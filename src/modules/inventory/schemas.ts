@@ -1,6 +1,8 @@
 import { StockGrade } from "@prisma/client";
 import { z } from "zod";
 
+import { queryBoolean } from "@/lib/query-params";
+
 const id = z.string().min(1);
 const name = z.string().trim().min(1, "Required").max(120);
 const money = z.number().min(0).max(1_000_000_000).multipleOf(0.01);
@@ -68,7 +70,7 @@ export const listStylesSchema = z.object({
   categoryId: id.optional(), // includes sub-categories
   brandId: id.optional(),
   search: z.string().trim().max(100).optional(),
-  includeInactive: z.coerce.boolean().optional(),
+  includeInactive: queryBoolean.optional(),
   cursor: id.optional(),
   take: z.coerce.number().int().min(1).max(200).optional(),
 });

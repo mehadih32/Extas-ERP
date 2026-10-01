@@ -14,6 +14,7 @@ cp .env.example .env        # then edit the values
 npm install                 # installs packages and generates the Prisma client
 npm run db:up               # starts PostgreSQL in Docker
 npm run db:deploy           # creates all database tables
+npm run db:seed             # permissions, companies, built-in roles and the owner account
 npm run dev                 # http://localhost:3000
 ```
 
@@ -46,3 +47,36 @@ src/
   styles/globals.css     # Tailwind + brand colors
   types/                 # shared TypeScript types
 ```
+
+## Login, companies and roles (backend)
+
+Sessions use an httpOnly cookie; only a SHA-256 hash of the token is stored. Passwords use
+scrypt. Five failed logins lock an account for 15 minutes. Every request re-checks the user's
+membership, so deactivating someone takes effect immediately.
+
+Server code gets the signed-in context from `src/modules/auth/context.ts`:
+
+```ts
+const ctx = await requirePermission("sales.order.create");
+ctx.db.salesOrder.findMany(); // ctx.db only ever sees the active company's rows
+```
+
+The permission list and the default grants for the five blueprint roles live in
+`src/modules/rbac/permissions.ts`.
+
+| Endpoint                                             | Purpose                                                  |
+| ---------------------------------------------------- | -------------------------------------------------------- |
+| `POST /api/auth/login`                               | Sign in (`email`, `password`)                            |
+| `POST /api/auth/logout`                              | Sign out this device                                     |
+| `GET /api/auth/me`                                   | User, company switcher list, active company, permissions |
+| `POST /api/auth/switch-company`                      | Change the active company (`companyId`)                  |
+| `POST /api/auth/change-password`                     | Change own password                                      |
+| `GET/POST /api/companies`                            | List switchable companies / create one (platform owner)  |
+| `GET/PATCH /api/company`                             | Active company profile and letterhead details            |
+| `GET /api/permissions`                               | Permission catalogue for the role editor                 |
+| `GET/POST /api/roles`, `PATCH/DELETE /api/roles/:id` | Manage roles                                             |
+| `GET/POST /api/members`, `PATCH /api/members/:id`    | Add users, change role, deactivate                       |
+| `POST /api/members/:id/reset-password`               | Issue a temporary password                               |
+| `GET /api/audit-logs`                                | Audit trail with filters                                 |
+
+The same operations are available as Server Actions in `src/server/actions/`.

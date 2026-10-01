@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { ZodError } from "zod";
 
 import { AppError, newErrorId, type ErrorCode } from "@/lib/errors";
@@ -23,6 +24,15 @@ export function toActionError(error: unknown): ActionError {
       (fieldErrors[key] ??= []).push(issue.message);
     }
     return { code: "VALIDATION", message: "Please check the highlighted fields.", fieldErrors };
+  }
+  if (error instanceof Prisma.PrismaClientKnownRequestError) {
+    // Unique constraint (e.g. duplicate SKU or name) and "record not found".
+    if (error.code === "P2002") {
+      return { code: "CONFLICT", message: "A record with these details already exists." };
+    }
+    if (error.code === "P2025") {
+      return { code: "NOT_FOUND", message: "The record was not found." };
+    }
   }
   const errorId = newErrorId();
   console.error(`[${errorId}]`, error);

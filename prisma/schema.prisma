@@ -511,6 +511,7 @@ model Warehouse {
   stockBalances        StockBalance[]
   stockMovements       StockMovement[]
   rawMaterialMovements RawMaterialMovement[]
+  salesOrders          SalesOrder[]
 
   @@unique([companyId, name])
 }
@@ -817,6 +818,7 @@ model SalesOrder {
   proformaId       String?          @unique
   integrationId    String?
   externalOrderId  String? // id from website / e-commerce platform
+  warehouseId      String? // stock is reserved in / shipped from this warehouse
   status           SalesOrderStatus @default(CONFIRMED)
   orderDate        DateTime         @default(now())
   // Retail delivery details
@@ -840,6 +842,7 @@ model SalesOrder {
   party            Party?                   @relation(fields: [partyId], references: [id], onDelete: SetNull)
   proforma         ProformaInvoice?         @relation(fields: [proformaId], references: [id], onDelete: SetNull)
   integration      SalesChannelIntegration? @relation(fields: [integrationId], references: [id], onDelete: SetNull)
+  warehouse        Warehouse?               @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
   items            SalesOrderItem[]
   invoice          Invoice?
   packingList      PackingList?

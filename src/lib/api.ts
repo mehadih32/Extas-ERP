@@ -22,10 +22,15 @@ function assertSameOrigin(request: Request): void {
   if (originHost !== host) throw new AppError("FORBIDDEN", "Cross-site request blocked.");
 }
 
-/** Parses a JSON body, turning malformed JSON into a 422 instead of a 500. */
+/**
+ * Parses a JSON body, turning malformed JSON into a 422 instead of a 500. An
+ * empty body reads as `{}` (for actions whose fields are all optional).
+ */
 export async function readJson(request: Request): Promise<unknown> {
+  const text = await request.text();
+  if (!text.trim()) return {};
   try {
-    return await request.json();
+    return JSON.parse(text) as unknown;
   } catch {
     throw new AppError("VALIDATION", "Request body must be valid JSON.");
   }

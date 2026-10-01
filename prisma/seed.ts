@@ -3,7 +3,8 @@
  *   1. the permission catalogue,
  *   2. the companies (default: "Extras" and "Fabric Apparel") with the five built-in roles,
  *   3. the platform owner account, as Super Admin of every seeded company,
- *   4. per company: the default size run (S to 3XL) and a "Main Warehouse".
+ *   4. per company: the default size run (S to 3XL), a "Main Warehouse" and the
+ *      receivable / payable control ledger accounts.
  *
  * Safe to run repeatedly. Usage: `npm run db:seed`
  *   SEED_ADMIN_EMAIL     owner email (required)
@@ -14,6 +15,7 @@
 import { generateTemporaryPassword, hashPassword } from "../src/lib/auth/password";
 import { prisma } from "../src/lib/prisma";
 import { slugify } from "../src/lib/slug";
+import { ensureControlAccounts } from "../src/modules/accounts/control-accounts";
 import { DEFAULT_SIZES } from "../src/modules/inventory/catalog.service";
 import { DEFAULT_WAREHOUSE_NAME } from "../src/modules/inventory/stock.service";
 import { ensureSystemRoles, syncPermissionCatalog } from "../src/modules/rbac/role.service";
@@ -74,7 +76,10 @@ async function main() {
       create: { companyId: company.id, name: DEFAULT_WAREHOUSE_NAME, isDefault: true },
       update: {},
     });
-    console.log(`✓ Company "${name}" ready with built-in roles, sizes and warehouse`);
+    await ensureControlAccounts(company.id);
+    console.log(
+      `✓ Company "${name}" ready with built-in roles, sizes, warehouse and ledger accounts`,
+    );
   }
 
   if (printedPassword) {

@@ -110,3 +110,46 @@ weighted average cost.
 
 Reads need `inventory.view`; changes need `inventory.manage`. Server Actions for all of these
 are in `src/server/actions/inventory.actions.ts`.
+
+## Buyers & Suppliers (backend)
+
+One profile per buyer, supplier or both (`BUY-0001`, `SUP-0001`, `BS-0001`), with a grade
+(A+, A, B, C), the Blue Verified badge, a credit limit and an account status. Closing an
+account that still owes or is owed money moves it to **Settling** (no new business) and it
+closes on its own once the balance reaches zero. Buyers with no business for the company's
+"dormant after" period (6 months by default) become **Dormant** and wake up on their next
+sale.
+
+Balances come from the double-entry journal: every journal line tagged with a party on the
+Receivable, Payable or Customer Advance account counts. Positive means they owe us, negative
+means we owe them. Sales, Purchasing and Accounts will post those entries; this module reads
+them and posts the one-off opening balance. Statement periods follow the company's timezone,
+so `to=2026-02-28` includes everything posted on 28 February in Dhaka.
+
+| Endpoint                                                   | Purpose                                                     |
+| ---------------------------------------------------------- | ----------------------------------------------------------- |
+| `GET/POST /api/parties`                                    | List (type, grade, badge, status, city, search) / create    |
+| `GET/PATCH /api/parties/:id`                               | 360° profile with balance and activity / edit               |
+| `PUT /api/parties/:id/grade`                               | Set A+, A, B, C or none                                     |
+| `PUT /api/parties/:id/verify`                              | Give or remove the Blue Verified badge                      |
+| `PUT /api/parties/:id/status`                              | Active, Dormant, Closed (Settling while dues remain)        |
+| `PUT /api/parties/:id/opening-balance`                     | Balance brought forward (posts a journal voucher)           |
+| `GET /api/parties/:id/statement?from=&to=`                 | Statement: summary page plus date-wise log, running balance |
+| `GET /api/parties/receivables-payables`                    | Total receivables and payables with per-party breakdown     |
+| `GET /api/parties/dormant?months=6\|12&buyerTypes=`        | Dormant buyers (wholesale and B2B by default)               |
+| `POST /api/parties/refresh-statuses`                       | Mark idle buyers dormant, close settled accounts            |
+| `GET/POST /api/parties/campaigns`                          | Re-engagement campaigns (WhatsApp, email or SMS)            |
+| `GET /api/parties/campaigns/:id`                           | Personalised message and one-click link for each buyer      |
+| `PATCH /api/parties/campaigns/:id/recipients/:recipientId` | Log sent, delivered, read, failed or responded              |
+| `POST /api/parties/campaigns/:id/complete` / `…/cancel`    | Finish or cancel a campaign                                 |
+
+Campaign messages can use `{BuyerName}`, `{ContactPerson}`, `{CompanyName}` and
+`{CatalogLink}`. Automatic sending through a WhatsApp Business or email provider comes with
+the notifications work; for now each buyer gets a ready-to-send link.
+
+Profiles and the dormant list need `parties.view`; changes need `parties.manage`; statements
+and the receivables overview need `parties.ledger.view`; opening balances need
+`accounts.manage`; campaigns need `sales.campaigns.manage`. Server Actions for all of these
+are in `src/server/actions/parties.actions.ts`. Sales and Purchasing will call
+`assertPartyCanTransact` (type, status and credit limit check) and `recordPartyActivity`
+from `src/modules/parties/party.service.ts`.

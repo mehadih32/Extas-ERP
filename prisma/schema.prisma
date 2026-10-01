@@ -72,6 +72,7 @@ model Company {
   updatedAt             DateTime @updatedAt
 
   memberships          CompanyMembership[]
+  sessions             Session[]
   roles                Role[]
   auditLogs            AuditLog[]
   files                FileAsset[]
@@ -132,18 +133,22 @@ model Company {
 
 /// A person who can log in. Global across companies.
 model User {
-  id            String     @id @default(cuid())
-  email         String     @unique
-  phone         String?
-  name          String
-  passwordHash  String?
-  avatarUrl     String?
-  status        UserStatus @default(ACTIVE)
-  isSuperAdmin  Boolean    @default(false) // platform-wide owner
-  lastLoginAt   DateTime?
-  lastCompanyId String? // remembers the company switcher selection
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
+  id                 String     @id @default(cuid())
+  email              String     @unique
+  phone              String?
+  name               String
+  passwordHash       String?
+  avatarUrl          String?
+  status             UserStatus @default(ACTIVE)
+  isSuperAdmin       Boolean    @default(false) // platform-wide owner
+  lastLoginAt        DateTime?
+  lastCompanyId      String? // remembers the company switcher selection
+  failedLoginCount   Int        @default(0)
+  lockedUntil        DateTime? // temporary lockout after repeated failed logins
+  passwordChangedAt  DateTime?
+  mustChangePassword Boolean    @default(false) // set for invited users with a temporary password
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
 
   memberships       CompanyMembership[]
   sessions          Session[]
@@ -164,18 +169,24 @@ model User {
   backupRuns        BackupRun[]
 }
 
+/// A signed-in device. `token` stores the SHA-256 hash of the cookie value, never
+/// the raw token. `activeCompanyId` is the company selected in the switcher.
 model Session {
-  id        String   @id @default(cuid())
-  userId    String
-  token     String   @unique
-  userAgent String?
-  ipAddress String?
-  expiresAt DateTime
-  createdAt DateTime @default(now())
+  id              String   @id @default(cuid())
+  userId          String
+  token           String   @unique
+  activeCompanyId String?
+  userAgent       String?
+  ipAddress       String?
+  expiresAt       DateTime
+  lastSeenAt      DateTime @default(now())
+  createdAt       DateTime @default(now())
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activeCompany Company? @relation(fields: [activeCompanyId], references: [id], onDelete: SetNull)
 
   @@index([userId])
+  @@index([expiresAt])
 }
 
 /// Links a user to a company with one role (data isolation boundary).
@@ -248,7 +259,7 @@ model UserPreference {
 /// Security / activity log for critical actions (force overrides, edits, deletions...).
 model AuditLog {
   id         String      @id @default(cuid())
-  companyId  String
+  companyId  String? // null for platform-level events (e.g. login before a company is chosen)
   userId     String?
   action     AuditAction
   entityType String // e.g. "Invoice", "SalesOrderItem"
@@ -260,8 +271,8 @@ model AuditLog {
   userAgent  String?
   createdAt  DateTime    @default(now())
 
-  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  user    User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+  company Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user    User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([companyId, createdAt])
   @@index([companyId, entityType, entityId])
@@ -2033,7 +2044,10 @@ enum AuditAction {
   INVOICE_EDIT
   STATUS_CHANGE
   LOGIN
+  LOGIN_FAILED
   LOGOUT
+  COMPANY_SWITCH
+  PASSWORD_CHANGE
   EXPORT
   PERMISSION_CHANGE
   STOCK_ADJUSTMENT

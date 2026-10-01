@@ -1,0 +1,23 @@
+# Local / server PostgreSQL for Extras ERP.
+# Start it with `npm run db:up`. The app service is added in the deployment step.
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: extras-erp-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-extras}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+      POSTGRES_DB: ${POSTGRES_DB:-extras_erp}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-extras} -d ${POSTGRES_DB:-extras_erp}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:

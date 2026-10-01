@@ -7,6 +7,7 @@ export type ErrorCode =
   | "NOT_FOUND"
   | "VALIDATION"
   | "CONFLICT"
+  | "INSUFFICIENT_STOCK" // UI shows the "Force Override & Sell" warning
   | "INVALID_CREDENTIALS"
   | "ACCOUNT_LOCKED"
   | "ACCOUNT_DISABLED"
@@ -21,6 +22,7 @@ const HTTP_STATUS: Record<ErrorCode, number> = {
   NOT_FOUND: 404,
   VALIDATION: 422,
   CONFLICT: 409,
+  INSUFFICIENT_STOCK: 409,
   INVALID_CREDENTIALS: 401,
   ACCOUNT_LOCKED: 423,
   ACCOUNT_DISABLED: 403,

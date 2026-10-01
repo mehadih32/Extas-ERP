@@ -9,11 +9,25 @@ import { prisma } from "@/lib/prisma";
  * 1xxx assets, 2xxx liabilities, 3xxx equity, 4xxx income, 5xxx+ expenses.
  */
 export const CONTROL_ACCOUNTS = {
+  CASH: { code: "1000", name: "Cash in Hand", type: "ASSET", subType: "CASH" },
+  MOBILE_WALLET: {
+    code: "1050",
+    name: "Mobile Wallets (bKash / Nagad / Rocket)",
+    type: "ASSET",
+    subType: "MOBILE_WALLET",
+  },
+  BANK: { code: "1100", name: "Bank", type: "ASSET", subType: "BANK" },
   RECEIVABLE: {
     code: "1200",
     name: "Accounts Receivable (Buyers)",
     type: "ASSET",
     subType: "ACCOUNTS_RECEIVABLE",
+  },
+  INVENTORY: {
+    code: "1300",
+    name: "Finished Goods Inventory",
+    type: "ASSET",
+    subType: "INVENTORY",
   },
   PAYABLE: {
     code: "2100",
@@ -27,12 +41,21 @@ export const CONTROL_ACCOUNTS = {
     type: "LIABILITY",
     subType: "CUSTOMER_ADVANCE",
   },
+  VAT_PAYABLE: { code: "2200", name: "VAT Payable", type: "LIABILITY", subType: "OTHER_LIABILITY" },
   OPENING_EQUITY: {
     code: "3900",
     name: "Opening Balance Equity",
     type: "EQUITY",
     subType: "RETAINED_EARNINGS",
   },
+  SALES: { code: "4000", name: "Sales", type: "INCOME", subType: "SALES" },
+  DELIVERY_INCOME: {
+    code: "4100",
+    name: "Delivery Charges Collected",
+    type: "INCOME",
+    subType: "OTHER_INCOME",
+  },
+  COGS: { code: "5000", name: "Cost of Goods Sold", type: "EXPENSE", subType: "COGS" },
 } as const satisfies Record<
   string,
   { code: string; name: string; type: AccountType; subType: AccountSubType }
@@ -52,17 +75,26 @@ export async function ensureControlAccounts(
   companyId: string,
   db: Db = prisma,
 ): Promise<Record<ControlAccountKey, string>> {
-  const ids = {} as Record<ControlAccountKey, string>;
-  for (const [key, acc] of Object.entries(CONTROL_ACCOUNTS) as Array<
+  const entries = Object.entries(CONTROL_ACCOUNTS) as Array<
     [ControlAccountKey, (typeof CONTROL_ACCOUNTS)[ControlAccountKey]]
-  >) {
-    const row = await db.ledgerAccount.upsert({
-      where: { companyId_code: { companyId, code: acc.code } },
-      create: { companyId, ...acc, isSystem: true },
-      update: {},
-      select: { id: true },
-    });
-    ids[key] = row.id;
+  >;
+  const existing = await db.ledgerAccount.findMany({
+    where: { companyId, code: { in: entries.map(([, acc]) => acc.code) } },
+    select: { id: true, code: true },
+  });
+  const byCode = new Map(existing.map((a) => [a.code, a.id]));
+  const ids = {} as Record<ControlAccountKey, string>;
+  for (const [key, acc] of entries) {
+    ids[key] =
+      byCode.get(acc.code) ??
+      (
+        await db.ledgerAccount.upsert({
+          where: { companyId_code: { companyId, code: acc.code } },
+          create: { companyId, ...acc, isSystem: true },
+          update: {},
+          select: { id: true },
+        })
+      ).id;
   }
   return ids;
 }

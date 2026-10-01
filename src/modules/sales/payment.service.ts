@@ -1,0 +1,281 @@
+import { Prisma, type PaymentMethod } from "@prisma/client";
+
+import { dayRange } from "@/lib/dates";
+import { AppError } from "@/lib/errors";
+import { nextDocumentNumber } from "@/lib/numbering";
+import { prisma } from "@/lib/prisma";
+import type { RequestMeta } from "@/lib/request-meta";
+import { ensureControlAccounts } from "@/modules/accounts/control-accounts";
+import { postJournalEntry } from "@/modules/accounts/journal.service";
+import { auditInCompany } from "@/modules/audit/audit.service";
+import type { CompanyContext } from "@/modules/auth/context";
+import { letterhead } from "@/modules/companies/letterhead";
+import { recordPartyActivity } from "@/modules/parties/party.service";
+import { lockRow, refreshOrderPayments } from "@/modules/sales/posting";
+import { listPaymentsSchema, receivePaymentSchema } from "@/modules/sales/schemas";
+import { money } from "@/modules/sales/totals";
+
+type Tx = Prisma.TransactionClient;
+type ReceiveInput = ReturnType<typeof receivePaymentSchema.parse>;
+
+/** Default lead time for a production project started by a proforma advance. */
+export const DEFAULT_PRODUCTION_LEAD_DAYS = 45;
+
+const CASH_SUBTYPES = ["CASH", "BANK", "MOBILE_WALLET"] as const;
+
+/** The cash / bank / wallet account money goes into. */
+async function depositAccount(
+  tx: Tx,
+  companyId: string,
+  method: PaymentMethod,
+  accountId?: string,
+) {
+  if (accountId) {
+    const account = await tx.ledgerAccount.findFirst({
+      where: { id: accountId, companyId, isActive: true, subType: { in: [...CASH_SUBTYPES] } },
+    });
+    if (!account) throw new AppError("VALIDATION", "Choose a cash, bank or mobile wallet account.");
+    return account.id;
+  }
+  const acc = await ensureControlAccounts(companyId, tx);
+  if (method === "BKASH" || method === "NAGAD" || method === "ROCKET") return acc.MOBILE_WALLET;
+  if (method === "BANK_TRANSFER" || method === "CHEQUE" || method === "CARD") return acc.BANK;
+  return acc.CASH;
+}
+
+/**
+ * Blueprint: the proforma advance "routes funds to Accounts & creates a
+ * Production project". Called once the advance is fully received.
+ */
+async function startProductionFromProforma(
+  tx: Tx,
+  ctx: CompanyContext,
+  proforma: { id: string; number: string; partyId: string; quotationId: string | null },
+  meta?: RequestMeta,
+) {
+  const [party, items] = await Promise.all([
+    tx.party.findUniqueOrThrow({ where: { id: proforma.partyId }, select: { name: true } }),
+    proforma.quotationId
+      ? tx.quotationItem.findMany({
+          where: { quotationId: proforma.quotationId },
+          orderBy: { sortOrder: "asc" },
+        })
+      : Promise.resolve([]),
+  ]);
+  const targetDate = new Date(Date.now() + DEFAULT_PRODUCTION_LEAD_DAYS * 86_400_000);
+  const project = await tx.productionProject.create({
+    data: {
+      companyId: ctx.company.id,
+      code: await nextDocumentNumber(tx, ctx.company.id, "PRODUCTION_PROJECT"),
+      name: `${party.name} — ${proforma.number}`,
+      categoryId: items.find((i) => i.categoryId)?.categoryId ?? null,
+      styleId: items.find((i) => i.styleId)?.styleId ?? null,
+      buyerId: proforma.partyId,
+      proformaId: proforma.id,
+      targetDate,
+      targetQuantity: items.reduce((s, i) => s + i.quantity, 0),
+      notes: `Started automatically when the advance for ${proforma.number} was received.`,
+      stageLogs: { create: { stage: "FABRIC_SOURCING" } },
+    },
+  });
+  await tx.proformaInvoice.update({
+    where: { id: proforma.id },
+    data: { status: "IN_PRODUCTION" },
+  });
+  await auditInCompany(
+    ctx,
+    meta,
+    {
+      action: "CREATE",
+      entityType: "ProductionProject",
+      entityId: project.id,
+      summary: `Production project ${project.code} started from ${proforma.number}`,
+    },
+    tx,
+  );
+  return project;
+}
+
+/**
+ * Records money received from a buyer (inside a transaction) and posts it:
+ * against an order or proforma before invoicing it is an advance; after
+ * invoicing, or on account, it reduces the receivable.
+ */
+export async function receivePaymentTx(
+  tx: Tx,
+  ctx: CompanyContext,
+  input: ReceiveInput,
+  meta?: RequestMeta,
+) {
+  const companyId = ctx.company.id;
+  const amount = money(input.amount);
+  let partyId: string | null = null;
+  let isAdvance = false;
+  let label: string;
+  let proformaToCheck: { id: string } | null = null;
+
+  if (input.orderId) {
+    await lockRow(tx, "SalesOrder", input.orderId);
+    const order = await tx.salesOrder.findFirst({
+      where: { id: input.orderId, companyId },
+      include: { invoice: { select: { status: true } } },
+    });
+    if (!order) throw new AppError("NOT_FOUND", "Order not found.");
+    if (order.status === "CANCELLED") throw new AppError("CONFLICT", "This order is cancelled.");
+    if (amount.gt(order.total.minus(order.paidAmount))) {
+      throw new AppError(
+        "VALIDATION",
+        `Only ${order.total.minus(order.paidAmount).toFixed(2)} is due on ${order.number}.`,
+      );
+    }
+    partyId = order.partyId;
+    isAdvance = !order.invoice || order.invoice.status === "VOID";
+    label = order.number;
+  } else if (input.proformaId) {
+    await lockRow(tx, "ProformaInvoice", input.proformaId);
+    const proforma = await tx.proformaInvoice.findFirst({
+      where: { id: input.proformaId, companyId },
+    });
+    if (!proforma) throw new AppError("NOT_FOUND", "Proforma invoice not found.");
+    if (proforma.status === "CANCELLED" || proforma.status === "CONVERTED") {
+      throw new AppError(
+        "CONFLICT",
+        `This proforma is ${proforma.status.toLowerCase()}; take payment on its order instead.`,
+      );
+    }
+    if (amount.gt(proforma.total.minus(proforma.advancePaid))) {
+      throw new AppError(
+        "VALIDATION",
+        `Only ${proforma.total.minus(proforma.advancePaid).toFixed(2)} is left on ${proforma.number}.`,
+      );
+    }
+    partyId = proforma.partyId;
+    isAdvance = true;
+    label = proforma.number;
+    proformaToCheck = proforma;
+  } else {
+    const party = await tx.party.findFirst({ where: { id: input.partyId, companyId } });
+    if (!party) throw new AppError("NOT_FOUND", "Buyer not found.");
+    if (party.kind === "SUPPLIER")
+      throw new AppError("VALIDATION", `${party.name} is not a buyer.`);
+    partyId = party.id;
+    label = `on account (${party.code})`;
+  }
+
+  const accounts = await ensureControlAccounts(companyId, tx);
+  const debitAccount = await depositAccount(tx, companyId, input.method, input.accountId);
+  const paymentDate = input.paymentDate ?? new Date();
+  const payment = await tx.payment.create({
+    data: {
+      companyId,
+      number: await nextDocumentNumber(tx, companyId, "PAYMENT_RECEIPT"),
+      direction: "RECEIVED",
+      method: input.method,
+      partyId,
+      amount,
+      paymentDate,
+      accountId: debitAccount,
+      orderId: input.orderId ?? null,
+      proformaId: input.proformaId ?? null,
+      reference: input.reference ?? null,
+      isAdvance,
+      notes: input.notes ?? null,
+    },
+  });
+  const entry = await postJournalEntry(tx, {
+    companyId,
+    date: paymentDate,
+    description: `Payment ${payment.number} received — ${label}`,
+    sourceType: "PAYMENT",
+    sourceId: payment.id,
+    postedById: ctx.user.id,
+    lines: [
+      { accountId: debitAccount, debit: amount, memo: input.reference ?? undefined },
+      {
+        accountId: isAdvance ? accounts.CUSTOMER_ADVANCE : accounts.RECEIVABLE,
+        partyId,
+        credit: amount,
+        memo: isAdvance ? "Advance" : undefined,
+      },
+    ],
+  });
+  await tx.payment.update({ where: { id: payment.id }, data: { journalEntryId: entry.id } });
+
+  if (input.orderId) await refreshOrderPayments(tx, input.orderId);
+
+  let productionProject: { id: string; code: string } | null = null;
+  if (proformaToCheck) {
+    const updated = await tx.proformaInvoice.update({
+      where: { id: proformaToCheck.id },
+      data: { advancePaid: { increment: amount } },
+    });
+    if (updated.status === "ISSUED" && updated.advancePaid.gte(updated.advanceAmount)) {
+      await tx.proformaInvoice.update({
+        where: { id: updated.id },
+        data: { status: "ADVANCE_RECEIVED", advancePaidAt: paymentDate },
+      });
+      productionProject = await startProductionFromProforma(tx, ctx, updated, meta);
+    }
+  }
+  if (partyId) await recordPartyActivity(partyId, paymentDate, tx);
+  await auditInCompany(
+    ctx,
+    meta,
+    {
+      action: "CREATE",
+      entityType: "Payment",
+      entityId: payment.id,
+      summary: `Received ${amount.toFixed(2)} (${input.method}) ${payment.number} — ${label}`,
+    },
+    tx,
+  );
+  return { payment: { ...payment, journalEntryId: entry.id }, productionProject };
+}
+
+export async function receivePayment(ctx: CompanyContext, raw: unknown, meta?: RequestMeta) {
+  const input = receivePaymentSchema.parse(raw);
+  return prisma.$transaction((tx) => receivePaymentTx(tx, ctx, input, meta), { timeout: 30_000 });
+}
+
+export async function listPayments(ctx: CompanyContext, raw: unknown = {}) {
+  const q = listPaymentsSchema.parse(raw);
+  const take = q.take ?? 50;
+  const { start, end } = dayRange(q.from, q.to, ctx.company.timezone);
+  const rows = await ctx.db.payment.findMany({
+    where: {
+      direction: "RECEIVED",
+      ...(q.partyId ? { partyId: q.partyId } : {}),
+      ...(q.orderId ? { orderId: q.orderId } : {}),
+      ...(start || end
+        ? { paymentDate: { ...(start ? { gte: start } : {}), ...(end ? { lt: end } : {}) } }
+        : {}),
+    },
+    include: {
+      party: { select: { id: true, code: true, name: true } },
+      account: { select: { id: true, code: true, name: true } },
+      order: { select: { id: true, number: true } },
+      proforma: { select: { id: true, number: true } },
+    },
+    orderBy: [{ paymentDate: "desc" }, { id: "desc" }],
+    take: take + 1,
+    ...(q.cursor ? { cursor: { id: q.cursor }, skip: 1 } : {}),
+  });
+  const hasMore = rows.length > take;
+  const items = hasMore ? rows.slice(0, take) : rows;
+  return { items, nextCursor: hasMore ? items[items.length - 1]?.id : undefined };
+}
+
+/** Money receipt document data. */
+export async function getPaymentReceipt(ctx: CompanyContext, paymentId: string) {
+  const payment = await ctx.db.payment.findUnique({
+    where: { id: paymentId },
+    include: {
+      party: { select: { id: true, code: true, name: true, phone: true, address: true } },
+      account: { select: { name: true } },
+      order: { select: { number: true, total: true, paidAmount: true, dueAmount: true } },
+      proforma: { select: { number: true, total: true, advanceAmount: true, advancePaid: true } },
+    },
+  });
+  if (!payment) throw new AppError("NOT_FOUND", "Payment not found.");
+  return { ...payment, letterhead: letterhead(ctx.company) };
+}

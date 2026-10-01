@@ -21,28 +21,7 @@ async function setup(companyName = "Extras") {
   await addToCompany(user.id, company.id, roles.SUPER_ADMIN);
   const ctx = await contextFor(user.id, company.id);
   const control = await ensureControlAccounts(company.id);
-  const sales = await prisma.ledgerAccount.create({
-    data: { companyId: company.id, code: "4000", name: "Sales", type: "INCOME", subType: "SALES" },
-  });
-  const cash = await prisma.ledgerAccount.create({
-    data: { companyId: company.id, code: "1000", name: "Cash", type: "ASSET", subType: "CASH" },
-  });
-  const purchases = await prisma.ledgerAccount.create({
-    data: {
-      companyId: company.id,
-      code: "5000",
-      name: "Purchases",
-      type: "EXPENSE",
-      subType: "COGS",
-    },
-  });
-  return {
-    ctx,
-    company,
-    user,
-    roles,
-    accounts: { ...control, SALES: sales.id, CASH: cash.id, PURCHASES: purchases.id },
-  };
+  return { ctx, company, user, roles, accounts: { ...control, PURCHASES: control.COGS } };
 }
 
 type Env = Awaited<ReturnType<typeof setup>>;

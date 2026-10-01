@@ -153,3 +153,57 @@ and the receivables overview need `parties.ledger.view`; opening balances need
 are in `src/server/actions/parties.actions.ts`. Sales and Purchasing will call
 `assertPartyCanTransact` (type, status and credit limit check) and `recordPartyActivity`
 from `src/modules/parties/party.service.ts`.
+
+## Sales: quotations and orders (backend)
+
+**B2B pre-order flow.** Quotation (items by category / style, fabric, quantity or a size
+breakdown, styling rules such as "the placket should not have a black border", and the
+company's custom fields) → one-click Proforma Invoice with an advance (30% by default) → when
+the advance is fully paid a Production project starts on its own → when the goods are ready
+the proforma becomes a sales order and the advance moves with it.
+
+**Orders and stock.** Orders are entered as SKU lines or straight from the color × size
+matrix. Confirming an order reserves its stock, so the matrix shows the real available
+quantity at once. The delivery challan takes the pieces out of stock. Asking for more than is
+available returns `409 INSUFFICIENT_STOCK` with the short SKUs, which is the cue for the
+"Force Override & Sell" warning. Overriding needs `sales.force_override`, is recorded on each
+line and lands in the audit log.
+
+**Documents at checkout (optional).** Commercial Invoice (made by default), Packing List /
+pick-list and Delivery Challan (price-free). Payment taken at the counter can be included.
+Everything is saved together or not at all.
+
+**Books.** Every step posts a balanced journal entry, so the buyer's ledger, statements and
+the receivables overview update immediately:
+
+| Event                  | Entry                                                         |
+| ---------------------- | ------------------------------------------------------------- |
+| Payment before invoice | Dr Cash / Bank / Wallet, Cr Customer Advance (buyer)          |
+| Invoice                | Dr Receivable (buyer), Cr Sales / Delivery income / VAT       |
+| Advance applied        | Dr Customer Advance, Cr Receivable (inside the invoice entry) |
+| Payment after invoice  | Dr Cash / Bank / Wallet, Cr Receivable (buyer)                |
+| Delivery               | Dr Cost of Goods Sold, Cr Inventory (at average cost)         |
+| Invoice void           | Mirror entry; payments become the buyer's advance again       |
+
+| Endpoint                                                           | Purpose                                                  |
+| ------------------------------------------------------------------ | -------------------------------------------------------- |
+| `GET/POST /api/sales/custom-fields`, `PATCH …/:id`                 | Extra fields for quotations and other records            |
+| `GET/POST /api/sales/quotations`, `GET/PATCH/DELETE …/:id`         | Quotation builder (data for the letterhead PDF)          |
+| `PUT /api/sales/quotations/:id/status`                             | Sent, accepted or rejected                               |
+| `POST /api/sales/quotations/:id/convert`                           | Make the proforma invoice                                |
+| `GET /api/sales/proformas`, `GET …/:id`                            | Proformas with advance due, payments and production      |
+| `POST /api/sales/proformas/:id/cancel` / `…/convert`               | Cancel (no advance yet) / turn into a sales order        |
+| `GET/POST /api/sales/orders`, `GET/PATCH …/:id`                    | Orders and checkout; edit before delivery and invoicing  |
+| `POST /api/sales/orders/:id/cancel`                                | Cancel and free the reserved stock                       |
+| `POST /api/sales/orders/:id/invoice` / `packing-list` / `challans` | Make each document later                                 |
+| `GET /api/sales/invoices/:id`, `POST …/:id/void`                   | Commercial invoice / void it (audited)                   |
+| `GET /api/sales/packing-lists/:id`, `PUT …/:id/pick`               | Pick-list and picking progress                           |
+| `GET /api/sales/challans`, `GET …/:id`                             | Challan history and the price-free challan               |
+| `GET/POST /api/sales/payments`, `GET …/:id`                        | Money received (order, proforma or on account), receipts |
+| `GET /api/sales/summary?from=&to=`                                 | Today's sales, collections and open dues                 |
+
+Reads need `sales.view`; quotations and proformas need `sales.quotation.manage`; orders,
+documents and payments need `sales.order.create`; voiding an invoice needs
+`sales.invoice.edit`; custom field definitions need `company.settings`. Server Actions are in
+`src/server/actions/sales.actions.ts`. Website / courier sync and returns QC come next in
+this module.

@@ -1,0 +1,5 @@
+node_modules
+.next
+prisma/migrations
+package-lock.json
+ERP_Blueprint.md

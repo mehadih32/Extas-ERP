@@ -1,0 +1,12 @@
+@import "tailwindcss";
+
+/*
+ * Extras ERP design tokens (blueprint: "Ralph Lauren editorial" luxury aesthetic).
+ * Usable as Tailwind utilities, e.g. bg-primary, text-accent, bg-background.
+ */
+@theme {
+  --color-primary: #0b3d2e; /* Dark Green */
+  --color-accent: #be1434; /* Deep Red — alerts & accents */
+  --color-background: #f8f8f8; /* Off-White */
+  --color-foreground: #1a1a1a;
+}

@@ -1,0 +1,2564 @@
+// =============================================================================
+//  EXTRAS ENTERPRISE ERP — Prisma schema (Blueprint v1.6)
+// =============================================================================
+//
+//  Conventions
+//  -----------
+//  * PostgreSQL + Prisma. All primary keys are cuid() strings.
+//  * Multi-tenancy: every business record carries `companyId` and is isolated
+//    per company (e.g. "Extras", "Fabric Apparel"). Users are global and join
+//    companies through `CompanyMembership`, each with one `Role`.
+//  * Money uses Decimal(14,2); unit costs use Decimal(14,4); quantities are Int
+//    (pieces) except raw materials, which use Decimal(14,3) (metres, kg, ...).
+//  * Accounting is double-entry: every financial event posts a `JournalEntry`
+//    with balanced `JournalLine`s. Buyer/Supplier lifetime ledgers are the
+//    journal lines tagged with that `partyId`.
+//  * Stock is tracked as a running balance (`StockBalance`) plus an immutable
+//    movement log (`StockMovement`) that explains every change.
+//
+//  Sections
+//  --------
+//   1. Tenancy, users, RBAC, audit, preferences, files, numbering
+//   2. Catalog & product matrix (category -> brand -> style -> variant)
+//   3. Inventory, raw materials, bad stock
+//   4. Parties (buyers & suppliers), grading, verification, dormancy
+//   5. Sales: quotations, proforma, orders, 3-document flow, payments
+//   6. E-commerce sync, couriers, returns QC
+//   7. Production projects, costing, split bills, AI stock intake
+//   8. Accounts & finance (chart of accounts, journal, banks, assets, capital)
+//   9. Expenses & marketing spend
+//  10. HR, payroll, leave, salary advances, conveyance
+//  11. Compliance, dynamic templates, generated documents, reports
+//  12. Notepad, tasks, reminders, notifications
+//  13. Backups
+// =============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =============================================================================
+// 1. TENANCY, USERS, RBAC, AUDIT
+// =============================================================================
+
+/// A distinct business entity. All data is isolated per company.
+model Company {
+  id                    String   @id @default(cuid())
+  name                  String
+  slug                  String   @unique
+  legalName             String?
+  // Letterhead / branding info used on every PDF & the blank letterhead pad
+  logoUrl               String?
+  address               String?
+  phone                 String?
+  email                 String?
+  website               String?
+  letterheadFooter      String?
+  primaryColor          String   @default("#0B3D2E")
+  accentColor           String   @default("#BE1434")
+  currency              String   @default("BDT")
+  timezone              String   @default("Asia/Dhaka")
+  // Business rules
+  lowStockThreshold     Int      @default(5)
+  defaultAdvancePercent Decimal  @default(30) @db.Decimal(5, 2)
+  dormantAfterMonths    Int      @default(6)
+  isActive              Boolean  @default(true)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  memberships          CompanyMembership[]
+  roles                Role[]
+  auditLogs            AuditLog[]
+  files                FileAsset[]
+  sequences            DocumentSequence[]
+  customFields         CustomFieldDefinition[]
+  categories           Category[]
+  brands               Brand[]
+  styles               Style[]
+  colors               Color[]
+  sizes                Size[]
+  variants             ProductVariant[]
+  ratioPresets         SizeRatioPreset[]
+  warehouses           Warehouse[]
+  stockBalances        StockBalance[]
+  stockMovements       StockMovement[]
+  rawMaterials         RawMaterial[]
+  rawMaterialMovements RawMaterialMovement[]
+  badStockEntries      BadStockEntry[]
+  parties              Party[]
+  campaigns            ReEngagementCampaign[]
+  quotations           Quotation[]
+  proformaInvoices     ProformaInvoice[]
+  salesOrders          SalesOrder[]
+  invoices             Invoice[]
+  packingLists         PackingList[]
+  deliveryChallans     DeliveryChallan[]
+  payments             Payment[]
+  integrations         SalesChannelIntegration[]
+  webhookEvents        WebhookEvent[]
+  courierAccounts      CourierAccount[]
+  shipments            Shipment[]
+  salesReturns         SalesReturn[]
+  productionProjects   ProductionProject[]
+  supplierBills        SupplierBill[]
+  stockIntakes         StockIntake[]
+  ledgerAccounts       LedgerAccount[]
+  journalEntries       JournalEntry[]
+  bankAccounts         BankAccount[]
+  fixedAssets          FixedAsset[]
+  capitalSources       CapitalSource[]
+  expenseHeads         ExpenseHead[]
+  expenses             Expense[]
+  adSpends             AdSpend[]
+  employees            Employee[]
+  leaveTypes           LeaveType[]
+  leaveRequests        LeaveRequest[]
+  payrollRuns          PayrollRun[]
+  salaryAdvances       SalaryAdvance[]
+  complianceDocuments  ComplianceDocument[]
+  templates            DocumentTemplate[]
+  generatedDocuments   GeneratedDocument[]
+  reportExports        ReportExport[]
+  notes                Note[]
+  tasks                Task[]
+  reminders            Reminder[]
+  notifications        NotificationLog[]
+}
+
+/// A person who can log in. Global across companies.
+model User {
+  id            String     @id @default(cuid())
+  email         String     @unique
+  phone         String?
+  name          String
+  passwordHash  String?
+  avatarUrl     String?
+  status        UserStatus @default(ACTIVE)
+  isSuperAdmin  Boolean    @default(false) // platform-wide owner
+  lastLoginAt   DateTime?
+  lastCompanyId String? // remembers the company switcher selection
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  memberships       CompanyMembership[]
+  sessions          Session[]
+  preference        UserPreference?
+  auditLogs         AuditLog[]
+  employeeProfiles  Employee[]
+  uploadedFiles     FileAsset[]
+  forceOverrides    SalesOrderItem[]    @relation("ForceOverrideBy")
+  returnInspections SalesReturnItem[]   @relation("ReturnInspectedBy")
+  notes             Note[]
+  tasksCreated      Task[]              @relation("TaskCreatedBy")
+  remindersCreated  Reminder[]          @relation("ReminderCreatedBy")
+  reminderTargets   ReminderRecipient[]
+  reportExports     ReportExport[]
+  journalEntries    JournalEntry[]      @relation("JournalPostedBy")
+  approvedLeaves    LeaveRequest[]      @relation("LeaveApprovedBy")
+  generatedDocs     GeneratedDocument[]
+  backupRuns        BackupRun[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  userAgent String?
+  ipAddress String?
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+/// Links a user to a company with one role (data isolation boundary).
+model CompanyMembership {
+  id        String   @id @default(cuid())
+  companyId String
+  userId    String
+  roleId    String
+  isActive  Boolean  @default(true)
+  joinedAt  DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role    Role    @relation(fields: [roleId], references: [id])
+
+  @@unique([companyId, userId])
+  @@index([roleId])
+}
+
+/// A role inside a company. The five blueprint roles are seeded as system roles;
+/// companies can add custom roles too.
+model Role {
+  id          String      @id @default(cuid())
+  companyId   String
+  name        String
+  systemRole  SystemRole? // set for the built-in roles
+  description String?
+  isSystem    Boolean     @default(false)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  company     Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  permissions RolePermission[]
+  memberships CompanyMembership[]
+
+  @@unique([companyId, name])
+}
+
+/// A single capability, e.g. "invoice.create", "stock.force_override".
+model Permission {
+  id          String    @id @default(cuid())
+  key         String    @unique
+  module      AppModule
+  description String?
+
+  roles RolePermission[]
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+}
+
+/// Per-user UI preferences (e.g. which dashboard metric cards are hidden 👁).
+model UserPreference {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  hiddenMetrics   String[] // e.g. ["NET_PROFIT", "LIABILITIES"]
+  dashboardLayout Json?
+  updatedAt       DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// Security / activity log for critical actions (force overrides, edits, deletions...).
+model AuditLog {
+  id         String      @id @default(cuid())
+  companyId  String
+  userId     String?
+  action     AuditAction
+  entityType String // e.g. "Invoice", "SalesOrderItem"
+  entityId   String?
+  summary    String?
+  before     Json?
+  after      Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime    @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user    User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, createdAt])
+  @@index([companyId, entityType, entityId])
+  @@index([userId])
+}
+
+/// Any uploaded file (logos, packing-list photos, templates, compliance scans, PDFs).
+model FileAsset {
+  id           String   @id @default(cuid())
+  companyId    String
+  uploadedById String?
+  fileName     String
+  mimeType     String
+  sizeBytes    Int
+  storagePath  String // local path or object-storage key
+  url          String?
+  checksum     String?
+  createdAt    DateTime @default(now())
+
+  company    Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  uploadedBy User?   @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+
+  stockIntakes        StockIntake[]
+  complianceDocuments ComplianceDocument[]
+  templates           DocumentTemplate[]
+  generatedDocuments  GeneratedDocument[]
+  reportExports       ReportExport[]
+  supplierBills       SupplierBill[]
+  expenses            Expense[]
+  leaveRequests       LeaveRequest[]
+
+  @@index([companyId])
+}
+
+/// Auto-numbering per company and document type (e.g. INV-2026-00042).
+model DocumentSequence {
+  id          String       @id @default(cuid())
+  companyId   String
+  docType     DocumentType
+  prefix      String
+  nextNumber  Int          @default(1)
+  padding     Int          @default(5)
+  resetYearly Boolean      @default(true)
+  year        Int?
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, docType])
+}
+
+/// Dynamic custom fields (e.g. extra quotation styling fields). Values are stored
+/// in the `customFields` JSON column of the target record, keyed by `key`.
+model CustomFieldDefinition {
+  id         String            @id @default(cuid())
+  companyId  String
+  entity     CustomFieldEntity
+  key        String
+  label      String
+  fieldType  CustomFieldType
+  options    String[] // for SELECT fields
+  isRequired Boolean           @default(false)
+  sortOrder  Int               @default(0)
+  isActive   Boolean           @default(true)
+  createdAt  DateTime          @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, entity, key])
+}
+
+// =============================================================================
+// 2. CATALOG & PRODUCT MATRIX
+// =============================================================================
+
+/// Tree navigation: Category (self-nesting) -> Brand -> Style -> Matrix.
+model Category {
+  id        String   @id @default(cuid())
+  companyId String
+  parentId  String?
+  name      String
+  slug      String
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  company            Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  parent             Category?           @relation("CategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children           Category[]          @relation("CategoryTree")
+  styles             Style[]
+  quotationItems     QuotationItem[]
+  productionProjects ProductionProject[]
+
+  @@unique([companyId, slug])
+}
+
+model Brand {
+  id        String   @id @default(cuid())
+  companyId String
+  name      String
+  logoUrl   String?
+  createdAt DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  styles  Style[]
+
+  @@unique([companyId, name])
+}
+
+/// Master style (e.g. "Classic Polo — EX-PL-001"). Variants form the color x size matrix.
+model Style {
+  id             String   @id @default(cuid())
+  companyId      String
+  categoryId     String
+  brandId        String?
+  code           String
+  name           String
+  description    String?
+  fabric         String?
+  imageUrl       String?
+  retailPrice    Decimal  @default(0) @db.Decimal(14, 2)
+  wholesalePrice Decimal  @default(0) @db.Decimal(14, 2)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  company            Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  category           Category            @relation(fields: [categoryId], references: [id])
+  brand              Brand?              @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  variants           ProductVariant[]
+  quotationItems     QuotationItem[]
+  productionProjects ProductionProject[]
+
+  @@unique([companyId, code])
+  @@index([companyId, categoryId])
+}
+
+/// Matrix rows — colors with a visual hex swatch.
+model Color {
+  id        String @id @default(cuid())
+  companyId String
+  name      String
+  hexCode   String // e.g. "#0B3D2E"
+  sortOrder Int    @default(0)
+
+  company  Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  variants ProductVariant[]
+
+  @@unique([companyId, name])
+}
+
+/// Matrix columns — sizes S to 3XL (or any custom set), ordered by sortOrder.
+model Size {
+  id        String @id @default(cuid())
+  companyId String
+  name      String // S, M, L, XL, XXL, 3XL
+  sortOrder Int    @default(0)
+
+  company      Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  variants     ProductVariant[]
+  ratioEntries SizeRatioEntry[]
+
+  @@unique([companyId, name])
+}
+
+/// One SKU = one cell of the matrix (style + color + size).
+model ProductVariant {
+  id             String   @id @default(cuid())
+  companyId      String
+  styleId        String
+  colorId        String
+  sizeId         String
+  sku            String
+  barcode        String?
+  retailPrice    Decimal? @db.Decimal(14, 2) // overrides style price when set
+  wholesalePrice Decimal? @db.Decimal(14, 2)
+  avgCost        Decimal  @default(0) @db.Decimal(14, 4) // weighted average cost (COGS)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  company          Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  style            Style                 @relation(fields: [styleId], references: [id], onDelete: Cascade)
+  color            Color                 @relation(fields: [colorId], references: [id])
+  size             Size                  @relation(fields: [sizeId], references: [id])
+  stockBalances    StockBalance[]
+  stockMovements   StockMovement[]
+  badStockEntries  BadStockEntry[]
+  orderItems       SalesOrderItem[]
+  returnItems      SalesReturnItem[]
+  intakeLines      StockIntakeLine[]
+  packingListItems PackingListItem[]
+  challanItems     DeliveryChallanItem[]
+
+  @@unique([companyId, sku])
+  @@unique([styleId, colorId, sizeId])
+  @@index([companyId, barcode])
+}
+
+/// Saved "Ratio Fill" shortcut for the wholesale matrix (e.g. S:1 M:2 L:2 XL:1).
+model SizeRatioPreset {
+  id        String   @id @default(cuid())
+  companyId String
+  name      String
+  createdAt DateTime @default(now())
+
+  company Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  entries SizeRatioEntry[]
+
+  @@unique([companyId, name])
+}
+
+model SizeRatioEntry {
+  id       String @id @default(cuid())
+  presetId String
+  sizeId   String
+  ratio    Int
+
+  preset SizeRatioPreset @relation(fields: [presetId], references: [id], onDelete: Cascade)
+  size   Size            @relation(fields: [sizeId], references: [id], onDelete: Cascade)
+
+  @@unique([presetId, sizeId])
+}
+
+// =============================================================================
+// 3. INVENTORY, RAW MATERIALS, BAD STOCK
+// =============================================================================
+
+model Warehouse {
+  id        String   @id @default(cuid())
+  companyId String
+  name      String
+  address   String?
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  company              Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  stockBalances        StockBalance[]
+  stockMovements       StockMovement[]
+  rawMaterialMovements RawMaterialMovement[]
+
+  @@unique([companyId, name])
+}
+
+/// Current quantity per SKU, warehouse and grade. May go negative only via Force Override.
+model StockBalance {
+  id          String     @id @default(cuid())
+  companyId   String
+  variantId   String
+  warehouseId String
+  grade       StockGrade @default(A_GRADE)
+  quantity    Int        @default(0)
+  reserved    Int        @default(0) // allocated to confirmed but undelivered orders
+  updatedAt   DateTime   @updatedAt
+
+  company   Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  warehouse Warehouse      @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+
+  @@unique([variantId, warehouseId, grade])
+  @@index([companyId, quantity])
+}
+
+/// Immutable log explaining every stock change.
+model StockMovement {
+  id            String            @id @default(cuid())
+  companyId     String
+  variantId     String
+  warehouseId   String
+  grade         StockGrade        @default(A_GRADE)
+  type          StockMovementType
+  quantity      Int // + in, - out
+  unitCost      Decimal?          @db.Decimal(14, 4)
+  referenceType String? // e.g. "SalesOrder", "StockIntake", "SalesReturn"
+  referenceId   String?
+  note          String?
+  createdById   String?
+  createdAt     DateTime          @default(now())
+
+  company   Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  warehouse Warehouse      @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, createdAt])
+  @@index([variantId, createdAt])
+  @@index([referenceType, referenceId])
+}
+
+/// Damaged / unsellable pieces written off as inventory loss.
+model BadStockEntry {
+  id                String         @id @default(cuid())
+  companyId         String
+  variantId         String
+  quantity          Int
+  unitCost          Decimal        @db.Decimal(14, 4)
+  lossValue         Decimal        @db.Decimal(14, 2)
+  source            BadStockSource
+  reason            String?
+  salesReturnItemId String?        @unique
+  journalEntryId    String?        @unique
+  createdAt         DateTime       @default(now())
+
+  company         Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  variant         ProductVariant   @relation(fields: [variantId], references: [id])
+  salesReturnItem SalesReturnItem? @relation(fields: [salesReturnItemId], references: [id], onDelete: SetNull)
+  journalEntry    JournalEntry?    @relation(fields: [journalEntryId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, createdAt])
+}
+
+/// Fabric, trims, accessories, packaging — tracked as Current Assets.
+model RawMaterial {
+  id           String          @id @default(cuid())
+  companyId    String
+  code         String
+  name         String
+  kind         RawMaterialKind
+  unit         MeasurementUnit
+  quantity     Decimal         @default(0) @db.Decimal(14, 3)
+  avgCost      Decimal         @default(0) @db.Decimal(14, 4)
+  reorderLevel Decimal?        @db.Decimal(14, 3)
+  supplierId   String?
+  isActive     Boolean         @default(true)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  company   Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  supplier  Party?                @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  movements RawMaterialMovement[]
+
+  @@unique([companyId, code])
+}
+
+model RawMaterialMovement {
+  id                  String                  @id @default(cuid())
+  companyId           String
+  rawMaterialId       String
+  warehouseId         String?
+  type                RawMaterialMovementType
+  quantity            Decimal                 @db.Decimal(14, 3) // + in, - out
+  unitCost            Decimal?                @db.Decimal(14, 4)
+  productionProjectId String? // consumption charged to a batch
+  supplierBillId      String?
+  note                String?
+  createdAt           DateTime                @default(now())
+
+  company           Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  rawMaterial       RawMaterial        @relation(fields: [rawMaterialId], references: [id], onDelete: Cascade)
+  warehouse         Warehouse?         @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
+  productionProject ProductionProject? @relation(fields: [productionProjectId], references: [id], onDelete: SetNull)
+  supplierBill      SupplierBill?      @relation(fields: [supplierBillId], references: [id], onDelete: SetNull)
+
+  @@index([rawMaterialId, createdAt])
+}
+
+// =============================================================================
+// 4. PARTIES — 360° BUYER & SUPPLIER PROFILES
+// =============================================================================
+
+/// A buyer (retail, wholesale, B2B), supplier/factory, or both.
+model Party {
+  id                String      @id @default(cuid())
+  companyId         String
+  code              String
+  kind              PartyKind
+  buyerType         BuyerType? // only for buyers
+  name              String
+  contactPerson     String?
+  phone             String?
+  whatsapp          String?
+  email             String?
+  address           String?
+  city              String?
+  country           String?     @default("Bangladesh")
+  taxId             String?
+  // 360° profile signals
+  grade             PartyGrade? // A+, A, B, C
+  isVerified        Boolean     @default(false) // 💙 Blue Verified badge
+  verifiedAt        DateTime?
+  status            PartyStatus @default(ACTIVE)
+  statusChangedAt   DateTime?
+  creditLimit       Decimal?    @db.Decimal(14, 2)
+  paymentTermsDays  Int?
+  openingBalance    Decimal     @default(0) @db.Decimal(14, 2) // + receivable / - payable
+  lastTransactionAt DateTime? // drives dormant buyer filters
+  notes             String?
+  customFields      Json?
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  company              Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  quotations           Quotation[]
+  proformaInvoices     ProformaInvoice[]
+  salesOrders          SalesOrder[]
+  invoices             Invoice[]
+  payments             Payment[]
+  journalLines         JournalLine[]
+  supplierBills        SupplierBill[]
+  expenses             Expense[]
+  rawMaterials         RawMaterial[]
+  productionsAsBuyer   ProductionProject[] @relation("ProductionBuyer")
+  productionsAsFactory ProductionProject[] @relation("ProductionFactory")
+  campaignRecipients   CampaignRecipient[]
+  generatedDocuments   GeneratedDocument[]
+
+  @@unique([companyId, code])
+  @@index([companyId, kind, status])
+  @@index([companyId, lastTransactionAt])
+}
+
+/// One-click re-engagement campaign targeting dormant B2B buyers.
+model ReEngagementCampaign {
+  id               String         @id @default(cuid())
+  companyId        String
+  name             String
+  inactivityMonths Int // e.g. 6 or 12
+  channel          MessageChannel
+  message          String
+  catalogFileUrl   String? // catalog / stock availability share
+  status           CampaignStatus @default(DRAFT)
+  scheduledAt      DateTime?
+  sentAt           DateTime?
+  createdAt        DateTime       @default(now())
+
+  company    Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  recipients CampaignRecipient[]
+}
+
+model CampaignRecipient {
+  id          String         @id @default(cuid())
+  campaignId  String
+  partyId     String
+  status      DeliveryStatus @default(PENDING)
+  sentAt      DateTime?
+  respondedAt DateTime?
+  error       String?
+
+  campaign ReEngagementCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  party    Party                @relation(fields: [partyId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, partyId])
+}
+
+// =============================================================================
+// 5. SALES — QUOTATION -> PROFORMA -> ORDER -> 3 DOCUMENTS
+// =============================================================================
+
+model Quotation {
+  id           String          @id @default(cuid())
+  companyId    String
+  number       String
+  partyId      String
+  status       QuotationStatus @default(DRAFT)
+  issueDate    DateTime        @default(now())
+  validUntil   DateTime?
+  currency     String          @default("BDT")
+  subtotal     Decimal         @default(0) @db.Decimal(14, 2)
+  discount     Decimal         @default(0) @db.Decimal(14, 2)
+  tax          Decimal         @default(0) @db.Decimal(14, 2)
+  total        Decimal         @default(0) @db.Decimal(14, 2)
+  terms        String?
+  notes        String?
+  customFields Json? // values for CustomFieldDefinition(entity = QUOTATION)
+  templateId   String?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  company      Company                @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  party        Party                  @relation(fields: [partyId], references: [id])
+  template     DocumentTemplate?      @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  items        QuotationItem[]
+  stylingRules QuotationStylingRule[]
+  proforma     ProformaInvoice?
+
+  @@unique([companyId, number])
+  @@index([companyId, status])
+}
+
+model QuotationItem {
+  id            String  @id @default(cuid())
+  quotationId   String
+  categoryId    String?
+  styleId       String?
+  description   String
+  fabric        String?
+  colorNote     String?
+  sizeBreakdown Json? // e.g. {"S":20,"M":40,"L":40}
+  quantity      Int
+  unitPrice     Decimal @db.Decimal(14, 2)
+  lineTotal     Decimal @db.Decimal(14, 2)
+  sortOrder     Int     @default(0)
+
+  quotation Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  category  Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  style     Style?    @relation(fields: [styleId], references: [id], onDelete: SetNull)
+}
+
+/// Free-text styling instructions, e.g. "Placket should not have a black border".
+model QuotationStylingRule {
+  id          String  @id @default(cuid())
+  quotationId String
+  area        String? // e.g. "Placket", "Collar & Cuff", "Logo"
+  instruction String
+  sortOrder   Int     @default(0)
+
+  quotation Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+}
+
+/// Proforma Invoice converted from a quotation; the advance (default 30%) triggers
+/// accounts posting and a production project.
+model ProformaInvoice {
+  id             String         @id @default(cuid())
+  companyId      String
+  number         String
+  quotationId    String?        @unique
+  partyId        String
+  status         ProformaStatus @default(ISSUED)
+  issueDate      DateTime       @default(now())
+  total          Decimal        @db.Decimal(14, 2)
+  advancePercent Decimal        @default(30) @db.Decimal(5, 2)
+  advanceAmount  Decimal        @db.Decimal(14, 2)
+  advancePaid    Decimal        @default(0) @db.Decimal(14, 2)
+  advancePaidAt  DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  company            Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  quotation          Quotation?          @relation(fields: [quotationId], references: [id], onDelete: SetNull)
+  party              Party               @relation(fields: [partyId], references: [id])
+  salesOrder         SalesOrder?
+  productionProjects ProductionProject[]
+  payments           Payment[]
+
+  @@unique([companyId, number])
+}
+
+/// A confirmed order from any channel: website, social/POS, wholesale or B2B pre-order.
+model SalesOrder {
+  id               String           @id @default(cuid())
+  companyId        String
+  number           String
+  channel          SalesChannel
+  partyId          String? // null allowed for walk-in retail
+  proformaId       String?          @unique
+  integrationId    String?
+  externalOrderId  String? // id from website / e-commerce platform
+  status           SalesOrderStatus @default(CONFIRMED)
+  orderDate        DateTime         @default(now())
+  // Retail delivery details
+  customerName     String?
+  customerPhone    String?
+  shippingAddress  String?
+  // Totals
+  subtotal         Decimal          @default(0) @db.Decimal(14, 2)
+  discount         Decimal          @default(0) @db.Decimal(14, 2)
+  shippingCharge   Decimal          @default(0) @db.Decimal(14, 2)
+  tax              Decimal          @default(0) @db.Decimal(14, 2)
+  total            Decimal          @default(0) @db.Decimal(14, 2)
+  paidAmount       Decimal          @default(0) @db.Decimal(14, 2)
+  dueAmount        Decimal          @default(0) @db.Decimal(14, 2)
+  hasForceOverride Boolean          @default(false)
+  notes            String?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  company          Company                  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  party            Party?                   @relation(fields: [partyId], references: [id], onDelete: SetNull)
+  proforma         ProformaInvoice?         @relation(fields: [proformaId], references: [id], onDelete: SetNull)
+  integration      SalesChannelIntegration? @relation(fields: [integrationId], references: [id], onDelete: SetNull)
+  items            SalesOrderItem[]
+  invoice          Invoice?
+  packingList      PackingList?
+  deliveryChallans DeliveryChallan[]
+  shipments        Shipment[]
+  returns          SalesReturn[]
+  payments         Payment[]
+  reminders        Reminder[]
+
+  @@unique([companyId, number])
+  @@unique([companyId, integrationId, externalOrderId])
+  @@index([companyId, status, orderDate])
+  @@index([partyId])
+}
+
+/// One SKU line. Matrix entry creates one line per non-empty color/size cell.
+/// `forceOverride` records when quantity exceeded available stock.
+model SalesOrderItem {
+  id              String    @id @default(cuid())
+  orderId         String
+  variantId       String
+  quantity        Int
+  unitPrice       Decimal   @db.Decimal(14, 2)
+  discount        Decimal   @default(0) @db.Decimal(14, 2)
+  lineTotal       Decimal   @db.Decimal(14, 2)
+  unitCost        Decimal?  @db.Decimal(14, 4) // COGS snapshot at sale
+  availableAtSale Int? // stock seen when the line was saved
+  forceOverride   Boolean   @default(false)
+  overrideById    String?
+  overrideReason  String?
+  overrideAt      DateTime?
+
+  order      SalesOrder     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  variant    ProductVariant @relation(fields: [variantId], references: [id])
+  overrideBy User?          @relation("ForceOverrideBy", fields: [overrideById], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+  @@index([variantId])
+}
+
+/// Document 1: Commercial Invoice (prices, totals, paid/due). Saved permanently.
+model Invoice {
+  id         String        @id @default(cuid())
+  companyId  String
+  number     String
+  orderId    String        @unique
+  partyId    String?
+  issueDate  DateTime      @default(now())
+  dueDate    DateTime?
+  total      Decimal       @db.Decimal(14, 2)
+  paidAmount Decimal       @default(0) @db.Decimal(14, 2)
+  dueAmount  Decimal       @db.Decimal(14, 2)
+  status     InvoiceStatus @default(UNPAID)
+  isLocked   Boolean       @default(false) // edits after lock are audited
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+
+  company  Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  order    SalesOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  party    Party?     @relation(fields: [partyId], references: [id], onDelete: SetNull)
+  payments Payment[]
+
+  @@unique([companyId, number])
+  @@index([companyId, status])
+}
+
+/// Document 2: Packing List / Pick-List for the warehouse.
+model PackingList {
+  id            String   @id @default(cuid())
+  companyId     String
+  number        String
+  orderId       String   @unique
+  cartons       Int?
+  grossWeightKg Decimal? @db.Decimal(10, 2)
+  notes         String?
+  createdAt     DateTime @default(now())
+
+  company Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  order   SalesOrder        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  items   PackingListItem[]
+
+  @@unique([companyId, number])
+}
+
+model PackingListItem {
+  id            String  @id @default(cuid())
+  packingListId String
+  variantId     String
+  quantity      Int
+  cartonNo      String?
+  isPicked      Boolean @default(false)
+
+  packingList PackingList    @relation(fields: [packingListId], references: [id], onDelete: Cascade)
+  variant     ProductVariant @relation(fields: [variantId], references: [id])
+}
+
+/// Document 3: Delivery Challan — price-free transport document.
+model DeliveryChallan {
+  id           String   @id @default(cuid())
+  companyId    String
+  number       String
+  orderId      String
+  deliveryDate DateTime @default(now())
+  vehicleNo    String?
+  driverName   String?
+  driverPhone  String?
+  receivedBy   String?
+  notes        String?
+  createdAt    DateTime @default(now())
+
+  company Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  order   SalesOrder            @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  items   DeliveryChallanItem[]
+
+  @@unique([companyId, number])
+}
+
+model DeliveryChallanItem {
+  id        String @id @default(cuid())
+  challanId String
+  variantId String
+  quantity  Int
+
+  challan DeliveryChallan @relation(fields: [challanId], references: [id], onDelete: Cascade)
+  variant ProductVariant  @relation(fields: [variantId], references: [id])
+}
+
+/// Money received from buyers or paid to suppliers. Always posts a journal entry.
+model Payment {
+  id             String           @id @default(cuid())
+  companyId      String
+  number         String
+  direction      PaymentDirection
+  method         PaymentMethod
+  partyId        String?
+  amount         Decimal          @db.Decimal(14, 2)
+  paymentDate    DateTime         @default(now())
+  accountId      String // cash / bank ledger account used
+  invoiceId      String?
+  orderId        String?
+  proformaId     String?
+  supplierBillId String?
+  shipmentId     String? // courier COD payout
+  reference      String? // cheque no, bKash trx id...
+  isAdvance      Boolean          @default(false)
+  notes          String?
+  journalEntryId String?          @unique
+  createdAt      DateTime         @default(now())
+
+  company      Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  party        Party?           @relation(fields: [partyId], references: [id], onDelete: SetNull)
+  account      LedgerAccount    @relation(fields: [accountId], references: [id])
+  invoice      Invoice?         @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  order        SalesOrder?      @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  proforma     ProformaInvoice? @relation(fields: [proformaId], references: [id], onDelete: SetNull)
+  supplierBill SupplierBill?    @relation(fields: [supplierBillId], references: [id], onDelete: SetNull)
+  shipment     Shipment?        @relation(fields: [shipmentId], references: [id], onDelete: SetNull)
+  journalEntry JournalEntry?    @relation(fields: [journalEntryId], references: [id], onDelete: SetNull)
+
+  @@unique([companyId, number])
+  @@index([companyId, paymentDate])
+  @@index([partyId])
+}
+
+// =============================================================================
+// 6. E-COMMERCE SYNC, COURIERS, RETURNS QC
+// =============================================================================
+
+/// A connected website / e-commerce platform that pushes orders via API/Webhook.
+model SalesChannelIntegration {
+  id               String            @id @default(cuid())
+  companyId        String
+  name             String
+  platform         EcommercePlatform
+  baseUrl          String?
+  apiKeyRef        String? // reference to an encrypted secret, never the raw key
+  webhookSecretRef String?
+  isActive         Boolean           @default(true)
+  lastSyncedAt     DateTime?
+  createdAt        DateTime          @default(now())
+
+  company       Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  orders        SalesOrder[]
+  webhookEvents WebhookEvent[]
+}
+
+/// Raw inbound webhook log (orders from websites, courier status updates).
+model WebhookEvent {
+  id            String        @id @default(cuid())
+  companyId     String
+  source        WebhookSource
+  integrationId String?
+  eventType     String
+  externalId    String?
+  payload       Json
+  status        WebhookStatus @default(RECEIVED)
+  error         String?
+  receivedAt    DateTime      @default(now())
+  processedAt   DateTime?
+
+  company     Company                  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  integration SalesChannelIntegration? @relation(fields: [integrationId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, status])
+  @@index([source, externalId])
+}
+
+/// Courier API credentials per company (Pathao / Steadfast).
+model CourierAccount {
+  id             String          @id @default(cuid())
+  companyId      String
+  provider       CourierProvider
+  name           String
+  storeId        String?
+  credentialsRef String? // reference to encrypted credentials
+  isActive       Boolean         @default(true)
+  createdAt      DateTime        @default(now())
+
+  company   Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  shipments Shipment[]
+
+  @@unique([companyId, provider, name])
+}
+
+/// A courier consignment created from the ERP.
+model Shipment {
+  id               String         @id @default(cuid())
+  companyId        String
+  orderId          String
+  courierAccountId String
+  consignmentId    String?
+  trackingCode     String?
+  status           ShipmentStatus @default(PENDING)
+  codAmount        Decimal        @default(0) @db.Decimal(14, 2)
+  deliveryCharge   Decimal        @default(0) @db.Decimal(14, 2)
+  codCharge        Decimal        @default(0) @db.Decimal(14, 2)
+  payoutAmount     Decimal?       @db.Decimal(14, 2)
+  payoutAt         DateTime?
+  deliveredAt      DateTime?
+  returnedAt       DateTime?
+  lastSyncedAt     DateTime?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  company        Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  order          SalesOrder      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  courierAccount CourierAccount  @relation(fields: [courierAccountId], references: [id])
+  events         ShipmentEvent[]
+  returns        SalesReturn[]
+  payments       Payment[]
+
+  @@unique([courierAccountId, consignmentId])
+  @@index([companyId, status])
+}
+
+model ShipmentEvent {
+  id         String         @id @default(cuid())
+  shipmentId String
+  status     ShipmentStatus
+  rawStatus  String? // courier's own status text
+  message    String?
+  occurredAt DateTime       @default(now())
+
+  shipment Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+
+  @@index([shipmentId, occurredAt])
+}
+
+/// Returned parcel. Items sit in the "Pending Returns to Check" pool until QC.
+model SalesReturn {
+  id          String       @id @default(cuid())
+  companyId   String
+  number      String
+  orderId     String
+  shipmentId  String?
+  reason      String?
+  status      ReturnStatus @default(PENDING_QC)
+  receivedAt  DateTime     @default(now())
+  completedAt DateTime?
+
+  company  Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  order    SalesOrder        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  shipment Shipment?         @relation(fields: [shipmentId], references: [id], onDelete: SetNull)
+  items    SalesReturnItem[]
+
+  @@unique([companyId, number])
+  @@index([companyId, status])
+}
+
+/// QC decision per returned SKU: Move to Main Stock or Move to Bad Stock.
+model SalesReturnItem {
+  id            String             @id @default(cuid())
+  returnId      String
+  variantId     String
+  quantity      Int
+  qcStatus      ReturnItemQcStatus @default(PENDING)
+  qtyRestocked  Int                @default(0)
+  qtyBadStock   Int                @default(0)
+  inspectedById String?
+  inspectedAt   DateTime?
+  qcNote        String?
+
+  salesReturn   SalesReturn    @relation(fields: [returnId], references: [id], onDelete: Cascade)
+  variant       ProductVariant @relation(fields: [variantId], references: [id])
+  inspectedBy   User?          @relation("ReturnInspectedBy", fields: [inspectedById], references: [id], onDelete: SetNull)
+  badStockEntry BadStockEntry?
+
+  @@index([returnId])
+  @@index([qcStatus])
+}
+
+// =============================================================================
+// 7. PRODUCTION, BATCH COSTING, SPLIT BILLS, AI STOCK INTAKE
+// =============================================================================
+
+model ProductionProject {
+  id             String           @id @default(cuid())
+  companyId      String
+  code           String
+  name           String
+  categoryId     String?
+  styleId        String?
+  factoryId      String? // supplier Party acting as factory
+  factoryName    String? // free text when factory is not a party
+  buyerId        String? // null + isInHouse = in-house production
+  isInHouse      Boolean          @default(false)
+  proformaId     String?
+  stage          ProductionStage  @default(FABRIC_SOURCING)
+  status         ProductionStatus @default(ACTIVE)
+  startDate      DateTime         @default(now())
+  targetDate     DateTime
+  completedAt    DateTime?
+  targetQuantity Int
+  producedQtyA   Int              @default(0)
+  producedQtyB   Int              @default(0)
+  totalCost      Decimal          @default(0) @db.Decimal(14, 2) // cached rollup
+  notes          String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  company              Company                  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  category             Category?                @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  style                Style?                   @relation(fields: [styleId], references: [id], onDelete: SetNull)
+  factory              Party?                   @relation("ProductionFactory", fields: [factoryId], references: [id], onDelete: SetNull)
+  buyer                Party?                   @relation("ProductionBuyer", fields: [buyerId], references: [id], onDelete: SetNull)
+  proforma             ProformaInvoice?         @relation(fields: [proformaId], references: [id], onDelete: SetNull)
+  stageLogs            ProductionStageLog[]
+  billAllocations      SupplierBillAllocation[]
+  expenses             Expense[]
+  rawMaterialMovements RawMaterialMovement[]
+  stockIntakes         StockIntake[]
+  reminders            Reminder[]
+  tasks                Task[]
+
+  @@unique([companyId, code])
+  @@index([companyId, status, targetDate])
+}
+
+/// History of stage badges (Fabric Sourcing -> Cutting -> Sewing -> Wash/QC -> Finishing).
+model ProductionStageLog {
+  id          String          @id @default(cuid())
+  projectId   String
+  stage       ProductionStage
+  startedAt   DateTime        @default(now())
+  completedAt DateTime?
+  note        String?
+
+  project ProductionProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+}
+
+/// A supplier bill (fabric, trims, factory CM...). Paid by Cash/Bank or left Due on
+/// the supplier ledger, and split across one or more production batches.
+model SupplierBill {
+  id             String      @id @default(cuid())
+  companyId      String
+  number         String // internal number
+  supplierRef    String? // supplier's own bill no
+  supplierId     String
+  billDate       DateTime    @default(now())
+  totalAmount    Decimal     @db.Decimal(14, 2)
+  paymentType    PaymentType
+  paidAmount     Decimal     @default(0) @db.Decimal(14, 2)
+  dueAmount      Decimal     @default(0) @db.Decimal(14, 2)
+  status         BillStatus  @default(UNPAID)
+  attachmentId   String?
+  notes          String?
+  journalEntryId String?     @unique
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  company              Company                  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  supplier             Party                    @relation(fields: [supplierId], references: [id])
+  attachment           FileAsset?               @relation(fields: [attachmentId], references: [id], onDelete: SetNull)
+  journalEntry         JournalEntry?            @relation(fields: [journalEntryId], references: [id], onDelete: SetNull)
+  allocations          SupplierBillAllocation[]
+  payments             Payment[]
+  rawMaterialMovements RawMaterialMovement[]
+
+  @@unique([companyId, number])
+  @@index([supplierId])
+}
+
+/// Split Bill Logic: portion of a bill charged to a batch under an expense head.
+model SupplierBillAllocation {
+  id            String  @id @default(cuid())
+  billId        String
+  projectId     String? // null = general / raw-material stock
+  expenseHeadId String
+  amount        Decimal @db.Decimal(14, 2)
+  description   String?
+
+  bill        SupplierBill       @relation(fields: [billId], references: [id], onDelete: Cascade)
+  project     ProductionProject? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  expenseHead ExpenseHead        @relation(fields: [expenseHeadId], references: [id])
+
+  @@index([projectId])
+}
+
+/// "Move to Stock": factory packing list photo/PDF parsed by AI (or entered manually),
+/// allocating batch cost across A-Grade and B-Grade quantities.
+model StockIntake {
+  id              String               @id @default(cuid())
+  companyId       String
+  number          String
+  projectId       String?
+  sourceFileId    String?
+  method          IntakeMethod         @default(MANUAL)
+  status          IntakeStatus         @default(DRAFT)
+  aiRawResult     Json? // OCR output before human confirmation
+  aiConfidence    Decimal?             @db.Decimal(5, 2)
+  totalCost       Decimal              @default(0) @db.Decimal(14, 2)
+  costAllocation  CostAllocationMethod @default(EQUAL_PER_PIECE)
+  bGradeCostRatio Decimal?             @db.Decimal(5, 4) // e.g. 0.5 = B-Grade valued at 50%
+  confirmedAt     DateTime?
+  createdAt       DateTime             @default(now())
+
+  company    Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  project    ProductionProject? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  sourceFile FileAsset?         @relation(fields: [sourceFileId], references: [id], onDelete: SetNull)
+  lines      StockIntakeLine[]
+
+  @@unique([companyId, number])
+}
+
+model StockIntakeLine {
+  id        String     @id @default(cuid())
+  intakeId  String
+  variantId String
+  grade     StockGrade
+  quantity  Int
+  unitCost  Decimal    @db.Decimal(14, 4)
+
+  intake  StockIntake    @relation(fields: [intakeId], references: [id], onDelete: Cascade)
+  variant ProductVariant @relation(fields: [variantId], references: [id])
+
+  @@unique([intakeId, variantId, grade])
+}
+
+// =============================================================================
+// 8. ACCOUNTS & FINANCE
+// =============================================================================
+
+/// Chart of accounts. `subType` lets dashboards find Cash, Bank, Receivables,
+/// Payables, Fixed Assets, Loans, Investors, Inventory, COGS, etc.
+model LedgerAccount {
+  id             String         @id @default(cuid())
+  companyId      String
+  code           String
+  name           String
+  type           AccountType
+  subType        AccountSubType
+  parentId       String?
+  isSystem       Boolean        @default(false)
+  isActive       Boolean        @default(true)
+  openingBalance Decimal        @default(0) @db.Decimal(14, 2)
+  createdAt      DateTime       @default(now())
+
+  company        Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  parent         LedgerAccount?       @relation("AccountTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children       LedgerAccount[]      @relation("AccountTree")
+  lines          JournalLine[]
+  payments       Payment[]
+  bankAccount    BankAccount?
+  fixedAsset     FixedAsset?
+  capitalSource  CapitalSource?
+  expenseHeads   ExpenseHead[]
+  expensesPaid   Expense[]            @relation("ExpensePaidFrom")
+  salaryAdvances SalaryAdvance[]
+  installments   CapitalInstallment[]
+
+  @@unique([companyId, code])
+  @@index([companyId, type, subType])
+}
+
+/// A balanced double-entry voucher. Every financial module posts here.
+model JournalEntry {
+  id           String        @id @default(cuid())
+  companyId    String
+  number       String
+  date         DateTime      @default(now())
+  description  String?
+  sourceType   JournalSource
+  sourceId     String?
+  postedById   String?
+  isReversed   Boolean       @default(false)
+  reversalOfId String?       @unique
+  createdAt    DateTime      @default(now())
+
+  company      Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  postedBy     User?          @relation("JournalPostedBy", fields: [postedById], references: [id], onDelete: SetNull)
+  reversalOf   JournalEntry?  @relation("JournalReversal", fields: [reversalOfId], references: [id], onDelete: SetNull)
+  reversedBy   JournalEntry?  @relation("JournalReversal")
+  lines        JournalLine[]
+  payment      Payment?
+  supplierBill SupplierBill?
+  expense      Expense?
+  badStock     BadStockEntry?
+  payrollItem  PayrollItem?
+
+  @@unique([companyId, number])
+  @@index([companyId, date])
+  @@index([sourceType, sourceId])
+}
+
+/// Debit/credit line. `partyId` builds each buyer's/supplier's lifetime ledger.
+model JournalLine {
+  id         String  @id @default(cuid())
+  entryId    String
+  accountId  String
+  partyId    String?
+  employeeId String?
+  debit      Decimal @default(0) @db.Decimal(14, 2)
+  credit     Decimal @default(0) @db.Decimal(14, 2)
+  memo       String?
+
+  entry    JournalEntry  @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  account  LedgerAccount @relation(fields: [accountId], references: [id])
+  party    Party?        @relation(fields: [partyId], references: [id], onDelete: SetNull)
+  employee Employee?     @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+
+  @@index([accountId])
+  @@index([partyId])
+  @@index([employeeId])
+}
+
+/// Bank accounts (each mapped to a ledger account) for bank-compliant statements.
+model BankAccount {
+  id              String   @id @default(cuid())
+  companyId       String
+  ledgerAccountId String   @unique
+  bankName        String
+  branch          String?
+  accountName     String
+  accountNumber   String
+  routingNumber   String?
+  swiftCode       String?
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+
+  company       Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  ledgerAccount LedgerAccount @relation(fields: [ledgerAccountId], references: [id])
+
+  @@unique([companyId, accountNumber])
+}
+
+model FixedAsset {
+  id               String      @id @default(cuid())
+  companyId        String
+  ledgerAccountId  String?     @unique
+  name             String
+  category         String? // Machinery, Furniture, Vehicle, IT...
+  purchaseDate     DateTime
+  purchaseCost     Decimal     @db.Decimal(14, 2)
+  depreciationRate Decimal?    @db.Decimal(5, 2) // % per year
+  currentValue     Decimal     @db.Decimal(14, 2)
+  location         String?
+  status           AssetStatus @default(IN_USE)
+  disposedAt       DateTime?
+  createdAt        DateTime    @default(now())
+
+  company       Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  ledgerAccount LedgerAccount? @relation(fields: [ledgerAccountId], references: [id], onDelete: SetNull)
+}
+
+/// Capital, investors and loans (liabilities) with installment schedules.
+model CapitalSource {
+  id              String            @id @default(cuid())
+  companyId       String
+  ledgerAccountId String?           @unique
+  kind            CapitalSourceKind
+  name            String // investor / lender name
+  contact         String?
+  principal       Decimal           @db.Decimal(14, 2)
+  interestRate    Decimal?          @db.Decimal(5, 2)
+  profitSharePct  Decimal?          @db.Decimal(5, 2)
+  startDate       DateTime
+  maturityDate    DateTime?
+  outstanding     Decimal           @db.Decimal(14, 2)
+  status          CapitalStatus     @default(ACTIVE)
+  notes           String?
+  createdAt       DateTime          @default(now())
+
+  company       Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  ledgerAccount LedgerAccount?       @relation(fields: [ledgerAccountId], references: [id], onDelete: SetNull)
+  installments  CapitalInstallment[]
+}
+
+/// Scheduled installment payouts (loan EMIs, investor profit payouts).
+model CapitalInstallment {
+  id                String            @id @default(cuid())
+  capitalSourceId   String
+  dueDate           DateTime
+  amount            Decimal           @db.Decimal(14, 2)
+  principalPart     Decimal?          @db.Decimal(14, 2)
+  interestPart      Decimal?          @db.Decimal(14, 2)
+  status            InstallmentStatus @default(SCHEDULED)
+  paidAt            DateTime?
+  paidFromAccountId String?
+  journalEntryId    String?
+
+  capitalSource   CapitalSource  @relation(fields: [capitalSourceId], references: [id], onDelete: Cascade)
+  paidFromAccount LedgerAccount? @relation(fields: [paidFromAccountId], references: [id], onDelete: SetNull)
+
+  @@index([capitalSourceId, dueDate])
+}
+
+// =============================================================================
+// 9. EXPENSES & MARKETING
+// =============================================================================
+
+model ExpenseHead {
+  id               String          @id @default(cuid())
+  companyId        String
+  name             String
+  category         ExpenseCategory
+  ledgerAccountId  String?
+  isProductionCost Boolean         @default(false)
+  requiresEmployee Boolean         @default(false) // true for Conveyance / Food
+  isActive         Boolean         @default(true)
+
+  company         Company                  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  ledgerAccount   LedgerAccount?           @relation(fields: [ledgerAccountId], references: [id], onDelete: SetNull)
+  expenses        Expense[]
+  billAllocations SupplierBillAllocation[]
+
+  @@unique([companyId, name])
+}
+
+/// General expense (incl. Quick Add). Conveyance/Food entries must name an
+/// employee and purpose and can settle against a salary advance.
+model Expense {
+  id                String      @id @default(cuid())
+  companyId         String
+  number            String
+  date              DateTime    @default(now())
+  headId            String
+  amount            Decimal     @db.Decimal(14, 2)
+  paymentType       PaymentType
+  paidFromAccountId String? // Cash/Bank account when paymentType = CASH_BANK
+  supplierId        String? // supplier ledger when paymentType = DUE
+  projectId         String? // production batch cost
+  employeeId        String? // required for conveyance/food
+  purpose           String?
+  fromLocation      String?
+  toLocation        String?
+  salaryAdvanceId   String? // auto-deduct from advance
+  description       String?
+  receiptFileId     String?
+  formPrinted       Boolean     @default(false)
+  journalEntryId    String?     @unique
+  createdAt         DateTime    @default(now())
+
+  company            Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  head               ExpenseHead         @relation(fields: [headId], references: [id])
+  paidFromAccount    LedgerAccount?      @relation("ExpensePaidFrom", fields: [paidFromAccountId], references: [id], onDelete: SetNull)
+  supplier           Party?              @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  project            ProductionProject?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  employee           Employee?           @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+  salaryAdvance      SalaryAdvance?      @relation(fields: [salaryAdvanceId], references: [id], onDelete: SetNull)
+  receiptFile        FileAsset?          @relation(fields: [receiptFileId], references: [id], onDelete: SetNull)
+  journalEntry       JournalEntry?       @relation(fields: [journalEntryId], references: [id], onDelete: SetNull)
+  advanceSettlements AdvanceSettlement[]
+
+  @@unique([companyId, number])
+  @@index([companyId, date])
+  @@index([employeeId])
+}
+
+/// Daily ad spend for the ROAS widget (Ad Spend vs Retail Sales).
+model AdSpend {
+  id        String     @id @default(cuid())
+  companyId String
+  date      DateTime   @db.Date
+  platform  AdPlatform
+  campaign  String?
+  amount    Decimal    @db.Decimal(14, 2)
+  createdAt DateTime   @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, date])
+}
+
+// =============================================================================
+// 10. HR, PAYROLL, LEAVE, ADVANCES
+// =============================================================================
+
+model Employee {
+  id          String         @id @default(cuid())
+  companyId   String
+  userId      String? // links to login for the Employee Portal
+  code        String
+  name        String
+  designation String?
+  department  String?
+  phone       String?
+  whatsapp    String?
+  email       String?
+  nid         String?
+  address     String?
+  photoUrl    String?
+  joinDate    DateTime
+  exitDate    DateTime?
+  baseSalary  Decimal        @db.Decimal(14, 2)
+  status      EmployeeStatus @default(ACTIVE)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  company         Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user            User?               @relation(fields: [userId], references: [id], onDelete: SetNull)
+  salaryHistory   SalaryRevision[]
+  leaveBalances   LeaveBalance[]
+  leaveRequests   LeaveRequest[]
+  payrollItems    PayrollItem[]
+  advances        SalaryAdvance[]
+  expenses        Expense[]
+  journalLines    JournalLine[]
+  tasksAssigned   Task[]              @relation("TaskAssignee")
+  reminderTargets ReminderRecipient[]
+
+  @@unique([companyId, code])
+  @@unique([companyId, userId])
+}
+
+model SalaryRevision {
+  id            String   @id @default(cuid())
+  employeeId    String
+  effectiveFrom DateTime
+  amount        Decimal  @db.Decimal(14, 2)
+  reason        String?
+  createdAt     DateTime @default(now())
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId, effectiveFrom])
+}
+
+model LeaveType {
+  id          String  @id @default(cuid())
+  companyId   String
+  name        String // Casual, Sick, Annual...
+  daysPerYear Int
+  isPaid      Boolean @default(true)
+
+  company  Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  balances LeaveBalance[]
+  requests LeaveRequest[]
+
+  @@unique([companyId, name])
+}
+
+model LeaveBalance {
+  id          String  @id @default(cuid())
+  employeeId  String
+  leaveTypeId String
+  year        Int
+  entitled    Decimal @db.Decimal(5, 1)
+  used        Decimal @default(0) @db.Decimal(5, 1)
+
+  employee  Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  leaveType LeaveType @relation(fields: [leaveTypeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, leaveTypeId, year])
+}
+
+model LeaveRequest {
+  id           String      @id @default(cuid())
+  companyId    String
+  employeeId   String
+  leaveTypeId  String
+  startDate    DateTime    @db.Date
+  endDate      DateTime    @db.Date
+  days         Decimal     @db.Decimal(5, 1)
+  reason       String?
+  status       LeaveStatus @default(PENDING)
+  approvedById String?
+  decidedAt    DateTime?
+  attachmentId String?
+  createdAt    DateTime    @default(now())
+
+  company    Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee   Employee   @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  leaveType  LeaveType  @relation(fields: [leaveTypeId], references: [id])
+  approvedBy User?      @relation("LeaveApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+  attachment FileAsset? @relation(fields: [attachmentId], references: [id], onDelete: SetNull)
+
+  @@index([employeeId, startDate])
+}
+
+/// Monthly payroll batch.
+model PayrollRun {
+  id        String        @id @default(cuid())
+  companyId String
+  year      Int
+  month     Int // 1-12
+  status    PayrollStatus @default(DRAFT)
+  totalNet  Decimal       @default(0) @db.Decimal(14, 2)
+  paidAt    DateTime?
+  createdAt DateTime      @default(now())
+
+  company Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  items   PayrollItem[]
+
+  @@unique([companyId, year, month])
+}
+
+/// Historical salary per employee per month.
+model PayrollItem {
+  id                   String  @id @default(cuid())
+  runId                String
+  employeeId           String
+  basic                Decimal @db.Decimal(14, 2)
+  allowances           Decimal @default(0) @db.Decimal(14, 2)
+  overtime             Decimal @default(0) @db.Decimal(14, 2)
+  bonus                Decimal @default(0) @db.Decimal(14, 2)
+  unpaidLeaveDeduction Decimal @default(0) @db.Decimal(14, 2)
+  advanceDeduction     Decimal @default(0) @db.Decimal(14, 2)
+  otherDeductions      Decimal @default(0) @db.Decimal(14, 2)
+  netPay               Decimal @db.Decimal(14, 2)
+  isPaid               Boolean @default(false)
+  journalEntryId       String? @unique
+
+  run          PayrollRun          @relation(fields: [runId], references: [id], onDelete: Cascade)
+  employee     Employee            @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  journalEntry JournalEntry?       @relation(fields: [journalEntryId], references: [id], onDelete: SetNull)
+  settlements  AdvanceSettlement[]
+
+  @@unique([runId, employeeId])
+}
+
+/// Cash advance given to an employee; settled by conveyance expenses or payroll.
+model SalaryAdvance {
+  id                String        @id @default(cuid())
+  companyId         String
+  employeeId        String
+  amount            Decimal       @db.Decimal(14, 2)
+  outstanding       Decimal       @db.Decimal(14, 2)
+  givenAt           DateTime      @default(now())
+  paidFromAccountId String?
+  purpose           String?
+  status            AdvanceStatus @default(OPEN)
+
+  company         Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee        Employee            @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  paidFromAccount LedgerAccount?      @relation(fields: [paidFromAccountId], references: [id], onDelete: SetNull)
+  expenses        Expense[]
+  settlements     AdvanceSettlement[]
+
+  @@index([employeeId, status])
+}
+
+model AdvanceSettlement {
+  id            String   @id @default(cuid())
+  advanceId     String
+  payrollItemId String?
+  expenseId     String?
+  amount        Decimal  @db.Decimal(14, 2)
+  settledAt     DateTime @default(now())
+
+  advance     SalaryAdvance @relation(fields: [advanceId], references: [id], onDelete: Cascade)
+  payrollItem PayrollItem?  @relation(fields: [payrollItemId], references: [id], onDelete: SetNull)
+  expense     Expense?      @relation(fields: [expenseId], references: [id], onDelete: SetNull)
+}
+
+// =============================================================================
+// 11. COMPLIANCE, TEMPLATES, GENERATED DOCUMENTS, REPORTS
+// =============================================================================
+
+/// Trade License, VAT/BIN, TIN, IRC, ERC... with renewal alerts.
+model ComplianceDocument {
+  id               String         @id @default(cuid())
+  companyId        String
+  type             ComplianceType
+  title            String
+  number           String?
+  issuingAuthority String?
+  issueDate        DateTime?
+  expiryDate       DateTime?
+  alertDaysBefore  Int            @default(30)
+  fileId           String?
+  notes            String?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  company   Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  file      FileAsset? @relation(fields: [fileId], references: [id], onDelete: SetNull)
+  reminders Reminder[]
+
+  @@index([companyId, expiryDate])
+}
+
+/// Uploaded custom template (PDF, Word, Image, HTML) for invoices, letterheads, etc.
+model DocumentTemplate {
+  id           String         @id @default(cuid())
+  companyId    String
+  name         String
+  documentType DocumentType
+  format       TemplateFormat
+  fileId       String? // uploaded source (PDF/Word/Image)
+  htmlContent  String? // for HTML templates
+  isDefault    Boolean        @default(false)
+  isActive     Boolean        @default(true)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  company            Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  file               FileAsset?            @relation(fields: [fileId], references: [id], onDelete: SetNull)
+  placeholders       TemplatePlaceholder[]
+  quotations         Quotation[]
+  generatedDocuments GeneratedDocument[]
+
+  @@unique([companyId, name])
+  @@index([companyId, documentType])
+}
+
+/// Tag mapping, e.g. {CompanyName} -> company.name, {TotalAmount} -> invoice.total.
+model TemplatePlaceholder {
+  id         String   @id @default(cuid())
+  templateId String
+  tag        String // "{BuyerName}"
+  sourcePath String // "party.name"
+  format     String? // e.g. "currency", "date:dd MMM yyyy"
+  pageX      Decimal? @db.Decimal(8, 2) // position for PDF/Image overlays
+  pageY      Decimal? @db.Decimal(8, 2)
+  page       Int?
+
+  template DocumentTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@unique([templateId, tag])
+}
+
+/// Every PDF the system produces (quotations, PI, invoices, packing lists, challans,
+/// stock availability shares, ledger & bank statements, letterhead pads, conveyance forms)
+/// — gives permanent historical lookup and share tracking.
+model GeneratedDocument {
+  id            String           @id @default(cuid())
+  companyId     String
+  documentType  DocumentType
+  referenceType String? // "Invoice", "Party", "Style"...
+  referenceId   String?
+  partyId       String?
+  templateId    String?
+  fileId        String?
+  title         String
+  periodFrom    DateTime?
+  periodTo      DateTime?
+  sharedVia     MessageChannel[]
+  sharedAt      DateTime?
+  generatedById String?
+  createdAt     DateTime         @default(now())
+
+  company     Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  party       Party?            @relation(fields: [partyId], references: [id], onDelete: SetNull)
+  template    DocumentTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  file        FileAsset?        @relation(fields: [fileId], references: [id], onDelete: SetNull)
+  generatedBy User?             @relation(fields: [generatedById], references: [id], onDelete: SetNull)
+
+  @@index([companyId, documentType, createdAt])
+  @@index([referenceType, referenceId])
+}
+
+/// Report Builder: downloadable PDF/Excel for 1 week / 1 month / 1 year.
+model ReportExport {
+  id            String       @id @default(cuid())
+  companyId     String
+  requestedById String?
+  period        ReportPeriod
+  fromDate      DateTime
+  toDate        DateTime
+  metrics       String[] // selected metric keys
+  format        ReportFormat
+  status        JobStatus    @default(QUEUED)
+  fileId        String?
+  error         String?
+  createdAt     DateTime     @default(now())
+  completedAt   DateTime?
+
+  company     Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  requestedBy User?      @relation(fields: [requestedById], references: [id], onDelete: SetNull)
+  file        FileAsset? @relation(fields: [fileId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, createdAt])
+}
+
+// =============================================================================
+// 12. NOTEPAD, TASKS, REMINDERS, NOTIFICATIONS
+// =============================================================================
+
+/// Digital Notepad & Planner tabs: Daily Routine, Next 3 Days, General Notes.
+model Note {
+  id        String    @id @default(cuid())
+  companyId String
+  userId    String
+  tab       NoteTab
+  title     String?
+  content   String
+  planDate  DateTime? @db.Date
+  isDone    Boolean   @default(false)
+  isPinned  Boolean   @default(false)
+  sortOrder Int       @default(0)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, userId, tab])
+}
+
+/// In-app task tracking (e.g. "Nazrul: factory visit on Tuesday").
+model Task {
+  id          String       @id @default(cuid())
+  companyId   String
+  title       String
+  description String?
+  assigneeId  String?
+  createdById String?
+  projectId   String?
+  dueAt       DateTime?
+  priority    TaskPriority @default(MEDIUM)
+  status      TaskStatus   @default(TODO)
+  completedAt DateTime?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  company   Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  assignee  Employee?          @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  createdBy User?              @relation("TaskCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  project   ProductionProject? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  reminders Reminder[]
+
+  @@index([companyId, status, dueAt])
+}
+
+/// Trigger-based reminder (production deadline, goods in-house, shipment,
+/// compliance expiry, factory visit...) delivered via WhatsApp / Email / In-app.
+model Reminder {
+  id                   String           @id @default(cuid())
+  companyId            String
+  type                 ReminderType
+  title                String
+  message              String?
+  remindAt             DateTime
+  repeatRule           String? // RRULE string for recurring reminders
+  offsetDays           Int? // e.g. fire 3 days before the deadline
+  status               ReminderStatus   @default(SCHEDULED)
+  channels             MessageChannel[]
+  projectId            String?
+  orderId              String?
+  complianceDocumentId String?
+  taskId               String?
+  createdById          String?
+  sentAt               DateTime?
+  createdAt            DateTime         @default(now())
+
+  company            Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  project            ProductionProject?  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  order              SalesOrder?         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  complianceDocument ComplianceDocument? @relation(fields: [complianceDocumentId], references: [id], onDelete: Cascade)
+  task               Task?               @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  createdBy          User?               @relation("ReminderCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  recipients         ReminderRecipient[]
+  notifications      NotificationLog[]
+
+  @@index([companyId, status, remindAt])
+}
+
+/// Who gets a reminder: a management user and/or an assigned employee.
+model ReminderRecipient {
+  id         String  @id @default(cuid())
+  reminderId String
+  userId     String?
+  employeeId String?
+
+  reminder Reminder  @relation(fields: [reminderId], references: [id], onDelete: Cascade)
+  user     User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  employee Employee? @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([reminderId])
+}
+
+/// Outbound message log (WhatsApp Business API, Email, In-app).
+model NotificationLog {
+  id                String         @id @default(cuid())
+  companyId         String
+  reminderId        String?
+  channel           MessageChannel
+  recipient         String // phone, email or user id
+  subject           String?
+  body              String
+  status            DeliveryStatus @default(PENDING)
+  providerMessageId String?
+  error             String?
+  sentAt            DateTime?
+  readAt            DateTime?
+  createdAt         DateTime       @default(now())
+
+  company  Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  reminder Reminder? @relation(fields: [reminderId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, status])
+}
+
+// =============================================================================
+// 13. BACKUPS (system-wide, not per company)
+// =============================================================================
+
+model BackupConfig {
+  id                  String   @id @default(cuid())
+  cronSchedule        String   @default("0 2 * * *") // daily at 02:00
+  includeMedia        Boolean  @default(true)
+  googleDriveFolderId String?
+  credentialsRef      String? // reference to encrypted Google credentials
+  retentionDays       Int      @default(30)
+  isEnabled           Boolean  @default(true)
+  updatedAt           DateTime @updatedAt
+}
+
+model BackupRun {
+  id               String        @id @default(cuid())
+  trigger          BackupTrigger
+  status           JobStatus     @default(QUEUED)
+  startedAt        DateTime      @default(now())
+  finishedAt       DateTime?
+  dbDumpPath       String?
+  mediaArchivePath String?
+  sizeBytes        BigInt?
+  driveFileId      String? // Google Drive file id
+  triggeredById    String?
+  error            String?
+
+  triggeredBy User? @relation(fields: [triggeredById], references: [id], onDelete: SetNull)
+
+  @@index([startedAt])
+}
+
+// =============================================================================
+// ENUMS
+// =============================================================================
+
+enum UserStatus {
+  ACTIVE
+  INVITED
+  SUSPENDED
+}
+
+enum SystemRole {
+  SUPER_ADMIN
+  PRODUCTION_MANAGER
+  SALES_EXECUTIVE
+  WAREHOUSE_TEAM
+  EMPLOYEE
+}
+
+enum AppModule {
+  DASHBOARD
+  SALES
+  WHOLESALE
+  RETAIL
+  PRODUCTION
+  INVENTORY
+  PARTIES
+  ACCOUNTS
+  EXPENSES
+  HR
+  COMPLIANCE
+  TEMPLATES
+  REPORTS
+  NOTEPAD
+  REMINDERS
+  SETTINGS
+  BACKUPS
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  FORCE_OVERRIDE
+  INVOICE_EDIT
+  STATUS_CHANGE
+  LOGIN
+  LOGOUT
+  EXPORT
+  PERMISSION_CHANGE
+  STOCK_ADJUSTMENT
+  RESTORE
+}
+
+enum CustomFieldEntity {
+  QUOTATION
+  QUOTATION_ITEM
+  SALES_ORDER
+  PARTY
+  PRODUCTION_PROJECT
+  STYLE
+}
+
+enum CustomFieldType {
+  TEXT
+  LONG_TEXT
+  NUMBER
+  DATE
+  BOOLEAN
+  SELECT
+  COLOR
+}
+
+enum StockGrade {
+  A_GRADE
+  B_GRADE
+}
+
+enum StockMovementType {
+  OPENING
+  PRODUCTION_IN
+  PURCHASE_IN
+  SALE_OUT
+  RETURN_RESTOCK
+  BAD_STOCK_OUT
+  ADJUSTMENT
+  TRANSFER_IN
+  TRANSFER_OUT
+}
+
+enum BadStockSource {
+  RETURN_QC
+  WAREHOUSE_DAMAGE
+  PRODUCTION_REJECT
+  MANUAL
+}
+
+enum RawMaterialKind {
+  FABRIC
+  TRIM
+  ACCESSORY
+  PACKAGING
+  OTHER
+}
+
+enum MeasurementUnit {
+  PCS
+  METER
+  YARD
+  KG
+  GRAM
+  ROLL
+  DOZEN
+  GROSS
+  CONE
+  SET
+}
+
+enum RawMaterialMovementType {
+  PURCHASE_IN
+  ISSUE_TO_PRODUCTION
+  RETURN_FROM_PRODUCTION
+  ADJUSTMENT
+  WASTAGE
+}
+
+enum PartyKind {
+  BUYER
+  SUPPLIER
+  BOTH
+}
+
+enum BuyerType {
+  RETAIL
+  WHOLESALE
+  B2B_CORPORATE
+}
+
+enum PartyGrade {
+  A_PLUS
+  A
+  B
+  C
+}
+
+enum PartyStatus {
+  ACTIVE
+  SETTLING // closed for new business, pending dues being settled
+  DORMANT
+  CLOSED
+}
+
+enum CampaignStatus {
+  DRAFT
+  SCHEDULED
+  SENDING
+  SENT
+  CANCELLED
+}
+
+enum MessageChannel {
+  WHATSAPP
+  EMAIL
+  SMS
+  IN_APP
+  PDF_DOWNLOAD
+}
+
+enum DeliveryStatus {
+  PENDING
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
+enum QuotationStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  REJECTED
+  EXPIRED
+  CONVERTED
+}
+
+enum ProformaStatus {
+  ISSUED
+  ADVANCE_RECEIVED
+  IN_PRODUCTION
+  CONVERTED
+  CANCELLED
+}
+
+enum SalesChannel {
+  WEBSITE
+  SOCIAL_COMMERCE
+  POS
+  WHOLESALE
+  B2B_PREORDER
+}
+
+enum SalesOrderStatus {
+  DRAFT
+  CONFIRMED
+  PROCESSING
+  PACKED
+  SHIPPED
+  DELIVERED
+  PARTIALLY_RETURNED
+  RETURNED
+  CANCELLED
+}
+
+enum InvoiceStatus {
+  UNPAID
+  PARTIALLY_PAID
+  PAID
+  VOID
+}
+
+enum PaymentDirection {
+  RECEIVED
+  PAID
+}
+
+enum PaymentMethod {
+  CASH
+  BANK_TRANSFER
+  CHEQUE
+  BKASH
+  NAGAD
+  ROCKET
+  CARD
+  COURIER_COD
+  OTHER
+}
+
+enum PaymentType {
+  CASH_BANK
+  DUE
+}
+
+enum EcommercePlatform {
+  SHOPIFY
+  WOOCOMMERCE
+  CUSTOM_WEBSITE
+  FACEBOOK_SHOP
+  OTHER
+}
+
+enum WebhookSource {
+  ECOMMERCE
+  PATHAO
+  STEADFAST
+  WHATSAPP
+  OTHER
+}
+
+enum WebhookStatus {
+  RECEIVED
+  PROCESSED
+  IGNORED
+  FAILED
+}
+
+enum CourierProvider {
+  PATHAO
+  STEADFAST
+  OTHER
+}
+
+enum ShipmentStatus {
+  PENDING
+  CREATED
+  PICKED_UP
+  IN_TRANSIT
+  OUT_FOR_DELIVERY
+  DELIVERED
+  PARTIALLY_DELIVERED
+  RETURNED
+  CANCELLED
+  PAYOUT_RECEIVED
+}
+
+enum ReturnStatus {
+  PENDING_QC
+  PARTIALLY_CHECKED
+  COMPLETED
+}
+
+enum ReturnItemQcStatus {
+  PENDING
+  MOVED_TO_MAIN_STOCK
+  MOVED_TO_BAD_STOCK
+  SPLIT // part restocked, part bad
+}
+
+enum ProductionStage {
+  FABRIC_SOURCING
+  CUTTING
+  SEWING
+  WASH_QC
+  FINISHING
+  COMPLETED
+}
+
+enum ProductionStatus {
+  PLANNED
+  ACTIVE
+  ON_HOLD
+  COMPLETED
+  CANCELLED
+}
+
+enum BillStatus {
+  UNPAID
+  PARTIALLY_PAID
+  PAID
+  VOID
+}
+
+enum IntakeMethod {
+  AI_OCR
+  MANUAL
+}
+
+enum IntakeStatus {
+  DRAFT
+  PARSED
+  CONFIRMED
+  CANCELLED
+}
+
+enum CostAllocationMethod {
+  EQUAL_PER_PIECE
+  B_GRADE_RATIO
+  MANUAL
+}
+
+enum AccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  INCOME
+  EXPENSE
+}
+
+enum AccountSubType {
+  CASH
+  BANK
+  MOBILE_WALLET
+  ACCOUNTS_RECEIVABLE
+  INVENTORY
+  RAW_MATERIALS
+  PENDING_RETURNS
+  ADVANCE_TO_EMPLOYEE
+  OTHER_CURRENT_ASSET
+  FIXED_ASSET
+  ACCUMULATED_DEPRECIATION
+  ACCOUNTS_PAYABLE
+  CUSTOMER_ADVANCE
+  LOAN
+  INVESTOR
+  OTHER_LIABILITY
+  CAPITAL
+  RETAINED_EARNINGS
+  DRAWINGS
+  SALES
+  OTHER_INCOME
+  COGS
+  INVENTORY_LOSS
+  OPERATING_EXPENSE
+  PAYROLL_EXPENSE
+  MARKETING_EXPENSE
+  COURIER_EXPENSE
+  FINANCE_COST
+}
+
+enum JournalSource {
+  MANUAL
+  SALE
+  PAYMENT
+  SUPPLIER_BILL
+  EXPENSE
+  PAYROLL
+  SALARY_ADVANCE
+  BAD_STOCK
+  STOCK_INTAKE
+  RETURN
+  COURIER_PAYOUT
+  CAPITAL
+  INSTALLMENT
+  DEPRECIATION
+  OPENING_BALANCE
+}
+
+enum AssetStatus {
+  IN_USE
+  UNDER_REPAIR
+  DISPOSED
+}
+
+enum CapitalSourceKind {
+  OWNER_CAPITAL
+  INVESTOR
+  BANK_LOAN
+  PRIVATE_LOAN
+}
+
+enum CapitalStatus {
+  ACTIVE
+  SETTLED
+  DEFAULTED
+}
+
+enum InstallmentStatus {
+  SCHEDULED
+  PAID
+  OVERDUE
+  SKIPPED
+}
+
+enum ExpenseCategory {
+  PRODUCTION
+  RAW_MATERIAL
+  CONVEYANCE
+  FOOD
+  RENT
+  UTILITIES
+  SALARY
+  MARKETING
+  COURIER
+  OFFICE
+  MAINTENANCE
+  OTHER
+}
+
+enum AdPlatform {
+  FACEBOOK
+  INSTAGRAM
+  GOOGLE
+  TIKTOK
+  OTHER
+}
+
+enum EmployeeStatus {
+  ACTIVE
+  ON_LEAVE
+  RESIGNED
+  TERMINATED
+}
+
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum PayrollStatus {
+  DRAFT
+  APPROVED
+  PAID
+}
+
+enum AdvanceStatus {
+  OPEN
+  SETTLED
+}
+
+enum ComplianceType {
+  TRADE_LICENSE
+  VAT_BIN
+  TIN
+  IRC
+  ERC
+  BGMEA_BKMEA
+  FIRE_LICENSE
+  ENVIRONMENT
+  OTHER
+}
+
+enum DocumentType {
+  QUOTATION
+  PROFORMA_INVOICE
+  SALES_ORDER
+  COMMERCIAL_INVOICE
+  PACKING_LIST
+  DELIVERY_CHALLAN
+  PAYMENT_RECEIPT
+  SUPPLIER_BILL
+  EXPENSE_VOUCHER
+  JOURNAL_VOUCHER
+  SALES_RETURN
+  STOCK_INTAKE
+  PRODUCTION_PROJECT
+  STOCK_AVAILABILITY
+  LEDGER_STATEMENT
+  RECEIVABLES_REPORT
+  PAYABLES_REPORT
+  BANK_STATEMENT
+  LETTERHEAD
+  CONVEYANCE_FORM
+  PAYSLIP
+  REPORT
+}
+
+enum TemplateFormat {
+  PDF
+  WORD
+  IMAGE
+  HTML
+}
+
+enum ReportPeriod {
+  ONE_WEEK
+  ONE_MONTH
+  ONE_YEAR
+  CUSTOM
+}
+
+enum ReportFormat {
+  PDF
+  EXCEL
+}
+
+enum JobStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+}
+
+enum NoteTab {
+  DAILY_ROUTINE
+  NEXT_3_DAYS
+  GENERAL
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  DONE
+  CANCELLED
+}
+
+enum ReminderType {
+  PRODUCTION_DEADLINE
+  GOODS_IN_HOUSE
+  SHIPMENT
+  COMPLIANCE_EXPIRY
+  FACTORY_VISIT
+  PAYMENT_DUE
+  INSTALLMENT_DUE
+  CUSTOM
+}
+
+enum ReminderStatus {
+  SCHEDULED
+  SENT
+  ACKNOWLEDGED
+  CANCELLED
+  FAILED
+}
+
+enum BackupTrigger {
+  SCHEDULED
+  MANUAL
+}

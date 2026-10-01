@@ -4,6 +4,7 @@ import { z } from "zod";
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
+import { slugify } from "@/lib/slug";
 import { recordAudit } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { setSessionCompany, type ValidSession } from "@/modules/auth/session.service";
@@ -40,17 +41,6 @@ export const createCompanySchema = companyProfileSchema.extend({
     .optional(),
 });
 
-export function slugify(name: string): string {
-  return (
-    name
-      .toLowerCase()
-      .normalize("NFKD")
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "")
-      .slice(0, 60) || "company"
-  );
-}
-
 async function uniqueSlug(base: string): Promise<string> {
   let slug = base;
   for (let i = 2; await prisma.company.findUnique({ where: { slug } }); i++) {
@@ -69,7 +59,7 @@ export async function createCompany(
   meta: RequestMeta = {},
 ): Promise<Company> {
   const input = createCompanySchema.parse(rawInput);
-  const slug = input.slug ?? (await uniqueSlug(slugify(input.name)));
+  const slug = input.slug ?? (await uniqueSlug(slugify(input.name, "company")));
   if (input.slug && (await prisma.company.findUnique({ where: { slug } }))) {
     throw new AppError("CONFLICT", "That company short name is already taken.");
   }

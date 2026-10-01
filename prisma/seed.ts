@@ -2,7 +2,8 @@
  * Seeds the minimum data needed to sign in:
  *   1. the permission catalogue,
  *   2. the companies (default: "Extras" and "Fabric Apparel") with the five built-in roles,
- *   3. the platform owner account, as Super Admin of every seeded company.
+ *   3. the platform owner account, as Super Admin of every seeded company,
+ *   4. per company: the default size run (S to 3XL) and a "Main Warehouse".
  *
  * Safe to run repeatedly. Usage: `npm run db:seed`
  *   SEED_ADMIN_EMAIL     owner email (required)
@@ -12,7 +13,9 @@
  */
 import { generateTemporaryPassword, hashPassword } from "../src/lib/auth/password";
 import { prisma } from "../src/lib/prisma";
-import { slugify } from "../src/modules/companies/company.service";
+import { slugify } from "../src/lib/slug";
+import { DEFAULT_SIZES } from "../src/modules/inventory/catalog.service";
+import { DEFAULT_WAREHOUSE_NAME } from "../src/modules/inventory/stock.service";
 import { ensureSystemRoles, syncPermissionCatalog } from "../src/modules/rbac/role.service";
 
 async function main() {
@@ -47,7 +50,7 @@ async function main() {
   }
 
   for (const name of companyNames) {
-    const slug = slugify(name);
+    const slug = slugify(name, "company");
     const company =
       (await prisma.company.findUnique({ where: { slug } })) ??
       (await prisma.company.create({ data: { name, slug } }));
@@ -57,7 +60,21 @@ async function main() {
       create: { companyId: company.id, userId: admin.id, roleId: roles.SUPER_ADMIN },
       update: {},
     });
-    console.log(`✓ Company "${name}" ready with built-in roles`);
+    if ((await prisma.size.count({ where: { companyId: company.id } })) === 0) {
+      await prisma.size.createMany({
+        data: DEFAULT_SIZES.map((size, sortOrder) => ({
+          companyId: company.id,
+          name: size,
+          sortOrder,
+        })),
+      });
+    }
+    await prisma.warehouse.upsert({
+      where: { companyId_name: { companyId: company.id, name: DEFAULT_WAREHOUSE_NAME } },
+      create: { companyId: company.id, name: DEFAULT_WAREHOUSE_NAME, isDefault: true },
+      update: {},
+    });
+    console.log(`✓ Company "${name}" ready with built-in roles, sizes and warehouse`);
   }
 
   if (printedPassword) {

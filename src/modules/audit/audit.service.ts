@@ -65,3 +65,13 @@ export async function listAuditLogs(query: AuditQuery) {
   const items = hasMore ? rows.slice(0, take) : rows;
   return { items, nextCursor: hasMore ? items[items.length - 1]?.id : undefined };
 }
+
+/** Shorthand for module services: stamps the company and acting user from the context. */
+export async function auditInCompany(
+  ctx: { company: { id: string }; user: { id: string } },
+  meta: RequestMeta | undefined,
+  input: Omit<AuditInput, "companyId" | "userId" | "meta">,
+  db: Db = prisma,
+): Promise<void> {
+  await recordAudit({ ...input, companyId: ctx.company.id, userId: ctx.user.id, meta }, db);
+}

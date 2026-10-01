@@ -13,6 +13,16 @@ export const PASSWORD = "Extras2026";
 export async function resetDb() {
   resetRateLimits();
   await prisma.auditLog.deleteMany();
+  await prisma.stockMovement.deleteMany();
+  await prisma.badStockEntry.deleteMany();
+  await prisma.stockBalance.deleteMany();
+  await prisma.sizeRatioPreset.deleteMany();
+  await prisma.productVariant.deleteMany();
+  await prisma.style.deleteMany();
+  await prisma.category.deleteMany();
+  await prisma.color.deleteMany();
+  await prisma.size.deleteMany();
+  await prisma.warehouse.deleteMany();
   await prisma.session.deleteMany();
   await prisma.companyMembership.deleteMany();
   await prisma.rolePermission.deleteMany();

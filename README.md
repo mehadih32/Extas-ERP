@@ -80,3 +80,33 @@ The permission list and the default grants for the five blueprint roles live in
 | `GET /api/audit-logs`                                | Audit trail with filters                                 |
 
 The same operations are available as Server Actions in `src/server/actions/`.
+
+## Inventory (backend)
+
+Category tree → Brand → Style → color × size matrix, where each cell is one SKU
+(`EX-PL-001-NAVY-XL`). Stock is kept per SKU, warehouse and grade (A / B) with a movement
+log for every change. Available stock is A-grade minus reserved, and stock never goes below
+zero here (Force Override comes with the Sales module). Bad stock records the loss at the
+weighted average cost.
+
+| Endpoint                                                                | Purpose                                                 |
+| ----------------------------------------------------------------------- | ------------------------------------------------------- |
+| `GET /api/inventory/tree`                                               | Category → Brand → Style navigation                     |
+| `GET/POST /api/inventory/categories`, `PATCH/DELETE …/:id`              | Category tree                                           |
+| `GET/POST /api/inventory/brands`, `PATCH/DELETE …/:id`                  | Brands                                                  |
+| `GET/POST /api/inventory/colors`, `PATCH/DELETE …/:id`                  | Colors with hex codes (matrix rows)                     |
+| `GET/POST /api/inventory/sizes`, `PATCH/DELETE …/:id`, `POST …/reorder` | Sizes (matrix columns)                                  |
+| `GET/POST /api/inventory/styles`, `GET/PATCH/DELETE …/:id`              | Styles; filter by category, brand, search               |
+| `GET/POST /api/inventory/styles/:id/matrix`                             | Matrix with live stock / create missing SKUs            |
+| `PATCH /api/inventory/variants/:id`                                     | SKU price override, barcode, deactivate                 |
+| `GET /api/inventory/lookup?code=`                                       | Find a SKU by barcode or SKU                            |
+| `GET/POST /api/inventory/ratio-presets`, `PATCH/DELETE …/:id`           | Saved size ratios                                       |
+| `POST /api/inventory/ratio-fill`                                        | Ratio Fill quantities (packs or total, capped to stock) |
+| `GET/POST /api/inventory/warehouses`                                    | Warehouses                                              |
+| `POST /api/inventory/stock/adjust`                                      | Opening stock or +/- correction                         |
+| `POST /api/inventory/stock/bad-stock`                                   | Move to Bad Stock (inventory loss)                      |
+| `GET /api/inventory/stock/movements`                                    | Stock history                                           |
+| `GET /api/inventory/stock/summary`                                      | Stock value, low / highest / slow stock, top sellers    |
+
+Reads need `inventory.view`; changes need `inventory.manage`. Server Actions for all of these
+are in `src/server/actions/inventory.actions.ts`.

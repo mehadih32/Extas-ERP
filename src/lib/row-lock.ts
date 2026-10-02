@@ -12,7 +12,12 @@ export type LockableTable =
   | "FixedAsset"
   | "CapitalSource"
   | "CapitalInstallment"
-  | "Expense";
+  | "Expense"
+  | "Employee"
+  | "LeaveRequest"
+  | "SalaryAdvance"
+  | "PayrollRun"
+  | "PayrollPayment";
 
 /**
  * Locks rows until the transaction ends (`SELECT ... FOR UPDATE`), so two people

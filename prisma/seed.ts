@@ -5,8 +5,9 @@
  *      (Super Admin, Production Manager, Sales Executive, Warehouse Team, Employee, Accounts),
  *   3. the platform owner account, as Super Admin of every seeded company,
  *   4. per company: the default size run (S to 3XL), a "Main Warehouse", the chart of
- *      accounts, the default expense heads (Office Rent, Conveyance, Bank Charges...)
- *      and the default production cost heads (Fabric, Sewing (CM)...).
+ *      accounts, the default expense heads (Office Rent, Conveyance, Bank Charges...),
+ *      the default production cost heads (Fabric, Sewing (CM)...), and the HR rules
+ *      (Friday off, 09:00 start) with the default leave types (Casual, Sick...).
  *
  * Safe to run repeatedly. Usage: `npm run db:seed`
  *   SEED_ADMIN_EMAIL     owner email (required)
@@ -18,6 +19,7 @@ import { generateTemporaryPassword, hashPassword } from "../src/lib/auth/passwor
 import { prisma } from "../src/lib/prisma";
 import { slugify } from "../src/lib/slug";
 import { ensureAccountsSetup } from "../src/modules/accounts/setup";
+import { ensureHrSetup } from "../src/modules/hr/setup";
 import { DEFAULT_SIZES } from "../src/modules/inventory/catalog.service";
 import { DEFAULT_WAREHOUSE_NAME } from "../src/modules/inventory/stock.service";
 import { ensureProductionCostHeads } from "../src/modules/production/cost.service";
@@ -81,8 +83,9 @@ async function main() {
     });
     await ensureAccountsSetup(company.id);
     await ensureProductionCostHeads(company.id);
+    await ensureHrSetup(company.id);
     console.log(
-      `✓ Company "${name}" ready with built-in roles, sizes, warehouse, chart of accounts, expense and cost heads`,
+      `✓ Company "${name}" ready with built-in roles, sizes, warehouse, chart of accounts, expense and cost heads, HR rules and leave types`,
     );
   }
 

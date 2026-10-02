@@ -118,9 +118,13 @@ model Company {
   expenses             Expense[]
   adSpends             AdSpend[]
   employees            Employee[]
+  hrSettings           HrSettings?
+  holidays             Holiday[]
+  attendance           Attendance[]
   leaveTypes           LeaveType[]
   leaveRequests        LeaveRequest[]
   payrollRuns          PayrollRun[]
+  payrollPayments      PayrollPayment[]
   salaryAdvances       SalaryAdvance[]
   complianceDocuments  ComplianceDocument[]
   templates            DocumentTemplate[]
@@ -166,6 +170,12 @@ model User {
   reportExports     ReportExport[]
   journalEntries    JournalEntry[]      @relation("JournalPostedBy")
   approvedLeaves    LeaveRequest[]      @relation("LeaveApprovedBy")
+  requestedLeaves   LeaveRequest[]      @relation("LeaveRequestedBy")
+  attendanceMarked  Attendance[]        @relation("AttendanceRecordedBy")
+  payrollsCreated   PayrollRun[]        @relation("PayrollCreatedBy")
+  payrollsApproved  PayrollRun[]        @relation("PayrollApprovedBy")
+  salariesPaid      PayrollPayment[]    @relation("PayrollPaidBy")
+  advancesGiven     SalaryAdvance[]     @relation("AdvanceCreatedBy")
   generatedDocs     GeneratedDocument[]
   backupRuns        BackupRun[]
   expensesCreated   Expense[]           @relation("ExpenseCreatedBy")
@@ -1340,6 +1350,7 @@ model LedgerAccount {
   expenseHeads   ExpenseHead[]
   expensesPaid   Expense[]            @relation("ExpensePaidFrom")
   salaryAdvances SalaryAdvance[]
+  salaryPayments PayrollPayment[]
   installments   CapitalInstallment[]
 
   @@unique([companyId, code])
@@ -1360,16 +1371,19 @@ model JournalEntry {
   reversalOfId String?       @unique
   createdAt    DateTime      @default(now())
 
-  company      Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  postedBy     User?          @relation("JournalPostedBy", fields: [postedById], references: [id], onDelete: SetNull)
-  reversalOf   JournalEntry?  @relation("JournalReversal", fields: [reversalOfId], references: [id], onDelete: SetNull)
-  reversedBy   JournalEntry?  @relation("JournalReversal")
-  lines        JournalLine[]
-  payment      Payment?
-  supplierBill SupplierBill?
-  expense      Expense?
-  badStock     BadStockEntry?
-  payrollItem  PayrollItem?
+  company           Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  postedBy          User?              @relation("JournalPostedBy", fields: [postedById], references: [id], onDelete: SetNull)
+  reversalOf        JournalEntry?      @relation("JournalReversal", fields: [reversalOfId], references: [id], onDelete: SetNull)
+  reversedBy        JournalEntry?      @relation("JournalReversal")
+  lines             JournalLine[]
+  payment           Payment?
+  supplierBill      SupplierBill?
+  expense           Expense?
+  badStock          BadStockEntry?
+  payrollRun        PayrollRun?        @relation("PayrollAccrual")
+  payrollPayment    PayrollPayment?
+  salaryAdvance     SalaryAdvance?
+  advanceSettlement AdvanceSettlement?
 
   @@unique([companyId, number])
   @@index([companyId, date])
@@ -1511,7 +1525,8 @@ model ExpenseHead {
 }
 
 /// General expense (incl. Quick Add). Conveyance/Food entries must name an
-/// employee and purpose and can settle against a salary advance.
+/// employee and purpose; when paid they settle the employee's open advances
+/// first (see AdvanceSettlement).
 model Expense {
   id                String      @id @default(cuid())
   companyId         String
@@ -1527,7 +1542,6 @@ model Expense {
   purpose           String?
   fromLocation      String?
   toLocation        String?
-  salaryAdvanceId   String? // auto-deduct from advance
   description       String?
   receiptFileId     String?
   formPrinted       Boolean     @default(false)
@@ -1543,7 +1557,6 @@ model Expense {
   supplier           Party?              @relation(fields: [supplierId], references: [id], onDelete: SetNull)
   project            ProductionProject?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
   employee           Employee?           @relation(fields: [employeeId], references: [id], onDelete: SetNull)
-  salaryAdvance      SalaryAdvance?      @relation(fields: [salaryAdvanceId], references: [id], onDelete: SetNull)
   receiptFile        FileAsset?          @relation(fields: [receiptFileId], references: [id], onDelete: SetNull)
   journalEntry       JournalEntry?       @relation(fields: [journalEntryId], references: [id], onDelete: SetNull)
   createdBy          User?               @relation("ExpenseCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
@@ -1575,30 +1588,43 @@ model AdSpend {
 // 10. HR, PAYROLL, LEAVE, ADVANCES
 // =============================================================================
 
+/// A person on the payroll. `baseSalary` is the monthly gross salary in force
+/// now; SalaryRevision keeps the history payroll reads month by month.
 model Employee {
-  id          String         @id @default(cuid())
-  companyId   String
-  userId      String? // links to login for the Employee Portal
-  code        String
-  name        String
-  designation String?
-  department  String?
-  phone       String?
-  whatsapp    String?
-  email       String?
-  nid         String?
-  address     String?
-  photoUrl    String?
-  joinDate    DateTime
-  exitDate    DateTime?
-  baseSalary  Decimal        @db.Decimal(14, 2)
-  status      EmployeeStatus @default(ACTIVE)
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
+  id                String         @id @default(cuid())
+  companyId         String
+  userId            String? // links to login for the Employee Portal
+  code              String
+  name              String
+  designation       String?
+  department        String?
+  phone             String?
+  whatsapp          String?
+  email             String?
+  nid               String?
+  address           String?
+  photoUrl          String?
+  dateOfBirth       DateTime?      @db.Date
+  bloodGroup        String?
+  emergencyContact  String?
+  joinDate          DateTime       @db.Date
+  exitDate          DateTime?      @db.Date // last working day
+  exitReason        String?
+  baseSalary        Decimal        @db.Decimal(14, 2)
+  overtimeRate      Decimal?       @db.Decimal(10, 2) // per overtime hour
+  salaryMethod      PaymentMethod  @default(CASH) // how the salary is usually paid
+  bankName          String?
+  bankAccountNumber String?
+  walletNumber      String? // bKash / Nagad / Rocket number
+  notes             String?
+  status            EmployeeStatus @default(ACTIVE)
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
 
   company         Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
   user            User?               @relation(fields: [userId], references: [id], onDelete: SetNull)
   salaryHistory   SalaryRevision[]
+  attendance      Attendance[]
   leaveBalances   LeaveBalance[]
   leaveRequests   LeaveRequest[]
   payrollItems    PayrollItem[]
@@ -1612,10 +1638,11 @@ model Employee {
   @@unique([companyId, userId])
 }
 
+/// Monthly gross salary from a day onwards (the first one is the joining salary).
 model SalaryRevision {
   id            String   @id @default(cuid())
   employeeId    String
-  effectiveFrom DateTime
+  effectiveFrom DateTime @db.Date
   amount        Decimal  @db.Decimal(14, 2)
   reason        String?
   createdAt     DateTime @default(now())
@@ -1625,12 +1652,67 @@ model SalaryRevision {
   @@index([employeeId, effectiveFrom])
 }
 
+/// Per-company HR rules used by attendance, leave and payroll.
+model HrSettings {
+  id                   String   @id @default(cuid())
+  companyId            String   @unique
+  weeklyOffDays        Int[]    @default([5]) // 0 = Sunday ... 6 = Saturday (5 = Friday)
+  officeStartTime      String   @default("09:00") // check-ins after this plus the grace are late
+  lateGraceMinutes     Int      @default(15)
+  latesPerDeductionDay Int      @default(0) // e.g. 3: every 3 lates cost a day's salary; 0 = never
+  selfCheckIn          Boolean  @default(true) // employees may check in from the portal
+  updatedAt            DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+}
+
+/// Public and company holidays: paid days off, not counted as working days.
+model Holiday {
+  id        String   @id @default(cuid())
+  companyId String
+  date      DateTime @db.Date
+  name      String
+  createdAt DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, date])
+}
+
+/// One employee's attendance on one day. Working days without a row count as
+/// present, so only lates, half days, absences (and overtime) need marking;
+/// self check-ins from the portal also land here.
+model Attendance {
+  id              String           @id @default(cuid())
+  companyId       String
+  employeeId      String
+  date            DateTime         @db.Date
+  status          AttendanceStatus
+  checkIn         DateTime?
+  checkOut        DateTime?
+  overtimeMinutes Int              @default(0)
+  note            String?
+  source          AttendanceSource @default(MANUAL)
+  recordedById    String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  company    Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  recordedBy User?    @relation("AttendanceRecordedBy", fields: [recordedById], references: [id], onDelete: SetNull)
+
+  @@unique([employeeId, date])
+  @@index([companyId, date])
+}
+
 model LeaveType {
   id          String  @id @default(cuid())
   companyId   String
   name        String // Casual, Sick, Annual...
   daysPerYear Int
   isPaid      Boolean @default(true)
+  prorate     Boolean @default(true) // joiners get a share for the months they work that year
+  isActive    Boolean @default(true)
 
   company  Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
   balances LeaveBalance[]
@@ -1639,6 +1721,8 @@ model LeaveType {
   @@unique([companyId, name])
 }
 
+/// Leave entitled and taken per calendar year. `used` follows the approved
+/// requests; `adjusted` keeps an entitlement HR set by hand (e.g. carried over).
 model LeaveBalance {
   id          String  @id @default(cuid())
   employeeId  String
@@ -1646,6 +1730,8 @@ model LeaveBalance {
   year        Int
   entitled    Decimal @db.Decimal(5, 1)
   used        Decimal @default(0) @db.Decimal(5, 1)
+  adjusted    Boolean @default(false)
+  note        String?
 
   employee  Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   leaveType LeaveType @relation(fields: [leaveTypeId], references: [id], onDelete: Cascade)
@@ -1653,103 +1739,195 @@ model LeaveBalance {
   @@unique([employeeId, leaveTypeId, year])
 }
 
+/// `days` counts working days only (weekly days off and holidays are skipped).
 model LeaveRequest {
-  id           String      @id @default(cuid())
-  companyId    String
-  employeeId   String
-  leaveTypeId  String
-  startDate    DateTime    @db.Date
-  endDate      DateTime    @db.Date
-  days         Decimal     @db.Decimal(5, 1)
-  reason       String?
-  status       LeaveStatus @default(PENDING)
-  approvedById String?
-  decidedAt    DateTime?
-  attachmentId String?
-  createdAt    DateTime    @default(now())
+  id            String      @id @default(cuid())
+  companyId     String
+  employeeId    String
+  leaveTypeId   String
+  startDate     DateTime    @db.Date
+  endDate       DateTime    @db.Date
+  halfDay       Boolean     @default(false) // only for a single day
+  days          Decimal     @db.Decimal(5, 1)
+  reason        String?
+  status        LeaveStatus @default(PENDING)
+  requestedById String?
+  approvedById  String? // who approved or rejected it
+  decidedAt     DateTime?
+  decisionNote  String?
+  attachmentId  String?
+  createdAt     DateTime    @default(now())
 
-  company    Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  employee   Employee   @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  leaveType  LeaveType  @relation(fields: [leaveTypeId], references: [id])
-  approvedBy User?      @relation("LeaveApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
-  attachment FileAsset? @relation(fields: [attachmentId], references: [id], onDelete: SetNull)
+  company     Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee    Employee   @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  leaveType   LeaveType  @relation(fields: [leaveTypeId], references: [id])
+  requestedBy User?      @relation("LeaveRequestedBy", fields: [requestedById], references: [id], onDelete: SetNull)
+  approvedBy  User?      @relation("LeaveApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+  attachment  FileAsset? @relation(fields: [attachmentId], references: [id], onDelete: SetNull)
 
   @@index([employeeId, startDate])
+  @@index([companyId, status])
 }
 
-/// Monthly payroll batch.
+/// Monthly payroll batch. Approving it posts the month's salaries to the books
+/// (`journalEntryId`); paying it posts PayrollPayment vouchers.
 model PayrollRun {
-  id        String        @id @default(cuid())
-  companyId String
-  year      Int
-  month     Int // 1-12
-  status    PayrollStatus @default(DRAFT)
-  totalNet  Decimal       @default(0) @db.Decimal(14, 2)
-  paidAt    DateTime?
-  createdAt DateTime      @default(now())
+  id             String        @id @default(cuid())
+  companyId      String
+  year           Int
+  month          Int // 1-12
+  status         PayrollStatus @default(DRAFT)
+  totalGross     Decimal       @default(0) @db.Decimal(14, 2)
+  totalNet       Decimal       @default(0) @db.Decimal(14, 2)
+  journalEntryId String?       @unique
+  notes          String?
+  createdById    String?
+  approvedById   String?
+  approvedAt     DateTime?
+  paidAt         DateTime?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
 
-  company Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  items   PayrollItem[]
+  company      Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  journalEntry JournalEntry?    @relation("PayrollAccrual", fields: [journalEntryId], references: [id], onDelete: SetNull)
+  createdBy    User?            @relation("PayrollCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  approvedBy   User?            @relation("PayrollApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+  items        PayrollItem[]
+  payments     PayrollPayment[]
 
   @@unique([companyId, year, month])
 }
 
-/// Historical salary per employee per month.
+/// One employee's salary for one month (the payslip). Day counts come from
+/// attendance and leave; `overtimeEdited` / `advanceEdited` mark figures typed
+/// in by hand, which a recalculation keeps.
 model PayrollItem {
   id                   String  @id @default(cuid())
   runId                String
   employeeId           String
-  basic                Decimal @db.Decimal(14, 2)
+  monthlySalary        Decimal @default(0) @db.Decimal(14, 2) // gross monthly salary in force
+  workingDays          Int     @default(0)
+  presentDays          Decimal @default(0) @db.Decimal(5, 1)
+  paidLeaveDays        Decimal @default(0) @db.Decimal(5, 1)
+  unpaidLeaveDays      Decimal @default(0) @db.Decimal(5, 1)
+  absentDays           Decimal @default(0) @db.Decimal(5, 1)
+  lateDays             Int     @default(0)
+  unpaidDays           Decimal @default(0) @db.Decimal(5, 1) // absent + unpaid leave + late penalty
+  overtimeHours        Decimal @default(0) @db.Decimal(6, 2)
+  overtimeEdited       Boolean @default(false)
+  basic                Decimal @db.Decimal(14, 2) // salary for the days employed this month
   allowances           Decimal @default(0) @db.Decimal(14, 2)
   overtime             Decimal @default(0) @db.Decimal(14, 2)
   bonus                Decimal @default(0) @db.Decimal(14, 2)
   unpaidLeaveDeduction Decimal @default(0) @db.Decimal(14, 2)
   advanceDeduction     Decimal @default(0) @db.Decimal(14, 2)
+  advanceEdited        Boolean @default(false)
+  taxDeduction         Decimal @default(0) @db.Decimal(14, 2)
   otherDeductions      Decimal @default(0) @db.Decimal(14, 2)
   netPay               Decimal @db.Decimal(14, 2)
-  isPaid               Boolean @default(false)
-  journalEntryId       String? @unique
+  note                 String?
+  paymentId            String?
 
-  run          PayrollRun          @relation(fields: [runId], references: [id], onDelete: Cascade)
-  employee     Employee            @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  journalEntry JournalEntry?       @relation(fields: [journalEntryId], references: [id], onDelete: SetNull)
-  settlements  AdvanceSettlement[]
+  run         PayrollRun          @relation(fields: [runId], references: [id], onDelete: Cascade)
+  employee    Employee            @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  payment     PayrollPayment?     @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  settlements AdvanceSettlement[]
 
   @@unique([runId, employeeId])
+  @@index([employeeId])
+  @@index([paymentId])
 }
 
-/// Cash advance given to an employee; settled by conveyance expenses or payroll.
+/// Salaries paid for a payroll run: one payment voucher per batch (cash, a bank
+/// transfer...) covering one or more employees. Voided payments stay for the
+/// record; their entry is reversed and their employees are unpaid again.
+model PayrollPayment {
+  id             String        @id @default(cuid())
+  companyId      String
+  runId          String
+  number         String
+  date           DateTime
+  method         PaymentMethod
+  accountId      String // cash / bank / wallet account paid from
+  amount         Decimal       @db.Decimal(14, 2)
+  employeeCount  Int
+  reference      String?
+  journalEntryId String?       @unique
+  paidById       String?
+  voidedAt       DateTime?
+  voidReason     String?
+  createdAt      DateTime      @default(now())
+
+  company      Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  run          PayrollRun    @relation(fields: [runId], references: [id], onDelete: Cascade)
+  account      LedgerAccount @relation(fields: [accountId], references: [id])
+  journalEntry JournalEntry? @relation(fields: [journalEntryId], references: [id], onDelete: SetNull)
+  paidBy       User?         @relation("PayrollPaidBy", fields: [paidById], references: [id], onDelete: SetNull)
+  items        PayrollItem[]
+
+  @@unique([companyId, number])
+  @@index([runId])
+}
+
+/// Cash advance given to an employee (or brought forward at go-live). It is
+/// recovered from salary (in installments when set), settled by conveyance and
+/// food expenses, or returned in cash.
 model SalaryAdvance {
   id                String        @id @default(cuid())
   companyId         String
   employeeId        String
+  number            String
   amount            Decimal       @db.Decimal(14, 2)
   outstanding       Decimal       @db.Decimal(14, 2)
   givenAt           DateTime      @default(now())
+  method            PaymentMethod @default(CASH)
   paidFromAccountId String?
+  reference         String?
   purpose           String?
+  installmentAmount Decimal?      @db.Decimal(14, 2) // recovered per salary; null = all at once
+  recoverFrom       DateTime?     @db.Date // first payroll month to recover in (default: the month given)
+  isOpening         Boolean       @default(false) // owed from before the ERP
   status            AdvanceStatus @default(OPEN)
+  journalEntryId    String?       @unique
+  createdById       String?
+  voidedAt          DateTime?
+  voidReason        String?
+  createdAt         DateTime      @default(now())
 
   company         Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
   employee        Employee            @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   paidFromAccount LedgerAccount?      @relation(fields: [paidFromAccountId], references: [id], onDelete: SetNull)
-  expenses        Expense[]
+  journalEntry    JournalEntry?       @relation(fields: [journalEntryId], references: [id], onDelete: SetNull)
+  createdBy       User?               @relation("AdvanceCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   settlements     AdvanceSettlement[]
 
+  @@unique([companyId, number])
   @@index([employeeId, status])
 }
 
+/// Part of an advance recovered from a salary, settled by an expense, or
+/// returned in cash. Reversed settlements (a voided expense, a reopened payroll)
+/// stay for the record with `reversedAt` set.
 model AdvanceSettlement {
-  id            String   @id @default(cuid())
-  advanceId     String
-  payrollItemId String?
-  expenseId     String?
-  amount        Decimal  @db.Decimal(14, 2)
-  settledAt     DateTime @default(now())
+  id             String                @id @default(cuid())
+  advanceId      String
+  kind           AdvanceSettlementKind
+  payrollItemId  String?
+  expenseId      String?
+  journalEntryId String?               @unique // cash returns post their own entry
+  amount         Decimal               @db.Decimal(14, 2)
+  settledAt      DateTime              @default(now())
+  note           String?
+  reversedAt     DateTime?
 
-  advance     SalaryAdvance @relation(fields: [advanceId], references: [id], onDelete: Cascade)
-  payrollItem PayrollItem?  @relation(fields: [payrollItemId], references: [id], onDelete: SetNull)
-  expense     Expense?      @relation(fields: [expenseId], references: [id], onDelete: SetNull)
+  advance      SalaryAdvance @relation(fields: [advanceId], references: [id], onDelete: Cascade)
+  payrollItem  PayrollItem?  @relation(fields: [payrollItemId], references: [id], onDelete: SetNull)
+  expense      Expense?      @relation(fields: [expenseId], references: [id], onDelete: SetNull)
+  journalEntry JournalEntry? @relation(fields: [journalEntryId], references: [id], onDelete: SetNull)
+
+  @@index([advanceId])
+  @@index([payrollItemId])
+  @@index([expenseId])
 }
 
 // =============================================================================
@@ -2509,6 +2687,25 @@ enum PayrollStatus {
 enum AdvanceStatus {
   OPEN
   SETTLED
+  VOID
+}
+
+enum AdvanceSettlementKind {
+  PAYROLL
+  EXPENSE
+  CASH_RETURN
+}
+
+enum AttendanceStatus {
+  PRESENT
+  LATE
+  HALF_DAY
+  ABSENT
+}
+
+enum AttendanceSource {
+  MANUAL
+  SELF // checked in from the employee portal
 }
 
 enum ComplianceType {
@@ -2546,6 +2743,7 @@ enum DocumentType {
   LETTERHEAD
   CONVEYANCE_FORM
   PAYSLIP
+  SALARY_ADVANCE
   REPORT
 }
 

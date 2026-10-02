@@ -13,6 +13,8 @@ import { nextDocumentNumber } from "@/lib/numbering";
 export type JournalLineInput = {
   accountId: string;
   partyId?: string | null;
+  /** Names the employee on advance, salary and payable lines (their HR statement). */
+  employeeId?: string | null;
   debit?: Prisma.Decimal | number;
   credit?: Prisma.Decimal | number;
   memo?: string;
@@ -66,6 +68,7 @@ export async function postJournalEntry(db: Db, input: JournalEntryInput) {
         create: lines.map((l) => ({
           accountId: l.accountId,
           partyId: l.partyId ?? null,
+          employeeId: l.employeeId ?? null,
           debit: l.debit,
           credit: l.credit,
           memo: l.memo,

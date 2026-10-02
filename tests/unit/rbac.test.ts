@@ -59,6 +59,20 @@ describe("permission catalogue", () => {
       expect(can(role, "accounts.manage")).toBe(role === "SUPER_ADMIN" || role === "ACCOUNTS");
     }
   });
+
+  it("keeps salaries to HR roles and Accounts, and payroll approval to Super Admin", () => {
+    const can = (role: SystemRole, key: string) =>
+      (DEFAULT_ROLE_PERMISSIONS[role] as readonly string[]).includes(key);
+    for (const role of Object.values(SystemRole)) {
+      // Everyone gets the employee portal for their own attendance, leave and payslips.
+      expect(can(role, "portal.self")).toBe(true);
+      // Accounts prepares payroll; approving it is a second person's call.
+      expect(can(role, "hr.payroll")).toBe(role === "SUPER_ADMIN" || role === "ACCOUNTS");
+      expect(can(role, "hr.payroll.approve")).toBe(role === "SUPER_ADMIN");
+      expect(can(role, "hr.manage")).toBe(role === "SUPER_ADMIN");
+      expect(can(role, "hr.view")).toBe(role === "SUPER_ADMIN" || role === "ACCOUNTS");
+    }
+  });
 });
 
 describe("resolvePermissions", () => {

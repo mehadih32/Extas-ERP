@@ -89,3 +89,36 @@ export function toInstant(value: Date | string, timeZone: string): Date {
   if (value instanceof Date) return value;
   return DATE_ONLY.test(value) ? startOfDayInZone(value, timeZone) : new Date(value);
 }
+
+/** "YYYY-MM-DD" of a @db.Date column (stored as midnight UTC). */
+export function dateOnly(value: Date): string;
+export function dateOnly(value: Date | null): string | null;
+export function dateOnly(value: Date | null): string | null {
+  return value ? value.toISOString().slice(0, 10) : null;
+}
+
+/** The value to write to a @db.Date column for a calendar day. */
+export function dateColumn(day: string): Date {
+  return new Date(`${day}T00:00:00Z`);
+}
+
+/** Day of the week of a calendar day: 0 = Sunday ... 6 = Saturday. */
+export function weekday(day: string): number {
+  return new Date(`${day}T00:00:00Z`).getUTCDay();
+}
+
+/** Wall-clock time ("09:42") of an instant in `timeZone`. */
+export function localTime(at: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone,
+    hourCycle: "h23",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(at);
+}
+
+/** The instant a wall-clock time ("09:42") on a calendar day happens in `timeZone`. */
+export function atLocalTime(day: string, time: string, timeZone: string): Date {
+  const [h, m] = time.split(":").map(Number) as [number, number];
+  return new Date(startOfDayInZone(day, timeZone).getTime() + (h * 60 + m) * 60_000);
+}

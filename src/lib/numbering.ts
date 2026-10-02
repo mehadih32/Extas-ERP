@@ -20,6 +20,7 @@ export const DEFAULT_PREFIXES: Partial<Record<DocumentType, string>> = {
   SALES_RETURN: "RET",
   STOCK_INTAKE: "GRN",
   PRODUCTION_PROJECT: "PRD",
+  SALARY_ADVANCE: "ADV",
 };
 
 /**

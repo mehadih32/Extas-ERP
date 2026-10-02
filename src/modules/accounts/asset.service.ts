@@ -1,6 +1,6 @@
 import { type FixedAsset, Prisma } from "@prisma/client";
 
-import { localDay, startOfDayInZone, toInstant } from "@/lib/dates";
+import { dateColumn, dateOnly, localDay, startOfDayInZone, toInstant } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
@@ -51,10 +51,6 @@ import { assertPartyCanTransact, recordPartyActivity } from "@/modules/parties/p
 
 type Tx = Prisma.TransactionClient;
 const TX_OPTIONS = { timeout: 60_000 };
-
-/** "YYYY-MM-DD" for a @db.Date column. */
-const dateOnly = (value: Date | null) => (value ? value.toISOString().slice(0, 10) : null);
-const dateColumn = (day: string) => new Date(`${day}T00:00:00Z`);
 
 function depreciable(asset: FixedAsset): DepreciableAsset {
   return {

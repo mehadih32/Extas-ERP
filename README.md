@@ -638,9 +638,9 @@ picked, as a PDF or an Excel file:
 | Stock alerts    | Low, dead and slow stock and the highest stock, on the day the report is made  | `dashboard.view` or `inventory.view`               |
 
 The PDF is A4 with the company's details, the period, who made it and page numbers on every
-page; long tables carry their header onto the next page. It uses the built-in Helvetica font,
-which covers English and Western European letters, so other scripts (such as Bengali) show as
-"?" in the PDF; the Excel file keeps them. The Excel file has an overview sheet and one sheet
+page; long tables carry their header onto the next page. English and Bengali text both print
+(see [Bengali in PDFs](#bengali-in-pdfs)); other scripts show as "?" in the PDF, and the Excel
+file keeps them. The Excel file has an overview sheet and one sheet
 per table with real numbers and dates (so they add up and sort), a header row that stays in
 view and filter buttons.
 
@@ -701,8 +701,22 @@ It is checked thoroughly before it is kept, and every print makes sure the file 
 one that was checked, so a damaged image can never break a PDF. Replacing or removing it deletes the old file; PDFs made
 earlier keep the logo they had.
 
-The built-in PDF fonts cover English and Western European letters, so other scripts (such as
-Bengali) show as "?" on the page. Packing lists and payment receipts are not printable yet.
+Packing lists and payment receipts are not printable yet.
+
+### Bengali in PDFs
+
+Bengali text (names, addresses, notes, amounts in words) prints in every PDF, the reports and
+the documents alike, mixed freely with English on the same line. English text uses the
+built-in Helvetica and Times fonts; Bengali uses Noto Sans Bengali (regular and bold, SIL Open
+Font License, in `assets/fonts/`). Bengali letters join into conjuncts and vowel signs, so each
+Bengali run is shaped by HarfBuzz, the same engine browsers use, and set on the English text's
+baseline. Copying text out of the PDF gives the words as typed. The font is only embedded in a
+PDF that has Bengali in it, and only the letters used. Other scripts (Chinese, emoji...) still
+show as "?".
+
+The helpers are in `src/lib/pdf.ts`: make documents with `createPdf()` and draw text with
+`drawText()`, `fitText()` and `wrapText()`. The production build copies the font files into
+the server bundle (`outputFileTracingIncludes` in `next.config.js`).
 
 | Endpoint                                                       | Purpose                                                                |
 | -------------------------------------------------------------- | ---------------------------------------------------------------------- |

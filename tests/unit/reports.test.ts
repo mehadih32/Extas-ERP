@@ -24,6 +24,8 @@ import { renderExcel } from "@/modules/reports/render/excel";
 import { pdfText, renderPdf } from "@/modules/reports/render/pdf";
 import { generateReportSchema, reportQuerySchema } from "@/modules/reports/schemas";
 
+import { pdfLines } from "../fixtures/pdf";
+
 /** The `can` of a person holding a built-in role's default permissions. */
 const role = (name: SystemRole) => ({
   can: (p: PermissionKey) => DEFAULT_ROLE_PERMISSIONS[name].includes(p),
@@ -85,7 +87,7 @@ function sampleReport(): ReportDocument {
             empty: "",
           },
         ],
-        notes: ["Customer names like রহিম ট্রেডার্স stay in Excel; the PDF shows ?."],
+        notes: ["Customer names like রহিম ট্রেডার্স print in Bengali in the PDF too."],
       },
       {
         key: "SALES",
@@ -134,15 +136,6 @@ function sampleReport(): ReportDocument {
       },
     ],
   };
-}
-
-/** The text of each line drawn in an uncompressed PDF (pdfkit writes hex strings, split for kerning). */
-function pdfLines(pdf: Buffer): string[] {
-  return [...pdf.toString("latin1").matchAll(/\[([^\]]*)\]\s*TJ/g)].map((m) =>
-    [...m[1]!.matchAll(/<([0-9a-f]*)>/gi)]
-      .map((h) => Buffer.from(h[1]!, "hex").toString("latin1"))
-      .join(""),
-  );
 }
 
 function unzipText(bytes: Uint8Array): Record<string, string> {
@@ -294,11 +287,11 @@ describe("Excel writer", () => {
 });
 
 describe("PDF writer", () => {
-  it("keeps the characters the built-in fonts can draw", () => {
+  it("keeps the characters the PDF fonts can draw", () => {
     expect(pdfText("Café – “quoted” £5 · €")).toBe("Café – “quoted” £5 · €");
-    expect(pdfText("রহিম ট্রেডার্স")).toBe("? ?");
+    expect(pdfText("রহিম ট্রেডার্স")).toBe("রহিম ট্রেডার্স");
     expect(pdfText("a\n\tb")).toBe("a b");
-    expect(pdfText("😀😀x")).toBe("?x");
+    expect(pdfText("😀😀x 漢字")).toBe("?x ?");
   });
 
   it("renders every section on numbered A4 pages, repeating headers on long tables", async () => {
@@ -314,7 +307,7 @@ describe("PDF writer", () => {
     expect(lines).toContain(`Page 1 of ${pages}`);
     expect(lines).toContain(`Page ${pages} of ${pages}`);
     expect(lines.some((l) => l.endsWith("(continued)"))).toBe(true);
-    expect(lines.some((l) => l.includes("? ?"))).toBe(true);
+    expect(lines).toContain("Customer names like রহিম ট্রেডার্স print in Bengali in the PDF too.");
     // Compressed by default, and still a PDF.
     const small = await renderPdf(sampleReport());
     expect(small.length).toBeLessThan(pdf.length);

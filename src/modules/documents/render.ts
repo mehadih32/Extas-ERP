@@ -1,6 +1,16 @@
-import PDFDocument from "pdfkit";
-
-import { collectPdf, fitText, pdfText, safeHex, tint, wrapText } from "@/lib/pdf";
+import {
+  collectPdf,
+  createPdf,
+  drawText,
+  fitText,
+  pdfInfo,
+  pdfText,
+  safeHex,
+  type TextStyle,
+  textWidth,
+  tint,
+  wrapText,
+} from "@/lib/pdf";
 import type { Align, Block, Column, PrintDocument, Row, RowStyle } from "@/modules/documents/model";
 
 /*
@@ -11,9 +21,10 @@ import type { Align, Block, Column, PrintDocument, Row, RowStyle } from "@/modul
  * The look follows the brand: the company colour (dark green by default) for the
  * name, titles, rules and table headers, the accent colour (deep red) for a fine
  * line under the letterhead and for VOID / CANCELLED marks, Times for the name
- * and titles, Helvetica for everything else, on plain white paper so it prints
- * well. Text is placed line by line (cut with "…" when it cannot wrap), tables
- * repeat their header on every page, and nothing is ever drawn past the margins.
+ * and titles, Helvetica for everything else (Bengali in Noto Sans Bengali), on
+ * plain white paper so it prints well. Text is placed line by line (cut with "…"
+ * when it cannot wrap), tables repeat their header on every page, and nothing is
+ * ever drawn past the margins.
  */
 
 const PAGE = { width: 595.28, height: 841.89 }; // A4 in points
@@ -44,14 +55,7 @@ const DETAIL_LINE = 9.4;
 const TABLE_HEADER = 18;
 const MAX_CELL_LINES = 8;
 
-type TextStyle = {
-  font: string;
-  size: number;
-  color?: string;
-  align?: Align;
-  /** Letter spacing in points. */
-  spacing?: number;
-};
+type LineStyle = TextStyle & { color?: string; align?: Align };
 
 type ColumnBox = { x: number; width: number; align: Align };
 
@@ -79,19 +83,15 @@ class Writer {
   // --- Primitives -----------------------------------------------------------
 
   /** One line of text in a box `width` wide, cut to fit; returns the width drawn. */
-  private line(text: string, x: number, y: number, width: number, style: TextStyle): number {
+  private line(text: string, x: number, y: number, width: number, style: LineStyle): number {
     const doc = this.doc;
-    const spacing = style.spacing ?? 0;
-    doc
-      .font(style.font)
-      .fontSize(style.size)
-      .fillColor(style.color ?? INK);
-    const fitted = fitText(doc, text, width, spacing);
+    const fitted = fitText(doc, text, width, style);
     if (!fitted) return 0;
-    const drawn = doc.widthOfString(fitted, { characterSpacing: spacing });
+    const drawn = textWidth(doc, fitted, style);
     const dx =
       style.align === "right" ? width - drawn : style.align === "center" ? (width - drawn) / 2 : 0;
-    doc.text(fitted, x + dx, y, { lineBreak: false, characterSpacing: spacing });
+    doc.fillColor(style.color ?? INK);
+    drawText(doc, fitted, x + dx, y, style);
     return drawn;
   }
 
@@ -108,7 +108,7 @@ class Writer {
   private wrap(text: string, width: number, font: string, size: number): string[] {
     return text
       .split(/\r?\n/)
-      .flatMap((part) => (part.trim() ? wrapText(this.doc, part, width, font, size) : [""]));
+      .flatMap((part) => (part.trim() ? wrapText(this.doc, part, width, { font, size }) : [""]));
   }
 
   /** Starts a new page with the slim header when `height` does not fit; true if it did. */
@@ -260,20 +260,17 @@ class Writer {
     if (stamp?.tone !== "danger") return;
     const range = this.doc.bufferedPageRange();
     const size = 96;
+    const style = { font: SANS_BOLD, size, spacing: 6 };
+    const text = pdfText(stamp.text.toUpperCase());
+    const width = textWidth(this.doc, text, style);
     for (let i = range.start; i < range.start + range.count; i++) {
       this.doc.switchToPage(i);
-      const text = pdfText(stamp.text.toUpperCase());
       this.doc.save();
-      this.doc.font(SANS_BOLD).fontSize(size);
-      const width = this.doc.widthOfString(text, { characterSpacing: 6 });
       const cx = PAGE.width / 2;
       const cy = PAGE.height / 2;
       this.doc.rotate(-32, { origin: [cx, cy] });
       this.doc.fillColor(this.accent).fillOpacity(0.07);
-      this.doc.text(text, cx - width / 2, cy - size * 0.36, {
-        lineBreak: false,
-        characterSpacing: 6,
-      });
+      drawText(this.doc, text, cx - width / 2, cy - size * 0.36, style);
       this.doc.restore();
     }
   }
@@ -286,9 +283,8 @@ class Writer {
     const leftWidth = WIDTH * 0.56;
 
     const stampText = stamp ? pdfText(stamp.text.toUpperCase()) : "";
-    this.doc.font(SANS_BOLD).fontSize(7.5);
     const badgeWidth = stamp
-      ? this.doc.widthOfString(stampText, { characterSpacing: 1.2 }) + 12
+      ? textWidth(this.doc, stampText, { font: SANS_BOLD, size: 7.5, spacing: 1.2 }) + 12
       : 0;
     const room = leftWidth - (stamp ? badgeWidth + 12 : 0);
 
@@ -296,9 +292,8 @@ class Writer {
     const titleText = title.toUpperCase();
     const spacingFor = (size: number) => size * 0.115;
     let size = 19;
-    this.doc.font(SERIF_BOLD);
     const widthAt = (s: number) =>
-      this.doc.fontSize(s).widthOfString(pdfText(titleText), { characterSpacing: spacingFor(s) });
+      textWidth(this.doc, titleText, { font: SERIF_BOLD, size: s, spacing: spacingFor(s) });
     while (size > 12 && widthAt(size) > room) size -= 0.5;
     const titleWidth = this.line(titleText, MARGIN.left, top + (19 - size) * 0.55, room, {
       font: SERIF_BOLD,
@@ -648,17 +643,15 @@ class Writer {
     const width = WIDTH - indent;
     const items = block.items.map((item) => {
       const label = item.label ? pdfText(`${item.label}:`) : "";
-      this.doc.font(SANS_BOLD).fontSize(8.4);
-      const labelWidth = label ? this.doc.widthOfString(label) + 4 : 0;
+      const labelWidth = label ? textWidth(this.doc, label, { font: SANS_BOLD, size: 8.4 }) + 4 : 0;
       // The first line leaves room for the bold label; the rest use the full width.
       const words = pdfText(item.text).split(" ").filter(Boolean);
-      this.doc.font(SANS).fontSize(8.4);
       const lines: string[] = [];
       let current = "";
       for (const word of words) {
         const limit = lines.length === 0 ? width - labelWidth : width;
         const next = current ? `${current} ${word}` : word;
-        if (current && this.doc.widthOfString(next) > limit) {
+        if (current && textWidth(this.doc, next, { font: SANS, size: 8.4 }) > limit) {
           lines.push(current);
           current = word;
         } else {
@@ -729,17 +722,17 @@ export async function renderDocumentPdf(
   model: PrintDocument,
   options: { logo?: Buffer | null; compress?: boolean } = {},
 ): Promise<Buffer> {
-  const doc = new PDFDocument({
+  const doc = await createPdf({
     size: "A4",
     margins: MARGIN,
     bufferPages: true,
     compress: options.compress ?? true,
     info: {
-      Title: pdfText(
+      Title: pdfInfo(
         [model.letterhead.name, model.title, model.reference].filter(Boolean).join(" - "),
       ),
-      Author: pdfText(model.letterhead.name),
-      Subject: pdfText(model.title || "Letterhead"),
+      Author: pdfInfo(model.letterhead.name),
+      Subject: pdfInfo(model.title || "Letterhead"),
       Creator: "Extras ERP",
       Producer: "Extras ERP",
     },

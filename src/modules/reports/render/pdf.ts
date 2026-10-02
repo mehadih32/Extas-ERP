@@ -1,6 +1,16 @@
-import PDFDocument from "pdfkit";
-
-import { collectPdf, fitText, PDF_MIME, pdfText, safeHex, tint, wrapText } from "@/lib/pdf";
+import {
+  collectPdf,
+  createPdf,
+  drawText,
+  fitText,
+  PDF_MIME,
+  pdfInfo,
+  pdfText,
+  safeHex,
+  textWidth,
+  tint,
+  wrapText,
+} from "@/lib/pdf";
 import {
   type ColumnKind,
   formatCell,
@@ -20,9 +30,9 @@ import {
  *
  * Text is placed line by line at exact positions (never through pdfkit's own
  * wrapping), so a long name is cut with "…" instead of spilling over, and no
- * page is ever added by surprise. The built-in Helvetica covers Western
- * European text; other scripts (e.g. Bengali) show as "?" in the PDF and stay
- * intact in Excel.
+ * page is ever added by surprise. Helvetica covers Western European text and
+ * Noto Sans Bengali covers Bengali; other scripts show as "?" in the PDF and
+ * stay intact in Excel.
  */
 
 export { PDF_MIME, pdfText };
@@ -88,10 +98,6 @@ class Writer {
     return true;
   }
 
-  private fit(text: string, width: number): string {
-    return fitText(this.doc, text, width);
-  }
-
   /** One line of text in a box, cut to fit, aligned left or right. */
   private line(
     text: string,
@@ -101,19 +107,17 @@ class Writer {
     style: { font?: string; size: number; color?: string; align?: Align },
   ) {
     const doc = this.doc;
-    doc
-      .font(style.font ?? REGULAR)
-      .fontSize(style.size)
-      .fillColor(style.color ?? INK);
-    const fitted = this.fit(text, width);
+    const textStyle = { font: style.font ?? REGULAR, size: style.size };
+    const fitted = fitText(doc, text, width, textStyle);
     if (!fitted) return;
-    const dx = style.align === "right" ? width - doc.widthOfString(fitted) : 0;
-    doc.text(fitted, x + dx, y, { lineBreak: false });
+    const dx = style.align === "right" ? width - textWidth(doc, fitted, textStyle) : 0;
+    doc.fillColor(style.color ?? INK);
+    drawText(doc, fitted, x + dx, y, textStyle);
   }
 
   /** Greedy word wrap into lines no wider than `width`. */
   private wrap(text: string, width: number, font: string, size: number): string[] {
-    return wrapText(this.doc, text, width, font, size);
+    return wrapText(this.doc, text, width, { font, size });
   }
 
   private paragraph(text: string, style: { font: string; size: number; color: string }) {
@@ -349,15 +353,15 @@ export async function renderPdf(
   report: ReportDocument,
   options: { compress?: boolean } = {},
 ): Promise<Buffer> {
-  const doc = new PDFDocument({
+  const doc = await createPdf({
     size: "A4",
     margins: MARGIN,
     bufferPages: true,
     compress: options.compress ?? true,
     info: {
-      Title: pdfText(`${report.company.name}: ${report.title}`),
-      Author: pdfText(report.generatedBy),
-      Subject: pdfText(report.period.label),
+      Title: pdfInfo(`${report.company.name}: ${report.title}`),
+      Author: pdfInfo(report.generatedBy),
+      Subject: pdfInfo(report.period.label),
       Creator: "Extras ERP",
       Producer: "Extras ERP",
       CreationDate: new Date(report.generatedAt),

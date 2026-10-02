@@ -449,7 +449,11 @@ describe("letterhead PDFs", () => {
     const pad: PrintDocument = {
       type: "LETTERHEAD",
       title: "",
-      letterhead: { ...LETTERHEAD, name: "এক্সট্রাস Extras" },
+      letterhead: {
+        ...LETTERHEAD,
+        name: "এক্সট্রাস 漢字",
+        footer: "এক্সট্রাস ফ্যাশন লিমিটেড · extras.test",
+      },
       meta: [],
       parties: [],
       blocks: [],
@@ -463,9 +467,9 @@ describe("letterhead PDFs", () => {
     const text = pdf.toString("latin1");
     expect(text).toContain("/Subtype /Image");
     const lines = pdfLines(pdf);
-    // Scripts the built-in fonts cannot draw show as "?".
-    expect(lines).toContain("? Extras");
-    expect(lines).toContain("Extras Fashion Ltd. · extras.test");
+    // Bengali prints in Noto Sans Bengali; scripts no PDF font has show as "?".
+    expect(lines).toContain("এক্সট্রাস ?");
+    expect(lines).toContain("এক্সট্রাস ফ্যাশন লিমিটেড · extras.test");
     expect(lines.some((l) => l.includes("Page"))).toBe(false);
     expect(lines.some((l) => l.includes("SIGNATURE"))).toBe(false);
   });

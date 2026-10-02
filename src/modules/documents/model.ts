@@ -21,8 +21,11 @@ export const PRINT_TYPES = [
 
 export type PrintType = (typeof PRINT_TYPES)[number];
 
-/** Bump when the layout changes, so documents printed again get the new look. */
-export const LAYOUT_VERSION = 1;
+/**
+ * Bump when the layout changes, so documents printed again get the new look.
+ * 2: Bengali text prints in Noto Sans Bengali instead of "?".
+ */
+export const LAYOUT_VERSION = 2;
 
 export type Letterhead = {
   name: string;

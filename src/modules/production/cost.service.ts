@@ -14,6 +14,7 @@ import { postJournalEntry, reverseJournalEntry } from "@/modules/accounts/journa
 import { settleSupplierBills } from "@/modules/accounts/supplier-settlement";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
+import { projectMaterialUsage } from "@/modules/materials/usage";
 import { assertPartyCanTransact, recordPartyActivity } from "@/modules/parties/party.service";
 import { money, ZERO } from "@/modules/production/costing";
 import {
@@ -304,7 +305,7 @@ type PayOutInput = {
 };
 
 /** Pays (part of) a bill: Dr Payable (supplier), Cr Cash / Bank / Wallet. */
-async function payBillTx(
+export async function payBillTx(
   tx: Tx,
   ctx: CompanyContext,
   billId: string,
@@ -423,10 +424,21 @@ export async function voidBill(
     await lockRow(tx, "SupplierBill", billId);
     const bill = await tx.supplierBill.findFirst({
       where: { id: billId, companyId },
-      include: { allocations: true, supplier: { select: { name: true } } },
+      include: {
+        allocations: true,
+        supplier: { select: { name: true } },
+        _count: { select: { items: true } },
+      },
     });
     if (!bill) throw new AppError("NOT_FOUND", "Supplier bill not found.");
     if (bill.status === "VOID") throw new AppError("CONFLICT", `${bill.number} is already void.`);
+    if (bill._count.items > 0) {
+      // Its goods are in the store: voiding has to take them back out (Raw materials).
+      throw new AppError(
+        "CONFLICT",
+        `${bill.number} is a raw material purchase; void it from Raw materials.`,
+      );
+    }
     const projectIds = [
       ...new Set(bill.allocations.flatMap((a) => (a.projectId ? [a.projectId] : []))),
     ];
@@ -497,6 +509,13 @@ export async function getBill(ctx: CompanyContext, billId: string) {
           expenseHead: { select: { id: true, name: true, category: true } },
         },
       },
+      // Raw material purchases: the goods, the store they went into and the order.
+      items: {
+        orderBy: { id: "asc" },
+        include: { rawMaterial: { select: { id: true, code: true, name: true, unit: true } } },
+      },
+      warehouse: { select: { id: true, name: true } },
+      purchaseOrder: { select: { id: true, number: true, status: true } },
       payments: {
         orderBy: [{ paymentDate: "asc" }, { id: "asc" }],
         select: {
@@ -536,6 +555,8 @@ export async function listBills(ctx: CompanyContext, raw: unknown = {}) {
         orderBy: { id: "asc" },
         select: { projectId: true, amount: true, project: { select: { code: true } } },
       },
+      // Raw material lines (purchases into the store) and project shares.
+      _count: { select: { items: true, allocations: true } },
     },
     orderBy: [{ billDate: "desc" }, { id: "desc" }],
     take: take + 1,
@@ -737,6 +758,12 @@ export async function getProjectCostSheet(ctx: CompanyContext, projectId: string
     },
   });
   const summary = await projectCostSummary(prisma, ctx.company.id, project.id);
+  // Raw materials issued from the store (and returned unused), at what they cost.
+  const materials = await projectMaterialUsage(prisma, ctx.company.id, project.id);
+  const materialNotes = await ctx.db.materialIssue.findMany({
+    where: { projectId: project.id },
+    include: { warehouse: { select: { id: true, name: true } } },
+  });
 
   const byHead = new Map<
     string,
@@ -787,6 +814,18 @@ export async function getProjectCostSheet(ctx: CompanyContext, projectId: string
       isVoid: Boolean(e.voidedAt),
       voidReason: e.voidReason,
     })),
+    ...materialNotes.map((n) => ({
+      kind: n.kind === "ISSUE" ? ("MATERIAL_ISSUE" as const) : ("MATERIAL_RETURN" as const),
+      id: n.id,
+      date: n.date,
+      number: n.number,
+      warehouse: n.warehouse,
+      receivedBy: n.receivedBy,
+      /** A return takes cost back out of the project. */
+      amount: n.kind === "ISSUE" ? n.totalValue : ZERO.minus(n.totalValue),
+      description: n.note,
+      isVoid: false,
+    })),
   ].sort((a, b) => a.date.getTime() - b.date.getTime() || a.number.localeCompare(b.number));
 
   const received = project.producedQtyA + project.producedQtyB;
@@ -800,6 +839,8 @@ export async function getProjectCostSheet(ctx: CompanyContext, projectId: string
         received > 0 ? summary.inStock.dividedBy(received).toDecimalPlaces(2) : null,
     },
     byHead: [...byHead.values()].sort((a, b) => b.amount.comparedTo(a.amount)),
+    /** Raw materials from the store, per material (issued less returned). */
+    byMaterial: materials.filter((m) => !m.netQuantity.isZero() || !m.netValue.isZero()),
     entries,
   };
 }

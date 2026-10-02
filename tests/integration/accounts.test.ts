@@ -1465,6 +1465,8 @@ run("profit and loss, balance sheet and trial balance", () => {
       "ENTRIES",
       "PARTY_LINES",
       "INVENTORY",
+      "RAW_MATERIALS",
+      "WORK_IN_PROGRESS",
       "FIXED_ASSETS",
       "DEPRECIATION",
       "CAPITAL",

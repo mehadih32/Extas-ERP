@@ -65,6 +65,25 @@ export const PERMISSIONS = [
     module: "INVENTORY",
     description: "Manage catalog, adjust stock and record bad stock",
   },
+  // Raw materials (fabric, trims, accessories, packaging)
+  {
+    key: "materials.view",
+    module: "INVENTORY",
+    description:
+      "View raw material stock, stock cards and purchase orders (prices need materials.purchase, production.manage or accounts.view)",
+  },
+  {
+    key: "materials.manage",
+    module: "INVENTORY",
+    description:
+      "Add raw materials, count stock, record wastage, move stock between stores, and issue to or take back from production",
+  },
+  {
+    key: "materials.purchase",
+    module: "INVENTORY",
+    description:
+      "Raise purchase orders, record material bills on credit (Due), return goods to suppliers and enter opening stock",
+  },
   // Production
   {
     key: "production.view",
@@ -217,6 +236,9 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<SystemRole, readonly PermissionKey
     "production.stock_intake",
     "inventory.view",
     "inventory.manage",
+    "materials.view",
+    "materials.manage",
+    "materials.purchase",
     "parties.view",
     "expenses.create",
     "reports.export",
@@ -242,6 +264,9 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<SystemRole, readonly PermissionKey
   WAREHOUSE_TEAM: [
     "inventory.view",
     "inventory.manage",
+    // The store keeps, counts and issues raw materials but does not buy them.
+    "materials.view",
+    "materials.manage",
     "sales.view",
     "sales.returns.qc",
     "production.view",
@@ -255,6 +280,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<SystemRole, readonly PermissionKey
     "dashboard.financials",
     "sales.view",
     "production.view",
+    "materials.view",
     "parties.view",
     "parties.ledger.view",
     "accounts.view",

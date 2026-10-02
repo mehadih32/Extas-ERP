@@ -14,6 +14,8 @@ import { money, ZERO } from "@/modules/production/costing";
  *   Bill paid / Cash-Bank cost Dr Payable (supplier) or WIP Cr Cash / Bank / Wallet
  *   Move to Stock (delivery)   Dr Finished Goods Inventory  Cr Work in Progress
  *   Write-off (cancel / close) Dr Production Losses         Cr Work in Progress
+ *   Materials issued (store)   Dr Work in Progress          Cr Raw Materials
+ *   Materials returned (store) Dr Raw Materials             Cr Work in Progress
  * A project's work in progress = its costs - what moved to stock - write-offs.
  */
 
@@ -24,6 +26,8 @@ export type ProjectCostSummary = {
   billCost: Prisma.Decimal;
   /** Costs paid straight from cash or bank (void ones excluded). */
   directCost: Prisma.Decimal;
+  /** Raw materials issued from the store, less what came back unused. */
+  materialCost: Prisma.Decimal;
   totalCost: Prisma.Decimal;
   /** Moved into stock by confirmed deliveries. */
   inStock: Prisma.Decimal;
@@ -35,6 +39,7 @@ export type ProjectCostSummary = {
 const emptySummary = (): ProjectCostSummary => ({
   billCost: ZERO,
   directCost: ZERO,
+  materialCost: ZERO,
   totalCost: ZERO,
   inStock: ZERO,
   writtenOff: ZERO,
@@ -62,6 +67,15 @@ export async function projectCostSummaries(
     where: { companyId, projectId: { in: ids }, voidedAt: null },
     _sum: { amount: true },
   });
+  const materials = await db.rawMaterialMovement.groupBy({
+    by: ["productionProjectId"],
+    where: {
+      companyId,
+      productionProjectId: { in: ids },
+      type: { in: ["ISSUE_TO_PRODUCTION", "RETURN_FROM_PRODUCTION"] },
+    },
+    _sum: { value: true },
+  });
   const intakes = await db.stockIntake.groupBy({
     by: ["projectId"],
     where: { companyId, projectId: { in: ids }, status: "CONFIRMED" },
@@ -83,12 +97,18 @@ export async function projectCostSummaries(
   for (const row of direct) {
     if (row.projectId) result.get(row.projectId)!.directCost = money(row._sum.amount ?? 0);
   }
+  for (const row of materials) {
+    // Issues take value out of the store (negative), returns bring it back.
+    if (row.productionProjectId) {
+      result.get(row.productionProjectId)!.materialCost = ZERO.minus(money(row._sum.value ?? 0));
+    }
+  }
   for (const row of intakes) {
     if (row.projectId) result.get(row.projectId)!.inStock = money(row._sum.totalCost ?? 0);
   }
   for (const row of writeOffs) result.get(row.projectId)!.writtenOff = money(row.amount);
   for (const s of result.values()) {
-    s.totalCost = s.billCost.plus(s.directCost);
+    s.totalCost = s.billCost.plus(s.directCost).plus(s.materialCost);
     s.wip = s.totalCost.minus(s.inStock).minus(s.writtenOff);
   }
   return result;

@@ -17,7 +17,10 @@ export type LockableTable =
   | "LeaveRequest"
   | "SalaryAdvance"
   | "PayrollRun"
-  | "PayrollPayment";
+  | "PayrollPayment"
+  | "RawMaterial"
+  | "PurchaseOrder"
+  | "PurchaseReturn";
 
 /**
  * Locks rows until the transaction ends (`SELECT ... FOR UPDATE`), so two people

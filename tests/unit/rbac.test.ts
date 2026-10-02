@@ -75,6 +75,25 @@ describe("permission catalogue", () => {
   });
 });
 
+describe("raw material permissions", () => {
+  const can = (role: SystemRole, key: string) =>
+    (DEFAULT_ROLE_PERMISSIONS[role] as readonly string[]).includes(key);
+
+  it("lets production buy materials and the store keep them, and Accounts see them", () => {
+    expect(can("PRODUCTION_MANAGER", "materials.purchase")).toBe(true);
+    expect(can("PRODUCTION_MANAGER", "materials.manage")).toBe(true);
+    // The store keeps, counts and issues materials but does not buy them.
+    expect(can("WAREHOUSE_TEAM", "materials.manage")).toBe(true);
+    expect(can("WAREHOUSE_TEAM", "materials.purchase")).toBe(false);
+    expect(can("ACCOUNTS", "materials.view")).toBe(true);
+    expect(can("ACCOUNTS", "materials.manage")).toBe(false);
+    for (const role of ["SALES_EXECUTIVE", "EMPLOYEE"] as const) {
+      expect(can(role, "materials.view")).toBe(false);
+      expect(can(role, "materials.purchase")).toBe(false);
+    }
+  });
+});
+
 describe("resolvePermissions", () => {
   it("gives Super Admin and the platform owner everything", () => {
     const all = ALL_PERMISSION_KEYS.length;

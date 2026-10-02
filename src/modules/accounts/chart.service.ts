@@ -64,7 +64,7 @@ export function manualPostingBlock(account: {
     case "INVENTORY":
       return "Stock value follows stock movements (opening stock, deliveries, sales, bad stock).";
     case "RAW_MATERIALS":
-      return "Raw material stock is kept by the raw materials module.";
+      return "Raw material stock is kept by the store: buy, issue, count or return materials there.";
     case "PENDING_RETURNS":
       return "Returns are kept by returns QC.";
     case "FIXED_ASSET":
@@ -111,6 +111,8 @@ function openingBalanceBlock(account: AccountRow): string | null {
         return "Set opening balances on each buyer or supplier instead.";
       case "INVENTORY":
         return "Enter opening stock in Inventory instead; its value reaches this account.";
+      case "RAW_MATERIALS":
+        return "Enter opening stock for each raw material instead; its value reaches this account.";
       case "FIXED_ASSET":
       case "ACCUMULATED_DEPRECIATION":
         return "Add the asset to the fixed asset register as already owned instead.";

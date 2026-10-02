@@ -54,6 +54,8 @@ model Company {
   legalName             String?
   // Letterhead / branding info used on every PDF & the blank letterhead pad
   logoUrl               String?
+  /// Uploaded logo (PNG or JPG) printed on the letterhead of every PDF.
+  logoFileId            String?  @unique
   address               String?
   phone                 String?
   email                 String?
@@ -76,7 +78,8 @@ model Company {
   sessions             Session[]
   roles                Role[]
   auditLogs            AuditLog[]
-  files                FileAsset[]
+  files                FileAsset[]               @relation("CompanyFiles")
+  logoFile             FileAsset?                @relation("CompanyLogo", fields: [logoFileId], references: [id], onDelete: SetNull)
   sequences            DocumentSequence[]
   customFields         CustomFieldDefinition[]
   categories           Category[]
@@ -312,8 +315,9 @@ model FileAsset {
   checksum     String?
   createdAt    DateTime @default(now())
 
-  company    Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  uploadedBy User?   @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+  company    Company  @relation("CompanyFiles", fields: [companyId], references: [id], onDelete: Cascade)
+  uploadedBy User?    @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+  logoOf     Company? @relation("CompanyLogo")
 
   stockIntakes        StockIntake[]
   complianceDocuments ComplianceDocument[]
@@ -2236,6 +2240,11 @@ model GeneratedDocument {
   periodTo      DateTime?
   sharedVia     MessageChannel[]
   sharedAt      DateTime?
+  /// SHA-256 of everything printed on it (and the logo): printing unchanged
+  /// content again reuses this copy instead of making a new file.
+  contentHash   String?
+  /// What was asked for (stock sheet styles / brand / warehouse, statement dates).
+  options       Json?
   generatedById String?
   createdAt     DateTime         @default(now())
 
@@ -2245,6 +2254,7 @@ model GeneratedDocument {
   file        FileAsset?        @relation(fields: [fileId], references: [id], onDelete: SetNull)
   generatedBy User?             @relation(fields: [generatedById], references: [id], onDelete: SetNull)
 
+  @@unique([companyId, contentHash])
   @@index([companyId, documentType, createdAt])
   @@index([referenceType, referenceId])
 }

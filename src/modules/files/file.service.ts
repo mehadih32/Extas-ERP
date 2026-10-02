@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { AppError } from "@/lib/errors";
@@ -11,8 +11,9 @@ import type { CompanyContext } from "@/modules/auth/context";
  * Uploaded files (packing-list photos, bill scans). Bytes live on disk under
  * UPLOAD_DIR/<companyId>/<year>/<month>/<random name>; the FileAsset row keeps
  * the original name, the type detected from the bytes and a SHA-256 checksum.
- * Files the app makes itself (saved reports) go under UPLOAD_DIR/<companyId>/
- * reports/<year>/<month>/, have no uploader and open through their own record.
+ * Files the app makes itself (saved reports, printed documents) go under
+ * UPLOAD_DIR/<companyId>/<reports|documents>/<year>/<month>/, have no uploader and
+ * open through their own record; the letterhead logo goes under logos/.
  */
 
 export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
@@ -148,7 +149,8 @@ export async function storeUpload(
 }
 
 /**
- * Saves a file the app made itself (a report) under UPLOAD_DIR/<companyId>/<folder>/...
+ * Saves a file the app made or checked itself (a report, a printed document, the
+ * logo) under UPLOAD_DIR/<companyId>/<folder>/...
  * The caller records the FileAsset with these details, and removes the bytes
  * again with deleteStoredFile when that fails.
  */
@@ -165,6 +167,16 @@ export async function writeGeneratedFile(
     sizeBytes: bytes.length,
     checksum: createHash("sha256").update(bytes).digest("hex"),
   };
+}
+
+/** Whether a stored file's bytes are still on disk. */
+export async function storedFileExists(asset: { storagePath: string }): Promise<boolean> {
+  try {
+    await access(absolutePath(asset.storagePath));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Removes a stored file's bytes (already gone is fine). */

@@ -181,6 +181,11 @@ export const PERMISSIONS = [
     module: "TEMPLATES",
     description: "Upload and map document templates",
   },
+  {
+    key: "documents.letterhead",
+    module: "TEMPLATES",
+    description: "Print the blank company letterhead pad",
+  },
   { key: "reports.export", module: "REPORTS", description: "Generate PDF / Excel reports" },
   { key: "notepad.use", module: "NOTEPAD", description: "Use the personal notepad and planner" },
   {
@@ -242,6 +247,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<SystemRole, readonly PermissionKey
     "parties.view",
     "expenses.create",
     "reports.export",
+    "documents.letterhead",
     "portal.self",
     "notepad.use",
     "reminders.manage",
@@ -257,6 +263,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<SystemRole, readonly PermissionKey
     "parties.manage",
     "parties.ledger.view",
     "expenses.create",
+    "documents.letterhead",
     "portal.self",
     "notepad.use",
     "reminders.manage",
@@ -295,6 +302,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<SystemRole, readonly PermissionKey
     "hr.payroll",
     "portal.self",
     "reports.export",
+    "documents.letterhead",
     "notepad.use",
   ],
 };

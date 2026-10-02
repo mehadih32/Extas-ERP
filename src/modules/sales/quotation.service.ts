@@ -293,6 +293,7 @@ export async function getQuotation(ctx: CompanyContext, quotationId: string) {
           phone: true,
           email: true,
           address: true,
+          taxId: true,
           grade: true,
           isVerified: true,
         },

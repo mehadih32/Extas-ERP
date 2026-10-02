@@ -665,16 +665,73 @@ Server Actions are in `src/server/actions/dashboard.actions.ts` and
 `src/server/actions/reports.actions.ts`. Marketing Sync (ad spend against sales, ROAS) comes
 later with the other outside integrations.
 
+## Printable documents (backend)
+
+Quotations, proforma and commercial invoices, delivery challans, buyer and supplier statements,
+stock availability sheets and a blank letterhead pad print as A4 PDFs on the company
+letterhead: the logo, name, legal name and contact details on top, the company colours, and
+the footer line with page numbers on every page. Everything on the page comes from the same
+data as the screens, with amounts in lakh and crore for taka and dates in the company's time
+zone.
+
+| Document             | What it shows                                                                                                               | Needs                  |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
+| Quotation            | Items with style, fabric and sizes, discount, VAT, the total in words, styling instructions, custom fields and terms        | `sales.view`           |
+| Proforma invoice     | The quotation's items and total, the advance with what is received and due, and payments; CANCELLED across a cancelled one  | `sales.view`           |
+| Commercial invoice   | Each SKU with pieces and price (a discount column only when used), delivery charge, VAT, paid and due; PAID or VOID marks   | `sales.view`           |
+| Delivery challan     | SKU, item, colour, size and pieces with the total, vehicle and driver, received by; no prices                               | `sales.view`           |
+| Statement of account | Opening balance, debits, credits and closing balance (Dr / Cr), then every transaction with the running balance, any period | `parties.ledger.view`  |
+| Stock availability   | Pieces ready to ship per colour and size for chosen styles or a whole brand, in one warehouse or all; no prices             | `inventory.view`       |
+| Blank letterhead     | The letterhead and footer on an empty page, for letters                                                                     | `documents.letterhead` |
+
+`documents.letterhead` is new: Sales Executives, Accounts and Production Managers have it by
+default (Super Admin has every permission). The stock sheet counts first-quality pieces less
+those set aside for orders, never below zero. A brand sheet leaves out styles with nothing to
+sell unless `includeEmpty` is set, and shows up to 100 styles.
+
+**Kept copies.** Every PDF is kept under `UPLOAD_DIR/<company>/documents/` (so it is part of the
+media backup) and listed with who made it and what for. Printing something that has not
+changed returns the kept copy (`reused: true`) instead of making a new file. When anything on
+it changed (a payment, a price, the logo), a new PDF is made and the earlier one stays as a
+record of what was sent. A kept file that went missing is made again. Making and downloading
+PDFs are recorded in the audit log, and a person can print up to 30 documents a minute.
+
+**Logo.** Upload a PNG or JPG of up to 2 MB and 3000 pixels a side (needs `company.settings`).
+It is checked thoroughly before it is kept, and every print makes sure the file is still the
+one that was checked, so a damaged image can never break a PDF. Replacing or removing it deletes the old file; PDFs made
+earlier keep the logo they had.
+
+The built-in PDF fonts cover English and Western European letters, so other scripts (such as
+Bengali) show as "?" on the page. Packing lists and payment receipts are not printable yet.
+
+| Endpoint                                                       | Purpose                                                                |
+| -------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `POST /api/documents`                                          | Print a document (see below); returns it with `reused`                 |
+| `GET /api/documents?type=&referenceId=&partyId=&cursor=&take=` | Printed documents this person may see, newest first                    |
+| `GET /api/documents/:id`                                       | One printed document                                                   |
+| `GET /api/documents/:id/download?inline=1`                     | The PDF (`inline=1` opens it in the browser to print)                  |
+| `GET/POST/DELETE /api/company/logo`                            | The letterhead logo: see it, upload it (multipart `file`) or remove it |
+
+What to print:
+
+- `{ type: "QUOTATION" | "PROFORMA_INVOICE" | "COMMERCIAL_INVOICE" | "DELIVERY_CHALLAN", id }`
+- `{ type: "LEDGER_STATEMENT", partyId, from?, to? }` (calendar days; none = the whole account)
+- `{ type: "STOCK_AVAILABILITY", styleIds?, brandId?, warehouseId?, includeEmpty? }`
+- `{ type: "LETTERHEAD" }`
+
+Server Actions are in `src/server/actions/documents.actions.ts`, with `uploadCompanyLogoAction`
+and `removeCompanyLogoAction` in `src/server/actions/company.actions.ts`.
+
 ## Backups (backend)
 
 Every day at 02:00 (Asia/Dhaka) the server backs up the whole platform, every company, into
 `BACKUP_DIR/<date_time>/`:
 
-| File            | What it holds                                                                     |
-| --------------- | --------------------------------------------------------------------------------- |
-| `database.dump` | The database (`pg_dump`, custom format)                                           |
-| `media.tar.gz`  | Stored files: logos, packing lists, bill scans, saved reports (can be turned off) |
-| `manifest.json` | Sizes and SHA-256 checksums of the files, and how to restore                      |
+| File            | What it holds                                                                                           |
+| --------------- | ------------------------------------------------------------------------------------------------------- |
+| `database.dump` | The database (`pg_dump`, custom format)                                                                 |
+| `media.tar.gz`  | Stored files: logos, packing lists, bill scans, saved reports and printed documents (can be turned off) |
+| `manifest.json` | Sizes and SHA-256 checksums of the files, and how to restore                                            |
 
 Each backup is also copied to a folder in the owner's Google Drive once it is connected.
 Backups older than the retention period (30 days by default) are deleted on the server and

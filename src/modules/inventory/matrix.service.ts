@@ -27,6 +27,19 @@ export function buildSku(styleCode: string, colorName: string, sizeName: string)
   return `${styleCode}-${colorSkuCode(colorName)}-${size}`;
 }
 
+type Axis = { id: string; name: string; sortOrder: number };
+
+/** A style's colours and sizes in display order (sort order, then name). */
+export function matrixAxes<C extends Axis, S extends Axis>(
+  variants: Array<{ color: C; size: S }>,
+): { colors: C[]; sizes: S[] } {
+  const byOrder = (a: Axis, b: Axis) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name);
+  return {
+    colors: [...new Map(variants.map((v) => [v.color.id, v.color])).values()].sort(byOrder),
+    sizes: [...new Map(variants.map((v) => [v.size.id, v.size])).values()].sort(byOrder),
+  };
+}
+
 async function getStyleOrThrow(ctx: CompanyContext, styleId: string) {
   const style = await ctx.db.style.findUnique({ where: { id: styleId } });
   if (!style) throw new AppError("NOT_FOUND", "Style not found.");
@@ -54,12 +67,7 @@ export async function getStyleMatrix(
   );
   const threshold = ctx.company.lowStockThreshold;
 
-  const colors = [...new Map(variants.map((v) => [v.color.id, v.color])).values()].sort(
-    (a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name),
-  );
-  const sizes = [...new Map(variants.map((v) => [v.size.id, v.size])).values()].sort(
-    (a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name),
-  );
+  const { colors, sizes } = matrixAxes(variants);
   const byCell = new Map(variants.map((v) => [`${v.colorId}:${v.sizeId}`, v]));
 
   const columnTotals = new Map(sizes.map((s) => [s.id, 0]));

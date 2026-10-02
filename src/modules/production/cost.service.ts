@@ -11,7 +11,7 @@ import { lockRow } from "@/lib/row-lock";
 import { cashAccountFor } from "@/modules/accounts/cash-accounts";
 import { ensureControlAccounts } from "@/modules/accounts/control-accounts";
 import { postJournalEntry, reverseJournalEntry } from "@/modules/accounts/journal.service";
-import { settleSupplierBills } from "@/modules/accounts/supplier-settlement";
+import { lockSupplierAccount, settleSupplierBills } from "@/modules/accounts/supplier-settlement";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { projectMaterialUsage } from "@/modules/materials/usage";
@@ -195,6 +195,8 @@ async function createBillTx(
 ) {
   const companyId = ctx.company.id;
   const { supplier, heads } = prepared;
+  // The supplier's account first, as for paying or voiding their bills.
+  await lockSupplierAccount(tx, companyId, supplier.id);
   const projects = await lockOpenProjects(
     tx,
     companyId,
@@ -314,6 +316,13 @@ export async function payBillTx(
 ) {
   assertCanPayOut(ctx);
   const companyId = ctx.company.id;
+  // The supplier's account before the bill, as every payment, void or return on a
+  // supplier's bills does, so two of them queue up instead of deadlocking.
+  const owner = await tx.supplierBill.findFirst({
+    where: { id: billId, companyId },
+    select: { supplierId: true },
+  });
+  if (owner) await lockSupplierAccount(tx, companyId, owner.supplierId);
   await lockRow(tx, "SupplierBill", billId);
   const bill = await tx.supplierBill.findFirst({
     where: { id: billId, companyId },
@@ -421,6 +430,12 @@ export async function voidBill(
   const { reason } = voidSchema.parse(raw);
   const companyId = ctx.company.id;
   await prisma.$transaction(async (tx) => {
+    // The supplier's account before the bill (see payBillTx).
+    const owner = await tx.supplierBill.findFirst({
+      where: { id: billId, companyId },
+      select: { supplierId: true },
+    });
+    if (owner) await lockSupplierAccount(tx, companyId, owner.supplierId);
     await lockRow(tx, "SupplierBill", billId);
     const bill = await tx.supplierBill.findFirst({
       where: { id: billId, companyId },

@@ -3,9 +3,9 @@ import type { Prisma, PurchaseOrderStatus } from "@prisma/client";
 import { dateColumn, dateOnly, localDay } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
 import { nextDocumentNumber } from "@/lib/numbering";
-import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
 import { lockRow } from "@/lib/row-lock";
+import { runTransaction } from "@/lib/transaction";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { assertCanBuyMaterials, costMask } from "@/modules/materials/access";
@@ -154,7 +154,7 @@ export async function createPurchaseOrder(ctx: CompanyContext, raw: unknown, met
     });
   }
   const { lines, total } = await prepareLines(ctx, input.lines);
-  const orderId = await prisma.$transaction(async (tx) => {
+  const orderId = await runTransaction(async (tx) => {
     const order = await tx.purchaseOrder.create({
       data: {
         companyId,
@@ -214,7 +214,7 @@ export async function updatePurchaseOrder(
   const companyId = ctx.company.id;
   if (input.projectId) await assertOpenProject(ctx, input.projectId);
   const prepared = input.lines ? await prepareLines(ctx, input.lines) : null;
-  await prisma.$transaction(async (tx) => {
+  await runTransaction(async (tx) => {
     const order = await lockOrder(tx, companyId, orderId);
     if (!OPEN_ORDER.includes(order.status)) {
       throw new AppError(
@@ -281,7 +281,7 @@ export async function cancelPurchaseOrder(
 ) {
   const { reason } = closeOrderSchema.parse(raw);
   assertCanBuyMaterials(ctx);
-  await prisma.$transaction(async (tx) => {
+  await runTransaction(async (tx) => {
     const order = await lockOrder(tx, ctx.company.id, orderId);
     if (order.status !== "OPEN" || order.lines.some((l) => l.receivedQty.gt(0))) {
       throw new AppError(
@@ -319,7 +319,7 @@ export async function closePurchaseOrder(
 ) {
   const { reason } = closeOrderSchema.parse(raw);
   assertCanBuyMaterials(ctx);
-  await prisma.$transaction(async (tx) => {
+  await runTransaction(async (tx) => {
     const order = await lockOrder(tx, ctx.company.id, orderId);
     if (order.status !== "PARTIALLY_RECEIVED") {
       throw new AppError(

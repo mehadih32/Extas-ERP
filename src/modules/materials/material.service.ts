@@ -6,6 +6,7 @@ import { dateColumn, dateOnly, dayRange, localDay } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
+import { runTransaction } from "@/lib/transaction";
 import { ensureControlAccounts } from "@/modules/accounts/control-accounts";
 import { type JournalLineInput, postJournalEntry } from "@/modules/accounts/journal.service";
 import { auditInCompany } from "@/modules/audit/audit.service";
@@ -162,7 +163,7 @@ export async function createMaterial(ctx: CompanyContext, raw: unknown, meta?: R
   if (reorderLevel) {
     assertUnitFits({ code: input.name, unit: input.unit }, reorderLevel, "reorderLevel");
   }
-  const material = await prisma.$transaction(async (tx) => {
+  const material = await runTransaction(async (tx) => {
     await lockMaterialCodes(tx, companyId);
     if (input.code) await assertCodeFree(tx, companyId, input.code);
     const created = await tx.rawMaterial.create({
@@ -205,7 +206,7 @@ export async function updateMaterial(
   assertCanEditCatalogue(ctx);
   const companyId = ctx.company.id;
   if (input.supplierId) await assertSupplier(ctx, input.supplierId);
-  await prisma.$transaction(async (tx) => {
+  await runTransaction(async (tx) => {
     if (input.code) await lockMaterialCodes(tx, companyId);
     const m = (await lockMaterials(tx, companyId, [materialId])).get(materialId)!;
     if (input.code && input.code !== m.code) await assertCodeFree(tx, companyId, input.code, m.id);
@@ -580,7 +581,7 @@ export async function addOpeningStock(
   const quantity = qty(input.quantity);
   const price = unitCost(input.unitCost);
   const value = money(quantity.times(price));
-  await prisma.$transaction(async (tx) => {
+  await runTransaction(async (tx) => {
     const state = await lockMaterials(tx, companyId, [materialId]);
     const m = state.get(materialId)!;
     if (!m.isActive) throw new AppError("CONFLICT", `${materialLabel(m)} is archived.`);
@@ -639,7 +640,7 @@ export async function countStock(
   const store = await resolveStore(ctx, input.warehouseId);
   const date = documentDate(ctx, input.date);
   const counted = qty(input.countedQuantity);
-  await prisma.$transaction(async (tx) => {
+  await runTransaction(async (tx) => {
     const state = await lockMaterials(tx, companyId, [materialId]);
     const m = state.get(materialId)!;
     assertUnitFits(m, counted, "countedQuantity");
@@ -720,7 +721,7 @@ export async function recordWastage(
   const store = await resolveStore(ctx, input.warehouseId);
   const date = documentDate(ctx, input.date);
   const quantity = qty(input.quantity);
-  await prisma.$transaction(async (tx) => {
+  await runTransaction(async (tx) => {
     const state = await lockMaterials(tx, companyId, [materialId]);
     const m = state.get(materialId)!;
     assertUnitFits(m, quantity);
@@ -774,7 +775,7 @@ export async function transferStock(
   const to = await resolveStore(ctx, input.toWarehouseId);
   const date = documentDate(ctx, input.date);
   const quantity = qty(input.quantity);
-  await prisma.$transaction(async (tx) => {
+  await runTransaction(async (tx) => {
     const m = (await lockMaterials(tx, companyId, [materialId])).get(materialId)!;
     assertUnitFits(m, quantity);
     await takeFromStore(tx, m, from.id, quantity);

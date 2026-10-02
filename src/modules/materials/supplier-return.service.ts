@@ -3,16 +3,16 @@ import type { Prisma } from "@prisma/client";
 import { dayRange } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
 import { nextDocumentNumber } from "@/lib/numbering";
-import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
 import { lockRow } from "@/lib/row-lock";
+import { runTransaction } from "@/lib/transaction";
 import { ensureControlAccounts } from "@/modules/accounts/control-accounts";
 import {
   type JournalLineInput,
   postJournalEntry,
   reverseJournalEntry,
 } from "@/modules/accounts/journal.service";
-import { settleSupplierBills } from "@/modules/accounts/supplier-settlement";
+import { lockSupplierAccount, settleSupplierBills } from "@/modules/accounts/supplier-settlement";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { assertAnyPermission, assertCanSeeMaterialCosts } from "@/modules/materials/access";
@@ -33,7 +33,7 @@ import {
   stockIn,
   stockOut,
 } from "@/modules/materials/stock";
-import { formatQuantity, money, qty, ZERO } from "@/modules/materials/valuation";
+import { formatQuantity, qty, valueOut, ZERO } from "@/modules/materials/valuation";
 import { recordPartyActivity } from "@/modules/parties/party.service";
 
 /*
@@ -60,13 +60,15 @@ export async function createSupplierReturn(ctx: CompanyContext, raw: unknown, me
   const companyId = ctx.company.id;
   const found = await ctx.db.supplierBill.findFirst({
     where: { id: input.billId, items: { some: {} } },
-    select: { id: true, warehouseId: true },
+    select: { id: true, supplierId: true, warehouseId: true },
   });
   if (!found) throw new AppError("NOT_FOUND", "Material purchase not found.");
   const store = await resolveStore(ctx, input.warehouseId ?? found.warehouseId);
   const date = documentDate(ctx, input.date);
 
-  const returnId = await prisma.$transaction(async (tx) => {
+  const returnId = await runTransaction(async (tx) => {
+    // Same order as a purchase: the supplier's account, the bill, then the materials.
+    await lockSupplierAccount(tx, companyId, found.supplierId);
     await lockRow(tx, "SupplierBill", found.id);
     const bill = await tx.supplierBill.findFirstOrThrow({
       where: { id: found.id, companyId },
@@ -106,10 +108,12 @@ export async function createSupplierReturn(ctx: CompanyContext, raw: unknown, me
           { [`lines.${i}.quantity`]: [`At most ${left.toString()}`] },
         );
       }
-      // The last of a line takes what is left of its amount, so the line returns in full.
-      const amount = quantity.equals(left)
-        ? item.amount.minus(returnedAmount)
-        : money(quantity.times(item.unitPrice));
+      // Priced from what is left of the line, so its returns add up to its amount
+      // exactly (never more, whatever the rounding) and the last of it takes the rest.
+      const amount = valueOut(
+        { quantity: left, value: item.amount.minus(returnedAmount) },
+        quantity,
+      );
       return { item, quantity, amount };
     });
 
@@ -244,11 +248,12 @@ export async function voidSupplierReturn(
   const companyId = ctx.company.id;
   const found = await ctx.db.purchaseReturn.findUnique({
     where: { id: returnId },
-    select: { billId: true },
+    select: { billId: true, supplierId: true },
   });
   if (!found) throw new AppError("NOT_FOUND", "Supplier return not found.");
-  await prisma.$transaction(async (tx) => {
-    // The bill first, like a new return from it.
+  await runTransaction(async (tx) => {
+    // Like a new return: the supplier's account, the bill, the return, the materials.
+    await lockSupplierAccount(tx, companyId, found.supplierId);
     await lockRow(tx, "SupplierBill", found.billId);
     await lockRow(tx, "PurchaseReturn", returnId);
     const ret = await tx.purchaseReturn.findFirstOrThrow({

@@ -3,13 +3,13 @@ import type { Prisma } from "@prisma/client";
 import { dayRange, toInstant } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
 import { nextDocumentNumber } from "@/lib/numbering";
-import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
 import { lockRow } from "@/lib/row-lock";
+import { runTransaction } from "@/lib/transaction";
 import { ensureControlAccounts } from "@/modules/accounts/control-accounts";
 import { assertCanPayMoney } from "@/modules/accounts/money-guards";
 import { postJournalEntry, reverseJournalEntry } from "@/modules/accounts/journal.service";
-import { settleSupplierBills } from "@/modules/accounts/supplier-settlement";
+import { lockSupplierAccount, settleSupplierBills } from "@/modules/accounts/supplier-settlement";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { assertAnyPermission, assertCanSeeMaterialCosts } from "@/modules/materials/access";
@@ -136,7 +136,10 @@ export async function createPurchase(ctx: CompanyContext, raw: unknown, meta?: R
   }
   const billDate = documentDate(ctx, input.billDate);
 
-  const billId = await prisma.$transaction(async (tx) => {
+  const billId = await runTransaction(async (tx) => {
+    // Lock order for purchases, voids and returns: the supplier's account, the
+    // purchase order, the bill, then the materials.
+    await lockSupplierAccount(tx, companyId, supplier.id);
     if (order) {
       await lockRow(tx, "PurchaseOrder", order.id);
       const { status } = await tx.purchaseOrder.findUniqueOrThrow({
@@ -262,7 +265,7 @@ export async function payPurchase(
   const input = payBillSchema.parse(raw);
   assertCanPayMoney(ctx);
   await assertPurchase(ctx, billId);
-  await prisma.$transaction(
+  await runTransaction(
     (tx) =>
       payBillTx(
         tx,
@@ -301,8 +304,10 @@ export async function voidPurchase(
   );
   const companyId = ctx.company.id;
   const found = await assertPurchase(ctx, billId);
-  await prisma.$transaction(async (tx) => {
-    // Same order as receiving: the purchase order, then the bill, then the materials.
+  await runTransaction(async (tx) => {
+    // Same order as receiving: the supplier's account, the purchase order, the bill,
+    // then the materials.
+    await lockSupplierAccount(tx, companyId, found.supplierId);
     if (found.purchaseOrderId) await lockRow(tx, "PurchaseOrder", found.purchaseOrderId);
     await lockRow(tx, "SupplierBill", billId);
     const bill = await tx.supplierBill.findFirstOrThrow({

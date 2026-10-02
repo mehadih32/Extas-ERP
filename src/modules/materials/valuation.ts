@@ -58,6 +58,7 @@ export function removeAtValue(
   if (quantity.gt(holding.quantity)) {
     throw new RangeError(`Only ${holding.quantity.toString()} is on hand.`);
   }
+  if (target.isNegative()) throw new RangeError("Goods cannot go back at less than nothing.");
   const removed = quantity.equals(holding.quantity)
     ? holding.value
     : Prisma.Decimal.min(target, holding.value);

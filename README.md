@@ -499,8 +499,9 @@ are counted whole) and, optionally, a color, a specification (e.g. 180 GSM singl
 the usual supplier and a reorder level. A material is low on stock at or below its reorder
 level. Stock is kept per store (the same warehouses as finished goods) and valued for the
 whole company at moving average cost, to the paisa: the last unit out takes whatever value
-is left. A material's unit cannot change once it has been ordered, bought or moved, and it
-is archived only when none is left and nothing is still on order.
+is left. A material's unit cannot change once it has been ordered, bought or moved. It is
+archived only when none is left and nothing is still on order, and no stock comes into it
+until it is made active again.
 
 **Purchase orders.** A purchase order (PO-) books fabric or trims with a supplier, for a
 production project if wanted, with the day the goods are expected. Nothing reaches the books
@@ -575,12 +576,18 @@ Accounts (`accounts.manage`) can also void bills, send goods back and enter open
 default Production Managers hold all three `materials.*` permissions, the Warehouse Team
 views and keeps the store but does not buy, and Accounts views; only Accounts and Super Admin
 move money. Bills and returns, and prices and values everywhere, are shown only to holders of
-`materials.purchase`, `production.manage`, `accounts.view` or `accounts.payments.record`, so
-the store team sees quantities. The books check compares the Raw Materials ledger with the
+`materials.purchase`, `production.manage`, `accounts.view`, `accounts.manage` or
+`accounts.payments.record`, so the store team sees quantities. The books check compares the Raw Materials ledger with the
 stock value, material by material and against each stock card, and the Work in Progress
 ledger with the projects; the Accounts overview shows raw material stock, low stock, open and
 late purchase orders and work in progress. Server Actions are in
 `src/server/actions/materials.actions.ts`.
+
+Everything that adds, pays, voids or returns goods on a supplier's bills (here and in
+Production) first locks that supplier's account (`lockSupplierAccount`), so two people working
+on one supplier at once queue up instead of blocking each other. Raw material changes also
+run again automatically if the database ever cancels one to break such a conflict
+(`runTransaction` in `src/lib/transaction.ts`).
 
 ## Backups (backend)
 

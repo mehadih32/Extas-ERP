@@ -227,6 +227,13 @@ export async function stockIn(
   if (args.quantity.lte(0) || value.isNegative()) {
     throw new AppError("INTERNAL", "Stock comes in as a positive quantity and value.");
   }
+  // Checked under the lock, so archiving and stock coming in never cross.
+  if (!m.isActive) {
+    throw new AppError(
+      "CONFLICT",
+      `${materialLabel(m)} is archived; make it active again before stock comes in.`,
+    );
+  }
   await putIntoStore(tx, args.companyId, m.id, args.warehouseId, args.quantity);
   const updated = await saveMaterial(
     tx,

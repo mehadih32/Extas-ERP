@@ -10,6 +10,8 @@ import type { PermissionKey } from "@/modules/rbac/permissions";
  *   materials.purchase  buying: purchase orders, bills on credit (Due), returns
  *                       to suppliers, opening stock
  *   accounts.payments.record  money paid out (purchases paid now, paying bills)
+ *   accounts.manage           voiding purchases and returns, sending goods back,
+ *                             opening stock (Accounts)
  * Prices and values are shown to buyers, Production Managers and Accounts only.
  */
 
@@ -18,6 +20,7 @@ export function canSeeMaterialCosts(ctx: CompanyContext) {
     ctx.can("materials.purchase") ||
     ctx.can("production.manage") ||
     ctx.can("accounts.view") ||
+    ctx.can("accounts.manage") ||
     ctx.can("accounts.payments.record")
   );
 }

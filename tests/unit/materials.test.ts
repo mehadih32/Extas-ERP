@@ -1,6 +1,8 @@
 import { Prisma } from "@prisma/client";
 import { describe, expect, it } from "vitest";
 
+import type { CompanyContext } from "@/modules/auth/context";
+import { canSeeMaterialCosts } from "@/modules/materials/access";
 import {
   averageCost,
   costPerUnit,
@@ -61,6 +63,8 @@ describe("moving average valuation", () => {
       removed: d(2000),
       difference: d(-1000),
     });
+    // Nothing goes back at less than nothing, which would add value to the stock.
+    expect(() => removeAtValue(holding(100, 2000), d(1), d(-0.01))).toThrow(RangeError);
   });
 
   it("works out average and unit costs", () => {
@@ -111,5 +115,23 @@ describe("purchase order status", () => {
   it("never shows less than nothing still to come", () => {
     expect(pendingQuantity(line(100, 40)).toString()).toBe("60");
     expect(pendingQuantity(line(100, 104.5)).toString()).toBe("0");
+  });
+});
+
+describe("material prices", () => {
+  const withPermissions = (...keys: string[]) =>
+    ({ can: (key: string) => keys.includes(key) }) as unknown as CompanyContext;
+
+  it("are shown to buyers, Production Managers and Accounts, not to the store", () => {
+    expect(canSeeMaterialCosts(withPermissions("materials.view", "materials.manage"))).toBe(false);
+    for (const key of [
+      "materials.purchase",
+      "production.manage",
+      "accounts.view",
+      "accounts.manage",
+      "accounts.payments.record",
+    ]) {
+      expect(canSeeMaterialCosts(withPermissions(key))).toBe(true);
+    }
   });
 });

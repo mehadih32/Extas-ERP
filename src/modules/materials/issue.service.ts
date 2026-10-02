@@ -5,6 +5,7 @@ import { AppError } from "@/lib/errors";
 import { nextDocumentNumber } from "@/lib/numbering";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
+import { runTransaction } from "@/lib/transaction";
 import { ensureControlAccounts } from "@/modules/accounts/control-accounts";
 import { postJournalEntry } from "@/modules/accounts/journal.service";
 import { auditInCompany } from "@/modules/audit/audit.service";
@@ -68,7 +69,7 @@ export async function issueToProduction(ctx: CompanyContext, raw: unknown, meta?
   const store = await resolveStore(ctx, input.warehouseId);
   const { date, lines } = prepare(ctx, input);
 
-  const issueId = await prisma.$transaction(async (tx) => {
+  const issueId = await runTransaction(async (tx) => {
     const project = (
       await lockOpenProjects(
         tx,
@@ -174,7 +175,7 @@ export async function returnFromProduction(ctx: CompanyContext, raw: unknown, me
   const store = await resolveStore(ctx, input.warehouseId);
   const { date, lines } = prepare(ctx, input);
 
-  const issueId = await prisma.$transaction(async (tx) => {
+  const issueId = await runTransaction(async (tx) => {
     const project = (
       await lockOpenProjects(
         tx,

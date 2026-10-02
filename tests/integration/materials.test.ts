@@ -801,6 +801,148 @@ run("raw materials", () => {
     await expectBooksOk(env);
   });
 
+  it("prices goods sent back a few at a time so they never come to more than the bill line", async () => {
+    const env = await setup();
+    // Other buttons in stock, so each return goes out at its bill price.
+    await purchases.createPurchase(env.pm, {
+      supplierId: env.trims.id,
+      paymentType: "DUE",
+      items: [{ materialId: env.buttons.id, quantity: 100, unitPrice: 1 }],
+    });
+    // 7 buttons at 0.015 come to 0.11; one at a time each would round up to 0.02.
+    const small = await purchases.createPurchase(env.pm, {
+      supplierId: env.trims.id,
+      paymentType: "DUE",
+      items: [{ materialId: env.buttons.id, quantity: 7, unitPrice: 0.015 }],
+    });
+    expect(small.totalAmount.toFixed(2)).toBe("0.11");
+    const credited: string[] = [];
+    for (let i = 0; i < 7; i += 1) {
+      const note = await returns.createSupplierReturn(env.pm, {
+        billId: small.id,
+        reason: "Broken buttons",
+        lines: [{ billItemId: small.items[0]!.id, quantity: 1 }],
+      });
+      credited.push(note.totalAmount.toFixed(2));
+    }
+    expect(credited).toEqual(["0.02", "0.02", "0.01", "0.02", "0.01", "0.02", "0.01"]);
+    expect(pair(await materials.getMaterial(env.pm, env.buttons.id))).toEqual(["100", "100.00"]);
+
+    // 10.001 m at 2.501 come to 25.01; 5 m at that price alone would be 12.51 twice.
+    await buy(env, [{ materialId: env.fabric.id, quantity: 50, unitPrice: 3 }]);
+    const cut = await buy(env, [{ materialId: env.fabric.id, quantity: 10.001, unitPrice: 2.501 }]);
+    const sentBack: string[] = [];
+    for (const quantity of [5, 5, 0.001]) {
+      const note = await returns.createSupplierReturn(env.pm, {
+        billId: cut.id,
+        reason: "Wrong shade",
+        lines: [{ billItemId: cut.items[0]!.id, quantity }],
+      });
+      sentBack.push(note.totalAmount.toFixed(2));
+    }
+    expect(sentBack).toEqual(["12.50", "12.51", "0.00"]);
+    expect(pair(await materials.getMaterial(env.pm, env.fabric.id))).toEqual(["50", "150.00"]);
+    expect(await balance(env, "PAYABLE")).toBe("250.00");
+    await expectBooksOk(env);
+  });
+
+  it("keeps stock out of archived materials until they are made active again", async () => {
+    const env = await setup();
+    await buy(env, [{ materialId: env.rib.id, quantity: 50, unitPrice: 10 }]);
+    await issues.issueToProduction(env.store, {
+      projectId: env.project.id,
+      lines: [{ materialId: env.rib.id, quantity: 50 }],
+    });
+    await materials.updateMaterial(env.pm, env.rib.id, { isActive: false });
+    const comeBack = {
+      projectId: env.project.id,
+      lines: [{ materialId: env.rib.id, quantity: 5 }],
+    };
+    await expectAppError(issues.returnFromProduction(env.store, comeBack), "CONFLICT");
+    await expectAppError(
+      materials.countStock(env.store, env.rib.id, { countedQuantity: 3 }),
+      "CONFLICT",
+    );
+    await materials.updateMaterial(env.pm, env.rib.id, { isActive: true });
+    await issues.returnFromProduction(env.store, comeBack);
+    expect(pair(await materials.getMaterial(env.pm, env.rib.id))).toEqual(["5", "50.00"]);
+
+    // Goods sent back to the supplier do not come back into an archived material either.
+    const cones = await purchases.createPurchase(env.pm, {
+      supplierId: env.trims.id,
+      paymentType: "DUE",
+      items: [{ materialId: env.thread.id, quantity: 10, unitPrice: 95 }],
+    });
+    const note = await returns.createSupplierReturn(env.pm, {
+      billId: cones.id,
+      reason: "Wrong count",
+      lines: [{ billItemId: cones.items[0]!.id, quantity: 10 }],
+    });
+    await materials.updateMaterial(env.pm, env.thread.id, { isActive: false });
+    await expectAppError(
+      returns.voidSupplierReturn(env.pm, note.id, { reason: "Supplier refused them" }),
+      "CONFLICT",
+    );
+    await materials.updateMaterial(env.pm, env.thread.id, { isActive: true });
+    await returns.voidSupplierReturn(env.pm, note.id, { reason: "Supplier refused them" });
+    expect(pair(await materials.getMaterial(env.pm, env.thread.id))).toEqual(["10", "950.00"]);
+    await expectBooksOk(env);
+  });
+
+  it("keeps a supplier's account right when several people work on it at once", async () => {
+    const env = await setup();
+    const fabricAndRib = [
+      { materialId: env.fabric.id, quantity: 100, unitPrice: 150 },
+      { materialId: env.rib.id, quantity: 50, unitPrice: 300 },
+    ];
+    const first = await buy(env, fabricAndRib);
+    const second = await buy(env, [...fabricAndRib].reverse());
+    const lineOf = (bill: typeof first, materialId: string) =>
+      bill.items.find((i) => i.rawMaterial.id === materialId)!.id;
+    // The mill also knits for the project: production bills on the same account.
+    const heads = new Map((await costs.listCostHeads(env.pm)).map((h) => [h.name, h.id]));
+    const knitting = (amount: number) =>
+      costs.createBill(env.pm, {
+        supplierId: env.mill.id,
+        paymentType: "DUE",
+        allocations: [{ projectId: env.project.id, expenseHeadId: heads.get("Fabric")!, amount }],
+      });
+    const knit = await knitting(5000);
+    const twice = await knitting(2000);
+    // Buying, returning, paying and voiding on the same supplier's bills, all at once.
+    const results = await Promise.allSettled([
+      knitting(1000),
+      costs.payBill(env.accounts, knit.id, { amount: 500, method: "CASH" }),
+      costs.voidBill(env.pm, twice.id, { reason: "Entered twice" }),
+      buy(env, [{ materialId: env.fabric.id, quantity: 10, unitPrice: 150 }]),
+      buy(env, [
+        { materialId: env.rib.id, quantity: 5, unitPrice: 300 },
+        { materialId: env.fabric.id, quantity: 10, unitPrice: 150 },
+      ]),
+      returns.createSupplierReturn(env.pm, {
+        billId: first.id,
+        reason: "Holes in two rolls",
+        lines: [{ billItemId: lineOf(first, env.fabric.id), quantity: 5 }],
+      }),
+      returns.createSupplierReturn(env.pm, {
+        billId: second.id,
+        reason: "Rib lot off shade",
+        lines: [
+          { billItemId: lineOf(second, env.rib.id), quantity: 5 },
+          { billItemId: lineOf(second, env.fabric.id), quantity: 5 },
+        ],
+      }),
+      purchases.payPurchase(env.accounts, first.id, { amount: 1000, method: "CASH" }),
+      purchases.payPurchase(env.accounts, second.id, { amount: 1000, method: "CASH" }),
+    ]);
+    expect(results.filter((r) => r.status === "rejected")).toEqual([]);
+    // Materials: 64,500 bought, 3,000 sent back, 2,000 paid. Knitting: 6,000 billed, 500 paid.
+    expect(await balance(env, "PAYABLE")).toBe("65000.00");
+    expect(await balance(env, "RAW_MATERIALS")).toBe("61500.00");
+    expect(await balance(env, "CASH")).toBe("-2500.00");
+    await expectBooksOk(env);
+  });
+
   it("edits, closes and cancels purchase orders and flags late deliveries", async () => {
     const env = await setup();
     const buttons = [{ materialId: env.buttons.id, quantity: 5000, unitPrice: 1.1 }];

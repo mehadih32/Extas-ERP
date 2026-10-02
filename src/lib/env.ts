@@ -16,6 +16,15 @@ const serverEnvSchema = z.object({
   AUTH_SECRET: z.string().optional(),
   ENCRYPTION_KEY: z.string().optional(),
   UPLOAD_DIR: z.string().default("./storage/uploads"),
+  BACKUP_DIR: z.string().default("./storage/backups"),
+  PG_DUMP_PATH: z.string().default("pg_dump"),
+  /** Daily backup clock; on by default in production (empty = default). */
+  BACKUP_SCHEDULER: z.preprocess(
+    (v) => (v === "" ? undefined : v),
+    z.enum(["on", "off"]).optional(),
+  ),
+  GOOGLE_DRIVE_CLIENT_ID: z.string().optional(),
+  GOOGLE_DRIVE_CLIENT_SECRET: z.string().optional(),
 });
 
 export type ServerEnv = z.infer<typeof serverEnvSchema>;

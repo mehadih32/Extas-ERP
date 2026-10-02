@@ -102,20 +102,28 @@ export const PERMISSIONS = [
   {
     key: "accounts.manage",
     module: "ACCOUNTS",
-    description: "Post journal entries, write-offs, assets and capital",
+    description: "Journal vouchers, chart of accounts, bank accounts, fixed assets and capital",
   },
   {
     key: "accounts.receipts.record",
     module: "ACCOUNTS",
-    description: "Record money received from buyers (payments and advances)",
+    description: "Record money received (buyer payments and advances, capital, loans, asset sales)",
   },
   {
     key: "accounts.payments.record",
     module: "ACCOUNTS",
-    description: "Pay suppliers and record costs paid in cash or bank",
+    description: "Record money paid out (suppliers, expense claims, loan installments, transfers)",
   },
-  { key: "expenses.create", module: "EXPENSES", description: "Record expenses and conveyance" },
-  { key: "expenses.manage", module: "EXPENSES", description: "Edit or delete any expense" },
+  {
+    key: "expenses.create",
+    module: "EXPENSES",
+    description: "Record expenses and conveyance (cash ones wait for Accounts to pay them)",
+  },
+  {
+    key: "expenses.manage",
+    module: "EXPENSES",
+    description: "See, edit and void any expense; manage expense heads",
+  },
   // HR
   { key: "hr.view", module: "HR", description: "View employee profiles" },
   { key: "hr.manage", module: "HR", description: "Manage employees, leave and salary advances" },
@@ -143,7 +151,11 @@ export const PERMISSIONS = [
     module: "REMINDERS",
     description: "Create tasks and WhatsApp / email reminders",
   },
-  { key: "backups.manage", module: "BACKUPS", description: "Run and download backups" },
+  {
+    key: "backups.manage",
+    module: "BACKUPS",
+    description: "Backups (platform owner only: a backup holds every company)",
+  },
 ] as const satisfies ReadonlyArray<{ key: string; module: AppModule; description: string }>;
 
 export type PermissionKey = (typeof PERMISSIONS)[number]["key"];

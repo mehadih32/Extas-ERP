@@ -11,6 +11,7 @@ import { lockRow } from "@/lib/row-lock";
 import { cashAccountFor } from "@/modules/accounts/cash-accounts";
 import { ensureControlAccounts } from "@/modules/accounts/control-accounts";
 import { postJournalEntry, reverseJournalEntry } from "@/modules/accounts/journal.service";
+import { settleSupplierBills } from "@/modules/accounts/supplier-settlement";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { assertPartyCanTransact, recordPartyActivity } from "@/modules/parties/party.service";
@@ -276,6 +277,8 @@ async function createBillTx(
       meta,
     );
   }
+  // An advance already paid to the supplier settles a Due bill straight away.
+  await settleSupplierBills(tx, companyId, supplier.id);
   await recordPartyActivity(supplier.id, billDate, tx);
   return bill.id;
 }
@@ -359,6 +362,7 @@ async function payBillTx(
     where: { id: bill.id },
     data: { paidAmount: paid, dueAmount: due, status: due.lte(0) ? "PAID" : "PARTIALLY_PAID" },
   });
+  await settleSupplierBills(tx, companyId, bill.supplierId);
   await recordPartyActivity(bill.supplierId, paymentDate, tx);
   await auditInCompany(
     ctx,
@@ -458,6 +462,8 @@ export async function voidBill(
       where: { id: bill.id },
       data: { status: "VOID", paidAmount: 0, dueAmount: 0 },
     });
+    // What was paid on it now settles the supplier's other open bills.
+    await settleSupplierBills(tx, companyId, bill.supplierId);
     await refreshProjectCosts(tx, companyId, projectIds);
     await auditInCompany(
       ctx,

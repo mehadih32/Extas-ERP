@@ -4,8 +4,9 @@
  *   2. the companies (default: "Extras" and "Fabric Apparel") with the built-in roles
  *      (Super Admin, Production Manager, Sales Executive, Warehouse Team, Employee, Accounts),
  *   3. the platform owner account, as Super Admin of every seeded company,
- *   4. per company: the default size run (S to 3XL), a "Main Warehouse", the control
- *      ledger accounts and the default production cost heads (Fabric, Sewing (CM)...).
+ *   4. per company: the default size run (S to 3XL), a "Main Warehouse", the chart of
+ *      accounts, the default expense heads (Office Rent, Conveyance, Bank Charges...)
+ *      and the default production cost heads (Fabric, Sewing (CM)...).
  *
  * Safe to run repeatedly. Usage: `npm run db:seed`
  *   SEED_ADMIN_EMAIL     owner email (required)
@@ -16,7 +17,7 @@
 import { generateTemporaryPassword, hashPassword } from "../src/lib/auth/password";
 import { prisma } from "../src/lib/prisma";
 import { slugify } from "../src/lib/slug";
-import { ensureControlAccounts } from "../src/modules/accounts/control-accounts";
+import { ensureAccountsSetup } from "../src/modules/accounts/setup";
 import { DEFAULT_SIZES } from "../src/modules/inventory/catalog.service";
 import { DEFAULT_WAREHOUSE_NAME } from "../src/modules/inventory/stock.service";
 import { ensureProductionCostHeads } from "../src/modules/production/cost.service";
@@ -78,10 +79,10 @@ async function main() {
       create: { companyId: company.id, name: DEFAULT_WAREHOUSE_NAME, isDefault: true },
       update: {},
     });
-    await ensureControlAccounts(company.id);
+    await ensureAccountsSetup(company.id);
     await ensureProductionCostHeads(company.id);
     console.log(
-      `✓ Company "${name}" ready with built-in roles, sizes, warehouse, ledger accounts and cost heads`,
+      `✓ Company "${name}" ready with built-in roles, sizes, warehouse, chart of accounts, expense and cost heads`,
     );
   }
 

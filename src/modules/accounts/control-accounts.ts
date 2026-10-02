@@ -4,9 +4,10 @@ import type { Db } from "@/lib/db-types";
 import { prisma } from "@/lib/prisma";
 
 /**
- * The few ledger accounts other modules post to before the full Accounts module
- * (chart of accounts) exists. Codes follow a simple 4-digit chart:
- * 1xxx assets, 2xxx liabilities, 3xxx equity, 4xxx income, 5xxx+ expenses.
+ * The ledger accounts the code posts to by name. Every company gets them on first
+ * use. Codes follow a simple 4-digit chart: 1xxx assets, 2xxx liabilities,
+ * 3xxx equity, 4xxx income, 5xxx-9xxx expenses (see `chart.ts` for the ranges
+ * new accounts are numbered in).
  */
 export const CONTROL_ACCOUNTS = {
   CASH: { code: "1000", name: "Cash in Hand", type: "ASSET", subType: "CASH" },
@@ -35,6 +36,18 @@ export const CONTROL_ACCOUNTS = {
     type: "ASSET",
     subType: "OTHER_CURRENT_ASSET",
   },
+  FIXED_ASSETS: {
+    code: "1500",
+    name: "Fixed Assets (at cost)",
+    type: "ASSET",
+    subType: "FIXED_ASSET",
+  },
+  ACCUMULATED_DEPRECIATION: {
+    code: "1590",
+    name: "Accumulated Depreciation",
+    type: "ASSET",
+    subType: "ACCUMULATED_DEPRECIATION",
+  },
   PAYABLE: {
     code: "2100",
     name: "Accounts Payable (Suppliers)",
@@ -48,6 +61,7 @@ export const CONTROL_ACCOUNTS = {
     subType: "CUSTOMER_ADVANCE",
   },
   VAT_PAYABLE: { code: "2200", name: "VAT Payable", type: "LIABILITY", subType: "OTHER_LIABILITY" },
+  DRAWINGS: { code: "3100", name: "Owner's Drawings", type: "EQUITY", subType: "DRAWINGS" },
   OPENING_EQUITY: {
     code: "3900",
     name: "Opening Balance Equity",
@@ -61,12 +75,31 @@ export const CONTROL_ACCOUNTS = {
     type: "INCOME",
     subType: "OTHER_INCOME",
   },
+  OTHER_INCOME: { code: "4200", name: "Other Income", type: "INCOME", subType: "OTHER_INCOME" },
   COGS: { code: "5000", name: "Cost of Goods Sold", type: "EXPENSE", subType: "COGS" },
   PRODUCTION_LOSS: {
     code: "5100",
     name: "Production & Inventory Losses",
     type: "EXPENSE",
     subType: "INVENTORY_LOSS",
+  },
+  DEPRECIATION: {
+    code: "6800",
+    name: "Depreciation",
+    type: "EXPENSE",
+    subType: "OPERATING_EXPENSE",
+  },
+  DISPOSAL_LOSS: {
+    code: "6850",
+    name: "Loss on Disposal of Assets",
+    type: "EXPENSE",
+    subType: "OPERATING_EXPENSE",
+  },
+  FINANCE_COST: {
+    code: "7000",
+    name: "Finance Costs",
+    type: "EXPENSE",
+    subType: "FINANCE_COST",
   },
 } as const satisfies Record<
   string,

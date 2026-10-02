@@ -7,6 +7,7 @@ import { nextDocumentNumber } from "@/lib/numbering";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
 import { ensureControlAccounts, PARTY_BALANCE_SUBTYPES } from "@/modules/accounts/control-accounts";
+import { settleSupplierBills } from "@/modules/accounts/supplier-settlement";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { openingBalanceSchema, statementSchema } from "@/modules/parties/schemas";
@@ -229,6 +230,8 @@ export async function setOpeningBalance(
       });
     }
     await tx.party.update({ where: { id: party.id }, data: { openingBalance: amount } });
+    // What we owed before go-live is the oldest due: payments on account settle it first.
+    if (party.kind !== "BUYER") await settleSupplierBills(tx, ctx.company.id, party.id);
     await auditInCompany(
       ctx,
       meta,

@@ -274,3 +274,163 @@ Actions are in `src/server/actions/production.actions.ts`.
 AI reading needs `AI_API_KEY` (a Claude API key) and `AI_INTAKE_MODEL` (a Claude model that
 reads images and PDFs) in `.env`. Without them, deliveries are typed in. Uploads are kept
 under `UPLOAD_DIR`; photos sent to the AI reader can be up to 5 MB.
+
+## Accounts (backend)
+
+**Chart of accounts.** Every company starts with a standard chart: Cash in Hand (1000),
+Mobile Wallets (1050), Bank (1100), Receivables, Inventory, Work in Progress, Fixed Assets
+and Accumulated Depreciation, Payables (2100), Customer Advances, VAT, loans (from 2300),
+investors (from 2400), owners' capital (from 3000), Drawings, Opening Balance Equity, Sales,
+Other Income, Cost of Goods Sold and the expense accounts (6000 to 7000). Accounts adds
+accounts (the next free code in the range by default), renames them, archives them at a zero
+balance, and brings balances forward from before go-live against Opening Balance Equity.
+Every account has a ledger for any period with a running balance.
+
+**Journal and transfers.** Journal vouchers record adjustments as balanced debit and credit
+lines. A posted entry is never edited or deleted: it is reversed with a reason, and the
+reversal is an entry of its own. Money moved between cash, bank and wallets is a transfer.
+Sales, production, expenses, assets and capital all post to the same journal, so the day
+book shows everything.
+
+**Bank accounts.** Each bank account has its own ledger account. Its statement shows the
+opening and closing balance, every deposit and withdrawal with a running balance, and a
+month-by-month summary with the average daily balance, the figures a bank or loan officer
+asks for.
+
+**Fixed assets.** The register holds machines, furniture, vehicles and computers, whether
+bought for cash, bought on credit from a supplier, or already owned at go-live.
+Depreciation is straight line or reducing balance, monthly, and counts part of the first
+month. A run can be previewed first, and running it again only posts what is missing.
+Selling or scrapping an asset books the gain or the loss.
+
+**Capital, investors and loans.** Each owner, investor, bank loan and private loan has its
+own ledger account, so the balance sheet lists every one. Installment plans are EMI, flat or
+interest-only, monthly or quarterly. An installment is paid (split into principal and
+interest) or skipped with a reason, and overdue ones are listed. Interest and investor
+profit go to Finance Costs; owners' withdrawals go to Drawings.
+
+**Supplier payments.** A payment on account settles the supplier's oldest dues first: the
+opening balance, bills, assets bought on credit and Due expenses. Anything left over stays
+as an advance and settles the next bill. Bill paid and due figures are always recomputed
+from the supplier's ledger, so voiding a payment or a bill keeps them right.
+
+**Expenses (Quick Add).** Expense heads come ready (Office Rent, Electricity, Water & Gas,
+Salaries & Wages, Marketing & Ads, Courier & Delivery, Conveyance, Food & Refreshments...).
+Conveyance and food name the employee and the purpose. Accounts records an expense as paid
+now or owed to a supplier. An expense recorded by anyone else is a claim that stays out of
+the books until Accounts pays it back, puts it on the supplier's account, or turns it down.
+
+**Automatic reports.** All of them are worked out from the journal, so they always agree
+with the ledgers.
+
+- **Profit and loss** for this month, last month, this or last financial year (July to June
+  by default), 1 week, 1 month, 1 year or any dates, optionally month by month: Sales less
+  Cost of Goods Sold is gross profit; plus other income, less expenses, is net profit.
+- **Balance sheet** on any day, with profit kept in the business split into earlier years
+  and this year.
+- **Trial balance.**
+- **Books check:** the journal balances, and the stock, fixed asset, loan, investor and
+  supplier bill registers agree with their ledger accounts.
+- **Overview:** cash, bank and wallet balances, stock value, fixed assets, loans and
+  investors, today's sales, this month's and this year's profit, overdue installments and
+  claims waiting to be paid.
+
+| Event                      | Entry                                                      |
+| -------------------------- | ---------------------------------------------------------- |
+| Expense paid now           | Dr Expense, Cr Cash / Bank / Wallet                        |
+| Expense owed to a supplier | Dr Expense, Cr Payable (supplier)                          |
+| Supplier paid on account   | Dr Payable (supplier), Cr Cash / Bank / Wallet             |
+| Asset bought               | Dr Fixed Assets, Cr Cash / Bank / Wallet or Payable        |
+| Depreciation               | Dr Depreciation, Cr Accumulated Depreciation               |
+| Asset sold or scrapped     | Dr Cash + Accumulated Depreciation, Cr Fixed Assets (cost) |
+| Capital or loan received   | Dr Cash / Bank / Wallet, Cr Capital / Investor / Loan      |
+| Installment paid           | Dr Loan (principal) + Finance Costs, Cr Cash / Bank        |
+| Balance brought forward    | The account against Opening Balance Equity                 |
+
+| Endpoint                                                               | Purpose                                                 |
+| ---------------------------------------------------------------------- | ------------------------------------------------------- |
+| `GET /api/accounts/overview`                                           | Money cards and Accounts' to-do counts                  |
+| `GET/POST /api/accounts/chart`, `GET/PATCH …/:id`                      | Chart of accounts with balances                         |
+| `GET /api/accounts/chart/:id/ledger`, `PUT …/:id/opening-balance`      | An account's ledger / balance brought forward           |
+| `GET /api/accounts/cash-accounts`                                      | Cash, bank and wallet accounts with balances            |
+| `GET/POST /api/accounts/journal`, `GET …/:id`, `POST …/:id/reverse`    | Day book, journal vouchers and reversals                |
+| `POST /api/accounts/transfers`                                         | Move money between cash, bank and wallets               |
+| `GET/POST /api/accounts/bank-accounts`, `GET/PATCH …/:id`              | Bank accounts                                           |
+| `GET /api/accounts/bank-accounts/:id/statement?from=&to=`              | Bank statement with monthly average balances            |
+| `GET/POST /api/accounts/assets`, `GET/PATCH …/:id`                     | Fixed asset register                                    |
+| `POST /api/accounts/assets/:id/dispose` / `…/void`                     | Sell or scrap an asset / remove one entered by mistake  |
+| `GET/POST /api/accounts/depreciation`                                  | Preview / post depreciation up to a day                 |
+| `GET/POST /api/accounts/capital`, `GET/PATCH …/:id`                    | Owners' capital, investors and loans                    |
+| `POST /api/accounts/capital/:id/receipts` / `…/repayments`             | Money in / repayments                                   |
+| `POST /api/accounts/capital/:id/schedule` / `…/schedule/preview`       | Installment plan (EMI, flat, interest-only)             |
+| `POST /api/accounts/capital/:id/installments`, `…/entries/:id/reverse` | Add one installment / undo an entry                     |
+| `GET /api/accounts/installments`, `POST …/:id/pay` / `…/skip`          | Installment payouts, overdue ones first                 |
+| `GET/POST /api/accounts/supplier-payments`, `GET …/:id`, `POST …/void` | Supplier payments on account                            |
+| `GET /api/accounts/reports/profit-and-loss?period=&from=&to=`          | Automatic profit and loss                               |
+| `GET /api/accounts/reports/balance-sheet?asOf=` / `trial-balance`      | Balance sheet / trial balance                           |
+| `GET /api/accounts/reports/books-check`                                | Do the ledgers agree with the registers?                |
+| `GET/POST /api/expenses`, `GET/PATCH …/:id`                            | Expenses and claims                                     |
+| `POST /api/expenses/:id/approve` / `…/reject` / `…/void`               | Pay or post a claim / turn it down / reverse an expense |
+| `GET/POST /api/expenses/heads`, `PATCH …/:id`                          | Expense heads                                           |
+
+Reads need `accounts.view` (the overview also opens with `dashboard.financials`). Journal
+vouchers, the chart, bank accounts, fixed assets, capital and installments need
+`accounts.manage`, and an entry that moves money also needs `accounts.receipts.record` (money
+in) or `accounts.payments.record` (money out). Supplier payments, transfers and paying claims
+need `accounts.payments.record`. By default only Accounts and Super Admin hold any of these;
+Sales, Production, Warehouse and Employees hold none. Anyone with `expenses.create` records
+expenses, but unless they can pay money out each one is a claim for Accounts. Holders of
+`expenses.manage` see, edit and void any expense, manage expense heads and post Due expenses.
+Server Actions are in `src/server/actions/accounts.actions.ts` and `expenses.actions.ts`.
+
+## Backups (backend)
+
+Every day at 02:00 (Asia/Dhaka) the server backs up the whole platform, every company, into
+`BACKUP_DIR/<date_time>/`:
+
+| File            | What it holds                                                        |
+| --------------- | -------------------------------------------------------------------- |
+| `database.dump` | The database (`pg_dump`, custom format)                              |
+| `media.tar.gz`  | Uploaded files: logos, packing lists, bill scans (can be turned off) |
+| `manifest.json` | Sizes and SHA-256 checksums of the files, and how to restore         |
+
+Each backup is also copied to a folder in the owner's Google Drive once it is connected.
+Backups older than the retention period (30 days by default) are deleted on the server and
+on Drive, but the newest good one always stays. Only one backup runs at a time. A backup
+missed while the server was off runs as soon as it is back. If the Drive copy fails, the
+backup is still kept on the server and the run says why.
+
+A backup holds every company, so backups are for the platform owner (the Super Admin of the
+platform) only. Every download is recorded in the audit log.
+
+| Endpoint                                                            | Purpose                                             |
+| ------------------------------------------------------------------- | --------------------------------------------------- |
+| `GET/PATCH /api/backups/settings`                                   | Schedule, retention, media, on/off, pg_dump check   |
+| `GET/POST /api/backups/runs`, `GET …/:id`                           | Backup history / back up now (202, poll for result) |
+| `GET /api/backups/runs/:id/download?file=database\|media\|manifest` | Download a file to a PC                             |
+| `GET /api/backups/google/connect`, `POST …/disconnect`              | Connect or disconnect Google Drive                  |
+| `GET /api/backups/google/callback`                                  | Where Google sends the owner back                   |
+
+**Server setup.**
+
+- Install the PostgreSQL 16 client tools for `pg_dump` (`apt install postgresql-client-16`),
+  or set `PG_DUMP_PATH`. When the app runs in Docker, the app image needs them too. The
+  backup settings show whether `pg_dump` was found.
+- Keep `BACKUP_DIR` on a persistent volume.
+- The schedule runs in production and not in development; set
+  `BACKUP_SCHEDULER=on` or `off` to choose.
+- Google Drive: in Google Cloud console, enable the Google Drive API and create an OAuth
+  client of type "Web application" with the authorised redirect URI
+  `<APP_URL>/api/backups/google/callback`. Put its ID and secret in
+  `GOOGLE_DRIVE_CLIENT_ID` and `GOOGLE_DRIVE_CLIENT_SECRET`, and set `ENCRYPTION_KEY`
+  (`openssl rand -base64 32`), which seals the stored Google connection. The owner then
+  connects their Google account once. The app only sees the files it creates (the
+  `drive.file` scope), and backups use that account's storage. Changing `ENCRYPTION_KEY`
+  means connecting Google Drive again.
+
+**Restoring.** Check the files against `manifest.json` (`sha256sum`), then:
+
+```bash
+pg_restore --clean --if-exists --no-owner --dbname=<database> database.dump
+tar -xzf media.tar.gz -C <UPLOAD_DIR>
+```

@@ -5,6 +5,7 @@ import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
 import { slugify } from "@/lib/slug";
+import { ensureAccountsSetup } from "@/modules/accounts/setup";
 import { recordAudit } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { setSessionCompany, type ValidSession } from "@/modules/auth/session.service";
@@ -29,6 +30,8 @@ export const companyProfileSchema = z.object({
   lowStockThreshold: z.number().int().min(0).max(100000).optional(),
   defaultAdvancePercent: z.number().min(0).max(100).optional(),
   dormantAfterMonths: z.number().int().min(1).max(60).optional(),
+  /** Month the financial year starts in (7 = July, the Bangladesh income year). */
+  fiscalYearStartMonth: z.number().int().min(1).max(12).optional(),
 });
 
 export const createCompanySchema = companyProfileSchema.extend({
@@ -67,6 +70,7 @@ export async function createCompany(
   return prisma.$transaction(async (tx) => {
     const company = await tx.company.create({ data: { ...input, slug } });
     const roles = await ensureSystemRoles(company.id, tx);
+    await ensureAccountsSetup(company.id, tx);
     await tx.companyMembership.create({
       data: { companyId: company.id, userId: actor.userId, roleId: roles.SUPER_ADMIN },
     });

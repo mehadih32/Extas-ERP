@@ -67,6 +67,7 @@ model Company {
   lowStockThreshold     Int      @default(5)
   defaultAdvancePercent Decimal  @default(30) @db.Decimal(5, 2)
   dormantAfterMonths    Int      @default(6)
+  fiscalYearStartMonth  Int      @default(7) // 7 = July (Bangladesh income year July-June)
   isActive              Boolean  @default(true)
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
@@ -167,6 +168,7 @@ model User {
   approvedLeaves    LeaveRequest[]      @relation("LeaveApprovedBy")
   generatedDocs     GeneratedDocument[]
   backupRuns        BackupRun[]
+  expensesCreated   Expense[]           @relation("ExpenseCreatedBy")
 }
 
 /// A signed-in device. `token` stores the SHA-256 hash of the cookie value, never
@@ -1415,23 +1417,32 @@ model BankAccount {
   @@unique([companyId, accountNumber])
 }
 
+/// Fixed asset register. Cost sits on the Fixed Assets account and depreciation on
+/// Accumulated Depreciation; journal entries name the asset in `sourceId`.
 model FixedAsset {
-  id               String      @id @default(cuid())
-  companyId        String
-  ledgerAccountId  String?     @unique
-  name             String
-  category         String? // Machinery, Furniture, Vehicle, IT...
-  purchaseDate     DateTime
-  purchaseCost     Decimal     @db.Decimal(14, 2)
-  depreciationRate Decimal?    @db.Decimal(5, 2) // % per year
-  currentValue     Decimal     @db.Decimal(14, 2)
-  location         String?
-  status           AssetStatus @default(IN_USE)
-  disposedAt       DateTime?
-  createdAt        DateTime    @default(now())
+  id                 String             @id @default(cuid())
+  companyId          String
+  ledgerAccountId    String?            @unique
+  name               String
+  category           String? // Machinery, Furniture, Vehicle, IT...
+  purchaseDate       DateTime
+  purchaseCost       Decimal            @db.Decimal(14, 2)
+  depreciationRate   Decimal?           @db.Decimal(5, 2) // % per year
+  depreciationMethod DepreciationMethod @default(STRAIGHT_LINE)
+  salvageValue       Decimal            @default(0) @db.Decimal(14, 2) // book value never goes below this
+  currentValue       Decimal            @db.Decimal(14, 2) // book value: cost - depreciation so far
+  depreciatedUntil   DateTime?          @db.Date // last calendar day depreciation was posted for
+  location           String?
+  status             AssetStatus        @default(IN_USE)
+  disposedAt         DateTime?
+  disposalAmount     Decimal?           @db.Decimal(14, 2) // sale proceeds (0 when scrapped)
+  notes              String?
+  createdAt          DateTime           @default(now())
 
   company       Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
   ledgerAccount LedgerAccount? @relation(fields: [ledgerAccountId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, status])
 }
 
 /// Capital, investors and loans (liabilities) with installment schedules.
@@ -1469,6 +1480,7 @@ model CapitalInstallment {
   paidAt            DateTime?
   paidFromAccountId String?
   journalEntryId    String?
+  note              String?
 
   capitalSource   CapitalSource  @relation(fields: [capitalSourceId], references: [id], onDelete: Cascade)
   paidFromAccount LedgerAccount? @relation(fields: [paidFromAccountId], references: [id], onDelete: SetNull)
@@ -1522,6 +1534,7 @@ model Expense {
   journalEntryId    String?     @unique
   voidedAt          DateTime? // voided entries stay for the record; their journal is reversed
   voidReason        String?
+  createdById       String? // who recorded it (claims are paid back to them)
   createdAt         DateTime    @default(now())
 
   company            Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
@@ -1533,12 +1546,14 @@ model Expense {
   salaryAdvance      SalaryAdvance?      @relation(fields: [salaryAdvanceId], references: [id], onDelete: SetNull)
   receiptFile        FileAsset?          @relation(fields: [receiptFileId], references: [id], onDelete: SetNull)
   journalEntry       JournalEntry?       @relation(fields: [journalEntryId], references: [id], onDelete: SetNull)
+  createdBy          User?               @relation("ExpenseCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   advanceSettlements AdvanceSettlement[]
 
   @@unique([companyId, number])
   @@index([companyId, date])
   @@index([employeeId])
   @@index([projectId])
+  @@index([createdById])
 }
 
 /// Daily ad spend for the ROAS widget (Ad Spend vs Retail Sales).
@@ -1980,12 +1995,15 @@ model NotificationLog {
 // 13. BACKUPS (system-wide, not per company)
 // =============================================================================
 
+/// Platform-wide backup settings (one row). Backups cover every company.
 model BackupConfig {
   id                  String   @id @default(cuid())
   cronSchedule        String   @default("0 2 * * *") // daily at 02:00
+  timezone            String   @default("Asia/Dhaka") // the schedule's clock
   includeMedia        Boolean  @default(true)
-  googleDriveFolderId String?
-  credentialsRef      String? // reference to encrypted Google credentials
+  googleDriveFolderId String? // folder the app created in the connected Drive
+  googleDriveAccount  String? // email of the connected Google account
+  credentialsRef      String? // encrypted Google refresh token (ENCRYPTION_KEY)
   retentionDays       Int      @default(30)
   isEnabled           Boolean  @default(true)
   updatedAt           DateTime @updatedAt
@@ -2000,7 +2018,9 @@ model BackupRun {
   dbDumpPath       String?
   mediaArchivePath String?
   sizeBytes        BigInt?
-  driveFileId      String? // Google Drive file id
+  driveFileId      String? // Google Drive folder holding this run's files
+  driveError       String? // set when the files were saved on the server but not on Drive
+  filesDeletedAt   DateTime? // local files removed by the retention rule
   triggeredById    String?
   error            String?
 
@@ -2407,12 +2427,20 @@ enum JournalSource {
   DEPRECIATION
   OPENING_BALANCE
   PRODUCTION
+  TRANSFER
+  FIXED_ASSET
+  STOCK_ADJUSTMENT
 }
 
 enum AssetStatus {
   IN_USE
   UNDER_REPAIR
   DISPOSED
+}
+
+enum DepreciationMethod {
+  STRAIGHT_LINE
+  REDUCING_BALANCE
 }
 
 enum CapitalSourceKind {

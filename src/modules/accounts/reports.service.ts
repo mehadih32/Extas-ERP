@@ -36,7 +36,7 @@ import { projectCostSummaries } from "@/modules/production/project-costs";
  * Periods are calendar days in company time; reversed entries cancel out.
  */
 
-type AccountInfo = {
+export type AccountInfo = {
   id: string;
   code: string;
   name: string;
@@ -47,7 +47,7 @@ type AccountInfo = {
 
 type ReportLine = { accountId: string; code: string; name: string; amount: string };
 
-async function loadAccounts(companyId: string): Promise<AccountInfo[]> {
+export async function loadAccounts(companyId: string): Promise<AccountInfo[]> {
   await ensureControlAccounts(companyId);
   return prisma.ledgerAccount.findMany({
     where: { companyId },
@@ -57,7 +57,7 @@ async function loadAccounts(companyId: string): Promise<AccountInfo[]> {
 }
 
 /** Balance in the account's natural direction. */
-function natural(account: AccountInfo, totals: Map<string, Totals>) {
+export function natural(account: AccountInfo, totals: Map<string, Totals>) {
   const t = totals.get(account.id);
   return t ? naturalBalance(account.type, t.debit, t.credit) : ZERO;
 }
@@ -95,7 +95,7 @@ const EXPENSE_GROUPS: Array<{ key: string; label: string; subTypes: AccountSubTy
 ];
 
 /** The five P&L figures for a set of account totals. */
-function profitFigures(accounts: AccountInfo[], totals: Map<string, Totals>) {
+export function profitFigures(accounts: AccountInfo[], totals: Map<string, Totals>) {
   const revenue = section(accounts, totals, (a) => a.subType === "SALES");
   const costOfSales = section(accounts, totals, (a) => a.subType === "COGS");
   const otherIncome = section(
@@ -379,7 +379,7 @@ export async function getTrialBalance(ctx: CompanyContext, raw: unknown = {}) {
 // =============================================================================
 
 /** Stock on hand valued at each SKU's average cost (A and B grade). */
-async function stockValuation(companyId: string) {
+export async function stockValuation(companyId: string) {
   const [row] = await prisma.$queryRaw<Array<{ value: Prisma.Decimal | null }>>`
     SELECT SUM(sb.quantity * pv."avgCost") AS value
     FROM "StockBalance" sb

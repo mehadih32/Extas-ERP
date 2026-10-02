@@ -1128,6 +1128,7 @@ model Invoice {
 
   @@unique([companyId, number])
   @@index([companyId, status])
+  @@index([companyId, issueDate])
 }
 
 /// Document 2: Packing List / Pick-List for the warehouse.
@@ -2248,15 +2249,19 @@ model GeneratedDocument {
   @@index([referenceType, referenceId])
 }
 
-/// Report Builder: downloadable PDF/Excel for 1 week / 1 month / 1 year.
+/// Report Builder: a downloadable PDF / Excel report for any period (1 week,
+/// 1 month, 1 year or chosen days) with the chosen metrics. The file is kept
+/// so it can be downloaded again; the row keeps who asked for what.
 model ReportExport {
   id            String       @id @default(cuid())
   companyId     String
   requestedById String?
+  title         String       @default("Business report")
   period        ReportPeriod
-  fromDate      DateTime
-  toDate        DateTime
-  metrics       String[] // selected metric keys
+  fromDate      DateTime     @db.Date
+  toDate        DateTime     @db.Date
+  metrics       String[] // selected metric keys (see src/modules/reports/catalog.ts)
+  options       Json? // limits and windows used (top sellers shown, slow-stock days)
   format        ReportFormat
   status        JobStatus    @default(QUEUED)
   fileId        String?
@@ -3000,7 +3005,13 @@ enum TemplateFormat {
   HTML
 }
 
+/// The Report Builder's periods (src/modules/accounts/periods.ts), or chosen days.
 enum ReportPeriod {
+  TODAY
+  THIS_MONTH
+  LAST_MONTH
+  THIS_FINANCIAL_YEAR
+  LAST_FINANCIAL_YEAR
   ONE_WEEK
   ONE_MONTH
   ONE_YEAR

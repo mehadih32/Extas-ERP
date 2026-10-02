@@ -231,15 +231,17 @@ run("stock", () => {
   it("summarises value, low stock and highest stock for the dashboard", async () => {
     const env = await setup();
     const { cell } = await makePolo(env);
-    await stock.adjustStock(env.ctx, {
-      variantId: cell("Navy", "M").variantId,
-      quantity: 50,
-      unitCost: 400,
-    });
+    const navyM = cell("Navy", "M").variantId;
+    await stock.adjustStock(env.ctx, { variantId: navyM, quantity: 50, unitCost: 400 });
     await stock.adjustStock(env.ctx, {
       variantId: cell("Navy", "L").variantId,
       quantity: 3,
       unitCost: 400,
+    });
+    // Navy M has been in stock for 100 days without selling; Navy L only just arrived.
+    await prisma.stockMovement.updateMany({
+      where: { variantId: navyM },
+      data: { createdAt: new Date(Date.now() - 100 * 24 * 60 * 60 * 1000) },
     });
     const summary = await stock.getStockSummary(env.ctx);
     expect(summary.stockValue).toBe("21200.00");
@@ -247,7 +249,11 @@ run("stock", () => {
     expect(summary.highestStock[0]!.sku).toBe("EX-PL-001-NAVY-M");
     expect(summary.lowStock.map((r) => r.sku)).toContain("EX-PL-001-NAVY-L");
     expect(summary.lowStock.map((r) => r.sku)).not.toContain("EX-PL-001-NAVY-M");
-    expect(summary.slowStock.map((r) => r.sku)).toContain("EX-PL-001-NAVY-M");
+    // SKUs never stocked are not "low"; stock that just arrived is not judged as slow yet.
+    expect(summary.lowStock.map((r) => r.sku)).not.toContain("EX-PL-001-WHITE-M");
+    expect(summary.slowStock).toEqual([
+      expect.objectContaining({ sku: "EX-PL-001-NAVY-M", movement: "DEAD", available: 50 }),
+    ]);
   });
 });
 

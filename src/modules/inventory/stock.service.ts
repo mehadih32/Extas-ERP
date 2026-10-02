@@ -7,6 +7,16 @@ import { ensureControlAccounts } from "@/modules/accounts/control-accounts";
 import { postJournalEntry } from "@/modules/accounts/journal.service";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
+import { canSeeFinancials } from "@/modules/dashboard/access";
+import { stockWindow } from "@/modules/dashboard/insights.service";
+import { topSellers } from "@/modules/dashboard/sales-figures";
+import {
+  deadAndSlowStock,
+  highestStock,
+  lowStock,
+  type SkuStock,
+  stockOnHand,
+} from "@/modules/dashboard/stock-figures";
 import {
   adjustStockSchema,
   badStockSchema,
@@ -403,82 +413,57 @@ export async function moveToBadStock(ctx: CompanyContext, raw: unknown, meta?: R
 }
 
 // =============================================================================
-// Dashboard insights
+// Stock summary
 // =============================================================================
 
-type SkuRow = {
-  variantId: string;
-  sku: string;
-  styleCode: string;
-  styleName: string;
-  colorName: string;
-  sizeName: string;
-  available: number;
-};
+const skuRow = (r: SkuStock) => ({
+  variantId: r.variantId,
+  sku: r.sku,
+  styleCode: r.styleCode,
+  styleName: r.styleName,
+  colorName: r.colorName,
+  sizeName: r.sizeName,
+  available: r.available,
+});
 
 /**
- * Inventory figures for the master dashboard: stock value, piece counts, low
- * stock (< company threshold), highest stock, slow/dead stock and top sellers.
+ * Inventory figures: stock value, piece counts, low stock (below the company's
+ * threshold), highest stock, dead and slow stock, and the top sellers of the
+ * last 30 days. Same rules as the master dashboard (src/modules/dashboard), so
+ * the two never disagree.
  */
 export async function getStockSummary(ctx: CompanyContext, options: { slowDays?: number } = {}) {
   const companyId = ctx.company.id;
   const threshold = ctx.company.lowStockThreshold;
-  const slowSince = new Date(Date.now() - (options.slowDays ?? 90) * 24 * 60 * 60 * 1000);
-  const sellingSince = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const slowDays = options.slowDays ?? 90;
+  const now = new Date();
+  const window = stockWindow(ctx.company, { slowDays, coverDays: 180 }, now);
 
-  // Per-SKU available A-grade stock (0 when the SKU has no balance yet).
-  const perSku = Prisma.sql`
-    SELECT pv.id AS "variantId", pv.sku, s.code AS "styleCode", s.name AS "styleName",
-           c.name AS "colorName", z.name AS "sizeName",
-           COALESCE(SUM(CASE WHEN sb.grade = 'A_GRADE' THEN sb.quantity - sb.reserved END), 0)::int AS available
-    FROM "ProductVariant" pv
-    JOIN "Style" s ON s.id = pv."styleId"
-    JOIN "Color" c ON c.id = pv."colorId"
-    JOIN "Size" z ON z.id = pv."sizeId"
-    LEFT JOIN "StockBalance" sb ON sb."variantId" = pv.id
-    WHERE pv."companyId" = ${companyId} AND pv."isActive" = true AND s."isActive" = true
-    GROUP BY pv.id, s.code, s.name, c.name, z.name`;
-
-  const [totals, lowStock, highestStock, slowStock, topSelling] = await Promise.all([
-    prisma.$queryRaw<
-      Array<{ value: Prisma.Decimal | null; aGrade: bigint | null; bGrade: bigint | null }>
-    >`
-      SELECT SUM(GREATEST(sb.quantity, 0) * pv."avgCost") AS value,
-             SUM(CASE WHEN sb.grade = 'A_GRADE' THEN sb.quantity END) AS "aGrade",
-             SUM(CASE WHEN sb.grade = 'B_GRADE' THEN sb.quantity END) AS "bGrade"
-      FROM "StockBalance" sb JOIN "ProductVariant" pv ON pv.id = sb."variantId"
-      WHERE sb."companyId" = ${companyId}`,
-    prisma.$queryRaw<SkuRow[]>`
-      SELECT * FROM (${perSku}) t WHERE available < ${threshold} ORDER BY available ASC, sku LIMIT 50`,
-    prisma.$queryRaw<SkuRow[]>`
-      SELECT * FROM (${perSku}) t WHERE available > 0 ORDER BY available DESC, sku LIMIT 10`,
-    prisma.$queryRaw<SkuRow[]>`
-      SELECT * FROM (${perSku}) t
-      WHERE available > 0 AND NOT EXISTS (
-        SELECT 1 FROM "StockMovement" m
-        WHERE m."variantId" = t."variantId" AND m.type = 'SALE_OUT' AND m."createdAt" >= ${slowSince}
-      )
-      ORDER BY available DESC, sku LIMIT 50`,
-    prisma.$queryRaw<Array<{ variantId: string; sku: string; soldQty: bigint }>>`
-      SELECT pv.id AS "variantId", pv.sku, -SUM(m.quantity) AS "soldQty"
-      FROM "StockMovement" m JOIN "ProductVariant" pv ON pv.id = m."variantId"
-      WHERE m."companyId" = ${companyId} AND m.type = 'SALE_OUT' AND m."createdAt" >= ${sellingSince}
-      GROUP BY pv.id ORDER BY "soldQty" DESC LIMIT 10`,
+  const [onHand, low, highest, deadSlow, top] = await Promise.all([
+    stockOnHand(companyId),
+    lowStock(companyId, window, threshold, 50),
+    highestStock(companyId, window, 10),
+    deadAndSlowStock(companyId, window, 50),
+    topSellers(
+      companyId,
+      { start: window.recentSince, end: now },
+      { groupBy: "SKU", sortBy: "QUANTITY", limit: 10 },
+    ),
   ]);
 
-  const total = totals[0];
   return {
     // Money figures are only shown to roles that may see financials.
-    stockValue: ctx.can("dashboard.financials")
-      ? (total?.value ?? new Prisma.Decimal(0)).toFixed(2)
+    stockValue: canSeeFinancials(ctx)
+      ? onHand.aGradeValue.plus(onHand.bGradeValue).toFixed(2)
       : null,
-    aGradePieces: Number(total?.aGrade ?? 0),
-    bGradePieces: Number(total?.bGrade ?? 0),
+    aGradePieces: onHand.aGradePieces,
+    bGradePieces: onHand.bGradePieces,
     lowStockThreshold: threshold,
-    lowStock,
-    highestStock,
-    slowStock,
-    slowStockDays: options.slowDays ?? 90,
-    topSelling: topSelling.map((r) => ({ ...r, soldQty: Number(r.soldQty) })),
+    lowStock: low.items.map(skuRow),
+    highestStock: highest.map(skuRow),
+    /** Dead stock (nothing sold in slowStockDays), then slow stock. */
+    slowStock: deadSlow.items.map((r) => ({ ...skuRow(r), movement: r.movement })),
+    slowStockDays: slowDays,
+    topSelling: top.items.map((r) => ({ variantId: r.id, sku: r.sku, soldQty: r.pieces })),
   };
 }

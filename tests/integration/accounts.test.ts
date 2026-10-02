@@ -1469,6 +1469,9 @@ run("profit and loss, balance sheet and trial balance", () => {
       "DEPRECIATION",
       "CAPITAL",
       "SUPPLIER_BILLS",
+      "EMPLOYEE_LINES",
+      "EMPLOYEE_ADVANCES",
+      "SALARIES_PAYABLE",
     ]);
     expect(check.ok).toBe(true);
 

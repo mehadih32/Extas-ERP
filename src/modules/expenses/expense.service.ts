@@ -7,7 +7,7 @@ import { nextDocumentNumber } from "@/lib/numbering";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
 import { lockRow } from "@/lib/row-lock";
-import { money } from "@/modules/accounts/balances";
+import { money, ZERO } from "@/modules/accounts/balances";
 import { cashAccountFor } from "@/modules/accounts/cash-accounts";
 import {
   EXPENSE_CATEGORY_ACCOUNTS,
@@ -33,6 +33,8 @@ import {
   updateExpenseSchema,
   voidExpenseSchema,
 } from "@/modules/expenses/schemas";
+import { linkedEmployee } from "@/modules/hr/access";
+import { reverseSettlementsTx, settleAdvancesForExpenseTx } from "@/modules/hr/advance.service";
 import { assertPartyCanTransact, recordPartyActivity } from "@/modules/parties/party.service";
 
 /*
@@ -45,6 +47,10 @@ import { assertPartyCanTransact, recordPartyActivity } from "@/modules/parties/p
  * Accounts pays a cash claim back (choosing cash, bank or a wallet), puts a Due
  * claim on the supplier's account, or rejects it. Production costs are recorded
  * on production projects instead.
+ * Conveyance / food (heads that name the employee) paid while the employee holds
+ * an advance is settled from the advance first, oldest first:
+ *                       Dr Expense account   Cr Advances to Employees (employee)
+ *                                            Cr Cash / Bank / Wallet (any rest)
  */
 
 type Tx = Prisma.TransactionClient;
@@ -256,6 +262,14 @@ const expenseInclude = {
   receiptFile: { select: { id: true, fileName: true, mimeType: true } },
   createdBy: { select: { id: true, name: true } },
   journalEntry: { select: { id: true, number: true, date: true, isReversed: true } },
+  advanceSettlements: {
+    select: {
+      amount: true,
+      reversedAt: true,
+      advance: { select: { id: true, number: true } },
+    },
+    orderBy: { id: "asc" },
+  },
 } satisfies Prisma.ExpenseInclude;
 
 type ExpenseRow = Prisma.ExpenseGetPayload<{ include: typeof expenseInclude }>;
@@ -270,6 +284,13 @@ function presentExpense(e: ExpenseRow) {
     amount: e.amount.toFixed(2),
     paymentType: e.paymentType,
     paidFrom: e.paidFromAccount,
+    /** Part settled from the employee's advances instead of cash. */
+    fromAdvance: e.advanceSettlements.reduce((t, s) => t.plus(s.amount), ZERO).toFixed(2),
+    advanceSettlements: e.advanceSettlements.map((s) => ({
+      advance: s.advance,
+      amount: s.amount.toFixed(2),
+      reversedAt: s.reversedAt,
+    })),
     supplier: e.supplier,
     employee: e.employee,
     purpose: e.purpose,
@@ -380,27 +401,71 @@ function entryDescription(expense: Expense, head: ExpenseHead, extra?: string) {
   return [`${expense.number} — ${head.name}`, expense.purpose, extra].filter(Boolean).join(" · ");
 }
 
-/** Pays an expense from cash / bank / wallet: Dr expense account, Cr the money account. */
+/**
+ * Pays an expense from cash / bank / wallet: Dr expense account, Cr the money
+ * account. Conveyance / food is settled from the employee's open advances first
+ * (Cr Advances to Employees); only the rest comes out of the money account.
+ */
 async function postPaidTx(
   tx: Tx,
   ctx: CompanyContext,
   expense: Expense,
   head: ExpenseHead,
-  pay: { paidFrom: string; date: Date; reference?: string | null; extra?: string },
+  pay: {
+    paidFrom: string;
+    date: Date;
+    reference?: string | null;
+    extra?: string;
+    useAdvance: boolean;
+  },
 ) {
-  const expenseAccount = await headAccountId(tx, ctx.company.id, head);
-  return postJournalEntry(tx, {
-    companyId: ctx.company.id,
+  const companyId = ctx.company.id;
+  const expenseAccount = await headAccountId(tx, companyId, head);
+  const employeeId = head.requiresEmployee && pay.useAdvance ? expense.employeeId : null;
+  const fromAdvance = employeeId
+    ? await settleAdvancesForExpenseTx(tx, companyId, employeeId, expense.amount, {
+        expenseId: expense.id,
+        at: pay.date,
+      })
+    : ZERO;
+  const cash = expense.amount.minus(fromAdvance);
+  const acc = fromAdvance.gt(0) ? await ensureControlAccounts(companyId, tx) : null;
+  const entry = await postJournalEntry(tx, {
+    companyId,
     date: pay.date,
-    description: entryDescription(expense, head, pay.extra),
+    description: entryDescription(
+      expense,
+      head,
+      [pay.extra, acc ? `${fromAdvance.toFixed(2)} from advance` : undefined]
+        .filter(Boolean)
+        .join(" · "),
+    ),
     sourceType: "EXPENSE",
     sourceId: expense.id,
     postedById: ctx.user.id,
     lines: [
       { accountId: expenseAccount, debit: expense.amount, memo: head.name },
-      { accountId: pay.paidFrom, credit: expense.amount, memo: pay.reference ?? undefined },
+      ...(acc
+        ? [
+            {
+              accountId: acc.EMPLOYEE_ADVANCES,
+              employeeId,
+              credit: fromAdvance,
+              memo: "Spent from advance",
+            },
+          ]
+        : []),
+      { accountId: pay.paidFrom, credit: cash, memo: pay.reference ?? undefined },
     ],
   });
+  return { entry, fromAdvance, paidFrom: cash.gt(0) ? pay.paidFrom : null };
+}
+
+/** "paid (CASH)", or "300.00 from advance, 200.00 paid (CASH)". */
+function paidSummary(amount: Prisma.Decimal, fromAdvance: Prisma.Decimal, method: string) {
+  if (fromAdvance.isZero()) return `paid (${method})`;
+  const cash = amount.minus(fromAdvance);
+  return `${fromAdvance.toFixed(2)} from advance${cash.gt(0) ? `, ${cash.toFixed(2)} paid (${method})` : ""}`;
 }
 
 /** Puts an expense on a supplier's account: Dr expense account, Cr Payable (supplier). */
@@ -456,8 +521,13 @@ export async function createExpense(ctx: CompanyContext, raw: unknown, meta?: Re
   if (!ctx.can("expenses.create")) {
     throw new AppError("FORBIDDEN", "You do not have permission to record expenses.");
   }
-  const input = createExpenseSchema.parse(raw);
-  const head = await loadHead(ctx, input.headId);
+  const parsed = createExpenseSchema.parse(raw);
+  const head = await loadHead(ctx, parsed.headId);
+  // Conveyance / food recorded by an employee for themselves names them by default.
+  const input =
+    head.requiresEmployee && !parsed.employeeId
+      ? { ...parsed, employeeId: (await linkedEmployee(ctx))?.id ?? null }
+      : parsed;
   await checkDetails(ctx, head, input);
   const supplier =
     input.paymentType === "DUE"
@@ -492,19 +562,23 @@ export async function createExpense(ctx: CompanyContext, raw: unknown, meta?: Re
         createdById: ctx.user.id,
       },
     });
-    let entryNumber: string | null = null;
+    let outcome = `claim waiting for Accounts${supplier ? ` (due to ${supplier.name})` : ""}`;
     if (paidFrom) {
-      const entry = await postPaidTx(tx, ctx, expense, head, {
+      const posted = await postPaidTx(tx, ctx, expense, head, {
         paidFrom,
         date,
         reference: input.reference,
+        useAdvance: input.useAdvance,
       });
-      await tx.expense.update({ where: { id: expense.id }, data: { journalEntryId: entry.id } });
-      entryNumber = entry.number;
+      await tx.expense.update({
+        where: { id: expense.id },
+        data: { journalEntryId: posted.entry.id, paidFromAccountId: posted.paidFrom },
+      });
+      outcome = `${paidSummary(amount, posted.fromAdvance, input.method)}, ${posted.entry.number}`;
     } else if (inBooks && supplier) {
       const entry = await postDueTx(tx, ctx, expense, head, supplier, input.reference);
       await tx.expense.update({ where: { id: expense.id }, data: { journalEntryId: entry.id } });
-      entryNumber = entry.number;
+      outcome = `due to ${supplier.name}, ${entry.number}`;
     }
     await auditInCompany(
       ctx,
@@ -513,13 +587,7 @@ export async function createExpense(ctx: CompanyContext, raw: unknown, meta?: Re
         action: "CREATE",
         entityType: "Expense",
         entityId: expense.id,
-        summary: `${expense.number}: ${amount.toFixed(2)} ${head.name} — ${
-          paidFrom
-            ? `paid (${input.method}), ${entryNumber}`
-            : entryNumber && supplier
-              ? `due to ${supplier.name}, ${entryNumber}`
-              : `claim waiting for Accounts${supplier ? ` (due to ${supplier.name})` : ""}`
-        }`,
+        summary: `${expense.number}: ${amount.toFixed(2)} ${head.name} — ${outcome}`,
       },
       tx,
     );
@@ -563,6 +631,17 @@ export async function updateExpense(
       throw new AppError(
         "CONFLICT",
         `${expense.number} is in the books; void it and record it again to change the amount, head or date.`,
+      );
+    }
+    if (
+      status === "POSTED" &&
+      input.employeeId !== undefined &&
+      input.employeeId !== expense.employeeId &&
+      (await tx.advanceSettlement.count({ where: { expenseId: expense.id, reversedAt: null } })) > 0
+    ) {
+      throw new AppError(
+        "CONFLICT",
+        `${expense.number} was settled from the employee's advance; void it and record it again to change the employee.`,
       );
     }
     const head = input.headId ? await loadHead(ctx, input.headId) : expense.head;
@@ -634,19 +713,20 @@ export async function approveExpense(
       }): due to ${supplier.name}, ${entry.number}`;
     } else {
       const paidFrom = await cashAccountFor(tx, ctx.company.id, input.method, input.accountId);
-      const entry = await postPaidTx(tx, ctx, expense, expense.head, {
+      const posted = await postPaidTx(tx, ctx, expense, expense.head, {
         paidFrom,
         date,
         reference: input.reference,
         extra: claimant ? `claim by ${claimant}` : undefined,
+        useAdvance: input.useAdvance,
       });
       await tx.expense.update({
         where: { id: expense.id },
-        data: { paidFromAccountId: paidFrom, journalEntryId: entry.id },
+        data: { paidFromAccountId: posted.paidFrom, journalEntryId: posted.entry.id },
       });
       summary = `Paid claim ${expense.number} (${expense.amount.toFixed(2)} ${expense.head.name}${
         claimant ? `, ${claimant}` : ""
-      }) by ${input.method}, ${entry.number}`;
+      }): ${paidSummary(expense.amount, posted.fromAdvance, input.method)}, ${posted.entry.number}`;
     }
     await auditInCompany(
       ctx,
@@ -726,6 +806,8 @@ export async function voidExpense(
     if (expense.paymentType === "DUE" && expense.supplierId) {
       await settleSupplierBills(tx, ctx.company.id, expense.supplierId);
     }
+    // The part spent from an advance is owed again (the reversal debits Advances).
+    const restored = await reverseSettlementsTx(tx, ctx.company.id, { expenseId: expense.id });
     await tx.expense.update({
       where: { id: expense.id },
       data: { voidedAt: new Date(), voidReason: reason },
@@ -737,7 +819,9 @@ export async function voidExpense(
         action: "STATUS_CHANGE",
         entityType: "Expense",
         entityId: expense.id,
-        summary: `Voided ${expense.number} (${expense.amount.toFixed(2)} ${expense.head.name}): ${reason}`,
+        summary: `Voided ${expense.number} (${expense.amount.toFixed(2)} ${expense.head.name}${
+          restored.gt(0) ? `; ${restored.toFixed(2)} is owed on the advance again` : ""
+        }): ${reason}`,
       },
       tx,
     );

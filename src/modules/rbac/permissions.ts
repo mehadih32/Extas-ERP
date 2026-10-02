@@ -125,13 +125,31 @@ export const PERMISSIONS = [
     description: "See, edit and void any expense; manage expense heads",
   },
   // HR
-  { key: "hr.view", module: "HR", description: "View employee profiles" },
-  { key: "hr.manage", module: "HR", description: "Manage employees, leave and salary advances" },
-  { key: "hr.payroll", module: "HR", description: "Run and pay payroll" },
+  {
+    key: "hr.view",
+    module: "HR",
+    description: "View employee profiles, attendance, leave and holidays (not salaries)",
+  },
+  {
+    key: "hr.manage",
+    module: "HR",
+    description:
+      "Add and edit employees and their salaries, mark attendance, approve leave, set holidays and HR rules",
+  },
+  {
+    key: "hr.payroll",
+    module: "HR",
+    description: "Prepare monthly payroll; see salaries, payslips and advances",
+  },
+  {
+    key: "hr.payroll.approve",
+    module: "HR",
+    description: "Approve or reopen monthly payroll (posts the salaries to the books)",
+  },
   {
     key: "portal.self",
     module: "HR",
-    description: "Employee portal: own profile, leave, orders and expenses",
+    description: "Employee portal: own profile, attendance, leave, payslips and advances",
   },
   // Other modules
   {
@@ -202,6 +220,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<SystemRole, readonly PermissionKey
     "parties.view",
     "expenses.create",
     "reports.export",
+    "portal.self",
     "notepad.use",
     "reminders.manage",
   ],
@@ -216,6 +235,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<SystemRole, readonly PermissionKey
     "parties.manage",
     "parties.ledger.view",
     "expenses.create",
+    "portal.self",
     "notepad.use",
     "reminders.manage",
   ],
@@ -226,6 +246,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<SystemRole, readonly PermissionKey
     "sales.returns.qc",
     "production.view",
     "production.stock_intake",
+    "portal.self",
     "notepad.use",
   ],
   EMPLOYEE: ["portal.self", "expenses.create", "notepad.use"],
@@ -242,6 +263,11 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<SystemRole, readonly PermissionKey
     "accounts.payments.record",
     "expenses.create",
     "expenses.manage",
+    // Accounts prepares payroll; approving it is Super Admin's by default (two people
+    // sign off salaries), and paying it needs accounts.payments.record.
+    "hr.view",
+    "hr.payroll",
+    "portal.self",
     "reports.export",
     "notepad.use",
   ],

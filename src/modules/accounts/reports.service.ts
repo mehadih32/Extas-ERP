@@ -30,7 +30,8 @@ import type { CompanyContext } from "@/modules/auth/context";
  *   Balance sheet   Assets = Liabilities + Equity (equity includes the profit
  *                   kept in the business, split into earlier years and this year)
  *   Trial balance   every account's balance on its debit or credit side
- *   Books check     the ledgers agree with the stock, asset and loan registers
+ *   Books check     the ledgers agree with the stock, asset, loan, advance and
+ *                   payroll registers
  * Periods are calendar days in company time; reversed entries cancel out.
  */
 
@@ -445,6 +446,13 @@ export async function getAccountsOverview(ctx: CompanyContext) {
     _count: { _all: true },
     _sum: { amount: true },
   });
+  const [draftPayrolls, unpaidSalaries] = await Promise.all([
+    ctx.db.payrollRun.count({ where: { status: "DRAFT" } }),
+    prisma.payrollItem.findMany({
+      where: { paymentId: null, netPay: { gt: 0 }, run: { companyId, status: "APPROVED" } },
+      select: { runId: true, netPay: true },
+    }),
+  ]);
 
   const loans = sum((a) => a.subType === "LOAN");
   const investors = sum((a) => a.subType === "INVESTOR");
@@ -489,6 +497,18 @@ export async function getAccountsOverview(ctx: CompanyContext) {
       count: claims._count._all,
       amount: (claims._sum.amount ?? ZERO).toFixed(2),
     },
+    payroll: {
+      /** Advances employees still owe (recovered from salary or expenses). */
+      employeeAdvances: sum((a) => a.subType === "ADVANCE_TO_EMPLOYEE").toFixed(2),
+      /** Approved net salaries not yet paid. */
+      salariesPayable: sum((a) => a.code === CONTROL_ACCOUNTS.SALARIES_PAYABLE.code).toFixed(2),
+      draftsAwaitingApproval: draftPayrolls,
+      awaitingPayment: {
+        payrolls: new Set(unpaidSalaries.map((i) => i.runId)).size,
+        employees: unpaidSalaries.length,
+        amount: unpaidSalaries.reduce((t, i) => t.plus(i.netPay), ZERO).toFixed(2),
+      },
+    },
   };
 }
 
@@ -505,6 +525,49 @@ type Check = {
   difference: string;
   note?: string;
 };
+
+/** Each employee's debit-minus-credit on one account (null: lines naming nobody). */
+async function employeeBalances(companyId: string, accountId: string) {
+  const rows = await prisma.$queryRaw<
+    Array<{ employeeId: string | null; balance: Prisma.Decimal }>
+  >`
+    SELECT jl."employeeId", SUM(jl.debit - jl.credit) AS balance
+    FROM "JournalLine" jl
+    JOIN "JournalEntry" je ON je.id = jl."entryId"
+    WHERE je."companyId" = ${companyId} AND jl."accountId" = ${accountId}
+    GROUP BY jl."employeeId"`;
+  return new Map(rows.map((r) => [r.employeeId, new Prisma.Decimal(r.balance)]));
+}
+
+/** A ledger kept per employee against its HR register, employee by employee. */
+async function employeeRegisterCheck(
+  key: string,
+  label: string,
+  ledger: Map<string | null, Prisma.Decimal>,
+  register: Map<string, Prisma.Decimal>,
+): Promise<Check> {
+  const total = (m: Map<string | null, Prisma.Decimal>) =>
+    [...m.values()].reduce((t, v) => t.plus(v), ZERO);
+  const ids = new Set<string | null>([...ledger.keys(), ...register.keys()]);
+  const off = [...ids].filter(
+    (id) => !(ledger.get(id) ?? ZERO).equals((id && register.get(id)) || ZERO),
+  );
+  const check = compare(key, label, total(ledger), total(register));
+  if (off.length === 0) return check;
+  const named = await prisma.employee.findMany({
+    where: { id: { in: off.filter((id): id is string => id !== null) } },
+    select: { id: true, name: true },
+  });
+  const nameOf = new Map(named.map((e) => [e.id, e.name]));
+  return {
+    ...check,
+    ok: false,
+    note: `Out of step: ${off
+      .slice(0, 20)
+      .map((id) => (id ? (nameOf.get(id) ?? id) : "lines naming no employee"))
+      .join(", ")}`,
+  };
+}
 
 function compare(
   key: string,
@@ -673,6 +736,57 @@ export async function getBooksCheck(ctx: CompanyContext) {
             .join("; ")}`
         : "Payables also include Due expenses, assets bought on credit and opening balances.",
   });
+
+  // 7. Employee advances and salaries payable: every line names the employee, and each
+  //    employee's balance matches the HR registers (open advances, approved unpaid pay).
+  const advanceAccount = byCode.get(CONTROL_ACCOUNTS.EMPLOYEE_ADVANCES.code)!;
+  const payableAccount = byCode.get(CONTROL_ACCOUNTS.SALARIES_PAYABLE.code)!;
+  const [noEmployee] = await prisma.$queryRaw<Array<{ count: bigint }>>`
+    SELECT COUNT(*) AS count
+    FROM "JournalLine" jl
+    JOIN "JournalEntry" je ON je.id = jl."entryId"
+    WHERE je."companyId" = ${companyId} AND jl."employeeId" IS NULL
+      AND jl."accountId" IN (${advanceAccount.id}, ${payableAccount.id})`;
+  const noEmployeeCount = Number(noEmployee?.count ?? 0);
+  checks.push({
+    key: "EMPLOYEE_LINES",
+    label: "Advance and salary payable lines name the employee",
+    ok: noEmployeeCount === 0,
+    books: String(noEmployeeCount),
+    register: "0",
+    difference: String(noEmployeeCount),
+  });
+  const [advanceLedger, payableLedger, openAdvances, unpaidPay] = await Promise.all([
+    employeeBalances(companyId, advanceAccount.id),
+    employeeBalances(companyId, payableAccount.id),
+    prisma.salaryAdvance.groupBy({
+      by: ["employeeId"],
+      where: { companyId, status: "OPEN" },
+      _sum: { outstanding: true },
+    }),
+    prisma.payrollItem.groupBy({
+      by: ["employeeId"],
+      where: { paymentId: null, run: { companyId, status: { in: ["APPROVED", "PAID"] } } },
+      _sum: { netPay: true },
+    }),
+  ]);
+  checks.push(
+    await employeeRegisterCheck(
+      "EMPLOYEE_ADVANCES",
+      "Advances to employees match what is owed on open advances",
+      advanceLedger,
+      new Map(openAdvances.map((a) => [a.employeeId, a._sum.outstanding ?? ZERO])),
+    ),
+  );
+  checks.push(
+    await employeeRegisterCheck(
+      "SALARIES_PAYABLE",
+      "Salaries payable match approved net pay not yet paid",
+      // A liability: its balance is credit minus debit.
+      new Map([...payableLedger].map(([id, v]) => [id, v.neg()])),
+      new Map(unpaidPay.map((i) => [i.employeeId, i._sum.netPay ?? ZERO])),
+    ),
+  );
 
   return {
     asOf: today(ctx),

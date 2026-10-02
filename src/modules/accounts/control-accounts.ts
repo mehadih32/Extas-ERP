@@ -24,6 +24,12 @@ export const CONTROL_ACCOUNTS = {
     type: "ASSET",
     subType: "ACCOUNTS_RECEIVABLE",
   },
+  EMPLOYEE_ADVANCES: {
+    code: "1250",
+    name: "Advances to Employees",
+    type: "ASSET",
+    subType: "ADVANCE_TO_EMPLOYEE",
+  },
   INVENTORY: {
     code: "1300",
     name: "Finished Goods Inventory",
@@ -61,6 +67,18 @@ export const CONTROL_ACCOUNTS = {
     subType: "CUSTOMER_ADVANCE",
   },
   VAT_PAYABLE: { code: "2200", name: "VAT Payable", type: "LIABILITY", subType: "OTHER_LIABILITY" },
+  SALARIES_PAYABLE: {
+    code: "2250",
+    name: "Salaries Payable",
+    type: "LIABILITY",
+    subType: "OTHER_LIABILITY",
+  },
+  SALARY_TAX: {
+    code: "2260",
+    name: "Tax Deducted from Salaries (TDS)",
+    type: "LIABILITY",
+    subType: "OTHER_LIABILITY",
+  },
   DRAWINGS: { code: "3100", name: "Owner's Drawings", type: "EQUITY", subType: "DRAWINGS" },
   OPENING_EQUITY: {
     code: "3900",
@@ -82,6 +100,13 @@ export const CONTROL_ACCOUNTS = {
     name: "Production & Inventory Losses",
     type: "EXPENSE",
     subType: "INVENTORY_LOSS",
+  },
+  // Also the SALARY expense category's account (chart.ts), so both name one account.
+  SALARIES: {
+    code: "6200",
+    name: "Salaries & Wages",
+    type: "EXPENSE",
+    subType: "PAYROLL_EXPENSE",
   },
   DEPRECIATION: {
     code: "6800",

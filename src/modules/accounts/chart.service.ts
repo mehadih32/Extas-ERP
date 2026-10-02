@@ -74,6 +74,12 @@ export function manualPostingBlock(account: {
   if (account.code === CONTROL_ACCOUNTS.WORK_IN_PROGRESS.code) {
     return "Work in progress is kept by Production.";
   }
+  if (account.code === CONTROL_ACCOUNTS.EMPLOYEE_ADVANCES.code) {
+    return "Advances to employees are kept by HR: give, recover or take back an advance there.";
+  }
+  if (account.code === CONTROL_ACCOUNTS.SALARIES_PAYABLE.code) {
+    return "Salaries payable is kept by payroll (approve and pay a month's payroll).";
+  }
   if (account.capitalSource) return "Use capital, investors and loans for this account.";
   return null;
 }
@@ -88,6 +94,12 @@ function openingBalanceBlock(account: AccountRow): string | null {
     "ADVANCE_TO_EMPLOYEE",
     "OTHER_LIABILITY",
   ];
+  if (account.code === CONTROL_ACCOUNTS.EMPLOYEE_ADVANCES.code) {
+    return "Enter each employee's advance brought forward in HR instead.";
+  }
+  if (account.code === CONTROL_ACCOUNTS.SALARIES_PAYABLE.code) {
+    return "Salaries payable is kept by payroll.";
+  }
   if (
     account.code === CONTROL_ACCOUNTS.WORK_IN_PROGRESS.code ||
     !allowed.includes(account.subType)

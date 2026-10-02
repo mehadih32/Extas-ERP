@@ -329,11 +329,13 @@ with the ledgers.
 - **Balance sheet** on any day, with profit kept in the business split into earlier years
   and this year.
 - **Trial balance.**
-- **Books check:** the journal balances, and the stock, fixed asset, loan, investor and
-  supplier bill registers agree with their ledger accounts.
+- **Books check:** the journal balances, and the stock, fixed asset, loan, investor,
+  supplier bill, employee advance and unpaid salary registers agree with their ledger
+  accounts.
 - **Overview:** cash, bank and wallet balances, stock value, fixed assets, loans and
-  investors, today's sales, this month's and this year's profit, overdue installments and
-  claims waiting to be paid.
+  investors, today's sales, this month's and this year's profit, overdue installments,
+  claims waiting to be paid, salary advances owed and payrolls waiting to be approved or
+  paid.
 
 | Event                      | Entry                                                      |
 | -------------------------- | ---------------------------------------------------------- |
@@ -382,6 +384,110 @@ Sales, Production, Warehouse and Employees hold none. Anyone with `expenses.crea
 expenses, but unless they can pay money out each one is a claim for Accounts. Holders of
 `expenses.manage` see, edit and void any expense, manage expense heads and post Due expenses.
 Server Actions are in `src/server/actions/accounts.actions.ts` and `expenses.actions.ts`.
+
+## HR & Payroll (backend)
+
+**Employees.** Each employee gets a code (EMP-0001 onwards) and a profile with contact
+details, NID, blood group, emergency contact, joining day, monthly salary and how they are
+paid (cash, bank or wallet). A raise or a cut is a salary revision from a day onwards, so
+past months keep the salary they were paid at. Leaving is recorded with a day and a reason
+(resigned or terminated), and a leaver can be reinstated. An employee with payroll, advance,
+attendance, leave or expense records cannot be deleted; record their leaving day instead. HR
+gives an employee a portal login: a member already in the company, or a new login with the
+Employee role.
+
+**Attendance.** Attendance is marked by exception: a working day nobody marked counts as
+present, so HR only marks late, half-day and absent days, and overtime minutes. Employees
+can also check in and out from the portal. A check-in after the office start time plus the
+grace minutes (09:00 and 15 minutes by default) is late. The HR rules set the weekly days off
+(Friday by default) and the holiday list; both are paid days off. A company can also decide
+that every few lates cost a day's salary.
+
+**Leave.** Casual (10 days a year), Sick (14), Earned (16), Maternity (112) and Unpaid leave
+come ready; a company changes them or adds its own. Leave counts working days only, can be a
+half day, and is counted again when holidays or days off change. Paid leave has a yearly
+allowance, shared out by the months worked for people who join or leave during the year
+(not Maternity). HR can set a different allowance for one person and year. Unpaid leave has
+no limit and is deducted in payroll. Employees ask from the portal and HR approves or rejects.
+Overlapping requests are refused, and so is full-day leave on a day the person was marked at
+work. Nobody approves their own leave or cancels their own approved leave, and nobody
+changes their own salary; only a Super Admin can.
+
+**Salary advances.** Accounts pays an advance from cash, bank or a wallet, or brings one
+forward from before go-live. Each advance is recovered from salary all at once or in monthly
+installments, from a chosen month, oldest first, and never more than the month's pay; when
+someone leaves, everything still owed is recovered. Accounts can also take money back in
+cash. A conveyance or food expense for an employee is paid from their advance first, and
+only the rest in cash (Accounts can choose to pay it all in cash instead). Voiding the
+expense puts the advance back.
+
+**Monthly payroll.** A draft covers everyone employed in the month. Each person earns their
+salary for the days they were employed (1/days-in-month a day, at the salary in force that
+day), so joiners and leavers are paid for their days. Unpaid leave and absent days are
+deducted, overtime is hours x the employee's hourly rate, and advances are recovered.
+Payroll adds allowances, a bonus (an amount, or a percentage of salary for everyone, such as
+an Eid bonus), tax (TDS) and other deductions, and can change overtime hours or the advance
+recovery. Recalculating picks up later attendance, leave, salary and advance changes and
+keeps those edits. Someone holding the approval permission (Super Admin by default) then
+approves it; a draft that is out of date is refused, so what was checked is what gets posted. Approval posts one entry dated the month's last day
+and freezes the month's attendance, leave, holidays and salaries. Accounts then pays
+everyone, or chosen people in batches, from cash, bank or a wallet. A payment can be voided.
+A payroll can be reopened (its entry reversed and the advances owed again) only while none
+of it is paid. Every employee gets a payslip on the company letterhead, with the net pay in
+words, and sees their own payslips in the portal.
+
+**Employee portal.** With `portal.self`, an employee sees their own profile and pay details,
+leave balances, this month's attendance, advances and payslips, checks in and out, and asks
+for or cancels leave. Nothing else in HR is open to them.
+
+| Event                        | Entry                                                                    |
+| ---------------------------- | ------------------------------------------------------------------------ |
+| Advance given                | Dr Advances to Employees (1250), Cr Cash / Bank / Wallet                 |
+| Advance brought forward      | Dr Advances to Employees, Cr Opening Balance Equity                      |
+| Advance returned in cash     | Dr Cash / Bank / Wallet, Cr Advances to Employees                        |
+| Expense paid from an advance | Dr Expense, Cr Advances to Employees (and Cr Cash for any rest)          |
+| Payroll approved, per person | Dr Salaries & Wages (6200) gross pay, Cr Salaries Payable (2250) net pay |
+| ...and the deductions        | Cr Advances to Employees, Tax Deducted (2260), Other Income (4200)       |
+| Salaries paid                | Dr Salaries Payable (employee), Cr Cash / Bank / Wallet                  |
+
+| Endpoint                                                                          | Purpose                                                  |
+| --------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| `GET/PATCH /api/hr/settings`                                                      | Weekly days off, office start time, late rules, check-in |
+| `GET/POST /api/hr/holidays`, `DELETE …/:id`                                       | Holiday list (one or many at once)                       |
+| `GET/POST /api/hr/leave-types`, `PATCH …/:id`                                     | Leave types and yearly days                              |
+| `GET/POST /api/hr/employees`, `GET/PATCH/DELETE …/:id`                            | Employees and the 360° profile                           |
+| `GET /api/hr/employees/directory`                                                 | Names and codes for pickers (no pay details)             |
+| `POST /api/hr/employees/:id/salary`, `DELETE …/salary/:revisionId`                | Salary revisions                                         |
+| `POST /api/hr/employees/:id/exit` / `…/reinstate`                                 | Leaving / coming back                                    |
+| `POST/DELETE /api/hr/employees/:id/portal-access`                                 | Give or take away a portal login                         |
+| `GET /api/hr/employees/:id/statement` / `…/attendance?month=`                     | Advances, salaries and payments / the month day by day   |
+| `GET/POST /api/hr/attendance?date=`, `DELETE …/:id`, `GET …/summary`              | Day register and marking / monthly day counts            |
+| `GET/POST /api/hr/leave`, `GET …/:id`, `POST …/:id/approve` / `reject` / `cancel` | Leave requests                                           |
+| `GET/PUT /api/hr/leave/balances`                                                  | Leave balances / set one person's allowance for a year   |
+| `GET/POST /api/hr/advances`, `GET/PATCH …/:id`                                    | Salary advances and their recovery plan                  |
+| `POST /api/hr/advances/:id/return` / `…/void`, `…/returns/:id/void`               | Money given back / undo an advance or a return           |
+| `GET/POST /api/hr/payroll`, `GET/DELETE …/:id`                                    | Monthly payroll runs                                     |
+| `POST /api/hr/payroll/:id/recalculate` / `…/bonus`, `PATCH …/items/:id`           | Prepare the draft                                        |
+| `POST /api/hr/payroll/:id/approve` / `…/reopen`                                   | Post to the books / undo                                 |
+| `POST /api/hr/payroll/:id/pay`, `POST /api/hr/payroll/payments/:id/void`          | Pay salaries / void a payment                            |
+| `GET /api/hr/payroll/:id/items/:id/payslip`                                       | Payslip                                                  |
+| `GET /api/portal/me`, `…/attendance`, `…/payslips`, `…/advances`                  | Employee portal: my records                              |
+| `POST /api/portal/attendance/check-in` / `check-out`                              | Employee portal: check in and out                        |
+| `GET/POST /api/portal/leave`, `POST …/:id/cancel`                                 | Employee portal: my leave                                |
+
+`hr.view` sees profiles, attendance, leave and holidays, but no salaries. `hr.manage` adds
+and edits employees and salaries, marks attendance, approves leave and sets the HR rules.
+`hr.payroll` prepares payroll and sees salaries, payslips and advances; `hr.payroll.approve`
+approves or reopens it. Salaries, bank details, advances and payslips are shown only to
+holders of `hr.manage`, `hr.payroll` or `accounts.view`. Paying advances and salaries needs
+`accounts.payments.record`, and taking money back needs `accounts.receipts.record`, so by
+default only Accounts and Super Admin move money. By default Accounts holds `hr.view` and
+`hr.payroll`, Super Admin holds everything (so a Super Admin approves what Accounts
+prepares), and every role holds `portal.self`. A company can make an "HR Manager" role with
+`hr.view` and `hr.manage`. The books check also compares the advances and unpaid salaries
+with their ledger accounts, employee by employee, and the Accounts overview shows advances
+owed, salaries payable and payrolls waiting for approval or payment. Server Actions are in
+`src/server/actions/hr.actions.ts` and `portal.actions.ts`.
 
 ## Backups (backend)
 

@@ -10,6 +10,7 @@ import { recordAudit } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { setSessionCompany, type ValidSession } from "@/modules/auth/session.service";
 import { resolveCompanyAccess } from "@/modules/companies/access";
+import { ensureHrSetup } from "@/modules/hr/setup";
 import { ensureSystemRoles } from "@/modules/rbac/role.service";
 
 const hexColor = z.string().regex(/^#[0-9a-fA-F]{6}$/, "Use a hex color like #0B3D2E");
@@ -71,6 +72,7 @@ export async function createCompany(
     const company = await tx.company.create({ data: { ...input, slug } });
     const roles = await ensureSystemRoles(company.id, tx);
     await ensureAccountsSetup(company.id, tx);
+    await ensureHrSetup(company.id, tx);
     await tx.companyMembership.create({
       data: { companyId: company.id, userId: actor.userId, roleId: roles.SUPER_ADMIN },
     });

@@ -86,6 +86,11 @@ export const createExpenseSchema = z
     reference: optionalText(120),
     /** The supplier a Due expense is owed to. */
     supplierId: id.optional(),
+    /**
+     * Conveyance / food paid now: settle it from the employee's open advances
+     * first (the rest is paid in cash). Default: yes.
+     */
+    useAdvance: z.boolean().default(true),
     ...detailFields,
   })
   .superRefine((v, ctx) => {
@@ -122,6 +127,8 @@ export const approveExpenseSchema = z.object({
   reference: optionalText(120),
   /** When the money was paid; default: now. */
   date: dayOrInstant.optional(),
+  /** Conveyance / food: settle it from the employee's open advances first. Default: yes. */
+  useAdvance: z.boolean().default(true),
 });
 
 export const rejectExpenseSchema = z.object({ reason });

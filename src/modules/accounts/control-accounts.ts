@@ -42,6 +42,12 @@ export const CONTROL_ACCOUNTS = {
     type: "ASSET",
     subType: "OTHER_CURRENT_ASSET",
   },
+  RAW_MATERIALS: {
+    code: "1400",
+    name: "Raw Materials & Accessories",
+    type: "ASSET",
+    subType: "RAW_MATERIALS",
+  },
   FIXED_ASSETS: {
     code: "1500",
     name: "Fixed Assets (at cost)",

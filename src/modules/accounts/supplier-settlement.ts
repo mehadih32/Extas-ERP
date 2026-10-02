@@ -141,11 +141,14 @@ const isCurrent = (b: PlannedBill) =>
   b.paid.equals(b.recorded.paid) && b.due.equals(b.recorded.due) && b.status === b.recorded.status;
 
 /**
- * Brings a supplier's bills in line with their Payable ledger (see planSettlement).
- * Returns the bills that changed and what is left over as an advance.
+ * Locks a supplier's account until the transaction ends: one settlement per
+ * supplier at a time, so a bill saved meanwhile is never missed, and all of
+ * their open bills. settleSupplierBills takes it last; a transaction that also
+ * locks one of the supplier's bills (to pay, void or return goods on it) takes
+ * it first, so two such transactions queue up instead of each holding a bill
+ * the other's settlement needs. Taking it again in the same transaction is free.
  */
-export async function settleSupplierBills(tx: Tx, companyId: string, supplierId: string) {
-  // One settlement per supplier at a time, so a bill saved meanwhile is never missed.
+export async function lockSupplierAccount(tx: Tx, companyId: string, supplierId: string) {
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`supplier-settle:${supplierId}`}))`;
   const ids = (
     await tx.supplierBill.findMany({
@@ -154,6 +157,14 @@ export async function settleSupplierBills(tx: Tx, companyId: string, supplierId:
     })
   ).map((b) => b.id);
   await lockRows(tx, "SupplierBill", ids);
+}
+
+/**
+ * Brings a supplier's bills in line with their Payable ledger (see planSettlement).
+ * Returns the bills that changed and what is left over as an advance.
+ */
+export async function settleSupplierBills(tx: Tx, companyId: string, supplierId: string) {
+  await lockSupplierAccount(tx, companyId, supplierId);
   const plan = await planSettlement(tx, companyId, supplierId);
   const changed: BillSettlement[] = [];
   for (const bill of plan.bills) {

@@ -92,6 +92,10 @@ model Company {
   rawMaterials         RawMaterial[]
   rawMaterialMovements RawMaterialMovement[]
   badStockEntries      BadStockEntry[]
+  rawMaterialStocks    RawMaterialStock[]
+  purchaseOrders       PurchaseOrder[]
+  materialIssues       MaterialIssue[]
+  purchaseReturns      PurchaseReturn[]
   parties              Party[]
   campaigns            ReEngagementCampaign[]
   quotations           Quotation[]
@@ -161,24 +165,28 @@ model User {
   auditLogs         AuditLog[]
   employeeProfiles  Employee[]
   uploadedFiles     FileAsset[]
-  forceOverrides    SalesOrderItem[]    @relation("ForceOverrideBy")
-  returnInspections SalesReturnItem[]   @relation("ReturnInspectedBy")
+  forceOverrides    SalesOrderItem[]      @relation("ForceOverrideBy")
+  returnInspections SalesReturnItem[]     @relation("ReturnInspectedBy")
   notes             Note[]
-  tasksCreated      Task[]              @relation("TaskCreatedBy")
-  remindersCreated  Reminder[]          @relation("ReminderCreatedBy")
+  tasksCreated      Task[]                @relation("TaskCreatedBy")
+  remindersCreated  Reminder[]            @relation("ReminderCreatedBy")
   reminderTargets   ReminderRecipient[]
   reportExports     ReportExport[]
-  journalEntries    JournalEntry[]      @relation("JournalPostedBy")
-  approvedLeaves    LeaveRequest[]      @relation("LeaveApprovedBy")
-  requestedLeaves   LeaveRequest[]      @relation("LeaveRequestedBy")
-  attendanceMarked  Attendance[]        @relation("AttendanceRecordedBy")
-  payrollsCreated   PayrollRun[]        @relation("PayrollCreatedBy")
-  payrollsApproved  PayrollRun[]        @relation("PayrollApprovedBy")
-  salariesPaid      PayrollPayment[]    @relation("PayrollPaidBy")
-  advancesGiven     SalaryAdvance[]     @relation("AdvanceCreatedBy")
+  journalEntries    JournalEntry[]        @relation("JournalPostedBy")
+  approvedLeaves    LeaveRequest[]        @relation("LeaveApprovedBy")
+  requestedLeaves   LeaveRequest[]        @relation("LeaveRequestedBy")
+  attendanceMarked  Attendance[]          @relation("AttendanceRecordedBy")
+  payrollsCreated   PayrollRun[]          @relation("PayrollCreatedBy")
+  payrollsApproved  PayrollRun[]          @relation("PayrollApprovedBy")
+  salariesPaid      PayrollPayment[]      @relation("PayrollPaidBy")
+  advancesGiven     SalaryAdvance[]       @relation("AdvanceCreatedBy")
   generatedDocs     GeneratedDocument[]
   backupRuns        BackupRun[]
-  expensesCreated   Expense[]           @relation("ExpenseCreatedBy")
+  expensesCreated   Expense[]             @relation("ExpenseCreatedBy")
+  purchaseOrders    PurchaseOrder[]       @relation("PurchaseOrderCreatedBy")
+  materialIssues    MaterialIssue[]       @relation("MaterialIssueCreatedBy")
+  purchaseReturns   PurchaseReturn[]      @relation("PurchaseReturnCreatedBy")
+  materialMovements RawMaterialMovement[] @relation("MaterialMovementBy")
 }
 
 /// A signed-in device. `token` stores the SHA-256 hash of the cookie value, never
@@ -525,6 +533,10 @@ model Warehouse {
   rawMaterialMovements RawMaterialMovement[]
   salesOrders          SalesOrder[]
   stockIntakes         StockIntake[]
+  rawMaterialStocks    RawMaterialStock[]
+  supplierBills        SupplierBill[]
+  materialIssues       MaterialIssue[]
+  purchaseReturns      PurchaseReturn[]
 
   @@unique([companyId, name])
 }
@@ -595,49 +607,243 @@ model BadStockEntry {
   @@index([companyId, createdAt])
 }
 
-/// Fabric, trims, accessories, packaging — tracked as Current Assets.
+/// Fabric, trims, accessories and packaging bought for production: a current
+/// asset (Raw Materials & Accessories, 1400) valued at moving average cost.
 model RawMaterial {
-  id           String          @id @default(cuid())
-  companyId    String
-  code         String
-  name         String
-  kind         RawMaterialKind
-  unit         MeasurementUnit
-  quantity     Decimal         @default(0) @db.Decimal(14, 3)
-  avgCost      Decimal         @default(0) @db.Decimal(14, 4)
-  reorderLevel Decimal?        @db.Decimal(14, 3)
-  supplierId   String?
-  isActive     Boolean         @default(true)
-  createdAt    DateTime        @default(now())
-  updatedAt    DateTime        @updatedAt
+  id            String          @id @default(cuid())
+  companyId     String
+  code          String // "FAB-0001", or the company's own code
+  name          String
+  kind          RawMaterialKind
+  unit          MeasurementUnit
+  color         String?
+  specification String? // e.g. "180 GSM single jersey, 100% cotton, 72 in open width"
+  quantity      Decimal         @default(0) @db.Decimal(14, 3) // on hand in every store
+  stockValue    Decimal         @default(0) @db.Decimal(14, 2) // its share of the Raw Materials ledger
+  avgCost       Decimal         @default(0) @db.Decimal(14, 4) // stockValue / quantity (the last one while none is left)
+  reorderLevel  Decimal?        @db.Decimal(14, 3) // low stock at or below this
+  supplierId    String? // the usual supplier
+  isActive      Boolean         @default(true)
+  notes         String?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
 
-  company   Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  supplier  Party?                @relation(fields: [supplierId], references: [id], onDelete: SetNull)
-  movements RawMaterialMovement[]
+  company     Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  supplier    Party?                @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  stocks      RawMaterialStock[]
+  movements   RawMaterialMovement[]
+  orderLines  PurchaseOrderLine[]
+  billItems   SupplierBillItem[]
+  returnLines PurchaseReturnLine[]
 
   @@unique([companyId, code])
+  @@index([companyId, kind, isActive])
 }
 
+/// How much of a raw material sits in one store (warehouse).
+model RawMaterialStock {
+  id            String   @id @default(cuid())
+  companyId     String
+  rawMaterialId String
+  warehouseId   String
+  quantity      Decimal  @default(0) @db.Decimal(14, 3)
+  updatedAt     DateTime @updatedAt
+
+  company     Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  rawMaterial RawMaterial @relation(fields: [rawMaterialId], references: [id], onDelete: Cascade)
+  warehouse   Warehouse   @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+
+  @@unique([rawMaterialId, warehouseId])
+  @@index([companyId, warehouseId])
+}
+
+/// The stock card: every change to a raw material, in the order it was recorded.
+/// `quantity` changes the store's stock; `value` changes the material's value
+/// (its values add up to `stockValue`, its share of the Raw Materials ledger).
 model RawMaterialMovement {
   id                  String                  @id @default(cuid())
   companyId           String
   rawMaterialId       String
-  warehouseId         String?
+  warehouseId         String
   type                RawMaterialMovementType
-  quantity            Decimal                 @db.Decimal(14, 3) // + in, - out
-  unitCost            Decimal?                @db.Decimal(14, 4)
-  productionProjectId String? // consumption charged to a batch
-  supplierBillId      String?
+  date                DateTime                @default(now()) // the bill, issue or count day
+  quantity            Decimal                 @db.Decimal(14, 3) // + into, - out of the store
+  unitCost            Decimal                 @db.Decimal(14, 4)
+  value               Decimal                 @default(0) @db.Decimal(14, 2) // + into, - out of the books
+  productionProjectId String? // issued to / returned from this project
+  supplierBillId      String? // bought (or voided) on this bill
+  issueId             String? // material issue or return note
+  purchaseReturnId    String? // sent back to the supplier (debit note)
+  transferId          String? // pairs the two sides of a transfer between stores
+  journalEntryId      String?
   note                String?
+  createdById         String?
   createdAt           DateTime                @default(now())
 
   company           Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
   rawMaterial       RawMaterial        @relation(fields: [rawMaterialId], references: [id], onDelete: Cascade)
-  warehouse         Warehouse?         @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
+  warehouse         Warehouse          @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
   productionProject ProductionProject? @relation(fields: [productionProjectId], references: [id], onDelete: SetNull)
   supplierBill      SupplierBill?      @relation(fields: [supplierBillId], references: [id], onDelete: SetNull)
+  issue             MaterialIssue?     @relation(fields: [issueId], references: [id], onDelete: SetNull)
+  purchaseReturn    PurchaseReturn?    @relation(fields: [purchaseReturnId], references: [id], onDelete: SetNull)
+  journalEntry      JournalEntry?      @relation(fields: [journalEntryId], references: [id], onDelete: SetNull)
+  createdBy         User?              @relation("MaterialMovementBy", fields: [createdById], references: [id], onDelete: SetNull)
 
   @@index([rawMaterialId, createdAt])
+  @@index([companyId, type, createdAt])
+  @@index([productionProjectId])
+  @@index([supplierBillId])
+}
+
+/// An order placed with a supplier for raw materials (e.g. a fabric booking). No
+/// money moves until the goods arrive with the supplier's bill.
+model PurchaseOrder {
+  id           String              @id @default(cuid())
+  companyId    String
+  number       String
+  supplierId   String
+  projectId    String? // bought for this production project
+  orderDate    DateTime            @db.Date
+  expectedDate DateTime?           @db.Date // when the goods should be in-house
+  status       PurchaseOrderStatus @default(OPEN)
+  supplierRef  String? // the supplier's PI or booking number
+  totalAmount  Decimal             @default(0) @db.Decimal(14, 2)
+  notes        String?
+  closedReason String? // why it was closed or cancelled before everything came
+  closedAt     DateTime?
+  createdById  String?
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+
+  company   Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  supplier  Party               @relation(fields: [supplierId], references: [id])
+  project   ProductionProject?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  createdBy User?               @relation("PurchaseOrderCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  lines     PurchaseOrderLine[]
+  bills     SupplierBill[]
+
+  @@unique([companyId, number])
+  @@index([companyId, status, expectedDate])
+  @@index([supplierId])
+}
+
+model PurchaseOrderLine {
+  id            String  @id @default(cuid())
+  orderId       String
+  rawMaterialId String
+  quantity      Decimal @db.Decimal(14, 3)
+  unitPrice     Decimal @db.Decimal(14, 4)
+  amount        Decimal @db.Decimal(14, 2)
+  receivedQty   Decimal @default(0) @db.Decimal(14, 3) // on bills that are not void
+  description   String?
+
+  order       PurchaseOrder      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  rawMaterial RawMaterial        @relation(fields: [rawMaterialId], references: [id])
+  billItems   SupplierBillItem[]
+
+  @@index([orderId])
+  @@index([rawMaterialId])
+}
+
+/// Raw materials bought on a supplier bill and received into the bill's store.
+model SupplierBillItem {
+  id                  String  @id @default(cuid())
+  billId              String
+  rawMaterialId       String
+  purchaseOrderLineId String?
+  quantity            Decimal @db.Decimal(14, 3)
+  unitPrice           Decimal @db.Decimal(14, 4)
+  amount              Decimal @db.Decimal(14, 2)
+  description         String?
+
+  bill              SupplierBill         @relation(fields: [billId], references: [id], onDelete: Cascade)
+  rawMaterial       RawMaterial          @relation(fields: [rawMaterialId], references: [id])
+  purchaseOrderLine PurchaseOrderLine?   @relation(fields: [purchaseOrderLineId], references: [id], onDelete: SetNull)
+  returnLines       PurchaseReturnLine[]
+
+  @@index([billId])
+  @@index([purchaseOrderLineId])
+}
+
+/// Materials handed from a store to a production project (ISSUE) or brought back
+/// unused (RETURN). Issues go out at the store's average cost; returns come back
+/// at what the project was charged for them.
+model MaterialIssue {
+  id             String            @id @default(cuid())
+  companyId      String
+  number         String
+  kind           MaterialIssueKind
+  projectId      String
+  warehouseId    String
+  date           DateTime          @default(now())
+  receivedBy     String? // who took the materials (or brought them back)
+  note           String?
+  totalValue     Decimal           @default(0) @db.Decimal(14, 2)
+  journalEntryId String?           @unique
+  createdById    String?
+  createdAt      DateTime          @default(now())
+
+  company      Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  project      ProductionProject     @relation(fields: [projectId], references: [id])
+  warehouse    Warehouse             @relation(fields: [warehouseId], references: [id])
+  journalEntry JournalEntry?         @relation(fields: [journalEntryId], references: [id], onDelete: SetNull)
+  createdBy    User?                 @relation("MaterialIssueCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  movements    RawMaterialMovement[]
+
+  @@unique([companyId, number])
+  @@index([projectId, createdAt])
+}
+
+/// Goods sent back to a supplier from one of their bills (a debit note): the
+/// supplier owes us the bill price and the goods leave the store.
+model PurchaseReturn {
+  id             String    @id @default(cuid())
+  companyId      String
+  number         String
+  supplierId     String
+  billId         String
+  warehouseId    String
+  date           DateTime  @default(now())
+  reason         String
+  totalAmount    Decimal   @db.Decimal(14, 2) // what the supplier credits, at the bill price
+  stockValue     Decimal   @db.Decimal(14, 2) // the value that left the store
+  journalEntryId String?   @unique
+  voidedAt       DateTime?
+  voidReason     String?
+  createdById    String?
+  createdAt      DateTime  @default(now())
+
+  company      Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  supplier     Party                 @relation(fields: [supplierId], references: [id])
+  bill         SupplierBill          @relation(fields: [billId], references: [id])
+  warehouse    Warehouse             @relation(fields: [warehouseId], references: [id])
+  journalEntry JournalEntry?         @relation(fields: [journalEntryId], references: [id], onDelete: SetNull)
+  createdBy    User?                 @relation("PurchaseReturnCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  lines        PurchaseReturnLine[]
+  movements    RawMaterialMovement[]
+
+  @@unique([companyId, number])
+  @@index([billId])
+  @@index([supplierId])
+}
+
+model PurchaseReturnLine {
+  id               String  @id @default(cuid())
+  purchaseReturnId String
+  billItemId       String
+  rawMaterialId    String
+  quantity         Decimal @db.Decimal(14, 3)
+  unitPrice        Decimal @db.Decimal(14, 4) // the bill price
+  amount           Decimal @db.Decimal(14, 2)
+  stockValue       Decimal @db.Decimal(14, 2)
+
+  purchaseReturn PurchaseReturn   @relation(fields: [purchaseReturnId], references: [id], onDelete: Cascade)
+  billItem       SupplierBillItem @relation(fields: [billItemId], references: [id])
+  rawMaterial    RawMaterial      @relation(fields: [rawMaterialId], references: [id])
+
+  @@index([purchaseReturnId])
+  @@index([billItemId])
 }
 
 // =============================================================================
@@ -685,6 +891,8 @@ model Party {
   supplierBills        SupplierBill[]
   expenses             Expense[]
   rawMaterials         RawMaterial[]
+  purchaseOrders       PurchaseOrder[]
+  purchaseReturns      PurchaseReturn[]
   productionsAsBuyer   ProductionProject[] @relation("ProductionBuyer")
   productionsAsFactory ProductionProject[] @relation("ProductionFactory")
   campaignRecipients   CampaignRecipient[]
@@ -1208,6 +1416,8 @@ model ProductionProject {
   rawMaterialMovements RawMaterialMovement[]
   stockIntakes         StockIntake[]
   reminders            Reminder[]
+  purchaseOrders       PurchaseOrder[]
+  materialIssues       MaterialIssue[]
   tasks                Task[]
 
   @@unique([companyId, code])
@@ -1231,33 +1441,41 @@ model ProductionStageLog {
 /// A supplier bill (fabric, trims, factory CM...). Paid by Cash/Bank or left Due on
 /// the supplier ledger, and split across one or more production batches.
 model SupplierBill {
-  id             String      @id @default(cuid())
-  companyId      String
-  number         String // internal number
-  supplierRef    String? // supplier's own bill no
-  supplierId     String
-  billDate       DateTime    @default(now())
-  totalAmount    Decimal     @db.Decimal(14, 2)
-  paymentType    PaymentType
-  paidAmount     Decimal     @default(0) @db.Decimal(14, 2)
-  dueAmount      Decimal     @default(0) @db.Decimal(14, 2)
-  status         BillStatus  @default(UNPAID)
-  attachmentId   String?
-  notes          String?
-  journalEntryId String?     @unique
-  createdAt      DateTime    @default(now())
-  updatedAt      DateTime    @updatedAt
+  id              String      @id @default(cuid())
+  companyId       String
+  number          String // internal number
+  supplierRef     String? // supplier's own bill no
+  supplierId      String
+  billDate        DateTime    @default(now())
+  totalAmount     Decimal     @db.Decimal(14, 2)
+  paymentType     PaymentType
+  paidAmount      Decimal     @default(0) @db.Decimal(14, 2)
+  dueAmount       Decimal     @default(0) @db.Decimal(14, 2)
+  status          BillStatus  @default(UNPAID)
+  attachmentId    String?
+  notes           String?
+  journalEntryId  String?     @unique
+  // Raw material purchases: the store the goods went into and the order they came on.
+  warehouseId     String?
+  purchaseOrderId String?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
 
   company              Company                  @relation(fields: [companyId], references: [id], onDelete: Cascade)
   supplier             Party                    @relation(fields: [supplierId], references: [id])
   attachment           FileAsset?               @relation(fields: [attachmentId], references: [id], onDelete: SetNull)
   journalEntry         JournalEntry?            @relation(fields: [journalEntryId], references: [id], onDelete: SetNull)
+  warehouse            Warehouse?               @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
+  purchaseOrder        PurchaseOrder?           @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
   allocations          SupplierBillAllocation[]
+  items                SupplierBillItem[]
   payments             Payment[]
   rawMaterialMovements RawMaterialMovement[]
+  purchaseReturns      PurchaseReturn[]
 
   @@unique([companyId, number])
   @@index([supplierId])
+  @@index([purchaseOrderId])
 }
 
 /// Split Bill Logic: portion of a bill charged to a batch under an expense head.
@@ -1371,19 +1589,22 @@ model JournalEntry {
   reversalOfId String?       @unique
   createdAt    DateTime      @default(now())
 
-  company           Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  postedBy          User?              @relation("JournalPostedBy", fields: [postedById], references: [id], onDelete: SetNull)
-  reversalOf        JournalEntry?      @relation("JournalReversal", fields: [reversalOfId], references: [id], onDelete: SetNull)
-  reversedBy        JournalEntry?      @relation("JournalReversal")
+  company           Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  postedBy          User?                 @relation("JournalPostedBy", fields: [postedById], references: [id], onDelete: SetNull)
+  reversalOf        JournalEntry?         @relation("JournalReversal", fields: [reversalOfId], references: [id], onDelete: SetNull)
+  reversedBy        JournalEntry?         @relation("JournalReversal")
   lines             JournalLine[]
   payment           Payment?
   supplierBill      SupplierBill?
   expense           Expense?
   badStock          BadStockEntry?
-  payrollRun        PayrollRun?        @relation("PayrollAccrual")
+  payrollRun        PayrollRun?           @relation("PayrollAccrual")
   payrollPayment    PayrollPayment?
   salaryAdvance     SalaryAdvance?
   advanceSettlement AdvanceSettlement?
+  materialIssue     MaterialIssue?
+  purchaseReturn    PurchaseReturn?
+  materialMovements RawMaterialMovement[]
 
   @@unique([companyId, number])
   @@index([companyId, date])
@@ -2329,11 +2550,30 @@ enum MeasurementUnit {
 }
 
 enum RawMaterialMovementType {
+  OPENING
   PURCHASE_IN
+  PURCHASE_VOID
+  RETURN_TO_SUPPLIER
+  SUPPLIER_RETURN_VOID
   ISSUE_TO_PRODUCTION
   RETURN_FROM_PRODUCTION
   ADJUSTMENT
   WASTAGE
+  TRANSFER_OUT
+  TRANSFER_IN
+}
+
+enum PurchaseOrderStatus {
+  OPEN
+  PARTIALLY_RECEIVED
+  RECEIVED
+  CLOSED
+  CANCELLED
+}
+
+enum MaterialIssueKind {
+  ISSUE
+  RETURN
 }
 
 enum PartyKind {
@@ -2608,6 +2848,8 @@ enum JournalSource {
   TRANSFER
   FIXED_ASSET
   STOCK_ADJUSTMENT
+  MATERIAL_ISSUE
+  PURCHASE_RETURN
 }
 
 enum AssetStatus {
@@ -2744,6 +2986,10 @@ enum DocumentType {
   CONVEYANCE_FORM
   PAYSLIP
   SALARY_ADVANCE
+  PURCHASE_ORDER
+  MATERIAL_ISSUE
+  MATERIAL_RETURN
+  PURCHASE_RETURN
   REPORT
 }
 

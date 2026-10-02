@@ -34,7 +34,7 @@ Check the database connection at <http://localhost:3000/api/health>.
 
 ```
 prisma/
-  schema.prisma          # full database design (85 tables)
+  schema.prisma          # full database design (96 tables)
   migrations/            # SQL migrations applied to PostgreSQL
 src/
   app/                   # Next.js App Router (routes; api/health for DB check)
@@ -278,10 +278,11 @@ under `UPLOAD_DIR`; photos sent to the AI reader can be up to 5 MB.
 ## Accounts (backend)
 
 **Chart of accounts.** Every company starts with a standard chart: Cash in Hand (1000),
-Mobile Wallets (1050), Bank (1100), Receivables, Inventory, Work in Progress, Fixed Assets
-and Accumulated Depreciation, Payables (2100), Customer Advances, VAT, loans (from 2300),
-investors (from 2400), owners' capital (from 3000), Drawings, Opening Balance Equity, Sales,
-Other Income, Cost of Goods Sold and the expense accounts (6000 to 7000). Accounts adds
+Mobile Wallets (1050), Bank (1100), Receivables, Inventory, Work in Progress, Raw Materials &
+Accessories (1400), Fixed Assets and Accumulated Depreciation, Payables (2100), Customer
+Advances, VAT, loans (from 2300), investors (from 2400), owners' capital (from 3000),
+Drawings, Opening Balance Equity, Sales, Other Income, Cost of Goods Sold and the expense
+accounts (6000 to 7000). Accounts adds
 accounts (the next free code in the range by default), renames them, archives them at a zero
 balance, and brings balances forward from before go-live against Opening Balance Equity.
 Every account has a ledger for any period with a running balance.
@@ -289,8 +290,8 @@ Every account has a ledger for any period with a running balance.
 **Journal and transfers.** Journal vouchers record adjustments as balanced debit and credit
 lines. A posted entry is never edited or deleted: it is reversed with a reason, and the
 reversal is an entry of its own. Money moved between cash, bank and wallets is a transfer.
-Sales, production, expenses, assets and capital all post to the same journal, so the day
-book shows everything.
+Sales, production, raw materials, expenses, assets and capital all post to the same journal,
+so the day book shows everything.
 
 **Bank accounts.** Each bank account has its own ledger account. Its statement shows the
 opening and closing balance, every deposit and withdrawal with a running balance, and a
@@ -329,13 +330,13 @@ with the ledgers.
 - **Balance sheet** on any day, with profit kept in the business split into earlier years
   and this year.
 - **Trial balance.**
-- **Books check:** the journal balances, and the stock, fixed asset, loan, investor,
-  supplier bill, employee advance and unpaid salary registers agree with their ledger
-  accounts.
-- **Overview:** cash, bank and wallet balances, stock value, fixed assets, loans and
-  investors, today's sales, this month's and this year's profit, overdue installments,
-  claims waiting to be paid, salary advances owed and payrolls waiting to be approved or
-  paid.
+- **Books check:** the journal balances, and the stock, raw material, work in progress,
+  fixed asset, loan, investor, supplier bill, employee advance and unpaid salary registers
+  agree with their ledger accounts.
+- **Overview:** cash, bank and wallet balances, stock value, raw materials (with low stock
+  and late purchase orders), work in progress, fixed assets, loans and investors, today's
+  sales, this month's and this year's profit, overdue installments, claims waiting to be
+  paid, salary advances owed and payrolls waiting to be approved or paid.
 
 | Event                      | Entry                                                      |
 | -------------------------- | ---------------------------------------------------------- |
@@ -488,6 +489,105 @@ prepares), and every role holds `portal.self`. A company can make an "HR Manager
 with their ledger accounts, employee by employee, and the Accounts overview shows advances
 owed, salaries payable and payrolls waiting for approval or payment. Server Actions are in
 `src/server/actions/hr.actions.ts` and `portal.actions.ts`.
+
+## Raw materials & purchasing (backend)
+
+**Materials and stores.** Fabric, trims, accessories, packaging and other materials each get
+a code per kind (FAB-0001, TRM-0001, ACC-0001, PKG-0001, RM-0001) or the company's own code,
+a unit (pcs, m, yd, kg, g, rolls, dozen, gross, cones or sets; pieces, rolls, cones and sets
+are counted whole) and, optionally, a color, a specification (e.g. 180 GSM single jersey),
+the usual supplier and a reorder level. A material is low on stock at or below its reorder
+level. Stock is kept per store (the same warehouses as finished goods) and valued for the
+whole company at moving average cost, to the paisa: the last unit out takes whatever value
+is left. A material's unit cannot change once it has been ordered, bought or moved. It is
+archived only when none is left and nothing is still on order, and no stock comes into it
+until it is made active again.
+
+**Purchase orders.** A purchase order (PO-) books fabric or trims with a supplier, for a
+production project if wanted, with the day the goods are expected. Nothing reaches the books
+until the goods arrive. Bills received against the order count towards its lines, so it
+shows as Open, Partially Received or Received; a delivery a little over the order is
+accepted. Lines can be changed until something arrives. An order nothing has arrived on can
+be cancelled, and a partly received one closed, each with a reason. An order is late once
+its expected day has passed with goods still to come, and the summary lists late deliveries
+with the days late.
+
+**Buying.** The supplier's bill is the goods received note: its lines come into the chosen
+store at the bill price and are owed to the supplier (Due), or paid in full straight away
+from cash, bank or a wallet. Production Managers record Due bills; only Accounts records a
+bill paid now or pays a Due one, and payments settle the supplier's oldest dues first, as in
+Accounts. Voiding a bill takes its goods back out of the store, and anything already paid
+stays with the supplier as an advance. A bill with goods sent back to the supplier is voided
+only after those returns are voided.
+
+**Returns to suppliers.** A debit note (DN-) sends goods from one of the supplier's bills
+back at the bill price, never more than is left on the bill line. The amount comes off what
+is owed to the supplier, oldest due first, or stays with them as an advance. If the stock's
+average cost has moved away from the bill price since the goods arrived, the difference goes
+to Production & Inventory Losses, so the stock value always matches the ledger.
+
+**The store.** A stock count sets a store's quantity to what was counted: a shortfall is
+written off at average cost, and a surplus comes in at average cost. Wastage is written off
+with a reason. Stock moves between stores without changing its value. Opening stock from
+before go-live is entered per material and store at its cost. Every change appears on the
+material's stock card with a running quantity and value, for any dates and any store.
+
+**Issues to production.** An issue note (MI-) hands materials from a store to an open
+production project at average cost, and that cost joins the project's work in progress. A
+return note (MR-) brings unused materials back at what the project was charged for them,
+never more than the project holds. Notes are not voided: a mistaken issue is corrected with
+a return. The project's cost sheet lists the materials it used and their net cost next to
+its bills and costs, and Move to Stock carries that cost into the finished goods.
+
+| Event                     | Entry                                                            |
+| ------------------------- | ---------------------------------------------------------------- |
+| Opening stock             | Dr Raw Materials & Accessories (1400), Cr Opening Balance Equity |
+| Bill received             | Dr Raw Materials, Cr Payable (supplier)                          |
+| Bill paid                 | Dr Payable (supplier), Cr Cash / Bank / Wallet                   |
+| Goods sent back           | Dr Payable (supplier), Cr Raw Materials (± the cost difference)  |
+| Bill voided               | Its entry reversed (± the cost difference)                       |
+| Issued to production      | Dr Work in Progress (project), Cr Raw Materials                  |
+| Returned from production  | Dr Raw Materials, Cr Work in Progress (project)                  |
+| Count shortfall / wastage | Dr Production & Inventory Losses (5100), Cr Raw Materials        |
+| Count surplus             | Dr Raw Materials, Cr Production & Inventory Losses               |
+| Moved between stores      | No entry: quantities only                                        |
+
+| Endpoint                                                                            | Purpose                                                      |
+| ----------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| `GET /api/materials/summary`                                                        | Stock value by kind, low stock, stores, open and late orders |
+| `GET/POST /api/materials`, `GET/PATCH …/:id`                                        | Materials with stock per store and quantity on order         |
+| `GET /api/materials/:id/stock-card?from=&to=&warehouseId=`                          | Stock card with running quantity and value                   |
+| `GET /api/materials/movements`                                                      | Every stock movement (material, store, project, type, dates) |
+| `POST /api/materials/:id/opening-stock`                                             | Stock from before go-live                                    |
+| `POST /api/materials/:id/count` / `…/wastage` / `…/transfer`                        | Stock count / write off / move between stores                |
+| `GET/POST /api/materials/purchase-orders`, `GET/PATCH …/:id`                        | Purchase orders (status, supplier, project, late)            |
+| `POST /api/materials/purchase-orders/:id/cancel` / `…/close`                        | Cancel an order / close it with what has arrived             |
+| `GET/POST /api/materials/purchases`, `GET …/:id`                                    | Material bills (goods received)                              |
+| `POST /api/materials/purchases/:id/payments` / `…/void`                             | Pay a bill (Accounts) / void it                              |
+| `GET/POST /api/materials/supplier-returns`, `GET …/:id`, `POST …/:id/void`          | Returns to suppliers (debit notes)                           |
+| `GET/POST /api/materials/issues`, `GET …/:id`, `POST /api/materials/issues/returns` | Issue notes to production / return notes from it             |
+| `GET /api/production/projects/:id/materials`                                        | A project's materials: issued, returned, cost, orders        |
+
+Reads need `materials.view`. Adding and editing materials needs `materials.manage` or
+`materials.purchase`. Counts, wastage, transfers and issues to and from production need
+`materials.manage`; purchase orders, Due bills, returns to suppliers and opening stock need
+`materials.purchase`. A bill paid now and paying a bill need `accounts.payments.record`, and
+Accounts (`accounts.manage`) can also void bills, send goods back and enter opening stock. By
+default Production Managers hold all three `materials.*` permissions, the Warehouse Team
+views and keeps the store but does not buy, and Accounts views; only Accounts and Super Admin
+move money. Bills and returns, and prices and values everywhere, are shown only to holders of
+`materials.purchase`, `production.manage`, `accounts.view`, `accounts.manage` or
+`accounts.payments.record`, so the store team sees quantities. The books check compares the Raw Materials ledger with the
+stock value, material by material and against each stock card, and the Work in Progress
+ledger with the projects; the Accounts overview shows raw material stock, low stock, open and
+late purchase orders and work in progress. Server Actions are in
+`src/server/actions/materials.actions.ts`.
+
+Everything that adds, pays, voids or returns goods on a supplier's bills (here and in
+Production) first locks that supplier's account (`lockSupplierAccount`), so two people working
+on one supplier at once queue up instead of blocking each other. Raw material changes also
+run again automatically if the database ever cancels one to break such a conflict
+(`runTransaction` in `src/lib/transaction.ts`).
 
 ## Backups (backend)
 

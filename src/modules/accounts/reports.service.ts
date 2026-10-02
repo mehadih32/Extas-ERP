@@ -1,6 +1,6 @@
 import { type AccountSubType, type AccountType, Prisma } from "@prisma/client";
 
-import { localDay, nextDay, startOfDayInZone } from "@/lib/dates";
+import { dateColumn, localDay, nextDay, startOfDayInZone } from "@/lib/dates";
 import { prisma } from "@/lib/prisma";
 import {
   accountTotals,
@@ -21,6 +21,7 @@ import {
 import { asOfSchema, profitAndLossSchema } from "@/modules/accounts/schemas";
 import { billsOutOfStep } from "@/modules/accounts/supplier-settlement";
 import type { CompanyContext } from "@/modules/auth/context";
+import { projectCostSummaries } from "@/modules/production/project-costs";
 
 /*
  * Financial statements straight from the journal, so they always agree with
@@ -454,6 +455,23 @@ export async function getAccountsOverview(ctx: CompanyContext) {
     }),
   ]);
 
+  const [lowMaterials, openOrders, lateOrders] = await Promise.all([
+    ctx.db.rawMaterial.count({
+      where: {
+        isActive: true,
+        reorderLevel: { not: null },
+        quantity: { lte: prisma.rawMaterial.fields.reorderLevel },
+      },
+    }),
+    ctx.db.purchaseOrder.count({ where: { status: { in: ["OPEN", "PARTIALLY_RECEIVED"] } } }),
+    ctx.db.purchaseOrder.count({
+      where: {
+        status: { in: ["OPEN", "PARTIALLY_RECEIVED"] },
+        expectedDate: { lt: dateColumn(day) },
+      },
+    }),
+  ]);
+
   const loans = sum((a) => a.subType === "LOAN");
   const investors = sum((a) => a.subType === "INVESTOR");
   return {
@@ -464,6 +482,17 @@ export async function getAccountsOverview(ctx: CompanyContext) {
     },
     /** "Total Active Stock Value": pieces on hand at average cost. */
     stockValue: stockValue.toFixed(2),
+    rawMaterials: {
+      /** Fabric, trims and accessories in the stores, at average cost. */
+      value: sum((a) => a.subType === "RAW_MATERIALS").toFixed(2),
+      /** Materials at or below their reorder level. */
+      lowStock: lowMaterials,
+      /** Purchase orders still waiting for goods, and how many of them are late. */
+      openPurchaseOrders: openOrders,
+      overdueDeliveries: lateOrders,
+    },
+    /** Production costs not yet moved into finished stock. */
+    workInProgress: sum((a) => a.code === CONTROL_ACCOUNTS.WORK_IN_PROGRESS.code).toFixed(2),
     /** Fixed assets at book value (cost less depreciation). */
     fixedAssets: sum(
       (a) => a.subType === "FIXED_ASSET" || a.subType === "ACCUMULATED_DEPRECIATION",
@@ -659,6 +688,63 @@ export async function getBooksCheck(ctx: CompanyContext) {
       stockValue,
       Prisma.Decimal.max(1, stockValue.abs().times(0.001)),
       "Small differences come from rounding average costs to 4 decimals.",
+    ),
+  );
+
+  // 3b. Raw materials: the ledger vs each material's value, and each material's figures vs
+  //     its stock card and its stores.
+  const materials = await prisma.rawMaterial.aggregate({
+    where: { companyId },
+    _sum: { stockValue: true },
+  });
+  const offCard = await prisma.$queryRaw<Array<{ code: string }>>`
+    SELECT rm.code
+    FROM "RawMaterial" rm
+    LEFT JOIN (
+      SELECT "rawMaterialId", SUM(quantity) AS quantity, SUM(value) AS value
+      FROM "RawMaterialMovement" WHERE "companyId" = ${companyId} GROUP BY "rawMaterialId"
+    ) mv ON mv."rawMaterialId" = rm.id
+    LEFT JOIN (
+      SELECT "rawMaterialId", SUM(quantity) AS quantity
+      FROM "RawMaterialStock" WHERE "companyId" = ${companyId} GROUP BY "rawMaterialId"
+    ) st ON st."rawMaterialId" = rm.id
+    WHERE rm."companyId" = ${companyId}
+      AND (rm.quantity <> COALESCE(mv.quantity, 0) OR rm."stockValue" <> COALESCE(mv.value, 0)
+           OR rm.quantity <> COALESCE(st.quantity, 0) OR rm."stockValue" < 0)
+    ORDER BY rm.code
+    LIMIT 20`;
+  const rawMaterials = compare(
+    "RAW_MATERIALS",
+    "Raw materials match the stock in the stores",
+    balanceOf(CONTROL_ACCOUNTS.RAW_MATERIALS.code),
+    materials._sum.stockValue ?? ZERO,
+  );
+  checks.push(
+    offCard.length > 0
+      ? {
+          ...rawMaterials,
+          ok: false,
+          note: `Stock cards out of step: ${offCard.map((m) => m.code).join(", ")}`,
+        }
+      : rawMaterials,
+  );
+
+  // 3c. Work in progress: the ledger vs what open production still carries.
+  const projects = await prisma.productionProject.findMany({
+    where: { companyId },
+    select: { id: true },
+  });
+  const projectCosts = await projectCostSummaries(
+    prisma,
+    companyId,
+    projects.map((p) => p.id),
+  );
+  checks.push(
+    compare(
+      "WORK_IN_PROGRESS",
+      "Work in progress matches the production projects' costs",
+      balanceOf(CONTROL_ACCOUNTS.WORK_IN_PROGRESS.code),
+      [...projectCosts.values()].reduce((t, c) => t.plus(c.wip), ZERO),
     ),
   );
 

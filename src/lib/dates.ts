@@ -68,3 +68,24 @@ export function dayRange(
         : new Date(new Date(to).getTime() + 1);
   return { start, end };
 }
+
+/** The calendar day ("2026-02-28") an instant falls on in `timeZone`. */
+export function localDay(at: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(at);
+}
+
+/** Whole calendar days from `from` to `to` ("YYYY-MM-DD"); negative when `to` is earlier. */
+export function daysBetween(from: string, to: string): number {
+  return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);
+}
+
+/** A plain calendar day means the start of that day in company time; timestamps pass through. */
+export function toInstant(value: Date | string, timeZone: string): Date {
+  if (value instanceof Date) return value;
+  return DATE_ONLY.test(value) ? startOfDayInZone(value, timeZone) : new Date(value);
+}

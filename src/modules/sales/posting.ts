@@ -15,15 +15,6 @@ import { invoiceStatusFor, money, ZERO } from "@/modules/sales/totals";
 
 type Tx = Prisma.TransactionClient;
 
-/** Locks a sales document row until the transaction ends (no double payments / deliveries). */
-export async function lockRow(
-  tx: Tx,
-  table: "SalesOrder" | "ProformaInvoice" | "Quotation",
-  id: string,
-) {
-  await tx.$queryRaw`SELECT id FROM ${Prisma.raw(`"${table}"`)} WHERE id = ${id} FOR UPDATE`;
-}
-
 /** Re-totals what has been paid against an order and its invoice. */
 export async function refreshOrderPayments(tx: Tx, orderId: string) {
   const order = await tx.salesOrder.findUniqueOrThrow({

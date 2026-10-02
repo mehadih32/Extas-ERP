@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { dayRange, nextDay, startOfDayInZone } from "@/lib/dates";
+import { dayRange, daysBetween, localDay, nextDay, startOfDayInZone, toInstant } from "@/lib/dates";
 
 describe("company-time day boundaries", () => {
   it("starts a Dhaka day at 18:00 UTC the evening before", () => {
@@ -30,5 +30,21 @@ describe("company-time day boundaries", () => {
     const exact = dayRange(undefined, "2026-02-28T10:00:00Z", "Asia/Dhaka");
     expect(exact.start).toBeUndefined();
     expect(exact.end?.toISOString()).toBe("2026-02-28T10:00:00.001Z");
+  });
+
+  it("reads the calendar day of an instant in company time", () => {
+    expect(localDay(new Date("2026-01-31T17:59:00Z"), "Asia/Dhaka")).toBe("2026-01-31");
+    expect(localDay(new Date("2026-01-31T18:00:00Z"), "Asia/Dhaka")).toBe("2026-02-01");
+    expect(daysBetween("2026-01-31", "2026-03-01")).toBe(29);
+    expect(daysBetween("2026-03-01", "2026-01-31")).toBe(-29);
+  });
+
+  it("treats a plain day as the start of that day and keeps timestamps", () => {
+    expect(toInstant("2026-03-01", "Asia/Dhaka").toISOString()).toBe("2026-02-28T18:00:00.000Z");
+    expect(toInstant("2026-03-01T10:00:00Z", "Asia/Dhaka").toISOString()).toBe(
+      "2026-03-01T10:00:00.000Z",
+    );
+    const at = new Date("2026-03-01T10:00:00Z");
+    expect(toInstant(at, "Asia/Dhaka")).toBe(at);
   });
 });

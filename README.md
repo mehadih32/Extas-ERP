@@ -61,8 +61,10 @@ const ctx = await requirePermission("sales.order.create");
 ctx.db.salesOrder.findMany(); // ctx.db only ever sees the active company's rows
 ```
 
-The permission list and the default grants for the five blueprint roles live in
-`src/modules/rbac/permissions.ts`.
+The permission list and the default grants for the built-in roles (the five from the blueprint
+plus **Accounts**) live in `src/modules/rbac/permissions.ts`. Recording money is kept apart from
+selling and producing: by default only Super Admin and Accounts hold `accounts.receipts.record`
+(money received from buyers) and `accounts.payments.record` (money paid to suppliers).
 
 | Endpoint                                             | Purpose                                                  |
 | ---------------------------------------------------- | -------------------------------------------------------- |
@@ -170,8 +172,8 @@ available returns `409 INSUFFICIENT_STOCK` with the short SKUs, which is the cue
 line and lands in the audit log.
 
 **Documents at checkout (optional).** Commercial Invoice (made by default), Packing List /
-pick-list and Delivery Challan (price-free). Payment taken at the counter can be included.
-Everything is saved together or not at all.
+pick-list and Delivery Challan (price-free). Payment taken at the counter can be included when
+the user may record money (see below). Everything is saved together or not at all.
 
 **Books.** Every step posts a balanced journal entry, so the buyer's ledger, statements and
 the receivables overview update immediately:
@@ -202,8 +204,73 @@ the receivables overview update immediately:
 | `GET/POST /api/sales/payments`, `GET …/:id`                        | Money received (order, proforma or on account), receipts |
 | `GET /api/sales/summary?from=&to=`                                 | Today's sales, collections and open dues                 |
 
-Reads need `sales.view`; quotations and proformas need `sales.quotation.manage`; orders,
-documents and payments need `sales.order.create`; voiding an invoice needs
-`sales.invoice.edit`; custom field definitions need `company.settings`. Server Actions are in
+Reads need `sales.view`; quotations and proformas need `sales.quotation.manage`; orders and
+documents need `sales.order.create`; recording money received (on its own or at checkout)
+needs `accounts.receipts.record`, which only Accounts and Super Admin hold by default, so
+Sales Executives create orders and proformas but never record receipts; voiding an invoice
+needs `sales.invoice.edit`; custom field definitions need `company.settings`. Server Actions are in
 `src/server/actions/sales.actions.ts`. Website / courier sync and returns QC come next in
 this module.
+
+## Production (backend)
+
+**Projects.** A production project records the item (category / style), the factory (a
+supplier profile, or just its name), the target date and quantity, and the buyer or
+In-House. Projects start Active, or Planned for later. A fully paid proforma advance starts
+one on its own with a 45-day target. The overview shows a card for each open project with its
+elapsed and remaining days in company time. A card turns red once its target date has passed,
+and shows the stage badge: Fabric Sourcing → Cutting → Sewing → Wash/QC → Finishing. Every
+stage change is logged; going back a stage (rework) needs a note.
+
+**Costs.** Every cost names an expense head (Fabric, Trims & Accessories, Cutting, Sewing
+(CM), Wash...). It is either Due to a supplier or paid now from cash, bank or a mobile
+wallet. One supplier bill can be split across several projects (Split Bill). Production
+Managers record Due bills. Paying suppliers and costs paid in cash or bank are for Accounts.
+Voiding a bill reverses it, and anything already paid on it stays with the supplier as an
+advance.
+
+**Move to Stock.** A factory delivery is typed in (SKU lines or the color × size matrix, A-
+and B-grade), or read by AI from a packing-list photo or PDF and matched to the style's SKUs
+for a person to check. Confirming a delivery puts the pieces into stock and moves its share
+of the project's cost from work in progress into inventory. That share follows the pieces
+still expected (300 of 1,000 take 30%), and the final delivery takes the rest. Within the
+delivery the cost is split per piece in one of three ways: equally, with B-grade valued at a
+ratio of A-grade (half by default), or as typed in. Each SKU's average cost is re-weighted,
+so sales are costed at what the goods cost to make.
+
+| Event                        | Entry                                                    |
+| ---------------------------- | -------------------------------------------------------- |
+| Supplier bill                | Dr Work in Progress (per project), Cr Payable (supplier) |
+| Supplier paid                | Dr Payable (supplier), Cr Cash / Bank / Wallet           |
+| Cost paid without a supplier | Dr Work in Progress, Cr Cash / Bank / Wallet             |
+| Delivery moved to stock      | Dr Finished Goods Inventory, Cr Work in Progress         |
+| Unrecovered cost written off | Dr Production & Inventory Losses, Cr Work in Progress    |
+
+| Endpoint                                                            | Purpose                                                    |
+| ------------------------------------------------------------------- | ---------------------------------------------------------- |
+| `GET /api/production/overview`                                      | Dashboard: counts, projects per stage, project cards       |
+| `GET/POST /api/production/projects`, `GET/PATCH …/:id`              | Projects (status, stage, buyer, In-House, overdue, search) |
+| `POST /api/production/projects/:id/stage`                           | Move the stage badge                                       |
+| `POST /api/production/projects/:id/status`                          | Start, hold or resume                                      |
+| `POST /api/production/projects/:id/complete` / `…/cancel`           | Close a project (leftover cost written off by Accounts)    |
+| `GET/POST /api/production/projects/:id/costs`                       | Cost sheet / add one cost, Due or paid now                 |
+| `POST /api/production/costs/:id/void`                               | Void a cost paid in cash or bank                           |
+| `GET/POST /api/production/cost-heads`, `PATCH …/:id`                | Expense heads for production costs                         |
+| `GET/POST /api/production/bills`, `GET …/:id`                       | Supplier bills split across projects                       |
+| `POST /api/production/bills/:id/payments` / `…/void`                | Pay a bill / void it                                       |
+| `POST /api/production/files`                                        | Upload a packing list or bill scan (photo or PDF, 10 MB)   |
+| `GET/POST /api/production/intakes`, `GET/PATCH …/:id`               | Deliveries for Move to Stock, with a cost preview          |
+| `POST /api/production/intakes/:id/parse` / `…/confirm` / `…/cancel` | Read with AI / put into stock / drop the draft             |
+| `GET /api/files/:id`                                                | Open an uploaded file                                      |
+
+Reads need `production.view`, which the Warehouse Team also holds. Projects, stages, cost
+heads and Due bills need `production.manage`. Money paid out (bill payments, costs paid in
+cash or bank) needs `accounts.payments.record`, and writing leftover cost off when a project
+is completed or cancelled needs `accounts.manage`; by default only Accounts and Super Admin
+hold either. Deliveries need `production.stock_intake`. Cost figures are shown only to
+holders of `production.manage` or `accounts.view`, so the warehouse never sees them. Server
+Actions are in `src/server/actions/production.actions.ts`.
+
+AI reading needs `AI_API_KEY` (a Claude API key) and `AI_INTAKE_MODEL` (a Claude model that
+reads images and PDFs) in `.env`. Without them, deliveries are typed in. Uploads are kept
+under `UPLOAD_DIR`; photos sent to the AI reader can be up to 5 MB.

@@ -50,7 +50,7 @@ async function uniqueSlug(base: string): Promise<string> {
 }
 
 /**
- * Creates a company with the five built-in roles and makes the creator its
+ * Creates a company with the built-in roles and makes the creator its
  * Super Admin. Platform owner only (checked by the caller).
  */
 export async function createCompany(

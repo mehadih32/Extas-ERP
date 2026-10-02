@@ -38,6 +38,12 @@ export async function readJson(request: Request): Promise<unknown> {
 
 type RouteContext<P> = { params: Promise<P> };
 
+/** The JSON error envelope `{ ok: false, error }` with the matching HTTP status. */
+export function apiErrorResponse(error: unknown): NextResponse {
+  const safe = toActionError(error);
+  return NextResponse.json({ ok: false, error: safe }, { status: httpStatusFor(safe.code) });
+}
+
 /**
  * Wraps a Route Handler: same-origin check for writes, JSON envelope
  * `{ ok: true, data }` / `{ ok: false, error }`, and correct HTTP status codes.
@@ -52,8 +58,7 @@ export function apiRoute<P = Record<string, never>>(
       const data = await handler(request, await context.params);
       return NextResponse.json({ ok: true, data }, { status: options.successStatus ?? 200 });
     } catch (error) {
-      const safe = toActionError(error);
-      return NextResponse.json({ ok: false, error: safe }, { status: httpStatusFor(safe.code) });
+      return apiErrorResponse(error);
     }
   };
 }

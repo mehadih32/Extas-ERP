@@ -9,7 +9,13 @@ import {
   resetMemberPassword,
   setMemberActive,
 } from "@/modules/rbac/member.service";
-import { createRole, deleteRole, listRoles, updateRole } from "@/modules/rbac/role.service";
+import {
+  createRole,
+  deleteRole,
+  ensureSystemRoles,
+  listRoles,
+  updateRole,
+} from "@/modules/rbac/role.service";
 
 import { addToCompany, contextFor, makeCompany, makeUser, resetDb } from "./helpers";
 
@@ -54,7 +60,7 @@ run("tenant isolation", () => {
 run("roles", () => {
   beforeEach(resetDb);
 
-  it("lists the five built-in roles with Super Admin holding everything", async () => {
+  it("lists the built-in roles with Super Admin holding everything", async () => {
     const { ctx } = await setup();
     const roles = await listRoles(ctx);
     expect(
@@ -63,6 +69,7 @@ run("roles", () => {
         .map((r) => r.systemRole)
         .sort(),
     ).toEqual([
+      "ACCOUNTS",
       "EMPLOYEE",
       "PRODUCTION_MANAGER",
       "SALES_EXECUTIVE",
@@ -107,6 +114,19 @@ run("roles", () => {
     await expect(
       updateRole(ctx, fabric.roles.EMPLOYEE, { permissions: ["backups.manage"] }),
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  it("adopts a hand-made Accounts role when the built-in one is added", async () => {
+    const { ctx, extras } = await setup();
+    // A company created before Accounts became built-in, with its own "Accounts" role.
+    await prisma.role.delete({ where: { id: extras.roles.ACCOUNTS } });
+    const own = await createRole(ctx, { name: "Accounts", permissions: ["accounts.view"] });
+
+    const roles = await ensureSystemRoles(extras.company.id);
+    expect(roles.ACCOUNTS).toBe(own.id);
+    const adopted = (await listRoles(ctx)).find((r) => r.id === own.id)!;
+    expect(adopted).toMatchObject({ systemRole: "ACCOUNTS", isSystem: true });
+    expect(adopted.permissions).toEqual(["accounts.view"]);
   });
 });
 

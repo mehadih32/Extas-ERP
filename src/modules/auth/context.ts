@@ -74,6 +74,17 @@ export async function requirePermission(...permissions: PermissionKey[]): Promis
   return ctx;
 }
 
+/** Like requireCompany, but demands at least one of the listed permissions. */
+export async function requireAnyPermission(
+  ...permissions: PermissionKey[]
+): Promise<CompanyContext> {
+  const ctx = await loadCompanyContext();
+  if (!permissions.some((p) => ctx.permissions.has(p))) {
+    throw new AppError("FORBIDDEN", "You do not have permission to do this.");
+  }
+  return ctx;
+}
+
 /** Platform-level owner check (create companies, manage everything). */
 export async function requirePlatformSuperAdmin(): Promise<ValidSession> {
   const current = await requireSession();

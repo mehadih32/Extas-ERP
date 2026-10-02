@@ -1,0 +1,323 @@
+import { Prisma } from "@prisma/client";
+
+import { dateOnly } from "@/lib/dates";
+import { AppError } from "@/lib/errors";
+import { PDF_MIME } from "@/lib/pdf";
+import { prisma } from "@/lib/prisma";
+import { checkRateLimit } from "@/lib/rate-limit";
+import type { RequestMeta } from "@/lib/request-meta";
+import { auditInCompany } from "@/modules/audit/audit.service";
+import type { CompanyContext } from "@/modules/auth/context";
+import { loadPrintLogo } from "@/modules/companies/logo.service";
+import { buildDocument } from "@/modules/documents/builders";
+import {
+  contentHash,
+  documentFileName,
+  PRINT_TYPES,
+  type PrintType,
+} from "@/modules/documents/model";
+import { renderDocumentPdf } from "@/modules/documents/render";
+import { listDocumentsSchema, printRequestSchema } from "@/modules/documents/schemas";
+import {
+  deleteStoredFile,
+  readStoredFile,
+  storedFileExists,
+  writeGeneratedFile,
+} from "@/modules/files/file.service";
+import type { PermissionKey } from "@/modules/rbac/permissions";
+
+/*
+ * Printed documents: quotations, proforma and commercial invoices, delivery
+ * challans, buyer / supplier statements, stock availability sheets and the blank
+ * letterhead pad, made as PDFs on the company letterhead and kept.
+ *
+ * Every print reads the live data and hashes what would be printed (with the
+ * logo and the layout version). When a kept PDF has the same hash, that copy is
+ * returned instead of making a new file. When anything changed (a payment, a
+ * price, the logo), a new PDF is made and the older one stays, as a record of
+ * what was printed before.
+ *
+ * Who may print what follows who may see the data on screen: sales documents
+ * need sales.view, statements parties.ledger.view, stock sheets inventory.view
+ * and the blank pad documents.letterhead. Making a PDF and downloading one are
+ * written to the activity log.
+ */
+
+/** PDFs a person may make in a minute (each one reads the data and lays out pages). */
+const PRINT_PER_MINUTE = 30;
+
+export const PRINT_INFO: Record<
+  PrintType,
+  { label: string; plural: string; permission: PermissionKey }
+> = {
+  QUOTATION: { label: "Quotation", plural: "quotations", permission: "sales.view" },
+  PROFORMA_INVOICE: {
+    label: "Proforma invoice",
+    plural: "proforma invoices",
+    permission: "sales.view",
+  },
+  COMMERCIAL_INVOICE: { label: "Commercial invoice", plural: "invoices", permission: "sales.view" },
+  DELIVERY_CHALLAN: {
+    label: "Delivery challan",
+    plural: "delivery challans",
+    permission: "sales.view",
+  },
+  LEDGER_STATEMENT: {
+    label: "Statement of account",
+    plural: "statements",
+    permission: "parties.ledger.view",
+  },
+  STOCK_AVAILABILITY: {
+    label: "Stock availability sheet",
+    plural: "stock availability sheets",
+    permission: "inventory.view",
+  },
+  LETTERHEAD: {
+    label: "Blank letterhead",
+    plural: "the blank letterhead",
+    permission: "documents.letterhead",
+  },
+};
+
+/** The permissions that open the documents API (any one of them). */
+export const PRINT_PERMISSIONS = [
+  ...new Set(Object.values(PRINT_INFO).map((info) => info.permission)),
+] as PermissionKey[];
+
+/** The documents this person may print and see. */
+export function printableTypes(ctx: CompanyContext): PrintType[] {
+  return PRINT_TYPES.filter((type) => ctx.can(PRINT_INFO[type].permission));
+}
+
+function assertMayPrint(ctx: CompanyContext, type: PrintType) {
+  if (!ctx.can(PRINT_INFO[type].permission)) {
+    throw new AppError(
+      "FORBIDDEN",
+      `You do not have permission to print ${PRINT_INFO[type].plural}.`,
+    );
+  }
+}
+
+const isPrintType = (value: string): value is PrintType =>
+  (PRINT_TYPES as readonly string[]).includes(value);
+
+const documentInclude = {
+  party: { select: { id: true, code: true, name: true } },
+  generatedBy: { select: { id: true, name: true } },
+  file: {
+    select: { id: true, fileName: true, mimeType: true, sizeBytes: true, storagePath: true },
+  },
+} satisfies Prisma.GeneratedDocumentInclude;
+
+type DocumentRow = Prisma.GeneratedDocumentGetPayload<{ include: typeof documentInclude }>;
+
+function present(row: DocumentRow) {
+  const type = row.documentType as PrintType;
+  return {
+    id: row.id,
+    type,
+    typeLabel: PRINT_INFO[type].label,
+    title: row.title,
+    /** What it was printed for: "Quotation", "ProformaInvoice", "Invoice", "DeliveryChallan", "Party", "Brand", "Style". */
+    referenceType: row.referenceType,
+    referenceId: row.referenceId,
+    party: row.party,
+    /** Statements: the days covered (no start = from the first transaction). */
+    periodFrom: dateOnly(row.periodFrom),
+    periodTo: dateOnly(row.periodTo),
+    /** What was asked for (statement dates, stock sheet styles / brand / warehouse). */
+    options: row.options,
+    /** Ready to download from /api/documents/:id/download. */
+    downloadable: row.file !== null,
+    fileName: row.file?.fileName ?? null,
+    sizeBytes: row.file?.sizeBytes ?? null,
+    generatedBy: row.generatedBy,
+    createdAt: row.createdAt,
+  };
+}
+
+export type PrintedDocument = ReturnType<typeof present>;
+
+async function findByHash(ctx: CompanyContext, hash: string): Promise<DocumentRow | null> {
+  return ctx.db.generatedDocument.findFirst({
+    where: { contentHash: hash },
+    include: documentInclude,
+  });
+}
+
+/** Another print took the same content (or the same missing file) at the same moment. */
+class LostRace extends Error {}
+
+const isUniqueViolation = (error: unknown) =>
+  error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
+
+/**
+ * Prints a document as a PDF on the letterhead and keeps it. `reused` is true when
+ * nothing changed since the last print, so the kept copy is returned as it is.
+ */
+export async function printDocument(
+  ctx: CompanyContext,
+  raw: unknown,
+  meta?: RequestMeta,
+  now: Date = new Date(),
+): Promise<PrintedDocument & { reused: boolean }> {
+  const input = printRequestSchema.parse(raw);
+  assertMayPrint(ctx, input.type);
+  checkRateLimit(`print:${ctx.user.id}`, PRINT_PER_MINUTE, 60_000);
+
+  const { model, record } = await buildDocument(ctx, input, now);
+  const logo = await loadPrintLogo(ctx.company.id);
+  const hash = contentHash(model, logo?.checksum ?? null);
+
+  const existing = await findByHash(ctx, hash);
+  if (existing?.file && (await storedFileExists(existing.file))) {
+    return { ...present(existing), reused: true };
+  }
+
+  const bytes = await renderDocumentPdf(model, { logo: logo?.bytes });
+  const saved = await writeGeneratedFile(ctx.company.id, "documents", ".pdf", bytes);
+  const companyId = ctx.company.id;
+  try {
+    const row = await prisma.$transaction(async (tx) => {
+      const asset = await tx.fileAsset.create({
+        data: {
+          companyId,
+          // Made by the app, not uploaded: it opens through its document only.
+          uploadedById: null,
+          fileName: documentFileName(ctx.company.name, record.title),
+          mimeType: PDF_MIME,
+          sizeBytes: saved.sizeBytes,
+          storagePath: saved.storagePath,
+          checksum: saved.checksum,
+        },
+      });
+      let documentId: string;
+      if (existing) {
+        // Same content, but its kept file went missing: it gets the new file.
+        const { count } = await tx.generatedDocument.updateMany({
+          where: { id: existing.id, companyId, fileId: existing.fileId },
+          data: { fileId: asset.id },
+        });
+        if (count === 0) throw new LostRace();
+        if (existing.fileId) {
+          await tx.fileAsset.deleteMany({ where: { id: existing.fileId, companyId } });
+        }
+        documentId = existing.id;
+      } else {
+        const created = await tx.generatedDocument.create({
+          data: {
+            companyId,
+            documentType: input.type,
+            referenceType: record.referenceType,
+            referenceId: record.referenceId,
+            partyId: record.partyId,
+            fileId: asset.id,
+            title: record.title,
+            periodFrom: record.periodFrom ?? null,
+            periodTo: record.periodTo ?? null,
+            contentHash: hash,
+            options: record.options,
+            generatedById: ctx.user.id,
+          },
+          select: { id: true },
+        });
+        documentId = created.id;
+      }
+      await auditInCompany(
+        ctx,
+        meta,
+        {
+          action: "EXPORT",
+          entityType: "GeneratedDocument",
+          entityId: documentId,
+          summary: `${existing ? "Made PDF again (the kept copy was missing)" : "Made PDF"}: ${record.title}`,
+        },
+        tx,
+      );
+      return tx.generatedDocument.findUniqueOrThrow({
+        where: { id: documentId },
+        include: documentInclude,
+      });
+    });
+    return { ...present(row), reused: false };
+  } catch (error) {
+    await deleteStoredFile(saved).catch(() => undefined);
+    if (error instanceof LostRace || isUniqueViolation(error)) {
+      const winner = await findByHash(ctx, hash);
+      if (winner) return { ...present(winner), reused: true };
+    }
+    throw error;
+  }
+}
+
+/** Printed documents this person may see, newest first. */
+export async function listDocuments(ctx: CompanyContext, raw: unknown) {
+  const input = listDocumentsSchema.parse(raw);
+  if (input.type) assertMayPrint(ctx, input.type);
+  const types = input.type ? [input.type] : printableTypes(ctx);
+  if (types.length === 0) {
+    throw new AppError("FORBIDDEN", "You do not have permission to see printed documents.");
+  }
+  const rows = await ctx.db.generatedDocument.findMany({
+    where: {
+      documentType: { in: types },
+      ...(input.referenceId ? { referenceId: input.referenceId } : {}),
+      ...(input.partyId ? { partyId: input.partyId } : {}),
+    },
+    include: documentInclude,
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    take: input.take + 1,
+    ...(input.cursor ? { cursor: { id: input.cursor }, skip: 1 } : {}),
+  });
+  const hasMore = rows.length > input.take;
+  const items = hasMore ? rows.slice(0, input.take) : rows;
+  return {
+    items: items.map(present),
+    nextCursor: hasMore ? items[items.length - 1]?.id : undefined,
+  };
+}
+
+async function loadDocument(ctx: CompanyContext, documentId: string): Promise<DocumentRow> {
+  const row = await ctx.db.generatedDocument.findUnique({
+    where: { id: documentId },
+    include: documentInclude,
+  });
+  if (!row || !isPrintType(row.documentType)) {
+    throw new AppError("NOT_FOUND", "Document not found.");
+  }
+  assertMayPrint(ctx, row.documentType);
+  return row;
+}
+
+export async function getDocument(ctx: CompanyContext, documentId: string) {
+  return present(await loadDocument(ctx, documentId));
+}
+
+/** A printed document's PDF. Every download is written to the activity log. */
+export async function downloadDocument(
+  ctx: CompanyContext,
+  documentId: string,
+  meta?: RequestMeta,
+) {
+  const row = await loadDocument(ctx, documentId);
+  const gone = () =>
+    new AppError(
+      "NOT_FOUND",
+      "This PDF is no longer in storage. Print the document again to make a new copy.",
+    );
+  if (!row.file) throw gone();
+  let bytes: Buffer;
+  try {
+    bytes = await readStoredFile(row.file);
+  } catch (error) {
+    if (error instanceof AppError && error.code === "NOT_FOUND") throw gone();
+    throw error;
+  }
+  await auditInCompany(ctx, meta, {
+    action: "EXPORT",
+    entityType: "GeneratedDocument",
+    entityId: row.id,
+    summary: `Downloaded PDF: ${row.title}`,
+  });
+  return { fileName: row.file.fileName, mimeType: row.file.mimeType, bytes };
+}

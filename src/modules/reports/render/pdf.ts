@@ -1,5 +1,6 @@
 import PDFDocument from "pdfkit";
 
+import { collectPdf, fitText, PDF_MIME, pdfText, safeHex, tint, wrapText } from "@/lib/pdf";
 import {
   type ColumnKind,
   formatCell,
@@ -24,7 +25,7 @@ import {
  * intact in Excel.
  */
 
-export const PDF_MIME = "application/pdf";
+export { PDF_MIME, pdfText };
 
 const PAGE = { width: 595.28, height: 841.89 }; // A4 in points
 const MARGIN = { top: 40, bottom: 48, left: 40, right: 40 };
@@ -46,46 +47,6 @@ const HEADER_ROW = 16;
 const LINE_STEP = 9;
 const CELL_PAD = 4;
 const TABLE_SIZE = 7.5;
-
-/** Characters the built-in fonts can draw (Windows-1252 / WinAnsi). */
-const WIN_ANSI_EXTRA = new Set(
-  [
-    0x20ac, 0x201a, 0x0192, 0x201e, 0x2026, 0x2020, 0x2021, 0x02c6, 0x2030, 0x0160, 0x2039, 0x0152,
-    0x017d, 0x2018, 0x2019, 0x201c, 0x201d, 0x2022, 0x2013, 0x2014, 0x02dc, 0x2122, 0x0161, 0x203a,
-    0x0153, 0x017e, 0x0178,
-  ].map((c) => String.fromCodePoint(c)),
-);
-
-/** Text the built-in fonts can draw on one line: other characters become "?". */
-export function pdfText(text: string): string {
-  let out = "";
-  let replaced = false;
-  for (const ch of text.normalize("NFC").replace(/\s+/g, " ")) {
-    const code = ch.codePointAt(0)!;
-    const ok =
-      (code >= 0x20 && code <= 0x7e) || (code >= 0xa0 && code <= 0xff) || WIN_ANSI_EXTRA.has(ch);
-    if (ok) {
-      out += ch;
-      replaced = false;
-    } else if (!replaced) {
-      out += "?";
-      replaced = true;
-    }
-  }
-  return out;
-}
-
-function hex(color: string, fallback: string) {
-  return /^#[0-9a-f]{6}$/i.test(color) ? color : fallback;
-}
-
-/** The colour mixed with white: amount 0 = the colour, 1 = white. */
-function tint(color: string, amount: number) {
-  const n = parseInt(color.slice(1), 16);
-  const mix = (c: number) => Math.round(c + (255 - c) * amount);
-  const [r, g, b] = [mix((n >> 16) & 255), mix((n >> 8) & 255), mix(n & 255)];
-  return `#${((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1)}`;
-}
 
 const DEFAULT_WEIGHT: Record<ColumnKind, number> = {
   text: 2,
@@ -109,7 +70,7 @@ class Writer {
     private readonly doc: PDFKit.PDFDocument,
     private readonly report: ReportDocument,
   ) {
-    this.primary = hex(report.company.primaryColor, "#0B3D2E");
+    this.primary = safeHex(report.company.primaryColor, "#0B3D2E");
     this.currency = report.company.currency;
   }
 
@@ -128,17 +89,7 @@ class Writer {
   }
 
   private fit(text: string, width: number): string {
-    const doc = this.doc;
-    const clean = pdfText(text);
-    if (doc.widthOfString(clean) <= width) return clean;
-    let lo = 0;
-    let hi = clean.length;
-    while (lo < hi) {
-      const mid = Math.ceil((lo + hi) / 2);
-      if (doc.widthOfString(`${clean.slice(0, mid).trimEnd()}…`) <= width) lo = mid;
-      else hi = mid - 1;
-    }
-    return lo === 0 ? "" : `${clean.slice(0, lo).trimEnd()}…`;
+    return fitText(this.doc, text, width);
   }
 
   /** One line of text in a box, cut to fit, aligned left or right. */
@@ -162,21 +113,7 @@ class Writer {
 
   /** Greedy word wrap into lines no wider than `width`. */
   private wrap(text: string, width: number, font: string, size: number): string[] {
-    const doc = this.doc;
-    doc.font(font).fontSize(size);
-    const lines: string[] = [];
-    let current = "";
-    for (const word of pdfText(text).split(" ")) {
-      const next = current ? `${current} ${word}` : word;
-      if (current && doc.widthOfString(next) > width) {
-        lines.push(current);
-        current = word;
-      } else {
-        current = next;
-      }
-    }
-    if (current) lines.push(current);
-    return lines;
+    return wrapText(this.doc, text, width, font, size);
   }
 
   private paragraph(text: string, style: { font: string; size: number; color: string }) {
@@ -426,12 +363,7 @@ export async function renderPdf(
       CreationDate: new Date(report.generatedAt),
     },
   });
-  const chunks: Buffer[] = [];
-  const done = new Promise<Buffer>((resolve, reject) => {
-    doc.on("data", (chunk: Buffer) => chunks.push(chunk));
-    doc.on("end", () => resolve(Buffer.concat(chunks)));
-    doc.on("error", reject);
-  });
+  const done = collectPdf(doc);
   const writer = new Writer(doc, report);
   writer.header();
   for (const section of report.sections) writer.section(section);

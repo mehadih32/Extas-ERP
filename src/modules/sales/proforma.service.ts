@@ -92,18 +92,33 @@ export async function getProforma(ctx: CompanyContext, proformaId: string) {
           name: true,
           contactPerson: true,
           phone: true,
+          email: true,
           address: true,
+          taxId: true,
         },
       },
       quotation: {
         include: {
-          items: { orderBy: { sortOrder: "asc" } },
+          items: {
+            orderBy: { sortOrder: "asc" },
+            include: {
+              category: { select: { id: true, name: true } },
+              style: { select: { id: true, code: true, name: true } },
+            },
+          },
           stylingRules: { orderBy: { sortOrder: "asc" } },
         },
       },
       payments: {
         orderBy: { paymentDate: "asc" },
-        select: { id: true, number: true, amount: true, method: true, paymentDate: true },
+        select: {
+          id: true,
+          number: true,
+          amount: true,
+          method: true,
+          paymentDate: true,
+          reference: true,
+        },
       },
       productionProjects: {
         select: { id: true, code: true, name: true, stage: true, targetDate: true },

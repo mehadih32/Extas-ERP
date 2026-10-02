@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 
 /** Tables whose rows are locked while money or stock is changed. */
 export type LockableTable =
+  | "Company"
   | "SalesOrder"
   | "ProformaInvoice"
   | "Quotation"

@@ -146,8 +146,11 @@ export async function getStatement(ctx: CompanyContext, partyId: string, raw: un
       grade: party.grade,
       isVerified: party.isVerified,
       status: party.status,
+      contactPerson: party.contactPerson,
       address: party.address,
       phone: party.phone,
+      email: party.email,
+      taxId: party.taxId,
     },
     company: {
       name: ctx.company.name,

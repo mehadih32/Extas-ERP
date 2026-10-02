@@ -3,6 +3,8 @@ import { Prisma, type StockGrade } from "@prisma/client";
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
+import { ensureControlAccounts } from "@/modules/accounts/control-accounts";
+import { postJournalEntry } from "@/modules/accounts/journal.service";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import {
@@ -22,6 +24,11 @@ import {
  *   Force Override (built later) may sell past zero.
  * - ProductVariant.avgCost is the weighted average cost used for stock value,
  *   COGS and bad-stock loss.
+ * - Every change in stock value reaches the books (Finished Goods Inventory):
+ *     Opening stock        Dr Inventory              Cr Opening Balance Equity
+ *     Count correction +/- Dr Inventory / Losses     Cr Production & Inventory Losses / Inventory
+ *     Bad stock            Dr Production & Inventory Losses   Cr Inventory
+ *   (deliveries from production and sales post their own entries).
  */
 
 // =============================================================================
@@ -233,6 +240,11 @@ export async function adjustStock(ctx: CompanyContext, raw: unknown, meta?: Requ
   const warehouse = await resolveWarehouse(ctx, input.warehouseId);
   const key = { variantId: variant.id, warehouseId: warehouse.id, grade: input.grade };
 
+  // Value at the cost given for incoming stock, otherwise the SKU's average cost.
+  const unitCost =
+    input.quantity > 0 && input.unitCost !== undefined ? input.unitCost : Number(variant.avgCost);
+  const value = new Prisma.Decimal((unitCost * Math.abs(input.quantity)).toFixed(2));
+
   const movement = await prisma.$transaction(async (tx) => {
     if (input.quantity < 0) {
       await decrementBalance(tx, key, -input.quantity);
@@ -270,6 +282,31 @@ export async function adjustStock(ctx: CompanyContext, raw: unknown, meta?: Requ
         createdById: ctx.user.id,
       },
     });
+    if (value.gt(0)) {
+      const acc = await ensureControlAccounts(ctx.company.id, tx);
+      // Opening stock is brought forward against equity; corrections are gains or losses.
+      const other = input.type === "OPENING" ? acc.OPENING_EQUITY : acc.PRODUCTION_LOSS;
+      const memo = `${variant.sku} × ${Math.abs(input.quantity)}`;
+      await postJournalEntry(tx, {
+        companyId: ctx.company.id,
+        description: `${input.type === "OPENING" ? "Opening stock" : "Stock count correction"} — ${variant.sku} ${
+          input.quantity > 0 ? "+" : ""
+        }${input.quantity}${input.note ? ` (${input.note})` : ""}`,
+        sourceType: "STOCK_ADJUSTMENT",
+        sourceId: created.id,
+        postedById: ctx.user.id,
+        lines:
+          input.quantity > 0
+            ? [
+                { accountId: acc.INVENTORY, debit: value, memo },
+                { accountId: other, credit: value, memo },
+              ]
+            : [
+                { accountId: other, debit: value, memo },
+                { accountId: acc.INVENTORY, credit: value, memo },
+              ],
+      });
+    }
     await auditInCompany(
       ctx,
       meta,
@@ -291,9 +328,8 @@ export async function adjustStock(ctx: CompanyContext, raw: unknown, meta?: Requ
 }
 
 /**
- * Moves pieces to Bad Stock: removes them from sellable stock and records the
- * purchase value as an inventory loss. (The Accounts module will post the
- * matching journal entry and link it via `journalEntryId`.)
+ * Moves pieces to Bad Stock: removes them from sellable stock and books their
+ * value (average cost) as an inventory loss.
  */
 export async function moveToBadStock(ctx: CompanyContext, raw: unknown, meta?: RequestMeta) {
   const input = badStockSchema.parse(raw);
@@ -329,6 +365,27 @@ export async function moveToBadStock(ctx: CompanyContext, raw: unknown, meta?: R
         createdById: ctx.user.id,
       },
     });
+    let journalEntryId: string | null = null;
+    if (lossValue.gt(0)) {
+      const acc = await ensureControlAccounts(ctx.company.id, tx);
+      const memo = `${variant.sku} × ${input.quantity}`;
+      const journal = await postJournalEntry(tx, {
+        companyId: ctx.company.id,
+        description: `Bad stock — ${variant.sku} × ${input.quantity}${input.reason ? ` (${input.reason})` : ""}`,
+        sourceType: "BAD_STOCK",
+        sourceId: created.id,
+        postedById: ctx.user.id,
+        lines: [
+          { accountId: acc.PRODUCTION_LOSS, debit: lossValue, memo },
+          { accountId: acc.INVENTORY, credit: lossValue, memo },
+        ],
+      });
+      await tx.badStockEntry.update({
+        where: { id: created.id },
+        data: { journalEntryId: journal.id },
+      });
+      journalEntryId = journal.id;
+    }
     await auditInCompany(
       ctx,
       meta,
@@ -340,7 +397,7 @@ export async function moveToBadStock(ctx: CompanyContext, raw: unknown, meta?: R
       },
       tx,
     );
-    return created;
+    return { ...created, journalEntryId };
   });
   return entry;
 }

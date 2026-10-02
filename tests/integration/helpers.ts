@@ -25,6 +25,10 @@ export async function resetDb() {
   await prisma.customFieldDefinition.deleteMany();
   await prisma.campaignRecipient.deleteMany();
   await prisma.reEngagementCampaign.deleteMany();
+  await prisma.capitalInstallment.deleteMany();
+  await prisma.capitalSource.deleteMany();
+  await prisma.fixedAsset.deleteMany();
+  await prisma.bankAccount.deleteMany();
   await prisma.journalLine.deleteMany();
   await prisma.journalEntry.deleteMany();
   await prisma.ledgerAccount.deleteMany();
@@ -40,6 +44,8 @@ export async function resetDb() {
   await prisma.color.deleteMany();
   await prisma.size.deleteMany();
   await prisma.warehouse.deleteMany();
+  await prisma.backupRun.deleteMany();
+  await prisma.backupConfig.deleteMany();
   await prisma.session.deleteMany();
   await prisma.companyMembership.deleteMany();
   await prisma.rolePermission.deleteMany();

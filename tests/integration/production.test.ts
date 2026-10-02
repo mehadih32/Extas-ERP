@@ -737,7 +737,8 @@ run("move to stock", () => {
     // Navy M: 10 on hand at 50, then 20 x 104.7619 and 5 x 52.3810.
     expect(await avgCost(navyM)).toBe("81.6327");
     expect(await avgCost(env.sku("Navy", "S"))).toBe("104.7619");
-    expect(await accountBalance(env.company.id, INVENTORY)).toBe("5500.00");
+    // 500 of opening stock (10 Navy M at 50) plus the 5,500 received.
+    expect(await accountBalance(env.company.id, INVENTORY)).toBe("6000.00");
     expect(await accountBalance(env.company.id, WIP)).toBe("4500.00");
     const movements = await prisma.stockMovement.findMany({
       where: { referenceType: "StockIntake", referenceId: draft.id },

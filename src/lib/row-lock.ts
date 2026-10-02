@@ -8,7 +8,11 @@ export type LockableTable =
   | "SupplierBill"
   | "ProductionProject"
   | "StockIntake"
-  | "ProductVariant";
+  | "ProductVariant"
+  | "FixedAsset"
+  | "CapitalSource"
+  | "CapitalInstallment"
+  | "Expense";
 
 /**
  * Locks rows until the transaction ends (`SELECT ... FOR UPDATE`), so two people

@@ -589,16 +589,92 @@ on one supplier at once queue up instead of blocking each other. Raw material ch
 run again automatically if the database ever cancels one to break such a conflict
 (`runTransaction` in `src/lib/transaction.ts`).
 
+## Dashboard & reports (backend)
+
+**Metric cards.** The owner's five cards come from the books, so they always agree with the
+Accounts overview and the statements. Each card also carries the figures behind it.
+
+| Card                            | Figure                                                        | Behind it                                         |
+| ------------------------------- | ------------------------------------------------------------- | ------------------------------------------------- |
+| Total active stock value        | Finished goods on hand (A and B grade) at average cost        | Pieces and value per grade; raw materials and WIP |
+| Fixed assets                    | Book value (cost less depreciation)                           | Cost, depreciation so far, assets in use          |
+| Liabilities (loans / investors) | What is owed to lenders and investors                         | Loans and investors apart                         |
+| Today's sales                   | The Sales account today (after discounts, no delivery or VAT) | Invoices, pieces, yesterday and the change        |
+| Net profit (this month)         | Profit from the books since the 1st                           | Last month, this financial year                   |
+
+Each person can hide cards (the eye icon). The choice is saved per person, and hidden cards
+still come with their figures, marked `hidden`, so the screen can show dots.
+
+**Insights.** Top sellers for a period (the past month by default), per SKU or per style, by
+pieces or by sales value; the SKUs holding the most stock; dead and slow stock; low stock.
+
+- Sales count on the invoice day in the company's time zone. Void invoices and cancelled
+  orders never count. Amounts are after line and order discounts, without delivery charges or
+  VAT. An order discount is shared across the order's lines by value, to the paisa, so the
+  products always add up to the order and to the books.
+- Low stock: sellable pieces (A grade less those reserved for orders) below the company's
+  threshold (5 by default), for SKUs that have been stocked before. Out-of-stock SKUs come
+  first, then the ones that sold most in the last 30 days.
+- Dead stock: held 90 days ago and nothing sold since. Slow stock: it sells, but at the pace of
+  those 90 days the pieces available would last more than 180 days. Both windows can be
+  changed per request (14 to 365 days, and 30 to 730 days). Stock that arrived within the
+  window is not judged yet.
+- The Inventory stock summary (`/api/inventory/stock/summary`) uses the same rules.
+
+Quantities are for anyone who sees the dashboard or inventory. Sales values need `sales.view`
+or the financials (`dashboard.financials` or `accounts.view`); costs, stock values and
+margins need the financials. Amounts a person may not see come back as `null`.
+
+**Report Builder.** A report for any period (today, this or last month, this or last
+financial year, the past week, month or year, or chosen days up to 10 years) with the metrics
+picked, as a PDF or an Excel file:
+
+| Metric          | What it shows                                                                  | Needs                                              |
+| --------------- | ------------------------------------------------------------------------------ | -------------------------------------------------- |
+| Key figures     | Sales, profit and margins for the period; stock, assets and loans at its end   | `dashboard.financials` or `accounts.view`          |
+| Sales           | Sales by day (by month beyond 62 days) and by channel                          | `sales.view` or the financials                     |
+| Profit and loss | Sales, cost of goods sold, expenses and net profit, from the books             | `dashboard.financials` or `accounts.view`          |
+| Top sellers     | Best SKUs and styles, with sales values, margins and stock left when permitted | `dashboard.view`, `inventory.view` or `sales.view` |
+| Stock alerts    | Low, dead and slow stock and the highest stock, on the day the report is made  | `dashboard.view` or `inventory.view`               |
+
+The PDF is A4 with the company's details, the period, who made it and page numbers on every
+page; long tables carry their header onto the next page. It uses the built-in Helvetica font,
+which covers English and Western European letters, so other scripts (such as Bengali) show as
+"?" in the PDF; the Excel file keeps them. The Excel file has an overview sheet and one sheet
+per table with real numbers and dates (so they add up and sort), a header row that stays in
+view and filter buttons.
+
+Making a report needs `reports.export` (Super Admin, Accounts and Production Managers by
+default) plus each metric's own permission. Files are made straight away and kept under
+`UPLOAD_DIR/<company>/reports/`, so they are part of the media backup. A saved report opens
+only for people who may see everything in it, including the money columns its maker could
+see, and is deleted by the person who made it or a Super Admin. Making and downloading reports
+are recorded in the audit log, and a person can make up to 10 reports a minute.
+
+| Endpoint                                                                                     | Purpose                                            |
+| -------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| `GET /api/dashboard/cards`                                                                   | The owner's metric cards                           |
+| `GET /api/dashboard/insights?period=&from=&to=&limit=&groupBy=&sortBy=&slowDays=&coverDays=` | Top sellers, highest, dead / slow and low stock    |
+| `GET/PATCH /api/dashboard/preferences`                                                       | Hidden cards: `{ metric, hidden }` or the list     |
+| `GET /api/reports/builder`                                                                   | Metrics this person may pick, periods, defaults    |
+| `GET /api/reports/preview?period=&from=&to=&metrics=SALES,TOP_SELLERS&…`                     | The report as data, without a file                 |
+| `GET/POST /api/reports/exports`, `GET/DELETE …/:id`                                          | Saved reports / make one: `{ format: PDF\|EXCEL }` |
+| `GET /api/reports/exports/:id/download`                                                      | The PDF or Excel file                              |
+
+Server Actions are in `src/server/actions/dashboard.actions.ts` and
+`src/server/actions/reports.actions.ts`. Marketing Sync (ad spend against sales, ROAS) comes
+later with the other outside integrations.
+
 ## Backups (backend)
 
 Every day at 02:00 (Asia/Dhaka) the server backs up the whole platform, every company, into
 `BACKUP_DIR/<date_time>/`:
 
-| File            | What it holds                                                        |
-| --------------- | -------------------------------------------------------------------- |
-| `database.dump` | The database (`pg_dump`, custom format)                              |
-| `media.tar.gz`  | Uploaded files: logos, packing lists, bill scans (can be turned off) |
-| `manifest.json` | Sizes and SHA-256 checksums of the files, and how to restore         |
+| File            | What it holds                                                                     |
+| --------------- | --------------------------------------------------------------------------------- |
+| `database.dump` | The database (`pg_dump`, custom format)                                           |
+| `media.tar.gz`  | Stored files: logos, packing lists, bill scans, saved reports (can be turned off) |
+| `manifest.json` | Sizes and SHA-256 checksums of the files, and how to restore                      |
 
 Each backup is also copied to a folder in the owner's Google Drive once it is connected.
 Backups older than the retention period (30 days by default) are deleted on the server and

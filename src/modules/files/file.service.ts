@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { AppError } from "@/lib/errors";
@@ -11,6 +11,8 @@ import type { CompanyContext } from "@/modules/auth/context";
  * Uploaded files (packing-list photos, bill scans). Bytes live on disk under
  * UPLOAD_DIR/<companyId>/<year>/<month>/<random name>; the FileAsset row keeps
  * the original name, the type detected from the bytes and a SHA-256 checksum.
+ * Files the app makes itself (saved reports) go under UPLOAD_DIR/<companyId>/
+ * reports/<year>/<month>/, have no uploader and open through their own record.
  */
 
 export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
@@ -90,6 +92,23 @@ export async function fileFromRequest(request: Request) {
   return fileFromForm(form);
 }
 
+function datedPath(companyId: string, folders: string[], ext: string): string {
+  const now = new Date();
+  return path.posix.join(
+    companyId,
+    ...folders,
+    String(now.getUTCFullYear()),
+    String(now.getUTCMonth() + 1).padStart(2, "0"),
+    `${randomUUID()}${ext}`,
+  );
+}
+
+async function writeNew(storagePath: string, bytes: Buffer): Promise<void> {
+  const full = absolutePath(storagePath);
+  await mkdir(path.dirname(full), { recursive: true });
+  await writeFile(full, bytes, { flag: "wx" });
+}
+
 /** Saves an upload for the active company and returns its FileAsset. */
 export async function storeUpload(
   ctx: CompanyContext,
@@ -104,16 +123,8 @@ export async function storeUpload(
   const type = detectFileType(bytes);
   if (!type) throw new AppError("VALIDATION", "Upload a photo (JPG, PNG or WebP) or a PDF.");
 
-  const now = new Date();
-  const storagePath = path.posix.join(
-    ctx.company.id,
-    String(now.getUTCFullYear()),
-    String(now.getUTCMonth() + 1).padStart(2, "0"),
-    `${randomUUID()}${type.ext}`,
-  );
-  const full = absolutePath(storagePath);
-  await mkdir(path.dirname(full), { recursive: true });
-  await writeFile(full, bytes, { flag: "wx" });
+  const storagePath = datedPath(ctx.company.id, [], type.ext);
+  await writeNew(storagePath, bytes);
 
   const asset = await ctx.db.fileAsset.create({
     data: {
@@ -136,6 +147,31 @@ export async function storeUpload(
   return asset;
 }
 
+/**
+ * Saves a file the app made itself (a report) under UPLOAD_DIR/<companyId>/<folder>/...
+ * The caller records the FileAsset with these details, and removes the bytes
+ * again with deleteStoredFile when that fails.
+ */
+export async function writeGeneratedFile(
+  companyId: string,
+  folder: string,
+  ext: string,
+  bytes: Buffer,
+) {
+  const storagePath = datedPath(companyId, [folder], ext);
+  await writeNew(storagePath, bytes);
+  return {
+    storagePath,
+    sizeBytes: bytes.length,
+    checksum: createHash("sha256").update(bytes).digest("hex"),
+  };
+}
+
+/** Removes a stored file's bytes (already gone is fine). */
+export async function deleteStoredFile(asset: { storagePath: string }): Promise<void> {
+  await rm(absolutePath(asset.storagePath), { force: true });
+}
+
 export async function readStoredFile(asset: { storagePath: string }): Promise<Buffer> {
   try {
     return await readFile(absolutePath(asset.storagePath));
@@ -149,7 +185,8 @@ export async function readStoredFile(asset: { storagePath: string }): Promise<Bu
 
 /**
  * A file for download. Allowed for its uploader and for roles that may see the
- * record it belongs to (a delivery's packing list, a supplier bill's scan).
+ * record it belongs to (a delivery's packing list, a supplier bill's scan). Saved
+ * reports download through the Report Builder, which checks their figures.
  */
 export async function getFileForDownload(ctx: CompanyContext, fileId: string) {
   const asset = await ctx.db.fileAsset.findUnique({

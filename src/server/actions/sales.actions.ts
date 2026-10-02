@@ -15,12 +15,13 @@ import * as summary from "@/modules/sales/summary.service";
 
 /*
  * Sales Server Actions. Each returns { ok: true, data } or { ok: false, error }.
- *   sales.view              read quotations, proformas, orders, documents, payments
- *   sales.quotation.manage  quotations and proforma conversion
- *   sales.order.create      orders, invoices, packing lists, challans, payments
- *   sales.invoice.edit      void invoices (cancelling an invoiced order needs it too)
- *   sales.force_override    sell beyond available stock (checked inside the order)
- *   company.settings        custom field definitions
+ *   sales.view                read quotations, proformas, orders, documents, payments
+ *   sales.quotation.manage    quotations and proforma conversion
+ *   sales.order.create        orders, invoices, packing lists, challans
+ *   accounts.receipts.record  money received (also needed for a payment at checkout)
+ *   sales.invoice.edit        void invoices (cancelling an invoiced order needs it too)
+ *   sales.force_override      sell beyond available stock (checked inside the order)
+ *   company.settings          custom field definitions
  * An INSUFFICIENT_STOCK error means: show the "Force Override & Sell" warning.
  */
 
@@ -137,7 +138,13 @@ export const listChallansAction = async (query: {
 
 // --- Payments & summary --------------------------------------------------------
 export const receivePaymentAction = async (input: unknown) =>
-  runAction(async () => payments.receivePayment(await sell(), input, await getRequestMeta()));
+  runAction(async () =>
+    payments.receivePayment(
+      await requirePermission("accounts.receipts.record"),
+      input,
+      await getRequestMeta(),
+    ),
+  );
 export const listPaymentsAction = async (query: unknown) =>
   runAction(async () => payments.listPayments(await view(), query));
 export const getPaymentReceiptAction = async (paymentId: string) =>

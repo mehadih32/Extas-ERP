@@ -37,7 +37,11 @@ export const PERMISSIONS = [
     module: "SALES",
     description: "Create and edit quotations and proforma invoices",
   },
-  { key: "sales.order.create", module: "SALES", description: "Create sales orders and invoices" },
+  {
+    key: "sales.order.create",
+    module: "SALES",
+    description: "Create sales orders, invoices, packing lists and delivery challans",
+  },
   { key: "sales.invoice.edit", module: "SALES", description: "Edit or void issued invoices" },
   {
     key: "sales.force_override",
@@ -62,11 +66,15 @@ export const PERMISSIONS = [
     description: "Manage catalog, adjust stock and record bad stock",
   },
   // Production
-  { key: "production.view", module: "PRODUCTION", description: "View production projects" },
+  {
+    key: "production.view",
+    module: "PRODUCTION",
+    description: "View production projects (costs need production.manage or accounts.view)",
+  },
   {
     key: "production.manage",
     module: "PRODUCTION",
-    description: "Create projects, update stages and allocate costs",
+    description: "Create projects, update stages and record supplier bills on credit (Due)",
   },
   {
     key: "production.stock_intake",
@@ -94,7 +102,17 @@ export const PERMISSIONS = [
   {
     key: "accounts.manage",
     module: "ACCOUNTS",
-    description: "Post journal entries, payments, assets and capital",
+    description: "Post journal entries, write-offs, assets and capital",
+  },
+  {
+    key: "accounts.receipts.record",
+    module: "ACCOUNTS",
+    description: "Record money received from buyers (payments and advances)",
+  },
+  {
+    key: "accounts.payments.record",
+    module: "ACCOUNTS",
+    description: "Pay suppliers and record costs paid in cash or bank",
   },
   { key: "expenses.create", module: "EXPENSES", description: "Record expenses and conveyance" },
   { key: "expenses.manage", module: "EXPENSES", description: "Edit or delete any expense" },
@@ -137,14 +155,24 @@ export function isPermissionKey(value: string): value is PermissionKey {
   return PERMISSION_KEY_SET.has(value);
 }
 
-/** Display names of the five built-in roles from the blueprint. */
+/** Display names of the built-in roles: the five from the blueprint plus Accounts. */
 export const SYSTEM_ROLE_NAMES: Record<SystemRole, string> = {
   SUPER_ADMIN: "Super Admin",
   PRODUCTION_MANAGER: "Production Manager",
   SALES_EXECUTIVE: "Sales Executive",
   WAREHOUSE_TEAM: "Warehouse Team",
   EMPLOYEE: "Employee",
+  ACCOUNTS: "Accounts",
 };
+
+/**
+ * Money in and money out. By default only Super Admin and Accounts hold these,
+ * so the people who sell or produce never record cash themselves.
+ */
+export const MONEY_PERMISSIONS: readonly PermissionKey[] = [
+  "accounts.receipts.record",
+  "accounts.payments.record",
+];
 
 /**
  * Default grants for the built-in roles. Super Admin always has every permission
@@ -184,8 +212,25 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<SystemRole, readonly PermissionKey
     "inventory.manage",
     "sales.view",
     "sales.returns.qc",
+    "production.view",
     "production.stock_intake",
     "notepad.use",
   ],
   EMPLOYEE: ["portal.self", "expenses.create", "notepad.use"],
+  ACCOUNTS: [
+    "dashboard.view",
+    "dashboard.financials",
+    "sales.view",
+    "production.view",
+    "parties.view",
+    "parties.ledger.view",
+    "accounts.view",
+    "accounts.manage",
+    "accounts.receipts.record",
+    "accounts.payments.record",
+    "expenses.create",
+    "expenses.manage",
+    "reports.export",
+    "notepad.use",
+  ],
 };

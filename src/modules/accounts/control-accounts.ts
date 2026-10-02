@@ -29,6 +29,12 @@ export const CONTROL_ACCOUNTS = {
     type: "ASSET",
     subType: "INVENTORY",
   },
+  WORK_IN_PROGRESS: {
+    code: "1350",
+    name: "Work in Progress (Production)",
+    type: "ASSET",
+    subType: "OTHER_CURRENT_ASSET",
+  },
   PAYABLE: {
     code: "2100",
     name: "Accounts Payable (Suppliers)",
@@ -56,6 +62,12 @@ export const CONTROL_ACCOUNTS = {
     subType: "OTHER_INCOME",
   },
   COGS: { code: "5000", name: "Cost of Goods Sold", type: "EXPENSE", subType: "COGS" },
+  PRODUCTION_LOSS: {
+    code: "5100",
+    name: "Production & Inventory Losses",
+    type: "EXPENSE",
+    subType: "INVENTORY_LOSS",
+  },
 } as const satisfies Record<
   string,
   { code: string; name: string; type: AccountType; subType: AccountSubType }

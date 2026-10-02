@@ -4,18 +4,14 @@ import { AppError } from "@/lib/errors";
 import { nextDocumentNumber } from "@/lib/numbering";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
+import { lockRow } from "@/lib/row-lock";
 import { ensureControlAccounts } from "@/modules/accounts/control-accounts";
 import { postJournalEntry, reverseJournalEntry } from "@/modules/accounts/journal.service";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { letterhead } from "@/modules/companies/letterhead";
 import { recordPartyActivity } from "@/modules/parties/party.service";
-import {
-  lockRow,
-  postCostOfSales,
-  postInvoice,
-  refreshOrderPayments,
-} from "@/modules/sales/posting";
+import { postCostOfSales, postInvoice, refreshOrderPayments } from "@/modules/sales/posting";
 import {
   deliveryChallanSchema,
   issueInvoiceSchema,

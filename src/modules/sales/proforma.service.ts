@@ -4,13 +4,14 @@ import { AppError } from "@/lib/errors";
 import { nextDocumentNumber } from "@/lib/numbering";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
+import { lockRow } from "@/lib/row-lock";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { letterhead } from "@/modules/companies/letterhead";
 import { getDefaultWarehouse } from "@/modules/inventory/stock.service";
 import { assertPartyCanTransact } from "@/modules/parties/party.service";
 import { createOrderTx, getOrder } from "@/modules/sales/order.service";
-import { lockRow, refreshOrderPayments } from "@/modules/sales/posting";
+import { refreshOrderPayments } from "@/modules/sales/posting";
 import { assertStockOrOverride, resolveOrderLines } from "@/modules/sales/pricing";
 import {
   cancelOrderSchema,

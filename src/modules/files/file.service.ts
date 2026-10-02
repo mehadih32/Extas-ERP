@@ -1,0 +1,178 @@
+import { createHash, randomUUID } from "node:crypto";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
+
+import { AppError } from "@/lib/errors";
+import type { RequestMeta } from "@/lib/request-meta";
+import { auditInCompany } from "@/modules/audit/audit.service";
+import type { CompanyContext } from "@/modules/auth/context";
+
+/*
+ * Uploaded files (packing-list photos, bill scans). Bytes live on disk under
+ * UPLOAD_DIR/<companyId>/<year>/<month>/<random name>; the FileAsset row keeps
+ * the original name, the type detected from the bytes and a SHA-256 checksum.
+ */
+
+export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+
+const FILE_TYPES = [
+  {
+    mimeType: "image/jpeg",
+    ext: ".jpg",
+    matches: (b: Buffer) => b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff,
+  },
+  {
+    mimeType: "image/png",
+    ext: ".png",
+    matches: (b: Buffer) =>
+      b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])),
+  },
+  {
+    mimeType: "image/webp",
+    ext: ".webp",
+    matches: (b: Buffer) =>
+      b.toString("ascii", 0, 4) === "RIFF" && b.toString("ascii", 8, 12) === "WEBP",
+  },
+  {
+    mimeType: "application/pdf",
+    ext: ".pdf",
+    matches: (b: Buffer) => b.toString("ascii", 0, 5) === "%PDF-",
+  },
+] as const;
+
+/** JPG, PNG, WebP or PDF, judged by the file's first bytes (not its name). */
+export function detectFileType(bytes: Buffer): { mimeType: string; ext: string } | null {
+  const type = FILE_TYPES.find((t) => t.matches(bytes));
+  return type ? { mimeType: type.mimeType, ext: type.ext } : null;
+}
+
+/** Keeps a readable original name without folders or control characters. */
+export function safeFileName(name: string): string {
+  const base = name.split(/[\\/]/).pop() ?? "";
+  const cleaned = base.replace(/[\u0000-\u001f\u007f"<>|*?:]/g, "").trim();
+  return cleaned.slice(-120) || "upload";
+}
+
+/** Read at call time so tests (and a changed .env) can point it elsewhere. */
+export function uploadRoot(): string {
+  return path.resolve(process.env.UPLOAD_DIR || "./storage/uploads");
+}
+
+function absolutePath(storagePath: string): string {
+  const root = uploadRoot();
+  const full = path.resolve(root, storagePath);
+  if (!full.startsWith(root + path.sep)) throw new AppError("NOT_FOUND", "File not found.");
+  return full;
+}
+
+/** The `file` field of a multipart form (route handlers and Server Actions). */
+export async function fileFromForm(form: FormData): Promise<{ fileName: string; bytes: Buffer }> {
+  const file = form.get("file");
+  if (!(file instanceof File)) {
+    throw new AppError("VALIDATION", 'Attach the file in a form field named "file".');
+  }
+  if (file.size > MAX_UPLOAD_BYTES) throw new AppError("VALIDATION", "Files can be up to 10 MB.");
+  return { fileName: file.name, bytes: Buffer.from(await file.arrayBuffer()) };
+}
+
+/** Reads a multipart request without accepting oversized bodies. */
+export async function fileFromRequest(request: Request) {
+  const length = Number(request.headers.get("content-length") ?? 0);
+  if (length > MAX_UPLOAD_BYTES + 1024 * 1024) {
+    throw new AppError("VALIDATION", "Files can be up to 10 MB.");
+  }
+  let form: FormData;
+  try {
+    form = await request.formData();
+  } catch {
+    throw new AppError("VALIDATION", "Send the file as multipart/form-data.");
+  }
+  return fileFromForm(form);
+}
+
+/** Saves an upload for the active company and returns its FileAsset. */
+export async function storeUpload(
+  ctx: CompanyContext,
+  upload: { fileName: string; bytes: Buffer },
+  meta?: RequestMeta,
+) {
+  const { bytes } = upload;
+  if (bytes.length === 0) throw new AppError("VALIDATION", "The file is empty.");
+  if (bytes.length > MAX_UPLOAD_BYTES) {
+    throw new AppError("VALIDATION", "Files can be up to 10 MB.");
+  }
+  const type = detectFileType(bytes);
+  if (!type) throw new AppError("VALIDATION", "Upload a photo (JPG, PNG or WebP) or a PDF.");
+
+  const now = new Date();
+  const storagePath = path.posix.join(
+    ctx.company.id,
+    String(now.getUTCFullYear()),
+    String(now.getUTCMonth() + 1).padStart(2, "0"),
+    `${randomUUID()}${type.ext}`,
+  );
+  const full = absolutePath(storagePath);
+  await mkdir(path.dirname(full), { recursive: true });
+  await writeFile(full, bytes, { flag: "wx" });
+
+  const asset = await ctx.db.fileAsset.create({
+    data: {
+      companyId: ctx.company.id,
+      uploadedById: ctx.user.id,
+      fileName: safeFileName(upload.fileName),
+      mimeType: type.mimeType,
+      sizeBytes: bytes.length,
+      storagePath,
+      checksum: createHash("sha256").update(bytes).digest("hex"),
+    },
+    select: { id: true, fileName: true, mimeType: true, sizeBytes: true, createdAt: true },
+  });
+  await auditInCompany(ctx, meta, {
+    action: "CREATE",
+    entityType: "FileAsset",
+    entityId: asset.id,
+    summary: `Uploaded ${asset.fileName} (${Math.ceil(asset.sizeBytes / 1024)} KB)`,
+  });
+  return asset;
+}
+
+export async function readStoredFile(asset: { storagePath: string }): Promise<Buffer> {
+  try {
+    return await readFile(absolutePath(asset.storagePath));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      throw new AppError("NOT_FOUND", "The file is missing from storage.");
+    }
+    throw error;
+  }
+}
+
+/**
+ * A file for download. Allowed for its uploader and for roles that may see the
+ * record it belongs to (a delivery's packing list, a supplier bill's scan).
+ */
+export async function getFileForDownload(ctx: CompanyContext, fileId: string) {
+  const asset = await ctx.db.fileAsset.findUnique({
+    where: { id: fileId },
+    include: {
+      stockIntakes: { select: { id: true }, take: 1 },
+      supplierBills: { select: { id: true }, take: 1 },
+    },
+  });
+  if (!asset) throw new AppError("NOT_FOUND", "File not found.");
+  const allowed =
+    asset.uploadedById === ctx.user.id ||
+    (asset.stockIntakes.length > 0 &&
+      (ctx.can("production.view") || ctx.can("production.stock_intake"))) ||
+    (asset.supplierBills.length > 0 && (ctx.can("production.manage") || ctx.can("accounts.view")));
+  if (!allowed) throw new AppError("FORBIDDEN", "You do not have permission to open this file.");
+  return {
+    asset: {
+      id: asset.id,
+      fileName: asset.fileName,
+      mimeType: asset.mimeType,
+      sizeBytes: asset.sizeBytes,
+    },
+    bytes: await readStoredFile(asset),
+  };
+}

@@ -22,7 +22,8 @@ const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
 
 /**
  * A company with a polo style (Navy / White x S M L XL, wholesale 900, retail
- * 1450), 10 pcs of each SKU at cost 500, a wholesale buyer and a Sales Executive.
+ * 1450), 10 pcs of each SKU at cost 500, a wholesale buyer, a Sales Executive and an
+ * Accounts user.
  */
 async function setup(companyName = "Extras") {
   const { company, roles } = await makeCompany(companyName);
@@ -32,6 +33,9 @@ async function setup(companyName = "Extras") {
   const seller = await makeUser(`sales@${company.slug}.test`);
   await addToCompany(seller.id, company.id, roles.SALES_EXECUTIVE);
   const salesCtx = await contextFor(seller.id, company.id);
+  const accountant = await makeUser(`accounts@${company.slug}.test`);
+  await addToCompany(accountant.id, company.id, roles.ACCOUNTS);
+  const accountsCtx = await contextFor(accountant.id, company.id);
 
   const sizes = [];
   for (const name of ["S", "M", "L", "XL"]) sizes.push(await catalog.createSize(ctx, { name }));
@@ -67,7 +71,7 @@ async function setup(companyName = "Extras") {
     })
   ).party;
   const warehouse = await stock.getDefaultWarehouse(ctx);
-  return { ctx, salesCtx, company, style, tops, sku, buyer, warehouse };
+  return { ctx, salesCtx, accountsCtx, company, style, tops, sku, buyer, warehouse };
 }
 
 type Env = Awaited<ReturnType<typeof setup>>;
@@ -753,6 +757,41 @@ run("payments, invoices and walk-in sales", () => {
       outstandingDue: "0.00",
     });
     expect(today.byChannel).toEqual([{ channel: "POS", orders: 1, value: "2800.00" }]);
+  });
+
+  it("lets only Accounts record money: Sales Executives sell without taking payments", async () => {
+    const env = await setup();
+    const order = await orders.createOrder(env.salesCtx, {
+      channel: "WHOLESALE",
+      partyId: env.buyer.id,
+      lines: [{ variantId: env.sku("Navy", "M"), quantity: 2 }],
+    });
+    expect(order.total.toFixed(2)).toBe("1800.00");
+
+    await expectAppError(
+      payments.receivePayment(env.salesCtx, { orderId: order.id, amount: 500, method: "CASH" }),
+      "FORBIDDEN",
+    );
+    await expectAppError(
+      orders.createOrder(env.salesCtx, {
+        channel: "POS",
+        lines: [{ variantId: env.sku("White", "S"), quantity: 1 }],
+        payment: { amount: 1450, method: "CASH" },
+      }),
+      "FORBIDDEN",
+    );
+    // The refused checkout saved nothing and held no stock.
+    expect(await prisma.salesOrder.count()).toBe(1);
+    expect((await cell(env, env.sku("White", "S"))).available).toBe(10);
+
+    const { payment } = await payments.receivePayment(env.accountsCtx, {
+      orderId: order.id,
+      amount: 1800,
+      method: "BKASH",
+    });
+    expect(payment.direction).toBe("RECEIVED");
+    expect(await balanceOf(env, env.buyer.id)).toBe("0.00");
+    expect((await orders.getOrder(env.salesCtx, order.id)).invoice?.status).toBe("PAID");
   });
 
   it("takes on-account payments from buyers only", async () => {

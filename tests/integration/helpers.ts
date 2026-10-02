@@ -15,6 +15,10 @@ export async function resetDb() {
   await prisma.auditLog.deleteMany();
   await prisma.payment.deleteMany();
   await prisma.salesOrder.deleteMany();
+  await prisma.stockIntake.deleteMany();
+  await prisma.supplierBill.deleteMany();
+  await prisma.expense.deleteMany();
+  await prisma.expenseHead.deleteMany();
   await prisma.productionProject.deleteMany();
   await prisma.proformaInvoice.deleteMany();
   await prisma.quotation.deleteMany();
@@ -41,6 +45,7 @@ export async function resetDb() {
   await prisma.rolePermission.deleteMany();
   await prisma.role.deleteMany();
   await prisma.brand.deleteMany();
+  await prisma.fileAsset.deleteMany();
   await prisma.company.deleteMany();
   await prisma.user.deleteMany();
   await syncPermissionCatalog();

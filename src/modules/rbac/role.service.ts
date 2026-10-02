@@ -45,8 +45,9 @@ export async function syncPermissionCatalog(db: Db = prisma): Promise<void> {
 }
 
 /**
- * Makes sure a company has the five blueprint roles. New roles get the default
- * grants; existing roles keep whatever an admin configured.
+ * Makes sure a company has the built-in roles (the five from the blueprint plus
+ * Accounts). New roles get the default grants; existing roles keep whatever an
+ * admin configured.
  */
 export async function ensureSystemRoles(companyId: string, db: Db = prisma) {
   const permissionIds = new Map(
@@ -58,6 +59,16 @@ export async function ensureSystemRoles(companyId: string, db: Db = prisma) {
     const existing = await db.role.findFirst({ where: { companyId, systemRole } });
     if (existing) {
       roles[systemRole] = existing.id;
+      continue;
+    }
+    // A custom role with the same name (e.g. an "Accounts" role made by hand before
+    // it became built-in) is adopted as it is, keeping its permissions.
+    const sameName = await db.role.findFirst({
+      where: { companyId, name: SYSTEM_ROLE_NAMES[systemRole], systemRole: null },
+    });
+    if (sameName) {
+      await db.role.update({ where: { id: sameName.id }, data: { systemRole, isSystem: true } });
+      roles[systemRole] = sameName.id;
       continue;
     }
     const created = await db.role.create({

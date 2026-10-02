@@ -5,6 +5,7 @@ import { AppError } from "@/lib/errors";
 import { nextDocumentNumber } from "@/lib/numbering";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
+import { lockRow } from "@/lib/row-lock";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { letterhead } from "@/modules/companies/letterhead";
@@ -17,8 +18,7 @@ import {
   issueInvoiceTx,
   voidInvoiceTx,
 } from "@/modules/sales/documents.service";
-import { receivePaymentTx } from "@/modules/sales/payment.service";
-import { lockRow } from "@/modules/sales/posting";
+import { assertCanRecordReceipts, receivePaymentTx } from "@/modules/sales/payment.service";
 import {
   assertStockOrOverride,
   type ResolvedLine,
@@ -198,6 +198,7 @@ export async function createOrderTx(
  */
 export async function createOrder(ctx: CompanyContext, raw: unknown, meta?: RequestMeta) {
   const input = createOrderSchema.parse(raw);
+  if (input.payment) assertCanRecordReceipts(ctx);
   const party = input.partyId ? await assertPartyCanTransact(ctx, input.partyId, "SALE") : null;
   const warehouse = await resolveWarehouse(ctx, input.warehouseId);
   const lines = await resolveOrderLines(ctx, input, input.channel, warehouse.id);

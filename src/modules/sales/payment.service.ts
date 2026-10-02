@@ -1,99 +1,37 @@
-import { Prisma, type PaymentMethod } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 
 import { dayRange } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
 import { nextDocumentNumber } from "@/lib/numbering";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
+import { lockRow } from "@/lib/row-lock";
+import { cashAccountFor } from "@/modules/accounts/cash-accounts";
 import { ensureControlAccounts } from "@/modules/accounts/control-accounts";
 import { postJournalEntry } from "@/modules/accounts/journal.service";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { letterhead } from "@/modules/companies/letterhead";
 import { recordPartyActivity } from "@/modules/parties/party.service";
-import { lockRow, refreshOrderPayments } from "@/modules/sales/posting";
+import { createProjectFromProformaTx } from "@/modules/production/project.service";
+import { refreshOrderPayments } from "@/modules/sales/posting";
 import { listPaymentsSchema, receivePaymentSchema } from "@/modules/sales/schemas";
 import { money } from "@/modules/sales/totals";
 
 type Tx = Prisma.TransactionClient;
 type ReceiveInput = ReturnType<typeof receivePaymentSchema.parse>;
 
-/** Default lead time for a production project started by a proforma advance. */
-export const DEFAULT_PRODUCTION_LEAD_DAYS = 45;
-
-const CASH_SUBTYPES = ["CASH", "BANK", "MOBILE_WALLET"] as const;
-
-/** The cash / bank / wallet account money goes into. */
-async function depositAccount(
-  tx: Tx,
-  companyId: string,
-  method: PaymentMethod,
-  accountId?: string,
-) {
-  if (accountId) {
-    const account = await tx.ledgerAccount.findFirst({
-      where: { id: accountId, companyId, isActive: true, subType: { in: [...CASH_SUBTYPES] } },
-    });
-    if (!account) throw new AppError("VALIDATION", "Choose a cash, bank or mobile wallet account.");
-    return account.id;
-  }
-  const acc = await ensureControlAccounts(companyId, tx);
-  if (method === "BKASH" || method === "NAGAD" || method === "ROCKET") return acc.MOBILE_WALLET;
-  if (method === "BANK_TRANSFER" || method === "CHEQUE" || method === "CARD") return acc.BANK;
-  return acc.CASH;
-}
-
 /**
- * Blueprint: the proforma advance "routes funds to Accounts & creates a
- * Production project". Called once the advance is fully received.
+ * Money receipts are kept apart from selling: by default only Accounts and
+ * Super Admin may record them (checked here too, so no caller can skip it).
  */
-async function startProductionFromProforma(
-  tx: Tx,
-  ctx: CompanyContext,
-  proforma: { id: string; number: string; partyId: string; quotationId: string | null },
-  meta?: RequestMeta,
-) {
-  const [party, items] = await Promise.all([
-    tx.party.findUniqueOrThrow({ where: { id: proforma.partyId }, select: { name: true } }),
-    proforma.quotationId
-      ? tx.quotationItem.findMany({
-          where: { quotationId: proforma.quotationId },
-          orderBy: { sortOrder: "asc" },
-        })
-      : Promise.resolve([]),
-  ]);
-  const targetDate = new Date(Date.now() + DEFAULT_PRODUCTION_LEAD_DAYS * 86_400_000);
-  const project = await tx.productionProject.create({
-    data: {
-      companyId: ctx.company.id,
-      code: await nextDocumentNumber(tx, ctx.company.id, "PRODUCTION_PROJECT"),
-      name: `${party.name} — ${proforma.number}`,
-      categoryId: items.find((i) => i.categoryId)?.categoryId ?? null,
-      styleId: items.find((i) => i.styleId)?.styleId ?? null,
-      buyerId: proforma.partyId,
-      proformaId: proforma.id,
-      targetDate,
-      targetQuantity: items.reduce((s, i) => s + i.quantity, 0),
-      notes: `Started automatically when the advance for ${proforma.number} was received.`,
-      stageLogs: { create: { stage: "FABRIC_SOURCING" } },
-    },
-  });
-  await tx.proformaInvoice.update({
-    where: { id: proforma.id },
-    data: { status: "IN_PRODUCTION" },
-  });
-  await auditInCompany(
-    ctx,
-    meta,
-    {
-      action: "CREATE",
-      entityType: "ProductionProject",
-      entityId: project.id,
-      summary: `Production project ${project.code} started from ${proforma.number}`,
-    },
-    tx,
-  );
-  return project;
+export function assertCanRecordReceipts(ctx: CompanyContext) {
+  if (!ctx.can("accounts.receipts.record")) {
+    throw new AppError(
+      "FORBIDDEN",
+      "Only Accounts can record money received. Save the order without the payment.",
+    );
+  }
 }
 
 /**
@@ -107,6 +45,7 @@ export async function receivePaymentTx(
   input: ReceiveInput,
   meta?: RequestMeta,
 ) {
+  assertCanRecordReceipts(ctx);
   const companyId = ctx.company.id;
   const amount = money(input.amount);
   let partyId: string | null = null;
@@ -163,7 +102,7 @@ export async function receivePaymentTx(
   }
 
   const accounts = await ensureControlAccounts(companyId, tx);
-  const debitAccount = await depositAccount(tx, companyId, input.method, input.accountId);
+  const debitAccount = await cashAccountFor(tx, companyId, input.method, input.accountId);
   const paymentDate = input.paymentDate ?? new Date();
   const payment = await tx.payment.create({
     data: {
@@ -214,7 +153,11 @@ export async function receivePaymentTx(
         where: { id: updated.id },
         data: { status: "ADVANCE_RECEIVED", advancePaidAt: paymentDate },
       });
-      productionProject = await startProductionFromProforma(tx, ctx, updated, meta);
+      await tx.proformaInvoice.update({
+        where: { id: updated.id },
+        data: { status: "IN_PRODUCTION" },
+      });
+      productionProject = await createProjectFromProformaTx(tx, ctx, updated, meta);
     }
   }
   if (partyId) await recordPartyActivity(partyId, paymentDate, tx);

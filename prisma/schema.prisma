@@ -206,8 +206,8 @@ model CompanyMembership {
   @@index([roleId])
 }
 
-/// A role inside a company. The five blueprint roles are seeded as system roles;
-/// companies can add custom roles too.
+/// A role inside a company. The five blueprint roles plus Accounts are seeded as
+/// system roles; companies can add custom roles too.
 model Role {
   id          String      @id @default(cuid())
   companyId   String
@@ -512,6 +512,7 @@ model Warehouse {
   stockMovements       StockMovement[]
   rawMaterialMovements RawMaterialMovement[]
   salesOrders          SalesOrder[]
+  stockIntakes         StockIntake[]
 
   @@unique([companyId, name])
 }
@@ -1270,6 +1271,7 @@ model StockIntake {
   companyId       String
   number          String
   projectId       String?
+  warehouseId     String? // where the goods are received
   sourceFileId    String?
   method          IntakeMethod         @default(MANUAL)
   status          IntakeStatus         @default(DRAFT)
@@ -1278,15 +1280,18 @@ model StockIntake {
   totalCost       Decimal              @default(0) @db.Decimal(14, 2)
   costAllocation  CostAllocationMethod @default(EQUAL_PER_PIECE)
   bGradeCostRatio Decimal?             @db.Decimal(5, 4) // e.g. 0.5 = B-Grade valued at 50%
+  notes           String?
   confirmedAt     DateTime?
   createdAt       DateTime             @default(now())
 
   company    Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
   project    ProductionProject? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  warehouse  Warehouse?         @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
   sourceFile FileAsset?         @relation(fields: [sourceFileId], references: [id], onDelete: SetNull)
   lines      StockIntakeLine[]
 
   @@unique([companyId, number])
+  @@index([projectId])
 }
 
 model StockIntakeLine {
@@ -1515,6 +1520,8 @@ model Expense {
   receiptFileId     String?
   formPrinted       Boolean     @default(false)
   journalEntryId    String?     @unique
+  voidedAt          DateTime? // voided entries stay for the record; their journal is reversed
+  voidReason        String?
   createdAt         DateTime    @default(now())
 
   company            Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
@@ -1531,6 +1538,7 @@ model Expense {
   @@unique([companyId, number])
   @@index([companyId, date])
   @@index([employeeId])
+  @@index([projectId])
 }
 
 /// Daily ad spend for the ROAS widget (Ad Spend vs Retail Sales).
@@ -2017,6 +2025,7 @@ enum SystemRole {
   SALES_EXECUTIVE
   WAREHOUSE_TEAM
   EMPLOYEE
+  ACCOUNTS
 }
 
 enum AppModule {
@@ -2397,6 +2406,7 @@ enum JournalSource {
   INSTALLMENT
   DEPRECIATION
   OPENING_BALANCE
+  PRODUCTION
 }
 
 enum AssetStatus {
@@ -2493,6 +2503,7 @@ enum DocumentType {
   PACKING_LIST
   DELIVERY_CHALLAN
   PAYMENT_RECEIPT
+  PAYMENT_VOUCHER
   SUPPLIER_BILL
   EXPENSE_VOUCHER
   JOURNAL_VOUCHER

@@ -16,7 +16,8 @@ export const GET = apiRoute(async (request) =>
 /**
  * POST /api/sales/orders — checkout: { channel, partyId?, lines? | matrix?, discount?,
  * shippingCharge?, tax?, forceOverride?: { reason }, payment?, documents? }.
- * 409 INSUFFICIENT_STOCK means: show the Force Override warning.
+ * 409 INSUFFICIENT_STOCK means: show the Force Override warning. A `payment` also
+ * needs accounts.receipts.record (Accounts / Super Admin).
  */
 export const POST = apiRoute(
   async (request) =>

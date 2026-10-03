@@ -34,7 +34,7 @@ Check the database connection at <http://localhost:3000/api/health>.
 
 ```
 prisma/
-  schema.prisma          # full database design (96 tables)
+  schema.prisma          # full database design (97 tables)
   migrations/            # SQL migrations applied to PostgreSQL
 src/
   app/                   # Next.js App Router (routes; api/health for DB check)
@@ -175,6 +175,11 @@ line and lands in the audit log.
 pick-list and Delivery Challan (price-free). Payment taken at the counter can be included when
 the user may record money (see below). Everything is saved together or not at all.
 
+**Shipment date.** An order can carry the day it is due to ship (`shipmentDate`), set at
+checkout, when a proforma becomes an order, or later. It cannot be before the order date and
+can change until the goods are delivered; changes are in the audit log. Shipment reminders
+follow it (see [automatic reminders](#notepad-tasks-and-reminders-backend)).
+
 **Books.** Every step posts a balanced journal entry, so the buyer's ledger, statements and
 the receivables overview update immediately:
 
@@ -197,6 +202,7 @@ the receivables overview update immediately:
 | `POST /api/sales/proformas/:id/cancel` / `…/convert`               | Cancel (no advance yet) / turn into a sales order        |
 | `GET/POST /api/sales/orders`, `GET/PATCH …/:id`                    | Orders and checkout; edit before delivery and invoicing  |
 | `POST /api/sales/orders/:id/cancel`                                | Cancel and free the reserved stock                       |
+| `POST /api/sales/orders/:id/shipment`                              | Set, move or clear the shipment date: `{ shipmentDate }` |
 | `POST /api/sales/orders/:id/invoice` / `packing-list` / `challans` | Make each document later                                 |
 | `GET /api/sales/invoices/:id`, `POST …/:id/void`                   | Commercial invoice / void it (audited)                   |
 | `GET /api/sales/packing-lists/:id`, `PUT …/:id/pick`               | Pick-list and picking progress                           |
@@ -638,9 +644,9 @@ picked, as a PDF or an Excel file:
 | Stock alerts    | Low, dead and slow stock and the highest stock, on the day the report is made  | `dashboard.view` or `inventory.view`               |
 
 The PDF is A4 with the company's details, the period, who made it and page numbers on every
-page; long tables carry their header onto the next page. It uses the built-in Helvetica font,
-which covers English and Western European letters, so other scripts (such as Bengali) show as
-"?" in the PDF; the Excel file keeps them. The Excel file has an overview sheet and one sheet
+page; long tables carry their header onto the next page. English and Bengali text both print
+(see [Bengali in PDFs](#bengali-in-pdfs)); other scripts show as "?" in the PDF, and the Excel
+file keeps them. The Excel file has an overview sheet and one sheet
 per table with real numbers and dates (so they add up and sort), a header row that stays in
 view and filter buttons.
 
@@ -701,15 +707,29 @@ It is checked thoroughly before it is kept, and every print makes sure the file 
 one that was checked, so a damaged image can never break a PDF. Replacing or removing it deletes the old file; PDFs made
 earlier keep the logo they had.
 
-The built-in PDF fonts cover English and Western European letters, so other scripts (such as
-Bengali) show as "?" on the page. Packing lists and payment receipts are not printable yet.
+Packing lists and payment receipts are not printable yet.
+
+### Bengali in PDFs
+
+Bengali text (names, addresses, notes, amounts in words) prints in every PDF, the reports and
+the documents alike, mixed freely with English on the same line. English text uses the
+built-in Helvetica and Times fonts; Bengali uses Noto Sans Bengali (regular and bold, SIL Open
+Font License, in `assets/fonts/`). Bengali letters join into conjuncts and vowel signs, so each
+Bengali run is shaped by HarfBuzz, the same engine browsers use, and set on the English text's
+baseline. Copying text out of the PDF gives the words as typed. The font is only embedded in a
+PDF that has Bengali in it, and only the letters used. Other scripts (Chinese, emoji...) still
+show as "?".
+
+The helpers are in `src/lib/pdf.ts`: make documents with `createPdf()` and draw text with
+`drawText()`, `fitText()` and `wrapText()`. The production build copies the font files into
+the server bundle (`outputFileTracingIncludes` in `next.config.js`).
 
 | Endpoint                                                       | Purpose                                                                |
 | -------------------------------------------------------------- | ---------------------------------------------------------------------- |
 | `POST /api/documents`                                          | Print a document (see below); returns it with `reused`                 |
 | `GET /api/documents?type=&referenceId=&partyId=&cursor=&take=` | Printed documents this person may see, newest first                    |
 | `GET /api/documents/:id`                                       | One printed document                                                   |
-| `GET /api/documents/:id/download?inline=1`                     | The PDF (`inline=1` opens it in the browser to print)                  |
+| `GET /api/documents/:id/download?inline=1`                     | The file (`inline=1` opens a PDF in the browser to print)              |
 | `GET/POST/DELETE /api/company/logo`                            | The letterhead logo: see it, upload it (multipart `file`) or remove it |
 
 What to print:
@@ -722,16 +742,171 @@ What to print:
 Server Actions are in `src/server/actions/documents.actions.ts`, with `uploadCompanyLogoAction`
 and `removeCompanyLogoAction` in `src/server/actions/company.actions.ts`.
 
+## Document templates (backend)
+
+Besides the built-in PDFs, a company can upload its own designs for quotations, proforma
+invoices, commercial invoices, delivery challans and letters, and the system fills in the data.
+A template has tags in curly brackets where the data goes: `{BuyerName}`, `{InvoiceNo}`,
+`{TotalAmount}`, `{ItemQuantity}`... (`{{BuyerName}}` and `{ BuyerName }` work too).
+
+| Kind                                            | How the values go in                                                                                                                           | What comes out                         |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| Word (.docx)                                    | Tags anywhere in the text, tables, headers and footers, even when Word split a tag into pieces; each value keeps the tag's bold, size, colour  | A Word file                            |
+| HTML page                                       | Tags in the text or in attribute values; values are escaped, so data can never change the page                                                 | An HTML file to open and print         |
+| PDF (a form from the printer, up to 20 pages)   | Each tag is placed on a page: its top-left corner in points (72 = 1 inch), text size, bold, alignment and a box width that long text is cut to | The same PDF with the values on it     |
+| Image (a JPG or PNG scan, up to 5000 px a side) | Placed like a PDF's tags, on one page                                                                                                          | A PDF: the image as an A4 page, filled |
+
+**Tags.** `GET /api/templates/catalog?documentType=` lists every tag a document can fill and
+what it prints: the company (with the BIN, TIN, trade licence, IRC and ERC numbers from its
+[licence records](#licences-and-registrations-backend)), the buyer, numbers and dates, amounts
+with the total in words, the challan's vehicle and driver, and the document's lines. Word and
+HTML tags are found when the file is uploaded. A tag with a known name means its data straight
+away; any other (`{Customer}`) can be mapped to any data, in upper or lower case if wanted, and a
+tag left unmapped prints nothing. In a table row, line tags (`{ItemDescription}`,
+`{ItemQuantity}`, `{ItemAmount}`...) repeat the row once per line of the document; anywhere else
+they list every line. English and Bengali both print, in PDF and image templates too.
+
+**Filling.** `POST /api/templates/:id/fill` with the quotation, proforma, invoice or challan
+(for a letter, optionally the buyer or supplier it is addressed to). The result is kept with
+the printed documents and downloads from `/api/documents/:id/download`; filling again when
+nothing changed returns the kept copy (`reused: true`). Each document type can have one default
+template. Replacing a template's file keeps the mapping of the tags still in it, and deleting a
+template keeps the documents already filled from it.
+
+**Safety.** Files are checked before they are kept: damaged files, Word files with macros and
+very large Word files are refused; HTML templates with scripts, frames, forms, event handlers
+(`onclick`...) or `javascript:` links are refused; password-protected and rotated PDFs are
+refused with what to do instead. Files can be up to 10 MB. Word and HTML files (templates and
+filled copies) always download and never open inside the app, so they can never run as one of
+its pages. Only photos and PDFs open in the browser (this now applies to every stored file).
+
+Uploading, mapping, editing and deleting templates, and downloading their files, need
+`templates.manage` (Super Admin by default). Everyone else sees the active templates of the
+documents they may print, and filling one needs the same permission as printing that
+document.
+
+| Endpoint                                    | Purpose                                                                                 |
+| ------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `GET /api/templates?documentType=&active=1` | Templates, defaults first                                                               |
+| `POST /api/templates`                       | Upload one (multipart `file`, `name`, `documentType`, `isDefault`), or JSON with `html` |
+| `GET/PATCH/DELETE /api/templates/:id`       | The template with its tags / rename, default, active, HTML text / delete                |
+| `PUT /api/templates/:id/placeholders`       | Map tags to data; for PDF and image templates, place them on the page                   |
+| `GET/POST /api/templates/:id/file`          | Download the uploaded file / upload a new version                                       |
+| `GET /api/templates/catalog?documentType=`  | The tags a document can fill and what each prints                                       |
+| `POST /api/templates/:id/fill`              | Fill it: `{ id, partyId? }`; returns the kept document with `reused`                    |
+
+## Notepad, tasks and reminders (backend)
+
+**Notepad & planner.** Each person has a private notepad with three tabs. Nobody else, not even
+a Super Admin, can read it. Needs `notepad.use` (everyone by default).
+
+- Daily routine: a checklist for every day. Ticking an item marks it done for today only, so the
+  list starts fresh each morning.
+- Next 3 days: the plan for today, tomorrow and the day after. Items not done by their day come
+  back as overdue.
+- General notes: free notes, pinned ones first, with search.
+
+**Tasks.** Management gives staff a piece of work ("Nazrul: factory visit on Tuesday 10:00")
+with a due day or time, a priority (low to urgent) and, if it belongs to one, a production
+project. The employee hears about it in the app through the login linked to their employee
+profile, sees it in the employee portal and marks it started or done there; whoever gave it
+hears when it is done. Creating, editing, cancelling and seeing every task need
+`reminders.manage` (Super Admin, Production Managers and Sales Executives by default).
+
+**Reminders set by hand.** "Call Rahim Traders about the advance on Monday 10:00", "file the VAT
+return on the 15th of every month": a time (or a day and time in company time), optionally
+repeating every so many days, weeks, months or years until a chosen day, and optionally linked
+to a project, order, purchase order, licence or task. Anyone can set reminders for themselves;
+reminding other people needs `reminders.manage`. Whoever gets a reminder can mark it as dealt
+with.
+
+**Automatic reminders.** The system watches these dates and tells the people who can act on
+them. These are the defaults; each company can change the days, the time (09:00 company time),
+the overdue repeat and who hears, per kind of date.
+
+| Date                                                                       | Before the date                                                 | Overdue      | Who hears                                   |
+| -------------------------------------------------------------------------- | --------------------------------------------------------------- | ------------ | ------------------------------------------- |
+| Production deadline: a planned or active project's target date             | 7, 3 and 1 days before, and on the day                          | Every 3 days | People who manage production                |
+| Goods in-house: a purchase order's expected date, until everything arrived | 3 and 1 days before, and on the day                             | Every 2 days | People who buy materials, and who raised it |
+| Shipment: a sales order's shipment date, until it is delivered             | 7, 3 and 1 days before, and on the day                          | Every day    | People who take orders                      |
+| Licence renewal: the expiry date                                           | From the licence's own alert days, then 15, 7, 1 and on the day | Every 7 days | People who see or manage licences           |
+| Task due                                                                   | 1 day before, and on the day                                    | Every day    | The employee and whoever gave the task      |
+
+Each reminder goes out once, even when two servers run. A moved date starts its reminders
+afresh, a project on hold or a cancelled order stops them, and renewing a licence or finishing
+a task marks the alerts already sent as dealt with.
+
+**Inbox and planner.** Every reminder lands in the person's in-app inbox (with an unread count
+for the bell). `GET /api/reminders/upcoming?days=7` is the planner's agenda: the deadlines,
+goods due, shipments and renewals the person's role can see, their tasks and their reminders,
+day by day, plus everything overdue. Only in-app messages go out for now; WhatsApp and email
+come with the other outside integrations at the end. Staff without a login are kept as
+recipients for those.
+
+**Server setup.** The reminder clock checks every minute. It runs in production and not in
+development; set `REMINDER_SCHEDULER=on` or `off` to choose.
+
+| Endpoint                                                  | Purpose                                                                          |
+| --------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `GET/POST /api/notepad?tab=`, `PATCH/DELETE …/:id`        | Your notes, one tab at a time / write, edit, move or delete one                  |
+| `POST /api/notepad/:id/done`, `POST /api/notepad/reorder` | Tick a routine or plan item / put a tab in order                                 |
+| `GET/POST /api/tasks`, `GET/PATCH/DELETE …/:id`           | Every task (soonest due first) / give one, edit or remove it                     |
+| `POST /api/tasks/:id/status`                              | To do, in progress, done or cancelled                                            |
+| `GET /api/portal/tasks`, `POST …/:id/status`              | The tasks given to you / start, finish or reopen one                             |
+| `GET/POST /api/reminders`, `GET/PATCH/DELETE …/:id`       | Reminders you set or are on (`all=1` for everyone's) / set, change, remove       |
+| `POST /api/reminders/:id/cancel` / `…/acknowledge`        | Stop one before it goes out / mark it as dealt with                              |
+| `GET /api/reminders/upcoming?days=`                       | The planner's agenda, with everything overdue                                    |
+| `GET /api/reminders/rules`, `PATCH …/:type`               | Automatic reminder settings per kind of date (changing needs `company.settings`) |
+| `GET /api/notifications?unread=1`, `GET …/unread-count`   | Your in-app inbox / the bell's count                                             |
+| `POST /api/notifications/:id/read`, `POST …/read-all`     | Mark one or all as read                                                          |
+
+## Licences and registrations (backend)
+
+The company's trade licence, VAT registration (BIN), TIN, IRC, ERC, BGMEA / BKMEA membership,
+fire licence, environment clearance and any other, each with its number, issuing authority,
+issue and expiry dates, notes and a scan (JPG, PNG, WebP or PDF up to 10 MB).
+
+Each record is valid, expiring (inside its renewal window: 30 days before expiry unless set
+otherwise for that record), expired, or has no expiry (a TIN or BIN). The summary counts them,
+lists what needs renewing (soonest first), shows which of the trade licence, BIN and TIN are not
+on file, and gives the numbers in force, which custom templates print (`{CompanyBIN}`,
+`{CompanyTIN}`, `{CompanyTradeLicense}`, `{CompanyIRC}`, `{CompanyERC}`).
+
+**Renewing** adds the next term (the new expiry, and the number or authority if they changed);
+the old term stays as history and its alerts stop. Deleting a renewal entered by mistake puts
+the term before it back in force. Archiving takes a record off the list and stops its alerts;
+restoring brings it back. Renewal alerts follow the rules in
+[automatic reminders](#notepad-tasks-and-reminders-backend), and every change is in the audit log.
+
+`compliance.view` (Super Admin and Accounts by default) sees the records and scans and gets the
+renewal alerts; `compliance.manage` (Super Admin) adds, corrects, renews, archives and deletes
+them.
+
+| Endpoint                                              | Purpose                                                                                    |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `GET /api/compliance?type=&status=&history=1&search=` | Records in force (with `history=1` also renewed and archived ones), soonest expiry first   |
+| `POST /api/compliance`                                | Add one: `{ type, number?, issuingAuthority?, issueDate?, expiryDate?, alertDaysBefore? }` |
+| `GET /api/compliance/summary`                         | Counts, what needs renewing, what is missing and the numbers in force                      |
+| `GET/PATCH/DELETE /api/compliance/:id`                | The record with its earlier terms / correct it / delete it                                 |
+| `POST /api/compliance/:id/renew`                      | The next term                                                                              |
+| `POST /api/compliance/:id/archive` / `…/restore`      | Take it off the list / put it back                                                         |
+| `GET/POST/DELETE /api/compliance/:id/scan`            | See the scan (`?download=1` saves it) / upload one (multipart `file`) / remove             |
+
+Server Actions are in `src/server/actions/templates.actions.ts`,
+`src/server/actions/notepad.actions.ts`, `src/server/actions/reminders.actions.ts`,
+`src/server/actions/compliance.actions.ts` and, for the employee's own tasks,
+`src/server/actions/portal.actions.ts`.
+
 ## Backups (backend)
 
 Every day at 02:00 (Asia/Dhaka) the server backs up the whole platform, every company, into
 `BACKUP_DIR/<date_time>/`:
 
-| File            | What it holds                                                                                           |
-| --------------- | ------------------------------------------------------------------------------------------------------- |
-| `database.dump` | The database (`pg_dump`, custom format)                                                                 |
-| `media.tar.gz`  | Stored files: logos, packing lists, bill scans, saved reports and printed documents (can be turned off) |
-| `manifest.json` | Sizes and SHA-256 checksums of the files, and how to restore                                            |
+| File            | What it holds                                                                                                                  |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `database.dump` | The database (`pg_dump`, custom format)                                                                                        |
+| `media.tar.gz`  | Stored files: logos, packing lists, bill and licence scans, templates, saved reports and printed documents (can be turned off) |
+| `manifest.json` | Sizes and SHA-256 checksums of the files, and how to restore                                                                   |
 
 Each backup is also copied to a folder in the owner's Google Drive once it is connected.
 Backups older than the retention period (30 days by default) are deleted on the server and

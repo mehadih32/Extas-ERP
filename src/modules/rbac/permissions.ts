@@ -170,16 +170,23 @@ export const PERMISSIONS = [
     module: "HR",
     description: "Employee portal: own profile, attendance, leave, payslips and advances",
   },
-  // Other modules
+  // Compliance (trade licence, VAT / BIN, TIN, IRC / ERC...)
+  {
+    key: "compliance.view",
+    module: "COMPLIANCE",
+    description:
+      "View licences and registrations (trade licence, VAT / BIN, TIN...) and their renewal dates",
+  },
   {
     key: "compliance.manage",
     module: "COMPLIANCE",
-    description: "Manage licences and renewal alerts",
+    description: "Add, renew and archive licences and their scans; get renewal alerts",
   },
   {
     key: "templates.manage",
     module: "TEMPLATES",
-    description: "Upload and map document templates",
+    description:
+      "Upload document templates (Word, HTML, PDF, image) and map their tags such as {BuyerName}",
   },
   {
     key: "documents.letterhead",
@@ -187,11 +194,15 @@ export const PERMISSIONS = [
     description: "Print the blank company letterhead pad",
   },
   { key: "reports.export", module: "REPORTS", description: "Generate PDF / Excel reports" },
-  { key: "notepad.use", module: "NOTEPAD", description: "Use the personal notepad and planner" },
+  {
+    key: "notepad.use",
+    module: "NOTEPAD",
+    description: "Use the personal notepad and planner, and set reminders for yourself",
+  },
   {
     key: "reminders.manage",
     module: "REMINDERS",
-    description: "Create tasks and WhatsApp / email reminders",
+    description: "Assign tasks to staff and set reminders for other people",
   },
   {
     key: "backups.manage",
@@ -300,6 +311,8 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<SystemRole, readonly PermissionKey
     // sign off salaries), and paying it needs accounts.payments.record.
     "hr.view",
     "hr.payroll",
+    // VAT and tax numbers go on invoices and returns; renewing licences stays with the owner.
+    "compliance.view",
     "portal.self",
     "reports.export",
     "documents.letterhead",

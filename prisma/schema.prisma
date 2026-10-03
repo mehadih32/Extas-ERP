@@ -140,6 +140,7 @@ model Company {
   notes                Note[]
   tasks                Task[]
   reminders            Reminder[]
+  reminderRules        ReminderRule[]
   notifications        NotificationLog[]
 }
 
@@ -173,7 +174,10 @@ model User {
   notes             Note[]
   tasksCreated      Task[]                @relation("TaskCreatedBy")
   remindersCreated  Reminder[]            @relation("ReminderCreatedBy")
+  remindersAcked    Reminder[]            @relation("ReminderAcknowledgedBy")
   reminderTargets   ReminderRecipient[]
+  reminderRules     ReminderRule[]        @relation("ReminderRuleUpdatedBy")
+  notifications     NotificationLog[]
   reportExports     ReportExport[]
   journalEntries    JournalEntry[]        @relation("JournalPostedBy")
   approvedLeaves    LeaveRequest[]        @relation("LeaveApprovedBy")
@@ -726,6 +730,7 @@ model PurchaseOrder {
   createdBy User?               @relation("PurchaseOrderCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   lines     PurchaseOrderLine[]
   bills     SupplierBill[]
+  reminders Reminder[]
 
   @@unique([companyId, number])
   @@index([companyId, status, expectedDate])
@@ -1059,6 +1064,8 @@ model SalesOrder {
   paidAmount       Decimal          @default(0) @db.Decimal(14, 2)
   dueAmount        Decimal          @default(0) @db.Decimal(14, 2)
   hasForceOverride Boolean          @default(false)
+  /// The day the goods are due to ship to the buyer (shipment reminders).
+  shipmentDate     DateTime?        @db.Date
   notes            String?
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
@@ -1080,6 +1087,7 @@ model SalesOrder {
   @@unique([companyId, number])
   @@unique([companyId, integrationId, externalOrderId])
   @@index([companyId, status, orderDate])
+  @@index([companyId, shipmentDate])
   @@index([partyId])
 }
 
@@ -1859,6 +1867,7 @@ model Employee {
   journalLines    JournalLine[]
   tasksAssigned   Task[]              @relation("TaskAssignee")
   reminderTargets ReminderRecipient[]
+  notifications   NotificationLog[]
 
   @@unique([companyId, code])
   @@unique([companyId, userId])
@@ -2160,7 +2169,8 @@ model AdvanceSettlement {
 // 11. COMPLIANCE, TEMPLATES, GENERATED DOCUMENTS, REPORTS
 // =============================================================================
 
-/// Trade License, VAT/BIN, TIN, IRC, ERC... with renewal alerts.
+/// Trade License, VAT/BIN, TIN, IRC, ERC... with renewal alerts. Renewing one
+/// keeps the old record (supersededAt) and links the new one to it (previousId).
 model ComplianceDocument {
   id               String         @id @default(cuid())
   companyId        String
@@ -2168,19 +2178,28 @@ model ComplianceDocument {
   title            String
   number           String?
   issuingAuthority String?
-  issueDate        DateTime?
-  expiryDate       DateTime?
+  issueDate        DateTime?      @db.Date
+  expiryDate       DateTime?      @db.Date
   alertDaysBefore  Int            @default(30)
   fileId           String?
   notes            String?
+  /// The record this one renewed.
+  previousId       String?        @unique
+  /// Set when a renewal replaced it.
+  supersededAt     DateTime?
+  /// Taken off the list (kept for the history).
+  archivedAt       DateTime?
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
 
-  company   Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  file      FileAsset? @relation(fields: [fileId], references: [id], onDelete: SetNull)
+  company   Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  file      FileAsset?          @relation(fields: [fileId], references: [id], onDelete: SetNull)
+  previous  ComplianceDocument? @relation("ComplianceRenewal", fields: [previousId], references: [id], onDelete: SetNull)
+  renewal   ComplianceDocument? @relation("ComplianceRenewal")
   reminders Reminder[]
 
   @@index([companyId, expiryDate])
+  @@index([companyId, type])
 }
 
 /// Uploaded custom template (PDF, Word, Image, HTML) for invoices, letterheads, etc.
@@ -2192,6 +2211,8 @@ model DocumentTemplate {
   format       TemplateFormat
   fileId       String? // uploaded source (PDF/Word/Image)
   htmlContent  String? // for HTML templates
+  /// PDF and image templates: each page's size in points ([{ width, height }]).
+  pageSizes    Json?
   isDefault    Boolean        @default(false)
   isActive     Boolean        @default(true)
   createdAt    DateTime       @default(now())
@@ -2207,16 +2228,20 @@ model DocumentTemplate {
   @@index([companyId, documentType])
 }
 
-/// Tag mapping, e.g. {CompanyName} -> company.name, {TotalAmount} -> invoice.total.
+/// Tag mapping, e.g. {CompanyName} -> company.name, {TotalAmount} -> doc.total.
 model TemplatePlaceholder {
   id         String   @id @default(cuid())
   templateId String
   tag        String // "{BuyerName}"
-  sourcePath String // "party.name"
-  format     String? // e.g. "currency", "date:dd MMM yyyy"
-  pageX      Decimal? @db.Decimal(8, 2) // position for PDF/Image overlays
+  sourcePath String? // "buyer.name"; null = a tag not mapped yet (prints empty)
+  format     String? // e.g. "upper", "date:dd MMM yyyy"
+  pageX      Decimal? @db.Decimal(8, 2) // position for PDF/Image overlays (points from the top left)
   pageY      Decimal? @db.Decimal(8, 2)
   page       Int?
+  fontSize   Int? // overlays: text size in points (default 10)
+  bold       Boolean  @default(false)
+  align      String? // overlays: "left" | "center" | "right" within `width`
+  width      Decimal? @db.Decimal(8, 2) // overlays: box width; longer text is cut to fit
 
   template DocumentTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
 
@@ -2300,6 +2325,8 @@ model Note {
   content   String
   planDate  DateTime? @db.Date
   isDone    Boolean   @default(false)
+  /// Daily routine items: the day they were last ticked (done today = today).
+  doneOn    DateTime? @db.Date
   isPinned  Boolean   @default(false)
   sortOrder Int       @default(0)
   createdAt DateTime  @default(now())
@@ -2334,10 +2361,13 @@ model Task {
   reminders Reminder[]
 
   @@index([companyId, status, dueAt])
+  @@index([assigneeId, status])
 }
 
 /// Trigger-based reminder (production deadline, goods in-house, shipment,
 /// compliance expiry, factory visit...) delivered via WhatsApp / Email / In-app.
+/// Set by hand (sourceKey null, may repeat) or made by a ReminderRule when a
+/// date comes near (sourceKey says which date and step, so each fires once).
 model Reminder {
   id                   String           @id @default(cuid())
   companyId            String
@@ -2345,28 +2375,74 @@ model Reminder {
   title                String
   message              String?
   remindAt             DateTime
-  repeatRule           String? // RRULE string for recurring reminders
-  offsetDays           Int? // e.g. fire 3 days before the deadline
+  repeatRule           String? // RRULE subset: FREQ, INTERVAL, BYMONTHDAY, UNTIL
+  offsetDays           Int? // automatic: days before the date (negative = days after it)
+  /// Automatic: the day of the deadline, delivery, shipment or expiry.
+  dueDate              DateTime?        @db.Date
+  /// Automatic: "<type>:<record>:<due day>:<step>", unique per company.
+  sourceKey            String?
   status               ReminderStatus   @default(SCHEDULED)
   channels             MessageChannel[]
   projectId            String?
   orderId              String?
+  purchaseOrderId      String?
   complianceDocumentId String?
   taskId               String?
   createdById          String?
   sentAt               DateTime?
+  acknowledgedAt       DateTime?
+  acknowledgedById     String?
   createdAt            DateTime         @default(now())
 
   company            Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
   project            ProductionProject?  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   order              SalesOrder?         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  purchaseOrder      PurchaseOrder?      @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
   complianceDocument ComplianceDocument? @relation(fields: [complianceDocumentId], references: [id], onDelete: Cascade)
   task               Task?               @relation(fields: [taskId], references: [id], onDelete: Cascade)
   createdBy          User?               @relation("ReminderCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  acknowledgedBy     User?               @relation("ReminderAcknowledgedBy", fields: [acknowledgedById], references: [id], onDelete: SetNull)
   recipients         ReminderRecipient[]
   notifications      NotificationLog[]
 
+  @@unique([companyId, sourceKey])
   @@index([companyId, status, remindAt])
+  @@index([projectId])
+  @@index([orderId])
+  @@index([purchaseOrderId])
+  @@index([complianceDocumentId])
+  @@index([taskId])
+}
+
+/// Company settings for one kind of automatic reminder (production deadlines,
+/// goods in-house, shipments, licence expiry, task due dates). Without a row the
+/// defaults in src/modules/reminders/rules.ts apply.
+model ReminderRule {
+  id               String       @id @default(cuid())
+  companyId        String
+  type             ReminderType
+  isActive         Boolean      @default(true)
+  /// Days before the date to remind, e.g. {7,3,1,0} (0 = on the day).
+  daysBefore       Int[]
+  /// Remind again every this many days once the date has passed (0 = never).
+  overdueEveryDays Int          @default(1)
+  /// Wall-clock time in company time when the reminders go out ("09:00").
+  sendTime         String       @default("09:00")
+  /// Everyone whose role can act on it (e.g. production.manage for deadlines).
+  notifyManagers   Boolean      @default(true)
+  /// The people on the record: who raised the purchase order, a task's assignee and creator.
+  notifyOwner      Boolean      @default(true)
+  /// More people to tell (user ids), and staff (employee ids: in-app through their login).
+  userIds          String[]
+  employeeIds      String[]
+  updatedById      String?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  updatedBy User?   @relation("ReminderRuleUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@unique([companyId, type])
 }
 
 /// Who gets a reminder: a management user and/or an assigned employee.
@@ -2381,17 +2457,27 @@ model ReminderRecipient {
   employee Employee? @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   @@index([reminderId])
+  @@index([userId])
+  @@index([employeeId])
 }
 
-/// Outbound message log (WhatsApp Business API, Email, In-app).
+/// Outbound message log (WhatsApp Business API, Email, In-app). In-app
+/// notifications are the rows with channel IN_APP and a userId: the inbox.
 model NotificationLog {
   id                String         @id @default(cuid())
   companyId         String
   reminderId        String?
   channel           MessageChannel
   recipient         String // phone, email or user id
+  /// In-app: the user whose inbox it is in.
+  userId            String?
+  /// The staff member it was for (also the WhatsApp / email target later).
+  employeeId        String?
   subject           String?
   body              String
+  /// The record it is about ("ProductionProject", "Task"...), to open it.
+  entityType        String?
+  entityId          String?
   status            DeliveryStatus @default(PENDING)
   providerMessageId String?
   error             String?
@@ -2401,8 +2487,12 @@ model NotificationLog {
 
   company  Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
   reminder Reminder? @relation(fields: [reminderId], references: [id], onDelete: SetNull)
+  user     User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  employee Employee? @relation(fields: [employeeId], references: [id], onDelete: SetNull)
 
   @@index([companyId, status])
+  @@index([companyId, userId, createdAt])
+  @@index([companyId, userId, readAt])
 }
 
 // =============================================================================
@@ -3065,6 +3155,7 @@ enum ReminderType {
   GOODS_IN_HOUSE
   SHIPMENT
   COMPLIANCE_EXPIRY
+  TASK_DUE
   FACTORY_VISIT
   PAYMENT_DUE
   INSTALLMENT_DUE

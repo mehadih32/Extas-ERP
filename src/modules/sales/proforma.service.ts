@@ -255,6 +255,7 @@ export async function convertProformaToOrder(
           proformaId: proforma.id,
           warehouseId: warehouse.id,
           orderDate: input.orderDate,
+          shipmentDate: input.shipmentDate,
           lines,
           charges: input,
           notes: input.notes,

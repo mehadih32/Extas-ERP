@@ -21,8 +21,11 @@ export const PRINT_TYPES = [
 
 export type PrintType = (typeof PRINT_TYPES)[number];
 
-/** Bump when the layout changes, so documents printed again get the new look. */
-export const LAYOUT_VERSION = 1;
+/**
+ * Bump when the layout changes, so documents printed again get the new look.
+ * 2: Bengali text prints in Noto Sans Bengali instead of "?".
+ */
+export const LAYOUT_VERSION = 2;
 
 export type Letterhead = {
   name: string;
@@ -115,11 +118,11 @@ export function contentHash(doc: PrintDocument, logoChecksum: string | null): st
 }
 
 /** "Extras - Invoice INV-2026-00042.pdf", without characters file systems refuse. */
-export function documentFileName(companyName: string, label: string): string {
+export function documentFileName(companyName: string, label: string, ext = ".pdf"): string {
   const clean = (s: string) =>
     s
       .replace(/[\u0000-\u001f\u007f"<>|*?:\\/]/g, " ")
       .replace(/\s+/g, " ")
       .trim();
-  return `${clean(companyName).slice(0, 60)} - ${clean(label).slice(0, 120)}.pdf`;
+  return `${clean(companyName).slice(0, 60)} - ${clean(label).slice(0, 120)}${ext}`;
 }

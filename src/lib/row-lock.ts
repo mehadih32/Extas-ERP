@@ -21,7 +21,9 @@ export type LockableTable =
   | "PayrollPayment"
   | "RawMaterial"
   | "PurchaseOrder"
-  | "PurchaseReturn";
+  | "PurchaseReturn"
+  | "ComplianceDocument"
+  | "DocumentTemplate";
 
 /**
  * Locks rows until the transaction ends (`SELECT ... FOR UPDATE`), so two people

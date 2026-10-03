@@ -17,6 +17,8 @@ const optionalText = (max: number) => z.string().trim().max(max).nullish();
 const take = z.coerce.number().int().min(1).max(200).optional();
 /** A calendar day ("2026-02-28", whole day in company time) or an exact timestamp. */
 const dayOrInstant = z.union([z.date(), z.iso.date(), z.iso.datetime({ offset: true })]);
+/** The day the goods are due to leave for the buyer ("2026-11-20"); shipment reminders follow it. */
+const shipmentDate = z.iso.date().nullish();
 
 // --- Custom fields ---------------------------------------------------------------
 export const customFieldDefinitionSchema = z
@@ -174,6 +176,7 @@ export const createOrderSchema = z
     partyId: id.nullish(),
     warehouseId: id.optional(),
     orderDate: z.coerce.date().optional(),
+    shipmentDate,
     ...orderLines,
     ...orderCharges,
     /** Money taken at checkout (e.g. cash at the counter). */
@@ -202,6 +205,7 @@ export const convertProformaToOrderSchema = z
   .object({
     warehouseId: id.optional(),
     orderDate: z.coerce.date().optional(),
+    shipmentDate,
     ...orderLines,
     ...orderCharges,
   })
@@ -212,6 +216,9 @@ export const convertProformaToOrderSchema = z
   });
 
 export const cancelOrderSchema = z.object({ reason: z.string().trim().min(3).max(500) });
+
+/** Sets, moves or (null) clears the day an open order is due to ship. */
+export const orderShipmentSchema = z.object({ shipmentDate: z.iso.date().nullable() });
 
 export const listOrdersSchema = z.object({
   status: z.enum(SalesOrderStatus).optional(),

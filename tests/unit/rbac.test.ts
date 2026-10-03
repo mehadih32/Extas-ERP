@@ -94,6 +94,24 @@ describe("raw material permissions", () => {
   });
 });
 
+describe("notepad, reminder, licence and template permissions", () => {
+  const can = (role: SystemRole, key: string) =>
+    (DEFAULT_ROLE_PERMISSIONS[role] as readonly string[]).includes(key);
+
+  it("gives everyone a notepad, managers reminders for others, and Accounts the licences to read", () => {
+    for (const role of Object.values(SystemRole)) {
+      expect(can(role, "notepad.use")).toBe(true);
+      // Licence and VAT numbers go on invoices; renewing them stays with the owner.
+      expect(can(role, "compliance.view")).toBe(role === "SUPER_ADMIN" || role === "ACCOUNTS");
+      expect(can(role, "compliance.manage")).toBe(role === "SUPER_ADMIN");
+      expect(can(role, "templates.manage")).toBe(role === "SUPER_ADMIN");
+      expect(can(role, "reminders.manage")).toBe(
+        role === "SUPER_ADMIN" || role === "PRODUCTION_MANAGER" || role === "SALES_EXECUTIVE",
+      );
+    }
+  });
+});
+
 describe("resolvePermissions", () => {
   it("gives Super Admin and the platform owner everything", () => {
     const all = ALL_PERMISSION_KEYS.length;

@@ -9,8 +9,9 @@ type Params = { documentId: string };
 export const dynamic = "force-dynamic";
 
 /**
- * GET /api/documents/:documentId/download — the PDF. Add ?inline=1 to open it in the browser
- * (to print) instead of saving it. Every download is audited.
+ * GET /api/documents/:documentId/download — the PDF (or the Word / HTML file filled from a
+ * custom template). Add ?inline=1 to open a PDF in the browser (to print) instead of saving
+ * it; Word and HTML files always download. Every download is audited.
  */
 export async function GET(request: Request, context: { params: Promise<Params> }) {
   try {

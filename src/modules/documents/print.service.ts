@@ -44,7 +44,7 @@ import type { PermissionKey } from "@/modules/rbac/permissions";
  */
 
 /** PDFs a person may make in a minute (each one reads the data and lays out pages). */
-const PRINT_PER_MINUTE = 30;
+export const PRINT_PER_MINUTE = 30;
 
 export const PRINT_INFO: Record<
   PrintType,
@@ -89,7 +89,7 @@ export function printableTypes(ctx: CompanyContext): PrintType[] {
   return PRINT_TYPES.filter((type) => ctx.can(PRINT_INFO[type].permission));
 }
 
-function assertMayPrint(ctx: CompanyContext, type: PrintType) {
+export function assertMayPrint(ctx: CompanyContext, type: PrintType) {
   if (!ctx.can(PRINT_INFO[type].permission)) {
     throw new AppError(
       "FORBIDDEN",
@@ -101,17 +101,18 @@ function assertMayPrint(ctx: CompanyContext, type: PrintType) {
 const isPrintType = (value: string): value is PrintType =>
   (PRINT_TYPES as readonly string[]).includes(value);
 
-const documentInclude = {
+export const documentInclude = {
   party: { select: { id: true, code: true, name: true } },
   generatedBy: { select: { id: true, name: true } },
+  template: { select: { id: true, name: true, format: true } },
   file: {
     select: { id: true, fileName: true, mimeType: true, sizeBytes: true, storagePath: true },
   },
 } satisfies Prisma.GeneratedDocumentInclude;
 
-type DocumentRow = Prisma.GeneratedDocumentGetPayload<{ include: typeof documentInclude }>;
+export type DocumentRow = Prisma.GeneratedDocumentGetPayload<{ include: typeof documentInclude }>;
 
-function present(row: DocumentRow) {
+export function presentDocument(row: DocumentRow) {
   const type = row.documentType as PrintType;
   return {
     id: row.id,
@@ -127,16 +128,19 @@ function present(row: DocumentRow) {
     periodTo: dateOnly(row.periodTo),
     /** What was asked for (statement dates, stock sheet styles / brand / warehouse). */
     options: row.options,
+    /** Filled from a custom template (Word and HTML ones download as .docx / .html). */
+    template: row.template,
     /** Ready to download from /api/documents/:id/download. */
     downloadable: row.file !== null,
     fileName: row.file?.fileName ?? null,
+    mimeType: row.file?.mimeType ?? null,
     sizeBytes: row.file?.sizeBytes ?? null,
     generatedBy: row.generatedBy,
     createdAt: row.createdAt,
   };
 }
 
-export type PrintedDocument = ReturnType<typeof present>;
+export type PrintedDocument = ReturnType<typeof presentDocument>;
 
 async function findByHash(ctx: CompanyContext, hash: string): Promise<DocumentRow | null> {
   return ctx.db.generatedDocument.findFirst({
@@ -171,7 +175,7 @@ export async function printDocument(
 
   const existing = await findByHash(ctx, hash);
   if (existing?.file && (await storedFileExists(existing.file))) {
-    return { ...present(existing), reused: true };
+    return { ...presentDocument(existing), reused: true };
   }
 
   const bytes = await renderDocumentPdf(model, { logo: logo?.bytes });
@@ -239,12 +243,12 @@ export async function printDocument(
         include: documentInclude,
       });
     });
-    return { ...present(row), reused: false };
+    return { ...presentDocument(row), reused: false };
   } catch (error) {
     await deleteStoredFile(saved).catch(() => undefined);
     if (error instanceof LostRace || isUniqueViolation(error)) {
       const winner = await findByHash(ctx, hash);
-      if (winner) return { ...present(winner), reused: true };
+      if (winner) return { ...presentDocument(winner), reused: true };
     }
     throw error;
   }
@@ -272,7 +276,7 @@ export async function listDocuments(ctx: CompanyContext, raw: unknown) {
   const hasMore = rows.length > input.take;
   const items = hasMore ? rows.slice(0, input.take) : rows;
   return {
-    items: items.map(present),
+    items: items.map(presentDocument),
     nextCursor: hasMore ? items[items.length - 1]?.id : undefined,
   };
 }
@@ -290,10 +294,10 @@ async function loadDocument(ctx: CompanyContext, documentId: string): Promise<Do
 }
 
 export async function getDocument(ctx: CompanyContext, documentId: string) {
-  return present(await loadDocument(ctx, documentId));
+  return presentDocument(await loadDocument(ctx, documentId));
 }
 
-/** A printed document's PDF. Every download is written to the activity log. */
+/** A printed document's file (a PDF, or a filled Word / HTML template). Every download is logged. */
 export async function downloadDocument(
   ctx: CompanyContext,
   documentId: string,
@@ -303,7 +307,7 @@ export async function downloadDocument(
   const gone = () =>
     new AppError(
       "NOT_FOUND",
-      "This PDF is no longer in storage. Print the document again to make a new copy.",
+      "This file is no longer in storage. Print the document again to make a new copy.",
     );
   if (!row.file) throw gone();
   let bytes: Buffer;
@@ -317,7 +321,7 @@ export async function downloadDocument(
     action: "EXPORT",
     entityType: "GeneratedDocument",
     entityId: row.id,
-    summary: `Downloaded PDF: ${row.title}`,
+    summary: `Downloaded ${row.file.mimeType === PDF_MIME ? "PDF" : "file"}: ${row.title}`,
   });
   return { fileName: row.file.fileName, mimeType: row.file.mimeType, bytes };
 }

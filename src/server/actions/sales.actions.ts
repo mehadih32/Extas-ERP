@@ -99,6 +99,10 @@ export const updateOrderAction = async (orderId: string, input: unknown) =>
   runAction(async () => orders.updateOrder(await sell(), orderId, input, await getRequestMeta()));
 export const cancelOrderAction = async (orderId: string, input: unknown) =>
   runAction(async () => orders.cancelOrder(await sell(), orderId, input, await getRequestMeta()));
+export const setOrderShipmentDateAction = async (orderId: string, input: unknown) =>
+  runAction(async () =>
+    orders.setOrderShipmentDate(await sell(), orderId, input, await getRequestMeta()),
+  );
 
 // --- Documents -----------------------------------------------------------------
 export const issueInvoiceAction = async (orderId: string, input: unknown) =>

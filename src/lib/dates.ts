@@ -40,8 +40,13 @@ export function startOfDayInZone(day: string, timeZone: string): Date {
 
 /** The calendar day after `day` ("2026-02-28" -> "2026-03-01"). */
 export function nextDay(day: string): string {
+  return addDays(day, 1);
+}
+
+/** The calendar day `days` after `day` (before it when negative). */
+export function addDays(day: string, days: number): string {
   const d = new Date(`${day}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + 1);
+  d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().slice(0, 10);
 }
 

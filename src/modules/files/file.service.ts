@@ -80,17 +80,29 @@ export async function fileFromForm(form: FormData): Promise<{ fileName: string; 
 
 /** Reads a multipart request without accepting oversized bodies. */
 export async function fileFromRequest(request: Request) {
+  return fileFromForm(await formFromRequest(request));
+}
+
+/** A multipart request's form (the file and any other fields), refusing oversized bodies. */
+export async function formFromRequest(request: Request): Promise<FormData> {
   const length = Number(request.headers.get("content-length") ?? 0);
   if (length > MAX_UPLOAD_BYTES + 1024 * 1024) {
     throw new AppError("VALIDATION", "Files can be up to 10 MB.");
   }
-  let form: FormData;
   try {
-    form = await request.formData();
+    return await request.formData();
   } catch {
     throw new AppError("VALIDATION", "Send the file as multipart/form-data.");
   }
-  return fileFromForm(form);
+}
+
+/** The text fields of a form (everything but files). */
+export function formFields(form: FormData): Record<string, string> {
+  const fields: Record<string, string> = {};
+  form.forEach((value, key) => {
+    if (typeof value === "string") fields[key] = value;
+  });
+  return fields;
 }
 
 function datedPath(companyId: string, folders: string[], ext: string): string {
@@ -197,8 +209,9 @@ export async function readStoredFile(asset: { storagePath: string }): Promise<Bu
 
 /**
  * A file for download. Allowed for its uploader and for roles that may see the
- * record it belongs to (a delivery's packing list, a supplier bill's scan). Saved
- * reports download through the Report Builder, which checks their figures.
+ * record it belongs to (a delivery's packing list, a supplier bill's scan, a
+ * licence scan, a document template). Saved reports download through the Report
+ * Builder, which checks their figures.
  */
 export async function getFileForDownload(ctx: CompanyContext, fileId: string) {
   const asset = await ctx.db.fileAsset.findUnique({
@@ -206,6 +219,8 @@ export async function getFileForDownload(ctx: CompanyContext, fileId: string) {
     include: {
       stockIntakes: { select: { id: true }, take: 1 },
       supplierBills: { select: { id: true }, take: 1 },
+      complianceDocuments: { select: { id: true }, take: 1 },
+      templates: { select: { id: true }, take: 1 },
     },
   });
   if (!asset) throw new AppError("NOT_FOUND", "File not found.");
@@ -213,7 +228,11 @@ export async function getFileForDownload(ctx: CompanyContext, fileId: string) {
     asset.uploadedById === ctx.user.id ||
     (asset.stockIntakes.length > 0 &&
       (ctx.can("production.view") || ctx.can("production.stock_intake"))) ||
-    (asset.supplierBills.length > 0 && (ctx.can("production.manage") || ctx.can("accounts.view")));
+    (asset.supplierBills.length > 0 &&
+      (ctx.can("production.manage") || ctx.can("accounts.view"))) ||
+    (asset.complianceDocuments.length > 0 &&
+      (ctx.can("compliance.view") || ctx.can("compliance.manage"))) ||
+    (asset.templates.length > 0 && ctx.can("templates.manage"));
   if (!allowed) throw new AppError("FORBIDDEN", "You do not have permission to open this file.");
   return {
     asset: {

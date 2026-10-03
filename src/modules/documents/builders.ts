@@ -112,8 +112,8 @@ function partyLines(party: PartyLike, address?: string | null): string[] {
   ].filter((l): l is string => Boolean(l));
 }
 
-/** "S 20 · M 40 · L 40", sizes in the company's size order. */
-function sizesLine(
+/** "S 20 · M 40 · L 40", sizes in the company's size order (null when there are none). */
+export function sizeBreakdownText(
   breakdown: Prisma.JsonValue | null,
   sizeOrder: Map<string, number>,
   currency: string,
@@ -125,10 +125,20 @@ function sizesLine(
   if (entries.length === 0) return null;
   const rank = (size: string) => sizeOrder.get(size.toUpperCase()) ?? Number.MAX_SAFE_INTEGER;
   entries.sort((a, b) => rank(a.size) - rank(b.size) || a.index - b.index);
-  return `Sizes: ${entries.map((e) => `${e.size} ${count(e.qty, currency)}`).join(" · ")}`;
+  return entries.map((e) => `${e.size} ${count(e.qty, currency)}`).join(" · ");
 }
 
-async function sizeOrderOf(ctx: CompanyContext) {
+function sizesLine(
+  breakdown: Prisma.JsonValue | null,
+  sizeOrder: Map<string, number>,
+  currency: string,
+): string | null {
+  const text = sizeBreakdownText(breakdown, sizeOrder, currency);
+  return text ? `Sizes: ${text}` : null;
+}
+
+/** The company's sizes in their sort order, by upper-case name. */
+export async function sizeOrderOf(ctx: CompanyContext) {
   const sizes = await ctx.db.size.findMany({ select: { name: true, sortOrder: true } });
   return new Map(sizes.map((s) => [s.name.toUpperCase(), s.sortOrder]));
 }

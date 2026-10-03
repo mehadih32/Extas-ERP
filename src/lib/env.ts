@@ -23,6 +23,11 @@ const serverEnvSchema = z.object({
     (v) => (v === "" ? undefined : v),
     z.enum(["on", "off"]).optional(),
   ),
+  /** The reminder clock (in-app reminders); on by default in production (empty = default). */
+  REMINDER_SCHEDULER: z.preprocess(
+    (v) => (v === "" ? undefined : v),
+    z.enum(["on", "off"]).optional(),
+  ),
   GOOGLE_DRIVE_CLIENT_ID: z.string().optional(),
   GOOGLE_DRIVE_CLIENT_SECRET: z.string().optional(),
 });

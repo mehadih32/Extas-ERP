@@ -88,8 +88,11 @@ The same operations are available as Server Actions in `src/server/actions/`.
 Category tree → Brand → Style → color × size matrix, where each cell is one SKU
 (`EX-PL-001-NAVY-XL`). Stock is kept per SKU, warehouse and grade (A / B) with a movement
 log for every change. Available stock is A-grade minus reserved, and stock never goes below
-zero here (Force Override comes with the Sales module). Bad stock records the loss at the
-weighted average cost.
+zero here (Force Override comes with the Sales module). Each SKU keeps two weighted average
+costs, one for A-grade and one for B-grade (`avgCost` and `bGradeAvgCost`), so cheaper seconds
+never pull down the cost of first-quality stock. Stock coming in re-weights only its own grade's
+cost; corrections, bad stock, deliveries and the stock value all use the grade's own cost. Bad
+stock records the loss at that cost.
 
 | Endpoint                                                                | Purpose                                                 |
 | ----------------------------------------------------------------------- | ------------------------------------------------------- |
@@ -180,17 +183,41 @@ checkout, when a proforma becomes an order, or later. It cannot be before the or
 can change until the goods are delivered; changes are in the audit log. Shipment reminders
 follow it (see [automatic reminders](#notepad-tasks-and-reminders-backend)).
 
+**Refunds and cancelling paid work.** Money a buyer paid can be taken back off an order or a
+proforma, or off the credit on their account, in one of three ways: paid back (cash, bank or a
+wallet), kept as credit on the buyer's account, or kept as a cancellation charge. Each refund is
+a numbered voucher (`RF-2026-00001`). An order or proforma holds what was received on it less
+its refunds, which is its paid amount; a proforma whose advance a refund brings back under the
+required amount keeps its production running, but cannot become an order until the advance is
+paid again. Money on a live invoice is not refunded on its own: the invoice is voided first,
+which turns its payments back into an advance.
+
+An order or proforma that still holds money cannot be cancelled until that money is settled.
+Either Accounts refunds it first and Sales then cancels as usual, or whoever cancels says how
+to settle it (`settle`) and the whole amount is refunded as part of the cancel. Cancelling an
+invoiced order also voids its invoice, which needs `sales.invoice.edit`, so a paid, invoiced
+order is cancelled by the Super Admin by default. A refund recorded by mistake can be voided,
+which puts the money back where it came from, but not once its order or proforma is cancelled,
+the order is invoiced again, the order or proforma has since been paid up to its total, or
+credit it left on the account has been used. A walk-in customer has no account, so their money
+is paid back or kept as a charge, never kept as credit.
+
 **Books.** Every step posts a balanced journal entry, so the buyer's ledger, statements and
 the receivables overview update immediately:
 
-| Event                  | Entry                                                         |
-| ---------------------- | ------------------------------------------------------------- |
-| Payment before invoice | Dr Cash / Bank / Wallet, Cr Customer Advance (buyer)          |
-| Invoice                | Dr Receivable (buyer), Cr Sales / Delivery income / VAT       |
-| Advance applied        | Dr Customer Advance, Cr Receivable (inside the invoice entry) |
-| Payment after invoice  | Dr Cash / Bank / Wallet, Cr Receivable (buyer)                |
-| Delivery               | Dr Cost of Goods Sold, Cr Inventory (at average cost)         |
-| Invoice void           | Mirror entry; payments become the buyer's advance again       |
+| Event                  | Entry                                                          |
+| ---------------------- | -------------------------------------------------------------- |
+| Payment before invoice | Dr Cash / Bank / Wallet, Cr Customer Advance (buyer)           |
+| Invoice                | Dr Receivable (buyer), Cr Sales / Delivery income / VAT        |
+| Advance applied        | Dr Customer Advance, Cr Receivable (inside the invoice entry)  |
+| Payment after invoice  | Dr Cash / Bank / Wallet, Cr Receivable (buyer)                 |
+| Delivery               | Dr Cost of Goods Sold, Cr Inventory (at average cost)          |
+| Invoice void           | Mirror entry; payments become the buyer's advance again        |
+| Refund paid back       | Dr Customer Advance (buyer), Cr Cash / Bank / Wallet           |
+| Refund kept as credit  | Dr Customer Advance, Cr Receivable (buyer)                     |
+| Cancellation charge    | Dr Customer Advance (buyer), Cr Other Income                   |
+| Account credit refund  | Dr Receivable (buyer), Cr Cash / Bank / Wallet or Other Income |
+| Refund void            | Mirror entry; the money is held where it came from again       |
 
 | Endpoint                                                           | Purpose                                                  |
 | ------------------------------------------------------------------ | -------------------------------------------------------- |
@@ -199,22 +226,27 @@ the receivables overview update immediately:
 | `PUT /api/sales/quotations/:id/status`                             | Sent, accepted or rejected                               |
 | `POST /api/sales/quotations/:id/convert`                           | Make the proforma invoice                                |
 | `GET /api/sales/proformas`, `GET …/:id`                            | Proformas with advance due, payments and production      |
-| `POST /api/sales/proformas/:id/cancel` / `…/convert`               | Cancel (no advance yet) / turn into a sales order        |
+| `POST /api/sales/proformas/:id/cancel` / `…/convert`               | Cancel, settling any advance / turn into a sales order   |
 | `GET/POST /api/sales/orders`, `GET/PATCH …/:id`                    | Orders and checkout; edit before delivery and invoicing  |
-| `POST /api/sales/orders/:id/cancel`                                | Cancel and free the reserved stock                       |
+| `POST /api/sales/orders/:id/cancel`                                | Cancel, settling any money paid, and free the stock      |
 | `POST /api/sales/orders/:id/shipment`                              | Set, move or clear the shipment date: `{ shipmentDate }` |
 | `POST /api/sales/orders/:id/invoice` / `packing-list` / `challans` | Make each document later                                 |
 | `GET /api/sales/invoices/:id`, `POST …/:id/void`                   | Commercial invoice / void it (audited)                   |
 | `GET /api/sales/packing-lists/:id`, `PUT …/:id/pick`               | Pick-list and picking progress                           |
 | `GET /api/sales/challans`, `GET …/:id`                             | Challan history and the price-free challan               |
 | `GET/POST /api/sales/payments`, `GET …/:id`                        | Money received (order, proforma or on account), receipts |
-| `GET /api/sales/summary?from=&to=`                                 | Today's sales, collections and open dues                 |
+| `GET/POST /api/sales/refunds`, `GET …/:id`, `POST …/:id/void`      | Refunds to buyers (paid back, credit, charge) / void one |
+| `GET /api/sales/summary?from=&to=`                                 | Today's sales, collections less refunds, and open dues   |
 
 Reads need `sales.view`; quotations and proformas need `sales.quotation.manage`; orders and
 documents need `sales.order.create`; recording money received (on its own or at checkout)
 needs `accounts.receipts.record`, which only Accounts and Super Admin hold by default, so
 Sales Executives create orders and proformas but never record receipts; voiding an invoice
-needs `sales.invoice.edit`; custom field definitions need `company.settings`. Server Actions are in
+needs `sales.invoice.edit`; custom field definitions need `company.settings`. Refunds, and a
+cancel that settles money, are Accounts' work too: paying money back needs
+`accounts.payments.record`, keeping it as credit `accounts.receipts.record`, and keeping it as a
+cancellation charge `accounts.manage`. Cancel bodies are `{ reason, settle?: { kind, method?,
+accountId?, refundDate?, reference?, notes? } }`. Server Actions are in
 `src/server/actions/sales.actions.ts`. Website / courier sync and returns QC come next in
 this module.
 
@@ -241,8 +273,17 @@ for a person to check. Confirming a delivery puts the pieces into stock and move
 of the project's cost from work in progress into inventory. That share follows the pieces
 still expected (300 of 1,000 take 30%), and the final delivery takes the rest. Within the
 delivery the cost is split per piece in one of three ways: equally, with B-grade valued at a
-ratio of A-grade (half by default), or as typed in. Each SKU's average cost is re-weighted,
-so sales are costed at what the goods cost to make.
+ratio of A-grade (half by default), or as typed in. Each SKU's average cost for that grade is
+re-weighted, so sales are costed at what the goods cost to make.
+
+**Undoing a delivery.** A delivery moved to stock by mistake (wrong counts, wrong SKUs, the
+wrong project) can be undone with a reason, as long as the warehouse still has that many free
+pieces of each SKU and grade. Its pieces leave stock, its cost goes back to the project's work
+in progress, each SKU's average cost is put back as if the pieces had never come in, and the
+project's produced counts go down. A completed project is reopened at its last working stage.
+If the stock's value moved in between (other deliveries came and went), the small difference is
+booked to Production & Inventory Losses so the inventory account keeps matching the stock.
+With `redraft` a draft copy opens, linked to the undone one, to correct and confirm again.
 
 | Event                        | Entry                                                    |
 | ---------------------------- | -------------------------------------------------------- |
@@ -251,6 +292,7 @@ so sales are costed at what the goods cost to make.
 | Cost paid without a supplier | Dr Work in Progress, Cr Cash / Bank / Wallet             |
 | Delivery moved to stock      | Dr Finished Goods Inventory, Cr Work in Progress         |
 | Unrecovered cost written off | Dr Production & Inventory Losses, Cr Work in Progress    |
+| Delivery undone              | Mirror of the delivery entry, plus any value difference  |
 
 | Endpoint                                                            | Purpose                                                    |
 | ------------------------------------------------------------------- | ---------------------------------------------------------- |
@@ -267,10 +309,11 @@ so sales are costed at what the goods cost to make.
 | `POST /api/production/files`                                        | Upload a packing list or bill scan (photo or PDF, 10 MB)   |
 | `GET/POST /api/production/intakes`, `GET/PATCH …/:id`               | Deliveries for Move to Stock, with a cost preview          |
 | `POST /api/production/intakes/:id/parse` / `…/confirm` / `…/cancel` | Read with AI / put into stock / drop the draft             |
+| `POST /api/production/intakes/:id/reverse`                          | Undo a confirmed delivery: `{ reason, redraft? }`          |
 | `GET /api/files/:id`                                                | Open an uploaded file                                      |
 
 Reads need `production.view`, which the Warehouse Team also holds. Projects, stages, cost
-heads and Due bills need `production.manage`. Money paid out (bill payments, costs paid in
+heads, Due bills and undoing a delivery need `production.manage`. Money paid out (bill payments, costs paid in
 cash or bank) needs `accounts.payments.record`, and writing leftover cost off when a project
 is completed or cancelled needs `accounts.manage`; by default only Accounts and Super Admin
 hold either. Deliveries need `production.stock_intake`. Cost figures are shown only to
@@ -602,7 +645,7 @@ Accounts overview and the statements. Each card also carries the figures behind 
 
 | Card                            | Figure                                                        | Behind it                                         |
 | ------------------------------- | ------------------------------------------------------------- | ------------------------------------------------- |
-| Total active stock value        | Finished goods on hand (A and B grade) at average cost        | Pieces and value per grade; raw materials and WIP |
+| Total active stock value        | Finished goods on hand (A and B grade), each at its own cost  | Pieces and value per grade; raw materials and WIP |
 | Fixed assets                    | Book value (cost less depreciation)                           | Cost, depreciation so far, assets in use          |
 | Liabilities (loans / investors) | What is owed to lenders and investors                         | Loans and investors apart                         |
 | Today's sales                   | The Sales account today (after discounts, no delivery or VAT) | Invoices, pieces, yesterday and the change        |
@@ -674,7 +717,7 @@ later with the other outside integrations.
 ## Printable documents (backend)
 
 Quotations, proforma and commercial invoices, packing lists, delivery challans, money receipts,
-buyer and supplier statements, stock availability sheets and a blank letterhead pad print as A4
+refund vouchers, buyer and supplier statements, stock availability sheets and a blank letterhead pad print as A4
 PDFs on the company letterhead: the logo, name, legal name and contact details on top, the
 company colours, and the footer line with page numbers on every page. Everything on the page
 comes from the same data as the screens, with amounts in lakh and crore for taka and dates in
@@ -696,6 +739,7 @@ receipt, payslip and bank statement endpoints) carries them as `bin` and `tradeL
 | Packing list         | SKU, item, colour, size and pieces by carton (each carton totalled), a tick box per line, cartons, gross weight; no prices  | `sales.view`           |
 | Delivery challan     | SKU, item, colour, size and pieces with the total, vehicle and driver, received by; no prices                               | `sales.view`           |
 | Money receipt        | Who paid, the amount in figures and words, method and cheque / transaction no., what it was for, and the balance after it   | `sales.view`           |
+| Refund voucher       | Money taken back off a proforma, order or account: paid back, credit note or cancellation charge, with what it left held    | `sales.view`           |
 | Statement of account | Opening balance, debits, credits and closing balance (Dr / Cr), then every transaction with the running balance, any period | `parties.ledger.view`  |
 | Stock availability   | Pieces ready to ship per colour and size for chosen styles or a whole brand, in one warehouse or all; no prices             | `inventory.view`       |
 | Blank letterhead     | The letterhead and footer on an empty page, for letters                                                                     | `documents.letterhead` |
@@ -716,7 +760,16 @@ a proforma or an order, a payment against the invoice, or on account. The figure
 the proforma (total, advance, received, advance due) or the order (total, received, balance
 due) stood once this payment came in, counting earlier payments only, so a receipt printed
 again later shows the same figures and reuses its kept copy. A cheque receipt notes that it
-holds once the cheque is cleared.
+holds once the cheque is cleared. Refunds made before a payment are taken off what it shows
+as received so far ("less 2,500.00 refunded").
+
+**Refund voucher.** Printed for any refund (`type: "REFUND_VOUCHER"`, `id` is the refund's id).
+Money paid back is a Refund Voucher the buyer signs for, with the method and transaction no.;
+money kept on the buyer's account is a Credit Note; money kept by the company is a
+Cancellation Charge. Each shows the amount in figures and words, the reason, and what the
+proforma or order held before and after it, by date, so printing it again later shows the same
+figures. A voided refund prints with a VOID mark and why. Proformas and invoices list the
+refunds under their payments and show the paid amount net of them.
 
 **Kept copies.** Every PDF is kept under `UPLOAD_DIR/<company>/documents/` (so it is part of the
 media backup) and listed with who made it and what for. Printing something that has not

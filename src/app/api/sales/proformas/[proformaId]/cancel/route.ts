@@ -7,7 +7,11 @@ type Params = { proformaId: string };
 
 export const dynamic = "force-dynamic";
 
-/** POST /api/sales/proformas/:proformaId/cancel — { reason } (no advance paid yet) */
+/**
+ * POST /api/sales/proformas/:proformaId/cancel — { reason, settle? }. An advance still held on it
+ * needs settle (as for cancelling an order) or a refund by Accounts first. Its production project,
+ * if started, keeps running.
+ */
 export const POST = apiRoute<Params>(async (request, { proformaId }) =>
   proformas.cancelProforma(
     await requirePermission("sales.quotation.manage"),

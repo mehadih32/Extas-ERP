@@ -1,4 +1,4 @@
-import { Prisma } from "@prisma/client";
+import { Prisma, type ProformaInvoice } from "@prisma/client";
 
 import { dayRange } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
@@ -14,7 +14,7 @@ import type { CompanyContext } from "@/modules/auth/context";
 import { letterhead } from "@/modules/companies/letterhead";
 import { recordPartyActivity } from "@/modules/parties/party.service";
 import { createProjectFromProformaTx } from "@/modules/production/project.service";
-import { refreshOrderPayments } from "@/modules/sales/posting";
+import { refreshOrderPayments, refreshProformaPayments } from "@/modules/sales/posting";
 import { listPaymentsSchema, receivePaymentSchema } from "@/modules/sales/schemas";
 import { money } from "@/modules/sales/totals";
 
@@ -144,21 +144,8 @@ export async function receivePaymentTx(
 
   let productionProject: { id: string; code: string } | null = null;
   if (proformaToCheck) {
-    const updated = await tx.proformaInvoice.update({
-      where: { id: proformaToCheck.id },
-      data: { advancePaid: { increment: amount } },
-    });
-    if (updated.status === "ISSUED" && updated.advancePaid.gte(updated.advanceAmount)) {
-      await tx.proformaInvoice.update({
-        where: { id: updated.id },
-        data: { status: "ADVANCE_RECEIVED", advancePaidAt: paymentDate },
-      });
-      await tx.proformaInvoice.update({
-        where: { id: updated.id },
-        data: { status: "IN_PRODUCTION" },
-      });
-      productionProject = await createProjectFromProformaTx(tx, ctx, updated, meta);
-    }
+    const updated = await refreshProformaPayments(tx, proformaToCheck.id);
+    productionProject = await startProductionIfAdvancePaid(tx, ctx, updated, paymentDate, meta);
   }
   if (partyId) await recordPartyActivity(partyId, paymentDate, tx);
   await auditInCompany(
@@ -173,6 +160,30 @@ export async function receivePaymentTx(
     tx,
   );
   return { payment: { ...payment, journalEntryId: entry.id }, productionProject };
+}
+
+/**
+ * An issued proforma whose advance is now paid in full goes into production: a
+ * production project is created for it. Returns the project, or null when
+ * nothing starts.
+ */
+export async function startProductionIfAdvancePaid(
+  tx: Tx,
+  ctx: CompanyContext,
+  proforma: ProformaInvoice,
+  paidAt: Date,
+  meta?: RequestMeta,
+) {
+  if (proforma.status !== "ISSUED" || proforma.advancePaid.lt(proforma.advanceAmount)) return null;
+  await tx.proformaInvoice.update({
+    where: { id: proforma.id },
+    data: { status: "ADVANCE_RECEIVED", advancePaidAt: paidAt },
+  });
+  await tx.proformaInvoice.update({
+    where: { id: proforma.id },
+    data: { status: "IN_PRODUCTION" },
+  });
+  return createProjectFromProformaTx(tx, ctx, proforma, meta);
 }
 
 export async function receivePayment(ctx: CompanyContext, raw: unknown, meta?: RequestMeta) {
@@ -213,9 +224,10 @@ export async function listPayments(ctx: CompanyContext, raw: unknown = {}) {
  * suppliers are not sales data and answer "not found" here).
  *
  * `receivedToDate` is what had come in on the receipt's proforma (or order) up
- * to and including this payment, by payment date, so a receipt printed again
- * later still shows the position it was written for. Null for a payment on
- * account.
+ * to and including this payment, by payment date, less what was refunded from
+ * it before then (`refundedToDate`, refunds that are not void), so a receipt
+ * printed again later still shows the position it was written for. Both are
+ * null for a payment on account.
  */
 export async function getPaymentReceipt(ctx: CompanyContext, paymentId: string) {
   const payment = await ctx.db.payment.findUnique({
@@ -268,6 +280,7 @@ export async function getPaymentReceipt(ctx: CompanyContext, paymentId: string) 
       ? { orderId: payment.orderId }
       : null;
   let receivedToDate: Prisma.Decimal | null = null;
+  let refundedToDate: Prisma.Decimal | null = null;
   if (against) {
     const { paymentDate: date, createdAt } = payment;
     const agg = await ctx.db.payment.aggregate({
@@ -282,7 +295,16 @@ export async function getPaymentReceipt(ctx: CompanyContext, paymentId: string) 
       },
       _sum: { amount: true },
     });
-    receivedToDate = money(agg._sum.amount ?? 0);
+    const refunded = await ctx.db.refund.aggregate({
+      where: {
+        ...against,
+        voidedAt: null,
+        OR: [{ refundDate: { lt: date } }, { refundDate: date, createdAt: { lt: createdAt } }],
+      },
+      _sum: { amount: true },
+    });
+    refundedToDate = money(refunded._sum.amount ?? 0);
+    receivedToDate = money(agg._sum.amount ?? 0).minus(refundedToDate);
   }
-  return { ...payment, receivedToDate, letterhead: await letterhead(ctx) };
+  return { ...payment, receivedToDate, refundedToDate, letterhead: await letterhead(ctx) };
 }

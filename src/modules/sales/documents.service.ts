@@ -516,6 +516,13 @@ export async function getInvoiceDocument(ctx: CompanyContext, invoiceId: string)
     orderBy: { paymentDate: "asc" },
     select: { number: true, paymentDate: true, amount: true, method: true, reference: true },
   });
+  // Money given back before this invoice was issued: its paid amount is net of it. (Refunds
+  // come only while an order has no live invoice, so later ones followed a void of this one.)
+  const refunds = await ctx.db.refund.findMany({
+    where: { orderId: invoice.orderId, voidedAt: null, createdAt: { lt: invoice.createdAt } },
+    orderBy: [{ refundDate: "asc" }, { id: "asc" }],
+    select: { number: true, refundDate: true, amount: true, kind: true, method: true },
+  });
   const { order } = invoice;
   return {
     id: invoice.id,
@@ -547,6 +554,7 @@ export async function getInvoiceDocument(ctx: CompanyContext, invoiceId: string)
     paidAmount: invoice.paidAmount,
     dueAmount: invoice.dueAmount,
     payments,
+    refunds,
     letterhead: await letterhead(ctx),
   };
 }

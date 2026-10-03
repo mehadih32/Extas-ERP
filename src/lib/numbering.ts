@@ -25,6 +25,7 @@ export const DEFAULT_PREFIXES: Partial<Record<DocumentType, string>> = {
   MATERIAL_ISSUE: "MI",
   MATERIAL_RETURN: "MR",
   PURCHASE_RETURN: "DN",
+  REFUND_VOUCHER: "RF",
 };
 
 /**

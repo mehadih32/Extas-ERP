@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { cancelOrderSchema, refundSchema } from "@/modules/sales/schemas";
 import {
   advanceAmount,
   collectOrderLines,
@@ -87,5 +88,38 @@ describe("advance and invoice status", () => {
     expect(invoiceStatusFor(100, 0)).toBe("UNPAID");
     expect(invoiceStatusFor(100, 99.99)).toBe("PARTIALLY_PAID");
     expect(invoiceStatusFor(100, 100)).toBe("PAID");
+  });
+});
+
+describe("refund requests", () => {
+  const base = { amount: 1000, reason: "Buyer cancelled", orderId: "order-1" };
+  const ok = (value: unknown) => refundSchema.safeParse(value).success;
+
+  it("names how the money was paid back only when it is paid back", () => {
+    expect(ok({ ...base, kind: "CASH", method: "BKASH", reference: "TRX9" })).toBe(true);
+    expect(ok({ ...base, kind: "CASH" })).toBe(false);
+    expect(ok({ ...base, kind: "CREDIT" })).toBe(true);
+    expect(ok({ ...base, kind: "CREDIT", method: "CASH" })).toBe(false);
+    expect(ok({ ...base, kind: "FORFEIT", accountId: "acc-1" })).toBe(false);
+  });
+
+  it("takes money off one order, one proforma or the buyer's account", () => {
+    const noTarget = { amount: base.amount, reason: base.reason };
+    expect(ok({ ...noTarget, kind: "FORFEIT" })).toBe(false);
+    expect(ok({ ...noTarget, kind: "FORFEIT", partyId: "buyer-1" })).toBe(true);
+    expect(ok({ ...base, kind: "FORFEIT", proformaId: "pi-1" })).toBe(false);
+    expect(ok({ ...base, kind: "FORFEIT", amount: 0 })).toBe(false);
+    expect(ok({ ...base, kind: "FORFEIT", amount: 10.001 })).toBe(false);
+    expect(ok({ ...base, kind: "FORFEIT", reason: "x" })).toBe(false);
+  });
+
+  it("settles a cancelled order's money in one of the same three ways", () => {
+    expect(cancelOrderSchema.parse({ reason: "Changed mind" }).settle).toBeUndefined();
+    expect(
+      cancelOrderSchema.parse({ reason: "Changed mind", settle: { kind: "FORFEIT" } }).settle?.kind,
+    ).toBe("FORFEIT");
+    expect(
+      cancelOrderSchema.safeParse({ reason: "Changed mind", settle: { kind: "CASH" } }).success,
+    ).toBe(false);
   });
 });

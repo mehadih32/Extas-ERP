@@ -7,10 +7,17 @@ import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
 import { lockRow, lockRows } from "@/lib/row-lock";
 import { ensureControlAccounts } from "@/modules/accounts/control-accounts";
-import { postJournalEntry } from "@/modules/accounts/journal.service";
+import { postJournalEntry, reverseJournalEntry } from "@/modules/accounts/journal.service";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { readStoredFile } from "@/modules/files/file.service";
+import {
+  gradeCost,
+  gradeCostData,
+  gradeKey,
+  onHandByGrade,
+  removeAtCost,
+} from "@/modules/inventory/costs";
 import { getDefaultWarehouse, weightedAverageCost } from "@/modules/inventory/stock.service";
 import {
   defaultIntakeParser,
@@ -25,11 +32,12 @@ import {
   isProjectClosed,
   projectCostSummary,
 } from "@/modules/production/project-costs";
-import { completeProjectTx } from "@/modules/production/project.service";
+import { completeProjectTx, reopenProjectTx } from "@/modules/production/project.service";
 import {
   confirmIntakeSchema,
   createIntakeSchema,
   listIntakesSchema,
+  reverseIntakeSchema,
   updateIntakeSchema,
 } from "@/modules/production/schemas";
 
@@ -39,7 +47,10 @@ import {
  *      packing-list photo / PDF read by AI and matched to SKUs (PARSED).
  *   2. Confirm: pieces enter the warehouse as A- or B-grade, the delivery takes
  *      its share of the project's cost (Dr Inventory, Cr Work in Progress) and
- *      each SKU's average cost is re-weighted.
+ *      each SKU grade's average cost is re-weighted.
+ *   3. Undo (if needed): a confirmed delivery's pieces leave stock again and its
+ *      cost goes back to the project (REVERSED), optionally with a draft copy
+ *      to correct and confirm again.
  */
 
 type IntakeLinesInput = Pick<z.output<typeof createIntakeSchema>, "lines" | "matrix">;
@@ -531,37 +542,35 @@ export async function confirmIntake(
         );
       }
 
-      // Re-weight each SKU's average cost with the pieces coming in (A and B together).
+      // Re-weight each SKU grade's average cost with the pieces coming in, so
+      // B-grade pieces valued lower never lower the cost of the A-grade ones.
       const variantIds = [...new Set(intake.lines.map((l) => l.variantId))];
       await lockRows(tx, "ProductVariant", variantIds);
-      const onHand = await tx.stockBalance.groupBy({
-        by: ["variantId"],
-        where: { variantId: { in: variantIds } },
-        _sum: { quantity: true },
-      });
-      const onHandBy = new Map(onHand.map((r) => [r.variantId, r._sum.quantity ?? 0]));
+      const onHand = await onHandByGrade(tx, variantIds);
       const variants = await tx.productVariant.findMany({
         where: { id: { in: variantIds } },
-        select: { id: true, avgCost: true },
+        select: { id: true, avgCost: true, bGradeAvgCost: true },
       });
       for (const v of variants) {
-        let qty = 0;
-        let value = new Prisma.Decimal(0);
-        intake.lines.forEach((l, i) => {
-          if (l.variantId !== v.id) return;
-          qty += l.quantity;
-          value = value.plus(plan.unitCosts[i]!.times(l.quantity));
-        });
-        const avg = weightedAverageCost(
-          onHandBy.get(v.id) ?? 0,
-          Number(v.avgCost),
-          qty,
-          qty > 0 ? value.dividedBy(qty).toNumber() : 0,
-        );
-        await tx.productVariant.update({
-          where: { id: v.id },
-          data: { avgCost: new Prisma.Decimal(avg.toFixed(4)) },
-        });
+        let data: Prisma.ProductVariantUpdateInput = {};
+        for (const grade of ["A_GRADE", "B_GRADE"] as const) {
+          let qty = 0;
+          let value = new Prisma.Decimal(0);
+          intake.lines.forEach((l, i) => {
+            if (l.variantId !== v.id || l.grade !== grade) return;
+            qty += l.quantity;
+            value = value.plus(plan.unitCosts[i]!.times(l.quantity));
+          });
+          if (qty === 0) continue;
+          const avg = weightedAverageCost(
+            onHand.get(gradeKey(v.id, grade)) ?? 0,
+            gradeCost(v, grade).toNumber(),
+            qty,
+            value.dividedBy(qty).toNumber(),
+          );
+          data = { ...data, ...gradeCostData(grade, avg) };
+        }
+        await tx.productVariant.update({ where: { id: v.id }, data });
       }
 
       for (const [i, line] of intake.lines.entries()) {
@@ -634,6 +643,276 @@ export async function confirmIntake(
 }
 
 // =============================================================================
+// Undo: take a confirmed delivery back out of stock
+// =============================================================================
+
+const gradeLetter = (grade: StockGrade) => (grade === "A_GRADE" ? "A" : "B");
+
+/**
+ * Undoes a confirmed delivery that was received by mistake or with the wrong
+ * quantities or grades. Its pieces leave the warehouse again, its cost goes
+ * back into the project's work in progress (the Move to Stock entry is
+ * reversed) and each SKU grade's average cost goes back to what it was before,
+ * as near as the stock that moved since allows. It is refused while any of its
+ * pieces have been sold, are reserved for orders or have gone to bad stock: a
+ * stock count correction fixes those instead.
+ *
+ * A completed project is reopened, since cost is waiting in it again; a
+ * cancelled one cannot take cost back. With `redraft`, a draft copy of the
+ * delivery is opened to be corrected and confirmed again.
+ */
+export async function reverseIntake(
+  ctx: CompanyContext,
+  intakeId: string,
+  raw: unknown,
+  meta?: RequestMeta,
+) {
+  const input = reverseIntakeSchema.parse(raw);
+  if (!ctx.can("production.manage")) {
+    throw new AppError("FORBIDDEN", "Only Production Managers can undo a delivery.");
+  }
+  const companyId = ctx.company.id;
+  const redraft = await prisma.$transaction(
+    async (tx) => {
+      await lockRow(tx, "StockIntake", intakeId);
+      const intake = await tx.stockIntake.findFirst({
+        where: { id: intakeId, companyId },
+        include: {
+          lines: { orderBy: { id: "asc" }, include: { variant: { select: { sku: true } } } },
+        },
+      });
+      if (!intake) throw new AppError("NOT_FOUND", "Delivery not found.");
+      if (intake.status !== "CONFIRMED") {
+        throw new AppError(
+          "CONFLICT",
+          intake.status === "REVERSED"
+            ? `${intake.number} is already undone.`
+            : `${intake.number} is ${intake.status.toLowerCase()}; only a confirmed delivery can be undone.`,
+        );
+      }
+      const { projectId, warehouseId } = intake;
+      if (!projectId || !warehouseId) {
+        throw new AppError(
+          "CONFLICT",
+          `${intake.number}'s ${projectId ? "warehouse" : "production project"} no longer exists, so it cannot be undone.`,
+        );
+      }
+      await lockRow(tx, "ProductionProject", projectId);
+      const project = await tx.productionProject.findFirstOrThrow({
+        where: { id: projectId, companyId },
+      });
+      if (project.status === "CANCELLED") {
+        throw new AppError(
+          "CONFLICT",
+          `${project.code} is cancelled, so its deliveries can no longer be undone.`,
+        );
+      }
+
+      // Every piece must still be in the warehouse, and A-grade ones not promised to orders.
+      const variantIds = [...new Set(intake.lines.map((l) => l.variantId))];
+      const balances = await tx.stockBalance.findMany({
+        where: { warehouseId, variantId: { in: variantIds } },
+        select: { variantId: true, grade: true, quantity: true, reserved: true },
+      });
+      const free = new Map(
+        balances.map((b) => [gradeKey(b.variantId, b.grade), b.quantity - b.reserved]),
+      );
+      const freeFor = (l: { variantId: string; grade: StockGrade }) =>
+        Math.max(free.get(gradeKey(l.variantId, l.grade)) ?? 0, 0);
+      const short = intake.lines.filter((l) => freeFor(l) < l.quantity);
+      if (short.length > 0) {
+        const list = short
+          .slice(0, 5)
+          .map(
+            (l) =>
+              `${l.variant.sku} ${gradeLetter(l.grade)}-grade (${freeFor(l)} of ${l.quantity} free)`,
+          )
+          .join(", ");
+        throw new AppError(
+          "CONFLICT",
+          `${intake.number} cannot be undone: some of its pieces were sold, are reserved for orders or went to bad stock — ${list}${
+            short.length > 5 ? ` and ${short.length - 5} more` : ""
+          }. Correct the difference with a stock count correction instead.`,
+        );
+      }
+
+      // Take the pieces back out at the cost they came in at, restoring each grade's average.
+      await lockRows(tx, "ProductVariant", variantIds);
+      const onHand = await onHandByGrade(tx, variantIds);
+      const variants = await tx.productVariant.findMany({
+        where: { id: { in: variantIds } },
+        select: { id: true, avgCost: true, bGradeAvgCost: true },
+      });
+      const costsById = new Map(variants.map((v) => [v.id, v]));
+      let cameIn = new Prisma.Decimal(0);
+      let takenOut = new Prisma.Decimal(0);
+      const note = `${intake.number} undone · ${project.code}: ${input.reason}`;
+      for (const line of intake.lines) {
+        const out = removeAtCost(
+          onHand.get(gradeKey(line.variantId, line.grade)) ?? 0,
+          gradeCost(costsById.get(line.variantId)!, line.grade),
+          line.quantity,
+          line.unitCost,
+        );
+        cameIn = cameIn.plus(line.unitCost.times(line.quantity));
+        takenOut = takenOut.plus(out.removed);
+        await tx.productVariant.update({
+          where: { id: line.variantId },
+          data: gradeCostData(line.grade, out.average),
+        });
+        const taken = await tx.$executeRaw`
+          UPDATE "StockBalance"
+          SET quantity = quantity - ${line.quantity}, "updatedAt" = NOW()
+          WHERE "variantId" = ${line.variantId} AND "warehouseId" = ${warehouseId}
+            AND grade = ${line.grade}::"StockGrade" AND quantity - reserved >= ${line.quantity}`;
+        if (taken === 0) {
+          throw new AppError(
+            "CONFLICT",
+            `${line.variant.sku}'s stock changed while undoing ${intake.number}. Try again.`,
+          );
+        }
+        await tx.stockMovement.create({
+          data: {
+            companyId,
+            variantId: line.variantId,
+            warehouseId,
+            grade: line.grade,
+            type: "PRODUCTION_REVERSAL",
+            quantity: -line.quantity,
+            unitCost: line.unitCost,
+            referenceType: "StockIntake",
+            referenceId: intake.id,
+            note,
+            createdById: ctx.user.id,
+          },
+        });
+      }
+
+      // The cost goes back into work in progress: reverse the Move to Stock entry.
+      if (intake.totalCost.gt(0)) {
+        const original = await tx.journalEntry.findFirst({
+          where: {
+            companyId,
+            sourceType: "STOCK_INTAKE",
+            sourceId: intake.id,
+            reversalOfId: null,
+            isReversed: false,
+          },
+        });
+        if (!original) {
+          throw new AppError("CONFLICT", `The books entry for ${intake.number} was not found.`);
+        }
+        await reverseJournalEntry(tx, original.id, {
+          description: `Delivery ${intake.number} undone — ${project.code}: ${input.reason}`,
+          postedById: ctx.user.id,
+        });
+      }
+      // Stock that came and went at other costs since can leave the pieces worth more or
+      // less than they came in at; the books follow the stock value.
+      const difference = cameIn.minus(takenOut).toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
+      if (!difference.isZero()) {
+        const acc = await ensureControlAccounts(companyId, tx);
+        const amount = difference.abs();
+        const memo = intake.number;
+        await postJournalEntry(tx, {
+          companyId,
+          description: `Stock value difference on undoing ${intake.number} — ${project.code}`,
+          sourceType: "STOCK_INTAKE",
+          sourceId: intake.id,
+          postedById: ctx.user.id,
+          lines: difference.gt(0)
+            ? [
+                { accountId: acc.INVENTORY, debit: amount, memo },
+                { accountId: acc.PRODUCTION_LOSS, credit: amount, memo },
+              ]
+            : [
+                { accountId: acc.PRODUCTION_LOSS, debit: amount, memo },
+                { accountId: acc.INVENTORY, credit: amount, memo },
+              ],
+        });
+      }
+
+      const pieces = intake.lines.reduce((s, l) => s + l.quantity, 0);
+      const aGrade = intake.lines
+        .filter((l) => l.grade === "A_GRADE")
+        .reduce((s, l) => s + l.quantity, 0);
+      const bGrade = pieces - aGrade;
+      await tx.stockIntake.update({
+        where: { id: intake.id },
+        data: {
+          status: "REVERSED",
+          reversedAt: new Date(),
+          reversedById: ctx.user.id,
+          reversalReason: input.reason,
+        },
+      });
+      await tx.productionProject.update({
+        where: { id: project.id },
+        data: { producedQtyA: { decrement: aGrade }, producedQtyB: { decrement: bGrade } },
+      });
+      if (project.status === "COMPLETED") {
+        await reopenProjectTx(tx, ctx, project, `${intake.number} undone: ${input.reason}`, meta);
+      }
+
+      let copy: { id: string; number: string } | null = null;
+      if (input.redraft) {
+        copy = await tx.stockIntake.create({
+          data: {
+            companyId,
+            number: await nextDocumentNumber(tx, companyId, "STOCK_INTAKE"),
+            projectId: project.id,
+            warehouseId,
+            sourceFileId: intake.sourceFileId,
+            method: intake.method,
+            aiConfidence: intake.aiConfidence,
+            aiRawResult: (intake.aiRawResult ?? undefined) as Prisma.InputJsonValue | undefined,
+            costAllocation: intake.costAllocation,
+            bGradeCostRatio: intake.bGradeCostRatio,
+            notes: intake.notes,
+            correctionOfId: intake.id,
+            lines: {
+              create: intake.lines.map((l) => ({
+                variantId: l.variantId,
+                grade: l.grade,
+                quantity: l.quantity,
+                // Only manual costing keeps its costs; the others are worked out again on confirming.
+                unitCost: intake.costAllocation === "MANUAL" ? l.unitCost : 0,
+              })),
+            },
+          },
+          select: { id: true, number: true },
+        });
+        await auditInCompany(
+          ctx,
+          meta,
+          {
+            action: "CREATE",
+            entityType: "StockIntake",
+            entityId: copy.id,
+            summary: `Delivery ${copy.number} for ${project.code}: draft copy of ${intake.number} to correct`,
+          },
+          tx,
+        );
+      }
+      await auditInCompany(
+        ctx,
+        meta,
+        {
+          action: "STOCK_ADJUSTMENT",
+          entityType: "StockIntake",
+          entityId: intake.id,
+          summary: `Undid delivery ${intake.number} from ${project.code}: ${pieces} pcs out of stock (${aGrade} A-grade, ${bGrade} B-grade), cost ${intake.totalCost.toFixed(2)} back to the project — ${input.reason}`,
+        },
+        tx,
+      );
+      return copy;
+    },
+    { timeout: 60_000 },
+  );
+  return { ...(await getIntake(ctx, intakeId)), redraft };
+}
+
+// =============================================================================
 // Reading
 // =============================================================================
 
@@ -656,6 +935,12 @@ export async function getIntake(ctx: CompanyContext, intakeId: string) {
       },
       warehouse: { select: { id: true, name: true } },
       sourceFile: { select: { id: true, fileName: true, mimeType: true, sizeBytes: true } },
+      reversedBy: { select: { id: true, name: true } },
+      correctionOf: { select: { id: true, number: true, status: true } },
+      corrections: {
+        select: { id: true, number: true, status: true },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      },
       lines: {
         include: {
           variant: {
@@ -757,6 +1042,13 @@ export async function getIntake(ctx: CompanyContext, intakeId: string) {
     costPreview,
     createdAt: intake.createdAt,
     confirmedAt: intake.confirmedAt,
+    /** Set when a confirmed delivery was undone. */
+    reversal: intake.reversedAt
+      ? { at: intake.reversedAt, by: intake.reversedBy, reason: intake.reversalReason }
+      : null,
+    /** The undone delivery this draft corrects, and the drafts opened to correct this one. */
+    correctionOf: intake.correctionOf,
+    corrections: intake.corrections,
   };
 }
 
@@ -795,6 +1087,7 @@ export async function listIntakes(ctx: CompanyContext, raw: unknown = {}) {
       totalCost: showCosts ? i.totalCost : null,
       createdAt: i.createdAt,
       confirmedAt: i.confirmedAt,
+      reversedAt: i.reversedAt,
     })),
     nextCursor: hasMore ? page[page.length - 1]?.id : undefined,
   };

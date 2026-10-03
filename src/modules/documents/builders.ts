@@ -1,4 +1,4 @@
-import { type Company, type PaymentMethod, Prisma } from "@prisma/client";
+import { type Company, type PaymentMethod, Prisma, type RefundKind } from "@prisma/client";
 
 import { amountInWords } from "@/lib/amount-words";
 import { dateColumn, localDay } from "@/lib/dates";
@@ -26,6 +26,7 @@ import {
 import { getPaymentReceipt } from "@/modules/sales/payment.service";
 import { getProforma } from "@/modules/sales/proforma.service";
 import { getQuotation } from "@/modules/sales/quotation.service";
+import { getRefund } from "@/modules/sales/refund.service";
 
 /*
  * Turns the data behind each document (the same functions the JSON endpoints
@@ -273,6 +274,52 @@ function paymentsTable(
   ];
 }
 
+/** How a refund was settled, as printed. */
+const REFUND_KINDS: Record<RefundKind, string> = {
+  CASH: "Paid back",
+  CREDIT: "Credit on account",
+  FORFEIT: "Cancellation charge",
+};
+
+/** Refunds that are not void, under the payments they came out of. */
+function refundsTable(
+  refunds: Array<{
+    number: string;
+    refundDate: Date;
+    amount: Prisma.Decimal;
+    kind: RefundKind;
+    method: PaymentMethod | null;
+    voidedAt?: Date | null;
+  }>,
+  currency: string,
+  timeZone: string,
+): Block[] {
+  const live = refunds.filter((r) => !r.voidedAt);
+  if (live.length === 0) return [];
+  return [
+    {
+      kind: "table",
+      title: "Refunds",
+      columns: [
+        { label: "Date", weight: 1.2 },
+        { label: "Voucher", weight: 1.4 },
+        { label: "Settled as", weight: 2.8 },
+        { label: `Amount (${currency})`, align: "right", weight: 1.4 },
+      ],
+      rows: live.map((r) => ({
+        cells: [
+          formatInstantDay(r.refundDate, timeZone),
+          r.number,
+          r.kind === "CASH" && r.method
+            ? `${REFUND_KINDS.CASH} (${PAYMENT_METHODS[r.method]})`
+            : REFUND_KINDS[r.kind],
+          money(r.amount, currency),
+        ],
+      })),
+    },
+  ];
+}
+
 function base(
   ctx: CompanyContext,
   type: PrintType,
@@ -391,7 +438,12 @@ export async function proformaDocument(
       : []),
     { label: `Total (${currency})`, value: money(pi.total, currency), strong: true },
     { label: `Advance (${percent}%)`, value: money(pi.advanceAmount, currency) },
-    { label: "Advance received", value: money(pi.advancePaid, currency) },
+    {
+      label: pi.refunds.some((r) => !r.voidedAt)
+        ? "Advance received, less refunds"
+        : "Advance received",
+      value: money(pi.advancePaid, currency),
+    },
     { label: "Advance due", value: money(pi.advanceDue, currency), strong: true },
     { label: "Balance due", value: money(pi.balanceDue, currency) },
   ];
@@ -414,6 +466,7 @@ export async function proformaDocument(
       },
       { kind: "totals", rows: totals, words: amountInWords(pi.total, currency) },
       ...paymentsTable(pi.payments, currency, tz),
+      ...refundsTable(pi.refunds, currency, tz),
       { kind: "note", text: "Production starts when the advance is received." },
       ...textBlock("Terms & conditions", quotation?.terms),
     ],
@@ -449,7 +502,12 @@ export async function invoiceDocument(
     ...(isPositive(inv.tax) ? [{ label: "VAT / tax", value: money(inv.tax, currency) }] : []),
     { label: `Total (${currency})`, value: money(inv.total, currency), strong: true },
     ...(isPositive(inv.paidAmount)
-      ? [{ label: "Paid", value: money(inv.paidAmount, currency) }]
+      ? [
+          {
+            label: inv.refunds.length > 0 ? "Paid, less refunds" : "Paid",
+            value: money(inv.paidAmount, currency),
+          },
+        ]
       : []),
     { label: "Due", value: money(inv.dueAmount, currency), strong: true },
   ];
@@ -496,6 +554,7 @@ export async function invoiceDocument(
       },
       { kind: "totals", rows: totals, words: amountInWords(inv.total, currency) },
       ...paymentsTable(inv.payments, currency, tz),
+      ...refundsTable(inv.refunds, currency, tz),
     ],
     signatures: ["Customer signature", "Authorised signature"],
   });
@@ -752,6 +811,9 @@ export async function receiptDocument(
 
   const received = new Prisma.Decimal(r.receivedToDate ?? 0);
   const left = (total: Prisma.Decimal) => Prisma.Decimal.max(total.minus(received), 0);
+  const receivedHint = isPositive(r.refundedToDate ?? 0)
+    ? `Up to this receipt, less ${money(r.refundedToDate!, currency)} refunded`
+    : "Up to this receipt";
   const position: Block[] = [];
   if (proforma) {
     const percent = new Prisma.Decimal(proforma.advancePercent).toDecimalPlaces(2).toString();
@@ -760,7 +822,7 @@ export async function receiptDocument(
       figures: [
         { label: "Proforma total", value: money(proforma.total, currency), hint: proforma.number },
         { label: `Advance (${percent}%)`, value: money(proforma.advanceAmount, currency) },
-        { label: "Total received", value: money(received, currency), hint: "Up to this receipt" },
+        { label: "Total received", value: money(received, currency), hint: receivedHint },
         {
           label: "Advance due",
           value: money(left(proforma.advanceAmount), currency),
@@ -773,7 +835,7 @@ export async function receiptDocument(
       kind: "figures",
       figures: [
         { label: "Order total", value: money(order.total, currency), hint: order.number },
-        { label: "Total received", value: money(received, currency), hint: "Up to this receipt" },
+        { label: "Total received", value: money(received, currency), hint: receivedHint },
         {
           label: "Balance due",
           value: money(left(order.total), currency),
@@ -836,6 +898,134 @@ export async function receiptDocument(
     record: {
       title: `Money receipt ${r.number}`,
       referenceType: "Payment",
+      referenceId: r.id,
+      partyId: r.partyId,
+    },
+  };
+}
+
+const REFUND_TITLES: Record<RefundKind, { title: string; record: string; heading: string }> = {
+  CASH: { title: "Refund Voucher", record: "Refund voucher", heading: "Paid to" },
+  CREDIT: { title: "Credit Note", record: "Credit note", heading: "Credited to" },
+  FORFEIT: { title: "Cancellation Charge", record: "Cancellation charge", heading: "Buyer" },
+};
+
+/**
+ * Refund voucher: money a buyer paid, taken back off a proforma, an order or
+ * their account. Paid back it is a voucher the buyer signs for; kept as credit
+ * on their account it is a credit note; kept by the company it is a
+ * cancellation charge note. The position counts what the proforma (or order)
+ * held up to this refund, so printing it again later shows the same figures.
+ */
+export async function refundDocument(
+  ctx: CompanyContext,
+  refundId: string,
+): Promise<BuiltDocument> {
+  const r = await getRefund(ctx, refundId);
+  const tz = ctx.company.timezone;
+  const currency = ctx.company.currency;
+  const { order, proforma } = r;
+  const titles = REFUND_TITLES[r.kind];
+  const buyer: PartyLike = r.party ?? {
+    name: order?.customerName ?? "Walk-in customer",
+    phone: order?.customerPhone,
+    address: order?.shippingAddress,
+  };
+  const from = proforma
+    ? `the advance paid on proforma invoice ${proforma.number}`
+    : order
+      ? `the money paid on order ${order.number}`
+      : "credit on the buyer's account";
+  const particulars =
+    r.kind === "CASH"
+      ? `Refund of ${from}`
+      : r.kind === "CREDIT"
+        ? `${from.charAt(0).toUpperCase()}${from.slice(1)}, kept as credit on the buyer's account`
+        : `Cancellation charge kept from ${from}`;
+
+  const position: Block[] = [];
+  const against = proforma ?? order;
+  if (against && r.heldBefore && r.heldAfter) {
+    position.push({
+      kind: "figures",
+      figures: [
+        {
+          label: `${proforma ? "Proforma" : "Order"} total`,
+          value: money(against.total, currency),
+          hint: against.number,
+        },
+        {
+          label: "Paid before",
+          value: money(r.heldBefore, currency),
+          hint: "Received, less earlier refunds",
+        },
+        { label: "Paid after", value: money(r.heldAfter, currency), hint: "Less this voucher" },
+      ],
+    });
+  }
+
+  const reference = r.reference?.trim();
+  const model = base(ctx, "REFUND_VOUCHER", {
+    title: titles.title,
+    reference: r.number,
+    stamp: r.voidedAt ? { text: "Void", tone: "danger" } : undefined,
+    meta: [
+      { label: "Voucher no.", value: r.number },
+      { label: "Date", value: formatInstantDay(r.refundDate, tz) },
+      ...(r.method ? [{ label: "Paid by", value: PAYMENT_METHODS[r.method] }] : []),
+      ...(reference && r.method
+        ? [{ label: REFERENCE_LABELS[r.method] ?? "Reference", value: reference }]
+        : reference
+          ? [{ label: "Reference", value: reference }]
+          : []),
+      ...(proforma ? [{ label: "Proforma no.", value: proforma.number }] : []),
+      ...(order ? [{ label: "Order no.", value: order.number }] : []),
+    ],
+    parties: [{ heading: titles.heading, lines: partyLines(buyer) }],
+    blocks: [
+      {
+        kind: "table",
+        columns: [
+          { label: "Particulars", weight: 5 },
+          { label: `Amount (${currency})`, align: "right", weight: 1.6 },
+        ],
+        rows: [
+          { cells: [particulars, money(r.amount, currency)], details: [`Reason: ${r.reason}`] },
+        ],
+      },
+      {
+        kind: "totals",
+        rows: [
+          {
+            label: `${r.kind === "CASH" ? "Paid back" : r.kind === "CREDIT" ? "Credited" : "Kept"} (${currency})`,
+            value: money(r.amount, currency),
+            strong: true,
+          },
+        ],
+        words: amountInWords(r.amount, currency),
+      },
+      ...position,
+      ...textBlock("Notes", r.notes),
+      ...(r.kind === "CREDIT"
+        ? [
+            {
+              kind: "note" as const,
+              text: "This credit stays on the buyer's account and counts against what they owe on later invoices.",
+            },
+          ]
+        : []),
+      ...(r.voidedAt
+        ? [{ kind: "note" as const, text: `Voided: ${r.voidReason ?? "no reason given"}` }]
+        : []),
+    ],
+    signatures:
+      r.kind === "CASH" ? ["Received by", "Authorised signature"] : ["Authorised signature"],
+  });
+  return {
+    model,
+    record: {
+      title: `${titles.record} ${r.number}`,
+      referenceType: "Refund",
       referenceId: r.id,
       partyId: r.partyId,
     },
@@ -1183,6 +1373,8 @@ async function buildModel(
       return challanDocument(ctx, input.id);
     case "PAYMENT_RECEIPT":
       return receiptDocument(ctx, input.id);
+    case "REFUND_VOUCHER":
+      return refundDocument(ctx, input.id);
     case "LEDGER_STATEMENT":
       return statementDocument(ctx, input, now);
     case "STOCK_AVAILABILITY":

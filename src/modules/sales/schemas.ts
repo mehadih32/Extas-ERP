@@ -2,6 +2,7 @@ import {
   CustomFieldEntity,
   CustomFieldType,
   PaymentMethod,
+  RefundKind,
   SalesChannel,
   SalesOrderStatus,
   QuotationStatus,
@@ -215,7 +216,48 @@ export const convertProformaToOrderSchema = z
     }
   });
 
-export const cancelOrderSchema = z.object({ reason: z.string().trim().min(3).max(500) });
+/**
+ * How money held for a buyer is settled when it is taken off an order, a proforma
+ * or their account (Accounts):
+ *   CASH     paid back from cash, bank or a wallet (`method`; `accountId` defaults by method)
+ *   CREDIT   kept as credit on the buyer's account for later orders (not for walk-in customers)
+ *   FORFEIT  kept by the company as a cancellation charge (other income)
+ */
+const settlement = {
+  kind: z.enum(RefundKind),
+  method: z.enum(PaymentMethod).optional(),
+  accountId: id.optional(),
+  refundDate: z.coerce.date().optional(),
+  reference: optionalText(120),
+  notes: optionalText(1000),
+};
+
+type Settlement = { kind: RefundKind; method?: PaymentMethod; accountId?: string };
+
+function checkSettlement(v: Settlement, ctx: z.RefinementCtx) {
+  if (v.kind === "CASH" && !v.method) {
+    ctx.addIssue({ code: "custom", path: ["method"], message: "Say how the money was paid back" });
+  }
+  if (v.kind !== "CASH" && (v.method || v.accountId)) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["method"],
+      message: "Only money paid back comes out of an account",
+    });
+  }
+}
+
+/** Settles all the money still held on an order or proforma that is being cancelled. */
+export const settleSchema = z.object(settlement).superRefine(checkSettlement);
+
+export const cancelOrderSchema = z.object({
+  reason: z.string().trim().min(3).max(500),
+  /**
+   * How to settle money still held on it (Accounts' money keys needed). Without it,
+   * an order or proforma holding money is not cancelled: Accounts settles it first.
+   */
+  settle: settleSchema.optional(),
+});
 
 /** Sets, moves or (null) clears the day an open order is due to ship. */
 export const orderShipmentSchema = z.object({ shipmentDate: z.iso.date().nullable() });
@@ -296,6 +338,41 @@ export const receivePaymentSchema = z
 export const listPaymentsSchema = z.object({
   partyId: id.optional(),
   orderId: id.optional(),
+  from: dayOrInstant.optional(),
+  to: dayOrInstant.optional(),
+  cursor: z.string().optional(),
+  take,
+});
+
+// --- Refunds ------------------------------------------------------------------------
+export const refundSchema = z
+  .object({
+    orderId: id.optional(),
+    proformaId: id.optional(),
+    /** Credit on the buyer's account (payments on account, earlier CREDIT refunds). */
+    partyId: id.optional(),
+    amount: positiveMoney,
+    reason: z.string().trim().min(3).max(500),
+    ...settlement,
+  })
+  .superRefine((v, ctx) => {
+    const targets = [v.orderId, v.proformaId].filter(Boolean).length;
+    if (targets > 1) {
+      ctx.addIssue({ code: "custom", path: ["orderId"], message: "Choose an order or a proforma" });
+    }
+    if (targets === 0 && !v.partyId) {
+      ctx.addIssue({ code: "custom", path: ["partyId"], message: "Choose a buyer or an order" });
+    }
+    checkSettlement(v, ctx);
+  });
+
+export const voidRefundSchema = z.object({ reason: z.string().trim().min(5).max(500) });
+
+export const listRefundsSchema = z.object({
+  partyId: id.optional(),
+  orderId: id.optional(),
+  proformaId: id.optional(),
+  kind: z.enum(RefundKind).optional(),
   from: dayOrInstant.optional(),
   to: dayOrInstant.optional(),
   cursor: z.string().optional(),

@@ -108,6 +108,7 @@ model Company {
   packingLists         PackingList[]
   deliveryChallans     DeliveryChallan[]
   payments             Payment[]
+  refunds              Refund[]
   integrations         SalesChannelIntegration[]
   webhookEvents        WebhookEvent[]
   courierAccounts      CourierAccount[]
@@ -194,6 +195,8 @@ model User {
   materialIssues    MaterialIssue[]       @relation("MaterialIssueCreatedBy")
   purchaseReturns   PurchaseReturn[]      @relation("PurchaseReturnCreatedBy")
   materialMovements RawMaterialMovement[] @relation("MaterialMovementBy")
+  refunds           Refund[]              @relation("RefundCreatedBy")
+  intakesReversed   StockIntake[]         @relation("IntakeReversedBy")
 }
 
 /// A signed-in device. `token` stores the SHA-256 hash of the cookie value, never
@@ -475,7 +478,11 @@ model ProductVariant {
   barcode        String?
   retailPrice    Decimal? @db.Decimal(14, 2) // overrides style price when set
   wholesalePrice Decimal? @db.Decimal(14, 2)
-  avgCost        Decimal  @default(0) @db.Decimal(14, 4) // weighted average cost (COGS)
+  /// Weighted average cost of the A-grade (sellable) pieces: COGS, stock value.
+  avgCost        Decimal  @default(0) @db.Decimal(14, 4)
+  /// Weighted average cost of the B-grade pieces, kept apart so a cheaper
+  /// B-grade piece never lowers the cost of the A-grade ones.
+  bGradeAvgCost  Decimal  @default(0) @db.Decimal(14, 4)
   isActive       Boolean  @default(true)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -896,6 +903,7 @@ model Party {
   salesOrders          SalesOrder[]
   invoices             Invoice[]
   payments             Payment[]
+  refunds              Refund[]
   journalLines         JournalLine[]
   supplierBills        SupplierBill[]
   expenses             Expense[]
@@ -1034,6 +1042,7 @@ model ProformaInvoice {
   salesOrder         SalesOrder?
   productionProjects ProductionProject[]
   payments           Payment[]
+  refunds            Refund[]
 
   @@unique([companyId, number])
 }
@@ -1082,6 +1091,7 @@ model SalesOrder {
   shipments        Shipment[]
   returns          SalesReturn[]
   payments         Payment[]
+  refunds          Refund[]
   reminders        Reminder[]
 
   @@unique([companyId, number])
@@ -1238,6 +1248,47 @@ model Payment {
 
   @@unique([companyId, number])
   @@index([companyId, paymentDate])
+  @@index([partyId])
+}
+
+/// Buyer money taken back off an order, a proforma or the buyer's account:
+/// paid back to them (CASH), kept as credit on their account (CREDIT), or kept
+/// as a cancellation charge (FORFEIT). What an order or proforma holds is what
+/// was received less its refunds that are not void. Each posts one journal
+/// entry; a voided refund keeps its row and has that entry reversed.
+model Refund {
+  id             String         @id @default(cuid())
+  companyId      String
+  number         String
+  kind           RefundKind
+  partyId        String? // null: a walk-in customer's order
+  orderId        String?
+  proformaId     String? // a proforma's refunds move onto its order when it converts
+  amount         Decimal        @db.Decimal(14, 2)
+  refundDate     DateTime       @default(now())
+  method         PaymentMethod? // CASH: how the money went back
+  accountId      String? // CASH: the cash / bank / wallet account it was paid from
+  reference      String? // cheque no, bKash trx id...
+  reason         String
+  notes          String?
+  journalEntryId String?        @unique
+  createdById    String?
+  voidedAt       DateTime?
+  voidReason     String?
+  createdAt      DateTime       @default(now())
+
+  company      Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  party        Party?           @relation(fields: [partyId], references: [id], onDelete: SetNull)
+  order        SalesOrder?      @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  proforma     ProformaInvoice? @relation(fields: [proformaId], references: [id], onDelete: SetNull)
+  account      LedgerAccount?   @relation(fields: [accountId], references: [id])
+  journalEntry JournalEntry?    @relation(fields: [journalEntryId], references: [id], onDelete: SetNull)
+  createdBy    User?            @relation("RefundCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@unique([companyId, number])
+  @@index([companyId, refundDate])
+  @@index([orderId])
+  @@index([proformaId])
   @@index([partyId])
 }
 
@@ -1508,7 +1559,9 @@ model SupplierBillAllocation {
 }
 
 /// "Move to Stock": factory packing list photo/PDF parsed by AI (or entered manually),
-/// allocating batch cost across A-Grade and B-Grade quantities.
+/// allocating batch cost across A-Grade and B-Grade quantities. A confirmed
+/// delivery entered by mistake is undone (REVERSED): its pieces leave stock and
+/// its cost goes back to the project; a corrected copy can start as a new draft.
 model StockIntake {
   id              String               @id @default(cuid())
   companyId       String
@@ -1525,16 +1578,25 @@ model StockIntake {
   bGradeCostRatio Decimal?             @db.Decimal(5, 4) // e.g. 0.5 = B-Grade valued at 50%
   notes           String?
   confirmedAt     DateTime?
+  reversedAt      DateTime?
+  reversedById    String?
+  reversalReason  String?
+  /// The undone delivery this draft was copied from to correct it.
+  correctionOfId  String?
   createdAt       DateTime             @default(now())
 
-  company    Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  project    ProductionProject? @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  warehouse  Warehouse?         @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
-  sourceFile FileAsset?         @relation(fields: [sourceFileId], references: [id], onDelete: SetNull)
-  lines      StockIntakeLine[]
+  company      Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  project      ProductionProject? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  warehouse    Warehouse?         @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
+  sourceFile   FileAsset?         @relation(fields: [sourceFileId], references: [id], onDelete: SetNull)
+  reversedBy   User?              @relation("IntakeReversedBy", fields: [reversedById], references: [id], onDelete: SetNull)
+  correctionOf StockIntake?       @relation("IntakeCorrection", fields: [correctionOfId], references: [id], onDelete: SetNull)
+  corrections  StockIntake[]      @relation("IntakeCorrection")
+  lines        StockIntakeLine[]
 
   @@unique([companyId, number])
   @@index([projectId])
+  @@index([correctionOfId])
 }
 
 model StockIntakeLine {
@@ -1575,6 +1637,7 @@ model LedgerAccount {
   children       LedgerAccount[]      @relation("AccountTree")
   lines          JournalLine[]
   payments       Payment[]
+  refunds        Refund[]
   bankAccount    BankAccount?
   fixedAsset     FixedAsset?
   capitalSource  CapitalSource?
@@ -1608,6 +1671,7 @@ model JournalEntry {
   reversedBy        JournalEntry?         @relation("JournalReversal")
   lines             JournalLine[]
   payment           Payment?
+  refund            Refund?
   supplierBill      SupplierBill?
   expense           Expense?
   badStock          BadStockEntry?
@@ -2617,6 +2681,7 @@ enum StockGrade {
 enum StockMovementType {
   OPENING
   PRODUCTION_IN
+  PRODUCTION_REVERSAL // a confirmed factory delivery undone
   PURCHASE_IN
   SALE_OUT
   RETURN_RESTOCK
@@ -2797,6 +2862,12 @@ enum PaymentType {
   DUE
 }
 
+enum RefundKind {
+  CASH // paid back to the buyer from cash, bank or a wallet
+  CREDIT // kept on the buyer's account for later orders
+  FORFEIT // kept by the company as a cancellation charge (other income)
+}
+
 enum EcommercePlatform {
   SHOPIFY
   WOOCOMMERCE
@@ -2886,6 +2957,7 @@ enum IntakeStatus {
   PARSED
   CONFIRMED
   CANCELLED
+  REVERSED // confirmed, then undone: its pieces left stock and its cost went back to the project
 }
 
 enum CostAllocationMethod {
@@ -2955,6 +3027,7 @@ enum JournalSource {
   STOCK_ADJUSTMENT
   MATERIAL_ISSUE
   PURCHASE_RETURN
+  REFUND
 }
 
 enum AssetStatus {
@@ -3096,6 +3169,7 @@ enum DocumentType {
   MATERIAL_RETURN
   PURCHASE_RETURN
   REPORT
+  REFUND_VOUCHER
 }
 
 enum TemplateFormat {

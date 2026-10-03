@@ -80,6 +80,20 @@ Built one module at a time, each in its own pull request. So far:
   net profit), each with an eye that hides it on that person's screens, and the Insights: top
   sellers (period, SKUs or styles, by pieces or sales value, kept in the address so a link
   shows the same list), highest stock, dead and slow stock, and low stock.
+- **Settings** (`/settings`), in three tabs:
+  - **Team**: everyone in the company, with a search and a list of deactivated people. Adding
+    a person takes their email, name and role; someone new gets a temporary password, shown
+    once with a copy button, for the administrator to hand over (sending it by email or
+    WhatsApp comes with the integrations). Each person's menu changes their role, issues a new
+    temporary password (signing them out everywhere), or deactivates or reactivates them.
+  - **Roles**: the built-in and custom roles and what each allows. A new role starts empty or
+    from a copy of another role's permissions, which are grouped by area. Ticking a money
+    permission (recording money received or paid) for a role other than Accounts shows a
+    warning. Built-in roles keep their names and cannot be deleted; Super Admin always has
+    every permission.
+  - **Company**: name and contact details, the letterhead (logo, colours, footer), business
+    rules (low stock level, advance percentage, when a buyer counts as dormant) and money and
+    time (currency, time zone, first month of the financial year).
 
 The screens ask the same Server Actions as the API, so the backend's permissions decide what
 appears. With the built-in roles' default permissions:
@@ -91,6 +105,17 @@ appears. With the built-in roles' default permissions:
 | Production Manager         | No          | Yes      | No           | No                           |
 | Employee                   | No          | No       | No           | No                           |
 
+Settings follows the same rule. The Team tab needs `company.members.manage`. The Roles tab
+opens with `company.members.manage` (to read them) or `company.roles.manage` (to change them).
+Everyone can read the company details, and `company.settings` lets them be changed. Settings
+shows in the menu for people holding any of these three, which by default is only Super Admin.
+
+On the Team tab, someone who manages the team without being a Super Admin cannot give the
+Super Admin role or change, deactivate, reactivate or reset a Super Admin. The company always
+keeps one active Super Admin. Nobody can deactivate or reset themselves; they change their own
+password instead. Only the platform owner can reset the platform owner or someone who also
+works in another company. Each person's menu offers exactly what these rules allow.
+
 For developers:
 
 - `src/proxy.ts` only checks that a session cookie is there: visitors without one go to sign
@@ -100,6 +125,11 @@ For developers:
   choose a company.
 - A module's screens add their menu entry, with the permissions that open it, in
   `src/components/shell/nav-items.ts`.
+- When a screen offers actions on each row, the service that enforces them sends a flag for
+  each one, decided by the same rules, so a button never appears for something the server
+  refuses (or goes missing for something it allows). The Team and Roles rules live in
+  `src/modules/rbac/rules.ts`; `tests/integration/team-screens.test.ts` tries every action as
+  different people and checks it works exactly when it is offered.
 - Components are [shadcn/ui](https://ui.shadcn.com) in `src/components/ui` (add more with
   `npx shadcn@latest add <name>`), in the brand colours from `src/styles/globals.css`. The
   fonts (Inter, Playfair Display, Noto Sans Bengali) are bundled with the app.
@@ -134,7 +164,7 @@ selling and producing: by default only Super Admin and Accounts hold `accounts.r
 | `GET/POST /api/companies`                            | List switchable companies / create one (platform owner)  |
 | `GET/PATCH /api/company`                             | Active company profile and letterhead details            |
 | `GET /api/permissions`                               | Permission catalogue for the role editor                 |
-| `GET/POST /api/roles`, `PATCH/DELETE /api/roles/:id` | Manage roles                                             |
+| `GET/POST /api/roles`, `PATCH/DELETE /api/roles/:id` | List roles (either team permission) and manage them      |
 | `GET/POST /api/members`, `PATCH /api/members/:id`    | Add users, change role, deactivate                       |
 | `POST /api/members/:id/reset-password`               | Issue a temporary password                               |
 | `GET /api/audit-logs`                                | Audit trail with filters                                 |

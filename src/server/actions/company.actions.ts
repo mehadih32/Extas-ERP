@@ -4,8 +4,16 @@ import { revalidatePath } from "next/cache";
 
 import { getRequestMeta } from "@/lib/request-meta";
 import { runAction } from "@/lib/result";
-import { requirePermission, requirePlatformSuperAdmin } from "@/modules/auth/context";
-import { createCompany, updateCompanyProfile } from "@/modules/companies/company.service";
+import {
+  requireCompany,
+  requirePermission,
+  requirePlatformSuperAdmin,
+} from "@/modules/auth/context";
+import {
+  createCompany,
+  getCompanyDetails,
+  updateCompanyProfile,
+} from "@/modules/companies/company.service";
 import { removeCompanyLogo, uploadCompanyLogo } from "@/modules/companies/logo.service";
 import { fileFromForm } from "@/modules/files/file.service";
 
@@ -14,6 +22,14 @@ export async function createCompanyAction(input: unknown) {
   return runAction(async () => {
     const { user } = await requirePlatformSuperAdmin();
     return createCompany({ userId: user.id }, input, await getRequestMeta());
+  });
+}
+
+/** The company's details for the settings screen: anyone in the company may read them. */
+export async function getCompanyDetailsAction() {
+  return runAction(async () => {
+    const ctx = await requireCompany();
+    return { details: await getCompanyDetails(ctx), canEdit: ctx.can("company.settings") };
   });
 }
 

@@ -11,7 +11,8 @@ import * as projects from "@/modules/production/project.service";
 /*
  * Production Server Actions. Each returns { ok: true, data } or { ok: false, error }.
  *   production.view           overview, projects, deliveries (costs need the next two)
- *   production.manage         projects, stages, cost heads, Due bills, voiding bills
+ *   production.manage         projects, stages, cost heads, Due bills, voiding bills,
+ *                             undoing a confirmed delivery
  *   accounts.payments.record  money paid out: Cash/Bank costs, paying bills (Accounts)
  *   accounts.manage           writing unrecovered cost off when completing / cancelling
  *   production.stock_intake   Move to Stock: deliveries, AI packing-list reading
@@ -139,3 +140,8 @@ export const confirmIntakeAction = async (intakeId: string, input: unknown) =>
   );
 export const cancelIntakeAction = async (intakeId: string) =>
   runAction(async () => intakes.cancelIntake(await intake(), intakeId, await getRequestMeta()));
+/** Undo a confirmed delivery (Production Managers): { reason, redraft? }. */
+export const reverseIntakeAction = async (intakeId: string, input: unknown) =>
+  runAction(async () =>
+    intakes.reverseIntake(await manage(), intakeId, input, await getRequestMeta()),
+  );

@@ -3,6 +3,7 @@ import { Prisma, type StockGrade } from "@prisma/client";
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
+import { lockRow } from "@/lib/row-lock";
 import { ensureControlAccounts } from "@/modules/accounts/control-accounts";
 import { postJournalEntry } from "@/modules/accounts/journal.service";
 import { auditInCompany } from "@/modules/audit/audit.service";
@@ -17,6 +18,7 @@ import {
   type SkuStock,
   stockOnHand,
 } from "@/modules/dashboard/stock-figures";
+import { gradeCost, gradeCostData } from "@/modules/inventory/costs";
 import {
   adjustStockSchema,
   badStockSchema,
@@ -32,8 +34,9 @@ import {
  * - "Available" = A-grade quantity minus quantity reserved for open orders.
  * - Decreases are atomic and refuse to go below zero; only the Sales module's
  *   Force Override (built later) may sell past zero.
- * - ProductVariant.avgCost is the weighted average cost used for stock value,
- *   COGS and bad-stock loss.
+ * - Each SKU keeps a weighted average cost per grade (see ./costs.ts):
+ *   avgCost for A-grade (stock value, COGS) and bGradeAvgCost for B-grade.
+ *   Pieces in and out of a grade use and re-weight that grade's cost only.
  * - Every change in stock value reaches the books (Finished Goods Inventory):
  *     Opening stock        Dr Inventory              Cr Opening Balance Equity
  *     Count correction +/- Dr Inventory / Losses     Cr Production & Inventory Losses / Inventory
@@ -240,9 +243,18 @@ export function weightedAverageCost(
   return (base * currentAvg + quantity * unitCost) / (base + quantity);
 }
 
+/** The SKU's grade costs, locked so no other change re-weights them meanwhile. */
+async function lockGradeCosts(tx: Tx, variantId: string) {
+  await lockRow(tx, "ProductVariant", variantId);
+  return tx.productVariant.findUniqueOrThrow({
+    where: { id: variantId },
+    select: { avgCost: true, bGradeAvgCost: true },
+  });
+}
+
 /**
  * Manual stock change: opening stock or a correction (+/-). Incoming stock with a
- * unit cost updates the SKU's weighted average cost.
+ * unit cost updates the weighted average cost of its grade.
  */
 export async function adjustStock(ctx: CompanyContext, raw: unknown, meta?: RequestMeta) {
   const input = adjustStockSchema.parse(raw);
@@ -250,29 +262,34 @@ export async function adjustStock(ctx: CompanyContext, raw: unknown, meta?: Requ
   const warehouse = await resolveWarehouse(ctx, input.warehouseId);
   const key = { variantId: variant.id, warehouseId: warehouse.id, grade: input.grade };
 
-  // Value at the cost given for incoming stock, otherwise the SKU's average cost.
-  const unitCost =
-    input.quantity > 0 && input.unitCost !== undefined ? input.unitCost : Number(variant.avgCost);
-  const value = new Prisma.Decimal((unitCost * Math.abs(input.quantity)).toFixed(2));
-
   const movement = await prisma.$transaction(async (tx) => {
+    const average = gradeCost(await lockGradeCosts(tx, variant.id), input.grade);
+    // Value at the cost given for incoming stock, otherwise the grade's average cost.
+    const unitCost =
+      input.quantity > 0 && input.unitCost !== undefined
+        ? new Prisma.Decimal(input.unitCost)
+        : average;
+    const value = unitCost
+      .times(Math.abs(input.quantity))
+      .toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
+
     if (input.quantity < 0) {
       await decrementBalance(tx, key, -input.quantity);
     } else {
       if (input.unitCost !== undefined) {
         const onHand = await tx.stockBalance.aggregate({
-          where: { variantId: variant.id },
+          where: { variantId: variant.id, grade: input.grade },
           _sum: { quantity: true },
         });
         const avg = weightedAverageCost(
           onHand._sum.quantity ?? 0,
-          Number(variant.avgCost),
+          average.toNumber(),
           input.quantity,
           input.unitCost,
         );
         await tx.productVariant.update({
           where: { id: variant.id },
-          data: { avgCost: new Prisma.Decimal(avg.toFixed(4)) },
+          data: gradeCostData(input.grade, avg),
         });
       }
       await tx.stockBalance.upsert({
@@ -287,7 +304,7 @@ export async function adjustStock(ctx: CompanyContext, raw: unknown, meta?: Requ
         companyId: ctx.company.id,
         type: input.type,
         quantity: input.quantity,
-        unitCost: input.unitCost ?? variant.avgCost,
+        unitCost,
         note: input.note,
         createdById: ctx.user.id,
       },
@@ -339,24 +356,26 @@ export async function adjustStock(ctx: CompanyContext, raw: unknown, meta?: Requ
 
 /**
  * Moves pieces to Bad Stock: removes them from sellable stock and books their
- * value (average cost) as an inventory loss.
+ * value (their grade's average cost) as an inventory loss.
  */
 export async function moveToBadStock(ctx: CompanyContext, raw: unknown, meta?: RequestMeta) {
   const input = badStockSchema.parse(raw);
   const variant = await getVariant(ctx, input.variantId);
   const warehouse = await resolveWarehouse(ctx, input.warehouseId);
   const key = { variantId: variant.id, warehouseId: warehouse.id, grade: input.grade };
-  const unitCost = Number(variant.avgCost);
-  const lossValue = new Prisma.Decimal((unitCost * input.quantity).toFixed(2));
 
   const entry = await prisma.$transaction(async (tx) => {
+    const unitCost = gradeCost(await lockGradeCosts(tx, variant.id), input.grade);
+    const lossValue = unitCost
+      .times(input.quantity)
+      .toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
     await decrementBalance(tx, key, input.quantity);
     const created = await tx.badStockEntry.create({
       data: {
         companyId: ctx.company.id,
         variantId: variant.id,
         quantity: input.quantity,
-        unitCost: variant.avgCost,
+        unitCost,
         lossValue,
         source: input.source,
         reason: input.reason,
@@ -368,7 +387,7 @@ export async function moveToBadStock(ctx: CompanyContext, raw: unknown, meta?: R
         companyId: ctx.company.id,
         type: "BAD_STOCK_OUT",
         quantity: -input.quantity,
-        unitCost: variant.avgCost,
+        unitCost,
         referenceType: "BadStockEntry",
         referenceId: created.id,
         note: input.reason,

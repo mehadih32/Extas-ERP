@@ -4,13 +4,14 @@ import type { CustomFieldEntity } from "@prisma/client";
 
 import { getRequestMeta } from "@/lib/request-meta";
 import { runAction } from "@/lib/result";
-import { requirePermission } from "@/modules/auth/context";
+import { requireAnyPermission, requirePermission } from "@/modules/auth/context";
 import * as customFields from "@/modules/sales/custom-fields.service";
 import * as documents from "@/modules/sales/documents.service";
 import * as orders from "@/modules/sales/order.service";
 import * as payments from "@/modules/sales/payment.service";
 import * as proformas from "@/modules/sales/proforma.service";
 import * as quotations from "@/modules/sales/quotation.service";
+import * as refunds from "@/modules/sales/refund.service";
 import * as summary from "@/modules/sales/summary.service";
 
 /*
@@ -18,7 +19,10 @@ import * as summary from "@/modules/sales/summary.service";
  *   sales.view                read quotations, proformas, orders, documents, payments
  *   sales.quotation.manage    quotations and proforma conversion
  *   sales.order.create        orders, invoices, packing lists, challans
- *   accounts.receipts.record  money received (also needed for a payment at checkout)
+ *   accounts.receipts.record  money received (also needed for a payment at checkout);
+ *                             a refund kept as the buyer's credit
+ *   accounts.payments.record  a refund paid back to the buyer
+ *   accounts.manage           a refund kept as a cancellation charge
  *   sales.invoice.edit        void invoices (cancelling an invoiced order needs it too)
  *   sales.force_override      sell beyond available stock (checked inside the order)
  *   company.settings          custom field definitions
@@ -153,5 +157,21 @@ export const listPaymentsAction = async (query: unknown) =>
   runAction(async () => payments.listPayments(await view(), query));
 export const getPaymentReceiptAction = async (paymentId: string) =>
   runAction(async () => payments.getPaymentReceipt(await view(), paymentId));
+
+// --- Refunds -------------------------------------------------------------------
+/** Any Accounts money key opens refunds; the service checks the one for the refund's kind. */
+const refundMoney = () =>
+  requireAnyPermission("accounts.payments.record", "accounts.receipts.record", "accounts.manage");
+export const refundBuyerAction = async (input: unknown) =>
+  runAction(async () => refunds.refundBuyer(await refundMoney(), input, await getRequestMeta()));
+export const voidRefundAction = async (refundId: string, input: unknown) =>
+  runAction(async () =>
+    refunds.voidRefund(await refundMoney(), refundId, input, await getRequestMeta()),
+  );
+export const listRefundsAction = async (query: unknown) =>
+  runAction(async () => refunds.listRefunds(await view(), query));
+export const getRefundAction = async (refundId: string) =>
+  runAction(async () => refunds.getRefund(await view(), refundId));
+
 export const getSalesSummaryAction = async (query: unknown) =>
   runAction(async () => summary.getSalesSummary(await view(), query));

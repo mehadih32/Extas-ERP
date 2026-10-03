@@ -2,13 +2,14 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import type { Prisma } from "@prisma/client";
+import type { Prisma, StockGrade } from "@prisma/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ZodError } from "zod";
 
 import { localDay } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
+import { stockValuation } from "@/modules/accounts/reports.service";
 import * as files from "@/modules/files/file.service";
 import * as catalog from "@/modules/inventory/catalog.service";
 import * as matrix from "@/modules/inventory/matrix.service";
@@ -22,6 +23,7 @@ import * as intakes from "@/modules/production/intake.service";
 import { projectCostSummaries } from "@/modules/production/project-costs";
 import * as projects from "@/modules/production/project.service";
 import * as documents from "@/modules/sales/documents.service";
+import * as orders from "@/modules/sales/order.service";
 import * as payments from "@/modules/sales/payment.service";
 import * as proformas from "@/modules/sales/proforma.service";
 import * as quotations from "@/modules/sales/quotation.service";
@@ -163,12 +165,22 @@ async function expectWipMatchesProjects(env: Env) {
   expect(await accountBalance(env.company.id, WIP)).toBe(total.toFixed(2));
 }
 
+/** The Inventory ledger account equals the stock on hand at each SKU grade's average cost. */
+async function expectInventoryMatchesStock(env: Env) {
+  const books = Number(await accountBalance(env.company.id, INVENTORY));
+  const stockValue = Number(await stockValuation(env.company.id));
+  expect(Math.abs(books - stockValue)).toBeLessThan(0.01);
+}
+
 const balanceOf = async (env: Env, partyId: string) =>
   (await ledger.getPartyBalance(env.ctx, partyId)).toFixed(2);
 const cell = async (env: Env, variantId: string) =>
   (await stock.stockByVariant(env.ctx, [variantId])).get(variantId)!;
-const avgCost = async (variantId: string) =>
-  (await prisma.productVariant.findUniqueOrThrow({ where: { id: variantId } })).avgCost.toFixed(4);
+/** A SKU's average cost for one grade (A-grade unless said). */
+const avgCost = async (variantId: string, grade: StockGrade = "A_GRADE") => {
+  const v = await prisma.productVariant.findUniqueOrThrow({ where: { id: variantId } });
+  return (grade === "B_GRADE" ? v.bGradeAvgCost : v.avgCost).toFixed(4);
+};
 
 /** An active polo project made by the Production Manager. */
 const newProject = (env: Env, extra: Record<string, unknown> = {}) =>
@@ -734,8 +746,10 @@ run("move to stock", () => {
 
     expect(await cell(env, navyM)).toMatchObject({ aGrade: 30, bGrade: 5 });
     expect(await cell(env, env.sku("Navy", "L"))).toMatchObject({ aGrade: 20, bGrade: 0 });
-    // Navy M: 10 on hand at 50, then 20 x 104.7619 and 5 x 52.3810.
-    expect(await avgCost(navyM)).toBe("81.6327");
+    // Navy M A-grade: 10 on hand at 50, then 20 x 104.7619. Its 5 B-grade pieces at
+    // 52.3810 keep their own average and do not pull the A-grade cost down.
+    expect(await avgCost(navyM)).toBe("86.5079");
+    expect(await avgCost(navyM, "B_GRADE")).toBe("52.3810");
     expect(await avgCost(env.sku("Navy", "S"))).toBe("104.7619");
     // 500 of opening stock (10 Navy M at 50) plus the 5,500 received.
     expect(await accountBalance(env.company.id, INVENTORY)).toBe("6000.00");
@@ -897,7 +911,8 @@ run("move to stock", () => {
     });
     const costed = await intakes.confirmIntake(env.pmCtx, counted.id);
     expect(costed.totalCost?.toFixed(2)).toBe("3700.00"); // 60 x 45 + 40 x 25
-    expect(await avgCost(whiteL)).toBe("37.0000");
+    expect(await avgCost(whiteL)).toBe("45.0000");
+    expect(await avgCost(whiteL, "B_GRADE")).toBe("25.0000");
     expect((await costs.getProjectCostSheet(env.pmCtx, manual.id)).summary.wip.toFixed(2)).toBe(
       "1300.00",
     );
@@ -1057,6 +1072,267 @@ run("move to stock", () => {
       vi.unstubAllEnvs();
       await rm(uploads, { recursive: true, force: true });
     }
+  });
+});
+
+run("undoing a delivery", () => {
+  beforeEach(resetDb);
+
+  it("takes a confirmed delivery back out of stock and restores costs, WIP and average cost", async () => {
+    const env = await setup();
+    const project = await newProject(env, { targetQuantity: 100 });
+    await dueBill(env, project.id, 10000);
+    const navyM = env.sku("Navy", "M");
+    const navyS = env.sku("Navy", "S");
+    await stock.adjustStock(env.ctx, {
+      variantId: navyM,
+      quantity: 10,
+      type: "OPENING",
+      unitCost: 40,
+    });
+    const delivery = await intakes.createIntake(env.warehouseCtx, {
+      projectId: project.id,
+      lines: [
+        { variantId: navyM, quantity: 30 },
+        { variantId: navyM, grade: "B_GRADE", quantity: 5 },
+        { variantId: navyS, quantity: 15 },
+      ],
+    });
+    // 50 of 100 pieces take half the cost: 100 a piece.
+    await intakes.confirmIntake(env.warehouseCtx, delivery.id);
+    expect(await avgCost(navyM)).toBe("85.0000"); // (10 x 40 + 30 x 100) / 40
+    expect(await avgCost(navyM, "B_GRADE")).toBe("100.0000");
+    expect(await accountBalance(env.company.id, WIP)).toBe("5000.00");
+
+    // Only Production Managers undo deliveries, and they say why.
+    await expectAppError(
+      intakes.reverseIntake(env.warehouseCtx, delivery.id, { reason: "Counted the wrong style" }),
+      "FORBIDDEN",
+    );
+    await expect(
+      intakes.reverseIntake(env.pmCtx, delivery.id, { reason: "No" }),
+    ).rejects.toBeInstanceOf(ZodError);
+    const undone = await intakes.reverseIntake(env.pmCtx, delivery.id, {
+      reason: "Counted the wrong style",
+    });
+    expect(undone).toMatchObject({
+      status: "REVERSED",
+      reversal: { reason: "Counted the wrong style", by: { name: expect.any(String) } },
+      corrections: [],
+      redraft: null,
+    });
+    expect(await cell(env, navyM)).toMatchObject({ aGrade: 10, bGrade: 0 });
+    expect(await cell(env, navyS)).toMatchObject({ aGrade: 0, bGrade: 0 });
+    expect(await avgCost(navyM)).toBe("40.0000"); // back to the opening stock's cost
+    // The cost is back in the project, the stock value back to the opening stock.
+    expect(await accountBalance(env.company.id, WIP)).toBe("10000.00");
+    expect(await accountBalance(env.company.id, INVENTORY)).toBe("400.00");
+    const after = await projects.getProject(env.pmCtx, project.id);
+    expect(after.quantities).toMatchObject({ producedA: 0, producedB: 0, produced: 0 });
+    expect(after.costs?.inStock.toFixed(2)).toBe("0.00");
+    expect(after.costs?.wip.toFixed(2)).toBe("10000.00");
+    expect(after.deliveries).toMatchObject([
+      { number: delivery.number, status: "REVERSED", reversedAt: expect.any(Date) },
+    ]);
+    const movements = await prisma.stockMovement.findMany({
+      where: { referenceType: "StockIntake", referenceId: delivery.id },
+      orderBy: { quantity: "asc" },
+    });
+    expect(movements.map((m) => [m.type, m.quantity])).toEqual([
+      ["PRODUCTION_REVERSAL", -30],
+      ["PRODUCTION_REVERSAL", -15],
+      ["PRODUCTION_REVERSAL", -5],
+      ["PRODUCTION_IN", 5],
+      ["PRODUCTION_IN", 15],
+      ["PRODUCTION_IN", 30],
+    ]);
+    // Nothing else moved, so the reversal of the Move to Stock entry is all the books need.
+    const entries = await prisma.journalEntry.findMany({
+      where: { sourceType: "STOCK_INTAKE", sourceId: delivery.id },
+      orderBy: { createdAt: "asc" },
+    });
+    expect(entries.map((e) => [e.isReversed, e.reversalOfId])).toEqual([
+      [true, null],
+      [false, entries[0]!.id],
+    ]);
+    await expectAppError(
+      intakes.reverseIntake(env.pmCtx, delivery.id, { reason: "Counted the wrong style" }),
+      "CONFLICT",
+    );
+    const audit = await prisma.auditLog.findFirstOrThrow({
+      where: {
+        entityId: delivery.id,
+        action: "STOCK_ADJUSTMENT",
+        summary: { startsWith: "Undid" },
+      },
+    });
+    expect(audit.summary).toContain("50 pcs out of stock (45 A-grade, 5 B-grade)");
+
+    // A draft has nothing to undo.
+    const draft = await intakes.createIntake(env.pmCtx, {
+      projectId: project.id,
+      lines: [{ variantId: navyS, quantity: 5 }],
+    });
+    await expectAppError(
+      intakes.reverseIntake(env.pmCtx, draft.id, { reason: "Not received yet" }),
+      "CONFLICT",
+    );
+    await intakes.cancelIntake(env.pmCtx, draft.id);
+
+    // Received again, then undone with a draft copy to correct: the B-grade was really A-grade.
+    const again = await intakes.createIntake(env.warehouseCtx, {
+      projectId: project.id,
+      lines: [
+        { variantId: navyM, quantity: 30 },
+        { variantId: navyM, grade: "B_GRADE", quantity: 5 },
+      ],
+    });
+    await intakes.confirmIntake(env.warehouseCtx, again.id);
+    const corrected = await intakes.reverseIntake(env.pmCtx, again.id, {
+      reason: "Five pieces graded B by mistake",
+      redraft: true,
+    });
+    expect(corrected.redraft?.number).toMatch(/^GRN-\d{4}-00004$/);
+    expect(corrected.corrections).toEqual([
+      { id: corrected.redraft!.id, number: corrected.redraft!.number, status: "DRAFT" },
+    ]);
+    const copy = await intakes.getIntake(env.pmCtx, corrected.redraft!.id);
+    expect(copy).toMatchObject({
+      status: "DRAFT",
+      project: { id: project.id },
+      correctionOf: { id: again.id, number: again.number, status: "REVERSED" },
+      pieces: { total: 35, aGrade: 30, bGrade: 5 },
+    });
+    await intakes.updateIntake(env.pmCtx, copy.id, {
+      lines: [{ variantId: navyM, quantity: 35 }],
+    });
+    await intakes.confirmIntake(env.pmCtx, copy.id);
+    expect(await cell(env, navyM)).toMatchObject({ aGrade: 45, bGrade: 0 });
+    expect((await projects.getProject(env.pmCtx, project.id)).quantities).toMatchObject({
+      producedA: 35,
+      producedB: 0,
+    });
+
+    await expectBooksBalanced(env.company.id);
+    await expectWipMatchesProjects(env);
+    await expectInventoryMatchesStock(env);
+  });
+
+  it("reopens a completed project, and refuses while pieces are reserved or the project is cancelled", async () => {
+    const env = await setup();
+    const project = await newProject(env, { targetQuantity: 12 });
+    await dueBill(env, project.id, 1200);
+    await projects.setProjectStage(env.pmCtx, project.id, { stage: "CUTTING" });
+    await projects.setProjectStage(env.pmCtx, project.id, { stage: "SEWING" });
+    const whiteM = env.sku("White", "M");
+    const delivery = await intakes.createIntake(env.warehouseCtx, {
+      projectId: project.id,
+      lines: [{ variantId: whiteM, quantity: 12 }],
+    });
+    await intakes.confirmIntake(env.pmCtx, delivery.id, { completeProject: true });
+    expect((await projects.getProject(env.pmCtx, project.id)).status).toBe("COMPLETED");
+
+    // Five pieces are promised to an order: they cannot be taken back.
+    const order = await orders.createOrder(env.ctx, {
+      channel: "WHOLESALE",
+      partyId: env.buyer.id,
+      lines: [{ variantId: whiteM, quantity: 5 }],
+      documents: { invoice: false },
+    });
+    const refused = await expectAppError(
+      intakes.reverseIntake(env.pmCtx, delivery.id, { reason: "Wrong colour delivered" }),
+      "CONFLICT",
+    );
+    expect(refused.message).toContain("EX-PL-001-WHITE-M A-grade (7 of 12 free)");
+    await orders.cancelOrder(env.ctx, order.id, { reason: "Buyer waits for the right colour" });
+
+    const undone = await intakes.reverseIntake(env.pmCtx, delivery.id, {
+      reason: "Wrong colour delivered",
+      redraft: true,
+    });
+    expect(undone.status).toBe("REVERSED");
+    // Cost is waiting in the project again, so it is active again at the stage it finished from.
+    const reopened = await projects.getProject(env.pmCtx, project.id);
+    expect(reopened).toMatchObject({
+      status: "ACTIVE",
+      stage: { key: "SEWING" },
+      quantities: { produced: 0 },
+    });
+    expect(reopened.costs?.wip.toFixed(2)).toBe("1200.00");
+    expect(reopened.stageHistory.at(-1)).toMatchObject({
+      label: "Sewing",
+      completedAt: null,
+      note: `${delivery.number} undone: Wrong colour delivered`,
+    });
+    await expectAppError(projects.completeProject(env.pmCtx, project.id), "CONFLICT");
+
+    // The corrected delivery completes it again.
+    await intakes.confirmIntake(env.pmCtx, undone.redraft!.id, { completeProject: true });
+    const done = await projects.getProject(env.pmCtx, project.id);
+    expect(done.status).toBe("COMPLETED");
+    expect(done.costs?.wip.toFixed(2)).toBe("0.00");
+    expect(await avgCost(whiteM)).toBe("100.0000");
+
+    // A cancelled project wrote its cost off: its deliveries stay.
+    const dropped = await newProject(env, { name: "Dropped run", targetQuantity: 10 });
+    await dueBill(env, dropped.id, 1000);
+    const part = await intakes.createIntake(env.pmCtx, {
+      projectId: dropped.id,
+      lines: [{ variantId: env.sku("White", "S"), quantity: 4 }],
+    });
+    await intakes.confirmIntake(env.pmCtx, part.id);
+    await projects.cancelProject(env.accountsCtx, dropped.id, { reason: "Factory shut down" });
+    await expectAppError(
+      intakes.reverseIntake(env.pmCtx, part.id, { reason: "Factory shut down" }),
+      "CONFLICT",
+    );
+
+    await expectBooksBalanced(env.company.id);
+    await expectWipMatchesProjects(env);
+    await expectInventoryMatchesStock(env);
+  });
+
+  it("keeps the books on the stock value when stock at other costs came and went in between", async () => {
+    const env = await setup();
+    const project = await newProject(env, { targetQuantity: 10 });
+    await dueBill(env, project.id, 1000);
+    const navyXL = env.sku("Navy", "XL");
+    const delivery = await intakes.createIntake(env.pmCtx, {
+      projectId: project.id,
+      lines: [{ variantId: navyXL, quantity: 10 }],
+    });
+    await intakes.confirmIntake(env.pmCtx, delivery.id); // 10 at 100
+    // A count finds 10 more at 10 each (average 55), then 5 go to bad stock at 55.
+    await stock.adjustStock(env.ctx, { variantId: navyXL, quantity: 10, unitCost: 10 });
+    await stock.moveToBadStock(env.ctx, { variantId: navyXL, quantity: 5, reason: "Torn" });
+    expect(await avgCost(navyXL)).toBe("55.0000");
+
+    // The 15 left are worth 825, less than the 1,000 the delivery brought in.
+    await intakes.reverseIntake(env.pmCtx, delivery.id, {
+      reason: "Delivered to the wrong company",
+    });
+    expect(await cell(env, navyXL)).toMatchObject({ aGrade: 5 });
+    expect(await avgCost(navyXL)).toBe("0.0000");
+    const difference = await prisma.journalEntry.findFirstOrThrow({
+      where: {
+        sourceType: "STOCK_INTAKE",
+        sourceId: delivery.id,
+        description: { startsWith: "Stock value difference" },
+      },
+      include: { lines: { include: { account: true } } },
+    });
+    expect(
+      difference.lines.map((l) => [l.account.code, l.debit.toFixed(2), l.credit.toFixed(2)]),
+    ).toEqual([
+      [INVENTORY, "175.00", "0.00"],
+      [LOSS, "0.00", "175.00"],
+    ]);
+    expect(await accountBalance(env.company.id, INVENTORY)).toBe("0.00");
+    expect(await accountBalance(env.company.id, WIP)).toBe("1000.00");
+
+    await expectBooksBalanced(env.company.id);
+    await expectWipMatchesProjects(env);
+    await expectInventoryMatchesStock(env);
   });
 });
 

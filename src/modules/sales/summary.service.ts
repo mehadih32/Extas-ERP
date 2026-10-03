@@ -11,8 +11,8 @@ function todayIn(timeZone: string) {
 
 /**
  * Sales figures for the dashboard ("Today's Sales") and the sales overview:
- * invoiced sales, orders by channel, money collected and dues still open.
- * Defaults to today in company time.
+ * invoiced sales, orders by channel, money collected (and paid back to buyers)
+ * and dues still open. Defaults to today in company time.
  */
 export async function getSalesSummary(ctx: CompanyContext, raw: unknown = {}) {
   const q = salesSummarySchema.parse(raw);
@@ -20,36 +20,49 @@ export async function getSalesSummary(ctx: CompanyContext, raw: unknown = {}) {
   const { start, end } = dayRange(q.from ?? today, q.to ?? q.from ?? today, ctx.company.timezone);
   const range = { gte: start, lt: end };
 
-  const [invoiced, orders, byChannel, collected, outstanding, awaitingAdvance, openQuotations] =
-    await Promise.all([
-      ctx.db.invoice.aggregate({
-        where: { status: { not: "VOID" }, issueDate: range },
-        _sum: { total: true },
-        _count: { _all: true },
-      }),
-      ctx.db.salesOrder.aggregate({
-        where: { status: { not: "CANCELLED" }, orderDate: range },
-        _sum: { total: true },
-        _count: { _all: true },
-      }),
-      ctx.db.salesOrder.groupBy({
-        by: ["channel"],
-        where: { status: { not: "CANCELLED" }, orderDate: range },
-        _sum: { total: true },
-        _count: { _all: true },
-      }),
-      ctx.db.payment.aggregate({
-        where: { direction: "RECEIVED", paymentDate: range },
-        _sum: { amount: true },
-      }),
-      ctx.db.invoice.aggregate({
-        where: { status: { in: ["UNPAID", "PARTIALLY_PAID"] } },
-        _sum: { dueAmount: true },
-        _count: { _all: true },
-      }),
-      ctx.db.proformaInvoice.count({ where: { status: "ISSUED" } }),
-      ctx.db.quotation.count({ where: { status: { in: ["DRAFT", "SENT"] } } }),
-    ]);
+  const [
+    invoiced,
+    orders,
+    byChannel,
+    collected,
+    paidBack,
+    outstanding,
+    awaitingAdvance,
+    openQuotations,
+  ] = await Promise.all([
+    ctx.db.invoice.aggregate({
+      where: { status: { not: "VOID" }, issueDate: range },
+      _sum: { total: true },
+      _count: { _all: true },
+    }),
+    ctx.db.salesOrder.aggregate({
+      where: { status: { not: "CANCELLED" }, orderDate: range },
+      _sum: { total: true },
+      _count: { _all: true },
+    }),
+    ctx.db.salesOrder.groupBy({
+      by: ["channel"],
+      where: { status: { not: "CANCELLED" }, orderDate: range },
+      _sum: { total: true },
+      _count: { _all: true },
+    }),
+    ctx.db.payment.aggregate({
+      where: { direction: "RECEIVED", paymentDate: range },
+      _sum: { amount: true },
+    }),
+    // Only refunds paid back move money; credit kept or charges kept do not.
+    ctx.db.refund.aggregate({
+      where: { kind: "CASH", voidedAt: null, refundDate: range },
+      _sum: { amount: true },
+    }),
+    ctx.db.invoice.aggregate({
+      where: { status: { in: ["UNPAID", "PARTIALLY_PAID"] } },
+      _sum: { dueAmount: true },
+      _count: { _all: true },
+    }),
+    ctx.db.proformaInvoice.count({ where: { status: "ISSUED" } }),
+    ctx.db.quotation.count({ where: { status: { in: ["DRAFT", "SENT"] } } }),
+  ]);
   const amount = (v: Prisma.Decimal | null | undefined) => (v ?? new Prisma.Decimal(0)).toFixed(2);
   return {
     period: { from: q.from ?? today, to: q.to ?? q.from ?? today, timezone: ctx.company.timezone },
@@ -63,6 +76,11 @@ export async function getSalesSummary(ctx: CompanyContext, raw: unknown = {}) {
       value: amount(c._sum.total),
     })),
     collected: amount(collected._sum.amount),
+    /** Money paid back to buyers in the period. */
+    refunded: amount(paidBack._sum.amount),
+    netCollected: amount(
+      (collected._sum.amount ?? new Prisma.Decimal(0)).minus(paidBack._sum.amount ?? 0),
+    ),
     outstandingDue: amount(outstanding._sum.dueAmount),
     unpaidInvoices: outstanding._count._all,
     proformasAwaitingAdvance: awaitingAdvance,

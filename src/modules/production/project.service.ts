@@ -342,6 +342,7 @@ export async function getProject(ctx: CompanyContext, projectId: string) {
           method: true,
           totalCost: true,
           confirmedAt: true,
+          reversedAt: true,
           createdAt: true,
           lines: { select: { grade: true, quantity: true } },
         },
@@ -381,6 +382,7 @@ export async function getProject(ctx: CompanyContext, projectId: string) {
         .reduce((s, l) => s + l.quantity, 0),
       totalCost: showCosts ? intake.totalCost : null,
       confirmedAt: intake.confirmedAt,
+      reversedAt: intake.reversedAt,
       createdAt: intake.createdAt,
     })),
   };
@@ -687,6 +689,48 @@ export async function completeProjectTx(
       summary: `Completed ${project.code}: ${produced} of ${project.targetQuantity} pcs received${
         costs.wip.gt(0) ? `, ${costs.wip.toFixed(2)} written off (${options.writeOffReason})` : ""
       }`,
+    },
+    tx,
+  );
+}
+
+/**
+ * Reopens a completed project because cost is waiting in it again (one of its
+ * deliveries was undone): it is active again, back at the stage it finished
+ * from, until its goods are received again and it is completed again.
+ */
+export async function reopenProjectTx(
+  tx: Tx,
+  ctx: CompanyContext,
+  project: { id: string; code: string },
+  note: string,
+  meta?: RequestMeta,
+) {
+  const last = await tx.productionStageLog.findFirst({
+    where: { projectId: project.id, stage: { not: "COMPLETED" } },
+    orderBy: [{ startedAt: "desc" }, { id: "desc" }],
+  });
+  const stage = last?.stage ?? "FINISHING";
+  const now = new Date();
+  await tx.productionStageLog.updateMany({
+    where: { projectId: project.id, completedAt: null },
+    data: { completedAt: now },
+  });
+  await tx.productionStageLog.create({
+    data: { projectId: project.id, stage, startedAt: now, note },
+  });
+  await tx.productionProject.update({
+    where: { id: project.id },
+    data: { status: "ACTIVE", stage, completedAt: null },
+  });
+  await auditInCompany(
+    ctx,
+    meta,
+    {
+      action: "STATUS_CHANGE",
+      entityType: "ProductionProject",
+      entityId: project.id,
+      summary: `Reopened ${project.code} at ${STAGE_LABELS[stage]}: ${note}`,
     },
     tx,
   );

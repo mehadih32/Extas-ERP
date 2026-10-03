@@ -27,6 +27,7 @@ import * as orders from "@/modules/sales/order.service";
 import * as payments from "@/modules/sales/payment.service";
 import * as proformas from "@/modules/sales/proforma.service";
 import * as quotations from "@/modules/sales/quotation.service";
+import * as refunds from "@/modules/sales/refund.service";
 
 import { png } from "../fixtures/images";
 import { pdfLines } from "../fixtures/pdf";
@@ -1378,6 +1379,230 @@ run("printed documents", () => {
     const other = await setup("Fabric Apparel");
     await expectAppError(
       printing.printDocument(other.ctx, { type: "PAYMENT_RECEIPT", id: paid.id }),
+      "NOT_FOUND",
+    );
+  });
+
+  it("prints refund vouchers, credit notes and cancellation charges, and refunds on what they came off", async () => {
+    const env = await setup();
+    const seller = env.as.SALES_EXECUTIVE;
+    const accounts = env.as.ACCOUNTS;
+    const today = formatDay(localDay(new Date(), env.company.timezone));
+
+    // A proforma for 100 polos at 650 (65,000 taka): its 19,500 advance paid, 2,500 paid back.
+    const q = await quotations.createQuotation(env.ctx, {
+      partyId: env.buyer.id,
+      validUntil: "2099-12-31",
+      items: [
+        {
+          categoryId: env.tops.id,
+          styleId: env.polo.id,
+          description: "Pique polo",
+          sizeBreakdown: { M: 50, L: 50 },
+          unitPrice: 650,
+        },
+      ],
+    });
+    const pi = await proformas.convertQuotationToProforma(env.ctx, q.id);
+    await payments.receivePayment(accounts, {
+      proformaId: pi.id,
+      amount: 19500,
+      method: "BANK_TRANSFER",
+      reference: "DBBL-7781",
+    });
+    const back = await refunds.refundBuyer(accounts, {
+      proformaId: pi.id,
+      kind: "CASH",
+      method: "BKASH",
+      amount: 2500,
+      reason: "Fewer pieces agreed",
+      reference: "TRX-RF-1",
+      notes: "Sent to the buyer's bKash",
+    });
+    const voucher = await printing.printDocument(seller, { type: "REFUND_VOUCHER", id: back.id });
+    expect(voucher).toMatchObject({
+      type: "REFUND_VOUCHER",
+      typeLabel: "Refund voucher",
+      title: `Refund voucher ${back.number}`,
+      referenceType: "Refund",
+      referenceId: back.id,
+      party: { id: env.buyer.id },
+      fileName: `Extras - Refund voucher ${back.number}.pdf`,
+      reused: false,
+    });
+    const lines = await linesOf(seller, voucher.id);
+    for (const text of [
+      "REFUND VOUCHER",
+      back.number,
+      "PAID BY",
+      "bKash",
+      "TRANSACTION ID",
+      "TRX-RF-1",
+      "PROFORMA NO.",
+      pi.number,
+      "PAID TO",
+      "Rahim Traders",
+      `Refund of the advance paid on proforma invoice ${pi.number}`,
+      "Reason: Fewer pieces agreed",
+      "2,500.00",
+      "In words: Taka Two Thousand Five Hundred Only",
+      "PROFORMA TOTAL",
+      "65,000.00",
+      "PAID BEFORE",
+      "19,500.00",
+      "PAID AFTER",
+      "17,000.00",
+      "Sent to the buyer's bKash",
+      "Received by",
+      "Authorised signature",
+    ]) {
+      expect(lines).toContain(text);
+    }
+    const built = await build(seller, { type: "REFUND_VOUCHER", id: back.id });
+    expect(built.model.meta).toEqual([
+      { label: "Voucher no.", value: back.number },
+      { label: "Date", value: today },
+      { label: "Paid by", value: "bKash" },
+      { label: "Transaction ID", value: "TRX-RF-1" },
+      { label: "Proforma no.", value: pi.number },
+    ]);
+    expect(built.model.blocks.find((b) => b.kind === "totals")).toEqual({
+      kind: "totals",
+      rows: [{ label: "Paid back (BDT)", value: "2,500.00", strong: true }],
+      words: "Taka Two Thousand Five Hundred Only",
+    });
+    expect(figures(built.model)).toEqual([
+      ["Proforma total", "65,000.00", pi.number],
+      ["Paid before", "19,500.00", "Received, less earlier refunds"],
+      ["Paid after", "17,000.00", "Less this voucher"],
+    ]);
+
+    // The proforma shows the advance net of the refund, and the refund under its payments.
+    let proformaBuilt = await build(seller, { type: "PROFORMA_INVOICE", id: pi.id });
+    const proformaTotals = proformaBuilt.model.blocks.find((b) => b.kind === "totals");
+    expect(proformaTotals?.rows.filter((r) => r.label.startsWith("Advance"))).toEqual([
+      { label: "Advance (30%)", value: "19,500.00" },
+      { label: "Advance received, less refunds", value: "17,000.00" },
+      { label: "Advance due", value: "2,500.00", strong: true },
+    ]);
+    expect(tables(proformaBuilt.model).find((t) => t.title === "Refunds")?.rows).toEqual([
+      { cells: [today, back.number, "Paid back (bKash)", "2,500.00"] },
+    ]);
+
+    // The next receipt counts the refund in what was received so far.
+    const topUp = (
+      await payments.receivePayment(accounts, {
+        proformaId: pi.id,
+        amount: 2500,
+        method: "CASH",
+      })
+    ).payment;
+    expect(figures((await build(seller, { type: "PAYMENT_RECEIPT", id: topUp.id })).model)).toEqual(
+      [
+        ["Proforma total", "65,000.00", pi.number],
+        ["Advance (30%)", "19,500.00", ""],
+        ["Total received", "19,500.00", "Up to this receipt, less 2,500.00 refunded"],
+        ["Advance due", "0.00", "Balance due 45,500.00"],
+      ],
+    );
+
+    // Kept as credit on the buyer's account: a credit note.
+    const credit = await refunds.refundBuyer(accounts, {
+      proformaId: pi.id,
+      kind: "CREDIT",
+      amount: 1000,
+      reason: "Kept for the next order",
+    });
+    const creditBuilt = await build(seller, { type: "REFUND_VOUCHER", id: credit.id });
+    expect(creditBuilt.model.title).toBe("Credit Note");
+    expect(creditBuilt.model.parties[0]!.heading).toBe("Credited to");
+    expect(creditBuilt.model.meta.map((m) => m.label)).toEqual([
+      "Voucher no.",
+      "Date",
+      "Proforma no.",
+    ]);
+    expect(tables(creditBuilt.model)[0]!.rows[0]!.cells).toEqual([
+      `The advance paid on proforma invoice ${pi.number}, kept as credit on the buyer's account`,
+      "1,000.00",
+    ]);
+    expect(figures(creditBuilt.model).slice(1)).toEqual([
+      ["Paid before", "19,500.00", "Received, less earlier refunds"],
+      ["Paid after", "18,500.00", "Less this voucher"],
+    ]);
+    expect(notes(creditBuilt.model)).toEqual([
+      "This credit stays on the buyer's account and counts against what they owe on later invoices.",
+    ]);
+    expect(creditBuilt.model.signatures).toEqual(["Authorised signature"]);
+    expect(creditBuilt.record.title).toBe(`Credit note ${credit.number}`);
+    proformaBuilt = await build(seller, { type: "PROFORMA_INVOICE", id: pi.id });
+    expect(
+      tables(proformaBuilt.model)
+        .find((t) => t.title === "Refunds")
+        ?.rows.map((r) => r.cells[2]),
+    ).toEqual(["Paid back (bKash)", "Credit on account"]);
+
+    // An invoiced order cancelled with a cancellation charge kept.
+    const order = await sellPolo(env);
+    await payments.receivePayment(accounts, { orderId: order.id, amount: 4000, method: "CASH" });
+    const cancelled = await orders.cancelOrder(env.ctx, order.id, {
+      reason: "Buyer cancelled",
+      settle: { kind: "FORFEIT" },
+    });
+    const charge = cancelled.refunds[0]!;
+    const chargeBuilt = await build(seller, { type: "REFUND_VOUCHER", id: charge.id });
+    expect(chargeBuilt.model.title).toBe("Cancellation Charge");
+    expect(chargeBuilt.model.meta.map((m) => m.label)).toEqual([
+      "Voucher no.",
+      "Date",
+      "Order no.",
+    ]);
+    expect(tables(chargeBuilt.model)[0]!.rows).toEqual([
+      {
+        cells: [
+          `Cancellation charge kept from the money paid on order ${order.number}`,
+          "4,000.00",
+        ],
+        details: ["Reason: Order cancelled: Buyer cancelled"],
+      },
+    ]);
+    expect(chargeBuilt.model.blocks.find((b) => b.kind === "totals")?.rows).toEqual([
+      { label: "Kept (BDT)", value: "4,000.00", strong: true },
+    ]);
+    expect(figures(chargeBuilt.model)).toEqual([
+      ["Order total", "10,800.00", order.number],
+      ["Paid before", "4,000.00", "Received, less earlier refunds"],
+      ["Paid after", "0.00", "Less this voucher"],
+    ]);
+    // The voided invoice still shows what was paid on it, not the charge kept after its void.
+    const voidInvoice = await build(seller, { type: "COMMERCIAL_INVOICE", id: order.invoice!.id });
+    expect(voidInvoice.model.stamp).toEqual({ text: "Void", tone: "danger" });
+    expect(tables(voidInvoice.model).find((t) => t.title === "Refunds")).toBeUndefined();
+
+    // A voided refund prints with a void stamp and its reason.
+    const mistake = await refunds.refundBuyer(accounts, {
+      partyId: env.buyer.id,
+      kind: "CASH",
+      method: "CASH",
+      amount: 500,
+      reason: "Paid out of the credit",
+    });
+    await refunds.voidRefund(accounts, mistake.id, { reason: "Buyer never collected it" });
+    const voidBuilt = await build(seller, { type: "REFUND_VOUCHER", id: mistake.id });
+    expect(voidBuilt.model.stamp).toEqual({ text: "Void", tone: "danger" });
+    expect(notes(voidBuilt.model)).toEqual(["Voided: Buyer never collected it"]);
+    expect(figures(voidBuilt.model)).toEqual([]); // credit on account: no proforma or order
+    expect(tables(voidBuilt.model)[0]!.rows[0]!.cells[0]).toBe(
+      "Refund of credit on the buyer's account",
+    );
+
+    // Who may print refunds follows who sees sales.
+    await expectAppError(
+      printing.printDocument(env.as.PRODUCTION_MANAGER, { type: "REFUND_VOUCHER", id: back.id }),
+      "FORBIDDEN",
+    );
+    const other = await setup("Fabric Apparel");
+    await expectAppError(
+      printing.printDocument(other.ctx, { type: "REFUND_VOUCHER", id: back.id }),
       "NOT_FOUND",
     );
   });

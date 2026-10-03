@@ -231,6 +231,12 @@ export const confirmIntakeSchema = z.object({
   allowZeroCost: z.boolean().optional(),
 });
 
+export const reverseIntakeSchema = z.object({
+  reason,
+  /** Also open a draft copy of the delivery to correct and confirm again. */
+  redraft: z.boolean().optional(),
+});
+
 export const listIntakesSchema = z.object({
   projectId: id.optional(),
   status: z.enum(IntakeStatus).optional(),

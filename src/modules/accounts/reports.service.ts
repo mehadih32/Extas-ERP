@@ -21,6 +21,7 @@ import {
 import { asOfSchema, profitAndLossSchema } from "@/modules/accounts/schemas";
 import { billsOutOfStep } from "@/modules/accounts/supplier-settlement";
 import type { CompanyContext } from "@/modules/auth/context";
+import { balanceUnitCostSql } from "@/modules/inventory/costs";
 import { projectCostSummaries } from "@/modules/production/project-costs";
 
 /*
@@ -378,10 +379,10 @@ export async function getTrialBalance(ctx: CompanyContext, raw: unknown = {}) {
 // Overview (dashboard money cards)
 // =============================================================================
 
-/** Stock on hand valued at each SKU's average cost (A and B grade). */
+/** Stock on hand valued at each SKU's average cost for its grade (A and B grade). */
 export async function stockValuation(companyId: string) {
   const [row] = await prisma.$queryRaw<Array<{ value: Prisma.Decimal | null }>>`
-    SELECT SUM(sb.quantity * pv."avgCost") AS value
+    SELECT SUM(sb.quantity * ${balanceUnitCostSql}) AS value
     FROM "StockBalance" sb
     JOIN "ProductVariant" pv ON pv.id = sb."variantId"
     WHERE sb."companyId" = ${companyId}`;

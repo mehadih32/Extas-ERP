@@ -65,6 +65,7 @@ export const PRINT_INFO: Record<
     permission: "sales.view",
   },
   PAYMENT_RECEIPT: { label: "Money receipt", plural: "money receipts", permission: "sales.view" },
+  REFUND_VOUCHER: { label: "Refund voucher", plural: "refund vouchers", permission: "sales.view" },
   LEDGER_STATEMENT: {
     label: "Statement of account",
     plural: "statements",

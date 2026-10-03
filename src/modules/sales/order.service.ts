@@ -19,6 +19,7 @@ import {
   voidInvoiceTx,
 } from "@/modules/sales/documents.service";
 import { assertCanRecordReceipts, receivePaymentTx } from "@/modules/sales/payment.service";
+import { heldOnOrder } from "@/modules/sales/posting";
 import {
   assertStockOrOverride,
   type ResolvedLine,
@@ -31,6 +32,7 @@ import {
   orderShipmentSchema,
   updateOrderSchema,
 } from "@/modules/sales/schemas";
+import { assertCanRefund, REFUND_KIND_TEXT, refundBuyerTx } from "@/modules/sales/refund.service";
 import { releaseStock, reserveStock } from "@/modules/sales/stock-ops";
 import { money, orderTotals } from "@/modules/sales/totals";
 
@@ -395,9 +397,17 @@ export async function updateOrder(
   return getOrder(ctx, order.id);
 }
 
+/** The message when money still held on an order or proforma stops it being cancelled. */
+export function settleFirstMessage(held: Prisma.Decimal, number: string) {
+  return `${held.toFixed(2)} paid on ${number} has to be settled first: Accounts can pay it back, keep it as credit on the buyer's account or keep it as a cancellation charge.`;
+}
+
 /**
  * Cancels an order that has not been delivered: frees the reserved stock and
- * voids its invoice. Orders with payments need a refund first (Accounts).
+ * voids its invoice. Money still held on it is settled with `settle` (paid
+ * back, kept as the buyer's credit or kept as a cancellation charge, which
+ * needs Accounts' money keys); without it the order is not cancelled until
+ * Accounts has refunded the money.
  */
 export async function cancelOrder(
   ctx: CompanyContext,
@@ -405,7 +415,7 @@ export async function cancelOrder(
   raw: unknown,
   meta?: RequestMeta,
 ) {
-  const { reason } = cancelOrderSchema.parse(raw);
+  const { reason, settle } = cancelOrderSchema.parse(raw);
   const order = await ctx.db.salesOrder.findUnique({
     where: { id: orderId },
     include: { items: true, invoice: true },
@@ -416,12 +426,12 @@ export async function cancelOrder(
   if ((await deliveredByVariant(prisma, order.id)).size > 0) {
     throw new AppError("CONFLICT", "Goods on this order were delivered; record a return instead.");
   }
-  if (order.paidAmount.gt(0)) {
-    throw new AppError(
-      "CONFLICT",
-      `${order.paidAmount.toFixed(2)} was paid on this order; refund it before cancelling.`,
-    );
+  if (order.paidAmount.gt(0) && !settle) {
+    throw new AppError("CONFLICT", settleFirstMessage(order.paidAmount, order.number), {
+      settle: ["Say how to settle the money paid on this order"],
+    });
   }
+  if (settle) assertCanRefund(ctx, settle.kind);
   const liveInvoice = order.invoice && order.invoice.status !== "VOID" ? order.invoice : null;
   if (liveInvoice && !ctx.can("sales.invoice.edit")) {
     throw new AppError(
@@ -432,14 +442,44 @@ export async function cancelOrder(
 
   await prisma.$transaction(async (tx) => {
     await lockRow(tx, "SalesOrder", order.id);
-    const { count } = await tx.salesOrder.updateMany({
-      where: { id: order.id, status: { not: "CANCELLED" } },
+    const current = await tx.salesOrder.findUniqueOrThrow({
+      where: { id: order.id },
+      include: { invoice: true },
+    });
+    if (current.status === "CANCELLED") {
+      throw new AppError("CONFLICT", "This order is already cancelled.");
+    }
+    const invoice = current.invoice && current.invoice.status !== "VOID" ? current.invoice : null;
+    if (invoice) {
+      if (!ctx.can("sales.invoice.edit")) {
+        throw new AppError(
+          "FORBIDDEN",
+          `Cancelling also voids invoice ${invoice.number}; you may not void invoices.`,
+        );
+      }
+      // Its payments become an advance again, so they can be settled below.
+      await voidInvoiceTx(tx, ctx, invoice, `Order cancelled: ${reason}`, meta);
+    }
+    const held = await heldOnOrder(tx, order.id);
+    let settled = "";
+    if (held.gt(0)) {
+      if (!settle) {
+        throw new AppError("CONFLICT", settleFirstMessage(held, order.number), {
+          settle: ["Say how to settle the money paid on this order"],
+        });
+      }
+      const refund = await refundBuyerTx(
+        tx,
+        ctx,
+        { ...settle, orderId: order.id, amount: held, reason: `Order cancelled: ${reason}` },
+        meta,
+      );
+      settled = ` (${held.toFixed(2)} paid ${REFUND_KIND_TEXT[settle.kind]}, ${refund.number})`;
+    }
+    await tx.salesOrder.update({
+      where: { id: order.id },
       data: { status: "CANCELLED", dueAmount: 0 },
     });
-    if (count === 0) throw new AppError("CONFLICT", "This order is already cancelled.");
-    if (liveInvoice) {
-      await voidInvoiceTx(tx, ctx, liveInvoice, `Order cancelled: ${reason}`, meta);
-    }
     if (order.warehouseId) {
       for (const item of order.items) {
         await releaseStock(
@@ -456,7 +496,7 @@ export async function cancelOrder(
         action: "STATUS_CHANGE",
         entityType: "SalesOrder",
         entityId: order.id,
-        summary: `Cancelled order ${order.number}: ${reason}`,
+        summary: `Cancelled order ${order.number}: ${reason}${settled}`,
       },
       tx,
     );
@@ -514,7 +554,19 @@ export async function setOrderShipmentDate(
   return getOrder(ctx, order.id);
 }
 
-/** Order with lines (delivered / remaining), documents and payments. */
+/** Refunds as listed on an order or proforma (void ones too, marked by voidedAt). */
+export const refundSummary = {
+  id: true,
+  number: true,
+  kind: true,
+  amount: true,
+  method: true,
+  refundDate: true,
+  reason: true,
+  voidedAt: true,
+} as const;
+
+/** Order with lines (delivered / remaining), documents, payments and refunds. */
 export async function getOrder(ctx: CompanyContext, orderId: string) {
   const order = await ctx.db.salesOrder.findUnique({
     where: { id: orderId },
@@ -558,6 +610,7 @@ export async function getOrder(ctx: CompanyContext, orderId: string) {
           isAdvance: true,
         },
       },
+      refunds: { orderBy: [{ refundDate: "asc" }, { id: "asc" }], select: refundSummary },
       proforma: { select: { id: true, number: true } },
     },
   });

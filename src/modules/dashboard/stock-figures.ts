@@ -255,7 +255,7 @@ export type StockOnHand = {
   bGradeValue: Prisma.Decimal;
 };
 
-/** Pieces and value on hand by grade, at each SKU's average cost (all SKUs). */
+/** Pieces and value on hand by grade, at each SKU's average cost for the grade (all SKUs). */
 export async function stockOnHand(companyId: string): Promise<StockOnHand> {
   const [row] = await prisma.$queryRaw<
     Array<{
@@ -268,7 +268,7 @@ export async function stockOnHand(companyId: string): Promise<StockOnHand> {
     SELECT (SUM(sb.quantity) FILTER (WHERE sb.grade = 'A_GRADE'))::bigint AS "aPieces",
            (SUM(sb.quantity) FILTER (WHERE sb.grade = 'B_GRADE'))::bigint AS "bPieces",
            SUM(sb.quantity * pv."avgCost") FILTER (WHERE sb.grade = 'A_GRADE') AS "aValue",
-           SUM(sb.quantity * pv."avgCost") FILTER (WHERE sb.grade = 'B_GRADE') AS "bValue"
+           SUM(sb.quantity * pv."bGradeAvgCost") FILTER (WHERE sb.grade = 'B_GRADE') AS "bValue"
     FROM "StockBalance" sb
     JOIN "ProductVariant" pv ON pv.id = sb."variantId"
     WHERE sb."companyId" = ${companyId}`;

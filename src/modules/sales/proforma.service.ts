@@ -10,9 +10,15 @@ import type { CompanyContext } from "@/modules/auth/context";
 import { letterhead } from "@/modules/companies/letterhead";
 import { getDefaultWarehouse } from "@/modules/inventory/stock.service";
 import { assertPartyCanTransact } from "@/modules/parties/party.service";
-import { createOrderTx, getOrder } from "@/modules/sales/order.service";
-import { refreshOrderPayments } from "@/modules/sales/posting";
+import {
+  createOrderTx,
+  getOrder,
+  refundSummary,
+  settleFirstMessage,
+} from "@/modules/sales/order.service";
+import { heldOnProforma, refreshOrderPayments } from "@/modules/sales/posting";
 import { assertStockOrOverride, resolveOrderLines } from "@/modules/sales/pricing";
+import { assertCanRefund, REFUND_KIND_TEXT, refundBuyerTx } from "@/modules/sales/refund.service";
 import {
   cancelOrderSchema,
   convertProformaToOrderSchema,
@@ -25,7 +31,8 @@ import { advanceAmount, orderTotals } from "@/modules/sales/totals";
  * B2B pre-order flow:
  *   Quotation -> Proforma Invoice (advance, default 30%)
  *   advance received -> production project starts (see payment.service)
- *   goods ready -> Proforma converts to a sales order; the advance moves with it.
+ *   goods ready -> Proforma converts to a sales order; the advance (and any
+ *   refunds of it) moves with it.
  */
 
 /** One-click conversion of a quotation into a proforma invoice. */
@@ -120,8 +127,9 @@ export async function getProforma(ctx: CompanyContext, proformaId: string) {
           reference: true,
         },
       },
+      refunds: { orderBy: [{ refundDate: "asc" }, { id: "asc" }], select: refundSummary },
       productionProjects: {
-        select: { id: true, code: true, name: true, stage: true, targetDate: true },
+        select: { id: true, code: true, name: true, stage: true, status: true, targetDate: true },
       },
       salesOrder: { select: { id: true, number: true, status: true } },
     },
@@ -153,46 +161,82 @@ export async function listProformas(ctx: CompanyContext, raw: unknown = {}) {
   return { items, nextCursor: hasMore ? items[items.length - 1]?.id : undefined };
 }
 
-/** Cancels a proforma with no advance paid; its quotation can be converted again. */
+/**
+ * Cancels a proforma that has not become an order; its quotation can be
+ * converted again. An advance still held on it is settled with `settle` (paid
+ * back, kept as the buyer's credit or kept as a cancellation charge: Accounts'
+ * money keys); without it the proforma is not cancelled until Accounts has
+ * refunded the advance. A production project started by the advance keeps
+ * running: cancel it in Production if the goods are not wanted.
+ */
 export async function cancelProforma(
   ctx: CompanyContext,
   proformaId: string,
   raw: unknown,
   meta?: RequestMeta,
 ) {
-  const { reason } = cancelOrderSchema.parse(raw);
+  const { reason, settle } = cancelOrderSchema.parse(raw);
   const proforma = await ctx.db.proformaInvoice.findUnique({ where: { id: proformaId } });
   if (!proforma) throw new AppError("NOT_FOUND", "Proforma invoice not found.");
+  if (settle) assertCanRefund(ctx, settle.kind);
   await prisma.$transaction(async (tx) => {
     await lockRow(tx, "ProformaInvoice", proforma.id);
     const current = await tx.proformaInvoice.findUniqueOrThrow({ where: { id: proforma.id } });
-    if (current.status !== "ISSUED") {
+    if (current.status === "CANCELLED" || current.status === "CONVERTED") {
       throw new AppError(
         "CONFLICT",
-        `A proforma that is ${current.status.toLowerCase()} cannot be cancelled.`,
+        current.status === "CONVERTED"
+          ? `${current.number} became an order; cancel the order instead.`
+          : `${current.number} is already cancelled.`,
       );
     }
-    if (current.advancePaid.gt(0)) {
-      throw new AppError("CONFLICT", "An advance was paid on this proforma; refund it first.");
+    const held = await heldOnProforma(tx, current.id);
+    let settled = "";
+    if (held.gt(0)) {
+      if (!settle) {
+        throw new AppError("CONFLICT", settleFirstMessage(held, current.number), {
+          settle: ["Say how to settle the advance paid on this proforma"],
+        });
+      }
+      const refund = await refundBuyerTx(
+        tx,
+        ctx,
+        {
+          ...settle,
+          proformaId: current.id,
+          amount: held,
+          reason: `Proforma cancelled: ${reason}`,
+        },
+        meta,
+      );
+      settled = ` (${held.toFixed(2)} advance ${REFUND_KIND_TEXT[settle.kind]}, ${refund.number})`;
     }
     await tx.proformaInvoice.update({
-      where: { id: proforma.id },
+      where: { id: current.id },
       data: { status: "CANCELLED", quotationId: null },
     });
-    if (proforma.quotationId) {
+    if (current.quotationId) {
       await tx.quotation.update({
-        where: { id: proforma.quotationId },
+        where: { id: current.quotationId },
         data: { status: "ACCEPTED" },
       });
     }
+    const running = await tx.productionProject.findMany({
+      where: { proformaId: current.id, status: { notIn: ["COMPLETED", "CANCELLED"] } },
+      select: { code: true },
+    });
     await auditInCompany(
       ctx,
       meta,
       {
         action: "STATUS_CHANGE",
         entityType: "ProformaInvoice",
-        entityId: proforma.id,
-        summary: `Cancelled ${proforma.number}: ${reason}`,
+        entityId: current.id,
+        summary: `Cancelled ${current.number}: ${reason}${settled}${
+          running.length > 0
+            ? `; production ${running.map((p) => p.code).join(", ")} keeps running`
+            : ""
+        }`,
       },
       tx,
     );
@@ -241,11 +285,21 @@ export async function convertProformaToOrder(
   const orderId = await prisma.$transaction(
     async (tx) => {
       await lockRow(tx, "ProformaInvoice", proforma.id);
-      const { count } = await tx.proformaInvoice.updateMany({
-        where: { id: proforma.id, status: { notIn: ["CANCELLED", "CONVERTED"] } },
+      const current = await tx.proformaInvoice.findUniqueOrThrow({ where: { id: proforma.id } });
+      if (current.status === "CANCELLED" || current.status === "CONVERTED") {
+        throw new AppError("CONFLICT", `This proforma is already ${current.status.toLowerCase()}.`);
+      }
+      // Checked again under the lock: a refund may have taken part of the advance back.
+      if (current.advancePaid.lt(current.advanceAmount)) {
+        throw new AppError(
+          "CONFLICT",
+          `The advance of ${current.advanceAmount.toFixed(2)} is not fully received yet (${current.advancePaid.toFixed(2)} paid).`,
+        );
+      }
+      await tx.proformaInvoice.update({
+        where: { id: proforma.id },
         data: { status: "CONVERTED" },
       });
-      if (count === 0) throw new AppError("CONFLICT", "This proforma was already converted.");
       const order = await createOrderTx(
         tx,
         ctx,
@@ -267,6 +321,10 @@ export async function convertProformaToOrder(
         meta,
       );
       await tx.payment.updateMany({
+        where: { proformaId: proforma.id },
+        data: { orderId: order.id },
+      });
+      await tx.refund.updateMany({
         where: { proformaId: proforma.id },
         data: { orderId: order.id },
       });

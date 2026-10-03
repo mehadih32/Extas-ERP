@@ -84,6 +84,7 @@ export async function createCampaign(ctx: CompanyContext, raw: unknown, meta?: R
         id: { in: ids },
         kind: { in: ["BUYER", "BOTH"] },
         status: { in: ["ACTIVE", "DORMANT"] },
+        systemRole: null,
       },
       select: { id: true, code: true, name: true, phone: true, whatsapp: true, email: true },
     });

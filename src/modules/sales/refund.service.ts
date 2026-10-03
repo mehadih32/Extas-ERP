@@ -13,11 +13,13 @@ import { postJournalEntry, reverseJournalEntry } from "@/modules/accounts/journa
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { letterhead } from "@/modules/companies/letterhead";
+import { assertNotWalkIn } from "@/modules/parties/walk-in";
 import type { PermissionKey } from "@/modules/rbac/permissions";
 import { startProductionIfAdvancePaid } from "@/modules/sales/payment.service";
 import {
   heldOnOrder,
   heldOnProforma,
+  ledgerPartyId,
   refreshOrderPayments,
   refreshProformaPayments,
 } from "@/modules/sales/posting";
@@ -178,6 +180,7 @@ export async function refundBuyerTx(
     if (party.kind === "SUPPLIER") {
       throw new AppError("VALIDATION", `${party.name} is not a buyer.`);
     }
+    assertNotWalkIn(party, "A walk-in customer's money is refunded on their order.");
     await lockRow(tx, "Party", party.id);
     const credit = await accountCredit(tx, companyId, party.id);
     if (amount.gt(credit)) {
@@ -201,6 +204,8 @@ export async function refundBuyerTx(
   }
 
   const acc = await ensureControlAccounts(companyId, tx);
+  // A walk-in customer's money sits on the Walk-in customers account.
+  const ledgerParty = await ledgerPartyId(tx, companyId, partyId);
   const cashAccount =
     input.kind === "CASH"
       ? await cashAccountFor(tx, companyId, input.method ?? "CASH", input.accountId)
@@ -234,14 +239,19 @@ export async function refundBuyerTx(
     lines: [
       {
         accountId: fromAdvance ? acc.CUSTOMER_ADVANCE : acc.RECEIVABLE,
-        partyId,
+        partyId: ledgerParty,
         debit: amount,
         memo: fromAdvance ? "Advance refunded" : "Credit on account refunded",
       },
       input.kind === "CASH"
         ? { accountId: cashAccount!, credit: amount, memo: input.reference ?? undefined }
         : input.kind === "CREDIT"
-          ? { accountId: acc.RECEIVABLE, partyId, credit: amount, memo: "Credit on account" }
+          ? {
+              accountId: acc.RECEIVABLE,
+              partyId: ledgerParty,
+              credit: amount,
+              memo: "Credit on account",
+            }
           : { accountId: acc.OTHER_INCOME, credit: amount, memo: "Cancellation charge" },
     ],
   });

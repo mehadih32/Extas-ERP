@@ -868,7 +868,7 @@ model PurchaseReturnLine {
 
 /// A buyer (retail, wholesale, B2B), supplier/factory, or both.
 model Party {
-  id                String      @id @default(cuid())
+  id                String           @id @default(cuid())
   companyId         String
   code              String
   kind              PartyKind
@@ -880,22 +880,24 @@ model Party {
   email             String?
   address           String?
   city              String?
-  country           String?     @default("Bangladesh")
+  country           String?          @default("Bangladesh")
   taxId             String?
   // 360° profile signals
   grade             PartyGrade? // A+, A, B, C
-  isVerified        Boolean     @default(false) // 💙 Blue Verified badge
+  isVerified        Boolean          @default(false) // 💙 Blue Verified badge
   verifiedAt        DateTime?
-  status            PartyStatus @default(ACTIVE)
+  status            PartyStatus      @default(ACTIVE)
   statusChangedAt   DateTime?
-  creditLimit       Decimal?    @db.Decimal(14, 2)
+  creditLimit       Decimal?         @db.Decimal(14, 2)
   paymentTermsDays  Int?
-  openingBalance    Decimal     @default(0) @db.Decimal(14, 2) // + receivable / - payable
+  openingBalance    Decimal          @default(0) @db.Decimal(14, 2) // + receivable / - payable
   lastTransactionAt DateTime? // drives dormant buyer filters
   notes             String?
   customFields      Json?
-  createdAt         DateTime    @default(now())
-  updatedAt         DateTime    @updatedAt
+  /// Set on the account the system keeps itself (see PartySystemRole); null for real buyers and suppliers.
+  systemRole        PartySystemRole?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
 
   company              Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
   quotations           Quotation[]
@@ -916,6 +918,7 @@ model Party {
   generatedDocuments   GeneratedDocument[]
 
   @@unique([companyId, code])
+  @@unique([companyId, systemRole])
   @@index([companyId, kind, status])
   @@index([companyId, lastTransactionAt])
 }
@@ -2756,6 +2759,14 @@ enum BuyerType {
   RETAIL
   WHOLESALE
   B2B_CORPORATE
+}
+
+/// Accounts the system keeps for itself, one of each per company.
+/// WALK_IN ("Walk-in customers") carries the receivable and advance lines of every
+/// sale without a buyer profile (counter, website and social orders by name only),
+/// so every buyer-account line in the books names an account.
+enum PartySystemRole {
+  WALK_IN
 }
 
 enum PartyGrade {

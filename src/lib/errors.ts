@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { randomErrorCode } from "@/lib/error-code";
 
 export type ErrorCode =
   | "UNAUTHENTICATED"
@@ -56,7 +56,10 @@ export class AppError extends Error {
   }
 }
 
-/** Short random ID users can quote to support, e.g. "ERR-7F3K9Q2M". */
+/**
+ * Short random ID users can quote to support, e.g. "ERR-7F3K9Q2M": capitals and
+ * digits that are easy to read out (no 0 or O, 1 or I, and no dashes).
+ */
 export function newErrorId(): string {
-  return `ERR-${randomBytes(5).toString("base64url").toUpperCase().slice(0, 8)}`;
+  return randomErrorCode();
 }

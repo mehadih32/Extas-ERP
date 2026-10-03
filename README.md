@@ -18,7 +18,8 @@ npm run db:seed             # permissions, companies, built-in roles and the own
 npm run dev                 # http://localhost:3000
 ```
 
-Check the database connection at <http://localhost:3000/api/health>.
+Sign in at <http://localhost:3000> with the owner account from `.env` (`SEED_ADMIN_EMAIL` and
+`SEED_ADMIN_PASSWORD`). Check the database connection at <http://localhost:3000/api/health>.
 
 ## Useful commands
 
@@ -52,16 +53,58 @@ prisma/
   schema.prisma          # full database design (97 tables)
   migrations/            # SQL migrations applied to PostgreSQL
 src/
-  app/                   # Next.js App Router (routes; api/health for DB check)
-  components/            # shared UI components (added module by module)
+  app/                   # Next.js App Router: (auth) sign-in screens, (app) signed-in screens, api/
+  components/            # ui/ (shadcn/ui), shell/ (top bar, menus), then one folder per module
   hooks/                 # shared React hooks
   lib/                   # env validation, Prisma client
   modules/<module>/      # one folder per blueprint module (sales, production, ...)
+  proxy.ts               # sends visitors without a session to sign in
   server/actions/        # Server Actions
+  server/pages/          # the screens' gatekeepers (session, new password, company)
   server/services/       # business logic shared across modules
   styles/globals.css     # Tailwind + brand colors
   types/                 # shared TypeScript types
 ```
+
+## Screens
+
+Built one module at a time, each in its own pull request. So far:
+
+- **Sign in** (`/sign-in`) with email and password. Someone with a temporary password (a new
+  member, or a reset by the administrator) sets their own at `/change-password` before
+  anything else opens. Anyone can change their password from the account menu, and sign out
+  their other phones and computers at the same time.
+- **Choose a company** (`/select-company`) when no company is open or access to it was
+  removed. The switcher in the top bar changes company at any time.
+- **Dashboard** (`/`): the key figures (stock value, fixed assets, liabilities, today's sales,
+  net profit), each with an eye that hides it on that person's screens, and the Insights: top
+  sellers (period, SKUs or styles, by pieces or sales value, kept in the address so a link
+  shows the same list), highest stock, dead and slow stock, and low stock.
+
+The screens ask the same Server Actions as the API, so the backend's permissions decide what
+appears. With the built-in roles' default permissions:
+
+| Role                       | Key figures | Insights | Sales values | Stock values, costs, margins |
+| -------------------------- | ----------- | -------- | ------------ | ---------------------------- |
+| Super Admin, Accounts      | Yes         | Yes      | Yes          | Yes                          |
+| Sales Executive, Warehouse | No          | Yes      | Yes          | No                           |
+| Production Manager         | No          | Yes      | No           | No                           |
+| Employee                   | No          | No       | No           | No                           |
+
+For developers:
+
+- `src/proxy.ts` only checks that a session cookie is there: visitors without one go to sign
+  in and come back to the page afterwards. It renews the cookie but never decides access.
+- Every screen starts with `requireCompanyPage()` from `src/server/pages/guards.ts`, the same
+  check the Server Actions make. It sends people to sign in, to set a new password or to
+  choose a company.
+- A module's screens add their menu entry, with the permissions that open it, in
+  `src/components/shell/nav-items.ts`.
+- Components are [shadcn/ui](https://ui.shadcn.com) in `src/components/ui` (add more with
+  `npx shadcn@latest add <name>`), in the brand colours from `src/styles/globals.css`. The
+  fonts (Inter, Playfair Display, Noto Sans Bengali) are bundled with the app.
+- When something fails, the screen shows the blueprint's error window: "An error occurred.
+  Error Code: ERR-…". The server log has the same code next to the error.
 
 ## Login, companies and roles (backend)
 

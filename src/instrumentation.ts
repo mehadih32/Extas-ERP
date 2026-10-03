@@ -1,3 +1,5 @@
+import type { Instrumentation } from "next";
+
 /**
  * Runs once when the Next.js server starts. Starts the daily backup scheduler,
  * the reminder scheduler and the nightly housekeeping in the Node.js server: each
@@ -22,3 +24,15 @@ export async function register() {
     startHousekeepingScheduler();
   }
 }
+
+/**
+ * Called for every error Next.js catches while showing a screen or running a
+ * Server Action. The screen shows the person "Error Code: ERR-<digest>"; this
+ * puts the same code in the server log next to Next.js' own report of the error,
+ * so support can find it ("When something goes wrong" in deploy/README.md).
+ */
+export const onRequestError: Instrumentation.onRequestError = (error, request, context) => {
+  const digest = (error as { digest?: unknown } | null)?.digest;
+  if (typeof digest !== "string") return;
+  console.error(`[ERR-${digest}] ${request.method} ${request.path} (${context.routeType})`);
+};

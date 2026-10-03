@@ -2,19 +2,11 @@ import "server-only";
 
 import { cookies } from "next/headers";
 
-import { env } from "@/lib/env";
-
-export const SESSION_COOKIE = "extras_session";
+import { SESSION_COOKIE, sessionCookieOptions } from "@/lib/auth/session-cookie";
 
 export async function setSessionCookie(token: string, expiresAt: Date): Promise<void> {
   const store = await cookies();
-  store.set(SESSION_COOKIE, token, {
-    httpOnly: true,
-    secure: env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    expires: expiresAt,
-  });
+  store.set(SESSION_COOKIE, token, { ...sessionCookieOptions(), expires: expiresAt });
 }
 
 export async function readSessionCookie(): Promise<string | undefined> {

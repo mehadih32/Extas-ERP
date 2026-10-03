@@ -56,9 +56,12 @@ export function safeFileName(name: string): string {
   return cleaned.slice(-120) || "upload";
 }
 
-/** Read at call time so tests (and a changed .env) can point it elsewhere. */
+/**
+ * Read at call time so tests (and a changed .env) can point it elsewhere. A folder
+ * on the server, not part of the app: the build is told not to bundle it.
+ */
 export function uploadRoot(): string {
-  return path.resolve(process.env.UPLOAD_DIR || "./storage/uploads");
+  return path.resolve(/*turbopackIgnore: true*/ process.env.UPLOAD_DIR || "./storage/uploads");
 }
 
 function absolutePath(storagePath: string): string {

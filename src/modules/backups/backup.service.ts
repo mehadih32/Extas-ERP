@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { mkdir, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 
@@ -43,9 +43,12 @@ const STALE_RUN_MS = 6 * 60 * 60 * 1000;
 
 export type Actor = { userId: string };
 
-/** Read at call time so tests (and a changed .env) can point it elsewhere. */
+/**
+ * Read at call time so tests (and a changed .env) can point it elsewhere. A folder
+ * on the server, not part of the app: the build is told not to bundle it.
+ */
 export function backupRoot(): string {
-  return path.resolve(process.env.BACKUP_DIR || "./storage/backups");
+  return path.resolve(/*turbopackIgnore: true*/ process.env.BACKUP_DIR || "./storage/backups");
 }
 
 const pgDumpBinary = () => process.env.PG_DUMP_PATH || "pg_dump";
@@ -321,6 +324,78 @@ async function claimRun(trigger: BackupTrigger, actor: Actor | null) {
       data: { trigger, status: "RUNNING", triggeredById: actor?.userId ?? null },
     });
   });
+}
+
+/**
+ * Finishes the record of runs still marked QUEUED or RUNNING whose files were all
+ * written. A database restored from a backup holds that backup's own run as
+ * RUNNING (the dump is taken while it runs), and a server stopped during the
+ * Google Drive copy leaves its run that way too. The run's folder is the one
+ * whose manifest.json has the run's start time. Called when the server starts;
+ * a run without its files is left to the six-hour rule in claimRun.
+ */
+export async function settleFinishedRuns(): Promise<number> {
+  const open = await prisma.backupRun.findMany({
+    where: { status: { in: ["QUEUED", "RUNNING"] } },
+  });
+  if (open.length === 0) return 0;
+  const root = backupRoot();
+  const byStart = new Map<string, { dir: string; files: string[]; size: number; at: Date }>();
+  for (const entry of await readdir(root, { withFileTypes: true }).catch(() => [])) {
+    if (!entry.isDirectory()) continue;
+    const dir = path.join(root, entry.name);
+    try {
+      const manifestPath = path.join(dir, "manifest.json");
+      const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
+        createdAt?: unknown;
+        files?: { name?: unknown; bytes?: unknown }[];
+      };
+      const files = manifest.files ?? [];
+      if (typeof manifest.createdAt !== "string" || files.length === 0) continue;
+      const written = await stat(manifestPath);
+      let size = written.size;
+      for (const file of files) {
+        if (typeof file.name !== "string" || path.basename(file.name) !== file.name) {
+          throw new Error("unexpected file name");
+        }
+        const bytes = (await stat(path.join(dir, file.name))).size;
+        if (bytes !== file.bytes) throw new Error("incomplete file");
+        size += bytes;
+      }
+      byStart.set(manifest.createdAt, {
+        dir,
+        files: files.map((f) => f.name as string),
+        size,
+        at: written.mtime,
+      });
+    } catch {
+      // No manifest, or a file is missing: not a finished backup.
+    }
+  }
+
+  const config = await getBackupConfig();
+  let settled = 0;
+  for (const run of open) {
+    const found = byStart.get(run.startedAt.toISOString());
+    if (!found || !found.files.includes("database.dump")) continue;
+    const { count } = await prisma.backupRun.updateMany({
+      where: { id: run.id, status: { in: ["QUEUED", "RUNNING"] } },
+      data: {
+        status: "SUCCEEDED",
+        finishedAt: found.at,
+        dbDumpPath: path.relative(root, path.join(found.dir, "database.dump")),
+        mediaArchivePath: found.files.includes("media.tar.gz")
+          ? path.relative(root, path.join(found.dir, "media.tar.gz"))
+          : null,
+        sizeBytes: BigInt(found.size),
+        driveError: config.credentialsRef
+          ? "Not known whether this backup reached Google Drive: the server stopped or was restored before the copy was recorded."
+          : null,
+      },
+    });
+    settled += count;
+  }
+  return settled;
 }
 
 /** "2026-10-02_020000" in the schedule's timezone. */

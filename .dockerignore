@@ -1,0 +1,21 @@
+# Only the source the image needs goes into the Docker build.
+.git
+.next
+node_modules
+storage
+backups
+tests
+deploy
+coverage
+*.tsbuildinfo
+npm-debug.log*
+
+# Secrets never go into an image.
+.env
+.env.*
+!.env.example
+
+*.md
+.DS_Store
+.vscode
+.idea

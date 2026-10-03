@@ -1,0 +1,148 @@
+# Extras ERP on one server: PostgreSQL 16, the app, and Caddy for HTTPS.
+# Run it through the scripts in this folder (see README.md here). The settings
+# come from deploy/.env, which configure.sh writes.
+name: extras-erp
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  # The database. Not reachable from outside the server: only the app and the
+  # migrations talk to it, over the internal network.
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    shm_size: 256mb
+    stop_grace_period: 1m
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-extras_erp}
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run deploy/configure.sh first}
+      # Checksums catch disk corruption; C.UTF-8 sorting never changes with updates.
+      POSTGRES_INITDB_ARGS: --data-checksums --encoding=UTF8 --locale=C.UTF-8
+      # The app's own database user, made on first start (postgres/init-app-user.sh).
+      APP_DB_USER: ${APP_DB_USER:-extras_app}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?Run deploy/configure.sh first}
+    # Sized for a 4 to 8 GB server; raise the first two on a bigger one.
+    command:
+      - postgres
+      - -c
+      - shared_buffers=${PG_SHARED_BUFFERS:-512MB}
+      - -c
+      - effective_cache_size=${PG_EFFECTIVE_CACHE_SIZE:-2GB}
+      - -c
+      - maintenance_work_mem=128MB
+      - -c
+      - work_mem=16MB
+      - -c
+      - max_connections=50
+      - -c
+      - random_page_cost=1.1
+      - -c
+      - effective_io_concurrency=200
+      - -c
+      - wal_compression=on
+      - -c
+      - idle_in_transaction_session_timeout=10min
+      - -c
+      - log_min_duration_statement=1s
+    volumes:
+      - ${DATA_DIR:-/srv/extras-erp}/postgres:/var/lib/postgresql/data
+      - ./postgres/init-app-user.sh:/docker-entrypoint-initdb.d/10-app-user.sh:ro
+      # Read-only, for restore.sh.
+      - ${DATA_DIR:-/srv/extras-erp}/backups:/backups:ro
+      - ${DATA_DIR:-/srv/extras-erp}/safety-copies:/safety-copies:ro
+    healthcheck:
+      test: ["CMD-SHELL", 'pg_isready -U postgres -d "$${POSTGRES_DB}"']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+      start_interval: 2s
+    networks: [internal]
+    logging: *logging
+
+  # Brings the database up to date with the code, then stops. The app waits for it.
+  migrate:
+    build:
+      context: ..
+      target: tools
+    image: extras-erp-tools:latest
+    restart: "no"
+    environment:
+      DATABASE_URL: postgresql://${APP_DB_USER:-extras_app}:${APP_DB_PASSWORD}@db:5432/${POSTGRES_DB:-extras_erp}?schema=public
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [internal]
+    logging: *logging
+
+  # The ERP itself, with the daily backup, reminder and housekeeping clocks.
+  app:
+    build:
+      context: ..
+      target: runner
+    image: extras-erp-app:latest
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 30s
+    environment:
+      APP_URL: https://${APP_DOMAIN:?Run deploy/configure.sh first}
+      DATABASE_URL: postgresql://${APP_DB_USER:-extras_app}:${APP_DB_PASSWORD}@db:5432/${POSTGRES_DB:-extras_erp}?schema=public&connection_limit=10
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?Run deploy/configure.sh first}
+      GOOGLE_DRIVE_CLIENT_ID: ${GOOGLE_DRIVE_CLIENT_ID:-}
+      GOOGLE_DRIVE_CLIENT_SECRET: ${GOOGLE_DRIVE_CLIENT_SECRET:-}
+      AI_API_KEY: ${AI_API_KEY:-}
+      AI_INTAKE_MODEL: ${AI_INTAKE_MODEL:-}
+    volumes:
+      - ${DATA_DIR:-/srv/extras-erp}/uploads:/data/uploads
+      - ${DATA_DIR:-/srv/extras-erp}/backups:/data/backups
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/api/health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+      start_interval: 3s
+    # internal: the database. edge: Caddy, and the internet (Google Drive backups).
+    networks: [internal, edge]
+    logging: *logging
+
+  # HTTPS: gets and renews the Let's Encrypt certificate and sends traffic to the app.
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:?Run deploy/configure.sh first}
+      ACME_EMAIL: ${ACME_EMAIL:?Run deploy/configure.sh first}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ${DATA_DIR:-/srv/extras-erp}/caddy/data:/data
+      - ${DATA_DIR:-/srv/extras-erp}/caddy/config:/config
+    depends_on:
+      app:
+        condition: service_started
+    networks: [edge]
+    logging: *logging
+
+networks:
+  # No internet access: the database stays private.
+  internal:
+    internal: true
+  edge: {}

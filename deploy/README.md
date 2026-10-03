@@ -268,6 +268,10 @@ set once:
   about the network or a download (for example `Exit handler never called`), run it again:
   what was already downloaded is kept.
 - **The app does not start.** `sudo ./deploy/logs.sh app` shows why.
+- **Someone sees "An error occurred. Error Code: ERR-…".** Ask them for the code, then look
+  it up in the app's log, with the part after `ERR-`:
+  `sudo docker logs extras-erp-app-1 2>&1 | grep -B 15 -A 15 7F3K9Q2M`. The lines around it
+  say what failed.
 - **The disk is filling up.** `sudo ./deploy/status.sh` shows the free space. Old safety
   copies in `/srv/extras-erp/safety-copies/` can be deleted, the backups can be kept for
   fewer days, or the disk can be enlarged in Azure.

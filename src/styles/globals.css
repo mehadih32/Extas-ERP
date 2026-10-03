@@ -1,12 +1,101 @@
 @import "tailwindcss";
+@import "tw-animate-css";
 
 /*
- * Extras ERP design tokens (blueprint: "Ralph Lauren editorial" luxury aesthetic).
- * Usable as Tailwind utilities, e.g. bg-primary, text-accent, bg-background.
+ * Extras ERP design tokens (blueprint: "Ralph Lauren editorial" luxury aesthetic):
+ * Dark Green #0B3D2E, Deep Red #BE1434 for alerts and accents, Off-White #F8F8F8.
+ *
+ * The semantic names follow shadcn/ui, so components added later with the shadcn
+ * CLI pick up the brand: primary is the green, destructive is the red, and
+ * "accent" is shadcn's quiet hover surface (not the red). The raw brand colours
+ * are also there as brand-green, brand-red and brand-ivory.
  */
-@theme {
-  --color-primary: #0b3d2e; /* Dark Green */
-  --color-accent: #be1434; /* Deep Red — alerts & accents */
-  --color-background: #f8f8f8; /* Off-White */
-  --color-foreground: #1a1a1a;
+:root {
+  --brand-green: #0b3d2e;
+  --brand-red: #be1434;
+  --brand-ivory: #f8f8f8;
+
+  --background: #f8f8f8;
+  --foreground: #161616;
+  --card: #ffffff;
+  --card-foreground: #161616;
+  --popover: #ffffff;
+  --popover-foreground: #161616;
+  --primary: #0b3d2e;
+  --primary-foreground: #f8f8f8;
+  --secondary: #edf1ee;
+  --secondary-foreground: #0b3d2e;
+  --muted: #f1f0ec;
+  --muted-foreground: #66665f;
+  --accent: #edf1ee;
+  --accent-foreground: #0b3d2e;
+  --destructive: #be1434;
+  --destructive-foreground: #ffffff;
+  --success: #1f6b4f;
+  --border: #e4e1da;
+  --input: #d6d2c9;
+  --ring: #0b3d2e;
+  --radius: 0.25rem;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-brand-green: var(--brand-green);
+  --color-brand-red: var(--brand-red);
+  --color-brand-ivory: var(--brand-ivory);
+
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 2px);
+  --radius-xl: calc(var(--radius) + 6px);
+
+  /* Inter for the interface, Playfair Display for headings and figures; Bengali
+     text (names, addresses) falls back to Noto Sans Bengali. Set in app/fonts.ts. */
+  --font-sans: var(--font-inter), var(--font-bengali), ui-sans-serif, system-ui, sans-serif;
+  --font-serif: var(--font-playfair), var(--font-bengali), ui-serif, Georgia, serif;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-background font-sans text-foreground antialiased;
+    font-feature-settings:
+      "cv11" 1,
+      "ss01" 1;
+  }
+}
+
+@layer utilities {
+  /* Small capitals labels: "TOTAL ACTIVE STOCK VALUE". */
+  .eyebrow {
+    @apply text-[0.6875rem] font-medium tracking-[0.18em] text-muted-foreground uppercase;
+  }
+  /* Room for the phone's home bar under the bottom navigation. */
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
 }

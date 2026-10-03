@@ -1,10 +1,11 @@
 import type { Session, User } from "@prisma/client";
 
+import { SESSION_MAX_AGE_SECONDS } from "@/lib/auth/session-cookie";
 import { generateSessionToken, hashSessionToken } from "@/lib/auth/token";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
 
-export const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+export const SESSION_TTL_MS = SESSION_MAX_AGE_SECONDS * 1000; // 30 days
 const RENEW_WHEN_REMAINING_MS = 15 * 24 * 60 * 60 * 1000; // slide expiry after 15 days
 const LAST_SEEN_RESOLUTION_MS = 5 * 60 * 1000; // avoid a DB write on every request
 

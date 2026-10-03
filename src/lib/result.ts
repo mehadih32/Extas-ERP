@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { ZodError } from "zod";
 
+import { errorMessageFor } from "@/lib/error-code";
 import { AppError, newErrorId, type ErrorCode } from "@/lib/errors";
 
 export type ActionError = {
@@ -38,7 +39,7 @@ export function toActionError(error: unknown): ActionError {
   console.error(`[${errorId}]`, error);
   return {
     code: "INTERNAL",
-    message: `An error occurred. Error Code: ${errorId}. Please share this with your technical support.`,
+    message: errorMessageFor(errorId),
     errorId,
   };
 }

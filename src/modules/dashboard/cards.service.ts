@@ -87,8 +87,9 @@ export async function getMetricCards(ctx: CompanyContext, now: Date = new Date()
   const yesterdaySales = sum(yesterdayTotals, (a) => a.subType === "SALES");
 
   const hiddenSet = new Set<MetricCardKey>(hidden);
-  const card = <D extends Record<string, unknown>>(
-    key: MetricCardKey,
+  // Keeps each card's key as a literal type, so screens can tell the cards' details apart.
+  const card = <K extends MetricCardKey, D extends Record<string, unknown>>(
+    key: K,
     label: string,
     value: Prisma.Decimal,
     details: D,

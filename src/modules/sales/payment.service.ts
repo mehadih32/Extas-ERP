@@ -208,17 +208,81 @@ export async function listPayments(ctx: CompanyContext, raw: unknown = {}) {
   return { items, nextCursor: hasMore ? items[items.length - 1]?.id : undefined };
 }
 
-/** Money receipt document data. */
+/**
+ * Money receipt document data: money received from a buyer (payments made to
+ * suppliers are not sales data and answer "not found" here).
+ *
+ * `receivedToDate` is what had come in on the receipt's proforma (or order) up
+ * to and including this payment, by payment date, so a receipt printed again
+ * later still shows the position it was written for. Null for a payment on
+ * account.
+ */
 export async function getPaymentReceipt(ctx: CompanyContext, paymentId: string) {
   const payment = await ctx.db.payment.findUnique({
-    where: { id: paymentId },
+    where: { id: paymentId, direction: "RECEIVED" },
     include: {
-      party: { select: { id: true, code: true, name: true, phone: true, address: true } },
+      party: {
+        select: {
+          id: true,
+          code: true,
+          name: true,
+          contactPerson: true,
+          phone: true,
+          address: true,
+          taxId: true,
+        },
+      },
       account: { select: { name: true } },
-      order: { select: { number: true, total: true, paidAmount: true, dueAmount: true } },
-      proforma: { select: { number: true, total: true, advanceAmount: true, advancePaid: true } },
+      order: {
+        select: {
+          id: true,
+          number: true,
+          status: true,
+          total: true,
+          paidAmount: true,
+          dueAmount: true,
+          customerName: true,
+          customerPhone: true,
+          shippingAddress: true,
+          invoice: { select: { id: true, number: true, status: true } },
+        },
+      },
+      proforma: {
+        select: {
+          id: true,
+          number: true,
+          status: true,
+          total: true,
+          advancePercent: true,
+          advanceAmount: true,
+          advancePaid: true,
+        },
+      },
     },
   });
   if (!payment) throw new AppError("NOT_FOUND", "Payment not found.");
-  return { ...payment, letterhead: letterhead(ctx.company) };
+  // A proforma's advances move onto its order when it converts; the receipt stays with the proforma.
+  const against = payment.proformaId
+    ? { proformaId: payment.proformaId }
+    : payment.orderId
+      ? { orderId: payment.orderId }
+      : null;
+  let receivedToDate: Prisma.Decimal | null = null;
+  if (against) {
+    const { paymentDate: date, createdAt } = payment;
+    const agg = await ctx.db.payment.aggregate({
+      where: {
+        ...against,
+        direction: "RECEIVED",
+        OR: [
+          { paymentDate: { lt: date } },
+          { paymentDate: date, createdAt: { lt: createdAt } },
+          { paymentDate: date, createdAt, id: { lte: payment.id } },
+        ],
+      },
+      _sum: { amount: true },
+    });
+    receivedToDate = money(agg._sum.amount ?? 0);
+  }
+  return { ...payment, receivedToDate, letterhead: await letterhead(ctx) };
 }

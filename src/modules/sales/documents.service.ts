@@ -547,16 +547,25 @@ export async function getInvoiceDocument(ctx: CompanyContext, invoiceId: string)
     paidAmount: invoice.paidAmount,
     dueAmount: invoice.dueAmount,
     payments,
-    letterhead: letterhead(ctx.company),
+    letterhead: await letterhead(ctx),
   };
 }
 
+/** Pick-list / packing list data; price-free like the challan. */
 export async function getPackingListDocument(ctx: CompanyContext, packingListId: string) {
   const list = await ctx.db.packingList.findUnique({
     where: { id: packingListId },
     include: {
       items: { include: { variant: variantLabel }, orderBy: { id: "asc" } },
-      order: { select: { number: true, customerName: true, party: partyDetails } },
+      order: {
+        select: {
+          number: true,
+          customerName: true,
+          customerPhone: true,
+          shippingAddress: true,
+          party: partyDetails,
+        },
+      },
     },
   });
   if (!list) throw new AppError("NOT_FOUND", "Packing list not found.");
@@ -564,7 +573,7 @@ export async function getPackingListDocument(ctx: CompanyContext, packingListId:
     ...list,
     totalPieces: list.items.reduce((s, i) => s + i.quantity, 0),
     pickedPieces: list.items.filter((i) => i.isPicked).reduce((s, i) => s + i.quantity, 0),
-    letterhead: letterhead(ctx.company),
+    letterhead: await letterhead(ctx),
   };
 }
 
@@ -596,7 +605,7 @@ export async function getChallanDocument(ctx: CompanyContext, challanId: string)
       quantity: i.quantity,
     })),
     totalPieces: challan.items.reduce((s, i) => s + i.quantity, 0),
-    letterhead: letterhead(ctx.company),
+    letterhead: await letterhead(ctx),
   };
 }
 

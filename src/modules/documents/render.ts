@@ -11,12 +11,21 @@ import {
   tint,
   wrapText,
 } from "@/lib/pdf";
-import type { Align, Block, Column, PrintDocument, Row, RowStyle } from "@/modules/documents/model";
+import {
+  type Align,
+  type Block,
+  type Column,
+  type PrintDocument,
+  type Row,
+  type RowStyle,
+  TICK,
+} from "@/modules/documents/model";
 
 /*
  * Lays a printed document out on the company letterhead: A4 portrait, the logo,
- * name and contact details on top of the first page (a slim header on the pages
- * after it), the footer line and page numbers at the bottom of every page.
+ * name, contact details and registration numbers (BIN, trade licence) on top of
+ * the first page (a slim header on the pages after it), the footer line and page
+ * numbers at the bottom of every page.
  *
  * The look follows the brand: the company colour (dark green by default) for the
  * name, titles, rules and table headers, the accent colour (deep red) for a fine
@@ -57,7 +66,7 @@ const MAX_CELL_LINES = 8;
 
 type LineStyle = TextStyle & { color?: string; align?: Align };
 
-type ColumnBox = { x: number; width: number; align: Align };
+type ColumnBox = { x: number; width: number; align: Align; check: boolean };
 
 /** pdfkit's opened image (its type definitions leave openImage out). */
 type OpenedImage = { width: number; height: number; orientation?: number };
@@ -136,7 +145,7 @@ class Writer {
 
   // --- Letterhead -------------------------------------------------------------
 
-  /** Logo, name and contact details across the top of the first page. */
+  /** Logo, name, contact details and registration numbers across the top of the first page. */
   letterhead() {
     const { letterhead } = this.model;
     const top = MARGIN.top;
@@ -181,16 +190,25 @@ class Writer {
     const contactX = MARGIN.left + nameColumn + 10;
     const contactWidth = WIDTH - nameColumn - 10;
     let contactY = top + 2;
-    for (const contact of letterhead.contacts) {
-      for (const text of this.wrap(contact, contactWidth, SANS, 7.6).slice(0, 2)) {
-        this.line(text, contactX, contactY, contactWidth, {
-          font: SANS,
-          size: 7.6,
-          color: MUTED,
-          align: "right",
-        });
-        contactY += 10.6;
+    const contactLines = (texts: string[]) => {
+      for (const contact of texts) {
+        for (const text of this.wrap(contact, contactWidth, SANS, 7.6).slice(0, 2)) {
+          this.line(text, contactX, contactY, contactWidth, {
+            font: SANS,
+            size: 7.6,
+            color: MUTED,
+            align: "right",
+          });
+          contactY += 10.6;
+        }
       }
+    };
+    contactLines(letterhead.contacts);
+    // The BIN and trade licence number, a little apart from the address and phone.
+    const registrations = letterhead.registrations ?? [];
+    if (registrations.length > 0) {
+      if (letterhead.contacts.length > 0) contactY += 3;
+      contactLines(registrations);
     }
 
     const bottom = Math.max(top + logoHeight, nameTop + nameBlock, contactY);
@@ -410,7 +428,7 @@ class Writer {
     let x = MARGIN.left;
     return columns.map((c) => {
       const width = ((c.weight ?? 1) / total) * WIDTH;
-      const box = { x, width, align: c.align ?? "left" };
+      const box = { x, width, align: c.align ?? "left", check: c.check ?? false };
       x += width;
       return box;
     });
@@ -440,9 +458,11 @@ class Writer {
       const width = box.width - 2 * CELL_PAD - indent;
       const text = row.cells[i] ?? "";
       const lines =
-        box.align === "left"
-          ? this.wrap(text, width, font, TABLE_SIZE).slice(0, MAX_CELL_LINES)
-          : [text];
+        box.check && !bold
+          ? [] // a tick box instead of text
+          : box.align === "left"
+            ? this.wrap(text, width, font, TABLE_SIZE).slice(0, MAX_CELL_LINES)
+            : [text];
       const details =
         i === detailColumn
           ? (row.details ?? [])
@@ -534,6 +554,10 @@ class Writer {
     layout.cells.forEach((cell, i) => {
       const box = boxes[i]!;
       const x = box.x + CELL_PAD + cell.indent;
+      if (box.check && style === "normal") {
+        this.tickBox(box, top, row.cells[i] === TICK);
+        return;
+      }
       if (i === 0 && row.swatch) {
         const color = safeHex(row.swatch, "#FFFFFF");
         this.doc
@@ -557,6 +581,28 @@ class Writer {
       }
     });
     this.y += layout.height;
+  }
+
+  /** A small box in the cell, with a tick in the company colour when `ticked`. */
+  private tickBox(box: ColumnBox, top: number, ticked: boolean) {
+    const size = 7;
+    const x =
+      box.align === "center"
+        ? box.x + (box.width - size) / 2
+        : box.align === "right"
+          ? box.x + box.width - CELL_PAD - size
+          : box.x + CELL_PAD;
+    const y = top + CELL_PAD - 0.5; // level with the row's capitals and figures
+    this.doc.rect(x, y, size, size).lineWidth(0.6).strokeColor(INK).stroke();
+    if (ticked) {
+      this.doc
+        .moveTo(x + 1.5, y + size * 0.52)
+        .lineTo(x + size * 0.42, y + size - 1.5)
+        .lineTo(x + size - 1.3, y + 1.4)
+        .lineWidth(1.2)
+        .strokeColor(this.primary)
+        .stroke();
+    }
   }
 
   private totals(block: Extract<Block, { kind: "totals" }>) {

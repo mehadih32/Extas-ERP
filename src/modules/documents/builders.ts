@@ -5,12 +5,25 @@ import { dateColumn, localDay } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
 import { formatAmount, formatDay, formatInstantDay } from "@/lib/format";
 import type { CompanyContext } from "@/modules/auth/context";
+import { registrationNumbers } from "@/modules/companies/letterhead";
 import { matrixAxes } from "@/modules/inventory/matrix.service";
 import { stockByVariant } from "@/modules/inventory/stock.service";
-import type { Block, Letterhead, PrintDocument, PrintType, Row } from "@/modules/documents/model";
+import {
+  type Block,
+  type Letterhead,
+  type PrintDocument,
+  type PrintType,
+  type Row,
+  TICK,
+} from "@/modules/documents/model";
 import type { PrintRequest } from "@/modules/documents/schemas";
 import { getStatement } from "@/modules/parties/ledger.service";
-import { getChallanDocument, getInvoiceDocument } from "@/modules/sales/documents.service";
+import {
+  getChallanDocument,
+  getInvoiceDocument,
+  getPackingListDocument,
+} from "@/modules/sales/documents.service";
+import { getPaymentReceipt } from "@/modules/sales/payment.service";
 import { getProforma } from "@/modules/sales/proforma.service";
 import { getQuotation } from "@/modules/sales/quotation.service";
 
@@ -20,8 +33,12 @@ import { getQuotation } from "@/modules/sales/quotation.service";
  * model: every label, amount and date formatted the way it is printed, in the
  * company's time zone and currency grouping (12,34,567.50 for taka).
  *
- * Price-free by design: the delivery challan and the stock availability sheet
- * carry quantities only.
+ * Price-free by design: the packing list, the delivery challan and the stock
+ * availability sheet carry quantities only.
+ *
+ * Every document's letterhead also carries the company's BIN and trade licence
+ * number from its licence records (buildDocument adds them), so a renewal with
+ * a new number prints from then on.
  */
 
 /** How the stored copy is described and filed (GeneratedDocument columns). */
@@ -53,6 +70,15 @@ const PAYMENT_METHODS: Record<PaymentMethod, string> = {
   OTHER: "Other",
 };
 
+/** What a payment's reference is, by method ("Reference" for the rest). */
+const REFERENCE_LABELS: Partial<Record<PaymentMethod, string>> = {
+  CHEQUE: "Cheque no.",
+  BANK_TRANSFER: "Bank reference",
+  BKASH: "Transaction ID",
+  NAGAD: "Transaction ID",
+  ROCKET: "Transaction ID",
+};
+
 // =============================================================================
 // Shared pieces
 // =============================================================================
@@ -79,6 +105,17 @@ export function letterheadOf(company: Company): Letterhead {
     primaryColor: company.primaryColor,
     accentColor: company.accentColor,
   };
+}
+
+/** "BIN: 000123456-0101", "Trade licence: TRAD/DNCC/123": the lines under the contact details. */
+export function registrationLines(numbers: {
+  bin: string | null;
+  tradeLicense: string | null;
+}): string[] {
+  return [
+    numbers.bin ? `BIN: ${numbers.bin}` : null,
+    numbers.tradeLicense ? `Trade licence: ${numbers.tradeLicense}` : null,
+  ].filter((l): l is string => l !== null);
 }
 
 const money = (value: Prisma.Decimal.Value, currency: string) => formatAmount(value, 2, currency);
@@ -473,6 +510,139 @@ export async function invoiceDocument(
   };
 }
 
+const cartonCollator = new Intl.Collator("en", { numeric: true, sensitivity: "base" });
+
+/** Cartons in counting order ("2" before "10", "C-2" before "C-10"); loose pieces (none) last. */
+function compareCartons(a: string | null, b: string | null): number {
+  if (a === null || b === null) return (a === null ? 1 : 0) - (b === null ? 1 : 0);
+  return cartonCollator.compare(a, b);
+}
+
+/**
+ * The pick-list / packing list: every SKU with its pieces and a tick box for
+ * picking (ticked once picked in the system). Lines packed in cartons are sorted
+ * by carton, with each carton's pieces when there is more than one.
+ */
+export async function packingListDocument(
+  ctx: CompanyContext,
+  packingListId: string,
+): Promise<BuiltDocument> {
+  const pl = await getPackingListDocument(ctx, packingListId);
+  const tz = ctx.company.timezone;
+  const currency = ctx.company.currency;
+  const { order } = pl;
+  const receiver: PartyLike = order.party ?? {
+    name: order.customerName ?? "Walk-in customer",
+    phone: order.customerPhone,
+  };
+
+  const items = pl.items.map((item) => ({ ...item, carton: item.cartonNo?.trim() || null }));
+  const byCarton = items.some((i) => i.carton !== null);
+  // Within a carton the lines keep the order they were added in (the sort is stable).
+  if (byCarton) items.sort((a, b) => compareCartons(a.carton, b.carton));
+  const groups: Array<{ carton: string | null; items: typeof items }> = [];
+  for (const item of items) {
+    const last = groups.at(-1);
+    if (last && compareCartons(last.carton, item.carton) === 0) last.items.push(item);
+    else groups.push({ carton: item.carton, items: [item] });
+  }
+
+  const rows: Row[] = [];
+  let line = 0;
+  for (const group of groups) {
+    for (const item of group.items) {
+      line += 1;
+      rows.push({
+        cells: [
+          byCarton ? (item.carton ?? "Loose") : String(line),
+          item.variant.sku,
+          item.variant.style.name,
+          item.variant.color.name,
+          item.variant.size.name,
+          count(item.quantity, currency),
+          item.isPicked ? TICK : "",
+        ],
+      });
+    }
+    if (byCarton && groups.length > 1) {
+      const pieces = group.items.reduce((sum, i) => sum + i.quantity, 0);
+      rows.push({
+        cells: [
+          "",
+          "",
+          group.carton === null ? "Loose pieces" : `Carton ${group.carton} total`,
+          "",
+          "",
+          count(pieces, currency),
+          "",
+        ],
+        style: "subtotal",
+      });
+    }
+  }
+  rows.push({
+    cells: ["", "", "Total pieces", "", "", count(pl.totalPieces, currency), ""],
+    style: "total",
+  });
+
+  const model = base(ctx, "PACKING_LIST", {
+    title: "Packing List",
+    reference: pl.number,
+    meta: [
+      { label: "Packing list no.", value: pl.number },
+      { label: "Date", value: formatInstantDay(pl.createdAt, tz) },
+      { label: "Order no.", value: order.number },
+      ...(pl.cartons !== null ? [{ label: "Cartons", value: count(pl.cartons, currency) }] : []),
+      ...(pl.grossWeightKg !== null
+        ? [{ label: "Gross weight", value: `${formatAmount(pl.grossWeightKg, 2, currency)} kg` }]
+        : []),
+      {
+        label: "Picked",
+        value: `${count(pl.pickedPieces, currency)} of ${count(pl.totalPieces, currency)} pcs`,
+      },
+    ],
+    parties: [
+      {
+        heading: "Deliver to",
+        lines: partyLines(receiver, order.shippingAddress ?? receiver.address),
+      },
+    ],
+    blocks: [
+      {
+        kind: "table",
+        columns: [
+          byCarton
+            ? { label: "Carton", weight: 0.9 }
+            : { label: "#", align: "right" as const, weight: 0.45 },
+          { label: "SKU", weight: 2.1 },
+          { label: "Item", weight: 2.2 },
+          { label: "Colour", weight: 1.2 },
+          { label: "Size", weight: 0.75 },
+          { label: "Qty (pcs)", align: "right", weight: 0.95 },
+          { label: "Picked", align: "center", weight: 0.75, check: true },
+        ],
+        rows,
+        empty: "No items on this packing list.",
+      },
+      ...textBlock("Notes", pl.notes),
+      {
+        kind: "note",
+        text: "A ticked box means the line is picked. This packing list carries no prices.",
+      },
+    ],
+    signatures: ["Packed by", "Checked by", "Authorised signature"],
+  });
+  return {
+    model,
+    record: {
+      title: `Packing list ${pl.number}`,
+      referenceType: "PackingList",
+      referenceId: pl.id,
+      partyId: order.party?.id ?? null,
+    },
+  };
+}
+
 export async function challanDocument(
   ctx: CompanyContext,
   challanId: string,
@@ -546,6 +716,128 @@ export async function challanDocument(
       referenceType: "DeliveryChallan",
       referenceId: ch.id,
       partyId: order.party?.id ?? null,
+    },
+  };
+}
+
+/**
+ * The money receipt for a payment from a buyer: who paid, how much (in words),
+ * how and against what, and where the proforma or order stood once it was paid.
+ * The position counts payments up to this one only, so printing the receipt
+ * again later shows the same figures.
+ */
+export async function receiptDocument(
+  ctx: CompanyContext,
+  paymentId: string,
+): Promise<BuiltDocument> {
+  const r = await getPaymentReceipt(ctx, paymentId);
+  const tz = ctx.company.timezone;
+  const currency = ctx.company.currency;
+  const { order, proforma } = r;
+  const invoice = order?.invoice && order.invoice.status !== "VOID" ? order.invoice : null;
+  const payer: PartyLike = r.party ?? {
+    name: order?.customerName ?? "Walk-in customer",
+    phone: order?.customerPhone,
+    address: order?.shippingAddress,
+  };
+  const particulars = proforma
+    ? `Advance against proforma invoice ${proforma.number}`
+    : order
+      ? r.isAdvance
+        ? `Advance against order ${order.number}`
+        : invoice
+          ? `Payment against invoice ${invoice.number}`
+          : `Payment against order ${order.number}`
+      : "Payment on account";
+
+  const received = new Prisma.Decimal(r.receivedToDate ?? 0);
+  const left = (total: Prisma.Decimal) => Prisma.Decimal.max(total.minus(received), 0);
+  const position: Block[] = [];
+  if (proforma) {
+    const percent = new Prisma.Decimal(proforma.advancePercent).toDecimalPlaces(2).toString();
+    position.push({
+      kind: "figures",
+      figures: [
+        { label: "Proforma total", value: money(proforma.total, currency), hint: proforma.number },
+        { label: `Advance (${percent}%)`, value: money(proforma.advanceAmount, currency) },
+        { label: "Total received", value: money(received, currency), hint: "Up to this receipt" },
+        {
+          label: "Advance due",
+          value: money(left(proforma.advanceAmount), currency),
+          hint: `Balance due ${money(left(proforma.total), currency)}`,
+        },
+      ],
+    });
+  } else if (order) {
+    position.push({
+      kind: "figures",
+      figures: [
+        { label: "Order total", value: money(order.total, currency), hint: order.number },
+        { label: "Total received", value: money(received, currency), hint: "Up to this receipt" },
+        {
+          label: "Balance due",
+          value: money(left(order.total), currency),
+          hint: "After this receipt",
+        },
+      ],
+    });
+  }
+
+  const reference = r.reference?.trim();
+  const model = base(ctx, "PAYMENT_RECEIPT", {
+    title: "Money Receipt",
+    reference: r.number,
+    meta: [
+      { label: "Receipt no.", value: r.number },
+      { label: "Date", value: formatInstantDay(r.paymentDate, tz) },
+      { label: "Payment method", value: PAYMENT_METHODS[r.method] },
+      ...(reference
+        ? [{ label: REFERENCE_LABELS[r.method] ?? "Reference", value: reference }]
+        : []),
+      ...(proforma ? [{ label: "Proforma no.", value: proforma.number }] : []),
+      ...(order ? [{ label: "Order no.", value: order.number }] : []),
+      ...(invoice ? [{ label: "Invoice no.", value: invoice.number }] : []),
+    ],
+    parties: [
+      {
+        heading: "Received with thanks from",
+        lines: partyLines(payer),
+      },
+    ],
+    blocks: [
+      {
+        kind: "table",
+        columns: [
+          { label: "Particulars", weight: 5 },
+          { label: `Amount (${currency})`, align: "right", weight: 1.6 },
+        ],
+        rows: [{ cells: [particulars, money(r.amount, currency)] }],
+      },
+      {
+        kind: "totals",
+        rows: [{ label: `Received (${currency})`, value: money(r.amount, currency), strong: true }],
+        words: amountInWords(r.amount, currency),
+      },
+      ...position,
+      ...textBlock("Notes", r.notes),
+      ...(r.method === "CHEQUE"
+        ? [
+            {
+              kind: "note" as const,
+              text: "Paid by cheque: this receipt holds once the cheque is cleared.",
+            },
+          ]
+        : []),
+    ],
+    signatures: ["Received by", "Authorised signature"],
+  });
+  return {
+    model,
+    record: {
+      title: `Money receipt ${r.number}`,
+      referenceType: "Payment",
+      referenceId: r.id,
+      partyId: r.partyId,
     },
   };
 }
@@ -873,8 +1165,7 @@ export function letterheadDocument(ctx: CompanyContext): BuiltDocument {
   };
 }
 
-/** The printed model and its record for any print request. */
-export async function buildDocument(
+async function buildModel(
   ctx: CompanyContext,
   input: PrintRequest,
   now: Date,
@@ -886,8 +1177,12 @@ export async function buildDocument(
       return proformaDocument(ctx, input.id);
     case "COMMERCIAL_INVOICE":
       return invoiceDocument(ctx, input.id);
+    case "PACKING_LIST":
+      return packingListDocument(ctx, input.id);
     case "DELIVERY_CHALLAN":
       return challanDocument(ctx, input.id);
+    case "PAYMENT_RECEIPT":
+      return receiptDocument(ctx, input.id);
     case "LEDGER_STATEMENT":
       return statementDocument(ctx, input, now);
     case "STOCK_AVAILABILITY":
@@ -895,4 +1190,26 @@ export async function buildDocument(
     case "LETTERHEAD":
       return letterheadDocument(ctx);
   }
+}
+
+/**
+ * The printed model and its record for any print request, on a letterhead that
+ * carries the BIN and trade licence number on file (nothing is added when the
+ * company has recorded neither, so those documents print as before).
+ */
+export async function buildDocument(
+  ctx: CompanyContext,
+  input: PrintRequest,
+  now: Date,
+): Promise<BuiltDocument> {
+  const [built, numbers] = await Promise.all([
+    buildModel(ctx, input, now),
+    registrationNumbers(ctx.company.id),
+  ]);
+  const registrations = registrationLines(numbers);
+  if (registrations.length === 0) return built;
+  return {
+    ...built,
+    model: { ...built.model, letterhead: { ...built.model.letterhead, registrations } },
+  };
 }

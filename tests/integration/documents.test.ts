@@ -4,14 +4,15 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { localDay, nextDay } from "@/lib/dates";
+import { addDays, localDay, nextDay } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
 import { formatDay } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import type { CompanyContext } from "@/modules/auth/context";
 import * as logos from "@/modules/companies/logo.service";
+import * as compliance from "@/modules/compliance/compliance.service";
 import { buildDocument, drCr } from "@/modules/documents/builders";
-import type { Block, PrintDocument } from "@/modules/documents/model";
+import { type Block, type PrintDocument, TICK } from "@/modules/documents/model";
 import * as printing from "@/modules/documents/print.service";
 import { printRequestSchema } from "@/modules/documents/schemas";
 import { uploadRoot } from "@/modules/files/file.service";
@@ -161,6 +162,12 @@ const printedText = (model: PrintDocument) =>
 
 const notes = (model: PrintDocument) =>
   model.blocks.flatMap((b) => (b.kind === "note" ? [b.text] : []));
+
+/** The figure cards as [label, value, hint]. */
+const figures = (model: PrintDocument) =>
+  model.blocks.flatMap((b) =>
+    b.kind === "figures" ? b.figures.map((f) => [f.label, f.value, f.hint ?? ""]) : [],
+  );
 
 const linesOf = async (ctx: CompanyContext, documentId: string) =>
   pdfLines((await printing.downloadDocument(ctx, documentId)).bytes);
@@ -943,5 +950,532 @@ run("printed documents", () => {
     for (let i = 0; i < 24; i++) await printing.printDocument(env.ctx, { type: "LETTERHEAD" });
     await expectAppError(printing.printDocument(env.ctx, { type: "LETTERHEAD" }), "RATE_LIMITED");
     await printing.printDocument(env.as.ACCOUNTS, { type: "LETTERHEAD" });
+  });
+
+  it("prints the packing list by carton, with tick boxes for picking and no prices", async () => {
+    const env = await setup();
+    const order = await sellPolo(env);
+    const list = await documents.createPackingList(env.ctx, order.id, {
+      cartons: 2,
+      grossWeightKg: 8.5,
+      notes: "Fold each polo with tissue.",
+      items: [
+        { variantId: env.sku("Navy", "M"), quantity: 4, cartonNo: "10" },
+        { variantId: env.sku("Navy", "S"), quantity: 2, cartonNo: "2" },
+        { variantId: env.sku("Navy", "L"), quantity: 4, cartonNo: "2" },
+        { variantId: env.sku("Navy", "XL"), quantity: 2 },
+      ],
+    });
+    const listItems = (await documents.getPackingListDocument(env.ctx, list.id)).items;
+    const small = listItems.find((i) => i.variant.sku === "EX-PL-001-NAVY-S")!;
+    await documents.setPickedItems(env.ctx, list.id, { itemIds: [small.id], isPicked: true });
+
+    const built = await build(env.ctx, { type: "PACKING_LIST", id: list.id });
+    expect(built.model).toMatchObject({
+      type: "PACKING_LIST",
+      title: "Packing List",
+      reference: list.number,
+      signatures: ["Packed by", "Checked by", "Authorised signature"],
+    });
+    expect(built.model.meta).toEqual([
+      { label: "Packing list no.", value: list.number },
+      { label: "Date", value: formatDay(localDay(new Date(), env.company.timezone)) },
+      { label: "Order no.", value: order.number },
+      { label: "Cartons", value: "2" },
+      { label: "Gross weight", value: "8.50 kg" },
+      { label: "Picked", value: "2 of 12 pcs" },
+    ]);
+    expect(built.model.parties[0]).toMatchObject({ heading: "Deliver to" });
+    expect(built.model.parties[0]!.lines).toContain("Mirpur 10, Dhaka");
+    const [items] = tables(built.model);
+    expect(items!.columns.map((c) => c.label)).toEqual([
+      "Carton",
+      "SKU",
+      "Item",
+      "Colour",
+      "Size",
+      "Qty (pcs)",
+      "Picked",
+    ]);
+    expect(items!.columns.at(-1)).toMatchObject({ align: "center", check: true });
+    // By carton in counting order (2 before 10), loose pieces last, each carton totalled.
+    expect(items!.rows.map((r) => [r.style ?? "normal", ...r.cells])).toEqual([
+      ["normal", "2", "EX-PL-001-NAVY-S", "Classic Polo", "Navy", "S", "2", TICK],
+      ["normal", "2", "EX-PL-001-NAVY-L", "Classic Polo", "Navy", "L", "4", ""],
+      ["subtotal", "", "", "Carton 2 total", "", "", "6", ""],
+      ["normal", "10", "EX-PL-001-NAVY-M", "Classic Polo", "Navy", "M", "4", ""],
+      ["subtotal", "", "", "Carton 10 total", "", "", "4", ""],
+      ["normal", "Loose", "EX-PL-001-NAVY-XL", "Classic Polo", "Navy", "XL", "2", ""],
+      ["subtotal", "", "", "Loose pieces", "", "", "2", ""],
+      ["total", "", "", "Total pieces", "", "", "12", ""],
+    ]);
+    expect(printedText(built.model)).not.toMatch(/10,800|3,600|900\b/);
+    expect(built.record).toEqual({
+      title: `Packing list ${list.number}`,
+      referenceType: "PackingList",
+      referenceId: list.id,
+      partyId: env.buyer.id,
+    });
+
+    // The warehouse prints it.
+    const printed = await printing.printDocument(env.as.WAREHOUSE_TEAM, {
+      type: "PACKING_LIST",
+      id: list.id,
+    });
+    expect(printed).toMatchObject({
+      type: "PACKING_LIST",
+      typeLabel: "Packing list",
+      title: `Packing list ${list.number}`,
+      referenceType: "PackingList",
+      referenceId: list.id,
+      party: { id: env.buyer.id },
+      fileName: `Extras - Packing list ${list.number}.pdf`,
+      reused: false,
+    });
+    const lines = await linesOf(env.as.WAREHOUSE_TEAM, printed.id);
+    for (const text of [
+      "PACKING LIST",
+      list.number,
+      order.number,
+      "DELIVER TO",
+      "Rahim Traders",
+      "8.50 kg",
+      "2 of 12 pcs",
+      "Picked",
+      "EX-PL-001-NAVY-XL",
+      "Carton 2 total",
+      "Loose pieces",
+      "Total pieces",
+      "Fold each polo with tissue.",
+      "A ticked box means the line is picked. This packing list carries no prices.",
+      "Packed by",
+      "Checked by",
+      "Authorised signature",
+    ]) {
+      expect(lines).toContain(text);
+    }
+    expect(lines.some((l) => l.includes("?"))).toBe(false); // tick boxes are drawn
+
+    // Picking the rest changes the page: a new PDF.
+    await documents.setPickedItems(env.ctx, list.id, {
+      itemIds: listItems.map((i) => i.id),
+      isPicked: true,
+    });
+    const picked = await printing.printDocument(env.as.WAREHOUSE_TEAM, {
+      type: "PACKING_LIST",
+      id: list.id,
+    });
+    expect(picked.reused).toBe(false);
+    expect(await linesOf(env.as.WAREHOUSE_TEAM, picked.id)).toContain("12 of 12 pcs");
+
+    // Without cartons: numbered lines and one total.
+    const second = await sellPolo(env);
+    const plain = await documents.createPackingList(env.ctx, second.id);
+    const plainBuilt = await build(env.ctx, { type: "PACKING_LIST", id: plain.id });
+    const [plainItems] = tables(plainBuilt.model);
+    expect(plainItems!.columns[0]).toEqual({ label: "#", align: "right", weight: 0.45 });
+    expect(plainItems!.rows.map((r) => [r.style ?? "normal", r.cells[0]])).toEqual([
+      ["normal", "1"],
+      ["normal", "2"],
+      ["normal", "3"],
+      ["normal", "4"],
+      ["total", ""],
+    ]);
+    expect(plainBuilt.model.meta.map((m) => m.label)).toEqual([
+      "Packing list no.",
+      "Date",
+      "Order no.",
+      "Picked",
+    ]);
+
+    // A walk-in customer's packing list goes to the name and address on the order.
+    const walkIn = await orders.createOrder(env.ctx, {
+      channel: "POS",
+      customerName: "Karim Uddin",
+      customerPhone: "01900000000",
+      shippingAddress: "Road 3, Uttara, Dhaka",
+      lines: [{ variantId: env.sku("White", "M"), quantity: 2 }],
+      documents: { packingList: true },
+    });
+    const walkInList = await build(env.ctx, { type: "PACKING_LIST", id: walkIn.packingList!.id });
+    expect(walkInList.model.parties[0]!.lines).toEqual([
+      "Karim Uddin",
+      "01900000000",
+      "Road 3, Uttara, Dhaka",
+    ]);
+    expect(walkInList.record.partyId).toBeNull();
+
+    await expectAppError(
+      printing.printDocument(env.as.PRODUCTION_MANAGER, { type: "PACKING_LIST", id: list.id }),
+      "FORBIDDEN",
+    );
+    await expectAppError(build(env.ctx, { type: "PACKING_LIST", id: "missing" }), "NOT_FOUND");
+    const other = await setup("Fabric Apparel");
+    await expectAppError(
+      printing.printDocument(other.ctx, { type: "PACKING_LIST", id: list.id }),
+      "NOT_FOUND",
+    );
+  });
+
+  it("prints money receipts with the amount in words and the balance as of each receipt", async () => {
+    const env = await setup();
+    const seller = env.as.SALES_EXECUTIVE;
+    const today = localDay(new Date(), env.company.timezone);
+
+    // A proforma for 100 polos at 650 (65,000 taka), its 30% advance paid in two parts.
+    const q = await quotations.createQuotation(env.ctx, {
+      partyId: env.buyer.id,
+      validUntil: "2099-12-31",
+      items: [
+        {
+          categoryId: env.tops.id,
+          styleId: env.polo.id,
+          description: "Pique polo",
+          sizeBreakdown: { M: 50, L: 50 },
+          unitPrice: 650,
+        },
+      ],
+    });
+    const pi = await proformas.convertQuotationToProforma(env.ctx, q.id);
+    const first = (
+      await payments.receivePayment(env.as.ACCOUNTS, {
+        proformaId: pi.id,
+        amount: 10000,
+        method: "BANK_TRANSFER",
+        reference: "DBBL-7781",
+        notes: "First part of the advance",
+      })
+    ).payment;
+    const firstPrint = await printing.printDocument(seller, {
+      type: "PAYMENT_RECEIPT",
+      id: first.id,
+    });
+    expect(firstPrint).toMatchObject({
+      type: "PAYMENT_RECEIPT",
+      typeLabel: "Money receipt",
+      title: `Money receipt ${first.number}`,
+      referenceType: "Payment",
+      referenceId: first.id,
+      party: { id: env.buyer.id },
+      fileName: `Extras - Money receipt ${first.number}.pdf`,
+      reused: false,
+    });
+    let lines = await linesOf(seller, firstPrint.id);
+    for (const text of [
+      "MONEY RECEIPT",
+      first.number,
+      "PAYMENT METHOD",
+      "Bank transfer",
+      "BANK REFERENCE",
+      "DBBL-7781",
+      "PROFORMA NO.",
+      pi.number,
+      "RECEIVED WITH THANKS FROM",
+      "Rahim Traders",
+      "BIN / Tax ID: BIN-0042",
+      "Particulars",
+      `Advance against proforma invoice ${pi.number}`,
+      "10,000.00",
+      "In words: Taka Ten Thousand Only",
+      "PROFORMA TOTAL",
+      "65,000.00",
+      "ADVANCE (30%)",
+      "19,500.00",
+      "TOTAL RECEIVED",
+      "Up to this receipt",
+      "ADVANCE DUE",
+      "9,500.00",
+      "Balance due 55,000.00",
+      "First part of the advance",
+      "Received by",
+      "Authorised signature",
+    ]) {
+      expect(lines).toContain(text);
+    }
+    expect((await payments.getPaymentReceipt(seller, first.id)).receivedToDate?.toFixed(2)).toBe(
+      "10000.00",
+    );
+
+    // The rest of the advance, by cheque.
+    const second = (
+      await payments.receivePayment(env.as.ACCOUNTS, {
+        proformaId: pi.id,
+        amount: 9500,
+        method: "CHEQUE",
+        reference: "CHQ-004512",
+      })
+    ).payment;
+    const secondBuilt = await build(seller, { type: "PAYMENT_RECEIPT", id: second.id });
+    expect(figures(secondBuilt.model)).toEqual([
+      ["Proforma total", "65,000.00", pi.number],
+      ["Advance (30%)", "19,500.00", ""],
+      ["Total received", "19,500.00", "Up to this receipt"],
+      ["Advance due", "0.00", "Balance due 45,500.00"],
+    ]);
+    expect(secondBuilt.model.meta).toContainEqual({ label: "Cheque no.", value: "CHQ-004512" });
+    expect(secondBuilt.model.blocks.find((b) => b.kind === "totals")).toEqual({
+      kind: "totals",
+      rows: [{ label: "Received (BDT)", value: "9,500.00", strong: true }],
+      words: "Taka Nine Thousand Five Hundred Only",
+    });
+    expect(notes(secondBuilt.model)).toEqual([
+      "Paid by cheque: this receipt holds once the cheque is cleared.",
+    ]);
+    // The first receipt still shows where things stood when it was paid: the kept copy.
+    expect(
+      await printing.printDocument(seller, { type: "PAYMENT_RECEIPT", id: first.id }),
+    ).toMatchObject({ id: firstPrint.id, reused: true });
+
+    // Against an invoiced order, by bKash.
+    const order = await sellPolo(env);
+    const paid = (
+      await payments.receivePayment(env.as.ACCOUNTS, {
+        orderId: order.id,
+        amount: 4000,
+        method: "BKASH",
+        reference: "TRX123",
+      })
+    ).payment;
+    const orderBuilt = await build(seller, { type: "PAYMENT_RECEIPT", id: paid.id });
+    expect(orderBuilt.model.meta).toEqual([
+      { label: "Receipt no.", value: paid.number },
+      { label: "Date", value: formatDay(today) },
+      { label: "Payment method", value: "bKash" },
+      { label: "Transaction ID", value: "TRX123" },
+      { label: "Order no.", value: order.number },
+      { label: "Invoice no.", value: order.invoice!.number },
+    ]);
+    expect(tables(orderBuilt.model)[0]!.rows).toEqual([
+      { cells: [`Payment against invoice ${order.invoice!.number}`, "4,000.00"] },
+    ]);
+    expect(figures(orderBuilt.model)).toEqual([
+      ["Order total", "10,800.00", order.number],
+      ["Total received", "4,000.00", "Up to this receipt"],
+      ["Balance due", "6,800.00", "After this receipt"],
+    ]);
+    expect(notes(orderBuilt.model)).toEqual([]);
+    expect(orderBuilt.record).toEqual({
+      title: `Money receipt ${paid.number}`,
+      referenceType: "Payment",
+      referenceId: paid.id,
+      partyId: env.buyer.id,
+    });
+
+    // An advance on an order not invoiced yet.
+    const unbilled = await orders.createOrder(env.ctx, {
+      channel: "WHOLESALE",
+      partyId: env.buyer.id,
+      lines: [{ variantId: env.sku("White", "S"), quantity: 5 }],
+      documents: { invoice: false },
+    });
+    const advance = (
+      await payments.receivePayment(env.as.ACCOUNTS, {
+        orderId: unbilled.id,
+        amount: 1500,
+        method: "CASH",
+      })
+    ).payment;
+    const advanceBuilt = await build(seller, { type: "PAYMENT_RECEIPT", id: advance.id });
+    expect(tables(advanceBuilt.model)[0]!.rows[0]!.cells).toEqual([
+      `Advance against order ${unbilled.number}`,
+      "1,500.00",
+    ]);
+    expect(advanceBuilt.model.meta.map((m) => m.label)).toEqual([
+      "Receipt no.",
+      "Date",
+      "Payment method",
+      "Order no.",
+    ]);
+    expect(figures(advanceBuilt.model).at(-1)).toEqual([
+      "Balance due",
+      "3,000.00",
+      "After this receipt",
+    ]);
+
+    // On account: no order to show a balance for.
+    const onAccount = (
+      await payments.receivePayment(env.as.ACCOUNTS, {
+        partyId: env.buyer.id,
+        amount: 3000,
+        method: "CASH",
+      })
+    ).payment;
+    const accountBuilt = await build(seller, { type: "PAYMENT_RECEIPT", id: onAccount.id });
+    expect(tables(accountBuilt.model)[0]!.rows[0]!.cells).toEqual([
+      "Payment on account",
+      "3,000.00",
+    ]);
+    expect(figures(accountBuilt.model)).toEqual([]);
+    expect(accountBuilt.model.meta.map((m) => m.label)).toEqual([
+      "Receipt no.",
+      "Date",
+      "Payment method",
+    ]);
+
+    // A walk-in customer at the counter.
+    const walkIn = await orders.createOrder(env.ctx, {
+      channel: "POS",
+      customerName: "Karim Uddin",
+      customerPhone: "01900000000",
+      shippingAddress: "Road 3, Uttara, Dhaka",
+      lines: [{ variantId: env.sku("White", "M"), quantity: 2 }],
+    });
+    const counter = (
+      await payments.receivePayment(env.as.ACCOUNTS, {
+        orderId: walkIn.id,
+        amount: 2900,
+        method: "NAGAD",
+        reference: "NGD-55",
+      })
+    ).payment;
+    const counterPrint = await printing.printDocument(seller, {
+      type: "PAYMENT_RECEIPT",
+      id: counter.id,
+    });
+    expect(counterPrint.party).toBeNull();
+    lines = await linesOf(seller, counterPrint.id);
+    for (const text of [
+      "Karim Uddin",
+      "01900000000",
+      "Road 3, Uttara, Dhaka",
+      "Nagad",
+      "TRANSACTION ID",
+      "NGD-55",
+      "In words: Taka Two Thousand Nine Hundred Only",
+      "BALANCE DUE",
+      "0.00",
+    ]) {
+      expect(lines).toContain(text);
+    }
+
+    // Money paid out to a supplier is not a sales receipt.
+    const cash = await prisma.ledgerAccount.findFirstOrThrow({
+      where: { companyId: env.company.id },
+    });
+    const supplierPayment = await prisma.payment.create({
+      data: {
+        companyId: env.company.id,
+        number: "PAY-TEST-0001",
+        direction: "PAID",
+        method: "CASH",
+        amount: 500,
+        accountId: cash.id,
+      },
+    });
+    await expectAppError(payments.getPaymentReceipt(seller, supplierPayment.id), "NOT_FOUND");
+    await expectAppError(
+      build(seller, { type: "PAYMENT_RECEIPT", id: supplierPayment.id }),
+      "NOT_FOUND",
+    );
+
+    // Who may print receipts follows who sees sales.
+    const denied = await expectAppError(
+      printing.printDocument(env.as.PRODUCTION_MANAGER, { type: "PAYMENT_RECEIPT", id: paid.id }),
+      "FORBIDDEN",
+    );
+    expect(denied.message).toBe("You do not have permission to print money receipts.");
+    await printing.printDocument(env.as.ACCOUNTS, { type: "PAYMENT_RECEIPT", id: paid.id });
+    const other = await setup("Fabric Apparel");
+    await expectAppError(
+      printing.printDocument(other.ctx, { type: "PAYMENT_RECEIPT", id: paid.id }),
+      "NOT_FOUND",
+    );
+  });
+
+  it("prints the BIN and trade licence number from the licence records on every document", async () => {
+    const env = await setup();
+    const today = localDay(new Date(), env.company.timezone);
+    const order = await sellPolo(env);
+    const packingList = await documents.createPackingList(env.ctx, order.id);
+    const challan = await documents.createDeliveryChallan(env.ctx, order.id);
+    const payment = (
+      await payments.receivePayment(env.as.ACCOUNTS, {
+        orderId: order.id,
+        amount: 1000,
+        method: "CASH",
+      })
+    ).payment;
+
+    // Nothing on file: the letterhead is as before.
+    const before = await printing.printDocument(env.ctx, { type: "LETTERHEAD" });
+    const plain = await build(env.ctx, { type: "LETTERHEAD" });
+    expect(plain.model.letterhead.registrations).toBeUndefined();
+    expect((await linesOf(env.ctx, before.id)).some((l) => /BIN|licence/.test(l))).toBe(false);
+
+    const bin = await compliance.createCompliance(env.ctx, {
+      type: "VAT_BIN",
+      number: "000123456-0101",
+      issuingAuthority: "National Board of Revenue",
+    });
+    const licence = await compliance.createCompliance(env.ctx, {
+      type: "TRADE_LICENSE",
+      number: "TRAD/DNCC/123",
+      issueDate: addDays(today, -300),
+      expiryDate: addDays(today, 65),
+    });
+    const both = ["BIN: 000123456-0101", "Trade licence: TRAD/DNCC/123"];
+    for (const request of [
+      { type: "COMMERCIAL_INVOICE", id: order.invoice!.id },
+      { type: "PACKING_LIST", id: packingList.id },
+      { type: "DELIVERY_CHALLAN", id: challan.id },
+      { type: "PAYMENT_RECEIPT", id: payment.id },
+      { type: "LEDGER_STATEMENT", partyId: env.buyer.id },
+      { type: "STOCK_AVAILABILITY", brandId: env.brand.id },
+      { type: "LETTERHEAD" },
+    ]) {
+      expect((await build(env.ctx, request)).model.letterhead.registrations).toEqual(both);
+    }
+    const invoicePdf = await printing.printDocument(env.ctx, {
+      type: "COMMERCIAL_INVOICE",
+      id: order.invoice!.id,
+    });
+    const invoiceLines = await linesOf(env.ctx, invoicePdf.id);
+    for (const text of both) expect(invoiceLines).toContain(text);
+    // The data behind the screens' print layouts carries them too.
+    expect(
+      (await documents.getInvoiceDocument(env.ctx, order.invoice!.id)).letterhead,
+    ).toMatchObject({ bin: "000123456-0101", tradeLicense: "TRAD/DNCC/123" });
+
+    // The pad with the numbers is a new PDF; printing it again reuses it.
+    const numbered = await printing.printDocument(env.ctx, { type: "LETTERHEAD" });
+    expect(numbered).toMatchObject({ reused: false });
+    expect(numbered.id).not.toBe(before.id);
+    const padLines = await linesOf(env.ctx, numbered.id);
+    for (const text of both) expect(padLines).toContain(text);
+    expect(await printing.printDocument(env.ctx, { type: "LETTERHEAD" })).toMatchObject({
+      id: numbered.id,
+      reused: true,
+    });
+
+    // Renewing the licence under the same number changes nothing on paper.
+    const renewed = await compliance.renewCompliance(env.ctx, licence.id, {
+      expiryDate: addDays(today, 430),
+    });
+    expect(await printing.printDocument(env.ctx, { type: "LETTERHEAD" })).toMatchObject({
+      id: numbered.id,
+      reused: true,
+    });
+    // A new number prints from then on.
+    await compliance.renewCompliance(env.ctx, renewed.id, {
+      expiryDate: addDays(today, 800),
+      number: "TRAD/DNCC/456",
+    });
+    const renumbered = await printing.printDocument(env.ctx, { type: "LETTERHEAD" });
+    expect(renumbered.reused).toBe(false);
+    const renumberedLines = await linesOf(env.ctx, renumbered.id);
+    expect(renumberedLines).toContain("Trade licence: TRAD/DNCC/456");
+    expect(renumberedLines).not.toContain("Trade licence: TRAD/DNCC/123");
+
+    // An archived record is off the letterhead.
+    await compliance.archiveCompliance(env.ctx, bin.id);
+    expect((await build(env.ctx, { type: "LETTERHEAD" })).model.letterhead.registrations).toEqual([
+      "Trade licence: TRAD/DNCC/456",
+    ]);
+
+    // Another company prints its own numbers (none here).
+    const other = await setup("Fabric Apparel");
+    expect(
+      (await build(other.ctx, { type: "LETTERHEAD" })).model.letterhead.registrations,
+    ).toBeUndefined();
   });
 });

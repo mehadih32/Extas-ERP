@@ -291,7 +291,7 @@ export async function getBankStatement(
   return {
     title: "Bank Statement",
     note: `Statement of account as recorded in the books of ${ctx.company.legalName ?? ctx.company.name}.`,
-    letterhead: letterhead(ctx.company),
+    letterhead: await letterhead(ctx),
     accountHolder: {
       name: bank.accountName,
       company: ctx.company.legalName ?? ctx.company.name,

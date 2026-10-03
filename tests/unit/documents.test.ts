@@ -6,12 +6,13 @@ import { AppError } from "@/lib/errors";
 import { formatInstantDay } from "@/lib/format";
 import { ImageCheckError, inspectImage, inspectJpeg, inspectPng, LOGO_LIMITS } from "@/lib/images";
 import { checkLogo, MAX_LOGO_BYTES } from "@/modules/companies/logo.service";
-import { drCr, letterheadOf } from "@/modules/documents/builders";
+import { drCr, letterheadOf, registrationLines } from "@/modules/documents/builders";
 import {
   contentHash,
   documentFileName,
   type Letterhead,
   type PrintDocument,
+  TICK,
 } from "@/modules/documents/model";
 import { renderDocumentPdf } from "@/modules/documents/render";
 import { listDocumentsSchema, printRequestSchema } from "@/modules/documents/schemas";
@@ -339,6 +340,26 @@ describe("document model", () => {
     );
   });
 
+  it("puts the BIN and trade licence number on the letterhead when they are on file", () => {
+    expect(registrationLines({ bin: "000123456-0101", tradeLicense: "TRAD/DNCC/123" })).toEqual([
+      "BIN: 000123456-0101",
+      "Trade licence: TRAD/DNCC/123",
+    ]);
+    expect(registrationLines({ bin: null, tradeLicense: "TRAD/DNCC/123" })).toEqual([
+      "Trade licence: TRAD/DNCC/123",
+    ]);
+    expect(registrationLines({ bin: null, tradeLicense: null })).toEqual([]);
+    // The numbers are part of what is printed; a letterhead without them hashes as before.
+    const doc = sampleInvoice();
+    const numbered = sampleInvoice({
+      letterhead: { ...LETTERHEAD, registrations: ["BIN: 000123456-0101"] },
+    });
+    expect(contentHash(numbered, null)).not.toBe(contentHash(doc, null));
+    expect(
+      contentHash(sampleInvoice({ letterhead: { ...LETTERHEAD, registrations: undefined } }), null),
+    ).toBe(contentHash(doc, null));
+  });
+
   it("shows balances as debit or credit", () => {
     expect(drCr("125000.5", "BDT")).toBe("1,25,000.50 Dr");
     expect(drCr("-3000", "BDT")).toBe("3,000.00 Cr");
@@ -364,8 +385,17 @@ describe("document model", () => {
       printRequestSchema.safeParse({ type: "LEDGER_STATEMENT", partyId: "p", from: "2026-02-30" })
         .success,
     ).toBe(false);
+    expect(printRequestSchema.parse({ type: "PACKING_LIST", id: "pl1" })).toEqual({
+      type: "PACKING_LIST",
+      id: "pl1",
+    });
+    expect(printRequestSchema.parse({ type: "PAYMENT_RECEIPT", id: " pay1 " })).toEqual({
+      type: "PAYMENT_RECEIPT",
+      id: "pay1",
+    });
     expect(printRequestSchema.safeParse({ type: "PAYSLIP", id: "x" }).success).toBe(false);
     expect(printRequestSchema.safeParse({ type: "QUOTATION" }).success).toBe(false);
+    expect(printRequestSchema.safeParse({ type: "PAYMENT_RECEIPT", id: "" }).success).toBe(false);
     expect(
       printRequestSchema.safeParse({
         type: "STOCK_AVAILABILITY",
@@ -373,6 +403,10 @@ describe("document model", () => {
       }).success,
     ).toBe(false);
     expect(listDocumentsSchema.parse({ take: "5" })).toEqual({ take: 5 });
+    expect(listDocumentsSchema.parse({ type: "PACKING_LIST" })).toEqual({
+      type: "PACKING_LIST",
+      take: 20,
+    });
     expect(listDocumentsSchema.safeParse({ type: "PAYSLIP" }).success).toBe(false);
   });
 });
@@ -443,6 +477,67 @@ describe("letterhead PDFs", () => {
     );
     expect(statement).toContain("STATEMENT OF ACCOUNT");
     expect(statement).toContain("CANCELLED");
+  });
+
+  it("prints the BIN and trade licence number under the contact details", async () => {
+    const registrations = ["BIN: 000123456-0101", "Trade licence: TRAD/DNCC/123"];
+    const lines = pdfLines(
+      await renderDocumentPdf(sampleInvoice({ letterhead: { ...LETTERHEAD, registrations } }), {
+        compress: false,
+      }),
+    );
+    const at = (text: string) => lines.indexOf(text);
+    expect(at("hello@extras.test")).toBeGreaterThanOrEqual(0);
+    expect(at("BIN: 000123456-0101")).toBeGreaterThan(at("hello@extras.test"));
+    expect(at("Trade licence: TRAD/DNCC/123")).toBeGreaterThan(at("BIN: 000123456-0101"));
+    // Only on the first page's letterhead, not the slim header of the pages after it.
+    expect(lines.filter((l) => l === "BIN: 000123456-0101")).toHaveLength(1);
+
+    // A company with no address or phone on file still shows them.
+    const bare = pdfLines(
+      await renderDocumentPdf(
+        sampleInvoice({ letterhead: { ...LETTERHEAD, contacts: [], registrations } }),
+        { compress: false },
+      ),
+    );
+    expect(bare).toContain("BIN: 000123456-0101");
+    expect(bare).toContain("Trade licence: TRAD/DNCC/123");
+  });
+
+  it("draws tick boxes in a check column and prints text on total rows", async () => {
+    const pickList = (picked: string) =>
+      sampleInvoice({
+        title: "Packing List",
+        blocks: [
+          {
+            kind: "table",
+            columns: [
+              { label: "SKU", weight: 3 },
+              { label: "Qty (pcs)", align: "right" },
+              { label: "Picked", align: "center", check: true },
+            ],
+            rows: [
+              { cells: ["EX-PL-001-NAVY-S", "2", picked] },
+              { cells: ["EX-PL-001-NAVY-M", "4", ""] },
+              { cells: ["Total pieces", "6", "2 of 6"], style: "total" },
+            ],
+          },
+        ],
+      });
+    const ticked = await renderDocumentPdf(pickList(TICK), { compress: false });
+    const lines = pdfLines(ticked);
+    for (const text of ["Picked", "EX-PL-001-NAVY-S", "EX-PL-001-NAVY-M", "2 of 6"]) {
+      expect(lines).toContain(text);
+    }
+    // Boxes are drawn, never printed as a character the font lacks.
+    expect(lines.some((l) => l.includes("?") || l.includes(TICK))).toBe(false);
+    const content = ticked.toString("latin1");
+    expect(content.match(/ 7 7 re\n/g)).toHaveLength(2);
+    // The ticked box has one tick stroke more than the empty one.
+    const empty = (await renderDocumentPdf(pickList(""), { compress: false })).toString("latin1");
+    expect(empty.match(/ 7 7 re\n/g)).toHaveLength(2);
+    const ticks = (pdf: string) => pdf.match(/\n1\.2 w\n/g)?.length ?? 0;
+    expect(ticks(content)).toBe(ticks(empty) + 1);
   });
 
   it("prints the blank letterhead pad with the logo and a centred footer", async () => {

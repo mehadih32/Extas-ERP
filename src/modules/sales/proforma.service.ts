@@ -131,7 +131,7 @@ export async function getProforma(ctx: CompanyContext, proformaId: string) {
     ...proforma,
     advanceDue: Prisma.Decimal.max(proforma.advanceAmount.minus(proforma.advancePaid), 0),
     balanceDue: Prisma.Decimal.max(proforma.total.minus(proforma.advancePaid), 0),
-    letterhead: letterhead(ctx.company),
+    letterhead: await letterhead(ctx),
   };
 }
 

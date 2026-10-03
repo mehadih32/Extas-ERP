@@ -1,6 +1,6 @@
-import { Prisma, type SalesChannel } from "@prisma/client";
+import { Prisma, type SalesChannel, type SalesOrderStatus } from "@prisma/client";
 
-import { dayRange } from "@/lib/dates";
+import { dateColumn, dateOnly, dayRange, localDay } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
 import { nextDocumentNumber } from "@/lib/numbering";
 import { prisma } from "@/lib/prisma";
@@ -28,6 +28,7 @@ import {
   cancelOrderSchema,
   createOrderSchema,
   listOrdersSchema,
+  orderShipmentSchema,
   updateOrderSchema,
 } from "@/modules/sales/schemas";
 import { releaseStock, reserveStock } from "@/modules/sales/stock-ops";
@@ -129,6 +130,8 @@ type OrderDraft = {
   proformaId?: string;
   warehouseId: string;
   orderDate?: Date;
+  /** The day it is due to ship ("2026-11-20"). */
+  shipmentDate?: string | null;
   lines: ResolvedLine[];
   charges: { discount?: number; shippingCharge?: number; tax?: number };
   customerName?: string | null;
@@ -138,6 +141,15 @@ type OrderDraft = {
   overrideReason?: string;
 };
 
+/** A shipment cannot be due before the order was taken. */
+function checkShipmentDate(ctx: CompanyContext, shipmentDate: string, orderDate: Date) {
+  if (shipmentDate < localDay(orderDate, ctx.company.timezone)) {
+    throw new AppError("VALIDATION", "The shipment date is before the order date.", {
+      shipmentDate: ["Choose a day on or after the order date"],
+    });
+  }
+}
+
 /** Creates a confirmed order and reserves its stock (inside a transaction). */
 export async function createOrderTx(
   tx: Tx,
@@ -145,6 +157,8 @@ export async function createOrderTx(
   draft: OrderDraft,
   meta?: RequestMeta,
 ) {
+  const orderDate = draft.orderDate ?? new Date();
+  if (draft.shipmentDate) checkShipmentDate(ctx, draft.shipmentDate, orderDate);
   const totals = orderTotals(
     draft.lines.map((l) => ({ ...l, discount: l.discount })),
     draft.charges,
@@ -158,7 +172,8 @@ export async function createOrderTx(
       proformaId: draft.proformaId ?? null,
       warehouseId: draft.warehouseId,
       status: "CONFIRMED",
-      orderDate: draft.orderDate ?? new Date(),
+      orderDate,
+      shipmentDate: draft.shipmentDate ? dateColumn(draft.shipmentDate) : null,
       customerName: draft.customerName ?? null,
       customerPhone: draft.customerPhone ?? null,
       shippingAddress: draft.shippingAddress ?? null,
@@ -198,6 +213,7 @@ export async function createOrderTx(
  */
 export async function createOrder(ctx: CompanyContext, raw: unknown, meta?: RequestMeta) {
   const input = createOrderSchema.parse(raw);
+  if (input.shipmentDate) checkShipmentDate(ctx, input.shipmentDate, input.orderDate ?? new Date());
   if (input.payment) assertCanRecordReceipts(ctx);
   const party = input.partyId ? await assertPartyCanTransact(ctx, input.partyId, "SALE") : null;
   const warehouse = await resolveWarehouse(ctx, input.warehouseId);
@@ -229,6 +245,7 @@ export async function createOrder(ctx: CompanyContext, raw: unknown, meta?: Requ
         partyId: party?.id ?? null,
         warehouseId: warehouse.id,
         orderDate: input.orderDate,
+        shipmentDate: input.shipmentDate,
         lines,
         charges: input,
         customerName: input.customerName,
@@ -447,6 +464,56 @@ export async function cancelOrder(
   return getOrder(ctx, order.id);
 }
 
+/** Orders whose goods have not all left yet: their shipment date can still change. */
+const SHIPMENT_OPEN: SalesOrderStatus[] = ["DRAFT", "CONFIRMED", "PROCESSING", "PACKED"];
+
+/**
+ * Sets, moves or clears the day an open order is due to ship. Shipment
+ * reminders follow it (a moved date starts its reminders afresh).
+ */
+export async function setOrderShipmentDate(
+  ctx: CompanyContext,
+  orderId: string,
+  raw: unknown,
+  meta?: RequestMeta,
+) {
+  const { shipmentDate } = orderShipmentSchema.parse(raw);
+  const order = await ctx.db.salesOrder.findUnique({ where: { id: orderId } });
+  if (!order) throw new AppError("NOT_FOUND", "Order not found.");
+  if (!SHIPMENT_OPEN.includes(order.status)) {
+    throw new AppError(
+      "CONFLICT",
+      `This order is ${order.status.toLowerCase().replace(/_/g, " ")}; its shipment date can no longer change.`,
+    );
+  }
+  if (shipmentDate) checkShipmentDate(ctx, shipmentDate, order.orderDate);
+  const before = dateOnly(order.shipmentDate);
+  if (before !== shipmentDate) {
+    await prisma.$transaction(async (tx) => {
+      const { count } = await tx.salesOrder.updateMany({
+        where: { id: order.id, companyId: ctx.company.id, status: { in: SHIPMENT_OPEN } },
+        data: { shipmentDate: shipmentDate ? dateColumn(shipmentDate) : null },
+      });
+      if (count === 0)
+        throw new AppError("CONFLICT", "This order just changed. Refresh and try again.");
+      await auditInCompany(
+        ctx,
+        meta,
+        {
+          action: "UPDATE",
+          entityType: "SalesOrder",
+          entityId: order.id,
+          summary: `Shipment date of ${order.number}: ${before ?? "none"} -> ${shipmentDate ?? "none"}`,
+          before: { shipmentDate: before },
+          after: { shipmentDate },
+        },
+        tx,
+      );
+    });
+  }
+  return getOrder(ctx, order.id);
+}
+
 /** Order with lines (delivered / remaining), documents and payments. */
 export async function getOrder(ctx: CompanyContext, orderId: string) {
   const order = await ctx.db.salesOrder.findUnique({
@@ -498,6 +565,7 @@ export async function getOrder(ctx: CompanyContext, orderId: string) {
   const delivered = await deliveredByVariant(prisma, order.id);
   return {
     ...order,
+    shipmentDate: dateOnly(order.shipmentDate),
     items: order.items.map((i) => ({
       ...i,
       delivered: delivered.get(i.variantId) ?? 0,
@@ -542,5 +610,8 @@ export async function listOrders(ctx: CompanyContext, raw: unknown = {}) {
   });
   const hasMore = rows.length > take;
   const items = hasMore ? rows.slice(0, take) : rows;
-  return { items, nextCursor: hasMore ? items[items.length - 1]?.id : undefined };
+  return {
+    items: items.map((o) => ({ ...o, shipmentDate: dateOnly(o.shipmentDate) })),
+    nextCursor: hasMore ? items[items.length - 1]?.id : undefined,
+  };
 }

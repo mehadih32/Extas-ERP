@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import { ZodError } from "zod";
 
+import { addDays, localDay } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import * as catalog from "@/modules/inventory/catalog.service";
@@ -812,6 +814,77 @@ run("payments, invoices and walk-in sales", () => {
     expect(list.items).toHaveLength(1);
     const receipt = await payments.getPaymentReceipt(env.ctx, list.items[0]!.id);
     expect(receipt.account.name).toBe("Bank");
+  });
+});
+
+run("order shipment date", () => {
+  beforeEach(resetDb);
+
+  it("sets, moves and clears the day an order is due to ship", async () => {
+    const env = await setup();
+    const day = (n: number) => addDays(localDay(new Date(), env.ctx.company.timezone), n);
+    const shipmentAudits = (orderId: string) =>
+      prisma.auditLog.findMany({
+        where: { entityType: "SalesOrder", entityId: orderId, summary: { startsWith: "Shipment" } },
+        orderBy: { createdAt: "asc" },
+      });
+
+    const order = await wholesaleOrder(env, { shipmentDate: day(10) });
+    expect(order.shipmentDate).toBe(day(10));
+    expect((await orders.listOrders(env.ctx)).items.map((o) => o.shipmentDate)).toEqual([day(10)]);
+    const plain = await orders.createOrder(env.ctx, {
+      channel: "WHOLESALE",
+      partyId: env.buyer.id,
+      lines: [{ variantId: env.sku("White", "M"), quantity: 1 }],
+    });
+    expect(plain.shipmentDate).toBeNull();
+
+    // A Sales Executive moves it; the change is in the audit trail.
+    const moved = await orders.setOrderShipmentDate(env.salesCtx, order.id, {
+      shipmentDate: day(14),
+    });
+    expect(moved.shipmentDate).toBe(day(14));
+    expect((await shipmentAudits(order.id)).map((a) => a.summary)).toEqual([
+      `Shipment date of ${order.number}: ${day(10)} -> ${day(14)}`,
+    ]);
+    // The same day again changes nothing.
+    await orders.setOrderShipmentDate(env.ctx, order.id, { shipmentDate: day(14) });
+    expect(await shipmentAudits(order.id)).toHaveLength(1);
+
+    // Not before the order was taken, and only real days.
+    await expectAppError(
+      orders.setOrderShipmentDate(env.ctx, order.id, { shipmentDate: day(-1) }),
+      "VALIDATION",
+    );
+    await expectAppError(wholesaleOrder(env, { shipmentDate: day(-1) }), "VALIDATION");
+    await expect(
+      orders.setOrderShipmentDate(env.ctx, order.id, { shipmentDate: "20/11/2026" }),
+    ).rejects.toThrow(ZodError);
+    await expect(orders.setOrderShipmentDate(env.ctx, order.id, {})).rejects.toThrow(ZodError);
+
+    const cleared = await orders.setOrderShipmentDate(env.ctx, order.id, { shipmentDate: null });
+    expect(cleared.shipmentDate).toBeNull();
+    expect((await shipmentAudits(order.id)).map((a) => a.summary)).toEqual([
+      `Shipment date of ${order.number}: ${day(10)} -> ${day(14)}`,
+      `Shipment date of ${order.number}: ${day(14)} -> none`,
+    ]);
+
+    // Once the goods have left, the date stays as it was.
+    const delivered = await wholesaleOrder(env, {
+      shipmentDate: day(0),
+      documents: { deliveryChallan: true },
+    });
+    expect(delivered.status).toBe("DELIVERED");
+    expect(delivered.shipmentDate).toBe(day(0));
+    await expectAppError(
+      orders.setOrderShipmentDate(env.ctx, delivered.id, { shipmentDate: day(3) }),
+      "CONFLICT",
+    );
+    const other = await setup("Fabric Apparel");
+    await expectAppError(
+      orders.setOrderShipmentDate(other.ctx, order.id, { shipmentDate: day(3) }),
+      "NOT_FOUND",
+    );
   });
 });
 

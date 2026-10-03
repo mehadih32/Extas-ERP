@@ -8,6 +8,7 @@ import * as attendance from "@/modules/hr/attendance.service";
 import * as leave from "@/modules/hr/leave.service";
 import * as payroll from "@/modules/hr/payroll.service";
 import * as portal from "@/modules/hr/portal.service";
+import * as tasks from "@/modules/reminders/task.service";
 
 /*
  * Employee portal Server Actions (portal.self): the signed-in employee's own
@@ -35,3 +36,7 @@ export const myPayslipAction = async (itemId: string) =>
   runAction(async () => payroll.myPayslip(await self(), itemId));
 export const myAdvancesAction = async () =>
   runAction(async () => advances.myAdvances(await self()));
+export const myTasksAction = async (query: unknown = {}) =>
+  runAction(async () => tasks.myTasks(await self(), query));
+export const setMyTaskStatusAction = async (taskId: string, input: unknown) =>
+  runAction(async () => tasks.setMyTaskStatus(await self(), taskId, input, await getRequestMeta()));

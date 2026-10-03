@@ -10,9 +10,11 @@ import type { CompanyContext } from "@/modules/auth/context";
 import {
   DEFAULT_ROLE_PERMISSIONS,
   PERMISSIONS,
+  type PermissionKey,
   SYSTEM_ROLE_NAMES,
   isPermissionKey,
 } from "@/modules/rbac/permissions";
+import { assertAllowed, canDeleteRole, canEditRole, canRenameRole } from "@/modules/rbac/rules";
 
 const permissionKeysSchema = z
   .array(z.string())
@@ -20,15 +22,22 @@ const permissionKeysSchema = z
   .refine((keys) => keys.every(isPermissionKey), { message: "Unknown permission" })
   .transform((keys) => [...new Set(keys)]);
 
+const roleName = z
+  .string()
+  .trim()
+  .min(2, "Give the role a name of at least 2 characters")
+  .max(60, "Use at most 60 characters");
+const roleDescription = z.string().trim().max(300, "Use at most 300 characters");
+
 export const createRoleSchema = z.object({
-  name: z.string().trim().min(2).max(60),
-  description: z.string().trim().max(300).optional(),
+  name: roleName,
+  description: roleDescription.optional(),
   permissions: permissionKeysSchema,
 });
 
 export const updateRoleSchema = z.object({
-  name: z.string().trim().min(2).max(60).optional(),
-  description: z.string().trim().max(300).nullable().optional(),
+  name: roleName.optional(),
+  description: roleDescription.nullable().optional(),
   permissions: permissionKeysSchema.optional(),
 });
 
@@ -90,12 +99,16 @@ export async function ensureSystemRoles(companyId: string, db: Db = prisma) {
   return roles;
 }
 
-/** Roles of the active company with their permission keys and member counts. */
+/**
+ * Roles of the active company with their permission keys, their active members
+ * (memberCount) and all their members including deactivated ones (membershipCount,
+ * which keeps a role from being deleted).
+ */
 export async function listRoles(ctx: CompanyContext) {
   const roles = await ctx.db.role.findMany({
     include: {
       permissions: { select: { permission: { select: { key: true } } } },
-      _count: { select: { memberships: { where: { isActive: true } } } },
+      memberships: { select: { isActive: true } },
     },
     orderBy: [{ isSystem: "desc" }, { name: "asc" }],
   });
@@ -105,12 +118,42 @@ export async function listRoles(ctx: CompanyContext) {
     description: r.description,
     systemRole: r.systemRole,
     isSystem: r.isSystem,
-    memberCount: r._count.memberships,
+    memberCount: r.memberships.filter((m) => m.isActive).length,
+    membershipCount: r.memberships.length,
     permissions:
       r.systemRole === "SUPER_ADMIN"
         ? PERMISSIONS.map((p) => p.key)
-        : r.permissions.map((rp) => rp.permission.key),
+        : r.permissions.map((rp) => rp.permission.key as PermissionKey),
   }));
+}
+
+export type RoleSummary = Awaited<ReturnType<typeof listRoles>>[number] & {
+  /** What the person looking may do to the role (nothing without company.roles.manage). */
+  can: { edit: boolean; rename: boolean; delete: boolean };
+};
+
+/**
+ * The Roles screen: every role with what the person looking may do to it, by the
+ * same rules updateRole and deleteRole enforce. Changing roles needs
+ * company.roles.manage (`canManage`); people who only manage members see the
+ * roles to know what each one gives.
+ */
+export async function getRolesScreen(
+  ctx: CompanyContext,
+): Promise<{ roles: RoleSummary[]; canManage: boolean }> {
+  const canManage = ctx.can("company.roles.manage");
+  const roles = (await listRoles(ctx)).map((role) => {
+    const edit = canManage && canEditRole(role).ok;
+    return {
+      ...role,
+      can: {
+        edit,
+        rename: edit && canRenameRole(role).ok,
+        delete: canManage && canDeleteRole(role, role.membershipCount).ok,
+      },
+    };
+  });
+  return { roles, canManage };
 }
 
 /** The permission catalogue grouped for a role editor. */
@@ -165,13 +208,9 @@ export async function updateRole(
     include: { permissions: { select: { permission: { select: { key: true } } } } },
   });
   if (!role) throw new AppError("NOT_FOUND", "Role not found.");
-  if (role.systemRole === "SUPER_ADMIN") {
-    throw new AppError("FORBIDDEN", "The Super Admin role always has every permission.");
-  }
-  if (role.isSystem && input.name && input.name !== role.name) {
-    throw new AppError("FORBIDDEN", "Built-in roles cannot be renamed.");
-  }
+  assertAllowed(canEditRole(role));
   if (input.name && input.name !== role.name) {
+    assertAllowed(canRenameRole(role));
     const duplicate = await ctx.db.role.findFirst({
       where: { name: input.name, id: { not: role.id } },
     });
@@ -217,10 +256,7 @@ export async function deleteRole(ctx: CompanyContext, roleId: string, meta: Requ
     include: { _count: { select: { memberships: true } } },
   });
   if (!role) throw new AppError("NOT_FOUND", "Role not found.");
-  if (role.isSystem) throw new AppError("FORBIDDEN", "Built-in roles cannot be deleted.");
-  if (role._count.memberships > 0) {
-    throw new AppError("CONFLICT", "Move the users in this role to another role first.");
-  }
+  assertAllowed(canDeleteRole(role, role._count.memberships));
   await ctx.db.role.delete({ where: { id: role.id } });
   await recordAudit({
     companyId: ctx.company.id,

@@ -1,6 +1,8 @@
+import type { SystemRole, UserStatus } from "@prisma/client";
 import { z } from "zod";
 
 import { generateTemporaryPassword, hashPassword } from "@/lib/auth/password";
+import { localDay } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
@@ -8,17 +10,38 @@ import { recordAudit } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { emailSchema } from "@/modules/auth/schemas";
 import { revokeAllUserSessions } from "@/modules/auth/session.service";
+import {
+  type Actor,
+  assertAllowed,
+  canChangeRole,
+  canDeactivate,
+  canGrantRole,
+  canReactivate,
+  canResetPassword,
+} from "@/modules/rbac/rules";
 
 export const addMemberSchema = z.object({
   email: emailSchema,
-  name: z.string().trim().min(2).max(100),
-  phone: z.string().trim().max(30).optional(),
-  roleId: z.string().min(1),
+  name: z
+    .string()
+    .trim()
+    .min(2, "Enter their name (at least 2 characters)")
+    .max(100, "Use at most 100 characters"),
+  phone: z.string().trim().max(30, "Use at most 30 characters").optional(),
+  roleId: z.string().min(1, "Choose a role"),
 });
 
 const memberInclude = {
   user: {
-    select: { id: true, email: true, name: true, phone: true, status: true, lastLoginAt: true },
+    select: {
+      id: true,
+      email: true,
+      name: true,
+      phone: true,
+      status: true,
+      lastLoginAt: true,
+      isSuperAdmin: true,
+    },
   },
   role: { select: { id: true, name: true, systemRole: true } },
 } as const;
@@ -28,6 +51,15 @@ export async function listMembers(ctx: CompanyContext) {
     include: memberInclude,
     orderBy: [{ isActive: "desc" }, { user: { name: "asc" } }],
   });
+}
+
+/** The person acting, as the member rules (rbac/rules.ts) see them. */
+function actorOf(ctx: CompanyContext): Actor {
+  return {
+    userId: ctx.user.id,
+    systemRole: ctx.role?.systemRole ?? null,
+    isPlatformOwner: ctx.user.isSuperAdmin,
+  };
 }
 
 async function getRoleInCompany(ctx: CompanyContext, roleId: string) {
@@ -45,14 +77,19 @@ async function getMembership(ctx: CompanyContext, membershipId: string) {
   return membership;
 }
 
-/** Blocks changes that would leave a company without an active Super Admin. */
-async function assertNotLastSuperAdmin(ctx: CompanyContext, membershipId: string) {
-  const others = await ctx.db.companyMembership.count({
+/** The company's active Super Admins other than this member (so it never loses its last one). */
+async function otherActiveSuperAdmins(ctx: CompanyContext, membershipId: string) {
+  return ctx.db.companyMembership.count({
     where: { id: { not: membershipId }, isActive: true, role: { systemRole: "SUPER_ADMIN" } },
   });
-  if (others === 0) {
-    throw new AppError("CONFLICT", "The company must keep at least one active Super Admin.");
-  }
+}
+
+/** Whether the user also belongs to another company (a membership there, active or not). */
+async function worksElsewhere(ctx: CompanyContext, userId: string) {
+  const elsewhere = await prisma.companyMembership.count({
+    where: { userId, companyId: { not: ctx.company.id } },
+  });
+  return elsewhere > 0;
 }
 
 /**
@@ -63,13 +100,7 @@ async function assertNotLastSuperAdmin(ctx: CompanyContext, membershipId: string
 export async function addMember(ctx: CompanyContext, rawInput: unknown, meta: RequestMeta = {}) {
   const input = addMemberSchema.parse(rawInput);
   const role = await getRoleInCompany(ctx, input.roleId);
-  if (
-    role.systemRole === "SUPER_ADMIN" &&
-    ctx.role?.systemRole !== "SUPER_ADMIN" &&
-    !ctx.user.isSuperAdmin
-  ) {
-    throw new AppError("FORBIDDEN", "Only a Super Admin can grant the Super Admin role.");
-  }
+  assertAllowed(canGrantRole(actorOf(ctx), role));
 
   let temporaryPassword: string | undefined;
   let user = await prisma.user.findUnique({ where: { email: input.email } });
@@ -126,15 +157,11 @@ export async function changeMemberRole(
   const role = await getRoleInCompany(ctx, roleId);
   if (membership.roleId === role.id) return membership;
 
-  const isPrivileged = ctx.role?.systemRole === "SUPER_ADMIN" || ctx.user.isSuperAdmin;
-  if (
-    (role.systemRole === "SUPER_ADMIN" || membership.role.systemRole === "SUPER_ADMIN") &&
-    !isPrivileged
-  ) {
-    throw new AppError("FORBIDDEN", "Only a Super Admin can grant or remove the Super Admin role.");
-  }
-  if (membership.role.systemRole === "SUPER_ADMIN")
-    await assertNotLastSuperAdmin(ctx, membership.id);
+  const others =
+    membership.role.systemRole === "SUPER_ADMIN"
+      ? await otherActiveSuperAdmins(ctx, membership.id)
+      : 0;
+  assertAllowed(canChangeRole(actorOf(ctx), membership.role, role, others));
 
   const updated = await ctx.db.companyMembership.update({
     where: { id: membership.id },
@@ -155,7 +182,10 @@ export async function changeMemberRole(
   return updated;
 }
 
-/** Deactivating removes access to this company immediately (checked on every request). */
+/**
+ * Deactivating removes access to this company immediately (checked on every
+ * request); reactivating gives it back in the role the member had.
+ */
 export async function setMemberActive(
   ctx: CompanyContext,
   membershipId: string,
@@ -164,17 +194,23 @@ export async function setMemberActive(
 ) {
   const membership = await getMembership(ctx, membershipId);
   if (membership.isActive === isActive) return membership;
-  if (!isActive) {
-    if (membership.userId === ctx.user.id) {
-      throw new AppError("CONFLICT", "You cannot deactivate your own access.");
-    }
-    if (membership.role.systemRole === "SUPER_ADMIN") {
-      if (ctx.role?.systemRole !== "SUPER_ADMIN" && !ctx.user.isSuperAdmin) {
-        throw new AppError("FORBIDDEN", "Only a Super Admin can deactivate a Super Admin.");
-      }
-      await assertNotLastSuperAdmin(ctx, membership.id);
-    }
+  const actor = actorOf(ctx);
+  if (isActive) {
+    assertAllowed(canReactivate(actor, membership.role));
+  } else {
+    const others =
+      membership.role.systemRole === "SUPER_ADMIN"
+        ? await otherActiveSuperAdmins(ctx, membership.id)
+        : 0;
+    assertAllowed(
+      canDeactivate(
+        actor,
+        { userId: membership.userId, systemRole: membership.role.systemRole },
+        others,
+      ),
+    );
   }
+
   const updated = await ctx.db.companyMembership.update({
     where: { id: membership.id },
     data: { isActive },
@@ -193,8 +229,10 @@ export async function setMemberActive(
 }
 
 /**
- * Issues a new temporary password. A company admin may only reset users who belong
- * to no other company; resetting shared users is reserved for the platform owner.
+ * Issues a new temporary password and signs the user out everywhere. A company
+ * admin may only reset users who belong to no other company; resetting shared
+ * users is reserved for the platform owner, and a Super Admin's password for
+ * Super Admins.
  */
 export async function resetMemberPassword(
   ctx: CompanyContext,
@@ -202,23 +240,14 @@ export async function resetMemberPassword(
   meta: RequestMeta = {},
 ) {
   const membership = await getMembership(ctx, membershipId);
-  if (membership.userId === ctx.user.id) {
-    throw new AppError("CONFLICT", "Use Change Password for your own account.");
-  }
-  if (!ctx.user.isSuperAdmin) {
-    const otherCompanies = await prisma.companyMembership.count({
-      where: { userId: membership.userId, companyId: { not: ctx.company.id } },
-    });
-    if (otherCompanies > 0) {
-      throw new AppError(
-        "FORBIDDEN",
-        "This user also works in another company. Ask the platform owner.",
-      );
-    }
-    const target = await prisma.user.findUnique({ where: { id: membership.userId } });
-    if (target?.isSuperAdmin)
-      throw new AppError("FORBIDDEN", "You cannot reset the platform owner.");
-  }
+  assertAllowed(
+    canResetPassword(actorOf(ctx), {
+      userId: membership.userId,
+      systemRole: membership.role.systemRole,
+      isPlatformOwner: membership.user.isSuperAdmin,
+      worksElsewhere: await worksElsewhere(ctx, membership.userId),
+    }),
+  );
 
   const temporaryPassword = generateTemporaryPassword();
   await prisma.user.update({
@@ -241,4 +270,115 @@ export async function resetMemberPassword(
     meta,
   });
   return { temporaryPassword };
+}
+
+// --- The Team screen -----------------------------------------------------------
+
+export type TeamRole = {
+  id: string;
+  name: string;
+  description: string | null;
+  systemRole: SystemRole | null;
+  isSystem: boolean;
+};
+
+export type TeamMember = {
+  /** The membership: what the member actions take. */
+  id: string;
+  name: string;
+  email: string;
+  phone: string | null;
+  /** INVITED until the first sign-in with the temporary password. */
+  status: UserStatus;
+  /** Whether they can open this company (false once deactivated). */
+  isActive: boolean;
+  role: { id: string; name: string; systemRole: SystemRole | null };
+  /** Days in company time ("2026-10-03"). */
+  joinedOn: string;
+  lastSignedInOn: string | null;
+  isYou: boolean;
+  isPlatformOwner: boolean;
+  /** What the person looking may do to this member (the services' own rules). */
+  can: { changeRole: boolean; deactivate: boolean; reactivate: boolean; resetPassword: boolean };
+  /** The roles they may move this member to. */
+  roleChoices: string[];
+};
+
+export type Team = {
+  members: TeamMember[];
+  roles: TeamRole[];
+  /** The roles they may give someone they add. */
+  grantableRoleIds: string[];
+};
+
+/**
+ * Everyone in the active company with what the person looking may do to each,
+ * decided by the same rules the member actions enforce.
+ */
+export async function listTeam(ctx: CompanyContext): Promise<Team> {
+  const [memberships, roles] = await Promise.all([
+    listMembers(ctx),
+    ctx.db.role.findMany({
+      select: { id: true, name: true, description: true, systemRole: true, isSystem: true },
+      orderBy: [{ isSystem: "desc" }, { name: "asc" }],
+    }),
+  ]);
+  const shared = await prisma.companyMembership.findMany({
+    where: {
+      userId: { in: memberships.map((m) => m.userId) },
+      companyId: { not: ctx.company.id },
+    },
+    select: { userId: true },
+    distinct: ["userId"],
+  });
+  const sharedUsers = new Set(shared.map((m) => m.userId));
+  const isActiveSuperAdmin = (m: (typeof memberships)[number]) =>
+    m.isActive && m.role.systemRole === "SUPER_ADMIN";
+  const activeSuperAdmins = memberships.filter(isActiveSuperAdmin).length;
+  const actor = actorOf(ctx);
+  const timeZone = ctx.company.timezone;
+
+  const members = memberships.map((m): TeamMember => {
+    const others = activeSuperAdmins - (isActiveSuperAdmin(m) ? 1 : 0);
+    const target = {
+      userId: m.userId,
+      systemRole: m.role.systemRole,
+      isPlatformOwner: m.user.isSuperAdmin,
+      worksElsewhere: sharedUsers.has(m.userId),
+    };
+    const roleChoices = roles
+      .filter((r) => r.id !== m.roleId && canChangeRole(actor, m.role, r, others).ok)
+      .map((r) => r.id);
+    return {
+      id: m.id,
+      name: m.user.name,
+      email: m.user.email,
+      phone: m.user.phone,
+      status: m.user.status,
+      isActive: m.isActive,
+      role: m.role,
+      joinedOn: localDay(m.joinedAt, timeZone),
+      lastSignedInOn: m.user.lastLoginAt ? localDay(m.user.lastLoginAt, timeZone) : null,
+      isYou: m.userId === ctx.user.id,
+      isPlatformOwner: m.user.isSuperAdmin,
+      can: {
+        changeRole: roleChoices.length > 0,
+        deactivate: m.isActive && canDeactivate(actor, target, others).ok,
+        reactivate: !m.isActive && canReactivate(actor, target).ok,
+        resetPassword: canResetPassword(actor, target).ok,
+      },
+      roleChoices,
+    };
+  });
+  members.sort(
+    (a, b) =>
+      Number(b.isActive) - Number(a.isActive) ||
+      a.name.localeCompare(b.name, "en", { sensitivity: "base" }),
+  );
+
+  return {
+    members,
+    roles,
+    grantableRoleIds: roles.filter((r) => canGrantRole(actor, r).ok).map((r) => r.id),
+  };
 }

@@ -1,4 +1,4 @@
-import { LayoutDashboardIcon, type LucideIcon } from "lucide-react";
+import { LayoutDashboardIcon, type LucideIcon, SettingsIcon } from "lucide-react";
 
 import type { PermissionKey } from "@/modules/rbac/permissions";
 
@@ -16,12 +16,25 @@ export type NavItem = {
 
 export const NAV_ITEMS: readonly NavItem[] = [
   { href: "/", label: "Dashboard", icon: LayoutDashboardIcon, anyOf: [] },
+  {
+    // Team, roles and company details (components/settings/tabs.ts).
+    href: "/settings",
+    label: "Settings",
+    icon: SettingsIcon,
+    anyOf: ["company.members.manage", "company.roles.manage", "company.settings"],
+  },
 ];
+
+/** Whether someone holding `permissions` may see an entry with these `anyOf` permissions. */
+export function holdsAny(permissions: Iterable<string>, anyOf: readonly string[]): boolean {
+  if (anyOf.length === 0) return true;
+  const held = new Set(permissions);
+  return anyOf.some((p) => held.has(p));
+}
 
 /** The sections this person may open in the active company. */
 export function visibleNavItems(permissions: readonly string[]): NavItem[] {
-  const held = new Set(permissions);
-  return NAV_ITEMS.filter((item) => item.anyOf.length === 0 || item.anyOf.some((p) => held.has(p)));
+  return NAV_ITEMS.filter((item) => holdsAny(permissions, item.anyOf));
 }
 
 /** Whether a menu entry is the current section ("/sales" also covers "/sales/123"). */

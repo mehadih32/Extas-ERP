@@ -1,6 +1,6 @@
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
-import { getBackupConfig, runBackup } from "@/modules/backups/backup.service";
+import { getBackupConfig, runBackup, settleFinishedRuns } from "@/modules/backups/backup.service";
 import { previousRun } from "@/modules/backups/cron";
 
 /*
@@ -36,6 +36,11 @@ export async function backupTick(now: Date = new Date()) {
 
 export function startBackupScheduler() {
   if (timer) return;
+  // A backup whose run was left open (the server stopped, or this database was
+  // restored from that very backup) is recorded as done when its files are all there.
+  void settleFinishedRuns().catch((error: unknown) =>
+    console.error("[backups] could not check unfinished backups", error),
+  );
   timer = setInterval(() => void backupTick(), CHECK_EVERY_MS);
   timer.unref();
   console.log("[backups] daily backup scheduler started");

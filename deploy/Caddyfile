@@ -1,0 +1,30 @@
+# HTTPS in front of the app. Caddy gets the Let's Encrypt certificate for
+# APP_DOMAIN by itself and renews it before it expires; plain http:// requests
+# are sent on to https://.
+{
+	email {$ACME_EMAIL}
+}
+
+{$APP_DOMAIN} {
+	encode zstd gzip
+
+	# Uploads are at most 10 MB each (packing-list photos, bill scans, templates).
+	request_body {
+		max_size 25MB
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	reverse_proxy app:3000
+
+	log {
+		output stdout
+		format json
+	}
+}

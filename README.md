@@ -30,9 +30,24 @@ Check the database connection at <http://localhost:3000/api/health>.
 | `npm run lint`       | ESLint                                          |
 | `npm run build`      | Production build                                |
 
+## Running on the server
+
+The ERP runs on one Azure Ubuntu 24.04 server in Docker: PostgreSQL 16, the app, and Caddy
+for HTTPS with a free Let's Encrypt certificate. [`deploy/README.md`](./deploy/README.md) is
+the step-by-step guide, from creating the server to backups, restoring, updates and moving
+to a new server. The scripts and settings are in [`deploy/`](./deploy), and the app's image
+in the [`Dockerfile`](./Dockerfile).
+
+In production the app runs three clocks of its own: the daily backup (02:00), reminders, and
+the nightly housekeeping (03:30, Asia/Dhaka), which marks idle buyers dormant, closes settled
+accounts and removes expired sign-ins (`src/modules/housekeeping/scheduler.ts`). Each is off
+in development; set `BACKUP_SCHEDULER`, `REMINDER_SCHEDULER` or `HOUSEKEEPING_SCHEDULER` to
+`on` or `off` to choose.
+
 ## Folder structure
 
 ```
+deploy/                  # the server: Docker, HTTPS, backups and restore (see deploy/README.md)
 prisma/
   schema.prisma          # full database design (97 tables)
   migrations/            # SQL migrations applied to PostgreSQL
@@ -123,7 +138,8 @@ One profile per buyer, supplier or both (`BUY-0001`, `SUP-0001`, `BS-0001`), wit
 account that still owes or is owed money moves it to **Settling** (no new business) and it
 closes on its own once the balance reaches zero. Buyers with no business for the company's
 "dormant after" period (6 months by default) become **Dormant** and wake up on their next
-sale.
+sale. The server checks every night at 03:30 (Asia/Dhaka) for every company, and the refresh
+endpoint below runs the same check on demand.
 
 Balances come from the double-entry journal: every journal line tagged with a party on the
 Receivable, Payable or Customer Advance account counts. Positive means they owe us, negative
@@ -1017,10 +1033,11 @@ platform) only. Every download is recorded in the audit log.
 
 **Server setup.**
 
-- Install the PostgreSQL 16 client tools for `pg_dump` (`apt install postgresql-client-16`),
-  or set `PG_DUMP_PATH`. When the app runs in Docker, the app image needs them too. The
-  backup settings show whether `pg_dump` was found.
-- Keep `BACKUP_DIR` on a persistent volume.
+- The app's Docker image carries the PostgreSQL 16 client tools, and the server keeps
+  `BACKUP_DIR` in `/srv/extras-erp/backups` ([`deploy/README.md`](./deploy/README.md)).
+  Elsewhere, install them for `pg_dump` (`apt install postgresql-client-16`) or set
+  `PG_DUMP_PATH`, and keep `BACKUP_DIR` on a persistent disk. The backup settings show
+  whether `pg_dump` was found.
 - The schedule runs in production and not in development; set
   `BACKUP_SCHEDULER=on` or `off` to choose.
 - Google Drive: in Google Cloud console, enable the Google Drive API and create an OAuth
@@ -1032,7 +1049,10 @@ platform) only. Every download is recorded in the audit log.
   `drive.file` scope), and backups use that account's storage. Changing `ENCRYPTION_KEY`
   means connecting Google Drive again.
 
-**Restoring.** Check the files against `manifest.json` (`sha256sum`), then:
+**Restoring.** On the server, `sudo ./deploy/restore.sh <backup folder>` checks the files,
+saves a safety copy and restores the database and the files
+([`deploy/README.md`](./deploy/README.md#restoring-a-backup)). By hand, check the files
+against `manifest.json` (`sha256sum`), then:
 
 ```bash
 pg_restore --clean --if-exists --no-owner --dbname=<database> database.dump

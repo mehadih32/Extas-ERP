@@ -374,6 +374,56 @@ run("daily backups", () => {
       });
     });
 
+    it("records a backup as done after restoring the database from it", async () => {
+      const done = await backUpNow();
+      const saved = await prisma.backupRun.findUniqueOrThrow({ where: { id: done.id } });
+      // The backup's own dump holds its run as still running, with no files yet.
+      await prisma.backupRun.update({
+        where: { id: done.id },
+        data: {
+          status: "RUNNING",
+          finishedAt: null,
+          dbDumpPath: null,
+          mediaArchivePath: null,
+          sizeBytes: null,
+        },
+      });
+      // A run cut off before its files were written stays for the six-hour rule.
+      const cutOff = await prisma.backupRun.create({
+        data: { trigger: "MANUAL", status: "RUNNING", startedAt: hoursAgo(1) },
+      });
+
+      expect(await backups.settleFinishedRuns()).toBe(1);
+      const settled = await prisma.backupRun.findUniqueOrThrow({ where: { id: done.id } });
+      expect(settled).toMatchObject({
+        status: "SUCCEEDED",
+        dbDumpPath: saved.dbDumpPath,
+        mediaArchivePath: saved.mediaArchivePath,
+        sizeBytes: saved.sizeBytes,
+        driveError: null,
+      });
+      expect(settled.finishedAt).toBeInstanceOf(Date);
+      expect(await backups.getBackupRun(done.id)).toMatchObject({
+        files: { database: true, media: true, manifest: true },
+      });
+      expect((await backups.getBackupRun(cutOff.id)).status).toBe("RUNNING");
+      expect(await backups.settleFinishedRuns()).toBe(0);
+
+      // With Google Drive connected, the run says the Drive copy is not known.
+      await prisma.backupRun.update({ where: { id: done.id }, data: { status: "RUNNING" } });
+      await prisma.backupConfig.update({
+        where: { id: (await backups.getBackupConfig()).id },
+        data: { credentialsRef: encryptSecret("refresh-1") },
+      });
+      expect(await backups.settleFinishedRuns()).toBe(1);
+      expect((await backups.getBackupRun(done.id)).driveError).toMatch(/^Not known whether/);
+
+      // A damaged backup folder is not taken as finished.
+      await prisma.backupRun.update({ where: { id: done.id }, data: { status: "RUNNING" } });
+      await writeFile(path.join(await folderOf(done.id), "database.dump"), "cut short");
+      expect(await backups.settleFinishedRuns()).toBe(0);
+    });
+
     it("lets only one of two backups started together run", async () => {
       const results = await Promise.allSettled([backUpNow(), backUpNow()]);
       expect(results.map((r) => r.status).sort()).toEqual(["fulfilled", "rejected"]);

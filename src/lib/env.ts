@@ -28,6 +28,11 @@ const serverEnvSchema = z.object({
     (v) => (v === "" ? undefined : v),
     z.enum(["on", "off"]).optional(),
   ),
+  /** Nightly housekeeping (dormant buyers, expired sessions); on by default in production. */
+  HOUSEKEEPING_SCHEDULER: z.preprocess(
+    (v) => (v === "" ? undefined : v),
+    z.enum(["on", "off"]).optional(),
+  ),
   GOOGLE_DRIVE_CLIENT_ID: z.string().optional(),
   GOOGLE_DRIVE_CLIENT_SECRET: z.string().optional(),
 });

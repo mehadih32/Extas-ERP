@@ -5,12 +5,17 @@ import { PRINT_TYPES } from "@/modules/documents/model";
 const id = z.string().trim().min(1).max(64);
 const day = z.iso.date();
 
-/** What to print: a sales document by id, a statement, a stock sheet or the blank letterhead. */
+/**
+ * What to print: a sales document by id (a money receipt by its payment's id), a
+ * statement, a stock sheet or the blank letterhead.
+ */
 export const printRequestSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("QUOTATION"), id }),
   z.object({ type: z.literal("PROFORMA_INVOICE"), id }),
   z.object({ type: z.literal("COMMERCIAL_INVOICE"), id }),
+  z.object({ type: z.literal("PACKING_LIST"), id }),
   z.object({ type: z.literal("DELIVERY_CHALLAN"), id }),
+  z.object({ type: z.literal("PAYMENT_RECEIPT"), id }),
   z.object({
     type: z.literal("LEDGER_STATEMENT"),
     partyId: id,
@@ -35,7 +40,7 @@ export type PrintRequest = z.output<typeof printRequestSchema>;
 
 export const listDocumentsSchema = z.object({
   type: z.enum(PRINT_TYPES).optional(),
-  /** The quotation, invoice, challan, buyer, brand or style it was printed for. */
+  /** The quotation, invoice, packing list, challan, payment, buyer, brand or style it was printed for. */
   referenceId: id.optional(),
   partyId: id.optional(),
   take: z.coerce.number().int().min(1).max(100).default(20),

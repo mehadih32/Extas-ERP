@@ -27,9 +27,10 @@ import {
 import type { PermissionKey } from "@/modules/rbac/permissions";
 
 /*
- * Printed documents: quotations, proforma and commercial invoices, delivery
- * challans, buyer / supplier statements, stock availability sheets and the blank
- * letterhead pad, made as PDFs on the company letterhead and kept.
+ * Printed documents: quotations, proforma and commercial invoices, packing
+ * lists, delivery challans, money receipts, buyer / supplier statements, stock
+ * availability sheets and the blank letterhead pad, made as PDFs on the company
+ * letterhead (with its BIN and trade licence number) and kept.
  *
  * Every print reads the live data and hashes what would be printed (with the
  * logo and the layout version). When a kept PDF has the same hash, that copy is
@@ -57,11 +58,13 @@ export const PRINT_INFO: Record<
     permission: "sales.view",
   },
   COMMERCIAL_INVOICE: { label: "Commercial invoice", plural: "invoices", permission: "sales.view" },
+  PACKING_LIST: { label: "Packing list", plural: "packing lists", permission: "sales.view" },
   DELIVERY_CHALLAN: {
     label: "Delivery challan",
     plural: "delivery challans",
     permission: "sales.view",
   },
+  PAYMENT_RECEIPT: { label: "Money receipt", plural: "money receipts", permission: "sales.view" },
   LEDGER_STATEMENT: {
     label: "Statement of account",
     plural: "statements",
@@ -119,7 +122,7 @@ export function presentDocument(row: DocumentRow) {
     type,
     typeLabel: PRINT_INFO[type].label,
     title: row.title,
-    /** What it was printed for: "Quotation", "ProformaInvoice", "Invoice", "DeliveryChallan", "Party", "Brand", "Style". */
+    /** What it was printed for: "Quotation", "ProformaInvoice", "Invoice", "PackingList", "DeliveryChallan", "Payment", "Party", "Brand", "Style". */
     referenceType: row.referenceType,
     referenceId: row.referenceId,
     party: row.party,

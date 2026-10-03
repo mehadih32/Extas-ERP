@@ -673,19 +673,29 @@ later with the other outside integrations.
 
 ## Printable documents (backend)
 
-Quotations, proforma and commercial invoices, delivery challans, buyer and supplier statements,
-stock availability sheets and a blank letterhead pad print as A4 PDFs on the company
-letterhead: the logo, name, legal name and contact details on top, the company colours, and
-the footer line with page numbers on every page. Everything on the page comes from the same
-data as the screens, with amounts in lakh and crore for taka and dates in the company's time
-zone.
+Quotations, proforma and commercial invoices, packing lists, delivery challans, money receipts,
+buyer and supplier statements, stock availability sheets and a blank letterhead pad print as A4
+PDFs on the company letterhead: the logo, name, legal name and contact details on top, the
+company colours, and the footer line with page numbers on every page. Everything on the page
+comes from the same data as the screens, with amounts in lakh and crore for taka and dates in
+the company's time zone.
+
+**BIN and trade licence.** Under the contact details, every document prints the company's VAT
+registration (`BIN: …`) and trade licence number (`Trade licence: …`), taken from the
+[licence records](#licences-and-registrations-backend) in force. Nothing is added while neither
+is on file. Renewing a licence under a new number prints the new one from then on; a renewal
+that keeps the number changes nothing, so kept PDFs are reused. The print data behind the
+screens (`letterhead` in the quotation, proforma, order, invoice, packing list, challan,
+receipt, payslip and bank statement endpoints) carries them as `bin` and `tradeLicense`.
 
 | Document             | What it shows                                                                                                               | Needs                  |
 | -------------------- | --------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
 | Quotation            | Items with style, fabric and sizes, discount, VAT, the total in words, styling instructions, custom fields and terms        | `sales.view`           |
 | Proforma invoice     | The quotation's items and total, the advance with what is received and due, and payments; CANCELLED across a cancelled one  | `sales.view`           |
 | Commercial invoice   | Each SKU with pieces and price (a discount column only when used), delivery charge, VAT, paid and due; PAID or VOID marks   | `sales.view`           |
+| Packing list         | SKU, item, colour, size and pieces by carton (each carton totalled), a tick box per line, cartons, gross weight; no prices  | `sales.view`           |
 | Delivery challan     | SKU, item, colour, size and pieces with the total, vehicle and driver, received by; no prices                               | `sales.view`           |
+| Money receipt        | Who paid, the amount in figures and words, method and cheque / transaction no., what it was for, and the balance after it   | `sales.view`           |
 | Statement of account | Opening balance, debits, credits and closing balance (Dr / Cr), then every transaction with the running balance, any period | `parties.ledger.view`  |
 | Stock availability   | Pieces ready to ship per colour and size for chosen styles or a whole brand, in one warehouse or all; no prices             | `inventory.view`       |
 | Blank letterhead     | The letterhead and footer on an empty page, for letters                                                                     | `documents.letterhead` |
@@ -694,6 +704,19 @@ zone.
 default (Super Admin has every permission). The stock sheet counts first-quality pieces less
 those set aside for orders, never below zero. A brand sheet leaves out styles with nothing to
 sell unless `includeEmpty` is set, and shows up to 100 styles.
+
+**Packing list.** The pick-list for the warehouse: lines packed in cartons are sorted by carton
+number (2 before 10), with each carton's pieces and loose pieces last; without carton numbers
+the lines are numbered. A line already picked in the system has a ticked box, the rest an
+empty box to tick by hand, and the details show how many pieces are picked.
+
+**Money receipt.** Printed for any payment received from a buyer (`id` is the payment's id;
+money paid to suppliers is not a receipt). It says what the money was for: an advance against
+a proforma or an order, a payment against the invoice, or on account. The figures show where
+the proforma (total, advance, received, advance due) or the order (total, received, balance
+due) stood once this payment came in, counting earlier payments only, so a receipt printed
+again later shows the same figures and reuses its kept copy. A cheque receipt notes that it
+holds once the cheque is cleared.
 
 **Kept copies.** Every PDF is kept under `UPLOAD_DIR/<company>/documents/` (so it is part of the
 media backup) and listed with who made it and what for. Printing something that has not
@@ -706,8 +729,6 @@ PDFs are recorded in the audit log, and a person can print up to 30 documents a 
 It is checked thoroughly before it is kept, and every print makes sure the file is still the
 one that was checked, so a damaged image can never break a PDF. Replacing or removing it deletes the old file; PDFs made
 earlier keep the logo they had.
-
-Packing lists and payment receipts are not printable yet.
 
 ### Bengali in PDFs
 
@@ -734,7 +755,8 @@ the server bundle (`outputFileTracingIncludes` in `next.config.js`).
 
 What to print:
 
-- `{ type: "QUOTATION" | "PROFORMA_INVOICE" | "COMMERCIAL_INVOICE" | "DELIVERY_CHALLAN", id }`
+- `{ type: "QUOTATION" | "PROFORMA_INVOICE" | "COMMERCIAL_INVOICE" | "PACKING_LIST" | "DELIVERY_CHALLAN", id }`
+- `{ type: "PAYMENT_RECEIPT", id }` (the payment's id)
 - `{ type: "LEDGER_STATEMENT", partyId, from?, to? }` (calendar days; none = the whole account)
 - `{ type: "STOCK_AVAILABILITY", styleIds?, brandId?, warehouseId?, includeEmpty? }`
 - `{ type: "LETTERHEAD" }`
@@ -869,8 +891,9 @@ issue and expiry dates, notes and a scan (JPG, PNG, WebP or PDF up to 10 MB).
 Each record is valid, expiring (inside its renewal window: 30 days before expiry unless set
 otherwise for that record), expired, or has no expiry (a TIN or BIN). The summary counts them,
 lists what needs renewing (soonest first), shows which of the trade licence, BIN and TIN are not
-on file, and gives the numbers in force, which custom templates print (`{CompanyBIN}`,
-`{CompanyTIN}`, `{CompanyTradeLicense}`, `{CompanyIRC}`, `{CompanyERC}`).
+on file, and gives the numbers in force. Every built-in document prints the BIN and trade
+licence number under the letterhead's contact details, and custom templates print any of them
+(`{CompanyBIN}`, `{CompanyTIN}`, `{CompanyTradeLicense}`, `{CompanyIRC}`, `{CompanyERC}`).
 
 **Renewing** adds the next term (the new expiry, and the number or authority if they changed);
 the old term stays as history and its alerts stop. Deleting a renewal entered by mistake puts

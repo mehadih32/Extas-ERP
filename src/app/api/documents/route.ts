@@ -18,7 +18,8 @@ export const GET = apiRoute(async (request) =>
 
 /**
  * POST /api/documents — prints a PDF on the company letterhead and keeps it:
- * - { type: QUOTATION | PROFORMA_INVOICE | COMMERCIAL_INVOICE | DELIVERY_CHALLAN, id } (sales.view)
+ * - { type: QUOTATION | PROFORMA_INVOICE | COMMERCIAL_INVOICE | PACKING_LIST | DELIVERY_CHALLAN, id } (sales.view)
+ * - { type: PAYMENT_RECEIPT, id: the payment's id } (sales.view)
  * - { type: LEDGER_STATEMENT, partyId, from?, to? } (parties.ledger.view)
  * - { type: STOCK_AVAILABILITY, styleIds? or brandId?, warehouseId?, includeEmpty? } (inventory.view)
  * - { type: LETTERHEAD } (documents.letterhead)

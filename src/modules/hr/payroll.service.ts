@@ -1077,7 +1077,7 @@ export async function voidPayrollPayment(
 // Payslips
 // =============================================================================
 
-function payslip(
+async function payslip(
   ctx: CompanyContext,
   run: { year: number; month: number; status: string },
   i: ItemRow,
@@ -1111,7 +1111,7 @@ function payslip(
   const totalEarnings = earnings.reduce((t, e) => t.plus(e.amount), ZERO);
   const totalDeductions = deductions.reduce((t, d) => t.plus(d.amount), ZERO);
   return {
-    company: letterhead(ctx.company),
+    company: await letterhead(ctx),
     month,
     label: monthLabel(month),
     status: run.status,

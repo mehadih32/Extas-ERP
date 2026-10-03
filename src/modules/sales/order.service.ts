@@ -572,7 +572,7 @@ export async function getOrder(ctx: CompanyContext, orderId: string) {
       remaining: i.quantity - (delivered.get(i.variantId) ?? 0),
     })),
     totalPieces: order.items.reduce((s, i) => s + i.quantity, 0),
-    letterhead: letterhead(ctx.company),
+    letterhead: await letterhead(ctx),
   };
 }
 

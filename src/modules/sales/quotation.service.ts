@@ -318,7 +318,7 @@ export async function getQuotation(ctx: CompanyContext, quotationId: string) {
     ...quotation,
     isExpired: isExpired(quotation),
     customFieldValues: labelledCustomFields(defs, quotation.customFields),
-    letterhead: letterhead(ctx.company),
+    letterhead: await letterhead(ctx),
   };
 }
 

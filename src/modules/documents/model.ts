@@ -13,7 +13,9 @@ export const PRINT_TYPES = [
   "QUOTATION",
   "PROFORMA_INVOICE",
   "COMMERCIAL_INVOICE",
+  "PACKING_LIST",
   "DELIVERY_CHALLAN",
+  "PAYMENT_RECEIPT",
   "LEDGER_STATEMENT",
   "STOCK_AVAILABILITY",
   "LETTERHEAD",
@@ -32,6 +34,8 @@ export type Letterhead = {
   legalName: string | null;
   /** Address and contact lines shown at the top right. */
   contacts: string[];
+  /** Registration numbers under the contacts ("BIN: 000123456-0101"); left out when none are on file. */
+  registrations?: string[];
   /** The footer line (company setting, or the name and website). */
   footer: string;
   primaryColor: string;
@@ -45,7 +49,15 @@ export type Column = {
   align?: Align;
   /** Relative width (default 1). */
   weight?: number;
+  /**
+   * A column of tick boxes: on plain rows each cell is a box, ticked when it holds
+   * TICK and empty (to tick by hand) otherwise. Subtotal and total rows print text.
+   */
+  check?: boolean;
 };
+
+/** A ticked box in a `check` column. */
+export const TICK = "✓";
 
 /** normal rows alternate shading; subtotal and total rows are bold with a rule above. */
 export type RowStyle = "normal" | "subtotal" | "total";

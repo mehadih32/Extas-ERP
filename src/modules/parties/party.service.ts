@@ -15,6 +15,9 @@ import {
   updatePartySchema,
   verifySchema,
 } from "@/modules/parties/schemas";
+import { assertNotWalkIn, isWalkIn, WALK_IN_NOT_A_BUYER } from "@/modules/parties/walk-in";
+
+const WALK_IN_KEPT = "Walk-in customers is kept by the system for sales without a buyer profile.";
 
 const CODE_PREFIX: Record<PartyKind, string> = { BUYER: "BUY", SUPPLIER: "SUP", BOTH: "BS" };
 
@@ -108,6 +111,9 @@ export async function updateParty(
 ) {
   const input = updatePartySchema.parse(raw);
   const before = await getPartyOrThrow(ctx, partyId);
+  if (isWalkIn(before) && Object.keys(input).some((k) => k !== "name" && k !== "notes")) {
+    throw new AppError("VALIDATION", `${WALK_IN_KEPT} Only its name and notes can change.`);
+  }
   const kind = input.kind ?? before.kind;
   if (kind === "SUPPLIER" && input.buyerType) {
     throw new AppError("VALIDATION", "Suppliers have no buyer type.");
@@ -197,6 +203,9 @@ export async function listParties(ctx: CompanyContext, raw: unknown = {}) {
 export async function getPartyProfile(ctx: CompanyContext, partyId: string) {
   const party = await getPartyOrThrow(ctx, partyId);
   const id = party.id;
+  // Walk-in customers' sales are the orders without a buyer.
+  const walkIn = isWalkIn(party);
+  const ownSales = walkIn ? { partyId: null } : { partyId: id };
   const [
     balance,
     quotations,
@@ -209,13 +218,15 @@ export async function getPartyProfile(ctx: CompanyContext, partyId: string) {
   ] = await Promise.all([
     getPartyBalance(ctx, id),
     ctx.db.quotation.count({ where: { partyId: id } }),
-    ctx.db.salesOrder.count({ where: { partyId: id } }),
-    ctx.db.invoice.count({ where: { partyId: id } }),
+    ctx.db.salesOrder.count({ where: ownSales }),
+    ctx.db.invoice.count({ where: ownSales }),
     ctx.db.supplierBill.count({ where: { supplierId: id } }),
     ctx.db.productionProject.count({ where: { buyerId: id } }),
     ctx.db.productionProject.count({ where: { factoryId: id } }),
     ctx.db.payment.findMany({
-      where: { partyId: id },
+      where: walkIn
+        ? { partyId: null, direction: "RECEIVED", orderId: { not: null } }
+        : { partyId: id },
       orderBy: { paymentDate: "desc" },
       take: 1,
       select: { paymentDate: true, amount: true, direction: true },
@@ -250,6 +261,7 @@ export async function setPartyGrade(
 ) {
   const { grade } = gradeSchema.parse(raw);
   const party = await getPartyOrThrow(ctx, partyId);
+  assertNotWalkIn(party, WALK_IN_KEPT);
   const updated = await ctx.db.party.update({ where: { id: party.id }, data: { grade } });
   await auditInCompany(ctx, meta, {
     action: "UPDATE",
@@ -269,6 +281,7 @@ export async function setPartyVerified(
 ) {
   const { isVerified } = verifySchema.parse(raw);
   const party = await getPartyOrThrow(ctx, partyId);
+  assertNotWalkIn(party, WALK_IN_KEPT);
   const updated = await ctx.db.party.update({
     where: { id: party.id },
     data: { isVerified, verifiedAt: isVerified ? new Date() : null },
@@ -294,6 +307,7 @@ export async function changePartyStatus(
 ) {
   const input = statusSchema.parse(raw);
   const party = await getPartyOrThrow(ctx, partyId);
+  assertNotWalkIn(party, `${WALK_IN_KEPT} It stays open.`);
   if (input.status === "DORMANT" && party.kind === "SUPPLIER") {
     throw new AppError("VALIDATION", "Only buyers can be marked dormant.");
   }
@@ -330,6 +344,7 @@ export async function assertPartyCanTransact(
   newAmount = 0,
 ) {
   const party = await getPartyOrThrow(ctx, partyId);
+  assertNotWalkIn(party, WALK_IN_NOT_A_BUYER);
   const allowedKinds: PartyKind[] = purpose === "SALE" ? ["BUYER", "BOTH"] : ["SUPPLIER", "BOTH"];
   if (!allowedKinds.includes(party.kind)) {
     throw new AppError(

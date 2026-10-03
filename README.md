@@ -131,6 +131,17 @@ means we owe them. Sales, Purchasing and Accounts will post those entries; this 
 them and posts the one-off opening balance. Statement periods follow the company's timezone,
 so `to=2026-02-28` includes everything posted on 28 February in Dhaka.
 
+**Walk-in customers.** Sales without a buyer profile (counter sales, and website or social
+orders taken by name only) post their receivable and advance lines to one account the system
+keeps for each company: **Walk-in customers** (`WALK-IN`, marked `systemRole: WALK_IN`), made
+with the company's first such sale. Its statement lists every walk-in sale, and the
+receivables overview counts what walk-in customers still owe. The orders, invoices and
+payments themselves keep no buyer; the customer's name and phone stay on the order. The
+account is never the buyer on a quotation, proforma, order or payment (leave the buyer empty
+instead), stays open and ungraded, is left out of dormant lists, status refreshes and
+campaigns, and only its name and notes can be changed. On a database with walk-in sales from
+before this account existed, the upgrade makes it and names it on those sales' lines.
+
 | Endpoint                                                   | Purpose                                                     |
 | ---------------------------------------------------------- | ----------------------------------------------------------- |
 | `GET/POST /api/parties`                                    | List (type, grade, badge, status, city, search) / create    |
@@ -199,11 +210,12 @@ invoiced order also voids its invoice, which needs `sales.invoice.edit`, so a pa
 order is cancelled by the Super Admin by default. A refund recorded by mistake can be voided,
 which puts the money back where it came from, but not once its order or proforma is cancelled,
 the order is invoiced again, the order or proforma has since been paid up to its total, or
-credit it left on the account has been used. A walk-in customer has no account, so their money
-is paid back or kept as a charge, never kept as credit.
+credit it left on the account has been used. A walk-in customer has no account of their own,
+so their money is paid back or kept as a charge, never kept as credit.
 
 **Books.** Every step posts a balanced journal entry, so the buyer's ledger, statements and
-the receivables overview update immediately:
+the receivables overview update immediately. For a sale without a buyer, the lines marked
+"buyer" below name the [Walk-in customers](#buyers--suppliers-backend) account:
 
 | Event                  | Entry                                                          |
 | ---------------------- | -------------------------------------------------------------- |
@@ -379,9 +391,11 @@ with the ledgers.
 - **Balance sheet** on any day, with profit kept in the business split into earlier years
   and this year.
 - **Trial balance.**
-- **Books check:** the journal balances, and the stock, raw material, work in progress,
-  fixed asset, loan, investor, supplier bill, employee advance and unpaid salary registers
-  agree with their ledger accounts.
+- **Books check:** the journal balances; every receivable, payable and customer advance line
+  names a buyer, a supplier or Walk-in customers (when one doesn't, the check lists the
+  entries); and the stock, raw material, work in progress, fixed asset, loan, investor,
+  supplier bill, employee advance and unpaid salary registers agree with their ledger
+  accounts.
 - **Overview:** cash, bank and wallet balances, stock value, raw materials (with low stock
   and late purchase orders), work in progress, fixed assets, loans and investors, today's
   sales, this month's and this year's profit, overdue installments, claims waiting to be

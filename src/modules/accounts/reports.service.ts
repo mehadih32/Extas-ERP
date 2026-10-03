@@ -660,16 +660,19 @@ export async function getBooksCheck(ctx: CompanyContext) {
       : {}),
   });
 
-  // 2. Lines on buyer / supplier accounts always name the buyer or supplier.
-  const [untagged] = await prisma.$queryRaw<Array<{ count: bigint }>>`
-    SELECT COUNT(*) AS count
+  // 2. Lines on buyer / supplier accounts always name the buyer or supplier (sales
+  //    without a buyer name the Walk-in customers account).
+  const untagged = await prisma.$queryRaw<Array<{ number: string; count: bigint }>>`
+    SELECT je.number, COUNT(*) AS count
     FROM "JournalLine" jl
     JOIN "JournalEntry" je ON je.id = jl."entryId"
     JOIN "LedgerAccount" la ON la.id = jl."accountId"
     WHERE je."companyId" = ${companyId} AND jl."partyId" IS NULL
       AND la."subType" IN ('ACCOUNTS_RECEIVABLE'::"AccountSubType", 'ACCOUNTS_PAYABLE'::"AccountSubType",
-                           'CUSTOMER_ADVANCE'::"AccountSubType")`;
-  const untaggedCount = Number(untagged?.count ?? 0);
+                           'CUSTOMER_ADVANCE'::"AccountSubType")
+    GROUP BY je.id, je.number
+    ORDER BY je.number`;
+  const untaggedCount = untagged.reduce((n, r) => n + Number(r.count), 0);
   checks.push({
     key: "PARTY_LINES",
     label: "Receivable / payable lines name a buyer or supplier",
@@ -677,6 +680,14 @@ export async function getBooksCheck(ctx: CompanyContext) {
     books: String(untaggedCount),
     register: "0",
     difference: String(untaggedCount),
+    ...(untagged.length > 0
+      ? {
+          note: `Lines naming no buyer or supplier in: ${untagged
+            .slice(0, 20)
+            .map((u) => u.number)
+            .join(", ")}${untagged.length > 20 ? ` and ${untagged.length - 20} more entries` : ""}`,
+        }
+      : {}),
   });
 
   // 3. Finished goods: inventory account vs pieces on hand at average cost.

@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import type { Db } from "@/lib/db-types";
 import { ensureControlAccounts } from "@/modules/accounts/control-accounts";
 import { postJournalEntry } from "@/modules/accounts/journal.service";
+import { ensureWalkInParty } from "@/modules/parties/walk-in";
 import { invoiceStatusFor, money, ZERO } from "@/modules/sales/totals";
 
 /*
@@ -15,7 +16,9 @@ import { invoiceStatusFor, money, ZERO } from "@/modules/sales/totals";
  *   Refund (see refund.service) Dr Customer Advance   Cr Cash / Receivable / Other Income
  *
  * What an order or proforma holds is what was received on it less its refunds
- * that are not void: that is its paid amount.
+ * that are not void: that is its paid amount. The receivable and advance lines
+ * of an order without a buyer name the Walk-in customers account
+ * (parties/walk-in.ts).
  */
 
 type Tx = Prisma.TransactionClient;
@@ -98,6 +101,11 @@ export async function advanceHeld(tx: Tx, orderId: string) {
   );
 }
 
+/** The account a sale's receivable and advance lines name: its buyer, or Walk-in customers. */
+export async function ledgerPartyId(tx: Tx, companyId: string, partyId: string | null) {
+  return partyId ?? ensureWalkInParty(companyId, tx);
+}
+
 /** Revenue entry for an invoice, applying any advance already received. */
 export async function postInvoice(
   tx: Tx,
@@ -120,6 +128,7 @@ export async function postInvoice(
   const { order } = args;
   if (order.total.isZero()) return null;
   const acc = await ensureControlAccounts(args.companyId, tx);
+  const partyId = await ledgerPartyId(tx, args.companyId, order.partyId);
   const applied = Prisma.Decimal.min(await advanceHeld(tx, order.id), order.total);
   return postJournalEntry(tx, {
     companyId: args.companyId,
@@ -129,22 +138,12 @@ export async function postInvoice(
     sourceId: args.invoice.id,
     postedById: args.userId,
     lines: [
-      { accountId: acc.RECEIVABLE, partyId: order.partyId, debit: order.total },
+      { accountId: acc.RECEIVABLE, partyId, debit: order.total },
       { accountId: acc.SALES, credit: order.subtotal.minus(order.discount) },
       { accountId: acc.DELIVERY_INCOME, credit: order.shippingCharge },
       { accountId: acc.VAT_PAYABLE, credit: order.tax },
-      {
-        accountId: acc.CUSTOMER_ADVANCE,
-        partyId: order.partyId,
-        debit: applied,
-        memo: "Advance applied",
-      },
-      {
-        accountId: acc.RECEIVABLE,
-        partyId: order.partyId,
-        credit: applied,
-        memo: "Advance applied",
-      },
+      { accountId: acc.CUSTOMER_ADVANCE, partyId, debit: applied, memo: "Advance applied" },
+      { accountId: acc.RECEIVABLE, partyId, credit: applied, memo: "Advance applied" },
     ],
   });
 }

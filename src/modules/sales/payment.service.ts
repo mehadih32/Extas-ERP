@@ -13,8 +13,13 @@ import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { letterhead } from "@/modules/companies/letterhead";
 import { recordPartyActivity } from "@/modules/parties/party.service";
+import { assertNotWalkIn } from "@/modules/parties/walk-in";
 import { createProjectFromProformaTx } from "@/modules/production/project.service";
-import { refreshOrderPayments, refreshProformaPayments } from "@/modules/sales/posting";
+import {
+  ledgerPartyId,
+  refreshOrderPayments,
+  refreshProformaPayments,
+} from "@/modules/sales/posting";
 import { listPaymentsSchema, receivePaymentSchema } from "@/modules/sales/schemas";
 import { money } from "@/modules/sales/totals";
 
@@ -97,6 +102,7 @@ export async function receivePaymentTx(
     if (!party) throw new AppError("NOT_FOUND", "Buyer not found.");
     if (party.kind === "SUPPLIER")
       throw new AppError("VALIDATION", `${party.name} is not a buyer.`);
+    assertNotWalkIn(party, "Take a walk-in customer's payment against their order.");
     partyId = party.id;
     label = `on account (${party.code})`;
   }
@@ -132,7 +138,7 @@ export async function receivePaymentTx(
       { accountId: debitAccount, debit: amount, memo: input.reference ?? undefined },
       {
         accountId: isAdvance ? accounts.CUSTOMER_ADVANCE : accounts.RECEIVABLE,
-        partyId,
+        partyId: await ledgerPartyId(tx, companyId, partyId),
         credit: amount,
         memo: isAdvance ? "Advance" : undefined,
       },

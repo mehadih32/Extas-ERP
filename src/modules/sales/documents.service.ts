@@ -11,7 +11,12 @@ import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { letterhead } from "@/modules/companies/letterhead";
 import { recordPartyActivity } from "@/modules/parties/party.service";
-import { postCostOfSales, postInvoice, refreshOrderPayments } from "@/modules/sales/posting";
+import {
+  ledgerPartyId,
+  postCostOfSales,
+  postInvoice,
+  refreshOrderPayments,
+} from "@/modules/sales/posting";
 import {
   deliveryChallanSchema,
   issueInvoiceSchema,
@@ -227,6 +232,7 @@ async function reclassifyPaymentsAsAdvance(tx: Tx, ctx: CompanyContext, orderId:
   const paidAfterInvoice = agg._sum.amount ?? ZERO;
   if (paidAfterInvoice.gt(0)) {
     const acc = await ensureControlAccounts(ctx.company.id, tx);
+    const partyId = await ledgerPartyId(tx, ctx.company.id, order.partyId);
     await postJournalEntry(tx, {
       companyId: ctx.company.id,
       description: `Payments on ${order.number} held as advance after invoice void`,
@@ -234,8 +240,8 @@ async function reclassifyPaymentsAsAdvance(tx: Tx, ctx: CompanyContext, orderId:
       sourceId: orderId,
       postedById: ctx.user.id,
       lines: [
-        { accountId: acc.RECEIVABLE, partyId: order.partyId, debit: paidAfterInvoice },
-        { accountId: acc.CUSTOMER_ADVANCE, partyId: order.partyId, credit: paidAfterInvoice },
+        { accountId: acc.RECEIVABLE, partyId, debit: paidAfterInvoice },
+        { accountId: acc.CUSTOMER_ADVANCE, partyId, credit: paidAfterInvoice },
       ],
     });
     await tx.payment.updateMany({

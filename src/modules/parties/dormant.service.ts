@@ -22,7 +22,8 @@ export function monthsAgo(months: number, now: Date = new Date()): Date {
 
 /**
  * Buyers with no transaction since `cutoff` (never-traded buyers count from the
- * day they were added). Closed and settling accounts are left out.
+ * day they were added). Closed and settling accounts are left out, and so is
+ * the Walk-in customers account, which is not a buyer to win back.
  */
 export function inactiveBuyersWhere(
   cutoff: Date,
@@ -30,6 +31,7 @@ export function inactiveBuyersWhere(
 ): Prisma.PartyWhereInput {
   return {
     kind: { in: ["BUYER", "BOTH"] },
+    systemRole: null,
     status: { in: ["ACTIVE", "DORMANT"] },
     ...(buyerTypes ? { buyerType: { in: buyerTypes } } : {}),
     OR: [

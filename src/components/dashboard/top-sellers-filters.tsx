@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
-import { useTransition } from "react";
+import { useOptimistic, useTransition } from "react";
 
 import { NativeSelect } from "@/components/ui/native-select";
 import { cn } from "@/lib/utils";
@@ -11,7 +11,7 @@ import { PERIOD_OPTIONS, type TopSellersView, topSellersSearch } from "./top-sel
 /**
  * Period, SKUs or styles, and pieces or sales value for the top sellers. A
  * change reloads the list from the server; the old list stays, dimmed, until
- * the new one arrives.
+ * the new one arrives, while the filters already show the choice made.
  */
 export function TopSellersFilters({
   view,
@@ -25,10 +25,16 @@ export function TopSellersFilters({
   const router = useRouter();
   const pathname = usePathname();
   const [pending, startTransition] = useTransition();
+  // The choice made, until the list for it arrives (a select bound to the address
+  // alone would spring back while it loads).
+  const [shown, setShown] = useOptimistic(view);
 
   function show(change: Partial<TopSellersView>) {
-    const search = topSellersSearch({ ...view, ...change });
-    startTransition(() => router.replace(`${pathname}${search}`, { scroll: false }));
+    const next = { ...shown, ...change };
+    startTransition(() => {
+      setShown(next);
+      router.replace(`${pathname}${topSellersSearch(next)}`, { scroll: false });
+    });
   }
 
   return (
@@ -39,7 +45,7 @@ export function TopSellersFilters({
         </label>
         <NativeSelect
           id="top-period"
-          value={view.period}
+          value={shown.period}
           onChange={(e) => show({ period: e.target.value as TopSellersView["period"] })}
         >
           {PERIOD_OPTIONS.map((option) => (
@@ -54,7 +60,7 @@ export function TopSellersFilters({
           </label>
           <NativeSelect
             id="top-group"
-            value={view.groupBy}
+            value={shown.groupBy}
             onChange={(e) => show({ groupBy: e.target.value as TopSellersView["groupBy"] })}
           >
             <option value="SKU">By SKU</option>
@@ -67,7 +73,7 @@ export function TopSellersFilters({
               </label>
               <NativeSelect
                 id="top-sort"
-                value={view.sortBy}
+                value={shown.sortBy}
                 onChange={(e) => show({ sortBy: e.target.value as TopSellersView["sortBy"] })}
               >
                 <option value="QUANTITY">By pieces</option>

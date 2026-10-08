@@ -3,19 +3,34 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-import { isActivePath } from "@/components/shell/nav-items";
 import { cn } from "@/lib/utils";
 
-/** The settings area's tabs: an underlined row of links, like the dashboard's tabs. */
-export function SettingsTabs({ tabs }: { tabs: Array<{ href: string; label: string }> }) {
+import { activeTabHref } from "./nav-items";
+
+/**
+ * A section's tabs (Settings, Products): an underlined row of links, like the
+ * dashboard's tabs. It scrolls sideways on phones when the tabs do not fit.
+ */
+export function SectionTabs({
+  label,
+  tabs,
+}: {
+  /** What the tabs are for, for screen readers ("Settings"). */
+  label: string;
+  tabs: Array<{ href: string; label: string }>;
+}) {
   const pathname = usePathname();
+  const current = activeTabHref(
+    pathname,
+    tabs.map((tab) => tab.href),
+  );
   return (
     <nav
-      aria-label="Settings"
+      aria-label={label}
       className="flex w-full [scrollbar-width:none] items-end gap-6 overflow-x-auto border-b [&::-webkit-scrollbar]:hidden"
     >
       {tabs.map((tab) => {
-        const active = isActivePath(pathname, tab.href);
+        const active = tab.href === current;
         return (
           <Link
             key={tab.href}

@@ -1,5 +1,5 @@
-import { SettingsTabs } from "@/components/settings/settings-tabs";
 import { visibleSettingsTabs } from "@/components/settings/tabs";
+import { SectionTabs } from "@/components/shell/section-tabs";
 import { requireCompanyPage } from "@/server/pages/guards";
 
 /**
@@ -19,7 +19,7 @@ export default async function SettingsLayout({ children }: { children: React.Rea
             Settings
           </h1>
         </div>
-        <SettingsTabs tabs={tabs} />
+        <SectionTabs label="Settings" tabs={tabs} />
       </header>
       {children}
     </div>

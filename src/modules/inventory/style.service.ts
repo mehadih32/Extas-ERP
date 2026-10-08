@@ -2,9 +2,11 @@ import { Prisma } from "@prisma/client";
 
 import { AppError } from "@/lib/errors";
 import type { RequestMeta } from "@/lib/request-meta";
+import { assertAllowed } from "@/lib/verdict";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { categoryWithDescendants, listCategoryTree } from "@/modules/inventory/catalog.service";
+import { canDeleteStyle } from "@/modules/inventory/rules";
 import {
   createStyleSchema,
   listStylesSchema,
@@ -25,6 +27,12 @@ async function assertRefs(ctx: CompanyContext, categoryId?: string, brandId?: st
   if (brandId && !(await ctx.db.brand.findUnique({ where: { id: brandId } }))) {
     throw new AppError("NOT_FOUND", "Brand not found.");
   }
+}
+
+/** Another style already has this code (shown on the code field). */
+function codeTaken(code: string) {
+  const message = `Style code ${code} already exists.`;
+  return new AppError("CONFLICT", message, { code: [message] });
 }
 
 export async function getStyle(ctx: CompanyContext, styleId: string) {
@@ -78,9 +86,7 @@ export async function listStyles(ctx: CompanyContext, raw: unknown = {}) {
 export async function createStyle(ctx: CompanyContext, raw: unknown, meta?: RequestMeta) {
   const input = createStyleSchema.parse(raw);
   await assertRefs(ctx, input.categoryId, input.brandId);
-  if (await ctx.db.style.findFirst({ where: { code: input.code } })) {
-    throw new AppError("CONFLICT", `Style code ${input.code} already exists.`);
-  }
+  if (await ctx.db.style.findFirst({ where: { code: input.code } })) throw codeTaken(input.code);
   const style = await ctx.db.style.create({
     data: { ...input, brandId: input.brandId ?? null, companyId: ctx.company.id },
     include: styleInclude,
@@ -105,9 +111,7 @@ export async function updateStyle(
   const before = await getStyle(ctx, styleId);
   await assertRefs(ctx, input.categoryId, input.brandId);
   if (input.code && input.code !== before.code) {
-    if (await ctx.db.style.findFirst({ where: { code: input.code } })) {
-      throw new AppError("CONFLICT", `Style code ${input.code} already exists.`);
-    }
+    if (await ctx.db.style.findFirst({ where: { code: input.code } })) throw codeTaken(input.code);
   }
   const style = await ctx.db.style.update({
     where: { id: before.id },
@@ -127,21 +131,27 @@ export async function updateStyle(
 }
 
 /**
+ * How many records point at the style's SKUs: stock movements, orders, deliveries
+ * from production and quotations. A style with any of them cannot be deleted.
+ */
+export async function styleHistoryCount(ctx: CompanyContext, styleId: string): Promise<number> {
+  const variantFilter = { variant: { styleId } };
+  const [movements, orderItems, intakeLines, quotationItems] = await Promise.all([
+    ctx.db.stockMovement.count({ where: variantFilter }),
+    ctx.db.salesOrder.count({ where: { items: { some: variantFilter } } }),
+    ctx.db.stockIntake.count({ where: { lines: { some: variantFilter } } }),
+    ctx.db.quotation.count({ where: { items: { some: { styleId } } } }),
+  ]);
+  return movements + orderItems + intakeLines + quotationItems;
+}
+
+/**
  * Deletes a style only if none of its SKUs has history (stock, sales, production).
  * Otherwise archive it with `isActive: false` so past documents stay intact.
  */
 export async function deleteStyle(ctx: CompanyContext, styleId: string, meta?: RequestMeta) {
   const style = await getStyle(ctx, styleId);
-  const variantFilter = { variant: { styleId: style.id } };
-  const [movements, orderItems, intakeLines, quotationItems] = await Promise.all([
-    ctx.db.stockMovement.count({ where: variantFilter }),
-    ctx.db.salesOrder.count({ where: { items: { some: variantFilter } } }),
-    ctx.db.stockIntake.count({ where: { lines: { some: variantFilter } } }),
-    ctx.db.quotation.count({ where: { items: { some: { styleId: style.id } } } }),
-  ]);
-  if (movements + orderItems + intakeLines + quotationItems > 0) {
-    throw new AppError("CONFLICT", "This style has history. Archive it instead of deleting.");
-  }
+  assertAllowed(canDeleteStyle({ historyCount: await styleHistoryCount(ctx, style.id) }));
   await ctx.db.style.delete({ where: { id: style.id } });
   await auditInCompany(ctx, meta, {
     action: "DELETE",

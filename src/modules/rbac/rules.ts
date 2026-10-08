@@ -1,6 +1,8 @@
 import type { SystemRole } from "@prisma/client";
 
-import { AppError } from "@/lib/errors";
+import { ALLOWED, refuse, type Verdict } from "@/lib/verdict";
+
+export { assertAllowed, type Verdict } from "@/lib/verdict";
 
 /*
  * Who may do what to the company's members and roles. The member and role
@@ -9,19 +11,6 @@ import { AppError } from "@/lib/errors";
  * never show a button the server would refuse (or hide one it would allow).
  * Holding company.members.manage / company.roles.manage is checked before these.
  */
-
-export type Verdict = { ok: true } | { ok: false; code: "FORBIDDEN" | "CONFLICT"; message: string };
-
-const ALLOWED: Verdict = { ok: true };
-
-function refuse(code: "FORBIDDEN" | "CONFLICT", message: string): Verdict {
-  return { ok: false, code, message };
-}
-
-/** Throws the refusal as the AppError the API and Server Actions report. */
-export function assertAllowed(verdict: Verdict): void {
-  if (!verdict.ok) throw new AppError(verdict.code, verdict.message);
-}
 
 /** The person acting: their role in the open company and whether they own the platform. */
 export type Actor = {

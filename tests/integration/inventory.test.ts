@@ -210,7 +210,7 @@ run("stock", () => {
       quantity: 2,
       reason: "Stain on collar",
     });
-    expect(entry.lossValue.toFixed(2)).toBe("840.00");
+    expect(entry.lossValue).toBe("840.00");
     const balance = await prisma.stockBalance.findFirst({ where: { variantId: v } });
     expect(balance!.quantity).toBe(8);
     expect(
@@ -363,5 +363,196 @@ run("inventory tree and style list", () => {
     const { style, cell } = await makePolo(env);
     await stock.adjustStock(env.ctx, { variantId: cell("Navy", "S").variantId, quantity: 1 });
     await expect(styles.deleteStyle(env.ctx, style.id)).rejects.toMatchObject({ code: "CONFLICT" });
+  });
+});
+
+run("stock counts and bad stock", () => {
+  beforeEach(resetDb);
+
+  /** Someone in the company's Warehouse Team: keeps the stock, never sees what it cost. */
+  async function storeKeeper(env: Awaited<ReturnType<typeof setup>>) {
+    const role = await prisma.role.findFirstOrThrow({
+      where: { companyId: env.company.id, systemRole: "WAREHOUSE_TEAM" },
+    });
+    const user = await makeUser(`store@${env.company.slug}.test`);
+    await addToCompany(user.id, env.company.id, role.id);
+    return contextFor(user.id, env.company.id);
+  }
+
+  const onShelf = async (variantId: string, grade: "A_GRADE" | "B_GRADE" = "A_GRADE") =>
+    (await prisma.stockBalance.findFirst({ where: { variantId, grade } }))?.quantity ?? 0;
+
+  it("counts a whole style at once, correcting only the SKUs that differ", async () => {
+    const env = await setup();
+    const { cell } = await makePolo(env);
+    const [navyS, navyM, whiteS] = [cell("Navy", "S"), cell("Navy", "M"), cell("White", "S")];
+    await stock.adjustStock(env.ctx, {
+      variantId: navyS.variantId,
+      quantity: 10,
+      type: "OPENING",
+      unitCost: 400,
+    });
+    await stock.adjustStock(env.ctx, { variantId: navyM.variantId, quantity: 5, unitCost: 400 });
+
+    const result = await stock.recordStockCount(env.ctx, {
+      mode: "COUNT",
+      note: "October count",
+      lines: [
+        { variantId: navyS.variantId, counted: 8, expected: 10 }, // 2 missing
+        { variantId: navyM.variantId, counted: 5, expected: 5 }, // as expected
+        { variantId: whiteS.variantId, counted: 3, expected: 0 }, // 3 found
+      ],
+    });
+    expect(result).toEqual({ changed: 2, added: 3, removed: 2 });
+    expect([
+      await onShelf(navyS.variantId),
+      await onShelf(navyM.variantId),
+      await onShelf(whiteS.variantId),
+    ]).toEqual([8, 5, 3]);
+
+    const corrections = await prisma.stockMovement.findMany({
+      where: { type: "ADJUSTMENT", note: "October count" },
+      orderBy: { quantity: "asc" },
+    });
+    expect(corrections.map((m) => m.quantity)).toEqual([-2, 3]);
+    // The 2 missing pieces leave at their average cost and are booked as a loss.
+    const loss = await prisma.journalEntry.findFirstOrThrow({
+      where: { sourceId: corrections[0]!.id },
+      include: { lines: true },
+    });
+    expect(loss.lines.map((l) => [l.debit.toFixed(2), l.credit.toFixed(2)])).toEqual([
+      ["800.00", "0.00"],
+      ["0.00", "800.00"],
+    ]);
+    const audit = await prisma.auditLog.findFirstOrThrow({
+      where: { entityType: "Warehouse", action: "STOCK_ADJUSTMENT" },
+    });
+    expect(audit.summary).toBe(
+      "Stock count at Main Warehouse (A-grade): 2 SKU(s), +3 / -2 (October count)",
+    );
+  });
+
+  it("refuses a count when the stock moved after the count began, and saves nothing", async () => {
+    const env = await setup();
+    const { cell } = await makePolo(env);
+    const [navyS, navyL] = [cell("Navy", "S").variantId, cell("Navy", "L").variantId];
+    await stock.adjustStock(env.ctx, { variantId: navyS, quantity: 10 });
+    await stock.adjustStock(env.ctx, { variantId: navyL, quantity: 4 });
+    // A piece leaves while the shelf is being counted.
+    await stock.moveToBadStock(env.ctx, { variantId: navyS, quantity: 1 });
+
+    await expect(
+      stock.recordStockCount(env.ctx, {
+        mode: "COUNT",
+        lines: [
+          { variantId: navyS, counted: 9, expected: 10 },
+          { variantId: navyL, counted: 6, expected: 4 },
+        ],
+      }),
+    ).rejects.toMatchObject({
+      code: "CONFLICT",
+      message: expect.stringContaining("EX-PL-001-NAVY-S"),
+    });
+    expect([await onShelf(navyS), await onShelf(navyL)]).toEqual([9, 4]);
+    expect(await prisma.stockMovement.count({ where: { type: "ADJUSTMENT" } })).toBe(2);
+  });
+
+  it("adds opening stock for several SKUs at one cost, in the chosen grade", async () => {
+    const env = await setup();
+    const { cell } = await makePolo(env);
+    const [whiteM, whiteL] = [cell("White", "M").variantId, cell("White", "L").variantId];
+    const result = await stock.recordStockCount(env.ctx, {
+      mode: "OPENING",
+      grade: "B_GRADE",
+      unitCost: 250,
+      lines: [
+        { variantId: whiteM, quantity: 4 },
+        { variantId: whiteL, quantity: 6 },
+      ],
+    });
+    expect(result).toEqual({ changed: 2, added: 10, removed: 0 });
+    expect([await onShelf(whiteM, "B_GRADE"), await onShelf(whiteL, "B_GRADE")]).toEqual([4, 6]);
+    const variant = await prisma.productVariant.findUniqueOrThrow({ where: { id: whiteM } });
+    expect([variant.avgCost.toFixed(2), variant.bGradeAvgCost.toFixed(2)]).toEqual([
+      "0.00",
+      "250.00",
+    ]);
+    const opening = await prisma.stockMovement.findMany({ where: { type: "OPENING" } });
+    expect(opening).toHaveLength(2);
+    expect(await prisma.journalEntry.count({ where: { sourceType: "STOCK_ADJUSTMENT" } })).toBe(2);
+
+    await expect(
+      stock.recordStockCount(env.ctx, {
+        mode: "OPENING",
+        lines: [
+          { variantId: whiteM, quantity: 1 },
+          { variantId: whiteM, quantity: 2 },
+        ],
+      }),
+    ).rejects.toMatchObject({ name: "ZodError" });
+  });
+
+  it("lists bad stock with where it came from, costs only for those who see the financials", async () => {
+    const env = await setup();
+    const store = await storeKeeper(env);
+    const { cell } = await makePolo(env);
+    const navyM = cell("Navy", "M").variantId;
+    await stock.adjustStock(env.ctx, { variantId: navyM, quantity: 10, unitCost: 420 });
+    await stock.adjustStock(env.ctx, { variantId: navyM, quantity: 5, grade: "B_GRADE" });
+
+    const moved = await stock.moveToBadStock(store, {
+      variantId: navyM,
+      quantity: 2,
+      source: "WAREHOUSE_DAMAGE",
+      reason: "Water damage",
+    });
+    // The Warehouse Team records the loss without seeing what it cost.
+    expect(moved).toMatchObject({ quantity: 2, unitCost: null, lossValue: null });
+    await stock.moveToBadStock(env.ctx, { variantId: navyM, quantity: 1, grade: "B_GRADE" });
+
+    const forOwner = await stock.listBadStock(env.ctx);
+    expect(forOwner.showsCosts).toBe(true);
+    expect(forOwner.totals).toEqual({ entries: 2, pieces: 3, lossValue: "840.00" });
+    const damage = forOwner.items.find((e) => e.source === "WAREHOUSE_DAMAGE")!;
+    expect(damage).toMatchObject({
+      sku: "EX-PL-001-NAVY-M",
+      quantity: 2,
+      grade: "A_GRADE",
+      warehouse: { name: "Main Warehouse" },
+      recordedBy: { name: "store" },
+      reason: "Water damage",
+      unitCost: "420.00",
+      lossValue: "840.00",
+    });
+    expect(forOwner.items.find((e) => e.grade === "B_GRADE")!.lossValue).toBe("0.00");
+
+    const forStore = await stock.listBadStock(store);
+    expect(forStore.showsCosts).toBe(false);
+    expect(forStore.totals.lossValue).toBeNull();
+    expect(forStore.items.every((e) => e.unitCost === null && e.lossValue === null)).toBe(true);
+
+    // The days chosen are company days.
+    const today = new Date().toLocaleDateString("en-CA", { timeZone: env.company.timezone });
+    expect((await stock.listBadStock(env.ctx, { from: today, to: today })).totals.pieces).toBe(3);
+    expect((await stock.listBadStock(env.ctx, { to: "2020-01-01" })).items).toHaveLength(0);
+  });
+
+  it("shows what stock movements cost only to those who see the financials", async () => {
+    const env = await setup();
+    const store = await storeKeeper(env);
+    const { cell } = await makePolo(env);
+    const navyS = cell("Navy", "S").variantId;
+    await stock.adjustStock(env.ctx, { variantId: navyS, quantity: 4, unitCost: 300 });
+    const { movement } = await stock.adjustStock(store, { variantId: navyS, quantity: -1 });
+    expect(movement).toMatchObject({ quantity: -1, unitCost: null, value: null });
+
+    const owner = await stock.listMovements(env.ctx, { variantId: navyS });
+    expect(owner.items.map((m) => [m.quantity, m.unitCost, m.value])).toEqual([
+      [-1, "300.00", "300.00"],
+      [4, "300.00", "1200.00"],
+    ]);
+    expect(owner.items[0]!.recordedBy?.name).toBe("store");
+    const keeper = await stock.listMovements(store, { variantId: navyS });
+    expect(keeper.items.every((m) => m.unitCost === null && m.value === null)).toBe(true);
   });
 });

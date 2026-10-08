@@ -18,18 +18,21 @@ The data lives in one folder on the server, `/srv/extras-erp` unless you choose 
 | `backups/`       | The daily backups, one folder per day                                             |
 | `safety-copies/` | Copies of the database taken just before each update and each restore             |
 | `caddy/`         | The HTTPS certificate                                                             |
+| `deploy-logs/`   | The logs of the automatic updates, the newest 30                                  |
 
 The scripts in this folder do all the work. Each one explains itself at the top.
 
-| Script            | When to run it                                                       |
-| ----------------- | -------------------------------------------------------------------- |
-| `setup-server.sh` | Once, on a new server: updates, Docker, firewall, security updates   |
-| `configure.sh`    | Once: asks for the web address and the owner, makes the passwords    |
-| `deploy.sh`       | To install, and again after every update                             |
-| `create-owner.sh` | Once, after the first install: the owner's account and the companies |
-| `status.sh`       | Any time: is everything running, latest backups, free disk space     |
-| `logs.sh`         | When something looks wrong                                           |
-| `restore.sh`      | To put the ERP back to a backup                                      |
+| Script                 | When to run it                                                         |
+| ---------------------- | ---------------------------------------------------------------------- |
+| `setup-server.sh`      | Once, on a new server: updates, Docker, firewall, security updates     |
+| `configure.sh`         | Once: asks for the web address and the owner, makes the passwords      |
+| `deploy.sh`            | To install, and again after every update                               |
+| `create-owner.sh`      | Once, after the first install: the owner's account and the companies   |
+| `setup-auto-deploy.sh` | Once, to let GitHub install each update by itself                      |
+| `auto-deploy.sh`       | Run by GitHub after each merge: gets the newest code, then `deploy.sh` |
+| `status.sh`            | Any time: is everything running, latest backups, free disk space       |
+| `logs.sh`              | When something looks wrong                                             |
+| `restore.sh`           | To put the ERP back to a backup                                        |
 
 Until the screens are built, the ERP answers its API only (for example `/api/health`); the
 home page shows "not found".
@@ -57,7 +60,9 @@ virtual machine** and fill in:
 Create the server and open it when it is ready. Note its **Public IP address**, and check
 under **Networking** that the IP is **Static**. In the same place, edit the SSH (22) rule
 and set its **Source** to **My IP address**, so only your office can sign in to the server.
-The web ports (80 and 443) stay open to everyone.
+(Automatic updates need it open to everyone; see
+[Updating by itself after each merge](#updating-by-itself-after-each-merge).) The web ports
+(80 and 443) stay open to everyone.
 
 ## 2. Point the web address at the server
 
@@ -234,7 +239,66 @@ If an update goes wrong, go back to the version before it: find it with
 `sudo git log --oneline -5`, then run `sudo git checkout <its code>` and
 `sudo ./deploy/deploy.sh`. If the update changed the database, also restore the
 `before-update-…` safety copy taken just before it. `sudo git checkout main` returns to the
-latest version.
+latest version. With automatic updates on, the next merge also returns to it; to stay on the
+earlier version for a while, turn them off first (below).
+
+## Updating by itself after each merge
+
+Once this is set up, GitHub installs each new version by itself: after every merge into
+`main`, it signs in to the server and runs `deploy/auto-deploy.sh`, which gets the newest
+code and runs `deploy.sh`. The **Deploy** workflow in the repository's **Actions** tab shows
+each update and its steps. The full log stays on the server, in
+`/srv/extras-erp/deploy-logs/`, because anyone can read the Actions logs while the
+repository is public.
+
+Set it up once:
+
+1. **On the server**, get the newest code and make GitHub's key:
+
+   ```bash
+   cd /opt/extras-erp
+   sudo git pull
+   sudo ./deploy/setup-auto-deploy.sh
+   ```
+
+   The key can only run the update: it cannot open a shell, copy files or reach anything
+   else on the server. The script prints what GitHub needs, then deletes the private half of
+   the key from the server.
+
+2. **On GitHub**, open the repository's **Settings → Secrets and variables → Actions**, and
+   add each of these with **New repository secret**:
+
+   | Name              | Value                                                                                |
+   | ----------------- | ------------------------------------------------------------------------------------ |
+   | `SERVER_IP`       | The server's public IP address, the one you sign in to it with                       |
+   | `USERNAME`        | The account the script printed, for example `erpadmin`                               |
+   | `SSH_PRIVATE_KEY` | The whole key it printed, from the `-----BEGIN` line to the `-----END` line included |
+   | `SSH_HOST_KEY`    | The line it printed that starts with `ssh-ed25519`                                   |
+
+3. **In Azure**, open the server's **Networking**, edit the **SSH (22)** rule and set its
+   **Source** to **Any**. GitHub's machines have a different address each time, so a rule
+   for your office alone keeps them out. The server accepts keys only, never passwords (the
+   script checks this before it makes the key).
+
+4. **Try it**: in the repository's **Actions** tab, open **Deploy** and press **Run
+   workflow**. It takes as long as `deploy.sh` by hand. A green tick means the server runs
+   the newest version.
+
+From then on:
+
+- Each merge into `main` is installed by itself. A merge made during an update is installed
+  right after it.
+- A failed update shows a red cross in the **Actions** tab, and GitHub emails whoever made
+  the merge. To read why on the server, list the logs with
+  `sudo ls /srv/extras-erp/deploy-logs/`, then open the newest with `sudo less`.
+- Updating by hand still works. An update or a restore started while another is running
+  stops with a message instead.
+- To turn automatic updates off, open **Actions → Deploy**, then **⋯ → Disable workflow**.
+  To also take the key away from the server:
+  `sed -i '/ extras-erp-auto-deploy$/d' ~/.ssh/authorized_keys` and
+  `sudo rm /etc/sudoers.d/extras-erp-auto-deploy`.
+- Running `sudo ./deploy/setup-auto-deploy.sh` again makes a new key and stops the old one.
+  Put the new `SSH_PRIVATE_KEY` on GitHub afterwards.
 
 ## Everyday commands
 
@@ -278,8 +342,8 @@ set once:
 
 ## Security
 
-- Only ports 22 (SSH, from your office only), 80 and 443 are open, both in Azure and in
-  the server's own firewall. The database is never open to the internet.
+- Only ports 22 (SSH, keys only; from your office only unless automatic updates are on), 80
+  and 443 are open, both in Azure and in the server's own firewall. The database is never open to the internet.
 - The ERP uses its own database account, which can reach only the ERP's own data.
 - `deploy/.env` holds the passwords and keys. Only the administrator can read it. Never
   put it in the repository or send it by email or chat.

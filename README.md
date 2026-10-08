@@ -39,6 +39,12 @@ the step-by-step guide, from creating the server to backups, restoring, updates 
 to a new server. The scripts and settings are in [`deploy/`](./deploy), and the app's image
 in the [`Dockerfile`](./Dockerfile).
 
+After every merge into `main`, the **Deploy** workflow
+([`.github/workflows/deploy.yml`](./.github/workflows/deploy.yml)) installs the new version on
+the server by itself, over SSH with a key that can only run `deploy/auto-deploy.sh`. Setting
+it up takes one script on the server and four repository secrets:
+[`deploy/README.md`](./deploy/README.md#updating-by-itself-after-each-merge).
+
 In production the app runs three clocks of its own: the daily backup (02:00), reminders, and
 the nightly housekeeping (03:30, Asia/Dhaka), which marks idle buyers dormant, closes settled
 accounts and removes expired sign-ins (`src/modules/housekeeping/scheduler.ts`). Each is off

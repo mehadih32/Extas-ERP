@@ -1,3 +1,5 @@
+import type { ProductVariant } from "@prisma/client";
+
 import { AppError } from "@/lib/errors";
 import type { RequestMeta } from "@/lib/request-meta";
 import { auditInCompany } from "@/modules/audit/audit.service";
@@ -188,6 +190,24 @@ export async function generateMatrix(
   return { created: wanted.length, matrix: await getStyleMatrix(ctx, style.id) };
 }
 
+/**
+ * A SKU as the API returns it after a change: its own prices (null when it sells
+ * at the style's), never what it cost, which follows the financials rule.
+ */
+function presentVariant(v: ProductVariant) {
+  return {
+    id: v.id,
+    styleId: v.styleId,
+    colorId: v.colorId,
+    sizeId: v.sizeId,
+    sku: v.sku,
+    barcode: v.barcode,
+    isActive: v.isActive,
+    retailPrice: v.retailPrice?.toFixed(2) ?? null,
+    wholesalePrice: v.wholesalePrice?.toFixed(2) ?? null,
+  };
+}
+
 /** Per-SKU price override, barcode, or deactivating a single cell. */
 export async function updateVariant(
   ctx: CompanyContext,
@@ -212,24 +232,38 @@ export async function updateVariant(
     entityId: variant.id,
     summary: `Updated SKU ${variant.sku}: ${Object.keys(input).join(", ")}`,
   });
-  return updated;
+  return presentVariant(updated);
 }
 
-/** Finds a SKU by barcode or SKU text (for scanners and quick search). */
+/**
+ * Finds a SKU by barcode or SKU text (for scanners and quick search), with the
+ * prices it sells at (its own or the style's) and its stock in all warehouses.
+ */
 export async function lookupVariant(ctx: CompanyContext, code: string) {
   const term = code.trim();
   if (!term) throw new AppError("VALIDATION", "Enter a SKU or barcode.");
   const variant = await ctx.db.productVariant.findFirst({
     where: { OR: [{ barcode: term }, { sku: term.toUpperCase() }] },
     include: {
-      style: { select: { id: true, code: true, name: true } },
+      style: {
+        select: { id: true, code: true, name: true, retailPrice: true, wholesalePrice: true },
+      },
       color: { select: { name: true, hexCode: true } },
       size: { select: { name: true } },
     },
   });
   if (!variant) throw new AppError("NOT_FOUND", "No SKU matches that code.");
   const stock = (await stockByVariant(ctx, [variant.id])).get(variant.id)!;
-  return { ...variant, stock };
+  const { style } = variant;
+  return {
+    ...presentVariant(variant),
+    retailPrice: (variant.retailPrice ?? style.retailPrice).toFixed(2),
+    wholesalePrice: (variant.wholesalePrice ?? style.wholesalePrice).toFixed(2),
+    style: { id: style.id, code: style.code, name: style.name },
+    color: variant.color,
+    size: variant.size,
+    stock,
+  };
 }
 
 // =============================================================================

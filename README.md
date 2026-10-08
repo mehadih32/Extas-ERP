@@ -94,6 +94,27 @@ Built one module at a time, each in its own pull request. So far:
   - **Company**: name and contact details, the letterhead (logo, colours, footer), business
     rules (low stock level, advance percentage, when a buyer counts as dormant) and money and
     time (currency, time zone, first month of the financial year).
+- **Products** (`/products`), in four tabs:
+  - **Styles**: the styles as cards with the pieces ready to sell, B-grade and SKU count,
+    browsed by category (a tree on computers, a picker on phones) and brand, with archived
+    styles on request. The search takes a style's name or code, or an exact SKU or barcode,
+    which opens that SKU. A brand's stock sheet (PDF) prints from here. A style's page shows
+    its details, its **stock matrix** (colours down, sizes across, all warehouses or one; red
+    below the low stock level) and its stock history. A matrix cell opens its SKU: prices,
+    barcode and stock in each warehouse, and for managers editing the SKU (barcode, own
+    prices, offered for sale), correcting its stock and moving pieces to bad stock. Managers
+    also add styles, add colours or sizes to a style (making its SKUs), edit, archive and
+    restore it, and delete a style that has no history yet.
+  - **Stock count**: pick a style, warehouse and grade, type the pieces found on the shelf
+    for each SKU and save only the differences (missing pieces are booked as a loss). If stock
+    moves while counting (a sale, another count), the save is refused and the sheet reloads
+    the new shelf numbers, keeping what was typed. The same tab enters **opening stock**: the
+    pieces held before starting with Extras ERP, at an optional cost per piece.
+  - **Bad stock**: the pieces taken out of the sellable stock, for a period, with why, where
+    from and who recorded them. Managers record bad stock from a SKU or barcode.
+  - **Setup**: colours (with their swatch), sizes (in matrix order), the category tree,
+    brands and warehouses. Something already in use cannot be deleted. Names are unique
+    whatever their letter case ("maroon" next to Maroon is refused).
 
 The screens ask the same Server Actions as the API, so the backend's permissions decide what
 appears. With the built-in roles' default permissions:
@@ -104,6 +125,21 @@ appears. With the built-in roles' default permissions:
 | Sales Executive, Warehouse | No          | Yes      | Yes          | No                           |
 | Production Manager         | No          | Yes      | No           | No                           |
 | Employee                   | No          | No       | No           | No                           |
+
+Products follows the inventory permissions:
+
+| Role                               | Products menu | Changes (styles, SKUs, counts, bad stock, setup) | Costs and losses |
+| ---------------------------------- | ------------- | ------------------------------------------------ | ---------------- |
+| Super Admin                        | Yes           | Yes                                              | Yes              |
+| Production Manager, Warehouse Team | Yes           | Yes                                              | No               |
+| Sales Executive                    | Yes (to look) | No (no Stock count tab, Setup is read-only)      | No               |
+| Accounts, Employee                 | No            | No                                               | No               |
+
+Reading needs `inventory.view` and changing needs `inventory.manage`. What stock cost (a
+SKU's average cost, the value of each stock movement, the loss on bad stock) shows only to
+people who see the financials (`dashboard.financials` or `accounts.view`); for everyone else
+the server leaves it out. Opening stock asks for a cost per piece, so the people who enter it
+(those with `inventory.manage`) decide what it is worth in the books.
 
 Settings follows the same rule. The Team tab needs `company.members.manage`. The Roles tab
 opens with `company.members.manage` (to read them) or `company.roles.manage` (to change them).
@@ -128,8 +164,15 @@ For developers:
 - When a screen offers actions on each row, the service that enforces them sends a flag for
   each one, decided by the same rules, so a button never appears for something the server
   refuses (or goes missing for something it allows). The Team and Roles rules live in
-  `src/modules/rbac/rules.ts`; `tests/integration/team-screens.test.ts` tries every action as
-  different people and checks it works exactly when it is offered.
+  `src/modules/rbac/rules.ts` and the catalogue's (what may be deleted) in
+  `src/modules/inventory/rules.ts`; `tests/integration/team-screens.test.ts` and
+  `tests/integration/products-screens.test.ts` try every action as different people and check
+  it works exactly when it is offered.
+- Filters and pickers that live in the address (the style list, the stock count, the matrix's
+  warehouse) show the choice at once and dim the list until the new one arrives.
+- A page (a Server Component) gets only the components of a `"use client"` file, so values
+  both sides need (like a page size) go in a plain module next to it;
+  `tests/unit/server-client-imports.test.ts` checks this.
 - Components are [shadcn/ui](https://ui.shadcn.com) in `src/components/ui` (add more with
   `npx shadcn@latest add <name>`), in the brand colours from `src/styles/globals.css`. The
   fonts (Inter, Playfair Display, Noto Sans Bengali) are bundled with the app.
@@ -191,18 +234,21 @@ stock records the loss at that cost.
 | `GET/POST /api/inventory/sizes`, `PATCH/DELETE …/:id`, `POST …/reorder` | Sizes (matrix columns)                                  |
 | `GET/POST /api/inventory/styles`, `GET/PATCH/DELETE …/:id`              | Styles; filter by category, brand, search               |
 | `GET/POST /api/inventory/styles/:id/matrix`                             | Matrix with live stock / create missing SKUs            |
-| `PATCH /api/inventory/variants/:id`                                     | SKU price override, barcode, deactivate                 |
+| `GET/PATCH /api/inventory/variants/:id`                                 | SKU with stock per warehouse / price, barcode, on sale  |
 | `GET /api/inventory/lookup?code=`                                       | Find a SKU by barcode or SKU                            |
 | `GET/POST /api/inventory/ratio-presets`, `PATCH/DELETE …/:id`           | Saved size ratios                                       |
 | `POST /api/inventory/ratio-fill`                                        | Ratio Fill quantities (packs or total, capped to stock) |
 | `GET/POST /api/inventory/warehouses`                                    | Warehouses                                              |
 | `POST /api/inventory/stock/adjust`                                      | Opening stock or +/- correction                         |
-| `POST /api/inventory/stock/bad-stock`                                   | Move to Bad Stock (inventory loss)                      |
+| `POST /api/inventory/stock/count`                                       | Stock count (only differences) or opening stock         |
+| `GET/POST /api/inventory/stock/bad-stock`                               | Bad stock entries / move to Bad Stock (inventory loss)  |
 | `GET /api/inventory/stock/movements`                                    | Stock history                                           |
 | `GET /api/inventory/stock/summary`                                      | Stock value, low / highest / slow stock, top sellers    |
 
-Reads need `inventory.view`; changes need `inventory.manage`. Server Actions for all of these
-are in `src/server/actions/inventory.actions.ts`.
+Reads need `inventory.view`; changes need `inventory.manage`. Costs (average costs, movement
+values, bad stock losses) come back only to people who see the financials, and the SKU lookup
+and SKU change return prices but never costs. Server Actions for all of these are in
+`src/server/actions/inventory.actions.ts`.
 
 ## Buyers & Suppliers (backend)
 

@@ -1,8 +1,9 @@
-import type { Category } from "@prisma/client";
+import { type Category, Prisma } from "@prisma/client";
 
 import { AppError } from "@/lib/errors";
 import type { RequestMeta } from "@/lib/request-meta";
 import { slugify } from "@/lib/slug";
+import { assertAllowed } from "@/lib/verdict";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import {
@@ -16,6 +17,25 @@ import {
   updateColorSchema,
   updateSizeSchema,
 } from "@/modules/inventory/schemas";
+import { refuseTakenName, sameName } from "@/modules/inventory/names";
+import {
+  canDeleteBrand,
+  canDeleteCategory,
+  canDeleteColor,
+  canDeleteSize,
+} from "@/modules/inventory/rules";
+
+/** A create or rename that clashes with a name already taken: CONFLICT, shown on the name. */
+async function namedUniquely<T>(work: Promise<T>, taken: string): Promise<T> {
+  try {
+    return await work;
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      throw new AppError("CONFLICT", taken, { name: [taken] });
+    }
+    throw error;
+  }
+}
 
 /** Blueprint's default size run for the matrix columns. */
 export const DEFAULT_SIZES = ["S", "M", "L", "XL", "XXL", "3XL"] as const;
@@ -147,12 +167,12 @@ export async function deleteCategory(ctx: CompanyContext, categoryId: string, me
     include: { _count: { select: { styles: true, children: true } } },
   });
   if (!category) throw new AppError("NOT_FOUND", "Category not found.");
-  if (category._count.children > 0) {
-    throw new AppError("CONFLICT", "Move or delete its sub-categories first.");
-  }
-  if (category._count.styles > 0) {
-    throw new AppError("CONFLICT", "Move its styles to another category first.");
-  }
+  assertAllowed(
+    canDeleteCategory({
+      childCount: category._count.children,
+      styleCount: category._count.styles,
+    }),
+  );
   await ctx.db.category.delete({ where: { id: category.id } });
   await auditInCompany(ctx, meta, {
     action: "DELETE",
@@ -176,9 +196,16 @@ export async function listBrands(ctx: CompanyContext) {
 
 export async function createBrand(ctx: CompanyContext, raw: unknown, meta?: RequestMeta) {
   const input = createBrandSchema.parse(raw);
-  const brand = await ctx.db.brand.create({
-    data: { companyId: ctx.company.id, name: input.name, logoUrl: input.logoUrl ?? null },
-  });
+  await refuseTakenName(
+    ctx.db.brand.findFirst({ where: sameName(input.name), select: { id: true } }),
+    `There is already a brand called ${input.name}.`,
+  );
+  const brand = await namedUniquely(
+    ctx.db.brand.create({
+      data: { companyId: ctx.company.id, name: input.name, logoUrl: input.logoUrl ?? null },
+    }),
+    `There is already a brand called ${input.name}.`,
+  );
   await auditInCompany(ctx, meta, {
     action: "CREATE",
     entityType: "Brand",
@@ -197,7 +224,16 @@ export async function updateBrand(
   const input = updateBrandSchema.parse(raw);
   const brand = await ctx.db.brand.findUnique({ where: { id: brandId } });
   if (!brand) throw new AppError("NOT_FOUND", "Brand not found.");
-  const updated = await ctx.db.brand.update({ where: { id: brand.id }, data: input });
+  if (input.name) {
+    await refuseTakenName(
+      ctx.db.brand.findFirst({ where: sameName(input.name, brand.id), select: { id: true } }),
+      `There is already a brand called ${input.name}.`,
+    );
+  }
+  const updated = await namedUniquely(
+    ctx.db.brand.update({ where: { id: brand.id }, data: input }),
+    `There is already a brand called ${input.name ?? brand.name}.`,
+  );
   await auditInCompany(ctx, meta, {
     action: "UPDATE",
     entityType: "Brand",
@@ -213,9 +249,7 @@ export async function deleteBrand(ctx: CompanyContext, brandId: string, meta?: R
     include: { _count: { select: { styles: true } } },
   });
   if (!brand) throw new AppError("NOT_FOUND", "Brand not found.");
-  if (brand._count.styles > 0) {
-    throw new AppError("CONFLICT", "This brand still has styles. Move them first.");
-  }
+  assertAllowed(canDeleteBrand({ styleCount: brand._count.styles }));
   await ctx.db.brand.delete({ where: { id: brand.id } });
   await auditInCompany(ctx, meta, {
     action: "DELETE",
@@ -235,14 +269,21 @@ export async function listColors(ctx: CompanyContext) {
 
 export async function createColor(ctx: CompanyContext, raw: unknown, meta?: RequestMeta) {
   const input = createColorSchema.parse(raw);
-  const color = await ctx.db.color.create({
-    data: {
-      companyId: ctx.company.id,
-      name: input.name,
-      hexCode: input.hexCode,
-      sortOrder: input.sortOrder ?? 0,
-    },
-  });
+  await refuseTakenName(
+    ctx.db.color.findFirst({ where: sameName(input.name), select: { id: true } }),
+    `There is already a colour called ${input.name}.`,
+  );
+  const color = await namedUniquely(
+    ctx.db.color.create({
+      data: {
+        companyId: ctx.company.id,
+        name: input.name,
+        hexCode: input.hexCode,
+        sortOrder: input.sortOrder ?? 0,
+      },
+    }),
+    `There is already a colour called ${input.name}.`,
+  );
   await auditInCompany(ctx, meta, {
     action: "CREATE",
     entityType: "Color",
@@ -261,7 +302,16 @@ export async function updateColor(
   const input = updateColorSchema.parse(raw);
   const color = await ctx.db.color.findUnique({ where: { id: colorId } });
   if (!color) throw new AppError("NOT_FOUND", "Color not found.");
-  const updated = await ctx.db.color.update({ where: { id: color.id }, data: input });
+  if (input.name) {
+    await refuseTakenName(
+      ctx.db.color.findFirst({ where: sameName(input.name, color.id), select: { id: true } }),
+      `There is already a colour called ${input.name}.`,
+    );
+  }
+  const updated = await namedUniquely(
+    ctx.db.color.update({ where: { id: color.id }, data: input }),
+    `There is already a colour called ${input.name ?? color.name}.`,
+  );
   await auditInCompany(ctx, meta, {
     action: "UPDATE",
     entityType: "Color",
@@ -277,12 +327,7 @@ export async function deleteColor(ctx: CompanyContext, colorId: string, meta?: R
     include: { _count: { select: { variants: true } } },
   });
   if (!color) throw new AppError("NOT_FOUND", "Color not found.");
-  if (color._count.variants > 0) {
-    throw new AppError(
-      "CONFLICT",
-      "This color is used by products. Deactivate those SKUs instead.",
-    );
-  }
+  assertAllowed(canDeleteColor({ variantCount: color._count.variants }));
   await ctx.db.color.delete({ where: { id: color.id } });
   await auditInCompany(ctx, meta, {
     action: "DELETE",
@@ -299,13 +344,17 @@ export async function listSizes(ctx: CompanyContext) {
 export async function createSize(ctx: CompanyContext, raw: unknown, meta?: RequestMeta) {
   const input = createSizeSchema.parse(raw);
   const last = await ctx.db.size.findFirst({ orderBy: { sortOrder: "desc" } });
-  const size = await ctx.db.size.create({
-    data: {
-      companyId: ctx.company.id,
-      name: input.name.toUpperCase(),
-      sortOrder: input.sortOrder ?? (last ? last.sortOrder + 1 : 0),
-    },
-  });
+  const name = input.name.toUpperCase();
+  const size = await namedUniquely(
+    ctx.db.size.create({
+      data: {
+        companyId: ctx.company.id,
+        name,
+        sortOrder: input.sortOrder ?? (last ? last.sortOrder + 1 : 0),
+      },
+    }),
+    `There is already a size called ${name}.`,
+  );
   await auditInCompany(ctx, meta, {
     action: "CREATE",
     entityType: "Size",
@@ -324,10 +373,11 @@ export async function updateSize(
   const input = updateSizeSchema.parse(raw);
   const size = await ctx.db.size.findUnique({ where: { id: sizeId } });
   if (!size) throw new AppError("NOT_FOUND", "Size not found.");
-  const updated = await ctx.db.size.update({
-    where: { id: size.id },
-    data: { ...input, name: input.name?.toUpperCase() },
-  });
+  const name = input.name?.toUpperCase();
+  const updated = await namedUniquely(
+    ctx.db.size.update({ where: { id: size.id }, data: { ...input, name } }),
+    `There is already a size called ${name ?? size.name}.`,
+  );
   await auditInCompany(ctx, meta, {
     action: "UPDATE",
     entityType: "Size",
@@ -361,9 +411,7 @@ export async function deleteSize(ctx: CompanyContext, sizeId: string, meta?: Req
     include: { _count: { select: { variants: true } } },
   });
   if (!size) throw new AppError("NOT_FOUND", "Size not found.");
-  if (size._count.variants > 0) {
-    throw new AppError("CONFLICT", "This size is used by products. Deactivate those SKUs instead.");
-  }
+  assertAllowed(canDeleteSize({ variantCount: size._count.variants }));
   await ctx.db.size.delete({ where: { id: size.id } });
   await auditInCompany(ctx, meta, {
     action: "DELETE",

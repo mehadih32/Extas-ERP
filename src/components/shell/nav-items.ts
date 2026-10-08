@@ -1,4 +1,4 @@
-import { LayoutDashboardIcon, type LucideIcon, SettingsIcon } from "lucide-react";
+import { LayoutDashboardIcon, type LucideIcon, SettingsIcon, ShirtIcon } from "lucide-react";
 
 import type { PermissionKey } from "@/modules/rbac/permissions";
 
@@ -16,6 +16,14 @@ export type NavItem = {
 
 export const NAV_ITEMS: readonly NavItem[] = [
   { href: "/", label: "Dashboard", icon: LayoutDashboardIcon, anyOf: [] },
+  {
+    // Styles and their stock matrix, stock counts, bad stock and the catalogue setup
+    // (components/products/tabs.ts).
+    href: "/products",
+    label: "Products",
+    icon: ShirtIcon,
+    anyOf: ["inventory.view"],
+  },
   {
     // Team, roles and company details (components/settings/tabs.ts).
     href: "/settings",
@@ -41,4 +49,14 @@ export function visibleNavItems(permissions: readonly string[]): NavItem[] {
 export function isActivePath(pathname: string, href: string): boolean {
   if (href === "/") return pathname === "/";
   return pathname === href || pathname.startsWith(`${href}/`);
+}
+
+/**
+ * The tab a page belongs to: the longest tab address it sits under, so
+ * "/products/stock-count" is the Stock count tab rather than Styles ("/products").
+ */
+export function activeTabHref(pathname: string, hrefs: readonly string[]): string | undefined {
+  return hrefs
+    .filter((href) => isActivePath(pathname, href))
+    .sort((a, b) => b.length - a.length)[0];
 }

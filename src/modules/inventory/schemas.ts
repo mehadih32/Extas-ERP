@@ -163,3 +163,77 @@ export const movementsQuerySchema = z.object({
   cursor: id.optional(),
   take: z.coerce.number().int().min(1).max(200).optional(),
 });
+
+const uniqueSkus = (lines: Array<{ variantId: string }>) =>
+  new Set(lines.map((l) => l.variantId)).size === lines.length;
+
+/**
+ * A stock count (the pieces found on the shelf, against the pieces the screen
+ * showed when counting began) or opening stock (pieces to add, at one cost each)
+ * for several SKUs at one warehouse and grade.
+ */
+export const stockCountSchema = z.discriminatedUnion("mode", [
+  z.object({
+    mode: z.literal("COUNT"),
+    warehouseId: id.optional(), // default warehouse when omitted
+    grade: z.enum(StockGrade).default("A_GRADE"),
+    note: z.string().trim().max(500, "Use at most 500 characters").optional(),
+    lines: z
+      .array(
+        z.object({
+          variantId: id,
+          counted: z
+            .number("Enter the pieces counted")
+            .int("Enter whole pieces")
+            .min(0, "Pieces cannot be below 0")
+            .max(1_000_000),
+          expected: z.number().int().min(0).max(1_000_000),
+        }),
+      )
+      .min(1, "Count at least one SKU")
+      .max(500)
+      .refine(uniqueSkus, "Each SKU can appear once"),
+  }),
+  z.object({
+    mode: z.literal("OPENING"),
+    warehouseId: id.optional(),
+    grade: z.enum(StockGrade).default("A_GRADE"),
+    /** What each piece cost; without it the pieces come in at the SKU's average cost. */
+    unitCost: z
+      .number("Enter a cost")
+      .min(0, "The cost cannot be below 0")
+      .max(10_000_000, "That cost is too large")
+      .optional(),
+    note: z.string().trim().max(500, "Use at most 500 characters").optional(),
+    lines: z
+      .array(
+        z.object({
+          variantId: id,
+          quantity: z
+            .number("Enter the pieces")
+            .int("Enter whole pieces")
+            .min(1, "Add at least 1 piece")
+            .max(1_000_000),
+        }),
+      )
+      .min(1, "Add pieces to at least one SKU")
+      .max(500)
+      .refine(uniqueSkus, "Each SKU can appear once"),
+  }),
+]);
+
+export const badStockQuerySchema = z.object({
+  /** Calendar days in company time. */
+  from: z.iso.date().optional(),
+  to: z.iso.date().optional(),
+  styleId: id.optional(),
+  cursor: id.optional(),
+  take: z.coerce.number().int().min(1).max(100).optional(),
+});
+
+/** Which count sheet to show: a style's SKUs at one warehouse and grade. */
+export const stockCountSheetQuerySchema = z.object({
+  styleId: id.optional(),
+  warehouseId: id.optional(),
+  grade: z.enum(StockGrade).default("A_GRADE"),
+});

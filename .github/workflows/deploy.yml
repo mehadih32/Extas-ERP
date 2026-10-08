@@ -1,0 +1,59 @@
+# Installs the newest code on the server after every merge into main, and from
+# the Actions tab with "Run workflow". It signs in over SSH with a key that can
+# only run deploy/auto-deploy.sh. Setting it up: deploy/README.md, "Updating by
+# itself after each merge".
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One update at a time: a merge made during an update is installed after it.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Update the server
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      SERVER_IP: ${{ secrets.SERVER_IP }}
+      USERNAME: ${{ secrets.USERNAME }}
+      SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+      SSH_HOST_KEY: ${{ secrets.SSH_HOST_KEY }}
+    steps:
+      - name: Check the secrets
+        run: |
+          missing=""
+          for name in SERVER_IP USERNAME SSH_PRIVATE_KEY SSH_HOST_KEY; do
+            [ -n "${!name}" ] || missing="$missing $name"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error title=Auto-deploy is not set up yet::Add these repository secrets:$missing. See deploy/README.md, \"Updating by itself after each merge\"."
+            exit 1
+          fi
+
+      - name: Update the server
+        run: |
+          # Spaces or line breaks pasted around a secret are dropped.
+          host="$(printf '%s' "$SERVER_IP" | tr -d '[:space:]')"
+          user="$(printf '%s' "$USERNAME" | tr -d '[:space:]')"
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" | tr -d '\r' >~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          # Only the server's own key is accepted, so no other machine can pose as it.
+          printf '%s %s\n' "$host" "$(printf '%s' "$SSH_HOST_KEY" | tr -d '\r\n')" >~/.ssh/known_hosts
+          ssh -T -i ~/.ssh/deploy_key \
+            -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            -o ConnectTimeout=30 -o ServerAliveInterval=30 -o ServerAliveCountMax=10 \
+            "$user@$host" deploy </dev/null
+
+      - name: Remove the key from GitHub's machine
+        if: always()
+        run: rm -f ~/.ssh/deploy_key

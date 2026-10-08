@@ -18,6 +18,15 @@ need_root() {
   [ "$(id -u)" -eq 0 ] || die "run this with sudo, for example: sudo $0"
 }
 
+# One update or restore at a time. The lock stays held until the script ends, and
+# a script started by one that holds it (auto-deploy.sh runs deploy.sh) shares it.
+take_update_lock() {
+  [ -n "${EXTRAS_ERP_UPDATE_LOCK:-}" ] && return 0
+  exec 9>/run/extras-erp-update.lock
+  flock -n 9 || die "another update or restore is running. Wait for it to finish, then try again."
+  export EXTRAS_ERP_UPDATE_LOCK=1
+}
+
 # A setting from deploy/.env (the last line wins), or the default given.
 setting() {
   local value

@@ -18,6 +18,7 @@ done
 
 need_root
 load_settings
+take_update_lock
 [ -n "$APP_DOMAIN" ] || die "APP_DOMAIN is empty in deploy/.env."
 
 say "Preparing the data folders in $DATA_DIR"

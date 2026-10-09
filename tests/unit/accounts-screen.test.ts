@@ -49,7 +49,7 @@ describe("Accounts in the menu, by role", () => {
     expect(tabs(role("ACCOUNTS"))).toEqual(all);
     const accounts = phoneTabs(visibleNavItems(role("ACCOUNTS")));
     expect(accounts.tabs.map((i) => i.href)).toEqual(["/", "/sales", "/production", "/accounts"]);
-    expect(accounts.more.map((i) => i.href)).toEqual(["/materials", "/parties"]);
+    expect(accounts.more.map((i) => i.href)).toEqual(["/materials", "/parties", "/hr"]);
   });
 
   it("folds the owner's last sections under More where the top bar is narrower", () => {
@@ -65,6 +65,7 @@ describe("Accounts in the menu, by role", () => {
       ["/products", "md"],
       ["/materials", "lg"],
       ["/parties", "lg"],
+      ["/hr", "all"],
       ["/settings", "all"],
     ]);
     expect(topBarFold(7)).toBe("all");

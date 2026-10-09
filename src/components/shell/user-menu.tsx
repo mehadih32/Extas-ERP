@@ -1,6 +1,6 @@
 "use client";
 
-import { KeyRoundIcon, LogOutIcon, MenuIcon, UserRoundIcon } from "lucide-react";
+import { IdCardIcon, KeyRoundIcon, LogOutIcon, MenuIcon, UserRoundIcon } from "lucide-react";
 import Link from "next/link";
 import { useState, useTransition } from "react";
 
@@ -23,8 +23,8 @@ import type { NavItem } from "./nav-items";
 import type { ShellUser } from "./types";
 
 /**
- * The person's menu: who is signed in and in which role, change password and
- * sign out. An initials button in the top bar, the "Account" tab on phones.
+ * The person's menu: who is signed in and in which role, their own HR records
+ * (for people whose menu has HR & payroll instead), change password and sign out. An initials button in the top bar, the "Account" tab on phones.
  * When the phone's tab bar has more sections than fit, the tab is "More" and
  * lists those sections first.
  */
@@ -116,6 +116,14 @@ export function UserMenu({
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
           <DropdownMenuGroup>
+            {user.myHr && (
+              <DropdownMenuItem asChild>
+                <Link href={ROUTES.myHr}>
+                  <IdCardIcon aria-hidden />
+                  My HR
+                </Link>
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem asChild>
               <Link href={ROUTES.changePassword}>
                 <KeyRoundIcon aria-hidden />

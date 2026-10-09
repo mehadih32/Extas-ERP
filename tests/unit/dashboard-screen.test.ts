@@ -56,9 +56,12 @@ describe("top sellers choices in the address bar", () => {
 describe("the app frame", () => {
   it("shows the dashboard to everyone, even without dashboard permissions", () => {
     expect(visibleNavItems([]).map((item) => item.href)).toEqual(["/"]);
-    // Everything but the claimants' own Expenses entry, which Accounts reach as a tab.
+    // Everything but the claimants' own Expenses entry, which Accounts reach as a tab, and
+    // My HR, which HR and Accounts reach from the account menu.
     expect(visibleNavItems(ALL_PERMISSIONS).map((item) => item.href)).toEqual(
-      NAV_ITEMS.map((item) => item.href).filter((href) => href !== "/accounts/expenses"),
+      NAV_ITEMS.map((item) => item.href).filter(
+        (href) => href !== "/accounts/expenses" && href !== "/me",
+      ),
     );
   });
 

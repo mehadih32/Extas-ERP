@@ -71,7 +71,9 @@ describe("the menu with Sales in it", () => {
       "/products",
       "/materials",
       "/parties",
+      "/hr",
       "/accounts/expenses",
+      "/me",
       "/settings",
     ]);
     expect(visibleNavItems(["sales.view"]).map((i) => i.href)).toEqual(["/", "/sales"]);
@@ -92,6 +94,7 @@ describe("the menu with Sales in it", () => {
       "/products",
       "/materials",
       "/parties",
+      "/hr",
       "/settings",
     ]);
     const seller = phoneTabs(visibleNavItems(["sales.view", "inventory.view", "parties.view"]));

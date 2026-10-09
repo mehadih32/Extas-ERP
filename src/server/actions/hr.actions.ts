@@ -1,13 +1,17 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
+
 import { getRequestMeta } from "@/lib/request-meta";
 import { runAction } from "@/lib/result";
 import { requireAnyPermission, requirePermission } from "@/modules/auth/context";
+import * as files from "@/modules/files/file.service";
 import * as advances from "@/modules/hr/advance.service";
 import * as attendance from "@/modules/hr/attendance.service";
 import * as employees from "@/modules/hr/employee.service";
 import * as leave from "@/modules/hr/leave.service";
 import * as payroll from "@/modules/hr/payroll.service";
+import * as screens from "@/modules/hr/screens.service";
 import * as settings from "@/modules/hr/settings.service";
 
 /*
@@ -19,6 +23,7 @@ import * as settings from "@/modules/hr/settings.service";
  *   accounts.payments.record  pay advances and salaries (Accounts)
  *   accounts.receipts.record  take unspent advances back (Accounts)
  * Services check the HR and money permissions themselves too, so no caller can skip them.
+ * Changes refresh the screens and hand back the record's id (and number or code) only.
  */
 
 const hrRead = () => requireAnyPermission("hr.view", "hr.manage", "hr.payroll");
@@ -30,12 +35,94 @@ const runPayroll = () => requirePermission("hr.payroll");
 const approvePayroll = () => requirePermission("hr.payroll.approve");
 const payOut = () => requirePermission("accounts.payments.record");
 const takeIn = () => requirePermission("accounts.receipts.record");
+const giveOut = () => requireAnyPermission("accounts.payments.record", "accounts.manage");
+
+/** Runs a change and refreshes every screen that may show it. */
+const change = <T>(work: () => Promise<T>) =>
+  runAction(async () => {
+    const result = await work();
+    revalidatePath("/", "layout");
+    return result;
+  });
+
+const employeeRef = (e: { id: string; code: string; name: string }) => ({
+  id: e.id,
+  code: e.code,
+  name: e.name,
+});
+const runRef = (r: { id: string; month: string; status: string }) => ({
+  id: r.id,
+  month: r.month,
+  status: r.status,
+});
+const advanceRef = (a: { id: string; number: string; status: string; outstanding: string }) => ({
+  id: a.id,
+  number: a.number,
+  status: a.status,
+  outstanding: a.outstanding,
+});
+const leaveRef = (l: { id: string; status: string; days: number }) => ({
+  id: l.id,
+  status: l.status,
+  days: l.days,
+});
+
+// --- Screens -------------------------------------------------------------------------------
+export const getHrOverviewScreenAction = async () =>
+  runAction(async () => screens.getOverviewScreen(await hrRead()));
+export const getEmployeeListAction = async (query: unknown) =>
+  runAction(async () => screens.getEmployeeList(await hrRead(), query));
+export const listEmployeeRowsAction = async (query: unknown) =>
+  runAction(async () => screens.listEmployeeRows(await hrRead(), query));
+export const getEmployeeScreenAction = async (
+  employeeId: string,
+  options: { year?: number } = {},
+) => runAction(async () => screens.getEmployeeScreen(await hrRead(), employeeId, options));
+export const getEmployeeFormAction = async (employeeId?: string) =>
+  runAction(async () => screens.getEmployeeForm(await hrManage(), employeeId));
+export const getEmployeeMonthScreenAction = async (employeeId: string, query: unknown) =>
+  runAction(async () => screens.getEmployeeMonthScreen(await hrRead(), employeeId, query));
+export const getStatementScreenAction = async (
+  employeeId: string,
+  query: { from?: string; to?: string } = {},
+) => runAction(async () => screens.getStatementScreen(await salaryRead(), employeeId, query));
+export const getAttendanceScreenAction = async (query: unknown) =>
+  runAction(async () => screens.getAttendanceScreen(await hrRead(), query));
+export const getAttendanceMonthScreenAction = async (query: unknown) =>
+  runAction(async () => screens.getAttendanceMonthScreen(await hrRead(), query));
+export const getLeaveListAction = async (query: unknown) =>
+  runAction(async () => screens.getLeaveList(await hrRead(), query));
+export const listLeaveRowsAction = async (query: unknown) =>
+  runAction(async () => screens.listLeaveRows(await hrRead(), query));
+export const getLeaveScreenAction = async (leaveId: string) =>
+  runAction(async () => screens.getLeaveScreen(await hrRead(), leaveId));
+export const getLeaveFormAction = async (options: { employeeId?: string } = {}) =>
+  runAction(async () => screens.getLeaveForm(await hrManage(), options));
+export const getPayrollListAction = async (query: { year?: unknown } = {}) =>
+  runAction(async () => screens.getPayrollList(await salaryRead(), query));
+export const getPayrollScreenAction = async (runId: string) =>
+  runAction(async () => screens.getPayrollScreen(await salaryRead(), runId));
+export const getPayslipScreenAction = async (runId: string, itemId: string) =>
+  runAction(async () => screens.getPayslipScreen(await salaryRead(), runId, itemId));
+export const getAdvanceListAction = async (query: unknown) =>
+  runAction(async () => screens.getAdvanceList(await advanceRead(), query));
+export const listAdvanceRowsAction = async (query: unknown) =>
+  runAction(async () => screens.listAdvanceRows(await advanceRead(), query));
+export const getAdvanceScreenAction = async (advanceId: string) =>
+  runAction(async () => screens.getAdvanceScreen(await advanceRead(), advanceId));
+export const getAdvanceFormAction = async (options: { employeeId?: string } = {}) =>
+  runAction(async () => screens.getAdvanceForm(await giveOut(), options));
+export const getHrSettingsScreenAction = async (query: { year?: unknown } = {}) =>
+  runAction(async () => screens.getSettingsScreen(await hrRead(), query));
 
 // --- Rules, holidays, leave types --------------------------------------------------------
 export const getHrSettingsAction = async () =>
   runAction(async () => settings.getHrSettings(await hrRead()));
 export const updateHrSettingsAction = async (input: unknown) =>
-  runAction(async () => settings.updateHrSettings(await hrManage(), input, await getRequestMeta()));
+  change(async () => {
+    await settings.updateHrSettings(await hrManage(), input, await getRequestMeta());
+    return { saved: true };
+  });
 export const listHolidaysAction = async (query: unknown) =>
   runAction(async () =>
     settings.listHolidays(
@@ -44,11 +131,12 @@ export const listHolidaysAction = async (query: unknown) =>
     ),
   );
 export const createHolidaysAction = async (input: unknown) =>
-  runAction(async () => settings.createHolidays(await hrManage(), input, await getRequestMeta()));
+  change(async () => {
+    const added = await settings.createHolidays(await hrManage(), input, await getRequestMeta());
+    return { year: added.year };
+  });
 export const deleteHolidayAction = async (holidayId: string) =>
-  runAction(async () =>
-    settings.deleteHoliday(await hrManage(), holidayId, await getRequestMeta()),
-  );
+  change(async () => settings.deleteHoliday(await hrManage(), holidayId, await getRequestMeta()));
 export const listLeaveTypesAction = async (query: { includeInactive?: unknown } = {}) =>
   runAction(async () =>
     settings.listLeaveTypes(
@@ -57,11 +145,20 @@ export const listLeaveTypesAction = async (query: { includeInactive?: unknown } 
     ),
   );
 export const createLeaveTypeAction = async (input: unknown) =>
-  runAction(async () => settings.createLeaveType(await hrManage(), input, await getRequestMeta()));
+  change(async () => {
+    const type = await settings.createLeaveType(await hrManage(), input, await getRequestMeta());
+    return { id: type.id, name: type.name };
+  });
 export const updateLeaveTypeAction = async (leaveTypeId: string, input: unknown) =>
-  runAction(async () =>
-    settings.updateLeaveType(await hrManage(), leaveTypeId, input, await getRequestMeta()),
-  );
+  change(async () => {
+    const type = await settings.updateLeaveType(
+      await hrManage(),
+      leaveTypeId,
+      input,
+      await getRequestMeta(),
+    );
+    return { id: type.id, name: type.name };
+  });
 
 // --- Employees ------------------------------------------------------------------------------
 export const listEmployeesAction = async (query: unknown) =>
@@ -85,43 +182,67 @@ export const employeeDirectoryAction = async (query: unknown) =>
 export const getEmployeeAction = async (employeeId: string) =>
   runAction(async () => employees.getEmployee(await hrRead(), employeeId));
 export const createEmployeeAction = async (input: unknown) =>
-  runAction(async () => employees.createEmployee(await hrManage(), input, await getRequestMeta()));
+  change(async () =>
+    employeeRef(await employees.createEmployee(await hrManage(), input, await getRequestMeta())),
+  );
 export const updateEmployeeAction = async (employeeId: string, input: unknown) =>
-  runAction(async () =>
-    employees.updateEmployee(await hrManage(), employeeId, input, await getRequestMeta()),
+  change(async () =>
+    employeeRef(
+      await employees.updateEmployee(await hrManage(), employeeId, input, await getRequestMeta()),
+    ),
   );
 export const deleteEmployeeAction = async (employeeId: string) =>
-  runAction(async () =>
+  change(async () =>
     employees.deleteEmployee(await hrManage(), employeeId, await getRequestMeta()),
   );
 export const reviseSalaryAction = async (employeeId: string, input: unknown) =>
-  runAction(async () =>
-    employees.reviseSalary(await hrManage(), employeeId, input, await getRequestMeta()),
+  change(async () =>
+    employeeRef(
+      await employees.reviseSalary(await hrManage(), employeeId, input, await getRequestMeta()),
+    ),
   );
 export const deleteSalaryRevisionAction = async (employeeId: string, revisionId: string) =>
-  runAction(async () =>
-    employees.deleteSalaryRevision(
-      await hrManage(),
-      employeeId,
-      revisionId,
-      await getRequestMeta(),
+  change(async () =>
+    employeeRef(
+      await employees.deleteSalaryRevision(
+        await hrManage(),
+        employeeId,
+        revisionId,
+        await getRequestMeta(),
+      ),
     ),
   );
 export const exitEmployeeAction = async (employeeId: string, input: unknown) =>
-  runAction(async () =>
-    employees.exitEmployee(await hrManage(), employeeId, input, await getRequestMeta()),
+  change(async () =>
+    employeeRef(
+      await employees.exitEmployee(await hrManage(), employeeId, input, await getRequestMeta()),
+    ),
   );
 export const reinstateEmployeeAction = async (employeeId: string) =>
-  runAction(async () =>
-    employees.reinstateEmployee(await hrManage(), employeeId, await getRequestMeta()),
+  change(async () =>
+    employeeRef(
+      await employees.reinstateEmployee(await hrManage(), employeeId, await getRequestMeta()),
+    ),
   );
+/** The temporary password comes back once, for a login made for them now. */
 export const grantPortalAccessAction = async (employeeId: string, input: unknown) =>
-  runAction(async () =>
-    employees.grantPortalAccess(await hrManage(), employeeId, input, await getRequestMeta()),
-  );
+  change(async () => {
+    const granted = await employees.grantPortalAccess(
+      await hrManage(),
+      employeeId,
+      input,
+      await getRequestMeta(),
+    );
+    return {
+      email: granted.employee.portalLogin?.email ?? null,
+      temporaryPassword: granted.temporaryPassword,
+    };
+  });
 export const revokePortalAccessAction = async (employeeId: string) =>
-  runAction(async () =>
-    employees.revokePortalAccess(await hrManage(), employeeId, await getRequestMeta()),
+  change(async () =>
+    employeeRef(
+      await employees.revokePortalAccess(await hrManage(), employeeId, await getRequestMeta()),
+    ),
   );
 export const getEmployeeStatementAction = async (employeeId: string, query: unknown) =>
   runAction(async () => employees.getEmployeeStatement(await salaryRead(), employeeId, query));
@@ -130,9 +251,12 @@ export const getEmployeeStatementAction = async (employeeId: string, query: unkn
 export const getAttendanceDayAction = async (query: unknown) =>
   runAction(async () => attendance.getAttendanceDay(await hrRead(), query));
 export const markAttendanceAction = async (input: unknown) =>
-  runAction(async () => attendance.markAttendance(await hrManage(), input, await getRequestMeta()));
+  change(async () => {
+    const day = await attendance.markAttendance(await hrManage(), input, await getRequestMeta());
+    return { date: day.date, totals: day.totals };
+  });
 export const clearAttendanceAction = async (attendanceId: string) =>
-  runAction(async () =>
+  change(async () =>
     attendance.clearAttendance(await hrManage(), attendanceId, await getRequestMeta()),
   );
 export const getAttendanceSummaryAction = async (query: unknown) =>
@@ -145,24 +269,39 @@ export const listLeaveRequestsAction = async (query: unknown) =>
   runAction(async () => leave.listLeaveRequests(await hrRead(), query));
 export const getLeaveRequestAction = async (leaveId: string) =>
   runAction(async () => leave.getLeaveRequest(await hrRead(), leaveId));
+/** A doctor's note or other paper for a leave request, recorded by HR. */
+export const uploadLeaveFileAction = async (form: FormData) =>
+  runAction(async () => {
+    const asset = await files.storeUpload(
+      await hrManage(),
+      await files.fileFromForm(form),
+      await getRequestMeta(),
+    );
+    return { id: asset.id, fileName: asset.fileName };
+  });
 export const createLeaveAction = async (input: unknown) =>
-  runAction(async () => leave.createLeave(await hrManage(), input, await getRequestMeta()));
+  change(async () =>
+    leaveRef(await leave.createLeave(await hrManage(), input, await getRequestMeta())),
+  );
 export const approveLeaveAction = async (leaveId: string, input: unknown) =>
-  runAction(async () =>
-    leave.approveLeave(await hrManage(), leaveId, input, await getRequestMeta()),
+  change(async () =>
+    leaveRef(await leave.approveLeave(await hrManage(), leaveId, input, await getRequestMeta())),
   );
 export const rejectLeaveAction = async (leaveId: string, input: unknown) =>
-  runAction(async () =>
-    leave.rejectLeave(await hrManage(), leaveId, input, await getRequestMeta()),
+  change(async () =>
+    leaveRef(await leave.rejectLeave(await hrManage(), leaveId, input, await getRequestMeta())),
   );
 export const cancelLeaveAction = async (leaveId: string, input: unknown) =>
-  runAction(async () =>
-    leave.cancelLeave(await hrManage(), leaveId, input, await getRequestMeta()),
+  change(async () =>
+    leaveRef(await leave.cancelLeave(await hrManage(), leaveId, input, await getRequestMeta())),
   );
 export const getLeaveBalancesAction = async (query: unknown) =>
   runAction(async () => leave.getLeaveBalances(await hrRead(), query));
 export const adjustLeaveBalanceAction = async (input: unknown) =>
-  runAction(async () => leave.adjustLeaveBalance(await hrManage(), input, await getRequestMeta()));
+  change(async () => {
+    await leave.adjustLeaveBalance(await hrManage(), input, await getRequestMeta());
+    return { saved: true };
+  });
 
 // --- Advances -------------------------------------------------------------------------------
 export const listAdvancesAction = async (query: unknown) =>
@@ -171,47 +310,46 @@ export const getAdvanceAction = async (advanceId: string) =>
   runAction(async () => advances.getAdvance(await advanceRead(), advanceId));
 /** Paying an advance needs accounts.payments.record; bringing one forward, accounts.manage. */
 export const giveAdvanceAction = async (input: unknown) =>
-  runAction(async () =>
-    advances.giveAdvance(
-      await requireAnyPermission("accounts.payments.record", "accounts.manage"),
-      input,
-      await getRequestMeta(),
-    ),
+  change(async () =>
+    advanceRef(await advances.giveAdvance(await giveOut(), input, await getRequestMeta())),
   );
 export const updateAdvanceAction = async (advanceId: string, input: unknown) =>
-  runAction(async () =>
-    advances.updateAdvance(
-      await requireAnyPermission("accounts.payments.record", "hr.payroll"),
-      advanceId,
-      input,
-      await getRequestMeta(),
+  change(async () =>
+    advanceRef(
+      await advances.updateAdvance(
+        await requireAnyPermission("accounts.payments.record", "hr.payroll"),
+        advanceId,
+        input,
+        await getRequestMeta(),
+      ),
     ),
   );
 export const returnAdvanceAction = async (advanceId: string, input: unknown) =>
-  runAction(async () =>
-    advances.returnAdvance(await takeIn(), advanceId, input, await getRequestMeta()),
+  change(async () =>
+    advanceRef(
+      await advances.returnAdvance(await takeIn(), advanceId, input, await getRequestMeta()),
+    ),
   );
 export const voidAdvanceReturnAction = async (
   advanceId: string,
   settlementId: string,
   input: unknown,
 ) =>
-  runAction(async () =>
-    advances.voidAdvanceReturn(
-      await takeIn(),
-      advanceId,
-      settlementId,
-      input,
-      await getRequestMeta(),
+  change(async () =>
+    advanceRef(
+      await advances.voidAdvanceReturn(
+        await takeIn(),
+        advanceId,
+        settlementId,
+        input,
+        await getRequestMeta(),
+      ),
     ),
   );
 export const voidAdvanceAction = async (advanceId: string, input: unknown) =>
-  runAction(async () =>
-    advances.voidAdvance(
-      await requireAnyPermission("accounts.payments.record", "accounts.manage"),
-      advanceId,
-      input,
-      await getRequestMeta(),
+  change(async () =>
+    advanceRef(
+      await advances.voidAdvance(await giveOut(), advanceId, input, await getRequestMeta()),
     ),
   );
 
@@ -221,40 +359,51 @@ export const listPayrollRunsAction = async (query: unknown) =>
 export const getPayrollRunAction = async (runId: string) =>
   runAction(async () => payroll.getPayrollRun(await salaryRead(), runId));
 export const createPayrollRunAction = async (input: unknown) =>
-  runAction(async () =>
-    payroll.createPayrollRun(await runPayroll(), input, await getRequestMeta()),
+  change(async () =>
+    runRef(await payroll.createPayrollRun(await runPayroll(), input, await getRequestMeta())),
   );
 export const recalculatePayrollRunAction = async (runId: string) =>
-  runAction(async () =>
-    payroll.recalculatePayrollRun(await runPayroll(), runId, await getRequestMeta()),
+  change(async () =>
+    runRef(await payroll.recalculatePayrollRun(await runPayroll(), runId, await getRequestMeta())),
   );
 export const updatePayrollItemAction = async (runId: string, itemId: string, input: unknown) =>
-  runAction(async () =>
-    payroll.updatePayrollItem(await runPayroll(), runId, itemId, input, await getRequestMeta()),
+  change(async () =>
+    runRef(
+      await payroll.updatePayrollItem(
+        await runPayroll(),
+        runId,
+        itemId,
+        input,
+        await getRequestMeta(),
+      ),
+    ),
   );
 export const setPayrollBonusAction = async (runId: string, input: unknown) =>
-  runAction(async () =>
-    payroll.setPayrollBonus(await runPayroll(), runId, input, await getRequestMeta()),
+  change(async () =>
+    runRef(await payroll.setPayrollBonus(await runPayroll(), runId, input, await getRequestMeta())),
   );
 export const deletePayrollRunAction = async (runId: string) =>
-  runAction(async () =>
-    payroll.deletePayrollRun(await runPayroll(), runId, await getRequestMeta()),
-  );
+  change(async () => payroll.deletePayrollRun(await runPayroll(), runId, await getRequestMeta()));
 export const approvePayrollRunAction = async (runId: string) =>
-  runAction(async () =>
-    payroll.approvePayrollRun(await approvePayroll(), runId, await getRequestMeta()),
+  change(async () =>
+    runRef(await payroll.approvePayrollRun(await approvePayroll(), runId, await getRequestMeta())),
   );
 export const reopenPayrollRunAction = async (runId: string, input: unknown) =>
-  runAction(async () =>
-    payroll.reopenPayrollRun(await approvePayroll(), runId, input, await getRequestMeta()),
+  change(async () =>
+    runRef(
+      await payroll.reopenPayrollRun(await approvePayroll(), runId, input, await getRequestMeta()),
+    ),
   );
 export const payPayrollRunAction = async (runId: string, input: unknown) =>
-  runAction(async () =>
-    payroll.payPayrollRun(await payOut(), runId, input, await getRequestMeta()),
-  );
+  change(async () => {
+    const paid = await payroll.payPayrollRun(await payOut(), runId, input, await getRequestMeta());
+    return { paymentId: paid.paymentId, number: paid.number, run: runRef(paid.run) };
+  });
 export const voidPayrollPaymentAction = async (paymentId: string, input: unknown) =>
-  runAction(async () =>
-    payroll.voidPayrollPayment(await payOut(), paymentId, input, await getRequestMeta()),
+  change(async () =>
+    runRef(
+      await payroll.voidPayrollPayment(await payOut(), paymentId, input, await getRequestMeta()),
+    ),
   );
 export const getPayslipAction = async (runId: string, itemId: string) =>
   runAction(async () => payroll.getPayslip(await salaryRead(), runId, itemId));

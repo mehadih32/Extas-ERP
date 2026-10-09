@@ -4,16 +4,26 @@ import { dateColumn, dateOnly, dayRange, localDay } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
+import { assertAllowed } from "@/lib/verdict";
 import { money, ZERO } from "@/modules/accounts/balances";
 import { CONTROL_ACCOUNTS } from "@/modules/accounts/control-accounts";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import {
+  actingAs,
   assertCanManageHr,
   assertCanSeeSalaries,
-  assertNotOwnRecord,
   canSeeSalaries,
 } from "@/modules/hr/access";
+import {
+  canChangeSalary,
+  canDeleteEmployee,
+  canGivePortalLogin,
+  canReinstate,
+  canRemovePortalLogin,
+  canRemoveSalaryRevision,
+  canSetStatus,
+} from "@/modules/hr/rules";
 import { employeeMonth } from "@/modules/hr/attendance.service";
 import { monthKey, monthLabel } from "@/modules/hr/calendar";
 import { balancesFor, syncLeaveBalanceTx } from "@/modules/hr/leave.service";
@@ -132,6 +142,24 @@ async function loadEmployee(
   return employee;
 }
 
+/** What the rules (hr/rules.ts) need about an employee. */
+export function state(e: Pick<EmployeeRow, "name" | "userId" | "exitDate">) {
+  return { name: e.name, userId: e.userId, exitDate: dateOnly(e.exitDate) };
+}
+
+/** Payroll lines, advances, journal lines, attendance, leave and expenses naming an employee. */
+export async function employeeRecords(ctx: CompanyContext, employeeId: string) {
+  const counts = await Promise.all([
+    prisma.payrollItem.count({ where: { employeeId } }),
+    ctx.db.salaryAdvance.count({ where: { employeeId } }),
+    prisma.journalLine.count({ where: { employeeId } }),
+    ctx.db.attendance.count({ where: { employeeId } }),
+    ctx.db.leaveRequest.count({ where: { employeeId } }),
+    ctx.db.expense.count({ where: { employeeId } }),
+  ]);
+  return counts.reduce((t, n) => t + n, 0);
+}
+
 /** The next free "EMP-0001" style code (held under a per-company lock). */
 async function nextEmployeeCode(tx: Tx, companyId: string) {
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`employee-code:${companyId}`}))`;
@@ -237,7 +265,7 @@ export async function getEmployee(ctx: CompanyContext, employeeId: string) {
   const withSalary = canSeeSalaries(ctx);
   const [leave, month] = await Promise.all([
     balancesFor(prisma, employee, Number(day.slice(0, 4))),
-    employeeMonth(ctx, employee, day.slice(0, 7)),
+    employeeMonth(ctx, employee, day.slice(0, 7), { upTo: day }),
   ]);
   const extra = {
     leaveBalances: leave,
@@ -345,9 +373,7 @@ export async function updateEmployee(
   const employee = await loadEmployee(ctx, employeeId);
   if (input.code && input.code !== employee.code)
     await assertCodeFree(ctx, input.code, employee.id);
-  if (input.status && employee.exitDate) {
-    throw new AppError("CONFLICT", `${employee.name} has left; reinstate them first.`);
-  }
+  if (input.status) assertAllowed(canSetStatus(state(employee)));
   const oldJoin = dateOnly(employee.joinDate);
   const { joinDate: newJoin, dateOfBirth, ...details } = input;
   const exit = dateOnly(employee.exitDate);
@@ -405,7 +431,7 @@ export async function reviseSalary(
   assertCanManageHr(ctx, "Only HR can change salaries.");
   const input = salaryRevisionSchema.parse(raw);
   const employee = await loadEmployee(ctx, employeeId);
-  assertNotOwnRecord(ctx, employee, "Someone else must change your own salary.");
+  assertAllowed(canChangeSalary(state(employee), actingAs(ctx)));
   const join = dateOnly(employee.joinDate);
   const exit = dateOnly(employee.exitDate);
   if (input.effectiveFrom < join) {
@@ -461,12 +487,12 @@ export async function deleteSalaryRevision(
 ) {
   assertCanManageHr(ctx, "Only HR can change salaries.");
   const employee = await loadEmployee(ctx, employeeId);
-  assertNotOwnRecord(ctx, employee, "Someone else must change your own salary.");
+  assertAllowed(canChangeSalary(state(employee), actingAs(ctx)));
   const revision = employee.salaryHistory.find((r) => r.id === revisionId);
   if (!revision) throw new AppError("NOT_FOUND", "Salary revision not found.");
-  if (employee.salaryHistory[0]?.id === revision.id) {
-    throw new AppError("CONFLICT", "The joining salary stays; add a new revision instead.");
-  }
+  assertAllowed(
+    canRemoveSalaryRevision({ isJoining: employee.salaryHistory[0]?.id === revision.id }),
+  );
   const from = dateOnly(revision.effectiveFrom);
   await prisma.$transaction(async (tx) => {
     await assertOpenFrom(tx, ctx.company.id, from.slice(0, 7), "salaries");
@@ -561,8 +587,8 @@ export async function reinstateEmployee(
 ) {
   assertCanManageHr(ctx, "Only HR can reinstate employees.");
   const employee = await loadEmployee(ctx, employeeId);
-  const exit = dateOnly(employee.exitDate);
-  if (!exit) throw new AppError("CONFLICT", `${employee.name} has not left.`);
+  assertAllowed(canReinstate(state(employee)));
+  const exit = dateOnly(employee.exitDate)!;
   await prisma.$transaction(async (tx) => {
     await assertOpenFrom(tx, ctx.company.id, exit.slice(0, 7), "the leaving day");
     await tx.employee.update({
@@ -593,20 +619,7 @@ export async function reinstateEmployee(
 export async function deleteEmployee(ctx: CompanyContext, employeeId: string, meta?: RequestMeta) {
   assertCanManageHr(ctx, "Only HR can delete employees.");
   const employee = await loadEmployee(ctx, employeeId);
-  const [items, advances, lines, marks, leave, expenses] = await Promise.all([
-    prisma.payrollItem.count({ where: { employeeId: employee.id } }),
-    ctx.db.salaryAdvance.count({ where: { employeeId: employee.id } }),
-    prisma.journalLine.count({ where: { employeeId: employee.id } }),
-    ctx.db.attendance.count({ where: { employeeId: employee.id } }),
-    ctx.db.leaveRequest.count({ where: { employeeId: employee.id } }),
-    ctx.db.expense.count({ where: { employeeId: employee.id } }),
-  ]);
-  if (items + advances + lines + marks + leave + expenses > 0) {
-    throw new AppError(
-      "CONFLICT",
-      `${employee.name} has payroll, advance, attendance, leave or expense records. Record their leaving day instead.`,
-    );
-  }
+  assertAllowed(canDeleteEmployee(state(employee), await employeeRecords(ctx, employee.id)));
   await prisma.$transaction(async (tx) => {
     await tx.employee.delete({ where: { id: employee.id } });
     await auditInCompany(
@@ -642,12 +655,7 @@ export async function grantPortalAccess(
   assertCanManageHr(ctx, "Only HR can give portal access.");
   const input = portalAccessSchema.parse(raw);
   const employee = await loadEmployee(ctx, employeeId);
-  if (employee.userId) {
-    throw new AppError(
-      "CONFLICT",
-      `${employee.name} already signs in as ${employee.user?.email}; remove that first.`,
-    );
-  }
+  assertAllowed(canGivePortalLogin({ ...state(employee), loginEmail: employee.user?.email }));
   let userId = input.userId;
   let temporaryPassword: string | undefined;
   if (!userId && input.email) {
@@ -704,9 +712,9 @@ export async function revokePortalAccess(
 ) {
   assertCanManageHr(ctx, "Only HR can remove portal access.");
   const employee = await loadEmployee(ctx, employeeId);
-  if (!employee.userId) throw new AppError("CONFLICT", `${employee.name} has no portal login.`);
+  assertAllowed(canRemovePortalLogin(state(employee)));
   const membership = await ctx.db.companyMembership.findFirst({
-    where: { userId: employee.userId },
+    where: { userId: employee.userId! },
     include: { role: { select: { systemRole: true } } },
   });
   await ctx.db.employee.update({ where: { id: employee.id }, data: { userId: null } });

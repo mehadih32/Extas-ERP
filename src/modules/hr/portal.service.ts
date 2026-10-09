@@ -21,7 +21,7 @@ export async function getMyOverview(ctx: CompanyContext) {
   const [employee, leave, month, advances, payslips, settings] = await Promise.all([
     ctx.db.employee.findUniqueOrThrow({ where: { id: linked.id }, include: employeeInclude }),
     balancesFor(prisma, linked, Number(day.slice(0, 4))),
-    employeeMonth(ctx, linked, day.slice(0, 7)),
+    employeeMonth(ctx, linked, day.slice(0, 7), { upTo: day }),
     ctx.db.salaryAdvance.aggregate({
       where: { employeeId: linked.id, status: "OPEN" },
       _sum: { outstanding: true },

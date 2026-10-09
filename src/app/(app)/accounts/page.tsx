@@ -189,6 +189,7 @@ export default async function AccountsOverviewPage() {
                     salaries.employees === 1 ? "employee" : "employees"
                   }, approved`
             }
+            href="/hr/payroll"
           />
           <Stat
             label="Loan installments"
@@ -233,6 +234,7 @@ export default async function AccountsOverviewPage() {
             label="Advances to employees"
             value={m(o.payroll.employeeAdvances)}
             hint="Still to be settled"
+            href="/hr/advances?status=OPEN"
           />
           <Stat
             label="Loans and investors"

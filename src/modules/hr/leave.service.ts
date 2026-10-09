@@ -1,14 +1,16 @@
-import { type Employee, type LeaveType, Prisma } from "@prisma/client";
+import { type Employee, type LeaveStatus, type LeaveType, Prisma } from "@prisma/client";
 
 import { dateColumn, dateOnly, localDay } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
 import { lockRow } from "@/lib/row-lock";
+import { assertAllowed } from "@/lib/verdict";
 import { monthsBetween } from "@/modules/accounts/periods";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import {
+  actingAs,
   assertCanManageHr,
   assertNotOwnRecord,
   linkedEmployee,
@@ -17,6 +19,12 @@ import {
 import { isWorkingDay, leaveDayCount, toHalfDays } from "@/modules/hr/calendar";
 import { employedOn } from "@/modules/hr/month-data";
 import { assertMonthsOpen } from "@/modules/hr/period-lock";
+import {
+  canApproveLeave,
+  canCancelLeave,
+  canRejectLeave,
+  canSetAllowance,
+} from "@/modules/hr/rules";
 import {
   adjustLeaveBalanceSchema,
   approveLeaveSchema,
@@ -81,6 +89,23 @@ const yearBounds = (year: number) => ({
 });
 
 const fmtDays = (n: number) => `${n} day${n === 1 ? "" : "s"}`;
+
+/** Months closed by an approved payroll are checked by assertMonthsOpen inside the transaction. */
+const NO_CLOSED_MONTHS: ReadonlySet<string> = new Set();
+
+/** What the rules (hr/rules.ts) need about a request. */
+function leaveState(r: {
+  status: LeaveStatus;
+  startDate: Date;
+  endDate: Date;
+  employee: { userId: string | null };
+}) {
+  return {
+    status: r.status,
+    employeeUserId: r.employee.userId,
+    months: monthsBetween(dateOnly(r.startDate), dateOnly(r.endDate)),
+  };
+}
 
 /** Holds the employee's leave until the transaction ends (no double-booking). */
 async function lockEmployeeLeave(tx: Tx, employeeId: string) {
@@ -466,11 +491,8 @@ export async function approveLeave(
   const companyId = ctx.company.id;
   await prisma.$transaction(async (tx) => {
     const request = await lockLeave(tx, ctx, leaveId);
-    if (request.status !== "PENDING") {
-      throw new AppError("CONFLICT", `This request is already ${request.status.toLowerCase()}.`);
-    }
+    assertAllowed(canApproveLeave(leaveState(request), actingAs(ctx), NO_CLOSED_MONTHS));
     const { employee, leaveType: type } = request;
-    assertNotOwnRecord(ctx, employee, "Someone else must approve your own leave.");
     const start = dateOnly(request.startDate);
     const end = dateOnly(request.endDate);
     assertEmployed(employee, start, end);
@@ -521,9 +543,7 @@ export async function rejectLeave(
   const { note } = rejectLeaveSchema.parse(raw);
   await prisma.$transaction(async (tx) => {
     const request = await lockLeave(tx, ctx, leaveId);
-    if (request.status !== "PENDING") {
-      throw new AppError("CONFLICT", `This request is already ${request.status.toLowerCase()}.`);
-    }
+    assertAllowed(canRejectLeave(request));
     await tx.leaveRequest.update({
       where: { id: request.id },
       data: {
@@ -564,24 +584,11 @@ export async function cancelLeave(
   await prisma.$transaction(async (tx) => {
     const request = await lockLeave(tx, ctx, leaveId);
     const own = request.employee.userId === ctx.user.id;
-    if (!ctx.can("hr.manage")) {
-      if (!own) throw new AppError("FORBIDDEN", "Only HR can cancel someone else's leave.");
-      if (request.status !== "PENDING") {
-        throw new AppError("CONFLICT", "Ask HR to cancel leave that is already approved.");
-      }
-    }
-    if (request.status !== "PENDING" && request.status !== "APPROVED") {
-      throw new AppError("CONFLICT", `This request is already ${request.status.toLowerCase()}.`);
-    }
+    // Approved leave decides pay, so cancelling it is someone else's call, as approving it was.
+    assertAllowed(canCancelLeave(leaveState(request), actingAs(ctx), NO_CLOSED_MONTHS));
     const start = dateOnly(request.startDate);
     const end = dateOnly(request.endDate);
     if (request.status === "APPROVED") {
-      // Approved leave decides pay, so it is someone else's call, as approving it was.
-      assertNotOwnRecord(
-        ctx,
-        request.employee,
-        "Someone else must cancel your own approved leave.",
-      );
       await assertMonthsOpen(tx, ctx.company.id, monthsBetween(start, end), "leave");
     }
     await tx.leaveRequest.update({
@@ -637,9 +644,7 @@ export async function adjustLeaveBalance(ctx: CompanyContext, raw: unknown, meta
   if (!employee) throw new AppError("NOT_FOUND", "Employee not found.");
   const type = await ctx.db.leaveType.findUnique({ where: { id: input.leaveTypeId } });
   if (!type) throw new AppError("NOT_FOUND", "Leave type not found.");
-  if (!type.isPaid) {
-    throw new AppError("VALIDATION", `${type.name} is unpaid and has no allowance to set.`);
-  }
+  assertAllowed(canSetAllowance(type));
   await prisma.$transaction(async (tx) => {
     const key = {
       employeeId_leaveTypeId_year: {

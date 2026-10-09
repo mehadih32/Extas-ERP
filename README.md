@@ -286,6 +286,49 @@ Built one module at a time, each in its own pull request. So far:
 
   Reading a supplier's bill or packing list with AI comes with the integrations.
 
+- **HR & payroll** (`/hr`, "HR" on the phone), in seven tabs:
+  - **Overview**: how many people work here, who is in, late, absent or on leave today, the
+    leave waiting for a decision, the coming holidays and the headcount by department; for
+    people who see salaries, where last month's and this month's payroll stand and what is
+    owed on advances.
+  - **Employees**: everyone working here (and people who left, on request), searchable by
+    name, code, phone or designation and filtered by department and status, with the monthly
+    salary for people who see salaries. An employee takes their details, joining day, salary,
+    overtime rate and how the salary is paid (cash, bank or wallet); their code is given
+    (EMP-0001). An employee's page shows this month's attendance, their leave for any year
+    (with the allowance HR sets by hand), and for people who see salaries their pay, salary
+    history, advances, payslips and a statement of what they owe and are owed. From there HR
+    changes their details or salary, records leave, gives them a My HR login (the temporary
+    password shows once), records their leaving day and reinstates them.
+  - **Attendance**: a day's register: everyone's mark (present, late, half day, absent) with
+    check-in and check-out times, overtime and a note, saved together; people on leave and
+    days off are shown. A month's totals show the figures payroll uses for each person.
+    Attendance is marked by exception, so a working day with no mark counts as present.
+  - **Leave**: requests filtered by status, type and employee. HR records leave (approved at
+    once, or left waiting) with a doctor's note or other paper, and approves, rejects or
+    cancels it. Nobody approves their own leave, the owner aside.
+  - **Payroll**: each month's salaries worked out from attendance, leave and advances, as a
+    draft whose lines (allowances, bonus, tax, other deductions, overtime, advance taken back)
+    are checked and changed, with a bonus for everyone as a percentage or an amount. A second
+    person approves it, which posts it to the books and freezes the month's attendance and
+    leave; Accounts then pays the ticked people from a cash, bank or wallet account. Each
+    person's **payslip** prints on the letterhead. A payroll is reopened only after its
+    payments are voided.
+  - **Advances**: salary advances, filtered by status and employee: given from a cash, bank or
+    wallet account (or brought forward from before the ERP), taken back all at once or a
+    monthly amount from a chosen payroll, with money returned in cash and voiding.
+  - **Holidays & rules**: the weekly days off, the office start time, the minutes of grace
+    and how many lates cost a day's salary, whether staff check in themselves, the year's
+    holidays, and the leave types with their yearly days.
+- **My HR** (`/me`), for every employee with a login, in five tabs: **Today** (check in and
+  check out when HR allows it, this month so far, leave left, pay, advances owed and their
+  details), **Attendance** (their month day by day), **Leave** (what is left, their requests
+  and asking for leave with a paper, withdrawing a request HR has not decided), **Payslips**
+  (each approved month, ready to print) and **Advances** (what is still owed and how it is
+  taken back). People who reach HR & payroll open My HR from the account menu.
+
+  Sending payslips by email or WhatsApp comes with the integrations.
+
 The screens ask the same Server Actions as the API, so the backend's permissions decide what
 appears. With the built-in roles' default permissions:
 
@@ -404,6 +447,26 @@ return, and opening stock need `materials.purchase` or `accounts.manage`. Prices
 the Purchases and Supplier returns tabs (bills) are hidden from it and its stock cards and
 issue notes show quantities only.
 
+HR & payroll follows the HR and accounts permissions:
+
+| Role                                                          | HR & payroll menu | Employees, attendance, leave, holidays | Change them | Salaries, payroll, payslips | Prepare payroll | Approve payroll | Pay salaries and advances | My HR        |
+| ------------------------------------------------------------- | ----------------- | -------------------------------------- | ----------- | --------------------------- | --------------- | --------------- | ------------------------- | ------------ |
+| Super Admin                                                   | Yes               | Yes                                    | Yes         | Yes                         | Yes             | Yes             | Yes                       | Account menu |
+| Accounts                                                      | Yes               | Yes                                    | No          | Yes                         | Yes             | No              | Yes                       | Account menu |
+| Sales Executive, Production Manager, Warehouse Team, Employee | No                | No                                     | No          | No                          | No              | No              | No                        | Yes (own)    |
+
+Employees, attendance, leave and the holidays and rules read with `hr.view`, `hr.manage` or
+`hr.payroll`, and change with `hr.manage` (by default no built-in role but Super Admin; a
+custom "HR Manager" role gets it). Salaries, payroll, payslips and statements read with
+`hr.manage`, `hr.payroll` or `accounts.view`; for someone holding only `hr.view` the server
+leaves every salary out. Payroll is prepared with `hr.payroll` and approved with
+`hr.payroll.approve`, so a second person signs salaries off; paying salaries and giving
+advances need `accounts.payments.record`, money returned needs `accounts.receipts.record`,
+and bringing an old advance forward needs `accounts.manage`. Someone holding only
+`accounts.payments.record` sees the Advances tab. My HR needs `portal.self` and a login
+linked to an employee, and shows only that employee's own records; it sits in the menu for
+people without HR & payroll and in the account menu for the others.
+
 Settings follows the same rule. The Team tab needs `company.members.manage`. The Roles tab
 opens with `company.members.manage` (to read them) or `company.roles.manage` (to change them).
 Everyone can read the company details, and `company.settings` lets them be changed. Settings
@@ -456,6 +519,13 @@ For developers:
   `src/modules/materials/screens.service.ts` sends them as each screen's `can` flags with
   prices and values left out for people who do not see costs. Its tabs and who sees them are
   in `src/components/materials/tabs.ts`.
+- HR's rules (which month is frozen by an approved payroll, what may be approved, cancelled,
+  paid, reopened, voided or removed, and acting on one's own record) live in
+  `src/modules/hr/rules.ts`, and `src/modules/hr/screens.service.ts` sends them as each
+  screen's `can` flags, with salaries left out for people who do not see them. The tabs and
+  who sees them are in `src/components/hr/tabs.ts`; My HR is hidden from the menu of people
+  who reach HR & payroll (`noneOf` in `nav-items.ts`) and opens from their account menu.
+  Payslips print with the browser (the menus and tabs carry `print:hidden`).
 - The phone's tab bar holds four sections. With more, the fifth tab is **More**, listing the
   other sections above the account menu (`phoneTabs` in `src/components/shell/nav-items.ts`).
   Between tablet and laptop widths the top bar uses short labels ("Parties"), and lists show

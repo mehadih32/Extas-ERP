@@ -36,6 +36,9 @@ import {
 } from "@/modules/accounts/supplier-payment.service";
 import { getJournalEntry, listJournalEntries } from "@/modules/accounts/voucher.service";
 import type { CompanyContext } from "@/modules/auth/context";
+import { canSeeSalaries } from "@/modules/hr/access";
+import { monthKey, monthLabel } from "@/modules/hr/calendar";
+import { hrKeys } from "@/modules/hr/rules";
 import { canSeeMaterialCosts } from "@/modules/materials/access";
 import { getPartyBalance } from "@/modules/parties/ledger.service";
 import { isWalkIn } from "@/modules/parties/walk-in";
@@ -661,6 +664,40 @@ async function sourceLink(
       return {
         title: `Project ${project.code}`,
         href: production ? `/production/projects/${sourceId}` : null,
+      };
+    }
+    case "PAYROLL": {
+      // Approving a month's payroll posts it under the run; each salary payment under itself.
+      const salaries = canSeeSalaries(ctx);
+      const run = await ctx.db.payrollRun.findUnique({
+        where: { id: sourceId },
+        select: { year: true, month: true },
+      });
+      if (run) {
+        return {
+          title: `Payroll for ${monthLabel(monthKey(run.year, run.month))}`,
+          href: salaries ? `/hr/payroll/${sourceId}` : null,
+        };
+      }
+      const payment = await ctx.db.payrollPayment.findUnique({
+        where: { id: sourceId },
+        select: { number: true, runId: true },
+      });
+      if (!payment) return null;
+      return {
+        title: `Salary payment ${payment.number}`,
+        href: salaries ? `/hr/payroll/${payment.runId}` : null,
+      };
+    }
+    case "SALARY_ADVANCE": {
+      const advance = await ctx.db.salaryAdvance.findUnique({
+        where: { id: sourceId },
+        select: { number: true, employee: { select: { name: true } } },
+      });
+      if (!advance) return null;
+      return {
+        title: `Advance ${advance.number} to ${advance.employee.name}`,
+        href: hrKeys(ctx).advances ? `/hr/advances/${sourceId}` : null,
       };
     }
     case "OPENING_BALANCE": {

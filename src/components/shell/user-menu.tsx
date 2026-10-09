@@ -1,6 +1,6 @@
 "use client";
 
-import { KeyRoundIcon, LogOutIcon, UserRoundIcon } from "lucide-react";
+import { KeyRoundIcon, LogOutIcon, MenuIcon, UserRoundIcon } from "lucide-react";
 import Link from "next/link";
 import { useState, useTransition } from "react";
 
@@ -19,23 +19,33 @@ import { ROUTES } from "@/lib/routes";
 import { cn } from "@/lib/utils";
 import { signOutAction } from "@/server/actions/auth-forms.actions";
 
+import type { NavItem } from "./nav-items";
 import type { ShellUser } from "./types";
 
 /**
  * The person's menu: who is signed in and in which role, change password and
  * sign out. An initials button in the top bar, the "Account" tab on phones.
+ * When the phone's tab bar has more sections than fit, the tab is "More" and
+ * lists those sections first.
  */
 export function UserMenu({
   user,
   companyName,
   variant,
   className,
+  sections = [],
+  activeSection = false,
 }: {
   user: ShellUser;
   companyName: string;
   variant: "avatar" | "tab";
   className?: string;
+  /** Sections that did not fit in the phone's tab bar. */
+  sections?: NavItem[];
+  /** One of those sections is the current page. */
+  activeSection?: boolean;
 }) {
+  const more = variant === "tab" && sections.length > 0;
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<ActionError>();
 
@@ -54,13 +64,24 @@ export function UserMenu({
           </DropdownMenuTrigger>
         ) : (
           <DropdownMenuTrigger
+            aria-label={
+              more ? `More: ${sections.map((s) => s.label).join(", ")} and your account` : undefined
+            }
             className={cn(
-              "flex h-full w-full cursor-pointer flex-col items-center justify-center gap-1 text-[0.625rem] tracking-[0.02em] text-muted-foreground uppercase outline-none data-[state=open]:text-primary min-[400px]:text-[0.6875rem] min-[400px]:tracking-[0.06em]",
+              "relative flex h-full w-full cursor-pointer flex-col items-center justify-center gap-1 text-[0.625rem] tracking-[0.02em] uppercase outline-none data-[state=open]:text-primary min-[400px]:text-[0.6875rem] min-[400px]:tracking-[0.06em]",
+              activeSection ? "text-primary" : "text-muted-foreground",
               className,
             )}
           >
-            <UserRoundIcon className="size-5" aria-hidden />
-            Account
+            {activeSection && (
+              <span aria-hidden className="absolute inset-x-6 top-0 h-0.5 bg-primary" />
+            )}
+            {more ? (
+              <MenuIcon className="size-5" aria-hidden />
+            ) : (
+              <UserRoundIcon className="size-5" aria-hidden />
+            )}
+            {more ? "More" : "Account"}
           </DropdownMenuTrigger>
         )}
         <DropdownMenuContent
@@ -68,6 +89,24 @@ export function UserMenu({
           side={variant === "tab" ? "top" : "bottom"}
           className="w-[min(18rem,calc(100vw-2rem))]"
         >
+          {more && (
+            <>
+              <DropdownMenuGroup>
+                {sections.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <DropdownMenuItem key={item.href} asChild>
+                      <Link href={item.href}>
+                        <Icon aria-hidden />
+                        {item.label}
+                      </Link>
+                    </DropdownMenuItem>
+                  );
+                })}
+              </DropdownMenuGroup>
+              <DropdownMenuSeparator />
+            </>
+          )}
           <DropdownMenuLabel className="grid gap-1 py-2.5">
             <span className="truncate font-serif text-base leading-tight">{user.name}</span>
             <span className="truncate text-xs font-normal text-muted-foreground">{user.email}</span>

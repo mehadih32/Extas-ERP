@@ -5,6 +5,7 @@ import { nextDocumentNumber } from "@/lib/numbering";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
 import { lockRow } from "@/lib/row-lock";
+import { assertAllowed } from "@/lib/verdict";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { letterhead } from "@/modules/companies/letterhead";
@@ -19,6 +20,7 @@ import {
 import { heldOnProforma, refreshOrderPayments } from "@/modules/sales/posting";
 import { assertStockOrOverride, resolveOrderLines } from "@/modules/sales/pricing";
 import { assertCanRefund, REFUND_KIND_TEXT, refundBuyerTx } from "@/modules/sales/refund.service";
+import { canCancelProforma, canConvertProforma, canConvertQuotation } from "@/modules/sales/rules";
 import {
   cancelOrderSchema,
   convertProformaToOrderSchema,
@@ -45,6 +47,7 @@ export async function convertQuotationToProforma(
   const input = convertToProformaSchema.parse(raw);
   const quotation = await ctx.db.quotation.findUnique({ where: { id: quotationId } });
   if (!quotation) throw new AppError("NOT_FOUND", "Quotation not found.");
+  assertAllowed(canConvertQuotation(quotation));
   const party = await assertPartyCanTransact(ctx, quotation.partyId, "SALE");
   const percent = new Prisma.Decimal(input.advancePercent ?? ctx.company.defaultAdvancePercent);
 
@@ -182,14 +185,7 @@ export async function cancelProforma(
   await prisma.$transaction(async (tx) => {
     await lockRow(tx, "ProformaInvoice", proforma.id);
     const current = await tx.proformaInvoice.findUniqueOrThrow({ where: { id: proforma.id } });
-    if (current.status === "CANCELLED" || current.status === "CONVERTED") {
-      throw new AppError(
-        "CONFLICT",
-        current.status === "CONVERTED"
-          ? `${current.number} became an order; cancel the order instead.`
-          : `${current.number} is already cancelled.`,
-      );
-    }
+    assertAllowed(canCancelProforma(current));
     const held = await heldOnProforma(tx, current.id);
     let settled = "";
     if (held.gt(0)) {
@@ -257,15 +253,7 @@ export async function convertProformaToOrder(
   const input = convertProformaToOrderSchema.parse(raw);
   const proforma = await ctx.db.proformaInvoice.findUnique({ where: { id: proformaId } });
   if (!proforma) throw new AppError("NOT_FOUND", "Proforma invoice not found.");
-  if (proforma.status === "CANCELLED" || proforma.status === "CONVERTED") {
-    throw new AppError("CONFLICT", `This proforma is already ${proforma.status.toLowerCase()}.`);
-  }
-  if (proforma.advancePaid.lt(proforma.advanceAmount)) {
-    throw new AppError(
-      "CONFLICT",
-      `The advance of ${proforma.advanceAmount.toFixed(2)} is not fully received yet (${proforma.advancePaid.toFixed(2)} paid).`,
-    );
-  }
+  assertAllowed(canConvertProforma(proforma));
   const warehouse = input.warehouseId
     ? await ctx.db.warehouse.findUnique({ where: { id: input.warehouseId } })
     : await getDefaultWarehouse(ctx);
@@ -286,16 +274,8 @@ export async function convertProformaToOrder(
     async (tx) => {
       await lockRow(tx, "ProformaInvoice", proforma.id);
       const current = await tx.proformaInvoice.findUniqueOrThrow({ where: { id: proforma.id } });
-      if (current.status === "CANCELLED" || current.status === "CONVERTED") {
-        throw new AppError("CONFLICT", `This proforma is already ${current.status.toLowerCase()}.`);
-      }
       // Checked again under the lock: a refund may have taken part of the advance back.
-      if (current.advancePaid.lt(current.advanceAmount)) {
-        throw new AppError(
-          "CONFLICT",
-          `The advance of ${current.advanceAmount.toFixed(2)} is not fully received yet (${current.advancePaid.toFixed(2)} paid).`,
-        );
-      }
+      assertAllowed(canConvertProforma(current));
       await tx.proformaInvoice.update({
         where: { id: proforma.id },
         data: { status: "CONVERTED" },

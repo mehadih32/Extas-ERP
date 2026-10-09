@@ -6,6 +6,7 @@ import { nextDocumentNumber } from "@/lib/numbering";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
 import { lockRow } from "@/lib/row-lock";
+import { assertAllowed } from "@/lib/verdict";
 import { cashAccountFor } from "@/modules/accounts/cash-accounts";
 import { ensureControlAccounts } from "@/modules/accounts/control-accounts";
 import { postJournalEntry } from "@/modules/accounts/journal.service";
@@ -20,6 +21,7 @@ import {
   refreshOrderPayments,
   refreshProformaPayments,
 } from "@/modules/sales/posting";
+import { canReceiveOnOrder, canReceiveOnProforma } from "@/modules/sales/rules";
 import { listPaymentsSchema, receivePaymentSchema } from "@/modules/sales/schemas";
 import { money } from "@/modules/sales/totals";
 
@@ -65,7 +67,7 @@ export async function receivePaymentTx(
       include: { invoice: { select: { status: true } } },
     });
     if (!order) throw new AppError("NOT_FOUND", "Order not found.");
-    if (order.status === "CANCELLED") throw new AppError("CONFLICT", "This order is cancelled.");
+    assertAllowed(canReceiveOnOrder(order));
     if (amount.gt(order.total.minus(order.paidAmount))) {
       throw new AppError(
         "VALIDATION",
@@ -81,12 +83,7 @@ export async function receivePaymentTx(
       where: { id: input.proformaId, companyId },
     });
     if (!proforma) throw new AppError("NOT_FOUND", "Proforma invoice not found.");
-    if (proforma.status === "CANCELLED" || proforma.status === "CONVERTED") {
-      throw new AppError(
-        "CONFLICT",
-        `This proforma is ${proforma.status.toLowerCase()}; take payment on its order instead.`,
-      );
-    }
+    assertAllowed(canReceiveOnProforma(proforma));
     if (amount.gt(proforma.total.minus(proforma.advancePaid))) {
       throw new AppError(
         "VALIDATION",

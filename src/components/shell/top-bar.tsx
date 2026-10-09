@@ -22,7 +22,7 @@ export function TopBar({
 }) {
   return (
     <header className="sticky top-0 z-40 bg-primary text-primary-foreground">
-      <div className="mx-auto flex h-14 w-full max-w-7xl items-center gap-8 px-4 sm:px-6 md:h-16 lg:px-8">
+      <div className="mx-auto flex h-14 w-full max-w-7xl items-center gap-5 px-4 sm:px-6 md:h-16 lg:gap-8 lg:px-8">
         <Link
           href={ROUTES.home}
           aria-label="Extras ERP, dashboard"

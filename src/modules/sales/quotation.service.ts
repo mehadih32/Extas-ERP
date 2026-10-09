@@ -5,11 +5,13 @@ import { AppError } from "@/lib/errors";
 import { nextDocumentNumber } from "@/lib/numbering";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
+import { assertAllowed } from "@/lib/verdict";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { letterhead } from "@/modules/companies/letterhead";
 import { assertPartyCanTransact } from "@/modules/parties/party.service";
 import { labelledCustomFields, validateCustomFields } from "@/modules/sales/custom-fields.service";
+import { canDeleteQuotation, canEditQuotation, canMarkQuotation } from "@/modules/sales/rules";
 import {
   createQuotationSchema,
   listQuotationsSchema,
@@ -23,8 +25,6 @@ import { quotationLineQuantity, quotationTotals } from "@/modules/sales/totals";
  * breakdown, price), free-text styling rules ("placket should not have a black
  * border") and the company's custom fields. The data feeds the letterhead PDF.
  */
-
-const EDITABLE: QuotationStatus[] = ["DRAFT", "SENT"];
 
 type QuotationItemInput = NonNullable<ReturnType<typeof createQuotationSchema.parse>["items"]>;
 
@@ -142,9 +142,7 @@ export async function updateQuotation(
 ) {
   const input = updateQuotationSchema.parse(raw);
   const before = await getQuotationOrThrow(ctx, quotationId);
-  if (!EDITABLE.includes(before.status)) {
-    throw new AppError("CONFLICT", `A ${before.status.toLowerCase()} quotation cannot be edited.`);
-  }
+  assertAllowed(canEditQuotation(before));
   if (input.partyId && input.partyId !== before.partyId) {
     await assertPartyCanTransact(ctx, input.partyId, "SALE");
   }
@@ -235,17 +233,7 @@ export async function setQuotationStatus(
 ) {
   const { status } = quotationStatusSchema.parse(raw);
   const quotation = await getQuotationOrThrow(ctx, quotationId);
-  const allowedFrom: Record<typeof status, QuotationStatus[]> = {
-    SENT: ["DRAFT"],
-    ACCEPTED: ["DRAFT", "SENT"],
-    REJECTED: ["DRAFT", "SENT", "ACCEPTED"],
-  };
-  if (!allowedFrom[status].includes(quotation.status)) {
-    throw new AppError(
-      "CONFLICT",
-      `Cannot mark a ${quotation.status.toLowerCase()} quotation as ${status.toLowerCase()}.`,
-    );
-  }
+  assertAllowed(canMarkQuotation(quotation, status));
   const updated = await ctx.db.quotation.update({ where: { id: quotation.id }, data: { status } });
   await auditInCompany(ctx, meta, {
     action: "STATUS_CHANGE",
@@ -262,9 +250,7 @@ export async function deleteQuotation(
   meta?: RequestMeta,
 ) {
   const quotation = await getQuotationOrThrow(ctx, quotationId);
-  if (quotation.status !== "DRAFT") {
-    throw new AppError("CONFLICT", "Only draft quotations can be deleted; reject it instead.");
-  }
+  assertAllowed(canDeleteQuotation(quotation));
   await ctx.db.quotation.delete({ where: { id: quotation.id } });
   await auditInCompany(ctx, meta, {
     action: "DELETE",

@@ -5,11 +5,15 @@ import { usePathname } from "next/navigation";
 
 import { cn } from "@/lib/utils";
 
-import { isActivePath, visibleNavItems } from "./nav-items";
+import { isActivePath, phoneTabs, visibleNavItems } from "./nav-items";
 import type { ShellUser } from "./types";
 import { UserMenu } from "./user-menu";
 
-/** The phone's bottom navigation (blueprint: mobile friendly), above the home bar. */
+/**
+ * The phone's bottom navigation (blueprint: mobile friendly), above the home bar:
+ * up to four sections, then the account tab. With more sections than fit, the
+ * last tab is "More", holding the other sections and the account menu.
+ */
 export function BottomNav({
   permissions,
   user,
@@ -20,7 +24,7 @@ export function BottomNav({
   companyName: string;
 }) {
   const pathname = usePathname();
-  const items = visibleNavItems(permissions);
+  const { tabs: items, more } = phoneTabs(visibleNavItems(permissions));
 
   return (
     <nav
@@ -54,7 +58,13 @@ export function BottomNav({
           );
         })}
         <li>
-          <UserMenu user={user} companyName={companyName} variant="tab" />
+          <UserMenu
+            user={user}
+            companyName={companyName}
+            variant="tab"
+            sections={more}
+            activeSection={more.some((item) => isActivePath(pathname, item.href))}
+          />
         </li>
       </ul>
     </nav>

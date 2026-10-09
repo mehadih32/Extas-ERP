@@ -7,6 +7,7 @@ import { nextDocumentNumber } from "@/lib/numbering";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
 import { lockRow } from "@/lib/row-lock";
+import { assertAllowed } from "@/lib/verdict";
 import { cashAccountFor } from "@/modules/accounts/cash-accounts";
 import { ensureControlAccounts } from "@/modules/accounts/control-accounts";
 import { postJournalEntry, reverseJournalEntry } from "@/modules/accounts/journal.service";
@@ -14,7 +15,6 @@ import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { letterhead } from "@/modules/companies/letterhead";
 import { assertNotWalkIn } from "@/modules/parties/walk-in";
-import type { PermissionKey } from "@/modules/rbac/permissions";
 import { startProductionIfAdvancePaid } from "@/modules/sales/payment.service";
 import {
   heldOnOrder,
@@ -23,6 +23,12 @@ import {
   refreshOrderPayments,
   refreshProformaPayments,
 } from "@/modules/sales/posting";
+import {
+  canRefundAs,
+  canRefundOrder,
+  canRefundProforma,
+  canVoidRefund,
+} from "@/modules/sales/rules";
 import { listRefundsSchema, refundSchema, voidRefundSchema } from "@/modules/sales/schemas";
 import { money, ZERO } from "@/modules/sales/totals";
 
@@ -67,21 +73,6 @@ export const REFUND_KIND_TEXT: Record<RefundKind, string> = {
   FORFEIT: "kept as a cancellation charge",
 };
 
-const REFUND_PERMISSION: Record<RefundKind, { key: PermissionKey; message: string }> = {
-  CASH: {
-    key: "accounts.payments.record",
-    message: "Only Accounts can pay money back to a buyer.",
-  },
-  CREDIT: {
-    key: "accounts.receipts.record",
-    message: "Only Accounts can keep a buyer's money as credit on their account.",
-  },
-  FORFEIT: {
-    key: "accounts.manage",
-    message: "Only Accounts can keep a buyer's money as a cancellation charge.",
-  },
-};
-
 /**
  * Refunds are Accounts' work, like every money record (checked here too, so no
  * caller can skip it): paying money back needs accounts.payments.record, moving
@@ -89,8 +80,7 @@ const REFUND_PERMISSION: Record<RefundKind, { key: PermissionKey; message: strin
  * income accounts.manage.
  */
 export function assertCanRefund(ctx: CompanyContext, kind: RefundKind) {
-  const rule = REFUND_PERMISSION[kind];
-  if (!ctx.can(rule.key)) throw new AppError("FORBIDDEN", rule.message);
+  assertAllowed(canRefundAs(ctx, kind));
 }
 
 /** A buyer's credit on account: what their receivable shows the company owes them. */
@@ -141,16 +131,9 @@ export async function refundBuyerTx(
       include: { invoice: { select: { number: true, status: true } } },
     });
     if (!order) throw new AppError("NOT_FOUND", "Order not found.");
-    if (order.status === "CANCELLED") {
-      throw new AppError("CONFLICT", `${order.number} is cancelled.`);
-    }
-    if (order.invoice && order.invoice.status !== "VOID") {
-      throw new AppError(
-        "CONFLICT",
-        `The money paid on ${order.number} has paid invoice ${order.invoice.number}. Void the invoice first to refund it.`,
-      );
-    }
-    assertWithinHeld(amount, await heldOnOrder(tx, order.id), order.number);
+    const held = await heldOnOrder(tx, order.id);
+    assertAllowed(canRefundOrder(order, held));
+    assertWithinHeld(amount, held, order.number);
     partyId = order.partyId;
     label = `order ${order.number}`;
   } else if (input.proformaId) {
@@ -159,16 +142,9 @@ export async function refundBuyerTx(
       where: { id: input.proformaId, companyId },
     });
     if (!proforma) throw new AppError("NOT_FOUND", "Proforma invoice not found.");
-    if (proforma.status === "CONVERTED") {
-      throw new AppError(
-        "CONFLICT",
-        `${proforma.number} became an order and its advance moved with it; refund it on the order.`,
-      );
-    }
-    if (proforma.status === "CANCELLED") {
-      throw new AppError("CONFLICT", `${proforma.number} is cancelled.`);
-    }
-    assertWithinHeld(amount, await heldOnProforma(tx, proforma.id), proforma.number);
+    const held = await heldOnProforma(tx, proforma.id);
+    assertAllowed(canRefundProforma(proforma, held));
+    assertWithinHeld(amount, held, proforma.number);
     partyId = proforma.partyId;
     label = `proforma ${proforma.number}`;
   } else {
@@ -306,25 +282,19 @@ export async function voidRefund(
       if (found.partyId) await lockRow(tx, "Party", found.partyId);
       await lockRow(tx, "Refund", found.id);
       const refund = await tx.refund.findFirstOrThrow({ where: { id: found.id, companyId } });
-      if (refund.voidedAt) throw new AppError("CONFLICT", "This refund is already void.");
+      const order = refund.orderId
+        ? await tx.salesOrder.findUniqueOrThrow({
+            where: { id: refund.orderId },
+            include: { invoice: { select: { number: true, status: true } } },
+          })
+        : null;
+      const proforma =
+        !order && refund.proformaId
+          ? await tx.proformaInvoice.findUniqueOrThrow({ where: { id: refund.proformaId } })
+          : null;
+      assertAllowed(canVoidRefund(refund, { order, proforma }));
 
-      if (refund.orderId) {
-        const order = await tx.salesOrder.findUniqueOrThrow({
-          where: { id: refund.orderId },
-          include: { invoice: { select: { number: true, status: true } } },
-        });
-        if (order.status === "CANCELLED") {
-          throw new AppError(
-            "CONFLICT",
-            `${order.number} is cancelled, so its refunds can no longer be voided.`,
-          );
-        }
-        if (order.invoice && order.invoice.status !== "VOID") {
-          throw new AppError(
-            "CONFLICT",
-            `${order.number} has been invoiced again (${order.invoice.number}); void the invoice before voiding this refund.`,
-          );
-        }
+      if (order) {
         const held = await heldOnOrder(tx, order.id);
         if (held.plus(refund.amount).gt(order.total)) {
           throw new AppError(
@@ -332,16 +302,7 @@ export async function voidRefund(
             `${order.number} has been paid again since; voiding this refund would put more than its total of ${order.total.toFixed(2)} on it.`,
           );
         }
-      } else if (refund.proformaId) {
-        const proforma = await tx.proformaInvoice.findUniqueOrThrow({
-          where: { id: refund.proformaId },
-        });
-        if (proforma.status === "CANCELLED" || proforma.status === "CONVERTED") {
-          throw new AppError(
-            "CONFLICT",
-            `${proforma.number} is ${proforma.status.toLowerCase()}, so its refunds can no longer be voided.`,
-          );
-        }
+      } else if (proforma) {
         const held = await heldOnProforma(tx, proforma.id);
         if (held.plus(refund.amount).gt(proforma.total)) {
           throw new AppError(

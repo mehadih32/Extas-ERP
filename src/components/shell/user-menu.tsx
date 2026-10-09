@@ -55,7 +55,7 @@ export function UserMenu({
         ) : (
           <DropdownMenuTrigger
             className={cn(
-              "flex h-full w-full cursor-pointer flex-col items-center justify-center gap-1 text-[0.6875rem] tracking-[0.06em] text-muted-foreground uppercase outline-none data-[state=open]:text-primary",
+              "flex h-full w-full cursor-pointer flex-col items-center justify-center gap-1 text-[0.625rem] tracking-[0.02em] text-muted-foreground uppercase outline-none data-[state=open]:text-primary min-[400px]:text-[0.6875rem] min-[400px]:tracking-[0.06em]",
               className,
             )}
           >

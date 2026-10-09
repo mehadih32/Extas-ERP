@@ -1,4 +1,10 @@
-import { LayoutDashboardIcon, type LucideIcon, SettingsIcon, ShirtIcon } from "lucide-react";
+import {
+  HandshakeIcon,
+  LayoutDashboardIcon,
+  type LucideIcon,
+  SettingsIcon,
+  ShirtIcon,
+} from "lucide-react";
 
 import type { PermissionKey } from "@/modules/rbac/permissions";
 
@@ -9,6 +15,8 @@ import type { PermissionKey } from "@/modules/rbac/permissions";
 export type NavItem = {
   href: string;
   label: string;
+  /** A shorter name for the phone's tab bar, where the cells are narrow. */
+  shortLabel?: string;
   icon: LucideIcon;
   /** Shown to people holding any of these permissions; to everyone when empty. */
   anyOf: readonly PermissionKey[];
@@ -23,6 +31,14 @@ export const NAV_ITEMS: readonly NavItem[] = [
     label: "Products",
     icon: ShirtIcon,
     anyOf: ["inventory.view"],
+  },
+  {
+    // Buyers, suppliers and what they owe or are owed (components/parties/tabs.ts).
+    href: "/parties",
+    label: "Buyers & suppliers",
+    shortLabel: "Parties",
+    icon: HandshakeIcon,
+    anyOf: ["parties.view", "parties.ledger.view"],
   },
   {
     // Team, roles and company details (components/settings/tabs.ts).

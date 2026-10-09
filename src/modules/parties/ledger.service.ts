@@ -6,10 +6,12 @@ import { AppError } from "@/lib/errors";
 import { nextDocumentNumber } from "@/lib/numbering";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
+import { assertAllowed } from "@/lib/verdict";
 import { ensureControlAccounts, PARTY_BALANCE_SUBTYPES } from "@/modules/accounts/control-accounts";
 import { settleSupplierBills } from "@/modules/accounts/supplier-settlement";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
+import { canSetOpeningBalance } from "@/modules/parties/rules";
 import { openingBalanceSchema, statementSchema } from "@/modules/parties/schemas";
 
 /*
@@ -186,12 +188,7 @@ export async function setOpeningBalance(
   const input = openingBalanceSchema.parse(raw);
   const party = await getPartyOrThrow(ctx, partyId);
   const amount = new Prisma.Decimal(input.amount.toFixed(2));
-  if (amount.gt(0) && party.kind === "SUPPLIER") {
-    throw new AppError(
-      "VALIDATION",
-      "A supplier's opening balance is normally negative (we owe them).",
-    );
-  }
+  assertAllowed(canSetOpeningBalance(party, amount.toNumber()));
 
   await prisma.$transaction(async (tx) => {
     const accounts = await ensureControlAccounts(ctx.company.id, tx);

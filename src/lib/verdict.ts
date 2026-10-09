@@ -6,11 +6,13 @@ import { AppError } from "@/lib/errors";
  * what the server refuses (or hides what it allows).
  */
 
-export type Verdict = { ok: true } | { ok: false; code: "FORBIDDEN" | "CONFLICT"; message: string };
+type RefusalCode = "FORBIDDEN" | "CONFLICT" | "VALIDATION";
+
+export type Verdict = { ok: true } | { ok: false; code: RefusalCode; message: string };
 
 export const ALLOWED: Verdict = { ok: true };
 
-export function refuse(code: "FORBIDDEN" | "CONFLICT", message: string): Verdict {
+export function refuse(code: RefusalCode, message: string): Verdict {
   return { ok: false, code, message };
 }
 

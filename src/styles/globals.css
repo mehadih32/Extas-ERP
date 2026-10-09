@@ -32,6 +32,8 @@
   --destructive: #be1434;
   --destructive-foreground: #ffffff;
   --success: #1f6b4f;
+  /* The Blue Verified badge on trusted buyers and suppliers (blueprint). */
+  --verified: #1d5fc4;
   --border: #e4e1da;
   --input: #d6d2c9;
   --ring: #0b3d2e;
@@ -56,6 +58,7 @@
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
   --color-success: var(--success);
+  --color-verified: var(--verified);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);

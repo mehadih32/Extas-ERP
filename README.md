@@ -121,6 +121,33 @@ Built one module at a time, each in its own pull request. So far:
   - **Setup**: colours (with their swatch), sizes (in matrix order), the category tree,
     brands and warehouses. Something already in use cannot be deleted. Names are unique
     whatever their letter case ("maroon" next to Maroon is refused).
+- **Buyers & suppliers** (`/parties`, "Parties" on the phone tab bar), in three tabs:
+  - **Buyers** and **Suppliers**: every account with its contact, city, grade, Blue Verified
+    tick, status and balance ("Owes you", "You owe" or "Settled"). An account that is both a
+    buyer and a supplier shows in both lists. The search takes a name, code, contact person,
+    phone or email, and the status, grade, buyer type and Blue Verified filters narrow the
+    list. All of them are kept in the address. A profile shows:
+    - the balance, credit limit and credit left, payment terms, last payment, last business
+      and opening balance;
+    - the contact details (phone, WhatsApp and email open the phone's own apps);
+    - how many quotations, orders, invoices, supplier bills and production projects the
+      account has;
+    - the notes, and a warning when another account has the same phone or email.
+
+    From the profile, people who may change accounts edit the details, give a grade (A+ to C),
+    give or remove the Blue Verified badge, mark a buyer dormant, and close or reopen the
+    account. Closing an account that still owes or is owed makes it Settling until the balance
+    is zero. Accounts staff set the opening balance: what was owed either way before starting
+    with Extras ERP. A buyer cannot become a supplier (or the other way round) while money is
+    owed, but becoming both is always possible. Walk-in customers, the account kept for sales
+    without a buyer profile, only lets its name and notes change.
+
+  - **Statement** (from a profile): the opening balance, total debit and credit and the
+    closing balance, then every transaction with its running balance (Dr is owed to the
+    company, Cr is owed to them), for the whole account, this month, the last 90 days, this
+    year or any two dates. The same statement prints as a PDF on the letterhead.
+  - **Dues**: what buyers owe the company and what it owes suppliers today, in total and
+    account by account, largest first. Each one opens its statement.
 
 The screens ask the same Server Actions as the API, so the backend's permissions decide what
 appears. With the built-in roles' default permissions:
@@ -147,6 +174,21 @@ people who see the financials (`dashboard.financials` or `accounts.view`); for e
 the server leaves it out. Opening stock asks for a cost per piece, so the people who enter it
 (those with `inventory.manage`) decide what it is worth in the books.
 
+Buyers & suppliers follows the party permissions:
+
+| Role                | Lists, profiles, balances | Add and change accounts | Statements and Dues | Opening balances |
+| ------------------- | ------------------------- | ----------------------- | ------------------- | ---------------- |
+| Super Admin         | Yes                       | Yes                     | Yes                 | Yes              |
+| Sales Executive     | Yes                       | Yes                     | Yes                 | No               |
+| Accounts            | Yes                       | No                      | Yes                 | Yes              |
+| Production Manager  | Yes                       | No                      | No                  | No               |
+| Warehouse, Employee | No                        | No                      | No                  | No               |
+
+Lists and profiles need `parties.view`, adding and changing accounts (details, grade, badge,
+status) needs `parties.manage`, statements and the Dues tab need `parties.ledger.view`, and
+opening balances need `accounts.manage`, because they post to the books. The balance shows to
+everyone who can open a profile, as the API returns it with `parties.view`.
+
 Settings follows the same rule. The Team tab needs `company.members.manage`. The Roles tab
 opens with `company.members.manage` (to read them) or `company.roles.manage` (to change them).
 Everyone can read the company details, and `company.settings` lets them be changed. Settings
@@ -170,12 +212,16 @@ For developers:
 - When a screen offers actions on each row, the service that enforces them sends a flag for
   each one, decided by the same rules, so a button never appears for something the server
   refuses (or goes missing for something it allows). The Team and Roles rules live in
-  `src/modules/rbac/rules.ts` and the catalogue's (what may be deleted) in
-  `src/modules/inventory/rules.ts`; `tests/integration/team-screens.test.ts` and
-  `tests/integration/products-screens.test.ts` try every action as different people and check
-  it works exactly when it is offered.
+  `src/modules/rbac/rules.ts`, the catalogue's (what may be deleted) in
+  `src/modules/inventory/rules.ts` and the buyers' and suppliers' (Walk-in customers, kind,
+  status, opening balance) in `src/modules/parties/rules.ts`. The `*-screens.test.ts` files in
+  `tests/integration` try every action as different people and check it works exactly when it
+  is offered.
 - Filters and pickers that live in the address (the style list, the stock count, the matrix's
-  warehouse) show the choice at once and dim the list until the new one arrives.
+  warehouse, the buyer and supplier lists, a statement's days) show the choice at once and dim
+  the list until the new one arrives.
+- Lists of cards on phones use `grid-cols-1` all the way down, so a long name or code is cut
+  short or wraps instead of making the page wider than the screen.
 - A page (a Server Component) gets only the components of a `"use client"` file, so values
   both sides need (like a page size) go in a plain module next to it;
   `tests/unit/server-client-imports.test.ts` checks this.

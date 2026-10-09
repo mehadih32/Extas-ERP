@@ -1,4 +1,4 @@
-# Running Extras ERP on an Azure Ubuntu server
+# Running Extas ERP on an Azure Ubuntu server
 
 Everything runs on one Ubuntu 24.04 server, in Docker:
 

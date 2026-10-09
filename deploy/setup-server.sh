@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Prepares a fresh Ubuntu 24.04 server for Extras ERP: system updates, Docker,
+# Prepares a fresh Ubuntu 24.04 server for Extas ERP: system updates, Docker,
 # automatic security updates, the firewall and a swap file. Safe to run again.
 #   sudo ./deploy/setup-server.sh
 # shellcheck source=deploy/lib.sh

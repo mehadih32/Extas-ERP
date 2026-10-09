@@ -106,6 +106,6 @@ describe("Production in the menu, by role", () => {
 
   it("puts Production third on the phone's tab bar", () => {
     const owner = phoneTabs(visibleNavItems(role("SUPER_ADMIN")));
-    expect(owner.tabs.map((i) => i.href)).toEqual(["/", "/sales", "/production", "/products"]);
+    expect(owner.tabs.map((i) => i.href)).toEqual(["/", "/sales", "/production", "/accounts"]);
   });
 });

@@ -45,7 +45,7 @@ secret() { openssl rand -hex 32; }
 
 umask 077
 cat >"$ENV_FILE" <<EOF
-# Extras ERP server settings, written by configure.sh on $(date -u +%Y-%m-%d).
+# Extas ERP server settings, written by configure.sh on $(date -u +%Y-%m-%d).
 # Keep a copy somewhere safe (a password manager): it holds this server's
 # passwords and keys and is not part of the backups. deploy/.env.example
 # explains each setting.

@@ -215,7 +215,7 @@ run("daily backups", () => {
         files: Array<{ name: string; bytes: number; sha256: string }>;
       };
       expect(manifest).toMatchObject({
-        app: "Extras ERP",
+        app: "Extas ERP",
         format: 1,
         timezone: "Asia/Dhaka",
         trigger: "MANUAL",
@@ -647,7 +647,7 @@ run("daily backups", () => {
         client_id: "client-123.apps.googleusercontent.com",
         redirect_uri: "https://erp.example.com/api/backups/google/callback",
       });
-      expect(calls[2]!.body).toEqual({ name: "Extras ERP Backups", mimeType: FOLDER });
+      expect(calls[2]!.body).toEqual({ name: "Extas ERP Backups", mimeType: FOLDER });
 
       // The refresh token is stored sealed, and never shown.
       const config = await backups.getBackupConfig();
@@ -751,7 +751,7 @@ run("daily backups", () => {
           .filter((c) => c.method === "POST" && c.url.pathname === "/drive/v3/files")
           .map((c) => c.body),
       ).toEqual([
-        { name: "Extras ERP Backups", mimeType: FOLDER },
+        { name: "Extas ERP Backups", mimeType: FOLDER },
         { name: stamp, mimeType: FOLDER, parents: ["folder-1"] },
       ]);
       expect((await backups.getBackupOverview()).config.googleDrive.folderId).toBe("folder-1");

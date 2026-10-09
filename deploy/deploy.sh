@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Installs or updates Extras ERP on this server. It saves a safety copy of the
+# Installs or updates Extas ERP on this server. It saves a safety copy of the
 # database (when there is one), builds the app from this copy of the code, brings
 # the database up to date and starts everything. Run it again after every
 # `git pull`.
@@ -58,5 +58,5 @@ fi
 docker image prune -f >/dev/null
 docker builder prune -f --filter until=720h >/dev/null
 
-say "Extras ERP is running at https://$APP_DOMAIN"
+say "Extas ERP is running at https://$APP_DOMAIN"
 echo "Check it: https://$APP_DOMAIN/api/health should show \"status\":\"ok\"."

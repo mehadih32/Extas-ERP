@@ -362,8 +362,8 @@ export async function renderPdf(
       Title: pdfInfo(`${report.company.name}: ${report.title}`),
       Author: pdfInfo(report.generatedBy),
       Subject: pdfInfo(report.period.label),
-      Creator: "Extras ERP",
-      Producer: "Extras ERP",
+      Creator: "Extas ERP",
+      Producer: "Extas ERP",
       CreationDate: new Date(report.generatedAt),
     },
   });

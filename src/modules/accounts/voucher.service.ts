@@ -4,15 +4,13 @@ import { dayRange, toInstant } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
+import { assertAllowed } from "@/lib/verdict";
 import { money, ZERO } from "@/modules/accounts/balances";
 import { isCashSubType, isPartySubType } from "@/modules/accounts/chart";
 import { manualPostingBlock } from "@/modules/accounts/chart.service";
 import { postJournalEntry, reverseJournalEntry } from "@/modules/accounts/journal.service";
-import {
-  assertCanManageAccounts,
-  assertCanPayMoney,
-  assertCanReceiveMoney,
-} from "@/modules/accounts/money-guards";
+import { assertCanManageAccounts, assertCanPayMoney } from "@/modules/accounts/money-guards";
+import { canMoveMoney, canReverseEntry } from "@/modules/accounts/rules";
 import {
   createJournalSchema,
   listJournalSchema,
@@ -48,9 +46,7 @@ function assertMoneyPermissions(
   ctx: CompanyContext,
   lines: Array<{ subType: AccountSubType; debit: Prisma.Decimal; credit: Prisma.Decimal }>,
 ) {
-  const cash = lines.filter((l) => isCashSubType(l.subType));
-  if (cash.some((l) => l.debit.gt(0))) assertCanReceiveMoney(ctx);
-  if (cash.some((l) => l.credit.gt(0))) assertCanPayMoney(ctx);
+  assertAllowed(canMoveMoney(ctx, lines));
 }
 
 export async function listJournalEntries(ctx: CompanyContext, raw: unknown = {}) {
@@ -230,20 +226,15 @@ export async function reverseJournalVoucher(
     include: { lines: { include: { account: { select: { subType: true } } } } },
   });
   if (!entry) throw new AppError("NOT_FOUND", "Journal entry not found.");
-  if (entry.sourceType !== "MANUAL" && entry.sourceType !== "TRANSFER") {
-    throw new AppError(
-      "CONFLICT",
-      `${entry.number} was made by ${entry.sourceType.toLowerCase().replace(/_/g, " ")}; undo it there (void the document).`,
-    );
-  }
-  if (entry.reversalOfId) throw new AppError("CONFLICT", `${entry.number} is itself a reversal.`);
-  if (entry.isReversed) throw new AppError("CONFLICT", `${entry.number} was already reversed.`);
-  if (entry.sourceType === "MANUAL") assertCanManageAccounts(ctx);
-  else assertCanPayMoney(ctx, "Only Accounts can move money between accounts.");
-  // The reversal moves money the other way, so it needs the mirrored permissions.
-  assertMoneyPermissions(
-    ctx,
-    entry.lines.map((l) => ({ subType: l.account.subType, debit: l.credit, credit: l.debit })),
+  assertAllowed(
+    canReverseEntry(ctx, {
+      ...entry,
+      lines: entry.lines.map((l) => ({
+        subType: l.account.subType,
+        debit: l.debit,
+        credit: l.credit,
+      })),
+    }),
   );
 
   const reversal = await prisma.$transaction(async (tx) => {

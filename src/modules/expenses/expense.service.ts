@@ -7,6 +7,7 @@ import { nextDocumentNumber } from "@/lib/numbering";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
 import { lockRow } from "@/lib/row-lock";
+import { assertAllowed } from "@/lib/verdict";
 import { money, ZERO } from "@/modules/accounts/balances";
 import { cashAccountFor } from "@/modules/accounts/cash-accounts";
 import {
@@ -16,7 +17,7 @@ import {
 } from "@/modules/accounts/chart";
 import { ensureControlAccounts } from "@/modules/accounts/control-accounts";
 import { postJournalEntry, reverseJournalEntry } from "@/modules/accounts/journal.service";
-import { assertCanPayMoney, assertCanReceiveMoney } from "@/modules/accounts/money-guards";
+import { assertCanPayMoney } from "@/modules/accounts/money-guards";
 import { settleSupplierBills } from "@/modules/accounts/supplier-settlement";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
@@ -33,6 +34,12 @@ import {
   updateExpenseSchema,
   voidExpenseSchema,
 } from "@/modules/expenses/schemas";
+import {
+  canApproveExpense,
+  canEditExpense,
+  canRejectExpense,
+  canVoidExpense,
+} from "@/modules/expenses/rules";
 import { linkedEmployee } from "@/modules/hr/access";
 import { reverseSettlementsTx, settleAdvancesForExpenseTx } from "@/modules/hr/advance.service";
 import { assertPartyCanTransact, recordPartyActivity } from "@/modules/parties/party.service";
@@ -123,6 +130,19 @@ async function headAccountId(db: Db, companyId: string, head: ExpenseHead): Prom
 export function expenseStatus(e: Pick<Expense, "journalEntryId" | "voidedAt">): ExpenseStatus {
   if (e.voidedAt) return e.journalEntryId ? "VOID" : "REJECTED";
   return e.journalEntryId ? "POSTED" : "PENDING";
+}
+
+/** What the expense rules read: its number, status and payment type, and whose it is. */
+export function expenseState(
+  ctx: Pick<CompanyContext, "user">,
+  e: Pick<Expense, "number" | "journalEntryId" | "voidedAt" | "paymentType" | "createdById">,
+) {
+  return {
+    number: e.number,
+    status: expenseStatus(e),
+    paymentType: e.paymentType,
+    own: e.createdById === ctx.user.id,
+  };
 }
 
 function statusWhere(status: ExpenseStatus): Prisma.ExpenseWhereInput {
@@ -387,7 +407,10 @@ async function checkDetails(
   }
   if (details.receiptFileId) {
     const file = await ctx.db.fileAsset.findUnique({ where: { id: details.receiptFileId } });
-    if (!file) throw new AppError("NOT_FOUND", "Receipt file not found.");
+    // A receipt is one the person uploaded (Accounts may attach any company file).
+    if (!file || (file.uploadedById !== ctx.user.id && !seesAll(ctx))) {
+      throw new AppError("NOT_FOUND", "Receipt file not found.");
+    }
   }
 }
 
@@ -618,21 +641,9 @@ export async function updateExpense(
   await prisma.$transaction(async (tx) => {
     const expense = await lockExpense(tx, ctx, expenseId);
     const status = expenseStatus(expense);
-    const own = expense.createdById === ctx.user.id;
-    if (!ctx.can("expenses.manage") && !(own && status === "PENDING")) {
-      throw new AppError("FORBIDDEN", "You can only change your own claims while they wait.");
-    }
-    if (status === "REJECTED" || status === "VOID") {
-      throw new AppError("CONFLICT", `${expense.number} is ${status.toLowerCase()}.`);
-    }
     const changesMoney =
       input.headId !== undefined || input.amount !== undefined || input.date !== undefined;
-    if (status === "POSTED" && changesMoney) {
-      throw new AppError(
-        "CONFLICT",
-        `${expense.number} is in the books; void it and record it again to change the amount, head or date.`,
-      );
-    }
+    assertAllowed(canEditExpense(ctx, expenseState(ctx, expense), { money: changesMoney }));
     if (
       status === "POSTED" &&
       input.employeeId !== undefined &&
@@ -699,9 +710,7 @@ export async function approveExpense(
   const date = input.date ? toInstant(input.date, ctx.company.timezone) : new Date();
   await prisma.$transaction(async (tx) => {
     const expense = await lockExpense(tx, ctx, expenseId);
-    if (expenseStatus(expense) !== "PENDING") {
-      throw new AppError("CONFLICT", `${expense.number} is not a waiting claim.`);
-    }
+    assertAllowed(canApproveExpense(ctx, expenseState(ctx, expense)));
     const claimant = expense.createdBy?.name;
     let summary: string;
     if (expense.paymentType === "DUE") {
@@ -749,12 +758,7 @@ export async function rejectExpense(
   await prisma.$transaction(async (tx) => {
     const expense = await lockExpense(tx, ctx, expenseId);
     const own = expense.createdById === ctx.user.id;
-    if (!own && !ctx.can("accounts.payments.record") && !ctx.can("expenses.manage")) {
-      throw new AppError("FORBIDDEN", "Only Accounts can turn down someone else's claim.");
-    }
-    if (expenseStatus(expense) !== "PENDING") {
-      throw new AppError("CONFLICT", `${expense.number} is not a waiting claim.`);
-    }
+    assertAllowed(canRejectExpense(ctx, expenseState(ctx, expense)));
     await tx.expense.update({
       where: { id: expense.id },
       data: { voidedAt: new Date(), voidReason: reason },
@@ -787,18 +791,8 @@ export async function voidExpense(
   const { reason } = voidExpenseSchema.parse(raw);
   await prisma.$transaction(async (tx) => {
     const expense = await lockExpense(tx, ctx, expenseId);
-    const status = expenseStatus(expense);
-    if (status === "PENDING") {
-      throw new AppError("CONFLICT", `${expense.number} is a claim; reject it instead.`);
-    }
-    if (status !== "POSTED") {
-      throw new AppError("CONFLICT", `${expense.number} is already ${status.toLowerCase()}.`);
-    }
     // Undoing a cash payment is Accounts' call: the money goes back into the account.
-    if (expense.paymentType === "CASH_BANK") {
-      assertCanPayMoney(ctx);
-      assertCanReceiveMoney(ctx);
-    }
+    assertAllowed(canVoidExpense(ctx, expenseState(ctx, expense)));
     await reverseJournalEntry(tx, expense.journalEntryId!, {
       description: `Void ${expense.number}: ${reason}`,
       postedById: ctx.user.id,

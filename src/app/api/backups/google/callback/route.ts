@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 /**
  * GET /api/backups/google/callback?code=&state= — where Google returns the owner
  * after they allow access. Saves the (encrypted) Drive connection and creates the
- * "Extras ERP Backups" folder. This address must be an authorised redirect URI of
+ * "Extas ERP Backups" folder. This address must be an authorised redirect URI of
  * the Google OAuth client.
  */
 export const GET = apiRoute(async (request) => {

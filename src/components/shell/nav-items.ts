@@ -1,11 +1,13 @@
 import {
   FactoryIcon,
   HandshakeIcon,
+  LandmarkIcon,
   LayoutDashboardIcon,
   type LucideIcon,
   ReceiptTextIcon,
   SettingsIcon,
   ShirtIcon,
+  WalletIcon,
 } from "lucide-react";
 
 import type { PermissionKey } from "@/modules/rbac/permissions";
@@ -22,7 +24,20 @@ export type NavItem = {
   icon: LucideIcon;
   /** Shown to people holding any of these permissions; to everyone when empty. */
   anyOf: readonly PermissionKey[];
+  /** ...unless they hold any of these (they reach the same screens another way). */
+  noneOf?: readonly PermissionKey[];
 };
+
+/**
+ * The permissions that open the Accounts section (the books and reports,
+ * supplier payments, everyone's expenses). Money received is recorded where it
+ * comes in (Sales), so accounts.receipts.record alone opens nothing here.
+ */
+const ACCOUNTS_KEYS: readonly PermissionKey[] = [
+  "accounts.view",
+  "accounts.payments.record",
+  "expenses.manage",
+];
 
 export const NAV_ITEMS: readonly NavItem[] = [
   { href: "/", label: "Dashboard", icon: LayoutDashboardIcon, anyOf: [] },
@@ -44,6 +59,14 @@ export const NAV_ITEMS: readonly NavItem[] = [
     anyOf: ["production.view", "production.stock_intake"],
   },
   {
+    // Cash and bank, supplier payments, expenses, the journal, the chart of
+    // accounts and the financial reports (components/accounts/tabs.ts).
+    href: "/accounts",
+    label: "Accounts",
+    icon: LandmarkIcon,
+    anyOf: ACCOUNTS_KEYS,
+  },
+  {
     // Styles and their stock matrix, stock counts, bad stock and the catalogue setup
     // (components/products/tabs.ts).
     href: "/products",
@@ -58,6 +81,15 @@ export const NAV_ITEMS: readonly NavItem[] = [
     shortLabel: "Parties",
     icon: HandshakeIcon,
     anyOf: ["parties.view", "parties.ledger.view"],
+  },
+  {
+    // Everyone else who spends company money records their own expenses as
+    // claims; it is the Expenses tab of Accounts, reached from its own entry.
+    href: "/accounts/expenses",
+    label: "Expenses",
+    icon: WalletIcon,
+    anyOf: ["expenses.create"],
+    noneOf: ACCOUNTS_KEYS,
   },
   {
     // Team, roles and company details (components/settings/tabs.ts).
@@ -77,7 +109,11 @@ export function holdsAny(permissions: Iterable<string>, anyOf: readonly string[]
 
 /** The sections this person may open in the active company. */
 export function visibleNavItems(permissions: readonly string[]): NavItem[] {
-  return NAV_ITEMS.filter((item) => holdsAny(permissions, item.anyOf));
+  return NAV_ITEMS.filter(
+    (item) =>
+      holdsAny(permissions, item.anyOf) &&
+      !(item.noneOf && item.noneOf.some((p) => permissions.includes(p))),
+  );
 }
 
 /** Sections that fit in the phone's tab bar; the rest go under "More" with the account menu. */
@@ -87,6 +123,24 @@ export const PHONE_TABS = 4;
 export function phoneTabs(items: readonly NavItem[]): { tabs: NavItem[]; more: NavItem[] } {
   if (items.length <= PHONE_TABS) return { tabs: [...items], more: [] };
   return { tabs: items.slice(0, PHONE_TABS), more: items.slice(PHONE_TABS) };
+}
+
+/**
+ * How many sections fit in the top bar on tablets (md), laptops (lg) and
+ * computers (xl); the rest go under its "More" menu at that width.
+ */
+export const TOP_BAR_TABS = { md: 4, lg: 5, xl: 7 } as const;
+
+/**
+ * Up to which width a section at this position sits under the top bar's "More":
+ * null when it always fits, "md" on tablets only, "lg" on tablets and laptops,
+ * "all" at every width.
+ */
+export function topBarFold(index: number): "md" | "lg" | "all" | null {
+  if (index < TOP_BAR_TABS.md) return null;
+  if (index < TOP_BAR_TABS.lg) return "md";
+  if (index < TOP_BAR_TABS.xl) return "lg";
+  return "all";
 }
 
 /** Whether a menu entry is the current section ("/sales" also covers "/sales/123"). */

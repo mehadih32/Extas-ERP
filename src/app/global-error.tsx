@@ -14,7 +14,7 @@ export default function GlobalError(props: {
   return (
     <html lang="en" className={fontVariables}>
       <body>
-        <title>Something went wrong · Extras ERP</title>
+        <title>Something went wrong · Extas ERP</title>
         <ScreenError {...props} />
       </body>
     </html>

@@ -4,11 +4,13 @@ import { DATE_ONLY, dayRange, localDay, nextDay, toInstant } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
+import { assertAllowed } from "@/lib/verdict";
 import { accountTotals, money, rawBalance, ZERO } from "@/modules/accounts/balances";
 import { createNumberedAccount } from "@/modules/accounts/chart";
 import { buildLedger, postAccountOpeningTx } from "@/modules/accounts/chart.service";
 import { ensureControlAccounts } from "@/modules/accounts/control-accounts";
 import { assertCanManageAccounts } from "@/modules/accounts/money-guards";
+import { canCloseBankAccount } from "@/modules/accounts/rules";
 import { daysBetweenInclusive } from "@/modules/accounts/periods";
 import {
   createBankAccountSchema,
@@ -142,13 +144,9 @@ export async function updateBankAccount(
     }
   }
   if (input.isActive === false && bank.isActive) {
-    const balance = await rawBalance(ctx.company.id, bank.ledgerAccountId);
-    if (!balance.isZero()) {
-      throw new AppError(
-        "CONFLICT",
-        `This account still shows ${balance.toFixed(2)}; transfer the balance out before closing it.`,
-      );
-    }
+    assertAllowed(
+      canCloseBankAccount(bank, await rawBalance(ctx.company.id, bank.ledgerAccountId)),
+    );
   }
   await prisma.$transaction(async (tx) => {
     const updated = await tx.bankAccount.update({
@@ -321,6 +319,7 @@ export async function getBankStatement(
     },
     months,
     transactions: ledger.lines.map((l) => ({
+      entryId: l.entryId,
       date: l.date,
       voucherNumber: l.number,
       particulars: [l.description, l.particulars].filter(Boolean).join(" — "),

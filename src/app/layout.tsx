@@ -5,9 +5,9 @@ import "@/styles/globals.css";
 import { fontVariables } from "./fonts";
 
 export const metadata: Metadata = {
-  title: { default: "Extras ERP", template: "%s · Extras ERP" },
-  description: "Extras Enterprise ERP: sales, stock, production, accounts and HR in one place.",
-  applicationName: "Extras ERP",
+  title: { default: "Extas ERP", template: "%s · Extas ERP" },
+  description: "Extas Enterprise ERP: sales, stock, production, accounts and HR in one place.",
+  applicationName: "Extas ERP",
   // A private business system: keep it out of search engines.
   robots: { index: false, follow: false },
 };

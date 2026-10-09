@@ -1,4 +1,4 @@
-# Local PostgreSQL for developing Extras ERP.
+# Local PostgreSQL for developing Extas ERP.
 # Start it with `npm run db:up`. The server setup (app, database, HTTPS, backups)
 # is in deploy/compose.yml; see deploy/README.md.
 services:

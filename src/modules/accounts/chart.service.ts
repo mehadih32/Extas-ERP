@@ -6,6 +6,7 @@ import { AppError } from "@/lib/errors";
 import { nextDocumentNumber } from "@/lib/numbering";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
+import { assertAllowed } from "@/lib/verdict";
 import {
   accountTotals,
   type DateRange,
@@ -25,6 +26,7 @@ import {
 } from "@/modules/accounts/chart";
 import { CONTROL_ACCOUNTS, ensureControlAccounts } from "@/modules/accounts/control-accounts";
 import { assertCanManageAccounts } from "@/modules/accounts/money-guards";
+import { canArchiveAccount } from "@/modules/accounts/rules";
 import {
   accountOpeningSchema,
   createAccountSchema,
@@ -84,8 +86,12 @@ export function manualPostingBlock(account: {
   return null;
 }
 
-/** Accounts that can carry a balance brought forward from before the ERP. */
-function openingBalanceBlock(account: AccountRow): string | null {
+/** Kept by a bank account, a loan or an asset (they archive it themselves). */
+export const isLinked = (account: AccountRow) =>
+  Boolean(account.bankAccount || account.capitalSource || account.fixedAsset);
+
+/** Why an account cannot take a balance brought forward from before the ERP (null when it can). */
+export function openingBalanceBlock(account: AccountRow): string | null {
   const allowed: AccountRow["subType"][] = [
     "CASH",
     "BANK",
@@ -298,19 +304,12 @@ export async function updateAccount(
     if (clash) throw new AppError("CONFLICT", `An account called "${clash.name}" already exists.`);
   }
   if (input.isActive === false && account.isActive) {
-    if (account.isSystem) {
-      throw new AppError("CONFLICT", `${account.name} is used by the system and stays active.`);
-    }
-    if (account.bankAccount || account.capitalSource || account.fixedAsset) {
-      throw new AppError("CONFLICT", "Archive the bank account, loan or asset this belongs to.");
-    }
-    const balance = await rawBalance(ctx.company.id, account.id);
-    if (!balance.isZero()) {
-      throw new AppError(
-        "CONFLICT",
-        `${account.name} still has a balance of ${balance.abs().toFixed(2)}; move it out first.`,
-      );
-    }
+    assertAllowed(
+      canArchiveAccount(
+        { ...account, linked: isLinked(account) },
+        await rawBalance(ctx.company.id, account.id),
+      ),
+    );
   }
   await ctx.db.ledgerAccount.update({
     where: { id: account.id },

@@ -1,4 +1,4 @@
-# Extras ERP on one server: PostgreSQL 16, the app, and Caddy for HTTPS.
+# Extas ERP on one server: PostgreSQL 16, the app, and Caddy for HTTPS.
 # Run it through the scripts in this folder (see README.md here). The settings
 # come from deploy/.env, which configure.sh writes.
 name: extras-erp

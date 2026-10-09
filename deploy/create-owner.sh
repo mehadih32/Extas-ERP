@@ -12,7 +12,7 @@ need_root
 load_settings
 email="$(setting SEED_ADMIN_EMAIL)"
 [ -n "$email" ] || die "set SEED_ADMIN_EMAIL in deploy/.env first."
-[ -n "$(compose ps -q app 2>/dev/null)" ] || die "Extras ERP is not installed yet: run sudo ./deploy/deploy.sh first."
+[ -n "$(compose ps -q app 2>/dev/null)" ] || die "Extas ERP is not installed yet: run sudo ./deploy/deploy.sh first."
 
 say "Setting up the owner account ($email) and the companies"
 compose run --rm \

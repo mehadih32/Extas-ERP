@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Puts Extras ERP back to a backup: the database, and the uploaded files when the
+# Puts Extas ERP back to a backup: the database, and the uploaded files when the
 # backup has them. It first saves a safety copy of the database as it is now, so
 # a restore can be undone by restoring that copy.
 #   sudo ./deploy/restore.sh /srv/extras-erp/backups/2026-10-04_020000

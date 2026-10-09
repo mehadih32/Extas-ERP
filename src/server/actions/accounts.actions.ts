@@ -1,5 +1,7 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
+
 import { getRequestMeta } from "@/lib/request-meta";
 import { runAction } from "@/lib/result";
 import { requireAnyPermission, requirePermission } from "@/modules/auth/context";
@@ -8,6 +10,7 @@ import * as bank from "@/modules/accounts/bank.service";
 import * as capital from "@/modules/accounts/capital.service";
 import * as chart from "@/modules/accounts/chart.service";
 import * as reports from "@/modules/accounts/reports.service";
+import * as screens from "@/modules/accounts/screens.service";
 import * as supplierPayments from "@/modules/accounts/supplier-payment.service";
 import * as vouchers from "@/modules/accounts/voucher.service";
 
@@ -18,6 +21,9 @@ import * as vouchers from "@/modules/accounts/voucher.service";
  *   accounts.receipts.record  money in (capital and loans received, asset sale proceeds)
  *   accounts.payments.record  money out (transfers, supplier payments, installments)
  * Services check the money permissions themselves too, so no caller can skip them.
+ * Changes made from the screens refresh them and hand back the record's id and
+ * number only: the full records carry Decimal amounts, which do not cross to the
+ * browser, so the screens reload the record from its page.
  */
 
 const view = () => requirePermission("accounts.view");
@@ -26,6 +32,76 @@ const payOut = () => requirePermission("accounts.payments.record");
 /** The "paid from / into" picker: anyone who records money. */
 const moneyDesk = () =>
   requireAnyPermission("accounts.view", "accounts.receipts.record", "accounts.payments.record");
+/** Supplier payments: the people who see the books and the people who pay. */
+const paymentsDesk = () => requireAnyPermission("accounts.view", "accounts.payments.record");
+
+/** Runs a change and refreshes every screen that may show it. */
+const change = <T>(work: () => Promise<T>) =>
+  runAction(async () => {
+    const result = await work();
+    revalidatePath("/", "layout");
+    return result;
+  });
+
+const ref = (record: { id: string; number: string }) => ({
+  id: record.id,
+  number: record.number,
+});
+const accountRef = (account: { id: string; code: string; name: string }) => ({
+  id: account.id,
+  code: account.code,
+  name: account.name,
+});
+type Range = { from?: string; to?: string };
+
+// --- Screens ---------------------------------------------------------------------------
+export const getAccountsOverviewScreenAction = async () =>
+  runAction(async () => screens.getOverviewScreen(await view()));
+export const getCashBankScreenAction = async () =>
+  runAction(async () => screens.getCashBankScreen(await view()));
+export const getBankScreenAction = async (bankAccountId: string, range: Range = {}) =>
+  runAction(async () => screens.getBankScreen(await view(), bankAccountId, range));
+export const getBankFormAction = async (bankAccountId?: string) =>
+  runAction(async () => screens.getBankForm(await manage(), bankAccountId));
+export const getSupplierPaymentListAction = async (query: { supplierId?: string; take?: number }) =>
+  runAction(async () => screens.getSupplierPaymentList(await paymentsDesk(), query));
+export const listSupplierPaymentRowsAction = async (query: unknown) =>
+  runAction(async () => screens.listSupplierPaymentRows(await paymentsDesk(), query));
+export const getSupplierPaymentScreenAction = async (paymentId: string) =>
+  runAction(async () => screens.getSupplierPaymentScreen(await paymentsDesk(), paymentId));
+export const getPayFormAction = async (supplierId?: string) =>
+  runAction(async () => screens.getPayForm(await payOut(), supplierId));
+export const getSupplierDuesAction = async (supplierId: string) =>
+  runAction(async () => screens.getSupplierDues(await payOut(), supplierId));
+/** Suppliers to pay or to owe, buyers and suppliers on journal lines. */
+export const findAccountsPartiesAction = async (query: {
+  kind: "SUPPLIER" | "BUYER";
+  purpose: "PAY" | "DUE" | "JOURNAL";
+  search?: string;
+}) =>
+  runAction(async () =>
+    screens.findParties(
+      await requireAnyPermission(
+        "parties.view",
+        "accounts.view",
+        "accounts.payments.record",
+        "expenses.manage",
+      ),
+      query,
+    ),
+  );
+export const getJournalListAction = async (query: unknown) =>
+  runAction(async () => screens.getJournalList(await view(), query));
+export const listJournalRowsAction = async (query: unknown) =>
+  runAction(async () => screens.listJournalRows(await view(), query));
+export const getJournalEntryScreenAction = async (entryId: string) =>
+  runAction(async () => screens.getJournalEntryScreen(await view(), entryId));
+export const getVoucherFormAction = async () =>
+  runAction(async () => screens.getVoucherForm(await manage()));
+export const getChartScreenAction = async (query: { includeInactive?: boolean } = {}) =>
+  runAction(async () => screens.getChartScreen(await view(), query));
+export const getAccountScreenAction = async (accountId: string, range: Range = {}) =>
+  runAction(async () => screens.getAccountScreen(await view(), accountId, range));
 
 // --- Overview & reports -----------------------------------------------------------------
 export const getAccountsOverviewAction = async () =>
@@ -53,14 +129,23 @@ export const getAccountLedgerAction = async (accountId: string, query: unknown) 
 export const listCashAccountsAction = async () =>
   runAction(async () => chart.listCashAccounts(await moneyDesk()));
 export const createAccountAction = async (input: unknown) =>
-  runAction(async () => chart.createAccount(await manage(), input, await getRequestMeta()));
+  change(async () =>
+    accountRef(await chart.createAccount(await manage(), input, await getRequestMeta())),
+  );
 export const updateAccountAction = async (accountId: string, input: unknown) =>
-  runAction(async () =>
-    chart.updateAccount(await manage(), accountId, input, await getRequestMeta()),
+  change(async () =>
+    accountRef(await chart.updateAccount(await manage(), accountId, input, await getRequestMeta())),
   );
 export const setAccountOpeningBalanceAction = async (accountId: string, input: unknown) =>
-  runAction(async () =>
-    chart.setAccountOpeningBalance(await manage(), accountId, input, await getRequestMeta()),
+  change(async () =>
+    accountRef(
+      await chart.setAccountOpeningBalance(
+        await manage(),
+        accountId,
+        input,
+        await getRequestMeta(),
+      ),
+    ),
   );
 
 // --- Journal vouchers & transfers ---------------------------------------------------------
@@ -69,21 +154,25 @@ export const listJournalEntriesAction = async (query: unknown) =>
 export const getJournalEntryAction = async (entryId: string) =>
   runAction(async () => vouchers.getJournalEntry(await view(), entryId));
 export const createJournalVoucherAction = async (input: unknown) =>
-  runAction(async () =>
-    vouchers.createJournalVoucher(await manage(), input, await getRequestMeta()),
+  change(async () =>
+    ref(await vouchers.createJournalVoucher(await manage(), input, await getRequestMeta())),
   );
 /** Journal vouchers need accounts.manage; transfers need accounts.payments.record. */
 export const reverseJournalVoucherAction = async (entryId: string, input: unknown) =>
-  runAction(async () =>
-    vouchers.reverseJournalVoucher(
-      await requireAnyPermission("accounts.manage", "accounts.payments.record"),
-      entryId,
-      input,
-      await getRequestMeta(),
+  change(async () =>
+    ref(
+      await vouchers.reverseJournalVoucher(
+        await requireAnyPermission("accounts.manage", "accounts.payments.record"),
+        entryId,
+        input,
+        await getRequestMeta(),
+      ),
     ),
   );
 export const createTransferAction = async (input: unknown) =>
-  runAction(async () => vouchers.createTransfer(await payOut(), input, await getRequestMeta()));
+  change(async () =>
+    ref(await vouchers.createTransfer(await payOut(), input, await getRequestMeta())),
+  );
 
 // --- Bank accounts & statements -------------------------------------------------------------
 export const listBankAccountsAction = async (query: { includeInactive?: unknown } = {}) =>
@@ -91,11 +180,20 @@ export const listBankAccountsAction = async (query: { includeInactive?: unknown 
 export const getBankAccountAction = async (bankAccountId: string) =>
   runAction(async () => bank.getBankAccount(await view(), bankAccountId));
 export const createBankAccountAction = async (input: unknown) =>
-  runAction(async () => bank.createBankAccount(await manage(), input, await getRequestMeta()));
+  change(async () => {
+    const created = await bank.createBankAccount(await manage(), input, await getRequestMeta());
+    return { id: created.id, accountNumber: created.accountNumber };
+  });
 export const updateBankAccountAction = async (bankAccountId: string, input: unknown) =>
-  runAction(async () =>
-    bank.updateBankAccount(await manage(), bankAccountId, input, await getRequestMeta()),
-  );
+  change(async () => {
+    const updated = await bank.updateBankAccount(
+      await manage(),
+      bankAccountId,
+      input,
+      await getRequestMeta(),
+    );
+    return { id: updated.id, accountNumber: updated.accountNumber, isActive: updated.isActive };
+  });
 export const getBankStatementAction = async (bankAccountId: string, query: unknown) =>
   runAction(async () => bank.getBankStatement(await view(), bankAccountId, query));
 
@@ -177,24 +275,27 @@ export const skipInstallmentAction = async (installmentId: string, input: unknow
 
 // --- Supplier payments ----------------------------------------------------------------------------
 export const listSupplierPaymentsAction = async (query: unknown) =>
-  runAction(async () =>
-    supplierPayments.listSupplierPayments(
-      await requireAnyPermission("accounts.view", "accounts.payments.record"),
-      query,
-    ),
-  );
+  runAction(async () => supplierPayments.listSupplierPayments(await paymentsDesk(), query));
 export const getSupplierPaymentAction = async (paymentId: string) =>
-  runAction(async () =>
-    supplierPayments.getSupplierPayment(
-      await requireAnyPermission("accounts.view", "accounts.payments.record"),
-      paymentId,
-    ),
-  );
+  runAction(async () => supplierPayments.getSupplierPayment(await paymentsDesk(), paymentId));
+/** Pays a supplier on account: what it settled and any advance left with them. */
 export const paySupplierAction = async (input: unknown) =>
-  runAction(async () =>
-    supplierPayments.paySupplier(await payOut(), input, await getRequestMeta()),
-  );
+  change(async () => {
+    const paid = await supplierPayments.paySupplier(await payOut(), input, await getRequestMeta());
+    return {
+      ...ref(paid),
+      appliedTo: paid.appliedTo.map((a) => ({ number: a.number, amount: a.amount })),
+      advanceLeft: paid.advanceLeft,
+    };
+  });
 export const voidSupplierPaymentAction = async (paymentId: string, input: unknown) =>
-  runAction(async () =>
-    supplierPayments.voidSupplierPayment(await payOut(), paymentId, input, await getRequestMeta()),
+  change(async () =>
+    ref(
+      await supplierPayments.voidSupplierPayment(
+        await payOut(),
+        paymentId,
+        input,
+        await getRequestMeta(),
+      ),
+    ),
   );

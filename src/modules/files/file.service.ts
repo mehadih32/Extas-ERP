@@ -213,8 +213,8 @@ export async function readStoredFile(asset: { storagePath: string }): Promise<Bu
 /**
  * A file for download. Allowed for its uploader and for roles that may see the
  * record it belongs to (a delivery's packing list, a supplier bill's scan, a
- * licence scan, a document template). Saved reports download through the Report
- * Builder, which checks their figures.
+ * licence scan, a document template, an expense's receipt). Saved reports
+ * download through the Report Builder, which checks their figures.
  */
 export async function getFileForDownload(ctx: CompanyContext, fileId: string) {
   const asset = await ctx.db.fileAsset.findUnique({
@@ -224,6 +224,7 @@ export async function getFileForDownload(ctx: CompanyContext, fileId: string) {
       supplierBills: { select: { id: true }, take: 1 },
       complianceDocuments: { select: { id: true }, take: 1 },
       templates: { select: { id: true }, take: 1 },
+      expenses: { select: { id: true }, take: 1 },
     },
   });
   if (!asset) throw new AppError("NOT_FOUND", "File not found.");
@@ -235,7 +236,12 @@ export async function getFileForDownload(ctx: CompanyContext, fileId: string) {
       (ctx.can("production.manage") || ctx.can("accounts.view"))) ||
     (asset.complianceDocuments.length > 0 &&
       (ctx.can("compliance.view") || ctx.can("compliance.manage"))) ||
-    (asset.templates.length > 0 && ctx.can("templates.manage"));
+    (asset.templates.length > 0 && ctx.can("templates.manage")) ||
+    // Receipts on expenses and claims: the people who see every expense.
+    (asset.expenses.length > 0 &&
+      (ctx.can("expenses.manage") ||
+        ctx.can("accounts.view") ||
+        ctx.can("accounts.payments.record")));
   if (!allowed) throw new AppError("FORBIDDEN", "You do not have permission to open this file.");
   return {
     asset: {

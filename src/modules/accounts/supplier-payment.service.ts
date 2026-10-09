@@ -5,12 +5,13 @@ import { AppError } from "@/lib/errors";
 import { nextDocumentNumber } from "@/lib/numbering";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
+import { assertAllowed } from "@/lib/verdict";
 import { money } from "@/modules/accounts/balances";
 import { cashAccountFor } from "@/modules/accounts/cash-accounts";
-import { isCashSubType } from "@/modules/accounts/chart";
 import { ensureControlAccounts } from "@/modules/accounts/control-accounts";
 import { postJournalEntry, reverseJournalEntry } from "@/modules/accounts/journal.service";
-import { assertCanPayMoney, assertCanReceiveMoney } from "@/modules/accounts/money-guards";
+import { assertCanPayMoney } from "@/modules/accounts/money-guards";
+import { canVoidSupplierPayment } from "@/modules/accounts/rules";
 import {
   listSupplierPaymentsSchema,
   paySupplierSchema,
@@ -226,13 +227,12 @@ export async function voidSupplierPayment(
   if (!payment || payment.direction !== "PAID" || !payment.party) {
     throw new AppError("NOT_FOUND", "Supplier payment not found.");
   }
-  if (!payment.journalEntry) {
-    throw new AppError("CONFLICT", `${payment.number} has no journal entry to reverse.`);
-  }
   // The money comes back into the cash / bank account.
-  if (isCashSubType(payment.account.subType)) assertCanReceiveMoney(ctx);
+  assertAllowed(
+    canVoidSupplierPayment(ctx, { ...payment, accountSubType: payment.account.subType }),
+  );
   const supplier = payment.party;
-  const entryId = payment.journalEntry.id;
+  const entryId = payment.journalEntry!.id;
 
   await prisma.$transaction(async (tx) => {
     const reversal = await reverseJournalEntry(tx, entryId, {

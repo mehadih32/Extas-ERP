@@ -56,13 +56,18 @@ describe("top sellers choices in the address bar", () => {
 describe("the app frame", () => {
   it("shows the dashboard to everyone, even without dashboard permissions", () => {
     expect(visibleNavItems([]).map((item) => item.href)).toEqual(["/"]);
-    expect(visibleNavItems(ALL_PERMISSIONS).length).toBe(NAV_ITEMS.length);
+    // Everything but the claimants' own Expenses entry, which Accounts reach as a tab.
+    expect(visibleNavItems(ALL_PERMISSIONS).map((item) => item.href)).toEqual(
+      NAV_ITEMS.map((item) => item.href).filter((href) => href !== "/accounts/expenses"),
+    );
   });
 
   it("only lists permissions that exist", () => {
     const known = new Set<string>(ALL_PERMISSIONS);
     for (const item of NAV_ITEMS) {
-      for (const permission of item.anyOf) expect(known.has(permission), permission).toBe(true);
+      for (const permission of [...item.anyOf, ...(item.noneOf ?? [])]) {
+        expect(known.has(permission), permission).toBe(true);
+      }
     }
   });
 

@@ -1,4 +1,4 @@
-# Extras ERP
+# Extas ERP
 
 Enterprise apparel ERP (multi-company, wholesale matrix, production, accounts, HR) built from
 [`ERP_Blueprint.md`](./ERP_Blueprint.md).
@@ -115,7 +115,7 @@ Built one module at a time, each in its own pull request. So far:
     for each SKU and save only the differences (missing pieces are booked as a loss). If stock
     moves while counting (a sale, another count), the save is refused and the sheet reloads
     the new shelf numbers, keeping what was typed. The same tab enters **opening stock**: the
-    pieces held before starting with Extras ERP, at an optional cost per piece.
+    pieces held before starting with Extas ERP, at an optional cost per piece.
   - **Bad stock**: the pieces taken out of the sellable stock, for a period, with why, where
     from and who recorded them. Managers record bad stock from a SKU or barcode.
   - **Setup**: colours (with their swatch), sizes (in matrix order), the category tree,
@@ -138,7 +138,7 @@ Built one module at a time, each in its own pull request. So far:
     give or remove the Blue Verified badge, mark a buyer dormant, and close or reopen the
     account. Closing an account that still owes or is owed makes it Settling until the balance
     is zero. Accounts staff set the opening balance: what was owed either way before starting
-    with Extras ERP. A buyer cannot become a supplier (or the other way round) while money is
+    with Extas ERP. A buyer cannot become a supplier (or the other way round) while money is
     owed, but becoming both is always possible. Walk-in customers, the account kept for sales
     without a buyer profile, only lets its name and notes change.
 
@@ -211,6 +211,45 @@ Built one module at a time, each in its own pull request. So far:
   counting cut and sewn pieces would need the backend to store them first. Reading a
   packing list with AI comes with the integrations: for now the file is kept with the
   delivery and the pieces are typed in.
+
+- **Accounts** (`/accounts`), in seven tabs:
+  - **Overview**: the money in hand (cash, each bank account and wallet), what buyers owe and
+    what is owed to suppliers, buyer advances, today's sales, the net profit this month and
+    this financial year, the stock, raw materials, work in progress and fixed assets, the
+    loans and installments due, and what waits for Accounts (claims to pay back, payroll to
+    approve or pay). Money is moved between accounts and suppliers are paid from here.
+  - **Cash & bank**: cash in hand, wallets and every bank account with today's balance. A
+    bank account's page shows its details and its statement for any days (opening balance,
+    deposits, withdrawals, closing and average balance, month by month), each line opening its
+    journal entry. Bank accounts are added with their balance on the go-live day, changed, and
+    closed once their money is moved out.
+  - **Supplier payments**: payments to factories, mills and other suppliers, filtered by
+    supplier. Paying one shows what they are owed and their open bills; a payment settles the
+    oldest first and anything over stays as an advance. A payment made by mistake is voided.
+  - **Expenses**: rent, utilities, conveyance and the other running costs, searchable and
+    filtered by status, head and "only mine". An expense takes the head, amount, day, how it
+    was paid (now, from cash, a bank or a wallet, or owed to a supplier), the employee and the
+    trip for conveyance and food, the details and a photo of the receipt. Accounts approves a
+    waiting claim (paying it back, from the employee's advance first) or turns it down, and
+    voids an expense in the books. Expense heads are added, changed, archived and restored.
+  - **Journal**: every entry in the books, searchable and filtered by what made it (sales,
+    payments, bills, expenses, vouchers...). An entry's page shows its lines and opens the
+    record that made it. A **journal voucher** is written by hand: at least two lines, each a
+    debit or a credit, naming the buyer or supplier on receivable and payable lines, with the
+    debits and credits kept equal as it is typed. Vouchers and transfers are reversed with a
+    mirror entry; other entries are undone on their own screens (voiding the bill...).
+  - **Chart of accounts**: every account by type with its balance today, archived ones on
+    request. An account's page shows its ledger for any days. Accounts are added, renamed,
+    archived when empty, and given the balance brought forward from before go-live.
+  - **Reports**: the **profit and loss** for this month, last month, this or last financial
+    year, the last 12 months or any days, optionally month by month; the **balance sheet** and
+    the **trial balance** at the end of any day; and the **books check**, which shows whether
+    the journal balances and the stock, materials, assets, loans and payroll agree with the
+    books. Each account in a report opens its ledger.
+
+  Everyone else who spends company money sees an **Expenses** entry in their menu instead: the
+  claims they sent, and a form to send a new one. Fixed assets, loans and investors, and
+  printing reports and bank statements as PDFs, come in a later step.
 
 The screens ask the same Server Actions as the API, so the backend's permissions decide what
 appears. With the built-in roles' default permissions:
@@ -292,6 +331,24 @@ entries, the cost a piece, the A-grade and B-grade costs, a delivery's cost) rea
 `production.manage` and `accounts.view` holders; for the store team the server leaves them
 out, so its delivery form has no costing.
 
+Accounts follows the accounts and expenses permissions:
+
+| Role                                          | Accounts menu      | Books, balances and reports | Pay suppliers, approve claims, move money | Vouchers, accounts and banks | Send expense claims |
+| --------------------------------------------- | ------------------ | --------------------------- | ----------------------------------------- | ---------------------------- | ------------------- |
+| Super Admin, Accounts                         | Yes                | Yes                         | Yes                                       | Yes                          | Yes                 |
+| Sales Executive, Production Manager, Employee | No (Expenses only) | No                          | No                                        | No                           | Yes (their own)     |
+| Warehouse Team                                | No                 | No                          | No                                        | No                           | No                  |
+
+The books, balances, the journal, the chart of accounts and every report read with
+`accounts.view`. Paying suppliers, paying claims back, paying expenses straight away and moving
+money need `accounts.payments.record`; vouchers, accounts, bank accounts and opening balances
+need `accounts.manage`. Any change that moves money into a cash, bank or wallet account also
+needs `accounts.receipts.record`, so reversing a payment needs both money keys. Expenses open
+with `expenses.create`; people without `expenses.manage`, `accounts.view` or
+`accounts.payments.record` see only the claims they sent, and never an account's balance.
+Someone holding only `accounts.payments.record` sees the Supplier payments and Expenses tabs,
+not the books.
+
 Settings follows the same rule. The Team tab needs `company.members.manage`. The Roles tab
 opens with `company.members.manage` (to read them) or `company.roles.manage` (to change them).
 Everyone can read the company details, and `company.settings` lets them be changed. Settings
@@ -332,6 +389,13 @@ For developers:
   tabs and who sees them are in `src/components/production/tabs.ts`. The server spells some
   stages differently ("Wash/QC"), so the screens name stages from
   `src/components/production/labels.ts` by their key.
+- Accounts' rules (what may be reversed, voided, archived or closed, and which money keys a
+  change needs) live in `src/modules/accounts/rules.ts`, and expenses' (approve, turn down,
+  void, change) in `src/modules/expenses/rules.ts`. The services refuse with them and
+  `src/modules/accounts/screens.service.ts` and `src/modules/expenses/screens.service.ts`
+  send them as each screen's `can` flags. The tabs and who sees them are in
+  `src/components/accounts/tabs.ts`; the claimants' own Expenses menu entry is hidden from
+  people who reach Expenses through Accounts (`noneOf` in `nav-items.ts`).
 - The phone's tab bar holds four sections. With more, the fifth tab is **More**, listing the
   other sections above the account menu (`phoneTabs` in `src/components/shell/nav-items.ts`).
   Between tablet and laptop widths the top bar uses short labels ("Parties"), and lists show

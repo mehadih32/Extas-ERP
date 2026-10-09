@@ -5,31 +5,33 @@ import { notFound } from "next/navigation";
 
 import { SectionError } from "@/components/dashboard/section-error";
 import { FormAlert } from "@/components/forms/field";
+import { FlagBadge } from "@/components/materials/badges";
+import { materialsHref, perUnit, quantity } from "@/components/materials/labels";
+import { MaterialsNoAccess, PricesNoAccess } from "@/components/materials/no-access";
+import { PurchaseActions } from "@/components/materials/purchase-actions";
 import { BillBadge } from "@/components/production/badges";
-import { BillActions } from "@/components/production/bill-actions";
-import { PAYMENT_TYPE_LABELS, productionHref } from "@/components/production/labels";
-import { ProductionNoAccess } from "@/components/production/no-access";
-import { BackLink } from "@/components/settings/back-link";
+import { PAYMENT_TYPE_LABELS } from "@/components/production/labels";
 import { Fact, Panel, RecordHeader, Totals } from "@/components/sales/detail-bits";
 import { METHOD_LABELS, money } from "@/components/sales/labels";
-import { localDay } from "@/lib/dates";
+import { BackLink } from "@/components/settings/back-link";
 import { formatDay } from "@/lib/display";
-import { getBillScreenAction } from "@/server/actions/production.actions";
+import { cn } from "@/lib/utils";
+import { getPurchaseScreenAction } from "@/server/actions/materials.actions";
 import { requireCompanyPage } from "@/server/pages/guards";
 
-export const metadata: Metadata = { title: "Supplier bill" };
+export const metadata: Metadata = { title: "Purchase" };
 
+const linkClass = "text-primary underline-offset-4 hover:underline";
 const one = (value: string | string[] | undefined) =>
   typeof value === "string" ? value : undefined;
 
-const linkClass = "text-primary underline-offset-4 hover:underline";
-
 /**
- * One supplier bill (production.view with the costs, like GET
- * /api/production/bills/:id): how it is shared across projects, or the raw
- * materials it bought, and what was paid on it.
+ * One raw material purchase (materials.view with the prices, like GET
+ * /api/materials/purchases/:id): the materials that came in and how much of
+ * each went back, what was paid, the returns made from it, and paying,
+ * sending goods back or voiding it as this person may.
  */
-export default async function BillPage({
+export default async function PurchasePage({
   params,
   searchParams,
 }: {
@@ -37,31 +39,31 @@ export default async function BillPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const ctx = await requireCompanyPage();
+  if (!ctx.can("materials.view")) return <MaterialsNoAccess />;
   const [{ billId }, query] = await Promise.all([params, searchParams]);
-  const result = await getBillScreenAction(billId);
+  const result = await getPurchaseScreenAction(billId);
   if (!result.ok) {
     if (result.error.code === "NOT_FOUND") notFound();
-    if (result.error.code === "FORBIDDEN") {
-      return (
-        <ProductionNoAccess title="Production costs are not part of your role">
-          Supplier bills show to Production Managers and Accounts.
-        </ProductionNoAccess>
-      );
-    }
-    return <SectionError title="Bill" heading="The bill could not load" error={result.error} />;
+    if (result.error.code === "FORBIDDEN") return <PricesNoAccess />;
+    return (
+      <SectionError title="Purchase" heading="The purchase could not load" error={result.error} />
+    );
   }
   const screen = result.data;
   const { bill: b, can, notes } = screen;
   const currency = ctx.company.currency;
-  const notice = one(query.created) === "1" ? `${b.number} was saved.` : undefined;
+  const notice =
+    one(query.created) === "1"
+      ? `${b.number} was saved and the goods are in ${b.store ?? "the store"}.`
+      : undefined;
   const isVoid = b.status === "VOID";
 
   return (
     <div className="grid grid-cols-1 gap-8 md:gap-10">
       <div className="grid gap-6">
-        <BackLink href="/production/bills">All bills</BackLink>
+        <BackLink href={materialsHref.purchases}>All purchases</BackLink>
         <RecordHeader
-          eyebrow={`Bill ${b.number} · ${formatDay(b.billOn)}`}
+          eyebrow={`Purchase ${b.number} · ${formatDay(b.billOn)}`}
           title={b.supplier.name}
           badges={
             <>
@@ -73,85 +75,56 @@ export default async function BillPage({
             </>
           }
         />
-        {screen.materialsHref ? (
-          <FormAlert tone="note">
-            This bill bought raw materials.{" "}
-            <Link href={screen.materialsHref} className="font-medium underline underline-offset-4">
-              Open it in Raw materials
-            </Link>{" "}
-            to send goods back to the supplier or void it.
-          </FormAlert>
-        ) : (
-          notes.void && <FormAlert tone="note">{notes.void}</FormAlert>
-        )}
-        <BillActions
-          key={b.id}
-          screen={screen}
-          currency={currency}
-          today={localDay(new Date(), ctx.company.timezone)}
-          notice={notice}
-        />
+        {notes.void && <FormAlert tone="note">{notes.void}</FormAlert>}
+        <PurchaseActions key={b.id} screen={screen} currency={currency} notice={notice} />
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,8fr)_minmax(0,4fr)]">
         <div className="grid min-w-0 grid-cols-1 content-start gap-6">
-          {b.items.length > 0 ? (
-            <Panel title="Raw materials bought" id="items-heading">
-              <ul className="mt-4 grid divide-y">
-                {b.items.map((item) => (
+          <Panel title="What came in" id="items-heading">
+            <ul className="mt-4 grid divide-y">
+              {b.items.map((item) => {
+                const q = (text: string) => quantity(text, item.unit, currency);
+                return (
                   <li
                     key={item.id}
                     className="flex items-start justify-between gap-3 py-3 first:pt-0 last:pb-0"
                   >
                     <div className="min-w-0">
-                      <p className="text-sm font-medium break-words">
+                      <Link
+                        href={materialsHref.material(item.material.id)}
+                        className={`text-sm font-medium break-words ${linkClass}`}
+                      >
                         {item.material.code} · {item.material.name}
-                      </p>
+                      </Link>
                       <p className="text-[0.8125rem] text-muted-foreground tabular-nums">
-                        {item.quantity} {item.unit} at {money(item.unitPrice, currency)}
+                        {q(item.quantity)} at {perUnit(item.unitPrice, item.unit, currency)}
                       </p>
+                      {/[1-9]/.test(item.returned) && (
+                        <p className="mt-1 flex flex-wrap items-center gap-1.5 text-[0.8125rem]">
+                          <FlagBadge tone="plain">{q(item.returned)} sent back</FlagBadge>
+                        </p>
+                      )}
+                      {item.description && (
+                        <p className="text-[0.8125rem] break-words text-muted-foreground">
+                          {item.description}
+                        </p>
+                      )}
                     </div>
-                    <p className="text-sm whitespace-nowrap tabular-nums">
+                    <p
+                      className={cn(
+                        "text-sm whitespace-nowrap tabular-nums",
+                        isVoid && "text-muted-foreground line-through",
+                      )}
+                    >
                       {money(item.amount, currency)}
                     </p>
                   </li>
-                ))}
-              </ul>
-            </Panel>
-          ) : (
-            <Panel title="Shared across" id="shares-heading">
-              <ul className="mt-4 grid divide-y">
-                {b.shares.map((share) => (
-                  <li
-                    key={share.id}
-                    className="flex items-start justify-between gap-3 py-3 first:pt-0 last:pb-0"
-                  >
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium break-words">
-                        {share.project ? (
-                          <Link
-                            href={productionHref.project(share.project.id)}
-                            className={linkClass}
-                          >
-                            {share.project.code} · {share.project.name}
-                          </Link>
-                        ) : (
-                          "No project"
-                        )}
-                      </p>
-                      <p className="text-[0.8125rem] break-words text-muted-foreground">
-                        {share.head}
-                        {share.description ? ` · ${share.description}` : ""}
-                      </p>
-                    </div>
-                    <p className="text-sm whitespace-nowrap tabular-nums">
-                      {money(share.amount, currency)}
-                    </p>
-                  </li>
-                ))}
-              </ul>
-            </Panel>
-          )}
+                );
+              })}
+            </ul>
+          </Panel>
+
           <Panel title="Payments" id="payments-heading">
             {b.payments.length === 0 ? (
               <p className="mt-4 text-sm text-muted-foreground">
@@ -180,7 +153,44 @@ export default async function BillPage({
               </ul>
             )}
           </Panel>
+
+          {b.returns.length > 0 && (
+            <Panel title="Sent back" id="returns-heading">
+              <ul className="mt-4 grid divide-y">
+                {b.returns.map((r) => (
+                  <li
+                    key={r.id}
+                    className="flex items-start justify-between gap-3 py-3 first:pt-0 last:pb-0"
+                  >
+                    <div className="min-w-0">
+                      <Link
+                        href={materialsHref.supplierReturn(r.id)}
+                        className={`text-sm font-medium ${linkClass}`}
+                      >
+                        {r.number}
+                      </Link>
+                      <p className="text-[0.8125rem] break-words text-muted-foreground">
+                        {formatDay(r.day)} · {r.reason}
+                      </p>
+                    </div>
+                    <div className="flex flex-col items-end gap-1">
+                      {r.isVoid && <FlagBadge tone="closed">Void</FlagBadge>}
+                      <span
+                        className={cn(
+                          "text-sm whitespace-nowrap tabular-nums",
+                          r.isVoid && "text-muted-foreground line-through",
+                        )}
+                      >
+                        {money(r.total, currency)}
+                      </span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </Panel>
+          )}
         </div>
+
         <div className="grid min-w-0 grid-cols-1 content-start gap-6">
           <Panel title="Amount" id="amount-heading">
             <Totals
@@ -201,7 +211,7 @@ export default async function BillPage({
             action={
               can.openParty ? (
                 <Link
-                  href={productionHref.supplier(b.supplier.id)}
+                  href={materialsHref.supplier(b.supplier.id)}
                   className={`text-sm ${linkClass}`}
                 >
                   Account
@@ -212,12 +222,18 @@ export default async function BillPage({
             <dl className="mt-4 grid gap-4">
               <Fact label="Supplier">{`${b.supplier.name} (${b.supplier.code})`}</Fact>
               {b.supplier.phone && <Fact label="Phone">{b.supplier.phone}</Fact>}
-              {b.warehouse && <Fact label="Into the store">{b.warehouse}</Fact>}
-              {b.purchaseOrder && <Fact label="Purchase order">{b.purchaseOrder.number}</Fact>}
+              {b.store && <Fact label="Into the store">{b.store}</Fact>}
+              {b.order && (
+                <Fact label="Purchase order">
+                  <Link href={b.order.href} className={linkClass}>
+                    {b.order.number}
+                  </Link>
+                </Fact>
+              )}
               <Fact label="Bill photo">
                 {b.attachment ? (
                   <a
-                    href={productionHref.file(b.attachment.id)}
+                    href={materialsHref.file(b.attachment.id)}
                     target="_blank"
                     rel="noreferrer"
                     className={`inline-flex max-w-full items-center gap-1.5 ${linkClass}`}

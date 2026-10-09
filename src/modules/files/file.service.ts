@@ -6,6 +6,7 @@ import { AppError } from "@/lib/errors";
 import type { RequestMeta } from "@/lib/request-meta";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
+import { canSeeMaterialCosts } from "@/modules/materials/access";
 
 /*
  * Uploaded files (packing-list photos, bill scans). Bytes live on disk under
@@ -213,7 +214,8 @@ export async function readStoredFile(asset: { storagePath: string }): Promise<Bu
 /**
  * A file for download. Allowed for its uploader and for roles that may see the
  * record it belongs to (a delivery's packing list, a supplier bill's scan, a
- * licence scan, a document template, an expense's receipt). Saved reports
+ * licence scan, a document template, an expense's receipt, a raw material
+ * purchase's bill). Saved reports
  * download through the Report Builder, which checks their figures.
  */
 export async function getFileForDownload(ctx: CompanyContext, fileId: string) {
@@ -242,7 +244,18 @@ export async function getFileForDownload(ctx: CompanyContext, fileId: string) {
       (ctx.can("expenses.manage") ||
         ctx.can("accounts.view") ||
         ctx.can("accounts.payments.record")));
-  if (!allowed) throw new AppError("FORBIDDEN", "You do not have permission to open this file.");
+  // A raw material purchase's bill also opens to the people who see material purchases.
+  const materialBill =
+    !allowed &&
+    asset.supplierBills.length > 0 &&
+    ctx.can("materials.view") &&
+    canSeeMaterialCosts(ctx) &&
+    (await ctx.db.supplierBill.count({
+      where: { attachmentId: asset.id, items: { some: {} } },
+    })) > 0;
+  if (!allowed && !materialBill) {
+    throw new AppError("FORBIDDEN", "You do not have permission to open this file.");
+  }
   return {
     asset: {
       id: asset.id,

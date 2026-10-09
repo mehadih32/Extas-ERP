@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 
 import { SectionError } from "@/components/dashboard/section-error";
 import { FormAlert } from "@/components/forms/field";
+import { ProjectMaterials } from "@/components/materials/project-materials";
 import {
   DeliveryBadge,
   ProjectBadge,
@@ -21,6 +22,7 @@ import { Fact, Panel, RecordHeader } from "@/components/sales/detail-bits";
 import { money, salesHref } from "@/components/sales/labels";
 import { formatCount, formatDay } from "@/lib/display";
 import type { ProjectScreen } from "@/modules/production/screens.service";
+import { getProjectMaterialsPanelAction } from "@/server/actions/materials.actions";
 import { getProjectScreenAction } from "@/server/actions/production.actions";
 import { requireCompanyPage } from "@/server/pages/guards";
 
@@ -80,8 +82,9 @@ function Deliveries({ screen, currency }: { screen: ProjectScreen; currency: str
 /**
  * One production project (production.view, like GET /api/production/projects/:id):
  * its time and pieces, how far it got through cutting, sewing and the other
- * stages, its factory deliveries and, for Production Managers and Accounts, its
- * costs with what an A- and a B-grade piece cost. What may be done comes with
+ * stages, its factory deliveries, the raw materials the store handed it and,
+ * for Production Managers and Accounts, its costs with what an A- and a B-grade
+ * piece cost. What may be done comes with
  * the screen from the rules the production actions use (screen.can).
  */
 export default async function ProjectPage({
@@ -93,7 +96,10 @@ export default async function ProjectPage({
 }) {
   const ctx = await requireCompanyPage();
   const [{ projectId }, query] = await Promise.all([params, searchParams]);
-  const result = await getProjectScreenAction(projectId);
+  const [result, materials] = await Promise.all([
+    getProjectScreenAction(projectId),
+    getProjectMaterialsPanelAction(projectId),
+  ]);
   if (!result.ok) {
     if (result.error.code === "NOT_FOUND") notFound();
     if (result.error.code === "FORBIDDEN") return <ProductionNoAccess />;
@@ -152,6 +158,13 @@ export default async function ProjectPage({
             <StageLog log={p.log} />
           </Panel>
           <Deliveries screen={screen} currency={currency} />
+          {materials.ok && (
+            <ProjectMaterials
+              panel={materials.data}
+              currency={currency}
+              canOpenNotes={ctx.can("materials.view")}
+            />
+          )}
           {costs && <CostEntries costs={costs} currency={currency} />}
         </div>
         <div className="grid min-w-0 grid-cols-1 content-start gap-6">

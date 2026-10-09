@@ -36,6 +36,7 @@ import {
 } from "@/modules/accounts/supplier-payment.service";
 import { getJournalEntry, listJournalEntries } from "@/modules/accounts/voucher.service";
 import type { CompanyContext } from "@/modules/auth/context";
+import { canSeeMaterialCosts } from "@/modules/materials/access";
 import { getPartyBalance } from "@/modules/parties/ledger.service";
 import { isWalkIn } from "@/modules/parties/walk-in";
 import { canSeeProductionCosts } from "@/modules/production/project-costs";
@@ -502,8 +503,8 @@ export type JournalList = Awaited<ReturnType<typeof getJournalList>>;
 
 /**
  * The record an entry came from, for people who may open it there: the
- * invoice, the receipt, the bill... Entries from screens not built yet (payroll,
- * assets, capital) name no record.
+ * invoice, the receipt, the bill, the issue note... Entries from screens not
+ * built yet (payroll, assets, capital) name no record.
  */
 async function sourceLink(
   ctx: CompanyContext,
@@ -513,6 +514,8 @@ async function sourceLink(
   if (!sourceId) return null;
   const sales = ctx.can("sales.view");
   const production = ctx.can("production.view");
+  /** Material purchases and returns open with their prices in Raw materials. */
+  const materials = ctx.can("materials.view") && canSeeMaterialCosts(ctx);
   switch (sourceType) {
     case "SALE": {
       const invoice = await ctx.db.invoice.findUnique({
@@ -587,12 +590,52 @@ async function sourceLink(
     case "SUPPLIER_BILL": {
       const bill = await ctx.db.supplierBill.findUnique({
         where: { id: sourceId },
-        select: { number: true },
+        select: { number: true, _count: { select: { items: true } } },
       });
       if (!bill) return null;
+      // Raw material purchases open in Raw materials; bills shared across projects in Production.
+      if (bill._count.items > 0 && materials) {
+        return { title: `Bill ${bill.number}`, href: `/materials/purchases/${sourceId}` };
+      }
       return {
         title: `Bill ${bill.number}`,
         href: canOpenBill(ctx) ? `/production/bills/${sourceId}` : null,
+      };
+    }
+    case "PURCHASE_RETURN": {
+      const ret = await ctx.db.purchaseReturn.findUnique({
+        where: { id: sourceId },
+        select: { number: true },
+      });
+      if (!ret) return null;
+      return {
+        title: `Return ${ret.number} to the supplier`,
+        href: materials ? `/materials/returns/${sourceId}` : null,
+      };
+    }
+    case "MATERIAL_ISSUE": {
+      const note = await ctx.db.materialIssue.findUnique({
+        where: { id: sourceId },
+        select: { number: true, kind: true, project: { select: { code: true } } },
+      });
+      if (!note) return null;
+      return {
+        title: `${note.kind === "ISSUE" ? "Issue note" : "Return note"} ${note.number}, ${
+          note.project.code
+        }`,
+        href: ctx.can("materials.view") ? `/materials/issues/${sourceId}` : null,
+      };
+    }
+    case "STOCK_ADJUSTMENT": {
+      // Raw material counts, wastage and opening stock name the stock card line.
+      const line = await ctx.db.rawMaterialMovement.findUnique({
+        where: { id: sourceId },
+        select: { rawMaterialId: true, rawMaterial: { select: { code: true, name: true } } },
+      });
+      if (!line) return null;
+      return {
+        title: `${line.rawMaterial.code} ${line.rawMaterial.name}`,
+        href: ctx.can("materials.view") ? `/materials/stock/${line.rawMaterialId}` : null,
       };
     }
     case "STOCK_INTAKE": {

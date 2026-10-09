@@ -179,6 +179,39 @@ Built one module at a time, each in its own pull request. So far:
   Courier bookings, website orders, returns and sending documents by WhatsApp or email come
   with the integrations, at the end.
 
+- **Production** (`/production`), in five tabs:
+  - **Overview**: how many projects are in production, late, due this week, planned, on hold
+    and done this month, how many sit at each stage, the money in open projects (for people
+    who see costs) and a card for each open project, late ones first. A card shows the
+    factory, the stage, the days used against the target (amber when due soon, red with a red
+    edge when late) and the pieces in stock against the pieces to make.
+  - **Projects**: every project, searchable by code, name or buyer and filtered by status
+    (including Late) and stage. A new project takes the factory (a supplier or just a name),
+    the buyer or In-House, the style, the category, the dates (45 days by default) and the
+    pieces to make, and starts in production or as planned. A project's page shows the stage
+    tracker (Fabric sourcing, Cutting, Sewing, Wash and QC, Finishing) with the days spent at
+    each, the stage log with notes and rework sent back, its factory deliveries, its cost
+    entries, the A-grade and B-grade cost a piece, the costs by head and material, and its
+    details. From there it is started, moved to the next stage (or another, going back needs
+    a note), put on hold, resumed, completed or cancelled, and costs and bills are added.
+  - **Deliveries**: goods from the factory, as drafts and confirmed. A delivery takes the
+    pieces for each colour and size, with A-grade and B-grade apart, and the warehouse, with
+    the packing list attached. Confirming moves the pieces into stock at the project's share
+    of the cost, all the rest of it, or a cost typed in, split so a B-grade piece carries a
+    percentage of an A-grade piece's cost, or with both costs typed. The last delivery can
+    complete the project. A confirmed delivery can be undone with a reason, which takes the
+    pieces back out and leaves a draft copy to correct.
+  - **Bills**: supplier bills for production, each shared across one or more projects and
+    cost heads, due or paid now, with a photo of the bill. A bill's page pays the supplier
+    or voids it.
+  - **Cost heads**: the making costs and materials costs are booked against, added, renamed,
+    archived and restored.
+
+  Cutting and sewing progress is the stage the project is at, with its days and notes;
+  counting cut and sewn pieces would need the backend to store them first. Reading a
+  packing list with AI comes with the integrations: for now the file is kept with the
+  delivery and the pieces are typed in.
+
 The screens ask the same Server Actions as the API, so the backend's permissions decide what
 appears. With the built-in roles' default permissions:
 
@@ -239,6 +272,26 @@ cancellation charge. Voiding an invoice (and so cancelling an invoiced order) ne
 Admin has those two. An order's cost and margin, and each line's cost, reach only people who
 see the financials; the server leaves them out for everyone else, in the API too.
 
+Production follows the production and accounts permissions:
+
+| Role                      | Production menu | Projects and stages | Receive deliveries | Bills and costs | Pay suppliers | Write off unused cost | Costs and A/B-grade costs |
+| ------------------------- | --------------- | ------------------- | ------------------ | --------------- | ------------- | --------------------- | ------------------------- |
+| Super Admin               | Yes             | Yes                 | Yes                | Yes             | Yes           | Yes                   | Yes                       |
+| Production Manager        | Yes             | Yes                 | Yes                | Yes (due only)  | No            | No                    | Yes                       |
+| Accounts                  | Yes             | No (to look)        | No (to look)       | Yes             | Yes           | Yes                   | Yes                       |
+| Warehouse Team            | Yes             | No (to look)        | Yes                | No              | No            | No                    | No                        |
+| Sales Executive, Employee | No              | No                  | No                 | No              | No            | No                    | No                        |
+
+Projects and deliveries read with `production.view`; projects, stages and cost heads change
+with `production.manage`, and deliveries go into stock with `production.stock_intake`. Bills
+and costs need `production.manage` (due to the supplier) or `accounts.payments.record`, which
+alone pays a supplier or records a cost as paid now. Completing or cancelling a project whose
+cost has not all reached stock writes the rest off, so it needs `accounts.manage`; the
+Production Manager completes a project once its cost is all in stock. Costs (bills, cost
+entries, the cost a piece, the A-grade and B-grade costs, a delivery's cost) reach only
+`production.manage` and `accounts.view` holders; for the store team the server leaves them
+out, so its delivery form has no costing.
+
 Settings follows the same rule. The Team tab needs `company.members.manage`. The Roles tab
 opens with `company.members.manage` (to read them) or `company.roles.manage` (to change them).
 Everyone can read the company details, and `company.settings` lets them be changed. Settings
@@ -273,6 +326,12 @@ For developers:
   as each screen's `can` flags. The Sales actions that change something hand back only the
   record's id and number: the full records carry Decimal amounts, which do not cross to the
   browser, so the page reloads them.
+- Production's rules (which stage a project may move to, what may be completed, cancelled,
+  confirmed, undone, paid or voided) live in `src/modules/production/rules.ts`, and
+  `src/modules/production/screens.service.ts` sends them as each screen's `can` flags. Its
+  tabs and who sees them are in `src/components/production/tabs.ts`. The server spells some
+  stages differently ("Wash/QC"), so the screens name stages from
+  `src/components/production/labels.ts` by their key.
 - The phone's tab bar holds four sections. With more, the fifth tab is **More**, listing the
   other sections above the account menu (`phoneTabs` in `src/components/shell/nav-items.ts`).
   Between tablet and laptop widths the top bar uses short labels ("Parties"), and lists show

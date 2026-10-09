@@ -7,7 +7,8 @@ import { FormAlert } from "@/components/forms/field";
 import { BackLink } from "@/components/settings/back-link";
 import { ProformaBadge } from "@/components/sales/badges";
 import { Fact, Panel, RecordHeader, Totals } from "@/components/sales/detail-bits";
-import { isZero, money, PRODUCTION_STAGE_LABELS, salesHref } from "@/components/sales/labels";
+import { STAGE_LABELS } from "@/components/production/labels";
+import { isZero, money, salesHref } from "@/components/sales/labels";
 import { MoneyRecords } from "@/components/sales/money-records";
 import { SalesNoAccess } from "@/components/sales/no-access";
 import { ProformaActions } from "@/components/sales/proforma-actions";
@@ -178,7 +179,7 @@ export default async function ProformaPage({
                       {project.code} · {project.name}
                     </p>
                     <p className="text-[0.8125rem] text-muted-foreground">
-                      {PRODUCTION_STAGE_LABELS[project.stage]}
+                      {STAGE_LABELS[project.stage]}
                       {project.targetOn ? ` · due ${formatDay(project.targetOn)}` : ""}
                     </p>
                   </li>

@@ -19,7 +19,7 @@ const SEARCH_DELAY_MS = 250;
  * A search box with the matches listed under it (the server finds them as the
  * person types). Choosing one hands it back; the list closes.
  */
-function SearchList<T extends { id: string }>({
+export function SearchList<T extends { id: string }>({
   id,
   label,
   placeholder,

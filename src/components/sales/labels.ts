@@ -1,7 +1,6 @@
 import type {
   InvoiceStatus,
   PaymentMethod,
-  ProductionStage,
   ProformaStatus,
   QuotationStatus,
   RefundKind,
@@ -117,13 +116,4 @@ export const salesHref = {
   invoice: (id: string) => `/sales/invoices/${encodeURIComponent(id)}`,
   payment: (id: string) => `/sales/payments/${encodeURIComponent(id)}`,
   buyer: (id: string) => `/parties/buyers/${encodeURIComponent(id)}`,
-};
-
-export const PRODUCTION_STAGE_LABELS: Record<ProductionStage, string> = {
-  FABRIC_SOURCING: "Fabric sourcing",
-  CUTTING: "Cutting",
-  SEWING: "Sewing",
-  WASH_QC: "Wash and QC",
-  FINISHING: "Finishing",
-  COMPLETED: "Completed",
 };

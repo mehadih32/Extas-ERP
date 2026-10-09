@@ -66,6 +66,7 @@ describe("the menu with Sales in it", () => {
     expect(NAV_ITEMS.map((i) => i.href)).toEqual([
       "/",
       "/sales",
+      "/production",
       "/products",
       "/parties",
       "/settings",
@@ -83,8 +84,8 @@ describe("the menu with Sales in it", () => {
 
   it("keeps four sections on the phone's tab bar and moves the rest under More", () => {
     const everything = phoneTabs(visibleNavItems(all));
-    expect(everything.tabs.map((i) => i.href)).toEqual(["/", "/sales", "/products", "/parties"]);
-    expect(everything.more.map((i) => i.href)).toEqual(["/settings"]);
+    expect(everything.tabs.map((i) => i.href)).toEqual(["/", "/sales", "/production", "/products"]);
+    expect(everything.more.map((i) => i.href)).toEqual(["/parties", "/settings"]);
     const seller = phoneTabs(visibleNavItems(["sales.view", "inventory.view", "parties.view"]));
     expect(seller.tabs).toHaveLength(4);
     expect(seller.more).toEqual([]);

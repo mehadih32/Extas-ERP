@@ -17,7 +17,7 @@ import {
   REFUND_KIND_LABELS,
 } from "./labels";
 
-type Tone = "open" | "done" | "warn" | "closed" | "plain";
+export type Tone = "open" | "done" | "warn" | "closed" | "plain";
 
 const TONE_STYLES: Record<Tone, string> = {
   /** Waiting on someone: the brand green outline. */
@@ -31,7 +31,8 @@ const TONE_STYLES: Record<Tone, string> = {
   plain: "border-border bg-muted text-foreground",
 };
 
-function StatusBadge({
+/** A status as a small outlined label in one of the tones above. */
+export function StatusBadge({
   tone,
   children,
   className,

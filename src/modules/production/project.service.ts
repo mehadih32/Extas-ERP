@@ -1,4 +1,4 @@
-import { Prisma, type ProductionStatus } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 
 import { daysBetween, localDay, startOfDayInZone, toInstant } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
@@ -6,6 +6,7 @@ import { nextDocumentNumber } from "@/lib/numbering";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
 import { lockRow } from "@/lib/row-lock";
+import { assertAllowed } from "@/lib/verdict";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { assertPartyCanTransact } from "@/modules/parties/party.service";
@@ -13,12 +14,19 @@ import { ZERO } from "@/modules/production/costing";
 import {
   assertCanWriteOff,
   canSeeProductionCosts,
-  isProjectClosed,
   type ProjectCostSummary,
   projectCostSummaries,
   projectCostSummary,
   writeOffProjectWip,
 } from "@/modules/production/project-costs";
+import {
+  canCancelProject,
+  canChangeProjectBuyer,
+  canChangeProjectFields,
+  canCompleteProject,
+  canSetStage,
+  canSetStatus,
+} from "@/modules/production/rules";
 import {
   cancelProjectSchema,
   completeProjectSchema,
@@ -96,12 +104,6 @@ function projectCard(
           }
         : null,
   };
-}
-
-function notActiveMessage(p: { code: string; status: ProductionStatus }) {
-  if (p.status === "PLANNED") return `${p.code} has not started yet; start it first.`;
-  if (p.status === "ON_HOLD") return `${p.code} is on hold; resume it first.`;
-  return `${p.code} is ${p.status.toLowerCase()}.`;
 }
 
 /** Checks the category, style, factory (a supplier) and buyer the user picked. */
@@ -253,8 +255,6 @@ export async function createProjectFromProformaTx(
   return project;
 }
 
-const CLOSED_EDITABLE = new Set(["name", "notes"]);
-
 export async function updateProject(
   ctx: CompanyContext,
   projectId: string,
@@ -268,17 +268,9 @@ export async function updateProject(
   });
   if (!project) throw new AppError("NOT_FOUND", "Production project not found.");
   const changed = Object.keys(input).filter((k) => input[k as keyof typeof input] !== undefined);
-  if (isProjectClosed(project) && changed.some((k) => !CLOSED_EDITABLE.has(k))) {
-    throw new AppError(
-      "CONFLICT",
-      `${project.code} is ${project.status.toLowerCase()}; only its name and notes can change.`,
-    );
-  }
-  if (project.proformaId && input.buyerId !== undefined && input.buyerId !== project.buyerId) {
-    throw new AppError(
-      "CONFLICT",
-      `${project.code} was started from ${project.proforma?.number}; its buyer cannot change.`,
-    );
+  assertAllowed(canChangeProjectFields(project, changed));
+  if (input.buyerId !== undefined) {
+    assertAllowed(canChangeProjectBuyer(project, project.proforma?.number, input.buyerId));
   }
   const refs = await resolveProjectRefs(ctx, input);
   const tz = ctx.company.timezone;
@@ -526,10 +518,7 @@ export async function setProjectStage(
   const input = setStageSchema.parse(raw);
   await prisma.$transaction(async (tx) => {
     const project = await lockProject(tx, ctx, projectId);
-    if (project.status !== "ACTIVE") throw new AppError("CONFLICT", notActiveMessage(project));
-    if (project.stage === input.stage) {
-      throw new AppError("CONFLICT", `${project.code} is already at ${STAGE_LABELS[input.stage]}.`);
-    }
+    assertAllowed(canSetStage(project, input.stage));
     if (isStageBackward(project.stage, input.stage) && !input.note) {
       throw new AppError(
         "VALIDATION",
@@ -574,16 +563,7 @@ export async function setProjectStatus(
   const input = setStatusSchema.parse(raw);
   await prisma.$transaction(async (tx) => {
     const project = await lockProject(tx, ctx, projectId);
-    const allowedFrom: ProductionStatus[] =
-      input.status === "ACTIVE" ? ["PLANNED", "ON_HOLD"] : ["ACTIVE"];
-    if (!allowedFrom.includes(project.status)) {
-      throw new AppError(
-        "CONFLICT",
-        project.status === input.status
-          ? `${project.code} is already ${input.status === "ACTIVE" ? "active" : "on hold"}.`
-          : `${project.code} is ${project.status.toLowerCase()}.`,
-      );
-    }
+    assertAllowed(canSetStatus(project, input.status));
     const now = new Date();
     const data: Prisma.ProductionProjectUpdateInput = { status: input.status };
     if (project.status === "PLANNED") {
@@ -628,14 +608,6 @@ export async function completeProjectTx(
   meta?: RequestMeta,
 ) {
   const project = await lockProject(tx, ctx, projectId);
-  if (project.status !== "ACTIVE" && project.status !== "ON_HOLD") {
-    throw new AppError(
-      "CONFLICT",
-      project.status === "PLANNED"
-        ? `${project.code} has not started; start it or cancel it.`
-        : `${project.code} is already ${project.status.toLowerCase()}.`,
-    );
-  }
   const openIntake = await tx.stockIntake.findFirst({
     where: {
       companyId: ctx.company.id,
@@ -643,12 +615,7 @@ export async function completeProjectTx(
       status: { in: ["DRAFT", "PARSED"] },
     },
   });
-  if (openIntake) {
-    throw new AppError(
-      "CONFLICT",
-      `Confirm or cancel the open delivery ${openIntake.number} before completing ${project.code}.`,
-    );
-  }
+  assertAllowed(canCompleteProject(project, openIntake));
   const costs = await projectCostSummary(tx, ctx.company.id, project.id);
   if (costs.wip.gt(0)) {
     if (!options.writeOffReason) {
@@ -760,9 +727,7 @@ export async function cancelProject(
   const { reason } = cancelProjectSchema.parse(raw);
   await prisma.$transaction(async (tx) => {
     const project = await lockProject(tx, ctx, projectId);
-    if (isProjectClosed(project)) {
-      throw new AppError("CONFLICT", `${project.code} is already ${project.status.toLowerCase()}.`);
-    }
+    assertAllowed(canCancelProject(project));
     const costs = await projectCostSummary(tx, ctx.company.id, project.id);
     if (costs.wip.gt(0)) {
       assertCanWriteOff(ctx, costs.wip);

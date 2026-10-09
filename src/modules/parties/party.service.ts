@@ -4,9 +4,16 @@ import type { Db } from "@/lib/db-types";
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
+import { assertAllowed } from "@/lib/verdict";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { balancesFor, getPartyBalance } from "@/modules/parties/ledger.service";
+import {
+  canChangeKind,
+  canChangeStanding,
+  canEditFields,
+  canSetStatus,
+} from "@/modules/parties/rules";
 import {
   createPartySchema,
   gradeSchema,
@@ -16,8 +23,6 @@ import {
   verifySchema,
 } from "@/modules/parties/schemas";
 import { assertNotWalkIn, isWalkIn, WALK_IN_NOT_A_BUYER } from "@/modules/parties/walk-in";
-
-const WALK_IN_KEPT = "Walk-in customers is kept by the system for sales without a buyer profile.";
 
 const CODE_PREFIX: Record<PartyKind, string> = { BUYER: "BUY", SUPPLIER: "SUP", BOTH: "BS" };
 
@@ -42,7 +47,7 @@ async function getPartyOrThrow(ctx: CompanyContext, partyId: string) {
 }
 
 /** Other parties with the same phone, WhatsApp or email (a hint, not a block). */
-async function findPossibleDuplicates(
+export async function findPossibleDuplicates(
   ctx: CompanyContext,
   fields: { phone?: string | null; whatsapp?: string | null; email?: string | null },
   excludeId?: string,
@@ -71,7 +76,8 @@ export async function createParty(ctx: CompanyContext, raw: unknown, meta?: Requ
   const possibleDuplicates = await findPossibleDuplicates(ctx, input);
 
   if (requestedCode && (await ctx.db.party.findFirst({ where: { code: requestedCode } }))) {
-    throw new AppError("CONFLICT", `Code ${requestedCode} is already used.`);
+    const taken = `Code ${requestedCode} is already used.`;
+    throw new AppError("CONFLICT", taken, { code: [taken] });
   }
 
   // Two people creating at once can pick the same generated code: retry.
@@ -111,19 +117,14 @@ export async function updateParty(
 ) {
   const input = updatePartySchema.parse(raw);
   const before = await getPartyOrThrow(ctx, partyId);
-  if (isWalkIn(before) && Object.keys(input).some((k) => k !== "name" && k !== "notes")) {
-    throw new AppError("VALIDATION", `${WALK_IN_KEPT} Only its name and notes can change.`);
-  }
+  assertAllowed(canEditFields(before, Object.keys(input)));
   const kind = input.kind ?? before.kind;
   if (kind === "SUPPLIER" && input.buyerType) {
     throw new AppError("VALIDATION", "Suppliers have no buyer type.");
   }
-  if (before.kind !== kind && kind !== "BOTH") {
-    // Narrowing BUYER<->SUPPLIER would orphan existing documents of the other side.
-    const balance = await getPartyBalance(ctx, before.id);
-    if (!balance.isZero()) {
-      throw new AppError("CONFLICT", "Settle the balance before changing buyer/supplier type.");
-    }
+  if (before.kind !== kind) {
+    const balanceIsZero = kind === "BOTH" || (await getPartyBalance(ctx, before.id)).isZero();
+    assertAllowed(canChangeKind(before.kind, kind, balanceIsZero));
   }
   const { customFields, ...fields } = input;
   const party = await ctx.db.party.update({
@@ -261,7 +262,7 @@ export async function setPartyGrade(
 ) {
   const { grade } = gradeSchema.parse(raw);
   const party = await getPartyOrThrow(ctx, partyId);
-  assertNotWalkIn(party, WALK_IN_KEPT);
+  assertAllowed(canChangeStanding(party));
   const updated = await ctx.db.party.update({ where: { id: party.id }, data: { grade } });
   await auditInCompany(ctx, meta, {
     action: "UPDATE",
@@ -281,7 +282,7 @@ export async function setPartyVerified(
 ) {
   const { isVerified } = verifySchema.parse(raw);
   const party = await getPartyOrThrow(ctx, partyId);
-  assertNotWalkIn(party, WALK_IN_KEPT);
+  assertAllowed(canChangeStanding(party));
   const updated = await ctx.db.party.update({
     where: { id: party.id },
     data: { isVerified, verifiedAt: isVerified ? new Date() : null },
@@ -307,10 +308,7 @@ export async function changePartyStatus(
 ) {
   const input = statusSchema.parse(raw);
   const party = await getPartyOrThrow(ctx, partyId);
-  assertNotWalkIn(party, `${WALK_IN_KEPT} It stays open.`);
-  if (input.status === "DORMANT" && party.kind === "SUPPLIER") {
-    throw new AppError("VALIDATION", "Only buyers can be marked dormant.");
-  }
+  assertAllowed(canSetStatus(party, input.status));
   let status = input.status;
   let note: string | undefined;
   if (status === "CLOSED") {

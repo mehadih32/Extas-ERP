@@ -40,7 +40,7 @@ export function BottomNav({
                 href={item.href}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "relative flex h-full flex-col items-center justify-center gap-1 text-[0.6875rem] tracking-[0.06em] uppercase transition-colors",
+                  "relative flex h-full flex-col items-center justify-center gap-1 text-[0.625rem] tracking-[0.02em] uppercase transition-colors min-[400px]:text-[0.6875rem] min-[400px]:tracking-[0.06em]",
                   active ? "text-primary" : "text-muted-foreground hover:text-foreground",
                 )}
               >
@@ -48,7 +48,7 @@ export function BottomNav({
                   <span aria-hidden className="absolute inset-x-6 top-0 h-0.5 bg-primary" />
                 )}
                 <Icon className="size-5" aria-hidden />
-                {item.label}
+                {item.shortLabel ?? item.label}
               </Link>
             </li>
           );

@@ -1,5 +1,7 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
+
 import { getRequestMeta } from "@/lib/request-meta";
 import { runAction } from "@/lib/result";
 import { requirePermission } from "@/modules/auth/context";
@@ -7,6 +9,7 @@ import * as campaigns from "@/modules/parties/campaign.service";
 import * as dormant from "@/modules/parties/dormant.service";
 import * as ledger from "@/modules/parties/ledger.service";
 import * as parties from "@/modules/parties/party.service";
+import * as screens from "@/modules/parties/screens.service";
 
 /*
  * Buyers & Suppliers Server Actions. Each returns { ok: true, data } or
@@ -16,6 +19,7 @@ import * as parties from "@/modules/parties/party.service";
  *   parties.ledger.view     statements, receivables & payables overview
  *   accounts.manage         opening balances (posts a journal entry)
  *   sales.campaigns.manage  re-engagement campaigns
+ * Changes refresh the screens, so lists, profiles and balances show them straight away.
  */
 
 const view = () => requirePermission("parties.view");
@@ -23,27 +27,47 @@ const manage = () => requirePermission("parties.manage");
 const ledgerView = () => requirePermission("parties.ledger.view");
 const campaignsManage = () => requirePermission("sales.campaigns.manage");
 
+/** Runs a change and refreshes every screen that may show it. */
+const change = <T>(work: () => Promise<T>) =>
+  runAction(async () => {
+    const result = await work();
+    revalidatePath("/", "layout");
+    return result;
+  });
+
+// --- Screens ---------------------------------------------------------------------
+export const getPartyListAction = async (query: unknown) =>
+  runAction(async () => screens.getPartyList(await view(), query));
+export const listPartyRowsAction = async (query: unknown) =>
+  runAction(async () => screens.listPartyRows(await view(), query));
+export const getPartyScreenAction = async (partyId: string) =>
+  runAction(async () => screens.getPartyScreen(await view(), partyId));
+export const getPartyFormAction = async (partyId?: string) =>
+  runAction(async () => screens.getPartyForm(await manage(), partyId));
+export const getStatementScreenAction = async (
+  partyId: string,
+  range: { from?: string; to?: string },
+) => runAction(async () => screens.getStatementScreen(await ledgerView(), partyId, range));
+export const getDuesScreenAction = async () =>
+  runAction(async () => screens.getDuesScreen(await ledgerView()));
+
 // --- Profiles --------------------------------------------------------------------
 export const listPartiesAction = async (query: unknown) =>
   runAction(async () => parties.listParties(await view(), query));
 export const getPartyProfileAction = async (partyId: string) =>
   runAction(async () => parties.getPartyProfile(await view(), partyId));
 export const createPartyAction = async (input: unknown) =>
-  runAction(async () => parties.createParty(await manage(), input, await getRequestMeta()));
+  change(async () => parties.createParty(await manage(), input, await getRequestMeta()));
 export const updatePartyAction = async (partyId: string, input: unknown) =>
-  runAction(async () =>
-    parties.updateParty(await manage(), partyId, input, await getRequestMeta()),
-  );
+  change(async () => parties.updateParty(await manage(), partyId, input, await getRequestMeta()));
 export const setPartyGradeAction = async (partyId: string, input: unknown) =>
-  runAction(async () =>
-    parties.setPartyGrade(await manage(), partyId, input, await getRequestMeta()),
-  );
+  change(async () => parties.setPartyGrade(await manage(), partyId, input, await getRequestMeta()));
 export const setPartyVerifiedAction = async (partyId: string, input: unknown) =>
-  runAction(async () =>
+  change(async () =>
     parties.setPartyVerified(await manage(), partyId, input, await getRequestMeta()),
   );
 export const changePartyStatusAction = async (partyId: string, input: unknown) =>
-  runAction(async () =>
+  change(async () =>
     parties.changePartyStatus(await manage(), partyId, input, await getRequestMeta()),
   );
 
@@ -53,7 +77,7 @@ export const getPartyStatementAction = async (partyId: string, query: unknown) =
 export const getReceivablesPayablesAction = async () =>
   runAction(async () => ledger.getReceivablesPayables(await ledgerView()));
 export const setOpeningBalanceAction = async (partyId: string, input: unknown) =>
-  runAction(async () =>
+  change(async () =>
     ledger.setOpeningBalance(
       await requirePermission("accounts.manage"),
       partyId,
@@ -66,7 +90,7 @@ export const setOpeningBalanceAction = async (partyId: string, input: unknown) =
 export const listDormantBuyersAction = async (query: unknown) =>
   runAction(async () => dormant.listDormantBuyers(await view(), query));
 export const refreshPartyStatusesAction = async () =>
-  runAction(async () => dormant.refreshPartyStatuses(await manage(), await getRequestMeta()));
+  change(async () => dormant.refreshPartyStatuses(await manage(), await getRequestMeta()));
 
 // --- Re-engagement campaigns -----------------------------------------------------
 export const listCampaignsAction = async () =>

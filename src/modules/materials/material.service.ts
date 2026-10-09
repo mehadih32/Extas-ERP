@@ -5,6 +5,7 @@ import { Prisma, type PurchaseOrderStatus, type RawMaterial } from "@prisma/clie
 import { dateColumn, dateOnly, dayRange, localDay } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
+import { assertAllowed } from "@/lib/verdict";
 import type { RequestMeta } from "@/lib/request-meta";
 import { runTransaction } from "@/lib/transaction";
 import { ensureControlAccounts } from "@/modules/accounts/control-accounts";
@@ -12,6 +13,12 @@ import { type JournalLineInput, postJournalEntry } from "@/modules/accounts/jour
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { assertAnyPermission, assertCanKeepStore, costMask } from "@/modules/materials/access";
+import {
+  canArchiveMaterial,
+  canChangeUnit,
+  canStockIn,
+  OPEN_ORDER_STATUSES,
+} from "@/modules/materials/rules";
 import {
   countStockSchema,
   createMaterialSchema,
@@ -64,7 +71,7 @@ import {
 type Tx = Prisma.TransactionClient;
 
 const TX_OPTIONS = { timeout: 30_000 };
-export const OPEN_ORDER: PurchaseOrderStatus[] = ["OPEN", "PARTIALLY_RECEIVED"];
+export const OPEN_ORDER: PurchaseOrderStatus[] = [...OPEN_ORDER_STATUSES];
 
 const today = (ctx: CompanyContext) => localDay(new Date(), ctx.company.timezone);
 
@@ -213,16 +220,12 @@ export async function updateMaterial(
 
     const unit = input.unit ?? m.unit;
     if (unit !== m.unit) {
-      const used =
-        (await tx.rawMaterialMovement.count({ where: { rawMaterialId: m.id } })) +
-        (await tx.purchaseOrderLine.count({ where: { rawMaterialId: m.id } })) +
-        (await tx.supplierBillItem.count({ where: { rawMaterialId: m.id } }));
-      if (used > 0) {
-        throw new AppError(
-          "CONFLICT",
-          `${m.code} already has stock or orders in ${UNIT_LABELS[m.unit]}, so its unit can no longer change. Add a new material instead.`,
-        );
-      }
+      assertAllowed(
+        canChangeUnit(
+          { code: m.code, unitLabel: UNIT_LABELS[m.unit] },
+          await materialUses(tx, m.id),
+        ),
+      );
     }
     const reorderLevel =
       input.reorderLevel === undefined
@@ -233,25 +236,12 @@ export async function updateMaterial(
     if (reorderLevel) assertUnitFits({ code: m.code, unit }, reorderLevel, "reorderLevel");
 
     if (input.isActive === false && m.isActive) {
-      if (m.quantity.gt(0)) {
-        throw new AppError(
-          "CONFLICT",
-          `${m.code} still has ${formatQuantity(m.quantity, m.unit)} in stock; use it up, count it or record it as wastage before archiving.`,
-        );
-      }
-      const onOrder = await tx.purchaseOrderLine.count({
-        where: {
-          rawMaterialId: m.id,
-          order: { companyId, status: { in: OPEN_ORDER } },
-          receivedQty: { lt: prisma.purchaseOrderLine.fields.quantity },
-        },
-      });
-      if (onOrder > 0) {
-        throw new AppError(
-          "CONFLICT",
-          `${m.code} is still due on an open purchase order; receive, close or cancel it before archiving.`,
-        );
-      }
+      assertAllowed(
+        canArchiveMaterial(
+          { ...m, onHand: formatQuantity(m.quantity, m.unit) },
+          await openOrderLines(tx, companyId, m.id),
+        ),
+      );
     }
 
     const updated = await tx.rawMaterial.update({
@@ -288,6 +278,30 @@ export async function updateMaterial(
     );
   }, TX_OPTIONS);
   return getMaterial(ctx, materialId);
+}
+
+/** Stock card lines, order lines and bill lines naming a material: its unit is then fixed. */
+export async function materialUses(db: Tx | typeof prisma, materialId: string) {
+  return (
+    (await db.rawMaterialMovement.count({ where: { rawMaterialId: materialId } })) +
+    (await db.purchaseOrderLine.count({ where: { rawMaterialId: materialId } })) +
+    (await db.supplierBillItem.count({ where: { rawMaterialId: materialId } }))
+  );
+}
+
+/** Lines of open purchase orders still waiting for a material. */
+export async function openOrderLines(
+  db: Tx | typeof prisma,
+  companyId: string,
+  materialId: string,
+) {
+  return db.purchaseOrderLine.count({
+    where: {
+      rawMaterialId: materialId,
+      order: { companyId, status: { in: OPEN_ORDER } },
+      receivedQty: { lt: prisma.purchaseOrderLine.fields.quantity },
+    },
+  });
 }
 
 /** Open purchase order lines still to arrive, per material. */
@@ -584,7 +598,7 @@ export async function addOpeningStock(
   await runTransaction(async (tx) => {
     const state = await lockMaterials(tx, companyId, [materialId]);
     const m = state.get(materialId)!;
-    if (!m.isActive) throw new AppError("CONFLICT", `${materialLabel(m)} is archived.`);
+    assertAllowed(canStockIn(m));
     assertUnitFits(m, quantity);
     const { movement } = await stockIn(tx, state, {
       companyId,

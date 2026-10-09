@@ -19,6 +19,7 @@ import { getStyleMatrix } from "@/modules/inventory/matrix.service";
 import { listCategoryOptions } from "@/modules/inventory/screens.service";
 import { getDefaultWarehouse, listWarehouses } from "@/modules/inventory/stock.service";
 import { listStyles } from "@/modules/inventory/style.service";
+import { canSeeMaterialCosts } from "@/modules/materials/access";
 import { isWalkIn } from "@/modules/parties/walk-in";
 import {
   billShares,
@@ -1060,6 +1061,11 @@ export async function getBillScreen(ctx: CompanyContext, billId: string) {
       })),
     },
     methods: RECEIVE_METHODS,
+    /** A raw material purchase also opens in Raw materials, where it is returned or voided. */
+    materialsHref:
+      bill.items.length > 0 && ctx.can("materials.view") && canSeeMaterialCosts(ctx)
+        ? `/materials/purchases/${bill.id}`
+        : null,
     can: {
       pay: access.payOut && canPayBill(bill).ok,
       void: voidVerdict?.ok ?? false,

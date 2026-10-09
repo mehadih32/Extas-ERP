@@ -7,6 +7,7 @@ import {
   ReceiptTextIcon,
   SettingsIcon,
   ShirtIcon,
+  SpoolIcon,
   WalletIcon,
 } from "lucide-react";
 
@@ -73,6 +74,14 @@ export const NAV_ITEMS: readonly NavItem[] = [
     label: "Products",
     icon: ShirtIcon,
     anyOf: ["inventory.view"],
+  },
+  {
+    // Fabric, trims and packaging: stock in each store, purchase orders, purchases,
+    // returns to suppliers and issue notes to production (components/materials/tabs.ts).
+    href: "/materials",
+    label: "Materials",
+    icon: SpoolIcon,
+    anyOf: ["materials.view"],
   },
   {
     // Buyers, suppliers and what they owe or are owed (components/parties/tabs.ts).

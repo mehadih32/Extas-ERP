@@ -6,10 +6,17 @@ import { nextDocumentNumber } from "@/lib/numbering";
 import type { RequestMeta } from "@/lib/request-meta";
 import { lockRow } from "@/lib/row-lock";
 import { runTransaction } from "@/lib/transaction";
+import { assertAllowed } from "@/lib/verdict";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { assertCanBuyMaterials, costMask } from "@/modules/materials/access";
 import { OPEN_ORDER } from "@/modules/materials/material.service";
+import {
+  canCancelOrder,
+  canChangeOrder,
+  canChangeOrderLines,
+  canCloseOrder,
+} from "@/modules/materials/rules";
 import {
   closeOrderSchema,
   createPurchaseOrderSchema,
@@ -38,14 +45,6 @@ import { isProjectClosed } from "@/modules/production/project-costs";
 type Tx = Prisma.TransactionClient;
 
 const TX_OPTIONS = { timeout: 30_000 };
-
-const STATUS_LABEL: Record<PurchaseOrderStatus, string> = {
-  OPEN: "open",
-  PARTIALLY_RECEIVED: "partly received",
-  RECEIVED: "received in full",
-  CLOSED: "closed",
-  CANCELLED: "cancelled",
-};
 
 const orderInclude = {
   supplier: { select: { id: true, code: true, name: true, phone: true } },
@@ -199,6 +198,17 @@ async function lockOrder(tx: Tx, companyId: string, orderId: string) {
   return order;
 }
 
+/** An order as the rules read it. */
+export const orderState = (order: {
+  number: string;
+  status: PurchaseOrderStatus;
+  lines: Array<{ receivedQty: Prisma.Decimal }>;
+}) => ({
+  number: order.number,
+  status: order.status,
+  received: order.lines.some((l) => l.receivedQty.gt(0)),
+});
+
 /**
  * Changes an open order: dates, references, the project, and (while nothing
  * has arrived) its lines.
@@ -216,19 +226,9 @@ export async function updatePurchaseOrder(
   const prepared = input.lines ? await prepareLines(ctx, input.lines) : null;
   await runTransaction(async (tx) => {
     const order = await lockOrder(tx, companyId, orderId);
-    if (!OPEN_ORDER.includes(order.status)) {
-      throw new AppError(
-        "CONFLICT",
-        `${order.number} is ${STATUS_LABEL[order.status]}; it can no longer change.`,
-      );
-    }
+    assertAllowed(canChangeOrder(orderState(order)));
     if (prepared) {
-      if (order.status !== "OPEN" || order.lines.some((l) => l.receivedQty.gt(0))) {
-        throw new AppError(
-          "CONFLICT",
-          `Goods have already arrived on ${order.number}, so its lines can no longer change. Close it and order the rest again.`,
-        );
-      }
+      assertAllowed(canChangeOrderLines(orderState(order)));
       await tx.purchaseOrderLine.deleteMany({ where: { orderId: order.id } });
       await tx.purchaseOrderLine.createMany({
         data: prepared.lines.map((l) => ({ ...l, orderId: order.id })),
@@ -283,14 +283,7 @@ export async function cancelPurchaseOrder(
   assertCanBuyMaterials(ctx);
   await runTransaction(async (tx) => {
     const order = await lockOrder(tx, ctx.company.id, orderId);
-    if (order.status !== "OPEN" || order.lines.some((l) => l.receivedQty.gt(0))) {
-      throw new AppError(
-        "CONFLICT",
-        OPEN_ORDER.includes(order.status) || order.status === "RECEIVED"
-          ? `Goods have already arrived on ${order.number}; close it instead of cancelling it.`
-          : `${order.number} is already ${STATUS_LABEL[order.status]}.`,
-      );
-    }
+    assertAllowed(canCancelOrder(orderState(order)));
     await tx.purchaseOrder.update({
       where: { id: order.id },
       data: { status: "CANCELLED", closedReason: reason, closedAt: new Date() },
@@ -321,14 +314,7 @@ export async function closePurchaseOrder(
   assertCanBuyMaterials(ctx);
   await runTransaction(async (tx) => {
     const order = await lockOrder(tx, ctx.company.id, orderId);
-    if (order.status !== "PARTIALLY_RECEIVED") {
-      throw new AppError(
-        "CONFLICT",
-        order.status === "OPEN"
-          ? `Nothing has arrived on ${order.number} yet; cancel it instead.`
-          : `${order.number} is already ${STATUS_LABEL[order.status]}.`,
-      );
-    }
+    assertAllowed(canCloseOrder(orderState(order)));
     await tx.purchaseOrder.update({
       where: { id: order.id },
       data: { status: "CLOSED", closedReason: reason, closedAt: new Date() },

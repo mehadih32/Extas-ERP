@@ -6,6 +6,7 @@ import { nextDocumentNumber } from "@/lib/numbering";
 import type { RequestMeta } from "@/lib/request-meta";
 import { lockRow } from "@/lib/row-lock";
 import { runTransaction } from "@/lib/transaction";
+import { assertAllowed } from "@/lib/verdict";
 import { ensureControlAccounts } from "@/modules/accounts/control-accounts";
 import { assertCanPayMoney } from "@/modules/accounts/money-guards";
 import { postJournalEntry, reverseJournalEntry } from "@/modules/accounts/journal.service";
@@ -13,8 +14,8 @@ import { lockSupplierAccount, settleSupplierBills } from "@/modules/accounts/sup
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { assertAnyPermission, assertCanSeeMaterialCosts } from "@/modules/materials/access";
-import { OPEN_ORDER } from "@/modules/materials/material.service";
 import { refreshPurchaseOrders } from "@/modules/materials/purchase-order.service";
+import { canReceiveOnOrder, canVoidPurchase } from "@/modules/materials/rules";
 import { createPurchaseSchema, listPurchasesSchema, voidSchema } from "@/modules/materials/schemas";
 import {
   assertUnitFits,
@@ -146,12 +147,7 @@ export async function createPurchase(ctx: CompanyContext, raw: unknown, meta?: R
         where: { id: order.id },
         select: { status: true },
       });
-      if (!OPEN_ORDER.includes(status)) {
-        throw new AppError(
-          "CONFLICT",
-          `${order.number} is ${status === "RECEIVED" ? "received in full" : status.toLowerCase()}; goods can no longer arrive on it.`,
-        );
-      }
+      assertAllowed(canReceiveOnOrder({ number: order.number, status, received: false }));
     }
     const state = await lockMaterials(
       tx,
@@ -318,20 +314,10 @@ export async function voidPurchase(
         purchaseReturns: { where: { voidedAt: null }, select: { number: true } },
       },
     });
-    if (bill.status === "VOID") throw new AppError("CONFLICT", `${bill.number} is already void.`);
-    if (bill.purchaseReturns.length > 0) {
-      throw new AppError(
-        "CONFLICT",
-        `Goods from ${bill.number} went back to the supplier on ${bill.purchaseReturns
-          .map((r) => r.number)
-          .join(
-            ", ",
-          )}; void ${bill.purchaseReturns.length > 1 ? "those returns" : "that return"} first.`,
-      );
-    }
-    if (!bill.warehouseId) {
-      throw new AppError("CONFLICT", `The store ${bill.number} received into no longer exists.`);
-    }
+    assertAllowed(
+      canVoidPurchase({ ...bill, activeReturns: bill.purchaseReturns.map((r) => r.number) }),
+    );
+    if (!bill.warehouseId) throw new AppError("INTERNAL", "The bill has no store.");
     const state = await lockMaterials(
       tx,
       companyId,

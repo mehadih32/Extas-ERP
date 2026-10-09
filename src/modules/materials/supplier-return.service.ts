@@ -6,6 +6,7 @@ import { nextDocumentNumber } from "@/lib/numbering";
 import type { RequestMeta } from "@/lib/request-meta";
 import { lockRow } from "@/lib/row-lock";
 import { runTransaction } from "@/lib/transaction";
+import { assertAllowed } from "@/lib/verdict";
 import { ensureControlAccounts } from "@/modules/accounts/control-accounts";
 import {
   type JournalLineInput,
@@ -16,6 +17,7 @@ import { lockSupplierAccount, settleSupplierBills } from "@/modules/accounts/sup
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { assertAnyPermission, assertCanSeeMaterialCosts } from "@/modules/materials/access";
+import { canReturnToSupplier, canVoidSupplierReturn } from "@/modules/materials/rules";
 import {
   createSupplierReturnSchema,
   listSupplierReturnsSchema,
@@ -85,7 +87,17 @@ export async function createSupplierReturn(ctx: CompanyContext, raw: unknown, me
         },
       },
     });
-    if (bill.status === "VOID") throw new AppError("CONFLICT", `${bill.number} is void.`);
+    assertAllowed(
+      canReturnToSupplier({
+        number: bill.number,
+        status: bill.status,
+        returnable: bill.items.reduce(
+          (t, i) =>
+            t.plus(i.quantity).minus(i.returnLines.reduce((r, l) => r.plus(l.quantity), ZERO)),
+          ZERO,
+        ),
+      }),
+    );
     const itemsById = new Map(bill.items.map((i) => [i.id, i]));
     const planned = input.lines.map((line, i) => {
       const item = itemsById.get(line.billItemId);
@@ -263,7 +275,7 @@ export async function voidSupplierReturn(
         supplier: { select: { name: true } },
       },
     });
-    if (ret.voidedAt) throw new AppError("CONFLICT", `${ret.number} is already void.`);
+    assertAllowed(canVoidSupplierReturn({ number: ret.number, isVoid: ret.voidedAt !== null }));
     const state = await lockMaterials(
       tx,
       companyId,

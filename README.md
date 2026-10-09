@@ -251,6 +251,41 @@ Built one module at a time, each in its own pull request. So far:
   claims they sent, and a form to send a new one. Fixed assets, loans and investors, and
   printing reports and bank statements as PDFs, come in a later step.
 
+- **Raw materials** (`/materials`), in six tabs:
+  - **Overview**: how many materials there are, how many are running low, the open and late
+    purchase orders, the stock value (for people who see costs), the materials at or below
+    their reorder level, the late orders, the stock by kind, each store's holding and the
+    latest issue notes.
+  - **Stock**: every material, searchable by code, name, colour or specification and filtered
+    by kind, store, running low and archived. A material takes its name, kind, unit, colour,
+    reorder level, specification and usual supplier; its code is given from its kind (FAB-,
+    TRM-, ACC-, PKG-, RM-), and its unit is fixed once it has stock or orders. A material's
+    page shows what is on hand and on order, each store's quantity, its open orders, and its
+    **stock card**: every movement in and out with the balance after it, for any store and
+    any days. From there it is received, ordered, issued to production, counted, moved between
+    stores, written off as wastage, given its opening stock, changed, archived once used up
+    and brought back.
+  - **Purchase orders**: orders to suppliers, searchable by number or the supplier's
+    reference and filtered by status, late, supplier and material. An order takes the
+    supplier, optionally the project it is for, the order and expected dates and a line for
+    each material with its quantity and price. Its page shows what has arrived on each line
+    and the purchases made against it. It is changed while open (its lines only while nothing
+    has arrived), cancelled when nothing came, or closed when the rest will not come.
+  - **Purchases**: the suppliers' bills, filtered by status and supplier. Receiving goods
+    records the bill as they arrive, on an order (its lines filled in with what is still to
+    come) or without one, into a store, due to the supplier or paid now, with a photo or PDF
+    of the bill. A purchase's page shows its lines, payments and returns; it is paid, goods
+    are sent back, or it is voided.
+  - **Supplier returns**: goods sent back to suppliers (debit notes), each from one purchase,
+    at most what is left on each line, crediting the supplier's account. A return entered by
+    mistake is voided.
+  - **Issue notes**: materials handed from a store to a production project, and unused
+    materials taken back, at most what the project still holds. A production project's page
+    lists the materials it was issued and holds, their cost, the orders still to arrive for
+    it and its latest notes, with buttons to issue more, take some back or order for it.
+
+  Reading a supplier's bill or packing list with AI comes with the integrations.
+
 The screens ask the same Server Actions as the API, so the backend's permissions decide what
 appears. With the built-in roles' default permissions:
 
@@ -349,6 +384,26 @@ with `expenses.create`; people without `expenses.manage`, `accounts.view` or
 Someone holding only `accounts.payments.record` sees the Supplier payments and Expenses tabs,
 not the books.
 
+Raw materials follows the materials and accounts permissions:
+
+| Role                      | Raw materials menu | Count, move, issue, write off | Materials list | Orders, due bills and returns | Pay suppliers | Opening stock | Prices and values |
+| ------------------------- | ------------------ | ----------------------------- | -------------- | ----------------------------- | ------------- | ------------- | ----------------- |
+| Super Admin               | Yes                | Yes                           | Yes            | Yes                           | Yes           | Yes           | Yes               |
+| Production Manager        | Yes                | Yes                           | Yes            | Yes                           | No            | Yes           | Yes               |
+| Accounts                  | Yes                | No                            | No             | Bills and returns only        | Yes           | Yes           | Yes               |
+| Warehouse Team            | Yes (no bills)     | Yes                           | Yes            | No                            | No            | No            | No                |
+| Sales Executive, Employee | No                 | No                            | No             | No                            | No            | No            | No                |
+
+Stock, stock cards, purchase orders and issue notes read with `materials.view`. Counting,
+moving, writing off, issuing and taking back need `materials.manage`, and purchase orders
+`materials.purchase`; the materials list (adding and changing materials) needs either. Goods
+are received on a due bill with `materials.purchase` or `accounts.payments.record`, which
+alone pays a bill or records one as paid now. Sending goods back, voiding a purchase or a
+return, and opening stock need `materials.purchase` or `accounts.manage`. Prices and values reach only `materials.purchase`,
+`production.manage` and the accounts keys; for the store team the server leaves them out, so
+the Purchases and Supplier returns tabs (bills) are hidden from it and its stock cards and
+issue notes show quantities only.
+
 Settings follows the same rule. The Team tab needs `company.members.manage`. The Roles tab
 opens with `company.members.manage` (to read them) or `company.roles.manage` (to change them).
 Everyone can read the company details, and `company.settings` lets them be changed. Settings
@@ -396,6 +451,11 @@ For developers:
   send them as each screen's `can` flags. The tabs and who sees them are in
   `src/components/accounts/tabs.ts`; the claimants' own Expenses menu entry is hidden from
   people who reach Expenses through Accounts (`noneOf` in `nav-items.ts`).
+- Raw materials' rules (what may be archived, ordered, cancelled, closed, received, voided or
+  sent back, and the keys behind each) live in `src/modules/materials/rules.ts`, and
+  `src/modules/materials/screens.service.ts` sends them as each screen's `can` flags with
+  prices and values left out for people who do not see costs. Its tabs and who sees them are
+  in `src/components/materials/tabs.ts`.
 - The phone's tab bar holds four sections. With more, the fifth tab is **More**, listing the
   other sections above the account menu (`phoneTabs` in `src/components/shell/nav-items.ts`).
   Between tablet and laptop widths the top bar uses short labels ("Parties"), and lists show

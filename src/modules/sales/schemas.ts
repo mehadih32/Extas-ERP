@@ -1,6 +1,7 @@
 import {
   CustomFieldEntity,
   CustomFieldType,
+  InvoiceStatus,
   PaymentMethod,
   RefundKind,
   SalesChannel,
@@ -280,6 +281,21 @@ export const issueInvoiceSchema = z.object({
   dueDate: z.coerce.date().nullish(),
 });
 export const voidInvoiceSchema = z.object({ reason: z.string().trim().min(5).max(500) });
+export const listInvoicesSchema = z.object({
+  status: z.enum(InvoiceStatus).optional(),
+  /** Unpaid or part-paid invoices past their due day. */
+  overdue: z
+    .union([z.boolean(), z.enum(["true", "false", "1", "0"])])
+    .transform((v) => v === true || v === "true" || v === "1")
+    .optional(),
+  partyId: id.optional(),
+  /** Invoice or order number, buyer or customer name. */
+  search: z.string().trim().max(100).optional(),
+  from: dayOrInstant.optional(),
+  to: dayOrInstant.optional(),
+  cursor: z.string().optional(),
+  take,
+});
 
 const docItemSchema = z.object({ variantId: id, quantity: qty });
 

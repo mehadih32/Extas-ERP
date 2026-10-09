@@ -1,4 +1,4 @@
-import { Prisma, type SalesChannel, type SalesOrderStatus } from "@prisma/client";
+import { Prisma, type SalesChannel } from "@prisma/client";
 
 import { dateColumn, dateOnly, dayRange, localDay } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
@@ -6,9 +6,11 @@ import { nextDocumentNumber } from "@/lib/numbering";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
 import { lockRow } from "@/lib/row-lock";
+import { assertAllowed } from "@/lib/verdict";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { letterhead } from "@/modules/companies/letterhead";
+import { canSeeFinancials } from "@/modules/dashboard/access";
 import { getDefaultWarehouse } from "@/modules/inventory/stock.service";
 import { assertPartyCanTransact, recordPartyActivity } from "@/modules/parties/party.service";
 import {
@@ -33,6 +35,13 @@ import {
   updateOrderSchema,
 } from "@/modules/sales/schemas";
 import { assertCanRefund, REFUND_KIND_TEXT, refundBuyerTx } from "@/modules/sales/refund.service";
+import {
+  canCancelOrder,
+  canEditOrder,
+  canSetShipmentDate,
+  liveInvoice as live,
+  SHIPMENT_OPEN,
+} from "@/modules/sales/rules";
 import { releaseStock, reserveStock } from "@/modules/sales/stock-ops";
 import { money, orderTotals } from "@/modules/sales/totals";
 
@@ -45,6 +54,9 @@ import { money, orderTotals } from "@/modules/sales/totals";
 
 type Tx = Prisma.TransactionClient;
 const TX_OPTIONS = { timeout: 30_000 };
+
+/** Pieces in a per-SKU count. */
+const piecesOf = (bySku: Map<string, number>) => [...bySku.values()].reduce((a, b) => a + b, 0);
 
 async function resolveWarehouse(ctx: CompanyContext, warehouseId?: string) {
   if (!warehouseId) return getDefaultWarehouse(ctx);
@@ -289,18 +301,7 @@ export async function updateOrder(
     },
   });
   if (!order) throw new AppError("NOT_FOUND", "Order not found.");
-  if (!["CONFIRMED", "PACKED"].includes(order.status)) {
-    throw new AppError("CONFLICT", `A ${order.status.toLowerCase()} order cannot be edited.`);
-  }
-  if (order.invoice && order.invoice.status !== "VOID") {
-    throw new AppError(
-      "CONFLICT",
-      `Void invoice ${order.invoice.number} before editing the order.`,
-    );
-  }
-  if ((await deliveredByVariant(prisma, order.id)).size > 0) {
-    throw new AppError("CONFLICT", "Part of this order is already delivered.");
-  }
+  assertAllowed(canEditOrder(order, piecesOf(await deliveredByVariant(prisma, order.id))));
   if (!order.warehouseId) throw new AppError("CONFLICT", "The order has no warehouse.");
 
   const linesChanged = Boolean(input.lines || input.matrix);
@@ -421,18 +422,14 @@ export async function cancelOrder(
     include: { items: true, invoice: true },
   });
   if (!order) throw new AppError("NOT_FOUND", "Order not found.");
-  if (order.status === "CANCELLED")
-    throw new AppError("CONFLICT", "This order is already cancelled.");
-  if ((await deliveredByVariant(prisma, order.id)).size > 0) {
-    throw new AppError("CONFLICT", "Goods on this order were delivered; record a return instead.");
-  }
+  assertAllowed(canCancelOrder(order, piecesOf(await deliveredByVariant(prisma, order.id))));
   if (order.paidAmount.gt(0) && !settle) {
     throw new AppError("CONFLICT", settleFirstMessage(order.paidAmount, order.number), {
       settle: ["Say how to settle the money paid on this order"],
     });
   }
   if (settle) assertCanRefund(ctx, settle.kind);
-  const liveInvoice = order.invoice && order.invoice.status !== "VOID" ? order.invoice : null;
+  const liveInvoice = live(order.invoice);
   if (liveInvoice && !ctx.can("sales.invoice.edit")) {
     throw new AppError(
       "FORBIDDEN",
@@ -446,10 +443,8 @@ export async function cancelOrder(
       where: { id: order.id },
       include: { invoice: true },
     });
-    if (current.status === "CANCELLED") {
-      throw new AppError("CONFLICT", "This order is already cancelled.");
-    }
-    const invoice = current.invoice && current.invoice.status !== "VOID" ? current.invoice : null;
+    assertAllowed(canCancelOrder(current, 0));
+    const invoice = live(current.invoice);
     if (invoice) {
       if (!ctx.can("sales.invoice.edit")) {
         throw new AppError(
@@ -504,9 +499,6 @@ export async function cancelOrder(
   return getOrder(ctx, order.id);
 }
 
-/** Orders whose goods have not all left yet: their shipment date can still change. */
-const SHIPMENT_OPEN: SalesOrderStatus[] = ["DRAFT", "CONFIRMED", "PROCESSING", "PACKED"];
-
 /**
  * Sets, moves or clears the day an open order is due to ship. Shipment
  * reminders follow it (a moved date starts its reminders afresh).
@@ -520,18 +512,13 @@ export async function setOrderShipmentDate(
   const { shipmentDate } = orderShipmentSchema.parse(raw);
   const order = await ctx.db.salesOrder.findUnique({ where: { id: orderId } });
   if (!order) throw new AppError("NOT_FOUND", "Order not found.");
-  if (!SHIPMENT_OPEN.includes(order.status)) {
-    throw new AppError(
-      "CONFLICT",
-      `This order is ${order.status.toLowerCase().replace(/_/g, " ")}; its shipment date can no longer change.`,
-    );
-  }
+  assertAllowed(canSetShipmentDate(order));
   if (shipmentDate) checkShipmentDate(ctx, shipmentDate, order.orderDate);
   const before = dateOnly(order.shipmentDate);
   if (before !== shipmentDate) {
     await prisma.$transaction(async (tx) => {
       const { count } = await tx.salesOrder.updateMany({
-        where: { id: order.id, companyId: ctx.company.id, status: { in: SHIPMENT_OPEN } },
+        where: { id: order.id, companyId: ctx.company.id, status: { in: [...SHIPMENT_OPEN] } },
         data: { shipmentDate: shipmentDate ? dateColumn(shipmentDate) : null },
       });
       if (count === 0)
@@ -566,7 +553,10 @@ export const refundSummary = {
   voidedAt: true,
 } as const;
 
-/** Order with lines (delivered / remaining), documents, payments and refunds. */
+/**
+ * Order with lines (delivered / remaining), documents, payments and refunds. What
+ * delivered pieces cost (unitCost) shows only to people who see the financials.
+ */
 export async function getOrder(ctx: CompanyContext, orderId: string) {
   const order = await ctx.db.salesOrder.findUnique({
     where: { id: orderId },
@@ -616,11 +606,13 @@ export async function getOrder(ctx: CompanyContext, orderId: string) {
   });
   if (!order) throw new AppError("NOT_FOUND", "Order not found.");
   const delivered = await deliveredByVariant(prisma, order.id);
+  const showCosts = canSeeFinancials(ctx);
   return {
     ...order,
     shipmentDate: dateOnly(order.shipmentDate),
     items: order.items.map((i) => ({
       ...i,
+      unitCost: showCosts ? i.unitCost : null,
       delivered: delivered.get(i.variantId) ?? 0,
       remaining: i.quantity - (delivered.get(i.variantId) ?? 0),
     })),

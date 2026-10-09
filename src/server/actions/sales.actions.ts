@@ -1,6 +1,7 @@
 "use server";
 
 import type { CustomFieldEntity } from "@prisma/client";
+import { revalidatePath } from "next/cache";
 
 import { getRequestMeta } from "@/lib/request-meta";
 import { runAction } from "@/lib/result";
@@ -12,6 +13,7 @@ import * as payments from "@/modules/sales/payment.service";
 import * as proformas from "@/modules/sales/proforma.service";
 import * as quotations from "@/modules/sales/quotation.service";
 import * as refunds from "@/modules/sales/refund.service";
+import * as screens from "@/modules/sales/screens.service";
 import * as summary from "@/modules/sales/summary.service";
 
 /*
@@ -27,17 +29,92 @@ import * as summary from "@/modules/sales/summary.service";
  *   sales.force_override      sell beyond available stock (checked inside the order)
  *   company.settings          custom field definitions
  * An INSUFFICIENT_STOCK error means: show the "Force Override & Sell" warning.
+ * Changes refresh the screens, so lists, orders and balances show them straight away.
  */
 
 const view = () => requirePermission("sales.view");
 const quote = () => requirePermission("sales.quotation.manage");
 const sell = () => requirePermission("sales.order.create");
 
+/** Runs a change and refreshes every screen that may show it. */
+const change = <T>(work: () => Promise<T>) =>
+  runAction(async () => {
+    const result = await work();
+    revalidatePath("/", "layout");
+    return result;
+  });
+
+/**
+ * What a change hands back to the screen: the record's id and number only. The
+ * full records carry Decimal amounts, which do not cross to the browser; the
+ * screens reload the record from its page.
+ */
+const ref = (record: { id: string; number: string }) => ({
+  id: record.id,
+  number: record.number,
+});
+
+// --- Screens -------------------------------------------------------------------
+export const getQuotationListAction = async (query: unknown) =>
+  runAction(async () => screens.getQuotationList(await view(), query));
+export const listQuotationRowsAction = async (query: unknown) =>
+  runAction(async () => screens.listQuotationRows(await view(), query));
+export const getQuotationScreenAction = async (quotationId: string) =>
+  runAction(async () => screens.getQuotationScreen(await view(), quotationId));
+export const getQuotationFormAction = async (quotationId?: string) =>
+  runAction(async () => screens.getQuotationForm(await quote(), quotationId));
+export const listProformaRowsAction = async (query: unknown) =>
+  runAction(async () => screens.listProformaRows(await view(), query));
+export const getProformaScreenAction = async (proformaId: string) =>
+  runAction(async () => screens.getProformaScreen(await view(), proformaId));
+export const getOrderListAction = async (query: unknown) =>
+  runAction(async () => screens.getOrderList(await view(), query));
+export const listOrderRowsAction = async (query: unknown) =>
+  runAction(async () => screens.listOrderRows(await view(), query));
+export const getOrderScreenAction = async (orderId: string) =>
+  runAction(async () => screens.getOrderScreen(await view(), orderId));
+export const getOrderFormAction = async (from: { orderId?: string; proformaId?: string }) =>
+  runAction(async () => screens.getOrderForm(await sell(), from));
+export const listInvoiceRowsAction = async (query: unknown) =>
+  runAction(async () => screens.listInvoiceRows(await view(), query));
+export const getInvoiceScreenAction = async (invoiceId: string) =>
+  runAction(async () => screens.getInvoiceScreen(await view(), invoiceId));
+export const getPaymentListAction = async (query: unknown) =>
+  runAction(async () => screens.getPaymentList(await view(), query));
+export const listPaymentRowsAction = async (query: unknown) =>
+  runAction(async () => screens.listPaymentRows(await view(), query));
+export const listRefundRowsAction = async (query: unknown) =>
+  runAction(async () => screens.listRefundRows(await view(), query));
+export const getPaymentScreenAction = async (paymentId: string) =>
+  runAction(async () => screens.getPaymentScreen(await view(), paymentId));
+
+/** Buyers to pick for a quotation, an order or a payment on account. */
+export const findBuyersAction = async (query: { search?: string; purpose?: "SALE" | "PAYMENT" }) =>
+  runAction(async () =>
+    screens.findBuyers(
+      query.purpose === "PAYMENT"
+        ? await requirePermission("accounts.receipts.record")
+        : await requireAnyPermission("sales.quotation.manage", "sales.order.create"),
+      query,
+    ),
+  );
+/** Styles to quote or sell. */
+export const findSaleStylesAction = async (query: { search?: string }) =>
+  runAction(async () =>
+    screens.findSaleStyles(
+      await requireAnyPermission("sales.quotation.manage", "sales.order.create"),
+      query,
+    ),
+  );
+/** A style's colours and sizes with the pieces ready to sell, for order entry. */
+export const getSaleMatrixAction = async (styleId: string, warehouseId?: string) =>
+  runAction(async () => screens.getSaleMatrix(await sell(), styleId, warehouseId));
+
 // --- Custom fields -------------------------------------------------------------
 export const listCustomFieldsAction = async (entity?: CustomFieldEntity) =>
   runAction(async () => customFields.listCustomFields(await view(), entity));
 export const createCustomFieldAction = async (input: unknown) =>
-  runAction(async () =>
+  change(async () =>
     customFields.createCustomField(
       await requirePermission("company.settings"),
       input,
@@ -45,7 +122,7 @@ export const createCustomFieldAction = async (input: unknown) =>
     ),
   );
 export const updateCustomFieldAction = async (fieldId: string, input: unknown) =>
-  runAction(async () =>
+  change(async () =>
     customFields.updateCustomField(
       await requirePermission("company.settings"),
       fieldId,
@@ -60,22 +137,41 @@ export const listQuotationsAction = async (query: unknown) =>
 export const getQuotationAction = async (quotationId: string) =>
   runAction(async () => quotations.getQuotation(await view(), quotationId));
 export const createQuotationAction = async (input: unknown) =>
-  runAction(async () => quotations.createQuotation(await quote(), input, await getRequestMeta()));
+  change(async () =>
+    ref(await quotations.createQuotation(await quote(), input, await getRequestMeta())),
+  );
 export const updateQuotationAction = async (quotationId: string, input: unknown) =>
-  runAction(async () =>
-    quotations.updateQuotation(await quote(), quotationId, input, await getRequestMeta()),
+  change(async () =>
+    ref(
+      await quotations.updateQuotation(await quote(), quotationId, input, await getRequestMeta()),
+    ),
   );
 export const setQuotationStatusAction = async (quotationId: string, input: unknown) =>
-  runAction(async () =>
-    quotations.setQuotationStatus(await quote(), quotationId, input, await getRequestMeta()),
+  change(async () =>
+    ref(
+      await quotations.setQuotationStatus(
+        await quote(),
+        quotationId,
+        input,
+        await getRequestMeta(),
+      ),
+    ),
   );
 export const deleteQuotationAction = async (quotationId: string) =>
-  runAction(async () =>
-    quotations.deleteQuotation(await quote(), quotationId, await getRequestMeta()),
-  );
+  change(async () => {
+    await quotations.deleteQuotation(await quote(), quotationId, await getRequestMeta());
+    return { id: quotationId };
+  });
 export const convertQuotationToProformaAction = async (quotationId: string, input: unknown) =>
-  runAction(async () =>
-    proformas.convertQuotationToProforma(await quote(), quotationId, input, await getRequestMeta()),
+  change(async () =>
+    ref(
+      await proformas.convertQuotationToProforma(
+        await quote(),
+        quotationId,
+        input,
+        await getRequestMeta(),
+      ),
+    ),
   );
 
 // --- Proforma invoices ---------------------------------------------------------
@@ -84,12 +180,19 @@ export const listProformasAction = async (query: unknown) =>
 export const getProformaAction = async (proformaId: string) =>
   runAction(async () => proformas.getProforma(await view(), proformaId));
 export const cancelProformaAction = async (proformaId: string, input: unknown) =>
-  runAction(async () =>
-    proformas.cancelProforma(await quote(), proformaId, input, await getRequestMeta()),
+  change(async () =>
+    ref(await proformas.cancelProforma(await quote(), proformaId, input, await getRequestMeta())),
   );
 export const convertProformaToOrderAction = async (proformaId: string, input: unknown) =>
-  runAction(async () =>
-    proformas.convertProformaToOrder(await sell(), proformaId, input, await getRequestMeta()),
+  change(async () =>
+    ref(
+      await proformas.convertProformaToOrder(
+        await sell(),
+        proformaId,
+        input,
+        await getRequestMeta(),
+      ),
+    ),
   );
 
 // --- Orders ----------------------------------------------------------------------
@@ -98,46 +201,56 @@ export const listOrdersAction = async (query: unknown) =>
 export const getOrderAction = async (orderId: string) =>
   runAction(async () => orders.getOrder(await view(), orderId));
 export const createOrderAction = async (input: unknown) =>
-  runAction(async () => orders.createOrder(await sell(), input, await getRequestMeta()));
+  change(async () => ref(await orders.createOrder(await sell(), input, await getRequestMeta())));
 export const updateOrderAction = async (orderId: string, input: unknown) =>
-  runAction(async () => orders.updateOrder(await sell(), orderId, input, await getRequestMeta()));
+  change(async () =>
+    ref(await orders.updateOrder(await sell(), orderId, input, await getRequestMeta())),
+  );
 export const cancelOrderAction = async (orderId: string, input: unknown) =>
-  runAction(async () => orders.cancelOrder(await sell(), orderId, input, await getRequestMeta()));
+  change(async () =>
+    ref(await orders.cancelOrder(await sell(), orderId, input, await getRequestMeta())),
+  );
 export const setOrderShipmentDateAction = async (orderId: string, input: unknown) =>
-  runAction(async () =>
-    orders.setOrderShipmentDate(await sell(), orderId, input, await getRequestMeta()),
+  change(async () =>
+    ref(await orders.setOrderShipmentDate(await sell(), orderId, input, await getRequestMeta())),
   );
 
 // --- Documents -----------------------------------------------------------------
 export const issueInvoiceAction = async (orderId: string, input: unknown) =>
-  runAction(async () =>
-    documents.issueInvoice(await sell(), orderId, input, await getRequestMeta()),
+  change(async () =>
+    ref(await documents.issueInvoice(await sell(), orderId, input, await getRequestMeta())),
   );
 export const voidInvoiceAction = async (invoiceId: string, input: unknown) =>
-  runAction(async () =>
-    documents.voidInvoice(
-      await requirePermission("sales.invoice.edit"),
-      invoiceId,
-      input,
-      await getRequestMeta(),
+  change(async () =>
+    ref(
+      await documents.voidInvoice(
+        await requirePermission("sales.invoice.edit"),
+        invoiceId,
+        input,
+        await getRequestMeta(),
+      ),
     ),
   );
 export const getInvoiceAction = async (invoiceId: string) =>
   runAction(async () => documents.getInvoiceDocument(await view(), invoiceId));
 export const createPackingListAction = async (orderId: string, input: unknown) =>
-  runAction(async () =>
-    documents.createPackingList(await sell(), orderId, input, await getRequestMeta()),
+  change(async () =>
+    ref(await documents.createPackingList(await sell(), orderId, input, await getRequestMeta())),
   );
 export const getPackingListAction = async (packingListId: string) =>
   runAction(async () => documents.getPackingListDocument(await view(), packingListId));
 export const setPickedItemsAction = async (packingListId: string, input: unknown) =>
-  runAction(async () => documents.setPickedItems(await sell(), packingListId, input));
+  change(async () => documents.setPickedItems(await sell(), packingListId, input));
 export const createDeliveryChallanAction = async (orderId: string, input: unknown) =>
-  runAction(async () =>
-    documents.createDeliveryChallan(await sell(), orderId, input, await getRequestMeta()),
+  change(async () =>
+    ref(
+      await documents.createDeliveryChallan(await sell(), orderId, input, await getRequestMeta()),
+    ),
   );
 export const getChallanAction = async (challanId: string) =>
   runAction(async () => documents.getChallanDocument(await view(), challanId));
+export const listInvoicesAction = async (query: unknown) =>
+  runAction(async () => documents.listInvoices(await view(), query));
 export const listChallansAction = async (query: {
   orderId?: string;
   partyId?: string;
@@ -146,13 +259,19 @@ export const listChallansAction = async (query: {
 
 // --- Payments & summary --------------------------------------------------------
 export const receivePaymentAction = async (input: unknown) =>
-  runAction(async () =>
-    payments.receivePayment(
+  change(async () => {
+    const { payment, productionProject } = await payments.receivePayment(
       await requirePermission("accounts.receipts.record"),
       input,
       await getRequestMeta(),
-    ),
-  );
+    );
+    return {
+      payment: ref(payment),
+      productionProject: productionProject
+        ? { id: productionProject.id, code: productionProject.code }
+        : null,
+    };
+  });
 export const listPaymentsAction = async (query: unknown) =>
   runAction(async () => payments.listPayments(await view(), query));
 export const getPaymentReceiptAction = async (paymentId: string) =>
@@ -163,10 +282,12 @@ export const getPaymentReceiptAction = async (paymentId: string) =>
 const refundMoney = () =>
   requireAnyPermission("accounts.payments.record", "accounts.receipts.record", "accounts.manage");
 export const refundBuyerAction = async (input: unknown) =>
-  runAction(async () => refunds.refundBuyer(await refundMoney(), input, await getRequestMeta()));
+  change(async () =>
+    ref(await refunds.refundBuyer(await refundMoney(), input, await getRequestMeta())),
+  );
 export const voidRefundAction = async (refundId: string, input: unknown) =>
-  runAction(async () =>
-    refunds.voidRefund(await refundMoney(), refundId, input, await getRequestMeta()),
+  change(async () =>
+    ref(await refunds.voidRefund(await refundMoney(), refundId, input, await getRequestMeta())),
   );
 export const listRefundsAction = async (query: unknown) =>
   runAction(async () => refunds.listRefunds(await view(), query));

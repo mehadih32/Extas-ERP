@@ -1,10 +1,12 @@
-import type { Prisma, SalesOrderStatus } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
 
+import { dayRange } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
 import { nextDocumentNumber } from "@/lib/numbering";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
 import { lockRow } from "@/lib/row-lock";
+import { assertAllowed } from "@/lib/verdict";
 import { ensureControlAccounts } from "@/modules/accounts/control-accounts";
 import { postJournalEntry, reverseJournalEntry } from "@/modules/accounts/journal.service";
 import { auditInCompany } from "@/modules/audit/audit.service";
@@ -18,8 +20,15 @@ import {
   refreshOrderPayments,
 } from "@/modules/sales/posting";
 import {
+  canCreateChallan,
+  canCreatePackingList,
+  canIssueInvoice,
+  canVoidInvoice,
+} from "@/modules/sales/rules";
+import {
   deliveryChallanSchema,
   issueInvoiceSchema,
+  listInvoicesSchema,
   packingListSchema,
   pickItemsSchema,
   voidInvoiceSchema,
@@ -35,8 +44,6 @@ import { ZERO } from "@/modules/sales/totals";
  */
 
 type Tx = Prisma.TransactionClient;
-
-const CLOSED: SalesOrderStatus[] = ["CANCELLED", "RETURNED"];
 
 async function loadOrder(tx: Tx, companyId: string, orderId: string) {
   const order = await tx.salesOrder.findFirst({
@@ -78,15 +85,7 @@ export async function issueInvoiceTx(
 ) {
   await lockRow(tx, "SalesOrder", orderId);
   const order = await loadOrder(tx, ctx.company.id, orderId);
-  if (CLOSED.includes(order.status)) {
-    throw new AppError("CONFLICT", `This order is ${order.status.toLowerCase()}.`);
-  }
-  if (order.invoice && order.invoice.status !== "VOID") {
-    throw new AppError(
-      "CONFLICT",
-      `Invoice ${order.invoice.number} already exists for this order.`,
-    );
-  }
+  assertAllowed(canIssueInvoice(order));
   const issueDate = input.issueDate ?? new Date();
   const terms = order.party?.paymentTermsDays;
   const dueDate =
@@ -161,7 +160,7 @@ export async function voidInvoice(
   const { reason } = voidInvoiceSchema.parse(raw);
   const invoice = await ctx.db.invoice.findUnique({ where: { id: invoiceId } });
   if (!invoice) throw new AppError("NOT_FOUND", "Invoice not found.");
-  if (invoice.status === "VOID") throw new AppError("CONFLICT", "This invoice is already void.");
+  assertAllowed(canVoidInvoice(invoice));
   return prisma.$transaction(
     async (tx) => {
       await voidInvoiceTx(tx, ctx, invoice, reason, meta);
@@ -264,12 +263,7 @@ export async function createPackingListTx(
 ) {
   await lockRow(tx, "SalesOrder", orderId);
   const order = await loadOrder(tx, ctx.company.id, orderId);
-  if (CLOSED.includes(order.status)) {
-    throw new AppError("CONFLICT", `This order is ${order.status.toLowerCase()}.`);
-  }
-  if (order.packingList) {
-    throw new AppError("CONFLICT", `Packing list ${order.packingList.number} already exists.`);
-  }
+  assertAllowed(canCreatePackingList(order));
   const ordered = new Map(order.items.map((i) => [i.variantId, i.quantity]));
   const items =
     input.items ??
@@ -358,14 +352,13 @@ export async function createDeliveryChallanTx(
 ) {
   await lockRow(tx, "SalesOrder", orderId);
   const order = await loadOrder(tx, ctx.company.id, orderId);
-  if (CLOSED.includes(order.status) || order.status === "DRAFT") {
-    throw new AppError("CONFLICT", `This order is ${order.status.toLowerCase()}.`);
-  }
-  if (!order.warehouseId) throw new AppError("CONFLICT", "The order has no warehouse.");
   const delivered = await deliveredByVariant(tx, order.id);
   const byVariant = new Map(order.items.map((i) => [i.variantId, i]));
   const remaining = (variantId: string) =>
     (byVariant.get(variantId)?.quantity ?? 0) - (delivered.get(variantId) ?? 0);
+  const left = order.items.reduce((sum, i) => sum + Math.max(remaining(i.variantId), 0), 0);
+  assertAllowed(canCreateChallan(order, left));
+  if (!order.warehouseId) throw new AppError("CONFLICT", "The order has no warehouse.");
 
   const requested =
     input.items ??
@@ -563,6 +556,48 @@ export async function getInvoiceDocument(ctx: CompanyContext, invoiceId: string)
     refunds,
     letterhead: await letterhead(ctx),
   };
+}
+
+/**
+ * Invoices, newest first: by status, overdue (unpaid past the due day), buyer,
+ * issue day or a search on the invoice or order number and the buyer's name.
+ */
+export async function listInvoices(ctx: CompanyContext, raw: unknown = {}) {
+  const q = listInvoicesSchema.parse(raw);
+  const take = q.take ?? 50;
+  const { start, end } = dayRange(q.from, q.to, ctx.company.timezone);
+  const rows = await ctx.db.invoice.findMany({
+    where: {
+      ...(q.status ? { status: q.status } : {}),
+      ...(q.overdue
+        ? { status: { in: ["UNPAID", "PARTIALLY_PAID"] }, dueDate: { lt: new Date() } }
+        : {}),
+      ...(q.partyId ? { partyId: q.partyId } : {}),
+      ...(start || end
+        ? { issueDate: { ...(start ? { gte: start } : {}), ...(end ? { lt: end } : {}) } }
+        : {}),
+      ...(q.search
+        ? {
+            OR: [
+              { number: { contains: q.search, mode: "insensitive" } },
+              { order: { number: { contains: q.search, mode: "insensitive" } } },
+              { order: { customerName: { contains: q.search, mode: "insensitive" } } },
+              { party: { name: { contains: q.search, mode: "insensitive" } } },
+            ],
+          }
+        : {}),
+    },
+    include: {
+      party: { select: { id: true, code: true, name: true } },
+      order: { select: { id: true, number: true, channel: true, customerName: true } },
+    },
+    orderBy: [{ issueDate: "desc" }, { id: "desc" }],
+    take: take + 1,
+    ...(q.cursor ? { cursor: { id: q.cursor }, skip: 1 } : {}),
+  });
+  const hasMore = rows.length > take;
+  const items = hasMore ? rows.slice(0, take) : rows;
+  return { items, nextCursor: hasMore ? items[items.length - 1]?.id : undefined };
 }
 
 /** Pick-list / packing list data; price-free like the challan. */

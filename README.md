@@ -148,6 +148,36 @@ Built one module at a time, each in its own pull request. So far:
     year or any two dates. The same statement prints as a PDF on the letterhead.
   - **Dues**: what buyers owe the company and what it owes suppliers today, in total and
     account by account, largest first. Each one opens its statement.
+- **Sales** (`/sales`), in five tabs:
+  - **Orders**: wholesale, counter and social commerce orders, with their invoice and what is
+    still due, searchable by number, buyer or phone and filtered by status and channel. A new
+    order takes the channel, the buyer (needed for wholesale; a counter or social sale can go
+    without one and keep the customer's name, phone and address instead), the warehouse and
+    the styles. Each style opens as a matrix of colours and sizes showing the pieces ready,
+    with one price for the whole style (empty uses the wholesale or retail list price). At
+    checkout the invoice is issued (it can also wait), and the packing list, a delivery
+    challan and a payment can be made with it. Pieces beyond the stock are marked; people
+    allowed to sell beyond stock tick **Force Override & Sell** with a reason, which stays on
+    the order. An order's page shows its lines with what was delivered, the totals with paid
+    and due, its invoice, packing list and challans (each with its PDF), its payments and
+    refunds, and its cost and margin for people who see the financials. From there it is
+    edited (until something is delivered or invoiced), invoiced, packed, delivered in full or
+    in part, given a ship-by day, paid, refunded or cancelled.
+  - **Quotations**: the quotation builder takes the buyer, the dates, items picked from the
+    catalogue or described freely (fabric, colours, a quantity or a size breakdown, a price),
+    styling rules for the factory, discount and tax, terms and the company's custom fields. A
+    quotation is marked sent, accepted or rejected, printed, and made into a proforma invoice
+    asking for an advance (the company's usual percentage, or another).
+  - **Proformas**: the advance asked for and paid. Once it is paid in full, production starts
+    and the order is made from it (its advance moves onto the order). A proforma can be
+    refunded or cancelled, saying what happens to the money already paid.
+  - **Invoices**: every commercial invoice with what is paid and due, with an Overdue filter.
+    An invoice's page receives a payment against its order, voids it and prints it.
+  - **Payments**: money received (each opening its money receipt and PDF) and refunds.
+    Accounts can record a payment on a buyer's account here.
+
+  Courier bookings, website orders, returns and sending documents by WhatsApp or email come
+  with the integrations, at the end.
 
 The screens ask the same Server Actions as the API, so the backend's permissions decide what
 appears. With the built-in roles' default permissions:
@@ -189,6 +219,26 @@ status) needs `parties.manage`, statements and the Dues tab need `parties.ledger
 opening balances need `accounts.manage`, because they post to the books. The balance shows to
 everyone who can open a profile, as the API returns it with `parties.view`.
 
+Sales follows the sales and accounts permissions:
+
+| Role                         | Sales menu | Quotations, proformas | Orders, invoices, delivery | Money received and refunds | Costs and margins |
+| ---------------------------- | ---------- | --------------------- | -------------------------- | -------------------------- | ----------------- |
+| Super Admin                  | Yes        | Yes                   | Yes                        | Yes                        | Yes               |
+| Sales Executive              | Yes        | Yes                   | Yes                        | No                         | No                |
+| Accounts                     | Yes        | No (to look)          | No (to look)               | Yes                        | Yes               |
+| Warehouse Team               | Yes        | No (to look)          | No (to look)               | No                         | No                |
+| Production Manager, Employee | No         | No                    | No                         | No                         | No                |
+
+Everything in Sales reads with `sales.view`. Quotations and proformas need
+`sales.quotation.manage`; orders, invoices, packing lists and challans need
+`sales.order.create`. Money only moves with Accounts' keys: `accounts.receipts.record` to
+receive a payment (also at checkout) or keep a refund as the buyer's credit,
+`accounts.payments.record` to pay money back and `accounts.manage` to keep it as a
+cancellation charge. Voiding an invoice (and so cancelling an invoiced order) needs
+`sales.invoice.edit`, and selling beyond stock `sales.force_override`; by default only Super
+Admin has those two. An order's cost and margin, and each line's cost, reach only people who
+see the financials; the server leaves them out for everyone else, in the API too.
+
 Settings follows the same rule. The Team tab needs `company.members.manage`. The Roles tab
 opens with `company.members.manage` (to read them) or `company.roles.manage` (to change them).
 Everyone can read the company details, and `company.settings` lets them be changed. Settings
@@ -217,6 +267,19 @@ For developers:
   status, opening balance) in `src/modules/parties/rules.ts`. The `*-screens.test.ts` files in
   `tests/integration` try every action as different people and check it works exactly when it
   is offered.
+- Sales' rules (what may be edited, marked, converted, cancelled, paid, refunded or voided,
+  and which refund kinds a person's keys allow) live in `src/modules/sales/rules.ts`. The
+  services refuse with them and `src/modules/sales/screens.service.ts` sends the same answers
+  as each screen's `can` flags. The Sales actions that change something hand back only the
+  record's id and number: the full records carry Decimal amounts, which do not cross to the
+  browser, so the page reloads them.
+- The phone's tab bar holds four sections. With more, the fifth tab is **More**, listing the
+  other sections above the account menu (`phoneTabs` in `src/components/shell/nav-items.ts`).
+  Between tablet and laptop widths the top bar uses short labels ("Parties"), and lists show
+  cards until there is room for their table.
+- Forms whose rows can be added (quotation items, order styles) key the rows they start with
+  by position, so the server's page and the browser's agree; only rows added in the browser
+  take keys from a counter.
 - Filters and pickers that live in the address (the style list, the stock count, the matrix's
   warehouse, the buyer and supplier lists, a statement's days) show the choice at once and dim
   the list until the new one arrives.

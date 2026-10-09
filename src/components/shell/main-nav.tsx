@@ -11,7 +11,7 @@ import { isActivePath, visibleNavItems } from "./nav-items";
 export function MainNav({ permissions, className }: { permissions: string[]; className?: string }) {
   const pathname = usePathname();
   return (
-    <nav aria-label="Main" className={cn("items-stretch gap-6 self-stretch", className)}>
+    <nav aria-label="Main" className={cn("items-stretch gap-3.5 self-stretch lg:gap-6", className)}>
       {visibleNavItems(permissions).map((item) => {
         const active = isActivePath(pathname, item.href);
         return (
@@ -20,13 +20,20 @@ export function MainNav({ permissions, className }: { permissions: string[]; cla
             href={item.href}
             aria-current={active ? "page" : undefined}
             className={cn(
-              "inline-flex items-center border-b-2 pt-0.5 text-[0.8125rem] tracking-[0.08em] uppercase transition-colors",
+              "inline-flex items-center border-b-2 pt-0.5 text-[0.8125rem] tracking-[0.05em] whitespace-nowrap uppercase transition-colors lg:tracking-[0.08em]",
               active
                 ? "border-primary-foreground text-primary-foreground"
                 : "border-transparent text-primary-foreground/65 hover:text-primary-foreground",
             )}
           >
-            {item.label}
+            {item.shortLabel ? (
+              <>
+                <span className="lg:hidden">{item.shortLabel}</span>
+                <span className="hidden lg:inline">{item.label}</span>
+              </>
+            ) : (
+              item.label
+            )}
           </Link>
         );
       })}

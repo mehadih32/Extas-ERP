@@ -1,4 +1,10 @@
-import type { ExpenseCategory, Party, PaymentMethod, Prisma } from "@prisma/client";
+import type {
+  ExpenseCategory,
+  Party,
+  PaymentMethod,
+  Prisma,
+  ProductionStatus,
+} from "@prisma/client";
 import type { z } from "zod";
 
 import { dayRange, toInstant } from "@/lib/dates";
@@ -8,6 +14,7 @@ import { nextDocumentNumber } from "@/lib/numbering";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
 import { lockRow } from "@/lib/row-lock";
+import { assertAllowed } from "@/lib/verdict";
 import { cashAccountFor } from "@/modules/accounts/cash-accounts";
 import { ensureControlAccounts } from "@/modules/accounts/control-accounts";
 import { postJournalEntry, reverseJournalEntry } from "@/modules/accounts/journal.service";
@@ -25,6 +32,7 @@ import {
   projectCostSummary,
   refreshProjectCosts,
 } from "@/modules/production/project-costs";
+import { canPayBill, canVoidBill } from "@/modules/production/rules";
 import {
   addProjectCostSchema,
   costHeadSchema,
@@ -329,8 +337,7 @@ export async function payBillTx(
     include: { supplier: { select: { id: true, name: true } } },
   });
   if (!bill) throw new AppError("NOT_FOUND", "Supplier bill not found.");
-  if (bill.status === "VOID") throw new AppError("CONFLICT", `${bill.number} is void.`);
-  if (bill.dueAmount.lte(0)) throw new AppError("CONFLICT", `${bill.number} is already paid.`);
+  assertAllowed(canPayBill(bill));
   const amount = money(input.amount);
   if (amount.gt(bill.dueAmount)) {
     throw new AppError("VALIDATION", `Only ${bill.dueAmount.toFixed(2)} is due on ${bill.number}.`);
@@ -421,6 +428,18 @@ export async function payBill(
  * paid on it stays on the supplier's ledger as an advance. Not possible once
  * the cost has moved into stock.
  */
+/** Each project's share of a bill, with what the project still holds in work in progress. */
+export function billShares(
+  allocations: Array<{ projectId: string | null; amount: Prisma.Decimal }>,
+  projects: Map<string, { code: string; status: ProductionStatus }>,
+  costs: Map<string, { wip: Prisma.Decimal }>,
+) {
+  return [...projects].map(([id, project]) => ({
+    project: { code: project.code, status: project.status, wip: costs.get(id)!.wip },
+    amount: allocations.filter((a) => a.projectId === id).reduce((s, a) => s.plus(a.amount), ZERO),
+  }));
+}
+
 export async function voidBill(
   ctx: CompanyContext,
   billId: string,
@@ -446,14 +465,10 @@ export async function voidBill(
       },
     });
     if (!bill) throw new AppError("NOT_FOUND", "Supplier bill not found.");
-    if (bill.status === "VOID") throw new AppError("CONFLICT", `${bill.number} is already void.`);
-    if (bill._count.items > 0) {
-      // Its goods are in the store: voiding has to take them back out (Raw materials).
-      throw new AppError(
-        "CONFLICT",
-        `${bill.number} is a raw material purchase; void it from Raw materials.`,
-      );
-    }
+    // A raw material purchase's goods are in the store: voiding has to take them back
+    // out, from Raw materials.
+    const state = { ...bill, itemCount: bill._count.items };
+    assertAllowed(canVoidBill(state, []));
     const projectIds = [
       ...new Set(bill.allocations.flatMap((a) => (a.projectId ? [a.projectId] : []))),
     ];
@@ -464,17 +479,7 @@ export async function voidBill(
       "its bills can no longer be voided",
     );
     const costs = await projectCostSummaries(tx, companyId, projectIds);
-    for (const projectId of projectIds) {
-      const share = bill.allocations
-        .filter((a) => a.projectId === projectId)
-        .reduce((s, a) => s.plus(a.amount), ZERO);
-      if (costs.get(projectId)!.wip.lt(share)) {
-        throw new AppError(
-          "CONFLICT",
-          `${projects.get(projectId)!.code} has already moved this bill's cost into stock, so the bill can no longer be voided.`,
-        );
-      }
-    }
+    assertAllowed(canVoidBill(state, billShares(bill.allocations, projects, costs)));
     if (bill.journalEntryId) {
       await reverseJournalEntry(tx, bill.journalEntryId, {
         description: `Void bill ${bill.number}: ${reason}`,

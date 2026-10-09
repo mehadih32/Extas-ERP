@@ -1,4 +1,4 @@
-import { Prisma, type StockGrade } from "@prisma/client";
+import { type IntakeStatus, Prisma, type ProductionStatus, type StockGrade } from "@prisma/client";
 import type { z } from "zod";
 
 import { AppError } from "@/lib/errors";
@@ -6,6 +6,7 @@ import { nextDocumentNumber } from "@/lib/numbering";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
 import { lockRow, lockRows } from "@/lib/row-lock";
+import { assertAllowed } from "@/lib/verdict";
 import { ensureControlAccounts } from "@/modules/accounts/control-accounts";
 import { postJournalEntry, reverseJournalEntry } from "@/modules/accounts/journal.service";
 import { auditInCompany } from "@/modules/audit/audit.service";
@@ -33,6 +34,7 @@ import {
   projectCostSummary,
 } from "@/modules/production/project-costs";
 import { completeProjectTx, reopenProjectTx } from "@/modules/production/project.service";
+import { canChangeDelivery, canReceiveGoods, canUndoDelivery } from "@/modules/production/rules";
 import {
   confirmIntakeSchema,
   createIntakeSchema,
@@ -58,21 +60,11 @@ type LineInput = { variantId: string; grade: StockGrade; quantity: number; unitC
 
 const DRAFT_STATUSES = ["DRAFT", "PARSED"] as const;
 
-function assertDraft(intake: { number: string; status: string }) {
-  if (!(DRAFT_STATUSES as readonly string[]).includes(intake.status)) {
-    throw new AppError("CONFLICT", `${intake.number} is already ${intake.status.toLowerCase()}.`);
-  }
-}
+const assertDraft = (intake: { number: string; status: IntakeStatus }) =>
+  assertAllowed(canChangeDelivery(intake));
 
-function assertCanReceive(project: { code: string; status: string }) {
-  if (project.status === "ACTIVE" || project.status === "ON_HOLD") return;
-  throw new AppError(
-    "CONFLICT",
-    project.status === "PLANNED"
-      ? `${project.code} has not started yet; start it first.`
-      : `${project.code} is ${project.status.toLowerCase()}; it cannot receive goods.`,
-  );
-}
+const assertCanReceive = (project: { code: string; status: ProductionStatus }) =>
+  assertAllowed(canReceiveGoods(project));
 
 async function resolveWarehouse(ctx: CompanyContext, warehouseId?: string) {
   if (!warehouseId) return getDefaultWarehouse(ctx);
@@ -646,7 +638,7 @@ export async function confirmIntake(
 // Undo: take a confirmed delivery back out of stock
 // =============================================================================
 
-const gradeLetter = (grade: StockGrade) => (grade === "A_GRADE" ? "A" : "B");
+const gradeLetter = (grade: StockGrade) => (grade === "A_GRADE" ? ("A" as const) : ("B" as const));
 
 /**
  * Undoes a confirmed delivery that was received by mistake or with the wrong
@@ -682,14 +674,7 @@ export async function reverseIntake(
         },
       });
       if (!intake) throw new AppError("NOT_FOUND", "Delivery not found.");
-      if (intake.status !== "CONFIRMED") {
-        throw new AppError(
-          "CONFLICT",
-          intake.status === "REVERSED"
-            ? `${intake.number} is already undone.`
-            : `${intake.number} is ${intake.status.toLowerCase()}; only a confirmed delivery can be undone.`,
-        );
-      }
+      assertAllowed(canUndoDelivery(intake));
       const { projectId, warehouseId } = intake;
       if (!projectId || !warehouseId) {
         throw new AppError(
@@ -701,12 +686,6 @@ export async function reverseIntake(
       const project = await tx.productionProject.findFirstOrThrow({
         where: { id: projectId, companyId },
       });
-      if (project.status === "CANCELLED") {
-        throw new AppError(
-          "CONFLICT",
-          `${project.code} is cancelled, so its deliveries can no longer be undone.`,
-        );
-      }
 
       // Every piece must still be in the warehouse, and A-grade ones not promised to orders.
       const variantIds = [...new Set(intake.lines.map((l) => l.variantId))];
@@ -719,22 +698,15 @@ export async function reverseIntake(
       );
       const freeFor = (l: { variantId: string; grade: StockGrade }) =>
         Math.max(free.get(gradeKey(l.variantId, l.grade)) ?? 0, 0);
-      const short = intake.lines.filter((l) => freeFor(l) < l.quantity);
-      if (short.length > 0) {
-        const list = short
-          .slice(0, 5)
-          .map(
-            (l) =>
-              `${l.variant.sku} ${gradeLetter(l.grade)}-grade (${freeFor(l)} of ${l.quantity} free)`,
-          )
-          .join(", ");
-        throw new AppError(
-          "CONFLICT",
-          `${intake.number} cannot be undone: some of its pieces were sold, are reserved for orders or went to bad stock — ${list}${
-            short.length > 5 ? ` and ${short.length - 5} more` : ""
-          }. Correct the difference with a stock count correction instead.`,
-        );
-      }
+      const short = intake.lines
+        .filter((l) => freeFor(l) < l.quantity)
+        .map((l) => ({
+          sku: l.variant.sku,
+          grade: gradeLetter(l.grade),
+          free: freeFor(l),
+          quantity: l.quantity,
+        }));
+      assertAllowed(canUndoDelivery(intake, project, short));
 
       // Take the pieces back out at the cost they came in at, restoring each grade's average.
       await lockRows(tx, "ProductVariant", variantIds);

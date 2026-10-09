@@ -1,4 +1,5 @@
 import {
+  FactoryIcon,
   HandshakeIcon,
   LayoutDashboardIcon,
   type LucideIcon,
@@ -32,6 +33,15 @@ export const NAV_ITEMS: readonly NavItem[] = [
     label: "Sales",
     icon: ReceiptTextIcon,
     anyOf: ["sales.view"],
+  },
+  {
+    // The production overview, projects, factory deliveries, supplier bills and
+    // cost heads (components/production/tabs.ts). The store team, who only
+    // receive goods, land on its Deliveries tab.
+    href: "/production",
+    label: "Production",
+    icon: FactoryIcon,
+    anyOf: ["production.view", "production.stock_intake"],
   },
   {
     // Styles and their stock matrix, stock counts, bad stock and the catalogue setup

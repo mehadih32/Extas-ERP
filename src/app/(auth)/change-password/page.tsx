@@ -25,7 +25,7 @@ export default async function ChangePasswordPage() {
           Back to the dashboard
         </Link>
       )}
-      <p className="eyebrow">{firstTime ? "Welcome to Extras ERP" : "Your account"}</p>
+      <p className="eyebrow">{firstTime ? "Welcome to Extas ERP" : "Your account"}</p>
       <h1 className="mt-3 font-serif text-4xl text-primary">
         {firstTime ? "Set your password" : "Change password"}
       </h1>

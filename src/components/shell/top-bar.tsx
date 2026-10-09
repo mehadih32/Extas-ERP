@@ -25,7 +25,7 @@ export function TopBar({
       <div className="mx-auto flex h-14 w-full max-w-7xl items-center gap-5 px-4 sm:px-6 md:h-16 lg:gap-8 lg:px-8">
         <Link
           href={ROUTES.home}
-          aria-label="Extras ERP, dashboard"
+          aria-label="Extas ERP, dashboard"
           className="rounded-sm outline-none focus-visible:ring-[3px] focus-visible:ring-primary-foreground/30"
         >
           <Wordmark />

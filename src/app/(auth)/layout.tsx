@@ -20,7 +20,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
           </p>
         </div>
         <p className="hidden text-xs tracking-wide text-primary-foreground/50 lg:block">
-          © {new Date().getFullYear()} Extras
+          © {new Date().getFullYear()} Extas ERP
         </p>
         <span
           aria-hidden

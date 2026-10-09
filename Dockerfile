@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-# Extras ERP server image (used by deploy/compose.yml; see deploy/README.md).
+# Extas ERP server image (used by deploy/compose.yml; see deploy/README.md).
 #   runner  the app: the Next.js standalone server, plus the PostgreSQL 16 client
 #           tools the daily backups run (pg_dump)
 #   tools   the whole project with its build tools, for database migrations and

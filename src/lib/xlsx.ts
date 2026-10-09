@@ -259,7 +259,7 @@ export function buildXlsx(sheets: XlsxSheet[], options: XlsxOptions = {}): Uint8
     `</cp:coreProperties>`;
   const app =
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n` +
-    `<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>Extras ERP</Application></Properties>`;
+    `<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>Extas ERP</Application></Properties>`;
   const filters = named
     .map((s, i) =>
       s.filter

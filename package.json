@@ -2,7 +2,7 @@
   "name": "extras-erp",
   "version": "0.1.0",
   "private": true,
-  "description": "Extras Enterprise ERP — multi-company apparel ERP (Next.js + PostgreSQL + Prisma)",
+  "description": "Extas Enterprise ERP — multi-company apparel ERP (Next.js + PostgreSQL + Prisma)",
   "engines": {
     "node": ">=20.9.0"
   },

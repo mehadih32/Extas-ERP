@@ -177,7 +177,7 @@ function ReviewDialog({
               ? nothing
                 ? `The ${count.length === 1 ? "SKU" : `${count.length} SKUs`} counted match the stock of ${where}. There is nothing to change.`
                 : `${where}: ${differing.length} ${differing.length === 1 ? "SKU differs" : "SKUs differ"} from the stock (${signed(totals.added, currency)} / ${signed(-totals.removed, currency)}). Missing pieces are booked as a loss; pieces found are added.`
-              : `Opening stock for ${where}: stock you held before starting with Extras ERP.`}
+              : `Opening stock for ${where}: stock you held before starting with Extas ERP.`}
           </DialogDescription>
         </DialogHeader>
         {!nothing && (
@@ -479,14 +479,14 @@ export function CountScreen({
           <EmptyState title="Choose a style to count">
             {counting
               ? "Its SKUs show with the pieces the stock says are on the shelf. Type what you count; only differences are saved."
-              : "Its SKUs show, ready for the pieces you held before starting with Extras ERP."}
+              : "Its SKUs show, ready for the pieces you held before starting with Extas ERP."}
           </EmptyState>
         ) : (
           <>
             <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">
               {counting
                 ? `Type the ${GRADE_LABELS[view.grade]} pieces you find for each SKU at ${sheet.warehouse.name}. Leave a box empty to skip it; only the SKUs that differ change.`
-                : `Type the ${GRADE_LABELS[view.grade]} pieces to add for each SKU at ${sheet.warehouse.name}. For stock held before starting with Extras ERP; deliveries from production come in through Production.`}
+                : `Type the ${GRADE_LABELS[view.grade]} pieces to add for each SKU at ${sheet.warehouse.name}. For stock held before starting with Extas ERP; deliveries from production come in through Production.`}
             </p>
             {rows.map((row) => (
               <fieldset key={row.color.id} className="rounded-lg border bg-card p-4 sm:p-5">

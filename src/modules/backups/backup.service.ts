@@ -37,7 +37,7 @@ import { uploadRoot } from "@/modules/files/file.service";
 
 const exec = promisify(execFile);
 const LONG_JOB = { timeout: 2 * 60 * 60 * 1000, maxBuffer: 10 * 1024 * 1024 };
-const DRIVE_FOLDER_NAME = "Extras ERP Backups";
+const DRIVE_FOLDER_NAME = "Extas ERP Backups";
 /** A run still "running" after this long was cut off (the server stopped). */
 const STALE_RUN_MS = 6 * 60 * 60 * 1000;
 
@@ -544,7 +544,7 @@ async function executeRun(run: BackupRun): Promise<BackupRun> {
       manifest,
       JSON.stringify(
         {
-          app: "Extras ERP",
+          app: "Extas ERP",
           format: 1,
           createdAt: run.startedAt.toISOString(),
           timezone: config.timezone,

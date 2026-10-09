@@ -779,8 +779,8 @@ export async function renderDocumentPdf(
       ),
       Author: pdfInfo(model.letterhead.name),
       Subject: pdfInfo(model.title || "Letterhead"),
-      Creator: "Extras ERP",
-      Producer: "Extras ERP",
+      Creator: "Extas ERP",
+      Producer: "Extas ERP",
     },
   });
   const done = collectPdf(doc);

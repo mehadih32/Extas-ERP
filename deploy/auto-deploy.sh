@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Updates Extras ERP to the newest code on GitHub's main branch and installs it
+# Updates Extas ERP to the newest code on GitHub's main branch and installs it
 # with deploy.sh. GitHub runs it after every merge into main, over SSH with the
 # key that setup-auto-deploy.sh made (see .github/workflows/deploy.yml). It can
 # also be run by hand:

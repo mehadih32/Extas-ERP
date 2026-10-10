@@ -21,7 +21,7 @@ import { switchCompanyAction } from "@/server/actions/auth.actions";
 import type { ShellCompany } from "./types";
 
 const triggerStyle =
-  "inline-flex h-9 max-w-[11rem] items-center gap-2 rounded-md border border-primary-foreground/20 px-2.5 text-sm text-primary-foreground transition-colors outline-none sm:max-w-[16rem] sm:px-3 md:max-w-[8.5rem] lg:max-w-[16rem]";
+  "inline-flex h-9 max-w-[11rem] min-w-0 items-center gap-2 rounded-md border border-primary-foreground/20 px-2.5 text-sm text-primary-foreground transition-colors outline-none sm:max-w-[16rem] sm:px-3 md:max-w-[8.5rem] lg:max-w-[16rem]";
 
 /**
  * The blueprint's multi-company switcher in the top bar. Switching re-checks

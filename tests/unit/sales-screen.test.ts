@@ -73,6 +73,8 @@ describe("the menu with Sales in it", () => {
       "/parties",
       "/hr",
       "/reports",
+      "/planner",
+      "/compliance",
       "/accounts/expenses",
       "/me",
       "/settings",
@@ -98,6 +100,8 @@ describe("the menu with Sales in it", () => {
       "/parties",
       "/hr",
       "/reports",
+      "/planner",
+      "/compliance",
       "/settings",
     ]);
     const seller = phoneTabs(visibleNavItems(["sales.view", "inventory.view", "parties.view"]));

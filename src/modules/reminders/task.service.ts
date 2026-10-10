@@ -3,12 +3,19 @@ import { type Prisma, type TaskStatus } from "@prisma/client";
 import { localDay, localTime, nextDay, startOfDayInZone, toInstant } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
 import { formatDay } from "@/lib/format";
+import { assertAllowed } from "@/lib/verdict";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { requireLinkedEmployee } from "@/modules/hr/access";
 import { isActiveMember } from "@/modules/reminders/audience";
+import {
+  canEditTask,
+  canSetMyTaskStatus,
+  canSetTaskStatus,
+  TASK_STATUS_WORDS as STATUS_WORDS,
+} from "@/modules/reminders/checks";
 import { sendInApp } from "@/modules/reminders/notification.service";
 import { settleAlerts } from "@/modules/reminders/reminder.service";
 import {
@@ -43,13 +50,6 @@ const taskInclude = {
 } satisfies Prisma.TaskInclude;
 
 type TaskRow = Prisma.TaskGetPayload<{ include: typeof taskInclude }>;
-
-const STATUS_WORDS: Record<TaskStatus, string> = {
-  TODO: "to do",
-  IN_PROGRESS: "in progress",
-  DONE: "done",
-  CANCELLED: "cancelled",
-};
 
 function dueParts(dueAt: Date | null, timeZone: string) {
   if (!dueAt) return { dueDay: null, dueTime: null };
@@ -210,12 +210,7 @@ export async function updateTask(
 ) {
   const input = updateTaskSchema.parse(raw);
   const task = await loadTask(ctx, taskId);
-  if (!OPEN.includes(task.status)) {
-    throw new AppError(
-      "CONFLICT",
-      `This task is ${STATUS_WORDS[task.status]}. Reopen it before changing it.`,
-    );
-  }
+  assertAllowed(canEditTask(task));
   await checkRefs(ctx, input);
   const tz = ctx.company.timezone;
   const reassigned = input.assigneeId !== undefined && input.assigneeId !== task.assigneeId;
@@ -258,9 +253,6 @@ async function changeStatus(
   meta: RequestMeta | undefined,
   now: Date,
 ) {
-  if (task.status === status) {
-    throw new AppError("CONFLICT", `This task is already ${STATUS_WORDS[status]}.`);
-  }
   const tz = ctx.company.timezone;
   return prisma.$transaction(async (tx) => {
     // Only the change from the status read above goes through (no double "done" messages).
@@ -327,7 +319,9 @@ export async function setTaskStatus(
   now: Date = new Date(),
 ) {
   const { status } = taskStatusSchema.parse(raw);
-  return changeStatus(ctx, await loadTask(ctx, taskId), status, meta, now);
+  const task = await loadTask(ctx, taskId);
+  assertAllowed(canSetTaskStatus(task, status));
+  return changeStatus(ctx, task, status, meta, now);
 }
 
 export async function deleteTask(ctx: CompanyContext, taskId: string, meta?: RequestMeta) {
@@ -441,8 +435,6 @@ export async function setMyTaskStatus(
     include: taskInclude,
   });
   if (!task) throw new AppError("NOT_FOUND", "Task not found.");
-  if (task.status === "CANCELLED") {
-    throw new AppError("CONFLICT", "This task was cancelled.");
-  }
+  assertAllowed(canSetMyTaskStatus(task, status));
   return changeStatus(ctx, task, status, meta, now);
 }

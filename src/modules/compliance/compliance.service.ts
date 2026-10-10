@@ -7,6 +7,7 @@ import { formatDay } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
 import { lockRow } from "@/lib/row-lock";
+import { assertAllowed } from "@/lib/verdict";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import {
@@ -15,6 +16,7 @@ import {
   renewComplianceSchema,
   updateComplianceSchema,
 } from "@/modules/compliance/schemas";
+import { canArchive, canDelete, canRenew, canRestore } from "@/modules/compliance/rules";
 import {
   COMPLIANCE_TYPE_LABELS,
   complianceStatus,
@@ -348,10 +350,7 @@ export async function renewCompliance(
 ) {
   const input = renewComplianceSchema.parse(raw);
   const old = await load(ctx, id);
-  if (old.supersededAt) {
-    throw new AppError("CONFLICT", "This term was already renewed; renew the newer record.");
-  }
-  if (old.archivedAt) throw new AppError("CONFLICT", "Restore this record before renewing it.");
+  assertAllowed(canRenew(old));
   const oldExpiry = dateOnly(old.expiryDate);
   if (oldExpiry && input.expiryDate <= oldExpiry) {
     throw new AppError(
@@ -411,7 +410,7 @@ export async function archiveCompliance(
   now = new Date(),
 ) {
   const doc = await load(ctx, id);
-  if (doc.archivedAt) throw new AppError("CONFLICT", "This record is already archived.");
+  assertAllowed(canArchive(doc));
   const updated = await prisma.$transaction(async (tx) => {
     const { count } = await tx.complianceDocument.updateMany({
       where: { id: doc.id, companyId: ctx.company.id, archivedAt: null },
@@ -443,7 +442,7 @@ export async function restoreCompliance(
   now = new Date(),
 ) {
   const doc = await load(ctx, id);
-  if (!doc.archivedAt) throw new AppError("CONFLICT", "This record is not archived.");
+  assertAllowed(canRestore(doc));
   const updated = await prisma.$transaction(async (tx) => {
     const row = await tx.complianceDocument.update({
       where: { id: doc.id },
@@ -472,9 +471,7 @@ export async function restoreCompliance(
  */
 export async function deleteCompliance(ctx: CompanyContext, id: string, meta?: RequestMeta) {
   const doc = await load(ctx, id);
-  if (doc.renewal) {
-    throw new AppError("CONFLICT", "This term was renewed; delete the newer record first.");
-  }
+  assertAllowed(canDelete(doc));
   const scan = await prisma.$transaction(async (tx) => {
     await lockRow(tx, "ComplianceDocument", doc.id);
     if (doc.previousId) {

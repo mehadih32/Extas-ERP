@@ -49,7 +49,14 @@ describe("Accounts in the menu, by role", () => {
     expect(tabs(role("ACCOUNTS"))).toEqual(all);
     const accounts = phoneTabs(visibleNavItems(role("ACCOUNTS")));
     expect(accounts.tabs.map((i) => i.href)).toEqual(["/", "/sales", "/production", "/accounts"]);
-    expect(accounts.more.map((i) => i.href)).toEqual(["/materials", "/parties", "/hr", "/reports"]);
+    expect(accounts.more.map((i) => i.href)).toEqual([
+      "/materials",
+      "/parties",
+      "/hr",
+      "/reports",
+      "/planner",
+      "/compliance",
+    ]);
   });
 
   it("folds the owner's last sections under More where the top bar is narrower", () => {
@@ -61,15 +68,17 @@ describe("Accounts in the menu, by role", () => {
       ["/", null],
       ["/sales", null],
       ["/production", null],
-      ["/accounts", null],
+      ["/accounts", "md"],
       ["/products", "md"],
       ["/materials", "lg"],
-      ["/parties", "lg"],
+      ["/parties", "all"],
       ["/hr", "all"],
       ["/reports", "all"],
+      ["/planner", "all"],
+      ["/compliance", "all"],
       ["/settings", "all"],
     ]);
-    expect(topBarFold(7)).toBe("all");
+    expect(topBarFold(6)).toBe("all");
   });
 
   it("hides the books, balances and reports from everyone else", () => {

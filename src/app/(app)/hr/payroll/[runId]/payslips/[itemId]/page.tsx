@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { SectionError } from "@/components/dashboard/section-error";
+import { PrintDocumentButton } from "@/components/documents/print-button";
 import { hrHref } from "@/components/hr/labels";
 import { SalariesNoAccess } from "@/components/hr/no-access";
 import { PayslipView } from "@/components/hr/payslip";
@@ -44,6 +45,15 @@ export default async function PayslipPage({
               {slip.employee.name}
             </Link>
           )}
+          <PrintDocumentButton
+            request={{ type: "PAYSLIP", id: itemId }}
+            label="PDF"
+            ready={{
+              eyebrow: "Payslip",
+              description: `${slip.employee.name}, ${slip.label}, on the company letterhead.`,
+              errorTitle: "We could not make the payslip PDF",
+            }}
+          />
           <PrintButton label="Print the payslip" />
         </div>
       </div>

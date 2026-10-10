@@ -17,6 +17,7 @@ import {
   TICK,
 } from "@/modules/documents/model";
 import type { PrintRequest } from "@/modules/documents/schemas";
+import { getPayslipByItem } from "@/modules/hr/payroll.service";
 import { getStatement } from "@/modules/parties/ledger.service";
 import {
   getChallanDocument,
@@ -1348,6 +1349,140 @@ export async function stockSheetDocument(
 // Blank letterhead pad
 // =============================================================================
 
+// =============================================================================
+// Payslips
+// =============================================================================
+
+/**
+ * A payslip on the letterhead: the employee, the month's attendance, earnings and
+ * deductions, and the take-home pay in figures and words, from the same data as
+ * the payslip on screen. A draft payroll's payslip carries a DRAFT watermark.
+ */
+export async function payslipDocument(ctx: CompanyContext, itemId: string): Promise<BuiltDocument> {
+  const slip = await getPayslipByItem(ctx, itemId);
+  const currency = ctx.company.currency;
+  const tz = ctx.company.timezone;
+  const e = slip.employee;
+  const a = slip.attendance;
+  const job = [e.designation, e.department].filter(Boolean).join(" · ");
+  const payTo =
+    e.salaryMethod === "BANK_TRANSFER" || e.salaryMethod === "CHEQUE"
+      ? [e.bankName, e.bankAccountNumber].filter(Boolean).join(" · ")
+      : e.salaryMethod === "BKASH" || e.salaryMethod === "NAGAD" || e.salaryMethod === "ROCKET"
+        ? (e.walletNumber ?? "")
+        : "";
+  const payment = slip.payment;
+  const paidLine =
+    payment.status === "PAID"
+      ? `Paid on ${formatInstantDay(payment.date, tz)} by ${PAYMENT_METHODS[payment.method]} (${payment.number}).`
+      : payment.status === "UNPAID"
+        ? "Not paid yet."
+        : "Draft: this payroll is not approved yet, so these figures may change.";
+
+  const model = base(ctx, "PAYSLIP", {
+    title: "Payslip",
+    subtitle: slip.label,
+    reference: `${e.code} · ${slip.month}`,
+    ...(payment.status === "PAID"
+      ? { stamp: { text: "PAID", tone: "success" as const } }
+      : payment.status === "DRAFT"
+        ? { stamp: { text: "DRAFT", tone: "danger" as const } }
+        : {}),
+    meta: [
+      { label: "Month", value: slip.label },
+      { label: "Employee code", value: e.code },
+    ],
+    parties: [
+      {
+        heading: "Employee",
+        lines: [
+          e.name,
+          ...(job ? [job] : []),
+          `Joined ${formatDay(e.joinDate!)}${e.exitDate ? ` · last day ${formatDay(e.exitDate)}` : ""}`,
+        ],
+      },
+      {
+        heading: "Salary",
+        lines: [
+          `Monthly salary ${money(slip.monthlySalary, currency)}`,
+          `Paid by ${PAYMENT_METHODS[e.salaryMethod]}`,
+          ...(payTo ? [payTo] : []),
+        ],
+      },
+    ],
+    blocks: [
+      {
+        kind: "figures",
+        figures: [
+          { label: "Working days", value: String(a.workingDays) },
+          { label: "Present", value: String(a.presentDays) },
+          { label: "Paid leave", value: String(a.paidLeaveDays) },
+          { label: "Unpaid leave", value: String(a.unpaidLeaveDays) },
+          { label: "Absent", value: String(a.absentDays) },
+          { label: "Late", value: String(a.lateDays) },
+          { label: "Unpaid days", value: String(a.unpaidDays) },
+          { label: "Overtime", value: `${a.overtimeHours} h` },
+        ],
+      },
+      {
+        kind: "table",
+        title: "Earnings",
+        columns: [
+          { label: "Earning", weight: 4 },
+          { label: `Amount (${currency})`, align: "right", weight: 1.6 },
+        ],
+        rows: [
+          ...slip.earnings.map((x) => ({ cells: [x.label, money(x.amount, currency)] })),
+          {
+            cells: ["Total earnings", money(slip.totalEarnings, currency)],
+            style: "subtotal" as const,
+          },
+        ],
+      },
+      {
+        kind: "table",
+        title: "Deductions",
+        columns: [
+          { label: "Deduction", weight: 4 },
+          { label: `Amount (${currency})`, align: "right", weight: 1.6 },
+        ],
+        rows: [
+          ...slip.deductions.map((x) => ({ cells: [x.label, money(x.amount, currency)] })),
+          {
+            cells: ["Total deductions", money(slip.totalDeductions, currency)],
+            style: "subtotal" as const,
+          },
+        ],
+      },
+      {
+        kind: "totals",
+        rows: [
+          { label: `Total earnings (${currency})`, value: money(slip.totalEarnings, currency) },
+          { label: `Total deductions (${currency})`, value: money(slip.totalDeductions, currency) },
+          {
+            label: `Take-home pay (${currency})`,
+            value: money(slip.netPay, currency),
+            strong: true,
+          },
+        ],
+        words: slip.netPayInWords,
+      },
+      { kind: "note", text: slip.note ? `${paidLine} ${slip.note}` : paidLine },
+    ],
+    signatures: ["Employee's signature", "Authorised signature"],
+  });
+  return {
+    model,
+    record: {
+      title: `Payslip ${slip.label}, ${e.name} (${e.code})`,
+      referenceType: "PayrollItem",
+      referenceId: itemId,
+      partyId: null,
+      options: { employeeId: e.id, month: slip.month },
+    },
+  };
+}
+
 export function letterheadDocument(ctx: CompanyContext): BuiltDocument {
   return {
     model: base(ctx, "LETTERHEAD", { title: "" }),
@@ -1381,6 +1516,8 @@ async function buildModel(
       return stockSheetDocument(ctx, input, now);
     case "LETTERHEAD":
       return letterheadDocument(ctx);
+    case "PAYSLIP":
+      return payslipDocument(ctx, input.id);
   }
 }
 

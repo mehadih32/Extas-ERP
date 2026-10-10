@@ -13,6 +13,7 @@ import { SalesNoAccess } from "@/components/sales/no-access";
 import { localDay } from "@/lib/dates";
 import { formatCount, formatDay } from "@/lib/display";
 import { getInvoiceScreenAction } from "@/server/actions/sales.actions";
+import { templateChoicesAction } from "@/server/actions/templates.actions";
 import { requireCompanyPage } from "@/server/pages/guards";
 
 export const metadata: Metadata = { title: "Invoice" };
@@ -25,7 +26,10 @@ export const metadata: Metadata = { title: "Invoice" };
 export default async function InvoicePage({ params }: { params: Promise<{ invoiceId: string }> }) {
   const ctx = await requireCompanyPage();
   const { invoiceId } = await params;
-  const result = await getInvoiceScreenAction(invoiceId);
+  const [result, templates] = await Promise.all([
+    getInvoiceScreenAction(invoiceId),
+    templateChoicesAction("COMMERCIAL_INVOICE"),
+  ]);
   if (!result.ok) {
     if (result.error.code === "NOT_FOUND") notFound();
     if (result.error.code === "FORBIDDEN") return <SalesNoAccess />;
@@ -70,6 +74,7 @@ export default async function InvoicePage({ params }: { params: Promise<{ invoic
           screen={screen}
           currency={currency}
           today={localDay(new Date(), ctx.company.timezone)}
+          templates={templates.ok ? templates.data : []}
         />
       </div>
 

@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { checkRateLimit } from "@/lib/rate-limit";
 import type { RequestMeta } from "@/lib/request-meta";
 import { toActionError } from "@/lib/result";
+import { assertAllowed } from "@/lib/verdict";
 import { PERIOD_PRESETS, resolvePeriod } from "@/modules/accounts/periods";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
@@ -30,6 +31,7 @@ import {
 } from "@/modules/reports/catalog";
 import { formatRange, type ReportDocument, reportFileName } from "@/modules/reports/document";
 import { EXCEL_MIME, renderExcel } from "@/modules/reports/render/excel";
+import { mayDeleteReport } from "@/modules/reports/rules";
 import { PDF_MIME, renderPdf } from "@/modules/reports/render/pdf";
 import {
   generateReportSchema,
@@ -199,6 +201,14 @@ function present(row: ExportRow) {
 }
 
 export type SavedReport = ReturnType<typeof present>;
+
+/** The signed-in person, for mayDeleteReport. */
+export function actingOn(ctx: CompanyContext) {
+  return {
+    userId: ctx.user.id,
+    isOwner: ctx.user.isSuperAdmin || ctx.role?.systemRole === "SUPER_ADMIN",
+  };
+}
 
 function mayOpen(ctx: CompanyContext, row: ExportRow): boolean {
   return mayOpenReport(ctx, {
@@ -389,16 +399,10 @@ export async function deleteReportExport(
 ) {
   const row = await loadExport(ctx, exportId);
   const own = row.requestedById === ctx.user.id;
-  const superAdmin = ctx.role?.systemRole === "SUPER_ADMIN" || ctx.user.isSuperAdmin;
   if (!own && !mayOpen(ctx, row)) {
     throw new AppError("FORBIDDEN", "This report shows figures your role cannot see.");
   }
-  if (!own && !superAdmin) {
-    throw new AppError(
-      "FORBIDDEN",
-      "Only the person who made this report, or a Super Admin, can delete it.",
-    );
-  }
+  assertAllowed(mayDeleteReport(actingOn(ctx), row));
   await prisma.$transaction(async (tx) => {
     await tx.reportExport.delete({ where: { id: row.id } });
     if (row.file)

@@ -4,8 +4,10 @@ import { BanknoteIcon, FileXIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { PrintDocumentButton } from "@/components/documents/print-button";
+import { UseTemplateButton } from "@/components/reports/use-template";
 import { FormAlert } from "@/components/forms/field";
 import { Button } from "@/components/ui/button";
+import type { TemplateChoice } from "@/modules/reports/screens.service";
 import type { InvoiceScreen } from "@/modules/sales/screens.service";
 import { voidInvoiceAction } from "@/server/actions/sales.actions";
 
@@ -22,10 +24,13 @@ export function InvoiceActions({
   screen,
   currency,
   today,
+  templates = [],
 }: {
   screen: InvoiceScreen;
   currency: string;
   today: string;
+  /** The company's own invoice designs this person may fill. */
+  templates?: TemplateChoice[];
 }) {
   const [open, setOpen] = useState<Open>(null);
   const [notice, setNotice] = useState<string>();
@@ -58,6 +63,14 @@ export function InvoiceActions({
                 description: `${inv.number} for ${inv.buyer.name}, on the company letterhead.`,
                 errorTitle: "We could not make the invoice PDF",
               }}
+            />
+          )}
+          {inv.status !== "VOID" && (
+            <UseTemplateButton
+              id={inv.id}
+              templates={templates}
+              what={`Invoice ${inv.number}`}
+              className="flex-1 sm:flex-none"
             />
           )}
           {can.void && (

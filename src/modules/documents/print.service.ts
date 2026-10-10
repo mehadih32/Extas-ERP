@@ -9,6 +9,7 @@ import type { RequestMeta } from "@/lib/request-meta";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { loadPrintLogo } from "@/modules/companies/logo.service";
+import { canSeeSalaries } from "@/modules/hr/access";
 import { buildDocument } from "@/modules/documents/builders";
 import {
   contentHash,
@@ -29,8 +30,8 @@ import type { PermissionKey } from "@/modules/rbac/permissions";
 /*
  * Printed documents: quotations, proforma and commercial invoices, packing
  * lists, delivery challans, money receipts, buyer / supplier statements, stock
- * availability sheets and the blank letterhead pad, made as PDFs on the company
- * letterhead (with its BIN and trade licence number) and kept.
+ * availability sheets, payslips and the blank letterhead pad, made as PDFs on
+ * the company letterhead (with its BIN and trade licence number) and kept.
  *
  * Every print reads the live data and hashes what would be printed (with the
  * logo and the layout version). When a kept PDF has the same hash, that copy is
@@ -40,8 +41,10 @@ import type { PermissionKey } from "@/modules/rbac/permissions";
  *
  * Who may print what follows who may see the data on screen: sales documents
  * need sales.view, statements parties.ledger.view, stock sheets inventory.view
- * and the blank pad documents.letterhead. Making a PDF and downloading one are
- * written to the activity log.
+ * and the blank pad documents.letterhead. Payslips print for the people who see
+ * salaries (hr/access.ts) and, through My HR, for the employee they belong to;
+ * the list of printed documents shows payslips only to the former. Making a PDF
+ * and downloading one are written to the activity log.
  */
 
 /** PDFs a person may make in a minute (each one reads the data and lays out pages). */
@@ -49,7 +52,13 @@ export const PRINT_PER_MINUTE = 30;
 
 export const PRINT_INFO: Record<
   PrintType,
-  { label: string; plural: string; permission: PermissionKey }
+  {
+    label: string;
+    plural: string;
+    permission: PermissionKey;
+    /** Who may print it, when that is more than holding `permission`. */
+    allowed?: (ctx: Pick<CompanyContext, "can">) => boolean;
+  }
 > = {
   QUOTATION: { label: "Quotation", plural: "quotations", permission: "sales.view" },
   PROFORMA_INVOICE: {
@@ -81,25 +90,68 @@ export const PRINT_INFO: Record<
     plural: "the blank letterhead",
     permission: "documents.letterhead",
   },
+  PAYSLIP: {
+    label: "Payslip",
+    plural: "payslips",
+    permission: "hr.payroll",
+    // HR, payroll and Accounts for anyone's; an employee for their own (checked per payslip).
+    allowed: (ctx) => canSeeSalaries(ctx) || ctx.can("portal.self"),
+  },
 };
 
 /** The permissions that open the documents API (any one of them). */
 export const PRINT_PERMISSIONS = [
-  ...new Set(Object.values(PRINT_INFO).map((info) => info.permission)),
+  ...new Set([
+    ...Object.values(PRINT_INFO).map((info) => info.permission),
+    // Payslips (PRINT_INFO.PAYSLIP.allowed).
+    "hr.manage",
+    "accounts.view",
+    "portal.self",
+  ]),
 ] as PermissionKey[];
 
+/** Whether this person may print (and see) documents of this type. */
+export function mayPrintType(ctx: Pick<CompanyContext, "can">, type: PrintType): boolean {
+  const info = PRINT_INFO[type];
+  return info.allowed ? info.allowed(ctx) : ctx.can(info.permission);
+}
+
 /** The documents this person may print and see. */
-export function printableTypes(ctx: CompanyContext): PrintType[] {
-  return PRINT_TYPES.filter((type) => ctx.can(PRINT_INFO[type].permission));
+export function printableTypes(ctx: Pick<CompanyContext, "can">): PrintType[] {
+  return PRINT_TYPES.filter((type) => mayPrintType(ctx, type));
+}
+
+/**
+ * The kinds of printed documents this person sees in the list of printed documents:
+ * the ones they may print, with payslips only for the people who see everyone's.
+ */
+export function archiveTypes(ctx: Pick<CompanyContext, "can">): PrintType[] {
+  return printableTypes(ctx).filter((type) => type !== "PAYSLIP" || canSeeSalaries(ctx));
 }
 
 export function assertMayPrint(ctx: CompanyContext, type: PrintType) {
-  if (!ctx.can(PRINT_INFO[type].permission)) {
+  if (!mayPrintType(ctx, type)) {
     throw new AppError(
       "FORBIDDEN",
       `You do not have permission to print ${PRINT_INFO[type].plural}.`,
     );
   }
+}
+
+/** A kept payslip opens for the people who see salaries, and for the employee it belongs to. */
+async function assertMayOpenPayslip(ctx: CompanyContext, row: DocumentRow) {
+  if (canSeeSalaries(ctx)) return;
+  const own = row.referenceId
+    ? await prisma.payrollItem.findFirst({
+        where: {
+          id: row.referenceId,
+          employee: { companyId: ctx.company.id, userId: ctx.user.id },
+          run: { companyId: ctx.company.id, status: { in: ["APPROVED", "PAID"] } },
+        },
+        select: { id: true },
+      })
+    : null;
+  if (!own) throw new AppError("NOT_FOUND", "Document not found.");
 }
 
 const isPrintType = (value: string): value is PrintType =>
@@ -261,8 +313,14 @@ export async function printDocument(
 /** Printed documents this person may see, newest first. */
 export async function listDocuments(ctx: CompanyContext, raw: unknown) {
   const input = listDocumentsSchema.parse(raw);
-  if (input.type) assertMayPrint(ctx, input.type);
-  const types = input.type ? [input.type] : printableTypes(ctx);
+  const allowed = archiveTypes(ctx);
+  if (input.type && !allowed.includes(input.type)) {
+    throw new AppError(
+      "FORBIDDEN",
+      `You do not have permission to see ${PRINT_INFO[input.type].plural}.`,
+    );
+  }
+  const types = input.type ? [input.type] : allowed;
   if (types.length === 0) {
     throw new AppError("FORBIDDEN", "You do not have permission to see printed documents.");
   }
@@ -294,6 +352,7 @@ async function loadDocument(ctx: CompanyContext, documentId: string): Promise<Do
     throw new AppError("NOT_FOUND", "Document not found.");
   }
   assertMayPrint(ctx, row.documentType);
+  if (row.documentType === "PAYSLIP") await assertMayOpenPayslip(ctx, row);
   return row;
 }
 

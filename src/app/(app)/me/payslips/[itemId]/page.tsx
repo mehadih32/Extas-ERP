@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
+import { PrintDocumentButton } from "@/components/documents/print-button";
 import { hrHref } from "@/components/hr/labels";
 import { MyHrProblem } from "@/components/hr/no-access";
 import { PayslipView } from "@/components/hr/payslip";
@@ -28,7 +29,18 @@ export default async function MyPayslipPage({ params }: { params: Promise<{ item
     <div className="grid gap-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between print:hidden">
         <BackLink href={hrHref.myPayslips}>All payslips</BackLink>
-        <PrintButton label="Print the payslip" />
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <PrintDocumentButton
+            request={{ type: "PAYSLIP", id: itemId }}
+            label="PDF"
+            ready={{
+              eyebrow: "Payslip",
+              description: `Your payslip for ${slip.label}, on the company letterhead.`,
+              errorTitle: "We could not make the payslip PDF",
+            }}
+          />
+          <PrintButton label="Print the payslip" />
+        </div>
       </div>
       <PayslipView slip={slip} />
     </div>

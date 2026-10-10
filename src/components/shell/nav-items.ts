@@ -1,5 +1,6 @@
 import {
   FactoryIcon,
+  FileTextIcon,
   HandshakeIcon,
   IdCardIcon,
   LandmarkIcon,
@@ -53,6 +54,28 @@ export const HR_KEYS: readonly PermissionKey[] = [
   "hr.payroll",
   "accounts.view",
   "accounts.payments.record",
+];
+
+/**
+ * The permissions that show printed documents: the print permissions of every
+ * kind of document, with payslips for the people who see salaries
+ * (documents/print.service.ts archiveTypes).
+ */
+export const DOCUMENT_KEYS: readonly PermissionKey[] = [
+  "sales.view",
+  "parties.ledger.view",
+  "inventory.view",
+  "documents.letterhead",
+  "hr.manage",
+  "hr.payroll",
+  "accounts.view",
+];
+
+/** The permissions that open Reports & documents: reports, printed documents and templates. */
+export const REPORTS_KEYS: readonly PermissionKey[] = [
+  "reports.export",
+  ...DOCUMENT_KEYS,
+  "templates.manage",
 ];
 
 export const NAV_ITEMS: readonly NavItem[] = [
@@ -114,6 +137,15 @@ export const NAV_ITEMS: readonly NavItem[] = [
     shortLabel: "HR",
     icon: UsersRoundIcon,
     anyOf: HR_KEYS,
+  },
+  {
+    // Reports made with the Report Builder, the PDFs printed from the app and the
+    // company's own document templates (components/reports/tabs.ts).
+    href: "/reports",
+    label: "Reports & documents",
+    shortLabel: "Reports",
+    icon: FileTextIcon,
+    anyOf: REPORTS_KEYS,
   },
   {
     // Everyone else who spends company money records their own expenses as

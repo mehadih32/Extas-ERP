@@ -20,6 +20,7 @@ export const PRINT_TYPES = [
   "LEDGER_STATEMENT",
   "STOCK_AVAILABILITY",
   "LETTERHEAD",
+  "PAYSLIP",
 ] as const;
 
 export type PrintType = (typeof PRINT_TYPES)[number];

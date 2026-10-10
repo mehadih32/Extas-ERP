@@ -24,6 +24,7 @@ import {
   assertCanApprovePayroll,
   assertCanRunPayroll,
   assertCanSeeSalaries,
+  canSeeSalaries,
   requireLinkedEmployee,
 } from "@/modules/hr/access";
 import {
@@ -1158,6 +1159,20 @@ export async function getPayslip(ctx: CompanyContext, runId: string, itemId: str
   const item = run.items.find((i) => i.id === itemId);
   if (!item) throw new AppError("NOT_FOUND", "Payslip not found.");
   return payslip(ctx, run, item);
+}
+
+/**
+ * A payslip by its payroll line alone (printing): any line for the people who see
+ * salaries, otherwise only the signed-in employee's own from an approved payroll.
+ */
+export async function getPayslipByItem(ctx: CompanyContext, itemId: string) {
+  if (!canSeeSalaries(ctx)) return myPayslip(ctx, itemId);
+  const item = await prisma.payrollItem.findFirst({
+    where: { id: itemId, run: { companyId: ctx.company.id } },
+    select: { runId: true },
+  });
+  if (!item) throw new AppError("NOT_FOUND", "Payslip not found.");
+  return getPayslip(ctx, item.runId, itemId);
 }
 
 /** The signed-in employee's payslips from approved payrolls, newest first. */

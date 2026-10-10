@@ -11,6 +11,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { PrintDocumentButton } from "@/components/documents/print-button";
+import { UseTemplateButton } from "@/components/reports/use-template";
 import { FormAlert } from "@/components/forms/field";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,6 +21,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import type { TemplateChoice } from "@/modules/reports/screens.service";
 import type { ProformaScreen } from "@/modules/sales/screens.service";
 import { cancelProformaAction } from "@/server/actions/sales.actions";
 
@@ -48,11 +50,14 @@ export function ProformaActions({
   currency,
   today,
   notice: initialNotice,
+  templates = [],
 }: {
   screen: ProformaScreen;
   currency: string;
   today: string;
   notice?: string;
+  /** The company's own proforma designs this person may fill. */
+  templates?: TemplateChoice[];
 }) {
   const [open, setOpen] = useState<Open>(null);
   const [notice, setNotice] = useState(initialNotice);
@@ -102,6 +107,12 @@ export function ProformaActions({
               description: `${p.number} for ${p.buyer.name}, asking for ${money(p.advanceAmount, currency)} in advance.`,
               errorTitle: "We could not make the proforma PDF",
             }}
+          />
+          <UseTemplateButton
+            id={p.id}
+            templates={templates}
+            what={`Proforma ${p.number}`}
+            className="flex-1 sm:flex-none"
           />
           {hasMenu && (
             <DropdownMenu>

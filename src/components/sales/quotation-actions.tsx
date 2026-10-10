@@ -14,6 +14,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { PrintDocumentButton } from "@/components/documents/print-button";
+import { UseTemplateButton } from "@/components/reports/use-template";
 import { ConfirmDialog } from "@/components/feedback/confirm-dialog";
 import { Field, FormAlert } from "@/components/forms/field";
 import { textOf } from "@/components/products/form-values";
@@ -27,6 +28,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import type { QuotationMark } from "@/modules/sales/rules";
+import type { TemplateChoice } from "@/modules/reports/screens.service";
 import type { QuotationScreen } from "@/modules/sales/screens.service";
 import {
   convertQuotationToProformaAction,
@@ -54,9 +56,12 @@ const MARKS: Record<QuotationMark, { label: string; icon: typeof SendIcon; done:
 export function QuotationActions({
   screen,
   notice: initialNotice,
+  templates = [],
 }: {
   screen: QuotationScreen;
   notice?: string;
+  /** The company's own quotation designs this person may fill. */
+  templates?: TemplateChoice[];
 }) {
   const router = useRouter();
   const [open, setOpen] = useState<Open>(null);
@@ -98,6 +103,12 @@ export function QuotationActions({
               description: `${q.number} for ${q.buyer.name}, on the company letterhead.`,
               errorTitle: "We could not make the quotation PDF",
             }}
+          />
+          <UseTemplateButton
+            id={q.id}
+            templates={templates}
+            what={`Quotation ${q.number}`}
+            className="flex-1 sm:flex-none"
           />
           {hasMenu && (
             <DropdownMenu>

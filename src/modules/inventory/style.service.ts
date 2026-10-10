@@ -19,7 +19,7 @@ import { stockTotalsByStyle } from "@/modules/inventory/stock.service";
 const styleInclude = {
   category: { select: { id: true, name: true } },
   brand: { select: { id: true, name: true } },
-  _count: { select: { variants: true } },
+  _count: { select: { variants: { where: { removedAt: null } } } },
 } as const;
 
 async function assertRefs(ctx: CompanyContext, categoryId?: string, brandId?: string | null) {

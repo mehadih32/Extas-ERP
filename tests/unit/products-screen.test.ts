@@ -6,7 +6,7 @@ import {
   badStockPeriodFrom,
   badStockSearch,
 } from "@/components/products/bad-stock-view";
-import { newSkuCount, parentChoices } from "@/components/products/catalog-helpers";
+import { matrixChange, parentChoices } from "@/components/products/catalog-helpers";
 import {
   countLines,
   countSearch,
@@ -180,10 +180,24 @@ describe("the catalogue forms", () => {
     expect(readAmount("2000000000")).toBe("invalid");
   });
 
-  it("count the SKUs that ticking colours and sizes makes", () => {
-    expect(newSkuCount(2, 4, 0)).toBe(8);
-    expect(newSkuCount(3, 4, 8)).toBe(4); // a new colour in the four sizes
-    expect(newSkuCount(2, 2, 4)).toBe(0);
+  it("count the SKUs that ticking and unticking colours and sizes adds and removes", () => {
+    const cells = ["a", "b"].flatMap((colorId) =>
+      ["s", "m"].map((sizeId) => ({ colorId, sizeId })),
+    );
+    const set = (...ids: string[]) => new Set(ids);
+    expect(matrixChange([], set("a", "b"), set("s", "m", "l", "xl"))).toEqual({
+      adding: 8,
+      removing: 0,
+    });
+    // A new colour in the two sizes.
+    expect(matrixChange(cells, set("a", "b", "c"), set("s", "m"))).toEqual({
+      adding: 2,
+      removing: 0,
+    });
+    // Size m unticked, size l ticked: a and b lose m and gain l.
+    expect(matrixChange(cells, set("a", "b"), set("s", "l"))).toEqual({ adding: 2, removing: 2 });
+    expect(matrixChange(cells, set("a"), set("s", "m"))).toEqual({ adding: 0, removing: 2 });
+    expect(matrixChange(cells, set("a", "b"), set("s", "m"))).toEqual({ adding: 0, removing: 0 });
   });
 
   it("offer quick-pick colours the colour form accepts, each once", () => {

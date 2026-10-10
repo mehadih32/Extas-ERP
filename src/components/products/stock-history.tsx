@@ -29,7 +29,7 @@ type Movement = MovementPage["items"][number];
 
 /**
  * Every change to a style's stock, newest first: what happened, to which SKU,
- * where, and who did it. What the pieces were worth shows only to people who see
+ * where, with which lot, and who did it. What the pieces were worth shows only to people who see
  * the financials (the server leaves it out for everyone else).
  */
 export function StockHistory({
@@ -78,13 +78,7 @@ export function StockHistory({
   }
 
   return (
-    <section aria-labelledby="history-heading" className="grid grid-cols-1 gap-4">
-      <div>
-        <h3 id="history-heading" className="font-serif text-xl text-primary">
-          Stock history
-        </h3>
-        <p className="mt-1 text-sm text-muted-foreground">Every piece in and out, newest first.</p>
-      </div>
+    <div className="grid grid-cols-1 gap-4">
       {items.length === 0 ? (
         <EmptyState title="No stock movements yet">
           Opening stock, deliveries from production, sales and counts show here.
@@ -117,8 +111,13 @@ export function StockHistory({
                     >
                       {signed(m.quantity, currency)}
                     </TableCell>
-                    <TableCell className="max-w-[16rem] whitespace-normal">
+                    <TableCell className="max-w-[16rem] min-w-[11rem] whitespace-normal">
                       <div>{what(m)}</div>
+                      {m.lot && (
+                        <div className="text-xs whitespace-nowrap text-muted-foreground">
+                          Lot {m.lot}
+                        </div>
+                      )}
                       {m.note && <div className="text-xs text-muted-foreground">{m.note}</div>}
                     </TableCell>
                     <TableCell className="text-muted-foreground">
@@ -140,6 +139,7 @@ export function StockHistory({
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="font-medium">{what(m)}</p>
+                    {m.lot && <p className="text-xs text-muted-foreground">Lot {m.lot}</p>}
                     <p className="truncate text-sm text-muted-foreground">
                       {sku(m)} · {m.variant.sku}
                     </p>
@@ -181,6 +181,6 @@ export function StockHistory({
         title="We could not load more of the history"
         onClose={() => setError(undefined)}
       />
-    </section>
+    </div>
   );
 }

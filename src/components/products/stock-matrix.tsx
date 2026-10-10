@@ -1,8 +1,12 @@
 "use client";
 
+import { ScanLineIcon, SheetIcon } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useOptimistic, useState, useTransition } from "react";
+import { useEffect, useOptimistic, useState, useTransition } from "react";
 
+import { IntegrationPendingButton } from "@/components/feedback/integration-pending";
+import { FormAlert } from "@/components/forms/field";
+import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { formatCount } from "@/lib/display";
@@ -10,6 +14,7 @@ import { cn } from "@/lib/utils";
 import type { StyleScreen } from "@/modules/inventory/screens.service";
 
 import { EmptyState, Swatch } from "./bits";
+import { BulkUpdateDialog } from "./bulk-update-dialog";
 import { SkuDialog } from "./sku-dialog";
 
 type Matrix = StyleScreen["matrix"];
@@ -75,8 +80,9 @@ function CellButton({
  * A style's stock matrix (blueprint: rows are colours with their swatch, columns
  * are sizes): the pieces ready to sell in each SKU, A-grade less those set aside
  * for orders, in one warehouse or all of them. Cells below the company's low
- * stock level are red. A cell opens its SKU. On phones the colour column stays
- * put while the sizes scroll sideways.
+ * stock level are red. A cell opens its SKU; inventory.manage also gets the Bulk
+ * update grid for every SKU at once. On phones the colour column stays put while
+ * the sizes scroll sideways.
  */
 export function StockMatrix({
   screen,
@@ -97,6 +103,8 @@ export function StockMatrix({
   const [shownWarehouse, setShownWarehouse] = useOptimistic(warehouseId ?? "");
   const known = matrix.rows.some((r) => r.cells.some((c) => c?.variantId === openSku));
   const [selected, setSelected] = useState<string | null>(known ? openSku! : null);
+  const [bulk, setBulk] = useState(false);
+  const [notice, setNotice] = useState<string>();
   const count = (n: number) => formatCount(n, currency);
   const sizeName = new Map(matrix.sizes.map((s) => [s.id, s.name]));
 
@@ -111,6 +119,12 @@ export function StockMatrix({
       router.replace(`${pathname}${query ? `?${query}` : ""}`, { scroll: false });
     });
   }
+
+  useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(() => setNotice(undefined), 10_000);
+    return () => clearTimeout(timer);
+  }, [notice]);
 
   function close() {
     setSelected(null);
@@ -155,6 +169,26 @@ export function StockMatrix({
           </div>
         )}
       </div>
+
+      {screen.can.manage && matrix.rows.length > 0 && (
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full sm:w-auto"
+            onClick={() => setBulk(true)}
+          >
+            <SheetIcon aria-hidden />
+            Bulk update
+          </Button>
+          <IntegrationPendingButton icon={ScanLineIcon} label="Upload packing list (AI scan)">
+            Reading a factory packing list with AI comes with the integrations, which are on hold
+            for now. Until then, type the pieces into Bulk update, or receive the delivery from its
+            production project.
+          </IntegrationPendingButton>
+        </div>
+      )}
+      {notice && <FormAlert tone="success">{notice}</FormAlert>}
 
       {matrix.rows.length === 0 ? (
         <EmptyState title="No colours or sizes yet">
@@ -264,6 +298,17 @@ export function StockMatrix({
         </div>
       )}
 
+      {bulk && (
+        <BulkUpdateDialog
+          screen={screen}
+          currency={currency}
+          onClose={() => setBulk(false)}
+          onSaved={(text) => {
+            setBulk(false);
+            setNotice(text);
+          }}
+        />
+      )}
       {selected && (
         <SkuDialog
           variantId={selected}

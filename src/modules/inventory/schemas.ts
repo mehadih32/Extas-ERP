@@ -80,6 +80,14 @@ export const listStylesSchema = z.object({
 /** Archive several styles at once (the "no stock for 6 months" hint). */
 export const archiveStylesSchema = z.object({ styleIds: z.array(id).min(1).max(200) });
 
+/** A style's inward batches (lots), newest first. */
+export const lotsQuerySchema = z.object({
+  styleId: id,
+  warehouseId: id.optional(),
+  cursor: id.optional(),
+  take: z.coerce.number().int().min(1).max(100).optional(),
+});
+
 // --- Matrix & variants -----------------------------------------------------------
 export const generateMatrixSchema = z.object({
   colorIds: z.array(id).min(1).max(50),
@@ -169,13 +177,14 @@ export const movementsQuerySchema = z.object({
   take: z.coerce.number().int().min(1).max(200).optional(),
 });
 
-const uniqueSkus = (lines: Array<{ variantId: string }>) =>
-  new Set(lines.map((l) => l.variantId)).size === lines.length;
+const uniqueSkus = (lines: Array<{ variantId: string; grade?: StockGrade }>) =>
+  new Set(lines.map((l) => `${l.variantId}:${l.grade ?? ""}`)).size === lines.length;
 
 /**
  * A stock count (the pieces found on the shelf, against the pieces the screen
  * showed when counting began) or opening stock (pieces to add, at one cost each)
- * for several SKUs at one warehouse and grade.
+ * for several SKUs at one warehouse and grade (a count's lines may each name
+ * their own grade).
  */
 export const stockCountSchema = z.discriminatedUnion("mode", [
   z.object({
@@ -187,6 +196,8 @@ export const stockCountSchema = z.discriminatedUnion("mode", [
       .array(
         z.object({
           variantId: id,
+          /** This line's own grade (the Bulk update grid counts both); else the count's. */
+          grade: z.enum(StockGrade).optional(),
           counted: z
             .number("Enter the pieces counted")
             .int("Enter whole pieces")
@@ -196,8 +207,8 @@ export const stockCountSchema = z.discriminatedUnion("mode", [
         }),
       )
       .min(1, "Count at least one SKU")
-      .max(500)
-      .refine(uniqueSkus, "Each SKU can appear once"),
+      .max(1000)
+      .refine(uniqueSkus, "Each SKU can appear once in each grade"),
   }),
   z.object({
     mode: z.literal("OPENING"),

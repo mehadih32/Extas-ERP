@@ -73,10 +73,12 @@ import {
   getStyleScreenAction,
   getVariantDetailsAction,
   listBadStockAction,
+  listStockLotsAction,
   listStockMovementsAction,
   lookupVariantAction,
   moveToBadStockAction,
   recordStockCountAction,
+  setMatrixAction,
   updateBrandAction,
   updateCategoryAction,
   updateColorAction,
@@ -633,4 +635,233 @@ run("Products screens", () => {
     expect(polos.name).toBe("Polo Shirts");
     expect(polos.parentId).not.toBeNull();
   });
+
+  it("locks colours and sizes that hold stock, and takes the empty ones off the matrix", async () => {
+    const env = await shop();
+    const sku = (code: string) =>
+      prisma.productVariant.findFirstOrThrow({ where: { sku: `EX-PL-001-${code}` } });
+    // White M had stock once (it has history); White L is on a made-to-order pre-order.
+    const whiteM = await sku("WHITE-M");
+    const whiteL = await sku("WHITE-L");
+    await stock.recordStockCount(env.owner, {
+      mode: "OPENING",
+      lines: [{ variantId: whiteM.id, quantity: 3 }],
+    });
+    await stock.recordStockCount(env.owner, {
+      mode: "COUNT",
+      lines: [{ variantId: whiteM.id, counted: 0, expected: 3 }],
+    });
+    const buyer = (await parties.createParty(env.owner, { kind: "BUYER", name: "Shop One" })).party;
+    await orders.createOrder(env.owner, {
+      channel: "B2B_PREORDER",
+      partyId: buyer.id,
+      lines: [{ variantId: whiteL.id, quantity: 5 }],
+      forceOverride: { reason: "Made to order" },
+      documents: { invoice: false },
+    });
+
+    await as(env, "store");
+    const screen = data(await getStyleScreenAction(env.polo.id), "screen");
+    const color = Object.fromEntries(screen.matrix.rows.map((r) => [r.color.name, r.color.id]));
+    const size = Object.fromEntries(screen.matrix.sizes.map((s) => [s.name, s.id]));
+    expect(screen.locks).toEqual({
+      colors: {
+        [color.Navy!]: { pieces: 8, inUse: false },
+        [color.White!]: { pieces: 0, inUse: true },
+      },
+      sizes: {
+        [size.S!]: { pieces: 8, inUse: false },
+        [size.L!]: { pieces: 0, inUse: true },
+      },
+    });
+    const both = [color.Navy!, color.White!];
+
+    // Unticking Navy (8 pieces) or L (on an order) is refused, and nothing changes.
+    for (const ticked of [
+      { colorIds: [color.White!], sizeIds: Object.values(size) },
+      { colorIds: both, sizeIds: [size.S!, size.M!, size.XL!] },
+    ]) {
+      const refused = await setMatrixAction(env.polo.id, ticked);
+      expect(refused.ok ? "saved" : refused.error.message).toMatch(
+        /still (has|have) stock or open orders/,
+      );
+    }
+    expect(await prisma.productVariant.count({ where: { styleId: env.polo.id } })).toBe(8);
+
+    // M and XL leave: White M has history, so it is kept off the matrix; the rest go.
+    expect(
+      data(
+        await setMatrixAction(env.polo.id, { colorIds: both, sizeIds: [size.S!, size.L!] }),
+        "untick",
+      ),
+    ).toEqual({ created: 0, restored: 0, removed: 4 });
+    const left = await prisma.productVariant.findMany({
+      where: { styleId: env.polo.id },
+      orderBy: { sku: "asc" },
+    });
+    expect(left.map((v) => [v.sku, v.isActive, v.removedAt !== null])).toEqual([
+      ["EX-PL-001-NAVY-L", true, false],
+      ["EX-PL-001-NAVY-S", true, false],
+      ["EX-PL-001-WHITE-L", true, false],
+      ["EX-PL-001-WHITE-M", false, true],
+      ["EX-PL-001-WHITE-S", true, false],
+    ]);
+    const after = data(await getStyleScreenAction(env.polo.id), "after");
+    expect(after.matrix.sizes.map((s) => s.name)).toEqual(["S", "L"]);
+    expect(after.style.variantCount).toBe(4);
+    const sheet = data(await getStockCountSheetAction({ styleId: env.polo.id }), "sheet");
+    expect(sheet.sheet!.sizes.map((s) => s.name)).toEqual(["S", "L"]);
+    // Its history stays, but it takes no stock while it is off the matrix.
+    const history = data(await listStockMovementsAction({ styleId: env.polo.id }), "history");
+    expect(history.items.filter((m) => m.variant.sku === "EX-PL-001-WHITE-M")).toHaveLength(2);
+    const blocked = await recordStockCountAction({
+      mode: "OPENING",
+      lines: [{ variantId: whiteM.id, quantity: 1 }],
+    });
+    expect(blocked.ok ? "saved" : blocked.error.message).toMatch(/taken off its style's matrix/);
+
+    // Ticking M again brings White M back as it was and makes Navy M afresh.
+    expect(
+      data(
+        await setMatrixAction(env.polo.id, {
+          colorIds: both,
+          sizeIds: [size.S!, size.M!, size.L!],
+        }),
+        "tick again",
+      ),
+    ).toEqual({ created: 1, restored: 1, removed: 0 });
+    const back = await prisma.productVariant.findUniqueOrThrow({ where: { id: whiteM.id } });
+    expect([back.isActive, back.removedAt]).toEqual([true, null]);
+    expect(data(await getStyleScreenAction(env.polo.id), "back").style.variantCount).toBe(6);
+
+    // Only people who manage the stock change the matrix, or see its locks.
+    await as(env, "sales");
+    const denied = await setMatrixAction(env.polo.id, { colorIds: both, sizeIds: [size.S!] });
+    expect(denied.ok ? "saved" : denied.error.code).toBe("FORBIDDEN");
+    expect(data(await getStyleScreenAction(env.polo.id), "sales").locks).toEqual({
+      colors: {},
+      sizes: {},
+    });
+  }, 60_000);
+
+  it("updates good and B-grade stock of many SKUs in one go, or not at all", async () => {
+    const env = await shop();
+    const navyM = await prisma.productVariant.findFirstOrThrow({
+      where: { sku: "EX-PL-001-NAVY-M" },
+    });
+    await as(env, "store");
+    const lines = [
+      { variantId: env.navyS.id, grade: "A_GRADE", counted: 6, expected: 8 },
+      { variantId: env.navyS.id, grade: "B_GRADE", counted: 2, expected: 0 },
+      { variantId: navyM.id, grade: "B_GRADE", counted: 4, expected: 0 },
+      { variantId: navyM.id, grade: "A_GRADE", counted: 0, expected: 0 },
+    ];
+    expect(
+      data(await recordStockCountAction({ mode: "COUNT", note: "Bulk", lines }), "bulk"),
+    ).toEqual({ changed: 3, added: 6, removed: 2 });
+    const screen = data(await getStyleScreenAction(env.polo.id), "screen");
+    const [s, m] = screen.matrix.rows[0]!.cells;
+    expect([s!.aGrade, s!.bGrade, m!.aGrade, m!.bGrade]).toEqual([6, 2, 0, 4]);
+    const audit = await prisma.auditLog.findFirst({
+      where: { action: "STOCK_ADJUSTMENT" },
+      orderBy: { createdAt: "desc" },
+    });
+    expect(audit?.summary).toBe(
+      "Stock count at Main Warehouse (A and B-grade): 3 SKU(s), +6 / -2 (Bulk)",
+    );
+
+    // Saved again, the grid is stale: nothing changes, not even the boxes that still match.
+    const stale = await recordStockCountAction({
+      mode: "COUNT",
+      lines: [
+        { variantId: navyM.id, grade: "A_GRADE", counted: 5, expected: 0 },
+        { variantId: env.navyS.id, grade: "B_GRADE", counted: 9, expected: 0 },
+      ],
+    });
+    expect(stale.ok ? "saved" : stale.error.message).toMatch(
+      /Stock changed while you were counting \(EX-PL-001-NAVY-S\)/,
+    );
+    const still = data(await getStyleScreenAction(env.polo.id), "still").matrix.rows[0]!.cells[1]!;
+    expect(still.aGrade).toBe(0);
+
+    // A SKU appears once in each grade.
+    const twice = await recordStockCountAction({
+      mode: "COUNT",
+      lines: [
+        { variantId: navyM.id, grade: "A_GRADE", counted: 1, expected: 0 },
+        { variantId: navyM.id, grade: "A_GRADE", counted: 2, expected: 0 },
+      ],
+    });
+    expect(twice.ok ? "saved" : twice.error.code).toBe("VALIDATION");
+
+    await as(env, "sales");
+    const denied = await recordStockCountAction({ mode: "COUNT", lines });
+    expect(denied.ok ? "saved" : denied.error.code).toBe("FORBIDDEN");
+  }, 30_000);
+
+  it("numbers each inward batch by itself and shows its costs only to people who see them", async () => {
+    const env = await shop();
+    const whiteS = await prisma.productVariant.findFirstOrThrow({
+      where: { sku: "EX-PL-001-WHITE-S" },
+    });
+    const teeS = await prisma.productVariant.findFirstOrThrow({ where: { styleId: env.tee.id } });
+    // Two styles at once: a lot each. A count correction is not a batch.
+    await stock.recordStockCount(env.owner, {
+      mode: "OPENING",
+      unitCost: 250,
+      lines: [
+        { variantId: whiteS.id, quantity: 5 },
+        { variantId: teeS.id, quantity: 7 },
+      ],
+    });
+    await stock.recordStockCount(env.owner, {
+      mode: "COUNT",
+      grade: "B_GRADE",
+      lines: [{ variantId: whiteS.id, counted: 1, expected: 0 }],
+    });
+    const year = new Date().getFullYear();
+    const lots = await prisma.stockLot.findMany({ orderBy: { number: "asc" } });
+    expect(lots.map((l) => [l.number, l.styleId, l.source])).toEqual([
+      [`LOT-${year}-00001`, env.polo.id, "OPENING"],
+      [`LOT-${year}-00002`, env.polo.id, "OPENING"],
+      [`LOT-${year}-00003`, env.tee.id, "OPENING"],
+    ]);
+
+    await as(env, "owner");
+    const page = data(await listStockLotsAction({ styleId: env.polo.id }), "lots");
+    expect(
+      page.items.map((l) => [l.number, l.fresh, l.bGrade, l.unitCost, l.value, l.delivery]),
+    ).toEqual([
+      [`LOT-${year}-00002`, 5, 0, { fresh: "250.00", bGrade: null }, "1250.00", null],
+      [`LOT-${year}-00001`, 10, 0, { fresh: "400.00", bGrade: null }, "4000.00", null],
+    ]);
+    const movements = data(await listStockMovementsAction({ styleId: env.polo.id }), "moves");
+    expect(movements.items.map((m) => [m.type, m.lot])).toEqual([
+      ["ADJUSTMENT", null],
+      ["OPENING", `LOT-${year}-00002`],
+      ["BAD_STOCK_OUT", null],
+      ["OPENING", `LOT-${year}-00001`],
+    ]);
+    // Paged, newest first.
+    const first = data(await listStockLotsAction({ styleId: env.polo.id, take: 1 }), "first");
+    const next = data(
+      await listStockLotsAction({ styleId: env.polo.id, take: 1, cursor: first.nextCursor }),
+      "next",
+    );
+    expect([...first.items, ...next.items].map((l) => l.number)).toEqual([
+      `LOT-${year}-00002`,
+      `LOT-${year}-00001`,
+    ]);
+    expect(next.nextCursor).toBeUndefined();
+
+    for (const who of ["store", "sales", "production"] as const) {
+      const ctx = await as(env, who);
+      const seen = data(await listStockLotsAction({ styleId: env.polo.id }), who).items[0]!;
+      expect(seen.unitCost.fresh !== null, who).toBe(canSeeFinancials(ctx));
+      expect(seen.value !== null, who).toBe(canSeeFinancials(ctx));
+    }
+    await as(env, "employee");
+    const denied = await listStockLotsAction({ styleId: env.polo.id });
+    expect(denied.ok ? "listed" : denied.error.code).toBe("FORBIDDEN");
+  }, 30_000);
 });

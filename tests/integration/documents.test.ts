@@ -728,7 +728,7 @@ run("printed documents", () => {
     );
   });
 
-  it("shows sellable pieces on the stock sheet, without prices", async () => {
+  it("shows the total stock (good and B-grade) on the stock sheet, without prices", async () => {
     const env = await setup();
     await sellPolo(env); // sets aside Navy 2 / 4 / 4 / 2
     await matrix.updateVariant(env.ctx, env.sku("White", "XL"), { isActive: false });
@@ -747,6 +747,31 @@ run("printed documents", () => {
     expect(sheet.model.subtitle).toBe("Brand: Extras Men · 58 pieces");
     expect(notes(sheet.model)).toContain("1 style with nothing in stock is left out.");
     expect(printedText(sheet.model)).not.toMatch(/\d\.\d{2}|900|1450|1,450/);
+
+    // B-grade pieces join the one total; pieces moved to bad stock leave it.
+    await stock.adjustStock(env.ctx, {
+      variantId: env.sku("Navy", "S"),
+      grade: "B_GRADE",
+      quantity: 3,
+      type: "OPENING",
+      unitCost: 300,
+    });
+    await stock.moveToBadStock(env.ctx, {
+      variantId: env.sku("White", "S"),
+      quantity: 4,
+      source: "WAREHOUSE_DAMAGE",
+      reason: "Torn",
+    });
+    const graded = await build(env.ctx, { type: "STOCK_AVAILABILITY", brandId: env.brand.id });
+    expect(tables(graded.model)[0]!.rows.map((r) => r.cells)).toEqual([
+      ["Navy", "11", "6", "6", "8", "31"],
+      ["White", "6", "10", "10", "–", "26"],
+      ["Total", "17", "16", "16", "8", "57"],
+    ]);
+    expect(graded.model.subtitle).toBe("Brand: Extras Men · 57 pieces");
+    expect(notes(graded.model).join(" ")).toMatch(
+      /B-grade pieces together\. Damaged and QC-rejected pieces are not counted\./,
+    );
 
     // Asked for: empty styles too.
     const all = await build(env.ctx, {

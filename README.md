@@ -117,11 +117,20 @@ Built one module at a time, each in its own pull request. So far:
     for people who see sales (units sold and revenue after discounts, invoiced orders only,
     split into wholesale with B2B pre-orders and retail), its **stock matrix** (colours down,
     sizes across, all warehouses or one; red below the low stock level) and its stock
-    history. A matrix cell opens its SKU: prices, barcode and stock in each warehouse, and for
+    history in two tabs: **Inward batches**, a timeline of each lot that came in (its
+    automatic lot number, where it came from with links to the delivery, project and
+    supplier, fresh and B-grade pieces and, for people who see the financials, the cost a
+    piece; an undone delivery's lot is marked Undone) and **All movements**, each with its lot.
+    A matrix cell opens its SKU: prices, barcode and stock in each warehouse, and for
     managers editing the SKU (barcode, own prices, offered for sale), correcting its stock and
-    moving pieces to bad stock. Managers also add styles, add colours or sizes to a style
-    (making its SKUs; long names wrap), edit and archive it, and delete a style that has no
-    history yet.
+    moving pieces to bad stock. Managers also get **Bulk update**, a spreadsheet-style grid of
+    every colour and size with a Good and a B-grade box each, filled with the shelf numbers of
+    one warehouse (Tab or Enter moves on), saved at once as a stock count, and an "Upload
+    packing list (AI scan)" button that says Integration Pending for now. Managers add styles,
+    tick and untick a style's colours and sizes (making its SKUs; long names wrap; a colour or
+    size whose SKUs hold stock in any warehouse, or are on an open order or delivery, is locked
+    with its pieces shown), edit and archive it, and delete a style that has no history yet.
+    The stock sheet (PDF) sits beside a "Share to WhatsApp" button (Integration Pending).
   - **Archived styles**: the archived styles, filtered the same way, each with a one-tap
     **Unarchive**. Archived styles stay out of the sales and production pickers but keep
     their stock and history and stay in every report.
@@ -818,6 +827,21 @@ never pull down the cost of first-quality stock. Stock coming in re-weights only
 cost; corrections, bad stock, deliveries and the stock value all use the grade's own cost. Bad
 stock records the loss at that cost.
 
+**Lots.** Every inward batch is a `StockLot`, numbered `LOT-2026-00001` by itself (document
+type `STOCK_LOT`): one per style for each opening stock entry and each confirmed production
+delivery (linked to its `StockIntake`, so its project and factory follow). Its pieces, grades
+and costs are the stock movements that name it (`StockMovement.lotId`), so a lot never
+disagrees with the stock; an undone delivery's movements name the same lot. Costing stays
+weighted average. The migration gave the existing opening stock and deliveries their lots
+and carried the numbering on from them.
+
+**Taking colours and sizes off.** Unticking a colour or size removes its SKUs only when none
+holds stock in any warehouse or grade and none is on an open sales order or an unconfirmed
+delivery; otherwise nothing changes. A SKU with no history is deleted; one with history gets
+`removedAt` (and stops being offered for sale), leaves the matrix, the count sheet and the
+stock sheet, keeps its history in the reports, takes no stock, and comes back when its colour
+and size are ticked again.
+
 | Endpoint                                                                | Purpose                                                 |
 | ----------------------------------------------------------------------- | ------------------------------------------------------- |
 | `GET /api/inventory/tree`                                               | Category → Brand → Style navigation                     |
@@ -826,16 +850,17 @@ stock records the loss at that cost.
 | `GET/POST /api/inventory/colors`, `PATCH/DELETE …/:id`                  | Colors with hex codes (matrix rows)                     |
 | `GET/POST /api/inventory/sizes`, `PATCH/DELETE …/:id`, `POST …/reorder` | Sizes (matrix columns)                                  |
 | `GET/POST /api/inventory/styles`, `GET/PATCH/DELETE …/:id`              | Styles; filter by category, brand, search, `archived=1` |
-| `GET/POST /api/inventory/styles/:id/matrix`                             | Matrix with live stock / create missing SKUs            |
+| `GET/POST/PUT /api/inventory/styles/:id/matrix`                         | Matrix / create missing SKUs / set colours and sizes    |
 | `GET/PATCH /api/inventory/variants/:id`                                 | SKU with stock per warehouse / price, barcode, on sale  |
 | `GET /api/inventory/lookup?code=`                                       | Find a SKU by barcode or SKU                            |
 | `GET/POST /api/inventory/ratio-presets`, `PATCH/DELETE …/:id`           | Saved size ratios                                       |
 | `POST /api/inventory/ratio-fill`                                        | Ratio Fill quantities (packs or total, capped to stock) |
 | `GET/POST /api/inventory/warehouses`                                    | Warehouses                                              |
 | `POST /api/inventory/stock/adjust`                                      | Opening stock or +/- correction                         |
-| `POST /api/inventory/stock/count`                                       | Stock count (only differences) or opening stock         |
+| `POST /api/inventory/stock/count`                                       | Stock count (lines may each name a grade) or opening    |
 | `GET/POST /api/inventory/stock/bad-stock`                               | Bad stock entries / move to Bad Stock (inventory loss)  |
-| `GET /api/inventory/stock/movements`                                    | Stock history                                           |
+| `GET /api/inventory/stock/movements`                                    | Stock history (each movement with its lot)              |
+| `GET /api/inventory/stock/lots?styleId=`                                | A style's inward batches (lots), newest first           |
 | `GET /api/inventory/stock/summary`                                      | Stock value, low / highest / slow stock, top sellers    |
 
 Reads need `inventory.view`; changes need `inventory.manage`. Costs (average costs, movement
@@ -1503,13 +1528,15 @@ receipt, payslip and bank statement endpoints) carries them as `bin` and `tradeL
 | Statement of account  | Opening balance, debits, credits and closing balance (Dr / Cr), then every transaction with the running balance, any period | `parties.ledger.view`  |
 | Buyer 360° profile    | Sales, average order, outstanding, overdue, gross profit, top styles, and every order, quotation, payment and production    | `parties.view`         |
 | Supplier 360° profile | Due to them, billed and paid, active and completed projects with their settlements, deliveries, orders, bills and payments  | `parties.view`         |
-| Stock availability    | Pieces ready to ship per colour and size for chosen styles or a whole brand, in one warehouse or all; no prices             | `inventory.view`       |
+| Stock availability    | Total stock (good and B-grade) per colour and size for chosen styles or a whole brand, in one warehouse or all; no prices   | `inventory.view`       |
 | Blank letterhead      | The letterhead and footer on an empty page, for letters                                                                     | `documents.letterhead` |
 
 `documents.letterhead` is new: Sales Executives, Accounts and Production Managers have it by
-default (Super Admin has every permission). The stock sheet counts first-quality pieces less
-those set aside for orders, never below zero. A brand sheet leaves out styles with nothing to
-sell unless `includeEmpty` is set, and shows up to 100 styles.
+default (Super Admin has every permission). The stock sheet shows one Total Stock figure per
+colour and size: first-quality pieces less those set aside for orders, plus B-grade pieces,
+each never below zero; bad stock (damage and QC rejects) has already left stock and is never
+counted. A brand sheet leaves out styles with nothing in stock unless `includeEmpty` is set,
+and shows up to 100 styles.
 
 **Packing list.** The pick-list for the warehouse: lines packed in cartons are sorted by carton
 number (2 before 10), with each carton's pieces and loose pieces last; without carton numbers

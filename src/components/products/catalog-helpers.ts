@@ -4,11 +4,17 @@
  */
 
 /**
- * How many SKUs ticking these colours and sizes makes: every colour in every
- * size, less the SKUs the style already has.
+ * What saving these colours and sizes does to a style's SKUs (`cells`): one is
+ * made, or brought back, for each ticked pair it lacks, and those of unticked
+ * colours or sizes leave the matrix.
  */
-export function newSkuCount(colors: number, sizes: number, existing: number): number {
-  return Math.max(colors * sizes - existing, 0);
+export function matrixChange(
+  cells: ReadonlyArray<{ colorId: string; sizeId: string }>,
+  colors: ReadonlySet<string>,
+  sizes: ReadonlySet<string>,
+): { adding: number; removing: number } {
+  const kept = cells.filter((c) => colors.has(c.colorId) && sizes.has(c.sizeId)).length;
+  return { adding: colors.size * sizes.size - kept, removing: cells.length - kept };
 }
 
 /**

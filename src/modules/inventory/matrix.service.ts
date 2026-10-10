@@ -1,7 +1,10 @@
 import type { ProductVariant } from "@prisma/client";
 
+import type { Db } from "@/lib/db-types";
 import { AppError } from "@/lib/errors";
+import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
+import { lockRows } from "@/lib/row-lock";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { capToAvailable, fillByPacks, fillByTotal } from "@/modules/inventory/ratio";
@@ -12,6 +15,7 @@ import {
   updateVariantSchema,
 } from "@/modules/inventory/schemas";
 import { stockByVariant } from "@/modules/inventory/stock.service";
+import { SHIPMENT_OPEN } from "@/modules/sales/rules";
 
 /** "Navy Blue" -> "NAVYBL" — the color part of a SKU. */
 export function colorSkuCode(colorName: string): string {
@@ -59,7 +63,7 @@ export async function getStyleMatrix(
 ) {
   const style = await getStyleOrThrow(ctx, styleId);
   const variants = await ctx.db.productVariant.findMany({
-    where: { styleId: style.id },
+    where: { styleId: style.id, removedAt: null },
     include: { color: true, size: true },
   });
   const stock = await stockByVariant(
@@ -120,8 +124,9 @@ export async function getStyleMatrix(
 }
 
 /**
- * Creates the SKUs for every chosen color x size that does not exist yet.
- * Existing SKUs are left untouched, so this can be re-run to add a new color or size.
+ * Creates the SKUs for every chosen color x size that does not exist yet, and
+ * brings back any of them taken off the matrix earlier. Other SKUs are left
+ * untouched, so this can be re-run to add a new color or size.
  */
 export async function generateMatrix(
   ctx: CompanyContext,
@@ -136,7 +141,7 @@ export async function generateMatrix(
     ctx.db.size.findMany({ where: { id: { in: input.sizeIds } } }),
     ctx.db.productVariant.findMany({
       where: { styleId: style.id },
-      select: { colorId: true, sizeId: true },
+      select: { id: true, sku: true, colorId: true, sizeId: true, removedAt: true },
     }),
   ]);
   if (colors.length !== new Set(input.colorIds).size) {
@@ -147,6 +152,22 @@ export async function generateMatrix(
   }
 
   const have = new Set(existing.map((v) => `${v.colorId}:${v.sizeId}`));
+  const chosen = (v: { colorId: string; sizeId: string }) =>
+    input.colorIds.includes(v.colorId) && input.sizeIds.includes(v.sizeId);
+  const back = existing.filter((v) => v.removedAt && chosen(v));
+  if (back.length > 0) {
+    await ctx.db.productVariant.updateMany({
+      where: { id: { in: back.map((v) => v.id) } },
+      data: { removedAt: null, isActive: true },
+    });
+    await auditInCompany(ctx, meta, {
+      action: "UPDATE",
+      entityType: "Style",
+      entityId: style.id,
+      summary: `Brought back ${back.length} SKU(s) to ${style.code}`,
+      after: { skus: back.map((v) => v.sku) },
+    });
+  }
   const wanted = colors.flatMap((color) =>
     sizes
       .filter((size) => !have.has(`${color.id}:${size.id}`))
@@ -187,7 +208,160 @@ export async function generateMatrix(
       after: { skus: wanted.map((w) => w.sku) },
     });
   }
-  return { created: wanted.length, matrix: await getStyleMatrix(ctx, style.id) };
+  return {
+    created: wanted.length,
+    restored: back.length,
+    matrix: await getStyleMatrix(ctx, style.id),
+  };
+}
+
+/** What keeps a SKU on its matrix: pieces it holds, or a place on open work. */
+export type SkuHold = { pieces: number; inUse: boolean };
+
+/**
+ * What keeps each SKU on its style's matrix: the pieces it holds (in every
+ * warehouse and grade) and whether an open sales order or an unconfirmed
+ * delivery from production names it.
+ */
+async function skuHolds(db: Db, companyId: string, variantIds: string[]) {
+  const holds = new Map<string, SkuHold>(variantIds.map((id) => [id, { pieces: 0, inUse: false }]));
+  if (variantIds.length === 0) return holds;
+  const ids = { in: variantIds };
+  const [balances, ordered, delivering] = await Promise.all([
+    db.stockBalance.groupBy({
+      by: ["variantId"],
+      where: { companyId, variantId: ids },
+      _sum: { quantity: true },
+    }),
+    db.salesOrderItem.findMany({
+      where: { variantId: ids, order: { companyId, status: { in: [...SHIPMENT_OPEN] } } },
+      select: { variantId: true },
+      distinct: ["variantId"],
+    }),
+    db.stockIntakeLine.findMany({
+      where: { variantId: ids, intake: { companyId, status: { in: ["DRAFT", "PARSED"] } } },
+      select: { variantId: true },
+      distinct: ["variantId"],
+    }),
+  ]);
+  for (const b of balances) holds.get(b.variantId)!.pieces = Math.max(0, b._sum.quantity ?? 0);
+  for (const line of [...ordered, ...delivering]) holds.get(line.variantId)!.inUse = true;
+  return holds;
+}
+
+const held = (hold: SkuHold) => hold.pieces > 0 || hold.inUse;
+
+/**
+ * The style's colours and sizes that cannot be unticked, with the pieces they
+ * hold: one of their SKUs has stock, or is on an open order or delivery.
+ */
+export type MatrixLocks = { colors: Record<string, SkuHold>; sizes: Record<string, SkuHold> };
+
+export async function matrixLocks(ctx: CompanyContext, styleId: string): Promise<MatrixLocks> {
+  const variants = await ctx.db.productVariant.findMany({
+    where: { styleId, removedAt: null },
+    select: { id: true, colorId: true, sizeId: true },
+  });
+  const holds = await skuHolds(
+    prisma,
+    ctx.company.id,
+    variants.map((v) => v.id),
+  );
+  const { colors, sizes }: MatrixLocks = { colors: {}, sizes: {} };
+  const add = (into: Record<string, SkuHold>, key: string, hold: SkuHold) => {
+    const was = into[key] ?? { pieces: 0, inUse: false };
+    into[key] = { pieces: was.pieces + hold.pieces, inUse: was.inUse || hold.inUse };
+  };
+  for (const v of variants) {
+    const hold = holds.get(v.id)!;
+    if (!held(hold)) continue;
+    add(colors, v.colorId, hold);
+    add(sizes, v.sizeId, hold);
+  }
+  return { colors, sizes };
+}
+
+/**
+ * Sets a style's colours and sizes in one go: SKUs for newly ticked ones are
+ * made (or brought back), and those of unticked ones leave the matrix. A SKU
+ * leaves only with no stock anywhere and no open order or delivery; otherwise
+ * nothing changes. One with no history is deleted; one with history is taken
+ * off the matrix (kept for the reports, not for sale).
+ */
+export async function setMatrix(
+  ctx: CompanyContext,
+  styleId: string,
+  raw: unknown,
+  meta?: RequestMeta,
+) {
+  const input = generateMatrixSchema.parse(raw);
+  const style = await getStyleOrThrow(ctx, styleId);
+  // Checked before anything leaves, so a bad pick changes nothing.
+  const [colors, sizes] = await Promise.all([
+    ctx.db.color.count({ where: { id: { in: input.colorIds } } }),
+    ctx.db.size.count({ where: { id: { in: input.sizeIds } } }),
+  ]);
+  if (colors !== new Set(input.colorIds).size || sizes !== new Set(input.sizeIds).size) {
+    throw new AppError("NOT_FOUND", "One or more colours or sizes were not found.");
+  }
+  const leaving = await ctx.db.productVariant.findMany({
+    where: {
+      styleId: style.id,
+      removedAt: null,
+      OR: [{ colorId: { notIn: input.colorIds } }, { sizeId: { notIn: input.sizeIds } }],
+    },
+    select: { id: true, sku: true },
+  });
+  let removed = 0;
+  if (leaving.length > 0) {
+    const ids = leaving.map((v) => v.id);
+    removed = await prisma.$transaction(async (tx) => {
+      // Stock changes lock their SKU first, so none can arrive while this checks.
+      await lockRows(tx, "ProductVariant", ids);
+      const holds = await skuHolds(tx, ctx.company.id, ids);
+      const kept = leaving.filter((v) => held(holds.get(v.id)!));
+      if (kept.length > 0) {
+        throw new AppError(
+          "CONFLICT",
+          `${kept.map((v) => v.sku).join(", ")} still ${kept.length === 1 ? "has" : "have"} stock or open orders, so ${kept.length === 1 ? "it stays" : "they stay"} on the matrix.`,
+        );
+      }
+      const used = await tx.productVariant.findMany({
+        where: {
+          id: { in: ids },
+          OR: [
+            { stockMovements: { some: {} } },
+            { stockBalances: { some: {} } },
+            { badStockEntries: { some: {} } },
+            { orderItems: { some: {} } },
+            { returnItems: { some: {} } },
+            { intakeLines: { some: {} } },
+            { packingListItems: { some: {} } },
+            { challanItems: { some: {} } },
+          ],
+        },
+        select: { id: true },
+      });
+      const keep = new Set(used.map((v) => v.id));
+      await tx.productVariant.updateMany({
+        where: { id: { in: [...keep] } },
+        data: { removedAt: new Date(), isActive: false },
+      });
+      await tx.productVariant.deleteMany({
+        where: { id: { in: ids.filter((id) => !keep.has(id)) } },
+      });
+      return ids.length;
+    });
+    await auditInCompany(ctx, meta, {
+      action: "DELETE",
+      entityType: "Style",
+      entityId: style.id,
+      summary: `Took ${removed} SKU(s) off ${style.code}`,
+      before: { skus: leaving.map((v) => v.sku) },
+    });
+  }
+  const result = await generateMatrix(ctx, style.id, input, meta);
+  return { created: result.created, restored: result.restored, removed };
 }
 
 /**

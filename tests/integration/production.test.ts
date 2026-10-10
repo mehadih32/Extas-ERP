@@ -12,6 +12,7 @@ import { prisma } from "@/lib/prisma";
 import { stockValuation } from "@/modules/accounts/reports.service";
 import * as files from "@/modules/files/file.service";
 import * as catalog from "@/modules/inventory/catalog.service";
+import { listLots } from "@/modules/inventory/lot.service";
 import * as matrix from "@/modules/inventory/matrix.service";
 import * as stock from "@/modules/inventory/stock.service";
 import * as styles from "@/modules/inventory/style.service";
@@ -1152,6 +1153,33 @@ run("undoing a delivery", () => {
       ["PRODUCTION_IN", 5],
       ["PRODUCTION_IN", 15],
       ["PRODUCTION_IN", 30],
+    ]);
+    // The delivery came in as one lot for the style; taking it back out names the same lot.
+    const lot = await prisma.stockLot.findFirstOrThrow({ where: { intakeId: delivery.id } });
+    expect(new Set(movements.map((m) => m.lotId))).toEqual(new Set([lot.id]));
+    const [undoneLot, openingLot] = (await listLots(env.ctx, { styleId: env.style.id })).items;
+    expect(undoneLot).toMatchObject({
+      number: lot.number,
+      source: "PRODUCTION",
+      fresh: 45,
+      bGrade: 5,
+      unitCost: { fresh: "100.00", bGrade: "100.00" },
+      value: "5000.00",
+      undone: true,
+      delivery: { id: delivery.id, number: delivery.number },
+      project: { id: project.id, code: project.code },
+      supplier: { id: env.factory.id, name: "Gazipur Knit Factory" },
+    });
+    expect(openingLot).toMatchObject({ source: "OPENING", fresh: 10, delivery: null });
+    // The Production Manager does not see what the pieces cost.
+    const costs = (await listLots(env.pmCtx, { styleId: env.style.id })).items[0]!;
+    expect([costs.unitCost, costs.value]).toEqual([{ fresh: null, bGrade: null }, null]);
+    // Sales sees where it came from, but not as links into Production.
+    const seen = (await listLots(env.salesCtx, { styleId: env.style.id })).items[0]!;
+    expect([seen.delivery, seen.project, seen.supplier]).toEqual([
+      { id: null, number: delivery.number },
+      { id: null, code: project.code },
+      { id: env.factory.id, name: "Gazipur Knit Factory" },
     ]);
     // Nothing else moved, so the reversal of the Move to Stock entry is all the books need.
     const entries = await prisma.journalEntry.findMany({

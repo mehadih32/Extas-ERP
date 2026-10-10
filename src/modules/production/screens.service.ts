@@ -346,7 +346,11 @@ export async function getProjectScreen(ctx: CompanyContext, projectId: string) {
     ? await Promise.all([
         getProjectCostSheet(ctx, project.id),
         gradeCosts(ctx, project.id),
-        projectSupplierRows(prisma, ctx, { id: project.id, status: project.status }),
+        projectSupplierRows(prisma, ctx, {
+          id: project.id,
+          status: project.status,
+          completedAt: project.completedAt,
+        }),
       ])
     : [null, null, null];
   const openDelivery = project.deliveries.find((d) => isDraftDelivery(d)) ?? null;

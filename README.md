@@ -1108,7 +1108,9 @@ supplier who is not accessories-only: what they billed the project, what was pai
 was left, with the bills as they stood. Nothing is posted: every bill is already on the
 supplier's Payable ledger, which is the master ledger, so the carried due simply stays there.
 The project's balance with them reads zero from then on. Reopening the project marks its
-statements `reopenedAt`; completing it again makes new ones.
+statements `reopenedAt`; completing it again makes new ones. A project completed before
+statements were kept reads as settled from its completion day too, with no statement: its
+balance zero and what its bills still owe shown as left on the supplier's ledger.
 
 **Expenses (Quick Add).** Expense heads come ready (Office Rent, Electricity, Water & Gas,
 Salaries & Wages, Marketing & Ads, Courier & Delivery, Conveyance, Food & Refreshments...).

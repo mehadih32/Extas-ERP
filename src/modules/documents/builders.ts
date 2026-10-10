@@ -2005,6 +2005,8 @@ export async function supplierProfileDocument(
     );
   }
   if (p.deliveries) {
+    // Raw materials carry their purchase value; finished goods none of their own.
+    const valued = p.deliveries.items.some((d) => d.value !== null);
     blocks.push(
       {
         kind: "table",
@@ -2014,7 +2016,7 @@ export async function supplierProfileDocument(
           { label: "Date", weight: 1.1 },
           { label: "What", weight: 2.8 },
           { label: "For", weight: 1.4 },
-          ...(showMoney ? [{ label: "Value", align: "right" as const, weight: 1.3 }] : []),
+          ...(valued ? [{ label: "Value", align: "right" as const, weight: 1.3 }] : []),
         ],
         rows: p.deliveries.items.map((d) => ({
           cells: [
@@ -2028,7 +2030,7 @@ export async function supplierProfileDocument(
                   )
                   .join(", "),
             [d.order?.number, d.project?.code].filter(Boolean).join(" · "),
-            ...(showMoney ? [d.value ? m(d.value) : ""] : []),
+            ...(valued ? [d.value ? m(d.value) : ""] : []),
           ],
           details: d.warehouse ? [`Into ${d.warehouse}`] : undefined,
         })),

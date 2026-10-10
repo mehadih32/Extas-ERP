@@ -188,14 +188,13 @@ function ProjectRow({
             ? `${n(p.produced)} of ${n(p.targetQuantity)}`
             : undefined
       }
-      sub={
-        p.money
-          ? `Billed ${amount(p.money.billed, currency)} · paid ${amount(p.money.paid, currency)}`
-          : p.asFactory
-            ? "pcs"
-            : undefined
-      }
+      sub={!p.money && p.asFactory ? "pcs" : undefined}
     >
+      {p.money && !isZero(p.money.billed) && (
+        <p className="mt-0.5 text-[0.8125rem] text-muted-foreground tabular-nums">
+          Billed {amount(p.money.billed, currency)} · paid {amount(p.money.paid, currency)}
+        </p>
+      )}
       {settlement && (
         <p className="mt-0.5 text-[0.8125rem] text-muted-foreground">
           Settled on {formatDay(settlement.settledOn)}:{" "}
@@ -204,7 +203,9 @@ function ProjectRow({
             : `${amount(settlement.carried, currency)} left on their ledger${
                 isZero(settlement.stillDue)
                   ? ", since paid."
-                  : `, ${amount(settlement.stillDue, currency)} of it still unpaid.`
+                  : settlement.stillDue === settlement.carried
+                    ? ", still unpaid."
+                    : `, ${amount(settlement.stillDue, currency)} of it still unpaid.`
               }`}
         </p>
       )}

@@ -22,7 +22,9 @@ import { ZERO } from "@/modules/production/costing";
  * from then on, and later payments keep settling their oldest bills (or the ones
  * a payment is made for). Accessories suppliers run on a continuous ledger and
  * are not settled by project. Reopening a project sets its statements aside;
- * completing it again makes new ones.
+ * completing it again makes new ones. A project completed before statements
+ * were kept is settled all the same, from the day it closed: no statement, its
+ * balance with them zero, and what their bills for it still owe on their ledger.
  */
 
 type Tx = Prisma.TransactionClient;
@@ -132,9 +134,13 @@ export type ProjectSupplierRow = {
   paid: string;
   /** What the project still owes them: zero once it is settled. */
   balance: string;
-  /** Settled when the project closed: what was left on their ledger, and when. */
+  /**
+   * Settled when the project closed: what was left on their ledger, and when.
+   * No statement (id null) for a project completed before statements were kept:
+   * then what their bills for it still owe today, and no bills listed.
+   */
   settlement: {
-    id: string;
+    id: string | null;
     settledOn: string;
     carried: string;
     bills: SettledBill[];
@@ -149,7 +155,7 @@ export type ProjectSupplierRow = {
 export async function projectSupplierRows(
   db: Db,
   ctx: CompanyContext,
-  project: { id: string; status: ProductionStatus },
+  project: { id: string; status: ProductionStatus; completedAt?: Date | null },
 ): Promise<ProjectSupplierRow[]> {
   const companyId = ctx.company.id;
   const tz = ctx.company.timezone;
@@ -188,6 +194,26 @@ export async function projectSupplierRows(
           settledOn: localDay(statement.settledAt, tz),
           carried: fixed(statement.carried),
           bills: statement.bills as SettledBill[],
+        },
+      };
+    }
+    if (
+      project.status === "COMPLETED" &&
+      project.completedAt &&
+      !runningLedger &&
+      balance?.billed.gt(ZERO)
+    ) {
+      // Completed before statements were kept.
+      return {
+        ...base,
+        billed: fixed(balance.billed),
+        paid: fixed(balance.paid),
+        balance: fixed(ZERO),
+        settlement: {
+          id: null,
+          settledOn: localDay(project.completedAt, tz),
+          carried: fixed(balance.due),
+          bills: [],
         },
       };
     }

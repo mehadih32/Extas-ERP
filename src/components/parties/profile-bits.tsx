@@ -173,7 +173,7 @@ export function Row({
         {badges && <div className="mt-1.5 flex flex-wrap gap-1.5">{badges}</div>}
       </div>
       {(value || sub) && (
-        <div className="shrink-0 text-right">
+        <div className="max-w-[50%] shrink-0 text-right">
           {value && <p className="text-sm font-medium tabular-nums">{value}</p>}
           {sub && (
             <p className="mt-0.5 text-[0.8125rem] text-muted-foreground tabular-nums">{sub}</p>

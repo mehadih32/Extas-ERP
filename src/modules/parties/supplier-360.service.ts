@@ -159,6 +159,14 @@ async function projectLists(
   const present = (p: (typeof projects)[number]) => {
     const live = balances.get(p.id);
     const statement = p.status === "COMPLETED" ? settled.get(p.id) : undefined;
+    // Completed before statements were kept: settled all the same, from the day it closed.
+    const unrecorded =
+      !statement &&
+      p.status === "COMPLETED" &&
+      p.completedAt !== null &&
+      !runningLedger &&
+      live !== undefined &&
+      live.billed.gt(ZERO);
     return {
       id: p.id,
       code: p.code,
@@ -191,12 +199,25 @@ async function projectLists(
                 stillDue: fixed(live?.due ?? ZERO),
               },
             }
-          : {
-              billed: fixed(live?.billed ?? ZERO),
-              paid: fixed(live?.paid ?? ZERO),
-              balance: fixed(live?.due ?? ZERO),
-              settlement: null,
-            }
+          : unrecorded
+            ? {
+                billed: fixed(live.billed),
+                paid: fixed(live.paid),
+                balance: fixed(ZERO),
+                /** No statement: what their bills for it still owe today. */
+                settlement: {
+                  id: null,
+                  settledOn: localDay(p.completedAt!, tz),
+                  carried: fixed(live.due),
+                  stillDue: fixed(live.due),
+                },
+              }
+            : {
+                billed: fixed(live?.billed ?? ZERO),
+                paid: fixed(live?.paid ?? ZERO),
+                balance: fixed(live?.due ?? ZERO),
+                settlement: null,
+              }
         : null,
     };
   };

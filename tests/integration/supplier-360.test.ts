@@ -489,6 +489,54 @@ run("Supplier 360° and project settlements", () => {
     expect(await billsOutOfStep(env.company.id)).toEqual([]);
   });
 
+  it("settles a project completed before statements were kept from the day it closed", async () => {
+    const env = await setup();
+    const project = await newProject(env, "Polo run Z");
+    await bill(env, env.factory.id, dayFromToday(-6), [
+      { projectId: project.id, head: "Sewing (CM)", amount: 5000 },
+    ]);
+    await bill(env, env.trims.id, dayFromToday(-7), [
+      { projectId: project.id, head: "Trims & Accessories", amount: 800 },
+    ]);
+    await pay(env, env.factory.id, 1000, project.id);
+    await deliverAndComplete(env, project.id);
+    // As if it had closed before this update: no statement kept.
+    await prisma.projectSettlement.deleteMany({ where: { projectId: project.id } });
+    const done = await prisma.productionProject.findUniqueOrThrow({ where: { id: project.id } });
+    const closedOn = localDay(done.completedAt!, TZ);
+
+    const factory360 = await getSupplier360(env.ctx, env.factory.id);
+    expect(factory360.completedProjects?.items[0]?.money).toEqual({
+      billed: "5000.00",
+      paid: "1000.00",
+      balance: "0.00",
+      settlement: { id: null, settledOn: closedOn, carried: "4000.00", stillDue: "4000.00" },
+    });
+    // Accessories stay on their running ledger.
+    const trims360 = await getSupplier360(env.ctx, env.trims.id);
+    expect(trims360.completedProjects?.items[0]?.money).toMatchObject({
+      balance: "800.00",
+      settlement: null,
+    });
+    const screen = await productionScreens.getProjectScreen(env.pmCtx, project.id);
+    expect(screen.suppliers?.map((r) => [r.supplier.name, r.balance, r.settlement])).toEqual([
+      ["Dhaka Trims", "800.00", null],
+      [
+        "Gazipur Knit Factory",
+        "0.00",
+        { id: null, settledOn: closedOn, carried: "4000.00", bills: [] },
+      ],
+    ]);
+
+    // Paid later for the project: what is left on their ledger goes down with it.
+    await pay(env, env.factory.id, 4000, project.id);
+    const paid = await getSupplier360(env.ctx, env.factory.id);
+    expect(paid.completedProjects?.items[0]?.money?.settlement).toMatchObject({
+      carried: "0.00",
+      stillDue: "0.00",
+    });
+  });
+
   it("shows each role the part of a supplier's 360° view it may see", async () => {
     const env = await setup();
     const now = new Date();

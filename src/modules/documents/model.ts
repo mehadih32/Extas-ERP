@@ -21,6 +21,7 @@ export const PRINT_TYPES = [
   "STOCK_AVAILABILITY",
   "LETTERHEAD",
   "PAYSLIP",
+  "BUYER_360",
 ] as const;
 
 export type PrintType = (typeof PRINT_TYPES)[number];
@@ -124,10 +125,19 @@ function stableJson(value: unknown): string {
   return JSON.stringify(value);
 }
 
-/** SHA-256 of everything that ends up on the page: the model, the logo and the layout version. */
-export function contentHash(doc: PrintDocument, logoChecksum: string | null): string {
+/**
+ * SHA-256 of everything that ends up on the page: the model, the logo and the layout version,
+ * and for a document only some people may open (a buyer's 360° profile), who those are, so
+ * the same pages printed for another set of readers are kept apart. Without readers the
+ * hash is what it always was (stableJson leaves out undefined).
+ */
+export function contentHash(
+  doc: PrintDocument,
+  logoChecksum: string | null,
+  readers?: unknown,
+): string {
   return createHash("sha256")
-    .update(stableJson({ layout: LAYOUT_VERSION, logo: logoChecksum, doc }))
+    .update(stableJson({ layout: LAYOUT_VERSION, logo: logoChecksum, doc, readers }))
     .digest("hex");
 }
 

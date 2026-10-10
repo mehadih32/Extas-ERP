@@ -65,6 +65,7 @@ export const HR_KEYS: readonly PermissionKey[] = [
  */
 export const DOCUMENT_KEYS: readonly PermissionKey[] = [
   "sales.view",
+  "parties.view", // buyers' 360° profiles
   "parties.ledger.view",
   "inventory.view",
   "documents.letterhead",

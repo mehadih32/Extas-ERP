@@ -3189,6 +3189,7 @@ enum DocumentType {
   PURCHASE_RETURN
   REPORT
   REFUND_VOUCHER
+  BUYER_360 // a buyer's whole history on one PDF (Customer 360°)
 }
 
 enum TemplateFormat {

@@ -4,8 +4,11 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
 import { SectionError } from "@/components/dashboard/section-error";
+import { PrintDocumentButton } from "@/components/documents/print-button";
 import { FormAlert } from "@/components/forms/field";
 import { GradeBadge, StatusBadge, VerifiedBadge } from "@/components/parties/badges";
+import { BuyerFigures, BuyerHistoryPanels, BuyerTopStyles } from "@/components/parties/buyer-360";
+import { EmailPendingButton } from "@/components/parties/email-pending";
 import {
   balanceText,
   balanceTone,
@@ -22,14 +25,18 @@ import { BackLink } from "@/components/settings/back-link";
 import { Badge } from "@/components/ui/badge";
 import { formatCount, formatDay } from "@/lib/display";
 import { cn } from "@/lib/utils";
+import { BUYER_HISTORIES, type BuyerHistory } from "@/modules/parties/buyer-360.service";
 import type { PartyScreen } from "@/modules/parties/screens.service";
-import { getPartyScreenAction } from "@/server/actions/parties.actions";
+import { getBuyer360Action, getPartyScreenAction } from "@/server/actions/parties.actions";
 import { requireCompanyPage } from "@/server/pages/guards";
 
 export const metadata: Metadata = { title: "Buyer or supplier" };
 
 const one = (value: string | string[] | undefined) =>
   typeof value === "string" ? value : undefined;
+
+const historyFrom = (value: string | undefined): BuyerHistory | undefined =>
+  BUYER_HISTORIES.find((h) => h === value);
 
 function Fact({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -252,6 +259,11 @@ function ActivityPanel({ screen, currency }: { screen: PartyScreen; currency: st
  * grade, Blue Verified badge and status, the balance with the credit left,
  * contact details and the business done so far. What may be changed comes with
  * the screen from the same rules the party actions use (screen.can).
+ *
+ * A buyer's profile is their Customer 360° view (GET /api/parties/:id/buyer-360):
+ * total sales, the average order, outstanding and overdue, gross profit, the
+ * styles they buy most and their whole history, with a PDF of all of it. Each
+ * part shows only to the people who may see it (parties/profile-access.ts).
  */
 export default async function PartyPage({
   params,
@@ -281,6 +293,10 @@ export default async function PartyPage({
   // A supplier opened from the buyers' address (or the other way) moves to its own list.
   if (party.kind !== "BOTH" && listOf(party.kind) !== name) redirect(partyHref(party));
   const currency = ctx.company.currency;
+  const open = historyFrom(one(query.show));
+  // Customer 360°: buyers (and accounts that are both), seen from the buyers' list.
+  const buyer = name === "buyers" ? await getBuyer360Action(party.id, { all: open }) : null;
+  const buyer360 = buyer?.ok ? buyer.data : null;
   const noun =
     party.kind === "SUPPLIER" ? "supplier" : party.kind === "BUYER" ? "buyer" : "account";
   const notice =
@@ -336,7 +352,26 @@ export default async function PartyPage({
             </FormAlert>
           )
         )}
-        <PartyActions key={party.id} screen={screen} currency={currency} notice={notice} />
+        <PartyActions key={party.id} screen={screen} currency={currency} notice={notice}>
+          {buyer360?.can.print && (
+            <div className="flex gap-2">
+              <PrintDocumentButton
+                request={{ type: "BUYER_360", partyId: party.id }}
+                label="360° PDF"
+                className="flex-1 sm:flex-none"
+                ready={{
+                  eyebrow: "Buyer profile",
+                  description: `${party.name}'s whole history with the figures you may see, as of today.`,
+                  errorTitle: "The PDF could not be made",
+                }}
+              />
+              <EmailPendingButton
+                what={`${party.name}'s 360° profile`}
+                className="flex-1 sm:flex-none"
+              />
+            </div>
+          )}
+        </PartyActions>
       </div>
 
       {screen.possibleDuplicates.length > 0 && (
@@ -355,13 +390,34 @@ export default async function PartyPage({
         </FormAlert>
       )}
 
+      {buyer && !buyer.ok && (
+        <SectionError
+          title="Customer 360°"
+          heading="The buyer's figures and history could not load"
+          error={buyer.error}
+        />
+      )}
+      {buyer360 && <BuyerFigures data={buyer360} currency={currency} />}
+
       <div className="grid gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
-        <MoneyPanel screen={screen} currency={currency} />
+        <div className="grid content-start gap-6">
+          <MoneyPanel screen={screen} currency={currency} />
+          {buyer360 && <BuyerTopStyles data={buyer360} currency={currency} />}
+        </div>
         <div className="grid content-start gap-6">
           <ContactPanel screen={screen} />
           <ActivityPanel screen={screen} currency={currency} />
         </div>
       </div>
+
+      {buyer360 && (
+        <BuyerHistoryPanels
+          data={buyer360}
+          currency={currency}
+          open={open}
+          basePath={partyHref(party)}
+        />
+      )}
 
       {party.notes && (
         <Panel title="Notes" id="notes-heading">

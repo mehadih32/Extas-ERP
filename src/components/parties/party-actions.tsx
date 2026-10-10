@@ -60,11 +60,14 @@ export function PartyActions({
   screen,
   currency,
   notice: initialNotice,
+  children,
 }: {
   screen: PartyScreen;
   currency: string;
   /** A message to show first (the account was just added or saved). */
   notice?: string;
+  /** More buttons at the end of the row (a buyer's 360° PDF and email). */
+  children?: React.ReactNode;
 }) {
   const [open, setOpen] = useState<Open>(null);
   const [notice, setNotice] = useState(initialNotice);
@@ -108,7 +111,7 @@ export function PartyActions({
     close();
   }
 
-  if (!can.edit && !can.statement && !hasMenu) return null;
+  if (!can.edit && !can.statement && !hasMenu && !children) return null;
 
   return (
     <div className="grid gap-4">
@@ -198,6 +201,7 @@ export function PartyActions({
             )}
           </div>
         )}
+        {children}
       </div>
 
       {notice && <FormAlert tone="success">{notice}</FormAlert>}

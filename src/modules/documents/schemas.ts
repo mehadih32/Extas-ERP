@@ -38,6 +38,8 @@ export const printRequestSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("LETTERHEAD") }),
   /** A payslip, by its payroll line's id. */
   z.object({ type: z.literal("PAYSLIP"), id }),
+  /** A buyer's whole history (Customer 360°), with the figures the person may see. */
+  z.object({ type: z.literal("BUYER_360"), partyId: id }),
 ]);
 
 export type PrintRequest = z.output<typeof printRequestSchema>;

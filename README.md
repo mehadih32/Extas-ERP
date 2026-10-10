@@ -320,12 +320,14 @@ Built one module at a time, each in its own pull request. So far:
   - **Holidays & rules**: the weekly days off, the office start time, the minutes of grace
     and how many lates cost a day's salary, whether staff check in themselves, the year's
     holidays, and the leave types with their yearly days.
-- **My HR** (`/me`), for every employee with a login, in five tabs: **Today** (check in and
+- **My HR** (`/me`), for every employee with a login, in six tabs: **Today** (check in and
   check out when HR allows it, this month so far, leave left, pay, advances owed and their
-  details), **Attendance** (their month day by day), **Leave** (what is left, their requests
-  and asking for leave with a paper, withdrawing a request HR has not decided), **Payslips**
-  (each approved month, ready to print) and **Advances** (what is still owed and how it is
-  taken back). People who reach HR & payroll open My HR from the account menu.
+  details), **Tasks** (the work given to them, soonest due first, to start, finish or reopen;
+  whoever gave it hears about it), **Attendance** (their month day by day), **Leave** (what is
+  left, their requests and asking for leave with a paper, withdrawing a request HR has not
+  decided), **Payslips** (each approved month, ready to print) and **Advances** (what is still
+  owed and how it is taken back). People who reach HR & payroll open My HR from the account
+  menu.
 
   Sending payslips by email or WhatsApp comes with the integrations.
 
@@ -358,6 +360,38 @@ Built one module at a time, each in its own pull request. So far:
   Quotations, proformas, invoices and challans get a **Template** button next to their PDF
   once the company has a template for them, and payslips (in HR & payroll and in My HR) get a
   **PDF** button on the letterhead.
+
+- **Planner** (`/planner`), in five tabs:
+  - **Coming up**: the next 7, 14 or 30 days and what is overdue: production deadlines, goods
+    due in-house, shipments and licence renewals (as far as the person's role sees them), their
+    tasks (every task for managers) and their own reminders, each opening its record.
+  - **Notepad**: the person's own **Daily routine** (ticks clear each morning), **Next 3
+    days** work plan (unfinished items carry over) and **General notes** (pinned first, with a
+    search). Items can be changed, moved up or down and deleted. Nobody else sees them.
+  - **Tasks** (managers): work given to staff with a due day or time, a priority and a
+    production project; open, overdue, done, cancelled, one employee's or only one's own.
+    A task's page starts, finishes, reopens, changes, cancels or deletes it and lists the
+    reminders sent about it. Staff without a login are told once WhatsApp is set up.
+  - **Reminders**: the reminders a person set or is on (everyone's for managers), by status
+    and by kind. **Add a reminder** takes what, a day and time, whether it repeats, and, for
+    managers, who hears about it. A reminder's page marks it **Dealt with** once it has gone
+    out, and lets whoever set it change, cancel or delete it before then.
+  - **Automatic reminders**: when the app reminds people about deadlines, deliveries,
+    shipments, licence renewals and task due days (the days before, again while overdue, the
+    time), and who hears about each. Managers read them; the owner changes them.
+- **Inbox** (`/inbox`, the bell in the top bar with the unread count): the person's messages,
+  newest first, or only the unread ones. Each opens what it is about, can be marked read, or,
+  when it came from a reminder, marked as dealt with. **Mark all as read** clears the bell.
+- **Compliance** (`/compliance`): the licences and registrations (trade licence, VAT / BIN,
+  TIN, IRC / ERC, BGMEA / BKMEA, fire, environment) with how many are in force, need renewing
+  or have expired, which of the trade licence, BIN and TIN are not on file, and the numbers
+  documents print. The list filters by kind, by what needs renewing and with the renewed and
+  archived terms. A record's page shows its number, issuer, dates and when reminders start,
+  its scan (a photo or PDF, to open or download) and its earlier terms; **Renew** keeps the
+  old term as history and stops its reminders, and the record can be corrected, archived,
+  restored or deleted.
+
+  Reminders and messages go out in the app; WhatsApp and email come with the integrations.
 
 The screens ask the same Server Actions as the API, so the backend's permissions decide what
 appears. With the built-in roles' default permissions:
@@ -518,6 +552,23 @@ only their own, from an approved payroll. Templates change with `templates.manag
 whoever prints a kind of document may fill its active templates; addressing a letter to a
 buyer or supplier also needs `parties.view`.
 
+The Planner, the inbox and Compliance follow the notepad, reminder and compliance
+permissions:
+
+| Role                                | Coming up, reminders, inbox | Notepad | Tasks, reminders for others | Automatic reminders | Compliance     |
+| ----------------------------------- | --------------------------- | ------- | --------------------------- | ------------------- | -------------- |
+| Super Admin                         | Yes                         | Yes     | Yes                         | Read and change     | See and change |
+| Production Manager, Sales Executive | Yes                         | Yes     | Yes                         | Read                | No             |
+| Accounts                            | Yes                         | Yes     | No                          | No                  | See            |
+| Warehouse Team, Employee            | Yes                         | Yes     | No                          | No                  | No             |
+
+The notepad and reminders for oneself need `notepad.use`; tasks, reminders for other people
+and everyone's reminders need `reminders.manage`; the automatic reminders are read with
+`reminders.manage` or `company.settings` and changed with `company.settings`. Whoever set a
+reminder by hand (or `reminders.manage`) changes it until it goes out; anyone it went to marks
+it dealt with. Employees see the tasks given to them in My HR (`portal.self`). Compliance is
+seen with `compliance.view` and changed with `compliance.manage`.
+
 Settings follows the same rule. The Team tab needs `company.members.manage`. The Roles tab
 opens with `company.members.manage` (to read them) or `company.roles.manage` (to change them).
 Everyone can read the company details, and `company.settings` lets them be changed. Settings
@@ -583,6 +634,15 @@ For developers:
   back only to records the person may open. The tabs and who sees them are in
   `src/components/reports/tabs.ts`. Reports and printed files open in the browser with
   `?inline=1` on their download address.
+- The Planner's rules (who may change, cancel, delete or deal with a reminder, which moves a
+  task may make, for management and for the employee) live in
+  `src/modules/reminders/checks.ts`, and licences' (what may be renewed, archived, restored
+  or deleted) in `src/modules/compliance/rules.ts`. The services refuse with them, and
+  `src/modules/reminders/screens.service.ts` and `src/modules/compliance/screens.service.ts`
+  send them as each screen's `can` flags. A reminder, message or agenda item links to its
+  record only when the person's role opens that page (`src/modules/reminders/links.ts`). The
+  Planner's tabs and who sees them are in `src/components/planner/tabs.ts`; the top bar's
+  bell reads the unread count with the layout, which every change refreshes.
 - The phone's tab bar holds four sections. With more, the fifth tab is **More**, listing the
   other sections above the account menu (`phoneTabs` in `src/components/shell/nav-items.ts`).
   Between tablet and laptop widths the top bar uses short labels ("Parties"), and lists show

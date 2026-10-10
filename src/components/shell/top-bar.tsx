@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { Wordmark } from "@/components/brand/wordmark";
+import { InboxBell } from "@/components/planner/inbox";
 import { ROUTES } from "@/lib/routes";
 
 import { CompanySwitcher } from "./company-switcher";
@@ -8,17 +9,23 @@ import { MainNav } from "./main-nav";
 import type { ShellCompany, ShellUser } from "./types";
 import { UserMenu } from "./user-menu";
 
-/** The green top bar: the house mark, the sections, the company switcher and the person. */
+/**
+ * The green top bar: the house mark, the sections, the company switcher, the
+ * inbox bell with the unread count, and the person.
+ */
 export function TopBar({
   user,
   companies,
   activeCompany,
   permissions,
+  unread,
 }: {
   user: ShellUser;
   companies: ShellCompany[];
   activeCompany: { id: string; name: string };
   permissions: string[];
+  /** Unread inbox messages. */
+  unread: number;
 }) {
   return (
     <header className="sticky top-0 z-40 bg-primary text-primary-foreground print:hidden">
@@ -33,6 +40,7 @@ export function TopBar({
         <MainNav permissions={permissions} className="hidden md:flex" />
         <div className="ml-auto flex items-center gap-3">
           <CompanySwitcher companies={companies} activeCompany={activeCompany} />
+          <InboxBell unread={unread} />
           <UserMenu
             user={user}
             companyName={activeCompany.name}

@@ -12,6 +12,7 @@ import * as leave from "@/modules/hr/leave.service";
 import * as payroll from "@/modules/hr/payroll.service";
 import * as portal from "@/modules/hr/portal.service";
 import * as screens from "@/modules/hr/screens.service";
+import * as plannerScreens from "@/modules/reminders/screens.service";
 import * as tasks from "@/modules/reminders/task.service";
 
 /*
@@ -81,5 +82,10 @@ export const myAdvancesAction = async () =>
   runAction(async () => advances.myAdvances(await self()));
 export const myTasksAction = async (query: unknown = {}) =>
   runAction(async () => tasks.myTasks(await self(), query));
+export const getMyTasksScreenAction = async (query: { show?: unknown; cursor?: string } = {}) =>
+  runAction(async () => plannerScreens.getMyTasksScreen(await self(), query));
 export const setMyTaskStatusAction = async (taskId: string, input: unknown) =>
-  change(async () => tasks.setMyTaskStatus(await self(), taskId, input, await getRequestMeta()));
+  change(async () => {
+    const task = await tasks.setMyTaskStatus(await self(), taskId, input, await getRequestMeta());
+    return { id: task.id, title: task.title, status: task.status };
+  });

@@ -6,6 +6,7 @@ import type { ShellUser } from "@/components/shell/types";
 import { getCurrentSession } from "@/modules/auth/context";
 import { ROUTES } from "@/lib/routes";
 import { getMe } from "@/modules/auth/me.service";
+import { unreadNotificationsAction } from "@/server/actions/reminders.actions";
 
 /**
  * The app frame: top bar with the company switcher, and the bottom navigation on
@@ -27,6 +28,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       me.permissions.includes("portal.self") &&
       !visibleNavItems(me.permissions).some((item) => item.href === ROUTES.myHr),
   };
+  // The bell's count; it refreshes whenever something changes (every change revalidates the layout).
+  const inbox = await unreadNotificationsAction();
+  const unread = inbox.ok ? inbox.data.unread : 0;
   const companies = me.companies.map((c) => ({ id: c.id, name: c.name, roleName: c.roleName }));
   const activeCompany = { id: me.activeCompany.id, name: me.activeCompany.name };
 
@@ -43,6 +47,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         companies={companies}
         activeCompany={activeCompany}
         permissions={me.permissions}
+        unread={unread}
       />
       <main
         id="main"

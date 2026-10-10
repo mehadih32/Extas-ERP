@@ -6,8 +6,10 @@ import {
   LandmarkIcon,
   LayoutDashboardIcon,
   type LucideIcon,
+  NotebookPenIcon,
   ReceiptTextIcon,
   SettingsIcon,
+  ShieldCheckIcon,
   ShirtIcon,
   SpoolIcon,
   UsersRoundIcon,
@@ -78,6 +80,20 @@ export const REPORTS_KEYS: readonly PermissionKey[] = [
   "templates.manage",
 ];
 
+/**
+ * The permissions that open the Planner: the notepad and one's own reminders
+ * (notepad.use), tasks and reminders for others (reminders.manage), and the
+ * automatic reminder settings (company.settings).
+ */
+export const PLANNER_KEYS: readonly PermissionKey[] = [
+  "notepad.use",
+  "reminders.manage",
+  "company.settings",
+];
+
+/** The permissions that open Compliance: the company's licences and registrations. */
+export const COMPLIANCE_KEYS: readonly PermissionKey[] = ["compliance.view", "compliance.manage"];
+
 export const NAV_ITEMS: readonly NavItem[] = [
   { href: "/", label: "Dashboard", icon: LayoutDashboardIcon, anyOf: [] },
   {
@@ -146,6 +162,21 @@ export const NAV_ITEMS: readonly NavItem[] = [
     shortLabel: "Reports",
     icon: FileTextIcon,
     anyOf: REPORTS_KEYS,
+  },
+  {
+    // What is coming up, the notepad, tasks for staff, reminders and the
+    // automatic reminder settings (components/planner/tabs.ts).
+    href: "/planner",
+    label: "Planner",
+    icon: NotebookPenIcon,
+    anyOf: PLANNER_KEYS,
+  },
+  {
+    // The trade licence, BIN, TIN and other licences, with their renewals.
+    href: "/compliance",
+    label: "Compliance",
+    icon: ShieldCheckIcon,
+    anyOf: COMPLIANCE_KEYS,
   },
   {
     // Everyone else who spends company money records their own expenses as

@@ -82,9 +82,15 @@ describe("HR & payroll in the menu, by role", () => {
       expect(nav(role(name)), name).toContain("/me");
     }
     const employee = phoneTabs(visibleNavItems(role("EMPLOYEE")));
-    expect(employee.tabs.map((i) => i.href)).toEqual(["/", "/accounts/expenses", "/me"]);
+    expect(employee.tabs.map((i) => i.href)).toEqual([
+      "/",
+      "/planner",
+      "/accounts/expenses",
+      "/me",
+    ]);
     expect(MY_HR_TABS.map((t) => t.label)).toEqual([
       "Today",
+      "Tasks",
       "Attendance",
       "Leave",
       "Payslips",

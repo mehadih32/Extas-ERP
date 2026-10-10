@@ -42,6 +42,7 @@ export function visibleHrTabs(permissions: Iterable<string>): HrTab[] {
 /** The employee's own pages ("My HR", portal.self). */
 export const MY_HR_TABS: ReadonlyArray<{ href: string; label: string }> = [
   { href: "/me", label: "Today" },
+  { href: "/me/tasks", label: "Tasks" },
   { href: "/me/attendance", label: "Attendance" },
   { href: "/me/leave", label: "Leave" },
   { href: "/me/payslips", label: "Payslips" },

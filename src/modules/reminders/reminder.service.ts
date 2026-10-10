@@ -11,11 +11,19 @@ import {
 } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
 import { formatInstantDay } from "@/lib/format";
+import { assertAllowed } from "@/lib/verdict";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { linkedEmployee } from "@/modules/hr/access";
+import {
+  canAcknowledgeReminder,
+  canCancelReminder,
+  canDeleteReminder,
+  canEditReminder,
+  type ReminderState,
+} from "@/modules/reminders/checks";
 import { describeRepeat, formatRepeat, parseRepeat, type Repeat } from "@/modules/reminders/repeat";
 import { AUTO_TYPES, type AutoType } from "@/modules/reminders/rules";
 import {
@@ -133,20 +141,29 @@ async function loadVisible(ctx: CompanyContext, reminderId: string): Promise<Rem
   return row;
 }
 
-/** Set by hand, and changeable by its maker or reminders.manage. */
-async function loadOwnManual(ctx: CompanyContext, reminderId: string): Promise<ReminderRow> {
-  const row = await loadVisible(ctx, reminderId);
-  if (row.sourceKey !== null) {
-    throw new AppError(
-      "CONFLICT",
-      "Automatic reminders follow their record; change its date instead.",
-    );
-  }
-  if (row.createdById !== ctx.user.id && !ctx.can("reminders.manage")) {
-    throw new AppError("FORBIDDEN", "Only the person who set this reminder can change it.");
-  }
-  return row;
+/** Where a reminder stands, for the rules in checks.ts. */
+export function reminderState(r: {
+  sourceKey: string | null;
+  createdById: string | null;
+  status: ReminderState["status"];
+  repeatRule: string | null;
+  sentAt: Date | null;
+  acknowledgedAt: Date | null;
+}): ReminderState {
+  return {
+    automatic: r.sourceKey !== null,
+    createdById: r.createdById,
+    status: r.status,
+    repeating: r.repeatRule !== null,
+    sentAt: r.sentAt,
+    acknowledgedAt: r.acknowledgedAt,
+  };
 }
+
+const acting = (ctx: CompanyContext) => ({
+  userId: ctx.user.id,
+  manage: ctx.can("reminders.manage"),
+});
 
 async function checkPeople(
   ctx: CompanyContext,
@@ -342,10 +359,8 @@ export async function updateReminder(
   now: Date = new Date(),
 ) {
   const input = updateReminderSchema.parse(raw);
-  const row = await loadOwnManual(ctx, reminderId);
-  if (row.status !== "SCHEDULED") {
-    throw new AppError("CONFLICT", "This reminder has already gone out or was cancelled.");
-  }
+  const row = await loadVisible(ctx, reminderId);
+  assertAllowed(canEditReminder(reminderState(row), acting(ctx)));
   // Giving only users (or only staff) keeps the other list as it was.
   const peopleChanged = input.userIds !== undefined || input.employeeIds !== undefined;
   const people = peopleChanged
@@ -414,10 +429,8 @@ export async function updateReminder(
 }
 
 export async function cancelReminder(ctx: CompanyContext, reminderId: string, meta?: RequestMeta) {
-  const row = await loadOwnManual(ctx, reminderId);
-  if (row.status !== "SCHEDULED") {
-    throw new AppError("CONFLICT", "Only reminders that have not gone out can be cancelled.");
-  }
+  const row = await loadVisible(ctx, reminderId);
+  assertAllowed(canCancelReminder(reminderState(row), acting(ctx)));
   const updated = await prisma.$transaction(async (tx) => {
     const { count } = await tx.reminder.updateMany({
       where: { id: row.id, companyId: ctx.company.id, status: "SCHEDULED" },
@@ -441,7 +454,8 @@ export async function cancelReminder(ctx: CompanyContext, reminderId: string, me
 }
 
 export async function deleteReminder(ctx: CompanyContext, reminderId: string, meta?: RequestMeta) {
-  const row = await loadOwnManual(ctx, reminderId);
+  const row = await loadVisible(ctx, reminderId);
+  assertAllowed(canDeleteReminder(reminderState(row), acting(ctx)));
   await prisma.$transaction(async (tx) => {
     await tx.reminder.delete({ where: { id: row.id } });
     await auditInCompany(
@@ -473,13 +487,8 @@ export async function acknowledgeReminder(
 ) {
   const row = await loadVisible(ctx, reminderId);
   if (row.status === "ACKNOWLEDGED") return present(row, ctx.company.timezone);
-  const repeating = row.status === "SCHEDULED" && row.repeatRule !== null && row.sentAt !== null;
-  if (row.status !== "SENT" && !repeating) {
-    throw new AppError(
-      "CONFLICT",
-      "Only reminders that have gone out can be marked as dealt with.",
-    );
-  }
+  assertAllowed(canAcknowledgeReminder(reminderState(row)));
+  const repeating = row.status === "SCHEDULED";
   const updated = await prisma.$transaction(async (tx) => {
     await tx.reminder.updateMany({
       where: { id: row.id, companyId: ctx.company.id, status: row.status },

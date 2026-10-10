@@ -43,6 +43,8 @@ describe("Reports & documents in the menu, by role", () => {
       "/parties",
       "/hr",
       "/reports",
+      "/planner",
+      "/compliance",
     ]);
   });
 

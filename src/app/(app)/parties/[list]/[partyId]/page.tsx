@@ -1,4 +1,4 @@
-import { MailIcon, MessageCircleIcon, PhoneIcon } from "lucide-react";
+import { BanknoteIcon, MailIcon, MessageCircleIcon, PhoneIcon } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
@@ -8,6 +8,7 @@ import { PrintDocumentButton } from "@/components/documents/print-button";
 import { FormAlert } from "@/components/forms/field";
 import { GradeBadge, StatusBadge, VerifiedBadge } from "@/components/parties/badges";
 import { BuyerFigures, BuyerHistoryPanels, BuyerTopStyles } from "@/components/parties/buyer-360";
+import { accountsHref } from "@/components/accounts/labels";
 import { EmailPendingButton } from "@/components/parties/email-pending";
 import {
   balanceText,
@@ -17,17 +18,26 @@ import {
   money,
   partyHref,
   STATUS_MEANINGS,
+  SUPPLIER_CATEGORIES,
+  SUPPLIER_CATEGORY_LABELS,
 } from "@/components/parties/labels";
 import { PartiesNoAccess } from "@/components/parties/no-access";
 import { PartyActions } from "@/components/parties/party-actions";
 import { listName } from "@/components/parties/route";
+import { SupplierFigures, SupplierPanels } from "@/components/parties/supplier-360";
 import { BackLink } from "@/components/settings/back-link";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { formatCount, formatDay } from "@/lib/display";
 import { cn } from "@/lib/utils";
 import { BUYER_HISTORIES, type BuyerHistory } from "@/modules/parties/buyer-360.service";
 import type { PartyScreen } from "@/modules/parties/screens.service";
-import { getBuyer360Action, getPartyScreenAction } from "@/server/actions/parties.actions";
+import { SUPPLIER_HISTORIES, type SupplierHistory } from "@/modules/parties/supplier-360.service";
+import {
+  getBuyer360Action,
+  getPartyScreenAction,
+  getSupplier360Action,
+} from "@/server/actions/parties.actions";
 import { requireCompanyPage } from "@/server/pages/guards";
 
 export const metadata: Metadata = { title: "Buyer or supplier" };
@@ -37,6 +47,9 @@ const one = (value: string | string[] | undefined) =>
 
 const historyFrom = (value: string | undefined): BuyerHistory | undefined =>
   BUYER_HISTORIES.find((h) => h === value);
+
+const supplierListFrom = (value: string | undefined): SupplierHistory | undefined =>
+  SUPPLIER_HISTORIES.find((h) => h === value);
 
 function Fact({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -262,8 +275,12 @@ function ActivityPanel({ screen, currency }: { screen: PartyScreen; currency: st
  *
  * A buyer's profile is their Customer 360° view (GET /api/parties/:id/buyer-360):
  * total sales, the average order, outstanding and overdue, gross profit, the
- * styles they buy most and their whole history, with a PDF of all of it. Each
- * part shows only to the people who may see it (parties/profile-access.ts).
+ * styles they buy most and their whole history, with a PDF of all of it.
+ * A supplier's is their Supplier 360° view (GET /api/parties/:id/supplier-360):
+ * what is due to them, their active and completed projects with each one's
+ * balance and settlement, the goods they delivered, and their purchase orders,
+ * bills and payments, with a PDF too. Each part shows only to the people who
+ * may see it (parties/profile-access.ts).
  */
 export default async function PartyPage({
   params,
@@ -294,9 +311,19 @@ export default async function PartyPage({
   if (party.kind !== "BOTH" && listOf(party.kind) !== name) redirect(partyHref(party));
   const currency = ctx.company.currency;
   const open = historyFrom(one(query.show));
-  // Customer 360°: buyers (and accounts that are both), seen from the buyers' list.
-  const buyer = name === "buyers" ? await getBuyer360Action(party.id, { all: open }) : null;
+  const openList = supplierListFrom(one(query.show));
+  // Customer 360°: buyers (and accounts that are both), seen from the buyers' list;
+  // Supplier 360°: suppliers (and accounts that are both), seen from the suppliers' list.
+  const [buyer, supplier] = await Promise.all([
+    name === "buyers" ? getBuyer360Action(party.id, { all: open }) : null,
+    name === "suppliers" ? getSupplier360Action(party.id, { all: openList }) : null,
+  ]);
   const buyer360 = buyer?.ok ? buyer.data : null;
+  const supplier360 = supplier?.ok ? supplier.data : null;
+  const categories =
+    party.kind === "BUYER"
+      ? []
+      : SUPPLIER_CATEGORIES.filter((c) => party.supplierCategories.includes(c));
   const noun =
     party.kind === "SUPPLIER" ? "supplier" : party.kind === "BUYER" ? "buyer" : "account";
   const notice =
@@ -338,6 +365,15 @@ export default async function PartyPage({
             {party.isVerified && <VerifiedBadge full />}
             <StatusBadge status={party.status} showActive />
           </div>
+          {categories.length > 0 && (
+            <ul aria-label="What they supply" className="mt-2 flex flex-wrap gap-1.5">
+              {categories.map((c) => (
+                <li key={c}>
+                  <Badge variant="secondary">{SUPPLIER_CATEGORY_LABELS[c]}</Badge>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
         {party.isWalkIn ? (
           <FormAlert tone="note">
@@ -362,6 +398,32 @@ export default async function PartyPage({
                 ready={{
                   eyebrow: "Buyer profile",
                   description: `${party.name}'s whole history with the figures you may see, as of today.`,
+                  errorTitle: "The PDF could not be made",
+                }}
+              />
+              <EmailPendingButton
+                what={`${party.name}'s 360° profile`}
+                className="flex-1 sm:flex-none"
+              />
+            </div>
+          )}
+          {supplier360?.can.pay && (
+            <Button asChild variant="outline" className="w-full sm:w-auto">
+              <Link href={accountsHref.pay(party.id)}>
+                <BanknoteIcon aria-hidden />
+                Pay supplier
+              </Link>
+            </Button>
+          )}
+          {supplier360?.can.print && (
+            <div className="flex gap-2">
+              <PrintDocumentButton
+                request={{ type: "SUPPLIER_360", partyId: party.id }}
+                label="360° PDF"
+                className="flex-1 sm:flex-none"
+                ready={{
+                  eyebrow: "Supplier profile",
+                  description: `${party.name}'s projects, deliveries and dues with the figures you may see, as of today.`,
                   errorTitle: "The PDF could not be made",
                 }}
               />
@@ -398,6 +460,14 @@ export default async function PartyPage({
         />
       )}
       {buyer360 && <BuyerFigures data={buyer360} currency={currency} />}
+      {supplier && !supplier.ok && (
+        <SectionError
+          title="Supplier 360°"
+          heading="The supplier's projects and history could not load"
+          error={supplier.error}
+        />
+      )}
+      {supplier360 && <SupplierFigures data={supplier360} currency={currency} />}
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
         <div className="grid content-start gap-6">
@@ -415,6 +485,14 @@ export default async function PartyPage({
           data={buyer360}
           currency={currency}
           open={open}
+          basePath={partyHref(party)}
+        />
+      )}
+      {supplier360 && (
+        <SupplierPanels
+          data={supplier360}
+          currency={currency}
+          open={openList}
           basePath={partyHref(party)}
         />
       )}

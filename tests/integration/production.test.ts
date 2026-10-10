@@ -653,9 +653,16 @@ run("production costs", () => {
   it("keeps a list of production cost heads", async () => {
     const env = await setup();
     const heads = await costs.listCostHeads(env.pmCtx);
-    expect(heads).toHaveLength(10);
+    expect(heads).toHaveLength(12);
     expect(heads.map((h) => h.name)).toEqual(
-      expect.arrayContaining(["Fabric", "Sewing (CM)", "Wash", "Finishing & Packing"]),
+      expect.arrayContaining([
+        "Fabric",
+        "Sewing (CM)",
+        "Wash",
+        "Finishing & Packing",
+        "FOB Goods",
+        "QC & Inspection",
+      ]),
     );
     const knitting = await costs.createCostHead(env.pmCtx, { name: "Knitting" });
     expect(knitting).toMatchObject({ name: "Knitting", category: "PRODUCTION", isActive: true });
@@ -1471,7 +1478,7 @@ run("production company isolation", () => {
     ]);
     expect((await costs.listBills(b.pmCtx)).items).toEqual([]);
     expect((await intakes.listIntakes(b.pmCtx)).items).toEqual([]);
-    expect(await costs.listCostHeads(b.pmCtx)).toHaveLength(10);
+    expect(await costs.listCostHeads(b.pmCtx)).toHaveLength(12);
     expect((await intakes.getIntake(a.pmCtx, intake.id)).status).toBe("DRAFT");
     await expectBooksBalanced(a.company.id);
     await expectBooksBalanced(b.company.id);

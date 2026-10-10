@@ -13,6 +13,10 @@ import { ensureControlAccounts } from "@/modules/accounts/control-accounts";
  * bill, an asset bought on credit, a Due expense, an opening balance or a
  * journal adjustment. Every change to a supplier's Payable lines calls
  * settleSupplierBills in the same transaction.
+ *
+ * A payment made for one production project settles that project's bills
+ * first (oldest first, up to the project's part of a bill split between
+ * projects); what it does not need joins everything else, oldest due first.
  */
 
 type Tx = Prisma.TransactionClient;
@@ -31,6 +35,56 @@ export type BillSettlement = {
   status: BillStatus;
 };
 
+/**
+ * What each of these bills charges to each production project: the split of a
+ * production bill (its allocations), and the whole of a raw material purchase
+ * made on a purchase order for a project. Bills charged to no project are left out.
+ */
+export async function billProjectShares(
+  db: Db,
+  bills: Array<{ id: string; totalAmount: Prisma.Decimal; purchaseOrderId?: string | null }>,
+): Promise<Map<string, Map<string, Prisma.Decimal>>> {
+  const shares = new Map<string, Map<string, Prisma.Decimal>>();
+  const add = (billId: string, projectId: string, amount: Prisma.Decimal) => {
+    const forBill = shares.get(billId) ?? new Map<string, Prisma.Decimal>();
+    forBill.set(projectId, (forBill.get(projectId) ?? ZERO).plus(amount));
+    shares.set(billId, forBill);
+  };
+  if (bills.length === 0) return shares;
+  const allocations = await db.supplierBillAllocation.groupBy({
+    by: ["billId", "projectId"],
+    where: { billId: { in: bills.map((b) => b.id) }, projectId: { not: null } },
+    _sum: { amount: true },
+  });
+  for (const a of allocations) add(a.billId, a.projectId!, a._sum.amount ?? ZERO);
+  const orderIds = [
+    ...new Set(bills.flatMap((b) => (b.purchaseOrderId ? [b.purchaseOrderId] : []))),
+  ];
+  if (orderIds.length > 0) {
+    const orders = await db.purchaseOrder.findMany({
+      where: { id: { in: orderIds }, projectId: { not: null } },
+      select: { id: true, projectId: true },
+    });
+    const projectOf = new Map(orders.map((o) => [o.id, o.projectId!]));
+    for (const b of bills) {
+      const projectId = b.purchaseOrderId ? projectOf.get(b.purchaseOrderId) : undefined;
+      // A purchase bill has no allocations: the whole of it is for the order's project.
+      if (projectId && !shares.has(b.id)) add(b.id, projectId, b.totalAmount);
+    }
+  }
+  return shares;
+}
+
+/** A project's part of an amount on a bill (all of it when the bill is the project's alone). */
+export function projectPart(
+  amount: Prisma.Decimal,
+  share: Prisma.Decimal,
+  billTotal: Prisma.Decimal,
+): Prisma.Decimal {
+  if (billTotal.lte(0) || share.gte(billTotal)) return amount;
+  return amount.times(share).dividedBy(billTotal).toDecimalPlaces(2, Prisma.Decimal.ROUND_DOWN);
+}
+
 type PlannedBill = {
   id: string;
   number: string;
@@ -42,10 +96,12 @@ type PlannedBill = {
 
 /**
  * What a supplier's bills should show, from their Payable ledger. Payments made
- * against a bill count for that bill. Everything else the supplier's ledger was
- * debited with (payments on account, payments left over from void bills,
- * adjustments) settles what they are owed oldest first, bills and other dues
- * (opening balance, assets on credit, Due expenses) alike.
+ * against a bill count for that bill. Payments made for a project then settle
+ * that project's bills, oldest first. Everything else the supplier's ledger was
+ * debited with (payments on account, what project payments did not need,
+ * payments left over from void bills, adjustments) settles what they are owed
+ * oldest first, bills and other dues (opening balance, assets on credit, Due
+ * expenses) alike.
  */
 async function planSettlement(db: Db, companyId: string, supplierId: string) {
   const bills = await db.supplierBill.findMany({
@@ -59,6 +115,7 @@ async function planSettlement(db: Db, companyId: string, supplierId: string) {
       paidAmount: true,
       dueAmount: true,
       status: true,
+      purchaseOrderId: true,
     },
   });
   const billIds = new Set(bills.map((b) => b.id));
@@ -69,6 +126,20 @@ async function planSettlement(db: Db, companyId: string, supplierId: string) {
   });
   const directByBill = new Map(direct.map((d) => [d.supplierBillId, d._sum.amount ?? ZERO]));
   const paidDirect = [...directByBill.values()].reduce((s, v) => s.plus(v), ZERO);
+  // Payments made for one project (on account, not against a bill).
+  const forProjects = await db.payment.groupBy({
+    by: ["projectId"],
+    where: {
+      companyId,
+      direction: "PAID",
+      partyId: supplierId,
+      supplierBillId: null,
+      projectId: { not: null },
+      ...livePayment,
+    },
+    _sum: { amount: true },
+    orderBy: { projectId: "asc" },
+  });
 
   // The supplier's Payable lines that still count (an entry and its reversal cancel out).
   const acc = await ensureControlAccounts(companyId, db);
@@ -116,14 +187,41 @@ async function planSettlement(db: Db, companyId: string, supplierId: string) {
       (a.bill ? 1 : 0) - (b.bill ? 1 : 0),
   );
 
-  let pool = Prisma.Decimal.max(debits.minus(paidDirect), ZERO);
+  // Each project's payments settle its own bills first, oldest first.
+  const forProject = new Map<string, Prisma.Decimal>();
+  let paidForProjects = ZERO;
+  if (forProjects.length > 0) {
+    const shares = await billProjectShares(db, bills);
+    for (const row of forProjects) {
+      let left = row._sum.amount ?? ZERO;
+      for (const due of dues) {
+        if (left.lte(0)) break;
+        const bill = due.bill;
+        const share = bill ? shares.get(bill.id)?.get(row.projectId!) : undefined;
+        if (!bill || !share) continue;
+        const taken = forProject.get(bill.id) ?? ZERO;
+        const open = Prisma.Decimal.min(
+          projectPart(due.amount, share, bill.totalAmount),
+          due.amount.minus(taken),
+        );
+        const applied = Prisma.Decimal.min(left, open);
+        if (applied.lte(0)) continue;
+        forProject.set(bill.id, taken.plus(applied));
+        paidForProjects = paidForProjects.plus(applied);
+        left = left.minus(applied);
+      }
+    }
+  }
+
+  let pool = Prisma.Decimal.max(debits.minus(paidDirect).minus(paidForProjects), ZERO);
   const planned: PlannedBill[] = [];
   for (const due of dues) {
-    const applied = Prisma.Decimal.min(due.amount, pool);
+    const projectPaid = due.bill ? (forProject.get(due.bill.id) ?? ZERO) : ZERO;
+    const applied = Prisma.Decimal.min(due.amount.minus(projectPaid), pool);
     pool = pool.minus(applied);
     const bill = due.bill;
     if (!bill) continue;
-    const paid = (directByBill.get(bill.id) ?? ZERO).plus(applied);
+    const paid = (directByBill.get(bill.id) ?? ZERO).plus(projectPaid).plus(applied);
     const owed = Prisma.Decimal.max(bill.totalAmount.minus(paid), ZERO);
     planned.push({
       id: bill.id,

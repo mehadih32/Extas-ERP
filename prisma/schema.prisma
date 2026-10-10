@@ -143,6 +143,7 @@ model Company {
   reminders            Reminder[]
   reminderRules        ReminderRule[]
   notifications        NotificationLog[]
+  projectSettlements   ProjectSettlement[]
 }
 
 /// A person who can log in. Global across companies.
@@ -197,6 +198,7 @@ model User {
   materialMovements RawMaterialMovement[] @relation("MaterialMovementBy")
   refunds           Refund[]              @relation("RefundCreatedBy")
   intakesReversed   StockIntake[]         @relation("IntakeReversedBy")
+  settlementsMade   ProjectSettlement[]   @relation("SettlementMadeBy")
 }
 
 /// A signed-in device. `token` stores the SHA-256 hash of the cookie value, never
@@ -869,36 +871,39 @@ model PurchaseReturnLine {
 
 /// A buyer (retail, wholesale, B2B), supplier/factory, or both.
 model Party {
-  id                String           @id @default(cuid())
-  companyId         String
-  code              String
-  kind              PartyKind
-  buyerType         BuyerType? // only for buyers
-  name              String
-  contactPerson     String?
-  phone             String?
-  whatsapp          String?
-  email             String?
-  address           String?
-  city              String?
-  country           String?          @default("Bangladesh")
-  taxId             String?
+  id                 String             @id @default(cuid())
+  companyId          String
+  code               String
+  kind               PartyKind
+  buyerType          BuyerType? // only for buyers
+  name               String
+  contactPerson      String?
+  phone              String?
+  whatsapp           String?
+  email              String?
+  address            String?
+  city               String?
+  country            String?            @default("Bangladesh")
+  taxId              String?
   // 360° profile signals
-  grade             PartyGrade? // A+, A, B, C
-  isVerified        Boolean          @default(false) // 💙 Blue Verified badge
-  verifiedAt        DateTime?
-  status            PartyStatus      @default(ACTIVE)
-  statusChangedAt   DateTime?
-  creditLimit       Decimal?         @db.Decimal(14, 2)
-  paymentTermsDays  Int?
-  openingBalance    Decimal          @default(0) @db.Decimal(14, 2) // + receivable / - payable
-  lastTransactionAt DateTime? // drives dormant buyer filters
-  notes             String?
-  customFields      Json?
+  grade              PartyGrade? // A+, A, B, C
+  isVerified         Boolean            @default(false) // 💙 Blue Verified badge
+  verifiedAt         DateTime?
+  status             PartyStatus        @default(ACTIVE)
+  statusChangedAt    DateTime?
+  creditLimit        Decimal?           @db.Decimal(14, 2)
+  paymentTermsDays   Int?
+  openingBalance     Decimal            @default(0) @db.Decimal(14, 2) // + receivable / - payable
+  lastTransactionAt  DateTime? // drives dormant buyer filters
+  notes              String?
+  customFields       Json?
   /// Set on the account the system keeps itself (see PartySystemRole); null for real buyers and suppliers.
-  systemRole        PartySystemRole?
-  createdAt         DateTime         @default(now())
-  updatedAt         DateTime         @updatedAt
+  systemRole         PartySystemRole?
+  /// What a supplier supplies (any number of them; none for buyers). Fabric, FOB and CM
+  /// suppliers are settled project by project; accessories run on a continuous ledger.
+  supplierCategories SupplierCategory[] @default([])
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
 
   company              Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
   quotations           Quotation[]
@@ -917,6 +922,7 @@ model Party {
   productionsAsFactory ProductionProject[] @relation("ProductionFactory")
   campaignRecipients   CampaignRecipient[]
   generatedDocuments   GeneratedDocument[]
+  projectSettlements   ProjectSettlement[]
 
   @@unique([companyId, code])
   @@unique([companyId, systemRole])
@@ -1234,25 +1240,29 @@ model Payment {
   proformaId     String?
   supplierBillId String?
   shipmentId     String? // courier COD payout
+  /// A payment to a supplier for one production project: it settles that project's bills first.
+  projectId      String?
   reference      String? // cheque no, bKash trx id...
   isAdvance      Boolean          @default(false)
   notes          String?
   journalEntryId String?          @unique
   createdAt      DateTime         @default(now())
 
-  company      Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  party        Party?           @relation(fields: [partyId], references: [id], onDelete: SetNull)
-  account      LedgerAccount    @relation(fields: [accountId], references: [id])
-  invoice      Invoice?         @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
-  order        SalesOrder?      @relation(fields: [orderId], references: [id], onDelete: SetNull)
-  proforma     ProformaInvoice? @relation(fields: [proformaId], references: [id], onDelete: SetNull)
-  supplierBill SupplierBill?    @relation(fields: [supplierBillId], references: [id], onDelete: SetNull)
-  shipment     Shipment?        @relation(fields: [shipmentId], references: [id], onDelete: SetNull)
-  journalEntry JournalEntry?    @relation(fields: [journalEntryId], references: [id], onDelete: SetNull)
+  company      Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  party        Party?             @relation(fields: [partyId], references: [id], onDelete: SetNull)
+  account      LedgerAccount      @relation(fields: [accountId], references: [id])
+  invoice      Invoice?           @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  order        SalesOrder?        @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  proforma     ProformaInvoice?   @relation(fields: [proformaId], references: [id], onDelete: SetNull)
+  supplierBill SupplierBill?      @relation(fields: [supplierBillId], references: [id], onDelete: SetNull)
+  shipment     Shipment?          @relation(fields: [shipmentId], references: [id], onDelete: SetNull)
+  project      ProductionProject? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  journalEntry JournalEntry?      @relation(fields: [journalEntryId], references: [id], onDelete: SetNull)
 
   @@unique([companyId, number])
   @@index([companyId, paymentDate])
   @@index([partyId])
+  @@index([projectId])
 }
 
 /// Buyer money taken back off an order, a proforma or the buyer's account:
@@ -1487,9 +1497,41 @@ model ProductionProject {
   purchaseOrders       PurchaseOrder[]
   materialIssues       MaterialIssue[]
   tasks                Task[]
+  supplierPayments     Payment[]
+  settlements          ProjectSettlement[]
 
   @@unique([companyId, code])
   @@index([companyId, status, targetDate])
+}
+
+/// What a project owed one supplier when it was completed (closed): their bills for it,
+/// what was paid on them and the rest, which stays due on the supplier's own ledger. A
+/// statement only: nothing is posted, as every bill is already on that ledger, so the
+/// project's balance with the supplier shows as zero from then on. Reopening the
+/// project sets it aside; completing it again makes a new one.
+model ProjectSettlement {
+  id          String    @id @default(cuid())
+  companyId   String
+  projectId   String
+  supplierId  String
+  settledAt   DateTime  @default(now())
+  billed      Decimal   @db.Decimal(14, 2) // the supplier's bills charged to the project
+  paid        Decimal   @db.Decimal(14, 2) // paid on those bills when it closed
+  carried     Decimal   @db.Decimal(14, 2) // still due, left on the supplier's ledger
+  /// The bills as they stood: [{ id, number, billOn, charged, paid, due }].
+  bills       Json
+  settledById String?
+  /// The project was reopened: this statement no longer stands.
+  reopenedAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  company   Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  project   ProductionProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  supplier  Party             @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  settledBy User?             @relation("SettlementMadeBy", fields: [settledById], references: [id], onDelete: SetNull)
+
+  @@index([projectId])
+  @@index([supplierId, settledAt])
 }
 
 /// History of stage badges (Fabric Sourcing -> Cutting -> Sewing -> Wash/QC -> Finishing).
@@ -2763,6 +2805,15 @@ enum PartyKind {
   BOTH
 }
 
+/// What a supplier supplies. FABRIC, FOB (finished goods) and CM (a factory's cut and
+/// make) are settled project by project; ACCESSORIES run on a continuous ledger.
+enum SupplierCategory {
+  FABRIC
+  ACCESSORIES
+  FOB
+  CM
+}
+
 enum BuyerType {
   RETAIL
   WHOLESALE
@@ -3190,6 +3241,7 @@ enum DocumentType {
   REPORT
   REFUND_VOUCHER
   BUYER_360 // a buyer's whole history on one PDF (Customer 360°)
+  SUPPLIER_360 // a supplier's projects, deliveries and dues on one PDF (Supplier 360°)
 }
 
 enum TemplateFormat {

@@ -144,8 +144,8 @@ const sales = {
 
 /**
  * Where each printed document came from, for its link: a sales record (sales.view),
- * a statement (parties.ledger.view), a buyer's profile (parties.view), a style
- * (inventory.view) or a payslip (salaries).
+ * a statement (parties.ledger.view), a buyer's or supplier's profile (parties.view),
+ * a style (inventory.view) or a payslip (salaries).
  * Records that are gone, or that this person cannot open, get no link.
  */
 async function sourceLinks(
@@ -240,9 +240,11 @@ async function sourceLinks(
         break;
       }
       case "PartyProfile":
-        link = ctx.can("parties.view")
-          ? to(`/parties/buyers/${encodeURIComponent(id)}`, "Open the buyer")
-          : null;
+        link = !ctx.can("parties.view")
+          ? null
+          : d.type === "SUPPLIER_360"
+            ? to(`/parties/suppliers/${encodeURIComponent(id)}`, "Open the supplier")
+            : to(`/parties/buyers/${encodeURIComponent(id)}`, "Open the buyer");
         break;
       case "Style":
         link = ctx.can("inventory.view")

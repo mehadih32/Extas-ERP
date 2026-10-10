@@ -15,6 +15,7 @@ import { CostEntries, CostSummary, GradeCosts } from "@/components/production/co
 import { pieces, productionHref } from "@/components/production/labels";
 import { ProductionNoAccess } from "@/components/production/no-access";
 import { ProjectActions } from "@/components/production/project-actions";
+import { ProjectSuppliers } from "@/components/production/project-suppliers";
 import { forWhom, PiecesBar, TimelineBar } from "@/components/production/project-card";
 import { StageLog, StageTrack } from "@/components/production/stage-track";
 import { BackLink } from "@/components/settings/back-link";
@@ -173,6 +174,14 @@ export default async function ProjectPage({
               <GradeCosts costs={costs} targetQuantity={p.quantities.target} currency={currency} />
               <CostSummary costs={costs} currency={currency} />
             </>
+          )}
+          {screen.suppliers && (
+            <ProjectSuppliers
+              rows={screen.suppliers}
+              completed={p.status === "COMPLETED"}
+              currency={currency}
+              canOpenParty={can.openParty}
+            />
           )}
           <Panel title="Details" id="details-heading">
             <dl className="mt-4 grid gap-4">

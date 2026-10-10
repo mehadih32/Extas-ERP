@@ -11,11 +11,13 @@ import * as dormant from "@/modules/parties/dormant.service";
 import * as ledger from "@/modules/parties/ledger.service";
 import * as parties from "@/modules/parties/party.service";
 import * as screens from "@/modules/parties/screens.service";
+import * as supplier360 from "@/modules/parties/supplier-360.service";
 
 /*
  * Buyers & Suppliers Server Actions. Each returns { ok: true, data } or
  * { ok: false, error }.
- *   parties.view            profiles (with a buyer's 360° view), lists, dormant buyer filter
+ *   parties.view            profiles (with a buyer's or supplier's 360° view), lists,
+ *                           dormant buyer filter
  *   parties.manage          create / edit, grade, Blue Verified badge, status
  *   parties.ledger.view     statements, receivables & payables overview
  *   accounts.manage         opening balances (posts a journal entry)
@@ -46,6 +48,11 @@ export const getPartyScreenAction = async (partyId: string) =>
 /** A buyer's 360° view: figures, gross profit and history, as far as this person may see. */
 export const getBuyer360Action = async (partyId: string, options?: buyer360.Buyer360Options) =>
   runAction(async () => buyer360.getBuyer360(await view(), partyId, options));
+/** A supplier's 360° view: dues, projects, deliveries and history, as far as this person may see. */
+export const getSupplier360Action = async (
+  partyId: string,
+  options?: supplier360.Supplier360Options,
+) => runAction(async () => supplier360.getSupplier360(await view(), partyId, options));
 export const getPartyFormAction = async (partyId?: string) =>
   runAction(async () => screens.getPartyForm(await manage(), partyId));
 export const getStatementScreenAction = async (

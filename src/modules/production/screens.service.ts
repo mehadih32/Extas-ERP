@@ -56,6 +56,7 @@ import {
   isDraftDelivery,
   stageMoves,
 } from "@/modules/production/rules";
+import { projectSupplierRows } from "@/modules/production/settlement.service";
 import { STAGE_LABELS, STAGE_ORDER } from "@/modules/production/timeline";
 import { RECEIVE_METHODS } from "@/modules/sales/choices";
 
@@ -341,9 +342,13 @@ export async function getProjectScreen(ctx: CompanyContext, projectId: string) {
   const state = { code: project.code, status: project.status, stage: project.stage.key };
   const summary = await projectCostSummary(prisma, ctx.company.id, project.id);
   const wip = summary.wip;
-  const [sheet, grades] = access.seeCosts
-    ? await Promise.all([getProjectCostSheet(ctx, project.id), gradeCosts(ctx, project.id)])
-    : [null, null];
+  const [sheet, grades, suppliers] = access.seeCosts
+    ? await Promise.all([
+        getProjectCostSheet(ctx, project.id),
+        gradeCosts(ctx, project.id),
+        projectSupplierRows(prisma, ctx, { id: project.id, status: project.status }),
+      ])
+    : [null, null, null];
   const openDelivery = project.deliveries.find((d) => isDraftDelivery(d)) ?? null;
   const writeOff = canWriteOffOnClose(wip, access.writeOff).ok;
   const completable = access.close && canCompleteProject(state, openDelivery).ok;
@@ -401,6 +406,12 @@ export async function getProjectScreen(ctx: CompanyContext, projectId: string) {
             entries: costEntries(sheet, { ...state, wip }, access.payOut, tz),
           }
         : null,
+    /**
+     * Each supplier's bills for the project, what is paid and what it still owes
+     * them; once completed, the settlement statements (balance zero, the rest
+     * left on their ledger). Production Managers and Accounts only.
+     */
+    suppliers,
     can: {
       edit: access.manage,
       /** Where the stage badge may move (empty unless active). */

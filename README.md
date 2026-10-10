@@ -131,8 +131,11 @@ Built one module at a time, each in its own pull request. So far:
   - **Buyers** and **Suppliers**: every account with its contact, city, grade, Blue Verified
     tick, status and balance ("Owes you", "You owe" or "Settled"). An account that is both a
     buyer and a supplier shows in both lists. The search takes a name, code, contact person,
-    phone or email, and the status, grade, buyer type and Blue Verified filters narrow the
-    list. All of them are kept in the address. A profile shows:
+    phone or email, and the status, grade, buyer type (buyers), category (suppliers) and Blue
+    Verified filters narrow the list. All of them are kept in the address. A supplier has any
+    number of categories, ticked on their form: Fabric, Accessories, FOB and CM (Factory), so
+    a factory can be both CM and FOB; the suppliers' list shows them in a Category column. A
+    profile shows:
     - the balance, credit limit and credit left, payment terms, last payment, last business
       and opening balance;
     - the contact details (phone, WhatsApp and email open the phone's own apps);
@@ -158,6 +161,26 @@ Built one module at a time, each in its own pull request. So far:
     and production `production.view`, so a Sales Executive sees no profit and a Production
     Manager no sales. A printed profile keeps the parts it was made with and opens (in the
     list, on the profile and as a download) only for people who may see all of them.
+
+    A supplier's profile is their **Supplier 360°** view, with their categories under the
+    name. "At a glance" shows what is due to them on their ledger (the master ledger: every
+    bill, Due expense and opening balance less what was paid), what they billed and were paid
+    in all, what their open bills still owe, their active and completed projects and their
+    deliveries. Below come their active and completed projects (as the factory, or through a
+    bill or purchase order for the project) with what each was billed, paid and still owes
+    them, a completed one marked Settled with what was left on their ledger when it closed and
+    how much of that is still unpaid; the goods they delivered (raw materials bought into the
+    store and the finished goods their factory delivered, A and B grade); their purchase
+    orders, bills, payments and the documents printed for them, eight of each with "Show all"
+    (`?show=active`, `completed`, `deliveries`, `orders`, `bills`, `payments`, `documents`).
+    Accessories suppliers are on a running ledger and are not settled project by project.
+    "Pay supplier" (Accounts) opens the payment form, and "Pay for …" under a project opens it
+    on that project. "360° PDF" prints all of it, and "Email" says the integration is
+    pending. Amounts need the people who see production costs or raw material prices
+    (`production.manage`, `materials.purchase` or the accounts permissions), projects and
+    finished goods `production.view`, and purchase orders and raw material deliveries
+    `materials.view`; a Sales Executive sees the profile's balance only. A printed profile
+    opens only for people who may see every part of it.
 
     From the profile, people who may change accounts edit the details, give a grade (A+ to C),
     give or remove the Blue Verified badge, mark a buyer dormant, and close or reopen the
@@ -219,6 +242,16 @@ Built one module at a time, each in its own pull request. So far:
     entries, the A-grade and B-grade cost a piece, the costs by head and material, and its
     details. From there it is started, moved to the next stage (or another, going back needs
     a note), put on hold, resumed, completed or cancelled, and costs and bills are added.
+    For people who see costs, its Suppliers panel shows each supplier's bills for the project,
+    what is paid and what is still due. Completing a project settles it with every Fabric,
+    FOB and CM supplier (and any supplier with no category): a settlement statement keeps
+    their bills, what was paid and what was left, the project's balance with them shows as
+    zero, and what was left stays due on their own ledger, where every bill already is, so
+    nothing is posted and nothing counts twice. Accessories suppliers are on a running ledger
+    and are not settled by project. Reopening a project (a delivery undone) sets its
+    statements aside; completing it again settles anew. An FOB project takes the FOB
+    supplier's bill under the FOB Goods head, the company's own accessories issued from the
+    store, and QC under the QC & Inspection head, so the landed cost is complete.
   - **Deliveries**: goods from the factory, as drafts and confirmed. A delivery takes the
     pieces for each colour and size, with A-grade and B-grade apart, and the warehouse, with
     the packing list attached. Confirming moves the pieces into stock at the project's share
@@ -250,7 +283,9 @@ Built one module at a time, each in its own pull request. So far:
     closed once their money is moved out.
   - **Supplier payments**: payments to factories, mills and other suppliers, filtered by
     supplier. Paying one shows what they are owed and their open bills; a payment settles the
-    oldest first and anything over stays as an advance. A payment made by mistake is voided.
+    oldest first and anything over stays as an advance. "Apply to a project (optional)" picks
+    one of their projects with something due (completed ones too): the payment settles that
+    project's bills first and the rest goes to the oldest. A payment made by mistake is voided.
   - **Expenses**: rent, utilities, conveyance and the other running costs, searchable and
     filtered by status, head and "only mine". An expense takes the head, amount, day, how it
     was paid (now, from cash, a bank or a wallet, or owed to a supplier), the employee and the
@@ -467,7 +502,8 @@ Lists and profiles need `parties.view`, adding and changing accounts (details, g
 status) needs `parties.manage`, statements and the Dues tab need `parties.ledger.view`, and
 opening balances need `accounts.manage`, because they post to the books. The balance shows to
 everyone who can open a profile, as the API returns it with `parties.view`. A buyer's
-Customer 360° figures go by role on top of that:
+Customer 360° figures go by role on top of that (a supplier's Supplier 360° parts are
+described with the Buyers & suppliers screens above):
 
 | Role                | Sales figures and history | Gross profit | Production |
 | ------------------- | ------------------------- | ------------ | ---------- |
@@ -591,8 +627,9 @@ and profit and loss the financials, sales `sales.view`, stock alerts `inventory.
 opens only for people who may see every figure in it. Each kind of printed document needs the
 permission that prints it: `sales.view` for sales documents, `parties.ledger.view` for
 statements, `inventory.view` for stock sheets and `documents.letterhead` for letters. Buyer
-360° profiles need `parties.view`, and each opens only for people who may see every part it
-shows (sales, gross profit, production). Payslips
+and supplier 360° profiles need `parties.view`, and each opens only for people who may see
+every part it shows (a buyer's sales, gross profit and production; a supplier's amounts,
+projects and raw materials). Payslips
 list for `hr.manage`, `hr.payroll` and `accounts.view`; an employee with `portal.self` prints
 only their own, from an approved payroll. Templates change with `templates.manage`, and
 whoever prints a kind of document may fill its active templates; addressing a letter to a
@@ -828,6 +865,7 @@ before this account existed, the upgrade makes it and names it on those sales' l
 | `GET/POST /api/parties`                                    | List (type, grade, badge, status, city, search) / create    |
 | `GET/PATCH /api/parties/:id`                               | 360° profile with balance and activity / edit               |
 | `GET /api/parties/:id/buyer-360?all=`                      | Customer 360°: sales, dues, gross profit, styles, history   |
+| `GET /api/parties/:id/supplier-360?all=`                   | Supplier 360°: dues, projects, deliveries, bills, payments  |
 | `PUT /api/parties/:id/grade`                               | Set A+, A, B, C or none                                     |
 | `PUT /api/parties/:id/verify`                              | Give or remove the Blue Verified badge                      |
 | `PUT /api/parties/:id/status`                              | Active, Dormant, Closed (Settling while dues remain)        |
@@ -1055,8 +1093,22 @@ profit go to Finance Costs; owners' withdrawals go to Drawings.
 
 **Supplier payments.** A payment on account settles the supplier's oldest dues first: the
 opening balance, bills, assets bought on credit and Due expenses. Anything left over stays
-as an advance and settles the next bill. Bill paid and due figures are always recomputed
-from the supplier's ledger, so voiding a payment or a bill keeps them right.
+as an advance and settles the next bill. A payment made for one production project
+(`projectId` on `POST /api/accounts/supplier-payments`, only while something is due to the
+supplier for it) settles that project's bills first, oldest first and up to the project's
+share of a bill split between projects; what it does not need joins the rest, oldest first.
+Bill paid and due figures are always recomputed from the supplier's ledger, so voiding a
+payment or a bill keeps them right.
+
+**Project settlements.** A supplier's balance with a project is their bills for it: a bill's
+share for the project (all of it when the bill is the project's alone, and the whole of a raw
+material purchase made on a purchase order for the project), with paid and due split by the
+same share. Completing a project keeps a settlement statement (`ProjectSettlement`) for each
+supplier who is not accessories-only: what they billed the project, what was paid and what
+was left, with the bills as they stood. Nothing is posted: every bill is already on the
+supplier's Payable ledger, which is the master ledger, so the carried due simply stays there.
+The project's balance with them reads zero from then on. Reopening the project marks its
+statements `reopenedAt`; completing it again makes new ones.
 
 **Expenses (Quick Add).** Expense heads come ready (Office Rent, Electricity, Water & Gas,
 Salaries & Wages, Marketing & Ads, Courier & Delivery, Conveyance, Food & Refreshments...).
@@ -1413,7 +1465,7 @@ later with the other outside integrations.
 ## Printable documents (backend)
 
 Quotations, proforma and commercial invoices, packing lists, delivery challans, money receipts,
-refund vouchers, buyer and supplier statements, buyer 360° profiles, stock availability sheets and a blank letterhead pad print as A4
+refund vouchers, buyer and supplier statements, buyer and supplier 360° profiles, stock availability sheets and a blank letterhead pad print as A4
 PDFs on the company letterhead: the logo, name, legal name and contact details on top, the
 company colours, and the footer line with page numbers on every page. Everything on the page
 comes from the same data as the screens, with amounts in lakh and crore for taka and dates in
@@ -1427,19 +1479,20 @@ that keeps the number changes nothing, so kept PDFs are reused. The print data b
 screens (`letterhead` in the quotation, proforma, order, invoice, packing list, challan,
 receipt, payslip and bank statement endpoints) carries them as `bin` and `tradeLicense`.
 
-| Document             | What it shows                                                                                                               | Needs                  |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
-| Quotation            | Items with style, fabric and sizes, discount, VAT, the total in words, styling instructions, custom fields and terms        | `sales.view`           |
-| Proforma invoice     | The quotation's items and total, the advance with what is received and due, and payments; CANCELLED across a cancelled one  | `sales.view`           |
-| Commercial invoice   | Each SKU with pieces and price (a discount column only when used), delivery charge, VAT, paid and due; PAID or VOID marks   | `sales.view`           |
-| Packing list         | SKU, item, colour, size and pieces by carton (each carton totalled), a tick box per line, cartons, gross weight; no prices  | `sales.view`           |
-| Delivery challan     | SKU, item, colour, size and pieces with the total, vehicle and driver, received by; no prices                               | `sales.view`           |
-| Money receipt        | Who paid, the amount in figures and words, method and cheque / transaction no., what it was for, and the balance after it   | `sales.view`           |
-| Refund voucher       | Money taken back off a proforma, order or account: paid back, credit note or cancellation charge, with what it left held    | `sales.view`           |
-| Statement of account | Opening balance, debits, credits and closing balance (Dr / Cr), then every transaction with the running balance, any period | `parties.ledger.view`  |
-| Buyer 360° profile   | Sales, average order, outstanding, overdue, gross profit, top styles, and every order, quotation, payment and production    | `parties.view`         |
-| Stock availability   | Pieces ready to ship per colour and size for chosen styles or a whole brand, in one warehouse or all; no prices             | `inventory.view`       |
-| Blank letterhead     | The letterhead and footer on an empty page, for letters                                                                     | `documents.letterhead` |
+| Document              | What it shows                                                                                                               | Needs                  |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
+| Quotation             | Items with style, fabric and sizes, discount, VAT, the total in words, styling instructions, custom fields and terms        | `sales.view`           |
+| Proforma invoice      | The quotation's items and total, the advance with what is received and due, and payments; CANCELLED across a cancelled one  | `sales.view`           |
+| Commercial invoice    | Each SKU with pieces and price (a discount column only when used), delivery charge, VAT, paid and due; PAID or VOID marks   | `sales.view`           |
+| Packing list          | SKU, item, colour, size and pieces by carton (each carton totalled), a tick box per line, cartons, gross weight; no prices  | `sales.view`           |
+| Delivery challan      | SKU, item, colour, size and pieces with the total, vehicle and driver, received by; no prices                               | `sales.view`           |
+| Money receipt         | Who paid, the amount in figures and words, method and cheque / transaction no., what it was for, and the balance after it   | `sales.view`           |
+| Refund voucher        | Money taken back off a proforma, order or account: paid back, credit note or cancellation charge, with what it left held    | `sales.view`           |
+| Statement of account  | Opening balance, debits, credits and closing balance (Dr / Cr), then every transaction with the running balance, any period | `parties.ledger.view`  |
+| Buyer 360° profile    | Sales, average order, outstanding, overdue, gross profit, top styles, and every order, quotation, payment and production    | `parties.view`         |
+| Supplier 360° profile | Due to them, billed and paid, active and completed projects with their settlements, deliveries, orders, bills and payments  | `parties.view`         |
+| Stock availability    | Pieces ready to ship per colour and size for chosen styles or a whole brand, in one warehouse or all; no prices             | `inventory.view`       |
+| Blank letterhead      | The letterhead and footer on an empty page, for letters                                                                     | `documents.letterhead` |
 
 `documents.letterhead` is new: Sales Executives, Accounts and Production Managers have it by
 default (Super Admin has every permission). The stock sheet counts first-quality pieces less
@@ -1509,6 +1562,7 @@ What to print:
 - `{ type: "PAYMENT_RECEIPT", id }` (the payment's id)
 - `{ type: "LEDGER_STATEMENT", partyId, from?, to? }` (calendar days; none = the whole account)
 - `{ type: "BUYER_360", partyId }` (a buyer's Customer 360° profile, as of today)
+- `{ type: "SUPPLIER_360", partyId }` (a supplier's Supplier 360° profile, as of today)
 - `{ type: "STOCK_AVAILABILITY", styleIds?, brandId?, warehouseId?, includeEmpty? }`
 - `{ type: "LETTERHEAD" }`
 

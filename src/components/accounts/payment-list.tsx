@@ -22,7 +22,7 @@ import { paymentListQuery, type PaymentListView } from "./list-view";
 const what = (p: SupplierPaymentRow) =>
   [
     `${METHOD_LABELS[p.method]}${p.account ? ` from ${p.account.name}` : ""}`,
-    p.bill ? `for ${p.bill.number}` : "on account",
+    p.bill ? `for ${p.bill.number}` : p.project ? `for ${p.project.code}` : "on account",
   ].join(" · ");
 
 /**

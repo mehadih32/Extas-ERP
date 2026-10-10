@@ -1,6 +1,6 @@
 "use client";
 
-import type { BuyerType, PartyGrade, PartyKind } from "@prisma/client";
+import type { BuyerType, PartyGrade, PartyKind, SupplierCategory } from "@prisma/client";
 import { LoaderCircleIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -17,12 +17,22 @@ import type { ActionError } from "@/lib/result";
 import type { PartyForm as PartyFormData } from "@/modules/parties/screens.service";
 import { createPartyAction, updatePartyAction } from "@/server/actions/parties.actions";
 
-import { BUYER_TYPE_LABELS, GRADE_LABELS, GRADES, KIND_LABELS, partyHref } from "./labels";
+import {
+  BUYER_TYPE_LABELS,
+  GRADE_LABELS,
+  GRADES,
+  KIND_LABELS,
+  partyHref,
+  SUPPLIER_CATEGORIES,
+  SUPPLIER_CATEGORY_HINTS,
+  SUPPLIER_CATEGORY_LABELS,
+} from "./labels";
 import type { PartyListName } from "./labels";
 
 const FIELDS = [
   "kind",
   "buyerType",
+  "supplierCategories",
   "code",
   "name",
   "contactPerson",
@@ -45,6 +55,7 @@ const PHONE = /^[+0-9 ()-]*$/;
 /** Whether a field's new value differs from the saved one ("50000.00" and 50000 are the same). */
 function differs(saved: unknown, value: unknown): boolean {
   if (typeof value === "number" && typeof saved === "string") return Number(saved) !== value;
+  if (Array.isArray(value)) return JSON.stringify(saved ?? []) !== JSON.stringify(value);
   return (saved ?? null) !== (value ?? null);
 }
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -89,6 +100,7 @@ export function PartyForm({
   const described = (name: FieldName, hint = false) =>
     fieldError(name) ? `${name}-error` : hint ? `${name}-hint` : undefined;
   const sells = kind !== "SUPPLIER";
+  const supplies = kind !== "BUYER";
   const noun = kind === "SUPPLIER" ? "supplier" : kind === "BUYER" ? "buyer" : "account";
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -123,6 +135,9 @@ export function PartyForm({
     const all = {
       kind,
       buyerType: sells ? ((textOf(form, "buyerType") || "WHOLESALE") as BuyerType) : null,
+      supplierCategories: supplies
+        ? SUPPLIER_CATEGORIES.filter((c) => form.getAll("supplierCategories").includes(c))
+        : ([] as SupplierCategory[]),
       name,
       contactPerson: textOf(form, "contactPerson") || null,
       phone: textOf(form, "phone") || null,
@@ -217,6 +232,51 @@ export function PartyForm({
               </Field>
             )}
           </div>
+          {supplies && (
+            <fieldset
+              className="grid gap-3"
+              aria-describedby={
+                fieldError("supplierCategories")
+                  ? "supplierCategories-error"
+                  : "supplierCategories-hint"
+              }
+            >
+              <legend className="text-sm font-medium">What they supply (optional)</legend>
+              <p
+                id="supplierCategories-hint"
+                className="-mt-1 text-[0.8125rem] text-muted-foreground"
+              >
+                Tick all that apply: a factory can be both CM and FOB.
+              </p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {SUPPLIER_CATEGORIES.map((c) => (
+                  <label
+                    key={c}
+                    className="flex cursor-pointer items-start gap-3 rounded-md border bg-card p-3 text-sm has-[:checked]:border-primary/50"
+                  >
+                    <input
+                      type="checkbox"
+                      name="supplierCategories"
+                      value={c}
+                      defaultChecked={party?.supplierCategories.includes(c) ?? false}
+                      className="mt-0.5 size-4 shrink-0 cursor-pointer accent-primary"
+                    />
+                    <span className="min-w-0">
+                      <span className="font-medium">{SUPPLIER_CATEGORY_LABELS[c]}</span>
+                      <span className="mt-0.5 block text-[0.8125rem] text-muted-foreground">
+                        {SUPPLIER_CATEGORY_HINTS[c]}
+                      </span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+              {fieldError("supplierCategories") && (
+                <p id="supplierCategories-error" className="text-sm text-destructive">
+                  {fieldError("supplierCategories")}
+                </p>
+              )}
+            </fieldset>
+          )}
         </Section>
       )}
 

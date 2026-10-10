@@ -17,6 +17,7 @@ import {
   paySupplierSchema,
   voidSchema,
 } from "@/modules/accounts/schemas";
+import { supplierProjectBalances } from "@/modules/accounts/supplier-projects";
 import { settleSupplierBills } from "@/modules/accounts/supplier-settlement";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
@@ -27,11 +28,13 @@ import { recordPartyActivity } from "@/modules/parties/party.service";
  * Paying a supplier on account (not against one bill): one payment voucher,
  *   Dr Payable (supplier)   Cr Cash / Bank / Wallet
  * The supplier's oldest dues are then settled first: the opening balance, bills,
- * assets bought on credit, Due expenses. Anything left over stays on their
- * ledger as an advance and settles the next bill automatically. Bill paid / due
- * figures are recomputed from the supplier's ledger every time
- * (settleSupplierBills), so voiding a payment or a bill keeps them in step. A
- * payment is void once its journal entry is reversed.
+ * assets bought on credit, Due expenses. A payment made for one production
+ * project settles that project's bills first instead, and the rest goes to the
+ * oldest dues as usual. Anything left over stays on their ledger as an advance
+ * and settles the next bill automatically. Bill paid / due figures are
+ * recomputed from the supplier's ledger every time (settleSupplierBills), so
+ * voiding a payment or a bill keeps them in step. A payment is void once its
+ * journal entry is reversed.
  */
 
 const TX_OPTIONS = { timeout: 30_000 };
@@ -40,6 +43,7 @@ const paymentInclude = {
   party: { select: { id: true, code: true, name: true } },
   account: { select: { id: true, code: true, name: true } },
   supplierBill: { select: { id: true, number: true } },
+  project: { select: { id: true, code: true, name: true } },
   journalEntry: { select: { id: true, number: true, isReversed: true } },
 } satisfies Prisma.PaymentInclude;
 
@@ -58,6 +62,8 @@ function presentPayment(p: PaymentRow) {
     account: p.account,
     /** null: paid on account (settles the oldest open bills). */
     bill: p.supplierBill,
+    /** The production project it was paid for (settles that project's bills first). */
+    project: p.project,
     journalEntry: p.journalEntry,
     isVoid: p.journalEntry?.isReversed ?? false,
     createdAt: p.createdAt,
@@ -117,7 +123,10 @@ export async function getSupplierPayment(ctx: CompanyContext, paymentId: string)
   return { ...presentPayment(payment), supplierNow: await supplierSummary(ctx, payment.partyId) };
 }
 
-/** Accounts pays a supplier a lump sum; it settles their oldest open bills. */
+/**
+ * Accounts pays a supplier a lump sum; it settles their oldest open bills, or
+ * first those of the project it is paid for.
+ */
 export async function paySupplier(ctx: CompanyContext, raw: unknown, meta?: RequestMeta) {
   assertCanPayMoney(ctx, "Only Accounts can pay suppliers.");
   const input = paySupplierSchema.parse(raw);
@@ -134,6 +143,24 @@ export async function paySupplier(ctx: CompanyContext, raw: unknown, meta?: Requ
   const paymentDate = input.paymentDate
     ? toInstant(input.paymentDate, ctx.company.timezone)
     : new Date();
+  const project = input.projectId
+    ? await ctx.db.productionProject.findUnique({
+        where: { id: input.projectId },
+        select: { id: true, code: true },
+      })
+    : null;
+  if (input.projectId && !project) throw new AppError("NOT_FOUND", "Production project not found.");
+  if (project) {
+    const owed = (await supplierProjectBalances(prisma, companyId, supplier.id)).get(project.id);
+    if (!owed || owed.due.lte(0)) {
+      throw new AppError(
+        "VALIDATION",
+        `Nothing is due to ${supplier.name} for ${project.code}. Pay without a project to settle their oldest bills.`,
+        { projectId: [`Nothing is due for ${project.code}.`] },
+      );
+    }
+  }
+  const forWhat = project ? `for ${project.code}` : "on account";
 
   const result = await prisma.$transaction(async (tx) => {
     const paidFrom = await cashAccountFor(tx, companyId, input.method, input.accountId);
@@ -148,6 +175,7 @@ export async function paySupplier(ctx: CompanyContext, raw: unknown, meta?: Requ
         amount,
         paymentDate,
         accountId: paidFrom,
+        projectId: project?.id ?? null,
         reference: input.reference ?? null,
         notes: input.notes ?? null,
       },
@@ -155,14 +183,19 @@ export async function paySupplier(ctx: CompanyContext, raw: unknown, meta?: Requ
     const entry = await postJournalEntry(tx, {
       companyId,
       date: paymentDate,
-      description: `Payment ${payment.number} to ${supplier.name} (on account)${
+      description: `Payment ${payment.number} to ${supplier.name} (${forWhat})${
         input.notes ? ` — ${input.notes}` : ""
       }`,
       sourceType: "PAYMENT",
       sourceId: payment.id,
       postedById: ctx.user.id,
       lines: [
-        { accountId: acc.PAYABLE, partyId: supplier.id, debit: amount, memo: "On account" },
+        {
+          accountId: acc.PAYABLE,
+          partyId: supplier.id,
+          debit: amount,
+          memo: project ? `For ${project.code}` : "On account",
+        },
         { accountId: paidFrom, credit: amount, memo: input.reference ?? undefined },
       ],
     });
@@ -185,7 +218,7 @@ export async function paySupplier(ctx: CompanyContext, raw: unknown, meta?: Requ
         action: "CREATE",
         entityType: "Payment",
         entityId: payment.id,
-        summary: `Paid ${amount.toFixed(2)} (${input.method}) ${payment.number} to ${supplier.name} on account${
+        summary: `Paid ${amount.toFixed(2)} (${input.method}) ${payment.number} to ${supplier.name} ${forWhat}${
           appliedTo.length > 0
             ? `; settles ${appliedTo.map((a) => `${a.number} ${a.amount}`).join(", ")}`
             : ""

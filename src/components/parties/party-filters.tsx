@@ -9,14 +9,22 @@ import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { cn } from "@/lib/utils";
 
-import { BUYER_TYPE_LABELS, GRADE_LABELS, GRADES, STATUS_LABELS } from "./labels";
+import {
+  BUYER_TYPE_LABELS,
+  GRADE_LABELS,
+  GRADES,
+  STATUS_LABELS,
+  SUPPLIER_CATEGORIES,
+  SUPPLIER_CATEGORY_LABELS,
+} from "./labels";
 import { isFiltered, type PartyListView, partyListSearch } from "./list-view";
 
 /**
  * The Buyers and Suppliers tabs' filters: search (name, code, contact person,
- * phone or email), status, grade, buyer type (buyers only) and Blue Verified
- * only. A change reloads the list from the server; the old list stays, dimmed,
- * until the new one arrives, while the filters already show the choice made.
+ * phone or email), status, grade, buyer type (buyers only), category
+ * (suppliers only) and Blue Verified only. A change reloads the list from the
+ * server; the old list stays, dimmed, until the new one arrives, while the
+ * filters already show the choice made.
  */
 export function PartyFilters({
   view,
@@ -128,6 +136,27 @@ export function PartyFilters({
               </NativeSelect>
             </div>
           )}
+          {!buyers && (
+            <div>
+              <label className="sr-only" htmlFor="party-category">
+                Category
+              </label>
+              <NativeSelect
+                id="party-category"
+                value={shown.category ?? ""}
+                onChange={(e) =>
+                  show({ category: (e.target.value || undefined) as PartyListView["category"] })
+                }
+              >
+                <option value="">All categories</option>
+                {SUPPLIER_CATEGORIES.map((c) => (
+                  <option key={c} value={c}>
+                    {SUPPLIER_CATEGORY_LABELS[c]}
+                  </option>
+                ))}
+              </NativeSelect>
+            </div>
+          )}
           <label className="flex h-11 cursor-pointer items-center gap-2 text-sm md:h-9">
             <input
               type="checkbox"
@@ -150,6 +179,7 @@ export function PartyFilters({
                 status: undefined,
                 grade: undefined,
                 type: undefined,
+                category: undefined,
                 verified: false,
               })
             }

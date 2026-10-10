@@ -73,6 +73,9 @@ export const DEFAULT_PRODUCTION_COST_HEADS: ReadonlyArray<{
   { name: "Finishing & Packing", category: "PRODUCTION" },
   { name: "Production Transport", category: "PRODUCTION" },
   { name: "Sampling", category: "PRODUCTION" },
+  // FOB projects: the finished goods bought from the FOB supplier, and the check on them.
+  { name: "FOB Goods", category: "PRODUCTION" },
+  { name: "QC & Inspection", category: "PRODUCTION" },
   { name: "Other Production Cost", category: "PRODUCTION" },
 ];
 

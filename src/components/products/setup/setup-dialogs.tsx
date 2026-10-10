@@ -17,9 +17,12 @@ import {
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import type { ActionError } from "@/lib/result";
+import { cn } from "@/lib/utils";
 import type { CatalogSetup } from "@/modules/inventory/screens.service";
 
+import { Swatch } from "../bits";
 import { parentChoices } from "../catalog-helpers";
+import { COLOR_PRESETS } from "./color-presets";
 
 type Category = CatalogSetup["categories"][number];
 
@@ -172,6 +175,7 @@ export function ColorDialog({
 }) {
   const { error, pending, run, dismiss } = useSave(onSave);
   const [hex, setHex] = useState(color?.hexCode ?? "#1F2A44");
+  const [name, setName] = useState(color?.name ?? "");
   const nameProblem = fieldError(error, "name");
   const hexProblem = fieldError(error, "hexCode");
   return (
@@ -186,7 +190,7 @@ export function ColorDialog({
       error={error}
       fieldNames={["name", "hexCode"]}
       pending={pending}
-      onSubmit={(form) => run({ name: String(form.get("name") ?? "").trim(), hexCode: hex.trim() })}
+      onSubmit={() => run({ name: name.trim(), hexCode: hex.trim() })}
       onClose={onClose}
       onDismissError={dismiss}
     >
@@ -194,20 +198,47 @@ export function ColorDialog({
         <Input
           id="color-name"
           name="name"
-          defaultValue={color?.name}
+          value={name}
+          onChange={(e) => setName(e.target.value)}
           maxLength={40}
           autoComplete="off"
-          placeholder="Like Navy"
+          placeholder="Like Navy, or Black & White Stripes"
           aria-invalid={Boolean(nameProblem)}
           aria-describedby={nameProblem ? "color-name-error" : undefined}
           autoFocus
           required
         />
       </Field>
+      <fieldset className="grid gap-2">
+        <legend className="mb-2 text-sm font-medium">Quick pick</legend>
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(2.5rem,1fr))] gap-2">
+          {COLOR_PRESETS.map((preset) => {
+            const chosen = hex.toUpperCase() === preset.hex;
+            return (
+              <button
+                key={preset.hex}
+                type="button"
+                title={preset.name}
+                aria-label={preset.name}
+                aria-pressed={chosen}
+                onClick={() => {
+                  setHex(preset.hex);
+                  if (!name.trim()) setName(preset.name);
+                }}
+                className={cn(
+                  "size-10 justify-self-center rounded-full border border-black/15 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40",
+                  chosen && "ring-2 ring-primary ring-offset-2 ring-offset-background",
+                )}
+                style={{ backgroundColor: preset.hex }}
+              />
+            );
+          })}
+        </div>
+      </fieldset>
       <Field
         id="color-hex"
         label="Swatch"
-        hint="Pick the colour or type its hex code."
+        hint="Tap a quick pick, use the picker, or type a hex code."
         error={hexProblem}
       >
         <div className="flex items-center gap-3">
@@ -231,6 +262,15 @@ export function ColorDialog({
           />
         </div>
       </Field>
+      <div
+        aria-label="Preview"
+        className="flex min-w-0 items-center gap-3 rounded-lg border bg-muted/40 px-3 py-2.5"
+      >
+        <Swatch hex={HEX.test(hex) ? hex : "#FFFFFF"} className="size-7" />
+        <span className="min-w-0 text-sm font-medium break-words">
+          {name.trim() || "Colour name"}
+        </span>
+      </div>
     </SetupDialog>
   );
 }

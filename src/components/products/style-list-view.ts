@@ -1,7 +1,8 @@
 /*
- * The Styles tab's filters, kept in the address bar so a refresh or a shared
- * link shows the same list: "/products?q=polo&category=…&brand=…&archived=1".
- * Empty filters stay out of the address.
+ * The Styles and Archived styles tabs' filters, kept in the address bar so a
+ * refresh or a shared link shows the same list: "/products?q=polo&category=…&brand=…".
+ * Empty filters stay out of the address. Which of the two lists it is comes from
+ * the page, not the address.
  */
 
 export type StyleListView = {
@@ -9,7 +10,7 @@ export type StyleListView = {
   q: string;
   category?: string;
   brand?: string;
-  /** Show archived styles too. */
+  /** The Archived styles tab: archived styles only (otherwise active ones only). */
   archived: boolean;
 };
 
@@ -24,7 +25,7 @@ const one = (params: SearchParams, key: string) => {
 };
 
 /** Reads the filters from the address bar; anything malformed is ignored. */
-export function styleListViewFrom(params: SearchParams): StyleListView {
+export function styleListViewFrom(params: SearchParams, archived = false): StyleListView {
   const id = (key: string) => {
     const value = one(params, key);
     return /^[a-z0-9]{1,64}$/i.test(value) ? value : undefined;
@@ -33,17 +34,16 @@ export function styleListViewFrom(params: SearchParams): StyleListView {
     q: one(params, "q").slice(0, 100),
     category: id("category"),
     brand: id("brand"),
-    archived: one(params, "archived") === "1",
+    archived,
   };
 }
 
-/** The address-bar query for these filters: "?q=polo&archived=1", or "" when none are set. */
+/** The address-bar query for these filters: "?q=polo&brand=…", or "" when none are set. */
 export function styleListSearch(view: StyleListView): string {
   const params = new URLSearchParams();
   if (view.q.trim()) params.set("q", view.q.trim());
   if (view.category) params.set("category", view.category);
   if (view.brand) params.set("brand", view.brand);
-  if (view.archived) params.set("archived", "1");
   const query = params.toString();
   return query ? `?${query}` : "";
 }
@@ -54,7 +54,7 @@ export function styleListQuery(view: StyleListView, cursor?: string) {
     search: view.q.trim() || undefined,
     categoryId: view.category,
     brandId: view.brand,
-    includeInactive: view.archived || undefined,
+    archived: view.archived || undefined,
     cursor,
     take: STYLE_PAGE_SIZE,
   };

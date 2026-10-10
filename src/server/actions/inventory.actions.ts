@@ -112,6 +112,8 @@ export const updateStyleAction = async (id: string, input: unknown) =>
   });
 export const deleteStyleAction = async (id: string) =>
   change(async () => styles.deleteStyle(await manage(), id, await getRequestMeta()));
+export const archiveStylesAction = async (input: unknown) =>
+  change(async () => styles.archiveStyles(await manage(), input, await getRequestMeta()));
 export const generateMatrixAction = async (styleId: string, input: unknown) =>
   change(async () => {
     const result = await matrix.generateMatrix(

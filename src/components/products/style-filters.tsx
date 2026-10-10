@@ -1,9 +1,9 @@
 "use client";
 
-import { SearchIcon, XIcon } from "lucide-react";
+import { ChevronDownIcon, ChevronRightIcon, FolderTreeIcon, SearchIcon, XIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useOptimistic, useTransition } from "react";
+import { useOptimistic, useState, useTransition } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,35 +13,137 @@ import type { CategoryOption } from "@/modules/inventory/screens.service";
 
 import { type StyleListView, styleListSearch } from "./style-list-view";
 
-/** "    Polos": a category in a list, indented under its parent. */
-const indented = (c: CategoryOption) => `${"   ".repeat(c.depth)}${c.name}`;
+type TreeProps = {
+  categories: CategoryOption[];
+  /** This tab's styles per category, counting the categories under it. */
+  counts: Record<string, number>;
+  selected?: string;
+  hrefFor: (categoryId: string | undefined) => string;
+  onSelect: (categoryId: string | undefined) => void;
+};
+
+/** The category's parents, so the tree opens down to it. */
+function ancestors(categories: CategoryOption[], id?: string): string[] {
+  const byId = new Map(categories.map((c) => [c.id, c]));
+  const out: string[] = [];
+  for (let c = id ? byId.get(id) : undefined; c?.parentId; c = byId.get(c.parentId)) {
+    out.push(c.parentId);
+  }
+  return out;
+}
 
 /**
- * The Styles tab's filters: search (a style's name or code, or an exact SKU or
- * barcode), category, brand and archived styles. On computers the categories are
- * a tree beside the list (Category, then Brand, then Style, then its matrix); on
- * phones they are a picker. A change reloads the list from the server; the old
- * list stays, dimmed, until the new one arrives, while the filters already show
- * the choice made.
+ * The categories as a tree that folds open: tap a name to show its styles (and
+ * those under it), tap the arrow to see its subcategories. Each shows how many
+ * styles it holds.
  */
+function CategoryTree({ categories, counts, selected, hrefFor, onSelect }: TreeProps) {
+  const [open, setOpen] = useState(() => new Set(ancestors(categories, selected)));
+  const total = categories.reduce((sum, c) => sum + (c.parentId ? 0 : (counts[c.id] ?? 0)), 0);
+
+  function toggle(id: string) {
+    setOpen((was) => {
+      const next = new Set(was);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
+  }
+
+  function row(id: string | undefined, name: string, count: number) {
+    const active = selected === id;
+    return (
+      <Link
+        href={hrefFor(id)}
+        scroll={false}
+        aria-current={active ? "page" : undefined}
+        onClick={(event) => {
+          event.preventDefault();
+          onSelect(id);
+        }}
+        className={cn(
+          "flex min-w-0 flex-1 items-center justify-between gap-2 rounded-md py-2 pr-2 pl-2 transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/25 lg:py-1.5",
+          active
+            ? "bg-secondary font-medium text-primary"
+            : "text-muted-foreground hover:bg-muted hover:text-foreground",
+        )}
+      >
+        <span className="min-w-0 break-words">{name}</span>
+        <span
+          className={cn(
+            "shrink-0 rounded-full px-2 py-0.5 text-xs tabular-nums",
+            active ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground",
+          )}
+        >
+          {count}
+        </span>
+      </Link>
+    );
+  }
+
+  function branch(parentId: string | null): React.ReactNode {
+    return categories
+      .filter((c) => c.parentId === parentId)
+      .map((c) => {
+        const expanded = open.has(c.id);
+        return (
+          <li key={c.id}>
+            <div className="flex items-center">
+              {c.childCount > 0 ? (
+                <button
+                  type="button"
+                  aria-expanded={expanded}
+                  aria-label={`${expanded ? "Hide" : "Show"} the categories in ${c.name}`}
+                  onClick={() => toggle(c.id)}
+                  className="grid size-8 shrink-0 place-items-center rounded-md text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/25"
+                >
+                  <ChevronRightIcon
+                    aria-hidden
+                    className={cn("size-4 transition-transform", expanded && "rotate-90")}
+                  />
+                </button>
+              ) : (
+                <span aria-hidden className="size-8 shrink-0" />
+              )}
+              {row(c.id, c.name, counts[c.id] ?? 0)}
+            </div>
+            {expanded && <ul className="ml-4 grid gap-0.5 border-l pl-1">{branch(c.id)}</ul>}
+          </li>
+        );
+      });
+  }
+
+  return (
+    <ul className="grid gap-0.5 text-sm">
+      <li className="flex items-center">
+        <span aria-hidden className="size-8 shrink-0" />
+        {row(undefined, "All categories", total)}
+      </li>
+      {branch(null)}
+    </ul>
+  );
+}
+
 export function StyleFilters({
   view,
   categories,
+  counts,
   brands,
   children,
 }: {
   view: StyleListView;
   categories: CategoryOption[];
+  counts: Record<string, number>;
   brands: Array<{ id: string; name: string }>;
   children: React.ReactNode;
 }) {
   const router = useRouter();
   const pathname = usePathname();
   const [pending, startTransition] = useTransition();
-  // The choice made, until the list for it arrives (a select or checkbox bound to
-  // the address alone would spring back while it loads).
+  const [treeOpen, setTreeOpen] = useState(false);
+  // The choice made, until the list for it arrives (a select bound to the
+  // address alone would spring back while it loads).
   const [shown, setShown] = useOptimistic(view);
-  const filtered = Boolean(shown.q || shown.category || shown.brand || shown.archived);
+  const filtered = Boolean(shown.q || shown.category || shown.brand);
 
   function show(change: Partial<StyleListView>) {
     const next = { ...shown, ...change };
@@ -57,41 +159,26 @@ export function StyleFilters({
     show({ q: typeof value === "string" ? value : "" });
   }
 
-  const treeLink = (categoryId: string | undefined) =>
-    `${pathname}${styleListSearch({ ...shown, category: categoryId })}`;
+  const tree: TreeProps = {
+    categories,
+    counts,
+    selected: shown.category,
+    hrefFor: (category) => `${pathname}${styleListSearch({ ...shown, category })}`,
+    onSelect: (category) => {
+      setTreeOpen(false);
+      show({ category });
+    },
+  };
+  const categoryName = categories.find((c) => c.id === shown.category)?.name;
 
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-[13rem_minmax(0,1fr)] lg:gap-10">
       {categories.length > 0 && (
         <nav aria-label="Categories" className="hidden lg:block">
           <p className="eyebrow">Categories</p>
-          <ul className="mt-3 grid gap-0.5 text-sm">
-            {[{ id: undefined, name: "All categories", depth: 0 }, ...categories].map((c) => {
-              const active = shown.category === c.id;
-              return (
-                <li key={c.id ?? "all"}>
-                  <Link
-                    href={treeLink(c.id)}
-                    scroll={false}
-                    aria-current={active ? "page" : undefined}
-                    onClick={(event) => {
-                      event.preventDefault();
-                      show({ category: c.id });
-                    }}
-                    style={{ paddingLeft: `${0.75 + c.depth * 0.875}rem` }}
-                    className={cn(
-                      "block truncate rounded-sm py-1.5 pr-2 transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/25",
-                      active
-                        ? "bg-secondary font-medium text-primary"
-                        : "text-muted-foreground hover:bg-muted hover:text-foreground",
-                    )}
-                  >
-                    {c.name}
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
+          <div className="mt-3">
+            <CategoryTree {...tree} />
+          </div>
         </nav>
       )}
 
@@ -114,70 +201,60 @@ export function StyleFilters({
               className="pl-9"
             />
           </form>
-          <div className="grid grid-cols-2 gap-2 md:flex md:gap-3">
-            {categories.length > 0 && (
-              <div className="lg:hidden">
-                <label className="sr-only" htmlFor="style-category">
-                  Category
-                </label>
-                <NativeSelect
-                  id="style-category"
-                  value={shown.category ?? ""}
-                  onChange={(e) => show({ category: e.target.value || undefined })}
-                >
-                  <option value="">All categories</option>
-                  {categories.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {indented(c)}
-                    </option>
-                  ))}
-                </NativeSelect>
-              </div>
-            )}
-            {brands.length > 0 && (
-              <div>
-                <label className="sr-only" htmlFor="style-brand">
-                  Brand
-                </label>
-                <NativeSelect
-                  id="style-brand"
-                  value={shown.brand ?? ""}
-                  onChange={(e) => show({ brand: e.target.value || undefined })}
-                >
-                  <option value="">All brands</option>
-                  {brands.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.name}
-                    </option>
-                  ))}
-                </NativeSelect>
-              </div>
-            )}
-          </div>
-          <label className="flex h-11 cursor-pointer items-center gap-2 text-sm md:h-9">
-            <input
-              type="checkbox"
-              checked={shown.archived}
-              onChange={(e) => show({ archived: e.target.checked })}
-              className="size-4 cursor-pointer accent-primary"
-            />
-            Show archived styles
-          </label>
+          {brands.length > 0 && (
+            <div className="md:w-48">
+              <label className="sr-only" htmlFor="style-brand">
+                Brand
+              </label>
+              <NativeSelect
+                id="style-brand"
+                value={shown.brand ?? ""}
+                onChange={(e) => show({ brand: e.target.value || undefined })}
+              >
+                <option value="">All brands</option>
+                {brands.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
+                ))}
+              </NativeSelect>
+            </div>
+          )}
           {filtered && (
             <Button
               type="button"
               variant="ghost"
               size="sm"
               className="justify-self-start md:ml-auto"
-              onClick={() =>
-                show({ q: "", category: undefined, brand: undefined, archived: false })
-              }
+              onClick={() => show({ q: "", category: undefined, brand: undefined })}
             >
               <XIcon aria-hidden />
               Clear filters
             </Button>
           )}
         </div>
+        {categories.length > 0 && (
+          <details
+            open={treeOpen}
+            onToggle={(e) => setTreeOpen(e.currentTarget.open)}
+            className="group rounded-lg border bg-card shadow-sm lg:hidden"
+          >
+            <summary className="flex h-11 cursor-pointer list-none items-center gap-2 px-3 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/25 [&::-webkit-details-marker]:hidden">
+              <FolderTreeIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+              <span className="text-muted-foreground">Category</span>
+              <span className="min-w-0 flex-1 truncate font-medium">
+                {categoryName ?? "All categories"}
+              </span>
+              <ChevronDownIcon
+                aria-hidden
+                className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180"
+              />
+            </summary>
+            <nav aria-label="Categories" className="border-t p-2">
+              <CategoryTree {...tree} />
+            </nav>
+          </details>
+        )}
         <div
           aria-busy={pending}
           className={cn(

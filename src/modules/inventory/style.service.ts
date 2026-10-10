@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 
 import { AppError } from "@/lib/errors";
+import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
 import { assertAllowed } from "@/lib/verdict";
 import { auditInCompany } from "@/modules/audit/audit.service";
@@ -8,6 +9,7 @@ import type { CompanyContext } from "@/modules/auth/context";
 import { categoryWithDescendants, listCategoryTree } from "@/modules/inventory/catalog.service";
 import { canDeleteStyle } from "@/modules/inventory/rules";
 import {
+  archiveStylesSchema,
   createStyleSchema,
   listStylesSchema,
   updateStyleSchema,
@@ -46,7 +48,7 @@ export async function listStyles(ctx: CompanyContext, raw: unknown = {}) {
   const query = listStylesSchema.parse(raw);
   const take = query.take ?? 50;
   const where: Prisma.StyleWhereInput = {
-    ...(query.includeInactive ? {} : { isActive: true }),
+    ...(query.archived ? { isActive: false } : query.includeInactive ? {} : { isActive: true }),
     ...(query.brandId ? { brandId: query.brandId } : {}),
     ...(query.categoryId
       ? { categoryId: { in: await categoryWithDescendants(ctx, query.categoryId) } }
@@ -159,6 +161,69 @@ export async function deleteStyle(ctx: CompanyContext, styleId: string, meta?: R
     entityId: style.id,
     summary: `Deleted style ${style.code}`,
   });
+}
+
+/** How long a style must have had no stock before archiving it is suggested. */
+export const STALE_STOCK_DAYS = 180;
+
+/**
+ * Active styles with no stock at all (any grade, any warehouse) for the last six
+ * months, none being made and none on an open order: suggested for archiving.
+ * Stock is constant between movements, so it has been zero since the style's
+ * last movement (or since it was added, when it never had any).
+ */
+export async function staleStyles(ctx: CompanyContext, now = new Date()) {
+  const cutoff = new Date(now.getTime() - STALE_STOCK_DAYS * 86_400_000);
+  const companyId = ctx.company.id;
+  const rows = await prisma.$queryRaw<
+    Array<{ id: string; code: string; name: string; since: Date }>
+  >`
+    SELECT st.id, st.code, st.name, COALESCE(MAX(sm."createdAt"), st."createdAt") AS since
+    FROM "Style" st
+    LEFT JOIN "ProductVariant" pv ON pv."styleId" = st.id
+    LEFT JOIN "StockMovement" sm ON sm."variantId" = pv.id
+    WHERE st."companyId" = ${companyId} AND st."isActive"
+      AND NOT EXISTS (
+        SELECT 1 FROM "StockBalance" sb JOIN "ProductVariant" v ON v.id = sb."variantId"
+        WHERE v."styleId" = st.id AND sb.quantity <> 0)
+      AND NOT EXISTS (
+        SELECT 1 FROM "ProductionProject" p
+        WHERE p."styleId" = st.id AND p.status IN ('PLANNED', 'ACTIVE', 'ON_HOLD'))
+      AND NOT EXISTS (
+        SELECT 1 FROM "SalesOrderItem" i
+        JOIN "SalesOrder" so ON so.id = i."orderId"
+        JOIN "ProductVariant" v ON v.id = i."variantId"
+        WHERE v."styleId" = st.id AND so.status IN ('DRAFT', 'CONFIRMED', 'PROCESSING', 'PACKED'))
+    GROUP BY st.id
+    HAVING COALESCE(MAX(sm."createdAt"), st."createdAt") < ${cutoff}
+    ORDER BY since, st.code
+    LIMIT 200`;
+  return rows;
+}
+
+/** Archives the styles given that are still active; returns how many it archived. */
+export async function archiveStyles(ctx: CompanyContext, raw: unknown, meta?: RequestMeta) {
+  const { styleIds } = archiveStylesSchema.parse(raw);
+  const styles = await ctx.db.style.findMany({
+    where: { id: { in: styleIds }, isActive: true },
+    select: { id: true, code: true },
+  });
+  if (styles.length === 0) return { archived: 0 };
+  await ctx.db.style.updateMany({
+    where: { id: { in: styles.map((s) => s.id) } },
+    data: { isActive: false },
+  });
+  for (const style of styles) {
+    await auditInCompany(ctx, meta, {
+      action: "UPDATE",
+      entityType: "Style",
+      entityId: style.id,
+      summary: `Archived style ${style.code}`,
+      before: { isActive: "true" },
+      after: { isActive: "false" },
+    });
+  }
+  return { archived: styles.length };
 }
 
 /**

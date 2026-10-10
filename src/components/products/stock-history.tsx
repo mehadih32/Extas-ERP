@@ -78,7 +78,7 @@ export function StockHistory({
   }
 
   return (
-    <section aria-labelledby="history-heading" className="grid gap-4">
+    <section aria-labelledby="history-heading" className="grid grid-cols-1 gap-4">
       <div>
         <h3 id="history-heading" className="font-serif text-xl text-primary">
           Stock history

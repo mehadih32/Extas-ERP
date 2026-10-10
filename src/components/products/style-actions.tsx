@@ -5,13 +5,15 @@ import {
   ArchiveRestoreIcon,
   EllipsisVerticalIcon,
   Grid3x3Icon,
+  LoaderCircleIcon,
   PencilIcon,
   Trash2Icon,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useTransition } from "react";
 
+import { ActionErrorDialog } from "@/components/feedback/action-error-dialog";
 import { ConfirmDialog } from "@/components/feedback/confirm-dialog";
 import { FormAlert } from "@/components/forms/field";
 import { Button } from "@/components/ui/button";
@@ -22,17 +24,19 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import type { ActionError } from "@/lib/result";
 import type { StyleScreen } from "@/modules/inventory/screens.service";
 import { deleteStyleAction, updateStyleAction } from "@/server/actions/inventory.actions";
 
 import { AddSkusDialog } from "./add-skus-dialog";
 import { StockSheetButton } from "./stock-sheet-button";
 
-type Open = "skus" | "archive" | "restore" | "delete" | null;
+type Open = "skus" | "archive" | "delete" | null;
 
 /**
  * What can be done with a style: everyone who sees it can print its stock sheet;
- * inventory.manage edits it, adds colours and sizes, and archives or restores it;
+ * inventory.manage edits it, adds colours and sizes, and archives it (or
+ * unarchives it in one tap);
  * deleting is offered only while it has no history (inventory/rules.ts).
  */
 export function StyleActions({
@@ -46,8 +50,18 @@ export function StyleActions({
   const router = useRouter();
   const [open, setOpen] = useState<Open>(null);
   const [notice, setNotice] = useState(initialNotice);
+  const [unarchiving, startUnarchive] = useTransition();
+  const [error, setError] = useState<ActionError>();
   const { style, can } = screen;
   const close = () => setOpen(null);
+
+  function unarchive() {
+    startUnarchive(async () => {
+      const result = await updateStyleAction(style.id, { isActive: true });
+      if (!result.ok) return setError(result.error);
+      setNotice(`${style.name} was unarchived. It is back on the Styles tab.`);
+    });
+  }
 
   useEffect(() => {
     if (!notice) return;
@@ -58,6 +72,21 @@ export function StyleActions({
   return (
     <div className="grid gap-4">
       <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+        {can.manage && !style.isActive && (
+          <Button
+            type="button"
+            className="w-full sm:w-auto"
+            disabled={unarchiving}
+            onClick={unarchive}
+          >
+            {unarchiving ? (
+              <LoaderCircleIcon className="animate-spin" aria-hidden />
+            ) : (
+              <ArchiveRestoreIcon aria-hidden />
+            )}
+            Unarchive
+          </Button>
+        )}
         {can.manage && (
           <Button type="button" className="w-full sm:w-auto" onClick={() => setOpen("skus")}>
             <Grid3x3Icon aria-hidden />
@@ -91,20 +120,15 @@ export function StyleActions({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">
-                {style.isActive ? (
+                {style.isActive && (
                   <DropdownMenuItem onSelect={() => setOpen("archive")}>
                     <ArchiveIcon aria-hidden />
                     Archive
                   </DropdownMenuItem>
-                ) : (
-                  <DropdownMenuItem onSelect={() => setOpen("restore")}>
-                    <ArchiveRestoreIcon aria-hidden />
-                    Restore
-                  </DropdownMenuItem>
                 )}
                 {can.delete && (
                   <>
-                    <DropdownMenuSeparator />
+                    {style.isActive && <DropdownMenuSeparator />}
                     <DropdownMenuItem variant="destructive" onSelect={() => setOpen("delete")}>
                       <Trash2Icon aria-hidden />
                       Delete
@@ -118,6 +142,11 @@ export function StyleActions({
       </div>
 
       {notice && <FormAlert tone="success">{notice}</FormAlert>}
+      <ActionErrorDialog
+        error={error}
+        title="We could not unarchive the style"
+        onClose={() => setError(undefined)}
+      />
 
       {open === "skus" && (
         <AddSkusDialog
@@ -136,7 +165,7 @@ export function StyleActions({
       {open === "archive" && (
         <ConfirmDialog
           title={`Archive ${style.name}?`}
-          description="It drops out of the style list and cannot be sold or received from production, but keeps its SKUs, stock and history. You can restore it at any time."
+          description="It moves to the Archived styles tab and cannot be sold or received from production, but keeps its SKUs, stock and history, and stays in every report. You can unarchive it at any time."
           confirmLabel="Archive"
           pendingLabel="Archiving"
           errorTitle="We could not archive the style"
@@ -144,23 +173,7 @@ export function StyleActions({
           onConfirm={async () => {
             const result = await updateStyleAction(style.id, { isActive: false });
             if (!result.ok) return result.error;
-            setNotice(`${style.name} was archived.`);
-            close();
-          }}
-        />
-      )}
-      {open === "restore" && (
-        <ConfirmDialog
-          title={`Restore ${style.name}?`}
-          description="It comes back to the style list and can be sold again."
-          confirmLabel="Restore"
-          pendingLabel="Restoring"
-          errorTitle="We could not restore the style"
-          onClose={close}
-          onConfirm={async () => {
-            const result = await updateStyleAction(style.id, { isActive: true });
-            if (!result.ok) return result.error;
-            setNotice(`${style.name} was restored.`);
+            setNotice(`${style.name} was archived. It is on the Archived styles tab.`);
             close();
           }}
         />

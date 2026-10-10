@@ -71,9 +71,14 @@ export const listStylesSchema = z.object({
   brandId: id.optional(),
   search: z.string().trim().max(100).optional(),
   includeInactive: queryBoolean.optional(),
+  /** Only archived styles (the Archived styles tab). */
+  archived: queryBoolean.optional(),
   cursor: id.optional(),
   take: z.coerce.number().int().min(1).max(200).optional(),
 });
+
+/** Archive several styles at once (the "no stock for 6 months" hint). */
+export const archiveStylesSchema = z.object({ styleIds: z.array(id).min(1).max(200) });
 
 // --- Matrix & variants -----------------------------------------------------------
 export const generateMatrixSchema = z.object({

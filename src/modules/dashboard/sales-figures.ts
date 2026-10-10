@@ -2,6 +2,7 @@ import { Prisma, type SalesChannel } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
 import { ZERO } from "@/modules/accounts/balances";
+import { WHOLESALE_CHANNELS } from "@/modules/sales/pricing";
 
 /*
  * Sales figures for the dashboard and the Report Builder, from the sales
@@ -102,20 +103,28 @@ export async function salesByChannel(
 /** One buyer's sales: their account's orders, or Walk-in customers' (orders with no buyer). */
 export type BuyerFilter = { partyId: string | null };
 
-function buyerCondition(buyer?: BuyerFilter) {
-  if (!buyer) return Prisma.empty;
-  return buyer.partyId === null
+/** One style's sales: the orders with any of its SKUs (other lines are dropped after). */
+type StyleFilter = { styleId: string };
+
+function scopeCondition(scope?: BuyerFilter | StyleFilter) {
+  if (!scope) return Prisma.empty;
+  if ("styleId" in scope) {
+    return Prisma.sql`AND so.id IN (
+      SELECT i."orderId" FROM "SalesOrderItem" i JOIN "ProductVariant" v ON v.id = i."variantId"
+      WHERE v."styleId" = ${scope.styleId})`;
+  }
+  return scope.partyId === null
     ? Prisma.sql`AND so."partyId" IS NULL`
-    : Prisma.sql`AND so."partyId" = ${buyer.partyId}`;
+    : Prisma.sql`AND so."partyId" = ${scope.partyId}`;
 }
 
 /**
  * Every invoiced line in the range with its share of the order's net value, in
  * paisa-exact amounts, and its cost: the cost recorded when it was delivered,
  * or the SKU's average cost for lines not delivered yet. With a buyer, only
- * that buyer's lines.
+ * that buyer's lines; with a style, the orders that have it.
  */
-function soldLines(companyId: string, range: SalesRange, buyer?: BuyerFilter) {
+function soldLines(companyId: string, range: SalesRange, scope?: BuyerFilter | StyleFilter) {
   return Prisma.sql`
     WITH lines AS (
       SELECT soi.id, soi."orderId", soi."variantId", pv."styleId", soi.quantity, soi."lineTotal",
@@ -128,7 +137,7 @@ function soldLines(companyId: string, range: SalesRange, buyer?: BuyerFilter) {
       WHERE inv."companyId" = ${companyId}
         AND inv.status <> 'VOID' AND so.status <> 'CANCELLED'
         AND inv."issueDate" >= ${range.start} AND inv."issueDate" < ${range.end}
-        ${buyerCondition(buyer)}
+        ${scopeCondition(scope)}
     ),
     shares AS (
       -- In whole paisa: line x order net / order subtotal, split into the rounded-down
@@ -369,4 +378,37 @@ export async function buyerTopStyles(
     net: new Prisma.Decimal(r.net),
     cost: new Prisma.Decimal(r.cost),
   }));
+}
+
+export type StyleSales = Record<"wholesale" | "retail", SalesTotals>;
+
+/**
+ * One style's sales, all time unless a range is given: wholesale (wholesale and
+ * B2B pre-orders) and retail (shop, website and social commerce), with each
+ * line's share of its order's discount.
+ */
+export async function styleSales(
+  companyId: string,
+  styleId: string,
+  range: SalesRange = ALL_TIME,
+): Promise<StyleSales> {
+  const rows = await prisma.$queryRaw<
+    Array<{ wholesale: boolean; orders: number; pieces: bigint; net: Prisma.Decimal }>
+  >`
+    SELECT so.channel::text IN (${Prisma.join(WHOLESALE_CHANNELS)}) AS wholesale,
+           COUNT(DISTINCT s."orderId")::int AS orders, SUM(s.quantity)::bigint AS pieces,
+           SUM(s.net) AS net
+    FROM (${soldLines(companyId, range, { styleId })}) s
+    JOIN "SalesOrder" so ON so.id = s."orderId"
+    WHERE s."styleId" = ${styleId}
+    GROUP BY 1`;
+  const side = (wholesale: boolean): SalesTotals => {
+    const row = rows.find((r) => r.wholesale === wholesale);
+    return {
+      orders: row?.orders ?? 0,
+      pieces: Number(row?.pieces ?? 0),
+      net: new Prisma.Decimal(row?.net ?? 0),
+    };
+  };
+  return { wholesale: side(true), retail: side(false) };
 }

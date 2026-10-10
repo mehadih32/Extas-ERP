@@ -12,7 +12,7 @@ import { localDay } from "@/lib/dates";
 import { listBadStockAction } from "@/server/actions/inventory.actions";
 import { requireCompanyPage } from "@/server/pages/guards";
 
-export const metadata: Metadata = { title: "Bad stock" };
+export const metadata: Metadata = { title: "Damage & QC Rejects" };
 
 /**
  * Bad stock (inventory.view, like GET /api/inventory/stock/bad-stock): the losses
@@ -42,19 +42,23 @@ export default async function BadStockPage({
       );
     }
     return (
-      <SectionError title="Bad stock" heading="The bad stock could not load" error={result.error} />
+      <SectionError
+        title="Damage & QC Rejects"
+        heading="The damaged and rejected pieces could not load"
+        error={result.error}
+      />
     );
   }
 
   return (
-    <section aria-labelledby="bad-heading" className="grid gap-6">
+    <section aria-labelledby="bad-heading" className="grid grid-cols-1 gap-6">
       <div>
         <h2 id="bad-heading" className="font-serif text-2xl text-primary">
-          Bad stock
+          Damage &amp; QC Rejects
         </h2>
         <p className="mt-1 max-w-xl text-sm leading-relaxed text-muted-foreground">
-          Pieces taken out of the sellable stock: damaged, rejected or failed checks. Their cost is
-          booked as an inventory loss.
+          Pieces taken out of the sellable stock because they are damaged or failed a quality check
+          (QC). What they cost is booked to the Inventory Loss account.
         </p>
       </div>
       <BadStockScreen

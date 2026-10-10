@@ -4,13 +4,14 @@ import { PERIOD_PRESETS } from "@/modules/accounts/periods";
 
 const day = z.iso.date();
 
-/** The owner's metric cards, in the blueprint's order. */
+/** The owner's metric cards, in the blueprint's order, then the bad stock value. */
 export const METRIC_CARDS = [
   "STOCK_VALUE",
   "FIXED_ASSETS",
   "LIABILITIES",
   "TODAY_SALES",
   "NET_PROFIT",
+  "BAD_STOCK_VALUE",
 ] as const;
 
 export type MetricCardKey = (typeof METRIC_CARDS)[number];

@@ -36,6 +36,7 @@ import {
   deleteCategoryAction,
   deleteColorAction,
   deleteSizeAction,
+  deleteWarehouseAction,
   reorderSizesAction,
   updateBrandAction,
   updateCategoryAction,
@@ -45,12 +46,19 @@ import {
 
 import { Swatch } from "../bits";
 import { InlineName } from "./inline-name";
-import { CategoryDialog, ColorDialog, NameDialog, WarehouseDialog } from "./setup-dialogs";
+import {
+  CategoryDialog,
+  ColorDialog,
+  DeleteWarehouseDialog,
+  NameDialog,
+  WarehouseDialog,
+} from "./setup-dialogs";
 import { SortableRow, SortableRows } from "./sortable-rows";
 
 type Color = CatalogSetup["colors"][number];
 type Size = CatalogSetup["sizes"][number];
 type Category = CatalogSetup["categories"][number];
+type Warehouse = CatalogSetup["warehouses"][number];
 
 type Open =
   | { kind: "color"; color?: Color }
@@ -58,6 +66,7 @@ type Open =
   | { kind: "category"; category?: Category; parentId: string | null }
   | { kind: "brand" }
   | { kind: "warehouse" }
+  | { kind: "deleteWarehouse"; warehouse: Warehouse }
   | {
       kind: "delete";
       what: string;
@@ -81,6 +90,16 @@ const treeMark = (depth: number) =>
       └
     </span>
   );
+
+/** "120 pieces · 3 raw materials", "Empty": what a warehouse holds now. */
+function holding({ hold }: Warehouse) {
+  const parts = [
+    hold.pieces > 0 && `${hold.pieces} ${hold.pieces === 1 ? "piece" : "pieces"}`,
+    hold.materials > 0 &&
+      `${hold.materials} ${hold.materials === 1 ? "raw material" : "raw materials"}`,
+  ].filter(Boolean);
+  return parts.length > 0 ? parts.join(" · ") : "Empty";
+}
 
 /** "Used by 4 SKUs", "No styles yet". */
 function usage(count: number, one: string, many: string) {
@@ -514,10 +533,21 @@ export function SetupScreen({ setup }: { setup: CatalogSetup }) {
                       <span className="truncate">{w.name}</span>
                       {w.isDefault && <Badge variant="secondary">Default</Badge>}
                     </p>
-                    {w.address && (
-                      <p className="truncate text-xs text-muted-foreground">{w.address}</p>
-                    )}
+                    <p className="truncate text-xs text-muted-foreground">
+                      {[w.address, holding(w)].filter(Boolean).join(" · ")}
+                    </p>
                   </div>
+                  {(w.can.delete || w.blocked) && (
+                    <RowMenu label={w.name}>
+                      <DropdownMenuItem
+                        variant="destructive"
+                        onSelect={() => setOpen({ kind: "deleteWarehouse", warehouse: w })}
+                      >
+                        <Trash2Icon aria-hidden />
+                        Delete
+                      </DropdownMenuItem>
+                    </RowMenu>
+                  )}
                 </li>
               ))}
             </Rows>
@@ -589,6 +619,21 @@ export function SetupScreen({ setup }: { setup: CatalogSetup }) {
         <WarehouseDialog
           onClose={close}
           onSave={(value) => saved(createWarehouseAction(value), done(`${value.name} was added.`))}
+        />
+      )}
+      {open?.kind === "deleteWarehouse" && (
+        <DeleteWarehouseDialog
+          warehouse={open.warehouse}
+          onClose={close}
+          onDelete={async (value) => {
+            const result = await deleteWarehouseAction(open.warehouse.id, value);
+            if (!result.ok) return result.error;
+            const { name, newDefault } = result.data;
+            setOpen(null);
+            setNotice(
+              `${name} was deleted.${newDefault ? ` ${newDefault} is now the default.` : ""}`,
+            );
+          }}
         />
       )}
       {open?.kind === "delete" && (

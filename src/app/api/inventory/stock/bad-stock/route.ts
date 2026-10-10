@@ -16,7 +16,7 @@ export const GET = apiRoute(async (request) =>
   ),
 );
 
-/** POST /api/inventory/stock/bad-stock — move pieces to Bad Stock (inventory loss). */
+/** POST /api/inventory/stock/bad-stock — move pieces to Damage & QC Rejects (Inventory Loss). */
 export const POST = apiRoute(
   async (request) =>
     stock.moveToBadStock(

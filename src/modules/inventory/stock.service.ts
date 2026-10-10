@@ -1,8 +1,11 @@
 import { Prisma, type StockGrade, type StockMovement } from "@prisma/client";
 
+import { verifyPassword } from "@/lib/auth/password";
 import { dayRange } from "@/lib/dates";
+import type { Db } from "@/lib/db-types";
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
+import { checkRateLimit } from "@/lib/rate-limit";
 import type { RequestMeta } from "@/lib/request-meta";
 import { lockRow, lockRows } from "@/lib/row-lock";
 import { ensureControlAccounts } from "@/modules/accounts/control-accounts";
@@ -19,17 +22,21 @@ import {
   type SkuStock,
   stockOnHand,
 } from "@/modules/dashboard/stock-figures";
+import { isCompanyOwner } from "@/modules/hr/access";
 import { gradeCost, gradeCostData } from "@/modules/inventory/costs";
 import { openLots } from "@/modules/inventory/lot.service";
 import { refuseTakenName, sameName } from "@/modules/inventory/names";
+import { canDeleteWarehouse, type WarehouseHold } from "@/modules/inventory/rules";
 import {
   adjustStockSchema,
   badStockQuerySchema,
   badStockSchema,
   createWarehouseSchema,
+  deleteWarehouseSchema,
   movementsQuerySchema,
   stockCountSchema,
 } from "@/modules/inventory/schemas";
+import { SHIPMENT_OPEN } from "@/modules/sales/rules";
 
 /*
  * Stock rules
@@ -44,9 +51,12 @@ import {
  *   Pieces in and out of a grade use and re-weight that grade's cost only.
  * - Every change in stock value reaches the books (Finished Goods Inventory):
  *     Opening stock        Dr Inventory              Cr Opening Balance Equity
- *     Count correction +/- Dr Inventory / Losses     Cr Production & Inventory Losses / Inventory
- *     Bad stock            Dr Production & Inventory Losses   Cr Inventory
- *   (deliveries from production and sales post their own entries).
+ *     Count shortage       Dr Inventory Loss         Cr Inventory
+ *     Count surplus        Dr Inventory              Cr Inventory Loss
+ *     Damage & QC reject   Dr Inventory Loss         Cr Inventory
+ *   (deliveries from production and sales post their own entries). Inventory
+ *   Loss (5150) took over from Production & Inventory Losses (5100) in October
+ *   2026; entries posted before stay where they are.
  */
 
 // =============================================================================
@@ -55,29 +65,44 @@ import {
 
 export const DEFAULT_WAREHOUSE_NAME = "Main Warehouse";
 
+/** Deleted warehouses stay for the history but leave every list and picker. */
+const LIVE = { deletedAt: null } as const;
+
 export async function listWarehouses(ctx: CompanyContext) {
-  return ctx.db.warehouse.findMany({ orderBy: [{ isDefault: "desc" }, { name: "asc" }] });
+  return ctx.db.warehouse.findMany({
+    where: LIVE,
+    orderBy: [{ isDefault: "desc" }, { name: "asc" }],
+  });
 }
 
 /** The company's default warehouse, created on first use. */
 export async function getDefaultWarehouse(ctx: CompanyContext) {
   const existing =
-    (await ctx.db.warehouse.findFirst({ where: { isDefault: true } })) ??
-    (await ctx.db.warehouse.findFirst({ orderBy: { createdAt: "asc" } }));
+    (await ctx.db.warehouse.findFirst({ where: { ...LIVE, isDefault: true } })) ??
+    (await ctx.db.warehouse.findFirst({ where: LIVE, orderBy: { createdAt: "asc" } }));
   if (existing) return existing;
   return ctx.db.warehouse.upsert({
     where: { companyId_name: { companyId: ctx.company.id, name: DEFAULT_WAREHOUSE_NAME } },
     create: { companyId: ctx.company.id, name: DEFAULT_WAREHOUSE_NAME, isDefault: true },
-    update: {},
+    // A deleted Main Warehouse comes back rather than leave the company with none.
+    update: { deletedAt: null, isDefault: true },
   });
 }
 
 export async function createWarehouse(ctx: CompanyContext, raw: unknown, meta?: RequestMeta) {
   const input = createWarehouseSchema.parse(raw);
   await refuseTakenName(
-    ctx.db.warehouse.findFirst({ where: sameName(input.name), select: { id: true } }),
+    ctx.db.warehouse.findFirst({
+      where: { ...LIVE, ...sameName(input.name) },
+      select: { id: true },
+    }),
     `There is already a warehouse called ${input.name}.`,
   );
+  // A deleted warehouse of the same name comes back, with its history.
+  const deleted = await ctx.db.warehouse.findFirst({
+    where: { deletedAt: { not: null }, ...sameName(input.name) },
+    select: { id: true },
+  });
   const warehouse = await prisma.$transaction(async (tx) => {
     if (input.isDefault) {
       await tx.warehouse.updateMany({
@@ -85,28 +110,148 @@ export async function createWarehouse(ctx: CompanyContext, raw: unknown, meta?: 
         data: { isDefault: false },
       });
     }
-    return tx.warehouse.create({
-      data: {
-        companyId: ctx.company.id,
-        name: input.name,
-        address: input.address ?? null,
-        isDefault: input.isDefault ?? false,
-      },
-    });
+    const data = {
+      name: input.name,
+      address: input.address ?? null,
+      isDefault: input.isDefault ?? false,
+    };
+    return deleted
+      ? tx.warehouse.update({ where: { id: deleted.id }, data: { ...data, deletedAt: null } })
+      : tx.warehouse.create({ data: { ...data, companyId: ctx.company.id } });
   });
   await auditInCompany(ctx, meta, {
     action: "CREATE",
     entityType: "Warehouse",
     entityId: warehouse.id,
-    summary: `Created warehouse "${warehouse.name}"`,
+    summary: `${deleted ? "Brought back" : "Created"} warehouse "${warehouse.name}"`,
   });
   return warehouse;
 }
 
-async function resolveWarehouse(ctx: CompanyContext, warehouseId?: string) {
+/**
+ * Each warehouse's stock and the open work bound for it: what keeps it from
+ * being deleted (inventory/rules.ts canDeleteWarehouse).
+ */
+export async function warehouseHolds(
+  db: Db,
+  companyId: string,
+  ids: string[],
+): Promise<Map<string, WarehouseHold>> {
+  const holds = new Map<string, WarehouseHold>(
+    ids.map((id) => [id, { pieces: 0, materials: 0, orders: 0, deliveries: 0 }]),
+  );
+  if (ids.length === 0) return holds;
+  const warehouseId = { in: ids };
+  const [balances, materials, orders, deliveries] = await Promise.all([
+    db.stockBalance.findMany({
+      where: { companyId, warehouseId, OR: [{ quantity: { not: 0 } }, { reserved: { not: 0 } }] },
+      select: { warehouseId: true, quantity: true, reserved: true },
+    }),
+    db.rawMaterialStock.groupBy({
+      by: ["warehouseId"],
+      where: { companyId, warehouseId, quantity: { not: 0 } },
+      _count: { _all: true },
+    }),
+    db.salesOrder.groupBy({
+      by: ["warehouseId"],
+      where: { companyId, warehouseId, status: { in: [...SHIPMENT_OPEN] } },
+      _count: { _all: true },
+    }),
+    db.stockIntake.groupBy({
+      by: ["warehouseId"],
+      where: { companyId, warehouseId, status: { in: ["DRAFT", "PARSED"] } },
+      _count: { _all: true },
+    }),
+  ]);
+  for (const b of balances) {
+    // Pieces set aside with none on the shelf still count: an order is waiting on them.
+    holds.get(b.warehouseId)!.pieces += Math.max(Math.abs(b.quantity), b.reserved);
+  }
+  for (const m of materials) holds.get(m.warehouseId)!.materials = m._count._all;
+  for (const o of orders) if (o.warehouseId) holds.get(o.warehouseId)!.orders = o._count._all;
+  for (const d of deliveries) {
+    if (d.warehouseId) holds.get(d.warehouseId)!.deliveries = d._count._all;
+  }
+  return holds;
+}
+
+/**
+ * Deletes an empty warehouse: a Super Admin only, who types their password
+ * again. It is kept for the history (its movements, lots and documents still
+ * name it) but leaves every list and picker; adding a warehouse of the same name
+ * brings it back. The default passes to the oldest warehouse left.
+ */
+export async function deleteWarehouse(
+  ctx: CompanyContext,
+  warehouseId: string,
+  raw: unknown,
+  meta?: RequestMeta,
+) {
+  if (!isCompanyOwner(ctx)) {
+    throw new AppError("FORBIDDEN", "Only a Super Admin can delete a warehouse.");
+  }
+  const input = deleteWarehouseSchema.parse(raw);
+  checkRateLimit(`warehouse-delete:${ctx.user.id}`, 5, 60_000);
+  const user = await prisma.user.findUnique({
+    where: { id: ctx.user.id },
+    select: { passwordHash: true },
+  });
+  if (!user?.passwordHash || !(await verifyPassword(input.password, user.passwordHash))) {
+    throw new AppError("VALIDATION", "That password is not right.", {
+      password: ["That password is not right. Type the one you sign in with."],
+    });
+  }
+  const companyId = ctx.company.id;
+  const warehouse = await prisma.$transaction(async (tx) => {
+    // The company's warehouses (two deletes never leave it with none, and no new shelf
+    // or movement can point at this one meanwhile), then this one's shelves.
+    const live = await tx.$queryRaw<
+      Array<{ id: string; name: string; isDefault: boolean; createdAt: Date }>
+    >`
+      SELECT id, name, "isDefault", "createdAt" FROM "Warehouse"
+      WHERE "companyId" = ${companyId} AND "deletedAt" IS NULL
+      ORDER BY id
+      FOR UPDATE`;
+    const found = live.find((w) => w.id === warehouseId);
+    if (!found) throw new AppError("NOT_FOUND", "Warehouse not found.");
+    await tx.$queryRaw`SELECT id FROM "StockBalance" WHERE "warehouseId" = ${found.id} FOR UPDATE`;
+    const holds = await warehouseHolds(tx, companyId, [found.id]);
+    const others = live
+      .filter((w) => w.id !== found.id)
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || a.id.localeCompare(b.id));
+    const verdict = canDeleteWarehouse({ hold: holds.get(found.id)!, others: others.length });
+    if (!verdict.ok) throw new AppError(verdict.code, `${found.name}: ${verdict.message}`);
+    await tx.warehouse.update({
+      where: { id: found.id },
+      data: { deletedAt: new Date(), isDefault: false },
+    });
+    const heir = found.isDefault ? others[0]! : null;
+    if (heir) await tx.warehouse.update({ where: { id: heir.id }, data: { isDefault: true } });
+    await auditInCompany(
+      ctx,
+      meta,
+      {
+        action: "DELETE",
+        entityType: "Warehouse",
+        entityId: found.id,
+        summary: `Deleted warehouse "${found.name}"${heir ? `; ${heir.name} is now the default` : ""}`,
+      },
+      tx,
+    );
+    return { id: found.id, name: found.name, newDefault: heir?.name ?? null };
+  });
+  return warehouse;
+}
+
+/** A warehouse in use (not deleted), or the default one when none is given. */
+export async function resolveWarehouse(
+  ctx: CompanyContext,
+  warehouseId?: string | null,
+  notFound = "Warehouse not found.",
+) {
   if (!warehouseId) return getDefaultWarehouse(ctx);
-  const warehouse = await ctx.db.warehouse.findUnique({ where: { id: warehouseId } });
-  if (!warehouse) throw new AppError("NOT_FOUND", "Warehouse not found.");
+  const warehouse = await ctx.db.warehouse.findFirst({ where: { id: warehouseId, ...LIVE } });
+  if (!warehouse) throw new AppError("NOT_FOUND", notFound);
   return warehouse;
 }
 
@@ -395,14 +540,17 @@ async function applyAdjustment(tx: Tx, ctx: CompanyContext, change: Adjustment) 
   });
   if (value.gt(0)) {
     const acc = await ensureControlAccounts(ctx.company.id, tx);
-    // Opening stock is brought forward against equity; corrections are gains or losses.
-    const other = change.type === "OPENING" ? acc.OPENING_EQUITY : acc.PRODUCTION_LOSS;
+    // Opening stock is brought forward against equity; a count's shortage is an
+    // inventory loss and its surplus takes some back.
+    const opening = change.type === "OPENING";
+    const other = opening ? acc.OPENING_EQUITY : acc.INVENTORY_LOSS;
     const memo = `${variant.sku} × ${Math.abs(quantity)}`;
+    const what = opening ? "Opening stock" : `Stock count ${quantity < 0 ? "shortage" : "surplus"}`;
     await postJournalEntry(tx, {
       companyId: ctx.company.id,
-      description: `${change.type === "OPENING" ? "Opening stock" : "Stock count correction"} — ${variant.sku} ${
-        quantity > 0 ? "+" : ""
-      }${quantity}${change.note ? ` (${change.note})` : ""}`,
+      description: `${what} — ${variant.sku} ${quantity > 0 ? "+" : ""}${quantity}${
+        change.note ? ` (${change.note})` : ""
+      }`,
       sourceType: "STOCK_ADJUSTMENT",
       sourceId: created.id,
       postedById: ctx.user.id,
@@ -597,8 +745,9 @@ export async function recordStockCount(ctx: CompanyContext, raw: unknown, meta?:
 }
 
 /**
- * Moves pieces to Bad Stock: removes them from sellable stock and books their
- * value (their grade's average cost) as an inventory loss.
+ * Moves pieces to Damage & QC Rejects (the bad stock): removes them from the
+ * sellable stock and books their value (their grade's average cost) to the
+ * Inventory Loss account.
  */
 export async function moveToBadStock(ctx: CompanyContext, raw: unknown, meta?: RequestMeta) {
   const input = badStockSchema.parse(raw);
@@ -642,12 +791,12 @@ export async function moveToBadStock(ctx: CompanyContext, raw: unknown, meta?: R
       const memo = `${variant.sku} × ${input.quantity}`;
       const journal = await postJournalEntry(tx, {
         companyId: ctx.company.id,
-        description: `Bad stock — ${variant.sku} × ${input.quantity}${input.reason ? ` (${input.reason})` : ""}`,
+        description: `Damage & QC reject — ${variant.sku} × ${input.quantity}${input.reason ? ` (${input.reason})` : ""}`,
         sourceType: "BAD_STOCK",
         sourceId: created.id,
         postedById: ctx.user.id,
         lines: [
-          { accountId: acc.PRODUCTION_LOSS, debit: lossValue, memo },
+          { accountId: acc.INVENTORY_LOSS, debit: lossValue, memo },
           { accountId: acc.INVENTORY, credit: lossValue, memo },
         ],
       });
@@ -664,7 +813,7 @@ export async function moveToBadStock(ctx: CompanyContext, raw: unknown, meta?: R
         action: "STOCK_ADJUSTMENT",
         entityType: "BadStockEntry",
         entityId: created.id,
-        summary: `Moved ${input.quantity} × ${variant.sku} to Bad Stock (loss ${lossValue.toFixed(2)})`,
+        summary: `Moved ${input.quantity} × ${variant.sku} to Damage & QC Rejects (loss ${lossValue.toFixed(2)})`,
       },
       tx,
     );

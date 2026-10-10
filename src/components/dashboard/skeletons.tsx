@@ -1,12 +1,7 @@
 import { Skeleton } from "@/components/ui/skeleton";
 
-const SPANS = [
-  "lg:col-span-2",
-  "lg:col-span-2",
-  "lg:col-span-2",
-  "lg:col-span-3",
-  "sm:col-span-2 lg:col-span-3",
-];
+/** One per metric card: three across on wide screens, twice. */
+const CARDS = [1, 2, 3, 4, 5, 6];
 
 export function MetricCardsSkeleton() {
   return (
@@ -14,8 +9,8 @@ export function MetricCardsSkeleton() {
       <Skeleton className="h-7 w-40" />
       <Skeleton className="mt-2 h-4 w-56" />
       <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-6">
-        {SPANS.map((span) => (
-          <div key={span} className={`rounded-lg border bg-card p-6 ${span}`}>
+        {CARDS.map((card) => (
+          <div key={card} className="rounded-lg border bg-card p-6 lg:col-span-2">
             <Skeleton className="h-3 w-32" />
             <Skeleton className="mt-5 h-8 w-44" />
             <Skeleton className="mt-6 h-3 w-full" />

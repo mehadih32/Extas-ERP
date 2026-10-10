@@ -297,7 +297,7 @@ export function BulkUpdateDialog({
                     changes.added > 0 ? `${pieces(changes.added, currency)} found` : ""
                   }${changes.added > 0 && changes.removed > 0 ? ", " : ""}${
                     changes.removed > 0
-                      ? `${pieces(changes.removed, currency)} missing (booked as a loss)`
+                      ? `${pieces(changes.removed, currency)} missing (booked to Inventory Loss)`
                       : ""
                   }.`}
           </p>

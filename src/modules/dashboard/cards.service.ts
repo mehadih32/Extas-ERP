@@ -21,8 +21,8 @@ import { stockOnHand } from "@/modules/dashboard/stock-figures";
 
 /*
  * The owner's metric cards (blueprint: Total Active Stock Value, Fixed Assets,
- * Liabilities (Loans / Investors), Today's Sales, Net Profit), each with the
- * figures behind it. Money comes from the books, so the cards agree with the
+ * Liabilities (Loans / Investors), Today's Sales, Net Profit, and the Total Bad
+ * Stock Value: Damage & QC Rejects at cost), each with the figures behind it. Money comes from the books, so the cards agree with the
  * Accounts overview and the statements; pieces and invoice counts come from
  * stock and the sales documents. Each card says whether the person chose to
  * hide it (the eye icon); hiding is a display choice, the figures still come.
@@ -58,6 +58,8 @@ export async function getMetricCards(ctx: CompanyContext, now: Date = new Date()
     yearProfit,
     assets,
     hidden,
+    badStock,
+    badStockThisMonth,
   ] = await Promise.all([
     accountTotals(companyId),
     accountTotals(companyId, { start: dayStart, end: dayEnd }),
@@ -69,6 +71,15 @@ export async function getMetricCards(ctx: CompanyContext, now: Date = new Date()
     netProfitFor(companyId, { start: at(fyFrom), end: dayEnd }),
     prisma.fixedAsset.count({ where: { companyId, status: { not: "DISPOSED" } } }),
     hiddenMetricsFor(ctx.user.id),
+    prisma.badStockEntry.aggregate({
+      where: { companyId },
+      _sum: { quantity: true, lossValue: true },
+      _count: { _all: true },
+    }),
+    prisma.badStockEntry.aggregate({
+      where: { companyId, createdAt: { gte: at(monthFrom), lt: dayEnd } },
+      _sum: { quantity: true, lossValue: true },
+    }),
   ]);
 
   const sum = (
@@ -133,6 +144,15 @@ export async function getMetricCards(ctx: CompanyContext, now: Date = new Date()
         lastMonth: lastMonthProfit.toFixed(2),
         thisFinancialYear: yearProfit.toFixed(2),
         financialYearFrom: fyFrom,
+      }),
+      card("BAD_STOCK_VALUE", "Total bad stock value", badStock._sum.lossValue ?? ZERO, {
+        /** Every piece moved to Damage & QC Rejects, at its cost then. */
+        pieces: badStock._sum.quantity ?? 0,
+        entries: badStock._count._all,
+        thisMonth: {
+          pieces: badStockThisMonth._sum.quantity ?? 0,
+          value: (badStockThisMonth._sum.lossValue ?? ZERO).toFixed(2),
+        },
       }),
     ],
   };

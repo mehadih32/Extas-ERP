@@ -496,7 +496,9 @@ run("metric cards", () => {
       "LIABILITIES",
       "TODAY_SALES",
       "NET_PROFIT",
+      "BAD_STOCK_VALUE",
     ]);
+    expect(card.BAD_STOCK_VALUE).toMatchObject({ value: "0.00", details: { pieces: 0 } });
     expect(card.STOCK_VALUE).toMatchObject({
       value: "12000.00",
       details: {
@@ -529,6 +531,25 @@ run("metric cards", () => {
     expect(card.NET_PROFIT!.details).toMatchObject({
       thisFinancialYear: overview.netProfit.thisFinancialYear,
       financialYearFrom: overview.netProfit.financialYearFrom,
+    });
+  });
+
+  it("add up Damage & QC Rejects at cost as the Total bad stock value", async () => {
+    const env = await setup();
+    await stockUp(env, "EX-PL-001-NAVY-M", 10, { unitCost: 400 });
+    const variantId = env.id("EX-PL-001-NAVY-M");
+    await stock.moveToBadStock(env.admin, { variantId, quantity: 2, reason: "Torn seam" });
+    const old = await stock.moveToBadStock(env.admin, { variantId, quantity: 1 });
+    // An earlier month's entry counts in the total, not in this month.
+    await prisma.badStockEntry.update({
+      where: { id: old.id },
+      data: { createdAt: new Date(Date.now() - 40 * DAY_MS) },
+    });
+    const { cards } = await getMetricCards(env.accounts);
+    expect(cards.find((c) => c.key === "BAD_STOCK_VALUE")).toMatchObject({
+      label: "Total bad stock value",
+      value: "1200.00",
+      details: { pieces: 3, entries: 2, thisMonth: { pieces: 2, value: "800.00" } },
     });
   });
 

@@ -2,9 +2,11 @@ import type { StockGrade } from "@prisma/client";
 
 import { localDay } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
+import { prisma } from "@/lib/prisma";
 import type { CompanyContext } from "@/modules/auth/context";
 import { canSeeFinancials } from "@/modules/dashboard/access";
 import { type SalesTotals, styleSales } from "@/modules/dashboard/sales-figures";
+import { isCompanyOwner } from "@/modules/hr/access";
 import {
   type CategoryNode,
   listBrands,
@@ -12,6 +14,7 @@ import {
   listColors,
   listSizes,
 } from "@/modules/inventory/catalog.service";
+import { gradeCost } from "@/modules/inventory/costs";
 import {
   getStyleMatrix,
   matrixAxes,
@@ -25,12 +28,14 @@ import {
   canDeleteColor,
   canDeleteSize,
   canDeleteStyle,
+  canDeleteWarehouse,
 } from "@/modules/inventory/rules";
 import {
   costMask,
   DEFAULT_WAREHOUSE_NAME,
   listWarehouses,
   type StockCell,
+  warehouseHolds,
 } from "@/modules/inventory/stock.service";
 import {
   getStyle,
@@ -103,6 +108,13 @@ export async function getCatalogSetup(ctx: CompanyContext) {
     listBrands(ctx),
     listWarehouses(ctx),
   ]);
+  // Only a Super Admin deletes warehouses: they see what each one still holds.
+  const owner = canManage && isCompanyOwner(ctx);
+  const holds = await warehouseHolds(
+    prisma,
+    ctx.company.id,
+    warehouses.map((w) => w.id),
+  );
   return {
     canManage,
     colors: colors.map((c) => {
@@ -134,12 +146,20 @@ export async function getCatalogSetup(ctx: CompanyContext) {
       styleCount: b.styleCount,
       can: { delete: canManage && canDeleteBrand(b).ok },
     })),
-    warehouses: warehouses.map((w) => ({
-      id: w.id,
-      name: w.name,
-      address: w.address,
-      isDefault: w.isDefault,
-    })),
+    warehouses: warehouses.map((w) => {
+      const hold = holds.get(w.id)!;
+      const verdict = canDeleteWarehouse({ hold, others: warehouses.length - 1 });
+      return {
+        id: w.id,
+        name: w.name,
+        address: w.address,
+        isDefault: w.isDefault,
+        hold,
+        can: { delete: owner && verdict.ok },
+        /** Why a Super Admin cannot delete it yet (null when they can, or are not one). */
+        blocked: owner && !verdict.ok ? verdict.message : null,
+      };
+    }),
   };
 }
 
@@ -455,6 +475,7 @@ export async function getStockCountSheet(ctx: CompanyContext, raw: unknown = {})
         })
       : [];
     const shelf = new Map(balances.map((b) => [b.variantId, b]));
+    const cost = costMask(ctx);
     const { colors, sizes } = matrixAxes(variants);
     const byCell = new Map(variants.map((v) => [`${v.colorId}:${v.sizeId}`, v]));
     sheet = {
@@ -473,6 +494,8 @@ export async function getStockCountSheet(ctx: CompanyContext, raw: unknown = {})
             /** Pieces of this grade on the shelf, including any set aside for orders. */
             onShelf: balance?.quantity ?? 0,
             reserved: balance?.reserved ?? 0,
+            /** What one piece of this grade costs, for people who see the financials. */
+            unitCost: cost(gradeCost(variant, grade)),
           };
         }),
       })),
@@ -488,6 +511,8 @@ export async function getStockCountSheet(ctx: CompanyContext, raw: unknown = {})
       : { id: null, name: DEFAULT_WAREHOUSE_NAME },
     grade,
     sheet,
+    /** Whether shortages show what they cost (the cells' unitCost). */
+    showsCosts: canSeeFinancials(ctx),
   };
 }
 

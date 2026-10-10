@@ -2,13 +2,14 @@ import type { HelpSection } from "../types";
 
 /**
  * Products: styles and their stock matrix, SKUs, inward batches (lots), stock
- * counts and the Bulk update grid, bad stock and the catalogue setup.
+ * counts and the Bulk update grid, Damage & QC Rejects (bad stock) and the
+ * catalogue setup.
  */
 export const productsHelp: HelpSection = {
   id: "products",
   title: "পণ্য ও স্টক (Products)",
   description:
-    "প্রতিটি স্টাইল, তার রং ও সাইজ অনুযায়ী স্টক (SKU), স্টক গণনা, নষ্ট মাল (Bad stock), আর রং, সাইজ, ক্যাটাগরি, ব্র্যান্ড ও গুদামের সেটআপ।",
+    "প্রতিটি স্টাইল, তার রং ও সাইজ অনুযায়ী স্টক (SKU), স্টক গণনা, নষ্ট ও QC-তে বাতিল মাল (Damage & QC Rejects), আর রং, সাইজ, ক্যাটাগরি, ব্র্যান্ড ও গুদামের সেটআপ।",
   href: "/products",
   articles: [
     {
@@ -242,19 +243,24 @@ export const productsHelp: HelpSection = {
       slug: "products-stock-count",
       title: "স্টক গণনা (Stock count) করে মিলাবেন যেভাবে",
       summary:
-        "তাকে গুনে পাওয়া পিস লিখে শুধু পার্থক্যগুলো সংরক্ষণ করা। কম পাওয়া পিস ক্ষতি হিসেবে লেখা হয়।",
+        "সফটওয়্যারের স্টক (System stock) পাশে রেখে তাকে গুনে পাওয়া পিস (Physical count) লেখা। পার্থক্য নিজে থেকে হিসাব হয়, কম পাওয়া পিসের দাম Accounts-এর Inventory Loss-এ যায়।",
       keywords: [
         "stock count",
         "count",
         "physical count",
+        "system stock",
         "stock take",
         "shelf",
         "difference",
+        "shortage",
+        "inventory loss",
         "স্টক গণনা",
         "স্টক মেলানো",
         "গোনা",
         "মজুদ যাচাই",
         "স্টক টেক",
+        "ঘাটতি",
+        "কম পাওয়া",
       ],
       routes: ["/products/stock-count"],
       who: "যাঁদের স্টক সামলানোর অনুমতি আছে: Super Admin, Production Manager ও Warehouse Team।",
@@ -268,23 +274,31 @@ export const productsHelp: HelpSection = {
           },
         },
         {
-          text: "“Style”, “Warehouse” ও “Grade” (“A-grade” বা “B-grade”) বেছে নিন। রং × সাইজের গণনার শিট খুলবে।",
+          text: "“Style”, “Warehouse” ও “Grade” (“A-grade” বা “B-grade”) বেছে নিন। প্রতিটি রঙের জন্য একটি ছক খুলবে।",
         },
         {
-          text: "প্রতিটি ঘরে তাকে গুনে যত পিস পেলেন লিখুন। যেগুলো গোনেননি সেগুলোতে বর্তমান সংখ্যা বসাতে “Fill the rest”, সব মুছতে “Clear”।",
+          text: "ছকের প্রতিটি সারি একটি সাইজ: “System stock”-এ সফটওয়্যারে যত পিস আছে, পাশে “Physical count” ঘরে তাকে গুনে যত পিস পেলেন তা লিখুন। “Difference” নিজে থেকেই হিসাব হয়: মিললে “Matches”, কম হলে লাল “short”, বেশি হলে “extra”।",
           image: {
             id: "products-stock-count-2",
-            caption: "গণনার শিট: প্রতিটি ঘরে গোনা পিস লেখা",
+            caption: "গণনার ছক: “System stock”, “Physical count” ও “Difference”",
           },
         },
         {
-          text: "“Review and save” চাপুন। কোন SKU-তে কত পার্থক্য তা দেখাবে। সব মিললে “Everything matches” লেখা আসবে।",
+          text: "যেগুলো গোনেননি সেগুলোতে সফটওয়্যারের সংখ্যা বসাতে “Fill the rest”, সব মুছতে “Clear”।",
         },
         {
-          text: "দরকার হলে নোট লিখে (যেমন October count) “Save the count” চাপুন।",
+          text: "কোনো সাইজে কম পাওয়া গেলে নিচে লাল “Shortage found” নোট আসে। এতে চাপলে খুলে দেখায় কোন রং-সাইজে কত পিস কম, কোন গুদাম, কোন তারিখে গোনা, আর (যাঁরা খরচ দেখেন তাঁদের জন্য) কত টাকার মাল।",
+          image: {
+            id: "products-stock-count-3",
+            caption: "খোলা “Shortage found” নোট: কম পাওয়া সাইজ, তারিখ ও টাকার অঙ্ক",
+          },
+        },
+        {
+          text: "“Review and save” চাপুন, দরকার হলে নোট লিখে (যেমন October count) “Save the count” চাপুন। সংরক্ষণের পর নোটটি “Shortage recorded” হিসেবে থেকে যায়।",
         },
       ],
       tips: [
+        "কম পাওয়া পিসের দাম (পিসপ্রতি খরচ × কম পিস) নিজে থেকেই Accounts-এর “Inventory Loss” হিসাবে যায়, তাই লাভ-ক্ষতির হিসাবে (Profit & loss) দেখা যায়। বেশি পাওয়া গেলে সেই ক্ষতি ততটা কমে।",
         "গণনার সময় স্টক বদলালে (বিক্রি বা অন্য গণনা) সংরক্ষণ আটকে যাবে। “Load the new shelf numbers, keeping what you typed” চাপুন, আপনার লেখা থেকে যাবে।",
         "একটি SKU-র স্টক দ্রুত ঠিক করতে SKU-র জানালায় “Correct stock” চাপুন, “Pieces counted on the shelf” লিখে “Save the count” চাপুন।",
         "একটি স্টাইলের ভালো ও B-grade দুটোই একসাথে ঠিক করতে স্টাইলের পাতায় “Bulk update” ব্যবহার করুন (নিচের গাইড দেখুন)।",
@@ -324,7 +338,7 @@ export const productsHelp: HelpSection = {
           },
         },
         {
-          text: "বদলানো ঘর সবুজ হয়। নিচে লেখা থাকে কয়টি ঘর বদলেছে, কত পিস বেশি পাওয়া গেল আর কত কম। কম পাওয়া পিস ক্ষতি হিসেবে লেখা হয়।",
+          text: "বদলানো ঘর সবুজ হয়। নিচে লেখা থাকে কয়টি ঘর বদলেছে, কত পিস বেশি পাওয়া গেল আর কত কম। কম পাওয়া পিসের দাম Accounts-এর “Inventory Loss” হিসাবে যায়।",
         },
         {
           text: "দরকার হলে “Note (optional)” লিখে “Save changes” চাপুন। মাঝে কেউ স্টক বদলালে সংরক্ষণ আটকে যাবে, নতুন সংখ্যা চলে আসবে আর আপনার লেখা থেকে যাবে। আবার দেখে “Save changes” চাপুন।",
@@ -424,30 +438,34 @@ export const productsHelp: HelpSection = {
     },
     {
       slug: "products-bad-stock",
-      title: "নষ্ট মাল (Bad stock) আলাদা করবেন যেভাবে",
+      title: "নষ্ট ও QC-তে বাতিল মাল (Damage & QC Rejects) আলাদা করবেন যেভাবে",
       summary:
-        "দাগ লাগা, ছেঁড়া বা হারানো পিস বিক্রির স্টক থেকে সরিয়ে কারণসহ লেখা, আর কোন সময়ে কত নষ্ট হলো দেখা।",
+        "দাগ লাগা, ছেঁড়া, হারানো বা মান যাচাইয়ে (QC) বাতিল পিস বিক্রির স্টক থেকে সরিয়ে কারণসহ লেখা। এর দাম Accounts-এর Inventory Loss-এ যায়।",
       keywords: [
+        "damage",
+        "qc rejects",
         "bad stock",
         "damaged",
         "defect",
+        "reject",
         "lost",
         "write off",
-        "record bad stock",
+        "inventory loss",
         "নষ্ট মাল",
         "ক্ষতিগ্রস্ত",
         "দাগ",
         "ছেঁড়া",
         "বাতিল মাল",
+        "কিউসি",
       ],
       routes: ["/products/bad-stock"],
       who: "দেখতে পারেন যাঁরা স্টক দেখেন। লিখতে স্টক সামলানোর অনুমতি লাগে (Super Admin, Production Manager, Warehouse Team)।",
       steps: [
         {
-          text: "“Products” > “Bad stock” ট্যাবে “Record bad stock” চাপুন।",
+          text: "“Products” > “Damage & QC Rejects” ট্যাবে “Record damage” চাপুন। (আগে এই ট্যাবের নাম ছিল Bad stock।)",
           image: {
             id: "products-bad-stock-1",
-            caption: "“Bad stock” ট্যাব: সময় বাছাই, তালিকা ও “Record bad stock” বোতাম",
+            caption: "“Damage & QC Rejects” ট্যাব: সময় বাছাই, তালিকা ও “Record damage” বোতাম",
           },
         },
         {
@@ -460,14 +478,16 @@ export const productsHelp: HelpSection = {
             caption: "নষ্ট মালের ফর্ম: গুদাম, গ্রেড, পিস ও কারণ",
           },
         },
-        { text: "“Move to bad stock” চাপুন।" },
+        { text: "“Move to Damage & QC Rejects” চাপুন।" },
         {
           text: "তালিকায় “Period” বেছে নিয়ে কবে, কোন SKU, কত পিস, কেন, কোথা থেকে আর কে লিখেছেন দেখুন।",
         },
       ],
       tips: [
+        "সরানো পিসের দাম (পিসপ্রতি খরচ × পিস) নিজে থেকেই Accounts-এর “Inventory Loss” হিসাবে যায়, তাই লাভ-ক্ষতির হিসাবে দেখা যায়।",
+        "মোট কত টাকার মাল নষ্ট হলো তা ড্যাশবোর্ডের “Total bad stock value” কার্ডে দেখা যায় (যাঁরা টাকার হিসাব দেখেন তাঁদের জন্য)।",
         "অর্ডারের জন্য আটকে রাখা পিস সরালে সেই অর্ডারে পিস কম পড়বে, ফর্মে সতর্কবার্তা আসবে।",
-        "SKU-র জানালার “Bad stock” বোতাম থেকেও সরাসরি নষ্ট মাল লেখা যায়।",
+        "SKU-র জানালার “Damage & QC” বোতাম থেকেও সরাসরি নষ্ট মাল লেখা যায়।",
         "ক্ষতির টাকার অঙ্ক শুধু যাঁরা খরচ দেখতে পারেন তাঁরা দেখেন।",
       ],
     },
@@ -490,6 +510,8 @@ export const productsHelp: HelpSection = {
         "ব্র্যান্ড",
         "গুদাম",
         "ওয়্যারহাউস",
+        "delete warehouse",
+        "গুদাম মোছা",
         "drag",
         "rename",
         "quick pick",
@@ -523,11 +545,19 @@ export const productsHelp: HelpSection = {
           text: "ব্র্যান্ড যোগ করতে “Add brand”। গুদাম যোগ করতে “Add a warehouse”, নাম ও “Address (optional)” দিন। কোনো গুদাম বাছা না হলে যেখানে মাল যাবে সেটিকে “Make it the default” করুন।",
         },
         {
+          text: "গুদাম মুছতে পারেন শুধু Super Admin। গুদামের পাশের মেনু থেকে “Delete” চাপুন। গুদামে একটিও পিস বা কাঁচামাল থাকলে, বা কোনো খোলা অর্ডার বা ডেলিভারি সেটি ব্যবহার করলে মোছা যায় না, কারণটি লেখা থাকে। খালি হলে “Your password” ঘরে নিজের পাসওয়ার্ড আবার লিখে “Delete warehouse” চাপুন।",
+          image: {
+            id: "products-setup-3",
+            caption: "গুদাম মোছার আগে পাসওয়ার্ড চাওয়া হয়",
+          },
+        },
+        {
           text: "ক্যাটাগরি বা ব্র্যান্ডের নাম বদলাতে নামের ওপর চাপুন, নতুন নাম লিখে Enter বা টিক চিহ্ন চাপুন। বাদ দিতে Esc বা ক্রস চাপুন। ক্যাটাগরি অন্য ক্যাটাগরির ভেতরে সরাতে পাশের মেনু থেকে “Move”। রং ও সাইজের পাশের মেনুতে “Edit”, “Rename” ও “Delete” থাকে।",
         },
       ],
       tips: [
-        "যে রং, সাইজ, ক্যাটাগরি বা গুদাম ব্যবহার হচ্ছে তা মোছা যায় না।",
+        "যে রং, সাইজ বা ক্যাটাগরি ব্যবহার হচ্ছে তা মোছা যায় না। গুদামের নিচে লেখা থাকে এখন তাতে কত পিস ও কাঁচামাল আছে।",
+        "মোছা গুদামের পুরোনো লেনদেন ইতিহাসে তার নামসহ থেকে যায়। একই নামে আবার গুদাম যোগ করলে পুরোনোটিই ফিরে আসে। শেষ গুদামটি মোছা যায় না, আর ডিফল্ট গুদাম মুছলে সবচেয়ে পুরোনো বাকি গুদামটি ডিফল্ট হয়।",
         "একই নাম দুবার দেওয়া যায় না, বড়-ছোট হাতের অক্ষর আলাদা হলেও না (maroon ও Maroon একই)।",
       ],
     },

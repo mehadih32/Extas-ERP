@@ -662,10 +662,32 @@ async function sourceLink(
         where: { id: sourceId },
         select: { rawMaterialId: true, rawMaterial: { select: { code: true, name: true } } },
       });
-      if (!line) return null;
+      if (line) {
+        return {
+          title: `${line.rawMaterial.code} ${line.rawMaterial.name}`,
+          href: ctx.can("materials.view") ? `/materials/stock/${line.rawMaterialId}` : null,
+        };
+      }
+      // Finished goods counts and opening stock name the SKU, on its style's page.
+      const movement = await ctx.db.stockMovement.findUnique({
+        where: { id: sourceId },
+        select: { variant: { select: { sku: true, styleId: true } } },
+      });
+      if (!movement) return null;
       return {
-        title: `${line.rawMaterial.code} ${line.rawMaterial.name}`,
-        href: ctx.can("materials.view") ? `/materials/stock/${line.rawMaterialId}` : null,
+        title: movement.variant.sku,
+        href: ctx.can("inventory.view") ? `/products/${movement.variant.styleId}` : null,
+      };
+    }
+    case "BAD_STOCK": {
+      const entry = await ctx.db.badStockEntry.findUnique({
+        where: { id: sourceId },
+        select: { variant: { select: { sku: true } } },
+      });
+      if (!entry) return null;
+      return {
+        title: `Damage & QC reject, ${entry.variant.sku}`,
+        href: ctx.can("inventory.view") ? "/products/bad-stock" : null,
       };
     }
     case "STOCK_INTAKE": {

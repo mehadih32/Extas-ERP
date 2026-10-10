@@ -11,7 +11,7 @@ import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { letterhead } from "@/modules/companies/letterhead";
 import { canSeeFinancials } from "@/modules/dashboard/access";
-import { getDefaultWarehouse } from "@/modules/inventory/stock.service";
+import { resolveWarehouse } from "@/modules/inventory/stock.service";
 import { assertPartyCanTransact, recordPartyActivity } from "@/modules/parties/party.service";
 import {
   createDeliveryChallanTx,
@@ -57,13 +57,6 @@ const TX_OPTIONS = { timeout: 30_000 };
 
 /** Pieces in a per-SKU count. */
 const piecesOf = (bySku: Map<string, number>) => [...bySku.values()].reduce((a, b) => a + b, 0);
-
-async function resolveWarehouse(ctx: CompanyContext, warehouseId?: string) {
-  if (!warehouseId) return getDefaultWarehouse(ctx);
-  const warehouse = await ctx.db.warehouse.findUnique({ where: { id: warehouseId } });
-  if (!warehouse) throw new AppError("NOT_FOUND", "Warehouse not found.");
-  return warehouse;
-}
 
 /** Reserves stock for each line; a line that loses a race for the last pieces fails. */
 async function reserveLines(

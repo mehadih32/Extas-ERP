@@ -550,6 +550,9 @@ model Warehouse {
   address   String?
   isDefault Boolean  @default(false)
   createdAt DateTime @default(now())
+  /// Set when a Super Admin deletes an empty warehouse: it leaves every list and
+  /// picker, while its past movements keep their warehouse in the history.
+  deletedAt DateTime?
 
   company              Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
   stockBalances        StockBalance[]

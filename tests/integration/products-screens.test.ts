@@ -66,6 +66,7 @@ import {
   deleteColorAction,
   deleteSizeAction,
   deleteStyleAction,
+  deleteWarehouseAction,
   generateMatrixAction,
   getCatalogSetupAction,
   getStockCountSheetAction,
@@ -87,7 +88,7 @@ import {
 } from "@/server/actions/inventory.actions";
 import { requireCompanyPage } from "@/server/pages/guards";
 
-import { addToCompany, contextFor, makeCompany, makeUser, resetDb } from "./helpers";
+import { addToCompany, contextFor, makeCompany, makeUser, PASSWORD, resetDb } from "./helpers";
 
 const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
 
@@ -297,6 +298,17 @@ run("Products screens", () => {
         expectRuleRefusal(result, who);
         if (result.ok) await prisma.brand.create({ data: before });
       }
+      // Only the Super Admin is offered warehouse deletes, and told why the only one stays.
+      const main = setup.warehouses.find((w) => w.name === "Main Warehouse")!;
+      expect([main.hold.pieces, main.can.delete, main.blocked], who).toEqual([
+        8,
+        false,
+        who === "owner" ? "This is the only warehouse. Add another one before deleting it." : null,
+      ]);
+      const removed = await deleteWarehouseAction(main.id, { password: PASSWORD });
+      expect(removed.ok ? "allowed" : removed.error.code, who).toBe(
+        who === "owner" ? "CONFLICT" : "FORBIDDEN",
+      );
       if (manage) {
         expect(setup.colors.filter((c) => c.can.delete).map((c) => c.name)).toEqual(["Black"]);
         expect(setup.sizes.filter((s) => s.can.delete).map((s) => s.name)).toEqual(["3XL"]);
@@ -393,6 +405,16 @@ run("Products screens", () => {
         ["BAD_STOCK_OUT", -2, financial ? "800.00" : null],
         ["OPENING", 10, financial ? "4000.00" : null],
       ]);
+      // The count sheet prices a shortage only for them.
+      if (ctx.can("inventory.manage")) {
+        const sheet = data(await getStockCountSheetAction({ styleId: env.polo.id }), who);
+        expect(sheet.showsCosts, who).toBe(financial);
+        const navy = sheet.sheet!.rows.find((r) => r.color.name === "Navy")!;
+        expect(navy.cells[0], who).toMatchObject({
+          onShelf: 8,
+          unitCost: financial ? "400.00" : null,
+        });
+      }
       // A SKU lookup (scanners, the bad stock form) never carries its cost.
       const found = data(await lookupVariantAction("ex-pl-001-navy-s"), who);
       expect(found, who).not.toHaveProperty("avgCost");

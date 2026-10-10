@@ -11,6 +11,7 @@ import * as chart from "@/modules/accounts/chart.service";
 import { ensureControlAccounts } from "@/modules/accounts/control-accounts";
 import { financialYearStart } from "@/modules/accounts/periods";
 import * as reports from "@/modules/accounts/reports.service";
+import { getJournalEntryScreen } from "@/modules/accounts/screens.service";
 import * as supplierPayments from "@/modules/accounts/supplier-payment.service";
 import * as vouchers from "@/modules/accounts/voucher.service";
 import type { CompanyContext } from "@/modules/auth/context";
@@ -134,6 +135,7 @@ run("chart of accounts, journal vouchers and transfers", () => {
         "4200",
         "5000",
         "5100",
+        "5150",
         "6000",
         "6200",
         "6700",
@@ -1260,7 +1262,7 @@ run("expenses and claims", () => {
 run("stock in the books", () => {
   beforeEach(resetDb);
 
-  it("posts opening stock, count corrections and bad stock to the ledger", async () => {
+  it("posts opening stock, count corrections and bad stock to the ledger (Inventory Loss)", async () => {
     const env = await setup();
     const size = await catalog.createSize(env.admin, { name: "M" });
     const color = await catalog.createColor(env.admin, { name: "Navy", hexCode: "#1f2a44" });
@@ -1295,11 +1297,34 @@ run("stock in the books", () => {
     });
     expect(bad.journalEntryId).toEqual(expect.any(String));
     expect(await balance(env.accounts, env.acc.INVENTORY)).toBe("350.00");
-    expect(await balance(env.accounts, env.acc.PRODUCTION_LOSS)).toBe("150.00");
+    // The shortage and the damaged piece go to Inventory Loss, not to production losses.
+    expect(await balance(env.accounts, env.acc.INVENTORY_LOSS)).toBe("150.00");
+    expect(await balance(env.accounts, env.acc.PRODUCTION_LOSS)).toBe("0.00");
+    const pl = await reports.getProfitAndLoss(env.accounts);
+    expect(pl.expenses.groups.find((g) => g.key === "LOSSES")).toMatchObject({
+      total: "150.00",
+      lines: [{ code: "5150", name: "Inventory Loss", amount: "150.00" }],
+    });
+    // Each entry opens the record it came from.
+    const damage = await getJournalEntryScreen(env.admin, bad.journalEntryId!);
+    expect(damage.source).toEqual({
+      title: "Damage & QC reject, EX-TS-001-NAVY-M",
+      href: "/products/bad-stock",
+    });
+    const short = await prisma.journalEntry.findFirstOrThrow({
+      where: {
+        companyId: env.company.id,
+        description: "Stock count shortage — EX-TS-001-NAVY-M -2 (Count short)",
+      },
+    });
+    expect((await getJournalEntryScreen(env.admin, short.id)).source).toEqual({
+      title: "EX-TS-001-NAVY-M",
+      href: `/products/${style.id}`,
+    });
     // Found three more on a recount: valued at average cost, the loss comes back.
     await stock.adjustStock(env.admin, { variantId: variant.id, quantity: 3 });
     expect(await balance(env.accounts, env.acc.INVENTORY)).toBe("500.00");
-    expect(await balance(env.accounts, env.acc.PRODUCTION_LOSS)).toBe("0.00");
+    expect(await balance(env.accounts, env.acc.INVENTORY_LOSS)).toBe("0.00");
     const check = await reports.getBooksCheck(env.accounts);
     expect(check.checks.find((c) => c.key === "INVENTORY")).toMatchObject({
       ok: true,

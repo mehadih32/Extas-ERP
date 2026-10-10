@@ -9,7 +9,7 @@ import { toInstant } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
 import { lockRows } from "@/lib/row-lock";
 import type { CompanyContext } from "@/modules/auth/context";
-import { getDefaultWarehouse } from "@/modules/inventory/stock.service";
+import { resolveWarehouse } from "@/modules/inventory/stock.service";
 import {
   averageCost,
   costPerUnit,
@@ -75,10 +75,7 @@ export function assertUnitFits(
 
 /** The store to use: the one given, or the company's main store. */
 export async function resolveStore(ctx: CompanyContext, warehouseId?: string | null) {
-  if (!warehouseId) return getDefaultWarehouse(ctx);
-  const warehouse = await ctx.db.warehouse.findUnique({ where: { id: warehouseId } });
-  if (!warehouse) throw new AppError("NOT_FOUND", "Store (warehouse) not found.");
-  return warehouse;
+  return resolveWarehouse(ctx, warehouseId, "Store (warehouse) not found.");
 }
 
 /** Materials named on a document, checked to exist and not be archived. */

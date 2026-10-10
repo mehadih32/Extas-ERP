@@ -15,8 +15,10 @@ import {
   openingLines,
   readPieces,
   shelfNumbers,
+  shortage,
 } from "@/components/products/count-sheet";
 import { readAmount } from "@/components/products/form-values";
+import { canDeleteWarehouse } from "@/modules/inventory/rules";
 import { COLOR_PRESETS } from "@/components/products/setup/color-presets";
 import {
   BAD_STOCK_SOURCE_CHOICES,
@@ -56,18 +58,23 @@ describe("the Products area", () => {
   });
 
   it("shows the stock count only to people who may change stock", () => {
-    expect(tabs(["inventory.view"])).toEqual(["Styles", "Archived styles", "Bad stock", "Setup"]);
+    expect(tabs(["inventory.view"])).toEqual([
+      "Styles",
+      "Archived styles",
+      "Damage & QC Rejects",
+      "Setup",
+    ]);
     expect(tabs(["inventory.view", "inventory.manage"])).toEqual([
       "Styles",
       "Archived styles",
       "Stock count",
-      "Bad stock",
+      "Damage & QC Rejects",
       "Setup",
     ]);
     expect(tabs(DEFAULT_ROLE_PERMISSIONS.SALES_EXECUTIVE)).toEqual([
       "Styles",
       "Archived styles",
-      "Bad stock",
+      "Damage & QC Rejects",
       "Setup",
     ]);
     expect(tabs(DEFAULT_ROLE_PERMISSIONS.WAREHOUSE_TEAM)).toHaveLength(5);
@@ -147,6 +154,26 @@ describe("the stock count sheet", () => {
     expect(countTotals(lines)).toEqual({ counted: 3, changed: 2, added: 3, removed: 2 });
   });
 
+  it("notes a shortage: the pieces missing and, with every cost known, their value", () => {
+    const costed = cells.map((c, i) => ({ ...c, unitCost: ["412.3333", "400.00", "1", null][i]! }));
+    const { lines } = countLines(costed, { a: "7", b: "4", c: "5" });
+    const short = shortage(lines);
+    expect(short.lines.map((l) => [l.sku, l.difference])).toEqual([
+      ["P-NAVY-S", -3],
+      ["P-NAVY-M", -1],
+    ]);
+    // Each line rounded to the paisa, as the books round them: 1237.00 + 400.00.
+    expect(short).toMatchObject({ pieces: 4, value: "1637.00" });
+    // A SKU short whose cost is hidden hides the total.
+    const hidden = shortage(countLines(costed, { a: "9", d: "1" }).lines);
+    expect(hidden).toMatchObject({ pieces: 2, value: null });
+    expect(shortage(countLines(cells, { a: "1" }).lines)).toMatchObject({ pieces: 9, value: null });
+    expect(shortage(countLines(cells, { a: "10" }).lines)).toMatchObject({
+      pieces: 0,
+      value: null,
+    });
+  });
+
   it("adds opening stock for the SKUs given more than nothing", () => {
     const { lines, invalid } = openingLines(cells, { a: "12", b: "0", c: "" });
     expect(invalid).toEqual([]);
@@ -167,6 +194,29 @@ describe("the stock count sheet", () => {
     });
     expect(countSearch(view)).toBe("?style=cm1style&grade=b&mode=opening");
     expect(countSearch(countViewFrom({ grade: "x", mode: "?" }))).toBe("");
+  });
+});
+
+describe("deleting a warehouse", () => {
+  const empty = { pieces: 0, materials: 0, orders: 0, deliveries: 0 };
+  const why = (hold: Partial<typeof empty>, others = 1) => {
+    const verdict = canDeleteWarehouse({ hold: { ...empty, ...hold }, others });
+    return verdict.ok ? "ok" : verdict.message;
+  };
+
+  it("is allowed only for an empty warehouse that is not the last one", () => {
+    expect(why({})).toBe("ok");
+    expect(why({}, 0)).toBe("This is the only warehouse. Add another one before deleting it.");
+    expect(why({ pieces: 1 })).toBe(
+      "It still holds stock (1 piece). Sell, issue or count it down to 0 first.",
+    );
+    expect(why({ pieces: 120, materials: 3 })).toBe(
+      "It still holds stock (120 pieces and 3 raw materials). Sell, issue or count it down to 0 first.",
+    );
+    expect(why({ orders: 1 })).toBe("1 open order still uses it. Finish or cancel it first.");
+    expect(why({ orders: 2, deliveries: 1 })).toBe(
+      "2 open orders and 1 delivery from production still use it. Finish or cancel them first.",
+    );
   });
 });
 

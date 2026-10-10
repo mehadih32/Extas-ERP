@@ -4,6 +4,7 @@ import { SectionError } from "@/components/dashboard/section-error";
 import { CountScreen } from "@/components/products/count-screen";
 import { countSearch, countViewFrom } from "@/components/products/count-sheet";
 import { NoAccess } from "@/components/settings/no-access";
+import { localDay } from "@/lib/dates";
 import { getStockCountSheetAction } from "@/server/actions/inventory.actions";
 import { requireCompanyPage } from "@/server/pages/guards";
 
@@ -43,14 +44,14 @@ export default async function StockCountPage({
   }
 
   return (
-    <section aria-labelledby="count-heading" className="grid gap-6">
+    <section aria-labelledby="count-heading" className="grid grid-cols-1 gap-6">
       <div>
         <h2 id="count-heading" className="font-serif text-2xl text-primary">
           Stock count
         </h2>
         <p className="mt-1 max-w-xl text-sm leading-relaxed text-muted-foreground">
-          Count a style&apos;s pieces on the shelf and save the differences, or enter the stock you
-          held before starting.
+          Compare the system stock with a physical count of the shelf and save the differences, or
+          enter the stock you held before starting.
         </p>
       </div>
       <CountScreen
@@ -58,6 +59,7 @@ export default async function StockCountPage({
         sheet={result.data}
         view={view}
         currency={ctx.company.currency}
+        today={localDay(new Date(), ctx.company.timezone)}
       />
     </section>
   );

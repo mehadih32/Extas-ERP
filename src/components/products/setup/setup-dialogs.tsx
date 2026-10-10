@@ -1,6 +1,6 @@
 "use client";
 
-import { LoaderCircleIcon } from "lucide-react";
+import { LoaderCircleIcon, LockIcon } from "lucide-react";
 import { useState, useTransition } from "react";
 
 import { ErrorDialog } from "@/components/feedback/error-dialog";
@@ -37,6 +37,8 @@ function SetupDialog({
   error,
   fieldNames,
   pending,
+  pendingLabel = "Saving",
+  destructive = false,
   onSubmit,
   onClose,
   onDismissError,
@@ -45,6 +47,8 @@ function SetupDialog({
   title: string;
   description?: string;
   saveLabel: string;
+  pendingLabel?: string;
+  destructive?: boolean;
   error: ActionError | undefined;
   /** The fields that show their own errors; anything else shows above the buttons. */
   fieldNames: string[];
@@ -76,9 +80,13 @@ function SetupDialog({
             <Button type="button" variant="outline" onClick={onClose} disabled={pending}>
               Cancel
             </Button>
-            <Button type="submit" disabled={pending}>
+            <Button
+              type="submit"
+              variant={destructive ? "destructive" : "default"}
+              disabled={pending}
+            >
               {pending && <LoaderCircleIcon className="animate-spin" aria-hidden />}
-              {pending ? "Saving" : saveLabel}
+              {pending ? pendingLabel : saveLabel}
             </Button>
           </DialogFooter>
         </form>
@@ -406,6 +414,83 @@ export function WarehouseDialog({
           </span>
         </span>
       </label>
+    </SetupDialog>
+  );
+}
+
+type Warehouse = CatalogSetup["warehouses"][number];
+
+/**
+ * Deleting a warehouse (a Super Admin only): one that still holds stock or open
+ * work says why it cannot go yet; an empty one asks for the password again.
+ */
+export function DeleteWarehouseDialog({
+  warehouse,
+  onDelete,
+  onClose,
+}: {
+  warehouse: Warehouse;
+  onDelete: Save<{ password: string }>;
+  onClose: () => void;
+}) {
+  const { error, pending, run, dismiss } = useSave(onDelete);
+  const problem = fieldError(error, "password");
+  if (warehouse.blocked) {
+    return (
+      <Dialog open onOpenChange={(open) => !open && onClose()}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{warehouse.name} cannot be deleted yet</DialogTitle>
+            <DialogDescription>Only an empty warehouse can be deleted.</DialogDescription>
+          </DialogHeader>
+          <FormAlert tone="note">
+            <span className="flex items-start gap-2">
+              <LockIcon aria-hidden className="mt-0.5 size-4 shrink-0" />
+              {warehouse.blocked}
+            </span>
+          </FormAlert>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+  return (
+    <SetupDialog
+      title={`Delete ${warehouse.name}?`}
+      description={`It is empty, so it can go. Its past stock movements keep its name in the history.${
+        warehouse.isDefault ? " The oldest warehouse left becomes the default." : ""
+      }`}
+      saveLabel="Delete warehouse"
+      pendingLabel="Deleting"
+      destructive
+      error={error}
+      fieldNames={["password"]}
+      pending={pending}
+      onSubmit={(form) => run({ password: String(form.get("password") ?? "") })}
+      onClose={onClose}
+      onDismissError={dismiss}
+    >
+      <Field
+        id="warehouse-password"
+        label="Your password"
+        hint="For safety, type the password you sign in with."
+        error={problem}
+      >
+        <Input
+          id="warehouse-password"
+          name="password"
+          type="password"
+          autoComplete="current-password"
+          aria-invalid={Boolean(problem)}
+          aria-describedby={problem ? "warehouse-password-error" : "warehouse-password-hint"}
+          autoFocus
+          required
+        />
+      </Field>
     </SetupDialog>
   );
 }

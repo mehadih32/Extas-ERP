@@ -88,7 +88,7 @@ export const SOURCE_LABELS: Record<JournalSource, string> = {
   EXPENSE: "Expense",
   PAYROLL: "Payroll",
   SALARY_ADVANCE: "Salary advance",
-  BAD_STOCK: "Bad stock",
+  BAD_STOCK: "Damage & QC rejects",
   STOCK_INTAKE: "Factory delivery",
   RETURN: "Return",
   COURIER_PAYOUT: "Courier payout",

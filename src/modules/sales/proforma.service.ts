@@ -9,7 +9,7 @@ import { assertAllowed } from "@/lib/verdict";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { letterhead } from "@/modules/companies/letterhead";
-import { getDefaultWarehouse } from "@/modules/inventory/stock.service";
+import { resolveWarehouse } from "@/modules/inventory/stock.service";
 import { assertPartyCanTransact } from "@/modules/parties/party.service";
 import {
   createOrderTx,
@@ -254,10 +254,7 @@ export async function convertProformaToOrder(
   const proforma = await ctx.db.proformaInvoice.findUnique({ where: { id: proformaId } });
   if (!proforma) throw new AppError("NOT_FOUND", "Proforma invoice not found.");
   assertAllowed(canConvertProforma(proforma));
-  const warehouse = input.warehouseId
-    ? await ctx.db.warehouse.findUnique({ where: { id: input.warehouseId } })
-    : await getDefaultWarehouse(ctx);
-  if (!warehouse) throw new AppError("NOT_FOUND", "Warehouse not found.");
+  const warehouse = await resolveWarehouse(ctx, input.warehouseId);
   const lines = await resolveOrderLines(ctx, input, "B2B_PREORDER", warehouse.id);
   assertStockOrOverride(ctx, lines, input.forceOverride);
   const { total } = orderTotals(lines, input);

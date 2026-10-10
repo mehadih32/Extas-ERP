@@ -48,7 +48,7 @@ type View = "details" | "edit" | "correct" | "bad";
 const TITLES: Record<Exclude<View, "details">, string> = {
   edit: "Edit the SKU",
   correct: "Correct the stock",
-  bad: "Move to bad stock",
+  bad: "Move to Damage & QC Rejects",
 };
 
 function Prices({ details, currency }: { details: VariantDetails; currency: string }) {
@@ -412,7 +412,7 @@ function CorrectStockForm({
 /**
  * One SKU (a matrix cell): its prices, barcode and stock in each warehouse. For
  * people with inventory.manage (the permission each change checks) it also edits
- * the SKU, corrects its stock and moves pieces to bad stock.
+ * the SKU, corrects its stock and moves pieces to Damage & QC Rejects.
  */
 export function SkuDialog({
   variantId,
@@ -515,7 +515,7 @@ export function SkuDialog({
                     </Button>
                     <Button type="button" variant="outline" onClick={() => setView("bad")}>
                       <Trash2Icon aria-hidden />
-                      Bad stock
+                      Damage & QC
                     </Button>
                   </div>
                 )}
@@ -542,7 +542,7 @@ export function SkuDialog({
                 onCancel={back}
                 onDone={(moved) =>
                   done(
-                    `${pieces(moved.quantity, currency)} of ${moved.sku} moved to bad stock${
+                    `${pieces(moved.quantity, currency)} of ${moved.sku} moved to Damage & QC Rejects${
                       moved.lossValue ? `, a loss of ${money(moved.lossValue, currency)}` : ""
                     }.`,
                   )

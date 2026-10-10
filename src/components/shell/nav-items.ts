@@ -234,7 +234,7 @@ export function phoneTabs(items: readonly NavItem[]): { tabs: NavItem[]; more: N
  * How many sections fit in the top bar on tablets (md), laptops (lg) and
  * computers (xl); the rest go under its "More" menu at that width.
  */
-export const TOP_BAR_TABS = { md: 3, lg: 5, xl: 7 } as const;
+export const TOP_BAR_TABS = { md: 3, lg: 5, xl: 6 } as const;
 
 /**
  * Up to which width a section at this position sits under the top bar's "More":

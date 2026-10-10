@@ -71,14 +71,14 @@ describe("Accounts in the menu, by role", () => {
       ["/accounts", "md"],
       ["/products", "md"],
       ["/materials", "lg"],
-      ["/parties", "lg"],
+      ["/parties", "all"],
       ["/hr", "all"],
       ["/reports", "all"],
       ["/planner", "all"],
       ["/compliance", "all"],
       ["/settings", "all"],
     ]);
-    expect(topBarFold(7)).toBe("all");
+    expect(topBarFold(6)).toBe("all");
   });
 
   it("hides the books, balances and reports from everyone else", () => {

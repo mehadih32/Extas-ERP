@@ -277,11 +277,12 @@ model RolePermission {
 
 /// Per-user UI preferences (e.g. which dashboard metric cards are hidden 👁).
 model UserPreference {
-  id              String   @id @default(cuid())
-  userId          String   @unique
+  id              String         @id @default(cuid())
+  userId          String         @unique
   hiddenMetrics   String[] // e.g. ["NET_PROFIT", "LIABILITIES"]
   dashboardLayout Json?
-  updatedAt       DateTime @updatedAt
+  interfaceStyle  InterfaceStyle @default(LEGACY)
+  updatedAt       DateTime       @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
@@ -2608,6 +2609,13 @@ enum UserStatus {
   ACTIVE
   INVITED
   SUSPENDED
+}
+
+/// How the app looks for one person: the original layout with the top menu
+/// (LEGACY, the default) or the modern one with the side menu.
+enum InterfaceStyle {
+  LEGACY
+  MODERN
 }
 
 enum SystemRole {

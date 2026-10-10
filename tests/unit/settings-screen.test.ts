@@ -30,12 +30,13 @@ describe("the settings area", () => {
   });
 
   it("shows each tab to the people its Server Actions let in", () => {
-    expect(tabs(["company.members.manage"])).toEqual(["Team", "Roles", "Company"]);
-    expect(tabs(["company.roles.manage"])).toEqual(["Roles", "Company"]);
-    expect(tabs(["company.settings"])).toEqual(["Company"]);
-    // The company details can be read by everyone in the company (GET /api/company).
-    expect(tabs([])).toEqual(["Company"]);
-    expect(tabs(PERMISSIONS.map((p) => p.key))).toEqual(["Team", "Roles", "Company"]);
+    expect(tabs(["company.members.manage"])).toEqual(["Team", "Roles", "Company", "Appearance"]);
+    expect(tabs(["company.roles.manage"])).toEqual(["Roles", "Company", "Appearance"]);
+    expect(tabs(["company.settings"])).toEqual(["Company", "Appearance"]);
+    // The company details can be read by everyone in the company (GET /api/company),
+    // and everyone chooses their own look.
+    expect(tabs([])).toEqual(["Company", "Appearance"]);
+    expect(tabs(PERMISSIONS.map((p) => p.key))).toEqual(["Team", "Roles", "Company", "Appearance"]);
   });
 });
 

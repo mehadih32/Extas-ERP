@@ -2,6 +2,8 @@ import type { Metadata, Viewport } from "next";
 
 import "@/styles/globals.css";
 
+import { currentInterfaceStyle } from "@/modules/appearance/appearance.service";
+
 import { fontVariables } from "./fonts";
 
 export const metadata: Metadata = {
@@ -20,9 +22,12 @@ export const viewport: Viewport = {
   viewportFit: "cover",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // The person's chosen look (Settings → Appearance): the modern styles in
+  // globals.css apply under data-ui="modern"; the original look needs nothing.
+  const style = await currentInterfaceStyle();
   return (
-    <html lang="en" className={fontVariables}>
+    <html lang="en" className={fontVariables} data-ui={style === "MODERN" ? "modern" : undefined}>
       <body>{children}</body>
     </html>
   );

@@ -1,6 +1,15 @@
 "use client";
 
-import { IdCardIcon, KeyRoundIcon, LogOutIcon, MenuIcon, UserRoundIcon } from "lucide-react";
+import {
+  ChevronsUpDownIcon,
+  IdCardIcon,
+  KeyRoundIcon,
+  LifeBuoyIcon,
+  LogOutIcon,
+  MenuIcon,
+  PaletteIcon,
+  UserRoundIcon,
+} from "lucide-react";
 import Link from "next/link";
 import { useState, useTransition } from "react";
 
@@ -24,22 +33,27 @@ import type { ShellUser } from "./types";
 
 /**
  * The person's menu: who is signed in and in which role, their own HR records
- * (for people whose menu has HR & payroll instead), change password and sign out. An initials button in the top bar, the "Account" tab on phones.
- * When the phone's tab bar has more sections than fit, the tab is "More" and
- * lists those sections first.
+ * (for people whose menu has HR & payroll instead), the Help Center, their
+ * look (Appearance), change password and sign out. An initials button in the
+ * top bar, the "Account" tab on phones, and the person's row at the foot of the
+ * modern side menu. When the phone's tab bar has more sections than fit, the
+ * tab is "More" and lists those sections first.
  */
 export function UserMenu({
   user,
   companyName,
   variant,
   className,
+  labelClassName,
   sections = [],
   activeSection = false,
 }: {
   user: ShellUser;
   companyName: string;
-  variant: "avatar" | "tab";
+  variant: "avatar" | "tab" | "sidebar";
   className?: string;
+  /** The side menu's name and role next to the initials (hidden while it is narrow). */
+  labelClassName?: string;
   /** Sections that did not fit in the phone's tab bar. */
   sections?: NavItem[];
   /** One of those sections is the current page. */
@@ -61,6 +75,31 @@ export function UserMenu({
             )}
           >
             {user.initials}
+          </DropdownMenuTrigger>
+        ) : variant === "sidebar" ? (
+          <DropdownMenuTrigger
+            aria-label={`Account: ${user.name}`}
+            className={cn(
+              "flex w-full min-w-0 cursor-pointer items-center gap-3 rounded-md p-1.5 text-left text-primary-foreground transition-colors outline-none hover:bg-primary-foreground/10 focus-visible:ring-[3px] focus-visible:ring-primary-foreground/30 data-[state=open]:bg-primary-foreground/10",
+              className,
+            )}
+          >
+            <span
+              aria-hidden
+              className="inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-primary-foreground text-[0.6875rem] font-semibold tracking-wider text-primary"
+            >
+              {user.initials}
+            </span>
+            <span className={cn("min-w-0 flex-1 flex-col", labelClassName)}>
+              <span className="block truncate text-sm font-medium">{user.name}</span>
+              <span className="block truncate text-xs text-primary-foreground/65">
+                {user.roleName}
+              </span>
+            </span>
+            <ChevronsUpDownIcon
+              className={cn("size-4 shrink-0 opacity-60", labelClassName)}
+              aria-hidden
+            />
           </DropdownMenuTrigger>
         ) : (
           <DropdownMenuTrigger
@@ -86,7 +125,7 @@ export function UserMenu({
         )}
         <DropdownMenuContent
           align="end"
-          side={variant === "tab" ? "top" : "bottom"}
+          side={variant === "tab" ? "top" : variant === "sidebar" ? "right" : "bottom"}
           className="w-[min(18rem,calc(100vw-2rem))]"
         >
           {more && (
@@ -124,6 +163,18 @@ export function UserMenu({
                 </Link>
               </DropdownMenuItem>
             )}
+            <DropdownMenuItem asChild>
+              <Link href={ROUTES.help}>
+                <LifeBuoyIcon aria-hidden />
+                Help Center
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <Link href={ROUTES.appearance}>
+                <PaletteIcon aria-hidden />
+                Appearance
+              </Link>
+            </DropdownMenuItem>
             <DropdownMenuItem asChild>
               <Link href={ROUTES.changePassword}>
                 <KeyRoundIcon aria-hidden />

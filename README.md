@@ -64,6 +64,7 @@ src/
   hooks/                 # shared React hooks
   lib/                   # env validation, Prisma client
   modules/<module>/      # one folder per blueprint module (sales, production, ...)
+  modules/help/content/  # the Bengali Help Center, one file per section (kept up to date with every feature)
   proxy.ts               # sends visitors without a session to sign in
   server/actions/        # Server Actions
   server/pages/          # the screens' gatekeepers (session, new password, company)
@@ -86,7 +87,7 @@ Built one module at a time, each in its own pull request. So far:
   net profit), each with an eye that hides it on that person's screens, and the Insights: top
   sellers (period, SKUs or styles, by pieces or sales value, kept in the address so a link
   shows the same list), highest stock, dead and slow stock, and low stock.
-- **Settings** (`/settings`), in three tabs:
+- **Settings** (`/settings`), in four tabs:
   - **Team**: everyone in the company, with a search and a list of deactivated people. Adding
     a person takes their email, name and role; someone new gets a temporary password, shown
     once with a copy button, for the administrator to hand over (sending it by email or
@@ -100,6 +101,11 @@ Built one module at a time, each in its own pull request. So far:
   - **Company**: name and contact details, the letterhead (logo, colours, footer), business
     rules (low stock level, advance percentage, when a buyer counts as dormant) and money and
     time (currency, time zone, first month of the financial year).
+  - **Appearance**, for everyone: their own look. **Legacy** (the original top bar, and
+    everyone's default) or **Modern**: a side menu that narrows to icons (remembered on that
+    device), the Inter typeface with figures that line up, softer cards and tables. Everything
+    works the same in both, and the choice changes only that person's screens. It also opens
+    from the account menu.
 - **Products** (`/products`), in four tabs:
   - **Styles**: the styles as cards with the pieces ready to sell, B-grade and SKU count,
     browsed by category (a tree on computers, a picker on phones) and brand, with archived
@@ -382,6 +388,16 @@ Built one module at a time, each in its own pull request. So far:
 - **Inbox** (`/inbox`, the bell in the top bar with the unread count): the person's messages,
   newest first, or only the unread ones. Each opens what it is about, can be marked read, or,
   when it came from a reminder, marked as dealt with. **Mark all as read** clears the bell.
+- **Help Center** (`/help`, "Help Center" in the account menu and at the foot of the modern side
+  menu), for everyone: a step-by-step manual in Bengali for every screen, one section per
+  menu entry plus first steps. Each guide says who can do it, the steps (with a space for a
+  screenshot under each step that needs one), tips, and a button to open that page. The
+  search box finds guides as you type, in Bengali or English. Guides for work the person's
+  role does not open are marked with a lock. When nothing matches, or the person says the
+  guides did not help, it writes an English request headed "Admin: Copy this prompt to Claude
+  to build this feature." with what they searched for, their role and the company, ready to
+  copy. A screenshot goes in `public/help/<code>.png`, named by the code its placeholder
+  shows, and its step's `image.src` becomes `/help/<code>.png`.
 - **Compliance** (`/compliance`): the licences and registrations (trade licence, VAT / BIN,
   TIN, IRC / ERC, BGMEA / BKMEA, fire, environment) with how many are in force, need renewing
   or have expired, which of the trade licence, BIN and TIN are not on file, and the numbers
@@ -658,6 +674,20 @@ For developers:
 - A page (a Server Component) gets only the components of a `"use client"` file, so values
   both sides need (like a page size) go in a plain module next to it;
   `tests/unit/server-client-imports.test.ts` checks this.
+- The Modern look is a set of styles under `html[data-ui="modern"]` in
+  `src/styles/globals.css`, plus the side menu (`src/components/shell/sidebar.tsx`); the root
+  layout sets the attribute from the person's `UserPreference.interfaceStyle`. The Legacy
+  look is the code as it was, untouched, so switching back is always safe. The side menu's
+  width is a cookie (`extas_sidebar`), so it is the same after a reload on that device.
+- **The Help Center is part of every feature.** Whenever a screen, button, tab or rule is added,
+  changed or removed, its Bengali guide in `src/modules/help/content/` changes in the same
+  pull request. `tests/unit/help-center.test.ts` holds the manual to the app: every menu entry
+  needs a section, every page a guide, every guide's page must exist, and every English label
+  a guide quotes (“Add a reminder”) must still appear in the code. Labels are quoted exactly as
+  the screen shows them; `…` stands for a name that changes.
+  Screenshots for the guides are not in yet: the repository has no `public/` folder and the
+  Docker image does not copy one, so the pull request that adds the first screenshots also adds
+  `COPY --from=builder --chown=erp:erp /app/public ./public` to the runner stage.
 - Components are [shadcn/ui](https://ui.shadcn.com) in `src/components/ui` (add more with
   `npx shadcn@latest add <name>`), in the brand colours from `src/styles/globals.css`. The
   fonts (Inter, Playfair Display, Noto Sans Bengali) are bundled with the app.
@@ -689,6 +719,7 @@ selling and producing: by default only Super Admin and Accounts hold `accounts.r
 | `GET /api/auth/me`                                   | User, company switcher list, active company, permissions |
 | `POST /api/auth/switch-company`                      | Change the active company (`companyId`)                  |
 | `POST /api/auth/change-password`                     | Change own password                                      |
+| `GET/PATCH /api/auth/appearance`                     | Own look (`interfaceStyle`: `LEGACY` or `MODERN`)        |
 | `GET/POST /api/companies`                            | List switchable companies / create one (platform owner)  |
 | `GET/PATCH /api/company`                             | Active company profile and letterhead details            |
 | `GET /api/permissions`                               | Permission catalogue for the role editor                 |

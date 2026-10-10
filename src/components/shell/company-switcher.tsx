@@ -31,9 +31,12 @@ const triggerStyle =
 export function CompanySwitcher({
   companies,
   activeCompany,
+  className,
 }: {
   companies: ShellCompany[];
   activeCompany: { id: string; name: string };
+  /** Extra classes for the button (the modern side menu makes it full width). */
+  className?: string;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -41,7 +44,7 @@ export function CompanySwitcher({
 
   if (companies.length <= 1) {
     return (
-      <span className={cn(triggerStyle, "border-transparent")}>
+      <span className={cn(triggerStyle, "border-transparent", className)}>
         <Building2Icon className="size-4 shrink-0 opacity-70" aria-hidden />
         <span className="truncate">{activeCompany.name}</span>
       </span>
@@ -67,6 +70,7 @@ export function CompanySwitcher({
           className={cn(
             triggerStyle,
             "cursor-pointer hover:bg-primary-foreground/10 focus-visible:ring-[3px] focus-visible:ring-primary-foreground/30 data-[state=open]:bg-primary-foreground/10",
+            className,
           )}
           aria-label={`Company: ${activeCompany.name}. Switch company`}
           disabled={pending}

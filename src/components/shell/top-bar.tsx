@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Wordmark } from "@/components/brand/wordmark";
 import { InboxBell } from "@/components/planner/inbox";
 import { ROUTES } from "@/lib/routes";
+import { cn } from "@/lib/utils";
 
 import { CompanySwitcher } from "./company-switcher";
 import { MainNav } from "./main-nav";
@@ -19,6 +20,7 @@ export function TopBar({
   activeCompany,
   permissions,
   unread,
+  className,
 }: {
   user: ShellUser;
   companies: ShellCompany[];
@@ -26,9 +28,13 @@ export function TopBar({
   permissions: string[];
   /** Unread inbox messages. */
   unread: number;
+  /** Extra classes (the modern look shows the bar on phones only, "md:hidden"). */
+  className?: string;
 }) {
   return (
-    <header className="sticky top-0 z-40 bg-primary text-primary-foreground print:hidden">
+    <header
+      className={cn("sticky top-0 z-40 bg-primary text-primary-foreground print:hidden", className)}
+    >
       <div className="mx-auto flex h-14 w-full max-w-7xl items-center gap-5 px-4 sm:px-6 md:h-16 lg:gap-6 lg:px-8">
         <Link
           href={ROUTES.home}

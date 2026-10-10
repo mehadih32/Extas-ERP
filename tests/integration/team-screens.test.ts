@@ -469,12 +469,17 @@ run("team and roles screens offer exactly what the server allows", () => {
       seen[who] = { team: team.ok, roles: roles.ok, canEdit };
 
       // The tabs are exactly the parts whose data the server hands this person;
-      // everyone may read the company details.
+      // everyone may read the company details and choose their own look.
       const tabs = visibleSettingsTabs(ctx.permissions);
       expect(
         tabs.map((t) => t.label),
         who,
-      ).toEqual([...(team.ok ? ["Team"] : []), ...(roles.ok ? ["Roles"] : []), "Company"]);
+      ).toEqual([
+        ...(team.ok ? ["Team"] : []),
+        ...(roles.ok ? ["Roles"] : []),
+        "Company",
+        "Appearance",
+      ]);
       // /settings opens the first of them.
       expect(await redirectOf(SettingsPage()), who).toBe(tabs[0]!.href);
       // The menu shows Settings to people who can do something there.

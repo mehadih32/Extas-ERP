@@ -6,6 +6,10 @@ export const ROUTES = {
   selectCompany: "/select-company",
   /** The employee's own HR records. */
   myHr: "/me",
+  /** The Help Center: the manual in Bengali. */
+  help: "/help",
+  /** Each person's look: Legacy or Modern. */
+  appearance: "/settings/appearance",
 } as const;
 
 /** Screens a person is never sent back to after signing in (they would loop). */

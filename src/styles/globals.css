@@ -102,3 +102,129 @@
     padding-bottom: env(safe-area-inset-bottom);
   }
 }
+
+/*
+ * The modern look (Settings → Appearance → Modern), for the people who choose it;
+ * the root layout sets data-ui="modern" on <html>. Everything here is scoped to
+ * that attribute, so the original look is untouched. It keeps the brand colours
+ * and changes the feel: Inter for headings too, figures in tabular numbers,
+ * rounder corners, soft shadows on cards and calmer tables.
+ */
+html[data-ui="modern"] {
+  /* Headings and big figures in Inter instead of Playfair Display. */
+  --font-playfair: var(--font-inter);
+
+  --background: #f3f5f4;
+  --card: #ffffff;
+  --popover: #ffffff;
+  --muted: #eff2f0;
+  --muted-foreground: #5f6661;
+  --secondary: #e7efea;
+  --accent: #ecf2ee;
+  --border: #e1e6e3;
+  --input: #d3dad6;
+  --radius: 0.625rem;
+
+  --shadow-soft: 0 1px 2px rgb(16 40 30 / 0.04), 0 1px 3px rgb(16 40 30 / 0.06);
+  --shadow-raised: 0 10px 24px -8px rgb(16 40 30 / 0.12), 0 2px 6px -2px rgb(16 40 30 / 0.06);
+}
+
+html[data-ui="modern"] body {
+  /* Figures line up in columns everywhere: amounts, quantities, dates. */
+  font-variant-numeric: tabular-nums;
+  font-feature-settings:
+    "cv11" 1,
+    "ss01" 1,
+    "tnum" 1;
+}
+
+/* Headings: Inter, semi-bold and a little tighter, a size smaller than the serif. */
+html[data-ui="modern"] .font-serif {
+  font-weight: 600;
+  letter-spacing: -0.018em;
+}
+html[data-ui="modern"] h1.font-serif {
+  font-size: clamp(1.625rem, 1.25rem + 1.2vw, 2.125rem);
+  line-height: 1.15;
+}
+
+/* Small labels: softer tracking. */
+html[data-ui="modern"] .eyebrow {
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+
+/* Cards and panels: a soft shadow and a lighter edge; links that are cards lift on hover. */
+html[data-ui="modern"] :is([data-slot="card"], .bg-card.border) {
+  border-color: var(--border);
+  box-shadow: var(--shadow-soft);
+}
+html[data-ui="modern"] a:is([data-slot="card"], .bg-card.border) {
+  transition:
+    box-shadow 150ms,
+    border-color 150ms,
+    transform 150ms;
+}
+html[data-ui="modern"] a:is([data-slot="card"], .bg-card.border):hover {
+  box-shadow: var(--shadow-raised);
+}
+
+/* Status labels: rounded pills in sentence case. */
+html[data-ui="modern"] [data-slot="badge"] {
+  border-radius: 9999px;
+  padding-inline: 0.5rem;
+  letter-spacing: 0.01em;
+  text-transform: none;
+}
+
+/* Buttons: a touch of depth on the solid ones. */
+html[data-ui="modern"] [data-slot="button"]:is(.bg-primary, .bg-destructive) {
+  box-shadow:
+    0 1px 2px rgb(16 40 30 / 0.12),
+    inset 0 1px 0 rgb(255 255 255 / 0.08);
+}
+
+/* Tables: a quiet header band, sentence-case headings and a clear row hover. */
+html[data-ui="modern"] [data-slot="table-header"] tr {
+  background: var(--muted);
+  border-bottom-color: var(--border);
+}
+html[data-ui="modern"] [data-slot="table-head"] {
+  height: 2.5rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--muted-foreground);
+}
+html[data-ui="modern"] :is([data-slot="table-head"], [data-slot="table-cell"]):first-child {
+  padding-left: 0.75rem;
+}
+html[data-ui="modern"] :is([data-slot="table-head"], [data-slot="table-cell"]):last-child {
+  padding-right: 0.75rem;
+}
+html[data-ui="modern"] [data-slot="table-header"] tr th:first-child {
+  border-top-left-radius: calc(var(--radius) - 2px);
+  border-bottom-left-radius: calc(var(--radius) - 2px);
+}
+html[data-ui="modern"] [data-slot="table-header"] tr th:last-child {
+  border-top-right-radius: calc(var(--radius) - 2px);
+  border-bottom-right-radius: calc(var(--radius) - 2px);
+}
+html[data-ui="modern"] [data-slot="table-body"] [data-slot="table-row"]:hover {
+  background: color-mix(in oklab, var(--primary) 4%, transparent);
+}
+
+/* Dialogs and menus float a little higher. */
+html[data-ui="modern"] :is([data-slot="dialog-content"], [data-slot="dropdown-menu-content"]) {
+  box-shadow: var(--shadow-raised);
+}
+
+/*
+ * Lists laid out as a one-column grid keep to their panel's width. Tabular
+ * figures are a little wider, and a column sized by its content would let a
+ * cut-short line ("Casual Leave · 26 Oct 2026 to …") widen a phone's page.
+ */
+html[data-ui="modern"] :is(ul, ol).grid:not([class*="grid-cols-"], [class*="grid-flow-col"]) {
+  grid-template-columns: minmax(0, 1fr);
+}

@@ -68,7 +68,7 @@ describe("Accounts in the menu, by role", () => {
       ["/", null],
       ["/sales", null],
       ["/production", null],
-      ["/accounts", null],
+      ["/accounts", "md"],
       ["/products", "md"],
       ["/materials", "lg"],
       ["/parties", "lg"],

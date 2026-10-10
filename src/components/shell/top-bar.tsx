@@ -29,7 +29,7 @@ export function TopBar({
 }) {
   return (
     <header className="sticky top-0 z-40 bg-primary text-primary-foreground print:hidden">
-      <div className="mx-auto flex h-14 w-full max-w-7xl items-center gap-5 px-4 sm:px-6 md:h-16 lg:gap-8 lg:px-8">
+      <div className="mx-auto flex h-14 w-full max-w-7xl items-center gap-5 px-4 sm:px-6 md:h-16 lg:gap-6 lg:px-8">
         <Link
           href={ROUTES.home}
           aria-label="Extas ERP, dashboard"
@@ -38,7 +38,7 @@ export function TopBar({
           <Wordmark />
         </Link>
         <MainNav permissions={permissions} className="hidden md:flex" />
-        <div className="ml-auto flex items-center gap-3">
+        <div className="ml-auto flex min-w-0 items-center gap-3">
           <CompanySwitcher companies={companies} activeCompany={activeCompany} />
           <InboxBell unread={unread} />
           <UserMenu

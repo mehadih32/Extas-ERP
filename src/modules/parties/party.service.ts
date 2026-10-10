@@ -122,6 +122,9 @@ export async function updateParty(
   if (kind === "SUPPLIER" && input.buyerType) {
     throw new AppError("VALIDATION", "Suppliers have no buyer type.");
   }
+  if (kind === "BUYER" && input.supplierCategories?.length) {
+    throw new AppError("VALIDATION", "Buyers have no supplier categories.");
+  }
   if (before.kind !== kind) {
     const balanceIsZero = kind === "BOTH" || (await getPartyBalance(ctx, before.id)).isZero();
     assertAllowed(canChangeKind(before.kind, kind, balanceIsZero));
@@ -132,6 +135,10 @@ export async function updateParty(
     data: {
       ...fields,
       ...(kind === "SUPPLIER" ? { buyerType: null } : {}),
+      // A buyer supplies nothing.
+      ...(kind === "BUYER" && before.supplierCategories.length > 0
+        ? { supplierCategories: [] }
+        : {}),
       ...(kind !== "SUPPLIER" && !before.buyerType && !input.buyerType
         ? { buyerType: "WHOLESALE" as const }
         : {}),
@@ -164,6 +171,7 @@ export async function listParties(ctx: CompanyContext, raw: unknown = {}) {
     ...(q.buyerType ? { buyerType: q.buyerType } : {}),
     ...(q.grade ? { grade: q.grade } : {}),
     ...(q.status ? { status: q.status } : {}),
+    ...(q.category ? { supplierCategories: { has: q.category } } : {}),
     ...(q.verified !== undefined ? { isVerified: q.verified } : {}),
     ...(q.city ? { city: { equals: q.city, mode: "insensitive" } } : {}),
     ...(q.search

@@ -69,8 +69,8 @@ export const listSupplierPaymentRowsAction = async (query: unknown) =>
   runAction(async () => screens.listSupplierPaymentRows(await paymentsDesk(), query));
 export const getSupplierPaymentScreenAction = async (paymentId: string) =>
   runAction(async () => screens.getSupplierPaymentScreen(await paymentsDesk(), paymentId));
-export const getPayFormAction = async (supplierId?: string) =>
-  runAction(async () => screens.getPayForm(await payOut(), supplierId));
+export const getPayFormAction = async (supplierId?: string, projectId?: string) =>
+  runAction(async () => screens.getPayForm(await payOut(), supplierId, projectId));
 export const getSupplierDuesAction = async (supplierId: string) =>
   runAction(async () => screens.getSupplierDues(await payOut(), supplierId));
 /** Suppliers to pay or to owe, buyers and suppliers on journal lines. */

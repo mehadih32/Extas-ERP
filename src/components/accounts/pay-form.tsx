@@ -9,6 +9,7 @@ import { dayOrNow, readPositive } from "@/components/production/cost-dialogs";
 import { textOf } from "@/components/products/form-values";
 import { money } from "@/components/sales/labels";
 import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import { formatDay } from "@/lib/display";
 import type {
@@ -23,7 +24,16 @@ import { accountsHref, isNegative } from "./labels";
 import { AccountsPartyPicker, PaidFromFields } from "./money-fields";
 
 /** What the supplier is owed now and the bills a payment settles, oldest first. */
-function Dues({ dues, currency }: { dues: SupplierDues; currency: string }) {
+function Dues({
+  dues,
+  currency,
+  project,
+}: {
+  dues: SupplierDues;
+  currency: string;
+  /** The project the payment is for, whose bills it settles first. */
+  project: SupplierDues["projects"][number] | null;
+}) {
   const owed = !isNegative(dues.payable) && /[1-9]/.test(dues.payable);
   return (
     <div className="grid gap-3 rounded-lg border bg-card p-4 text-sm">
@@ -41,24 +51,33 @@ function Dues({ dues, currency }: { dues: SupplierDues; currency: string }) {
           "Nothing is owed to them; a payment is kept as an advance for their next bill."
         )}
       </p>
-      {dues.openBills.length > 0 && (
-        <>
-          <p className="text-muted-foreground">A payment settles the oldest first:</p>
-          <ul className="grid divide-y" aria-label="Open bills">
-            {dues.openBills.map((b) => (
-              <li
-                key={b.id}
-                className="flex items-baseline justify-between gap-3 py-2 first:pt-0 last:pb-0"
-              >
-                <span className="min-w-0 truncate">
-                  {b.number} · {formatDay(b.billOn)}
-                </span>
-                <span className="whitespace-nowrap tabular-nums">{money(b.due, currency)} due</span>
-              </li>
-            ))}
-          </ul>
-          {dues.moreBills && <p className="text-muted-foreground">…and more after these.</p>}
-        </>
+      {project ? (
+        <p className="text-muted-foreground">
+          This payment settles {project.code}&apos;s bills first ({money(project.due, currency)}{" "}
+          due); anything over goes to their oldest dues.
+        </p>
+      ) : (
+        dues.openBills.length > 0 && (
+          <>
+            <p className="text-muted-foreground">A payment settles the oldest first:</p>
+            <ul className="grid divide-y" aria-label="Open bills">
+              {dues.openBills.map((b) => (
+                <li
+                  key={b.id}
+                  className="flex items-baseline justify-between gap-3 py-2 first:pt-0 last:pb-0"
+                >
+                  <span className="min-w-0 truncate">
+                    {b.number} · {formatDay(b.billOn)}
+                  </span>
+                  <span className="whitespace-nowrap tabular-nums">
+                    {money(b.due, currency)} due
+                  </span>
+                </li>
+              ))}
+            </ul>
+            {dues.moreBills && <p className="text-muted-foreground">…and more after these.</p>}
+          </>
+        )
       )}
     </div>
   );
@@ -97,6 +116,16 @@ export function PayForm({ form: data, currency }: { form: PayFormData; currency:
   }, [supplierId, loaded?.id]);
   const current = loaded && loaded.id === supplierId ? loaded : null;
   const dues = current?.dues ?? null;
+  // The project to pay for, if any (reset when the supplier changes).
+  const [chosen, setChosen] = useState<{ supplierId: string; projectId: string } | null>(
+    data.supplier?.projectId
+      ? { supplierId: data.supplier.option.id, projectId: data.supplier.projectId }
+      : null,
+  );
+  const project =
+    chosen && chosen.supplierId === supplierId
+      ? (dues?.projects.find((p) => p.id === chosen.projectId) ?? null)
+      : null;
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -117,6 +146,7 @@ export function PayForm({ form: data, currency }: { form: PayFormData; currency:
         paymentDate: dayOrNow(values, "paymentDate", data.today),
         accountId: textOf(values, "accountId"),
         method: textOf(values, "method") || "CASH",
+        projectId: project?.id,
         reference: textOf(values, "reference") || undefined,
         notes: textOf(values, "notes") || undefined,
       });
@@ -133,7 +163,11 @@ export function PayForm({ form: data, currency }: { form: PayFormData; currency:
     );
   }
 
-  const owed = dues && !isNegative(dues.payable) && /[1-9]/.test(dues.payable) ? dues.payable : "";
+  const owed = project
+    ? project.due
+    : dues && !isNegative(dues.payable) && /[1-9]/.test(dues.payable)
+      ? dues.payable
+      : "";
 
   return (
     <form onSubmit={submit} className="grid max-w-3xl gap-6" noValidate>
@@ -153,7 +187,39 @@ export function PayForm({ form: data, currency }: { form: PayFormData; currency:
         (current?.error ? (
           <FormAlert>{current.error}</FormAlert>
         ) : dues ? (
-          <Dues dues={dues} currency={currency} />
+          <>
+            {dues.projects.length > 0 && (
+              <Field
+                id="pay-project"
+                label="Apply to a project (optional)"
+                hint="Leave it on the oldest bills, or pick one project to settle its bills first."
+              >
+                <NativeSelect
+                  id="pay-project"
+                  value={project?.id ?? ""}
+                  onChange={(e) =>
+                    setChosen(
+                      e.target.value
+                        ? { supplierId: supplierId!, projectId: e.target.value }
+                        : null,
+                    )
+                  }
+                  containerClassName="sm:w-full"
+                  className="md:h-10"
+                  aria-describedby="pay-project-hint"
+                >
+                  <option value="">Oldest bills first</option>
+                  {dues.projects.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.code} · {p.name} · {money(p.due, currency)} due
+                      {p.status === "COMPLETED" ? " (completed)" : ""}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </Field>
+            )}
+            <Dues dues={dues} currency={currency} project={project} />
+          </>
         ) : (
           <p className="flex items-center gap-2 text-sm text-muted-foreground">
             <LoaderCircleIcon className="size-4 animate-spin" aria-hidden />

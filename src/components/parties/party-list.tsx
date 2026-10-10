@@ -21,7 +21,14 @@ import type { PartyRow } from "@/modules/parties/screens.service";
 import { listPartyRowsAction } from "@/server/actions/parties.actions";
 
 import { GradeBadge, StatusBadge, VerifiedBadge } from "./badges";
-import { balanceText, balanceTone, BUYER_TYPE_LABELS, kindLabel, partyHref } from "./labels";
+import {
+  balanceText,
+  balanceTone,
+  BUYER_TYPE_LABELS,
+  categoryText,
+  kindLabel,
+  partyHref,
+} from "./labels";
 import { type PartyListView, partyListQuery } from "./list-view";
 
 const TONE: Record<ReturnType<typeof balanceTone>, string> = {
@@ -38,8 +45,18 @@ function SystemBadge() {
   );
 }
 
-function PartyCard({ party, currency }: { party: PartyRow; currency: string }) {
+function PartyCard({
+  party,
+  currency,
+  supplies,
+}: {
+  party: PartyRow;
+  currency: string;
+  /** Shown on the suppliers' list: what they supply. */
+  supplies: boolean;
+}) {
   const contact = [party.contactPerson, party.phone].filter(Boolean).join(" · ");
+  const categories = supplies ? categoryText(party.supplierCategories) : "";
   return (
     <li>
       <Link
@@ -64,6 +81,7 @@ function PartyCard({ party, currency }: { party: PartyRow; currency: string }) {
             className="ml-auto size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5"
           />
         </p>
+        {categories && <p className="mt-1 text-sm">{categories}</p>}
         {(contact || party.city) && (
           <p className="mt-1 truncate text-sm text-muted-foreground">
             {[contact, party.city].filter(Boolean).join(" · ")}
@@ -119,7 +137,7 @@ export function PartyList({
     <div className="grid grid-cols-1 gap-5">
       <ul className="grid grid-cols-1 gap-3 md:hidden" aria-label={noun}>
         {items.map((party) => (
-          <PartyCard key={party.id} party={party} currency={currency} />
+          <PartyCard key={party.id} party={party} currency={currency} supplies={!buyers} />
         ))}
       </ul>
       <div className="hidden md:block">
@@ -127,7 +145,7 @@ export function PartyList({
           <TableHeader>
             <TableRow className="hover:bg-transparent">
               <TableHead>Name</TableHead>
-              {buyers && <TableHead>Type</TableHead>}
+              {buyers ? <TableHead>Type</TableHead> : <TableHead>Category</TableHead>}
               <TableHead>Contact</TableHead>
               <TableHead className="hidden lg:table-cell">City</TableHead>
               <TableHead>Grade</TableHead>
@@ -153,9 +171,18 @@ export function PartyList({
                     <StatusBadge status={party.status} />
                   </div>
                 </TableCell>
-                {buyers && (
+                {buyers ? (
                   <TableCell className="text-muted-foreground">
                     {party.buyerType ? BUYER_TYPE_LABELS[party.buyerType] : ""}
+                  </TableCell>
+                ) : (
+                  <TableCell className="max-w-48 text-muted-foreground">
+                    {categoryText(party.supplierCategories) || (
+                      <>
+                        <span aria-hidden>–</span>
+                        <span className="sr-only">Not set</span>
+                      </>
+                    )}
                   </TableCell>
                 )}
                 <TableCell>

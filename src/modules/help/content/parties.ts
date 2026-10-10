@@ -5,7 +5,7 @@ export const partiesHelp: HelpSection = {
   id: "parties",
   title: "ক্রেতা ও সরবরাহকারী (Buyers & suppliers)",
   description:
-    "প্রতিটি ক্রেতা ও সরবরাহকারীর প্রোফাইল, যোগাযোগ, গ্রেড, Blue Verified চিহ্ন, পাওনা-দেনা, হিসাবের স্টেটমেন্ট আর কে কত বকেয়া (Dues)।",
+    "প্রতিটি ক্রেতা ও সরবরাহকারীর প্রোফাইল, ৩৬০° হিসাব, যোগাযোগ, গ্রেড, Blue Verified চিহ্ন, সরবরাহকারীর ধরন (Fabric, Accessories, FOB, CM), পাওনা-দেনা, হিসাবের স্টেটমেন্ট আর কে কত বকেয়া (Dues)।",
   href: "/parties",
   articles: [
     {
@@ -42,6 +42,9 @@ export const partiesHelp: HelpSection = {
         },
         {
           text: "খোঁজার ঘরে নাম, কোড, যোগাযোগের মানুষ, ফোন বা ইমেইল লিখুন। “Status”, “Grade”, “Buyer type” ও “Blue Verified only” দিয়ে ছাঁকুন। “Clear filters” দিয়ে আবার সব দেখুন।",
+        },
+        {
+          text: "“Suppliers” ট্যাবে “Buyer type”-এর জায়গায় “All categories” বাছাই থাকে: “Fabric”, “Accessories”, “FOB” বা “CM (Factory)” বেছে শুধু সেই ধরনের সরবরাহকারী দেখুন। তালিকার “Category” কলামে প্রত্যেকে কী সরবরাহ করেন তা লেখা থাকে।",
         },
         {
           text: "তালিকার “Balance”-এ “Owes you” মানে তাঁর কাছে আপনার পাওনা, “You owe” মানে আপনার দেনা, “Settled” মানে কিছু বাকি নেই।",
@@ -166,6 +169,119 @@ export const partiesHelp: HelpSection = {
       ],
     },
     {
+      slug: "parties-supplier-360",
+      title: "সরবরাহকারীর ৩৬০° প্রোফাইল (Supplier 360°) দেখবেন যেভাবে",
+      summary:
+        "এক পাতায় সরবরাহকারীর কাছে মোট দেনা, মোট বিল ও পরিশোধ, চলমান ও শেষ হওয়া প্রজেক্ট (প্রতিটির হিসাব মেলানোসহ), মাল ডেলিভারি, পারচেজ অর্ডার, বিল, পেমেন্ট ও কাগজের পুরো ইতিহাস।",
+      keywords: [
+        "supplier 360",
+        "360",
+        "due to them",
+        "master ledger",
+        "running ledger",
+        "active projects",
+        "completed projects",
+        "settled",
+        "deliveries",
+        "purchase orders",
+        "supplier bills",
+        "fob",
+        "cm",
+        "fabric",
+        "accessories",
+        "সরবরাহকারীর হিসাব",
+        "দেনা",
+        "প্রজেক্টের হিসাব",
+        "ডেলিভারি",
+        "ফ্যাক্টরি",
+      ],
+      routes: ["/parties/suppliers"],
+      who: "যাঁরা সরবরাহকারী দেখতে পারেন। কে কোন অংশ দেখবেন তা ভূমিকা অনুযায়ী: টাকার অঙ্ক (বিল, পেমেন্ট, প্রজেক্টের পাওনা) Production Manager, Accounts ও Super Admin; প্রজেক্ট ও তৈরি পণ্যের ডেলিভারি যাঁরা প্রোডাকশন দেখেন; পারচেজ অর্ডার ও কাঁচামালের ডেলিভারি যাঁরা কাঁচামাল দেখেন। Sales Executive শুধু প্রোফাইলের ব্যালান্স দেখেন।",
+      anyOf: ["parties.view"],
+      steps: [
+        {
+          text: "“Suppliers” ট্যাবে সরবরাহকারীর নামে চাপুন। নামের নিচে তাঁর ধরন (যেমন “FOB”, “CM (Factory)”) দেখাবে। ওপরে “At a glance” অংশে এক নজরে: “Due to them”, “Billed in all”, “Open bills”, “Paid to them”, “Projects” ও “Deliveries”।",
+          image: {
+            id: "parties-supplier-360-1",
+            caption:
+              "সরবরাহকারীর প্রোফাইলের “At a glance”: দেনা, মোট বিল, খোলা বিল, পরিশোধ, প্রজেক্ট ও ডেলিভারি",
+          },
+        },
+        {
+          text: "“Due to them” হলো তাঁর মূল খাতায় (master ledger) আজ আপনার মোট দেনা: সব বিল, বাকিতে খরচ ও শুরুর ব্যালান্স থেকে পরিশোধ বাদ দিয়ে। শেষ হওয়া প্রজেক্টের বাকি টাকাও এখানেই থাকে।",
+        },
+        {
+          text: "“Active projects”-এ চলমান প্রজেক্ট: প্রতিটিতে তাঁর বিল (“Billed”), পরিশোধ (“paid”) আর ওই প্রজেক্টে এখনো কত বাকি। তিনি প্রজেক্টের ফ্যাক্টরি হলে “Their factory” লেখা থাকে।",
+          image: {
+            id: "parties-supplier-360-2",
+            caption:
+              "“Active projects” ও “Completed projects”: প্রতিটি প্রজেক্টে বিল, পরিশোধ ও বাকি",
+          },
+        },
+        {
+          text: "“Completed projects”-এ শেষ হওয়া প্রজেক্ট “Settled” চিহ্নসহ: প্রজেক্ট শেষ হওয়ার দিন তাঁর বিল ও পরিশোধ মিলিয়ে হিসাব রাখা হয়েছে, প্রজেক্টের ব্যালান্স শূন্য (“Balance zero”), আর যা বাকি ছিল তা তাঁর মূল খাতায় চলে গেছে। পরে তার কত শোধ হলো তাও লেখা থাকে।",
+        },
+        {
+          text: "“Deliveries”-এ তিনি যা দিয়েছেন: “Raw materials” (তাঁর কাছ থেকে কেনা কাপড় বা অ্যাক্সেসরিজ, কোন স্টোরে ঢুকেছে) আর “Finished goods” (তাঁর ফ্যাক্টরি থেকে প্রজেক্টের তৈরি পণ্য, A ও B গ্রেডের পিস)। নিচে “Purchase orders”, “Bills”, “Payments made” ও “Documents”।",
+          image: {
+            id: "parties-supplier-360-3",
+            caption: "ডেলিভারি, পারচেজ অর্ডার, বিল, পেমেন্ট ও ছাপা কাগজের তালিকা",
+          },
+        },
+        {
+          text: "প্রতিটি তালিকায় সর্বশেষ ৮টি থাকে; বাকিগুলো দেখতে “Show all …”, ছোট করতে “Show fewer” চাপুন। সারিতে চাপলে সেই প্রজেক্ট, বিল, ডেলিভারি বা পেমেন্ট খুলবে।",
+        },
+        {
+          text: "Accounts হলে ওপরে “Pay supplier” চাপুন, অথবা কোনো প্রজেক্টের নিচের “Pay for …” লিংকে চাপলে সেই প্রজেক্ট আগে থেকে বাছাই করা পেমেন্ট ফর্ম খুলবে।",
+        },
+      ],
+      tips: [
+        "“Fabric”, “FOB” ও “CM (Factory)” সরবরাহকারীর হিসাব প্রজেক্ট ধরে মেলানো হয়। শুধু “Accessories” হলে তাঁর হিসাব একটানা খাতায় চলে (running ledger), প্রজেক্ট শেষ হলেও আলাদা করে মেলানো হয় না।",
+        "একটি বিল দুই প্রজেক্টে ভাগ করা থাকলে প্রতিটি প্রজেক্টে তার নিজের অংশ ধরা হয়, পরিশোধও সেই অনুপাতে।",
+        "যে অংশ আপনার ভূমিকায় দেখা যায় না, সেটি পাতায় আসেই না; টাকার অঙ্ক না দেখলেও প্রজেক্ট ও ডেলিভারির তালিকা দেখা যায়।",
+      ],
+    },
+    {
+      slug: "parties-supplier-360-pdf",
+      title: "সরবরাহকারীর পুরো হিসাব এক PDF-এ নেবেন যেভাবে",
+      summary:
+        "এক ক্লিকে সরবরাহকারীর ৩৬০° প্রোফাইলের দেনা, প্রজেক্ট, ডেলিভারি, বিল ও পেমেন্ট লেটারহেডে PDF করা; ইমেইলে পাঠানো ইন্টিগ্রেশনের সঙ্গে আসবে।",
+      keywords: [
+        "supplier 360 pdf",
+        "supplier profile pdf",
+        "supplier history pdf",
+        "export",
+        "email",
+        "integration pending",
+        "পিডিএফ",
+        "সরবরাহকারীর প্রোফাইল",
+        "ইমেইল",
+        "ডাউনলোড",
+      ],
+      routes: ["/parties/suppliers"],
+      who: "যাঁরা সরবরাহকারী দেখতে পারেন। PDF-এ শুধু সেই হিসাব থাকে যা আপনার ভূমিকা দেখতে পারে।",
+      anyOf: ["parties.view"],
+      steps: [
+        {
+          text: "সরবরাহকারীর প্রোফাইলে “360° PDF” চাপুন। কিছুক্ষণ পর জানালা খুলবে; “Open the PDF” চাপলে ব্রাউজারে দেখবেন, “Download” চাপলে নামবে।",
+          image: {
+            id: "parties-supplier-360-pdf-1",
+            caption: "সরবরাহকারীর প্রোফাইলের ওপরের বোতাম: “Pay supplier”, “360° PDF” ও “Email”",
+          },
+        },
+        {
+          text: "PDF-এ থাকে আজকের তারিখ পর্যন্ত তাঁর কাছে দেনা, মোট বিল ও পরিশোধ, চলমান ও শেষ হওয়া প্রজেক্ট (প্রতিটির হিসাব মেলানোসহ), সব ডেলিভারি, পারচেজ অর্ডার, বিল ও পেমেন্ট।",
+        },
+        {
+          text: "“Email” বোতাম এখনো কাজ করে না: চাপলে “Integration Pending” বার্তা আসে। ততদিন PDF নামিয়ে নিজের ইমেইলে সংযুক্ত করে পাঠান।",
+        },
+      ],
+      tips: [
+        "কিছু না বদলালে আবার চাপলে আগের PDF-ই ফেরত আসে, নতুন কপি হয় না।",
+        "তৈরি করা PDF “Reports & documents” > “Printed documents”-এ ও প্রোফাইলের “Documents”-এ থাকে। যে PDF-এ টাকার অঙ্ক বা প্রজেক্ট আছে, তা শুধু তাঁরাই খুলতে পারেন যাঁরা ওই অংশ দেখার অনুমতি রাখেন।",
+      ],
+    },
+    {
       slug: "parties-new",
       title: "নতুন ক্রেতা বা সরবরাহকারী যোগ করবেন যেভাবে",
       summary:
@@ -200,6 +316,9 @@ export const partiesHelp: HelpSection = {
         },
         {
           text: "“Name”, দরকার হলে “Code (optional)” ও “Grade (optional)” দিন।",
+        },
+        {
+          text: "সরবরাহকারী হলে “What they supply (optional)” অংশে যা যা প্রযোজ্য সবগুলোতে টিক দিন: “Fabric” (কাপড়), “Accessories” (বোতাম, লেবেল, ট্রিমস), “FOB” (অর্ডারমতো তৈরি পণ্য) বা “CM (Factory)” (কাটিং-সেলাইয়ের ফ্যাক্টরি)। একটি ফ্যাক্টরি একসঙ্গে “CM (Factory)” ও “FOB” দুটোই হতে পারে।",
         },
         {
           text: "“Contact” অংশে “Contact person (optional)”, “Email (optional)”, “Phone (optional)”, “WhatsApp (optional)”, “Address (optional)”, “City (optional)” ও “Country” দিন।",
@@ -251,6 +370,7 @@ export const partiesHelp: HelpSection = {
         },
       ],
       tips: [
+        "সরবরাহকারীর ধরন বদলাতে “Edit details”-এ “What they supply (optional)”-এর টিক বদলান। কাউকে শুধু ক্রেতা বানালে তাঁর ধরন মুছে যায়।",
         "পাওনা বা দেনা বাকি থাকা অবস্থায় বন্ধ করলে অ্যাকাউন্ট “Settling” হয়; ব্যালান্স শূন্য হলে বন্ধ হয়ে যায়।",
         "টাকা বাকি থাকলে ক্রেতাকে সরবরাহকারী (বা উল্টোটা) বানানো যায় না, তবে “Buyer and supplier” করা সবসময় যায়।",
         "“Walk-in customers” অ্যাকাউন্টটি সিস্টেমের, এর শুধু নাম ও নোট বদলানো যায়।",

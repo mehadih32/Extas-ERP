@@ -19,6 +19,7 @@ import {
 import type { PrintRequest } from "@/modules/documents/schemas";
 import { getPayslipByItem } from "@/modules/hr/payroll.service";
 import { getBuyer360, PROFILE_ALL_ROWS } from "@/modules/parties/buyer-360.service";
+import { getSupplier360, SUPPLIER_PROFILE_ALL_ROWS } from "@/modules/parties/supplier-360.service";
 import { getStatement } from "@/modules/parties/ledger.service";
 import {
   getChallanDocument,
@@ -29,8 +30,16 @@ import { getPaymentReceipt } from "@/modules/sales/payment.service";
 import { getProforma } from "@/modules/sales/proforma.service";
 import { getQuotation } from "@/modules/sales/quotation.service";
 import { getRefund } from "@/modules/sales/refund.service";
-import { GRADE_LABELS, STATUS_LABELS } from "@/components/parties/labels";
-import { PROJECT_STATUS_LABELS, STAGE_LABELS } from "@/components/production/labels";
+import {
+  ORDER_STATUS_LABELS as PO_STATUS_LABELS,
+  quantity as materialQuantity,
+} from "@/components/materials/labels";
+import { categoryText, GRADE_LABELS, STATUS_LABELS } from "@/components/parties/labels";
+import {
+  BILL_STATUS_LABELS,
+  PROJECT_STATUS_LABELS,
+  STAGE_LABELS,
+} from "@/components/production/labels";
 import {
   CHANNEL_LABELS,
   INVOICE_STATUS_LABELS,
@@ -1819,6 +1828,365 @@ export async function buyerProfileDocument(
   };
 }
 
+// =============================================================================
+// Supplier 360° profile
+// =============================================================================
+
+/**
+ * A supplier's whole history on one PDF (Supplier 360°): what is due to them,
+ * what was billed and paid, their active and completed projects (with the
+ * settlement made when each closed), the goods they delivered, their purchase
+ * orders, bills and payments (up to SUPPLIER_PROFILE_ALL_ROWS each). It holds
+ * only what the person printing it may see; the record keeps those flags so the
+ * copy never opens for someone who may see less (parties/profile-access.ts).
+ */
+export async function supplierProfileDocument(
+  ctx: CompanyContext,
+  partyId: string,
+  now: Date,
+): Promise<BuiltDocument> {
+  const p = await getSupplier360(ctx, partyId, { all: "everything" }, now);
+  const currency = ctx.company.currency;
+  const m = (value: string) => money(value, currency);
+  const n = (value: number) => count(value, currency);
+  const plural = (value: number, word: string) => `${n(value)} ${word}${value === 1 ? "" : "s"}`;
+  const { figures, party } = p;
+  const showMoney = p.shows.money;
+
+  const blocks: Block[] = [];
+  const headline: Array<{ label: string; value: string; hint?: string }> = [
+    {
+      label: "Due to them",
+      value: m(figures.dueToThem),
+      hint: isPositive(figures.advanceWithThem)
+        ? `They hold ${m(figures.advanceWithThem)} of ours as advance`
+        : "On their ledger today",
+    },
+  ];
+  if (figures.billed) {
+    headline.push(
+      {
+        label: "Billed in all",
+        value: m(figures.billed.total),
+        hint: plural(figures.billed.bills, "bill"),
+      },
+      {
+        label: "Open bills",
+        value: m(figures.billed.open),
+        hint:
+          figures.billed.openBills > 0
+            ? `${plural(figures.billed.openBills, "bill")} not fully paid`
+            : "Every bill is paid",
+      },
+    );
+  }
+  if (figures.paid) {
+    headline.push({
+      label: "Paid to them",
+      value: m(figures.paid.total),
+      hint: plural(figures.paid.payments, "payment"),
+    });
+  }
+  blocks.push({ kind: "figures", figures: headline });
+  const work: Array<{ label: string; value: string; hint?: string }> = [];
+  if (figures.projects) {
+    work.push(
+      { label: "Active projects", value: n(figures.projects.active), hint: "Still running" },
+      {
+        label: "Completed projects",
+        value: n(figures.projects.completed),
+        hint: "Closed and settled",
+      },
+    );
+  }
+  if (figures.deliveries) {
+    work.push({
+      label: "Deliveries",
+      value: n(figures.deliveries.total),
+      hint: figures.deliveries.lastOn
+        ? `Last on ${formatDay(figures.deliveries.lastOn)}`
+        : "None yet",
+    });
+  }
+  if (work.length > 0) blocks.push({ kind: "figures", figures: work });
+  blocks.push({
+    kind: "note",
+    text: p.runningLedger
+      ? "Accessories supplier: their bills run on a continuous ledger and are not settled project by project."
+      : "Their bills are settled project by project: when a project is completed its balance with them becomes zero, and anything still due stays on their ledger.",
+  });
+
+  const more = (shown: number, total: number, what: string) =>
+    total > shown
+      ? [
+          {
+            kind: "note" as const,
+            text: `The latest ${n(shown)} of ${n(total)} ${what} are listed.`,
+          },
+        ]
+      : [];
+  const moneyColumns = showMoney
+    ? [
+        { label: "Billed", align: "right" as const, weight: 1.3 },
+        { label: "Paid", align: "right" as const, weight: 1.3 },
+      ]
+    : [];
+
+  if (p.activeProjects) {
+    blocks.push(
+      {
+        kind: "table",
+        title: `Active projects (${n(p.activeProjects.total)})`,
+        columns: [
+          { label: "Project", weight: 2.6 },
+          { label: "Stage", weight: 1.4 },
+          { label: "Target", weight: 1.1 },
+          { label: "Pieces", align: "right", weight: 1.2 },
+          ...moneyColumns,
+          ...(showMoney ? [{ label: "Due", align: "right" as const, weight: 1.3 }] : []),
+        ],
+        rows: p.activeProjects.items.map((pr) => ({
+          cells: [
+            `${pr.code} · ${pr.name}`,
+            pr.status === "ACTIVE" ? STAGE_LABELS[pr.stage] : PROJECT_STATUS_LABELS[pr.status],
+            formatDay(pr.targetOn),
+            pr.asFactory ? `${n(pr.produced)} of ${n(pr.targetQuantity)}` : "",
+            ...(pr.money ? [m(pr.money.billed), m(pr.money.paid), m(pr.money.balance)] : []),
+          ],
+          details: [
+            pr.asFactory ? "Their factory" : null,
+            pr.buyer ? `For ${pr.buyer.name}` : "In-house",
+          ].filter((t): t is string => t !== null),
+        })),
+        empty: "No active projects with them.",
+      },
+      ...more(p.activeProjects.items.length, p.activeProjects.total, "active projects"),
+    );
+  }
+  if (p.completedProjects) {
+    blocks.push(
+      {
+        kind: "table",
+        title: `Completed projects (${n(p.completedProjects.total)})`,
+        columns: [
+          { label: "Project", weight: 2.6 },
+          { label: "Status", weight: 1.2 },
+          { label: "Closed", weight: 1.1 },
+          ...moneyColumns,
+          ...(showMoney ? [{ label: "Left on ledger", align: "right" as const, weight: 1.4 }] : []),
+        ],
+        rows: p.completedProjects.items.map((pr) => ({
+          cells: [
+            `${pr.code} · ${pr.name}`,
+            PROJECT_STATUS_LABELS[pr.status],
+            pr.completedOn ? formatDay(pr.completedOn) : "",
+            ...(pr.money
+              ? [
+                  m(pr.money.billed),
+                  m(pr.money.paid),
+                  pr.money.settlement ? m(pr.money.settlement.carried) : m(pr.money.balance),
+                ]
+              : []),
+          ],
+          details: [
+            pr.asFactory ? "Their factory" : null,
+            pr.money?.settlement
+              ? `Settled on ${formatDay(pr.money.settlement.settledOn)}; balance zero${
+                  isPositive(pr.money.settlement.stillDue)
+                    ? `, ${m(pr.money.settlement.stillDue)} of it still unpaid`
+                    : ""
+                }`
+              : null,
+          ].filter((t): t is string => t !== null),
+        })),
+        empty: "No completed projects with them yet.",
+      },
+      ...more(p.completedProjects.items.length, p.completedProjects.total, "completed projects"),
+    );
+  }
+  if (p.deliveries) {
+    // Raw materials carry their purchase value; finished goods none of their own.
+    const valued = p.deliveries.items.some((d) => d.value !== null);
+    blocks.push(
+      {
+        kind: "table",
+        title: `Deliveries (${n(p.deliveries.total)})`,
+        columns: [
+          { label: "Delivery", weight: 1.5 },
+          { label: "Date", weight: 1.1 },
+          { label: "What", weight: 2.8 },
+          { label: "For", weight: 1.4 },
+          ...(valued ? [{ label: "Value", align: "right" as const, weight: 1.3 }] : []),
+        ],
+        rows: p.deliveries.items.map((d) => ({
+          cells: [
+            `${d.number}${d.undone ? (d.kind === "GOODS" ? " (undone)" : " (void)") : ""}`,
+            formatDay(d.deliveredOn),
+            d.kind === "GOODS"
+              ? `Finished goods: ${n(d.pieces!.a)} A${d.pieces!.b > 0 ? `, ${n(d.pieces!.b)} B` : ""} pcs`
+              : d
+                  .materials!.map(
+                    (i) => `${i.name} ${materialQuantity(i.quantity, i.unit, currency)}`,
+                  )
+                  .join(", "),
+            [d.order?.number, d.project?.code].filter(Boolean).join(" · "),
+            ...(valued ? [d.value ? m(d.value) : ""] : []),
+          ],
+          details: d.warehouse ? [`Into ${d.warehouse}`] : undefined,
+        })),
+        empty: "Nothing delivered yet.",
+      },
+      ...more(p.deliveries.items.length, p.deliveries.total, "deliveries"),
+    );
+  }
+  if (p.orders) {
+    blocks.push(
+      {
+        kind: "table",
+        title: `Purchase orders (${n(p.orders.total)})`,
+        columns: [
+          { label: "Order", weight: 1.5 },
+          { label: "Date", weight: 1.1 },
+          { label: "Expected", weight: 1.1 },
+          { label: "Status", weight: 1.5 },
+          { label: "Project", weight: 1.2 },
+          ...(showMoney ? [{ label: "Total", align: "right" as const, weight: 1.3 }] : []),
+        ],
+        rows: p.orders.items.map((o) => ({
+          cells: [
+            o.number,
+            formatDay(o.orderedOn),
+            o.expectedOn ? formatDay(o.expectedOn) : "",
+            PO_STATUS_LABELS[o.status],
+            o.project?.code ?? "",
+            ...(showMoney ? [o.total ? m(o.total) : ""] : []),
+          ],
+          details: o.reference ? [o.reference] : undefined,
+        })),
+        empty: "No purchase orders yet.",
+      },
+      ...more(p.orders.items.length, p.orders.total, "purchase orders"),
+    );
+  }
+  if (p.bills) {
+    blocks.push(
+      {
+        kind: "table",
+        title: `Bills (${n(p.bills.total)})`,
+        columns: [
+          { label: "Bill", weight: 1.5 },
+          { label: "Date", weight: 1.1 },
+          { label: "For", weight: 2 },
+          { label: "Status", weight: 1.3 },
+          { label: "Total", align: "right", weight: 1.3 },
+          { label: "Due", align: "right", weight: 1.3 },
+        ],
+        rows: p.bills.items.map((b) => ({
+          cells: [
+            b.number,
+            formatDay(b.billOn),
+            [b.isPurchase ? "Raw materials" : b.heads.join(", "), b.projects.join(", ")]
+              .filter(Boolean)
+              .join(" · "),
+            BILL_STATUS_LABELS[b.status],
+            m(b.total),
+            m(b.due),
+          ],
+          details: b.reference ? [`Their bill ${b.reference}`] : undefined,
+        })),
+        empty: "No bills yet.",
+      },
+      ...more(p.bills.items.length, p.bills.total, "bills"),
+    );
+  }
+  if (p.payments) {
+    blocks.push(
+      {
+        kind: "table",
+        title: `Payments made (${n(p.payments.total)})`,
+        columns: [
+          { label: "Voucher", weight: 1.5 },
+          { label: "Date", weight: 1.1 },
+          { label: "Method", weight: 1.3 },
+          { label: "For", weight: 1.8 },
+          { label: "Amount", align: "right", weight: 1.4 },
+        ],
+        rows: [
+          ...p.payments.items.map((pay) => ({
+            cells: [
+              pay.number,
+              formatDay(pay.paidOn),
+              PAYMENT_METHODS[pay.method],
+              [
+                pay.bill
+                  ? `Bill ${pay.bill.number}`
+                  : pay.project
+                    ? `Project ${pay.project.code}`
+                    : "On account",
+                pay.voided ? "(voided)" : "",
+              ]
+                .filter(Boolean)
+                .join(" "),
+              m(pay.amount),
+            ],
+            details: pay.reference ? [pay.reference] : undefined,
+          })),
+          ...(p.payments.items.length > 0 && figures.paid
+            ? [
+                {
+                  cells: ["Paid in all", "", "", "", m(figures.paid.total)],
+                  style: "total" as const,
+                },
+              ]
+            : []),
+        ],
+        empty: "No payments yet.",
+      },
+      ...more(p.payments.items.length, p.payments.total, "payments"),
+    );
+  }
+
+  const grade = [
+    party.grade ? GRADE_LABELS[party.grade] : "None",
+    party.isVerified ? "Blue Verified" : null,
+  ].filter((t): t is string => t !== null);
+
+  const model = base(ctx, "SUPPLIER_360", {
+    title: "Supplier Profile",
+    subtitle: `${party.name} (${party.code})`,
+    reference: party.code,
+    meta: [
+      { label: "As of", value: formatDay(p.asOf) },
+      { label: "Supplier since", value: formatDay(party.addedOn) },
+      { label: "Supplies", value: categoryText(party.categories) || "Not set" },
+      { label: "Grade", value: grade.join(" · ") },
+      { label: "Status", value: STATUS_LABELS[party.status] },
+    ],
+    parties: [
+      {
+        heading: "Supplier",
+        lines: partyLines({
+          ...party,
+          address: [party.address, [party.city, party.country].filter(Boolean).join(", ")]
+            .filter(Boolean)
+            .join("\n"),
+        }),
+      },
+    ],
+    blocks,
+  });
+  return {
+    model,
+    record: {
+      title: `Supplier profile: ${party.name} (${formatDay(p.asOf)})`,
+      referenceType: "PartyProfile",
+      referenceId: party.id,
+      partyId: party.id,
+      options: { shows: p.shows, rowsEach: SUPPLIER_PROFILE_ALL_ROWS },
+    },
+  };
+}
+
 export function letterheadDocument(ctx: CompanyContext): BuiltDocument {
   return {
     model: base(ctx, "LETTERHEAD", { title: "" }),
@@ -1856,6 +2224,8 @@ async function buildModel(
       return payslipDocument(ctx, input.id);
     case "BUYER_360":
       return buyerProfileDocument(ctx, input.partyId, now);
+    case "SUPPLIER_360":
+      return supplierProfileDocument(ctx, input.partyId, now);
   }
 }
 

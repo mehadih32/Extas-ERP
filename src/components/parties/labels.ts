@@ -1,4 +1,10 @@
-import type { BuyerType, PartyGrade, PartyKind, PartyStatus } from "@prisma/client";
+import type {
+  BuyerType,
+  PartyGrade,
+  PartyKind,
+  PartyStatus,
+  SupplierCategory,
+} from "@prisma/client";
 
 import { groupAmount } from "@/lib/display";
 
@@ -17,6 +23,31 @@ export const BUYER_TYPE_LABELS: Record<BuyerType, string> = {
   RETAIL: "Retail",
   WHOLESALE: "Wholesale",
   B2B_CORPORATE: "Corporate (B2B)",
+};
+
+/** What a supplier supplies, in the order they are shown. */
+export const SUPPLIER_CATEGORIES: SupplierCategory[] = ["FABRIC", "ACCESSORIES", "FOB", "CM"];
+
+export const SUPPLIER_CATEGORY_LABELS: Record<SupplierCategory, string> = {
+  FABRIC: "Fabric",
+  ACCESSORIES: "Accessories",
+  FOB: "FOB",
+  CM: "CM (Factory)",
+};
+
+/** "Fabric, CM (Factory)", or "" for none. */
+export function categoryText(categories: readonly SupplierCategory[]): string {
+  return SUPPLIER_CATEGORIES.filter((c) => categories.includes(c))
+    .map((c) => SUPPLIER_CATEGORY_LABELS[c])
+    .join(", ");
+}
+
+/** What each category means, for the form. */
+export const SUPPLIER_CATEGORY_HINTS: Record<SupplierCategory, string> = {
+  FABRIC: "Fabric for production projects, settled project by project.",
+  ACCESSORIES: "Trims and accessories on a running ledger, whatever the project.",
+  FOB: "Finished goods made to order, settled project by project.",
+  CM: "A factory's cut and make, settled project by project.",
 };
 
 export const GRADE_LABELS: Record<PartyGrade, string> = {

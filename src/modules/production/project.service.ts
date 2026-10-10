@@ -37,6 +37,10 @@ import {
   updateProjectSchema,
 } from "@/modules/production/schemas";
 import {
+  setAsideSettlementsTx,
+  settleProjectSuppliersTx,
+} from "@/modules/production/settlement.service";
+import {
   isStageBackward,
   OPEN_STATUSES,
   projectTimeline,
@@ -599,6 +603,8 @@ export async function setProjectStatus(
 /**
  * Marks a project completed. All its cost must have moved to stock first (the
  * final delivery takes whatever is left), unless Accounts writes the rest off.
+ * Completing closes the project with its suppliers: a settlement statement is
+ * kept for each (production/settlement.service.ts); nothing is posted.
  */
 export async function completeProjectTx(
   tx: Tx,
@@ -645,6 +651,7 @@ export async function completeProjectTx(
     where: { id: project.id },
     data: { status: "COMPLETED", stage: "COMPLETED", completedAt: now },
   });
+  await settleProjectSuppliersTx(tx, ctx, project, meta);
   const produced = project.producedQtyA + project.producedQtyB;
   await auditInCompany(
     ctx,
@@ -690,6 +697,8 @@ export async function reopenProjectTx(
     where: { id: project.id },
     data: { status: "ACTIVE", stage, completedAt: null },
   });
+  // Its settlement with the suppliers no longer stands; completing it again settles anew.
+  await setAsideSettlementsTx(tx, ctx.company.id, project.id);
   await auditInCompany(
     ctx,
     meta,

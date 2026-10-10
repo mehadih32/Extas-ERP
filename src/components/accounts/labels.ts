@@ -207,9 +207,11 @@ export const accountsHref = {
   account: (id: string) => `/accounts/chart/${encodeURIComponent(id)}`,
   entry: (id: string) => `/accounts/journal/${encodeURIComponent(id)}`,
   payment: (id: string) => `/accounts/supplier-payments/${encodeURIComponent(id)}`,
-  pay: (supplierId?: string) =>
+  pay: (supplierId?: string, projectId?: string) =>
     supplierId
-      ? `/accounts/supplier-payments/new?supplier=${encodeURIComponent(supplierId)}`
+      ? `/accounts/supplier-payments/new?supplier=${encodeURIComponent(supplierId)}${
+          projectId ? `&project=${encodeURIComponent(projectId)}` : ""
+        }`
       : "/accounts/supplier-payments/new",
   expense: (id: string) => `/accounts/expenses/${encodeURIComponent(id)}`,
   file: (id: string) => `/api/files/${encodeURIComponent(id)}`,

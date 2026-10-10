@@ -25,7 +25,12 @@ import {
   storedFileExists,
   writeGeneratedFile,
 } from "@/modules/files/file.service";
-import { hiddenProfileFlags, mayOpenProfile } from "@/modules/parties/profile-access";
+import {
+  hiddenProfileFlags,
+  isProfileType,
+  mayOpenProfile,
+  PROFILE_TYPES,
+} from "@/modules/parties/profile-access";
 import type { PermissionKey } from "@/modules/rbac/permissions";
 
 /*
@@ -42,10 +47,10 @@ import type { PermissionKey } from "@/modules/rbac/permissions";
  *
  * Who may print what follows who may see the data on screen: sales documents
  * need sales.view, statements parties.ledger.view, stock sheets inventory.view,
- * a buyer's 360° profile parties.view (with only the figures the person sees)
- * and the blank pad documents.letterhead. Payslips print for the people who see
- * salaries (hr/access.ts) and, through My HR, for the employee they belong to;
- * the list of printed documents shows payslips only to the former. Making a PDF
+ * a buyer's or supplier's 360° profile parties.view (with only the figures the
+ * person sees) and the blank pad documents.letterhead. Payslips print for the
+ * people who see salaries (hr/access.ts) and, through My HR, for the employee
+ * they belong to; the list of printed documents shows payslips only to the former. Making a PDF
  * and downloading one are written to the activity log.
  */
 
@@ -97,6 +102,11 @@ export const PRINT_INFO: Record<
     plural: "buyer profiles",
     permission: "parties.view",
   },
+  SUPPLIER_360: {
+    label: "Supplier 360° profile",
+    plural: "supplier profiles",
+    permission: "parties.view",
+  },
   PAYSLIP: {
     label: "Payslip",
     plural: "payslips",
@@ -138,22 +148,29 @@ export function archiveTypes(ctx: Pick<CompanyContext, "can">): PrintType[] {
 
 /**
  * The printed documents of these kinds this person may see, as a database filter.
- * A buyer's 360° profile also needs every figure its maker could see
- * (parties/profile-access.ts): one with gross profit stays hidden from sales staff.
+ * A 360° profile also needs every figure its maker could see
+ * (parties/profile-access.ts): a buyer's with gross profit stays hidden from
+ * sales staff, a supplier's with bill amounts from the store.
  */
 export function visibleDocumentsWhere(
   ctx: Pick<CompanyContext, "can">,
   types: PrintType[],
 ): Prisma.GeneratedDocumentWhereInput {
-  const hidden = hiddenProfileFlags(ctx);
-  if (hidden.length === 0 || !types.includes("BUYER_360")) return { documentType: { in: types } };
+  const limited = PROFILE_TYPES.flatMap((type) => {
+    if (!types.includes(type)) return [];
+    const hidden = hiddenProfileFlags(ctx, type);
+    return hidden.length > 0 ? [{ type, hidden }] : [];
+  });
+  if (limited.length === 0) return { documentType: { in: types } };
   return {
     documentType: { in: types },
-    OR: [
-      { documentType: { not: "BUYER_360" } },
-      // Only profiles that say they leave these out.
-      { AND: hidden.map((flag) => ({ options: { path: ["shows", flag], equals: false } })) },
-    ],
+    AND: limited.map(({ type, hidden }) => ({
+      OR: [
+        { documentType: { not: type } },
+        // Only profiles that say they leave these out.
+        { AND: hidden.map((flag) => ({ options: { path: ["shows", flag], equals: false } })) },
+      ],
+    })),
   };
 }
 
@@ -255,8 +272,8 @@ export async function printDocument(
 
   const { model, record } = await buildDocument(ctx, input, now);
   const logo = await loadPrintLogo(ctx.company.id);
-  // A buyer's profile opens only for people who see every part it shows (options.shows).
-  const readers = input.type === "BUYER_360" ? record.options : undefined;
+  // A 360° profile opens only for people who see every part it shows (options.shows).
+  const readers = isProfileType(input.type) ? record.options : undefined;
   const hash = contentHash(model, logo?.checksum ?? null, readers);
 
   const existing = await findByHash(ctx, hash);
@@ -383,7 +400,7 @@ async function loadDocument(ctx: CompanyContext, documentId: string): Promise<Do
   }
   assertMayPrint(ctx, row.documentType);
   if (row.documentType === "PAYSLIP") await assertMayOpenPayslip(ctx, row);
-  if (row.documentType === "BUYER_360" && !mayOpenProfile(ctx, row.options)) {
+  if (isProfileType(row.documentType) && !mayOpenProfile(ctx, row.documentType, row.options)) {
     throw new AppError("FORBIDDEN", "This profile shows figures your role cannot see.");
   }
   return row;

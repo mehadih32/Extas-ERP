@@ -15,7 +15,7 @@ import type { PermissionKey } from "@/modules/rbac/permissions";
  * Prices and values are shown to buyers, Production Managers and Accounts only.
  */
 
-export function canSeeMaterialCosts(ctx: CompanyContext) {
+export function canSeeMaterialCosts(ctx: Pick<CompanyContext, "can">) {
   return (
     ctx.can("materials.purchase") ||
     ctx.can("production.manage") ||

@@ -12,7 +12,8 @@ export const metadata: Metadata = { title: "Pay a supplier" };
 /**
  * Paying a supplier on account: accounts.payments.record, as paySupplierAction
  * checks (only Accounts and the owner pay money out). "?supplier=" starts it on
- * one supplier, from their profile or a bill.
+ * one supplier, from their profile or a bill, and "&project=" on one of their
+ * projects with something due.
  */
 export default async function PaySupplierPage({
   searchParams,
@@ -22,7 +23,8 @@ export default async function PaySupplierPage({
   const ctx = await requireCompanyPage();
   const query = await searchParams;
   const supplierId = typeof query.supplier === "string" ? query.supplier : undefined;
-  const result = await getPayFormAction(supplierId);
+  const projectId = typeof query.project === "string" ? query.project : undefined;
+  const result = await getPayFormAction(supplierId, projectId);
   if (!result.ok) {
     if (result.error.code === "FORBIDDEN") {
       return (
@@ -42,8 +44,8 @@ export default async function PaySupplierPage({
       <div>
         <h2 className="font-serif text-2xl text-primary">Pay a supplier</h2>
         <p className="mt-1 max-w-xl text-sm leading-relaxed text-muted-foreground">
-          A payment voucher is made. It settles the supplier&apos;s oldest bills first; anything
-          over stays with them as an advance.
+          A payment voucher is made. It settles the supplier&apos;s oldest bills first, or the bills
+          of the project you apply it to; anything over stays with them as an advance.
         </p>
       </div>
       <PayForm form={result.data} currency={ctx.company.currency} />

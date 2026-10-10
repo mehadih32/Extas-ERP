@@ -1,6 +1,7 @@
 import { type JournalSource, Prisma } from "@prisma/client";
 
 import { localDay } from "@/lib/dates";
+import { prisma } from "@/lib/prisma";
 import { rawBalance } from "@/modules/accounts/balances";
 import {
   getBankAccount,
@@ -40,6 +41,7 @@ import { canSeeSalaries } from "@/modules/hr/access";
 import { monthKey, monthLabel } from "@/modules/hr/calendar";
 import { hrKeys } from "@/modules/hr/rules";
 import { canSeeMaterialCosts } from "@/modules/materials/access";
+import { supplierProjectBalances } from "@/modules/accounts/supplier-projects";
 import { getPartyBalance } from "@/modules/parties/ledger.service";
 import { isWalkIn } from "@/modules/parties/walk-in";
 import { canSeeProductionCosts } from "@/modules/production/project-costs";
@@ -289,6 +291,7 @@ function presentPaymentRow(p: PaymentData, tz: string) {
     supplier: partyOf(p.supplier),
     account: p.account ? { id: p.account.id, name: p.account.name } : null,
     bill: p.bill,
+    project: p.project ? { id: p.project.id, code: p.project.code } : null,
     isVoid: p.isVoid,
   };
 }
@@ -327,7 +330,7 @@ export type SupplierPaymentList = Awaited<ReturnType<typeof getSupplierPaymentLi
 /** What a supplier is owed now and their open bills, oldest first (what a payment settles). */
 export async function getSupplierDues(ctx: CompanyContext, supplierId: string) {
   const tz = ctx.company.timezone;
-  const [balance, bills] = await Promise.all([
+  const [balance, bills, byProject] = await Promise.all([
     getPartyBalance(ctx, supplierId),
     ctx.db.supplierBill.findMany({
       where: { supplierId, status: { in: ["UNPAID", "PARTIALLY_PAID"] } },
@@ -335,7 +338,14 @@ export async function getSupplierDues(ctx: CompanyContext, supplierId: string) {
       orderBy: [{ billDate: "asc" }, { createdAt: "asc" }],
       take: 21,
     }),
+    supplierProjectBalances(prisma, ctx.company.id, supplierId),
   ]);
+  const owedFor = [...byProject.values()].filter((b) => b.due.gt(0));
+  const projects = await ctx.db.productionProject.findMany({
+    where: { id: { in: owedFor.map((b) => b.projectId) } },
+    select: { id: true, code: true, name: true, status: true },
+    orderBy: { code: "asc" },
+  });
   return {
     /** Owed to the supplier (negative: they hold an advance from us). */
     payable: balance.neg().toFixed(2),
@@ -347,6 +357,14 @@ export async function getSupplierDues(ctx: CompanyContext, supplierId: string) {
       due: b.dueAmount.toFixed(2),
     })),
     moreBills: bills.length > 20,
+    /** Projects something is still due for, to pay one of them first. */
+    projects: projects.map((p) => ({
+      id: p.id,
+      code: p.code,
+      name: p.name,
+      status: p.status,
+      due: byProject.get(p.id)!.due.toFixed(2),
+    })),
   };
 }
 
@@ -380,6 +398,7 @@ export async function getSupplierPaymentScreen(ctx: CompanyContext, paymentId: s
       supplier: partyOf(p.supplier)!,
       account: { id: p.account.id, code: p.account.code, name: p.account.name },
       bill: p.bill,
+      project: p.project,
       journalEntry: p.journalEntry
         ? { id: p.journalEntry.id, number: p.journalEntry.number }
         : null,
@@ -400,6 +419,7 @@ export async function getSupplierPaymentScreen(ctx: CompanyContext, paymentId: s
       openParty: access.openParty,
       openEntry: access.view && Boolean(p.journalEntry),
       openBill: canOpenBill(ctx),
+      openProject: ctx.can("production.view"),
       openLedger: access.view,
     },
     notes: { void: voiding && !voiding.ok && !p.isVoid ? voiding.message : null },
@@ -450,15 +470,22 @@ export type PartyOption = Awaited<ReturnType<typeof findParties>>[number];
  * What the payment form needs: today, the accounts money can come from, and
  * the supplier it starts on (from their profile or a bill) with what they are owed.
  */
-export async function getPayForm(ctx: CompanyContext, supplierId?: string) {
+export async function getPayForm(ctx: CompanyContext, supplierId?: string, projectId?: string) {
   const accounts = await listMoneyAccounts(ctx);
-  let supplier: { option: PartyOption; dues: SupplierDues } | null = null;
+  let supplier: {
+    option: PartyOption;
+    dues: SupplierDues;
+    /** The project to pay for, when one with something due was asked for. */
+    projectId: string | null;
+  } | null = null;
   if (supplierId) {
     const p = await ctx.db.party.findUnique({ where: { id: supplierId } });
     if (p && p.kind !== "BUYER" && p.status !== "CLOSED" && !isWalkIn(p)) {
+      const dues = await getSupplierDues(ctx, p.id);
       supplier = {
         option: { id: p.id, code: p.code, name: p.name, phone: p.phone, city: p.city },
-        dues: await getSupplierDues(ctx, p.id),
+        dues,
+        projectId: dues.projects.some((d) => d.id === projectId) ? projectId! : null,
       };
     }
   }

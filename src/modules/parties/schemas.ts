@@ -1,4 +1,11 @@
-import { BuyerType, MessageChannel, PartyGrade, PartyKind, PartyStatus } from "@prisma/client";
+import {
+  BuyerType,
+  MessageChannel,
+  PartyGrade,
+  PartyKind,
+  PartyStatus,
+  SupplierCategory,
+} from "@prisma/client";
 import { z } from "zod";
 
 import { queryBoolean } from "@/lib/query-params";
@@ -10,6 +17,9 @@ const phone = z
   .max(30)
   .regex(/^[+0-9 ()-]*$/, "Use digits, spaces, +, - or brackets")
   .nullish();
+
+/** In the order they are shown. */
+export const SUPPLIER_CATEGORIES: SupplierCategory[] = ["FABRIC", "ACCESSORIES", "FOB", "CM"];
 
 const partyFields = {
   code: z
@@ -37,11 +47,24 @@ const partyFields = {
   paymentTermsDays: z.number().int().min(0).max(365).nullish(),
   notes: optionalText(4000),
   customFields: z.record(z.string(), z.unknown()).nullish(),
+  /** What a supplier supplies, any number of them (none for buyers). */
+  supplierCategories: z
+    .array(z.enum(SupplierCategory))
+    .max(4)
+    .transform((list) => SUPPLIER_CATEGORIES.filter((c) => list.includes(c)))
+    .optional(),
 };
 
 export const createPartySchema = z.object(partyFields).superRefine((v, ctx) => {
   if (v.kind === "SUPPLIER" && v.buyerType) {
     ctx.addIssue({ code: "custom", path: ["buyerType"], message: "Suppliers have no buyer type" });
+  }
+  if (v.kind === "BUYER" && v.supplierCategories?.length) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["supplierCategories"],
+      message: "Buyers have no supplier categories",
+    });
   }
 });
 
@@ -52,6 +75,8 @@ export const listPartiesSchema = z.object({
   buyerType: z.enum(BuyerType).optional(),
   grade: z.enum(PartyGrade).optional(),
   status: z.enum(PartyStatus).optional(),
+  /** Suppliers of this category. */
+  category: z.enum(SupplierCategory).optional(),
   verified: queryBoolean.optional(),
   city: z.string().trim().max(80).optional(),
   search: z.string().trim().max(100).optional(),

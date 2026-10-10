@@ -347,6 +347,8 @@ export const paySupplierSchema = z.object({
   supplierId: id,
   amount: positiveMoney,
   paymentDate: dayOrInstant.optional(),
+  /** Pay for this production project: its bills are settled first. */
+  projectId: id.optional(),
   ...cashSide,
   notes: optionalText(1000),
 });

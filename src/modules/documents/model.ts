@@ -22,6 +22,7 @@ export const PRINT_TYPES = [
   "LETTERHEAD",
   "PAYSLIP",
   "BUYER_360",
+  "SUPPLIER_360",
 ] as const;
 
 export type PrintType = (typeof PRINT_TYPES)[number];

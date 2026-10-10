@@ -98,6 +98,17 @@ export default async function SupplierPaymentPage({
                 ) : (
                   `Bill ${p.bill.number}`
                 )
+              ) : p.project ? (
+                <>
+                  {can.openProject ? (
+                    <Link href={productionHref.project(p.project.id)} className={linkClass}>
+                      {p.project.code}
+                    </Link>
+                  ) : (
+                    p.project.code
+                  )}{" "}
+                  · {p.project.name} (its bills first)
+                </>
               ) : (
                 "Their account (oldest bills first)"
               )}

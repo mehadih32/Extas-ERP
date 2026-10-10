@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { getRequestMeta } from "@/lib/request-meta";
 import { runAction } from "@/lib/result";
 import { requirePermission } from "@/modules/auth/context";
+import * as buyer360 from "@/modules/parties/buyer-360.service";
 import * as campaigns from "@/modules/parties/campaign.service";
 import * as dormant from "@/modules/parties/dormant.service";
 import * as ledger from "@/modules/parties/ledger.service";
@@ -14,7 +15,7 @@ import * as screens from "@/modules/parties/screens.service";
 /*
  * Buyers & Suppliers Server Actions. Each returns { ok: true, data } or
  * { ok: false, error }.
- *   parties.view            profiles, lists, dormant buyer filter
+ *   parties.view            profiles (with a buyer's 360° view), lists, dormant buyer filter
  *   parties.manage          create / edit, grade, Blue Verified badge, status
  *   parties.ledger.view     statements, receivables & payables overview
  *   accounts.manage         opening balances (posts a journal entry)
@@ -42,6 +43,9 @@ export const listPartyRowsAction = async (query: unknown) =>
   runAction(async () => screens.listPartyRows(await view(), query));
 export const getPartyScreenAction = async (partyId: string) =>
   runAction(async () => screens.getPartyScreen(await view(), partyId));
+/** A buyer's 360° view: figures, gross profit and history, as far as this person may see. */
+export const getBuyer360Action = async (partyId: string, options?: buyer360.Buyer360Options) =>
+  runAction(async () => buyer360.getBuyer360(await view(), partyId, options));
 export const getPartyFormAction = async (partyId?: string) =>
   runAction(async () => screens.getPartyForm(await manage(), partyId));
 export const getStatementScreenAction = async (

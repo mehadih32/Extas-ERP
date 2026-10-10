@@ -140,6 +140,25 @@ Built one module at a time, each in its own pull request. So far:
       account has;
     - the notes, and a warning when another account has the same phone or email.
 
+    A buyer's profile is their **Customer 360°** view. "At a glance" shows total sales (goods
+    invoiced after discounts, without delivery charges or VAT, on invoices that are not void
+    for orders that are not cancelled), the average order, what they owe (Outstanding), what is
+    past its due date (Overdue, with the number of invoices and how late the oldest is) and
+    gross profit: sales less what those goods cost, delivered lines at the cost recorded when
+    they left and the rest at the SKU's average landed cost, the same figures as the
+    dashboard's top sellers. Office overheads stay out, so there is no net profit here. "Styles
+    bought most" ranks their five biggest styles by value with their share, and below come
+    their orders, quotations, payments received (with refunds), production and the documents
+    printed for them, eight of each with "Show all" to list the rest (`?show=orders` and so
+    on, kept in the address). "360° PDF" prints all of it on the letterhead, every row of
+    every history; "Email" says the integration is pending, because sending email comes with
+    the deferred integrations. The Walk-in customers account shows every sale without a buyer
+    profile. Each part shows only to people who may see it: sales figures and the history
+    need `sales.view`, gross profit the financials (`dashboard.financials` or `accounts.view`)
+    and production `production.view`, so a Sales Executive sees no profit and a Production
+    Manager no sales. A printed profile keeps the parts it was made with and opens (in the
+    list, on the profile and as a download) only for people who may see all of them.
+
     From the profile, people who may change accounts edit the details, give a grade (A+ to C),
     give or remove the Blue Verified badge, mark a buyer dormant, and close or reopen the
     account. Closing an account that still owes or is owed makes it Settling until the balance
@@ -447,7 +466,16 @@ Buyers & suppliers follows the party permissions:
 Lists and profiles need `parties.view`, adding and changing accounts (details, grade, badge,
 status) needs `parties.manage`, statements and the Dues tab need `parties.ledger.view`, and
 opening balances need `accounts.manage`, because they post to the books. The balance shows to
-everyone who can open a profile, as the API returns it with `parties.view`.
+everyone who can open a profile, as the API returns it with `parties.view`. A buyer's
+Customer 360° figures go by role on top of that:
+
+| Role                | Sales figures and history | Gross profit | Production |
+| ------------------- | ------------------------- | ------------ | ---------- |
+| Super Admin         | Yes                       | Yes          | Yes        |
+| Sales Executive     | Yes                       | No           | No         |
+| Accounts            | Yes                       | Yes          | Yes        |
+| Production Manager  | No                        | No           | Yes        |
+| Warehouse, Employee | No                        | No           | No         |
 
 Sales follows the sales and accounts permissions:
 
@@ -562,7 +590,9 @@ Reports need `reports.export`, and each figure in a report its own permission (k
 and profit and loss the financials, sales `sales.view`, stock alerts `inventory.view`); a saved report
 opens only for people who may see every figure in it. Each kind of printed document needs the
 permission that prints it: `sales.view` for sales documents, `parties.ledger.view` for
-statements, `inventory.view` for stock sheets and `documents.letterhead` for letters. Payslips
+statements, `inventory.view` for stock sheets and `documents.letterhead` for letters. Buyer
+360° profiles need `parties.view`, and each opens only for people who may see every part it
+shows (sales, gross profit, production). Payslips
 list for `hr.manage`, `hr.payroll` and `accounts.view`; an employee with `portal.self` prints
 only their own, from an approved payroll. Templates change with `templates.manage`, and
 whoever prints a kind of document may fill its active templates; addressing a letter to a
@@ -797,6 +827,7 @@ before this account existed, the upgrade makes it and names it on those sales' l
 | ---------------------------------------------------------- | ----------------------------------------------------------- |
 | `GET/POST /api/parties`                                    | List (type, grade, badge, status, city, search) / create    |
 | `GET/PATCH /api/parties/:id`                               | 360° profile with balance and activity / edit               |
+| `GET /api/parties/:id/buyer-360?all=`                      | Customer 360°: sales, dues, gross profit, styles, history   |
 | `PUT /api/parties/:id/grade`                               | Set A+, A, B, C or none                                     |
 | `PUT /api/parties/:id/verify`                              | Give or remove the Blue Verified badge                      |
 | `PUT /api/parties/:id/status`                              | Active, Dormant, Closed (Settling while dues remain)        |
@@ -1382,7 +1413,7 @@ later with the other outside integrations.
 ## Printable documents (backend)
 
 Quotations, proforma and commercial invoices, packing lists, delivery challans, money receipts,
-refund vouchers, buyer and supplier statements, stock availability sheets and a blank letterhead pad print as A4
+refund vouchers, buyer and supplier statements, buyer 360° profiles, stock availability sheets and a blank letterhead pad print as A4
 PDFs on the company letterhead: the logo, name, legal name and contact details on top, the
 company colours, and the footer line with page numbers on every page. Everything on the page
 comes from the same data as the screens, with amounts in lakh and crore for taka and dates in
@@ -1406,6 +1437,7 @@ receipt, payslip and bank statement endpoints) carries them as `bin` and `tradeL
 | Money receipt        | Who paid, the amount in figures and words, method and cheque / transaction no., what it was for, and the balance after it   | `sales.view`           |
 | Refund voucher       | Money taken back off a proforma, order or account: paid back, credit note or cancellation charge, with what it left held    | `sales.view`           |
 | Statement of account | Opening balance, debits, credits and closing balance (Dr / Cr), then every transaction with the running balance, any period | `parties.ledger.view`  |
+| Buyer 360° profile   | Sales, average order, outstanding, overdue, gross profit, top styles, and every order, quotation, payment and production    | `parties.view`         |
 | Stock availability   | Pieces ready to ship per colour and size for chosen styles or a whole brand, in one warehouse or all; no prices             | `inventory.view`       |
 | Blank letterhead     | The letterhead and footer on an empty page, for letters                                                                     | `documents.letterhead` |
 
@@ -1476,6 +1508,7 @@ What to print:
 - `{ type: "QUOTATION" | "PROFORMA_INVOICE" | "COMMERCIAL_INVOICE" | "PACKING_LIST" | "DELIVERY_CHALLAN", id }`
 - `{ type: "PAYMENT_RECEIPT", id }` (the payment's id)
 - `{ type: "LEDGER_STATEMENT", partyId, from?, to? }` (calendar days; none = the whole account)
+- `{ type: "BUYER_360", partyId }` (a buyer's Customer 360° profile, as of today)
 - `{ type: "STOCK_AVAILABILITY", styleIds?, brandId?, warehouseId?, includeEmpty? }`
 - `{ type: "LETTERHEAD" }`
 

@@ -18,6 +18,7 @@ import {
 } from "@/modules/documents/model";
 import type { PrintRequest } from "@/modules/documents/schemas";
 import { getPayslipByItem } from "@/modules/hr/payroll.service";
+import { getBuyer360, PROFILE_ALL_ROWS } from "@/modules/parties/buyer-360.service";
 import { getStatement } from "@/modules/parties/ledger.service";
 import {
   getChallanDocument,
@@ -28,6 +29,15 @@ import { getPaymentReceipt } from "@/modules/sales/payment.service";
 import { getProforma } from "@/modules/sales/proforma.service";
 import { getQuotation } from "@/modules/sales/quotation.service";
 import { getRefund } from "@/modules/sales/refund.service";
+import { GRADE_LABELS, STATUS_LABELS } from "@/components/parties/labels";
+import { PROJECT_STATUS_LABELS, STAGE_LABELS } from "@/components/production/labels";
+import {
+  CHANNEL_LABELS,
+  INVOICE_STATUS_LABELS,
+  ORDER_STATUS_LABELS,
+  QUOTATION_STATUS_LABELS,
+  REFUND_KIND_LABELS,
+} from "@/components/sales/labels";
 
 /*
  * Turns the data behind each document (the same functions the JSON endpoints
@@ -1483,6 +1493,332 @@ export async function payslipDocument(ctx: CompanyContext, itemId: string): Prom
   };
 }
 
+// =============================================================================
+// Buyer 360° profile
+// =============================================================================
+
+/** Styles ranked on the printed profile. */
+const PRINTED_TOP_STYLES = 10;
+
+/**
+ * A buyer's whole history on one PDF (Customer 360°): the figures, the styles
+ * they buy most, and every order, quotation, payment, refund and production
+ * project (up to PROFILE_ALL_ROWS each). It holds only what the person printing
+ * it may see; the record keeps those flags so the copy never opens for someone
+ * who may see less (parties/profile-access.ts).
+ */
+export async function buyerProfileDocument(
+  ctx: CompanyContext,
+  partyId: string,
+  now: Date,
+): Promise<BuiltDocument> {
+  const p = await getBuyer360(
+    ctx,
+    partyId,
+    { all: "everything", topStyles: PRINTED_TOP_STYLES },
+    now,
+  );
+  const currency = ctx.company.currency;
+  const m = (value: string) => money(value, currency);
+  const n = (value: number) => count(value, currency);
+  const plural = (value: number, word: string) => `${n(value)} ${word}${value === 1 ? "" : "s"}`;
+  const { figures } = p;
+  const party = p.party;
+
+  const blocks: Block[] = [];
+  const headline: Array<{ label: string; value: string; hint?: string }> = [];
+  if (figures.sales) {
+    headline.push(
+      {
+        label: "Total sales",
+        value: m(figures.sales.total),
+        hint: `${plural(figures.sales.orders, "invoiced order")} · ${n(figures.sales.pieces)} pcs`,
+      },
+      {
+        label: "Average order",
+        value: figures.sales.averageOrder ? m(figures.sales.averageOrder) : "None yet",
+        hint: "Sales per invoiced order",
+      },
+    );
+  }
+  headline.push({
+    label: "Outstanding",
+    value: m(figures.outstanding),
+    hint: isPositive(figures.heldForThem)
+      ? `${m(figures.heldForThem)} of theirs held`
+      : "What they owe today",
+  });
+  if (figures.overdue) {
+    headline.push({
+      label: "Overdue",
+      value: m(figures.overdue.amount),
+      hint:
+        figures.overdue.invoices > 0
+          ? `${plural(figures.overdue.invoices, "invoice")}, oldest ${plural(figures.overdue.oldestDays ?? 0, "day")} late`
+          : "Nothing past its due date",
+    });
+  }
+  blocks.push({ kind: "figures", figures: headline });
+  if (figures.profit) {
+    blocks.push({
+      kind: "figures",
+      figures: [
+        {
+          label: "Gross profit",
+          value: m(figures.profit.gross),
+          hint: "Sales less what the goods cost",
+        },
+        { label: "Cost of goods", value: m(figures.profit.cost), hint: "Landed cost of the goods" },
+        {
+          label: "Margin",
+          value: figures.profit.marginPct ? `${figures.profit.marginPct}%` : "None yet",
+          hint: "Gross profit as a share of sales",
+        },
+      ],
+    });
+  }
+  if (figures.sales?.firstOn) {
+    blocks.push({
+      kind: "note",
+      text: `Sales are goods invoiced after discounts, without delivery charges or VAT, from ${formatDay(figures.sales.firstOn)} to ${formatDay(figures.sales.lastOn ?? figures.sales.firstOn)}.`,
+    });
+  }
+
+  if (p.topStyles && p.topStyles.length > 0) {
+    blocks.push({
+      kind: "table",
+      title: "Styles bought most",
+      columns: [
+        { label: "Style", weight: 3 },
+        { label: "Orders", align: "right" },
+        { label: "Pieces", align: "right" },
+        { label: "Sales", align: "right", weight: 1.5 },
+        { label: "Share", align: "right" },
+        ...(p.shows.profit
+          ? [{ label: "Gross profit", align: "right" as const, weight: 1.5 }]
+          : []),
+      ],
+      rows: p.topStyles.map((s) => ({
+        cells: [
+          `${s.code} · ${s.name}`,
+          n(s.orders),
+          n(s.pieces),
+          m(s.value),
+          s.sharePct ? `${s.sharePct}%` : "",
+          ...(p.shows.profit ? [s.profit ? m(s.profit) : ""] : []),
+        ],
+      })),
+    });
+  }
+
+  const more = (shown: number, total: number, what: string) =>
+    total > shown
+      ? [
+          {
+            kind: "note" as const,
+            text: `The latest ${n(shown)} of ${n(total)} ${what} are listed.`,
+          },
+        ]
+      : [];
+
+  if (p.orders) {
+    blocks.push(
+      {
+        kind: "table",
+        title: `Orders (${n(p.orders.total)})`,
+        columns: [
+          { label: "Order", weight: 1.6 },
+          { label: "Date", weight: 1.1 },
+          { label: "Status", weight: 1.4 },
+          { label: "Invoice", weight: 1.6 },
+          { label: "Total", align: "right", weight: 1.4 },
+          { label: "Due", align: "right", weight: 1.3 },
+        ],
+        rows: p.orders.items.map((o) => ({
+          cells: [
+            o.number,
+            formatDay(o.orderedOn),
+            ORDER_STATUS_LABELS[o.status],
+            o.invoice
+              ? `${o.invoice.number} (${o.invoice.isOverdue ? "Overdue" : INVOICE_STATUS_LABELS[o.invoice.status]})`
+              : "Not invoiced",
+            m(o.total),
+            m(o.due),
+          ],
+          details: [CHANNEL_LABELS[o.channel]],
+        })),
+        empty: "No orders yet.",
+      },
+      ...more(p.orders.items.length, p.orders.total, "orders"),
+    );
+  }
+  if (p.quotations) {
+    blocks.push(
+      {
+        kind: "table",
+        title: `Quotations (${n(p.quotations.total)})`,
+        columns: [
+          { label: "Quotation", weight: 1.6 },
+          { label: "Date", weight: 1.1 },
+          { label: "Valid until", weight: 1.1 },
+          { label: "Status", weight: 1.4 },
+          { label: "Items", align: "right", weight: 0.8 },
+          { label: "Total", align: "right", weight: 1.4 },
+        ],
+        rows: p.quotations.items.map((q) => ({
+          cells: [
+            q.number,
+            formatDay(q.issuedOn),
+            q.validUntil ? formatDay(q.validUntil) : "",
+            QUOTATION_STATUS_LABELS[q.status],
+            n(q.itemCount),
+            money(q.total, q.currency),
+          ],
+        })),
+        empty: "No quotations yet.",
+      },
+      ...more(p.quotations.items.length, p.quotations.total, "quotations"),
+    );
+  }
+  if (p.payments) {
+    blocks.push(
+      {
+        kind: "table",
+        title: `Payments received (${n(p.payments.total)})`,
+        columns: [
+          { label: "Receipt", weight: 1.5 },
+          { label: "Date", weight: 1.1 },
+          { label: "Method", weight: 1.3 },
+          { label: "For", weight: 1.8 },
+          { label: "Amount", align: "right", weight: 1.4 },
+        ],
+        rows: [
+          ...p.payments.items.map((pay) => ({
+            cells: [
+              pay.number,
+              formatDay(pay.paidOn),
+              PAYMENT_METHODS[pay.method],
+              [
+                pay.order
+                  ? `Order ${pay.order.number}`
+                  : pay.proforma
+                    ? `Advance, ${pay.proforma.number}`
+                    : "On account",
+                pay.voided ? "(voided)" : "",
+              ]
+                .filter(Boolean)
+                .join(" "),
+              m(pay.amount),
+            ],
+            details: pay.reference ? [pay.reference] : undefined,
+          })),
+          ...(p.payments.items.length > 0
+            ? [
+                {
+                  cells: ["Received in all", "", "", "", m(p.payments.totalReceived)],
+                  style: "total" as const,
+                },
+              ]
+            : []),
+        ],
+        empty: "No payments yet.",
+      },
+      ...more(p.payments.items.length, p.payments.total, "payments"),
+    );
+  }
+  if (p.refunds && p.refunds.total > 0) {
+    blocks.push(
+      {
+        kind: "table",
+        title: `Refunds (${n(p.refunds.total)})`,
+        columns: [
+          { label: "Refund", weight: 1.5 },
+          { label: "Date", weight: 1.1 },
+          { label: "Kind", weight: 1.6 },
+          { label: "For", weight: 1.8 },
+          { label: "Amount", align: "right", weight: 1.4 },
+        ],
+        rows: p.refunds.items.map((r) => ({
+          cells: [
+            r.number,
+            formatDay(r.refundedOn),
+            `${REFUND_KIND_LABELS[r.kind]}${r.voided ? " (voided)" : ""}`,
+            r.order ? `Order ${r.order.number}` : r.proforma ? r.proforma.number : "",
+            m(r.amount),
+          ],
+        })),
+      },
+      ...more(p.refunds.items.length, p.refunds.total, "refunds"),
+    );
+  }
+  if (p.production) {
+    blocks.push(
+      {
+        kind: "table",
+        title: `Production (${n(p.production.total)})`,
+        columns: [
+          { label: "Project", weight: 2.6 },
+          { label: "Status", weight: 1.4 },
+          { label: "Started", weight: 1.1 },
+          { label: "Target", weight: 1.1 },
+          { label: "Pieces", align: "right", weight: 1.3 },
+        ],
+        rows: p.production.items.map((pr) => ({
+          cells: [
+            `${pr.code} · ${pr.name}`,
+            pr.status === "ACTIVE" ? STAGE_LABELS[pr.stage] : PROJECT_STATUS_LABELS[pr.status],
+            formatDay(pr.startedOn),
+            pr.completedOn ? `Done ${formatDay(pr.completedOn)}` : formatDay(pr.targetOn),
+            `${n(pr.produced)} of ${n(pr.targetQuantity)}`,
+          ],
+          details: pr.factory ? [`Factory: ${pr.factory}`] : undefined,
+        })),
+        empty: "No production for them yet.",
+      },
+      ...more(p.production.items.length, p.production.total, "projects"),
+    );
+  }
+
+  const grade = [
+    party.grade ? GRADE_LABELS[party.grade] : "None",
+    party.isVerified ? "Blue Verified" : null,
+  ].filter((t): t is string => t !== null);
+
+  const model = base(ctx, "BUYER_360", {
+    title: "Buyer Profile",
+    subtitle: `${party.name} (${party.code})`,
+    reference: party.code,
+    meta: [
+      { label: "As of", value: formatDay(p.asOf) },
+      { label: "Buyer since", value: formatDay(party.addedOn) },
+      { label: "Grade", value: grade.join(" · ") },
+      { label: "Status", value: STATUS_LABELS[party.status] },
+    ],
+    parties: [
+      {
+        heading: "Buyer",
+        lines: partyLines({
+          ...party,
+          address: [party.address, [party.city, party.country].filter(Boolean).join(", ")]
+            .filter(Boolean)
+            .join("\n"),
+        }),
+      },
+    ],
+    blocks,
+  });
+  return {
+    model,
+    record: {
+      title: `Buyer profile: ${party.name} (${formatDay(p.asOf)})`,
+      referenceType: "PartyProfile",
+      referenceId: party.id,
+      partyId: party.id,
+      options: { shows: p.shows, rowsEach: PROFILE_ALL_ROWS },
+    },
+  };
+}
+
 export function letterheadDocument(ctx: CompanyContext): BuiltDocument {
   return {
     model: base(ctx, "LETTERHEAD", { title: "" }),
@@ -1518,6 +1854,8 @@ async function buildModel(
       return letterheadDocument(ctx);
     case "PAYSLIP":
       return payslipDocument(ctx, input.id);
+    case "BUYER_360":
+      return buyerProfileDocument(ctx, input.partyId, now);
   }
 }
 

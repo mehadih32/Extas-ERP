@@ -144,7 +144,8 @@ const sales = {
 
 /**
  * Where each printed document came from, for its link: a sales record (sales.view),
- * a statement (parties.ledger.view), a style (inventory.view) or a payslip (salaries).
+ * a statement (parties.ledger.view), a buyer's profile (parties.view), a style
+ * (inventory.view) or a payslip (salaries).
  * Records that are gone, or that this person cannot open, get no link.
  */
 async function sourceLinks(
@@ -238,6 +239,11 @@ async function sourceLinks(
           : null;
         break;
       }
+      case "PartyProfile":
+        link = ctx.can("parties.view")
+          ? to(`/parties/buyers/${encodeURIComponent(id)}`, "Open the buyer")
+          : null;
+        break;
       case "Style":
         link = ctx.can("inventory.view")
           ? to(`/products/${encodeURIComponent(id)}`, "Open the style")

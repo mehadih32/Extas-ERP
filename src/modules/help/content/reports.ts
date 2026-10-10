@@ -66,7 +66,7 @@ export const reportsHelp: HelpSection = {
       slug: "reports-printed-documents",
       title: "আগে ছাপা PDF (Printed documents) খুঁজে পাবেন যেভাবে",
       summary:
-        "অ্যাপ থেকে তৈরি সব কোটেশন, ইনভয়েস, চালান, রসিদ, স্টেটমেন্ট, স্টক শিট, চিঠি ও পে-স্লিপ আবার খোলা বা নামানো।",
+        "অ্যাপ থেকে তৈরি সব কোটেশন, ইনভয়েস, চালান, রসিদ, স্টেটমেন্ট, ক্রেতার ৩৬০° প্রোফাইল, স্টক শিট, চিঠি ও পে-স্লিপ আবার খোলা বা নামানো।",
       keywords: [
         "printed documents",
         "pdf",

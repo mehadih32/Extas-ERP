@@ -99,12 +99,23 @@ export async function salesByChannel(
   }));
 }
 
+/** One buyer's sales: their account's orders, or Walk-in customers' (orders with no buyer). */
+export type BuyerFilter = { partyId: string | null };
+
+function buyerCondition(buyer?: BuyerFilter) {
+  if (!buyer) return Prisma.empty;
+  return buyer.partyId === null
+    ? Prisma.sql`AND so."partyId" IS NULL`
+    : Prisma.sql`AND so."partyId" = ${buyer.partyId}`;
+}
+
 /**
  * Every invoiced line in the range with its share of the order's net value, in
  * paisa-exact amounts, and its cost: the cost recorded when it was delivered,
- * or the SKU's average cost for lines not delivered yet.
+ * or the SKU's average cost for lines not delivered yet. With a buyer, only
+ * that buyer's lines.
  */
-function soldLines(companyId: string, range: SalesRange) {
+function soldLines(companyId: string, range: SalesRange, buyer?: BuyerFilter) {
   return Prisma.sql`
     WITH lines AS (
       SELECT soi.id, soi."orderId", soi."variantId", pv."styleId", soi.quantity, soi."lineTotal",
@@ -117,6 +128,7 @@ function soldLines(companyId: string, range: SalesRange) {
       WHERE inv."companyId" = ${companyId}
         AND inv.status <> 'VOID' AND so.status <> 'CANCELLED'
         AND inv."issueDate" >= ${range.start} AND inv."issueDate" < ${range.end}
+        ${buyerCondition(buyer)}
     ),
     shares AS (
       -- In whole paisa: line x order net / order subtotal, split into the rounded-down
@@ -270,4 +282,91 @@ export async function topSellers(
         }
       : { groups: 0, pieces: 0, net: ZERO, cost: ZERO },
   };
+}
+
+/** Every sale there has been: invoices from the beginning to far ahead. */
+export const ALL_TIME: SalesRange = {
+  start: new Date(Date.UTC(1970, 0, 1)),
+  end: new Date(Date.UTC(9999, 0, 1)),
+};
+
+export type BuyerSales = {
+  /** Invoiced orders. */
+  orders: number;
+  pieces: number;
+  /** Goods value after discounts, without delivery charges or VAT. */
+  net: Prisma.Decimal;
+  /** What the goods cost: delivered lines at their recorded cost, the rest at average cost. */
+  cost: Prisma.Decimal;
+};
+
+/** One buyer's invoiced orders, pieces, net sales and the cost of those goods. */
+export async function buyerSales(
+  companyId: string,
+  buyer: BuyerFilter,
+  range: SalesRange = ALL_TIME,
+): Promise<BuyerSales> {
+  const [row] = await prisma.$queryRaw<
+    Array<{
+      orders: number;
+      pieces: bigint | null;
+      net: Prisma.Decimal | null;
+      cost: Prisma.Decimal | null;
+    }>
+  >`
+    SELECT COUNT(DISTINCT s."orderId")::int AS orders, SUM(s.quantity)::bigint AS pieces,
+           SUM(s.net) AS net, SUM(s.cost) AS cost
+    FROM (${soldLines(companyId, range, buyer)}) s`;
+  return {
+    orders: row?.orders ?? 0,
+    pieces: Number(row?.pieces ?? 0),
+    net: new Prisma.Decimal(row?.net ?? 0),
+    cost: new Prisma.Decimal(row?.cost ?? 0),
+  };
+}
+
+export type BuyerStyle = {
+  id: string;
+  code: string;
+  name: string;
+  orders: number;
+  pieces: number;
+  net: Prisma.Decimal;
+  cost: Prisma.Decimal;
+};
+
+/** The styles a buyer bought most, by sales value (then pieces). */
+export async function buyerTopStyles(
+  companyId: string,
+  buyer: BuyerFilter,
+  limit: number,
+  range: SalesRange = ALL_TIME,
+): Promise<BuyerStyle[]> {
+  const rows = await prisma.$queryRaw<
+    Array<{
+      id: string;
+      code: string;
+      name: string;
+      orders: number;
+      pieces: bigint;
+      net: Prisma.Decimal;
+      cost: Prisma.Decimal;
+    }>
+  >`
+    SELECT st.id, st.code, st.name, COUNT(DISTINCT s."orderId")::int AS orders,
+           SUM(s.quantity)::bigint AS pieces, SUM(s.net) AS net, SUM(s.cost) AS cost
+    FROM (${soldLines(companyId, range, buyer)}) s
+    JOIN "Style" st ON st.id = s."styleId"
+    GROUP BY st.id, st.code, st.name
+    ORDER BY SUM(s.net) DESC, SUM(s.quantity) DESC, st.code
+    LIMIT ${limit}`;
+  return rows.map((r) => ({
+    id: r.id,
+    code: r.code,
+    name: r.name,
+    orders: r.orders,
+    pieces: Number(r.pieces),
+    net: new Prisma.Decimal(r.net),
+    cost: new Prisma.Decimal(r.cost),
+  }));
 }

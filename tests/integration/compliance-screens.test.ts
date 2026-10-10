@@ -121,7 +121,10 @@ const today = () => localDay(new Date(), TZ);
 
 function scanForm(name = "licence.png") {
   const form = new FormData();
-  form.set("file", new File([png({ width: 40, height: 30 })], name, { type: "image/png" }));
+  form.set(
+    "file",
+    new File([new Uint8Array(png({ width: 40, height: 30 }))], name, { type: "image/png" }),
+  );
   return form;
 }
 

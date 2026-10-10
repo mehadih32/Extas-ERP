@@ -20,6 +20,7 @@ import {
   stockOnHand,
 } from "@/modules/dashboard/stock-figures";
 import { gradeCost, gradeCostData } from "@/modules/inventory/costs";
+import { openLots } from "@/modules/inventory/lot.service";
 import { refuseTakenName, sameName } from "@/modules/inventory/names";
 import {
   adjustStockSchema,
@@ -116,6 +117,15 @@ async function getVariant(ctx: CompanyContext, variantId: string) {
   });
   if (!variant) throw new AppError("NOT_FOUND", "SKU not found.");
   return variant;
+}
+
+/** A SKU taken off its style's matrix takes no stock until it is ticked again. */
+function assertOnMatrix(variant: { sku: string; removedAt: Date | null } | undefined) {
+  if (!variant?.removedAt) return;
+  throw new AppError(
+    "VALIDATION",
+    `${variant.sku} was taken off its style's matrix. Tick its colour and size again first.`,
+  );
 }
 
 // =============================================================================
@@ -246,6 +256,7 @@ export async function listMovements(ctx: CompanyContext, raw: unknown = {}) {
         },
       },
       warehouse: { select: { id: true, name: true } },
+      lot: { select: { number: true } },
     },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     take: take + 1,
@@ -260,6 +271,8 @@ export async function listMovements(ctx: CompanyContext, raw: unknown = {}) {
       ...presentMovement(cost, m),
       variant: m.variant,
       warehouse: m.warehouse,
+      /** The inward batch the pieces came with or went back out of (LOT-2026-00001). */
+      lot: m.lot?.number ?? null,
       recordedBy: m.createdById ? (people.get(m.createdById) ?? null) : null,
     })),
     nextCursor: hasMore ? page[page.length - 1]?.id : undefined,
@@ -325,6 +338,8 @@ type Adjustment = {
   /** What incoming pieces cost each; without it they come in at the grade's average cost. */
   unitCost?: number;
   note?: string;
+  /** The inward batch opening stock comes in with. */
+  lotId?: string;
 };
 
 /**
@@ -374,6 +389,7 @@ async function applyAdjustment(tx: Tx, ctx: CompanyContext, change: Adjustment) 
       quantity,
       unitCost,
       note: change.note,
+      lotId: change.lotId,
       createdById: ctx.user.id,
     },
   });
@@ -414,9 +430,18 @@ const gradeLetter = (grade: StockGrade) => (grade === "A_GRADE" ? "A" : "B");
 export async function adjustStock(ctx: CompanyContext, raw: unknown, meta?: RequestMeta) {
   const input = adjustStockSchema.parse(raw);
   const variant = await getVariant(ctx, input.variantId);
+  if (input.quantity > 0) assertOnMatrix(variant);
   const warehouse = await resolveWarehouse(ctx, input.warehouseId);
 
   const movement = await prisma.$transaction(async (tx) => {
+    const lots =
+      input.type === "OPENING" && input.quantity > 0
+        ? await openLots(tx, ctx, {
+            variantIds: [variant.id],
+            warehouseId: warehouse.id,
+            source: "OPENING",
+          })
+        : undefined;
     const created = await applyAdjustment(tx, ctx, {
       variant,
       warehouse,
@@ -425,6 +450,7 @@ export async function adjustStock(ctx: CompanyContext, raw: unknown, meta?: Requ
       type: input.type,
       unitCost: input.unitCost,
       note: input.note,
+      lotId: lots?.get(variant.id),
     });
     await auditInCompany(
       ctx,
@@ -457,30 +483,43 @@ export async function adjustStock(ctx: CompanyContext, raw: unknown, meta?: Requ
 export async function recordStockCount(ctx: CompanyContext, raw: unknown, meta?: RequestMeta) {
   const input = stockCountSchema.parse(raw);
   const warehouse = await resolveWarehouse(ctx, input.warehouseId);
-  const ids = input.lines.map((l) => l.variantId);
+  const ids = [...new Set(input.lines.map((l) => l.variantId))];
   const variants = await ctx.db.productVariant.findMany({
     where: { id: { in: ids } },
-    select: { id: true, sku: true },
+    select: { id: true, sku: true, removedAt: true },
   });
   if (variants.length !== ids.length) {
     throw new AppError("NOT_FOUND", "One or more SKUs were not found.");
   }
+  assertOnMatrix(variants.find((v) => v.removedAt));
   const skuOf = new Map(variants.map((v) => [v.id, v.sku]));
 
   const changes =
     input.mode === "COUNT"
       ? input.lines
+          .map((l) => ({ ...l, grade: l.grade ?? input.grade }))
           .filter((l) => l.counted !== l.expected)
           .map((l) => ({
             variantId: l.variantId,
+            grade: l.grade,
             quantity: l.counted - l.expected,
             expected: l.expected,
           }))
-      : input.lines.map((l) => ({ variantId: l.variantId, quantity: l.quantity, expected: 0 }));
+      : input.lines.map((l) => ({
+          variantId: l.variantId,
+          grade: input.grade,
+          quantity: l.quantity,
+          expected: 0,
+        }));
+  const key = (c: { variantId: string; grade: StockGrade }) => `${c.variantId}:${c.grade}`;
+  if (new Set(changes.map(key)).size !== changes.length) {
+    throw new AppError("VALIDATION", "Each SKU can appear once in each grade.");
+  }
   const added = changes.reduce((sum, c) => sum + Math.max(c.quantity, 0), 0);
   const removed = changes.reduce((sum, c) => sum + Math.max(-c.quantity, 0), 0);
   const summary = { changed: changes.length, added, removed };
   if (changes.length === 0) return summary;
+  const grades = [...new Set(changes.map((c) => c.grade))].sort();
 
   await prisma.$transaction(
     async (tx) => {
@@ -491,31 +530,43 @@ export async function recordStockCount(ctx: CompanyContext, raw: unknown, meta?:
         changes.map((c) => c.variantId),
       );
       if (input.mode === "COUNT") {
-        const shelves = await tx.$queryRaw<Array<{ variantId: string; quantity: number }>>`
-          SELECT "variantId", quantity FROM "StockBalance"
-          WHERE "warehouseId" = ${warehouse.id} AND grade = ${input.grade}::"StockGrade"
+        const shelves = await tx.$queryRaw<
+          Array<{ variantId: string; grade: StockGrade; quantity: number }>
+        >`
+          SELECT "variantId", grade, quantity FROM "StockBalance"
+          WHERE "warehouseId" = ${warehouse.id}
             AND "variantId" IN (${Prisma.join(changes.map((c) => c.variantId))})
           FOR UPDATE`;
-        const onShelf = new Map(shelves.map((r) => [r.variantId, r.quantity]));
+        const onShelf = new Map(shelves.map((r) => [key(r), r.quantity]));
         const moved = changes
-          .filter((c) => (onShelf.get(c.variantId) ?? 0) !== c.expected)
+          .filter((c) => (onShelf.get(key(c)) ?? 0) !== c.expected)
           .map((c) => skuOf.get(c.variantId)!);
         if (moved.length > 0) {
           throw new AppError(
             "CONFLICT",
-            `Stock changed while you were counting (${moved.join(", ")}). Reload the count, check those SKUs again and save.`,
+            `Stock changed while you were counting (${[...new Set(moved)].join(", ")}). Reload the count, check those SKUs again and save.`,
           );
         }
       }
+      // Opening stock comes in as one numbered batch per style.
+      const lots =
+        input.mode === "OPENING"
+          ? await openLots(tx, ctx, {
+              variantIds: changes.map((c) => c.variantId),
+              warehouseId: warehouse.id,
+              source: "OPENING",
+            })
+          : undefined;
       for (const change of changes) {
         await applyAdjustment(tx, ctx, {
           variant: { id: change.variantId, sku: skuOf.get(change.variantId)! },
           warehouse,
-          grade: input.grade,
+          grade: change.grade,
           quantity: change.quantity,
           type: input.mode === "OPENING" ? "OPENING" : "ADJUSTMENT",
           unitCost: input.mode === "OPENING" ? input.unitCost : undefined,
           note: input.note,
+          lotId: lots?.get(change.variantId),
         });
       }
       const what = input.mode === "OPENING" ? "Opening stock" : "Stock count";
@@ -526,11 +577,15 @@ export async function recordStockCount(ctx: CompanyContext, raw: unknown, meta?:
           action: "STOCK_ADJUSTMENT",
           entityType: "Warehouse",
           entityId: warehouse.id,
-          summary: `${what} at ${warehouse.name} (${gradeLetter(input.grade)}-grade): ${
+          summary: `${what} at ${warehouse.name} (${grades.map(gradeLetter).join(" and ")}-grade): ${
             changes.length
           } SKU(s), +${added} / -${removed}${input.note ? ` (${input.note})` : ""}`,
           after: {
-            lines: changes.map((c) => ({ sku: skuOf.get(c.variantId), change: c.quantity })),
+            lines: changes.map((c) => ({
+              sku: skuOf.get(c.variantId),
+              grade: c.grade,
+              change: c.quantity,
+            })),
           },
         },
         tx,

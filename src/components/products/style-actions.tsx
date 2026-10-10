@@ -28,22 +28,44 @@ import type { ActionError } from "@/lib/result";
 import type { StyleScreen } from "@/modules/inventory/screens.service";
 import { deleteStyleAction, updateStyleAction } from "@/server/actions/inventory.actions";
 
-import { AddSkusDialog } from "./add-skus-dialog";
+import { ColorsSizesDialog } from "./colors-sizes-dialog";
 import { StockSheetButton } from "./stock-sheet-button";
 
 type Open = "skus" | "archive" | "delete" | null;
 
+const skus = (n: number) => `${n} ${n === 1 ? "SKU" : "SKUs"}`;
+
+/** "4 SKUs were added and 2 taken off the matrix." */
+function matrixNotice({
+  created,
+  restored,
+  removed,
+}: {
+  created: number;
+  restored: number;
+  removed: number;
+}) {
+  const added = created + restored;
+  if (added === 0 && removed === 0) return "Those SKUs were already there.";
+  if (removed === 0) return `${skus(added)} ${added === 1 ? "was" : "were"} added to the matrix.`;
+  if (added === 0)
+    return `${skus(removed)} ${removed === 1 ? "was" : "were"} taken off the matrix.`;
+  return `${skus(added)} added and ${skus(removed)} taken off the matrix.`;
+}
+
 /**
  * What can be done with a style: everyone who sees it can print its stock sheet;
- * inventory.manage edits it, adds colours and sizes, and archives it (or
- * unarchives it in one tap);
+ * inventory.manage edits it, ticks and unticks its colours and sizes, and
+ * archives it (or unarchives it in one tap);
  * deleting is offered only while it has no history (inventory/rules.ts).
  */
 export function StyleActions({
   screen,
+  currency,
   notice: initialNotice,
 }: {
   screen: StyleScreen;
+  currency: string;
   /** A message to show first (the style was just added or saved). */
   notice?: string;
 }) {
@@ -90,7 +112,7 @@ export function StyleActions({
         {can.manage && (
           <Button type="button" className="w-full sm:w-auto" onClick={() => setOpen("skus")}>
             <Grid3x3Icon aria-hidden />
-            Add colours or sizes
+            Colours and sizes
           </Button>
         )}
         <StockSheetButton
@@ -149,15 +171,12 @@ export function StyleActions({
       />
 
       {open === "skus" && (
-        <AddSkusDialog
+        <ColorsSizesDialog
           screen={screen}
+          currency={currency}
           onClose={close}
-          onAdded={(created) => {
-            setNotice(
-              created === 0
-                ? "Those SKUs were already there."
-                : `${created} ${created === 1 ? "SKU was" : "SKUs were"} added to the matrix.`,
-            );
+          onSaved={(change) => {
+            setNotice(matrixNotice(change));
             close();
           }}
         />

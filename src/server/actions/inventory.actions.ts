@@ -6,6 +6,7 @@ import { getRequestMeta } from "@/lib/request-meta";
 import { runAction } from "@/lib/result";
 import { requirePermission } from "@/modules/auth/context";
 import * as catalog from "@/modules/inventory/catalog.service";
+import * as lots from "@/modules/inventory/lot.service";
 import * as matrix from "@/modules/inventory/matrix.service";
 import * as screens from "@/modules/inventory/screens.service";
 import * as stock from "@/modules/inventory/stock.service";
@@ -124,6 +125,12 @@ export const generateMatrixAction = async (styleId: string, input: unknown) =>
     );
     return { created: result.created };
   });
+/** Ticks and unticks a style's colours and sizes (SKUs that hold stock stay). */
+export const setMatrixAction = async (styleId: string, input: unknown) =>
+  change(async () => {
+    const result = await matrix.setMatrix(await manage(), styleId, input, await getRequestMeta());
+    return { created: result.created, restored: result.restored, removed: result.removed };
+  });
 export const updateVariantAction = async (variantId: string, input: unknown) =>
   change(async () => {
     const variant = await matrix.updateVariant(
@@ -158,5 +165,7 @@ export const listBadStockAction = async (query: unknown) =>
   runAction(async () => stock.listBadStock(await view(), query));
 export const listStockMovementsAction = async (query: unknown) =>
   runAction(async () => stock.listMovements(await view(), query));
+export const listStockLotsAction = async (query: unknown) =>
+  runAction(async () => lots.listLots(await view(), query));
 export const getStockSummaryAction = async () =>
   runAction(async () => stock.getStockSummary(await view()));

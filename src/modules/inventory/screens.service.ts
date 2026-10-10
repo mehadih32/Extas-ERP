@@ -12,7 +12,12 @@ import {
   listColors,
   listSizes,
 } from "@/modules/inventory/catalog.service";
-import { getStyleMatrix, matrixAxes } from "@/modules/inventory/matrix.service";
+import {
+  getStyleMatrix,
+  matrixAxes,
+  matrixLocks,
+  type MatrixLocks,
+} from "@/modules/inventory/matrix.service";
 import { listStylesSchema, stockCountSheetQuerySchema } from "@/modules/inventory/schemas";
 import {
   canDeleteBrand,
@@ -264,13 +269,16 @@ export async function getStyleScreen(
   const warehouseId = warehouses.some((w) => w.id === options.warehouseId)
     ? options.warehouseId
     : undefined;
-  const [matrix, categories, colors, sizes, historyCount, sales] = await Promise.all([
+  const [matrix, categories, colors, sizes, historyCount, sales, locks] = await Promise.all([
     getStyleMatrix(ctx, style.id, { warehouseId }),
     listCategoryOptions(ctx),
     listColors(ctx),
     listSizes(ctx),
     canManage ? styleHistoryCount(ctx, style.id) : Promise.resolve(0),
     ctx.can("sales.view") ? styleSales(ctx.company.id, style.id) : Promise.resolve(null),
+    canManage
+      ? matrixLocks(ctx, style.id)
+      : Promise.resolve<MatrixLocks>({ colors: {}, sizes: {} }),
   ]);
   const sold = (side: SalesTotals) => ({
     orders: side.orders,
@@ -290,6 +298,11 @@ export async function getStyleScreen(
       manage: canManage,
       delete: canManage && canDeleteStyle({ historyCount }).ok,
     },
+    /**
+     * The colours and sizes that cannot be unticked (inventory.manage): one of
+     * their SKUs holds stock in some warehouse, or is on an open order or delivery.
+     */
+    locks,
     /** Whether the stock history shows what the pieces cost. */
     showsCosts: canSeeFinancials(ctx),
     /** Units sold and revenue, wholesale and retail (invoiced, all time): sales.view only. */
@@ -420,7 +433,7 @@ export async function getStockCountSheet(ctx: CompanyContext, raw: unknown = {})
   const grade = options.grade;
   const [styles, warehouses] = await Promise.all([
     ctx.db.style.findMany({
-      where: { variants: { some: {} } },
+      where: { variants: { some: { removedAt: null } } },
       select: { id: true, code: true, name: true, isActive: true },
       orderBy: [{ code: "asc" }, { id: "asc" }],
     }),
@@ -432,7 +445,7 @@ export async function getStockCountSheet(ctx: CompanyContext, raw: unknown = {})
   let sheet = null;
   if (style) {
     const variants = await ctx.db.productVariant.findMany({
-      where: { styleId: style.id },
+      where: { styleId: style.id, removedAt: null },
       include: { color: true, size: true },
     });
     const balances = warehouse

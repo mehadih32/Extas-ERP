@@ -4,15 +4,21 @@ import { notFound } from "next/navigation";
 import { SectionError } from "@/components/dashboard/section-error";
 import { FormAlert } from "@/components/forms/field";
 import { categoryPath, money } from "@/components/products/labels";
+import { InwardBatches } from "@/components/products/inward-batches";
 import { StockHistory } from "@/components/products/stock-history";
 import { HISTORY_PAGE_SIZE } from "@/components/products/stock-history-view";
 import { StockMatrix } from "@/components/products/stock-matrix";
+import { StockRecords } from "@/components/products/stock-records";
 import { StyleActions } from "@/components/products/style-actions";
 import { StyleSalesKpis } from "@/components/products/style-sales";
 import { BackLink } from "@/components/settings/back-link";
 import { NoAccess } from "@/components/settings/no-access";
 import { StatusBadge } from "@/components/sales/badges";
-import { getStyleScreenAction, listStockMovementsAction } from "@/server/actions/inventory.actions";
+import {
+  getStyleScreenAction,
+  listStockLotsAction,
+  listStockMovementsAction,
+} from "@/server/actions/inventory.actions";
 import { requireCompanyPage } from "@/server/pages/guards";
 
 export const metadata: Metadata = { title: "Style" };
@@ -22,8 +28,9 @@ const one = (value: string | string[] | undefined) =>
 
 /**
  * One style: its details, its stock matrix (all warehouses or one) and its stock
- * history, for inventory.view. What may be changed comes with the screen from the
- * same checks the inventory actions make (screen.can).
+ * history (inward batches and every movement), for inventory.view. What may be
+ * changed comes with the screen from the same checks the inventory actions make
+ * (screen.can).
  */
 export default async function StylePage({
   params,
@@ -50,11 +57,12 @@ export default async function StylePage({
   const screen = result.data;
   const { style } = screen;
   const currency = ctx.company.currency;
-  const history = await listStockMovementsAction({
-    styleId: style.id,
-    warehouseId: screen.warehouseId ?? undefined,
-    take: HISTORY_PAGE_SIZE,
-  });
+  const page = { styleId: style.id, warehouseId: screen.warehouseId ?? undefined };
+  const [history, lots] = await Promise.all([
+    listStockMovementsAction({ ...page, take: HISTORY_PAGE_SIZE }),
+    listStockLotsAction({ ...page, take: HISTORY_PAGE_SIZE }),
+  ]);
+  const where = screen.warehouseId ?? "all";
   const notice =
     query.created === "1"
       ? screen.can.manage && style.variantCount === 0
@@ -110,29 +118,51 @@ export default async function StylePage({
             unarchived. Its history stays in every report.
           </FormAlert>
         )}
-        <StyleActions key={style.id} screen={screen} notice={notice} />
+        <StyleActions key={style.id} screen={screen} currency={currency} notice={notice} />
       </div>
 
       <StockMatrix screen={screen} currency={currency} openSku={one(query.sku)} />
 
-      {history.ok ? (
-        <StockHistory
-          // A new movement (a correction made here) starts the list afresh.
-          key={`${screen.warehouseId ?? "all"}:${history.data.items[0]?.id ?? "none"}`}
-          initial={history.data}
-          styleId={style.id}
-          warehouseId={screen.warehouseId}
-          showsCosts={screen.showsCosts}
-          currency={currency}
-          timeZone={ctx.company.timezone}
-        />
-      ) : (
-        <SectionError
-          title="Stock history"
-          heading="The stock history could not load"
-          error={history.error}
-        />
-      )}
+      <StockRecords
+        batches={
+          lots.ok ? (
+            <InwardBatches
+              key={`${where}:${lots.data.items[0]?.id ?? "none"}`}
+              initial={lots.data}
+              styleId={style.id}
+              warehouseId={screen.warehouseId}
+              currency={currency}
+              timeZone={ctx.company.timezone}
+            />
+          ) : (
+            <SectionError
+              title="Inward batches"
+              heading="The inward batches could not load"
+              error={lots.error}
+            />
+          )
+        }
+        movements={
+          history.ok ? (
+            <StockHistory
+              // A new movement (a correction made here) starts the list afresh.
+              key={`${where}:${history.data.items[0]?.id ?? "none"}`}
+              initial={history.data}
+              styleId={style.id}
+              warehouseId={screen.warehouseId}
+              showsCosts={screen.showsCosts}
+              currency={currency}
+              timeZone={ctx.company.timezone}
+            />
+          ) : (
+            <SectionError
+              title="Stock history"
+              heading="The stock history could not load"
+              error={history.error}
+            />
+          )
+        }
+      />
     </div>
   );
 }

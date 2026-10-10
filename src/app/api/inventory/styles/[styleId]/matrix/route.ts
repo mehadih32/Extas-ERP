@@ -23,3 +23,17 @@ export const POST = apiRoute<Params>(async (request, { styleId }) =>
     await getRequestMeta(),
   ),
 );
+
+/**
+ * PUT /api/inventory/styles/:styleId/matrix — { colorIds, sizeIds } sets the style's colours
+ * and sizes: makes (or brings back) SKUs for new ones and takes unticked ones off, refusing
+ * while any of those SKUs holds stock or is on an open order or delivery.
+ */
+export const PUT = apiRoute<Params>(async (request, { styleId }) =>
+  matrix.setMatrix(
+    await requirePermission("inventory.manage"),
+    styleId,
+    await readJson(request),
+    await getRequestMeta(),
+  ),
+);

@@ -19,6 +19,7 @@ import {
   onHandByGrade,
   removeAtCost,
 } from "@/modules/inventory/costs";
+import { lotsOfIntake, openLots } from "@/modules/inventory/lot.service";
 import { getDefaultWarehouse, weightedAverageCost } from "@/modules/inventory/stock.service";
 import {
   defaultIntakeParser,
@@ -565,6 +566,13 @@ export async function confirmIntake(
         await tx.productVariant.update({ where: { id: v.id }, data });
       }
 
+      // The delivery comes in as one numbered batch per style.
+      const lots = await openLots(tx, ctx, {
+        variantIds,
+        warehouseId,
+        source: "PRODUCTION",
+        intakeId: intake.id,
+      });
       for (const [i, line] of intake.lines.entries()) {
         const unitCost = plan.unitCosts[i]!;
         const key = { variantId: line.variantId, warehouseId, grade: line.grade };
@@ -582,6 +590,7 @@ export async function confirmIntake(
             unitCost,
             referenceType: "StockIntake",
             referenceId: intake.id,
+            lotId: lots.get(line.variantId),
             note: `${intake.number} · ${project.code}`,
             createdById: ctx.user.id,
           },
@@ -716,6 +725,7 @@ export async function reverseIntake(
         select: { id: true, avgCost: true, bGradeAvgCost: true },
       });
       const costsById = new Map(variants.map((v) => [v.id, v]));
+      const lots = await lotsOfIntake(tx, intake.id, variantIds);
       let cameIn = new Prisma.Decimal(0);
       let takenOut = new Prisma.Decimal(0);
       const note = `${intake.number} undone · ${project.code}: ${input.reason}`;
@@ -754,6 +764,7 @@ export async function reverseIntake(
             unitCost: line.unitCost,
             referenceType: "StockIntake",
             referenceId: intake.id,
+            lotId: lots.get(line.variantId),
             note,
             createdById: ctx.user.id,
           },

@@ -1,6 +1,9 @@
 import type { HelpSection } from "../types";
 
-/** Products: styles and their stock matrix, SKUs, stock counts, bad stock and the catalogue setup. */
+/**
+ * Products: styles and their stock matrix, SKUs, inward batches (lots), stock
+ * counts and the Bulk update grid, bad stock and the catalogue setup.
+ */
 export const productsHelp: HelpSection = {
   id: "products",
   title: "পণ্য ও স্টক (Products)",
@@ -32,6 +35,9 @@ export const productsHelp: HelpSection = {
         "total revenue",
         "ক্যাটাগরি গাছ",
         "কত বিক্রি হয়েছে",
+        "stock sheet",
+        "whatsapp",
+        "স্টক শিট",
       ],
       routes: ["/products"],
       who: "যাঁরা স্টক দেখতে পারেন: Super Admin, Production Manager, Warehouse Team ও Sales Executive।",
@@ -67,12 +73,19 @@ export const productsHelp: HelpSection = {
           text: "ছকের কোনো ঘরে চাপলে সেই SKU খুলবে: দাম, বারকোড, প্রতিটি গুদামে “Available”, “Set aside” (অর্ডারের জন্য আটকে রাখা) ও “B-grade”।",
         },
         {
-          text: "নিচে “Stock history”-তে প্রতিটি পিস আসা-যাওয়ার ইতিহাস (শুরুর স্টক, উৎপাদন থেকে আসা, বিক্রি, গণনা) সর্বশেষটি আগে দেখাবে।",
+          text: "নিচে “Stock history”-তে দুটি ট্যাব: “Inward batches”-এ প্রতিটি আসা মালের লট (নিচে “লট” গাইড দেখুন), আর “All movements”-এ প্রতিটি পিস আসা-যাওয়ার ইতিহাস (শুরুর স্টক, উৎপাদন থেকে আসা, বিক্রি, গণনা), সর্বশেষটি আগে।",
+        },
+        {
+          text: "“Stock sheet (PDF)” চাপলে দাম ছাড়া স্টকের তালিকা তৈরি হয়, ক্রেতাকে সরাসরি পাঠানো যায়। প্রতিটি রং-সাইজে একটি সংখ্যাই থাকে: মোট স্টক, মানে বিক্রির জন্য তৈরি ভালো পিস আর B-grade পিস একসাথে। নষ্ট মাল ধরা হয় না। পাশের “Share to WhatsApp” এখনো চালু হয়নি (“Integration Pending”), ততদিন PDF নামিয়ে ফোন থেকে পাঠান।",
+          image: {
+            id: "products-find-style-4",
+            caption: "“Stock sheet (PDF)” ও তার পাশে “Share to WhatsApp” বোতাম",
+          },
         },
       ],
       tips: [
         "খরচ দেখার অনুমতি থাকলে SKU-তে “Average cost per piece” এবং ইতিহাসে “Value” দেখাবে।",
-        "একটি ব্র্যান্ডের সব স্টাইলের স্টক তালিকা ছাপতে ব্র্যান্ড বেছে “Stock sheet (PDF)” চাপুন।",
+        "একটি ব্র্যান্ডের সব স্টাইলের স্টক তালিকা ছাপতে ব্র্যান্ড বেছে স্টক শিট বোতাম চাপুন।",
         "বিক্রির হিসাবে শুধু ইনভয়েস হওয়া অর্ডার ধরা হয়, বাতিল অর্ডার বাদ।",
       ],
     },
@@ -85,7 +98,8 @@ export const productsHelp: HelpSection = {
         "new style",
         "add the style",
         "sku",
-        "add colours or sizes",
+        "colours and sizes",
+        "remove a colour",
         "wholesale price",
         "retail price",
         "নতুন স্টাইল",
@@ -93,6 +107,7 @@ export const productsHelp: HelpSection = {
         "পণ্য যোগ",
         "দাম",
         "রং সাইজ",
+        "রং বাদ",
       ],
       routes: ["/products/new", "/products"],
       who: "যাঁদের স্টক সামলানোর অনুমতি আছে: Super Admin, Production Manager ও Warehouse Team।",
@@ -112,19 +127,27 @@ export const productsHelp: HelpSection = {
           text: "“Wholesale price” (পাইকারি দাম) ও “Retail price” (খুচরা দাম) লিখুন। চাইলে “Fabric (optional)” ও “Description (optional)” দিন। “Add the style” চাপুন।",
         },
         {
-          text: "স্টাইলের পাতায় “Add colours or sizes” চাপুন। “Colours” ও “Sizes” থেকে যেগুলো এই স্টাইলে বানানো হয় টিক দিন। সব সাইজ একবারে নিতে “Tick all sizes” চাপুন। প্রতিটি রং-সাইজের জোড়া একটি SKU হবে। লম্বা নাম (যেমন Black & White Stripes) পুরোটা দুই লাইনে দেখায়।",
+          text: "স্টাইলের পাতায় “Colours and sizes” চাপুন। “Colours” ও “Sizes” থেকে যেগুলো এই স্টাইলে বানানো হয় টিক দিন। সব সাইজ একবারে নিতে “Tick all sizes” চাপুন। প্রতিটি রং-সাইজের জোড়া একটি SKU হবে। লম্বা নাম (যেমন Black & White Stripes) পুরোটা দুই লাইনে দেখায়।",
           image: {
             id: "products-new-style-2",
-            caption: "“Add colours or sizes” জানালায় রং ও সাইজের টিকবক্স",
+            caption: "“Colours and sizes” জানালায় রং ও সাইজের টিকবক্স",
           },
         },
         {
-          text: "নিশ্চিত করুন। ছকে নতুন SKU-গুলো দেখাবে, স্টক তখন শূন্য। স্টক আসবে উৎপাদনের ডেলিভারি বা শুরুর স্টক (Opening stock) থেকে।",
+          text: "ভুল করে যোগ হওয়া রং বা সাইজ বাদ দিতে তার টিক তুলে দিন। কোনো রং বা সাইজে স্টক থাকলে (যেকোনো গুদামে) বা সেটি খোলা অর্ডার বা ডেলিভারিতে থাকলে তার টিক তোলা যায় না: পাশে তালার চিহ্ন আর কত পিস আছে লেখা থাকে। আগে সেই পিস বিক্রি, গণনা বা নষ্ট মালে সরান।",
+          image: {
+            id: "products-new-style-3",
+            caption: "স্টক থাকা রং ও সাইজে তালার চিহ্ন ও পিসের সংখ্যা",
+          },
+        },
+        {
+          text: "নিচে কয়টি SKU যোগ হবে ও কয়টি বাদ যাবে লেখা থাকে। “Save” চাপুন। ছকে নতুন SKU-গুলো দেখাবে, স্টক তখন শূন্য। স্টক আসবে উৎপাদনের ডেলিভারি বা শুরুর স্টক (Opening stock) থেকে।",
         },
       ],
       tips: [
         "রং বা সাইজ তালিকায় না থাকলে আগে “Setup” ট্যাবে যোগ করুন।",
         "পরে নতুন রং বা সাইজ যোগ করা যায়, পুরোনো SKU ঠিক থাকে।",
+        "যে SKU-র ইতিহাস আছে, বাদ দিলেও তা মোছে না: ছক থেকে সরে যায়, রিপোর্টে থাকে। আবার টিক দিলে আগের SKU ফিরে আসে।",
       ],
     },
     {
@@ -264,7 +287,100 @@ export const productsHelp: HelpSection = {
       tips: [
         "গণনার সময় স্টক বদলালে (বিক্রি বা অন্য গণনা) সংরক্ষণ আটকে যাবে। “Load the new shelf numbers, keeping what you typed” চাপুন, আপনার লেখা থেকে যাবে।",
         "একটি SKU-র স্টক দ্রুত ঠিক করতে SKU-র জানালায় “Correct stock” চাপুন, “Pieces counted on the shelf” লিখে “Save the count” চাপুন।",
+        "একটি স্টাইলের ভালো ও B-grade দুটোই একসাথে ঠিক করতে স্টাইলের পাতায় “Bulk update” ব্যবহার করুন (নিচের গাইড দেখুন)।",
         "Sales Executive-এর জন্য এই ট্যাব থাকে না।",
+      ],
+    },
+    {
+      slug: "products-bulk-update",
+      title: "সব রং-সাইজের স্টক একসাথে ঠিক করবেন যেভাবে (Bulk update)",
+      summary:
+        "একটি স্টাইলের সব রং ও সাইজের ভালো (Good) ও B-grade পিস এক ছকে লিখে একবারে সংরক্ষণ করা।",
+      keywords: [
+        "bulk update",
+        "spreadsheet",
+        "good",
+        "b-grade",
+        "update stock",
+        "ai scan",
+        "packing list",
+        "একসাথে স্টক",
+        "স্টক ঠিক করা",
+        "ছক",
+        "প্যাকিং লিস্ট",
+      ],
+      routes: ["/products"],
+      who: "যাঁদের স্টক সামলানোর অনুমতি আছে: Super Admin, Production Manager ও Warehouse Team।",
+      anyOf: ["inventory.manage"],
+      steps: [
+        {
+          text: "স্টাইলের পাতায় “Stock matrix”-এর ওপরে “Bulk update” চাপুন। একাধিক গুদাম থাকলে “Warehouse” বেছে নিন।",
+        },
+        {
+          text: "ছকে প্রতিটি রঙের দুটি সারি: “Good” (বিক্রির ভালো পিস) ও “B-grade”। প্রতিটি ঘরে এখন তাকে কত পিস আছে তা লেখা থাকে। যেগুলো মেলে না শুধু সেগুলো বদলান। Tab বা Enter চাপলে পরের ঘরে যায়।",
+          image: {
+            id: "products-bulk-update-1",
+            caption: "“Bulk update” ছক: রং × সাইজ, প্রতিটি রঙে “Good” ও “B-grade” সারি",
+          },
+        },
+        {
+          text: "বদলানো ঘর সবুজ হয়। নিচে লেখা থাকে কয়টি ঘর বদলেছে, কত পিস বেশি পাওয়া গেল আর কত কম। কম পাওয়া পিস ক্ষতি হিসেবে লেখা হয়।",
+        },
+        {
+          text: "দরকার হলে “Note (optional)” লিখে “Save changes” চাপুন। মাঝে কেউ স্টক বদলালে সংরক্ষণ আটকে যাবে, নতুন সংখ্যা চলে আসবে আর আপনার লেখা থেকে যাবে। আবার দেখে “Save changes” চাপুন।",
+        },
+        {
+          text: "“Upload packing list (AI scan)” দিয়ে কারখানার প্যাকিং লিস্টের ছবি থেকে পিস পড়ে নেওয়া যাবে। এটি এখনো চালু হয়নি (“Integration Pending”), ততদিন হাতে লিখুন বা উৎপাদনের ডেলিভারি থেকে মাল তুলুন।",
+        },
+      ],
+      tips: [
+        "একটি ঘর ঠিক করতে আগের মতো ছকের ঘরে চাপুন, তারপর “Correct stock”।",
+        "এটি স্টক গণনার মতোই কাজ করে: প্রতিটি পার্থক্য ইতিহাসে “Stock count correction” হিসেবে থাকে।",
+      ],
+    },
+    {
+      slug: "products-inward-batches",
+      title: "আসা মালের লট (Inward batches) দেখবেন যেভাবে",
+      summary:
+        "উৎপাদন থেকে আসা প্রতিটি ডেলিভারি ও শুরুর স্টক নিজে থেকেই একটি লট নম্বর পায়। কোথা থেকে এলো, কত ভালো ও B-grade পিস, আর পিসপ্রতি খরচ দেখা।",
+      keywords: [
+        "inward batches",
+        "lot",
+        "lot number",
+        "batch",
+        "supplier",
+        "unit cost",
+        "লট",
+        "লট নম্বর",
+        "ব্যাচ",
+        "কোথা থেকে এলো",
+      ],
+      routes: ["/products"],
+      who: "যাঁরা স্টক দেখতে পারেন। পিসপ্রতি খরচ দেখেন শুধু যাঁদের খরচ দেখার অনুমতি আছে।",
+      steps: [
+        {
+          text: "লট নম্বর কাউকে লিখতে হয় না। উৎপাদনের ডেলিভারি নিশ্চিত হলে বা শুরুর স্টক তুললে প্রতিটি স্টাইলের জন্য একটি লট নিজে থেকে তৈরি হয় (যেমন LOT-2026-00001)।",
+        },
+        {
+          text: "স্টাইলের পাতায় নিচে “Stock history” > “Inward batches” খুলুন। সর্বশেষ লট আগে, সময়রেখার মতো সাজানো।",
+          image: {
+            id: "products-inward-batches-1",
+            caption: "“Inward batches” সময়রেখা: লট নম্বর, কোথা থেকে, ভালো ও B-grade পিস",
+          },
+        },
+        {
+          text: "প্রতিটি লটে থাকে: কবে এলো, কোন গুদামে, ডেলিভারি ও প্রজেক্টের নম্বর আর কারখানার নাম (অনুমতি থাকলে চাপলে খোলে), “Fresh” (ভালো) ও “B-grade” পিস। খরচ দেখার অনুমতি থাকলে পিসপ্রতি খরচ ও মোট “Worth”।",
+        },
+        {
+          text: "কোনো ডেলিভারি পরে বাতিল (undo) করা হলে তার লটে “Undone” লেখা থাকে, কারণ সেই পিস স্টক থেকে বেরিয়ে গেছে।",
+        },
+        {
+          text: "“All movements” ট্যাবে প্রতিটি আসা পিসের পাশেও তার লট নম্বর লেখা থাকে।",
+        },
+      ],
+      tips: [
+        "খরচের হিসাব আগের মতো গড় খরচে (weighted average) চলে। লট শুধু দেখায় কোন মাল কবে, কোথা থেকে, কত খরচে এলো।",
+        "পুরোনো ডেলিভারি ও শুরুর স্টকেও লট নম্বর বসানো হয়েছে।",
       ],
     },
     {

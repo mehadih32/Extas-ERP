@@ -1241,7 +1241,8 @@ export async function stockSheetDocument(
     where: styleIds
       ? { id: { in: styleIds }, ...(brand ? { brandId: brand.id } : {}) }
       : { brandId: brand!.id, isActive: true },
-    include: { variants: { include: { color: true, size: true } } },
+    // SKUs taken off a matrix stay out of its sheet.
+    include: { variants: { where: { removedAt: null }, include: { color: true, size: true } } },
     orderBy: [{ code: "asc" }, { id: "asc" }],
     take: MAX_SHEET_STYLES + 1,
   });
@@ -1265,8 +1266,13 @@ export async function stockSheetDocument(
     warehouse?.id,
   );
 
-  // Sellable pieces only, never below zero (a force-override sale can dip under).
-  const sellable = (variantId: string) => Math.max(0, stock.get(variantId)?.available ?? 0);
+  // Total stock: the A-grade pieces free to sell plus the B-grade ones, as one
+  // figure (each never below zero: a force-override sale can dip under). Bad
+  // stock has already left stock, so it is never counted.
+  const sellable = (variantId: string) => {
+    const cell = stock.get(variantId);
+    return Math.max(0, cell?.available ?? 0) + Math.max(0, cell?.bGrade ?? 0);
+  };
   const blocks: Block[] = [];
   let shown = 0;
   let leftOut = 0;
@@ -1326,7 +1332,7 @@ export async function stockSheetDocument(
   }
   blocks.push({
     kind: "note",
-    text: "Pieces ready to ship: first-quality stock less pieces already set aside for orders. A dash means the size is not offered in that colour.",
+    text: "Total stock: first-quality pieces (less those already set aside for orders) and B-grade pieces together. Damaged and QC-rejected pieces are not counted. A dash means the size is not offered in that colour.",
   });
 
   const today = localDay(now, tz);

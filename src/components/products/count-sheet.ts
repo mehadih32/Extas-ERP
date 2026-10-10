@@ -66,6 +66,29 @@ export function openingLines(
   return { lines, invalid: invalidSkus(cells, typed) };
 }
 
+/** One box of the Bulk update grid: a SKU's pieces of one grade on the shelf. */
+export type GridCell = SheetCell & { grade: "A_GRADE" | "B_GRADE" };
+
+/** A grid box's key: its SKU and grade. */
+export const gridKey = (cell: { variantId: string; grade: string }) =>
+  `${cell.variantId}:${cell.grade}`;
+
+/**
+ * The Bulk update grid's changes: each box whose number differs from the shelf.
+ * The boxes start at the shelf's numbers, so an emptied box changes nothing.
+ */
+export function gridChanges(cells: GridCell[], typed: Record<string, string>) {
+  const lines: Array<GridCell & { counted: number; difference: number }> = [];
+  const invalid: string[] = [];
+  for (const cell of cells) {
+    const read = readPieces(typed[gridKey(cell)]);
+    if (read.kind === "invalid") invalid.push(cell.sku);
+    if (read.kind !== "pieces" || read.value === cell.onShelf) continue;
+    lines.push({ ...cell, counted: read.value, difference: read.value - cell.onShelf });
+  }
+  return { lines, invalid, ...countTotals(lines) };
+}
+
 /** Each box filled with the pieces on the shelf, to count only the SKUs that differ. */
 export function shelfNumbers(cells: SheetCell[]): Record<string, string> {
   return Object.fromEntries(cells.map((c) => [c.variantId, String(c.onShelf)]));

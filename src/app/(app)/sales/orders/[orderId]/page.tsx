@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 
 import { SectionError } from "@/components/dashboard/section-error";
 import { PrintDocumentButton } from "@/components/documents/print-button";
+import { UseTemplateButton } from "@/components/reports/use-template";
 import { FormAlert } from "@/components/forms/field";
 import { VerifiedBadge } from "@/components/parties/badges";
 import { BackLink } from "@/components/settings/back-link";
@@ -16,8 +17,10 @@ import { OrderActions } from "@/components/sales/order-actions";
 import { localDay } from "@/lib/dates";
 import { formatCount, formatDay } from "@/lib/display";
 import { cn } from "@/lib/utils";
+import type { TemplateChoice } from "@/modules/reports/screens.service";
 import type { OrderScreen } from "@/modules/sales/screens.service";
 import { getOrderScreenAction } from "@/server/actions/sales.actions";
+import { templateChoicesAction } from "@/server/actions/templates.actions";
 import { requireCompanyPage } from "@/server/pages/guards";
 
 export const metadata: Metadata = { title: "Order" };
@@ -90,7 +93,16 @@ function Items({ screen, currency }: { screen: OrderScreen; currency: string }) 
   );
 }
 
-function Documents({ screen, currency }: { screen: OrderScreen; currency: string }) {
+function Documents({
+  screen,
+  currency,
+  templates,
+}: {
+  screen: OrderScreen;
+  currency: string;
+  /** The company's own invoice and challan designs this person may fill. */
+  templates: { invoice: TemplateChoice[]; challan: TemplateChoice[] };
+}) {
   const { order: o } = screen;
   const party = buyerName(o.buyer, o.customer.name);
   const rows: Array<{
@@ -116,16 +128,24 @@ function Documents({ screen, currency }: { screen: OrderScreen; currency: string
       detail: `${formatDay(o.invoice.issuedOn)}${o.invoice.dueOn ? ` · due ${formatDay(o.invoice.dueOn)}` : ""} · ${money(o.invoice.due, currency)} due`,
       print:
         o.invoice.status === "VOID" ? undefined : (
-          <PrintDocumentButton
-            request={{ type: "COMMERCIAL_INVOICE", id: o.invoice.id }}
-            label="PDF"
-            className="w-auto"
-            ready={{
-              eyebrow: "Commercial invoice",
-              description: `${o.invoice.number} for ${party}.`,
-              errorTitle: "We could not make the invoice PDF",
-            }}
-          />
+          <>
+            <PrintDocumentButton
+              request={{ type: "COMMERCIAL_INVOICE", id: o.invoice.id }}
+              label="PDF"
+              className="w-auto"
+              ready={{
+                eyebrow: "Commercial invoice",
+                description: `${o.invoice.number} for ${party}.`,
+                errorTitle: "We could not make the invoice PDF",
+              }}
+            />
+            <UseTemplateButton
+              id={o.invoice.id}
+              templates={templates.invoice}
+              what={`Invoice ${o.invoice.number}`}
+              className="w-auto"
+            />
+          </>
         ),
     });
   }
@@ -161,16 +181,24 @@ function Documents({ screen, currency }: { screen: OrderScreen; currency: string
         .filter(Boolean)
         .join(" · "),
       print: (
-        <PrintDocumentButton
-          request={{ type: "DELIVERY_CHALLAN", id: c.id }}
-          label="PDF"
-          className="w-auto"
-          ready={{
-            eyebrow: "Delivery challan",
-            description: `${c.number}: ${c.pieces} pieces for ${party}.`,
-            errorTitle: "We could not make the challan PDF",
-          }}
-        />
+        <>
+          <PrintDocumentButton
+            request={{ type: "DELIVERY_CHALLAN", id: c.id }}
+            label="PDF"
+            className="w-auto"
+            ready={{
+              eyebrow: "Delivery challan",
+              description: `${c.number}: ${c.pieces} pieces for ${party}.`,
+              errorTitle: "We could not make the challan PDF",
+            }}
+          />
+          <UseTemplateButton
+            id={c.id}
+            templates={templates.challan}
+            what={`Challan ${c.number}`}
+            className="w-auto"
+          />
+        </>
       ),
     });
   }
@@ -183,13 +211,13 @@ function Documents({ screen, currency }: { screen: OrderScreen; currency: string
           {rows.map((row) => (
             <li
               key={row.key}
-              className="flex min-w-0 items-center justify-between gap-3 py-3 first:pt-0 last:pb-0"
+              className="flex min-w-0 flex-wrap items-center justify-between gap-3 py-3 first:pt-0 last:pb-0"
             >
               <div className="min-w-0 text-sm">
                 <div className="font-medium">{row.title}</div>
                 <p className="text-[0.8125rem] text-muted-foreground">{row.detail}</p>
               </div>
-              {row.print}
+              {row.print && <div className="flex shrink-0 gap-2">{row.print}</div>}
             </li>
           ))}
         </ul>
@@ -213,7 +241,11 @@ export default async function OrderPage({
 }) {
   const ctx = await requireCompanyPage();
   const [{ orderId }, query] = await Promise.all([params, searchParams]);
-  const result = await getOrderScreenAction(orderId);
+  const [result, invoiceTemplates, challanTemplates] = await Promise.all([
+    getOrderScreenAction(orderId),
+    templateChoicesAction("COMMERCIAL_INVOICE"),
+    templateChoicesAction("DELIVERY_CHALLAN"),
+  ]);
   if (!result.ok) {
     if (result.error.code === "NOT_FOUND") notFound();
     if (result.error.code === "FORBIDDEN") return <SalesNoAccess />;
@@ -299,7 +331,14 @@ export default async function OrderPage({
               )}
             </dl>
           </Panel>
-          <Documents screen={screen} currency={currency} />
+          <Documents
+            screen={screen}
+            currency={currency}
+            templates={{
+              invoice: invoiceTemplates.ok ? invoiceTemplates.data : [],
+              challan: challanTemplates.ok ? challanTemplates.data : [],
+            }}
+          />
           {costs && (
             <Panel title="Cost and margin" id="costs-heading">
               <dl className="mt-4 grid gap-2 text-sm tabular-nums">

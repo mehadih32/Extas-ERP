@@ -72,11 +72,13 @@ describe("the menu with Sales in it", () => {
       "/materials",
       "/parties",
       "/hr",
+      "/reports",
       "/accounts/expenses",
       "/me",
       "/settings",
     ]);
-    expect(visibleNavItems(["sales.view"]).map((i) => i.href)).toEqual(["/", "/sales"]);
+    // Their printed quotations and invoices are under Reports & documents.
+    expect(visibleNavItems(["sales.view"]).map((i) => i.href)).toEqual(["/", "/sales", "/reports"]);
     expect(visibleSalesTabs(["sales.view"]).map((t) => t.label)).toEqual([
       "Orders",
       "Quotations",
@@ -95,10 +97,11 @@ describe("the menu with Sales in it", () => {
       "/materials",
       "/parties",
       "/hr",
+      "/reports",
       "/settings",
     ]);
     const seller = phoneTabs(visibleNavItems(["sales.view", "inventory.view", "parties.view"]));
-    expect(seller.tabs).toHaveLength(4);
-    expect(seller.more).toEqual([]);
+    expect(seller.tabs.map((i) => i.href)).toEqual(["/", "/sales", "/products", "/parties"]);
+    expect(seller.more.map((i) => i.href)).toEqual(["/reports"]);
   });
 });

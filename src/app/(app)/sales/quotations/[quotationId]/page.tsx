@@ -14,6 +14,7 @@ import { QuotationActions } from "@/components/sales/quotation-actions";
 import { QuoteItems } from "@/components/sales/quote-items";
 import { formatDay } from "@/lib/display";
 import { getQuotationScreenAction } from "@/server/actions/sales.actions";
+import { templateChoicesAction } from "@/server/actions/templates.actions";
 import { requireCompanyPage } from "@/server/pages/guards";
 
 export const metadata: Metadata = { title: "Quotation" };
@@ -36,7 +37,10 @@ export default async function QuotationPage({
 }) {
   await requireCompanyPage();
   const [{ quotationId }, query] = await Promise.all([params, searchParams]);
-  const result = await getQuotationScreenAction(quotationId);
+  const [result, templates] = await Promise.all([
+    getQuotationScreenAction(quotationId),
+    templateChoicesAction("QUOTATION"),
+  ]);
   if (!result.ok) {
     if (result.error.code === "NOT_FOUND") notFound();
     if (result.error.code === "FORBIDDEN") return <SalesNoAccess />;
@@ -92,7 +96,12 @@ export default async function QuotationPage({
             sending it again.
           </FormAlert>
         )}
-        <QuotationActions key={q.id} screen={screen} notice={notice} />
+        <QuotationActions
+          key={q.id}
+          screen={screen}
+          notice={notice}
+          templates={templates.ok ? templates.data : []}
+        />
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,8fr)_minmax(0,4fr)]">

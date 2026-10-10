@@ -945,10 +945,13 @@ run("printed documents", () => {
       printing.printDocument(env.ctx, { type: "QUOTATION", id: "missing" }),
       "NOT_FOUND",
     );
-    await expect(printing.printDocument(env.ctx, { type: "PAYSLIP", id: "x" })).rejects.toThrow();
+    await expectAppError(
+      printing.printDocument(env.ctx, { type: "PAYSLIP", id: "x" }),
+      "NOT_FOUND",
+    );
 
-    // Thirty prints a minute per person, counting the six asked for above.
-    for (let i = 0; i < 24; i++) await printing.printDocument(env.ctx, { type: "LETTERHEAD" });
+    // Thirty prints a minute per person, counting the seven asked for above.
+    for (let i = 0; i < 23; i++) await printing.printDocument(env.ctx, { type: "LETTERHEAD" });
     await expectAppError(printing.printDocument(env.ctx, { type: "LETTERHEAD" }), "RATE_LIMITED");
     await printing.printDocument(env.as.ACCOUNTS, { type: "LETTERHEAD" });
   });

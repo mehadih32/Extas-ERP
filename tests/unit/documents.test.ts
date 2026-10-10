@@ -393,7 +393,12 @@ describe("document model", () => {
       type: "PAYMENT_RECEIPT",
       id: "pay1",
     });
-    expect(printRequestSchema.safeParse({ type: "PAYSLIP", id: "x" }).success).toBe(false);
+    expect(printRequestSchema.parse({ type: "PAYSLIP", id: " item1 " })).toEqual({
+      type: "PAYSLIP",
+      id: "item1",
+    });
+    expect(printRequestSchema.safeParse({ type: "PAYSLIP" }).success).toBe(false);
+    expect(printRequestSchema.safeParse({ type: "SALARY_SHEET", id: "x" }).success).toBe(false);
     expect(printRequestSchema.safeParse({ type: "QUOTATION" }).success).toBe(false);
     expect(printRequestSchema.safeParse({ type: "PAYMENT_RECEIPT", id: "" }).success).toBe(false);
     expect(
@@ -407,7 +412,8 @@ describe("document model", () => {
       type: "PACKING_LIST",
       take: 20,
     });
-    expect(listDocumentsSchema.safeParse({ type: "PAYSLIP" }).success).toBe(false);
+    expect(listDocumentsSchema.parse({ type: "PAYSLIP" })).toEqual({ type: "PAYSLIP", take: 20 });
+    expect(listDocumentsSchema.safeParse({ type: "SALARY_SHEET" }).success).toBe(false);
   });
 });
 

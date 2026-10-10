@@ -21,6 +21,7 @@ import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import type { ActionError } from "@/lib/result";
+import { cn } from "@/lib/utils";
 import { RECEIVE_METHODS } from "@/modules/sales/choices";
 import type { BuyerOption } from "@/modules/sales/screens.service";
 import { receivePaymentAction, refundBuyerAction } from "@/server/actions/sales.actions";
@@ -50,6 +51,7 @@ export function FormDialog({
   onSubmit,
   onClose,
   children,
+  className,
 }: {
   title: string;
   description: React.ReactNode;
@@ -62,6 +64,8 @@ export function FormDialog({
   onClose: () => void;
   /** The fields, given the error of each field by its name. */
   children: (fieldError: (name: string) => string | undefined) => React.ReactNode;
+  /** A wider window ("sm:max-w-2xl") for a long text. */
+  className?: string;
 }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<ActionError>();
@@ -79,7 +83,7 @@ export function FormDialog({
 
   return (
     <Dialog open onOpenChange={(open) => !open && !pending && onClose()}>
-      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto">
+      <DialogContent className={cn("max-h-[calc(100dvh-2rem)] overflow-y-auto", className)}>
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>

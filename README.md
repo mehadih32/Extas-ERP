@@ -329,6 +329,36 @@ Built one module at a time, each in its own pull request. So far:
 
   Sending payslips by email or WhatsApp comes with the integrations.
 
+- **Reports & documents** (`/reports`, "Reports" on the phone), in three tabs:
+  - **Reports**: everyone's saved reports, or only one's own, newest first, each with its PDF
+    or Excel file to open or download again. **Make a report** opens the Report Builder: a
+    title, the period (today, this or last month, this or last financial year, the past week,
+    month or year, or chosen dates), the figures (key figures, sales, profit and loss, top
+    sellers, stock alerts; each person sees only the ones their role may), and how long the
+    lists are. **Show on screen** shows the report in the page; **Make PDF** and **Make
+    Excel** keep the file. A saved report shows what it covers and who made it, and can be
+    shown again for the same days, made again or deleted (by whoever made it, or a Super
+    Admin).
+  - **Printed documents**: every PDF made from the app that the person's role may print
+    (quotations, proformas, invoices, packing lists, challans, money receipts and refund
+    vouchers for sales; statements for whoever sees the ledgers; stock sheets; letters;
+    payslips for HR, payroll and Accounts), newest first and filtered by kind, each with its
+    file to open or download and a link to what it was printed for. People who write letters
+    print the blank letterhead here, or write a letter on one of the company's letter
+    templates, addressed to a buyer or supplier.
+  - **Templates** (Super Admin): the company's own designs for quotations, proforma invoices,
+    invoices, delivery challans and letters. A template is a Word file, an HTML page (uploaded,
+    or written here from a starting page), a PDF or a picture of the pad. On a Word or HTML
+    template each tag ({BuyerName}) is matched to its data, and tags the system does not know
+    are given their data by hand; on a PDF or picture the tags are placed by clicking the page
+    (positions in millimetres), with their size, width, line-up and letter case. **Try it**
+    fills it with the newest record of its kind. A template can be offered first, switched
+    off, renamed, given a new file or deleted.
+
+  Quotations, proformas, invoices and challans get a **Template** button next to their PDF
+  once the company has a template for them, and payslips (in HR & payroll and in My HR) get a
+  **PDF** button on the letterhead.
+
 The screens ask the same Server Actions as the API, so the backend's permissions decide what
 appears. With the built-in roles' default permissions:
 
@@ -467,6 +497,27 @@ and bringing an old advance forward needs `accounts.manage`. Someone holding onl
 linked to an employee, and shows only that employee's own records; it sits in the menu for
 people without HR & payroll and in the account menu for the others.
 
+Reports & documents follows the reports, printing and template permissions:
+
+| Role               | Reports | Printed documents                                  | Letters | Templates |
+| ------------------ | ------- | -------------------------------------------------- | ------- | --------- |
+| Super Admin        | Yes     | All, payslips included                             | Yes     | Yes       |
+| Accounts           | Yes     | Sales documents, statements, letters, payslips     | Yes     | No        |
+| Production Manager | Yes     | Stock sheets, letters                              | Yes     | No        |
+| Sales Executive    | No      | Sales documents, statements, stock sheets, letters | Yes     | No        |
+| Warehouse Team     | No      | Sales documents, stock sheets                      | No      | No        |
+| Employee           | No      | No (their own payslip PDF from My HR)              | No      | No        |
+
+Reports need `reports.export`, and each figure in a report its own permission (key figures
+and profit and loss the financials, sales `sales.view`, stock alerts `inventory.view`); a saved report
+opens only for people who may see every figure in it. Each kind of printed document needs the
+permission that prints it: `sales.view` for sales documents, `parties.ledger.view` for
+statements, `inventory.view` for stock sheets and `documents.letterhead` for letters. Payslips
+list for `hr.manage`, `hr.payroll` and `accounts.view`; an employee with `portal.self` prints
+only their own, from an approved payroll. Templates change with `templates.manage`, and
+whoever prints a kind of document may fill its active templates; addressing a letter to a
+buyer or supplier also needs `parties.view`.
+
 Settings follows the same rule. The Team tab needs `company.members.manage`. The Roles tab
 opens with `company.members.manage` (to read them) or `company.roles.manage` (to change them).
 Everyone can read the company details, and `company.settings` lets them be changed. Settings
@@ -526,6 +577,12 @@ For developers:
   who sees them are in `src/components/hr/tabs.ts`; My HR is hidden from the menu of people
   who reach HR & payroll (`noneOf` in `nav-items.ts`) and opens from their account menu.
   Payslips print with the browser (the menus and tabs carry `print:hidden`).
+- Reports & documents' rules (who may delete a saved report, which kinds of printed document
+  a person sees) live in `src/modules/reports/rules.ts`, and
+  `src/modules/reports/screens.service.ts` sends them as each screen's `can` flags with links
+  back only to records the person may open. The tabs and who sees them are in
+  `src/components/reports/tabs.ts`. Reports and printed files open in the browser with
+  `?inline=1` on their download address.
 - The phone's tab bar holds four sections. With more, the fifth tab is **More**, listing the
   other sections above the account menu (`phoneTabs` in `src/components/shell/nav-items.ts`).
   Between tablet and laptop widths the top bar uses short labels ("Parties"), and lists show

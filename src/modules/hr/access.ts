@@ -15,7 +15,7 @@ import type { CompanyContext } from "@/modules/auth/context";
  */
 
 /** Salaries, bank details, payslips and advances. */
-export function canSeeSalaries(ctx: CompanyContext): boolean {
+export function canSeeSalaries(ctx: Pick<CompanyContext, "can">): boolean {
   return ctx.can("hr.manage") || ctx.can("hr.payroll") || ctx.can("accounts.view");
 }
 

@@ -16,6 +16,7 @@ import { QuoteItems } from "@/components/sales/quote-items";
 import { localDay } from "@/lib/dates";
 import { formatDay } from "@/lib/display";
 import { getProformaScreenAction } from "@/server/actions/sales.actions";
+import { templateChoicesAction } from "@/server/actions/templates.actions";
 import { requireCompanyPage } from "@/server/pages/guards";
 
 export const metadata: Metadata = { title: "Proforma invoice" };
@@ -38,7 +39,10 @@ export default async function ProformaPage({
 }) {
   const ctx = await requireCompanyPage();
   const [{ proformaId }, query] = await Promise.all([params, searchParams]);
-  const result = await getProformaScreenAction(proformaId);
+  const [result, templates] = await Promise.all([
+    getProformaScreenAction(proformaId),
+    templateChoicesAction("PROFORMA_INVOICE"),
+  ]);
   if (!result.ok) {
     if (result.error.code === "NOT_FOUND") notFound();
     if (result.error.code === "FORBIDDEN") return <SalesNoAccess />;
@@ -103,6 +107,7 @@ export default async function ProformaPage({
           currency={currency}
           today={localDay(new Date(), ctx.company.timezone)}
           notice={notice}
+          templates={templates.ok ? templates.data : []}
         />
       </div>
 

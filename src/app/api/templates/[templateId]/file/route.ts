@@ -9,15 +9,19 @@ type Params = { templateId: string };
 
 export const dynamic = "force-dynamic";
 
-/** GET /api/templates/:templateId/file — the uploaded template file, to check or edit it. */
-export async function GET(_request: Request, context: { params: Promise<Params> }) {
+/**
+ * GET /api/templates/:templateId/file — the uploaded template file, to check or edit it. Add
+ * ?inline=1 to show a PDF or image template in the browser (Word and HTML always download).
+ */
+export async function GET(request: Request, context: { params: Promise<Params> }) {
   try {
     const { templateId } = await context.params;
+    const inline = ["1", "true"].includes(new URL(request.url).searchParams.get("inline") ?? "");
     const file = await templates.downloadTemplateSource(
       await requirePermission("templates.manage"),
       templateId,
     );
-    return fileResponse(file);
+    return fileResponse(file, inline ? "inline" : "attachment");
   } catch (error) {
     return apiErrorResponse(error);
   }

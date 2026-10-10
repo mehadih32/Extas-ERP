@@ -7,8 +7,8 @@ const day = z.iso.date();
 
 /**
  * What to print: a sales document by id (a money receipt by its payment's id, a
- * refund voucher by its refund's id), a statement, a stock sheet or the blank
- * letterhead.
+ * refund voucher by its refund's id), a statement, a stock sheet, the blank
+ * letterhead or a payslip (by its payroll line's id).
  */
 export const printRequestSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("QUOTATION"), id }),
@@ -36,13 +36,15 @@ export const printRequestSchema = z.discriminatedUnion("type", [
     includeEmpty: z.boolean().optional(),
   }),
   z.object({ type: z.literal("LETTERHEAD") }),
+  /** A payslip, by its payroll line's id. */
+  z.object({ type: z.literal("PAYSLIP"), id }),
 ]);
 
 export type PrintRequest = z.output<typeof printRequestSchema>;
 
 export const listDocumentsSchema = z.object({
   type: z.enum(PRINT_TYPES).optional(),
-  /** The quotation, invoice, packing list, challan, payment, refund, buyer, brand or style it was printed for. */
+  /** The quotation, invoice, packing list, challan, payment, refund, buyer, brand, style or payroll line it was printed for. */
   referenceId: id.optional(),
   partyId: id.optional(),
   take: z.coerce.number().int().min(1).max(100).default(20),

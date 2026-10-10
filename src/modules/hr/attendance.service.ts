@@ -4,6 +4,7 @@ import { atLocalTime, dateColumn, dateOnly, localDay, localTime, weekday } from 
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
+import { assertAllowed } from "@/lib/verdict";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { assertCanManageHr, requireLinkedEmployee } from "@/modules/hr/access";
@@ -15,8 +16,9 @@ import {
   loadEmploymentInputs,
   loadRules,
 } from "@/modules/hr/month-data";
-import { evaluateMonth, minutesToHours } from "@/modules/hr/payroll-calc";
+import { type EmploymentInput, evaluateMonth, minutesToHours } from "@/modules/hr/payroll-calc";
 import { assertMonthsOpen } from "@/modules/hr/period-lock";
+import { canMarkDay } from "@/modules/hr/rules";
 import {
   attendanceDaySchema,
   attendanceMonthSchema,
@@ -123,7 +125,8 @@ export async function markAttendance(ctx: CompanyContext, raw: unknown, meta?: R
   const companyId = ctx.company.id;
   const tz = ctx.company.timezone;
   const day = input.date;
-  if (day > today(ctx)) throw new AppError("VALIDATION", "Attendance cannot be marked ahead.");
+  // The month's payroll is checked inside the transaction (assertMonthsOpen).
+  assertAllowed(canMarkDay(day, today(ctx), new Set()));
   const ids = input.entries.map((e) => e.employeeId);
   const employees = await ctx.db.employee.findMany({ where: { id: { in: ids } } });
   const byId = new Map(employees.map((e) => [e.id, e]));
@@ -220,8 +223,22 @@ export async function clearAttendance(
   return { cleared: true, date: day };
 }
 
-/** Day counts per employee for a month (the figures payroll uses). */
-export async function getAttendanceSummary(ctx: CompanyContext, raw: unknown = {}) {
+/** Only the days up to `day` count: the current month so far. */
+function upTo(input: EmploymentInput, day: string | undefined): EmploymentInput {
+  if (!day) return input;
+  return { ...input, exitDate: input.exitDate && input.exitDate < day ? input.exitDate : day };
+}
+
+/**
+ * Day counts per employee for a month (the figures payroll uses). With
+ * `upTo`, the screens' current month so far: days still to come are left out
+ * rather than counted as present.
+ */
+export async function getAttendanceSummary(
+  ctx: CompanyContext,
+  raw: unknown = {},
+  options: { upTo?: string } = {},
+) {
   const q = attendanceMonthSchema.parse(raw);
   const month = q.month ?? thisMonth(ctx);
   const { from, to } = monthRange(month);
@@ -238,7 +255,7 @@ export async function getAttendanceSummary(ctx: CompanyContext, raw: unknown = {
     loadEmploymentInputs(companyId, employees, from, to),
   ]);
   const rows = employees.flatMap((e) => {
-    const f = evaluateMonth(month, rules, inputs.get(e.id)!);
+    const f = evaluateMonth(month, rules, upTo(inputs.get(e.id)!, options.upTo));
     if (!f) return [];
     return [
       {
@@ -267,8 +284,16 @@ export async function getAttendanceSummary(ctx: CompanyContext, raw: unknown = {
   };
 }
 
-/** One employee's month, day by day, with the totals payroll uses. */
-export async function employeeMonth(ctx: CompanyContext, employee: Employee, month: string) {
+/**
+ * One employee's month, day by day, with the totals payroll uses; with
+ * `upTo`, the totals count only the days up to it (this month so far).
+ */
+export async function employeeMonth(
+  ctx: CompanyContext,
+  employee: Employee,
+  month: string,
+  options: { upTo?: string } = {},
+) {
   const { from, to } = monthRange(month);
   const companyId = ctx.company.id;
   const [{ rules }, inputs, marks, holidays] = await Promise.all([
@@ -279,26 +304,30 @@ export async function employeeMonth(ctx: CompanyContext, employee: Employee, mon
     }),
     ctx.db.holiday.findMany({ where: { date: { gte: dateColumn(from), lte: dateColumn(to) } } }),
   ]);
-  const f = evaluateMonth(month, rules, inputs.get(employee.id)!);
+  const input = inputs.get(employee.id)!;
+  const f = evaluateMonth(month, rules, input);
+  const counted =
+    options.upTo && options.upTo < to ? evaluateMonth(month, rules, upTo(input, options.upTo)) : f;
   const markOf = new Map(marks.map((m) => [dateOnly(m.date), m]));
   const holidayOf = new Map(holidays.map((h) => [dateOnly(h.date), h.name]));
   return {
     employee: brief(employee),
     month,
     employed: f !== null,
-    totals: f
-      ? {
-          workingDays: f.workingDays,
-          presentDays: f.presentDays,
-          lateDays: f.lateDays,
-          absentDays: f.absentDays,
-          paidLeaveDays: f.paidLeaveDays,
-          unpaidLeaveDays: f.unpaidLeaveDays,
-          latePenaltyDays: f.latePenaltyDays,
-          unpaidDays: f.unpaidDays,
-          overtimeHours: minutesToHours(f.overtimeMinutes).toNumber(),
-        }
-      : null,
+    // Someone who starts later this month has nothing counted yet.
+    totals: !f
+      ? null
+      : {
+          workingDays: counted?.workingDays ?? 0,
+          presentDays: counted?.presentDays ?? 0,
+          lateDays: counted?.lateDays ?? 0,
+          absentDays: counted?.absentDays ?? 0,
+          paidLeaveDays: counted?.paidLeaveDays ?? 0,
+          unpaidLeaveDays: counted?.unpaidLeaveDays ?? 0,
+          latePenaltyDays: counted?.latePenaltyDays ?? 0,
+          unpaidDays: counted?.unpaidDays ?? 0,
+          overtimeHours: minutesToHours(counted?.overtimeMinutes ?? 0).toNumber(),
+        },
     days: (f?.days ?? []).map((d) => ({
       date: d.date,
       weekday: weekdayName(weekday(d.date)),
@@ -318,21 +347,26 @@ export async function getEmployeeAttendance(
   ctx: CompanyContext,
   employeeId: string,
   raw: unknown = {},
+  options: { upTo?: string } = {},
 ) {
   const q = attendanceMonthSchema.parse(raw);
   const employee = await ctx.db.employee.findUnique({ where: { id: employeeId } });
   if (!employee) throw new AppError("NOT_FOUND", "Employee not found.");
-  return employeeMonth(ctx, employee, q.month ?? thisMonth(ctx));
+  return employeeMonth(ctx, employee, q.month ?? thisMonth(ctx), options);
 }
 
 // =============================================================================
 // Employee portal: own month, check in and check out
 // =============================================================================
 
-export async function myAttendance(ctx: CompanyContext, raw: unknown = {}) {
+export async function myAttendance(
+  ctx: CompanyContext,
+  raw: unknown = {},
+  options: { upTo?: string } = {},
+) {
   const q = attendanceMonthSchema.parse(raw);
   const employee = await requireLinkedEmployee(ctx);
-  return employeeMonth(ctx, employee, q.month ?? thisMonth(ctx));
+  return employeeMonth(ctx, employee, q.month ?? thisMonth(ctx), options);
 }
 
 async function todaysMark(tx: Tx, employeeId: string, day: string) {

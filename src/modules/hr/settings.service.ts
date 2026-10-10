@@ -2,12 +2,14 @@ import { dateColumn, dateOnly, localDay } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
+import { assertAllowed } from "@/lib/verdict";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { assertCanManageHr } from "@/modules/hr/access";
 import { weekdayName } from "@/modules/hr/calendar";
 import { recountLeaveDaysTx } from "@/modules/hr/leave.service";
 import { assertMonthsOpen } from "@/modules/hr/period-lock";
+import { canSwitchPaid } from "@/modules/hr/rules";
 import {
   createHolidaysSchema,
   createLeaveTypeSchema,
@@ -231,12 +233,7 @@ export async function updateLeaveType(
     const approved = await ctx.db.leaveRequest.count({
       where: { leaveTypeId: type.id, status: "APPROVED" },
     });
-    if (approved > 0) {
-      throw new AppError(
-        "CONFLICT",
-        `${type.name} already has approved leave, so it cannot switch between paid and unpaid. Add a new leave type instead.`,
-      );
-    }
+    assertAllowed(canSwitchPaid(type, approved));
   }
   const updated = await ctx.db.leaveType.update({ where: { id: type.id }, data: input });
   await auditInCompany(ctx, meta, {

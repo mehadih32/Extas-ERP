@@ -227,6 +227,7 @@ export async function getFileForDownload(ctx: CompanyContext, fileId: string) {
       complianceDocuments: { select: { id: true }, take: 1 },
       templates: { select: { id: true }, take: 1 },
       expenses: { select: { id: true }, take: 1 },
+      leaveRequests: { select: { employee: { select: { userId: true } } }, take: 1 },
     },
   });
   if (!asset) throw new AppError("NOT_FOUND", "File not found.");
@@ -243,7 +244,13 @@ export async function getFileForDownload(ctx: CompanyContext, fileId: string) {
     (asset.expenses.length > 0 &&
       (ctx.can("expenses.manage") ||
         ctx.can("accounts.view") ||
-        ctx.can("accounts.payments.record")));
+        ctx.can("accounts.payments.record"))) ||
+    // A leave request's paper (a doctor's note): HR, and the employee it is for.
+    (asset.leaveRequests.length > 0 &&
+      (ctx.can("hr.view") ||
+        ctx.can("hr.manage") ||
+        ctx.can("hr.payroll") ||
+        asset.leaveRequests[0]!.employee.userId === ctx.user.id));
   // A raw material purchase's bill also opens to the people who see material purchases.
   const materialBill =
     !allowed &&

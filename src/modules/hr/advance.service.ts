@@ -6,6 +6,7 @@ import { nextDocumentNumber } from "@/lib/numbering";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
 import { lockRow, lockRows } from "@/lib/row-lock";
+import { assertAllowed } from "@/lib/verdict";
 import { money, ZERO } from "@/modules/accounts/balances";
 import { cashAccountFor } from "@/modules/accounts/cash-accounts";
 import { ensureControlAccounts } from "@/modules/accounts/control-accounts";
@@ -20,6 +21,13 @@ import type { CompanyContext } from "@/modules/auth/context";
 import { requireLinkedEmployee } from "@/modules/hr/access";
 import { employedOn } from "@/modules/hr/month-data";
 import type { RecoverableAdvance } from "@/modules/hr/payroll-calc";
+import {
+  canChangeAdvance,
+  canTakeAdvanceBack,
+  canUndoReturn,
+  canVoidAdvance,
+  isCashReturn,
+} from "@/modules/hr/rules";
 import {
   advanceReturnSchema,
   giveAdvanceSchema,
@@ -395,9 +403,7 @@ export async function updateAdvance(
       where: { id: advanceId, companyId: ctx.company.id },
     });
     if (!advance) throw new AppError("NOT_FOUND", "Advance not found.");
-    if (advance.status !== "OPEN") {
-      throw new AppError("CONFLICT", `${advance.number} is ${advance.status.toLowerCase()}.`);
-    }
+    assertAllowed(canChangeAdvance(advance));
     if (input.installmentAmount && money(input.installmentAmount).gt(advance.amount)) {
       throw new AppError("VALIDATION", "The installment is more than the advance.");
     }
@@ -455,9 +461,7 @@ export async function returnAdvance(
   const date = input.date ? toInstant(input.date, ctx.company.timezone) : new Date();
   await prisma.$transaction(async (tx) => {
     const advance = await lockAdvance(tx, ctx, advanceId);
-    if (advance.status !== "OPEN") {
-      throw new AppError("CONFLICT", `${advance.number} is ${advance.status.toLowerCase()}.`);
-    }
+    assertAllowed(canTakeAdvanceBack(advance));
     if (amount.gt(advance.outstanding)) {
       throw new AppError(
         "VALIDATION",
@@ -519,14 +523,13 @@ export async function voidAdvanceReturn(
   const { reason } = voidSchema.parse(raw);
   await prisma.$transaction(async (tx) => {
     const advance = await lockAdvance(tx, ctx, advanceId);
-    if (advance.status === "VOID") throw new AppError("CONFLICT", `${advance.number} is void.`);
     const settlement = await tx.advanceSettlement.findFirst({
       where: { id: settlementId, advanceId: advance.id },
     });
-    if (!settlement || settlement.kind !== "CASH_RETURN" || !settlement.journalEntryId) {
+    if (!settlement?.journalEntryId || !isCashReturn({ kind: settlement.kind, hasEntry: true })) {
       throw new AppError("NOT_FOUND", "Cash return not found.");
     }
-    if (settlement.reversedAt) throw new AppError("CONFLICT", "This return was already undone.");
+    assertAllowed(canUndoReturn(advance, { reversed: settlement.reversedAt !== null }));
     await reverseJournalEntry(tx, settlement.journalEntryId, {
       description: `Undo return on ${advance.number}: ${reason}`,
       postedById: ctx.user.id,
@@ -573,17 +576,10 @@ export async function voidAdvance(
       assertCanPayMoney(ctx, "Only Accounts can void advances.");
       assertCanReceiveMoney(ctx, "Only Accounts can void advances.");
     }
-    if (advance.status === "VOID")
-      throw new AppError("CONFLICT", `${advance.number} is already void.`);
     const live = await tx.advanceSettlement.count({
       where: { advanceId: advance.id, reversedAt: null },
     });
-    if (live > 0) {
-      throw new AppError(
-        "CONFLICT",
-        `Part of ${advance.number} has been recovered or spent; undo those first or take the rest back.`,
-      );
-    }
+    assertAllowed(canVoidAdvance(advance, live));
     if (advance.journalEntryId) {
       await reverseJournalEntry(tx, advance.journalEntryId, {
         description: `Void ${advance.number}: ${reason}`,

@@ -1,6 +1,7 @@
 import {
   FactoryIcon,
   HandshakeIcon,
+  IdCardIcon,
   LandmarkIcon,
   LayoutDashboardIcon,
   type LucideIcon,
@@ -8,6 +9,7 @@ import {
   SettingsIcon,
   ShirtIcon,
   SpoolIcon,
+  UsersRoundIcon,
   WalletIcon,
 } from "lucide-react";
 
@@ -38,6 +40,19 @@ const ACCOUNTS_KEYS: readonly PermissionKey[] = [
   "accounts.view",
   "accounts.payments.record",
   "expenses.manage",
+];
+
+/**
+ * The permissions that open HR & payroll: employees, attendance and leave (the
+ * HR keys), payroll for Accounts (accounts.view) and the advances register for
+ * whoever pays advances out (accounts.payments.record).
+ */
+export const HR_KEYS: readonly PermissionKey[] = [
+  "hr.view",
+  "hr.manage",
+  "hr.payroll",
+  "accounts.view",
+  "accounts.payments.record",
 ];
 
 export const NAV_ITEMS: readonly NavItem[] = [
@@ -92,6 +107,15 @@ export const NAV_ITEMS: readonly NavItem[] = [
     anyOf: ["parties.view", "parties.ledger.view"],
   },
   {
+    // Employees, attendance, leave, payroll, salary advances, holidays and HR rules
+    // (components/hr/tabs.ts).
+    href: "/hr",
+    label: "HR & payroll",
+    shortLabel: "HR",
+    icon: UsersRoundIcon,
+    anyOf: HR_KEYS,
+  },
+  {
     // Everyone else who spends company money records their own expenses as
     // claims; it is the Expenses tab of Accounts, reached from its own entry.
     href: "/accounts/expenses",
@@ -99,6 +123,15 @@ export const NAV_ITEMS: readonly NavItem[] = [
     icon: WalletIcon,
     anyOf: ["expenses.create"],
     noneOf: ACCOUNTS_KEYS,
+  },
+  {
+    // The employee's own attendance and check-in, leave, payslips and advances.
+    // People who open HR & payroll reach theirs from the account menu instead.
+    href: "/me",
+    label: "My HR",
+    icon: IdCardIcon,
+    anyOf: ["portal.self"],
+    noneOf: HR_KEYS,
   },
   {
     // Team, roles and company details (components/settings/tabs.ts).

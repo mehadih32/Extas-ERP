@@ -4,6 +4,8 @@ export const ROUTES = {
   signIn: "/sign-in",
   changePassword: "/change-password",
   selectCompany: "/select-company",
+  /** The employee's own HR records. */
+  myHr: "/me",
 } as const;
 
 /** Screens a person is never sent back to after signing in (they would loop). */

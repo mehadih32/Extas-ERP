@@ -1,4 +1,4 @@
-import { type Employee, type PayrollItem, Prisma } from "@prisma/client";
+import { type Employee, type PayrollItem, type PayrollStatus, Prisma } from "@prisma/client";
 
 import { amountInWords } from "@/lib/amount-words";
 import { dateOnly, localDay, startOfDayInZone, toInstant } from "@/lib/dates";
@@ -7,6 +7,7 @@ import { nextDocumentNumber } from "@/lib/numbering";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
 import { lockRow } from "@/lib/row-lock";
+import { assertAllowed } from "@/lib/verdict";
 import { money, ZERO } from "@/modules/accounts/balances";
 import { cashAccountFor } from "@/modules/accounts/cash-accounts";
 import { ensureControlAccounts } from "@/modules/accounts/control-accounts";
@@ -44,6 +45,12 @@ import {
   scheduledRecovery,
 } from "@/modules/hr/payroll-calc";
 import { lockPayrollMonths } from "@/modules/hr/period-lock";
+import {
+  canChangePayroll,
+  canPayPayroll,
+  canReopenPayroll,
+  canVoidSalaryPayment,
+} from "@/modules/hr/rules";
 import {
   createPayrollSchema,
   listPayrollSchema,
@@ -490,13 +497,8 @@ async function lockRun(tx: Tx, ctx: CompanyContext, runId: string) {
   return run;
 }
 
-function assertDraft(run: { status: string; year: number; month: number }) {
-  if (run.status !== "DRAFT") {
-    throw new AppError(
-      "CONFLICT",
-      `The payroll for ${monthLabel(runMonth(run))} is ${run.status.toLowerCase()}; reopen it to change it.`,
-    );
-  }
+function assertDraft(run: { status: PayrollStatus; year: number; month: number }) {
+  assertAllowed(canChangePayroll(run));
 }
 
 // =============================================================================
@@ -863,14 +865,8 @@ export async function reopenPayrollRun(
   const { reason } = reopenPayrollSchema.parse(raw);
   await prisma.$transaction(async (tx) => {
     const run = await lockRun(tx, ctx, runId);
-    if (run.status === "DRAFT") throw new AppError("CONFLICT", "This payroll is still a draft.");
     const live = await tx.payrollPayment.count({ where: { runId: run.id, voidedAt: null } });
-    if (live > 0) {
-      throw new AppError(
-        "CONFLICT",
-        "Salaries from this payroll were paid; void those payments first.",
-      );
-    }
+    assertAllowed(canReopenPayroll(run, live));
     const label = monthLabel(runMonth(run));
     if (run.journalEntryId) {
       const original = await tx.journalEntry.findUniqueOrThrow({
@@ -930,13 +926,8 @@ export async function payPayrollRun(
   const paymentId = await prisma.$transaction(async (tx) => {
     const run = await lockRun(tx, ctx, runId);
     const label = monthLabel(runMonth(run));
-    if (run.status === "DRAFT") {
-      throw new AppError("CONFLICT", `Approve the payroll for ${label} before paying it.`);
-    }
-    if (run.status === "PAID") {
-      throw new AppError("CONFLICT", `The payroll for ${label} is already fully paid.`);
-    }
     const unpaid = run.items.filter((i) => !i.paymentId && i.netPay.gt(0));
+    assertAllowed(canPayPayroll(run, unpaid.length));
     let items = unpaid;
     if (input.itemIds) {
       const wanted = new Set(input.itemIds);
@@ -1035,7 +1026,9 @@ export async function voidPayrollPayment(
     const run = await lockRun(tx, ctx, found.runId);
     await lockRow(tx, "PayrollPayment", paymentId);
     const payment = await tx.payrollPayment.findUniqueOrThrow({ where: { id: paymentId } });
-    if (payment.voidedAt) throw new AppError("CONFLICT", `${payment.number} is already void.`);
+    assertAllowed(
+      canVoidSalaryPayment({ number: payment.number, voided: payment.voidedAt !== null }),
+    );
     if (payment.journalEntryId) {
       await reverseJournalEntry(tx, payment.journalEntryId, {
         description: `Void ${payment.number}: ${reason}`,

@@ -1,8 +1,10 @@
 import { BottomNav } from "@/components/shell/bottom-nav";
 import { initialsOf, roleLabel } from "@/components/shell/labels";
+import { visibleNavItems } from "@/components/shell/nav-items";
 import { TopBar } from "@/components/shell/top-bar";
 import type { ShellUser } from "@/components/shell/types";
 import { getCurrentSession } from "@/modules/auth/context";
+import { ROUTES } from "@/lib/routes";
 import { getMe } from "@/modules/auth/me.service";
 
 /**
@@ -21,6 +23,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     email: me.user.email,
     initials: initialsOf(me.user.name, me.user.email),
     roleName: roleLabel(me.role, me.user.isSuperAdmin),
+    myHr:
+      me.permissions.includes("portal.self") &&
+      !visibleNavItems(me.permissions).some((item) => item.href === ROUTES.myHr),
   };
   const companies = me.companies.map((c) => ({ id: c.id, name: c.name, roleName: c.roleName }));
   const activeCompany = { id: me.activeCompany.id, name: me.activeCompany.name };
@@ -41,7 +46,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       />
       <main
         id="main"
-        className="mx-auto w-full max-w-7xl flex-1 px-4 pt-7 pb-28 sm:px-6 md:pt-10 md:pb-16 lg:px-8"
+        className="mx-auto w-full max-w-7xl flex-1 px-4 pt-7 pb-28 sm:px-6 md:pt-10 md:pb-16 lg:px-8 print:max-w-none print:p-0"
       >
         {children}
       </main>

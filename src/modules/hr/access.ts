@@ -48,6 +48,11 @@ export function isCompanyOwner(ctx: CompanyContext): boolean {
   return ctx.user.isSuperAdmin || ctx.role?.systemRole === "SUPER_ADMIN";
 }
 
+/** The signed-in person, for the rules about one's own record (hr/rules.ts). */
+export function actingAs(ctx: CompanyContext) {
+  return { userId: ctx.user.id, isOwner: isCompanyOwner(ctx), manage: ctx.can("hr.manage") };
+}
+
 /** Nobody approves their own leave or changes their own salary, except a Super Admin. */
 export function assertNotOwnRecord(
   ctx: CompanyContext,

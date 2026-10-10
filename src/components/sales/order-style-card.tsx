@@ -397,15 +397,18 @@ function MatrixGrid({
         <caption className="sr-only">Pieces by colour and size, with the pieces ready</caption>
         <thead>
           <tr className="text-[0.8125rem] text-muted-foreground">
-            <th scope="col" className="sticky left-0 z-10 bg-card py-2 pr-3 text-left font-medium">
+            <th
+              scope="col"
+              className="sticky left-0 z-10 bg-card py-2 pr-2 text-left font-medium sm:pr-3"
+            >
               Colour
             </th>
             {sizes.map((s) => (
-              <th key={s.id} scope="col" className="px-1 py-2 text-center font-medium">
+              <th key={s.id} scope="col" className="px-0.5 py-2 text-center font-medium sm:px-1">
                 {s.name}
               </th>
             ))}
-            <th scope="col" className="py-2 pl-2 text-right font-medium">
+            <th scope="col" className="hidden py-2 pl-2 text-right font-medium sm:table-cell">
               Total
             </th>
           </tr>
@@ -420,18 +423,18 @@ function MatrixGrid({
               <tr key={row.color.id}>
                 <th
                   scope="row"
-                  className="sticky left-0 z-10 max-w-36 bg-card py-1.5 pr-3 text-left font-normal"
+                  className="sticky left-0 z-10 max-w-24 bg-card py-1.5 pr-2 text-left font-normal break-words sm:max-w-36 sm:pr-3"
                 >
                   <ColorName name={row.color.name} hexCode={row.color.hexCode} />
                 </th>
                 {sizes.map((size) => {
                   const cell = row.cells[size.column];
-                  if (!cell) return <td key={size.id} className="px-1 py-1.5" />;
+                  if (!cell) return <td key={size.id} className="px-0.5 py-1.5 sm:px-1" />;
                   const ready = Math.max(cell.available, 0) + (own[cell.variantId] ?? 0);
                   const isShort = Boolean(short[cell.sku]);
                   const bad = Boolean(fieldError(`qty.${cell.variantId}`));
                   return (
-                    <td key={size.id} className="px-1 py-1.5 align-top">
+                    <td key={size.id} className="px-0.5 py-1.5 align-top sm:px-1">
                       <Input
                         inputMode="numeric"
                         value={block.quantities[cell.variantId] ?? ""}
@@ -445,7 +448,7 @@ function MatrixGrid({
                         aria-label={`${row.color.name} ${size.name}, pieces (${ready} ready)`}
                         aria-invalid={bad || isShort}
                         className={cn(
-                          "h-9 w-16 px-2 text-right tabular-nums",
+                          "h-9 w-[3.25rem] px-1 text-right tabular-nums sm:w-16 sm:px-2",
                           isShort && "border-amber-500 focus-visible:border-amber-500",
                         )}
                       />
@@ -465,7 +468,7 @@ function MatrixGrid({
                     </td>
                   );
                 })}
-                <td className="py-1.5 pl-2 text-right align-top font-medium tabular-nums">
+                <td className="hidden py-1.5 pl-2 text-right align-top font-medium tabular-nums sm:table-cell">
                   <span className="inline-block pt-2">{formatCount(rowTotal, currency)}</span>
                 </td>
               </tr>
@@ -477,16 +480,16 @@ function MatrixGrid({
             <tr className="text-[0.8125rem] text-muted-foreground">
               <th
                 scope="row"
-                className="sticky left-0 z-10 border-t bg-card py-2 pr-3 text-left font-medium"
+                className="sticky left-0 z-10 border-t bg-card py-2 pr-2 text-left font-medium sm:pr-3"
               >
                 Total
               </th>
               {sizes.map((s) => (
-                <td key={s.id} className="border-t px-1 py-2 text-center tabular-nums">
+                <td key={s.id} className="border-t px-0.5 py-2 text-center tabular-nums sm:px-1">
                   {formatCount(sizeTotal(s.column), currency)}
                 </td>
               ))}
-              <td className="border-t py-2 pl-2 text-right font-medium text-foreground tabular-nums">
+              <td className="hidden border-t py-2 pl-2 text-right font-medium text-foreground tabular-nums sm:table-cell">
                 {formatCount(blockPieces(block), currency)}
               </td>
             </tr>

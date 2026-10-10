@@ -1203,7 +1203,7 @@ export function OrderForm({ form: data }: { form: OrderFormData }) {
           <span className="text-muted-foreground">{formatCount(pieces, currency)} pcs · </span>
           <span className="font-medium">{money(fixed2(total), currency)}</span>
         </p>
-        <div className="grid grid-cols-2 gap-2 sm:flex">
+        <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-2 sm:flex">
           {step === 0 ? (
             <Button asChild variant="outline">
               <Link

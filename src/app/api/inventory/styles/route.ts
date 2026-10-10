@@ -5,7 +5,7 @@ import * as styles from "@/modules/inventory/style.service";
 
 export const dynamic = "force-dynamic";
 
-/** GET /api/inventory/styles?categoryId=&brandId=&search=&includeInactive=&cursor=&take= */
+/** GET /api/inventory/styles?categoryId=&brandId=&search=&includeInactive=&archived=&cursor=&take= */
 export const GET = apiRoute(async (request) =>
   styles.listStyles(
     await requirePermission("inventory.view"),

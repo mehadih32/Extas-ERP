@@ -5,7 +5,8 @@ import type { CompanyContext } from "@/modules/auth/context";
 import { availableByVariant } from "@/modules/inventory/stock.service";
 import { collectOrderLines, type RequestedLine } from "@/modules/sales/totals";
 
-const WHOLESALE_CHANNELS: SalesChannel[] = ["WHOLESALE", "B2B_PREORDER"];
+/** Channels sold at wholesale prices; the rest (shop, website, social) are retail. */
+export const WHOLESALE_CHANNELS: SalesChannel[] = ["WHOLESALE", "B2B_PREORDER"];
 
 export type ResolvedLine = {
   variantId: string;

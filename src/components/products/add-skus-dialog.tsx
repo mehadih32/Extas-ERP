@@ -36,8 +36,9 @@ function Choice({
 }) {
   return (
     <label
+      title={locked ? "Already in this style" : undefined}
       className={cn(
-        "flex min-h-11 cursor-pointer items-center gap-2.5 rounded-md border px-3 text-sm transition-colors md:min-h-9",
+        "flex min-h-11 min-w-0 cursor-pointer items-start gap-2.5 rounded-md border px-3 py-2.5 text-sm leading-snug transition-colors md:min-h-9 md:py-2",
         checked ? "border-primary/40 bg-secondary" : "hover:bg-muted",
         locked && "cursor-default opacity-70",
       )}
@@ -47,7 +48,7 @@ function Choice({
         checked={checked}
         disabled={locked}
         onChange={(e) => onChange(e.target.checked)}
-        className="size-4 cursor-pointer accent-primary disabled:cursor-default"
+        className="mt-px size-4 shrink-0 cursor-pointer accent-primary disabled:cursor-default"
       />
       {children}
     </label>
@@ -77,6 +78,7 @@ export function AddSkusDialog({
   const [error, setError] = useState<ActionError>();
   const [pending, startTransition] = useTransition();
   const adding = newSkuCount(colors.size, sizes.size, existing);
+  const allSizes = sizes.size === screen.sizes.length;
 
   const toggle = (set: Set<string>, id: string, on: boolean) => {
     const next = new Set(set);
@@ -103,7 +105,7 @@ export function AddSkusDialog({
 
   return (
     <Dialog open onOpenChange={(open) => !open && !pending && onClose()}>
-      <DialogContent className="sm:max-w-xl">
+      <DialogContent className="grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Add colours or sizes</DialogTitle>
           <DialogDescription>
@@ -119,10 +121,15 @@ export function AddSkusDialog({
             . Add them there first.
           </FormAlert>
         ) : (
-          <div className="grid gap-6">
+          <div className="-mx-2 grid min-h-0 content-start gap-6 overflow-y-auto overscroll-contain px-2 py-1">
+            {(ownColors.size > 0 || ownSizes.size > 0) && (
+              <p className="text-[0.8125rem] text-muted-foreground">
+                The style&apos;s own colours and sizes stay ticked; SKUs are never removed here.
+              </p>
+            )}
             <fieldset className="grid gap-3">
               <legend className="eyebrow mb-3">Colours</legend>
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))] gap-2">
                 {screen.colors.map((c) => (
                   <Choice
                     key={c.id}
@@ -130,15 +137,28 @@ export function AddSkusDialog({
                     locked={ownColors.has(c.id)}
                     onChange={(on) => setColors((set) => toggle(set, c.id, on))}
                   >
-                    <Swatch hex={c.hexCode} />
-                    <span className="truncate">{c.name}</span>
+                    <Swatch hex={c.hexCode} className="mt-0.5" />
+                    <span className="min-w-0 break-words">{c.name}</span>
                   </Choice>
                 ))}
               </div>
             </fieldset>
             <fieldset className="grid gap-3">
-              <legend className="eyebrow mb-3">Sizes</legend>
-              <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+              <legend className="mb-3 flex w-full items-center justify-between gap-3">
+                <span className="eyebrow">Sizes</span>
+                {!allSizes && (
+                  <Button
+                    type="button"
+                    variant="link"
+                    size="sm"
+                    className="h-auto p-0"
+                    onClick={() => setSizes(new Set(screen.sizes.map((s) => s.id)))}
+                  >
+                    Tick all sizes
+                  </Button>
+                )}
+              </legend>
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(5rem,1fr))] gap-2">
                 {screen.sizes.map((s) => (
                   <Choice
                     key={s.id}
@@ -146,34 +166,38 @@ export function AddSkusDialog({
                     locked={ownSizes.has(s.id)}
                     onChange={(on) => setSizes((set) => toggle(set, s.id, on))}
                   >
-                    {s.name}
+                    <span className="min-w-0 break-words">{s.name}</span>
                   </Choice>
                 ))}
               </div>
             </fieldset>
+          </div>
+        )}
+        <div className="grid gap-4 border-t pt-4">
+          {!missing && (
             <p className="text-sm" role="status">
               {adding === 0
                 ? "Tick a colour and a size to add."
                 : `This adds ${adding} ${adding === 1 ? "SKU" : "SKUs"}.`}
             </p>
-          </div>
-        )}
-        {error && error.code !== "INTERNAL" && <FormAlert>{error.message}</FormAlert>}
-        <DialogFooter>
-          <Button type="button" variant="outline" onClick={onClose} disabled={pending}>
-            Cancel
-          </Button>
-          {!missing && (
-            <Button type="button" onClick={save} disabled={pending || adding === 0}>
-              {pending && <LoaderCircleIcon className="animate-spin" aria-hidden />}
-              {pending
-                ? "Adding"
-                : adding > 0
-                  ? `Add ${adding} ${adding === 1 ? "SKU" : "SKUs"}`
-                  : "Add"}
-            </Button>
           )}
-        </DialogFooter>
+          {error && error.code !== "INTERNAL" && <FormAlert>{error.message}</FormAlert>}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose} disabled={pending}>
+              Cancel
+            </Button>
+            {!missing && (
+              <Button type="button" onClick={save} disabled={pending || adding === 0}>
+                {pending && <LoaderCircleIcon className="animate-spin" aria-hidden />}
+                {pending
+                  ? "Adding"
+                  : adding > 0
+                    ? `Add ${adding} ${adding === 1 ? "SKU" : "SKUs"}`
+                    : "Add"}
+              </Button>
+            )}
+          </DialogFooter>
+        </div>
         {error?.code === "INTERNAL" && (
           <ErrorDialog
             code={error.errorId ?? "ERR-UNKNOWN"}

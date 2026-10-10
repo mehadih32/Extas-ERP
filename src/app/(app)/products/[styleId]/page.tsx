@@ -8,9 +8,10 @@ import { StockHistory } from "@/components/products/stock-history";
 import { HISTORY_PAGE_SIZE } from "@/components/products/stock-history-view";
 import { StockMatrix } from "@/components/products/stock-matrix";
 import { StyleActions } from "@/components/products/style-actions";
+import { StyleSalesKpis } from "@/components/products/style-sales";
 import { BackLink } from "@/components/settings/back-link";
 import { NoAccess } from "@/components/settings/no-access";
-import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/sales/badges";
 import { getStyleScreenAction, listStockMovementsAction } from "@/server/actions/inventory.actions";
 import { requireCompanyPage } from "@/server/pages/guards";
 
@@ -71,16 +72,18 @@ export default async function StylePage({
   if (style.fabric) facts.push(["Fabric", style.fabric]);
 
   return (
-    <div className="grid gap-8 md:gap-10">
+    <div className="grid grid-cols-1 gap-8 md:gap-10">
       <div className="grid gap-6">
-        <BackLink href="/products">All styles</BackLink>
+        <BackLink href={style.isActive ? "/products" : "/products/archived"}>
+          {style.isActive ? "All styles" : "Archived styles"}
+        </BackLink>
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <span className="eyebrow">{style.code}</span>
             {!style.isActive && (
-              <Badge variant="outline" className="text-muted-foreground">
+              <StatusBadge tone="closed" className="rounded-full px-2">
                 Archived
-              </Badge>
+              </StatusBadge>
             )}
           </div>
           <h2 className="mt-2 font-serif text-[1.75rem] leading-tight text-primary">
@@ -92,6 +95,7 @@ export default async function StylePage({
             </p>
           )}
         </div>
+        {screen.sales && <StyleSalesKpis sales={screen.sales} currency={currency} />}
         <dl className="grid grid-cols-2 gap-x-6 gap-y-4 sm:flex sm:flex-wrap sm:gap-x-10">
           {facts.map(([label, value]) => (
             <div key={label} className="min-w-0">
@@ -103,7 +107,7 @@ export default async function StylePage({
         {!style.isActive && (
           <FormAlert tone="note">
             This style is archived: it cannot be sold or received from production until it is
-            restored.
+            unarchived. Its history stays in every report.
           </FormAlert>
         )}
         <StyleActions key={style.id} screen={screen} notice={notice} />

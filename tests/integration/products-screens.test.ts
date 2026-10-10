@@ -36,8 +36,8 @@ vi.mock("next/navigation", () => ({
 vi.mock("next/cache", () => ({ revalidatePath: () => undefined, revalidateTag: () => undefined }));
 
 import NewStylePage from "@/app/(app)/products/new/page";
-import StylesPage from "@/app/(app)/products/page";
 import StockCountPage from "@/app/(app)/products/stock-count/page";
+import { StyleListPage } from "@/components/products/style-list-page";
 import { visibleProductsTabs } from "@/components/products/tabs";
 import { NoAccess } from "@/components/settings/no-access";
 import { visibleNavItems } from "@/components/shell/nav-items";
@@ -51,7 +51,11 @@ import * as catalog from "@/modules/inventory/catalog.service";
 import * as matrix from "@/modules/inventory/matrix.service";
 import * as stock from "@/modules/inventory/stock.service";
 import * as styles from "@/modules/inventory/style.service";
+import * as parties from "@/modules/parties/party.service";
+import * as documents from "@/modules/sales/documents.service";
+import * as orders from "@/modules/sales/order.service";
 import {
+  archiveStylesAction,
   createBrandAction,
   createColorAction,
   createSizeAction,
@@ -74,6 +78,7 @@ import {
   moveToBadStockAction,
   recordStockCountAction,
   updateBrandAction,
+  updateCategoryAction,
   updateColorAction,
   updateStyleAction,
   updateVariantAction,
@@ -204,7 +209,7 @@ run("Products screens", () => {
         visibleProductsTabs(ctx.permissions).map((t) => t.href),
         who,
       ).toEqual([
-        ...(view ? ["/products"] : []),
+        ...(view ? ["/products", "/products/archived"] : []),
         ...(manage ? ["/products/stock-count"] : []),
         ...(view ? ["/products/bad-stock", "/products/setup"] : []),
       ]);
@@ -227,8 +232,10 @@ run("Products screens", () => {
       }
 
       // The pages show "not part of your role" in the same cases.
-      const list = await StylesPage({ searchParams: Promise.resolve({}) });
-      expect(list.type === NoAccess, `${who}: styles page`).toBe(!view);
+      for (const archived of [false, true]) {
+        const list = await StyleListPage({ searchParams: Promise.resolve({}), archived });
+        expect(list.type === NoAccess, `${who}: styles page`).toBe(!view);
+      }
       const adding = await NewStylePage();
       expect(adding.type === NoAccess, `${who}: new style page`).toBe(!manage);
       const counting = await StockCountPage({ searchParams: Promise.resolve({}) });
@@ -470,4 +477,160 @@ run("Products screens", () => {
       /Stock changed while you were counting/,
     );
   }, 30_000);
+
+  it("moves archived styles to their own tab and suggests archiving the long-empty ones", async () => {
+    const env = await shop();
+    const DAY = 86_400_000;
+    const ago = (days: number) => new Date(Date.now() - days * DAY);
+    const list = async (archived: boolean) =>
+      data(await getStyleListAction({ archived: archived || undefined }), "list");
+
+    await as(env, "owner");
+    // The Plain Tee never had stock; added seven months ago, it is suggested.
+    await prisma.style.update({ where: { id: env.tee.id }, data: { createdAt: ago(210) } });
+    let active = await list(false);
+    expect(active.stale.map((st) => st.code)).toEqual(["EX-TS-001"]);
+    expect(active.stale[0]!.since).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    // Categories count the styles in them and in the ones under them.
+    const tops = active.categories.find((c) => c.name === "Tops")!;
+    expect(active.counts[tops.id]).toBe(2);
+    expect(active.counts[env.polos.id]).toBe(1);
+
+    // The Classic Polo has stock, so it is never suggested, even when long untouched.
+    await prisma.stockMovement.updateMany({ data: { createdAt: ago(400) } });
+    await prisma.style.update({ where: { id: env.polo.id }, data: { createdAt: ago(400) } });
+    expect((await list(false)).stale.map((st) => st.code)).toEqual(["EX-TS-001"]);
+
+    // A style on an open order or being made is not suggested either.
+    const buyer = (await parties.createParty(env.owner, { kind: "BUYER", name: "Shop One" })).party;
+    const teeS = await prisma.productVariant.findFirstOrThrow({ where: { styleId: env.tee.id } });
+    const draft = await orders.createOrder(env.owner, {
+      channel: "B2B_PREORDER",
+      partyId: buyer.id,
+      lines: [{ variantId: teeS.id, quantity: 5 }],
+      forceOverride: { reason: "Made to order" },
+      documents: { invoice: false },
+    });
+    expect((await list(false)).stale).toEqual([]);
+    await prisma.salesOrder.update({ where: { id: draft.id }, data: { status: "CANCELLED" } });
+    expect((await list(false)).stale).toHaveLength(1);
+    // Movements after the cutoff keep it off the list.
+    await prisma.style.update({ where: { id: env.tee.id }, data: { createdAt: ago(10) } });
+    expect((await list(false)).stale).toEqual([]);
+    await prisma.style.update({ where: { id: env.tee.id }, data: { createdAt: ago(210) } });
+
+    // Only people who may manage the stock see the hint or archive.
+    for (const who of ["sales", "store"] as const) {
+      const ctx = await as(env, who);
+      const manage = ctx.can("inventory.manage");
+      expect((await list(false)).stale.length > 0, who).toBe(manage);
+      if (!manage) {
+        const refused = await archiveStylesAction({ styleIds: [env.tee.id] });
+        expect(refused.ok ? "allowed" : refused.error.code, who).toBe("FORBIDDEN");
+      }
+    }
+
+    await as(env, "owner");
+    expect(
+      data(await archiveStylesAction({ styleIds: [env.tee.id, env.tee.id] }), "archive"),
+    ).toEqual({ archived: 1 });
+    // Archiving again changes nothing.
+    expect(data(await archiveStylesAction({ styleIds: [env.tee.id] }), "again")).toEqual({
+      archived: 0,
+    });
+    active = await list(false);
+    expect(active.items.map((st) => st.code)).toEqual(["EX-PL-001"]);
+    expect(active.stale).toEqual([]);
+    expect(active.counts[tops.id]).toBe(1);
+    const archived = await list(true);
+    expect(archived.items.map((st) => st.code)).toEqual(["EX-TS-001"]);
+    expect(archived.items[0]!.isActive).toBe(false);
+    expect(archived.stale).toEqual([]);
+    expect(archived.counts[tops.id]).toBe(1);
+    expect(archived.counts[env.polos.id]).toBeUndefined();
+    const audit = await prisma.auditLog.findFirst({
+      where: { entityId: env.tee.id },
+      orderBy: { createdAt: "desc" },
+    });
+    expect(audit?.summary).toBe("Archived style EX-TS-001");
+
+    // Unarchiving brings it back.
+    data(await updateStyleAction(env.tee.id, { isActive: true }), "unarchive");
+    expect((await list(true)).items).toEqual([]);
+    expect((await list(false)).items).toHaveLength(2);
+  }, 60_000);
+
+  it("shows a style's sales split into wholesale and retail, to people who see sales", async () => {
+    const env = await shop();
+    const buyer = (await parties.createParty(env.owner, { kind: "BUYER", name: "Shop One" })).party;
+    const navyM = await prisma.productVariant.findFirstOrThrow({
+      where: { sku: "EX-PL-001-NAVY-M" },
+    });
+    const teeS = await prisma.productVariant.findFirstOrThrow({ where: { styleId: env.tee.id } });
+    await stock.recordStockCount(env.owner, {
+      mode: "OPENING",
+      unitCost: 300,
+      lines: [
+        { variantId: navyM.id, quantity: 20 },
+        { variantId: teeS.id, quantity: 20 },
+      ],
+    });
+    const sell = async (
+      channel: "WHOLESALE" | "POS" | "WEBSITE",
+      lines: Array<{ variantId: string; quantity: number; unitPrice: number }>,
+      discount?: number,
+    ) => {
+      const order = await orders.createOrder(env.owner, {
+        channel,
+        partyId: channel === "WHOLESALE" ? buyer.id : undefined,
+        lines,
+        discount,
+        documents: { invoice: false },
+      });
+      await documents.issueInvoice(env.owner, order.id, {});
+      return order;
+    };
+    // Wholesale: 4 polos and 2 tees at 900 less 600 off the order: the polos carry 400 of it.
+    await sell(
+      "WHOLESALE",
+      [
+        { variantId: navyM.id, quantity: 4, unitPrice: 900 },
+        { variantId: teeS.id, quantity: 2, unitPrice: 900 },
+      ],
+      600,
+    );
+    await sell("POS", [{ variantId: navyM.id, quantity: 1, unitPrice: 1450 }]);
+    await sell("WEBSITE", [{ variantId: navyM.id, quantity: 2, unitPrice: 1400 }]);
+    // Not invoiced: not counted.
+    await orders.createOrder(env.owner, {
+      channel: "POS",
+      lines: [{ variantId: navyM.id, quantity: 3, unitPrice: 1450 }],
+      documents: { invoice: false },
+    });
+
+    await as(env, "owner");
+    const owner = data(await getStyleScreenAction(env.polo.id), "owner");
+    expect(owner.sales).toEqual({
+      wholesale: { orders: 1, pieces: 4, net: "3200.00" },
+      retail: { orders: 2, pieces: 3, net: "4250.00" },
+      total: { orders: 3, pieces: 7, net: "7450.00" },
+    });
+    const tee = data(await getStyleScreenAction(env.tee.id), "tee");
+    expect(tee.sales?.total).toEqual({ orders: 1, pieces: 2, net: "1600.00" });
+
+    for (const who of ["sales", "store", "production"] as const) {
+      const ctx = await as(env, who);
+      const screen = data(await getStyleScreenAction(env.polo.id), who);
+      expect(screen.sales !== null, who).toBe(ctx.can("sales.view"));
+    }
+  }, 60_000);
+
+  it("renames categories in place without moving them", async () => {
+    const env = await shop();
+    await as(env, "owner");
+    data(await updateCategoryAction(env.polos.id, { name: "Polo Shirts" }), "rename");
+    const polos = await prisma.category.findUniqueOrThrow({ where: { id: env.polos.id } });
+    expect(polos.name).toBe("Polo Shirts");
+    expect(polos.parentId).not.toBeNull();
+  });
 });

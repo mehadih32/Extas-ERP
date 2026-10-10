@@ -106,17 +106,25 @@ Built one module at a time, each in its own pull request. So far:
     device), the Inter typeface with figures that line up, softer cards and tables. Everything
     works the same in both, and the choice changes only that person's screens. It also opens
     from the account menu.
-- **Products** (`/products`), in four tabs:
-  - **Styles**: the styles as cards with the pieces ready to sell, B-grade and SKU count,
-    browsed by category (a tree on computers, a picker on phones) and brand, with archived
-    styles on request. The search takes a style's name or code, or an exact SKU or barcode,
-    which opens that SKU. A brand's stock sheet (PDF) prints from here. A style's page shows
-    its details, its **stock matrix** (colours down, sizes across, all warehouses or one; red
-    below the low stock level) and its stock history. A matrix cell opens its SKU: prices,
-    barcode and stock in each warehouse, and for managers editing the SKU (barcode, own
-    prices, offered for sale), correcting its stock and moving pieces to bad stock. Managers
-    also add styles, add colours or sizes to a style (making its SKUs), edit, archive and
-    restore it, and delete a style that has no history yet.
+- **Products** (`/products`), in five tabs:
+  - **Styles**: the active styles as cards with a picture (or a placeholder), a status pill
+    (Active, Out of stock, No SKUs yet), the pieces ready to sell, B-grade and SKU count,
+    browsed by category (a tree that folds open, with each category's style count; a fold-out
+    on phones) and brand. The search takes a style's name or code, or an exact SKU or barcode,
+    which opens that SKU. A brand's stock sheet (PDF) prints from here. Managers see a
+    suggestion to archive styles with no stock at all for six months (none being made and none
+    on an open order), one by one or all at once. A style's page shows its details, its sales
+    for people who see sales (units sold and revenue after discounts, invoiced orders only,
+    split into wholesale with B2B pre-orders and retail), its **stock matrix** (colours down,
+    sizes across, all warehouses or one; red below the low stock level) and its stock
+    history. A matrix cell opens its SKU: prices, barcode and stock in each warehouse, and for
+    managers editing the SKU (barcode, own prices, offered for sale), correcting its stock and
+    moving pieces to bad stock. Managers also add styles, add colours or sizes to a style
+    (making its SKUs; long names wrap), edit and archive it, and delete a style that has no
+    history yet.
+  - **Archived styles**: the archived styles, filtered the same way, each with a one-tap
+    **Unarchive**. Archived styles stay out of the sales and production pickers but keep
+    their stock and history and stay in every report.
   - **Stock count**: pick a style, warehouse and grade, type the pieces found on the shelf
     for each SKU and save only the differences (missing pieces are booked as a loss). If stock
     moves while counting (a sale, another count), the save is refused and the sheet reloads
@@ -124,8 +132,10 @@ Built one module at a time, each in its own pull request. So far:
     pieces held before starting with Extas ERP, at an optional cost per piece.
   - **Bad stock**: the pieces taken out of the sellable stock, for a period, with why, where
     from and who recorded them. Managers record bad stock from a SKU or barcode.
-  - **Setup**: colours (with their swatch), sizes (in matrix order), the category tree,
-    brands and warehouses. Something already in use cannot be deleted. Names are unique
+  - **Setup**: colours (with their swatch, and quick-pick swatches when adding one), sizes
+    (in matrix order, dragged into place by their handle or moved with the keyboard), the
+    category tree and brands (renamed in place by tapping the name) and warehouses.
+    Something already in use cannot be deleted. Names are unique
     whatever their letter case ("maroon" next to Maroon is refused).
 - **Buyers & suppliers** (`/parties`, "Parties" on the phone tab bar), in three tabs:
   - **Buyers** and **Suppliers**: every account with its contact, city, grade, Blue Verified
@@ -815,7 +825,7 @@ stock records the loss at that cost.
 | `GET/POST /api/inventory/brands`, `PATCH/DELETE …/:id`                  | Brands                                                  |
 | `GET/POST /api/inventory/colors`, `PATCH/DELETE …/:id`                  | Colors with hex codes (matrix rows)                     |
 | `GET/POST /api/inventory/sizes`, `PATCH/DELETE …/:id`, `POST …/reorder` | Sizes (matrix columns)                                  |
-| `GET/POST /api/inventory/styles`, `GET/PATCH/DELETE …/:id`              | Styles; filter by category, brand, search               |
+| `GET/POST /api/inventory/styles`, `GET/PATCH/DELETE …/:id`              | Styles; filter by category, brand, search, `archived=1` |
 | `GET/POST /api/inventory/styles/:id/matrix`                             | Matrix with live stock / create missing SKUs            |
 | `GET/PATCH /api/inventory/variants/:id`                                 | SKU with stock per warehouse / price, barcode, on sale  |
 | `GET /api/inventory/lookup?code=`                                       | Find a SKU by barcode or SKU                            |

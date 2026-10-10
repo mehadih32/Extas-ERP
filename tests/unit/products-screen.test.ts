@@ -17,6 +17,7 @@ import {
   shelfNumbers,
 } from "@/components/products/count-sheet";
 import { readAmount } from "@/components/products/form-values";
+import { COLOR_PRESETS } from "@/components/products/setup/color-presets";
 import {
   BAD_STOCK_SOURCE_CHOICES,
   BAD_STOCK_SOURCE_LABELS,
@@ -33,6 +34,7 @@ import {
 } from "@/components/products/style-list-view";
 import { visibleProductsTabs } from "@/components/products/tabs";
 import { activeTabHref, visibleNavItems } from "@/components/shell/nav-items";
+import { createColorSchema } from "@/modules/inventory/schemas";
 import { DEFAULT_ROLE_PERMISSIONS } from "@/modules/rbac/permissions";
 
 const tabs = (permissions: readonly string[]) =>
@@ -54,19 +56,21 @@ describe("the Products area", () => {
   });
 
   it("shows the stock count only to people who may change stock", () => {
-    expect(tabs(["inventory.view"])).toEqual(["Styles", "Bad stock", "Setup"]);
+    expect(tabs(["inventory.view"])).toEqual(["Styles", "Archived styles", "Bad stock", "Setup"]);
     expect(tabs(["inventory.view", "inventory.manage"])).toEqual([
       "Styles",
+      "Archived styles",
       "Stock count",
       "Bad stock",
       "Setup",
     ]);
     expect(tabs(DEFAULT_ROLE_PERMISSIONS.SALES_EXECUTIVE)).toEqual([
       "Styles",
+      "Archived styles",
       "Bad stock",
       "Setup",
     ]);
-    expect(tabs(DEFAULT_ROLE_PERMISSIONS.WAREHOUSE_TEAM)).toHaveLength(4);
+    expect(tabs(DEFAULT_ROLE_PERMISSIONS.WAREHOUSE_TEAM)).toHaveLength(5);
     expect(tabs(DEFAULT_ROLE_PERMISSIONS.ACCOUNTS)).toEqual([]);
   });
 
@@ -75,6 +79,7 @@ describe("the Products area", () => {
     expect(activeTabHref("/products", hrefs)).toBe("/products");
     expect(activeTabHref("/products/new", hrefs)).toBe("/products");
     expect(activeTabHref("/products/cm1abc/edit", hrefs)).toBe("/products");
+    expect(activeTabHref("/products/archived", hrefs)).toBe("/products/archived");
     expect(activeTabHref("/products/stock-count", hrefs)).toBe("/products/stock-count");
     expect(activeTabHref("/products/bad-stock", hrefs)).toBe("/products/bad-stock");
     expect(activeTabHref("/products/setup", hrefs)).toBe("/products/setup");
@@ -87,23 +92,23 @@ describe("the Products area", () => {
 
 describe("the style list filters", () => {
   it("round-trip through the address bar and drop anything malformed", () => {
-    const view = styleListViewFrom({
-      q: "  polo ",
-      category: "cm1cat",
-      brand: "not an id!",
-      archived: "1",
-    });
-    expect(view).toEqual({ q: "polo", category: "cm1cat", brand: undefined, archived: true });
-    expect(styleListSearch(view)).toBe("?q=polo&category=cm1cat&archived=1");
+    const view = styleListViewFrom({ q: "  polo ", category: "cm1cat", brand: "not an id!" });
+    expect(view).toEqual({ q: "polo", category: "cm1cat", brand: undefined, archived: false });
+    expect(styleListSearch(view)).toBe("?q=polo&category=cm1cat");
     expect(styleListSearch(styleListViewFrom({}))).toBe("");
     expect(styleListQuery(view, "cm1next")).toEqual({
       search: "polo",
       categoryId: "cm1cat",
       brandId: undefined,
-      includeInactive: true,
+      archived: undefined,
       cursor: "cm1next",
       take: 24,
     });
+    // The Archived styles tab lists archived styles only; the address does not decide it.
+    const archived = styleListViewFrom({ archived: "1" }, true);
+    expect(styleListSearch(archived)).toBe("");
+    expect(styleListQuery(archived).archived).toBe(true);
+    expect(styleListViewFrom({ archived: "1" }).archived).toBe(false);
   });
 
   it("look a search up as a SKU or barcode only when it could be one", () => {
@@ -179,6 +184,16 @@ describe("the catalogue forms", () => {
     expect(newSkuCount(2, 4, 0)).toBe(8);
     expect(newSkuCount(3, 4, 8)).toBe(4); // a new colour in the four sizes
     expect(newSkuCount(2, 2, 4)).toBe(0);
+  });
+
+  it("offer quick-pick colours the colour form accepts, each once", () => {
+    for (const preset of COLOR_PRESETS) {
+      expect(createColorSchema.parse({ name: preset.name, hexCode: preset.hex }).hexCode).toBe(
+        preset.hex,
+      );
+    }
+    expect(new Set(COLOR_PRESETS.map((p) => p.name.toLowerCase())).size).toBe(COLOR_PRESETS.length);
+    expect(new Set(COLOR_PRESETS.map((p) => p.hex)).size).toBe(COLOR_PRESETS.length);
   });
 
   it("never move a category inside itself", () => {

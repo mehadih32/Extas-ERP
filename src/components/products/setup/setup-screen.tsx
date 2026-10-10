@@ -1,8 +1,6 @@
 "use client";
 
 import {
-  ArrowDownIcon,
-  ArrowUpIcon,
   EllipsisVerticalIcon,
   FolderInputIcon,
   FolderPlusIcon,
@@ -46,18 +44,19 @@ import {
 } from "@/server/actions/inventory.actions";
 
 import { Swatch } from "../bits";
+import { InlineName } from "./inline-name";
 import { CategoryDialog, ColorDialog, NameDialog, WarehouseDialog } from "./setup-dialogs";
+import { SortableRow, SortableRows } from "./sortable-rows";
 
 type Color = CatalogSetup["colors"][number];
 type Size = CatalogSetup["sizes"][number];
 type Category = CatalogSetup["categories"][number];
-type Brand = CatalogSetup["brands"][number];
 
 type Open =
   | { kind: "color"; color?: Color }
   | { kind: "size"; size?: Size }
   | { kind: "category"; category?: Category; parentId: string | null }
-  | { kind: "brand"; brand?: Brand }
+  | { kind: "brand" }
   | { kind: "warehouse" }
   | {
       kind: "delete";
@@ -74,6 +73,14 @@ const SECTIONS = [
   ["brands", "Brands"],
   ["warehouses", "Warehouses"],
 ] as const;
+
+/** The "└" before a category inside another. */
+const treeMark = (depth: number) =>
+  depth > 0 && (
+    <span aria-hidden className="mr-1.5 text-muted-foreground">
+      └
+    </span>
+  );
 
 /** "Used by 4 SKUs", "No styles yet". */
 function usage(count: number, one: string, many: string) {
@@ -100,7 +107,7 @@ function Section({
     <section
       id={id}
       aria-labelledby={`${id}-heading`}
-      className="grid scroll-mt-24 content-start gap-4 rounded-lg border bg-card p-5 sm:p-6"
+      className="grid scroll-mt-24 grid-cols-1 content-start gap-4 rounded-lg border bg-card p-5 sm:p-6"
     >
       <div className="flex items-start justify-between gap-4">
         <div>
@@ -197,10 +204,7 @@ export function SetupScreen({ setup }: { setup: CatalogSetup }) {
     (id) => sizesById.get(id) ?? [],
   );
 
-  function move(index: number, by: -1 | 1) {
-    const ids = sizes.map((s) => s.id);
-    const [taken] = ids.splice(index, 1);
-    ids.splice(index + by, 0, taken!);
+  function reorder(ids: string[]) {
     setSizeOrder(ids);
     startReordering(async () => {
       const result = await reorderSizesAction({ sizeIds: ids });
@@ -218,7 +222,7 @@ export function SetupScreen({ setup }: { setup: CatalogSetup }) {
     });
 
   return (
-    <div className="grid gap-6">
+    <div className="grid grid-cols-1 gap-6">
       <nav aria-label="Setup sections" className="flex flex-wrap gap-2 lg:hidden">
         {SECTIONS.map(([id, label]) => (
           <a
@@ -239,7 +243,7 @@ export function SetupScreen({ setup }: { setup: CatalogSetup }) {
       )}
       {notice && <FormAlert tone="success">{notice}</FormAlert>}
 
-      <div className="grid items-start gap-6 lg:grid-cols-2">
+      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
         <Section
           id="colours"
           title="Colours"
@@ -255,7 +259,7 @@ export function SetupScreen({ setup }: { setup: CatalogSetup }) {
                 <li key={color.id} className="flex min-h-14 items-center gap-3 py-2">
                   <Swatch hex={color.hexCode} className="size-6" />
                   <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium">{color.name}</p>
+                    <p className="font-medium break-words">{color.name}</p>
                     <p className="text-xs text-muted-foreground">
                       {color.hexCode} · {usage(color.variantCount, "SKU", "SKUs")}
                     </p>
@@ -291,50 +295,31 @@ export function SetupScreen({ setup }: { setup: CatalogSetup }) {
         <Section
           id="sizes"
           title="Sizes"
-          description="The columns of each style's matrix, in this order."
+          description={
+            canManage
+              ? "The columns of each style's matrix, in this order. Drag a size by its handle to move it."
+              : "The columns of each style's matrix, in this order."
+          }
           addLabel={canManage ? "Add" : undefined}
           onAdd={() => setOpen({ kind: "size" })}
         >
           {sizes.length === 0 ? (
             <Empty>No sizes yet.</Empty>
           ) : (
-            <Rows label="Sizes">
-              {sizes.map((size, index) => (
-                <li
-                  key={size.id}
-                  className={cn(
-                    "flex min-h-14 items-center gap-3 py-2",
-                    reordering && "opacity-70",
-                  )}
-                >
-                  <span className="w-12 font-medium">{size.name}</span>
-                  <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-                    {usage(size.variantCount, "SKU", "SKUs")}
-                  </span>
-                  {canManage && (
-                    <>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon-sm"
-                        className="size-10 md:size-8"
-                        aria-label={`Move ${size.name} up`}
-                        disabled={index === 0 || reordering}
-                        onClick={() => move(index, -1)}
-                      >
-                        <ArrowUpIcon aria-hidden />
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon-sm"
-                        className="size-10 md:size-8"
-                        aria-label={`Move ${size.name} down`}
-                        disabled={index === sizes.length - 1 || reordering}
-                        onClick={() => move(index, 1)}
-                      >
-                        <ArrowDownIcon aria-hidden />
-                      </Button>
+            <SortableRows
+              id="size-order"
+              label="Sizes"
+              ids={sizes.map((s) => s.id)}
+              onMove={reorder}
+            >
+              {sizes.map((size) => {
+                const row = (
+                  <>
+                    <span className="w-14 font-medium break-words">{size.name}</span>
+                    <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+                      {usage(size.variantCount, "SKU", "SKUs")}
+                    </span>
+                    {canManage && (
                       <RowMenu label={size.name}>
                         <DropdownMenuItem onSelect={() => setOpen({ kind: "size", size })}>
                           <PencilIcon aria-hidden />
@@ -355,11 +340,26 @@ export function SetupScreen({ setup }: { setup: CatalogSetup }) {
                           </>
                         )}
                       </RowMenu>
-                    </>
-                  )}
-                </li>
-              ))}
-            </Rows>
+                    )}
+                  </>
+                );
+                return canManage ? (
+                  <SortableRow
+                    key={size.id}
+                    id={size.id}
+                    name={size.name}
+                    disabled={reordering}
+                    className={cn(reordering && "opacity-70")}
+                  >
+                    {row}
+                  </SortableRow>
+                ) : (
+                  <li key={size.id} className="flex min-h-14 items-center gap-3 py-2">
+                    {row}
+                  </li>
+                );
+              })}
+            </SortableRows>
           )}
         </Section>
 
@@ -381,14 +381,21 @@ export function SetupScreen({ setup }: { setup: CatalogSetup }) {
                   style={{ paddingLeft: `${category.depth * 1.25}rem` }}
                 >
                   <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium">
-                      {category.depth > 0 && (
-                        <span aria-hidden className="mr-1.5 text-muted-foreground">
-                          └
-                        </span>
-                      )}
-                      {category.name}
-                    </p>
+                    {canManage ? (
+                      <InlineName
+                        name={category.name}
+                        label="category"
+                        maxLength={120}
+                        onSave={(name) => updateCategoryAction(category.id, { name })}
+                      >
+                        {treeMark(category.depth)}
+                      </InlineName>
+                    ) : (
+                      <p className="font-medium break-words">
+                        {treeMark(category.depth)}
+                        {category.name}
+                      </p>
+                    )}
                     <p className="text-xs text-muted-foreground">
                       {category.styleCount === 0
                         ? "No styles of its own"
@@ -404,7 +411,7 @@ export function SetupScreen({ setup }: { setup: CatalogSetup }) {
                         }
                       >
                         <FolderInputIcon aria-hidden />
-                        Rename or move
+                        Move
                       </DropdownMenuItem>
                       <DropdownMenuItem
                         onSelect={() => setOpen({ kind: "category", parentId: category.id })}
@@ -450,22 +457,26 @@ export function SetupScreen({ setup }: { setup: CatalogSetup }) {
               {setup.brands.map((brand) => (
                 <li key={brand.id} className="flex min-h-14 items-center gap-3 py-2">
                   <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium">{brand.name}</p>
+                    {canManage ? (
+                      <InlineName
+                        name={brand.name}
+                        label="brand"
+                        maxLength={120}
+                        onSave={(name) => updateBrandAction(brand.id, { name })}
+                      />
+                    ) : (
+                      <p className="font-medium break-words">{brand.name}</p>
+                    )}
                     <p className="text-xs text-muted-foreground">
                       {brand.styleCount === 0
                         ? "No styles yet"
                         : `${brand.styleCount} ${brand.styleCount === 1 ? "style" : "styles"}`}
                     </p>
                   </div>
-                  {canManage && (
+                  {canManage && brand.can.delete && (
                     <RowMenu label={brand.name}>
-                      <DropdownMenuItem onSelect={() => setOpen({ kind: "brand", brand })}>
-                        <PencilIcon aria-hidden />
-                        Rename
-                      </DropdownMenuItem>
                       {brand.can.delete && (
                         <>
-                          <DropdownMenuSeparator />
                           <DropdownMenuItem
                             variant="destructive"
                             onSelect={() =>
@@ -566,18 +577,12 @@ export function SetupScreen({ setup }: { setup: CatalogSetup }) {
       )}
       {open?.kind === "brand" && (
         <NameDialog
-          title={open.brand ? `Rename ${open.brand.name}` : "Add a brand"}
+          title="Add a brand"
           label="Name"
-          initial={open.brand?.name}
           maxLength={120}
-          saveLabel={open.brand ? "Save" : "Add brand"}
+          saveLabel="Add brand"
           onClose={close}
-          onSave={(name) =>
-            saved(
-              open.brand ? updateBrandAction(open.brand.id, { name }) : createBrandAction({ name }),
-              done(open.brand ? `${name} was saved.` : `${name} was added.`),
-            )
-          }
+          onSave={(name) => saved(createBrandAction({ name }), done(`${name} was added.`))}
         />
       )}
       {open?.kind === "warehouse" && (

@@ -1,8 +1,10 @@
 import type { StockGrade } from "@prisma/client";
 
+import { localDay } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
 import type { CompanyContext } from "@/modules/auth/context";
 import { canSeeFinancials } from "@/modules/dashboard/access";
+import { type SalesTotals, styleSales } from "@/modules/dashboard/sales-figures";
 import {
   type CategoryNode,
   listBrands,
@@ -11,7 +13,7 @@ import {
   listSizes,
 } from "@/modules/inventory/catalog.service";
 import { getStyleMatrix, matrixAxes } from "@/modules/inventory/matrix.service";
-import { stockCountSheetQuerySchema } from "@/modules/inventory/schemas";
+import { listStylesSchema, stockCountSheetQuerySchema } from "@/modules/inventory/schemas";
 import {
   canDeleteBrand,
   canDeleteCategory,
@@ -25,7 +27,12 @@ import {
   listWarehouses,
   type StockCell,
 } from "@/modules/inventory/stock.service";
-import { getStyle, listStyles, styleHistoryCount } from "@/modules/inventory/style.service";
+import {
+  getStyle,
+  listStyles,
+  staleStyles,
+  styleHistoryCount,
+} from "@/modules/inventory/style.service";
 
 /*
  * What the Products screens show, as plain values (prices as "450.00" strings),
@@ -170,6 +177,7 @@ export async function listStyleCards(ctx: CompanyContext, raw: unknown = {}) {
       id: s.id,
       code: s.code,
       name: s.name,
+      imageUrl: s.imageUrl,
       isActive: s.isActive,
       category: s.category,
       brand: s.brand,
@@ -189,17 +197,38 @@ export type StyleCard = Awaited<ReturnType<typeof listStyleCards>>["items"][numb
  * and brands to filter by, and whether this person may add styles.
  */
 export async function getStyleList(ctx: CompanyContext, raw: unknown = {}) {
-  const [page, categories, brands] = await Promise.all([
+  const canManage = ctx.can("inventory.manage");
+  const archived = listStylesSchema.parse(raw).archived ?? false;
+  const [page, categories, brands, stale, groups] = await Promise.all([
     listStyleCards(ctx, raw),
     listCategoryOptions(ctx),
     listBrands(ctx),
+    canManage && !archived ? staleStyles(ctx) : Promise.resolve([]),
+    ctx.db.style.groupBy({ by: ["categoryId"], where: { isActive: !archived }, _count: true }),
   ]);
+  // Styles in each category and the ones under it (the tree is listed parents first).
+  const counts: Record<string, number> = Object.fromEntries(
+    groups.map((g) => [g.categoryId, g._count]),
+  );
+  for (const c of categories.toReversed()) {
+    if (c.parentId) counts[c.parentId] = (counts[c.parentId] ?? 0) + (counts[c.id] ?? 0);
+  }
   return {
     ...page,
     categories,
+    /** This tab's styles per category, counting the categories under it. */
+    counts,
     brands: brands.map((b) => ({ id: b.id, name: b.name })),
-    /** Add styles (and everything else on the style pages that changes stock or SKUs). */
-    canManage: ctx.can("inventory.manage"),
+    /** Add, archive and unarchive styles (and change stock or SKUs on the style pages). */
+    canManage,
+    /** Styles with no stock for six months, suggested for archiving (inventory.manage only). */
+    stale: stale.map((st) => ({
+      id: st.id,
+      code: st.code,
+      name: st.name,
+      /** The day its stock last moved (or it was added). */
+      since: localDay(st.since, ctx.company.timezone),
+    })),
   };
 }
 
@@ -235,13 +264,19 @@ export async function getStyleScreen(
   const warehouseId = warehouses.some((w) => w.id === options.warehouseId)
     ? options.warehouseId
     : undefined;
-  const [matrix, categories, colors, sizes, historyCount] = await Promise.all([
+  const [matrix, categories, colors, sizes, historyCount, sales] = await Promise.all([
     getStyleMatrix(ctx, style.id, { warehouseId }),
     listCategoryOptions(ctx),
     listColors(ctx),
     listSizes(ctx),
     canManage ? styleHistoryCount(ctx, style.id) : Promise.resolve(0),
+    ctx.can("sales.view") ? styleSales(ctx.company.id, style.id) : Promise.resolve(null),
   ]);
+  const sold = (side: SalesTotals) => ({
+    orders: side.orders,
+    pieces: side.pieces,
+    net: side.net.toFixed(2),
+  });
   return {
     style: presentStyle(style, categories),
     matrix,
@@ -257,6 +292,18 @@ export async function getStyleScreen(
     },
     /** Whether the stock history shows what the pieces cost. */
     showsCosts: canSeeFinancials(ctx),
+    /** Units sold and revenue, wholesale and retail (invoiced, all time): sales.view only. */
+    sales: sales
+      ? {
+          wholesale: sold(sales.wholesale),
+          retail: sold(sales.retail),
+          total: sold({
+            orders: sales.wholesale.orders + sales.retail.orders,
+            pieces: sales.wholesale.pieces + sales.retail.pieces,
+            net: sales.wholesale.net.add(sales.retail.net),
+          }),
+        }
+      : null,
   };
 }
 

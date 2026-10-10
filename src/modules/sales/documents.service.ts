@@ -278,12 +278,14 @@ export async function createPackingListTx(
     }
     packed.set(item.variantId, total);
   }
+  // The order's carton count fills in when none is given; a count given here goes onto the order.
+  const cartons = input.cartons ?? order.totalCartons ?? null;
   const list = await tx.packingList.create({
     data: {
       companyId: ctx.company.id,
       number: await nextDocumentNumber(tx, ctx.company.id, "PACKING_LIST"),
       orderId: order.id,
-      cartons: input.cartons ?? null,
+      cartons,
       grossWeightKg: input.grossWeightKg ?? null,
       notes: input.notes ?? null,
       items: {
@@ -295,8 +297,14 @@ export async function createPackingListTx(
       },
     },
   });
-  if (order.status === "CONFIRMED" || order.status === "PROCESSING") {
-    await tx.salesOrder.update({ where: { id: order.id }, data: { status: "PACKED" } });
+  const change = {
+    ...(order.status === "CONFIRMED" || order.status === "PROCESSING"
+      ? { status: "PACKED" as const }
+      : {}),
+    ...(cartons !== order.totalCartons ? { totalCartons: cartons } : {}),
+  };
+  if (Object.keys(change).length > 0) {
+    await tx.salesOrder.update({ where: { id: order.id }, data: change });
   }
   await auditInCompany(
     ctx,
@@ -612,6 +620,8 @@ export async function getPackingListDocument(ctx: CompanyContext, packingListId:
           customerName: true,
           customerPhone: true,
           shippingAddress: true,
+          totalCartons: true,
+          packedBy: { select: { name: true } },
           party: partyDetails,
         },
       },
@@ -638,6 +648,8 @@ export async function getChallanDocument(ctx: CompanyContext, challanId: string)
           customerName: true,
           customerPhone: true,
           shippingAddress: true,
+          totalCartons: true,
+          packedBy: { select: { name: true } },
           party: partyDetails,
         },
       },

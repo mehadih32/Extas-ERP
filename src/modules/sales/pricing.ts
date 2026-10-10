@@ -97,7 +97,7 @@ export function assertStockOrOverride(
   if (!forceOverride) {
     throw new AppError(
       "INSUFFICIENT_STOCK",
-      `Not enough stock for ${short.length} item(s). Tick "Force Override & Sell" to sell anyway.`,
+      `Not enough stock for ${short.length} item(s). Choose "Force Allow" to sell anyway.`,
       Object.fromEntries(
         short.map((l) => [
           `stock.${l.sku}`,

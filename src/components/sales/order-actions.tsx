@@ -3,6 +3,7 @@
 import {
   BanIcon,
   BanknoteIcon,
+  BoxesIcon,
   CalendarIcon,
   EllipsisVerticalIcon,
   FileTextIcon,
@@ -26,6 +27,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import type { OrderScreen } from "@/modules/sales/screens.service";
@@ -34,6 +36,7 @@ import {
   createDeliveryChallanAction,
   createPackingListAction,
   issueInvoiceAction,
+  setOrderLogisticsAction,
   setOrderShipmentDateAction,
   voidInvoiceAction,
 } from "@/server/actions/sales.actions";
@@ -56,6 +59,7 @@ type Open =
   | "challan"
   | "packing"
   | "shipment"
+  | "logistics"
   | "voidInvoice"
   | "refund"
   | "cancel"
@@ -101,6 +105,7 @@ export function OrderActions({
       icon: CalendarIcon,
     });
   }
+  if (can.logistics) menu.push({ key: "logistics", label: "Cartons and packer", icon: BoxesIcon });
   if (can.voidInvoice)
     menu.push({ key: "voidInvoice", label: "Void the invoice", icon: FileXIcon });
   if (refund) menu.push({ key: "refund", label: "Refund money paid", icon: Undo2Icon });
@@ -324,6 +329,7 @@ export function OrderActions({
                     name="cartons"
                     inputMode="numeric"
                     autoComplete="off"
+                    defaultValue={o.totalCartons ?? ""}
                   />
                 </Field>
                 <Field
@@ -375,6 +381,62 @@ export function OrderActions({
                 className="sm:w-48"
               />
             </Field>
+          )}
+        </FormDialog>
+      )}
+      {open === "logistics" && (
+        <FormDialog
+          title="Cartons and packer"
+          description="How many cartons the order goes in and who packed it. Both print on the packing list and the delivery challan."
+          submitLabel="Save"
+          pendingLabel="Saving"
+          errorTitle="We could not save the cartons and packer"
+          onClose={close}
+          onSubmit={async (form) => {
+            const cartonsText = textOf(form, "totalCartons");
+            const cartons = cartonsText ? wholeNumber(cartonsText) : null;
+            if (cartonsText && cartons === null) {
+              return problem({ totalCartons: "Enter a whole number." });
+            }
+            const result = await setOrderLogisticsAction(o.id, {
+              totalCartons: cartons,
+              packedById: textOf(form, "packedById") || null,
+            });
+            if (!result.ok) return result.error;
+            done("The cartons and packer were saved.");
+          }}
+        >
+          {(fieldError) => (
+            <div className="grid items-start gap-5 sm:grid-cols-2">
+              <Field
+                id="logistics-cartons"
+                label="Total cartons"
+                error={fieldError("totalCartons")}
+              >
+                <Input
+                  id="logistics-cartons"
+                  name="totalCartons"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  defaultValue={o.totalCartons ?? ""}
+                />
+              </Field>
+              <Field id="logistics-packer" label="Packed by" error={fieldError("packedById")}>
+                <NativeSelect
+                  id="logistics-packer"
+                  name="packedById"
+                  containerClassName="sm:w-full"
+                  defaultValue={o.packedBy?.id ?? ""}
+                >
+                  <option value="">Not yet</option>
+                  {screen.packers.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} ({p.code})
+                    </option>
+                  ))}
+                </NativeSelect>
+              </Field>
+            </div>
           )}
         </FormDialog>
       )}

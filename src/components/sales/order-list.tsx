@@ -16,6 +16,7 @@ import { InvoiceBadge, OrderBadge, OverrideBadge } from "./badges";
 import { buyerName, CHANNEL_LABELS, isZero, money, salesHref } from "./labels";
 import { orderListQuery, type OrderListView } from "./list-view";
 import { RowCard, RowLink, ShowMore, useLoadMore } from "./load-more";
+import { QuickViewButton } from "./order-quick-view";
 
 function DueText({ order, currency }: { order: OrderRow; currency: string }) {
   if (order.status === "CANCELLED") return <span className="text-muted-foreground">Cancelled</span>;
@@ -79,6 +80,9 @@ export function OrderList({
               <TableHead>Invoice</TableHead>
               <TableHead className="text-right">Total</TableHead>
               <TableHead className="text-right">Due</TableHead>
+              <TableHead className="w-12">
+                <span className="sr-only">Quick view</span>
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -122,6 +126,9 @@ export function OrderList({
                 </TableCell>
                 <TableCell className="text-right whitespace-nowrap">
                   <DueText order={order} currency={currency} />
+                </TableCell>
+                <TableCell className="text-right">
+                  <QuickViewButton orderId={order.id} number={order.number} currency={currency} />
                 </TableCell>
               </TableRow>
             ))}

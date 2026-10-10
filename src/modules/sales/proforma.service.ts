@@ -15,6 +15,7 @@ import {
   createOrderTx,
   getOrder,
   refundSummary,
+  resolvePacker,
   settleFirstMessage,
 } from "@/modules/sales/order.service";
 import { heldOnProforma, refreshOrderPayments } from "@/modules/sales/posting";
@@ -255,6 +256,7 @@ export async function convertProformaToOrder(
   if (!proforma) throw new AppError("NOT_FOUND", "Proforma invoice not found.");
   assertAllowed(canConvertProforma(proforma));
   const warehouse = await resolveWarehouse(ctx, input.warehouseId);
+  const packer = await resolvePacker(ctx, input.packedById);
   const lines = await resolveOrderLines(ctx, input, "B2B_PREORDER", warehouse.id);
   assertStockOrOverride(ctx, lines, input.forceOverride);
   const { total } = orderTotals(lines, input);
@@ -294,6 +296,8 @@ export async function convertProformaToOrder(
           customerPhone: input.customerPhone,
           shippingAddress: input.shippingAddress,
           overrideReason: input.forceOverride?.reason,
+          totalCartons: input.totalCartons,
+          packedById: packer?.id,
         },
         meta,
       );

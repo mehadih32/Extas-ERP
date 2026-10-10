@@ -1010,7 +1010,7 @@ run("printed documents", () => {
       { label: "Packing list no.", value: list.number },
       { label: "Date", value: formatDay(localDay(new Date(), env.company.timezone)) },
       { label: "Order no.", value: order.number },
-      { label: "Cartons", value: "2" },
+      { label: "Total cartons", value: "2" },
       { label: "Gross weight", value: "8.50 kg" },
       { label: "Picked", value: "2 of 12 pcs" },
     ]);

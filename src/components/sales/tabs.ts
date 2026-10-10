@@ -8,6 +8,7 @@ export type SalesTab = { href: string; label: string; anyOf: readonly Permission
  * list reads with sales.view. What may be done in each comes with its screen.
  */
 export const SALES_TABS: readonly SalesTab[] = [
+  { href: "/sales/overview", label: "Overview", anyOf: ["sales.view"] },
   { href: "/sales/orders", label: "Orders", anyOf: ["sales.view"] },
   { href: "/sales/quotations", label: "Quotations", anyOf: ["sales.view"] },
   { href: "/sales/proformas", label: "Proformas", anyOf: ["sales.view"] },

@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 
 import "@/styles/globals.css";
 
+import { Toaster } from "@/components/feedback/toaster";
 import { currentInterfaceStyle } from "@/modules/appearance/appearance.service";
 
 import { fontVariables } from "./fonts";
@@ -28,7 +29,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const style = await currentInterfaceStyle();
   return (
     <html lang="en" className={fontVariables} data-ui={style === "MODERN" ? "modern" : undefined}>
-      <body>{children}</body>
+      <body>
+        {children}
+        <Toaster />
+      </body>
     </html>
   );
 }

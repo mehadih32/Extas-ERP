@@ -236,6 +236,14 @@ export function canCancelOrder(o: OrderState, deliveredPieces: number): Verdict 
   return ALLOWED;
 }
 
+/** Cartons and the packer can be noted until an order is cancelled or returned. */
+export function canSetLogistics(o: Pick<OrderState, "status">): Verdict {
+  if (ORDER_CLOSED.includes(o.status)) {
+    return refuse("CONFLICT", `This order is ${lower(o.status)}.`);
+  }
+  return ALLOWED;
+}
+
 export function canSetShipmentDate(o: Pick<OrderState, "status">): Verdict {
   if (SHIPMENT_OPEN.includes(o.status)) return ALLOWED;
   return refuse(

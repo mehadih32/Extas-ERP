@@ -9,6 +9,7 @@ import { requireAnyPermission, requirePermission } from "@/modules/auth/context"
 import * as customFields from "@/modules/sales/custom-fields.service";
 import * as documents from "@/modules/sales/documents.service";
 import * as orders from "@/modules/sales/order.service";
+import * as overview from "@/modules/sales/overview.service";
 import * as payments from "@/modules/sales/payment.service";
 import * as proformas from "@/modules/sales/proforma.service";
 import * as quotations from "@/modules/sales/quotation.service";
@@ -28,7 +29,7 @@ import * as summary from "@/modules/sales/summary.service";
  *   sales.invoice.edit        void invoices (cancelling an invoiced order needs it too)
  *   sales.force_override      sell beyond available stock (checked inside the order)
  *   company.settings          custom field definitions
- * An INSUFFICIENT_STOCK error means: show the "Force Override & Sell" warning.
+ * An INSUFFICIENT_STOCK error means: show the "Force Allow" pop-up.
  * Changes refresh the screens, so lists, orders and balances show them straight away.
  */
 
@@ -55,6 +56,10 @@ const ref = (record: { id: string; number: string }) => ({
 });
 
 // --- Screens -------------------------------------------------------------------
+export const getSalesOverviewAction = async () =>
+  runAction(async () => overview.getSalesOverview(await view()));
+export const getOrderPeekAction = async (orderId: string) =>
+  runAction(async () => overview.getOrderPeek(await view(), orderId));
 export const getQuotationListAction = async (query: unknown) =>
   runAction(async () => screens.getQuotationList(await view(), query));
 export const listQuotationRowsAction = async (query: unknown) =>
@@ -214,6 +219,14 @@ export const setOrderShipmentDateAction = async (orderId: string, input: unknown
   change(async () =>
     ref(await orders.setOrderShipmentDate(await sell(), orderId, input, await getRequestMeta())),
   );
+/** Cartons and who packed an order, any time before it is cancelled or returned. */
+export const setOrderLogisticsAction = async (orderId: string, input: unknown) =>
+  change(async () =>
+    ref(await orders.setOrderLogistics(await sell(), orderId, input, await getRequestMeta())),
+  );
+/** Whether a buyer may take this much more on credit, asked before an order is placed. */
+export const checkBuyerCreditAction = async (input: unknown) =>
+  runAction(async () => orders.checkBuyerCredit(await sell(), input));
 
 // --- Documents -----------------------------------------------------------------
 export const issueInvoiceAction = async (orderId: string, input: unknown) =>

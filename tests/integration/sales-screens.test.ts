@@ -41,6 +41,7 @@ import EditOrderPage from "@/app/(app)/sales/orders/[orderId]/edit/page";
 import OrderPage from "@/app/(app)/sales/orders/[orderId]/page";
 import NewOrderPage from "@/app/(app)/sales/orders/new/page";
 import OrdersPage from "@/app/(app)/sales/orders/page";
+import SalesOverviewPage from "@/app/(app)/sales/overview/page";
 import SalesPage from "@/app/(app)/sales/page";
 import PaymentPage from "@/app/(app)/sales/payments/[paymentId]/page";
 import PaymentsPage from "@/app/(app)/sales/payments/page";
@@ -83,7 +84,9 @@ import {
   findSaleStylesAction,
   getInvoiceScreenAction,
   getOrderFormAction,
+  checkBuyerCreditAction,
   getOrderListAction,
+  getOrderPeekAction,
   getOrderScreenAction,
   getPaymentListAction,
   getPaymentScreenAction,
@@ -92,12 +95,14 @@ import {
   getQuotationListAction,
   getQuotationScreenAction,
   getSaleMatrixAction,
+  getSalesOverviewAction,
   issueInvoiceAction,
   listInvoiceRowsAction,
   listProformaRowsAction,
   listRefundRowsAction,
   receivePaymentAction,
   refundBuyerAction,
+  setOrderLogisticsAction,
   setOrderShipmentDateAction,
   setQuotationStatusAction,
   updateOrderAction,
@@ -286,6 +291,7 @@ run("Sales screens", () => {
       expect(tabs, who).toEqual(
         view
           ? [
+              "/sales/overview",
               "/sales/orders",
               "/sales/quotations",
               "/sales/proformas",
@@ -296,6 +302,14 @@ run("Sales screens", () => {
       );
 
       // Each screen's data comes exactly to the people its page is shown to.
+      const overview = await getSalesOverviewAction();
+      expect(overview.ok, `${who}: overview`).toBe(view);
+      if (overview.ok) expect(overview.data.canCreate, who).toBe(sell);
+      expect((await getOrderPeekAction(order.id)).ok, `${who}: quick view`).toBe(view);
+      expect(
+        (await checkBuyerCreditAction({ partyId: env.buyer.id, amount: 1 })).ok,
+        `${who}: credit check`,
+      ).toBe(sell);
       const orderList = await getOrderListAction({});
       expect(orderList.ok, `${who}: orders`).toBe(view);
       const quotationList = await getQuotationListAction({});
@@ -323,8 +337,9 @@ run("Sales screens", () => {
       // The pages show "not part of your role" in the same cases.
       const page = (allowed: boolean) => (allowed ? "page" : "no access");
       expect(await rendered(SalesPage()), `${who}: /sales`).toBe(
-        view ? "redirect /sales/orders" : "no access",
+        view ? "redirect /sales/overview" : "no access",
       );
+      expect(await rendered(SalesOverviewPage()), `${who}: overview`).toBe(page(view));
       const listed = { searchParams: noQuery() };
       expect(await rendered(OrdersPage(listed)), `${who}: orders`).toBe(page(view));
       expect(await rendered(QuotationsPage(listed)), `${who}: quotations`).toBe(page(view));
@@ -548,6 +563,12 @@ run("Sales screens", () => {
         screen.can.shipmentDate,
         `${who}: ship-by day`,
       );
+      expectOffered(
+        await setOrderLogisticsAction(fresh.id, { totalCartons: 2 }),
+        screen.can.logistics,
+        `${who}: cartons and packer`,
+      );
+      expect(screen.can.logistics, who).toBe(ctx.can("sales.order.create"));
       expectOffered(
         await receivePaymentAction({ orderId: fresh.id, amount: 500, method: "CASH" }),
         screen.can.receive,

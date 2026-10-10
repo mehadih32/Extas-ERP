@@ -23,7 +23,7 @@ import { isWalkIn } from "@/modules/parties/walk-in";
 import { ORDER_CHANNELS, RECEIVE_METHODS } from "@/modules/sales/choices";
 import { listCustomFields } from "@/modules/sales/custom-fields.service";
 import { getInvoiceDocument, listInvoices } from "@/modules/sales/documents.service";
-import { getOrder, listOrders } from "@/modules/sales/order.service";
+import { getOrder, listOrders, listPackers } from "@/modules/sales/order.service";
 import { getPaymentReceipt, listPayments } from "@/modules/sales/payment.service";
 import { getProforma, listProformas } from "@/modules/sales/proforma.service";
 import { getQuotation, listQuotations } from "@/modules/sales/quotation.service";
@@ -42,6 +42,7 @@ import {
   canReceiveOnOrder,
   canReceiveOnProforma,
   canRefundAs,
+  canSetLogistics,
   canRefundOrder,
   canRefundProforma,
   canSetShipmentDate,
@@ -725,6 +726,7 @@ export async function getOrderScreen(ctx: CompanyContext, orderId: string) {
   const kinds = settleKinds(ctx, { onAccount });
 
   const cancellable = access.sell && canCancelOrder(order, delivered).ok;
+  const logistics = access.sell && canSetLogistics(order).ok;
   const needsVoid = cancellable && invoice !== null && !access.voidInvoice;
   const needsSettling = cancellable && isPositive(held) && kinds.length === 0;
 
@@ -752,6 +754,8 @@ export async function getOrderScreen(ctx: CompanyContext, orderId: string) {
         address: order.shippingAddress,
       },
       warehouse: order.warehouse?.name ?? null,
+      totalCartons: order.totalCartons,
+      packedBy: order.packedBy,
       notes: order.notes,
       proforma: order.proforma,
       hasForceOverride: order.hasForceOverride,
@@ -813,6 +817,7 @@ export async function getOrderScreen(ctx: CompanyContext, orderId: string) {
       packingList: access.sell && canCreatePackingList(order).ok,
       challan: access.sell && canCreateChallan(order, remaining).ok,
       shipmentDate: access.sell && canSetShipmentDate(order).ok,
+      logistics,
       edit: access.sell && canEditOrder(order, delivered).ok,
       cancel: cancellable && !needsVoid && !needsSettling,
       /** How the money held may be settled when it is cancelled. */
@@ -820,6 +825,8 @@ export async function getOrderScreen(ctx: CompanyContext, orderId: string) {
       refundKinds: canRefundOrder(order, held).ok ? kinds : [],
       openBuyer: access.openBuyer,
     },
+    /** Who can be named as the packer (only when this person may set it). */
+    packers: logistics ? await listPackers(ctx, order.packedBy?.id) : [],
     /** Why cancelling, which this person could otherwise do, is not offered. */
     notes: {
       cancel: needsVoid
@@ -897,6 +904,9 @@ export async function getOrderForm(
       customerName: o.customerName,
       customerPhone: o.customerPhone,
       shippingAddress: o.shippingAddress,
+      totalCartons: o.totalCartons,
+      packedById: o.packedById,
+      total: fixed(o.total),
       paid: fixed(o.paidAmount),
     };
   } else if (from.proformaId) {
@@ -913,11 +923,22 @@ export async function getOrderForm(
       styleIds: [...new Set(items.map((i) => i.style?.id).filter((id): id is string => !!id))],
     };
   }
+  const [packers, ratioPresets] = await Promise.all([
+    listPackers(ctx, order?.packedById),
+    ctx.db.sizeRatioPreset.findMany({
+      select: { id: true, name: true, entries: { select: { sizeId: true, ratio: true } } },
+      orderBy: { name: "asc" },
+      take: 50,
+    }),
+  ]);
   return {
     order,
     proforma,
     today: localDay(new Date(), tz),
     currency: ctx.company.currency,
+    packers,
+    /** Saved size ratios (Products), offered as one-tap Magic Ratio fills. */
+    ratioPresets,
     channels: order
       ? [order.channel]
       : proforma

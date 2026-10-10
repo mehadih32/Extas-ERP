@@ -71,7 +71,7 @@ function BadStockList({
   }
 
   return (
-    <div className="grid gap-5">
+    <div className="grid grid-cols-1 gap-5">
       <div className="hidden rounded-lg border bg-card px-5 py-1 md:block">
         <Table>
           <TableHeader>
@@ -118,7 +118,7 @@ function BadStockList({
         </Table>
       </div>
 
-      <ul className="grid gap-3 md:hidden" aria-label="Bad stock">
+      <ul className="grid gap-3 md:hidden" aria-label="Damage & QC Rejects">
         {items.map((e) => (
           <li key={e.id} className="rounded-lg border bg-card p-4">
             <div className="flex items-start justify-between gap-3">
@@ -172,8 +172,8 @@ function BadStockList({
 }
 
 /**
- * The Bad stock tab: pieces taken out of the sellable stock, when, why and by
- * whom, for a period. Everyone with inventory.view sees the pieces; what they
+ * The Damage & QC Rejects tab (bad stock): pieces taken out of the sellable
+ * stock, when, why and by whom, for a period. Everyone with inventory.view sees the pieces; what they
  * cost (the loss) shows only to people who see the financials, and recording
  * bad stock needs inventory.manage.
  */
@@ -210,7 +210,7 @@ export function BadStockScreen({
   }
 
   return (
-    <div className="grid gap-6">
+    <div className="grid grid-cols-1 gap-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="grid gap-1">
           <label className="sr-only" htmlFor="bad-period">
@@ -243,7 +243,7 @@ export function BadStockScreen({
             }}
           >
             <PackageXIcon aria-hidden />
-            Record bad stock
+            Record damage
           </Button>
         )}
       </div>
@@ -252,7 +252,10 @@ export function BadStockScreen({
 
       <div
         aria-busy={pending}
-        className={cn("grid gap-6 transition-opacity", pending && "pointer-events-none opacity-50")}
+        className={cn(
+          "grid grid-cols-1 gap-6 transition-opacity",
+          pending && "pointer-events-none opacity-50",
+        )}
       >
         <dl className="flex flex-wrap gap-x-10 gap-y-4">
           <Figure label="Entries" value={formatCount(totals.entries, currency)} />
@@ -262,7 +265,13 @@ export function BadStockScreen({
           )}
         </dl>
         {page.items.length === 0 ? (
-          <EmptyState title={period === "ALL" ? "No bad stock yet" : "No bad stock in this period"}>
+          <EmptyState
+            title={
+              period === "ALL"
+                ? "No damaged or rejected pieces yet"
+                : "No damaged or rejected pieces in this period"
+            }
+          >
             {period === "ALL"
               ? "Damaged pieces and production rejects show here once they are moved out of the sellable stock."
               : "Pick a longer period to see older entries."}
@@ -285,7 +294,7 @@ export function BadStockScreen({
           onDone={(moved) => {
             setRecording(false);
             setNotice(
-              `${pieces(moved.quantity, currency)} of ${moved.sku} moved to bad stock${
+              `${pieces(moved.quantity, currency)} of ${moved.sku} moved to Damage & QC Rejects${
                 moved.lossValue ? `, a loss of ${money(moved.lossValue, currency)}` : ""
               }.`,
             );

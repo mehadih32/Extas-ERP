@@ -20,7 +20,7 @@ export const MOVEMENT_LABELS: Record<StockMovementType, string> = {
   PURCHASE_IN: "Bought in",
   SALE_OUT: "Sold",
   RETURN_RESTOCK: "Returned to stock",
-  BAD_STOCK_OUT: "Moved to bad stock",
+  BAD_STOCK_OUT: "Moved to Damage & QC Rejects",
   ADJUSTMENT: "Stock count correction",
   TRANSFER_IN: "Transfer in",
   TRANSFER_OUT: "Transfer out",

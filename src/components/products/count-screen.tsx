@@ -1,6 +1,6 @@
 "use client";
 
-import { LoaderCircleIcon } from "lucide-react";
+import { ChevronDownIcon, LoaderCircleIcon, TriangleAlertIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useOptimistic, useState, useTransition } from "react";
@@ -19,6 +19,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
+import { formatCount, formatDay } from "@/lib/display";
 import type { ActionError } from "@/lib/result";
 import { cn } from "@/lib/utils";
 import type { StockCountSheet } from "@/modules/inventory/screens.service";
@@ -37,11 +38,224 @@ import {
   readPieces,
   type SheetCell,
   shelfNumbers,
+  type Shortage,
+  shortage,
 } from "./count-sheet";
 import { AMOUNT_HINT, readAmount } from "./form-values";
 import { GRADE_LABELS, money, pieces, signed } from "./labels";
 
-type Cell = SheetCell & { label: string; isActive: boolean; reserved: number };
+type Cell = SheetCell & {
+  label: string;
+  isActive: boolean;
+  reserved: number;
+  unitCost: string | null;
+};
+type Line = Cell & { counted: number; difference: number };
+type Row = NonNullable<StockCountSheet["sheet"]>["rows"][number];
+
+/**
+ * The note a shortage gets, folded to one line until opened: how many pieces
+ * are missing (and their value, for people who see costs), where and when, and
+ * each colour and size short. Before saving it says what saving books; after,
+ * what was booked.
+ */
+function ShortageNote({
+  short,
+  where,
+  day,
+  saved,
+  currency,
+}: {
+  short: Shortage<Line>;
+  where: string;
+  day: string;
+  saved: boolean;
+  currency: string;
+}) {
+  const sizes = short.lines.length;
+  return (
+    <details className="group rounded-lg border border-destructive/30 bg-destructive/5 text-sm">
+      <summary className="flex cursor-pointer list-none items-start gap-3 p-4 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/25 [&::-webkit-details-marker]:hidden">
+        <TriangleAlertIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-destructive" />
+        <span className="min-w-0 flex-1">
+          <span className="font-medium">
+            {saved ? "Shortage recorded" : "Shortage found"}: {pieces(short.pieces, currency)}{" "}
+            missing in {sizes} {sizes === 1 ? "size" : "sizes"}
+            {short.value !== null && `, worth ${money(short.value, currency)}`}
+          </span>
+          <span className="mt-0.5 block text-[0.8125rem] text-muted-foreground">
+            {where} · counted {formatDay(day)}
+          </span>
+        </span>
+        <ChevronDownIcon
+          aria-hidden
+          className="mt-0.5 size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180"
+        />
+      </summary>
+      <div className="grid gap-3 border-t border-destructive/20 px-4 pt-3 pb-4">
+        <ul className="grid gap-1.5 tabular-nums" aria-label="Missing pieces">
+          {short.lines.map((line) => (
+            <li key={line.variantId} className="flex flex-wrap justify-between gap-x-4 gap-y-0.5">
+              <span className="min-w-0 break-words">
+                {line.label} <span className="text-muted-foreground">· {line.sku}</span>
+              </span>
+              <span>
+                <span className="font-medium text-destructive">
+                  {formatCount(-line.difference, currency)} missing
+                </span>{" "}
+                <span className="text-muted-foreground">
+                  ({line.onShelf} → {line.counted})
+                  {line.unitCost !== null &&
+                    ` · ${money(
+                      (Math.round(Number(line.unitCost) * -line.difference * 100) / 100).toFixed(2),
+                      currency,
+                    )}`}
+                </span>
+              </span>
+            </li>
+          ))}
+        </ul>
+        <p className="text-muted-foreground">
+          {saved
+            ? "The missing pieces left the stock and their cost went to the Inventory Loss account in Accounts, so the profit and loss shows it."
+            : "When you save, the missing pieces leave the stock and their cost goes to the Inventory Loss account in Accounts, so the profit and loss shows it."}
+        </p>
+      </div>
+    </details>
+  );
+}
+
+/**
+ * One colour of the sheet as a table: each size with its system stock, a box for
+ * the physical count (or the pieces to add) and the difference worked out.
+ */
+function ColourSheet({
+  row,
+  sizes,
+  counting,
+  typed,
+  before,
+  currency,
+  onType,
+}: {
+  row: Row;
+  sizes: Array<{ id: string; name: string }>;
+  counting: boolean;
+  typed: Record<string, string>;
+  before: Record<string, number>;
+  currency: string;
+  onType: (variantId: string, value: string) => void;
+}) {
+  const head = "px-2 py-2 text-xs leading-tight font-medium text-muted-foreground";
+  return (
+    <section
+      aria-labelledby={`count-colour-${row.color.id}`}
+      className="min-w-0 overflow-hidden rounded-lg border bg-card"
+    >
+      <h3
+        id={`count-colour-${row.color.id}`}
+        className="flex items-center gap-2 border-b px-3 py-3 font-medium sm:px-4"
+      >
+        <Swatch hex={row.color.hexCode} />
+        <span className="min-w-0 break-words">{row.color.name}</span>
+      </h3>
+      <table className="w-full text-sm tabular-nums">
+        <caption className="sr-only">
+          {row.color.name}: system stock and {counting ? "physical count" : "pieces to add"} by size
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col" className={cn(head, "pl-3 text-left sm:pl-4")}>
+              Size
+            </th>
+            <th scope="col" className={cn(head, "text-right")}>
+              System stock
+            </th>
+            <th scope="col" className={cn(head, "text-left")}>
+              {counting ? "Physical count" : "Pieces to add"}
+            </th>
+            <th scope="col" className={cn(head, "pr-3 text-right sm:pr-4")}>
+              {counting ? "Difference" : "New stock"}
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {row.cells.map((cell, i) => {
+            if (!cell) return null;
+            const size = sizes[i]!.name;
+            const read = readPieces(typed[cell.variantId]);
+            const typedPieces = read.kind === "pieces" ? read.value : null;
+            const difference = typedPieces === null ? null : typedPieces - cell.onShelf;
+            const moved =
+              before[cell.variantId] !== undefined && before[cell.variantId] !== cell.onShelf;
+            const short = counting && difference !== null && difference < 0;
+            const extra = counting && difference !== null && difference > 0;
+            return (
+              <tr
+                key={cell.variantId}
+                className={cn(
+                  "border-t",
+                  short && "bg-destructive/5",
+                  extra && "bg-secondary/70",
+                  read.kind === "invalid" && "bg-destructive/5",
+                  moved && "bg-amber-500/10",
+                )}
+              >
+                <th scope="row" className="py-1.5 pr-2 pl-3 text-left font-medium sm:pl-4">
+                  {size}
+                  {!cell.isActive && (
+                    <span className="ml-1.5 text-xs font-normal text-muted-foreground">Off</span>
+                  )}
+                </th>
+                <td className="px-2 py-1.5 text-right">
+                  <span className="block">{formatCount(cell.onShelf, currency)}</span>
+                  {cell.reserved > 0 && (
+                    <span className="block text-xs text-muted-foreground">
+                      {formatCount(cell.reserved, currency)} set aside
+                    </span>
+                  )}
+                </td>
+                <td className="px-2 py-1.5">
+                  <Input
+                    inputMode="numeric"
+                    autoComplete="off"
+                    value={typed[cell.variantId] ?? ""}
+                    onChange={(e) => onType(cell.variantId, e.target.value)}
+                    aria-label={`${row.color.name} / ${size}: ${counting ? "physical count" : "pieces to add"}`}
+                    aria-invalid={read.kind === "invalid"}
+                    placeholder={counting ? "" : "0"}
+                    className="h-10 w-20 text-right tabular-nums placeholder:text-muted-foreground/40 sm:w-24 md:h-9"
+                  />
+                </td>
+                <td
+                  className={cn(
+                    "py-1.5 pr-3 pl-2 text-right text-xs whitespace-nowrap sm:pr-4 sm:text-sm",
+                    read.kind === "invalid" || short ? "text-destructive" : "text-muted-foreground",
+                    extra && "font-medium text-primary",
+                    short && "font-medium",
+                    moved && "text-amber-700",
+                  )}
+                >
+                  {read.kind === "invalid"
+                    ? "Whole pieces"
+                    : moved
+                      ? `Moved: was ${before[cell.variantId]}`
+                      : typedPieces === null
+                        ? "—"
+                        : !counting
+                          ? formatCount(cell.onShelf + typedPieces, currency)
+                          : difference === 0
+                            ? "Matches"
+                            : `${signed(difference!, currency)} ${short ? "short" : "extra"}`}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </section>
+  );
+}
 
 function Segmented<T extends string>({
   label,
@@ -176,7 +390,7 @@ function ReviewDialog({
             {counting
               ? nothing
                 ? `The ${count.length === 1 ? "SKU" : `${count.length} SKUs`} counted match the stock of ${where}. There is nothing to change.`
-                : `${where}: ${differing.length} ${differing.length === 1 ? "SKU differs" : "SKUs differ"} from the stock (${signed(totals.added, currency)} / ${signed(-totals.removed, currency)}). Missing pieces are booked as a loss; pieces found are added.`
+                : `${where}: ${differing.length} ${differing.length === 1 ? "SKU differs" : "SKUs differ"} from the stock (${signed(totals.added, currency)} / ${signed(-totals.removed, currency)}). Missing pieces go to the Inventory Loss account; pieces found are added.`
               : `Opening stock for ${where}: stock you held before starting with Extas ERP.`}
           </DialogDescription>
         </DialogHeader>
@@ -291,10 +505,13 @@ export function CountScreen({
   sheet,
   view,
   currency,
+  today,
 }: {
   sheet: StockCountSheet;
   view: CountView;
   currency: string;
+  /** Today in the company's time zone, the day a count is made. */
+  today: string;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -304,7 +521,12 @@ export function CountScreen({
   const [typed, setTyped] = useState<Record<string, string>>({});
   const [leaving, setLeaving] = useState<CountView | null>(null);
   const [reviewing, setReviewing] = useState(false);
-  const [notice, setNotice] = useState<{ tone: "success" | "note"; text: string }>();
+  const [notice, setNotice] = useState<{
+    tone: "success" | "note";
+    text: string;
+    /** A saved count's shortage, kept under the notice. */
+    shortage?: { short: Shortage<Line>; where: string };
+  }>();
   /** The shelf numbers before reloading them, to point out the ones that moved. */
   const [before, setBefore] = useState<Record<string, number>>({});
 
@@ -321,6 +543,7 @@ export function CountScreen({
               onShelf: cell.onShelf,
               reserved: cell.reserved,
               isActive: cell.isActive,
+              unitCost: cell.unitCost,
               label: `${row.color.name} / ${sizes[i]!.name}`,
             },
           ]
@@ -330,6 +553,8 @@ export function CountScreen({
   const count = countLines(cells, typed);
   const opening = openingLines(cells, typed);
   const totals = countTotals(count.lines);
+  const short = shortage(count.lines);
+  const where = `${sheet.warehouse.name}, ${GRADE_LABELS[view.grade]}`;
   const invalid = counting ? count.invalid : opening.invalid;
   const dirty = Object.values(typed).some((v) => v.trim() !== "");
   const openingPieces = opening.lines.reduce((sum, l) => sum + l.quantity, 0);
@@ -391,7 +616,7 @@ export function CountScreen({
       : `${pieces(openingPieces, currency)} to add in ${opening.lines.length} ${opening.lines.length === 1 ? "SKU" : "SKUs"}`;
 
   return (
-    <div className="grid gap-6">
+    <div className="grid grid-cols-1 gap-6">
       <div className="grid gap-4 rounded-lg border bg-card p-4 sm:grid-cols-2 sm:p-5 xl:grid-cols-[auto_minmax(0,1fr)_minmax(0,14rem)_auto]">
         <div className="grid gap-2">
           <span className="eyebrow">What to do</span>
@@ -456,6 +681,15 @@ export function CountScreen({
       </div>
 
       {notice && <FormAlert tone={notice.tone}>{notice.text}</FormAlert>}
+      {notice?.shortage && (
+        <ShortageNote
+          short={notice.shortage.short}
+          where={notice.shortage.where}
+          day={today}
+          saved
+          currency={currency}
+        />
+      )}
 
       <div
         aria-busy={navigating}
@@ -485,86 +719,32 @@ export function CountScreen({
           <>
             <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">
               {counting
-                ? `Type the ${GRADE_LABELS[view.grade]} pieces you find for each SKU at ${sheet.warehouse.name}. Leave a box empty to skip it; only the SKUs that differ change.`
+                ? `Count the ${GRADE_LABELS[view.grade]} pieces on the shelf at ${sheet.warehouse.name} and type each number under Physical count. The difference from the system stock works itself out. Leave a box empty to skip it; only the sizes that differ change.`
                 : `Type the ${GRADE_LABELS[view.grade]} pieces to add for each SKU at ${sheet.warehouse.name}. For stock held before starting with Extas ERP; deliveries from production come in through Production.`}
             </p>
-            {rows.map((row) => (
-              <fieldset key={row.color.id} className="rounded-lg border bg-card p-4 sm:p-5">
-                <legend className="flex items-center gap-2 px-1 font-medium">
-                  <Swatch hex={row.color.hexCode} />
-                  {row.color.name}
-                </legend>
-                <div className="grid gap-2 sm:grid-cols-[repeat(auto-fill,minmax(8.5rem,1fr))] sm:gap-3">
-                  {row.cells.map((cell, i) => {
-                    if (!cell) return null;
-                    const size = sizes[i]!.name;
-                    const read = readPieces(typed[cell.variantId]);
-                    const difference = read.kind === "pieces" ? read.value - cell.onShelf : null;
-                    const moved =
-                      before[cell.variantId] !== undefined &&
-                      before[cell.variantId] !== cell.onShelf;
-                    return (
-                      <div
-                        key={cell.variantId}
-                        className={cn(
-                          "grid grid-cols-[3.25rem_minmax(0,1fr)_6rem] items-center gap-x-3 gap-y-1 rounded-md border px-3 py-2 sm:grid-cols-1 sm:grid-rows-[auto_1fr_auto_auto] sm:py-3",
-                          read.kind === "invalid" && "border-destructive/50 bg-destructive/5",
-                          counting &&
-                            difference !== null &&
-                            difference !== 0 &&
-                            "border-primary/30 bg-secondary/60",
-                          moved && "border-amber-500/60",
-                        )}
-                      >
-                        <span className="font-medium">
-                          {size}
-                          {!cell.isActive && (
-                            <span className="ml-1.5 text-xs font-normal text-muted-foreground">
-                              Off
-                            </span>
-                          )}
-                        </span>
-                        <span className="text-xs text-muted-foreground tabular-nums sm:self-start">
-                          <span className="block">Stock {cell.onShelf}</span>
-                          {cell.reserved > 0 && (
-                            <span className="block">{cell.reserved} set aside</span>
-                          )}
-                        </span>
-                        <Input
-                          inputMode="numeric"
-                          autoComplete="off"
-                          value={typed[cell.variantId] ?? ""}
-                          onChange={(e) => type(cell.variantId, e.target.value)}
-                          aria-label={`${row.color.name} / ${size}: pieces ${counting ? "counted" : "to add"}`}
-                          aria-invalid={read.kind === "invalid"}
-                          placeholder={counting ? String(cell.onShelf) : "0"}
-                          className="h-10 text-right tabular-nums placeholder:text-muted-foreground/40 md:h-9"
-                        />
-                        <span
-                          className={cn(
-                            // Kept on computers, so the boxes of a row line up.
-                            "col-span-3 text-xs tabular-nums empty:hidden sm:col-span-1 sm:min-h-4 sm:empty:block",
-                            read.kind === "invalid" && "text-destructive",
-                            difference !== null && difference < 0 && "text-destructive",
-                            moved && "text-amber-700",
-                          )}
-                        >
-                          {read.kind === "invalid"
-                            ? "Whole pieces only"
-                            : moved
-                              ? `Stock moved: was ${before[cell.variantId]}`
-                              : counting && difference !== null
-                                ? difference === 0
-                                  ? "Matches"
-                                  : signed(difference, currency)
-                                : ""}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </fieldset>
-            ))}
+            <div className="grid grid-cols-1 items-start gap-4 md:grid-cols-2">
+              {rows.map((row) => (
+                <ColourSheet
+                  key={row.color.id}
+                  row={row}
+                  sizes={sizes}
+                  counting={counting}
+                  typed={typed}
+                  before={before}
+                  currency={currency}
+                  onType={type}
+                />
+              ))}
+            </div>
+            {counting && short.pieces > 0 && (
+              <ShortageNote
+                short={short}
+                where={where}
+                day={today}
+                saved={false}
+                currency={currency}
+              />
+            )}
           </>
         )}
       </div>
@@ -631,6 +811,7 @@ export function CountScreen({
             setTyped({});
             setBefore({});
             setNotice({
+              shortage: counting && short.pieces > 0 ? { short, where } : undefined,
               tone: "success",
               text: counting
                 ? saved.changed === 0

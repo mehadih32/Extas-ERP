@@ -7,7 +7,7 @@ import * as matrix from "@/modules/inventory/matrix.service";
 import * as stock from "@/modules/inventory/stock.service";
 import * as styles from "@/modules/inventory/style.service";
 
-import { addToCompany, contextFor, makeCompany, makeUser, resetDb } from "./helpers";
+import { addToCompany, contextFor, makeCompany, makeUser, PASSWORD, resetDb } from "./helpers";
 
 const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
 
@@ -554,5 +554,103 @@ run("stock counts and bad stock", () => {
     expect(owner.items[0]!.recordedBy?.name).toBe("store");
     const keeper = await stock.listMovements(store, { variantId: navyS });
     expect(keeper.items.every((m) => m.unitCost === null && m.value === null)).toBe(true);
+  });
+});
+run("deleting a warehouse", () => {
+  beforeEach(resetDb);
+
+  const shopFloor = async (env: Awaited<ReturnType<typeof setup>>) => {
+    const main = await stock.getDefaultWarehouse(env.ctx);
+    const uttara = await stock.createWarehouse(env.ctx, { name: "Uttara Store" });
+    return { main, uttara };
+  };
+
+  it("is for a Super Admin who types their password, and only once the stock is 0", async () => {
+    const env = await setup();
+    const { cell } = await makePolo(env);
+    const { main, uttara } = await shopFloor(env);
+    const navyS = cell("Navy", "S").variantId;
+    await stock.adjustStock(env.ctx, {
+      variantId: navyS,
+      warehouseId: uttara.id,
+      quantity: 5,
+      type: "OPENING",
+      unitCost: 300,
+    });
+
+    // The Warehouse Team may manage stock, but not delete a warehouse.
+    const role = await prisma.role.findFirstOrThrow({
+      where: { companyId: env.company.id, systemRole: "WAREHOUSE_TEAM" },
+    });
+    const keeper = await makeUser(`store@${env.company.slug}.test`);
+    await addToCompany(keeper.id, env.company.id, role.id);
+    const keeperCtx = await contextFor(keeper.id, env.company.id);
+    await expect(
+      stock.deleteWarehouse(keeperCtx, uttara.id, { password: PASSWORD }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+
+    await expect(
+      stock.deleteWarehouse(env.ctx, uttara.id, { password: "not-it" }),
+    ).rejects.toMatchObject({ code: "VALIDATION", details: { password: [expect.any(String)] } });
+    await expect(
+      stock.deleteWarehouse(env.ctx, uttara.id, { password: PASSWORD }),
+    ).rejects.toMatchObject({
+      code: "CONFLICT",
+      message:
+        "Uttara Store: It still holds stock (5 pieces). Sell, issue or count it down to 0 first.",
+    });
+
+    // Counted down to 0: the 5 missing pieces (1,500) go to the Inventory Loss account.
+    await stock.recordStockCount(env.ctx, {
+      mode: "COUNT",
+      warehouseId: uttara.id,
+      lines: [{ variantId: navyS, counted: 0, expected: 5 }],
+    });
+    const loss = await prisma.ledgerAccount.findFirstOrThrow({
+      where: { companyId: env.company.id, code: "5150" },
+      include: { lines: { include: { entry: { select: { description: true } } } } },
+    });
+    expect(loss.name).toBe("Inventory Loss");
+    expect(loss.lines.map((l) => [l.debit.toFixed(2), l.entry.description])).toEqual([
+      ["1500.00", "Stock count shortage — EX-PL-001-NAVY-S -5"],
+    ]);
+
+    const gone = await stock.deleteWarehouse(env.ctx, uttara.id, { password: PASSWORD });
+    expect(gone).toEqual({ id: uttara.id, name: "Uttara Store", newDefault: null });
+    expect((await stock.listWarehouses(env.ctx)).map((w) => w.name)).toEqual(["Main Warehouse"]);
+    // Its history still names it; nothing new can go there.
+    const history = await stock.listMovements(env.ctx, { variantId: navyS });
+    expect(history.items.map((m) => m.warehouse.name)).toEqual(["Uttara Store", "Uttara Store"]);
+    await expect(
+      stock.adjustStock(env.ctx, { variantId: navyS, warehouseId: uttara.id, quantity: 1 }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(await prisma.auditLog.count({ where: { action: "DELETE", entityId: uttara.id } })).toBe(
+      1,
+    );
+
+    // The last warehouse stays; adding the name again brings the old one back.
+    await expect(
+      stock.deleteWarehouse(env.ctx, main.id, { password: PASSWORD }),
+    ).rejects.toMatchObject({
+      code: "CONFLICT",
+      message: expect.stringContaining("only warehouse"),
+    });
+    const back = await stock.createWarehouse(env.ctx, {
+      name: "uttara store",
+      address: "Sector 7",
+    });
+    expect(back).toMatchObject({ id: uttara.id, name: "uttara store", deletedAt: null });
+  });
+
+  it("hands the default on to the oldest warehouse left", async () => {
+    const env = await setup();
+    const { main, uttara } = await shopFloor(env);
+    expect(await stock.deleteWarehouse(env.ctx, main.id, { password: PASSWORD })).toMatchObject({
+      newDefault: "Uttara Store",
+    });
+    expect(await stock.getDefaultWarehouse(env.ctx)).toMatchObject({
+      id: uttara.id,
+      isDefault: true,
+    });
   });
 });

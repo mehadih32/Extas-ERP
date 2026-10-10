@@ -35,8 +35,9 @@ function startingShelf(details: VariantDetails, warehouseId: string | null | und
 }
 
 /**
- * Moves pieces of one SKU to bad stock: they leave the sellable stock and what
- * they cost is booked as a loss (inventory.manage, like moveToBadStockAction).
+ * Moves pieces of one SKU to Damage & QC Rejects (bad stock): they leave the
+ * sellable stock and what they cost is booked to Inventory Loss (inventory.manage,
+ * like moveToBadStockAction).
  * The loss in money shows only to people who see the financials.
  */
 export function BadStockForm({
@@ -112,7 +113,8 @@ export function BadStockForm({
     return (
       <div className="grid gap-5">
         <FormAlert tone="note">
-          {details.sku} has nothing on the shelf, so there is nothing to move to bad stock.
+          {details.sku} has nothing on the shelf, so there is nothing to move to Damage & QC
+          Rejects.
         </FormAlert>
         <div className="flex justify-end">
           <Button type="button" variant="outline" onClick={onCancel}>
@@ -206,8 +208,8 @@ export function BadStockForm({
         </FormAlert>
       )}
       <p className="text-sm text-muted-foreground">
-        The pieces leave the sellable stock and what they cost is booked as a loss
-        {loss ? `: ${money(loss, currency)}.` : "."}
+        The pieces leave the sellable stock and what they cost is booked to the Inventory Loss
+        account{loss ? `: ${money(loss, currency)}.` : "."}
       </p>
       {error && error.code !== "INTERNAL" && !error.fieldErrors && (
         <FormAlert>{error.message}</FormAlert>
@@ -219,13 +221,13 @@ export function BadStockForm({
         </Button>
         <Button type="submit" variant="destructive" disabled={pending}>
           {pending && <LoaderCircleIcon className="animate-spin" aria-hidden />}
-          {pending ? "Moving" : "Move to bad stock"}
+          {pending ? "Moving" : "Move to Damage & QC Rejects"}
         </Button>
       </div>
       {error?.code === "INTERNAL" && (
         <ErrorDialog
           code={error.errorId ?? "ERR-UNKNOWN"}
-          title="We could not move the pieces to bad stock"
+          title="We could not move the pieces to Damage & QC Rejects"
           onClose={() => setError(undefined)}
         />
       )}

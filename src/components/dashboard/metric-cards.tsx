@@ -17,14 +17,8 @@ type Row = { label: string; value: string; strong?: boolean };
 
 const MASK = "••••••";
 
-/** Five cards over a six-column grid on wide screens: three across, then two. */
-const SPAN: Record<MetricCard["key"], string> = {
-  STOCK_VALUE: "lg:col-span-2",
-  FIXED_ASSETS: "lg:col-span-2",
-  LIABILITIES: "lg:col-span-2",
-  TODAY_SALES: "lg:col-span-3",
-  NET_PROFIT: "sm:col-span-2 lg:col-span-3",
-};
+/** Six cards over a six-column grid on wide screens: three across, twice. */
+const SPAN = "lg:col-span-2";
 
 /** The figures behind each card, written out for people. */
 function detailRows(card: MetricCard, currency: string): Row[] {
@@ -64,6 +58,17 @@ function detailRows(card: MetricCard, currency: string): Row[] {
         { label: "Yesterday", value: money(d.yesterday) },
       ];
     }
+    case "BAD_STOCK_VALUE": {
+      const d = card.details;
+      return [
+        { label: "Pieces written off", value: count(d.pieces) },
+        {
+          label: "This month",
+          value: `${count(d.thisMonth.pieces)} pcs · ${money(d.thisMonth.value)}`,
+        },
+        { label: "Entries", value: count(d.entries) },
+      ];
+    }
     case "NET_PROFIT": {
       const d = card.details;
       return [
@@ -92,6 +97,8 @@ function Caption({ card }: { card: MetricCard }) {
       return quiet("Owed to lenders and investors");
     case "NET_PROFIT":
       return quiet(`Since ${formatDay(card.details.monthFrom)}`);
+    case "BAD_STOCK_VALUE":
+      return quiet("Damage & QC Rejects, at cost");
     case "TODAY_SALES": {
       const { changePct } = card.details;
       if (changePct === null) return quiet("No sales yesterday to compare with");
@@ -128,7 +135,7 @@ function MetricCardView({
   const rows = detailRows(card, currency);
   return (
     <article
-      className={cn("flex min-w-0 flex-col rounded-lg border bg-card p-5 sm:p-6", SPAN[card.key])}
+      className={cn("flex min-w-0 flex-col rounded-lg border bg-card p-5 sm:p-6", SPAN)}
       aria-label={card.label}
     >
       <header className="flex items-start justify-between gap-3">
@@ -186,7 +193,7 @@ function MetricCardView({
 
 /**
  * The owner's money cards (blueprint: stock value, fixed assets, liabilities,
- * today's sales, net profit). The eye hides a figure on this person's screens
+ * today's sales, net profit; and the bad stock value). The eye hides a figure on this person's screens
  * (saved with their preferences), e.g. while someone looks over their shoulder.
  */
 export function MetricCards({ data }: { data: MetricCardsData }) {

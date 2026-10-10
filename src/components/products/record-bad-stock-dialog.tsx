@@ -22,8 +22,9 @@ import { BadStockForm, type MovedToBadStock } from "./bad-stock-form";
 import { Swatch } from "./bits";
 
 /**
- * Records bad stock from the Bad stock tab: find the SKU by its code or barcode
- * (a scanner types it in), then say how many pieces, from where and why.
+ * Records damage or a QC reject from the Damage & QC Rejects tab: find the SKU
+ * by its code or barcode (a scanner types it in), then say how many pieces, from
+ * where and why.
  */
 export function RecordBadStockDialog({
   currency,
@@ -61,7 +62,7 @@ export function RecordBadStockDialog({
     <Dialog open onOpenChange={(open) => !open && !pending && onClose()}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Record bad stock</DialogTitle>
+          <DialogTitle>Record damage or a QC reject</DialogTitle>
           <DialogDescription>
             {details ? (
               <span className="flex items-center gap-2">

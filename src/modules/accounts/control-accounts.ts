@@ -107,6 +107,13 @@ export const CONTROL_ACCOUNTS = {
     type: "EXPENSE",
     subType: "INVENTORY_LOSS",
   },
+  // Finished stock lost: count shortages (less surpluses) and Damage & QC Rejects.
+  INVENTORY_LOSS: {
+    code: "5150",
+    name: "Inventory Loss",
+    type: "EXPENSE",
+    subType: "INVENTORY_LOSS",
+  },
   // Also the SALARY expense category's account (chart.ts), so both name one account.
   SALARIES: {
     code: "6200",

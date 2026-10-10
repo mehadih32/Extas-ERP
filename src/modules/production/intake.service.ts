@@ -20,7 +20,11 @@ import {
   removeAtCost,
 } from "@/modules/inventory/costs";
 import { lotsOfIntake, openLots } from "@/modules/inventory/lot.service";
-import { getDefaultWarehouse, weightedAverageCost } from "@/modules/inventory/stock.service";
+import {
+  getDefaultWarehouse,
+  resolveWarehouse,
+  weightedAverageCost,
+} from "@/modules/inventory/stock.service";
 import {
   defaultIntakeParser,
   type IntakeParser,
@@ -66,13 +70,6 @@ const assertDraft = (intake: { number: string; status: IntakeStatus }) =>
 
 const assertCanReceive = (project: { code: string; status: ProductionStatus }) =>
   assertAllowed(canReceiveGoods(project));
-
-async function resolveWarehouse(ctx: CompanyContext, warehouseId?: string) {
-  if (!warehouseId) return getDefaultWarehouse(ctx);
-  const warehouse = await ctx.db.warehouse.findUnique({ where: { id: warehouseId } });
-  if (!warehouse) throw new AppError("NOT_FOUND", "Warehouse not found.");
-  return warehouse;
-}
 
 /** Lines and matrix cells as SKU x grade lines; repeats are added up. */
 async function resolveIntakeLines(
@@ -496,7 +493,7 @@ export async function confirmIntake(
       let warehouseId = input.warehouseId ?? intake.warehouseId;
       if (input.warehouseId) {
         const warehouse = await tx.warehouse.findFirst({
-          where: { id: input.warehouseId, companyId },
+          where: { id: input.warehouseId, companyId, deletedAt: null },
         });
         if (!warehouse) throw new AppError("NOT_FOUND", "Warehouse not found.");
       }

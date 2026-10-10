@@ -145,6 +145,11 @@ export const createWarehouseSchema = z.object({
   isDefault: z.boolean().optional(),
 });
 
+/** Deleting a warehouse: the Super Admin types their password again. */
+export const deleteWarehouseSchema = z.object({
+  password: z.string().min(1, "Type your password").max(200),
+});
+
 export const adjustStockSchema = z.object({
   variantId: id,
   warehouseId: id.optional(), // default warehouse when omitted

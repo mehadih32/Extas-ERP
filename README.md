@@ -123,7 +123,7 @@ Built one module at a time, each in its own pull request. So far:
     piece; an undone delivery's lot is marked Undone) and **All movements**, each with its lot.
     A matrix cell opens its SKU: prices, barcode and stock in each warehouse, and for
     managers editing the SKU (barcode, own prices, offered for sale), correcting its stock and
-    moving pieces to bad stock. Managers also get **Bulk update**, a spreadsheet-style grid of
+    moving pieces to Damage & QC Rejects. Managers also get **Bulk update**, a spreadsheet-style grid of
     every colour and size with a Good and a B-grade box each, filled with the shelf numbers of
     one warehouse (Tab or Enter moves on), saved at once as a stock count, and an "Upload
     packing list (AI scan)" button that says Integration Pending for now. Managers add styles,
@@ -134,17 +134,28 @@ Built one module at a time, each in its own pull request. So far:
   - **Archived styles**: the archived styles, filtered the same way, each with a one-tap
     **Unarchive**. Archived styles stay out of the sales and production pickers but keep
     their stock and history and stay in every report.
-  - **Stock count**: pick a style, warehouse and grade, type the pieces found on the shelf
-    for each SKU and save only the differences (missing pieces are booked as a loss). If stock
-    moves while counting (a sale, another count), the save is refused and the sheet reloads
-    the new shelf numbers, keeping what was typed. The same tab enters **opening stock**: the
-    pieces held before starting with Extas ERP, at an optional cost per piece.
-  - **Bad stock**: the pieces taken out of the sellable stock, for a period, with why, where
-    from and who recorded them. Managers record bad stock from a SKU or barcode.
+  - **Stock count**: pick a style, warehouse and grade; each colour is a table of its sizes
+    with the **System stock**, one **Physical count** box and the **Difference** worked out
+    (Matches, short or extra). A shortage shows an expandable note (the colours and sizes
+    short, the warehouse, the day and, for people who see costs, the value). Only the
+    differences are saved: missing pieces (unit cost x pieces) go to the **Inventory Loss**
+    account, pieces found take it back. If stock moves while counting (a sale, another
+    count), the save is refused and the sheet reloads the new shelf numbers, keeping what was
+    typed. The same tab enters **opening stock**: the pieces held before starting with Extas
+    ERP, at an optional cost per piece.
+  - **Damage & QC Rejects** (formerly Bad stock, still at `/products/bad-stock`): the pieces
+    taken out of the sellable stock as damaged or QC rejects, for a period, with why, where
+    from and who recorded them; their cost goes to the Inventory Loss account. Managers record
+    them from a SKU or barcode. The dashboard's **Total bad stock value** card adds them up.
   - **Setup**: colours (with their swatch, and quick-pick swatches when adding one), sizes
     (in matrix order, dragged into place by their handle or moved with the keyboard), the
-    category tree and brands (renamed in place by tapping the name) and warehouses.
-    Something already in use cannot be deleted. Names are unique
+    category tree and brands (renamed in place by tapping the name) and warehouses (each with
+    the pieces and raw materials it holds). Only a **Super Admin** deletes a warehouse, after
+    typing their password again, and only an empty one (no pieces, no raw materials, no open
+    order or delivery from production using it, and not the last one). A deleted warehouse
+    leaves every list and picker but its history keeps its name; adding the same name brings
+    it back, and the default passes to the oldest one left. Something else already in use
+    cannot be deleted. Names are unique
     whatever their letter case ("maroon" next to Maroon is refused).
 - **Buyers & suppliers** (`/parties`, "Parties" on the phone tab bar), in three tabs:
   - **Buyers** and **Suppliers**: every account with its contact, city, grade, Blue Verified
@@ -494,7 +505,7 @@ appears. With the built-in roles' default permissions:
 
 Products follows the inventory permissions:
 
-| Role                               | Products menu | Changes (styles, SKUs, counts, bad stock, setup) | Costs and losses |
+| Role                               | Products menu | Changes (styles, SKUs, counts, damage/QC, setup) | Costs and losses |
 | ---------------------------------- | ------------- | ------------------------------------------------ | ---------------- |
 | Super Admin                        | Yes           | Yes                                              | Yes              |
 | Production Manager, Warehouse Team | Yes           | Yes                                              | No               |
@@ -502,7 +513,8 @@ Products follows the inventory permissions:
 | Accounts, Employee                 | No            | No                                               | No               |
 
 Reading needs `inventory.view` and changing needs `inventory.manage`. What stock cost (a
-SKU's average cost, the value of each stock movement, the loss on bad stock) shows only to
+SKU's average cost, the value of each stock movement, the loss on damage and QC rejects and
+on a count's shortage) shows only to
 people who see the financials (`dashboard.financials` or `accounts.view`); for everyone else
 the server leaves it out. Opening stock asks for a cost per piece, so the people who enter it
 (those with `inventory.manage`) decide what it is worth in the books.
@@ -825,7 +837,9 @@ zero here (Force Override comes with the Sales module). Each SKU keeps two weigh
 costs, one for A-grade and one for B-grade (`avgCost` and `bGradeAvgCost`), so cheaper seconds
 never pull down the cost of first-quality stock. Stock coming in re-weights only its own grade's
 cost; corrections, bad stock, deliveries and the stock value all use the grade's own cost. Bad
-stock records the loss at that cost.
+stock records the loss at that cost. Count shortages (less surpluses) and Damage & QC Rejects
+post to **Inventory Loss** (5150, an `INVENTORY_LOSS` expense shown as its own line in the
+P&L); entries from before October 2026 stay in Production & Inventory Losses (5100).
 
 **Lots.** Every inward batch is a `StockLot`, numbered `LOT-2026-00001` by itself (document
 type `STOCK_LOT`): one per style for each opening stock entry and each confirmed production
@@ -856,9 +870,10 @@ and size are ticked again.
 | `GET/POST /api/inventory/ratio-presets`, `PATCH/DELETE …/:id`           | Saved size ratios                                       |
 | `POST /api/inventory/ratio-fill`                                        | Ratio Fill quantities (packs or total, capped to stock) |
 | `GET/POST /api/inventory/warehouses`                                    | Warehouses                                              |
+| `DELETE /api/inventory/warehouses/:id` — `{ password }`                 | Delete an empty warehouse (Super Admin only)            |
 | `POST /api/inventory/stock/adjust`                                      | Opening stock or +/- correction                         |
 | `POST /api/inventory/stock/count`                                       | Stock count (lines may each name a grade) or opening    |
-| `GET/POST /api/inventory/stock/bad-stock`                               | Bad stock entries / move to Bad Stock (inventory loss)  |
+| `GET/POST /api/inventory/stock/bad-stock`                               | Damage & QC Rejects / move there (Inventory Loss)       |
 | `GET /api/inventory/stock/movements`                                    | Stock history (each movement with its lot)              |
 | `GET /api/inventory/stock/lots?styleId=`                                | A style's inward batches (lots), newest first           |
 | `GET /api/inventory/stock/summary`                                      | Stock value, low / highest / slow stock, top sellers    |
@@ -1425,8 +1440,9 @@ run again automatically if the database ever cancels one to break such a conflic
 
 ## Dashboard & reports (backend)
 
-**Metric cards.** The owner's five cards come from the books, so they always agree with the
-Accounts overview and the statements. Each card also carries the figures behind it.
+**Metric cards.** The owner's six cards come from the books (the bad stock value from the
+Damage & QC Rejects entries), so they always agree with the Accounts overview and the
+statements. Each card also carries the figures behind it.
 
 | Card                            | Figure                                                        | Behind it                                         |
 | ------------------------------- | ------------------------------------------------------------- | ------------------------------------------------- |
@@ -1435,6 +1451,7 @@ Accounts overview and the statements. Each card also carries the figures behind 
 | Liabilities (loans / investors) | What is owed to lenders and investors                         | Loans and investors apart                         |
 | Today's sales                   | The Sales account today (after discounts, no delivery or VAT) | Invoices, pieces, yesterday and the change        |
 | Net profit (this month)         | Profit from the books since the 1st                           | Last month, this financial year                   |
+| Total bad stock value           | Every piece moved to Damage & QC Rejects, at its cost then    | Pieces, this month's pieces and value, entries    |
 
 Each person can hide cards (the eye icon). The choice is saved per person, and hidden cards
 still come with their figures, marked `hidden`, so the screen can show dots.

@@ -108,6 +108,7 @@ const href = {
 /** The company's stores, the main one first. */
 async function listStores(ctx: CompanyContext) {
   const rows = await ctx.db.warehouse.findMany({
+    where: { deletedAt: null },
     select: { id: true, name: true, isDefault: true },
     orderBy: [{ isDefault: "desc" }, { name: "asc" }],
   });

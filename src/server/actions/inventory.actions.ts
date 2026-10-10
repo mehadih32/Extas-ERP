@@ -155,6 +155,11 @@ export const listWarehousesAction = async () =>
   runAction(async () => stock.listWarehouses(await view()));
 export const createWarehouseAction = async (input: unknown) =>
   change(async () => stock.createWarehouse(await manage(), input, await getRequestMeta()));
+/** Super Admin only, with their password (checked in the service). */
+export const deleteWarehouseAction = async (warehouseId: string, input: unknown) =>
+  change(async () =>
+    stock.deleteWarehouse(await manage(), warehouseId, input, await getRequestMeta()),
+  );
 export const adjustStockAction = async (input: unknown) =>
   change(async () => stock.adjustStock(await manage(), input, await getRequestMeta()));
 export const recordStockCountAction = async (input: unknown) =>

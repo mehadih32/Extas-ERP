@@ -12,7 +12,7 @@ export const dashboardHelp: HelpSection = {
       slug: "dashboard-key-figures",
       title: "মূল হিসাবগুলো (Key figures) পড়বেন যেভাবে",
       summary:
-        "স্টকের মূল্য, স্থায়ী সম্পদ, দেনা, আজকের বিক্রি ও এ মাসের নিট লাভের কার্ডগুলো বোঝা।",
+        "স্টকের মূল্য, স্থায়ী সম্পদ, দেনা, আজকের বিক্রি, এ মাসের নিট লাভ ও নষ্ট মালের মূল্যের কার্ডগুলো বোঝা।",
       keywords: [
         "dashboard",
         "key figures",
@@ -21,22 +21,25 @@ export const dashboardHelp: HelpSection = {
         "liabilities",
         "today's sales",
         "net profit",
+        "bad stock value",
+        "damage",
         "ড্যাশবোর্ড",
         "আজকের বিক্রি",
         "লাভ",
         "নিট লাভ",
         "স্টকের মূল্য",
         "দেনা",
+        "নষ্ট মাল",
       ],
       routes: ["/"],
       who: "যাঁরা আর্থিক হিসাব দেখতে পারেন, যেমন Super Admin ও Accounts। অন্যদের পর্দায় এই কার্ডগুলো আসে না।",
       anyOf: ["dashboard.financials", "accounts.view"],
       steps: [
         {
-          text: "মেনুর “Dashboard”-এ চাপুন, অথবা উপরের “Extas ERP” লেখায় চাপুন। “Key figures” অংশে পাঁচটি কার্ড দেখবেন।",
+          text: "মেনুর “Dashboard”-এ চাপুন, অথবা উপরের “Extas ERP” লেখায় চাপুন। “Key figures” অংশে ছয়টি কার্ড দেখবেন।",
           image: {
             id: "dashboard-key-figures-1",
-            caption: "ড্যাশবোর্ডের “Key figures” অংশে পাঁচটি কার্ড",
+            caption: "ড্যাশবোর্ডের “Key figures” অংশে ছয়টি কার্ড",
           },
         },
         {
@@ -47,6 +50,9 @@ export const dashboardHelp: HelpSection = {
         },
         {
           text: "“Today's sales”: আজকের বিক্রি, ইনভয়েস ও পিসের সংখ্যা, আর গতকালের সঙ্গে তুলনা। “Net profit (this month)”: এ মাসের নিট লাভ, সঙ্গে গত মাস ও এই অর্থবছরের হিসাব।",
+        },
+        {
+          text: "“Total bad stock value”: এ পর্যন্ত যত পিস “Damage & QC Rejects”-এ সরানো হয়েছে তার মোট দাম, খরচের দামে। নিচে মোট পিস (“Pieces written off”), এ মাসের পিস ও টাকা (“This month”) আর কয়বার লেখা হয়েছে (“Entries”)।",
         },
         {
           text: "কোনো কার্ড পাশে কেউ দেখে ফেলুক না চাইলে কার্ডের চোখের আইকনে চাপুন (“Hide figure”)। সব কার্ড একসঙ্গে লুকাতে “Hide all figures” চাপুন। আবার দেখাতে “Show figure” বা “Show all figures”।",

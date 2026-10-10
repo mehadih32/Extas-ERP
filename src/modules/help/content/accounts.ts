@@ -512,6 +512,8 @@ export const accountsHelp: HelpSection = {
         "নিট লাভ",
         "মোট লাভ",
         "আয় ব্যয়",
+        "inventory loss",
+        "স্টকের ক্ষতি",
       ],
       routes: ["/accounts/reports/profit-and-loss", "/accounts/reports"],
       who: "Accounts ও Super Admin।",
@@ -538,6 +540,7 @@ export const accountsHelp: HelpSection = {
       tips: [
         "রিপোর্ট সরাসরি হিসাবের খাতা থেকে তৈরি হয়, তাই সবসময় হালনাগাদ থাকে।",
         "রিপোর্ট PDF বা Excel হিসেবে রাখতে Reports & documents-এর Report Builder ব্যবহার করুন।",
+        "স্টক গণনায় কম পাওয়া পিস আর নষ্ট ও QC-তে বাতিল মালের দাম নিজে থেকেই “Inventory Loss” (5150) খাতে যায়, “Expenses”-এর ক্ষতির অংশে আলাদা লাইনে দেখায়। অক্টোবর ২০২৬-এর আগের এমন ক্ষতি আগের মতো “Production & Inventory Losses” (5100) খাতে থাকে।",
       ],
     },
     {

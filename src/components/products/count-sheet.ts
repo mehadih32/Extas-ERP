@@ -31,10 +31,10 @@ function invalidSkus(cells: SheetCell[], typed: Record<string, string>): string[
 }
 
 /** A count: each SKU with pieces typed, and how far that is from the shelf. */
-export function countLines(
-  cells: SheetCell[],
+export function countLines<C extends SheetCell>(
+  cells: C[],
   typed: Record<string, string>,
-): { lines: CountLine[]; invalid: string[] } {
+): { lines: Array<C & { counted: number; difference: number }>; invalid: string[] } {
   const lines = cells.flatMap((cell) => {
     const read = readPieces(typed[cell.variantId]);
     if (read.kind !== "pieces") return [];
@@ -52,6 +52,23 @@ export function countTotals(lines: CountLine[]) {
     removed: lines.reduce((sum, l) => sum + Math.max(-l.difference, 0), 0),
   };
 }
+
+/**
+ * A count's shortage: the SKUs found short, the pieces missing and, when every
+ * SKU's cost is known, what they are worth (each line rounded to the paisa, as
+ * the books round them).
+ */
+export function shortage<T extends CountLine & { unitCost?: string | null }>(lines: T[]) {
+  const short = lines.filter((l) => l.difference < 0);
+  const missing = short.reduce((sum, l) => sum - l.difference, 0);
+  const costed = short.length > 0 && short.every((l) => l.unitCost != null);
+  const value = costed
+    ? short.reduce((sum, l) => sum + Math.round(Number(l.unitCost) * -l.difference * 100), 0) / 100
+    : null;
+  return { lines: short, pieces: missing, value: value === null ? null : value.toFixed(2) };
+}
+
+export type Shortage<T extends CountLine = CountLine> = ReturnType<typeof shortage<T>>;
 
 /** Opening stock: each SKU with pieces to add (a 0 adds nothing and is left out). */
 export function openingLines(

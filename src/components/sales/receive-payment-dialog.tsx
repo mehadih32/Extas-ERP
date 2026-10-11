@@ -9,6 +9,7 @@ import { AMOUNT_HINT, readAmount, textOf } from "@/components/products/form-valu
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
+import { formatDay } from "@/lib/display";
 import type { ActionError } from "@/lib/result";
 import { cn } from "@/lib/utils";
 import {
@@ -175,7 +176,7 @@ function AllocationGrid({
                   {d.invoiceNumber} <span className="text-muted-foreground">· {d.orderNumber}</span>
                 </p>
                 <p className="text-[0.8125rem] text-muted-foreground">
-                  Due {money(d.due, currency)} · issued {d.issuedOn}
+                  Due {money(d.due, currency)} · issued {formatDay(d.issuedOn)}
                 </p>
                 {error && <p className="text-[0.8125rem] text-destructive">{error}</p>}
               </div>
@@ -247,7 +248,8 @@ export function paidSentence(
   }
   const toInvoices = allocated.reduce((sum, a) => sum + cents(Number(a.amount)), 0);
   const earlier = cents(Number(amount)) - toInvoices - cents(Number(advanceKept));
-  if (earlier > 0) parts.push(`${money(fixed2(earlier / 100), currency)} paid the earlier balance.`);
+  if (earlier > 0)
+    parts.push(`${money(fixed2(earlier / 100), currency)} paid the earlier balance.`);
   if (Number(advanceKept) > 0) {
     parts.push(`${money(advanceKept, currency)} is kept as advance balance.`);
   }

@@ -314,10 +314,16 @@ Built one module at a time, each in its own pull request. So far:
 
 - **Production** (`/production`), in five tabs:
   - **Overview**: how many projects are in production, late, due this week, planned, on hold
-    and done this month, how many sit at each stage, the money in open projects (for people
-    who see costs) and a card for each open project, late ones first. A card shows the
-    factory, the stage, the days used against the target (amber when due soon, red with a red
-    edge when late) and the pieces in stock against the pieces to make.
+    and done this month, the money in open projects (for people who see costs) and the
+    **Production board**: a Kanban column for Planned and for each stage (Fabric sourcing,
+    Cutting, Sewing, Wash and QC, Finishing), each with a card per open project, late ones
+    first. A row of stage buttons shows each column's count and late count and scrolls the
+    board to it; on a phone the columns swipe one at a time. A card shows the project, who it
+    is for, the stage and factory, the pieces in stock against the pieces to make, the days
+    used against the target (amber when due soon, red when late, and the whole card turns red),
+    and for people who see costs the cost so far and a piece. Production Managers move an
+    active project to its next stage with **Move to …** on its card, and the note that
+    confirms it has an **Undo** that takes the move back within 10 minutes.
   - **Projects**: every project, searchable by code, name or buyer and filtered by status
     (including Late) and stage. A new project takes the factory (a supplier or just a name),
     the buyer or In-House, the style, the category, the dates (45 days by default) and the
@@ -1186,7 +1192,9 @@ In-House. Projects start Active, or Planned for later. A fully paid proforma adv
 one on its own with a 45-day target. The overview shows a card for each open project with its
 elapsed and remaining days in company time. A card turns red once its target date has passed,
 and shows the stage badge: Fabric Sourcing → Cutting → Sewing → Wash/QC → Finishing. Every
-stage change is logged; going back a stage (rework) needs a note.
+stage change is logged; going back a stage (rework) needs a note. A move made by mistake is
+taken back within 10 minutes (`UNDO_STAGE_MINUTES`) while nothing changed since: its log entry
+goes and the stage before it is open again, so no rework shows.
 
 **Costs.** Every cost names an expense head (Fabric, Trims & Accessories, Cutting, Sewing
 (CM), Wash...). It is either Due to a supplier or paid now from cash, bank or a mobile
@@ -1227,6 +1235,7 @@ With `redraft` a draft copy opens, linked to the undone one, to correct and conf
 | `GET /api/production/overview`                                      | Dashboard: counts, projects per stage, project cards       |
 | `GET/POST /api/production/projects`, `GET/PATCH …/:id`              | Projects (status, stage, buyer, In-House, overdue, search) |
 | `POST /api/production/projects/:id/stage`                           | Move the stage badge                                       |
+| `POST /api/production/projects/:id/stage/undo`                      | Take back a move made by mistake: `{ stage }`, 10 minutes  |
 | `POST /api/production/projects/:id/status`                          | Start, hold or resume                                      |
 | `POST /api/production/projects/:id/complete` / `…/cancel`           | Close a project (leftover cost written off by Accounts)    |
 | `GET/POST /api/production/projects/:id/costs`                       | Cost sheet / add one cost, Due or paid now                 |

@@ -131,7 +131,8 @@ export function ProjectCard({ project, currency }: { project: ProjectCardData; c
         href={productionHref.project(p.id)}
         className={cn(
           "group grid h-full grid-cols-1 gap-4 rounded-lg border bg-card p-4 transition-colors outline-none hover:border-primary/40 focus-visible:ring-[3px] focus-visible:ring-ring/25",
-          p.timeline.isOverdue && "border-l-4 border-destructive/40 border-l-destructive",
+          p.timeline.isOverdue &&
+            "border-l-4 border-destructive/40 border-l-destructive bg-destructive/5",
         )}
       >
         <div>

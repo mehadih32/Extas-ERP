@@ -20,6 +20,7 @@ import { listCategoryOptions } from "@/modules/inventory/screens.service";
 import { getDefaultWarehouse, listWarehouses } from "@/modules/inventory/stock.service";
 import { listStyles } from "@/modules/inventory/style.service";
 import { canSeeMaterialCosts } from "@/modules/materials/access";
+import { boardColumns, nextStage } from "@/modules/production/board";
 import { isWalkIn } from "@/modules/parties/walk-in";
 import {
   billShares,
@@ -48,6 +49,7 @@ import {
   canCompleteProject,
   canPayBill,
   canReceiveGoods,
+  canSetStage,
   canSetStatus,
   canUndoDelivery,
   canVoidBill,
@@ -153,17 +155,27 @@ function presentCard(card: ProjectCard, tz: string) {
 export type ProjectCardData = ReturnType<typeof presentCard>;
 
 /**
- * The Production Overview: a card per open project (overdue first), how many
- * are at each stage, and for people who see costs what sits in production.
+ * The Production Overview: the board (a column per stage, Planned first, with a
+ * card per open project, late ones first), the counts, and for people who see
+ * costs what sits in production. A Production Manager moves an active project
+ * to its next stage from its card (`next`).
  */
 export async function getOverviewScreen(ctx: CompanyContext) {
   const overview = await getProductionOverview(ctx);
   const access = productionAccess(ctx);
   const tz = ctx.company.timezone;
+  const cards = overview.projects.map((card) => {
+    const to = nextStage(card.stage.key);
+    return {
+      ...presentCard(card, tz),
+      /** The stage the card moves to in one click; null when not offered. */
+      next:
+        access.manage && to && canSetStage({ ...card, stage: card.stage.key }, to).ok ? to : null,
+    };
+  });
   return {
     today: overview.today,
     counts: overview.counts,
-    byStage: overview.byStage,
     totals: overview.totals
       ? {
           totalCost: fixed(overview.totals.totalCost),
@@ -171,10 +183,16 @@ export async function getOverviewScreen(ctx: CompanyContext) {
           wip: fixed(overview.totals.wip),
         }
       : null,
-    projects: overview.projects.map((card) => presentCard(card, tz)),
+    columns: boardColumns(cards, (c) => ({
+      status: c.status,
+      stage: c.stage.key,
+      late: c.timeline.isOverdue,
+    })),
     canCreate: access.manage,
   };
 }
+
+export type BoardCardData = OverviewScreen["columns"][number]["projects"][number];
 
 export type OverviewScreen = Awaited<ReturnType<typeof getOverviewScreen>>;
 

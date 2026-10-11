@@ -18,5 +18,5 @@ say "Setting up the owner account ($email) and the companies"
 compose run --rm \
   -e SEED_ADMIN_EMAIL="$email" \
   -e SEED_ADMIN_NAME="$(setting SEED_ADMIN_NAME Owner)" \
-  -e SEED_COMPANIES="$(setting SEED_COMPANIES 'Extras,Fabric Apparel')" \
+  -e SEED_COMPANIES="$(setting SEED_COMPANIES 'Extas,Fabric Apparel')" \
   migrate npx prisma db seed

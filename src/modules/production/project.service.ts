@@ -10,6 +10,7 @@ import { assertAllowed } from "@/lib/verdict";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { assertPartyCanTransact } from "@/modules/parties/party.service";
+import { UNDO_STAGE_MINUTES } from "@/modules/production/board";
 import { ZERO } from "@/modules/production/costing";
 import {
   assertCanWriteOff,
@@ -26,6 +27,7 @@ import {
   canCompleteProject,
   canSetStage,
   canSetStatus,
+  canUndoStageMove,
 } from "@/modules/production/rules";
 import {
   cancelProjectSchema,
@@ -34,6 +36,7 @@ import {
   listProjectsSchema,
   setStageSchema,
   setStatusSchema,
+  undoStageSchema,
   updateProjectSchema,
 } from "@/modules/production/schemas";
 import {
@@ -550,6 +553,53 @@ export async function setProjectStage(
         entityType: "ProductionProject",
         entityId: project.id,
         summary: `${project.code}: ${STAGE_LABELS[project.stage]} → ${STAGE_LABELS[input.stage]}${input.note ? ` (${input.note})` : ""}`,
+      },
+      tx,
+    );
+  });
+  return getProject(ctx, projectId);
+}
+
+/**
+ * Takes back a stage move made by mistake, within a few minutes of it: the
+ * move's log entry goes and the stage before it is open again, so the log shows
+ * no rework. Later, "Change the stage" (with a note when going back) does it.
+ */
+export async function undoStageMove(
+  ctx: CompanyContext,
+  projectId: string,
+  raw: unknown,
+  meta?: RequestMeta,
+) {
+  const input = undoStageSchema.parse(raw);
+  await prisma.$transaction(async (tx) => {
+    const project = await lockProject(tx, ctx, projectId);
+    const [last, before] = await tx.productionStageLog.findMany({
+      where: { projectId: project.id },
+      orderBy: [{ startedAt: "desc" }, { id: "desc" }],
+      take: 2,
+      select: { id: true, stage: true, startedAt: true, completedAt: true },
+    });
+    assertAllowed(
+      canUndoStageMove(project, { last, before }, input.stage, new Date(), UNDO_STAGE_MINUTES),
+    );
+    await tx.productionStageLog.delete({ where: { id: last!.id } });
+    await tx.productionStageLog.update({
+      where: { id: before!.id },
+      data: { completedAt: null },
+    });
+    await tx.productionProject.update({
+      where: { id: project.id },
+      data: { stage: before!.stage },
+    });
+    await auditInCompany(
+      ctx,
+      meta,
+      {
+        action: "STATUS_CHANGE",
+        entityType: "ProductionProject",
+        entityId: project.id,
+        summary: `${project.code}: took back the move to ${STAGE_LABELS[input.stage]}, back at ${STAGE_LABELS[before!.stage]}`,
       },
       tx,
     );

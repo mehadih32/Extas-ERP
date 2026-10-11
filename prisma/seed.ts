@@ -1,7 +1,7 @@
 /**
  * Seeds the minimum data needed to sign in:
  *   1. the permission catalogue,
- *   2. the companies (default: "Extras" and "Fabric Apparel") with the built-in roles
+ *   2. the companies (default: "Extas" and "Fabric Apparel") with the built-in roles
  *      (Super Admin, Production Manager, Sales Executive, Warehouse Team, Employee, Accounts),
  *   3. the platform owner account, as Super Admin of every seeded company,
  *   4. per company: the default size run (S to 3XL), a "Main Warehouse", the chart of
@@ -28,7 +28,7 @@ import { ensureSystemRoles, syncPermissionCatalog } from "../src/modules/rbac/ro
 async function main() {
   const email = process.env.SEED_ADMIN_EMAIL?.trim().toLowerCase();
   if (!email) throw new Error("Set SEED_ADMIN_EMAIL in .env before seeding.");
-  const companyNames = (process.env.SEED_COMPANIES ?? "Extras,Fabric Apparel")
+  const companyNames = (process.env.SEED_COMPANIES ?? "Extas,Fabric Apparel")
     .split(",")
     .map((n) => n.trim())
     .filter(Boolean);

@@ -37,7 +37,7 @@ email_ok "$ACME_EMAIL" || die "\"$ACME_EMAIL\" is not an email address."
 ask SEED_ADMIN_EMAIL "Owner's email (the first sign-in)" "$ACME_EMAIL"
 email_ok "$SEED_ADMIN_EMAIL" || die "\"$SEED_ADMIN_EMAIL\" is not an email address."
 ask SEED_ADMIN_NAME "Owner's name" "Owner"
-ask SEED_COMPANIES "Company names, separated by commas" "Extras,Fabric Apparel"
+ask SEED_COMPANIES "Company names, separated by commas" "Extas,Fabric Apparel"
 ask DATA_DIR "Folder for the data on this server" "/srv/extras-erp"
 [[ "$DATA_DIR" == /* ]] || die "the data folder must be a full path, like /srv/extras-erp."
 

@@ -9,6 +9,7 @@ import * as assets from "@/modules/accounts/asset.service";
 import * as bank from "@/modules/accounts/bank.service";
 import * as capital from "@/modules/accounts/capital.service";
 import * as chart from "@/modules/accounts/chart.service";
+import * as executive from "@/modules/accounts/executive.service";
 import * as reports from "@/modules/accounts/reports.service";
 import * as screens from "@/modules/accounts/screens.service";
 import * as supplierPayments from "@/modules/accounts/supplier-payment.service";
@@ -55,8 +56,22 @@ const accountRef = (account: { id: string; code: string; name: string }) => ({
 type Range = { from?: string; to?: string };
 
 // --- Screens ---------------------------------------------------------------------------
-export const getAccountsOverviewScreenAction = async () =>
-  runAction(async () => screens.getOverviewScreen(await view()));
+/** The overview; its Net profit card covers `period` (this month when not given). */
+export const getAccountsOverviewScreenAction = async (period?: string) =>
+  runAction(async () =>
+    screens.getOverviewScreen(await view(), executive.isProfitPeriod(period) ? period : undefined),
+  );
+/** What opens under the Market due and Market payable cards: party by party. */
+export const getMarketBalancesAction = async () =>
+  runAction(async () => executive.getMarketBalances(await view()));
+/** What opens under the Inventory & WIP card. */
+export const getHoldingsBreakdownAction = async () =>
+  runAction(async () => executive.getHoldingsBreakdown(await view()));
+/** What opens under the Net profit card: the most profitable categories and buyers. */
+export const getProfitLeadersAction = async (period: string) =>
+  runAction(async () =>
+    executive.getProfitLeaders(await view(), executive.isProfitPeriod(period) ? period : "MONTH"),
+  );
 export const getCashBankScreenAction = async () =>
   runAction(async () => screens.getCashBankScreen(await view()));
 export const getBankScreenAction = async (bankAccountId: string, range: Range = {}) =>

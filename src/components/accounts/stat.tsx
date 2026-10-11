@@ -2,10 +2,12 @@ import Link from "next/link";
 
 import { cn } from "@/lib/utils";
 
+import { Amount } from "./privacy";
+
 /**
  * One figure in a box: a label, the amount, a line under it, and when given a
  * link to where the figure comes from. "alert" turns it red (money owed late,
- * a loss).
+ * a loss). With a `scope`, the amount hides behind the page's eye (privacy.tsx).
  */
 export function Stat({
   label,
@@ -13,6 +15,7 @@ export function Stat({
   hint,
   href,
   alert = false,
+  scope,
   className,
 }: {
   label: string;
@@ -20,6 +23,8 @@ export function Stat({
   hint?: React.ReactNode;
   href?: string;
   alert?: boolean;
+  /** Hides the amount until the page's eye (or this scope's) shows it. */
+  scope?: string;
   className?: string;
 }) {
   const body = (
@@ -31,7 +36,7 @@ export function Stat({
           alert ? "text-destructive" : "text-primary",
         )}
       >
-        {value}
+        {scope ? <Amount scope={scope}>{value}</Amount> : value}
       </dd>
       {hint && <dd className="mt-1 text-[0.8125rem] text-muted-foreground">{hint}</dd>}
     </>

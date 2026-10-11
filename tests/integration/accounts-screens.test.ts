@@ -92,9 +92,12 @@ import {
   getCashBankScreenAction,
   getChartScreenAction,
   getJournalEntryScreenAction,
+  getHoldingsBreakdownAction,
   getJournalListAction,
+  getMarketBalancesAction,
   getPayFormAction,
   getProfitAndLossAction,
+  getProfitLeadersAction,
   getSupplierDuesAction,
   getSupplierPaymentListAction,
   getSupplierPaymentScreenAction,
@@ -296,6 +299,10 @@ run("Accounts screens", () => {
       // Each screen's data comes exactly to the people its page is shown to.
       const checks: Array<[string, Promise<ActionResult<unknown>>, boolean]> = [
         ["overview", getAccountsOverviewScreenAction(), view],
+        ["overview for a year", getAccountsOverviewScreenAction("YEAR"), view],
+        ["market due and payable", getMarketBalancesAction(), view],
+        ["inventory and WIP", getHoldingsBreakdownAction(), view],
+        ["most profitable", getProfitLeadersAction("LIFETIME"), view],
         ["cash and bank", getCashBankScreenAction(), view],
         ["bank statement", getBankScreenAction(env.bank.id), view],
         ["new bank form", getBankFormAction(), manage],
@@ -356,7 +363,7 @@ run("Accounts screens", () => {
       const page = (allowed: boolean) => (allowed ? "page" : "no access");
       const query = { searchParams: noQuery() };
       const firstTab = visibleAccountsTabs(ctx.permissions)[0]?.href;
-      expect(await rendered(AccountsOverviewPage()), `${who}: /accounts`).toBe(
+      expect(await rendered(AccountsOverviewPage(query)), `${who}: /accounts`).toBe(
         view ? "page" : firstTab ? `redirect ${firstTab}` : "no access",
       );
       const pages: Array<[string, () => Promise<React.ReactElement>, string]> = [

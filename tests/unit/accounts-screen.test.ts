@@ -1,7 +1,15 @@
-import type { SystemRole } from "@prisma/client";
+import { Prisma, type SystemRole } from "@prisma/client";
 import { describe, expect, it } from "vitest";
 
-import { accountsHref, columnAmount, isNegative, signedMoney } from "@/components/accounts/labels";
+import {
+  accountsHref,
+  columnAmount,
+  growthText,
+  isNegative,
+  PROFIT_PERIOD_LABELS,
+  profitSpan,
+  signedMoney,
+} from "@/components/accounts/labels";
 import {
   accountsListSearch,
   clearedAccountsView,
@@ -20,6 +28,7 @@ import {
 } from "@/components/accounts/report-view";
 import { visibleAccountsTabs } from "@/components/accounts/tabs";
 import { phoneTabs, topBarFold, visibleNavItems } from "@/components/shell/nav-items";
+import { growth, isProfitPeriod, profitWindow } from "@/modules/accounts/profit-periods";
 import { canMoveMoney, canReverseEntry, canVoidSupplierPayment } from "@/modules/accounts/rules";
 import {
   canApproveExpense,
@@ -231,5 +240,81 @@ describe("what the Accounts screens offer, from the same rules the services chec
     expect(canVoidExpense(employee, { ...claim, status: "POSTED" }).ok).toBe(false);
     expect(canVoidExpense(ACCOUNTS, { ...claim, status: "POSTED" }).ok).toBe(true);
     expect(canVoidExpense(ACCOUNTS, claim).ok).toBe(false);
+  });
+});
+
+describe("the Net profit card's periods", () => {
+  it("covers today, this month or this financial year so far, against the same days before", () => {
+    // Financial year from July.
+    expect(profitWindow("TODAY", "2026-10-11", 7)).toEqual({
+      from: "2026-10-11",
+      to: "2026-10-11",
+      previous: { from: "2026-10-10", to: "2026-10-10" },
+    });
+    expect(profitWindow("MONTH", "2026-10-11", 7)).toEqual({
+      from: "2026-10-01",
+      to: "2026-10-11",
+      previous: { from: "2026-09-01", to: "2026-09-11" },
+    });
+    // A longer month against a shorter one stops at the shorter month's end.
+    expect(profitWindow("MONTH", "2026-03-31", 7).previous).toEqual({
+      from: "2026-02-01",
+      to: "2026-02-28",
+    });
+    expect(profitWindow("YEAR", "2026-10-11", 7)).toEqual({
+      from: "2026-07-01",
+      to: "2026-10-11",
+      previous: { from: "2025-07-01", to: "2025-10-11" },
+    });
+    // Before July the financial year began the year before; a calendar year when it starts in January.
+    expect(profitWindow("YEAR", "2026-03-05", 7).from).toBe("2025-07-01");
+    expect(profitWindow("YEAR", "2026-03-05", 1).from).toBe("2026-01-01");
+    expect(profitWindow("LIFETIME", "2026-10-11", 7)).toEqual({
+      from: null,
+      to: "2026-10-11",
+      previous: null,
+    });
+    expect(isProfitPeriod("MONTH")).toBe(true);
+    expect(isProfitPeriod("month")).toBe(false);
+    expect(isProfitPeriod(undefined)).toBe(false);
+  });
+
+  it("says which way profit moved, as a share of the period before, a loss too", () => {
+    const d = (v: number) => new Prisma.Decimal(v);
+    expect(growth(d(12500), d(10000))).toEqual({ direction: "UP", percent: "25.0" });
+    expect(growth(d(8000), d(10000))).toEqual({ direction: "DOWN", percent: "20.0" });
+    expect(growth(d(5000), d(5000))).toEqual({ direction: "FLAT", percent: "0.0" });
+    // From a 4,000 loss to a 1,000 loss is better: up 75%.
+    expect(growth(d(-1000), d(-4000))).toEqual({ direction: "UP", percent: "75.0" });
+    expect(growth(d(-500), d(1000))).toEqual({ direction: "DOWN", percent: "150.0" });
+    // Nothing before: no share to give.
+    expect(growth(d(300), d(0))).toEqual({ direction: "UP", percent: null });
+    expect(growth(d(0), d(0))).toEqual({ direction: "FLAT", percent: null });
+
+    expect(growthText({ direction: "UP", percent: "25.0" }, "MONTH")).toBe(
+      "Up 25.0% on the same days last month",
+    );
+    expect(growthText({ direction: "DOWN", percent: "20.0" }, "TODAY")).toBe(
+      "Down 20.0% on yesterday",
+    );
+    expect(growthText({ direction: "UP", percent: null }, "YEAR")).toBe(
+      "Up on the same days last year",
+    );
+    expect(growthText({ direction: "FLAT", percent: "0.0" }, "TODAY")).toBe("Same as yesterday");
+    expect(profitSpan({ period: "MONTH", from: "2026-10-01", to: "2026-10-11" })).toBe(
+      "1 – 11 Oct 2026",
+    );
+    expect(profitSpan({ period: "TODAY", from: "2026-10-11", to: "2026-10-11" })).toBe(
+      "Today, 11 Oct 2026",
+    );
+    expect(profitSpan({ period: "LIFETIME", from: null, to: "2026-10-11" })).toBe(
+      "All time to 11 Oct 2026",
+    );
+    expect(Object.values(PROFIT_PERIOD_LABELS)).toEqual([
+      "Today",
+      "This month",
+      "This year",
+      "Lifetime",
+    ]);
   });
 });

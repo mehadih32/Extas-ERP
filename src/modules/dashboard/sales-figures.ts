@@ -412,3 +412,53 @@ export async function styleSales(
   };
   return { wholesale: side(true), retail: side(false) };
 }
+
+export type ProfitLeader = {
+  /** The category id, or the buyer's party id. */
+  id: string;
+  pieces: number;
+  net: Prisma.Decimal;
+  cost: Prisma.Decimal;
+  /** Gross profit: net sales less the cost of the pieces. */
+  profit: Prisma.Decimal;
+};
+
+export type ProfitLeaders = { categories: ProfitLeader[]; buyers: ProfitLeader[] };
+
+/**
+ * The categories (each style's own) and buyers that made the most gross profit
+ * in the range, best first. Walk-in sales (no buyer account) are left out of
+ * the buyers: they are retail.
+ */
+export async function profitLeaders(
+  companyId: string,
+  range: SalesRange,
+  limit: number,
+): Promise<ProfitLeaders> {
+  type Row = { id: string; pieces: bigint; net: Prisma.Decimal; cost: Prisma.Decimal };
+  const [categories, buyers] = await Promise.all([
+    prisma.$queryRaw<Row[]>`
+      SELECT st."categoryId" AS id, SUM(s.quantity)::bigint AS pieces,
+             SUM(s.net) AS net, SUM(s.cost) AS cost
+      FROM (${soldLines(companyId, range)}) s
+      JOIN "Style" st ON st.id = s."styleId"
+      GROUP BY 1
+      ORDER BY SUM(s.net) - SUM(s.cost) DESC, SUM(s.net) DESC, 1
+      LIMIT ${limit}`,
+    prisma.$queryRaw<Row[]>`
+      SELECT so."partyId" AS id, SUM(s.quantity)::bigint AS pieces,
+             SUM(s.net) AS net, SUM(s.cost) AS cost
+      FROM (${soldLines(companyId, range)}) s
+      JOIN "SalesOrder" so ON so.id = s."orderId"
+      WHERE so."partyId" IS NOT NULL
+      GROUP BY 1
+      ORDER BY SUM(s.net) - SUM(s.cost) DESC, SUM(s.net) DESC, 1
+      LIMIT ${limit}`,
+  ]);
+  const present = (r: Row): ProfitLeader => {
+    const net = new Prisma.Decimal(r.net);
+    const cost = new Prisma.Decimal(r.cost).toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
+    return { id: r.id, pieces: Number(r.pieces), net, cost, profit: net.minus(cost) };
+  };
+  return { categories: categories.map(present), buyers: buyers.map(present) };
+}

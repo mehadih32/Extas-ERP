@@ -22,6 +22,11 @@ import {
   LEDGER_LINES_SHOWN,
   type MoneyAccountKind,
 } from "@/modules/accounts/choices";
+import {
+  getMarketBalances,
+  getProfitCard,
+  type ProfitPeriod,
+} from "@/modules/accounts/executive.service";
 import { getAccountsOverview } from "@/modules/accounts/reports.service";
 import {
   accountsKeys,
@@ -106,17 +111,42 @@ export async function listMoneyAccounts(ctx: CompanyContext) {
 export type MoneyAccountOption = Awaited<ReturnType<typeof listMoneyAccounts>>[number];
 
 /**
- * The Accounts Overview: money in hand and in the bank, what buyers owe and
- * what is owed to suppliers, profit, stock and what is waiting for Accounts.
+ * The Accounts Overview: the five executive cards (cash and bank, market due,
+ * market payable, inventory and work in progress, net profit for the period
+ * chosen), then money in hand and in the bank, what buyers owe and what is
+ * owed to suppliers, profit, stock and what is waiting for Accounts.
  */
-export async function getOverviewScreen(ctx: CompanyContext) {
-  const [o, banks] = await Promise.all([
+export async function getOverviewScreen(ctx: CompanyContext, period: ProfitPeriod = "MONTH") {
+  const [o, banks, market, profit] = await Promise.all([
     getAccountsOverview(ctx),
     ctx.db.bankAccount.findMany({ select: { id: true, ledgerAccountId: true } }),
+    getMarketBalances(ctx),
+    getProfitCard(ctx, period),
   ]);
   const access = accountsAccess(ctx);
   const bankOf = new Map(banks.map((b) => [b.ledgerAccountId, b.id]));
+  const cashOf = (kind: MoneyAccountKind) =>
+    sum(o.cash.accounts.filter((a) => a.subType === kind).map((a) => a.balance));
   return {
+    cards: {
+      cash: {
+        total: o.cash.total,
+        byKind: {
+          CASH: cashOf("CASH"),
+          BANK: cashOf("BANK"),
+          MOBILE_WALLET: cashOf("MOBILE_WALLET"),
+        },
+      },
+      due: { total: market.due.total, count: market.due.count },
+      payable: { total: market.payable.total, count: market.payable.count },
+      holdings: {
+        total: sum([o.stockValue, o.rawMaterials.value, o.workInProgress]),
+        readyStock: o.stockValue,
+        rawMaterials: o.rawMaterials.value,
+        workInProgress: o.workInProgress,
+      },
+      profit,
+    },
     asOf: o.asOf,
     cash: {
       total: o.cash.total,

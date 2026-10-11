@@ -648,7 +648,12 @@ export function OrderForm({ form: data }: { form: OrderFormData }) {
         proofFileId = stored.id;
       }
       const result = editing
-        ? await updateOrderAction(editing.id, { matrix, ...charges })
+        ? await updateOrderAction(editing.id, {
+            matrix,
+            ...charges,
+            // With a live invoice the edit revises it (Smart Edit; the edit page says so).
+            ...(editing.invoice ? { reviseInvoice: true } : {}),
+          })
         : proforma
           ? await convertProformaToOrderAction(proforma.id, {
               warehouseId: warehouseId || undefined,
@@ -689,7 +694,11 @@ export function OrderForm({ form: data }: { form: OrderFormData }) {
         return;
       }
       setForceAllow(false);
-      router.push(`${salesHref.order(result.data.id)}?${editing ? "saved" : "created"}=1`);
+      router.push(
+        `${salesHref.order(result.data.id)}?${
+          editing ? `saved=${editing.invoice ? "revised" : "1"}` : "created=1"
+        }`,
+      );
     });
   }
 
@@ -1189,6 +1198,7 @@ export function OrderForm({ form: data }: { form: OrderFormData }) {
                 checked={documents.packingList}
                 onChange={(packingList) => setDocuments((d) => ({ ...d, packingList }))}
                 label="Make the packing list"
+                hint="It also prints as page 2 of the invoice PDF, as a size matrix with the cartons and who packed them."
               />
               <Tick
                 id="doc-challan"
@@ -1471,7 +1481,9 @@ export function OrderForm({ form: data }: { form: OrderFormData }) {
               {pending
                 ? "Saving"
                 : editing
-                  ? "Save the changes"
+                  ? editing.invoice
+                    ? "Save and revise the invoice"
+                    : "Save the changes"
                   : proforma
                     ? "Make the order"
                     : "Place the order"}

@@ -137,3 +137,11 @@ export function ChequeBadge({ status }: { status: ChequeStatus }) {
 export function OverrideBadge() {
   return <StatusBadge tone="warn">Force override</StatusBadge>;
 }
+
+/** An invoice edited after it was issued (Smart Edit): same number, "(Revised)" on the PDF. */
+export function RevisedBadge({ revision }: { revision: number }) {
+  if (revision <= 0) return null;
+  return (
+    <StatusBadge tone="plain">{revision > 1 ? `Revised ×${revision}` : "Revised"}</StatusBadge>
+  );
+}

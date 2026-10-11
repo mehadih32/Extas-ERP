@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { recordAudit } from "@/modules/audit/audit.service";
 import { purgeExpiredSessions } from "@/modules/auth/session.service";
 import { parseCron, previousRun } from "@/modules/backups/cron";
+import { purgeKeptSalesPdfs } from "@/modules/documents/print.service";
 import { refreshStatusesForCompany } from "@/modules/parties/dormant.service";
 import { purgeUnusedProofs } from "@/modules/sales/proof.service";
 
@@ -14,7 +15,9 @@ import { purgeUnusedProofs } from "@/modules/sales/proof.service";
  *     close (the same refresh as POST /api/parties/refresh-statuses);
  *   - expired sign-in sessions are deleted;
  *   - payment proof photos uploaded more than a day ago that no payment or
- *     cheque uses (the payment was never recorded) are deleted from disk.
+ *     cheque uses (the payment was never recorded) are deleted from disk;
+ *   - PDFs of sales documents made more than a day ago are deleted from disk
+ *     (printing again makes a fresh copy; documents/print.service.ts).
  * Every step is safe to repeat, so a run after a restart changes nothing new.
  */
 
@@ -55,7 +58,15 @@ export async function runHousekeeping(now: Date = new Date()) {
   }
   const sessionsRemoved = await purgeExpiredSessions();
   const proofsRemoved = await purgeUnusedProofs(now);
-  return { companies: companies.length, markedDormant, closed, sessionsRemoved, proofsRemoved };
+  const salesPdfsRemoved = await purgeKeptSalesPdfs(now);
+  return {
+    companies: companies.length,
+    markedDormant,
+    closed,
+    sessionsRemoved,
+    proofsRemoved,
+    salesPdfsRemoved,
+  };
 }
 
 /** Runs the housekeeping when a scheduled time has passed that this process has not run for. */

@@ -23,6 +23,9 @@ export const printDocumentAction = async (input: unknown) =>
     revalidatePath("/", "layout");
     return printed;
   });
+/** Page 1 of an invoice as data, for the browser to draw as a picture to share. */
+export const documentPictureAction = async (input: unknown) =>
+  runAction(async () => printing.documentPicture(await printer(), input, await getRequestMeta()));
 export const listDocumentsAction = async (query: unknown) =>
   runAction(async () => printing.listDocuments(await printer(), query));
 export const getDocumentAction = async (documentId: string) =>

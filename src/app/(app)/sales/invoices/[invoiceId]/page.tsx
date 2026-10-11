@@ -5,9 +5,10 @@ import { notFound } from "next/navigation";
 import { SectionError } from "@/components/dashboard/section-error";
 import { FormAlert } from "@/components/forms/field";
 import { BackLink } from "@/components/settings/back-link";
-import { InvoiceBadge, RefundBadge } from "@/components/sales/badges";
+import { InvoiceBadge, RefundBadge, RevisedBadge } from "@/components/sales/badges";
 import { Fact, Panel, RecordHeader, Totals } from "@/components/sales/detail-bits";
 import { InvoiceActions } from "@/components/sales/invoice-actions";
+import { invoiceTotalLines } from "@/components/sales/invoice-totals";
 import { METHOD_LABELS, money, salesHref } from "@/components/sales/labels";
 import { SalesNoAccess } from "@/components/sales/no-access";
 import { localDay } from "@/lib/dates";
@@ -20,8 +21,9 @@ export const metadata: Metadata = { title: "Invoice" };
 
 /**
  * One commercial invoice (sales.view, like GET /api/sales/invoices/:id): what
- * was billed line by line, totals with paid and due, and the payments and
- * refunds on its order. What may be done comes with the screen (screen.can).
+ * was billed line by line, totals with paid and due, the packing list printed
+ * as its page 2, and the payments and refunds on its order. What may be done
+ * comes with the screen (screen.can).
  */
 export default async function InvoicePage({ params }: { params: Promise<{ invoiceId: string }> }) {
   const ctx = await requireCompanyPage();
@@ -51,6 +53,7 @@ export default async function InvoicePage({ params }: { params: Promise<{ invoic
           badges={
             <>
               <InvoiceBadge status={inv.status} isOverdue={inv.isOverdue} />
+              <RevisedBadge revision={inv.revision} />
               <span className="text-sm text-muted-foreground">
                 For order{" "}
                 <Link
@@ -67,6 +70,12 @@ export default async function InvoicePage({ params }: { params: Promise<{ invoic
         {inv.status === "VOID" && (
           <FormAlert tone="note">
             This invoice was voided; the buyer does not owe it. It is kept as a record.
+          </FormAlert>
+        )}
+        {inv.status !== "VOID" && inv.revisedOn && (
+          <FormAlert tone="note">
+            Edited after it was issued, last on {formatDay(inv.revisedOn)}. It keeps its number, and
+            its PDF says &quot;(Revised)&quot;.
           </FormAlert>
         )}
         <InvoiceActions
@@ -108,29 +117,7 @@ export default async function InvoicePage({ params }: { params: Promise<{ invoic
             <Totals
               className="mt-5 border-t pt-4 sm:ml-auto sm:max-w-sm"
               currency={currency}
-              lines={[
-                { label: "Subtotal", amount: inv.subtotal },
-                { label: "Discount", amount: inv.discount, minus: true, optional: true },
-                { label: "Delivery charge", amount: inv.shippingCharge, optional: true },
-                { label: "Tax / VAT", amount: inv.tax, optional: true },
-                { label: "Total", amount: inv.total, strong: true },
-                ...(inv.previous
-                  ? [
-                      { label: "Previous due", amount: inv.previous.previousDue },
-                      { label: "Total payable", amount: inv.previous.totalPayable, strong: true },
-                      { label: "Paid", amount: inv.previous.paid, tone: "muted" as const },
-                      {
-                        label: "Balance due",
-                        amount: inv.previous.balanceDue,
-                        strong: true,
-                        tone: "due" as const,
-                      },
-                    ]
-                  : [
-                      { label: "Paid", amount: inv.paid, tone: "muted" as const },
-                      { label: "Due", amount: inv.due, strong: true, tone: "due" as const },
-                    ]),
-              ]}
+              lines={invoiceTotalLines(inv)}
             />
           </Panel>
         </div>
@@ -165,6 +152,27 @@ export default async function InvoicePage({ params }: { params: Promise<{ invoic
               )}
               {inv.buyer.taxId && <Fact label="BIN / tax ID">{inv.buyer.taxId}</Fact>}
             </dl>
+          </Panel>
+          <Panel title="Packing list" id="packing-heading">
+            {inv.packingList ? (
+              <dl className="mt-4 grid grid-cols-2 gap-4">
+                <Fact label="Number">{inv.packingList.number}</Fact>
+                <Fact label="Pieces">{formatCount(inv.packingList.pieces, currency)}</Fact>
+                <Fact label="Total cartons">
+                  {inv.packingList.cartons !== null
+                    ? formatCount(inv.packingList.cartons, currency)
+                    : "Not counted"}
+                </Fact>
+                <Fact label="Packed by">{inv.packingList.packedBy ?? "Not named"}</Fact>
+                <p className="col-span-2 text-[0.8125rem] text-muted-foreground">
+                  Printed as page 2 of the invoice PDF, as a size matrix.
+                </p>
+              </dl>
+            ) : (
+              <p className="mt-4 text-sm text-muted-foreground">
+                None made, so the invoice PDF is one page. Make it from the order.
+              </p>
+            )}
           </Panel>
           <Panel title="Payments" id="payments-heading">
             {inv.payments.length === 0 && inv.refunds.length === 0 && inv.credits.length === 0 ? (

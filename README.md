@@ -47,7 +47,8 @@ it up takes one script on the server and four repository secrets:
 
 In production the app runs three clocks of its own: the daily backup (02:00), reminders, and
 the nightly housekeeping (03:30, Asia/Dhaka), which marks idle buyers dormant, closes settled
-accounts and removes expired sign-ins (`src/modules/housekeeping/scheduler.ts`). Each is off
+accounts, removes expired sign-ins and deletes kept sales PDFs older than a day
+(`src/modules/housekeeping/scheduler.ts`). Each is off
 in development; set `BACKUP_SCHEDULER`, `REMINDER_SCHEDULER` or `HOUSEKEEPING_SCHEDULER` to
 `on` or `off` to choose.
 
@@ -254,9 +255,10 @@ Built one module at a time, each in its own pull request. So far:
     order. An order's page shows its lines with what was delivered, the totals with paid and
     due, the cartons and the packer, its invoice, packing list and challans (each with its
     PDF), its payments and refunds, and its cost and margin for people who see the
-    financials. From there it is edited (until something is delivered or invoiced), invoiced,
-    packed, delivered in full or in part, given a ship-by day or its cartons and packer, paid,
-    refunded or cancelled.
+    financials. From there it is edited (until something is delivered; with a live invoice that
+    is not fully paid, saving revises the invoice under the same number), invoiced, packed,
+    delivered in full or in part, given a ship-by day or its cartons and packer, paid, refunded
+    or cancelled.
   - **Quotations**: the quotation builder takes the buyer, the dates, items picked from the
     catalogue or described freely (fabric, colours, a quantity or a size breakdown, a price),
     styling rules for the factory, discount and tax, terms and the company's custom fields. A
@@ -266,7 +268,16 @@ Built one module at a time, each in its own pull request. So far:
     and the order is made from it (its advance moves onto the order). A proforma can be
     refunded or cancelled, saying what happens to the money already paid.
   - **Invoices**: every commercial invoice with what is paid and due, with an Overdue filter.
-    An invoice's page receives a payment against its order, voids it and prints it.
+    Opening one slides out its hub over the list: its state, order, due day, pieces, packing
+    list, totals and payments, with every action, and the row updates after a payment, an edit
+    or a void (a Ctrl or Cmd click opens the full page instead). From the hub or the invoice's
+    page it receives a payment against its order, prints its PDF (page 1 the money, page 2 the
+    packing list as a size matrix when one was made), shares page 1 on WhatsApp as a sharp JPG
+    made on the device (the phone's share menu, or download it and open the buyer's chat), is
+    edited under the same number until it is fully paid (Smart Edit, marked Revised), and is
+    voided (Safe Void: by default its order is cancelled, delivered pieces come back into
+    stock at their cost and the sale comes off the books; or the order is kept to correct
+    it). Invoices are never deleted.
   - **Payments**: a dashboard on top (collected today, pending dues, cheques to clear,
     cheques bounced this month), then money received (each opening its money receipt, its
     PDF and its proof photo), cheques (pending, cleared or bounced, which Accounts marks here)
@@ -1070,12 +1081,12 @@ the receivables overview update immediately. For a sale without a buyer, the lin
 | `POST /api/sales/quotations/:id/convert`                           | Make the proforma invoice                                |
 | `GET /api/sales/proformas`, `GET …/:id`                            | Proformas with advance due, payments and production      |
 | `POST /api/sales/proformas/:id/cancel` / `…/convert`               | Cancel, settling any advance / turn into a sales order   |
-| `GET/POST /api/sales/orders`, `GET/PATCH …/:id`                    | Orders and checkout; edit before delivery and invoicing  |
-| `POST /api/sales/orders/:id/cancel`                                | Cancel, settling any money paid, and free the stock      |
+| `GET/POST /api/sales/orders`, `GET/PATCH …/:id`                    | Orders and checkout; edit before delivery (Smart Edit)   |
+| `POST /api/sales/orders/:id/cancel`                                | Cancel, settling money paid; free or restock the goods   |
 | `POST /api/sales/orders/:id/shipment`                              | Set, move or clear the shipment date: `{ shipmentDate }` |
 | `POST /api/sales/orders/:id/logistics`                             | Cartons and packer: `{ totalCartons?, packedById? }`     |
 | `POST /api/sales/orders/:id/invoice` / `packing-list` / `challans` | Make each document later                                 |
-| `GET /api/sales/invoices/:id`, `POST …/:id/void`                   | Commercial invoice / void it (audited)                   |
+| `GET /api/sales/invoices/:id`, `POST …/:id/void`                   | Commercial invoice / void it, or cancel too (audited)    |
 | `GET /api/sales/packing-lists/:id`, `PUT …/:id/pick`               | Pick-list and picking progress                           |
 | `GET /api/sales/challans`, `GET …/:id`                             | Challan history and the price-free challan               |
 | `GET/POST /api/sales/payments`, `GET …/:id`                        | Money received (order, proforma or on account), receipts |
@@ -1098,7 +1109,9 @@ needs `sales.invoice.edit`; custom field definitions need `company.settings`. Re
 cancel that settles money, are Accounts' work too: paying money back needs
 `accounts.payments.record`, keeping it as credit `accounts.receipts.record`, and keeping it as a
 cancellation charge `accounts.manage`. Cancel bodies are `{ reason, settle?: { kind, method?,
-accountId?, refundDate?, reference?, notes? } }`. Server Actions are in
+accountId?, refundDate?, reference?, notes? } }`; an order's cancel also takes
+`returnDelivered: true` to cancel after delivery, and the invoice void takes `{ reason,
+cancelOrder?, settle? }`. Server Actions are in
 `src/server/actions/sales.actions.ts`. Website / courier sync and returns QC come next in
 this module.
 
@@ -1607,7 +1620,7 @@ receipt, payslip and bank statement endpoints) carries them as `bin` and `tradeL
 | --------------------- | --------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
 | Quotation             | Items with style, fabric and sizes, discount, VAT, the total in words, styling instructions, custom fields and terms        | `sales.view`           |
 | Proforma invoice      | The quotation's items and total, the advance with what is received and due, and payments; CANCELLED across a cancelled one  | `sales.view`           |
-| Commercial invoice    | Each SKU with pieces and price (a discount column only when used), delivery charge, VAT, paid and due; PAID or VOID marks   | `sales.view`           |
+| Commercial invoice    | Page 1: each style and colour with its sizes, pieces and price, charges, VAT, paid and due; page 2: the packing list matrix | `sales.view`           |
 | Packing list          | SKU, item, colour, size and pieces by carton (each carton totalled), a tick box per line, cartons, gross weight; no prices  | `sales.view`           |
 | Delivery challan      | SKU, item, colour, size and pieces with the total, vehicle and driver, received by; no prices                               | `sales.view`           |
 | Money receipt         | Who paid, the amount in figures and words, method and cheque / transaction no., what it was for, and the balance after it   | `sales.view`           |
@@ -1624,6 +1637,26 @@ colour and size: first-quality pieces less those set aside for orders, plus B-gr
 each never below zero; bad stock (damage and QC rejects) has already left stock and is never
 counted. A brand sheet leaves out styles with nothing in stock unless `includeEmpty` is set,
 and shows up to 100 styles.
+
+**Commercial invoice.** Page 1 is the money only: one line per style, colour and price, with
+its sizes underneath ("Sizes: S 2 · M 4 · L 4"), then the totals, payments, credit and refunds,
+and the signatures; PAID or VOID marks it. When the order has a packing list, page 2 is that
+list as a matrix: one table per style with a row per colour and a column per size (in the
+company's size order), with the packing list's number, total cartons (and gross weight), who
+packed it and the total pieces, and lines to sign. An invoice edited after it was issued
+(Smart Edit: `PATCH /api/sales/orders/:id` with `reviseInvoice: true`, which needs
+`sales.invoice.edit` and refuses a fully paid invoice) keeps its number, counts its revisions
+(`revision`, `revisedAt`) and prints as "Commercial Invoice (Revised)". Its sale is reversed and
+posted again on the invoice's own date, so the buyer's ledger and the books follow the new
+total. Every printout shows "Total cartons" and "Packed by", like the packing list and the
+delivery challan.
+
+**Sharing page 1.** `documentPictureAction` (Server Action, in
+`src/server/actions/documents.actions.ts`) gives a commercial invoice's page 1 as data, with the
+same permission checks, rate limit and audit (EXPORT) as printing. The browser draws it at
+about 2.5 times screen size on a canvas (`src/lib/document-image.ts`) and makes a JPG, so no
+file is kept on the server; the phone's share menu sends it to WhatsApp, or it is downloaded
+and the buyer's chat opened (wa.me).
 
 **Packing list.** The pick-list for the warehouse: lines packed in cartons are sorted by carton
 number (2 before 10), with each carton's pieces and loose pieces last; without carton numbers
@@ -1651,8 +1684,12 @@ refunds under their payments and show the paid amount net of them.
 media backup) and listed with who made it and what for. Printing something that has not
 changed returns the kept copy (`reused: true`) instead of making a new file. When anything on
 it changed (a payment, a price, the logo), a new PDF is made and the earlier one stays as a
-record of what was sent. A kept file that went missing is made again. Making and downloading
-PDFs are recorded in the audit log, and a person can print up to 30 documents a minute.
+record of what was sent. A kept file that went missing is made again. To save disk space,
+the nightly housekeeping deletes the files of sales PDFs (quotations, proformas, invoices,
+packing lists, challans, money receipts and refund vouchers, not ones filled from a template)
+after a day; the record stays, and printing again makes a fresh file on it. Making and
+downloading PDFs are recorded in the audit log, and a person can print up to 30 documents a
+minute.
 
 **Logo.** Upload a PNG or JPG of up to 2 MB and 3000 pixels a side (needs `company.settings`).
 It is checked thoroughly before it is kept, and every print makes sure the file is still the

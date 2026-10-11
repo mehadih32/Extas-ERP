@@ -17,6 +17,7 @@ import {
   PRINT_TYPES,
   type PrintType,
 } from "@/modules/documents/model";
+import { firstPage } from "@/modules/documents/parts";
 import { renderDocumentPdf } from "@/modules/documents/render";
 import { listDocumentsSchema, printRequestSchema } from "@/modules/documents/schemas";
 import {
@@ -355,6 +356,99 @@ export async function printDocument(
     }
     throw error;
   }
+}
+
+/** Documents whose first page can be shared as a picture, drawn in the browser. */
+export const PICTURE_TYPES: readonly PrintType[] = ["COMMERCIAL_INVOICE"];
+
+/**
+ * Page 1 of a document as data, for the browser to draw as a JPG to share (an
+ * invoice's money side, without its packing list): the same checks as
+ * printing, and nothing is made or kept on the server. Logged. `logo` is where
+ * the browser fetches the letterhead logo from (null: none).
+ */
+export async function documentPicture(
+  ctx: CompanyContext,
+  raw: unknown,
+  meta?: RequestMeta,
+  now: Date = new Date(),
+) {
+  const input = printRequestSchema.parse(raw);
+  if (!PICTURE_TYPES.includes(input.type)) {
+    throw new AppError(
+      "VALIDATION",
+      `${PRINT_INFO[input.type].label}s are not shared as pictures.`,
+    );
+  }
+  assertMayPrint(ctx, input.type);
+  checkRateLimit(`print:${ctx.user.id}`, PRINT_PER_MINUTE, 60_000);
+  const [{ model, record }, logo] = await Promise.all([
+    buildDocument(ctx, input, now),
+    loadPrintLogo(ctx.company.id),
+  ]);
+  await auditInCompany(ctx, meta, {
+    action: "EXPORT",
+    entityType: record.referenceType ?? input.type,
+    entityId: record.referenceId ?? undefined,
+    summary: `Made a picture of page 1 to share: ${record.title}`,
+  });
+  return {
+    model: firstPage(model),
+    fileName: documentFileName(ctx.company.name, record.title, ".jpg"),
+    logo: logo ? `/api/company/logo?v=${logo.checksum.slice(0, 12)}` : null,
+  };
+}
+
+/**
+ * Sales documents follow the live sale and are printed again whenever they are
+ * needed, so their PDFs are kept only a day (the nightly housekeeping deletes
+ * them). The record of each print stays in the list of printed documents.
+ */
+export const SHORT_KEPT_TYPES: readonly PrintType[] = [
+  "QUOTATION",
+  "PROFORMA_INVOICE",
+  "COMMERCIAL_INVOICE",
+  "PACKING_LIST",
+  "DELIVERY_CHALLAN",
+  "PAYMENT_RECEIPT",
+  "REFUND_VOUCHER",
+];
+
+const PURGE_BATCH = 500;
+const PURGE_BATCHES_PER_NIGHT = 20;
+
+/**
+ * Nightly: deletes the PDF files of sales documents made more than a day ago
+ * (files filled from a custom template stay). Their print records stay and
+ * show "File no longer kept"; printing again makes a fresh copy from the live
+ * data onto the same record. Returns the files deleted.
+ */
+export async function purgeKeptSalesPdfs(now: Date = new Date()) {
+  const before = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  let removed = 0;
+  for (let batch = 0; batch < PURGE_BATCHES_PER_NIGHT; batch++) {
+    const files = await prisma.fileAsset.findMany({
+      where: {
+        createdAt: { lt: before },
+        generatedDocuments: {
+          some: { documentType: { in: [...SHORT_KEPT_TYPES] }, templateId: null },
+        },
+      },
+      select: { id: true, storagePath: true },
+      orderBy: { createdAt: "asc" },
+      take: PURGE_BATCH,
+    });
+    for (const file of files) {
+      // The record keeps its row: the file link is cleared (onDelete: SetNull).
+      await prisma.fileAsset.delete({ where: { id: file.id } });
+      await deleteStoredFile(file).catch((error) => {
+        console.error("[housekeeping] could not delete a kept PDF", file.storagePath, error);
+      });
+    }
+    removed += files.length;
+    if (files.length < PURGE_BATCH) break;
+  }
+  return removed;
 }
 
 /** Printed documents this person may see, newest first. */

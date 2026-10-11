@@ -8,7 +8,7 @@ import { UseTemplateButton } from "@/components/reports/use-template";
 import { FormAlert } from "@/components/forms/field";
 import { VerifiedBadge } from "@/components/parties/badges";
 import { BackLink } from "@/components/settings/back-link";
-import { InvoiceBadge, OrderBadge, OverrideBadge } from "@/components/sales/badges";
+import { InvoiceBadge, OrderBadge, OverrideBadge, RevisedBadge } from "@/components/sales/badges";
 import { ColorName, Fact, Panel, RecordHeader, Totals } from "@/components/sales/detail-bits";
 import { buyerName, CHANNEL_LABELS, money, salesHref } from "@/components/sales/labels";
 import { MoneyRecords } from "@/components/sales/money-records";
@@ -123,6 +123,7 @@ function Documents({
             Invoice {o.invoice.number}
           </Link>
           <InvoiceBadge status={o.invoice.status} />
+          <RevisedBadge revision={o.invoice.revision} />
         </span>
       ),
       detail: `${formatDay(o.invoice.issuedOn)}${o.invoice.dueOn ? ` · due ${formatDay(o.invoice.dueOn)}` : ""} · ${money(o.invoice.due, currency)} due`,
@@ -259,7 +260,9 @@ export default async function OrderPage({
       ? `Order ${o.number} was placed${o.invoice ? ` and invoice ${o.invoice.number} issued` : ""}.`
       : one(query.saved) === "1"
         ? "The changes were saved."
-        : undefined;
+        : one(query.saved) === "revised" && o.invoice
+          ? `The changes were saved and invoice ${o.invoice.number} was revised under the same number.`
+          : undefined;
   const customer = [o.customer.name, o.customer.phone].filter(Boolean).join(" · ");
 
   return (

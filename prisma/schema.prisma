@@ -1213,6 +1213,10 @@ model Invoice {
   /// The buyer's unused credit (advance balance) at that moment: already taken
   /// off previousDue, so credit later used on this invoice is not counted twice.
   previousCredit Decimal?      @db.Decimal(14, 2)
+  /// How many times the invoice was edited after it was issued (Smart Edit): the
+  /// number stays, the PDF says "(Revised)". Back to 0 when a void is re-issued.
+  revision       Int           @default(0)
+  revisedAt      DateTime?
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 

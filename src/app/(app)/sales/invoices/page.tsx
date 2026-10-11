@@ -11,6 +11,7 @@ import {
 } from "@/components/sales/list-view";
 import { SalesNoAccess } from "@/components/sales/no-access";
 import { SalesFilters } from "@/components/sales/sales-filters";
+import { localDay } from "@/lib/dates";
 import { listInvoiceRowsAction } from "@/server/actions/sales.actions";
 import { requireCompanyPage } from "@/server/pages/guards";
 
@@ -18,7 +19,8 @@ export const metadata: Metadata = { title: "Invoices" };
 
 /**
  * Commercial invoices, newest first, with what is paid and due, for sales.view
- * like GET /api/sales/invoices. They are issued from orders.
+ * like GET /api/sales/invoices. They are issued from orders. Opening one slides
+ * out its hub, with what can be done with it.
  */
 export default async function InvoicesPage({
   searchParams,
@@ -65,6 +67,7 @@ export default async function InvoicesPage({
             initial={{ items, nextCursor }}
             view={view}
             currency={ctx.company.currency}
+            today={localDay(new Date(), ctx.company.timezone)}
           />
         )}
       </SalesFilters>

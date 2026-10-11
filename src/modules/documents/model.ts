@@ -87,6 +87,10 @@ export type Block =
   | { kind: "text"; title: string; paragraphs: string[] }
   | { kind: "list"; title: string; items: Array<{ label?: string; text: string }> }
   | { kind: "note"; text: string }
+  /** A heading opening a part of the document on its own page (an invoice's packing list). */
+  | { kind: "heading"; title: string; subtitle?: string }
+  /** Signature lines at the foot of this page, for a part that is signed on its own. */
+  | { kind: "signatures"; labels: string[] }
   | { kind: "pageBreak" };
 
 export type Stamp = {

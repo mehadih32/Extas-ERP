@@ -11,13 +11,17 @@ import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { letterhead } from "@/modules/companies/letterhead";
 import { canSeeFinancials } from "@/modules/dashboard/access";
-import { resolveWarehouse } from "@/modules/inventory/stock.service";
+import { reverseJournalEntry } from "@/modules/accounts/journal.service";
+import { gradeCostData } from "@/modules/inventory/costs";
+import { resolveWarehouse, weightedAverageCost } from "@/modules/inventory/stock.service";
 import { assertPartyCanTransact, recordPartyActivity } from "@/modules/parties/party.service";
 import {
   createDeliveryChallanTx,
   createPackingListTx,
   deliveredByVariant,
   issueInvoiceTx,
+  reviseInvoiceTx,
+  voidInvoice,
   voidInvoiceTx,
 } from "@/modules/sales/documents.service";
 import { recordChequeTx } from "@/modules/sales/cheque.service";
@@ -37,6 +41,7 @@ import {
   orderLogisticsSchema,
   orderShipmentSchema,
   updateOrderSchema,
+  voidInvoiceSchema,
 } from "@/modules/sales/schemas";
 import { assertCanRefund, REFUND_KIND_TEXT, refundBuyerTx } from "@/modules/sales/refund.service";
 import {
@@ -44,6 +49,7 @@ import {
   canEditOrder,
   canSetLogistics,
   canSetShipmentDate,
+  canVoidInvoice,
   liveInvoice as live,
   SHIPMENT_OPEN,
 } from "@/modules/sales/rules";
@@ -378,8 +384,11 @@ export async function createOrder(ctx: CompanyContext, raw: unknown, meta?: Requ
 }
 
 /**
- * Edits an order before anything has left the warehouse and while it has no
- * live invoice (void the invoice first). Reservations are redone.
+ * Edits an order before anything has left the warehouse. Reservations are
+ * redone. An order with a live invoice is edited only with `reviseInvoice`
+ * (Smart Edit): the invoice keeps its number and takes the new total, its sale
+ * is posted again and its packing list follows the new lines. A fully paid
+ * invoice is locked; without the flag the invoice has to be voided first.
  */
 export async function updateOrder(
   ctx: CompanyContext,
@@ -387,7 +396,7 @@ export async function updateOrder(
   raw: unknown,
   meta?: RequestMeta,
 ) {
-  const input = updateOrderSchema.parse(raw);
+  const { reviseInvoice, ...input } = updateOrderSchema.parse(raw);
   const order = await ctx.db.salesOrder.findUnique({
     where: { id: orderId },
     include: {
@@ -397,7 +406,18 @@ export async function updateOrder(
     },
   });
   if (!order) throw new AppError("NOT_FOUND", "Order not found.");
-  assertAllowed(canEditOrder(order, piecesOf(await deliveredByVariant(prisma, order.id))));
+  assertAllowed(
+    canEditOrder(order, piecesOf(await deliveredByVariant(prisma, order.id)), {
+      revise: reviseInvoice,
+    }),
+  );
+  const revising = live(order.invoice);
+  if (revising && !ctx.can("sales.invoice.edit")) {
+    throw new AppError(
+      "FORBIDDEN",
+      `Editing this order revises invoice ${revising.number}; you may not edit invoices.`,
+    );
+  }
   if (!order.warehouseId) throw new AppError("CONFLICT", "The order has no warehouse.");
   if (input.packedById && input.packedById !== order.packedById) {
     await resolvePacker(ctx, input.packedById);
@@ -457,7 +477,18 @@ export async function updateOrder(
         })),
       });
       await reserveLines(tx, ctx, order.warehouseId!, lines);
-      if (order.packingList) {
+      if (order.packingList && revising) {
+        // A revised invoice keeps its packing list (its page 2) under the same
+        // number, now with the new lines, loose and not picked yet.
+        await tx.packingListItem.deleteMany({ where: { packingListId: order.packingList.id } });
+        await tx.packingListItem.createMany({
+          data: lines.map((l) => ({
+            packingListId: order.packingList!.id,
+            variantId: l.variantId,
+            quantity: l.quantity,
+          })),
+        });
+      } else if (order.packingList) {
         // The pick-list no longer matches; it is made again from the new lines.
         await tx.packingList.delete({ where: { id: order.packingList.id } });
       }
@@ -472,7 +503,9 @@ export async function updateOrder(
         total: totals.total,
         dueAmount: Prisma.Decimal.max(totals.total.minus(order.paidAmount), 0),
         hasForceOverride: lines.some((l) => l.short),
-        ...(linesChanged && order.status === "PACKED" ? { status: "CONFIRMED" } : {}),
+        ...(linesChanged && order.status === "PACKED" && !(revising && order.packingList)
+          ? { status: "CONFIRMED" }
+          : {}),
         ...(input.notes !== undefined ? { notes: input.notes } : {}),
         ...(input.customerName !== undefined ? { customerName: input.customerName } : {}),
         ...(input.customerPhone !== undefined ? { customerPhone: input.customerPhone } : {}),
@@ -494,6 +527,7 @@ export async function updateOrder(
       tx,
     );
     if (linesChanged) await auditOverride(tx, ctx, meta, order, lines, input.forceOverride?.reason);
+    if (revising) await reviseInvoiceTx(tx, ctx, order.id, revising.total, meta);
   }, TX_OPTIONS);
   return getOrder(ctx, order.id);
 }
@@ -504,11 +538,12 @@ export function settleFirstMessage(held: Prisma.Decimal, number: string) {
 }
 
 /**
- * Cancels an order that has not been delivered: frees the reserved stock and
- * voids its invoice. Money still held on it is settled with `settle` (paid
- * back, kept as the buyer's credit or kept as a cancellation charge, which
- * needs Accounts' money keys); without it the order is not cancelled until
- * Accounts has refunded the money.
+ * Cancels an order: frees the reserved stock and voids its invoice. Pieces
+ * already delivered come back into stock only with `returnDelivered` (Safe
+ * Void, for people who may void invoices). Money still held on it is settled
+ * with `settle` (paid back, kept as the buyer's credit or kept as a
+ * cancellation charge, which needs Accounts' money keys); without it the order
+ * is not cancelled until Accounts has refunded the money.
  */
 export async function cancelOrder(
   ctx: CompanyContext,
@@ -516,13 +551,20 @@ export async function cancelOrder(
   raw: unknown,
   meta?: RequestMeta,
 ) {
-  const { reason, settle } = cancelOrderSchema.parse(raw);
+  const { reason, settle, returnDelivered } = cancelOrderSchema.parse(raw);
   const order = await ctx.db.salesOrder.findUnique({
     where: { id: orderId },
     include: { items: true, invoice: true },
   });
   if (!order) throw new AppError("NOT_FOUND", "Order not found.");
-  assertAllowed(canCancelOrder(order, piecesOf(await deliveredByVariant(prisma, order.id))));
+  const deliveredBefore = piecesOf(await deliveredByVariant(prisma, order.id));
+  assertAllowed(canCancelOrder(order, deliveredBefore, { returnDelivered }));
+  if (deliveredBefore > 0 && !ctx.can("sales.invoice.edit")) {
+    throw new AppError(
+      "FORBIDDEN",
+      "Taking delivered goods back into stock needs the right to void invoices.",
+    );
+  }
   if (order.paidAmount.gt(0) && !settle) {
     throw new AppError("CONFLICT", settleFirstMessage(order.paidAmount, order.number), {
       settle: ["Say how to settle the money paid on this order"],
@@ -543,7 +585,14 @@ export async function cancelOrder(
       where: { id: order.id },
       include: { invoice: true },
     });
-    assertAllowed(canCancelOrder(current, 0));
+    const delivered = await deliveredByVariant(tx, order.id);
+    assertAllowed(canCancelOrder(current, piecesOf(delivered), { returnDelivered }));
+    if (piecesOf(delivered) > 0 && !ctx.can("sales.invoice.edit")) {
+      throw new AppError(
+        "FORBIDDEN",
+        "Taking delivered goods back into stock needs the right to void invoices.",
+      );
+    }
     const invoice = live(current.invoice);
     if (invoice) {
       if (!ctx.can("sales.invoice.edit")) {
@@ -576,14 +625,19 @@ export async function cancelOrder(
       data: { status: "CANCELLED", dueAmount: 0 },
     });
     if (order.warehouseId) {
+      // Delivery already took its pieces off the reservation; only the rest is freed.
+      const left = new Map(delivered);
       for (const item of order.items) {
+        const out = Math.min(left.get(item.variantId) ?? 0, item.quantity);
+        left.set(item.variantId, (left.get(item.variantId) ?? 0) - out);
         await releaseStock(
           tx,
           { companyId: ctx.company.id, warehouseId: order.warehouseId, variantId: item.variantId },
-          item.quantity,
+          item.quantity - out,
         );
       }
     }
+    const restocked = piecesOf(delivered) > 0 ? await restockDeliveredTx(tx, ctx, order) : 0;
     await auditInCompany(
       ctx,
       meta,
@@ -591,12 +645,148 @@ export async function cancelOrder(
         action: "STATUS_CHANGE",
         entityType: "SalesOrder",
         entityId: order.id,
-        summary: `Cancelled order ${order.number}: ${reason}${settled}`,
+        summary: `Cancelled order ${order.number}: ${reason}${settled}${
+          restocked > 0 ? `; ${restocked} delivered pcs back in stock` : ""
+        }`,
       },
       tx,
     );
   }, TX_OPTIONS);
   return getOrder(ctx, order.id);
+}
+
+/**
+ * Safe Void after delivery: the order's delivered pieces come back into good
+ * stock where they left from, at the cost they left at (re-weighting the SKU's
+ * average cost), and the cost of goods its challans posted is reversed. Returns
+ * the pieces taken back.
+ */
+async function restockDeliveredTx(
+  tx: Tx,
+  ctx: CompanyContext,
+  order: { id: string; number: string },
+) {
+  const moves = await tx.stockMovement.findMany({
+    where: { referenceType: "SalesOrder", referenceId: order.id, type: "SALE_OUT" },
+    select: { variantId: true, warehouseId: true, quantity: true, unitCost: true },
+  });
+  const back = new Map<
+    string,
+    { variantId: string; warehouseId: string; pieces: number; value: Prisma.Decimal }
+  >();
+  for (const m of moves) {
+    const key = `${m.variantId}:${m.warehouseId}`;
+    const entry = back.get(key) ?? {
+      variantId: m.variantId,
+      warehouseId: m.warehouseId,
+      pieces: 0,
+      value: new Prisma.Decimal(0),
+    };
+    entry.pieces -= m.quantity; // out is negative
+    entry.value = entry.value.plus((m.unitCost ?? new Prisma.Decimal(0)).times(-m.quantity));
+    back.set(key, entry);
+  }
+  let pieces = 0;
+  // One SKU at a time in a fixed order, so two of these never wait on each other.
+  for (const entry of [...back.values()].sort((a, b) => a.variantId.localeCompare(b.variantId))) {
+    if (entry.pieces <= 0) continue;
+    await lockRow(tx, "ProductVariant", entry.variantId);
+    const variant = await tx.productVariant.findUniqueOrThrow({
+      where: { id: entry.variantId },
+      select: { avgCost: true },
+    });
+    const onHand = await tx.stockBalance.aggregate({
+      where: { variantId: entry.variantId, grade: "A_GRADE" },
+      _sum: { quantity: true },
+    });
+    const unitCost = entry.value.dividedBy(entry.pieces);
+    const average = weightedAverageCost(
+      onHand._sum.quantity ?? 0,
+      variant.avgCost.toNumber(),
+      entry.pieces,
+      unitCost.toNumber(),
+    );
+    await tx.productVariant.update({
+      where: { id: entry.variantId },
+      data: gradeCostData("A_GRADE", average),
+    });
+    const key = {
+      variantId: entry.variantId,
+      warehouseId: entry.warehouseId,
+      grade: "A_GRADE" as const,
+    };
+    await tx.stockBalance.upsert({
+      where: { variantId_warehouseId_grade: key },
+      create: { ...key, companyId: ctx.company.id, quantity: entry.pieces },
+      update: { quantity: { increment: entry.pieces } },
+    });
+    await tx.stockMovement.create({
+      data: {
+        ...key,
+        companyId: ctx.company.id,
+        type: "RETURN_RESTOCK",
+        quantity: entry.pieces,
+        unitCost: unitCost.toDecimalPlaces(4, Prisma.Decimal.ROUND_HALF_UP),
+        referenceType: "SalesOrder",
+        referenceId: order.id,
+        note: `${order.number} cancelled`,
+        createdById: ctx.user.id,
+      },
+    });
+    pieces += entry.pieces;
+  }
+  // The cost of goods each challan posted goes back to Inventory.
+  const challans = await tx.deliveryChallan.findMany({
+    where: { orderId: order.id },
+    select: { id: true, number: true },
+  });
+  const entries = await tx.journalEntry.findMany({
+    where: {
+      companyId: ctx.company.id,
+      sourceType: "SALE",
+      sourceId: { in: challans.map((c) => c.id) },
+      isReversed: false,
+      reversalOfId: null,
+    },
+    select: { id: true, sourceId: true },
+  });
+  for (const entry of entries) {
+    const challan = challans.find((c) => c.id === entry.sourceId);
+    await reverseJournalEntry(tx, entry.id, {
+      description: `Goods back in stock — ${order.number}${challan ? ` / ${challan.number}` : ""} cancelled`,
+      postedById: ctx.user.id,
+    });
+  }
+  return pieces;
+}
+
+/**
+ * Voids an invoice. With `cancelOrder` (Safe Void) its order is cancelled too:
+ * reserved stock is freed, delivered pieces come back into stock, the sale is
+ * reversed and money held is settled (`settle`). Without it the order stays
+ * open to be corrected and invoiced again.
+ */
+export async function voidOrCancelInvoice(
+  ctx: CompanyContext,
+  invoiceId: string,
+  raw: unknown,
+  meta?: RequestMeta,
+) {
+  const input = voidInvoiceSchema.parse(raw);
+  if (!input.cancelOrder) return voidInvoice(ctx, invoiceId, input, meta);
+  const invoice = await ctx.db.invoice.findUnique({
+    where: { id: invoiceId },
+    select: { id: true, orderId: true, status: true },
+  });
+  if (!invoice) throw new AppError("NOT_FOUND", "Invoice not found.");
+  assertAllowed(canVoidInvoice(invoice));
+  await cancelOrder(
+    ctx,
+    invoice.orderId,
+    { reason: input.reason, settle: input.settle, returnDelivered: true },
+    meta,
+  );
+  return prisma.invoice.findUniqueOrThrow({ where: { id: invoice.id } });
 }
 
 /**

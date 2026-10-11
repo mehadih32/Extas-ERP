@@ -413,6 +413,10 @@ class Writer {
         return this.list(block);
       case "note":
         return this.note(block.text);
+      case "heading":
+        return this.heading(block);
+      case "signatures":
+        return this.signatureLines(block.labels);
       case "pageBreak":
         return this.newPage();
     }
@@ -742,9 +746,32 @@ class Writer {
     this.y += 8;
   }
 
+  /** A part's title in the company colour, with a line under it and a rule. */
+  private heading(block: Extract<Block, { kind: "heading" }>) {
+    const subtitle = block.subtitle ? this.wrap(block.subtitle, WIDTH, SANS, 9).slice(0, 2) : [];
+    this.ensure(26 + subtitle.length * 12 + 60);
+    this.line(block.title.toUpperCase(), MARGIN.left, this.y, WIDTH, {
+      font: SERIF_BOLD,
+      size: 15,
+      color: this.primary,
+      spacing: 1.7,
+    });
+    this.y += 21;
+    for (const text of subtitle) {
+      this.line(text, MARGIN.left, this.y, WIDTH, { font: SANS, size: 9, color: MUTED });
+      this.y += 12;
+    }
+    this.rule(this.y + 2, this.primary, 0.8);
+    this.y += 16;
+  }
+
   /** Signature lines near the bottom of the last page. */
   signatures() {
-    const labels = this.model.signatures;
+    this.signatureLines(this.model.signatures);
+  }
+
+  /** Signature lines near the bottom of this page (on a new one when there is no room). */
+  private signatureLines(labels: string[]) {
     if (labels.length === 0) return;
     if (this.y + 60 > BOTTOM) this.newPage();
     const y = Math.max(this.y + 40, BOTTOM - 34);

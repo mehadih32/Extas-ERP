@@ -122,6 +122,9 @@ export async function issueInvoiceTx(
     dueAmount: order.total,
     status: "UNPAID" as const,
     isLocked: true,
+    // A re-issued invoice is a new one: it starts unrevised.
+    revision: 0,
+    revisedAt: null,
   };
   // One invoice row per order: a voided invoice is re-issued under a new number.
   const invoice = order.invoice
@@ -237,6 +240,71 @@ export async function voidInvoiceTx(
     },
     tx,
   );
+}
+
+/**
+ * Smart Edit: the order behind a live invoice was edited (lines or charges), so
+ * the invoice takes the order's new total under the same number, one revision
+ * on. The sale is reversed and posted again on the invoice's own date, so the
+ * revenue and the buyer's ledger follow, and what was paid is re-totalled. A
+ * fully paid invoice is locked. Runs inside the edit's transaction, with the
+ * order locked. Audited.
+ */
+export async function reviseInvoiceTx(
+  tx: Tx,
+  ctx: CompanyContext,
+  orderId: string,
+  before: Prisma.Decimal,
+  meta?: RequestMeta,
+) {
+  const order = await loadOrder(tx, ctx.company.id, orderId);
+  const invoice = order.invoice?.status === "VOID" ? null : order.invoice;
+  if (!invoice) throw new AppError("CONFLICT", "This order has no invoice to revise.");
+  if (invoice.status === "PAID") {
+    throw new AppError("CONFLICT", `Invoice ${invoice.number} is fully paid, so it is locked.`);
+  }
+  const entry = await tx.journalEntry.findFirst({
+    where: {
+      companyId: ctx.company.id,
+      sourceType: "SALE",
+      sourceId: invoice.id,
+      isReversed: false,
+      reversalOfId: null,
+    },
+  });
+  if (entry) {
+    await reverseJournalEntry(tx, entry.id, {
+      description: `Invoice ${invoice.number} revised (${before.toFixed(2)} to ${order.total.toFixed(2)})`,
+      postedById: ctx.user.id,
+      date: invoice.issueDate,
+    });
+  }
+  const revised = await tx.invoice.update({
+    where: { id: invoice.id },
+    data: { total: order.total, revision: { increment: 1 }, revisedAt: new Date() },
+  });
+  await postInvoice(tx, {
+    companyId: ctx.company.id,
+    userId: ctx.user.id,
+    invoice: revised,
+    order,
+    partyName: partyLabel(order),
+  });
+  await refreshOrderPayments(tx, order.id);
+  await auditInCompany(
+    ctx,
+    meta,
+    {
+      action: "INVOICE_EDIT",
+      entityType: "Invoice",
+      entityId: invoice.id,
+      summary: `Revised invoice ${invoice.number} (revision ${revised.revision}): ${before.toFixed(2)} to ${order.total.toFixed(2)}`,
+      before: { total: before.toFixed(2) },
+      after: { total: order.total.toFixed(2) },
+    },
+    tx,
+  );
+  return revised;
 }
 
 /**
@@ -538,6 +606,20 @@ export async function getInvoiceDocument(ctx: CompanyContext, invoiceId: string)
       order: {
         include: {
           items: { include: { variant: variantLabel } },
+          packedBy: { select: { name: true } },
+          // Printed as the invoice's page 2 when the order has one.
+          packingList: {
+            select: {
+              number: true,
+              cartons: true,
+              grossWeightKg: true,
+              createdAt: true,
+              items: {
+                select: { quantity: true, cartonNo: true, variant: variantLabel },
+                orderBy: { id: "asc" },
+              },
+            },
+          },
         },
       },
     },
@@ -614,6 +696,9 @@ export async function getInvoiceDocument(ctx: CompanyContext, invoiceId: string)
     status: invoice.status,
     issueDate: invoice.issueDate,
     dueDate: invoice.dueDate,
+    /** Times it was edited after it was issued (0: never), and when it last was. */
+    revision: invoice.revision,
+    revisedAt: invoice.revisedAt,
     orderNumber: order.number,
     buyer: invoice.party ?? {
       name: order.customerName ?? "Walk-in customer",
@@ -622,6 +707,7 @@ export async function getInvoiceDocument(ctx: CompanyContext, invoiceId: string)
     },
     items: order.items.map((i) => ({
       sku: i.variant.sku,
+      styleCode: i.variant.style.code,
       style: i.variant.style.name,
       color: i.variant.color.name,
       size: i.variant.size.name,
@@ -630,6 +716,14 @@ export async function getInvoiceDocument(ctx: CompanyContext, invoiceId: string)
       discount: i.discount,
       lineTotal: i.lineTotal,
     })),
+    /** The order's packing list (page 2 of the PDF), with who packed it; null when none was made. */
+    packingList: order.packingList
+      ? {
+          ...order.packingList,
+          packedBy: order.packedBy?.name ?? null,
+          totalPieces: order.packingList.items.reduce((s, i) => s + i.quantity, 0),
+        }
+      : null,
     subtotal: order.subtotal,
     discount: order.discount,
     shippingCharge: order.shippingCharge,

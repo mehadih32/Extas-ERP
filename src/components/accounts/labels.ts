@@ -291,6 +291,14 @@ export const assetHref = {
   record: "/accounts/assets/new",
 };
 
+export const pettyCashHref = {
+  box: (id: string) => `/accounts/petty-cash/${encodeURIComponent(id)}`,
+  edit: (id: string) => `/accounts/petty-cash/${encodeURIComponent(id)}/edit`,
+  open: "/accounts/petty-cash/new",
+  /** The expense form with the box chosen as where the money came from. */
+  spend: (id: string) => `/accounts/expenses/new?box=${encodeURIComponent(id)}`,
+};
+
 /** One employee's pay, month by month, for a year. */
 export function employeePayHref(employeeId: string, year?: number): string {
   const base = `/accounts/salaries/${encodeURIComponent(employeeId)}`;

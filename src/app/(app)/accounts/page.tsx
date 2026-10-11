@@ -114,6 +114,7 @@ export default async function AccountsOverviewPage({
             currency={currency}
             today={o.asOf}
             can={{ transfer: o.can.transfer, paySupplier: o.can.paySupplier }}
+            moneyInOut={o.moneyInOut}
           />
         </div>
 

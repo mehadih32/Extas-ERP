@@ -48,6 +48,7 @@ export async function resetDb() {
   await prisma.reEngagementCampaign.deleteMany();
   await prisma.capitalInstallment.deleteMany();
   await prisma.capitalSource.deleteMany();
+  await prisma.pettyCashBox.deleteMany();
   await prisma.fixedAsset.deleteMany();
   await prisma.bankAccount.deleteMany();
   await prisma.journalLine.deleteMany();

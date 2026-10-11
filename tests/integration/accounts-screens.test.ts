@@ -56,6 +56,9 @@ import JournalEntryPage from "@/app/(app)/accounts/journal/[entryId]/page";
 import NewVoucherPage from "@/app/(app)/accounts/journal/new/page";
 import JournalPage from "@/app/(app)/accounts/journal/page";
 import AccountsOverviewPage from "@/app/(app)/accounts/page";
+import EditPettyCashBoxPage from "@/app/(app)/accounts/petty-cash/[boxId]/edit/page";
+import PettyCashBoxPage from "@/app/(app)/accounts/petty-cash/[boxId]/page";
+import NewPettyCashBoxPage from "@/app/(app)/accounts/petty-cash/new/page";
 import BalanceSheetPage from "@/app/(app)/accounts/reports/balance-sheet/page";
 import BooksCheckPage from "@/app/(app)/accounts/reports/books-check/page";
 import ReportsPage from "@/app/(app)/accounts/reports/page";
@@ -72,6 +75,7 @@ import { prisma } from "@/lib/prisma";
 import type { ActionResult } from "@/lib/result";
 import * as bankAccounts from "@/modules/accounts/bank.service";
 import * as chart from "@/modules/accounts/chart.service";
+import * as pettyCash from "@/modules/accounts/petty-cash.service";
 import * as supplierPayments from "@/modules/accounts/supplier-payment.service";
 import * as vouchers from "@/modules/accounts/voucher.service";
 import type { CompanyContext } from "@/modules/auth/context";
@@ -278,6 +282,11 @@ run("Accounts screens", () => {
   it("shows each page to the people its actions let in, and nothing to the others", async () => {
     const env = await books();
     const seen: Record<string, unknown> = {};
+    // A petty cash box the sales executive keeps.
+    const box = await pettyCash.createPettyCashBox(env.owner, {
+      name: "Showroom",
+      holderId: env.people.sales.id,
+    });
 
     for (const who of Object.keys(ROLES) as Who[]) {
       const ctx = await as(env, who);
@@ -352,7 +361,12 @@ run("Accounts screens", () => {
       // What the lists offer follows the same keys.
       const cash = await getCashBankScreenAction();
       if (cash.ok) {
-        expect(cash.data.can, who).toEqual({ transfer: pay, addBank: manage, addAccount: manage });
+        expect(cash.data.can, who).toEqual({
+          transfer: pay,
+          addBank: manage,
+          addAccount: manage,
+          openBox: manage,
+        });
       }
       const journal = await getJournalListAction({});
       if (journal.ok) expect(journal.data.canCreate, who).toBe(manage);
@@ -416,7 +430,18 @@ run("Accounts screens", () => {
         ["trial balance", () => TrialBalancePage(query), page(view)],
         ["books check", () => BooksCheckPage(), page(view)],
         ["expenses", () => ExpensesPage(query), page(anyExpense)],
-        ["new expense", () => NewExpensePage(), page(record)],
+        ["new expense", () => NewExpensePage(query), page(record)],
+        ["new petty cash box", () => NewPettyCashBoxPage(), page(manage)],
+        [
+          "petty cash box",
+          () => PettyCashBoxPage({ params: params({ boxId: box.id }), ...query }),
+          page(view || who === "sales"),
+        ],
+        [
+          "change petty cash box",
+          () => EditPettyCashBoxPage({ params: params({ boxId: box.id }) }),
+          page(manage),
+        ],
         ["expense heads", () => ExpenseHeadsPage(), page(anyExpense)],
         [
           "the claim",

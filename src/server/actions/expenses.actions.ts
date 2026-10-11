@@ -52,9 +52,10 @@ export const listExpenseRowsAction = async (query: unknown) =>
 export const getExpenseScreenAction = async (expenseId: string) =>
   runAction(async () => screens.getExpenseScreen(await anyExpenseRole(), expenseId));
 /** A new expense needs expenses.create; changing one is decided by the expense rules. */
-export const getExpenseFormAction = async (expenseId?: string) =>
+/** The form for a new expense (optionally paid from petty cash box `boxId`) or a change to one. */
+export const getExpenseFormAction = async (expenseId?: string, boxId?: string) =>
   runAction(async () =>
-    screens.getExpenseForm(expenseId ? await anyExpenseRole() : await record(), expenseId),
+    screens.getExpenseForm(expenseId ? await anyExpenseRole() : await record(), expenseId, boxId),
   );
 export const getExpenseHeadsScreenAction = async () =>
   runAction(async () => screens.getExpenseHeadsScreen(await anyExpenseRole()));

@@ -27,6 +27,8 @@ import {
   getProfitCard,
   type ProfitPeriod,
 } from "@/modules/accounts/executive.service";
+import { getMoneyInOutOptions } from "@/modules/accounts/money-in-out.service";
+import { listPettyCashBoxes } from "@/modules/accounts/petty-cash.service";
 import { getAccountsOverview } from "@/modules/accounts/reports.service";
 import {
   accountsKeys,
@@ -102,6 +104,7 @@ export async function listMoneyAccounts(ctx: CompanyContext) {
             kind: a.subType as MoneyAccountKind,
             balance: a.balance,
             bankAccountId: a.linkedTo?.kind === "BANK_ACCOUNT" ? a.linkedTo.id : null,
+            pettyCashBoxId: a.linkedTo?.kind === "PETTY_CASH_BOX" ? a.linkedTo.id : null,
           },
         ]
       : [],
@@ -117,11 +120,12 @@ export type MoneyAccountOption = Awaited<ReturnType<typeof listMoneyAccounts>>[n
  * owed to suppliers, profit, stock and what is waiting for Accounts.
  */
 export async function getOverviewScreen(ctx: CompanyContext, period: ProfitPeriod = "MONTH") {
-  const [o, banks, market, profit] = await Promise.all([
+  const [o, banks, market, profit, moneyInOut] = await Promise.all([
     getAccountsOverview(ctx),
     ctx.db.bankAccount.findMany({ select: { id: true, ledgerAccountId: true } }),
     getMarketBalances(ctx),
     getProfitCard(ctx, period),
+    getMoneyInOutOptions(ctx),
   ]);
   const access = accountsAccess(ctx);
   const bankOf = new Map(banks.map((b) => [b.ledgerAccountId, b.id]));
@@ -178,6 +182,7 @@ export async function getOverviewScreen(ctx: CompanyContext, period: ProfitPerio
       draftsAwaitingApproval: o.payroll.draftsAwaitingApproval,
       awaitingPayment: o.payroll.awaitingPayment,
     },
+    moneyInOut,
     can: { transfer: access.pay, paySupplier: access.pay, payClaims: access.pay },
   };
 }
@@ -189,15 +194,20 @@ export type AccountsOverviewScreen = Awaited<ReturnType<typeof getOverviewScreen
  * too) with its balance, and whether this person may move money or add one.
  */
 export async function getCashBankScreen(ctx: CompanyContext) {
-  const [money, banks] = await Promise.all([
+  const [money, banks, boxes, moneyInOut] = await Promise.all([
     listMoneyAccounts(ctx),
     listBankAccounts(ctx, { includeInactive: true }),
+    listPettyCashBoxes(ctx),
+    getMoneyInOutOptions(ctx),
   ]);
   const access = accountsAccess(ctx);
   return {
     total: sum(money.map((a) => a.balance)),
     /** Cash in hand, wallets, and the general bank account before any bank account is added. */
-    accounts: money.filter((a) => !a.bankAccountId),
+    accounts: money.filter((a) => !a.bankAccountId && !a.pettyCashBoxId),
+    /** Petty cash boxes, open ones first, each with its holder. */
+    pettyCash: boxes,
+    moneyInOut,
     banks: banks.map((b) => ({
       id: b.id,
       bankName: b.bankName,
@@ -213,6 +223,7 @@ export async function getCashBankScreen(ctx: CompanyContext) {
       transfer: access.pay && money.length >= 2,
       addBank: access.manage,
       addAccount: access.manage,
+      openBox: access.manage,
     },
   };
 }

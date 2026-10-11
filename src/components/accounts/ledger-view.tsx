@@ -77,9 +77,12 @@ export function LedgerLines({
   columns,
   currency,
   canOpen,
+  hiddenNote,
 }: {
   lines: LedgerLine[];
   hiddenCount: number;
+  /** What to say about the lines left out, when the page has no days to choose. */
+  hiddenNote?: React.ReactNode;
   /** The money columns' names: ["Debit", "Credit"] or ["Deposit", "Withdrawal"]. */
   columns: [string, string];
   currency: string;
@@ -109,8 +112,12 @@ export function LedgerLines({
       </h3>
       {hiddenCount > 0 && (
         <FormAlert tone="note">
-          The latest {formatCount(lines.length, currency)} transactions are shown. Choose fewer days
-          to see the {formatCount(hiddenCount, currency)} before them.
+          {hiddenNote ?? (
+            <>
+              The latest {formatCount(lines.length, currency)} transactions are shown. Choose fewer
+              days to see the {formatCount(hiddenCount, currency)} before them.
+            </>
+          )}
         </FormAlert>
       )}
       <ol className="grid grid-cols-1 gap-3 md:hidden" aria-label="Transactions">
@@ -164,7 +171,7 @@ export function LedgerLines({
                     </span>
                   )}
                 </TableCell>
-                <TableCell className="min-w-56">
+                <TableCell className="min-w-56 whitespace-normal">
                   {line.details}
                   {line.note && (
                     <span className="block text-[0.8125rem] text-muted-foreground">

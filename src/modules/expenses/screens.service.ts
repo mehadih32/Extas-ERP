@@ -1,6 +1,7 @@
 import { localDay } from "@/lib/dates";
 import { assertAllowed } from "@/lib/verdict";
 import { EXPENSE_CATEGORY_ACCOUNTS, type GeneralExpenseCategory } from "@/modules/accounts/chart";
+import { boxesToSpendFrom, myPettyCashBoxes } from "@/modules/accounts/petty-cash.service";
 import { accountsAccess, listMoneyAccounts } from "@/modules/accounts/screens.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { getExpense, listExpenseHeads, listExpenses } from "@/modules/expenses/expense.service";
@@ -78,11 +79,12 @@ export async function listExpenseRows(ctx: CompanyContext, raw: unknown = {}) {
 
 /**
  * The Expenses tab: the first page, the heads to filter by, how many claims are
- * waiting, and whether this person sees everyone's expenses or only their own.
+ * waiting, whether this person sees everyone's expenses or only their own, and
+ * the petty cash boxes they keep.
  */
 export async function getExpenseList(ctx: CompanyContext, raw: unknown = {}) {
   const access = expensesAccess(ctx);
-  const [page, heads, waiting] = await Promise.all([
+  const [page, heads, waiting, boxes] = await Promise.all([
     listExpenseRows(ctx, raw),
     listExpenseHeads(ctx, { includeInactive: true }),
     ctx.db.expense.count({
@@ -93,11 +95,14 @@ export async function getExpenseList(ctx: CompanyContext, raw: unknown = {}) {
         ...(access.seesAll ? {} : { createdById: ctx.user.id }),
       },
     }),
+    access.record ? myPettyCashBoxes(ctx) : Promise.resolve([]),
   ]);
   return {
     ...page,
     heads: heads.map((h) => ({ id: h.id, name: h.name })),
     waiting,
+    /** The open petty cash boxes this person keeps. */
+    boxes,
     seesAll: access.seesAll,
     can: { create: access.record, payClaims: access.pay, manageHeads: access.manageHeads },
   };
@@ -178,7 +183,7 @@ export type ExpenseScreen = Awaited<ReturnType<typeof getExpenseScreen>>;
  * this person's expense lands (in the books now, or as a claim). With an
  * expense, its details to change: the amount, head and date only while it waits.
  */
-export async function getExpenseForm(ctx: CompanyContext, expenseId?: string) {
+export async function getExpenseForm(ctx: CompanyContext, expenseId?: string, boxId?: string) {
   const access = expensesAccess(ctx);
   const expense = expenseId ? await getExpense(ctx, expenseId) : null;
   if (expense) assertAllowed(canEditExpense(ctx, stateOf(ctx, expense)));
@@ -189,10 +194,11 @@ export async function getExpenseForm(ctx: CompanyContext, expenseId?: string) {
       : null;
   const allHeads = current ? [...heads, current] : heads;
   const needsEmployee = allHeads.some((h) => h.requiresEmployee);
-  const [employees, linked, accounts] = await Promise.all([
+  const [employees, linked, accounts, boxes] = await Promise.all([
     needsEmployee ? employeeDirectory(ctx, {}) : [],
     linkedEmployee(ctx),
     access.pay && !expense ? listMoneyAccounts(ctx) : [],
+    expense ? [] : boxesToSpendFrom(ctx, boxId),
   ]);
   return {
     today: localDay(new Date(), ctx.company.timezone),
@@ -205,6 +211,10 @@ export async function getExpenseForm(ctx: CompanyContext, expenseId?: string) {
     employees: employees.map((e) => ({ id: e.id, code: e.code, name: e.name })),
     linkedEmployeeId: linked?.id ?? null,
     accounts,
+    /** Petty cash boxes it may be paid from (their holder's costs go into the books). */
+    boxes,
+    /** The box chosen when the form opens: the one asked for, or a holder's own box. */
+    boxId: boxes.find((b) => b.id === boxId)?.id ?? (access.pay ? null : (boxes[0]?.id ?? null)),
     can: {
       /** Paid now from cash, bank or a wallet (Accounts); anyone else's is a claim. */
       payNow: access.pay,

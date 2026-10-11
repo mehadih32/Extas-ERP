@@ -10,6 +10,7 @@ import { isCashSubType, isPartySubType } from "@/modules/accounts/chart";
 import { manualPostingBlock } from "@/modules/accounts/chart.service";
 import { postJournalEntry, reverseJournalEntry } from "@/modules/accounts/journal.service";
 import { assertCanManageAccounts, assertCanPayMoney } from "@/modules/accounts/money-guards";
+import { assertBoxCovers } from "@/modules/accounts/petty-cash-balance";
 import { canMoveMoney, canReverseEntry } from "@/modules/accounts/rules";
 import {
   createJournalSchema,
@@ -277,31 +278,60 @@ export async function createTransfer(ctx: CompanyContext, raw: unknown, meta?: R
   }
   const amount = money(input.amount);
   const date = input.date ? toInstant(input.date, ctx.company.timezone) : new Date();
+  // Money taken back out of a petty cash box: never more than is in it.
+  const box = await ctx.db.pettyCashBox.findFirst({
+    where: { ledgerAccountId: from.id },
+    select: { id: true, name: true, ledgerAccountId: true },
+  });
   const entry = await prisma.$transaction(async (tx) => {
-    const posted = await postJournalEntry(tx, {
-      companyId: ctx.company.id,
-      date,
-      description:
-        `Transfer from ${from.name} to ${to.name}` + (input.notes ? ` — ${input.notes}` : ""),
-      sourceType: "TRANSFER",
-      postedById: ctx.user.id,
-      lines: [
-        { accountId: to.id, debit: amount, memo: input.reference ?? undefined },
-        { accountId: from.id, credit: amount, memo: input.reference ?? undefined },
-      ],
-    });
-    await auditInCompany(
-      ctx,
-      meta,
-      {
-        action: "CREATE",
-        entityType: "JournalEntry",
-        entityId: posted.id,
-        summary: `Transfer ${posted.number}: ${amount.toFixed(2)} from ${from.name} to ${to.name}`,
-      },
-      tx,
-    );
-    return posted;
+    if (box) {
+      await assertBoxCovers(tx, ctx.company.id, box, amount, "Take back at most that.");
+    }
+    return postTransferTx(tx, ctx, { ...input, from, to, amount, date }, meta);
   });
   return getJournalEntry(ctx, entry.id);
+}
+
+/**
+ * Posts a transfer between two cash, bank or wallet accounts the caller has
+ * already checked: Dr the account the money goes into, Cr the one it leaves.
+ */
+export async function postTransferTx(
+  tx: Prisma.TransactionClient,
+  ctx: CompanyContext,
+  input: {
+    from: { id: string; name: string };
+    to: { id: string; name: string };
+    amount: Prisma.Decimal;
+    date: Date;
+    reference?: string | null;
+    notes?: string | null;
+  },
+  meta?: RequestMeta,
+) {
+  const { from, to, amount } = input;
+  const posted = await postJournalEntry(tx, {
+    companyId: ctx.company.id,
+    date: input.date,
+    description:
+      `Transfer from ${from.name} to ${to.name}` + (input.notes ? ` — ${input.notes}` : ""),
+    sourceType: "TRANSFER",
+    postedById: ctx.user.id,
+    lines: [
+      { accountId: to.id, debit: amount, memo: input.reference ?? undefined },
+      { accountId: from.id, credit: amount, memo: input.reference ?? undefined },
+    ],
+  });
+  await auditInCompany(
+    ctx,
+    meta,
+    {
+      action: "CREATE",
+      entityType: "JournalEntry",
+      entityId: posted.id,
+      summary: `Transfer ${posted.number}: ${amount.toFixed(2)} from ${from.name} to ${to.name}`,
+    },
+    tx,
+  );
+  return posted;
 }

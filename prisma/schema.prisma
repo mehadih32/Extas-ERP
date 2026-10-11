@@ -124,6 +124,7 @@ model Company {
   ledgerAccounts       LedgerAccount[]
   journalEntries       JournalEntry[]
   bankAccounts         BankAccount[]
+  pettyCashBoxes       PettyCashBox[]
   fixedAssets          FixedAsset[]
   capitalSources       CapitalSource[]
   expenseHeads         ExpenseHead[]
@@ -196,6 +197,7 @@ model User {
   generatedDocs     GeneratedDocument[]
   backupRuns        BackupRun[]
   expensesCreated   Expense[]             @relation("ExpenseCreatedBy")
+  pettyCashHeld     PettyCashBox[]        @relation("PettyCashHolder")
   purchaseOrders    PurchaseOrder[]       @relation("PurchaseOrderCreatedBy")
   materialIssues    MaterialIssue[]       @relation("MaterialIssueCreatedBy")
   materialChallans  MaterialChallan[]     @relation("MaterialChallanCreatedBy")
@@ -1958,6 +1960,7 @@ model LedgerAccount {
   bankAccount    BankAccount?
   fixedAsset     FixedAsset?
   capitalSource  CapitalSource?
+  pettyCashBox   PettyCashBox?
   expenseHeads   ExpenseHead[]
   expensesPaid   Expense[]            @relation("ExpensePaidFrom")
   salaryAdvances SalaryAdvance[]
@@ -2046,6 +2049,31 @@ model BankAccount {
   proformas     ProformaInvoice[]
 
   @@unique([companyId, accountNumber])
+}
+
+/// A petty cash box: cash one person holds for small daily costs, on its own cash
+/// ledger account so the main cash and bank ledgers stay clean. Accounts tops it up
+/// (a transfer into its account); the holder records each cost from it straight into
+/// the books, with no approval step, up to what is in the box.
+model PettyCashBox {
+  id              String   @id @default(cuid())
+  companyId       String
+  ledgerAccountId String   @unique
+  name            String
+  holderId        String
+  /// The amount it is usually topped up to: a guide, not a limit.
+  float           Decimal? @db.Decimal(14, 2)
+  notes           String?
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  company       Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  ledgerAccount LedgerAccount @relation(fields: [ledgerAccountId], references: [id])
+  holder        User          @relation("PettyCashHolder", fields: [holderId], references: [id])
+
+  @@unique([companyId, name])
+  @@index([holderId])
 }
 
 /// Fixed asset register. Cost sits on the Fixed Assets account and depreciation on

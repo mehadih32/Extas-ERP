@@ -8,6 +8,7 @@ import { Field, FormAlert } from "@/components/forms/field";
 import { ChoiceList } from "@/components/parties/choice-list";
 import { dayOrNow, readPositive } from "@/components/production/cost-dialogs";
 import { textOf } from "@/components/products/form-values";
+import { money } from "@/components/sales/labels";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
@@ -25,13 +26,15 @@ import { AccountsPartyPicker, PaidFromFields } from "./money-fields";
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 
-type How = "CASH_BANK" | "DUE";
+/** Paid now (or a claim), owed to a supplier, or paid from petty cash box <id>. */
+type How = "CASH_BANK" | "DUE" | `BOX:${string}`;
 
 /**
  * An expense (Quick Add) or a change to one: the head, the amount and day, how
  * it was paid, who and what it was for, and a receipt photo. Accounts' expenses
- * go into the books straight away; anyone else's become claims Accounts pays
- * back. Conveyance and food name the employee and the purpose.
+ * go into the books straight away, and so does a cost a petty cash holder pays
+ * from their box; anyone else's become claims Accounts pays back. Conveyance and
+ * food name the employee and the purpose.
  */
 export function ExpenseForm({ form: data, currency }: { form: ExpenseFormData; currency: string }) {
   const router = useRouter();
@@ -40,13 +43,14 @@ export function ExpenseForm({ form: data, currency }: { form: ExpenseFormData; c
   const expense = data.expense;
   const moneyLocked = expense?.status === "POSTED";
   const [headId, setHeadId] = useState(expense?.headId ?? "");
-  const [how, setHow] = useState<How>("CASH_BANK");
+  const [how, setHow] = useState<How>(data.boxId ? `BOX:${data.boxId}` : "CASH_BANK");
   const [supplier, setSupplier] = useState<PartyOption | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const head = data.heads.find((h) => h.id === headId);
   const namesEmployee = Boolean(head?.requiresEmployee);
   const showEmployee = namesEmployee || Boolean(expense?.employeeId);
   const payNow = !expense && how === "CASH_BANK" && data.can.payNow;
+  const box = how.startsWith("BOX:") ? data.boxes.find((b) => `BOX:${b.id}` === how) : undefined;
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -57,6 +61,8 @@ export function ExpenseForm({ form: data, currency }: { form: ExpenseFormData; c
     const amount = moneyLocked ? null : readPositive(values, "amount");
     if (amount !== null && typeof amount !== "number") {
       found.amount = amount.fieldErrors?.amount?.[0] ?? "Enter the amount.";
+    } else if (box && typeof amount === "number" && amount > Number(box.balance)) {
+      found.amount = `${box.name} has ${money(box.balance, currency)} in it.`;
     }
     if (!expense && how === "DUE" && !supplier)
       found.supplierId = "Choose the supplier it is owed to.";
@@ -107,17 +113,19 @@ export function ExpenseForm({ form: data, currency }: { form: ExpenseFormData; c
         headId,
         amount: amount as number,
         date: dayOrNow(values, "date", data.today),
-        paymentType: how,
-        ...(how === "DUE"
-          ? { supplierId: supplier!.id, reference: text("reference") || undefined }
-          : payNow
-            ? {
-                accountId: text("accountId") || undefined,
-                method: text("method") || "CASH",
-                reference: text("reference") || undefined,
-                useAdvance: namesEmployee ? values.get("useAdvance") === "on" : undefined,
-              }
-            : {}),
+        paymentType: how === "DUE" ? "DUE" : "CASH_BANK",
+        ...(box
+          ? { pettyCashBoxId: box.id }
+          : how === "DUE"
+            ? { supplierId: supplier!.id, reference: text("reference") || undefined }
+            : payNow
+              ? {
+                  accountId: text("accountId") || undefined,
+                  method: text("method") || "CASH",
+                  reference: text("reference") || undefined,
+                  useAdvance: namesEmployee ? values.get("useAdvance") === "on" : undefined,
+                }
+              : {}),
         ...details,
       });
       if (!result.ok) return form.setError(result.error);
@@ -136,13 +144,15 @@ export function ExpenseForm({ form: data, currency }: { form: ExpenseFormData; c
 
   const outcome = expense
     ? null
-    : how === "DUE"
-      ? data.can.dueInBooks
-        ? "It goes on the supplier's account now; Accounts pays it with their other bills."
-        : "It becomes a claim. Once Accounts approves it, it goes on the supplier's account."
-      : data.can.payNow
-        ? "It goes into the books now, paid from the account you choose."
-        : "It becomes a claim. Accounts pays you back once they approve it.";
+    : box
+      ? `It goes into the books now, paid from ${box.name}, which has ${money(box.balance, currency)} in it.`
+      : how === "DUE"
+        ? data.can.dueInBooks
+          ? "It goes on the supplier's account now; Accounts pays it with their other bills."
+          : "It becomes a claim. Once Accounts approves it, it goes on the supplier's account."
+        : data.can.payNow
+          ? "It goes into the books now, paid from the account you choose."
+          : "It becomes a claim. Accounts pays you back once they approve it.";
 
   return (
     <form onSubmit={submit} className="grid max-w-3xl gap-6" noValidate>
@@ -203,25 +213,36 @@ export function ExpenseForm({ form: data, currency }: { form: ExpenseFormData; c
 
       {!expense && (
         <div className="grid gap-4">
-          {data.can.due && (
+          {(data.can.due || data.boxes.length > 0) && (
             <ChoiceList<How>
               name="paymentType"
               legend="How it was paid"
-              defaultValue="CASH_BANK"
+              defaultValue={how}
               onChange={setHow}
               options={[
+                ...data.boxes.map((b) => ({
+                  value: `BOX:${b.id}` as const,
+                  label: `From petty cash: ${b.name}`,
+                  hint: `${money(b.balance, currency)} in the box.`,
+                })),
                 {
                   value: "CASH_BANK",
                   label: data.can.payNow ? "Paid now" : "I paid it",
                   hint: data.can.payNow
                     ? "From cash, a bank account or a wallet."
-                    : "Out of your own pocket or petty cash given to you.",
+                    : data.boxes.length > 0
+                      ? "Out of your own pocket; Accounts pays you back."
+                      : "Out of your own pocket or petty cash given to you.",
                 },
-                {
-                  value: "DUE",
-                  label: "Owed to a supplier",
-                  hint: "Their bill is paid later, with their other dues.",
-                },
+                ...(data.can.due
+                  ? [
+                      {
+                        value: "DUE" as const,
+                        label: "Owed to a supplier",
+                        hint: "Their bill is paid later, with their other dues.",
+                      },
+                    ]
+                  : []),
               ]}
             />
           )}

@@ -7,7 +7,9 @@ import { OffBadge } from "@/components/accounts/badges";
 import {
   ACCOUNT_TYPE_LABELS,
   accountsHref,
+  assetHref,
   isNegative,
+  pettyCashHref,
   signedMoney,
   SUBTYPE_LABELS,
 } from "@/components/accounts/labels";
@@ -103,8 +105,14 @@ export default async function AccountPage({
                   </Link>
                 ) : a.linkedTo.kind === "CAPITAL_SOURCE" ? (
                   `the loan or investor ${a.linkedTo.name}`
+                ) : a.linkedTo.kind === "PETTY_CASH_BOX" ? (
+                  <Link href={pettyCashHref.box(a.linkedTo.id)} className={linkClass}>
+                    the petty cash box {a.linkedTo.name}
+                  </Link>
                 ) : (
-                  `the fixed asset ${a.linkedTo.name}`
+                  <Link href={assetHref.asset(a.linkedTo.id)} className={linkClass}>
+                    the fixed asset {a.linkedTo.name}
+                  </Link>
                 )}
                 ; it is changed there.
               </p>

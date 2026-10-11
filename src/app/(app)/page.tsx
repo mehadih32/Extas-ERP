@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { cache, Suspense } from "react";
+import { cache, Fragment, Suspense } from "react";
 
 import { PrivacyProvider } from "@/components/accounts/privacy";
 import { ActionZone } from "@/components/dashboard/action-zone";
 import { ActivityFeed } from "@/components/dashboard/activity-feed";
+import { ArrangeSections } from "@/components/dashboard/arrange-sections";
 import { homeRangeFrom } from "@/components/dashboard/home-range";
 import { HomeToolbar } from "@/components/dashboard/home-toolbar";
 import { Insights, type InsightsColumns } from "@/components/dashboard/insights";
@@ -36,12 +37,13 @@ import { canSeeFinancials, canSeeSalesAmounts, canSeeStock } from "@/modules/das
 import { pulseAccess } from "@/modules/dashboard/home.service";
 import { canSeePipeline } from "@/modules/dashboard/pipeline.service";
 import { predictiveAccess } from "@/modules/dashboard/predictive.service";
-import type { HomeRange } from "@/modules/dashboard/schemas";
+import { HOME_SECTIONS, type HomeRange, type HomeSectionKey } from "@/modules/dashboard/schemas";
 import {
   getActionZoneAction,
   getActivityFeedAction,
   getDashboardInsightsAction,
   getHomePulseAction,
+  getHomeSectionOrderAction,
   getHomeTopBarAction,
   getMetricCardsAction,
   getPredictiveInsightsAction,
@@ -167,7 +169,8 @@ async function InsightsSection({
  * checks: the money
  * cards for dashboard.financials or accounts.view, the Insights for
  * dashboard.view or inventory.view, with sales values and costs only for those
- * who may see them. Every amount shows *** until the eye shows it.
+ * who may see them. Every amount shows *** until the eye shows it. Each person
+ * can put the sections in their own order ("Arrange sections" by the date).
  */
 export default async function DashboardPage({
   searchParams,
@@ -200,12 +203,118 @@ export default async function DashboardPage({
   const now = new Date();
   const firstName = ctx.user.name.trim().split(/\s+/)[0] || ctx.user.name;
   const role = roleLabel(ctx.role, ctx.user.isSuperAdmin);
+  // The person's own order of the sections; the standard one if it cannot be read.
+  const saved = await getHomeSectionOrderAction();
+  const order = saved.ok ? saved.data.sectionOrder : HOME_SECTIONS;
+
+  // Each section with what it holds, or null when this person does not see it.
+  const sections: Record<HomeSectionKey, { name: string; node: React.ReactNode } | null> = {
+    TARGET_PULSE:
+      salesAmounts || hasPulse
+        ? {
+            name:
+              salesAmounts && hasPulse
+                ? "Monthly sales target and The Pulse"
+                : salesAmounts
+                  ? "Monthly sales target"
+                  : "The Pulse",
+            node: (
+              <div className="grid grid-cols-1 gap-8">
+                {salesAmounts && (
+                  <Suspense fallback={<SalesTargetSkeleton />}>
+                    <SalesTargetSection />
+                  </Suspense>
+                )}
+                {hasPulse && (
+                  <Suspense fallback={<PulseSkeleton />}>
+                    <PulseSection range={range} />
+                  </Suspense>
+                )}
+              </div>
+            ),
+          }
+        : null,
+    ACTION_ZONE: hasZone
+      ? {
+          name: "Action Zone",
+          node: (
+            <Suspense fallback={<ActionZoneSkeleton />}>
+              <ActionZoneSection range={range} />
+            </Suspense>
+          ),
+        }
+      : null,
+    PREDICTIVE: hasPredictive
+      ? {
+          name: "Predictive insights",
+          node: (
+            <Suspense fallback={<PredictiveSkeleton />}>
+              <PredictiveSection range={range} />
+            </Suspense>
+          ),
+        }
+      : null,
+    PIPELINE_ACTIVITY: {
+      name: pipeline ? "Production pipeline and Live activity" : "Live activity",
+      node: (
+        // The pipeline, with the live feed on its right (under it on phones).
+        <div
+          className={cn(
+            "grid grid-cols-1 items-start gap-12 md:gap-16 lg:gap-8",
+            pipeline &&
+              "lg:grid-cols-[minmax(0,1fr)_minmax(0,24rem)] 2xl:grid-cols-[minmax(0,1fr)_minmax(0,28rem)]",
+          )}
+        >
+          {pipeline && (
+            <Suspense fallback={<PipelineSkeleton />}>
+              <PipelineSection currency={ctx.company.currency} />
+            </Suspense>
+          )}
+          <Suspense fallback={<ActivityFeedSkeleton />}>
+            <ActivitySection />
+          </Suspense>
+        </div>
+      ),
+    },
+    KEY_FIGURES: financials
+      ? {
+          name: "Key figures",
+          node: (
+            <Suspense fallback={<MetricCardsSkeleton />}>
+              <KeyFigures />
+            </Suspense>
+          ),
+        }
+      : null,
+    INSIGHTS: stock
+      ? {
+          name: "Insights",
+          node: (
+            <Suspense fallback={<InsightsSkeleton />}>
+              <InsightsSection view={view} columns={{ salesAmounts, financials }} />
+            </Suspense>
+          ),
+        }
+      : null,
+  };
+  const shown = order.flatMap((key) => {
+    const section = sections[key];
+    return section ? [{ key, ...section }] : [];
+  });
 
   return (
     <PrivacyProvider>
       <div className="flex flex-col">
         <header>
-          <p className="eyebrow">{formatLongDay(localDay(now, ctx.company.timezone))}</p>
+          <div className="flex items-center justify-between gap-3">
+            <p className="eyebrow">{formatLongDay(localDay(now, ctx.company.timezone))}</p>
+            {shown.length > 1 && (
+              <ArrangeSections
+                sections={shown.map(({ key, name }) => ({ key, name }))}
+                className="-my-2"
+              />
+            )}
+          </div>
           <h1 className="mt-3 font-serif text-[2rem] leading-tight text-primary sm:text-[2.5rem]">
             {greetingAt(now, ctx.company.timezone)}, {firstName}
           </h1>
@@ -236,62 +345,9 @@ export default async function DashboardPage({
             </section>
           )}
 
-          {(salesAmounts || hasPulse) && (
-            <div className="grid grid-cols-1 gap-8">
-              {salesAmounts && (
-                <Suspense fallback={<SalesTargetSkeleton />}>
-                  <SalesTargetSection />
-                </Suspense>
-              )}
-              {hasPulse && (
-                <Suspense fallback={<PulseSkeleton />}>
-                  <PulseSection range={range} />
-                </Suspense>
-              )}
-            </div>
-          )}
-
-          {hasZone && (
-            <Suspense fallback={<ActionZoneSkeleton />}>
-              <ActionZoneSection range={range} />
-            </Suspense>
-          )}
-
-          {hasPredictive && (
-            <Suspense fallback={<PredictiveSkeleton />}>
-              <PredictiveSection range={range} />
-            </Suspense>
-          )}
-
-          {/* The pipeline, with the live feed on its right (under it on phones). */}
-          <div
-            className={cn(
-              "grid grid-cols-1 items-start gap-12 md:gap-16 lg:gap-8",
-              pipeline &&
-                "lg:grid-cols-[minmax(0,1fr)_minmax(0,24rem)] 2xl:grid-cols-[minmax(0,1fr)_minmax(0,28rem)]",
-            )}
-          >
-            {pipeline && (
-              <Suspense fallback={<PipelineSkeleton />}>
-                <PipelineSection currency={ctx.company.currency} />
-              </Suspense>
-            )}
-            <Suspense fallback={<ActivityFeedSkeleton />}>
-              <ActivitySection />
-            </Suspense>
-          </div>
-
-          {financials && (
-            <Suspense fallback={<MetricCardsSkeleton />}>
-              <KeyFigures />
-            </Suspense>
-          )}
-
-          {stock && (
-            <Suspense fallback={<InsightsSkeleton />}>
-              <InsightsSection view={view} columns={{ salesAmounts, financials }} />
-            </Suspense>
-          )}
+          {shown.map(({ key, node }) => (
+            <Fragment key={key}>{node}</Fragment>
+          ))}
         </div>
       </div>
     </PrivacyProvider>

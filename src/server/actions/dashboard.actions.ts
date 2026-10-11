@@ -14,6 +14,8 @@ import { getProductionPipeline } from "@/modules/dashboard/pipeline.service";
 import { getPredictiveInsights } from "@/modules/dashboard/predictive.service";
 import {
   getDashboardPreferences,
+  getHomeSectionOrder,
+  setHomeSectionOrder,
   updateDashboardPreferences,
 } from "@/modules/dashboard/preferences.service";
 
@@ -22,7 +24,8 @@ import {
  *   dashboard.financials / accounts.view   the owner's money cards
  *   dashboard.view / inventory.view        top sellers and stock alerts (money columns only
  *                                          for people who may see sales or the financials)
- * Hiding a card (the eye icon) is each person's own display choice.
+ * Hiding a card (the eye icon) and the order of the Home sections are each person's own
+ * display choices.
  * The Home screen's top bar, The Pulse, the Action Zone, the predictive insights and the
  * activity feed are for everyone signed in to the company; each part is only worked out
  * for the people who may see it (home.service.ts, action-zone.service.ts,
@@ -43,6 +46,10 @@ export const getDashboardPreferencesAction = async () =>
   runAction(async () => getDashboardPreferences(await requireCompany()));
 export const updateDashboardPreferencesAction = async (input: unknown) =>
   runAction(async () => updateDashboardPreferences(await requireCompany(), input));
+export const getHomeSectionOrderAction = async () =>
+  runAction(async () => getHomeSectionOrder(await requireCompany()));
+export const setHomeSectionOrderAction = async (input: unknown) =>
+  runAction(async () => setHomeSectionOrder(await requireCompany(), input));
 export const getHomeTopBarAction = async () =>
   runAction(async () => getHomeTopBar(await requireCompany()));
 export const getHomePulseAction = async (query: unknown) =>

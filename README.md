@@ -92,7 +92,10 @@ Built one module at a time, each in its own pull request. So far:
   Pulse for the period (sales and money collected, deliveries and orders waiting to go out,
   production projects); the Action Zone (overdue invoices by buyer with a WhatsApp reminder
   link, low stock with "Order now", and pending approvals in red: leave, payroll, and for the
-  owner the period's sales returns and orders with a discount over 10%); the key figures (stock value, fixed assets, liabilities, today's
+  owner the period's sales returns and orders with a discount over 10%); the predictive
+  insights (how many days the top sellers' stock lasts at the last 30 days' speed, and the
+  period's top buyer); the production pipeline (active projects as progress bars) beside the
+  live activity feed (from the audit log, refreshed every minute); the key figures (stock value, fixed assets, liabilities, today's
   sales, net profit); and the Insights: top sellers (period, SKUs or styles, by pieces or sales
   value, kept in the address so a link shows the same list), highest stock, dead and slow
   stock, and low stock. Every amount shows `***` when the screen opens: the eye at the top
@@ -1784,6 +1787,30 @@ who handle it.
   Returns and discounts have no approval step (a return is a credit note at once; QC of
   returned goods is deferred), so the list only flags them.
 
+**Predictive insights** (`predictive.service.ts`):
+
+- Stock runway (`dashboard.view` or `inventory.view`, pieces only): the 5 styles that sold the
+  most pieces in the last 30 days (today included), with the pieces available now (A-grade
+  less reserved) and how many days they last: available × 30 ÷ pieces sold. Red under 15
+  days or out of stock, amber under 45 days (a project's default lead time), with "Order now"
+  for those rows as in the Action Zone.
+- Top buyer (sales values): the buyer account with the most sales after discounts in the
+  period chosen at the top, its share of all the period's sales (walk-ins count in the total
+  but are not a buyer), invoices, pieces, the 3 styles it bought most, and the next 2 buyers.
+
+**Production pipeline** (`pipeline.service.ts`, `production.view` or the financials): the
+active projects, the earliest target date first (6 shown, with the count of the rest and of
+those on hold). A project in a stage is half way through it (Fabric sourcing 10%, Cutting
+30%, Sewing 50%, Wash and QC 70%, Finishing 90%); once pieces are received, the share of
+the target received is used when it is further along. Days left, or late in red.
+
+**Live activity** (`activity.service.ts`, everyone): the latest 12 audit log rows, newest
+first, grouped by day in company time. `audit.view` sees everyone's; everyone else sees their
+own. Sign-ins, sign-outs, company switches, downloads and attendance check-ins are left out.
+Amounts in the text (`12345.00`) come back as their own parts so the page hides them behind
+the eye; a row links to its record when the reader may open it. The page reads it again
+every minute while it is on screen.
+
 **Insights.** Top sellers for a period (the past month by default), per SKU or per style, by
 pieces or by sales value; the SKUs holding the most stock; dead and slow stock; low stock.
 
@@ -1838,6 +1865,9 @@ are recorded in the audit log, and a person can make up to 10 reports a minute.
 | `GET /api/dashboard/home?range=TODAY\|WEEK\|MONTH`                                           | Home top bar (pending tasks, target) and The Pulse |
 | `PUT /api/dashboard/sales-target`                                                            | `{ month: "2026-10", amount }` (company.settings)  |
 | `GET /api/dashboard/action-zone?range=TODAY\|WEEK\|MONTH`                                    | Overdue invoices, low stock, pending approvals     |
+| `GET /api/dashboard/predictive?range=TODAY\|WEEK\|MONTH`                                     | Stock runway of the top sellers, the top buyer     |
+| `GET /api/dashboard/pipeline`                                                                | Active production projects with their progress     |
+| `GET /api/dashboard/activity?limit=12`                                                       | Latest activity: everyone's or one's own           |
 | `GET /api/reports/builder`                                                                   | Metrics this person may pick, periods, defaults    |
 | `GET /api/reports/preview?period=&from=&to=&metrics=SALES,TOP_SELLERS&…`                     | The report as data, without a file                 |
 | `GET/POST /api/reports/exports`, `GET/DELETE …/:id`                                          | Saved reports / make one: `{ format: PDF\|EXCEL }` |

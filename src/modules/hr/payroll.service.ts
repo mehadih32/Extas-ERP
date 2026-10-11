@@ -579,6 +579,20 @@ export async function recalculatePayrollRun(
   return getPayrollRun(ctx, runId);
 }
 
+/** Money in the audit trail as everywhere else ("1500.00"), so the Home screen's eye hides it. */
+const PAYROLL_MONEY_FIELDS = new Set([
+  "allowances",
+  "bonus",
+  "taxDeduction",
+  "otherDeductions",
+  "advanceDeduction",
+]);
+
+const payrollEditValue = (field: string, value: unknown) =>
+  PAYROLL_MONEY_FIELDS.has(field) && typeof value === "number"
+    ? money(value).toFixed(2)
+    : String(value);
+
 /** Edits one employee's line on a draft; the run is recalculated around it. */
 export async function updatePayrollItem(
   ctx: CompanyContext,
@@ -634,7 +648,7 @@ export async function updatePayrollItem(
         summary: `Payroll ${monthLabel(computed.month)}, ${
           computed.employees.get(item.employeeId)?.name
         }: ${Object.entries(input)
-          .map(([k, v]) => `${k} ${v === null ? "back to automatic" : String(v)}`)
+          .map(([k, v]) => `${k} ${v === null ? "back to automatic" : payrollEditValue(k, v)}`)
           .join(", ")}`,
       },
       tx,

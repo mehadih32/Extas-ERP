@@ -3,14 +3,15 @@ import type { HelpSection } from "../types";
 /**
  * The dashboard (the Home screen): the top bar (pending tasks, the period, the
  * eye and the (+) quick actions), the monthly sales target, The Pulse, the
- * Action Zone (overdue invoices, low stock, pending approvals), the key figures
- * and the Insights (top sellers and stock alerts).
+ * Action Zone (overdue invoices, low stock, pending approvals), the predictive
+ * insights (stock runway, top buyer), the production pipeline and the live
+ * activity feed, the key figures and the Insights (top sellers and stock alerts).
  */
 export const dashboardHelp: HelpSection = {
   id: "dashboard",
   title: "ড্যাশবোর্ড (Dashboard)",
   description:
-    "সাইন ইন করলেই প্রথমে যে পাতা খোলে: আজকের বাকি কাজ, দ্রুত কাজের (+) বোতাম, মাসের বিক্রির লক্ষ্য, বিক্রি-আদায়-ডেলিভারি-উৎপাদনের গতি, বকেয়া ইনভয়েস-কম স্টক-অনুমোদনের কাজ, ব্যবসার মূল হিসাব, কোন পণ্য বেশি বিক্রি হচ্ছে আর কোন স্টক আটকে আছে বা ফুরিয়ে আসছে।",
+    "সাইন ইন করলেই প্রথমে যে পাতা খোলে: আজকের বাকি কাজ, দ্রুত কাজের (+) বোতাম, মাসের বিক্রির লক্ষ্য, বিক্রি-আদায়-ডেলিভারি-উৎপাদনের গতি, বকেয়া ইনভয়েস-কম স্টক-অনুমোদনের কাজ, স্টক কত দিন চলবে ও সেরা বায়ার, উৎপাদনের অগ্রগতি, অ্যাপে সর্বশেষ কী হলো, ব্যবসার মূল হিসাব, কোন পণ্য বেশি বিক্রি হচ্ছে আর কোন স্টক আটকে আছে বা ফুরিয়ে আসছে।",
   href: "/",
   articles: [
     {
@@ -45,7 +46,7 @@ export const dashboardHelp: HelpSection = {
           text: "হোম স্ক্রিনে শুভেচ্ছার নিচে লেখা থাকে আজ আপনার কয়টি কাজ বাকি: আজকের ও আগের দিনের শেষ না হওয়া কাজ আর রিমাইন্ডার, Planner-এর তালিকা থেকে। সংখ্যাটিতে চাপলে Planner খোলে। কিছু বাকি না থাকলে লেখা থাকে “Nothing is pending for today.”",
         },
         {
-          text: "শুভেচ্ছার নিচের বারটি স্ক্রিন নিচে নামালেও উপরে আটকে থাকে। বাঁ দিকে সময় বাছাই: “Today”, “This week” (শনিবার থেকে আজ পর্যন্ত) ও “This month”। বাছাই বদলালে “The Pulse”-এর হিসাব সঙ্গে সঙ্গে বদলে যায়।",
+          text: "শুভেচ্ছার নিচের বারটি স্ক্রিন নিচে নামালেও উপরে আটকে থাকে। বাঁ দিকে সময় বাছাই: “Today”, “This week” (শনিবার থেকে আজ পর্যন্ত) ও “This month”। বাছাই বদলালে “The Pulse” ও সেরা বায়ারের (“Top buyer …”) হিসাব সঙ্গে সঙ্গে বদলে যায়।",
           image: {
             id: "dashboard-home-top-bar-1",
             caption: "উপরে আটকে থাকা বার: সময় বাছাই, “Show amounts” ও (+) বোতাম",
@@ -263,6 +264,138 @@ export const dashboardHelp: HelpSection = {
       ],
     },
     {
+      slug: "dashboard-predictive",
+      title: "ভবিষ্যতের আভাস (Predictive insights): স্টক কত দিন চলবে আর সেরা বায়ার কে",
+      summary:
+        "সবচেয়ে বেশি বিক্রি হওয়া পণ্যের স্টক এখনকার গতিতে কত দিনে ফুরাবে তা দেখা, “Order now” দিয়ে আগেভাগে বানানো, আর বাছাই করা সময়ের সেরা বায়ার কে ও তিনি কী কিনেছেন তা দেখা।",
+      keywords: [
+        "predictive insights",
+        "stock runway",
+        "runs out",
+        "top selling",
+        "sales speed",
+        "top buyer",
+        "best buyer",
+        "buyer of the month",
+        "স্টক কত দিন চলবে",
+        "ফুরাবে",
+        "বিক্রির গতি",
+        "সেরা বায়ার",
+        "সবচেয়ে বেশি বিক্রি",
+      ],
+      routes: ["/"],
+      who: "“Stock runway” দেখেন যাঁরা ড্যাশবোর্ড বা স্টক দেখতে পারেন (শুধু পিস, টাকা নয়)। “Top buyer …” দেখেন যাঁরা বিক্রির টাকা দেখতে পারেন: Sales, Accounts ও Super Admin।",
+      anyOf: [
+        "dashboard.view",
+        "inventory.view",
+        "sales.view",
+        "dashboard.financials",
+        "accounts.view",
+      ],
+      steps: [
+        {
+          text: "হোম স্ক্রিনে “Action Zone”-এর নিচে “Predictive insights” অংশে দুটি কার্ড: “Stock runway” আর বাছাই করা সময়ের সেরা বায়ার (“Top buyer …”, যেমন এই মাসের)।",
+          image: {
+            id: "dashboard-predictive-1",
+            caption: "“Predictive insights”: “Stock runway” ও “Top buyer …” কার্ড",
+          },
+        },
+        {
+          text: "“Stock runway” কার্ডের প্রথম লাইনে থাকে গত ৩০ দিনে কোন স্টাইল সবচেয়ে বেশি পিস বিক্রি হয়েছে (“Top selling: …”) আর এখনকার গতিতে তার স্টক কত দিনে ফুরাবে (“At the current speed, stock runs out in” … দিন), সঙ্গে আনুমানিক তারিখ।",
+        },
+        {
+          text: "হিসাবটি সহজ: এখন বিক্রিযোগ্য পিস ÷ গত ৩০ দিনে দিনে গড়ে কত পিস বিক্রি হয়েছে। নিচের তালিকায় সবচেয়ে বেশি বিক্রি হওয়া ৫টি স্টাইল: দিনে কত পিস বিক্রি হয় (“a day”), কত পিস বাকি (“pcs left”), আর ডান দিকে কত দিন চলবে।",
+        },
+        {
+          text: "রং দেখে বুঝুন: লাল মানে ১৫ দিনের মধ্যে ফুরাবে বা “Out of stock”; হলুদ মানে নতুন ব্যাচ বানাতে যত দিন লাগে (প্রায় ৪৫ দিন) তার আগেই ফুরাবে; ধূসর মানে আপাতত চিন্তা নেই।",
+          image: {
+            id: "dashboard-predictive-2",
+            caption:
+              "“Stock runway”: প্রতিটি স্টাইলের দিনে বিক্রি, বাকি পিস, কত দিন চলবে ও “Order now”",
+          },
+        },
+        {
+          text: "লাল বা হলুদ সারিতে Production Manager ও Super Admin “Order now” পান: চাপলে নতুন প্রোডাকশন প্রজেক্টের ফর্ম খোলে, স্টাইল ও “In-House” বসানো থাকে। অন্যরা “See stock” চেপে পণ্যের স্টকের পাতা দেখতে পারেন।",
+        },
+        {
+          text: "“Top buyer …” কার্ডে থাকে বাছাই করা সময়ে (“Today”, “This week” বা “This month”) যে বায়ার সবচেয়ে বেশি টাকার মাল কিনেছেন তাঁর নাম, কত টাকার কিনেছেন ও মোট বিক্রির কত শতাংশ (“% of sales”), কয়টি ইনভয়েস ও কত পিস, আর “Bought most”-এ তিনি কোন স্টাইল বেশি নিয়েছেন। নিচে ২ ও ৩ নম্বর বায়ার।",
+          image: {
+            id: "dashboard-predictive-3",
+            caption: "“Top buyer …” কার্ড: নাম, কেনার টাকা, বিক্রির শতাংশ ও “Bought most”",
+          },
+        },
+        {
+          text: "টাকা শুরুতে *** থাকে; কার্ডের চোখে বা উপরের “Show amounts”-এ চাপলে দেখা যায়। বায়ারের নামে চাপলে তাঁর প্রোফাইল খোলে।",
+        },
+      ],
+      tips: [
+        "স্টক কত দিন চলবে তা সবসময় গত ৩০ দিনের বিক্রি ধরে হিসাব হয়; উপরের সময় বাছাই শুধু সেরা বায়ারের হিসাব বদলায়।",
+        "যে পিস এখনো ফ্যাক্টরিতে বানানো হচ্ছে তা স্টকে ঢোকার আগে এই হিসাবে আসে না। তাই “Order now” চাপার আগে “Production pipeline”-এ দেখে নিন একই স্টাইল আগে থেকেই বানানো হচ্ছে কি না।",
+        "দোকানের খুচরা (walk-in) বিক্রি কোনো একজন বায়ারের নয়, তাই সেরা বায়ারের তালিকায় আসে না; তবে মোট বিক্রির শতাংশের হিসাবে ধরা থাকে।",
+      ],
+    },
+    {
+      slug: "dashboard-pipeline-activity",
+      title:
+        "উৎপাদনের অগ্রগতি (Production pipeline) ও সর্বশেষ কাজের তালিকা (Live activity) দেখবেন যেভাবে",
+      summary:
+        "চলমান প্রতিটি প্রোডাকশন প্রজেক্ট কত শতাংশ এগোল ও কোন ধাপে আছে তা অগ্রগতির বারে দেখা, আর অ্যাপে সর্বশেষ কী কী কাজ হলো তা সময়সহ এক জায়গায় দেখা।",
+      keywords: [
+        "production pipeline",
+        "progress bar",
+        "project progress",
+        "live activity",
+        "activity feed",
+        "recent activity",
+        "timeline",
+        "who did what",
+        "উৎপাদনের অগ্রগতি",
+        "অগ্রগতির বার",
+        "সর্বশেষ কাজ",
+        "কে কী করেছে",
+        "লাইভ",
+      ],
+      routes: ["/"],
+      who: "“Live activity” সবাই দেখেন: Super Admin (বা যাঁর ভূমিকায় অডিট ট্রেইল দেখার অনুমতি আছে) কোম্পানির সবার কাজ, অন্যরা শুধু নিজের কাজ। “Production pipeline” দেখেন যাঁরা উৎপাদন দেখতে পারেন (Production, Store, Accounts ও Super Admin); এতে শুধু পিস ও দিন থাকে, টাকা নয়।",
+      steps: [
+        {
+          text: "“Predictive insights”-এর নিচে বাঁ দিকে “Production pipeline”, আর ডান দিকে “Live activity”। ফোনে দুটি একটির নিচে আরেকটি থাকে।",
+          image: {
+            id: "dashboard-pipeline-activity-1",
+            caption:
+              "বাঁ দিকে “Production pipeline”-এর অগ্রগতির বার, ডান দিকে “Live activity”-র সময়রেখা",
+          },
+        },
+        {
+          text: "“Production pipeline”: চলমান প্রতিটি প্রজেক্ট একটি করে বারে, যার শেষ তারিখ সবচেয়ে কাছে সে প্রথমে। বারের নিচে লেখা থাকে কত শতাংশ হলো (“% complete”) আর কোন ধাপে আছে, যেমন Sewing।",
+        },
+        {
+          text: "প্রতিটি ধাপ বারকে এগিয়ে নেয়: Fabric sourcing ১০%, Cutting ৩০%, Sewing ৫০%, Wash and QC ৭০%, Finishing ৯০%। ফ্যাক্টরি থেকে পিস আসা শুরু হলে পিসের হিসাব বেশি এগোলে বার সেটাই দেখায়, আর লেখা থাকে কত পিস এল (“… of … pcs received”)।",
+        },
+        {
+          text: "ডান দিকে লেখা থাকে কত দিন বাকি, শেষ দিন আজ হলে “Due today”, আর দেরি হলে লাল লেখায় কত দিন দেরি (“… late”); তখন বারও লাল হয়। প্রজেক্টের নামে চাপলে প্রজেক্টের পাতা খোলে। সব প্রজেক্ট দেখতে নিচের “See all … active projects” বা “Open Production” চাপুন।",
+        },
+        {
+          text: "“Live activity”: অ্যাপে সর্বশেষ যা করা হয়েছে, নতুনটা উপরে, দিন ধরে সাজানো (“Today”, “Yesterday”)। প্রতিটি লাইনে সময় (যেমন 10:15 AM), কে করেছেন (আপনি নিজে হলে “You”), আর কী করেছেন, যেমন ইনভয়েস তৈরি, পেমেন্ট নেওয়া বা মাল স্টকে তোলা।",
+          image: {
+            id: "dashboard-pipeline-activity-2",
+            caption: "“Live activity”: সময়, কে করেছেন ও কী করেছেন, দিন ধরে সাজানো",
+          },
+        },
+        {
+          text: "লাইনে চাপলে সেই ইনভয়েস, অর্ডার, প্রজেক্ট বা রেকর্ডটি খোলে, যদি আপনার সেটি দেখার অনুমতি থাকে। তালিকাটি প্রতি মিনিটে নিজে থেকে হালনাগাদ হয় (“Updates every minute”); পাতা আবার খুলতে হয় না।",
+        },
+        {
+          text: "লেখার ভেতরের টাকার অঙ্ক শুরুতে *** থাকে; কার্ডের চোখে বা উপরের “Show amounts”-এ চাপলে দেখা যায়।",
+        },
+      ],
+      tips: [
+        "Super Admin দেখেন “Everything done in the company, newest first.”; অন্যরা দেখেন “What you did lately, newest first.”, অর্থাৎ শুধু নিজের কাজ।",
+        "সাইন ইন ও সাইন আউট, কোম্পানি বদল, ডাউনলোড আর হাজিরার চেক-ইন এই তালিকায় আসে না, যাতে আসল কাজগুলো চোখে পড়ে। এগুলোও অডিট ট্রেইলে লেখা থাকে।",
+        "স্থগিত (On hold) প্রজেক্ট বারে আসে না; কয়টি স্থগিত আছে তা নিচে “… on hold” লেখায় থাকে।",
+      ],
+    },
+    {
       slug: "dashboard-key-figures",
       title: "মূল হিসাবগুলো (Key figures) পড়বেন যেভাবে",
       summary:
@@ -420,7 +553,7 @@ export const dashboardHelp: HelpSection = {
     {
       slug: "dashboard-empty",
       title: "ড্যাশবোর্ড ফাঁকা দেখালে কী বুঝবেন",
-      summary: "“Nothing to show here yet” লেখা কেন আসে এবং কী করবেন।",
+      summary: "“No figures to show here yet” লেখা কেন আসে এবং কী করবেন।",
       keywords: [
         "nothing to show",
         "empty dashboard",
@@ -434,7 +567,10 @@ export const dashboardHelp: HelpSection = {
       who: "যাঁদের ভূমিকায় ড্যাশবোর্ডের হিসাব নেই, যেমন Employee।",
       steps: [
         {
-          text: "ড্যাশবোর্ডে “Nothing to show here yet” লেখা থাকলে বুঝবেন আপনার ভূমিকায় ড্যাশবোর্ডের হিসাব দেখার অনুমতি নেই। এটা কোনো সমস্যা নয়।",
+          text: "ড্যাশবোর্ডে “No figures to show here yet” লেখা থাকলে বুঝবেন আপনার ভূমিকায় ড্যাশবোর্ডের হিসাব দেখার অনুমতি নেই। এটা কোনো সমস্যা নয়।",
+        },
+        {
+          text: "এর নিচে “Live activity”-তে আপনার নিজের সর্বশেষ কাজগুলো থাকে, যেমন ছুটির আবেদন বা খরচের দাবি।",
         },
         {
           text: "আপনার কাজের অংশগুলো মেনুতে পাবেন, যেমন “My HR”, “Planner” বা “Expenses”।",

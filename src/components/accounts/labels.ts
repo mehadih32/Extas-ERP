@@ -1,7 +1,8 @@
 import type { AccountSubType, AccountType, JournalSource, PaymentType } from "@prisma/client";
 
-import { groupAmount } from "@/lib/display";
+import { formatDay, formatDayRange, groupAmount } from "@/lib/display";
 import type { MoneyAccountKind } from "@/modules/accounts/choices";
+import type { Growth, ProfitPeriod } from "@/modules/accounts/profit-periods";
 import type { PeriodPreset } from "@/modules/accounts/periods";
 import type { ExpenseStatus } from "@/modules/expenses/schemas";
 
@@ -223,4 +224,36 @@ export function moneyAccountHref(account: { id: string; bankAccountId: string | 
   return account.bankAccountId
     ? accountsHref.bank(account.bankAccountId)
     : accountsHref.account(account.id);
+}
+
+export const PROFIT_PERIOD_LABELS: Record<ProfitPeriod, string> = {
+  TODAY: "Today",
+  MONTH: "This month",
+  YEAR: "This year",
+  LIFETIME: "Lifetime",
+};
+
+const COMPARED_WITH: Record<Exclude<ProfitPeriod, "LIFETIME">, string> = {
+  TODAY: "yesterday",
+  MONTH: "the same days last month",
+  YEAR: "the same days last year",
+};
+
+/** "Up 12.5% on the same days last month", "Down on yesterday", "Same as yesterday". */
+export function growthText(growth: Growth, period: Exclude<ProfitPeriod, "LIFETIME">): string {
+  const than = COMPARED_WITH[period];
+  if (growth.direction === "FLAT") return `Same as ${than}`;
+  const word = growth.direction === "UP" ? "Up" : "Down";
+  return growth.percent ? `${word} ${growth.percent}% on ${than}` : `${word} on ${than}`;
+}
+
+/** The days a profit figure covers: "1 – 11 Oct 2026", "Today, 11 Oct 2026", "All time to 11 Oct 2026". */
+export function profitSpan(card: {
+  period: ProfitPeriod;
+  from: string | null;
+  to: string;
+}): string {
+  if (!card.from) return `All time to ${formatDay(card.to)}`;
+  if (card.period === "TODAY") return `Today, ${formatDay(card.to)}`;
+  return formatDayRange(card.from, card.to);
 }

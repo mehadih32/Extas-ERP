@@ -401,11 +401,20 @@ Built one module at a time, each in its own pull request. So far:
   delivery and the pieces are typed in.
 
 - **Accounts** (`/accounts`), in seven tabs:
-  - **Overview**: the money in hand (cash, each bank account and wallet), what buyers owe and
-    what is owed to suppliers, buyer advances, today's sales, the net profit this month and
-    this financial year, the stock, raw materials, work in progress and fixed assets, the
-    loans and installments due, and what waits for Accounts (claims to pay back, payroll to
-    approve or pay). Money is moved between accounts and suppliers are paid from here.
+  - **Overview**: five executive cards, each opening a side panel loaded when it opens:
+    **Cash & bank** (hand cash, bank and mobile banking, account by account), **Market due**
+    (buyers who owe us, net of their advances, each opening the buyer's profile), **Market
+    payable** (suppliers, factories and CMTs we owe, net of advances paid them), **Inventory &
+    WIP** (ready stock at cost by category, raw materials, and the work in progress of each open
+    project) and **Net profit** (gross and net profit for Today, This month, This year (the
+    financial year) or Lifetime via `?period=`, with ↑/↓ % against the same days of the period
+    before, opening the most profitable categories and buyers by gross profit on invoices).
+    Below them, what waits for Accounts (claims to pay back, payroll to approve or pay, loan
+    installments) and what else the business holds and owes (fixed assets, employee advances,
+    buyer advances, loans and investors). Every amount shows `***` until **Show amounts** (or
+    a card's own eye) shows it; nothing is remembered, so the page opens hidden again. Money is
+    moved between accounts and suppliers are paid from here. The cards only read the journal,
+    the stock and the sales documents; nothing is stored or posted.
   - **Cash & bank**: cash in hand, wallets and every bank account with today's balance. A
     bank account's page shows its details and its statement for any days (opening balance,
     deposits, withdrawals, closing and average balance, month by month), each line opening its

@@ -2,7 +2,7 @@
 
 import { BanIcon, CircleCheckIcon } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 
 import { Field, FormAlert } from "@/components/forms/field";
 import { textOf } from "@/components/products/form-values";
@@ -41,11 +41,15 @@ export function ChequeList({
   view,
   currency,
   today,
+  empty,
 }: {
   initial: ChequePage;
   view: PaymentListView;
   currency: string;
   today: string;
+  /** Shown when the list starts empty. The list stays once it has cheques, so marking
+   * the last pending one keeps it on screen (as cleared or bounced) with its notice. */
+  empty: ReactNode;
 }) {
   const list = useLoadMore(initial, (cursor) =>
     listChequeRowsAction(paymentListQuery(view, cursor)),
@@ -55,6 +59,7 @@ export function ChequeList({
   const [bouncing, setBouncing] = useState<ChequeRow | null>(null);
   const [notice, setNotice] = useState<string>();
   const rows = list.items.map((c) => ({ ...c, ...changed[c.id] }));
+  if (rows.length === 0) return empty;
 
   return (
     <div className="grid grid-cols-1 gap-5">

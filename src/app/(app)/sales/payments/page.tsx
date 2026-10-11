@@ -115,23 +115,22 @@ export default async function PaymentsPage({
             />
           )
         ) : cheques?.ok ? (
-          cheques.data.items.length === 0 ? (
-            <EmptyState
-              title={view.chequeStatus ? "No cheques with this status" : "No cheques yet"}
-            >
-              {view.chequeStatus
-                ? "Try another status, or show every cheque."
-                : "Cheques show here once Accounts records one. A cheque is put in the books only when it clears."}
-            </EmptyState>
-          ) : (
-            <ChequeList
-              key={salesListSearch(view)}
-              initial={cheques.data}
-              view={view}
-              currency={currency}
-              today={today}
-            />
-          )
+          <ChequeList
+            key={salesListSearch(view)}
+            initial={cheques.data}
+            view={view}
+            currency={currency}
+            today={today}
+            empty={
+              <EmptyState
+                title={view.chequeStatus ? "No cheques with this status" : "No cheques yet"}
+              >
+                {view.chequeStatus
+                  ? "Try another status, or show every cheque."
+                  : "Cheques show here once Accounts records one. A cheque is put in the books only when it clears."}
+              </EmptyState>
+            }
+          />
         ) : null}
       </SalesFilters>
     </section>

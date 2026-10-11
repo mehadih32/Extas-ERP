@@ -5,6 +5,7 @@ import { parseCron, previousRun } from "@/modules/backups/cron";
 import { purgeKeptSalesPdfs } from "@/modules/documents/print.service";
 import { refreshStatusesForCompany } from "@/modules/parties/dormant.service";
 import { purgeUnusedProofs } from "@/modules/sales/proof.service";
+import { purgeUnusedReferenceImages } from "@/modules/sales/reference-image.service";
 
 /*
  * The nightly housekeeping clock. Started once per server process
@@ -16,6 +17,8 @@ import { purgeUnusedProofs } from "@/modules/sales/proof.service";
  *   - expired sign-in sessions are deleted;
  *   - payment proof photos uploaded more than a day ago that no payment or
  *     cheque uses (the payment was never recorded) are deleted from disk;
+ *   - quotation reference pictures uploaded more than a day ago that no item
+ *     uses (the quotation was never saved) are deleted from disk;
  *   - PDFs of sales documents made more than a day ago are deleted from disk
  *     (printing again makes a fresh copy; documents/print.service.ts).
  * Every step is safe to repeat, so a run after a restart changes nothing new.
@@ -58,6 +61,7 @@ export async function runHousekeeping(now: Date = new Date()) {
   }
   const sessionsRemoved = await purgeExpiredSessions();
   const proofsRemoved = await purgeUnusedProofs(now);
+  const picturesRemoved = await purgeUnusedReferenceImages(now);
   const salesPdfsRemoved = await purgeKeptSalesPdfs(now);
   return {
     companies: companies.length,
@@ -65,6 +69,7 @@ export async function runHousekeeping(now: Date = new Date()) {
     closed,
     sessionsRemoved,
     proofsRemoved,
+    picturesRemoved,
     salesPdfsRemoved,
   };
 }

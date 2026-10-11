@@ -20,16 +20,25 @@ import { createQuotationAction, updateQuotationAction } from "@/server/actions/s
 
 import { money, salesHref } from "./labels";
 import { BuyerPicker, StylePicker } from "./pickers";
+import { type ItemPicture, PictureField } from "./reference-picture";
 
 type Buyer = { id: string; code: string; name: string };
 
+/** From the catalogue (a style in Products) or a custom item kept on the quotation only. */
+type ItemKind = "catalogue" | "custom";
+
 type ItemDraft = {
   key: string;
+  kind: ItemKind;
   style: { id: string; code: string; name: string } | null;
   categoryId: string;
   description: string;
   fabric: string;
+  gsm: string;
   colorNote: string;
+  sizeRatio: string;
+  accessories: string;
+  picture: ItemPicture | null;
   bySize: boolean;
   quantity: string;
   sizes: Record<string, string>;
@@ -45,11 +54,16 @@ const newKey = () => `row-${++nextKey}`;
 
 const emptyItem = (key = newKey()): ItemDraft => ({
   key,
+  kind: "catalogue",
   style: null,
   categoryId: "",
   description: "",
   fabric: "",
+  gsm: "",
   colorNote: "",
+  sizeRatio: "",
+  accessories: "",
+  picture: null,
   bySize: false,
   quantity: "",
   sizes: {},
@@ -85,8 +99,10 @@ function Section({
 }
 
 /**
- * The quotation builder (blueprint): the buyer, items by style or category with
- * fabric, colour and a quantity or a size breakdown at a price, free-text
+ * The quotation builder (blueprint): the buyer, items from the catalogue (a style)
+ * or custom items (kept on the quotation only, never added to Products) with
+ * their garment specs (fabric, GSM, colours, size ratio, accessories and a
+ * reference picture) and a quantity or a size breakdown at a price, free-text
  * styling rules, discount and tax, terms, and the company's custom fields. For
  * new quotations and for editing a draft or sent one; both need
  * sales.quotation.manage, as the quotation actions check.
@@ -100,11 +116,16 @@ export function QuotationForm({ form: data }: { form: QuotationFormData }) {
     editing
       ? editing.items.map((i, index) => ({
           key: `item-${index}`,
+          kind: i.style ? "catalogue" : "custom",
           style: i.style,
           categoryId: i.category?.id ?? "",
           description: i.description,
           fabric: i.fabric ?? "",
+          gsm: i.gsm ? String(i.gsm) : "",
           colorNote: i.colorNote ?? "",
+          sizeRatio: i.sizeRatio ?? "",
+          accessories: i.accessories ?? "",
+          picture: i.imageId ? { id: i.imageId } : null,
           bySize: Boolean(i.sizes),
           quantity: i.sizes ? "" : String(i.quantity),
           sizes: Object.fromEntries((i.sizes ?? []).map((s) => [s.size, String(s.quantity)])),
@@ -129,6 +150,8 @@ export function QuotationForm({ form: data }: { form: QuotationFormData }) {
   const [error, setError] = useState<ActionError>();
   const [problems, setProblems] = useState<Record<string, string>>({});
   const [pending, startTransition] = useTransition();
+  // Pictures still on their way to the server; saving waits for them.
+  const [sending, setSending] = useState(0);
   const fieldError = (name: string) => problems[name] ?? error?.fieldErrors?.[name]?.[0];
   const hasFieldErrors =
     Object.keys(problems).length > 0 || Object.keys(error?.fieldErrors ?? {}).length > 0;
@@ -158,6 +181,13 @@ export function QuotationForm({ form: data }: { form: QuotationFormData }) {
     const found: Record<string, string> = {};
     if (!buyer) found.partyId = "Choose the buyer.";
     items.forEach((item, index) => {
+      if (item.kind === "catalogue" && !item.style) {
+        found[`items.${index}.style`] = "Pick a style, or choose Custom item.";
+      }
+      const gsm = item.gsm.trim();
+      if (gsm && !(/^\d{2,4}$/.test(gsm) && Number(gsm) >= 10 && Number(gsm) <= 2000)) {
+        found[`items.${index}.gsm`] = "Enter the GSM as a number, like 180.";
+      }
       if (item.description.trim().length < 1) {
         found[`items.${index}.description`] = "Describe the item.";
       }
@@ -198,11 +228,15 @@ export function QuotationForm({ form: data }: { form: QuotationFormData }) {
       issueDate: issueDate || undefined,
       validUntil: validUntil || null,
       items: items.map((item) => ({
-        styleId: item.style?.id ?? null,
+        styleId: item.kind === "catalogue" ? (item.style?.id ?? null) : null,
         categoryId: item.categoryId || null,
         description: item.description.trim(),
         fabric: item.fabric.trim() || null,
+        gsm: item.gsm.trim() ? Number(item.gsm.trim()) : null,
         colorNote: item.colorNote.trim() || null,
+        sizeRatio: item.sizeRatio.trim() || null,
+        accessories: item.accessories.trim() || null,
+        imageId: item.picture?.id ?? null,
         ...(item.bySize
           ? {
               sizeBreakdown: Object.fromEntries(
@@ -278,7 +312,7 @@ export function QuotationForm({ form: data }: { form: QuotationFormData }) {
 
       <Section
         title="Items"
-        hint="Pick a style from the catalogue or describe a new one. Give the pieces in total or by size."
+        hint="Pick a style from the catalogue, or make a custom item for a new design (it stays on this quotation and is not added to Products). Give the pieces in total or by size."
       >
         <ol className="grid grid-cols-1 gap-4">
           {items.map((item, index) => {
@@ -304,38 +338,74 @@ export function QuotationForm({ form: data }: { form: QuotationFormData }) {
                     </Button>
                   )}
                 </div>
+                <div
+                  role="group"
+                  aria-label={`Kind of item ${index + 1}`}
+                  className="flex flex-wrap gap-2"
+                >
+                  {(
+                    [
+                      ["catalogue", "From the catalogue"],
+                      ["custom", "Custom item"],
+                    ] as const
+                  ).map(([kind, label]) => (
+                    <button
+                      key={kind}
+                      type="button"
+                      aria-pressed={item.kind === kind}
+                      onClick={() =>
+                        update(item.key, kind === "custom" ? { kind, style: null } : { kind })
+                      }
+                      className={cn(
+                        "h-9 cursor-pointer rounded-md border px-3 text-sm transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/25",
+                        item.kind === kind
+                          ? "border-primary bg-secondary text-primary"
+                          : "text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
                 <div className="grid items-start gap-4 md:grid-cols-2">
-                  <Field id={id("style")} label="Style (optional)">
-                    {item.style ? (
-                      <div className="flex min-w-0 items-center justify-between gap-3 rounded-md border px-3 py-2">
-                        <span className="truncate text-sm">
-                          {item.style.code} · {item.style.name}
-                        </span>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => update(item.key, { style: null })}
-                          aria-label={`Remove the style from item ${index + 1}`}
-                        >
-                          <XIcon aria-hidden />
-                        </Button>
-                      </div>
-                    ) : (
-                      <StylePicker
-                        id={id("style")}
-                        currency={currency}
-                        onPick={(style) =>
-                          update(item.key, {
-                            style: { id: style.id, code: style.code, name: style.name },
-                            description: item.description || style.name,
-                            unitPrice: item.unitPrice || style.wholesalePrice,
-                            categoryId: item.categoryId || style.categoryId,
-                          })
-                        }
-                      />
-                    )}
-                  </Field>
+                  {item.kind === "custom" ? (
+                    <p className="rounded-md border border-dashed px-3 py-2.5 text-[0.8125rem] text-muted-foreground md:self-end">
+                      A new design described here. It stays on this quotation and its proforma only;
+                      nothing is added to Products.
+                    </p>
+                  ) : (
+                    <Field id={id("style")} label="Style" error={fieldError(at("style"))}>
+                      {item.style ? (
+                        <div className="flex min-w-0 items-center justify-between gap-3 rounded-md border px-3 py-2">
+                          <span className="truncate text-sm">
+                            {item.style.code} · {item.style.name}
+                          </span>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => update(item.key, { style: null })}
+                            aria-label={`Remove the style from item ${index + 1}`}
+                          >
+                            <XIcon aria-hidden />
+                          </Button>
+                        </div>
+                      ) : (
+                        <StylePicker
+                          id={id("style")}
+                          currency={currency}
+                          onPick={(style) =>
+                            update(item.key, {
+                              style: { id: style.id, code: style.code, name: style.name },
+                              description: item.description || style.name,
+                              unitPrice: item.unitPrice || style.wholesalePrice,
+                              categoryId: item.categoryId || style.categoryId,
+                            })
+                          }
+                        />
+                      )}
+                    </Field>
+                  )}
                   <Field id={id("category")} label="Category (optional)">
                     <NativeSelect
                       id={id("category")}
@@ -367,17 +437,30 @@ export function QuotationForm({ form: data }: { form: QuotationFormData }) {
                     aria-invalid={Boolean(fieldError(at("description")))}
                   />
                 </Field>
+                <p className="eyebrow -mb-1">Garment specs (optional)</p>
                 <div className="grid items-start gap-4 sm:grid-cols-2">
-                  <Field id={id("fabric")} label="Fabric (optional)">
+                  <Field id={id("fabric")} label="Fabric">
                     <Input
                       id={id("fabric")}
                       value={item.fabric}
                       maxLength={200}
                       onChange={(e) => update(item.key, { fabric: e.target.value })}
-                      placeholder="100% cotton, 220 GSM"
+                      placeholder="100% cotton single jersey"
                     />
                   </Field>
-                  <Field id={id("color")} label="Colours (optional)">
+                  <Field id={id("gsm")} label="GSM" error={fieldError(at("gsm"))}>
+                    <Input
+                      id={id("gsm")}
+                      inputMode="numeric"
+                      value={item.gsm}
+                      maxLength={4}
+                      onChange={(e) => update(item.key, { gsm: e.target.value })}
+                      placeholder="180"
+                      className="tabular-nums sm:w-32"
+                      aria-invalid={Boolean(fieldError(at("gsm")))}
+                    />
+                  </Field>
+                  <Field id={id("color")} label="Colours">
                     <Input
                       id={id("color")}
                       value={item.colorNote}
@@ -386,7 +469,48 @@ export function QuotationForm({ form: data }: { form: QuotationFormData }) {
                       placeholder="Navy, white"
                     />
                   </Field>
+                  <Field
+                    id={id("ratio")}
+                    label="Size ratio"
+                    hint={
+                      data.sizeRatios.length > 0 ? "Type it, or pick a saved ratio." : undefined
+                    }
+                  >
+                    <Input
+                      id={id("ratio")}
+                      value={item.sizeRatio}
+                      maxLength={100}
+                      list={data.sizeRatios.length > 0 ? id("ratios") : undefined}
+                      onChange={(e) => update(item.key, { sizeRatio: e.target.value })}
+                      placeholder="S:M:L:XL = 1:2:2:1"
+                      autoComplete="off"
+                      aria-describedby={data.sizeRatios.length > 0 ? id("ratio-hint") : undefined}
+                    />
+                    {data.sizeRatios.length > 0 && (
+                      <datalist id={id("ratios")}>
+                        {data.sizeRatios.map((ratio) => (
+                          <option key={ratio} value={ratio} />
+                        ))}
+                      </datalist>
+                    )}
+                  </Field>
                 </div>
+                <Field id={id("accessories")} label="Accessories notes">
+                  <Textarea
+                    id={id("accessories")}
+                    value={item.accessories}
+                    rows={2}
+                    maxLength={1000}
+                    onChange={(e) => update(item.key, { accessories: e.target.value })}
+                    placeholder="Main label, care label, hang tag, 4-hole buttons, polybag"
+                  />
+                </Field>
+                <PictureField
+                  label="Reference picture"
+                  value={item.picture}
+                  onChange={(picture) => update(item.key, { picture })}
+                  onBusy={(busy) => setSending((n) => Math.max(0, n + (busy ? 1 : -1)))}
+                />
                 <div className="grid gap-3">
                   <div
                     role="group"
@@ -721,9 +845,15 @@ export function QuotationForm({ form: data }: { form: QuotationFormData }) {
         <Button asChild variant="outline">
           <Link href={editing ? salesHref.quotation(editing.id) : "/sales/quotations"}>Cancel</Link>
         </Button>
-        <Button type="submit" disabled={pending}>
-          {pending && <LoaderCircleIcon className="animate-spin" aria-hidden />}
-          {pending ? "Saving" : editing ? "Save the changes" : "Save the quotation"}
+        <Button type="submit" disabled={pending || sending > 0}>
+          {(pending || sending > 0) && <LoaderCircleIcon className="animate-spin" aria-hidden />}
+          {sending > 0
+            ? "Sending the picture"
+            : pending
+              ? "Saving"
+              : editing
+                ? "Save the changes"
+                : "Save the quotation"}
         </Button>
       </div>
       {error?.code === "INTERNAL" && (

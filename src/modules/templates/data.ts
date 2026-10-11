@@ -2,7 +2,8 @@ import { Prisma } from "@prisma/client";
 
 import { amountInWords } from "@/lib/amount-words";
 import { AppError } from "@/lib/errors";
-import { formatAmount, formatInstantDay } from "@/lib/format";
+import { dateOnly } from "@/lib/dates";
+import { formatAmount, formatDay, formatInstantDay } from "@/lib/format";
 import type { CompanyContext } from "@/modules/auth/context";
 import { complianceNumbers } from "@/modules/compliance/compliance.service";
 import { sizeBreakdownText, sizeOrderOf } from "@/modules/documents/builders";
@@ -123,6 +124,9 @@ export async function templateData(
             "item.color": text(item.colorNote),
             "item.sizes": sizeBreakdownText(item.sizeBreakdown, sizeOrder, cur) ?? "",
             "item.fabric": text(item.fabric),
+            "item.gsm": item.gsm ? String(item.gsm) : "",
+            "item.sizeRatio": text(item.sizeRatio),
+            "item.accessories": text(item.accessories),
             "item.quantity": count(item.quantity, cur),
             "item.unitPrice": money(item.unitPrice, cur),
             "item.amount": money(item.lineTotal, cur),
@@ -159,6 +163,14 @@ export async function templateData(
         "proforma.advancePaid": money(pi.advancePaid, cur),
         "proforma.advanceDue": money(pi.advanceDue, cur),
         "proforma.balanceDue": money(pi.balanceDue, cur),
+        "proforma.validUntil": pi.validUntil ? formatDay(dateOnly(pi.validUntil)) : "",
+        "proforma.buyerPoNumber": text(pi.buyerPoNumber),
+        "bank.name": text(pi.bankAccount?.bankName),
+        "bank.branch": text(pi.bankAccount?.branch),
+        "bank.accountName": text(pi.bankAccount?.accountName),
+        "bank.accountNumber": text(pi.bankAccount?.accountNumber),
+        "bank.routingNumber": text(pi.bankAccount?.routingNumber),
+        "bank.swiftCode": text(pi.bankAccount?.swiftCode),
         "document.totalQuantity": count(
           items.reduce((s, i) => s + i.quantity, 0),
           cur,
@@ -175,6 +187,9 @@ export async function templateData(
             "item.color": text(item.colorNote),
             "item.sizes": sizeBreakdownText(item.sizeBreakdown, sizeOrder, cur) ?? "",
             "item.fabric": text(item.fabric),
+            "item.gsm": item.gsm ? String(item.gsm) : "",
+            "item.sizeRatio": text(item.sizeRatio),
+            "item.accessories": text(item.accessories),
             "item.quantity": count(item.quantity, cur),
             "item.unitPrice": money(item.unitPrice, cur),
             "item.amount": money(item.lineTotal, cur),

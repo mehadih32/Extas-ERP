@@ -136,9 +136,14 @@ export function ProformaList({
             key={p.id}
             href={salesHref.proforma(p.id)}
             eyebrow={`${p.number} · ${formatDay(p.issuedOn)}`}
-            badges={<ProformaBadge status={p.status} />}
+            badges={<ProformaBadge status={p.status} isExpired={p.isExpired} />}
             title={p.buyer.name}
-            details={`Advance ${p.advancePercent}%: ${money(p.advanceAmount, currency)}`}
+            details={[
+              p.buyerPoNumber ? `Buyer PO: ${p.buyerPoNumber}` : null,
+              `Advance ${p.advancePercent}%: ${money(p.advanceAmount, currency)}`,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
             footer={
               <>
                 <span className="font-medium">{money(p.total, currency)}</span>
@@ -166,6 +171,7 @@ export function ProformaList({
                   <RowLink href={salesHref.proforma(p.id)}>{p.number}</RowLink>
                   <div className="mt-1 text-[0.8125rem] text-muted-foreground">
                     {formatDay(p.issuedOn)}
+                    {p.buyerPoNumber ? ` · Buyer PO: ${p.buyerPoNumber}` : ""}
                   </div>
                 </TableCell>
                 <TableCell>
@@ -173,7 +179,7 @@ export function ProformaList({
                   <div className="text-[0.8125rem] text-muted-foreground">{p.buyer.code}</div>
                 </TableCell>
                 <TableCell>
-                  <ProformaBadge status={p.status} />
+                  <ProformaBadge status={p.status} isExpired={p.isExpired} />
                 </TableCell>
                 <TableCell className="text-right font-medium whitespace-nowrap">
                   {money(p.total, currency)}

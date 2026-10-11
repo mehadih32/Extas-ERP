@@ -911,6 +911,7 @@ export function OrderForm({ form: data }: { form: OrderFormData }) {
               <ul className="mt-2 grid gap-1 text-muted-foreground">
                 {proforma.items.map((item) => (
                   <li key={item.id} className="break-words">
+                    {item.custom ? "Custom: " : ""}
                     {item.description} · {formatCount(item.quantity, currency)} pcs ×{" "}
                     {money(item.unitPrice, currency)}
                     {item.sizes
@@ -919,6 +920,12 @@ export function OrderForm({ form: data }: { form: OrderFormData }) {
                   </li>
                 ))}
               </ul>
+              {proforma.items.some((item) => item.custom) && (
+                <p className="mt-2 text-[0.8125rem] text-muted-foreground">
+                  Custom items are not in Products, so they cannot be sold from stock as they are.
+                  Add the finished style in Products first, then add it here.
+                </p>
+              )}
             </div>
           )}
           {blocks.length > 0 && (
@@ -1605,22 +1612,32 @@ function ForceAllowDialog({
 }
 
 /**
- * Converting a proforma: when the style comes in one colour, the quotation's
- * size breakdown fills the pieces in. Otherwise (and when editing) the
- * quantities stay as they are.
+ * Converting a proforma: the quotation's size breakdowns fill the pieces in. An
+ * item lands on the style's colour when the style comes in one colour, or on the
+ * colour its "Colours" note names (one colour, the same name); items of the same
+ * style and colour add up. Otherwise (and when editing) the quantities stay as
+ * they are.
  */
 function prefill(block: Block, matrix: SaleMatrix, data: OrderFormData): Record<string, string> {
-  if (!data.proforma || Object.keys(block.quantities).length > 0 || matrix.rows.length !== 1) {
-    return block.quantities;
+  if (!data.proforma || Object.keys(block.quantities).length > 0) return block.quantities;
+  const filled: Record<string, number> = {};
+  for (const item of data.proforma.items) {
+    if (item.style?.id !== block.styleId || !item.sizes) continue;
+    const named = item.colorNote?.trim().toLowerCase();
+    const row =
+      matrix.rows.length === 1
+        ? matrix.rows[0]
+        : matrix.rows.find((r) => named && r.color.name.toLowerCase() === named);
+    if (!row) continue;
+    matrix.sizes.forEach((size, index) => {
+      const cell = row.cells[index];
+      const wanted = item.sizes!.find((s) => s.size === size.name)?.quantity;
+      if (cell && cell.isActive !== false && wanted) {
+        filled[cell.variantId] = (filled[cell.variantId] ?? 0) + wanted;
+      }
+    });
   }
-  const item = data.proforma.items.find((i) => i.style?.id === block.styleId);
-  if (!item?.sizes) return block.quantities;
-  const row = matrix.rows[0]!;
-  const filled: Record<string, string> = {};
-  matrix.sizes.forEach((size, index) => {
-    const cell = row.cells[index];
-    const wanted = item.sizes!.find((s) => s.size === size.name)?.quantity;
-    if (cell && wanted) filled[cell.variantId] = String(wanted);
-  });
-  return filled;
+  return Object.keys(filled).length > 0
+    ? Object.fromEntries(Object.entries(filled).map(([variantId, q]) => [variantId, String(q)]))
+    : block.quantities;
 }

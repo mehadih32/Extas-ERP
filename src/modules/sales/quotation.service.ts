@@ -11,6 +11,10 @@ import type { CompanyContext } from "@/modules/auth/context";
 import { letterhead } from "@/modules/companies/letterhead";
 import { assertPartyCanTransact } from "@/modules/parties/party.service";
 import { labelledCustomFields, validateCustomFields } from "@/modules/sales/custom-fields.service";
+import {
+  assertReferenceImages,
+  dropUnusedReferenceImages,
+} from "@/modules/sales/reference-image.service";
 import { canDeleteQuotation, canEditQuotation, canMarkQuotation } from "@/modules/sales/rules";
 import {
   createQuotationSchema,
@@ -24,15 +28,27 @@ import { quotationLineQuantity, quotationTotals } from "@/modules/sales/totals";
  * Quotation builder: buyer, items (category / style, fabric, quantity or a size
  * breakdown, price), free-text styling rules ("placket should not have a black
  * border") and the company's custom fields. The data feeds the letterhead PDF.
+ *
+ * An item is either from the catalogue (a style) or a custom item: a description
+ * kept on the quotation only, never added to Products. Either can carry garment
+ * specs (fabric, GSM, colours, size ratio, accessories) and a reference picture
+ * (reference-image.service.ts), printed with it on the quotation and proforma.
  */
 
 type QuotationItemInput = NonNullable<ReturnType<typeof createQuotationSchema.parse>["items"]>;
 
-/** Category, style and template ids must belong to this company. */
+const imageIdsOf = (items: Array<{ imageId?: string | null }>) =>
+  items.map((i) => i.imageId).filter((id): id is string => Boolean(id));
+
+/**
+ * Category, style, picture and template ids must belong to this company; a picture
+ * must be one this person uploaded or one already on the quotation being edited.
+ */
 async function assertReferences(
   ctx: CompanyContext,
   items: QuotationItemInput,
   templateId?: string | null,
+  quotationId?: string,
 ) {
   const categoryIds = [...new Set(items.map((i) => i.categoryId).filter(Boolean))] as string[];
   const styleIds = [...new Set(items.map((i) => i.styleId).filter(Boolean))] as string[];
@@ -42,6 +58,7 @@ async function assertReferences(
   ]);
   if (categories !== categoryIds.length) throw new AppError("VALIDATION", "Unknown category.");
   if (styles !== styleIds.length) throw new AppError("VALIDATION", "Unknown style.");
+  await assertReferenceImages(ctx, imageIdsOf(items), quotationId);
   if (templateId) {
     const template = await ctx.db.documentTemplate.findFirst({
       where: { id: templateId, documentType: "QUOTATION", isActive: true },
@@ -69,6 +86,10 @@ function itemCreates(
     description: i.description,
     fabric: i.fabric ?? null,
     colorNote: i.colorNote ?? null,
+    gsm: i.gsm ?? null,
+    sizeRatio: i.sizeRatio ?? null,
+    accessories: i.accessories ?? null,
+    imageId: i.imageId ?? null,
     sizeBreakdown: (i.sizeBreakdown ?? undefined) as Prisma.InputJsonValue | undefined,
     quantity: quantities[idx]!,
     unitPrice: new Prisma.Decimal(i.unitPrice),
@@ -147,18 +168,19 @@ export async function updateQuotation(
     await assertPartyCanTransact(ctx, input.partyId, "SALE");
   }
   if (input.items || input.templateId)
-    await assertReferences(ctx, input.items ?? [], input.templateId);
+    await assertReferences(ctx, input.items ?? [], input.templateId, before.id);
   const customFields =
     input.customFields !== undefined
       ? await validateCustomFields(ctx, "QUOTATION", input.customFields)
       : undefined;
 
-  const currentItems = input.items
-    ? undefined
-    : await prisma.quotationItem.findMany({ where: { quotationId: before.id } });
+  const currentItems = await prisma.quotationItem.findMany({
+    where: { quotationId: before.id },
+    select: { quantity: true, unitPrice: true, imageId: true },
+  });
   const priced = input.items
     ? itemRows(input.items).priced
-    : currentItems!.map((i) => ({ quantity: i.quantity, unitPrice: i.unitPrice }));
+    : currentItems.map((i) => ({ quantity: i.quantity, unitPrice: i.unitPrice }));
   const totals = quotationTotals(
     priced,
     input.discount ?? before.discount,
@@ -221,6 +243,14 @@ export async function updateQuotation(
       tx,
     );
   });
+  // Pictures the new items no longer use go at once.
+  if (input.items) {
+    const kept = new Set(imageIdsOf(input.items));
+    await dropUnusedReferenceImages(
+      prisma,
+      imageIdsOf(currentItems).filter((id) => !kept.has(id)),
+    );
+  }
   return getQuotation(ctx, before.id);
 }
 
@@ -251,7 +281,12 @@ export async function deleteQuotation(
 ) {
   const quotation = await getQuotationOrThrow(ctx, quotationId);
   assertAllowed(canDeleteQuotation(quotation));
+  const pictures = await prisma.quotationItem.findMany({
+    where: { quotationId: quotation.id, imageId: { not: null } },
+    select: { imageId: true },
+  });
   await ctx.db.quotation.delete({ where: { id: quotation.id } });
+  await dropUnusedReferenceImages(prisma, imageIdsOf(pictures));
   await auditInCompany(ctx, meta, {
     action: "DELETE",
     entityType: "Quotation",
@@ -292,7 +327,14 @@ export async function getQuotation(ctx: CompanyContext, quotationId: string) {
         },
       },
       stylingRules: { orderBy: { sortOrder: "asc" } },
-      proforma: { select: { id: true, number: true, status: true } },
+      proforma: {
+        select: {
+          id: true,
+          number: true,
+          status: true,
+          salesOrder: { select: { id: true, number: true } },
+        },
+      },
     },
   });
   if (!quotation) throw new AppError("NOT_FOUND", "Quotation not found.");

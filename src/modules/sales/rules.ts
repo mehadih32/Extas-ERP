@@ -90,6 +90,26 @@ export function canCancelProforma(p: Pick<ProformaState, "number" | "status">): 
   return ALLOWED;
 }
 
+/** Buyer PO, validity and bank details change while the proforma is open. */
+export function canEditProformaDetails(p: Pick<ProformaState, "number" | "status">): Verdict {
+  if (isClosedProforma(p.status)) {
+    return refuse(
+      "CONFLICT",
+      `${p.number} is ${lower(p.status)}; its details are kept as printed.`,
+    );
+  }
+  return ALLOWED;
+}
+
+/**
+ * A proforma's offer has run out: `today` (company time) is past its last valid day
+ * and no advance came in yet. Shown on screen only; nothing is blocked by it.
+ */
+export const isProformaExpired = (
+  p: { status: ProformaStatus; validUntil: string | null },
+  today: string,
+) => Boolean(p.validUntil && p.validUntil < today && p.status === "ISSUED");
+
 /** Goods ready and the advance received in full: the proforma becomes an order. */
 export function canConvertProforma(
   p: Pick<ProformaState, "status" | "advanceAmount" | "advancePaid">,

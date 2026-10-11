@@ -535,7 +535,7 @@ export const salesHelp: HelpSection = {
       slug: "sales-quotation",
       title: "কোটেশন তৈরি করবেন যেভাবে",
       summary:
-        "ক্রেতাকে দাম জানাতে ক্যাটালগের স্টাইল বা নিজের লেখা পণ্য, কাপড়, রং, পিস ও দাম দিয়ে কোটেশন বানানো।",
+        "ক্রেতাকে দাম জানাতে ক্যাটালগের স্টাইল বা কাস্টম পণ্য (নতুন ডিজাইন), কাপড়, GSM, রং, সাইজ অনুপাত, এক্সেসরিজ, রেফারেন্স ছবি, পিস ও দাম দিয়ে কোটেশন বানানো।",
       keywords: [
         "quotation",
         "quote",
@@ -543,7 +543,20 @@ export const salesHelp: HelpSection = {
         "price offer",
         "styling rules",
         "terms",
+        "custom item",
+        "from the catalogue",
+        "garment specs",
+        "fabric",
+        "size ratio",
+        "accessories",
+        "reference picture",
+        "tech pack",
         "কোটেশন",
+        "কাস্টম পণ্য",
+        "জিএসএম",
+        "সাইজ অনুপাত",
+        "এক্সেসরিজ",
+        "রেফারেন্স ছবি",
         "দরপত্র",
         "দাম জানানো",
         "কোট",
@@ -564,11 +577,29 @@ export const salesHelp: HelpSection = {
           text: "“Buyer and dates” অংশে “Buyer”, “Date” ও দরকার হলে “Valid until (optional)” (কোটেশন কতদিন চলবে) দিন।",
         },
         {
-          text: "“Items” অংশে প্রতিটি পণ্যের জন্য ক্যাটালগ থেকে “Style (optional)” বেছে নিন, অথবা “Description”-এ নিজে লিখুন। “Fabric (optional)”, “Colours (optional)”, “Pieces” আর দাম দিন। পিস মোট সংখ্যায় বা সাইজ অনুযায়ী ভাগ করে লেখা যায়।",
+          text: "“Items” অংশে প্রতিটি পণ্যের ধরন বেছে নিন। “From the catalogue”: Products-এ থাকা স্টাইল, “Style” ঘরে খুঁজে বেছে নিন। “Custom item”: নতুন ডিজাইন, যা শুধু এই কোটেশন ও এর প্রোফর্মায় থাকে, Products-এ কিছু যোগ হয় না। তারপর “Description” লিখুন।",
           image: {
             id: "sales-quotation-2",
-            caption: "কোটেশনের একটি পণ্যের ঘর: স্টাইল, বর্ণনা, কাপড়, রং, পিস ও দাম",
+            caption:
+              "কোটেশনের একটি পণ্যের ঘর: “From the catalogue” ও “Custom item”, স্টাইল ও বর্ণনা",
           },
+        },
+        {
+          text: "“Garment specs (optional)” অংশে “Fabric”, “GSM” (কাপড়ের ওজন, যেমন 180), “Colours”, “Size ratio” (যেমন S:M:L:XL = 1:2:2:1; Products-এ রাখা অনুপাত থাকলে তালিকা থেকেও বাছা যায়) ও “Accessories notes” (লেবেল, বোতাম, হ্যাং ট্যাগ, পলিব্যাগ…) দিন।",
+          image: {
+            id: "sales-quotation-3",
+            caption: "“Garment specs (optional)”: কাপড়, GSM, রং, সাইজ অনুপাত ও এক্সেসরিজ",
+          },
+        },
+        {
+          text: "“Reference picture”-এ স্কেচ বা নমুনার ছবি টেনে এনে ফেলুন, বা চেপে বেছে নিন (ফোনে ক্যামেরাও খোলে)। ছবিটি প্রায় 150 KB-এর JPG বানিয়ে পাঠানো হয়, আর কোটেশন ও প্রোফর্মার PDF-এ পণ্যের পাশে ছাপা হয়। সরাতে “Remove the picture” (×) চাপুন।",
+          image: {
+            id: "sales-quotation-4",
+            caption: "“Reference picture”: ছবি ফেলার জায়গা ও ছোট করা ছবির আকার",
+          },
+        },
+        {
+          text: "“Pieces”-এ মোট পিস দিন, বা “By size” চেপে সাইজ অনুযায়ী ভাগ করে লিখুন। তারপর পিসপ্রতি দাম দিন।",
         },
         { text: "আরও পণ্য যোগ করতে “Add an item” চাপুন।" },
         {
@@ -584,6 +615,8 @@ export const salesHelp: HelpSection = {
       tips: [
         "কোটেশন ছাপতে বা ক্রেতাকে পাঠাতে পরের নির্দেশিকা দেখুন।",
         "তালিকায় কোটেশন নম্বর বা ক্রেতার নামের অংশ দিয়ে খোঁজা যায়, অবস্থা (“Status”) দিয়েও ছাঁকা যায়।",
+        "কাস্টম পণ্যের জন্য Products-এ কোনো স্টাইল বা SKU তৈরি হয় না, তাই ক্যাটালগ পরিষ্কার থাকে। কোটেশনের পাতায় এমন পণ্যের পাশে “Custom” লেখা থাকে।",
+        "ছবি বেছে নিলেই পাঠানো হয়; পাঠানো শেষ না হওয়া পর্যন্ত সংরক্ষণের বোতামে “Sending the picture” দেখায়। কোটেশনে সংরক্ষণ না করা বা সরিয়ে দেওয়া ছবি সার্ভার থেকে নিজে থেকেই মুছে যায়।",
       ],
     },
     {
@@ -613,7 +646,7 @@ export const salesHelp: HelpSection = {
           text: "“Quotations” তালিকা থেকে কোটেশনে চাপুন।",
         },
         {
-          text: "ছাপতে বা ক্রেতাকে পাঠাতে “PDF” চাপুন। কোম্পানির লেটারহেডে PDF তৈরি হবে। নিজস্ব টেমপ্লেট থাকলে “Template” বোতামও পাবেন।",
+          text: "ছাপতে বা ক্রেতাকে পাঠাতে “PDF” চাপুন। কোম্পানির লেটারহেডে PDF তৈরি হবে: প্রতিটি পণ্যের পাশে তার রেফারেন্স ছবি, নিচে কাপড়, GSM, রং, সাইজ, সাইজ অনুপাত ও এক্সেসরিজ। নিজস্ব টেমপ্লেট থাকলে “Template” বোতামও পাবেন।",
           image: {
             id: "sales-quotation-status-1",
             caption: "কোটেশনের পাতায় “PDF”, “Mark as sent” ও “Make a proforma invoice” বোতাম",
@@ -639,7 +672,7 @@ export const salesHelp: HelpSection = {
       slug: "sales-proforma",
       title: "প্রোফর্মা ইনভয়েস বানিয়ে অগ্রিম নেবেন ও অর্ডারে পরিণত করবেন যেভাবে",
       summary:
-        "কোটেশন থেকে অগ্রিম চেয়ে প্রোফর্মা ইনভয়েস বানানো, অগ্রিম নেওয়া, তারপর অর্ডার তৈরি করা, অথবা প্রোফর্মা বাতিল করা।",
+        "কোটেশন থেকে এক ক্লিকে প্রোফর্মা ইনভয়েস (ক্রেতার PO নম্বর, মেয়াদ ও ব্যাংকের তথ্যসহ) বানানো, অগ্রিম নেওয়া, তারপর অর্ডার তৈরি করা, অথবা প্রোফর্মা বাতিল করা।",
       keywords: [
         "proforma",
         "proforma invoice",
@@ -647,7 +680,14 @@ export const salesHelp: HelpSection = {
         "make the order",
         "b2b pre-order",
         "cancel the proforma",
+        "buyer po",
+        "purchase order",
+        "bank details",
+        "valid until",
+        "edit the details",
         "প্রোফর্মা",
+        "ব্যাংকের তথ্য",
+        "মেয়াদ",
         "অগ্রিম",
         "অ্যাডভান্স",
         "প্রি-অর্ডার",
@@ -658,14 +698,25 @@ export const salesHelp: HelpSection = {
       anyOf: ["sales.quotation.manage", "accounts.receipts.record"],
       steps: [
         {
-          text: "কোটেশনের পাতায় “Make a proforma invoice” চাপুন। “Advance (%)”-এ কত শতাংশ অগ্রিম চাইবেন দিন (কোম্পানির সাধারণ হার আগে থেকে বসানো থাকে), তারপর “Make the proforma” চাপুন।",
+          text: "কোটেশনের পাতায় “Make a proforma invoice” চাপুন। “Advance (%)”-এ কত শতাংশ অগ্রিম চাইবেন দিন (কোম্পানির সাধারণ হার আগে থেকে বসানো থাকে)। ক্রেতার PO নম্বর থাকলে “Buyer PO no. (optional)”-এ দিন। “Valid until (optional)”-এ আজ থেকে ১৫ দিন বসানো থাকে, দরকারে বদলান। “Bank details”-এ কোন ব্যাংক অ্যাকাউন্টে টাকা নেবেন বেছে নিন (প্রথম খোলা অ্যাকাউন্ট বসানো থাকে)। তারপর “Make the proforma” চাপুন।",
           image: {
             id: "sales-proforma-1",
-            caption: "“Make a proforma invoice” জানালা ও “Advance (%)” ঘর",
+            caption:
+              "“Make a proforma invoice” জানালা: “Advance (%)”, “Buyer PO no. (optional)”, “Valid until (optional)” ও “Bank details”",
           },
         },
         {
-          text: "প্রোফর্মার “PDF” ছেপে ক্রেতাকে দিন। “Proformas” ট্যাবে এটি “Awaiting advance” অবস্থায় দেখাবে।",
+          text: "প্রোফর্মার পাতার ওপরে তিনটি ধাপ দেখায়: “Quotation”, “Proforma invoice” ও “Sales order”। যে ধাপ হয়ে গেছে তার নম্বরে চেপে সেই কাগজে যাওয়া যায়।",
+          image: {
+            id: "sales-proforma-3",
+            caption: "কোটেশন থেকে অর্ডার পর্যন্ত তিন ধাপ, আর “Proforma details” অংশ",
+          },
+        },
+        {
+          text: "প্রোফর্মার “PDF” ছেপে ক্রেতাকে দিন। এতে পণ্যের ছবি ও স্পেক, ক্রেতার PO নম্বর, মেয়াদ (“Valid until”) আর “Bank details” ছাপা থাকে। “Proformas” ট্যাবে এটি “Awaiting advance” অবস্থায় দেখাবে।",
+        },
+        {
+          text: "PO নম্বর, মেয়াদ বা ব্যাংক বদলাতে প্রোফর্মার পাতায় তিন-বিন্দু মেনু থেকে “Edit the details” চাপুন, বদলে “Save the details” চাপুন। নতুন কপি পাঠাতে আবার “PDF” চাপুন।",
         },
         {
           text: "ক্রেতা অগ্রিম দিলে Accounts প্রোফর্মার পাতায় “Receive the advance” চেপে টাকা রেকর্ড করবেন। “Advance” অংশে চাওয়া, পাওয়া ও বাকি অগ্রিম দেখা যায়।",
@@ -676,7 +727,7 @@ export const salesHelp: HelpSection = {
           },
         },
         {
-          text: "অগ্রিম পুরো পাওয়ার পর মাল তৈরি হলে “Make the order” চাপুন। অর্ডারের ফর্ম “B2B pre-order” হিসেবে খুলবে, পণ্য ও দাম আগে থেকে বসানো থাকবে। গুদাম ও পিস মিলিয়ে “Make the order” চাপুন। অগ্রিম অর্ডারে চলে যাবে।",
+          text: "অগ্রিম পুরো পাওয়ার পর মাল তৈরি হলে “Make the order” চাপুন। অর্ডারের ফর্ম “B2B pre-order” হিসেবে খুলবে, ক্যাটালগের পণ্য ও দাম আগে থেকে বসানো থাকবে। স্টাইলের রং একটি হলে, বা কোটেশনের “Colours”-এ একটি রঙের নাম হুবহু মিললে, সাইজের পিসও বসে যায়। গুদাম ও পিস মিলিয়ে “Make the order” চাপুন। অগ্রিম অর্ডারে চলে যাবে।",
         },
         {
           text: "ক্রেতা পিছিয়ে গেলে “Cancel the proforma” চাপুন। আগে নেওয়া অগ্রিম কী হবে (ফেরত, জমা বা চার্জ) তা বলে দিতে হবে।",
@@ -685,6 +736,9 @@ export const salesHelp: HelpSection = {
       tips: [
         "অগ্রিম পুরো না পাওয়া পর্যন্ত “Make the order” কাজ করবে না।",
         "অর্ডার হয়ে যাওয়া প্রোফর্মা বাতিল করা যায় না, তখন অর্ডারটি বাতিল করুন।",
+        "কাস্টম পণ্য Products-এ থাকে না, তাই সরাসরি স্টক থেকে বিক্রি হয় না। মাল তৈরির পর Products-এ স্টাইলটি যোগ করুন, তারপর অর্ডারে সেটি বেছে নিন।",
+        "মেয়াদ পেরিয়ে গেলে আর অগ্রিম না এলে প্রোফর্মায় “Expired” দেখায়। এটা শুধু মনে করিয়ে দেয়; অগ্রিম নেওয়া বা অর্ডার করা আটকায় না।",
+        "অর্ডার হয়ে যাওয়া বা বাতিল প্রোফর্মার তথ্য আর বদলানো যায় না, ছাপা কাগজের মতোই থাকে।",
       ],
     },
     {

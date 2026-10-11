@@ -188,6 +188,7 @@ export const reportsHelp: HelpSection = {
       ],
       tips: [
         "টেমপ্লেট থাকলে কোটেশন, প্রোফর্মা, ইনভয়েস ও চালানের “PDF”-এর পাশে “Template” বোতাম দেখাবে।",
+        "প্রোফর্মার টেমপ্লেটে {BuyerPONo}, {ValidUntil}, {BankName}, {BankAccountName}, {BankAccountNo}, {BankBranch}, {BankRoutingNo} ও {BankSWIFT} দেওয়া যায়। কোটেশন ও প্রোফর্মার পণ্যের সারিতে {ItemGSM}, {ItemSizeRatio} ও {ItemAccessories}-ও বসে।",
       ],
     },
     {

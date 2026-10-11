@@ -14,6 +14,7 @@ import { buyerName, CHANNEL_LABELS, money, salesHref } from "@/components/sales/
 import { MoneyRecords } from "@/components/sales/money-records";
 import { SalesNoAccess } from "@/components/sales/no-access";
 import { OrderActions } from "@/components/sales/order-actions";
+import { SalesFlow } from "@/components/sales/sales-flow";
 import { localDay } from "@/lib/dates";
 import { formatCount, formatDay } from "@/lib/display";
 import { cn } from "@/lib/utils";
@@ -289,6 +290,14 @@ export default async function OrderPage({
             </>
           }
         />
+        {o.proforma && (
+          <SalesFlow
+            current="order"
+            quotation={o.proforma.quotation}
+            proforma={o.proforma}
+            order={o}
+          />
+        )}
         {o.proforma && (
           <FormAlert tone="note">
             Made from proforma invoice{" "}

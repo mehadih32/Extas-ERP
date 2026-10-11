@@ -80,7 +80,15 @@ const PROFORMA_TONES: Record<ProformaStatus, Tone> = {
   CANCELLED: "closed",
 };
 
-export function ProformaBadge({ status }: { status: ProformaStatus }) {
+export function ProformaBadge({
+  status,
+  isExpired = false,
+}: {
+  status: ProformaStatus;
+  /** Past its valid-until day with no advance yet. */
+  isExpired?: boolean;
+}) {
+  if (isExpired) return <StatusBadge tone="warn">Expired</StatusBadge>;
   return <StatusBadge tone={PROFORMA_TONES[status]}>{PROFORMA_STATUS_LABELS[status]}</StatusBadge>;
 }
 

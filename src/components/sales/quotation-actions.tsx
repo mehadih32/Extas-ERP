@@ -38,6 +38,7 @@ import {
 
 import { FormDialog, problem } from "./dialogs";
 import { money, salesHref } from "./labels";
+import { ProformaDetailsFields, readProformaDetails } from "./proforma-details";
 
 type Open = QuotationMark | "convert" | "delete" | null;
 
@@ -183,45 +184,63 @@ export function QuotationActions({
           }}
         />
       )}
-      {open === "convert" && (
+      {open === "convert" && screen.proformaDefaults && (
         <FormDialog
           title={`Make a proforma invoice from ${q.number}?`}
-          description={`It asks ${q.buyer.name} for an advance on the ${money(q.total, q.currency)} total. Once the advance is paid in full, production starts.`}
+          description={`It asks ${q.buyer.name} for an advance on the ${money(q.total, q.currency)} total, with the same items, pictures and specs. Once the advance is paid in full, production starts.`}
           submitLabel="Make the proforma"
           pendingLabel="Making it"
           errorTitle="We could not make the proforma invoice"
           onClose={close}
           onSubmit={async (form) => {
             const percent = Number(textOf(form, "advancePercent"));
-            if (!Number.isFinite(percent) || percent < 0 || percent > 100) {
-              return problem({ advancePercent: "Enter a percentage from 0 to 100." });
-            }
+            const details = readProformaDetails(form, screen.proformaDefaults!.issuedOn);
+            const found = {
+              ...(!Number.isFinite(percent) || percent < 0 || percent > 100
+                ? { advancePercent: "Enter a percentage from 0 to 100." }
+                : {}),
+              ...(details.ok ? {} : details.problems),
+            };
+            if (Object.keys(found).length > 0 || !details.ok) return problem(found);
             const result = await convertQuotationToProformaAction(q.id, {
               advancePercent: percent,
+              ...details.input,
             });
             if (!result.ok) return result.error;
             router.push(`${salesHref.proforma(result.data.id)}?created=1`);
           }}
         >
           {(fieldError) => (
-            <Field
-              id="advance-percent"
-              label="Advance (%)"
-              hint={`The company's usual advance is ${screen.advancePercent}%.`}
-              error={fieldError("advancePercent")}
-            >
-              <Input
+            <>
+              <Field
                 id="advance-percent"
-                name="advancePercent"
-                inputMode="decimal"
-                defaultValue={String(screen.advancePercent)}
-                autoComplete="off"
-                className="sm:w-32"
-                aria-describedby={
-                  fieldError("advancePercent") ? "advance-percent-error" : "advance-percent-hint"
-                }
+                label="Advance (%)"
+                hint={`The company's usual advance is ${screen.advancePercent}%.`}
+                error={fieldError("advancePercent")}
+              >
+                <Input
+                  id="advance-percent"
+                  name="advancePercent"
+                  inputMode="decimal"
+                  defaultValue={String(screen.advancePercent)}
+                  autoComplete="off"
+                  className="sm:w-32"
+                  aria-describedby={
+                    fieldError("advancePercent") ? "advance-percent-error" : "advance-percent-hint"
+                  }
+                />
+              </Field>
+              <ProformaDetailsFields
+                values={{
+                  buyerPoNumber: null,
+                  validUntil: screen.proformaDefaults!.validUntil,
+                  bankId: screen.proformaDefaults!.banks[0]?.id ?? null,
+                }}
+                banks={screen.proformaDefaults!.banks}
+                issuedOn={screen.proformaDefaults!.issuedOn}
+                fieldError={fieldError}
               />
-            </Field>
+            </>
           )}
         </FormDialog>
       )}

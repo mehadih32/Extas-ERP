@@ -344,6 +344,7 @@ model FileAsset {
   leaveRequests       LeaveRequest[]
   paymentProofs       Payment[]            @relation("PaymentProof")
   chequeProofs        Cheque[]             @relation("ChequeProof")
+  quotationImages     QuotationItem[]      @relation("QuotationItemImage")
 
   @@index([companyId])
 }
@@ -1055,15 +1056,20 @@ model QuotationItem {
   description   String
   fabric        String?
   colorNote     String?
+  gsm           Int? // fabric weight, grams per square metre
+  sizeRatio     String? // e.g. "1:2:2:1" for S:M:L:XL
+  accessories   String? // trims, labels, buttons, packing notes
+  imageId       String? // reference picture (JPEG or PNG), printed on the PDFs
   sizeBreakdown Json? // e.g. {"S":20,"M":40,"L":40}
   quantity      Int
   unitPrice     Decimal @db.Decimal(14, 2)
   lineTotal     Decimal @db.Decimal(14, 2)
   sortOrder     Int     @default(0)
 
-  quotation Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
-  category  Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  style     Style?    @relation(fields: [styleId], references: [id], onDelete: SetNull)
+  quotation Quotation  @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  category  Category?  @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  style     Style?     @relation(fields: [styleId], references: [id], onDelete: SetNull)
+  image     FileAsset? @relation("QuotationItemImage", fields: [imageId], references: [id], onDelete: SetNull)
 }
 
 /// Free-text styling instructions, e.g. "Placket should not have a black border".
@@ -1092,12 +1098,16 @@ model ProformaInvoice {
   advanceAmount  Decimal        @db.Decimal(14, 2)
   advancePaid    Decimal        @default(0) @db.Decimal(14, 2)
   advancePaidAt  DateTime?
+  buyerPoNumber  String? // the buyer's purchase order number, printed on the PI
+  validUntil     DateTime?      @db.Date // the PI's offer is valid until the end of this day
+  bankAccountId  String? // the account the buyer pays into, printed as bank details
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
 
   company            Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
   quotation          Quotation?          @relation(fields: [quotationId], references: [id], onDelete: SetNull)
   party              Party               @relation(fields: [partyId], references: [id])
+  bankAccount        BankAccount?        @relation(fields: [bankAccountId], references: [id], onDelete: SetNull)
   salesOrder         SalesOrder?
   productionProjects ProductionProject[]
   payments           Payment[]
@@ -1921,8 +1931,9 @@ model BankAccount {
   isActive        Boolean  @default(true)
   createdAt       DateTime @default(now())
 
-  company       Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  ledgerAccount LedgerAccount @relation(fields: [ledgerAccountId], references: [id])
+  company       Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  ledgerAccount LedgerAccount     @relation(fields: [ledgerAccountId], references: [id])
+  proformas     ProformaInvoice[]
 
   @@unique([companyId, accountNumber])
 }

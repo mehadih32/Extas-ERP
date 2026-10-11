@@ -179,15 +179,32 @@ export function ProofDrop({
   );
 }
 
-/** A proof photo as a small picture; tapping it opens it full size (lightbox). */
-export function ProofView({ fileId, label }: { fileId: string; label: string }) {
+/**
+ * A proof photo (or another stored picture, such as a quotation item's reference
+ * picture) as a small picture; tapping it opens it full size (lightbox).
+ */
+export function ProofView({
+  fileId,
+  label,
+  description = "The proof photo, full size.",
+  className,
+}: {
+  fileId: string;
+  label: string;
+  description?: string;
+  /** The thumbnail's size (size-20 unless given). */
+  className?: string;
+}) {
   const [open, setOpen] = useState(false);
   return (
     <>
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="group relative size-20 shrink-0 overflow-hidden rounded-md border bg-muted focus-visible:ring-[3px] focus-visible:ring-ring/25 focus-visible:outline-hidden"
+        className={cn(
+          "group relative size-20 shrink-0 overflow-hidden rounded-md border bg-muted focus-visible:ring-[3px] focus-visible:ring-ring/25 focus-visible:outline-hidden",
+          className,
+        )}
         aria-label={`Open ${label}`}
       >
         {/* eslint-disable-next-line @next/next/no-img-element -- served by /api/files with its own checks */}
@@ -205,7 +222,7 @@ export function ProofView({ fileId, label }: { fileId: string; label: string }) 
               <ImageIcon className="size-4" aria-hidden />
               {label}
             </DialogTitle>
-            <DialogDescription className="sr-only">The proof photo, full size.</DialogDescription>
+            <DialogDescription className="sr-only">{description}</DialogDescription>
           </DialogHeader>
           {/* eslint-disable-next-line @next/next/no-img-element -- served by /api/files with its own checks */}
           <img

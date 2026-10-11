@@ -958,7 +958,9 @@ export async function getOrder(ctx: CompanyContext, orderId: string) {
         },
       },
       refunds: { orderBy: [{ refundDate: "asc" }, { id: "asc" }], select: refundSummary },
-      proforma: { select: { id: true, number: true } },
+      proforma: {
+        select: { id: true, number: true, quotation: { select: { id: true, number: true } } },
+      },
     },
   });
   if (!order) throw new AppError("NOT_FOUND", "Order not found.");

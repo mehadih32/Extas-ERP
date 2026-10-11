@@ -33,6 +33,7 @@ import {
   PROFILE_TYPES,
 } from "@/modules/parties/profile-access";
 import type { PermissionKey } from "@/modules/rbac/permissions";
+import { loadReferenceImages } from "@/modules/sales/reference-image.service";
 
 /*
  * Printed documents: quotations, proforma and commercial invoices, packing
@@ -282,7 +283,12 @@ export async function printDocument(
     return { ...presentDocument(existing), reused: true };
   }
 
-  const bytes = await renderDocumentPdf(model, { logo: logo?.bytes });
+  // Reference pictures on quotation and proforma items (their ids are in the hash).
+  const images = await loadReferenceImages(
+    ctx.company.id,
+    model.blocks.flatMap((b) => (b.kind === "table" ? b.rows.map((r) => r.image) : [])),
+  );
+  const bytes = await renderDocumentPdf(model, { logo: logo?.bytes, images });
   const saved = await writeGeneratedFile(ctx.company.id, "documents", ".pdf", bytes);
   const companyId = ctx.company.id;
   try {

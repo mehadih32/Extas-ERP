@@ -67,6 +67,9 @@ export const setStageSchema = z.object({
   note: optionalText(1000),
 });
 
+/** Takes back the stage move just made by mistake (to `stage`). */
+export const undoStageSchema = z.object({ stage: z.enum(ProductionStage) });
+
 export const setStatusSchema = z.object({
   /** ACTIVE starts a planned project or resumes one on hold. */
   status: z.enum(["ACTIVE", "ON_HOLD"]),

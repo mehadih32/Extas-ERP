@@ -23,6 +23,7 @@ import * as costs from "@/modules/production/cost.service";
 import * as intakes from "@/modules/production/intake.service";
 import { projectCostSummaries } from "@/modules/production/project-costs";
 import * as projects from "@/modules/production/project.service";
+import * as screens from "@/modules/production/screens.service";
 import * as documents from "@/modules/sales/documents.service";
 import * as orders from "@/modules/sales/order.service";
 import * as payments from "@/modules/sales/payment.service";
@@ -394,6 +395,92 @@ run("production projects", () => {
       quantities: { target: 1200 },
       timeline: { remainingDays: 50 },
     });
+  });
+
+  it("moves a project on from the board in one click and takes a mistaken move back", async () => {
+    const env = await setup();
+    const late = await newProject(env, {
+      name: "Late polos",
+      startDate: dayFromToday(-30),
+      targetDate: dayFromToday(-2),
+    });
+    const project = await newProject(env, { name: "Oxford shirts" });
+    const planned = await newProject(env, {
+      name: "Winter hoodies",
+      status: "PLANNED",
+      startDate: dayFromToday(5),
+      targetDate: dayFromToday(50),
+    });
+    await projects.setProjectStage(env.pmCtx, project.id, { stage: "CUTTING" });
+
+    // The board: Planned first, then a column per working stage, late projects flagged.
+    const board = await screens.getOverviewScreen(env.pmCtx);
+    const column = (key: string) => board.columns.find((c) => c.key === key)!;
+    expect(board.columns.map((c) => [c.key, c.projects.map((p) => p.name), c.late])).toEqual([
+      ["PLANNED", ["Winter hoodies"], 0],
+      ["FABRIC_SOURCING", ["Late polos"], 1],
+      ["CUTTING", ["Oxford shirts"], 0],
+      ["SEWING", [], 0],
+      ["WASH_QC", [], 0],
+      ["FINISHING", [], 0],
+    ]);
+    expect(column("CUTTING").projects[0]).toMatchObject({
+      next: "SEWING",
+      costs: { totalCost: "0.00" },
+    });
+    expect(column("PLANNED").projects[0]!.next).toBeNull();
+    expect(column("FABRIC_SOURCING").projects[0]!.timeline.isOverdue).toBe(true);
+    // The store sees the board but neither moves cards nor sees costs.
+    const store = await screens.getOverviewScreen(env.warehouseCtx);
+    const storeCard = store.columns.find((c) => c.key === "CUTTING")!.projects[0]!;
+    expect([storeCard.next, storeCard.costs]).toEqual([null, null]);
+
+    // One click moves it on; Undo puts it back as if the move never happened.
+    await projects.setProjectStage(env.pmCtx, project.id, { stage: "SEWING" });
+    const back = await projects.undoStageMove(env.pmCtx, project.id, { stage: "SEWING" });
+    expect(back.stage.key).toBe("CUTTING");
+    expect(back.stageHistory.map((s) => [s.label, s.completedAt === null])).toEqual([
+      ["Fabric Sourcing", false],
+      ["Cutting", true],
+    ]);
+    expect(
+      await prisma.auditLog.findFirst({
+        where: { entityId: project.id },
+        orderBy: { createdAt: "desc" },
+        select: { summary: true },
+      }),
+    ).toEqual({ summary: `${project.code}: took back the move to Sewing, back at Cutting` });
+    // Only once, and only the move just made.
+    const twice = await expectAppError(
+      projects.undoStageMove(env.pmCtx, project.id, { stage: "SEWING" }),
+      "CONFLICT",
+    );
+    expect(twice.message).toBe(
+      `${project.code}'s stage has changed since. Use "Change the stage" on the project instead.`,
+    );
+
+    // After ten minutes a move stays: the stage is changed with a note instead.
+    await projects.setProjectStage(env.pmCtx, project.id, { stage: "SEWING" });
+    await prisma.$executeRaw`
+      UPDATE "ProductionStageLog"
+      SET "startedAt" = "startedAt" - interval '11 minutes',
+          "completedAt" = "completedAt" - interval '11 minutes'
+      WHERE "projectId" = ${project.id}`;
+    const stale = await expectAppError(
+      projects.undoStageMove(env.pmCtx, project.id, { stage: "SEWING" }),
+      "CONFLICT",
+    );
+    expect(stale.message).toBe(
+      `${project.code} moved to Sewing more than 10 minutes ago. Use "Change the stage" on the project instead.`,
+    );
+    // A project put on hold right after is resumed first.
+    await projects.setProjectStage(env.pmCtx, late.id, { stage: "CUTTING" });
+    await projects.setProjectStatus(env.pmCtx, late.id, { status: "ON_HOLD" });
+    await expectAppError(
+      projects.undoStageMove(env.pmCtx, late.id, { stage: "CUTTING" }),
+      "CONFLICT",
+    );
+    expect((await projects.getProject(env.ctx, planned.id)).stage.key).toBe("FABRIC_SOURCING");
   });
 });
 

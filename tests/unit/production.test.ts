@@ -12,11 +12,13 @@ import {
   type MatchVariant,
   type ParsedLine,
 } from "@/modules/production/ai-intake";
+import { boardColumnOf, boardColumns, nextStage } from "@/modules/production/board";
 import {
   allocateIntakeCost,
   deliveryCostShare,
   planIntakeCost,
 } from "@/modules/production/costing";
+import { canUndoStageMove } from "@/modules/production/rules";
 import { isStageBackward, projectTimeline, stageBadge } from "@/modules/production/timeline";
 
 const TZ = "Asia/Dhaka";
@@ -436,5 +438,62 @@ describe("uploads", () => {
     expect(safeFileName("C:\\Users\\me\\packing list (3).jpg")).toBe("packing list (3).jpg");
     expect(safeFileName('bad"<name>|?.pdf')).toBe("badname.pdf");
     expect(safeFileName("   ")).toBe("upload");
+  });
+});
+
+describe("the production board", () => {
+  it("puts planned projects first and every other open one in its stage's column", () => {
+    expect(boardColumnOf({ status: "PLANNED", stage: "FABRIC_SOURCING" })).toBe("PLANNED");
+    expect(boardColumnOf({ status: "ON_HOLD", stage: "SEWING" })).toBe("SEWING");
+    expect(boardColumnOf({ status: "COMPLETED", stage: "COMPLETED" })).toBeNull();
+    const cards = [
+      { id: "a", status: "ACTIVE" as const, stage: "CUTTING" as const, late: true },
+      { id: "b", status: "PLANNED" as const, stage: "FABRIC_SOURCING" as const, late: false },
+      { id: "c", status: "ON_HOLD" as const, stage: "CUTTING" as const, late: false },
+    ];
+    expect(
+      boardColumns(cards, (c) => c).map((c) => [c.key, c.projects.map((p) => p.id), c.late]),
+    ).toEqual([
+      ["PLANNED", ["b"], 0],
+      ["FABRIC_SOURCING", [], 0],
+      ["CUTTING", ["a", "c"], 1],
+      ["SEWING", [], 0],
+      ["WASH_QC", [], 0],
+      ["FINISHING", [], 0],
+    ]);
+  });
+
+  it("offers the next stage up to Finishing, which ends with Complete", () => {
+    expect(nextStage("FABRIC_SOURCING")).toBe("CUTTING");
+    expect(nextStage("WASH_QC")).toBe("FINISHING");
+    expect(nextStage("FINISHING")).toBeNull();
+    expect(nextStage("COMPLETED")).toBeNull();
+  });
+
+  it("takes a move back only right after it, while nothing changed since", () => {
+    const project = { code: "PRD-1", status: "ACTIVE" as const, stage: "SEWING" as const };
+    const at = new Date("2026-10-11T10:00:00Z");
+    const moved = {
+      last: { stage: "SEWING" as const, startedAt: at, completedAt: null },
+      before: { stage: "CUTTING" as const, startedAt: new Date("2026-10-01"), completedAt: at },
+    };
+    const later = (minutes: number) => new Date(at.getTime() + minutes * 60_000);
+    expect(canUndoStageMove(project, moved, "SEWING", later(9), 10).ok).toBe(true);
+    expect(canUndoStageMove(project, moved, "SEWING", later(11), 10)).toMatchObject({
+      ok: false,
+      message:
+        'PRD-1 moved to Sewing more than 10 minutes ago. Use "Change the stage" on the project instead.',
+    });
+    const changed =
+      'PRD-1\'s stage has changed since. Use "Change the stage" on the project instead.';
+    expect(canUndoStageMove(project, moved, "CUTTING", later(1), 10)).toMatchObject({
+      message: changed,
+    });
+    expect(
+      canUndoStageMove(project, { ...moved, before: undefined }, "SEWING", later(1), 10),
+    ).toMatchObject({ message: changed });
+    expect(
+      canUndoStageMove({ ...project, status: "ON_HOLD" }, moved, "SEWING", later(1), 10),
+    ).toMatchObject({ message: "PRD-1 is on hold; resume it first." });
   });
 });

@@ -11,7 +11,9 @@ import { cn } from "@/lib/utils";
  */
 
 type Tone = "error" | "success";
-type Toast = { id: number; tone: Tone; message: string };
+/** A button on the note, like "Undo"; pressing it closes the note. */
+type ToastAction = { label: string; onClick: () => void };
+type Toast = { id: number; tone: Tone; message: string; action?: ToastAction };
 
 const SHOW_FOR_MS = 6_000;
 let toasts: Toast[] = [];
@@ -27,16 +29,17 @@ function dismiss(id: number) {
   emit(toasts.filter((t) => t.id !== id));
 }
 
-function show(tone: Tone, message: string) {
+function show(tone: Tone, message: string, action?: ToastAction) {
   const id = ++lastId;
   // The same note twice in a row shows once.
-  emit([...toasts.filter((t) => t.message !== message), { id, tone, message }].slice(-3));
-  setTimeout(() => dismiss(id), SHOW_FOR_MS);
+  emit([...toasts.filter((t) => t.message !== message), { id, tone, message, action }].slice(-3));
+  // A note with a button stays a little longer, to give time to press it.
+  setTimeout(() => dismiss(id), action ? SHOW_FOR_MS * 2 : SHOW_FOR_MS);
 }
 
 export const toast = {
   error: (message: string) => show("error", message),
-  success: (message: string) => show("success", message),
+  success: (message: string, action?: ToastAction) => show("success", message, action),
 };
 
 const subscribe = (listener: () => void) => {
@@ -76,6 +79,18 @@ export function Toaster() {
               aria-hidden
             />
             <p className="min-w-0 flex-1 break-words">{t.message}</p>
+            {t.action && (
+              <button
+                type="button"
+                onClick={() => {
+                  dismiss(t.id);
+                  t.action!.onClick();
+                }}
+                className="-my-0.5 shrink-0 cursor-pointer rounded-sm px-1 py-0.5 font-medium text-primary underline-offset-4 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/25 focus-visible:outline-none"
+              >
+                {t.action.label}
+              </button>
+            )}
             <button
               type="button"
               onClick={() => dismiss(t.id)}

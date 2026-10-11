@@ -69,6 +69,44 @@ export function canSetStage(
   return ALLOWED;
 }
 
+type StageLogState = { stage: ProductionStage; startedAt: Date; completedAt: Date | null };
+
+/**
+ * A stage move made by mistake is taken back within `minutes` of it, while the
+ * project is still active at that stage and the stage before it ended with the
+ * move. Later, "Change the stage" (with a note when going back) does it.
+ */
+export function canUndoStageMove(
+  project: ProjectState & { stage: ProductionStage },
+  moved: { last: StageLogState | undefined; before: StageLogState | undefined },
+  stage: ProductionStage,
+  now: Date,
+  minutes: number,
+): Verdict {
+  if (project.status !== "ACTIVE") return refuse("CONFLICT", notActiveMessage(project));
+  const { last, before } = moved;
+  if (
+    project.stage !== stage ||
+    !last ||
+    last.stage !== stage ||
+    last.completedAt !== null ||
+    !before?.completedAt ||
+    before.completedAt.getTime() !== last.startedAt.getTime()
+  ) {
+    return refuse(
+      "CONFLICT",
+      `${project.code}'s stage has changed since. Use "Change the stage" on the project instead.`,
+    );
+  }
+  if (now.getTime() - last.startedAt.getTime() > minutes * 60_000) {
+    return refuse(
+      "CONFLICT",
+      `${project.code} moved to ${STAGE_LABELS[stage]} more than ${minutes} minutes ago. Use "Change the stage" on the project instead.`,
+    );
+  }
+  return ALLOWED;
+}
+
 /** Going back a stage is rework, and needs a note saying why. */
 export const stageNeedsNote = (from: ProductionStage, to: ProductionStage) =>
   isStageBackward(from, to);

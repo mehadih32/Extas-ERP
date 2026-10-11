@@ -113,6 +113,10 @@ export const setProjectStageAction = async (projectId: string, input: unknown) =
       await projects.setProjectStage(await manage(), projectId, input, await getRequestMeta()),
     ),
   );
+export const undoStageMoveAction = async (projectId: string, input: unknown) =>
+  change(async () =>
+    project(await projects.undoStageMove(await manage(), projectId, input, await getRequestMeta())),
+  );
 export const setProjectStatusAction = async (projectId: string, input: unknown) =>
   change(async () =>
     project(

@@ -5,9 +5,8 @@ import { redirect } from "next/navigation";
 
 import { SectionError } from "@/components/dashboard/section-error";
 import { EmptyState } from "@/components/products/bits";
-import { STAGE_LABELS } from "@/components/production/labels";
 import { ProductionNoAccess } from "@/components/production/no-access";
-import { ProjectCard } from "@/components/production/project-card";
+import { ProductionBoard } from "@/components/production/production-board";
 import { visibleProductionTabs } from "@/components/production/tabs";
 import { money } from "@/components/sales/labels";
 import { Button } from "@/components/ui/button";
@@ -67,9 +66,9 @@ function Stat({
 
 /**
  * The Production Overview (production.view, like GET /api/production/overview):
- * every open project as a card, late ones first and in red, how many are at
- * each stage, and for Production Managers and Accounts the money in production.
- * People who only receive goods start on the Deliveries tab instead.
+ * the counts, for Production Managers and Accounts the money in production, and
+ * the board: a column per stage with every open project as a card, late ones
+ * first and in red. People who only receive goods start on the Deliveries tab.
  */
 export default async function ProductionOverviewPage() {
   const ctx = await requireCompanyPage();
@@ -85,8 +84,9 @@ export default async function ProductionOverviewPage() {
       <SectionError title="Production" heading="The overview could not load" error={result.error} />
     );
   }
-  const { counts, byStage, totals, projects, canCreate } = result.data;
+  const { counts, totals, columns, canCreate } = result.data;
   const currency = ctx.company.currency;
+  const projectCount = columns.reduce((sum, column) => sum + column.projects.length, 0);
 
   return (
     <div className="grid grid-cols-1 gap-8">
@@ -94,8 +94,9 @@ export default async function ProductionOverviewPage() {
         <div>
           <h2 className="font-serif text-2xl text-primary">Overview</h2>
           <p className="mt-1 max-w-xl text-sm leading-relaxed text-muted-foreground">
-            Every project still in the works, late ones first. Open one to move its stage, add its
-            costs or receive its goods.
+            Every project still in the works, in a column for its stage, late ones first and in red.
+            Move a project to its next stage from its card, or open it to add costs or receive its
+            goods.
           </p>
         </div>
         {canCreate && (
@@ -140,28 +141,6 @@ export default async function ProductionOverviewPage() {
         </dl>
       </section>
 
-      <section aria-labelledby="stages-heading" className="grid gap-3">
-        <h3 id="stages-heading" className="font-serif text-xl text-primary">
-          At each stage
-        </h3>
-        <ol className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
-          {byStage.map((s, index) => (
-            <li key={s.stage} className="min-w-0">
-              <Link
-                href={`/production/projects?stage=${s.stage}`}
-                className="flex h-full items-center justify-between gap-3 rounded-md border bg-card px-3 py-2.5 transition-colors outline-none hover:border-primary/40 focus-visible:ring-[3px] focus-visible:ring-ring/25"
-              >
-                <span className="min-w-0 text-sm">
-                  <span className="text-muted-foreground tabular-nums">{index + 1}. </span>
-                  {STAGE_LABELS[s.stage]}
-                </span>
-                <span className="font-serif text-lg text-primary tabular-nums">{s.count}</span>
-              </Link>
-            </li>
-          ))}
-        </ol>
-      </section>
-
       {totals && (
         <section aria-labelledby="money-heading" className="grid gap-3">
           <h3 id="money-heading" className="font-serif text-xl text-primary">
@@ -184,10 +163,10 @@ export default async function ProductionOverviewPage() {
         </section>
       )}
 
-      <section aria-labelledby="open-heading" className="grid gap-3">
+      <section aria-labelledby="board-heading" className="grid min-w-0 gap-3">
         <div className="flex items-baseline justify-between gap-4">
-          <h3 id="open-heading" className="font-serif text-xl text-primary">
-            Open projects
+          <h3 id="board-heading" className="font-serif text-xl text-primary">
+            Production board
           </h3>
           <Link
             href="/production/projects"
@@ -196,7 +175,7 @@ export default async function ProductionOverviewPage() {
             All projects
           </Link>
         </div>
-        {projects.length === 0 ? (
+        {projectCount === 0 ? (
           <EmptyState
             title="Nothing in production"
             action={
@@ -211,14 +190,7 @@ export default async function ProductionOverviewPage() {
             invoice starts one too once its advance is paid.
           </EmptyState>
         ) : (
-          <ul
-            className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3"
-            aria-label="Open projects"
-          >
-            {projects.map((project) => (
-              <ProjectCard key={project.id} project={project} currency={currency} />
-            ))}
-          </ul>
+          <ProductionBoard columns={columns} currency={currency} />
         )}
       </section>
     </div>

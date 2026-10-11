@@ -82,7 +82,9 @@ export function PaymentList({
                 <TableCell>
                   <div className="max-w-64 truncate">{who(p)}</div>
                 </TableCell>
-                <TableCell className="text-muted-foreground">{againstText(p)}</TableCell>
+                <TableCell className="min-w-32 whitespace-normal text-muted-foreground">
+                  {againstText(p)}
+                </TableCell>
                 <TableCell className="hidden lg:table-cell">
                   <div>{METHOD_LABELS[p.method]}</div>
                   {p.reference && (

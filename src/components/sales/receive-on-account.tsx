@@ -6,7 +6,7 @@ import { useState } from "react";
 import { FormAlert } from "@/components/forms/field";
 import { Button } from "@/components/ui/button";
 
-import { ReceivePaymentDialog } from "./dialogs";
+import { ReceivePaymentDialog } from "./receive-payment-dialog";
 
 /**
  * "Receive a payment" on the Payments tab: money a buyer paid towards their

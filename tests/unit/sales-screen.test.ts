@@ -8,6 +8,7 @@ import {
   invoiceViewFrom,
   isSalesFiltered,
   orderViewFrom,
+  paymentListQuery,
   paymentViewFrom,
   salesListSearch,
 } from "@/components/sales/list-view";
@@ -45,6 +46,16 @@ describe("the Sales lists' filters in the address bar", () => {
     });
     expect(isSalesFiltered({ ...view, from: undefined, to: undefined })).toBe(false);
     expect(clearedView(view)).toEqual({ list: "payments", show: "refunds" });
+  });
+
+  it("filters cheques by status, without days", () => {
+    const view = paymentViewFrom({ show: "cheques", status: "BOUNCED", from: "2026-10-01" });
+    expect(view).toEqual({ list: "payments", show: "cheques", chequeStatus: "BOUNCED" });
+    expect(salesListSearch(view)).toBe("?show=cheques&status=BOUNCED");
+    expect(isSalesFiltered(view)).toBe(true);
+    expect(paymentListQuery(view, "c1")).toEqual({ status: "BOUNCED", cursor: "c1", take: 30 });
+    expect(clearedView(view)).toEqual({ list: "payments", show: "cheques" });
+    expect(paymentViewFrom({ show: "cheques", status: "nonsense" }).chequeStatus).toBeUndefined();
   });
 });
 

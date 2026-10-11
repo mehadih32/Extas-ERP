@@ -20,6 +20,8 @@ import {
   issueInvoiceTx,
   voidInvoiceTx,
 } from "@/modules/sales/documents.service";
+import { recordChequeTx } from "@/modules/sales/cheque.service";
+import { applyCreditTx } from "@/modules/sales/credit.service";
 import { assertCanRecordReceipts, receivePaymentTx } from "@/modules/sales/payment.service";
 import { heldOnOrder } from "@/modules/sales/posting";
 import {
@@ -265,28 +267,46 @@ export async function createOrderTx(
 export async function createOrder(ctx: CompanyContext, raw: unknown, meta?: RequestMeta) {
   const input = createOrderSchema.parse(raw);
   if (input.shipmentDate) checkShipmentDate(ctx, input.shipmentDate, input.orderDate ?? new Date());
-  if (input.payment) assertCanRecordReceipts(ctx);
+  if (input.payment || input.useCredit) assertCanRecordReceipts(ctx);
+  const docs = { invoice: true, packingList: false, deliveryChallan: false, ...input.documents };
+  if ((input.includePreviousDue || input.useCredit) && !docs.invoice) {
+    const field = input.useCredit ? "useCredit" : "includePreviousDue";
+    throw new AppError(
+      "VALIDATION",
+      "Issue the invoice with the order to include the previous due or use credit.",
+      { [field]: ["Tick Issue the invoice"] },
+    );
+  }
   const party = input.partyId ? await assertPartyCanTransact(ctx, input.partyId, "SALE") : null;
   const warehouse = await resolveWarehouse(ctx, input.warehouseId);
   const packer = await resolvePacker(ctx, input.packedById);
   const lines = await resolveOrderLines(ctx, input, input.channel, warehouse.id);
   assertStockOrOverride(ctx, lines, input.forceOverride);
   const { total } = orderTotals(lines, input);
+  const credit = money(input.useCredit ?? 0);
+  if (credit.gt(total)) {
+    throw new AppError("VALIDATION", `Use at most ${total.toFixed(2)} of credit on this order.`, {
+      useCredit: [`At most ${total.toFixed(2)}`],
+    });
+  }
+  const paying = money(input.payment?.amount ?? 0);
   if (party) {
     await assertPartyCanTransact(
       ctx,
       party.id,
       "SALE",
-      Number(total.minus(input.payment?.amount ?? 0)),
+      Number(Prisma.Decimal.max(total.minus(paying).minus(credit), 0)),
     );
   }
-  if (input.payment && money(input.payment.amount).gt(total)) {
+  const cheque = input.payment?.method === "CHEQUE" ? input.payment.cheque : undefined;
+  // Above the order, money goes on the buyer's account: only with the invoice and a buyer.
+  const extraAllowed = docs.invoice && party !== null && !cheque;
+  if (input.payment && paying.plus(credit).gt(total) && !extraAllowed) {
     throw new AppError(
       "VALIDATION",
       `The payment is more than the order total (${total.toFixed(2)}).`,
     );
   }
-  const docs = { invoice: true, packingList: false, deliveryChallan: false, ...input.documents };
 
   const orderId = await prisma.$transaction(async (tx) => {
     const order = await createOrderTx(
@@ -310,9 +330,45 @@ export async function createOrder(ctx: CompanyContext, raw: unknown, meta?: Requ
       },
       meta,
     );
-    if (docs.invoice) await issueInvoiceTx(tx, ctx, order.id, {}, meta);
-    if (input.payment) {
-      await receivePaymentTx(tx, ctx, { ...input.payment, orderId: order.id }, meta);
+    if (docs.invoice) {
+      await issueInvoiceTx(
+        tx,
+        ctx,
+        order.id,
+        { includePreviousDue: input.includePreviousDue },
+        meta,
+      );
+    }
+    if (credit.gt(0)) await applyCreditTx(tx, ctx, { orderId: order.id, amount: credit }, meta);
+    if (input.payment && cheque) {
+      // A cheque is pending until cleared: nothing is posted and the order stays due.
+      await recordChequeTx(
+        tx,
+        ctx,
+        {
+          orderId: order.id,
+          amount: input.payment.amount,
+          ...cheque,
+          proofFileId: input.payment.proofFileId,
+        },
+        meta,
+      );
+    } else if (input.payment) {
+      const { amount, method, accountId, reference, proofFileId } = input.payment;
+      await receivePaymentTx(
+        tx,
+        ctx,
+        {
+          amount,
+          method,
+          accountId,
+          reference,
+          proofFileId,
+          orderId: order.id,
+          ...(extraAllowed ? { extra: input.includePreviousDue ? "OLDER_DUES" : "ADVANCE" } : {}),
+        },
+        meta,
+      );
     }
     if (docs.packingList) await createPackingListTx(tx, ctx, order.id, {}, meta);
     if (docs.deliveryChallan) await createDeliveryChallanTx(tx, ctx, order.id, {}, meta);

@@ -4,10 +4,11 @@ import Link from "next/link";
 import { formatCount, groupAmount } from "@/lib/display";
 import { cn } from "@/lib/utils";
 import type { SalesOverview } from "@/modules/sales/overview.service";
+import type { PaymentDashboard } from "@/modules/sales/screens.service";
 
 import { salesListSearch } from "./list-view";
 
-type Tile = {
+export type Tile = {
   label: string;
   /** An amount ("12500.00") or a count. */
   figure: { amount: string } | { count: number };
@@ -83,11 +84,70 @@ function tilesFor(o: SalesOverview): Tile[] {
 /** Today's sales figures as tappable tiles, each opening the list behind it. */
 export function OverviewFigures({ overview }: { overview: SalesOverview }) {
   return (
+    <FigureTiles tiles={tilesFor(overview)} currency={overview.currency} label="Today in sales" />
+  );
+}
+
+/** The Payments dashboard: today's collection, dues, and cheques pending and bounced. */
+export function PaymentFigures({
+  dashboard: d,
+  currency,
+}: {
+  dashboard: PaymentDashboard;
+  currency: string;
+}) {
+  const count = (n: number) => formatCount(n, currency);
+  const amount = (fixed: string) => `${currency} ${groupAmount(fixed, currency)}`;
+  const cheques = (status: "PENDING" | "BOUNCED") =>
+    `/sales/payments${salesListSearch({ list: "payments", show: "cheques", chequeStatus: status })}`;
+  const tiles: Tile[] = [
+    {
+      label: "Collected today",
+      figure: { amount: d.collectedToday.value },
+      caption: /[1-9]/.test(d.collectedToday.refunded)
+        ? `After ${amount(d.collectedToday.refunded)} paid back`
+        : "Money received, less refunds",
+      href: `/sales/payments${salesListSearch({ list: "payments", show: "received", from: d.today, to: d.today })}`,
+    },
+    {
+      label: "Pending dues",
+      figure: { amount: d.pendingDues.value },
+      caption: `${count(d.pendingDues.count)} unpaid invoice${d.pendingDues.count === 1 ? "" : "s"}`,
+      href: "/sales/invoices",
+    },
+    {
+      label: "Cheques to clear",
+      figure: { amount: d.pendingCheques.value },
+      caption: `${count(d.pendingCheques.count)} pending cheque${d.pendingCheques.count === 1 ? "" : "s"}, not in the books yet`,
+      href: cheques("PENDING"),
+    },
+    {
+      label: "Bounced cheques",
+      figure: { amount: d.bouncedCheques.value },
+      caption: `${count(d.bouncedCheques.count)} bounced this month`,
+      href: cheques("BOUNCED"),
+      alert: d.bouncedCheques.count > 0,
+    },
+  ];
+  return <FigureTiles tiles={tiles} currency={currency} label="Payments at a glance" />;
+}
+
+/** Figures as tappable tiles, each opening the list behind it. */
+export function FigureTiles({
+  tiles,
+  currency,
+  label,
+}: {
+  tiles: Tile[];
+  currency: string;
+  label: string;
+}) {
+  return (
     <ul
       className="grid grid-cols-1 gap-3 min-[400px]:grid-cols-2 lg:grid-cols-4"
-      aria-label="Today in sales"
+      aria-label={label}
     >
-      {tilesFor(overview).map((tile) => (
+      {tiles.map((tile) => (
         <li key={tile.label} className="min-w-0">
           <Link
             href={tile.href}
@@ -110,11 +170,11 @@ export function OverviewFigures({ overview }: { overview: SalesOverview }) {
               )}
             >
               {"count" in tile.figure
-                ? formatCount(tile.figure.count, overview.currency)
-                : groupAmount(tile.figure.amount, overview.currency)}
+                ? formatCount(tile.figure.count, currency)
+                : groupAmount(tile.figure.amount, currency)}
             </span>
             <span className="mt-1 text-[0.8125rem] text-muted-foreground">
-              {"amount" in tile.figure ? `${overview.currency} · ` : ""}
+              {"amount" in tile.figure ? `${currency} · ` : ""}
               {tile.caption}
             </span>
           </Link>

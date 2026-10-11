@@ -8,7 +8,7 @@ import type {
   SalesChannel,
 } from "@prisma/client";
 
-import { localDay } from "@/lib/dates";
+import { dateOnly, dayRange, localDay } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
 import { assertAllowed } from "@/lib/verdict";
 import type { CompanyContext } from "@/modules/auth/context";
@@ -24,6 +24,9 @@ import { ORDER_CHANNELS, RECEIVE_METHODS } from "@/modules/sales/choices";
 import { listCustomFields } from "@/modules/sales/custom-fields.service";
 import { getInvoiceDocument, listInvoices } from "@/modules/sales/documents.service";
 import { getOrder, listOrders, listPackers } from "@/modules/sales/order.service";
+import { prisma } from "@/lib/prisma";
+import { chequeFigures, listCheques } from "@/modules/sales/cheque.service";
+import { creditPosition } from "@/modules/sales/credit.service";
 import { getPaymentReceipt, listPayments } from "@/modules/sales/payment.service";
 import { getProforma, listProformas } from "@/modules/sales/proforma.service";
 import { getQuotation, listQuotations } from "@/modules/sales/quotation.service";
@@ -729,6 +732,38 @@ export async function getOrderScreen(ctx: CompanyContext, orderId: string) {
   const logistics = access.sell && canSetLogistics(order).ok;
   const needsVoid = cancellable && invoice !== null && !access.voidInvoice;
   const needsSettling = cancellable && isPositive(held) && kinds.length === 0;
+  // The buyer's money (previous due, unused credit), for people who see balances or take money.
+  const [credits, cheques, position] = await Promise.all([
+    ctx.db.creditAllocation.findMany({
+      where: { orderId: order.id, releasedAt: null },
+      select: {
+        id: true,
+        amount: true,
+        createdAt: true,
+        payment: { select: { id: true, number: true } },
+      },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    }),
+    // Cleared cheques show as their money receipt; pending and bounced ones are listed apart.
+    ctx.db.cheque.findMany({
+      where: { orderId: order.id, status: { not: "CLEARED" } },
+      select: {
+        id: true,
+        chequeNo: true,
+        bankName: true,
+        amount: true,
+        status: true,
+        chequeDate: true,
+        receivedAt: true,
+        payment: { select: { id: true, number: true } },
+      },
+      orderBy: [{ receivedAt: "asc" }, { id: "asc" }],
+    }),
+    order.partyId && (access.receive || access.openBuyer)
+      ? creditPosition(prisma, ctx.company.id, order.partyId)
+      : null,
+  ]);
+  const due = order.total.minus(order.paidAmount);
 
   return {
     order: {
@@ -807,11 +842,41 @@ export async function getOrderScreen(ctx: CompanyContext, orderId: string) {
         isAdvance: p.isAdvance,
       })),
       refunds: presentRefunds(ctx, order.refunds, { order }),
+      /** The buyer's credit (advance balance) put against this order's invoice. */
+      credits: credits.map((c) => ({
+        id: c.id,
+        amount: fixed(c.amount),
+        usedOn: localDay(c.createdAt, tz),
+        payment: c.payment,
+      })),
+      cheques: cheques.map((c) => ({
+        id: c.id,
+        chequeNo: c.chequeNo,
+        bankName: c.bankName,
+        amount: fixed(c.amount),
+        status: c.status,
+        chequeDate: dateOnly(c.chequeDate),
+        receivedOn: localDay(c.receivedAt, tz),
+        payment: c.payment,
+      })),
     },
+    /** The buyer's previous due and unused credit (null: walk-in, or not for this person). */
+    buyerMoney: position
+      ? { previousDue: fixed(position.previousDue), credit: fixed(position.credit) }
+      : null,
     /** Cost of the goods and the margin: only for people who see the financials. */
     costs: access.seeCosts ? orderCosts(order, facts) : null,
     can: {
       receive: access.receive && canReceiveOnOrder(order).ok,
+      /** Money above the due may be kept as the buyer's advance balance (invoiced, named buyer). */
+      receiveExtra: access.receive && invoice !== null && order.partyId !== null,
+      useCredit:
+        access.receive &&
+        invoice !== null &&
+        order.status !== "CANCELLED" &&
+        due.gt(0) &&
+        position !== null &&
+        position.credit.gt(0),
       issueInvoice: access.sell && canIssueInvoice(order).ok,
       voidInvoice: access.voidInvoice && invoice !== null && canVoidInvoice(invoice).ok,
       packingList: access.sell && canCreatePackingList(order).ok,
@@ -950,6 +1015,10 @@ export async function getOrderForm(
       forceOverride: access.forceOverride,
       /** Money taken at checkout: Accounts' receipts key (not when editing or converting). */
       takePayment: access.receive && !order && !proforma,
+      /** Print the buyer's previous due on the new invoice (people who see balances). */
+      previousDue: (access.openBuyer || access.receive) && !order && !proforma,
+      /** Use the buyer's credit (advance balance) on the new invoice: Accounts. */
+      useCredit: access.receive && !order && !proforma,
     },
   };
 }
@@ -1069,6 +1138,20 @@ export async function getInvoiceScreen(ctx: CompanyContext, invoiceId: string) {
         amount: fixed(r.amount),
         kind: r.kind,
       })),
+      credits: doc.credits.map((c, index) => ({
+        key: `${index}`,
+        usedOn: localDay(c.date, tz),
+        amount: fixed(c.amount),
+        paymentNumber: c.paymentNumber,
+      })),
+      previous: doc.previous
+        ? {
+            previousDue: fixed(doc.previous.previousDue),
+            totalPayable: fixed(doc.previous.totalPayable),
+            paid: fixed(doc.previous.paidToward),
+            balanceDue: fixed(doc.previous.balanceDue),
+          }
+        : null,
     },
     can: {
       receive: access.receive && open && canReceiveOnOrder(order).ok,
@@ -1100,6 +1183,7 @@ function presentPaymentRow(p: ListedPayment, tz: string) {
     proforma: p.proforma,
     account: p.account.name,
     isAdvance: p.isAdvance,
+    hasProof: p.proofFileId !== null,
   };
 }
 
@@ -1145,6 +1229,94 @@ export async function listRefundRows(ctx: CompanyContext, raw: unknown = {}) {
 }
 
 export type RefundList = Awaited<ReturnType<typeof listRefundRows>>;
+
+type ListedCheque = Awaited<ReturnType<typeof listCheques>>["items"][number];
+
+function presentChequeRow(c: ListedCheque, tz: string) {
+  return {
+    id: c.id,
+    chequeNo: c.chequeNo,
+    bankName: c.bankName,
+    amount: fixed(c.amount),
+    chequeDate: dateOnly(c.chequeDate),
+    receivedOn: localDay(c.receivedAt, tz),
+    status: c.status,
+    clearedOn: c.payment ? localDay(c.payment.paymentDate, tz) : null,
+    bouncedOn: c.bouncedAt ? localDay(c.bouncedAt, tz) : null,
+    bounceReason: c.bounceReason,
+    hasProof: c.proofFileId !== null,
+    proofFileId: c.proofFileId,
+    buyer: partyOf(c.party),
+    customerName: c.order?.customerName ?? null,
+    order: c.order ? { id: c.order.id, number: c.order.number } : null,
+    proforma: c.proforma,
+    payment: c.payment ? { id: c.payment.id, number: c.payment.number } : null,
+  };
+}
+
+export type ChequeRow = ReturnType<typeof presentChequeRow>;
+
+export async function listChequeRows(ctx: CompanyContext, raw: unknown = {}) {
+  const page = await listCheques(ctx, raw);
+  const tz = ctx.company.timezone;
+  const canManage = salesAccess(ctx).receive;
+  return {
+    items: page.items.map((c) => presentChequeRow(c, tz)),
+    nextCursor: page.nextCursor,
+    canManage,
+    /** Where a cleared cheque can be deposited (the main bank account first by code). */
+    banks: canManage
+      ? await ctx.db.ledgerAccount.findMany({
+          where: { subType: "BANK", isActive: true },
+          select: { id: true, code: true, name: true },
+          orderBy: { code: "asc" },
+        })
+      : [],
+  };
+}
+
+export type ChequeList = Awaited<ReturnType<typeof listChequeRows>>;
+
+/**
+ * The Payments dashboard: money collected today (less refunds), what buyers
+ * still owe on invoices, cheques waiting to clear, and cheques bounced this
+ * month. Every figure is one database count or sum.
+ */
+export async function getPaymentDashboard(ctx: CompanyContext) {
+  const tz = ctx.company.timezone;
+  const today = localDay(new Date(), tz);
+  const monthStart = dayRange(`${today.slice(0, 7)}-01`, undefined, tz).start!;
+  const day = dayRange(today, today, tz);
+  const range = { gte: day.start!, lt: day.end! };
+  const [collected, paidBack, dues, cheques] = await Promise.all([
+    ctx.db.payment.aggregate({
+      where: { direction: "RECEIVED", paymentDate: range },
+      _sum: { amount: true },
+    }),
+    // Only refunds paid back move money (as on the Sales overview).
+    ctx.db.refund.aggregate({
+      where: { kind: "CASH", voidedAt: null, refundDate: range },
+      _sum: { amount: true },
+    }),
+    ctx.db.invoice.aggregate({
+      where: { status: { in: ["UNPAID", "PARTIALLY_PAID"] } },
+      _sum: { dueAmount: true },
+      _count: { _all: true },
+    }),
+    chequeFigures(ctx, monthStart),
+  ]);
+  const received = money(collected._sum.amount ?? 0);
+  const refunded = money(paidBack._sum.amount ?? 0);
+  return {
+    today,
+    collectedToday: { value: fixed(received.minus(refunded)), refunded: fixed(refunded) },
+    pendingDues: { count: dues._count._all, value: fixed(money(dues._sum.dueAmount ?? 0)) },
+    pendingCheques: cheques.pending,
+    bouncedCheques: cheques.bounced,
+  };
+}
+
+export type PaymentDashboard = Awaited<ReturnType<typeof getPaymentDashboard>>;
 
 /** One money receipt: who paid, how, against what, and where it left that order or proforma. */
 export async function getPaymentScreen(ctx: CompanyContext, paymentId: string) {
@@ -1195,8 +1367,31 @@ export async function getPaymentScreen(ctx: CompanyContext, paymentId: string) {
         : null,
       receivedToDate: p.receivedToDate ? fixed(p.receivedToDate) : null,
       refundedToDate: p.refundedToDate ? fixed(p.refundedToDate) : null,
+      /** The invoices this money paid straight away (money on the buyer's account). */
+      allocations: p.allocations.map((a) => ({
+        orderId: a.order.id,
+        orderNumber: a.order.number,
+        invoiceNumber: a.invoice.number,
+        amount: fixed(a.amount),
+        released: a.releasedAt !== null,
+      })),
+      /** On the buyer's account: what this receipt left as their advance balance. */
+      advanceKept: p.onAccount ? fixed(p.onAccount.kept) : null,
+      /** On the buyer's account: what paid what they owed beyond their invoices. */
+      towardEarlier: p.onAccount?.towardEarlier.gt(0) ? fixed(p.onAccount.towardEarlier) : null,
+      cheque: p.cheque
+        ? {
+            chequeNo: p.cheque.chequeNo,
+            bankName: p.cheque.bankName,
+            chequeDate: dateOnly(p.cheque.chequeDate),
+          }
+        : null,
+      proofFileId: p.proofFileId,
     },
-    can: { openBuyer: salesAccess(ctx).openBuyer && Boolean(p.party) },
+    can: {
+      openBuyer: salesAccess(ctx).openBuyer && Boolean(p.party),
+      addProof: salesAccess(ctx).receive,
+    },
   };
 }
 

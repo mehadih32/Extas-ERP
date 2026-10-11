@@ -110,6 +110,8 @@ model Company {
   deliveryChallans     DeliveryChallan[]
   payments             Payment[]
   refunds              Refund[]
+  creditAllocations    CreditAllocation[]
+  cheques              Cheque[]
   integrations         SalesChannelIntegration[]
   webhookEvents        WebhookEvent[]
   courierAccounts      CourierAccount[]
@@ -198,6 +200,8 @@ model User {
   purchaseReturns   PurchaseReturn[]      @relation("PurchaseReturnCreatedBy")
   materialMovements RawMaterialMovement[] @relation("MaterialMovementBy")
   refunds           Refund[]              @relation("RefundCreatedBy")
+  creditAllocations CreditAllocation[]    @relation("CreditAllocatedBy")
+  chequesRecorded   Cheque[]              @relation("ChequeRecordedBy")
   intakesReversed   StockIntake[]         @relation("IntakeReversedBy")
   settlementsMade   ProjectSettlement[]   @relation("SettlementMadeBy")
 }
@@ -338,6 +342,8 @@ model FileAsset {
   supplierBills       SupplierBill[]
   expenses            Expense[]
   leaveRequests       LeaveRequest[]
+  paymentProofs       Payment[]            @relation("PaymentProof")
+  chequeProofs        Cheque[]             @relation("ChequeProof")
 
   @@index([companyId])
 }
@@ -953,6 +959,8 @@ model Party {
   invoices             Invoice[]
   payments             Payment[]
   refunds              Refund[]
+  creditAllocations    CreditAllocation[]
+  cheques              Cheque[]
   journalLines         JournalLine[]
   supplierBills        SupplierBill[]
   expenses             Expense[]
@@ -1094,6 +1102,7 @@ model ProformaInvoice {
   productionProjects ProductionProject[]
   payments           Payment[]
   refunds            Refund[]
+  cheques            Cheque[]
 
   @@unique([companyId, number])
 }
@@ -1134,21 +1143,23 @@ model SalesOrder {
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
 
-  company          Company                  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  party            Party?                   @relation(fields: [partyId], references: [id], onDelete: SetNull)
-  proforma         ProformaInvoice?         @relation(fields: [proformaId], references: [id], onDelete: SetNull)
-  integration      SalesChannelIntegration? @relation(fields: [integrationId], references: [id], onDelete: SetNull)
-  warehouse        Warehouse?               @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
-  packedBy         Employee?                @relation("OrderPackedBy", fields: [packedById], references: [id], onDelete: SetNull)
-  items            SalesOrderItem[]
-  invoice          Invoice?
-  packingList      PackingList?
-  deliveryChallans DeliveryChallan[]
-  shipments        Shipment[]
-  returns          SalesReturn[]
-  payments         Payment[]
-  refunds          Refund[]
-  reminders        Reminder[]
+  company           Company                  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  party             Party?                   @relation(fields: [partyId], references: [id], onDelete: SetNull)
+  proforma          ProformaInvoice?         @relation(fields: [proformaId], references: [id], onDelete: SetNull)
+  integration       SalesChannelIntegration? @relation(fields: [integrationId], references: [id], onDelete: SetNull)
+  warehouse         Warehouse?               @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
+  packedBy          Employee?                @relation("OrderPackedBy", fields: [packedById], references: [id], onDelete: SetNull)
+  items             SalesOrderItem[]
+  invoice           Invoice?
+  packingList       PackingList?
+  deliveryChallans  DeliveryChallan[]
+  shipments         Shipment[]
+  returns           SalesReturn[]
+  payments          Payment[]
+  refunds           Refund[]
+  creditAllocations CreditAllocation[]
+  cheques           Cheque[]
+  reminders         Reminder[]
 
   @@unique([companyId, number])
   @@unique([companyId, integrationId, externalOrderId])
@@ -1184,25 +1195,32 @@ model SalesOrderItem {
 
 /// Document 1: Commercial Invoice (prices, totals, paid/due). Saved permanently.
 model Invoice {
-  id         String        @id @default(cuid())
-  companyId  String
-  number     String
-  orderId    String        @unique
-  partyId    String?
-  issueDate  DateTime      @default(now())
-  dueDate    DateTime?
-  total      Decimal       @db.Decimal(14, 2)
-  paidAmount Decimal       @default(0) @db.Decimal(14, 2)
-  dueAmount  Decimal       @db.Decimal(14, 2)
-  status     InvoiceStatus @default(UNPAID)
-  isLocked   Boolean       @default(false) // edits after lock are audited
-  createdAt  DateTime      @default(now())
-  updatedAt  DateTime      @updatedAt
+  id             String        @id @default(cuid())
+  companyId      String
+  number         String
+  orderId        String        @unique
+  partyId        String?
+  issueDate      DateTime      @default(now())
+  dueDate        DateTime?
+  total          Decimal       @db.Decimal(14, 2)
+  paidAmount     Decimal       @default(0) @db.Decimal(14, 2)
+  dueAmount      Decimal       @db.Decimal(14, 2)
+  status         InvoiceStatus @default(UNPAID)
+  isLocked       Boolean       @default(false) // edits after lock are audited
+  /// What the buyer already owed when this invoice was issued, printed on it
+  /// ("Previous due" and "Total payable"). Null: not shown. Never revenue.
+  previousDue    Decimal?      @db.Decimal(14, 2)
+  /// The buyer's unused credit (advance balance) at that moment: already taken
+  /// off previousDue, so credit later used on this invoice is not counted twice.
+  previousCredit Decimal?      @db.Decimal(14, 2)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
 
-  company  Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  order    SalesOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  party    Party?     @relation(fields: [partyId], references: [id], onDelete: SetNull)
-  payments Payment[]
+  company           Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  order             SalesOrder         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  party             Party?             @relation(fields: [partyId], references: [id], onDelete: SetNull)
+  payments          Payment[]
+  creditAllocations CreditAllocation[]
 
   @@unique([companyId, number])
   @@index([companyId, status])
@@ -1292,6 +1310,12 @@ model Payment {
   isAdvance      Boolean          @default(false)
   notes          String?
   journalEntryId String?          @unique
+  /// A photo of the proof (a transfer screenshot, the cheque), compressed in the browser.
+  proofFileId    String?
+  /// Money on the buyer's account: what it left as their advance balance once it had
+  /// paid invoices and any earlier balance. Null for money on an order or proforma, and
+  /// for receipts recorded before this was kept.
+  advanceKept    Decimal?         @db.Decimal(14, 2)
   createdAt      DateTime         @default(now())
 
   company      Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
@@ -1304,11 +1328,88 @@ model Payment {
   shipment     Shipment?          @relation(fields: [shipmentId], references: [id], onDelete: SetNull)
   project      ProductionProject? @relation(fields: [projectId], references: [id], onDelete: SetNull)
   journalEntry JournalEntry?      @relation(fields: [journalEntryId], references: [id], onDelete: SetNull)
+  proofFile    FileAsset?         @relation("PaymentProof", fields: [proofFileId], references: [id], onDelete: SetNull)
+  allocations  CreditAllocation[]
+  cheque       Cheque?
 
   @@unique([companyId, number])
   @@index([companyId, paymentDate])
   @@index([partyId])
   @@index([projectId])
+}
+
+/// Money on a buyer's account (a payment on account, credit kept from a
+/// refund) put against one invoiced order: it counts as paid on that order.
+/// No journal entry: the money and the invoice are both on the buyer's
+/// Receivable already. Released (kept for the record) when the invoice is voided.
+model CreditAllocation {
+  id            String    @id @default(cuid())
+  companyId     String
+  partyId       String
+  orderId       String
+  invoiceId     String
+  /// The payment on account this money came in with; null: the buyer's earlier credit.
+  paymentId     String?
+  amount        Decimal   @db.Decimal(14, 2)
+  createdById   String?
+  createdAt     DateTime  @default(now())
+  releasedAt    DateTime?
+  releaseReason String?
+
+  company   Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  party     Party      @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  order     SalesOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  invoice   Invoice    @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  payment   Payment?   @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  createdBy User?      @relation("CreditAllocatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([companyId, partyId])
+  @@index([orderId])
+  @@index([paymentId])
+}
+
+/// A cheque received from a buyer. Nothing reaches the books while it is
+/// pending; marking it cleared records the payment into the bank account it
+/// was deposited in, and a bounced cheque records nothing.
+model Cheque {
+  id           String       @id @default(cuid())
+  companyId    String
+  partyId      String?
+  orderId      String?
+  proformaId   String?
+  amount       Decimal      @db.Decimal(14, 2)
+  chequeNo     String
+  bankName     String?
+  /// The day written on the cheque (it cannot be cleared before it).
+  chequeDate   DateTime     @db.Date
+  receivedAt   DateTime     @default(now())
+  status       ChequeStatus @default(PENDING)
+  /// A cheque on a buyer's account: how it pays their invoices once cleared,
+  /// [{ orderId, amount }]; null with oldestFirst false keeps it all as advance balance.
+  allocations  Json?
+  oldestFirst  Boolean      @default(false)
+  /// The money receipt recorded when it cleared.
+  paymentId    String?      @unique
+  clearedAt    DateTime?
+  bouncedAt    DateTime?
+  bounceReason String?
+  proofFileId  String?
+  notes        String?
+  createdById  String?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  company   Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  party     Party?           @relation(fields: [partyId], references: [id], onDelete: SetNull)
+  order     SalesOrder?      @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  proforma  ProformaInvoice? @relation(fields: [proformaId], references: [id], onDelete: SetNull)
+  payment   Payment?         @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  proofFile FileAsset?       @relation("ChequeProof", fields: [proofFileId], references: [id], onDelete: SetNull)
+  createdBy User?            @relation("ChequeRecordedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([companyId, status])
+  @@index([partyId])
+  @@index([orderId])
 }
 
 /// Buyer money taken back off an order, a proforma or the buyer's account:
@@ -2961,6 +3062,12 @@ enum InvoiceStatus {
   PARTIALLY_PAID
   PAID
   VOID
+}
+
+enum ChequeStatus {
+  PENDING
+  CLEARED
+  BOUNCED
 }
 
 enum PaymentDirection {

@@ -80,8 +80,13 @@ export const salesHelp: HelpSection = {
         "cartons",
         "packed by",
         "credit limit",
+        "previous due",
+        "use credit",
+        "advance balance",
+        "cheque",
         "অর্ডার",
         "নতুন অর্ডার",
+        "আগের বকেয়া",
         "বিক্রি",
         "পাইকারি",
         "অর্ডার নেওয়া",
@@ -144,6 +149,20 @@ export const salesHelp: HelpSection = {
             caption: "শেষ ধাপে সারাংশ, ক্রেডিট লিমিটের বার্তা, “At checkout” টিকবক্স ও মোট টাকা",
           },
         },
+        {
+          text: "ক্রেতা বাছাই করা থাকলে আর “Issue the invoice” টিক দেওয়া থাকলে নিচে ক্রেতার আগের হিসাবও আসে। “Include previous due (…)” টিক দিলে ক্রেতার আগের বকেয়া এই ইনভয়েসে ছাপা হয়, সঙ্গে “Total payable” (আগের বকেয়া + এই বিল)। শুধু এই অর্ডারটিই বিক্রি হিসেবে গোনা হয়, আগের বকেয়া আবার বিক্রিতে যোগ হয় না।",
+          image: {
+            id: "sales-new-order-6",
+            caption:
+              "“At checkout”-এ “Include previous due (…)” টিক ও “Use credit balance (…)” ঘর, নিচে “Total payable”",
+          },
+        },
+        {
+          text: "ক্রেতার জমা টাকা (advance balance) থাকলে Accounts “Use credit balance (…)” ঘরে কতটা এই বিলে লাগাবেন লিখতে পারেন, পুরোটা বা অল্প। “Use the most” চাপলে যতটা লাগানো যায় ততটা বসে যায়। মোট টাকার ঘরে “Credit used”, “Paid now” ও “Balance due” দেখাবে।",
+        },
+        {
+          text: "“Payment received now”-এ বিলের চেয়ে বেশি টাকা নিলে বাড়তি টাকা ক্রেতার হিসাবে যায়: আগের বকেয়া টিক দেওয়া থাকলে আগে পুরনো বকেয়া (সবচেয়ে পুরনোটা আগে) শোধ হয়, বাকিটা “Kept as advance balance” হিসেবে জমা থাকে। “Paid by”-তে “Cheque” বাছলে “Cheque number”, “Bank (optional)” ও “Date on the cheque” দিন; চেক ক্লিয়ার না হওয়া পর্যন্ত অর্ডারের বাকি থেকেই যায়। চাইলে “Proof photo (optional)”-এ রসিদ বা চেকের ছবি দিন।",
+        },
       ],
       tips: [
         "নিচের বারে সবসময় মোট পিস ও মোট টাকা দেখায়। “Back” চেপে আগের ধাপে ফিরে কিছু বদলালেও লেখা হারায় না।",
@@ -151,6 +170,8 @@ export const salesHelp: HelpSection = {
         "অর্ডার সংরক্ষণের সময় স্টকে থাকা পিস অর্ডারের জন্য আটকে রাখা হয়।",
         "স্টকের চেয়ে বেশি পিস লিখলে ঘরটি চিহ্নিত হয়। অর্ডার দেওয়ার সময় “Not enough stock” জানালা আসে, যার কথা “স্টকের চেয়ে বেশি বিক্রি” গাইডে আছে।",
         "আর্কাইভ করা স্টাইল শুধু বাকি স্টক থেকেই বিক্রি করা যায়।",
+        "বিলের চেয়ে বেশি টাকা নেওয়া যায় শুধু ইনভয়েস দেওয়া হলে ও ক্রেতা বাছাই থাকলে; চেকে কখনো নয়।",
+        "জমা টাকা লাগানো ও টাকা নেওয়া শুধু Accounts ও Super Admin পারেন।",
       ],
     },
     {
@@ -323,12 +344,18 @@ export const salesHelp: HelpSection = {
         "on account",
         "bkash",
         "cash",
+        "oldest first",
+        "fifo",
+        "advance balance",
+        "cheque",
+        "proof",
         "টাকা গ্রহণ",
         "পেমেন্ট",
         "টাকা জমা",
         "মানি রিসিট",
         "কালেকশন",
         "বকেয়া আদায়",
+        "অগ্রিম জমা",
       ],
       routes: ["/sales/payments", "/sales/orders", "/sales/invoices"],
       who: "শুধু Accounts ও Super Admin (টাকা গ্রহণের অনুমতি)। Sales Executive টাকা রেকর্ড করতে পারেন না।",
@@ -345,11 +372,25 @@ export const salesHelp: HelpSection = {
           text: "ক্রেতার হিসাবে নিলে “Buyer” বেছে নিন। তারপর টাকার পরিমাণ লিখুন।",
         },
         {
-          text: "“Paid by”-এ কীভাবে দিয়েছে বেছে নিন: “Cash”, “Bank transfer”, “Cheque”, “bKash”, “Nagad”, “Rocket”, “Card” ইত্যাদি। দরকার হলে “Reference (optional)”-এ লেনদেন নম্বর বা চেক নম্বর লিখুন।",
+          text: "ক্রেতার হিসাবে নিলে নিচে “What it pays” অংশে তাঁর বাকি থাকা ইনভয়েসগুলো আসে, সবচেয়ে পুরনোটা উপরে। “Oldest first” বাছাই থাকলে টাকা নিজে থেকেই সবচেয়ে পুরনো বকেয়া থেকে শোধ হয়। নিজে ভাগ করতে “Choose amounts” চাপুন আর প্রতিটি ইনভয়েসের পাশের ঘরে কত দেবেন লিখুন। যা বাকি থাকে তা “advance balance” হিসেবে ক্রেতার হিসাবে জমা থাকে।",
+          image: {
+            id: "sales-receive-payment-3",
+            caption:
+              "“What it pays” অংশ: “Oldest first” ও “Choose amounts”, প্রতিটি ইনভয়েসের পাশে টাকার ঘর",
+          },
+        },
+        {
+          text: "“Paid by”-এ কীভাবে দিয়েছে বেছে নিন: “Cash”, “Bank transfer”, “Cheque”, “bKash”, “Nagad”, “Rocket”, “Card” ইত্যাদি। দরকার হলে “Reference (optional)”-এ লেনদেন নম্বর লিখুন।",
           image: {
             id: "sales-receive-payment-2",
             caption: "টাকা গ্রহণের জানালা: পরিমাণ, “Paid by”, “Reference” ও “Received on”",
           },
+        },
+        {
+          text: "“Cheque” বাছলে “Cheque number”, “Bank (optional)” ও “Date on the cheque” দিন। চেকটি “Pending” হিসেবে রাখা হয়: ব্যাংক টাকা না দেওয়া পর্যন্ত হিসাবের খাতায় কিছু ওঠে না, বকেয়াও কমে না। বোতামটির নাম তখন “Record the cheque”।",
+        },
+        {
+          text: "রসিদের স্ক্রিনশট বা চেকের ছবি রাখতে “Drop a photo here, or tap to choose”-এ ছবি টেনে আনুন বা চেপে বেছে নিন (মোবাইলে ক্যামেরাও খোলে)। পাঠানোর আগে ছবিটি নিজে থেকেই প্রায় 100 KB-তে ছোট হয়।",
         },
         {
           text: "“Received on”-এ তারিখ দিন, দরকার হলে নোট লিখুন, তারপর “Record the payment” চাপুন।",
@@ -359,8 +400,10 @@ export const salesHelp: HelpSection = {
         },
       ],
       tips: [
-        "একটি অর্ডারে যত বাকি তার বেশি টাকা নেওয়া যায় না। বাড়তি টাকা ক্রেতার হিসাবে (on account) নিন।",
+        "ইনভয়েস হওয়া অর্ডারে বাকির চেয়ে বেশি টাকা নিলে অর্ডারটি পুরো শোধ হয়, বাড়তিটা ক্রেতার advance balance-এ জমা থাকে। ইনভয়েসের আগে বা খুচরা ক্রেতার বেলায় বাকির বেশি নেওয়া যায় না।",
         "নতুন অর্ডারের সময়ই “Payment received now” টিক দিয়েও টাকা নেওয়া যায়।",
+        "টাকা কোন কোন ইনভয়েসে গেল আর কত জমা রইল, মানি রিসিটের পাতায় “Invoices paid” ও “Kept as advance balance”-এ দেখা যায়।",
+        "ক্রেতার ইনভয়েসের বাইরে আগের বাকি (যেমন শুরুর ব্যালান্স) থাকলে ইনভয়েসের পরে বাকি টাকা আগে সেটি শোধ করে, তারপর জমা থাকে। মানি রিসিটে তা “Paid the earlier balance” হিসেবে দেখায়।",
       ],
     },
     {
@@ -646,6 +689,9 @@ export const salesHelp: HelpSection = {
           text: "ইনভয়েসে চাপলে তার পাতা খুলবে: হিসাব (“Billed”), ক্রেতার তথ্য (“Billed to”), আর কী কী পেমেন্ট এসেছে। “PDF” থেকে ছাপুন।",
         },
         {
+          text: "আগের বকেয়াসহ দেওয়া ইনভয়েসে হিসাবের নিচে “Previous due”, “Total payable” ও “Balance due” থাকে। ক্রেতার জমা টাকা এই ইনভয়েসে লাগানো হলে পেমেন্টের অংশে “Credit used” দেখায়।",
+        },
+        {
           text: "Accounts এখান থেকেই “Receive a payment” দিয়ে টাকা নিতে পারেন। অনুমতি থাকলে “Void” দিয়ে ইনভয়েস বাতিল করা যায়।",
         },
       ],
@@ -655,16 +701,21 @@ export const salesHelp: HelpSection = {
     },
     {
       slug: "sales-payments-list",
-      title: "পাওয়া টাকা ও রিফান্ডের তালিকা দেখবেন যেভাবে",
-      summary: "কোন দিন কার কাছ থেকে কত টাকা এসেছে এবং কাকে কত ফেরত দেওয়া হয়েছে তা দেখা।",
+      title: "পেমেন্টের ড্যাশবোর্ড, পাওয়া টাকা ও রিফান্ডের তালিকা দেখবেন যেভাবে",
+      summary:
+        "আজ কত টাকা এল, কত বকেয়া, কত চেক ক্লিয়ারের অপেক্ষায় বা বাউন্স হলো, আর কোন দিন কার কাছ থেকে কত টাকা এসেছে বা কাকে কত ফেরত গেছে তা দেখা।",
       keywords: [
         "payments",
+        "payments dashboard",
         "money received",
         "refunds",
         "receipt",
         "collection report",
+        "pending dues",
+        "bounced cheques",
         "টাকা পাওয়া",
         "আদায়",
+        "আজকের আদায়",
         "রিফান্ড তালিকা",
         "রসিদ",
       ],
@@ -672,10 +723,19 @@ export const salesHelp: HelpSection = {
       who: "যাঁরা Sales দেখতে পারেন।",
       steps: [
         {
-          text: "“Sales” > “Payments” ট্যাব খুলুন। “Money received” বেছে নিলে পাওয়া টাকা, “Refunds” বেছে নিলে ফেরত দেওয়া টাকা দেখাবে।",
+          text: "“Sales” > “Payments” ট্যাব খুলুন। উপরে চারটি ঘর: “Collected today” (আজ পাওয়া টাকা, ফেরত বাদে), “Pending dues” (ইনভয়েসে মোট কত বাকি), “Cheques to clear” (যে চেক এখনো ব্যাংকে ক্লিয়ার হয়নি) ও “Bounced cheques” (এই মাসে বাউন্স হওয়া চেক)। কোনো ঘরে চাপলে তার তালিকা খোলে।",
+          image: {
+            id: "sales-payments-list-2",
+            caption:
+              "“Payments” পাতার উপরে “Collected today”, “Pending dues”, “Cheques to clear” ও “Bounced cheques”",
+          },
+        },
+        {
+          text: "নিচে “Money received” বেছে নিলে পাওয়া টাকা, “Refunds” বেছে নিলে ফেরত দেওয়া টাকা, আর “Cheques” বেছে নিলে পাওয়া চেকগুলো দেখাবে।",
           image: {
             id: "sales-payments-list-1",
-            caption: "“Payments” ট্যাব: “Money received” / “Refunds” বাছাই ও তারিখের ঘর",
+            caption:
+              "“Payments” ট্যাব: “Money received” / “Refunds” / “Cheques” বাছাই ও তারিখের ঘর",
           },
         },
         {
@@ -684,6 +744,182 @@ export const salesHelp: HelpSection = {
         {
           text: "তালিকায় “Receipt” নম্বর, কার কাছ থেকে (“From”), কিসের জন্য (“For”), “Method” ও “Amount” থাকে। কোনো সারিতে চাপলে মানি রিসিটের পাতা খুলবে।",
         },
+      ],
+    },
+    {
+      slug: "sales-cheques",
+      title: "চেক ক্লিয়ার বা বাউন্স হিসেবে চিহ্নিত করবেন যেভাবে",
+      summary:
+        "ক্রেতার দেওয়া চেক “Pending”, “Cleared” ও “Bounced” হিসেবে রাখা। চেক ক্লিয়ার হলে তবেই টাকা ব্যাংকের খাতায় ওঠে।",
+      keywords: [
+        "cheque",
+        "check",
+        "pending cheque",
+        "cleared",
+        "bounced",
+        "mark cleared",
+        "mark bounced",
+        "bank",
+        "চেক",
+        "চেক ক্লিয়ার",
+        "চেক বাউন্স",
+        "ব্যাংক",
+      ],
+      routes: ["/sales/payments"],
+      who: "চেকের তালিকা দেখতে পারেন যাঁরা Sales দেখতে পারেন। চেক নেওয়া, ক্লিয়ার বা বাউন্স করা শুধু Accounts ও Super Admin পারেন।",
+      steps: [
+        {
+          text: "চেক নিতে অর্ডার, ইনভয়েস, প্রোফর্মা বা “Payments” পাতা থেকে “Receive a payment” চাপুন, “Paid by”-তে “Cheque” বেছে “Cheque number”, “Bank (optional)” ও “Date on the cheque” দিন, তারপর “Record the cheque” চাপুন। নতুন অর্ডারের শেষ ধাপেও “Payment received now”-এ চেক নেওয়া যায়।",
+        },
+        {
+          text: "“Sales” > “Payments”-এ “Cheques” বেছে নিন। প্রতিটি চেকের কার্ডে চেক নম্বর, তারিখ, ক্রেতা, ব্যাংক, কিসের জন্য, টাকা ও অবস্থা থাকে। “Every cheque” থেকে “Pending”, “Cleared” বা “Bounced” বেছে ছাঁকা যায়।",
+          image: {
+            id: "sales-cheques-1",
+            caption:
+              "“Cheques” তালিকা: চেকের কার্ড, অবস্থার চিহ্ন, “Mark cleared” ও “Mark bounced”",
+          },
+        },
+        {
+          text: "ব্যাংক টাকা দিলে “Mark cleared” চাপুন। “Cleared on”-এ ক্লিয়ারের দিন দিন; একাধিক ব্যাংক হিসাব থাকলে “Deposited in” থেকে কোন হিসাবে জমা হলো বেছে নিন। নিশ্চিত করলে তখনই মানি রিসিট তৈরি হয় আর টাকা ব্যাংকের খাতায় ওঠে, অর্ডার বা ইনভয়েসের বাকি কমে।",
+          image: {
+            id: "sales-cheques-2",
+            caption: "“Mark cleared” জানালা: “Cleared on” ও “Deposited in”",
+          },
+        },
+        {
+          text: "চেক ফেরত এলে “Mark bounced” চাপুন, “Why it bounced”-এ কারণ লিখে নিশ্চিত করুন। খাতায় কিছু ওঠে না, যে টাকার জন্য চেক ছিল তা বাকিই থাকে। চেকটি “Bounced” হিসেবে তালিকায় থেকে যায়।",
+        },
+      ],
+      tips: [
+        "অপেক্ষায় থাকা চেক অর্ডারের পাতাতেও “Pending” চিহ্নসহ দেখায়।",
+        "অর্ডার ততদিনে অন্যভাবে শোধ হয়ে গেলে ক্লিয়ার হওয়া চেকের টাকা ক্রেতার হিসাবে যায়: আগে পুরনো বকেয়া শোধ হয়, বাকিটা advance balance হিসেবে জমা থাকে।",
+        "চেকের ছবি রাখতে কার্ডে “Add a proof photo” চাপুন।",
+      ],
+    },
+    {
+      slug: "sales-use-credit",
+      title: "ক্রেতার জমা টাকা (Credit) নতুন বিলে লাগাবেন যেভাবে",
+      summary:
+        "ক্রেতার advance balance বা জমা থাকা টাকা পুরোটা বা অল্প করে কোনো ইনভয়েস হওয়া অর্ডারের বিলে লাগানো।",
+      keywords: [
+        "use credit",
+        "credit",
+        "advance balance",
+        "credit balance",
+        "return credit",
+        "adjust",
+        "জমা টাকা",
+        "ক্রেডিট",
+        "অগ্রিম",
+        "সমন্বয়",
+      ],
+      routes: ["/sales/orders"],
+      who: "শুধু Accounts ও Super Admin (টাকা গ্রহণের অনুমতি)।",
+      anyOf: ["accounts.receipts.record"],
+      steps: [
+        {
+          text: "ক্রেতার জমা টাকা আসে বাড়তি পেমেন্ট, ক্রেতার হিসাবে নেওয়া টাকা বা “Kept as credit” রিফান্ড থেকে। নতুন অর্ডারের শেষ ধাপে “Use credit balance (…)” ঘরে কতটা লাগাবেন লিখুন (বন্ধনীতে কত জমা আছে লেখা থাকে)।",
+        },
+        {
+          text: "আগের ইনভয়েস হওয়া কোনো অর্ডারে লাগাতে অর্ডারের পাতা খুলে উপরের মেনু (তিন বিন্দু) থেকে “Use credit” চাপুন। কত লাগাবেন লিখে “Use the credit” চাপুন। কত জমা বাকি রইল তা বার্তায় দেখাবে।",
+          image: {
+            id: "sales-use-credit-1",
+            caption: "অর্ডারের মেনুতে “Use credit” ও টাকার ঘর",
+          },
+        },
+        {
+          text: "অর্ডারের “Payments” অংশে ও ইনভয়েসে লাগানো টাকা “Credit used” হিসেবে দেখায়, আর বাকি সেই পরিমাণ কমে যায়।",
+        },
+      ],
+      tips: [
+        "জমা টাকা লাগানোয় নতুন মানি রিসিট বা হিসাবের এন্ট্রি হয় না; টাকা তো আগেই এসেছে, শুধু কোন বিলে গেল তা লেখা থাকে।",
+        "ইনভয়েস বাতিল (Void) করলে লাগানো জমা টাকা আবার ক্রেতার হিসাবে ফিরে যায়।",
+        "খুচরা (walk-in) ক্রেতার জমা হিসাব থাকে না।",
+      ],
+    },
+    {
+      slug: "sales-previous-due",
+      title: "ইনভয়েসে ক্রেতার আগের বকেয়া (Previous due) দেখাবেন যেভাবে",
+      summary:
+        "নতুন ইনভয়েসে ক্রেতার আগের বকেয়া ও “Total payable” ছাপা, যাতে ক্রেতা এক কাগজে মোট দেনা দেখেন; বিক্রি দুবার গোনা হয় না।",
+      keywords: [
+        "previous due",
+        "total payable",
+        "old due",
+        "balance due",
+        "আগের বকেয়া",
+        "পুরনো বাকি",
+        "মোট দেনা",
+        "বকেয়া",
+      ],
+      routes: ["/sales/orders", "/sales/invoices"],
+      who: "যাঁরা ক্রেতার হিসাব দেখতে পারেন বা টাকা নিতে পারেন, এবং ইনভয়েস দিতে পারেন।",
+      anyOf: ["parties.view", "accounts.receipts.record"],
+      steps: [
+        {
+          text: "নতুন অর্ডারের শেষ ধাপে “Issue the invoice” টিক দেওয়া থাকলে, ক্রেতার আগের বকেয়া থাকলে “Include previous due (…)” টিক দিন।",
+        },
+        {
+          text: "পরে ইনভয়েস দিলে অর্ডারের পাতায় “Issue the invoice” চাপুন। জানালায় “Include the previous due of …” টিক দিয়ে নিশ্চিত করুন।",
+          image: {
+            id: "sales-previous-due-1",
+            caption: "“Issue the invoice” জানালায় “Include the previous due of …” টিক",
+          },
+        },
+        {
+          text: "ইনভয়েসে ও তার PDF-এ “Previous due”, “Total payable” (আগের বকেয়া + এই বিল), “Paid” ও “Balance due” ছাপা হয়। সঙ্গে টাকা নিলে বাড়তি অংশ আগে পুরনো বকেয়া শোধ করে।",
+        },
+      ],
+      tips: [
+        "আগের বকেয়া শুধু দেখানোর জন্য: বিক্রির হিসাবে শুধু এই অর্ডারের টাকাই ওঠে, আগের ইনভয়েস আবার গোনা হয় না।",
+        "আগের বকেয়া মানে ইনভয়েস দেওয়ার মুহূর্তে ক্রেতার নিট বাকি, জমা টাকা বাদ দিয়ে। পরে বদলায় না।",
+        "একই বিলে জমা টাকা (“Use credit balance”) ব্যবহার করলে সেই অঙ্কটুকু আগের বকেয়ায় ফিরে যোগ হয় আর “Credit used” লাইনে পরিশোধ হিসেবে দেখায়। তাই টিকের পাশের অঙ্কও ততটা বাড়ে, কিন্তু শেষ “Balance due” একই থাকে।",
+      ],
+    },
+    {
+      slug: "sales-payment-proof",
+      title: "পেমেন্ট বা চেকের ছবি (Proof) রাখবেন ও দেখবেন যেভাবে",
+      summary:
+        "টাকা পাঠানোর স্ক্রিনশট বা চেকের ছবি পেমেন্টের সঙ্গে রাখা। ছবি পাঠানোর আগেই ফোন বা কম্পিউটারে প্রায় 100 KB-তে ছোট হয়, তাই সার্ভারে জায়গা কম লাগে।",
+      keywords: [
+        "proof",
+        "payment proof",
+        "screenshot",
+        "photo",
+        "cheque photo",
+        "attachment",
+        "ছবি",
+        "প্রমাণ",
+        "স্ক্রিনশট",
+        "রসিদের ছবি",
+      ],
+      routes: ["/sales/payments"],
+      who: "ছবি দেখতে পারেন যাঁরা Sales বা হিসাব দেখতে পারেন। ছবি যোগ বা বদলানো শুধু Accounts ও Super Admin পারেন।",
+      steps: [
+        {
+          text: "টাকা নেওয়ার সময় (“Receive a payment” বা নতুন অর্ডারের “Payment received now”) “Proof photo (optional)” অংশে ছবি টেনে আনুন বা “Drop a photo here, or tap to choose” চেপে বেছে নিন। মোবাইলে ক্যামেরা দিয়ে সরাসরি তোলা যায়।",
+          image: {
+            id: "sales-payment-proof-1",
+            caption: "ছবি দেওয়ার ঘর ও ছোট করার পরে “Made smaller: … → …” লেখা",
+          },
+        },
+        {
+          text: "ছবিটি নিজে থেকেই ছোট হয়, নিচে লেখা থাকে কত ছিল আর কত হলো (যেমন Made smaller: 3.2 MB → 96 KB)। ভুল ছবি হলে পাশের ক্রস চেপে সরিয়ে দিন।",
+        },
+        {
+          text: "পরে ছবি দিতে মানি রিসিটের পাতায় “Proof” অংশে বা চেকের কার্ডে “Add a proof photo” চাপুন, ছবি দিয়ে “Save the photo” চাপুন। আগে ছবি থাকলে বোতামটি “Replace the proof”।",
+        },
+        {
+          text: "ছবি দেখতে ছোট ছবিটিতে চাপুন: বড় করে খুলবে। “Open in a new tab” চাপলে আলাদা ট্যাবে খোলে।",
+          image: {
+            id: "sales-payment-proof-2",
+            caption: "মানি রিসিটের “Proof” অংশে ছোট ছবি ও বড় করে দেখা",
+          },
+        },
+      ],
+      tips: [
+        "শুধু ছবি (JPG, PNG বা WebP) বা স্ক্রিনশট দেওয়া যায়। PDF হলে তার স্ক্রিনশট নিন।",
+        "টাকা রেকর্ড না করে শুধু ছবি তুলে রাখলে তা পরদিন নিজে থেকেই মুছে যায়।",
       ],
     },
   ],

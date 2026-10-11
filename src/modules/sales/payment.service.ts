@@ -21,6 +21,15 @@ import {
   refreshOrderPayments,
   refreshProformaPayments,
 } from "@/modules/sales/posting";
+import { oldestFirst } from "@/modules/sales/allocation";
+import {
+  allocateTx,
+  type AllocationRequest,
+  creditPosition,
+  lockBuyerCredit,
+  openDuesOf,
+} from "@/modules/sales/credit.service";
+import { assertProofFile } from "@/modules/sales/proof.service";
 import { canReceiveOnOrder, canReceiveOnProforma } from "@/modules/sales/rules";
 import { listPaymentsSchema, receivePaymentSchema } from "@/modules/sales/schemas";
 import { money } from "@/modules/sales/totals";
@@ -45,6 +54,12 @@ export function assertCanRecordReceipts(ctx: CompanyContext) {
  * Records money received from a buyer (inside a transaction) and posts it:
  * against an order or proforma before invoicing it is an advance; after
  * invoicing, or on account, it reduces the receivable.
+ *
+ * Money on account can pay the buyer's invoices straight away (`allocations`,
+ * or `oldestFirst`); what is left stays on their account as advance balance.
+ * Money above an invoiced order's due (`extra`) is taken on the buyer's
+ * account the same way: the order is paid in full first, then their older
+ * dues when asked, and the rest is kept as advance balance.
  */
 export async function receivePaymentTx(
   tx: Tx,
@@ -59,24 +74,56 @@ export async function receivePaymentTx(
   let isAdvance = false;
   let label: string;
   let proformaToCheck: { id: string } | null = null;
+  // Where the money goes: an order or proforma, or the buyer's account (null).
+  let orderId = input.orderId ?? null;
+  let invoiceId: string | null = null;
+  let allocations: AllocationRequest[] | null = null;
+  if (input.proofFileId) await assertProofFile(ctx, tx, input.proofFileId);
 
   if (input.orderId) {
+    if (input.extra) {
+      // The extra goes on the buyer's account: their credit is held before the order.
+      const peek = await tx.salesOrder.findFirst({
+        where: { id: input.orderId, companyId },
+        select: { partyId: true },
+      });
+      if (peek?.partyId) await lockBuyerCredit(tx, peek.partyId);
+    }
     await lockRow(tx, "SalesOrder", input.orderId);
     const order = await tx.salesOrder.findFirst({
       where: { id: input.orderId, companyId },
-      include: { invoice: { select: { status: true } } },
+      include: {
+        invoice: { select: { id: true, status: true } },
+        party: { select: { code: true } },
+      },
     });
     if (!order) throw new AppError("NOT_FOUND", "Order not found.");
     assertAllowed(canReceiveOnOrder(order));
-    if (amount.gt(order.total.minus(order.paidAmount))) {
-      throw new AppError(
-        "VALIDATION",
-        `Only ${order.total.minus(order.paidAmount).toFixed(2)} is due on ${order.number}.`,
-      );
-    }
+    const due = order.total.minus(order.paidAmount);
+    const invoice = order.invoice && order.invoice.status !== "VOID" ? order.invoice : null;
     partyId = order.partyId;
-    isAdvance = !order.invoice || order.invoice.status === "VOID";
+    isAdvance = !invoice;
     label = order.number;
+    if (amount.gt(due)) {
+      if (!input.extra || !order.partyId || !invoice) {
+        throw new AppError("VALIDATION", `Only ${due.toFixed(2)} is due on ${order.number}.`);
+      }
+      // On the buyer's account: this order first, then (when asked) their older dues.
+      const older =
+        input.extra === "OLDER_DUES"
+          ? oldestFirst(
+              (await openDuesOf(tx, companyId, order.partyId, order.id)).map((d) => ({
+                orderId: d.orderId,
+                due: d.dueAmount.toFixed(2),
+              })),
+              Number(amount.minus(due).toFixed(2)),
+            )
+          : [];
+      allocations = [{ orderId: order.id, amount: due }, ...older];
+      orderId = null;
+      invoiceId = invoice.id;
+      label = `on account (${order.party?.code ?? ""}), ${order.number} paid in full`;
+    }
   } else if (input.proformaId) {
     await lockRow(tx, "ProformaInvoice", input.proformaId);
     const proforma = await tx.proformaInvoice.findFirst({
@@ -102,7 +149,28 @@ export async function receivePaymentTx(
     assertNotWalkIn(party, "Take a walk-in customer's payment against their order.");
     partyId = party.id;
     label = `on account (${party.code})`;
+    if (input.allocations?.length || input.oldestFirst) {
+      await lockBuyerCredit(tx, party.id);
+      allocations =
+        input.allocations ??
+        oldestFirst(
+          (await openDuesOf(tx, companyId, party.id)).map((d) => ({
+            orderId: d.orderId,
+            due: d.dueAmount.toFixed(2),
+          })),
+          Number(amount.toFixed(2)),
+        );
+    }
   }
+
+  // On the buyer's account: what they owed beyond their invoices (an opening balance),
+  // read before this money is posted. What pays no invoice settles that first.
+  const owedBeyondInvoices =
+    !orderId && !input.proformaId && partyId
+      ? await creditPosition(tx, companyId, partyId).then((p) =>
+          Prisma.Decimal.max(p.balance.minus(p.openDues), 0),
+        )
+      : null;
 
   const accounts = await ensureControlAccounts(companyId, tx);
   const debitAccount = await cashAccountFor(tx, companyId, input.method, input.accountId);
@@ -117,11 +185,13 @@ export async function receivePaymentTx(
       amount,
       paymentDate,
       accountId: debitAccount,
-      orderId: input.orderId ?? null,
+      orderId,
+      invoiceId,
       proformaId: input.proformaId ?? null,
       reference: input.reference ?? null,
       isAdvance,
       notes: input.notes ?? null,
+      proofFileId: input.proofFileId ?? null,
     },
   });
   const entry = await postJournalEntry(tx, {
@@ -141,9 +211,27 @@ export async function receivePaymentTx(
       },
     ],
   });
-  await tx.payment.update({ where: { id: payment.id }, data: { journalEntryId: entry.id } });
-
-  if (input.orderId) await refreshOrderPayments(tx, input.orderId);
+  if (orderId) await refreshOrderPayments(tx, orderId);
+  const allocated =
+    allocations && partyId
+      ? await allocateTx(tx, ctx, {
+          partyId,
+          paymentId: payment.id,
+          items: allocations,
+          limit: amount,
+        })
+      : [];
+  const allocatedTotal = allocated.reduce((s, a) => s.plus(a.amount), money(0));
+  // On the buyer's account, what pays no invoice and no earlier balance is kept as their
+  // advance balance (kept on the receipt, which prints it).
+  const advanceKept =
+    owedBeyondInvoices === null
+      ? null
+      : Prisma.Decimal.max(amount.minus(allocatedTotal).minus(owedBeyondInvoices), 0);
+  await tx.payment.update({
+    where: { id: payment.id },
+    data: { journalEntryId: entry.id, advanceKept },
+  });
 
   let productionProject: { id: string; code: string } | null = null;
   if (proformaToCheck) {
@@ -158,11 +246,20 @@ export async function receivePaymentTx(
       action: "CREATE",
       entityType: "Payment",
       entityId: payment.id,
-      summary: `Received ${amount.toFixed(2)} (${input.method}) ${payment.number} — ${label}`,
+      summary: `Received ${amount.toFixed(2)} (${input.method}) ${payment.number} — ${label}${
+        allocated.length > 0
+          ? `; paid ${allocated.map((a) => `${a.number} ${a.amount.toFixed(2)}`).join(", ")}`
+          : ""
+      }${advanceKept?.gt(0) ? `; ${advanceKept.toFixed(2)} kept as advance balance` : ""}`,
     },
     tx,
   );
-  return { payment: { ...payment, journalEntryId: entry.id }, productionProject };
+  return {
+    payment: { ...payment, journalEntryId: entry.id, advanceKept },
+    productionProject,
+    allocated: allocated.map((a) => ({ ...a, amount: a.amount.toFixed(2) })),
+    advanceKept: (advanceKept ?? money(0)).toFixed(2),
+  };
 }
 
 /**
@@ -273,6 +370,17 @@ export async function getPaymentReceipt(ctx: CompanyContext, paymentId: string) 
           advancePaid: true,
         },
       },
+      // Money on account that paid invoices straight away (released: their invoice was voided).
+      allocations: {
+        select: {
+          amount: true,
+          releasedAt: true,
+          order: { select: { id: true, number: true } },
+          invoice: { select: { id: true, number: true } },
+        },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      },
+      cheque: { select: { id: true, chequeNo: true, bankName: true, chequeDate: true } },
     },
   });
   if (!payment) throw new AppError("NOT_FOUND", "Payment not found.");
@@ -309,5 +417,34 @@ export async function getPaymentReceipt(ctx: CompanyContext, paymentId: string) 
     refundedToDate = money(refunded._sum.amount ?? 0);
     receivedToDate = money(agg._sum.amount ?? 0).minus(refundedToDate);
   }
-  return { ...payment, receivedToDate, refundedToDate, letterhead: await letterhead(ctx) };
+  return {
+    ...payment,
+    receivedToDate,
+    refundedToDate,
+    /** Money on the buyer's account: what it paid besides invoices, and what it left. */
+    onAccount: accountSplit(payment),
+    letterhead: await letterhead(ctx),
+  };
+}
+
+/**
+ * Money on a buyer's account, as its receipt shows it: what paid their earlier balance
+ * (owed beyond their invoices) and what is kept as advance balance, with the credit voided
+ * invoices gave back. Null when the receipt does not say: money on an order or proforma,
+ * or recorded before this was kept.
+ */
+function accountSplit(p: {
+  amount: Prisma.Decimal;
+  advanceKept: Prisma.Decimal | null;
+  allocations: Array<{ amount: Prisma.Decimal; releasedAt: Date | null }>;
+}) {
+  if (p.advanceKept === null) return null;
+  const allocated = p.allocations.reduce((sum, a) => sum.plus(a.amount), money(0));
+  const released = p.allocations
+    .filter((a) => a.releasedAt !== null)
+    .reduce((sum, a) => sum.plus(a.amount), money(0));
+  return {
+    towardEarlier: Prisma.Decimal.max(p.amount.minus(allocated).minus(p.advanceKept), 0),
+    kept: p.advanceKept.plus(released),
+  };
 }

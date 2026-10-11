@@ -12,13 +12,15 @@ import {
   PencilIcon,
   TruckIcon,
   Undo2Icon,
+  WalletIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { FormAlert, Field } from "@/components/forms/field";
-import { textOf } from "@/components/products/form-values";
+import { AMOUNT_HINT, readAmount, textOf } from "@/components/products/form-values";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -32,6 +34,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import type { OrderScreen } from "@/modules/sales/screens.service";
 import {
+  applyCreditAction,
   cancelOrderAction,
   createDeliveryChallanAction,
   createPackingListAction,
@@ -46,15 +49,16 @@ import {
   problem,
   readReason,
   ReasonField,
-  ReceivePaymentDialog,
   RefundDialog,
   readSettle,
   SettleFields,
 } from "./dialogs";
+import { ReceivePaymentDialog } from "./receive-payment-dialog";
 import { isZero, money, salesHref } from "./labels";
 
 type Open =
   | "receive"
+  | "credit"
   | "invoice"
   | "challan"
   | "packing"
@@ -108,6 +112,7 @@ export function OrderActions({
   if (can.logistics) menu.push({ key: "logistics", label: "Cartons and packer", icon: BoxesIcon });
   if (can.voidInvoice)
     menu.push({ key: "voidInvoice", label: "Void the invoice", icon: FileXIcon });
+  if (can.useCredit) menu.push({ key: "credit", label: "Use credit", icon: WalletIcon });
   if (refund) menu.push({ key: "refund", label: "Refund money paid", icon: Undo2Icon });
   const hasMenu = menu.length > 0 || can.cancel;
   const lines = o.styles.flatMap((s) =>
@@ -216,6 +221,7 @@ export function OrderActions({
         <ReceivePaymentDialog
           target={{ orderId: o.id, label: o.number }}
           due={o.due}
+          extraAllowed={can.receiveExtra}
           currency={currency}
           today={today}
           onDone={done}
@@ -250,6 +256,7 @@ export function OrderActions({
             const result = await issueInvoiceAction(o.id, {
               ...(issueDate && issueDate !== today ? { issueDate } : {}),
               ...(dueDate ? { dueDate } : {}),
+              ...(textOf(form, "includePreviousDue") ? { includePreviousDue: true } : {}),
             });
             if (!result.ok) return result.error;
             done(`Invoice ${result.data.number} was issued.`);
@@ -282,7 +289,76 @@ export function OrderActions({
                   }
                 />
               </Field>
+              {screen.buyerMoney && !isZero(screen.buyerMoney.previousDue) && (
+                <div className="flex items-start gap-3 sm:col-span-2">
+                  <Checkbox
+                    id="invoice-previous-due"
+                    name="includePreviousDue"
+                    className="mt-0.5"
+                    aria-describedby="invoice-previous-due-hint"
+                  />
+                  <div className="grid gap-0.5">
+                    <label htmlFor="invoice-previous-due" className="text-sm font-medium">
+                      Include the previous due of {money(screen.buyerMoney.previousDue, currency)}
+                    </label>
+                    <p
+                      id="invoice-previous-due-hint"
+                      className="text-[0.8125rem] leading-snug text-muted-foreground"
+                    >
+                      The invoice also shows what the buyer already owed and the total payable. Only
+                      this order counts as a sale.
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
+          )}
+        </FormDialog>
+      )}
+      {open === "credit" && screen.buyerMoney && (
+        <FormDialog
+          title={`Use credit on ${o.number}?`}
+          description={`${o.buyer?.name ?? "The buyer"} has ${money(screen.buyerMoney.credit, currency)} of credit (advance balance). Put some of it against this order's invoice. Voiding the invoice gives it back.`}
+          submitLabel="Use the credit"
+          pendingLabel="Using it"
+          errorTitle="We could not use the credit"
+          onClose={close}
+          onSubmit={async (form) => {
+            const most = Math.min(Number(screen.buyerMoney!.credit), Number(o.due));
+            const amount = readAmount(textOf(form, "amount"));
+            if (amount === "invalid") return problem({ amount: AMOUNT_HINT });
+            if (amount === null || amount <= 0) return problem({ amount: "Enter the amount." });
+            if (amount > most + 0.001) return problem({ amount: `At most ${most.toFixed(2)}.` });
+            const result = await applyCreditAction(o.id, { amount });
+            if (!result.ok) return result.error;
+            done(
+              `${money(result.data.amount, currency)} of credit now pays ${result.data.number}. ${money(result.data.creditLeft, currency)} of credit is left.`,
+            );
+          }}
+        >
+          {(fieldError) => (
+            <Field
+              id="credit-amount"
+              label={`Amount (${currency})`}
+              hint={`At most ${money(
+                Math.min(Number(screen.buyerMoney!.credit), Number(o.due)).toFixed(2),
+                currency,
+              )}: the credit, or what is due.`}
+              error={fieldError("amount")}
+            >
+              <Input
+                id="credit-amount"
+                name="amount"
+                inputMode="decimal"
+                defaultValue={Math.min(Number(screen.buyerMoney!.credit), Number(o.due)).toFixed(2)}
+                autoComplete="off"
+                autoFocus
+                aria-invalid={Boolean(fieldError("amount"))}
+                aria-describedby={
+                  fieldError("amount") ? "credit-amount-error" : "credit-amount-hint"
+                }
+              />
+            </Field>
           )}
         </FormDialog>
       )}

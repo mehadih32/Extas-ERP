@@ -8,6 +8,7 @@ import { BackLink } from "@/components/settings/back-link";
 import { Fact, Panel, RecordHeader } from "@/components/sales/detail-bits";
 import { METHOD_LABELS, money, salesHref } from "@/components/sales/labels";
 import { SalesNoAccess } from "@/components/sales/no-access";
+import { ProofAttach, ProofView } from "@/components/sales/proof";
 import { formatDay } from "@/lib/display";
 import { getPaymentScreenAction } from "@/server/actions/sales.actions";
 import { requireCompanyPage } from "@/server/pages/guards";
@@ -16,8 +17,10 @@ export const metadata: Metadata = { title: "Money receipt" };
 
 /**
  * One money receipt (sales.view, like GET /api/sales/payments/:id/receipt):
- * who paid, how much and how, what it was paid against, and the receipt PDF.
- * A receipt is not changed once recorded; a mistake is put right with a refund.
+ * who paid, how much and how, what it was paid against (on account: the
+ * invoices it paid and what was kept as advance balance), its proof photo and
+ * the receipt PDF. A receipt is not changed once recorded (a proof photo can be
+ * added); a mistake is put right with a refund.
  */
 export default async function PaymentPage({ params }: { params: Promise<{ paymentId: string }> }) {
   const ctx = await requireCompanyPage();
@@ -72,6 +75,14 @@ export default async function PaymentPage({ params }: { params: Promise<{ paymen
                 {p.reference}
               </Fact>
             )}
+            {p.cheque && (
+              <Fact label="Cheque" className="col-span-2">
+                {[p.cheque.chequeNo, p.cheque.bankName, `dated ${formatDay(p.cheque.chequeDate)}`]
+                  .filter(Boolean)
+                  .join(" · ")}{" "}
+                · cleared
+              </Fact>
+            )}
             {p.notes && (
               <Fact label="Notes" className="col-span-2">
                 <span className="whitespace-pre-line">{p.notes}</span>
@@ -119,8 +130,39 @@ export default async function PaymentPage({ params }: { params: Promise<{ paymen
                 </Link>{" "}
                 · {money(p.order.due, currency)} still due of {money(p.order.total, currency)}
               </Fact>
+            ) : p.allocations.length > 0 ? (
+              <Fact label="Invoices paid">
+                <ul className="grid gap-1">
+                  {p.allocations.map((a) => (
+                    <li
+                      key={`${a.orderId}:${a.invoiceNumber}`}
+                      className="flex justify-between gap-4 tabular-nums"
+                    >
+                      <span className={a.released ? "text-muted-foreground line-through" : ""}>
+                        <Link
+                          href={salesHref.order(a.orderId)}
+                          className="text-primary underline-offset-4 hover:underline"
+                        >
+                          {a.invoiceNumber}
+                        </Link>{" "}
+                        · {a.orderNumber}
+                        {a.released ? " (invoice voided)" : ""}
+                      </span>
+                      <span className={a.released ? "text-muted-foreground line-through" : ""}>
+                        {money(a.amount, currency)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </Fact>
             ) : (
               <Fact label="On account">Towards what the buyer owes, not one order.</Fact>
+            )}
+            {p.towardEarlier && (
+              <Fact label="Paid the earlier balance">{money(p.towardEarlier, currency)}</Fact>
+            )}
+            {p.advanceKept && p.advanceKept !== "0.00" && (
+              <Fact label="Kept as advance balance">{money(p.advanceKept, currency)}</Fact>
             )}
             {p.receivedToDate && (
               <Fact label="Received on it so far">{money(p.receivedToDate, currency)}</Fact>
@@ -130,6 +172,20 @@ export default async function PaymentPage({ params }: { params: Promise<{ paymen
             )}
           </dl>
         </Panel>
+        {(p.proofFileId || can.addProof) && (
+          <Panel title="Proof" id="proof-heading">
+            <div className="mt-4 flex flex-wrap items-center gap-4">
+              {p.proofFileId ? (
+                <ProofView fileId={p.proofFileId} label={`Proof of ${p.number}`} />
+              ) : (
+                <p className="text-sm text-muted-foreground">No photo of the proof yet.</p>
+              )}
+              {can.addProof && (
+                <ProofAttach target={{ paymentId: p.id }} hasProof={Boolean(p.proofFileId)} />
+              )}
+            </div>
+          </Panel>
+        )}
       </div>
     </div>
   );

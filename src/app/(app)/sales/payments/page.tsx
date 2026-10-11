@@ -39,7 +39,8 @@ export default async function PaymentsPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const ctx = await requireCompanyPage();
-  const view = paymentViewFrom(await searchParams);
+  const params = await searchParams;
+  const view = paymentViewFrom(params);
   const currency = ctx.company.currency;
   const query = paymentListQuery(view);
   const today = localDay(new Date(), ctx.company.timezone);
@@ -74,7 +75,9 @@ export default async function PaymentsPage({
             money refunded to them.
           </p>
         </div>
-        {canReceive && <ReceiveOnAccount currency={currency} today={today} />}
+        {canReceive && (
+          <ReceiveOnAccount currency={currency} today={today} startOpen={params.receive === "1"} />
+        )}
       </div>
 
       {dashboard.ok && <PaymentFigures dashboard={dashboard.data} currency={currency} />}

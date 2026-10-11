@@ -44,3 +44,35 @@ export function InsightsSkeleton() {
     </div>
   );
 }
+
+export function SalesTargetSkeleton() {
+  return (
+    <div aria-hidden className="rounded-lg border bg-card p-6">
+      <Skeleton className="h-3 w-40" />
+      <Skeleton className="mt-2 h-3 w-24" />
+      <Skeleton className="mt-5 h-8 w-32" />
+      <Skeleton className="mt-4 h-3 w-full rounded-full" />
+      <Skeleton className="mt-4 h-3 w-64" />
+    </div>
+  );
+}
+
+export function PulseSkeleton() {
+  return (
+    <div aria-hidden>
+      <Skeleton className="h-7 w-36" />
+      <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {[1, 2, 3].map((card) => (
+          <div key={card} className="rounded-lg border bg-card p-5">
+            <Skeleton className="h-3 w-32" />
+            <div className="mt-5 grid grid-cols-2 gap-4">
+              <Skeleton className="h-7 w-24" />
+              <Skeleton className="h-7 w-24" />
+            </div>
+            <Skeleton className="mt-3 h-3 w-4/5" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}

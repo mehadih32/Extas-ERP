@@ -1,3 +1,4 @@
+import { Amount, ScopeEye } from "@/components/accounts/privacy";
 import { Badge } from "@/components/ui/badge";
 import {
   Table,
@@ -34,6 +35,10 @@ type Product = {
 
 const DASH = "—";
 
+/** Sales values, costs and margins wait behind the eye (privacy.tsx). */
+const SCOPE = "insights";
+const hide = (value: React.ReactNode) => <Amount scope={SCOPE}>{value}</Amount>;
+
 function ProductCell({ product, skus }: { product: Product; skus?: number }) {
   const variant = [product.colorName, product.sizeName].filter(Boolean).join(" / ");
   const detail = product.sku
@@ -64,7 +69,7 @@ function Empty({ title, children }: { title: string; children?: React.ReactNode 
   );
 }
 
-function Summary({ items }: { items: Array<[label: string, value: string]> }) {
+function Summary({ items }: { items: Array<[label: string, value: React.ReactNode]> }) {
   return (
     <dl className="flex flex-wrap gap-x-8 gap-y-3">
       {items.map(([label, value]) => (
@@ -89,10 +94,10 @@ function TopSellersPanel({
   const top = data.topSellers;
   const currency = data.currency;
   const count = (n: number) => formatCount(n, currency);
-  const money = (v: string | null) => (v === null ? DASH : groupAmount(v, currency));
+  const money = (v: string | null) => (v === null ? DASH : hide(groupAmount(v, currency)));
   const bySku = top.groupBy === "SKU";
 
-  const summary: Array<[string, string]> = [
+  const summary: Array<[string, React.ReactNode]> = [
     ["Pieces sold", count(top.totals.pieces)],
     [bySku ? "SKUs sold" : "Styles sold", count(top.totals.sold)],
   ];
@@ -100,7 +105,7 @@ function TopSellersPanel({
     summary.push([`Net sales (${currency})`, money(top.totals.net)]);
   }
   if (columns.financials && top.totals.marginPct !== null) {
-    summary.push(["Margin", `${top.totals.marginPct}%`]);
+    summary.push(["Margin", hide(`${top.totals.marginPct}%`)]);
   }
 
   return (
@@ -136,7 +141,7 @@ function TopSellersPanel({
                   {columns.salesAmounts && <Num>{money(item.net)}</Num>}
                   {columns.salesAmounts && <Num>{money(item.avgPrice)}</Num>}
                   {columns.financials && (
-                    <Num>{item.marginPct === null ? DASH : `${item.marginPct}%`}</Num>
+                    <Num>{item.marginPct === null ? DASH : hide(`${item.marginPct}%`)}</Num>
                   )}
                   <Num className={cn(item.available <= 0 && "text-destructive")}>
                     {count(item.available)}
@@ -180,7 +185,7 @@ function HighestStockPanel({ data, columns }: { data: InsightsData; columns: Ins
             <Num>{count(row.bGrade)}</Num>
             <Num>{count(row.reserved)}</Num>
             {columns.financials && (
-              <Num>{row.value === null ? DASH : groupAmount(row.value, currency)}</Num>
+              <Num>{row.value === null ? DASH : hide(groupAmount(row.value, currency))}</Num>
             )}
             <Num>{count(row.soldRecently)}</Num>
             <TableCell className="text-muted-foreground">
@@ -197,16 +202,14 @@ function DeadAndSlowPanel({ data, columns }: { data: InsightsData; columns: Insi
   const { dead, slow, slowDays, coverDays, items } = data.deadAndSlow;
   const currency = data.currency;
   const count = (n: number) => formatCount(n, currency);
-  const group = (g: { skus: number; pieces: number; value: string | null }) =>
-    [
-      `${count(g.skus)} ${g.skus === 1 ? "SKU" : "SKUs"}`,
-      `${count(g.pieces)} pcs`,
-      columns.financials && g.value !== null
-        ? `${currency} ${groupAmount(g.value, currency)}`
-        : null,
-    ]
-      .filter(Boolean)
-      .join(" · ");
+  const group = (g: { skus: number; pieces: number; value: string | null }) => (
+    <>
+      {`${count(g.skus)} ${g.skus === 1 ? "SKU" : "SKUs"} · ${count(g.pieces)} pcs`}
+      {columns.financials && g.value !== null && (
+        <> · {hide(`${currency} ${groupAmount(g.value, currency)}`)}</>
+      )}
+    </>
+  );
 
   return (
     <div className="grid grid-cols-1 gap-5">
@@ -254,7 +257,7 @@ function DeadAndSlowPanel({ data, columns }: { data: InsightsData; columns: Insi
                 <Num>{count(row.soldInWindow)}</Num>
                 <Num>{row.daysOfCover === null ? DASH : count(row.daysOfCover)}</Num>
                 {columns.financials && (
-                  <Num>{row.value === null ? DASH : groupAmount(row.value, currency)}</Num>
+                  <Num>{row.value === null ? DASH : hide(groupAmount(row.value, currency))}</Num>
                 )}
                 <TableCell className="text-muted-foreground">
                   {row.lastSoldOn ? formatDay(row.lastSoldOn) : "Never"}
@@ -355,9 +358,14 @@ export function Insights({
   return (
     <section aria-labelledby="insights">
       <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-1">
-        <h2 id="insights" className="font-serif text-2xl text-primary">
-          Insights
-        </h2>
+        <div className="flex items-center gap-1">
+          <h2 id="insights" className="font-serif text-2xl text-primary">
+            Insights
+          </h2>
+          {(columns.salesAmounts || columns.financials) && (
+            <ScopeEye scope={SCOPE} label="the Insights" />
+          )}
+        </div>
         <p className="text-[0.8125rem] text-muted-foreground">Stock as of {formatDay(data.asOf)}</p>
       </div>
       <InsightsTabs

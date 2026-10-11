@@ -39,3 +39,11 @@ export const preferencesSchema = z.union([
   z.object({ metric: z.enum(METRIC_CARDS), hidden: z.boolean() }),
   z.object({ hiddenMetrics: z.array(z.enum(METRIC_CARDS)).max(METRIC_CARDS.length) }),
 ]);
+
+/** The Home screen's period: today, this week (from Saturday) or this month. */
+export const HOME_RANGES = ["TODAY", "WEEK", "MONTH"] as const;
+
+export type HomeRange = (typeof HOME_RANGES)[number];
+
+/** The period the Home screen opens with. */
+export const DEFAULT_HOME_RANGE: HomeRange = "MONTH";

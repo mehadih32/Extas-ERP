@@ -134,17 +134,19 @@ export async function updateStyle(
 
 /**
  * How many records point at the style's SKUs: stock movements, orders, deliveries
- * from production and quotations. A style with any of them cannot be deleted.
+ * from production, production projects' pieces to make and quotations. A style
+ * with any of them cannot be deleted.
  */
 export async function styleHistoryCount(ctx: CompanyContext, styleId: string): Promise<number> {
   const variantFilter = { variant: { styleId } };
-  const [movements, orderItems, intakeLines, quotationItems] = await Promise.all([
+  const [movements, orderItems, intakeLines, targets, quotationItems] = await Promise.all([
     ctx.db.stockMovement.count({ where: variantFilter }),
     ctx.db.salesOrder.count({ where: { items: { some: variantFilter } } }),
     ctx.db.stockIntake.count({ where: { lines: { some: variantFilter } } }),
+    ctx.db.productionProject.count({ where: { targetLines: { some: variantFilter } } }),
     ctx.db.quotation.count({ where: { items: { some: { styleId } } } }),
   ]);
-  return movements + orderItems + intakeLines + quotationItems;
+  return movements + orderItems + intakeLines + targets + quotationItems;
 }
 
 /**

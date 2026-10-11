@@ -7,6 +7,8 @@ import { PrintDocumentButton } from "@/components/documents/print-button";
 import { UseTemplateButton } from "@/components/reports/use-template";
 import { FormAlert } from "@/components/forms/field";
 import { VerifiedBadge } from "@/components/parties/badges";
+import { productionHref } from "@/components/production/labels";
+import { StartedProjects } from "@/components/production/started-projects";
 import { BackLink } from "@/components/settings/back-link";
 import { InvoiceBadge, OrderBadge, OverrideBadge, RevisedBadge } from "@/components/sales/badges";
 import { ColorName, Fact, Panel, RecordHeader, Totals } from "@/components/sales/detail-bits";
@@ -357,6 +359,13 @@ export default async function OrderPage({
               )}
             </dl>
           </Panel>
+          <StartedProjects
+            projects={o.production}
+            startHref={
+              screen.can.startProduction ? productionHref.startFrom({ orderId: o.id }) : null
+            }
+            canOpen={screen.can.openProduction}
+          />
           <Documents
             screen={screen}
             currency={currency}

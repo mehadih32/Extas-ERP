@@ -338,6 +338,7 @@ export async function setMatrix(
             { intakeLines: { some: {} } },
             { packingListItems: { some: {} } },
             { challanItems: { some: {} } },
+            { productionTargets: { some: {} } },
           ],
         },
         select: { id: true },

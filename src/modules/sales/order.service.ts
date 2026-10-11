@@ -926,6 +926,7 @@ export async function getOrder(ctx: CompanyContext, orderId: string) {
           grade: true,
           isVerified: true,
           status: true,
+          systemRole: true,
         },
       },
       warehouse: { select: { id: true, name: true } },

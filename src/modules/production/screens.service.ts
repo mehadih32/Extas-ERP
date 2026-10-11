@@ -9,13 +9,13 @@ import type {
   StockGrade,
 } from "@prisma/client";
 
-import { addDays, localDay } from "@/lib/dates";
+import { addDays, dateOnly, localDay } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import { assertAllowed } from "@/lib/verdict";
 import type { CompanyContext } from "@/modules/auth/context";
 import { listSizes } from "@/modules/inventory/catalog.service";
-import { getStyleMatrix } from "@/modules/inventory/matrix.service";
+import { getStyleMatrix, matrixAxes } from "@/modules/inventory/matrix.service";
 import { listCategoryOptions } from "@/modules/inventory/screens.service";
 import { getDefaultWarehouse, listWarehouses } from "@/modules/inventory/stock.service";
 import { listStyles } from "@/modules/inventory/style.service";
@@ -41,6 +41,7 @@ import {
   getProductionOverview,
   getProject,
   listProjects,
+  proformaTargets,
 } from "@/modules/production/project.service";
 import {
   canAddCost,
@@ -51,14 +52,24 @@ import {
   canReceiveGoods,
   canSetStage,
   canSetStatus,
+  canStartFromOrder,
+  canStartFromProforma,
   canUndoDelivery,
   canVoidBill,
   canVoidDirectCost,
   canWriteOffOnClose,
   isDraftDelivery,
+  ORDER_OPEN_FOR_PRODUCTION,
   stageMoves,
 } from "@/modules/production/rules";
 import { projectSupplierRows } from "@/modules/production/settlement.service";
+import {
+  lessTargets,
+  sumTargets,
+  targetTotal,
+  type UnplacedReason,
+} from "@/modules/production/targets";
+import { deliveredByVariant } from "@/modules/sales/documents.service";
 import { STAGE_LABELS, STAGE_ORDER } from "@/modules/production/timeline";
 import { RECEIVE_METHODS } from "@/modules/sales/choices";
 
@@ -126,6 +137,7 @@ function presentCard(card: ProjectCard, tz: string) {
     category: card.category ? { id: card.category.id, name: card.category.name } : null,
     style: card.style ? { id: card.style.id, code: card.style.code, name: card.style.name } : null,
     proforma: card.proforma ? { id: card.proforma.id, number: card.proforma.number } : null,
+    salesOrder: card.salesOrder ? { id: card.salesOrder.id, number: card.salesOrder.number } : null,
     startOn: localDay(card.startDate, tz),
     targetOn: localDay(card.targetDate, tz),
     completedOn: card.completedAt ? localDay(card.completedAt, tz) : null,
@@ -358,7 +370,10 @@ export async function getProjectScreen(ctx: CompanyContext, projectId: string) {
   const access = productionAccess(ctx);
   const tz = ctx.company.timezone;
   const state = { code: project.code, status: project.status, stage: project.stage.key };
-  const summary = await projectCostSummary(prisma, ctx.company.id, project.id);
+  const [summary, targets] = await Promise.all([
+    projectCostSummary(prisma, ctx.company.id, project.id),
+    targetTable(ctx, project.id, project.targets),
+  ]);
   const wip = summary.wip;
   const [sheet, grades, suppliers] = access.seeCosts
     ? await Promise.all([
@@ -394,6 +409,8 @@ export async function getProjectScreen(ctx: CompanyContext, projectId: string) {
         madeOn: localDay(d.createdAt, tz),
         confirmedOn: d.confirmedAt ? localDay(d.confirmedAt, tz) : null,
       })),
+      /** The pieces to make per colour and size, with those received; null without a grid. */
+      targets,
     },
     /** The cost sheet: Production Managers and Accounts only. */
     costs:
@@ -469,10 +486,16 @@ export type ProjectScreen = Awaited<ReturnType<typeof getProjectScreen>>;
 /**
  * What the project form needs: categories, today and the usual target day for a
  * new project, or an existing project's values and which of them are locked
- * (a closed project keeps all but its name and notes; one started by a
- * proforma keeps its buyer).
+ * (a closed project keeps all but its name and notes; one started from a
+ * proforma or a sales order keeps its buyer), and the pieces to make per colour
+ * and size (`blocks`, a style each). "Start production" on an order or a
+ * proforma (`from`) fills a new project in from it (`source`).
  */
-export async function getProjectForm(ctx: CompanyContext, projectId?: string) {
+export async function getProjectForm(
+  ctx: CompanyContext,
+  projectId?: string,
+  from: { orderId?: string; proformaId?: string } = {},
+) {
   const tz = ctx.company.timezone;
   const today = localDay(new Date(), tz);
   const categories = await listCategoryOptions(ctx);
@@ -481,7 +504,16 @@ export async function getProjectForm(ctx: CompanyContext, projectId?: string) {
     defaultTargetOn: addDays(today, DEFAULT_PRODUCTION_LEAD_DAYS),
     categories: categories.map((c) => ({ id: c.id, label: c.path.join(" › ") })),
   };
-  if (!projectId) return { ...base, project: null, locked: null };
+  if (!projectId) {
+    const started = await formSource(ctx, from, base.defaultTargetOn, today);
+    return {
+      ...base,
+      project: null,
+      locked: null,
+      source: started?.source ?? null,
+      blocks: started?.blocks ?? [],
+    };
+  }
   const p = await ctx.db.productionProject.findUnique({
     where: { id: projectId },
     include: {
@@ -489,12 +521,16 @@ export async function getProjectForm(ctx: CompanyContext, projectId?: string) {
       factory: { select: { id: true, code: true, name: true } },
       buyer: { select: { id: true, code: true, name: true } },
       proforma: { select: { id: true, number: true } },
+      salesOrder: { select: { id: true, number: true } },
+      targetLines: { select: { variantId: true, quantity: true } },
     },
   });
   if (!p) throw new AppError("NOT_FOUND", "Production project not found.");
   const closed = p.status === "COMPLETED" || p.status === "CANCELLED";
   return {
     ...base,
+    source: null,
+    blocks: await formBlocks(ctx, sumTargets(p.targetLines)),
     project: {
       id: p.id,
       code: p.code,
@@ -510,12 +546,382 @@ export async function getProjectForm(ctx: CompanyContext, projectId?: string) {
       targetQuantity: p.targetQuantity,
       notes: p.notes,
       proforma: p.proforma,
+      salesOrder: p.salesOrder,
     },
-    locked: { closed, buyer: Boolean(p.proformaId) },
+    locked: { closed, buyer: Boolean(p.proformaId || p.salesOrderId) },
   };
 }
 
 export type ProjectForm = Awaited<ReturnType<typeof getProjectForm>>;
+
+/**
+ * The colours by sizes of the styles given, from one read of their SKUs: those
+ * on the style's matrix, and the ones in `keep` even if taken off it since.
+ */
+async function styleGrids(ctx: CompanyContext, styleIds: string[], keep: string[] = []) {
+  if (styleIds.length === 0) return [];
+  const [styles, variants] = await Promise.all([
+    ctx.db.style.findMany({
+      where: { id: { in: styleIds } },
+      select: { id: true, code: true, name: true, isActive: true },
+    }),
+    ctx.db.productVariant.findMany({
+      where: { styleId: { in: styleIds }, OR: [{ removedAt: null }, { id: { in: keep } }] },
+      select: {
+        id: true,
+        sku: true,
+        isActive: true,
+        styleId: true,
+        color: { select: { id: true, name: true, hexCode: true, sortOrder: true } },
+        size: { select: { id: true, name: true, sortOrder: true } },
+      },
+    }),
+  ]);
+  const byId = new Map(styles.map((style) => [style.id, style]));
+  return styleIds.flatMap((styleId): IntakeMatrix[] => {
+    const style = byId.get(styleId);
+    if (!style) return [];
+    const ofStyle = variants.filter((v) => v.styleId === styleId);
+    const { colors, sizes } = matrixAxes(ofStyle);
+    const byCell = new Map(ofStyle.map((v) => [`${v.color.id}:${v.size.id}`, v]));
+    return [
+      {
+        style,
+        sizes: sizes.map((size) => ({ id: size.id, name: size.name })),
+        rows: colors.map((color) => ({
+          color: { id: color.id, name: color.name, hexCode: color.hexCode },
+          cells: sizes.map((size) => {
+            const v = byCell.get(`${color.id}:${size.id}`);
+            return v ? { variantId: v.id, sku: v.sku, isActive: v.isActive } : null;
+          }),
+        })),
+      },
+    ];
+  });
+}
+
+/** The styles of the SKUs given, in the order their SKUs come. */
+async function stylesOf(ctx: CompanyContext, variantIds: string[]) {
+  if (variantIds.length === 0) return [];
+  const rows = await ctx.db.productVariant.findMany({
+    where: { id: { in: variantIds } },
+    select: { id: true, styleId: true },
+  });
+  const styleOf = new Map(rows.map((v) => [v.id, v.styleId]));
+  return [...new Set(variantIds.flatMap((id) => styleOf.get(id) ?? []))];
+}
+
+/** The form's grid: a block per style with its pieces per SKU. */
+async function formBlocks(ctx: CompanyContext, targets: ReadonlyMap<string, number>) {
+  const ids = [...targets.keys()];
+  const grids = await styleGrids(ctx, await stylesOf(ctx, ids), ids);
+  return grids.map((matrix) => {
+    const skus = new Set(
+      matrix.rows.flatMap((r) => r.cells.flatMap((c) => (c ? c.variantId : []))),
+    );
+    return {
+      matrix,
+      quantities: Object.fromEntries([...targets].filter(([id]) => skus.has(id))),
+    };
+  });
+}
+
+/** Why a proforma item's pieces are not on the grid, as the form says it. */
+const UNPLACED_TEXT: Record<UnplacedReason, string> = {
+  NO_STYLE: "not a style in Products",
+  NO_SKUS: "its style has no colours and sizes yet",
+  NO_COLOUR: "its colour is not one of the style's",
+  NO_SIZES: "its sizes are not the style's",
+};
+
+/**
+ * "Start production" on a sales order or a proforma: the project filled in from
+ * it (its buyer, a name, a target day, the style) and the grid of what is left
+ * to make: an order's pieces still to deliver, or a proforma's items on their
+ * SKUs, less what projects already started from it make.
+ */
+async function formSource(
+  ctx: CompanyContext,
+  from: { orderId?: string; proformaId?: string },
+  defaultTargetOn: string,
+  today: string,
+) {
+  if (from.orderId) {
+    const order = await ctx.db.salesOrder.findUnique({
+      where: { id: from.orderId },
+      select: {
+        id: true,
+        number: true,
+        status: true,
+        proformaId: true,
+        shipmentDate: true,
+        party: { select: { id: true, code: true, name: true, systemRole: true } },
+        items: { select: { variantId: true, quantity: true }, orderBy: { id: "asc" } },
+      },
+    });
+    if (!order) throw new AppError("NOT_FOUND", "Sales order not found.");
+    assertAllowed(canStartFromOrder(order, order.party ? { walkIn: isWalkIn(order.party) } : null));
+    const [delivered, others] = await Promise.all([
+      deliveredByVariant(prisma, order.id),
+      startedFrom(ctx, [
+        { salesOrderId: order.id },
+        ...(order.proformaId ? [{ proformaId: order.proformaId }] : []),
+      ]),
+    ]);
+    const due = sumTargets(order.items);
+    const left = lessTargets(lessTargets(due, delivered), others.made);
+    const shipOn = dateOnly(order.shipmentDate);
+    return sourceOf(ctx, {
+      kind: "ORDER" as const,
+      id: order.id,
+      number: order.number,
+      buyer: order.party!,
+      targetOn: shipOn && shipOn >= today ? shipOn : defaultTargetOn,
+      left,
+      unplaced: [],
+      others: others.rows,
+    });
+  }
+  if (!from.proformaId) return null;
+  const proforma = await ctx.db.proformaInvoice.findUnique({
+    where: { id: from.proformaId },
+    select: {
+      id: true,
+      number: true,
+      status: true,
+      quotationId: true,
+      party: { select: { id: true, code: true, name: true } },
+      salesOrder: { select: { number: true } },
+    },
+  });
+  if (!proforma) throw new AppError("NOT_FOUND", "Proforma invoice not found.");
+  assertAllowed(canStartFromProforma(proforma, proforma.salesOrder));
+  const [placed, others] = await Promise.all([
+    proformaTargets(prisma, ctx.company.id, proforma.quotationId),
+    startedFrom(ctx, [{ proformaId: proforma.id }]),
+  ]);
+  return sourceOf(ctx, {
+    kind: "PROFORMA" as const,
+    id: proforma.id,
+    number: proforma.number,
+    buyer: proforma.party,
+    targetOn: defaultTargetOn,
+    left: lessTargets(placed.targets, others.made),
+    unplaced: placed.unplaced.map((u) => ({ ...u, why: UNPLACED_TEXT[u.reason] })),
+    others: others.rows,
+  });
+}
+
+/**
+ * Projects already started from an order or a proforma (not cancelled), and what their grids
+ * make; `onGrid` is false for one made without colours and sizes, whose pieces the form cannot
+ * take out of the boxes.
+ */
+async function startedFrom(ctx: CompanyContext, or: Prisma.ProductionProjectWhereInput[]) {
+  const rows = await ctx.db.productionProject.findMany({
+    where: { status: { not: "CANCELLED" }, OR: or },
+    select: {
+      id: true,
+      code: true,
+      targetQuantity: true,
+      targetLines: { select: { variantId: true, quantity: true } },
+    },
+    orderBy: [{ startDate: "asc" }, { id: "asc" }],
+  });
+  return {
+    made: sumTargets(rows.flatMap((r) => r.targetLines)),
+    rows: rows.map((r) => ({
+      id: r.id,
+      code: r.code,
+      pieces: r.targetQuantity,
+      onGrid: r.targetLines.length > 0,
+    })),
+  };
+}
+
+async function sourceOf(
+  ctx: CompanyContext,
+  s: {
+    kind: "ORDER" | "PROFORMA";
+    id: string;
+    number: string;
+    buyer: { id: string; code: string; name: string };
+    targetOn: string;
+    left: ReadonlyMap<string, number>;
+    unplaced: Array<{ description: string; quantity: number; styleId: string | null; why: string }>;
+    others: Array<{ id: string; code: string; pieces: number; onGrid: boolean }>;
+  },
+) {
+  const blocks = await formBlocks(ctx, s.left);
+  // The style the grid starts with, else that of an item left off it (to fill in by hand).
+  const firstId = blocks[0]?.matrix.style.id ?? s.unplaced.find((u) => u.styleId)?.styleId;
+  const style = firstId
+    ? await ctx.db.style.findUnique({
+        where: { id: firstId },
+        select: { id: true, code: true, name: true, categoryId: true },
+      })
+    : null;
+  return {
+    blocks,
+    source: {
+      kind: s.kind,
+      id: s.id,
+      number: s.number,
+      /** Whether this person opens Sales, so Cancel can go back to it. */
+      openSale: ctx.can("sales.view"),
+      buyer: { id: s.buyer.id, code: s.buyer.code, name: s.buyer.name },
+      name: `${s.buyer.name} — ${s.number}`,
+      targetOn: s.targetOn,
+      style: style ? { id: style.id, code: style.code, name: style.name } : null,
+      categoryId: style?.categoryId ?? null,
+      pieces: targetTotal(s.left),
+      /** Proforma items whose pieces could not go on the grid, and why. */
+      unplaced: s.unplaced,
+      /** Projects already started from it; the grid leaves out what those `onGrid` make. */
+      others: s.others,
+    },
+  };
+}
+
+/**
+ * Open sales orders and proformas a new project can start from, newest first, by number or
+ * buyer: a named buyer's order not yet packed, or a proforma not yet an order nor cancelled (as
+ * canStartFromOrder and canStartFromProforma allow). Numbers, buyers and pieces only, no
+ * prices, for Production Managers, who start projects but do not open Sales.
+ */
+export async function findSalesToStart(ctx: CompanyContext, query: { search?: string } = {}) {
+  const search = (query.search ?? "").trim().slice(0, 100);
+  const matches = search
+    ? {
+        OR: [
+          { number: { contains: search, mode: "insensitive" as const } },
+          { party: { is: { name: { contains: search, mode: "insensitive" as const } } } },
+        ],
+      }
+    : {};
+  const [orders, proformas] = await Promise.all([
+    ctx.db.salesOrder.findMany({
+      where: {
+        status: { in: [...ORDER_OPEN_FOR_PRODUCTION] },
+        party: { is: { systemRole: null } },
+        ...matches,
+      },
+      select: {
+        id: true,
+        number: true,
+        status: true,
+        createdAt: true,
+        party: { select: { name: true } },
+        items: { select: { quantity: true } },
+      },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: 10,
+    }),
+    ctx.db.proformaInvoice.findMany({
+      where: { status: { notIn: ["CANCELLED", "CONVERTED"] }, ...matches },
+      select: {
+        id: true,
+        number: true,
+        status: true,
+        createdAt: true,
+        party: { select: { name: true } },
+        quotation: { select: { items: { select: { quantity: true } } } },
+      },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: 10,
+    }),
+  ]);
+  const pieces = (items: Array<{ quantity: number }>) => items.reduce((s, i) => s + i.quantity, 0);
+  const sales = [
+    ...orders.map((o) => ({
+      at: o.createdAt.getTime(),
+      sale: {
+        kind: "ORDER" as const,
+        id: o.id,
+        number: o.number,
+        buyer: o.party?.name ?? "",
+        orderStatus: o.status,
+        proformaStatus: null,
+        pieces: pieces(o.items),
+      },
+    })),
+    ...proformas.map((p) => ({
+      at: p.createdAt.getTime(),
+      sale: {
+        kind: "PROFORMA" as const,
+        id: p.id,
+        number: p.number,
+        buyer: p.party.name,
+        orderStatus: null,
+        proformaStatus: p.status,
+        pieces: pieces(p.quotation?.items ?? []),
+      },
+    })),
+  ];
+  return sales
+    .sort((a, b) => b.at - a.at)
+    .slice(0, 12)
+    .map((s) => s.sale);
+}
+
+export type SaleToStart = Awaited<ReturnType<typeof findSalesToStart>>[number];
+
+/**
+ * The project page's grid: per style, its colours by sizes with the pieces to
+ * make and those received into stock (confirmed deliveries, A- and B-grade),
+ * keeping only the colours and sizes with either. Null without a grid.
+ */
+async function targetTable(
+  ctx: CompanyContext,
+  projectId: string,
+  lines: Array<{ variantId: string; quantity: number }>,
+) {
+  if (lines.length === 0) return null;
+  const receivedRows = await prisma.stockIntakeLine.groupBy({
+    by: ["variantId"],
+    where: { intake: { projectId, status: "CONFIRMED" } },
+    _sum: { quantity: true },
+  });
+  const target = sumTargets(lines);
+  const received = new Map(receivedRows.map((r) => [r.variantId, r._sum.quantity ?? 0]));
+  const ids = [...new Set([...target.keys(), ...received.keys()])];
+  const grids = await styleGrids(ctx, await stylesOf(ctx, ids), ids);
+  const styles = grids.map((m) => {
+    const cellOf = (variantId: string) => ({
+      target: target.get(variantId) ?? 0,
+      received: received.get(variantId) ?? 0,
+    });
+    const used = (c: { target: number; received: number }) => c.target > 0 || c.received > 0;
+    const keepSize = m.sizes.map((_, i) =>
+      m.rows.some((r) => r.cells[i] && used(cellOf(r.cells[i]!.variantId))),
+    );
+    const rows = m.rows
+      .map((row) => {
+        const cells = row.cells
+          .filter((_, i) => keepSize[i])
+          .map((c) => (c && used(cellOf(c.variantId)) ? cellOf(c.variantId) : null));
+        return {
+          color: row.color,
+          cells,
+          target: cells.reduce((s, c) => s + (c?.target ?? 0), 0),
+          received: cells.reduce((s, c) => s + (c?.received ?? 0), 0),
+        };
+      })
+      .filter((row) => row.cells.some(Boolean));
+    return {
+      style: { id: m.style.id, code: m.style.code, name: m.style.name },
+      sizes: m.sizes.filter((_, i) => keepSize[i]).map((size) => size.name),
+      rows,
+      target: rows.reduce((s, r) => s + r.target, 0),
+      received: rows.reduce((s, r) => s + r.received, 0),
+    };
+  });
+  return {
+    styles,
+    target: styles.reduce((s, x) => s + x.target, 0),
+    received: styles.reduce((s, x) => s + x.received, 0),
+  };
+}
 
 // =============================================================================
 // Pickers

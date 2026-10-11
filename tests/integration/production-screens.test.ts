@@ -340,7 +340,10 @@ run("Production screens", () => {
         await rendered(BillPage({ params: params({ billId: bill.id }), ...one })),
         `${who}: bill`,
       ).toBe(page(view && costsShown));
-      expect(await rendered(NewProjectPage()), `${who}: new project`).toBe(page(manage));
+      expect(
+        await rendered(NewProjectPage({ searchParams: params({}) })),
+        `${who}: new project`,
+      ).toBe(page(manage));
       expect(
         await rendered(EditProjectPage({ params: params({ projectId: project.id }) })),
         `${who}: edit project`,

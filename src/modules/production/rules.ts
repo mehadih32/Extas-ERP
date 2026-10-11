@@ -4,6 +4,8 @@ import {
   Prisma,
   type ProductionStage,
   type ProductionStatus,
+  type ProformaStatus,
+  type SalesOrderStatus,
 } from "@prisma/client";
 
 import { ALLOWED, refuse, type Verdict } from "@/lib/verdict";
@@ -37,17 +39,63 @@ export function canChangeProjectFields(project: ProjectState, fields: string[]):
   );
 }
 
-/** A project started by a proforma advance keeps that proforma's buyer. */
+/** A project started from a proforma or a sales order keeps that one's buyer. */
 export function canChangeProjectBuyer(
-  project: { code: string; proformaId: string | null; buyerId: string | null },
-  proformaNumber: string | undefined,
+  project: {
+    code: string;
+    proformaId: string | null;
+    salesOrderId?: string | null;
+    buyerId: string | null;
+  },
+  startedFrom: string | undefined,
   buyerId: string | null,
 ): Verdict {
-  if (!project.proformaId || buyerId === project.buyerId) return ALLOWED;
+  if ((!project.proformaId && !project.salesOrderId) || buyerId === project.buyerId) {
+    return ALLOWED;
+  }
   return refuse(
     "CONFLICT",
-    `${project.code} was started from ${proformaNumber}; its buyer cannot change.`,
+    `${project.code} was started from ${startedFrom}; its buyer cannot change.`,
   );
+}
+
+/** Orders still to be packed take production; a walk-in sale has no buyer to make for. */
+export const ORDER_OPEN_FOR_PRODUCTION: readonly SalesOrderStatus[] = [
+  "DRAFT",
+  "CONFIRMED",
+  "PROCESSING",
+];
+
+/** "Start production" on a sales order: a named buyer's order not yet packed. */
+export function canStartFromOrder(
+  order: { number: string; status: SalesOrderStatus },
+  buyer: { walkIn: boolean } | null,
+): Verdict {
+  if (!buyer || buyer.walkIn) {
+    return refuse(
+      "CONFLICT",
+      `${order.number} is a walk-in sale; start an In-House project for it instead.`,
+    );
+  }
+  if (!ORDER_OPEN_FOR_PRODUCTION.includes(order.status)) {
+    return refuse("CONFLICT", `${order.number} is ${lower(order.status)}; it needs no production.`);
+  }
+  return ALLOWED;
+}
+
+/** "Start production" on a proforma: until it becomes an order or is cancelled. */
+export function canStartFromProforma(
+  proforma: { number: string; status: ProformaStatus },
+  order: { number: string } | null = null,
+): Verdict {
+  if (proforma.status === "CANCELLED") {
+    return refuse("CONFLICT", `${proforma.number} is cancelled.`);
+  }
+  if (proforma.status === "CONVERTED") {
+    const became = order ? `became order ${order.number}` : "became an order";
+    return refuse("CONFLICT", `${proforma.number} ${became}; start production from the order.`);
+  }
+  return ALLOWED;
 }
 
 function notActiveMessage(project: ProjectState) {

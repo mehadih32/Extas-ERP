@@ -7,7 +7,8 @@ import { FormAlert } from "@/components/forms/field";
 import { BackLink } from "@/components/settings/back-link";
 import { ProformaBadge } from "@/components/sales/badges";
 import { Fact, Panel, RecordHeader, Totals } from "@/components/sales/detail-bits";
-import { STAGE_LABELS } from "@/components/production/labels";
+import { productionHref } from "@/components/production/labels";
+import { StartedProjects } from "@/components/production/started-projects";
 import { isZero, money, salesHref } from "@/components/sales/labels";
 import { MoneyRecords } from "@/components/sales/money-records";
 import { SalesNoAccess } from "@/components/sales/no-access";
@@ -206,23 +207,13 @@ export default async function ProformaPage({
               </p>
             )}
           </Panel>
-          {p.production.length > 0 && (
-            <Panel title="Production" id="production-heading">
-              <ul className="mt-4 grid gap-3">
-                {p.production.map((project) => (
-                  <li key={project.id} className="min-w-0 text-sm">
-                    <p className="font-medium break-words">
-                      {project.code} · {project.name}
-                    </p>
-                    <p className="text-[0.8125rem] text-muted-foreground">
-                      {STAGE_LABELS[project.stage]}
-                      {project.targetOn ? ` · due ${formatDay(project.targetOn)}` : ""}
-                    </p>
-                  </li>
-                ))}
-              </ul>
-            </Panel>
-          )}
+          <StartedProjects
+            projects={p.production}
+            startHref={
+              screen.can.startProduction ? productionHref.startFrom({ proformaId: p.id }) : null
+            }
+            canOpen={screen.can.openProduction}
+          />
           <Panel
             title="Buyer"
             id="buyer-heading"

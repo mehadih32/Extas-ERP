@@ -29,6 +29,7 @@ import * as orders from "@/modules/sales/order.service";
 import * as payments from "@/modules/sales/payment.service";
 import * as proformas from "@/modules/sales/proforma.service";
 import * as quotations from "@/modules/sales/quotation.service";
+import * as salesScreens from "@/modules/sales/screens.service";
 
 import { addToCompany, contextFor, makeCompany, makeUser, resetDb } from "./helpers";
 
@@ -1531,6 +1532,357 @@ run("production with sales", () => {
     expect(await cell(env, white("M"))).toMatchObject({ aGrade: 0, reserved: 0 });
     expect(await balanceOf(env, env.factory.id)).toBe("-3600.00");
     await expectBooksBalanced(env.company.id);
+  });
+});
+
+run("starting production from sales", () => {
+  beforeEach(resetDb);
+
+  it("starts production from a sales order with its colour and size grid", async () => {
+    const env = await setup();
+    const navy = (size: string) => env.sku("Navy", size);
+    const white = (size: string) => env.sku("White", size);
+    const order = await orders.createOrder(env.ctx, {
+      channel: "WHOLESALE",
+      partyId: env.buyer.id,
+      shipmentDate: dayFromToday(30),
+      lines: [
+        { variantId: navy("M"), quantity: 40 },
+        { variantId: navy("L"), quantity: 30 },
+        { variantId: white("M"), quantity: 20 },
+      ],
+      forceOverride: { reason: "Made to order" },
+      documents: { invoice: false },
+    });
+
+    // The order offers "Start production" to the people who start projects.
+    const offered = await salesScreens.getOrderScreen(env.ctx, order.id);
+    expect(offered.can).toMatchObject({ startProduction: true, openProduction: true });
+    expect(offered.order.production).toEqual([]);
+    expect((await salesScreens.getOrderScreen(env.salesCtx, order.id)).can.startProduction).toBe(
+      false,
+    );
+
+    // The form comes filled in from the order: buyer, name, ship-by day and the grid.
+    const form = await screens.getProjectForm(env.pmCtx, undefined, { orderId: order.id });
+    expect(form.source).toMatchObject({
+      kind: "ORDER",
+      number: order.number,
+      openSale: false, // a Production Manager does not open Sales: Cancel stays in Production
+      buyer: { id: env.buyer.id },
+      name: `Rahim Traders — ${order.number}`,
+      targetOn: dayFromToday(30),
+      style: { id: env.style.id },
+      categoryId: env.tops.id,
+      pieces: 90,
+      others: [],
+    });
+    expect(form.blocks).toHaveLength(1);
+    expect(form.blocks[0]!.matrix.style.id).toBe(env.style.id);
+    expect(form.blocks[0]!.quantities).toEqual({
+      [navy("M")]: 40,
+      [navy("L")]: 30,
+      [white("M")]: 20,
+    });
+
+    // Created with the grid: the total is the grid's, and the buyer is the order's.
+    const other = (await parties.createParty(env.ctx, { kind: "BUYER", name: "Other Buyer" }))
+      .party;
+    const created = await projects.createProject(env.pmCtx, {
+      name: form.source!.name,
+      buyerId: other.id,
+      targetDate: form.source!.targetOn,
+      salesOrderId: order.id,
+      targets: [
+        { variantId: navy("M"), quantity: 40 },
+        { variantId: navy("L"), quantity: 30 },
+        { variantId: white("M"), quantity: 20 },
+      ],
+    });
+    expect(created).toMatchObject({
+      buyer: { id: env.buyer.id },
+      salesOrder: { id: order.id, number: order.number },
+      style: { id: env.style.id },
+      category: { id: env.tops.id },
+      quantities: { target: 90 },
+    });
+    expect(created.targets).toHaveLength(3);
+    const audit = await prisma.auditLog.findFirstOrThrow({
+      where: { entityId: created.id, action: "CREATE" },
+    });
+    expect(audit.summary).toContain(`90 pcs in 3 colours and sizes`);
+    expect(audit.summary).toContain(`started from ${order.number}`);
+    await expectAppError(
+      projects.updateProject(env.pmCtx, created.id, { buyerId: other.id }),
+      "CONFLICT",
+    );
+
+    // The order lists it; a second start fills in only what is left.
+    const listed = await salesScreens.getOrderScreen(env.ctx, order.id);
+    expect(listed.order.production).toMatchObject([{ id: created.id, status: "ACTIVE" }]);
+    const again = await screens.getProjectForm(env.pmCtx, undefined, { orderId: order.id });
+    expect(again.source).toMatchObject({
+      pieces: 0,
+      others: [{ code: created.code, pieces: 90, onGrid: true }],
+    });
+    expect(again.blocks).toEqual([]);
+
+    // The project page shows the grid with what has come into stock.
+    const delivery = await intakes.createIntake(env.warehouseCtx, {
+      projectId: created.id,
+      lines: [
+        { variantId: navy("M"), quantity: 38 },
+        { variantId: navy("M"), grade: "B_GRADE", quantity: 2 },
+        { variantId: white("M"), quantity: 5 },
+      ],
+    });
+    await intakes.confirmIntake(env.warehouseCtx, delivery.id, { allowZeroCost: true });
+    const page = await screens.getProjectScreen(env.warehouseCtx, created.id);
+    expect(page.project.salesOrder).toEqual({ id: order.id, number: order.number });
+    expect(page.project.targets).toMatchObject({ target: 90, received: 45 });
+    const grid = page.project.targets!.styles[0]!;
+    expect(grid.sizes).toEqual(["M", "L"]);
+    expect(grid.rows.map((r) => [r.color.name, r.cells, r.target, r.received])).toEqual([
+      [
+        "Navy",
+        [
+          { target: 40, received: 40 },
+          { target: 30, received: 0 },
+        ],
+        70,
+        40,
+      ],
+      ["White", [{ target: 20, received: 5 }, null], 20, 5],
+    ]);
+
+    // Editing the grid changes the total; the total alone cannot drift from it.
+    await expectAppError(
+      projects.updateProject(env.pmCtx, created.id, { targetQuantity: 100 }),
+      "VALIDATION",
+    );
+    const edited = await projects.updateProject(env.pmCtx, created.id, {
+      targets: [
+        { variantId: navy("M"), quantity: 40 },
+        { variantId: navy("L"), quantity: 50 },
+      ],
+    });
+    expect(edited.quantities.target).toBe(90);
+    expect(edited.targets).toHaveLength(2);
+    const editForm = await screens.getProjectForm(env.pmCtx, created.id);
+    expect(editForm.blocks[0]!.quantities).toEqual({ [navy("M")]: 40, [navy("L")]: 50 });
+    expect(editForm.locked).toMatchObject({ buyer: true });
+
+    // A style whose SKUs are on a project's grid has history: it is archived, not deleted.
+    await expect(styles.deleteStyle(env.ctx, env.style.id)).rejects.toThrow(/history/);
+
+    // A walk-in sale is not started from.
+    const walkIn = await orders.createOrder(env.ctx, {
+      channel: "POS",
+      customerName: "Karim Uddin",
+      lines: [{ variantId: navy("S"), quantity: 1 }],
+      forceOverride: { reason: "Made to order" },
+    });
+    const refused = await expectAppError(
+      projects.createProject(env.pmCtx, {
+        name: "Walk-in",
+        targetDate: dayFromToday(10),
+        targetQuantity: 1,
+        salesOrderId: walkIn.id,
+      }),
+      "CONFLICT",
+    );
+    expect(refused.message).toContain("walk-in sale");
+    expect((await salesScreens.getOrderScreen(env.ctx, walkIn.id)).can.startProduction).toBe(false);
+
+    // A new project's search finds the order by buyer or number, with its pieces and no
+    // prices, and never offers the walk-in sale.
+    const found = await screens.findSalesToStart(env.pmCtx, { search: "rahim" });
+    expect(found).toEqual([
+      {
+        kind: "ORDER",
+        id: order.id,
+        number: order.number,
+        buyer: "Rahim Traders",
+        orderStatus: order.status,
+        proformaStatus: null,
+        pieces: 90,
+      },
+    ]);
+    expect(await screens.findSalesToStart(env.pmCtx, { search: order.number })).toHaveLength(1);
+    expect((await screens.findSalesToStart(env.pmCtx)).map((s) => s.id)).not.toContain(walkIn.id);
+  });
+
+  it("starts production from a proforma, and its advance then starts no second project", async () => {
+    const env = await setup();
+    const navy = (size: string) => env.sku("Navy", size);
+    const q = await quotations.createQuotation(env.salesCtx, {
+      partyId: env.buyer.id,
+      items: [
+        {
+          styleId: env.style.id,
+          description: "Navy polo",
+          colorNote: "navy blue",
+          sizeBreakdown: { S: 10, M: 20, L: 20 },
+          unitPrice: 1000,
+        },
+        {
+          categoryId: env.tops.id,
+          description: "Zip hoodie, new design",
+          quantity: 60,
+          unitPrice: 1450,
+        },
+      ],
+    });
+    const pi = await proformas.convertQuotationToProforma(env.salesCtx, q.id);
+    expect((await salesScreens.getProformaScreen(env.ctx, pi.id)).can.startProduction).toBe(true);
+    expect(await screens.findSalesToStart(env.pmCtx, { search: pi.number })).toEqual([
+      {
+        kind: "PROFORMA",
+        id: pi.id,
+        number: pi.number,
+        buyer: "Rahim Traders",
+        orderStatus: null,
+        proformaStatus: "ISSUED",
+        pieces: 110,
+      },
+    ]);
+
+    const form = await screens.getProjectForm(env.pmCtx, undefined, { proformaId: pi.id });
+    expect(form.source).toMatchObject({
+      kind: "PROFORMA",
+      buyer: { id: env.buyer.id },
+      pieces: 50,
+      unplaced: [
+        { description: "Zip hoodie, new design", quantity: 60, why: "not a style in Products" },
+      ],
+    });
+    expect(form.blocks[0]!.quantities).toEqual({
+      [navy("S")]: 10,
+      [navy("M")]: 20,
+      [navy("L")]: 20,
+    });
+    const created = await projects.createProject(env.pmCtx, {
+      name: form.source!.name,
+      targetDate: dayFromToday(45),
+      proformaId: pi.id,
+      targets: Object.entries(form.blocks[0]!.quantities).map(([variantId, quantity]) => ({
+        variantId,
+        quantity,
+      })),
+      status: "PLANNED",
+    });
+    expect(created).toMatchObject({
+      buyer: { id: env.buyer.id },
+      proforma: { id: pi.id },
+      status: "PLANNED",
+      quantities: { target: 50 },
+    });
+
+    // The advance moves the proforma on but starts no second project.
+    const advance = await payments.receivePayment(env.accountsCtx, {
+      proformaId: pi.id,
+      amount: Number(pi.advanceAmount),
+      method: "BANK_TRANSFER",
+    });
+    expect(advance.productionProject).toBeNull();
+    expect(await prisma.productionProject.count({ where: { proformaId: pi.id } })).toBe(1);
+    expect((await proformas.getProforma(env.ctx, pi.id)).status).toBe("IN_PRODUCTION");
+    const screen = await salesScreens.getProformaScreen(env.salesCtx, pi.id);
+    expect(screen.proforma.production).toMatchObject([{ id: created.id, status: "PLANNED" }]);
+    // A Sales Executive sees it listed, without links into Production or a start button.
+    expect(screen.can).toMatchObject({ startProduction: false, openProduction: false });
+
+    // Once it becomes an order, production starts from the order instead.
+    const order = await proformas.convertProformaToOrder(env.ctx, pi.id, {
+      matrix: [
+        {
+          styleId: env.style.id,
+          unitPrice: 1000,
+          quantities: { [navy("S")]: 10, [navy("M")]: 20, [navy("L")]: 20 },
+        },
+      ],
+      forceOverride: { reason: "Made to order" },
+    });
+    const refused = await expectAppError(
+      projects.createProject(env.pmCtx, {
+        name: "Again",
+        targetDate: dayFromToday(10),
+        targetQuantity: 1,
+        proformaId: pi.id,
+      }),
+      "CONFLICT",
+    );
+    expect(refused.message).toBe(
+      `${pi.number} became order ${order.number}; start production from the order.`,
+    );
+    // The search offers the order now, not the proforma it came from.
+    expect((await screens.findSalesToStart(env.pmCtx)).map((s) => s.number)).toEqual([
+      order.number,
+    ]);
+    // The order shows the proforma's project, and its form leaves out what it makes.
+    expect((await salesScreens.getOrderScreen(env.ctx, order.id)).order.production).toMatchObject([
+      { id: created.id },
+    ]);
+    const fromOrder = await screens.getProjectForm(env.pmCtx, undefined, { orderId: order.id });
+    expect(fromOrder.source).toMatchObject({
+      pieces: 0,
+      others: [{ code: created.code, onGrid: true }],
+    });
+  });
+
+  it("copies the grid when a paid advance starts a project and every piece finds its SKU", async () => {
+    const env = await setup();
+    const white = (size: string) => env.sku("White", size);
+    const quote = async (colorNote: string) =>
+      quotations.createQuotation(env.salesCtx, {
+        partyId: env.buyer.id,
+        items: [
+          {
+            styleId: env.style.id,
+            description: "Polo pre-order",
+            colorNote,
+            sizeBreakdown: { S: 2, M: 4, L: 0, XL: 2 },
+            unitPrice: 1000,
+          },
+        ],
+      });
+    const start = async (colorNote: string) => {
+      const pi = await proformas.convertQuotationToProforma(
+        env.salesCtx,
+        (await quote(colorNote)).id,
+      );
+      const advance = await payments.receivePayment(env.accountsCtx, {
+        proformaId: pi.id,
+        amount: Number(pi.advanceAmount),
+        method: "CASH",
+      });
+      return projects.getProject(env.pmCtx, advance.productionProject!.id);
+    };
+
+    const matched = await start("White");
+    expect(matched.quantities.target).toBe(8);
+    expect(Object.fromEntries(matched.targets.map((t) => [t.variantId, t.quantity]))).toEqual({
+      [white("S")]: 2,
+      [white("M")]: 4,
+      [white("XL")]: 2,
+    });
+
+    // A colour the style does not have: the total only, as before.
+    const unmatched = await start("Maroon");
+    expect(unmatched.quantities.target).toBe(8);
+    expect(unmatched.targets).toEqual([]);
+    // Starting another from that proforma: its pieces are not on the boxes, and the form says so.
+    const again = await screens.getProjectForm(env.pmCtx, undefined, {
+      proformaId: unmatched.proforma!.id,
+    });
+    expect(again.source).toMatchObject({
+      pieces: 0,
+      others: [{ code: unmatched.code, pieces: 8, onGrid: false }],
+      unplaced: [{ quantity: 8 }],
+      // The item's style is chosen, ready to fill in by hand.
+      style: { id: env.style.id },
+    });
+    expect(again.blocks).toEqual([]);
   });
 });
 

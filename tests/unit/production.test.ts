@@ -18,7 +18,18 @@ import {
   deliveryCostShare,
   planIntakeCost,
 } from "@/modules/production/costing";
-import { canUndoStageMove } from "@/modules/production/rules";
+import {
+  canChangeProjectBuyer,
+  canStartFromOrder,
+  canStartFromProforma,
+  canUndoStageMove,
+} from "@/modules/production/rules";
+import {
+  lessTargets,
+  quotationTargets,
+  sumTargets,
+  targetTotal,
+} from "@/modules/production/targets";
 import { isStageBackward, projectTimeline, stageBadge } from "@/modules/production/timeline";
 
 const TZ = "Asia/Dhaka";
@@ -495,5 +506,131 @@ describe("the production board", () => {
     expect(
       canUndoStageMove({ ...project, status: "ON_HOLD" }, moved, "SEWING", later(1), 10),
     ).toMatchObject({ message: "PRD-1 is on hold; resume it first." });
+  });
+});
+
+describe("a project's target grid", () => {
+  const skus = [
+    { id: "n-s", styleId: "polo", color: { name: "Navy" }, size: { name: "S" } },
+    { id: "n-m", styleId: "polo", color: { name: "Navy" }, size: { name: "M" } },
+    { id: "w-s", styleId: "polo", color: { name: "White" }, size: { name: "S" } },
+    { id: "w-m", styleId: "polo", color: { name: "White" }, size: { name: "M" } },
+    { id: "t-l", styleId: "tee", color: { name: "Black" }, size: { name: "L" } },
+    { id: "t-xl", styleId: "tee", color: { name: "Black" }, size: { name: "XL" } },
+    { id: "cap", styleId: "cap", color: { name: "Red" }, size: { name: "Free" } },
+  ];
+  const item = (over: Partial<Parameters<typeof quotationTargets>[0][number]>) => ({
+    styleId: "polo",
+    description: "Polo",
+    colorNote: null,
+    sizeBreakdown: null,
+    quantity: 10,
+    ...over,
+  });
+
+  it("adds up lines per SKU and takes off what other projects make", () => {
+    const want = sumTargets([
+      { variantId: "a", quantity: 5 },
+      { variantId: "b", quantity: 3 },
+      { variantId: "a", quantity: 2 },
+      { variantId: "c", quantity: 0 },
+    ]);
+    expect([...want]).toEqual([
+      ["a", 7],
+      ["b", 3],
+    ]);
+    expect(targetTotal(want)).toBe(10);
+    expect([
+      ...lessTargets(
+        want,
+        new Map([
+          ["a", 4],
+          ["b", 5],
+        ]),
+      ),
+    ]).toEqual([["a", 3]]);
+  });
+
+  it("puts a quotation's items on their SKUs by colour note and size breakdown", () => {
+    const { targets, unplaced } = quotationTargets(
+      [
+        item({ colorNote: "navy blue", sizeBreakdown: { S: 4, M: 6 } }),
+        item({ colorNote: " white ", sizeBreakdown: { s: 3, M: 0, m: 2 }, quantity: 5 }),
+        // The tee has one colour, so no note is needed.
+        item({ styleId: "tee", sizeBreakdown: { L: 1, XL: 1 }, quantity: 2 }),
+        // One colour and one size: the whole quantity goes there.
+        item({ styleId: "cap", quantity: 12 }),
+        item({ colorNote: "white", sizeBreakdown: { S: 1 }, quantity: 1 }),
+      ],
+      skus,
+    );
+    expect(Object.fromEntries(targets)).toEqual({
+      "n-s": 4,
+      "n-m": 6,
+      "w-s": 4,
+      "w-m": 2,
+      "t-l": 1,
+      "t-xl": 1,
+      cap: 12,
+    });
+    expect(unplaced).toEqual([]);
+  });
+
+  it("leaves out whole items it cannot place, saying why", () => {
+    const { targets, unplaced } = quotationTargets(
+      [
+        item({ styleId: null, description: "Hoodie" }),
+        item({ styleId: "gone", description: "Old style" }),
+        item({ description: "No colour", sizeBreakdown: { S: 10 } }),
+        item({ description: "Two colours named", colorNote: "navy and white" }),
+        item({ description: "Odd size", colorNote: "Navy", sizeBreakdown: { S: 5, XXL: 5 } }),
+        item({ description: "No sizes", colorNote: "Navy" }),
+        item({ description: "Nothing", quantity: 0 }),
+      ],
+      skus,
+    );
+    expect(targets.size).toBe(0);
+    expect(unplaced.map((u) => [u.description, u.reason])).toEqual([
+      ["Hoodie", "NO_STYLE"],
+      ["Old style", "NO_SKUS"],
+      ["No colour", "NO_COLOUR"],
+      ["Two colours named", "NO_COLOUR"],
+      ["Odd size", "NO_SIZES"],
+      ["No sizes", "NO_SIZES"],
+    ]);
+    // Each keeps its style, so the form can offer to fill that style in by hand.
+    expect(unplaced.map((u) => u.styleId)).toEqual([null, "gone", "polo", "polo", "polo", "polo"]);
+  });
+
+  it("starts production from open orders and proformas only", () => {
+    const order = { number: "SO-1", status: "CONFIRMED" as const };
+    expect(canStartFromOrder(order, { walkIn: false }).ok).toBe(true);
+    expect(canStartFromOrder({ ...order, status: "PROCESSING" }, { walkIn: false }).ok).toBe(true);
+    expect(canStartFromOrder({ ...order, status: "PACKED" }, { walkIn: false })).toMatchObject({
+      message: "SO-1 is packed; it needs no production.",
+    });
+    expect(canStartFromOrder(order, { walkIn: true })).toMatchObject({
+      message: "SO-1 is a walk-in sale; start an In-House project for it instead.",
+    });
+    expect(canStartFromOrder(order, null).ok).toBe(false);
+
+    const pi = { number: "PI-1", status: "ISSUED" as const };
+    expect(canStartFromProforma(pi).ok).toBe(true);
+    expect(canStartFromProforma({ ...pi, status: "IN_PRODUCTION" }).ok).toBe(true);
+    expect(canStartFromProforma({ ...pi, status: "CANCELLED" })).toMatchObject({
+      message: "PI-1 is cancelled.",
+    });
+    expect(canStartFromProforma({ ...pi, status: "CONVERTED" }, { number: "SO-9" })).toMatchObject({
+      message: "PI-1 became order SO-9; start production from the order.",
+    });
+
+    const project = { code: "PRD-1", proformaId: null, salesOrderId: "o1", buyerId: "b1" };
+    expect(canChangeProjectBuyer(project, "SO-1", "b1").ok).toBe(true);
+    expect(canChangeProjectBuyer(project, "SO-1", "b2")).toMatchObject({
+      message: "PRD-1 was started from SO-1; its buyer cannot change.",
+    });
+    expect(canChangeProjectBuyer({ ...project, salesOrderId: null }, undefined, "b2").ok).toBe(
+      true,
+    );
   });
 });

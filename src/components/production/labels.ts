@@ -108,6 +108,11 @@ export const productionHref = {
     projectId
       ? `/production/bills/new?project=${encodeURIComponent(projectId)}`
       : "/production/bills/new",
+  /** "Start production" on a sales order or a proforma: a new project filled in from it. */
+  startFrom: (from: { orderId: string } | { proformaId: string }) =>
+    "orderId" in from
+      ? `/production/projects/new?order=${encodeURIComponent(from.orderId)}`
+      : `/production/projects/new?proforma=${encodeURIComponent(from.proformaId)}`,
   supplier: (id: string) => `/parties/suppliers/${encodeURIComponent(id)}`,
   buyer: (id: string) => `/parties/buyers/${encodeURIComponent(id)}`,
   file: (id: string) => `/api/files/${encodeURIComponent(id)}`,

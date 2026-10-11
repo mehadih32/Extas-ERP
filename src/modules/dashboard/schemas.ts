@@ -47,3 +47,30 @@ export type HomeRange = (typeof HOME_RANGES)[number];
 
 /** The period the Home screen opens with. */
 export const DEFAULT_HOME_RANGE: HomeRange = "MONTH";
+
+/**
+ * The Home screen's sections, in the standard order. A few that sit together
+ * move together: the sales target with The Pulse, the production pipeline with
+ * the live activity beside it.
+ */
+export const HOME_SECTIONS = [
+  "TARGET_PULSE",
+  "ACTION_ZONE",
+  "PREDICTIVE",
+  "PIPELINE_ACTIVITY",
+  "KEY_FIGURES",
+  "INSIGHTS",
+] as const;
+
+export type HomeSectionKey = (typeof HOME_SECTIONS)[number];
+
+/** A new order for the Home sections a person sees, each once. */
+export const homeSectionOrderSchema = z.object({
+  order: z
+    .array(z.enum(HOME_SECTIONS))
+    .min(1)
+    .max(HOME_SECTIONS.length)
+    .refine((keys) => new Set(keys).size === keys.length, {
+      message: "Each section can only come once.",
+    }),
+});

@@ -1,6 +1,15 @@
+import type { Prisma } from "@prisma/client";
+
 import { prisma } from "@/lib/prisma";
 import type { CompanyContext } from "@/modules/auth/context";
-import { METRIC_CARDS, type MetricCardKey, preferencesSchema } from "@/modules/dashboard/schemas";
+import {
+  HOME_SECTIONS,
+  type HomeSectionKey,
+  homeSectionOrderSchema,
+  METRIC_CARDS,
+  type MetricCardKey,
+  preferencesSchema,
+} from "@/modules/dashboard/schemas";
 
 /*
  * The eye icon on the metric cards: each person chooses which figures stay
@@ -50,4 +59,71 @@ export async function updateDashboardPreferences(ctx: CompanyContext, raw: unkno
     return next;
   });
   return { hiddenMetrics };
+}
+
+/*
+ * The order of the Home screen's sections, also each person's own display
+ * choice: kept in UserPreference.dashboardLayout as { sectionOrder: [...] }.
+ */
+
+const knownSections = new Set<string>(HOME_SECTIONS);
+
+/**
+ * Every section once: the saved ones in their order (unknown or repeated keys
+ * dropped), then any not saved yet in the standard order.
+ */
+export function homeSectionOrder(saved: unknown): HomeSectionKey[] {
+  const keys = Array.isArray(saved) ? saved : [];
+  const order = [
+    ...new Set(
+      keys.filter((k): k is HomeSectionKey => typeof k === "string" && knownSections.has(k)),
+    ),
+  ];
+  return [...order, ...HOME_SECTIONS.filter((k) => !order.includes(k))];
+}
+
+/** The saved layout as an object, whatever was stored before. */
+function layoutOf(value: Prisma.JsonValue | null | undefined): Prisma.JsonObject {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
+export async function homeSectionOrderFor(userId: string): Promise<HomeSectionKey[]> {
+  const pref = await prisma.userPreference.findUnique({
+    where: { userId },
+    select: { dashboardLayout: true },
+  });
+  return homeSectionOrder(layoutOf(pref?.dashboardLayout).sectionOrder);
+}
+
+export async function getHomeSectionOrder(ctx: CompanyContext) {
+  return { sectionOrder: await homeSectionOrderFor(ctx.user.id) };
+}
+
+/**
+ * Saves a new order for the sections this person sees (`order`, each once).
+ * The sections left out, the ones their role does not show, keep their places.
+ */
+export async function setHomeSectionOrder(ctx: CompanyContext, raw: unknown) {
+  const { order } = homeSectionOrderSchema.parse(raw);
+  const userId = ctx.user.id;
+  const sectionOrder = await prisma.$transaction(async (tx) => {
+    // Lock the person's row so a save from another tab is not lost. The row is made
+    // when missing, quietly if another tab makes it at the same moment.
+    await tx.userPreference.createMany({ data: [{ userId }], skipDuplicates: true });
+    const [row] = await tx.$queryRaw<Array<{ dashboardLayout: Prisma.JsonValue }>>`
+      SELECT "dashboardLayout" FROM "UserPreference" WHERE "userId" = ${userId} FOR UPDATE`;
+    const layout = layoutOf(row?.dashboardLayout);
+    // The given sections take the places the same sections had, in the new order.
+    const moved = new Set<string>(order);
+    const next = [...order];
+    const merged = homeSectionOrder(layout.sectionOrder).map((key) =>
+      moved.has(key) ? next.shift()! : key,
+    );
+    await tx.userPreference.update({
+      where: { userId },
+      data: { dashboardLayout: { ...layout, sectionOrder: merged } },
+    });
+    return merged;
+  });
+  return { sectionOrder };
 }

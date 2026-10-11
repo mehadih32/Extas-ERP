@@ -99,7 +99,9 @@ Built one module at a time, each in its own pull request. So far:
   sales, net profit); and the Insights: top sellers (period, SKUs or styles, by pieces or sales
   value, kept in the address so a link shows the same list), highest stock, dead and slow
   stock, and low stock. Every amount shows `***` when the screen opens: the eye at the top
-  shows them all, a card's own eye shows only that card, and nothing is remembered.
+  shows them all, a card's own eye shows only that card, and nothing is remembered. "Arrange
+  sections" by the date puts the sections in each person's own order (drag, or pick a place),
+  saved for them.
 - **Settings** (`/settings`), in four tabs:
   - **Team**: everyone in the company, with a search and a list of deactivated people. Adding
     a person takes their email, name and role; someone new gets a temporary password, shown
@@ -1811,6 +1813,13 @@ Amounts in the text (`12345.00`) come back as their own parts so the page hides 
 the eye; a row links to its record when the reader may open it. The page reads it again
 every minute while it is on screen.
 
+**Arrange sections** (everyone, their own choice): the button by the date opens a list of the
+Home sections the person sees, moved by dragging a handle or by choosing each one's place.
+Saving keeps the order in the person's `UserPreference.dashboardLayout` (`{ sectionOrder }`),
+so it stays after a refresh or a new sign-in. The sections the role does not show keep their
+places; a new section comes last until it is moved. The sales target moves with The Pulse,
+and the production pipeline with the live activity beside it.
+
 **Insights.** Top sellers for a period (the past month by default), per SKU or per style, by
 pieces or by sales value; the SKUs holding the most stock; dead and slow stock; low stock.
 
@@ -1868,6 +1877,7 @@ are recorded in the audit log, and a person can make up to 10 reports a minute.
 | `GET /api/dashboard/predictive?range=TODAY\|WEEK\|MONTH`                                     | Stock runway of the top sellers, the top buyer     |
 | `GET /api/dashboard/pipeline`                                                                | Active production projects with their progress     |
 | `GET /api/dashboard/activity?limit=12`                                                       | Latest activity: everyone's or one's own           |
+| `GET/PUT /api/dashboard/section-order`                                                       | Order of one's Home sections: `{ order: [...] }`   |
 | `GET /api/reports/builder`                                                                   | Metrics this person may pick, periods, defaults    |
 | `GET /api/reports/preview?period=&from=&to=&metrics=SALES,TOP_SELLERS&…`                     | The report as data, without a file                 |
 | `GET/POST /api/reports/exports`, `GET/DELETE …/:id`                                          | Saved reports / make one: `{ format: PDF\|EXCEL }` |

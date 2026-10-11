@@ -2,16 +2,17 @@ import type { HelpSection } from "../types";
 
 /**
  * The dashboard (the Home screen): the top bar (pending tasks, the period, the
- * eye and the (+) quick actions), the monthly sales target, The Pulse, the
- * Action Zone (overdue invoices, low stock, pending approvals), the predictive
- * insights (stock runway, top buyer), the production pipeline and the live
- * activity feed, the key figures and the Insights (top sellers and stock alerts).
+ * eye and the (+) quick actions), arranging the sections, the monthly sales
+ * target, The Pulse, the Action Zone (overdue invoices, low stock, pending
+ * approvals), the predictive insights (stock runway, top buyer), the production
+ * pipeline and the live activity feed, the key figures and the Insights (top
+ * sellers and stock alerts).
  */
 export const dashboardHelp: HelpSection = {
   id: "dashboard",
   title: "ড্যাশবোর্ড (Dashboard)",
   description:
-    "সাইন ইন করলেই প্রথমে যে পাতা খোলে: আজকের বাকি কাজ, দ্রুত কাজের (+) বোতাম, মাসের বিক্রির লক্ষ্য, বিক্রি-আদায়-ডেলিভারি-উৎপাদনের গতি, বকেয়া ইনভয়েস-কম স্টক-অনুমোদনের কাজ, স্টক কত দিন চলবে ও সেরা বায়ার, উৎপাদনের অগ্রগতি, অ্যাপে সর্বশেষ কী হলো, ব্যবসার মূল হিসাব, কোন পণ্য বেশি বিক্রি হচ্ছে আর কোন স্টক আটকে আছে বা ফুরিয়ে আসছে।",
+    "সাইন ইন করলেই প্রথমে যে পাতা খোলে: আজকের বাকি কাজ, দ্রুত কাজের (+) বোতাম, মাসের বিক্রির লক্ষ্য, বিক্রি-আদায়-ডেলিভারি-উৎপাদনের গতি, বকেয়া ইনভয়েস-কম স্টক-অনুমোদনের কাজ, স্টক কত দিন চলবে ও সেরা বায়ার, উৎপাদনের অগ্রগতি, অ্যাপে সর্বশেষ কী হলো, ব্যবসার মূল হিসাব, কোন পণ্য বেশি বিক্রি হচ্ছে আর কোন স্টক আটকে আছে বা ফুরিয়ে আসছে। অংশগুলো যার যার পছন্দমতো উপরে-নিচে সাজানো যায়।",
   href: "/",
   articles: [
     {
@@ -74,6 +75,58 @@ export const dashboardHelp: HelpSection = {
       ],
     },
     {
+      slug: "dashboard-arrange-sections",
+      title: "হোম স্ক্রিনের অংশগুলো নিজের মতো সাজাবেন যেভাবে (Arrange sections)",
+      summary:
+        "তারিখের পাশের “Arrange sections” বোতাম থেকে হোম স্ক্রিনের অংশগুলো টেনে বা জায়গার নম্বর বেছে উপরে-নিচে সরানো। আপনার সাজানো শুধু আপনার জন্য মনে রাখা হয়।",
+      keywords: [
+        "arrange sections",
+        "reorder",
+        "drag and drop",
+        "section order",
+        "move section",
+        "layout",
+        "standard order",
+        "সাজানো",
+        "অংশ সরানো",
+        "টেনে সরানো",
+        "ক্রম বদলানো",
+        "উপরে নিচে",
+      ],
+      routes: ["/"],
+      who: "সবাই, নিজের হোম স্ক্রিনের জন্য। আপনার সাজানো অন্য কারো স্ক্রিন বদলায় না। যে অংশ আপনার ভূমিকায় দেখা যায় না তা তালিকায় আসে না।",
+      steps: [
+        {
+          text: "হোম স্ক্রিনের একদম উপরে তারিখের ডান পাশে “Arrange sections” বোতামে চাপুন (ফোনে লেখা থাকে “Arrange”)। একটি ছোট জানালা খোলে, যেখানে আপনার দেখা অংশগুলো এখন যে ক্রমে আছে সেভাবে সাজানো।",
+          image: {
+            id: "dashboard-arrange-sections-1",
+            caption: "তারিখের ডান পাশে “Arrange sections” বোতাম",
+          },
+        },
+        {
+          text: "টেনে সরাতে: অংশের নামের বাঁ পাশের হাতলটি (ছয় বিন্দুর চিহ্ন) চেপে ধরে উপরে বা নিচে টেনে নিয়ে ছেড়ে দিন। ফোনে আঙুল দিয়েও টানা যায়।",
+          image: {
+            id: "dashboard-arrange-sections-2",
+            caption: "অংশগুলোর তালিকা: বাঁ পাশে টানার হাতল, ডান পাশে জায়গার নম্বর",
+          },
+        },
+        {
+          text: "না টেনে সরাতে: অংশের ডান পাশের নম্বরের তালিকা থেকে জায়গা বেছে নিন; ১ বাছলে অংশটি সবার উপরে যায়। কিবোর্ডেও করা যায়: হাতলে গিয়ে Space চাপুন, উপর-নিচের তীর দিয়ে সরান, আবার Space চাপুন।",
+        },
+        {
+          text: "সাজানো শেষ হলে “Save the order” চাপুন। হোম স্ক্রিন সঙ্গে সঙ্গে নতুন ক্রমে দেখায়। না রেখে বেরোতে “Cancel” চাপুন; তখন কিছুই বদলায় না।",
+        },
+        {
+          text: "আগের মতো করতে “Reset to the standard order” চাপুন, তারপর “Save the order”।",
+        },
+      ],
+      tips: [
+        "সাজানোটি আপনার অ্যাকাউন্টে মনে রাখা হয়: পাতা রিফ্রেশ করলে, আবার সাইন ইন করলে বা অন্য কোম্পানিতে গেলেও একই থাকে।",
+        "“Monthly sales target” আর “The Pulse” একসঙ্গে সরে, “Production pipeline” আর “Live activity”-ও একসঙ্গে, কারণ এরা পাশাপাশি থাকে।",
+        "শুধু অংশগুলোর ক্রম বদলায়; ভেতরের হিসাব, অনুমতি আর টাকার লুকানো (***) যেমন ছিল তেমনই থাকে। এই সহায়িকার অন্য লেখায় অংশগুলোর জায়গা স্বাভাবিক ক্রম ধরে বলা।",
+      ],
+    },
+    {
       slug: "dashboard-sales-target",
       title: "মাসের বিক্রির লক্ষ্য (Monthly sales target) ঠিক করবেন ও দেখবেন যেভাবে",
       summary:
@@ -97,7 +150,7 @@ export const dashboardHelp: HelpSection = {
       anyOf: ["sales.view", "dashboard.financials", "accounts.view"],
       steps: [
         {
-          text: "হোম স্ক্রিনে উপরের বারের নিচে “Monthly sales target” কার্ড দেখবেন। প্রথমবার “Set target” চাপুন।",
+          text: "হোম স্ক্রিনে উপরের বারের নিচে (স্বাভাবিক ক্রমে) “Monthly sales target” কার্ড দেখবেন। প্রথমবার “Set target” চাপুন।",
           image: {
             id: "dashboard-sales-target-1",
             caption: "“Monthly sales target” কার্ড ও “Set target” বোতাম",
@@ -219,7 +272,7 @@ export const dashboardHelp: HelpSection = {
       ],
       steps: [
         {
-          text: "হোম স্ক্রিনে “The Pulse”-এর নিচে “Action Zone” অংশ দেখবেন। এখানে তিনটি কার্ড: “Overdue invoices”, “Low stock” ও “Pending approvals”। কার্ডের নামের পাশে লাল সংখ্যাটি বলে কয়টি কাজ অপেক্ষা করছে।",
+          text: "হোম স্ক্রিনে (স্বাভাবিক ক্রমে) “The Pulse”-এর নিচে “Action Zone” অংশ দেখবেন। এখানে তিনটি কার্ড: “Overdue invoices”, “Low stock” ও “Pending approvals”। কার্ডের নামের পাশে লাল সংখ্যাটি বলে কয়টি কাজ অপেক্ষা করছে।",
           image: {
             id: "dashboard-action-zone-1",
             caption:
@@ -294,7 +347,7 @@ export const dashboardHelp: HelpSection = {
       ],
       steps: [
         {
-          text: "হোম স্ক্রিনে “Action Zone”-এর নিচে “Predictive insights” অংশে দুটি কার্ড: “Stock runway” আর বাছাই করা সময়ের সেরা বায়ার (“Top buyer …”, যেমন এই মাসের)।",
+          text: "হোম স্ক্রিনে (স্বাভাবিক ক্রমে) “Action Zone”-এর নিচে “Predictive insights” অংশে দুটি কার্ড: “Stock runway” আর বাছাই করা সময়ের সেরা বায়ার (“Top buyer …”, যেমন এই মাসের)।",
           image: {
             id: "dashboard-predictive-1",
             caption: "“Predictive insights”: “Stock runway” ও “Top buyer …” কার্ড",
@@ -359,7 +412,7 @@ export const dashboardHelp: HelpSection = {
       who: "“Live activity” সবাই দেখেন: Super Admin (বা যাঁর ভূমিকায় অডিট ট্রেইল দেখার অনুমতি আছে) কোম্পানির সবার কাজ, অন্যরা শুধু নিজের কাজ। “Production pipeline” দেখেন যাঁরা উৎপাদন দেখতে পারেন (Production, Store, Accounts ও Super Admin); এতে শুধু পিস ও দিন থাকে, টাকা নয়।",
       steps: [
         {
-          text: "“Predictive insights”-এর নিচে বাঁ দিকে “Production pipeline”, আর ডান দিকে “Live activity”। ফোনে দুটি একটির নিচে আরেকটি থাকে।",
+          text: "স্বাভাবিক ক্রমে “Predictive insights”-এর নিচে বাঁ দিকে “Production pipeline”, আর ডান দিকে “Live activity”। ফোনে দুটি একটির নিচে আরেকটি থাকে।",
           image: {
             id: "dashboard-pipeline-activity-1",
             caption:
@@ -477,7 +530,7 @@ export const dashboardHelp: HelpSection = {
       anyOf: ["dashboard.view", "inventory.view"],
       steps: [
         {
-          text: "ড্যাশবোর্ডের নিচে “Insights” অংশে “Top sellers” ট্যাব খুলুন।",
+          text: "ড্যাশবোর্ডের নিচে (স্বাভাবিক ক্রমে) “Insights” অংশে “Top sellers” ট্যাব খুলুন।",
           image: {
             id: "dashboard-top-sellers-1",
             caption: "“Insights” অংশের “Top sellers” ট্যাব ও উপরের বাছাইগুলো",
@@ -538,7 +591,7 @@ export const dashboardHelp: HelpSection = {
           text: "তালিকায় “Days of cover” বলে এখনকার গতিতে স্টক কত দিন চলবে, আর “Last sold” বলে শেষ কবে বিক্রি হয়েছে।",
         },
         {
-          text: "“Low stock” ট্যাবে সেই SKU-গুলো দেখবেন যেগুলোর স্টক কোম্পানির ঠিক করা সীমার নিচে নেমেছে, স্টক শেষ হওয়াগুলোসহ। সবচেয়ে জরুরি পাঁচটি উপরের “Action Zone”-এও আসে, যেখানে “Order now” চাপলে সেই স্টাইলের নতুন প্রোডাকশন প্রজেক্ট শুরু করা যায়।",
+          text: "“Low stock” ট্যাবে সেই SKU-গুলো দেখবেন যেগুলোর স্টক কোম্পানির ঠিক করা সীমার নিচে নেমেছে, স্টক শেষ হওয়াগুলোসহ। সবচেয়ে জরুরি পাঁচটি “Action Zone”-এও আসে, যেখানে “Order now” চাপলে সেই স্টাইলের নতুন প্রোডাকশন প্রজেক্ট শুরু করা যায়।",
           image: {
             id: "dashboard-stock-alerts-2",
             caption: "“Low stock” ট্যাবে সীমার নিচে নামা SKU-র তালিকা",

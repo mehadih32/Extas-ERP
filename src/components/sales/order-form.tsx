@@ -1205,8 +1205,12 @@ export function OrderForm({ form: data }: { form: OrderFormData }) {
                     id="include-previous"
                     checked={includePrevious}
                     onChange={setIncludePrevious}
-                    label={`Include previous due (${money(fixed2(owed!.previousDue), currency)})`}
-                    hint="Prints what the buyer already owed on this invoice, with the Total payable. Only this order counts as a sale."
+                    label={`Include previous due (${money(fixed2(owed!.previousDue + creditUse), currency)})`}
+                    hint={
+                      creditUse > 0
+                        ? "Prints what the buyer owed before this bill, with the credit used here shown as paid, and the Total payable. Only this order counts as a sale."
+                        : "Prints what the buyer already owed on this invoice, with the Total payable. Only this order counts as a sale."
+                    }
                   />
                 )}
                 {canUseCredit && (

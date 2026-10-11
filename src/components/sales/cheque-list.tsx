@@ -61,7 +61,7 @@ export function ChequeList({
       {notice && <FormAlert tone="success">{notice}</FormAlert>}
       <ul className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3" aria-label="Cheques">
         {rows.map((c) => (
-          <li key={c.id} className="grid min-w-0 gap-3 rounded-lg border bg-card p-4">
+          <li key={c.id} className="grid min-w-0 grid-cols-1 gap-3 rounded-lg border bg-card p-4">
             <div className="flex items-start justify-between gap-3">
               <p className="eyebrow min-w-0 truncate">
                 Cheque {c.chequeNo} · dated {formatDay(c.chequeDate)}

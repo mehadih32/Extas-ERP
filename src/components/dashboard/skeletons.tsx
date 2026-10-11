@@ -76,3 +76,24 @@ export function PulseSkeleton() {
     </div>
   );
 }
+
+export function ActionZoneSkeleton() {
+  return (
+    <div aria-hidden>
+      <Skeleton className="h-7 w-40" />
+      <div className="mt-5 grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
+        {[1, 2, 3].map((card) => (
+          <div key={card} className="rounded-lg border bg-card p-5">
+            <Skeleton className="h-3 w-36" />
+            <Skeleton className="mt-5 h-4 w-4/5" />
+            <div className="mt-4 grid gap-3">
+              {[1, 2, 3].map((row) => (
+                <Skeleton key={row} className="h-9 w-full" />
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}

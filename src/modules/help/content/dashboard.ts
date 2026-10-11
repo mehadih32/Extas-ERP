@@ -2,14 +2,15 @@ import type { HelpSection } from "../types";
 
 /**
  * The dashboard (the Home screen): the top bar (pending tasks, the period, the
- * eye and the (+) quick actions), the monthly sales target, The Pulse, the key
- * figures and the Insights (top sellers and stock alerts).
+ * eye and the (+) quick actions), the monthly sales target, The Pulse, the
+ * Action Zone (overdue invoices, low stock, pending approvals), the key figures
+ * and the Insights (top sellers and stock alerts).
  */
 export const dashboardHelp: HelpSection = {
   id: "dashboard",
   title: "ড্যাশবোর্ড (Dashboard)",
   description:
-    "সাইন ইন করলেই প্রথমে যে পাতা খোলে: আজকের বাকি কাজ, দ্রুত কাজের (+) বোতাম, মাসের বিক্রির লক্ষ্য, বিক্রি-আদায়-ডেলিভারি-উৎপাদনের গতি, ব্যবসার মূল হিসাব, কোন পণ্য বেশি বিক্রি হচ্ছে আর কোন স্টক আটকে আছে বা ফুরিয়ে আসছে।",
+    "সাইন ইন করলেই প্রথমে যে পাতা খোলে: আজকের বাকি কাজ, দ্রুত কাজের (+) বোতাম, মাসের বিক্রির লক্ষ্য, বিক্রি-আদায়-ডেলিভারি-উৎপাদনের গতি, বকেয়া ইনভয়েস-কম স্টক-অনুমোদনের কাজ, ব্যবসার মূল হিসাব, কোন পণ্য বেশি বিক্রি হচ্ছে আর কোন স্টক আটকে আছে বা ফুরিয়ে আসছে।",
   href: "/",
   articles: [
     {
@@ -178,6 +179,90 @@ export const dashboardHelp: HelpSection = {
       ],
     },
     {
+      slug: "dashboard-action-zone",
+      title: "অ্যাকশন জোন (Action Zone): বকেয়া ইনভয়েস, কম স্টক ও অনুমোদনের কাজ এক ক্লিকে",
+      summary:
+        "যে বায়ারের ইনভয়েসের মেয়াদ পেরিয়েছে তাঁকে WhatsApp-এ পেমেন্টের কথা মনে করানো, ফুরিয়ে আসা মাল “Order now” দিয়ে আবার বানানো, আর অনুমোদনের অপেক্ষায় থাকা কাজ লাল লেখায় দেখা।",
+      keywords: [
+        "action zone",
+        "overdue invoices",
+        "overdue",
+        "whatsapp reminder",
+        "payment reminder",
+        "order now",
+        "restock",
+        "pending approvals",
+        "big discount",
+        "sales returns",
+        "leave requests",
+        "payroll approval",
+        "অ্যাকশন জোন",
+        "বকেয়া",
+        "মেয়াদ পেরোনো ইনভয়েস",
+        "হোয়াটসঅ্যাপ",
+        "পেমেন্টের তাগাদা",
+        "আবার বানানো",
+        "অনুমোদন",
+        "বড় ছাড়",
+      ],
+      routes: ["/"],
+      who: "প্রতিটি কার্ড শুধু তাঁরাই দেখেন যাঁদের সেই কাজ: “Overdue invoices” দেখেন Sales Executive, Accounts ও Super Admin; “Low stock” দেখেন যাঁরা ড্যাশবোর্ড বা স্টক দেখতে পারেন; “Pending approvals”-এ ছুটির আবেদন দেখেন HR, আর বেতনের অনুমোদন, ফেরত মাল ও বড় ছাড়ের অর্ডার দেখেন Super Admin।",
+      anyOf: [
+        "sales.view",
+        "dashboard.view",
+        "inventory.view",
+        "dashboard.financials",
+        "accounts.view",
+        "hr.manage",
+        "hr.payroll.approve",
+      ],
+      steps: [
+        {
+          text: "হোম স্ক্রিনে “The Pulse”-এর নিচে “Action Zone” অংশ দেখবেন। এখানে তিনটি কার্ড: “Overdue invoices”, “Low stock” ও “Pending approvals”। কার্ডের নামের পাশে লাল সংখ্যাটি বলে কয়টি কাজ অপেক্ষা করছে।",
+          image: {
+            id: "dashboard-action-zone-1",
+            caption:
+              "“Action Zone”-এর তিনটি কার্ড: “Overdue invoices”, “Low stock” ও “Pending approvals”",
+          },
+        },
+        {
+          text: "“Overdue invoices”: যে বায়ারদের ইনভয়েসের পেমেন্টের শেষ দিন পেরিয়ে গেছে, সবচেয়ে বেশি বকেয়া যাঁর তিনি প্রথমে। প্রতিটি সারিতে বায়ারের নাম, ইনভয়েস নম্বর বা কয়টি ইনভয়েস, কত দিন দেরি, আর বকেয়া টাকা। টাকা শুরুতে *** থাকে; কার্ডের চোখে বা উপরের “Show amounts”-এ চাপলে দেখা যায়।",
+        },
+        {
+          text: "সারির ডান দিকের সবুজ WhatsApp আইকনে চাপুন। বায়ারের WhatsApp চ্যাট খুলবে, পেমেন্টের কথা মনে করানোর বার্তা আগে থেকেই লেখা থাকবে: কোম্পানির নাম, বকেয়া টাকা, ইনভয়েস নম্বর ও শেষ দিন। দেখে নিয়ে নিজে “Send” চাপুন; অ্যাপ নিজে কিছু পাঠায় না।",
+          image: {
+            id: "dashboard-action-zone-2",
+            caption: "“Overdue invoices” কার্ডে বায়ার, বকেয়া টাকা ও সবুজ WhatsApp আইকন",
+          },
+        },
+        {
+          text: "সব বকেয়া ইনভয়েস দেখতে কার্ডের নিচে “See all overdue invoices” চাপুন। বায়ারের নামে চাপলে তাঁর প্রোফাইল খোলে।",
+        },
+        {
+          text: "“Low stock”: যে SKU-র বিক্রিযোগ্য পিস কোম্পানির সীমার (সাধারণত ৫ পিস) নিচে নেমেছে, স্টক শেষ হওয়াগুলো প্রথমে। Production Manager ও Super Admin সারির “Order now” চাপলে নতুন প্রোডাকশন প্রজেক্টের ফর্ম খোলে: স্টাইল, ক্যাটাগরি ও “In-House” বসানো থাকে, আর “Running low” লেখায় থাকে কোন রং ও সাইজ কম। পিস লিখে, ফ্যাক্টরি বেছে প্রজেক্ট তৈরি করুন।",
+          image: {
+            id: "dashboard-action-zone-3",
+            caption: "“Low stock” কার্ডে স্টক ফুরিয়ে আসা SKU ও “Order now” বোতাম",
+          },
+        },
+        {
+          text: "যাঁরা উৎপাদন শুরু করতে পারেন না তাঁরা “Order now”-এর জায়গায় “See stock” পান, যা পণ্যের স্টকের পাতা খোলে। পুরো তালিকা দেখতে “See the full list in Insights” চাপুন; নিচের “Insights”-এর “Low stock” ট্যাব খুলে যায়।",
+        },
+        {
+          text: "“Pending approvals”: অপেক্ষায় থাকা কাজ লাল লেখায়। “… to decide” মানে ছুটির আবেদন সিদ্ধান্তের অপেক্ষায়; “Payroll for … is waiting for approval” মানে বেতনের হিসাব অনুমোদনের অপেক্ষায়। লেখায় চাপলে সেই পাতা খোলে।",
+        },
+        {
+          text: "মালিক এখানে আরও দেখেন বাছাই করা সময়ে (“Today”, “This week” বা “This month”) কয়টি সেলস রিটার্ন হয়েছে (ক্রেডিট নোট নম্বর, বায়ার, ফেরত টাকা ও কে করেছেন), আর কোন অর্ডারগুলোতে ১০%-এর বেশি ছাড় দেওয়া হয়েছে (অর্ডার নম্বর, বায়ার, ছাড়ের শতাংশ ও টাকা, আর কে অর্ডারটি করেছেন)। নম্বরে চাপলে রিটার্ন বা অর্ডারটি খোলে।",
+        },
+      ],
+      tips: [
+        "বকেয়া ইনভয়েস, কম স্টক, ছুটি ও বেতন সবসময় এখনকার অবস্থা দেখায়; শুধু সেলস রিটার্ন ও বড় ছাড়ের অর্ডার উপরের সময় বাছাই মেনে চলে।",
+        "সেলস রিটার্ন ও বড় ছাড়ের জন্য আলাদা অনুমোদনের ধাপ নেই; Sales আগের মতোই কাজ করে। তালিকাটি শুধু মালিকের নজরে আনার জন্য।",
+        "বায়ারের প্রোফাইলে WhatsApp বা ফোন নম্বর না থাকলে আইকনটি ধূসর থাকে। নম্বর যোগ করলে আইকন চালু হয়। দোকানের খুচরা বিক্রিতে অর্ডারের ফোন নম্বর ব্যবহার হয়।",
+        "সব কাজ শেষ থাকলে কার্ডে সবুজ টিক দিয়ে লেখা থাকে, যেমন “No invoice is past its due day.” বা “Nothing is waiting for approval”।",
+      ],
+    },
+    {
       slug: "dashboard-key-figures",
       title: "মূল হিসাবগুলো (Key figures) পড়বেন যেভাবে",
       summary:
@@ -320,7 +405,7 @@ export const dashboardHelp: HelpSection = {
           text: "তালিকায় “Days of cover” বলে এখনকার গতিতে স্টক কত দিন চলবে, আর “Last sold” বলে শেষ কবে বিক্রি হয়েছে।",
         },
         {
-          text: "“Low stock” ট্যাবে সেই SKU-গুলো দেখবেন যেগুলোর স্টক কোম্পানির ঠিক করা সীমার নিচে নেমেছে, স্টক শেষ হওয়াগুলোসহ। এগুলো আবার তৈরি বা কেনার কথা ভাবুন।",
+          text: "“Low stock” ট্যাবে সেই SKU-গুলো দেখবেন যেগুলোর স্টক কোম্পানির ঠিক করা সীমার নিচে নেমেছে, স্টক শেষ হওয়াগুলোসহ। সবচেয়ে জরুরি পাঁচটি উপরের “Action Zone”-এও আসে, যেখানে “Order now” চাপলে সেই স্টাইলের নতুন প্রোডাকশন প্রজেক্ট শুরু করা যায়।",
           image: {
             id: "dashboard-stock-alerts-2",
             caption: "“Low stock” ট্যাবে সীমার নিচে নামা SKU-র তালিকা",

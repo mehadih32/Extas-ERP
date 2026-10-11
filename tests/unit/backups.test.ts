@@ -94,7 +94,9 @@ describe("secrets and signed links", () => {
     expect(decryptSecret(sealed)).toBe("1//refresh-token");
 
     const payload = sealed.slice(3);
-    const flipped = `v1:${payload.slice(0, -2)}${payload.endsWith("A") ? "B" : "A"}${payload.slice(-1)}`;
+    // Change the second-to-last character, whatever it is (it may already be an "A").
+    const swap = payload.at(-2) === "A" ? "B" : "A";
+    const flipped = `v1:${payload.slice(0, -2)}${swap}${payload.slice(-1)}`;
     expectAppError(() => decryptSecret(flipped), "UNAVAILABLE");
     vi.stubEnv("ENCRYPTION_KEY", "another-key-0123456789");
     expectAppError(() => decryptSecret(sealed), "UNAVAILABLE");

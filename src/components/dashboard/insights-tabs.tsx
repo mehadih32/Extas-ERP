@@ -1,10 +1,12 @@
 "use client";
 
 import { TriangleAlertIcon } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
+
+import { INSIGHTS_TAB_EVENT } from "./open-insights-tab";
 
 export type InsightsTab = {
   value: string;
@@ -15,7 +17,10 @@ export type InsightsTab = {
   content: React.ReactNode;
 };
 
-/** The Insights widget's tabs, with an optional warning line that opens its tab. */
+/**
+ * The Insights widget's tabs, with an optional warning line that opens its tab.
+ * Elsewhere on the page, OpenInsightsTab opens a tab and brings it into view.
+ */
 export function InsightsTabs({
   tabs,
   notice,
@@ -24,9 +29,26 @@ export function InsightsTabs({
   notice?: { message: string; action: string; tab: string };
 }) {
   const [tab, setTab] = useState(tabs[0]?.value ?? "");
+  const ref = useRef<HTMLDivElement>(null);
+  const values = tabs.map((t) => t.value).join(" ");
+
+  useEffect(() => {
+    const open = (event: Event) => {
+      const value = (event as CustomEvent<unknown>).detail;
+      if (typeof value !== "string" || !values.split(" ").includes(value)) return;
+      setTab(value);
+      ref.current?.scrollIntoView({ block: "start" });
+    };
+    window.addEventListener(INSIGHTS_TAB_EVENT, open);
+    return () => window.removeEventListener(INSIGHTS_TAB_EVENT, open);
+  }, [values]);
 
   return (
-    <div className="mt-5 grid grid-cols-1 gap-5">
+    // Clear of the bar pinned at the top when scrolled to.
+    <div
+      ref={ref}
+      className="mt-5 grid scroll-mt-[calc(var(--app-top,0px)+6rem)] grid-cols-1 gap-5"
+    >
       {notice && (
         <div
           role="status"

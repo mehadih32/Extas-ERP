@@ -90,7 +90,9 @@ Built one module at a time, each in its own pull request. So far:
   quotation, New expense, Blank letterhead pad, each for the roles that may do it); the monthly
   sales target as a bar (share reached, on pace or behind, what each day left needs); The
   Pulse for the period (sales and money collected, deliveries and orders waiting to go out,
-  production projects); the key figures (stock value, fixed assets, liabilities, today's
+  production projects); the Action Zone (overdue invoices by buyer with a WhatsApp reminder
+  link, low stock with "Order now", and pending approvals in red: leave, payroll, and for the
+  owner the period's sales returns and orders with a discount over 10%); the key figures (stock value, fixed assets, liabilities, today's
   sales, net profit); and the Insights: top sellers (period, SKUs or styles, by pieces or sales
   value, kept in the address so a link shows the same list), highest stock, dead and slow
   stock, and low stock. Every amount shows `***` when the screen opens: the eye at the top
@@ -1763,6 +1765,25 @@ production for `production.view` or the financials.
 - Periods: today, this week (Saturday to today) or this month (the 1st to today), in the
   company's time zone.
 
+**Action Zone** (`action-zone.service.ts`): what is open now, each part only for the people
+who handle it.
+
+- Overdue invoices (sales values plus the buyer ledgers or the financials: Sales, Accounts,
+  the owner): unpaid invoices past their due day, as the invoice list's Overdue filter reads
+  them, summed per buyer (a walk-in sale is its own row, under the order's customer), the
+  most owed first. Each row has a `wa.me` link with a payment reminder typed in, to the
+  buyer's WhatsApp or phone (the order's phone for a walk-in). The app sends nothing itself.
+- Low stock (`dashboard.view` or `inventory.view`): the Insights' list, out of stock first.
+  "Order now" opens `/production/projects/new?restock=<style>` for `production.manage`: an
+  In-House project for the style with its grid ready and its low SKUs named. Others with
+  `inventory.view` get the product's page.
+- Pending approvals: leave requests (`hr.manage`) and payroll not yet approved
+  (`hr.payroll.approve`). For `company.settings`, also the sales returns made in the period
+  chosen at the top (credit notes not void, with who made them) and its orders whose line and
+  order discounts come to more than 10% of the goods (who made them from the audit log).
+  Returns and discounts have no approval step (a return is a credit note at once; QC of
+  returned goods is deferred), so the list only flags them.
+
 **Insights.** Top sellers for a period (the past month by default), per SKU or per style, by
 pieces or by sales value; the SKUs holding the most stock; dead and slow stock; low stock.
 
@@ -1816,6 +1837,7 @@ are recorded in the audit log, and a person can make up to 10 reports a minute.
 | `GET/PATCH /api/dashboard/preferences`                                                       | Hidden cards: `{ metric, hidden }` or the list     |
 | `GET /api/dashboard/home?range=TODAY\|WEEK\|MONTH`                                           | Home top bar (pending tasks, target) and The Pulse |
 | `PUT /api/dashboard/sales-target`                                                            | `{ month: "2026-10", amount }` (company.settings)  |
+| `GET /api/dashboard/action-zone?range=TODAY\|WEEK\|MONTH`                                    | Overdue invoices, low stock, pending approvals     |
 | `GET /api/reports/builder`                                                                   | Metrics this person may pick, periods, defaults    |
 | `GET /api/reports/preview?period=&from=&to=&metrics=SALES,TOP_SELLERS&…`                     | The report as data, without a file                 |
 | `GET/POST /api/reports/exports`, `GET/DELETE …/:id`                                          | Saved reports / make one: `{ format: PDF\|EXCEL }` |

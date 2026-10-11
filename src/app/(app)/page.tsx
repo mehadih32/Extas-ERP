@@ -3,6 +3,7 @@ import Link from "next/link";
 import { cache, Suspense } from "react";
 
 import { PrivacyProvider } from "@/components/accounts/privacy";
+import { ActionZone } from "@/components/dashboard/action-zone";
 import { homeRangeFrom } from "@/components/dashboard/home-range";
 import { HomeToolbar } from "@/components/dashboard/home-toolbar";
 import { Insights, type InsightsColumns } from "@/components/dashboard/insights";
@@ -12,6 +13,7 @@ import type { QuickActionKeys } from "@/components/dashboard/quick-actions";
 import { SalesTargetBar } from "@/components/dashboard/sales-target";
 import { SectionError } from "@/components/dashboard/section-error";
 import {
+  ActionZoneSkeleton,
   InsightsSkeleton,
   MetricCardsSkeleton,
   PulseSkeleton,
@@ -23,10 +25,12 @@ import { PLANNER_KEYS } from "@/components/shell/nav-items";
 import { localDay } from "@/lib/dates";
 import { formatCount, formatLongDay } from "@/lib/display";
 import type { CompanyContext } from "@/modules/auth/context";
+import { actionZoneAccess, hasActionZone } from "@/modules/dashboard/action-zone.service";
 import { canSeeFinancials, canSeeSalesAmounts, canSeeStock } from "@/modules/dashboard/access";
 import { pulseAccess } from "@/modules/dashboard/home.service";
 import type { HomeRange } from "@/modules/dashboard/schemas";
 import {
+  getActionZoneAction,
   getDashboardInsightsAction,
   getHomePulseAction,
   getHomeTopBarAction,
@@ -98,6 +102,12 @@ async function PulseSection({ range }: { range: HomeRange }) {
   return <Pulse data={result.data} />;
 }
 
+async function ActionZoneSection({ range }: { range: HomeRange }) {
+  const result = await getActionZoneAction({ range });
+  if (!result.ok) return <SectionError title="Action Zone" error={result.error} />;
+  return <ActionZone data={result.data} />;
+}
+
 async function KeyFigures() {
   const result = await getMetricCardsAction();
   if (!result.ok) return <SectionError title="Key figures" error={result.error} />;
@@ -120,7 +130,8 @@ async function InsightsSection({
  * The master dashboard (blueprint section 1), the "Pro Smart" Home screen: the
  * greeting with today's pending tasks, a bar pinned to the top (the period, the
  * eye that shows or hides every amount, and the (+) quick actions), the monthly
- * sales target, The Pulse, then the key figures and the Insights. What each
+ * sales target, The Pulse, the Action Zone (overdue invoices, low stock, pending
+ * approvals), then the key figures and the Insights. What each
  * person sees follows the dashboard API's own permission checks: the money
  * cards for dashboard.financials or accounts.view, the Insights for
  * dashboard.view or inventory.view, with sales values and costs only for those
@@ -138,6 +149,8 @@ export default async function DashboardPage({
   const salesAmounts = canSeeSalesAmounts(ctx);
   const pulse = pulseAccess(ctx);
   const hasPulse = pulse.sales || pulse.deliveries || pulse.production;
+  const zone = actionZoneAccess(ctx);
+  const hasZone = hasActionZone(zone);
   const view = topSellersViewFrom(params, { canSortBySales: salesAmounts });
   const range = homeRangeFrom(params);
   const actions: QuickActionKeys = {
@@ -172,7 +185,7 @@ export default async function DashboardPage({
           className="mt-6"
           range={range}
           actions={actions}
-          showRange={hasPulse}
+          showRange={hasPulse || zone.returns || zone.discounts}
           showEye={salesAmounts || financials}
         />
 
@@ -192,6 +205,12 @@ export default async function DashboardPage({
             </div>
           )}
 
+          {hasZone && (
+            <Suspense fallback={<ActionZoneSkeleton />}>
+              <ActionZoneSection range={range} />
+            </Suspense>
+          )}
+
           {financials && (
             <Suspense fallback={<MetricCardsSkeleton />}>
               <KeyFigures />
@@ -204,7 +223,7 @@ export default async function DashboardPage({
             </Suspense>
           )}
 
-          {!financials && !stock && !hasPulse && (
+          {!financials && !stock && !hasPulse && !hasZone && (
             <section className="rounded-lg border bg-card px-6 py-12 text-center sm:px-10">
               <p className="font-serif text-2xl text-primary">Nothing to show here yet</p>
               <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-muted-foreground">

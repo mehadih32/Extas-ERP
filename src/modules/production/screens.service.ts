@@ -536,12 +536,14 @@ export type ProjectScreen = Awaited<ReturnType<typeof getProjectScreen>>;
  * (a closed project keeps all but its name and notes; one started from a
  * proforma or a sales order keeps its buyer), and the pieces to make per colour
  * and size (`blocks`, a style each). "Start production" on an order or a
- * proforma (`from`) fills a new project in from it (`source`).
+ * proforma (`from`) fills a new project in from it (`source`); "Order now" on
+ * the Home screen's low stock (`from.restockStyleId`) starts an in-house one for
+ * the style (`restock`).
  */
 export async function getProjectForm(
   ctx: CompanyContext,
   projectId?: string,
-  from: { orderId?: string; proformaId?: string } = {},
+  from: { orderId?: string; proformaId?: string; restockStyleId?: string } = {},
 ) {
   const tz = ctx.company.timezone;
   const today = localDay(new Date(), tz);
@@ -552,12 +554,24 @@ export async function getProjectForm(
     categories: categories.map((c) => ({ id: c.id, label: c.path.join(" › ") })),
   };
   if (!projectId) {
+    if (from.restockStyleId && !from.orderId && !from.proformaId) {
+      const restock = await restockSource(ctx, from.restockStyleId);
+      return {
+        ...base,
+        project: null,
+        locked: null,
+        source: null,
+        restock: restock.restock,
+        blocks: restock.blocks,
+      };
+    }
     const started = await formSource(ctx, from, base.defaultTargetOn, today);
     return {
       ...base,
       project: null,
       locked: null,
       source: started?.source ?? null,
+      restock: null,
       blocks: started?.blocks ?? [],
     };
   }
@@ -577,6 +591,7 @@ export async function getProjectForm(
   return {
     ...base,
     source: null,
+    restock: null,
     blocks: await formBlocks(ctx, sumTargets(p.targetLines)),
     project: {
       id: p.id,
@@ -671,6 +686,66 @@ async function formBlocks(ctx: CompanyContext, targets: ReadonlyMap<string, numb
       quantities: Object.fromEntries([...targets].filter(([id]) => skus.has(id))),
     };
   });
+}
+
+/**
+ * "Order now" on the Home screen's low stock: a new in-house project for the
+ * style, its colours and sizes ready to fill in, and which of its SKUs are below
+ * the low stock threshold (available A-grade pieces, as the Insights count them).
+ */
+async function restockSource(ctx: CompanyContext, styleId: string) {
+  const style = await ctx.db.style.findUnique({
+    where: { id: styleId },
+    select: { id: true, code: true, name: true, categoryId: true },
+  });
+  if (!style) throw new AppError("NOT_FOUND", "Style not found.");
+  const threshold = ctx.company.lowStockThreshold;
+  const [grids, balances] = await Promise.all([
+    styleGrids(ctx, [style.id]),
+    ctx.db.stockBalance.groupBy({
+      by: ["variantId", "grade"],
+      where: { variant: { styleId: style.id } },
+      _sum: { quantity: true, reserved: true },
+    }),
+  ]);
+  const available = new Map<string, number>();
+  for (const b of balances) {
+    const before = available.get(b.variantId) ?? 0;
+    const sellable = b.grade === "A_GRADE" ? (b._sum.quantity ?? 0) - (b._sum.reserved ?? 0) : 0;
+    available.set(b.variantId, before + sellable);
+  }
+  const matrix = grids[0];
+  // SKUs stocked before and now below the threshold; a cell never made is not "low".
+  const low = (matrix?.rows ?? [])
+    .flatMap((row) =>
+      row.cells.flatMap((cell, i) => {
+        if (!cell || !cell.isActive || !available.has(cell.variantId)) return [];
+        const left = available.get(cell.variantId)!;
+        if (left >= threshold) return [];
+        const size = matrix!.sizes[i]!;
+        return [
+          {
+            variantId: cell.variantId,
+            sku: cell.sku,
+            colorName: row.color.name,
+            sizeName: size.name,
+            available: left,
+          },
+        ];
+      }),
+    )
+    .sort((a, b) => a.available - b.available || a.sku.localeCompare(b.sku));
+  return {
+    blocks: matrix ? [{ matrix, quantities: {} as Record<string, number> }] : [],
+    restock: {
+      style: { id: style.id, code: style.code, name: style.name },
+      categoryId: style.categoryId,
+      name: `Restock: ${style.name} (${style.code})`,
+      threshold,
+      /** Its SKUs below the threshold, the emptiest first. */
+      low,
+    },
+  };
 }
 
 /** Why a proforma item's pieces are not on the grid, as the form says it. */

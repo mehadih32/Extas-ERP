@@ -33,6 +33,7 @@ export type StockWindow = {
 
 export type SkuStock = {
   variantId: string;
+  styleId: string;
   sku: string;
   styleCode: string;
   styleName: string;
@@ -99,7 +100,7 @@ function positions(
     ),
     held AS (${held}),
     sold AS (${sold})
-    SELECT pv.id AS "variantId", pv.sku, st.code AS "styleCode", st.name AS "styleName",
+    SELECT pv.id AS "variantId", pv."styleId", pv.sku, st.code AS "styleCode", st.name AS "styleName",
            c.name AS "colorName", z.name AS "sizeName", pv."avgCost",
            COALESCE(bal."aGrade", 0)::int AS "aGrade",
            COALESCE(bal."bGrade", 0)::int AS "bGrade",
@@ -137,6 +138,7 @@ function positions(
 function toSku(r: PositionRow): SkuStock {
   return {
     variantId: r.variantId,
+    styleId: r.styleId,
     sku: r.sku,
     styleCode: r.styleCode,
     styleName: r.styleName,

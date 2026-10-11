@@ -58,6 +58,7 @@ export function EmployeeList({
               <>
                 {e.status !== "ACTIVE" && <EmployeeBadge status={e.status} />}
                 {e.isCurrent && e.exitDate && <FlagBadge tone="warn">Leaving</FlagBadge>}
+                {e.vaultGaps.length > 0 && <FlagBadge tone="warn">Details missing</FlagBadge>}
               </>
             }
             title={e.name}
@@ -93,6 +94,7 @@ export function EmployeeList({
                     <span>{e.code}</span>
                     {e.status !== "ACTIVE" && <EmployeeBadge status={e.status} />}
                     {e.hasLogin && <span>· has a login</span>}
+                    {e.vaultGaps.length > 0 && <FlagBadge tone="warn">Details missing</FlagBadge>}
                   </div>
                 </TableCell>
                 <TableCell>

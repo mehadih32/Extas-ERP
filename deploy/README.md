@@ -309,6 +309,31 @@ From then on:
 | `sudo ./deploy/deploy.sh --no-pull`                    | Restart after changing a setting, without downloading updates   |
 | `sudo reboot`                                          | Restart the server; the ERP starts again by itself              |
 
+## Outside services (SMS, push, payouts, maps)
+
+The ERP works without these. Each is switched on by adding its settings to `deploy/.env` and
+restarting (`sudo ./deploy/deploy.sh --no-pull`); HR sees where each stands under
+**HR & payroll > Holidays & rules > Outside services**. "log" is a test mode: nothing leaves
+the server, and each message shows in `sudo ./deploy/logs.sh app`.
+
+- **SMS** (one-time codes when staff agree to the terms). `SMS_PROVIDER=http` works with any
+  SMS gateway that has a web address to send through. Put the gateway's address in
+  `SMS_HTTP_URL` with these words where the gateway expects each value: `{to}`
+  (8801711000000), `{to_local}` (01711000000), `{text}`, `{sender}` (`SMS_SENDER_ID`) and
+  `{key}` (`SMS_API_KEY`). For a gateway that wants a POST, also set `SMS_HTTP_METHOD=POST`
+  and the body in `SMS_HTTP_BODY` (JSON such as `{"to":"{to}","message":"{text}"}`, or
+  `to={to}&message={text}`). If the gateway answers "OK" even when it fails, put the text a
+  real success contains in `SMS_HTTP_SUCCESS`. Until SMS is on, staff sign with a drawn
+  signature instead.
+- **Push notifications** (`PUSH_PROVIDER`): `log` for now; phone notifications come with the
+  employee dashboard. Until then the in-app inbox carries every message.
+- **bKash / Nagad payouts** (`PAYOUT_PROVIDER`): `log` for now. The wallet's own connection is
+  added when the company has its payout account; until then Accounts pays and records
+  salaries as today.
+- **Google Maps** (`GOOGLE_MAPS_API_KEY`): a Maps JavaScript API key from Google Cloud
+  console, limited to the ERP's address (**Application restrictions > Websites**). Without it,
+  the staff map shows "Open in Google Maps" links instead of pins.
+
 ## Changing a setting
 
 Edit `deploy/.env` with `sudo nano deploy/.env`, save, then run

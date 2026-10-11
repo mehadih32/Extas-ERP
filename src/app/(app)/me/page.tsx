@@ -7,7 +7,9 @@ import { CheckInButtons } from "@/components/hr/my-hr-actions";
 import { MyHrProblem } from "@/components/hr/no-access";
 import { Fact, Panel } from "@/components/sales/detail-bits";
 import { isZero, METHOD_LABELS, money } from "@/components/sales/labels";
+import { FormAlert } from "@/components/forms/field";
 import { formatDay, formatLongDay, formatMonth } from "@/lib/display";
+import { VAULT_ITEM_WORDS } from "@/modules/hr/vault";
 import { getMyHrScreenAction } from "@/server/actions/portal.actions";
 import { requireCompanyPage } from "@/server/pages/guards";
 
@@ -15,6 +17,10 @@ export const metadata: Metadata = { title: "My HR" };
 
 const linkClass = "text-primary underline-offset-4 hover:underline";
 const smallText = "block text-[0.8125rem] text-muted-foreground";
+
+/** "blood group", "blood group and reference person", "a, b and c". */
+const listText = (items: string[]) =>
+  items.length <= 1 ? (items[0] ?? "") : `${items.slice(0, -1).join(", ")} and ${items.at(-1)}`;
 
 /**
  * The signed-in employee's own HR page (portal.self): checking in and out for
@@ -41,9 +47,20 @@ export default async function MyHrPage() {
   const t = thisMonth.totals;
   const year = today.date.slice(0, 4);
   const pay = payDetails(p);
+  const gaps = result.data.vaultGaps;
 
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
+      {gaps.length > 0 && (
+        <div className="lg:col-span-2">
+          <FormAlert tone="note">
+            HR still needs your {listText(gaps.map((g) => VAULT_ITEM_WORDS[g]))}.{" "}
+            <Link href={hrHref.myProfile} className="font-medium underline underline-offset-4">
+              Fill in my details
+            </Link>
+          </FormAlert>
+        </div>
+      )}
       <div className="grid min-w-0 grid-cols-1 content-start gap-6">
         <Panel title="Today" id="today-heading">
           <p className="mt-1 text-sm text-muted-foreground">{formatLongDay(today.date)}</p>
@@ -229,8 +246,10 @@ export default async function MyHrPage() {
               </Fact>
             )}
           </dl>
-          <p className="mt-5 text-[0.8125rem] text-muted-foreground">
-            Something wrong? Ask HR to change it.
+          <p className="mt-5 text-sm">
+            <Link href={hrHref.myProfile} className={linkClass}>
+              Update my details
+            </Link>
           </p>
         </Panel>
       </div>

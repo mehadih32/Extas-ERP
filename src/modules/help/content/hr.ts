@@ -39,6 +39,9 @@ export const hrHelp: HelpSection = {
           text: "“Leave to decide”-এ অপেক্ষায় থাকা ছুটির আবেদন, “Today”-তে আজ কে ছুটিতে বা অনুপস্থিত, “Coming holidays”-এ সামনের ছুটির দিন।",
         },
         {
+          text: "HR সামলানোর অনুমতি থাকলে “Staff records” অংশে কর্মীদের বেতনের হিসাব বদলের আবেদন (অনুমোদনের অপেক্ষায়) আর কয়জনের রেকর্ডে তথ্য বাকি তা দেখাবে।",
+        },
+        {
           text: "বেতন দেখার অনুমতি থাকলে “Payroll” অংশে গত মাস ও এ মাসের বেতন কোন অবস্থায় আছে (তৈরি হয়নি, অনুমোদন বাকি, পরিশোধ বাকি) দেখাবে।",
         },
         {
@@ -76,13 +79,13 @@ export const hrHelp: HelpSection = {
           },
         },
         {
-          text: "“The person” অংশে “Full name”, ফোন, WhatsApp, ইমেইল, “National ID (optional)”, জন্মতারিখ, রক্তের গ্রুপ, ঠিকানা ও “Emergency contact (optional)” দিন। কোড ফাঁকা রাখলে পরের কোড (যেমন EMP-0012) নিজে থেকে বসবে।",
+          text: "“The person” অংশে “Full name”, ফোন, WhatsApp, ইমেইল, “National ID (optional)”, জন্মতারিখ, রক্তের গ্রুপ, ঠিকানা, “Emergency contact (optional)” ও রেফারেন্স (“Reference person (optional)”, ফোন ও কীভাবে চেনেন) দিন। কোড ফাঁকা রাখলে পরের কোড (যেমন EMP-0012) নিজে থেকে বসবে।",
         },
         {
           text: "“The job” অংশে “Post (optional)” (যেমন Sewing operator), “Department (optional)” ও “Joined on” দিন। বেতন ও ছুটি এই দিন থেকে গোনা হয়।",
         },
         {
-          text: "“Pay” অংশে “Monthly salary” (যোগদানের দিন থেকে মোট বেতন), “Overtime pay per hour (optional)” (ফাঁকা রাখলে ওভারটাইম দেওয়া হয় না) আর “Salary paid by” (ক্যাশ, ব্যাংক বা ওয়ালেট, সঙ্গে নম্বর) দিন।",
+          text: "“Pay” অংশে “Monthly salary” (যোগদানের দিন থেকে মোট বেতন), “Overtime pay per hour (optional)” (ফাঁকা রাখলে ওভারটাইম দেওয়া হয় না) আর “Salary paid by” (ক্যাশ, ব্যাংক বা ওয়ালেট, সঙ্গে ব্যাংক, “Branch (optional)” ও নম্বর) দিন।",
           image: {
             id: "hr-add-employee-2",
             caption: "“Pay” অংশ: মাসিক বেতন, ওভারটাইম হার ও “Salary paid by”",
@@ -493,6 +496,115 @@ export const hrHelp: HelpSection = {
         },
       ],
       tips: ["সাপ্তাহিক ছুটি বদলালে অনুমোদন হয়নি এমন মাসগুলোর ছুটির দিন আবার গোনা হয়।"],
+    },
+    {
+      slug: "hr-data-vault",
+      title: "কর্মীর ডেটা ভল্ট: অসম্পূর্ণ তথ্য, কাগজপত্র ও বেতনের হিসাব বদলের অনুমোদন",
+      summary:
+        "কার রেকর্ডে NID, রক্তের গ্রুপ, রেফারেন্স বা ব্যাংক/ওয়ালেটের তথ্য নেই তা দেখা, NID-ছবি-সনদ রাখা, আর কর্মীর ব্যাংক বা বিকাশ নম্বর বদলের আবেদন অনুমোদন করা।",
+      keywords: [
+        "data vault",
+        "details missing",
+        "staff records",
+        "nid",
+        "reference person",
+        "pay details",
+        "bank account",
+        "bkash number",
+        "add a paper",
+        "approve the change",
+        "ডেটা ভল্ট",
+        "কাগজপত্র",
+        "জাতীয় পরিচয়পত্র",
+        "রেফারেন্স",
+        "ব্যাংক হিসাব বদল",
+        "বিকাশ নম্বর বদল",
+      ],
+      routes: ["/hr/employees", "/hr"],
+      who: "যাঁদের HR সামলানোর অনুমতি আছে: শুরুতে শুধু Super Admin, অথবা “HR Manager”-এর মতো নিজস্ব ভূমিকা।",
+      anyOf: ["hr.manage"],
+      steps: [
+        {
+          text: "“HR & payroll” > “Overview”-এর “Staff records” অংশে দেখবেন কার বেতনের হিসাব বদলের আবেদন অপেক্ষায় আছে, আর কয়জনের রেকর্ডে তথ্য বাকি। “Details missing” চাপলে শুধু তাঁদের তালিকা খুলবে।",
+          image: {
+            id: "hr-data-vault-1",
+            caption:
+              "“Overview”-এর “Staff records” অংশ: অনুমোদনের অপেক্ষায় থাকা আবেদন ও অসম্পূর্ণ রেকর্ড",
+          },
+        },
+        {
+          text: "“Employees” ট্যাবে “Details missing” টিক দিলেও একই তালিকা পাবেন। যাঁর রেকর্ড অসম্পূর্ণ, তাঁর নামের পাশে “Details missing” লেখা থাকে।",
+        },
+        {
+          text: "কর্মীর পাতায় ডান দিকে “Data vault” অংশ। উপরে চারটি জিনিস: “National ID”, “Blood group”, “Reference person” ও “Bank or wallet details”। যা নেই তার নিচে লাল করে “Missing” লেখা থাকে, আর কোণে চারটির কয়টি পূরণ হয়েছে (সব থাকলে “Complete”)।",
+          image: {
+            id: "hr-data-vault-2",
+            caption: "কর্মীর পাতার “Data vault”: কী আছে, কী নেই, আর কাগজপত্র",
+          },
+        },
+        {
+          text: "বাকি তথ্য নিজে দিতে “Change details” চাপুন। “Reference person (optional)”, “Reference phone (optional)” ও “How they know them (optional)” এখানে, আর ব্যাংকে বেতন হলে “Branch (optional)”। কর্মী নিজেও My HR থেকে দিতে পারেন।",
+        },
+        {
+          text: "NID কার্ডের ছবি, কর্মীর ছবি, সনদ বা নিয়োগপত্র রাখতে “Papers”-এর নিচে “Add a paper” চাপুন। “What it is” বেছে নিন, চাইলে “Name (optional)” দিন, “Photo or PDF”-এ ফাইল বা ফোনের ক্যামেরার ছবি দিন, তারপর “Add the paper”। নাম চাপলে নতুন ট্যাবে খোলে; ভুল হলে পাশের মুছে ফেলার বোতাম।",
+        },
+        {
+          text: "কর্মী My HR থেকে ব্যাংক বা বিকাশ/নগদ নম্বর বদলের আবেদন করলে পাতায় “Pay change to approve” আর “Data vault”-এ “Pay details change waiting” দেখাবে: “Now” (এখন যেখানে বেতন যায়) আর “Asked for” (নতুন)। নম্বরটি কর্মীর নিজের কি না যাচাই করে “Approve the change” চাপুন, না হলে “Turn down” চেপে “Why”-তে কারণ লিখুন।",
+          image: {
+            id: "hr-data-vault-3",
+            caption:
+              "“Pay details change waiting”: আগের ও নতুন হিসাব, “Approve the change” ও “Turn down”",
+          },
+        },
+      ],
+      tips: [
+        "অনুমোদনের পর থেকেই নতুন হিসাবে বেতন যায়; আগে অনুমোদিত বেতন বদলায় না। কর্মী ইনবক্সে সিদ্ধান্ত ও কারণ জানতে পারেন।",
+        "নিজের বেতনের হিসাব বদলের আবেদন নিজে অনুমোদন করা যায় না, আর “Change details”-এ নিজের ব্যাংক বা ওয়ালেট বদলানো যায় না; অন্য কেউ (বা Super Admin) করবেন।",
+        "ভল্টের কাগজপত্র শুধু HR আর সেই কর্মী খুলতে পারেন। প্রতিটি যোগ, মোছা ও সিদ্ধান্ত কার্যকলাপের লগে থাকে।",
+      ],
+    },
+    {
+      slug: "hr-outside-services",
+      title:
+        "বাইরের সেবা (SMS, ফোন নোটিফিকেশন, বিকাশ/নগদ, Google Maps) কোন অবস্থায় আছে দেখবেন যেভাবে",
+      summary:
+        "SMS কোড, ফোনে নোটিফিকেশন, ওয়ালেটে বেতন পাঠানো আর ম্যাপ চালু আছে, পরীক্ষা মোডে আছে, নাকি বন্ধ তা দেখা।",
+      keywords: [
+        "outside services",
+        "integrations",
+        "sms",
+        "otp",
+        "push notifications",
+        "bkash payout",
+        "nagad",
+        "google maps",
+        "বাইরের সেবা",
+        "এসএমএস",
+        "নোটিফিকেশন",
+        "ম্যাপ",
+      ],
+      routes: ["/hr/settings"],
+      who: "যাঁদের HR সামলানোর অনুমতি আছে।",
+      anyOf: ["hr.manage"],
+      steps: [
+        {
+          text: "“HR & payroll” > “Holidays & rules” ট্যাবের নিচে “Outside services” অংশ খুলুন।",
+          image: {
+            id: "hr-outside-services-1",
+            caption: "“Outside services”: SMS, ফোন নোটিফিকেশন, বিকাশ/নগদ ও Google Maps-এর অবস্থা",
+          },
+        },
+        {
+          text: "প্রতিটির পাশে অবস্থা: “Off” (বন্ধ), “Test mode” (কিছু পাঠানো হয় না, শুধু সার্ভারের লগে লেখা থাকে) বা “Connected” (চালু)। বন্ধ থাকলে ততদিন কী হয় তাও লেখা থাকে, যেমন SMS না থাকলে কর্মীরা আঙুলে আঁকা সই দেন।",
+        },
+        {
+          text: "চালু করতে সার্ভারের সেটিংসে এর চাবিগুলো (“Server settings”-এ লেখা নাম) বসাতে হয়। এটি আপনার সার্ভার দেখাশোনা করেন যিনি, তিনি করবেন (deploy/README.md-এর “Outside services”)। এই পাতা থেকে কিছু বদলানো যায় না।",
+        },
+      ],
+      tips: [
+        "“Setting to fix” লেখা থাকলে সেটিং দেওয়া আছে কিন্তু ভুল; লেখাটি সার্ভার দেখাশোনাকারীকে দেখান।",
+        "এসব ছাড়াও পুরো অ্যাপ চলে; চালু হলে কোনো কিছু নতুন করে শিখতে হয় না।",
+      ],
     },
   ],
 };

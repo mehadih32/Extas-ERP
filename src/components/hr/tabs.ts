@@ -47,4 +47,5 @@ export const MY_HR_TABS: ReadonlyArray<{ href: string; label: string }> = [
   { href: "/me/leave", label: "Leave" },
   { href: "/me/payslips", label: "Payslips" },
   { href: "/me/advances", label: "Advances" },
+  { href: "/me/profile", label: "My details" },
 ];

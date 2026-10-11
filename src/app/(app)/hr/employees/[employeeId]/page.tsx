@@ -7,10 +7,12 @@ import { EmployeeBadge, FlagBadge, PayrollBadge } from "@/components/hr/badges";
 import { EmployeeActions, LeaveAllowances, SalaryHistory } from "@/components/hr/employee-actions";
 import { hrHref, payDetails } from "@/components/hr/labels";
 import { HrNoAccess } from "@/components/hr/no-access";
+import { VaultPanel } from "@/components/hr/vault-panel";
 import { Fact, Panel, RecordHeader } from "@/components/sales/detail-bits";
 import { isZero, METHOD_LABELS, money } from "@/components/sales/labels";
 import { BackLink } from "@/components/settings/back-link";
 import { formatDay, formatMonth } from "@/lib/display";
+import { vaultScore } from "@/modules/hr/vault";
 import { getEmployeeScreenAction } from "@/server/actions/hr.actions";
 import { requireCompanyPage } from "@/server/pages/guards";
 
@@ -47,7 +49,7 @@ export default async function EmployeePage({
     );
   }
   const screen = result.data;
-  const { employee: e, pay, leave, thisMonth, can, notes } = screen;
+  const { employee: e, pay, leave, thisMonth, can, notes, vault } = screen;
   const currency = ctx.company.currency;
   const notice =
     one(query.created) === "1"
@@ -75,11 +77,20 @@ export default async function EmployeePage({
               {e.login && (
                 <FlagBadge>{e.login.active ? "Has a login" : "Login switched off"}</FlagBadge>
               )}
+              {vault?.pendingRequest && <FlagBadge tone="warn">Pay change to approve</FlagBadge>}
             </>
           }
         />
         <EmployeeActions key={e.id} screen={screen} currency={currency} notice={notice} />
         {notes.salary && <p className="text-[0.8125rem] text-muted-foreground">{notes.salary}</p>}
+        {vault?.pendingRequest && (
+          <p className="text-sm">
+            {e.name} asked to be paid by {vault.pendingRequest.changesText}.{" "}
+            <a href="#vault-heading" className={linkClass}>
+              See the change
+            </a>
+          </p>
+        )}
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
@@ -191,6 +202,23 @@ export default async function EmployeePage({
         </div>
 
         <div className="grid min-w-0 grid-cols-1 content-start gap-6">
+          {vault && (
+            <Panel
+              title="Data vault"
+              id="vault-heading"
+              className="scroll-mt-24"
+              action={
+                <span
+                  className={`text-sm ${vault.gaps.length > 0 ? "text-destructive" : "text-muted-foreground"}`}
+                >
+                  {vaultScore(vault.gaps)}
+                </span>
+              }
+            >
+              <VaultPanel employeeId={e.id} name={e.name} vault={vault} />
+            </Panel>
+          )}
+
           {pay && (
             <Panel title="Pay" id="pay-heading">
               <dl className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
@@ -301,6 +329,15 @@ export default async function EmployeePage({
                 </Fact>
               )}
               {e.emergencyContact && <Fact label="Emergency contact">{e.emergencyContact}</Fact>}
+              {e.referenceName && (
+                <Fact label="Reference person">
+                  {e.referenceName}
+                  {e.referenceRelation ? ` (${e.referenceRelation})` : ""}
+                  {e.referencePhone && (
+                    <span className="block text-muted-foreground">{e.referencePhone}</span>
+                  )}
+                </Fact>
+              )}
               <Fact label="Login">
                 {e.login ? `${e.login.email}${e.login.active ? "" : " (switched off)"}` : "None"}
               </Fact>

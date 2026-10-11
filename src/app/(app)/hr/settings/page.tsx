@@ -4,6 +4,7 @@ import Link from "next/link";
 import { SectionError } from "@/components/dashboard/section-error";
 import { hrHref, offDaysText } from "@/components/hr/labels";
 import { HrNoAccess } from "@/components/hr/no-access";
+import { OutsideServices } from "@/components/hr/outside-services";
 import { Holidays, HrRules, LeaveTypes } from "@/components/hr/settings-actions";
 import { Fact, Panel } from "@/components/sales/detail-bits";
 import { getHrSettingsScreenAction } from "@/server/actions/hr.actions";
@@ -44,7 +45,7 @@ export default async function HrSettingsPage({
       />
     );
   }
-  const { rules, year, years, holidays, leaveTypes, can } = result.data;
+  const { rules, year, years, holidays, leaveTypes, integrations, can } = result.data;
   const shownYears = years.includes(year) ? years : [...years, year].sort((a, b) => a - b);
 
   return (
@@ -111,6 +112,16 @@ export default async function HrSettingsPage({
             <LeaveTypes types={leaveTypes} canManage={can.manage} />
           </div>
         </Panel>
+
+        {integrations && (
+          <Panel title="Outside services" id="outside-services-heading" className="lg:col-span-2">
+            <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+              SMS, phone notifications, wallet payouts and maps work through outside companies. Each
+              is switched on by your server administrator; the app works without them.
+            </p>
+            <OutsideServices plugs={integrations} />
+          </Panel>
+        )}
       </div>
     </section>
   );

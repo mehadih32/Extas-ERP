@@ -19,6 +19,8 @@ export type EmployeeListView = {
   status?: EmployeeStatus;
   /** People who left too. */
   former?: boolean;
+  /** Only people with something missing from their data vault. */
+  missing?: boolean;
 };
 
 export type LeaveListView = {
@@ -53,6 +55,7 @@ export function employeeViewFrom(params: SearchParams): EmployeeListView {
     department: one(params, "department").slice(0, 80) || undefined,
     status: pick(EMPLOYEE_STATUSES, one(params, "status")),
     former: flag(params, "former"),
+    missing: flag(params, "missing"),
   };
 }
 
@@ -86,6 +89,7 @@ export function hrListSearch(view: HrListView): string {
       set("department", view.department);
       set("status", view.status);
       set("former", view.former);
+      set("missing", view.missing);
       break;
     case "leave":
       set("status", view.status);
@@ -116,6 +120,7 @@ export function employeeListQuery(view: EmployeeListView, cursor?: string) {
     department: view.department,
     status: view.status,
     former: view.former,
+    incomplete: view.missing,
     cursor,
     take: HR_PAGE_SIZE,
   };

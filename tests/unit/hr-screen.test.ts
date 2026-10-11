@@ -95,6 +95,7 @@ describe("HR & payroll in the menu, by role", () => {
       "Leave",
       "Payslips",
       "Advances",
+      "My details",
     ]);
   });
 
@@ -251,6 +252,9 @@ describe("HR words and figures", () => {
     expect(payDetails({ ...base, salaryMethod: "BANK_TRANSFER" })).toBe("City Bank · 123");
     expect(payDetails({ ...base, salaryMethod: "BKASH" })).toBe("01711000000");
     expect(payDetails({ ...base, salaryMethod: "CASH" })).toBeNull();
+    expect(payDetails({ ...base, bankBranch: "Gulshan", salaryMethod: "CHEQUE" })).toBe(
+      "City Bank · Gulshan · 123",
+    );
   });
 
   it("starts the attendance register again only when the saved marks change", () => {

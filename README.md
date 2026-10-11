@@ -1588,6 +1588,26 @@ words, and sees their own payslips in the portal.
 leave balances, this month's attendance, advances and payslips, checks in and out, and asks
 for or cancels leave. Nothing else in HR is open to them.
 
+**Data vault.** Each employee's record also keeps a reference person (name, phone and
+relation), the bank branch, and papers: an NID scan, a photo, certificates, an appointment
+letter or contract (photos or PDFs, up to 40 per person). A record is complete with a national
+ID, a blood group, a reference person and the details its way of paying needs (bank and
+account for a bank transfer or cheque, a wallet number for bKash, Nagad or Rocket, nothing for
+cash). HR sees what is missing on the employee's page, filters the list by "Details missing"
+and sees the count on the Overview. In My HR > "My details" the employee fills in their own
+national ID, date of birth and blood group once (HR changes them after that), keeps their
+contacts and reference person up to date, and adds papers. A new bank account or wallet is a
+request: it waits for HR (`hr.manage`) to approve or turn it down with a reason, a newer
+request replaces one waiting, and nobody approves their own (a Super Admin aside). HR also
+cannot change their own pay details on the edit form. Vault papers open only to HR and to the
+employee. Requests, decisions and papers are in the audit trail, and HR and the employee are
+told in the app.
+
+**Outside services.** SMS codes, push notifications, bKash/Nagad payouts and Google Maps are
+plugs in `src/modules/integrations/`, each switched off until its server settings are added
+(see `deploy/README.md`, "Outside services"); "log" mode writes to the server log for testing.
+HR sees where each stands under "Holidays & rules".
+
 | Event                        | Entry                                                                    |
 | ---------------------------- | ------------------------------------------------------------------------ |
 | Advance given                | Dr Advances to Employees (1250), Cr Cash / Bank / Wallet                 |
@@ -1598,30 +1618,35 @@ for or cancels leave. Nothing else in HR is open to them.
 | ...and the deductions        | Cr Advances to Employees, Tax Deducted (2260), Other Income (4200)       |
 | Salaries paid                | Dr Salaries Payable (employee), Cr Cash / Bank / Wallet                  |
 
-| Endpoint                                                                          | Purpose                                                  |
-| --------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| `GET/PATCH /api/hr/settings`                                                      | Weekly days off, office start time, late rules, check-in |
-| `GET/POST /api/hr/holidays`, `DELETE …/:id`                                       | Holiday list (one or many at once)                       |
-| `GET/POST /api/hr/leave-types`, `PATCH …/:id`                                     | Leave types and yearly days                              |
-| `GET/POST /api/hr/employees`, `GET/PATCH/DELETE …/:id`                            | Employees and the 360° profile                           |
-| `GET /api/hr/employees/directory`                                                 | Names and codes for pickers (no pay details)             |
-| `POST /api/hr/employees/:id/salary`, `DELETE …/salary/:revisionId`                | Salary revisions                                         |
-| `POST /api/hr/employees/:id/exit` / `…/reinstate`                                 | Leaving / coming back                                    |
-| `POST/DELETE /api/hr/employees/:id/portal-access`                                 | Give or take away a portal login                         |
-| `GET /api/hr/employees/:id/statement` / `…/attendance?month=`                     | Advances, salaries and payments / the month day by day   |
-| `GET/POST /api/hr/attendance?date=`, `DELETE …/:id`, `GET …/summary`              | Day register and marking / monthly day counts            |
-| `GET/POST /api/hr/leave`, `GET …/:id`, `POST …/:id/approve` / `reject` / `cancel` | Leave requests                                           |
-| `GET/PUT /api/hr/leave/balances`                                                  | Leave balances / set one person's allowance for a year   |
-| `GET/POST /api/hr/advances`, `GET/PATCH …/:id`                                    | Salary advances and their recovery plan                  |
-| `POST /api/hr/advances/:id/return` / `…/void`, `…/returns/:id/void`               | Money given back / undo an advance or a return           |
-| `GET/POST /api/hr/payroll`, `GET/DELETE …/:id`                                    | Monthly payroll runs                                     |
-| `POST /api/hr/payroll/:id/recalculate` / `…/bonus`, `PATCH …/items/:id`           | Prepare the draft                                        |
-| `POST /api/hr/payroll/:id/approve` / `…/reopen`                                   | Post to the books / undo                                 |
-| `POST /api/hr/payroll/:id/pay`, `POST /api/hr/payroll/payments/:id/void`          | Pay salaries / void a payment                            |
-| `GET /api/hr/payroll/:id/items/:id/payslip`                                       | Payslip                                                  |
-| `GET /api/portal/me`, `…/attendance`, `…/payslips`, `…/advances`                  | Employee portal: my records                              |
-| `POST /api/portal/attendance/check-in` / `check-out`                              | Employee portal: check in and out                        |
-| `GET/POST /api/portal/leave`, `POST …/:id/cancel`                                 | Employee portal: my leave                                |
+| Endpoint                                                                              | Purpose                                                  |
+| ------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| `GET/PATCH /api/hr/settings`                                                          | Weekly days off, office start time, late rules, check-in |
+| `GET/POST /api/hr/holidays`, `DELETE …/:id`                                           | Holiday list (one or many at once)                       |
+| `GET/POST /api/hr/leave-types`, `PATCH …/:id`                                         | Leave types and yearly days                              |
+| `GET/POST /api/hr/employees`, `GET/PATCH/DELETE …/:id`                                | Employees and the 360° profile                           |
+| `GET /api/hr/employees/directory`                                                     | Names and codes for pickers (no pay details)             |
+| `POST /api/hr/employees/:id/salary`, `DELETE …/salary/:revisionId`                    | Salary revisions                                         |
+| `POST /api/hr/employees/:id/exit` / `…/reinstate`                                     | Leaving / coming back                                    |
+| `POST/DELETE /api/hr/employees/:id/portal-access`                                     | Give or take away a portal login                         |
+| `GET /api/hr/employees/:id/statement` / `…/attendance?month=`                         | Advances, salaries and payments / the month day by day   |
+| `GET/POST /api/hr/attendance?date=`, `DELETE …/:id`, `GET …/summary`                  | Day register and marking / monthly day counts            |
+| `GET/POST /api/hr/leave`, `GET …/:id`, `POST …/:id/approve` / `reject` / `cancel`     | Leave requests                                           |
+| `GET/PUT /api/hr/leave/balances`                                                      | Leave balances / set one person's allowance for a year   |
+| `GET/POST /api/hr/advances`, `GET/PATCH …/:id`                                        | Salary advances and their recovery plan                  |
+| `POST /api/hr/advances/:id/return` / `…/void`, `…/returns/:id/void`                   | Money given back / undo an advance or a return           |
+| `GET/POST /api/hr/payroll`, `GET/DELETE …/:id`                                        | Monthly payroll runs                                     |
+| `POST /api/hr/payroll/:id/recalculate` / `…/bonus`, `PATCH …/items/:id`               | Prepare the draft                                        |
+| `POST /api/hr/payroll/:id/approve` / `…/reopen`                                       | Post to the books / undo                                 |
+| `POST /api/hr/payroll/:id/pay`, `POST /api/hr/payroll/payments/:id/void`              | Pay salaries / void a payment                            |
+| `GET /api/hr/payroll/:id/items/:id/payslip`                                           | Payslip                                                  |
+| `GET /api/portal/me`, `…/attendance`, `…/payslips`, `…/advances`                      | Employee portal: my records                              |
+| `POST /api/portal/attendance/check-in` / `check-out`                                  | Employee portal: check in and out                        |
+| `GET/POST /api/portal/leave`, `POST …/:id/cancel`                                     | Employee portal: my leave                                |
+| `GET /api/hr/employees/:id/vault`, `POST …/documents`, `DELETE /api/hr/documents/:id` | Data vault: what is missing, papers                      |
+| `GET /api/hr/pay-details-requests`, `POST …/:id/approve` / `reject`                   | Pay detail changes waiting for HR                        |
+| `GET/PATCH /api/portal/profile`, `POST …/documents`, `DELETE …/documents/:id`         | Employee portal: my details and papers                   |
+| `POST /api/portal/profile/pay-details`, `POST …/:id/withdraw`                         | Employee portal: ask for a pay details change            |
+| `GET /api/integrations/status`                                                        | Where the outside services stand (`hr.manage`)           |
 
 `hr.view` sees profiles, attendance, leave and holidays, but no salaries. `hr.manage` adds
 and edits employees and salaries, marks attendance, approves leave and sets the HR rules.

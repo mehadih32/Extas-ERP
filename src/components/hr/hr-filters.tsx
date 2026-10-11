@@ -178,6 +178,17 @@ export function HrFilters({
             People who left too
           </label>
         )}
+        {shown.list === "employees" && (
+          <label className="flex h-11 cursor-pointer items-center gap-2 text-sm md:h-9">
+            <input
+              type="checkbox"
+              className="size-4 cursor-pointer accent-primary"
+              checked={Boolean(shown.missing)}
+              onChange={(e) => show({ ...shown, missing: e.target.checked || undefined })}
+            />
+            Details missing
+          </label>
+        )}
         {named && <p className="min-w-0 text-sm break-words text-muted-foreground">{named.text}</p>}
         {isHrFiltered(shown) && (
           <Button

@@ -40,6 +40,7 @@ import {
 } from "@/modules/hr/payroll.service";
 import { getMyOverview } from "@/modules/hr/portal.service";
 import {
+  canActOnOwnRecord,
   canApproveLeave,
   canCancelLeave,
   canChangeAdvance,
@@ -66,6 +67,9 @@ import {
   mayVoidAdvance,
 } from "@/modules/hr/rules";
 import { getHrSettings, listHolidays, listLeaveTypes } from "@/modules/hr/settings.service";
+import { vaultIncompleteWhere } from "@/modules/hr/vault";
+import { getEmployeeVault, getMyVault, listPayRequests } from "@/modules/hr/vault.service";
+import { integrationStatus } from "@/modules/integrations/status";
 
 /*
  * What the HR & payroll screens and the employee's own "My HR" pages show, as
@@ -203,6 +207,29 @@ export async function getOverviewScreen(ctx: CompanyContext) {
         .map((r) => ({ id: r.id, label: r.label, unpaid: r.unpaid ?? "0.00" })),
     };
   }
+  let vault = null;
+  if (access.manage) {
+    const [waiting, incomplete] = await Promise.all([
+      listPayRequests(ctx, { status: "PENDING", take: 6 }),
+      ctx.db.employee.count({
+        where: {
+          AND: [
+            { OR: [{ exitDate: null }, { exitDate: { gte: dateColumn(day) } }] },
+            vaultIncompleteWhere(),
+          ],
+        },
+      }),
+    ]);
+    vault = {
+      payRequests: waiting.map((r) => ({
+        id: r.id,
+        employee: r.employee,
+        changesText: r.changesText,
+        askedOn: r.askedOn,
+      })),
+      incomplete,
+    };
+  }
   let advances = null;
   if (access.advances) {
     const open = await ctx.db.salaryAdvance.aggregate({
@@ -241,6 +268,7 @@ export async function getOverviewScreen(ctx: CompanyContext) {
       .slice(0, 5),
     payroll,
     advances,
+    vault,
     can: {
       addEmployee: access.manage,
       markAttendance: access.manage,
@@ -261,6 +289,8 @@ const employeeListSchema = z.object({
   status: z.enum(["ACTIVE", "ON_LEAVE", "RESIGNED", "TERMINATED"]).optional(),
   /** Everyone, including people who left. */
   former: queryBoolean.optional(),
+  /** Only people with something missing from their data vault. */
+  incomplete: queryBoolean.optional(),
   cursor: z.string().optional(),
   take: z.coerce.number().int().min(1).max(100).optional(),
 });
@@ -274,6 +304,7 @@ export async function listEmployeeRows(ctx: CompanyContext, raw: unknown = {}) {
     department: q.department,
     status: q.status,
     current: !(q.former || left),
+    incomplete: q.incomplete,
     cursor: q.cursor,
     take: q.take ?? 30,
   });
@@ -291,6 +322,7 @@ export async function listEmployeeRows(ctx: CompanyContext, raw: unknown = {}) {
       exitDate: e.exitDate,
       hasLogin: e.portalLogin !== null,
       salary: "salary" in e ? (e.salary as string) : null,
+      vaultGaps: e.vaultGaps,
     })),
     nextCursor: page.nextCursor,
   };
@@ -345,6 +377,7 @@ export async function getEmployeeScreen(
           overtimeRate: e.overtimeRate,
           salaryMethod: e.salaryMethod as PaymentMethod,
           bankName: e.bankName,
+          bankBranch: e.bankBranch,
           bankAccountNumber: e.bankAccountNumber,
           walletNumber: e.walletNumber,
           notes: e.notes,
@@ -361,9 +394,12 @@ export async function getEmployeeScreen(
         }
       : null;
   const activeTypes = balances.filter((b) => b.leaveType.isActive);
+  /** The data vault: what is missing, papers and pay detail changes (HR only). */
+  const vault = access.manage ? await getEmployeeVault(ctx, e.id) : null;
 
   return {
     today: day,
+    vault,
     employee: {
       id: e.id,
       code: e.code,
@@ -378,6 +414,10 @@ export async function getEmployeeScreen(
       dateOfBirth: e.dateOfBirth,
       bloodGroup: e.bloodGroup,
       emergencyContact: e.emergencyContact,
+      referenceName: e.referenceName,
+      referencePhone: e.referencePhone,
+      referenceRelation: e.referenceRelation,
+      vaultGaps: e.vaultGaps,
       joinDate: e.joinDate,
       exitDate: e.exitDate,
       exitReason: e.exitReason,
@@ -448,6 +488,9 @@ export async function getEmployeeForm(ctx: CompanyContext, employeeId?: string) 
             dateOfBirth: e.dateOfBirth,
             bloodGroup: e.bloodGroup,
             emergencyContact: e.emergencyContact,
+            referenceName: e.referenceName,
+            referencePhone: e.referencePhone,
+            referenceRelation: e.referenceRelation,
             notes: e.notes,
             joinDate: e.joinDate,
             exitDate: e.exitDate,
@@ -455,11 +498,22 @@ export async function getEmployeeForm(ctx: CompanyContext, employeeId?: string) 
             overtimeRate: e.overtimeRate,
             salaryMethod: e.salaryMethod as PaymentMethod,
             bankName: e.bankName,
+            bankBranch: e.bankBranch,
             bankAccountNumber: e.bankAccountNumber,
             walletNumber: e.walletNumber,
           }
         : null,
-    can: { setStatus: !e?.exitDate },
+    can: {
+      setStatus: !e?.exitDate,
+      /** Where one's own salary goes is someone else's call (a Super Admin aside). */
+      changePay:
+        !e ||
+        canActOnOwnRecord(
+          { userId: e.portalLogin?.id ?? null },
+          actingAs(ctx),
+          "Someone else must change your own pay details.",
+        ).ok,
+    },
   };
 }
 
@@ -931,6 +985,8 @@ export async function getSettingsScreen(ctx: CompanyContext, raw: { year?: unkno
       /** Paid or unpaid is fixed once the type has approved leave. */
       paidFixed: !canSwitchPaid(t, approvedOf.get(t.id) ?? 0).ok,
     })),
+    /** Where SMS, push, payouts and maps stand (server settings), for HR. */
+    integrations: access.manage ? integrationStatus() : null,
     can: { manage: access.manage },
   };
 }
@@ -967,6 +1023,7 @@ export async function getMyHrScreen(ctx: CompanyContext) {
   const open = o.today.selfCheckIn && working && !closed;
   return {
     ...o,
+    vaultGaps: o.profile.vaultGaps,
     onLeaveToday: onLeave ? onLeave.leaveType.name : null,
     can: {
       checkIn: open && !onLeave && !mark?.checkIn,
@@ -1045,3 +1102,10 @@ export type MyAdvancesScreen = Awaited<ReturnType<typeof getMyAdvancesScreen>>;
 export const MARK_STATUSES: readonly AttendanceStatus[] = ["PRESENT", "LATE", "HALF_DAY", "ABSENT"];
 
 export { monthRange };
+
+/** My details: what the employee fills in, their papers and how they are paid. */
+export async function getMyProfileScreen(ctx: CompanyContext) {
+  return getMyVault(ctx);
+}
+
+export type MyProfileScreen = Awaited<ReturnType<typeof getMyProfileScreen>>;

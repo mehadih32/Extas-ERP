@@ -60,6 +60,7 @@ import MyAdvancesPage from "@/app/(app)/me/advances/page";
 import MyAttendancePage from "@/app/(app)/me/attendance/page";
 import MyLeavePage from "@/app/(app)/me/leave/page";
 import MyHrPage from "@/app/(app)/me/page";
+import MyDetailsPage from "@/app/(app)/me/profile/page";
 import MyPayslipPage from "@/app/(app)/me/payslips/[itemId]/page";
 import MyPayslipsPage from "@/app/(app)/me/payslips/page";
 import { SectionError } from "@/components/dashboard/section-error";
@@ -667,6 +668,7 @@ run("HR & payroll screens", () => {
       expect(await rendered(MyLeavePage({ searchParams: noQuery() })), who).toBe(expected);
       expect(await rendered(MyPayslipsPage()), who).toBe(expected);
       expect(await rendered(MyAdvancesPage()), who).toBe(expected);
+      expect(await rendered(MyDetailsPage()), `${who}: my details`).toBe(expected);
       const inMenu = visibleNavItems([...ctx.permissions]).some((i) => i.href === "/me");
       expect(inMenu, `${who}: My HR in the menu`).toBe(
         self && !keys(ctx).view && !keys(ctx).advances,

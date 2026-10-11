@@ -149,6 +149,7 @@ model Company {
   reminderRules        ReminderRule[]
   notifications        NotificationLog[]
   projectSettlements   ProjectSettlement[]
+  salesTargets         SalesTarget[]
 }
 
 /// A person who can log in. Global across companies.
@@ -210,6 +211,7 @@ model User {
   intakesReversed   StockIntake[]         @relation("IntakeReversedBy")
   settlementsMade   ProjectSettlement[]   @relation("SettlementMadeBy")
   linesCleared      JournalLine[]         @relation("JournalLineClearedBy")
+  salesTargetsSet   SalesTarget[]         @relation("SalesTargetSetBy")
 }
 
 /// A signed-in device. `token` stores the SHA-256 hash of the cookie value, never
@@ -321,6 +323,26 @@ model AuditLog {
   @@index([companyId, createdAt])
   @@index([companyId, entityType, entityId])
   @@index([userId])
+}
+
+/// The sales a company aims for in a month: the bar on the Home screen. Measured
+/// as the month's sales after discounts, without VAT and delivery charges (the
+/// same figure as "Today's sales"). A month with no row of its own uses the
+/// latest earlier month's target.
+model SalesTarget {
+  id        String   @id @default(cuid())
+  companyId String
+  /// The first day of the month ("2026-10-01").
+  month     DateTime @db.Date
+  amount    Decimal  @db.Decimal(14, 2)
+  setById   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  setBy   User?   @relation("SalesTargetSetBy", fields: [setById], references: [id], onDelete: SetNull)
+
+  @@unique([companyId, month])
 }
 
 /// Any uploaded file (logos, packing-list photos, templates, compliance scans, PDFs).

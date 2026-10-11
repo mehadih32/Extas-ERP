@@ -1,13 +1,182 @@
 import type { HelpSection } from "../types";
 
-/** The dashboard: the key figures and the Insights (top sellers and stock alerts). */
+/**
+ * The dashboard (the Home screen): the top bar (pending tasks, the period, the
+ * eye and the (+) quick actions), the monthly sales target, The Pulse, the key
+ * figures and the Insights (top sellers and stock alerts).
+ */
 export const dashboardHelp: HelpSection = {
   id: "dashboard",
   title: "ড্যাশবোর্ড (Dashboard)",
   description:
-    "সাইন ইন করলেই প্রথমে যে পাতা খোলে: ব্যবসার মূল হিসাব, কোন পণ্য বেশি বিক্রি হচ্ছে আর কোন স্টক আটকে আছে বা ফুরিয়ে আসছে।",
+    "সাইন ইন করলেই প্রথমে যে পাতা খোলে: আজকের বাকি কাজ, দ্রুত কাজের (+) বোতাম, মাসের বিক্রির লক্ষ্য, বিক্রি-আদায়-ডেলিভারি-উৎপাদনের গতি, ব্যবসার মূল হিসাব, কোন পণ্য বেশি বিক্রি হচ্ছে আর কোন স্টক আটকে আছে বা ফুরিয়ে আসছে।",
   href: "/",
   articles: [
+    {
+      slug: "dashboard-home-top-bar",
+      title: "হোম স্ক্রিনের উপরের অংশ: আজকের কাজ, সময় বাছাই, চোখ ও (+) বোতাম",
+      summary:
+        "আজ কয়টি কাজ বাকি দেখা, “Today”, “This week” ও “This month”-এর হিসাব বাছাই, টাকার অঙ্ক দেখানো বা লুকানো, আর (+) বোতাম থেকে দ্রুত নতুন অর্ডার, পেমেন্ট, কোটেশন, খরচ বা খালি প্যাড তৈরি।",
+      keywords: [
+        "home",
+        "top bar",
+        "pending tasks",
+        "quick actions",
+        "new order",
+        "receive payment",
+        "new expense",
+        "letterhead",
+        "blank pad",
+        "show amounts",
+        "this week",
+        "হোম",
+        "আজকের কাজ",
+        "বাকি কাজ",
+        "দ্রুত কাজ",
+        "প্লাস বোতাম",
+        "খালি প্যাড",
+        "টাকা লুকানো",
+      ],
+      routes: ["/"],
+      who: "সবাই। (+) বোতামের তালিকায় শুধু সেই কাজগুলো আসে যা আপনার ভূমিকায় করা যায়। “Receive payment” শুধু Accounts ও Super Admin দেখেন।",
+      steps: [
+        {
+          text: "হোম স্ক্রিনে শুভেচ্ছার নিচে লেখা থাকে আজ আপনার কয়টি কাজ বাকি: আজকের ও আগের দিনের শেষ না হওয়া কাজ আর রিমাইন্ডার, Planner-এর তালিকা থেকে। সংখ্যাটিতে চাপলে Planner খোলে। কিছু বাকি না থাকলে লেখা থাকে “Nothing is pending for today.”",
+        },
+        {
+          text: "শুভেচ্ছার নিচের বারটি স্ক্রিন নিচে নামালেও উপরে আটকে থাকে। বাঁ দিকে সময় বাছাই: “Today”, “This week” (শনিবার থেকে আজ পর্যন্ত) ও “This month”। বাছাই বদলালে “The Pulse”-এর হিসাব সঙ্গে সঙ্গে বদলে যায়।",
+          image: {
+            id: "dashboard-home-top-bar-1",
+            caption: "উপরে আটকে থাকা বার: সময় বাছাই, “Show amounts” ও (+) বোতাম",
+          },
+        },
+        {
+          text: "হোম স্ক্রিন খুললে সব টাকার অঙ্ক *** দেখায়, যাতে পাশের কেউ দেখে না ফেলে। বারের “Show amounts” চাপলে সব অঙ্ক দেখা যায়, “Hide amounts” চাপলে আবার লুকায়। শুধু একটি কার্ডের অঙ্ক দেখতে সেই কার্ডের কোণের চোখের আইকনে চাপুন।",
+        },
+        {
+          text: "ডান দিকের (+) বোতামে চাপুন (বড় পর্দায় লেখা থাকে “New”)। তালিকা থেকে বেছে নিন: “New order”, “Receive payment”, “Quick quotation”, “New expense” বা “Blank letterhead pad”। যেটি বাছবেন তার ফর্ম খুলবে।",
+          image: {
+            id: "dashboard-home-top-bar-2",
+            caption:
+              "(+) বোতামের তালিকা: “New order”, “Receive payment”, “Quick quotation”, “New expense”, “Blank letterhead pad”",
+          },
+        },
+        {
+          text: "“Receive payment” চাপলে “Payments” পাতায় “Receive a payment” ফর্মটি সরাসরি খোলে। “Blank letterhead pad” চাপলে কোম্পানির খালি প্যাড PDF হিসেবে তৈরি হয়; তারপর “Open the PDF” বা “Download” চাপুন।",
+        },
+      ],
+      tips: [
+        "পাতা আবার খুললে অঙ্কগুলো আবার লুকানো থাকে; কিছুই মনে রাখা হয় না।",
+        "সময় বাছাই পাতার ঠিকানায় থাকে, তাই লিংক কাউকে পাঠালে তিনিও একই সময়ের হিসাব দেখবেন।",
+        "(+) তালিকায় কোনো কাজ না পেলে বুঝবেন আপনার ভূমিকায় তার অনুমতি নেই; দরকার হলে অ্যাডমিনকে বলুন।",
+      ],
+    },
+    {
+      slug: "dashboard-sales-target",
+      title: "মাসের বিক্রির লক্ষ্য (Monthly sales target) ঠিক করবেন ও দেখবেন যেভাবে",
+      summary:
+        "মাসে কত টাকার বিক্রি করতে চান তা ঠিক করা, আর হোম স্ক্রিনের দাগে দেখা কত ভাগ হলো, গতি ঠিক আছে কি না ও রোজ কত বিক্রি দরকার।",
+      keywords: [
+        "sales target",
+        "monthly target",
+        "target",
+        "achieved",
+        "on pace",
+        "behind pace",
+        "target reached",
+        "set target",
+        "বিক্রির লক্ষ্য",
+        "লক্ষ্য",
+        "মাসের টার্গেট",
+        "টার্গেট",
+      ],
+      routes: ["/"],
+      who: "লক্ষ্য দেখেন যাঁরা বিক্রির টাকা দেখতে পারেন (Super Admin, Accounts ও Sales Executive)। লক্ষ্য ঠিক করেন বা বদলান শুধু Super Admin, বা যে ভূমিকায় কোম্পানির সেটিংস বদলানোর অনুমতি আছে।",
+      anyOf: ["sales.view", "dashboard.financials", "accounts.view"],
+      steps: [
+        {
+          text: "হোম স্ক্রিনে উপরের বারের নিচে “Monthly sales target” কার্ড দেখবেন। প্রথমবার “Set target” চাপুন।",
+          image: {
+            id: "dashboard-sales-target-1",
+            caption: "“Monthly sales target” কার্ড ও “Set target” বোতাম",
+          },
+        },
+        {
+          text: "“Month” ঘরে মাস বেছে নিন (এই মাস বা সামনের কোনো মাস), “Target” ঘরে টাকার অঙ্ক লিখুন, তারপর “Save the target” চাপুন।",
+        },
+        {
+          text: "বড় সংখ্যাটি বলে লক্ষ্যের কত ভাগ বিক্রি হয়েছে (যেমন 75% “achieved”)। দাগটি সেই অনুযায়ী ভরে ওঠে। দাগের ওপর ছোট খাড়া রেখাটি দেখায়, মাস জুড়ে সমান গতিতে বিক্রি হলে আজ পর্যন্ত কোথায় থাকার কথা।",
+          image: {
+            id: "dashboard-sales-target-2",
+            caption: "ভরে ওঠা দাগ, শতাংশ আর “On pace” বা “Behind pace” লেখা",
+          },
+        },
+        {
+          text: "পাশে লেখা থাকে “On pace” (গতি ঠিক আছে), “Behind pace” (পিছিয়ে আছেন) বা “Target reached” (লক্ষ্য পূরণ)। নিচে থাকে মাসের বিক্রি, লক্ষ্য, কত দিন বাকি, আর লক্ষ্যে পৌঁছাতে বাকি দিনগুলোতে রোজ কত বিক্রি দরকার।",
+        },
+        {
+          text: "একবার ঠিক করা লক্ষ্য পরের মাসগুলোতেও চলে, যতক্ষণ না বদলান; তখন কার্ডে লেখা থাকে “Carried over from …”। বদলাতে “Change target” চাপুন।",
+        },
+      ],
+      tips: [
+        "বিক্রি গোনা হয় ছাড়ের পরের পণ্যের দামে, ভ্যাট ও ডেলিভারি চার্জ ছাড়া; বাতিল (void) ইনভয়েস গোনা হয় না। “Key figures”-এর “Today's sales”-ও এভাবেই গোনা।",
+        "টাকার অঙ্ক শুরুতে *** থাকে; উপরের “Show amounts” বা কার্ডের চোখে চাপলে দেখা যায়। শতাংশ সবসময় দেখা যায়।",
+        "পেরিয়ে যাওয়া মাসের লক্ষ্য আর বদলানো যায় না, যাতে পুরনো হিসাব ঠিক থাকে।",
+      ],
+    },
+    {
+      slug: "dashboard-pulse",
+      title: "দ্য পালস (The Pulse): বিক্রি, আদায়, ডেলিভারি ও উৎপাদনের গতি দেখবেন যেভাবে",
+      summary:
+        "আজ, এই সপ্তাহ বা এই মাসে কত বিক্রি ও আদায় হলো, কয়টি অর্ডার পাঠানো বাকি আর কয়টি প্রজেক্ট চলছে, এক নজরে দেখা।",
+      keywords: [
+        "pulse",
+        "sales & collection",
+        "collection",
+        "deliveries",
+        "active projects",
+        "production",
+        "waiting to go out",
+        "পালস",
+        "আদায়",
+        "কালেকশন",
+        "ডেলিভারি",
+        "চলমান প্রজেক্ট",
+      ],
+      routes: ["/"],
+      who: "“Sales & collection” দেখেন যাঁরা বিক্রির টাকা দেখতে পারেন, “Deliveries” দেখেন যাঁরা Sales দেখতে পারেন, আর “Production” দেখেন যাঁরা Production দেখতে পারেন ও মালিক।",
+      anyOf: ["sales.view", "production.view", "dashboard.financials", "accounts.view"],
+      steps: [
+        {
+          text: "উপরের বারে সময় বেছে নিন: “Today”, “This week” বা “This month”। “The Pulse” অংশের পাশে সেই সময়ের তারিখ লেখা থাকে।",
+          image: {
+            id: "dashboard-pulse-1",
+            caption:
+              "“The Pulse”-এর তিনটি কার্ড: “Sales & collection”, “Deliveries” ও “Production”",
+          },
+        },
+        {
+          text: "“Sales & collection”: এই সময়ে কত টাকার বিক্রি হলো (ইনভয়েস ও পিসের সংখ্যাসহ) আর বায়ারদের কাছ থেকে কত টাকা আদায় হলো। নগদে টাকা ফেরত দেওয়া হলে তা বাদ দিয়ে আদায় দেখায়। অঙ্ক দেখতে কার্ডের চোখে চাপুন।",
+        },
+        {
+          text: "“Deliveries”: কয়টি অর্ডারের মাল এখনো পাঠানো বাকি (“Orders waiting to go out”), আর এই সময়ে কয়টি ডেলিভারি চালান গেছে ও কত পিস। শিপমেন্টের দিন পেরিয়ে যাওয়া অর্ডার থাকলে লাল লেখায় দেখায়।",
+        },
+        {
+          text: "“Production”: এখন চলমান প্রজেক্ট (“Active projects”), এই সময়ে শেষ হওয়া প্রজেক্ট, আর পরিকল্পিত ও থেমে থাকা প্রজেক্টের সংখ্যা। দেরি হওয়া প্রজেক্ট থাকলে লাল লেখায় চাপলে সেগুলোর তালিকা খোলে।",
+          image: {
+            id: "dashboard-pulse-2",
+            caption: "“Production” কার্ডে চলমান ও দেরি হওয়া প্রজেক্ট",
+          },
+        },
+        {
+          text: "প্রতিটি কার্ডের নিচের লিংকে চাপলে সেই অংশের পাতা খোলে: “Open the sales overview”, “Open the orders” ও “Open the active projects”।",
+        },
+      ],
+      tips: [
+        "আদায় গোনা হয় “Payments” পাতার “Collected today”-এর মতো করেই: বায়ারের দেওয়া টাকা থেকে নগদ ফেরত বাদ।",
+        "সপ্তাহ শনিবার থেকে শুরু ধরা হয়, বাংলাদেশের কাজের সপ্তাহের মতো।",
+      ],
+    },
     {
       slug: "dashboard-key-figures",
       title: "মূল হিসাবগুলো (Key figures) পড়বেন যেভাবে",
@@ -55,15 +224,15 @@ export const dashboardHelp: HelpSection = {
           text: "“Total bad stock value”: এ পর্যন্ত যত পিস “Damage & QC Rejects”-এ সরানো হয়েছে তার মোট দাম, খরচের দামে। নিচে মোট পিস (“Pieces written off”), এ মাসের পিস ও টাকা (“This month”) আর কয়বার লেখা হয়েছে (“Entries”)।",
         },
         {
-          text: "কোনো কার্ড পাশে কেউ দেখে ফেলুক না চাইলে কার্ডের চোখের আইকনে চাপুন (“Hide figure”)। সব কার্ড একসঙ্গে লুকাতে “Hide all figures” চাপুন। আবার দেখাতে “Show figure” বা “Show all figures”।",
+          text: "ড্যাশবোর্ড খুললে সব কার্ডের অঙ্ক *** দেখায়। উপরের বারের “Show amounts” চাপলে সব কার্ড একসঙ্গে দেখা যায়, “Hide amounts” চাপলে আবার লুকায়। শুধু একটি কার্ড দেখতে সেই কার্ডের কোণের চোখের আইকনে চাপুন।",
           image: {
             id: "dashboard-key-figures-2",
-            caption: "কার্ডের কোণে চোখের আইকন ও “Hide all figures” বোতাম",
+            caption: "কার্ডের কোণে চোখের আইকন ও উপরের “Show amounts” বোতাম",
           },
         },
       ],
       tips: [
-        "লুকানো কার্ড শুধু আপনার পর্দায় লুকায়, অন্য কারও পর্দায় নয়, আর আপনার সব ফোন ও কম্পিউটারে মনে থাকে।",
+        "অঙ্ক দেখানো শুধু এই পর্দায় যতক্ষণ পাতা খোলা থাকে; পাতা আবার খুললে সব আবার লুকানো থাকে।",
         "সংখ্যাগুলো হিসাবের খাতা (Accounts) থেকে আসে। কোনো সংখ্যা অদ্ভুত লাগলে Accounts-এর “Reports” ট্যাবে “Books check” দেখুন।",
       ],
     },

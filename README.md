@@ -84,10 +84,17 @@ Built one module at a time, each in its own pull request. So far:
   their other phones and computers at the same time.
 - **Choose a company** (`/select-company`) when no company is open or access to it was
   removed. The switcher in the top bar changes company at any time.
-- **Dashboard** (`/`): the key figures (stock value, fixed assets, liabilities, today's sales,
-  net profit), each with an eye that hides it on that person's screens, and the Insights: top
-  sellers (period, SKUs or styles, by pieces or sales value, kept in the address so a link
-  shows the same list), highest stock, dead and slow stock, and low stock.
+- **Dashboard** (`/`, the Home screen): the greeting with today's pending tasks (the Planner's
+  agenda, today's and overdue); a bar pinned to the top with the period (Today, This week from
+  Saturday, This month), the eye and the (+) quick actions (New order, Receive payment, Quick
+  quotation, New expense, Blank letterhead pad, each for the roles that may do it); the monthly
+  sales target as a bar (share reached, on pace or behind, what each day left needs); The
+  Pulse for the period (sales and money collected, deliveries and orders waiting to go out,
+  production projects); the key figures (stock value, fixed assets, liabilities, today's
+  sales, net profit); and the Insights: top sellers (period, SKUs or styles, by pieces or sales
+  value, kept in the address so a link shows the same list), highest stock, dead and slow
+  stock, and low stock. Every amount shows `***` when the screen opens: the eye at the top
+  shows them all, a card's own eye shows only that card, and nothing is remembered.
 - **Settings** (`/settings`), in four tabs:
   - **Team**: everyone in the company, with a search and a list of deactivated people. Adding
     a person takes their email, name and role; someone new gets a temporary password, shown
@@ -1738,7 +1745,23 @@ statements. Each card also carries the figures behind it.
 | Total bad stock value           | Every piece moved to Damage & QC Rejects, at its cost then    | Pieces, this month's pieces and value, entries    |
 
 Each person can hide cards (the eye icon). The choice is saved per person, and hidden cards
-still come with their figures, marked `hidden`, so the screen can show dots.
+still come with their figures, marked `hidden`. The Home screen itself now hides every amount
+when it opens instead (the page's eye, as in Accounts); the saved choice stays in the API.
+
+**Home screen.** The top bar and The Pulse (`home.service.ts`) read each figure the way its own
+module does: sales from the invoices (as above), money collected as on the Payments tab
+(received less cash refunds), deliveries from the delivery challans, and production from the
+projects' status. Each part is only worked out for the people who may see it: the sales
+target and the sales card for people who see sales values, deliveries for `sales.view`, and
+production for `production.view` or the financials.
+
+- Monthly sales target (`SalesTarget`, one row per company and month): the month's sales after
+  discounts, without VAT or delivery, against the target. A month with no target of its own
+  uses the latest earlier one. On pace means at least the share of the target a steady month
+  would have reached by the end of today. Only `company.settings` sets it, for this month or a
+  later one, and each change is in the audit log.
+- Periods: today, this week (Saturday to today) or this month (the 1st to today), in the
+  company's time zone.
 
 **Insights.** Top sellers for a period (the past month by default), per SKU or per style, by
 pieces or by sales value; the SKUs holding the most stock; dead and slow stock; low stock.
@@ -1791,6 +1814,8 @@ are recorded in the audit log, and a person can make up to 10 reports a minute.
 | `GET /api/dashboard/cards`                                                                   | The owner's metric cards                           |
 | `GET /api/dashboard/insights?period=&from=&to=&limit=&groupBy=&sortBy=&slowDays=&coverDays=` | Top sellers, highest, dead / slow and low stock    |
 | `GET/PATCH /api/dashboard/preferences`                                                       | Hidden cards: `{ metric, hidden }` or the list     |
+| `GET /api/dashboard/home?range=TODAY\|WEEK\|MONTH`                                           | Home top bar (pending tasks, target) and The Pulse |
+| `PUT /api/dashboard/sales-target`                                                            | `{ month: "2026-10", amount }` (company.settings)  |
 | `GET /api/reports/builder`                                                                   | Metrics this person may pick, periods, defaults    |
 | `GET /api/reports/preview?period=&from=&to=&metrics=SALES,TOP_SELLERS&…`                     | The report as data, without a file                 |
 | `GET/POST /api/reports/exports`, `GET/DELETE …/:id`                                          | Saved reports / make one: `{ format: PDF\|EXCEL }` |

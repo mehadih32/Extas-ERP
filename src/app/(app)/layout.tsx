@@ -20,6 +20,8 @@ import { unreadNotificationsAction } from "@/server/actions/reminders.actions";
  * tab bar either way. Each screen checks the session and permissions itself (see
  * server/pages/guards.ts); without a usable session and company the frame stays
  * out of the way while the screen sends the person to sign in or choose.
+ * --app-top is the height of the top bar above the screen (none on computers in
+ * the modern look), for anything a screen pins to the top as it scrolls.
  */
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const current = await getCurrentSession();
@@ -78,7 +80,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           />
           <main
             id="main"
-            className="mx-auto w-full max-w-7xl flex-1 px-4 pt-6 pb-28 sm:px-6 md:px-8 md:pt-9 md:pb-16 xl:px-10 print:max-w-none print:p-0"
+            className="mx-auto w-full max-w-7xl flex-1 px-4 pt-6 pb-28 [--app-top:3.5rem] sm:px-6 md:px-8 md:pt-9 md:pb-16 md:[--app-top:0px] xl:px-10 print:max-w-none print:p-0"
           >
             {children}
           </main>
@@ -100,7 +102,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       />
       <main
         id="main"
-        className="mx-auto w-full max-w-7xl flex-1 px-4 pt-7 pb-28 sm:px-6 md:pt-10 md:pb-16 lg:px-8 print:max-w-none print:p-0"
+        className="mx-auto w-full max-w-7xl flex-1 px-4 pt-7 pb-28 [--app-top:3.5rem] sm:px-6 md:pt-10 md:pb-16 md:[--app-top:4rem] lg:px-8 print:max-w-none print:p-0"
       >
         {children}
       </main>

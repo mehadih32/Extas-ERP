@@ -11,9 +11,18 @@ import { ReceivePaymentDialog } from "./receive-payment-dialog";
 /**
  * "Receive a payment" on the Payments tab: money a buyer paid towards their
  * balance, not for one order. Shown only to Accounts (accounts.receipts.record).
+ * `startOpen` opens the form straight away (the Home screen's "Receive payment").
  */
-export function ReceiveOnAccount({ currency, today }: { currency: string; today: string }) {
-  const [open, setOpen] = useState(false);
+export function ReceiveOnAccount({
+  currency,
+  today,
+  startOpen = false,
+}: {
+  currency: string;
+  today: string;
+  startOpen?: boolean;
+}) {
+  const [open, setOpen] = useState(startOpen);
   const [notice, setNotice] = useState<string>();
   return (
     <div className="grid gap-3">

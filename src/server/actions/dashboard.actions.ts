@@ -1,8 +1,12 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
+
+import { getRequestMeta } from "@/lib/request-meta";
 import { runAction } from "@/lib/result";
 import { requireAnyPermission, requireCompany } from "@/modules/auth/context";
 import { getMetricCards } from "@/modules/dashboard/cards.service";
+import { getHomePulse, getHomeTopBar, setSalesTarget } from "@/modules/dashboard/home.service";
 import { getDashboardInsights } from "@/modules/dashboard/insights.service";
 import {
   getDashboardPreferences,
@@ -15,6 +19,9 @@ import {
  *   dashboard.view / inventory.view        top sellers and stock alerts (money columns only
  *                                          for people who may see sales or the financials)
  * Hiding a card (the eye icon) is each person's own display choice.
+ * The Home screen's top bar and The Pulse are for everyone signed in to the company;
+ * each part is only worked out for the people who may see it (home.service.ts), and
+ * only company.settings sets the monthly sales target.
  */
 
 export const getMetricCardsAction = async () =>
@@ -29,3 +36,13 @@ export const getDashboardPreferencesAction = async () =>
   runAction(async () => getDashboardPreferences(await requireCompany()));
 export const updateDashboardPreferencesAction = async (input: unknown) =>
   runAction(async () => updateDashboardPreferences(await requireCompany(), input));
+export const getHomeTopBarAction = async () =>
+  runAction(async () => getHomeTopBar(await requireCompany()));
+export const getHomePulseAction = async (query: unknown) =>
+  runAction(async () => getHomePulse(await requireCompany(), query));
+export const setSalesTargetAction = async (input: unknown) =>
+  runAction(async () => {
+    const result = await setSalesTarget(await requireCompany(), input, await getRequestMeta());
+    revalidatePath("/");
+    return result;
+  });

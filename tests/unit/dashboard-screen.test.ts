@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  HOME_RANGE_OPTIONS,
+  homeRangeFrom,
+  homeRangeLabel,
+  homeRangeParam,
+} from "@/components/dashboard/home-range";
+import {
   DEFAULT_PERIOD,
   PERIOD_OPTIONS,
   topSellersSearch,
@@ -50,6 +56,29 @@ describe("top sellers choices in the address bar", () => {
 
   it("never ranks by sales value for people who may not see sales", () => {
     expect(topSellersViewFrom({ sort: "sales" }, noSales).sortBy).toBe("QUANTITY");
+  });
+});
+
+describe("the Home screen's period in the address bar", () => {
+  it("opens on this month and reads today and this week", () => {
+    expect(homeRangeFrom({})).toBe("MONTH");
+    expect(homeRangeFrom({ range: "today" })).toBe("TODAY");
+    expect(homeRangeFrom({ range: "WEEK" })).toBe("WEEK");
+    expect(homeRangeFrom({ range: "year" })).toBe("MONTH");
+    expect(homeRangeFrom({ range: ["today", "week"] })).toBe("MONTH");
+  });
+
+  it("writes each period back the way it reads it, leaving the default out", () => {
+    for (const { value } of HOME_RANGE_OPTIONS) {
+      const param = homeRangeParam(value);
+      expect(homeRangeFrom(param ? { range: param } : {})).toBe(value);
+    }
+    expect(homeRangeParam("MONTH")).toBeNull();
+    expect(HOME_RANGE_OPTIONS.map((o) => homeRangeLabel(o.value))).toEqual([
+      "Today",
+      "This week",
+      "This month",
+    ]);
   });
 });
 

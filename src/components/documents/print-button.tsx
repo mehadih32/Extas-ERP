@@ -18,23 +18,14 @@ import { cn } from "@/lib/utils";
 import type { PrintRequest } from "@/modules/documents/schemas";
 import { printDocumentAction } from "@/server/actions/documents.actions";
 
+type ReadyText = { eyebrow: string; description: string; errorTitle: string };
+
 /**
- * Makes a document as a PDF on the company letterhead and offers it to open or
- * save. The documents API decides who may print what (documents/print.service.ts);
- * screens show this button to the same people.
+ * Makes a document as a PDF and, once it is made, offers it to open or save:
+ * `print` starts it and `dialogs` is the window (and the failure message) to
+ * render next to whatever started it, a button or a menu item.
  */
-export function PrintDocumentButton({
-  request,
-  label,
-  ready: readyText,
-  className,
-}: {
-  request: PrintRequest;
-  label: string;
-  /** What the window says once the PDF is made, and the heading of a failure. */
-  ready: { eyebrow: string; description: string; errorTitle: string };
-  className?: string;
-}) {
+export function usePrintDocument(request: PrintRequest, readyText: ReadyText) {
   const [pending, startTransition] = useTransition();
   const [ready, setReady] = useState<{ id: string; title: string }>();
   const [error, setError] = useState<ActionError>();
@@ -52,22 +43,8 @@ export function PrintDocumentButton({
 
   const download = ready ? `/api/documents/${encodeURIComponent(ready.id)}/download` : "";
 
-  return (
+  const dialogs = (
     <>
-      <Button
-        type="button"
-        variant="outline"
-        className={cn("w-full sm:w-auto", className)}
-        disabled={pending}
-        onClick={print}
-      >
-        {pending ? (
-          <LoaderCircleIcon className="animate-spin" aria-hidden />
-        ) : (
-          <FileDownIcon aria-hidden />
-        )}
-        {pending ? "Making the PDF" : label}
-      </Button>
       {ready && (
         <Dialog open onOpenChange={(open) => !open && setReady(undefined)}>
           <DialogContent>
@@ -96,6 +73,48 @@ export function PrintDocumentButton({
         title={readyText.errorTitle}
         onClose={() => setError(undefined)}
       />
+    </>
+  );
+
+  return { pending, print, dialogs };
+}
+
+/**
+ * Makes a document as a PDF on the company letterhead and offers it to open or
+ * save. The documents API decides who may print what (documents/print.service.ts);
+ * screens show this button to the same people.
+ */
+export function PrintDocumentButton({
+  request,
+  label,
+  ready: readyText,
+  className,
+}: {
+  request: PrintRequest;
+  label: string;
+  /** What the window says once the PDF is made, and the heading of a failure. */
+  ready: ReadyText;
+  className?: string;
+}) {
+  const { pending, print, dialogs } = usePrintDocument(request, readyText);
+
+  return (
+    <>
+      <Button
+        type="button"
+        variant="outline"
+        className={cn("w-full sm:w-auto", className)}
+        disabled={pending}
+        onClick={print}
+      >
+        {pending ? (
+          <LoaderCircleIcon className="animate-spin" aria-hidden />
+        ) : (
+          <FileDownIcon aria-hidden />
+        )}
+        {pending ? "Making the PDF" : label}
+      </Button>
+      {dialogs}
     </>
   );
 }

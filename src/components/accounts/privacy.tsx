@@ -87,21 +87,26 @@ export function Amount({
   );
 }
 
-/** The eye at the top of the page: shows every amount, or hides them all again. */
-export function PrivacyToggle({ className }: { className?: string }) {
+/**
+ * The eye at the top of the page: shows every amount, or hides them all again.
+ * `compact` keeps only the eye on phones (the words stay for screen readers).
+ */
+export function PrivacyToggle({ className, compact }: { className?: string; compact?: boolean }) {
   const privacy = usePrivacy();
   if (!privacy.active) return null;
   const Icon = privacy.allShown ? EyeOffIcon : EyeIcon;
+  const label = privacy.allShown ? "Hide amounts" : "Show amounts";
   return (
     <Button
       type="button"
       variant="outline"
       aria-pressed={privacy.allShown}
       onClick={privacy.toggleAll}
-      className={className}
+      title={compact ? label : undefined}
+      className={cn(compact && "size-10 sm:w-auto", className)}
     >
       <Icon aria-hidden />
-      {privacy.allShown ? "Hide amounts" : "Show amounts"}
+      {compact ? <span className="sr-only sm:not-sr-only">{label}</span> : label}
     </Button>
   );
 }

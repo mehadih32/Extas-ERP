@@ -146,7 +146,7 @@ const sales = {
 /**
  * Where each printed document came from, for its link: a sales record (sales.view),
  * a statement (parties.ledger.view), a buyer's or supplier's profile (parties.view),
- * a style (inventory.view) or a payslip (salaries).
+ * a style (inventory.view), a production project (production.view) or a payslip (salaries).
  * Records that are gone, or that this person cannot open, get no link.
  */
 async function sourceLinks(
@@ -160,7 +160,7 @@ async function sourceLinks(
   ];
   const links = new Map<string, SourceLink>();
   const salesView = ctx.can("sales.view");
-  const [packingLists, challans, refunds, parties, payslips] = await Promise.all([
+  const [packingLists, challans, refunds, parties, payslips, materialChallans] = await Promise.all([
     salesView && ids("PackingList").length
       ? ctx.db.packingList.findMany({
           where: { id: { in: ids("PackingList") } },
@@ -191,11 +191,18 @@ async function sourceLinks(
           select: { id: true, runId: true },
         })
       : [],
+    ctx.can("production.view") && ids("MaterialChallan").length
+      ? ctx.db.materialChallan.findMany({
+          where: { id: { in: ids("MaterialChallan") } },
+          select: { id: true, projectId: true },
+        })
+      : [],
   ]);
   const orderOf = new Map([...packingLists, ...challans].map((r) => [r.id, r.orderId]));
   const refundOf = new Map(refunds.map((r) => [r.id, r]));
   const partyOf = new Map(parties.map((p) => [p.id, p.kind]));
   const runOf = new Map(payslips.map((p) => [p.id, p.runId]));
+  const projectOf = new Map(materialChallans.map((c) => [c.id, c.projectId]));
 
   for (const d of docs) {
     const id = d.referenceId;
@@ -255,6 +262,13 @@ async function sourceLinks(
           ? to(`/products/${encodeURIComponent(id)}`, "Open the style")
           : null;
         break;
+      case "MaterialChallan": {
+        const projectId = projectOf.get(id);
+        link = projectId
+          ? to(`/production/projects/${encodeURIComponent(projectId)}`, "Open the project")
+          : null;
+        break;
+      }
       case "PayrollItem": {
         const runId = runOf.get(id);
         link = runId

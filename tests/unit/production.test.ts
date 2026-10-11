@@ -19,7 +19,9 @@ import {
   planIntakeCost,
 } from "@/modules/production/costing";
 import {
+  canCancelChallan,
   canChangeProjectBuyer,
+  canSendMaterial,
   canStartFromOrder,
   canStartFromProforma,
   canUndoStageMove,
@@ -632,5 +634,26 @@ describe("a project's target grid", () => {
     expect(canChangeProjectBuyer({ ...project, salesOrderId: null }, undefined, "b2").ok).toBe(
       true,
     );
+  });
+});
+
+describe("materials sent to the factory", () => {
+  it("sends materials for open projects and cancels a challan once", () => {
+    for (const status of ["PLANNED", "ACTIVE", "ON_HOLD"] as const) {
+      expect(canSendMaterial({ code: "PRD-1", status }).ok, status).toBe(true);
+    }
+    expect(canSendMaterial({ code: "PRD-1", status: "COMPLETED" })).toMatchObject({
+      ok: false,
+      code: "CONFLICT",
+      message: "PRD-1 is completed; nothing more is sent for it.",
+    });
+    expect(canSendMaterial({ code: "PRD-1", status: "CANCELLED" }).ok).toBe(false);
+
+    expect(canCancelChallan({ number: "MC-1", cancelledAt: null }).ok).toBe(true);
+    expect(canCancelChallan({ number: "MC-1", cancelledAt: new Date() })).toMatchObject({
+      ok: false,
+      code: "CONFLICT",
+      message: "MC-1 is already cancelled.",
+    });
   });
 });

@@ -8,7 +8,7 @@ import type {
   ProductionStatus,
 } from "@prisma/client";
 
-import { formatCount } from "@/lib/display";
+import { formatCount, groupDigits, usesLakhGrouping } from "@/lib/display";
 
 /*
  * Words and figures for the Production screens: plain strings in, plain strings
@@ -80,6 +80,23 @@ export function pieces(count: number, currency: string): string {
 }
 
 /** "12 days", "1 day". */
+/** "500", "12.5", "1,20,000.25": a quantity of up to 3 decimals, grouped like the company's money. */
+export function plainQuantity(value: number, currency: string): string {
+  const [whole = "0", fraction] = value
+    .toFixed(3)
+    .replace(/\.?0+$/, "")
+    .split(".");
+  return `${groupDigits(whole, usesLakhGrouping(currency))}${fraction ? `.${fraction}` : ""}`;
+}
+
+/** "500 kg Oxford fabric": a line of a material challan as one phrase. */
+export function materialLine(
+  item: { description: string; quantity: number; unit: string },
+  currency: string,
+): string {
+  return `${plainQuantity(item.quantity, currency)} ${item.unit} ${item.description}`;
+}
+
 export function days(count: number): string {
   return `${count} ${count === 1 ? "day" : "days"}`;
 }

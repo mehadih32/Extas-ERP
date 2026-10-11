@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { days, pieces, productionHref, remainingText } from "@/components/production/labels";
+import {
+  days,
+  materialLine,
+  pieces,
+  plainQuantity,
+  productionHref,
+  remainingText,
+} from "@/components/production/labels";
 import {
   billListQuery,
   billViewFrom,
@@ -73,6 +80,17 @@ describe("Production words", () => {
     expect(days(1)).toBe("1 day");
     expect(pieces(125000, "BDT")).toBe("1,25,000 pcs");
     expect(productionHref.newDelivery("p 1")).toBe("/production/deliveries/new?project=p%201");
+  });
+
+  it("writes a line of materials sent as one phrase", () => {
+    expect(materialLine({ description: "Oxford fabric", quantity: 500, unit: "kg" }, "BDT")).toBe(
+      "500 kg Oxford fabric",
+    );
+    expect(plainQuantity(12.5, "BDT")).toBe("12.5");
+    expect(plainQuantity(120000.25, "BDT")).toBe("1,20,000.25");
+    expect(plainQuantity(120000.125, "USD")).toBe("120,000.125");
+    expect(plainQuantity(10, "BDT")).toBe("10");
+    expect(plainQuantity(0.5, "BDT")).toBe("0.5");
   });
 });
 

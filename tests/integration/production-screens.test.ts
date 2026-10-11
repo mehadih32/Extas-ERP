@@ -222,12 +222,13 @@ const projectFor = (env: Factory, extra: Record<string, unknown> = {}) =>
     ...extra,
   });
 
-/** A fabric bill from the mill on credit (Due). */
+/** A fabric bill from the mill on credit (Due); the same bill again on purpose is allowed. */
 const fabricBill = (env: Factory, projectId: string, amount: number) =>
   costs.createBill(env.owner, {
     supplierId: env.mill.id,
     paymentType: "DUE",
     allocations: [{ projectId, expenseHeadId: env.heads.Fabric, amount }],
+    allowDuplicate: true,
   });
 
 /** A draft delivery of 30 A-grade and 10 B-grade Navy polos. */
@@ -479,6 +480,7 @@ run("Production screens", () => {
       }
 
       // Costs: owed to a supplier (Production and Accounts), or paid now (Accounts).
+      // Every role enters the same costs, so they are entered anyway.
       const working = data(await getProjectScreenAction(project.id), who);
       expectOffered(
         await addProjectCostAction(project.id, {
@@ -486,6 +488,7 @@ run("Production screens", () => {
           amount: 3000,
           paymentType: "DUE",
           supplierId: env.mill.id,
+          allowDuplicate: true,
         }),
         working.can.addDueCost,
         `${who}: add a cost owed`,
@@ -495,6 +498,7 @@ run("Production screens", () => {
         amount: 500,
         paymentType: "CASH_BANK",
         method: "CASH",
+        allowDuplicate: true,
       });
       expectOffered(paid, working.can.addPaidCost, `${who}: add a cost paid now`);
       expect((await getBillFormAction({ projectId: project.id })).ok, who).toBe(
@@ -506,6 +510,7 @@ run("Production screens", () => {
           amount: 500,
           paymentType: "CASH_BANK",
           method: "CASH",
+          allowDuplicate: true,
         });
       }
 
@@ -645,10 +650,12 @@ run("Production screens", () => {
     for (const who of ["owner", "production", "accounts", "store"] as const) {
       await as(env, who);
       const canEnter = who !== "store";
+      // Every role enters the same bills, so they are entered anyway.
       const created = await createBillAction({
         supplierId: env.knit.id,
         paymentType: "DUE",
         allocations: [{ projectId: project.id, expenseHeadId: env.heads.Fabric, amount: 1200 }],
+        allowDuplicate: true,
       });
       expectOffered(created, canEnter, `${who}: enter a bill`);
       const paidNow = await createBillAction({
@@ -656,6 +663,7 @@ run("Production screens", () => {
         paymentType: "CASH_BANK",
         method: "BKASH",
         allocations: [{ projectId: project.id, expenseHeadId: env.heads.Fabric, amount: 300 }],
+        allowDuplicate: true,
       });
       const form = (await getBillFormAction({})).ok ? data(await getBillFormAction({}), who) : null;
       expectOffered(paidNow, Boolean(form?.canPayNow), `${who}: enter a bill paid now`);

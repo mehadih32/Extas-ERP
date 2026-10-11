@@ -2,7 +2,6 @@ import type {
   BillStatus,
   CostAllocationMethod,
   ExpenseCategory,
-  PaymentMethod,
   PaymentType,
   Prisma,
   ProductionStatus,
@@ -13,6 +12,8 @@ import { addDays, dateOnly, localDay } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import { assertAllowed } from "@/lib/verdict";
+import { ensureControlAccounts } from "@/modules/accounts/control-accounts";
+import { listMoneyAccounts } from "@/modules/accounts/screens.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { listSizes } from "@/modules/inventory/catalog.service";
 import { getStyleMatrix, matrixAxes } from "@/modules/inventory/matrix.service";
@@ -21,6 +22,7 @@ import { getDefaultWarehouse, listWarehouses } from "@/modules/inventory/stock.s
 import { listStyles } from "@/modules/inventory/style.service";
 import { canSeeMaterialCosts } from "@/modules/materials/access";
 import { boardColumns, nextStage } from "@/modules/production/board";
+import { projectChallans } from "@/modules/production/challan.service";
 import { isWalkIn } from "@/modules/parties/walk-in";
 import {
   billShares,
@@ -50,6 +52,7 @@ import {
   canCompleteProject,
   canPayBill,
   canReceiveGoods,
+  canSendMaterial,
   canSetStage,
   canSetStatus,
   canStartFromOrder,
@@ -71,7 +74,6 @@ import {
 } from "@/modules/production/targets";
 import { deliveredByVariant } from "@/modules/sales/documents.service";
 import { STAGE_LABELS, STAGE_ORDER } from "@/modules/production/timeline";
-import { RECEIVE_METHODS } from "@/modules/sales/choices";
 
 /*
  * What the Production screens show, as plain values (amounts as "12500.00"
@@ -370,9 +372,10 @@ export async function getProjectScreen(ctx: CompanyContext, projectId: string) {
   const access = productionAccess(ctx);
   const tz = ctx.company.timezone;
   const state = { code: project.code, status: project.status, stage: project.stage.key };
-  const [summary, targets] = await Promise.all([
+  const [summary, targets, challans] = await Promise.all([
     projectCostSummary(prisma, ctx.company.id, project.id),
     targetTable(ctx, project.id, project.targets),
+    projectChallans(ctx, project.id),
   ]);
   const wip = summary.wip;
   const [sheet, grades, suppliers] = access.seeCosts
@@ -451,6 +454,13 @@ export async function getProjectScreen(ctx: CompanyContext, projectId: string) {
      * left on their ledger). Production Managers and Accounts only.
      */
     suppliers,
+    /** "Materials sent": the project's material challans (MC-), with no prices. */
+    materialsSent: {
+      challans,
+      /** Where a new challan goes unless changed: the project's factory. */
+      sentTo: project.factoryLabel,
+      today: localDay(new Date(), tz),
+    },
     can: {
       edit: access.manage,
       /** Where the stage badge may move (empty unless active). */
@@ -466,6 +476,8 @@ export async function getProjectScreen(ctx: CompanyContext, projectId: string) {
       addPaidCost: access.payOut && open,
       newBill: access.recordCosts && open,
       receive: access.receive && canReceiveGoods(state).ok,
+      sendMaterial: access.manage && canSendMaterial(state).ok,
+      cancelChallan: access.manage,
       openDelivery: openDelivery ? { id: openDelivery.id, number: openDelivery.number } : null,
       openParty: access.openParty,
     },
@@ -1451,6 +1463,7 @@ export async function getBillScreen(ctx: CompanyContext, billId: string) {
         ),
       )
     : null;
+  const canPay = access.payOut && canPayBill(bill).ok;
 
   return {
     bill: {
@@ -1499,14 +1512,15 @@ export async function getBillScreen(ctx: CompanyContext, billId: string) {
         account: p.account?.name ?? null,
       })),
     },
-    methods: RECEIVE_METHODS,
+    /** The cash, bank and wallet accounts it is paid from (for people who pay it). */
+    accounts: canPay ? await listMoneyAccounts(ctx) : [],
     /** A raw material purchase also opens in Raw materials, where it is returned or voided. */
     materialsHref:
       bill.items.length > 0 && ctx.can("materials.view") && canSeeMaterialCosts(ctx)
         ? `/materials/purchases/${bill.id}`
         : null,
     can: {
-      pay: access.payOut && canPayBill(bill).ok,
+      pay: canPay,
       void: voidVerdict?.ok ?? false,
       openParty: access.openParty,
     },
@@ -1546,16 +1560,33 @@ export async function getBillForm(ctx: CompanyContext, options: { projectId?: st
     today: localDay(new Date(), ctx.company.timezone),
     heads: heads.map((h) => ({ id: h.id, name: h.name, category: h.category })),
     canPayNow: access.payOut,
-    methods: RECEIVE_METHODS as readonly PaymentMethod[],
+    /** The cash, bank and wallet accounts a paid-now cost comes out of (Accounts only). */
+    accounts: access.payOut ? await listMoneyAccounts(ctx) : [],
     project,
   };
 }
 
 export type BillForm = Awaited<ReturnType<typeof getBillForm>>;
 
-/** The cost heads bills and costs are filed under, archived ones too, and who may change them. */
+/**
+ * The cost heads bills and costs are filed under, archived ones too, who may
+ * change them, and the ledger accounts their costs reach in the Chart of
+ * Accounts (cost.service posts every project cost to Work in Progress, a Due
+ * one against Accounts Payable; a delivery moves it into Finished Goods).
+ */
 export async function getCostHeadsScreen(ctx: CompanyContext) {
-  const heads = await listCostHeads(ctx, { includeInactive: true });
+  const [heads, acc] = await Promise.all([
+    listCostHeads(ctx, { includeInactive: true }),
+    ensureControlAccounts(ctx.company.id),
+  ]);
+  const ledger = await ctx.db.ledgerAccount.findMany({
+    where: { id: { in: [acc.WORK_IN_PROGRESS, acc.PAYABLE, acc.INVENTORY] } },
+    select: { id: true, code: true, name: true },
+  });
+  const account = (id: string) => {
+    const a = ledger.find((l) => l.id === id);
+    return a ? { id: a.id, code: a.code, name: a.name } : null;
+  };
   return {
     heads: heads.map((h) => ({
       id: h.id,
@@ -1564,6 +1595,13 @@ export async function getCostHeadsScreen(ctx: CompanyContext) {
       isActive: h.isActive,
     })),
     canManage: productionAccess(ctx).manage,
+    /** Where their costs are booked; the accounts open for people with accounts.view. */
+    books: {
+      cost: account(acc.WORK_IN_PROGRESS),
+      owed: account(acc.PAYABLE),
+      delivered: account(acc.INVENTORY),
+      canOpen: ctx.can("accounts.view"),
+    },
   };
 }
 

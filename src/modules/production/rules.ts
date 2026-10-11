@@ -232,6 +232,23 @@ export function canAddCost(project: ProjectState): Verdict {
   );
 }
 
+// --- Materials sent ----------------------------------------------------------------------
+
+/** "Send material" is recorded on open projects (planned, active or on hold). */
+export function canSendMaterial(project: ProjectState): Verdict {
+  if (!isClosed(project)) return ALLOWED;
+  return refuse(
+    "CONFLICT",
+    `${project.code} is ${lower(project.status)}; nothing more is sent for it.`,
+  );
+}
+
+/** A materials challan entered by mistake is cancelled once; it stays on record. */
+export function canCancelChallan(challan: { number: string; cancelledAt: Date | null }): Verdict {
+  if (!challan.cancelledAt) return ALLOWED;
+  return refuse("CONFLICT", `${challan.number} is already cancelled.`);
+}
+
 /**
  * A cost paid from cash or bank is voided while its project is open and its
  * amount is still in work in progress (not moved into stock).

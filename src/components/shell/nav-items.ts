@@ -68,6 +68,7 @@ export const DOCUMENT_KEYS: readonly PermissionKey[] = [
   "parties.view", // buyers' and suppliers' 360° profiles
   "parties.ledger.view",
   "inventory.view",
+  "production.view", // production projects' material challans
   "documents.letterhead",
   "hr.manage",
   "hr.payroll",

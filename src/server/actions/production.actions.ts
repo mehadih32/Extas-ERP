@@ -6,6 +6,7 @@ import { getRequestMeta } from "@/lib/request-meta";
 import { runAction } from "@/lib/result";
 import { requireAnyPermission, requirePermission } from "@/modules/auth/context";
 import * as files from "@/modules/files/file.service";
+import * as challans from "@/modules/production/challan.service";
 import * as costs from "@/modules/production/cost.service";
 import * as intakes from "@/modules/production/intake.service";
 import * as projects from "@/modules/production/project.service";
@@ -15,7 +16,7 @@ import * as screens from "@/modules/production/screens.service";
  * Production Server Actions. Each returns { ok: true, data } or { ok: false, error }.
  *   production.view           overview, projects, deliveries (costs need the next two)
  *   production.manage         projects, stages, cost heads, Due bills, voiding bills,
- *                             undoing a confirmed delivery
+ *                             undoing a confirmed delivery, materials sent (MC- challans)
  *   accounts.payments.record  money paid out: Cash/Bank costs, paying bills (Accounts)
  *   accounts.manage           writing unrecovered cost off when completing / cancelling
  *   production.stock_intake   Move to Stock: deliveries, AI packing-list reading
@@ -155,6 +156,30 @@ export const updateCostHeadAction = async (headId: string, input: unknown) =>
   change(async () => costs.updateCostHead(await manage(), headId, input, await getRequestMeta()));
 export const getProjectCostSheetAction = async (projectId: string) =>
   runAction(async () => costs.getProjectCostSheet(await view(), projectId));
+// --- Materials sent (MC- challans) ------------------------------------------------------
+export const createMaterialChallanAction = async (projectId: string, input: unknown) =>
+  change(async () =>
+    ref(
+      await challans.createMaterialChallan(
+        await manage(),
+        projectId,
+        input,
+        await getRequestMeta(),
+      ),
+    ),
+  );
+export const cancelMaterialChallanAction = async (challanId: string, input: unknown) =>
+  change(async () =>
+    ref(
+      await challans.cancelMaterialChallan(
+        await manage(),
+        challanId,
+        input,
+        await getRequestMeta(),
+      ),
+    ),
+  );
+
 export const addProjectCostAction = async (projectId: string, input: unknown) =>
   change(async () =>
     project(

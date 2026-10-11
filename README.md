@@ -57,7 +57,7 @@ in development; set `BACKUP_SCHEDULER`, `REMINDER_SCHEDULER` or `HOUSEKEEPING_SC
 ```
 deploy/                  # the server: Docker, HTTPS, backups and restore (see deploy/README.md)
 prisma/
-  schema.prisma          # full database design (97 tables)
+  schema.prisma          # full database design (104 tables)
   migrations/            # SQL migrations applied to PostgreSQL
 src/
   app/                   # Next.js App Router: (auth) sign-in screens, (app) signed-in screens, api/
@@ -344,9 +344,15 @@ Built one module at a time, each in its own pull request. So far:
     tracker (Fabric sourcing, Cutting, Sewing, Wash and QC, Finishing) with the days spent at
     each, the order or proforma it was started from, its pieces to make per colour and size
     with the pieces received of each, the stage log with notes and rework sent back, its
-    factory deliveries, its cost
+    factory deliveries, the materials sent to the factory, its cost
     entries, the A-grade and B-grade cost a piece, the costs by head and material, and its
-    details. From there it is started, moved to the next stage (or another, going back needs
+    details. **Materials sent** is a plain record of what went to the factory: Production
+    Managers press **Send material** and write each line as it is ("Oxford fabric, navy",
+    500, kg), where it went (the project's factory unless changed), the day, what it went
+    with and a note. Each gets a challan number (MC-) and a Material Challan PDF with no
+    prices, which everyone who sees the project can print; one entered by mistake is
+    cancelled with a reason and stays listed, its PDF stamped Cancelled. It moves no stock and
+    no money. From there it is started, moved to the next stage (or another, going back needs
     a note), put on hold, resumed, completed or cancelled, and costs and bills are added.
     For people who see costs, its Suppliers panel shows each supplier's bills for the project,
     what is paid and what is still due. Completing a project settles it with every Fabric,
@@ -367,9 +373,18 @@ Built one module at a time, each in its own pull request. So far:
     pieces back out and leaves a draft copy to correct.
   - **Bills**: supplier bills for production, each shared across one or more projects and
     cost heads, due or paid now, with a photo of the bill. A bill's page pays the supplier
-    or voids it.
+    or voids it. Money paid now (a bill, a cost, a payment) comes out of the exact cash, bank
+    or wallet account chosen, shown with its balance. A bill or cost that looks entered
+    already is stopped with what it matched: the supplier's same bill number; without one,
+    the same supplier and total within 3 days; without a supplier, the same project, cost
+    head and amount on the same day. Ticking "It is a different one: enter it anyway" saves
+    it.
   - **Cost heads**: the making costs and materials costs are booked against, added, renamed,
-    archived and restored.
+    archived and restored. Each group shows the ledger account its costs are booked to (1350
+    Work in Progress (Production)), and "In the accounts" shows the rest of the way: Due costs
+    on Accounts Payable (2100), paid-now costs out of the chosen cash or bank account, and
+    delivered pieces into Finished Goods Inventory (1300). Accounts opens each ledger from
+    there.
 
   Cutting and sewing progress is the stage the project is at, with its days and notes;
   counting cut and sewn pieces would need the backend to store them first. Reading a
@@ -1218,10 +1233,22 @@ goes and the stage before it is open again, so no rework shows.
 
 **Costs.** Every cost names an expense head (Fabric, Trims & Accessories, Cutting, Sewing
 (CM), Wash...). It is either Due to a supplier or paid now from cash, bank or a mobile
-wallet. One supplier bill can be split across several projects (Split Bill). Production
+wallet (`accountId`, a cash, bank or wallet ledger account; the method's default without
+it). One supplier bill can be split across several projects (Split Bill). Production
 Managers record Due bills. Paying suppliers and costs paid in cash or bank are for Accounts.
 Voiding a bill reverses it, and anything already paid on it stays with the supplier as an
-advance.
+advance. A bill or cost that looks entered already (not void) is refused with `409` and the
+match in `details.allowDuplicate`: the supplier's same bill number (any case); without one,
+the same supplier and total within `DUPLICATE_BILL_DAYS` (3) days; without a supplier, the
+same project, head and amount on the same day. Sent again with `allowDuplicate: true`, it
+is saved.
+
+**Materials sent.** `MaterialChallan` records what went to a project's factory, each under a
+challan number (MC-): the day sent (not after today), where it went (the factory's name by
+default), its lines (`items`: description, quantity to 3 decimals, unit; up to 30), what it
+went with and a note. It posts nothing and moves no stock. A closed project takes no more.
+Cancelling keeps it with `cancelledAt`, who and the reason. It prints as a Material Challan
+(`MATERIAL_CHALLAN`, `production.view`).
 
 **Move to Stock.** A factory delivery is typed in (SKU lines or the color × size matrix, A-
 and B-grade), or read by AI from a packing-list photo or PDF and matched to the style's SKUs
@@ -1261,6 +1288,8 @@ With `redraft` a draft copy opens, linked to the undone one, to correct and conf
 | `POST /api/production/projects/:id/complete` / `…/cancel`           | Close a project (leftover cost written off by Accounts)    |
 | `GET/POST /api/production/projects/:id/costs`                       | Cost sheet / add one cost, Due or paid now                 |
 | `POST /api/production/costs/:id/void`                               | Void a cost paid in cash or bank                           |
+| `GET/POST /api/production/projects/:id/challans`                    | Materials sent to the factory / record one (MC-)           |
+| `POST /api/production/challans/:id/cancel`                          | Cancel a material challan: `{ reason }`                    |
 | `GET/POST /api/production/cost-heads`, `PATCH …/:id`                | Expense heads for production costs                         |
 | `GET/POST /api/production/bills`, `GET …/:id`                       | Supplier bills split across projects                       |
 | `POST /api/production/bills/:id/payments` / `…/void`                | Pay a bill / void it                                       |
@@ -1271,7 +1300,7 @@ With `redraft` a draft copy opens, linked to the undone one, to correct and conf
 | `GET /api/files/:id`                                                | Open an uploaded file                                      |
 
 Reads need `production.view`, which the Warehouse Team also holds. Projects, stages, cost
-heads, Due bills and undoing a delivery need `production.manage`. Money paid out (bill payments, costs paid in
+heads, Due bills, materials sent and undoing a delivery need `production.manage`. Money paid out (bill payments, costs paid in
 cash or bank) needs `accounts.payments.record`, and writing leftover cost off when a project
 is completed or cancelled needs `accounts.manage`; by default only Accounts and Super Admin
 hold either. Deliveries need `production.stock_intake`. Cost figures are shown only to
@@ -1695,7 +1724,7 @@ later with the other outside integrations.
 ## Printable documents (backend)
 
 Quotations, proforma and commercial invoices, packing lists, delivery challans, money receipts,
-refund vouchers, buyer and supplier statements, buyer and supplier 360° profiles, stock availability sheets and a blank letterhead pad print as A4
+refund vouchers, buyer and supplier statements, buyer and supplier 360° profiles, stock availability sheets, material challans and a blank letterhead pad print as A4
 PDFs on the company letterhead: the logo, name, legal name and contact details on top, the
 company colours, and the footer line with page numbers on every page. Everything on the page
 comes from the same data as the screens, with amounts in lakh and crore for taka and dates in
@@ -1722,6 +1751,7 @@ receipt, payslip and bank statement endpoints) carries them as `bin` and `tradeL
 | Buyer 360° profile    | Sales, average order, outstanding, overdue, gross profit, top styles, and every order, quotation, payment and production                                                                    | `parties.view`         |
 | Supplier 360° profile | Due to them, billed and paid, active and completed projects with their settlements, deliveries, orders, bills and payments                                                                  | `parties.view`         |
 | Stock availability    | Total stock (good and B-grade) per colour and size for chosen styles or a whole brand, in one warehouse or all; no prices                                                                   | `inventory.view`       |
+| Material challan      | Materials sent to a factory for a production project: each item, quantity and unit, where it went and with what, the project and buyer; no prices; stamped Cancelled once cancelled         | `production.view`      |
 | Blank letterhead      | The letterhead and footer on an empty page, for letters                                                                                                                                     | `documents.letterhead` |
 
 `documents.letterhead` is new: Sales Executives, Accounts and Production Managers have it by

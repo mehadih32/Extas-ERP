@@ -387,6 +387,65 @@ export const productionHelp: HelpSection = {
       ],
     },
     {
+      slug: "production-materials-sent",
+      title: "ফ্যাক্টরিতে কী মালামাল পাঠালেন তা চালানসহ লিখে রাখবেন যেভাবে",
+      summary:
+        "প্রজেক্টের জন্য ফ্যাক্টরিতে কাপড়, ট্রিমস বা কার্টন পাঠালে সহজ লেখায় (যেমন 500 kg Oxford fabric) MC- নম্বরের চালানসহ রেকর্ড রাখা, আর ছাপার জন্য দাম ছাড়া Material Challan PDF।",
+      keywords: [
+        "materials sent",
+        "send material",
+        "material challan",
+        "challan",
+        "mc",
+        "fabric sent",
+        "sent to factory",
+        "চালান",
+        "মালামাল পাঠানো",
+        "কাপড় পাঠানো",
+        "ফ্যাক্টরিতে পাঠানো",
+        "ম্যাটেরিয়াল চালান",
+      ],
+      routes: ["/production/projects"],
+      who: "পাঠানো লিখতে ও চালান বাতিল করতে পারেন Production Manager ও Super Admin। প্রজেক্ট যাঁরা দেখেন (Accounts, Warehouse Team) তাঁরা তালিকা দেখেন ও PDF ছাপতে পারেন।",
+      steps: [
+        {
+          text: "প্রজেক্টের পাতায় “Materials sent” অংশে “Send material” চাপুন।",
+          image: {
+            id: "production-materials-sent-1",
+            caption: "প্রজেক্টের “Materials sent” অংশ: চালানের তালিকা, “PDF” ও “Cancel”",
+          },
+        },
+        {
+          text: "“Sent to”-তে প্রজেক্টের ফ্যাক্টরির নাম আগে থেকেই বসানো থাকে। মাল অন্য কোথাও (যেমন ওয়াশিং প্ল্যান্টে) গেলে নামটি বদলে দিন। “Date” আজকের বা আগের কোনো দিন হতে পারে।",
+        },
+        {
+          text: "“What was sent” অংশে প্রতিটি লাইনে “Item” (যেমন Oxford fabric, navy), “Quantity” (যেমন 500) ও “Unit” (যেমন kg) লিখুন। আরও জিনিস থাকলে “Add a line” চাপুন, ভুল লাইন “Remove” দিয়ে সরান।",
+          image: {
+            id: "production-materials-sent-2",
+            caption: "“Send material for …” জানালা: জিনিসের লাইন ও “Add a line”",
+          },
+        },
+        {
+          text: "চাইলে “Sent with (optional)”-এ গাড়ির নম্বর, চালক বা কুরিয়ার আর “Notes (optional)” লিখুন, তারপর “Save the challan” চাপুন। চালানটি একটি MC- নম্বর পায়।",
+        },
+        {
+          text: "তালিকায় চালানের পাশে “PDF” চাপলে Material Challan তৈরি হয়: কী কী, কত, কোথায় গেল, কোন প্রজেক্টের জন্য, আর গ্রহীতার সইয়ের জায়গা। এতে কোনো দাম থাকে না।",
+          image: {
+            id: "production-materials-sent-3",
+            caption: "ছাপা Material Challan: জিনিস, পরিমাণ ও সইয়ের জায়গা",
+          },
+        },
+        {
+          text: "ভুল চালান তালিকা থেকে “Cancel” চেপে কারণ লিখে “Cancel the challan” দিয়ে বাতিল করুন। চালানটি “Cancelled” চিহ্নসহ তালিকায় থেকে যায়, আর তার PDF-এ বাতিলের সিল পড়ে।",
+        },
+      ],
+      tips: [
+        "এটি শুধু রেকর্ড: স্টক বা খরচ কিছুই বদলায় না। স্টোরের কাঁচামাল প্রজেক্টে দিতে Raw materials-এর “Issue materials” ব্যবহার করুন, আর পাঠানোর খরচ (যেমন পরিবহন) “Add a cost” দিয়ে যোগ করুন।",
+        "ছাপা সব চালান “Reports & documents” > “Printed documents”-এ পাওয়া যায়, সেখান থেকে প্রজেক্টেও যাওয়া যায়।",
+        "প্রজেক্ট শেষ বা বাতিল হলে আর কিছু পাঠানো লেখা যায় না, তবে আগের চালানগুলো থেকে যায়।",
+      ],
+    },
+    {
       slug: "production-costs",
       title: "প্রজেক্টে খরচ যোগ করবেন ও পিসপ্রতি খরচ দেখবেন যেভাবে",
       summary:
@@ -399,11 +458,14 @@ export const productionHelp: HelpSection = {
         "making charge",
         "cm",
         "costing",
+        "paid from",
+        "duplicate",
         "খরচ",
         "খরচ যোগ",
         "পিসপ্রতি খরচ",
         "মজুরি",
         "কস্টিং",
+        "দুবার",
       ],
       routes: ["/production/projects"],
       who: "Production Manager (সরবরাহকারীর কাছে বকেয়া হিসেবে), Accounts ও Super Admin (এখনই পরিশোধ হিসেবেও)। খরচের অঙ্ক শুধু এঁরাই দেখেন।",
@@ -423,6 +485,9 @@ export const productionHelp: HelpSection = {
           text: "অনুমতি থাকলে কীভাবে পরিশোধ হবে বেছে নিন: “Due to the supplier” (সরবরাহকারীর হিসাবে যাবে, Accounts পরে দেবেন) বা “Paid now” (এখনই ক্যাশ, ব্যাংক বা ওয়ালেট থেকে)।",
         },
         {
+          text: "“Paid now” বাছলে “Paid from”-এ ঠিক কোন ক্যাশ, ব্যাংক বা ওয়ালেট অ্যাকাউন্ট থেকে টাকা গেল (ব্যালান্সসহ দেখায়) বেছে নিন, তারপর “How” ও “Reference (optional)” দিন। টাকা সঙ্গে সঙ্গে সেই অ্যাকাউন্ট থেকে কমে, একবারই হিসাবে ওঠে।",
+        },
+        {
           text: "“Owed to” (বা “Paid to (optional)”)-এ সরবরাহকারী, “Their bill number (optional)”, “Date” ও “Details (optional)” দিয়ে “Add the cost” চাপুন।",
         },
         {
@@ -439,6 +504,7 @@ export const productionHelp: HelpSection = {
       tips: [
         "একাধিক প্রজেক্টে ভাগ হওয়া বড় বিল “Bills” ট্যাব থেকে লিখুন (পরের নির্দেশিকা)।",
         "কাঁচামাল Raw materials থেকে প্রজেক্টে ইস্যু করলে তার খরচও নিজে থেকে যোগ হয়।",
+        "একই খরচ দুবার লেখা ঠেকাতে অ্যাপ আগে সতর্ক করে: একই সরবরাহকারীর একই বিল নম্বর; নম্বর না থাকলে ৩ দিনের মধ্যে একই সরবরাহকারীর একই অঙ্ক; সরবরাহকারী না থাকলে একই দিনে একই প্রজেক্ট, খাত ও অঙ্ক। মিলে যাওয়াটা দেখে সত্যিই আলাদা হলে “It is a different one: enter it anyway” টিক দিয়ে আবার চাপুন।",
       ],
     },
     {
@@ -474,7 +540,7 @@ export const productionHelp: HelpSection = {
           text: "“Supplier”, “Their bill number (optional)” ও “Bill date” দিন।",
         },
         {
-          text: "অনুমতি থাকলে “How it is paid”-এ “Due to the supplier” বা “Paid now” বেছে নিন। Production Manager-এর বিল সবসময় বকেয়া হিসেবে যায়, Accounts পরে দেন।",
+          text: "অনুমতি থাকলে “How it is paid”-এ “Due to the supplier” বা “Paid now” বেছে নিন। “Paid now” হলে “Paid from”-এ ঠিক কোন ক্যাশ, ব্যাংক বা ওয়ালেট অ্যাকাউন্ট থেকে দিলেন বেছে নিন। Production Manager-এর বিল সবসময় বকেয়া হিসেবে যায়, Accounts পরে দেন।",
         },
         {
           text: "“What it is for” অংশে “Project”, “What for” (খরচের খাত), পরিমাণ ও “Details (optional)” দিন। বিল একাধিক প্রজেক্টের হলে “Split across another project” চাপুন।",
@@ -487,12 +553,13 @@ export const productionHelp: HelpSection = {
           text: "“Photo or PDF of the bill (optional)”-এ বিলের ছবি দিন এবং “Save the bill” চাপুন।",
         },
         {
-          text: "পরে টাকা দিতে বিলের পাতায় “Pay the supplier” চাপুন। “Paid by”, “Reference (optional)”, “Paid on” দিয়ে “Record the payment” চাপুন। ভুল বিল “Void the bill” দিয়ে বাতিল করুন।",
+          text: "পরে টাকা দিতে বিলের পাতায় “Pay the supplier” চাপুন। পরিমাণ, “Paid on”, “Paid from” (কোন ক্যাশ, ব্যাংক বা ওয়ালেট অ্যাকাউন্ট), “How” ও “Reference (optional)” দিয়ে “Record the payment” চাপুন। ভুল বিল “Void the bill” দিয়ে বাতিল করুন।",
         },
       ],
       tips: [
         "খাত (cost head) না থাকলে আগে “Cost heads” ট্যাবে যোগ করুন।",
         "একজন সরবরাহকারীর সব বিল একসঙ্গে পরিশোধ করতে Accounts-এর “Supplier payments” ব্যবহার করুন।",
+        "একই সরবরাহকারীর একই বিল নম্বর আগে লেখা থাকলে, বা নম্বর ছাড়া ৩ দিনের মধ্যে একই অঙ্কের বিল থাকলে, সেভ করার আগে অ্যাপ সেই বিলটি দেখিয়ে সতর্ক করে। একই বিল হলে বাতিল করুন; আলাদা হলে “It is a different one: enter it anyway” টিক দিয়ে আবার “Save the bill” চাপুন।",
       ],
     },
     {
@@ -673,9 +740,14 @@ export const productionHelp: HelpSection = {
         "archive",
         "making cost",
         "material",
+        "ledger account",
+        "chart of accounts",
+        "work in progress",
         "খরচের খাত",
         "খাত",
         "হেড",
+        "লেজার",
+        "হিসাবের খাতা",
       ],
       routes: ["/production/cost-heads"],
       who: "যাঁদের প্রজেক্ট সামলানোর অনুমতি আছে, যেমন Production Manager ও Super Admin।",
@@ -694,8 +766,18 @@ export const productionHelp: HelpSection = {
         {
           text: "নাম বদলাতে খাতের পাশে “Rename” চাপুন। আর না লাগলে “Archive”, আবার লাগলে “Restore”।",
         },
+        {
+          text: "প্রতিটি ভাগের “Ledger account:” লাইনে দেখা যায় খাতগুলোর খরচ Chart of Accounts-এর কোন অ্যাকাউন্টে যায়: 1350 · Work in Progress (Production)। নিচের “In the accounts” অংশে পুরো পথ লেখা: বকেয়া খরচ সরবরাহকারীর হিসাবে (2100 · Accounts Payable), এখনই পরিশোধ বেছে নেওয়া ক্যাশ বা ব্যাংক থেকে, আর ফ্যাক্টরি মাল দিলে খরচ পিসের সঙ্গে 1300 · Finished Goods Inventory-তে যায়।",
+          image: {
+            id: "production-cost-heads-2",
+            caption: "“In the accounts” অংশ: খরচ কোন অ্যাকাউন্টে ওঠে",
+          },
+        },
       ],
-      tips: ["নাম বদলালে আগের খরচগুলোও নতুন নামেই দেখাবে।"],
+      tips: [
+        "নাম বদলালে আগের খরচগুলোও নতুন নামেই দেখাবে।",
+        "প্রতিটি খরচ একবারই হিসাবে ওঠে: খাতের জন্য আলাদা জাবেদা লিখতে হয় না। Accounts-এর লোকেরা অ্যাকাউন্টের নাম চাপলে তার লেজার খোলে।",
+      ],
     },
   ],
 };

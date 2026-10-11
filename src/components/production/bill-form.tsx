@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
+import { PaidFromFields } from "@/components/accounts/money-fields";
 import { ErrorDialog } from "@/components/feedback/error-dialog";
 import { Field, FormAlert } from "@/components/forms/field";
 import { ChoiceList } from "@/components/parties/choice-list";
@@ -19,7 +20,7 @@ import type { ActionError } from "@/lib/result";
 import type { BillForm as BillFormData } from "@/modules/production/screens.service";
 import { createBillAction, uploadProductionFileAction } from "@/server/actions/production.actions";
 
-import { HeadOptions, PayMethodSelect } from "./cost-dialogs";
+import { DuplicateCheck, duplicateOf, HeadOptions } from "./cost-dialogs";
 import { PAYMENT_TYPE_HINTS, PAYMENT_TYPE_LABELS, productionHref } from "./labels";
 import { PartyPicker, ProjectPicker } from "./pickers";
 
@@ -58,6 +59,8 @@ export function BillForm({ form: data, currency }: { form: BillFormData; currenc
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<ActionError>();
   const [problems, setProblems] = useState<Record<string, string>>({});
+  const [duplicate, setDuplicate] = useState<string>();
+  const [anyway, setAnyway] = useState(false);
   const [pending, startTransition] = useTransition();
   const fieldError = (name: string) => problems[name] ?? error?.fieldErrors?.[name]?.[0];
   const general = error && error.code !== "INTERNAL" ? error.message : undefined;
@@ -115,6 +118,7 @@ export function BillForm({ form: data, currency }: { form: BillFormData; currenc
         paymentType: type,
         ...(type === "CASH_BANK"
           ? {
+              accountId: textOf(form, "accountId") || undefined,
               method: (textOf(form, "method") || "CASH") as PaymentMethod,
               reference: textOf(form, "reference") || undefined,
             }
@@ -122,8 +126,15 @@ export function BillForm({ form: data, currency }: { form: BillFormData; currenc
         allocations,
         notes: textOf(form, "notes") || undefined,
         attachmentId,
+        allowDuplicate: duplicate && anyway ? true : undefined,
       });
       if (!result.ok) {
+        const match = duplicateOf(result.error);
+        if (match) {
+          setDuplicate(match);
+          setAnyway(false);
+          return;
+        }
         setError(result.error);
         return;
       }
@@ -194,22 +205,12 @@ export function BillForm({ form: data, currency }: { form: BillFormData; currenc
       )}
       {data.canPayNow && paymentType === "CASH_BANK" && (
         <div className="grid items-start gap-5 sm:grid-cols-2">
-          <Field id="method" label="Paid by" error={fieldError("method")}>
-            <PayMethodSelect id="method" methods={data.methods} />
-          </Field>
-          <Field
-            id="reference"
-            label="Reference (optional)"
-            hint="Cheque number, bKash transaction ID…"
-          >
-            <Input
-              id="reference"
-              name="reference"
-              maxLength={120}
-              autoComplete="off"
-              aria-describedby="reference-hint"
-            />
-          </Field>
+          <PaidFromFields
+            idPrefix="bill"
+            accounts={data.accounts}
+            currency={currency}
+            fieldError={fieldError}
+          />
         </div>
       )}
 
@@ -351,6 +352,9 @@ export function BillForm({ form: data, currency }: { form: BillFormData; currenc
         </Field>
       </div>
 
+      {duplicate && (
+        <DuplicateCheck id="bill-anyway" match={duplicate} checked={anyway} onChange={setAnyway} />
+      )}
       {general && <FormAlert>{general}</FormAlert>}
 
       <div className="flex flex-col-reverse gap-2 sm:flex-row">

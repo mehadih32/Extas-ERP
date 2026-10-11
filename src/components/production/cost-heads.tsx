@@ -1,7 +1,10 @@
 "use client";
 
 import { ArchiveIcon, ArchiveRestoreIcon, PencilIcon, PlusIcon } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useState, useTransition } from "react";
+
+import { accountsHref } from "@/components/accounts/labels";
 
 import { ActionErrorDialog } from "@/components/feedback/action-error-dialog";
 import { Field, FormAlert } from "@/components/forms/field";
@@ -29,6 +32,47 @@ const GROUPS = [
   },
   { category: "RAW_MATERIAL", title: "Materials", hint: "Fabric, trims, buttons, packing." },
 ] as const;
+
+type Books = CostHeadsScreen["books"];
+type BookAccount = Books["cost"];
+
+/** "1350 · Work in Progress (Production)", a link to its ledger for Accounts. */
+function AccountName({ account, canOpen }: { account: BookAccount; canOpen: boolean }) {
+  if (!account) return <span className="font-medium">its ledger account</span>;
+  const text = `${account.code} · ${account.name}`;
+  return canOpen ? (
+    <Link
+      href={accountsHref.account(account.id)}
+      className="font-medium text-primary underline-offset-4 hover:underline"
+    >
+      {text}
+    </Link>
+  ) : (
+    <span className="font-medium">{text}</span>
+  );
+}
+
+/** How the costs filed under these heads reach the Chart of Accounts, each posted once. */
+function InTheAccounts({ books }: { books: Books }) {
+  const name = (account: BookAccount) => <AccountName account={account} canOpen={books.canOpen} />;
+  return (
+    <Panel title="In the accounts" id="books-heading">
+      <ul className="mt-4 grid list-disc gap-2 pl-5 text-sm leading-relaxed">
+        <li>
+          Every cost under these heads is added to {name(books.cost)} in the Chart of Accounts while
+          its project runs.
+        </li>
+        <li>A cost owed to a supplier also goes on their account, in {name(books.owed)}.</li>
+        <li>
+          A cost paid now comes straight out of the cash, bank or wallet account Accounts picks.
+        </li>
+        <li>
+          When the factory delivers, the cost moves with the pieces into {name(books.delivered)}.
+        </li>
+      </ul>
+    </Panel>
+  );
+}
 
 /**
  * The cost heads bills and costs are filed under. Production Managers add,
@@ -125,6 +169,10 @@ export function CostHeads({ screen }: { screen: CostHeadsScreen }) {
           return (
             <Panel key={group.category} title={group.title} id={`${group.category}-heading`}>
               <p className="mt-1 text-[0.8125rem] text-muted-foreground">{group.hint}</p>
+              <p className="mt-1 text-[0.8125rem] text-muted-foreground">
+                Ledger account:{" "}
+                <AccountName account={screen.books.cost} canOpen={screen.books.canOpen} />
+              </p>
               {items.length === 0 ? (
                 <p className="mt-4 text-sm text-muted-foreground">None yet.</p>
               ) : (
@@ -139,6 +187,7 @@ export function CostHeads({ screen }: { screen: CostHeadsScreen }) {
           </Panel>
         )}
       </div>
+      <InTheAccounts books={screen.books} />
 
       {adding && (
         <FormDialog

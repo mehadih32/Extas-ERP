@@ -13,6 +13,7 @@ import { assertPartyCanTransact } from "@/modules/parties/party.service";
 import { isWalkIn } from "@/modules/parties/walk-in";
 import { UNDO_STAGE_MINUTES } from "@/modules/production/board";
 import { ZERO } from "@/modules/production/costing";
+import { evenOutPieceCostTx } from "@/modules/production/piece-cost.service";
 import {
   assertCanWriteOff,
   canSeeProductionCosts,
@@ -843,8 +844,10 @@ export async function setProjectStatus(
 /**
  * Marks a project completed. All its cost must have moved to stock first (the
  * final delivery takes whatever is left), unless Accounts writes the rest off.
- * Completing closes the project with its suppliers: a settlement statement is
- * kept for each (production/settlement.service.ts); nothing is posted.
+ * Every piece received is then evened out to one cost, total ÷ received
+ * (production/piece-cost.service.ts); pieces short of the target are wastage,
+ * with no loss booked. Completing closes the project with its suppliers: a
+ * settlement statement is kept for each (production/settlement.service.ts).
  */
 export async function completeProjectTx(
   tx: Tx,
@@ -873,6 +876,7 @@ export async function completeProjectTx(
     assertCanWriteOff(ctx, costs.wip);
     await writeOffProjectWip(tx, ctx, project, costs.wip, options.writeOffReason);
   }
+  const { even } = await evenOutPieceCostTx(tx, ctx, project, "even");
   const now = new Date();
   await tx.productionStageLog.updateMany({
     where: { projectId: project.id, completedAt: null },
@@ -893,6 +897,12 @@ export async function completeProjectTx(
   });
   await settleProjectSuppliersTx(tx, ctx, project, meta);
   const produced = project.producedQtyA + project.producedQtyB;
+  const short = Math.max(project.targetQuantity - produced, 0);
+  const { a, b } = even?.perPiece ?? { a: null, b: null };
+  const perPiece =
+    a && b && a.toFixed(2) !== b.toFixed(2)
+      ? `A-grade ${a.toFixed(2)}, B-grade ${b.toFixed(2)}`
+      : (a ?? b)?.toFixed(2);
   await auditInCompany(
     ctx,
     meta,
@@ -901,8 +911,10 @@ export async function completeProjectTx(
       entityType: "ProductionProject",
       entityId: project.id,
       summary: `Completed ${project.code}: ${produced} of ${project.targetQuantity} pcs received${
+        short > 0 ? `, ${short} short (wastage)` : ""
+      }${
         costs.wip.gt(0) ? `, ${costs.wip.toFixed(2)} written off (${options.writeOffReason})` : ""
-      }`,
+      }${perPiece ? `; every piece evened out to ${perPiece}` : ""}`,
     },
     tx,
   );

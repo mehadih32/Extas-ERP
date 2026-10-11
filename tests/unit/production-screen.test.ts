@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  completionNote,
   days,
+  evenCostText,
   materialLine,
   pieces,
   plainQuantity,
@@ -80,6 +82,19 @@ describe("Production words", () => {
     expect(days(1)).toBe("1 day");
     expect(pieces(125000, "BDT")).toBe("1,25,000 pcs");
     expect(productionHref.newDelivery("p 1")).toBe("/production/deliveries/new?project=p%201");
+  });
+
+  it("says what a piece costs once evened out, and what completing means", () => {
+    expect(evenCostText({ a: "122.22", b: "122.22" }, "BDT")).toBe("BDT 122.22 a piece");
+    expect(evenCostText({ a: "125.00", b: "62.50" }, "BDT")).toBe(
+      "A-grade BDT 125.00, B-grade BDT 62.50 a piece",
+    );
+    expect(evenCostText({ a: null, b: "100.00" }, "BDT")).toBe("BDT 100.00 a piece");
+    expect(evenCostText({ a: null, b: null }, "BDT")).toBe("");
+    expect(completionNote({ short: 1200, perPiece: { a: "103.09", b: null } }, "BDT")).toBe(
+      "The 1,200 pieces short are listed as wastage, with no loss booked. Every piece received then costs the same: BDT 103.09 a piece.",
+    );
+    expect(completionNote({ short: 0, perPiece: null }, "BDT")).toBe("");
   });
 
   it("writes a line of materials sent as one phrase", () => {

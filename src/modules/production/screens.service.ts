@@ -31,8 +31,9 @@ import {
   listBills,
   listCostHeads,
 } from "@/modules/production/cost.service";
-import { DEFAULT_B_GRADE_RATIO, money, ZERO } from "@/modules/production/costing";
+import { DEFAULT_B_GRADE_RATIO, evenCostPerPiece, money, ZERO } from "@/modules/production/costing";
 import { getIntake, listIntakes } from "@/modules/production/intake.service";
+import { projectPieceCosts } from "@/modules/production/piece-cost.service";
 import {
   canSeeProductionCosts,
   projectCostSummaries,
@@ -279,26 +280,49 @@ function stageLog(project: ProjectData, tz: string) {
 
 type GradeCost = { pieces: number; value: string; perPiece: string | null };
 
+const perPieceText = (cost: { a: Amount | null; b: Amount | null } | null) =>
+  cost
+    ? { a: cost.a ? fixed(money(cost.a)) : null, b: cost.b ? fixed(money(cost.b)) : null }
+    : null;
+
 /**
  * What the pieces received so far cost, A- and B-grade apart: the cost each
- * confirmed delivery moved into stock with them, per piece of each grade.
+ * confirmed delivery moved into stock with them, per piece of each grade, and
+ * once the project is completed the one cost they were all evened out to. Also
+ * what completing it now would even them out to (`whenCompleted`).
  */
-async function gradeCosts(ctx: CompanyContext, projectId: string) {
-  const lines = await prisma.stockIntakeLine.findMany({
-    where: { intake: { companyId: ctx.company.id, projectId, status: "CONFIRMED" } },
-    select: { grade: true, quantity: true, unitCost: true },
+async function gradeCosts(
+  ctx: CompanyContext,
+  projectId: string,
+  inStock: Amount,
+): Promise<{
+  a: GradeCost;
+  b: GradeCost;
+  evened: boolean;
+  whenCompleted: { a: string | null; b: string | null } | null;
+}> {
+  const costs = await projectPieceCosts(prisma, ctx.company.id, projectId);
+  const of = (grade: { pieces: number; value: Amount }): GradeCost => ({
+    pieces: grade.pieces,
+    value: fixed(grade.value),
+    perPiece: grade.pieces > 0 ? fixed(money(grade.value.dividedBy(grade.pieces))) : null,
   });
-  const of = (grade: StockGrade): GradeCost => {
-    const mine = lines.filter((l) => l.grade === grade);
-    const pieces = mine.reduce((s, l) => s + l.quantity, 0);
-    const value = money(mine.reduce((s, l) => s.plus(l.unitCost.times(l.quantity)), ZERO));
-    return {
-      pieces,
-      value: fixed(value),
-      perPiece: pieces > 0 ? fixed(money(value.dividedBy(pieces))) : null,
-    };
+  return {
+    a: of(costs.a),
+    b: of(costs.b),
+    evened: costs.evened,
+    whenCompleted: costs.method
+      ? perPieceText(
+          evenCostPerPiece({
+            aPieces: costs.a.pieces,
+            bPieces: costs.b.pieces,
+            total: inStock,
+            method: costs.method,
+            bGradeRatio: costs.bGradeRatio,
+          }),
+        )
+      : null,
   };
-  return { a: of("A_GRADE"), b: of("B_GRADE") };
 }
 
 type CostSheet = Awaited<ReturnType<typeof getProjectCostSheet>>;
@@ -374,14 +398,14 @@ export async function getProjectScreen(ctx: CompanyContext, projectId: string) {
   const state = { code: project.code, status: project.status, stage: project.stage.key };
   const [summary, targets, challans] = await Promise.all([
     projectCostSummary(prisma, ctx.company.id, project.id),
-    targetTable(ctx, project.id, project.targets),
+    targetTable(ctx, project.id, project.targets, project.status === "COMPLETED"),
     projectChallans(ctx, project.id),
   ]);
   const wip = summary.wip;
   const [sheet, grades, suppliers] = access.seeCosts
     ? await Promise.all([
         getProjectCostSheet(ctx, project.id),
-        gradeCosts(ctx, project.id),
+        gradeCosts(ctx, project.id, summary.inStock),
         projectSupplierRows(prisma, ctx, {
           id: project.id,
           status: project.status,
@@ -430,7 +454,9 @@ export async function getProjectScreen(ctx: CompanyContext, projectId: string) {
             actualCostPerPiece: sheet.summary.actualCostPerPiece
               ? fixed(sheet.summary.actualCostPerPiece)
               : null,
-            grades,
+            grades: { a: grades.a, b: grades.b },
+            /** Completed: every piece received was evened out to one cost (total ÷ received). */
+            evened: project.status === "COMPLETED" && grades.evened,
             byHead: sheet.byHead.map((h) => ({
               headId: h.headId,
               name: h.name,
@@ -480,6 +506,15 @@ export async function getProjectScreen(ctx: CompanyContext, projectId: string) {
       cancelChallan: access.manage,
       openDelivery: openDelivery ? { id: openDelivery.id, number: openDelivery.number } : null,
       openParty: access.openParty,
+    },
+    /**
+     * What completing it now means: pieces short of the target are listed as
+     * wastage (no loss booked) and, for people who see costs, what each piece
+     * received would cost once evened out (what reached stock ÷ pieces received).
+     */
+    completion: {
+      short: project.quantities.remaining,
+      perPiece: grades?.whenCompleted ?? null,
     },
     /** Why completing or cancelling, which this person could otherwise do, is not offered. */
     notes: {
@@ -887,6 +922,7 @@ async function targetTable(
   ctx: CompanyContext,
   projectId: string,
   lines: Array<{ variantId: string; quantity: number }>,
+  completed: boolean,
 ) {
   if (lines.length === 0) return null;
   const receivedRows = await prisma.stockIntakeLine.groupBy({
@@ -899,10 +935,11 @@ async function targetTable(
   const ids = [...new Set([...target.keys(), ...received.keys()])];
   const grids = await styleGrids(ctx, await stylesOf(ctx, ids), ids);
   const styles = grids.map((m) => {
-    const cellOf = (variantId: string) => ({
-      target: target.get(variantId) ?? 0,
-      received: received.get(variantId) ?? 0,
-    });
+    const cellOf = (variantId: string) => {
+      const cell = { target: target.get(variantId) ?? 0, received: received.get(variantId) ?? 0 };
+      // Once the project is completed, pieces never received are wastage.
+      return { ...cell, short: completed ? Math.max(cell.target - cell.received, 0) : 0 };
+    };
     const used = (c: { target: number; received: number }) => c.target > 0 || c.received > 0;
     const keepSize = m.sizes.map((_, i) =>
       m.rows.some((r) => r.cells[i] && used(cellOf(r.cells[i]!.variantId))),
@@ -917,6 +954,7 @@ async function targetTable(
           cells,
           target: cells.reduce((s, c) => s + (c?.target ?? 0), 0),
           received: cells.reduce((s, c) => s + (c?.received ?? 0), 0),
+          short: cells.reduce((s, c) => s + (c?.short ?? 0), 0),
         };
       })
       .filter((row) => row.cells.some(Boolean));
@@ -926,12 +964,15 @@ async function targetTable(
       rows,
       target: rows.reduce((s, r) => s + r.target, 0),
       received: rows.reduce((s, r) => s + r.received, 0),
+      short: rows.reduce((s, r) => s + r.short, 0),
     };
   });
   return {
     styles,
     target: styles.reduce((s, x) => s + x.target, 0),
     received: styles.reduce((s, x) => s + x.received, 0),
+    /** Completed: the pieces per colour and size never received (wastage). */
+    short: styles.reduce((s, x) => s + x.short, 0),
   };
 }
 
@@ -1168,6 +1209,42 @@ function presentPreview(intake: IntakeData): PreviewScreen | null {
   };
 }
 
+/**
+ * Completing a project with this draft delivery as its last: the pieces it
+ * will have and those short of the target (wastage), and for people who see
+ * costs what every piece will cost once evened out: all of the project's cost
+ * that reaches stock (this delivery takes what is left) ÷ the pieces received.
+ */
+async function completionPreview(
+  ctx: CompanyContext,
+  intake: IntakeData,
+  project: NonNullable<IntakeData["project"]>,
+  seeCosts: boolean,
+) {
+  const aPieces = project.producedQtyA + intake.pieces.aGrade;
+  const bPieces = project.producedQtyB + intake.pieces.bGrade;
+  const received = aPieces + bPieces;
+  let perPiece: { a: string | null; b: string | null } | null = null;
+  if (seeCosts) {
+    const summary = await projectCostSummary(prisma, ctx.company.id, project.id);
+    perPiece = perPieceText(
+      evenCostPerPiece({
+        aPieces,
+        bPieces,
+        total: summary.inStock.plus(summary.wip),
+        method: intake.costAllocation,
+        bGradeRatio: intake.bGradeCostRatio,
+      }),
+    );
+  }
+  return {
+    target: project.targetQuantity,
+    received,
+    short: Math.max(project.targetQuantity - received, 0),
+    perPiece,
+  };
+}
+
 /** Pieces of a confirmed delivery no longer free in its warehouse (sold, reserved, bad stock). */
 async function undoShortfall(ctx: CompanyContext, intakeId: string) {
   const intake = await ctx.db.stockIntake.findUnique({
@@ -1241,6 +1318,22 @@ export async function getIntakeScreen(ctx: CompanyContext, intakeId: string) {
   const costLines = access.seeCosts
     ? intake.lines.map((l) => ({ ...l, unitCost: l.unitCost ?? ZERO }))
     : [];
+  // Its pieces' cost once the project was completed and every piece evened out.
+  const evened =
+    intake.status === "CONFIRMED" && intake.lines.some((l) => l.costAdjustment?.isZero() === false)
+      ? perGrade(
+          costLines.map((l) => ({
+            ...l,
+            unitCost: l.unitCost.plus((l.costAdjustment ?? ZERO).dividedBy(l.quantity)),
+          })),
+        )
+      : null;
+  const completeProject = Boolean(access.manage && receivable && otherOpen === 0);
+  // Completing with this delivery: what is short, and what each piece would cost.
+  const completion =
+    completeProject && project
+      ? await completionPreview(ctx, intake, project, access.seeCosts)
+      : null;
 
   return {
     intake: {
@@ -1285,15 +1378,19 @@ export async function getIntakeScreen(ctx: CompanyContext, intakeId: string) {
       ? {
           totalCost: intake.totalCost ? fixed(intake.totalCost) : null,
           perPiece: intake.status === "CONFIRMED" ? perGrade(costLines) : null,
+          /** Completed project: what a piece of each grade costs since it was evened out. */
+          evened,
           preview: draft ? presentPreview(intake) : null,
         }
       : null,
+    /** Completing the project with this delivery (Production Managers). */
+    completion,
     can: {
       edit: access.receive && draft,
       confirm: access.receive && draft && receivable && intake.lines.length > 0,
       cancel: access.receive && draft,
       /** Also mark the project completed with the final delivery (Production Managers). */
-      completeProject: access.manage && receivable && otherOpen === 0,
+      completeProject,
       /** Set the cost it carries by hand instead of its share (manual costing sets it per piece). */
       setTotal: access.seeCosts && intake.costAllocation !== "MANUAL",
       undo: undo?.ok ?? false,
@@ -1314,10 +1411,59 @@ type FormBlock = {
   b: Record<string, number>;
 };
 
+type PlanCells = Record<string, { target: number; received: number }>;
+
+/**
+ * What the receiving grid shows in each box of a project with a target grid:
+ * the pieces to make of that SKU and those received so far (confirmed
+ * deliveries, both grades), and the styles the grid covers, by style code.
+ */
+async function receivingPlan(ctx: CompanyContext, projectId: string) {
+  const [targets, receivedRows] = await Promise.all([
+    prisma.productionTargetLine.findMany({
+      where: { projectId },
+      select: {
+        variantId: true,
+        quantity: true,
+        variant: { select: { styleId: true, style: { select: { code: true } } } },
+      },
+    }),
+    prisma.stockIntakeLine.groupBy({
+      by: ["variantId"],
+      where: { intake: { companyId: ctx.company.id, projectId, status: "CONFIRMED" } },
+      _sum: { quantity: true },
+    }),
+  ]);
+  const received = new Map(receivedRows.map((r) => [r.variantId, r._sum.quantity ?? 0]));
+  const cells: PlanCells = {};
+  for (const t of targets) {
+    if (t.quantity > 0)
+      cells[t.variantId] = { target: t.quantity, received: received.get(t.variantId) ?? 0 };
+  }
+  const styleIds = [
+    ...new Map(
+      [...targets]
+        .sort((a, b) => a.variant.style.code.localeCompare(b.variant.style.code))
+        .map((t) => [t.variant.styleId, t.variant.styleId]),
+    ).keys(),
+  ];
+  return { cells, styleIds };
+}
+
+const emptyBlocks = (ctx: CompanyContext, styleIds: string[]) =>
+  Promise.all(
+    styleIds.map(async (id): Promise<FormBlock> => ({
+      matrix: await getIntakeMatrix(ctx, id),
+      a: {},
+      b: {},
+    })),
+  );
+
 /**
  * What the delivery form needs: the project, warehouses, the costing choices
- * for people who see costs, and the styles to fill in (a draft's own lines, or
- * the project's style for a new delivery).
+ * for people who see costs, and the styles to fill in: a draft's own lines and
+ * the project's target grid (or its style when it has no grid), with each
+ * box's pieces to make and received so far (`plan`).
  */
 export async function getIntakeForm(
   ctx: CompanyContext,
@@ -1339,13 +1485,14 @@ export async function getIntakeForm(
     const intake = await getIntake(ctx, options.intakeId);
     assertAllowed(canChangeDelivery(intake));
     if (!intake.project) throw new AppError("NOT_FOUND", "Production project not found.");
-    const blocks = new Map<string, FormBlock>();
+    const plan = await receivingPlan(ctx, intake.project.id);
+    const lineStyles = [...new Set(intake.lines.map((l) => l.style.id))];
+    const styleIds = [...lineStyles, ...plan.styleIds.filter((id) => !lineStyles.includes(id))];
+    const blocks = new Map(
+      (await emptyBlocks(ctx, styleIds)).map((block) => [block.matrix.style.id, block]),
+    );
     for (const line of intake.lines) {
-      let block = blocks.get(line.style.id);
-      if (!block) {
-        block = { matrix: await getIntakeMatrix(ctx, line.style.id), a: {}, b: {} };
-        blocks.set(line.style.id, block);
-      }
+      const block = blocks.get(line.style.id)!;
       (line.grade === "A_GRADE" ? block.a : block.b)[line.variantId] = line.quantity;
     }
     const unit = (grade: StockGrade) => {
@@ -1376,24 +1523,28 @@ export async function getIntakeForm(
           : null,
       },
       blocks: [...blocks.values()],
+      plan: plan.cells,
     };
   }
 
-  if (!options.projectId) return { ...base, project: null, intake: null, blocks: [] };
+  if (!options.projectId) {
+    return { ...base, project: null, intake: null, blocks: [], plan: {} as PlanCells };
+  }
   const project = await ctx.db.productionProject.findUnique({
     where: { id: options.projectId },
     select: { id: true, code: true, name: true, status: true, styleId: true },
   });
   if (!project) throw new AppError("NOT_FOUND", "Production project not found.");
   assertAllowed(canReceiveGoods(project));
-  const blocks: FormBlock[] = project.styleId
-    ? [{ matrix: await getIntakeMatrix(ctx, project.styleId), a: {}, b: {} }]
-    : [];
+  const plan = await receivingPlan(ctx, project.id);
+  const styleIds =
+    plan.styleIds.length > 0 ? plan.styleIds : project.styleId ? [project.styleId] : [];
   return {
     ...base,
     project: { id: project.id, code: project.code, name: project.name, styleId: project.styleId },
     intake: null,
-    blocks,
+    blocks: await emptyBlocks(ctx, styleIds),
+    plan: plan.cells,
   };
 }
 

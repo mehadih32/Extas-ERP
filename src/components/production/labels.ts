@@ -8,6 +8,7 @@ import type {
   ProductionStatus,
 } from "@prisma/client";
 
+import { money } from "@/components/sales/labels";
 import { formatCount, groupDigits, usesLakhGrouping } from "@/lib/display";
 
 /*
@@ -134,3 +135,42 @@ export const productionHref = {
   buyer: (id: string) => `/parties/buyers/${encodeURIComponent(id)}`,
   file: (id: string) => `/api/files/${encodeURIComponent(id)}`,
 };
+
+/**
+ * What a piece costs once a project's pieces are evened out: "BDT 103.09 a
+ * piece", or with B-grade valued lower "A-grade BDT 110.00, B-grade BDT 55.00 a
+ * piece".
+ */
+export function evenCostText(
+  perPiece: { a: string | null; b: string | null },
+  currency: string,
+): string {
+  const { a, b } = perPiece;
+  if (a && b && a !== b) {
+    return `A-grade ${money(a, currency)}, B-grade ${money(b, currency)} a piece`;
+  }
+  const one = a ?? b;
+  return one ? `${money(one, currency)} a piece` : "";
+}
+
+/**
+ * What completing a project means for its pieces: those short of the target are
+ * wastage, and (for people who see costs) the one cost every piece received
+ * then carries.
+ */
+export function completionNote(
+  completion: {
+    short: number;
+    perPiece: { a: string | null; b: string | null } | null;
+  },
+  currency: string,
+): string {
+  const short =
+    completion.short > 0
+      ? `The ${formatCount(completion.short, currency)} pieces short are listed as wastage, with no loss booked.`
+      : "";
+  const cost = completion.perPiece ? evenCostText(completion.perPiece, currency) : "";
+  return [short, cost ? `Every piece received then costs the same: ${cost}.` : ""]
+    .filter(Boolean)
+    .join(" ");
+}

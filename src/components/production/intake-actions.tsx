@@ -22,7 +22,7 @@ import {
   reverseIntakeAction,
 } from "@/server/actions/production.actions";
 
-import { productionHref } from "./labels";
+import { completionNote, productionHref } from "./labels";
 
 type Open = "confirm" | "cancel" | "undo" | null;
 type CostChoice = "SHARE" | "FINAL" | "TYPED";
@@ -290,6 +290,12 @@ export function IntakeActions({
                   label={`Also complete ${project.code}`}
                   hint={`${formatCount(project.received, currency)} of ${formatCount(project.target, currency)} pieces were received before this one. Completing takes all that is left of its cost.`}
                 />
+              )}
+              {can.completeProject && complete && screen.completion && (
+                <FormAlert tone="note">
+                  {`With these, ${project.code} has ${formatCount(screen.completion.received, currency)} of ${formatCount(screen.completion.target, currency)} pieces.`}{" "}
+                  {completionNote(screen.completion, currency)}
+                </FormAlert>
               )}
               {showZero && (
                 <div className="grid gap-2">

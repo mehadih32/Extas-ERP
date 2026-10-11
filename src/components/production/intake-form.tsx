@@ -1,7 +1,7 @@
 "use client";
 
 import type { CostAllocationMethod } from "@prisma/client";
-import { LoaderCircleIcon, PaperclipIcon, Trash2Icon } from "lucide-react";
+import { ListChecksIcon, LoaderCircleIcon, PaperclipIcon, Trash2Icon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
@@ -34,6 +34,13 @@ import { ProductionStylePicker } from "./pickers";
 import { asText, piecesIn, sumOf } from "./pieces";
 
 type Grade = "A" | "B";
+type Plan = IntakeFormData["plan"];
+
+const GRADE_TABS: Record<Grade, string> = { A: "Good (A-grade)", B: "B-grade" };
+
+/** Pieces still to come in a box of the project's target grid, before this delivery. */
+const toCome = (cell: { target: number; received: number }) =>
+  Math.max(cell.target - cell.received, 0);
 
 /** One style received: its colours by sizes, and pieces per SKU for each grade. */
 type Block = {
@@ -77,10 +84,12 @@ function Section({
 
 /**
  * A factory delivery (Move to Stock), new or a draft being corrected: the
- * pieces received per colour and size, A-grade and B-grade apart, the warehouse
- * they go into, the factory's packing list and, for people who see costs, how
- * the project's cost is split over the pieces. The packing list is kept as a
- * photo or PDF; reading it automatically comes later with the AI integrations.
+ * pieces received per colour and size, good (A-grade) and B-grade apart, the
+ * warehouse they go into, the factory's packing list and, for people who see
+ * costs, how the project's cost is split over the pieces. A project with a
+ * target grid opens on its styles, each box showing the pieces still to come,
+ * with one tap to fill those in. The packing list is kept as a photo or PDF;
+ * reading it automatically comes later with the AI integrations.
  */
 export function IntakeForm({ form: data, currency }: { form: IntakeFormData; currency: string }) {
   const router = useRouter();
@@ -108,6 +117,8 @@ export function IntakeForm({ form: data, currency }: { form: IntakeFormData; cur
 
   const aPieces = blocks.reduce((s, b) => s + sumOf(b.a), 0);
   const bPieces = blocks.reduce((s, b) => s + sumOf(b.b), 0);
+  const planned = Object.values(data.plan);
+  const stillToCome = planned.reduce((s, cell) => s + toCome(cell), 0);
 
   function change(key: string, next: Partial<Block>) {
     setBlocks((all) => all.map((b) => (b.key === key ? { ...b, ...next } : b)));
@@ -229,7 +240,11 @@ export function IntakeForm({ form: data, currency }: { form: IntakeFormData; cur
     <form onSubmit={submit} className="grid max-w-4xl gap-8" noValidate>
       <Section
         title="Pieces received"
-        hint="Count each colour and size off the factory's packing list. B-grade pieces (small faults) go in apart, on the B-grade tab."
+        hint={
+          planned.length > 0
+            ? "Each box shows the pieces still to come of the order. Count the good pieces in off the factory's packing list, and B-grade pieces (small faults) apart, on the B-grade tab."
+            : "Count each colour and size off the factory's packing list. B-grade pieces (small faults) go in apart, on the B-grade tab."
+        }
       >
         {blocks.length === 0 && (
           <FormAlert tone="note">Choose the style the factory delivered.</FormAlert>
@@ -239,6 +254,8 @@ export function IntakeForm({ form: data, currency }: { form: IntakeFormData; cur
             <StyleBlock
               key={block.key}
               block={block}
+              plan={data.plan}
+              currency={currency}
               error={fieldError(`block.${block.key}`)}
               onChange={(next) => change(block.key, next)}
               onRemove={() => setBlocks((all) => all.filter((b) => b.key !== block.key))}
@@ -269,6 +286,12 @@ export function IntakeForm({ form: data, currency }: { form: IntakeFormData; cur
             <span className="text-muted-foreground">In all </span>
             <span className="font-medium">{formatCount(aPieces + bPieces, currency)} pcs</span>
           </span>
+          {planned.length > 0 && (
+            <span>
+              <span className="text-muted-foreground">Still to come before this </span>
+              <span className="font-medium">{formatCount(stillToCome, currency)} pcs</span>
+            </span>
+          )}
         </div>
         {fieldError("lines") && <FormAlert>{fieldError("lines")}</FormAlert>}
       </Section>
@@ -447,13 +470,45 @@ export function IntakeForm({ form: data, currency }: { form: IntakeFormData; cur
   );
 }
 
+/** Under a box of the target grid: what is still to come, or how many more than ordered. */
+function PlanNote({
+  cell,
+  typed,
+  currency,
+}: {
+  cell: { target: number; received: number };
+  typed: number;
+  currency: string;
+}) {
+  const left = toCome(cell);
+  const over = typed - left;
+  return (
+    <span
+      className={cn(
+        "text-[0.75rem] leading-tight tabular-nums",
+        over > 0 ? "text-amber-700 dark:text-amber-400" : "text-muted-foreground",
+      )}
+    >
+      {over > 0
+        ? `${formatCount(over, currency)} over`
+        : left === 0
+          ? "All in"
+          : `${formatCount(left, currency)} to come`}
+    </span>
+  );
+}
+
 function StyleBlock({
   block,
+  plan,
+  currency,
   error,
   onChange,
   onRemove,
 }: {
   block: Block;
+  plan: Plan;
+  currency: string;
   error?: string;
   onChange: (change: Partial<Block>) => void;
   onRemove: () => void;
@@ -462,6 +517,29 @@ function StyleBlock({
   const title = m ? `${m.style.code} · ${m.style.name}` : "Loading the style";
   const quantities = block.showing === "A" ? block.a : block.b;
   const counts = { A: sumOf(block.a), B: sumOf(block.b) };
+  // The boxes of this style on the project's target grid.
+  const planned = m
+    ? m.rows.flatMap((row) =>
+        row.cells.flatMap((cell) =>
+          cell && plan[cell.variantId]
+            ? [{ variantId: cell.variantId, ...plan[cell.variantId]! }]
+            : [],
+        ),
+      )
+    : [];
+  const target = planned.reduce((s, c) => s + c.target, 0);
+  const received = planned.reduce((s, c) => s + c.received, 0);
+  const left = planned.reduce((s, c) => s + toCome(c), 0);
+
+  /** Good pieces in every box: what is still to come, less any B-grade typed there. */
+  function fillToCome() {
+    const a = { ...block.a };
+    for (const cell of planned) {
+      const rest = toCome(cell) - (piecesIn(block.b[cell.variantId]) || 0);
+      a[cell.variantId] = rest > 0 ? String(rest) : "";
+    }
+    onChange({ a, showing: "A" });
+  }
 
   return (
     <li className="grid min-w-0 gap-4 rounded-lg border bg-card p-4 sm:p-5">
@@ -471,6 +549,12 @@ function StyleBlock({
           {m && (
             <p className="text-[0.8125rem] text-muted-foreground tabular-nums">
               {counts.A} A-grade · {counts.B} B-grade
+            </p>
+          )}
+          {planned.length > 0 && (
+            <p className="text-[0.8125rem] text-muted-foreground tabular-nums">
+              To make {formatCount(target, currency)} · {formatCount(received, currency)} in before
+              · {formatCount(left, currency)} to come
             </p>
           )}
         </div>
@@ -499,31 +583,45 @@ function StyleBlock({
         </FormAlert>
       ) : (
         <>
-          <div
-            role="tablist"
-            aria-label={`Grade for ${m.style.code}`}
-            className="inline-grid w-full grid-cols-2 rounded-md border bg-muted/40 p-1 sm:w-80"
-          >
-            {(["A", "B"] as const).map((grade) => (
-              <button
-                key={grade}
+          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+            <div
+              role="tablist"
+              aria-label={`Grade for ${m.style.code}`}
+              className="inline-grid w-full grid-cols-2 rounded-md border bg-muted/40 p-1 sm:w-96"
+            >
+              {(["A", "B"] as const).map((grade) => (
+                <button
+                  key={grade}
+                  type="button"
+                  role="tab"
+                  aria-selected={block.showing === grade}
+                  onClick={() => onChange({ showing: grade })}
+                  className={cn(
+                    "min-h-9 cursor-pointer rounded-sm px-2 py-1.5 text-sm leading-tight transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/25 sm:px-3",
+                    block.showing === grade
+                      ? "bg-card font-medium text-primary shadow-sm"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {GRADE_TABS[grade]}
+                  <span className="ml-1.5 text-[0.8125rem] text-muted-foreground tabular-nums">
+                    {counts[grade]}
+                  </span>
+                </button>
+              ))}
+            </div>
+            {left > 0 && (
+              <Button
                 type="button"
-                role="tab"
-                aria-selected={block.showing === grade}
-                onClick={() => onChange({ showing: grade })}
-                className={cn(
-                  "h-9 cursor-pointer rounded-sm px-3 text-sm transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/25",
-                  block.showing === grade
-                    ? "bg-card font-medium text-primary shadow-sm"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
+                variant="outline"
+                size="sm"
+                className="w-full sm:w-auto"
+                onClick={fillToCome}
               >
-                {grade}-grade
-                <span className="ml-1.5 text-[0.8125rem] text-muted-foreground tabular-nums">
-                  {counts[grade]}
-                </span>
-              </button>
-            ))}
+                <ListChecksIcon aria-hidden />
+                Fill in what is still to come
+              </Button>
+            )}
           </div>
           {!m.style.isActive && (
             <FormAlert tone="note">
@@ -542,8 +640,9 @@ function StyleBlock({
                     if (!cell) return null;
                     const inputId = `${block.key}-${block.showing}-${cell.variantId}`;
                     const value = quantities[cell.variantId] ?? "";
+                    const planCell = plan[cell.variantId];
                     return (
-                      <div key={cell.variantId} className="grid min-w-0 gap-1">
+                      <div key={cell.variantId} className="grid min-w-0 content-start gap-1">
                         <label htmlFor={inputId} className="text-[0.8125rem] font-medium">
                           {size.name}
                         </label>
@@ -560,10 +659,22 @@ function StyleBlock({
                           }
                           disabled={!cell.isActive && !value}
                           placeholder="0"
-                          aria-label={`${row.color.name} ${size.name}, ${block.showing}-grade pieces`}
+                          aria-label={`${row.color.name} ${size.name}, ${
+                            block.showing === "A" ? "good (A-grade)" : "B-grade"
+                          } pieces`}
                           aria-invalid={Number.isNaN(piecesIn(value))}
                           className="text-right tabular-nums"
                         />
+                        {planCell && (
+                          <PlanNote
+                            cell={planCell}
+                            typed={
+                              (piecesIn(block.a[cell.variantId]) || 0) +
+                              (piecesIn(block.b[cell.variantId]) || 0)
+                            }
+                            currency={currency}
+                          />
+                        )}
                       </div>
                     );
                   })}

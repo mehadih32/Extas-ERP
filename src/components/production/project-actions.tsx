@@ -41,7 +41,7 @@ import {
 } from "@/server/actions/production.actions";
 
 import { AddCostDialog } from "./cost-dialogs";
-import { productionHref, STAGE_LABELS } from "./labels";
+import { completionNote, productionHref, STAGE_LABELS } from "./labels";
 
 type Open = "next" | "stage" | "start" | "hold" | "resume" | "complete" | "cancel" | "cost" | null;
 
@@ -383,10 +383,8 @@ export function ProjectActions({
           description={
             <>
               {formatCount(p.quantities.produced, currency)} of{" "}
-              {formatCount(p.quantities.target, currency)} pieces are in stock
-              {p.quantities.remaining > 0
-                ? `; the other ${formatCount(p.quantities.remaining, currency)} will not be received.`
-                : "."}{" "}
+              {formatCount(p.quantities.target, currency)} pieces are in stock.{" "}
+              {completionNote(screen.completion, currency)}{" "}
               {can.writeOff
                 ? `${wipText} has not moved into stock with its pieces; completing writes it off as a production loss.`
                 : "No more costs or deliveries can be added after this."}

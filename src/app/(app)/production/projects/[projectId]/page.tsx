@@ -255,7 +255,9 @@ export default async function ProjectPage({
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <Fact label="To make">{pieces(p.quantities.target, currency)}</Fact>
-                <Fact label="Still to come">{pieces(p.quantities.remaining, currency)}</Fact>
+                <Fact label={p.status === "COMPLETED" ? "Short (wastage)" : "Still to come"}>
+                  {pieces(p.quantities.remaining, currency)}
+                </Fact>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <Fact label="A-grade in stock">{pieces(p.quantities.producedA, currency)}</Fact>

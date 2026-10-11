@@ -38,6 +38,7 @@ import {
   isProjectClosed,
   projectCostSummary,
 } from "@/modules/production/project-costs";
+import { evenOutPieceCostTx } from "@/modules/production/piece-cost.service";
 import { completeProjectTx, reopenProjectTx } from "@/modules/production/project.service";
 import { canChangeDelivery, canReceiveGoods, canUndoDelivery } from "@/modules/production/rules";
 import {
@@ -655,8 +656,9 @@ const gradeLetter = (grade: StockGrade) => (grade === "A_GRADE" ? ("A" as const)
  * pieces have been sold, are reserved for orders or have gone to bad stock: a
  * stock count correction fixes those instead.
  *
- * A completed project is reopened, since cost is waiting in it again; a
- * cancelled one cannot take cost back. With `redraft`, a draft copy of the
+ * A completed project is reopened, since cost is waiting in it again, and its
+ * pieces go back to the costs their deliveries carried (completing it again
+ * evens them out anew); a cancelled one cannot take cost back. With `redraft`, a draft copy of the
  * delivery is opened to be corrected and confirmed again.
  */
 export async function reverseIntake(
@@ -713,6 +715,13 @@ export async function reverseIntake(
           quantity: l.quantity,
         }));
       assertAllowed(canUndoDelivery(intake, project, short));
+
+      // A completed project's pieces were evened out to one cost: put that back
+      // first, so these leave at the cost they came in at. Completing it again
+      // evens them out anew.
+      if (project.status === "COMPLETED") {
+        await evenOutPieceCostTx(tx, ctx, project, "reset");
+      }
 
       // Take the pieces back out at the cost they came in at, restoring each grade's average.
       await lockRows(tx, "ProductVariant", variantIds);
@@ -1009,6 +1018,8 @@ export async function getIntake(ctx: CompanyContext, intakeId: string) {
       grade: l.grade,
       quantity: l.quantity,
       unitCost: showCosts ? l.unitCost : null,
+      /** Value added (or taken) when the project's pieces were evened out on completing it. */
+      costAdjustment: showCosts ? l.costAdjustment : null,
     })),
     ai:
       intake.method === "AI_OCR"

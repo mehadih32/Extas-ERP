@@ -26,6 +26,9 @@ export type ExpenseListView = {
   head?: string;
   /** Only the ones I recorded (for people who see everyone's). */
   mine?: boolean;
+  /** Dated from and to these days ("2026-10-01"), as the Overview's breakdown links them. */
+  from?: string;
+  to?: string;
 };
 
 export type PaymentListView = { list: "payments"; supplier?: string };
@@ -45,6 +48,9 @@ const pick = <T extends string>(choices: readonly T[], value: string): T | undef
 /** A record id from the address (letters, digits, dashes), or undefined. */
 const idParam = (value: string) => (/^[A-Za-z0-9_-]{1,40}$/.test(value) ? value : undefined);
 
+/** A day from the address ("2026-10-01"), or undefined. */
+const dayParam = (value: string) => (/^\d{4}-\d{2}-\d{2}$/.test(value) ? value : undefined);
+
 export function journalViewFrom(params: SearchParams): JournalListView {
   return {
     list: "journal",
@@ -60,6 +66,8 @@ export function expenseViewFrom(params: SearchParams): ExpenseListView {
     status: pick(EXPENSE_STATUSES, one(params, "status")),
     head: idParam(one(params, "head")),
     mine: one(params, "mine") === "1" || undefined,
+    from: dayParam(one(params, "from")),
+    to: dayParam(one(params, "to")),
   };
 }
 
@@ -76,6 +84,8 @@ export function accountsListSearch(view: AccountsListView): string {
     if (view.status) params.set("status", view.status);
     if (view.head) params.set("head", view.head);
     if (view.mine) params.set("mine", "1");
+    if (view.from) params.set("from", view.from);
+    if (view.to) params.set("to", view.to);
   }
   if (view.list === "payments" && view.supplier) params.set("supplier", view.supplier);
   const query = params.toString();
@@ -87,7 +97,9 @@ export function isAccountsFiltered(view: AccountsListView): boolean {
     case "journal":
       return Boolean(view.q.trim() || view.source);
     case "expenses":
-      return Boolean(view.q.trim() || view.status || view.head || view.mine);
+      return Boolean(
+        view.q.trim() || view.status || view.head || view.mine || view.from || view.to,
+      );
     case "payments":
       return Boolean(view.supplier);
   }
@@ -113,6 +125,8 @@ export function expenseListQuery(view: ExpenseListView, cursor?: string) {
     status: view.status,
     headId: view.head,
     mine: view.mine,
+    from: view.from,
+    to: view.to,
     cursor,
     take: ACCOUNTS_PAGE_SIZE,
   };

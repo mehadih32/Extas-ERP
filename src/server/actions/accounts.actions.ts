@@ -5,11 +5,13 @@ import { revalidatePath } from "next/cache";
 import { getRequestMeta } from "@/lib/request-meta";
 import { runAction } from "@/lib/result";
 import { requireAnyPermission, requirePermission } from "@/modules/auth/context";
+import * as assetScreens from "@/modules/accounts/asset-screens.service";
 import * as assets from "@/modules/accounts/asset.service";
 import * as bank from "@/modules/accounts/bank.service";
 import * as capital from "@/modules/accounts/capital.service";
 import * as chart from "@/modules/accounts/chart.service";
 import * as executive from "@/modules/accounts/executive.service";
+import * as breakdown from "@/modules/accounts/expense-breakdown.service";
 import * as reports from "@/modules/accounts/reports.service";
 import * as screens from "@/modules/accounts/screens.service";
 import * as supplierPayments from "@/modules/accounts/supplier-payment.service";
@@ -72,6 +74,12 @@ export const getProfitLeadersAction = async (period: string) =>
   runAction(async () =>
     executive.getProfitLeaders(await view(), executive.isProfitPeriod(period) ? period : "MONTH"),
   );
+/** The expense breakdown under the cards: "2026-10" (a month) or "2026" (a year); this month by default. */
+export const getExpenseBreakdownAction = async (costs?: string) =>
+  runAction(async () => breakdown.getExpenseBreakdown(await view(), costs));
+/** One employee's pay, month by month, for a year (this year by default). */
+export const getEmployeePayAction = async (employeeId: string, year?: string) =>
+  runAction(async () => breakdown.getEmployeePay(await view(), employeeId, year));
 export const getCashBankScreenAction = async () =>
   runAction(async () => screens.getCashBankScreen(await view()));
 export const getBankScreenAction = async (bankAccountId: string, range: Range = {}) =>
@@ -217,24 +225,35 @@ export const listFixedAssetsAction = async (query: unknown) =>
   runAction(async () => assets.listFixedAssets(await view(), query));
 export const getFixedAssetAction = async (assetId: string) =>
   runAction(async () => assets.getFixedAsset(await view(), assetId));
+/** The register screen: book values, totals and the depreciation not yet posted. */
+export const getAssetRegisterAction = async (query: unknown = {}) =>
+  runAction(async () => assetScreens.getAssetRegister(await view(), query));
+/** Recording a purchase, or changing an asset's details. */
+export const getAssetFormAction = async (assetId?: string) =>
+  runAction(async () => assetScreens.getAssetForm(await view(), assetId));
+export const getAssetScreenAction = async (assetId: string) =>
+  runAction(async () => assetScreens.getAssetScreen(await view(), assetId));
+const assetRef = (asset: { id: string; name: string }) => ({ id: asset.id, name: asset.name });
 export const createFixedAssetAction = async (input: unknown) =>
-  runAction(async () => assets.createFixedAsset(await manage(), input, await getRequestMeta()));
+  change(async () =>
+    assetRef(await assets.createFixedAsset(await manage(), input, await getRequestMeta())),
+  );
 export const updateFixedAssetAction = async (assetId: string, input: unknown) =>
-  runAction(async () =>
-    assets.updateFixedAsset(await manage(), assetId, input, await getRequestMeta()),
+  change(async () =>
+    assetRef(await assets.updateFixedAsset(await manage(), assetId, input, await getRequestMeta())),
   );
 export const disposeFixedAssetAction = async (assetId: string, input: unknown) =>
-  runAction(async () =>
-    assets.disposeFixedAsset(await manage(), assetId, input, await getRequestMeta()),
+  change(async () =>
+    assetRef(
+      await assets.disposeFixedAsset(await manage(), assetId, input, await getRequestMeta()),
+    ),
   );
 export const voidFixedAssetAction = async (assetId: string, input: unknown) =>
-  runAction(async () =>
-    assets.voidFixedAsset(await manage(), assetId, input, await getRequestMeta()),
-  );
+  change(async () => assets.voidFixedAsset(await manage(), assetId, input, await getRequestMeta()));
 export const previewDepreciationAction = async (query: unknown) =>
   runAction(async () => assets.previewDepreciation(await view(), query));
 export const runDepreciationAction = async (input: unknown) =>
-  runAction(async () => assets.runDepreciation(await manage(), input, await getRequestMeta()));
+  change(async () => assets.runDepreciation(await manage(), input, await getRequestMeta()));
 
 // --- Capital, investors & loans ---------------------------------------------------------------
 export const listCapitalSourcesAction = async (query: unknown) =>

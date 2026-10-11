@@ -5,7 +5,8 @@
  */
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-const FULL_MONTHS = [
+/** "January" … "December". */
+export const FULL_MONTHS = [
   "January",
   "February",
   "March",

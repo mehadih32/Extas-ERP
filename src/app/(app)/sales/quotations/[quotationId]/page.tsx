@@ -12,6 +12,7 @@ import { salesHref } from "@/components/sales/labels";
 import { SalesNoAccess } from "@/components/sales/no-access";
 import { QuotationActions } from "@/components/sales/quotation-actions";
 import { QuoteItems } from "@/components/sales/quote-items";
+import { SalesFlow } from "@/components/sales/sales-flow";
 import { formatDay } from "@/lib/display";
 import { getQuotationScreenAction } from "@/server/actions/sales.actions";
 import { templateChoicesAction } from "@/server/actions/templates.actions";
@@ -78,18 +79,12 @@ export default async function QuotationPage({
             </>
           }
         />
-        {q.proforma && (
-          <FormAlert tone="note">
-            Made into proforma invoice{" "}
-            <Link
-              href={salesHref.proforma(q.proforma.id)}
-              className="font-medium underline underline-offset-4"
-            >
-              {q.proforma.number}
-            </Link>
-            .
-          </FormAlert>
-        )}
+        <SalesFlow
+          current="quotation"
+          quotation={q}
+          proforma={q.proforma}
+          order={q.proforma?.salesOrder ?? null}
+        />
         {q.isExpired && (
           <FormAlert tone="note">
             Its validity ended on {formatDay(q.validUntil!)}. Edit it to give a new date before

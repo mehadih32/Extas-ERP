@@ -13,6 +13,7 @@ import { MoneyRecords } from "@/components/sales/money-records";
 import { SalesNoAccess } from "@/components/sales/no-access";
 import { ProformaActions } from "@/components/sales/proforma-actions";
 import { QuoteItems } from "@/components/sales/quote-items";
+import { SalesFlow } from "@/components/sales/sales-flow";
 import { localDay } from "@/lib/dates";
 import { formatDay } from "@/lib/display";
 import { getProformaScreenAction } from "@/server/actions/sales.actions";
@@ -72,21 +73,20 @@ export default async function ProformaPage({
           title={p.buyer.name}
           badges={
             <>
-              <ProformaBadge status={p.status} />
-              {p.quotation && (
-                <span className="text-sm text-muted-foreground">
-                  From quotation{" "}
-                  <Link
-                    href={salesHref.quotation(p.quotation.id)}
-                    className="text-primary underline-offset-4 hover:underline"
-                  >
-                    {p.quotation.number}
-                  </Link>
-                </span>
-              )}
+              <ProformaBadge status={p.status} isExpired={p.isExpired} />
+              <span className="text-sm text-muted-foreground">
+                {p.validUntil ? `Valid until ${formatDay(p.validUntil)}` : "No end date"}
+              </span>
             </>
           }
         />
+        <SalesFlow current="proforma" quotation={p.quotation} proforma={p} order={p.order} />
+        {p.isExpired && (
+          <FormAlert tone="note">
+            Its validity ended on {formatDay(p.validUntil!)}. Give a new date with Edit the details
+            before sending it again, or go ahead if the buyer still agrees.
+          </FormAlert>
+        )}
         {p.order && (
           <FormAlert tone="note">
             It became order{" "}
@@ -146,6 +146,37 @@ export default async function ProformaPage({
           />
         </div>
         <div className="grid min-w-0 grid-cols-1 content-start gap-6">
+          <Panel title="Proforma details" id="details-heading">
+            <dl className="mt-4 grid grid-cols-2 gap-4">
+              <Fact label="Buyer PO no.">{p.buyerPoNumber ?? "Not given"}</Fact>
+              <Fact label="Valid until">
+                {p.validUntil ? formatDay(p.validUntil) : "No end date"}
+              </Fact>
+              <Fact label="Bank details" className="col-span-2">
+                {p.bank ? (
+                  <span className="grid gap-0.5">
+                    <span>{p.bank.accountName}</span>
+                    <span className="tabular-nums">{p.bank.accountNumber}</span>
+                    <span className="text-muted-foreground">
+                      {[p.bank.bankName, p.bank.branch].filter(Boolean).join(", ")}
+                    </span>
+                    {(p.bank.routingNumber || p.bank.swiftCode) && (
+                      <span className="text-muted-foreground">
+                        {[
+                          p.bank.routingNumber ? `Routing ${p.bank.routingNumber}` : null,
+                          p.bank.swiftCode ? `SWIFT ${p.bank.swiftCode}` : null,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </span>
+                    )}
+                  </span>
+                ) : (
+                  "Not printed"
+                )}
+              </Fact>
+            </dl>
+          </Panel>
           <Panel title="Advance" id="advance-heading">
             <Totals
               className="mt-4"

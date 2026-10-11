@@ -63,6 +63,9 @@ const DETAIL_SIZE = 7;
 const DETAIL_LINE = 9.4;
 const TABLE_HEADER = 18;
 const MAX_CELL_LINES = 8;
+/** A row's reference picture: a square this wide, before the details' text. */
+const THUMB = 58;
+const THUMB_GAP = 7;
 
 type LineStyle = TextStyle & { color?: string; align?: Align };
 
@@ -79,11 +82,14 @@ class Writer {
   private y = MARGIN.top;
   private readonly primary: string;
   private readonly accent: string;
+  /** Row pictures opened by pdfkit, by file id (null: it could not be read). */
+  private readonly opened = new Map<string, OpenedImage | null>();
 
   constructor(
     private readonly doc: PDFKit.PDFDocument,
     private readonly model: PrintDocument,
     private readonly logo: Buffer | null,
+    private readonly images: ReadonlyMap<string, Buffer> = new Map(),
   ) {
     this.primary = safeHex(model.letterhead.primaryColor, DEFAULT_PRIMARY);
     this.accent = safeHex(model.letterhead.accentColor, DEFAULT_ACCENT);
@@ -453,12 +459,32 @@ class Writer {
     this.y += TABLE_HEADER;
   }
 
+  /** A row's picture, opened once; null when it was not handed over or cannot be read. */
+  private picture(id: string | undefined): OpenedImage | null {
+    if (!id) return null;
+    if (!this.opened.has(id)) {
+      const bytes = this.images.get(id);
+      let image: OpenedImage | null = null;
+      if (bytes) {
+        try {
+          image = (this.doc as unknown as PdfImages).openImage(bytes);
+        } catch {
+          image = null; // printed without it rather than not at all
+        }
+      }
+      this.opened.set(id, image);
+    }
+    return this.opened.get(id) ?? null;
+  }
+
   /** What a row prints in each column, and its height. */
   private layoutRow(row: Row, boxes: ColumnBox[], detailColumn: number) {
     const bold = (row.style ?? "normal") !== "normal";
     const font = bold ? SANS_BOLD : SANS;
+    const picture = this.picture(row.image);
     const cells = boxes.map((box, i) => {
-      const indent = i === 0 && row.swatch ? 11 : 0;
+      const indent =
+        (i === 0 && row.swatch ? 11 : 0) + (i === detailColumn && picture ? THUMB + THUMB_GAP : 0);
       const width = box.width - 2 * CELL_PAD - indent;
       const text = row.cells[i] ?? "";
       const lines =
@@ -484,10 +510,11 @@ class Writer {
             (c.details.length ? 1.5 : 0),
         ),
         TABLE_LINE,
+        picture ? THUMB : 0,
       ) +
       2 * CELL_PAD -
       1;
-    return { cells, height, font };
+    return { cells, height, font, picture, detailColumn };
   }
 
   private table(block: Extract<Block, { kind: "table" }>) {
@@ -569,6 +596,9 @@ class Writer {
           .lineWidth(0.5)
           .fillAndStroke(color, "#9AA5A0");
       }
+      if (i === layout.detailColumn && layout.picture) {
+        this.thumbnail(layout.picture, x - THUMB - THUMB_GAP, top + CELL_PAD - 0.5);
+      }
       let ly = top + CELL_PAD;
       for (const text of cell.lines) {
         this.line(text, x, ly, cell.width, {
@@ -585,6 +615,22 @@ class Writer {
       }
     });
     this.y += layout.height;
+  }
+
+  /** A picture fitted into a THUMB square on white, with a hairline frame. */
+  private thumbnail(image: OpenedImage, x: number, y: number) {
+    const rotated = (image.orientation ?? 1) > 4;
+    const width = rotated ? image.height : image.width;
+    const height = rotated ? image.width : image.height;
+    const scale = Math.min(THUMB / width, THUMB / height);
+    const w = width * scale;
+    const h = height * scale;
+    this.doc.rect(x, y, THUMB, THUMB).fill(WHITE);
+    (this.doc as unknown as PdfImages).image(image, x + (THUMB - w) / 2, y + (THUMB - h) / 2, {
+      width: w,
+      height: h,
+    });
+    this.doc.rect(x, y, THUMB, THUMB).lineWidth(0.5).strokeColor(HAIRLINE).stroke();
   }
 
   /** A small box in the cell, with a tick in the company colour when `ticked`. */
@@ -790,10 +836,14 @@ class Writer {
   }
 }
 
-/** The document as a PDF on letterhead. `compress: false` keeps the page text readable (tests). */
+/**
+ * The document as a PDF on letterhead. `images` holds the bytes of the rows'
+ * reference pictures by file id (checked when uploaded); a row whose picture is
+ * not there prints without it. `compress: false` keeps the page text readable (tests).
+ */
 export async function renderDocumentPdf(
   model: PrintDocument,
-  options: { logo?: Buffer | null; compress?: boolean } = {},
+  options: { logo?: Buffer | null; images?: ReadonlyMap<string, Buffer>; compress?: boolean } = {},
 ): Promise<Buffer> {
   const doc = await createPdf({
     size: "A4",
@@ -811,7 +861,7 @@ export async function renderDocumentPdf(
     },
   });
   const done = collectPdf(doc);
-  const writer = new Writer(doc, model, options.logo ?? null);
+  const writer = new Writer(doc, model, options.logo ?? null, options.images);
   writer.letterhead();
   if (model.type !== "LETTERHEAD") {
     writer.titleBlock();

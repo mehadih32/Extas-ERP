@@ -44,6 +44,7 @@ import {
   canCreatePackingList,
   canDeleteQuotation,
   canEditOrder,
+  canEditProformaDetails,
   canEditQuotation,
   canIssueInvoice,
   canReceiveOnOrder,
@@ -55,6 +56,7 @@ import {
   canSetShipmentDate,
   canVoidInvoice,
   canVoidRefund,
+  isProformaExpired,
   liveInvoice,
   quotationMarks,
   settleKinds,
@@ -314,14 +316,49 @@ function presentQuotationItems(items: QuotationData["items"], order: SizeOrder) 
     id: item.id,
     description: item.description,
     style: item.style ? { id: item.style.id, code: item.style.code, name: item.style.name } : null,
+    /** Not from the catalogue: kept on the quotation only, never added to Products. */
+    custom: item.styleId === null,
     category: item.category ? { id: item.category.id, name: item.category.name } : null,
     fabric: item.fabric,
+    gsm: item.gsm,
     colorNote: item.colorNote,
+    sizeRatio: item.sizeRatio,
+    accessories: item.accessories,
+    /** The reference picture (opens at /api/files/:id), or null. */
+    imageId: item.imageId,
     sizes: sizesOf(item.sizeBreakdown, order),
     quantity: item.quantity,
     unitPrice: fixed(item.unitPrice),
     lineTotal: fixed(item.lineTotal),
   }));
+}
+
+/** How a bank account reads in a list: "Dutch-Bangla Bank · 1234567890". */
+const bankLabel = (b: { bankName: string; accountNumber: string; isActive: boolean }) =>
+  `${b.bankName} · ${b.accountNumber}${b.isActive ? "" : " (closed)"}`;
+
+/**
+ * The bank accounts a proforma may print as its bank details: the company's open
+ * ones, plus the one it already has (even if closed since).
+ */
+async function bankChoices(ctx: CompanyContext, current?: string | null) {
+  const banks = await ctx.db.bankAccount.findMany({
+    where: { OR: [{ isActive: true }, ...(current ? [{ id: current }] : [])] },
+    select: { id: true, bankName: true, accountNumber: true, isActive: true },
+    orderBy: [{ isActive: "desc" }, { createdAt: "asc" }],
+    take: 50,
+  });
+  return banks.map((b) => ({ id: b.id, label: bankLabel(b) }));
+}
+
+/** Days a new proforma stays valid unless changed. */
+export const PROFORMA_VALID_DAYS = 15;
+
+/** A calendar day `days` after `day` ("2026-10-11" + 15 = "2026-10-26"). */
+function addDays(day: string, days: number) {
+  const at = new Date(`${day}T00:00:00Z`);
+  at.setUTCDate(at.getUTCDate() + days);
+  return at.toISOString().slice(0, 10);
 }
 
 /**
@@ -332,6 +369,8 @@ export async function getQuotationScreen(ctx: CompanyContext, quotationId: strin
   const [q, order] = await Promise.all([getQuotation(ctx, quotationId), sizeOrder(ctx)]);
   const tz = ctx.company.timezone;
   const access = salesAccess(ctx);
+  const convert = access.quote && canConvertQuotation(q).ok;
+  const today = localDay(new Date(), tz);
   return {
     quotation: {
       id: q.id,
@@ -373,12 +412,20 @@ export async function getQuotationScreen(ctx: CompanyContext, quotationId: strin
     },
     /** The advance a new proforma asks for unless changed (company setting). */
     advancePercent: Number(ctx.company.defaultAdvancePercent),
+    /** What "Make a proforma invoice" starts with: today, valid 15 days, the first bank. */
+    proformaDefaults: convert
+      ? {
+          issuedOn: today,
+          validUntil: addDays(today, PROFORMA_VALID_DAYS),
+          banks: await bankChoices(ctx),
+        }
+      : null,
     can: {
       edit: access.quote && canEditQuotation(q).ok,
       /** Sent, accepted, rejected: the marks it can take from where it is. */
       marks: access.quote ? quotationMarks(q) : [],
       delete: access.quote && canDeleteQuotation(q).ok,
-      convert: access.quote && canConvertQuotation(q).ok,
+      convert,
       openBuyer: access.openBuyer,
     },
   };
@@ -401,10 +448,15 @@ export type QuotationFieldDef = {
  */
 export async function getQuotationForm(ctx: CompanyContext, quotationId?: string) {
   const tz = ctx.company.timezone;
-  const [categories, sizes, fields] = await Promise.all([
+  const [categories, sizes, fields, presets] = await Promise.all([
     listCategoryOptions(ctx),
     listSizes(ctx),
     listCustomFields(ctx, "QUOTATION"),
+    ctx.db.sizeRatioPreset.findMany({
+      select: { name: true, entries: { select: { sizeId: true, ratio: true } } },
+      orderBy: { name: "asc" },
+      take: 50,
+    }),
   ]);
   let quotation = null;
   if (quotationId) {
@@ -437,6 +489,14 @@ export async function getQuotationForm(ctx: CompanyContext, quotationId?: string
     currency: ctx.company.currency,
     categories: categories.map((c) => ({ id: c.id, name: c.name, depth: c.depth })),
     sizes: sizes.map((s) => ({ id: s.id, name: s.name })),
+    /** Saved size ratios (Products) as size ratio suggestions: "S:M:L:XL = 1:2:2:1". */
+    sizeRatios: [
+      ...new Set(
+        presets
+          .map((p) => ratioSuggestion(p.entries, sizes))
+          .filter((text): text is string => text !== null),
+      ),
+    ],
     customFields: fields.map((f): QuotationFieldDef => ({
       key: f.key,
       label: f.label,
@@ -449,18 +509,33 @@ export async function getQuotationForm(ctx: CompanyContext, quotationId?: string
 
 export type QuotationForm = Awaited<ReturnType<typeof getQuotationForm>>;
 
+/** A saved ratio written out over the company's sizes, skipping sizes it leaves out. */
+function ratioSuggestion(
+  entries: Array<{ sizeId: string; ratio: number }>,
+  sizes: Array<{ id: string; name: string }>,
+): string | null {
+  const bySize = new Map(entries.map((e) => [e.sizeId, e.ratio]));
+  const used = sizes.filter((s) => (bySize.get(s.id) ?? 0) > 0);
+  if (used.length === 0) return null;
+  return `${used.map((s) => s.name).join(":")} = ${used.map((s) => bySize.get(s.id)).join(":")}`;
+}
+
 // =============================================================================
 // Proforma invoices
 // =============================================================================
 
 type ListedProforma = Awaited<ReturnType<typeof listProformas>>["items"][number];
 
-function presentProformaRow(p: ListedProforma, tz: string) {
+function presentProformaRow(p: ListedProforma, tz: string, today: string) {
+  const validUntil = dateOnly(p.validUntil);
   return {
     id: p.id,
     number: p.number,
     status: p.status,
     issuedOn: localDay(p.issueDate, tz),
+    buyerPoNumber: p.buyerPoNumber,
+    validUntil,
+    isExpired: isProformaExpired({ status: p.status, validUntil }, today),
     buyer: partyOf(p.party)!,
     total: fixed(p.total),
     advancePercent: Number(p.advancePercent),
@@ -474,7 +549,11 @@ export type ProformaRow = ReturnType<typeof presentProformaRow>;
 export async function listProformaRows(ctx: CompanyContext, raw: unknown = {}) {
   const page = await listProformas(ctx, raw);
   const tz = ctx.company.timezone;
-  return { items: page.items.map((p) => presentProformaRow(p, tz)), nextCursor: page.nextCursor };
+  const today = localDay(new Date(), tz);
+  return {
+    items: page.items.map((p) => presentProformaRow(p, tz, today)),
+    nextCursor: page.nextCursor,
+  };
 }
 
 export type ProformaList = Awaited<ReturnType<typeof listProformaRows>>;
@@ -531,12 +610,31 @@ export async function getProformaScreen(ctx: CompanyContext, proformaId: string)
   const cancellable = access.quote && canCancelProforma(p).ok;
   const blockedBySettling = cancellable && isPositive(held) && kinds.length === 0;
   const convertible = canConvertProforma(p);
+  const editDetails = access.quote && canEditProformaDetails(p).ok;
+  const validUntil = dateOnly(p.validUntil);
   return {
     proforma: {
       id: p.id,
       number: p.number,
       status: p.status,
       issuedOn: localDay(p.issueDate, tz),
+      buyerPoNumber: p.buyerPoNumber,
+      /** The last day of the offer ("2026-10-26"), or null for no end. */
+      validUntil,
+      /** Past that day with no advance yet: shown only, nothing is blocked. */
+      isExpired: isProformaExpired({ status: p.status, validUntil }, localDay(new Date(), tz)),
+      /** The account printed as the bank details, or null. */
+      bank: p.bankAccount
+        ? {
+            id: p.bankAccount.id,
+            bankName: p.bankAccount.bankName,
+            branch: p.bankAccount.branch,
+            accountName: p.bankAccount.accountName,
+            accountNumber: p.bankAccount.accountNumber,
+            routingNumber: p.bankAccount.routingNumber,
+            swiftCode: p.bankAccount.swiftCode,
+          }
+        : null,
       buyer: {
         id: p.party.id,
         code: p.party.code,
@@ -579,7 +677,11 @@ export async function getProformaScreen(ctx: CompanyContext, proformaId: string)
     },
     /** Money held on it now: advances received less refunds. */
     held: fixed(held),
+    /** Bank accounts "Edit the details" offers. */
+    banks: editDetails ? await bankChoices(ctx, p.bankAccountId) : [],
     can: {
+      /** Buyer PO, validity and bank details, while it is open. */
+      editDetails,
       receive: access.receive && canReceiveOnProforma(p).ok,
       convert: access.sell && convertible.ok,
       cancel: cancellable && !blockedBySettling,

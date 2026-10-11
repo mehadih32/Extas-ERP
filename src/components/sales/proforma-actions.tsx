@@ -4,6 +4,7 @@ import {
   BanIcon,
   BanknoteIcon,
   EllipsisVerticalIcon,
+  PencilIcon,
   ShoppingCartIcon,
   Undo2Icon,
 } from "lucide-react";
@@ -23,10 +24,11 @@ import {
 } from "@/components/ui/dropdown-menu";
 import type { TemplateChoice } from "@/modules/reports/screens.service";
 import type { ProformaScreen } from "@/modules/sales/screens.service";
-import { cancelProformaAction } from "@/server/actions/sales.actions";
+import { cancelProformaAction, updateProformaAction } from "@/server/actions/sales.actions";
 
 import {
   FormDialog,
+  problem,
   readReason,
   ReasonField,
   RefundDialog,
@@ -35,15 +37,17 @@ import {
 } from "./dialogs";
 import { ReceivePaymentDialog } from "./receive-payment-dialog";
 import { isZero, money } from "./labels";
+import { ProformaDetailsFields, readProformaDetails } from "./proforma-details";
 
-type Open = "receive" | "refund" | "cancel" | null;
+type Open = "receive" | "refund" | "cancel" | "details" | null;
 
 /**
  * What can be done with a proforma invoice, each offered from the flags the
  * screen came with (screen.can, from sales/rules.ts): Accounts receives the
  * advance and refunds it; sales.order.create makes the order once the advance is
- * paid; sales.quotation.manage cancels it (settling what was paid needs Accounts'
- * keys too). Everyone who sees it can print it.
+ * paid; sales.quotation.manage changes its Buyer PO, validity and bank details
+ * while it is open and cancels it (settling what was paid needs Accounts' keys
+ * too). Everyone who sees it can print it.
  */
 export function ProformaActions({
   screen,
@@ -64,7 +68,7 @@ export function ProformaActions({
   const { proforma: p, can, held } = screen;
   const close = () => setOpen(null);
   const refund = can.refundKinds.length > 0;
-  const hasMenu = refund || can.cancel;
+  const hasMenu = refund || can.cancel || can.editDetails;
   const done = (message: string) => {
     setNotice(message);
     close();
@@ -122,6 +126,12 @@ export function ProformaActions({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-60">
+                {can.editDetails && (
+                  <DropdownMenuItem onSelect={() => setOpen("details")}>
+                    <PencilIcon aria-hidden />
+                    Edit the details
+                  </DropdownMenuItem>
+                )}
                 {refund && (
                   <DropdownMenuItem onSelect={() => setOpen("refund")}>
                     <Undo2Icon aria-hidden />
@@ -130,7 +140,7 @@ export function ProformaActions({
                 )}
                 {can.cancel && (
                   <>
-                    {refund && <DropdownMenuSeparator />}
+                    {(refund || can.editDetails) && <DropdownMenuSeparator />}
                     <DropdownMenuItem variant="destructive" onSelect={() => setOpen("cancel")}>
                       <BanIcon aria-hidden />
                       Cancel the proforma
@@ -154,6 +164,36 @@ export function ProformaActions({
           onDone={done}
           onClose={close}
         />
+      )}
+      {open === "details" && (
+        <FormDialog
+          title={`Edit the details of ${p.number}`}
+          description="The buyer's PO number, how long the offer holds and the bank details printed on the proforma. Print it again to send the new copy."
+          submitLabel="Save the details"
+          pendingLabel="Saving"
+          errorTitle="We could not save the details"
+          onClose={close}
+          onSubmit={async (form) => {
+            const details = readProformaDetails(form, p.issuedOn);
+            if (!details.ok) return problem(details.problems);
+            const result = await updateProformaAction(p.id, details.input);
+            if (!result.ok) return result.error;
+            done("The details were saved.");
+          }}
+        >
+          {(fieldError) => (
+            <ProformaDetailsFields
+              values={{
+                buyerPoNumber: p.buyerPoNumber,
+                validUntil: p.validUntil,
+                bankId: p.bank?.id ?? null,
+              }}
+              banks={screen.banks}
+              issuedOn={p.issuedOn}
+              fieldError={fieldError}
+            />
+          )}
+        </FormDialog>
       )}
       {open === "refund" && (
         <RefundDialog

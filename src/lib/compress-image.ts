@@ -1,7 +1,8 @@
 /*
  * Makes a photo small in the browser before it is uploaded, so the server only
  * ever keeps small proof files (a phone photo of a cheque is often 3-5 MB; it
- * leaves here at about 100 KB). The photo is redrawn at most PROOF_MAX_SIDE
+ * leaves here at about 100 KB) and small quotation pictures (PICTURE_OPTIONS:
+ * about 150 KB, always a JPG because the PDF writer draws them). The photo is redrawn at most PROOF_MAX_SIDE
  * pixels on its long side and saved as WebP, or as JPG where the browser cannot
  * make WebP; quality and then size step down until it fits. Redrawing also drops
  * the photo's hidden details (camera, place). The tries are a pure plan
@@ -39,9 +40,10 @@ export async function shrinkWith(
   width: number,
   height: number,
   target = PROOF_TARGET_BYTES,
+  maxSide = PROOF_MAX_SIDE,
 ): Promise<Blob> {
   let smallest: Blob | null = null;
-  for (const attempt of attempts(width, height)) {
+  for (const attempt of attempts(width, height, maxSide)) {
     const blob = await encode(attempt);
     if (!smallest || blob.size < smallest.size) smallest = blob;
     if (blob.size <= target) return blob;
@@ -96,11 +98,19 @@ const toBlob = (canvas: HTMLCanvasElement, type: string, quality: number) =>
     ),
   );
 
+/** What a quotation item's reference picture aims at: printed on PDFs, so always a JPG. */
+export const PICTURE_OPTIONS = { target: 150 * 1024, maxSide: 1400, jpegOnly: true } as const;
+
 /**
- * A smaller copy of a photo, ready to upload (WebP, or JPG). Throws when the
- * file is not a photo the browser can read.
+ * A smaller copy of a photo, ready to upload (WebP, or JPG; always JPG with
+ * `jpegOnly`, for pictures the PDF writer draws). Throws when the file is not a
+ * photo the browser can read.
  */
-export async function compressImage(file: File, target = PROOF_TARGET_BYTES): Promise<File> {
+export async function compressImage(
+  file: File,
+  target: number = PROOF_TARGET_BYTES,
+  options: { maxSide?: number; jpegOnly?: boolean } = {},
+): Promise<File> {
   if (!file.type.startsWith("image/")) throw new Error("Choose a photo (JPG, PNG or WebP).");
   const image = await loadImage(file);
   try {
@@ -109,7 +119,7 @@ export async function compressImage(file: File, target = PROOF_TARGET_BYTES): Pr
     if (!context) throw new Error("This browser cannot make photos smaller.");
     canvas.width = 1;
     canvas.height = 1;
-    const webp = canvas.toDataURL("image/webp").startsWith("data:image/webp");
+    const webp = !options.jpegOnly && canvas.toDataURL("image/webp").startsWith("data:image/webp");
     const type = webp ? "image/webp" : "image/jpeg";
     const blob = await shrinkWith(
       async ({ width, height, quality }) => {
@@ -124,6 +134,7 @@ export async function compressImage(file: File, target = PROOF_TARGET_BYTES): Pr
       image.width,
       image.height,
       target,
+      options.maxSide ?? PROOF_MAX_SIDE,
     );
     const base = file.name.replace(/\.[^.]*$/, "") || "proof";
     return new File([blob], `${base}${webp ? ".webp" : ".jpg"}`, { type });

@@ -17,6 +17,7 @@ import * as payments from "@/modules/sales/payment.service";
 import * as proformas from "@/modules/sales/proforma.service";
 import * as proofs from "@/modules/sales/proof.service";
 import * as quotations from "@/modules/sales/quotation.service";
+import * as pictures from "@/modules/sales/reference-image.service";
 import * as refunds from "@/modules/sales/refund.service";
 import * as screens from "@/modules/sales/screens.service";
 import * as summary from "@/modules/sales/summary.service";
@@ -24,7 +25,8 @@ import * as summary from "@/modules/sales/summary.service";
 /*
  * Sales Server Actions. Each returns { ok: true, data } or { ok: false, error }.
  *   sales.view                read quotations, proformas, orders, documents, payments
- *   sales.quotation.manage    quotations and proforma conversion
+ *   sales.quotation.manage    quotations (with their reference pictures), proforma
+ *                             conversion and a proforma's PO, validity and bank details
  *   sales.order.create        orders, invoices, packing lists, challans
  *   accounts.receipts.record  money received (also needed for a payment at checkout);
  *                             a refund kept as the buyer's credit; using a buyer's
@@ -173,6 +175,16 @@ export const deleteQuotationAction = async (quotationId: string) =>
     await quotations.deleteQuotation(await quote(), quotationId, await getRequestMeta());
     return { id: quotationId };
   });
+/** FormData with a `file` field: an item's reference picture already made small in the browser. */
+export const uploadReferenceImageAction = async (form: FormData) =>
+  runAction(async () => {
+    const asset = await pictures.storeReferenceImage(
+      await quote(),
+      await files.fileFromForm(form),
+      await getRequestMeta(),
+    );
+    return { id: asset.id, fileName: asset.fileName, sizeBytes: asset.sizeBytes };
+  });
 export const convertQuotationToProformaAction = async (quotationId: string, input: unknown) =>
   change(async () =>
     ref(
@@ -190,6 +202,11 @@ export const listProformasAction = async (query: unknown) =>
   runAction(async () => proformas.listProformas(await view(), query));
 export const getProformaAction = async (proformaId: string) =>
   runAction(async () => proformas.getProforma(await view(), proformaId));
+/** Buyer PO number, validity and bank details of an open proforma. */
+export const updateProformaAction = async (proformaId: string, input: unknown) =>
+  change(async () =>
+    ref(await proformas.updateProforma(await quote(), proformaId, input, await getRequestMeta())),
+  );
 export const cancelProformaAction = async (proformaId: string, input: unknown) =>
   change(async () =>
     ref(await proformas.cancelProforma(await quote(), proformaId, input, await getRequestMeta())),

@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 
+import { dateColumn, dateOnly, localDay } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
 import { nextDocumentNumber } from "@/lib/numbering";
 import { prisma } from "@/lib/prisma";
@@ -21,22 +22,56 @@ import {
 import { heldOnProforma, refreshOrderPayments } from "@/modules/sales/posting";
 import { assertStockOrOverride, resolveOrderLines } from "@/modules/sales/pricing";
 import { assertCanRefund, REFUND_KIND_TEXT, refundBuyerTx } from "@/modules/sales/refund.service";
-import { canCancelProforma, canConvertProforma, canConvertQuotation } from "@/modules/sales/rules";
+import {
+  canCancelProforma,
+  canConvertProforma,
+  canConvertQuotation,
+  canEditProformaDetails,
+} from "@/modules/sales/rules";
 import {
   cancelOrderSchema,
   convertProformaToOrderSchema,
   convertToProformaSchema,
   listProformasSchema,
+  updateProformaSchema,
 } from "@/modules/sales/schemas";
 import { advanceAmount, orderTotals } from "@/modules/sales/totals";
 
 /*
  * B2B pre-order flow:
- *   Quotation -> Proforma Invoice (advance, default 30%)
+ *   Quotation -> Proforma Invoice (advance, default 30%; the buyer's PO number,
+ *   the last valid day and the bank account to pay into are printed on it)
  *   advance received -> production project starts (see payment.service)
  *   goods ready -> Proforma converts to a sales order; the advance (and any
  *   refunds of it) moves with it.
  */
+
+/** The bank account printed on a proforma: one of the company's, open for new proformas. */
+async function assertBankAccount(
+  ctx: CompanyContext,
+  bankAccountId: string | null | undefined,
+  current?: string | null,
+) {
+  if (!bankAccountId || bankAccountId === current) return;
+  const bank = await ctx.db.bankAccount.findFirst({
+    where: { id: bankAccountId, isActive: true },
+    select: { id: true },
+  });
+  if (!bank) {
+    throw new AppError("VALIDATION", "Choose one of the company's open bank accounts.", {
+      bankAccountId: ["Choose one of the company's open bank accounts"],
+    });
+  }
+}
+
+/** The last valid day may not be before the proforma's own date (company time). */
+function assertValidity(ctx: CompanyContext, validUntil: string | null | undefined, issued: Date) {
+  if (validUntil && validUntil < localDay(issued, ctx.company.timezone)) {
+    throw new AppError("VALIDATION", "Choose a day on or after the proforma's date.", {
+      validUntil: ["Choose a day on or after the proforma's date"],
+    });
+  }
+}
 
 /** One-click conversion of a quotation into a proforma invoice. */
 export async function convertQuotationToProforma(
@@ -51,6 +86,9 @@ export async function convertQuotationToProforma(
   assertAllowed(canConvertQuotation(quotation));
   const party = await assertPartyCanTransact(ctx, quotation.partyId, "SALE");
   const percent = new Prisma.Decimal(input.advancePercent ?? ctx.company.defaultAdvancePercent);
+  const issueDate = input.issueDate ?? new Date();
+  await assertBankAccount(ctx, input.bankAccountId);
+  assertValidity(ctx, input.validUntil, issueDate);
 
   const proforma = await prisma.$transaction(async (tx) => {
     // Claim the quotation so it cannot be converted twice.
@@ -70,10 +108,13 @@ export async function convertQuotationToProforma(
         number: await nextDocumentNumber(tx, ctx.company.id, "PROFORMA_INVOICE"),
         quotationId: quotation.id,
         partyId: party.id,
-        issueDate: input.issueDate ?? new Date(),
+        issueDate,
         total: quotation.total,
         advancePercent: percent,
         advanceAmount: advanceAmount(quotation.total, percent),
+        buyerPoNumber: input.buyerPoNumber || null,
+        validUntil: input.validUntil ? dateColumn(input.validUntil) : null,
+        bankAccountId: input.bankAccountId ?? null,
       },
     });
     await auditInCompany(
@@ -136,6 +177,18 @@ export async function getProforma(ctx: CompanyContext, proformaId: string) {
         select: { id: true, code: true, name: true, stage: true, status: true, targetDate: true },
       },
       salesOrder: { select: { id: true, number: true, status: true } },
+      bankAccount: {
+        select: {
+          id: true,
+          bankName: true,
+          branch: true,
+          accountName: true,
+          accountNumber: true,
+          routingNumber: true,
+          swiftCode: true,
+          isActive: true,
+        },
+      },
     },
   });
   if (!proforma) throw new AppError("NOT_FOUND", "Proforma invoice not found.");
@@ -145,6 +198,86 @@ export async function getProforma(ctx: CompanyContext, proformaId: string) {
     balanceDue: Prisma.Decimal.max(proforma.total.minus(proforma.advancePaid), 0),
     letterhead: await letterhead(ctx),
   };
+}
+
+/**
+ * The buyer's PO number, the last valid day and the bank account of a proforma
+ * that is still open. Only the fields sent change; null clears one.
+ */
+export async function updateProforma(
+  ctx: CompanyContext,
+  proformaId: string,
+  raw: unknown,
+  meta?: RequestMeta,
+) {
+  const input = updateProformaSchema.parse(raw);
+  const proforma = await ctx.db.proformaInvoice.findUnique({
+    where: { id: proformaId },
+    select: {
+      id: true,
+      number: true,
+      status: true,
+      issueDate: true,
+      buyerPoNumber: true,
+      validUntil: true,
+      bankAccountId: true,
+    },
+  });
+  if (!proforma) throw new AppError("NOT_FOUND", "Proforma invoice not found.");
+  assertAllowed(canEditProformaDetails(proforma));
+  if (input.bankAccountId !== undefined) {
+    await assertBankAccount(ctx, input.bankAccountId, proforma.bankAccountId);
+  }
+  if (input.validUntil !== undefined) assertValidity(ctx, input.validUntil, proforma.issueDate);
+
+  const before = {
+    buyerPoNumber: proforma.buyerPoNumber,
+    validUntil: dateOnly(proforma.validUntil),
+    bankAccountId: proforma.bankAccountId,
+  };
+  const after = {
+    buyerPoNumber:
+      input.buyerPoNumber !== undefined ? input.buyerPoNumber || null : before.buyerPoNumber,
+    validUntil: input.validUntil !== undefined ? (input.validUntil ?? null) : before.validUntil,
+    bankAccountId:
+      input.bankAccountId !== undefined ? (input.bankAccountId ?? null) : before.bankAccountId,
+  };
+  const changed = (Object.keys(after) as Array<keyof typeof after>).filter(
+    (key) => after[key] !== before[key],
+  );
+  if (changed.length > 0) {
+    await prisma.$transaction(async (tx) => {
+      await lockRow(tx, "ProformaInvoice", proforma.id);
+      const current = await tx.proformaInvoice.findUniqueOrThrow({
+        where: { id: proforma.id },
+        select: { number: true, status: true },
+      });
+      // Checked again under the lock: it may have become an order meanwhile.
+      assertAllowed(canEditProformaDetails(current));
+      await tx.proformaInvoice.update({
+        where: { id: proforma.id },
+        data: {
+          buyerPoNumber: after.buyerPoNumber,
+          validUntil: after.validUntil ? dateColumn(after.validUntil) : null,
+          bankAccountId: after.bankAccountId,
+        },
+      });
+      await auditInCompany(
+        ctx,
+        meta,
+        {
+          action: "UPDATE",
+          entityType: "ProformaInvoice",
+          entityId: proforma.id,
+          summary: `Updated ${proforma.number}: ${changed.join(", ")}`,
+          before,
+          after,
+        },
+        tx,
+      );
+    });
+  }
+  return getProforma(ctx, proforma.id);
 }
 
 export async function listProformas(ctx: CompanyContext, raw: unknown = {}) {

@@ -59,6 +59,13 @@ const quotationItemSchema = z
     description: z.string().trim().min(1).max(500),
     fabric: optionalText(200),
     colorNote: optionalText(200),
+    /** Fabric weight in grams per square metre. */
+    gsm: z.number().int().min(10).max(2000).nullish(),
+    /** Free text, e.g. "1:2:2:1" for S:M:L:XL. */
+    sizeRatio: optionalText(100),
+    accessories: optionalText(1000),
+    /** A reference picture uploaded through POST /api/sales/reference-images. */
+    imageId: id.nullish(),
     /** Pieces per size, e.g. { "S": 20, "M": 40, "L": 40 }. */
     sizeBreakdown: z.record(z.string().trim().min(1).max(20), z.number().int().min(0)).nullish(),
     quantity: qty.optional(),
@@ -120,11 +127,21 @@ export const listQuotationsSchema = z.object({
 });
 
 // --- Proforma invoices -------------------------------------------------------------
+const proformaDetails = {
+  /** The buyer's purchase order number, printed on the PI. */
+  buyerPoNumber: optionalText(80),
+  /** The last day of the PI's offer ("2026-11-20"). */
+  validUntil: z.iso.date().nullish(),
+  /** One of the company's bank accounts, printed as the bank details. */
+  bankAccountId: id.nullish(),
+};
 export const convertToProformaSchema = z.object({
   /** Defaults to the company's advance percentage (30%). */
   advancePercent: z.number().min(0).max(100).optional(),
   issueDate: z.coerce.date().optional(),
+  ...proformaDetails,
 });
+export const updateProformaSchema = z.object(proformaDetails).partial();
 export const listProformasSchema = z.object({
   status: z.enum(ProformaStatus).optional(),
   partyId: id.optional(),

@@ -47,8 +47,8 @@ it up takes one script on the server and four repository secrets:
 
 In production the app runs three clocks of its own: the daily backup (02:00), reminders, and
 the nightly housekeeping (03:30, Asia/Dhaka), which marks idle buyers dormant, closes settled
-accounts, removes expired sign-ins and deletes kept sales PDFs older than a day
-(`src/modules/housekeeping/scheduler.ts`). Each is off
+accounts, removes expired sign-ins, deletes unused proof photos and quotation pictures, and
+deletes kept sales PDFs older than a day (`src/modules/housekeeping/scheduler.ts`). Each is off
 in development; set `BACKUP_SCHEDULER`, `REMINDER_SCHEDULER` or `HOUSEKEEPING_SCHEDULER` to
 `on` or `off` to choose.
 
@@ -259,14 +259,25 @@ Built one module at a time, each in its own pull request. So far:
     is not fully paid, saving revises the invoice under the same number), invoiced, packed,
     delivered in full or in part, given a ship-by day or its cartons and packer, paid, refunded
     or cancelled.
-  - **Quotations**: the quotation builder takes the buyer, the dates, items picked from the
-    catalogue or described freely (fabric, colours, a quantity or a size breakdown, a price),
-    styling rules for the factory, discount and tax, terms and the company's custom fields. A
-    quotation is marked sent, accepted or rejected, printed, and made into a proforma invoice
-    asking for an advance (the company's usual percentage, or another).
-  - **Proformas**: the advance asked for and paid. Once it is paid in full, production starts
-    and the order is made from it (its advance moves onto the order). A proforma can be
-    refunded or cancelled, saying what happens to the money already paid.
+  - **Quotations**: the quotation builder takes the buyer, the dates, items **From the
+    catalogue** (a style) or **Custom items** (a new design kept on the quotation only, never
+    added to Products), each with its garment specs (fabric, GSM, colours, a size ratio such as
+    `S:M:L:XL = 1:2:2:1` with the saved ratios offered, accessories notes and a reference
+    picture), a quantity or a size breakdown and a price, styling rules for the factory,
+    discount and tax, terms and the company's custom fields. A quotation is marked sent,
+    accepted or rejected, printed (the pictures beside their items), and made into a proforma
+    invoice in one step asking for an advance (the company's usual percentage, or another),
+    with the buyer's PO number, a validity (15 days unless changed) and the bank account to pay
+    into.
+  - **Proformas**: the advance asked for and paid, the buyer's PO number, the validity (an
+    **Expired** mark once it passes with no advance; nothing is blocked) and the bank details,
+    changed with **Edit the details** while it is open. Once the advance is paid in full,
+    production starts and the order is made from it (its advance moves onto the order); the
+    order form fills in each catalogue item's sizes when its style has one colour or the
+    quotation names one of its colours. A proforma can be refunded or cancelled, saying what
+    happens to the money already paid. The quotation, the proforma and the order made from it
+    show the three steps (Quotation → Proforma invoice → Sales order), each linking to the
+    others.
   - **Invoices**: every commercial invoice with what is paid and due, with an Overdue filter.
     Opening one slides out its hub over the list: its state, order, due day, pieces, packing
     list, totals and payments, with every action, and the row updates after a payment, an edit
@@ -984,6 +995,24 @@ company's custom fields) → one-click Proforma Invoice with an advance (30% by 
 the advance is fully paid a Production project starts on its own → when the goods are ready
 the proforma becomes a sales order and the advance moves with it.
 
+**Custom items and garment specs.** A quotation item without a `styleId` is a custom item:
+its description and specs live on the `QuotationItem` only, so nothing is added to Products.
+Every item can carry `gsm` (10–2000), `sizeRatio` (free text), `accessories` and `imageId`, a
+reference picture uploaded first through `POST /api/sales/reference-images`
+(`sales.quotation.manage`). The browser redraws it as a JPG of about 150 KB (1400 pixels on
+the long side); the server keeps JPG or PNG files of at most 512 KB and 2400 pixels a side,
+checked down to their pixel rows like the logo (`src/lib/images.ts`), because the PDF writer
+draws them. An item may point only at a picture its editor uploaded or one already on that
+quotation. Pictures an edit drops, or a deleted draft's, are deleted at once; pictures never
+saved are deleted by the nightly housekeeping after a day. They open at `/api/files/:id` for
+everyone with `sales.view`.
+
+**Proforma details.** A proforma carries the buyer's `buyerPoNumber`, `validUntil` (a calendar
+day) and `bankAccountId` (one of the company's open bank accounts), given when it is made
+(`POST /api/sales/quotations/:id/convert`) and changed while it is open
+(`PATCH /api/sales/proformas/:id`; converted and cancelled ones keep what they printed). An
+issued proforma past its validity shows as Expired; nothing is blocked by it.
+
 **Orders and stock.** Orders are entered as SKU lines or straight from the color × size
 matrix. Confirming an order reserves its stock, so the matrix shows the real available
 quantity at once. The delivery challan takes the pieces out of stock. Asking for more than is
@@ -1079,7 +1108,9 @@ the receivables overview update immediately. For a sale without a buyer, the lin
 | `GET/POST /api/sales/quotations`, `GET/PATCH/DELETE …/:id`         | Quotation builder (data for the letterhead PDF)          |
 | `PUT /api/sales/quotations/:id/status`                             | Sent, accepted or rejected                               |
 | `POST /api/sales/quotations/:id/convert`                           | Make the proforma invoice                                |
+| `POST /api/sales/reference-images`                                 | Upload an item's reference picture (multipart `file`)    |
 | `GET /api/sales/proformas`, `GET …/:id`                            | Proformas with advance due, payments and production      |
+| `PATCH /api/sales/proformas/:id`                                   | Buyer PO no., validity and bank account of an open one   |
 | `POST /api/sales/proformas/:id/cancel` / `…/convert`               | Cancel, settling any advance / turn into a sales order   |
 | `GET/POST /api/sales/orders`, `GET/PATCH …/:id`                    | Orders and checkout; edit before delivery (Smart Edit)   |
 | `POST /api/sales/orders/:id/cancel`                                | Cancel, settling money paid; free or restock the goods   |
@@ -1616,20 +1647,20 @@ that keeps the number changes nothing, so kept PDFs are reused. The print data b
 screens (`letterhead` in the quotation, proforma, order, invoice, packing list, challan,
 receipt, payslip and bank statement endpoints) carries them as `bin` and `tradeLicense`.
 
-| Document              | What it shows                                                                                                               | Needs                  |
-| --------------------- | --------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
-| Quotation             | Items with style, fabric and sizes, discount, VAT, the total in words, styling instructions, custom fields and terms        | `sales.view`           |
-| Proforma invoice      | The quotation's items and total, the advance with what is received and due, and payments; CANCELLED across a cancelled one  | `sales.view`           |
-| Commercial invoice    | Page 1: each style and colour with its sizes, pieces and price, charges, VAT, paid and due; page 2: the packing list matrix | `sales.view`           |
-| Packing list          | SKU, item, colour, size and pieces by carton (each carton totalled), a tick box per line, cartons, gross weight; no prices  | `sales.view`           |
-| Delivery challan      | SKU, item, colour, size and pieces with the total, vehicle and driver, received by; no prices                               | `sales.view`           |
-| Money receipt         | Who paid, the amount in figures and words, method and cheque / transaction no., what it was for, and the balance after it   | `sales.view`           |
-| Refund voucher        | Money taken back off a proforma, order or account: paid back, credit note or cancellation charge, with what it left held    | `sales.view`           |
-| Statement of account  | Opening balance, debits, credits and closing balance (Dr / Cr), then every transaction with the running balance, any period | `parties.ledger.view`  |
-| Buyer 360° profile    | Sales, average order, outstanding, overdue, gross profit, top styles, and every order, quotation, payment and production    | `parties.view`         |
-| Supplier 360° profile | Due to them, billed and paid, active and completed projects with their settlements, deliveries, orders, bills and payments  | `parties.view`         |
-| Stock availability    | Total stock (good and B-grade) per colour and size for chosen styles or a whole brand, in one warehouse or all; no prices   | `inventory.view`       |
-| Blank letterhead      | The letterhead and footer on an empty page, for letters                                                                     | `documents.letterhead` |
+| Document              | What it shows                                                                                                                                                                               | Needs                  |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
+| Quotation             | Items with their reference pictures, style, fabric, GSM, colours, sizes, size ratio and accessories, discount, VAT, the total in words, styling instructions, custom fields and terms       | `sales.view`           |
+| Proforma invoice      | The quotation's items (pictures and specs) and total, the buyer's PO no., validity, bank details, the advance with what is received and due, and payments; CANCELLED across a cancelled one | `sales.view`           |
+| Commercial invoice    | Page 1: each style and colour with its sizes, pieces and price, charges, VAT, paid and due; page 2: the packing list matrix                                                                 | `sales.view`           |
+| Packing list          | SKU, item, colour, size and pieces by carton (each carton totalled), a tick box per line, cartons, gross weight; no prices                                                                  | `sales.view`           |
+| Delivery challan      | SKU, item, colour, size and pieces with the total, vehicle and driver, received by; no prices                                                                                               | `sales.view`           |
+| Money receipt         | Who paid, the amount in figures and words, method and cheque / transaction no., what it was for, and the balance after it                                                                   | `sales.view`           |
+| Refund voucher        | Money taken back off a proforma, order or account: paid back, credit note or cancellation charge, with what it left held                                                                    | `sales.view`           |
+| Statement of account  | Opening balance, debits, credits and closing balance (Dr / Cr), then every transaction with the running balance, any period                                                                 | `parties.ledger.view`  |
+| Buyer 360° profile    | Sales, average order, outstanding, overdue, gross profit, top styles, and every order, quotation, payment and production                                                                    | `parties.view`         |
+| Supplier 360° profile | Due to them, billed and paid, active and completed projects with their settlements, deliveries, orders, bills and payments                                                                  | `parties.view`         |
+| Stock availability    | Total stock (good and B-grade) per colour and size for chosen styles or a whole brand, in one warehouse or all; no prices                                                                   | `inventory.view`       |
+| Blank letterhead      | The letterhead and footer on an empty page, for letters                                                                                                                                     | `documents.letterhead` |
 
 `documents.letterhead` is new: Sales Executives, Accounts and Production Managers have it by
 default (Super Admin has every permission). The stock sheet shows one Total Stock figure per

@@ -73,6 +73,11 @@ export type Row = {
   details?: string[];
   /** A colour swatch before the first cell ("#1F2A44"). */
   swatch?: string;
+  /**
+   * A reference picture (its file id) printed as a small thumbnail at the start of
+   * the cell that holds the details. The writer is handed the pictures' bytes.
+   */
+  image?: string;
 };
 
 export type Block =

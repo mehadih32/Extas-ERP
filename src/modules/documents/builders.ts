@@ -1,7 +1,7 @@
 import { type Company, type PaymentMethod, Prisma, type RefundKind } from "@prisma/client";
 
 import { amountInWords } from "@/lib/amount-words";
-import { dateColumn, localDay } from "@/lib/dates";
+import { dateColumn, dateOnly, localDay } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
 import { formatAmount, formatDay, formatInstantDay } from "@/lib/format";
 import type { CompanyContext } from "@/modules/auth/context";
@@ -212,12 +212,19 @@ function customFieldText(value: unknown): string {
 const textBlock = (title: string, text: string | null | undefined): Block[] =>
   text?.trim() ? [{ kind: "text", title, paragraphs: text.trim().split(/\r?\n/) }] : [];
 
-/** Quotation-style item rows (# / description / qty / unit price / amount). */
+/**
+ * Quotation-style item rows (# / description / qty / unit price / amount), with the
+ * garment specs under the description and the reference picture beside it.
+ */
 function quotedItemRows(
   items: Array<{
     description: string;
     fabric: string | null;
+    gsm: number | null;
     colorNote: string | null;
+    sizeRatio: string | null;
+    accessories: string | null;
+    imageId: string | null;
     sizeBreakdown: Prisma.JsonValue | null;
     quantity: number;
     unitPrice: Prisma.Decimal;
@@ -243,11 +250,44 @@ function quotedItemRows(
       ]
         .filter(Boolean)
         .join(" · "),
-      item.fabric ? `Fabric: ${item.fabric}` : "",
+      [item.fabric ? `Fabric: ${item.fabric}` : null, item.gsm ? `${item.gsm} GSM` : null]
+        .filter(Boolean)
+        .join(" · "),
       item.colorNote ? `Colour: ${item.colorNote}` : "",
       sizesLine(item.sizeBreakdown, sizeOrder, currency) ?? "",
+      item.sizeRatio ? `Size ratio: ${item.sizeRatio}` : "",
+      item.accessories ? `Accessories: ${item.accessories}` : "",
     ].filter(Boolean),
+    ...(item.imageId ? { image: item.imageId } : {}),
   }));
+}
+
+/** Where the buyer pays: the proforma's bank account, as printed lines. */
+function bankDetails(
+  bank: {
+    bankName: string;
+    branch: string | null;
+    accountName: string;
+    accountNumber: string;
+    routingNumber: string | null;
+    swiftCode: string | null;
+  } | null,
+): Block[] {
+  if (!bank) return [];
+  return [
+    {
+      kind: "list",
+      title: "Bank details",
+      items: [
+        { label: "Account name", text: bank.accountName },
+        { label: "Account no.", text: bank.accountNumber },
+        { label: "Bank", text: bank.bankName },
+        ...(bank.branch ? [{ label: "Branch", text: bank.branch }] : []),
+        ...(bank.routingNumber ? [{ label: "Routing no.", text: bank.routingNumber }] : []),
+        ...(bank.swiftCode ? [{ label: "SWIFT", text: bank.swiftCode }] : []),
+      ],
+    },
+  ];
 }
 
 const quotedColumns = (currency: string) => [
@@ -501,6 +541,10 @@ export async function proformaDocument(
     meta: [
       { label: "Proforma no.", value: pi.number },
       { label: "Date", value: formatInstantDay(pi.issueDate, tz) },
+      ...(pi.validUntil
+        ? [{ label: "Valid until", value: formatDay(dateOnly(pi.validUntil)) }]
+        : []),
+      ...(pi.buyerPoNumber ? [{ label: "Buyer PO no.", value: pi.buyerPoNumber }] : []),
       ...(quotation ? [{ label: "Quotation", value: quotation.number }] : []),
     ],
     parties: [{ heading: "Bill to", lines: partyLines(pi.party) }],
@@ -512,6 +556,7 @@ export async function proformaDocument(
         empty: "Items as agreed.",
       },
       { kind: "totals", rows: totals, words: amountInWords(pi.total, currency) },
+      ...bankDetails(pi.bankAccount),
       ...paymentsTable(pi.payments, currency, tz),
       ...refundsTable(pi.refunds, currency, tz),
       { kind: "note", text: "Production starts when the advance is received." },

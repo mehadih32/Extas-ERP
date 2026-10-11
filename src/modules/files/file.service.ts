@@ -230,6 +230,7 @@ export async function getFileForDownload(ctx: CompanyContext, fileId: string) {
       leaveRequests: { select: { employee: { select: { userId: true } } }, take: 1 },
       paymentProofs: { select: { id: true }, take: 1 },
       chequeProofs: { select: { id: true }, take: 1 },
+      quotationImages: { select: { id: true }, take: 1 },
     },
   });
   if (!asset) throw new AppError("NOT_FOUND", "File not found.");
@@ -255,7 +256,9 @@ export async function getFileForDownload(ctx: CompanyContext, fileId: string) {
         asset.leaveRequests[0]!.employee.userId === ctx.user.id)) ||
     // Proof photos of payments and cheques: the people who see sales money and the books.
     (asset.paymentProofs.length + asset.chequeProofs.length > 0 &&
-      (ctx.can("sales.view") || ctx.can("accounts.view")));
+      (ctx.can("sales.view") || ctx.can("accounts.view"))) ||
+    // Reference pictures of quotation items: everyone who sees quotations and proformas.
+    (asset.quotationImages.length > 0 && ctx.can("sales.view"));
   // A raw material purchase's bill also opens to the people who see material purchases.
   const materialBill =
     !allowed &&

@@ -4,6 +4,8 @@ import type {
   PartyGrade,
   PaymentMethod,
   Prisma,
+  ProductionStage,
+  ProductionStatus,
   RefundKind,
   SalesChannel,
 } from "@prisma/client";
@@ -20,6 +22,7 @@ import { listWarehouses } from "@/modules/inventory/stock.service";
 import { listStyles } from "@/modules/inventory/style.service";
 import { balancesFor } from "@/modules/parties/ledger.service";
 import { isWalkIn } from "@/modules/parties/walk-in";
+import { canStartFromOrder, canStartFromProforma } from "@/modules/production/rules";
 import { ORDER_CHANNELS, RECEIVE_METHODS } from "@/modules/sales/choices";
 import { listCustomFields } from "@/modules/sales/custom-fields.service";
 import {
@@ -98,8 +101,32 @@ export function salesAccess(ctx: CompanyContext) {
     seeCosts: canSeeFinancials(ctx),
     /** Open a buyer's profile (Buyers & suppliers). */
     openBuyer: ctx.can("parties.view"),
+    /** "Start production" on an order or a proforma (Production Managers). */
+    startProduction: ctx.can("production.manage"),
+    /** Open the production projects started from it. */
+    openProduction: ctx.can("production.view"),
   };
 }
+
+type ProductionRow = {
+  id: string;
+  code: string;
+  name: string;
+  stage: ProductionStage;
+  status: ProductionStatus;
+  targetDate: Date | null;
+};
+
+/** The production projects started from an order or a proforma, as their pages list them. */
+const presentProduction = (rows: ProductionRow[], tz: string) =>
+  rows.map((project) => ({
+    id: project.id,
+    code: project.code,
+    name: project.name,
+    stage: project.stage,
+    status: project.status,
+    targetOn: project.targetDate ? localDay(project.targetDate, tz) : null,
+  }));
 
 /**
  * What voiding an order's invoice may also do (Safe Void): cancel the order, so
@@ -684,14 +711,7 @@ export async function getProformaScreen(ctx: CompanyContext, proformaId: string)
         reference: pay.reference,
       })),
       refunds: presentRefunds(ctx, p.refunds, { proforma: p }),
-      production: p.productionProjects.map((project) => ({
-        id: project.id,
-        code: project.code,
-        name: project.name,
-        stage: project.stage,
-        status: project.status,
-        targetOn: project.targetDate ? localDay(project.targetDate, tz) : null,
-      })),
+      production: presentProduction(p.productionProjects, tz),
       order: p.salesOrder,
     },
     /** Money held on it now: advances received less refunds. */
@@ -708,6 +728,8 @@ export async function getProformaScreen(ctx: CompanyContext, proformaId: string)
       settleKinds: isPositive(held) ? kinds : [],
       refundKinds: canRefundProforma(p, held).ok ? kinds : [],
       openBuyer: access.openBuyer,
+      startProduction: access.startProduction && canStartFromProforma(p, p.salesOrder).ok,
+      openProduction: access.openProduction,
     },
     /** Why an action this person would have is not offered yet. */
     notes: {
@@ -899,7 +921,7 @@ export async function getOrderScreen(ctx: CompanyContext, orderId: string) {
   const needsVoid = cancellable && invoice !== null && !access.voidInvoice;
   const needsSettling = cancellable && isPositive(held) && kinds.length === 0;
   // The buyer's money (previous due, unused credit), for people who see balances or take money.
-  const [credits, cheques, position, returnRows] = await Promise.all([
+  const [credits, cheques, position, returnRows, production] = await Promise.all([
     ctx.db.creditAllocation.findMany({
       where: { orderId: order.id, releasedAt: null },
       select: {
@@ -929,6 +951,17 @@ export async function getOrderScreen(ctx: CompanyContext, orderId: string) {
       ? creditPosition(prisma, ctx.company.id, order.partyId)
       : null,
     returnsOf(ctx, { orderId: order.id }),
+    // Projects started from it, or from the proforma it came from.
+    ctx.db.productionProject.findMany({
+      where: {
+        OR: [
+          { salesOrderId: order.id },
+          ...(order.proformaId ? [{ proformaId: order.proformaId }] : []),
+        ],
+      },
+      select: { id: true, code: true, name: true, stage: true, status: true, targetDate: true },
+      orderBy: [{ startDate: "asc" }, { id: "asc" }],
+    }),
   ]);
   const due = order.total.minus(order.paidAmount);
   const returns = presentReturns(returnRows, tz);
@@ -1014,6 +1047,8 @@ export async function getOrderScreen(ctx: CompanyContext, orderId: string) {
       refunds: presentRefunds(ctx, order.refunds, { order }),
       /** Sales returns (credit notes) on its invoice, void ones too. */
       returns,
+      /** Production projects started from it or from its proforma. */
+      production: presentProduction(production, tz),
       /** The buyer's credit (advance balance) put against this order's invoice. */
       credits: credits.map((c) => ({
         id: c.id,
@@ -1078,6 +1113,10 @@ export async function getOrderScreen(ctx: CompanyContext, orderId: string) {
       settleKinds: isPositive(held) ? kinds : [],
       refundKinds: canRefundOrder(order, held).ok ? kinds : [],
       openBuyer: access.openBuyer,
+      startProduction:
+        access.startProduction &&
+        canStartFromOrder(order, order.party ? { walkIn: isWalkIn(order.party) } : null).ok,
+      openProduction: access.openProduction,
     },
     /** What voiding the invoice may also do (only for people who may void it). */
     voidChoice:

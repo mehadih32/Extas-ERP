@@ -43,7 +43,7 @@ export default async function EditProjectPage({
         <p className="eyebrow">{project.code}</p>
         <h2 className="mt-2 font-serif text-2xl break-words text-primary">Edit {project.name}</h2>
       </div>
-      <ProjectForm form={result.data} />
+      <ProjectForm form={result.data} currency={ctx.company.currency} />
     </div>
   );
 }

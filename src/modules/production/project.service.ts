@@ -10,6 +10,7 @@ import { assertAllowed } from "@/lib/verdict";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { assertPartyCanTransact } from "@/modules/parties/party.service";
+import { isWalkIn } from "@/modules/parties/walk-in";
 import { UNDO_STAGE_MINUTES } from "@/modules/production/board";
 import { ZERO } from "@/modules/production/costing";
 import {
@@ -27,6 +28,8 @@ import {
   canCompleteProject,
   canSetStage,
   canSetStatus,
+  canStartFromOrder,
+  canStartFromProforma,
   canUndoStageMove,
 } from "@/modules/production/rules";
 import {
@@ -43,6 +46,7 @@ import {
   setAsideSettlementsTx,
   settleProjectSuppliersTx,
 } from "@/modules/production/settlement.service";
+import { quotationTargets, type TargetLine, targetTotal } from "@/modules/production/targets";
 import {
   isStageBackward,
   OPEN_STATUSES,
@@ -63,6 +67,7 @@ const projectInclude = {
   factory: { select: { id: true, code: true, name: true, phone: true } },
   buyer: { select: { id: true, code: true, name: true } },
   proforma: { select: { id: true, number: true, status: true } },
+  salesOrder: { select: { id: true, number: true } },
 } satisfies Prisma.ProductionProjectInclude;
 
 type ProjectRow = Prisma.ProductionProjectGetPayload<{ include: typeof projectInclude }>;
@@ -89,6 +94,7 @@ function projectCard(
     category: p.category,
     style: p.style,
     proforma: p.proforma,
+    salesOrder: p.salesOrder,
     startDate: p.startDate,
     targetDate: p.targetDate,
     completedAt: p.completedAt,
@@ -158,6 +164,140 @@ function assertDateOrder(ctx: CompanyContext, startDate: Date, targetDate: Date)
   }
 }
 
+/**
+ * Checks a target grid's SKUs: the company's, and still on their style's matrix
+ * unless already on this project's grid (`kept`). Gives the grid's total and the
+ * style (and its category) of its first SKU, for a project that names none.
+ */
+async function resolveTargets(
+  ctx: CompanyContext,
+  lines: TargetLine[] | undefined,
+  kept: ReadonlySet<string> = new Set(),
+) {
+  if (!lines) return null;
+  if (lines.length === 0) return { lines, total: 0, styleId: null, categoryId: null };
+  const skus = await ctx.db.productVariant.findMany({
+    where: { id: { in: lines.map((l) => l.variantId) } },
+    select: {
+      id: true,
+      sku: true,
+      removedAt: true,
+      styleId: true,
+      style: { select: { categoryId: true } },
+    },
+  });
+  const byId = new Map(skus.map((v) => [v.id, v]));
+  if (lines.some((l) => !byId.has(l.variantId))) {
+    throw new AppError(
+      "VALIDATION",
+      "Some colours and sizes are no longer in Products; reload the page and try again.",
+      { targets: ["Reload the page and try again"] },
+    );
+  }
+  const gone = skus.filter((v) => v.removedAt && !kept.has(v.id)).map((v) => v.sku);
+  if (gone.length > 0) {
+    throw new AppError(
+      "VALIDATION",
+      `${gone.join(", ")} ${gone.length === 1 ? "is" : "are"} no longer on the style's colours and sizes.`,
+      { targets: ["Leave out the colours and sizes taken off the style"] },
+    );
+  }
+  const first = byId.get(lines[0]!.variantId)!;
+  return {
+    lines,
+    total: lines.reduce((s, l) => s + l.quantity, 0),
+    styleId: first.styleId,
+    categoryId: first.style.categoryId,
+  };
+}
+
+/** The sales order or proforma a project is started from, checked, with its buyer. */
+async function resolveSource(
+  ctx: CompanyContext,
+  input: { salesOrderId?: string; proformaId?: string },
+) {
+  if (input.salesOrderId) {
+    const order = await ctx.db.salesOrder.findUnique({
+      where: { id: input.salesOrderId },
+      select: {
+        id: true,
+        number: true,
+        status: true,
+        partyId: true,
+        party: { select: { systemRole: true } },
+      },
+    });
+    if (!order) throw new AppError("NOT_FOUND", "Sales order not found.");
+    assertAllowed(canStartFromOrder(order, order.party ? { walkIn: isWalkIn(order.party) } : null));
+    return {
+      salesOrderId: order.id,
+      proformaId: null,
+      buyerId: order.partyId!,
+      number: order.number,
+    };
+  }
+  if (input.proformaId) {
+    const proforma = await ctx.db.proformaInvoice.findUnique({
+      where: { id: input.proformaId },
+      select: {
+        id: true,
+        number: true,
+        status: true,
+        partyId: true,
+        salesOrder: { select: { number: true } },
+      },
+    });
+    if (!proforma) throw new AppError("NOT_FOUND", "Proforma invoice not found.");
+    assertAllowed(canStartFromProforma(proforma, proforma.salesOrder));
+    return {
+      salesOrderId: null,
+      proformaId: proforma.id,
+      buyerId: proforma.partyId,
+      number: proforma.number,
+    };
+  }
+  return null;
+}
+
+/**
+ * A proforma's quotation items, and the target grid they make on their styles'
+ * SKUs with the items that found none (see quotationTargets).
+ */
+export async function proformaTargets(
+  db: Tx | typeof prisma,
+  companyId: string,
+  quotationId: string | null,
+) {
+  const items = quotationId
+    ? await db.quotationItem.findMany({
+        where: { quotationId },
+        orderBy: { sortOrder: "asc" },
+        select: {
+          styleId: true,
+          categoryId: true,
+          description: true,
+          colorNote: true,
+          sizeBreakdown: true,
+          quantity: true,
+        },
+      })
+    : [];
+  const styleIds = [...new Set(items.flatMap((i) => (i.styleId ? [i.styleId] : [])))];
+  const skus =
+    styleIds.length > 0
+      ? await db.productVariant.findMany({
+          where: { companyId, styleId: { in: styleIds }, removedAt: null },
+          select: {
+            id: true,
+            styleId: true,
+            color: { select: { name: true } },
+            size: { select: { name: true } },
+          },
+        })
+      : [];
+  return { items, ...quotationTargets(items, skus) };
+}
+
 // =============================================================================
 // Create / edit
 // =============================================================================
@@ -165,7 +305,13 @@ function assertDateOrder(ctx: CompanyContext, startDate: Date, targetDate: Date)
 /** Blueprint "Create Production Project": name, category, factory, target date and quantity, buyer or In-House. */
 export async function createProject(ctx: CompanyContext, raw: unknown, meta?: RequestMeta) {
   const input = createProjectSchema.parse(raw);
-  const refs = await resolveProjectRefs(ctx, input);
+  // Started from a sales order or a proforma: made for its buyer.
+  const source = await resolveSource(ctx, input);
+  const refs = await resolveProjectRefs(
+    ctx,
+    source ? { ...input, buyerId: source.buyerId } : input,
+  );
+  const grid = await resolveTargets(ctx, input.targets);
   const tz = ctx.company.timezone;
   const startDate = input.startDate ? toInstant(input.startDate, tz) : new Date();
   const targetDate = toInstant(input.targetDate, tz);
@@ -178,17 +324,20 @@ export async function createProject(ctx: CompanyContext, raw: unknown, meta?: Re
         companyId: ctx.company.id,
         code: await nextDocumentNumber(tx, ctx.company.id, "PRODUCTION_PROJECT"),
         name: input.name,
-        categoryId: refs.categoryId ?? null,
-        styleId: refs.styleId ?? null,
+        categoryId: refs.categoryId ?? (!refs.styleId && grid ? grid.categoryId : null),
+        styleId: refs.styleId ?? grid?.styleId ?? null,
         factoryId: refs.factoryId ?? null,
         factoryName: refs.factoryId ? null : (input.factoryName ?? null),
         buyerId: refs.buyerId ?? null,
         isInHouse: !refs.buyerId,
+        proformaId: source?.proformaId ?? null,
+        salesOrderId: source?.salesOrderId ?? null,
         status,
         startDate,
         targetDate,
-        targetQuantity: input.targetQuantity,
+        targetQuantity: grid?.total || input.targetQuantity!,
         notes: input.notes ?? null,
+        ...(grid?.lines.length ? { targetLines: { create: grid.lines } } : {}),
         ...(status === "ACTIVE"
           ? { stageLogs: { create: { stage: "FABRIC_SOURCING" as const, startedAt: startDate } } }
           : {}),
@@ -201,7 +350,11 @@ export async function createProject(ctx: CompanyContext, raw: unknown, meta?: Re
         action: "CREATE",
         entityType: "ProductionProject",
         entityId: created.id,
-        summary: `Production project ${created.code} "${created.name}": ${created.targetQuantity} pcs by ${localDay(targetDate, tz)}${refs.buyerId ? "" : " (In-House)"}`,
+        summary: `Production project ${created.code} "${created.name}": ${created.targetQuantity} pcs${
+          grid?.lines.length ? ` in ${grid.lines.length} colours and sizes` : ""
+        } by ${localDay(targetDate, tz)}${refs.buyerId ? "" : " (In-House)"}${
+          source ? `, started from ${source.number}` : ""
+        }`,
       },
       tx,
     );
@@ -220,15 +373,15 @@ export async function createProjectFromProformaTx(
   proforma: { id: string; number: string; partyId: string; quotationId: string | null },
   meta?: RequestMeta,
 ) {
-  const [party, items] = await Promise.all([
+  const [party, { items, targets, unplaced }] = await Promise.all([
     tx.party.findUniqueOrThrow({ where: { id: proforma.partyId }, select: { name: true } }),
-    proforma.quotationId
-      ? tx.quotationItem.findMany({
-          where: { quotationId: proforma.quotationId },
-          orderBy: { sortOrder: "asc" },
-        })
-      : Promise.resolve([]),
+    proformaTargets(tx, ctx.company.id, proforma.quotationId),
   ]);
+  // The colour × size grid comes along only when every piece found its SKU.
+  const grid =
+    unplaced.length === 0
+      ? [...targets].map(([variantId, quantity]) => ({ variantId, quantity }))
+      : [];
   const targetDate = new Date(Date.now() + DEFAULT_PRODUCTION_LEAD_DAYS * 86_400_000);
   const project = await tx.productionProject.create({
     data: {
@@ -246,6 +399,7 @@ export async function createProjectFromProformaTx(
       ),
       notes: `Started automatically when the advance for ${proforma.number} was received.`,
       stageLogs: { create: { stage: "FABRIC_SOURCING" } },
+      ...(grid.length > 0 ? { targetLines: { create: grid } } : {}),
     },
   });
   await auditInCompany(
@@ -255,7 +409,11 @@ export async function createProjectFromProformaTx(
       action: "CREATE",
       entityType: "ProductionProject",
       entityId: project.id,
-      summary: `Production project ${project.code} started from ${proforma.number}`,
+      summary: `Production project ${project.code} started from ${proforma.number}${
+        grid.length > 0
+          ? ` with ${targetTotal(targets)} pcs in ${grid.length} colours and sizes`
+          : ""
+      }`,
     },
     tx,
   );
@@ -271,13 +429,31 @@ export async function updateProject(
   const input = updateProjectSchema.parse(raw);
   const project = await ctx.db.productionProject.findUnique({
     where: { id: projectId },
-    include: { proforma: { select: { number: true } } },
+    include: {
+      proforma: { select: { number: true } },
+      salesOrder: { select: { number: true } },
+      targetLines: { select: { variantId: true } },
+    },
   });
   if (!project) throw new AppError("NOT_FOUND", "Production project not found.");
   const changed = Object.keys(input).filter((k) => input[k as keyof typeof input] !== undefined);
   assertAllowed(canChangeProjectFields(project, changed));
   if (input.buyerId !== undefined) {
-    assertAllowed(canChangeProjectBuyer(project, project.proforma?.number, input.buyerId));
+    const from = project.proforma?.number ?? project.salesOrder?.number;
+    assertAllowed(canChangeProjectBuyer(project, from, input.buyerId));
+  }
+  const grid = await resolveTargets(
+    ctx,
+    input.targets,
+    new Set(project.targetLines.map((l) => l.variantId)),
+  );
+  const hasGrid = grid ? grid.lines.length > 0 : project.targetLines.length > 0;
+  if (hasGrid && !grid?.lines.length && input.targetQuantity !== undefined) {
+    throw new AppError(
+      "VALIDATION",
+      `${project.code} has its pieces per colour and size; change those, and the total follows.`,
+      { targetQuantity: ["Change the pieces per colour and size instead"] },
+    );
   }
   const refs = await resolveProjectRefs(ctx, input);
   const tz = ctx.company.timezone;
@@ -288,11 +464,12 @@ export async function updateProject(
   const data: Prisma.ProductionProjectUncheckedUpdateInput = {
     name: input.name,
     notes: input.notes,
-    targetQuantity: input.targetQuantity,
+    targetQuantity: grid?.total || input.targetQuantity,
     startDate: input.startDate ? startDate : undefined,
     targetDate: input.targetDate ? targetDate : undefined,
     categoryId: refs.categoryId,
-    styleId: refs.styleId,
+    // A project that names no style goes into stock as its grid's.
+    styleId: refs.styleId === null && grid?.styleId ? grid.styleId : refs.styleId,
   };
   if (refs.factoryId) {
     data.factoryId = refs.factoryId;
@@ -307,6 +484,14 @@ export async function updateProject(
   }
   await prisma.$transaction(async (tx) => {
     await tx.productionProject.update({ where: { id: project.id }, data });
+    if (grid) {
+      await tx.productionTargetLine.deleteMany({ where: { projectId: project.id } });
+      if (grid.lines.length > 0) {
+        await tx.productionTargetLine.createMany({
+          data: grid.lines.map((l) => ({ projectId: project.id, ...l })),
+        });
+      }
+    }
     await auditInCompany(
       ctx,
       meta,
@@ -314,7 +499,9 @@ export async function updateProject(
         action: "UPDATE",
         entityType: "ProductionProject",
         entityId: project.id,
-        summary: `Updated ${project.code}: ${changed.join(", ")}`,
+        summary: `Updated ${project.code}: ${changed.join(", ")}${
+          grid?.lines.length ? ` (${grid.total} pcs in ${grid.lines.length} colours and sizes)` : ""
+        }`,
       },
       tx,
     );
@@ -331,6 +518,7 @@ export async function getProject(ctx: CompanyContext, projectId: string) {
     where: { id: projectId },
     include: {
       ...projectInclude,
+      targetLines: { select: { variantId: true, quantity: true } },
       stageLogs: { orderBy: [{ startedAt: "asc" }, { id: "asc" }] },
       stockIntakes: {
         orderBy: [{ createdAt: "desc" }, { id: "desc" }],
@@ -356,6 +544,8 @@ export async function getProject(ctx: CompanyContext, projectId: string) {
   return {
     ...projectCard(ctx, project, costs, now),
     notes: project.notes,
+    /** The pieces to make per SKU (colour and size); empty when it has only a total. */
+    targets: project.targetLines,
     createdAt: project.createdAt,
     updatedAt: project.updatedAt,
     stageHistory: project.stageLogs.map((log) => ({

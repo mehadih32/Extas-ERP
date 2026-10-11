@@ -7,12 +7,15 @@ type Params = { projectId: string };
 
 export const dynamic = "force-dynamic";
 
-/** GET /api/production/projects/:projectId — timeline, stage history, deliveries, costs. */
+/** GET /api/production/projects/:projectId — timeline, stage history, deliveries, costs, targets. */
 export const GET = apiRoute<Params>(async (_request, { projectId }) =>
   projects.getProject(await requirePermission("production.view"), projectId),
 );
 
-/** PATCH /api/production/projects/:projectId — edit details (closed projects: name and notes). */
+/**
+ * PATCH /api/production/projects/:projectId — edit details, `targets` replacing the pieces per
+ * colour and size (closed projects: name and notes).
+ */
 export const PATCH = apiRoute<Params>(async (request, { projectId }) =>
   projects.updateProject(
     await requirePermission("production.manage"),

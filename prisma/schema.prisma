@@ -504,18 +504,19 @@ model ProductVariant {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
-  company          Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  style            Style                 @relation(fields: [styleId], references: [id], onDelete: Cascade)
-  color            Color                 @relation(fields: [colorId], references: [id])
-  size             Size                  @relation(fields: [sizeId], references: [id])
-  stockBalances    StockBalance[]
-  stockMovements   StockMovement[]
-  badStockEntries  BadStockEntry[]
-  orderItems       SalesOrderItem[]
-  returnItems      SalesReturnItem[]
-  intakeLines      StockIntakeLine[]
-  packingListItems PackingListItem[]
-  challanItems     DeliveryChallanItem[]
+  company           Company                @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  style             Style                  @relation(fields: [styleId], references: [id], onDelete: Cascade)
+  color             Color                  @relation(fields: [colorId], references: [id])
+  size              Size                   @relation(fields: [sizeId], references: [id])
+  stockBalances     StockBalance[]
+  stockMovements    StockMovement[]
+  badStockEntries   BadStockEntry[]
+  orderItems        SalesOrderItem[]
+  returnItems       SalesReturnItem[]
+  intakeLines       StockIntakeLine[]
+  packingListItems  PackingListItem[]
+  challanItems      DeliveryChallanItem[]
+  productionTargets ProductionTargetLine[]
 
   @@unique([companyId, sku])
   @@unique([styleId, colorId, sizeId])
@@ -1156,23 +1157,25 @@ model SalesOrder {
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
 
-  company           Company                  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  party             Party?                   @relation(fields: [partyId], references: [id], onDelete: SetNull)
-  proforma          ProformaInvoice?         @relation(fields: [proformaId], references: [id], onDelete: SetNull)
-  integration       SalesChannelIntegration? @relation(fields: [integrationId], references: [id], onDelete: SetNull)
-  warehouse         Warehouse?               @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
-  packedBy          Employee?                @relation("OrderPackedBy", fields: [packedById], references: [id], onDelete: SetNull)
-  items             SalesOrderItem[]
-  invoice           Invoice?
-  packingList       PackingList?
-  deliveryChallans  DeliveryChallan[]
-  shipments         Shipment[]
-  returns           SalesReturn[]
-  payments          Payment[]
-  refunds           Refund[]
-  creditAllocations CreditAllocation[]
-  cheques           Cheque[]
-  reminders         Reminder[]
+  company            Company                  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  party              Party?                   @relation(fields: [partyId], references: [id], onDelete: SetNull)
+  proforma           ProformaInvoice?         @relation(fields: [proformaId], references: [id], onDelete: SetNull)
+  integration        SalesChannelIntegration? @relation(fields: [integrationId], references: [id], onDelete: SetNull)
+  warehouse          Warehouse?               @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
+  packedBy           Employee?                @relation("OrderPackedBy", fields: [packedById], references: [id], onDelete: SetNull)
+  items              SalesOrderItem[]
+  invoice            Invoice?
+  packingList        PackingList?
+  deliveryChallans   DeliveryChallan[]
+  shipments          Shipment[]
+  returns            SalesReturn[]
+  payments           Payment[]
+  refunds            Refund[]
+  creditAllocations  CreditAllocation[]
+  cheques            Cheque[]
+  reminders          Reminder[]
+  /// Production projects started from it.
+  productionProjects ProductionProject[]
 
   @@unique([companyId, number])
   @@unique([companyId, integrationId, externalOrderId])
@@ -1676,6 +1679,8 @@ model ProductionProject {
   buyerId        String? // null + isInHouse = in-house production
   isInHouse      Boolean          @default(false)
   proformaId     String?
+  /// The sales order it was started from ("Start production" on the order).
+  salesOrderId   String?
   stage          ProductionStage  @default(FABRIC_SOURCING)
   status         ProductionStatus @default(ACTIVE)
   startDate      DateTime         @default(now())
@@ -1695,6 +1700,8 @@ model ProductionProject {
   factory              Party?                   @relation("ProductionFactory", fields: [factoryId], references: [id], onDelete: SetNull)
   buyer                Party?                   @relation("ProductionBuyer", fields: [buyerId], references: [id], onDelete: SetNull)
   proforma             ProformaInvoice?         @relation(fields: [proformaId], references: [id], onDelete: SetNull)
+  salesOrder           SalesOrder?              @relation(fields: [salesOrderId], references: [id], onDelete: SetNull)
+  targetLines          ProductionTargetLine[]
   stageLogs            ProductionStageLog[]
   billAllocations      SupplierBillAllocation[]
   expenses             Expense[]
@@ -1709,6 +1716,24 @@ model ProductionProject {
 
   @@unique([companyId, code])
   @@index([companyId, status, targetDate])
+  @@index([salesOrderId])
+}
+
+/// The pieces a project is to make of each SKU (a colour and size of a style): its
+/// target grid, filled from the sales order or proforma it was started from, or by
+/// hand. Optional: a project without one has only its total (targetQuantity), which
+/// is the grid's sum when it has one.
+model ProductionTargetLine {
+  id        String @id @default(cuid())
+  projectId String
+  variantId String
+  quantity  Int
+
+  project ProductionProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  variant ProductVariant    @relation(fields: [variantId], references: [id])
+
+  @@unique([projectId, variantId])
+  @@index([variantId])
 }
 
 /// What a project owed one supplier when it was completed (closed): their bills for it,

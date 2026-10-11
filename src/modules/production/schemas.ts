@@ -23,6 +23,15 @@ const take = z.coerce.number().int().min(1).max(200).optional();
 const dayOrInstant = z.union([z.date(), z.iso.date(), z.iso.datetime({ offset: true })]);
 
 // --- Projects ----------------------------------------------------------------------
+/** The pieces to make per SKU (colour and size): the target grid, each SKU once. */
+const targets = z
+  .array(z.object({ variantId: id, quantity: qty }))
+  .max(1000)
+  .refine(
+    (lines) => new Set(lines.map((l) => l.variantId)).size === lines.length,
+    "Each colour and size can be given once",
+  );
+
 const projectFields = {
   name: z.string().trim().min(2).max(160),
   categoryId: id.nullish(),
@@ -35,15 +44,31 @@ const projectFields = {
   buyerId: id.nullish(),
   startDate: dayOrInstant.optional(),
   targetDate: dayOrInstant,
+  /** The pieces to make; with a target grid it is the grid's sum and may be left out. */
   targetQuantity: qty,
+  /** Replaces the target grid; an empty list clears it. */
+  targets: targets.optional(),
   notes: optionalText(4000),
 };
 
-export const createProjectSchema = z.object({
-  ...projectFields,
-  /** PLANNED projects have not started yet; the default is ACTIVE. */
-  status: z.enum(["PLANNED", "ACTIVE"]).optional(),
-});
+export const createProjectSchema = z
+  .object({
+    ...projectFields,
+    targetQuantity: qty.optional(),
+    /** PLANNED projects have not started yet; the default is ACTIVE. */
+    status: z.enum(["PLANNED", "ACTIVE"]).optional(),
+    /** "Start production" on a sales order or a proforma: made for its buyer. */
+    salesOrderId: id.optional(),
+    proformaId: id.optional(),
+  })
+  .refine((v) => v.targetQuantity !== undefined || (v.targets?.length ?? 0) > 0, {
+    path: ["targetQuantity"],
+    message: "Enter how many pieces, or the pieces per colour and size",
+  })
+  .refine((v) => !(v.salesOrderId && v.proformaId), {
+    path: ["proformaId"],
+    message: "Start it from the order or from the proforma, not both",
+  });
 export const updateProjectSchema = z.object(projectFields).partial();
 
 export const listProjectsSchema = z.object({

@@ -327,9 +327,24 @@ Built one module at a time, each in its own pull request. So far:
   - **Projects**: every project, searchable by code, name or buyer and filtered by status
     (including Late) and stage. A new project takes the factory (a supplier or just a name),
     the buyer or In-House, the style, the category, the dates (45 days by default) and the
-    pieces to make, and starts in production or as planned. A project's page shows the stage
+    pieces to make, and starts in production or as planned. The pieces can be given per colour
+    and size: pick a style and its colours by sizes open as boxes, and the pieces to make add
+    up by themselves. **Start production** on a sales order or a proforma opens the same form
+    filled in from it: its buyer (which then cannot change), name, style, the order's ship-by
+    day and what is still to make of each colour and size, leaving out what is delivered and
+    what its other projects make, so one order can be split across factories. Items the
+    quotation cannot place on a colour and size (custom items, a colour the style lacks) are
+    listed for adding by hand. Walk-in sales, orders already shipped or cancelled, cancelled
+    proformas and proformas already made into an order (start from the order) are refused. The
+    order's and the proforma's page list their projects with the stage and due day. Production
+    Managers, who do not open Sales, find the order or proforma from **New project** instead:
+    a search by number or buyer lists the open ones with their pieces (no prices) and opens the
+    same filled-in form. A
+    project's page shows the stage
     tracker (Fabric sourcing, Cutting, Sewing, Wash and QC, Finishing) with the days spent at
-    each, the stage log with notes and rework sent back, its factory deliveries, its cost
+    each, the order or proforma it was started from, its pieces to make per colour and size
+    with the pieces received of each, the stage log with notes and rework sent back, its
+    factory deliveries, its cost
     entries, the A-grade and B-grade cost a piece, the costs by head and material, and its
     details. From there it is started, moved to the next stage (or another, going back needs
     a note), put on hold, resumed, completed or cancelled, and costs and bills are added.
@@ -1189,7 +1204,12 @@ this module.
 **Projects.** A production project records the item (category / style), the factory (a
 supplier profile, or just its name), the target date and quantity, and the buyer or
 In-House. Projects start Active, or Planned for later. A fully paid proforma advance starts
-one on its own with a 45-day target. The overview shows a card for each open project with its
+one on its own with a 45-day target, unless one was already started from the proforma by
+hand; it copies the colour and size grid when every item of the quotation can be placed on
+it. A project can carry its pieces to make per SKU (`ProductionTargetLine`, unique per
+project and SKU); the target quantity is then their sum, and a SKU or style named on one is
+kept as history. A project started from a sales order keeps `salesOrderId`, as one started
+from a proforma keeps `proformaId`, and its buyer is that one's buyer. The overview shows a card for each open project with its
 elapsed and remaining days in company time. A card turns red once its target date has passed,
 and shows the stage badge: Fabric Sourcing → Cutting → Sewing → Wash/QC → Finishing. Every
 stage change is logged; going back a stage (rework) needs a note. A move made by mistake is
@@ -1234,6 +1254,7 @@ With `redraft` a draft copy opens, linked to the undone one, to correct and conf
 | ------------------------------------------------------------------- | ---------------------------------------------------------- |
 | `GET /api/production/overview`                                      | Dashboard: counts, projects per stage, project cards       |
 | `GET/POST /api/production/projects`, `GET/PATCH …/:id`              | Projects (status, stage, buyer, In-House, overdue, search) |
+| `POST /api/production/projects` with `salesOrderId` / `proformaId`  | Start from a sale; `targets` per SKU set the total         |
 | `POST /api/production/projects/:id/stage`                           | Move the stage badge                                       |
 | `POST /api/production/projects/:id/stage/undo`                      | Take back a move made by mistake: `{ stage }`, 10 minutes  |
 | `POST /api/production/projects/:id/status`                          | Start, hold or resume                                      |

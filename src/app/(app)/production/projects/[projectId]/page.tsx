@@ -18,6 +18,7 @@ import { ProjectActions } from "@/components/production/project-actions";
 import { ProjectSuppliers } from "@/components/production/project-suppliers";
 import { forWhom, PiecesBar, TimelineBar } from "@/components/production/project-card";
 import { StageLog, StageTrack } from "@/components/production/stage-track";
+import { TargetTable } from "@/components/production/target-table";
 import { BackLink } from "@/components/settings/back-link";
 import { Fact, Panel, RecordHeader } from "@/components/sales/detail-bits";
 import { money, salesHref } from "@/components/sales/labels";
@@ -158,6 +159,7 @@ export default async function ProjectPage({
             <h4 className="eyebrow mt-8">Stage log</h4>
             <StageLog log={p.log} />
           </Panel>
+          {p.targets && <TargetTable targets={p.targets} currency={currency} />}
           <Deliveries screen={screen} currency={currency} />
           {materials.ok && (
             <ProjectMaterials
@@ -230,6 +232,17 @@ export default async function ProjectPage({
                     </Link>
                   ) : (
                     `Proforma ${p.proforma.number}`
+                  )}
+                </Fact>
+              )}
+              {p.salesOrder && (
+                <Fact label="Started from">
+                  {ctx.can("sales.view") ? (
+                    <Link href={salesHref.order(p.salesOrder.id)} className={linkClass}>
+                      Order {p.salesOrder.number}
+                    </Link>
+                  ) : (
+                    `Order ${p.salesOrder.number}`
                   )}
                 </Fact>
               )}

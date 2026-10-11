@@ -31,6 +31,7 @@ import {
 
 import { COSTING_HINTS, COSTING_LABELS, productionHref } from "./labels";
 import { ProductionStylePicker } from "./pickers";
+import { asText, piecesIn, sumOf } from "./pieces";
 
 type Grade = "A" | "B";
 
@@ -53,19 +54,6 @@ const newKey = () => `style-${++nextKey}`;
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const COSTINGS: readonly CostAllocationMethod[] = ["EQUAL_PER_PIECE", "B_GRADE_RATIO", "MANUAL"];
-
-const asText = (quantities: Record<string, number>) =>
-  Object.fromEntries(Object.entries(quantities).map(([id, q]) => [id, String(q)]));
-
-/** A whole number of pieces, 0 for an empty box, or NaN for anything else. */
-const piecesIn = (text: string | undefined) => {
-  const value = (text ?? "").trim();
-  if (value === "") return 0;
-  return /^\d{1,7}$/.test(value) ? Number(value) : NaN;
-};
-
-const sumOf = (quantities: Record<string, string>) =>
-  Object.values(quantities).reduce((s, q) => s + (piecesIn(q) || 0), 0);
 
 function Section({
   title,

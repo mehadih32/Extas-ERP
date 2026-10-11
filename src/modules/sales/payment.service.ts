@@ -264,8 +264,8 @@ export async function receivePaymentTx(
 
 /**
  * An issued proforma whose advance is now paid in full goes into production: a
- * production project is created for it. Returns the project, or null when
- * nothing starts.
+ * production project is created for it, unless one was already started from it
+ * by hand ("Start production"). Returns the project, or null when nothing starts.
  */
 export async function startProductionIfAdvancePaid(
   tx: Tx,
@@ -283,6 +283,11 @@ export async function startProductionIfAdvancePaid(
     where: { id: proforma.id },
     data: { status: "IN_PRODUCTION" },
   });
+  const started = await tx.productionProject.findFirst({
+    where: { proformaId: proforma.id, status: { not: "CANCELLED" } },
+    select: { id: true },
+  });
+  if (started) return null;
   return createProjectFromProformaTx(tx, ctx, proforma, meta);
 }
 

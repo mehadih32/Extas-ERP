@@ -15,7 +15,9 @@ export const GET = apiRoute(async (request) =>
 
 /**
  * POST /api/production/projects — { name, categoryId?, styleId?, factoryId? or factoryName?,
- * buyerId? (empty = In-House), startDate?, targetDate, targetQuantity,
+ * buyerId? (empty = In-House), startDate?, targetDate, targetQuantity and/or
+ * targets: [{ variantId, quantity }] (the total is then their sum),
+ * salesOrderId? or proformaId? (started from it: the buyer is its buyer),
  * status?: "PLANNED" | "ACTIVE" (default), notes? }.
  */
 export const POST = apiRoute(

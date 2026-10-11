@@ -61,8 +61,13 @@ export const listProjectRowsAction = async (query: unknown) =>
   runAction(async () => screens.listProjectRows(await view(), query));
 export const getProjectScreenAction = async (projectId: string) =>
   runAction(async () => screens.getProjectScreen(await view(), projectId));
-export const getProjectFormAction = async (projectId?: string) =>
-  runAction(async () => screens.getProjectForm(await manage(), projectId));
+export const getProjectFormAction = async (
+  projectId?: string,
+  from?: { orderId?: string; proformaId?: string },
+) => runAction(async () => screens.getProjectForm(await manage(), projectId, from));
+/** Open sales orders and proformas a new project can start from (numbers, buyers, pieces). */
+export const findSalesToStartAction = async (query: { search?: string }) =>
+  runAction(async () => screens.findSalesToStart(await manage(), query));
 export const findProductionPartiesAction = async (query: {
   kind: "SUPPLIER" | "BUYER";
   search?: string;

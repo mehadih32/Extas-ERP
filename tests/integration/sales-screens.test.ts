@@ -373,7 +373,8 @@ run("Sales screens", () => {
       ).toBe(page(view));
       expect(await rendered(NewQuotationPage()), `${who}: new quotation`).toBe(page(quote));
       expect(await rendered(NewOrderPage(one)), `${who}: new order`).toBe(page(sell));
-      // An accepted quotation and an invoiced order can no longer be edited: back to their page.
+      // An accepted quotation can no longer be edited: back to its page. An invoiced order is
+      // edited (revising its invoice) only by people who may edit invoices.
       expect(
         await rendered(EditQuotationPage({ params: params({ quotationId: q.id }) })),
         `${who}: edit quotation`,
@@ -381,7 +382,13 @@ run("Sales screens", () => {
       expect(
         await rendered(EditOrderPage({ params: params({ orderId: order.id }) })),
         `${who}: edit order`,
-      ).toBe(sell ? `redirect /sales/orders/${order.id}` : "no access");
+      ).toBe(
+        !sell
+          ? "no access"
+          : ctx.can("sales.invoice.edit")
+            ? "page"
+            : `redirect /sales/orders/${order.id}`,
+      );
     }
 
     expect(seen).toEqual({
@@ -604,10 +611,16 @@ run("Sales screens", () => {
       );
       if (!screen.can.issueInvoice) await documents.issueInvoice(env.owner, fresh.id, {});
 
-      // Invoiced: no more edits; packing, delivery and voiding as the screen says.
+      // Invoiced: edits only revise the invoice (people who may edit invoices); packing,
+      // delivery and voiding as the screen says.
       screen = data(await getOrderScreenAction(fresh.id), who);
-      expect(screen.can.edit, `${who}: edit after invoicing`).toBe(false);
+      expect(screen.can.edit, `${who}: edit after invoicing`).toBe(who === "owner");
       expect(await updateOrderAction(fresh.id, { notes: "x" }).then((r) => r.ok), who).toBe(false);
+      expectOffered(
+        await updateOrderAction(fresh.id, { notes: "Revised note", reviseInvoice: true }),
+        screen.can.edit,
+        `${who}: revise the invoice`,
+      );
       expectOffered(
         await createPackingListAction(fresh.id, { cartons: 1 }),
         screen.can.packingList,

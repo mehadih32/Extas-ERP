@@ -530,6 +530,185 @@ export async function proformaDocument(
   };
 }
 
+type InvoiceData = Awaited<ReturnType<typeof getInvoiceDocument>>;
+
+/**
+ * The invoice's lines as billed: one row per style, colour and price, with its
+ * sizes and pieces under it, in the order the SKUs were added.
+ */
+function invoiceLineRows(
+  items: InvoiceData["items"],
+  sizeOrder: Map<string, number>,
+  currency: string,
+  withDiscount: boolean,
+): Row[] {
+  const groups = new Map<
+    string,
+    {
+      styleCode: string;
+      style: string;
+      color: string;
+      unitPrice: Prisma.Decimal;
+      quantity: number;
+      discount: Prisma.Decimal;
+      lineTotal: Prisma.Decimal;
+      sizes: Record<string, number>;
+    }
+  >();
+  for (const item of items) {
+    const key = [item.styleCode, item.color, item.unitPrice.toFixed(2)].join("\u0000");
+    const group = groups.get(key) ?? {
+      styleCode: item.styleCode,
+      style: item.style,
+      color: item.color,
+      unitPrice: item.unitPrice,
+      quantity: 0,
+      discount: new Prisma.Decimal(0),
+      lineTotal: new Prisma.Decimal(0),
+      sizes: {},
+    };
+    group.quantity += item.quantity;
+    group.discount = group.discount.plus(item.discount);
+    group.lineTotal = group.lineTotal.plus(item.lineTotal);
+    group.sizes[item.size] = (group.sizes[item.size] ?? 0) + item.quantity;
+    groups.set(key, group);
+  }
+  return [...groups.values()].map((g, i) => ({
+    cells: [
+      String(i + 1),
+      `${g.style} – ${g.color}`,
+      count(g.quantity, currency),
+      money(g.unitPrice, currency),
+      ...(withDiscount ? [isPositive(g.discount) ? money(g.discount, currency) : "–"] : []),
+      money(g.lineTotal, currency),
+    ],
+    details: [[g.styleCode, sizesLine(g.sizes, sizeOrder, currency)].filter(Boolean).join(" · ")],
+  }));
+}
+
+/**
+ * Page 2 of an invoice whose order has a packing list: the cartons, who packed
+ * them and a size matrix per style (a row per colour, a column per size).
+ */
+function packingListPart(
+  list: NonNullable<InvoiceData["packingList"]>,
+  sizeOrder: Map<string, number>,
+  currency: string,
+  timeZone: string,
+): Block[] {
+  const rank = (size: string) => sizeOrder.get(size.toUpperCase()) ?? Number.MAX_SAFE_INTEGER;
+  const styles = new Map<
+    string,
+    {
+      title: string;
+      sizes: string[];
+      colors: Map<string, { name: string; hex: string | null; pieces: Map<string, number> }>;
+    }
+  >();
+  for (const item of list.items) {
+    const { style, color, size } = item.variant;
+    const entry = styles.get(style.code) ?? {
+      title: `${style.code} · ${style.name}`,
+      sizes: [] as string[],
+      colors: new Map(),
+    };
+    if (!entry.sizes.includes(size.name)) entry.sizes.push(size.name);
+    const row = entry.colors.get(color.name) ?? {
+      name: color.name,
+      hex: color.hexCode,
+      pieces: new Map<string, number>(),
+    };
+    row.pieces.set(size.name, (row.pieces.get(size.name) ?? 0) + item.quantity);
+    entry.colors.set(color.name, row);
+    styles.set(style.code, entry);
+  }
+
+  const tables: Block[] = [...styles.values()].map((style) => {
+    // Sizes in the company's size order; ones it does not know keep the order they came in.
+    const sizes = style.sizes
+      .map((name, index) => ({ name, index }))
+      .sort((a, b) => rank(a.name) - rank(b.name) || a.index - b.index)
+      .map((s) => s.name);
+    const colors = [...style.colors.values()];
+    const sum = (pieces: Map<string, number>) => [...pieces.values()].reduce((a, b) => a + b, 0);
+    const rows: Row[] = colors.map((c) => ({
+      cells: [
+        c.name,
+        ...sizes.map((s) => (c.pieces.get(s) ? count(c.pieces.get(s)!, currency) : "–")),
+        count(sum(c.pieces), currency),
+      ],
+      ...(c.hex ? { swatch: c.hex } : {}),
+    }));
+    if (colors.length > 1) {
+      rows.push({
+        cells: [
+          "Total",
+          ...sizes.map((s) =>
+            count(
+              colors.reduce((a, c) => a + (c.pieces.get(s) ?? 0), 0),
+              currency,
+            ),
+          ),
+          count(
+            colors.reduce((a, c) => a + sum(c.pieces), 0),
+            currency,
+          ),
+        ],
+        style: "total",
+      });
+    }
+    return {
+      kind: "table",
+      title: style.title,
+      columns: [
+        { label: "Colour", weight: 2.4 },
+        ...sizes.map((s) => ({ label: s, align: "right" as const, weight: 0.8 })),
+        { label: "Total pcs", align: "right" as const, weight: 1.1 },
+      ],
+      rows,
+    };
+  });
+
+  const byCarton = list.items.some((i) => i.cartonNo?.trim());
+  return [
+    { kind: "pageBreak" },
+    {
+      kind: "heading",
+      title: "Packing List",
+      subtitle: `${list.number} · made ${formatInstantDay(list.createdAt, timeZone)}`,
+    },
+    {
+      kind: "figures",
+      figures: [
+        { label: "Packing list no.", value: list.number },
+        {
+          label: "Total cartons",
+          value: list.cartons !== null ? count(list.cartons, currency) : "–",
+          ...(list.grossWeightKg !== null
+            ? { hint: `Gross weight ${formatAmount(list.grossWeightKg, 2, currency)} kg` }
+            : {}),
+        },
+        { label: "Packed by", value: list.packedBy ?? "–" },
+        { label: "Total pieces", value: count(list.totalPieces, currency) },
+      ],
+    },
+    ...tables,
+    {
+      kind: "note",
+      text: byCarton
+        ? `Pieces packed, by style, colour and size. What each carton holds is on packing list ${list.number}.`
+        : "Pieces packed, by style, colour and size.",
+    },
+    { kind: "signatures", labels: ["Packed by", "Checked by"] },
+  ];
+}
+
+/**
+ * The commercial invoice. Page 1 is the money side: the lines, totals and what
+ * was paid, signed at its foot. When the order has a packing list, page 2 shows
+ * it as a size matrix with the cartons and who packed them. An invoice edited
+ * after it was issued says "(Revised)".
+ */
 export async function invoiceDocument(
   ctx: CompanyContext,
   invoiceId: string,
@@ -537,7 +716,9 @@ export async function invoiceDocument(
   const inv = await getInvoiceDocument(ctx, invoiceId);
   const tz = ctx.company.timezone;
   const currency = ctx.company.currency;
+  const sizeOrder = await sizeOrderOf(ctx);
   const hasLineDiscount = inv.items.some((i) => isPositive(i.discount));
+  const revised = inv.revision > 0;
   const totals = [
     { label: "Subtotal", value: money(inv.subtotal, currency) },
     ...(isPositive(inv.discount)
@@ -579,7 +760,7 @@ export async function invoiceDocument(
         ]),
   ];
   const model = base(ctx, "COMMERCIAL_INVOICE", {
-    title: "Commercial Invoice",
+    title: revised ? "Commercial Invoice (Revised)" : "Commercial Invoice",
     reference: inv.number,
     stamp:
       inv.status === "VOID"
@@ -590,6 +771,14 @@ export async function invoiceDocument(
     meta: [
       { label: "Invoice no.", value: inv.number },
       { label: "Date", value: formatInstantDay(inv.issueDate, tz) },
+      ...(revised && inv.revisedAt
+        ? [
+            {
+              label: "Revised",
+              value: `${formatInstantDay(inv.revisedAt, tz)}${inv.revision > 1 ? ` (${inv.revision}×)` : ""}`,
+            },
+          ]
+        : []),
       ...(inv.dueDate ? [{ label: "Due date", value: formatInstantDay(inv.dueDate, tz) }] : []),
       { label: "Order no.", value: inv.orderNumber },
     ],
@@ -605,26 +794,16 @@ export async function invoiceDocument(
           ...(hasLineDiscount ? [{ label: "Discount", align: "right" as const, weight: 1.1 }] : []),
           { label: `Amount (${currency})`, align: "right", weight: 1.6 },
         ],
-        rows: inv.items.map((item, i) => ({
-          cells: [
-            String(i + 1),
-            `${item.style} – ${item.color} / ${item.size}`,
-            count(item.quantity, currency),
-            money(item.unitPrice, currency),
-            ...(hasLineDiscount
-              ? [isPositive(item.discount) ? money(item.discount, currency) : "–"]
-              : []),
-            money(item.lineTotal, currency),
-          ],
-          details: [item.sku],
-        })),
+        rows: invoiceLineRows(inv.items, sizeOrder, currency, hasLineDiscount),
       },
       { kind: "totals", rows: totals, words: amountInWords(inv.total, currency) },
       ...paymentsTable(inv.payments, currency, tz),
       ...creditsTable(inv.credits, currency, tz),
       ...refundsTable(inv.refunds, currency, tz),
+      // Signed at the foot of page 1, so the packing list on page 2 is signed on its own.
+      { kind: "signatures", labels: ["Customer signature", "Authorised signature"] },
+      ...(inv.packingList ? packingListPart(inv.packingList, sizeOrder, currency, tz) : []),
     ],
-    signatures: ["Customer signature", "Authorised signature"],
   });
   return {
     model,
@@ -719,10 +898,9 @@ export async function packingListDocument(
       { label: "Packing list no.", value: pl.number },
       { label: "Date", value: formatInstantDay(pl.createdAt, tz) },
       { label: "Order no.", value: order.number },
-      ...(pl.cartons !== null
-        ? [{ label: "Total cartons", value: count(pl.cartons, currency) }]
-        : []),
-      ...(order.packedBy ? [{ label: "Packed by", value: order.packedBy.name }] : []),
+      // Always printed, a dash when not recorded yet.
+      { label: "Total cartons", value: pl.cartons !== null ? count(pl.cartons, currency) : "–" },
+      { label: "Packed by", value: order.packedBy?.name ?? "–" },
       ...(pl.grossWeightKg !== null
         ? [{ label: "Gross weight", value: `${formatAmount(pl.grossWeightKg, 2, currency)} kg` }]
         : []),
@@ -793,10 +971,12 @@ export async function challanDocument(
       { label: "Challan no.", value: ch.number },
       { label: "Date", value: formatInstantDay(ch.deliveryDate, tz) },
       { label: "Order no.", value: order.number },
-      ...(order.totalCartons !== null
-        ? [{ label: "Total cartons", value: count(order.totalCartons, currency) }]
-        : []),
-      ...(order.packedBy ? [{ label: "Packed by", value: order.packedBy.name }] : []),
+      // Always printed, a dash when not recorded yet.
+      {
+        label: "Total cartons",
+        value: order.totalCartons !== null ? count(order.totalCartons, currency) : "–",
+      },
+      { label: "Packed by", value: order.packedBy?.name ?? "–" },
       ...(ch.vehicleNo ? [{ label: "Vehicle no.", value: ch.vehicleNo }] : []),
       ...(driver ? [{ label: "Driver", value: driver }] : []),
     ],

@@ -239,10 +239,11 @@ export const issueInvoiceAction = async (orderId: string, input: unknown) =>
   change(async () =>
     ref(await documents.issueInvoice(await sell(), orderId, input, await getRequestMeta())),
   );
+/** Voids an invoice; with `cancelOrder` its order is cancelled too (Safe Void). */
 export const voidInvoiceAction = async (invoiceId: string, input: unknown) =>
   change(async () =>
     ref(
-      await documents.voidInvoice(
+      await orders.voidOrCancelInvoice(
         await requirePermission("sales.invoice.edit"),
         invoiceId,
         input,

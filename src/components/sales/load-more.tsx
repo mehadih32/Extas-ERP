@@ -40,6 +40,8 @@ export function useLoadMore<T>(
 
   return {
     items,
+    /** Changes the rows shown (one updated from a panel opened over the list). */
+    update: setItems,
     hasMore: Boolean(cursor),
     more,
     pending,
@@ -53,7 +55,7 @@ export function ShowMore({
   list,
   noun,
 }: {
-  list: ReturnType<typeof useLoadMore<unknown>>;
+  list: Omit<ReturnType<typeof useLoadMore<unknown>>, "items" | "update">;
   /** What the rows are, plural and in lower case ("orders"). */
   noun: string;
 }) {
@@ -80,6 +82,20 @@ export function ShowMore({
   );
 }
 
+/**
+ * A click handler that runs `open` for a plain click and leaves a click with a
+ * modifier key or another button (a new tab or window) to the link.
+ */
+function openInstead(open: () => void) {
+  return (event: React.MouseEvent<HTMLAnchorElement>) => {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+      return;
+    }
+    event.preventDefault();
+    open();
+  };
+}
+
 /** A phone card that opens a record: the top line, the main line, details and a footer. */
 export function RowCard({
   href,
@@ -88,6 +104,7 @@ export function RowCard({
   title,
   details,
   footer,
+  onOpen,
 }: {
   href: string;
   eyebrow: React.ReactNode;
@@ -95,11 +112,14 @@ export function RowCard({
   title: React.ReactNode;
   details?: React.ReactNode;
   footer?: React.ReactNode;
+  /** Opens the record over the list instead (a plain click; a new tab still opens `href`). */
+  onOpen?: () => void;
 }) {
   return (
     <li className="min-w-0">
       <Link
         href={href}
+        onClick={onOpen ? openInstead(onOpen) : undefined}
         className="group block rounded-lg border bg-card p-4 transition-colors outline-none hover:border-primary/40 focus-visible:ring-[3px] focus-visible:ring-ring/25"
       >
         <div className="flex items-start justify-between gap-3">
@@ -125,14 +145,18 @@ export function RowLink({
   href,
   children,
   className,
+  onOpen,
 }: {
   href: string;
   children: React.ReactNode;
   className?: string;
+  /** Opens the record over the list instead (a plain click; a new tab still opens `href`). */
+  onOpen?: () => void;
 }) {
   return (
     <Link
       href={href}
+      onClick={onOpen ? openInstead(onOpen) : undefined}
       className={cn(
         "rounded-sm font-medium whitespace-nowrap text-primary outline-none hover:underline hover:underline-offset-4 focus-visible:ring-[3px] focus-visible:ring-ring/25",
         className,

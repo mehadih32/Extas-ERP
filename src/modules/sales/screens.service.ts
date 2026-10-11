@@ -22,7 +22,11 @@ import { balancesFor } from "@/modules/parties/ledger.service";
 import { isWalkIn } from "@/modules/parties/walk-in";
 import { ORDER_CHANNELS, RECEIVE_METHODS } from "@/modules/sales/choices";
 import { listCustomFields } from "@/modules/sales/custom-fields.service";
-import { getInvoiceDocument, listInvoices } from "@/modules/sales/documents.service";
+import {
+  deliveredByVariant,
+  getInvoiceDocument,
+  listInvoices,
+} from "@/modules/sales/documents.service";
 import { getOrder, listOrders, listPackers } from "@/modules/sales/order.service";
 import { prisma } from "@/lib/prisma";
 import { chequeFigures, listCheques } from "@/modules/sales/cheque.service";
@@ -82,6 +86,8 @@ export function salesAccess(ctx: CompanyContext) {
     quote: ctx.can("sales.quotation.manage"),
     sell: ctx.can("sales.order.create"),
     voidInvoice: ctx.can("sales.invoice.edit"),
+    /** Edit an invoiced order, revising its invoice under the same number (Smart Edit). */
+    reviseInvoice: ctx.can("sales.invoice.edit"),
     forceOverride: ctx.can("sales.force_override"),
     receive: ctx.can("accounts.receipts.record"),
     seeCosts: canSeeFinancials(ctx),
@@ -89,6 +95,36 @@ export function salesAccess(ctx: CompanyContext) {
     openBuyer: ctx.can("parties.view"),
   };
 }
+
+/**
+ * What voiding an order's invoice may also do (Safe Void): cancel the order, so
+ * its stock comes back (delivered pieces included) and the money held on it is
+ * settled the ways this person may. `note` says why cancelling is not offered.
+ */
+function voidChoiceFor(
+  ctx: CompanyContext,
+  order: Parameters<typeof canCancelOrder>[0] & { partyId: string | null },
+  delivered: number,
+  held: Amount,
+) {
+  const kinds = settleKinds(ctx, { onAccount: order.partyId !== null });
+  const verdict = canCancelOrder(order, delivered, { returnDelivered: true });
+  const settleMissing = isPositive(held) && kinds.length === 0;
+  return {
+    cancel: verdict.ok && !settleMissing,
+    /** Pieces delivered, which come back into stock when the order is cancelled. */
+    delivered,
+    held: fixed(held),
+    settleKinds: isPositive(held) ? kinds : [],
+    note: !verdict.ok
+      ? verdict.message
+      : settleMissing
+        ? `${fixed(held)} paid on ${order.number} has to be settled by Accounts before the order can be cancelled.`
+        : null,
+  };
+}
+
+export type VoidChoice = ReturnType<typeof voidChoiceFor>;
 
 type PartyLike = { id: string; code: string; name: string };
 const partyOf = (party: PartyLike | null) =>
@@ -810,6 +846,7 @@ export async function getOrderScreen(ctx: CompanyContext, orderId: string) {
             id: order.invoice.id,
             number: order.invoice.number,
             status: order.invoice.status,
+            revision: order.invoice.revision,
             issuedOn: localDay(order.invoice.issueDate, tz),
             dueOn: order.invoice.dueDate ? localDay(order.invoice.dueDate, tz) : null,
             total: fixed(order.invoice.total),
@@ -883,13 +920,17 @@ export async function getOrderScreen(ctx: CompanyContext, orderId: string) {
       challan: access.sell && canCreateChallan(order, remaining).ok,
       shipmentDate: access.sell && canSetShipmentDate(order).ok,
       logistics,
-      edit: access.sell && canEditOrder(order, delivered).ok,
+      // With a live invoice, editing revises it (people who may edit invoices).
+      edit: access.sell && canEditOrder(order, delivered, { revise: access.reviseInvoice }).ok,
       cancel: cancellable && !needsVoid && !needsSettling,
       /** How the money held may be settled when it is cancelled. */
       settleKinds: isPositive(held) ? kinds : [],
       refundKinds: canRefundOrder(order, held).ok ? kinds : [],
       openBuyer: access.openBuyer,
     },
+    /** What voiding the invoice may also do (only for people who may void it). */
+    voidChoice:
+      access.voidInvoice && invoice !== null ? voidChoiceFor(ctx, order, delivered, held) : null,
     /** Who can be named as the packer (only when this person may set it). */
     packers: logistics ? await listPackers(ctx, order.packedBy?.id) : [],
     /** Why cancelling, which this person could otherwise do, is not offered. */
@@ -931,8 +972,10 @@ export async function getOrderForm(
       canEditOrder(
         o,
         o.items.reduce((s, i) => s + i.delivered, 0),
+        { revise: access.reviseInvoice },
       ),
     );
+    const revising = liveInvoice(o.invoice);
     const styles = new Map<string, FormStyle & { prices: Set<string>; discounted: boolean }>();
     for (const item of o.items) {
       const block = styles.get(item.variant.styleId) ?? {
@@ -973,6 +1016,10 @@ export async function getOrderForm(
       packedById: o.packedById,
       total: fixed(o.total),
       paid: fixed(o.paidAmount),
+      /** The live invoice saving revises (Smart Edit): same number, marked "(Revised)". */
+      invoice: revising
+        ? { number: revising.number, status: revising.status, revision: revising.revision }
+        : null,
     };
   } else if (from.proformaId) {
     const p = await getProforma(ctx, from.proformaId);
@@ -1047,6 +1094,8 @@ function presentInvoiceRow(inv: ListedInvoice, tz: string, now: Date) {
     total: fixed(inv.total),
     paid: fixed(inv.paidAmount),
     due: fixed(inv.dueAmount),
+    /** Edited after it was issued (Smart Edit; 0: never). */
+    revision: inv.revision,
   };
 }
 
@@ -1075,9 +1124,27 @@ export async function getInvoiceScreen(ctx: CompanyContext, invoiceId: string) {
   const { order } = await ctx.db.invoice.findUniqueOrThrow({
     where: { id: invoiceId },
     select: {
-      order: { select: { id: true, number: true, status: true, total: true, paidAmount: true } },
+      order: {
+        select: {
+          id: true,
+          number: true,
+          status: true,
+          total: true,
+          paidAmount: true,
+          partyId: true,
+          warehouseId: true,
+          invoice: { select: { number: true, status: true } },
+        },
+      },
     },
   });
+  const delivered = [...(await deliveredByVariant(prisma, order.id)).values()].reduce(
+    (a, b) => a + b,
+    0,
+  );
+  const live = doc.status !== "VOID";
+  const mayRevise = access.sell && access.reviseInvoice && live;
+  const edit = canEditOrder(order, delivered, { revise: true });
   const buyer = doc.buyer as {
     id?: string;
     code?: string;
@@ -1096,7 +1163,20 @@ export async function getInvoiceScreen(ctx: CompanyContext, invoiceId: string) {
       issuedOn: localDay(doc.issueDate, tz),
       dueOn: doc.dueDate ? localDay(doc.dueDate, tz) : null,
       isOverdue: open && doc.dueDate !== null && doc.dueDate < new Date(),
-      order: { id: order.id, number: order.number },
+      /** Times it was edited after it was issued (Smart Edit; 0: never), and the last day. */
+      revision: doc.revision,
+      revisedOn: doc.revisedAt ? localDay(doc.revisedAt, tz) : null,
+      order: { id: order.id, number: order.number, status: order.status },
+      /** Its order's packing list, printed as page 2 of the PDF (null: none made). */
+      packingList: doc.packingList
+        ? {
+            number: doc.packingList.number,
+            cartons: doc.packingList.cartons,
+            packedBy: doc.packingList.packedBy,
+            pieces: doc.packingList.totalPieces,
+          }
+        : null,
+      delivered,
       buyer: {
         id: buyer.id ?? null,
         code: buyer.code ?? null,
@@ -1156,7 +1236,18 @@ export async function getInvoiceScreen(ctx: CompanyContext, invoiceId: string) {
     can: {
       receive: access.receive && open && canReceiveOnOrder(order).ok,
       void: access.voidInvoice && canVoidInvoice(doc).ok,
+      /** Edit its order, revising the invoice under the same number (Smart Edit). */
+      edit: mayRevise && edit.ok,
+      /** Share page 1 as a picture (anyone who may print it). */
+      share: live,
       openBuyer: access.openBuyer && Boolean(buyer.id),
+    },
+    /** What voiding may also do (null: this person may not void it). */
+    voidChoice:
+      access.voidInvoice && live ? voidChoiceFor(ctx, order, delivered, order.paidAmount) : null,
+    notes: {
+      /** Why editing, which this person could otherwise do, is locked ("fully paid"). */
+      edit: mayRevise && !edit.ok ? edit.message : null,
     },
   };
 }

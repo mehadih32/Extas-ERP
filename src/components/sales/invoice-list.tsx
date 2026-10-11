@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+
 import {
   Table,
   TableBody,
@@ -10,10 +12,11 @@ import {
 } from "@/components/ui/table";
 import { formatDay } from "@/lib/display";
 import { cn } from "@/lib/utils";
-import type { InvoiceRow } from "@/modules/sales/screens.service";
+import type { InvoiceRow, InvoiceScreen } from "@/modules/sales/screens.service";
 import { listInvoiceRowsAction } from "@/server/actions/sales.actions";
 
-import { InvoiceBadge } from "./badges";
+import { InvoiceBadge, RevisedBadge } from "./badges";
+import { InvoiceHub } from "./invoice-hub";
 import { buyerName, isZero, money, salesHref } from "./labels";
 import { invoiceListQuery, type InvoiceListView } from "./list-view";
 import { RowCard, RowLink, ShowMore, useLoadMore } from "./load-more";
@@ -28,19 +31,44 @@ function DueText({ invoice, currency }: { invoice: InvoiceRow; currency: string 
   );
 }
 
-/** The invoices found: cards on phones, a table on computers, with "Show more". */
+/**
+ * The invoices found: cards on phones, a table on computers, with "Show more".
+ * Opening one slides out its hub (InvoiceHub) over the list; a new tab still
+ * opens the full invoice.
+ */
 export function InvoiceList({
   initial,
   view,
   currency,
+  today,
 }: {
   initial: { items: InvoiceRow[]; nextCursor?: string };
   view: InvoiceListView;
   currency: string;
+  /** Today in the company's time zone (the payment dialog's default day). */
+  today: string;
 }) {
   const list = useLoadMore(initial, (cursor) =>
     listInvoiceRowsAction(invoiceListQuery(view, cursor)),
   );
+  const [open, setOpen] = useState<string | null>(null);
+  // The hub's newer state on the row: paid, due, voided or revised.
+  const refresh = (inv: InvoiceScreen["invoice"]) =>
+    list.update((rows) =>
+      rows.map((row) =>
+        row.id === inv.id
+          ? {
+              ...row,
+              status: inv.status,
+              total: inv.total,
+              paid: inv.paid,
+              due: inv.due,
+              isOverdue: inv.isOverdue,
+              revision: inv.revision,
+            }
+          : row,
+      ),
+    );
 
   return (
     <div className="grid grid-cols-1 gap-5">
@@ -49,8 +77,14 @@ export function InvoiceList({
           <RowCard
             key={inv.id}
             href={salesHref.invoice(inv.id)}
+            onOpen={() => setOpen(inv.id)}
             eyebrow={`${inv.number} · ${formatDay(inv.issuedOn)}`}
-            badges={<InvoiceBadge status={inv.status} isOverdue={inv.isOverdue} />}
+            badges={
+              <>
+                <RevisedBadge revision={inv.revision} />
+                <InvoiceBadge status={inv.status} isOverdue={inv.isOverdue} />
+              </>
+            }
             title={buyerName(inv.buyer, inv.customerName)}
             details={[`Order ${inv.order.number}`, inv.dueOn ? `Due ${formatDay(inv.dueOn)}` : null]
               .filter(Boolean)
@@ -80,7 +114,9 @@ export function InvoiceList({
             {list.items.map((inv) => (
               <TableRow key={inv.id}>
                 <TableCell className="py-3">
-                  <RowLink href={salesHref.invoice(inv.id)}>{inv.number}</RowLink>
+                  <RowLink href={salesHref.invoice(inv.id)} onOpen={() => setOpen(inv.id)}>
+                    {inv.number}
+                  </RowLink>
                   <div className="mt-1 text-[0.8125rem] whitespace-nowrap text-muted-foreground">
                     {formatDay(inv.issuedOn)} · {inv.order.number}
                   </div>
@@ -95,7 +131,10 @@ export function InvoiceList({
                   {inv.dueOn ? formatDay(inv.dueOn) : "On receipt"}
                 </TableCell>
                 <TableCell>
-                  <InvoiceBadge status={inv.status} isOverdue={inv.isOverdue} />
+                  <div className="flex flex-wrap gap-1.5">
+                    <InvoiceBadge status={inv.status} isOverdue={inv.isOverdue} />
+                    <RevisedBadge revision={inv.revision} />
+                  </div>
                 </TableCell>
                 <TableCell className="text-right font-medium whitespace-nowrap">
                   {money(inv.total, currency)}
@@ -109,6 +148,15 @@ export function InvoiceList({
         </Table>
       </div>
       <ShowMore list={list} noun="invoices" />
+      {open && (
+        <InvoiceHub
+          invoiceId={open}
+          currency={currency}
+          today={today}
+          onChanged={refresh}
+          onClose={() => setOpen(null)}
+        />
+      )}
     </div>
   );
 }

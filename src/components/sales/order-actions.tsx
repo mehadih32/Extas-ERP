@@ -41,7 +41,6 @@ import {
   issueInvoiceAction,
   setOrderLogisticsAction,
   setOrderShipmentDateAction,
-  voidInvoiceAction,
 } from "@/server/actions/sales.actions";
 
 import {
@@ -55,6 +54,7 @@ import {
 } from "./dialogs";
 import { ReceivePaymentDialog } from "./receive-payment-dialog";
 import { isZero, money, salesHref } from "./labels";
+import { VoidInvoiceDialog } from "./void-invoice-dialog";
 
 type Open =
   | "receive"
@@ -516,27 +516,15 @@ export function OrderActions({
           )}
         </FormDialog>
       )}
-      {open === "voidInvoice" && o.invoice && (
-        <FormDialog
-          title={`Void invoice ${o.invoice.number}?`}
-          description="The buyer no longer owes it. The order stays open, so it can be edited and invoiced again. The voided invoice stays on record."
-          submitLabel="Void the invoice"
-          pendingLabel="Voiding"
-          destructive
-          errorTitle="We could not void the invoice"
+      {open === "voidInvoice" && o.invoice && screen.voidChoice && (
+        <VoidInvoiceDialog
+          invoice={o.invoice}
+          orderNumber={o.number}
+          choice={screen.voidChoice}
+          currency={currency}
+          onDone={done}
           onClose={close}
-          onSubmit={async (form) => {
-            const reason = readReason(form, 5);
-            if (typeof reason !== "string") return reason;
-            const result = await voidInvoiceAction(o.invoice!.id, { reason });
-            if (!result.ok) return result.error;
-            done(`Invoice ${o.invoice!.number} was voided.`);
-          }}
-        >
-          {(fieldError) => (
-            <ReasonField id="void-invoice-reason" min={5} error={fieldError("reason")} />
-          )}
-        </FormDialog>
+        />
       )}
       {open === "cancel" && (
         <FormDialog

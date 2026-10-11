@@ -1,6 +1,7 @@
 "use client";
 
-import { BanknoteIcon, FileXIcon } from "lucide-react";
+import { BanknoteIcon, FileXIcon, LockIcon, PencilIcon } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { PrintDocumentButton } from "@/components/documents/print-button";
@@ -9,34 +10,45 @@ import { FormAlert } from "@/components/forms/field";
 import { Button } from "@/components/ui/button";
 import type { TemplateChoice } from "@/modules/reports/screens.service";
 import type { InvoiceScreen } from "@/modules/sales/screens.service";
-import { voidInvoiceAction } from "@/server/actions/sales.actions";
 
-import { FormDialog, readReason, ReasonField } from "./dialogs";
+import { salesHref } from "./labels";
 import { ReceivePaymentDialog } from "./receive-payment-dialog";
+import { ShareInvoiceImageButton } from "./share-invoice-image";
+import { VoidInvoiceDialog } from "./void-invoice-dialog";
 
 type Open = "receive" | "void" | null;
 
 /**
  * What can be done with an invoice, from the flags the screen came with
- * (screen.can): Accounts receives a payment against its order;
- * sales.invoice.edit voids it. Everyone who sees it can print it.
+ * (screen.can): Accounts receives a payment against its order; people who may
+ * edit invoices edit it (Smart Edit, kept under the same number, until it is
+ * fully paid) and void it (Safe Void). Everyone who sees it can print it and
+ * share page 1 as a picture on WhatsApp. Used on the invoice page and in the
+ * invoice hub; `onChanged` runs after a payment or a void.
  */
 export function InvoiceActions({
   screen,
   currency,
   today,
   templates = [],
+  onChanged,
 }: {
   screen: InvoiceScreen;
   currency: string;
   today: string;
   /** The company's own invoice designs this person may fill. */
   templates?: TemplateChoice[];
+  onChanged?: () => void;
 }) {
   const [open, setOpen] = useState<Open>(null);
   const [notice, setNotice] = useState<string>();
   const { invoice: inv, can } = screen;
   const close = () => setOpen(null);
+  const done = (message: string) => {
+    setNotice(message);
+    close();
+    onChanged?.();
+  };
 
   useEffect(() => {
     if (!notice) return;
@@ -53,7 +65,13 @@ export function InvoiceActions({
             Receive a payment
           </Button>
         )}
-        <div className="flex gap-2">
+        {can.share && (
+          <ShareInvoiceImageButton
+            invoice={{ id: inv.id, number: inv.number }}
+            phone={inv.buyer.phone}
+          />
+        )}
+        <div className="flex flex-wrap gap-2">
           {inv.status !== "VOID" && (
             <PrintDocumentButton
               request={{ type: "COMMERCIAL_INVOICE", id: inv.id }}
@@ -61,7 +79,9 @@ export function InvoiceActions({
               className="flex-1 sm:flex-none"
               ready={{
                 eyebrow: "Commercial invoice",
-                description: `${inv.number} for ${inv.buyer.name}, on the company letterhead.`,
+                description: inv.packingList
+                  ? `${inv.number} for ${inv.buyer.name}, on the company letterhead, with packing list ${inv.packingList.number} as page 2.`
+                  : `${inv.number} for ${inv.buyer.name}, on the company letterhead.`,
                 errorTitle: "We could not make the invoice PDF",
               }}
             />
@@ -74,7 +94,15 @@ export function InvoiceActions({
               className="flex-1 sm:flex-none"
             />
           )}
-          {can.void && (
+          {can.edit && (
+            <Button asChild variant="outline" className="flex-1 sm:flex-none">
+              <Link href={`${salesHref.order(inv.order.id)}/edit`}>
+                <PencilIcon aria-hidden />
+                Edit
+              </Link>
+            </Button>
+          )}
+          {can.void && screen.voidChoice && (
             <Button
               type="button"
               variant="outline"
@@ -88,6 +116,12 @@ export function InvoiceActions({
         </div>
       </div>
 
+      {screen.notes.edit && (
+        <p className="flex items-start gap-2 text-sm text-muted-foreground">
+          <LockIcon className="mt-0.5 size-4 shrink-0" aria-hidden />
+          {screen.notes.edit}
+        </p>
+      )}
       {notice && <FormAlert tone="success">{notice}</FormAlert>}
 
       {open === "receive" && (
@@ -97,33 +131,19 @@ export function InvoiceActions({
           extraAllowed={inv.buyer.id !== null}
           currency={currency}
           today={today}
-          onDone={(message) => {
-            setNotice(message);
-            close();
-          }}
+          onDone={done}
           onClose={close}
         />
       )}
-      {open === "void" && (
-        <FormDialog
-          title={`Void invoice ${inv.number}?`}
-          description={`The buyer no longer owes it. Order ${inv.order.number} stays open, so it can be edited and invoiced again. The voided invoice stays on record.`}
-          submitLabel="Void the invoice"
-          pendingLabel="Voiding"
-          destructive
-          errorTitle="We could not void the invoice"
+      {open === "void" && screen.voidChoice && (
+        <VoidInvoiceDialog
+          invoice={{ id: inv.id, number: inv.number }}
+          orderNumber={inv.order.number}
+          choice={screen.voidChoice}
+          currency={currency}
+          onDone={done}
           onClose={close}
-          onSubmit={async (form) => {
-            const reason = readReason(form, 5);
-            if (typeof reason !== "string") return reason;
-            const result = await voidInvoiceAction(inv.id, { reason });
-            if (!result.ok) return result.error;
-            setNotice(`Invoice ${inv.number} was voided.`);
-            close();
-          }}
-        >
-          {(fieldError) => <ReasonField id="void-reason" min={5} error={fieldError("reason")} />}
-        </FormDialog>
+        />
       )}
     </div>
   );

@@ -240,7 +240,17 @@ export const createOrderSchema = z
     }
   });
 
-export const updateOrderSchema = z.object({ ...orderLines, ...orderCharges }).partial();
+export const updateOrderSchema = z
+  .object({
+    ...orderLines,
+    ...orderCharges,
+    /**
+     * Smart Edit: the order has a live invoice that is not fully paid, and the
+     * edit revises it under the same number (needs the invoice edit key).
+     */
+    reviseInvoice: z.boolean(),
+  })
+  .partial();
 
 export const convertProformaToOrderSchema = z
   .object({
@@ -297,6 +307,12 @@ export const cancelOrderSchema = z.object({
    * an order or proforma holding money is not cancelled: Accounts settles it first.
    */
   settle: settleSchema.optional(),
+  /**
+   * Safe Void: pieces already delivered come back into good stock at the cost
+   * they left at (needs the invoice edit key). Without it an order with
+   * delivered goods is not cancelled.
+   */
+  returnDelivered: z.boolean().optional(),
 });
 
 /** Sets or (null) clears an order's cartons and packer after it was taken. */
@@ -327,7 +343,16 @@ export const issueInvoiceSchema = z.object({
   /** Prints what the buyer already owed on it ("Previous due", "Total payable"). */
   includePreviousDue: z.boolean().optional(),
 });
-export const voidInvoiceSchema = z.object({ reason: z.string().trim().min(5).max(500) });
+export const voidInvoiceSchema = z.object({
+  reason: z.string().trim().min(5).max(500),
+  /**
+   * Safe Void: cancel the order too, so its reserved stock is freed, delivered
+   * pieces come back into stock and money held is settled (`settle`). Without
+   * it the order stays open to be corrected and invoiced again.
+   */
+  cancelOrder: z.boolean().optional(),
+  settle: settleSchema.optional(),
+});
 export const listInvoicesSchema = z.object({
   status: z.enum(InvoiceStatus).optional(),
   /** Unpaid or part-paid invoices past their due day. */

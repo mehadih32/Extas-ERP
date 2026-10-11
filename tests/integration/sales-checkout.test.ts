@@ -144,7 +144,7 @@ run("cartons and packer on an order", () => {
     expect(delivery).toMatchObject({ "Total cartons": "3", "Packed by": "Karim Packer" });
   });
 
-  it("leaves the papers as they were when neither is given", async () => {
+  it("prints a dash for each on the papers when neither is given", async () => {
     const env = await setup();
     const order = await wholesaleOrder(env, {
       documents: { invoice: false, packingList: true, deliveryChallan: true },
@@ -156,8 +156,7 @@ run("cartons and packer on an order", () => {
     const packing = await metaOf(env.ctx, { type: "PACKING_LIST", id: list.id });
     const delivery = await metaOf(env.ctx, { type: "DELIVERY_CHALLAN", id: challan.id });
     for (const meta of [packing, delivery]) {
-      expect(meta).not.toHaveProperty("Total cartons");
-      expect(meta).not.toHaveProperty("Packed by");
+      expect(meta).toMatchObject({ "Total cartons": "–", "Packed by": "–" });
     }
   });
 

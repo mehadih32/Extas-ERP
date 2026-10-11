@@ -340,10 +340,11 @@ run("printed documents", () => {
       "COMMERCIAL INVOICE",
       invoiceNumber,
       order.number,
-      "Classic Polo – Navy / S",
-      "EX-PL-001-NAVY-S",
+      // Page 1 bills one line per style, colour and price, with its sizes under it.
+      "Classic Polo – Navy",
+      "EX-PL-001 · Sizes: S 2 · M 4 · L 4 · XL 2",
+      "12",
       "900.00",
-      "3,600.00",
       "10,800.00",
       "4,000.00",
       "6,800.00",
@@ -1011,6 +1012,7 @@ run("printed documents", () => {
       { label: "Date", value: formatDay(localDay(new Date(), env.company.timezone)) },
       { label: "Order no.", value: order.number },
       { label: "Total cartons", value: "2" },
+      { label: "Packed by", value: "–" },
       { label: "Gross weight", value: "8.50 kg" },
       { label: "Picked", value: "2 of 12 pcs" },
     ]);
@@ -1110,11 +1112,14 @@ run("printed documents", () => {
       ["normal", "4"],
       ["total", ""],
     ]);
-    expect(plainBuilt.model.meta.map((m) => m.label)).toEqual([
-      "Packing list no.",
-      "Date",
-      "Order no.",
-      "Picked",
+    // Cartons and the packer always print, a dash when not recorded.
+    expect(plainBuilt.model.meta.map((m) => [m.label, m.value])).toEqual([
+      ["Packing list no.", plain.number],
+      ["Date", expect.any(String)],
+      ["Order no.", expect.any(String)],
+      ["Total cartons", "–"],
+      ["Packed by", "–"],
+      ["Picked", expect.any(String)],
     ]);
 
     // A walk-in customer's packing list goes to the name and address on the order.

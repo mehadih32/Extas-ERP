@@ -206,19 +206,28 @@ export function canCreateChallan(
 }
 
 /**
- * Lines and charges change before anything has left the warehouse and while the
- * order has no live invoice (void it first).
+ * Lines and charges change before anything has left the warehouse. With a live
+ * invoice the edit revises that invoice under the same number (Smart Edit,
+ * `revise`), which a fully paid invoice no longer allows; without `revise` the
+ * invoice has to be voided first.
  */
 export function canEditOrder(
   o: OrderState & { warehouseId: string | null },
   deliveredPieces: number,
+  options: { revise?: boolean } = {},
 ): Verdict {
   if (o.status !== "CONFIRMED" && o.status !== "PACKED") {
     return refuse("CONFLICT", `A ${lower(o.status)} order cannot be edited.`);
   }
   const invoice = liveInvoice(o.invoice);
-  if (invoice) {
+  if (invoice && !options.revise) {
     return refuse("CONFLICT", `Void invoice ${invoice.number} before editing the order.`);
+  }
+  if (invoice?.status === "PAID") {
+    return refuse(
+      "CONFLICT",
+      `Invoice ${invoice.number} is fully paid, so it is locked. Void it to correct it.`,
+    );
   }
   if (deliveredPieces > 0) {
     return refuse("CONFLICT", "Part of this order is already delivered.");
@@ -227,11 +236,24 @@ export function canEditOrder(
   return ALLOWED;
 }
 
-/** An order nothing of which has been delivered can be cancelled. */
-export function canCancelOrder(o: OrderState, deliveredPieces: number): Verdict {
+/**
+ * An order nothing of which has been delivered can be cancelled. One with
+ * delivered goods is cancelled only by taking them back into stock
+ * (`returnDelivered`, Safe Void), and not once a return was recorded on it.
+ */
+export function canCancelOrder(
+  o: OrderState,
+  deliveredPieces: number,
+  options: { returnDelivered?: boolean } = {},
+): Verdict {
   if (o.status === "CANCELLED") return refuse("CONFLICT", "This order is already cancelled.");
   if (deliveredPieces > 0) {
-    return refuse("CONFLICT", "Goods on this order were delivered; record a return instead.");
+    if (!options.returnDelivered) {
+      return refuse("CONFLICT", "Goods on this order were delivered; record a return instead.");
+    }
+    if (o.status === "RETURNED" || o.status === "PARTIALLY_RETURNED") {
+      return refuse("CONFLICT", `Goods on this ${lower(o.status)} order already came back.`);
+    }
   }
   return ALLOWED;
 }

@@ -1023,7 +1023,9 @@ account that has not paid an invoice yet: their unpaid invoices less their recei
 Credit is put against an invoiced order as a credit allocation (`CreditAllocation`), which
 counts in the order's paid amount but posts no journal entry, since the money is already in the
 books; voiding the invoice releases it. A payment on account pays the buyer's invoices oldest
-first (`oldestFirst`) or by the amounts given (`allocations`), and the rest stays as credit.
+first (`oldestFirst`) or by the amounts given (`allocations`); the rest first pays any earlier
+balance they owe beyond their invoices (an opening balance, say), and only what is left stays
+as credit, stored on the payment as `advanceKept` so its receipt can show the split.
 Money above an invoiced order's due, at checkout or later, is taken on the buyer's account the
 same way (`extra`: `ADVANCE`, or `OLDER_DUES` to pay their older dues first). A buyer's
 credit is locked (`pg_advisory_xact_lock`) before any order, so two payments cannot spend it

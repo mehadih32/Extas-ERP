@@ -443,6 +443,15 @@ Built one module at a time, each in its own pull request. So far:
     and its statement for any days (opening balance, deposits, withdrawals, closing and average
     balance, month by month), each line opening its journal entry. Bank accounts are added with
     their balance on the go-live day, changed, and closed once their money is moved out.
+    - **Bank reconcile** (`/accounts/cash-bank/<id>/reconcile`, **Reconcile with the bank**):
+      Accounts ticks each line of the account that is also on the real bank statement. The
+      page shows the balance in the books, the cleared balance (what the bank's statement
+      should show), and the deposits and withdrawals not cleared yet; typing the statement's
+      closing balance shows whether it matches. Lines not cleared yet are listed oldest first,
+      ticked ones latest first with who ticked them and when; **Tick everything up to a day**
+      ticks the backlog in one go when starting out. An entry and its reversal cancel out, so
+      neither waits to be ticked. Ticking only fills two optional fields on the journal line
+      (`clearedAt`, `clearedById`); amounts and balances never change.
     - **Petty cash** (`/accounts/petty-cash/<id>`): cash one person keeps for small daily
       costs, on its own cash account ("Petty cash — Factory"). Accounts opens a box (its
       holder, who must be able to record expenses, its usual amount and a first top-up), tops
@@ -478,6 +487,11 @@ Built one module at a time, each in its own pull request. So far:
     the **trial balance** at the end of any day; and the **books check**, which shows whether
     the journal balances and the stock, materials, assets, loans and payroll agree with the
     books. Each account in a report opens its ledger.
+
+  Every Accounts page that shows amounts, and HR's payroll pages, opens with them hidden as
+  `***`; **Show amounts** at the top shows them (and **Hide amounts** hides them again), and
+  nothing is remembered. The Help Center's **Accounts user manual** guide explains what each
+  part of Accounts is and why it is there.
 
   Everyone else who spends company money sees an **Expenses** entry in their menu instead: the
   claims they sent, and a form to send a new one; a petty cash holder also sees their box

@@ -1,6 +1,12 @@
 "use client";
 
-import { ArrowLeftRightIcon, ArchiveIcon, ArchiveRestoreIcon, PencilIcon } from "lucide-react";
+import {
+  ArrowLeftRightIcon,
+  ArchiveIcon,
+  ArchiveRestoreIcon,
+  ListChecksIcon,
+  PencilIcon,
+} from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 
@@ -18,8 +24,9 @@ type Open = "move" | "close" | "reopen" | null;
 
 /**
  * What can be done with a bank account, each offered from the screen's flags
- * (accounts/rules.ts): Accounts moves money in or out of it, and people who
- * keep the books change its details, close it once it is empty, or reopen it.
+ * (accounts/rules.ts): Accounts moves money in or out of it, anyone who sees the
+ * books opens its reconcile checklist, and people who keep the books change its
+ * details, close it once it is empty, or reopen it.
  */
 export function BankActions({
   screen,
@@ -41,50 +48,52 @@ export function BankActions({
   const name = `${b.bankName} ${b.accountNumber}`;
   const move = can.transfer;
 
-  if (!move && !can.edit && !can.close && !can.reopen && !notice && !notes.close) return null;
-
   return (
     <div className="grid gap-4">
-      {(move || can.edit || can.close || can.reopen) && (
-        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-          {move && (
-            <Button type="button" className="w-full sm:w-auto" onClick={() => setOpen("move")}>
-              <ArrowLeftRightIcon aria-hidden />
-              Move money
-            </Button>
-          )}
-          {can.edit && (
-            <Button asChild variant="outline" className="w-full sm:w-auto">
-              <Link href={`${accountsHref.bank(b.id)}/edit`}>
-                <PencilIcon aria-hidden />
-                Change details
-              </Link>
-            </Button>
-          )}
-          {can.close && (
-            <Button
-              type="button"
-              variant="outline"
-              className="w-full sm:w-auto"
-              onClick={() => setOpen("close")}
-            >
-              <ArchiveIcon aria-hidden />
-              Close the account
-            </Button>
-          )}
-          {can.reopen && (
-            <Button
-              type="button"
-              variant="outline"
-              className="w-full sm:w-auto"
-              onClick={() => setOpen("reopen")}
-            >
-              <ArchiveRestoreIcon aria-hidden />
-              Reopen
-            </Button>
-          )}
-        </div>
-      )}
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+        {move && (
+          <Button type="button" className="w-full sm:w-auto" onClick={() => setOpen("move")}>
+            <ArrowLeftRightIcon aria-hidden />
+            Move money
+          </Button>
+        )}
+        <Button asChild variant="outline" className="w-full sm:w-auto">
+          <Link href={accountsHref.reconcile(b.id)}>
+            <ListChecksIcon aria-hidden />
+            Reconcile with the bank
+          </Link>
+        </Button>
+        {can.edit && (
+          <Button asChild variant="outline" className="w-full sm:w-auto">
+            <Link href={`${accountsHref.bank(b.id)}/edit`}>
+              <PencilIcon aria-hidden />
+              Change details
+            </Link>
+          </Button>
+        )}
+        {can.close && (
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full sm:w-auto"
+            onClick={() => setOpen("close")}
+          >
+            <ArchiveIcon aria-hidden />
+            Close the account
+          </Button>
+        )}
+        {can.reopen && (
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full sm:w-auto"
+            onClick={() => setOpen("reopen")}
+          >
+            <ArchiveRestoreIcon aria-hidden />
+            Reopen
+          </Button>
+        )}
+      </div>
       {notes.close && <FormAlert tone="note">{notes.close}</FormAlert>}
       {notice && <FormAlert tone="success">{notice}</FormAlert>}
 

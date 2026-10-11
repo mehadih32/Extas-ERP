@@ -3,6 +3,7 @@ import Link from "next/link";
 import { cn } from "@/lib/utils";
 
 import { accountsHref, isNegative, signedMoney } from "./labels";
+import { Amount } from "./privacy";
 
 /*
  * The parts of a financial report on screen: blocks of account lines with
@@ -46,7 +47,9 @@ export function ReportLines({ lines, currency }: { lines: ReportLine[]; currency
               l.name
             )}
           </span>
-          <span className={amountClass(l.amount)}>{signedMoney(l.amount, currency)}</span>
+          <span className={amountClass(l.amount)}>
+            <Amount>{signedMoney(l.amount, currency)}</Amount>
+          </span>
         </li>
       ))}
     </ul>
@@ -78,7 +81,9 @@ export function ReportBlock({
       {total !== undefined && (
         <p className="flex items-baseline justify-between gap-3 border-t pt-2 text-sm font-medium">
           <span>{totalLabel ?? `Total ${title.toLowerCase()}`}</span>
-          <span className={amountClass(total)}>{signedMoney(total, currency)}</span>
+          <span className={amountClass(total)}>
+            <Amount>{signedMoney(total, currency)}</Amount>
+          </span>
         </p>
       )}
     </div>
@@ -96,7 +101,8 @@ export function ReportResult({
   label: string;
   amount: string;
   currency: string;
-  hint?: string | null;
+  /** A margin or other note; wrap an amount or a percentage in <Amount>. */
+  hint?: React.ReactNode;
   strong?: boolean;
 }) {
   return (
@@ -122,7 +128,7 @@ export function ReportResult({
           strong && !isNegative(amount) && "text-primary",
         )}
       >
-        {signedMoney(amount, currency)}
+        <Amount>{signedMoney(amount, currency)}</Amount>
       </span>
     </div>
   );

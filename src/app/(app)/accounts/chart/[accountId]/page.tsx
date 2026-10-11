@@ -15,6 +15,7 @@ import {
 } from "@/components/accounts/labels";
 import { LedgerLines, LedgerSummary } from "@/components/accounts/ledger-view";
 import { AccountsNoAccess } from "@/components/accounts/no-access";
+import { Amount, HeaderWithEye, PrivacyProvider } from "@/components/accounts/privacy";
 import { SectionError } from "@/components/dashboard/section-error";
 import { FormAlert } from "@/components/forms/field";
 import { dayParam } from "@/components/parties/route";
@@ -73,119 +74,123 @@ export default async function AccountPage({
   const notice = query.created === "1" && a ? `${a.code} ${a.name} was added.` : undefined;
 
   return (
-    <div className="grid grid-cols-1 gap-8 md:gap-10">
-      <div className="grid gap-6">
-        <BackLink href="/accounts/chart">Chart of accounts</BackLink>
-        {screen && a && (
-          <>
-            <RecordHeader
-              eyebrow={`${a.code} · ${ACCOUNT_TYPE_LABELS[a.type]} · ${SUBTYPE_LABELS[a.subType]}`}
-              title={a.name}
-              badges={
-                <>
-                  {!a.isActive && <OffBadge>Archived</OffBadge>}
-                  <span
-                    className={cn(
-                      "font-serif text-lg tabular-nums",
-                      isNegative(a.balance) ? "text-destructive" : "text-primary",
-                    )}
-                  >
-                    {signedMoney(a.balance, currency)}
-                  </span>
-                  <span className="text-sm text-muted-foreground">today</span>
-                </>
-              }
-            />
-            {a.linkedTo && (
-              <p className="text-sm text-muted-foreground">
-                Kept by{" "}
-                {a.linkedTo.kind === "BANK_ACCOUNT" ? (
-                  <Link href={accountsHref.bank(a.linkedTo.id)} className={linkClass}>
-                    the bank account {a.linkedTo.name}
-                  </Link>
-                ) : a.linkedTo.kind === "CAPITAL_SOURCE" ? (
-                  `the loan or investor ${a.linkedTo.name}`
-                ) : a.linkedTo.kind === "PETTY_CASH_BOX" ? (
-                  <Link href={pettyCashHref.box(a.linkedTo.id)} className={linkClass}>
-                    the petty cash box {a.linkedTo.name}
-                  </Link>
-                ) : (
-                  <Link href={assetHref.asset(a.linkedTo.id)} className={linkClass}>
-                    the fixed asset {a.linkedTo.name}
-                  </Link>
-                )}
-                ; it is changed there.
-              </p>
-            )}
-            {a.manualPostingNote && (
-              <p className="text-sm text-muted-foreground">
-                Journal vouchers do not post here: {a.manualPostingNote}
-              </p>
-            )}
-            <AccountActions key={a.id} screen={screen} currency={currency} notice={notice} />
-          </>
-        )}
-      </div>
-
-      <section aria-labelledby="ledger-heading" className="grid gap-4">
-        <div>
-          <h3 id="ledger-heading" className="font-serif text-2xl text-primary">
-            Ledger
-          </h3>
-          {screen && (
-            <p className="mt-1 text-sm text-muted-foreground">
-              {periodText(screen.from, screen.to)}
-            </p>
+    <PrivacyProvider>
+      <div className="grid grid-cols-1 gap-8 md:gap-10">
+        <div className="grid gap-6">
+          <BackLink href="/accounts/chart">Chart of accounts</BackLink>
+          {screen && a && (
+            <>
+              <HeaderWithEye>
+                <RecordHeader
+                  eyebrow={`${a.code} · ${ACCOUNT_TYPE_LABELS[a.type]} · ${SUBTYPE_LABELS[a.subType]}`}
+                  title={a.name}
+                  badges={
+                    <>
+                      {!a.isActive && <OffBadge>Archived</OffBadge>}
+                      <span
+                        className={cn(
+                          "font-serif text-lg tabular-nums",
+                          isNegative(a.balance) ? "text-destructive" : "text-primary",
+                        )}
+                      >
+                        <Amount>{signedMoney(a.balance, currency)}</Amount>
+                      </span>
+                      <span className="text-sm text-muted-foreground">today</span>
+                    </>
+                  }
+                />
+              </HeaderWithEye>
+              {a.linkedTo && (
+                <p className="text-sm text-muted-foreground">
+                  Kept by{" "}
+                  {a.linkedTo.kind === "BANK_ACCOUNT" ? (
+                    <Link href={accountsHref.bank(a.linkedTo.id)} className={linkClass}>
+                      the bank account {a.linkedTo.name}
+                    </Link>
+                  ) : a.linkedTo.kind === "CAPITAL_SOURCE" ? (
+                    `the loan or investor ${a.linkedTo.name}`
+                  ) : a.linkedTo.kind === "PETTY_CASH_BOX" ? (
+                    <Link href={pettyCashHref.box(a.linkedTo.id)} className={linkClass}>
+                      the petty cash box {a.linkedTo.name}
+                    </Link>
+                  ) : (
+                    <Link href={assetHref.asset(a.linkedTo.id)} className={linkClass}>
+                      the fixed asset {a.linkedTo.name}
+                    </Link>
+                  )}
+                  ; it is changed there.
+                </p>
+              )}
+              {a.manualPostingNote && (
+                <p className="text-sm text-muted-foreground">
+                  Journal vouchers do not post here: {a.manualPostingNote}
+                </p>
+              )}
+              <AccountActions key={a.id} screen={screen} currency={currency} notice={notice} />
+            </>
           )}
         </div>
-        <StatementRange from={range.from ?? null} to={range.to ?? null} today={today}>
-          {screen ? (
-            <>
-              <LedgerSummary
-                figures={[
-                  {
-                    label: "Opening balance",
-                    value: signedMoney(screen.summary.openingBalance, currency),
-                  },
-                  { label: "Debits", value: money(screen.summary.totalDebit, currency) },
-                  { label: "Credits", value: money(screen.summary.totalCredit, currency) },
-                  {
-                    label: "Closing balance",
-                    value: signedMoney(screen.summary.closingBalance, currency),
-                    alert: isNegative(screen.summary.closingBalance),
-                    hint: `${formatCount(screen.summary.transactionCount, currency)} ${
-                      screen.summary.transactionCount === 1 ? "line" : "lines"
-                    }`,
-                  },
-                ]}
-              />
-              <LedgerLines
-                lines={screen.lines.map((l, index) => ({
-                  key: `${l.entryId}-${index}`,
-                  entryId: l.entryId,
-                  day: l.day,
-                  number: l.number,
-                  details: l.description ?? l.particulars ?? "",
-                  note:
-                    [l.description ? l.particulars : null, l.parties, l.memo]
-                      .filter(Boolean)
-                      .join(" · ") || null,
-                  left: l.debit,
-                  right: l.credit,
-                  balance: l.balance,
-                  flag: l.isReversed ? "Reversed" : l.isReversal ? "Reversal" : null,
-                }))}
-                hiddenCount={screen.hiddenCount}
-                columns={["Debit", "Credit"]}
-                currency={currency}
-                canOpen
-              />
-            </>
-          ) : (
-            !result.ok && <FormAlert>{result.error.message}</FormAlert>
-          )}
-        </StatementRange>
-      </section>
-    </div>
+
+        <section aria-labelledby="ledger-heading" className="grid gap-4">
+          <div>
+            <h3 id="ledger-heading" className="font-serif text-2xl text-primary">
+              Ledger
+            </h3>
+            {screen && (
+              <p className="mt-1 text-sm text-muted-foreground">
+                {periodText(screen.from, screen.to)}
+              </p>
+            )}
+          </div>
+          <StatementRange from={range.from ?? null} to={range.to ?? null} today={today}>
+            {screen ? (
+              <>
+                <LedgerSummary
+                  figures={[
+                    {
+                      label: "Opening balance",
+                      value: signedMoney(screen.summary.openingBalance, currency),
+                    },
+                    { label: "Debits", value: money(screen.summary.totalDebit, currency) },
+                    { label: "Credits", value: money(screen.summary.totalCredit, currency) },
+                    {
+                      label: "Closing balance",
+                      value: signedMoney(screen.summary.closingBalance, currency),
+                      alert: isNegative(screen.summary.closingBalance),
+                      hint: `${formatCount(screen.summary.transactionCount, currency)} ${
+                        screen.summary.transactionCount === 1 ? "line" : "lines"
+                      }`,
+                    },
+                  ]}
+                />
+                <LedgerLines
+                  lines={screen.lines.map((l, index) => ({
+                    key: `${l.entryId}-${index}`,
+                    entryId: l.entryId,
+                    day: l.day,
+                    number: l.number,
+                    details: l.description ?? l.particulars ?? "",
+                    note:
+                      [l.description ? l.particulars : null, l.parties, l.memo]
+                        .filter(Boolean)
+                        .join(" · ") || null,
+                    left: l.debit,
+                    right: l.credit,
+                    balance: l.balance,
+                    flag: l.isReversed ? "Reversed" : l.isReversal ? "Reversal" : null,
+                  }))}
+                  hiddenCount={screen.hiddenCount}
+                  columns={["Debit", "Credit"]}
+                  currency={currency}
+                  canOpen
+                />
+              </>
+            ) : (
+              !result.ok && <FormAlert>{result.error.message}</FormAlert>
+            )}
+          </StatementRange>
+        </section>
+      </div>
+    </PrivacyProvider>
   );
 }

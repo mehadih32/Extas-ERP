@@ -12,6 +12,7 @@ import {
   SUBTYPE_LABELS,
 } from "@/components/accounts/labels";
 import { AccountsNoAccess } from "@/components/accounts/no-access";
+import { Amount, PrivacyProvider, PrivacyToggle } from "@/components/accounts/privacy";
 import { SectionError } from "@/components/dashboard/section-error";
 import { StatusBadge } from "@/components/sales/badges";
 import { Panel } from "@/components/sales/detail-bits";
@@ -50,73 +51,83 @@ export default async function ChartPage({
   const currency = ctx.company.currency;
 
   return (
-    <section aria-labelledby="chart-heading" className="grid gap-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h2 id="chart-heading" className="font-serif text-2xl text-primary">
-            Chart of accounts
-          </h2>
-          <p className="mt-1 max-w-xl text-sm leading-relaxed text-muted-foreground">
-            Every account in the books and what it holds today. Open one to see its ledger.
-          </p>
+    <PrivacyProvider>
+      <section aria-labelledby="chart-heading" className="grid gap-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 id="chart-heading" className="font-serif text-2xl text-primary">
+              Chart of accounts
+            </h2>
+            <p className="mt-1 max-w-xl text-sm leading-relaxed text-muted-foreground">
+              Every account in the books and what it holds today. Open one to see its ledger.
+            </p>
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <PrivacyToggle className="w-full sm:w-auto" />
+            {can.add && <AddAccount creatable={creatable} open={query.add === "1"} />}
+          </div>
         </div>
-        {can.add && <AddAccount creatable={creatable} open={query.add === "1"} />}
-      </div>
-      <p className="text-sm">
-        <Link
-          href={includeInactive ? "/accounts/chart" : "/accounts/chart?archived=1"}
-          scroll={false}
-          className="text-primary underline-offset-4 hover:underline"
-        >
-          {includeInactive ? "Hide archived accounts" : "Show archived accounts"}
-        </Link>
-      </p>
+        <p className="text-sm">
+          <Link
+            href={includeInactive ? "/accounts/chart" : "/accounts/chart?archived=1"}
+            scroll={false}
+            className="text-primary underline-offset-4 hover:underline"
+          >
+            {includeInactive ? "Hide archived accounts" : "Show archived accounts"}
+          </Link>
+        </p>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        {ACCOUNT_TYPES.map((type) => {
-          const group = accounts.filter((a) => a.type === type);
-          if (group.length === 0) return null;
-          const headingId = `type-${type.toLowerCase()}-heading`;
-          return (
-            <Panel key={type} title={ACCOUNT_TYPE_LABELS[type]} id={headingId} className="min-w-0">
-              <ul className="mt-4 grid divide-y" aria-labelledby={headingId}>
-                {group.map((a) => (
-                  <li key={a.id}>
-                    <Link
-                      href={accountsHref.account(a.id)}
-                      className={cn(
-                        "flex min-w-0 items-baseline justify-between gap-3 rounded-sm py-3 outline-none hover:bg-muted/40 focus-visible:ring-[3px] focus-visible:ring-ring/25",
-                        !a.isActive && "text-muted-foreground",
-                      )}
-                    >
-                      <span className="min-w-0">
-                        <span className="flex flex-wrap items-center gap-2 text-sm font-medium">
-                          <span className="text-muted-foreground tabular-nums">{a.code}</span>
-                          <span className="break-words">{a.name}</span>
-                          {!a.isActive && <OffBadge>Archived</OffBadge>}
-                          {a.isSystem && <StatusBadge tone="plain">System</StatusBadge>}
-                        </span>
-                        <span className="block text-[0.8125rem] break-words text-muted-foreground">
-                          {SUBTYPE_LABELS[a.subType]}
-                          {a.linkedTo ? ` · ${a.linkedTo.name}` : ""}
-                        </span>
-                      </span>
-                      <span
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          {ACCOUNT_TYPES.map((type) => {
+            const group = accounts.filter((a) => a.type === type);
+            if (group.length === 0) return null;
+            const headingId = `type-${type.toLowerCase()}-heading`;
+            return (
+              <Panel
+                key={type}
+                title={ACCOUNT_TYPE_LABELS[type]}
+                id={headingId}
+                className="min-w-0"
+              >
+                <ul className="mt-4 grid divide-y" aria-labelledby={headingId}>
+                  {group.map((a) => (
+                    <li key={a.id}>
+                      <Link
+                        href={accountsHref.account(a.id)}
                         className={cn(
-                          "text-sm whitespace-nowrap tabular-nums",
-                          isNegative(a.balance) && "text-destructive",
+                          "flex min-w-0 items-baseline justify-between gap-3 rounded-sm py-3 outline-none hover:bg-muted/40 focus-visible:ring-[3px] focus-visible:ring-ring/25",
+                          !a.isActive && "text-muted-foreground",
                         )}
                       >
-                        {signedMoney(a.balance, currency)}
-                      </span>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </Panel>
-          );
-        })}
-      </div>
-    </section>
+                        <span className="min-w-0">
+                          <span className="flex flex-wrap items-center gap-2 text-sm font-medium">
+                            <span className="text-muted-foreground tabular-nums">{a.code}</span>
+                            <span className="break-words">{a.name}</span>
+                            {!a.isActive && <OffBadge>Archived</OffBadge>}
+                            {a.isSystem && <StatusBadge tone="plain">System</StatusBadge>}
+                          </span>
+                          <span className="block text-[0.8125rem] break-words text-muted-foreground">
+                            {SUBTYPE_LABELS[a.subType]}
+                            {a.linkedTo ? ` · ${a.linkedTo.name}` : ""}
+                          </span>
+                        </span>
+                        <span
+                          className={cn(
+                            "text-sm whitespace-nowrap tabular-nums",
+                            isNegative(a.balance) && "text-destructive",
+                          )}
+                        >
+                          <Amount>{signedMoney(a.balance, currency)}</Amount>
+                        </span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </Panel>
+            );
+          })}
+        </div>
+      </section>
+    </PrivacyProvider>
   );
 }

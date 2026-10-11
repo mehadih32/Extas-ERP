@@ -7,7 +7,7 @@ import { accountsHref } from "@/components/accounts/labels";
 import { LedgerLines } from "@/components/accounts/ledger-view";
 import { AccountsNoAccess } from "@/components/accounts/no-access";
 import { PettyCashActions } from "@/components/accounts/petty-cash-actions";
-import { PrivacyProvider, PrivacyToggle } from "@/components/accounts/privacy";
+import { Amount, PrivacyProvider, PrivacyToggle } from "@/components/accounts/privacy";
 import { Stat } from "@/components/accounts/stat";
 import { SectionError } from "@/components/dashboard/section-error";
 import { EmptyState } from "@/components/products/bits";
@@ -100,10 +100,13 @@ export default async function PettyCashBoxPage({
             hint={
               b.shortOfFloat ? (
                 <>
-                  {m(b.shortOfFloat)} short of its usual {m(b.float!)}
+                  <Amount scope={SCOPE}>{m(b.shortOfFloat)}</Amount> short of its usual{" "}
+                  <Amount scope={SCOPE}>{m(b.float!)}</Amount>
                 </>
               ) : b.float ? (
-                `Usual amount ${m(b.float)}`
+                <>
+                  Usual amount <Amount scope={SCOPE}>{m(b.float)}</Amount>
+                </>
               ) : (
                 "Top-ups less costs"
               )

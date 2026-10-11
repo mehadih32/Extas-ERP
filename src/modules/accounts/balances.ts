@@ -79,6 +79,14 @@ export type LedgerRow = {
   isReversed: boolean;
 };
 
+/**
+ * The other accounts on a line's entry ("particulars"), for a query over
+ * "JournalLine" jl joined to "JournalEntry" je.
+ */
+export const counterAccountsSql = Prisma.sql`(SELECT string_agg(DISTINCT la2.name, ', ')
+              FROM "JournalLine" jl2 JOIN "LedgerAccount" la2 ON la2.id = jl2."accountId"
+              WHERE jl2."entryId" = je.id AND jl2."accountId" <> jl."accountId")`;
+
 /** Every line on one account in the range, oldest first (the body of a ledger or statement). */
 export async function ledgerRows(
   companyId: string,
@@ -89,9 +97,7 @@ export async function ledgerRows(
   const rows = await db.$queryRaw<LedgerRow[]>`
     SELECT je.id AS "entryId", je.date, je.number, je.description,
            je."sourceType"::text AS "sourceType", je."sourceId", jl.memo, jl.debit, jl.credit,
-           (SELECT string_agg(DISTINCT la2.name, ', ')
-              FROM "JournalLine" jl2 JOIN "LedgerAccount" la2 ON la2.id = jl2."accountId"
-              WHERE jl2."entryId" = je.id AND jl2."accountId" <> jl."accountId") AS "counterAccounts",
+           ${counterAccountsSql} AS "counterAccounts",
            (SELECT string_agg(DISTINCT p.name, ', ')
               FROM "JournalLine" jl3 JOIN "Party" p ON p.id = jl3."partyId"
               WHERE jl3."entryId" = je.id) AS "parties",

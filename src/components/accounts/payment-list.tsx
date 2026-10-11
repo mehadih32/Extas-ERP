@@ -18,6 +18,7 @@ import { listSupplierPaymentRowsAction } from "@/server/actions/accounts.actions
 import { OffBadge } from "./badges";
 import { accountsHref } from "./labels";
 import { paymentListQuery, type PaymentListView } from "./list-view";
+import { Amount } from "./privacy";
 
 const what = (p: SupplierPaymentRow) =>
   [
@@ -55,7 +56,7 @@ export function PaymentList({
             details={what(p)}
             footer={
               <span className={cn("font-medium", p.isVoid && "text-muted-foreground line-through")}>
-                {money(p.amount, currency)}
+                <Amount>{money(p.amount, currency)}</Amount>
               </span>
             }
           />
@@ -98,7 +99,7 @@ export function PaymentList({
                     p.isVoid && "text-muted-foreground line-through",
                   )}
                 >
-                  {money(p.amount, currency)}
+                  <Amount>{money(p.amount, currency)}</Amount>
                 </TableCell>
               </TableRow>
             ))}

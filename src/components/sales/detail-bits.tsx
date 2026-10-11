@@ -1,3 +1,4 @@
+import { Amount } from "@/components/accounts/privacy";
 import { Swatch } from "@/components/products/bits";
 import { cn } from "@/lib/utils";
 
@@ -100,8 +101,11 @@ export function Totals({
                 line.tone === "muted" && "text-muted-foreground",
               )}
             >
-              {line.minus && !isZero(line.amount) ? "− " : ""}
-              {money(line.amount, currency)}
+              {/* Hidden behind the eye on pages that hide amounts (the expense page). */}
+              <Amount>
+                {line.minus && !isZero(line.amount) ? "− " : ""}
+                {money(line.amount, currency)}
+              </Amount>
             </dd>
           </div>
         ))}

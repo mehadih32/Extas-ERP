@@ -17,6 +17,7 @@ import { listJournalRowsAction } from "@/server/actions/accounts.actions";
 import { OffBadge } from "./badges";
 import { accountsHref, SOURCE_LABELS } from "./labels";
 import { journalListQuery, type JournalListView } from "./list-view";
+import { Amount } from "./privacy";
 
 const accountsText = (e: JournalRow) =>
   e.accounts.join(", ") + (e.moreAccounts > 0 ? ` and ${e.moreAccounts} more` : "");
@@ -58,7 +59,9 @@ export function JournalList({
             footer={
               <>
                 <span className="text-muted-foreground">{SOURCE_LABELS[e.sourceType]}</span>
-                <span className="font-medium">{money(e.total, currency)}</span>
+                <span className="font-medium">
+                  <Amount>{money(e.total, currency)}</Amount>
+                </span>
               </>
             }
           />
@@ -94,7 +97,7 @@ export function JournalList({
                   {SOURCE_LABELS[e.sourceType]}
                 </TableCell>
                 <TableCell className="text-right font-medium whitespace-nowrap tabular-nums">
-                  {money(e.total, currency)}
+                  <Amount>{money(e.total, currency)}</Amount>
                 </TableCell>
               </TableRow>
             ))}

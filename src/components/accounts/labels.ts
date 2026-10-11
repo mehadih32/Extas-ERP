@@ -214,6 +214,8 @@ export function columnAmount(fixed: string, currency: string): string {
 
 export const accountsHref = {
   bank: (id: string) => `/accounts/cash-bank/${encodeURIComponent(id)}`,
+  reconcile: (id: string, show?: "ticked") =>
+    `/accounts/cash-bank/${encodeURIComponent(id)}/reconcile${show ? `?show=${show}` : ""}`,
   account: (id: string) => `/accounts/chart/${encodeURIComponent(id)}`,
   entry: (id: string) => `/accounts/journal/${encodeURIComponent(id)}`,
   payment: (id: string) => `/accounts/supplier-payments/${encodeURIComponent(id)}`,

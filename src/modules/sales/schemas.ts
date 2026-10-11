@@ -1,4 +1,5 @@
 import {
+  ChequeStatus,
   CustomFieldEntity,
   CustomFieldType,
   InvoiceStatus,
@@ -148,11 +149,23 @@ const matrixEntrySchema = z.object({
   quantities: z.record(id, z.number().int().min(0).max(1_000_000)),
 });
 
+/** The cheque's own details: its number, the bank it is drawn on and the day written on it. */
+const chequeDetails = {
+  chequeNo: z.string().trim().min(1).max(40),
+  bankName: optionalText(120),
+  /** Defaults to the day it is received. */
+  chequeDate: z.iso.date().optional(),
+};
+
 const checkoutPaymentSchema = z.object({
   amount: positiveMoney,
   method: z.enum(PaymentMethod),
   accountId: id.optional(),
   reference: optionalText(120),
+  /** A cheque (method CHEQUE): kept as pending; it reaches the bank when marked cleared. */
+  cheque: z.object(chequeDetails).optional(),
+  /** A photo of the proof, uploaded first (uploadPaymentProofAction). */
+  proofFileId: id.optional(),
 });
 
 const orderLines = {
@@ -188,8 +201,17 @@ export const createOrderSchema = z
     shipmentDate,
     ...orderLines,
     ...orderCharges,
-    /** Money taken at checkout (e.g. cash at the counter). */
+    /**
+     * Money taken at checkout (e.g. cash at the counter). With the invoice issued
+     * and a named buyer it may be more than the order: the extra pays the buyer's
+     * older dues oldest first when includePreviousDue is set, and the rest is kept
+     * as their advance balance.
+     */
     payment: checkoutPaymentSchema.optional(),
+    /** Prints what the buyer already owed on the invoice ("Total payable"); never revenue. */
+    includePreviousDue: z.boolean().optional(),
+    /** The buyer's credit (advance balance) to put against this order's invoice. */
+    useCredit: positiveMoney.optional(),
     /** Documents to create right away (blueprint "checkout" checkboxes). */
     documents: z
       .object({
@@ -205,6 +227,16 @@ export const createOrderSchema = z
     }
     if ((v.channel === "WHOLESALE" || v.channel === "B2B_PREORDER") && !v.partyId) {
       ctx.addIssue({ code: "custom", path: ["partyId"], message: "Choose the buyer" });
+    }
+    if (v.payment?.cheque && v.payment.method !== "CHEQUE") {
+      ctx.addIssue({ code: "custom", path: ["payment", "method"], message: "Choose Cheque" });
+    }
+    if ((v.includePreviousDue || v.useCredit) && !v.partyId) {
+      ctx.addIssue({
+        code: "custom",
+        path: [v.useCredit ? "useCredit" : "includePreviousDue"],
+        message: "Only a buyer with an account has dues and credit",
+      });
     }
   });
 
@@ -292,6 +324,8 @@ export const issueInvoiceSchema = z.object({
   issueDate: z.coerce.date().optional(),
   /** Defaults to the buyer's payment terms. */
   dueDate: z.coerce.date().nullish(),
+  /** Prints what the buyer already owed on it ("Previous due", "Total payable"). */
+  includePreviousDue: z.boolean().optional(),
 });
 export const voidInvoiceSchema = z.object({ reason: z.string().trim().min(5).max(500) });
 export const listInvoicesSchema = z.object({
@@ -353,6 +387,24 @@ export const receivePaymentSchema = z
     paymentDate: z.coerce.date().optional(),
     reference: optionalText(120),
     notes: optionalText(1000),
+    /** A photo of the proof, uploaded first (uploadPaymentProofAction). */
+    proofFileId: id.optional(),
+    /**
+     * On account: how the money pays the buyer's invoices, as amounts by order.
+     * What is left over stays on their account as advance balance.
+     */
+    allocations: z
+      .array(z.object({ orderId: id, amount: positiveMoney }))
+      .max(200)
+      .optional(),
+    /** On account, without allocations: pay the oldest dues first. */
+    oldestFirst: z.boolean().optional(),
+    /**
+     * On an invoiced order, money above its due: ADVANCE keeps the extra as the
+     * buyer's advance balance; OLDER_DUES pays their other dues oldest first and
+     * keeps the rest. Without it, more than the due is refused.
+     */
+    extra: z.enum(["ADVANCE", "OLDER_DUES"]).optional(),
   })
   .superRefine((v, ctx) => {
     const targets = [v.orderId, v.proformaId].filter(Boolean).length;
@@ -362,7 +414,76 @@ export const receivePaymentSchema = z
     if (targets === 0 && !v.partyId) {
       ctx.addIssue({ code: "custom", path: ["partyId"], message: "Choose a buyer or an order" });
     }
+    if ((v.allocations || v.oldestFirst) && targets > 0) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["allocations"],
+        message: "Only money on a buyer's account is spread over invoices",
+      });
+    }
+    if (v.extra && !v.orderId) {
+      ctx.addIssue({ code: "custom", path: ["extra"], message: "Only for a payment on an order" });
+    }
   });
+
+/** "Use credit" on an invoiced order. */
+export const applyCreditSchema = z.object({ amount: positiveMoney });
+
+// --- Cheques ------------------------------------------------------------------------
+/** A cheque received: for an order, a proforma or a buyer's account, like a payment. */
+export const recordChequeSchema = z
+  .object({
+    orderId: id.optional(),
+    proformaId: id.optional(),
+    partyId: id.optional(),
+    amount: positiveMoney,
+    ...chequeDetails,
+    /** The day it was handed over; defaults to now. */
+    receivedAt: z.coerce.date().optional(),
+    notes: optionalText(1000),
+    proofFileId: id.optional(),
+    /** On account: how it pays the buyer's invoices once cleared (as for a payment). */
+    allocations: z
+      .array(z.object({ orderId: id, amount: positiveMoney }))
+      .max(200)
+      .optional(),
+    oldestFirst: z.boolean().optional(),
+  })
+  .superRefine((v, ctx) => {
+    const targets = [v.orderId, v.proformaId].filter(Boolean).length;
+    if (targets > 1) {
+      ctx.addIssue({ code: "custom", path: ["orderId"], message: "Choose an order or a proforma" });
+    }
+    if (targets === 0 && !v.partyId) {
+      ctx.addIssue({ code: "custom", path: ["partyId"], message: "Choose a buyer or an order" });
+    }
+    if ((v.allocations || v.oldestFirst) && targets > 0) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["allocations"],
+        message: "Only a cheque on a buyer's account is spread over invoices",
+      });
+    }
+  });
+export const clearChequeSchema = z.object({
+  /** The day the bank credited it; defaults to today. */
+  clearedOn: z.iso.date().optional(),
+  /** The bank account it was deposited in; defaults to the main bank account. */
+  accountId: id.optional(),
+});
+export const bounceChequeSchema = z.object({
+  reason: z.string().trim().min(3).max(500),
+  bouncedOn: z.iso.date().optional(),
+});
+export const listChequesSchema = z.object({
+  status: z.enum(ChequeStatus).optional(),
+  partyId: id.optional(),
+  orderId: id.optional(),
+  cursor: z.string().optional(),
+  take,
+});
+/** A proof photo for a payment or a cheque, uploaded first (uploadPaymentProofAction). */
+export const attachProofSchema = z.object({ fileId: id });
 
 export const listPaymentsSchema = z.object({
   partyId: id.optional(),

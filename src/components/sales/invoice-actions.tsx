@@ -11,7 +11,8 @@ import type { TemplateChoice } from "@/modules/reports/screens.service";
 import type { InvoiceScreen } from "@/modules/sales/screens.service";
 import { voidInvoiceAction } from "@/server/actions/sales.actions";
 
-import { FormDialog, readReason, ReasonField, ReceivePaymentDialog } from "./dialogs";
+import { FormDialog, readReason, ReasonField } from "./dialogs";
+import { ReceivePaymentDialog } from "./receive-payment-dialog";
 
 type Open = "receive" | "void" | null;
 
@@ -93,6 +94,7 @@ export function InvoiceActions({
         <ReceivePaymentDialog
           target={{ orderId: inv.order.id, label: inv.number }}
           due={inv.due}
+          extraAllowed={inv.buyer.id !== null}
           currency={currency}
           today={today}
           onDone={(message) => {

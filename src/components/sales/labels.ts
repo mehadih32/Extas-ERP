@@ -1,4 +1,5 @@
 import type {
+  ChequeStatus,
   InvoiceStatus,
   PaymentMethod,
   ProformaStatus,
@@ -77,6 +78,12 @@ export const METHOD_LABELS: Record<PaymentMethod, string> = {
   CARD: "Card",
   COURIER_COD: "Courier cash on delivery",
   OTHER: "Other",
+};
+
+export const CHEQUE_STATUS_LABELS: Record<ChequeStatus, string> = {
+  PENDING: "Pending",
+  CLEARED: "Cleared",
+  BOUNCED: "Bounced",
 };
 
 export const REFUND_KIND_LABELS: Record<RefundKind, string> = {

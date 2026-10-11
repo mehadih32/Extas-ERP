@@ -215,7 +215,7 @@ export async function readStoredFile(asset: { storagePath: string }): Promise<Bu
  * A file for download. Allowed for its uploader and for roles that may see the
  * record it belongs to (a delivery's packing list, a supplier bill's scan, a
  * licence scan, a document template, an expense's receipt, a raw material
- * purchase's bill). Saved reports
+ * purchase's bill, a payment's or cheque's proof photo). Saved reports
  * download through the Report Builder, which checks their figures.
  */
 export async function getFileForDownload(ctx: CompanyContext, fileId: string) {
@@ -228,6 +228,8 @@ export async function getFileForDownload(ctx: CompanyContext, fileId: string) {
       templates: { select: { id: true }, take: 1 },
       expenses: { select: { id: true }, take: 1 },
       leaveRequests: { select: { employee: { select: { userId: true } } }, take: 1 },
+      paymentProofs: { select: { id: true }, take: 1 },
+      chequeProofs: { select: { id: true }, take: 1 },
     },
   });
   if (!asset) throw new AppError("NOT_FOUND", "File not found.");
@@ -250,7 +252,10 @@ export async function getFileForDownload(ctx: CompanyContext, fileId: string) {
       (ctx.can("hr.view") ||
         ctx.can("hr.manage") ||
         ctx.can("hr.payroll") ||
-        asset.leaveRequests[0]!.employee.userId === ctx.user.id));
+        asset.leaveRequests[0]!.employee.userId === ctx.user.id)) ||
+    // Proof photos of payments and cheques: the people who see sales money and the books.
+    (asset.paymentProofs.length + asset.chequeProofs.length > 0 &&
+      (ctx.can("sales.view") || ctx.can("accounts.view")));
   // A raw material purchase's bill also opens to the people who see material purchases.
   const materialBill =
     !allowed &&

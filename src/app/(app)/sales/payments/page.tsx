@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 
 import { SectionError } from "@/components/dashboard/section-error";
 import { EmptyState } from "@/components/products/bits";
+import { ChequeList } from "@/components/sales/cheque-list";
 import {
   isSalesFiltered,
   paymentListQuery,
@@ -9,20 +10,28 @@ import {
   salesListSearch,
 } from "@/components/sales/list-view";
 import { SalesNoAccess } from "@/components/sales/no-access";
+import { PaymentFigures } from "@/components/sales/overview-figures";
 import { PaymentList, RefundList } from "@/components/sales/payment-list";
 import { ReceiveOnAccount } from "@/components/sales/receive-on-account";
 import { SalesFilters } from "@/components/sales/sales-filters";
 import { localDay } from "@/lib/dates";
-import { getPaymentListAction, listRefundRowsAction } from "@/server/actions/sales.actions";
+import {
+  getPaymentDashboardAction,
+  getPaymentListAction,
+  listChequeRowsAction,
+  listRefundRowsAction,
+} from "@/server/actions/sales.actions";
 import { requireCompanyPage } from "@/server/pages/guards";
 
 export const metadata: Metadata = { title: "Payments" };
 
 /**
- * Money received from buyers and money refunded to them, newest first, for
- * sales.view like GET /api/sales/payments and /api/sales/refunds. Recording a
- * payment is offered only to Accounts (accounts.receipts.record), the
- * permission receivePaymentAction checks.
+ * The payments dashboard (today's collection, dues, cheques pending and
+ * bounced) over money received from buyers, cheques received and money
+ * refunded to them, newest first, for sales.view like GET /api/sales/payments,
+ * /api/sales/cheques and /api/sales/refunds. Recording a payment and clearing
+ * or bouncing a cheque are offered only to Accounts (accounts.receipts.record),
+ * the permission the actions check.
  */
 export default async function PaymentsPage({
   searchParams,
@@ -33,18 +42,25 @@ export default async function PaymentsPage({
   const view = paymentViewFrom(await searchParams);
   const currency = ctx.company.currency;
   const query = paymentListQuery(view);
-  const [received, refunds] = await Promise.all([
+  const today = localDay(new Date(), ctx.company.timezone);
+  const [dashboard, received, refunds, cheques] = await Promise.all([
+    getPaymentDashboardAction(),
     view.show === "received" ? getPaymentListAction(query) : null,
     view.show === "refunds" ? listRefundRowsAction(query) : null,
+    view.show === "cheques" ? listChequeRowsAction(query) : null,
   ]);
-  const result = received ?? refunds!;
+  const result = received ?? refunds ?? cheques!;
   if (!result.ok) {
     if (result.error.code === "FORBIDDEN") return <SalesNoAccess />;
     return (
       <SectionError title="Payments" heading="The payments could not load" error={result.error} />
     );
   }
-  const canReceive = received?.ok ? received.data.canReceive : false;
+  const canReceive = received?.ok
+    ? received.data.canReceive
+    : cheques?.ok
+      ? cheques.data.canManage
+      : false;
 
   return (
     <section aria-labelledby="payments-heading" className="grid gap-6">
@@ -54,16 +70,14 @@ export default async function PaymentsPage({
             Payments
           </h2>
           <p className="mt-1 max-w-xl text-sm leading-relaxed text-muted-foreground">
-            Money received from buyers, each with its money receipt, and money refunded to them.
+            Money received from buyers, each with its money receipt, cheques waiting to clear, and
+            money refunded to them.
           </p>
         </div>
-        {canReceive && (
-          <ReceiveOnAccount
-            currency={currency}
-            today={localDay(new Date(), ctx.company.timezone)}
-          />
-        )}
+        {canReceive && <ReceiveOnAccount currency={currency} today={today} />}
       </div>
+
+      {dashboard.ok && <PaymentFigures dashboard={dashboard.data} currency={currency} />}
 
       <SalesFilters view={view}>
         {received?.ok ? (
@@ -98,6 +112,24 @@ export default async function PaymentsPage({
               initial={refunds.data}
               view={view}
               currency={currency}
+            />
+          )
+        ) : cheques?.ok ? (
+          cheques.data.items.length === 0 ? (
+            <EmptyState
+              title={view.chequeStatus ? "No cheques with this status" : "No cheques yet"}
+            >
+              {view.chequeStatus
+                ? "Try another status, or show every cheque."
+                : "Cheques show here once Accounts records one. A cheque is put in the books only when it clears."}
+            </EmptyState>
+          ) : (
+            <ChequeList
+              key={salesListSearch(view)}
+              initial={cheques.data}
+              view={view}
+              currency={currency}
+              today={today}
             />
           )
         ) : null}

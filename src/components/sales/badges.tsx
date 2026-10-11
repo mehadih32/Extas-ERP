@@ -1,4 +1,5 @@
 import type {
+  ChequeStatus,
   InvoiceStatus,
   ProformaStatus,
   QuotationStatus,
@@ -10,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
 import {
+  CHEQUE_STATUS_LABELS,
   INVOICE_STATUS_LABELS,
   ORDER_STATUS_LABELS,
   PROFORMA_STATUS_LABELS,
@@ -119,6 +121,16 @@ export function InvoiceBadge({
 export function RefundBadge({ kind, voided = false }: { kind: RefundKind; voided?: boolean }) {
   if (voided) return <StatusBadge tone="closed">Void</StatusBadge>;
   return <StatusBadge tone="plain">{REFUND_KIND_LABELS[kind]}</StatusBadge>;
+}
+
+const CHEQUE_TONES: Record<ChequeStatus, Tone> = {
+  PENDING: "warn",
+  CLEARED: "done",
+  BOUNCED: "closed",
+};
+
+export function ChequeBadge({ status }: { status: ChequeStatus }) {
+  return <StatusBadge tone={CHEQUE_TONES[status]}>{CHEQUE_STATUS_LABELS[status]}</StatusBadge>;
 }
 
 /** Sold beyond the stock available, with the Force Override permission. */

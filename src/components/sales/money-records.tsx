@@ -9,10 +9,10 @@ import { FormAlert } from "@/components/forms/field";
 import { textOf } from "@/components/products/form-values";
 import { Button } from "@/components/ui/button";
 import { formatDay } from "@/lib/display";
-import type { PaymentMethod, RefundKind } from "@prisma/client";
+import type { ChequeStatus, PaymentMethod, RefundKind } from "@prisma/client";
 import { voidRefundAction } from "@/server/actions/sales.actions";
 
-import { RefundBadge } from "./badges";
+import { ChequeBadge, RefundBadge } from "./badges";
 import { Panel } from "./detail-bits";
 import { FormDialog, problem, ReasonField } from "./dialogs";
 import { METHOD_LABELS, money, salesHref } from "./labels";
@@ -38,19 +38,42 @@ type RefundLine = {
   can: { void: boolean };
 };
 
+type CreditLine = {
+  id: string;
+  amount: string;
+  usedOn: string;
+  payment: { id: string; number: string } | null;
+};
+
+type ChequeLine = {
+  id: string;
+  chequeNo: string;
+  bankName: string | null;
+  amount: string;
+  status: ChequeStatus;
+  chequeDate: string;
+  payment: { id: string; number: string } | null;
+};
+
 /**
- * The money receipts and refunds on an order or a proforma. Every receipt opens
- * its page; a refund prints its voucher, and Accounts can void one recorded by
- * mistake while the money is still on the record (refund.can.void).
+ * The money receipts and refunds on an order or a proforma, the buyer's credit
+ * used on it and the cheques taken for it. Every receipt opens its page; a
+ * refund prints its voucher, and Accounts can void one recorded by mistake
+ * while the money is still on the record (refund.can.void). A pending cheque
+ * is listed but not counted until it clears.
  */
 export function MoneyRecords({
   payments,
   refunds,
+  credits = [],
+  cheques = [],
   currency,
   empty,
 }: {
   payments: PaymentLine[];
   refunds: RefundLine[];
+  credits?: CreditLine[];
+  cheques?: ChequeLine[];
   currency: string;
   /** What shows when nothing was paid yet. */
   empty: string;
@@ -65,7 +88,10 @@ export function MoneyRecords({
           <FormAlert tone="success">{notice}</FormAlert>
         </div>
       )}
-      {payments.length === 0 && refunds.length === 0 ? (
+      {payments.length === 0 &&
+      refunds.length === 0 &&
+      credits.length === 0 &&
+      cheques.length === 0 ? (
         <p className="mt-4 text-sm text-muted-foreground">{empty}</p>
       ) : (
         <ul className="mt-4 grid grid-cols-1 divide-y">
@@ -89,6 +115,70 @@ export function MoneyRecords({
               </div>
               <p className="text-sm font-medium whitespace-nowrap tabular-nums">
                 {money(p.amount, currency)}
+              </p>
+            </li>
+          ))}
+          {credits.map((c) => (
+            <li
+              key={c.id}
+              className="flex min-w-0 items-start justify-between gap-4 py-3 first:pt-0"
+            >
+              <div className="min-w-0">
+                <p className="text-sm font-medium">Credit used</p>
+                <p className="text-[0.8125rem] text-muted-foreground">
+                  {formatDay(c.usedOn)} ·{" "}
+                  {c.payment ? (
+                    <Link
+                      href={salesHref.payment(c.payment.id)}
+                      className="text-primary underline-offset-4 hover:underline"
+                    >
+                      from {c.payment.number}
+                    </Link>
+                  ) : (
+                    "from the advance balance"
+                  )}
+                </p>
+              </div>
+              <p className="text-sm font-medium whitespace-nowrap tabular-nums">
+                {money(c.amount, currency)}
+              </p>
+            </li>
+          ))}
+          {cheques.map((c) => (
+            <li
+              key={c.id}
+              className="flex min-w-0 items-start justify-between gap-4 py-3 first:pt-0"
+            >
+              <div className="min-w-0">
+                <p className="flex flex-wrap items-center gap-2 text-sm font-medium">
+                  Cheque {c.chequeNo}
+                  <ChequeBadge status={c.status} />
+                </p>
+                <p className="text-[0.8125rem] text-muted-foreground">
+                  {[c.bankName, `dated ${formatDay(c.chequeDate)}`].filter(Boolean).join(" · ")}
+                  {c.payment && (
+                    <>
+                      {" · "}
+                      <Link
+                        href={salesHref.payment(c.payment.id)}
+                        className="text-primary underline-offset-4 hover:underline"
+                      >
+                        {c.payment.number}
+                      </Link>
+                    </>
+                  )}
+                </p>
+              </div>
+              <p
+                className={
+                  c.status === "BOUNCED"
+                    ? "text-sm whitespace-nowrap text-muted-foreground tabular-nums line-through"
+                    : c.status === "PENDING"
+                      ? "text-sm whitespace-nowrap text-muted-foreground tabular-nums"
+                      : "text-sm font-medium whitespace-nowrap tabular-nums"
+                }
+              >
+                {money(c.amount, currency)}
               </p>
             </li>
           ))}

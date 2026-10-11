@@ -6,12 +6,16 @@ import { revalidatePath } from "next/cache";
 import { getRequestMeta } from "@/lib/request-meta";
 import { runAction } from "@/lib/result";
 import { requireAnyPermission, requirePermission } from "@/modules/auth/context";
+import * as files from "@/modules/files/file.service";
+import * as cheques from "@/modules/sales/cheque.service";
+import * as credit from "@/modules/sales/credit.service";
 import * as customFields from "@/modules/sales/custom-fields.service";
 import * as documents from "@/modules/sales/documents.service";
 import * as orders from "@/modules/sales/order.service";
 import * as overview from "@/modules/sales/overview.service";
 import * as payments from "@/modules/sales/payment.service";
 import * as proformas from "@/modules/sales/proforma.service";
+import * as proofs from "@/modules/sales/proof.service";
 import * as quotations from "@/modules/sales/quotation.service";
 import * as refunds from "@/modules/sales/refund.service";
 import * as screens from "@/modules/sales/screens.service";
@@ -23,7 +27,9 @@ import * as summary from "@/modules/sales/summary.service";
  *   sales.quotation.manage    quotations and proforma conversion
  *   sales.order.create        orders, invoices, packing lists, challans
  *   accounts.receipts.record  money received (also needed for a payment at checkout);
- *                             a refund kept as the buyer's credit
+ *                             a refund kept as the buyer's credit; using a buyer's
+ *                             credit on an order; cheques (record, clear, bounce);
+ *                             proof photos
  *   accounts.payments.record  a refund paid back to the buyer
  *   accounts.manage           a refund kept as a cancellation charge
  *   sales.invoice.edit        void invoices (cancelling an invoiced order needs it too)
@@ -271,10 +277,11 @@ export const listChallansAction = async (query: {
 }) => runAction(async () => documents.listChallans(await view(), query));
 
 // --- Payments & summary --------------------------------------------------------
+const receipts = () => requirePermission("accounts.receipts.record");
 export const receivePaymentAction = async (input: unknown) =>
   change(async () => {
-    const { payment, productionProject } = await payments.receivePayment(
-      await requirePermission("accounts.receipts.record"),
+    const { payment, productionProject, allocated, advanceKept } = await payments.receivePayment(
+      await receipts(),
       input,
       await getRequestMeta(),
     );
@@ -283,8 +290,89 @@ export const receivePaymentAction = async (input: unknown) =>
       productionProject: productionProject
         ? { id: productionProject.id, code: productionProject.code }
         : null,
+      /** Invoices the money paid (on account), and what was kept as advance balance. */
+      allocated,
+      advanceKept,
     };
   });
+/** A buyer's previous due and unused credit (people who see buyers' balances, or Accounts). */
+export const getBuyerMoneyAction = async (partyId: string) =>
+  runAction(async () =>
+    credit.getBuyerMoney(
+      await requireAnyPermission("parties.view", "accounts.receipts.record"),
+      partyId,
+    ),
+  );
+/** A buyer's unpaid invoices, oldest first, for the payment window's allocation grid. */
+export const getBuyerOpenDuesAction = async (partyId: string) =>
+  runAction(async () => credit.getBuyerOpenDues(await receipts(), partyId));
+/** "Use credit": the buyer's credit (advance balance) against an invoiced order. */
+export const applyCreditAction = async (orderId: string, input: unknown) =>
+  change(async () => {
+    const used = await credit.applyCredit(await receipts(), orderId, input, await getRequestMeta());
+    return {
+      orderId: used.orderId,
+      number: used.number,
+      amount: used.amount.toFixed(2),
+      creditLeft: used.creditLeft.toFixed(2),
+    };
+  });
+
+// --- Cheques & proofs ----------------------------------------------------------
+export const recordChequeAction = async (input: unknown) =>
+  change(async () => {
+    const cheque = await cheques.recordCheque(await receipts(), input, await getRequestMeta());
+    return { id: cheque.id, chequeNo: cheque.chequeNo };
+  });
+export const clearChequeAction = async (chequeId: string, input: unknown) =>
+  change(async () => {
+    const cleared = await cheques.clearCheque(
+      await receipts(),
+      chequeId,
+      input,
+      await getRequestMeta(),
+    );
+    return {
+      chequeId: cleared.chequeId,
+      payment: ref(cleared.payment),
+      /** It went on the buyer's account (the order or proforma no longer took it all). */
+      onAccount: !cleared.payment.orderId && !cleared.payment.proformaId,
+      allocated: cleared.allocated,
+      advanceKept: cleared.advanceKept,
+    };
+  });
+export const bounceChequeAction = async (chequeId: string, input: unknown) =>
+  change(async () => {
+    const cheque = await cheques.bounceCheque(
+      await receipts(),
+      chequeId,
+      input,
+      await getRequestMeta(),
+    );
+    return { id: cheque.id, chequeNo: cheque.chequeNo };
+  });
+/** FormData with a `file` field: a proof photo already made small in the browser (512 KB max). */
+export const uploadPaymentProofAction = async (form: FormData) =>
+  runAction(async () => {
+    const asset = await proofs.storePaymentProof(
+      await receipts(),
+      await files.fileFromForm(form),
+      await getRequestMeta(),
+    );
+    return { id: asset.id, fileName: asset.fileName, sizeBytes: asset.sizeBytes };
+  });
+export const attachPaymentProofAction = async (paymentId: string, input: unknown) =>
+  change(async () =>
+    proofs.attachPaymentProof(await receipts(), paymentId, input, await getRequestMeta()),
+  );
+export const attachChequeProofAction = async (chequeId: string, input: unknown) =>
+  change(async () =>
+    proofs.attachChequeProof(await receipts(), chequeId, input, await getRequestMeta()),
+  );
+export const getPaymentDashboardAction = async () =>
+  runAction(async () => screens.getPaymentDashboard(await view()));
+export const listChequeRowsAction = async (query: unknown) =>
+  runAction(async () => screens.listChequeRows(await view(), query));
 export const listPaymentsAction = async (query: unknown) =>
   runAction(async () => payments.listPayments(await view(), query));
 export const getPaymentReceiptAction = async (paymentId: string) =>

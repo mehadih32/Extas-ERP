@@ -3,6 +3,7 @@ import { recordAudit } from "@/modules/audit/audit.service";
 import { purgeExpiredSessions } from "@/modules/auth/session.service";
 import { parseCron, previousRun } from "@/modules/backups/cron";
 import { refreshStatusesForCompany } from "@/modules/parties/dormant.service";
+import { purgeUnusedProofs } from "@/modules/sales/proof.service";
 
 /*
  * The nightly housekeeping clock. Started once per server process
@@ -11,7 +12,9 @@ import { refreshStatusesForCompany } from "@/modules/parties/dormant.service";
  *   - in every company, buyers with no business for the company's "dormant
  *     after" period become Dormant, and settling accounts whose dues are cleared
  *     close (the same refresh as POST /api/parties/refresh-statuses);
- *   - expired sign-in sessions are deleted.
+ *   - expired sign-in sessions are deleted;
+ *   - payment proof photos uploaded more than a day ago that no payment or
+ *     cheque uses (the payment was never recorded) are deleted from disk.
  * Every step is safe to repeat, so a run after a restart changes nothing new.
  */
 
@@ -24,7 +27,7 @@ let running = false;
 /** The scheduled time this process last ran for. */
 let lastDue: number | null = null;
 
-/** Refreshes every company's buyer statuses and removes expired sessions. */
+/** Refreshes every company's buyer statuses and removes expired sessions and unused proofs. */
 export async function runHousekeeping(now: Date = new Date()) {
   const companies = await prisma.company.findMany({
     select: { id: true, dormantAfterMonths: true },
@@ -51,7 +54,8 @@ export async function runHousekeeping(now: Date = new Date()) {
     closed += result.closed.length;
   }
   const sessionsRemoved = await purgeExpiredSessions();
-  return { companies: companies.length, markedDormant, closed, sessionsRemoved };
+  const proofsRemoved = await purgeUnusedProofs(now);
+  return { companies: companies.length, markedDormant, closed, sessionsRemoved, proofsRemoved };
 }
 
 /** Runs the housekeeping when a scheduled time has passed that this process has not run for. */

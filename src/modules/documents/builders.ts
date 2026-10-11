@@ -294,6 +294,33 @@ function paymentsTable(
   ];
 }
 
+/** The buyer's credit (advance balance) put against an invoice. */
+function creditsTable(
+  credits: Array<{ amount: Prisma.Decimal; date: Date; paymentNumber: string | null }>,
+  currency: string,
+  timeZone: string,
+): Block[] {
+  if (credits.length === 0) return [];
+  return [
+    {
+      kind: "table",
+      title: "Credit used",
+      columns: [
+        { label: "Date", weight: 1.2 },
+        { label: "From", weight: 3 },
+        { label: `Amount (${currency})`, align: "right", weight: 1.4 },
+      ],
+      rows: credits.map((c) => ({
+        cells: [
+          formatInstantDay(c.date, timeZone),
+          c.paymentNumber ? `Payment ${c.paymentNumber}` : "Advance balance",
+          money(c.amount, currency),
+        ],
+      })),
+    },
+  ];
+}
+
 /** How a refund was settled, as printed. */
 const REFUND_KINDS: Record<RefundKind, string> = {
   CASH: "Paid back",
@@ -521,15 +548,35 @@ export async function invoiceDocument(
       : []),
     ...(isPositive(inv.tax) ? [{ label: "VAT / tax", value: money(inv.tax, currency) }] : []),
     { label: `Total (${currency})`, value: money(inv.total, currency), strong: true },
-    ...(isPositive(inv.paidAmount)
+    ...(inv.previous
       ? [
+          // The buyer's earlier dues, shown on the bill; not part of this sale.
+          { label: "Previous due", value: money(inv.previous.previousDue, currency) },
           {
-            label: inv.refunds.length > 0 ? "Paid, less refunds" : "Paid",
-            value: money(inv.paidAmount, currency),
+            label: "Total payable",
+            value: money(inv.previous.totalPayable, currency),
+            strong: true,
+          },
+          ...(isPositive(inv.previous.paidToward)
+            ? [{ label: "Paid", value: money(inv.previous.paidToward, currency) }]
+            : []),
+          {
+            label: "Balance due",
+            value: money(inv.previous.balanceDue, currency),
+            strong: true,
           },
         ]
-      : []),
-    { label: "Due", value: money(inv.dueAmount, currency), strong: true },
+      : [
+          ...(isPositive(inv.paidAmount)
+            ? [
+                {
+                  label: inv.refunds.length > 0 ? "Paid, less refunds" : "Paid",
+                  value: money(inv.paidAmount, currency),
+                },
+              ]
+            : []),
+          { label: "Due", value: money(inv.dueAmount, currency), strong: true },
+        ]),
   ];
   const model = base(ctx, "COMMERCIAL_INVOICE", {
     title: "Commercial Invoice",
@@ -574,6 +621,7 @@ export async function invoiceDocument(
       },
       { kind: "totals", rows: totals, words: amountInWords(inv.total, currency) },
       ...paymentsTable(inv.payments, currency, tz),
+      ...creditsTable(inv.credits, currency, tz),
       ...refundsTable(inv.refunds, currency, tz),
     ],
     signatures: ["Customer signature", "Authorised signature"],
@@ -872,6 +920,24 @@ export async function receiptDocument(
     });
   }
 
+  // Money on account that paid invoices: one line per invoice, and what is kept as advance.
+  const paid = r.allocations.filter((a) => a.releasedAt === null);
+  const kept = paid.reduce((left, a) => left.minus(a.amount), r.amount);
+  const particularRows =
+    !order && !proforma && paid.length > 0
+      ? [
+          ...paid.map((a) => ({
+            cells: [
+              `Payment against invoice ${a.invoice.number} (order ${a.order.number})`,
+              money(a.amount, currency),
+            ],
+          })),
+          ...(isPositive(kept)
+            ? [{ cells: ["Kept as advance balance on account", money(kept, currency)] }]
+            : []),
+        ]
+      : [{ cells: [particulars, money(r.amount, currency)] }];
+
   const reference = r.reference?.trim();
   const model = base(ctx, "PAYMENT_RECEIPT", {
     title: "Money Receipt",
@@ -900,7 +966,7 @@ export async function receiptDocument(
           { label: "Particulars", weight: 5 },
           { label: `Amount (${currency})`, align: "right", weight: 1.6 },
         ],
-        rows: [{ cells: [particulars, money(r.amount, currency)] }],
+        rows: particularRows,
       },
       {
         kind: "totals",
@@ -909,14 +975,21 @@ export async function receiptDocument(
       },
       ...position,
       ...textBlock("Notes", r.notes),
-      ...(r.method === "CHEQUE"
+      ...(r.cheque
         ? [
             {
               kind: "note" as const,
-              text: "Paid by cheque: this receipt holds once the cheque is cleared.",
+              text: `Paid by cheque ${r.cheque.chequeNo}${r.cheque.bankName ? ` (${r.cheque.bankName})` : ""}, cleared by the bank.`,
             },
           ]
-        : []),
+        : r.method === "CHEQUE"
+          ? [
+              {
+                kind: "note" as const,
+                text: "Paid by cheque: this receipt holds once the cheque is cleared.",
+              },
+            ]
+          : []),
     ],
     signatures: ["Received by", "Authorised signature"],
   });

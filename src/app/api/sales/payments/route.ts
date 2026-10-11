@@ -14,7 +14,10 @@ export const GET = apiRoute(async (request) =>
 );
 
 /**
- * POST /api/sales/payments — { orderId | proformaId | partyId, amount, method, accountId?, reference? }.
+ * POST /api/sales/payments — { orderId | proformaId | partyId, amount, method, accountId?, reference?,
+ * proofFileId? }. On account, allocations [{ orderId, amount }] or oldestFirst pay the buyer's
+ * invoices and the rest stays as advance balance; on an invoiced order, extra ADVANCE |
+ * OLDER_DUES takes money above its due onto the buyer's account.
  * Accounts / Super Admin only (accounts.receipts.record).
  */
 export const POST = apiRoute(

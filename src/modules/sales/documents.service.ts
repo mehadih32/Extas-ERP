@@ -33,6 +33,7 @@ import {
   pickItemsSchema,
   voidInvoiceSchema,
 } from "@/modules/sales/schemas";
+import { creditPosition, releaseAllocationsTx } from "@/modules/sales/credit.service";
 import { deliverStock } from "@/modules/sales/stock-ops";
 import { ZERO } from "@/modules/sales/totals";
 
@@ -95,9 +96,25 @@ export async function issueInvoiceTx(
         ? new Date(issueDate.getTime() + terms * 86_400_000)
         : null;
   const number = await nextDocumentNumber(tx, ctx.company.id, "COMMERCIAL_INVOICE");
+  // What the buyer owed before this bill, read before the bill is posted. Shown only.
+  let previousDue: Prisma.Decimal | null = null;
+  let previousCredit: Prisma.Decimal | null = null;
+  if (input.includePreviousDue) {
+    if (!ctx.can("parties.view") && !ctx.can("accounts.receipts.record")) {
+      throw new AppError("FORBIDDEN", "You may not see buyers' balances to include them.");
+    }
+    if (!order.partyId) {
+      throw new AppError("VALIDATION", "A walk-in customer has no earlier dues to include.");
+    }
+    const position = await creditPosition(tx, ctx.company.id, order.partyId);
+    previousDue = position.previousDue.gt(0) ? position.previousDue : null;
+    previousCredit = previousDue && position.credit.gt(0) ? position.credit : null;
+  }
   const data = {
     number,
     partyId: order.partyId,
+    previousDue,
+    previousCredit,
     issueDate,
     dueDate,
     total: order.total,
@@ -198,8 +215,14 @@ export async function voidInvoiceTx(
       postedById: ctx.user.id,
     });
   }
-  // Money already received is an advance again until the order is re-invoiced.
+  // Money already received is an advance again until the order is re-invoiced,
+  // and the buyer's credit used on it goes back to their account.
   await reclassifyPaymentsAsAdvance(tx, ctx, invoice.orderId);
+  const released = await releaseAllocationsTx(
+    tx,
+    invoice.orderId,
+    `Invoice ${invoice.number} voided`,
+  );
   await refreshOrderPayments(tx, invoice.orderId);
   await auditInCompany(
     ctx,
@@ -208,7 +231,9 @@ export async function voidInvoiceTx(
       action: "INVOICE_EDIT",
       entityType: "Invoice",
       entityId: invoice.id,
-      summary: `Voided invoice ${invoice.number} (${invoice.total.toFixed(2)}): ${reason}`,
+      summary: `Voided invoice ${invoice.number} (${invoice.total.toFixed(2)}): ${reason}${
+        released.gt(0) ? `; ${released.toFixed(2)} of credit back on the buyer's account` : ""
+      }`,
     },
     tx,
   );
@@ -530,6 +555,58 @@ export async function getInvoiceDocument(ctx: CompanyContext, invoiceId: string)
     orderBy: [{ refundDate: "asc" }, { id: "asc" }],
     select: { number: true, refundDate: true, amount: true, kind: true, method: true },
   });
+  // The buyer's credit put against this invoice (counted in its paid amount).
+  const credits = await ctx.db.creditAllocation.findMany({
+    where: { invoiceId: invoice.id, releasedAt: null },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    select: {
+      amount: true,
+      createdAt: true,
+      payment: { select: { number: true, invoiceId: true, createdAt: true } },
+    },
+  });
+  // With the previous due on the bill: what the money taken with it paid of the older dues.
+  let previous: {
+    previousDue: Prisma.Decimal;
+    totalPayable: Prisma.Decimal;
+    paidTowardPrevious: Prisma.Decimal;
+    paidToward: Prisma.Decimal;
+    balanceDue: Prisma.Decimal;
+  } | null = null;
+  if (invoice.previousDue && invoice.status !== "VOID") {
+    const agg = await ctx.db.creditAllocation.aggregate({
+      where: {
+        releasedAt: null,
+        orderId: { not: invoice.orderId },
+        payment: { invoiceId: invoice.id },
+      },
+      _sum: { amount: true },
+    });
+    const paidTowardPrevious = agg._sum.amount ?? ZERO;
+    // Credit the buyer already had was taken off the previous due; used on this bill it is
+    // shown as paid, so it goes back on the previous due line (else counted twice). Money
+    // received with or after this bill is new and stays plain "paid".
+    const creditUsed = credits
+      .filter(
+        (c) =>
+          !c.payment ||
+          (c.payment.invoiceId !== invoice.id && c.payment.createdAt <= invoice.createdAt),
+      )
+      .reduce((sum, c) => sum.plus(c.amount), ZERO);
+    const hadCredit = invoice.previousCredit ?? ZERO;
+    const previousDue = invoice.previousDue.plus(creditUsed.lt(hadCredit) ? creditUsed : hadCredit);
+    const totalPayable = invoice.total.plus(previousDue);
+    const paidToward = invoice.paidAmount.plus(paidTowardPrevious);
+    previous = {
+      previousDue,
+      totalPayable,
+      paidTowardPrevious,
+      paidToward,
+      balanceDue: totalPayable.minus(paidToward).isNegative()
+        ? ZERO
+        : totalPayable.minus(paidToward),
+    };
+  }
   const { order } = invoice;
   return {
     id: invoice.id,
@@ -562,6 +639,13 @@ export async function getInvoiceDocument(ctx: CompanyContext, invoiceId: string)
     dueAmount: invoice.dueAmount,
     payments,
     refunds,
+    credits: credits.map((c) => ({
+      amount: c.amount,
+      date: c.createdAt,
+      paymentNumber: c.payment?.number ?? null,
+    })),
+    /** Set when the invoice carries the buyer's previous due ("Total payable"). */
+    previous,
     letterhead: await letterhead(ctx),
   };
 }

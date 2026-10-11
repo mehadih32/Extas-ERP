@@ -114,8 +114,22 @@ export default async function InvoicePage({ params }: { params: Promise<{ invoic
                 { label: "Delivery charge", amount: inv.shippingCharge, optional: true },
                 { label: "Tax / VAT", amount: inv.tax, optional: true },
                 { label: "Total", amount: inv.total, strong: true },
-                { label: "Paid", amount: inv.paid, tone: "muted" },
-                { label: "Due", amount: inv.due, strong: true, tone: "due" },
+                ...(inv.previous
+                  ? [
+                      { label: "Previous due", amount: inv.previous.previousDue },
+                      { label: "Total payable", amount: inv.previous.totalPayable, strong: true },
+                      { label: "Paid", amount: inv.previous.paid, tone: "muted" as const },
+                      {
+                        label: "Balance due",
+                        amount: inv.previous.balanceDue,
+                        strong: true,
+                        tone: "due" as const,
+                      },
+                    ]
+                  : [
+                      { label: "Paid", amount: inv.paid, tone: "muted" as const },
+                      { label: "Due", amount: inv.due, strong: true, tone: "due" as const },
+                    ]),
               ]}
             />
           </Panel>
@@ -153,7 +167,7 @@ export default async function InvoicePage({ params }: { params: Promise<{ invoic
             </dl>
           </Panel>
           <Panel title="Payments" id="payments-heading">
-            {inv.payments.length === 0 && inv.refunds.length === 0 ? (
+            {inv.payments.length === 0 && inv.refunds.length === 0 && inv.credits.length === 0 ? (
               <p className="mt-4 text-sm text-muted-foreground">Nothing was paid on it yet.</p>
             ) : (
               <ul className="mt-4 grid grid-cols-1 divide-y">
@@ -172,6 +186,25 @@ export default async function InvoicePage({ params }: { params: Promise<{ invoic
                     </div>
                     <p className="text-sm font-medium whitespace-nowrap tabular-nums">
                       {money(p.amount, currency)}
+                    </p>
+                  </li>
+                ))}
+                {inv.credits.map((c) => (
+                  <li
+                    key={c.key}
+                    className="flex min-w-0 items-start justify-between gap-4 py-2.5 first:pt-0"
+                  >
+                    <div className="min-w-0 text-sm">
+                      <p className="font-medium">Credit used</p>
+                      <p className="text-[0.8125rem] text-muted-foreground">
+                        {[
+                          formatDay(c.usedOn),
+                          c.paymentNumber ? `from ${c.paymentNumber}` : "advance balance",
+                        ].join(" · ")}
+                      </p>
+                    </div>
+                    <p className="text-sm font-medium whitespace-nowrap tabular-nums">
+                      {money(c.amount, currency)}
                     </p>
                   </li>
                 ))}

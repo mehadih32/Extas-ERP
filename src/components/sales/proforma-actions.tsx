@@ -29,11 +29,11 @@ import {
   FormDialog,
   readReason,
   ReasonField,
-  ReceivePaymentDialog,
   RefundDialog,
   readSettle,
   SettleFields,
 } from "./dialogs";
+import { ReceivePaymentDialog } from "./receive-payment-dialog";
 import { isZero, money } from "./labels";
 
 type Open = "receive" | "refund" | "cancel" | null;

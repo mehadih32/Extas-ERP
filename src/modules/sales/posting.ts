@@ -14,6 +14,7 @@ import { invoiceStatusFor, money, ZERO } from "@/modules/sales/totals";
  *   Payment after the invoice   Dr Cash/Bank/Wallet   Cr Receivable (buyer)
  *   Delivery                    Dr Cost of Goods Sold Cr Inventory (at average cost)
  *   Refund (see refund.service) Dr Customer Advance   Cr Cash / Receivable / Other Income
+ *   Credit used on an invoice   nothing (credit.service: money and invoice share the Receivable)
  *
  * What an order or proforma holds is what was received on it less its refunds
  * that are not void: that is its paid amount. The receivable and advance lines
@@ -31,13 +32,19 @@ async function refundedOn(db: Db, where: { orderId: string } | { proformaId: str
   return money(agg._sum.amount ?? 0);
 }
 
-/** Money held on an order: received on it less its refunds that are not void. */
+/**
+ * Money held on an order: received on it less its refunds that are not void,
+ * plus the buyer's credit put against its invoice (credit.service.ts; released
+ * when the invoice is voided, so an order without a live invoice holds none).
+ */
 export async function heldOnOrder(db: Db, orderId: string) {
-  const agg = await db.payment.aggregate({
-    where: { orderId, direction: "RECEIVED" },
-    _sum: { amount: true },
-  });
-  return money(agg._sum.amount ?? 0).minus(await refundedOn(db, { orderId }));
+  const [agg, credit] = await Promise.all([
+    db.payment.aggregate({ where: { orderId, direction: "RECEIVED" }, _sum: { amount: true } }),
+    db.creditAllocation.aggregate({ where: { orderId, releasedAt: null }, _sum: { amount: true } }),
+  ]);
+  return money(agg._sum.amount ?? 0)
+    .plus(money(credit._sum.amount ?? 0))
+    .minus(await refundedOn(db, { orderId }));
 }
 
 /** Money held on a proforma: advances received on it less its refunds that are not void. */

@@ -11,18 +11,21 @@ import { cn } from "@/lib/utils";
 
 import {
   CHANNEL_LABELS,
+  CHEQUE_STATUS_LABELS,
   INVOICE_STATUS_LABELS,
   ORDER_STATUS_LABELS,
   PROFORMA_STATUS_LABELS,
   QUOTATION_STATUS_LABELS,
 } from "./labels";
 import {
+  CHEQUE_FILTERS,
   clearedView,
   INVOICE_FILTERS,
   isSalesFiltered,
   ORDER_CHANNEL_FILTERS,
   ORDER_STATUSES,
   PROFORMA_STATUSES,
+  type PaymentListView,
   QUOTATION_STATUSES,
   type SalesListView,
   salesListSearch,
@@ -126,21 +129,22 @@ export function SalesFilters({
           <div
             role="group"
             aria-label="Show"
-            className="inline-grid w-full grid-cols-2 rounded-md border bg-card p-1 sm:w-auto"
+            className="inline-grid w-full grid-cols-[auto_1fr_1fr] rounded-md border bg-card p-1 sm:w-auto sm:grid-cols-3"
           >
             {(
               [
                 ["received", "Money received"],
                 ["refunds", "Refunds"],
+                ["cheques", "Cheques"],
               ] as const
             ).map(([value, label]) => (
               <button
                 key={value}
                 type="button"
                 aria-pressed={shown.show === value}
-                onClick={() => show({ ...shown, show: value })}
+                onClick={() => show({ list: "payments", show: value })}
                 className={cn(
-                  "h-9 cursor-pointer rounded-sm px-4 text-sm transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/25",
+                  "h-9 cursor-pointer rounded-sm px-3 text-sm whitespace-nowrap transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/25 sm:px-4",
                   shown.show === value
                     ? "bg-primary text-primary-foreground"
                     : "text-muted-foreground hover:text-foreground",
@@ -199,7 +203,27 @@ export function SalesFilters({
             })}
           </div>
         )}
-        {shown.list === "payments" && (
+        {shown.list === "payments" && shown.show === "cheques" && (
+          <NativeSelect
+            aria-label="Cheque status"
+            value={shown.chequeStatus ?? ""}
+            onChange={(e) =>
+              show({
+                ...shown,
+                chequeStatus: (e.target.value || undefined) as PaymentListView["chequeStatus"],
+              })
+            }
+            containerClassName="sm:w-44"
+          >
+            <option value="">Every cheque</option>
+            {CHEQUE_FILTERS.map((status) => (
+              <option key={status} value={status}>
+                {CHEQUE_STATUS_LABELS[status]}
+              </option>
+            ))}
+          </NativeSelect>
+        )}
+        {shown.list === "payments" && shown.show !== "cheques" && (
           <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
             <label className="grid gap-1 text-[0.8125rem] text-muted-foreground sm:flex sm:items-center sm:gap-2">
               From

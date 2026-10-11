@@ -108,7 +108,10 @@ describe("secrets and signed links", () => {
     const [body, signature] = token.split(".") as [string, string];
     const forged = Buffer.from(JSON.stringify({ u: "user_2", p: "drive-backup", exp: 9e9 }));
     expect(verifyPayload(`${forged.toString("base64url")}.${signature}`)).toBeNull();
-    expect(verifyPayload(`${body}.${signature.slice(0, -2)}xx`)).toBeNull();
+    // The first character carries 6 whole bits, so changing it always changes the signature
+    // (the last one has spare bits, and "…xx" was sometimes the same signature).
+    const altered = `${signature[0] === "A" ? "B" : "A"}${signature.slice(1)}`;
+    expect(verifyPayload(`${body}.${altered}`)).toBeNull();
     expect(verifyPayload(signPayload({ u: "user_1" }, -5))).toBeNull();
     expect(verifyPayload("not-a-token")).toBeNull();
   });

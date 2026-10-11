@@ -31,6 +31,7 @@ import {
   checkBuyerCreditAction,
   convertProformaToOrderAction,
   createOrderAction,
+  getBuyerMoneyAction,
   getSaleMatrixAction,
   updateOrderAction,
 } from "@/server/actions/sales.actions";
@@ -45,6 +46,8 @@ import {
 } from "./labels";
 import { type Block, blockPieces, fixed2, StyleCard, wholeNumber } from "./order-style-card";
 import { BuyerPicker, StylePicker } from "./pickers";
+import { ProofDrop, type ReadyProof, uploadProof } from "./proof";
+import { ChequeFields } from "./receive-payment-dialog";
 
 type Buyer = { id: string; code: string; name: string };
 
@@ -52,6 +55,14 @@ type Buyer = { id: string; code: string; name: string };
 type Credit = { state: "idle" | "checking" | "ok" } | { state: "refused"; message: string };
 /** The server's answer for one buyer and amount. */
 type CreditAnswer = { key: string } & Credit;
+/** What the chosen buyer already owes and their unused credit, for checkout. */
+type BuyerMoney = {
+  key: string;
+  previousDue: number;
+  credit: number;
+  /** Owed but on no invoice (an opening balance): money above the bill pays it first. */
+  earlier: number;
+};
 
 const LOAD_FAILED = "The style could not load. Check the connection and try again.";
 
@@ -280,6 +291,11 @@ export function OrderForm({ form: data }: { form: OrderFormData }) {
   });
   const [takePayment, setTakePayment] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("CASH");
+  const [proof, setProof] = useState<ReadyProof | null>(null);
+  const [includePrevious, setIncludePrevious] = useState(false);
+  const [creditText, setCreditText] = useState("");
+  const [buyerMoney, setBuyerMoney] = useState<BuyerMoney>();
   const [forceAllow, setForceAllow] = useState(false);
   const [serverShort, setServerShort] = useState<Record<string, string>>({});
   const [creditAnswer, setCreditAnswer] = useState<CreditAnswer>();
@@ -386,6 +402,68 @@ export function OrderForm({ form: data }: { form: OrderFormData }) {
   const total = Math.max(beforeDiscount - charge(discount), 0);
   const paidBefore = editing ? Number(editing.paid) : proforma ? Number(proforma.advancePaid) : 0;
   const payNow = takePayment ? charge(paymentAmount) : 0;
+  const isCheque = takePayment && paymentMethod === "CHEQUE";
+
+  // The buyer's previous due and credit (advance balance), read once on the last step
+  // when the invoice is issued with the order.
+  const moneyKey =
+    !locked &&
+    step === LAST &&
+    buyer &&
+    documents.invoice &&
+    (data.can.previousDue || data.can.useCredit)
+      ? buyer.id
+      : "";
+  const owed = moneyKey && buyerMoney?.key === moneyKey ? buyerMoney : null;
+  useEffect(() => {
+    if (!moneyKey) return;
+    let live = true;
+    void getBuyerMoneyAction(moneyKey)
+      .then((result) => {
+        if (!live) return;
+        setBuyerMoney(
+          result.ok
+            ? {
+                key: moneyKey,
+                previousDue: Number(result.data.previousDue),
+                credit: Number(result.data.credit),
+                earlier: Math.max(
+                  Number(result.data.previousDue) - Number(result.data.openDues),
+                  0,
+                ),
+              }
+            : { key: moneyKey, previousDue: 0, credit: 0, earlier: 0 },
+        );
+      })
+      .catch(() => {
+        // Without the figures checkout works as before: no previous due, no credit.
+        if (live) setBuyerMoney({ key: moneyKey, previousDue: 0, credit: 0, earlier: 0 });
+      });
+    return () => {
+      live = false;
+    };
+  }, [moneyKey]);
+  const canIncludePrevious = Boolean(data.can.previousDue && owed && owed.previousDue > 0);
+  const withPrevious = canIncludePrevious && includePrevious;
+  const canUseCredit = Boolean(data.can.useCredit && owed && owed.credit > 0);
+  const creditUse = canUseCredit ? charge(creditText) : 0;
+  /** Left to pay on this order after the credit used. */
+  const afterCredit = Math.max(total - creditUse, 0);
+  // Above the order the money goes on the buyer's account: only with the invoice and a buyer,
+  // and never a cheque (it is not in the books until it clears).
+  const extraAllowed = !locked && documents.invoice && Boolean(buyer) && !isCheque;
+  const extra = takePayment && !isCheque ? Math.max(payNow - afterCredit, 0) : 0;
+  /** The previous due as printed: credit the buyer had was taken off it, and goes back on when used. */
+  const previousShown = withPrevious ? owed!.previousDue + creditUse : 0;
+  /** What is left to pay after this checkout (below zero: kept on the buyer's account). */
+  const balanceAfter = total + previousShown - creditUse - (isCheque ? 0 : payNow);
+  /** The total box spells out the money lines when the bill goes beyond this order. */
+  const accountLines = withPrevious || creditUse > 0 || extra > 0;
+  /** Kept as advance balance: with the previous due, what the buyer is ahead by after this. */
+  const keptAfter = withPrevious
+    ? Math.max(-balanceAfter, 0)
+    : Math.max(extra - (owed?.earlier ?? 0), 0);
+
   const short = { ...shortSkus(blocks, own), ...serverShort };
   const shortCount = Object.keys(short).length;
   /** What the buyer takes on credit with this order, as the server will check it. */
@@ -393,7 +471,7 @@ export function OrderForm({ form: data }: { form: OrderFormData }) {
     ? Math.max(total - Number(editing.total), 0)
     : proforma
       ? total
-      : Math.max(total - payNow, 0);
+      : Math.max(total - payNow - creditUse, 0);
 
   // On the last step, the buyer's credit limit is checked like saving checks it.
   const creditFixed = fixed2(creditAmount);
@@ -471,11 +549,22 @@ export function OrderForm({ form: data }: { form: OrderFormData }) {
       }
       if (cartons.trim() && wholeNumber(cartons) === null) found.totalCartons = "Whole cartons";
     }
+    if (index === LAST && canUseCredit) {
+      const used = readAmount(creditText);
+      if (used === "invalid") found.useCredit = AMOUNT_HINT;
+      else if (used !== null && used > Math.min(owed!.credit, total) + 0.001) {
+        found.useCredit = `At most ${fixed2(Math.min(owed!.credit, total))}.`;
+      }
+    }
     if (index === LAST && takePayment) {
       const amount = readAmount(paymentAmount);
       if (amount === "invalid") found["payment.amount"] = AMOUNT_HINT;
       else if (amount === null || amount <= 0) found["payment.amount"] = "Enter the amount paid.";
-      else if (amount > total + 0.001) found["payment.amount"] = `At most ${fixed2(total)}.`;
+      else if (!extraAllowed && amount > afterCredit + 0.001) {
+        found["payment.amount"] = `At most ${fixed2(afterCredit)}.`;
+      }
+      if (isCheque && !text("chequeNo"))
+        found["payment.cheque.chequeNo"] = "Enter the cheque number.";
     }
     return found;
   }
@@ -526,16 +615,38 @@ export function OrderForm({ form: data }: { form: OrderFormData }) {
       shippingAddress: text("shippingAddress") || null,
       ...(overrideReason ? { forceOverride: { reason: overrideReason } } : {}),
     };
-    const payment: { amount: number; method: PaymentMethod; reference?: string } | undefined =
-      takePayment
-        ? {
-            amount: charge(paymentAmount),
-            method: (text("paymentMethod") || "CASH") as PaymentMethod,
-            reference: text("paymentReference") || undefined,
-          }
-        : undefined;
+    const payment = takePayment
+      ? {
+          amount: charge(paymentAmount),
+          method: paymentMethod,
+          reference: text("paymentReference") || undefined,
+          ...(isCheque
+            ? {
+                cheque: {
+                  chequeNo: text("chequeNo"),
+                  bankName: text("bankName") || null,
+                  chequeDate: text("chequeDate") || undefined,
+                },
+              }
+            : {}),
+        }
+      : undefined;
+    const accountMoney = {
+      ...(withPrevious ? { includePreviousDue: true } : {}),
+      ...(creditUse > 0 ? { useCredit: creditUse } : {}),
+    };
 
     startTransition(async () => {
+      // The proof photo (already made small) goes up first; the order then points at it.
+      let proofFileId: string | undefined;
+      if (payment && proof) {
+        const stored = await uploadProof(proof);
+        if (!("id" in stored)) {
+          setError({ ...stored, fieldErrors: { "payment.proofFileId": [stored.message] } });
+          return;
+        }
+        proofFileId = stored.id;
+      }
       const result = editing
         ? await updateOrderAction(editing.id, { matrix, ...charges })
         : proforma
@@ -555,7 +666,8 @@ export function OrderForm({ form: data }: { form: OrderFormData }) {
               matrix,
               ...charges,
               documents,
-              ...(payment ? { payment } : {}),
+              ...accountMoney,
+              ...(payment ? { payment: { ...payment, proofFileId } } : {}),
             });
       if (!result.ok) {
         const stock = Object.entries(result.error.fieldErrors ?? {})
@@ -1086,6 +1198,53 @@ export function OrderForm({ form: data }: { form: OrderFormData }) {
                 hint="Takes every piece out of stock now, as at a counter sale."
               />
             </div>
+            {(canIncludePrevious || canUseCredit) && (
+              <div className="grid gap-4 rounded-lg border bg-muted/30 p-4">
+                {canIncludePrevious && (
+                  <Tick
+                    id="include-previous"
+                    checked={includePrevious}
+                    onChange={setIncludePrevious}
+                    label={`Include previous due (${money(fixed2(owed!.previousDue), currency)})`}
+                    hint="Prints what the buyer already owed on this invoice, with the Total payable. Only this order counts as a sale."
+                  />
+                )}
+                {canUseCredit && (
+                  <Field
+                    id="use-credit"
+                    label={`Use credit balance (${currency})`}
+                    hint={`Available ${money(fixed2(owed!.credit), currency)}. Put some or all of the buyer's advance balance against this bill.`}
+                    error={fieldError("useCredit")}
+                  >
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                      <Input
+                        id="use-credit"
+                        inputMode="decimal"
+                        value={creditText}
+                        onChange={(e) => setCreditText(e.target.value)}
+                        placeholder="0.00"
+                        autoComplete="off"
+                        className="sm:w-48"
+                        aria-invalid={Boolean(fieldError("useCredit"))}
+                        aria-describedby={
+                          fieldError("useCredit") ? "use-credit-error" : "use-credit-hint"
+                        }
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="self-start sm:self-auto"
+                        onClick={() => setCreditText(fixed2(Math.min(owed!.credit, total)))}
+                        disabled={total <= 0}
+                      >
+                        Use the most
+                      </Button>
+                    </div>
+                  </Field>
+                )}
+              </div>
+            )}
             {data.can.takePayment && (
               <div className="grid gap-4">
                 <Tick
@@ -1093,51 +1252,90 @@ export function OrderForm({ form: data }: { form: OrderFormData }) {
                   checked={takePayment}
                   onChange={(on) => {
                     setTakePayment(on);
-                    if (on && !paymentAmount && total > 0) setPaymentAmount(fixed2(total));
+                    if (on && !paymentAmount && afterCredit > 0) {
+                      setPaymentAmount(fixed2(afterCredit));
+                    }
                   }}
                   label="Payment received now"
                   hint="A money receipt is made with the order."
                 />
                 {takePayment && (
-                  <div className="grid items-start gap-5 sm:grid-cols-3">
-                    <Field
-                      id="payment-amount"
-                      label={`Amount (${currency})`}
-                      error={fieldError("payment.amount")}
-                    >
-                      <Input
+                  <>
+                    <div className="grid items-start gap-5 sm:grid-cols-3">
+                      <Field
                         id="payment-amount"
-                        inputMode="decimal"
-                        value={paymentAmount}
-                        onChange={(e) => setPaymentAmount(e.target.value)}
-                        placeholder="0.00"
-                        autoComplete="off"
-                        aria-invalid={Boolean(fieldError("payment.amount"))}
-                      />
-                    </Field>
-                    <Field id="payment-method" label="Paid by">
-                      <NativeSelect
-                        id="payment-method"
-                        name="paymentMethod"
-                        defaultValue="CASH"
-                        containerClassName="sm:w-full"
+                        label={`Amount (${currency})`}
+                        hint={
+                          extra > 0
+                            ? withPrevious
+                              ? `${money(fixed2(afterCredit), currency)} pays this bill; the other ${money(fixed2(extra), currency)} pays the buyer's older dues, oldest first, and any left is kept as advance balance.`
+                              : owed && owed.earlier > 0
+                                ? `${money(fixed2(afterCredit), currency)} pays this bill; the other ${money(fixed2(extra), currency)} goes on the buyer's account: it pays their earlier balance first, and any left is kept as advance balance.`
+                                : `${money(fixed2(afterCredit), currency)} pays this bill; the other ${money(fixed2(extra), currency)} is kept as the buyer's advance balance.`
+                            : undefined
+                        }
+                        error={fieldError("payment.amount")}
                       >
-                        {data.paymentMethods.map((m) => (
-                          <option key={m} value={m}>
-                            {METHOD_LABELS[m]}
-                          </option>
-                        ))}
-                      </NativeSelect>
-                    </Field>
-                    <Field id="payment-reference" label="Reference (optional)">
-                      <Input
-                        id="payment-reference"
-                        name="paymentReference"
-                        maxLength={120}
-                        autoComplete="off"
-                      />
-                    </Field>
-                  </div>
+                        <Input
+                          id="payment-amount"
+                          inputMode="decimal"
+                          value={paymentAmount}
+                          onChange={(e) => setPaymentAmount(e.target.value)}
+                          placeholder="0.00"
+                          autoComplete="off"
+                          aria-invalid={Boolean(fieldError("payment.amount"))}
+                          aria-describedby={
+                            fieldError("payment.amount")
+                              ? "payment-amount-error"
+                              : extra > 0
+                                ? "payment-amount-hint"
+                                : undefined
+                          }
+                        />
+                      </Field>
+                      <Field id="payment-method" label="Paid by">
+                        <NativeSelect
+                          id="payment-method"
+                          name="paymentMethod"
+                          value={paymentMethod}
+                          onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod)}
+                          containerClassName="sm:w-full"
+                        >
+                          {data.paymentMethods.map((m) => (
+                            <option key={m} value={m}>
+                              {METHOD_LABELS[m]}
+                            </option>
+                          ))}
+                        </NativeSelect>
+                      </Field>
+                      <Field id="payment-reference" label="Reference (optional)">
+                        <Input
+                          id="payment-reference"
+                          name="paymentReference"
+                          maxLength={120}
+                          autoComplete="off"
+                        />
+                      </Field>
+                    </div>
+                    {isCheque && (
+                      <div className="grid gap-3">
+                        <ChequeFields
+                          idPrefix="checkout"
+                          today={data.today}
+                          fieldError={(name) => fieldError(`payment.cheque.${name}`)}
+                        />
+                        <p className="text-[0.8125rem] text-muted-foreground">
+                          The cheque is kept as pending and the order stays due. It goes into the
+                          bank when Accounts marks it cleared in Payments, Cheques.
+                        </p>
+                      </div>
+                    )}
+                    <ProofDrop
+                      value={proof}
+                      onChange={setProof}
+                      error={fieldError("payment.proofFileId")}
+                    />
+                  </>
                 )}
               </div>
             )}
@@ -1174,6 +1372,42 @@ export function OrderForm({ form: data }: { form: OrderFormData }) {
             <span>Total</span>
             <span className="font-serif text-lg">{money(fixed2(total), currency)}</span>
           </div>
+          {withPrevious && (
+            <>
+              <div className="flex justify-between gap-4 text-muted-foreground">
+                <span>Previous due</span>
+                <span>{money(fixed2(previousShown), currency)}</span>
+              </div>
+              <div className="flex justify-between gap-4 font-medium">
+                <span>Total payable</span>
+                <span>{money(fixed2(total + previousShown), currency)}</span>
+              </div>
+            </>
+          )}
+          {creditUse > 0 && (
+            <div className="flex justify-between gap-4 text-muted-foreground">
+              <span>Credit used</span>
+              <span>− {money(fixed2(creditUse), currency)}</span>
+            </div>
+          )}
+          {payNow > 0 && !isCheque && accountLines && (
+            <div className="flex justify-between gap-4 text-muted-foreground">
+              <span>Paid now</span>
+              <span>− {money(fixed2(payNow), currency)}</span>
+            </div>
+          )}
+          {accountLines && (
+            <div className="flex justify-between gap-4 font-medium">
+              <span>Balance due</span>
+              <span>{money(fixed2(Math.max(balanceAfter, 0)), currency)}</span>
+            </div>
+          )}
+          {extra > 0 && keptAfter > 0.004 && (
+            <div className="flex justify-between gap-4 text-muted-foreground">
+              <span>{withPrevious ? "Advance balance after this" : "Kept as advance balance"}</span>
+              <span>{money(fixed2(keptAfter), currency)}</span>
+            </div>
+          )}
           {paidBefore > 0 && (
             <>
               <div className="flex justify-between gap-4 text-muted-foreground">

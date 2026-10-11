@@ -23,11 +23,9 @@ import { Textarea } from "@/components/ui/textarea";
 import type { ActionError } from "@/lib/result";
 import { cn } from "@/lib/utils";
 import { RECEIVE_METHODS } from "@/modules/sales/choices";
-import type { BuyerOption } from "@/modules/sales/screens.service";
-import { receivePaymentAction, refundBuyerAction } from "@/server/actions/sales.actions";
+import { refundBuyerAction } from "@/server/actions/sales.actions";
 
 import { METHOD_LABELS, money, REFUND_KIND_HINTS, REFUND_KIND_LABELS } from "./labels";
-import { BuyerPicker } from "./pickers";
 
 /** A problem found before asking the server, shown like the server's own. */
 export const problem = (fieldErrors: Record<string, string>): ActionError => ({
@@ -248,134 +246,6 @@ const dayOrNow = (form: FormData, name: string, today: string) => {
   const day = textOf(form, name);
   return day && day !== today ? day : undefined;
 };
-
-type ReceiveTarget =
-  { orderId: string; label: string } | { proformaId: string; label: string } | { onAccount: true };
-
-/**
- * Records money received (accounts.receipts.record): against an order (an
- * advance before it is invoiced), a proforma's advance (production starts once
- * it is paid in full) or a buyer's account.
- */
-export function ReceivePaymentDialog({
-  target,
-  due,
-  currency,
-  today,
-  onDone,
-  onClose,
-}: {
-  target: ReceiveTarget;
-  /** What is still to pay: the suggested amount and the most it may be. */
-  due?: string;
-  currency: string;
-  today: string;
-  onDone: (message: string) => void;
-  onClose: () => void;
-}) {
-  const [buyer, setBuyer] = useState<BuyerOption | null>(null);
-  const onAccount = "onAccount" in target;
-  return (
-    <FormDialog
-      title={onAccount ? "Receive a payment on account" : `Receive a payment for ${target.label}`}
-      description={
-        onAccount
-          ? "Money a buyer paid towards what they owe, not for one order. It lowers their balance."
-          : due
-            ? `${money(due, currency)} is still to pay. A money receipt is made for it.`
-            : "A money receipt is made for it."
-      }
-      submitLabel="Record the payment"
-      pendingLabel="Recording"
-      errorTitle="We could not record the payment"
-      onClose={onClose}
-      onSubmit={async (form) => {
-        if (onAccount && !buyer) return problem({ partyId: "Choose the buyer who paid." });
-        const amount = readMoney(form, due);
-        if (typeof amount !== "number") return amount;
-        const result = await receivePaymentAction({
-          ...("orderId" in target ? { orderId: target.orderId } : {}),
-          ...("proformaId" in target ? { proformaId: target.proformaId } : {}),
-          ...(onAccount ? { partyId: buyer!.id } : {}),
-          amount,
-          method: textOf(form, "method") || "CASH",
-          paymentDate: dayOrNow(form, "paymentDate", today),
-          reference: textOf(form, "reference") || undefined,
-          notes: textOf(form, "notes") || undefined,
-        });
-        if (!result.ok) return result.error;
-        const { payment, productionProject } = result.data;
-        onDone(
-          `Payment ${payment.number} of ${money(amount.toFixed(2), currency)} was recorded.${
-            productionProject
-              ? ` The advance is paid in full, so production ${productionProject.code} has started.`
-              : ""
-          }`,
-        );
-      }}
-    >
-      {(fieldError) => (
-        <>
-          {onAccount && (
-            <Field id="receive-buyer" label="Buyer" error={fieldError("partyId")}>
-              <BuyerPicker
-                id="receive-buyer"
-                value={buyer}
-                onChange={setBuyer}
-                purpose="PAYMENT"
-                currency={currency}
-                invalid={Boolean(fieldError("partyId"))}
-              />
-            </Field>
-          )}
-          <div className="grid items-start gap-5 sm:grid-cols-2">
-            <Field id="receive-amount" label={`Amount (${currency})`} error={fieldError("amount")}>
-              <Input
-                id="receive-amount"
-                name="amount"
-                inputMode="decimal"
-                defaultValue={due && Number(due) > 0 ? due : ""}
-                placeholder="0.00"
-                autoComplete="off"
-                aria-invalid={Boolean(fieldError("amount"))}
-                aria-describedby={fieldError("amount") ? "receive-amount-error" : undefined}
-                autoFocus={!onAccount}
-              />
-            </Field>
-            <Field id="receive-method" label="Paid by" error={fieldError("method")}>
-              <MethodSelect id="receive-method" />
-            </Field>
-            <Field
-              id="receive-reference"
-              label="Reference (optional)"
-              hint="Cheque number, bKash transaction ID…"
-            >
-              <Input
-                id="receive-reference"
-                name="reference"
-                maxLength={120}
-                autoComplete="off"
-                aria-describedby="receive-reference-hint"
-              />
-            </Field>
-            <Field id="receive-date" label="Received on" error={fieldError("paymentDate")}>
-              <Input
-                id="receive-date"
-                name="paymentDate"
-                type="date"
-                defaultValue={today}
-                max={today}
-              />
-            </Field>
-          </div>
-          <Field id="receive-notes" label="Notes (optional)">
-            <Textarea id="receive-notes" name="notes" rows={2} maxLength={1000} />
-          </Field>
-        </>
-      )}
-    </FormDialog>
-  );
-}
 
 /**
  * Takes money back off an order or a proforma (Accounts): paid back, kept as

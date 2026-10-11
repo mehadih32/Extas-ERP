@@ -267,8 +267,17 @@ Built one module at a time, each in its own pull request. So far:
     refunded or cancelled, saying what happens to the money already paid.
   - **Invoices**: every commercial invoice with what is paid and due, with an Overdue filter.
     An invoice's page receives a payment against its order, voids it and prints it.
-  - **Payments**: money received (each opening its money receipt and PDF) and refunds.
-    Accounts can record a payment on a buyer's account here.
+  - **Payments**: a dashboard on top (collected today, pending dues, cheques to clear,
+    cheques bounced this month), then money received (each opening its money receipt, its
+    PDF and its proof photo), cheques (pending, cleared or bounced, which Accounts marks here)
+    and refunds. Accounts can record a payment on a buyer's account here, paying their
+    invoices oldest first or by amounts typed next to each; the rest is kept as advance
+    balance. Proof photos (a transfer screenshot or a cheque) are made about 100 KB in the
+    browser before they are uploaded, and open full size in a lightbox.
+  - At checkout and when issuing an invoice, the buyer's previous due can be printed on the
+    invoice ("Total payable"), and Accounts can put some or all of the buyer's credit
+    (advance balance) against the bill. Money above the bill goes to older dues (with the
+    previous due) or is kept as advance balance.
 
   Courier bookings, website orders, returns and sending documents by WhatsApp or email come
   with the integrations, at the end.
@@ -1009,6 +1018,26 @@ the order is invoiced again, the order or proforma has since been paid up to its
 credit it left on the account has been used. A walk-in customer has no account of their own,
 so their money is paid back or kept as a charge, never kept as credit.
 
+**Dues, credit and cheques.** A buyer's _credit_ (advance balance) is the money on their
+account that has not paid an invoice yet: their unpaid invoices less their receivable balance.
+Credit is put against an invoiced order as a credit allocation (`CreditAllocation`), which
+counts in the order's paid amount but posts no journal entry, since the money is already in the
+books; voiding the invoice releases it. A payment on account pays the buyer's invoices oldest
+first (`oldestFirst`) or by the amounts given (`allocations`), and the rest stays as credit.
+Money above an invoiced order's due, at checkout or later, is taken on the buyer's account the
+same way (`extra`: `ADVANCE`, or `OLDER_DUES` to pay their older dues first). A buyer's
+credit is locked (`pg_advisory_xact_lock`) before any order, so two payments cannot spend it
+twice. An invoice can print the buyer's _previous due_ (`includePreviousDue`): what they owed
+before it, net of their credit, taken when it is issued and stored on it (`previousDue`, with
+the credit at that moment in `previousCredit` so credit later used on it is not counted
+twice). It is shown only, never revenue. A cheque (`Cheque`) is recorded as pending and posts
+nothing; marking it cleared records the payment into the chosen bank account (or the main
+one) on the day it cleared, against what it was for, or on the buyer's account if that is
+settled by then; marking it bounced records the reason only. A payment or cheque can carry a
+proof photo (JPG, PNG or WebP, at most 512 KB, made about 100 KB in the browser), uploaded
+first and then named by id; photos no payment or cheque uses are deleted by the nightly
+housekeeping after a day.
+
 **Books.** Every step posts a balanced journal entry, so the buyer's ledger, statements and
 the receivables overview update immediately. For a sale without a buyer, the lines marked
 "buyer" below name the [Walk-in customers](#buyers--suppliers-backend) account:
@@ -1026,6 +1055,10 @@ the receivables overview update immediately. For a sale without a buyer, the lin
 | Cancellation charge    | Dr Customer Advance (buyer), Cr Other Income                   |
 | Account credit refund  | Dr Receivable (buyer), Cr Cash / Bank / Wallet or Other Income |
 | Refund void            | Mirror entry; the money is held where it came from again       |
+| Credit used on a bill  | None (the money is already on the buyer's account)             |
+| Cheque received        | None until it clears                                           |
+| Cheque cleared         | As a payment: Dr Bank, Cr Receivable or Customer Advance       |
+| Cheque bounced         | None                                                           |
 
 | Endpoint                                                           | Purpose                                                  |
 | ------------------------------------------------------------------ | -------------------------------------------------------- |
@@ -1044,13 +1077,21 @@ the receivables overview update immediately. For a sale without a buyer, the lin
 | `GET /api/sales/packing-lists/:id`, `PUT …/:id/pick`               | Pick-list and picking progress                           |
 | `GET /api/sales/challans`, `GET …/:id`                             | Challan history and the price-free challan               |
 | `GET/POST /api/sales/payments`, `GET …/:id`                        | Money received (order, proforma or on account), receipts |
+| `POST /api/sales/payments/:id/proof`                               | Attach or replace a payment's proof photo: `{ fileId }`  |
+| `POST /api/sales/payment-proofs`                                   | Upload a proof photo (multipart `file`); returns its id  |
+| `GET /api/sales/buyers/:partyId/dues`                              | A buyer's previous due, credit and unpaid invoices       |
+| `POST /api/sales/orders/:id/credit`                                | Put the buyer's credit against the order: `{ amount }`   |
+| `GET/POST /api/sales/cheques`                                      | Cheques received (by status, buyer, order) / record one  |
+| `POST /api/sales/cheques/:id/clear` / `bounce` / `proof`           | Mark cleared or bounced / attach its proof photo         |
 | `GET/POST /api/sales/refunds`, `GET …/:id`, `POST …/:id/void`      | Refunds to buyers (paid back, credit, charge) / void one |
 | `GET /api/sales/summary?from=&to=`                                 | Today's sales, collections less refunds, and open dues   |
 
 Reads need `sales.view`; quotations and proformas need `sales.quotation.manage`; orders and
 documents need `sales.order.create`; recording money received (on its own or at checkout)
 needs `accounts.receipts.record`, which only Accounts and Super Admin hold by default, so
-Sales Executives create orders and proformas but never record receipts; voiding an invoice
+Sales Executives create orders and proformas but never record receipts; the same key uses a
+buyer's credit, records and clears or bounces cheques and attaches proof photos; including the
+previous due needs `parties.view` or `accounts.receipts.record`; voiding an invoice
 needs `sales.invoice.edit`; custom field definitions need `company.settings`. Refunds, and a
 cancel that settles money, are Accounts' work too: paying money back needs
 `accounts.payments.record`, keeping it as credit `accounts.receipts.record`, and keeping it as a

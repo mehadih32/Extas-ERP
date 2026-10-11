@@ -78,7 +78,7 @@ type ProformaState = {
   advancePaid: Amount;
 };
 
-const isClosedProforma = (status: ProformaStatus) =>
+export const isClosedProforma = (status: ProformaStatus) =>
   status === "CANCELLED" || status === "CONVERTED";
 
 /** A proforma that has not become an order can be cancelled (money held is settled first). */

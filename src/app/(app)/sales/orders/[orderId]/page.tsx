@@ -314,6 +314,8 @@ export default async function OrderPage({
           <MoneyRecords
             payments={o.payments.map((p) => ({ ...p, reference: null }))}
             refunds={o.refunds}
+            credits={o.credits}
+            cheques={o.cheques}
             currency={currency}
             empty="Nothing was paid on it yet."
           />

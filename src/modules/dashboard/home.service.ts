@@ -48,7 +48,10 @@ export function homePeriod(range: HomeRange, today: string, timeZone: string): H
   return { range, from, to: today, start: start!, end: end! };
 }
 
-const rangeSchema = z.object({ range: z.enum(HOME_RANGES).default(DEFAULT_HOME_RANGE) });
+/** The Home screen's period query: today, this week or this month (the default). */
+export const homeRangeSchema = z.object({
+  range: z.enum(HOME_RANGES).default(DEFAULT_HOME_RANGE),
+});
 
 // --- Top bar -----------------------------------------------------------------------------
 
@@ -286,7 +289,7 @@ export function pulseAccess(ctx: Pick<CompanyContext, "can">) {
  * this week or this month. A card someone may not see comes back as null.
  */
 export async function getHomePulse(ctx: CompanyContext, raw: unknown = {}, now = new Date()) {
-  const { range } = rangeSchema.parse(raw);
+  const { range } = homeRangeSchema.parse(raw);
   const tz = ctx.company.timezone;
   const today = localDay(now, tz);
   const period = homePeriod(range, today, tz);

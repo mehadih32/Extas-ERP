@@ -116,7 +116,8 @@ function othersNote(others: ReadonlyArray<{ code: string; onGrid: boolean }>) {
  * factory, who it is for (a buyer or In-House), its days and how many pieces,
  * as a total or per colour and size (the target grid, which then gives the
  * total). New projects start now or are planned. "Start production" on a sales
- * order or a proforma fills a new one in from it, its buyer fixed. A completed
+ * order or a proforma fills a new one in from it, its buyer fixed; "Order now" on
+ * the Home screen's low stock starts an In-House one for the style. A completed
  * or cancelled project keeps all but its name and notes, and one started from a
  * proforma or an order keeps its buyer. Both need production.manage, as the
  * project actions check.
@@ -125,19 +126,24 @@ export function ProjectForm({ form: data, currency }: { form: ProjectFormData; c
   const router = useRouter();
   const project = data.project;
   const source = data.source;
+  const restock = data.restock;
   const closed = Boolean(project && data.locked?.closed);
   const buyerLocked = closed || Boolean(data.locked?.buyer) || Boolean(source);
   const [error, setError] = useState<ActionError>();
   const [problems, setProblems] = useState<Partial<Record<FieldName, string>>>({});
   const [pending, startTransition] = useTransition();
-  const [categoryId, setCategoryId] = useState(project?.categoryId ?? source?.categoryId ?? "");
-  const [style, setStyle] = useState<Style | null>(project?.style ?? source?.style ?? null);
+  const [categoryId, setCategoryId] = useState(
+    project?.categoryId ?? source?.categoryId ?? restock?.categoryId ?? "",
+  );
+  const [style, setStyle] = useState<Style | null>(
+    project?.style ?? source?.style ?? restock?.style ?? null,
+  );
   const [factoryMode, setFactoryMode] = useState<"PROFILE" | "NAME">(
     project && !project.factory && project.factoryName ? "NAME" : "PROFILE",
   );
   const [factory, setFactory] = useState<Party | null>(project?.factory ?? null);
   const [forWhom, setForWhom] = useState<"BUYER" | "IN_HOUSE">(
-    project ? (project.buyer ? "BUYER" : "IN_HOUSE") : "BUYER",
+    project ? (project.buyer ? "BUYER" : "IN_HOUSE") : restock ? "IN_HOUSE" : "BUYER",
   );
   const [buyer, setBuyer] = useState<Party | null>(project?.buyer ?? source?.buyer ?? null);
   const [blocks, setBlocks] = useState<TargetBlock[]>(() =>
@@ -256,7 +262,7 @@ export function ProjectForm({ form: data, currency }: { form: ProjectFormData; c
         <Input
           id="name"
           name="name"
-          defaultValue={project?.name ?? source?.name}
+          defaultValue={project?.name ?? source?.name ?? restock?.name}
           maxLength={160}
           autoComplete="off"
           aria-invalid={Boolean(fieldError("name"))}
@@ -469,8 +475,22 @@ export function ProjectForm({ form: data, currency }: { form: ProjectFormData; c
           <p className="-mt-2 text-[0.8125rem] text-muted-foreground">
             {source
               ? `Filled in from ${source.number}: what is still to make of each colour and size. Change any box, or add another style.`
-              : "Optional. Fill in a style's colours and sizes, and the pieces to make adds up by itself."}
+              : restock
+                ? `${restock.style.code}'s colours and sizes, ready to fill in. The pieces to make adds up by itself.`
+                : "Optional. Fill in a style's colours and sizes, and the pieces to make adds up by itself."}
           </p>
+          {restock && restock.low.length > 0 && (
+            <FormAlert tone="note">
+              Running low (below {restock.threshold} pieces):{" "}
+              {restock.low
+                .map(
+                  (l) =>
+                    `${l.colorName} · ${l.sizeName} (${l.available <= 0 ? "out of stock" : `${formatCount(l.available, currency)} left`})`,
+                )
+                .join(", ")}
+              .
+            </FormAlert>
+          )}
           {source && source.others.length > 0 && (
             <FormAlert tone="note">
               Already in production for {source.number}:{" "}

@@ -131,6 +131,8 @@ export const productionHref = {
     "orderId" in from
       ? `/production/projects/new?order=${encodeURIComponent(from.orderId)}`
       : `/production/projects/new?proforma=${encodeURIComponent(from.proformaId)}`,
+  /** "Order now" on low stock: a new in-house project for the style. */
+  restock: (styleId: string) => `/production/projects/new?restock=${encodeURIComponent(styleId)}`,
   supplier: (id: string) => `/parties/suppliers/${encodeURIComponent(id)}`,
   buyer: (id: string) => `/parties/buyers/${encodeURIComponent(id)}`,
   file: (id: string) => `/api/files/${encodeURIComponent(id)}`,

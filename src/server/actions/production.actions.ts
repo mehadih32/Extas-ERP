@@ -64,7 +64,7 @@ export const getProjectScreenAction = async (projectId: string) =>
   runAction(async () => screens.getProjectScreen(await view(), projectId));
 export const getProjectFormAction = async (
   projectId?: string,
-  from?: { orderId?: string; proformaId?: string },
+  from?: { orderId?: string; proformaId?: string; restockStyleId?: string },
 ) => runAction(async () => screens.getProjectForm(await manage(), projectId, from));
 /** Open sales orders and proformas a new project can start from (numbers, buyers, pieces). */
 export const findSalesToStartAction = async (query: { search?: string }) =>

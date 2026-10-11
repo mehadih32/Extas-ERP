@@ -35,6 +35,9 @@ export function recordHref(ctx: Can, link: RecordLink | null): string | null {
       return ctx.can("hr.view") || ctx.can("hr.manage") || ctx.can("hr.payroll")
         ? `/hr/employees/${id}`
         : null;
+    case "MyDetails":
+      // The employee's own details in My HR (a pay details change decided by HR).
+      return ctx.can("portal.self") ? "/me/profile" : null;
     default:
       return null;
   }
@@ -49,4 +52,5 @@ export const RECORD_NOUNS: Record<string, string> = {
   PurchaseOrder: "the purchase order",
   ComplianceDocument: "the licence",
   Employee: "the employee",
+  MyDetails: "my details",
 };

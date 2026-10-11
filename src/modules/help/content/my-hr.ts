@@ -204,7 +204,68 @@ export const myHrHelp: HelpSection = {
             caption: "“Today” ট্যাবের “Pay” ও “My details” অংশ",
           },
         },
-        { text: "কোনো তথ্য ভুল থাকলে HR-কে বলুন। নিজে বদলানো যায় না।" },
+        {
+          text: "কোনো তথ্য বাকি বা পুরোনো হলে “Update my details” চাপুন (“আমার তথ্য, রেফারেন্স ও কাগজপত্র দেবেন যেভাবে” নির্দেশিকা দেখুন)। নাম, কোড, পদ ও ফোন নম্বর HR বদলান।",
+        },
+      ],
+    },
+    {
+      slug: "my-hr-my-details",
+      title: "আমার তথ্য, রেফারেন্স ও কাগজপত্র দেবেন যেভাবে, আর বেতনের হিসাব বদলের আবেদন",
+      summary:
+        "নিজের NID, জন্মতারিখ, রক্তের গ্রুপ, যোগাযোগ ও রেফারেন্স দেওয়া, NID কার্ড ও ছবি যোগ করা, আর ব্যাংক বা বিকাশ/নগদ নম্বর বদলের জন্য HR-এর কাছে আবেদন।",
+      keywords: [
+        "my details",
+        "update my details",
+        "reference person",
+        "national id",
+        "blood group",
+        "add a paper",
+        "ask for a change",
+        "bkash number",
+        "bank account",
+        "আমার তথ্য",
+        "রেফারেন্স",
+        "এনআইডি",
+        "রক্তের গ্রুপ",
+        "বিকাশ নম্বর বদল",
+        "ব্যাংক হিসাব",
+      ],
+      routes: ["/me/profile"],
+      who: "যাঁদের My HR login আছে।",
+      anyOf: ["portal.self"],
+      steps: [
+        {
+          text: "“My HR” > “My details” ট্যাব খুলুন। “Today” ট্যাবে “HR still needs your …” লেখা থাকলে “Fill in my details” চাপলেও এখানে আসবেন। ডান দিকে “My record”-এ দেখবেন কোনটি বাকি।",
+          image: {
+            id: "my-hr-my-details-1",
+            caption:
+              "“My details” ট্যাব: নিজের তথ্যের ফর্ম, “My record”, “How I am paid” ও “My papers”",
+          },
+        },
+        {
+          text: "“Who I am” অংশে “National ID number”, “Date of birth” ও “Blood group” দিন। এগুলো একবারই দেওয়া যায়; পরে বদলাতে হলে HR-কে বলুন (তখন “On file. Ask HR to change it.” লেখা থাকে)।",
+        },
+        {
+          text: "“How to reach me”-তে WhatsApp, ইমেইল, ঠিকানা ও জরুরি যোগাযোগ, আর “Reference person”-এ এমন একজনের নাম ও ফোন দিন যিনি আপনাকে চেনেন (আগের মালিক, শিক্ষক বা এলাকার পরিচিত কেউ)। “Save my details” চাপুন।",
+        },
+        {
+          text: "বেতন অন্য ব্যাংক হিসাবে বা বিকাশ/নগদ/রকেট নম্বরে নিতে “How I am paid”-এ “Ask for a change” চাপুন। “Pay me by” বেছে ব্যাংক ও হিসাব নম্বর, বা ওয়ালেট নম্বর দিন, তারপর “Send to HR”।",
+          image: {
+            id: "my-hr-my-details-2",
+            caption: "“Change how I am paid”: “Pay me by”, নম্বর ও “Send to HR”",
+          },
+        },
+        {
+          text: "HR অনুমোদন না করা পর্যন্ত বেতন আগের হিসাবেই যায়, আর “Waiting for HR” লেখা থাকে। মত বদলালে “Withdraw the change”। HR অনুমোদন করলে “Approved”, না করলে “Not approved” ও HR-এর কারণ দেখাবে; ইনবক্সেও জানানো হয়।",
+        },
+        {
+          text: "NID কার্ডের ছবি (দুই পাশ), নিজের ছবি বা সনদ রাখতে “My papers”-এ “Add a paper” চাপুন, “What it is” বেছে ফোনের ক্যামেরায় ছবি তুলুন বা PDF দিন, তারপর “Add the paper”।",
+        },
+      ],
+      tips: [
+        "আপনার কাগজপত্র শুধু আপনি আর HR দেখতে পারেন। নিজের যোগ করা কাগজ নিজে মুছতে পারেন।",
+        "অন্য কারও নম্বরে বেতন নেওয়ার আবেদন HR বাতিল করতে পারেন; নিজের নামের হিসাব বা নম্বর দিন।",
       ],
     },
   ],

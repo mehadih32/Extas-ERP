@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 
 import { Stat } from "@/components/accounts/stat";
 import { SectionError } from "@/components/dashboard/section-error";
-import { PayrollBadge } from "@/components/hr/badges";
+import { FlagBadge, PayrollBadge } from "@/components/hr/badges";
 import { DAY_TYPE_LABELS, dayCount, hrHref, leaveDates } from "@/components/hr/labels";
 import { HrNoAccess } from "@/components/hr/no-access";
 import { visibleHrTabs } from "@/components/hr/tabs";
@@ -316,6 +316,60 @@ export default async function HrOverviewPage() {
         </div>
 
         <div className="grid min-w-0 grid-cols-1 content-start gap-6">
+          {o.vault && (
+            <Panel
+              title="Staff records"
+              id="vault-heading"
+              action={
+                <Link href={`${hrHref.employees}?missing=1`} className={linkClass}>
+                  Details missing
+                </Link>
+              }
+            >
+              {o.vault.payRequests.length > 0 && (
+                <ul className="mt-4 grid divide-y" aria-label="Pay details changes to approve">
+                  {o.vault.payRequests.map((r) => (
+                    <li key={r.id} className="py-3 first:pt-0 last:pb-0">
+                      <Link
+                        href={`${hrHref.employee(r.employee.id)}#vault-heading`}
+                        className={rowLink}
+                      >
+                        <span className="min-w-0">
+                          <span className="block text-sm font-medium text-primary">
+                            {r.employee.name}
+                          </span>
+                          <span className="block text-[0.8125rem] break-words text-muted-foreground">
+                            Pay by {r.changesText}
+                          </span>
+                        </span>
+                        <span className="flex flex-col items-end gap-1">
+                          <FlagBadge tone="warn">To approve</FlagBadge>
+                          <span className="text-[0.8125rem] whitespace-nowrap text-muted-foreground">
+                            {formatDay(r.askedOn)}
+                          </span>
+                        </span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <p
+                className={
+                  o.vault.payRequests.length > 0
+                    ? "mt-4 border-t pt-4 text-[0.8125rem] text-muted-foreground"
+                    : "mt-4 text-sm text-muted-foreground"
+                }
+              >
+                {o.vault.payRequests.length === 0 && "No pay details changes are waiting. "}
+                {o.vault.incomplete === 0
+                  ? "Every record has its NID, blood group, reference person and pay details."
+                  : `${count(o.vault.incomplete)} ${
+                      o.vault.incomplete === 1 ? "record misses" : "records miss"
+                    } an NID, blood group, reference person or pay details.`}
+              </p>
+            </Panel>
+          )}
+
           <Panel title="By department" id="departments-heading">
             {o.byDepartment.length === 0 ? (
               <p className="mt-4 text-sm text-muted-foreground">

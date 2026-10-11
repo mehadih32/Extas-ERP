@@ -215,7 +215,8 @@ export async function readStoredFile(asset: { storagePath: string }): Promise<Bu
  * A file for download. Allowed for its uploader and for roles that may see the
  * record it belongs to (a delivery's packing list, a supplier bill's scan, a
  * licence scan, a document template, an expense's receipt, a raw material
- * purchase's bill, a payment's or cheque's proof photo). Saved reports
+ * purchase's bill, a payment's or cheque's proof photo, a paper in an employee's
+ * data vault). Saved reports
  * download through the Report Builder, which checks their figures.
  */
 export async function getFileForDownload(ctx: CompanyContext, fileId: string) {
@@ -231,6 +232,7 @@ export async function getFileForDownload(ctx: CompanyContext, fileId: string) {
       paymentProofs: { select: { id: true }, take: 1 },
       chequeProofs: { select: { id: true }, take: 1 },
       quotationImages: { select: { id: true }, take: 1 },
+      employeeDocuments: { select: { employee: { select: { userId: true } } }, take: 1 },
     },
   });
   if (!asset) throw new AppError("NOT_FOUND", "File not found.");
@@ -258,7 +260,10 @@ export async function getFileForDownload(ctx: CompanyContext, fileId: string) {
     (asset.paymentProofs.length + asset.chequeProofs.length > 0 &&
       (ctx.can("sales.view") || ctx.can("accounts.view"))) ||
     // Reference pictures of quotation items: everyone who sees quotations and proformas.
-    (asset.quotationImages.length > 0 && ctx.can("sales.view"));
+    (asset.quotationImages.length > 0 && ctx.can("sales.view")) ||
+    // A paper in an employee's data vault (NID scan, photo): HR, and the employee it is about.
+    (asset.employeeDocuments.length > 0 &&
+      (ctx.can("hr.manage") || asset.employeeDocuments[0]!.employee.userId === ctx.user.id));
   // A raw material purchase's bill also opens to the people who see material purchases.
   const materialBill =
     !allowed &&

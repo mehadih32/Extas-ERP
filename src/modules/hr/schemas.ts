@@ -1,6 +1,7 @@
 import {
   AdvanceStatus,
   AttendanceStatus,
+  EmployeeDocumentKind,
   EmployeeStatus,
   LeaveStatus,
   PaymentMethod,
@@ -105,8 +106,13 @@ const employeeFields = {
   /** How the salary is usually paid (cash, bank transfer, bKash...). */
   salaryMethod: z.enum(PaymentMethod),
   bankName: optionalText(120),
+  bankBranch: optionalText(120),
   bankAccountNumber: optionalText(40),
   walletNumber: optionalText(30),
+  /** Someone who knows them and can vouch for them. */
+  referenceName: optionalText(120),
+  referencePhone: optionalText(30),
+  referenceRelation: optionalText(60),
 };
 
 export const createEmployeeSchema = z.object({
@@ -147,6 +153,8 @@ export const listEmployeesSchema = z.object({
   status: z.enum(EmployeeStatus).optional(),
   /** true (default): people working now; false: everyone, including those who left. */
   current: queryBoolean.optional(),
+  /** Only people with something missing from their data vault (hr/vault.ts). */
+  incomplete: queryBoolean.optional(),
   department: z.string().trim().max(80).optional(),
   search: z.string().trim().max(100).optional(),
   cursor: z.string().optional(),
@@ -373,3 +381,149 @@ export const payPayrollSchema = z.object({
 });
 
 export const reopenPayrollSchema = z.object({ reason });
+
+// --- Data vault (the employee's own details, pay detail changes, papers) ------------------
+
+/** The ways a salary is paid that an employee can ask for. */
+export const SALARY_METHOD_CHOICES = [
+  "CASH",
+  "BANK_TRANSFER",
+  "CHEQUE",
+  "BKASH",
+  "NAGAD",
+  "ROCKET",
+] as const;
+
+const WALLETS = new Set(["BKASH", "NAGAD", "ROCKET"]);
+const BANKS = new Set(["BANK_TRANSFER", "CHEQUE"]);
+
+/** "01711-000000" or "+8801711000000" → "01711000000"; anything else stays as typed. */
+const walletDigits = (value: string) => {
+  const digits = value.replace(/[\s()-]/g, "").replace(/^\+/, "");
+  return digits.startsWith("880") ? `0${digits.slice(3)}` : digits;
+};
+
+/**
+ * An employee's ask to be paid another way or to another account. Only the
+ * details the way of paying needs are kept: a bank and account number for a bank
+ * transfer or cheque, a wallet number for bKash, Nagad or Rocket, none for cash.
+ */
+export const payDetailsRequestSchema = z
+  .object({
+    salaryMethod: z.enum(SALARY_METHOD_CHOICES),
+    bankName: optionalText(120),
+    bankBranch: optionalText(120),
+    bankAccountNumber: optionalText(40),
+    walletNumber: optionalText(30),
+    /** Why, for HR. */
+    note: optionalText(300),
+  })
+  .superRefine((v, ctx) => {
+    if (BANKS.has(v.salaryMethod)) {
+      if (!v.bankName)
+        ctx.addIssue({ code: "custom", path: ["bankName"], message: "Enter the bank's name." });
+      if (!v.bankAccountNumber) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["bankAccountNumber"],
+          message: "Enter the account number.",
+        });
+      } else if (!/^[0-9][0-9 -]{4,38}[0-9]$/.test(v.bankAccountNumber)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["bankAccountNumber"],
+          message: "Use the account number's digits (dashes and spaces are fine).",
+        });
+      }
+    }
+    if (WALLETS.has(v.salaryMethod)) {
+      if (!v.walletNumber) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["walletNumber"],
+          message: "Enter the wallet number.",
+        });
+      } else if (!/^01[3-9]\d{8}$/.test(walletDigits(v.walletNumber))) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["walletNumber"],
+          message: "Enter an 11-digit mobile number, like 01711-000000.",
+        });
+      }
+    }
+  })
+  .transform((v) => {
+    const bank = BANKS.has(v.salaryMethod);
+    const wallet = WALLETS.has(v.salaryMethod);
+    return {
+      changes: {
+        salaryMethod: v.salaryMethod as PaymentMethod,
+        bankName: bank ? (v.bankName ?? null) : null,
+        bankBranch: bank ? v.bankBranch || null : null,
+        bankAccountNumber: bank ? (v.bankAccountNumber ?? null) : null,
+        walletNumber: wallet && v.walletNumber ? walletDigits(v.walletNumber) : null,
+      },
+      note: v.note || null,
+    };
+  });
+
+/** A phone number someone can be called on: 6 to 15 digits, with +, spaces or dashes. */
+const phone = z
+  .string()
+  .trim()
+  .max(30)
+  .refine((v) => v === "" || /^\+?[\d\s()-]+$/.test(v), "Use digits, like 01711-000000")
+  .refine((v) => {
+    const n = v.replace(/\D/g, "").length;
+    return v === "" || (n >= 6 && n <= 15);
+  }, "Enter the whole number, like 01711-000000")
+  .nullish();
+
+/**
+ * What employees fill in themselves in My HR. Who they are (national ID, date of
+ * birth, blood group) is filled once: after that HR changes it. Contacts and the
+ * reference person they keep up to date.
+ */
+export const myDetailsSchema = z
+  .object({
+    nid: z
+      .string()
+      .trim()
+      .transform((v) => v.replace(/[\s-]/g, ""))
+      .refine(
+        (v) => v === "" || /^(\d{10}|\d{13}|\d{17})$/.test(v),
+        "A national ID has 10, 13 or 17 digits",
+      )
+      .nullish(),
+    dateOfBirth: day.nullish(),
+    bloodGroup: z.enum(BLOOD_GROUPS).nullish(),
+    whatsapp: phone,
+    email: z.email().nullish(),
+    address: optionalText(300),
+    emergencyContact: optionalText(160),
+    referenceName: optionalText(120),
+    referencePhone: phone,
+    referenceRelation: optionalText(60),
+  })
+  .partial()
+  .transform(
+    (v) =>
+      Object.fromEntries(
+        Object.entries(v).map(([key, value]) => [key, value === "" ? null : value]),
+      ) as { [K in keyof typeof v]: Exclude<(typeof v)[K], ""> },
+  );
+
+export const decidePayRequestSchema = z.object({ note: optionalText(300) });
+export const rejectPayRequestSchema = z.object({ reason });
+
+export const listPayRequestsSchema = z.object({
+  status: z.enum(["PENDING", "APPROVED", "REJECTED", "WITHDRAWN"]).optional(),
+  employeeId: id.optional(),
+  take,
+});
+
+/** A paper for the vault; the file itself comes with the upload. */
+export const employeeDocumentSchema = z.object({
+  kind: z.enum(EmployeeDocumentKind),
+  title: optionalText(120),
+});

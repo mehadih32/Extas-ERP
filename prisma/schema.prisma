@@ -150,6 +150,8 @@ model Company {
   notifications        NotificationLog[]
   projectSettlements   ProjectSettlement[]
   salesTargets         SalesTarget[]
+  payDetailsRequests   PayDetailsRequest[]
+  employeeDocuments    EmployeeDocument[]
 }
 
 /// A person who can log in. Global across companies.
@@ -171,47 +173,50 @@ model User {
   createdAt          DateTime   @default(now())
   updatedAt          DateTime   @updatedAt
 
-  memberships       CompanyMembership[]
-  sessions          Session[]
-  preference        UserPreference?
-  auditLogs         AuditLog[]
-  employeeProfiles  Employee[]
-  uploadedFiles     FileAsset[]
-  forceOverrides    SalesOrderItem[]      @relation("ForceOverrideBy")
-  returnInspections SalesReturnItem[]     @relation("ReturnInspectedBy")
-  notes             Note[]
-  tasksCreated      Task[]                @relation("TaskCreatedBy")
-  remindersCreated  Reminder[]            @relation("ReminderCreatedBy")
-  remindersAcked    Reminder[]            @relation("ReminderAcknowledgedBy")
-  reminderTargets   ReminderRecipient[]
-  reminderRules     ReminderRule[]        @relation("ReminderRuleUpdatedBy")
-  notifications     NotificationLog[]
-  reportExports     ReportExport[]
-  journalEntries    JournalEntry[]        @relation("JournalPostedBy")
-  approvedLeaves    LeaveRequest[]        @relation("LeaveApprovedBy")
-  requestedLeaves   LeaveRequest[]        @relation("LeaveRequestedBy")
-  attendanceMarked  Attendance[]          @relation("AttendanceRecordedBy")
-  payrollsCreated   PayrollRun[]          @relation("PayrollCreatedBy")
-  payrollsApproved  PayrollRun[]          @relation("PayrollApprovedBy")
-  salariesPaid      PayrollPayment[]      @relation("PayrollPaidBy")
-  advancesGiven     SalaryAdvance[]       @relation("AdvanceCreatedBy")
-  generatedDocs     GeneratedDocument[]
-  backupRuns        BackupRun[]
-  expensesCreated   Expense[]             @relation("ExpenseCreatedBy")
-  pettyCashHeld     PettyCashBox[]        @relation("PettyCashHolder")
-  purchaseOrders    PurchaseOrder[]       @relation("PurchaseOrderCreatedBy")
-  materialIssues    MaterialIssue[]       @relation("MaterialIssueCreatedBy")
-  materialChallans  MaterialChallan[]     @relation("MaterialChallanCreatedBy")
-  purchaseReturns   PurchaseReturn[]      @relation("PurchaseReturnCreatedBy")
-  materialMovements RawMaterialMovement[] @relation("MaterialMovementBy")
-  refunds           Refund[]              @relation("RefundCreatedBy")
-  salesReturns      SalesReturn[]         @relation("SalesReturnCreatedBy")
-  creditAllocations CreditAllocation[]    @relation("CreditAllocatedBy")
-  chequesRecorded   Cheque[]              @relation("ChequeRecordedBy")
-  intakesReversed   StockIntake[]         @relation("IntakeReversedBy")
-  settlementsMade   ProjectSettlement[]   @relation("SettlementMadeBy")
-  linesCleared      JournalLine[]         @relation("JournalLineClearedBy")
-  salesTargetsSet   SalesTarget[]         @relation("SalesTargetSetBy")
+  memberships        CompanyMembership[]
+  sessions           Session[]
+  preference         UserPreference?
+  auditLogs          AuditLog[]
+  employeeProfiles   Employee[]
+  uploadedFiles      FileAsset[]
+  forceOverrides     SalesOrderItem[]      @relation("ForceOverrideBy")
+  returnInspections  SalesReturnItem[]     @relation("ReturnInspectedBy")
+  notes              Note[]
+  tasksCreated       Task[]                @relation("TaskCreatedBy")
+  remindersCreated   Reminder[]            @relation("ReminderCreatedBy")
+  remindersAcked     Reminder[]            @relation("ReminderAcknowledgedBy")
+  reminderTargets    ReminderRecipient[]
+  reminderRules      ReminderRule[]        @relation("ReminderRuleUpdatedBy")
+  notifications      NotificationLog[]
+  reportExports      ReportExport[]
+  journalEntries     JournalEntry[]        @relation("JournalPostedBy")
+  approvedLeaves     LeaveRequest[]        @relation("LeaveApprovedBy")
+  requestedLeaves    LeaveRequest[]        @relation("LeaveRequestedBy")
+  attendanceMarked   Attendance[]          @relation("AttendanceRecordedBy")
+  payrollsCreated    PayrollRun[]          @relation("PayrollCreatedBy")
+  payrollsApproved   PayrollRun[]          @relation("PayrollApprovedBy")
+  salariesPaid       PayrollPayment[]      @relation("PayrollPaidBy")
+  advancesGiven      SalaryAdvance[]       @relation("AdvanceCreatedBy")
+  generatedDocs      GeneratedDocument[]
+  backupRuns         BackupRun[]
+  expensesCreated    Expense[]             @relation("ExpenseCreatedBy")
+  pettyCashHeld      PettyCashBox[]        @relation("PettyCashHolder")
+  purchaseOrders     PurchaseOrder[]       @relation("PurchaseOrderCreatedBy")
+  materialIssues     MaterialIssue[]       @relation("MaterialIssueCreatedBy")
+  materialChallans   MaterialChallan[]     @relation("MaterialChallanCreatedBy")
+  purchaseReturns    PurchaseReturn[]      @relation("PurchaseReturnCreatedBy")
+  materialMovements  RawMaterialMovement[] @relation("MaterialMovementBy")
+  refunds            Refund[]              @relation("RefundCreatedBy")
+  salesReturns       SalesReturn[]         @relation("SalesReturnCreatedBy")
+  creditAllocations  CreditAllocation[]    @relation("CreditAllocatedBy")
+  chequesRecorded    Cheque[]              @relation("ChequeRecordedBy")
+  intakesReversed    StockIntake[]         @relation("IntakeReversedBy")
+  settlementsMade    ProjectSettlement[]   @relation("SettlementMadeBy")
+  linesCleared       JournalLine[]         @relation("JournalLineClearedBy")
+  salesTargetsSet    SalesTarget[]         @relation("SalesTargetSetBy")
+  payRequestsMade    PayDetailsRequest[]   @relation("PayDetailsRequestedBy")
+  payRequestsDecided PayDetailsRequest[]   @relation("PayDetailsDecidedBy")
+  employeeDocsAdded  EmployeeDocument[]    @relation("EmployeeDocumentAddedBy")
 }
 
 /// A signed-in device. `token` stores the SHA-256 hash of the cookie value, never
@@ -373,6 +378,7 @@ model FileAsset {
   paymentProofs       Payment[]            @relation("PaymentProof")
   chequeProofs        Cheque[]             @relation("ChequeProof")
   quotationImages     QuotationItem[]      @relation("QuotationItemImage")
+  employeeDocuments   EmployeeDocument[]
 
   @@index([companyId])
 }
@@ -2288,7 +2294,12 @@ model Employee {
   salaryMethod      PaymentMethod  @default(CASH) // how the salary is usually paid
   bankName          String?
   bankAccountNumber String?
+  bankBranch        String?
   walletNumber      String? // bKash / Nagad / Rocket number
+  /// Someone who knows them and can vouch for them (not the emergency contact).
+  referenceName     String?
+  referencePhone    String?
+  referenceRelation String?
   notes             String?
   status            EmployeeStatus @default(ACTIVE)
   createdAt         DateTime       @default(now())
@@ -2308,9 +2319,62 @@ model Employee {
   reminderTargets ReminderRecipient[]
   notifications   NotificationLog[]
   packedOrders    SalesOrder[]        @relation("OrderPackedBy")
+  payRequests     PayDetailsRequest[]
+  documents       EmployeeDocument[]
 
   @@unique([companyId, code])
   @@unique([companyId, userId])
+}
+
+/// An employee's ask (from My HR) to be paid another way or to another account.
+/// HR approves it before the pay details change, so salaries cannot be redirected
+/// by whoever holds the login. One waits at a time per employee.
+model PayDetailsRequest {
+  id            String           @id @default(cuid())
+  companyId     String
+  employeeId    String
+  /// The asked-for pay details: { salaryMethod, bankName, bankBranch, bankAccountNumber, walletNumber }.
+  changes       Json
+  /// The pay details when it was asked, to show what changes.
+  previous      Json
+  note          String?
+  status        PayRequestStatus @default(PENDING)
+  requestedById String?
+  decidedById   String?
+  decidedAt     DateTime?
+  /// Why it was turned down (or a note on the approval).
+  decisionNote  String?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee    Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  requestedBy User?    @relation("PayDetailsRequestedBy", fields: [requestedById], references: [id], onDelete: SetNull)
+  decidedBy   User?    @relation("PayDetailsDecidedBy", fields: [decidedById], references: [id], onDelete: SetNull)
+
+  @@index([companyId, status, createdAt])
+  @@index([employeeId, createdAt])
+}
+
+/// A paper kept in an employee's data vault: an NID scan, a photo, a certificate.
+/// The file opens to HR (hr.manage) and to the employee.
+model EmployeeDocument {
+  id         String               @id @default(cuid())
+  companyId  String
+  employeeId String
+  kind       EmployeeDocumentKind
+  title      String?
+  fileId     String
+  addedById  String?
+  createdAt  DateTime             @default(now())
+
+  company  Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  file     FileAsset @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  addedBy  User?     @relation("EmployeeDocumentAddedBy", fields: [addedById], references: [id], onDelete: SetNull)
+
+  @@index([employeeId, kind, createdAt])
+  @@index([fileId])
 }
 
 /// Monthly gross salary from a day onwards (the first one is the joining salary).
@@ -3191,6 +3255,21 @@ enum MessageChannel {
   SMS
   IN_APP
   PDF_DOWNLOAD
+}
+
+enum PayRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  WITHDRAWN
+}
+
+enum EmployeeDocumentKind {
+  NID
+  PHOTO
+  CERTIFICATE
+  CONTRACT
+  OTHER
 }
 
 enum DeliveryStatus {

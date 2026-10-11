@@ -13,6 +13,7 @@ import * as leave from "@/modules/hr/leave.service";
 import * as payroll from "@/modules/hr/payroll.service";
 import * as screens from "@/modules/hr/screens.service";
 import * as settings from "@/modules/hr/settings.service";
+import * as vault from "@/modules/hr/vault.service";
 
 /*
  * HR & Payroll Server Actions. Each returns { ok: true, data } or { ok: false, error }.
@@ -407,3 +408,44 @@ export const voidPayrollPaymentAction = async (paymentId: string, input: unknown
   );
 export const getPayslipAction = async (runId: string, itemId: string) =>
   runAction(async () => payroll.getPayslip(await salaryRead(), runId, itemId));
+
+// --- Data vault: papers and pay detail changes (hr.manage) --------------------------------
+/** Keeps a paper in an employee's vault: the form carries the file, its kind and a title. */
+export const addEmployeeDocumentAction = async (employeeId: string, form: FormData) =>
+  change(async () => {
+    const ctx = await hrManage();
+    const document = await vault.addEmployeeDocument(
+      ctx,
+      employeeId,
+      { kind: form.get("kind"), title: form.get("title") || null },
+      await files.fileFromForm(form),
+      await getRequestMeta(),
+    );
+    return { id: document.id, kind: document.kind, fileName: document.fileName };
+  });
+export const removeEmployeeDocumentAction = async (documentId: string) =>
+  change(async () =>
+    vault.removeEmployeeDocument(await hrManage(), documentId, await getRequestMeta()),
+  );
+export const listPayRequestsAction = async (query: unknown = {}) =>
+  runAction(async () => vault.listPayRequests(await hrManage(), query));
+export const approvePayRequestAction = async (requestId: string, input: unknown = {}) =>
+  change(async () => {
+    const r = await vault.approvePayRequest(
+      await hrManage(),
+      requestId,
+      input,
+      await getRequestMeta(),
+    );
+    return { id: r.id, status: r.status, changesText: r.changesText };
+  });
+export const rejectPayRequestAction = async (requestId: string, input: unknown) =>
+  change(async () => {
+    const r = await vault.rejectPayRequest(
+      await hrManage(),
+      requestId,
+      input,
+      await getRequestMeta(),
+    );
+    return { id: r.id, status: r.status };
+  });

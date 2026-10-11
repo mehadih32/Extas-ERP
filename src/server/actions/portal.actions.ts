@@ -12,6 +12,7 @@ import * as leave from "@/modules/hr/leave.service";
 import * as payroll from "@/modules/hr/payroll.service";
 import * as portal from "@/modules/hr/portal.service";
 import * as screens from "@/modules/hr/screens.service";
+import * as vault from "@/modules/hr/vault.service";
 import * as plannerScreens from "@/modules/reminders/screens.service";
 import * as tasks from "@/modules/reminders/task.service";
 
@@ -44,6 +45,8 @@ export const getMyPayslipScreenAction = async (itemId: string) =>
   runAction(async () => screens.getMyPayslipScreen(await self(), itemId));
 export const getMyAdvancesScreenAction = async () =>
   runAction(async () => screens.getMyAdvancesScreen(await self()));
+export const getMyProfileScreenAction = async () =>
+  runAction(async () => screens.getMyProfileScreen(await self()));
 
 export const getMyOverviewAction = async () =>
   runAction(async () => portal.getMyOverview(await self()));
@@ -89,3 +92,30 @@ export const setMyTaskStatusAction = async (taskId: string, input: unknown) =>
     const task = await tasks.setMyTaskStatus(await self(), taskId, input, await getRequestMeta());
     return { id: task.id, title: task.title, status: task.status };
   });
+
+// --- My details: the employee's own data vault ------------------------------------------
+export const updateMyDetailsAction = async (input: unknown) =>
+  change(async () => {
+    const result = await vault.updateMyDetails(await self(), input, await getRequestMeta());
+    return { changed: result.changed, gaps: result.gaps };
+  });
+export const requestPayDetailsChangeAction = async (input: unknown) =>
+  change(async () => {
+    const r = await vault.requestPayDetailsChange(await self(), input, await getRequestMeta());
+    return { id: r.id, status: r.status, changesText: r.changesText };
+  });
+export const withdrawMyPayRequestAction = async (requestId: string) =>
+  change(async () => vault.withdrawMyPayRequest(await self(), requestId, await getRequestMeta()));
+/** Keeps a paper in the employee's own vault: the form carries the file, its kind and a title. */
+export const addMyDocumentAction = async (form: FormData) =>
+  change(async () => {
+    const document = await vault.addMyDocument(
+      await self(),
+      { kind: form.get("kind"), title: form.get("title") || null },
+      await files.fileFromForm(form),
+      await getRequestMeta(),
+    );
+    return { id: document.id, kind: document.kind, fileName: document.fileName };
+  });
+export const removeMyDocumentAction = async (documentId: string) =>
+  change(async () => vault.removeMyDocument(await self(), documentId, await getRequestMeta()));

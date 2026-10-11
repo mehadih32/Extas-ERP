@@ -131,6 +131,8 @@ describe("where a reminder or a message opens", () => {
     expect(at("ACCOUNTS", "Employee")).toBe("/hr/employees/x%201");
     expect(at("PRODUCTION_MANAGER", "Employee")).toBeNull();
     expect(at("EMPLOYEE", "Reminder")).toBe("/planner/reminders/x%201");
+    expect(at("EMPLOYEE", "MyDetails")).toBe("/me/profile");
+    expect(at("SALES_EXECUTIVE", "MyDetails")).toBe("/me/profile");
     expect(recordHref(holding(role("SUPER_ADMIN")), { type: "Task", id: null })).toBeNull();
     expect(recordHref(holding(role("SUPER_ADMIN")), { type: "Unknown", id: "x" })).toBeNull();
   });

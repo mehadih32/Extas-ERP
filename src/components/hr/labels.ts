@@ -131,11 +131,12 @@ export function shiftMonth(month: string, by: number): string {
 export function payDetails(p: {
   salaryMethod: PaymentMethod;
   bankName: string | null;
+  bankBranch?: string | null;
   bankAccountNumber: string | null;
   walletNumber: string | null;
 }): string | null {
   if (p.salaryMethod === "BANK_TRANSFER" || p.salaryMethod === "CHEQUE") {
-    return [p.bankName, p.bankAccountNumber].filter(Boolean).join(" · ") || null;
+    return [p.bankName, p.bankBranch, p.bankAccountNumber].filter(Boolean).join(" · ") || null;
   }
   if (p.salaryMethod === "BKASH" || p.salaryMethod === "NAGAD" || p.salaryMethod === "ROCKET") {
     return p.walletNumber;
@@ -184,6 +185,7 @@ export const hrHref = {
   myPayslips: "/me/payslips",
   myPayslip: (itemId: string) => `/me/payslips/${enc(itemId)}`,
   myAdvances: "/me/advances",
+  myProfile: "/me/profile",
 };
 
 /** A short fingerprint of a day's marks: the register starts again when the saved marks change. */

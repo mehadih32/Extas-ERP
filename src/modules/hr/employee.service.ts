@@ -16,6 +16,7 @@ import {
   canSeeSalaries,
 } from "@/modules/hr/access";
 import {
+  canActOnOwnRecord,
   canChangeSalary,
   canDeleteEmployee,
   canGivePortalLogin,
@@ -40,6 +41,12 @@ import {
   updateEmployeeSchema,
 } from "@/modules/hr/schemas";
 import { ensureHrSetup } from "@/modules/hr/setup";
+import {
+  payDetailsOf,
+  payFieldsChanged,
+  vaultGaps,
+  vaultIncompleteWhere,
+} from "@/modules/hr/vault";
 import { addMember, setMemberActive } from "@/modules/rbac/member.service";
 
 /*
@@ -96,6 +103,11 @@ function profileOf(e: EmployeeRow, day: string) {
     dateOfBirth: dateOnly(e.dateOfBirth),
     bloodGroup: e.bloodGroup,
     emergencyContact: e.emergencyContact,
+    referenceName: e.referenceName,
+    referencePhone: e.referencePhone,
+    referenceRelation: e.referenceRelation,
+    /** What the data vault still misses (hr/vault.ts). */
+    vaultGaps: vaultGaps(e),
     joinDate: dateOnly(e.joinDate),
     exitDate: dateOnly(e.exitDate),
     exitReason: e.exitReason,
@@ -118,6 +130,7 @@ function payOf(e: EmployeeRow, day: string) {
     overtimeRate: e.overtimeRate?.toFixed(2) ?? null,
     salaryMethod: e.salaryMethod,
     bankName: e.bankName,
+    bankBranch: e.bankBranch,
     bankAccountNumber: e.bankAccountNumber,
     walletNumber: e.walletNumber,
     notes: e.notes,
@@ -206,6 +219,7 @@ export async function listEmployees(ctx: CompanyContext, raw: unknown = {}) {
         q.status ? { status: q.status } : {},
         current ? { OR: [{ exitDate: null }, { exitDate: { gte: dateColumn(day) } }] } : {},
         q.department ? { department: { equals: q.department, mode: "insensitive" } } : {},
+        q.incomplete ? vaultIncompleteWhere() : {},
         q.search
           ? {
               OR: [
@@ -374,6 +388,16 @@ export async function updateEmployee(
   if (input.code && input.code !== employee.code)
     await assertCodeFree(ctx, input.code, employee.id);
   if (input.status) assertAllowed(canSetStatus(state(employee)));
+  // Where one's own salary goes is someone else's call, as with the salary itself.
+  if (payFieldsChanged(payDetailsOf(employee), input)) {
+    assertAllowed(
+      canActOnOwnRecord(
+        employee,
+        actingAs(ctx),
+        "Someone else must change your own pay details. You can ask for the change in My HR.",
+      ),
+    );
+  }
   const oldJoin = dateOnly(employee.joinDate);
   const { joinDate: newJoin, dateOfBirth, ...details } = input;
   const exit = dateOnly(employee.exitDate);

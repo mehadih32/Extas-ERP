@@ -14,7 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import type { EmployeeForm as EmployeeFormData } from "@/modules/hr/screens.service";
 import { createEmployeeAction, updateEmployeeAction } from "@/server/actions/hr.actions";
 
-import { BLOOD_GROUPS, hrHref, SALARY_METHODS } from "./labels";
+import { BLOOD_GROUPS, hrHref, payDetails, SALARY_METHODS } from "./labels";
 
 const CODE_PATTERN = /^[A-Za-z0-9/_-]+$/;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -92,13 +92,21 @@ export function EmployeeForm({ form: data }: { form: EmployeeFormData }) {
       dateOfBirth: optional("dateOfBirth"),
       bloodGroup: (optional("bloodGroup") as (typeof BLOOD_GROUPS)[number] | null) ?? null,
       emergencyContact: optional("emergencyContact"),
+      referenceName: optional("referenceName"),
+      referencePhone: optional("referencePhone"),
+      referenceRelation: optional("referenceRelation"),
       notes: optional("notes"),
       joinDate,
       overtimeRate: overtime as number | null,
-      salaryMethod: method,
-      bankName: bank ? optional("bankName") : null,
-      bankAccountNumber: bank ? optional("bankAccountNumber") : null,
-      walletNumber: wallet ? optional("walletNumber") : null,
+      ...(data.can.changePay
+        ? {
+            salaryMethod: method,
+            bankName: bank ? optional("bankName") : null,
+            bankBranch: bank ? optional("bankBranch") : null,
+            bankAccountNumber: bank ? optional("bankAccountNumber") : null,
+            walletNumber: wallet ? optional("walletNumber") : null,
+          }
+        : {}),
     };
     form.startTransition(async () => {
       const result = e
@@ -206,6 +214,23 @@ export function EmployeeForm({ form: data }: { form: EmployeeFormData }) {
           max: 160,
           placeholder: "Name, relation and phone",
         })}
+        <div className="grid items-start gap-5 sm:grid-cols-3">
+          {text("referenceName", "Reference person (optional)", {
+            defaultValue: e?.referenceName,
+            max: 120,
+            hint: "Someone who knows them, other than family at home.",
+          })}
+          {text("referencePhone", "Reference phone (optional)", {
+            defaultValue: e?.referencePhone,
+            max: 30,
+            type: "tel",
+          })}
+          {text("referenceRelation", "How they know them (optional)", {
+            defaultValue: e?.referenceRelation,
+            max: 60,
+            placeholder: "Like: former employer",
+          })}
+        </div>
       </Section>
 
       <Section title="The job">
@@ -273,35 +298,54 @@ export function EmployeeForm({ form: data }: { form: EmployeeFormData }) {
             inputMode: "decimal",
             hint: "Left empty, overtime is not paid.",
           })}
-          <Field id="salaryMethod" label="Salary paid by" error={fieldError("salaryMethod")}>
-            <NativeSelect
-              id="salaryMethod"
-              value={method}
-              onChange={(event) => setMethod(event.target.value as PaymentMethod)}
-              containerClassName="sm:w-full"
-            >
-              {SALARY_METHODS.map((m) => (
-                <option key={m} value={m}>
-                  {METHOD_LABELS[m]}
-                </option>
-              ))}
-            </NativeSelect>
-          </Field>
-          {bank && (
+          {data.can.changePay ? (
             <>
-              {text("bankName", "Bank (optional)", { defaultValue: e?.bankName, max: 120 })}
-              {text("bankAccountNumber", "Account number (optional)", {
-                defaultValue: e?.bankAccountNumber,
-                max: 40,
-              })}
+              <Field id="salaryMethod" label="Salary paid by" error={fieldError("salaryMethod")}>
+                <NativeSelect
+                  id="salaryMethod"
+                  value={method}
+                  onChange={(event) => setMethod(event.target.value as PaymentMethod)}
+                  containerClassName="sm:w-full"
+                >
+                  {SALARY_METHODS.map((m) => (
+                    <option key={m} value={m}>
+                      {METHOD_LABELS[m]}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </Field>
+              {bank && (
+                <>
+                  {text("bankName", "Bank (optional)", { defaultValue: e?.bankName, max: 120 })}
+                  {text("bankBranch", "Branch (optional)", {
+                    defaultValue: e?.bankBranch,
+                    max: 120,
+                  })}
+                  {text("bankAccountNumber", "Account number (optional)", {
+                    defaultValue: e?.bankAccountNumber,
+                    max: 40,
+                  })}
+                </>
+              )}
+              {wallet &&
+                text("walletNumber", `${METHOD_LABELS[method]} number (optional)`, {
+                  defaultValue: e?.walletNumber,
+                  max: 30,
+                  type: "tel",
+                })}
             </>
+          ) : (
+            <div className="grid gap-1 sm:col-span-2">
+              <p className="eyebrow">Salary paid by</p>
+              <p className="text-sm">
+                {METHOD_LABELS[method]}
+                {e && payDetails(e) ? ` · ${payDetails(e)}` : ""}
+              </p>
+              <p className="text-[0.8125rem] text-muted-foreground">
+                Someone else changes your own pay details. Ask for the change in My HR.
+              </p>
+            </div>
           )}
-          {wallet &&
-            text("walletNumber", `${METHOD_LABELS[method]} number (optional)`, {
-              defaultValue: e?.walletNumber,
-              max: 30,
-              type: "tel",
-            })}
         </div>
         <Field id="notes" label="Notes for HR (optional)" error={fieldError("notes")}>
           <Textarea

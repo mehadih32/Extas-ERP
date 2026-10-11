@@ -98,7 +98,7 @@ function Loading({ state, what }: { state: { failed?: string }; what: string }) 
   );
 }
 
-function Figure({
+export function Figure({
   scope,
   value,
   alert = false,
@@ -228,7 +228,7 @@ function Panel({
 }
 
 /** One line in a panel: a name (a link when this person may open it) and an amount. */
-function Row({
+export function Row({
   href,
   title,
   sub,

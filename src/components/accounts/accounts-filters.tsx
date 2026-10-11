@@ -7,6 +7,7 @@ import { useOptimistic, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
+import { formatDay, formatDayRange } from "@/lib/display";
 import { cn } from "@/lib/utils";
 
 import { EXPENSE_STATUS_LABELS, EXPENSE_STATUSES, SOURCE_FILTERS, SOURCE_LABELS } from "./labels";
@@ -162,6 +163,18 @@ export function AccountsFilters({
             />
             Only the ones I recorded
           </label>
+        )}
+        {shown.list === "expenses" && (shown.from || shown.to) && (
+          <p className="text-sm text-muted-foreground">
+            Dated{" "}
+            <span className="font-medium text-foreground">
+              {shown.from && shown.to
+                ? formatDayRange(shown.from, shown.to)
+                : shown.from
+                  ? `from ${formatDay(shown.from)}`
+                  : `up to ${formatDay(shown.to!)}`}
+            </span>
+          </p>
         )}
         {shown.list === "payments" && shown.supplier && (
           <p className="text-sm text-muted-foreground">

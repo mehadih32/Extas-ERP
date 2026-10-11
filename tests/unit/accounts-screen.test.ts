@@ -3,7 +3,10 @@ import { describe, expect, it } from "vitest";
 
 import {
   accountsHref,
+  assetHref,
   columnAmount,
+  costPeriodLabel,
+  employeePayHref,
   growthText,
   isNegative,
   PROFIT_PERIOD_LABELS,
@@ -28,6 +31,13 @@ import {
 } from "@/components/accounts/report-view";
 import { visibleAccountsTabs } from "@/components/accounts/tabs";
 import { phoneTabs, topBarFold, visibleNavItems } from "@/components/shell/nav-items";
+import {
+  costPeriodOf,
+  costPeriodParam,
+  costWindow,
+  costYears,
+  parseCostPeriod,
+} from "@/modules/accounts/cost-periods";
 import { growth, isProfitPeriod, profitWindow } from "@/modules/accounts/profit-periods";
 import { canMoveMoney, canReverseEntry, canVoidSupplierPayment } from "@/modules/accounts/rules";
 import {
@@ -134,6 +144,15 @@ describe("the Accounts lists' filters in the address bar", () => {
     });
     expect(isAccountsFiltered(expenses)).toBe(true);
     expect(accountsListSearch(clearedAccountsView(expenses))).toBe("");
+    // The Overview's breakdown opens a head's expenses for its month.
+    const dated = expenseViewFrom({ head: "abc-123", from: "2026-10-01", to: "2026-10-31" });
+    expect(accountsListSearch(dated)).toBe("?head=abc-123&from=2026-10-01&to=2026-10-31");
+    expect(expenseListQuery(dated)).toMatchObject({ from: "2026-10-01", to: "2026-10-31" });
+    expect(isAccountsFiltered(expenseViewFrom({ from: "2026-10-01" }))).toBe(true);
+    expect(expenseViewFrom({ from: "1 Oct", to: "2026-10-31'" })).toMatchObject({
+      from: undefined,
+      to: undefined,
+    });
     expect(expenseViewFrom({ head: "<script>", status: "PAID" })).toMatchObject({
       head: undefined,
       status: undefined,
@@ -316,5 +335,43 @@ describe("the Net profit card's periods", () => {
       "This year",
       "Lifetime",
     ]);
+  });
+});
+
+describe("the expense breakdown's month or year", () => {
+  it("reads ?costs= as a month or a whole year, and nothing else", () => {
+    expect(parseCostPeriod("2026-10")).toEqual({ year: 2026, month: 10 });
+    expect(parseCostPeriod(" 2026 ")).toEqual({ year: 2026, month: null });
+    for (const bad of ["2026-13", "2026-00", "26-10", "1999", "2026-1", "", undefined, 2026]) {
+      expect(parseCostPeriod(bad), String(bad)).toBeNull();
+    }
+    expect(costPeriodParam({ year: 2026, month: 3 })).toBe("2026-03");
+    expect(costPeriodParam({ year: 2026, month: null })).toBe("2026");
+    expect(costPeriodOf("2026-10-11")).toEqual({ year: 2026, month: 10 });
+  });
+
+  it("covers the month's days, or the calendar year", () => {
+    expect(costWindow({ year: 2026, month: 10 })).toEqual({ from: "2026-10-01", to: "2026-10-31" });
+    expect(costWindow({ year: 2028, month: 2 })).toEqual({ from: "2028-02-01", to: "2028-02-29" });
+    expect(costWindow({ year: 2026, month: 2 })).toEqual({ from: "2026-02-01", to: "2026-02-28" });
+    expect(costWindow({ year: 2026, month: null })).toEqual({
+      from: "2026-01-01",
+      to: "2026-12-31",
+    });
+  });
+
+  it("offers the years from the first entry to this one, newest first", () => {
+    expect(costYears(2024, 2026)).toEqual([2026, 2025, 2024]);
+    expect(costYears(null, 2026)).toEqual([2026]);
+    expect(costYears(2027, 2026)).toEqual([2026]);
+  });
+
+  it("names the period and links the pages", () => {
+    expect(costPeriodLabel({ year: 2026, month: 10 })).toBe("October 2026");
+    expect(costPeriodLabel({ year: 2026, month: null })).toBe("2026");
+    expect(employeePayHref("emp 1", 2026)).toBe("/accounts/salaries/emp%201?year=2026");
+    expect(employeePayHref("e1")).toBe("/accounts/salaries/e1");
+    expect(assetHref.asset("a1")).toBe("/accounts/assets/a1");
+    expect(assetHref.edit("a1")).toBe("/accounts/assets/a1/edit");
   });
 });

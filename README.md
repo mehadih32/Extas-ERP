@@ -409,12 +409,31 @@ Built one module at a time, each in its own pull request. So far:
     project) and **Net profit** (gross and net profit for Today, This month, This year (the
     financial year) or Lifetime via `?period=`, with ↑/↓ % against the same days of the period
     before, opening the most profitable categories and buyers by gross profit on invoices).
-    Below them, what waits for Accounts (claims to pay back, payroll to approve or pay, loan
-    installments) and what else the business holds and owes (fixed assets, employee advances,
-    buyer advances, loans and investors). Every amount shows `***` until **Show amounts** (or
-    a card's own eye) shows it; nothing is remembered, so the page opens hidden again. Money is
-    moved between accounts and suppliers are paid from here. The cards only read the journal,
-    the stock and the sales documents; nothing is stored or posted.
+    Right below them, the **Expense breakdown** for a month or a whole calendar year
+    (`?costs=2026-10` or `?costs=2026`, this month by default) in four panels: **Salary &
+    payroll** (each employee's net pay from the approved payrolls of those months, what is not
+    paid yet, and Salary-group expenses in their name such as a QC bill), **Administrative
+    costs** (posted running costs by head, without production, raw material or salary heads,
+    each opening the expense list for those days), **Asset purchases** (fixed assets bought in
+    those days) and **Vendor summary** (suppliers, factories and CMTs ranked by money paid,
+    voided payments left out). An employee's name opens their **pay for a year**
+    (`/accounts/salaries/<id>`): basic, allowances, overtime, bonus, deductions and net pay
+    month by month with the day it was paid, a column for each other pay head, and the year's
+    totals. Below that, what waits for Accounts (claims to pay back, payroll to approve or pay,
+    loan installments) and what else the business holds and owes (fixed assets, employee
+    advances, buyer advances, loans and investors). Every amount shows `***` until **Show
+    amounts** (or a card's own eye) shows it; nothing is remembered, so the page opens hidden
+    again. Money is moved between accounts and suppliers are paid from here. The cards and
+    panels only read the journal, the payroll, the stock and the sales documents; nothing is
+    stored or posted.
+    - **Fixed asset register** (`/accounts/assets`, from the Fixed assets figure): machines,
+      furniture, computers and the rest at cost, depreciation so far and value now, filtered by
+      status. Accounts records a purchase (paid now from cash, a bank or a wallet, on credit from
+      a supplier, or owned before go-live with the depreciation already taken), with a yearly
+      rate and a straight-line or reducing-balance method; posts the depreciation due up to the
+      end of last month (counted by days, never twice for the same days); and on an asset's page
+      changes its details, sells or scraps it (a gain or loss on the sale) or removes one
+      entered by mistake (its entries reversed). The page lists every entry the asset made.
   - **Cash & bank**: cash in hand, wallets and every bank account with today's balance. A
     bank account's page shows its details and its statement for any days (opening balance,
     deposits, withdrawals, closing and average balance, month by month), each line opening its
@@ -447,8 +466,8 @@ Built one module at a time, each in its own pull request. So far:
     books. Each account in a report opens its ledger.
 
   Everyone else who spends company money sees an **Expenses** entry in their menu instead: the
-  claims they sent, and a form to send a new one. Fixed assets, loans and investors, and
-  printing reports and bank statements as PDFs, come in a later step.
+  claims they sent, and a form to send a new one. Loans and investors, and printing reports
+  and bank statements as PDFs, come in a later step.
 
 - **Raw materials** (`/materials`), in six tabs:
   - **Overview**: how many materials there are, how many are running low, the open and late

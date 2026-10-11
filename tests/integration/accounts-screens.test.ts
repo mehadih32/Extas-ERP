@@ -39,6 +39,8 @@ vi.mock("next/navigation", () => ({
 }));
 vi.mock("next/cache", () => ({ revalidatePath: () => undefined, revalidateTag: () => undefined }));
 
+import NewAssetPage from "@/app/(app)/accounts/assets/new/page";
+import AssetRegisterPage from "@/app/(app)/accounts/assets/page";
 import EditBankAccountPage from "@/app/(app)/accounts/cash-bank/[bankAccountId]/edit/page";
 import BankAccountPage from "@/app/(app)/accounts/cash-bank/[bankAccountId]/page";
 import NewBankAccountPage from "@/app/(app)/accounts/cash-bank/new/page";
@@ -92,6 +94,9 @@ import {
   getCashBankScreenAction,
   getChartScreenAction,
   getJournalEntryScreenAction,
+  getAssetFormAction,
+  getAssetRegisterAction,
+  getExpenseBreakdownAction,
   getHoldingsBreakdownAction,
   getJournalListAction,
   getMarketBalancesAction,
@@ -303,6 +308,10 @@ run("Accounts screens", () => {
         ["market due and payable", getMarketBalancesAction(), view],
         ["inventory and WIP", getHoldingsBreakdownAction(), view],
         ["most profitable", getProfitLeadersAction("LIFETIME"), view],
+        ["expense breakdown", getExpenseBreakdownAction(), view],
+        ["expense breakdown for a year", getExpenseBreakdownAction("2026"), view],
+        ["fixed asset register", getAssetRegisterAction(), view],
+        ["record an asset", getAssetFormAction(), view && manage],
         ["cash and bank", getCashBankScreenAction(), view],
         ["bank statement", getBankScreenAction(env.bank.id), view],
         ["new bank form", getBankFormAction(), manage],
@@ -368,6 +377,8 @@ run("Accounts screens", () => {
       );
       const pages: Array<[string, () => Promise<React.ReactElement>, string]> = [
         ["cash and bank", () => CashBankPage(), page(view)],
+        ["fixed asset register", () => AssetRegisterPage(query), page(view)],
+        ["record an asset", () => NewAssetPage(), page(view && manage)],
         ["new bank", () => NewBankAccountPage(), page(manage)],
         [
           "bank",

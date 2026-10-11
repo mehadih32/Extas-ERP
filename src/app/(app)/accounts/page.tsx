@@ -3,7 +3,8 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { ExecutiveCards } from "@/components/accounts/executive-cards";
-import { signedMoney } from "@/components/accounts/labels";
+import { ExpenseBreakdown } from "@/components/accounts/expense-breakdown";
+import { assetHref, signedMoney } from "@/components/accounts/labels";
 import { MoneyActions } from "@/components/accounts/money-actions";
 import { AccountsNoAccess } from "@/components/accounts/no-access";
 import { Amount, PrivacyProvider, PrivacyToggle, ScopeEye } from "@/components/accounts/privacy";
@@ -12,7 +13,10 @@ import { visibleAccountsTabs } from "@/components/accounts/tabs";
 import { SectionError } from "@/components/dashboard/section-error";
 import { money } from "@/components/sales/labels";
 import { formatCount, formatDay } from "@/lib/display";
-import { getAccountsOverviewScreenAction } from "@/server/actions/accounts.actions";
+import {
+  getAccountsOverviewScreenAction,
+  getExpenseBreakdownAction,
+} from "@/server/actions/accounts.actions";
 import { requireCompanyPage } from "@/server/pages/guards";
 
 export const metadata: Metadata = { title: "Accounts" };
@@ -54,18 +58,13 @@ function Section({
 }
 
 /**
- * The Accounts Overview (accounts.view, like GET /api/accounts/overview): money
- * in hand, in the bank and in wallets, what buyers owe and what is owed to
- * suppliers, profit so far, what the business holds, and what waits for
- * Accounts. People who reach Accounts for one tab only start there instead.
- */
-/**
  * The Accounts Overview (accounts.view, like GET /api/accounts/overview): the
  * five executive cards (cash and bank, market due, market payable, inventory
- * and work in progress, net profit for ?period=today|month|year|lifetime),
- * what waits for Accounts, and what else the business holds and owes. Every
- * amount shows *** until the eye shows it. People who reach Accounts for one
- * tab only start there instead.
+ * and work in progress, net profit for ?period=today|month|year|lifetime), the
+ * expense breakdown for ?costs=2026-10 (a month) or ?costs=2026 (a year), what
+ * waits for Accounts, and what else the business holds and owes. Every amount
+ * shows *** until the eye shows it. People who reach Accounts for one tab only
+ * start there instead.
  */
 export default async function AccountsOverviewPage({
   searchParams,
@@ -78,10 +77,11 @@ export default async function AccountsOverviewPage({
     if (first && first.href !== "/accounts") redirect(first.href);
     return <AccountsNoAccess />;
   }
-  const { period } = await searchParams;
-  const result = await getAccountsOverviewScreenAction(
-    typeof period === "string" ? period.toUpperCase() : undefined,
-  );
+  const { period, costs } = await searchParams;
+  const [result, breakdown] = await Promise.all([
+    getAccountsOverviewScreenAction(typeof period === "string" ? period.toUpperCase() : undefined),
+    getExpenseBreakdownAction(typeof costs === "string" ? costs : undefined),
+  ]);
   if (!result.ok) {
     if (result.error.code === "FORBIDDEN") return <AccountsNoAccess />;
     return (
@@ -118,6 +118,16 @@ export default async function AccountsOverviewPage({
         </div>
 
         <ExecutiveCards cards={o.cards} accounts={o.cash.accounts} currency={currency} />
+
+        {breakdown.ok ? (
+          <ExpenseBreakdown data={breakdown.data} currency={currency} />
+        ) : (
+          <SectionError
+            title="Expense breakdown"
+            heading="The expense breakdown could not load"
+            error={breakdown.error}
+          />
+        )}
 
         <Section id="waiting-heading" title="Waiting for Accounts" scope="waiting">
           <dl className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -186,6 +196,7 @@ export default async function AccountsOverviewPage({
               value={m(o.fixedAssets)}
               scope="holds"
               hint="After depreciation"
+              href={assetHref.register}
             />
             <Stat
               label="Advances to employees"

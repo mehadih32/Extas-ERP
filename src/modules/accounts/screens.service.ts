@@ -813,6 +813,15 @@ async function sourceLink(
           : null,
       };
     }
+    case "FIXED_ASSET":
+    case "DEPRECIATION": {
+      // A removed asset leaves the register; its reversed entries stay.
+      const asset = await ctx.db.fixedAsset.findUnique({
+        where: { id: sourceId },
+        select: { name: true },
+      });
+      return asset ? { title: asset.name, href: `/accounts/assets/${sourceId}` } : null;
+    }
     default:
       return null;
   }

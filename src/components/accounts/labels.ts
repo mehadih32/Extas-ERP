@@ -1,7 +1,15 @@
-import type { AccountSubType, AccountType, JournalSource, PaymentType } from "@prisma/client";
+import type {
+  AccountSubType,
+  AccountType,
+  AssetStatus,
+  DepreciationMethod,
+  JournalSource,
+  PaymentType,
+} from "@prisma/client";
 
-import { formatDay, formatDayRange, groupAmount } from "@/lib/display";
+import { formatDay, formatDayRange, FULL_MONTHS, groupAmount } from "@/lib/display";
 import type { MoneyAccountKind } from "@/modules/accounts/choices";
+import type { CostPeriod } from "@/modules/accounts/cost-periods";
 import type { Growth, ProfitPeriod } from "@/modules/accounts/profit-periods";
 import type { PeriodPreset } from "@/modules/accounts/periods";
 import type { ExpenseStatus } from "@/modules/expenses/schemas";
@@ -256,4 +264,35 @@ export function profitSpan(card: {
   if (!card.from) return `All time to ${formatDay(card.to)}`;
   if (card.period === "TODAY") return `Today, ${formatDay(card.to)}`;
   return formatDayRange(card.from, card.to);
+}
+
+/** The breakdown's month or year: "October 2026", or "2026" for the whole year. */
+export function costPeriodLabel(period: CostPeriod): string {
+  return period.month === null
+    ? String(period.year)
+    : `${FULL_MONTHS[period.month - 1]} ${period.year}`;
+}
+
+export const ASSET_STATUS_LABELS: Record<AssetStatus, string> = {
+  IN_USE: "In use",
+  UNDER_REPAIR: "Under repair",
+  DISPOSED: "Sold or scrapped",
+};
+
+export const DEPRECIATION_METHOD_LABELS: Record<DepreciationMethod, string> = {
+  STRAIGHT_LINE: "The same amount every year",
+  REDUCING_BALANCE: "A share of what is left each year",
+};
+
+export const assetHref = {
+  register: "/accounts/assets",
+  asset: (id: string) => `/accounts/assets/${encodeURIComponent(id)}`,
+  edit: (id: string) => `/accounts/assets/${encodeURIComponent(id)}/edit`,
+  record: "/accounts/assets/new",
+};
+
+/** One employee's pay, month by month, for a year. */
+export function employeePayHref(employeeId: string, year?: number): string {
+  const base = `/accounts/salaries/${encodeURIComponent(employeeId)}`;
+  return year ? `${base}?year=${year}` : base;
 }

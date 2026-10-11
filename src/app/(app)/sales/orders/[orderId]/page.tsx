@@ -324,6 +324,17 @@ export default async function OrderPage({
               <Fact label="Pieces">{formatCount(o.pieces, currency)}</Fact>
               <Fact label="Delivered">{formatCount(o.delivered, currency)}</Fact>
               <Fact label="Left">{formatCount(o.remaining, currency)}</Fact>
+              {o.totalCartons !== null && (
+                <Fact label="Total cartons">{formatCount(o.totalCartons, currency)}</Fact>
+              )}
+              {o.packedBy && (
+                <Fact
+                  label="Packed by"
+                  className={o.totalCartons !== null ? "col-span-2" : "col-span-3"}
+                >
+                  {o.packedBy.name}
+                </Fact>
+              )}
               {o.warehouse && (
                 <Fact label="Warehouse" className="col-span-3">
                   {o.warehouse}

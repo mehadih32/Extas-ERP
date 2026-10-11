@@ -160,7 +160,14 @@ const orderLines = {
   matrix: z.array(matrixEntrySchema).max(100).optional(),
 };
 
+/** How the goods go out: cartons and the employee who packed them (both optional). */
+const orderLogistics = {
+  totalCartons: z.number().int().min(0).max(100_000).nullish(),
+  packedById: id.nullish(),
+};
+
 const orderCharges = {
+  ...orderLogistics,
   discount: money.optional(),
   shippingCharge: money.optional(),
   tax: money.optional(),
@@ -259,6 +266,12 @@ export const cancelOrderSchema = z.object({
    */
   settle: settleSchema.optional(),
 });
+
+/** Sets or (null) clears an order's cartons and packer after it was taken. */
+export const orderLogisticsSchema = z.object(orderLogistics);
+
+/** Whether a buyer can take this much more on credit (checked before an order is placed). */
+export const creditCheckSchema = z.object({ partyId: id, amount: money });
 
 /** Sets, moves or (null) clears the day an open order is due to ship. */
 export const orderShipmentSchema = z.object({ shipmentDate: z.iso.date().nullable() });

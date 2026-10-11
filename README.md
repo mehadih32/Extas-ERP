@@ -226,21 +226,37 @@ Built one module at a time, each in its own pull request. So far:
     year or any two dates. The same statement prints as a PDF on the letterhead.
   - **Dues**: what buyers owe the company and what it owes suppliers today, in total and
     account by account, largest first. Each one opens its statement.
-- **Sales** (`/sales`), in five tabs:
+- **Sales** (`/sales`), in six tabs:
+  - **Overview** (the Sales front page): today's figures, refreshed every minute while the
+    page is open (orders today, sales invoiced today, collected today less refunds, orders
+    waiting to deliver with the late ones, dues outstanding, overdue, open quotations and
+    proformas waiting for their advance), each opening its list, then the latest orders and
+    the next ones due to ship. Any order opens in a quick view panel that slides in from the
+    right (buyer, styles, totals, cartons, packer and documents) without leaving the page;
+    the Orders list has the same quick view on each row on larger screens.
   - **Orders**: wholesale, counter and social commerce orders, with their invoice and what is
     still due, searchable by number, buyer or phone and filtered by status and channel. A new
-    order takes the channel, the buyer (needed for wholesale; a counter or social sale can go
-    without one and keep the customer's name, phone and address instead), the warehouse and
-    the styles. Each style opens as a matrix of colours and sizes showing the pieces ready,
-    with one price for the whole style (empty uses the wholesale or retail list price). At
-    checkout the invoice is issued (it can also wait), and the packing list, a delivery
-    challan and a payment can be made with it. Pieces beyond the stock are marked; people
-    allowed to sell beyond stock tick **Force Override & Sell** with a reason, which stays on
-    the order. An order's page shows its lines with what was delivered, the totals with paid
-    and due, its invoice, packing list and challans (each with its PDF), its payments and
-    refunds, and its cost and margin for people who see the financials. From there it is
-    edited (until something is delivered or invoiced), invoiced, packed, delivered in full or
-    in part, given a ship-by day, paid, refunded or cancelled.
+    order is a four-step wizard with a bar at the bottom that keeps the pieces and the total in
+    view: (1) the channel, the buyer (needed for wholesale; a counter or social sale can go
+    without one and keep the customer's name, phone and address instead), the dates and the
+    warehouse; (2) the styles, each a card that folds to its pieces and amount, with a compact
+    matrix of colours and sizes showing the pieces ready under each box (0 in bold red), one
+    price for the whole style (empty uses the wholesale or retail list price), and **Magic
+    Ratio**, which fills chosen colours with a number of sets of a size ratio such as 1:2:2:1
+    (saved size ratios are one tap); (3) the discount, a lump sum off the whole bill with
+    Round to 10 / Round to 100 buttons, the delivery charge and VAT, the total cartons and who
+    packed it (an employee from HR); (4) a review that checks the buyer's credit limit the same
+    way saving does and blocks placing an order that would go over it, then the documents and
+    payment at checkout (the invoice is issued by default; the packing list, a delivery
+    challan and a payment can be made with it). Pieces beyond the stock are marked; placing
+    the order then opens a **Not enough stock** pop-up listing the short SKUs, where people
+    allowed to sell beyond stock choose **Force Allow** with a reason, which stays on the
+    order. An order's page shows its lines with what was delivered, the totals with paid and
+    due, the cartons and the packer, its invoice, packing list and challans (each with its
+    PDF), its payments and refunds, and its cost and margin for people who see the
+    financials. From there it is edited (until something is delivered or invoiced), invoiced,
+    packed, delivered in full or in part, given a ship-by day or its cartons and packer, paid,
+    refunded or cancelled.
   - **Quotations**: the quotation builder takes the buyer, the dates, items picked from the
     catalogue or described freely (fabric, colours, a quantity or a size breakdown, a price),
     styling rules for the factory, discount and tax, terms and the company's custom fields. A
@@ -952,8 +968,18 @@ the proforma becomes a sales order and the advance moves with it.
 matrix. Confirming an order reserves its stock, so the matrix shows the real available
 quantity at once. The delivery challan takes the pieces out of stock. Asking for more than is
 available returns `409 INSUFFICIENT_STOCK` with the short SKUs, which is the cue for the
-"Force Override & Sell" warning. Overriding needs `sales.force_override`, is recorded on each
-line and lands in the audit log.
+"Force Allow" pop-up. Overriding needs `sales.force_override`, is recorded on each line and
+lands in the audit log. Before an order is placed, the screen asks the server whether the
+buyer may take the amount on credit (`checkBuyerCreditAction`, the same account and credit
+limit check saving runs), so a refusal shows on the review step.
+
+**Cartons and packer.** An order can carry its total cartons (`totalCartons`) and the employee
+who packed it (`packedById`, an active or on-leave employee of the company; the link is
+cleared if the employee is deleted). Both are set at checkout, when a proforma becomes an
+order, on edit, or later from the order page, up to the order being cancelled or returned.
+The packing list takes the order's cartons when none are given, and changing the cartons
+updates the packing list's too. The packing list prints "Packed by", and the delivery challan
+prints "Total cartons" and "Packed by", only when they are set.
 
 **Documents at checkout (optional).** Commercial Invoice (made by default), Packing List /
 pick-list and Delivery Challan (price-free). Payment taken at the counter can be included when
@@ -1012,6 +1038,7 @@ the receivables overview update immediately. For a sale without a buyer, the lin
 | `GET/POST /api/sales/orders`, `GET/PATCH …/:id`                    | Orders and checkout; edit before delivery and invoicing  |
 | `POST /api/sales/orders/:id/cancel`                                | Cancel, settling any money paid, and free the stock      |
 | `POST /api/sales/orders/:id/shipment`                              | Set, move or clear the shipment date: `{ shipmentDate }` |
+| `POST /api/sales/orders/:id/logistics`                             | Cartons and packer: `{ totalCartons?, packedById? }`     |
 | `POST /api/sales/orders/:id/invoice` / `packing-list` / `challans` | Make each document later                                 |
 | `GET /api/sales/invoices/:id`, `POST …/:id/void`                   | Commercial invoice / void it (audited)                   |
 | `GET /api/sales/packing-lists/:id`, `PUT …/:id/pick`               | Pick-list and picking progress                           |

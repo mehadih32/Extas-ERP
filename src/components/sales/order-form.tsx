@@ -1,16 +1,25 @@
 "use client";
 
 import type { PaymentMethod, SalesChannel } from "@prisma/client";
-import { LoaderCircleIcon, Trash2Icon, TriangleAlertIcon } from "lucide-react";
+import { CircleCheckIcon, LoaderCircleIcon, TriangleAlertIcon } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { useEffect, useRef, useState, useTransition } from "react";
 
 import { ErrorDialog } from "@/components/feedback/error-dialog";
+import { toast } from "@/components/feedback/toaster";
 import { Field, FormAlert } from "@/components/forms/field";
 import { AMOUNT_HINT, readAmount } from "@/components/products/form-values";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
@@ -19,13 +28,13 @@ import type { ActionError } from "@/lib/result";
 import { cn } from "@/lib/utils";
 import type { OrderForm as OrderFormData, SaleMatrix } from "@/modules/sales/screens.service";
 import {
+  checkBuyerCreditAction,
   convertProformaToOrderAction,
   createOrderAction,
   getSaleMatrixAction,
   updateOrderAction,
 } from "@/server/actions/sales.actions";
 
-import { ColorName } from "./detail-bits";
 import {
   CHANNEL_HINTS,
   CHANNEL_LABELS,
@@ -34,35 +43,49 @@ import {
   salesHref,
   usesWholesalePrice,
 } from "./labels";
+import { type Block, blockPieces, fixed2, StyleCard, wholeNumber } from "./order-style-card";
 import { BuyerPicker, StylePicker } from "./pickers";
 
 type Buyer = { id: string; code: string; name: string };
 
-/** One style on the order: its matrix, a price for every piece of it, and pieces per SKU. */
-type Block = {
-  key: string;
-  styleId: string;
-  matrix: SaleMatrix | null;
-  loadError?: string;
-  unitPrice: string;
-  quantities: Record<string, string>;
-  /** Editing: its SKUs had different prices or line discounts before. */
-  mixedPrices: boolean;
-};
+/** The buyer's credit, checked on the last step the same way saving checks it. */
+type Credit = { state: "idle" | "checking" | "ok" } | { state: "refused"; message: string };
+/** The server's answer for one buyer and amount. */
+type CreditAnswer = { key: string } & Credit;
+
+const LOAD_FAILED = "The style could not load. Check the connection and try again.";
+
+const STEPS = ["Customer", "Products", "Charges & delivery", "Review & place"] as const;
+const LAST = STEPS.length - 1;
+
+/** Which step each field is on, to go back to the first one with a problem. */
+function stepOf(field: string): number {
+  const [head = ""] = field.split(".");
+  if (
+    [
+      "channel",
+      "partyId",
+      "orderDate",
+      "shipmentDate",
+      "warehouseId",
+      "customerName",
+      "customerPhone",
+      "shippingAddress",
+    ].includes(head)
+  ) {
+    return 0;
+  }
+  if (["lines", "matrix", "price", "qty"].includes(head)) return 1;
+  if (["discount", "shippingCharge", "tax", "totalCartons", "packedById", "notes"].includes(head)) {
+    return 2;
+  }
+  return LAST;
+}
 
 // Styles added in the browser get keys from this counter; the ones the page
 // starts with are keyed by position, so the server and the browser agree.
 let nextKey = 0;
 const newKey = () => `style-${++nextKey}`;
-
-const wholeNumber = (text: string | undefined) =>
-  text !== undefined && /^\d{1,7}$/.test(text.trim()) ? Number(text) : null;
-
-const blockPieces = (block: Block) =>
-  Object.values(block.quantities).reduce((sum, q) => sum + (wholeNumber(q) ?? 0), 0);
-
-/** "4,500.00" for the totals preview. */
-const fixed2 = (n: number) => (Math.round(n * 100) / 100).toFixed(2);
 
 function Section({
   title,
@@ -136,17 +159,65 @@ function shortSkus(blocks: Block[], own: Record<string, number>) {
   return short;
 }
 
+/** The steps as a numbered strip; earlier steps can be opened again. */
+function Steps({ step, onGo }: { step: number; onGo: (step: number) => void }) {
+  return (
+    <nav aria-label="Order steps">
+      <p className="text-[0.8125rem] text-muted-foreground sm:hidden">
+        Step {step + 1} of {STEPS.length} · <span className="text-foreground">{STEPS[step]}</span>
+      </p>
+      <ol className="mt-2 grid grid-cols-4 gap-1.5 sm:mt-0 sm:gap-3">
+        {STEPS.map((label, index) => {
+          const done = index < step;
+          return (
+            <li key={label} className="min-w-0">
+              <button
+                type="button"
+                onClick={() => done && onGo(index)}
+                disabled={!done}
+                aria-current={index === step ? "step" : undefined}
+                className={cn(
+                  "grid w-full gap-1.5 text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/25",
+                  done ? "cursor-pointer" : "cursor-default",
+                )}
+              >
+                <span
+                  className={cn("h-1.5 rounded-full", index <= step ? "bg-primary" : "bg-muted")}
+                  aria-hidden
+                />
+                <span
+                  className={cn(
+                    "hidden truncate text-[0.8125rem] sm:block",
+                    index === step ? "font-medium text-primary" : "text-muted-foreground",
+                  )}
+                >
+                  {index + 1}. {label}
+                </span>
+                <span className="sr-only sm:hidden">
+                  {index + 1}. {label}
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ol>
+    </nav>
+  );
+}
+
 /**
- * The order form (blueprint checkout): the channel and buyer (or walk-in
- * customer), the warehouse, styles picked from the catalogue with pieces per
- * colour and size against the stock ready, one price per style (empty uses the
- * list price for the channel), charges, the documents to make and money taken
- * at checkout. Selling beyond stock offers Force Override only to people who
- * hold it. Used for new orders, for editing one before anything leaves the
+ * The order form as four short steps (blueprint checkout): 1 the channel and
+ * buyer (or walk-in customer), days and warehouse; 2 the styles, each a card
+ * with its colour × size grid, the pieces ready (0 in bold red) and Magic Ratio;
+ * 3 the discount and charges, cartons and who packed; 4 a review with the
+ * buyer's credit check, the documents to make and money taken at checkout.
+ * Selling beyond stock asks for Force Allow in a pop-up, offered only to people
+ * who hold it. Used for new orders, for editing one before anything leaves the
  * warehouse, and for making the order from a proforma.
  */
 export function OrderForm({ form: data }: { form: OrderFormData }) {
   const router = useRouter();
+  const formRef = useRef<HTMLFormElement>(null);
   const editing = data.order;
   const proforma = data.proforma;
   const currency = data.currency;
@@ -156,6 +227,7 @@ export function OrderForm({ form: data }: { form: OrderFormData }) {
     data.warehouses[0]?.id ??
     "";
 
+  const [step, setStep] = useState(0);
   const [channel, setChannel] = useState<SalesChannel>(
     editing?.channel ?? (proforma ? "B2B_PREORDER" : (data.channels[0] ?? "WHOLESALE")),
   );
@@ -186,6 +258,10 @@ export function OrderForm({ form: data }: { form: OrderFormData }) {
     }
     return [];
   });
+  // One style card is open at a time; the others fold to their totals.
+  const [openKey, setOpenKey] = useState<string | null>(() =>
+    editing?.styles.length || proforma?.styleIds.length ? "start-0" : null,
+  );
   const [discount, setDiscount] = useState(
     editing && Number(editing.discount) ? editing.discount : "",
   );
@@ -193,6 +269,10 @@ export function OrderForm({ form: data }: { form: OrderFormData }) {
     editing && Number(editing.shippingCharge) ? editing.shippingCharge : "",
   );
   const [tax, setTax] = useState(editing && Number(editing.tax) ? editing.tax : "");
+  const [cartons, setCartons] = useState(
+    editing?.totalCartons != null ? String(editing.totalCartons) : "",
+  );
+  const [packedById, setPackedById] = useState(editing?.packedById ?? "");
   const [documents, setDocuments] = useState({
     invoice: true,
     packingList: false,
@@ -200,8 +280,9 @@ export function OrderForm({ form: data }: { form: OrderFormData }) {
   });
   const [takePayment, setTakePayment] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState("");
-  const [override, setOverride] = useState(false);
+  const [forceAllow, setForceAllow] = useState(false);
   const [serverShort, setServerShort] = useState<Record<string, string>>({});
+  const [creditAnswer, setCreditAnswer] = useState<CreditAnswer>();
   const [error, setError] = useState<ActionError>();
   const [problems, setProblems] = useState<Record<string, string>>({});
   const [pending, startTransition] = useTransition();
@@ -225,18 +306,20 @@ export function OrderForm({ form: data }: { form: OrderFormData }) {
     const warehouse =
       data.order?.warehouseId ?? data.warehouses.find((w) => w.isDefault)?.id ?? undefined;
     for (const styleId of ids) {
-      void getSaleMatrixAction(styleId, warehouse ?? undefined).then((result) => {
-        if (!live) return;
-        setBlocks((all) =>
-          all.map((b) =>
-            b.styleId !== styleId
-              ? b
-              : result.ok
-                ? { ...b, matrix: result.data, quantities: prefill(b, result.data, data) }
-                : { ...b, loadError: result.error.message },
-          ),
-        );
-      });
+      void getSaleMatrixAction(styleId, warehouse ?? undefined)
+        .catch(() => ({ ok: false as const, error: { message: LOAD_FAILED } }))
+        .then((result) => {
+          if (!live) return;
+          setBlocks((all) =>
+            all.map((b) =>
+              b.styleId !== styleId
+                ? b
+                : result.ok
+                  ? { ...b, matrix: result.data, quantities: prefill(b, result.data, data) }
+                  : { ...b, loadError: result.error.message },
+            ),
+          );
+        });
     }
     return () => {
       live = false;
@@ -244,7 +327,11 @@ export function OrderForm({ form: data }: { form: OrderFormData }) {
   }, [data]);
 
   async function loadBlock(key: string, styleId: string, warehouse: string) {
-    const result = await getSaleMatrixAction(styleId, warehouse || undefined);
+    const result = await getSaleMatrixAction(styleId, warehouse || undefined).catch(() => ({
+      ok: false as const,
+      error: { code: "INTERNAL" as const, message: LOAD_FAILED },
+    }));
+    if (!result.ok) toast.error(result.error.message);
     setBlocks((all) =>
       all.map((b) =>
         b.key !== key
@@ -295,60 +382,124 @@ export function OrderForm({ form: data }: { form: OrderFormData }) {
     const value = readAmount(text);
     return typeof value === "number" ? value : 0;
   };
-  const total = Math.max(subtotal - charge(discount) + charge(shipping) + charge(tax), 0);
+  const beforeDiscount = subtotal + charge(shipping) + charge(tax);
+  const total = Math.max(beforeDiscount - charge(discount), 0);
   const paidBefore = editing ? Number(editing.paid) : proforma ? Number(proforma.advancePaid) : 0;
+  const payNow = takePayment ? charge(paymentAmount) : 0;
   const short = { ...shortSkus(blocks, own), ...serverShort };
   const shortCount = Object.keys(short).length;
+  /** What the buyer takes on credit with this order, as the server will check it. */
+  const creditAmount = editing
+    ? Math.max(total - Number(editing.total), 0)
+    : proforma
+      ? total
+      : Math.max(total - payNow, 0);
 
-  function submit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
+  // On the last step, the buyer's credit limit is checked like saving checks it.
+  const creditFixed = fixed2(creditAmount);
+  const creditKey = step === LAST && buyer && creditAmount > 0 ? `${buyer.id}:${creditFixed}` : "";
+  const credit: Credit = !creditKey
+    ? { state: "idle" }
+    : creditAnswer?.key === creditKey
+      ? creditAnswer
+      : { state: "checking" };
+  useEffect(() => {
+    if (!creditKey) return;
+    const [partyId] = creditKey.split(":");
+    let live = true;
+    const timer = setTimeout(() => {
+      void checkBuyerCreditAction({ partyId: partyId!, amount: Number(creditFixed) })
+        .then((result) => {
+          if (!live) return;
+          setCreditAnswer(
+            result.ok
+              ? { key: creditKey, state: "ok" }
+              : { key: creditKey, state: "refused", message: result.error.message },
+          );
+        })
+        .catch(() => {
+          // A lost connection does not block placing: saving checks the limit again.
+          if (live) setCreditAnswer({ key: creditKey, state: "idle" });
+        });
+    }, 400);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  }, [creditKey, creditFixed]);
+
+  /** Rounds the total down to a whole `unit` by setting the discount. */
+  function roundOff(unit: number) {
+    const target = Math.floor(beforeDiscount / unit) * unit;
+    setDiscount(beforeDiscount - target > 0 ? fixed2(beforeDiscount - target) : "");
+  }
+
+  /** The problems on one step, found before asking the server. */
+  function problemsOn(index: number, form: FormData): Record<string, string> {
     const text = (name: string) => {
       const v = form.get(name);
       return typeof v === "string" ? v.trim() : "";
     };
     const found: Record<string, string> = {};
-    if (buyerNeeded && !buyer) found.partyId = "Choose the buyer.";
-    if (pieces < 1) found.lines = "Add a style and enter the pieces.";
-    blocks.forEach((block) => {
-      if (readAmount(block.unitPrice) === "invalid") found[`price.${block.key}`] = AMOUNT_HINT;
-      for (const [variantId, q] of Object.entries(block.quantities)) {
-        if (q.trim() && wholeNumber(q) === null) found[`qty.${variantId}`] = "Whole pieces";
+    if (index === 0) {
+      if (buyerNeeded && !buyer) found.partyId = "Choose the buyer.";
+      const orderDate = text("orderDate");
+      const shipmentDate = text("shipmentDate");
+      if (shipmentDate && shipmentDate < (orderDate || data.today)) {
+        found.shipmentDate = "Choose a day on or after the order date.";
       }
-    });
-    for (const [name, value] of [
-      ["discount", discount],
-      ["shippingCharge", shipping],
-      ["tax", tax],
-    ] as const) {
-      if (readAmount(value) === "invalid") found[name] = AMOUNT_HINT;
     }
-    const orderDate = text("orderDate");
-    const shipmentDate = text("shipmentDate");
-    if (shipmentDate && shipmentDate < (orderDate || data.today)) {
-      found.shipmentDate = "Choose a day on or after the order date.";
+    if (index === 1) {
+      if (pieces < 1) found.lines = "Add a style and enter the pieces.";
+      blocks.forEach((block) => {
+        if (readAmount(block.unitPrice) === "invalid") found[`price.${block.key}`] = AMOUNT_HINT;
+        for (const [variantId, q] of Object.entries(block.quantities)) {
+          if (q.trim() && wholeNumber(q) === null) found[`qty.${variantId}`] = "Whole pieces";
+        }
+      });
     }
-    let payment: { amount: number; method: PaymentMethod; reference?: string } | undefined;
-    if (takePayment) {
+    if (index === 2) {
+      for (const [name, value] of [
+        ["discount", discount],
+        ["shippingCharge", shipping],
+        ["tax", tax],
+      ] as const) {
+        if (readAmount(value) === "invalid") found[name] = AMOUNT_HINT;
+      }
+      if (charge(discount) > beforeDiscount + 0.001) {
+        found.discount = `At most ${fixed2(beforeDiscount)}.`;
+      }
+      if (cartons.trim() && wholeNumber(cartons) === null) found.totalCartons = "Whole cartons";
+    }
+    if (index === LAST && takePayment) {
       const amount = readAmount(paymentAmount);
       if (amount === "invalid") found["payment.amount"] = AMOUNT_HINT;
       else if (amount === null || amount <= 0) found["payment.amount"] = "Enter the amount paid.";
       else if (amount > total + 0.001) found["payment.amount"] = `At most ${fixed2(total)}.`;
-      else {
-        payment = {
-          amount,
-          method: (text("paymentMethod") || "CASH") as PaymentMethod,
-          reference: text("paymentReference") || undefined,
-        };
-      }
     }
-    const overrideReason = text("overrideReason");
-    if (override && overrideReason.length < 5) {
-      found.overrideReason = "Write at least 5 letters.";
-    }
-    setProblems(found);
-    if (Object.keys(found).length > 0) return;
+    return found;
+  }
 
+  function go(next: number) {
+    setStep(next);
+    formRef.current?.scrollIntoView({ block: "start", behavior: "smooth" });
+  }
+
+  function next() {
+    const found = problemsOn(step, new FormData(formRef.current!));
+    setProblems(found);
+    if (Object.keys(found).length === 0) go(step + 1);
+  }
+
+  /** Saves the order; `overrideReason` when Force Allow was confirmed. */
+  function place(overrideReason?: string) {
+    const form = new FormData(formRef.current!);
+    const text = (name: string) => {
+      const v = form.get(name);
+      return typeof v === "string" ? v.trim() : "";
+    };
+    const orderDate = text("orderDate");
+    const shipmentDate = text("shipmentDate");
     const matrix = blocks
       .filter((b) => blockPieces(b) > 0)
       .map((b) => {
@@ -367,12 +518,22 @@ export function OrderForm({ form: data }: { form: OrderFormData }) {
       discount: charge(discount),
       shippingCharge: charge(shipping),
       tax: charge(tax),
+      totalCartons: cartons.trim() ? wholeNumber(cartons) : null,
+      packedById: packedById || null,
       notes: text("notes") || null,
       customerName: text("customerName") || null,
       customerPhone: text("customerPhone") || null,
       shippingAddress: text("shippingAddress") || null,
-      ...(override ? { forceOverride: { reason: overrideReason } } : {}),
+      ...(overrideReason ? { forceOverride: { reason: overrideReason } } : {}),
     };
+    const payment: { amount: number; method: PaymentMethod; reference?: string } | undefined =
+      takePayment
+        ? {
+            amount: charge(paymentAmount),
+            method: (text("paymentMethod") || "CASH") as PaymentMethod,
+            reference: text("paymentReference") || undefined,
+          }
+        : undefined;
 
     startTransition(async () => {
       const result = editing
@@ -402,466 +563,634 @@ export function OrderForm({ form: data }: { form: OrderFormData }) {
           .map(([key, messages]) => [key.slice("stock.".length), messages[0] ?? ""] as const);
         setServerShort(Object.fromEntries(stock));
         setError(result.error);
+        if (result.error.code === "INSUFFICIENT_STOCK") {
+          setForceAllow(true);
+          return;
+        }
+        const fields = Object.keys(result.error.fieldErrors ?? {}).filter(
+          (key) => !key.startsWith("stock."),
+        );
+        // The pop-up stays only for a problem with the reason typed in it.
+        if (!fields.includes("forceOverride.reason")) setForceAllow(false);
+        if (fields.length > 0) setStep(Math.min(...fields.map(stepOf)));
+        if (result.error.code !== "INTERNAL") toast.error(result.error.message);
         return;
       }
+      setForceAllow(false);
       router.push(`${salesHref.order(result.data.id)}?${editing ? "saved" : "created"}=1`);
     });
+  }
+
+  function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    // Enter in a field moves on a step; only the last step places the order.
+    if (step < LAST) {
+      next();
+      return;
+    }
+    const form = new FormData(event.currentTarget);
+    const found: Record<string, string> = {};
+    for (let index = 0; index <= LAST; index++) Object.assign(found, problemsOn(index, form));
+    setProblems(found);
+    const fields = Object.keys(found);
+    if (fields.length > 0) {
+      setStep(Math.min(...fields.map(stepOf)));
+      return;
+    }
+    if (shortCount > 0) {
+      setForceAllow(true);
+      return;
+    }
+    place();
   }
 
   const hasFieldErrors =
     Object.keys(problems).length > 0 ||
     Object.keys(error?.fieldErrors ?? {}).some((key) => !key.startsWith("stock."));
+  const blocked = credit.state === "refused" || credit.state === "checking";
 
   return (
-    <form onSubmit={submit} className="grid min-w-0 gap-8" noValidate>
-      <Section title={locked ? "Order" : "Who it is for"}>
-        {!locked ? (
-          <fieldset className="grid gap-2">
-            <legend className="mb-2 text-sm font-medium">Channel</legend>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-              {data.channels.map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  aria-pressed={channel === c}
-                  onClick={() => changeChannel(c)}
-                  className={cn(
-                    "grid cursor-pointer gap-0.5 rounded-md border px-3 py-2.5 text-left transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/25",
-                    channel === c
-                      ? "border-primary/50 bg-secondary text-primary"
-                      : "bg-card hover:border-primary/30",
-                  )}
-                >
-                  <span className="text-sm font-medium">{CHANNEL_LABELS[c]}</span>
-                  {CHANNEL_HINTS[c] && (
-                    <span className="text-[0.8125rem] leading-snug text-muted-foreground">
-                      {CHANNEL_HINTS[c]}
-                    </span>
-                  )}
-                </button>
-              ))}
-            </div>
-          </fieldset>
-        ) : (
-          <p className="text-sm text-muted-foreground">
-            {CHANNEL_LABELS[channel]}
-            {proforma ? ` from proforma ${proforma.number}` : ""}
-            {editing ? ` · ${editing.number}` : ""}
-          </p>
-        )}
-        <Field
-          id="order-buyer"
-          label={buyerNeeded ? "Buyer" : "Buyer (optional)"}
-          hint={
-            buyerNeeded || locked
-              ? undefined
-              : "Leave empty for a walk-in customer; their name and phone can go below."
-          }
-          error={fieldError("partyId")}
-        >
-          {locked && !buyer ? (
-            <p className="rounded-md border bg-card px-3 py-2 text-sm">Walk-in customer</p>
+    <form ref={formRef} onSubmit={submit} className="grid min-w-0 scroll-mt-24 gap-8" noValidate>
+      <Steps step={step} onGo={go} />
+
+      <div hidden={step !== 0} className="grid min-w-0 gap-8">
+        <Section title={locked ? "Order" : "Who it is for"}>
+          {!locked ? (
+            <fieldset className="grid gap-2">
+              <legend className="mb-2 text-sm font-medium">Channel</legend>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                {data.channels.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    aria-pressed={channel === c}
+                    onClick={() => changeChannel(c)}
+                    className={cn(
+                      "grid cursor-pointer gap-0.5 rounded-md border px-3 py-2.5 text-left transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/25",
+                      channel === c
+                        ? "border-primary/50 bg-secondary text-primary"
+                        : "bg-card hover:border-primary/30",
+                    )}
+                  >
+                    <span className="text-sm font-medium">{CHANNEL_LABELS[c]}</span>
+                    {CHANNEL_HINTS[c] && (
+                      <span className="text-[0.8125rem] leading-snug text-muted-foreground">
+                        {CHANNEL_HINTS[c]}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </fieldset>
           ) : (
-            <BuyerPicker
-              id="order-buyer"
-              value={buyer}
-              onChange={setBuyer}
-              currency={currency}
-              locked={locked}
-              invalid={Boolean(fieldError("partyId"))}
-              describedBy={
-                fieldError("partyId")
-                  ? "order-buyer-error"
-                  : !buyerNeeded && !locked
-                    ? "order-buyer-hint"
-                    : undefined
-              }
-            />
+            <p className="text-sm text-muted-foreground">
+              {CHANNEL_LABELS[channel]}
+              {proforma ? ` from proforma ${proforma.number}` : ""}
+              {editing ? ` · ${editing.number}` : ""}
+            </p>
           )}
-        </Field>
-        {!editing && (
-          <div className="grid items-start gap-5 sm:grid-cols-2">
-            <Field id="orderDate" label="Order date">
-              <Input
-                id="orderDate"
-                name="orderDate"
-                type="date"
-                defaultValue={data.today}
-                max={data.today}
-              />
-            </Field>
-            <Field
-              id="shipmentDate"
-              label="Ship by (optional)"
-              hint="The day it is due to leave the warehouse."
-              error={fieldError("shipmentDate")}
-            >
-              <Input
-                id="shipmentDate"
-                name="shipmentDate"
-                type="date"
-                min={data.today}
-                aria-describedby={
-                  fieldError("shipmentDate") ? "shipmentDate-error" : "shipmentDate-hint"
+          <Field
+            id="order-buyer"
+            label={buyerNeeded ? "Buyer" : "Buyer (optional)"}
+            hint={
+              buyerNeeded || locked
+                ? undefined
+                : "Leave empty for a walk-in customer; their name and phone can go below."
+            }
+            error={fieldError("partyId")}
+          >
+            {locked && !buyer ? (
+              <p className="rounded-md border bg-card px-3 py-2 text-sm">Walk-in customer</p>
+            ) : (
+              <BuyerPicker
+                id="order-buyer"
+                value={buyer}
+                onChange={setBuyer}
+                currency={currency}
+                locked={locked}
+                invalid={Boolean(fieldError("partyId"))}
+                describedBy={
+                  fieldError("partyId")
+                    ? "order-buyer-error"
+                    : !buyerNeeded && !locked
+                      ? "order-buyer-hint"
+                      : undefined
                 }
               />
-            </Field>
-          </div>
-        )}
-        {data.warehouses.length > 1 && (
-          <Field
-            id="warehouse"
-            label="Warehouse"
-            hint={
-              editing
-                ? "An order keeps the warehouse it was made from."
-                : "The goods come out of this one."
-            }
-          >
-            <NativeSelect
-              id="warehouse"
-              value={warehouseId}
-              onChange={(e) => changeWarehouse(e.target.value)}
-              disabled={Boolean(editing)}
-              containerClassName="sm:w-full sm:max-w-sm"
-              aria-describedby="warehouse-hint"
-            >
-              {data.warehouses.map((w) => (
-                <option key={w.id} value={w.id}>
-                  {w.name}
-                </option>
-              ))}
-            </NativeSelect>
+            )}
           </Field>
-        )}
-      </Section>
-
-      <Section
-        title="Items"
-        hint={
-          <>
-            Pick a style, then enter the pieces for each colour and size. Prices are{" "}
-            {wholesale ? "wholesale" : "retail"}; a price typed for a style applies to all of it.
-          </>
-        }
-      >
-        {proforma && proforma.items.length > 0 && (
-          <div className="rounded-md border bg-muted/40 px-4 py-3 text-sm">
-            <p className="font-medium">The proforma asked for</p>
-            <ul className="mt-2 grid gap-1 text-muted-foreground">
-              {proforma.items.map((item) => (
-                <li key={item.id} className="break-words">
-                  {item.description} · {formatCount(item.quantity, currency)} pcs ×{" "}
-                  {money(item.unitPrice, currency)}
-                  {item.sizes
-                    ? ` (${item.sizes.map((s) => `${s.size} ${s.quantity}`).join(", ")})`
-                    : ""}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-        {blocks.length > 0 && (
-          <ol className="grid grid-cols-1 gap-4">
-            {blocks.map((block) => (
-              <StyleBlock
-                key={block.key}
-                block={block}
-                wholesale={wholesale}
-                currency={currency}
-                own={own}
-                short={short}
-                fieldError={fieldError}
-                amount={blockAmount(block)}
-                onChange={(change) => updateBlock(block.key, change)}
-                onRemove={() => setBlocks((all) => all.filter((b) => b.key !== block.key))}
-              />
-            ))}
-          </ol>
-        )}
-        <Field
-          id="add-style"
-          label={blocks.length === 0 ? "Add a style" : "Add another style"}
-          error={fieldError("lines") ?? fieldError("matrix")}
-        >
-          <StylePicker
-            id="add-style"
-            currency={currency}
-            exclude={blocks.map((b) => b.styleId)}
-            onPick={(style) => {
-              const key = newKey();
-              setBlocks((all) => [
-                ...all,
-                {
-                  key,
-                  styleId: style.id,
-                  matrix: null,
-                  unitPrice: "",
-                  quantities: {},
-                  mixedPrices: false,
-                },
-              ]);
-              void loadBlock(key, style.id, warehouseId);
-            }}
-          />
-        </Field>
-      </Section>
-
-      <Section title="Charges and notes">
-        <div className="grid items-start gap-5 sm:grid-cols-3">
-          {(
-            [
-              ["discount", "Discount", discount, setDiscount],
-              ["shippingCharge", "Delivery charge", shipping, setShipping],
-              ["tax", "Tax / VAT", tax, setTax],
-            ] as const
-          ).map(([name, label, value, set]) => (
-            <Field
-              key={name}
-              id={`order-${name}`}
-              label={`${label} (${currency})`}
-              error={fieldError(name)}
-            >
-              <Input
-                id={`order-${name}`}
-                inputMode="decimal"
-                value={value}
-                onChange={(e) => set(e.target.value)}
-                placeholder="0.00"
-                autoComplete="off"
-                aria-invalid={Boolean(fieldError(name))}
-              />
-            </Field>
-          ))}
-        </div>
-        {!wholesale && (
-          <div className="grid items-start gap-5 sm:grid-cols-2">
-            <Field id="customerName" label="Customer name (optional)">
-              <Input
-                id="customerName"
-                name="customerName"
-                maxLength={120}
-                defaultValue={editing?.customerName ?? ""}
-                autoComplete="off"
-              />
-            </Field>
-            <Field id="customerPhone" label="Customer phone (optional)">
-              <Input
-                id="customerPhone"
-                name="customerPhone"
-                type="tel"
-                maxLength={30}
-                defaultValue={editing?.customerPhone ?? ""}
-                autoComplete="off"
-              />
-            </Field>
-            <Field
-              id="shippingAddress"
-              label="Delivery address (optional)"
-              className="sm:col-span-2"
-            >
-              <Textarea
+          {!wholesale && (
+            <div className="grid items-start gap-5 sm:grid-cols-2">
+              <Field id="customerName" label="Customer name (optional)">
+                <Input
+                  id="customerName"
+                  name="customerName"
+                  maxLength={120}
+                  defaultValue={editing?.customerName ?? ""}
+                  autoComplete="off"
+                />
+              </Field>
+              <Field id="customerPhone" label="Customer phone (optional)">
+                <Input
+                  id="customerPhone"
+                  name="customerPhone"
+                  type="tel"
+                  maxLength={30}
+                  defaultValue={editing?.customerPhone ?? ""}
+                  autoComplete="off"
+                />
+              </Field>
+              <Field
                 id="shippingAddress"
-                name="shippingAddress"
-                rows={2}
-                maxLength={500}
-                defaultValue={editing?.shippingAddress ?? ""}
-              />
-            </Field>
-          </div>
-        )}
-        <Field id="order-notes" label="Notes (optional)">
-          <Textarea
-            id="order-notes"
-            name="notes"
-            rows={2}
-            maxLength={4000}
-            defaultValue={editing?.notes ?? ""}
-          />
-        </Field>
-      </Section>
-
-      {!locked && (
-        <Section title="At checkout">
-          <div className="grid gap-4">
-            <Tick
-              id="doc-invoice"
-              checked={documents.invoice}
-              onChange={(invoice) => setDocuments((d) => ({ ...d, invoice }))}
-              label="Issue the invoice"
-              hint="The buyer owes the order from today; the invoice can also be issued later."
-            />
-            <Tick
-              id="doc-packing"
-              checked={documents.packingList}
-              onChange={(packingList) => setDocuments((d) => ({ ...d, packingList }))}
-              label="Make the packing list"
-            />
-            <Tick
-              id="doc-challan"
-              checked={documents.deliveryChallan}
-              onChange={(deliveryChallan) => setDocuments((d) => ({ ...d, deliveryChallan }))}
-              label="Hand the goods over now (delivery challan)"
-              hint="Takes every piece out of stock now, as at a counter sale."
-            />
-          </div>
-          {data.can.takePayment && (
-            <div className="grid gap-4">
-              <Tick
-                id="take-payment"
-                checked={takePayment}
-                onChange={(on) => {
-                  setTakePayment(on);
-                  if (on && !paymentAmount && total > 0) setPaymentAmount(fixed2(total));
-                }}
-                label="Payment received now"
-                hint="A money receipt is made with the order."
-              />
-              {takePayment && (
-                <div className="grid items-start gap-5 sm:grid-cols-3">
-                  <Field
-                    id="payment-amount"
-                    label={`Amount (${currency})`}
-                    error={fieldError("payment.amount")}
-                  >
-                    <Input
-                      id="payment-amount"
-                      inputMode="decimal"
-                      value={paymentAmount}
-                      onChange={(e) => setPaymentAmount(e.target.value)}
-                      placeholder="0.00"
-                      autoComplete="off"
-                      aria-invalid={Boolean(fieldError("payment.amount"))}
-                    />
-                  </Field>
-                  <Field id="payment-method" label="Paid by">
-                    <NativeSelect
-                      id="payment-method"
-                      name="paymentMethod"
-                      defaultValue="CASH"
-                      containerClassName="sm:w-full"
-                    >
-                      {data.paymentMethods.map((m) => (
-                        <option key={m} value={m}>
-                          {METHOD_LABELS[m]}
-                        </option>
-                      ))}
-                    </NativeSelect>
-                  </Field>
-                  <Field id="payment-reference" label="Reference (optional)">
-                    <Input
-                      id="payment-reference"
-                      name="paymentReference"
-                      maxLength={120}
-                      autoComplete="off"
-                    />
-                  </Field>
-                </div>
-              )}
+                label="Delivery address (optional)"
+                className="sm:col-span-2"
+              >
+                <Textarea
+                  id="shippingAddress"
+                  name="shippingAddress"
+                  rows={2}
+                  maxLength={500}
+                  defaultValue={editing?.shippingAddress ?? ""}
+                />
+              </Field>
             </div>
           )}
+          {!editing && (
+            <div className="grid items-start gap-5 sm:grid-cols-2">
+              <Field id="orderDate" label="Order date">
+                <Input
+                  id="orderDate"
+                  name="orderDate"
+                  type="date"
+                  defaultValue={data.today}
+                  max={data.today}
+                />
+              </Field>
+              <Field
+                id="shipmentDate"
+                label="Ship by (optional)"
+                hint="The day it is due to leave the warehouse."
+                error={fieldError("shipmentDate")}
+              >
+                <Input
+                  id="shipmentDate"
+                  name="shipmentDate"
+                  type="date"
+                  min={data.today}
+                  aria-describedby={
+                    fieldError("shipmentDate") ? "shipmentDate-error" : "shipmentDate-hint"
+                  }
+                />
+              </Field>
+            </div>
+          )}
+          {data.warehouses.length > 1 && (
+            <Field
+              id="warehouse"
+              label="Warehouse"
+              hint={
+                editing
+                  ? "An order keeps the warehouse it was made from."
+                  : "The goods come out of this one."
+              }
+            >
+              <NativeSelect
+                id="warehouse"
+                value={warehouseId}
+                onChange={(e) => changeWarehouse(e.target.value)}
+                disabled={Boolean(editing)}
+                containerClassName="sm:w-full sm:max-w-sm"
+                aria-describedby="warehouse-hint"
+              >
+                {data.warehouses.map((w) => (
+                  <option key={w.id} value={w.id}>
+                    {w.name}
+                  </option>
+                ))}
+              </NativeSelect>
+            </Field>
+          )}
         </Section>
-      )}
+      </div>
 
-      <section
-        aria-label="Order total"
-        className="grid gap-2 rounded-lg border bg-card p-5 text-sm tabular-nums"
-      >
-        <div className="flex justify-between gap-4 text-muted-foreground">
-          <span>Subtotal · {formatCount(pieces, currency)} pcs</span>
-          <span>{money(fixed2(subtotal), currency)}</span>
-        </div>
-        {charge(discount) > 0 && (
-          <div className="flex justify-between gap-4 text-muted-foreground">
-            <span>Discount</span>
-            <span>− {money(fixed2(charge(discount)), currency)}</span>
-          </div>
-        )}
-        {charge(shipping) > 0 && (
-          <div className="flex justify-between gap-4 text-muted-foreground">
-            <span>Delivery charge</span>
-            <span>{money(fixed2(charge(shipping)), currency)}</span>
-          </div>
-        )}
-        {charge(tax) > 0 && (
-          <div className="flex justify-between gap-4 text-muted-foreground">
-            <span>Tax / VAT</span>
-            <span>{money(fixed2(charge(tax)), currency)}</span>
-          </div>
-        )}
-        <div className="flex items-baseline justify-between gap-4 border-t pt-2 font-medium">
-          <span>Total</span>
-          <span className="font-serif text-lg">{money(fixed2(total), currency)}</span>
-        </div>
-        {paidBefore > 0 && (
-          <>
-            <div className="flex justify-between gap-4 text-muted-foreground">
-              <span>{proforma ? "Advance already paid" : "Paid so far"}</span>
-              <span>{money(fixed2(paidBefore), currency)}</span>
-            </div>
-            <div className="flex justify-between gap-4 font-medium">
-              <span>Left to pay</span>
-              <span>{money(fixed2(Math.max(total - paidBefore, 0)), currency)}</span>
-            </div>
-          </>
-        )}
-        <p className="text-[0.8125rem] text-muted-foreground">
-          The order works out the final figures when it is saved.
-        </p>
-      </section>
-
-      {shortCount > 0 && (
-        <div
-          role="alert"
-          className="grid gap-4 rounded-lg border border-amber-500/40 bg-amber-500/5 p-4 sm:p-5"
+      <div hidden={step !== 1} className="grid min-w-0 gap-8">
+        <Section
+          title="Products"
+          hint={
+            <>
+              Add each style, then type the pieces per colour and size, or use Magic Ratio. Prices
+              are {wholesale ? "wholesale" : "retail"}; a price typed for a style applies to all of
+              it.
+            </>
+          }
         >
-          <div className="flex items-start gap-2.5 text-sm">
-            <TriangleAlertIcon className="mt-0.5 size-4 shrink-0 text-amber-600" aria-hidden />
-            <div className="grid gap-1">
-              <p className="font-medium">
-                {shortCount === 1 ? "One SKU is" : `${shortCount} SKUs are`} short of stock
-              </p>
-              <ul className="text-muted-foreground">
-                {Object.entries(short).map(([sku, message]) => (
-                  <li key={sku}>
-                    <span className="font-medium text-foreground">{sku}</span>: {message}
+          {proforma && proforma.items.length > 0 && (
+            <div className="rounded-md border bg-muted/40 px-4 py-3 text-sm">
+              <p className="font-medium">The proforma asked for</p>
+              <ul className="mt-2 grid gap-1 text-muted-foreground">
+                {proforma.items.map((item) => (
+                  <li key={item.id} className="break-words">
+                    {item.description} · {formatCount(item.quantity, currency)} pcs ×{" "}
+                    {money(item.unitPrice, currency)}
+                    {item.sizes
+                      ? ` (${item.sizes.map((s) => `${s.size} ${s.quantity}`).join(", ")})`
+                      : ""}
                   </li>
                 ))}
               </ul>
-              {!data.can.forceOverride && (
-                <p>Lower the pieces marked, or ask someone who may sell beyond stock.</p>
-              )}
-            </div>
-          </div>
-          {data.can.forceOverride && (
-            <div className="grid gap-4">
-              <Tick
-                id="force-override"
-                checked={override}
-                onChange={setOverride}
-                label="Force Override & Sell"
-                hint="Sells the pieces anyway. Stock goes below zero until it is made, and the order is flagged."
-              />
-              {override && (
-                <Field
-                  id="override-reason"
-                  label="Why"
-                  hint="Kept on the order and in the activity log."
-                  error={fieldError("overrideReason") ?? fieldError("forceOverride.reason")}
-                >
-                  <Textarea
-                    id="override-reason"
-                    name="overrideReason"
-                    rows={2}
-                    maxLength={500}
-                    aria-describedby="override-reason-hint"
-                  />
-                </Field>
-              )}
             </div>
           )}
-        </div>
-      )}
+          {blocks.length > 0 && (
+            <ol className="grid grid-cols-1 gap-3">
+              {blocks.map((block) => (
+                <StyleCard
+                  key={block.key}
+                  block={block}
+                  open={openKey === block.key}
+                  onToggle={() => setOpenKey((k) => (k === block.key ? null : block.key))}
+                  wholesale={wholesale}
+                  currency={currency}
+                  own={own}
+                  short={short}
+                  fieldError={fieldError}
+                  amount={blockAmount(block)}
+                  presets={data.ratioPresets}
+                  onChange={(change) => updateBlock(block.key, change)}
+                  onRemove={() => setBlocks((all) => all.filter((b) => b.key !== block.key))}
+                />
+              ))}
+            </ol>
+          )}
+          <Field
+            id="add-style"
+            label={blocks.length === 0 ? "Add a style" : "Add another style"}
+            error={fieldError("lines") ?? fieldError("matrix")}
+          >
+            <StylePicker
+              id="add-style"
+              currency={currency}
+              exclude={blocks.map((b) => b.styleId)}
+              onPick={(style) => {
+                const key = newKey();
+                setBlocks((all) => [
+                  ...all,
+                  {
+                    key,
+                    styleId: style.id,
+                    matrix: null,
+                    unitPrice: "",
+                    quantities: {},
+                    mixedPrices: false,
+                  },
+                ]);
+                setOpenKey(key);
+                void loadBlock(key, style.id, warehouseId);
+              }}
+            />
+          </Field>
+        </Section>
+      </div>
+
+      <div hidden={step !== 2} className="grid min-w-0 gap-8">
+        <Section title="Charges">
+          <div className="grid items-start gap-5 sm:grid-cols-3">
+            <Field
+              id="order-discount"
+              label={`Discount (${currency})`}
+              hint="A lump sum off the whole bill: an agreed price or a round-off."
+              error={fieldError("discount")}
+              className="sm:col-span-3"
+            >
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <Input
+                  id="order-discount"
+                  inputMode="decimal"
+                  value={discount}
+                  onChange={(e) => setDiscount(e.target.value)}
+                  placeholder="0.00"
+                  autoComplete="off"
+                  className="sm:w-48"
+                  aria-invalid={Boolean(fieldError("discount"))}
+                  aria-describedby={
+                    fieldError("discount") ? "order-discount-error" : "order-discount-hint"
+                  }
+                />
+                <div className="flex gap-2">
+                  {(
+                    [
+                      [10, "Round to 10"],
+                      [100, "Round to 100"],
+                    ] as const
+                  ).map(([unit, label]) => (
+                    <Button
+                      key={unit}
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => roundOff(unit)}
+                      disabled={beforeDiscount <= 0}
+                    >
+                      {label}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            </Field>
+            {(
+              [
+                ["shippingCharge", "Delivery charge", shipping, setShipping],
+                ["tax", "Tax / VAT", tax, setTax],
+              ] as const
+            ).map(([name, label, value, set]) => (
+              <Field
+                key={name}
+                id={`order-${name}`}
+                label={`${label} (${currency})`}
+                error={fieldError(name)}
+              >
+                <Input
+                  id={`order-${name}`}
+                  inputMode="decimal"
+                  value={value}
+                  onChange={(e) => set(e.target.value)}
+                  placeholder="0.00"
+                  autoComplete="off"
+                  aria-invalid={Boolean(fieldError(name))}
+                />
+              </Field>
+            ))}
+          </div>
+        </Section>
+        <Section title="Delivery" hint="Both can be filled in later from the order too.">
+          <div className="grid items-start gap-5 sm:grid-cols-2">
+            <Field
+              id="order-cartons"
+              label="Total cartons (optional)"
+              error={fieldError("totalCartons")}
+            >
+              <Input
+                id="order-cartons"
+                inputMode="numeric"
+                value={cartons}
+                onChange={(e) => setCartons(e.target.value)}
+                placeholder="0"
+                autoComplete="off"
+                className="sm:w-32"
+                aria-invalid={Boolean(fieldError("totalCartons"))}
+              />
+            </Field>
+            <Field
+              id="order-packer"
+              label="Packed by (optional)"
+              hint={data.packers.length === 0 ? "Add staff in HR to choose them here." : undefined}
+              error={fieldError("packedById")}
+            >
+              <NativeSelect
+                id="order-packer"
+                value={packedById}
+                onChange={(e) => setPackedById(e.target.value)}
+                disabled={data.packers.length === 0}
+                containerClassName="sm:w-full"
+              >
+                <option value="">Not yet</option>
+                {data.packers.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} ({p.code})
+                  </option>
+                ))}
+              </NativeSelect>
+            </Field>
+          </div>
+          <Field id="order-notes" label="Notes (optional)">
+            <Textarea
+              id="order-notes"
+              name="notes"
+              rows={2}
+              maxLength={4000}
+              defaultValue={editing?.notes ?? ""}
+            />
+          </Field>
+        </Section>
+      </div>
+
+      <div hidden={step !== LAST} className="grid min-w-0 gap-8">
+        <Section title="Review">
+          <dl className="grid gap-x-6 gap-y-3 rounded-lg border bg-card p-4 text-sm sm:grid-cols-2 sm:p-5">
+            <div className="min-w-0">
+              <dt className="eyebrow">Customer</dt>
+              <dd className="mt-1 break-words">
+                {buyer?.name ?? "Walk-in customer"} · {CHANNEL_LABELS[channel]}
+              </dd>
+            </div>
+            <div className="min-w-0">
+              <dt className="eyebrow">Products</dt>
+              <dd className="mt-1">
+                {blocks
+                  .filter((b) => b.matrix && blockPieces(b) > 0)
+                  .map(
+                    (b) => `${b.matrix!.style.code} ${formatCount(blockPieces(b), currency)} pcs`,
+                  )
+                  .join(" · ") || "None yet"}
+              </dd>
+            </div>
+            {(cartons.trim() || packedById) && (
+              <div className="min-w-0">
+                <dt className="eyebrow">Delivery</dt>
+                <dd className="mt-1">
+                  {[
+                    cartons.trim() ? `${cartons.trim()} cartons` : null,
+                    packedById
+                      ? `packed by ${data.packers.find((p) => p.id === packedById)?.name ?? ""}`
+                      : null,
+                  ]
+                    .filter(Boolean)
+                    .join(", ")}
+                </dd>
+              </div>
+            )}
+          </dl>
+          {buyer && credit.state !== "idle" && (
+            <div
+              role="status"
+              className={cn(
+                "flex items-start gap-2.5 rounded-lg border p-4 text-sm",
+                credit.state === "refused"
+                  ? "border-destructive/30 bg-destructive/5"
+                  : "border-primary/20 bg-secondary/40",
+              )}
+            >
+              {credit.state === "checking" ? (
+                <LoaderCircleIcon className="mt-0.5 size-4 shrink-0 animate-spin" aria-hidden />
+              ) : credit.state === "ok" ? (
+                <CircleCheckIcon className="mt-0.5 size-4 shrink-0 text-success" aria-hidden />
+              ) : (
+                <TriangleAlertIcon
+                  className="mt-0.5 size-4 shrink-0 text-destructive"
+                  aria-hidden
+                />
+              )}
+              <div className="grid gap-1">
+                <p className="font-medium">
+                  {credit.state === "checking"
+                    ? "Checking the buyer's credit limit"
+                    : credit.state === "ok"
+                      ? "Within the buyer's credit limit"
+                      : "This order cannot go on the buyer's credit"}
+                </p>
+                {credit.state === "refused" && (
+                  <p className="text-muted-foreground">
+                    {credit.message} Take part of it as a payment now, lower the order, or ask
+                    Accounts to raise the limit.
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+          {shortCount > 0 && (
+            <div
+              role="alert"
+              className="flex items-start gap-2.5 rounded-lg border border-amber-500/40 bg-amber-500/5 p-4 text-sm"
+            >
+              <TriangleAlertIcon className="mt-0.5 size-4 shrink-0 text-amber-600" aria-hidden />
+              <p>
+                {shortCount === 1 ? "One SKU is" : `${shortCount} SKUs are`} short of stock.{" "}
+                {data.can.forceOverride
+                  ? "Placing the order asks you to Force Allow it."
+                  : "Lower the pieces marked, or ask someone who may sell beyond stock."}
+              </p>
+            </div>
+          )}
+        </Section>
+
+        {!locked && (
+          <Section title="At checkout">
+            <div className="grid gap-4">
+              <Tick
+                id="doc-invoice"
+                checked={documents.invoice}
+                onChange={(invoice) => setDocuments((d) => ({ ...d, invoice }))}
+                label="Issue the invoice"
+                hint="The buyer owes the order from today; the invoice can also be issued later."
+              />
+              <Tick
+                id="doc-packing"
+                checked={documents.packingList}
+                onChange={(packingList) => setDocuments((d) => ({ ...d, packingList }))}
+                label="Make the packing list"
+              />
+              <Tick
+                id="doc-challan"
+                checked={documents.deliveryChallan}
+                onChange={(deliveryChallan) => setDocuments((d) => ({ ...d, deliveryChallan }))}
+                label="Hand the goods over now (delivery challan)"
+                hint="Takes every piece out of stock now, as at a counter sale."
+              />
+            </div>
+            {data.can.takePayment && (
+              <div className="grid gap-4">
+                <Tick
+                  id="take-payment"
+                  checked={takePayment}
+                  onChange={(on) => {
+                    setTakePayment(on);
+                    if (on && !paymentAmount && total > 0) setPaymentAmount(fixed2(total));
+                  }}
+                  label="Payment received now"
+                  hint="A money receipt is made with the order."
+                />
+                {takePayment && (
+                  <div className="grid items-start gap-5 sm:grid-cols-3">
+                    <Field
+                      id="payment-amount"
+                      label={`Amount (${currency})`}
+                      error={fieldError("payment.amount")}
+                    >
+                      <Input
+                        id="payment-amount"
+                        inputMode="decimal"
+                        value={paymentAmount}
+                        onChange={(e) => setPaymentAmount(e.target.value)}
+                        placeholder="0.00"
+                        autoComplete="off"
+                        aria-invalid={Boolean(fieldError("payment.amount"))}
+                      />
+                    </Field>
+                    <Field id="payment-method" label="Paid by">
+                      <NativeSelect
+                        id="payment-method"
+                        name="paymentMethod"
+                        defaultValue="CASH"
+                        containerClassName="sm:w-full"
+                      >
+                        {data.paymentMethods.map((m) => (
+                          <option key={m} value={m}>
+                            {METHOD_LABELS[m]}
+                          </option>
+                        ))}
+                      </NativeSelect>
+                    </Field>
+                    <Field id="payment-reference" label="Reference (optional)">
+                      <Input
+                        id="payment-reference"
+                        name="paymentReference"
+                        maxLength={120}
+                        autoComplete="off"
+                      />
+                    </Field>
+                  </div>
+                )}
+              </div>
+            )}
+          </Section>
+        )}
+
+        <section
+          aria-label="Order total"
+          className="grid gap-2 rounded-lg border bg-card p-5 text-sm tabular-nums"
+        >
+          <div className="flex justify-between gap-4 text-muted-foreground">
+            <span>Subtotal · {formatCount(pieces, currency)} pcs</span>
+            <span>{money(fixed2(subtotal), currency)}</span>
+          </div>
+          {charge(shipping) > 0 && (
+            <div className="flex justify-between gap-4 text-muted-foreground">
+              <span>Delivery charge</span>
+              <span>{money(fixed2(charge(shipping)), currency)}</span>
+            </div>
+          )}
+          {charge(tax) > 0 && (
+            <div className="flex justify-between gap-4 text-muted-foreground">
+              <span>Tax / VAT</span>
+              <span>{money(fixed2(charge(tax)), currency)}</span>
+            </div>
+          )}
+          {charge(discount) > 0 && (
+            <div className="flex justify-between gap-4 text-muted-foreground">
+              <span>Discount</span>
+              <span>− {money(fixed2(charge(discount)), currency)}</span>
+            </div>
+          )}
+          <div className="flex items-baseline justify-between gap-4 border-t pt-2 font-medium">
+            <span>Total</span>
+            <span className="font-serif text-lg">{money(fixed2(total), currency)}</span>
+          </div>
+          {paidBefore > 0 && (
+            <>
+              <div className="flex justify-between gap-4 text-muted-foreground">
+                <span>{proforma ? "Advance already paid" : "Paid so far"}</span>
+                <span>{money(fixed2(paidBefore), currency)}</span>
+              </div>
+              <div className="flex justify-between gap-4 font-medium">
+                <span>Left to pay</span>
+                <span>{money(fixed2(Math.max(total - paidBefore, 0)), currency)}</span>
+              </div>
+            </>
+          )}
+          <p className="text-[0.8125rem] text-muted-foreground">
+            The order works out the final figures when it is saved.
+          </p>
+        </section>
+      </div>
 
       {hasFieldErrors && <FormAlert>Please check the highlighted fields.</FormAlert>}
       {error &&
@@ -869,31 +1198,63 @@ export function OrderForm({ form: data }: { form: OrderFormData }) {
         error.code !== "INSUFFICIENT_STOCK" &&
         !error.fieldErrors && <FormAlert>{error.message}</FormAlert>}
 
-      <div className="flex flex-col-reverse gap-2 border-t pt-6 sm:flex-row sm:justify-end">
-        <Button asChild variant="outline">
-          <Link
-            href={
-              editing
-                ? salesHref.order(editing.id)
-                : proforma
-                  ? salesHref.proforma(proforma.id)
-                  : "/sales/orders"
-            }
-          >
-            Cancel
-          </Link>
-        </Button>
-        <Button type="submit" disabled={pending}>
-          {pending && <LoaderCircleIcon className="animate-spin" aria-hidden />}
-          {pending
-            ? "Saving"
-            : editing
-              ? "Save the changes"
-              : proforma
-                ? "Make the order"
-                : "Place the order"}
-        </Button>
+      <div className="sticky bottom-[calc(4rem+env(safe-area-inset-bottom))] z-30 -mx-4 flex flex-col gap-3 border-t bg-card/95 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-card/85 sm:-mx-6 sm:flex-row sm:items-center sm:justify-between sm:px-6 md:bottom-4 md:mx-0 md:rounded-lg md:border md:px-5 md:shadow-[0_12px_32px_-16px_rgb(11_61_46/0.35)]">
+        <p className="text-sm tabular-nums">
+          <span className="text-muted-foreground">{formatCount(pieces, currency)} pcs · </span>
+          <span className="font-medium">{money(fixed2(total), currency)}</span>
+        </p>
+        <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-2 sm:flex">
+          {step === 0 ? (
+            <Button asChild variant="outline">
+              <Link
+                href={
+                  editing
+                    ? salesHref.order(editing.id)
+                    : proforma
+                      ? salesHref.proforma(proforma.id)
+                      : "/sales/orders"
+                }
+              >
+                Cancel
+              </Link>
+            </Button>
+          ) : (
+            <Button type="button" variant="outline" onClick={() => go(step - 1)} disabled={pending}>
+              Back
+            </Button>
+          )}
+          {step < LAST ? (
+            <Button type="button" onClick={next}>
+              Next: {STEPS[step + 1]}
+            </Button>
+          ) : (
+            <Button type="submit" disabled={pending || blocked}>
+              {pending && <LoaderCircleIcon className="animate-spin" aria-hidden />}
+              {pending
+                ? "Saving"
+                : editing
+                  ? "Save the changes"
+                  : proforma
+                    ? "Make the order"
+                    : "Place the order"}
+            </Button>
+          )}
+        </div>
       </div>
+
+      {forceAllow && (
+        <ForceAllowDialog
+          short={short}
+          canForce={data.can.forceOverride}
+          pending={pending}
+          error={fieldError("forceOverride.reason")}
+          onBack={() => {
+            setForceAllow(false);
+            go(1);
+          }}
+          onAllow={(reason) => place(reason)}
+        />
+      )}
       {error?.code === "INTERNAL" && (
         <ErrorDialog
           code={error.errorId ?? "ERR-UNKNOWN"}
@@ -902,6 +1263,94 @@ export function OrderForm({ form: data }: { form: OrderFormData }) {
         />
       )}
     </form>
+  );
+}
+
+/**
+ * Asked when the order wants more pieces than are ready: lists the SKUs short
+ * and, for people who may sell beyond stock, takes the reason and goes ahead.
+ */
+function ForceAllowDialog({
+  short,
+  canForce,
+  pending,
+  error,
+  onBack,
+  onAllow,
+}: {
+  short: Record<string, string>;
+  canForce: boolean;
+  pending: boolean;
+  error?: string;
+  onBack: () => void;
+  onAllow: (reason: string) => void;
+}) {
+  const [reason, setReason] = useState("");
+  const [problem, setProblem] = useState<string>();
+  const entries = Object.entries(short);
+  return (
+    <Dialog open onOpenChange={(open) => !open && !pending && onBack()}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Not enough stock</DialogTitle>
+          <DialogDescription>
+            {entries.length === 1 ? "One SKU asks" : `${entries.length} SKUs ask`} for more pieces
+            than are ready.
+            {canForce
+              ? " Force Allow sells them anyway: stock goes below zero until it is made, and the order is flagged."
+              : " Lower the pieces, or ask someone who may sell beyond stock."}
+          </DialogDescription>
+        </DialogHeader>
+        <ul className="grid max-h-48 gap-1 overflow-y-auto rounded-md border p-3 text-sm">
+          {entries.map(([sku, message]) => (
+            <li key={sku} className="break-words">
+              <span className="font-medium">{sku}</span>
+              <span className="text-muted-foreground">: {message || "no longer available"}</span>
+            </li>
+          ))}
+        </ul>
+        {canForce && (
+          <Field
+            id="force-reason"
+            label="Why"
+            hint="Kept on the order and in the activity log."
+            error={problem ?? error}
+          >
+            <Textarea
+              id="force-reason"
+              rows={2}
+              maxLength={500}
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              aria-describedby={(problem ?? error) ? "force-reason-error" : "force-reason-hint"}
+            />
+          </Field>
+        )}
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={onBack} disabled={pending}>
+            Change the pieces
+          </Button>
+          {canForce && (
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={pending}
+              onClick={() => {
+                if (reason.trim().length < 5) {
+                  setProblem("Write at least 5 letters.");
+                  return;
+                }
+                setProblem(undefined);
+                onAllow(reason.trim());
+              }}
+            >
+              {pending && <LoaderCircleIcon className="animate-spin" aria-hidden />}
+              {pending ? "Saving" : "Force Allow"}
+            </Button>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -924,153 +1373,4 @@ function prefill(block: Block, matrix: SaleMatrix, data: OrderFormData): Record<
     if (cell && wanted) filled[cell.variantId] = String(wanted);
   });
   return filled;
-}
-
-function StyleBlock({
-  block,
-  wholesale,
-  currency,
-  own,
-  short,
-  fieldError,
-  amount,
-  onChange,
-  onRemove,
-}: {
-  block: Block;
-  wholesale: boolean;
-  currency: string;
-  own: Record<string, number>;
-  short: Record<string, string>;
-  fieldError: (name: string) => string | undefined;
-  amount: number;
-  onChange: (change: Partial<Block>) => void;
-  onRemove: () => void;
-}) {
-  const m = block.matrix;
-  const title = m ? `${m.style.code} · ${m.style.name}` : "Loading the style";
-  const listPrice = m ? (wholesale ? m.style.wholesalePrice : m.style.retailPrice) : "";
-  const priceId = `${block.key}-price`;
-  const pieces = blockPieces(block);
-
-  return (
-    <li className="grid min-w-0 gap-4 rounded-lg border bg-card p-4 sm:p-5">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="font-medium break-words">{title}</p>
-          {m && (
-            <p className="text-[0.8125rem] text-muted-foreground tabular-nums">
-              {formatCount(pieces, currency)} pcs · {money(fixed2(amount), currency)}
-            </p>
-          )}
-        </div>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={onRemove}
-          aria-label={`Remove ${m ? m.style.code : "this style"}`}
-        >
-          <Trash2Icon aria-hidden />
-          Remove
-        </Button>
-      </div>
-
-      {block.loadError ? (
-        <FormAlert>{block.loadError}</FormAlert>
-      ) : !m ? (
-        <p className="flex items-center gap-2 text-sm text-muted-foreground">
-          <LoaderCircleIcon className="size-4 animate-spin" aria-hidden />
-          Loading colours and sizes
-        </p>
-      ) : (
-        <>
-          <Field
-            id={priceId}
-            label={`Price per piece (${currency})`}
-            hint={
-              block.mixedPrices
-                ? "Its pieces had different prices or discounts; saving gives them this one price (empty: the list price)."
-                : `Empty uses the ${wholesale ? "wholesale" : "retail"} list price, ${listPrice}.`
-            }
-            error={fieldError(`price.${block.key}`)}
-          >
-            <Input
-              id={priceId}
-              inputMode="decimal"
-              value={block.unitPrice}
-              onChange={(e) => onChange({ unitPrice: e.target.value })}
-              placeholder={listPrice}
-              autoComplete="off"
-              className="sm:w-40"
-              aria-invalid={Boolean(fieldError(`price.${block.key}`))}
-              aria-describedby={
-                fieldError(`price.${block.key}`) ? `${priceId}-error` : `${priceId}-hint`
-              }
-            />
-          </Field>
-          {!m.style.isActive && (
-            <FormAlert tone="note">
-              This style is archived; it can be sold only from stock left.
-            </FormAlert>
-          )}
-          <div className="grid grid-cols-1 gap-4">
-            {m.rows.map((row) => (
-              <fieldset key={row.color.id} className="grid min-w-0 gap-2">
-                <legend className="mb-1 text-sm font-medium">
-                  <ColorName name={row.color.name} hexCode={row.color.hexCode} />
-                </legend>
-                <div className="grid grid-cols-3 gap-2 min-[400px]:grid-cols-4 sm:grid-cols-6">
-                  {row.cells.map((cell, index) => {
-                    const size = m.sizes[index]!;
-                    if (!cell) return null;
-                    const ready = Math.max(cell.available, 0) + (own[cell.variantId] ?? 0);
-                    const isShort = Boolean(short[cell.sku]);
-                    const bad = Boolean(fieldError(`qty.${cell.variantId}`));
-                    const inputId = `${block.key}-${cell.variantId}`;
-                    return (
-                      <div key={cell.variantId} className="grid min-w-0 gap-1">
-                        <label
-                          htmlFor={inputId}
-                          className="flex items-baseline justify-between gap-1 text-[0.8125rem]"
-                        >
-                          <span className="font-medium">{size.name}</span>
-                          <span
-                            className={cn(
-                              "truncate tabular-nums",
-                              isShort ? "text-amber-700" : "text-muted-foreground",
-                            )}
-                          >
-                            {ready} ready
-                          </span>
-                        </label>
-                        <Input
-                          id={inputId}
-                          inputMode="numeric"
-                          value={block.quantities[cell.variantId] ?? ""}
-                          onChange={(e) =>
-                            onChange({
-                              quantities: { ...block.quantities, [cell.variantId]: e.target.value },
-                            })
-                          }
-                          disabled={!cell.isActive && !block.quantities[cell.variantId]}
-                          placeholder="0"
-                          aria-label={`${row.color.name} ${size.name}, pieces (${ready} ready)`}
-                          aria-invalid={bad || isShort}
-                          className={cn(
-                            "text-right tabular-nums",
-                            isShort && "border-amber-500 focus-visible:border-amber-500",
-                          )}
-                        />
-                      </div>
-                    );
-                  })}
-                </div>
-              </fieldset>
-            ))}
-          </div>
-        </>
-      )}
-    </li>
-  );
 }

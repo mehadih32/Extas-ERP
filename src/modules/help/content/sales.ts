@@ -9,10 +9,63 @@ export const salesHelp: HelpSection = {
   href: "/sales",
   articles: [
     {
+      slug: "sales-overview",
+      title: "বিক্রয়ের আজকের চিত্র (Overview) দেখবেন যেভাবে",
+      summary:
+        "আজকের অর্ডার, ইনভয়েস, আদায়, ডেলিভারির অপেক্ষা ও বকেয়া এক পাতায় দেখা, আর অর্ডার না খুলেই পাশের প্যানেলে দ্রুত দেখে নেওয়া।",
+      keywords: [
+        "sales overview",
+        "overview",
+        "dashboard",
+        "today in sales",
+        "kpi",
+        "quick view",
+        "ড্যাশবোর্ড",
+        "আজকের বিক্রি",
+        "বিক্রয়ের চিত্র",
+        "দ্রুত দেখা",
+        "বকেয়া",
+      ],
+      routes: ["/sales/overview"],
+      who: "যাঁরা Sales দেখতে পারেন, সবাই। “New order” বোতাম শুধু যাঁরা অর্ডার নিতে পারেন তাঁরা পান।",
+      steps: [
+        {
+          text: "মেনু থেকে “Sales” খুলুন। প্রথমেই “Overview” ট্যাবে “Today in sales” পাতা খুলবে।",
+          image: {
+            id: "sales-overview-1",
+            caption: "“Today in sales” পাতার উপরে আজকের হিসাবের আটটি ঘর",
+          },
+        },
+        {
+          text: "উপরের ঘরগুলোতে আজকের হিসাব থাকে: “Orders today”, “Sales invoiced today”, “Collected today”, “Waiting to deliver”, “Dues outstanding”, “Overdue”, “Open quotations” ও “PIs waiting for advance”। কোনো ঘরে চাপলে সেই তালিকা খুলবে, যেমন “Overdue”-তে চাপলে মেয়াদ পেরোনো ইনভয়েসগুলো।",
+        },
+        {
+          text: "পাতাটি প্রতি মিনিটে নিজে থেকেই হালনাগাদ হয়। শিরোনামের নিচে “Updated” ও সময় লেখা থাকে। সঙ্গে সঙ্গে হালনাগাদ করতে পাশের ঘোরানো তীরের বোতামে চাপুন।",
+        },
+        {
+          text: "নিচে দুটি তালিকা: “Latest orders” (সবচেয়ে নতুন অর্ডার) ও “Due to ship” (যেগুলোর পাঠানোর দিন সবচেয়ে কাছে)। পাঠানোর দিন পেরিয়ে গেলে লাল করে “Late” লেখা থাকে।",
+        },
+        {
+          text: "যেকোনো অর্ডারে চাপলে ডান পাশ থেকে “Quick view” প্যানেল খুলবে: ক্রেতা, স্টাইল ও পিস, মোট টাকা, বাকি, কার্টন, কে প্যাক করেছে ও কাগজপত্র। পুরো অর্ডার দেখতে “Open the order”, ইনভয়েস দেখতে “Open the invoice” চাপুন।",
+          image: {
+            id: "sales-overview-2",
+            caption: "ডান পাশ থেকে খোলা “Quick view” প্যানেলে অর্ডারের সারাংশ",
+          },
+        },
+        {
+          text: "বড় পর্দায় “Orders” তালিকার প্রতিটি সারির শেষে চোখের চিহ্ন থাকে। সেটিতে চাপলেও একই প্যানেল খোলে, তালিকা ছেড়ে যেতে হয় না।",
+        },
+      ],
+      tips: [
+        "“Collected today”-তে আজ ফেরত দেওয়া টাকা বাদ দিয়ে দেখানো হয়, নিচে কত ফেরত গেছে লেখা থাকে।",
+        "এই পাতা শুধু দেখার জন্য। কিছু বদলাতে অর্ডার বা ইনভয়েস খুলে নিন।",
+      ],
+    },
+    {
       slug: "sales-new-order",
       title: "নতুন অর্ডার নেবেন যেভাবে",
       summary:
-        "ক্রেতা, গুদাম ও স্টাইল বেছে রং ও সাইজ অনুযায়ী পিস লিখে অর্ডার তৈরি করা, সঙ্গে ইনভয়েস ও চালান।",
+        "চার ধাপে অর্ডার: ক্রেতা, রং × সাইজ ছকে পিস (Magic Ratio দিয়ে এক চাপে), ছাড় ও ডেলিভারির তথ্য, শেষে যাচাই করে অর্ডার দেওয়া।",
       keywords: [
         "new order",
         "order",
@@ -20,11 +73,21 @@ export const salesHelp: HelpSection = {
         "wholesale",
         "place the order",
         "checkout",
+        "magic ratio",
+        "ratio",
+        "matrix",
+        "round off",
+        "cartons",
+        "packed by",
+        "credit limit",
         "অর্ডার",
         "নতুন অর্ডার",
         "বিক্রি",
         "পাইকারি",
         "অর্ডার নেওয়া",
+        "অনুপাত",
+        "কার্টন",
+        "ছাড়",
         "order koro",
       ],
       routes: ["/sales/orders/new", "/sales/orders"],
@@ -32,52 +95,61 @@ export const salesHelp: HelpSection = {
       anyOf: ["sales.order.create"],
       steps: [
         {
-          text: "মেনু থেকে “Sales” খুলুন। “Orders” ট্যাবে “New order” বোতামে চাপুন।",
+          text: "মেনু থেকে “Sales” খুলুন। “Overview” বা “Orders” ট্যাবে “New order” বোতামে চাপুন। অর্ডার চার ধাপে হয়: “Customer”, “Products”, “Charges & delivery” ও “Review & place”। উপরের দাগগুলো দেখায় আপনি কোন ধাপে আছেন।",
           image: {
             id: "sales-new-order-1",
-            caption: "“Orders” ট্যাবে অর্ডারের তালিকা ও “New order” বোতাম",
+            caption: "নতুন অর্ডারের উপরে চার ধাপের দাগ ও প্রথম ধাপ “Customer”",
           },
         },
         {
-          text: "“Channel”-এ বিক্রির ধরন বেছে নিন: “Wholesale” (পাইকারি দামে ক্রেতার অর্ডার), “Counter sale” (দোকানে খুচরা দামে) বা “Social commerce” (Facebook, Instagram বা WhatsApp-এর অর্ডার, খুচরা দামে)।",
+          text: "প্রথম ধাপে “Channel” বেছে নিন: “Wholesale” (পাইকারি দামে ক্রেতার অর্ডার), “Counter sale” (দোকানে খুচরা দামে) বা “Social commerce” (Facebook, Instagram বা WhatsApp-এর অর্ডার, খুচরা দামে)।",
           image: {
             id: "sales-new-order-2",
-            caption: "নতুন অর্ডারের ফর্মে “Channel” বাছাই ও “Find a buyer” ঘর",
+            caption: "প্রথম ধাপে “Channel” বাছাই ও “Find a buyer” ঘর",
           },
         },
         {
-          text: "“Find a buyer” ঘরে ক্রেতার নাম, কোড বা ফোন লিখে তালিকা থেকে বেছে নিন। পাইকারি অর্ডারে ক্রেতা লাগবেই। পাশে দেখাবে ক্রেতার কাছে কত পাওনা বা কত জমা (“Owes” / “Credit”)।",
+          text: "“Find a buyer” ঘরে ক্রেতার নাম, কোড বা ফোন লিখে তালিকা থেকে বেছে নিন। পাইকারি অর্ডারে ক্রেতা লাগবেই। পাশে দেখাবে ক্রেতার কাছে কত পাওনা বা কত জমা (“Owes” / “Credit”)। “Order date”, দরকার হলে “Ship by (optional)” ও “Warehouse” দিয়ে নিচের “Next” বোতামে চাপুন।",
         },
         {
-          text: "“Order date”, দরকার হলে “Ship by (optional)” (কবে গুদাম থেকে বের হবে), আর “Warehouse” (কোন গুদাম থেকে মাল যাবে) দিন।",
-        },
-        {
-          text: "“Items” অংশে “Find a style” ঘরে স্টাইলের কোড বা নাম লিখে বেছে নিন। রং × সাইজের একটি ছক খুলবে, প্রতিটি ঘরে কত পিস তৈরি আছে লেখা থাকে। যত পিস চান সেই ঘরে লিখুন।",
+          text: "দ্বিতীয় ধাপ “Products”: “Find a style” ঘরে স্টাইলের কোড বা নাম লিখে বেছে নিন। স্টাইলটি একটি কার্ডে খুলবে, ভেতরে রং × সাইজের ছোট ছক। প্রতিটি ঘরে যত পিস চান লিখুন। ঘরের নিচের ছোট সংখ্যাটি কত পিস তৈরি আছে; একেবারে না থাকলে মোটা লাল “0” দেখায়।",
           image: {
             id: "sales-new-order-3",
-            caption: "স্টাইলের রং × সাইজ ছক: প্রতিটি ঘরে তৈরি পিস ও লেখার জায়গা",
+            caption: "স্টাইলের কার্ডে রং × সাইজ ছক, প্রতিটি ঘরের নিচে তৈরি পিস ও লাল 0",
           },
         },
         {
-          text: "দাম ফাঁকা রাখলে তালিকার দাম বসবে (পাইকারিতে wholesale, খুচরায় retail)। পুরো স্টাইলের জন্য অন্য দাম চাইলে দামের ঘরে লিখুন। আরও স্টাইল যোগ করতে “Add another style” চাপুন।",
-        },
-        {
-          text: "“Charges and notes” অংশে “Discount”, “Delivery charge”, “Tax / VAT” ও নোট দিন।",
-        },
-        {
-          text: "“At checkout” অংশে বেছে নিন এখনই কী হবে: “Issue the invoice”, “Make the packing list”, “Hand the goods over now (delivery challan)”, আর অনুমতি থাকলে “Payment received now”।",
+          text: "সব রঙে একই অনুপাতে পিস দিতে “Magic Ratio” চাপুন। “Ratio for …” ঘরে প্রতিটি সাইজের জন্য একটি করে সংখ্যা লিখুন, যেমন 1:2:2:1 (কোনো সাইজ বাদ দিতে 0)। “Sets for each colour”-এ কত সেট লিখুন (10 সেট 1:2:2:1 মানে 10, 20, 20, 10 পিস)। কোন কোন রঙে বসবে বেছে “Fill the grid” চাপুন। Products-এ সংরক্ষিত অনুপাত থাকলে সেগুলো বোতাম হিসেবেও দেখায়।",
           image: {
             id: "sales-new-order-4",
-            caption: "“At checkout” অংশের টিকবক্সগুলো ও নিচে অর্ডারের মোট টাকা",
+            caption: "“Magic Ratio” প্যানেল: অনুপাত, সেটের সংখ্যা, রং বাছাই ও “Fill the grid”",
           },
         },
         {
-          text: "“Place the order” বোতামে চাপুন। অর্ডারের পাতা খুলবে, সেখানে ইনভয়েস, প্যাকিং লিস্ট ও চালানের PDF পাবেন।",
+          text: "দাম ফাঁকা রাখলে তালিকার দাম বসবে (পাইকারিতে wholesale, খুচরায় retail)। পুরো স্টাইলের জন্য অন্য দাম চাইলে কার্ডের দামের ঘরে লিখুন। আরও স্টাইল যোগ করতে “Add another style” ঘরে খুঁজুন। একবারে একটি কার্ড খোলা থাকে; বাকিগুলো ভাঁজ হয়ে শুধু মোট পিস ও টাকা দেখায়, চাপলে আবার খোলে।",
+        },
+        {
+          text: "তৃতীয় ধাপ “Charges & delivery”: “Discount” হলো পুরো বিলের উপর একসাথে ছাড়, যেমন দরদাম করে ঠিক করা দাম বা খুচরা টাকা বাদ। “Round to 10” বা “Round to 100” চাপলে মোট টাকা নিচের গোল অঙ্কে নামিয়ে ছাড়টি নিজেই বসে যায়। দরকার হলে “Delivery charge” ও “Tax / VAT” দিন।",
+        },
+        {
+          text: "একই ধাপে “Total cartons (optional)”-এ কত কার্টনে মাল যাবে আর “Packed by (optional)”-এ কে প্যাক করেছেন (HR-এর কর্মীদের তালিকা থেকে) বেছে নিন। দুটোই প্যাকিং লিস্ট ও চালানে ছাপা হয়, পরে অর্ডারের পাতা থেকেও দেওয়া যায়।",
+        },
+        {
+          text: "শেষ ধাপ “Review & place”: পুরো অর্ডারের সারাংশ দেখুন। ক্রেতার ক্রেডিট লিমিট নিজে থেকেই যাচাই হয়: “Within the buyer's credit limit” লেখা এলে ঠিক আছে; “This order cannot go on the buyer's credit” এলে কিছু টাকা এখনই নিন, অর্ডার কমান বা Accounts-কে লিমিট বাড়াতে বলুন।",
+        },
+        {
+          text: "“At checkout” অংশে বেছে নিন এখনই কী হবে: “Issue the invoice”, “Make the packing list”, “Hand the goods over now (delivery challan)”, আর অনুমতি থাকলে “Payment received now”। তারপর “Place the order” চাপুন। অর্ডারের পাতা খুলবে, সেখানে ইনভয়েস, প্যাকিং লিস্ট ও চালানের PDF পাবেন।",
+          image: {
+            id: "sales-new-order-5",
+            caption: "শেষ ধাপে সারাংশ, ক্রেডিট লিমিটের বার্তা, “At checkout” টিকবক্স ও মোট টাকা",
+          },
         },
       ],
       tips: [
+        "নিচের বারে সবসময় মোট পিস ও মোট টাকা দেখায়। “Back” চেপে আগের ধাপে ফিরে কিছু বদলালেও লেখা হারায় না।",
+        "কোনো ধাপে ভুল থাকলে অর্ডার দেওয়ার সময় সেই ধাপটি নিজেই খুলে যায় এবং ঘরটি লাল দেখায়।",
         "অর্ডার সংরক্ষণের সময় স্টকে থাকা পিস অর্ডারের জন্য আটকে রাখা হয়।",
-        "স্টকের চেয়ে বেশি পিস লিখলে ঘরটি লাল হবে। পিস কমান, বা যাঁর অনুমতি আছে তাঁকে “Force Override & Sell” করতে বলুন।",
+        "স্টকের চেয়ে বেশি পিস লিখলে ঘরটি চিহ্নিত হয়। অর্ডার দেওয়ার সময় “Not enough stock” জানালা আসে, যার কথা “স্টকের চেয়ে বেশি বিক্রি” গাইডে আছে।",
         "আর্কাইভ করা স্টাইল শুধু বাকি স্টক থেকেই বিক্রি করা যায়।",
       ],
     },
@@ -132,15 +204,17 @@ export const salesHelp: HelpSection = {
     },
     {
       slug: "sales-force-override",
-      title: "স্টকের চেয়ে বেশি বিক্রি (Force Override) করবেন যেভাবে",
+      title: "স্টকের চেয়ে বেশি বিক্রি (Force Allow) করবেন যেভাবে",
       summary:
-        "স্টক কম থাকলেও বিশেষ কারণে অর্ডার নিতে হলে কারণ লিখে “Force Override & Sell” ব্যবহার করা।",
+        "স্টক কম থাকলেও বিশেষ কারণে অর্ডার নিতে হলে “Not enough stock” জানালায় কারণ লিখে “Force Allow” করা।",
       keywords: [
+        "force allow",
         "force override",
         "sell beyond stock",
         "oversell",
         "negative stock",
         "override",
+        "not enough stock",
         "স্টকের বেশি",
         "স্টক নেই",
         "ওভাররাইড",
@@ -151,23 +225,26 @@ export const salesHelp: HelpSection = {
       anyOf: ["sales.force_override"],
       steps: [
         {
-          text: "অর্ডারে স্টকের চেয়ে বেশি পিস লিখলে সেই ঘরগুলো চিহ্নিত হবে এবং নিচে সতর্কবার্তা আসবে।",
+          text: "অর্ডারের ছকে স্টকের চেয়ে বেশি পিস লিখলে সেই ঘর চিহ্নিত হয়, স্টাইলের কার্ডে “short of stock” লেখা আসে এবং শেষ ধাপে সতর্কবার্তা দেখায়।",
         },
         {
-          text: "অনুমতি থাকলে “Force Override & Sell” টিক দিন।",
+          text: "“Place the order” চাপলে “Not enough stock” জানালা খুলবে, কোন কোন SKU-তে কত পিস চাওয়া আর কত তৈরি আছে তার তালিকাসহ।",
           image: {
             id: "sales-force-override-1",
-            caption: "স্টকের বেশি পিসের সতর্কতা, “Force Override & Sell” টিকবক্স ও “Why” ঘর",
+            caption: "“Not enough stock” জানালা: কম পড়া SKU, “Why” ঘর ও “Force Allow” বোতাম",
           },
         },
         {
-          text: "“Why” ঘরে কারণ লিখুন, যেমন “কাল ফ্যাক্টরি থেকে মাল আসছে”। কারণটি অর্ডারে স্থায়ীভাবে থেকে যায়।",
+          text: "অনুমতি থাকলে “Why” ঘরে কারণ লিখুন, যেমন “কাল ফ্যাক্টরি থেকে মাল আসছে”, তারপর “Force Allow” চাপুন। কারণটি অর্ডারে ও কাজের খাতায় (activity log) স্থায়ীভাবে থেকে যায়।",
         },
         {
-          text: "“Place the order” চাপুন। অর্ডারের তালিকা ও পাতায় “Force override” চিহ্ন দেখাবে।",
+          text: "পিস কমাতে চাইলে “Change the pieces” চাপুন; পণ্যের ধাপ খুলে যাবে। অর্ডার দেওয়ার পরে তালিকা ও পাতায় “Force override” চিহ্ন দেখাবে।",
         },
       ],
-      tips: ["অনুমতি না থাকলে পিস কমিয়ে দিন অথবা Super Admin-কে বলুন।"],
+      tips: [
+        "অনুমতি না থাকলে জানালায় শুধু “Change the pieces” থাকে। পিস কমিয়ে দিন অথবা Super Admin-কে বলুন।",
+        "Force Allow করলে স্টক শূন্যের নিচে যায়, মাল তৈরি হয়ে এলে ঠিক হয়ে যায়।",
+      ],
     },
     {
       slug: "sales-order-documents",
@@ -204,7 +281,14 @@ export const salesHelp: HelpSection = {
           text: "ইনভয়েস দিতে “Issue the invoice” চাপুন, “Invoice date” ও দরকার হলে “Due by (optional)” (কবের মধ্যে টাকা দেবে) দিয়ে নিশ্চিত করুন।",
         },
         {
-          text: "প্যাকিং লিস্ট বানাতে “Make the packing list” চাপুন। “Cartons (optional)”, “Gross weight, kg (optional)” ও নোট দিয়ে নিশ্চিত করুন।",
+          text: "প্যাকিং লিস্ট বানাতে “Make the packing list” চাপুন। “Cartons (optional)”, “Gross weight, kg (optional)” ও নোট দিয়ে নিশ্চিত করুন। অর্ডারে কার্টনের সংখ্যা দেওয়া থাকলে তা আগে থেকেই বসানো থাকে।",
+        },
+        {
+          text: "কত কার্টন ও কে প্যাক করেছেন দিতে বা বদলাতে উপরের মেনু (তিন বিন্দু) থেকে “Cartons and packer” চাপুন। “Total cartons” লিখে “Packed by” থেকে কর্মী বেছে “Save” চাপুন। পাতার “Delivery” অংশে দুটোই দেখাবে, আর প্যাকিং লিস্ট ও চালানের PDF-এ ছাপা হবে।",
+          image: {
+            id: "sales-order-documents-3",
+            caption: "“Cartons and packer” জানালা: “Total cartons” ও “Packed by”",
+          },
         },
         {
           text: "মাল পাঠাতে “Deliver goods” চাপুন। “What goes out”-এ প্রতিটি লাইনের কত পিস যাচ্ছে লিখুন (আংশিকও পাঠানো যায়)। “Delivered on”, এবং চাইলে “Received by”, “Vehicle number”, “Driver” ও “Driver's phone” দিন। “Make the challan” চাপুন।",

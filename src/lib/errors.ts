@@ -7,7 +7,7 @@ export type ErrorCode =
   | "NOT_FOUND"
   | "VALIDATION"
   | "CONFLICT"
-  | "INSUFFICIENT_STOCK" // UI shows the "Force Override & Sell" warning
+  | "INSUFFICIENT_STOCK" // UI shows the "Force Allow" pop-up
   | "INVALID_CREDENTIALS"
   | "ACCOUNT_LOCKED"
   | "ACCOUNT_DISABLED"

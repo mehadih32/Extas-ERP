@@ -671,7 +671,10 @@ export async function packingListDocument(
       { label: "Packing list no.", value: pl.number },
       { label: "Date", value: formatInstantDay(pl.createdAt, tz) },
       { label: "Order no.", value: order.number },
-      ...(pl.cartons !== null ? [{ label: "Cartons", value: count(pl.cartons, currency) }] : []),
+      ...(pl.cartons !== null
+        ? [{ label: "Total cartons", value: count(pl.cartons, currency) }]
+        : []),
+      ...(order.packedBy ? [{ label: "Packed by", value: order.packedBy.name }] : []),
       ...(pl.grossWeightKg !== null
         ? [{ label: "Gross weight", value: `${formatAmount(pl.grossWeightKg, 2, currency)} kg` }]
         : []),
@@ -742,6 +745,10 @@ export async function challanDocument(
       { label: "Challan no.", value: ch.number },
       { label: "Date", value: formatInstantDay(ch.deliveryDate, tz) },
       { label: "Order no.", value: order.number },
+      ...(order.totalCartons !== null
+        ? [{ label: "Total cartons", value: count(order.totalCartons, currency) }]
+        : []),
+      ...(order.packedBy ? [{ label: "Packed by", value: order.packedBy.name }] : []),
       ...(ch.vehicleNo ? [{ label: "Vehicle no.", value: ch.vehicleNo }] : []),
       ...(driver ? [{ label: "Driver", value: driver }] : []),
     ],

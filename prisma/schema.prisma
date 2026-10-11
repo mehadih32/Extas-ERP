@@ -544,12 +544,12 @@ model SizeRatioEntry {
 // =============================================================================
 
 model Warehouse {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   companyId String
   name      String
   address   String?
-  isDefault Boolean  @default(false)
-  createdAt DateTime @default(now())
+  isDefault Boolean   @default(false)
+  createdAt DateTime  @default(now())
   /// Set when a Super Admin deletes an empty warehouse: it leaves every list and
   /// picker, while its past movements keep their warehouse in the history.
   deletedAt DateTime?
@@ -1126,6 +1126,10 @@ model SalesOrder {
   hasForceOverride Boolean          @default(false)
   /// The day the goods are due to ship to the buyer (shipment reminders).
   shipmentDate     DateTime?        @db.Date
+  /// Cartons the goods go out in; printed on the packing list and the delivery challan.
+  totalCartons     Int?
+  /// The employee who packed the goods; printed on the packing list and the challan.
+  packedById       String?
   notes            String?
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
@@ -1135,6 +1139,7 @@ model SalesOrder {
   proforma         ProformaInvoice?         @relation(fields: [proformaId], references: [id], onDelete: SetNull)
   integration      SalesChannelIntegration? @relation(fields: [integrationId], references: [id], onDelete: SetNull)
   warehouse        Warehouse?               @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
+  packedBy         Employee?                @relation("OrderPackedBy", fields: [packedById], references: [id], onDelete: SetNull)
   items            SalesOrderItem[]
   invoice          Invoice?
   packingList      PackingList?
@@ -2020,6 +2025,7 @@ model Employee {
   tasksAssigned   Task[]              @relation("TaskAssignee")
   reminderTargets ReminderRecipient[]
   notifications   NotificationLog[]
+  packedOrders    SalesOrder[]        @relation("OrderPackedBy")
 
   @@unique([companyId, code])
   @@unique([companyId, userId])

@@ -30,7 +30,9 @@ import {
 import {
   cancelOrderSchema,
   createOrderSchema,
+  creditCheckSchema,
   listOrdersSchema,
+  orderLogisticsSchema,
   orderShipmentSchema,
   updateOrderSchema,
 } from "@/modules/sales/schemas";
@@ -38,6 +40,7 @@ import { assertCanRefund, REFUND_KIND_TEXT, refundBuyerTx } from "@/modules/sale
 import {
   canCancelOrder,
   canEditOrder,
+  canSetLogistics,
   canSetShipmentDate,
   liveInvoice as live,
   SHIPMENT_OPEN,
@@ -131,6 +134,42 @@ async function auditOverride(
   );
 }
 
+/**
+ * The employee who packed an order: someone on the company's staff list who has
+ * not left (a packer who left later stays on the orders they packed).
+ */
+export async function resolvePacker(ctx: CompanyContext, packedById: string | null | undefined) {
+  if (!packedById) return null;
+  const packer = await ctx.db.employee.findFirst({
+    where: { id: packedById, status: { in: ["ACTIVE", "ON_LEAVE"] } },
+    select: { id: true, name: true },
+  });
+  if (!packer) {
+    throw new AppError("VALIDATION", "Choose who packed it from the staff list.", {
+      packedById: ["Choose someone from the list"],
+    });
+  }
+  return packer;
+}
+
+/** Staff who can be named as the packer, for the order screens' list. */
+export async function listPackers(ctx: CompanyContext, keep?: string | null) {
+  const working = { status: { in: ["ACTIVE" as const, "ON_LEAVE" as const] } };
+  return ctx.db.employee.findMany({
+    // The order's own packer stays in the list after leaving, so it still shows.
+    where: keep ? { OR: [working, { id: keep }] } : working,
+    select: { id: true, code: true, name: true },
+    orderBy: [{ name: "asc" }, { id: "asc" }],
+    take: 500,
+  });
+}
+
+/** The logistics fields a change sets: only those it names. */
+const logisticsOf = (input: { totalCartons?: number | null; packedById?: string | null }) => ({
+  ...(input.totalCartons !== undefined ? { totalCartons: input.totalCartons } : {}),
+  ...(input.packedById !== undefined ? { packedById: input.packedById } : {}),
+});
+
 type OrderDraft = {
   channel: SalesChannel;
   partyId: string | null;
@@ -146,6 +185,9 @@ type OrderDraft = {
   shippingAddress?: string | null;
   notes?: string | null;
   overrideReason?: string;
+  totalCartons?: number | null;
+  /** Checked by the caller (resolvePacker). */
+  packedById?: string | null;
 };
 
 /** A shipment cannot be due before the order was taken. */
@@ -192,6 +234,8 @@ export async function createOrderTx(
       paidAmount: 0,
       dueAmount: totals.total,
       hasForceOverride: draft.lines.some((l) => l.short),
+      totalCartons: draft.totalCartons ?? null,
+      packedById: draft.packedById ?? null,
       notes: draft.notes ?? null,
       items: { create: itemRows(ctx, draft.lines, totals.lineTotals, draft.overrideReason) },
     },
@@ -224,6 +268,7 @@ export async function createOrder(ctx: CompanyContext, raw: unknown, meta?: Requ
   if (input.payment) assertCanRecordReceipts(ctx);
   const party = input.partyId ? await assertPartyCanTransact(ctx, input.partyId, "SALE") : null;
   const warehouse = await resolveWarehouse(ctx, input.warehouseId);
+  const packer = await resolvePacker(ctx, input.packedById);
   const lines = await resolveOrderLines(ctx, input, input.channel, warehouse.id);
   assertStockOrOverride(ctx, lines, input.forceOverride);
   const { total } = orderTotals(lines, input);
@@ -260,6 +305,8 @@ export async function createOrder(ctx: CompanyContext, raw: unknown, meta?: Requ
         shippingAddress: input.shippingAddress,
         notes: input.notes,
         overrideReason: input.forceOverride?.reason,
+        totalCartons: input.totalCartons,
+        packedById: packer?.id,
       },
       meta,
     );
@@ -296,6 +343,9 @@ export async function updateOrder(
   if (!order) throw new AppError("NOT_FOUND", "Order not found.");
   assertAllowed(canEditOrder(order, piecesOf(await deliveredByVariant(prisma, order.id))));
   if (!order.warehouseId) throw new AppError("CONFLICT", "The order has no warehouse.");
+  if (input.packedById && input.packedById !== order.packedById) {
+    await resolvePacker(ctx, input.packedById);
+  }
 
   const linesChanged = Boolean(input.lines || input.matrix);
   const ownReserved = new Map(order.items.map((i) => [i.variantId, i.quantity]));
@@ -371,6 +421,7 @@ export async function updateOrder(
         ...(input.customerName !== undefined ? { customerName: input.customerName } : {}),
         ...(input.customerPhone !== undefined ? { customerPhone: input.customerPhone } : {}),
         ...(input.shippingAddress !== undefined ? { shippingAddress: input.shippingAddress } : {}),
+        ...logisticsOf(input),
       },
     });
     await auditInCompany(
@@ -493,6 +544,72 @@ export async function cancelOrder(
 }
 
 /**
+ * Sets or clears how an order's goods go out (cartons, who packed them) at any
+ * time before it is cancelled or returned. A packing list made already shows the
+ * new carton count too.
+ */
+export async function setOrderLogistics(
+  ctx: CompanyContext,
+  orderId: string,
+  raw: unknown,
+  meta?: RequestMeta,
+) {
+  const input = orderLogisticsSchema.parse(raw);
+  const order = await ctx.db.salesOrder.findUnique({
+    where: { id: orderId },
+    select: { id: true, number: true, status: true, totalCartons: true, packedById: true },
+  });
+  if (!order) throw new AppError("NOT_FOUND", "Order not found.");
+  assertAllowed(canSetLogistics(order));
+  if (input.packedById && input.packedById !== order.packedById) {
+    await resolvePacker(ctx, input.packedById);
+  }
+  const data = logisticsOf(input);
+  await prisma.$transaction(async (tx) => {
+    const { count } = await tx.salesOrder.updateMany({
+      where: {
+        id: order.id,
+        companyId: ctx.company.id,
+        status: { notIn: ["CANCELLED", "RETURNED"] },
+      },
+      data,
+    });
+    if (count === 0)
+      throw new AppError("CONFLICT", "This order just changed. Refresh and try again.");
+    if (data.totalCartons !== undefined) {
+      await tx.packingList.updateMany({
+        where: { orderId: order.id },
+        data: { cartons: data.totalCartons },
+      });
+    }
+    await auditInCompany(
+      ctx,
+      meta,
+      {
+        action: "UPDATE",
+        entityType: "SalesOrder",
+        entityId: order.id,
+        summary: `Logistics of ${order.number}: cartons ${order.totalCartons ?? "none"} -> ${input.totalCartons === undefined ? (order.totalCartons ?? "none") : (input.totalCartons ?? "none")}${data.packedById !== undefined && data.packedById !== order.packedById ? ", packer changed" : ""}`,
+        before: { totalCartons: order.totalCartons, packedById: order.packedById },
+        after: data,
+      },
+      tx,
+    );
+  });
+  return getOrder(ctx, order.id);
+}
+
+/**
+ * Whether a buyer may take `amount` more on credit: the same check an order
+ * runs when it is saved (account open, credit limit), asked before placing it.
+ */
+export async function checkBuyerCredit(ctx: CompanyContext, raw: unknown) {
+  const { partyId, amount } = creditCheckSchema.parse(raw);
+  await assertPartyCanTransact(ctx, partyId, "SALE", amount);
+  return { ok: true as const };
+}
+
+/**
  * Sets, moves or clears the day an open order is due to ship. Shipment
  * reminders follow it (a moved date starts its reminders afresh).
  */
@@ -566,6 +683,7 @@ export async function getOrder(ctx: CompanyContext, orderId: string) {
         },
       },
       warehouse: { select: { id: true, name: true } },
+      packedBy: { select: { id: true, code: true, name: true } },
       items: {
         include: {
           variant: {

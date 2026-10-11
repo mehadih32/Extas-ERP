@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { buyerName, isZero, money, usesWholesalePrice } from "@/components/sales/labels";
+import { parseRatio, presetRatio, ratioPieces, ratioText } from "@/components/sales/magic-ratio";
 import {
   clearedView,
   invoiceListQuery,
@@ -82,6 +83,7 @@ describe("the menu with Sales in it", () => {
     // Their printed quotations and invoices are under Reports & documents.
     expect(visibleNavItems(["sales.view"]).map((i) => i.href)).toEqual(["/", "/sales", "/reports"]);
     expect(visibleSalesTabs(["sales.view"]).map((t) => t.label)).toEqual([
+      "Overview",
       "Orders",
       "Quotations",
       "Proformas",
@@ -107,5 +109,63 @@ describe("the menu with Sales in it", () => {
     const seller = phoneTabs(visibleNavItems(["sales.view", "inventory.view", "parties.view"]));
     expect(seller.tabs.map((i) => i.href)).toEqual(["/", "/sales", "/products", "/parties"]);
     expect(seller.more.map((i) => i.href)).toEqual(["/reports"]);
+  });
+});
+
+describe("Magic Ratio on the order grid", () => {
+  const sizes = [
+    { id: "s", name: "S" },
+    { id: "m", name: "M" },
+    { id: "l", name: "L" },
+    { id: "xl", name: "XL" },
+  ];
+
+  it("reads a ratio however people type it", () => {
+    for (const text of ["1:2:2:1", "1-2-2-1", "1 2 2 1", " 1 : 2 : 2 : 1 ", "1/2/2/1", "1,2,2,1"]) {
+      expect(parseRatio(text)).toEqual([1, 2, 2, 1]);
+    }
+    expect(parseRatio("0:1:1:0")).toEqual([0, 1, 1, 0]);
+    expect(ratioText([1, 2, 2, 1])).toBe("1:2:2:1");
+  });
+
+  it("refuses a ratio that is not whole numbers, or all zero", () => {
+    for (const text of ["", "1:a:2", "1.5:2", "0:0:0", "1::2", "-1:2", "1000:1"]) {
+      expect(parseRatio(text)).toBeNull();
+    }
+  });
+
+  it("fills sets of the ratio, one number per size", () => {
+    const result = ratioPieces(sizes, [1, 2, 2, 1], 10);
+    expect("pieces" in result && Object.fromEntries(result.pieces)).toEqual({
+      s: 10,
+      m: 20,
+      l: 20,
+      xl: 10,
+    });
+  });
+
+  it("says why a ratio does not fit the style", () => {
+    expect(ratioPieces(sizes, [1, 2, 1], 10)).toEqual({
+      problem: "This style has 4 sizes (S, M, L, XL): type 4 numbers. Use 0 to skip a size.",
+    });
+    expect(ratioPieces(sizes, null, 10)).toEqual({
+      problem: "Type the ratio as numbers, like 1:2:2:1.",
+    });
+    for (const sets of [0, -1, 1.5, Number.NaN]) {
+      expect(ratioPieces(sizes, [1, 2, 2, 1], sets)).toEqual({
+        problem: "Enter how many sets, like 10.",
+      });
+    }
+  });
+
+  it("lays a saved ratio over the style's sizes", () => {
+    const saved = [
+      { sizeId: "m", ratio: 2 },
+      { sizeId: "l", ratio: 3 },
+      { sizeId: "xxl", ratio: 1 },
+    ];
+    expect(presetRatio(sizes, saved)).toEqual([0, 2, 3, 0]);
+    // A ratio for none of the style's sizes is not offered.
+    expect(presetRatio(sizes, [{ sizeId: "xxl", ratio: 1 }])).toBeNull();
   });
 });

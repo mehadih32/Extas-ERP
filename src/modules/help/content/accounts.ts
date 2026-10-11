@@ -275,6 +275,128 @@ export const accountsHelp: HelpSection = {
       tips: ["ভুল ট্রান্সফার জার্নাল থেকে “Reverse” করা যায় (জার্নালের নির্দেশিকা দেখুন)।"],
     },
     {
+      slug: "accounts-money-in-out",
+      title: "মালিকের টাকা যোগ, মালিকের টাকা তোলা ও ব্যাংক চার্জ লিখবেন যেভাবে",
+      summary:
+        "বিক্রি, কেনা বা চলমান খরচ ছাড়া যে টাকা আসে বা যায়: মালিক ব্যবসায় টাকা দিলেন (Add fund), মালিক নিজের জন্য টাকা নিলেন (Withdraw), বা ব্যাংক ফি কেটে নিল (Bank charge)। প্রতিটি সঙ্গে সঙ্গে খাতায় ওঠে।",
+      keywords: [
+        "money in/out",
+        "add fund",
+        "withdraw",
+        "bank charge",
+        "owner's capital",
+        "owner's drawings",
+        "drawings",
+        "bank charges",
+        "মালিকের টাকা",
+        "মূলধন",
+        "টাকা যোগ",
+        "টাকা তোলা",
+        "ড্রয়িংস",
+        "ব্যাংক চার্জ",
+        "ব্যাংক ফি",
+      ],
+      routes: ["/accounts", "/accounts/cash-bank"],
+      who: "শুধু Accounts ও Super Admin। মালিকের টাকা যোগ ও তোলায় হিসাব সামলানোর অনুমতিও লাগে।",
+      anyOf: ["accounts.payments.record", "accounts.receipts.record"],
+      steps: [
+        {
+          text: "“Accounts” > “Overview” বা “Cash & bank” ট্যাবে “Money in/out” চাপুন।",
+        },
+        {
+          text: "“What happened”-এ বেছে নিন: “Add fund” (মালিক ব্যবসায় টাকা দিলেন), “Withdraw” (মালিক নিজের জন্য টাকা নিলেন) বা “Bank charge” (ব্যাংক বা ওয়ালেট ফি কেটেছে, যেমন SMS চার্জ বা চেক বইয়ের দাম)।",
+          image: {
+            id: "accounts-money-in-out-1",
+            caption: "“Money in/out” জানালা: “Add fund”, “Withdraw” ও “Bank charge”",
+          },
+        },
+        {
+          text: "“Add fund” বা “Withdraw” হলে “Owner”-এ মালিক বেছে নিন। নতুন অংশীদার হলে “Someone new…” বেছে “Owner's name” লিখুন; প্রথমবার তাঁর মূলধনের হিসাব খুলে যায়।",
+        },
+        {
+          text: "টাকা কোথায় এল (“Into”) বা কোথা থেকে গেল (“From”) সেই ক্যাশ, ব্যাংক বা ওয়ালেট বেছে নিন। পরিমাণ, “Date”, দরকার হলে “Reference (optional)” (জমার স্লিপ বা লেনদেন নম্বর) ও “Notes (optional)” দিন।",
+        },
+        {
+          text: "“Bank charge” হলে “Charged to”-এ যে ব্যাংক বা ওয়ালেট টাকা কেটেছে তা বেছে নিন, পরিমাণ ও তারিখ দিন এবং “What it was for (optional)”-এ কারণ লিখুন।",
+        },
+        {
+          text: "“Add the fund”, “Record it” বা “Record the charge” চাপুন। ওপরে সবুজ বার্তায় কত টাকা কোথায় গেল তা দেখাবে।",
+        },
+      ],
+      tips: [
+        "“Add fund” মালিকের মূলধনে (Capital) যোগ হয়, লাভে নয়। ব্যালান্স শিটে মালিকের মূলধন বাড়ে।",
+        "“Withdraw” যায় “Owner's Drawings”-এ। এটি খরচ নয়, তাই লাভ কমে না; মালিক যা দিয়েছিলেন সেই মূলধনও একই থাকে।",
+        "“Bank charge” “Bank Charges” খাতে একটি খরচ হিসেবে ওঠে। এটি “Expenses” তালিকায় আর লাভ-ক্ষতির হিসাবে Finance costs-এ দেখায়। ভুল হলে খরচের পাতা থেকে “Void” করুন।",
+        "ভুল “Add fund” বা “Withdraw” জার্নাল থেকে “Reverse” করা যায়।",
+      ],
+    },
+    {
+      slug: "accounts-petty-cash",
+      title: "পেটি ক্যাশ বাক্স খুলবেন, টাকা দেবেন ও ছোট খরচ লিখবেন যেভাবে",
+      summary:
+        "ফ্যাক্টরি বা অফিসের একজনের কাছে ছোট দৈনিক খরচের (চা, রিকশা ভাড়া, কুরিয়ার) জন্য নগদ টাকা রাখা। যিনি বাক্স রাখেন তিনি প্রতিটি খরচ নিজেই খাতায় লেখেন, অনুমোদনের অপেক্ষা ছাড়াই; Accounts বাক্সে টাকা দেন ও প্রতিটি খরচ দেখেন।",
+      keywords: [
+        "petty cash",
+        "petty cash box",
+        "top up",
+        "take money back",
+        "record a cost",
+        "held by",
+        "পেটি ক্যাশ",
+        "ছোট খরচ",
+        "নগদ বাক্স",
+        "টাকা দেওয়া",
+        "দৈনিক খরচ",
+        "চা খরচ",
+        "রিকশা ভাড়া",
+      ],
+      routes: ["/accounts/expenses", "/accounts/cash-bank", "/accounts/petty-cash"],
+      who: "বাক্স খোলেন, টাকা দেন ও বন্ধ করেন Accounts ও Super Admin। বাক্স রাখতে পারেন যাঁর খরচ রেকর্ডের অনুমতি আছে (যেমন Production Manager); তিনি শুধু নিজের বাক্স দেখেন।",
+      anyOf: ["accounts.view", "expenses.create"],
+      steps: [
+        {
+          text: "Accounts: “Accounts” > “Cash & bank” ট্যাবের নিচে “Petty cash” অংশে “New petty cash box” চাপুন।",
+          image: {
+            id: "accounts-petty-cash-1",
+            caption: "“Cash & bank”-এর নিচে “Petty cash” অংশ: বাক্স, কে রাখেন ও কত টাকা আছে",
+          },
+        },
+        {
+          text: "“Box name”-এ নাম দিন (যেমন Factory), “Held by”-এ কে টাকা রাখবেন বেছে নিন, আর “Usual amount”-এ সাধারণত কত টাকা পর্যন্ত বাক্স ভরেন তা লিখুন (ঐচ্ছিক)। “First top-up (optional)”-এ কোন অ্যাকাউন্ট থেকে প্রথমবার কত টাকা দিচ্ছেন দিন, তারপর “Open the box” চাপুন। খাতায় বাক্সের নিজের ক্যাশ হিসাব খোলে: “Petty cash — …”।",
+        },
+        {
+          text: "যিনি বাক্স রাখেন: মেনু থেকে “Expenses” খুলুন। ওপরে “Your petty cash” কার্ডে বাক্সে কত টাকা আছে দেখাবে। খরচ লিখতে “Record a cost” চাপুন।",
+          image: {
+            id: "accounts-petty-cash-2",
+            caption: "“Expenses” পাতায় “Your petty cash” কার্ড ও “Record a cost” বোতাম",
+          },
+        },
+        {
+          text: "“How it was paid”-এ “From petty cash: …” বাছাই করা থাকে। খাত, পরিমাণ, তারিখ, বিবরণ ও রসিদের ছবি দিয়ে “Record the expense” চাপুন। খরচ সঙ্গে সঙ্গে খাতায় ওঠে, অনুমোদনের অপেক্ষা লাগে না। বাক্সে যত টাকা আছে তার বেশি লেখা যায় না।",
+        },
+        {
+          text: "বাক্সের পাতায় (কার্ডে বাক্সের নামে চাপুন) “In the box”, “Put in” ও “Spent” আর প্রতিটি টাকা দেওয়া ও খরচের তালিকা দেখবেন।",
+          image: {
+            id: "accounts-petty-cash-3",
+            caption: "বাক্সের পাতা: “In the box”, “Put in”, “Spent” ও লেনদেনের তালিকা",
+          },
+        },
+        {
+          text: "Accounts বাক্সের পাতায় “Top up” চাপলে কোন অ্যাকাউন্ট থেকে টাকা যাবে বেছে দেন; বাক্স সাধারণ পরিমাণের কম থাকলে ঘাটতিটুকু আগে থেকেই বসানো থাকে। টাকা ফেরত নিতে “Take money back”, নাম বা দায়িত্বপ্রাপ্ত ব্যক্তি বদলাতে “Change details”।",
+        },
+        {
+          text: "বাক্স আর না লাগলে আগে “Take money back” দিয়ে সব টাকা ফেরত নিন, তারপর “Close the box” চাপুন। সব লেনদেন খাতায় থেকে যায়।",
+        },
+      ],
+      tips: [
+        "বাক্স রাখতে পারেন শুধু তিনি, যাঁর রোলে খরচ রেকর্ডের অনুমতি আছে। Warehouse Team-এর রোলে তা নেই।",
+        "নিজের পকেট থেকে খরচ করলে আগের মতো “I paid it” বেছে দাবি পাঠান; সেটি Accounts-এর অনুমোদনের অপেক্ষায় থাকে।",
+        "ভুল খরচ Accounts খরচের পাতা থেকে “Void” করেন; টাকা আবার বাক্সে ফেরে।",
+        "Accounts চাইলে বাক্সের পাতার “Record a cost” দিয়ে যেকোনো বাক্স থেকে খরচ লিখতে পারেন।",
+        "বাক্সের টাকা “Cash & bank”-এর মোটে ধরা থাকে, কিন্তু আলাদা “Petty cash” অংশে দেখায়।",
+      ],
+    },
+    {
       slug: "accounts-pay-supplier",
       title: "সরবরাহকারীকে টাকা পরিশোধ করবেন যেভাবে",
       summary:
@@ -354,7 +476,7 @@ export const accountsHelp: HelpSection = {
       anyOf: ["accounts.view"],
       steps: [
         {
-          text: "“Accounts” > “Cash & bank” ট্যাব খুলুন। “Cash and wallets” ও “Bank accounts” অংশে প্রতিটির আজকের ব্যালান্স দেখবেন।",
+          text: "“Accounts” > “Cash & bank” ট্যাব খুলুন। “Bank accounts”, “Cash and wallets” ও “Petty cash” অংশে প্রতিটির আজকের ব্যালান্স দেখবেন।",
         },
         {
           text: "নতুন অ্যাকাউন্ট যোগ করতে “Add a bank account” চাপুন। “Bank”, “Branch (optional)”, “Name on the account”, “Account number”, “Routing number (optional)” ও “SWIFT code (optional)” দিন।",
@@ -408,7 +530,7 @@ export const accountsHelp: HelpSection = {
       anyOf: ["expenses.create"],
       steps: [
         {
-          text: "মেনু থেকে “Expenses” খুলুন (Accounts ও Super Admin-এর জন্য এটি Accounts-এর একটি ট্যাব)। “My expenses” পাতায় “New claim” চাপুন।",
+          text: "মেনু থেকে “Expenses” খুলুন (Accounts ও Super Admin-এর জন্য এটি Accounts-এর একটি ট্যাব)। “My expenses” পাতায় “New claim” চাপুন (আপনার পেটি ক্যাশ বাক্স থাকলে বোতামটির নাম “Record an expense”)।",
           image: {
             id: "accounts-expense-claim-1",
             caption: "“My expenses” পাতায় নিজের দাবির তালিকা ও “New claim” বোতাম",
@@ -418,7 +540,7 @@ export const accountsHelp: HelpSection = {
           text: "“What for”-এ খরচের খাত বেছে নিন (যেমন Conveyance), পরিমাণ লিখুন এবং “Spent on”-এ খরচের তারিখ দিন।",
         },
         {
-          text: "“How it was paid”-এ নিজের টাকায় দিলে “I paid it” বেছে নিন। দোকান বা সরবরাহকারী পরে বিল নেবে হলে “Owed to a supplier”।",
+          text: "“How it was paid”-এ নিজের টাকায় দিলে “I paid it” বেছে নিন। দোকান বা সরবরাহকারী পরে বিল নেবে হলে “Owed to a supplier”। আপনার কাছে পেটি ক্যাশ বাক্স থাকলে আর টাকা সেখান থেকে দিলে “From petty cash: …” বেছে নিন; তখন এটি দাবি নয়, সঙ্গে সঙ্গে খাতায় ওঠে।",
         },
         {
           text: "যাতায়াত বা খাবারের মতো খাতে “Employee”, “Purpose”, আর যাতায়াতে “From (optional)” ও “To (optional)” (কোথা থেকে কোথায়) দিন।",

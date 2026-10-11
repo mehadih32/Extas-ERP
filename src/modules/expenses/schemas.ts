@@ -91,9 +91,21 @@ export const createExpenseSchema = z
      * first (the rest is paid in cash). Default: yes.
      */
     useAdvance: z.boolean().default(true),
+    /**
+     * Paid from this petty cash box: straight into the books for its holder,
+     * up to what is in the box.
+     */
+    pettyCashBoxId: id.optional(),
     ...detailFields,
   })
   .superRefine((v, ctx) => {
+    if (v.pettyCashBoxId && (v.paymentType !== "CASH_BANK" || v.accountId)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["pettyCashBoxId"],
+        message: "Petty cash pays the expense from the box itself",
+      });
+    }
     if (v.paymentType === "DUE" && !v.supplierId) {
       ctx.addIssue({
         code: "custom",

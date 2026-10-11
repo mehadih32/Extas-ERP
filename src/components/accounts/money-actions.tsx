@@ -1,15 +1,16 @@
 "use client";
 
-import { ArrowLeftRightIcon, BanknoteIcon, PlusIcon } from "lucide-react";
+import { ArrowDownUpIcon, ArrowLeftRightIcon, BanknoteIcon, PlusIcon } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { FormAlert } from "@/components/forms/field";
 import { Button } from "@/components/ui/button";
-import type { MoneyAccountOption } from "@/modules/accounts/screens.service";
+import type { MoneyInOutOptions } from "@/modules/accounts/money-in-out.service";
 
 import { accountsHref } from "./labels";
-import { MoveMoneyDialog } from "./move-money-dialog";
+import { MoneyInOutDialog } from "./money-in-out-dialog";
+import { type MoveMoneyAccount, MoveMoneyDialog } from "./move-money-dialog";
 
 /** Shows a success message for ten seconds after a change. */
 export function useNotice(initial?: string) {
@@ -24,8 +25,9 @@ export function useNotice(initial?: string) {
 
 /**
  * The money buttons above the Overview and Cash & bank: move money between
- * accounts and pay a supplier (Accounts' payments permission), and add a bank
- * account (accounts.manage). Each is offered from the screen's flags.
+ * accounts and pay a supplier (Accounts' payments permission), money in/out
+ * (owner's funds and bank charges), and add a bank account (accounts.manage).
+ * Each is offered from the screen's flags.
  */
 export function MoneyActions({
   accounts,
@@ -33,26 +35,45 @@ export function MoneyActions({
   today,
   can,
   fromId,
+  moneyInOut,
 }: {
-  accounts: readonly MoneyAccountOption[];
+  accounts: readonly MoveMoneyAccount[];
   currency: string;
   today: string;
   can: { transfer: boolean; paySupplier?: boolean; addBank?: boolean };
   /** The account money leaves by default (a bank account's own page). */
   fromId?: string;
+  /** Add fund, withdraw and bank charge, when this person may record any of them. */
+  moneyInOut?: MoneyInOutOptions | null;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState<"move" | "in-out" | null>(null);
   const [notice, setNotice] = useNotice();
   const transfer = can.transfer && accounts.length >= 2;
-  if (!transfer && !can.paySupplier && !can.addBank && !notice) return null;
+  const inOut = Boolean(moneyInOut) && accounts.length > 0;
+  if (!transfer && !inOut && !can.paySupplier && !can.addBank && !notice) return null;
+  const done = (message: string) => {
+    setNotice(message);
+    setOpen(null);
+  };
 
   return (
     <div className="grid gap-4">
       <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
         {transfer && (
-          <Button type="button" className="w-full sm:w-auto" onClick={() => setOpen(true)}>
+          <Button type="button" className="w-full sm:w-auto" onClick={() => setOpen("move")}>
             <ArrowLeftRightIcon aria-hidden />
             Move money
+          </Button>
+        )}
+        {inOut && (
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full sm:w-auto"
+            onClick={() => setOpen("in-out")}
+          >
+            <ArrowDownUpIcon aria-hidden />
+            Money in/out
           </Button>
         )}
         {can.paySupplier && (
@@ -73,17 +94,24 @@ export function MoneyActions({
         )}
       </div>
       {notice && <FormAlert tone="success">{notice}</FormAlert>}
-      {open && (
+      {open === "move" && (
         <MoveMoneyDialog
           accounts={accounts}
           currency={currency}
           today={today}
           fromId={fromId}
-          onClose={() => setOpen(false)}
-          onDone={(message) => {
-            setNotice(message);
-            setOpen(false);
-          }}
+          onClose={() => setOpen(null)}
+          onDone={done}
+        />
+      )}
+      {open === "in-out" && moneyInOut && (
+        <MoneyInOutDialog
+          options={moneyInOut}
+          accounts={accounts}
+          currency={currency}
+          today={today}
+          onClose={() => setOpen(null)}
+          onDone={done}
         />
       )}
     </div>

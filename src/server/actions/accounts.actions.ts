@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { getRequestMeta } from "@/lib/request-meta";
 import { runAction } from "@/lib/result";
-import { requireAnyPermission, requirePermission } from "@/modules/auth/context";
+import { requireAnyPermission, requireCompany, requirePermission } from "@/modules/auth/context";
 import * as assetScreens from "@/modules/accounts/asset-screens.service";
 import * as assets from "@/modules/accounts/asset.service";
 import * as bank from "@/modules/accounts/bank.service";
@@ -12,6 +12,8 @@ import * as capital from "@/modules/accounts/capital.service";
 import * as chart from "@/modules/accounts/chart.service";
 import * as executive from "@/modules/accounts/executive.service";
 import * as breakdown from "@/modules/accounts/expense-breakdown.service";
+import * as moneyInOut from "@/modules/accounts/money-in-out.service";
+import * as pettyCash from "@/modules/accounts/petty-cash.service";
 import * as reports from "@/modules/accounts/reports.service";
 import * as screens from "@/modules/accounts/screens.service";
 import * as supplierPayments from "@/modules/accounts/supplier-payment.service";
@@ -196,6 +198,32 @@ export const createTransferAction = async (input: unknown) =>
   change(async () =>
     ref(await vouchers.createTransfer(await payOut(), input, await getRequestMeta())),
   );
+
+// --- Money in / out -------------------------------------------------------------------------
+/** Add fund: the owner puts money in (their capital). */
+export const addFundAction = async (input: unknown) =>
+  change(async () => moneyInOut.addFund(await manage(), input, await getRequestMeta()));
+/** Withdraw: the owner takes money out (Owner's Drawings). */
+export const withdrawFundAction = async (input: unknown) =>
+  change(async () => moneyInOut.withdrawFund(await manage(), input, await getRequestMeta()));
+/** Bank charge: an expense under Bank Charges, paid from the bank or wallet. */
+export const recordBankChargeAction = async (input: unknown) =>
+  change(async () => moneyInOut.recordBankCharge(await payOut(), input, await getRequestMeta()));
+
+// --- Petty cash -----------------------------------------------------------------------------
+/** One box: its holder and everyone who sees the books (the service checks which). */
+export const getPettyCashScreenAction = async (boxId: string) =>
+  runAction(async () => pettyCash.getPettyCashScreen(await requireCompany(), boxId));
+export const getPettyCashFormAction = async (boxId?: string) =>
+  runAction(async () => pettyCash.getPettyCashForm(await manage(), boxId));
+export const createPettyCashBoxAction = async (input: unknown) =>
+  change(async () => pettyCash.createPettyCashBox(await manage(), input, await getRequestMeta()));
+export const updatePettyCashBoxAction = async (boxId: string, input: unknown) =>
+  change(async () =>
+    pettyCash.updatePettyCashBox(await manage(), boxId, input, await getRequestMeta()),
+  );
+export const closePettyCashBoxAction = async (boxId: string) =>
+  change(async () => pettyCash.closePettyCashBox(await manage(), boxId, await getRequestMeta()));
 
 // --- Bank accounts & statements -------------------------------------------------------------
 export const listBankAccountsAction = async (query: { includeInactive?: unknown } = {}) =>

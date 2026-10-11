@@ -423,7 +423,11 @@ Built one module at a time, each in its own pull request. So far:
     loan installments) and what else the business holds and owes (fixed assets, employee
     advances, buyer advances, loans and investors). Every amount shows `***` until **Show
     amounts** (or a card's own eye) shows it; nothing is remembered, so the page opens hidden
-    again. Money is moved between accounts and suppliers are paid from here. The cards and
+    again. Money is moved between accounts and suppliers are paid from here, and **Money
+    in/out** records money the owner puts in (**Add fund**, onto their capital, opening it the
+    first time), takes out (**Withdraw**, to Owner's Drawings 3100, leaving their capital as it
+    is) and fees the bank took (**Bank charge**, an expense under the Bank Charges head on
+    Finance Costs, from a bank or wallet account). The cards and
     panels only read the journal, the payroll, the stock and the sales documents; nothing is
     stored or posted.
     - **Fixed asset register** (`/accounts/assets`, from the Fixed assets figure): machines,
@@ -434,11 +438,21 @@ Built one module at a time, each in its own pull request. So far:
       end of last month (counted by days, never twice for the same days); and on an asset's page
       changes its details, sells or scraps it (a gain or loss on the sale) or removes one
       entered by mistake (its entries reversed). The page lists every entry the asset made.
-  - **Cash & bank**: cash in hand, wallets and every bank account with today's balance. A
-    bank account's page shows its details and its statement for any days (opening balance,
-    deposits, withdrawals, closing and average balance, month by month), each line opening its
-    journal entry. Bank accounts are added with their balance on the go-live day, changed, and
-    closed once their money is moved out.
+  - **Cash & bank**: cash in hand, wallets, every bank account and every petty cash box with
+    today's balance, with the Money in/out button too. A bank account's page shows its details
+    and its statement for any days (opening balance, deposits, withdrawals, closing and average
+    balance, month by month), each line opening its journal entry. Bank accounts are added with
+    their balance on the go-live day, changed, and closed once their money is moved out.
+    - **Petty cash** (`/accounts/petty-cash/<id>`): cash one person keeps for small daily
+      costs, on its own cash account ("Petty cash — Factory"). Accounts opens a box (its
+      holder, who must be able to record expenses, its usual amount and a first top-up), tops
+      it up and takes money back (transfers, the top-up filled in with what it is short of its
+      usual amount), renames it or hands it to someone else, and closes it once empty. The
+      holder records each cost from their box (**Record a cost**, or "From petty cash" on the
+      expense form): it goes into the books at once with no approval, never more than is in
+      the box (the owner's decision). The box's page shows what is in it, what was put in and
+      spent, and every entry; Accounts may also record a cost from any box and voids a wrong
+      one like any other expense, which puts the money back.
   - **Supplier payments**: payments to factories, mills and other suppliers, filtered by
     supplier. Paying one shows what they are owed and their open bills; a payment settles the
     oldest first and anything over stays as an advance. "Apply to a project (optional)" picks
@@ -466,7 +480,8 @@ Built one module at a time, each in its own pull request. So far:
     books. Each account in a report opens its ledger.
 
   Everyone else who spends company money sees an **Expenses** entry in their menu instead: the
-  claims they sent, and a form to send a new one. Loans and investors, and printing reports
+  claims they sent, and a form to send a new one; a petty cash holder also sees their box
+  there, with its balance and **Record a cost**. Loans and investors, and printing reports
   and bank statements as PDFs, come in a later step.
 
 - **Raw materials** (`/materials`), in six tabs:

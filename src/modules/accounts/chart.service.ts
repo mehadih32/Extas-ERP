@@ -50,6 +50,7 @@ const accountInclude = {
   bankAccount: { select: { id: true, bankName: true, accountNumber: true, isActive: true } },
   capitalSource: { select: { id: true, name: true, kind: true } },
   fixedAsset: { select: { id: true, name: true } },
+  pettyCashBox: { select: { id: true, name: true } },
 } satisfies Prisma.LedgerAccountInclude;
 
 type AccountRow = Prisma.LedgerAccountGetPayload<{ include: typeof accountInclude }>;
@@ -88,10 +89,13 @@ export function manualPostingBlock(account: {
 
 /** Kept by a bank account, a loan or an asset (they archive it themselves). */
 export const isLinked = (account: AccountRow) =>
-  Boolean(account.bankAccount || account.capitalSource || account.fixedAsset);
+  Boolean(
+    account.bankAccount || account.capitalSource || account.fixedAsset || account.pettyCashBox,
+  );
 
 /** Why an account cannot take a balance brought forward from before the ERP (null when it can). */
 export function openingBalanceBlock(account: AccountRow): string | null {
+  if (account.pettyCashBox) return "Top the petty cash box up from its page instead.";
   const allowed: AccountRow["subType"][] = [
     "CASH",
     "BANK",
@@ -153,7 +157,13 @@ function presentAccount(
         }
       : account.fixedAsset
         ? { kind: "FIXED_ASSET" as const, id: account.fixedAsset.id, name: account.fixedAsset.name }
-        : null;
+        : account.pettyCashBox
+          ? {
+              kind: "PETTY_CASH_BOX" as const,
+              id: account.pettyCashBox.id,
+              name: account.pettyCashBox.name,
+            }
+          : null;
   const block = manualPostingBlock(account);
   return {
     id: account.id,

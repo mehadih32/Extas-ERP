@@ -375,3 +375,58 @@ export const profitAndLossSchema = periodSchema.extend({
 });
 
 export const asOfSchema = z.object({ asOf: day.optional() });
+
+// --- Money in / out and petty cash ---------------------------------------------------------
+
+const ownerMoneyFields = {
+  /** An owner already in the books (their capital account)... */
+  ownerId: id.optional(),
+  /** ...or the name of an owner new to the books. */
+  ownerName: z.string().trim().min(2).max(160).optional(),
+  /** The cash, bank or wallet account the money goes into or comes out of. */
+  accountId: id,
+  amount: positiveMoney,
+  date: dayOrInstant.optional(),
+  reference: optionalText(120),
+  notes: optionalText(500),
+};
+
+/** Add fund (the owner puts money in) and Withdraw (the owner takes money out). */
+export const ownerMoneySchema = z
+  .object(ownerMoneyFields)
+  .refine((v) => Boolean(v.ownerId) !== Boolean(v.ownerName), {
+    message: "Choose the owner, or write the name of a new one",
+    path: ["ownerId"],
+  });
+
+/** A charge the bank or the wallet took: SMS alerts, a cheque book, a transfer fee. */
+export const bankChargeSchema = z.object({
+  accountId: id,
+  amount: positiveMoney,
+  date: dayOrInstant.optional(),
+  notes: optionalText(300),
+});
+
+const pettyCashFields = {
+  name: z.string().trim().min(2).max(60),
+  /** The person who keeps the cash and records what is spent from it. */
+  holderId: id,
+  /** The amount it is usually topped up to: a guide, not a limit. */
+  float: positiveMoney.nullish(),
+  notes: optionalText(500),
+};
+
+export const createPettyCashBoxSchema = z.object({
+  ...pettyCashFields,
+  /** Money put in when it opens (needs the permission to pay money out). */
+  topUp: z
+    .object({
+      fromAccountId: id,
+      amount: positiveMoney,
+      date: dayOrInstant.optional(),
+      reference: optionalText(120),
+    })
+    .optional(),
+});
+
+export const updatePettyCashBoxSchema = z.object(pettyCashFields).partial();

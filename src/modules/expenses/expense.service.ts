@@ -18,6 +18,8 @@ import {
 import { ensureControlAccounts } from "@/modules/accounts/control-accounts";
 import { postJournalEntry, reverseJournalEntry } from "@/modules/accounts/journal.service";
 import { assertCanPayMoney } from "@/modules/accounts/money-guards";
+import { assertBoxCovers } from "@/modules/accounts/petty-cash-balance";
+import { pettyCashBoxForCost } from "@/modules/accounts/petty-cash.service";
 import { settleSupplierBills } from "@/modules/accounts/supplier-settlement";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
@@ -50,7 +52,9 @@ import { assertPartyCanTransact, recordPartyActivity } from "@/modules/parties/p
  *   Paid now            Dr Expense account   Cr Cash / Bank / Wallet   (Accounts)
  *   Owed to a supplier  Dr Expense account   Cr Payable (supplier)
  *   Claim               saved without an entry until Accounts approves it
- * The books stay with Accounts: an expense recorded by anyone else is a claim.
+ *   Petty cash          Dr Expense account   Cr Petty cash — <box>   (its holder, no approval)
+ * The books stay with Accounts: an expense recorded by anyone else is a claim,
+ * except a cost a petty cash holder pays from their own box, up to what is in it.
  * Accounts pays a cash claim back (choosing cash, bank or a wallet), puts a Due
  * claim on the supplier's account, or rejects it. Production costs are recorded
  * on production projects instead.
@@ -538,7 +542,8 @@ function postsNow(ctx: CompanyContext, paymentType: "CASH_BANK" | "DUE") {
 
 /**
  * Records an expense. Accounts' expenses go into the books straight away (paid,
- * or owed to the supplier); anyone else's become claims for Accounts to approve.
+ * or owed to the supplier), and so does a cost paid from a petty cash box by its
+ * holder; anyone else's become claims for Accounts to approve.
  */
 export async function createExpense(ctx: CompanyContext, raw: unknown, meta?: RequestMeta) {
   if (!ctx.can("expenses.create")) {
@@ -556,14 +561,17 @@ export async function createExpense(ctx: CompanyContext, raw: unknown, meta?: Re
     input.paymentType === "DUE"
       ? await assertPartyCanTransact(ctx, input.supplierId!, "PURCHASE")
       : null;
+  const box = input.pettyCashBoxId ? await pettyCashBoxForCost(ctx, input.pettyCashBoxId) : null;
   const companyId = ctx.company.id;
   const amount = money(input.amount);
   const date = input.date ? toInstant(input.date, ctx.company.timezone) : new Date();
-  const inBooks = postsNow(ctx, input.paymentType);
+  const inBooks = box !== null || postsNow(ctx, input.paymentType);
 
   const expenseId = await prisma.$transaction(async (tx) => {
-    const paidFrom =
-      inBooks && input.paymentType === "CASH_BANK"
+    if (box) await assertBoxCovers(tx, companyId, box, amount);
+    const paidFrom = box
+      ? box.ledgerAccountId
+      : inBooks && input.paymentType === "CASH_BANK"
         ? await cashAccountFor(tx, companyId, input.method, input.accountId)
         : null;
     const expense = await tx.expense.create({
@@ -591,13 +599,17 @@ export async function createExpense(ctx: CompanyContext, raw: unknown, meta?: Re
         paidFrom,
         date,
         reference: input.reference,
-        useAdvance: input.useAdvance,
+        extra: box ? `petty cash ${box.name}` : undefined,
+        // Money spent from a box comes out of the box, not an employee's advance.
+        useAdvance: box ? false : input.useAdvance,
       });
       await tx.expense.update({
         where: { id: expense.id },
         data: { journalEntryId: posted.entry.id, paidFromAccountId: posted.paidFrom },
       });
-      outcome = `${paidSummary(amount, posted.fromAdvance, input.method)}, ${posted.entry.number}`;
+      outcome = box
+        ? `paid from petty cash ${box.name}, ${posted.entry.number}`
+        : `${paidSummary(amount, posted.fromAdvance, input.method)}, ${posted.entry.number}`;
     } else if (inBooks && supplier) {
       const entry = await postDueTx(tx, ctx, expense, head, supplier, input.reference);
       await tx.expense.update({ where: { id: expense.id }, data: { journalEntryId: entry.id } });

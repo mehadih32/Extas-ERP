@@ -36,6 +36,7 @@ function presentSettings(s: Awaited<ReturnType<typeof loadHrSettings>>) {
     lateGraceMinutes: s.lateGraceMinutes,
     latesPerDeductionDay: s.latesPerDeductionDay,
     selfCheckIn: s.selfCheckIn,
+    gpsAttendance: s.gpsAttendance,
     updatedAt: s.updatedAt,
   };
 }
@@ -47,6 +48,7 @@ function rulesSnapshot(s: Awaited<ReturnType<typeof loadHrSettings>>) {
     lateGraceMinutes: s.lateGraceMinutes,
     latesPerDeductionDay: s.latesPerDeductionDay,
     selfCheckIn: s.selfCheckIn,
+    gpsAttendance: s.gpsAttendance,
   };
 }
 

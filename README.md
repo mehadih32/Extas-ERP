@@ -1644,6 +1644,40 @@ job (`FOR UPDATE SKIP LOCKED`); a failed job is tried again after 30 s, 1 min, 2
 housekeeping deletes finished jobs after 30 days and failed ones after 90. The worker is on
 in production; set `JOB_WORKER=on` or `off` to choose.
 
+**GPS attendance.** With "Ask for location at check-in and while checked in" on (HR rules,
+off by default), a self check-in needs the phone's position. Each check-in and check-out
+keeps the position, its accuracy, the IP address and the nearest work place (or the person's
+own place, `Employee.workLocationId`). Work places (`WorkLocation`) have a radius (150 m by
+default); further away than the radius plus the position's accuracy (up to 200 m) is a
+"Location mismatch" in the register and the audit log. While checked in, the phone takes a
+position every 30 s and sends them each minute (`LocationPing`, one row per kept ping, plus
+`StaffPosition`, the latest position per person). The server keeps a ping only 30 s after
+the last one or 50 m away from it, ignores positions vaguer than 1 km or outside the shift,
+and takes a per-person advisory lock so two phones cannot write at once. HR's staff map
+(`/hr/map`, `hr.manage`) shows today's shifts on OpenStreetMap (Leaflet, no key): who is on
+duty, "No signal" after 10 minutes without a position, where each person checked in, and
+their route for the shift (with a Google Maps link). It refreshes every 20 s while open. A
+check-out also closes a night shift checked in yesterday. Pings are deleted after 90 days
+by the nightly housekeeping; check-in and check-out positions stay with the attendance. In a
+browser the position is only sent while the page is open; while location is off or refused
+the app shows a lock with "Try again" and "Check out now".
+
+**Android app.** `mobile/` wraps the same web app in a Capacitor Android app that opens the
+company's server (`EXTAS_APP_URL` at build time). Its `DutyTracker` plugin
+(`mobile/android/app/src/main/java/com/extas/erp/`) starts a foreground location service
+when the person is checked in: it keeps sending positions (with the battery level) to
+`POST /api/portal/location/pings` with the app's sign-in cookie, with the screen off or the
+app closed, keeps them on the phone with no network, and stops when the server answers
+`onDuty: false` (checked out) or sign-in has ended. It uses Android's own location (no
+Google Play services). The web pages reach it through the bridge the app injects
+(`src/components/hr/location-client.ts`), so the web build needs no Capacitor package. The
+`Android app` workflow builds the APK; see deploy/README.md, "The Android app".
+
+**Install to the home screen.** `src/app/manifest.ts`, the icons in `public/icons` and the
+service worker `public/sw.js` make Extas ERP installable; phones are offered "Install" once
+(or told how on an iPhone). The service worker keeps only the app's versioned files and shows
+`public/offline.html` with no connection; pages and data are never stored on the phone.
+
 | Event                        | Entry                                                                    |
 | ---------------------------- | ------------------------------------------------------------------------ |
 | Advance given                | Dr Advances to Employees (1250), Cr Cash / Bank / Wallet                 |
@@ -1687,6 +1721,10 @@ in production; set `JOB_WORKER=on` or `off` to choose.
 | `POST/PUT/DELETE /api/hr/terms/draft`, `POST /api/hr/terms/publish`                   | Start, save or discard the draft / publish it            |
 | `POST /api/hr/terms/agreements/:id/pdf`                                               | Make a signed copy again                                 |
 | `GET /api/terms`, `POST /api/terms/code`, `POST /api/terms/agree`                     | My terms: what to agree to, an SMS code, agree           |
+| `GET/POST /api/hr/work-places`, `PATCH/DELETE …/:id`                                  | Work places for GPS attendance                           |
+| `GET /api/hr/staff-map?person=`                                                       | Who is on duty, where, no signal; a person's route       |
+| `GET /api/portal/location/duty`                                                       | Should this phone send its position now, how often       |
+| `POST /api/portal/location/pings`                                                     | Positions while checked in (browser or Android app)      |
 
 `hr.view` sees profiles, attendance, leave and holidays, but no salaries. `hr.manage` adds
 and edits employees and salaries, marks attendance, approves leave and sets the HR rules.

@@ -57,13 +57,16 @@ describe("HR & payroll in the menu, by role", () => {
     "Leave",
     "Payroll",
     "Advances",
+    "Staff map",
     "Holidays & rules",
     "Terms",
   ];
 
   it("gives the owner and Accounts every tab, and My HR from the account menu", () => {
     for (const name of ["SUPER_ADMIN", "ACCOUNTS"] as const) {
-      expect(tabs(role(name)), name).toEqual(ALL);
+      // Where staff are now is for HR (hr.manage), which Accounts does not hold.
+      const expected = name === "ACCOUNTS" ? ALL.filter((t) => t !== "Staff map") : ALL;
+      expect(tabs(role(name)), name).toEqual(expected);
       expect(nav(role(name)), name).toContain("/hr");
       expect(nav(role(name)), name).not.toContain("/me");
     }
@@ -113,6 +116,13 @@ describe("HR & payroll in the menu, by role", () => {
     // Whoever pays advances out sees the advances register and nothing else of HR.
     expect(tabs(["accounts.payments.record"])).toEqual(["Advances"]);
     expect(tabs(["portal.self"])).toEqual([]);
+  });
+
+  it("shows the staff map only to HR", () => {
+    expect(tabs(["hr.manage"])).toContain("Staff map");
+    for (const keys of [["hr.view"], ["hr.payroll"], ["accounts.view"], ["portal.self"]]) {
+      expect(tabs(keys), keys.join()).not.toContain("Staff map");
+    }
   });
 });
 

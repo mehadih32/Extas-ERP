@@ -9,6 +9,7 @@ import * as files from "@/modules/files/file.service";
 import * as advances from "@/modules/hr/advance.service";
 import * as attendance from "@/modules/hr/attendance.service";
 import * as leave from "@/modules/hr/leave.service";
+import * as location from "@/modules/hr/location.service";
 import * as payroll from "@/modules/hr/payroll.service";
 import * as portal from "@/modules/hr/portal.service";
 import * as screens from "@/modules/hr/screens.service";
@@ -52,6 +53,12 @@ export const getMyOverviewAction = async () =>
   runAction(async () => portal.getMyOverview(await self()));
 export const myAttendanceAction = async (query: unknown) =>
   runAction(async () => attendance.myAttendance(await self(), query));
+/**
+ * Whether this person's phone should send its position now (GPS attendance),
+ * for the app frame. Null for everyone it does not apply to.
+ */
+export const getDutyStateAction = async () =>
+  runAction(async () => location.getDutyState(await self()));
 export const checkInAction = async (input: unknown = {}) =>
   change(async () => attendance.checkIn(await self(), input, await getRequestMeta()));
 export const checkOutAction = async (input: unknown = {}) =>

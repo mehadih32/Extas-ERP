@@ -10,6 +10,7 @@ import * as advances from "@/modules/hr/advance.service";
 import * as attendance from "@/modules/hr/attendance.service";
 import * as employees from "@/modules/hr/employee.service";
 import * as leave from "@/modules/hr/leave.service";
+import * as location from "@/modules/hr/location.service";
 import * as payroll from "@/modules/hr/payroll.service";
 import * as screens from "@/modules/hr/screens.service";
 import * as settings from "@/modules/hr/settings.service";
@@ -115,6 +116,30 @@ export const getAdvanceFormAction = async (options: { employeeId?: string } = {}
   runAction(async () => screens.getAdvanceForm(await giveOut(), options));
 export const getHrSettingsScreenAction = async (query: { year?: unknown } = {}) =>
   runAction(async () => screens.getSettingsScreen(await hrRead(), query));
+
+export const getStaffMapScreenAction = async (query: unknown = {}) =>
+  runAction(async () => location.getStaffMap(await hrManage(), query));
+
+// --- Work places (GPS attendance) --------------------------------------------------------
+export const listWorkPlacesAction = async () =>
+  runAction(async () => location.listWorkPlaces(await hrRead()));
+export const createWorkPlaceAction = async (input: unknown) =>
+  change(async () => {
+    const place = await location.createWorkPlace(await hrManage(), input, await getRequestMeta());
+    return { id: place.id, name: place.name };
+  });
+export const updateWorkPlaceAction = async (placeId: string, input: unknown) =>
+  change(async () => {
+    const place = await location.updateWorkPlace(
+      await hrManage(),
+      placeId,
+      input,
+      await getRequestMeta(),
+    );
+    return { id: place.id, name: place.name };
+  });
+export const removeWorkPlaceAction = async (placeId: string) =>
+  change(async () => location.removeWorkPlace(await hrManage(), placeId, await getRequestMeta()));
 
 // --- Rules, holidays, leave types --------------------------------------------------------
 export const getHrSettingsAction = async () =>

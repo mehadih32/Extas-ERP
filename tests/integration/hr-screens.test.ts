@@ -89,6 +89,7 @@ import {
   getAdvanceListAction,
   getAdvanceScreenAction,
   getAttendanceMonthScreenAction,
+  getStaffMapScreenAction,
   getAttendanceScreenAction,
   getEmployeeFormAction,
   getEmployeeListAction,
@@ -326,6 +327,7 @@ run("HR & payroll screens", () => {
         ...(k.view ? ["/hr", "/hr/employees", "/hr/attendance", "/hr/leave"] : []),
         ...(k.salaries ? ["/hr/payroll"] : []),
         ...(k.advances ? ["/hr/advances"] : []),
+        ...(k.manage ? ["/hr/map"] : []),
         ...(k.view ? ["/hr/settings", "/hr/terms"] : []),
       ]);
 
@@ -347,6 +349,7 @@ run("HR & payroll screens", () => {
       );
       expect((await getAttendanceScreenAction({})).ok, `${who}: attendance`).toBe(k.view);
       expect((await getAttendanceMonthScreenAction({})).ok, `${who}: month totals`).toBe(k.view);
+      expect((await getStaffMapScreenAction({})).ok, `${who}: staff map`).toBe(k.manage);
       expect((await getLeaveListAction({})).ok, `${who}: leave`).toBe(k.view);
       expect((await listLeaveRowsAction({})).ok, `${who}: more leave`).toBe(k.view);
       expect((await getLeaveScreenAction(env.waiting.id)).ok, `${who}: leave request`).toBe(k.view);

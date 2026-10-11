@@ -3,3 +3,6 @@ node_modules
 prisma/migrations
 package-lock.json
 ERP_Blueprint.md
+mobile/android
+mobile/www
+mobile/package-lock.json

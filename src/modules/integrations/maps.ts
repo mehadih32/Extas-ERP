@@ -1,10 +1,12 @@
+import { pointLink } from "@/modules/hr/geo";
+
 import { type PlugStatus, serverSettings, setting, type Settings } from "./config";
 
 /*
- * Google Maps for the live staff map. Without GOOGLE_MAPS_API_KEY the map
- * screen lists each place with an "Open in Google Maps" link (which needs no
- * key); with it, the same screen draws the pins. The key goes to the browser,
- * so it should be limited to the ERP's web address in Google Cloud console.
+ * Google Maps, for road distances on travel claims. The staff map does not
+ * need it: it draws on OpenStreetMap, and every position opens in Google Maps
+ * with a link that needs no key. A browser key should be limited to the ERP's
+ * web address in Google Cloud console.
  */
 
 const SETTINGS = ["GOOGLE_MAPS_API_KEY"] as const;
@@ -27,5 +29,5 @@ export function mapsBrowserKey(settings: Settings = serverSettings()): string | 
 
 /** A Google Maps link to a point, which opens without any key. */
 export function mapLink(lat: number, lng: number): string {
-  return `https://www.google.com/maps/search/?api=1&query=${lat.toFixed(6)},${lng.toFixed(6)}`;
+  return pointLink({ lat, lng });
 }

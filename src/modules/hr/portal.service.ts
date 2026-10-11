@@ -46,6 +46,8 @@ export async function getMyOverview(ctx: CompanyContext) {
     today: {
       date: day,
       selfCheckIn: settings.selfCheckIn,
+      /** Check-in and check-out need the phone's location. */
+      gpsAttendance: settings.gpsAttendance,
       officeStartTime: settings.officeStartTime,
       mark: month.days.find((d) => d.date === day)?.mark ?? null,
     },

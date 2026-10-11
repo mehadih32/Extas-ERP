@@ -1,0 +1,17 @@
+{
+  "name": "extas-erp-android",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Extas ERP for Android: the web app in a native frame, with background GPS while staff are checked in.",
+  "scripts": {
+    "sync": "node scripts/app-url.mjs && cap sync android",
+    "apk": "npm run sync && cd android && ./gradlew assembleDebug"
+  },
+  "dependencies": {
+    "@capacitor/android": "8.5.2",
+    "@capacitor/core": "8.5.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.5.2"
+  }
+}

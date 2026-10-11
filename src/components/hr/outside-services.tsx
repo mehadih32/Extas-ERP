@@ -20,8 +20,9 @@ const PLUGS: Record<PlugStatus["key"], { name: string; does: string; meanwhile: 
   },
   maps: {
     name: "Google Maps",
-    does: "Draws staff positions as pins on a map.",
-    meanwhile: "Until it is on, positions open with an “Open in Google Maps” link.",
+    does: "Measures road distances for travel claims.",
+    meanwhile:
+      "Not needed for the staff map, which uses OpenStreetMap; every position also opens in Google Maps without it.",
   },
 };
 

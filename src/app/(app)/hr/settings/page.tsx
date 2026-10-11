@@ -6,6 +6,7 @@ import { hrHref, offDaysText } from "@/components/hr/labels";
 import { HrNoAccess } from "@/components/hr/no-access";
 import { OutsideServices } from "@/components/hr/outside-services";
 import { Holidays, HrRules, LeaveTypes } from "@/components/hr/settings-actions";
+import { WorkPlaces } from "@/components/hr/work-places";
 import { Fact, Panel } from "@/components/sales/detail-bits";
 import { getHrSettingsScreenAction } from "@/server/actions/hr.actions";
 import { requireCompanyPage } from "@/server/pages/guards";
@@ -45,7 +46,7 @@ export default async function HrSettingsPage({
       />
     );
   }
-  const { rules, year, years, holidays, leaveTypes, integrations, can } = result.data;
+  const { rules, year, years, holidays, leaveTypes, workPlaces, integrations, can } = result.data;
   const shownYears = years.includes(year) ? years : [...years, year].sort((a, b) => a - b);
 
   return (
@@ -78,6 +79,13 @@ export default async function HrSettingsPage({
             </Fact>
             <Fact label="Check-in">
               {rules.selfCheckIn ? "Staff check in themselves in My HR" : "HR marks attendance"}
+              {rules.selfCheckIn && (
+                <span className="block text-[0.8125rem] text-muted-foreground">
+                  {rules.gpsAttendance
+                    ? "With location, shared until check-out"
+                    : "Location is not asked for"}
+                </span>
+              )}
             </Fact>
           </dl>
           <HrRules rules={rules} canManage={can.manage} />
@@ -110,6 +118,24 @@ export default async function HrSettingsPage({
         <Panel title="Leave types" id="leave-types-heading">
           <div className="mt-4">
             <LeaveTypes types={leaveTypes} canManage={can.manage} />
+          </div>
+        </Panel>
+
+        <Panel title="Work places" id="work-places-heading">
+          <p className="mt-1 text-sm text-muted-foreground">
+            Where staff check in. A check-in further away than the radius shows as a location
+            mismatch.
+            {can.manage && rules.selfCheckIn && rules.gpsAttendance && (
+              <>
+                {" "}
+                <Link href={hrHref.map()} className={linkClass}>
+                  See the staff map
+                </Link>
+              </>
+            )}
+          </p>
+          <div className="mt-4">
+            <WorkPlaces places={workPlaces} canManage={can.manage} />
           </div>
         </Panel>
 

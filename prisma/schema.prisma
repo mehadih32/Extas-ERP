@@ -159,6 +159,9 @@ model Company {
   termsAcceptances     TermsAcceptance[]
   oneTimeCodes         OneTimeCode[]
   backgroundJobs       BackgroundJob[]
+  workLocations        WorkLocation[]
+  locationPings        LocationPing[]
+  staffPositions       StaffPosition[]
 }
 
 /// A person who can log in. Global across companies.
@@ -2315,6 +2318,8 @@ model Employee {
   status            EmployeeStatus @default(ACTIVE)
   /// When they last agreed to the terms of employment (TermsAcceptance).
   termsAgreedAt     DateTime?
+  /// Where they normally check in; check-ins away from it are flagged.
+  workLocationId    String?
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt
 
@@ -2335,9 +2340,13 @@ model Employee {
   payRequests     PayDetailsRequest[]
   documents       EmployeeDocument[]
   termsAgreed     TermsAcceptance[]
+  workLocation    WorkLocation?       @relation(fields: [workLocationId], references: [id], onDelete: SetNull)
+  locationPings   LocationPing[]
+  position        StaffPosition?
 
   @@unique([companyId, code])
   @@unique([companyId, userId])
+  @@index([workLocationId])
 }
 
 /// An employee's ask (from My HR) to be paid another way or to another account.
@@ -2527,6 +2536,8 @@ model HrSettings {
   lateGraceMinutes     Int      @default(15)
   latesPerDeductionDay Int      @default(0) // e.g. 3: every 3 lates cost a day's salary; 0 = never
   selfCheckIn          Boolean  @default(true) // employees may check in from the portal
+  /// Staff share their location when they check in and out and while checked in.
+  gpsAttendance        Boolean  @default(false)
   updatedAt            DateTime @updatedAt
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
@@ -2549,26 +2560,108 @@ model Holiday {
 /// present, so only lates, half days, absences (and overtime) need marking;
 /// self check-ins from the portal also land here.
 model Attendance {
-  id              String           @id @default(cuid())
-  companyId       String
-  employeeId      String
-  date            DateTime         @db.Date
-  status          AttendanceStatus
-  checkIn         DateTime?
-  checkOut        DateTime?
-  overtimeMinutes Int              @default(0)
-  note            String?
-  source          AttendanceSource @default(MANUAL)
-  recordedById    String?
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
+  id               String           @id @default(cuid())
+  companyId        String
+  employeeId       String
+  date             DateTime         @db.Date
+  status           AttendanceStatus
+  checkIn          DateTime?
+  checkOut         DateTime?
+  overtimeMinutes  Int              @default(0)
+  note             String?
+  source           AttendanceSource @default(MANUAL)
+  recordedById     String?
+  /// Where the phone was at check-in (self check-ins with location on).
+  checkInLat       Float?
+  checkInLng       Float?
+  checkInAccuracy  Float? // metres
+  checkInIp        String?
+  /// The work place it was compared with, how far away it was, and whether
+  /// that is outside the place's radius ("Location mismatch").
+  checkInPlaceId   String?
+  checkInDistance  Int? // metres
+  checkInAway      Boolean          @default(false)
+  checkOutLat      Float?
+  checkOutLng      Float?
+  checkOutAccuracy Float?
+  checkOutIp       String?
+  checkOutPlaceId  String?
+  checkOutDistance Int?
+  checkOutAway     Boolean          @default(false)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
 
-  company    Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  recordedBy User?    @relation("AttendanceRecordedBy", fields: [recordedById], references: [id], onDelete: SetNull)
+  company       Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee      Employee      @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  recordedBy    User?         @relation("AttendanceRecordedBy", fields: [recordedById], references: [id], onDelete: SetNull)
+  checkInPlace  WorkLocation? @relation("AttendanceCheckInPlace", fields: [checkInPlaceId], references: [id], onDelete: SetNull)
+  checkOutPlace WorkLocation? @relation("AttendanceCheckOutPlace", fields: [checkOutPlaceId], references: [id], onDelete: SetNull)
 
   @@unique([employeeId, date])
   @@index([companyId, date])
+}
+
+/// A place staff check in at (an office, a factory floor, a shop), with the
+/// radius inside which a check-in counts as being there.
+model WorkLocation {
+  id           String   @id @default(cuid())
+  companyId    String
+  name         String
+  address      String?
+  lat          Float
+  lng          Float
+  radiusMeters Int      @default(150)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  company   Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employees Employee[]
+  checkIns  Attendance[] @relation("AttendanceCheckInPlace")
+  checkOuts Attendance[] @relation("AttendanceCheckOutPlace")
+
+  @@unique([companyId, name])
+}
+
+/// A position a checked-in employee's phone sent while on duty (from My HR in
+/// the browser, or the Android app in the background). Kept for 90 days.
+model LocationPing {
+  id         BigInt     @id @default(autoincrement())
+  companyId  String
+  employeeId String
+  at         DateTime // when the phone took the position
+  lat        Float
+  lng        Float
+  accuracy   Float? // metres
+  speed      Float? // metres a second
+  battery    Int? // per cent
+  source     PingSource @default(WEB)
+  createdAt  DateTime   @default(now())
+
+  company  Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId, at])
+  @@index([companyId, at])
+}
+
+/// Each employee's latest position, one row per person, so the live staff map
+/// reads a few rows instead of every ping.
+model StaffPosition {
+  employeeId String     @id
+  companyId  String
+  at         DateTime
+  lat        Float
+  lng        Float
+  accuracy   Float?
+  battery    Int?
+  source     PingSource @default(WEB)
+  updatedAt  DateTime   @updatedAt
+
+  company  Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
 }
 
 model LeaveType {
@@ -3749,6 +3842,13 @@ enum AttendanceStatus {
 enum AttendanceSource {
   MANUAL
   SELF // checked in from the employee portal
+}
+
+/// Where a location ping came from: My HR in a browser, or the Android app's
+/// background service.
+enum PingSource {
+  WEB
+  ANDROID
 }
 
 enum ComplianceType {

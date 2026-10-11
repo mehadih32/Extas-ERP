@@ -318,6 +318,7 @@ export default async function EmployeePage({
                 </Fact>
               )}
               <Fact label="Phone">{e.phone ?? "–"}</Fact>
+              {e.workPlace && <Fact label="Work place">{e.workPlace.name}</Fact>}
               {e.whatsapp && <Fact label="WhatsApp">{e.whatsapp}</Fact>}
               {e.email && <Fact label="Email">{e.email}</Fact>}
               {e.nid && <Fact label="National ID">{e.nid}</Fact>}

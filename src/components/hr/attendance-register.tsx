@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import type { ActionError } from "@/lib/result";
 import { cn } from "@/lib/utils";
+import { distanceText } from "@/modules/hr/geo";
 import type { AttendanceScreen } from "@/modules/hr/screens.service";
 import { clearAttendanceAction, markAttendanceAction } from "@/server/actions/hr.actions";
 
@@ -46,6 +47,63 @@ const same = (a: Draft, b: Draft) =>
   a.checkOut === b.checkOut &&
   a.overtime === b.overtime &&
   a.note.trim() === b.note.trim();
+
+type Where = NonNullable<NonNullable<Row["where"]>["in"]>;
+
+/** "In at Head office", "In 2.4 km from Factory", "In with no location". */
+function whereText(label: string, w: Where) {
+  if (!w.located) return `${label} with no location`;
+  if (!w.placeName || w.distance === null) return `${label}, location recorded`;
+  return w.away
+    ? `${label} ${distanceText(w.distance)} from ${w.placeName}`
+    : `${label} at ${w.placeName}`;
+}
+
+/**
+ * Where a self check-in and check-out were (GPS attendance), with "Location
+ * mismatch" when further from the work place than its radius. HR also gets a
+ * link to the exact point.
+ */
+function WhereLine({ where }: { where: NonNullable<Row["where"]> }) {
+  const parts = [
+    where.in && { key: "in", text: whereText("In", where.in), w: where.in },
+    where.out && { key: "out", text: whereText("out", where.out), w: where.out },
+  ].filter((p) => p !== null);
+  if (parts.length === 0) return null;
+  const mismatch = parts.some((p) => p.w.away);
+  const unknown = parts.some((p) => !p.w.located);
+  return (
+    <div className="mt-1 grid gap-1">
+      <p className="text-[0.8125rem] text-muted-foreground">
+        {parts.map((p, i) => (
+          <span key={p.key}>
+            {i > 0 && " · "}
+            {p.text}
+            {p.w.link && (
+              <>
+                {" "}
+                <a
+                  href={p.w.link}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-primary underline-offset-4 hover:underline"
+                >
+                  (map)
+                </a>
+              </>
+            )}
+          </span>
+        ))}
+      </p>
+      {(mismatch || unknown) && (
+        <div className="flex flex-wrap gap-1.5">
+          {mismatch && <FlagBadge tone="warn">Location mismatch</FlagBadge>}
+          {unknown && <FlagBadge>No location</FlagBadge>}
+        </div>
+      )}
+    </div>
+  );
+}
 
 /** Away all day on approved leave: no mark is taken. */
 const awayAllDay = (r: Row) => r.leave?.status === "APPROVED" && !r.leave.halfDay;
@@ -191,6 +249,7 @@ export function AttendanceRegister({
                   <p className="text-[0.8125rem] text-muted-foreground">
                     {[r.employee.code, r.employee.designation].filter(Boolean).join(" · ")}
                   </p>
+                  {r.where && <WhereLine where={r.where} />}
                   {r.leave && (
                     <div className="mt-1">
                       <FlagBadge tone={r.leave.status === "APPROVED" ? "open" : "warn"}>

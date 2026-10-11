@@ -91,6 +91,7 @@ export function HrRules({ rules, canManage }: { rules: Rules; canManage: boolean
               lateGraceMinutes,
               latesPerDeductionDay,
               selfCheckIn: form.get("selfCheckIn") === "on",
+              gpsAttendance: form.get("gpsAttendance") === "on",
             });
             if (!result.ok) return result.error;
             setNotice("The rules are saved.");
@@ -176,6 +177,22 @@ export function HrRules({ rules, canManage }: { rules: Rules; canManage: boolean
                   Staff check in and out themselves
                   <span className={smallText}>
                     From My HR on their phone. HR can still correct any day.
+                  </span>
+                </span>
+              </label>
+              <label className="flex cursor-pointer items-start gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  name="gpsAttendance"
+                  defaultChecked={rules.gpsAttendance}
+                  className={`${checkboxClass} mt-0.5`}
+                />
+                <span>
+                  Ask for location at check-in and while checked in
+                  <span className={smallText}>
+                    Checking in needs the phone&apos;s location, and the phone keeps sharing it
+                    until check-out, for the staff map. Check-ins away from the work place are
+                    flagged.
                   </span>
                 </span>
               </label>

@@ -1,7 +1,7 @@
 import type { AttendanceStatus, EmployeeStatus, LeaveStatus, PaymentMethod } from "@prisma/client";
 import { z } from "zod";
 
-import { dateColumn, dateOnly, localDay } from "@/lib/dates";
+import { dateColumn, dateOnly, localDay, localTime } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import { queryBoolean } from "@/lib/query-params";
@@ -66,6 +66,7 @@ import {
   isCashReturn,
   mayVoidAdvance,
 } from "@/modules/hr/rules";
+import { listWorkPlaces, openShift } from "@/modules/hr/location.service";
 import { getHrSettings, listHolidays, listLeaveTypes } from "@/modules/hr/settings.service";
 import { vaultIncompleteWhere } from "@/modules/hr/vault";
 import { getEmployeeVault, getMyVault, listPayRequests } from "@/modules/hr/vault.service";
@@ -427,6 +428,7 @@ export async function getEmployeeScreen(
       exitReason: e.exitReason,
       status: e.status as EmployeeStatus,
       isCurrent: e.isCurrent,
+      workPlace: e.workPlace,
       login: e.portalLogin
         ? { email: e.portalLogin.email, active: e.portalLogin.status === "ACTIVE" }
         : null,
@@ -469,13 +471,16 @@ export type EmployeeScreen = Awaited<ReturnType<typeof getEmployeeScreen>>;
 export async function getEmployeeForm(ctx: CompanyContext, employeeId?: string) {
   const access = hrAccess(ctx);
   if (!access.manage) throw new AppError("FORBIDDEN", "Only HR can add or change employees.");
-  const [depts, e] = await Promise.all([
+  const [depts, e, places] = await Promise.all([
     departments(ctx),
     employeeId ? getEmployee(ctx, employeeId) : null,
+    listWorkPlaces(ctx),
   ]);
   return {
     today: today(ctx),
     departments: depts,
+    /** Work places to choose from (GPS attendance). */
+    workPlaces: places.map((p) => ({ id: p.id, name: p.name })),
     employee:
       e && "salary" in e
         ? {
@@ -505,6 +510,7 @@ export async function getEmployeeForm(ctx: CompanyContext, employeeId?: string) 
             bankBranch: e.bankBranch,
             bankAccountNumber: e.bankAccountNumber,
             walletNumber: e.walletNumber,
+            workLocationId: e.workPlace?.id ?? null,
           }
         : null,
     can: {
@@ -953,7 +959,7 @@ export async function getSettingsScreen(ctx: CompanyContext, raw: { year?: unkno
     Number(raw.year) >= thisYear - 5 && Number(raw.year) <= thisYear + 2
       ? Number(raw.year)
       : thisYear;
-  const [rules, holidays, types, closed, approved] = await Promise.all([
+  const [rules, holidays, types, closed, approved, places] = await Promise.all([
     getHrSettings(ctx),
     listHolidays(ctx, { year }),
     listLeaveTypes(ctx, { includeInactive: true }),
@@ -963,6 +969,7 @@ export async function getSettingsScreen(ctx: CompanyContext, raw: { year?: unkno
       where: { status: "APPROVED" },
       _count: { _all: true },
     }),
+    listWorkPlaces(ctx),
   ]);
   const approvedOf = new Map(approved.map((a) => [a.leaveTypeId, a._count._all]));
   return {
@@ -972,7 +979,10 @@ export async function getSettingsScreen(ctx: CompanyContext, raw: { year?: unkno
       lateGraceMinutes: rules.lateGraceMinutes,
       latesPerDeductionDay: rules.latesPerDeductionDay,
       selfCheckIn: rules.selfCheckIn,
+      gpsAttendance: rules.gpsAttendance,
     },
+    /** Where staff check in, each with its radius (GPS attendance). */
+    workPlaces: places,
     year,
     years: [thisYear - 1, thisYear, thisYear + 1],
     holidays: holidays.items.map((h) => ({
@@ -1025,13 +1035,20 @@ export async function getMyHrScreen(ctx: CompanyContext) {
   const closed = (await closedMonths(ctx)).has(day.slice(0, 7));
   const mark = o.today.mark;
   const open = o.today.selfCheckIn && working && !closed;
+  // Still checked in from a night shift that started yesterday.
+  const lastNight =
+    employee && o.today.selfCheckIn && !mark?.checkIn
+      ? await openShift(prisma, ctx.company.id, employee.id, ctx.company.timezone)
+      : null;
   return {
     ...o,
     vaultGaps: o.profile.vaultGaps,
     onLeaveToday: onLeave ? onLeave.leaveType.name : null,
+    /** "21:40" when yesterday's check-in is still open. */
+    openSince: lastNight?.checkIn ? localTime(lastNight.checkIn, ctx.company.timezone) : null,
     can: {
       checkIn: open && !onLeave && !mark?.checkIn,
-      checkOut: open && Boolean(mark?.checkIn) && !mark?.checkOut,
+      checkOut: (open && Boolean(mark?.checkIn) && !mark?.checkOut) || Boolean(lastNight),
     },
   };
 }

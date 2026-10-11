@@ -82,7 +82,7 @@ export const hrHelp: HelpSection = {
           text: "“The person” অংশে “Full name”, ফোন, WhatsApp, ইমেইল, “National ID (optional)”, জন্মতারিখ, রক্তের গ্রুপ, ঠিকানা, “Emergency contact (optional)” ও রেফারেন্স (“Reference person (optional)”, ফোন ও কীভাবে চেনেন) দিন। কোড ফাঁকা রাখলে পরের কোড (যেমন EMP-0012) নিজে থেকে বসবে।",
         },
         {
-          text: "“The job” অংশে “Post (optional)” (যেমন Sewing operator), “Department (optional)” ও “Joined on” দিন। বেতন ও ছুটি এই দিন থেকে গোনা হয়।",
+          text: "“The job” অংশে “Post (optional)” (যেমন Sewing operator), “Department (optional)” ও “Joined on” দিন। বেতন ও ছুটি এই দিন থেকে গোনা হয়। কাজের জায়গা যোগ করা থাকলে “Work place (optional)”-এ কর্মী কোথায় চেক-ইন করবেন তা বেছে নিন।",
         },
         {
           text: "“Pay” অংশে “Monthly salary” (যোগদানের দিন থেকে মোট বেতন), “Overtime pay per hour (optional)” (ফাঁকা রাখলে ওভারটাইম দেওয়া হয় না) আর “Salary paid by” (ক্যাশ, ব্যাংক বা ওয়ালেট, সঙ্গে ব্যাংক, “Branch (optional)” ও নম্বর) দিন।",
@@ -220,6 +220,13 @@ export const hrHelp: HelpSection = {
         {
           text: "দরকার হলে “In” ও “Out” সময়, “Overtime (minutes)” আর “Add a note” দিয়ে নোট লিখুন। ছুটিতে থাকা কর্মী ও ছুটির দিন আলাদা দেখানো হয়।",
         },
+        {
+          text: "কর্মী ফোন থেকে লোকেশনসহ চেক-ইন করলে নামের নিচে লেখা থাকে কোথা থেকে করেছেন, যেমন “In at …”। কাজের জায়গা থেকে দূরে হলে লাল “Location mismatch”, আর লোকেশন না থাকলে “No location” দেখাবে। HR “(map)” চেপে ঠিক জায়গাটি Google Maps-এ দেখতে পারেন।",
+          image: {
+            id: "hr-attendance-2",
+            caption: "রেজিস্টারে চেক-ইনের জায়গা, “Location mismatch” ও “No location” চিহ্ন",
+          },
+        },
         { text: "সবশেষে একবার “Save the register” চাপুন।" },
         {
           text: "মাসের হিসাব দেখতে “The month in figures” চাপুন। প্রত্যেকের কাজের দিন, উপস্থিত, দেরি, অনুপস্থিত, ছুটি ও ওভারটাইম, যা বেতনে ব্যবহার হয়।",
@@ -227,7 +234,112 @@ export const hrHelp: HelpSection = {
       ],
       tips: [
         "বেতন অনুমোদিত হয়ে গেলে সেই মাসের হাজিরা আর বদলানো যায় না।",
-        "কর্মীরা নিজে চেক-ইন করবেন কি না তা “Holidays & rules”-এ ঠিক করা হয়।",
+        "কর্মীরা নিজে চেক-ইন করবেন কি না, আর লোকেশন লাগবে কি না, তা “Holidays & rules”-এ ঠিক করা হয়।",
+      ],
+    },
+    {
+      slug: "hr-gps-attendance",
+      title: "লোকেশনসহ হাজিরা (GPS) চালু করবেন ও কাজের জায়গা যোগ করবেন যেভাবে",
+      summary:
+        "চেক-ইনের সময় ফোনের লোকেশন চাওয়া, চেক-আউট পর্যন্ত লোকেশন পাঠানো, আর অফিস-কারখানা-দোকানের জায়গা ও সীমা (radius) ঠিক করা।",
+      keywords: [
+        "gps attendance",
+        "location",
+        "work places",
+        "geofence",
+        "radius",
+        "location mismatch",
+        "use my location",
+        "লোকেশন",
+        "জিপিএস",
+        "কাজের জায়গা",
+        "অফিসের জায়গা",
+        "লোকেশন মিলছে না",
+      ],
+      routes: ["/hr/settings"],
+      who: "যাঁদের HR সামলানোর অনুমতি আছে।",
+      anyOf: ["hr.manage"],
+      steps: [
+        {
+          text: "“HR & payroll” > “Holidays & rules” ট্যাবে “Change the rules” চাপুন। “Staff check in and out themselves” আর “Ask for location at check-in and while checked in” দুটিতেই টিক দিয়ে “Save the rules” চাপুন।",
+          image: {
+            id: "hr-gps-attendance-1",
+            caption: "“Ask for location at check-in and while checked in” নিয়ম",
+          },
+        },
+        {
+          text: "একই পাতার “Work places” অংশে “Add a work place” চাপুন। “Name” (যেমন Head office বা Factory) আর ঠিকানা দিন।",
+        },
+        {
+          text: "জায়গাটিতে দাঁড়িয়ে ফোন থেকে “Use my location” চাপুন, “Latitude” ও “Longitude” নিজে থেকে বসবে। অথবা Google Maps-এ জায়গাটি চেপে ধরে ওপরের সংখ্যা দুটি কপি করে “Latitude” ঘরে পেস্ট করুন, দুটি ঘরই ভরে যাবে।",
+          image: {
+            id: "hr-gps-attendance-2",
+            caption: "“Add a work place”: নাম, “Use my location” ও “Radius in metres”",
+          },
+        },
+        {
+          text: "“Radius in metres”-এ লিখুন জায়গা থেকে কত মিটার পর্যন্ত এখানেই ধরা হবে (বেশিরভাগ ভবনে 150)। “Add the work place” চাপুন। বদলাতে “Change”, বাদ দিতে “Remove”।",
+        },
+        {
+          text: "কোনো কর্মী নির্দিষ্ট জায়গায় চেক-ইন করবেন বলে ঠিক করতে কর্মীর “Change details” পাতায় “Work place (optional)” বেছে নিন। না দিলে সবচেয়ে কাছের জায়গার সঙ্গে মেলানো হয় (“No fixed place (nearest)”)।",
+        },
+      ],
+      tips: [
+        "চালু থাকলে লোকেশন ছাড়া চেক-ইন করা যায় না। চেক-আউট লোকেশন ছাড়াও করা যায়, যাতে কেউ আটকে না যান।",
+        "চেক-ইন থেকে চেক-আউট পর্যন্ত ফোন প্রতি আধা মিনিটে লোকেশন নেয় আর প্রতি মিনিটে পাঠায়। মাঠের কর্মীদের জন্য Extas ERP-এর Android অ্যাপ দিন, তাতে স্ক্রিন বন্ধ বা অ্যাপ বন্ধ থাকলেও লোকেশন যায়।",
+        "লোকেশনের হিসাব ৯০ দিন রাখা হয়, তারপর নিজে থেকে মুছে যায়। চেক-ইন ও চেক-আউটের জায়গা হাজিরার সঙ্গে থেকে যায়।",
+      ],
+    },
+    {
+      slug: "hr-staff-map",
+      title: "কে কোথায় আছেন, লাইভ ম্যাপে দেখবেন যেভাবে",
+      summary:
+        "আজ চেক-ইন করা কর্মীরা কোথা থেকে চেক-ইন করেছেন, ফোন শেষবার কোথায় ছিল, কার সিগন্যাল নেই, আর কারও সারাদিনের পথ।",
+      keywords: [
+        "staff map",
+        "live map",
+        "tracking",
+        "no signal",
+        "route",
+        "where is",
+        "field staff",
+        "লাইভ ম্যাপ",
+        "কর্মী কোথায়",
+        "সিগন্যাল নেই",
+        "মাঠকর্মী",
+        "যাতায়াতের পথ",
+      ],
+      routes: ["/hr/map"],
+      who: "যাঁদের HR সামলানোর অনুমতি আছে।",
+      anyOf: ["hr.manage"],
+      steps: [
+        {
+          text: "“HR & payroll” > “Staff map” ট্যাব খুলুন। পাতাটি প্রতি ২০ সেকেন্ডে নিজে থেকে হালনাগাদ হয়।",
+          image: {
+            id: "hr-staff-map-1",
+            caption: "“Staff map”: ম্যাপে সবার শেষ অবস্থান ও পাশে তালিকা",
+          },
+        },
+        {
+          text: "ওপরে সংখ্যা: “On duty” (চেক-ইন করা), “No signal” (১০ মিনিট কোনো লোকেশন আসেনি), “Away at check-in” (কাজের জায়গা থেকে দূরে চেক-ইন) আর “Checked out”।",
+        },
+        {
+          text: "ম্যাপে সবুজ বিন্দু মানে কাজে আছেন, লাল মানে সিগন্যাল নেই, ধূসর মানে চলে গেছেন। বেগুনি বৃত্তগুলো কাজের জায়গা।",
+        },
+        {
+          text: "তালিকায় প্রত্যেকের চেক-ইনের সময় ও জায়গা, “Location mismatch” থাকলে তা, “Last seen” সময়, ফোনের ব্যাটারি আর “Open in Google Maps” লিংক। লাল “No signal since …” মানে ফোন বন্ধ, নেটওয়ার্ক নেই বা লোকেশন বন্ধ।",
+        },
+        {
+          text: "কারও সারাদিনের পথ দেখতে “Show the route” চাপুন (বা ম্যাপে তাঁর বিন্দু)। নীল রেখায় পথ, মোট দূরত্ব, আর “Open the route in Google Maps”। সবাইকে আবার দেখতে “Show everyone”।",
+          image: {
+            id: "hr-staff-map-2",
+            caption: "একজনের পথ: নীল রেখা, দূরত্ব ও “Open the route in Google Maps”",
+          },
+        },
+      ],
+      tips: [
+        "শুধু যাঁরা নিজে ফোন থেকে চেক-ইন করেছেন তাঁরাই এখানে আসেন। HR-এর দেওয়া হাজিরা ম্যাপে আসে না।",
+        "ব্রাউজারে My HR খোলা থাকলেই শুধু লোকেশন যায়। সারাদিন লোকেশন পেতে মাঠকর্মীদের Android অ্যাপ ব্যবহার করতে বলুন।",
       ],
     },
     {
@@ -495,7 +607,10 @@ export const hrHelp: HelpSection = {
           text: "ছুটির ধরন যোগ করতে “Add a leave type” চাপুন। নাম, “Days a year”, বেতনসহ কি না (“Paid leave”), আর মাঝবছরে যোগ দিলে আনুপাতিক বরাদ্দ (“Share out by the months worked”) ঠিক করুন। পুরোনো ধরন “Retire” করুন।",
         },
       ],
-      tips: ["সাপ্তাহিক ছুটি বদলালে অনুমোদন হয়নি এমন মাসগুলোর ছুটির দিন আবার গোনা হয়।"],
+      tips: [
+        "সাপ্তাহিক ছুটি বদলালে অনুমোদন হয়নি এমন মাসগুলোর ছুটির দিন আবার গোনা হয়।",
+        "লোকেশনসহ হাজিরা ও “Work places” নিয়ে আলাদা নির্দেশিকা আছে: “লোকেশনসহ হাজিরা (GPS) চালু করবেন”।",
+      ],
     },
     {
       slug: "hr-data-vault",

@@ -96,6 +96,9 @@ export function EmployeeForm({ form: data }: { form: EmployeeFormData }) {
       referencePhone: optional("referencePhone"),
       referenceRelation: optional("referenceRelation"),
       notes: optional("notes"),
+      ...(data.workPlaces.length > 0 || e?.workLocationId
+        ? { workLocationId: optional("workLocationId") }
+        : {}),
       joinDate,
       overtimeRate: overtime as number | null,
       ...(data.can.changePay
@@ -251,6 +254,29 @@ export function EmployeeForm({ form: data }: { form: EmployeeFormData }) {
             type: "date",
             hint: e ? "Salary and leave count from this day." : undefined,
           })}
+          {data.workPlaces.length > 0 && (
+            <Field
+              id="workLocationId"
+              label="Work place (optional)"
+              hint="Where they check in. Checking in away from it is flagged."
+              error={fieldError("workLocationId")}
+            >
+              <NativeSelect
+                id="workLocationId"
+                name="workLocationId"
+                defaultValue={e?.workLocationId ?? ""}
+                containerClassName="sm:w-full"
+                aria-describedby="workLocationId-hint"
+              >
+                <option value="">No fixed place (nearest)</option>
+                {data.workPlaces.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </NativeSelect>
+            </Field>
+          )}
           {e && data.can.setStatus && (
             <Field
               id="status"

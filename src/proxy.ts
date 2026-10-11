@@ -42,6 +42,8 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  // Screens only: not the API, Next.js' own files or the app icon.
-  matcher: ["/((?!api/|_next/|icon\\.svg$|favicon\\.ico$|robots\\.txt$).*)"],
+  // Screens only: not the API, Next.js' own files, the app icons or what installs the app.
+  matcher: [
+    "/((?!api/|_next/|icons/|icon\\.svg$|favicon\\.ico$|robots\\.txt$|manifest\\.webmanifest$|sw\\.js$|offline\\.html$).*)",
+  ],
 };

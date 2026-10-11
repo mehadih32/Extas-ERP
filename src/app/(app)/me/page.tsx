@@ -84,7 +84,12 @@ export default async function MyHrPage() {
             ) : (
               <p className="text-sm text-muted-foreground">Nothing to check in for today.</p>
             )}
-            <CheckInButtons canCheckIn={can.checkIn} canCheckOut={can.checkOut} />
+            <CheckInButtons
+              canCheckIn={can.checkIn}
+              canCheckOut={can.checkOut}
+              gps={today.gpsAttendance}
+              openSince={result.data.openSince}
+            />
           </div>
         </Panel>
 

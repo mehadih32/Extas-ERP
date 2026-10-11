@@ -28,6 +28,7 @@ import {
 import { employeeMonth } from "@/modules/hr/attendance.service";
 import { monthKey, monthLabel } from "@/modules/hr/calendar";
 import { balancesFor, syncLeaveBalanceTx } from "@/modules/hr/leave.service";
+import { assertWorkPlace } from "@/modules/hr/location.service";
 import { salaryOn } from "@/modules/hr/payroll-calc";
 import { assertOpenFrom } from "@/modules/hr/period-lock";
 import {
@@ -62,6 +63,7 @@ const TX_OPTIONS = { timeout: 30_000 };
 
 export const employeeInclude = {
   user: { select: { id: true, email: true, name: true, status: true } },
+  workLocation: { select: { id: true, name: true, isActive: true } },
   salaryHistory: {
     orderBy: [{ effectiveFrom: "asc" }, { createdAt: "asc" }],
   },
@@ -115,6 +117,10 @@ function profileOf(e: EmployeeRow, day: string) {
     /** Still working here (no leaving date, or it is today or later). */
     isCurrent: !e.exitDate || dateOnly(e.exitDate) >= day,
     portalLogin: e.user,
+    /** Where they check in (GPS attendance). */
+    workPlace: e.workLocation?.isActive
+      ? { id: e.workLocation.id, name: e.workLocation.name }
+      : null,
     createdAt: e.createdAt,
     updatedAt: e.updatedAt,
   };
@@ -339,6 +345,7 @@ export async function createEmployee(ctx: CompanyContext, raw: unknown, meta?: R
   const input = createEmployeeSchema.parse(raw);
   const companyId = ctx.company.id;
   if (input.code) await assertCodeFree(ctx, input.code);
+  await assertWorkPlace(ctx, input.workLocationId);
   const { salary, joinDate, dateOfBirth, ...details } = input;
   const id = await prisma.$transaction(async (tx) => {
     await ensureHrSetup(companyId, tx);
@@ -385,6 +392,9 @@ export async function updateEmployee(
   assertCanManageHr(ctx, "Only HR can edit employees.");
   const input = updateEmployeeSchema.parse(raw);
   const employee = await loadEmployee(ctx, employeeId);
+  if (input.workLocationId !== employee.workLocationId) {
+    await assertWorkPlace(ctx, input.workLocationId);
+  }
   if (input.code && input.code !== employee.code)
     await assertCodeFree(ctx, input.code, employee.id);
   if (input.status) assertAllowed(canSetStatus(state(employee)));

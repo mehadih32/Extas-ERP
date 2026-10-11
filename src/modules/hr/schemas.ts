@@ -9,6 +9,7 @@ import {
 import { z } from "zod";
 
 import { queryBoolean } from "@/lib/query-params";
+import { DEFAULT_RADIUS_METRES, isLatLng, RADIUS_LIMITS } from "@/modules/hr/geo";
 import { TERMS_LIMITS } from "@/modules/hr/terms";
 
 const id = z.string().min(1);
@@ -46,6 +47,8 @@ export const hrSettingsSchema = z
     latesPerDeductionDay: z.number().int().min(0).max(31),
     /** Employees may check in and out from the portal. */
     selfCheckIn: z.boolean(),
+    /** Location at check-in and check-out, and pings while checked in. */
+    gpsAttendance: z.boolean(),
   })
   .partial();
 
@@ -114,6 +117,8 @@ const employeeFields = {
   referenceName: optionalText(120),
   referencePhone: optionalText(30),
   referenceRelation: optionalText(60),
+  /** The work place they check in at (GPS attendance); none for no fixed place. */
+  workLocationId: id.nullish(),
 };
 
 export const createEmployeeSchema = z.object({
@@ -217,7 +222,71 @@ export const attendanceMonthSchema = z.object({
   employeeId: id.optional(),
 });
 
-export const checkInSchema = z.object({ note: optionalText(300) });
+// --- GPS attendance ----------------------------------------------------------------------
+
+const latitude = z.number().min(-90).max(90);
+const longitude = z.number().min(-180).max(180);
+
+/** Where the phone is, from its GPS, with how sure it is (metres). */
+export const positionSchema = z
+  .object({
+    lat: latitude,
+    lng: longitude,
+    accuracy: z.number().min(0).max(100_000).nullish(),
+  })
+  .refine(isLatLng, "The phone did not give a usable position. Try again.");
+
+/** Checking in or out; with GPS attendance on, where the phone is. */
+export const checkInSchema = z.object({
+  note: optionalText(300),
+  position: positionSchema.nullish(),
+  /** My HR in a browser, or the Android app. */
+  source: z.enum(["WEB", "ANDROID"]).default("WEB"),
+});
+
+/**
+ * On-duty positions from the phone, sent in batches: from My HR in the
+ * browser ("WEB") or the Android app's background service ("ANDROID"). Times
+ * are when the phone took each position (milliseconds since 1970, or ISO).
+ */
+export const locationPingsSchema = z.object({
+  source: z.enum(["WEB", "ANDROID"]).default("WEB"),
+  points: z
+    .array(
+      z.object({
+        at: z
+          .union([z.number().int().positive(), z.iso.datetime({ offset: true })])
+          .transform((v) => new Date(v)),
+        lat: latitude,
+        lng: longitude,
+        accuracy: z.number().min(0).max(100_000).nullish(),
+        speed: z.number().min(0).max(300).nullish(),
+        battery: z.number().int().min(0).max(100).nullish(),
+      }),
+    )
+    .min(1)
+    .max(300),
+});
+
+/** A place staff check in at, with the radius that counts as being there. */
+export const workPlaceSchema = z.object({
+  name: z.string().trim().min(2).max(80),
+  address: optionalText(200),
+  lat: latitude,
+  lng: longitude,
+  radiusMeters: z
+    .number()
+    .int()
+    .min(RADIUS_LIMITS.min, `At least ${RADIUS_LIMITS.min} m`)
+    .max(RADIUS_LIMITS.max, `At most ${RADIUS_LIMITS.max} m`)
+    .default(DEFAULT_RADIUS_METRES),
+});
+
+export const updateWorkPlaceSchema = workPlaceSchema
+  .extend({ radiusMeters: workPlaceSchema.shape.radiusMeters.unwrap() })
+  .partial();
+
+export const staffMapQuery = z.object({ person: id.max(40).optional() });
 
 // --- Leave ---------------------------------------------------------------------------------
 

@@ -1,0 +1,94 @@
+# Builds the Extas ERP Android app (mobile/): the web app in a native frame,
+# with background GPS while staff are checked in. It runs on every change to
+# mobile/ and from the Actions tab ("Run workflow"). The APK is under the run's
+# "Artifacts". It opens the address in the repository variable EXTAS_APP_URL
+# (or the one typed in "Run workflow"). With the signing secrets set, it also
+# makes a signed release APK that installs over the previous one. Setting it
+# up: deploy/README.md, "The Android app".
+name: Android app
+
+on:
+  pull_request:
+    paths: ["mobile/**", ".github/workflows/android.yml"]
+  push:
+    branches: [main]
+    paths: ["mobile/**", ".github/workflows/android.yml"]
+  workflow_dispatch:
+    inputs:
+      app_url:
+        description: "The Extas ERP address the app opens, like https://erp.yourcompany.com (empty: the EXTAS_APP_URL variable)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build the APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: mobile
+    env:
+      EXTAS_APP_URL: ${{ inputs.app_url || vars.EXTAS_APP_URL }}
+      EXTAS_VERSION_CODE: ${{ github.run_number }}
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Check the app's address
+        run: |
+          if [ -z "$EXTAS_APP_URL" ]; then
+            echo "::warning title=No app address::This APK opens https://erp.example.com. Add the repository variable EXTAS_APP_URL (your Extas ERP address) and run this again. See deploy/README.md, \"The Android app\"."
+          fi
+
+      - name: Install Capacitor
+        run: npm ci
+
+      - name: Copy the app settings into the Android project
+        run: npm run sync
+
+      - name: Build the APK
+        working-directory: mobile/android
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Build the signed release APK
+        if: env.ANDROID_KEYSTORE_BASE64 != ''
+        working-directory: mobile/android
+        env:
+          EXTAS_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          EXTAS_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          EXTAS_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/extas-erp.jks"
+          EXTAS_KEYSTORE_FILE="$RUNNER_TEMP/extas-erp.jks" ./gradlew assembleRelease --no-daemon --stacktrace
+          rm -f "$RUNNER_TEMP/extas-erp.jks"
+
+      - name: Keep the APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: extas-erp-android-${{ github.run_number }}
+          path: |
+            mobile/android/app/build/outputs/apk/debug/app-debug.apk
+            mobile/android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 30

@@ -3,6 +3,7 @@ import { recordAudit } from "@/modules/audit/audit.service";
 import { purgeExpiredSessions } from "@/modules/auth/session.service";
 import { parseCron, previousRun } from "@/modules/backups/cron";
 import { purgeKeptSalesPdfs } from "@/modules/documents/print.service";
+import { purgeOldPings } from "@/modules/hr/location.service";
 import { purgeOldJobs } from "@/modules/jobs/queue";
 import { refreshStatusesForCompany } from "@/modules/parties/dormant.service";
 import { purgeUnusedProofs } from "@/modules/sales/proof.service";
@@ -23,7 +24,9 @@ import { purgeUnusedReferenceImages } from "@/modules/sales/reference-image.serv
  *   - PDFs of sales documents made more than a day ago are deleted from disk
  *     (printing again makes a fresh copy; documents/print.service.ts);
  *   - background jobs finished more than 30 days ago (failed: 90) are cleared
- *     (jobs/queue.ts).
+ *     (jobs/queue.ts);
+ *   - on-duty location pings older than 90 days are deleted
+ *     (hr/location.service.ts).
  * Every step is safe to repeat, so a run after a restart changes nothing new.
  */
 
@@ -67,6 +70,7 @@ export async function runHousekeeping(now: Date = new Date()) {
   const picturesRemoved = await purgeUnusedReferenceImages(now);
   const salesPdfsRemoved = await purgeKeptSalesPdfs(now);
   const jobsCleared = await purgeOldJobs(now);
+  const pingsRemoved = await purgeOldPings(now);
   return {
     companies: companies.length,
     markedDormant,
@@ -76,6 +80,7 @@ export async function runHousekeeping(now: Date = new Date()) {
     picturesRemoved,
     salesPdfsRemoved,
     jobsCleared,
+    pingsRemoved,
   };
 }
 

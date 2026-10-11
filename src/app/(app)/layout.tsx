@@ -1,6 +1,8 @@
 import { cookies } from "next/headers";
 
+import { DutyTracker } from "@/components/hr/duty-tracker";
 import { BottomNav } from "@/components/shell/bottom-nav";
+import { InstallApp } from "@/components/shell/install-app";
 import { initialsOf, roleLabel } from "@/components/shell/labels";
 import { visibleNavItems } from "@/components/shell/nav-items";
 import { Sidebar } from "@/components/shell/sidebar";
@@ -52,8 +54,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       Skip to content
     </a>
   );
+  // Sends the phone's position while checked in, when HR asks for it (GPS attendance).
+  const dutyTracker = me.permissions.includes("portal.self") ? <DutyTracker /> : null;
   const bottomNav = (
-    <BottomNav permissions={me.permissions} user={user} companyName={activeCompany.name} />
+    <>
+      <BottomNav permissions={me.permissions} user={user} companyName={activeCompany.name} />
+      {dutyTracker}
+      <InstallApp />
+    </>
   );
 
   if (modern) {

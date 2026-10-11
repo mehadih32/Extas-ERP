@@ -122,5 +122,6 @@ export const salesHref = {
   proforma: (id: string) => `/sales/proformas/${encodeURIComponent(id)}`,
   invoice: (id: string) => `/sales/invoices/${encodeURIComponent(id)}`,
   payment: (id: string) => `/sales/payments/${encodeURIComponent(id)}`,
+  salesReturn: (id: string) => `/sales/returns/${encodeURIComponent(id)}`,
   buyer: (id: string) => `/parties/buyers/${encodeURIComponent(id)}`,
 };

@@ -9,6 +9,7 @@ import {
   FileTextIcon,
   FileXIcon,
   PackageIcon,
+  PackageXIcon,
   PencilIcon,
   TruckIcon,
   Undo2Icon,
@@ -114,7 +115,11 @@ export function OrderActions({
     menu.push({ key: "voidInvoice", label: "Void the invoice", icon: FileXIcon });
   if (can.useCredit) menu.push({ key: "credit", label: "Use credit", icon: WalletIcon });
   if (refund) menu.push({ key: "refund", label: "Refund money paid", icon: Undo2Icon });
-  const hasMenu = menu.length > 0 || can.cancel;
+  const returnHref =
+    can.makeReturn && o.invoice
+      ? `/sales/returns/new?invoice=${encodeURIComponent(o.invoice.id)}`
+      : null;
+  const hasMenu = menu.length > 0 || can.cancel || returnHref !== null;
   const lines = o.styles.flatMap((s) =>
     s.lines.filter((l) => l.remaining > 0).map((l) => ({ ...l, style: s.style.code })),
   );
@@ -198,9 +203,17 @@ export function OrderActions({
                         {label}
                       </DropdownMenuItem>
                     ))}
+                    {returnHref && (
+                      <DropdownMenuItem asChild>
+                        <Link href={returnHref}>
+                          <PackageXIcon aria-hidden />
+                          Sales return
+                        </Link>
+                      </DropdownMenuItem>
+                    )}
                     {can.cancel && (
                       <>
-                        {menu.length > 0 && <DropdownMenuSeparator />}
+                        {(menu.length > 0 || returnHref) && <DropdownMenuSeparator />}
                         <DropdownMenuItem variant="destructive" onSelect={() => setOpen("cancel")}>
                           <BanIcon aria-hidden />
                           Cancel the order

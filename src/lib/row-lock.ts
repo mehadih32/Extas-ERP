@@ -26,6 +26,7 @@ export type LockableTable =
   | "ComplianceDocument"
   | "DocumentTemplate"
   | "Refund"
+  | "SalesReturn"
   | "Cheque";
 
 /**

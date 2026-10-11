@@ -14,6 +14,7 @@ import { buyerName, CHANNEL_LABELS, money, salesHref } from "@/components/sales/
 import { MoneyRecords } from "@/components/sales/money-records";
 import { SalesNoAccess } from "@/components/sales/no-access";
 import { OrderActions } from "@/components/sales/order-actions";
+import { ReturnRecords } from "@/components/sales/return-records";
 import { SalesFlow } from "@/components/sales/sales-flow";
 import { localDay } from "@/lib/dates";
 import { formatCount, formatDay } from "@/lib/display";
@@ -364,18 +365,23 @@ export default async function OrderPage({
               challan: challanTemplates.ok ? challanTemplates.data : [],
             }}
           />
+          <ReturnRecords returns={o.returns} currency={currency} />
           {costs && (
             <Panel title="Cost and margin" id="costs-heading">
               <dl className="mt-4 grid gap-2 text-sm tabular-nums">
-                {(
-                  [
-                    ["Sales after discount", costs.netSales],
-                    ["Cost of the goods", costs.cost],
-                  ] as const
-                ).map(([label, amount]) => (
+                {[
+                  { label: "Sales after discount", amount: costs.netSales, minus: false },
+                  ...(costs.returned
+                    ? [{ label: "Less goods returned", amount: costs.returned, minus: true }]
+                    : []),
+                  { label: "Cost of the goods", amount: costs.cost, minus: false },
+                ].map(({ label, amount, minus }) => (
                   <div key={label} className="flex justify-between gap-4">
                     <dt className="text-muted-foreground">{label}</dt>
-                    <dd>{money(amount, currency)}</dd>
+                    <dd>
+                      {minus ? "− " : ""}
+                      {money(amount, currency)}
+                    </dd>
                   </div>
                 ))}
                 <div className="flex items-baseline justify-between gap-4 border-t pt-2 font-medium">
@@ -400,6 +406,11 @@ export default async function OrderPage({
               {costs.estimated && (
                 <p className="mt-3 text-[0.8125rem] text-muted-foreground">
                   Pieces not delivered yet are costed at today&apos;s average cost.
+                </p>
+              )}
+              {costs.returned && (
+                <p className="mt-3 text-[0.8125rem] text-muted-foreground">
+                  Returned pieces went to Damage &amp; QC Rejects, so their cost stays in.
                 </p>
               )}
             </Panel>

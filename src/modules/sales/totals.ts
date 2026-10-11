@@ -131,3 +131,56 @@ export function invoiceStatusFor(total: Num, paid: Num): InvoiceStatus {
   if (p.gte(t)) return "PAID";
   return p.gt(0) ? "PARTIALLY_PAID" : "UNPAID";
 }
+
+/** One invoice line in a sales return: the line as billed, its earlier returns and what comes back now. */
+export type ReturnLine = {
+  lineTotal: Num;
+  quantity: number;
+  /** Pieces of the line on earlier returns that are not void, and what they were credited. */
+  returnedQuantity: number;
+  returnedAmount: Num;
+  /** Pieces coming back now (at most what is left of the line). */
+  take: number;
+};
+
+/**
+ * What a sales return credits. Each line is priced from what is left of its
+ * invoice line, so a line's returns add up to its total exactly. The return's
+ * share of the invoice discount and VAT goes by the value of its goods; the
+ * return that brings back the last piece takes whatever is left of both.
+ */
+export function returnTotals(args: {
+  lines: ReturnLine[];
+  invoice: { subtotal: Num; discount: Num; tax: Num };
+  /** The discount and VAT earlier returns (not void) already took back. */
+  earlier: { discount: Num; tax: Num };
+  /** Every piece invoiced is back once this return is made. */
+  last: boolean;
+}) {
+  const amounts = args.lines.map((l) => {
+    const left = l.quantity - l.returnedQuantity;
+    if (l.take < 1 || l.take > left) {
+      throw new AppError("VALIDATION", "More pieces than are left on the line.");
+    }
+    const value = money(l.lineTotal).minus(money(l.returnedAmount));
+    return l.take === left ? value : money(value.times(l.take).dividedBy(left));
+  });
+  const goods = sum(amounts);
+  const subtotal = money(args.invoice.subtotal);
+  const fullDiscount = money(args.invoice.discount);
+  const fullTax = money(args.invoice.tax);
+  const discountLeft = Prisma.Decimal.max(fullDiscount.minus(money(args.earlier.discount)), ZERO);
+  const taxLeft = Prisma.Decimal.max(fullTax.minus(money(args.earlier.tax)), ZERO);
+  const discount = args.last
+    ? discountLeft
+    : subtotal.gt(0)
+      ? Prisma.Decimal.min(money(fullDiscount.times(goods).dividedBy(subtotal)), discountLeft)
+      : ZERO;
+  const net = subtotal.minus(fullDiscount);
+  const tax = args.last
+    ? taxLeft
+    : net.gt(0)
+      ? Prisma.Decimal.min(money(fullTax.times(goods.minus(discount)).dividedBy(net)), taxLeft)
+      : ZERO;
+  return { amounts, goods, discount, tax, total: goods.minus(discount).plus(tax) };
+}

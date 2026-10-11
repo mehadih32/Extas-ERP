@@ -100,6 +100,7 @@ describe("the menu with Sales in it", () => {
       "Proformas",
       "Invoices",
       "Payments",
+      "Returns",
     ]);
     expect(visibleSalesTabs(["inventory.view"])).toEqual([]);
   });

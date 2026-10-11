@@ -42,6 +42,7 @@ const SEARCH: Partial<Record<SalesListView["list"], string>> = {
   orders: "Order number, buyer or phone",
   quotations: "Quotation number or buyer",
   invoices: "Invoice or order number, or buyer",
+  returns: "Credit note or invoice number, or buyer",
 };
 
 const SELECTS: Record<SalesListView["list"], Select[]> = {
@@ -86,11 +87,13 @@ const SELECTS: Record<SalesListView["list"], Select[]> = {
     },
   ],
   payments: [],
+  returns: [],
 };
 
 /**
  * A Sales list's filters: a search and status (and channel) choices, or for
- * payments the received / refunds switch and a range of days. A change reloads
+ * payments the received / refunds switch and a range of days (returns: a
+ * search and a range of days). A change reloads
  * the list from the server; the old list stays, dimmed, until the new one
  * arrives, while the filters already show the choice made.
  */
@@ -223,7 +226,7 @@ export function SalesFilters({
             ))}
           </NativeSelect>
         )}
-        {shown.list === "payments" && shown.show !== "cheques" && (
+        {((shown.list === "payments" && shown.show !== "cheques") || shown.list === "returns") && (
           <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
             <label className="grid gap-1 text-[0.8125rem] text-muted-foreground sm:flex sm:items-center sm:gap-2">
               From

@@ -29,11 +29,11 @@ export const MOVEMENT_LABELS: Record<StockMovementType, string> = {
 export const BAD_STOCK_SOURCE_LABELS: Record<BadStockSource, string> = {
   WAREHOUSE_DAMAGE: "Damaged in the warehouse",
   PRODUCTION_REJECT: "Production reject",
-  RETURN_QC: "Failed the returns check",
+  RETURN_QC: "Sales return",
   MANUAL: "Other",
 };
 
-/** The reasons a person can pick; failed returns arrive from the returns check itself. */
+/** The reasons a person can pick; sales returns arrive here from the return itself. */
 export const BAD_STOCK_SOURCE_CHOICES: ReadonlyArray<{
   value: Exclude<BadStockSource, "RETURN_QC">;
   label: string;

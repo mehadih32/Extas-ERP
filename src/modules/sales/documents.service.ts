@@ -1,4 +1,4 @@
-import type { Prisma } from "@prisma/client";
+import type { InvoiceStatus, Prisma } from "@prisma/client";
 
 import { dayRange } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
@@ -193,11 +193,20 @@ export async function voidInvoice(
 export async function voidInvoiceTx(
   tx: Tx,
   ctx: CompanyContext,
-  invoice: { id: string; number: string; orderId: string; total: Prisma.Decimal },
+  invoice: {
+    id: string;
+    number: string;
+    orderId: string;
+    total: Prisma.Decimal;
+    status: InvoiceStatus;
+  },
   reason: string,
   meta?: RequestMeta,
 ) {
   await lockRow(tx, "SalesOrder", invoice.orderId);
+  // A sales return holds the invoice's prices (counted with the order locked, as returns are made).
+  const returns = await tx.salesReturn.count({ where: { invoiceId: invoice.id, voidedAt: null } });
+  assertAllowed(canVoidInvoice(invoice, returns));
   const { count } = await tx.invoice.updateMany({
     where: { id: invoice.id, status: { not: "VOID" } },
     data: { status: "VOID", dueAmount: ZERO },
@@ -544,7 +553,15 @@ export async function createDeliveryChallanTx(
   );
   await tx.salesOrder.update({
     where: { id: order.id },
-    data: { status: allDelivered ? "DELIVERED" : "PROCESSING" },
+    // An order with goods back on a sales return stays "Part returned" as the rest goes out.
+    data: {
+      status:
+        order.status === "PARTIALLY_RETURNED"
+          ? "PARTIALLY_RETURNED"
+          : allDelivered
+            ? "DELIVERED"
+            : "PROCESSING",
+    },
   });
   if (order.partyId) await recordPartyActivity(order.partyId, deliveryDate, tx);
   await auditInCompany(

@@ -17,7 +17,7 @@ export const DEFAULT_PREFIXES: Partial<Record<DocumentType, string>> = {
   SUPPLIER_BILL: "BILL",
   EXPENSE_VOUCHER: "EXP",
   JOURNAL_VOUCHER: "JV",
-  SALES_RETURN: "RET",
+  SALES_RETURN: "CN", // credit note
   STOCK_INTAKE: "GRN",
   PRODUCTION_PROJECT: "PRD",
   SALARY_ADVANCE: "ADV",

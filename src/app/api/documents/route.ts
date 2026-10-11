@@ -21,6 +21,7 @@ export const GET = apiRoute(async (request) =>
  * - { type: QUOTATION | PROFORMA_INVOICE | COMMERCIAL_INVOICE | PACKING_LIST | DELIVERY_CHALLAN, id } (sales.view)
  * - { type: PAYMENT_RECEIPT, id: the payment's id } (sales.view)
  * - { type: REFUND_VOUCHER, id: the refund's id } (sales.view)
+ * - { type: SALES_RETURN, id: the sales return's id }: its credit note (sales.view)
  * - { type: LEDGER_STATEMENT, partyId, from?, to? } (parties.ledger.view)
  * - { type: STOCK_AVAILABILITY, styleIds? or brandId?, warehouseId?, includeEmpty? } (inventory.view)
  * - { type: LETTERHEAD } (documents.letterhead)

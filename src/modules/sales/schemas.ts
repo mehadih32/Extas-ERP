@@ -575,3 +575,32 @@ export const salesSummarySchema = z.object({
   from: dayOrInstant.optional(),
   to: dayOrInstant.optional(),
 });
+
+// --- Sales returns (credit notes) ----------------------------------------------------
+
+/** Pieces coming back on one invoice: its lines (order items) and how many of each. */
+export const salesReturnSchema = z.object({
+  invoiceId: id,
+  items: z
+    .array(z.object({ orderItemId: id, quantity: qty }))
+    .min(1, "Enter the pieces coming back")
+    .max(500),
+  reason: z.string().trim().min(3).max(500),
+  /** The day the goods came back (company time); today when left out. */
+  returnDate: z.iso.date().optional(),
+  notes: optionalText(1000),
+});
+
+export const voidSalesReturnSchema = z.object({ reason: z.string().trim().min(5).max(500) });
+
+export const listSalesReturnsSchema = z.object({
+  /** Credit note or invoice number, or the buyer's name or code. */
+  search: z.string().trim().max(100).optional(),
+  partyId: id.optional(),
+  invoiceId: id.optional(),
+  orderId: id.optional(),
+  from: dayOrInstant.optional(),
+  to: dayOrInstant.optional(),
+  cursor: z.string().optional(),
+  take,
+});

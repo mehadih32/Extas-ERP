@@ -11,6 +11,7 @@ import { InvoiceActions } from "@/components/sales/invoice-actions";
 import { invoiceTotalLines } from "@/components/sales/invoice-totals";
 import { METHOD_LABELS, money, salesHref } from "@/components/sales/labels";
 import { SalesNoAccess } from "@/components/sales/no-access";
+import { ReturnRecords } from "@/components/sales/return-records";
 import { localDay } from "@/lib/dates";
 import { formatCount, formatDay } from "@/lib/display";
 import { getInvoiceScreenAction } from "@/server/actions/sales.actions";
@@ -22,7 +23,8 @@ export const metadata: Metadata = { title: "Invoice" };
 /**
  * One commercial invoice (sales.view, like GET /api/sales/invoices/:id): what
  * was billed line by line, totals with paid and due, the packing list printed
- * as its page 2, and the payments and refunds on its order. What may be done
+ * as its page 2, the payments and refunds on its order and the sales returns
+ * made on it. What may be done
  * comes with the screen (screen.can).
  */
 export default async function InvoicePage({ params }: { params: Promise<{ invoiceId: string }> }) {
@@ -174,6 +176,7 @@ export default async function InvoicePage({ params }: { params: Promise<{ invoic
               </p>
             )}
           </Panel>
+          <ReturnRecords returns={inv.returns} currency={currency} />
           <Panel title="Payments" id="payments-heading">
             {inv.payments.length === 0 && inv.refunds.length === 0 && inv.credits.length === 0 ? (
               <p className="mt-4 text-sm text-muted-foreground">Nothing was paid on it yet.</p>

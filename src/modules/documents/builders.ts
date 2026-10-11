@@ -30,6 +30,7 @@ import { getPaymentReceipt } from "@/modules/sales/payment.service";
 import { getProforma } from "@/modules/sales/proforma.service";
 import { getQuotation } from "@/modules/sales/quotation.service";
 import { getRefund } from "@/modules/sales/refund.service";
+import { getSalesReturn } from "@/modules/sales/return.service";
 import {
   ORDER_STATUS_LABELS as PO_STATUS_LABELS,
   quantity as materialQuantity,
@@ -1363,6 +1364,88 @@ export async function refundDocument(
   };
 }
 
+/**
+ * Credit note: goods a buyer sent back on an invoice, each line at the price
+ * billed, with the return's share of the invoice's discount and VAT, and the
+ * amount credited to the buyer's account.
+ */
+export async function salesReturnDocument(
+  ctx: CompanyContext,
+  returnId: string,
+): Promise<BuiltDocument> {
+  const r = await getSalesReturn(ctx, returnId);
+  const tz = ctx.company.timezone;
+  const currency = ctx.company.currency;
+  const invoice = r.invoice!;
+  const buyer: PartyLike = r.party ?? { name: "Buyer" };
+  const model = base(ctx, "SALES_RETURN", {
+    title: "Credit Note",
+    reference: r.number,
+    stamp: r.voidedAt ? { text: "Void", tone: "danger" } : undefined,
+    meta: [
+      { label: "Credit note no.", value: r.number },
+      { label: "Date", value: formatInstantDay(r.receivedAt, tz) },
+      { label: "Invoice no.", value: invoice.number },
+      { label: "Invoice date", value: formatInstantDay(invoice.issueDate, tz) },
+      { label: "Order no.", value: r.order.number },
+    ],
+    parties: [{ heading: "Credited to", lines: partyLines(buyer) }],
+    blocks: [
+      {
+        kind: "table",
+        columns: [
+          { label: "#", align: "right", weight: 0.45 },
+          { label: "Goods returned", weight: 4.4 },
+          { label: "Qty", align: "right", weight: 0.8 },
+          { label: `Unit price (${currency})`, align: "right", weight: 1.5 },
+          { label: `Amount (${currency})`, align: "right", weight: 1.6 },
+        ],
+        rows: r.items.map((item, i) => ({
+          cells: [
+            String(i + 1),
+            `${item.variant.style.name} – ${item.variant.color.name} – ${item.variant.size.name}`,
+            count(item.quantity, currency),
+            money(item.unitPrice, currency),
+            money(item.amount, currency),
+          ],
+          details: [item.variant.sku],
+        })),
+      },
+      {
+        kind: "totals",
+        rows: [
+          { label: "Goods returned", value: money(r.goodsValue, currency) },
+          ...(isPositive(r.discount)
+            ? [{ label: "Less their discount", value: `-${money(r.discount, currency)}` }]
+            : []),
+          ...(isPositive(r.tax) ? [{ label: "VAT / tax", value: money(r.tax, currency) }] : []),
+          { label: `Credited (${currency})`, value: money(r.amount, currency), strong: true },
+        ],
+        words: amountInWords(r.amount, currency),
+      },
+      ...textBlock("Reason", r.reason),
+      ...textBlock("Notes", r.notes),
+      {
+        kind: "note",
+        text: `Credited at the prices billed on invoice ${invoice.number}. This credit stays on the buyer's account and counts against what they owe on later invoices.`,
+      },
+      ...(r.voidedAt
+        ? [{ kind: "note" as const, text: `Voided: ${r.voidReason ?? "no reason given"}` }]
+        : []),
+    ],
+    signatures: ["Goods received by", "Authorised signature"],
+  });
+  return {
+    model,
+    record: {
+      title: `Credit note ${r.number}`,
+      referenceType: "SalesReturn",
+      referenceId: r.id,
+      partyId: r.partyId,
+    },
+  };
+}
+
 // =============================================================================
 // Buyer / supplier statement
 // =============================================================================
@@ -2531,6 +2614,8 @@ async function buildModel(
       return receiptDocument(ctx, input.id);
     case "REFUND_VOUCHER":
       return refundDocument(ctx, input.id);
+    case "SALES_RETURN":
+      return salesReturnDocument(ctx, input.id);
     case "LEDGER_STATEMENT":
       return statementDocument(ctx, input, now);
     case "STOCK_AVAILABILITY":

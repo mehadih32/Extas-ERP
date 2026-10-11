@@ -131,6 +131,12 @@ export function RefundBadge({ kind, voided = false }: { kind: RefundKind; voided
   return <StatusBadge tone="plain">{REFUND_KIND_LABELS[kind]}</StatusBadge>;
 }
 
+/** A sales return: its value credited to the buyer, or void. */
+export function SalesReturnBadge({ voided }: { voided: boolean }) {
+  if (voided) return <StatusBadge tone="closed">Void</StatusBadge>;
+  return <StatusBadge tone="plain">Credited</StatusBadge>;
+}
+
 const CHEQUE_TONES: Record<ChequeStatus, Tone> = {
   PENDING: "warn",
   CLEARED: "done",

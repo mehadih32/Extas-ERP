@@ -200,6 +200,7 @@ model User {
   purchaseReturns   PurchaseReturn[]      @relation("PurchaseReturnCreatedBy")
   materialMovements RawMaterialMovement[] @relation("MaterialMovementBy")
   refunds           Refund[]              @relation("RefundCreatedBy")
+  salesReturns      SalesReturn[]         @relation("SalesReturnCreatedBy")
   creditAllocations CreditAllocation[]    @relation("CreditAllocatedBy")
   chequesRecorded   Cheque[]              @relation("ChequeRecordedBy")
   intakesReversed   StockIntake[]         @relation("IntakeReversedBy")
@@ -572,6 +573,7 @@ model Warehouse {
   supplierBills        SupplierBill[]
   materialIssues       MaterialIssue[]
   purchaseReturns      PurchaseReturn[]
+  salesReturns         SalesReturn[]
 
   @@unique([companyId, name])
 }
@@ -960,6 +962,7 @@ model Party {
   invoices             Invoice[]
   payments             Payment[]
   refunds              Refund[]
+  salesReturns         SalesReturn[]
   creditAllocations    CreditAllocation[]
   cheques              Cheque[]
   journalLines         JournalLine[]
@@ -1195,9 +1198,10 @@ model SalesOrderItem {
   overrideReason  String?
   overrideAt      DateTime?
 
-  order      SalesOrder     @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  variant    ProductVariant @relation(fields: [variantId], references: [id])
-  overrideBy User?          @relation("ForceOverrideBy", fields: [overrideById], references: [id], onDelete: SetNull)
+  order       SalesOrder        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  variant     ProductVariant    @relation(fields: [variantId], references: [id])
+  overrideBy  User?             @relation("ForceOverrideBy", fields: [overrideById], references: [id], onDelete: SetNull)
+  returnItems SalesReturnItem[]
 
   @@index([orderId])
   @@index([variantId])
@@ -1235,6 +1239,7 @@ model Invoice {
   party             Party?             @relation(fields: [partyId], references: [id], onDelete: SetNull)
   payments          Payment[]
   creditAllocations CreditAllocation[]
+  returns           SalesReturn[]
 
   @@unique([companyId, number])
   @@index([companyId, status])
@@ -1571,25 +1576,56 @@ model ShipmentEvent {
   @@index([shipmentId, occurredAt])
 }
 
-/// Returned parcel. Items sit in the "Pending Returns to Check" pool until QC.
+/// Goods a buyer sends back. A return against an invoice (a credit note,
+/// CN-) credits the buyer at the prices billed and puts the pieces in Damage &
+/// QC Rejects at once. A courier's returned parcel (shipmentId) waits in the
+/// "Pending Returns to Check" pool until QC.
 model SalesReturn {
-  id          String       @id @default(cuid())
-  companyId   String
-  number      String
-  orderId     String
-  shipmentId  String?
-  reason      String?
-  status      ReturnStatus @default(PENDING_QC)
-  receivedAt  DateTime     @default(now())
-  completedAt DateTime?
+  id             String       @id @default(cuid())
+  companyId      String
+  number         String
+  orderId        String
+  /// The invoice the goods were billed on: its prices are what is credited.
+  invoiceId      String?
+  partyId        String?
+  /// Where the pieces are logged as Damage & QC Rejects (the order's warehouse).
+  warehouseId    String?
+  shipmentId     String?
+  reason         String?
+  notes          String?
+  status         ReturnStatus @default(PENDING_QC)
+  receivedAt     DateTime     @default(now())
+  completedAt    DateTime?
+  /// The goods at the prices billed, their share of the invoice's discount and VAT,
+  /// and what the buyer is credited (goodsValue - discount + tax).
+  goodsValue     Decimal      @default(0) @db.Decimal(14, 2)
+  discount       Decimal      @default(0) @db.Decimal(14, 2)
+  tax            Decimal      @default(0) @db.Decimal(14, 2)
+  amount         Decimal      @default(0) @db.Decimal(14, 2)
+  /// What the pieces cost when they left: booked to Inventory Loss.
+  costValue      Decimal      @default(0) @db.Decimal(14, 2)
+  journalEntryId String?      @unique
+  createdById    String?
+  voidedAt       DateTime?
+  voidReason     String?
+  createdAt      DateTime     @default(now())
 
-  company  Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  order    SalesOrder        @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  shipment Shipment?         @relation(fields: [shipmentId], references: [id], onDelete: SetNull)
-  items    SalesReturnItem[]
+  company      Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  order        SalesOrder        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  invoice      Invoice?          @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  party        Party?            @relation(fields: [partyId], references: [id], onDelete: SetNull)
+  warehouse    Warehouse?        @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
+  shipment     Shipment?         @relation(fields: [shipmentId], references: [id], onDelete: SetNull)
+  journalEntry JournalEntry?     @relation(fields: [journalEntryId], references: [id], onDelete: SetNull)
+  createdBy    User?             @relation("SalesReturnCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  items        SalesReturnItem[]
 
   @@unique([companyId, number])
   @@index([companyId, status])
+  @@index([companyId, receivedAt])
+  @@index([invoiceId])
+  @@index([orderId])
+  @@index([partyId])
 }
 
 /// QC decision per returned SKU: Move to Main Stock or Move to Bad Stock.
@@ -1597,7 +1633,15 @@ model SalesReturnItem {
   id            String             @id @default(cuid())
   returnId      String
   variantId     String
+  /// The invoice line it came back from.
+  orderItemId   String?
   quantity      Int
+  /// The price billed per piece (the line's total over its pieces).
+  unitPrice     Decimal            @default(0) @db.Decimal(14, 2)
+  /// These pieces at the prices billed (before the invoice's discount and VAT).
+  amount        Decimal            @default(0) @db.Decimal(14, 2)
+  /// What each piece cost when it left the warehouse.
+  unitCost      Decimal            @default(0) @db.Decimal(14, 4)
   qcStatus      ReturnItemQcStatus @default(PENDING)
   qtyRestocked  Int                @default(0)
   qtyBadStock   Int                @default(0)
@@ -1605,12 +1649,14 @@ model SalesReturnItem {
   inspectedAt   DateTime?
   qcNote        String?
 
-  salesReturn   SalesReturn    @relation(fields: [returnId], references: [id], onDelete: Cascade)
-  variant       ProductVariant @relation(fields: [variantId], references: [id])
-  inspectedBy   User?          @relation("ReturnInspectedBy", fields: [inspectedById], references: [id], onDelete: SetNull)
+  salesReturn   SalesReturn     @relation(fields: [returnId], references: [id], onDelete: Cascade)
+  variant       ProductVariant  @relation(fields: [variantId], references: [id])
+  orderItem     SalesOrderItem? @relation(fields: [orderItemId], references: [id], onDelete: SetNull)
+  inspectedBy   User?           @relation("ReturnInspectedBy", fields: [inspectedById], references: [id], onDelete: SetNull)
   badStockEntry BadStockEntry?
 
   @@index([returnId])
+  @@index([orderItemId])
   @@index([qcStatus])
 }
 
@@ -1880,6 +1926,7 @@ model JournalEntry {
   lines             JournalLine[]
   payment           Payment?
   refund            Refund?
+  salesReturn       SalesReturn?
   supplierBill      SupplierBill?
   expense           Expense?
   badStock          BadStockEntry?

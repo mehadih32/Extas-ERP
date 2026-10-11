@@ -288,7 +288,7 @@ Built one module at a time, each in its own pull request. So far:
     edited under the same number until it is fully paid (Smart Edit, marked Revised), and is
     voided (Safe Void: by default its order is cancelled, delivered pieces come back into
     stock at their cost and the sale comes off the books; or the order is kept to correct
-    it). Invoices are never deleted.
+    it) while no sales return stands on it. Invoices are never deleted.
   - **Payments**: a dashboard on top (collected today, pending dues, cheques to clear,
     cheques bounced this month), then money received (each opening its money receipt, its
     PDF and its proof photo), cheques (pending, cleared or bounced, which Accounts marks here)
@@ -296,6 +296,14 @@ Built one module at a time, each in its own pull request. So far:
     invoices oldest first or by amounts typed next to each; the rest is kept as advance
     balance. Proof photos (a transfer screenshot or a cheque) are made about 100 KB in the
     browser before they are uploaded, and open full size in a lightbox.
+  - **Returns**: goods buyers sent back, each on a credit note (`CN-`) made from its invoice
+    by Accounts (**Sales return** on the invoice, or **New sales return** here and choose the
+    invoice). The form takes the pieces per invoice line, up to what was delivered and has not
+    come back, the day and the reason, and estimates the credit as they are typed; the credit
+    note's page shows the lines at the prices billed, the discount and VAT shares, the
+    buyer's unused credit now and its PDF, and Accounts can void it until that credit is
+    spent. Invoices and orders list their returns, and an order's margin takes the goods
+    returned off its sales.
   - At checkout and when issuing an invoice, the buyer's previous due can be printed on the
     invoice ("Total payable"), and Accounts can put some or all of the buyer's credit
     (advance balance) against the bill. Money above the bill goes to older dues (with the
@@ -1058,6 +1066,25 @@ the order is invoiced again, the order or proforma has since been paid up to its
 credit it left on the account has been used. A walk-in customer has no account of their own,
 so their money is paid back or kept as a charge, never kept as credit.
 
+**Sales returns (credit notes).** Goods a buyer sends back are recorded by Accounts
+(`accounts.receipts.record`) against the invoice they were billed on, never on their own, so
+each piece is credited at the price billed: each line from what is left of its invoice line,
+less the return's share of the invoice discount and plus its share of the VAT, by the value of
+its goods (the return that brings back the last piece takes whatever is left of both, so the
+returns of an invoice add up to it exactly; a delivery charge is not credited). At most the
+pieces delivered on the order that have not come back can come back, on a day from the
+invoice's to today. The value becomes the buyer's credit (advance balance), to use on any
+invoice with "Use credit", after it pays whatever they owed outside their invoices (an
+opening balance, say); a walk-in sale has no account to keep it on, so it takes no return. The pieces go straight to Damage & QC Rejects (`BadStockEntry`, source `RETURN_QC`,
+shown as "Sales return") at the cost they left at: they come back into the order's warehouse
+and leave it at once (`RETURN_RESTOCK` in, `BAD_STOCK_OUT` out), so sellable stock and the
+average cost do not change. The order shows Part returned, or Returned once every piece
+ordered is back; while a return stands, its invoice cannot be voided nor its order
+cancelled. A return recorded by mistake can be voided unless the buyer has spent its credit
+(their credit is now less than the return's and credit was used on invoices or paid back since
+it): its entry is reversed, its pieces leave the rejects and the order's status follows.
+Each is a numbered credit note (`CN-2026-00001`) with its PDF.
+
 **Dues, credit and cheques.** A buyer's _credit_ (advance balance) is the money on their
 account that has not paid an invoice yet: their unpaid invoices less their receivable balance.
 Credit is put against an invoiced order as a credit allocation (`CreditAllocation`), which
@@ -1097,6 +1124,8 @@ the receivables overview update immediately. For a sale without a buyer, the lin
 | Cancellation charge    | Dr Customer Advance (buyer), Cr Other Income                   |
 | Account credit refund  | Dr Receivable (buyer), Cr Cash / Bank / Wallet or Other Income |
 | Refund void            | Mirror entry; the money is held where it came from again       |
+| Sales return           | Dr Sales / VAT, Cr Receivable; Dr Inventory Loss, Cr COGS      |
+| Sales return void      | Mirror entry                                                   |
 | Credit used on a bill  | None (the money is already on the buyer's account)             |
 | Cheque received        | None until it clears                                           |
 | Cheque cleared         | As a payment: Dr Bank, Cr Receivable or Customer Advance       |
@@ -1128,6 +1157,7 @@ the receivables overview update immediately. For a sale without a buyer, the lin
 | `GET/POST /api/sales/cheques`                                      | Cheques received (by status, buyer, order) / record one  |
 | `POST /api/sales/cheques/:id/clear` / `bounce` / `proof`           | Mark cleared or bounced / attach its proof photo         |
 | `GET/POST /api/sales/refunds`, `GET …/:id`, `POST …/:id/void`      | Refunds to buyers (paid back, credit, charge) / void one |
+| `GET/POST /api/sales/returns`, `GET …/:id`, `POST …/:id/void`      | Sales returns on an invoice (credit notes) / void one    |
 | `GET /api/sales/summary?from=&to=`                                 | Today's sales, collections less refunds, and open dues   |
 
 Reads need `sales.view`; quotations and proformas need `sales.quotation.manage`; orders and
@@ -1139,7 +1169,9 @@ previous due needs `parties.view` or `accounts.receipts.record`; voiding an invo
 needs `sales.invoice.edit`; custom field definitions need `company.settings`. Refunds, and a
 cancel that settles money, are Accounts' work too: paying money back needs
 `accounts.payments.record`, keeping it as credit `accounts.receipts.record`, and keeping it as a
-cancellation charge `accounts.manage`. Cancel bodies are `{ reason, settle?: { kind, method?,
+cancellation charge `accounts.manage`. Sales returns, made and voided, need
+`accounts.receipts.record`; a return's body is `{ invoiceId, items: [{ orderItemId, quantity }],
+reason, returnDate?, notes? }`. Cancel bodies are `{ reason, settle?: { kind, method?,
 accountId?, refundDate?, reference?, notes? } }`; an order's cancel also takes
 `returnDelivered: true` to cancel after delivery, and the invoice void takes `{ reason,
 cancelOrder?, settle? }`. Server Actions are in

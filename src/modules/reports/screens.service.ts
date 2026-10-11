@@ -140,6 +140,7 @@ const sales = {
   invoice: (id: string) => `/sales/invoices/${encodeURIComponent(id)}`,
   order: (id: string) => `/sales/orders/${encodeURIComponent(id)}`,
   payment: (id: string) => `/sales/payments/${encodeURIComponent(id)}`,
+  salesReturn: (id: string) => `/sales/returns/${encodeURIComponent(id)}`,
 };
 
 /**
@@ -213,6 +214,9 @@ async function sourceLinks(
         break;
       case "Payment":
         link = salesView ? to(sales.payment(id), "Open the payment") : null;
+        break;
+      case "SalesReturn":
+        link = salesView ? to(sales.salesReturn(id), "Open the sales return") : null;
         break;
       case "PackingList":
       case "DeliveryChallan": {

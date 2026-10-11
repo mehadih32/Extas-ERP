@@ -295,7 +295,7 @@ describe("the Products words", () => {
     expect(Object.keys(BAD_STOCK_SOURCE_LABELS).sort()).toEqual(
       Object.values(BadStockSource).sort(),
     );
-    // Failed returns come from the returns check, never from the form.
+    // Sales returns put their pieces here themselves, never from the form.
     expect(BAD_STOCK_SOURCE_CHOICES.map((c) => c.value)).not.toContain("RETURN_QC");
   });
 

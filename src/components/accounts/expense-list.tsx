@@ -19,6 +19,7 @@ import { listExpenseRowsAction } from "@/server/actions/expenses.actions";
 import { ExpenseBadge } from "./badges";
 import { accountsHref } from "./labels";
 import { expenseListQuery, type ExpenseListView } from "./list-view";
+import { Amount } from "./privacy";
 
 /** "Paid from Cash in hand", "Owed to Rahim Fabrics", "Claim by Karim". */
 function howText(e: ExpenseRow, showClaimant: boolean): string {
@@ -64,7 +65,9 @@ export function ExpenseList({
             details={[e.details, howText(e, seesAll)].filter(Boolean).join(" · ")}
             footer={
               <>
-                <span className="font-medium">{money(e.amount, currency)}</span>
+                <span className="font-medium">
+                  <Amount>{money(e.amount, currency)}</Amount>
+                </span>
                 {e.hasReceipt && (
                   <span className="inline-flex items-center gap-1 text-muted-foreground">
                     <PaperclipIcon className="size-3.5" aria-hidden />
@@ -118,7 +121,7 @@ export function ExpenseList({
                   </div>
                 </TableCell>
                 <TableCell className="text-right font-medium whitespace-nowrap tabular-nums">
-                  {money(e.amount, currency)}
+                  <Amount>{money(e.amount, currency)}</Amount>
                 </TableCell>
               </TableRow>
             ))}

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { HeaderWithEye, PrivacyProvider } from "@/components/accounts/privacy";
 import { Stat } from "@/components/accounts/stat";
 import { SectionError } from "@/components/dashboard/section-error";
 import { FormAlert } from "@/components/forms/field";
@@ -19,6 +20,8 @@ import { requireCompanyPage } from "@/server/pages/guards";
 export const metadata: Metadata = { title: "Payroll" };
 
 const linkClass = "text-primary underline-offset-4 hover:underline";
+/** The totals hide behind the page's eye. */
+const SCOPE = "payroll";
 const one = (value: string | string[] | undefined) =>
   typeof value === "string" ? value : undefined;
 
@@ -55,88 +58,93 @@ export default async function PayrollRunPage({
       : undefined;
 
   return (
-    <div className="grid grid-cols-1 gap-8 md:gap-10">
-      <div className="grid gap-6">
-        <BackLink href={hrHref.payroll}>All payroll</BackLink>
-        <RecordHeader
-          eyebrow={`Payroll · ${formatCount(run.employees, currency)} ${run.employees === 1 ? "employee" : "employees"}`}
-          title={run.label}
-          badges={
-            <>
-              <PayrollBadge status={run.status} />
-              {run.journalEntry?.isReversed && <FlagBadge tone="closed">Reversed</FlagBadge>}
-            </>
-          }
-        />
-        <PayrollActions key={run.id} screen={screen} currency={currency} notice={notice} />
-        {notes.approve && <FormAlert tone="note">{notes.approve}</FormAlert>}
-        {notes.reopen && <FormAlert tone="note">{notes.reopen}</FormAlert>}
-      </div>
+    <PrivacyProvider>
+      <div className="grid grid-cols-1 gap-8 md:gap-10">
+        <div className="grid gap-6">
+          <BackLink href={hrHref.payroll}>All payroll</BackLink>
+          <HeaderWithEye>
+            <RecordHeader
+              eyebrow={`Payroll · ${formatCount(run.employees, currency)} ${run.employees === 1 ? "employee" : "employees"}`}
+              title={run.label}
+              badges={
+                <>
+                  <PayrollBadge status={run.status} />
+                  {run.journalEntry?.isReversed && <FlagBadge tone="closed">Reversed</FlagBadge>}
+                </>
+              }
+            />
+          </HeaderWithEye>
+          <PayrollActions key={run.id} screen={screen} currency={currency} notice={notice} />
+          {notes.approve && <FormAlert tone="note">{notes.approve}</FormAlert>}
+          {notes.reopen && <FormAlert tone="note">{notes.reopen}</FormAlert>}
+        </div>
 
-      <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Stat label="Gross pay" value={money(run.totals.gross, currency)} />
-        <Stat label="Deductions" value={money(run.totals.deductions, currency)} />
-        <Stat label="Take home" value={money(run.totals.net, currency)} />
-        <Stat
-          label="Still to pay"
-          value={run.status === "DRAFT" ? "–" : money(run.totals.unpaid, currency)}
-          hint={
-            run.status === "DRAFT"
-              ? "Once approved"
-              : isZero(run.totals.unpaid)
-                ? "All paid"
-                : undefined
-          }
-          alert={run.status !== "DRAFT" && !isZero(run.totals.unpaid)}
-        />
-      </dl>
+        <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <Stat label="Gross pay" value={money(run.totals.gross, currency)} scope={SCOPE} />
+          <Stat label="Deductions" value={money(run.totals.deductions, currency)} scope={SCOPE} />
+          <Stat label="Take home" value={money(run.totals.net, currency)} scope={SCOPE} />
+          <Stat
+            label="Still to pay"
+            value={run.status === "DRAFT" ? "–" : money(run.totals.unpaid, currency)}
+            scope={run.status === "DRAFT" ? undefined : SCOPE}
+            hint={
+              run.status === "DRAFT"
+                ? "Once approved"
+                : isZero(run.totals.unpaid)
+                  ? "All paid"
+                  : undefined
+            }
+            alert={run.status !== "DRAFT" && !isZero(run.totals.unpaid)}
+          />
+        </dl>
 
-      <section aria-labelledby="lines-heading" className="grid gap-4">
-        <h3 id="lines-heading" className="font-serif text-xl text-primary">
-          Employees
-        </h3>
-        <PayrollLines screen={screen} currency={currency} />
-      </section>
+        <section aria-labelledby="lines-heading" className="grid gap-4">
+          <h3 id="lines-heading" className="font-serif text-xl text-primary">
+            Employees
+          </h3>
+          <PayrollLines screen={screen} currency={currency} />
+        </section>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <Panel title="Salary payments" id="payments-heading">
-          <SalaryPayments screen={screen} currency={currency} />
-        </Panel>
-        <Panel title="In the books" id="books-heading">
-          <dl className="mt-4 grid gap-3 text-sm">
-            <div className="flex justify-between gap-3">
-              <dt className="text-muted-foreground">Prepared by</dt>
-              <dd>{run.createdBy?.name ?? "–"}</dd>
-            </div>
-            <div className="flex justify-between gap-3">
-              <dt className="text-muted-foreground">Approved by</dt>
-              <dd>{run.approvedBy?.name ?? "Not yet"}</dd>
-            </div>
-            <div className="flex justify-between gap-3">
-              <dt className="text-muted-foreground">Journal entry</dt>
-              <dd>
-                {run.journalEntry ? (
-                  can.openJournal ? (
-                    <Link href={hrHref.journal(run.journalEntry.id)} className={linkClass}>
-                      {run.journalEntry.number}
-                    </Link>
-                  ) : (
-                    run.journalEntry.number
-                  )
-                ) : (
-                  "Posted when approved"
-                )}
-              </dd>
-            </div>
-            {run.notes && (
-              <div className="grid gap-1 border-t pt-3">
-                <dt className="text-muted-foreground">Notes</dt>
-                <dd className="whitespace-pre-line">{run.notes}</dd>
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <Panel title="Salary payments" id="payments-heading">
+            <SalaryPayments screen={screen} currency={currency} />
+          </Panel>
+          <Panel title="In the books" id="books-heading">
+            <dl className="mt-4 grid gap-3 text-sm">
+              <div className="flex justify-between gap-3">
+                <dt className="text-muted-foreground">Prepared by</dt>
+                <dd>{run.createdBy?.name ?? "–"}</dd>
               </div>
-            )}
-          </dl>
-        </Panel>
+              <div className="flex justify-between gap-3">
+                <dt className="text-muted-foreground">Approved by</dt>
+                <dd>{run.approvedBy?.name ?? "Not yet"}</dd>
+              </div>
+              <div className="flex justify-between gap-3">
+                <dt className="text-muted-foreground">Journal entry</dt>
+                <dd>
+                  {run.journalEntry ? (
+                    can.openJournal ? (
+                      <Link href={hrHref.journal(run.journalEntry.id)} className={linkClass}>
+                        {run.journalEntry.number}
+                      </Link>
+                    ) : (
+                      run.journalEntry.number
+                    )
+                  ) : (
+                    "Posted when approved"
+                  )}
+                </dd>
+              </div>
+              {run.notes && (
+                <div className="grid gap-1 border-t pt-3">
+                  <dt className="text-muted-foreground">Notes</dt>
+                  <dd className="whitespace-pre-line">{run.notes}</dd>
+                </div>
+              )}
+            </dl>
+          </Panel>
+        </div>
       </div>
-    </div>
+    </PrivacyProvider>
   );
 }

@@ -209,6 +209,7 @@ model User {
   chequesRecorded   Cheque[]              @relation("ChequeRecordedBy")
   intakesReversed   StockIntake[]         @relation("IntakeReversedBy")
   settlementsMade   ProjectSettlement[]   @relation("SettlementMadeBy")
+  linesCleared      JournalLine[]         @relation("JournalLineClearedBy")
 }
 
 /// A signed-in device. `token` stores the SHA-256 hash of the cookie value, never
@@ -2011,19 +2012,24 @@ model JournalEntry {
 
 /// Debit/credit line. `partyId` builds each buyer's/supplier's lifetime ledger.
 model JournalLine {
-  id         String  @id @default(cuid())
-  entryId    String
-  accountId  String
-  partyId    String?
-  employeeId String?
-  debit      Decimal @default(0) @db.Decimal(14, 2)
-  credit     Decimal @default(0) @db.Decimal(14, 2)
-  memo       String?
+  id          String    @id @default(cuid())
+  entryId     String
+  accountId   String
+  partyId     String?
+  employeeId  String?
+  debit       Decimal   @default(0) @db.Decimal(14, 2)
+  credit      Decimal   @default(0) @db.Decimal(14, 2)
+  memo        String?
+  /// Bank reconcile: when the line was ticked as matching the real bank statement, and by
+  /// whom. Empty until then; it never changes the amounts or the entry.
+  clearedAt   DateTime?
+  clearedById String?
 
-  entry    JournalEntry  @relation(fields: [entryId], references: [id], onDelete: Cascade)
-  account  LedgerAccount @relation(fields: [accountId], references: [id])
-  party    Party?        @relation(fields: [partyId], references: [id], onDelete: SetNull)
-  employee Employee?     @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+  entry     JournalEntry  @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  account   LedgerAccount @relation(fields: [accountId], references: [id])
+  party     Party?        @relation(fields: [partyId], references: [id], onDelete: SetNull)
+  employee  Employee?     @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+  clearedBy User?         @relation("JournalLineClearedBy", fields: [clearedById], references: [id], onDelete: SetNull)
 
   @@index([accountId])
   @@index([partyId])

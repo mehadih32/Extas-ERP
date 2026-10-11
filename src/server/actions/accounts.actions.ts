@@ -7,6 +7,7 @@ import { runAction } from "@/lib/result";
 import { requireAnyPermission, requireCompany, requirePermission } from "@/modules/auth/context";
 import * as assetScreens from "@/modules/accounts/asset-screens.service";
 import * as assets from "@/modules/accounts/asset.service";
+import * as reconcile from "@/modules/accounts/bank-reconcile.service";
 import * as bank from "@/modules/accounts/bank.service";
 import * as capital from "@/modules/accounts/capital.service";
 import * as chart from "@/modules/accounts/chart.service";
@@ -230,6 +231,18 @@ export const listBankAccountsAction = async (query: { includeInactive?: unknown 
   runAction(async () => bank.listBankAccounts(await view(), query));
 export const getBankAccountAction = async (bankAccountId: string) =>
   runAction(async () => bank.getBankAccount(await view(), bankAccountId));
+
+// --- Bank reconcile -------------------------------------------------------------------------
+export const getReconcileScreenAction = async (bankAccountId: string, query: { show?: string }) =>
+  runAction(async () => reconcile.getReconcileScreen(await view(), bankAccountId, query));
+export const setBankLinesClearedAction = async (bankAccountId: string, input: unknown) =>
+  change(async () =>
+    reconcile.setBankLinesCleared(await manage(), bankAccountId, input, await getRequestMeta()),
+  );
+export const tickBankLinesUpToAction = async (bankAccountId: string, input: unknown) =>
+  change(async () =>
+    reconcile.tickBankLinesUpTo(await manage(), bankAccountId, input, await getRequestMeta()),
+  );
 export const createBankAccountAction = async (input: unknown) =>
   change(async () => {
     const created = await bank.createBankAccount(await manage(), input, await getRequestMeta());

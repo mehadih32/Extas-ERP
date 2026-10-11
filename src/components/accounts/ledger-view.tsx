@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 
 import { OffBadge } from "./badges";
 import { accountsHref, columnAmount, isNegative, signedMoney } from "./labels";
+import { Amount } from "./privacy";
 
 /*
  * A ledger or a bank statement on screen: the figures for the days chosen,
@@ -22,7 +23,13 @@ import { accountsHref, columnAmount, isNegative, signedMoney } from "./labels";
  * tablets up), each opening its journal entry for people who see the journal.
  */
 
-export type LedgerFigure = { label: string; value: string; hint?: string; alert?: boolean };
+/** One figure; its value hides behind the page's eye, and a hint naming an amount wraps it in <Amount>. */
+export type LedgerFigure = {
+  label: string;
+  value: string;
+  hint?: React.ReactNode;
+  alert?: boolean;
+};
 
 export function LedgerSummary({
   figures,
@@ -46,7 +53,7 @@ export function LedgerSummary({
                 f.alert && "text-destructive",
               )}
             >
-              {f.value}
+              <Amount>{f.value}</Amount>
             </dd>
             {f.hint && <dd className="mt-1 text-[0.8125rem] text-muted-foreground">{f.hint}</dd>}
           </div>
@@ -136,12 +143,13 @@ export function LedgerLines({
             )}
             <div className="mt-3 flex items-baseline justify-between gap-3 border-t pt-3 text-sm tabular-nums">
               <span>
-                {columnAmount(line.left, currency)
-                  ? `${columns[0]} ${columnAmount(line.left, currency)}`
-                  : `${columns[1]} ${columnAmount(line.right, currency)}`}
+                {columnAmount(line.left, currency) ? columns[0] : columns[1]}{" "}
+                <Amount>
+                  {columnAmount(line.left, currency) || columnAmount(line.right, currency)}
+                </Amount>
               </span>
               <span className={cn("font-medium", isNegative(line.balance) && "text-destructive")}>
-                {signedMoney(line.balance, currency)}
+                <Amount>{signedMoney(line.balance, currency)}</Amount>
               </span>
             </div>
           </li>
@@ -180,10 +188,14 @@ export function LedgerLines({
                   )}
                 </TableCell>
                 <TableCell className="text-right whitespace-nowrap tabular-nums">
-                  {columnAmount(line.left, currency)}
+                  {columnAmount(line.left, currency) && (
+                    <Amount>{columnAmount(line.left, currency)}</Amount>
+                  )}
                 </TableCell>
                 <TableCell className="text-right whitespace-nowrap tabular-nums">
-                  {columnAmount(line.right, currency)}
+                  {columnAmount(line.right, currency) && (
+                    <Amount>{columnAmount(line.right, currency)}</Amount>
+                  )}
                 </TableCell>
                 <TableCell
                   className={cn(
@@ -191,7 +203,7 @@ export function LedgerLines({
                     isNegative(line.balance) && "text-destructive",
                   )}
                 >
-                  {signedMoney(line.balance, currency)}
+                  <Amount>{signedMoney(line.balance, currency)}</Amount>
                 </TableCell>
               </TableRow>
             ))}

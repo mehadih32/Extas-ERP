@@ -62,11 +62,21 @@ export function PrivacyProvider({ children }: { children: React.ReactNode }) {
   return <PrivacyContext value={value}>{children}</PrivacyContext>;
 }
 
+/** The scope of amounts that only the eye at the top of the page shows. */
+const PAGE_SCOPE = "page";
+
 /**
- * An amount, or *** while its card is hidden. The stars take the plain muted
- * colour, so a red (negative) amount does not give itself away.
+ * An amount, or *** while its card (or, with no scope, the page) is hidden. The
+ * stars take the plain muted colour, so a red (negative) amount does not give
+ * itself away.
  */
-export function Amount({ scope, children }: { scope: string; children: React.ReactNode }) {
+export function Amount({
+  scope = PAGE_SCOPE,
+  children,
+}: {
+  scope?: string;
+  children: React.ReactNode;
+}) {
   const privacy = usePrivacy();
   if (privacy.shown(scope)) return <>{children}</>;
   return (
@@ -93,6 +103,16 @@ export function PrivacyToggle({ className }: { className?: string }) {
       <Icon aria-hidden />
       {privacy.allShown ? "Hide amounts" : "Show amounts"}
     </Button>
+  );
+}
+
+/** A page's heading with the eye beside it (under it on phones, full width). */
+export function HeaderWithEye({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <div className="min-w-0">{children}</div>
+      <PrivacyToggle className="w-full shrink-0 sm:w-auto" />
+    </div>
   );
 }
 

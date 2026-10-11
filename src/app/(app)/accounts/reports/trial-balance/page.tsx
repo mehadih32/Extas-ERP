@@ -3,6 +3,7 @@ import Link from "next/link";
 
 import { accountsHref, columnAmount } from "@/components/accounts/labels";
 import { AccountsNoAccess } from "@/components/accounts/no-access";
+import { Amount, HeaderWithEye, PrivacyProvider } from "@/components/accounts/privacy";
 import { ReportAsOf } from "@/components/accounts/report-controls";
 import { asOfFrom } from "@/components/accounts/report-view";
 import { SectionError } from "@/components/dashboard/section-error";
@@ -59,114 +60,130 @@ export default async function TrialBalancePage({
   const r = result.ok ? result.data : null;
 
   return (
-    <section aria-labelledby="tb-heading" className="grid gap-6">
-      <BackLink href="/accounts/reports">Financial reports</BackLink>
-      <div>
-        <h2 id="tb-heading" className="font-serif text-2xl text-primary">
-          Trial balance
-        </h2>
-        {r && (
-          <p className="mt-1 text-sm text-muted-foreground">At the end of {formatDay(r.asOf)}</p>
-        )}
-      </div>
+    <PrivacyProvider>
+      <section aria-labelledby="tb-heading" className="grid gap-6">
+        <BackLink href="/accounts/reports">Financial reports</BackLink>
+        <HeaderWithEye>
+          <h2 id="tb-heading" className="font-serif text-2xl text-primary">
+            Trial balance
+          </h2>
+          {r && (
+            <p className="mt-1 text-sm text-muted-foreground">At the end of {formatDay(r.asOf)}</p>
+          )}
+        </HeaderWithEye>
 
-      <ReportAsOf asOf={asOf} today={today}>
-        {r ? (
-          r.lines.length === 0 ? (
-            <EmptyState title="Nothing in the books yet">
-              Balances show here once sales, payments and bills are recorded.
-            </EmptyState>
-          ) : (
-            <>
-              <FormAlert tone={r.balanced ? "success" : undefined}>
-                {r.balanced
-                  ? `Debits and credits both total ${money(r.totals.debit, currency)}.`
-                  : `Debits total ${money(r.totals.debit, currency)} but credits ${money(
-                      r.totals.credit,
-                      currency,
-                    )}. The books check shows where.`}
-              </FormAlert>
-              <Panel title="Balances" id="balances-heading">
-                <ul className="mt-4 grid divide-y md:hidden" aria-label="Balances">
-                  {r.lines.map((l) => (
-                    <li
-                      key={l.accountId}
-                      className="flex min-w-0 items-baseline justify-between gap-3 py-2.5 text-sm"
-                    >
-                      <Link
-                        href={accountsHref.account(l.accountId)}
-                        className={`min-w-0 break-words ${linkClass}`}
+        <ReportAsOf asOf={asOf} today={today}>
+          {r ? (
+            r.lines.length === 0 ? (
+              <EmptyState title="Nothing in the books yet">
+                Balances show here once sales, payments and bills are recorded.
+              </EmptyState>
+            ) : (
+              <>
+                <FormAlert tone={r.balanced ? "success" : undefined}>
+                  {r.balanced ? (
+                    <>
+                      Debits and credits both total{" "}
+                      <Amount>{money(r.totals.debit, currency)}</Amount>.
+                    </>
+                  ) : (
+                    <>
+                      Debits total <Amount>{money(r.totals.debit, currency)}</Amount> but credits{" "}
+                      <Amount>{money(r.totals.credit, currency)}</Amount>. The books check shows
+                      where.
+                    </>
+                  )}
+                </FormAlert>
+                <Panel title="Balances" id="balances-heading">
+                  <ul className="mt-4 grid divide-y md:hidden" aria-label="Balances">
+                    {r.lines.map((l) => (
+                      <li
+                        key={l.accountId}
+                        className="flex min-w-0 items-baseline justify-between gap-3 py-2.5 text-sm"
                       >
-                        <span className="mr-2 text-muted-foreground tabular-nums">{l.code}</span>
-                        {l.name}
-                      </Link>
-                      <span className="whitespace-nowrap tabular-nums">
-                        {owed(l.debit) ? "Dr " : "Cr "}
-                        {money(owed(l.debit) ? l.debit : l.credit, currency)}
+                        <Link
+                          href={accountsHref.account(l.accountId)}
+                          className={`min-w-0 break-words ${linkClass}`}
+                        >
+                          <span className="mr-2 text-muted-foreground tabular-nums">{l.code}</span>
+                          {l.name}
+                        </Link>
+                        <span className="whitespace-nowrap tabular-nums">
+                          {owed(l.debit) ? "Dr " : "Cr "}
+                          <Amount>{money(owed(l.debit) ? l.debit : l.credit, currency)}</Amount>
+                        </span>
+                      </li>
+                    ))}
+                    <li className="grid gap-1 pt-3 text-sm font-medium tabular-nums">
+                      <span className="flex justify-between gap-3">
+                        <span>Total debits</span>
+                        <span>
+                          <Amount>{money(r.totals.debit, currency)}</Amount>
+                        </span>
+                      </span>
+                      <span className="flex justify-between gap-3">
+                        <span>Total credits</span>
+                        <span>
+                          <Amount>{money(r.totals.credit, currency)}</Amount>
+                        </span>
                       </span>
                     </li>
-                  ))}
-                  <li className="grid gap-1 pt-3 text-sm font-medium tabular-nums">
-                    <span className="flex justify-between gap-3">
-                      <span>Total debits</span>
-                      <span>{money(r.totals.debit, currency)}</span>
-                    </span>
-                    <span className="flex justify-between gap-3">
-                      <span>Total credits</span>
-                      <span>{money(r.totals.credit, currency)}</span>
-                    </span>
-                  </li>
-                </ul>
-                <div className="mt-4 hidden md:block">
-                  <Table aria-label="Balances">
-                    <TableHeader>
-                      <TableRow className="hover:bg-transparent">
-                        <TableHead>Code</TableHead>
-                        <TableHead>Account</TableHead>
-                        <TableHead className="text-right">Debit</TableHead>
-                        <TableHead className="text-right">Credit</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {r.lines.map((l) => (
-                        <TableRow key={l.accountId}>
-                          <TableCell className="text-muted-foreground tabular-nums">
-                            {l.code}
+                  </ul>
+                  <div className="mt-4 hidden md:block">
+                    <Table aria-label="Balances">
+                      <TableHeader>
+                        <TableRow className="hover:bg-transparent">
+                          <TableHead>Code</TableHead>
+                          <TableHead>Account</TableHead>
+                          <TableHead className="text-right">Debit</TableHead>
+                          <TableHead className="text-right">Credit</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {r.lines.map((l) => (
+                          <TableRow key={l.accountId}>
+                            <TableCell className="text-muted-foreground tabular-nums">
+                              {l.code}
+                            </TableCell>
+                            <TableCell className="whitespace-normal">
+                              <Link href={accountsHref.account(l.accountId)} className={linkClass}>
+                                {l.name}
+                              </Link>
+                            </TableCell>
+                            <TableCell className="text-right whitespace-nowrap tabular-nums">
+                              {columnAmount(l.debit, currency) && (
+                                <Amount>{columnAmount(l.debit, currency)}</Amount>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right whitespace-nowrap tabular-nums">
+                              {columnAmount(l.credit, currency) && (
+                                <Amount>{columnAmount(l.credit, currency)}</Amount>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                        <TableRow className="border-t-2 hover:bg-transparent">
+                          <TableCell colSpan={2} className="font-medium">
+                            Total
                           </TableCell>
-                          <TableCell className="whitespace-normal">
-                            <Link href={accountsHref.account(l.accountId)} className={linkClass}>
-                              {l.name}
-                            </Link>
+                          <TableCell className="text-right font-medium whitespace-nowrap tabular-nums">
+                            <Amount>{money(r.totals.debit, currency)}</Amount>
                           </TableCell>
-                          <TableCell className="text-right whitespace-nowrap tabular-nums">
-                            {columnAmount(l.debit, currency)}
-                          </TableCell>
-                          <TableCell className="text-right whitespace-nowrap tabular-nums">
-                            {columnAmount(l.credit, currency)}
+                          <TableCell className="text-right font-medium whitespace-nowrap tabular-nums">
+                            <Amount>{money(r.totals.credit, currency)}</Amount>
                           </TableCell>
                         </TableRow>
-                      ))}
-                      <TableRow className="border-t-2 hover:bg-transparent">
-                        <TableCell colSpan={2} className="font-medium">
-                          Total
-                        </TableCell>
-                        <TableCell className="text-right font-medium whitespace-nowrap tabular-nums">
-                          {money(r.totals.debit, currency)}
-                        </TableCell>
-                        <TableCell className="text-right font-medium whitespace-nowrap tabular-nums">
-                          {money(r.totals.credit, currency)}
-                        </TableCell>
-                      </TableRow>
-                    </TableBody>
-                  </Table>
-                </div>
-              </Panel>
-            </>
-          )
-        ) : (
-          !result.ok && <FormAlert>{result.error.message}</FormAlert>
-        )}
-      </ReportAsOf>
-    </section>
+                      </TableBody>
+                    </Table>
+                  </div>
+                </Panel>
+              </>
+            )
+          ) : (
+            !result.ok && <FormAlert>{result.error.message}</FormAlert>
+          )}
+        </ReportAsOf>
+      </section>
+    </PrivacyProvider>
   );
 }

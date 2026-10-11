@@ -325,7 +325,10 @@ export const hrHelp: HelpSection = {
           text: "হাজিরা বা ছুটি বদলালে “Work it out again” চাপুন। খসড়া দরকার না হলে “Delete the draft”।",
         },
       ],
-      tips: ["খসড়া তৈরির পর অন্য একজন (Super Admin) অনুমোদন দেন। পরের নির্দেশিকা দেখুন।"],
+      tips: [
+        "খসড়া তৈরির পর অন্য একজন (Super Admin) অনুমোদন দেন। পরের নির্দেশিকা দেখুন।",
+        "বেতনের তালিকা বা মাসের পাতা খুললে টাকার অঙ্ক *** দেখায়, যাতে পাশের কেউ না দেখে। দেখতে ওপরের “Show amounts” চাপুন, আবার লুকাতে “Hide amounts”।",
+      ],
     },
     {
       slug: "hr-payroll-approve-pay",

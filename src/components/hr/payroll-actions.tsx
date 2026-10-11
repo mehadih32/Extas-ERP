@@ -14,6 +14,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { PaidFromFields } from "@/components/accounts/money-fields";
+import { Amount } from "@/components/accounts/privacy";
 import { Field, FormAlert } from "@/components/forms/field";
 import { ChoiceList } from "@/components/parties/choice-list";
 import { AMOUNT_HINT, readAmount, textOf } from "@/components/products/form-values";
@@ -636,15 +637,21 @@ export function PayrollLines({ screen, currency }: { screen: PayrollScreen; curr
             <dl className="mt-3 grid grid-cols-3 gap-2 border-t pt-3 text-sm tabular-nums">
               <div>
                 <dt className="text-[0.75rem] text-muted-foreground">Gross</dt>
-                <dd>{money(i.grossPay, currency)}</dd>
+                <dd>
+                  <Amount>{money(i.grossPay, currency)}</Amount>
+                </dd>
               </div>
               <div>
                 <dt className="text-[0.75rem] text-muted-foreground">Deductions</dt>
-                <dd>{money(i.totalDeductions, currency)}</dd>
+                <dd>
+                  <Amount>{money(i.totalDeductions, currency)}</Amount>
+                </dd>
               </div>
               <div>
                 <dt className="text-[0.75rem] text-muted-foreground">Take home</dt>
-                <dd className="font-medium">{money(i.netPay, currency)}</dd>
+                <dd className="font-medium">
+                  <Amount>{money(i.netPay, currency)}</Amount>
+                </dd>
               </div>
             </dl>
             {(i.note || can.change) && (
@@ -690,16 +697,20 @@ export function PayrollLines({ screen, currency }: { screen: PayrollScreen; curr
                   )}
                 </TableCell>
                 <TableCell className="text-right whitespace-nowrap tabular-nums">
-                  {money(i.salary, currency)}
+                  <Amount>{money(i.salary, currency)}</Amount>
                 </TableCell>
                 <TableCell className="text-right whitespace-nowrap tabular-nums">
-                  {isZero(additions(i)) ? "–" : money(additions(i), currency)}
+                  {isZero(additions(i)) ? "–" : <Amount>{money(additions(i), currency)}</Amount>}
                 </TableCell>
                 <TableCell className="text-right whitespace-nowrap tabular-nums">
-                  {isZero(i.totalDeductions) ? "–" : money(i.totalDeductions, currency)}
+                  {isZero(i.totalDeductions) ? (
+                    "–"
+                  ) : (
+                    <Amount>{money(i.totalDeductions, currency)}</Amount>
+                  )}
                 </TableCell>
                 <TableCell className="text-right font-medium whitespace-nowrap tabular-nums">
-                  {money(i.netPay, currency)}
+                  <Amount>{money(i.netPay, currency)}</Amount>
                 </TableCell>
                 <TableCell className="text-right whitespace-nowrap">
                   {can.change
@@ -777,7 +788,7 @@ export function SalaryPayments({ screen, currency }: { screen: PayrollScreen; cu
               <span
                 className={`text-sm whitespace-nowrap tabular-nums ${p.voidedAt ? "text-muted-foreground line-through" : ""}`}
               >
-                {money(p.amount, currency)}
+                <Amount>{money(p.amount, currency)}</Amount>
               </span>
               {p.canVoid && (
                 <Button

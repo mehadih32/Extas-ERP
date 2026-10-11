@@ -365,12 +365,21 @@ Built one module at a time, each in its own pull request. So far:
     supplier's bill under the FOB Goods head, the company's own accessories issued from the
     store, and QC under the QC & Inspection head, so the landed cost is complete.
   - **Deliveries**: goods from the factory, as drafts and confirmed. A delivery takes the
-    pieces for each colour and size, with A-grade and B-grade apart, and the warehouse, with
-    the packing list attached. Confirming moves the pieces into stock at the project's share
-    of the cost, all the rest of it, or a cost typed in, split so a B-grade piece carries a
-    percentage of an A-grade piece's cost, or with both costs typed. The last delivery can
-    complete the project. A confirmed delivery can be undone with a reason, which takes the
-    pieces back out and leaves a draft copy to correct.
+    pieces for each colour and size, good (A-grade) and B-grade apart, and the warehouse, with
+    the packing list attached. A project with pieces to make per colour and size opens the
+    receiving grid on its styles: each box shows the pieces still to come ("All in" once
+    they are, "5 over" in amber past the order), and **Fill in what is still to come** puts
+    them all in as good pieces to adjust. Confirming moves the pieces into stock at the
+    project's share of the cost, all the rest of it, or a cost typed in, split so a B-grade
+    piece carries a percentage of an A-grade piece's cost, or with both costs typed. The last
+    delivery can complete the project; ticking that shows how many pieces are short and, for
+    people who see costs, the one cost every piece will carry. A confirmed delivery can be
+    undone with a reason, which takes the pieces back out and leaves a draft copy to correct.
+    Completing a project lists the pieces short of the target as wastage (per colour and size
+    on its pieces to make, and "Short (wastage)" in its details), with no loss booked, and
+    evens every piece received out to one cost: what reached stock ÷ the pieces received, so
+    1,00,000 over 970 pieces is 103.09 each whichever delivery brought them. The pieces' stock
+    cost follows at once, so later sales show the real margin.
   - **Bills**: supplier bills for production, each shared across one or more projects and
     cost heads, due or paid now, with a photo of the bill. A bill's page pays the supplier
     or voids it. Money paid now (a bill, a cost, a payment) comes out of the exact cash, bank
@@ -1257,7 +1266,19 @@ of the project's cost from work in progress into inventory. That share follows t
 still expected (300 of 1,000 take 30%), and the final delivery takes the rest. Within the
 delivery the cost is split per piece in one of three ways: equally, with B-grade valued at a
 ratio of A-grade (half by default), or as typed in. Each SKU's average cost for that grade is
-re-weighted, so sales are costed at what the goods cost to make.
+re-weighted, so sales are costed at what the goods cost to make. The delivery form's `plan`
+gives each SKU of the project's target grid its pieces to make and those received so far.
+
+**One cost a piece.** A factory that delivers short leaves its missing pieces' cost in the
+pieces received (the owner's choice), and completing a project makes it exact: everything
+its confirmed deliveries carried into stock is spread again over every piece received, the
+way the last delivery split cost (equally, or B-grade at its ratio; typed costs are kept).
+Each delivery line keeps the difference in `StockIntakeLine.costAdjustment`. For pieces still
+in stock it goes into their SKU grade's average cost; for pieces already gone (the newest
+are taken as the ones left) it goes to Cost of Goods Sold, and only that move between the two
+is posted, under the project. The pieces short of the target are wastage: listed, with no
+loss posted. Undoing a delivery of a completed project takes the evening out back first, so
+the delivery leaves at the cost it came in at; completing again evens out anew.
 
 **Undoing a delivery.** A delivery moved to stock by mistake (wrong counts, wrong SKUs, the
 wrong project) can be undone with a reason, as long as the warehouse still has that many free
@@ -1268,14 +1289,15 @@ If the stock's value moved in between (other deliveries came and went), the smal
 booked to Production & Inventory Losses so the inventory account keeps matching the stock.
 With `redraft` a draft copy opens, linked to the undone one, to correct and confirm again.
 
-| Event                        | Entry                                                    |
-| ---------------------------- | -------------------------------------------------------- |
-| Supplier bill                | Dr Work in Progress (per project), Cr Payable (supplier) |
-| Supplier paid                | Dr Payable (supplier), Cr Cash / Bank / Wallet           |
-| Cost paid without a supplier | Dr Work in Progress, Cr Cash / Bank / Wallet             |
-| Delivery moved to stock      | Dr Finished Goods Inventory, Cr Work in Progress         |
-| Unrecovered cost written off | Dr Production & Inventory Losses, Cr Work in Progress    |
-| Delivery undone              | Mirror of the delivery entry, plus any value difference  |
+| Event                        | Entry                                                     |
+| ---------------------------- | --------------------------------------------------------- |
+| Supplier bill                | Dr Work in Progress (per project), Cr Payable (supplier)  |
+| Supplier paid                | Dr Payable (supplier), Cr Cash / Bank / Wallet            |
+| Cost paid without a supplier | Dr Work in Progress, Cr Cash / Bank / Wallet              |
+| Delivery moved to stock      | Dr Finished Goods Inventory, Cr Work in Progress          |
+| Unrecovered cost written off | Dr Production & Inventory Losses, Cr Work in Progress     |
+| Delivery undone              | Mirror of the delivery entry, plus any value difference   |
+| Project completed            | Inventory and Cost of Goods Sold, for pieces already gone |
 
 | Endpoint                                                            | Purpose                                                    |
 | ------------------------------------------------------------------- | ---------------------------------------------------------- |

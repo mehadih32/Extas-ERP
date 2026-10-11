@@ -16,6 +16,9 @@ import { boardColumnOf, boardColumns, nextStage } from "@/modules/production/boa
 import {
   allocateIntakeCost,
   deliveryCostShare,
+  evenCostPerPiece,
+  evenOutPieceCost,
+  inStockShare,
   planIntakeCost,
 } from "@/modules/production/costing";
 import {
@@ -221,6 +224,90 @@ describe("delivery costing", () => {
       final: false,
     });
     expect(manual.total.toFixed(2)).toBe("2850.00");
+  });
+});
+
+describe("one cost for every piece of a completed project", () => {
+  const fixed = (v: { toFixed(n: number): string } | null) => (v ? v.toFixed(2) : null);
+
+  it("spreads all that reached stock over every piece received", () => {
+    // 60 pieces at 100, then the last 30 took the rest at 166.67: 11,000 over 90.
+    const even = evenOutPieceCost({
+      lines: [
+        { grade: "A_GRADE", quantity: 60, unitCost: 100 },
+        { grade: "A_GRADE", quantity: 30, unitCost: "166.6667" },
+      ],
+      method: "EQUAL_PER_PIECE",
+    })!;
+    expect(fixed(even.total)).toBe("11000.00");
+    expect(even.pieces).toBe(90);
+    expect(even.unitCosts.map((c) => c.toFixed(4))).toEqual(["122.2222", "122.2222"]);
+    expect({ a: fixed(even.perPiece.a), b: fixed(even.perPiece.b) }).toEqual({
+      a: "122.22",
+      b: null,
+    });
+    // The first gain what the last give up (to the cent the per-piece rounding leaves).
+    expect(even.adjustments.map((a) => a.toFixed(2))).toEqual(["1333.33", "-1333.34"]);
+  });
+
+  it("keeps B-grade at its share, and keeps typed costs", () => {
+    const even = evenOutPieceCost({
+      lines: [
+        { grade: "A_GRADE", quantity: 70, unitCost: 120 },
+        { grade: "B_GRADE", quantity: 20, unitCost: 75 },
+      ],
+      method: "B_GRADE_RATIO",
+      bGradeRatio: 0.5,
+    })!;
+    // 8,400 + 1,500 = 9,900 over 70 + 10 shares.
+    expect({ a: fixed(even.perPiece.a), b: fixed(even.perPiece.b) }).toEqual({
+      a: "123.75",
+      b: "61.88",
+    });
+    const lines = [{ grade: "A_GRADE" as const, quantity: 5, unitCost: 95 }];
+    expect(evenOutPieceCost({ lines, method: "MANUAL" })).toBeNull();
+    expect(evenOutPieceCost({ lines: [], method: "EQUAL_PER_PIECE" })).toBeNull();
+    // B-grade valued at nothing cannot carry the cost alone.
+    expect(
+      evenOutPieceCost({
+        lines: [{ grade: "B_GRADE", quantity: 5, unitCost: 10 }],
+        method: "B_GRADE_RATIO",
+        bGradeRatio: 0,
+      }),
+    ).toBeNull();
+  });
+
+  it("says what a piece would cost once evened out", () => {
+    const cost = (args: Parameters<typeof evenCostPerPiece>[0]) => {
+      const result = evenCostPerPiece(args);
+      return result && { a: fixed(result.a), b: fixed(result.b) };
+    };
+    expect(cost({ aPieces: 89, bPieces: 1, total: 11000, method: "EQUAL_PER_PIECE" })).toEqual({
+      a: "122.22",
+      b: "122.22",
+    });
+    expect(
+      cost({ aPieces: 70, bPieces: 20, total: 10000, method: "B_GRADE_RATIO", bGradeRatio: 0.5 }),
+    ).toEqual({ a: "125.00", b: "62.50" });
+    expect(cost({ aPieces: 0, bPieces: 4, total: 400, method: "EQUAL_PER_PIECE" })).toEqual({
+      a: null,
+      b: "100.00",
+    });
+    expect(cost({ aPieces: 0, bPieces: 0, total: 400, method: "EQUAL_PER_PIECE" })).toBeNull();
+    expect(cost({ aPieces: 5, bPieces: 0, total: 400, method: "MANUAL" })).toBeNull();
+  });
+
+  it("puts the change on pieces still in stock, the newest first", () => {
+    const lines = [
+      { quantity: 30, change: -1333.33 }, // the last delivery, all in stock
+      { quantity: 40, change: 888.89 }, // the first: 10 of them gone
+    ];
+    // 60 in stock: the last 30, then 30 of the first 40.
+    expect(inStockShare(lines, 60).toFixed(2)).toBe("-666.66");
+    expect(inStockShare(lines, 100).toFixed(2)).toBe("-444.44");
+    expect(inStockShare(lines, 0).toFixed(2)).toBe("0.00");
+    expect(inStockShare(lines, -3).toFixed(2)).toBe("0.00");
+    expect(inStockShare([{ quantity: 0, change: 5 }, ...lines], 30).toFixed(2)).toBe("-1333.33");
   });
 });
 

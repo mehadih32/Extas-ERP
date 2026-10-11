@@ -119,3 +119,105 @@ export function planIntakeCost(args: {
     remainingAfter: wip.minus(total),
   };
 }
+
+/**
+ * "Into the received pieces": when a project is completed, all that its
+ * deliveries carried into stock is spread again over every piece received, the
+ * way its last delivery split cost (equal per piece, or B-grade at its share).
+ * Each piece then costs the same whichever delivery brought it, and pieces
+ * short of the target carry no cost of their own. Returns each line's cost per
+ * piece and the value it gains (or gives up) against the cost it came in at;
+ * null when the last delivery's costs were typed per piece (manual), which are
+ * kept, or the split cannot be made.
+ */
+export function evenOutPieceCost(args: {
+  lines: Array<{ grade: StockGrade; quantity: number; unitCost: Num }>;
+  method: CostAllocationMethod;
+  bGradeRatio?: Num | null;
+}) {
+  if (args.method === "MANUAL" || args.lines.length === 0) return null;
+  const total = money(args.lines.reduce((s, l) => s.plus(dec(l.unitCost).times(l.quantity)), ZERO));
+  let unitCosts: Prisma.Decimal[];
+  try {
+    unitCosts = allocateIntakeCost(
+      args.lines,
+      args.method,
+      total,
+      args.bGradeRatio ?? DEFAULT_B_GRADE_RATIO,
+    );
+  } catch (error) {
+    if (error instanceof AppError) return null;
+    throw error;
+  }
+  const costOf = (grade: StockGrade) => {
+    const i = args.lines.findIndex((l) => l.grade === grade && l.quantity > 0);
+    return i < 0 ? null : unitCosts[i]!;
+  };
+  return {
+    total,
+    pieces: args.lines.reduce((s, l) => s + l.quantity, 0),
+    perPiece: { a: costOf("A_GRADE"), b: costOf("B_GRADE") },
+    unitCosts,
+    adjustments: args.lines.map((l, i) =>
+      unitCosts[i]!.minus(dec(l.unitCost))
+        .times(l.quantity)
+        .toDecimalPlaces(4, Prisma.Decimal.ROUND_HALF_UP),
+    ),
+  };
+}
+
+/**
+ * What a piece of each grade would cost once evened out: `total` over the A-
+ * and B-grade pieces, split as `method` splits it (null for manual costing, or
+ * with no pieces).
+ */
+export function evenCostPerPiece(args: {
+  aPieces: number;
+  bPieces: number;
+  total: Num;
+  method: CostAllocationMethod;
+  bGradeRatio?: Num | null;
+}) {
+  const lines = [
+    { grade: "A_GRADE" as const, quantity: args.aPieces },
+    { grade: "B_GRADE" as const, quantity: args.bPieces },
+  ].filter((l) => l.quantity > 0);
+  if (args.method === "MANUAL" || lines.length === 0) return null;
+  try {
+    const costs = allocateIntakeCost(
+      lines,
+      args.method,
+      args.total,
+      args.bGradeRatio ?? DEFAULT_B_GRADE_RATIO,
+    );
+    return {
+      a: args.aPieces > 0 ? costs[0]! : null,
+      b: args.bPieces > 0 ? costs[lines.length - 1]! : null,
+    };
+  } catch (error) {
+    if (error instanceof AppError) return null;
+    throw error;
+  }
+}
+
+/**
+ * How much of a change in a SKU grade's value lands on pieces still in stock,
+ * the rest having gone with pieces already sold. The newest pieces are taken
+ * to be the ones left: of `onHand` pieces, the latest delivery's count first.
+ * `lines` are newest first.
+ */
+export function inStockShare(
+  lines: ReadonlyArray<{ quantity: number; change: Num }>,
+  onHand: number,
+): Prisma.Decimal {
+  let left = Math.max(onHand, 0);
+  let share = ZERO;
+  for (const line of lines) {
+    if (left <= 0) break;
+    if (line.quantity <= 0) continue;
+    const kept = Math.min(line.quantity, left);
+    left -= kept;
+    share = share.plus(dec(line.change).times(kept).dividedBy(line.quantity));
+  }
+  return share;
+}

@@ -109,7 +109,8 @@ function GradeBox({
 
 /**
  * What an A-grade and a B-grade piece cost: what each delivery carried into
- * stock with its pieces, per piece, next to the cost expected for a piece.
+ * stock with its pieces, per piece, next to the cost expected for a piece. Once
+ * the project is completed, every piece received carries the same cost.
  */
 export function GradeCosts({
   costs,
@@ -120,22 +121,33 @@ export function GradeCosts({
   targetQuantity: number;
   currency: string;
 }) {
+  const received = costs.grades.a.pieces + costs.grades.b.pieces;
   return (
     <Panel title="Cost a piece" id="grade-heading">
       <dl className="mt-4 grid grid-cols-2 gap-3">
         <GradeBox grade="A" figures={costs.grades.a} currency={currency} />
         <GradeBox grade="B" figures={costs.grades.b} currency={currency} />
       </dl>
-      <p className="mt-4 text-[0.8125rem] leading-relaxed text-muted-foreground">
-        At {money(costs.totalCost, currency)} so far over {formatCount(targetQuantity, currency)}{" "}
-        pieces, a piece is expected to cost{" "}
-        <span className="font-medium text-foreground tabular-nums">
-          {money(costs.estimatedCostPerPiece, currency)}
-        </span>
-        .
-        {costs.actualCostPerPiece &&
-          ` The pieces received carried ${money(costs.actualCostPerPiece, currency)} each on average.`}
-      </p>
+      {costs.evened ? (
+        <p className="mt-4 text-[0.8125rem] leading-relaxed text-muted-foreground">
+          Completed: the {money(costs.inStock, currency)} that reached stock is spread over all{" "}
+          {formatCount(received, currency)} pieces received, so each costs the same whichever
+          delivery brought it.
+          {received < targetQuantity &&
+            ` The ${formatCount(targetQuantity - received, currency)} pieces short are wastage.`}
+        </p>
+      ) : (
+        <p className="mt-4 text-[0.8125rem] leading-relaxed text-muted-foreground">
+          At {money(costs.totalCost, currency)} so far over {formatCount(targetQuantity, currency)}{" "}
+          pieces, a piece is expected to cost{" "}
+          <span className="font-medium text-foreground tabular-nums">
+            {money(costs.estimatedCostPerPiece, currency)}
+          </span>
+          .
+          {costs.actualCostPerPiece &&
+            ` The pieces received carried ${money(costs.actualCostPerPiece, currency)} each on average.`}
+        </p>
+      )}
     </Panel>
   );
 }

@@ -8,7 +8,12 @@ import { FormAlert } from "@/components/forms/field";
 import { DeliveryBadge } from "@/components/production/badges";
 import { IntakeActions } from "@/components/production/intake-actions";
 import { IntakeLines } from "@/components/production/intake-lines";
-import { COSTING_LABELS, pieces, productionHref } from "@/components/production/labels";
+import {
+  COSTING_LABELS,
+  evenCostText,
+  pieces,
+  productionHref,
+} from "@/components/production/labels";
 import { ProductionNoAccess } from "@/components/production/no-access";
 import { BackLink } from "@/components/settings/back-link";
 import { Fact, Panel, RecordHeader, Totals } from "@/components/sales/detail-bits";
@@ -190,6 +195,16 @@ export default async function DeliveryPage({
                     { label: "Into stock", amount: costs.totalCost, strong: true },
                   ]}
                 />
+              )}
+              {costs.evened && d.project && (
+                <p className="mt-4 border-t pt-4 text-[0.8125rem] leading-relaxed text-muted-foreground">
+                  When {d.project.code} was completed, every piece it received was evened out to one
+                  cost:{" "}
+                  <span className="font-medium text-foreground tabular-nums">
+                    {evenCostText(costs.evened, currency)}
+                  </span>
+                  .
+                </p>
               )}
               {costs.preview?.error === null && (
                 <p className="mt-4 border-t pt-4 text-[0.8125rem] leading-relaxed text-muted-foreground">

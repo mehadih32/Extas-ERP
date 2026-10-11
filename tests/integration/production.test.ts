@@ -1646,13 +1646,13 @@ run("starting production from sales", () => {
       [
         "Navy",
         [
-          { target: 40, received: 40 },
-          { target: 30, received: 0 },
+          { target: 40, received: 40, short: 0 },
+          { target: 30, received: 0, short: 0 },
         ],
         70,
         40,
       ],
-      ["White", [{ target: 20, received: 5 }, null], 20, 5],
+      ["White", [{ target: 20, received: 5, short: 0 }, null], 20, 5],
     ]);
 
     // Editing the grid changes the total; the total alone cannot drift from it.

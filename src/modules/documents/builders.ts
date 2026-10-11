@@ -920,22 +920,28 @@ export async function receiptDocument(
     });
   }
 
-  // Money on account that paid invoices: one line per invoice, and what is kept as advance.
+  // Money on account: one line per invoice it paid, the earlier balance, and what is kept.
   const paid = r.allocations.filter((a) => a.releasedAt === null);
-  const kept = paid.reduce((left, a) => left.minus(a.amount), r.amount);
+  const split = !order && !proforma ? r.onAccount : null;
+  const splitRows = split
+    ? [
+        ...paid.map((a) => ({
+          cells: [
+            `Payment against invoice ${a.invoice.number} (order ${a.order.number})`,
+            money(a.amount, currency),
+          ],
+        })),
+        ...(isPositive(split.towardEarlier)
+          ? [{ cells: ["Toward the earlier balance", money(split.towardEarlier, currency)] }]
+          : []),
+        ...(isPositive(split.kept)
+          ? [{ cells: ["Kept as advance balance on account", money(split.kept, currency)] }]
+          : []),
+      ]
+    : [];
   const particularRows =
-    !order && !proforma && paid.length > 0
-      ? [
-          ...paid.map((a) => ({
-            cells: [
-              `Payment against invoice ${a.invoice.number} (order ${a.order.number})`,
-              money(a.amount, currency),
-            ],
-          })),
-          ...(isPositive(kept)
-            ? [{ cells: ["Kept as advance balance on account", money(kept, currency)] }]
-            : []),
-        ]
+    splitRows.length > 1 || paid.length > 0
+      ? splitRows
       : [{ cells: [particulars, money(r.amount, currency)] }];
 
   const reference = r.reference?.trim();

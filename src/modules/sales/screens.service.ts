@@ -1376,14 +1376,9 @@ export async function getPaymentScreen(ctx: CompanyContext, paymentId: string) {
         released: a.releasedAt !== null,
       })),
       /** On the buyer's account: what this receipt left as their advance balance. */
-      advanceKept:
-        !p.order && !p.proforma && p.party
-          ? fixed(
-              p.allocations
-                .filter((a) => a.releasedAt === null)
-                .reduce((left, a) => left.minus(a.amount), p.amount),
-            )
-          : null,
+      advanceKept: p.onAccount ? fixed(p.onAccount.kept) : null,
+      /** On the buyer's account: what paid what they owed beyond their invoices. */
+      towardEarlier: p.onAccount?.towardEarlier.gt(0) ? fixed(p.onAccount.towardEarlier) : null,
       cheque: p.cheque
         ? {
             chequeNo: p.cheque.chequeNo,

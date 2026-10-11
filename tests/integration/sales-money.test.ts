@@ -13,6 +13,7 @@ import * as catalog from "@/modules/inventory/catalog.service";
 import * as matrix from "@/modules/inventory/matrix.service";
 import * as stock from "@/modules/inventory/stock.service";
 import * as styles from "@/modules/inventory/style.service";
+import * as ledger from "@/modules/parties/ledger.service";
 import * as parties from "@/modules/parties/party.service";
 import * as cheques from "@/modules/sales/cheque.service";
 import * as credit from "@/modules/sales/credit.service";
@@ -183,6 +184,39 @@ run("money on a buyer's account", () => {
     expect(receipt.allocations.map((a) => [a.order.number, a.amount.toFixed(2)])).toEqual([
       [second.number, "700.00"],
     ]);
+  });
+
+  it("settles an earlier balance owed beyond the invoices before keeping any advance", async () => {
+    const env = await setup();
+    await ledger.setOpeningBalance(env.ctx, env.buyer.id, { amount: 1000 });
+    const order = await sell(env, 1); // 900
+    expect(await position(env)).toMatchObject({
+      balance: "1900.00",
+      openDues: "900.00",
+      credit: "0.00",
+    });
+
+    const paid = await onAccount(env, 2500, { oldestFirst: true });
+    expect(paid.allocated.map((a) => a.amount)).toEqual(["900.00"]);
+    // 900 pays the invoice, 1,000 the opening balance, and only 600 is advance balance.
+    expect(paid.advanceKept).toBe("600.00");
+    expect(paid.payment.advanceKept?.toFixed(2)).toBe("600.00");
+    expect(await position(env)).toMatchObject({ balance: "-600.00", credit: "600.00" });
+    const receipt = await payments.getPaymentReceipt(env.accountsCtx, paid.payment.id);
+    expect(receipt.onAccount).toEqual({
+      towardEarlier: expect.anything(),
+      kept: expect.anything(),
+    });
+    expect(receipt.onAccount!.towardEarlier.toFixed(2)).toBe("1000.00");
+    const screen = await screens.getPaymentScreen(env.accountsCtx, paid.payment.id);
+    expect(screen.payment).toMatchObject({ towardEarlier: "1000.00", advanceKept: "600.00" });
+
+    // Voiding the invoice gives its 900 back as credit, and the receipt says so.
+    const invoice = await invoiceOf(order.id);
+    await documents.voidInvoice(env.ctx, invoice.id, { reason: "Billed twice" });
+    const after = await screens.getPaymentScreen(env.accountsCtx, paid.payment.id);
+    expect(after.payment).toMatchObject({ towardEarlier: "1000.00", advanceKept: "1500.00" });
+    expect(await position(env)).toMatchObject({ credit: "1500.00" });
   });
 
   it("pays the invoices chosen, refusing amounts that do not fit", async () => {

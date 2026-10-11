@@ -25,6 +25,7 @@ import { oldestFirst } from "@/modules/sales/allocation";
 import {
   allocateTx,
   type AllocationRequest,
+  creditPosition,
   lockBuyerCredit,
   openDuesOf,
 } from "@/modules/sales/credit.service";
@@ -162,6 +163,15 @@ export async function receivePaymentTx(
     }
   }
 
+  // On the buyer's account: what they owed beyond their invoices (an opening balance),
+  // read before this money is posted. What pays no invoice settles that first.
+  const owedBeyondInvoices =
+    !orderId && !input.proformaId && partyId
+      ? await creditPosition(tx, companyId, partyId).then((p) =>
+          Prisma.Decimal.max(p.balance.minus(p.openDues), 0),
+        )
+      : null;
+
   const accounts = await ensureControlAccounts(companyId, tx);
   const debitAccount = await cashAccountFor(tx, companyId, input.method, input.accountId);
   const paymentDate = input.paymentDate ?? new Date();
@@ -201,8 +211,6 @@ export async function receivePaymentTx(
       },
     ],
   });
-  await tx.payment.update({ where: { id: payment.id }, data: { journalEntryId: entry.id } });
-
   if (orderId) await refreshOrderPayments(tx, orderId);
   const allocated =
     allocations && partyId
@@ -214,8 +222,16 @@ export async function receivePaymentTx(
         })
       : [];
   const allocatedTotal = allocated.reduce((s, a) => s.plus(a.amount), money(0));
-  // On the buyer's account, what pays no invoice is kept as their advance balance.
-  const advanceKept = orderId || input.proformaId ? money(0) : amount.minus(allocatedTotal);
+  // On the buyer's account, what pays no invoice and no earlier balance is kept as their
+  // advance balance (kept on the receipt, which prints it).
+  const advanceKept =
+    owedBeyondInvoices === null
+      ? null
+      : Prisma.Decimal.max(amount.minus(allocatedTotal).minus(owedBeyondInvoices), 0);
+  await tx.payment.update({
+    where: { id: payment.id },
+    data: { journalEntryId: entry.id, advanceKept },
+  });
 
   let productionProject: { id: string; code: string } | null = null;
   if (proformaToCheck) {
@@ -234,15 +250,15 @@ export async function receivePaymentTx(
         allocated.length > 0
           ? `; paid ${allocated.map((a) => `${a.number} ${a.amount.toFixed(2)}`).join(", ")}`
           : ""
-      }${advanceKept.gt(0) ? `; ${advanceKept.toFixed(2)} kept as advance balance` : ""}`,
+      }${advanceKept?.gt(0) ? `; ${advanceKept.toFixed(2)} kept as advance balance` : ""}`,
     },
     tx,
   );
   return {
-    payment: { ...payment, journalEntryId: entry.id },
+    payment: { ...payment, journalEntryId: entry.id, advanceKept },
     productionProject,
     allocated: allocated.map((a) => ({ ...a, amount: a.amount.toFixed(2) })),
-    advanceKept: advanceKept.toFixed(2),
+    advanceKept: (advanceKept ?? money(0)).toFixed(2),
   };
 }
 
@@ -401,5 +417,34 @@ export async function getPaymentReceipt(ctx: CompanyContext, paymentId: string) 
     refundedToDate = money(refunded._sum.amount ?? 0);
     receivedToDate = money(agg._sum.amount ?? 0).minus(refundedToDate);
   }
-  return { ...payment, receivedToDate, refundedToDate, letterhead: await letterhead(ctx) };
+  return {
+    ...payment,
+    receivedToDate,
+    refundedToDate,
+    /** Money on the buyer's account: what it paid besides invoices, and what it left. */
+    onAccount: accountSplit(payment),
+    letterhead: await letterhead(ctx),
+  };
+}
+
+/**
+ * Money on a buyer's account, as its receipt shows it: what paid their earlier balance
+ * (owed beyond their invoices) and what is kept as advance balance, with the credit voided
+ * invoices gave back. Null when the receipt does not say: money on an order or proforma,
+ * or recorded before this was kept.
+ */
+function accountSplit(p: {
+  amount: Prisma.Decimal;
+  advanceKept: Prisma.Decimal | null;
+  allocations: Array<{ amount: Prisma.Decimal; releasedAt: Date | null }>;
+}) {
+  if (p.advanceKept === null) return null;
+  const allocated = p.allocations.reduce((sum, a) => sum.plus(a.amount), money(0));
+  const released = p.allocations
+    .filter((a) => a.releasedAt !== null)
+    .reduce((sum, a) => sum.plus(a.amount), money(0));
+  return {
+    towardEarlier: Prisma.Decimal.max(p.amount.minus(allocated).minus(p.advanceKept), 0),
+    kept: p.advanceKept.plus(released),
+  };
 }

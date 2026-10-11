@@ -19,6 +19,8 @@ import * as proofs from "@/modules/sales/proof.service";
 import * as quotations from "@/modules/sales/quotation.service";
 import * as pictures from "@/modules/sales/reference-image.service";
 import * as refunds from "@/modules/sales/refund.service";
+import * as returnScreens from "@/modules/sales/return-screens.service";
+import * as salesReturns from "@/modules/sales/return.service";
 import * as screens from "@/modules/sales/screens.service";
 import * as summary from "@/modules/sales/summary.service";
 
@@ -31,7 +33,7 @@ import * as summary from "@/modules/sales/summary.service";
  *   accounts.receipts.record  money received (also needed for a payment at checkout);
  *                             a refund kept as the buyer's credit; using a buyer's
  *                             credit on an order; cheques (record, clear, bounce);
- *                             proof photos
+ *                             proof photos; sales returns (credit notes), made and voided
  *   accounts.payments.record  a refund paid back to the buyer
  *   accounts.manage           a refund kept as a cancellation charge
  *   sales.invoice.edit        void invoices (cancelling an invoiced order needs it too)
@@ -412,6 +414,32 @@ export const listRefundsAction = async (query: unknown) =>
   runAction(async () => refunds.listRefunds(await view(), query));
 export const getRefundAction = async (refundId: string) =>
   runAction(async () => refunds.getRefund(await view(), refundId));
+
+// --- Sales returns (credit notes) ----------------------------------------------
+export const listSalesReturnRowsAction = async (query: unknown) =>
+  runAction(async () => returnScreens.listSalesReturnRows(await view(), query));
+export const getSalesReturnListAction = async (query: unknown) =>
+  runAction(async () => returnScreens.getSalesReturnList(await view(), query));
+export const getSalesReturnScreenAction = async (returnId: string) =>
+  runAction(async () => returnScreens.getSalesReturnScreen(await view(), returnId));
+/** An invoice's lines with the pieces that can come back, for the return form. */
+export const getSalesReturnFormAction = async (invoiceId: string) =>
+  runAction(async () => returnScreens.getSalesReturnForm(await receipts(), invoiceId));
+/** Invoices a return can be recorded on, by invoice or order number or buyer. */
+export const findReturnableInvoicesAction = async (search: string) =>
+  runAction(async () => returnScreens.findReturnableInvoices(await receipts(), search));
+/** Goods back on an invoice: credited to the buyer, the pieces to Damage & QC Rejects. */
+export const createSalesReturnAction = async (input: unknown) =>
+  change(async () =>
+    ref(await salesReturns.createSalesReturn(await receipts(), input, await getRequestMeta())),
+  );
+/** Voids a return recorded by mistake, while its credit is unused. */
+export const voidSalesReturnAction = async (returnId: string, input: unknown) =>
+  change(async () =>
+    ref(
+      await salesReturns.voidSalesReturn(await receipts(), returnId, input, await getRequestMeta()),
+    ),
+  );
 
 export const getSalesSummaryAction = async (query: unknown) =>
   runAction(async () => summary.getSalesSummary(await view(), query));

@@ -297,6 +297,7 @@ run("Sales screens", () => {
               "/sales/proformas",
               "/sales/invoices",
               "/sales/payments",
+              "/sales/returns",
             ]
           : [],
       );
@@ -415,6 +416,7 @@ run("Sales screens", () => {
         expect(screen.costs, who).toEqual({
           cost: "3000.00",
           netSales: "5400.00",
+          returned: null,
           margin: "2400.00",
           marginPercent: 44.4,
           estimated: false,

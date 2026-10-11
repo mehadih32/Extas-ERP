@@ -3,7 +3,7 @@ import { SectionTabs } from "@/components/shell/section-tabs";
 import { requireCompanyPage } from "@/server/pages/guards";
 
 /**
- * The Sales area: orders, quotations, proforma invoices, invoices and payments,
+ * The Sales area: orders, quotations, proforma invoices, invoices, payments and returns,
  * each tab shown only to people whose role opens it (components/sales/tabs.ts).
  * Each page checks again through its Server Action.
  */

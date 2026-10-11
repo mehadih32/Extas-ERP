@@ -35,6 +35,7 @@ import { getPaymentReceipt, listPayments } from "@/modules/sales/payment.service
 import { getProforma, listProformas } from "@/modules/sales/proforma.service";
 import { getQuotation, listQuotations } from "@/modules/sales/quotation.service";
 import { listRefunds } from "@/modules/sales/refund.service";
+import { returnsOf } from "@/modules/sales/return.service";
 import {
   canCancelOrder,
   canCancelProforma,
@@ -53,6 +54,7 @@ import {
   canSetLogistics,
   canRefundOrder,
   canRefundProforma,
+  canReturnOnInvoice,
   canSetShipmentDate,
   canVoidInvoice,
   canVoidRefund,
@@ -71,7 +73,8 @@ import { money } from "@/modules/sales/totals";
  *   sales.order.create        orders, invoices, packing lists and challans
  *   sales.invoice.edit        voiding an invoice (and cancelling an invoiced order)
  *   sales.force_override      selling beyond the stock available
- *   accounts.receipts.record  money received; keeping a refund as the buyer's credit
+ *   accounts.receipts.record  money received; keeping a refund as the buyer's credit;
+ *                             sales returns (credit notes)
  *   accounts.payments.record  money paid back to a buyer
  *   accounts.manage           money kept as a cancellation charge
  * and the rules in sales/rules.ts. What goods cost, and the margin, show only to
@@ -127,6 +130,22 @@ function voidChoiceFor(
 }
 
 export type VoidChoice = ReturnType<typeof voidChoiceFor>;
+
+/** The sales returns on an invoice or order, for its screen ("Returned" panel). */
+function presentReturns(rows: Awaited<ReturnType<typeof returnsOf>>, tz: string) {
+  return rows.map((r) => ({
+    id: r.id,
+    number: r.number,
+    returnedOn: localDay(r.receivedAt, tz),
+    pieces: r.items.reduce((s, i) => s + i.quantity, 0),
+    amount: fixed(r.amount),
+    voided: r.voidedAt !== null,
+  }));
+}
+
+/** Pieces on returns that stand (not void). */
+const piecesBack = (returns: ReturnType<typeof presentReturns>) =>
+  returns.reduce((s, r) => (r.voided ? s : s + r.pieces), 0);
 
 type PartyLike = { id: string; code: string; name: string };
 const partyOf = (party: PartyLike | null) =>
@@ -822,9 +841,15 @@ function orderLines(order: OrderData, facts: Awaited<ReturnType<typeof variantFa
 
 /**
  * What the goods cost and the margin they earn (financials only): delivered
- * pieces at the cost they left at, the rest at today's average cost.
+ * pieces at the cost they left at, the rest at today's average cost. Goods
+ * that came back on sales returns are taken off the sales (after their
+ * discount share); their cost stays in, as they went to Damage & QC Rejects.
  */
-function orderCosts(order: OrderData, facts: Awaited<ReturnType<typeof variantFacts>>) {
+function orderCosts(
+  order: OrderData,
+  facts: Awaited<ReturnType<typeof variantFacts>>,
+  returned: Amount,
+) {
   let cost = money(0);
   let estimated = false;
   for (const item of order.items) {
@@ -834,12 +859,15 @@ function orderCosts(order: OrderData, facts: Awaited<ReturnType<typeof variantFa
   }
   cost = money(cost);
   const netSales = order.subtotal.minus(order.discount);
-  const margin = netSales.minus(cost);
+  const kept = netSales.minus(returned);
+  const margin = kept.minus(cost);
   return {
     cost: fixed(cost),
     netSales: fixed(netSales),
+    /** Goods back on sales returns, after their discount share (null: none). */
+    returned: isPositive(returned) ? fixed(returned) : null,
     margin: fixed(margin),
-    marginPercent: netSales.gt(0) ? Number(margin.dividedBy(netSales).times(100).toFixed(1)) : null,
+    marginPercent: kept.gt(0) ? Number(margin.dividedBy(kept).times(100).toFixed(1)) : null,
     /** Some pieces are not delivered yet, so their cost is today's average. */
     estimated,
   };
@@ -871,7 +899,7 @@ export async function getOrderScreen(ctx: CompanyContext, orderId: string) {
   const needsVoid = cancellable && invoice !== null && !access.voidInvoice;
   const needsSettling = cancellable && isPositive(held) && kinds.length === 0;
   // The buyer's money (previous due, unused credit), for people who see balances or take money.
-  const [credits, cheques, position] = await Promise.all([
+  const [credits, cheques, position, returnRows] = await Promise.all([
     ctx.db.creditAllocation.findMany({
       where: { orderId: order.id, releasedAt: null },
       select: {
@@ -900,8 +928,11 @@ export async function getOrderScreen(ctx: CompanyContext, orderId: string) {
     order.partyId && (access.receive || access.openBuyer)
       ? creditPosition(prisma, ctx.company.id, order.partyId)
       : null,
+    returnsOf(ctx, { orderId: order.id }),
   ]);
   const due = order.total.minus(order.paidAmount);
+  const returns = presentReturns(returnRows, tz);
+  const standing = returns.filter((r) => !r.voided).length;
 
   return {
     order: {
@@ -981,6 +1012,8 @@ export async function getOrderScreen(ctx: CompanyContext, orderId: string) {
         isAdvance: p.isAdvance,
       })),
       refunds: presentRefunds(ctx, order.refunds, { order }),
+      /** Sales returns (credit notes) on its invoice, void ones too. */
+      returns,
       /** The buyer's credit (advance balance) put against this order's invoice. */
       credits: credits.map((c) => ({
         id: c.id,
@@ -1004,7 +1037,15 @@ export async function getOrderScreen(ctx: CompanyContext, orderId: string) {
       ? { previousDue: fixed(position.previousDue), credit: fixed(position.credit) }
       : null,
     /** Cost of the goods and the margin: only for people who see the financials. */
-    costs: access.seeCosts ? orderCosts(order, facts) : null,
+    costs: access.seeCosts
+      ? orderCosts(
+          order,
+          facts,
+          returnRows
+            .filter((r) => r.voidedAt === null)
+            .reduce((s, r) => s.plus(r.goodsValue).minus(r.discount), money(0)),
+        )
+      : null,
     can: {
       receive: access.receive && canReceiveOnOrder(order).ok,
       /** Money above the due may be kept as the buyer's advance balance (invoiced, named buyer). */
@@ -1017,7 +1058,15 @@ export async function getOrderScreen(ctx: CompanyContext, orderId: string) {
         position !== null &&
         position.credit.gt(0),
       issueInvoice: access.sell && canIssueInvoice(order).ok,
-      voidInvoice: access.voidInvoice && invoice !== null && canVoidInvoice(invoice).ok,
+      voidInvoice: access.voidInvoice && invoice !== null && canVoidInvoice(invoice, standing).ok,
+      /** Record goods coming back on its invoice (Accounts). */
+      makeReturn:
+        access.receive &&
+        invoice !== null &&
+        canReturnOnInvoice({ ...invoice, partyId: order.partyId }, order, {
+          delivered,
+          returned: piecesBack(returns),
+        }).ok,
       packingList: access.sell && canCreatePackingList(order).ok,
       challan: access.sell && canCreateChallan(order, remaining).ok,
       shipmentDate: access.sell && canSetShipmentDate(order).ok,
@@ -1236,14 +1285,18 @@ export async function getInvoiceScreen(ctx: CompanyContext, invoiceId: string) {
           partyId: true,
           warehouseId: true,
           invoice: { select: { number: true, status: true } },
+          items: { select: { quantity: true } },
         },
       },
     },
   });
-  const delivered = [...(await deliveredByVariant(prisma, order.id)).values()].reduce(
-    (a, b) => a + b,
-    0,
-  );
+  const [byVariant, returnRows] = await Promise.all([
+    deliveredByVariant(prisma, order.id),
+    returnsOf(ctx, { invoiceId }),
+  ]);
+  const delivered = [...byVariant.values()].reduce((a, b) => a + b, 0);
+  const returns = presentReturns(returnRows, tz);
+  const voidVerdict = canVoidInvoice(doc, returns.filter((r) => !r.voided).length);
   const live = doc.status !== "VOID";
   const mayRevise = access.sell && access.reviseInvoice && live;
   const edit = canEditOrder(order, delivered, { revise: true });
@@ -1320,6 +1373,8 @@ export async function getInvoiceScreen(ctx: CompanyContext, invoiceId: string) {
         amount: fixed(r.amount),
         kind: r.kind,
       })),
+      /** Sales returns (credit notes) made on it, void ones too. */
+      returns,
       credits: doc.credits.map((c, index) => ({
         key: `${index}`,
         usedOn: localDay(c.date, tz),
@@ -1337,7 +1392,17 @@ export async function getInvoiceScreen(ctx: CompanyContext, invoiceId: string) {
     },
     can: {
       receive: access.receive && open && canReceiveOnOrder(order).ok,
-      void: access.voidInvoice && canVoidInvoice(doc).ok,
+      void: access.voidInvoice && voidVerdict.ok,
+      /** Record goods coming back on it (Accounts). */
+      makeReturn:
+        access.receive &&
+        canReturnOnInvoice({ ...doc, partyId: order.partyId }, order, {
+          delivered: Math.min(
+            delivered,
+            order.items.reduce((s, i) => s + i.quantity, 0),
+          ),
+          returned: piecesBack(returns),
+        }).ok,
       /** Edit its order, revising the invoice under the same number (Smart Edit). */
       edit: mayRevise && edit.ok,
       /** Share page 1 as a picture (anyone who may print it). */
@@ -1350,6 +1415,8 @@ export async function getInvoiceScreen(ctx: CompanyContext, invoiceId: string) {
     notes: {
       /** Why editing, which this person could otherwise do, is locked ("fully paid"). */
       edit: mayRevise && !edit.ok ? edit.message : null,
+      /** Why voiding, which this person could otherwise do, is not offered (a return stands). */
+      void: access.voidInvoice && live && !voidVerdict.ok ? voidVerdict.message : null,
     },
   };
 }

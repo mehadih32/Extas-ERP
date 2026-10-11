@@ -1,6 +1,6 @@
 "use client";
 
-import { BanknoteIcon, FileXIcon, LockIcon, PencilIcon } from "lucide-react";
+import { BanknoteIcon, FileXIcon, LockIcon, PackageXIcon, PencilIcon } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
@@ -22,7 +22,8 @@ type Open = "receive" | "void" | null;
  * What can be done with an invoice, from the flags the screen came with
  * (screen.can): Accounts receives a payment against its order; people who may
  * edit invoices edit it (Smart Edit, kept under the same number, until it is
- * fully paid) and void it (Safe Void). Everyone who sees it can print it and
+ * fully paid) and void it (Safe Void) while no sales return stands on it;
+ * Accounts records goods coming back on it (Sales return). Everyone who sees it can print it and
  * share page 1 as a picture on WhatsApp. Used on the invoice page and in the
  * invoice hub; `onChanged` runs after a payment or a void.
  */
@@ -102,6 +103,14 @@ export function InvoiceActions({
               </Link>
             </Button>
           )}
+          {can.makeReturn && (
+            <Button asChild variant="outline" className="flex-1 sm:flex-none">
+              <Link href={`/sales/returns/new?invoice=${encodeURIComponent(inv.id)}`}>
+                <PackageXIcon aria-hidden />
+                Sales return
+              </Link>
+            </Button>
+          )}
           {can.void && screen.voidChoice && (
             <Button
               type="button"
@@ -116,12 +125,12 @@ export function InvoiceActions({
         </div>
       </div>
 
-      {screen.notes.edit && (
-        <p className="flex items-start gap-2 text-sm text-muted-foreground">
+      {[screen.notes.edit, screen.notes.void].filter(Boolean).map((note) => (
+        <p key={note} className="flex items-start gap-2 text-sm text-muted-foreground">
           <LockIcon className="mt-0.5 size-4 shrink-0" aria-hidden />
-          {screen.notes.edit}
+          {note}
         </p>
-      )}
+      ))}
       {notice && <FormAlert tone="success">{notice}</FormAlert>}
 
       {open === "receive" && (

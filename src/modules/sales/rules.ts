@@ -193,8 +193,18 @@ export function canIssueInvoice(o: OrderState): Verdict {
   return ALLOWED;
 }
 
-export function canVoidInvoice(invoice: Pick<InvoiceState, "status">): Verdict {
+/**
+ * An invoice is voided while nothing came back on it: a sales return (not
+ * void) holds its prices, so that return is voided first.
+ */
+export function canVoidInvoice(invoice: Pick<InvoiceState, "status">, returns = 0): Verdict {
   if (invoice.status === "VOID") return refuse("CONFLICT", "This invoice is already void.");
+  if (returns > 0) {
+    return refuse(
+      "CONFLICT",
+      "Goods on this invoice came back on a sales return. Void the return first to void the invoice.",
+    );
+  }
   return ALLOWED;
 }
 
@@ -393,4 +403,57 @@ export function canVoidRefund(
     );
   }
   return ALLOWED;
+}
+
+// --- Sales returns -------------------------------------------------------------------
+
+/**
+ * Goods come back against a live invoice once some of it was delivered, while
+ * delivered pieces are left that have not come back. The value becomes the
+ * buyer's credit, so a walk-in sale (no buyer account) takes no return.
+ */
+export function canReturnOnInvoice(
+  invoice: InvoiceState & { partyId: string | null },
+  order: Pick<OrderState, "status">,
+  pieces: { delivered: number; returned: number },
+): Verdict {
+  if (invoice.status === "VOID") return refuse("CONFLICT", `Invoice ${invoice.number} is void.`);
+  if (order.status === "CANCELLED") return refuse("CONFLICT", "Its order is cancelled.");
+  if (!invoice.partyId) {
+    return refuse(
+      "CONFLICT",
+      "A walk-in sale has no buyer account to keep the credit on, so it takes no sales return.",
+    );
+  }
+  if (pieces.delivered <= 0) {
+    return refuse(
+      "CONFLICT",
+      `Nothing on ${invoice.number} has been delivered yet, so nothing can come back.`,
+    );
+  }
+  if (pieces.returned >= pieces.delivered) {
+    return refuse("CONFLICT", `Every piece delivered on ${invoice.number} has already come back.`);
+  }
+  return ALLOWED;
+}
+
+export function canVoidSalesReturn(r: { number: string; voidedAt: Date | null }): Verdict {
+  if (r.voidedAt) return refuse("CONFLICT", `${r.number} is already void.`);
+  return ALLOWED;
+}
+
+/**
+ * An order's status from its pieces: Returned once every piece ordered came
+ * back, Part returned while some did, otherwise Delivered or (part delivered)
+ * Processing, as a delivery leaves it.
+ */
+export function statusAfterReturns(pieces: {
+  ordered: number;
+  delivered: number;
+  returned: number;
+}): SalesOrderStatus {
+  if (pieces.returned > 0) {
+    return pieces.returned >= pieces.ordered ? "RETURNED" : "PARTIALLY_RETURNED";
+  }
+  return pieces.delivered >= pieces.ordered ? "DELIVERED" : "PROCESSING";
 }

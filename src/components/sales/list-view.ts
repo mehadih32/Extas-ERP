@@ -51,8 +51,21 @@ export type PaymentListView = {
 
 export const CHEQUE_FILTERS: readonly ChequeStatus[] = ["PENDING", "CLEARED", "BOUNCED"];
 
+export type ReturnListView = {
+  list: "returns";
+  /** Credit note or invoice number, or buyer. */
+  q: string;
+  from?: string;
+  to?: string;
+};
+
 export type SalesListView =
-  OrderListView | QuotationListView | ProformaListView | InvoiceListView | PaymentListView;
+  | OrderListView
+  | QuotationListView
+  | ProformaListView
+  | InvoiceListView
+  | PaymentListView
+  | ReturnListView;
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
@@ -64,6 +77,8 @@ export const ORDER_STATUSES: readonly SalesOrderStatus[] = [
   "PACKED",
   "PROCESSING",
   "DELIVERED",
+  "PARTIALLY_RETURNED",
+  "RETURNED",
   "CANCELLED",
 ];
 export const ORDER_CHANNEL_FILTERS: readonly SalesChannel[] = [
@@ -130,15 +145,24 @@ export function invoiceViewFrom(params: SearchParams): InvoiceListView {
   };
 }
 
+/** The from and to days in the address, earliest first. */
+function daysFrom(params: SearchParams) {
+  let from = dayParam(params.from);
+  let to = dayParam(params.to);
+  if (from && to && from > to) [from, to] = [to, from];
+  return { from, to };
+}
+
 export function paymentViewFrom(params: SearchParams): PaymentListView {
   const show = pick(["refunds", "cheques"] as const, one(params, "show")) ?? "received";
   if (show === "cheques") {
     return { list: "payments", show, chequeStatus: pick(CHEQUE_FILTERS, one(params, "status")) };
   }
-  let from = dayParam(params.from);
-  let to = dayParam(params.to);
-  if (from && to && from > to) [from, to] = [to, from];
-  return { list: "payments", show, from, to };
+  return { list: "payments", show, ...daysFrom(params) };
+}
+
+export function returnViewFrom(params: SearchParams): ReturnListView {
+  return { list: "returns", q: one(params, "q").slice(0, 100), ...daysFrom(params) };
 }
 
 /** The address-bar query for these filters: "?q=rahim&status=SENT", or "" when none are set. */
@@ -153,6 +177,9 @@ export function salesListSearch(view: SalesListView): string {
       if (view.from) params.set("from", view.from);
       if (view.to) params.set("to", view.to);
     }
+  } else if (view.list === "returns") {
+    if (view.from) params.set("from", view.from);
+    if (view.to) params.set("to", view.to);
   } else {
     if (view.status) params.set("status", view.status);
     if (view.list === "orders" && view.channel) params.set("channel", view.channel);
@@ -167,6 +194,7 @@ export function isSalesFiltered(view: SalesListView): boolean {
     return view.show === "cheques" ? Boolean(view.chequeStatus) : Boolean(view.from || view.to);
   }
   if (view.list === "proformas") return Boolean(view.status);
+  if (view.list === "returns") return Boolean(view.q.trim() || view.from || view.to);
   if (view.list === "orders") return Boolean(view.q.trim() || view.status || view.channel);
   return Boolean(view.q.trim() || view.status);
 }
@@ -210,4 +238,14 @@ export function invoiceListQuery(view: InvoiceListView, cursor?: string) {
 export function paymentListQuery(view: PaymentListView, cursor?: string) {
   if (view.show === "cheques") return { status: view.chequeStatus, cursor, take: SALES_PAGE_SIZE };
   return { from: view.from, to: view.to, cursor, take: SALES_PAGE_SIZE };
+}
+
+export function returnListQuery(view: ReturnListView, cursor?: string) {
+  return {
+    search: view.q.trim() || undefined,
+    from: view.from,
+    to: view.to,
+    cursor,
+    take: SALES_PAGE_SIZE,
+  };
 }

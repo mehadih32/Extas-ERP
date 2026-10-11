@@ -7,7 +7,7 @@ const day = z.iso.date();
 
 /**
  * What to print: a sales document by id (a money receipt by its payment's id, a
- * refund voucher by its refund's id), a statement, a stock sheet, the blank
+ * refund voucher by its refund's id, a credit note by its sales return's id), a statement, a stock sheet, the blank
  * letterhead or a payslip (by its payroll line's id).
  */
 export const printRequestSchema = z.discriminatedUnion("type", [
@@ -18,6 +18,7 @@ export const printRequestSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("DELIVERY_CHALLAN"), id }),
   z.object({ type: z.literal("PAYMENT_RECEIPT"), id }),
   z.object({ type: z.literal("REFUND_VOUCHER"), id }),
+  z.object({ type: z.literal("SALES_RETURN"), id }),
   z.object({
     type: z.literal("LEDGER_STATEMENT"),
     partyId: id,

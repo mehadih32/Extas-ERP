@@ -603,6 +603,17 @@ async function sourceLink(
             : null;
       return { title: `Refund ${refund.number}`, href };
     }
+    case "RETURN": {
+      const salesReturn = await ctx.db.salesReturn.findUnique({
+        where: { id: sourceId },
+        select: { number: true },
+      });
+      if (!salesReturn) return null;
+      return {
+        title: `Sales return ${salesReturn.number}`,
+        href: sales ? `/sales/returns/${sourceId}` : null,
+      };
+    }
     case "EXPENSE": {
       const expense = await ctx.db.expense.findUnique({
         where: { id: sourceId },

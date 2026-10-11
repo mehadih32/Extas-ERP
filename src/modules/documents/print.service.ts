@@ -84,6 +84,7 @@ export const PRINT_INFO: Record<
   },
   PAYMENT_RECEIPT: { label: "Money receipt", plural: "money receipts", permission: "sales.view" },
   REFUND_VOUCHER: { label: "Refund voucher", plural: "refund vouchers", permission: "sales.view" },
+  SALES_RETURN: { label: "Credit note", plural: "credit notes", permission: "sales.view" },
   LEDGER_STATEMENT: {
     label: "Statement of account",
     plural: "statements",
@@ -418,6 +419,7 @@ export const SHORT_KEPT_TYPES: readonly PrintType[] = [
   "DELIVERY_CHALLAN",
   "PAYMENT_RECEIPT",
   "REFUND_VOUCHER",
+  "SALES_RETURN",
 ];
 
 const PURGE_BATCH = 500;

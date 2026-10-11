@@ -26,7 +26,7 @@ export type SalesTotals = { orders: number; pieces: number; net: Prisma.Decimal 
 /** Orders whose live invoice was issued in the range, with their net goods value. */
 function invoicedOrders(companyId: string, range: SalesRange) {
   return Prisma.sql`
-    SELECT so.id, so.channel, so.subtotal - so.discount AS net, inv."issueDate",
+    SELECT so.id, so.channel, so."partyId", so.subtotal - so.discount AS net, inv."issueDate",
            (SELECT COALESCE(SUM(i.quantity), 0) FROM "SalesOrderItem" i WHERE i."orderId" = so.id) AS pieces
     FROM "Invoice" inv
     JOIN "SalesOrder" so ON so.id = inv."orderId"
@@ -461,4 +461,43 @@ export async function profitLeaders(
     return { id: r.id, pieces: Number(r.pieces), net, cost, profit: net.minus(cost) };
   };
   return { categories: categories.map(present), buyers: buyers.map(present) };
+}
+
+export type TopBuyer = SalesTotals & { partyId: string; code: string; name: string };
+
+/**
+ * The buyers who bought the most in the range, by sales after discounts (then
+ * pieces), best first. Walk-in sales (no buyer account) are left out: they are
+ * retail, not one buyer.
+ */
+export async function topBuyers(
+  companyId: string,
+  range: SalesRange,
+  limit: number,
+): Promise<TopBuyer[]> {
+  const rows = await prisma.$queryRaw<
+    Array<{
+      partyId: string;
+      code: string;
+      name: string;
+      orders: number;
+      pieces: bigint;
+      net: Prisma.Decimal;
+    }>
+  >`
+    SELECT o."partyId", p.code, p.name, COUNT(*)::int AS orders,
+           SUM(o.pieces)::bigint AS pieces, SUM(o.net) AS net
+    FROM (${invoicedOrders(companyId, range)}) o
+    JOIN "Party" p ON p.id = o."partyId"
+    GROUP BY o."partyId", p.code, p.name
+    ORDER BY SUM(o.net) DESC, SUM(o.pieces) DESC, p.code
+    LIMIT ${limit}`;
+  return rows.map((r) => ({
+    partyId: r.partyId,
+    code: r.code,
+    name: r.name,
+    orders: r.orders,
+    pieces: Number(r.pieces),
+    net: new Prisma.Decimal(r.net),
+  }));
 }

@@ -4,18 +4,24 @@ import { cache, Suspense } from "react";
 
 import { PrivacyProvider } from "@/components/accounts/privacy";
 import { ActionZone } from "@/components/dashboard/action-zone";
+import { ActivityFeed } from "@/components/dashboard/activity-feed";
 import { homeRangeFrom } from "@/components/dashboard/home-range";
 import { HomeToolbar } from "@/components/dashboard/home-toolbar";
 import { Insights, type InsightsColumns } from "@/components/dashboard/insights";
 import { MetricCards } from "@/components/dashboard/metric-cards";
+import { Pipeline } from "@/components/dashboard/pipeline";
+import { Predictive } from "@/components/dashboard/predictive";
 import { Pulse } from "@/components/dashboard/pulse";
 import type { QuickActionKeys } from "@/components/dashboard/quick-actions";
 import { SalesTargetBar } from "@/components/dashboard/sales-target";
 import { SectionError } from "@/components/dashboard/section-error";
 import {
   ActionZoneSkeleton,
+  ActivityFeedSkeleton,
   InsightsSkeleton,
   MetricCardsSkeleton,
+  PipelineSkeleton,
+  PredictiveSkeleton,
   PulseSkeleton,
   SalesTargetSkeleton,
 } from "@/components/dashboard/skeletons";
@@ -28,14 +34,20 @@ import type { CompanyContext } from "@/modules/auth/context";
 import { actionZoneAccess, hasActionZone } from "@/modules/dashboard/action-zone.service";
 import { canSeeFinancials, canSeeSalesAmounts, canSeeStock } from "@/modules/dashboard/access";
 import { pulseAccess } from "@/modules/dashboard/home.service";
+import { canSeePipeline } from "@/modules/dashboard/pipeline.service";
+import { predictiveAccess } from "@/modules/dashboard/predictive.service";
 import type { HomeRange } from "@/modules/dashboard/schemas";
 import {
   getActionZoneAction,
+  getActivityFeedAction,
   getDashboardInsightsAction,
   getHomePulseAction,
   getHomeTopBarAction,
   getMetricCardsAction,
+  getPredictiveInsightsAction,
+  getProductionPipelineAction,
 } from "@/server/actions/dashboard.actions";
+import { cn } from "@/lib/utils";
 import { requireCompanyPage } from "@/server/pages/guards";
 
 export const metadata: Metadata = { title: "Dashboard" };
@@ -108,6 +120,24 @@ async function ActionZoneSection({ range }: { range: HomeRange }) {
   return <ActionZone data={result.data} />;
 }
 
+async function PredictiveSection({ range }: { range: HomeRange }) {
+  const result = await getPredictiveInsightsAction({ range });
+  if (!result.ok) return <SectionError title="Predictive insights" error={result.error} />;
+  return <Predictive data={result.data} />;
+}
+
+async function PipelineSection({ currency }: { currency: string }) {
+  const result = await getProductionPipelineAction();
+  if (!result.ok) return <SectionError title="Production pipeline" error={result.error} />;
+  return <Pipeline data={result.data} currency={currency} />;
+}
+
+async function ActivitySection() {
+  const result = await getActivityFeedAction({});
+  if (!result.ok) return <SectionError title="Live activity" error={result.error} />;
+  return <ActivityFeed initial={result.data} />;
+}
+
 async function KeyFigures() {
   const result = await getMetricCardsAction();
   if (!result.ok) return <SectionError title="Key figures" error={result.error} />;
@@ -131,8 +161,10 @@ async function InsightsSection({
  * greeting with today's pending tasks, a bar pinned to the top (the period, the
  * eye that shows or hides every amount, and the (+) quick actions), the monthly
  * sales target, The Pulse, the Action Zone (overdue invoices, low stock, pending
- * approvals), then the key figures and the Insights. What each
- * person sees follows the dashboard API's own permission checks: the money
+ * approvals), the predictive insights (stock runway, top buyer), the production
+ * pipeline beside the live activity feed, then the key figures and the
+ * Insights. What each person sees follows the dashboard API's own permission
+ * checks: the money
  * cards for dashboard.financials or accounts.view, the Insights for
  * dashboard.view or inventory.view, with sales values and costs only for those
  * who may see them. Every amount shows *** until the eye shows it.
@@ -151,6 +183,10 @@ export default async function DashboardPage({
   const hasPulse = pulse.sales || pulse.deliveries || pulse.production;
   const zone = actionZoneAccess(ctx);
   const hasZone = hasActionZone(zone);
+  const predictive = predictiveAccess(ctx);
+  const hasPredictive = predictive.runway || predictive.topBuyer;
+  const pipeline = canSeePipeline(ctx);
+  const noFigures = !financials && !stock && !hasPulse && !hasZone && !hasPredictive && !pipeline;
   const view = topSellersViewFrom(params, { canSortBySales: salesAmounts });
   const range = homeRangeFrom(params);
   const actions: QuickActionKeys = {
@@ -185,11 +221,21 @@ export default async function DashboardPage({
           className="mt-6"
           range={range}
           actions={actions}
-          showRange={hasPulse || zone.returns || zone.discounts}
+          showRange={hasPulse || zone.returns || zone.discounts || predictive.topBuyer}
           showEye={salesAmounts || financials}
         />
 
         <div className="mt-8 grid grid-cols-1 gap-12 md:mt-10 md:gap-16">
+          {noFigures && (
+            <section className="rounded-lg border bg-card px-6 py-12 text-center sm:px-10">
+              <p className="font-serif text-2xl text-primary">No figures to show here yet</p>
+              <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-muted-foreground">
+                Your role ({role}) does not include the dashboard&apos;s figures. Your administrator
+                can give you access to them. What you do in the app shows under Live activity.
+              </p>
+            </section>
+          )}
+
           {(salesAmounts || hasPulse) && (
             <div className="grid grid-cols-1 gap-8">
               {salesAmounts && (
@@ -211,6 +257,30 @@ export default async function DashboardPage({
             </Suspense>
           )}
 
+          {hasPredictive && (
+            <Suspense fallback={<PredictiveSkeleton />}>
+              <PredictiveSection range={range} />
+            </Suspense>
+          )}
+
+          {/* The pipeline, with the live feed on its right (under it on phones). */}
+          <div
+            className={cn(
+              "grid grid-cols-1 items-start gap-12 md:gap-16 lg:gap-8",
+              pipeline &&
+                "lg:grid-cols-[minmax(0,1fr)_minmax(0,24rem)] 2xl:grid-cols-[minmax(0,1fr)_minmax(0,28rem)]",
+            )}
+          >
+            {pipeline && (
+              <Suspense fallback={<PipelineSkeleton />}>
+                <PipelineSection currency={ctx.company.currency} />
+              </Suspense>
+            )}
+            <Suspense fallback={<ActivityFeedSkeleton />}>
+              <ActivitySection />
+            </Suspense>
+          </div>
+
           {financials && (
             <Suspense fallback={<MetricCardsSkeleton />}>
               <KeyFigures />
@@ -221,16 +291,6 @@ export default async function DashboardPage({
             <Suspense fallback={<InsightsSkeleton />}>
               <InsightsSection view={view} columns={{ salesAmounts, financials }} />
             </Suspense>
-          )}
-
-          {!financials && !stock && !hasPulse && !hasZone && (
-            <section className="rounded-lg border bg-card px-6 py-12 text-center sm:px-10">
-              <p className="font-serif text-2xl text-primary">Nothing to show here yet</p>
-              <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-muted-foreground">
-                Your role ({role}) does not include the dashboard&apos;s figures. Your administrator
-                can give you access to them.
-              </p>
-            </section>
           )}
         </div>
       </div>

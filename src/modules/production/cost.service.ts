@@ -7,9 +7,10 @@ import type {
 } from "@prisma/client";
 import type { z } from "zod";
 
-import { dayRange, toInstant } from "@/lib/dates";
+import { addDays, dayRange, localDay, toInstant } from "@/lib/dates";
 import type { Db } from "@/lib/db-types";
 import { AppError } from "@/lib/errors";
+import { formatAmount, formatInstantDay } from "@/lib/format";
 import { nextDocumentNumber } from "@/lib/numbering";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
@@ -176,6 +177,77 @@ async function loadCostHeads(ctx: CompanyContext, ids: string[]) {
 // Supplier bills (Split Bill) and supplier payments
 // =============================================================================
 
+/** A bill without the supplier's number counts as the same when its total matches within this many days. */
+export const DUPLICATE_BILL_DAYS = 3;
+
+/**
+ * Stops a bill or cost that looks entered already (not void), so the same bill
+ * is not booked twice: the supplier's same bill number; without a number, the
+ * same supplier and total within DUPLICATE_BILL_DAYS days; without a supplier,
+ * the same project, cost head and amount on the same day. A warning only: sent
+ * again with allowDuplicate, it goes through. The CONFLICT carries the match
+ * in details.allowDuplicate.
+ */
+async function assertNotDuplicate(
+  ctx: CompanyContext,
+  entry: {
+    total: Prisma.Decimal;
+    date: Date;
+    supplier?: { id: string; name: string };
+    supplierRef?: string | null;
+    projectId?: string;
+    headId?: string;
+  },
+) {
+  const tz = ctx.company.timezone;
+  const currency = ctx.company.currency;
+  const amount = (value: Prisma.Decimal.Value) => formatAmount(value, 2, currency);
+  const day = localDay(entry.date, tz);
+  let match: string | null = null;
+  if (entry.supplier) {
+    const ref = entry.supplierRef?.trim();
+    const near = dayRange(
+      addDays(day, -DUPLICATE_BILL_DAYS),
+      addDays(day, DUPLICATE_BILL_DAYS),
+      tz,
+    );
+    const bill = await ctx.db.supplierBill.findFirst({
+      where: {
+        supplierId: entry.supplier.id,
+        status: { not: "VOID" },
+        ...(ref
+          ? { supplierRef: { equals: ref, mode: "insensitive" } }
+          : { totalAmount: entry.total, billDate: { gte: near.start, lt: near.end } }),
+      },
+      select: { number: true, supplierRef: true, totalAmount: true, billDate: true },
+      orderBy: [{ billDate: "desc" }, { id: "desc" }],
+    });
+    if (bill) {
+      const what = `${amount(bill.totalAmount)} on ${formatInstantDay(bill.billDate, tz)}`;
+      match = ref
+        ? `${bill.number} from ${entry.supplier.name} already has their bill number ${bill.supplierRef}: ${what}. Is this the same bill?`
+        : `${bill.number} from ${entry.supplier.name} is also ${what}. Is this the same bill?`;
+    }
+  } else if (entry.projectId && entry.headId) {
+    const sameDay = dayRange(day, day, tz);
+    const cost = await ctx.db.expense.findFirst({
+      where: {
+        projectId: entry.projectId,
+        headId: entry.headId,
+        amount: entry.total,
+        voidedAt: null,
+        date: { gte: sameDay.start, lt: sameDay.end },
+      },
+      select: { number: true, head: { select: { name: true } } },
+      orderBy: [{ date: "desc" }, { id: "desc" }],
+    });
+    if (cost) {
+      match = `${cost.number} is also ${amount(entry.total)} for ${cost.head.name} on this project, the same day. Is this the same cost?`;
+    }
+  }
+  if (match) throw new AppError("CONFLICT", match, { allowDuplicate: [match] });
+}
+
 /** Checks run before the transaction: supplier, cost heads and attachment. */
 async function prepareBill(
   ctx: CompanyContext,
@@ -301,6 +373,14 @@ export async function createBill(ctx: CompanyContext, raw: unknown, meta?: Reque
   const input = createBillSchema.parse(raw);
   if (input.paymentType === "CASH_BANK") assertCanPayOut(ctx);
   const prepared = await prepareBill(ctx, input);
+  if (!input.allowDuplicate) {
+    await assertNotDuplicate(ctx, {
+      total: input.allocations.reduce((s, a) => s.plus(money(a.amount)), ZERO),
+      date: input.billDate ? toInstant(input.billDate, ctx.company.timezone) : new Date(),
+      supplier: prepared.supplier,
+      supplierRef: input.supplierRef,
+    });
+  }
   const billId = await prisma.$transaction(
     (tx) => createBillTx(tx, ctx, input, prepared, meta),
     TX_OPTIONS,
@@ -629,11 +709,27 @@ export async function addProjectCost(
       ],
     };
     const prepared = await prepareBill(ctx, billInput);
+    if (!input.allowDuplicate) {
+      await assertNotDuplicate(ctx, {
+        total: money(input.amount),
+        date,
+        supplier: prepared.supplier,
+        supplierRef: input.supplierRef,
+      });
+    }
     await prisma.$transaction((tx) => createBillTx(tx, ctx, billInput, prepared, meta), TX_OPTIONS);
     return getProjectCostSheet(ctx, projectId);
   }
 
   const head = (await loadCostHeads(ctx, [input.expenseHeadId])).get(input.expenseHeadId)!;
+  if (!input.allowDuplicate) {
+    await assertNotDuplicate(ctx, {
+      total: money(input.amount),
+      date,
+      projectId,
+      headId: head.id,
+    });
+  }
   await prisma.$transaction(async (tx) => {
     const project = (
       await lockOpenProjects(tx, companyId, [projectId], "no more costs can be added")

@@ -99,6 +99,7 @@ model Company {
   rawMaterialStocks    RawMaterialStock[]
   purchaseOrders       PurchaseOrder[]
   materialIssues       MaterialIssue[]
+  materialChallans     MaterialChallan[]
   purchaseReturns      PurchaseReturn[]
   parties              Party[]
   campaigns            ReEngagementCampaign[]
@@ -197,6 +198,7 @@ model User {
   expensesCreated   Expense[]             @relation("ExpenseCreatedBy")
   purchaseOrders    PurchaseOrder[]       @relation("PurchaseOrderCreatedBy")
   materialIssues    MaterialIssue[]       @relation("MaterialIssueCreatedBy")
+  materialChallans  MaterialChallan[]     @relation("MaterialChallanCreatedBy")
   purchaseReturns   PurchaseReturn[]      @relation("PurchaseReturnCreatedBy")
   materialMovements RawMaterialMovement[] @relation("MaterialMovementBy")
   refunds           Refund[]              @relation("RefundCreatedBy")
@@ -863,6 +865,38 @@ model MaterialIssue {
 
   @@unique([companyId, number])
   @@index([projectId, createdAt])
+}
+
+/// "Materials sent": a plain record of what went to the factory for a production
+/// project (fabric, trims, cartons... as written, with a quantity and unit) under
+/// its own challan number (MC-) to print and hand over. It moves no stock and no
+/// money; materials taken from the store's stock go out on a MaterialIssue. A
+/// challan entered by mistake is cancelled with a reason and stays on record.
+model MaterialChallan {
+  id            String    @id @default(cuid())
+  companyId     String
+  number        String
+  projectId     String
+  sentAt        DateTime  @default(now())
+  /// Where it went, as printed: the factory's name (and address).
+  sentTo        String
+  /// What was sent, line by line: [{ "description": "Oxford fabric", "quantity": 500, "unit": "kg" }].
+  items         Json
+  /// Vehicle, driver or courier that took it.
+  carrier       String?
+  notes         String?
+  createdById   String?
+  createdAt     DateTime  @default(now())
+  cancelledAt   DateTime?
+  cancelledById String?
+  cancelReason  String?
+
+  company   Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  project   ProductionProject @relation(fields: [projectId], references: [id])
+  createdBy User?             @relation("MaterialChallanCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@unique([companyId, number])
+  @@index([projectId, sentAt])
 }
 
 /// Goods sent back to a supplier from one of their bills (a debit note): the
@@ -1710,6 +1744,7 @@ model ProductionProject {
   reminders            Reminder[]
   purchaseOrders       PurchaseOrder[]
   materialIssues       MaterialIssue[]
+  materialChallans     MaterialChallan[]
   tasks                Task[]
   supplierPayments     Payment[]
   settlements          ProjectSettlement[]
@@ -3490,6 +3525,7 @@ enum DocumentType {
   BUYER_360 // a buyer's whole history on one PDF (Customer 360°)
   SUPPLIER_360 // a supplier's projects, deliveries and dues on one PDF (Supplier 360°)
   STOCK_LOT // inward batches of finished goods (LOT-2026-00001)
+  MATERIAL_CHALLAN // materials sent to a factory for a production project (MC-2026-00001)
 }
 
 enum TemplateFormat {

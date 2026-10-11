@@ -24,6 +24,7 @@ export const PRINT_TYPES = [
   "PAYSLIP",
   "BUYER_360",
   "SUPPLIER_360",
+  "MATERIAL_CHALLAN",
 ] as const;
 
 export type PrintType = (typeof PRINT_TYPES)[number];

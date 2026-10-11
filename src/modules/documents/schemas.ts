@@ -19,6 +19,8 @@ export const printRequestSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("PAYMENT_RECEIPT"), id }),
   z.object({ type: z.literal("REFUND_VOUCHER"), id }),
   z.object({ type: z.literal("SALES_RETURN"), id }),
+  /** A production project's material challan (materials sent to the factory). */
+  z.object({ type: z.literal("MATERIAL_CHALLAN"), id }),
   z.object({
     type: z.literal("LEDGER_STATEMENT"),
     partyId: id,

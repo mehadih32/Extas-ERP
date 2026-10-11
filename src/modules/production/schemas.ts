@@ -143,6 +143,8 @@ export const addProjectCostSchema = z
     date: dayOrInstant.optional(),
     description: optionalText(500),
     ...cashPaymentFields,
+    /** Enter it although it looks like a bill or cost already entered. */
+    allowDuplicate: z.boolean().optional(),
   })
   .superRefine((v, ctx) => {
     if (v.paymentType === "DUE" && !v.supplierId) {
@@ -153,6 +155,34 @@ export const addProjectCostSchema = z
       });
     }
   });
+
+// --- Materials sent (MC- challans) ---------------------------------------------------
+/** One line of what was sent: "Oxford fabric", 500, "kg". Quantities to 3 decimals. */
+const challanItemSchema = z.object({
+  description: z.string().trim().min(2).max(200),
+  quantity: z
+    .number()
+    .max(100_000_000)
+    .multipleOf(0.001)
+    .refine((v) => v > 0, "Must be more than zero"),
+  unit: z.string().trim().min(1).max(20),
+});
+
+/** "Send material": what went to the factory, line by line, and where and how it went. */
+export const createMaterialChallanSchema = z.object({
+  /** The day it was sent (company time); today when left out. */
+  sentOn: dayOrInstant.optional(),
+  /** Where it went; the project's factory when left out. */
+  sentTo: z.string().trim().min(2).max(300).optional(),
+  items: z.array(challanItemSchema).min(1).max(30),
+  carrier: optionalText(120),
+  notes: optionalText(1000),
+});
+
+export type ChallanItem = z.output<typeof challanItemSchema>;
+
+/** How a challan's stored lines are read back (the same shape as when saved). */
+export const challanItemsSchema = z.array(challanItemSchema);
 
 export const billAllocationSchema = z.object({
   projectId: id,
@@ -172,6 +202,8 @@ export const createBillSchema = z.object({
   notes: optionalText(2000),
   /** Photo / PDF of the bill uploaded first (POST /api/production/files). */
   attachmentId: id.optional(),
+  /** Enter it although it looks like a bill already entered (same number, or total within days). */
+  allowDuplicate: z.boolean().optional(),
 });
 
 export const payBillSchema = z.object({

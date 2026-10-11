@@ -110,6 +110,11 @@ export const PRINT_INFO: Record<
     plural: "supplier profiles",
     permission: "parties.view",
   },
+  MATERIAL_CHALLAN: {
+    label: "Material challan",
+    plural: "material challans",
+    permission: "production.view",
+  },
   PAYSLIP: {
     label: "Payslip",
     plural: "payslips",

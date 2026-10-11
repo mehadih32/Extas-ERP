@@ -3,6 +3,7 @@
 import { BanIcon, BanknoteIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { PaidFromFields } from "@/components/accounts/money-fields";
 import { Field, FormAlert } from "@/components/forms/field";
 import { textOf } from "@/components/products/form-values";
 import { FormDialog, problem, readReason, ReasonField } from "@/components/sales/dialogs";
@@ -13,7 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import type { BillScreen } from "@/modules/production/screens.service";
 import { payBillAction, voidBillAction } from "@/server/actions/production.actions";
 
-import { dayOrNow, PayMethodSelect, readPositive } from "./cost-dialogs";
+import { dayOrNow, readPositive } from "./cost-dialogs";
 
 type Open = "pay" | "void" | null;
 
@@ -36,7 +37,7 @@ export function BillActions({
 }) {
   const [open, setOpen] = useState<Open>(null);
   const [notice, setNotice] = useState(initialNotice);
-  const { bill: b, can, methods } = screen;
+  const { bill: b, can, accounts } = screen;
   const close = () => setOpen(null);
   const done = (message: string) => {
     setNotice(message);
@@ -91,6 +92,7 @@ export function BillActions({
             if (amount > Number(b.due)) return problem({ amount: `At most ${b.due}.` });
             const result = await payBillAction(b.id, {
               amount,
+              accountId: textOf(form, "accountId") || undefined,
               method: textOf(form, "method") || "CASH",
               paymentDate: dayOrNow(form, "paymentDate", today),
               reference: textOf(form, "reference") || undefined,
@@ -115,22 +117,6 @@ export function BillActions({
                     autoFocus
                   />
                 </Field>
-                <Field id="pay-method" label="Paid by" error={fieldError("method")}>
-                  <PayMethodSelect id="pay-method" methods={methods} />
-                </Field>
-                <Field
-                  id="pay-reference"
-                  label="Reference (optional)"
-                  hint="Cheque number, bKash transaction ID…"
-                >
-                  <Input
-                    id="pay-reference"
-                    name="reference"
-                    maxLength={120}
-                    autoComplete="off"
-                    aria-describedby="pay-reference-hint"
-                  />
-                </Field>
                 <Field id="pay-date" label="Paid on" error={fieldError("paymentDate")}>
                   <Input
                     id="pay-date"
@@ -140,6 +126,12 @@ export function BillActions({
                     max={today}
                   />
                 </Field>
+                <PaidFromFields
+                  idPrefix="pay"
+                  accounts={accounts}
+                  currency={currency}
+                  fieldError={fieldError}
+                />
               </div>
               <Field id="pay-notes" label="Notes (optional)">
                 <Textarea id="pay-notes" name="notes" rows={2} maxLength={1000} />

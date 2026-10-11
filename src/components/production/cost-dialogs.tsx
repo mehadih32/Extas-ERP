@@ -5,11 +5,12 @@ import { LoaderCircleIcon } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
+import { PaidFromFields } from "@/components/accounts/money-fields";
 import { Field, FormAlert } from "@/components/forms/field";
 import { ChoiceList } from "@/components/parties/choice-list";
 import { AMOUNT_HINT, readAmount, textOf } from "@/components/products/form-values";
 import { FormDialog, problem, readReason, ReasonField } from "@/components/sales/dialogs";
-import { METHOD_LABELS, money } from "@/components/sales/labels";
+import { money } from "@/components/sales/labels";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
@@ -38,26 +39,57 @@ export const dayOrNow = (form: FormData, name: string, today: string) => {
   return day && day !== today ? day : undefined;
 };
 
-/** The ways money is paid out by hand, as a select named `method`. */
-export function PayMethodSelect({
+/** The bill or cost a new one looks like, when the server found one entered already. */
+export function duplicateOf(error: ActionError): string | null {
+  return error.fieldErrors?.allowDuplicate ? error.message : null;
+}
+
+/**
+ * "Entered already?": what the new bill or cost matched (the supplier's same
+ * bill number, or the same amount close by) and a tick to enter it anyway.
+ */
+export function DuplicateCheck({
   id,
-  methods,
-  name = "method",
+  match,
+  checked,
+  onChange,
 }: {
   id: string;
-  methods: readonly PaymentMethod[];
-  name?: string;
+  match: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
 }) {
   return (
-    <NativeSelect id={id} name={name} defaultValue="CASH" containerClassName="sm:w-full">
-      {methods.map((m) => (
-        <option key={m} value={m}>
-          {METHOD_LABELS[m]}
-        </option>
-      ))}
-    </NativeSelect>
+    <div className="grid gap-2">
+      <FormAlert tone="note">{match}</FormAlert>
+      <label
+        htmlFor={id}
+        className="flex cursor-pointer items-start gap-3 rounded-md border bg-card px-3 py-2.5 has-[:checked]:border-primary/50 has-[:checked]:bg-secondary"
+      >
+        <input
+          id={id}
+          type="checkbox"
+          checked={checked}
+          onChange={(e) => onChange(e.target.checked)}
+          className="mt-0.5 size-4 shrink-0 cursor-pointer accent-primary"
+        />
+        <span className="grid gap-0.5">
+          <span className="text-sm font-medium">It is a different one: enter it anyway</span>
+          <span className="text-[0.8125rem] leading-snug text-muted-foreground">
+            Leave it unticked and cancel if it is the same, so it is not booked twice.
+          </span>
+        </span>
+      </label>
+    </div>
   );
 }
+
+/** Asks the person to look at the match first (a quiet error: the match shows above the tick). */
+export const duplicateProblem = (match: string): ActionError => ({
+  code: "VALIDATION",
+  message: match,
+  fieldErrors: {},
+});
 
 /** The cost heads to file a cost under, making cost first, then materials. */
 export function HeadOptions({ heads }: { heads: BillForm["heads"] }) {
@@ -113,6 +145,8 @@ export function AddCostDialog({
   const [loadError, setLoadError] = useState<string>();
   const [paymentType, setPaymentType] = useState<PaymentType>("DUE");
   const [supplier, setSupplier] = useState<PartyOption | null>(null);
+  const [duplicate, setDuplicate] = useState<string>();
+  const [anyway, setAnyway] = useState(false);
 
   useEffect(() => {
     let live = true;
@@ -157,12 +191,20 @@ export function AddCostDialog({
           description: textOf(data, "description") || undefined,
           ...(type === "CASH_BANK"
             ? {
+                accountId: textOf(data, "accountId") || undefined,
                 method: (textOf(data, "method") || "CASH") as PaymentMethod,
                 reference: textOf(data, "reference") || undefined,
               }
             : {}),
+          allowDuplicate: duplicate && anyway ? true : undefined,
         });
-        if (!result.ok) return result.error;
+        if (!result.ok) {
+          const match = duplicateOf(result.error);
+          if (!match) return result.error;
+          setDuplicate(match);
+          setAnyway(false);
+          return duplicateProblem(match);
+        }
         onDone(
           `${money(amount.toFixed(2), currency)} was added to ${project.code}${
             type === "DUE" && supplier ? `, owed to ${supplier.name}` : ""
@@ -267,29 +309,25 @@ export function AddCostDialog({
                 <Input id="cost-date" name="date" type="date" defaultValue={today} max={today} />
               </Field>
               {payNow && paymentType === "CASH_BANK" && (
-                <>
-                  <Field id="cost-method" label="Paid by" error={fieldError("method")}>
-                    <PayMethodSelect id="cost-method" methods={form.methods} />
-                  </Field>
-                  <Field
-                    id="cost-reference"
-                    label="Reference (optional)"
-                    hint="Cheque number, bKash transaction ID…"
-                  >
-                    <Input
-                      id="cost-reference"
-                      name="reference"
-                      maxLength={120}
-                      autoComplete="off"
-                      aria-describedby="cost-reference-hint"
-                    />
-                  </Field>
-                </>
+                <PaidFromFields
+                  idPrefix="cost"
+                  accounts={form.accounts}
+                  currency={currency}
+                  fieldError={fieldError}
+                />
               )}
             </div>
             <Field id="cost-description" label="Details (optional)">
               <Textarea id="cost-description" name="description" rows={2} maxLength={500} />
             </Field>
+            {duplicate && (
+              <DuplicateCheck
+                id="cost-anyway"
+                match={duplicate}
+                checked={anyway}
+                onChange={setAnyway}
+              />
+            )}
           </>
         )
       }

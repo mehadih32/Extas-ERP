@@ -21,6 +21,7 @@ import { getPayslipByItem } from "@/modules/hr/payroll.service";
 import { getBuyer360, PROFILE_ALL_ROWS } from "@/modules/parties/buyer-360.service";
 import { getSupplier360, SUPPLIER_PROFILE_ALL_ROWS } from "@/modules/parties/supplier-360.service";
 import { getStatement } from "@/modules/parties/ledger.service";
+import { getMaterialChallan } from "@/modules/production/challan.service";
 import {
   getChallanDocument,
   getInvoiceDocument,
@@ -38,6 +39,7 @@ import {
 import { categoryText, GRADE_LABELS, STATUS_LABELS } from "@/components/parties/labels";
 import {
   BILL_STATUS_LABELS,
+  plainQuantity,
   PROJECT_STATUS_LABELS,
   STAGE_LABELS,
 } from "@/components/production/labels";
@@ -55,8 +57,8 @@ import {
  * model: every label, amount and date formatted the way it is printed, in the
  * company's time zone and currency grouping (12,34,567.50 for taka).
  *
- * Price-free by design: the packing list, the delivery challan and the stock
- * availability sheet carry quantities only.
+ * Price-free by design: the packing list, the delivery challan, the material
+ * challan and the stock availability sheet carry quantities only.
  *
  * Every document's letterhead also carries the company's BIN and trade licence
  * number from its licence records (buildDocument adds them), so a renewal with
@@ -1765,6 +1767,100 @@ export async function stockSheetDocument(
 }
 
 // =============================================================================
+// Material challan (production, price-free)
+// =============================================================================
+
+/**
+ * The challan that goes with materials sent to a factory for a production project
+ * (MC-): what went, how much, where and how. It carries no prices, and a cancelled
+ * one prints stamped "Cancelled".
+ */
+export async function materialChallanDocument(
+  ctx: CompanyContext,
+  challanId: string,
+): Promise<BuiltDocument> {
+  const mc = await getMaterialChallan(ctx, challanId);
+  const currency = ctx.company.currency;
+  const { project } = mc;
+  const factory = project.factory;
+  const sentToFactory = factory !== null && factory.name === mc.sentTo;
+  const model = base(ctx, "MATERIAL_CHALLAN", {
+    title: "Material Challan",
+    reference: mc.number,
+    meta: [
+      { label: "Challan no.", value: mc.number },
+      { label: "Date", value: formatDay(mc.sentOn) },
+      { label: "Project", value: project.code },
+      ...(mc.carrier ? [{ label: "Sent with", value: mc.carrier }] : []),
+    ],
+    parties: [
+      {
+        heading: "Deliver to",
+        lines: [
+          mc.sentTo,
+          // The factory's contact details when it is the one the challan went to.
+          ...(sentToFactory
+            ? [factory.phone, ...lines([factory.address, factory.city].filter(Boolean).join("\n"))]
+            : []
+          ).filter((l): l is string => Boolean(l)),
+        ],
+      },
+      {
+        heading: "For production project",
+        lines: [
+          project.name,
+          project.code,
+          ...(project.buyer ? [`Made for ${project.buyer.name}`] : []),
+        ],
+      },
+    ],
+    blocks: [
+      {
+        kind: "table",
+        columns: [
+          { label: "#", align: "right", weight: 0.45 },
+          { label: "Item", weight: 4 },
+          { label: "Quantity", align: "right", weight: 1.2 },
+          { label: "Unit", weight: 1 },
+        ],
+        rows: mc.items.map((item, i) => ({
+          cells: [
+            String(i + 1),
+            item.description,
+            plainQuantity(item.quantity, currency),
+            item.unit,
+          ],
+        })),
+      },
+      ...textBlock("Notes", mc.notes),
+      ...(mc.cancelled
+        ? [
+            {
+              kind: "note" as const,
+              text: `Cancelled on ${formatDay(mc.cancelled.on)}: ${mc.cancelled.reason}`,
+            },
+          ]
+        : []),
+      {
+        kind: "note",
+        text: "Please check the materials on arrival and sign below. This challan carries no prices.",
+      },
+    ],
+    signatures: ["Received by (name, signature & date)", "Authorised signature"],
+    stamp: mc.cancelled ? { text: "Cancelled", tone: "danger" } : undefined,
+  });
+  return {
+    model,
+    record: {
+      title: `Material challan ${mc.number}`,
+      referenceType: "MaterialChallan",
+      referenceId: mc.id,
+      partyId: sentToFactory ? factory.id : null,
+    },
+  };
+}
+
+// =============================================================================
 // Blank letterhead pad
 // =============================================================================
 
@@ -2610,6 +2706,8 @@ async function buildModel(
       return packingListDocument(ctx, input.id);
     case "DELIVERY_CHALLAN":
       return challanDocument(ctx, input.id);
+    case "MATERIAL_CHALLAN":
+      return materialChallanDocument(ctx, input.id);
     case "PAYMENT_RECEIPT":
       return receiptDocument(ctx, input.id);
     case "REFUND_VOUCHER":

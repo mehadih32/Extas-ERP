@@ -13,6 +13,7 @@ import {
 } from "@/components/production/badges";
 import { CostEntries, CostSummary, GradeCosts } from "@/components/production/cost-sheet";
 import { pieces, productionHref } from "@/components/production/labels";
+import { MaterialsSent } from "@/components/production/materials-sent";
 import { ProductionNoAccess } from "@/components/production/no-access";
 import { ProjectActions } from "@/components/production/project-actions";
 import { ProjectSuppliers } from "@/components/production/project-suppliers";
@@ -84,7 +85,8 @@ function Deliveries({ screen, currency }: { screen: ProjectScreen; currency: str
 /**
  * One production project (production.view, like GET /api/production/projects/:id):
  * its time and pieces, how far it got through cutting, sewing and the other
- * stages, its factory deliveries, the raw materials the store handed it and,
+ * stages, its factory deliveries, the raw materials the store handed it, the
+ * materials sent to the factory on challans and,
  * for Production Managers and Accounts, its costs with what an A- and a B-grade
  * piece cost. What may be done comes with
  * the screen from the rules the production actions use (screen.can).
@@ -168,6 +170,7 @@ export default async function ProjectPage({
               canOpenNotes={ctx.can("materials.view")}
             />
           )}
+          <MaterialsSent screen={screen} currency={currency} />
           {costs && <CostEntries costs={costs} currency={currency} />}
         </div>
         <div className="grid min-w-0 grid-cols-1 content-start gap-6">

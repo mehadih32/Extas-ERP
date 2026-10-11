@@ -1,3 +1,5 @@
+import { randomBytes } from "node:crypto";
+
 import {
   collectPdf,
   createPdf,
@@ -56,6 +58,26 @@ const DEFAULT_ACCENT = "#BE1434";
 
 const LOGO_BOX = { width: 150, height: 52 };
 
+/**
+ * PDF security for a signed record: AES-256, opened and printed by anyone, but
+ * changing it needs a password nobody keeps (a fresh random one each time).
+ */
+function lockedPdf(): Partial<PDFKit.PDFDocumentOptions> {
+  return {
+    pdfVersion: "1.7ext3",
+    ownerPassword: randomBytes(24).toString("base64url"),
+    permissions: {
+      printing: "highResolution",
+      modifying: false,
+      copying: true,
+      annotating: false,
+      fillingForms: false,
+      contentAccessibility: true,
+      documentAssembly: false,
+    },
+  };
+}
+
 const CELL_PAD = 5;
 const TABLE_SIZE = 8.2;
 const TABLE_LINE = 10.8;
@@ -90,6 +112,7 @@ class Writer {
     private readonly model: PrintDocument,
     private readonly logo: Buffer | null,
     private readonly images: ReadonlyMap<string, Buffer> = new Map(),
+    private readonly signed: ReadonlyMap<string, Buffer> = new Map(),
   ) {
     this.primary = safeHex(model.letterhead.primaryColor, DEFAULT_PRIMARY);
     this.accent = safeHex(model.letterhead.accentColor, DEFAULT_ACCENT);
@@ -829,27 +852,57 @@ class Writer {
         labels.length === 1
           ? MARGIN.left + WIDTH - width
           : MARGIN.left + (i * (WIDTH - width)) / (labels.length - 1);
+      this.signatureImage(this.signed.get(label), x, y, width);
       this.rule(y, INK, 0.6, x, width);
       this.line(label, x, y + 5, width, { font: SANS, size: 7.4, color: MUTED, align: "center" });
     });
     this.y = y + 20;
+  }
+
+  /** A signature drawn by hand, standing on its line (a picture pdfkit cannot open is left out). */
+  private signatureImage(bytes: Buffer | undefined, x: number, lineY: number, width: number) {
+    if (!bytes) return;
+    let image: OpenedImage;
+    try {
+      image = (this.doc as unknown as PdfImages).openImage(bytes);
+    } catch {
+      return;
+    }
+    const box = { width, height: 44 };
+    const scale = Math.min(box.width / image.width, box.height / image.height);
+    const w = image.width * scale;
+    const h = image.height * scale;
+    (this.doc as unknown as PdfImages).image(image, x + (width - w) / 2, lineY - h - 2, {
+      width: w,
+      height: h,
+    });
   }
 }
 
 /**
  * The document as a PDF on letterhead. `images` holds the bytes of the rows'
  * reference pictures by file id (checked when uploaded); a row whose picture is
- * not there prints without it. `compress: false` keeps the page text readable (tests).
+ * not there prints without it. `signed` holds signatures drawn by hand (checked
+ * PNGs), printed on the signature line of the same label. `protect` locks the
+ * PDF against editing (it still opens, prints and copies without a password).
+ * `compress: false` keeps the page text readable (tests).
  */
 export async function renderDocumentPdf(
   model: PrintDocument,
-  options: { logo?: Buffer | null; images?: ReadonlyMap<string, Buffer>; compress?: boolean } = {},
+  options: {
+    logo?: Buffer | null;
+    images?: ReadonlyMap<string, Buffer>;
+    signed?: ReadonlyMap<string, Buffer>;
+    protect?: boolean;
+    compress?: boolean;
+  } = {},
 ): Promise<Buffer> {
   const doc = await createPdf({
     size: "A4",
     margins: MARGIN,
     bufferPages: true,
     compress: options.compress ?? true,
+    ...(options.protect ? lockedPdf() : {}),
     info: {
       Title: pdfInfo(
         [model.letterhead.name, model.title, model.reference].filter(Boolean).join(" - "),
@@ -861,7 +914,7 @@ export async function renderDocumentPdf(
     },
   });
   const done = collectPdf(doc);
-  const writer = new Writer(doc, model, options.logo ?? null, options.images);
+  const writer = new Writer(doc, model, options.logo ?? null, options.images, options.signed);
   writer.letterhead();
   if (model.type !== "LETTERHEAD") {
     writer.titleBlock();

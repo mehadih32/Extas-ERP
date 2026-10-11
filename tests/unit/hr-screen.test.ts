@@ -58,6 +58,7 @@ describe("HR & payroll in the menu, by role", () => {
     "Payroll",
     "Advances",
     "Holidays & rules",
+    "Terms",
   ];
 
   it("gives the owner and Accounts every tab, and My HR from the account menu", () => {
@@ -106,6 +107,7 @@ describe("HR & payroll in the menu, by role", () => {
       "Attendance",
       "Leave",
       "Holidays & rules",
+      "Terms",
     ]);
     expect(tabs(["accounts.view"])).toEqual(["Payroll", "Advances"]);
     // Whoever pays advances out sees the advances register and nothing else of HR.
@@ -323,6 +325,8 @@ describe("HR filters and addresses", () => {
     expect(hrHref.newLeave("e1")).toBe("/hr/leave/new?employee=e1");
     expect(hrHref.payslip("r1", "i1")).toBe("/hr/payroll/r1/payslips/i1");
     expect(hrHref.settings(2027)).toBe("/hr/settings?year=2027");
+    expect(hrHref.terms()).toBe("/hr/terms");
+    expect(hrHref.terms(2)).toBe("/hr/terms?version=2");
     expect(hrHref.myMonth()).toBe("/me/attendance");
     expect(hrHref.myLeave(2025)).toBe("/me/leave?year=2025");
     expect(hrHref.myPayslip("i1")).toBe("/me/payslips/i1");

@@ -69,6 +69,7 @@ import {
 import { getHrSettings, listHolidays, listLeaveTypes } from "@/modules/hr/settings.service";
 import { vaultIncompleteWhere } from "@/modules/hr/vault";
 import { getEmployeeVault, getMyVault, listPayRequests } from "@/modules/hr/vault.service";
+import { staffToAgreeCount } from "@/modules/hr/terms.service";
 import { integrationStatus } from "@/modules/integrations/status";
 
 /*
@@ -209,7 +210,7 @@ export async function getOverviewScreen(ctx: CompanyContext) {
   }
   let vault = null;
   if (access.manage) {
-    const [waiting, incomplete] = await Promise.all([
+    const [waiting, incomplete, termsToAgree] = await Promise.all([
       listPayRequests(ctx, { status: "PENDING", take: 6 }),
       ctx.db.employee.count({
         where: {
@@ -219,6 +220,7 @@ export async function getOverviewScreen(ctx: CompanyContext) {
           ],
         },
       }),
+      staffToAgreeCount(ctx),
     ]);
     vault = {
       payRequests: waiting.map((r) => ({
@@ -228,6 +230,8 @@ export async function getOverviewScreen(ctx: CompanyContext) {
         askedOn: r.askedOn,
       })),
       incomplete,
+      /** Staff with a login who still have to agree to the terms (null: no terms yet). */
+      termsToAgree,
     };
   }
   let advances = null;

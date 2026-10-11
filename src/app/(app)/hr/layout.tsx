@@ -4,7 +4,7 @@ import { requireCompanyPage } from "@/server/pages/guards";
 
 /**
  * The HR & payroll area: the overview, employees, attendance, leave, payroll,
- * salary advances, and holidays and rules, each tab shown only to people whose
+ * salary advances, holidays and rules, and the terms of employment, each tab shown only to people whose
  * role opens it (components/hr/tabs.ts). Each page checks again through its
  * Server Action.
  */

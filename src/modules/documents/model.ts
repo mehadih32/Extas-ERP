@@ -30,6 +30,12 @@ export const PRINT_TYPES = [
 export type PrintType = (typeof PRINT_TYPES)[number];
 
 /**
+ * Documents the app prints for its own records, outside the print archive and
+ * the Print buttons: a signed copy of the terms of employment (hr/terms-pdf.ts).
+ */
+export type RecordPrintType = "SIGNED_TERMS";
+
+/**
  * Bump when the layout changes, so documents printed again get the new look.
  * 2: Bengali text prints in Noto Sans Bengali instead of "?".
  */
@@ -107,7 +113,7 @@ export type Stamp = {
 };
 
 export type PrintDocument = {
-  type: PrintType;
+  type: PrintType | RecordPrintType;
   /** "Commercial Invoice"; empty for the blank letterhead. */
   title: string;
   /** A line under the title ("Rahim Traders", "Brand: Extras Men"). */

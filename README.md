@@ -50,7 +50,9 @@ the nightly housekeeping (03:30, Asia/Dhaka), which marks idle buyers dormant, c
 accounts, removes expired sign-ins, deletes unused proof photos and quotation pictures, and
 deletes kept sales PDFs older than a day (`src/modules/housekeeping/scheduler.ts`). Each is off
 in development; set `BACKUP_SCHEDULER`, `REMINDER_SCHEDULER` or `HOUSEKEEPING_SCHEDULER` to
-`on` or `off` to choose.
+`on` or `off` to choose. A background job worker also runs inside the app (signed PDFs and
+other slow work, see "Background jobs" under HR & Payroll); `JOB_WORKER` switches it the same
+way.
 
 ## Folder structure
 
@@ -547,7 +549,7 @@ Built one module at a time, each in its own pull request. So far:
 
   Reading a supplier's bill or packing list with AI comes with the integrations.
 
-- **HR & payroll** (`/hr`, "HR" on the phone), in seven tabs:
+- **HR & payroll** (`/hr`, "HR" on the phone), in eight tabs:
   - **Overview**: how many people work here, who is in, late, absent or on leave today, the
     leave waiting for a decision, the coming holidays and the headcount by department; for
     people who see salaries, where last month's and this month's payroll stand and what is
@@ -581,6 +583,16 @@ Built one module at a time, each in its own pull request. So far:
   - **Holidays & rules**: the weekly days off, the office start time, the minutes of grace
     and how many lates cost a day's salary, whether staff check in themselves, the year's
     holidays, and the leave types with their yearly days.
+  - **Terms**: the terms of employment staff agree to before they use the app. HR starts from
+    a Bengali and English starter text (confidentiality, zero tolerance for theft, deductions
+    from salary, leaving the company), changes it as a draft staff do not see, and publishes
+    it as a version. Who has agreed, who still has to and who has no login is listed, with
+    each signed copy; earlier versions stay readable.
+- **Terms of employment** (`/terms`): once terms are published, everyone whose login is linked
+  to a current employee is sent here before any other page until they agree. The text opens
+  in full; signing unlocks only once they have scrolled to the end. They sign with a finger
+  in the box, or (with SMS connected and a mobile number on file) enter a 6-digit code sent
+  by SMS. A signed PDF is then made in the background and kept in their papers.
 - **My HR** (`/me`), for every employee with a login, in six tabs: **Today** (check in and
   check out when HR allows it, this month so far, leave left, pay, advances owed and their
   details), **Tasks** (the work given to them, soonest due first, to start, finish or reopen;
@@ -1608,6 +1620,30 @@ plugs in `src/modules/integrations/`, each switched off until its server setting
 (see `deploy/README.md`, "Outside services"); "log" mode writes to the server log for testing.
 HR sees where each stands under "Holidays & rules".
 
+**Terms of employment.** HR (`hr.manage`) writes the terms as a draft and publishes it as a
+numbered version that never changes again (a published text's SHA-256 fingerprint is kept).
+Publishing sets the moment from which agreement is required: the first version, and any
+later one published with "Everyone agrees again", asks everyone; one published without it
+(for small wording fixes) asks only staff who never agreed. Until a person whose login is
+linked to an active or on-leave employee has agreed, every page sends them to `/terms` and
+every Server Action and API call answers `TERMS_REQUIRED` (403); people without an employee
+record (an owner who is not on the staff list) are never asked. Agreeing keeps the name,
+code and NID at that moment, the time, IP address, device and how they agreed (a drawn
+signature, kept as a PNG, or a one-time SMS code: 6 digits, 10 minutes, 5 tries, 60 seconds
+between codes and 5 an hour, stored only as a hash). A "terms.pdf" background job then makes
+the signed copy on the letterhead with the full text, the record of agreement and the
+signature, locked against editing (AES-256), and adds it to the employee's papers as "Signed
+terms of employment", which nobody can remove. If the PDF cannot be made, HR sees it and
+makes it again.
+
+**Background jobs.** Slow work (the signed terms PDFs, and more in later HR updates) goes to
+a queue in the database (`BackgroundJob`, `src/modules/jobs/`) and is done by a worker inside
+the app every 5 seconds, so a request answers at once. Two app processes never take the same
+job (`FOR UPDATE SKIP LOCKED`); a failed job is tried again after 30 s, 1 min, 2 min… up to
+5 times; a job left running by a restart goes back to the queue after 10 minutes. The nightly
+housekeeping deletes finished jobs after 30 days and failed ones after 90. The worker is on
+in production; set `JOB_WORKER=on` or `off` to choose.
+
 | Event                        | Entry                                                                    |
 | ---------------------------- | ------------------------------------------------------------------------ |
 | Advance given                | Dr Advances to Employees (1250), Cr Cash / Bank / Wallet                 |
@@ -1647,6 +1683,10 @@ HR sees where each stands under "Holidays & rules".
 | `GET/PATCH /api/portal/profile`, `POST …/documents`, `DELETE …/documents/:id`         | Employee portal: my details and papers                   |
 | `POST /api/portal/profile/pay-details`, `POST …/:id/withdraw`                         | Employee portal: ask for a pay details change            |
 | `GET /api/integrations/status`                                                        | Where the outside services stand (`hr.manage`)           |
+| `GET /api/hr/terms?version=`                                                          | The terms, the draft, who has agreed                     |
+| `POST/PUT/DELETE /api/hr/terms/draft`, `POST /api/hr/terms/publish`                   | Start, save or discard the draft / publish it            |
+| `POST /api/hr/terms/agreements/:id/pdf`                                               | Make a signed copy again                                 |
+| `GET /api/terms`, `POST /api/terms/code`, `POST /api/terms/agree`                     | My terms: what to agree to, an SMS code, agree           |
 
 `hr.view` sees profiles, attendance, leave and holidays, but no salaries. `hr.manage` adds
 and edits employees and salaries, marks attendance, approves leave and sets the HR rules.
@@ -1660,7 +1700,7 @@ prepares), and every role holds `portal.self`. A company can make an "HR Manager
 `hr.view` and `hr.manage`. The books check also compares the advances and unpaid salaries
 with their ledger accounts, employee by employee, and the Accounts overview shows advances
 owed, salaries payable and payrolls waiting for approval or payment. Server Actions are in
-`src/server/actions/hr.actions.ts` and `portal.actions.ts`.
+`src/server/actions/hr.actions.ts`, `portal.actions.ts` and `terms.actions.ts`.
 
 ## Raw materials & purchasing (backend)
 

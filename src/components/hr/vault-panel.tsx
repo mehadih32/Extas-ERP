@@ -114,7 +114,7 @@ export function VaultPanel({
       <div className="grid gap-3">
         <h4 className="eyebrow">Papers</h4>
         <VaultPapers
-          papers={vault.documents.map((d) => ({ ...d, canRemove: true }))}
+          papers={vault.documents.map((d) => ({ ...d, canRemove: d.kind !== "TERMS" }))}
           kinds={DOCUMENT_KINDS}
           canAdd={vault.can.addDocument}
           add={(form) => addEmployeeDocumentAction(employeeId, form)}

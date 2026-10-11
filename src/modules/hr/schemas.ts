@@ -9,6 +9,7 @@ import {
 import { z } from "zod";
 
 import { queryBoolean } from "@/lib/query-params";
+import { TERMS_LIMITS } from "@/modules/hr/terms";
 
 const id = z.string().min(1);
 const money = z.number().min(0).max(1_000_000_000).multipleOf(0.01);
@@ -524,6 +525,60 @@ export const listPayRequestsSchema = z.object({
 
 /** A paper for the vault; the file itself comes with the upload. */
 export const employeeDocumentSchema = z.object({
-  kind: z.enum(EmployeeDocumentKind),
+  // Signed terms are added by the app itself, never by hand.
+  kind: z.enum(EmployeeDocumentKind).exclude(["TERMS"]),
   title: optionalText(120),
 });
+
+// --- Terms of employment (terms.service.ts) ----------------------------------
+
+const termsSection = z.object({
+  title: z
+    .string()
+    .trim()
+    .min(1, "Give the section a heading.")
+    .max(TERMS_LIMITS.sectionTitle, "Keep the heading shorter."),
+  body: z
+    .string()
+    .trim()
+    .min(1, "Write the section's text.")
+    .max(TERMS_LIMITS.sectionBody, "This section is too long; split it in two."),
+});
+
+/** The draft HR edits before publishing it. */
+export const termsDraftSchema = z.object({
+  title: z
+    .string()
+    .trim()
+    .min(1, "Give the terms a title.")
+    .max(TERMS_LIMITS.title, "Keep the title shorter."),
+  intro: optionalText(TERMS_LIMITS.intro),
+  sections: z
+    .array(termsSection)
+    .min(1, "Add at least one section.")
+    .max(TERMS_LIMITS.sections, `Up to ${TERMS_LIMITS.sections} sections.`),
+});
+
+/** Publishing: whether everyone agrees again, or only staff who never agreed. */
+export const publishTermsSchema = z.object({ askEveryone: z.boolean().default(true) });
+
+/** Agreeing to a version: a signature drawn on the screen (a PNG), or the SMS code. */
+export const agreeToTermsSchema = z.discriminatedUnion("method", [
+  z.object({
+    versionId: id,
+    method: z.literal("SIGNATURE"),
+    /** data:image/png;base64,... as the browser's canvas gives it. */
+    signature: z
+      .string()
+      .min(1, "Sign in the box first.")
+      .max(700_000, "The signature is too big."),
+  }),
+  z.object({
+    versionId: id,
+    method: z.literal("SMS_CODE"),
+    code: z
+      .string()
+      .trim()
+      .regex(/^\d{6}$/, "Enter the 6-digit code from the SMS."),
+  }),
+]);

@@ -38,6 +38,9 @@ export function recordHref(ctx: Can, link: RecordLink | null): string | null {
     case "MyDetails":
       // The employee's own details in My HR (a pay details change decided by HR).
       return ctx.can("portal.self") ? "/me/profile" : null;
+    case "Terms":
+      // New terms of employment to read and agree to (anyone linked to an employee).
+      return "/terms";
     default:
       return null;
   }
@@ -53,4 +56,5 @@ export const RECORD_NOUNS: Record<string, string> = {
   ComplianceDocument: "the licence",
   Employee: "the employee",
   MyDetails: "my details",
+  Terms: "the terms",
 };

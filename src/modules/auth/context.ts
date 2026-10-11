@@ -4,9 +4,11 @@ import { cache } from "react";
 
 import { readSessionCookie } from "@/lib/auth/cookies";
 import { AppError } from "@/lib/errors";
+import { prisma } from "@/lib/prisma";
 import { tenantDb, type TenantDb } from "@/lib/tenant-db";
 import { validateSessionToken, type ValidSession } from "@/modules/auth/session.service";
 import { resolveCompanyAccess, type CompanyAccess } from "@/modules/companies/access";
+import { TERMS_STAFF_STATUSES, termsDue } from "@/modules/hr/terms";
 import type { PermissionKey } from "@/modules/rbac/permissions";
 
 /**
@@ -34,7 +36,22 @@ export type CompanyContext = ValidSession &
     can: (permission: PermissionKey) => boolean;
   };
 
-const loadCompanyContext = cache(async (): Promise<CompanyContext> => {
+/**
+ * Whether the person must agree to the company's terms of employment first:
+ * the company published terms everyone agrees to, and the person is a current
+ * employee here who has not agreed since (hr/terms.ts). One small lookup, and
+ * only in companies with terms.
+ */
+async function mustAgreeToTerms(company: CompanyAccess["company"], userId: string) {
+  if (!company.termsRequiredSince) return false;
+  const employee = await prisma.employee.findFirst({
+    where: { companyId: company.id, userId, status: { in: [...TERMS_STAFF_STATUSES] } },
+    select: { termsAgreedAt: true },
+  });
+  return employee !== null && termsDue(company.termsRequiredSince, employee.termsAgreedAt);
+}
+
+const loadCompanyAccess = cache(async (): Promise<{ ctx: CompanyContext; termsDue: boolean }> => {
   const current = await requireSession();
   if (current.user.mustChangePassword) {
     // Invited users and password resets: only /me, change-password and logout work until then.
@@ -51,13 +68,34 @@ const loadCompanyContext = cache(async (): Promise<CompanyContext> => {
       "You no longer have access to this company. Select another one.",
     );
   }
-  return {
+  const ctx: CompanyContext = {
     ...current,
     ...access,
     db: tenantDb(access.company.id),
     can: (permission) => access.permissions.has(permission),
   };
+  return { ctx, termsDue: await mustAgreeToTerms(access.company, current.user.id) };
 });
+
+async function loadCompanyContext(): Promise<CompanyContext> {
+  const { ctx, termsDue } = await loadCompanyAccess();
+  if (termsDue) {
+    // Until they agree, only the terms screen (/terms) and signing out work.
+    throw new AppError(
+      "TERMS_REQUIRED",
+      "Please read and agree to the terms of employment to continue.",
+    );
+  }
+  return ctx;
+}
+
+/**
+ * The active company for the terms screen itself, which works before the
+ * person has agreed (everything else answers TERMS_REQUIRED until then).
+ */
+export async function requireCompanyForTerms(): Promise<CompanyContext> {
+  return (await loadCompanyAccess()).ctx;
+}
 
 /** The active company, the user's role in it and a tenant-locked DB client. */
 export async function requireCompany(): Promise<CompanyContext> {

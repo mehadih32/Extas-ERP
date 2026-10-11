@@ -15,9 +15,9 @@ const SALARIES: readonly PermissionKey[] = ["hr.manage", "hr.payroll", "accounts
 
 /*
  * The HR & payroll area's tabs, shown to the people their Server Actions let
- * in: employees, attendance, leave and holidays read with any HR key; payroll
- * with the keys that see salaries; the advances register also opens to whoever
- * pays advances out (accounts.payments.record).
+ * in: employees, attendance, leave, holidays and the terms of employment read
+ * with any HR key; payroll with the keys that see salaries; the advances
+ * register also opens to whoever pays advances out (accounts.payments.record).
  */
 export const HR_TABS: readonly HrTab[] = [
   { href: "/hr", label: "Overview", anyOf: HR_READ },
@@ -31,6 +31,7 @@ export const HR_TABS: readonly HrTab[] = [
     anyOf: [...SALARIES, "accounts.payments.record"],
   },
   { href: "/hr/settings", label: "Holidays & rules", anyOf: HR_READ },
+  { href: "/hr/terms", label: "Terms", anyOf: HR_READ },
 ];
 
 /** The tabs this person may open, in order; the first is where /hr goes. */

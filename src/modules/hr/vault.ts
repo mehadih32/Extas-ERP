@@ -34,7 +34,10 @@ export function vaultScore(gaps: readonly VaultItem[]): string {
   return gaps.length === 0 ? "Complete" : `${filled} of ${VAULT_ITEMS.length} filled`;
 }
 
-/** The kinds of paper kept in the vault, in the order they are offered. */
+/**
+ * The kinds of paper people add to the vault, in the order they are offered.
+ * Signed terms (TERMS) are added by the app itself when someone agrees.
+ */
 export const DOCUMENT_KINDS: readonly EmployeeDocumentKind[] = [
   "NID",
   "PHOTO",
@@ -49,6 +52,7 @@ export const DOCUMENT_KIND_LABELS: Record<EmployeeDocumentKind, string> = {
   CERTIFICATE: "Certificate",
   CONTRACT: "Appointment letter or contract",
   OTHER: "Other paper",
+  TERMS: "Signed terms of employment",
 };
 
 /** Papers the employee adds themselves (an appointment letter comes from HR). */

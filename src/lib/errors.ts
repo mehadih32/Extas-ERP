@@ -12,6 +12,7 @@ export type ErrorCode =
   | "ACCOUNT_LOCKED"
   | "ACCOUNT_DISABLED"
   | "PASSWORD_CHANGE_REQUIRED"
+  | "TERMS_REQUIRED" // the person agrees to the terms of employment first (/terms)
   | "RATE_LIMITED"
   | "UNAVAILABLE" // an outside service (e.g. the AI reader) is not set up or not answering
   | "INTERNAL";
@@ -28,6 +29,7 @@ const HTTP_STATUS: Record<ErrorCode, number> = {
   ACCOUNT_LOCKED: 423,
   ACCOUNT_DISABLED: 403,
   PASSWORD_CHANGE_REQUIRED: 403,
+  TERMS_REQUIRED: 403,
   RATE_LIMITED: 429,
   UNAVAILABLE: 503,
   INTERNAL: 500,

@@ -56,6 +56,7 @@ import PayrollRunPage from "@/app/(app)/hr/payroll/[runId]/page";
 import PayslipPage from "@/app/(app)/hr/payroll/[runId]/payslips/[itemId]/page";
 import PayrollPage from "@/app/(app)/hr/payroll/page";
 import HrSettingsPage from "@/app/(app)/hr/settings/page";
+import HrTermsPage from "@/app/(app)/hr/terms/page";
 import MyAdvancesPage from "@/app/(app)/me/advances/page";
 import MyAttendancePage from "@/app/(app)/me/attendance/page";
 import MyLeavePage from "@/app/(app)/me/leave/page";
@@ -131,6 +132,7 @@ import {
   getMyPayslipsScreenAction,
   requestMyLeaveAction,
 } from "@/server/actions/portal.actions";
+import { getTermsScreenAction } from "@/server/actions/terms.actions";
 import { requireCompanyPage } from "@/server/pages/guards";
 
 import { addToCompany, contextFor, makeCompany, makeUser, resetDb } from "./helpers";
@@ -324,7 +326,7 @@ run("HR & payroll screens", () => {
         ...(k.view ? ["/hr", "/hr/employees", "/hr/attendance", "/hr/leave"] : []),
         ...(k.salaries ? ["/hr/payroll"] : []),
         ...(k.advances ? ["/hr/advances"] : []),
-        ...(k.view ? ["/hr/settings"] : []),
+        ...(k.view ? ["/hr/settings", "/hr/terms"] : []),
       ]);
 
       // Each screen's data comes exactly to the people its page is shown to.
@@ -362,6 +364,7 @@ run("HR & payroll screens", () => {
       expect((await getAdvanceScreenAction(env.advance.id)).ok, `${who}: advance`).toBe(k.advances);
       expect((await getAdvanceFormAction()).ok, `${who}: advance form`).toBe(k.give);
       expect((await getHrSettingsScreenAction()).ok, `${who}: settings`).toBe(k.view);
+      expect((await getTermsScreenAction()).ok, `${who}: terms`).toBe(k.view);
 
       // Salaries reach only the people who see them.
       if (overview.ok) {
@@ -448,6 +451,7 @@ run("HR & payroll screens", () => {
         `${who}: advance`,
       ).toBe(page(k.advances));
       expect(await rendered(HrSettingsPage(listed)), `${who}: settings`).toBe(page(k.view));
+      expect(await rendered(HrTermsPage(listed)), `${who}: terms`).toBe(page(k.view));
     }
   });
 

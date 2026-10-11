@@ -96,11 +96,13 @@ describe("the manual's content", () => {
   });
 
   // The app's pages, as route patterns: ["sales", "orders", "[orderId]"].
-  const pages = [join(SRC, "app", "(app)"), join(SRC, "app", "(auth)")].flatMap((group) =>
-    filesUnder(group, (path) => path.endsWith(`${sep}page.tsx`)).map((path) =>
-      relative(group, path).split(sep).slice(0, -1),
-    ),
-  );
+  const pages = ["(app)", "(auth)", "(gate)"]
+    .map((group) => join(SRC, "app", group))
+    .flatMap((group) =>
+      filesUnder(group, (path) => path.endsWith(`${sep}page.tsx`)).map((path) =>
+        relative(group, path).split(sep).slice(0, -1),
+      ),
+    );
   const segments = (route: string) => route.split("/").filter(Boolean);
   /** A guide's route covers a page when it is the page or a page above it ([id] matches anything). */
   const covers = (route: string, page: string[]) => {

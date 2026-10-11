@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 
 import { MyDetailsForm, MyPapers, MyPayDetails } from "@/components/hr/my-details";
 import { MyHrProblem } from "@/components/hr/no-access";
 import { VaultChecklist } from "@/components/hr/vault-bits";
 import { Panel } from "@/components/sales/detail-bits";
+import { ROUTES } from "@/lib/routes";
 import { vaultScore } from "@/modules/hr/vault";
 import { getMyProfileScreenAction } from "@/server/actions/portal.actions";
 import { requireCompanyPage } from "@/server/pages/guards";
@@ -62,6 +64,11 @@ export default async function MyDetailsPage() {
 
         <Panel title="My papers" id="papers-heading">
           <MyPapers screen={screen} />
+          <p className="mt-4 border-t pt-4 text-sm">
+            <Link href={ROUTES.terms} className="text-primary underline-offset-4 hover:underline">
+              Read the terms of employment
+            </Link>
+          </p>
         </Panel>
       </div>
     </div>

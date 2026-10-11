@@ -6,7 +6,7 @@ Everything runs on one Ubuntu 24.04 server, in Docker:
 | ----------- | --------------------------------------------------------------------------------------------------------------------- |
 | **db**      | PostgreSQL 16, the database. Only the app can reach it; it is never open to the internet.                             |
 | **migrate** | Brings the database up to date with the code each time the ERP is installed or updated, then stops.                   |
-| **app**     | The ERP itself, with its clocks: the daily backup, reminders and the nightly housekeeping.                            |
+| **app**     | The ERP itself, with its clocks (backup, reminders, housekeeping) and background jobs (signed PDFs).                  |
 | **caddy**   | HTTPS. Gets a free Let's Encrypt certificate for the ERP's web address, renews it, and sends `http://` to `https://`. |
 
 The data lives in one folder on the server, `/srv/extras-erp` unless you choose another:

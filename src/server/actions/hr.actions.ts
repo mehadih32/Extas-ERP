@@ -15,6 +15,7 @@ import * as exits from "@/modules/hr/exit.service";
 import * as leave from "@/modules/hr/leave.service";
 import * as location from "@/modules/hr/location.service";
 import * as logins from "@/modules/hr/login.service";
+import * as money from "@/modules/hr/money.service";
 import * as notices from "@/modules/hr/notice.service";
 import * as overtime from "@/modules/hr/overtime.service";
 import * as payroll from "@/modules/hr/payroll.service";
@@ -92,6 +93,11 @@ export const getEmployeeScreenAction = async (
   employeeId: string,
   options: { year?: number } = {},
 ) => runAction(async () => screens.getEmployeeScreen(await hrRead(), employeeId, options));
+// --- HR > Money: the staff money drill-down (hr.money.view) ---------------------------
+export const getMoneySummaryAction = async (query: unknown) =>
+  runAction(async () => money.getMoneySummary(await requirePermission("hr.money.view"), query));
+export const getMoneyBreakdownAction = async (query: unknown) =>
+  runAction(async () => money.getMoneyBreakdown(await requirePermission("hr.money.view"), query));
 export const getEmployeeFormAction = async (employeeId?: string) =>
   runAction(async () => screens.getEmployeeForm(await hrManage(), employeeId));
 export const getEmployeeMonthScreenAction = async (employeeId: string, query: unknown) =>

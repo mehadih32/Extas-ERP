@@ -166,6 +166,12 @@ export const PERMISSIONS = [
     description: "Approve or reopen monthly payroll (posts the salaries to the books)",
   },
   {
+    key: "hr.money.view",
+    module: "HR",
+    description:
+      "See the staff money drill-down: salary, conveyance, bonus and overtime by person and by day",
+  },
+  {
     key: "portal.self",
     module: "HR",
     description: "Employee portal: own profile, attendance, leave, payslips and advances",

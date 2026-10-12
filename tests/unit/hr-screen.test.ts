@@ -58,6 +58,7 @@ describe("HR & payroll in the menu, by role", () => {
     "Claims",
     "Leave",
     "Payroll",
+    "Money",
     "Advances",
     "Items",
     "Notices",
@@ -71,7 +72,9 @@ describe("HR & payroll in the menu, by role", () => {
   it("gives the owner and Accounts every tab, and My HR from the account menu", () => {
     for (const name of ["SUPER_ADMIN", "ACCOUNTS"] as const) {
       // Overtime and where staff are now are for HR (hr.manage).
-      const expected = name === "ACCOUNTS" ? ALL.filter((t) => !HR_ONLY.includes(t)) : ALL;
+      // Staff money is the owner's (hr.money.view) unless given.
+      const expected =
+        name === "ACCOUNTS" ? ALL.filter((t) => !HR_ONLY.includes(t) && t !== "Money") : ALL;
       expect(tabs(role(name)), name).toEqual(expected);
       expect(nav(role(name)), name).toContain("/hr");
       expect(nav(role(name)), name).not.toContain("/me");
@@ -110,6 +113,14 @@ describe("HR & payroll in the menu, by role", () => {
       "Claims",
       "My details",
     ]);
+  });
+
+  it("opens the staff money drill-down only with its own permission", () => {
+    expect(tabs(["hr.money.view"])).toEqual(["Money"]);
+    expect(nav(["hr.money.view"])).toContain("/hr");
+    for (const name of ["ACCOUNTS", "PRODUCTION_MANAGER", "SALES_EXECUTIVE", "EMPLOYEE"] as const) {
+      expect(tabs(role(name)), name).not.toContain("Money");
+    }
   });
 
   it("keeps salaries from people who only see the staff list", () => {

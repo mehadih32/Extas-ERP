@@ -18,12 +18,14 @@ const SALARIES: readonly PermissionKey[] = ["hr.manage", "hr.payroll", "accounts
  * in: employees, attendance, leave, holidays and the terms of employment read
  * with any HR key; payroll with the keys that see salaries; the advances
  * register also opens to whoever pays advances out (accounts.payments.record);
- * the staff map (where checked-in staff are now) only to HR (hr.manage).
+ * the overtime ledger (shadow overtime) and the staff map (where checked-in
+ * staff are now) only to HR (hr.manage).
  */
 export const HR_TABS: readonly HrTab[] = [
   { href: "/hr", label: "Overview", anyOf: HR_READ },
   { href: "/hr/employees", label: "Employees", anyOf: HR_READ },
   { href: "/hr/attendance", label: "Attendance", anyOf: HR_READ },
+  { href: "/hr/overtime", label: "Overtime", anyOf: ["hr.manage"] },
   { href: "/hr/leave", label: "Leave", anyOf: HR_READ },
   { href: "/hr/payroll", label: "Payroll", anyOf: SALARIES },
   {

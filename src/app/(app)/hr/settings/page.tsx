@@ -64,10 +64,10 @@ export default async function HrSettingsPage({
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Panel title="Working week" id="rules-heading" className="lg:col-span-2">
-          <dl className="mt-4 mb-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <dl className="mt-4 mb-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
             <Fact label="Weekly days off">{offDaysText(rules.weeklyOffDays)}</Fact>
-            <Fact label="Office starts">
-              {rules.officeStartTime}
+            <Fact label="Office hours">
+              {rules.officeStartTime} to {rules.officeEndTime}
               <span className="block text-[0.8125rem] text-muted-foreground">
                 Late after {lateAfter(rules.officeStartTime, rules.lateGraceMinutes)}
               </span>
@@ -84,6 +84,16 @@ export default async function HrSettingsPage({
                   {rules.gpsAttendance
                     ? "With location, shared until check-out"
                     : "Location is not asked for"}
+                </span>
+              )}
+            </Fact>
+            <Fact label="Overtime">
+              {rules.shadowOvertime && rules.selfCheckIn
+                ? `Found from check-outs after ${rules.officeEndTime}`
+                : "Marked by HR"}
+              {rules.shadowOvertime && rules.selfCheckIn && (
+                <span className="block text-[0.8125rem] text-muted-foreground">
+                  Once someone stays {rules.overtimeMinMinutes} minutes; HR approves it
                 </span>
               )}
             </Fact>

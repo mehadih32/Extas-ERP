@@ -90,6 +90,7 @@ import {
   getAdvanceScreenAction,
   getAttendanceMonthScreenAction,
   getStaffMapScreenAction,
+  getOvertimeLedgerAction,
   getAttendanceScreenAction,
   getEmployeeFormAction,
   getEmployeeListAction,
@@ -324,7 +325,9 @@ run("HR & payroll screens", () => {
         visibleHrTabs(ctx.permissions).map((t) => t.href),
         who,
       ).toEqual([
-        ...(k.view ? ["/hr", "/hr/employees", "/hr/attendance", "/hr/leave"] : []),
+        ...(k.view ? ["/hr", "/hr/employees", "/hr/attendance"] : []),
+        ...(k.manage ? ["/hr/overtime"] : []),
+        ...(k.view ? ["/hr/leave"] : []),
         ...(k.salaries ? ["/hr/payroll"] : []),
         ...(k.advances ? ["/hr/advances"] : []),
         ...(k.manage ? ["/hr/map"] : []),
@@ -350,6 +353,7 @@ run("HR & payroll screens", () => {
       expect((await getAttendanceScreenAction({})).ok, `${who}: attendance`).toBe(k.view);
       expect((await getAttendanceMonthScreenAction({})).ok, `${who}: month totals`).toBe(k.view);
       expect((await getStaffMapScreenAction({})).ok, `${who}: staff map`).toBe(k.manage);
+      expect((await getOvertimeLedgerAction({})).ok, `${who}: overtime`).toBe(k.manage);
       expect((await getLeaveListAction({})).ok, `${who}: leave`).toBe(k.view);
       expect((await listLeaveRowsAction({})).ok, `${who}: more leave`).toBe(k.view);
       expect((await getLeaveScreenAction(env.waiting.id)).ok, `${who}: leave request`).toBe(k.view);

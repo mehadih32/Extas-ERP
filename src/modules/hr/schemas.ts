@@ -4,12 +4,14 @@ import {
   EmployeeDocumentKind,
   EmployeeStatus,
   LeaveStatus,
+  OvertimeStatus,
   PaymentMethod,
 } from "@prisma/client";
 import { z } from "zod";
 
 import { queryBoolean } from "@/lib/query-params";
 import { DEFAULT_RADIUS_METRES, isLatLng, RADIUS_LIMITS } from "@/modules/hr/geo";
+import { MAX_OVERTIME_MINUTES } from "@/modules/hr/overtime";
 import { TERMS_LIMITS } from "@/modules/hr/terms";
 
 const id = z.string().min(1);
@@ -49,8 +51,21 @@ export const hrSettingsSchema = z
     selfCheckIn: z.boolean(),
     /** Location at check-in and check-out, and pings while checked in. */
     gpsAttendance: z.boolean(),
+    /** Staying later than this is overtime (shadow overtime). */
+    officeEndTime: clock,
+    /** The app finds overtime from self check-outs for HR to approve. */
+    shadowOvertime: z.boolean(),
+    /** Stays shorter than this many minutes are not overtime. */
+    overtimeMinMinutes: z.number().int().min(0).max(240),
   })
-  .partial();
+  .partial()
+  .refine(
+    (s) =>
+      s.officeStartTime === undefined ||
+      s.officeEndTime === undefined ||
+      s.officeStartTime !== s.officeEndTime,
+    { message: "The day must end at a different time than it starts.", path: ["officeEndTime"] },
+  );
 
 const holiday = z.object({ date: day, name: z.string().trim().min(2).max(120) });
 
@@ -651,3 +666,34 @@ export const agreeToTermsSchema = z.discriminatedUnion("method", [
       .regex(/^\d{6}$/, "Enter the 6-digit code from the SMS."),
   }),
 ]);
+
+// --- Shadow overtime ------------------------------------------------------------------------
+
+/** The overtime ledger: a month (default this month), optionally one status or person. */
+export const overtimeLedgerSchema = z.object({
+  month: monthSchema.optional(),
+  status: z.enum(OvertimeStatus).optional(),
+  employeeId: id.optional(),
+});
+
+/**
+ * HR's decision on overtime the app found: approve it (as found, or other
+ * minutes with a reason), or reject it with a reason.
+ */
+export const decideOvertimeSchema = z.discriminatedUnion("decision", [
+  z.object({
+    decision: z.literal("APPROVE"),
+    /** Minutes to pay; left out, the minutes found. */
+    minutes: z
+      .number()
+      .int("Overtime is in whole minutes.")
+      .min(1, "Approve at least 1 minute, or reject it.")
+      .max(MAX_OVERTIME_MINUTES, "That is more than 16 hours.")
+      .optional(),
+    reason: optionalText(300),
+  }),
+  z.object({ decision: z.literal("REJECT"), reason }),
+]);
+
+/** Approves a month's waiting overtime as found, except entries that need a look. */
+export const approveAllOvertimeSchema = z.object({ month: monthSchema });

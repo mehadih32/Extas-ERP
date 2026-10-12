@@ -1662,6 +1662,21 @@ by the nightly housekeeping; check-in and check-out positions stay with the atte
 browser the position is only sent while the page is open; while location is off or refused
 the app shows a lock with "Try again" and "Check out now".
 
+**Shadow overtime.** When someone checks themselves out after the working day ends
+(`HrSettings.officeEndTime`, 18:00 by default) or works on a weekly day off or a holiday, the
+check-out records an `OvertimeEntry` for HR: from the end time (or all of a day off), once
+they stay `overtimeMinMinutes` (30 by default), in whole 15-minute steps. Staff never see it:
+their month, My HR, the check-in and check-out answers and the portal API carry no overtime
+hours (an approved payslip shows the overtime paid). With GPS attendance, a check-in at a
+work place lets the trail suggest less when the person left it before checking out ("Left
+before checking out"). HR (`hr.manage`) works the month on the Overtime tab (`/hr/overtime`):
+approve as found, approve what the trail suggests, change the hours (a reason is needed) or
+reject (with a reason), or "Approve all as found" for entries with no flag. Only approved
+minutes are written to the day's `Attendance.overtimeMinutes`, which payroll already pays at
+the person's overtime rate, so payroll itself is unchanged; a payroll draft notes overtime
+still waiting. Nobody decides their own overtime (a Super Admin aside), and an approved
+payroll freezes its month's overtime. Turn it off with "Find overtime from check-outs".
+
 **Android app.** `mobile/` wraps the same web app in a Capacitor Android app that opens the
 company's server (`EXTAS_APP_URL` at build time). Its `DutyTracker` plugin
 (`mobile/android/app/src/main/java/com/extas/erp/`) starts a foreground location service
@@ -1690,7 +1705,7 @@ service worker `public/sw.js` make Extas ERP installable; phones are offered "In
 
 | Endpoint                                                                              | Purpose                                                  |
 | ------------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| `GET/PATCH /api/hr/settings`                                                          | Weekly days off, office start time, late rules, check-in |
+| `GET/PATCH /api/hr/settings`                                                          | Weekly days off, office hours, lates, check-in, overtime |
 | `GET/POST /api/hr/holidays`, `DELETE …/:id`                                           | Holiday list (one or many at once)                       |
 | `GET/POST /api/hr/leave-types`, `PATCH …/:id`                                         | Leave types and yearly days                              |
 | `GET/POST /api/hr/employees`, `GET/PATCH/DELETE …/:id`                                | Employees and the 360° profile                           |
@@ -1725,6 +1740,8 @@ service worker `public/sw.js` make Extas ERP installable; phones are offered "In
 | `GET /api/hr/staff-map?person=`                                                       | Who is on duty, where, no signal; a person's route       |
 | `GET /api/portal/location/duty`                                                       | Should this phone send its position now, how often       |
 | `POST /api/portal/location/pings`                                                     | Positions while checked in (browser or Android app)      |
+| `GET /api/hr/overtime?month=&status=`                                                 | Shadow overtime found at check-out, and HR's decisions   |
+| `POST /api/hr/overtime/:id/decide`, `POST /api/hr/overtime/approve-all`               | Approve, change or reject overtime / approve all found   |
 
 `hr.view` sees profiles, attendance, leave and holidays, but no salaries. `hr.manage` adds
 and edits employees and salaries, marks attendance, approves leave and sets the HR rules.

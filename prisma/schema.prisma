@@ -162,6 +162,7 @@ model Company {
   workLocations        WorkLocation[]
   locationPings        LocationPing[]
   staffPositions       StaffPosition[]
+  overtimeEntries      OvertimeEntry[]
 }
 
 /// A person who can log in. Global across companies.
@@ -203,6 +204,7 @@ model User {
   approvedLeaves     LeaveRequest[]        @relation("LeaveApprovedBy")
   requestedLeaves    LeaveRequest[]        @relation("LeaveRequestedBy")
   attendanceMarked   Attendance[]          @relation("AttendanceRecordedBy")
+  overtimeDecided    OvertimeEntry[]       @relation("OvertimeDecidedBy")
   payrollsCreated    PayrollRun[]          @relation("PayrollCreatedBy")
   payrollsApproved   PayrollRun[]          @relation("PayrollApprovedBy")
   salariesPaid       PayrollPayment[]      @relation("PayrollPaidBy")
@@ -2343,6 +2345,7 @@ model Employee {
   workLocation    WorkLocation?       @relation(fields: [workLocationId], references: [id], onDelete: SetNull)
   locationPings   LocationPing[]
   position        StaffPosition?
+  overtimeEntries OvertimeEntry[]
 
   @@unique([companyId, code])
   @@unique([companyId, userId])
@@ -2538,6 +2541,12 @@ model HrSettings {
   selfCheckIn          Boolean  @default(true) // employees may check in from the portal
   /// Staff share their location when they check in and out and while checked in.
   gpsAttendance        Boolean  @default(false)
+  /// When the working day ends: staying later than this is overtime.
+  officeEndTime        String   @default("18:00")
+  /// Shadow overtime: the app finds overtime from self check-outs for HR to
+  /// approve (staff never see it), once someone stays at least this long.
+  shadowOvertime       Boolean  @default(true)
+  overtimeMinMinutes   Int      @default(30)
   updatedAt            DateTime @updatedAt
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
@@ -2591,14 +2600,53 @@ model Attendance {
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
 
-  company       Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  employee      Employee      @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  recordedBy    User?         @relation("AttendanceRecordedBy", fields: [recordedById], references: [id], onDelete: SetNull)
-  checkInPlace  WorkLocation? @relation("AttendanceCheckInPlace", fields: [checkInPlaceId], references: [id], onDelete: SetNull)
-  checkOutPlace WorkLocation? @relation("AttendanceCheckOutPlace", fields: [checkOutPlaceId], references: [id], onDelete: SetNull)
+  company       Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee      Employee       @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  recordedBy    User?          @relation("AttendanceRecordedBy", fields: [recordedById], references: [id], onDelete: SetNull)
+  checkInPlace  WorkLocation?  @relation("AttendanceCheckInPlace", fields: [checkInPlaceId], references: [id], onDelete: SetNull)
+  checkOutPlace WorkLocation?  @relation("AttendanceCheckOutPlace", fields: [checkOutPlaceId], references: [id], onDelete: SetNull)
+  overtime      OvertimeEntry?
 
   @@unique([employeeId, date])
   @@index([companyId, date])
+}
+
+/// Overtime the app found from a self check-out ("shadow overtime"). The
+/// employee never sees it. HR approves it as found, changes it with a reason,
+/// or rejects it; only approved minutes go on the day's attendance
+/// (Attendance.overtimeMinutes), which payroll already pays.
+model OvertimeEntry {
+  id               String         @id @default(cuid())
+  companyId        String
+  employeeId       String
+  attendanceId     String         @unique
+  date             DateTime       @db.Date
+  basis            OvertimeBasis
+  /// When overtime started counting: the end of the working day, or the
+  /// check-in on a day off.
+  startsAt         DateTime
+  checkOut         DateTime
+  detectedMinutes  Int
+  /// The location trail's view: overtime only up to the last position at the
+  /// work place, when the person left before checking out.
+  suggestedMinutes Int?
+  lastAtPlace      DateTime?
+  status           OvertimeStatus @default(PENDING)
+  approvedMinutes  Int?
+  /// Why HR changed or rejected it (required then).
+  reason           String?
+  decidedById      String?
+  decidedAt        DateTime?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  company    Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee   Employee   @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  attendance Attendance @relation(fields: [attendanceId], references: [id], onDelete: Cascade)
+  decidedBy  User?      @relation("OvertimeDecidedBy", fields: [decidedById], references: [id], onDelete: SetNull)
+
+  @@index([companyId, status, date])
+  @@index([employeeId, date])
 }
 
 /// A place staff check in at (an office, a factory floor, a shop), with the
@@ -3842,6 +3890,19 @@ enum AttendanceStatus {
 enum AttendanceSource {
   MANUAL
   SELF // checked in from the employee portal
+}
+
+/// Why the app counted overtime: staying after the end of the working day, or
+/// working on a weekly day off or a holiday (all of it counts).
+enum OvertimeBasis {
+  AFTER_HOURS
+  DAY_OFF
+}
+
+enum OvertimeStatus {
+  PENDING
+  APPROVED
+  REJECTED
 }
 
 /// Where a location ping came from: My HR in a browser, or the Android app's

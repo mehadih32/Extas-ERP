@@ -76,6 +76,22 @@ export default async function PayrollRunPage({
           </HeaderWithEye>
           <PayrollActions key={run.id} screen={screen} currency={currency} notice={notice} />
           {notes.approve && <FormAlert tone="note">{notes.approve}</FormAlert>}
+          {notes.overtime && (
+            <FormAlert tone="note">
+              {notes.overtime}
+              {screen.overtimeHref && (
+                <>
+                  {" "}
+                  <Link
+                    href={hrHref.overtime(screen.overtimeHref, "PENDING")}
+                    className="font-medium underline underline-offset-4"
+                  >
+                    See the overtime
+                  </Link>
+                </>
+              )}
+            </FormAlert>
+          )}
           {notes.reopen && <FormAlert tone="note">{notes.reopen}</FormAlert>}
         </div>
 

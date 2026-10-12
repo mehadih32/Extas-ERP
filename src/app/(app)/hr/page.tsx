@@ -388,6 +388,18 @@ export default async function HrOverviewPage() {
                   </>
                 )}
               </p>
+              {o.vault.overtimeWaiting > 0 && (
+                <p className="mt-2 text-[0.8125rem] text-muted-foreground">
+                  {count(o.vault.overtimeWaiting)} overtime{" "}
+                  {o.vault.overtimeWaiting === 1 ? "entry waits" : "entries wait"} for approval.{" "}
+                  <Link
+                    href={hrHref.overtime(o.vault.overtimeMonth ?? undefined, "PENDING")}
+                    className={linkClass}
+                  >
+                    Approve overtime
+                  </Link>
+                </p>
+              )}
             </Panel>
           )}
 

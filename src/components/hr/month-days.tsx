@@ -17,7 +17,8 @@ type Day = {
     status: AttendanceStatus;
     checkIn: string | null;
     checkOut: string | null;
-    overtimeMinutes: number;
+    /** Left out of an employee's own month (shadow overtime). */
+    overtimeMinutes?: number;
     note: string | null;
     source: string;
   } | null;
@@ -33,10 +34,11 @@ type Totals = {
   unpaidLeaveDays: number;
   latePenaltyDays: number;
   unpaidDays: number;
-  overtimeHours: number;
+  /** Left out of an employee's own month (shadow overtime). */
+  overtimeHours?: number;
 };
 
-/** The month's figures that payroll uses. */
+/** The month's figures that payroll uses (overtime only where HR sees it). */
 export function MonthTotals({ totals }: { totals: Totals }) {
   return (
     <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
@@ -54,7 +56,7 @@ export function MonthTotals({ totals }: { totals: Totals }) {
       <Fact label="Paid leave">{totals.paidLeaveDays}</Fact>
       <Fact label="Unpaid leave">{totals.unpaidLeaveDays}</Fact>
       <Fact label="Unpaid days">{totals.unpaidDays}</Fact>
-      <Fact label="Overtime">{totals.overtimeHours} h</Fact>
+      {totals.overtimeHours !== undefined && <Fact label="Overtime">{totals.overtimeHours} h</Fact>}
     </dl>
   );
 }
@@ -81,7 +83,7 @@ export function MonthDays({
         const times = [
           d.mark?.checkIn && `In ${d.mark.checkIn}`,
           d.mark?.checkOut && `out ${d.mark.checkOut}`,
-          d.mark && d.mark.overtimeMinutes > 0 && `overtime ${minutesText(d.mark.overtimeMinutes)}`,
+          d.mark?.overtimeMinutes && `overtime ${minutesText(d.mark.overtimeMinutes)}`,
         ]
           .filter(Boolean)
           .join(", ");

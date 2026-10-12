@@ -177,6 +177,7 @@ export const hrHref = {
   employeeAdvances: (employee: string) => withQuery("/hr/advances", { employee }),
   settings: (year?: number) => withQuery("/hr/settings", { year: year ? String(year) : undefined }),
   map: (person?: string) => withQuery("/hr/map", { person }),
+  overtime: (month?: string, status?: string) => withQuery("/hr/overtime", { month, status }),
   terms: (version?: number) =>
     withQuery("/hr/terms", { version: version ? String(version) : undefined }),
   journal: (id: string) => `/accounts/journal/${enc(id)}`,

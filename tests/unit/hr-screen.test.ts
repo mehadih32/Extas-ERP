@@ -54,6 +54,7 @@ describe("HR & payroll in the menu, by role", () => {
     "Overview",
     "Employees",
     "Attendance",
+    "Overtime",
     "Leave",
     "Payroll",
     "Advances",
@@ -61,11 +62,13 @@ describe("HR & payroll in the menu, by role", () => {
     "Holidays & rules",
     "Terms",
   ];
+  /** Tabs for HR alone (hr.manage), which Accounts does not hold. */
+  const HR_ONLY = ["Overtime", "Staff map"];
 
   it("gives the owner and Accounts every tab, and My HR from the account menu", () => {
     for (const name of ["SUPER_ADMIN", "ACCOUNTS"] as const) {
-      // Where staff are now is for HR (hr.manage), which Accounts does not hold.
-      const expected = name === "ACCOUNTS" ? ALL.filter((t) => t !== "Staff map") : ALL;
+      // Overtime and where staff are now are for HR (hr.manage).
+      const expected = name === "ACCOUNTS" ? ALL.filter((t) => !HR_ONLY.includes(t)) : ALL;
       expect(tabs(role(name)), name).toEqual(expected);
       expect(nav(role(name)), name).toContain("/hr");
       expect(nav(role(name)), name).not.toContain("/me");
@@ -118,10 +121,12 @@ describe("HR & payroll in the menu, by role", () => {
     expect(tabs(["portal.self"])).toEqual([]);
   });
 
-  it("shows the staff map only to HR", () => {
-    expect(tabs(["hr.manage"])).toContain("Staff map");
-    for (const keys of [["hr.view"], ["hr.payroll"], ["accounts.view"], ["portal.self"]]) {
-      expect(tabs(keys), keys.join()).not.toContain("Staff map");
+  it("shows overtime and the staff map only to HR", () => {
+    for (const tab of HR_ONLY) {
+      expect(tabs(["hr.manage"])).toContain(tab);
+      for (const keys of [["hr.view"], ["hr.payroll"], ["accounts.view"], ["portal.self"]]) {
+        expect(tabs(keys), `${tab}: ${keys.join()}`).not.toContain(tab);
+      }
     }
   });
 });

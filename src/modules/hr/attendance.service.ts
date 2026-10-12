@@ -20,6 +20,7 @@ import { type EmploymentInput, evaluateMonth, minutesToHours } from "@/modules/h
 import { assertMonthsOpen } from "@/modules/hr/period-lock";
 import { distanceText } from "@/modules/hr/geo";
 import { openShift, placeCheck, savePings, whereOf } from "@/modules/hr/location.service";
+import { recordShadowOvertime } from "@/modules/hr/overtime.service";
 import { canMarkDay } from "@/modules/hr/rules";
 import {
   attendanceDaySchema,
@@ -34,7 +35,9 @@ import { loadHrSettings } from "@/modules/hr/setup";
  * HR only marks lates, half days and absences (and overtime minutes). Marking
  * a day replaces that day's record. Employees can also check in and out from
  * the portal; a check-in after the office start time plus the grace minutes is
- * late. Days in a month whose payroll is approved cannot change.
+ * late, and a check-out after the end of the day records shadow overtime for
+ * HR to approve (overtime.service.ts). Staff never see overtime hours. Days in
+ * a month whose payroll is approved cannot change.
  */
 
 type Tx = Prisma.TransactionClient;
@@ -76,6 +79,41 @@ function placeFor(ctx: CompanyContext, m: Parameters<typeof whereOf>[0], which: 
   if (!w || (!w.located && !w.ip)) return null;
   if (ctx.can("hr.manage")) return w;
   return { ...w, lat: null, lng: null, accuracy: null, ip: null, link: null };
+}
+
+/**
+ * A day's mark as its employee sees it: without overtime minutes, which only
+ * HR sees (shadow overtime; the approved pay shows on the payslip).
+ */
+function ownMark(m: ReturnType<typeof presentMark>) {
+  if (!m) return null;
+  return {
+    id: m.id,
+    status: m.status,
+    checkIn: m.checkIn,
+    checkOut: m.checkOut,
+    note: m.note,
+    source: m.source,
+  };
+}
+
+/** An employee's month as they see it: no overtime hours anywhere (shadow overtime). */
+export function withoutOvertime(m: Awaited<ReturnType<typeof employeeMonth>>) {
+  const t = m.totals;
+  return {
+    ...m,
+    totals: t && {
+      workingDays: t.workingDays,
+      presentDays: t.presentDays,
+      lateDays: t.lateDays,
+      absentDays: t.absentDays,
+      paidLeaveDays: t.paidLeaveDays,
+      unpaidLeaveDays: t.unpaidLeaveDays,
+      latePenaltyDays: t.latePenaltyDays,
+      unpaidDays: t.unpaidDays,
+    },
+    days: m.days.map((d) => ({ ...d, mark: ownMark(d.mark) })),
+  };
 }
 
 /** Is a check-in at this local time late? */
@@ -388,7 +426,7 @@ export async function myAttendance(
 ) {
   const q = attendanceMonthSchema.parse(raw);
   const employee = await requireLinkedEmployee(ctx);
-  return employeeMonth(ctx, employee, q.month ?? thisMonth(ctx), options);
+  return withoutOvertime(await employeeMonth(ctx, employee, q.month ?? thisMonth(ctx), options));
 }
 
 async function todaysMark(tx: Tx, employeeId: string, day: string) {
@@ -526,7 +564,7 @@ export async function checkIn(ctx: CompanyContext, raw: unknown = {}, meta?: Req
     );
     return saved;
   }, TX_OPTIONS);
-  return { date: day, mark: presentMark(mark, tz), place: placeResult(check) };
+  return { date: day, mark: ownMark(presentMark(mark, tz)), place: placeResult(check) };
 }
 
 /**
@@ -577,6 +615,8 @@ export async function checkOut(ctx: CompanyContext, raw: unknown = {}, meta?: Re
         source,
       );
     }
+    // Overtime is found here, silently, for HR to approve (shadow overtime).
+    await recordShadowOvertime(tx, { companyId, mark: saved, settings, timeZone: tz });
     await auditInCompany(
       ctx,
       meta,
@@ -592,5 +632,9 @@ export async function checkOut(ctx: CompanyContext, raw: unknown = {}, meta?: Re
     );
     return saved;
   }, TX_OPTIONS);
-  return { date: dateOnly(mark.date), mark: presentMark(mark, tz), place: placeResult(check) };
+  return {
+    date: dateOnly(mark.date),
+    mark: ownMark(presentMark(mark, tz)),
+    place: placeResult(check),
+  };
 }

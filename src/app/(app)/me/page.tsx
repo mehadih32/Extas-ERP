@@ -111,7 +111,6 @@ export default async function MyHrPage() {
               <Fact label="Paid leave">{t.paidLeaveDays}</Fact>
               <Fact label="Unpaid leave">{t.unpaidLeaveDays}</Fact>
               <Fact label="Unpaid days">{t.unpaidDays}</Fact>
-              <Fact label="Overtime">{t.overtimeHours} h</Fact>
             </dl>
           ) : (
             <p className="mt-4 text-sm text-muted-foreground">Not on the staff list this month.</p>

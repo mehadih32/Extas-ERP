@@ -11,6 +11,7 @@ import * as attendance from "@/modules/hr/attendance.service";
 import * as employees from "@/modules/hr/employee.service";
 import * as leave from "@/modules/hr/leave.service";
 import * as location from "@/modules/hr/location.service";
+import * as overtime from "@/modules/hr/overtime.service";
 import * as payroll from "@/modules/hr/payroll.service";
 import * as screens from "@/modules/hr/screens.service";
 import * as settings from "@/modules/hr/settings.service";
@@ -119,6 +120,16 @@ export const getHrSettingsScreenAction = async (query: { year?: unknown } = {}) 
 
 export const getStaffMapScreenAction = async (query: unknown = {}) =>
   runAction(async () => location.getStaffMap(await hrManage(), query));
+
+// --- Shadow overtime (HR only) -----------------------------------------------------------
+export const getOvertimeLedgerAction = async (query: unknown = {}) =>
+  runAction(async () => overtime.getOvertimeLedger(await hrManage(), query));
+export const decideOvertimeAction = async (entryId: string, input: unknown) =>
+  change(async () =>
+    overtime.decideOvertime(await hrManage(), entryId, input, await getRequestMeta()),
+  );
+export const approveAllOvertimeAction = async (input: unknown) =>
+  change(async () => overtime.approveAllOvertime(await hrManage(), input, await getRequestMeta()));
 
 // --- Work places (GPS attendance) --------------------------------------------------------
 export const listWorkPlacesAction = async () =>

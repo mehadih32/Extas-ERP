@@ -67,6 +67,7 @@ import {
   mayVoidAdvance,
 } from "@/modules/hr/rules";
 import { listWorkPlaces, openShift } from "@/modules/hr/location.service";
+import { waitingOvertime } from "@/modules/hr/overtime.service";
 import { getHrSettings, listHolidays, listLeaveTypes } from "@/modules/hr/settings.service";
 import { vaultIncompleteWhere } from "@/modules/hr/vault";
 import { getEmployeeVault, getMyVault, listPayRequests } from "@/modules/hr/vault.service";
@@ -211,7 +212,7 @@ export async function getOverviewScreen(ctx: CompanyContext) {
   }
   let vault = null;
   if (access.manage) {
-    const [waiting, incomplete, termsToAgree] = await Promise.all([
+    const [waiting, incomplete, termsToAgree, overtimeWaiting, oldestOvertime] = await Promise.all([
       listPayRequests(ctx, { status: "PENDING", take: 6 }),
       ctx.db.employee.count({
         where: {
@@ -222,6 +223,12 @@ export async function getOverviewScreen(ctx: CompanyContext) {
         },
       }),
       staffToAgreeCount(ctx),
+      ctx.db.overtimeEntry.count({ where: { status: "PENDING" } }),
+      ctx.db.overtimeEntry.findFirst({
+        where: { status: "PENDING" },
+        orderBy: { date: "asc" },
+        select: { date: true },
+      }),
     ]);
     vault = {
       payRequests: waiting.map((r) => ({
@@ -233,6 +240,9 @@ export async function getOverviewScreen(ctx: CompanyContext) {
       incomplete,
       /** Staff with a login who still have to agree to the terms (null: no terms yet). */
       termsToAgree,
+      /** Shadow overtime waiting for HR's approval, any month, and the earliest month with some. */
+      overtimeWaiting,
+      overtimeMonth: oldestOvertime ? dateOnly(oldestOvertime.date).slice(0, 7) : null,
     };
   }
   let advances = null;
@@ -782,6 +792,8 @@ export async function getPayrollScreen(ctx: CompanyContext, runId: string) {
   const draft = canChangePayroll(state);
   const reopen = canReopenPayroll(state, live);
   const pay = canPayPayroll(state, unpaid.length);
+  // Shadow overtime still waiting for HR is not paid until it is approved.
+  const overtimeWaiting = draft.ok ? await waitingOvertime(ctx, run.month) : 0;
   return {
     run,
     unpaid: unpaid.map((i) => ({ id: i.id, employee: i.employee, netPay: i.netPay })),
@@ -803,7 +815,13 @@ export async function getPayrollScreen(ctx: CompanyContext, runId: string) {
         run.status === "DRAFT" && !access.approve
           ? "Approving it is for someone who may approve payroll (by default the owner), so a second person checks the salaries."
           : null,
+      overtime:
+        overtimeWaiting > 0
+          ? `${overtimeWaiting} overtime ${overtimeWaiting === 1 ? "entry" : "entries"} found in ${run.label} still ${overtimeWaiting === 1 ? "waits" : "wait"} for HR. Only approved overtime is paid: once HR approves, use “Work it out again”.`
+          : null,
     },
+    /** Where HR approves the month's overtime (hr.manage). */
+    overtimeHref: overtimeWaiting > 0 && access.manage ? run.month : null,
     payments: run.payments.map((p) => ({
       ...p,
       paidOn: localDay(p.date, ctx.company.timezone),
@@ -980,6 +998,9 @@ export async function getSettingsScreen(ctx: CompanyContext, raw: { year?: unkno
       latesPerDeductionDay: rules.latesPerDeductionDay,
       selfCheckIn: rules.selfCheckIn,
       gpsAttendance: rules.gpsAttendance,
+      officeEndTime: rules.officeEndTime,
+      shadowOvertime: rules.shadowOvertime,
+      overtimeMinMinutes: rules.overtimeMinMinutes,
     },
     /** Where staff check in, each with its radius (GPS attendance). */
     workPlaces: places,

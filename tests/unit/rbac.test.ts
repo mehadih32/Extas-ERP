@@ -8,7 +8,7 @@ import {
   PERMISSIONS,
   isPermissionKey,
 } from "@/modules/rbac/permissions";
-import { resolvePermissions } from "@/modules/rbac/resolve";
+import { permissionChanges, resolvePermissions } from "@/modules/rbac/resolve";
 
 describe("permission catalogue", () => {
   it("has unique keys", () => {
@@ -134,5 +134,41 @@ describe("resolvePermissions", () => {
       grantedKeys: ["portal.self", "legacy.removed"],
     });
     expect([...perms]).toEqual(["portal.self"]);
+  });
+
+  it("adds and takes away one person's own changes on top of the role", () => {
+    const perms = resolvePermissions({
+      isPlatformSuperAdmin: false,
+      systemRole: "SALES_EXECUTIVE",
+      grantedKeys: ["sales.view", "sales.order.create"],
+      changes: [
+        { key: "sales.order.create", granted: false },
+        { key: "reports.export", granted: true },
+        { key: "legacy.removed", granted: true },
+      ],
+    });
+    expect([...perms].sort()).toEqual(["reports.export", "sales.view"]);
+    // Super Admins keep everything whatever is stored for them.
+    expect(
+      resolvePermissions({
+        isPlatformSuperAdmin: false,
+        systemRole: "SUPER_ADMIN",
+        grantedKeys: [],
+        changes: [{ key: "sales.view", granted: false }],
+      }).has("sales.view"),
+    ).toBe(true);
+  });
+
+  it("works out the changes from a role to the boxes ticked, A to Z", () => {
+    expect(
+      permissionChanges(
+        ["sales.view", "sales.order.create", "parties.view"],
+        ["sales.view", "reports.export", "audit.view"],
+      ),
+    ).toEqual({
+      added: ["audit.view", "reports.export"],
+      removed: ["parties.view", "sales.order.create"],
+    });
+    expect(permissionChanges(["sales.view"], ["sales.view"])).toEqual({ added: [], removed: [] });
   });
 });

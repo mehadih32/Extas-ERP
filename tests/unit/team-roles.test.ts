@@ -6,6 +6,7 @@ import {
   canChangeRole,
   canDeactivate,
   canDeleteRole,
+  canEditMemberPermissions,
   canEditRole,
   canGrantRole,
   canReactivate,
@@ -142,6 +143,21 @@ describe("resetting a password", () => {
       canResetPassword(platformOwner, member("u-shared", SALES, { worksElsewhere: true })),
     ).toEqual(allowed);
     expect(canResetPassword(platformOwner, member("u-admin", SUPER_ADMIN))).toEqual(allowed);
+  });
+});
+
+describe("ticking permissions for one member", () => {
+  it("never for a Super Admin, the platform owner or oneself", () => {
+    const always = refused("FORBIDDEN", "A Super Admin always has every permission.");
+    expect(canEditMemberPermissions(superAdmin, member("u-other", SUPER_ADMIN))).toEqual(always);
+    expect(
+      canEditMemberPermissions(superAdmin, member("u-owner", CUSTOM, { isPlatformOwner: true })),
+    ).toEqual(always);
+    expect(canEditMemberPermissions(hrManager, member("u-hr", CUSTOM))).toEqual(
+      refused("CONFLICT", "You cannot change your own permissions. Ask another admin."),
+    );
+    expect(canEditMemberPermissions(hrManager, member("u-sales", SALES))).toEqual(allowed);
+    expect(canEditMemberPermissions(superAdmin, member("u-sales", SALES))).toEqual(allowed);
   });
 });
 

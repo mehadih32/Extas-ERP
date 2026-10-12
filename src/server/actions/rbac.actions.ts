@@ -10,6 +10,7 @@ import {
   changeMemberRole,
   listTeam,
   resetMemberPassword,
+  setMemberAccess,
   setMemberActive,
 } from "@/modules/rbac/member.service";
 import { createRole, deleteRole, getRolesScreen, updateRole } from "@/modules/rbac/role.service";
@@ -79,6 +80,16 @@ export async function changeMemberRoleAction(membershipId: string, roleId: strin
     const updated = await changeMemberRole(ctx, membershipId, roleId, await getRequestMeta());
     refreshScreens();
     return updated;
+  });
+}
+
+/** The permission matrix: { roleId?, permissions? } (see setMemberAccess). */
+export async function setMemberAccessAction(membershipId: string, input: unknown) {
+  return runAction(async () => {
+    const ctx = await requirePermission("company.members.manage");
+    const updated = await setMemberAccess(ctx, membershipId, input, await getRequestMeta());
+    refreshScreens();
+    return { roleName: updated.role.name };
   });
 }
 

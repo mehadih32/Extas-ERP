@@ -110,6 +110,11 @@ Built one module at a time, each in its own pull request. So far:
     once with a copy button, for the administrator to hand over (sending it by email or
     WhatsApp comes with the integrations). Each person's menu changes their role, issues a new
     temporary password (signing them out everywhere), or deactivates or reactivates them.
+    Giving a role (adding someone, Change role, or a login from an employee's profile) opens
+    the **full disclosure permission matrix**: every permission A to Z with a box each, the
+    role's ticked. Unticking hides that part of the app from that one person; ticking more
+    gives it to them alone. The ⚙ next to a person's role ("Edit permissions") opens it again,
+    and the role shows "+2 −1" when someone has their own changes.
   - **Roles**: the built-in and custom roles and what each allows. A new role starts empty or
     from a copy of another role's permissions, which are grouped by area. Ticking a money
     permission (recording money received or paid) for a role other than Accounts shows a
@@ -891,6 +896,15 @@ Super Admin role or change, deactivate, reactivate or reset a Super Admin. The c
 keeps one active Super Admin. Nobody can deactivate or reset themselves; they change their own
 password instead. Only the platform owner can reset the platform owner or someone who also
 works in another company. Each person's menu offers exactly what these rules allow.
+
+One person's own permissions (the permission matrix) are kept as changes to their role's in
+the `MemberPermission` table: a permission added, or one of the role's taken away. Every
+request applies them on top of the role, so menus, screens and the API all follow; reminders
+and petty cash holders count people by them too. Ticking boxes needs `company.roles.manage`
+as well as `company.members.manage`, is never for a Super Admin (who always has everything)
+or for oneself, and a new role starts from that role's own permissions. Every change is in the
+audit log with what was added and taken away. `PATCH /api/members/:id` takes `permissions`
+(everything the person may do) alongside `roleId`.
 
 For developers:
 

@@ -35,6 +35,7 @@ import * as employees from "@/modules/hr/employee.service";
 import * as logins from "@/modules/hr/login.service";
 import * as screens from "@/modules/hr/screens.service";
 import * as vault from "@/modules/hr/vault.service";
+import { setMemberAccess } from "@/modules/rbac/member.service";
 import { createRole } from "@/modules/rbac/role.service";
 
 import { png } from "../fixtures/images";
@@ -122,6 +123,9 @@ run("the 360° profile and system access", () => {
   it("shows the login, its role and last sign-in to HR and to people who manage users", async () => {
     const card = await accessOf(env.owner, env.sumon.id);
     expect(card?.login).toEqual({
+      id: expect.any(String),
+      isYou: false,
+      permissions: { added: [], removed: [] },
       email: "sumon@extras.test",
       active: true,
       invited: false,
@@ -135,7 +139,12 @@ run("the 360° profile and system access", () => {
       switchOff: true,
       switchOn: false,
       remove: true,
+      editPermissions: true,
     });
+    // The permission matrix starts from what each role gives.
+    expect(card?.roles.find((r) => r.systemRole === "EMPLOYEE")?.permissions).toEqual(
+      expect.arrayContaining(["portal.self", "expenses.create", "notepad.use"]),
+    );
     // The owner may give any role, Super Admin included.
     expect(card?.roles.map((r) => r.systemRole)).toContain("SUPER_ADMIN");
 
@@ -150,6 +159,7 @@ run("the 360° profile and system access", () => {
       switchOff: false,
       switchOn: false,
       remove: false,
+      editPermissions: false,
     });
     expect((await accessOf(env.hr, env.sumon.id))?.can).toMatchObject({
       changeRole: false,
@@ -304,6 +314,37 @@ run("the 360° profile and system access", () => {
     await expect(
       logins.changeEmployeeLogin(env.owner, env.boss.id, { roleId: env.roles.EMPLOYEE }),
     ).rejects.toMatchObject({ code: "CONFLICT" });
+  });
+
+  it("shows one person's own permissions and offers the matrix to people who manage roles", async () => {
+    const before = await accessOf(env.owner, env.sumon.id);
+    await setMemberAccess(env.owner, before!.login!.id, {
+      permissions: ["portal.self", "notepad.use", "reports.export"],
+    });
+    const card = await accessOf(env.owner, env.sumon.id);
+    expect(card?.login?.permissions).toEqual({
+      added: ["reports.export"],
+      removed: ["expenses.create"],
+    });
+    // Sumon now works with them on every request.
+    const sumon = await contextFor(env.sumonCtx.user.id, env.company.id);
+    expect(sumon.can("reports.export")).toBe(true);
+    expect(sumon.can("expenses.create")).toBe(false);
+
+    // Office Admin manages users but not roles: the role can move, the boxes cannot.
+    expect((await accessOf(env.admin, env.sumon.id))?.can).toMatchObject({
+      changeRole: true,
+      editPermissions: false,
+    });
+    // Nobody ticks their own boxes (the owner is on the staff list as Mehadi).
+    expect((await accessOf(env.owner, env.boss.id))?.can.editPermissions).toBe(false);
+
+    // A new role starts from that role's permissions.
+    await logins.changeEmployeeLogin(env.owner, env.sumon.id, { roleId: env.roles.ACCOUNTS });
+    expect((await accessOf(env.owner, env.sumon.id))?.login?.permissions).toEqual({
+      added: [],
+      removed: [],
+    });
   });
 
   it("changes a login through the API for people who manage users only", async () => {

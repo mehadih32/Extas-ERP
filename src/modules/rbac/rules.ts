@@ -114,6 +114,24 @@ export function canResetPassword(
   return ALLOWED;
 }
 
+/**
+ * Ticking or unticking permissions for one member (the permission matrix), on
+ * top of the role they hold or are moving to (`target.systemRole`). Holding
+ * company.roles.manage is checked before this, as for editing a role.
+ */
+export function canEditMemberPermissions(
+  actor: Actor,
+  target: HasSystemRole & { userId: string; isPlatformOwner: boolean },
+): Verdict {
+  if (isSuperAdmin(target) || target.isPlatformOwner) {
+    return refuse("FORBIDDEN", "A Super Admin always has every permission.");
+  }
+  if (target.userId === actor.userId) {
+    return refuse("CONFLICT", "You cannot change your own permissions. Ask another admin.");
+  }
+  return ALLOWED;
+}
+
 // --- Roles ---------------------------------------------------------------------
 
 type RoleFacts = HasSystemRole & { isSystem: boolean };

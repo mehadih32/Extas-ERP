@@ -16,7 +16,7 @@ import {
 } from "@/modules/rbac/permissions";
 import { assertAllowed, canDeleteRole, canEditRole, canRenameRole } from "@/modules/rbac/rules";
 
-const permissionKeysSchema = z
+export const permissionKeysSchema = z
   .array(z.string())
   .max(PERMISSIONS.length)
   .refine((keys) => keys.every(isPermissionKey), { message: "Unknown permission" })

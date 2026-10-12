@@ -12,7 +12,14 @@ import {
   otherActiveSuperAdmins,
   setMemberActive,
 } from "@/modules/rbac/member.service";
-import { canChangeRole, canDeactivate, canGrantRole, canReactivate } from "@/modules/rbac/rules";
+import { ALL_PERMISSION_KEYS, type PermissionKey } from "@/modules/rbac/permissions";
+import {
+  canChangeRole,
+  canDeactivate,
+  canEditMemberPermissions,
+  canGrantRole,
+  canReactivate,
+} from "@/modules/rbac/rules";
 
 /*
  * The System access card on an employee's profile: the login linked to them,
@@ -32,11 +39,14 @@ async function membershipOf(ctx: CompanyContext, userId: string) {
   return ctx.db.companyMembership.findFirst({
     where: { userId },
     include: {
-      user: { select: { email: true, status: true, lastLoginAt: true } },
+      user: { select: { email: true, status: true, lastLoginAt: true, isSuperAdmin: true } },
       role: { select: roleSelect },
+      permissionChanges: { select: { granted: true, permission: { select: { key: true } } } },
     },
   });
 }
+
+const AZ = [...ALL_PERMISSION_KEYS].sort();
 
 /** What the card shows and offers, or null for people who neither run HR nor manage users. */
 export async function getSystemAccess(ctx: CompanyContext, employee: Subject) {
@@ -47,10 +57,24 @@ export async function getSystemAccess(ctx: CompanyContext, employee: Subject) {
   const [membership, roles] = await Promise.all([
     employee.userId ? membershipOf(ctx, employee.userId) : null,
     manageUsers
-      ? ctx.db.role.findMany({
-          select: roleSelect,
-          orderBy: [{ isSystem: "desc" }, { name: "asc" }],
-        })
+      ? ctx.db.role
+          .findMany({
+            select: {
+              ...roleSelect,
+              permissions: { select: { permission: { select: { key: true } } } },
+            },
+            orderBy: [{ isSystem: "desc" }, { name: "asc" }],
+          })
+          .then((rows) =>
+            rows.map(({ permissions, ...r }) => ({
+              ...r,
+              /** What the role gives, for the permission matrix. */
+              permissions:
+                r.systemRole === "SUPER_ADMIN"
+                  ? [...ALL_PERMISSION_KEYS]
+                  : permissions.map((p) => p.permission.key as PermissionKey),
+            })),
+          )
       : [],
   ]);
   const others =
@@ -67,9 +91,22 @@ export async function getSystemAccess(ctx: CompanyContext, employee: Subject) {
   const target = membership
     ? { userId: membership.userId, systemRole: membership.role.systemRole }
     : null;
+  const changed = (granted: boolean) => {
+    const keys = new Set(
+      membership?.permissionChanges
+        .filter((c) => c.granted === granted)
+        .map((c) => c.permission.key),
+    );
+    return AZ.filter((key) => keys.has(key));
+  };
   return {
     login: membership
       ? {
+          /** The membership: what the permission matrix changes. */
+          id: membership.id,
+          isYou: membership.userId === ctx.user.id,
+          /** Their own changes to the role's permissions, A to Z. */
+          permissions: { added: changed(true), removed: changed(false) },
           email: membership.user.email,
           /** On for this company (Settings > Team can switch it off too). */
           active: membership.isActive,
@@ -110,6 +147,17 @@ export async function getSystemAccess(ctx: CompanyContext, employee: Subject) {
         membership?.isActive === false &&
         canReactivate(actor, { systemRole: membership.role.systemRole }).ok,
       remove: manageHr && canRemovePortalLogin(subject).ok,
+      /** Tick or untick permissions for this login alone (people who manage roles too). */
+      editPermissions:
+        manageUsers &&
+        ctx.can("company.roles.manage") &&
+        (membership
+          ? canEditMemberPermissions(actor, {
+              userId: membership.userId,
+              systemRole: membership.role.systemRole,
+              isPlatformOwner: membership.user.isSuperAdmin,
+            }).ok
+          : true),
     },
   };
 }

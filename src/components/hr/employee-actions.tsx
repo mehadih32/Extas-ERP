@@ -57,17 +57,28 @@ export function EmployeeActions({
   screen,
   currency,
   notice: initialNotice,
+  openDeactivate = false,
 }: {
   screen: EmployeeScreen;
   currency: string;
   notice?: string;
+  /** Opened from the directory's "Deactivate": the deactivation check starts open. */
+  openDeactivate?: boolean;
 }) {
   const router = useRouter();
-  const [open, setOpen] = useState<Open>(null);
+  const [open, setOpen] = useState<Open>(
+    openDeactivate && screen.can.deactivate && screen.clearance ? "deactivate" : null,
+  );
   const [notice, setNotice] = useNotice(initialNotice);
   const [login, setLogin] = useState<{ email: string; password?: string } | null>(null);
   const { employee: e, can } = screen;
-  const close = () => setOpen(null);
+  const close = () => {
+    // Opened from the directory: a refresh should not open it again.
+    if (open === "deactivate" && openDeactivate) {
+      window.history.replaceState(null, "", hrHref.employee(e.id));
+    }
+    setOpen(null);
+  };
   const done = (message: string) => {
     setNotice(message);
     close();

@@ -232,7 +232,10 @@ export async function listEmployees(ctx: CompanyContext, raw: unknown = {}) {
                 { name: { contains: q.search, mode: "insensitive" } },
                 { code: { contains: q.search, mode: "insensitive" } },
                 { phone: { contains: q.search } },
+                { whatsapp: { contains: q.search } },
+                { email: { contains: q.search, mode: "insensitive" } },
                 { designation: { contains: q.search, mode: "insensitive" } },
+                { department: { contains: q.search, mode: "insensitive" } },
               ],
             }
           : {},

@@ -85,7 +85,13 @@ export default async function EmployeePage({
             </>
           }
         />
-        <EmployeeActions key={e.id} screen={screen} currency={currency} notice={notice} />
+        <EmployeeActions
+          key={e.id}
+          screen={screen}
+          currency={currency}
+          notice={notice}
+          openDeactivate={one(query.deactivate) === "1"}
+        />
         {notes.salary && <p className="text-[0.8125rem] text-muted-foreground">{notes.salary}</p>}
         {vault?.pendingRequest && (
           <p className="text-sm">

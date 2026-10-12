@@ -69,3 +69,20 @@ export function nextAnniversary(joined: string, day: string) {
   const date = on(year);
   return { date, years: year - jy, inDays: totalDaysBetween(day, date) };
 }
+
+const short = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+/**
+ * The short form for lists: "2 yrs 3 mos", "1 yr", "5 mos", "12 days",
+ * "Joined today".
+ */
+export function shortTenureText(t: Tenure): string {
+  if (t.years > 0) {
+    return t.months > 0
+      ? `${short(t.years, "yr", "yrs")} ${short(t.months, "mo", "mos")}`
+      : short(t.years, "yr", "yrs");
+  }
+  if (t.months > 0) return short(t.months, "mo", "mos");
+  if (t.days > 0) return short(t.days, "day", "days");
+  return "Joined today";
+}

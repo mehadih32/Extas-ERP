@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { SectionError } from "@/components/dashboard/section-error";
+import { DirectoryStatsRow } from "@/components/hr/directory-stats";
 import { EmployeeList } from "@/components/hr/employee-list";
 import { HrFilters } from "@/components/hr/hr-filters";
 import { hrHref } from "@/components/hr/labels";
@@ -21,9 +22,12 @@ import { requireCompanyPage } from "@/server/pages/guards";
 export const metadata: Metadata = { title: "Employees" };
 
 /**
- * The employees (hr.view, hr.manage or hr.payroll), by code: the people
- * working now, or everyone including those who left; by department and status.
- * Salaries show to people who see salaries; adding people is for HR (hr.manage).
+ * The employee directory (hr.view, hr.manage or hr.payroll): four counts at
+ * the top (everyone, in today, on leave, new joiners), one search over name,
+ * code, phone, WhatsApp, email, post and department, quick filters, and the
+ * people by code as profile cards or a list, each with WhatsApp and call
+ * buttons and a ⋮ menu. Salaries show to people who see salaries; adding
+ * people is for HR (hr.manage).
  */
 export default async function EmployeesPage({
   searchParams,
@@ -39,7 +43,7 @@ export default async function EmployeesPage({
       <SectionError title="Employees" heading="The employees could not load" error={result.error} />
     );
   }
-  const { items, nextCursor, departments, seeSalaries, can } = result.data;
+  const { items, nextCursor, departments, seeSalaries, can, stats, today } = result.data;
 
   return (
     <section aria-labelledby="employees-heading" className="grid gap-6">
@@ -49,8 +53,8 @@ export default async function EmployeesPage({
             Employees
           </h2>
           <p className="mt-1 max-w-xl text-sm leading-relaxed text-muted-foreground">
-            Everyone on the payroll: their post, contact and service, with their attendance, leave
-            and pay one tap away.
+            Everyone on the payroll: their post, contact and time here, with their 360° profile,
+            attendance, leave and pay one tap away.
           </p>
         </div>
         {can.add && (
@@ -62,6 +66,8 @@ export default async function EmployeesPage({
           </Button>
         )}
       </div>
+
+      <DirectoryStatsRow stats={stats} currency={ctx.company.currency} />
 
       <HrFilters view={view} departments={departments}>
         {items.length === 0 ? (
@@ -88,6 +94,9 @@ export default async function EmployeesPage({
             view={view}
             currency={ctx.company.currency}
             seeSalaries={seeSalaries}
+            can={can}
+            today={today}
+            timeZone={ctx.company.timezone}
           />
         )}
       </HrFilters>

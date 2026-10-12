@@ -30,11 +30,12 @@ export const PRINT_TYPES = [
 export type PrintType = (typeof PRINT_TYPES)[number];
 
 /**
- * Documents the app prints for its own records, outside the print archive and
- * the Print buttons: a signed copy of the terms of employment (hr/terms-pdf.ts)
- * and the experience and clearance certificate (hr/exit-pdf.ts).
+ * Documents the app prints outside the print archive and the Print buttons: a
+ * signed copy of the terms of employment (hr/terms-pdf.ts), the experience and
+ * clearance certificate (hr/exit-pdf.ts) and the employee 360° report, made
+ * when asked for and not kept (hr/report.service.ts).
  */
-export type RecordPrintType = "SIGNED_TERMS" | "CLEARANCE_CERTIFICATE";
+export type RecordPrintType = "SIGNED_TERMS" | "CLEARANCE_CERTIFICATE" | "EMPLOYEE_360";
 
 /**
  * Bump when the layout changes, so documents printed again get the new look.

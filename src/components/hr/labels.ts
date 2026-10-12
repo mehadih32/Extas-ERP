@@ -164,6 +164,8 @@ export const hrHref = {
   deactivate: (id: string) => `/hr/employees/${enc(id)}?deactivate=1`,
   /** The employee's photo (one "Photo" paper; the browser keeps it). */
   photo: (id: string, photoId: string) => `/api/hr/employees/${enc(id)}/photo?v=${enc(photoId)}`,
+  /** The employee's 360° report as a PDF (made on request, not kept). */
+  report: (id: string) => `/api/hr/employees/${enc(id)}/report`,
   newEmployee: "/hr/employees/new",
   editEmployee: (id: string) => `/hr/employees/${enc(id)}/edit`,
   employeeMonth: (id: string, month?: string) =>

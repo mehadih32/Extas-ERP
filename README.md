@@ -1623,6 +1623,17 @@ which approval asks for on every such line) and each staff claim paid back with 
 purpose, and sees their own payslips and a month-by-month money ledger in the portal. A draft
 also says how many of the month's claims still wait for Accounts.
 
+**Employee 360° report.** From a profile (or the directory's ⋮ menu), anyone who sees
+employees downloads one PDF with the last 12 months (whole months, or since joining):
+attendance, approved overtime and tasks, and for people who may see them the salary on
+approved payrolls and the conveyance claimed, month by month, with a short summary on top.
+The summary is written from the figures by rules; with `AI_API_KEY` and `AI_SUMMARY_MODEL`
+(or `AI_INTAKE_MODEL`) set, the Claude API words it from the same figures, without the
+person's name or contact details, in a few sentences, and the same figures are not asked
+about twice while the app runs. The PDF is made per request and not kept. "Share the report"
+sends it to WhatsApp, email or any app where the browser can share files (phones), and
+otherwise saves it and opens a WhatsApp chat or an email to the employee to attach it to.
+
 **Company items and leaving.** HR records the company items each person holds (laptop,
 phone, SIM, ID card, keys, uniform, tools, vehicle) and takes them back as returned, damaged
 or lost. "Deactivate employee" does leaving in one go: it is refused while items are still

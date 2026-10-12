@@ -10,6 +10,7 @@ import { hrHref, payDetails } from "@/components/hr/labels";
 import { HrNoAccess } from "@/components/hr/no-access";
 import { EmployeeProfileCard } from "@/components/hr/profile-card";
 import { ProfileTab, ProfileTabs, type ProfileTab as Tab } from "@/components/hr/profile-tabs";
+import { ReportActions } from "@/components/hr/report-actions";
 import { ScoreCard } from "@/components/hr/score-card";
 import { SystemAccessCard } from "@/components/hr/system-access";
 import { VaultPanel } from "@/components/hr/vault-panel";
@@ -17,6 +18,7 @@ import { Fact, Panel } from "@/components/sales/detail-bits";
 import { isZero, METHOD_LABELS, money } from "@/components/sales/labels";
 import { BackLink } from "@/components/settings/back-link";
 import { formatDay, formatMonth } from "@/lib/display";
+import { aiSummaryOn } from "@/modules/hr/report-summary";
 import { vaultScore } from "@/modules/hr/vault";
 import { getEmployeeScreenAction } from "@/server/actions/hr.actions";
 import { requireCompanyPage } from "@/server/pages/guards";
@@ -31,8 +33,9 @@ const one = (value: string | string[] | undefined) =>
  * One employee's 360° profile (hr.view, hr.manage or hr.payroll, like
  * GET /api/hr/employees/:id). A card at the side stays in view whatever tab
  * is open: their photo, name, Employee ID, post, contact buttons, the day
- * they joined and their time here, and for HR and people who manage users the
- * System access card (their login, its role and switch). The tabs: Overview
+ * they joined and their time here, the 360° report (download or share), and
+ * for HR and people who manage users the System access card (their login, its
+ * role and switch). The tabs: Overview
  * (this month's attendance and, for HR, the performance score), Leave, Pay
  * (people who see salaries: pay, salary history, payslips, advances), Papers
  * (HR: the data vault), Items (company items they hold) and Details. HR
@@ -90,6 +93,25 @@ export default async function EmployeePage({
           <section className="rounded-lg border bg-card p-5">
             <EmployeeProfileCard employee={e} pendingPayChange={Boolean(vault?.pendingRequest)} />
           </section>
+          <Panel title="360° report" id="report-heading">
+            <p className="mt-2 text-[0.8125rem] text-muted-foreground">
+              The last 12 months on one PDF: attendance, overtime, tasks and, where your role shows
+              them, salary and conveyance, with a summary on top
+              {aiSummaryOn() ? " written by AI" : ""}.
+            </p>
+            <div className="mt-4">
+              <ReportActions
+                employee={{
+                  id: e.id,
+                  name: e.name,
+                  phone: e.phone,
+                  whatsapp: e.whatsapp,
+                  email: e.email,
+                }}
+                company={ctx.company.name}
+              />
+            </div>
+          </Panel>
           {systemAccess && (
             <Panel title="System access" id="access-heading">
               <div className="mt-4">

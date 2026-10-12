@@ -3,6 +3,7 @@
 import {
   ClipboardPlusIcon,
   EllipsisVerticalIcon,
+  FileDownIcon,
   LayoutGridIcon,
   ListIcon,
   PowerOffIcon,
@@ -44,6 +45,7 @@ import { ContactLinks } from "./contact-links";
 import { EmployeeAvatar } from "./employee-avatar";
 import { hrHref } from "./labels";
 import { employeeListQuery, type EmployeeListView } from "./list-view";
+import { downloadReport } from "./report-actions";
 
 export type DirectoryCan = { assignTask: boolean; deactivate: boolean };
 
@@ -113,7 +115,7 @@ function StatusBadges({ e, today }: { e: EmployeeListRow; today: string }) {
   );
 }
 
-/** The ⋮ menu: the 360° profile, a task for them, deactivating them (HR). */
+/** The ⋮ menu: the 360° profile, their 360° report, a task for them, deactivating them (HR). */
 function RowMenu({
   e,
   can,
@@ -149,6 +151,10 @@ function RowMenu({
             <UserRoundIcon aria-hidden />
             View 360° profile
           </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => void downloadReport(e.id, e.name)}>
+          <FileDownIcon aria-hidden />
+          Download report
         </DropdownMenuItem>
         {assign && (
           <DropdownMenuItem onSelect={() => onAssign(e)}>

@@ -12,6 +12,7 @@ export type JobHandler = (job: BackgroundJob) => Promise<void>;
 
 export const JOB_HANDLERS: Record<JobKind, () => Promise<JobHandler>> = {
   "terms.pdf": async () => (await import("@/modules/hr/terms-pdf")).runTermsPdfJob,
+  "claim.route": async () => (await import("@/modules/hr/claims.service")).runClaimRouteJob,
 };
 
 export function isJobKind(kind: string): kind is JobKind {

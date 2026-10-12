@@ -396,6 +396,67 @@ export const hrHelp: HelpSection = {
       ],
     },
     {
+      slug: "hr-claims",
+      title: "কর্মীদের যাতায়াত ভাতা ও লোকাল কেনাকাটার দাবি দেখবেন ও অনুমোদন করবেন যেভাবে",
+      summary:
+        "কর্মী My HR থেকে যাতায়াতের ভাড়া বা প্রোডাকশনের জন্য নিজে কেনা মালের দাম ফেরত চান। অ্যাপ GPS হাজিরা ও স্বাভাবিক ভাড়ার সঙ্গে মিলিয়ে সন্দেহজনক দাবি চিহ্নিত করে; Accounts অনুমোদন দিলে খাতায় ওঠে, পরে টাকা ফেরত দেওয়া হয়।",
+      keywords: [
+        "claims",
+        "conveyance",
+        "local material",
+        "pay back",
+        "route",
+        "fare",
+        "যাতায়াত ভাতা",
+        "কনভেয়েন্স",
+        "দাবি",
+        "ভাড়া",
+        "লোকাল কেনাকাটা",
+        "সুতা",
+        "টাকা ফেরত",
+      ],
+      routes: ["/hr/claims"],
+      who: "HR দেখতে পারেন। অনুমোদন ও টাকা ফেরত দেন শুধু Accounts ও Super Admin।",
+      anyOf: ["hr.manage", "expenses.manage", "accounts.payments.record"],
+      steps: [
+        {
+          text: "“HR & payroll” > “Claims” ট্যাব খুলুন। ওপরে মাসের “Waiting” (সিদ্ধান্তের অপেক্ষায়), “Need a look” (চিহ্নিত দাবি), “Approved” ও “Paid back”। মাস বদলাতে ওপরের তীর চিহ্ন, আর নিচে অবস্থা ও ধরন (“Conveyance” বা “Local material”) দিয়ে ছাঁকুন।",
+          image: {
+            id: "hr-claims-1",
+            caption: "“Claims” ট্যাব: মাসের হিসাব, কর্মীদের পাওনা ও দাবির তালিকা",
+          },
+        },
+        {
+          text: "যাতায়াতের প্রতিটি দাবি সেদিনের হাজিরা ও GPS পথের সঙ্গে মেলানো হয়। লাল চিহ্নের মানে: “Not on duty” (সেদিন ডিউটিতে ছিলেন না), “No GPS trail” বা “No travel” (পথে কোনো চলাচল নেই), “Route not on the trail” (লেখা জায়গায় GPS কখনো যায়নি), “Price unusually high” (স্বাভাবিক ভাড়ার দেড় গুণের বেশি), “Claimed already” (একই দাবি আগেও) আর “No receipt”। নিচে এক লাইনে কারণটি লেখা থাকে।",
+          image: {
+            id: "hr-claims-2",
+            caption: "চিহ্নিত একটি দাবি: লাল চিহ্ন, কারণ ও GPS পথের হিসাব",
+          },
+        },
+        {
+          text: "পথটি নিজে দেখতে “See the route on Google Maps” চাপুন। Google Maps যুক্ত থাকলে রাস্তার দূরত্বও দেখায়, আর ভাড়া সেই দূরত্বে কিলোমিটারপ্রতি স্বাভাবিক ভাড়ার সঙ্গে মেলানো হয়।",
+        },
+        {
+          text: "ঠিক থাকলে “Approve …” চাপুন। কম টাকা দিতে “Change and approve” চাপুন, “Amount to approve” ও “Reason” লিখুন; লোকাল কেনাকাটায় “Cost head on the project” বেছে নিন। দিতে না চাইলে “Reject” চাপুন, কারণ লিখুন। কর্মী কারণটি দেখতে পান। হাজিরা ঠিক করার পর “Check again” চাপলে আবার মেলানো হয়।",
+          image: {
+            id: "hr-claims-3",
+            caption: "“Change and approve” জানালা: অনুমোদনের টাকা, কারণ ও প্রজেক্টের খরচের খাত",
+          },
+        },
+        {
+          text: "লাল চিহ্ন ছাড়া মাসের সব দাবি একসঙ্গে দিতে “Approve all with nothing to check” চাপুন। চিহ্নিতগুলো একটি একটি করে দেখুন।",
+        },
+        {
+          text: "অনুমোদিত টাকা কর্মীর পাওনা হয়ে “Owed to staff” তালিকায় থাকে। কাউকে টাকা দিতে তাঁর পাশে “Pay back” চাপুন, কোন অ্যাকাউন্ট থেকে দিলেন আর “Paid on” তারিখ দিয়ে “Record the payment” চাপুন। তাঁর সব পাওনা দাবি একসঙ্গে শোধ হয়।",
+        },
+      ],
+      tips: [
+        "প্রোডাকশন প্রজেক্টের জন্য কেনা মাল (যেমন সুতা) অনুমোদন হলেই সেই প্রজেক্টের খরচে যোগ হয়, আর কর্মীর পাওনায় ওঠে।",
+        "কিলোমিটারপ্রতি স্বাভাবিক ভাড়া “Holidays & rules”-এ “Usual conveyance fare per km”-এ ঠিক করুন। একই পথের আগের অনুমোদিত দাবির সঙ্গেও মেলানো হয়।",
+        "নিজের দাবি নিজে অনুমোদন বা শোধ করা যায় না। কর্মী চিহ্নগুলো দেখেন না, শুধু দাবির অবস্থা দেখেন।",
+      ],
+    },
+    {
       slug: "hr-leave",
       title: "ছুটি রেকর্ড ও অনুমোদন করবেন যেভাবে",
       summary:
@@ -654,7 +715,7 @@ export const hrHelp: HelpSection = {
           text: "“Change the rules” চাপুন। “Weekly days off” (যেমন শুক্রবার), “Office starts at”, “Working day ends at” (এর পরে থাকা ওভারটাইম), “Minutes of grace” (কত মিনিট পর্যন্ত দেরি ধরা হবে না) ও “Lates that cost a day's salary” (কয়টি দেরিতে এক দিনের বেতন কাটা) দিন।",
         },
         {
-          text: "কর্মীরা ফোন থেকে নিজে চেক-ইন করবেন চাইলে “Staff check in and out themselves” টিক দিন। চেক-আউট থেকে ওভারটাইম ধরতে “Find overtime from check-outs” টিক দিন, আর “Overtime counts after this many minutes”-এ লিখুন কত মিনিট থাকলে তবেই ওভারটাইম। “Save the rules” চাপুন।",
+          text: "কর্মীরা ফোন থেকে নিজে চেক-ইন করবেন চাইলে “Staff check in and out themselves” টিক দিন। চেক-আউট থেকে ওভারটাইম ধরতে “Find overtime from check-outs” টিক দিন, আর “Overtime counts after this many minutes”-এ লিখুন কত মিনিট থাকলে তবেই ওভারটাইম। যাতায়াতের দাবি মেলাতে “Usual conveyance fare per km”-এ কিলোমিটারপ্রতি স্বাভাবিক ভাড়া দিন (0 দিলে এই মিল বন্ধ)। “Save the rules” চাপুন।",
         },
         {
           text: "সরকারি বা কোম্পানির ছুটি যোগ করতে “Add holidays” চাপুন, “Day” ও “Name” দিন। একসঙ্গে কয়েক দিন দিতে “Another day”।",

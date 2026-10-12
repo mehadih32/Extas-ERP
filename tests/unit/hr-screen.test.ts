@@ -55,6 +55,7 @@ describe("HR & payroll in the menu, by role", () => {
     "Employees",
     "Attendance",
     "Overtime",
+    "Claims",
     "Leave",
     "Payroll",
     "Advances",
@@ -102,6 +103,7 @@ describe("HR & payroll in the menu, by role", () => {
       "Leave",
       "Payslips",
       "Advances",
+      "Claims",
       "My details",
     ]);
   });
@@ -116,8 +118,10 @@ describe("HR & payroll in the menu, by role", () => {
       "Terms",
     ]);
     expect(tabs(["accounts.view"])).toEqual(["Payroll", "Advances"]);
-    // Whoever pays advances out sees the advances register and nothing else of HR.
-    expect(tabs(["accounts.payments.record"])).toEqual(["Advances"]);
+    // Whoever pays advances out sees the advances register and the staff claims they pay back.
+    expect(tabs(["accounts.payments.record"])).toEqual(["Claims", "Advances"]);
+    // Staff claims also open to whoever decides expenses.
+    expect(tabs(["expenses.manage"])).toEqual(["Claims"]);
     expect(tabs(["portal.self"])).toEqual([]);
   });
 

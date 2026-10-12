@@ -178,6 +178,8 @@ export const hrHref = {
   settings: (year?: number) => withQuery("/hr/settings", { year: year ? String(year) : undefined }),
   map: (person?: string) => withQuery("/hr/map", { person }),
   overtime: (month?: string, status?: string) => withQuery("/hr/overtime", { month, status }),
+  claims: (month?: string, filter: { status?: string; kind?: string } = {}) =>
+    withQuery("/hr/claims", { month, ...filter }),
   terms: (version?: number) =>
     withQuery("/hr/terms", { version: version ? String(version) : undefined }),
   journal: (id: string) => `/accounts/journal/${enc(id)}`,
@@ -189,6 +191,7 @@ export const hrHref = {
   myPayslips: "/me/payslips",
   myPayslip: (itemId: string) => `/me/payslips/${enc(itemId)}`,
   myAdvances: "/me/advances",
+  myClaims: "/me/claims",
   myProfile: "/me/profile",
 };
 

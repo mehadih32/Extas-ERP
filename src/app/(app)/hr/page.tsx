@@ -400,6 +400,18 @@ export default async function HrOverviewPage() {
                   </Link>
                 </p>
               )}
+              {o.vault.claimsWaiting > 0 && (
+                <p className="mt-2 text-[0.8125rem] text-muted-foreground">
+                  {count(o.vault.claimsWaiting)} staff{" "}
+                  {o.vault.claimsWaiting === 1 ? "claim waits" : "claims wait"} for Accounts.{" "}
+                  <Link
+                    href={hrHref.claims(o.vault.claimsMonth ?? undefined, { status: "PENDING" })}
+                    className={linkClass}
+                  >
+                    See the claims
+                  </Link>
+                </p>
+              )}
             </Panel>
           )}
 

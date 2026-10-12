@@ -63,7 +63,7 @@ export default async function StatementPage({
     <div className="grid grid-cols-1 gap-6">
       <BackLink href={hrHref.employee(s.employee.id)}>{s.employee.name}</BackLink>
       <RecordHeader eyebrow={`${s.employee.code} · Statement`} title={s.employee.name} />
-      <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:max-w-2xl">
+      <dl className="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:max-w-3xl">
         <Stat
           label="Owes on advances"
           value={money(s.advanceBalance, currency)}
@@ -74,6 +74,11 @@ export default async function StatementPage({
           label="Salary still to pay them"
           value={money(s.salaryPayable, currency)}
           hint="Approved, not yet paid"
+        />
+        <Stat
+          label="Claims still to pay them"
+          value={money(s.claimsPayable, currency)}
+          hint="Approved claims, not yet paid back"
         />
       </dl>
 

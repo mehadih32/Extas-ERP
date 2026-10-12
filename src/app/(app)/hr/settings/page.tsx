@@ -8,6 +8,7 @@ import { OutsideServices } from "@/components/hr/outside-services";
 import { Holidays, HrRules, LeaveTypes } from "@/components/hr/settings-actions";
 import { WorkPlaces } from "@/components/hr/work-places";
 import { Fact, Panel } from "@/components/sales/detail-bits";
+import { money } from "@/components/sales/labels";
 import { getHrSettingsScreenAction } from "@/server/actions/hr.actions";
 import { requireCompanyPage } from "@/server/pages/guards";
 
@@ -34,7 +35,8 @@ export default async function HrSettingsPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  await requireCompanyPage();
+  const ctx = await requireCompanyPage();
+  const currency = ctx.company.currency;
   const result = await getHrSettingsScreenAction({ year: one((await searchParams).year) });
   if (!result.ok) {
     if (result.error.code === "FORBIDDEN") return <HrNoAccess />;
@@ -64,7 +66,7 @@ export default async function HrSettingsPage({
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Panel title="Working week" id="rules-heading" className="lg:col-span-2">
-          <dl className="mt-4 mb-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+          <dl className="mt-4 mb-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <Fact label="Weekly days off">{offDaysText(rules.weeklyOffDays)}</Fact>
             <Fact label="Office hours">
               {rules.officeStartTime} to {rules.officeEndTime}
@@ -96,6 +98,16 @@ export default async function HrSettingsPage({
                   Once someone stays {rules.overtimeMinMinutes} minutes; HR approves it
                 </span>
               )}
+            </Fact>
+            <Fact label="Conveyance claims">
+              {Number(rules.conveyanceRatePerKm) > 0
+                ? `Usually ${money(rules.conveyanceRatePerKm, currency)} a km`
+                : "No usual fare set"}
+              <span className="block text-[0.8125rem] text-muted-foreground">
+                {Number(rules.conveyanceRatePerKm) > 0
+                  ? "Trips well above it are flagged"
+                  : "Trips are checked against the GPS trail and past claims"}
+              </span>
             </Fact>
           </dl>
           <HrRules rules={rules} canManage={can.manage} />

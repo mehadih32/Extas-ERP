@@ -46,6 +46,7 @@ import { getJournalEntry, listJournalEntries } from "@/modules/accounts/voucher.
 import type { CompanyContext } from "@/modules/auth/context";
 import { canSeeSalaries } from "@/modules/hr/access";
 import { monthKey, monthLabel } from "@/modules/hr/calendar";
+import { claimAccess } from "@/modules/hr/claims";
 import { hrKeys } from "@/modules/hr/rules";
 import { canSeeMaterialCosts } from "@/modules/materials/access";
 import { supplierProjectBalances } from "@/modules/accounts/supplier-projects";
@@ -668,6 +669,18 @@ async function sourceLink(
         };
       }
       return { title: `Expense ${expense.number}`, href: `/accounts/expenses/${sourceId}` };
+    }
+    case "STAFF_CLAIM": {
+      // Claims paid back to an employee: the entry names the first claim it paid.
+      const claim = await ctx.db.staffClaim.findUnique({
+        where: { id: sourceId },
+        select: { number: true, employee: { select: { name: true } } },
+      });
+      if (!claim) return null;
+      return {
+        title: `Claims paid back to ${claim.employee.name} (${claim.number}…)`,
+        href: claimAccess(ctx).see ? `/hr/claims?claim=${encodeURIComponent(sourceId)}` : null,
+      };
     }
     case "SUPPLIER_BILL": {
       const bill = await ctx.db.supplierBill.findUnique({

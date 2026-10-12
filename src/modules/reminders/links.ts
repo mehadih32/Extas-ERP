@@ -1,3 +1,4 @@
+import { claimAccess } from "@/modules/hr/claims";
 import type { PermissionKey } from "@/modules/rbac/permissions";
 
 /*
@@ -41,6 +42,12 @@ export function recordHref(ctx: Can, link: RecordLink | null): string | null {
     case "Terms":
       // New terms of employment to read and agree to (anyone linked to an employee).
       return "/terms";
+    case "StaffClaim":
+      // A staff claim waiting for Accounts (HR sees the claims too).
+      return claimAccess(ctx).see ? `/hr/claims?claim=${id}#claim-${id}` : null;
+    case "MyClaim":
+      // The employee's own claim, decided or paid back.
+      return ctx.can("portal.self") ? "/me/claims" : null;
     default:
       return null;
   }
@@ -57,4 +64,6 @@ export const RECORD_NOUNS: Record<string, string> = {
   Employee: "the employee",
   MyDetails: "my details",
   Terms: "the terms",
+  StaffClaim: "the claim",
+  MyClaim: "my claims",
 };

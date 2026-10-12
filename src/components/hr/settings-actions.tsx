@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { Field, FormAlert } from "@/components/forms/field";
-import { textOf } from "@/components/products/form-values";
+import { readAmount, textOf } from "@/components/products/form-values";
 import { FormDialog, problem } from "@/components/sales/dialogs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -75,6 +75,7 @@ export function HrRules({ rules, canManage }: { rules: Rules; canManage: boolean
             const lateGraceMinutes = wholeOf(form, "lateGraceMinutes");
             const latesPerDeductionDay = wholeOf(form, "latesPerDeductionDay");
             const overtimeMinMinutes = wholeOf(form, "overtimeMinMinutes");
+            const conveyanceRatePerKm = readAmount(textOf(form, "conveyanceRatePerKm"));
             const errors: Record<string, string> = {};
             if (weeklyOffDays.length > 6) errors.weeklyOffDays = "Keep at least one working day.";
             if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(officeStartTime)) {
@@ -87,6 +88,13 @@ export function HrRules({ rules, canManage }: { rules: Rules; canManage: boolean
             }
             if (!(overtimeMinMinutes <= 240)) {
               errors.overtimeMinMinutes = "Write the minutes, from 0 to 240.";
+            }
+            if (
+              conveyanceRatePerKm === null ||
+              conveyanceRatePerKm === "invalid" ||
+              conveyanceRatePerKm > 100_000
+            ) {
+              errors.conveyanceRatePerKm = "Write the fare for a km, like 30 (0 for no check).";
             }
             if (!(lateGraceMinutes <= 240)) {
               errors.lateGraceMinutes = "Write the minutes, from 0 to 240.";
@@ -105,6 +113,7 @@ export function HrRules({ rules, canManage }: { rules: Rules; canManage: boolean
               gpsAttendance: form.get("gpsAttendance") === "on",
               shadowOvertime: form.get("shadowOvertime") === "on",
               overtimeMinMinutes,
+              conveyanceRatePerKm: conveyanceRatePerKm as number,
             });
             if (!result.ok) return result.error;
             setNotice("The rules are saved.");
@@ -253,6 +262,21 @@ export function HrRules({ rules, canManage }: { rules: Rules; canManage: boolean
                   required
                   defaultValue={rules.overtimeMinMinutes}
                   aria-invalid={Boolean(fieldError("overtimeMinMinutes"))}
+                />
+              </Field>
+              <Field
+                id="rules-conveyance-rate"
+                label="Usual conveyance fare per km"
+                hint="Staff claims for trips well above this are flagged for Accounts. 0 turns the check off."
+                error={fieldError("conveyanceRatePerKm")}
+              >
+                <Input
+                  id="rules-conveyance-rate"
+                  name="conveyanceRatePerKm"
+                  inputMode="decimal"
+                  required
+                  defaultValue={rules.conveyanceRatePerKm}
+                  aria-invalid={Boolean(fieldError("conveyanceRatePerKm"))}
                 />
               </Field>
             </>

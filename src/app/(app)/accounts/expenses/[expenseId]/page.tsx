@@ -65,7 +65,10 @@ export default async function ExpensePage({
   const fromAdvance = owed(e.fromAdvance);
 
   let how: string;
-  if (e.paymentType === "DUE") {
+  if (e.paymentType === "DUE" && !e.supplier && e.employee) {
+    // A staff claim Accounts approved: owed to the employee until paid back (HR → Claims).
+    how = `Owed to ${e.employee.name} (a staff claim)`;
+  } else if (e.paymentType === "DUE") {
     how = e.status === "PENDING" ? "To be owed to the supplier" : "Owed to the supplier";
   } else if (e.status === "PENDING") {
     how = "Paid by the claimant, waiting to be paid back";

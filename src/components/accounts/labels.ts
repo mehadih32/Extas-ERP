@@ -112,6 +112,7 @@ export const SOURCE_LABELS: Record<JournalSource, string> = {
   MATERIAL_ISSUE: "Materials issued",
   PURCHASE_RETURN: "Return to supplier",
   REFUND: "Refund",
+  STAFF_CLAIM: "Staff claims",
 };
 
 /** The journal's "made by" filter, in the order people look for them. */
@@ -128,6 +129,7 @@ export const SOURCE_FILTERS: readonly JournalSource[] = [
   "PRODUCTION",
   "PAYROLL",
   "SALARY_ADVANCE",
+  "STAFF_CLAIM",
   "OPENING_BALANCE",
   "STOCK_ADJUSTMENT",
   "BAD_STOCK",

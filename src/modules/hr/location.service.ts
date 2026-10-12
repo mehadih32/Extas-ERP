@@ -52,7 +52,7 @@ import { loadHrSettings } from "@/modules/hr/setup";
 
 const TX_OPTIONS = { timeout: 30_000 };
 /** A shift still open after this long is treated as forgotten, not on duty. */
-const LONGEST_SHIFT_HOURS = 16;
+export const LONGEST_SHIFT_HOURS = 16;
 /** One person's trail on the map: at most this many points. */
 const TRAIL_LIMIT = 3000;
 export const PINGS_PATH = "/api/portal/location/pings";
@@ -63,7 +63,7 @@ function assertHrRead(ctx: CompanyContext) {
   }
 }
 
-function placeOf(p: WorkLocation): Place {
+export function placeOf(p: WorkLocation): Place {
   return { id: p.id, name: p.name, lat: p.lat, lng: p.lng, radiusMeters: p.radiusMeters };
 }
 

@@ -42,6 +42,7 @@ import NewAdvancePage from "@/app/(app)/hr/advances/new/page";
 import AdvancesPage from "@/app/(app)/hr/advances/page";
 import AttendanceMonthPage from "@/app/(app)/hr/attendance/month/page";
 import AttendancePage from "@/app/(app)/hr/attendance/page";
+import ClaimsPage from "@/app/(app)/hr/claims/page";
 import EmployeeMonthPage from "@/app/(app)/hr/employees/[employeeId]/attendance/page";
 import EditEmployeePage from "@/app/(app)/hr/employees/[employeeId]/edit/page";
 import EmployeePage from "@/app/(app)/hr/employees/[employeeId]/page";
@@ -59,6 +60,7 @@ import HrSettingsPage from "@/app/(app)/hr/settings/page";
 import HrTermsPage from "@/app/(app)/hr/terms/page";
 import MyAdvancesPage from "@/app/(app)/me/advances/page";
 import MyAttendancePage from "@/app/(app)/me/attendance/page";
+import MyClaimsPage from "@/app/(app)/me/claims/page";
 import MyLeavePage from "@/app/(app)/me/leave/page";
 import MyHrPage from "@/app/(app)/me/page";
 import MyDetailsPage from "@/app/(app)/me/profile/page";
@@ -91,6 +93,7 @@ import {
   getAttendanceMonthScreenAction,
   getStaffMapScreenAction,
   getOvertimeLedgerAction,
+  getClaimsLedgerAction,
   getAttendanceScreenAction,
   getEmployeeFormAction,
   getEmployeeListAction,
@@ -305,6 +308,7 @@ function keys(ctx: CompanyContext) {
     receive: ctx.can("accounts.receipts.record"),
     give: pay || ctx.can("accounts.manage"),
     self: ctx.can("portal.self"),
+    claims: manage || pay || ctx.can("expenses.manage"),
   };
 }
 
@@ -320,13 +324,14 @@ run("HR & payroll screens", () => {
       const k = keys(ctx);
 
       const inMenu = visibleNavItems([...ctx.permissions]).some((i) => i.href === "/hr");
-      expect(inMenu, who).toBe(k.view || k.advances);
+      expect(inMenu, who).toBe(k.view || k.advances || k.claims);
       expect(
         visibleHrTabs(ctx.permissions).map((t) => t.href),
         who,
       ).toEqual([
         ...(k.view ? ["/hr", "/hr/employees", "/hr/attendance"] : []),
         ...(k.manage ? ["/hr/overtime"] : []),
+        ...(k.claims ? ["/hr/claims"] : []),
         ...(k.view ? ["/hr/leave"] : []),
         ...(k.salaries ? ["/hr/payroll"] : []),
         ...(k.advances ? ["/hr/advances"] : []),
@@ -354,6 +359,7 @@ run("HR & payroll screens", () => {
       expect((await getAttendanceMonthScreenAction({})).ok, `${who}: month totals`).toBe(k.view);
       expect((await getStaffMapScreenAction({})).ok, `${who}: staff map`).toBe(k.manage);
       expect((await getOvertimeLedgerAction({})).ok, `${who}: overtime`).toBe(k.manage);
+      expect((await getClaimsLedgerAction({})).ok, `${who}: claims`).toBe(k.claims);
       expect((await getLeaveListAction({})).ok, `${who}: leave`).toBe(k.view);
       expect((await listLeaveRowsAction({})).ok, `${who}: more leave`).toBe(k.view);
       expect((await getLeaveScreenAction(env.waiting.id)).ok, `${who}: leave request`).toBe(k.view);
@@ -407,7 +413,7 @@ run("HR & payroll screens", () => {
       const page = (allowed: boolean) => (allowed ? "page" : "no access");
       const listed = { searchParams: noQuery() };
       const employee = { params: params({ employeeId: env.rahim.id }), searchParams: noQuery() };
-      if (k.view || !k.advances) {
+      if (k.view || !(k.advances || k.claims)) {
         expect(await rendered(HrOverviewPage()), `${who}: /hr`).toBe(page(k.view));
       } else {
         await expect(HrOverviewPage(), `${who}: /hr`).rejects.toMatchObject({
@@ -459,6 +465,7 @@ run("HR & payroll screens", () => {
       ).toBe(page(k.advances));
       expect(await rendered(HrSettingsPage(listed)), `${who}: settings`).toBe(page(k.view));
       expect(await rendered(HrTermsPage(listed)), `${who}: terms`).toBe(page(k.view));
+      expect(await rendered(ClaimsPage(listed)), `${who}: claims`).toBe(page(k.claims));
     }
   });
 
@@ -679,10 +686,11 @@ run("HR & payroll screens", () => {
       expect(await rendered(MyLeavePage({ searchParams: noQuery() })), who).toBe(expected);
       expect(await rendered(MyPayslipsPage()), who).toBe(expected);
       expect(await rendered(MyAdvancesPage()), who).toBe(expected);
+      expect(await rendered(MyClaimsPage()), `${who}: my claims`).toBe(expected);
       expect(await rendered(MyDetailsPage()), `${who}: my details`).toBe(expected);
       const inMenu = visibleNavItems([...ctx.permissions]).some((i) => i.href === "/me");
       expect(inMenu, `${who}: My HR in the menu`).toBe(
-        self && !keys(ctx).view && !keys(ctx).advances,
+        self && !keys(ctx).view && !keys(ctx).advances && !keys(ctx).claims,
       );
     }
 

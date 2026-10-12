@@ -85,6 +85,13 @@ export const CONTROL_ACCOUNTS = {
     type: "LIABILITY",
     subType: "OTHER_LIABILITY",
   },
+  // Staff claims Accounts approved (conveyance, local material) until they are paid back.
+  EMPLOYEE_PAYABLE: {
+    code: "2270",
+    name: "Payable to Staff (Claims)",
+    type: "LIABILITY",
+    subType: "OTHER_LIABILITY",
+  },
   DRAWINGS: { code: "3100", name: "Owner's Drawings", type: "EQUITY", subType: "DRAWINGS" },
   OPENING_EQUITY: {
     code: "3900",

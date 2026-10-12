@@ -8,6 +8,7 @@ import { requirePermission } from "@/modules/auth/context";
 import * as files from "@/modules/files/file.service";
 import * as advances from "@/modules/hr/advance.service";
 import * as attendance from "@/modules/hr/attendance.service";
+import * as claims from "@/modules/hr/claims.service";
 import * as leave from "@/modules/hr/leave.service";
 import * as location from "@/modules/hr/location.service";
 import * as payroll from "@/modules/hr/payroll.service";
@@ -99,6 +100,24 @@ export const setMyTaskStatusAction = async (taskId: string, input: unknown) =>
     const task = await tasks.setMyTaskStatus(await self(), taskId, input, await getRequestMeta());
     return { id: task.id, title: task.title, status: task.status };
   });
+
+// --- My claims: conveyance and local material ---------------------------------------------
+export const getMyClaimsAction = async () =>
+  runAction(async () => claims.getMyClaims(await self()));
+/** A receipt or memo photo for the employee's own claim. */
+export const uploadMyClaimReceiptAction = async (form: FormData) =>
+  runAction(async () => {
+    const asset = await files.storeUpload(
+      await self(),
+      await files.fileFromForm(form),
+      await getRequestMeta(),
+    );
+    return { id: asset.id, fileName: asset.fileName };
+  });
+export const submitMyClaimAction = async (input: unknown) =>
+  change(async () => claims.submitClaim(await self(), input, await getRequestMeta()));
+export const withdrawMyClaimAction = async (claimId: string) =>
+  change(async () => claims.withdrawMyClaim(await self(), claimId, await getRequestMeta()));
 
 // --- My details: the employee's own data vault ------------------------------------------
 export const updateMyDetailsAction = async (input: unknown) =>

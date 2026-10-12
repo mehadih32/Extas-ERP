@@ -253,6 +253,56 @@ export const myHrHelp: HelpSection = {
       tips: ["অগ্রিম নিতে HR বা Accounts-এর সঙ্গে কথা বলুন।"],
     },
     {
+      slug: "my-hr-claims",
+      title: "যাতায়াতের ভাড়া বা কেনাকাটার টাকা ফেরত চাইবেন যেভাবে",
+      summary:
+        "কাজের জন্য নিজের পকেট থেকে দেওয়া রিকশা-সিএনজি ভাড়া, বা প্রোডাকশনের জন্য কেনা সুতা-বোতামের দাম ফেরত চাওয়া, আর দাবি কোথায় আছে তা দেখা।",
+      keywords: [
+        "my claims",
+        "new claim",
+        "conveyance",
+        "fare",
+        "local material",
+        "যাতায়াত ভাতা",
+        "ভাড়া ফেরত",
+        "দাবি",
+        "রিকশা ভাড়া",
+        "সুতা কেনা",
+      ],
+      routes: ["/me/claims"],
+      who: "যাঁদের My HR login আছে।",
+      anyOf: ["portal.self"],
+      steps: [
+        {
+          text: "“My HR” > “Claims” ট্যাব খুলুন। ওপরে “To be paid to you” (অনুমোদিত, এখনো পাননি) আর “Waiting for Accounts” দেখবেন।",
+          image: {
+            id: "my-hr-claims-1",
+            caption: "“Claims” ট্যাব: পাওনা টাকা ও নিজের দাবির তালিকা",
+          },
+        },
+        {
+          text: "“New claim” চাপুন। “What is it for?”-এ যাতায়াত হলে “Conveyance” বেছে “Day”, “Fare”, “From”, “To” ও “What the trip was for” লিখুন। আগে যাওয়া জায়গার নাম লিখতে শুরু করলেই নিচে চলে আসে।",
+          image: {
+            id: "my-hr-claims-2",
+            caption: "“Claim money back” জানালা: যাতায়াতের দিন, ভাড়া ও কোথা থেকে কোথায়",
+          },
+        },
+        {
+          text: "প্রোডাকশনের জন্য কিছু কিনে থাকলে “Local material” বেছে “Production project”, “What you bought”, “How much (optional)”, “Shop (optional)” ও “Price paid” দিন।",
+        },
+        {
+          text: "রসিদ বা মেমোর ছবি “Receipt or memo photo”-তে দিন (যাতায়াতে ঐচ্ছিক), তারপর “Send the claim” চাপুন। Accounts-এর কাছে খবর যায়।",
+        },
+        {
+          text: "প্রতিটি দাবির পাশে অবস্থা থাকে: “Waiting for Accounts”, “Approved, to be paid”, “Paid back” বা “Not approved” (কারণসহ)। সিদ্ধান্তের আগে ভুল দাবি তুলে নিতে “Withdraw” চাপুন।",
+        },
+      ],
+      tips: [
+        "চেক-ইন করা দিনের যাতায়াতই দাবি করুন। Accounts দাবিটি সেদিনের হাজিরা ও লোকেশনের সঙ্গে মিলিয়ে দেখে।",
+        "অনুমোদিত টাকা Accounts আলাদা করে ফেরত দেয়। টাকা পেলে দাবিটি “Paid back” দেখায়।",
+      ],
+    },
+    {
       slug: "my-hr-details",
       title: "নিজের তথ্য ও বেতনের সারাংশ দেখবেন যেভাবে",
       summary: "নিজের কোড, পদ, যোগদানের দিন, যোগাযোগ, বেতন ও বেতন কীভাবে দেওয়া হয় তা দেখা।",

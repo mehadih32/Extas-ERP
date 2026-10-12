@@ -15,11 +15,14 @@ import {
 import { AccountsNoAccess } from "@/components/accounts/no-access";
 import { SectionError } from "@/components/dashboard/section-error";
 import { FormAlert } from "@/components/forms/field";
+import { hrHref } from "@/components/hr/labels";
 import { EmptyState } from "@/components/products/bits";
 import { money } from "@/components/sales/labels";
 import { Button } from "@/components/ui/button";
 import { formatCount } from "@/lib/display";
+import { claimAccess } from "@/modules/hr/claims";
 import { getExpenseListAction } from "@/server/actions/expenses.actions";
+import { getWaitingClaimsAction } from "@/server/actions/hr.actions";
 import { requireCompanyPage } from "@/server/pages/guards";
 
 export const metadata: Metadata = { title: "Expenses" };
@@ -50,6 +53,8 @@ export default async function ExpensesPage({
     );
   }
   const { items, nextCursor, heads, waiting, seesAll, boxes, can } = result.data;
+  // Staff claims from My HR (conveyance, local material) are decided on the HR claims screen.
+  const staffClaims = claimAccess(ctx).decide ? await getWaitingClaimsAction() : null;
 
   return (
     <PrivacyProvider>
@@ -127,6 +132,20 @@ export default async function ExpensesPage({
               className="font-medium underline underline-offset-4"
             >
               Show {waiting === 1 ? "it" : "them"}
+            </Link>
+          </FormAlert>
+        )}
+
+        {staffClaims?.ok && staffClaims.data.count > 0 && (
+          <FormAlert tone="note">
+            {formatCount(staffClaims.data.count, ctx.company.currency)} staff{" "}
+            {staffClaims.data.count === 1 ? "claim" : "claims"} from My HR (fares and local
+            material) {staffClaims.data.count === 1 ? "waits" : "wait"} for Accounts.{" "}
+            <Link
+              href={hrHref.claims(staffClaims.data.month ?? undefined, { status: "PENDING" })}
+              className="font-medium underline underline-offset-4"
+            >
+              See the staff claims
             </Link>
           </FormAlert>
         )}

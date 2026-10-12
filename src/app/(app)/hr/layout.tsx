@@ -3,8 +3,9 @@ import { SectionTabs } from "@/components/shell/section-tabs";
 import { requireCompanyPage } from "@/server/pages/guards";
 
 /**
- * The HR & payroll area: the overview, employees, attendance, leave, payroll,
- * salary advances, the staff map, holidays and rules, and the terms of employment, each tab shown only to people whose
+ * The HR & payroll area: the overview, employees, attendance, overtime, staff
+ * claims, leave, payroll, salary advances, the staff map, holidays and rules,
+ * and the terms of employment, each tab shown only to people whose
  * role opens it (components/hr/tabs.ts). Each page checks again through its
  * Server Action.
  */

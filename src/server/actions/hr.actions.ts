@@ -8,6 +8,7 @@ import { requireAnyPermission, requirePermission } from "@/modules/auth/context"
 import * as files from "@/modules/files/file.service";
 import * as advances from "@/modules/hr/advance.service";
 import * as attendance from "@/modules/hr/attendance.service";
+import * as claims from "@/modules/hr/claims.service";
 import * as employees from "@/modules/hr/employee.service";
 import * as leave from "@/modules/hr/leave.service";
 import * as location from "@/modules/hr/location.service";
@@ -25,6 +26,7 @@ import * as vault from "@/modules/hr/vault.service";
  *   hr.payroll.approve        approve or reopen payroll (posts it to the books)
  *   accounts.payments.record  pay advances and salaries (Accounts)
  *   accounts.receipts.record  take unspent advances back (Accounts)
+ *   expenses.manage           approve or reject staff claims (with accounts.payments.record)
  * Services check the HR and money permissions themselves too, so no caller can skip them.
  * Changes refresh the screens and hand back the record's id (and number or code) only.
  */
@@ -39,6 +41,10 @@ const approvePayroll = () => requirePermission("hr.payroll.approve");
 const payOut = () => requirePermission("accounts.payments.record");
 const takeIn = () => requirePermission("accounts.receipts.record");
 const giveOut = () => requireAnyPermission("accounts.payments.record", "accounts.manage");
+/** Staff claims: HR and Accounts see them; Accounts decide them (they go in the books). */
+const claimsRead = () =>
+  requireAnyPermission("hr.manage", "expenses.manage", "accounts.payments.record");
+const claimsDecide = () => requireAnyPermission("expenses.manage", "accounts.payments.record");
 
 /** Runs a change and refreshes every screen that may show it. */
 const change = <T>(work: () => Promise<T>) =>
@@ -120,6 +126,23 @@ export const getHrSettingsScreenAction = async (query: { year?: unknown } = {}) 
 
 export const getStaffMapScreenAction = async (query: unknown = {}) =>
   runAction(async () => location.getStaffMap(await hrManage(), query));
+
+// --- Staff claims (conveyance, local material) ----------------------------------------------
+export const getClaimsLedgerAction = async (query: unknown = {}) =>
+  runAction(async () => claims.getClaimsLedger(await claimsRead(), query));
+/** Staff claims waiting for Accounts (the Expenses screen's note). */
+export const getWaitingClaimsAction = async () =>
+  runAction(async () => claims.waitingClaims(await claimsDecide()));
+export const decideClaimAction = async (claimId: string, input: unknown) =>
+  change(async () =>
+    claims.decideClaim(await claimsDecide(), claimId, input, await getRequestMeta()),
+  );
+export const approveAllClaimsAction = async (input: unknown) =>
+  change(async () => claims.approveAllClaims(await claimsDecide(), input, await getRequestMeta()));
+export const recheckClaimAction = async (claimId: string) =>
+  change(async () => claims.recheckClaim(await claimsDecide(), claimId));
+export const payBackClaimsAction = async (input: unknown) =>
+  change(async () => claims.payBackClaims(await payOut(), input, await getRequestMeta()));
 
 // --- Shadow overtime (HR only) -----------------------------------------------------------
 export const getOvertimeLedgerAction = async (query: unknown = {}) =>

@@ -67,6 +67,7 @@ import {
   mayVoidAdvance,
 } from "@/modules/hr/rules";
 import { listWorkPlaces, openShift } from "@/modules/hr/location.service";
+import { waitingClaims } from "@/modules/hr/claims.service";
 import { waitingOvertime } from "@/modules/hr/overtime.service";
 import { getHrSettings, listHolidays, listLeaveTypes } from "@/modules/hr/settings.service";
 import { vaultIncompleteWhere } from "@/modules/hr/vault";
@@ -212,24 +213,26 @@ export async function getOverviewScreen(ctx: CompanyContext) {
   }
   let vault = null;
   if (access.manage) {
-    const [waiting, incomplete, termsToAgree, overtimeWaiting, oldestOvertime] = await Promise.all([
-      listPayRequests(ctx, { status: "PENDING", take: 6 }),
-      ctx.db.employee.count({
-        where: {
-          AND: [
-            { OR: [{ exitDate: null }, { exitDate: { gte: dateColumn(day) } }] },
-            vaultIncompleteWhere(),
-          ],
-        },
-      }),
-      staffToAgreeCount(ctx),
-      ctx.db.overtimeEntry.count({ where: { status: "PENDING" } }),
-      ctx.db.overtimeEntry.findFirst({
-        where: { status: "PENDING" },
-        orderBy: { date: "asc" },
-        select: { date: true },
-      }),
-    ]);
+    const [waiting, incomplete, termsToAgree, overtimeWaiting, oldestOvertime, claims] =
+      await Promise.all([
+        listPayRequests(ctx, { status: "PENDING", take: 6 }),
+        ctx.db.employee.count({
+          where: {
+            AND: [
+              { OR: [{ exitDate: null }, { exitDate: { gte: dateColumn(day) } }] },
+              vaultIncompleteWhere(),
+            ],
+          },
+        }),
+        staffToAgreeCount(ctx),
+        ctx.db.overtimeEntry.count({ where: { status: "PENDING" } }),
+        ctx.db.overtimeEntry.findFirst({
+          where: { status: "PENDING" },
+          orderBy: { date: "asc" },
+          select: { date: true },
+        }),
+        waitingClaims(ctx),
+      ]);
     vault = {
       payRequests: waiting.map((r) => ({
         id: r.id,
@@ -243,6 +246,9 @@ export async function getOverviewScreen(ctx: CompanyContext) {
       /** Shadow overtime waiting for HR's approval, any month, and the earliest month with some. */
       overtimeWaiting,
       overtimeMonth: oldestOvertime ? dateOnly(oldestOvertime.date).slice(0, 7) : null,
+      /** Staff claims waiting for Accounts, any month, and the earliest month with some. */
+      claimsWaiting: claims.count,
+      claimsMonth: claims.month,
     };
   }
   let advances = null;
@@ -1001,6 +1007,7 @@ export async function getSettingsScreen(ctx: CompanyContext, raw: { year?: unkno
       officeEndTime: rules.officeEndTime,
       shadowOvertime: rules.shadowOvertime,
       overtimeMinMinutes: rules.overtimeMinMinutes,
+      conveyanceRatePerKm: rules.conveyanceRatePerKm,
     },
     /** Where staff check in, each with its radius (GPS attendance). */
     workPlaces: places,

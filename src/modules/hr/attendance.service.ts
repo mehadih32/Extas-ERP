@@ -9,6 +9,7 @@ import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { assertCanManageHr, requireLinkedEmployee } from "@/modules/hr/access";
 import { dayType, monthRange, weekdayName } from "@/modules/hr/calendar";
+import { recheckClaimsAtCheckOut } from "@/modules/hr/claims.service";
 import { leaveOnDay } from "@/modules/hr/leave.service";
 import {
   employedOn,
@@ -36,8 +37,10 @@ import { loadHrSettings } from "@/modules/hr/setup";
  * a day replaces that day's record. Employees can also check in and out from
  * the portal; a check-in after the office start time plus the grace minutes is
  * late, and a check-out after the end of the day records shadow overtime for
- * HR to approve (overtime.service.ts). Staff never see overtime hours. Days in
- * a month whose payroll is approved cannot change.
+ * HR to approve (overtime.service.ts). Staff never see overtime hours. A
+ * check-out also checks that day's waiting travel claims again against the
+ * now complete trail (claims.service.ts). Days in a month whose payroll is
+ * approved cannot change.
  */
 
 type Tx = Prisma.TransactionClient;
@@ -617,6 +620,13 @@ export async function checkOut(ctx: CompanyContext, raw: unknown = {}, meta?: Re
     }
     // Overtime is found here, silently, for HR to approve (shadow overtime).
     await recordShadowOvertime(tx, { companyId, mark: saved, settings, timeZone: tz });
+    // The day's trail is complete now: check that day's waiting travel claims again.
+    await recheckClaimsAtCheckOut(tx, {
+      companyId,
+      employeeId: saved.employeeId,
+      date: saved.date,
+      settings,
+    });
     await auditInCompany(
       ctx,
       meta,

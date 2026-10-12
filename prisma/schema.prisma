@@ -163,6 +163,7 @@ model Company {
   locationPings        LocationPing[]
   staffPositions       StaffPosition[]
   overtimeEntries      OvertimeEntry[]
+  staffClaims          StaffClaim[]
 }
 
 /// A person who can log in. Global across companies.
@@ -205,6 +206,9 @@ model User {
   requestedLeaves    LeaveRequest[]        @relation("LeaveRequestedBy")
   attendanceMarked   Attendance[]          @relation("AttendanceRecordedBy")
   overtimeDecided    OvertimeEntry[]       @relation("OvertimeDecidedBy")
+  claimsDecided      StaffClaim[]          @relation("StaffClaimDecidedBy")
+  claimsPaid         StaffClaim[]          @relation("StaffClaimPaidBy")
+  claimsCreated      StaffClaim[]          @relation("StaffClaimCreatedBy")
   payrollsCreated    PayrollRun[]          @relation("PayrollCreatedBy")
   payrollsApproved   PayrollRun[]          @relation("PayrollApprovedBy")
   salariesPaid       PayrollPayment[]      @relation("PayrollPaidBy")
@@ -395,6 +399,7 @@ model FileAsset {
   chequeProofs        Cheque[]             @relation("ChequeProof")
   quotationImages     QuotationItem[]      @relation("QuotationItemImage")
   employeeDocuments   EmployeeDocument[]
+  staffClaims         StaffClaim[]
 
   @@index([companyId])
 }
@@ -1793,6 +1798,7 @@ model ProductionProject {
   materialIssues       MaterialIssue[]
   materialChallans     MaterialChallan[]
   tasks                Task[]
+  staffClaims          StaffClaim[]
   supplierPayments     Payment[]
   settlements          ProjectSettlement[]
 
@@ -2048,6 +2054,7 @@ model JournalEntry {
   materialIssue     MaterialIssue?
   purchaseReturn    PurchaseReturn?
   materialMovements RawMaterialMovement[]
+  claimPayments     StaffClaim[]
 
   @@unique([companyId, number])
   @@index([companyId, date])
@@ -2215,6 +2222,7 @@ model ExpenseHead {
   ledgerAccount   LedgerAccount?           @relation(fields: [ledgerAccountId], references: [id], onDelete: SetNull)
   expenses        Expense[]
   billAllocations SupplierBillAllocation[]
+  staffClaims     StaffClaim[]             @relation("StaffClaimCostHead")
 
   @@unique([companyId, name])
 }
@@ -2256,6 +2264,7 @@ model Expense {
   journalEntry       JournalEntry?       @relation(fields: [journalEntryId], references: [id], onDelete: SetNull)
   createdBy          User?               @relation("ExpenseCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   advanceSettlements AdvanceSettlement[]
+  staffClaim         StaffClaim?
 
   @@unique([companyId, number])
   @@index([companyId, date])
@@ -2346,6 +2355,7 @@ model Employee {
   locationPings   LocationPing[]
   position        StaffPosition?
   overtimeEntries OvertimeEntry[]
+  staffClaims     StaffClaim[]
 
   @@unique([companyId, code])
   @@unique([companyId, userId])
@@ -2547,6 +2557,9 @@ model HrSettings {
   /// approve (staff never see it), once someone stays at least this long.
   shadowOvertime       Boolean  @default(true)
   overtimeMinMinutes   Int      @default(30)
+  /// The usual conveyance fare for a kilometre: a claim more than half again
+  /// the usual fare for the distance is flagged (0 turns that check off).
+  conveyanceRatePerKm  Decimal  @default(30) @db.Decimal(10, 2)
   updatedAt            DateTime @updatedAt
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
@@ -2647,6 +2660,80 @@ model OvertimeEntry {
 
   @@index([companyId, status, date])
   @@index([employeeId, date])
+}
+
+/// Money an employee spent for the company and claims back from My HR:
+/// conveyance (checked against their GPS trail and the usual fare) or local
+/// material bought for a production project. Accounts approves it: the cost
+/// goes into the books (a conveyance expense, or a cost on the project) and
+/// the amount is owed to the employee until Accounts pays it back.
+model StaffClaim {
+  id             String           @id @default(cuid())
+  companyId      String
+  employeeId     String
+  number         String
+  kind           StaffClaimKind
+  /// The day of the trip or the purchase.
+  date           DateTime         @db.Date
+  amount         Decimal          @db.Decimal(14, 2)
+  purpose        String?
+  /// Conveyance: where the trip started and ended, and the two in a form that
+  /// matches other claims for the same route (either way round).
+  fromPlace      String?
+  toPlace        String?
+  routeKey       String?
+  /// Local material: the production project it was bought for, what was
+  /// bought, how much and where.
+  projectId      String?
+  item           String?
+  quantity       String?
+  shop           String?
+  receiptFileId  String?
+  /// What the checks found, for Accounts and HR (never shown to the employee).
+  flags          StaffClaimFlag[]
+  check          Json?
+  checkedAt      DateTime?
+  /// Google Maps, when connected: the road distance and where the two ends are.
+  roadMetres     Int?
+  fromLat        Float?
+  fromLng        Float?
+  toLat          Float?
+  toLng          Float?
+  roadCheckedAt  DateTime?
+  status         StaffClaimStatus @default(PENDING)
+  approvedAmount Decimal?         @db.Decimal(14, 2)
+  /// Why the amount was cut, or why it was rejected or withdrawn.
+  reason         String?
+  decidedById    String?
+  decidedAt      DateTime?
+  /// The expense the approval put in the books (for local material, the cost
+  /// on the project) and the production cost head it went under.
+  expenseId      String?          @unique
+  costHeadId     String?
+  /// Paid back by Accounts.
+  paidAt         DateTime?
+  paidById       String?
+  paymentEntryId String?
+  createdById    String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  company      Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee     Employee           @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  project      ProductionProject? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  receiptFile  FileAsset?         @relation(fields: [receiptFileId], references: [id], onDelete: SetNull)
+  expense      Expense?           @relation(fields: [expenseId], references: [id], onDelete: SetNull)
+  costHead     ExpenseHead?       @relation("StaffClaimCostHead", fields: [costHeadId], references: [id], onDelete: SetNull)
+  decidedBy    User?              @relation("StaffClaimDecidedBy", fields: [decidedById], references: [id], onDelete: SetNull)
+  paidBy       User?              @relation("StaffClaimPaidBy", fields: [paidById], references: [id], onDelete: SetNull)
+  createdBy    User?              @relation("StaffClaimCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  paymentEntry JournalEntry?      @relation(fields: [paymentEntryId], references: [id], onDelete: SetNull)
+
+  @@unique([companyId, number])
+  @@index([companyId, status, date])
+  @@index([employeeId, date])
+  @@index([companyId, routeKey])
+  @@index([projectId])
 }
 
 /// A place staff check in at (an office, a factory floor, a shop), with the
@@ -3792,6 +3879,7 @@ enum JournalSource {
   MATERIAL_ISSUE
   PURCHASE_RETURN
   REFUND
+  STAFF_CLAIM
 }
 
 enum AssetStatus {
@@ -3905,6 +3993,31 @@ enum OvertimeStatus {
   REJECTED
 }
 
+/// What a staff claim is for: a trip (conveyance), or material bought locally
+/// for a production project.
+enum StaffClaimKind {
+  CONVEYANCE
+  LOCAL_MATERIAL
+}
+
+enum StaffClaimStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  WITHDRAWN
+}
+
+/// Why Accounts should look at a claim before approving it.
+enum StaffClaimFlag {
+  NOT_ON_DUTY // not checked in that day (absent, on leave, a day off)
+  NO_TRAIL // GPS attendance is on but the day has no positions
+  NO_TRAVEL // the GPS trail shows no real travel that day
+  ROUTE_MISMATCH // a place on the route that the GPS trail never reached
+  HIGH_PRICE // well above the usual fare for the distance, or for the route
+  DUPLICATE // the same claim was made already
+  NO_RECEIPT // local material without a receipt or memo photo
+}
+
 /// Where a location ping came from: My HR in a browser, or the Android app's
 /// background service.
 enum PingSource {
@@ -3958,6 +4071,7 @@ enum DocumentType {
   SUPPLIER_360 // a supplier's projects, deliveries and dues on one PDF (Supplier 360°)
   STOCK_LOT // inward batches of finished goods (LOT-2026-00001)
   MATERIAL_CHALLAN // materials sent to a factory for a production project (MC-2026-00001)
+  STAFF_CLAIM // conveyance or local material claimed back by an employee (CLM-2026-00001)
 }
 
 enum TemplateFormat {

@@ -41,6 +41,7 @@ function presentSettings(s: Awaited<ReturnType<typeof loadHrSettings>>) {
     officeEndTime: s.officeEndTime,
     shadowOvertime: s.shadowOvertime,
     overtimeMinMinutes: s.overtimeMinMinutes,
+    conveyanceRatePerKm: s.conveyanceRatePerKm.toFixed(2),
     updatedAt: s.updatedAt,
   };
 }
@@ -56,6 +57,7 @@ function rulesSnapshot(s: Awaited<ReturnType<typeof loadHrSettings>>) {
     officeEndTime: s.officeEndTime,
     shadowOvertime: s.shadowOvertime,
     overtimeMinMinutes: s.overtimeMinMinutes,
+    conveyanceRatePerKm: s.conveyanceRatePerKm.toFixed(2),
   };
 }
 

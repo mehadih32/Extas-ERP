@@ -6,6 +6,8 @@ import {
   LeaveStatus,
   OvertimeStatus,
   PaymentMethod,
+  StaffClaimKind,
+  StaffClaimStatus,
 } from "@prisma/client";
 import { z } from "zod";
 
@@ -57,6 +59,8 @@ export const hrSettingsSchema = z
     shadowOvertime: z.boolean(),
     /** Stays shorter than this many minutes are not overtime. */
     overtimeMinMinutes: z.number().int().min(0).max(240),
+    /** The usual conveyance fare for a km (claims well above it are flagged); 0 = no check. */
+    conveyanceRatePerKm: money.max(100_000),
   })
   .partial()
   .refine(
@@ -697,3 +701,76 @@ export const decideOvertimeSchema = z.discriminatedUnion("decision", [
 
 /** Approves a month's waiting overtime as found, except entries that need a look. */
 export const approveAllOvertimeSchema = z.object({ month: monthSchema });
+
+// --- Staff claims (conveyance, local material) ----------------------------------------------
+
+const place = z.string().trim().min(2, "Write the place.").max(160);
+
+/**
+ * A claim from My HR: a trip (date, from, to, what for, the fare) or local
+ * material bought for a production project (what, how much, where, the price).
+ * The date is the day of the trip or purchase, not after today.
+ */
+export const submitClaimSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("CONVEYANCE"),
+    date: day,
+    amount: positiveMoney,
+    fromPlace: place,
+    toPlace: place,
+    purpose: z.string().trim().min(3, "Say what the trip was for.").max(300),
+    receiptFileId: id.nullish(),
+  }),
+  z.object({
+    kind: z.literal("LOCAL_MATERIAL"),
+    date: day,
+    amount: positiveMoney,
+    projectId: id,
+    item: z.string().trim().min(2, "Write what you bought.").max(160),
+    quantity: optionalText(80),
+    shop: optionalText(160),
+    purpose: optionalText(300),
+    receiptFileId: id.nullish(),
+  }),
+]);
+
+/** The claims ledger: a month (default this month), optionally one status, kind or person. */
+export const claimsLedgerSchema = z.object({
+  month: monthSchema.optional(),
+  status: z.enum(StaffClaimStatus).optional(),
+  kind: z.enum(StaffClaimKind).optional(),
+  employeeId: id.optional(),
+  /** Opens the month this claim is in (a link from the inbox). */
+  claim: id.optional(),
+});
+
+/**
+ * Accounts' decision on a claim: approve it (the amount claimed, or less with
+ * a reason; local material under a production cost head), or reject it with a
+ * reason.
+ */
+export const decideClaimSchema = z.discriminatedUnion("decision", [
+  z.object({
+    decision: z.literal("APPROVE"),
+    /** Left out, the amount claimed. */
+    amount: positiveMoney.optional(),
+    reason: optionalText(300),
+    /** Local material: the project's cost head; left out, "Local Materials". */
+    costHeadId: id.optional(),
+  }),
+  z.object({ decision: z.literal("REJECT"), reason }),
+]);
+
+/** Approves a month's waiting claims that have no flag, as claimed. */
+export const approveAllClaimsSchema = z.object({ month: monthSchema });
+
+/** Accounts pays an employee back everything approved and still owed to them. */
+export const payBackClaimsSchema = z.object({
+  employeeId: id,
+  method: z.enum(PaymentMethod).default("CASH"),
+  /** Cash / bank / wallet account; defaults by method. */
+  accountId: id.optional(),
+  reference: optionalText(120),
+  /** When it was paid; default: now. */
+  date: dayOrInstant.optional(),
+});

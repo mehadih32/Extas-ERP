@@ -18,14 +18,20 @@ const SALARIES: readonly PermissionKey[] = ["hr.manage", "hr.payroll", "accounts
  * in: employees, attendance, leave, holidays and the terms of employment read
  * with any HR key; payroll with the keys that see salaries; the advances
  * register also opens to whoever pays advances out (accounts.payments.record);
- * the overtime ledger (shadow overtime) and the staff map (where checked-in
- * staff are now) only to HR (hr.manage).
+ * staff claims (conveyance, local material) to HR and to Accounts, who decide
+ * and pay them; the overtime ledger (shadow overtime) and the staff map (where
+ * checked-in staff are now) only to HR (hr.manage).
  */
 export const HR_TABS: readonly HrTab[] = [
   { href: "/hr", label: "Overview", anyOf: HR_READ },
   { href: "/hr/employees", label: "Employees", anyOf: HR_READ },
   { href: "/hr/attendance", label: "Attendance", anyOf: HR_READ },
   { href: "/hr/overtime", label: "Overtime", anyOf: ["hr.manage"] },
+  {
+    href: "/hr/claims",
+    label: "Claims",
+    anyOf: ["hr.manage", "expenses.manage", "accounts.payments.record"],
+  },
   { href: "/hr/leave", label: "Leave", anyOf: HR_READ },
   { href: "/hr/payroll", label: "Payroll", anyOf: SALARIES },
   {
@@ -52,5 +58,6 @@ export const MY_HR_TABS: ReadonlyArray<{ href: string; label: string }> = [
   { href: "/me/leave", label: "Leave" },
   { href: "/me/payslips", label: "Payslips" },
   { href: "/me/advances", label: "Advances" },
+  { href: "/me/claims", label: "Claims" },
   { href: "/me/profile", label: "My details" },
 ];

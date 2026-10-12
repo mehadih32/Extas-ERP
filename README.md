@@ -1677,6 +1677,26 @@ the person's overtime rate, so payroll itself is unchanged; a payroll draft note
 still waiting. Nobody decides their own overtime (a Super Admin aside), and an approved
 payroll freezes its month's overtime. Turn it off with "Find overtime from check-outs".
 
+**Staff claims.** Staff claim money they paid themselves from My HR (`/me/claims`, a
+`StaffClaim`, numbered CLM-): a trip ("Conveyance": the day, from, to, what for and the fare)
+or "Local material" bought for an open production project (what, how much, the shop, the
+price and a receipt photo). Each claim is checked when it is sent (`src/modules/hr/claims.ts`)
+and the flags are for HR and Accounts only: not on duty that day, no GPS trail or no travel,
+a work place named on the route that the day's trail never reached, a price more than half
+again the usual (the fare per km in "Usual conveyance fare per km", 30 by default, times
+Google's road distance when the Maps plug is on, else the day's GPS trail; or what the same
+route was approved for before), the same claim twice, and no receipt. A claim made while the
+shift is open is checked again at check-out, and the road distance comes from the background
+job `claim.route`. HR and Accounts see the month on the Claims tab (`/hr/claims`); Accounts
+(`expenses.manage` or `accounts.payments.record`) approves as claimed, changes the amount
+(with a reason) or rejects it (with a reason), or "Approve all with nothing to check".
+Approving makes a due `Expense` for the employee (no supplier) under Conveyance, or for local
+material under the project's "Local Materials" cost head, so it counts in the project's
+direct cost at once, and owes it to the employee in Payable to Staff (Claims) (2270). "Pay
+back" (`accounts.payments.record`) settles everything owed to one person in one entry.
+Nobody decides or pays back their own claim (a Super Admin aside), and voiding the expense in
+Accounts cancels the claim.
+
 **Android app.** `mobile/` wraps the same web app in a Capacitor Android app that opens the
 company's server (`EXTAS_APP_URL` at build time). Its `DutyTracker` plugin
 (`mobile/android/app/src/main/java/com/extas/erp/`) starts a foreground location service
@@ -1702,6 +1722,8 @@ service worker `public/sw.js` make Extas ERP installable; phones are offered "In
 | Payroll approved, per person | Dr Salaries & Wages (6200) gross pay, Cr Salaries Payable (2250) net pay |
 | ...and the deductions        | Cr Advances to Employees, Tax Deducted (2260), Other Income (4200)       |
 | Salaries paid                | Dr Salaries Payable (employee), Cr Cash / Bank / Wallet                  |
+| Staff claim approved         | Dr Conveyance or the project's cost head, Cr Payable to Staff (2270)     |
+| Staff claims paid back       | Dr Payable to Staff (Claims) (employee), Cr Cash / Bank / Wallet         |
 
 | Endpoint                                                                              | Purpose                                                  |
 | ------------------------------------------------------------------------------------- | -------------------------------------------------------- |
@@ -1742,6 +1764,10 @@ service worker `public/sw.js` make Extas ERP installable; phones are offered "In
 | `POST /api/portal/location/pings`                                                     | Positions while checked in (browser or Android app)      |
 | `GET /api/hr/overtime?month=&status=`                                                 | Shadow overtime found at check-out, and HR's decisions   |
 | `POST /api/hr/overtime/:id/decide`, `POST /api/hr/overtime/approve-all`               | Approve, change or reject overtime / approve all found   |
+| `GET /api/hr/claims?month=&status=&kind=&claim=`                                      | Staff claims with their checks, and what is owed         |
+| `POST /api/hr/claims/:id/decide` / `…/recheck`, `POST /api/hr/claims/approve-all`     | Approve, change or reject a claim / check it again       |
+| `POST /api/hr/claims/pay-back`                                                        | Pay back everything owed to one person                   |
+| `GET/POST /api/portal/claims`, `POST …/:id/withdraw`                                  | Employee portal: my claims, send one, withdraw one       |
 
 `hr.view` sees profiles, attendance, leave and holidays, but no salaries. `hr.manage` adds
 and edits employees and salaries, marks attendance, approves leave and sets the HR rules.

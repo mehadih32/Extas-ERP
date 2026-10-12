@@ -44,6 +44,7 @@ import {
 } from "@/modules/expenses/rules";
 import { linkedEmployee } from "@/modules/hr/access";
 import { reverseSettlementsTx, settleAdvancesForExpenseTx } from "@/modules/hr/advance.service";
+import { assertClaimNotPaidBack } from "@/modules/hr/claim-guard";
 import { assertPartyCanTransact, recordPartyActivity } from "@/modules/parties/party.service";
 
 /*
@@ -112,7 +113,7 @@ export async function ensureGeneralExpenseHeads(companyId: string, db: Db = pris
 }
 
 /** Where a head's expenses land in the books. */
-async function headAccountId(db: Db, companyId: string, head: ExpenseHead): Promise<string> {
+export async function headAccountId(db: Db, companyId: string, head: ExpenseHead): Promise<string> {
   if (head.ledgerAccountId) {
     const account = await db.ledgerAccount.findFirst({
       where: { id: head.ledgerAccountId, companyId },
@@ -805,6 +806,7 @@ export async function voidExpense(
     const expense = await lockExpense(tx, ctx, expenseId);
     // Undoing a cash payment is Accounts' call: the money goes back into the account.
     assertAllowed(canVoidExpense(ctx, expenseState(ctx, expense)));
+    await assertClaimNotPaidBack(tx, expense);
     await reverseJournalEntry(tx, expense.journalEntryId!, {
       description: `Void ${expense.number}: ${reason}`,
       postedById: ctx.user.id,

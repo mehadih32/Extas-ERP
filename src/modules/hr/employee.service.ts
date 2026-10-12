@@ -774,8 +774,9 @@ export async function revokePortalAccess(
 
 /**
  * Every journal line naming the employee: advances given and recovered,
- * salaries posted and paid, conveyance settled from advances, with what they
- * owe the company and what the company owes them.
+ * salaries posted and paid, conveyance settled from advances, staff claims
+ * approved and paid back, with what they owe the company and what the company
+ * owes them.
  */
 export async function getEmployeeStatement(
   ctx: CompanyContext,
@@ -825,9 +826,10 @@ export async function getEmployeeStatement(
     });
     return (sums._sum.debit ?? ZERO).minus(sums._sum.credit ?? ZERO);
   };
-  const [advances, payable] = await Promise.all([
+  const [advances, payable, claims] = await Promise.all([
     balanceOn(CONTROL_ACCOUNTS.EMPLOYEE_ADVANCES.code),
     balanceOn(CONTROL_ACCOUNTS.SALARIES_PAYABLE.code),
+    balanceOn(CONTROL_ACCOUNTS.EMPLOYEE_PAYABLE.code),
   ]);
   return {
     employee: { id: employee.id, code: employee.code, name: employee.name },
@@ -837,6 +839,8 @@ export async function getEmployeeStatement(
     advanceBalance: advances.toFixed(2),
     /** Approved salary not yet paid. */
     salaryPayable: payable.neg().toFixed(2),
+    /** Staff claims approved and not yet paid back (conveyance, local material). */
+    claimsPayable: claims.neg().toFixed(2),
     lines: lines.map((l) => ({
       entryId: l.entry.id,
       number: l.entry.number,

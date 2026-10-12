@@ -54,15 +54,25 @@ describe("HR & payroll in the menu, by role", () => {
     "Overview",
     "Employees",
     "Attendance",
+    "Overtime",
+    "Claims",
     "Leave",
     "Payroll",
     "Advances",
+    "Items",
+    "Notices",
+    "Staff map",
     "Holidays & rules",
+    "Terms",
   ];
+  /** Tabs for HR alone (hr.manage), which Accounts does not hold. */
+  const HR_ONLY = ["Overtime", "Notices", "Staff map"];
 
   it("gives the owner and Accounts every tab, and My HR from the account menu", () => {
     for (const name of ["SUPER_ADMIN", "ACCOUNTS"] as const) {
-      expect(tabs(role(name)), name).toEqual(ALL);
+      // Overtime and where staff are now are for HR (hr.manage).
+      const expected = name === "ACCOUNTS" ? ALL.filter((t) => !HR_ONLY.includes(t)) : ALL;
+      expect(tabs(role(name)), name).toEqual(expected);
       expect(nav(role(name)), name).toContain("/hr");
       expect(nav(role(name)), name).not.toContain("/me");
     }
@@ -91,10 +101,13 @@ describe("HR & payroll in the menu, by role", () => {
     expect(MY_HR_TABS.map((t) => t.label)).toEqual([
       "Today",
       "Tasks",
+      "Notices",
       "Attendance",
       "Leave",
       "Payslips",
+      "Money",
       "Advances",
+      "Claims",
       "My details",
     ]);
   });
@@ -105,12 +118,25 @@ describe("HR & payroll in the menu, by role", () => {
       "Employees",
       "Attendance",
       "Leave",
+      "Items",
       "Holidays & rules",
+      "Terms",
     ]);
     expect(tabs(["accounts.view"])).toEqual(["Payroll", "Advances"]);
-    // Whoever pays advances out sees the advances register and nothing else of HR.
-    expect(tabs(["accounts.payments.record"])).toEqual(["Advances"]);
+    // Whoever pays advances out sees the advances register and the staff claims they pay back.
+    expect(tabs(["accounts.payments.record"])).toEqual(["Claims", "Advances"]);
+    // Staff claims also open to whoever decides expenses.
+    expect(tabs(["expenses.manage"])).toEqual(["Claims"]);
     expect(tabs(["portal.self"])).toEqual([]);
+  });
+
+  it("shows overtime and the staff map only to HR", () => {
+    for (const tab of HR_ONLY) {
+      expect(tabs(["hr.manage"])).toContain(tab);
+      for (const keys of [["hr.view"], ["hr.payroll"], ["accounts.view"], ["portal.self"]]) {
+        expect(tabs(keys), `${tab}: ${keys.join()}`).not.toContain(tab);
+      }
+    }
   });
 });
 
@@ -323,6 +349,8 @@ describe("HR filters and addresses", () => {
     expect(hrHref.newLeave("e1")).toBe("/hr/leave/new?employee=e1");
     expect(hrHref.payslip("r1", "i1")).toBe("/hr/payroll/r1/payslips/i1");
     expect(hrHref.settings(2027)).toBe("/hr/settings?year=2027");
+    expect(hrHref.terms()).toBe("/hr/terms");
+    expect(hrHref.terms(2)).toBe("/hr/terms?version=2");
     expect(hrHref.myMonth()).toBe("/me/attendance");
     expect(hrHref.myLeave(2025)).toBe("/me/leave?year=2025");
     expect(hrHref.myPayslip("i1")).toBe("/me/payslips/i1");

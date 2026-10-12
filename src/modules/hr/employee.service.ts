@@ -28,6 +28,7 @@ import {
 import { employeeMonth } from "@/modules/hr/attendance.service";
 import { monthKey, monthLabel } from "@/modules/hr/calendar";
 import { balancesFor, syncLeaveBalanceTx } from "@/modules/hr/leave.service";
+import { assertWorkPlace } from "@/modules/hr/location.service";
 import { salaryOn } from "@/modules/hr/payroll-calc";
 import { assertOpenFrom } from "@/modules/hr/period-lock";
 import {
@@ -62,6 +63,7 @@ const TX_OPTIONS = { timeout: 30_000 };
 
 export const employeeInclude = {
   user: { select: { id: true, email: true, name: true, status: true } },
+  workLocation: { select: { id: true, name: true, isActive: true } },
   salaryHistory: {
     orderBy: [{ effectiveFrom: "asc" }, { createdAt: "asc" }],
   },
@@ -115,6 +117,10 @@ function profileOf(e: EmployeeRow, day: string) {
     /** Still working here (no leaving date, or it is today or later). */
     isCurrent: !e.exitDate || dateOnly(e.exitDate) >= day,
     portalLogin: e.user,
+    /** Where they check in (GPS attendance). */
+    workPlace: e.workLocation?.isActive
+      ? { id: e.workLocation.id, name: e.workLocation.name }
+      : null,
     createdAt: e.createdAt,
     updatedAt: e.updatedAt,
   };
@@ -339,6 +345,7 @@ export async function createEmployee(ctx: CompanyContext, raw: unknown, meta?: R
   const input = createEmployeeSchema.parse(raw);
   const companyId = ctx.company.id;
   if (input.code) await assertCodeFree(ctx, input.code);
+  await assertWorkPlace(ctx, input.workLocationId);
   const { salary, joinDate, dateOfBirth, ...details } = input;
   const id = await prisma.$transaction(async (tx) => {
     await ensureHrSetup(companyId, tx);
@@ -385,6 +392,9 @@ export async function updateEmployee(
   assertCanManageHr(ctx, "Only HR can edit employees.");
   const input = updateEmployeeSchema.parse(raw);
   const employee = await loadEmployee(ctx, employeeId);
+  if (input.workLocationId !== employee.workLocationId) {
+    await assertWorkPlace(ctx, input.workLocationId);
+  }
   if (input.code && input.code !== employee.code)
     await assertCodeFree(ctx, input.code, employee.id);
   if (input.status) assertAllowed(canSetStatus(state(employee)));
@@ -551,56 +561,71 @@ export async function exitEmployee(
   assertCanManageHr(ctx, "Only HR can record that someone left.");
   const input = exitEmployeeSchema.parse(raw);
   const employee = await loadEmployee(ctx, employeeId);
+  await prisma.$transaction((tx) => recordExitTx(tx, ctx, employee, input, meta), TX_OPTIONS);
+  return getEmployee(ctx, employee.id);
+}
+
+/**
+ * The leaving record itself, inside the caller's transaction (recording that
+ * someone left, and deactivating them in one go): the day, the reason, later
+ * leave cancelled and leave allowances shared out again, in the activity log
+ * (with `note` added to the entry).
+ */
+export async function recordExitTx(
+  tx: Prisma.TransactionClient,
+  ctx: CompanyContext,
+  employee: { id: string; code: string; name: string; joinDate: Date; exitDate: Date | null },
+  input: { exitDate: string; status: "RESIGNED" | "TERMINATED"; reason?: string | null },
+  meta?: RequestMeta,
+  note = "",
+) {
   const join = dateOnly(employee.joinDate);
   if (input.exitDate < join) {
     throw new AppError("VALIDATION", `The last working day cannot be before joining (${join}).`);
   }
   const oldExit = dateOnly(employee.exitDate);
   const from = oldExit && oldExit < input.exitDate ? oldExit : input.exitDate;
-  await prisma.$transaction(async (tx) => {
-    await assertOpenFrom(tx, ctx.company.id, from.slice(0, 7), "the leaving day");
-    const later = await tx.leaveRequest.findMany({
-      where: {
-        employeeId: employee.id,
-        status: { in: ["PENDING", "APPROVED"] },
-        startDate: { gt: dateColumn(input.exitDate) },
-      },
-    });
-    await tx.leaveRequest.updateMany({
-      where: { id: { in: later.map((l) => l.id) } },
-      data: { status: "CANCELLED", decisionNote: `Left on ${input.exitDate}` },
-    });
-    await tx.employee.update({
-      where: { id: employee.id },
-      data: {
-        exitDate: dateColumn(input.exitDate),
-        exitReason: input.reason ?? null,
-        status: input.status,
-      },
-    });
-    // Allowances shared out by months worked change with the leaving day.
-    const types = await tx.leaveBalance.findMany({
-      where: { employeeId: employee.id, year: { gte: Number(from.slice(0, 4)) } },
-      select: { leaveTypeId: true, year: true },
-    });
-    for (const t of types) await syncLeaveBalanceTx(tx, employee.id, t.leaveTypeId, t.year);
-    await auditInCompany(
-      ctx,
-      meta,
-      {
-        action: "STATUS_CHANGE",
-        entityType: "Employee",
-        entityId: employee.id,
-        summary: `${employee.code} ${employee.name} ${input.status.toLowerCase()}, last working day ${
-          input.exitDate
-        }${later.length ? `; cancelled ${later.length} later leave request(s)` : ""}${
-          input.reason ? ` — ${input.reason}` : ""
-        }`,
-      },
-      tx,
-    );
-  }, TX_OPTIONS);
-  return getEmployee(ctx, employee.id);
+  await assertOpenFrom(tx, ctx.company.id, from.slice(0, 7), "the leaving day");
+  const later = await tx.leaveRequest.findMany({
+    where: {
+      employeeId: employee.id,
+      status: { in: ["PENDING", "APPROVED"] },
+      startDate: { gt: dateColumn(input.exitDate) },
+    },
+  });
+  await tx.leaveRequest.updateMany({
+    where: { id: { in: later.map((l) => l.id) } },
+    data: { status: "CANCELLED", decisionNote: `Left on ${input.exitDate}` },
+  });
+  await tx.employee.update({
+    where: { id: employee.id },
+    data: {
+      exitDate: dateColumn(input.exitDate),
+      exitReason: input.reason ?? null,
+      status: input.status,
+    },
+  });
+  // Allowances shared out by months worked change with the leaving day.
+  const types = await tx.leaveBalance.findMany({
+    where: { employeeId: employee.id, year: { gte: Number(from.slice(0, 4)) } },
+    select: { leaveTypeId: true, year: true },
+  });
+  for (const t of types) await syncLeaveBalanceTx(tx, employee.id, t.leaveTypeId, t.year);
+  await auditInCompany(
+    ctx,
+    meta,
+    {
+      action: "STATUS_CHANGE",
+      entityType: "Employee",
+      entityId: employee.id,
+      summary: `${employee.code} ${employee.name} ${input.status.toLowerCase()}, last working day ${
+        input.exitDate
+      }${later.length ? `; cancelled ${later.length} later leave request(s)` : ""}${
+        input.reason ? ` — ${input.reason}` : ""
+      }${note}`,
+    },
+    tx,
+  );
 }
 
 /** Undoes a leaving record (e.g. the resignation was withdrawn). */
@@ -764,8 +789,9 @@ export async function revokePortalAccess(
 
 /**
  * Every journal line naming the employee: advances given and recovered,
- * salaries posted and paid, conveyance settled from advances, with what they
- * owe the company and what the company owes them.
+ * salaries posted and paid, conveyance settled from advances, staff claims
+ * approved and paid back, with what they owe the company and what the company
+ * owes them.
  */
 export async function getEmployeeStatement(
   ctx: CompanyContext,
@@ -815,9 +841,10 @@ export async function getEmployeeStatement(
     });
     return (sums._sum.debit ?? ZERO).minus(sums._sum.credit ?? ZERO);
   };
-  const [advances, payable] = await Promise.all([
+  const [advances, payable, claims] = await Promise.all([
     balanceOn(CONTROL_ACCOUNTS.EMPLOYEE_ADVANCES.code),
     balanceOn(CONTROL_ACCOUNTS.SALARIES_PAYABLE.code),
+    balanceOn(CONTROL_ACCOUNTS.EMPLOYEE_PAYABLE.code),
   ]);
   return {
     employee: { id: employee.id, code: employee.code, name: employee.name },
@@ -827,6 +854,8 @@ export async function getEmployeeStatement(
     advanceBalance: advances.toFixed(2),
     /** Approved salary not yet paid. */
     salaryPayable: payable.neg().toFixed(2),
+    /** Staff claims approved and not yet paid back (conveyance, local material). */
+    claimsPayable: claims.neg().toFixed(2),
     lines: lines.map((l) => ({
       entryId: l.entry.id,
       number: l.entry.number,

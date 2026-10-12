@@ -7,7 +7,7 @@ import { FormAlert } from "@/components/forms/field";
 import { FormDialog, readReason, ReasonField } from "@/components/sales/dialogs";
 import { Button } from "@/components/ui/button";
 import { formatDay } from "@/lib/display";
-import { DOCUMENT_KINDS } from "@/modules/hr/vault";
+import { DOCUMENT_KINDS, isAppMade } from "@/modules/hr/vault";
 import type { EmployeeVault } from "@/modules/hr/vault.service";
 import {
   addEmployeeDocumentAction,
@@ -114,7 +114,7 @@ export function VaultPanel({
       <div className="grid gap-3">
         <h4 className="eyebrow">Papers</h4>
         <VaultPapers
-          papers={vault.documents.map((d) => ({ ...d, canRemove: true }))}
+          papers={vault.documents.map((d) => ({ ...d, canRemove: !isAppMade(d.kind) }))}
           kinds={DOCUMENT_KINDS}
           canAdd={vault.can.addDocument}
           add={(form) => addEmployeeDocumentAction(employeeId, form)}

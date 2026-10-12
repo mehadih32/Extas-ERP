@@ -6,7 +6,9 @@ import { hrHref, offDaysText } from "@/components/hr/labels";
 import { HrNoAccess } from "@/components/hr/no-access";
 import { OutsideServices } from "@/components/hr/outside-services";
 import { Holidays, HrRules, LeaveTypes } from "@/components/hr/settings-actions";
+import { WorkPlaces } from "@/components/hr/work-places";
 import { Fact, Panel } from "@/components/sales/detail-bits";
+import { money } from "@/components/sales/labels";
 import { getHrSettingsScreenAction } from "@/server/actions/hr.actions";
 import { requireCompanyPage } from "@/server/pages/guards";
 
@@ -33,7 +35,8 @@ export default async function HrSettingsPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  await requireCompanyPage();
+  const ctx = await requireCompanyPage();
+  const currency = ctx.company.currency;
   const result = await getHrSettingsScreenAction({ year: one((await searchParams).year) });
   if (!result.ok) {
     if (result.error.code === "FORBIDDEN") return <HrNoAccess />;
@@ -45,7 +48,7 @@ export default async function HrSettingsPage({
       />
     );
   }
-  const { rules, year, years, holidays, leaveTypes, integrations, can } = result.data;
+  const { rules, year, years, holidays, leaveTypes, workPlaces, integrations, can } = result.data;
   const shownYears = years.includes(year) ? years : [...years, year].sort((a, b) => a - b);
 
   return (
@@ -63,10 +66,10 @@ export default async function HrSettingsPage({
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Panel title="Working week" id="rules-heading" className="lg:col-span-2">
-          <dl className="mt-4 mb-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <dl className="mt-4 mb-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <Fact label="Weekly days off">{offDaysText(rules.weeklyOffDays)}</Fact>
-            <Fact label="Office starts">
-              {rules.officeStartTime}
+            <Fact label="Office hours">
+              {rules.officeStartTime} to {rules.officeEndTime}
               <span className="block text-[0.8125rem] text-muted-foreground">
                 Late after {lateAfter(rules.officeStartTime, rules.lateGraceMinutes)}
               </span>
@@ -78,6 +81,33 @@ export default async function HrSettingsPage({
             </Fact>
             <Fact label="Check-in">
               {rules.selfCheckIn ? "Staff check in themselves in My HR" : "HR marks attendance"}
+              {rules.selfCheckIn && (
+                <span className="block text-[0.8125rem] text-muted-foreground">
+                  {rules.gpsAttendance
+                    ? "With location, shared until check-out"
+                    : "Location is not asked for"}
+                </span>
+              )}
+            </Fact>
+            <Fact label="Overtime">
+              {rules.shadowOvertime && rules.selfCheckIn
+                ? `Found from check-outs after ${rules.officeEndTime}`
+                : "Marked by HR"}
+              {rules.shadowOvertime && rules.selfCheckIn && (
+                <span className="block text-[0.8125rem] text-muted-foreground">
+                  Once someone stays {rules.overtimeMinMinutes} minutes; HR approves it
+                </span>
+              )}
+            </Fact>
+            <Fact label="Conveyance claims">
+              {Number(rules.conveyanceRatePerKm) > 0
+                ? `Usually ${money(rules.conveyanceRatePerKm, currency)} a km`
+                : "No usual fare set"}
+              <span className="block text-[0.8125rem] text-muted-foreground">
+                {Number(rules.conveyanceRatePerKm) > 0
+                  ? "Trips well above it are flagged"
+                  : "Trips are checked against the GPS trail and past claims"}
+              </span>
             </Fact>
           </dl>
           <HrRules rules={rules} canManage={can.manage} />
@@ -110,6 +140,24 @@ export default async function HrSettingsPage({
         <Panel title="Leave types" id="leave-types-heading">
           <div className="mt-4">
             <LeaveTypes types={leaveTypes} canManage={can.manage} />
+          </div>
+        </Panel>
+
+        <Panel title="Work places" id="work-places-heading">
+          <p className="mt-1 text-sm text-muted-foreground">
+            Where staff check in. A check-in further away than the radius shows as a location
+            mismatch.
+            {can.manage && rules.selfCheckIn && rules.gpsAttendance && (
+              <>
+                {" "}
+                <Link href={hrHref.map()} className={linkClass}>
+                  See the staff map
+                </Link>
+              </>
+            )}
+          </p>
+          <div className="mt-4">
+            <WorkPlaces places={workPlaces} canManage={can.manage} />
           </div>
         </Panel>
 

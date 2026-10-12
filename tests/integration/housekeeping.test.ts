@@ -60,6 +60,8 @@ run("nightly housekeeping", () => {
       proofsRemoved: 0,
       picturesRemoved: 0,
       salesPdfsRemoved: 0,
+      jobsCleared: 0,
+      pingsRemoved: 0,
     });
     expect(await statusOf(idle.id)).toBe("DORMANT");
     expect(await statusOf(quiet.id)).toBe("DORMANT");
@@ -95,6 +97,8 @@ run("nightly housekeeping", () => {
       proofsRemoved: 0,
       picturesRemoved: 0,
       salesPdfsRemoved: 0,
+      jobsCleared: 0,
+      pingsRemoved: 0,
     });
     expect(await prisma.auditLog.count({ where: { action: "STATUS_CHANGE" } })).toBe(2);
   });

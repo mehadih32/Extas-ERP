@@ -42,6 +42,7 @@ import {
   payPayrollRunAction,
   recalculatePayrollRunAction,
   reopenPayrollRunAction,
+  retrySalaryPayoutsAction,
   setPayrollBonusAction,
   updatePayrollItemAction,
   voidPayrollPaymentAction,
@@ -132,13 +133,12 @@ export function PayrollActions({
   const router = useRouter();
   const [open, setOpen] = useState<Open>(null);
   const [notice, setNotice] = useNotice(initial);
-  const { run, can, unpaid } = screen;
+  const { run, can } = screen;
   const close = () => setOpen(null);
   const done = (message: string) => {
     setNotice(message);
     close();
   };
-  const unpaidTotal = unpaid.reduce((t, i) => t + Number(i.netPay), 0).toFixed(2);
   const any = can.change || can.approve || can.remove || can.reopen || can.pay;
   if (!any && !notice) return null;
 
@@ -298,88 +298,209 @@ export function PayrollActions({
       )}
 
       {open === "pay" && (
-        <FormDialog
-          title={`Pay salaries for ${run.label}`}
-          description={`${unpaid.length} ${unpaid.length === 1 ? "employee is" : "employees are"} still to be paid, ${money(unpaidTotal, currency)} in all. A salary payment is recorded for the ones ticked.`}
-          submitLabel="Record the payment"
-          pendingLabel="Recording"
-          errorTitle="We could not record the payment"
-          onClose={close}
-          onSubmit={async (form) => {
-            const itemIds = form.getAll("itemIds").map(String);
-            if (itemIds.length === 0) return problem({ itemIds: "Tick who is paid." });
-            const date = textOf(form, "date");
-            const result = await payPayrollRunAction(run.id, {
-              itemIds: itemIds.length === unpaid.length ? undefined : itemIds,
-              accountId: textOf(form, "accountId") || undefined,
-              method: textOf(form, "method") || "CASH",
-              reference: textOf(form, "reference") || null,
-              date: date && date !== screen.today ? date : undefined,
-            });
-            if (!result.ok) return result.error;
-            done(
-              `Payment ${result.data.number} recorded for ${itemIds.length} ${itemIds.length === 1 ? "employee" : "employees"}.`,
-            );
-          }}
-        >
-          {(fieldError) => (
-            <>
-              <fieldset className="grid gap-2">
-                <legend className="mb-2 text-sm font-medium">Paid now</legend>
-                <div className="grid max-h-64 gap-1 overflow-y-auto rounded-md border p-2">
-                  {unpaid.map((i) => (
-                    <label
-                      key={i.id}
-                      className="flex cursor-pointer items-center justify-between gap-3 rounded-sm px-2 py-1.5 text-sm hover:bg-muted"
-                    >
-                      <span className="flex min-w-0 items-center gap-2">
+        <PayDialog screen={screen} currency={currency} onClose={close} onDone={done} />
+      )}
+    </div>
+  );
+}
+
+type Unpaid = PayrollScreen["unpaid"][number];
+const WALLET_METHODS = new Set(["BKASH", "NAGAD", "ROCKET"]);
+
+/**
+ * Paying salaries: everyone still owed, chosen people, or part of a salary (the
+ * amount typed is less than what is left; the rest is paid later). With wallet
+ * payouts connected, a bKash, Nagad or Rocket payment can go straight to each
+ * person's wallet.
+ */
+function PayDialog({
+  screen,
+  currency,
+  onClose,
+  onDone,
+}: {
+  screen: PayrollScreen;
+  currency: string;
+  onClose: () => void;
+  onDone: (message: string) => void;
+}) {
+  const { run, unpaid, payouts } = screen;
+  const [ticked, setTicked] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(unpaid.map((i) => [i.id, true])),
+  );
+  const [amounts, setAmounts] = useState<Record<string, string>>(() =>
+    Object.fromEntries(unpaid.map((i) => [i.id, i.balance])),
+  );
+  const left = unpaid.reduce((t, i) => t + Number(i.balance), 0).toFixed(2);
+  const chosen = unpaid.filter((i) => ticked[i.id]);
+  const total = chosen
+    .reduce((t, i) => {
+      const a = readAmount(amounts[i.id]);
+      return t + (typeof a === "number" ? a : 0);
+    }, 0)
+    .toFixed(2);
+  const fieldOf = (i: Unpaid) => `amount-${i.id}`;
+  // The amounts as last sent: an amount's problem goes away once it is changed.
+  const [sent, setSent] = useState<Record<string, string>>({});
+
+  return (
+    <FormDialog
+      title={`Pay salaries for ${run.label}`}
+      description={`${unpaid.length} ${unpaid.length === 1 ? "employee is" : "employees are"} still owed ${money(left, currency)} in all. Tick who is paid now; type less than what is left to pay part of a salary, and the rest stays to pay later.`}
+      submitLabel="Record the payment"
+      pendingLabel="Recording"
+      errorTitle="We could not record the payment"
+      onClose={onClose}
+      onSubmit={async (form) => {
+        setSent(amounts);
+        if (chosen.length === 0) return problem({ itemIds: "Tick who is paid." });
+        const parts: { itemId: string; amount: number }[] = [];
+        for (const i of chosen) {
+          const amount = readAmount(amounts[i.id]);
+          if (amount === "invalid" || amount === null)
+            return problem({ [fieldOf(i)]: AMOUNT_HINT });
+          if (amount <= 0) return problem({ [fieldOf(i)]: "Pay more than zero." });
+          if (amount > Number(i.balance)) {
+            return problem({ [fieldOf(i)]: `Only ${money(i.balance, currency)} is left to pay.` });
+          }
+          parts.push({ itemId: i.id, amount });
+        }
+        const isWhole = (p: (typeof parts)[number]) =>
+          p.amount.toFixed(2) === unpaid.find((i) => i.id === p.itemId)?.balance;
+        const whole = parts.every(isWhole);
+        const everyone = whole && parts.length === unpaid.length;
+        const date = textOf(form, "date");
+        const method = textOf(form, "method") || "CASH";
+        const sendToWallets = payouts.on && form.get("sendToWallets") === "on";
+        if (sendToWallets && !WALLET_METHODS.has(method)) {
+          return problem({ sendToWallets: "Pay by bKash, Nagad or Rocket to send it to wallets." });
+        }
+        const result = await payPayrollRunAction(run.id, {
+          ...(everyone ? {} : whole ? { itemIds: parts.map((p) => p.itemId) } : { parts }),
+          accountId: textOf(form, "accountId") || undefined,
+          method,
+          reference: textOf(form, "reference") || null,
+          date: date && date !== screen.today ? date : undefined,
+          sendToWallets: sendToWallets || undefined,
+        });
+        if (!result.ok) return result.error;
+        const inPart = parts.filter((p) => !isWhole(p)).length;
+        onDone(
+          `Payment ${result.data.number} recorded for ${parts.length} ${parts.length === 1 ? "employee" : "employees"}${
+            inPart > 0 ? `, ${inPart} in part` : ""
+          }.${sendToWallets ? " The money is being sent to their wallets." : ""}`,
+        );
+      }}
+    >
+      {(fieldError) => (
+        <>
+          <fieldset className="grid gap-2">
+            <legend className="mb-2 text-sm font-medium">Paid now</legend>
+            <div className="grid max-h-72 gap-1 overflow-y-auto rounded-md border p-2">
+              {unpaid.map((i) => {
+                const field = fieldOf(i);
+                const amountError = amounts[i.id] === sent[i.id] ? fieldError(field) : undefined;
+                const partPaid = !isZero(i.paidAmount);
+                return (
+                  <div
+                    key={i.id}
+                    className="grid gap-1 rounded-sm px-2 py-1.5 text-sm hover:bg-muted"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <label className="flex min-w-0 cursor-pointer items-center gap-2">
                         <input
                           type="checkbox"
                           name="itemIds"
                           value={i.id}
-                          defaultChecked
+                          checked={ticked[i.id] ?? false}
+                          onChange={(e) => setTicked((t) => ({ ...t, [i.id]: e.target.checked }))}
                           className="size-4 shrink-0 cursor-pointer accent-primary"
                         />
-                        <span className="truncate">
-                          {i.employee.name}
-                          <span className="text-muted-foreground">
-                            {" "}
-                            · {METHOD_LABELS[i.employee.salaryMethod]}
+                        <span className="min-w-0">
+                          <span className="block truncate">
+                            {i.employee.name}
+                            <span className="text-muted-foreground">
+                              {" "}
+                              · {METHOD_LABELS[i.employee.salaryMethod]}
+                            </span>
+                          </span>
+                          <span className="block text-[0.75rem] text-muted-foreground">
+                            {partPaid
+                              ? `${money(i.paidAmount, currency)} paid, ${money(i.balance, currency)} left`
+                              : `Take home ${money(i.netPay, currency)}`}
+                            {payouts.on && !i.employee.hasWallet ? " · no wallet number" : ""}
                           </span>
                         </span>
-                      </span>
-                      <span className="whitespace-nowrap tabular-nums">
-                        {money(i.netPay, currency)}
-                      </span>
-                    </label>
-                  ))}
-                </div>
-                {fieldError("itemIds") && (
-                  <p className="text-[0.8125rem] text-destructive">{fieldError("itemIds")}</p>
-                )}
-              </fieldset>
-              <div className="grid items-start gap-5 sm:grid-cols-2">
-                <PaidFromFields
-                  idPrefix="pay"
-                  accounts={screen.moneyAccounts}
-                  currency={currency}
-                  fieldError={fieldError}
+                      </label>
+                      <Input
+                        aria-label={`Amount for ${i.employee.name}`}
+                        name={field}
+                        inputMode="decimal"
+                        value={amounts[i.id] ?? ""}
+                        onChange={(e) => setAmounts((a) => ({ ...a, [i.id]: e.target.value }))}
+                        disabled={!ticked[i.id]}
+                        aria-invalid={Boolean(amountError)}
+                        className="h-8 w-28 shrink-0 text-right tabular-nums"
+                      />
+                    </div>
+                    {amountError && (
+                      <p className="text-right text-[0.8125rem] text-destructive">{amountError}</p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <p className="flex justify-between gap-3 text-sm">
+              <span className="text-muted-foreground">
+                {chosen.length} of {unpaid.length} ticked
+              </span>
+              <span className="font-medium tabular-nums">Paid now {money(total, currency)}</span>
+            </p>
+            {fieldError("itemIds") && (
+              <p className="text-[0.8125rem] text-destructive">{fieldError("itemIds")}</p>
+            )}
+          </fieldset>
+          <div className="grid items-start gap-5 sm:grid-cols-2">
+            <PaidFromFields
+              idPrefix="pay"
+              accounts={screen.moneyAccounts}
+              currency={currency}
+              fieldError={fieldError}
+            />
+            <Field id="pay-date" label="Paid on" error={fieldError("date")}>
+              <Input
+                id="pay-date"
+                name="date"
+                type="date"
+                defaultValue={screen.today}
+                max={screen.today}
+              />
+            </Field>
+          </div>
+          {payouts.on && (
+            <div className="grid gap-1">
+              <label className="flex cursor-pointer items-start gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  name="sendToWallets"
+                  className="mt-0.5 size-4 shrink-0 cursor-pointer accent-primary"
                 />
-                <Field id="pay-date" label="Paid on" error={fieldError("date")}>
-                  <Input
-                    id="pay-date"
-                    name="date"
-                    type="date"
-                    defaultValue={screen.today}
-                    max={screen.today}
-                  />
-                </Field>
-              </div>
-            </>
+                <span>
+                  Send it to their wallets
+                  <span className="block text-[0.8125rem] text-muted-foreground">
+                    Pay by bKash, Nagad or Rocket and the app sends each person their money.
+                    {payouts.test ? " Test mode: no money really moves." : ""}
+                  </span>
+                </span>
+              </label>
+              {fieldError("sendToWallets") && (
+                <p className="text-[0.8125rem] text-destructive">{fieldError("sendToWallets")}</p>
+              )}
+            </div>
           )}
-        </FormDialog>
+        </>
       )}
-    </div>
+    </FormDialog>
   );
 }
 
@@ -590,15 +711,23 @@ export function PayrollLines({ screen, currency }: { screen: PayrollScreen; curr
   const [notice, setNotice] = useNotice();
   const { run, can } = screen;
   const additions = (i: Line) =>
-    (Number(i.allowances) + Number(i.overtime) + Number(i.bonus)).toFixed(2);
+    (
+      Number(i.allowances) +
+      Number(i.overtime) +
+      Number(i.bonus) +
+      Number(i.reimbursements)
+    ).toFixed(2);
+  const partPaid = (i: Line) => !i.paid && !isZero(i.paidAmount);
   const paidText = (i: Line) =>
     i.paid
       ? "Paid"
       : run.status === "DRAFT"
         ? null
-        : isZero(i.netPay)
-          ? "Nothing to pay"
-          : "To pay";
+        : partPaid(i)
+          ? "Part paid"
+          : isZero(i.netPay)
+            ? "Nothing to pay"
+            : "To pay";
 
   const change = (i: Line) =>
     can.change ? (
@@ -632,7 +761,11 @@ export function PayrollLines({ screen, currency }: { screen: PayrollScreen; curr
                   {i.days.unpaid > 0 ? ` · ${i.days.unpaid} unpaid` : ""}
                 </p>
               </div>
-              {paidText(i) && <FlagBadge tone={i.paid ? "done" : "open"}>{paidText(i)}</FlagBadge>}
+              {paidText(i) && (
+                <FlagBadge tone={i.paid ? "done" : partPaid(i) ? "warn" : "open"}>
+                  {paidText(i)}
+                </FlagBadge>
+              )}
             </div>
             <dl className="mt-3 grid grid-cols-3 gap-2 border-t pt-3 text-sm tabular-nums">
               <div>
@@ -654,6 +787,17 @@ export function PayrollLines({ screen, currency }: { screen: PayrollScreen; curr
                 </dd>
               </div>
             </dl>
+            {!isZero(i.reimbursements) && (
+              <p className="mt-2 text-[0.8125rem] text-muted-foreground">
+                Claims paid back <Amount>{money(i.reimbursements, currency)}</Amount>
+              </p>
+            )}
+            {partPaid(i) && (
+              <p className="mt-2 text-[0.8125rem] text-muted-foreground">
+                <Amount>{money(i.paidAmount, currency)}</Amount> paid,{" "}
+                <Amount>{money(i.balance, currency)}</Amount> left
+              </p>
+            )}
             {(i.note || can.change) && (
               <div className="mt-2 flex items-center justify-between gap-3">
                 <p className="min-w-0 text-[0.8125rem] break-words text-muted-foreground">
@@ -672,7 +816,7 @@ export function PayrollLines({ screen, currency }: { screen: PayrollScreen; curr
               <TableHead>Employee</TableHead>
               <TableHead className="text-right">Days</TableHead>
               <TableHead className="text-right">Salary</TableHead>
-              <TableHead className="text-right">Overtime, bonus</TableHead>
+              <TableHead className="text-right">Overtime, bonus, claims</TableHead>
               <TableHead className="text-right">Deductions</TableHead>
               <TableHead className="text-right">Take home</TableHead>
               <TableHead>
@@ -701,6 +845,11 @@ export function PayrollLines({ screen, currency }: { screen: PayrollScreen; curr
                 </TableCell>
                 <TableCell className="text-right whitespace-nowrap tabular-nums">
                   {isZero(additions(i)) ? "–" : <Amount>{money(additions(i), currency)}</Amount>}
+                  {!isZero(i.reimbursements) && (
+                    <div className="text-[0.8125rem] text-muted-foreground">
+                      claims <Amount>{money(i.reimbursements, currency)}</Amount>
+                    </div>
+                  )}
                 </TableCell>
                 <TableCell className="text-right whitespace-nowrap tabular-nums">
                   {isZero(i.totalDeductions) ? (
@@ -716,8 +865,15 @@ export function PayrollLines({ screen, currency }: { screen: PayrollScreen; curr
                   {can.change
                     ? change(i)
                     : paidText(i) && (
-                        <FlagBadge tone={i.paid ? "done" : "open"}>{paidText(i)}</FlagBadge>
+                        <FlagBadge tone={i.paid ? "done" : partPaid(i) ? "warn" : "open"}>
+                          {paidText(i)}
+                        </FlagBadge>
                       )}
+                  {partPaid(i) && (
+                    <div className="mt-1 text-[0.8125rem] text-muted-foreground tabular-nums">
+                      <Amount>{money(i.balance, currency)}</Amount> left
+                    </div>
+                  )}
                 </TableCell>
               </TableRow>
             ))}
@@ -742,9 +898,19 @@ export function PayrollLines({ screen, currency }: { screen: PayrollScreen; curr
 
 type Payment = PayrollScreen["payments"][number];
 
+/** Where a wallet payout stands. */
+const PAYOUT_WORDS: Record<NonNullable<Payment["lines"][number]["payout"]>, string> = {
+  QUEUED: "Sending to wallet",
+  SENT: "Sent to wallet",
+  FAILED: "Wallet payout failed",
+  CANCELLED: "Wallet payout stopped",
+};
+
 /** The salary payments made for the month, with voiding one recorded by mistake (Accounts). */
 export function SalaryPayments({ screen, currency }: { screen: PayrollScreen; currency: string }) {
   const [voiding, setVoiding] = useState<Payment | null>(null);
+  const [retrying, setRetrying] = useState<string | null>(null);
+  const [problemText, setProblem] = useState<string | null>(null);
   const [notice, setNotice] = useNotice();
   const { payments, can } = screen;
   if (payments.length === 0) {
@@ -783,6 +949,28 @@ export function SalaryPayments({ screen, currency }: { screen: PayrollScreen; cu
                   Voided: {p.voidReason}
                 </span>
               )}
+              {p.lines.some((l) => l.payout) && (
+                <span className="mt-1 block text-[0.8125rem]">
+                  {p.lines
+                    .filter((l) => l.payout)
+                    .map((l) => (
+                      <span key={l.id} className="block">
+                        {l.employee.name}:{" "}
+                        <span
+                          className={
+                            l.payout === "FAILED" ? "text-destructive" : "text-muted-foreground"
+                          }
+                        >
+                          {PAYOUT_WORDS[l.payout!]}
+                          {l.payout === "FAILED" && l.payoutError ? ` (${l.payoutError})` : ""}
+                          {l.payout === "SENT" && l.payoutReference
+                            ? ` · ${l.payoutReference}`
+                            : ""}
+                        </span>
+                      </span>
+                    ))}
+                </span>
+              )}
             </span>
             <span className="flex shrink-0 flex-col items-end gap-1">
               <span
@@ -790,6 +978,26 @@ export function SalaryPayments({ screen, currency }: { screen: PayrollScreen; cu
               >
                 <Amount>{money(p.amount, currency)}</Amount>
               </span>
+              {p.canRetry && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={retrying !== null}
+                  onClick={async () => {
+                    setRetrying(p.id);
+                    setProblem(null);
+                    const result = await retrySalaryPayoutsAction(p.id);
+                    setRetrying(null);
+                    if (!result.ok) return setProblem(result.error.message);
+                    setNotice(
+                      `${result.data.queued} ${result.data.queued === 1 ? "payout is" : "payouts are"} being sent again.`,
+                    );
+                  }}
+                >
+                  {retrying === p.id ? "Sending" : "Try again"}
+                </Button>
+              )}
               {p.canVoid && (
                 <Button
                   type="button"
@@ -806,10 +1014,17 @@ export function SalaryPayments({ screen, currency }: { screen: PayrollScreen; cu
         ))}
       </ul>
       {notice && <FormAlert tone="success">{notice}</FormAlert>}
+      {problemText && <FormAlert>{problemText}</FormAlert>}
       {voiding && (
         <FormDialog
           title={`Void ${voiding.number}?`}
-          description={`The ${money(voiding.amount, currency)} goes back into ${voiding.account?.name ?? "the account it came from"}, and those employees show as not paid again.`}
+          description={`The ${money(voiding.amount, currency)} goes back into ${voiding.account?.name ?? "the account it came from"}, and those employees are owed that money again.${
+            voiding.lines.some((l) => l.payout === "SENT")
+              ? " Money already sent to wallets is not taken back: ask for it back yourself."
+              : voiding.lines.some((l) => l.payout === "QUEUED")
+                ? " Wallet payouts not sent yet are stopped."
+                : ""
+          }`}
           submitLabel="Void the payment"
           pendingLabel="Voiding"
           destructive

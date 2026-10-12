@@ -21,6 +21,7 @@ import {
   rejectPayRequestSchema,
 } from "@/modules/hr/schemas";
 import {
+  isAppMade,
   type PayDetails,
   payDetailsOf,
   samePayDetails,
@@ -404,7 +405,10 @@ export async function addEmployeeDocument(
   return addDocument(ctx, employee.id, input.kind, input.title || null, upload, meta, "HR");
 }
 
-/** Removes a paper and its file: HR any paper, an employee the ones they added themselves. */
+/**
+ * Removes a paper and its file: HR any paper, an employee the ones they added
+ * themselves. A signed copy of the terms stays.
+ */
 async function removeDocument(
   ctx: CompanyContext,
   documentId: string,
@@ -417,6 +421,14 @@ async function removeDocument(
       include: { file: true, employee: { select: { id: true, code: true, name: true } } },
     });
     if (!document) throw new AppError("NOT_FOUND", "Paper not found.");
+    if (isAppMade(document.kind)) {
+      throw new AppError(
+        "FORBIDDEN",
+        document.kind === "TERMS"
+          ? "A signed copy of the terms is kept for the record."
+          : "The experience and clearance certificate is kept for the record.",
+      );
+    }
     if (!allowed(document)) {
       throw new AppError("FORBIDDEN", "Only HR can remove this paper.");
     }
@@ -491,7 +503,7 @@ export async function getMyVault(ctx: CompanyContext) {
     payRequest: request ? presentRequest(request, ctx.company.timezone) : null,
     documents: documents.map((d) => ({
       ...presentDocument(d, ctx.company.timezone),
-      canRemove: d.addedById === ctx.user.id,
+      canRemove: d.addedById === ctx.user.id && !isAppMade(d.kind),
     })),
     can: { addDocument: documents.length < MAX_DOCUMENTS },
   };

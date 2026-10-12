@@ -9,6 +9,7 @@ import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { assertCanManageHr, requireLinkedEmployee } from "@/modules/hr/access";
 import { dayType, monthRange, weekdayName } from "@/modules/hr/calendar";
+import { recheckClaimsAtCheckOut } from "@/modules/hr/claims.service";
 import { leaveOnDay } from "@/modules/hr/leave.service";
 import {
   employedOn,
@@ -18,6 +19,9 @@ import {
 } from "@/modules/hr/month-data";
 import { type EmploymentInput, evaluateMonth, minutesToHours } from "@/modules/hr/payroll-calc";
 import { assertMonthsOpen } from "@/modules/hr/period-lock";
+import { distanceText } from "@/modules/hr/geo";
+import { openShift, placeCheck, savePings, whereOf } from "@/modules/hr/location.service";
+import { recordShadowOvertime } from "@/modules/hr/overtime.service";
 import { canMarkDay } from "@/modules/hr/rules";
 import {
   attendanceDaySchema,
@@ -32,7 +36,11 @@ import { loadHrSettings } from "@/modules/hr/setup";
  * HR only marks lates, half days and absences (and overtime minutes). Marking
  * a day replaces that day's record. Employees can also check in and out from
  * the portal; a check-in after the office start time plus the grace minutes is
- * late. Days in a month whose payroll is approved cannot change.
+ * late, and a check-out after the end of the day records shadow overtime for
+ * HR to approve (overtime.service.ts). Staff never see overtime hours. A
+ * check-out also checks that day's waiting travel claims again against the
+ * now complete trail (claims.service.ts). Days in a month whose payroll is
+ * approved cannot change.
  */
 
 type Tx = Prisma.TransactionClient;
@@ -64,6 +72,53 @@ function presentMark(m: Attendance | null | undefined, timeZone: string) {
   };
 }
 
+/**
+ * Where a self check-in or check-out was (GPS attendance). Everyone with HR
+ * access sees the place and any location mismatch; the exact position and IP
+ * address only HR (hr.manage).
+ */
+function placeFor(ctx: CompanyContext, m: Parameters<typeof whereOf>[0], which: "in" | "out") {
+  const w = whereOf(m, which);
+  if (!w || (!w.located && !w.ip)) return null;
+  if (ctx.can("hr.manage")) return w;
+  return { ...w, lat: null, lng: null, accuracy: null, ip: null, link: null };
+}
+
+/**
+ * A day's mark as its employee sees it: without overtime minutes, which only
+ * HR sees (shadow overtime; the approved pay shows on the payslip).
+ */
+function ownMark(m: ReturnType<typeof presentMark>) {
+  if (!m) return null;
+  return {
+    id: m.id,
+    status: m.status,
+    checkIn: m.checkIn,
+    checkOut: m.checkOut,
+    note: m.note,
+    source: m.source,
+  };
+}
+
+/** An employee's month as they see it: no overtime hours anywhere (shadow overtime). */
+export function withoutOvertime(m: Awaited<ReturnType<typeof employeeMonth>>) {
+  const t = m.totals;
+  return {
+    ...m,
+    totals: t && {
+      workingDays: t.workingDays,
+      presentDays: t.presentDays,
+      lateDays: t.lateDays,
+      absentDays: t.absentDays,
+      paidLeaveDays: t.paidLeaveDays,
+      unpaidLeaveDays: t.unpaidLeaveDays,
+      latePenaltyDays: t.latePenaltyDays,
+      unpaidDays: t.unpaidDays,
+    },
+    days: m.days.map((d) => ({ ...d, mark: ownMark(d.mark) })),
+  };
+}
+
 /** Is a check-in at this local time late? */
 function isLateAt(time: string, settings: { officeStartTime: string; lateGraceMinutes: number }) {
   const [h, m] = settings.officeStartTime.split(":").map(Number) as [number, number];
@@ -84,16 +139,24 @@ export async function getAttendanceDay(ctx: CompanyContext, raw: unknown = {}) {
   const { calendar } = await loadRules(companyId, day, day);
   const [employees, marks, leave, holiday] = await Promise.all([
     employeesInPeriod(companyId, day, day),
-    ctx.db.attendance.findMany({ where: { date: dateColumn(day) } }),
+    ctx.db.attendance.findMany({
+      where: { date: dateColumn(day) },
+      include: {
+        checkInPlace: { select: { name: true } },
+        checkOutPlace: { select: { name: true } },
+      },
+    }),
     leaveOnDay(ctx, day),
     ctx.db.holiday.findFirst({ where: { date: dateColumn(day) } }),
   ]);
   const markOf = new Map(marks.map((m) => [m.employeeId, m]));
   const rows = employees.map((e) => {
     const l = leave.find((x) => x.employeeId === e.id);
+    const m = markOf.get(e.id);
     return {
       employee: brief(e),
-      mark: presentMark(markOf.get(e.id), ctx.company.timezone),
+      mark: presentMark(m, ctx.company.timezone),
+      where: m ? { in: placeFor(ctx, m, "in"), out: placeFor(ctx, m, "out") } : null,
       leave: l ? { id: l.id, leaveType: l.leaveType, halfDay: l.halfDay, status: l.status } : null,
     };
   });
@@ -366,7 +429,7 @@ export async function myAttendance(
 ) {
   const q = attendanceMonthSchema.parse(raw);
   const employee = await requireLinkedEmployee(ctx);
-  return employeeMonth(ctx, employee, q.month ?? thisMonth(ctx), options);
+  return withoutOvertime(await employeeMonth(ctx, employee, q.month ?? thisMonth(ctx), options));
 }
 
 async function todaysMark(tx: Tx, employeeId: string, day: string) {
@@ -375,9 +438,46 @@ async function todaysMark(tx: Tx, employeeId: string, day: string) {
   });
 }
 
-/** Checks the signed-in employee in now (late after the start time plus grace). */
+/** The work place a check-in or check-out was compared with, for the person's own screen. */
+function placeResult(check: Awaited<ReturnType<typeof placeCheck>>) {
+  return check ? { name: check.placeName, distance: check.distance, away: check.away } : null;
+}
+
+/** "at Head office", "1.2 km from Head office (location mismatch)", "no location". */
+function whereText(check: Awaited<ReturnType<typeof placeCheck>>, located: boolean) {
+  if (!located) return "no location";
+  if (!check) return "location recorded";
+  return check.away
+    ? `${distanceText(check.distance)} from ${check.placeName} (location mismatch)`
+    : `at ${check.placeName}`;
+}
+
+/** The location columns for a check-in or check-out. */
+function locationData(
+  which: "checkIn" | "checkOut",
+  position: { lat: number; lng: number; accuracy?: number | null } | null | undefined,
+  check: Awaited<ReturnType<typeof placeCheck>>,
+  meta: RequestMeta | undefined,
+) {
+  return {
+    [`${which}Lat`]: position?.lat ?? null,
+    [`${which}Lng`]: position?.lng ?? null,
+    [`${which}Accuracy`]: position?.accuracy ?? null,
+    [`${which}Ip`]: meta?.ipAddress ?? null,
+    [`${which}PlaceId`]: check?.placeId ?? null,
+    [`${which}Distance`]: check?.distance ?? null,
+    [`${which}Away`]: check?.away ?? false,
+  } as Partial<Attendance>;
+}
+
+/**
+ * Checks the signed-in employee in now (late after the start time plus
+ * grace). With GPS attendance on, the phone's position is required: it is
+ * compared with their work place, kept with the IP address, and starts the
+ * shift's location pings.
+ */
 export async function checkIn(ctx: CompanyContext, raw: unknown = {}, meta?: RequestMeta) {
-  const { note } = checkInSchema.parse(raw);
+  const { note, position, source } = checkInSchema.parse(raw);
   const employee = await requireLinkedEmployee(ctx);
   const companyId = ctx.company.id;
   const tz = ctx.company.timezone;
@@ -385,6 +485,14 @@ export async function checkIn(ctx: CompanyContext, raw: unknown = {}, meta?: Req
   if (!settings.selfCheckIn) {
     throw new AppError("FORBIDDEN", "Checking in from the portal is turned off. Ask HR.");
   }
+  if (settings.gpsAttendance && !position) {
+    const message = "Turn on location on your phone to check in.";
+    throw new AppError("VALIDATION", message, { position: [message] });
+  }
+  const check = position
+    ? await placeCheck(prisma, companyId, employee.workLocationId, position)
+    : null;
+  const where = locationData("checkIn", position, check, meta);
   const now = new Date();
   const day = localDay(now, tz);
   if (!employedOn(employee, day)) {
@@ -419,6 +527,7 @@ export async function checkIn(ctx: CompanyContext, raw: unknown = {}, meta?: Req
             // HR's mark stands, except an absence: the person is here after all.
             ...(existing.status === "ABSENT" ? { status } : {}),
             note: note ?? existing.note,
+            ...where,
           },
         })
       : await tx.attendance.create({
@@ -431,8 +540,18 @@ export async function checkIn(ctx: CompanyContext, raw: unknown = {}, meta?: Req
             note: note ?? null,
             source: "SELF",
             recordedById: ctx.user.id,
+            ...where,
           },
         });
+    if (position && settings.gpsAttendance) {
+      await savePings(
+        tx,
+        companyId,
+        employee.id,
+        [{ at: now, lat: position.lat, lng: position.lng, accuracy: position.accuracy ?? null }],
+        source,
+      );
+    }
     await auditInCompany(
       ctx,
       meta,
@@ -440,17 +559,25 @@ export async function checkIn(ctx: CompanyContext, raw: unknown = {}, meta?: Req
         action: "CREATE",
         entityType: "Attendance",
         entityId: saved.id,
-        summary: `${employee.name} checked in at ${time}${status === "LATE" ? " (late)" : ""}`,
+        summary: `${employee.name} checked in at ${time}${status === "LATE" ? " (late)" : ""}${
+          settings.gpsAttendance || position ? `, ${whereText(check, Boolean(position))}` : ""
+        }`,
       },
       tx,
     );
     return saved;
   }, TX_OPTIONS);
-  return { date: day, mark: presentMark(mark, tz) };
+  return { date: day, mark: ownMark(presentMark(mark, tz)), place: placeResult(check) };
 }
 
+/**
+ * Checks the signed-in employee out, ending the shift's location pings. With
+ * GPS attendance on, the position is recorded when the phone gives one; a
+ * check-out without it is allowed (so nobody is stuck at work) and shows as
+ * "no location".
+ */
 export async function checkOut(ctx: CompanyContext, raw: unknown = {}, meta?: RequestMeta) {
-  const { note } = checkInSchema.parse(raw);
+  const { note, position, source } = checkInSchema.parse(raw);
   const employee = await requireLinkedEmployee(ctx);
   const companyId = ctx.company.id;
   const tz = ctx.company.timezone;
@@ -458,12 +585,20 @@ export async function checkOut(ctx: CompanyContext, raw: unknown = {}, meta?: Re
   if (!settings.selfCheckIn) {
     throw new AppError("FORBIDDEN", "Checking out from the portal is turned off. Ask HR.");
   }
+  const check = position
+    ? await placeCheck(prisma, companyId, employee.workLocationId, position)
+    : null;
+  const where = locationData("checkOut", position, check, meta);
   const now = new Date();
   const day = localDay(now, tz);
   const mark = await prisma.$transaction(async (tx) => {
-    await assertMonthsOpen(tx, companyId, [day.slice(0, 7)], "attendance");
-    const existing = await todaysMark(tx, employee.id, day);
+    const todays = await todaysMark(tx, employee.id, day);
+    // A night shift that started yesterday is closed on yesterday's day.
+    const existing = todays?.checkIn
+      ? todays
+      : ((await openShift(tx, companyId, employee.id, tz, now)) ?? todays);
     if (!existing?.checkIn) throw new AppError("CONFLICT", "Check in first.");
+    await assertMonthsOpen(tx, companyId, [dateOnly(existing.date).slice(0, 7)], "attendance");
     if (existing.checkOut) {
       throw new AppError(
         "CONFLICT",
@@ -472,7 +607,25 @@ export async function checkOut(ctx: CompanyContext, raw: unknown = {}, meta?: Re
     }
     const saved = await tx.attendance.update({
       where: { id: existing.id },
-      data: { checkOut: now, note: note ?? existing.note },
+      data: { checkOut: now, note: note ?? existing.note, ...where },
+    });
+    if (position && settings.gpsAttendance) {
+      await savePings(
+        tx,
+        companyId,
+        employee.id,
+        [{ at: now, lat: position.lat, lng: position.lng, accuracy: position.accuracy ?? null }],
+        source,
+      );
+    }
+    // Overtime is found here, silently, for HR to approve (shadow overtime).
+    await recordShadowOvertime(tx, { companyId, mark: saved, settings, timeZone: tz });
+    // The day's trail is complete now: check that day's waiting travel claims again.
+    await recheckClaimsAtCheckOut(tx, {
+      companyId,
+      employeeId: saved.employeeId,
+      date: saved.date,
+      settings,
     });
     await auditInCompany(
       ctx,
@@ -481,11 +634,17 @@ export async function checkOut(ctx: CompanyContext, raw: unknown = {}, meta?: Re
         action: "UPDATE",
         entityType: "Attendance",
         entityId: saved.id,
-        summary: `${employee.name} checked out at ${localTime(now, tz)}`,
+        summary: `${employee.name} checked out at ${localTime(now, tz)}${
+          settings.gpsAttendance || position ? `, ${whereText(check, Boolean(position))}` : ""
+        }`,
       },
       tx,
     );
     return saved;
   }, TX_OPTIONS);
-  return { date: day, mark: presentMark(mark, tz) };
+  return {
+    date: dateOnly(mark.date),
+    mark: ownMark(presentMark(mark, tz)),
+    place: placeResult(check),
+  };
 }

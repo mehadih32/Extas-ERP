@@ -47,8 +47,9 @@ const ACCOUNTS_KEYS: readonly PermissionKey[] = [
 
 /**
  * The permissions that open HR & payroll: employees, attendance and leave (the
- * HR keys), payroll for Accounts (accounts.view) and the advances register for
- * whoever pays advances out (accounts.payments.record).
+ * HR keys), payroll for Accounts (accounts.view), the advances register for
+ * whoever pays advances out (accounts.payments.record) and staff claims for
+ * whoever approves them (expenses.manage).
  */
 export const HR_KEYS: readonly PermissionKey[] = [
   "hr.view",
@@ -56,6 +57,7 @@ export const HR_KEYS: readonly PermissionKey[] = [
   "hr.payroll",
   "accounts.view",
   "accounts.payments.record",
+  "expenses.manage",
 ];
 
 /**

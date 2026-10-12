@@ -22,6 +22,7 @@ import { postJournalEntry, reverseJournalEntry } from "@/modules/accounts/journa
 import { lockSupplierAccount, settleSupplierBills } from "@/modules/accounts/supplier-settlement";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
+import { assertClaimNotPaidBack } from "@/modules/hr/claim-guard";
 import { projectMaterialUsage } from "@/modules/materials/usage";
 import { assertPartyCanTransact, recordPartyActivity } from "@/modules/parties/party.service";
 import { money, ZERO } from "@/modules/production/costing";
@@ -800,6 +801,7 @@ export async function voidProjectCost(
     const project = (
       await lockOpenProjects(tx, companyId, [projectId], "its costs can no longer change")
     ).get(projectId)!;
+    await assertClaimNotPaidBack(tx, expense);
     const { count } = await tx.expense.updateMany({
       where: { id: expense.id, companyId, voidedAt: null },
       data: { voidedAt: new Date(), voidReason: reason },
@@ -874,6 +876,8 @@ export async function getProjectCostSheet(ctx: CompanyContext, projectId: string
     include: {
       head: { select: { id: true, name: true, category: true } },
       paidFromAccount: { select: { id: true, name: true } },
+      // Local material an employee bought and claimed back (HR staff claims).
+      employee: { select: { id: true, name: true } },
     },
   });
   const summary = await projectCostSummary(prisma, ctx.company.id, project.id);
@@ -926,6 +930,8 @@ export async function getProjectCostSheet(ctx: CompanyContext, projectId: string
       date: e.date,
       number: e.number,
       paidFrom: e.paidFromAccount,
+      /** Bought by this employee and owed to them (a staff claim). */
+      boughtBy: e.paymentType === "DUE" ? e.employee : null,
       head: e.head,
       amount: e.amount,
       description: e.description,

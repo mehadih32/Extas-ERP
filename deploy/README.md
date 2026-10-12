@@ -6,7 +6,7 @@ Everything runs on one Ubuntu 24.04 server, in Docker:
 | ----------- | --------------------------------------------------------------------------------------------------------------------- |
 | **db**      | PostgreSQL 16, the database. Only the app can reach it; it is never open to the internet.                             |
 | **migrate** | Brings the database up to date with the code each time the ERP is installed or updated, then stops.                   |
-| **app**     | The ERP itself, with its clocks: the daily backup, reminders and the nightly housekeeping.                            |
+| **app**     | The ERP itself, with its clocks (backup, reminders, housekeeping) and background jobs (signed PDFs).                  |
 | **caddy**   | HTTPS. Gets a free Let's Encrypt certificate for the ERP's web address, renews it, and sends `http://` to `https://`. |
 
 The data lives in one folder on the server, `/srv/extras-erp` unless you choose another:
@@ -300,6 +300,45 @@ From then on:
 - Running `sudo ./deploy/setup-auto-deploy.sh` again makes a new key and stops the old one.
   Put the new `SSH_PRIVATE_KEY` on GitHub afterwards.
 
+## The Android app
+
+Field staff who check in and then travel need the Android app: it keeps sharing their
+location while they are checked in, with the phone in a pocket, the screen off or the app
+closed (a browser only shares it while the page is open). The app is the same Extas ERP,
+opened from your server, so screens update with the server and the app rarely needs a new
+version. GitHub builds it; nothing is installed on the server.
+
+1. **Tell GitHub your ERP's address.** Open the repository's **Settings → Secrets and
+   variables → Actions → Variables** and add **New repository variable**: name
+   `EXTAS_APP_URL`, value your ERP's address, for example `https://erp.yourcompany.com`.
+
+2. **Build it.** In the **Actions** tab, open **Android app** and press **Run workflow**.
+   When it has a green tick, open the run and download `extas-erp-android-…` under
+   **Artifacts**. Inside is `app-debug.apk`.
+
+3. **Install it.** Send the APK to staff (WhatsApp, Google Drive). On the phone, open it,
+   allow installing from this source, and install. They sign in with their usual email and
+   password. The first check-in asks for location and notifications: **Allow** both, and
+   **Allow** Extas ERP to run in the background. The Bengali guide "ফোনে Extas ERP অ্যাপ
+   বসাবেন যেভাবে" in the Help Center walks staff through it.
+
+4. **For updates that install over the old app**, sign the app with your company's own key.
+   Make the key once on any computer with Java (keep the file and passwords safe; a lost key
+   means everyone uninstalls and installs again):
+
+   ```bash
+   keytool -genkeypair -v -keystore extas-erp.jks -alias extas -keyalg RSA -keysize 2048 -validity 10000
+   base64 -w0 extas-erp.jks > extas-erp.jks.txt
+   ```
+
+   Then add these **repository secrets**: `ANDROID_KEYSTORE_BASE64` (the text in
+   `extas-erp.jks.txt`), `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` (`extas`) and
+   `ANDROID_KEY_PASSWORD`. From then on each build also makes `app-release.apk`; give staff
+   that one. Each build has a higher version number, so it installs over the previous one.
+
+The workflow also runs on every change to `mobile/`, to check the app still builds. If the
+address changes, change `EXTAS_APP_URL`, build again and send the new APK.
+
 ## Everyday commands
 
 | Command                                                | What it does                                                    |
@@ -330,9 +369,9 @@ the server, and each message shows in `sudo ./deploy/logs.sh app`.
 - **bKash / Nagad payouts** (`PAYOUT_PROVIDER`): `log` for now. The wallet's own connection is
   added when the company has its payout account; until then Accounts pays and records
   salaries as today.
-- **Google Maps** (`GOOGLE_MAPS_API_KEY`): a Maps JavaScript API key from Google Cloud
-  console, limited to the ERP's address (**Application restrictions > Websites**). Without it,
-  the staff map shows "Open in Google Maps" links instead of pins.
+- **Google Maps** (`GOOGLE_MAPS_API_KEY`): a key from Google Cloud console, limited to the
+  ERP's address (**Application restrictions > Websites**), for road distances on travel
+  claims. The staff map does not need it: it draws on OpenStreetMap.
 
 ## Changing a setting
 

@@ -4,13 +4,17 @@ import { revalidatePath } from "next/cache";
 
 import { getRequestMeta } from "@/lib/request-meta";
 import { runAction } from "@/lib/result";
-import { requirePermission } from "@/modules/auth/context";
+import { requireCompany, requirePermission } from "@/modules/auth/context";
 import * as files from "@/modules/files/file.service";
 import * as advances from "@/modules/hr/advance.service";
 import * as attendance from "@/modules/hr/attendance.service";
+import * as claims from "@/modules/hr/claims.service";
 import * as leave from "@/modules/hr/leave.service";
+import * as location from "@/modules/hr/location.service";
+import * as notices from "@/modules/hr/notice.service";
 import * as payroll from "@/modules/hr/payroll.service";
 import * as portal from "@/modules/hr/portal.service";
+import * as scores from "@/modules/hr/score.service";
 import * as screens from "@/modules/hr/screens.service";
 import * as vault from "@/modules/hr/vault.service";
 import * as plannerScreens from "@/modules/reminders/screens.service";
@@ -47,11 +51,20 @@ export const getMyAdvancesScreenAction = async () =>
   runAction(async () => screens.getMyAdvancesScreen(await self()));
 export const getMyProfileScreenAction = async () =>
   runAction(async () => screens.getMyProfileScreen(await self()));
+/** My money: salaries line by line, parts paid and what is still to come. */
+export const getMyLedgerScreenAction = async () =>
+  runAction(async () => screens.getMyLedgerScreen(await self()));
 
 export const getMyOverviewAction = async () =>
   runAction(async () => portal.getMyOverview(await self()));
 export const myAttendanceAction = async (query: unknown) =>
   runAction(async () => attendance.myAttendance(await self(), query));
+/**
+ * Whether this person's phone should send its position now (GPS attendance),
+ * for the app frame. Null for everyone it does not apply to.
+ */
+export const getDutyStateAction = async () =>
+  runAction(async () => location.getDutyState(await self()));
 export const checkInAction = async (input: unknown = {}) =>
   change(async () => attendance.checkIn(await self(), input, await getRequestMeta()));
 export const checkOutAction = async (input: unknown = {}) =>
@@ -92,6 +105,40 @@ export const setMyTaskStatusAction = async (taskId: string, input: unknown) =>
     const task = await tasks.setMyTaskStatus(await self(), taskId, input, await getRequestMeta());
     return { id: task.id, title: task.title, status: task.status };
   });
+/**
+ * The read receipt: the tasks given to the signed-in person that are on their
+ * screen now. Anyone in the company (a manager reads a task given to them in
+ * the Planner too); only tasks given to the person themselves change. Nothing
+ * else on the screen changes, so nothing is refreshed.
+ */
+export const markMyTasksSeenAction = async (taskIds: string[]) =>
+  runAction(async () => tasks.markTasksSeen(await requireCompany(), { taskIds }));
+
+// --- Notice board and my score ------------------------------------------------------------
+export const getMyNoticesAction = async () =>
+  runAction(async () => notices.myNotices(await self()));
+/** The notices on the screen are read (the first time is what HR sees). */
+export const markMyNoticesReadAction = async (noticeIds: string[]) =>
+  runAction(async () => notices.markNoticesRead(await self(), { noticeIds }));
+export const getMyScoreAction = async () => runAction(async () => scores.myScore(await self()));
+
+// --- My claims: conveyance and local material ---------------------------------------------
+export const getMyClaimsAction = async () =>
+  runAction(async () => claims.getMyClaims(await self()));
+/** A receipt or memo photo for the employee's own claim. */
+export const uploadMyClaimReceiptAction = async (form: FormData) =>
+  runAction(async () => {
+    const asset = await files.storeUpload(
+      await self(),
+      await files.fileFromForm(form),
+      await getRequestMeta(),
+    );
+    return { id: asset.id, fileName: asset.fileName };
+  });
+export const submitMyClaimAction = async (input: unknown) =>
+  change(async () => claims.submitClaim(await self(), input, await getRequestMeta()));
+export const withdrawMyClaimAction = async (claimId: string) =>
+  change(async () => claims.withdrawMyClaim(await self(), claimId, await getRequestMeta()));
 
 // --- My details: the employee's own data vault ------------------------------------------
 export const updateMyDetailsAction = async (input: unknown) =>

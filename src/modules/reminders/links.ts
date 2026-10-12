@@ -1,3 +1,4 @@
+import { claimAccess } from "@/modules/hr/claims";
 import type { PermissionKey } from "@/modules/rbac/permissions";
 
 /*
@@ -38,6 +39,25 @@ export function recordHref(ctx: Can, link: RecordLink | null): string | null {
     case "MyDetails":
       // The employee's own details in My HR (a pay details change decided by HR).
       return ctx.can("portal.self") ? "/me/profile" : null;
+    case "Terms":
+      // New terms of employment to read and agree to (anyone linked to an employee).
+      return "/terms";
+    case "StaffClaim":
+      // A staff claim waiting for Accounts (HR sees the claims too).
+      return claimAccess(ctx).see ? `/hr/claims?claim=${id}#claim-${id}` : null;
+    case "MyClaim":
+      // The employee's own claim, decided or paid back.
+      return ctx.can("portal.self") ? "/me/claims" : null;
+    case "Notice":
+      // A notice on the staff notice board: read it in My HR (HR without My HR sees the board).
+      if (ctx.can("portal.self")) return `/me/notices#notice-${id}`;
+      return ctx.can("hr.manage") ? `/hr/notices#notice-${id}` : null;
+    case "MyItems":
+      // A company item given to the employee or taken back: the list in My details.
+      return ctx.can("portal.self") ? "/me/profile#my-items" : null;
+    case "MySalary":
+      // A salary paid (in full or in part): the employee's money ledger.
+      return ctx.can("portal.self") ? "/me/ledger" : null;
     default:
       return null;
   }
@@ -53,4 +73,10 @@ export const RECORD_NOUNS: Record<string, string> = {
   ComplianceDocument: "the licence",
   Employee: "the employee",
   MyDetails: "my details",
+  Terms: "the terms",
+  StaffClaim: "the claim",
+  MyClaim: "my claims",
+  Notice: "the notice",
+  MyItems: "my items",
+  MySalary: "my money",
 };

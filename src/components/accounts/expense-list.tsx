@@ -21,13 +21,15 @@ import { accountsHref } from "./labels";
 import { expenseListQuery, type ExpenseListView } from "./list-view";
 import { Amount } from "./privacy";
 
-/** "Paid from Cash in hand", "Owed to Rahim Fabrics", "Claim by Karim". */
+/** "Paid from Cash in hand", "Owed to Rahim Fabrics", "Claim by Karim", "Owed to Sabbir" (a staff claim). */
 function howText(e: ExpenseRow, showClaimant: boolean): string {
   const parts: string[] = [];
-  if (e.paymentType === "DUE") parts.push(`Owed to ${e.supplier ?? "a supplier"}`);
+  const staffClaim = e.paymentType === "DUE" && !e.supplier && Boolean(e.employee);
+  if (staffClaim) parts.push(`Owed to ${e.employee}`);
+  else if (e.paymentType === "DUE") parts.push(`Owed to ${e.supplier ?? "a supplier"}`);
   else if (e.paidFrom) parts.push(`Paid from ${e.paidFrom}`);
   else if (e.status === "POSTED") parts.push("Paid from an advance");
-  if (e.employee) parts.push(e.employee);
+  if (e.employee && !staffClaim) parts.push(e.employee);
   if (showClaimant && e.createdBy && e.status === "PENDING") parts.push(`by ${e.createdBy}`);
   return parts.join(" · ");
 }

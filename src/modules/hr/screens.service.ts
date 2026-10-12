@@ -1,7 +1,7 @@
 import type { AttendanceStatus, EmployeeStatus, LeaveStatus, PaymentMethod } from "@prisma/client";
 import { z } from "zod";
 
-import { dateColumn, dateOnly, localDay } from "@/lib/dates";
+import { dateColumn, dateOnly, localDay, localTime } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import { queryBoolean } from "@/lib/query-params";
@@ -38,7 +38,11 @@ import {
   myPayslip,
   myPayslips,
 } from "@/modules/hr/payroll.service";
+import { myNotices } from "@/modules/hr/notice.service";
 import { getMyOverview } from "@/modules/hr/portal.service";
+import { employeeAssets, listAssets, myAssets } from "@/modules/hr/asset.service";
+import { getClearance } from "@/modules/hr/exit.service";
+import { myMoney } from "@/modules/hr/ledger.service";
 import {
   canActOnOwnRecord,
   canApproveLeave,
@@ -66,9 +70,15 @@ import {
   isCashReturn,
   mayVoidAdvance,
 } from "@/modules/hr/rules";
+import { listWorkPlaces, openShift } from "@/modules/hr/location.service";
+import { waitingClaims } from "@/modules/hr/claims.service";
+import { employeeScore, myScore } from "@/modules/hr/score.service";
+import { waitingOvertime } from "@/modules/hr/overtime.service";
 import { getHrSettings, listHolidays, listLeaveTypes } from "@/modules/hr/settings.service";
 import { vaultIncompleteWhere } from "@/modules/hr/vault";
 import { getEmployeeVault, getMyVault, listPayRequests } from "@/modules/hr/vault.service";
+import { staffToAgreeCount } from "@/modules/hr/terms.service";
+import { payoutStatus } from "@/modules/integrations/payouts";
 import { integrationStatus } from "@/modules/integrations/status";
 
 /*
@@ -209,17 +219,26 @@ export async function getOverviewScreen(ctx: CompanyContext) {
   }
   let vault = null;
   if (access.manage) {
-    const [waiting, incomplete] = await Promise.all([
-      listPayRequests(ctx, { status: "PENDING", take: 6 }),
-      ctx.db.employee.count({
-        where: {
-          AND: [
-            { OR: [{ exitDate: null }, { exitDate: { gte: dateColumn(day) } }] },
-            vaultIncompleteWhere(),
-          ],
-        },
-      }),
-    ]);
+    const [waiting, incomplete, termsToAgree, overtimeWaiting, oldestOvertime, claims] =
+      await Promise.all([
+        listPayRequests(ctx, { status: "PENDING", take: 6 }),
+        ctx.db.employee.count({
+          where: {
+            AND: [
+              { OR: [{ exitDate: null }, { exitDate: { gte: dateColumn(day) } }] },
+              vaultIncompleteWhere(),
+            ],
+          },
+        }),
+        staffToAgreeCount(ctx),
+        ctx.db.overtimeEntry.count({ where: { status: "PENDING" } }),
+        ctx.db.overtimeEntry.findFirst({
+          where: { status: "PENDING" },
+          orderBy: { date: "asc" },
+          select: { date: true },
+        }),
+        waitingClaims(ctx),
+      ]);
     vault = {
       payRequests: waiting.map((r) => ({
         id: r.id,
@@ -228,6 +247,14 @@ export async function getOverviewScreen(ctx: CompanyContext) {
         askedOn: r.askedOn,
       })),
       incomplete,
+      /** Staff with a login who still have to agree to the terms (null: no terms yet). */
+      termsToAgree,
+      /** Shadow overtime waiting for HR's approval, any month, and the earliest month with some. */
+      overtimeWaiting,
+      overtimeMonth: oldestOvertime ? dateOnly(oldestOvertime.date).slice(0, 7) : null,
+      /** Staff claims waiting for Accounts, any month, and the earliest month with some. */
+      claimsWaiting: claims.count,
+      claimsMonth: claims.month,
     };
   }
   let advances = null;
@@ -395,11 +422,23 @@ export async function getEmployeeScreen(
       : null;
   const activeTypes = balances.filter((b) => b.leaveType.isActive);
   /** The data vault: what is missing, papers and pay detail changes (HR only). */
-  const vault = access.manage ? await getEmployeeVault(ctx, e.id) : null;
+  const [vault, score] = access.manage
+    ? await Promise.all([getEmployeeVault(ctx, e.id), employeeScore(ctx, e.id)])
+    : [null, null];
+  /** Company items given to them (HR). */
+  const assets = access.view ? await employeeAssets(ctx, e.id) : null;
+  const deactivate =
+    access.manage && canActOnOwnRecord(subject, me, "Someone else in HR deactivates you.").ok;
+  /** Where they stand for leaving: items out, money either way, login, certificates. */
+  const clearance = deactivate ? await getClearance(ctx, e.id) : null;
 
   return {
     today: day,
     vault,
+    /** The performance score and tenure (HR only). */
+    score,
+    assets,
+    clearance,
     employee: {
       id: e.id,
       code: e.code,
@@ -423,6 +462,7 @@ export async function getEmployeeScreen(
       exitReason: e.exitReason,
       status: e.status as EmployeeStatus,
       isCurrent: e.isCurrent,
+      workPlace: e.workPlace,
       login: e.portalLogin
         ? { email: e.portalLogin.email, active: e.portalLogin.status === "ACTIVE" }
         : null,
@@ -442,6 +482,10 @@ export async function getEmployeeScreen(
       edit: access.manage,
       changeSalary: access.manage && salary?.ok === true,
       exit: access.manage,
+      /** Leaving in one go (clearance check, login off, certificate), or the certificate again. */
+      deactivate,
+      giveItem: access.manage && e.isCurrent,
+      changeItems: access.manage,
       reinstate: access.manage && canReinstate(subject).ok,
       remove: access.manage && canDeleteEmployee(subject, records).ok,
       giveLogin: access.manage && canGivePortalLogin(subject).ok,
@@ -465,13 +509,16 @@ export type EmployeeScreen = Awaited<ReturnType<typeof getEmployeeScreen>>;
 export async function getEmployeeForm(ctx: CompanyContext, employeeId?: string) {
   const access = hrAccess(ctx);
   if (!access.manage) throw new AppError("FORBIDDEN", "Only HR can add or change employees.");
-  const [depts, e] = await Promise.all([
+  const [depts, e, places] = await Promise.all([
     departments(ctx),
     employeeId ? getEmployee(ctx, employeeId) : null,
+    listWorkPlaces(ctx),
   ]);
   return {
     today: today(ctx),
     departments: depts,
+    /** Work places to choose from (GPS attendance). */
+    workPlaces: places.map((p) => ({ id: p.id, name: p.name })),
     employee:
       e && "salary" in e
         ? {
@@ -501,6 +548,7 @@ export async function getEmployeeForm(ctx: CompanyContext, employeeId?: string) 
             bankBranch: e.bankBranch,
             bankAccountNumber: e.bankAccountNumber,
             walletNumber: e.walletNumber,
+            workLocationId: e.workPlace?.id ?? null,
           }
         : null,
     can: {
@@ -766,15 +814,26 @@ export async function getPayrollScreen(ctx: CompanyContext, runId: string) {
     month: Number(run.month.slice(5, 7)),
   };
   const live = run.payments.filter((p) => !p.voidedAt).length;
-  const unpaid = run.items.filter(
-    (i) => !i.paid && /[1-9]/.test(i.netPay) && !i.netPay.startsWith("-"),
-  );
+  // Lines with something still to pay (a salary can be paid in parts).
+  const unpaid = run.items.filter((i) => /[1-9]/.test(i.balance) && !i.balance.startsWith("-"));
+  const payouts = payoutStatus();
+  const walletsOn = payouts.state !== "OFF";
   const draft = canChangePayroll(state);
   const reopen = canReopenPayroll(state, live);
   const pay = canPayPayroll(state, unpaid.length);
+  // Shadow overtime still waiting for HR is not paid until it is approved.
+  const overtimeWaiting = draft.ok ? await waitingOvertime(ctx, run.month) : 0;
   return {
     run,
-    unpaid: unpaid.map((i) => ({ id: i.id, employee: i.employee, netPay: i.netPay })),
+    unpaid: unpaid.map((i) => ({
+      id: i.id,
+      employee: i.employee,
+      netPay: i.netPay,
+      paidAmount: i.paidAmount,
+      balance: i.balance,
+    })),
+    /** Salaries can go straight to bKash, Nagad or Rocket wallets (test mode moves no money). */
+    payouts: { on: walletsOn, test: payouts.state === "TEST" },
     moneyAccounts: access.pay && pay.ok ? await listMoneyAccounts(ctx) : [],
     today: today(ctx),
     can: {
@@ -793,7 +852,13 @@ export async function getPayrollScreen(ctx: CompanyContext, runId: string) {
         run.status === "DRAFT" && !access.approve
           ? "Approving it is for someone who may approve payroll (by default the owner), so a second person checks the salaries."
           : null,
+      overtime:
+        overtimeWaiting > 0
+          ? `${overtimeWaiting} overtime ${overtimeWaiting === 1 ? "entry" : "entries"} found in ${run.label} still ${overtimeWaiting === 1 ? "waits" : "wait"} for HR. Only approved overtime is paid: once HR approves, use “Work it out again”.`
+          : null,
     },
+    /** Where HR approves the month's overtime (hr.manage). */
+    overtimeHref: overtimeWaiting > 0 && access.manage ? run.month : null,
     payments: run.payments.map((p) => ({
       ...p,
       paidOn: localDay(p.date, ctx.company.timezone),
@@ -801,6 +866,9 @@ export async function getPayrollScreen(ctx: CompanyContext, runId: string) {
         access.pay &&
         access.receive &&
         canVoidSalaryPayment({ number: p.number, voided: p.voidedAt !== null }).ok,
+      /** Wallet payouts that failed can be sent again. */
+      canRetry:
+        access.pay && walletsOn && !p.voidedAt && p.lines.some((l) => l.payout === "FAILED"),
     })),
   };
 }
@@ -809,10 +877,12 @@ export type PayrollScreen = Awaited<ReturnType<typeof getPayrollScreen>>;
 
 /** A payslip with the day it was paid in company time. */
 function withPaidOn(ctx: CompanyContext, slip: Awaited<ReturnType<typeof getPayslip>>) {
+  const tz = ctx.company.timezone;
   return {
     ...slip,
-    paidOn:
-      slip.payment.status === "PAID" ? localDay(slip.payment.date, ctx.company.timezone) : null,
+    paidOn: slip.payment.status === "PAID" ? localDay(slip.payment.date, tz) : null,
+    /** Each part paid, with its day in company time. */
+    parts: slip.payment.parts.map((p) => ({ ...p, on: localDay(p.date, tz) })),
   };
 }
 
@@ -949,7 +1019,7 @@ export async function getSettingsScreen(ctx: CompanyContext, raw: { year?: unkno
     Number(raw.year) >= thisYear - 5 && Number(raw.year) <= thisYear + 2
       ? Number(raw.year)
       : thisYear;
-  const [rules, holidays, types, closed, approved] = await Promise.all([
+  const [rules, holidays, types, closed, approved, places] = await Promise.all([
     getHrSettings(ctx),
     listHolidays(ctx, { year }),
     listLeaveTypes(ctx, { includeInactive: true }),
@@ -959,6 +1029,7 @@ export async function getSettingsScreen(ctx: CompanyContext, raw: { year?: unkno
       where: { status: "APPROVED" },
       _count: { _all: true },
     }),
+    listWorkPlaces(ctx),
   ]);
   const approvedOf = new Map(approved.map((a) => [a.leaveTypeId, a._count._all]));
   return {
@@ -968,7 +1039,14 @@ export async function getSettingsScreen(ctx: CompanyContext, raw: { year?: unkno
       lateGraceMinutes: rules.lateGraceMinutes,
       latesPerDeductionDay: rules.latesPerDeductionDay,
       selfCheckIn: rules.selfCheckIn,
+      gpsAttendance: rules.gpsAttendance,
+      officeEndTime: rules.officeEndTime,
+      shadowOvertime: rules.shadowOvertime,
+      overtimeMinMinutes: rules.overtimeMinMinutes,
+      conveyanceRatePerKm: rules.conveyanceRatePerKm,
     },
+    /** Where staff check in, each with its radius (GPS attendance). */
+    workPlaces: places,
     year,
     years: [thisYear - 1, thisYear, thisYear + 1],
     holidays: holidays.items.map((h) => ({
@@ -998,12 +1076,18 @@ export type HrSettingsScreen = Awaited<ReturnType<typeof getSettingsScreen>>;
 // =============================================================================
 
 /**
- * The signed-in employee's own page: today's check-in, this month's
- * attendance, leave left, advances owed, latest payslips and their details.
+ * The signed-in employee's own page: their dashboard (how long they have
+ * been with the company, their performance score and the notice board),
+ * today's check-in, this month's attendance, leave left, advances owed,
+ * latest payslips and their details.
  */
 export async function getMyHrScreen(ctx: CompanyContext) {
-  const o = await getMyOverview(ctx);
-  const employee = await linkedEmployee(ctx);
+  const [o, employee, score, notices] = await Promise.all([
+    getMyOverview(ctx),
+    linkedEmployee(ctx),
+    myScore(ctx),
+    myNotices(ctx),
+  ]);
   const day = o.today.date;
   const onLeave = employee
     ? await ctx.db.leaveRequest.findFirst({
@@ -1021,13 +1105,27 @@ export async function getMyHrScreen(ctx: CompanyContext) {
   const closed = (await closedMonths(ctx)).has(day.slice(0, 7));
   const mark = o.today.mark;
   const open = o.today.selfCheckIn && working && !closed;
+  // Still checked in from a night shift that started yesterday.
+  const lastNight =
+    employee && o.today.selfCheckIn && !mark?.checkIn
+      ? await openShift(prisma, ctx.company.id, employee.id, ctx.company.timezone)
+      : null;
   return {
     ...o,
+    score,
+    /** The newest notices up now (pinned first) and how many are new to them. */
+    notices: {
+      latest: notices.items.slice(0, 3),
+      unread: notices.unread,
+      total: notices.items.length,
+    },
     vaultGaps: o.profile.vaultGaps,
     onLeaveToday: onLeave ? onLeave.leaveType.name : null,
+    /** "21:40" when yesterday's check-in is still open. */
+    openSince: lastNight?.checkIn ? localTime(lastNight.checkIn, ctx.company.timezone) : null,
     can: {
       checkIn: open && !onLeave && !mark?.checkIn,
-      checkOut: open && Boolean(mark?.checkIn) && !mark?.checkOut,
+      checkOut: (open && Boolean(mark?.checkIn) && !mark?.checkOut) || Boolean(lastNight),
     },
   };
 }
@@ -1103,9 +1201,35 @@ export const MARK_STATUSES: readonly AttendanceStatus[] = ["PRESENT", "LATE", "H
 
 export { monthRange };
 
-/** My details: what the employee fills in, their papers and how they are paid. */
+/** My details: what the employee fills in, their papers, how they are paid and the company items they hold. */
 export async function getMyProfileScreen(ctx: CompanyContext) {
-  return getMyVault(ctx);
+  const [vault, items] = await Promise.all([getMyVault(ctx), myAssets(ctx)]);
+  return { ...vault, items };
 }
 
 export type MyProfileScreen = Awaited<ReturnType<typeof getMyProfileScreen>>;
+
+/** My money: each approved month's salary line by line, what is paid and what is still to come. */
+export async function getMyLedgerScreen(ctx: CompanyContext) {
+  return myMoney(ctx);
+}
+
+export type MyLedgerScreen = Awaited<ReturnType<typeof getMyLedgerScreen>>;
+
+// =============================================================================
+// Company items
+// =============================================================================
+
+/** HR's list of company items with staff, and who can be given one. */
+export async function getAssetsScreen(ctx: CompanyContext, raw: unknown = {}) {
+  const access = hrAccess(ctx);
+  const list = await listAssets(ctx, raw);
+  return {
+    ...list,
+    today: today(ctx),
+    people: access.manage ? await currentPeople(ctx) : [],
+    can: { manage: access.manage, openEmployee: access.view },
+  };
+}
+
+export type AssetsScreen = Awaited<ReturnType<typeof getAssetsScreen>>;

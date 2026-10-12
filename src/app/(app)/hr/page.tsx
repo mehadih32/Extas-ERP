@@ -367,6 +367,51 @@ export default async function HrOverviewPage() {
                       o.vault.incomplete === 1 ? "record misses" : "records miss"
                     } an NID, blood group, reference person or pay details.`}
               </p>
+              <p className="mt-2 text-[0.8125rem] text-muted-foreground">
+                {o.vault.termsToAgree === null ? (
+                  <>
+                    No terms of employment are published yet.{" "}
+                    <Link href={hrHref.terms()} className={linkClass}>
+                      Terms
+                    </Link>
+                  </>
+                ) : o.vault.termsToAgree === 0 ? (
+                  "Everyone with a login has agreed to the terms of employment."
+                ) : (
+                  <>
+                    {count(o.vault.termsToAgree)}{" "}
+                    {o.vault.termsToAgree === 1 ? "person still has" : "people still have"} to agree
+                    to the terms of employment.{" "}
+                    <Link href={hrHref.terms()} className={linkClass}>
+                      See who
+                    </Link>
+                  </>
+                )}
+              </p>
+              {o.vault.overtimeWaiting > 0 && (
+                <p className="mt-2 text-[0.8125rem] text-muted-foreground">
+                  {count(o.vault.overtimeWaiting)} overtime{" "}
+                  {o.vault.overtimeWaiting === 1 ? "entry waits" : "entries wait"} for approval.{" "}
+                  <Link
+                    href={hrHref.overtime(o.vault.overtimeMonth ?? undefined, "PENDING")}
+                    className={linkClass}
+                  >
+                    Approve overtime
+                  </Link>
+                </p>
+              )}
+              {o.vault.claimsWaiting > 0 && (
+                <p className="mt-2 text-[0.8125rem] text-muted-foreground">
+                  {count(o.vault.claimsWaiting)} staff{" "}
+                  {o.vault.claimsWaiting === 1 ? "claim waits" : "claims wait"} for Accounts.{" "}
+                  <Link
+                    href={hrHref.claims(o.vault.claimsMonth ?? undefined, { status: "PENDING" })}
+                    className={linkClass}
+                  >
+                    See the claims
+                  </Link>
+                </p>
+              )}
             </Panel>
           )}
 

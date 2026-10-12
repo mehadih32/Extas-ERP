@@ -7,10 +7,17 @@ import { runAction } from "@/lib/result";
 import { requireAnyPermission, requirePermission } from "@/modules/auth/context";
 import * as files from "@/modules/files/file.service";
 import * as advances from "@/modules/hr/advance.service";
+import * as assets from "@/modules/hr/asset.service";
 import * as attendance from "@/modules/hr/attendance.service";
+import * as claims from "@/modules/hr/claims.service";
 import * as employees from "@/modules/hr/employee.service";
+import * as exits from "@/modules/hr/exit.service";
 import * as leave from "@/modules/hr/leave.service";
+import * as location from "@/modules/hr/location.service";
+import * as notices from "@/modules/hr/notice.service";
+import * as overtime from "@/modules/hr/overtime.service";
 import * as payroll from "@/modules/hr/payroll.service";
+import * as scores from "@/modules/hr/score.service";
 import * as screens from "@/modules/hr/screens.service";
 import * as settings from "@/modules/hr/settings.service";
 import * as vault from "@/modules/hr/vault.service";
@@ -23,6 +30,7 @@ import * as vault from "@/modules/hr/vault.service";
  *   hr.payroll.approve        approve or reopen payroll (posts it to the books)
  *   accounts.payments.record  pay advances and salaries (Accounts)
  *   accounts.receipts.record  take unspent advances back (Accounts)
+ *   expenses.manage           approve or reject staff claims (with accounts.payments.record)
  * Services check the HR and money permissions themselves too, so no caller can skip them.
  * Changes refresh the screens and hand back the record's id (and number or code) only.
  */
@@ -37,6 +45,10 @@ const approvePayroll = () => requirePermission("hr.payroll.approve");
 const payOut = () => requirePermission("accounts.payments.record");
 const takeIn = () => requirePermission("accounts.receipts.record");
 const giveOut = () => requireAnyPermission("accounts.payments.record", "accounts.manage");
+/** Staff claims: HR and Accounts see them; Accounts decide them (they go in the books). */
+const claimsRead = () =>
+  requireAnyPermission("hr.manage", "expenses.manage", "accounts.payments.record");
+const claimsDecide = () => requireAnyPermission("expenses.manage", "accounts.payments.record");
 
 /** Runs a change and refreshes every screen that may show it. */
 const change = <T>(work: () => Promise<T>) =>
@@ -115,6 +127,88 @@ export const getAdvanceFormAction = async (options: { employeeId?: string } = {}
   runAction(async () => screens.getAdvanceForm(await giveOut(), options));
 export const getHrSettingsScreenAction = async (query: { year?: unknown } = {}) =>
   runAction(async () => screens.getSettingsScreen(await hrRead(), query));
+
+export const getStaffMapScreenAction = async (query: unknown = {}) =>
+  runAction(async () => location.getStaffMap(await hrManage(), query));
+
+// --- Staff claims (conveyance, local material) ----------------------------------------------
+export const getClaimsLedgerAction = async (query: unknown = {}) =>
+  runAction(async () => claims.getClaimsLedger(await claimsRead(), query));
+/** Staff claims waiting for Accounts (the Expenses screen's note). */
+export const getWaitingClaimsAction = async () =>
+  runAction(async () => claims.waitingClaims(await claimsDecide()));
+export const decideClaimAction = async (claimId: string, input: unknown) =>
+  change(async () =>
+    claims.decideClaim(await claimsDecide(), claimId, input, await getRequestMeta()),
+  );
+export const approveAllClaimsAction = async (input: unknown) =>
+  change(async () => claims.approveAllClaims(await claimsDecide(), input, await getRequestMeta()));
+export const recheckClaimAction = async (claimId: string) =>
+  change(async () => claims.recheckClaim(await claimsDecide(), claimId));
+export const payBackClaimsAction = async (input: unknown) =>
+  change(async () => claims.payBackClaims(await payOut(), input, await getRequestMeta()));
+
+// --- Notice board and performance scores (HR only) ----------------------------------------
+export const getNoticesScreenAction = async (query: unknown = {}) =>
+  runAction(async () => notices.listNotices(await hrManage(), query));
+export const postNoticeAction = async (input: unknown) =>
+  change(async () => {
+    const posted = await notices.postNotice(await hrManage(), input, await getRequestMeta());
+    return { id: posted.notice.id, told: posted.told, noLogin: posted.noLogin };
+  });
+export const updateNoticeAction = async (noticeId: string, input: unknown) =>
+  change(async () => {
+    const notice = await notices.updateNotice(
+      await hrManage(),
+      noticeId,
+      input,
+      await getRequestMeta(),
+    );
+    return { id: notice.id };
+  });
+export const takeDownNoticeAction = async (noticeId: string) =>
+  change(async () => {
+    const notice = await notices.takeDownNotice(await hrManage(), noticeId, await getRequestMeta());
+    return { id: notice.id };
+  });
+export const putBackNoticeAction = async (noticeId: string) =>
+  change(async () => {
+    const notice = await notices.putBackNotice(await hrManage(), noticeId, await getRequestMeta());
+    return { id: notice.id, state: notice.state };
+  });
+export const getEmployeeScoreAction = async (employeeId: string) =>
+  runAction(async () => scores.employeeScore(await hrManage(), employeeId));
+
+// --- Shadow overtime (HR only) -----------------------------------------------------------
+export const getOvertimeLedgerAction = async (query: unknown = {}) =>
+  runAction(async () => overtime.getOvertimeLedger(await hrManage(), query));
+export const decideOvertimeAction = async (entryId: string, input: unknown) =>
+  change(async () =>
+    overtime.decideOvertime(await hrManage(), entryId, input, await getRequestMeta()),
+  );
+export const approveAllOvertimeAction = async (input: unknown) =>
+  change(async () => overtime.approveAllOvertime(await hrManage(), input, await getRequestMeta()));
+
+// --- Work places (GPS attendance) --------------------------------------------------------
+export const listWorkPlacesAction = async () =>
+  runAction(async () => location.listWorkPlaces(await hrRead()));
+export const createWorkPlaceAction = async (input: unknown) =>
+  change(async () => {
+    const place = await location.createWorkPlace(await hrManage(), input, await getRequestMeta());
+    return { id: place.id, name: place.name };
+  });
+export const updateWorkPlaceAction = async (placeId: string, input: unknown) =>
+  change(async () => {
+    const place = await location.updateWorkPlace(
+      await hrManage(),
+      placeId,
+      input,
+      await getRequestMeta(),
+    );
+    return { id: place.id, name: place.name };
+  });
+export const removeWorkPlaceAction = async (placeId: string) =>
+  change(async () => location.removeWorkPlace(await hrManage(), placeId, await getRequestMeta()));
 
 // --- Rules, holidays, leave types --------------------------------------------------------
 export const getHrSettingsAction = async () =>
@@ -406,6 +500,17 @@ export const voidPayrollPaymentAction = async (paymentId: string, input: unknown
       await payroll.voidPayrollPayment(await payOut(), paymentId, input, await getRequestMeta()),
     ),
   );
+/** Sends a salary payment's failed wallet payouts again (all, or { lineIds }). */
+export const retrySalaryPayoutsAction = async (paymentId: string, input: unknown = {}) =>
+  change(async () => {
+    const r = await payroll.retrySalaryPayouts(
+      await payOut(),
+      paymentId,
+      input,
+      await getRequestMeta(),
+    );
+    return { paymentId: r.paymentId, queued: r.queued };
+  });
 export const getPayslipAction = async (runId: string, itemId: string) =>
   runAction(async () => payroll.getPayslip(await salaryRead(), runId, itemId));
 
@@ -449,3 +554,34 @@ export const rejectPayRequestAction = async (requestId: string, input: unknown) 
     );
     return { id: r.id, status: r.status };
   });
+
+// --- Company items with staff (hr.view sees, hr.manage changes) --------------------------
+export const getAssetsScreenAction = async (query: unknown = {}) =>
+  runAction(async () => screens.getAssetsScreen(await hrRead(), query));
+export const issueAssetAction = async (input: unknown) =>
+  change(async () => {
+    const a = await assets.issueAsset(await hrManage(), input, await getRequestMeta());
+    return { id: a.id, name: a.name, employee: a.employee };
+  });
+export const returnAssetAction = async (assetId: string, input: unknown) =>
+  change(async () => {
+    const a = await assets.returnAsset(await hrManage(), assetId, input, await getRequestMeta());
+    return { id: a.id, returnCondition: a.returnCondition };
+  });
+export const undoAssetReturnAction = async (assetId: string) =>
+  change(async () => {
+    const a = await assets.undoAssetReturn(await hrManage(), assetId, await getRequestMeta());
+    return { id: a.id };
+  });
+export const removeAssetAction = async (assetId: string) =>
+  change(async () => assets.removeAsset(await hrManage(), assetId, await getRequestMeta()));
+
+// --- Leaving: deactivate and the clearance certificate (hr.manage) ------------------------
+export const getClearanceAction = async (employeeId: string) =>
+  runAction(async () => exits.getClearance(await hrManage(), employeeId));
+export const deactivateEmployeeAction = async (employeeId: string, input: unknown) =>
+  change(async () =>
+    exits.deactivateEmployee(await hrManage(), employeeId, input, await getRequestMeta()),
+  );
+export const remakeCertificateAction = async (employeeId: string) =>
+  change(async () => exits.remakeCertificate(await hrManage(), employeeId, await getRequestMeta()));

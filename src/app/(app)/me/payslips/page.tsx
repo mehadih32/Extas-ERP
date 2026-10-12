@@ -5,7 +5,7 @@ import { hrHref } from "@/components/hr/labels";
 import { MyHrProblem } from "@/components/hr/no-access";
 import { EmptyState } from "@/components/products/bits";
 import { RowCard } from "@/components/sales/load-more";
-import { money } from "@/components/sales/labels";
+import { isZero, money } from "@/components/sales/labels";
 import { getMyPayslipsScreenAction } from "@/server/actions/portal.actions";
 import { requireCompanyPage } from "@/server/pages/guards";
 
@@ -56,16 +56,25 @@ export default async function MyPayslipsPage() {
               badges={
                 s.paid ? (
                   <FlagBadge tone="done">Paid</FlagBadge>
-                ) : (
+                ) : isZero(s.paidAmount) ? (
                   <FlagBadge tone="warn">To be paid</FlagBadge>
+                ) : (
+                  <FlagBadge tone="warn">Part paid</FlagBadge>
                 )
               }
               title={s.label}
               footer={
-                <>
-                  <span className="text-muted-foreground">Take home</span>
-                  <span className="font-medium">{money(s.netPay, currency)}</span>
-                </>
+                s.paid || isZero(s.paidAmount) ? (
+                  <>
+                    <span className="text-muted-foreground">Take home</span>
+                    <span className="font-medium">{money(s.netPay, currency)}</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-muted-foreground">Still to come</span>
+                    <span className="font-medium">{money(s.balance, currency)}</span>
+                  </>
+                )
               }
             />
           ))}

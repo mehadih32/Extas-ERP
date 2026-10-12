@@ -123,7 +123,8 @@ describe("Accounts in the menu, by role", () => {
 
   it("gives expense managers their tab under Accounts, not a second entry", () => {
     const items = visibleNavItems(["expenses.create", "expenses.manage"]).map((i) => i.href);
-    expect(items).toEqual(["/", "/accounts"]);
+    // HR & payroll opens only for the staff claims they decide (its Claims tab).
+    expect(items).toEqual(["/", "/accounts", "/hr"]);
     expect(tabs(["expenses.create", "expenses.manage"])).toEqual(["Expenses"]);
   });
 });

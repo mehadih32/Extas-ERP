@@ -176,6 +176,14 @@ export const hrHref = {
   newAdvance: (employee?: string) => withQuery("/hr/advances/new", { employee }),
   employeeAdvances: (employee: string) => withQuery("/hr/advances", { employee }),
   settings: (year?: number) => withQuery("/hr/settings", { year: year ? String(year) : undefined }),
+  map: (person?: string) => withQuery("/hr/map", { person }),
+  overtime: (month?: string, status?: string) => withQuery("/hr/overtime", { month, status }),
+  claims: (month?: string, filter: { status?: string; kind?: string } = {}) =>
+    withQuery("/hr/claims", { month, ...filter }),
+  notices: (show?: string) => withQuery("/hr/notices", { show }),
+  items: (filter: { show?: string; q?: string } = {}) => withQuery("/hr/items", filter),
+  terms: (version?: number) =>
+    withQuery("/hr/terms", { version: version ? String(version) : undefined }),
   journal: (id: string) => `/accounts/journal/${enc(id)}`,
   expense: (id: string) => `/accounts/expenses/${enc(id)}`,
   file: (id: string) => `/api/files/${enc(id)}`,
@@ -185,6 +193,10 @@ export const hrHref = {
   myPayslips: "/me/payslips",
   myPayslip: (itemId: string) => `/me/payslips/${enc(itemId)}`,
   myAdvances: "/me/advances",
+  myLedger: "/me/ledger",
+  myClaims: "/me/claims",
+  myNotices: "/me/notices",
+  myTasks: "/me/tasks",
   myProfile: "/me/profile",
 };
 

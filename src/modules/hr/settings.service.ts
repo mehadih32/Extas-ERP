@@ -20,7 +20,8 @@ import {
 import { ensureHrSetup, loadHrSettings } from "@/modules/hr/setup";
 
 /*
- * HR rules (weekly days off, office start time and late rules, self check-in),
+ * HR rules (weekly days off, office hours and late rules, self check-in, GPS
+ * attendance and shadow overtime),
  * holidays and leave types. Changing days off or holidays re-counts the days of
  * leave not yet locked by an approved payroll; months already approved keep
  * their figures.
@@ -36,6 +37,11 @@ function presentSettings(s: Awaited<ReturnType<typeof loadHrSettings>>) {
     lateGraceMinutes: s.lateGraceMinutes,
     latesPerDeductionDay: s.latesPerDeductionDay,
     selfCheckIn: s.selfCheckIn,
+    gpsAttendance: s.gpsAttendance,
+    officeEndTime: s.officeEndTime,
+    shadowOvertime: s.shadowOvertime,
+    overtimeMinMinutes: s.overtimeMinMinutes,
+    conveyanceRatePerKm: s.conveyanceRatePerKm.toFixed(2),
     updatedAt: s.updatedAt,
   };
 }
@@ -47,6 +53,11 @@ function rulesSnapshot(s: Awaited<ReturnType<typeof loadHrSettings>>) {
     lateGraceMinutes: s.lateGraceMinutes,
     latesPerDeductionDay: s.latesPerDeductionDay,
     selfCheckIn: s.selfCheckIn,
+    gpsAttendance: s.gpsAttendance,
+    officeEndTime: s.officeEndTime,
+    shadowOvertime: s.shadowOvertime,
+    overtimeMinMinutes: s.overtimeMinMinutes,
+    conveyanceRatePerKm: s.conveyanceRatePerKm.toFixed(2),
   };
 }
 
@@ -59,6 +70,13 @@ export async function updateHrSettings(ctx: CompanyContext, raw: unknown, meta?:
   const input = hrSettingsSchema.parse(raw);
   const companyId = ctx.company.id;
   const before = await loadHrSettings(companyId);
+  if (
+    (input.officeStartTime ?? before.officeStartTime) ===
+    (input.officeEndTime ?? before.officeEndTime)
+  ) {
+    const message = "The day must end at a different time than it starts.";
+    throw new AppError("VALIDATION", message, { officeEndTime: [message] });
+  }
   const offDaysChanged =
     input.weeklyOffDays !== undefined &&
     input.weeklyOffDays.join(",") !== before.weeklyOffDays.join(",");

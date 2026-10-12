@@ -6,14 +6,16 @@ export const ROUTES = {
   selectCompany: "/select-company",
   /** The employee's own HR records. */
   myHr: "/me",
+  /** The terms of employment staff agree to before working in the app. */
+  terms: "/terms",
   /** The Help Center: the manual in Bengali. */
   help: "/help",
   /** Each person's look: Legacy or Modern. */
   appearance: "/settings/appearance",
 } as const;
 
-/** Screens a person is never sent back to after signing in (they would loop). */
-const NOT_A_DESTINATION = new Set<string>([ROUTES.signIn, ROUTES.selectCompany]);
+/** Screens a person is never sent back to after signing in or agreeing (they would loop). */
+const NOT_A_DESTINATION = new Set<string>([ROUTES.signIn, ROUTES.selectCompany, ROUTES.terms]);
 
 /**
  * Where to go after signing in: only a path inside this app ("/sales?tab=open"),
@@ -44,6 +46,14 @@ export function signInPath(next?: string | null): string {
   return back && back !== ROUTES.home
     ? `${ROUTES.signIn}?next=${encodeURIComponent(back)}`
     : ROUTES.signIn;
+}
+
+/** The terms screen, bringing the person back to `next` once they have agreed. */
+export function termsPath(next?: string | null): string {
+  const back = safeNextPath(next);
+  return back && back !== ROUTES.home
+    ? `${ROUTES.terms}?next=${encodeURIComponent(back)}`
+    : ROUTES.terms;
 }
 
 /**

@@ -5,6 +5,7 @@ import { CheckIcon, PlayIcon, RotateCcwIcon } from "lucide-react";
 import { useState, useTransition } from "react";
 
 import { ActionErrorDialog } from "@/components/feedback/action-error-dialog";
+import { StatusBadge } from "@/components/sales/badges";
 import { ShowMore, useLoadMore } from "@/components/sales/load-more";
 import { Button } from "@/components/ui/button";
 import type { ActionError } from "@/lib/result";
@@ -15,6 +16,7 @@ import { getMyTasksScreenAction, setMyTaskStatusAction } from "@/server/actions/
 
 import { PriorityBadge, TaskBadge } from "./badges";
 import { moveLabel, TASK_STATUS_LABELS, whenText } from "./labels";
+import { useMarkTasksSeen } from "./mark-seen";
 
 const MOVE_ICONS: Partial<Record<TaskStatus, typeof CheckIcon>> = {
   IN_PROGRESS: PlayIcon,
@@ -26,6 +28,8 @@ const MOVE_ICONS: Partial<Record<TaskStatus, typeof CheckIcon>> = {
  * The tasks given to the signed-in employee, soonest due first, each with the
  * buttons to start, finish or reopen it. Whoever gave it hears about it in the
  * app. A task changed here keeps its place until the page is opened again.
+ * Tasks new to the person are marked "New"; once on the screen they count as
+ * seen, and whoever gave them sees ✓✓ with the time.
  */
 export function MyTaskList({
   initial,
@@ -47,6 +51,7 @@ export function MyTaskList({
   const [notice, setNotice] = useState<{ id: string; text: string }>();
   const [error, setError] = useState<ActionError>();
   const [pending, startTransition] = useTransition();
+  useMarkTasksSeen(list.items.filter((t) => t.seenAt === null).map((t) => t.id));
 
   function move(task: MyTaskRow, to: TaskStatus) {
     startTransition(async () => {
@@ -85,6 +90,7 @@ export function MyTaskList({
                 <TaskBadge status={status} />
                 {overdue && <TaskBadge status={status} overdue />}
                 <PriorityBadge priority={t.priority} />
+                {t.seenAt === null && <StatusBadge tone="warn">New</StatusBadge>}
               </div>
               <div className="min-w-0">
                 <h3 className="font-medium break-words text-primary">{t.title}</h3>

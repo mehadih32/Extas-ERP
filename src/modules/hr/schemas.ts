@@ -1,14 +1,22 @@
 import {
   AdvanceStatus,
+  AssetKind,
+  AssetReturn,
   AttendanceStatus,
   EmployeeDocumentKind,
   EmployeeStatus,
   LeaveStatus,
+  OvertimeStatus,
   PaymentMethod,
+  StaffClaimKind,
+  StaffClaimStatus,
 } from "@prisma/client";
 import { z } from "zod";
 
 import { queryBoolean } from "@/lib/query-params";
+import { DEFAULT_RADIUS_METRES, isLatLng, RADIUS_LIMITS } from "@/modules/hr/geo";
+import { MAX_OVERTIME_MINUTES } from "@/modules/hr/overtime";
+import { TERMS_LIMITS } from "@/modules/hr/terms";
 
 const id = z.string().min(1);
 const money = z.number().min(0).max(1_000_000_000).multipleOf(0.01);
@@ -45,8 +53,25 @@ export const hrSettingsSchema = z
     latesPerDeductionDay: z.number().int().min(0).max(31),
     /** Employees may check in and out from the portal. */
     selfCheckIn: z.boolean(),
+    /** Location at check-in and check-out, and pings while checked in. */
+    gpsAttendance: z.boolean(),
+    /** Staying later than this is overtime (shadow overtime). */
+    officeEndTime: clock,
+    /** The app finds overtime from self check-outs for HR to approve. */
+    shadowOvertime: z.boolean(),
+    /** Stays shorter than this many minutes are not overtime. */
+    overtimeMinMinutes: z.number().int().min(0).max(240),
+    /** The usual conveyance fare for a km (claims well above it are flagged); 0 = no check. */
+    conveyanceRatePerKm: money.max(100_000),
   })
-  .partial();
+  .partial()
+  .refine(
+    (s) =>
+      s.officeStartTime === undefined ||
+      s.officeEndTime === undefined ||
+      s.officeStartTime !== s.officeEndTime,
+    { message: "The day must end at a different time than it starts.", path: ["officeEndTime"] },
+  );
 
 const holiday = z.object({ date: day, name: z.string().trim().min(2).max(120) });
 
@@ -113,6 +138,8 @@ const employeeFields = {
   referenceName: optionalText(120),
   referencePhone: optionalText(30),
   referenceRelation: optionalText(60),
+  /** The work place they check in at (GPS attendance); none for no fixed place. */
+  workLocationId: id.nullish(),
 };
 
 export const createEmployeeSchema = z.object({
@@ -216,7 +243,71 @@ export const attendanceMonthSchema = z.object({
   employeeId: id.optional(),
 });
 
-export const checkInSchema = z.object({ note: optionalText(300) });
+// --- GPS attendance ----------------------------------------------------------------------
+
+const latitude = z.number().min(-90).max(90);
+const longitude = z.number().min(-180).max(180);
+
+/** Where the phone is, from its GPS, with how sure it is (metres). */
+export const positionSchema = z
+  .object({
+    lat: latitude,
+    lng: longitude,
+    accuracy: z.number().min(0).max(100_000).nullish(),
+  })
+  .refine(isLatLng, "The phone did not give a usable position. Try again.");
+
+/** Checking in or out; with GPS attendance on, where the phone is. */
+export const checkInSchema = z.object({
+  note: optionalText(300),
+  position: positionSchema.nullish(),
+  /** My HR in a browser, or the Android app. */
+  source: z.enum(["WEB", "ANDROID"]).default("WEB"),
+});
+
+/**
+ * On-duty positions from the phone, sent in batches: from My HR in the
+ * browser ("WEB") or the Android app's background service ("ANDROID"). Times
+ * are when the phone took each position (milliseconds since 1970, or ISO).
+ */
+export const locationPingsSchema = z.object({
+  source: z.enum(["WEB", "ANDROID"]).default("WEB"),
+  points: z
+    .array(
+      z.object({
+        at: z
+          .union([z.number().int().positive(), z.iso.datetime({ offset: true })])
+          .transform((v) => new Date(v)),
+        lat: latitude,
+        lng: longitude,
+        accuracy: z.number().min(0).max(100_000).nullish(),
+        speed: z.number().min(0).max(300).nullish(),
+        battery: z.number().int().min(0).max(100).nullish(),
+      }),
+    )
+    .min(1)
+    .max(300),
+});
+
+/** A place staff check in at, with the radius that counts as being there. */
+export const workPlaceSchema = z.object({
+  name: z.string().trim().min(2).max(80),
+  address: optionalText(200),
+  lat: latitude,
+  lng: longitude,
+  radiusMeters: z
+    .number()
+    .int()
+    .min(RADIUS_LIMITS.min, `At least ${RADIUS_LIMITS.min} m`)
+    .max(RADIUS_LIMITS.max, `At most ${RADIUS_LIMITS.max} m`)
+    .default(DEFAULT_RADIUS_METRES),
+});
+
+export const updateWorkPlaceSchema = workPlaceSchema
+  .extend({ radiusMeters: workPlaceSchema.shape.radiusMeters.unwrap() })
+  .partial();
+
+export const staffMapQuery = z.object({ person: id.max(40).optional() });
 
 // --- Leave ---------------------------------------------------------------------------------
 
@@ -370,15 +461,31 @@ export const payrollBonusSchema = z
     path: ["amount"],
   });
 
-export const payPayrollSchema = z.object({
-  /** Employees' payroll lines to pay; default: everyone not yet paid. */
-  itemIds: z.array(id).min(1).max(1000).optional(),
-  method: z.enum(PaymentMethod).default("CASH"),
-  /** Cash / bank / wallet ledger account; defaults by method. */
-  accountId: id.optional(),
-  date: dayOrInstant.optional(),
-  reference: optionalText(120),
-});
+export const payPayrollSchema = z
+  .object({
+    /** Employees' payroll lines to pay in full (what is left of each); default: everyone not yet paid. */
+    itemIds: z.array(id).min(1).max(1000).optional(),
+    /** Or amounts to pay on chosen lines: a part of a salary, or the rest of it. */
+    parts: z
+      .array(z.object({ itemId: id, amount: positiveMoney }))
+      .min(1)
+      .max(1000)
+      .optional(),
+    method: z.enum(PaymentMethod).default("CASH"),
+    /** Cash / bank / wallet ledger account; defaults by method. */
+    accountId: id.optional(),
+    date: dayOrInstant.optional(),
+    reference: optionalText(120),
+    /** Paid by bKash, Nagad or Rocket: also send each amount to the wallet (payout plug). */
+    sendToWallets: z.boolean().optional(),
+  })
+  .refine((v) => !(v.itemIds && v.parts), {
+    message: "Choose lines or amounts, not both.",
+    path: ["parts"],
+  });
+
+/** Wallet payouts that failed, to send again. */
+export const retryPayoutsSchema = z.object({ lineIds: z.array(id).min(1).max(1000).optional() });
 
 export const reopenPayrollSchema = z.object({ reason });
 
@@ -524,6 +631,234 @@ export const listPayRequestsSchema = z.object({
 
 /** A paper for the vault; the file itself comes with the upload. */
 export const employeeDocumentSchema = z.object({
-  kind: z.enum(EmployeeDocumentKind),
+  // Signed terms and the clearance certificate are made by the app itself, never by hand.
+  kind: z.enum(EmployeeDocumentKind).exclude(["TERMS", "CLEARANCE"]),
   title: optionalText(120),
 });
+
+// --- Terms of employment (terms.service.ts) ----------------------------------
+
+const termsSection = z.object({
+  title: z
+    .string()
+    .trim()
+    .min(1, "Give the section a heading.")
+    .max(TERMS_LIMITS.sectionTitle, "Keep the heading shorter."),
+  body: z
+    .string()
+    .trim()
+    .min(1, "Write the section's text.")
+    .max(TERMS_LIMITS.sectionBody, "This section is too long; split it in two."),
+});
+
+/** The draft HR edits before publishing it. */
+export const termsDraftSchema = z.object({
+  title: z
+    .string()
+    .trim()
+    .min(1, "Give the terms a title.")
+    .max(TERMS_LIMITS.title, "Keep the title shorter."),
+  intro: optionalText(TERMS_LIMITS.intro),
+  sections: z
+    .array(termsSection)
+    .min(1, "Add at least one section.")
+    .max(TERMS_LIMITS.sections, `Up to ${TERMS_LIMITS.sections} sections.`),
+});
+
+/** Publishing: whether everyone agrees again, or only staff who never agreed. */
+export const publishTermsSchema = z.object({ askEveryone: z.boolean().default(true) });
+
+/** Agreeing to a version: a signature drawn on the screen (a PNG), or the SMS code. */
+export const agreeToTermsSchema = z.discriminatedUnion("method", [
+  z.object({
+    versionId: id,
+    method: z.literal("SIGNATURE"),
+    /** data:image/png;base64,... as the browser's canvas gives it. */
+    signature: z
+      .string()
+      .min(1, "Sign in the box first.")
+      .max(700_000, "The signature is too big."),
+  }),
+  z.object({
+    versionId: id,
+    method: z.literal("SMS_CODE"),
+    code: z
+      .string()
+      .trim()
+      .regex(/^\d{6}$/, "Enter the 6-digit code from the SMS."),
+  }),
+]);
+
+// --- Shadow overtime ------------------------------------------------------------------------
+
+/** The overtime ledger: a month (default this month), optionally one status or person. */
+export const overtimeLedgerSchema = z.object({
+  month: monthSchema.optional(),
+  status: z.enum(OvertimeStatus).optional(),
+  employeeId: id.optional(),
+});
+
+/**
+ * HR's decision on overtime the app found: approve it (as found, or other
+ * minutes with a reason), or reject it with a reason.
+ */
+export const decideOvertimeSchema = z.discriminatedUnion("decision", [
+  z.object({
+    decision: z.literal("APPROVE"),
+    /** Minutes to pay; left out, the minutes found. */
+    minutes: z
+      .number()
+      .int("Overtime is in whole minutes.")
+      .min(1, "Approve at least 1 minute, or reject it.")
+      .max(MAX_OVERTIME_MINUTES, "That is more than 16 hours.")
+      .optional(),
+    reason: optionalText(300),
+  }),
+  z.object({ decision: z.literal("REJECT"), reason }),
+]);
+
+/** Approves a month's waiting overtime as found, except entries that need a look. */
+export const approveAllOvertimeSchema = z.object({ month: monthSchema });
+
+// --- Staff claims (conveyance, local material) ----------------------------------------------
+
+const place = z.string().trim().min(2, "Write the place.").max(160);
+
+/**
+ * A claim from My HR: a trip (date, from, to, what for, the fare) or local
+ * material bought for a production project (what, how much, where, the price).
+ * The date is the day of the trip or purchase, not after today.
+ */
+export const submitClaimSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("CONVEYANCE"),
+    date: day,
+    amount: positiveMoney,
+    fromPlace: place,
+    toPlace: place,
+    purpose: z.string().trim().min(3, "Say what the trip was for.").max(300),
+    receiptFileId: id.nullish(),
+  }),
+  z.object({
+    kind: z.literal("LOCAL_MATERIAL"),
+    date: day,
+    amount: positiveMoney,
+    projectId: id,
+    item: z.string().trim().min(2, "Write what you bought.").max(160),
+    quantity: optionalText(80),
+    shop: optionalText(160),
+    purpose: optionalText(300),
+    receiptFileId: id.nullish(),
+  }),
+]);
+
+/** The claims ledger: a month (default this month), optionally one status, kind or person. */
+export const claimsLedgerSchema = z.object({
+  month: monthSchema.optional(),
+  status: z.enum(StaffClaimStatus).optional(),
+  kind: z.enum(StaffClaimKind).optional(),
+  employeeId: id.optional(),
+  /** Opens the month this claim is in (a link from the inbox). */
+  claim: id.optional(),
+});
+
+/**
+ * Accounts' decision on a claim: approve it (the amount claimed, or less with
+ * a reason; local material under a production cost head), or reject it with a
+ * reason.
+ */
+export const decideClaimSchema = z.discriminatedUnion("decision", [
+  z.object({
+    decision: z.literal("APPROVE"),
+    /** Left out, the amount claimed. */
+    amount: positiveMoney.optional(),
+    reason: optionalText(300),
+    /** Local material: the project's cost head; left out, "Local Materials". */
+    costHeadId: id.optional(),
+  }),
+  z.object({ decision: z.literal("REJECT"), reason }),
+]);
+
+/** Approves a month's waiting claims that have no flag, as claimed. */
+export const approveAllClaimsSchema = z.object({ month: monthSchema });
+
+/** Accounts pays an employee back everything approved and still owed to them. */
+export const payBackClaimsSchema = z.object({
+  employeeId: id,
+  method: z.enum(PaymentMethod).default("CASH"),
+  /** Cash / bank / wallet account; defaults by method. */
+  accountId: id.optional(),
+  reference: optionalText(120),
+  /** When it was paid; default: now. */
+  date: dayOrInstant.optional(),
+});
+
+// --- Notice board -----------------------------------------------------------------------------
+
+export const NOTICE_LIMITS = { title: 150, body: 5000 } as const;
+
+/** A notice HR posts for every employee; it shows until its last day, if one is set. */
+export const postNoticeSchema = z.object({
+  title: z.string().trim().min(1, "Write a title").max(NOTICE_LIMITS.title),
+  body: z.string().trim().min(1, "Write the notice").max(NOTICE_LIMITS.body),
+  pinned: z.boolean().default(false),
+  showUntil: day.nullish(),
+});
+
+export const updateNoticeSchema = z.object({
+  title: z.string().trim().min(1, "Write a title").max(NOTICE_LIMITS.title).optional(),
+  body: z.string().trim().min(1, "Write the notice").max(NOTICE_LIMITS.body).optional(),
+  pinned: z.boolean().optional(),
+  showUntil: day.nullish(),
+});
+
+export const NOTICE_SHOWS = ["current", "ended", "all"] as const;
+
+/** HR's list: notices staff see now, ended or taken down, or all. */
+export const listNoticesSchema = z.object({
+  show: z.enum(NOTICE_SHOWS).catch("current").default("current"),
+});
+
+/** The notices on the employee's screen, to mark as read. */
+export const readNoticesSchema = z.object({ noticeIds: z.array(id).max(200) });
+
+// --- Company items with staff, and leaving -----------------------------------------------------
+
+export const ASSET_SHOWS = ["out", "returned", "all"] as const;
+
+/** HR's list of company items: with staff now, back, or all; for one person or by name or tag. */
+export const listAssetsSchema = z.object({
+  show: z.enum(ASSET_SHOWS).catch("out").default("out"),
+  employeeId: id.optional(),
+  q: z.string().trim().max(80).optional(),
+});
+
+/** HR gives a company item to an employee. */
+export const issueAssetSchema = z.object({
+  employeeId: id,
+  name: z.string().trim().min(2, "Write what it is").max(120),
+  kind: z.enum(AssetKind).default("OTHER"),
+  tag: optionalText(80),
+  value: money.nullish(),
+  issuedOn: day,
+  note: optionalText(300),
+});
+
+/** The item came back: good, damaged or lost (the last two need a note). */
+export const returnAssetSchema = z
+  .object({
+    returnedOn: day,
+    condition: z.enum(AssetReturn),
+    note: optionalText(300),
+  })
+  .refine((v) => v.condition === "GOOD" || (v.note?.trim().length ?? 0) >= 3, {
+    message: "Say what happened",
+    path: ["note"],
+  });
+
+/**
+ * Deactivating someone in one go: their last working day (today or before),
+ * why they left, and an optional note; the login goes off and the experience
+ * and clearance certificate is made.
+ */
+export const deactivateEmployeeSchema = exitEmployeeSchema;

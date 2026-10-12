@@ -48,31 +48,34 @@ datasource db {
 
 /// A distinct business entity. All data is isolated per company.
 model Company {
-  id                    String   @id @default(cuid())
+  id                    String    @id @default(cuid())
   name                  String
-  slug                  String   @unique
+  slug                  String    @unique
   legalName             String?
   // Letterhead / branding info used on every PDF & the blank letterhead pad
   logoUrl               String?
   /// Uploaded logo (PNG or JPG) printed on the letterhead of every PDF.
-  logoFileId            String?  @unique
+  logoFileId            String?   @unique
   address               String?
   phone                 String?
   email                 String?
   website               String?
   letterheadFooter      String?
-  primaryColor          String   @default("#0B3D2E")
-  accentColor           String   @default("#BE1434")
-  currency              String   @default("BDT")
-  timezone              String   @default("Asia/Dhaka")
+  primaryColor          String    @default("#0B3D2E")
+  accentColor           String    @default("#BE1434")
+  currency              String    @default("BDT")
+  timezone              String    @default("Asia/Dhaka")
+  /// When the terms of employment staff must have agreed to were published (null: no terms yet).
+  /// Staff linked to a login agree before they work in the app (hr/terms.service.ts).
+  termsRequiredSince    DateTime?
   // Business rules
-  lowStockThreshold     Int      @default(5)
-  defaultAdvancePercent Decimal  @default(30) @db.Decimal(5, 2)
-  dormantAfterMonths    Int      @default(6)
-  fiscalYearStartMonth  Int      @default(7) // 7 = July (Bangladesh income year July-June)
-  isActive              Boolean  @default(true)
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
+  lowStockThreshold     Int       @default(5)
+  defaultAdvancePercent Decimal   @default(30) @db.Decimal(5, 2)
+  dormantAfterMonths    Int       @default(6)
+  fiscalYearStartMonth  Int       @default(7) // 7 = July (Bangladesh income year July-June)
+  isActive              Boolean   @default(true)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
   memberships          CompanyMembership[]
   sessions             Session[]
@@ -152,6 +155,19 @@ model Company {
   salesTargets         SalesTarget[]
   payDetailsRequests   PayDetailsRequest[]
   employeeDocuments    EmployeeDocument[]
+  termsVersions        TermsVersion[]
+  termsAcceptances     TermsAcceptance[]
+  oneTimeCodes         OneTimeCode[]
+  backgroundJobs       BackgroundJob[]
+  workLocations        WorkLocation[]
+  locationPings        LocationPing[]
+  staffPositions       StaffPosition[]
+  overtimeEntries      OvertimeEntry[]
+  staffClaims          StaffClaim[]
+  notices              Notice[]
+  noticeReads          NoticeRead[]
+  payrollPaymentLines  PayrollPaymentLine[]
+  employeeAssets       EmployeeAsset[]
 }
 
 /// A person who can log in. Global across companies.
@@ -193,6 +209,15 @@ model User {
   approvedLeaves     LeaveRequest[]        @relation("LeaveApprovedBy")
   requestedLeaves    LeaveRequest[]        @relation("LeaveRequestedBy")
   attendanceMarked   Attendance[]          @relation("AttendanceRecordedBy")
+  overtimeDecided    OvertimeEntry[]       @relation("OvertimeDecidedBy")
+  claimsDecided      StaffClaim[]          @relation("StaffClaimDecidedBy")
+  claimsPaid         StaffClaim[]          @relation("StaffClaimPaidBy")
+  claimsCreated      StaffClaim[]          @relation("StaffClaimCreatedBy")
+  noticesPosted      Notice[]              @relation("NoticeCreatedBy")
+  noticesTakenDown   Notice[]              @relation("NoticeTakenDownBy")
+  noticeReads        NoticeRead[]
+  assetsIssued       EmployeeAsset[]       @relation("EmployeeAssetIssuedBy")
+  assetsTakenBack    EmployeeAsset[]       @relation("EmployeeAssetReturnedTo")
   payrollsCreated    PayrollRun[]          @relation("PayrollCreatedBy")
   payrollsApproved   PayrollRun[]          @relation("PayrollApprovedBy")
   salariesPaid       PayrollPayment[]      @relation("PayrollPaidBy")
@@ -217,6 +242,10 @@ model User {
   payRequestsMade    PayDetailsRequest[]   @relation("PayDetailsRequestedBy")
   payRequestsDecided PayDetailsRequest[]   @relation("PayDetailsDecidedBy")
   employeeDocsAdded  EmployeeDocument[]    @relation("EmployeeDocumentAddedBy")
+  termsWritten       TermsVersion[]        @relation("TermsVersionCreatedBy")
+  termsPublished     TermsVersion[]        @relation("TermsVersionPublishedBy")
+  termsAgreed        TermsAcceptance[]     @relation("TermsAcceptedBy")
+  oneTimeCodes       OneTimeCode[]
 }
 
 /// A signed-in device. `token` stores the SHA-256 hash of the cookie value, never
@@ -379,6 +408,7 @@ model FileAsset {
   chequeProofs        Cheque[]             @relation("ChequeProof")
   quotationImages     QuotationItem[]      @relation("QuotationItemImage")
   employeeDocuments   EmployeeDocument[]
+  staffClaims         StaffClaim[]
 
   @@index([companyId])
 }
@@ -1777,6 +1807,7 @@ model ProductionProject {
   materialIssues       MaterialIssue[]
   materialChallans     MaterialChallan[]
   tasks                Task[]
+  staffClaims          StaffClaim[]
   supplierPayments     Payment[]
   settlements          ProjectSettlement[]
 
@@ -2032,6 +2063,7 @@ model JournalEntry {
   materialIssue     MaterialIssue?
   purchaseReturn    PurchaseReturn?
   materialMovements RawMaterialMovement[]
+  claimPayments     StaffClaim[]
 
   @@unique([companyId, number])
   @@index([companyId, date])
@@ -2199,6 +2231,7 @@ model ExpenseHead {
   ledgerAccount   LedgerAccount?           @relation(fields: [ledgerAccountId], references: [id], onDelete: SetNull)
   expenses        Expense[]
   billAllocations SupplierBillAllocation[]
+  staffClaims     StaffClaim[]             @relation("StaffClaimCostHead")
 
   @@unique([companyId, name])
 }
@@ -2240,6 +2273,7 @@ model Expense {
   journalEntry       JournalEntry?       @relation(fields: [journalEntryId], references: [id], onDelete: SetNull)
   createdBy          User?               @relation("ExpenseCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   advanceSettlements AdvanceSettlement[]
+  staffClaim         StaffClaim?
 
   @@unique([companyId, number])
   @@index([companyId, date])
@@ -2302,6 +2336,10 @@ model Employee {
   referenceRelation String?
   notes             String?
   status            EmployeeStatus @default(ACTIVE)
+  /// When they last agreed to the terms of employment (TermsAcceptance).
+  termsAgreedAt     DateTime?
+  /// Where they normally check in; check-ins away from it are flagged.
+  workLocationId    String?
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt
 
@@ -2321,9 +2359,17 @@ model Employee {
   packedOrders    SalesOrder[]        @relation("OrderPackedBy")
   payRequests     PayDetailsRequest[]
   documents       EmployeeDocument[]
+  termsAgreed     TermsAcceptance[]
+  workLocation    WorkLocation?       @relation(fields: [workLocationId], references: [id], onDelete: SetNull)
+  locationPings   LocationPing[]
+  position        StaffPosition?
+  overtimeEntries OvertimeEntry[]
+  staffClaims     StaffClaim[]
+  assets          EmployeeAsset[]
 
   @@unique([companyId, code])
   @@unique([companyId, userId])
+  @@index([workLocationId])
 }
 
 /// An employee's ask (from My HR) to be paid another way or to another account.
@@ -2368,13 +2414,126 @@ model EmployeeDocument {
   addedById  String?
   createdAt  DateTime             @default(now())
 
-  company  Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  employee Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  file     FileAsset @relation(fields: [fileId], references: [id], onDelete: Cascade)
-  addedBy  User?     @relation("EmployeeDocumentAddedBy", fields: [addedById], references: [id], onDelete: SetNull)
+  company         Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee        Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  file            FileAsset        @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  addedBy         User?            @relation("EmployeeDocumentAddedBy", fields: [addedById], references: [id], onDelete: SetNull)
+  termsAcceptance TermsAcceptance?
 
   @@index([employeeId, kind, createdAt])
   @@index([fileId])
+}
+
+/// A version of the company's terms of employment. HR edits a draft (version
+/// null); publishing numbers it, and a published version never changes.
+model TermsVersion {
+  id            String    @id @default(cuid())
+  companyId     String
+  /// 1, 2, 3... once published; null while a draft.
+  version       Int?
+  title         String
+  intro         String?
+  /// [{ title, body }], in order.
+  sections      Json
+  /// On publishing: true when everyone must agree again, false when only staff
+  /// who have not agreed to any version yet must.
+  askEveryone   Boolean   @default(true)
+  /// SHA-256 of the published text, printed on every signed copy.
+  textHash      String?
+  publishedAt   DateTime?
+  publishedById String?
+  createdById   String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  company     Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  publishedBy User?             @relation("TermsVersionPublishedBy", fields: [publishedById], references: [id], onDelete: SetNull)
+  createdBy   User?             @relation("TermsVersionCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  acceptances TermsAcceptance[]
+
+  @@unique([companyId, version])
+  @@index([companyId, publishedAt])
+}
+
+/// An employee's agreement to a version of the terms, with what shows it was
+/// them: the drawn signature or the SMS code's number, the IP address and device,
+/// and their name and NID at that moment. The signed PDF is made in the background.
+model TermsAcceptance {
+  id            String          @id @default(cuid())
+  companyId     String
+  employeeId    String
+  versionId     String
+  userId        String?
+  method        TermsSignMethod
+  /// The drawn signature (PNG), when signed by hand.
+  signature     Bytes?
+  /// The number the SMS code went to, when agreed by code.
+  phone         String?
+  nameAtSigning String
+  codeAtSigning String
+  nidAtSigning  String?
+  ipAddress     String?
+  userAgent     String?
+  textHash      String
+  signedAt      DateTime        @default(now())
+  /// The signed PDF in the employee's papers, once made.
+  documentId    String?         @unique
+
+  company  Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee Employee          @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  version  TermsVersion      @relation(fields: [versionId], references: [id], onDelete: NoAction)
+  user     User?             @relation("TermsAcceptedBy", fields: [userId], references: [id], onDelete: SetNull)
+  document EmployeeDocument? @relation(fields: [documentId], references: [id], onDelete: SetNull)
+
+  @@unique([employeeId, versionId])
+  @@index([companyId, versionId])
+}
+
+/// A one-time code sent by SMS to confirm something (agreeing to the terms).
+/// Only a hash of the code is kept.
+model OneTimeCode {
+  id        String    @id @default(cuid())
+  companyId String
+  userId    String
+  /// What the code confirms, like "terms:<versionId>".
+  purpose   String
+  codeHash  String
+  sentTo    String
+  attempts  Int       @default(0)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, purpose, createdAt])
+}
+
+/// Work the app does in the background (jobs/queue.ts), like making a signed
+/// PDF. A worker inside the app claims each job once, retries a failure a few
+/// times with a growing wait, and picks up a job a crashed run left behind.
+model BackgroundJob {
+  id          String    @id @default(cuid())
+  companyId   String?
+  /// What to do, like "terms.pdf" (jobs/handlers.ts).
+  kind        String
+  payload     Json
+  status      JobStatus @default(QUEUED)
+  attempts    Int       @default(0)
+  maxAttempts Int       @default(5)
+  runAfter    DateTime  @default(now())
+  lockedAt    DateTime?
+  lockedBy    String?
+  lastError   String?
+  finishedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  company Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([status, runAfter])
+  @@index([companyId, kind, createdAt])
 }
 
 /// Monthly gross salary from a day onwards (the first one is the joining salary).
@@ -2400,6 +2559,17 @@ model HrSettings {
   lateGraceMinutes     Int      @default(15)
   latesPerDeductionDay Int      @default(0) // e.g. 3: every 3 lates cost a day's salary; 0 = never
   selfCheckIn          Boolean  @default(true) // employees may check in from the portal
+  /// Staff share their location when they check in and out and while checked in.
+  gpsAttendance        Boolean  @default(false)
+  /// When the working day ends: staying later than this is overtime.
+  officeEndTime        String   @default("18:00")
+  /// Shadow overtime: the app finds overtime from self check-outs for HR to
+  /// approve (staff never see it), once someone stays at least this long.
+  shadowOvertime       Boolean  @default(true)
+  overtimeMinMinutes   Int      @default(30)
+  /// The usual conveyance fare for a kilometre: a claim more than half again
+  /// the usual fare for the distance is flagged (0 turns that check off).
+  conveyanceRatePerKm  Decimal  @default(30) @db.Decimal(10, 2)
   updatedAt            DateTime @updatedAt
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
@@ -2422,26 +2592,301 @@ model Holiday {
 /// present, so only lates, half days, absences (and overtime) need marking;
 /// self check-ins from the portal also land here.
 model Attendance {
-  id              String           @id @default(cuid())
-  companyId       String
-  employeeId      String
-  date            DateTime         @db.Date
-  status          AttendanceStatus
-  checkIn         DateTime?
-  checkOut        DateTime?
-  overtimeMinutes Int              @default(0)
-  note            String?
-  source          AttendanceSource @default(MANUAL)
-  recordedById    String?
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
+  id               String           @id @default(cuid())
+  companyId        String
+  employeeId       String
+  date             DateTime         @db.Date
+  status           AttendanceStatus
+  checkIn          DateTime?
+  checkOut         DateTime?
+  overtimeMinutes  Int              @default(0)
+  note             String?
+  source           AttendanceSource @default(MANUAL)
+  recordedById     String?
+  /// Where the phone was at check-in (self check-ins with location on).
+  checkInLat       Float?
+  checkInLng       Float?
+  checkInAccuracy  Float? // metres
+  checkInIp        String?
+  /// The work place it was compared with, how far away it was, and whether
+  /// that is outside the place's radius ("Location mismatch").
+  checkInPlaceId   String?
+  checkInDistance  Int? // metres
+  checkInAway      Boolean          @default(false)
+  checkOutLat      Float?
+  checkOutLng      Float?
+  checkOutAccuracy Float?
+  checkOutIp       String?
+  checkOutPlaceId  String?
+  checkOutDistance Int?
+  checkOutAway     Boolean          @default(false)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
 
-  company    Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  recordedBy User?    @relation("AttendanceRecordedBy", fields: [recordedById], references: [id], onDelete: SetNull)
+  company       Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee      Employee       @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  recordedBy    User?          @relation("AttendanceRecordedBy", fields: [recordedById], references: [id], onDelete: SetNull)
+  checkInPlace  WorkLocation?  @relation("AttendanceCheckInPlace", fields: [checkInPlaceId], references: [id], onDelete: SetNull)
+  checkOutPlace WorkLocation?  @relation("AttendanceCheckOutPlace", fields: [checkOutPlaceId], references: [id], onDelete: SetNull)
+  overtime      OvertimeEntry?
 
   @@unique([employeeId, date])
   @@index([companyId, date])
+}
+
+/// Overtime the app found from a self check-out ("shadow overtime"). The
+/// employee never sees it. HR approves it as found, changes it with a reason,
+/// or rejects it; only approved minutes go on the day's attendance
+/// (Attendance.overtimeMinutes), which payroll already pays.
+model OvertimeEntry {
+  id               String         @id @default(cuid())
+  companyId        String
+  employeeId       String
+  attendanceId     String         @unique
+  date             DateTime       @db.Date
+  basis            OvertimeBasis
+  /// When overtime started counting: the end of the working day, or the
+  /// check-in on a day off.
+  startsAt         DateTime
+  checkOut         DateTime
+  detectedMinutes  Int
+  /// The location trail's view: overtime only up to the last position at the
+  /// work place, when the person left before checking out.
+  suggestedMinutes Int?
+  lastAtPlace      DateTime?
+  status           OvertimeStatus @default(PENDING)
+  approvedMinutes  Int?
+  /// Why HR changed or rejected it (required then).
+  reason           String?
+  decidedById      String?
+  decidedAt        DateTime?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  company    Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee   Employee   @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  attendance Attendance @relation(fields: [attendanceId], references: [id], onDelete: Cascade)
+  decidedBy  User?      @relation("OvertimeDecidedBy", fields: [decidedById], references: [id], onDelete: SetNull)
+
+  @@index([companyId, status, date])
+  @@index([employeeId, date])
+}
+
+/// Money an employee spent for the company and claims back from My HR:
+/// conveyance (checked against their GPS trail and the usual fare) or local
+/// material bought for a production project. Accounts approves it: the cost
+/// goes into the books (a conveyance expense, or a cost on the project) and
+/// the amount is owed to the employee until Accounts pays it back.
+model StaffClaim {
+  id             String           @id @default(cuid())
+  companyId      String
+  employeeId     String
+  number         String
+  kind           StaffClaimKind
+  /// The day of the trip or the purchase.
+  date           DateTime         @db.Date
+  amount         Decimal          @db.Decimal(14, 2)
+  purpose        String?
+  /// Conveyance: where the trip started and ended, and the two in a form that
+  /// matches other claims for the same route (either way round).
+  fromPlace      String?
+  toPlace        String?
+  routeKey       String?
+  /// Local material: the production project it was bought for, what was
+  /// bought, how much and where.
+  projectId      String?
+  item           String?
+  quantity       String?
+  shop           String?
+  receiptFileId  String?
+  /// What the checks found, for Accounts and HR (never shown to the employee).
+  flags          StaffClaimFlag[]
+  check          Json?
+  checkedAt      DateTime?
+  /// Google Maps, when connected: the road distance and where the two ends are.
+  roadMetres     Int?
+  fromLat        Float?
+  fromLng        Float?
+  toLat          Float?
+  toLng          Float?
+  roadCheckedAt  DateTime?
+  status         StaffClaimStatus @default(PENDING)
+  approvedAmount Decimal?         @db.Decimal(14, 2)
+  /// Why the amount was cut, or why it was rejected or withdrawn.
+  reason         String?
+  decidedById    String?
+  decidedAt      DateTime?
+  /// The expense the approval put in the books (for local material, the cost
+  /// on the project) and the production cost head it went under.
+  expenseId      String?          @unique
+  costHeadId     String?
+  /// Paid back by Accounts, on its own or with a salary.
+  paidAt         DateTime?
+  paidById       String?
+  paymentEntryId String?
+  /// The salary line it is paid back with, once that payroll is approved.
+  payrollItemId  String?
+  createdById    String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  company      Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee     Employee           @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  project      ProductionProject? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  receiptFile  FileAsset?         @relation(fields: [receiptFileId], references: [id], onDelete: SetNull)
+  expense      Expense?           @relation(fields: [expenseId], references: [id], onDelete: SetNull)
+  costHead     ExpenseHead?       @relation("StaffClaimCostHead", fields: [costHeadId], references: [id], onDelete: SetNull)
+  decidedBy    User?              @relation("StaffClaimDecidedBy", fields: [decidedById], references: [id], onDelete: SetNull)
+  paidBy       User?              @relation("StaffClaimPaidBy", fields: [paidById], references: [id], onDelete: SetNull)
+  createdBy    User?              @relation("StaffClaimCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  paymentEntry JournalEntry?      @relation(fields: [paymentEntryId], references: [id], onDelete: SetNull)
+  payrollItem  PayrollItem?       @relation(fields: [payrollItemId], references: [id], onDelete: SetNull)
+
+  @@unique([companyId, number])
+  @@index([companyId, status, date])
+  @@index([employeeId, date])
+  @@index([companyId, routeKey])
+  @@index([projectId])
+  @@index([payrollItemId])
+}
+
+/// A notice on the staff notice board (My HR > Notices), posted by HR for
+/// every employee: shown until its last day or until it is taken down.
+model Notice {
+  id            String    @id @default(cuid())
+  companyId     String
+  title         String
+  body          String
+  /// Kept at the top of the board.
+  pinned        Boolean   @default(false)
+  /// The last day staff see it (none: until it is taken down).
+  showUntil     DateTime? @db.Date
+  /// Changed after it was posted.
+  editedAt      DateTime?
+  /// Taken down by HR: staff no longer see it.
+  takenDownAt   DateTime?
+  takenDownById String?
+  createdById   String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  company     Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  createdBy   User?        @relation("NoticeCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  takenDownBy User?        @relation("NoticeTakenDownBy", fields: [takenDownById], references: [id], onDelete: SetNull)
+  reads       NoticeRead[]
+
+  @@index([companyId, takenDownAt, createdAt])
+}
+
+/// Who has read a notice, and when (the first time they saw it on the board).
+model NoticeRead {
+  id        String   @id @default(cuid())
+  companyId String
+  noticeId  String
+  userId    String
+  readAt    DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  notice  Notice  @relation(fields: [noticeId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([noticeId, userId])
+  @@index([companyId, userId])
+}
+
+/// A company item in an employee's hands (a laptop, phone, SIM, ID card, keys,
+/// uniform, tools): given on a day and returned (good, damaged or lost). Items
+/// not returned hold up the clearance when the person leaves.
+model EmployeeAsset {
+  id              String       @id @default(cuid())
+  companyId       String
+  employeeId      String
+  name            String
+  kind            AssetKind    @default(OTHER)
+  /// Serial number, asset tag or SIM number.
+  tag             String?
+  /// What it is worth, for a lost item.
+  value           Decimal?     @db.Decimal(14, 2)
+  issuedOn        DateTime     @db.Date
+  issueNote       String?
+  issuedById      String?
+  returnedOn      DateTime?    @db.Date
+  returnCondition AssetReturn?
+  returnNote      String?
+  returnedToId    String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  company    Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  issuedBy   User?    @relation("EmployeeAssetIssuedBy", fields: [issuedById], references: [id], onDelete: SetNull)
+  returnedTo User?    @relation("EmployeeAssetReturnedTo", fields: [returnedToId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, returnedOn])
+  @@index([employeeId, returnedOn])
+}
+
+/// A place staff check in at (an office, a factory floor, a shop), with the
+/// radius inside which a check-in counts as being there.
+model WorkLocation {
+  id           String   @id @default(cuid())
+  companyId    String
+  name         String
+  address      String?
+  lat          Float
+  lng          Float
+  radiusMeters Int      @default(150)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  company   Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employees Employee[]
+  checkIns  Attendance[] @relation("AttendanceCheckInPlace")
+  checkOuts Attendance[] @relation("AttendanceCheckOutPlace")
+
+  @@unique([companyId, name])
+}
+
+/// A position a checked-in employee's phone sent while on duty (from My HR in
+/// the browser, or the Android app in the background). Kept for 90 days.
+model LocationPing {
+  id         BigInt     @id @default(autoincrement())
+  companyId  String
+  employeeId String
+  at         DateTime // when the phone took the position
+  lat        Float
+  lng        Float
+  accuracy   Float? // metres
+  speed      Float? // metres a second
+  battery    Int? // per cent
+  source     PingSource @default(WEB)
+  createdAt  DateTime   @default(now())
+
+  company  Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId, at])
+  @@index([companyId, at])
+}
+
+/// Each employee's latest position, one row per person, so the live staff map
+/// reads a few rows instead of every ping.
+model StaffPosition {
+  employeeId String     @id
+  companyId  String
+  at         DateTime
+  lat        Float
+  lng        Float
+  accuracy   Float?
+  battery    Int?
+  source     PingSource @default(WEB)
+  updatedAt  DateTime   @updatedAt
+
+  company  Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
 }
 
 model LeaveType {
@@ -2563,14 +3008,22 @@ model PayrollItem {
   advanceEdited        Boolean @default(false)
   taxDeduction         Decimal @default(0) @db.Decimal(14, 2)
   otherDeductions      Decimal @default(0) @db.Decimal(14, 2)
+  /// Approved staff claims paid back with this salary (not salary: no tax, not
+  /// a salary cost). Take-home = gross pay + reimbursements - deductions.
+  reimbursements       Decimal @default(0) @db.Decimal(14, 2)
   netPay               Decimal @db.Decimal(14, 2)
   note                 String?
+  /// Paid so far by live salary payments; a salary can be paid in parts.
+  paidAmount           Decimal @default(0) @db.Decimal(14, 2)
+  /// The payment that finished paying the line (null until it is paid in full).
   paymentId            String?
 
-  run         PayrollRun          @relation(fields: [runId], references: [id], onDelete: Cascade)
-  employee    Employee            @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  payment     PayrollPayment?     @relation(fields: [paymentId], references: [id], onDelete: SetNull)
-  settlements AdvanceSettlement[]
+  run          PayrollRun           @relation(fields: [runId], references: [id], onDelete: Cascade)
+  employee     Employee             @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  payment      PayrollPayment?      @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  settlements  AdvanceSettlement[]
+  paymentLines PayrollPaymentLine[]
+  claims       StaffClaim[]
 
   @@unique([runId, employeeId])
   @@index([employeeId])
@@ -2597,15 +3050,38 @@ model PayrollPayment {
   voidReason     String?
   createdAt      DateTime      @default(now())
 
-  company      Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  run          PayrollRun    @relation(fields: [runId], references: [id], onDelete: Cascade)
-  account      LedgerAccount @relation(fields: [accountId], references: [id])
-  journalEntry JournalEntry? @relation(fields: [journalEntryId], references: [id], onDelete: SetNull)
-  paidBy       User?         @relation("PayrollPaidBy", fields: [paidById], references: [id], onDelete: SetNull)
+  company      Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  run          PayrollRun           @relation(fields: [runId], references: [id], onDelete: Cascade)
+  account      LedgerAccount        @relation(fields: [accountId], references: [id])
+  journalEntry JournalEntry?        @relation(fields: [journalEntryId], references: [id], onDelete: SetNull)
+  paidBy       User?                @relation("PayrollPaidBy", fields: [paidById], references: [id], onDelete: SetNull)
   items        PayrollItem[]
+  lines        PayrollPaymentLine[]
 
   @@unique([companyId, number])
   @@index([runId])
+}
+
+/// How much of one employee's salary a payment paid (all of it, or a part).
+/// When paid through the wallet plug (bKash, Nagad, Rocket), the payout's state
+/// is kept here; null means Accounts handed the money over themselves.
+model PayrollPaymentLine {
+  id              String       @id @default(cuid())
+  companyId       String
+  paymentId       String
+  itemId          String
+  amount          Decimal      @db.Decimal(14, 2)
+  payout          PayoutState?
+  payoutReference String?
+  payoutError     String?
+  payoutAt        DateTime?
+
+  company Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  payment PayrollPayment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  item    PayrollItem    @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([paymentId])
+  @@index([itemId])
 }
 
 /// Cash advance given to an employee (or brought forward at go-live). It is
@@ -2855,6 +3331,9 @@ model Task {
   priority    TaskPriority @default(MEDIUM)
   status      TaskStatus   @default(TODO)
   completedAt DateTime?
+  /// When the assignee first opened it in My HR (the read receipt, "Seen");
+  /// cleared when the task is given to someone else.
+  seenAt      DateTime?
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 
@@ -3270,6 +3749,41 @@ enum EmployeeDocumentKind {
   CERTIFICATE
   CONTRACT
   OTHER
+  TERMS
+  CLEARANCE
+}
+
+/// A salary sent through the wallet plug: waiting to go, sent, refused by the
+/// wallet, or stopped because the payment was voided first.
+enum PayoutState {
+  QUEUED
+  SENT
+  FAILED
+  CANCELLED
+}
+
+enum AssetKind {
+  LAPTOP
+  PHONE
+  SIM
+  ID_CARD
+  KEY
+  UNIFORM
+  TOOL
+  VEHICLE
+  OTHER
+}
+
+/// How a company item came back.
+enum AssetReturn {
+  GOOD
+  DAMAGED
+  LOST
+}
+
+enum TermsSignMethod {
+  SIGNATURE
+  SMS_CODE
 }
 
 enum DeliveryStatus {
@@ -3518,6 +4032,7 @@ enum JournalSource {
   MATERIAL_ISSUE
   PURCHASE_RETURN
   REFUND
+  STAFF_CLAIM
 }
 
 enum AssetStatus {
@@ -3618,6 +4133,51 @@ enum AttendanceSource {
   SELF // checked in from the employee portal
 }
 
+/// Why the app counted overtime: staying after the end of the working day, or
+/// working on a weekly day off or a holiday (all of it counts).
+enum OvertimeBasis {
+  AFTER_HOURS
+  DAY_OFF
+}
+
+enum OvertimeStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+/// What a staff claim is for: a trip (conveyance), or material bought locally
+/// for a production project.
+enum StaffClaimKind {
+  CONVEYANCE
+  LOCAL_MATERIAL
+}
+
+enum StaffClaimStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  WITHDRAWN
+}
+
+/// Why Accounts should look at a claim before approving it.
+enum StaffClaimFlag {
+  NOT_ON_DUTY // not checked in that day (absent, on leave, a day off)
+  NO_TRAIL // GPS attendance is on but the day has no positions
+  NO_TRAVEL // the GPS trail shows no real travel that day
+  ROUTE_MISMATCH // a place on the route that the GPS trail never reached
+  HIGH_PRICE // well above the usual fare for the distance, or for the route
+  DUPLICATE // the same claim was made already
+  NO_RECEIPT // local material without a receipt or memo photo
+}
+
+/// Where a location ping came from: My HR in a browser, or the Android app's
+/// background service.
+enum PingSource {
+  WEB
+  ANDROID
+}
+
 enum ComplianceType {
   TRADE_LICENSE
   VAT_BIN
@@ -3664,6 +4224,7 @@ enum DocumentType {
   SUPPLIER_360 // a supplier's projects, deliveries and dues on one PDF (Supplier 360°)
   STOCK_LOT // inward batches of finished goods (LOT-2026-00001)
   MATERIAL_CHALLAN // materials sent to a factory for a production project (MC-2026-00001)
+  STAFF_CLAIM // conveyance or local material claimed back by an employee (CLM-2026-00001)
 }
 
 enum TemplateFormat {

@@ -6,6 +6,7 @@ import { AppError } from "@/lib/errors";
 import type { RequestMeta } from "@/lib/request-meta";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
+import { claimAccess } from "@/modules/hr/claims";
 import { canSeeMaterialCosts } from "@/modules/materials/access";
 
 /*
@@ -216,7 +217,7 @@ export async function readStoredFile(asset: { storagePath: string }): Promise<Bu
  * record it belongs to (a delivery's packing list, a supplier bill's scan, a
  * licence scan, a document template, an expense's receipt, a raw material
  * purchase's bill, a payment's or cheque's proof photo, a paper in an employee's
- * data vault). Saved reports
+ * data vault, a staff claim's receipt). Saved reports
  * download through the Report Builder, which checks their figures.
  */
 export async function getFileForDownload(ctx: CompanyContext, fileId: string) {
@@ -233,6 +234,7 @@ export async function getFileForDownload(ctx: CompanyContext, fileId: string) {
       chequeProofs: { select: { id: true }, take: 1 },
       quotationImages: { select: { id: true }, take: 1 },
       employeeDocuments: { select: { employee: { select: { userId: true } } }, take: 1 },
+      staffClaims: { select: { id: true }, take: 1 },
     },
   });
   if (!asset) throw new AppError("NOT_FOUND", "File not found.");
@@ -263,7 +265,9 @@ export async function getFileForDownload(ctx: CompanyContext, fileId: string) {
     (asset.quotationImages.length > 0 && ctx.can("sales.view")) ||
     // A paper in an employee's data vault (NID scan, photo): HR, and the employee it is about.
     (asset.employeeDocuments.length > 0 &&
-      (ctx.can("hr.manage") || asset.employeeDocuments[0]!.employee.userId === ctx.user.id));
+      (ctx.can("hr.manage") || asset.employeeDocuments[0]!.employee.userId === ctx.user.id)) ||
+    // A staff claim's receipt: HR and Accounts, who see the claims (the employee uploaded it).
+    (asset.staffClaims.length > 0 && claimAccess(ctx).see);
   // A raw material purchase's bill also opens to the people who see material purchases.
   const materialBill =
     !allowed &&

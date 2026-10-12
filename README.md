@@ -50,7 +50,9 @@ the nightly housekeeping (03:30, Asia/Dhaka), which marks idle buyers dormant, c
 accounts, removes expired sign-ins, deletes unused proof photos and quotation pictures, and
 deletes kept sales PDFs older than a day (`src/modules/housekeeping/scheduler.ts`). Each is off
 in development; set `BACKUP_SCHEDULER`, `REMINDER_SCHEDULER` or `HOUSEKEEPING_SCHEDULER` to
-`on` or `off` to choose.
+`on` or `off` to choose. A background job worker also runs inside the app (signed PDFs and
+other slow work, see "Background jobs" under HR & Payroll); `JOB_WORKER` switches it the same
+way.
 
 ## Folder structure
 
@@ -547,7 +549,7 @@ Built one module at a time, each in its own pull request. So far:
 
   Reading a supplier's bill or packing list with AI comes with the integrations.
 
-- **HR & payroll** (`/hr`, "HR" on the phone), in seven tabs:
+- **HR & payroll** (`/hr`, "HR" on the phone), in eight tabs:
   - **Overview**: how many people work here, who is in, late, absent or on leave today, the
     leave waiting for a decision, the coming holidays and the headcount by department; for
     people who see salaries, where last month's and this month's payroll stand and what is
@@ -560,7 +562,11 @@ Built one module at a time, each in its own pull request. So far:
     (with the allowance HR sets by hand), and for people who see salaries their pay, salary
     history, advances, payslips and a statement of what they owe and are owed. From there HR
     changes their details or salary, records leave, gives them a My HR login (the temporary
-    password shows once), records their leaving day and reinstates them.
+    password shows once), records their leaving day and reinstates them. The page lists the
+    company items they hold, and **Deactivate employee** does leaving in one go: the
+    clearance check (items still out hold it up; salary, advances and claims either way are
+    shown), the last working day, their login switched off and the Experience & Clearance
+    Certificate made and kept in their papers (made again later from the same button).
   - **Attendance**: a day's register: everyone's mark (present, late, half day, absent) with
     check-in and check-out times, overtime and a note, saved together; people on leave and
     days off are shown. A month's totals show the figures payroll uses for each person.
@@ -572,22 +578,43 @@ Built one module at a time, each in its own pull request. So far:
     draft whose lines (allowances, bonus, tax, other deductions, overtime, advance taken back)
     are checked and changed, with a bonus for everyone as a percentage or an amount. A second
     person approves it, which posts it to the books and freezes the month's attendance and
-    leave; Accounts then pays the ticked people from a cash, bank or wallet account. Each
-    person's **payslip** prints on the letterhead. A payroll is reopened only after its
+    leave; Accounts then pays the ticked people from a cash, bank or wallet account, all of
+    what each is owed or part of it (the rest is paid later and the line shows what is left).
+    Approved staff claims not paid back yet are added to the salary. With wallet payouts
+    connected, a bKash, Nagad or Rocket payment can be sent straight to each person's wallet,
+    with each payout's state and **Try again** for a failed one. Each person's **payslip**
+    prints on the letterhead with every part paid. A payroll is reopened only after its
     payments are voided.
   - **Advances**: salary advances, filtered by status and employee: given from a cash, bank or
     wallet account (or brought forward from before the ERP), taken back all at once or a
     monthly amount from a chosen payroll, with money returned in cash and voiding.
+  - **Items**: the company items with staff (laptop, phone, SIM, ID card, keys, uniform,
+    tools, vehicle), searchable by item, tag or person: who has each since when, given out
+    and taken back as returned, damaged or lost (with a note), and those still with people
+    who left.
   - **Holidays & rules**: the weekly days off, the office start time, the minutes of grace
     and how many lates cost a day's salary, whether staff check in themselves, the year's
     holidays, and the leave types with their yearly days.
+  - **Terms**: the terms of employment staff agree to before they use the app. HR starts from
+    a Bengali and English starter text (confidentiality, zero tolerance for theft, deductions
+    from salary, leaving the company), changes it as a draft staff do not see, and publishes
+    it as a version. Who has agreed, who still has to and who has no login is listed, with
+    each signed copy; earlier versions stay readable.
+- **Terms of employment** (`/terms`): once terms are published, everyone whose login is linked
+  to a current employee is sent here before any other page until they agree. The text opens
+  in full; signing unlocks only once they have scrolled to the end. They sign with a finger
+  in the box, or (with SMS connected and a mobile number on file) enter a 6-digit code sent
+  by SMS. A signed PDF is then made in the background and kept in their papers.
 - **My HR** (`/me`), for every employee with a login, in six tabs: **Today** (check in and
   check out when HR allows it, this month so far, leave left, pay, advances owed and their
   details), **Tasks** (the work given to them, soonest due first, to start, finish or reopen;
   whoever gave it hears about it), **Attendance** (their month day by day), **Leave** (what is
   left, their requests and asking for leave with a paper, withdrawing a request HR has not
-  decided), **Payslips** (each approved month, ready to print) and **Advances** (what is still
-  owed and how it is taken back). People who reach HR & payroll open My HR from the account
+  decided), **Payslips** (each approved month, ready to print, paid or part paid), **Money**
+  (each month's salary line by line: basic + approved overtime + claims − absence − advance
+  EMI = take-home, every part paid and what is still to come, with what they owe on advances)
+  and **Advances** (what is still owed and how it is taken back); **My details** also lists
+  the company items they hold. People who reach HR & payroll open My HR from the account
   menu.
 
   Sending payslips by email or WhatsApp comes with the integrations.
@@ -1578,11 +1605,27 @@ an Eid bonus), tax (TDS) and other deductions, and can change overtime hours or 
 recovery. Recalculating picks up later attendance, leave, salary and advance changes and
 keeps those edits. Someone holding the approval permission (Super Admin by default) then
 approves it; a draft that is out of date is refused, so what was checked is what gets posted. Approval posts one entry dated the month's last day
-and freezes the month's attendance, leave, holidays and salaries. Accounts then pays
-everyone, or chosen people in batches, from cash, bank or a wallet. A payment can be voided.
-A payroll can be reopened (its entry reversed and the advances owed again) only while none
-of it is paid. Every employee gets a payslip on the company letterhead, with the net pay in
-words, and sees their own payslips in the portal.
+and freezes the month's attendance, leave, holidays and salaries. Staff claims approved by
+the month's end and not paid back yet are paid with the salary: Basic + approved overtime +
+claims - (absence + advance EMI) = net pay (plus allowances, bonus, tax and other deductions
+when set). Approval ties those claims to the salary line, so they are not paid back twice;
+reopening unties them. Accounts then pays everyone, chosen people in batches, or part of a
+salary (a part paid now, the rest later), from cash, bank or a wallet; each line shows what
+is paid and what is left, and the payroll is paid when nothing is left. With wallet payouts
+connected (`PAYOUT_PROVIDER`, `log` for test mode), a bKash, Nagad or Rocket payment can be
+sent straight to each person's wallet from the background queue; a failed payout is marked
+for Accounts to send again or void, never retried on its own. A payment can be voided, and
+its people are owed that money again. A payroll can be reopened (its entry reversed and the
+advances owed again) only while none of it is paid. Every employee gets a payslip on the
+company letterhead, with the net pay in words and the parts paid, and sees their own payslips
+and a month-by-month money ledger in the portal.
+
+**Company items and leaving.** HR records the company items each person holds (laptop,
+phone, SIM, ID card, keys, uniform, tools, vehicle) and takes them back as returned, damaged
+or lost. "Deactivate employee" does leaving in one go: it is refused while items are still
+out, records the last working day (today or earlier), switches an Employee login off (other
+roles only for someone who manages users) and has the Experience & Clearance Certificate
+made in the background, a PDF locked against editing and kept in the employee's papers.
 
 **Employee portal.** With `portal.self`, an employee sees their own profile and pay details,
 leave balances, this month's attendance, advances and payslips, checks in and out, and asks
@@ -1608,6 +1651,117 @@ plugs in `src/modules/integrations/`, each switched off until its server setting
 (see `deploy/README.md`, "Outside services"); "log" mode writes to the server log for testing.
 HR sees where each stands under "Holidays & rules".
 
+**Terms of employment.** HR (`hr.manage`) writes the terms as a draft and publishes it as a
+numbered version that never changes again (a published text's SHA-256 fingerprint is kept).
+Publishing sets the moment from which agreement is required: the first version, and any
+later one published with "Everyone agrees again", asks everyone; one published without it
+(for small wording fixes) asks only staff who never agreed. Until a person whose login is
+linked to an active or on-leave employee has agreed, every page sends them to `/terms` and
+every Server Action and API call answers `TERMS_REQUIRED` (403); people without an employee
+record (an owner who is not on the staff list) are never asked. Agreeing keeps the name,
+code and NID at that moment, the time, IP address, device and how they agreed (a drawn
+signature, kept as a PNG, or a one-time SMS code: 6 digits, 10 minutes, 5 tries, 60 seconds
+between codes and 5 an hour, stored only as a hash). A "terms.pdf" background job then makes
+the signed copy on the letterhead with the full text, the record of agreement and the
+signature, locked against editing (AES-256), and adds it to the employee's papers as "Signed
+terms of employment", which nobody can remove. If the PDF cannot be made, HR sees it and
+makes it again.
+
+**Background jobs.** Slow work (the signed terms PDFs, and more in later HR updates) goes to
+a queue in the database (`BackgroundJob`, `src/modules/jobs/`) and is done by a worker inside
+the app every 5 seconds, so a request answers at once. Two app processes never take the same
+job (`FOR UPDATE SKIP LOCKED`); a failed job is tried again after 30 s, 1 min, 2 min… up to
+5 times; a job left running by a restart goes back to the queue after 10 minutes. The nightly
+housekeeping deletes finished jobs after 30 days and failed ones after 90. The worker is on
+in production; set `JOB_WORKER=on` or `off` to choose.
+
+**GPS attendance.** With "Ask for location at check-in and while checked in" on (HR rules,
+off by default), a self check-in needs the phone's position. Each check-in and check-out
+keeps the position, its accuracy, the IP address and the nearest work place (or the person's
+own place, `Employee.workLocationId`). Work places (`WorkLocation`) have a radius (150 m by
+default); further away than the radius plus the position's accuracy (up to 200 m) is a
+"Location mismatch" in the register and the audit log. While checked in, the phone takes a
+position every 30 s and sends them each minute (`LocationPing`, one row per kept ping, plus
+`StaffPosition`, the latest position per person). The server keeps a ping only 30 s after
+the last one or 50 m away from it, ignores positions vaguer than 1 km or outside the shift,
+and takes a per-person advisory lock so two phones cannot write at once. HR's staff map
+(`/hr/map`, `hr.manage`) shows today's shifts on OpenStreetMap (Leaflet, no key): who is on
+duty, "No signal" after 10 minutes without a position, where each person checked in, and
+their route for the shift (with a Google Maps link). It refreshes every 20 s while open. A
+check-out also closes a night shift checked in yesterday. Pings are deleted after 90 days
+by the nightly housekeeping; check-in and check-out positions stay with the attendance. In a
+browser the position is only sent while the page is open; while location is off or refused
+the app shows a lock with "Try again" and "Check out now".
+
+**Shadow overtime.** When someone checks themselves out after the working day ends
+(`HrSettings.officeEndTime`, 18:00 by default) or works on a weekly day off or a holiday, the
+check-out records an `OvertimeEntry` for HR: from the end time (or all of a day off), once
+they stay `overtimeMinMinutes` (30 by default), in whole 15-minute steps. Staff never see it:
+their month, My HR, the check-in and check-out answers and the portal API carry no overtime
+hours (an approved payslip shows the overtime paid). With GPS attendance, a check-in at a
+work place lets the trail suggest less when the person left it before checking out ("Left
+before checking out"). HR (`hr.manage`) works the month on the Overtime tab (`/hr/overtime`):
+approve as found, approve what the trail suggests, change the hours (a reason is needed) or
+reject (with a reason), or "Approve all as found" for entries with no flag. Only approved
+minutes are written to the day's `Attendance.overtimeMinutes`, which payroll already pays at
+the person's overtime rate, so payroll itself is unchanged; a payroll draft notes overtime
+still waiting. Nobody decides their own overtime (a Super Admin aside), and an approved
+payroll freezes its month's overtime. Turn it off with "Find overtime from check-outs".
+
+**Staff claims.** Staff claim money they paid themselves from My HR (`/me/claims`, a
+`StaffClaim`, numbered CLM-): a trip ("Conveyance": the day, from, to, what for and the fare)
+or "Local material" bought for an open production project (what, how much, the shop, the
+price and a receipt photo). Each claim is checked when it is sent (`src/modules/hr/claims.ts`)
+and the flags are for HR and Accounts only: not on duty that day, no GPS trail or no travel,
+a work place named on the route that the day's trail never reached, a price more than half
+again the usual (the fare per km in "Usual conveyance fare per km", 30 by default, times
+Google's road distance when the Maps plug is on, else the day's GPS trail; or what the same
+route was approved for before), the same claim twice, and no receipt. A claim made while the
+shift is open is checked again at check-out, and the road distance comes from the background
+job `claim.route`. HR and Accounts see the month on the Claims tab (`/hr/claims`); Accounts
+(`expenses.manage` or `accounts.payments.record`) approves as claimed, changes the amount
+(with a reason) or rejects it (with a reason), or "Approve all with nothing to check".
+Approving makes a due `Expense` for the employee (no supplier) under Conveyance, or for local
+material under the project's "Local Materials" cost head, so it counts in the project's
+direct cost at once, and owes it to the employee in Payable to Staff (Claims) (2270). "Pay
+back" (`accounts.payments.record`) settles everything owed to one person in one entry.
+Nobody decides or pays back their own claim (a Super Admin aside), and voiding the expense in
+Accounts cancels the claim.
+
+**Employee dashboard.** My HR opens on the person's own dashboard: "My time here" (a clock
+of their time with the company, ticking every second, with the next work anniversary), "My
+score" and the newest notices. The performance score (`src/modules/hr/score.ts`) is 0 to 10
+over the last 30 days, worked out from clear rules with no outside AI: attendance counts half
+(on time 1, late or a half day 0.5, absent 0; leave, holidays, days off and unmarked days
+left out), tasks done by their due day 30% (done late 0.5, overdue 0) and claims 20%
+(approved as sent 1, for less 0.5, rejected 0). A part with nothing to count is left out and
+the others share its points. The ring is green from 8, yellow from 5 and red below, and "What
+lost points" lists each day, task and claim with the points it cost. Overtime and the claim
+checks play no part, as staff never see them. HR sees the same on the employee's page
+(`hr.manage`). The first time the assignee opens a task in My HR is kept as its read receipt
+(`Task.seenAt`): the Planner shows ✓✓ "Seen" with the time, or ✓ "Not seen yet", and giving
+the task to someone else starts again. HR posts notices for every employee on the Notices tab
+(`/hr/notices`, `Notice`): kept at the top or not, with an optional last day, changed, taken
+down or put back. Staff read them in My HR > Notices; each person's first read is kept
+(`NoticeRead`), so HR sees who has read each notice and who has not yet. New tasks and notices
+reach the in-app inbox and, once `PUSH_PROVIDER` is set, the phone through the push plug.
+
+**Android app.** `mobile/` wraps the same web app in a Capacitor Android app that opens the
+company's server (`EXTAS_APP_URL` at build time). Its `DutyTracker` plugin
+(`mobile/android/app/src/main/java/com/extas/erp/`) starts a foreground location service
+when the person is checked in: it keeps sending positions (with the battery level) to
+`POST /api/portal/location/pings` with the app's sign-in cookie, with the screen off or the
+app closed, keeps them on the phone with no network, and stops when the server answers
+`onDuty: false` (checked out) or sign-in has ended. It uses Android's own location (no
+Google Play services). The web pages reach it through the bridge the app injects
+(`src/components/hr/location-client.ts`), so the web build needs no Capacitor package. The
+`Android app` workflow builds the APK; see deploy/README.md, "The Android app".
+
+**Install to the home screen.** `src/app/manifest.ts`, the icons in `public/icons` and the
+service worker `public/sw.js` make Extas ERP installable; phones are offered "Install" once
+(or told how on an iPhone). The service worker keeps only the app's versioned files and shows
+`public/offline.html` with no connection; pages and data are never stored on the phone.
+
 | Event                        | Entry                                                                    |
 | ---------------------------- | ------------------------------------------------------------------------ |
 | Advance given                | Dr Advances to Employees (1250), Cr Cash / Bank / Wallet                 |
@@ -1615,12 +1769,15 @@ HR sees where each stands under "Holidays & rules".
 | Advance returned in cash     | Dr Cash / Bank / Wallet, Cr Advances to Employees                        |
 | Expense paid from an advance | Dr Expense, Cr Advances to Employees (and Cr Cash for any rest)          |
 | Payroll approved, per person | Dr Salaries & Wages (6200) gross pay, Cr Salaries Payable (2250) net pay |
+| ...claims paid with salary   | Dr Payable to Staff (2270), in the net pay                               |
 | ...and the deductions        | Cr Advances to Employees, Tax Deducted (2260), Other Income (4200)       |
 | Salaries paid                | Dr Salaries Payable (employee), Cr Cash / Bank / Wallet                  |
+| Staff claim approved         | Dr Conveyance or the project's cost head, Cr Payable to Staff (2270)     |
+| Staff claims paid back       | Dr Payable to Staff (Claims) (employee), Cr Cash / Bank / Wallet         |
 
 | Endpoint                                                                              | Purpose                                                  |
 | ------------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| `GET/PATCH /api/hr/settings`                                                          | Weekly days off, office start time, late rules, check-in |
+| `GET/PATCH /api/hr/settings`                                                          | Weekly days off, office hours, lates, check-in, overtime |
 | `GET/POST /api/hr/holidays`, `DELETE …/:id`                                           | Holiday list (one or many at once)                       |
 | `GET/POST /api/hr/leave-types`, `PATCH …/:id`                                         | Leave types and yearly days                              |
 | `GET/POST /api/hr/employees`, `GET/PATCH/DELETE …/:id`                                | Employees and the 360° profile                           |
@@ -1637,7 +1794,8 @@ HR sees where each stands under "Holidays & rules".
 | `GET/POST /api/hr/payroll`, `GET/DELETE …/:id`                                        | Monthly payroll runs                                     |
 | `POST /api/hr/payroll/:id/recalculate` / `…/bonus`, `PATCH …/items/:id`               | Prepare the draft                                        |
 | `POST /api/hr/payroll/:id/approve` / `…/reopen`                                       | Post to the books / undo                                 |
-| `POST /api/hr/payroll/:id/pay`, `POST /api/hr/payroll/payments/:id/void`              | Pay salaries / void a payment                            |
+| `POST /api/hr/payroll/:id/pay`, `POST /api/hr/payroll/payments/:id/void`              | Pay salaries, in full or in part / void a payment        |
+| `POST /api/hr/payroll/payments/:id/retry-payouts`                                     | Send failed wallet payouts again                         |
 | `GET /api/hr/payroll/:id/items/:id/payslip`                                           | Payslip                                                  |
 | `GET /api/portal/me`, `…/attendance`, `…/payslips`, `…/advances`                      | Employee portal: my records                              |
 | `POST /api/portal/attendance/check-in` / `check-out`                                  | Employee portal: check in and out                        |
@@ -1647,6 +1805,29 @@ HR sees where each stands under "Holidays & rules".
 | `GET/PATCH /api/portal/profile`, `POST …/documents`, `DELETE …/documents/:id`         | Employee portal: my details and papers                   |
 | `POST /api/portal/profile/pay-details`, `POST …/:id/withdraw`                         | Employee portal: ask for a pay details change            |
 | `GET /api/integrations/status`                                                        | Where the outside services stand (`hr.manage`)           |
+| `GET /api/hr/terms?version=`                                                          | The terms, the draft, who has agreed                     |
+| `POST/PUT/DELETE /api/hr/terms/draft`, `POST /api/hr/terms/publish`                   | Start, save or discard the draft / publish it            |
+| `POST /api/hr/terms/agreements/:id/pdf`                                               | Make a signed copy again                                 |
+| `GET /api/terms`, `POST /api/terms/code`, `POST /api/terms/agree`                     | My terms: what to agree to, an SMS code, agree           |
+| `GET/POST /api/hr/work-places`, `PATCH/DELETE …/:id`                                  | Work places for GPS attendance                           |
+| `GET /api/hr/staff-map?person=`                                                       | Who is on duty, where, no signal; a person's route       |
+| `GET /api/portal/location/duty`                                                       | Should this phone send its position now, how often       |
+| `POST /api/portal/location/pings`                                                     | Positions while checked in (browser or Android app)      |
+| `GET /api/hr/overtime?month=&status=`                                                 | Shadow overtime found at check-out, and HR's decisions   |
+| `POST /api/hr/overtime/:id/decide`, `POST /api/hr/overtime/approve-all`               | Approve, change or reject overtime / approve all found   |
+| `GET /api/hr/claims?month=&status=&kind=&claim=`                                      | Staff claims with their checks, and what is owed         |
+| `POST /api/hr/claims/:id/decide` / `…/recheck`, `POST /api/hr/claims/approve-all`     | Approve, change or reject a claim / check it again       |
+| `POST /api/hr/claims/pay-back`                                                        | Pay back everything owed to one person                   |
+| `GET/POST /api/portal/claims`, `POST …/:id/withdraw`                                  | Employee portal: my claims, send one, withdraw one       |
+| `GET /api/portal/score`, `GET /api/hr/employees/:id/score`                            | The performance score and tenure: mine / an employee's   |
+| `GET/POST /api/hr/notices?show=`, `PATCH …/:id`                                       | The notice board with who read each / post / change one  |
+| `POST /api/hr/notices/:id/take-down` / `…/put-back`                                   | Take a notice down / put it back up                      |
+| `GET /api/portal/notices`, `POST /api/portal/notices/read`                            | Employee portal: the notices up now / mark them read     |
+| `GET/POST /api/hr/items?show=`, `DELETE …/:id`                                        | Company items with staff / give one / remove a mistake   |
+| `POST /api/hr/items/:id/return` / `…/undo-return`                                     | Item back (good, damaged, lost) / undo                   |
+| `GET /api/hr/employees/:id/clearance`                                                 | Clearance check: items out, money either way, login      |
+| `POST /api/hr/employees/:id/deactivate` / `…/certificate`                             | Leave in one go / make the certificate again             |
+| `GET /api/portal/ledger`, `GET /api/portal/items`                                     | Employee portal: my money / company items with me        |
 
 `hr.view` sees profiles, attendance, leave and holidays, but no salaries. `hr.manage` adds
 and edits employees and salaries, marks attendance, approves leave and sets the HR rules.
@@ -1660,7 +1841,7 @@ prepares), and every role holds `portal.self`. A company can make an "HR Manager
 `hr.view` and `hr.manage`. The books check also compares the advances and unpaid salaries
 with their ledger accounts, employee by employee, and the Accounts overview shows advances
 owed, salaries payable and payrolls waiting for approval or payment. Server Actions are in
-`src/server/actions/hr.actions.ts` and `portal.actions.ts`.
+`src/server/actions/hr.actions.ts`, `portal.actions.ts` and `terms.actions.ts`.
 
 ## Raw materials & purchasing (backend)
 
@@ -2157,6 +2338,7 @@ development; set `REMINDER_SCHEDULER=on` or `off` to choose.
 | `GET/POST /api/tasks`, `GET/PATCH/DELETE …/:id`           | Every task (soonest due first) / give one, edit or remove it                     |
 | `POST /api/tasks/:id/status`                              | To do, in progress, done or cancelled                                            |
 | `GET /api/portal/tasks`, `POST …/:id/status`              | The tasks given to you / start, finish or reopen one                             |
+| `POST /api/portal/tasks/seen`                             | The tasks given to you that you have opened (the read receipt, "Seen")           |
 | `GET/POST /api/reminders`, `GET/PATCH/DELETE …/:id`       | Reminders you set or are on (`all=1` for everyone's) / set, change, remove       |
 | `POST /api/reminders/:id/cancel` / `…/acknowledge`        | Stop one before it goes out / mark it as dealt with                              |
 | `GET /api/reminders/upcoming?days=`                       | The planner's agenda, with everything overdue                                    |

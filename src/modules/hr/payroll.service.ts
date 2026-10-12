@@ -1,7 +1,15 @@
-import { type Employee, type PayrollItem, type PayrollStatus, Prisma } from "@prisma/client";
+import {
+  type BackgroundJob,
+  type Employee,
+  type PaymentMethod,
+  type PayrollItem,
+  type PayrollStatus,
+  Prisma,
+} from "@prisma/client";
 
+import { METHOD_LABELS } from "@/components/sales/labels";
 import { amountInWords } from "@/lib/amount-words";
-import { dateOnly, localDay, startOfDayInZone, toInstant } from "@/lib/dates";
+import { dateColumn, dateOnly, localDay, startOfDayInZone, toInstant } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
 import { nextDocumentNumber } from "@/lib/numbering";
 import { prisma } from "@/lib/prisma";
@@ -17,7 +25,7 @@ import {
   reverseJournalEntry,
 } from "@/modules/accounts/journal.service";
 import { assertCanPayMoney, assertCanReceiveMoney } from "@/modules/accounts/money-guards";
-import { auditInCompany } from "@/modules/audit/audit.service";
+import { auditInCompany, recordAudit } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { letterhead } from "@/modules/companies/letterhead";
 import {
@@ -37,15 +45,21 @@ import { monthKey, monthLabel, monthRange } from "@/modules/hr/calendar";
 import { employeesInPeriod, loadEmploymentInputs, loadRules } from "@/modules/hr/month-data";
 import {
   allocateRecovery,
+  balanceOf,
   evaluateMonth,
   grossPay,
   maxRecovery,
   minutesToHours,
   netPay,
   overtimePay,
+  salaryPaymentParts,
   scheduledRecovery,
 } from "@/modules/hr/payroll-calc";
 import { lockPayrollMonths } from "@/modules/hr/period-lock";
+import { payoutGateway, type PayoutWallet, sendPayout } from "@/modules/integrations/payouts";
+import { enqueueJob } from "@/modules/jobs/queue";
+import { kickJobWorker } from "@/modules/jobs/worker";
+import { sendInApp } from "@/modules/reminders/notification.service";
 import {
   canChangePayroll,
   canPayPayroll,
@@ -58,32 +72,41 @@ import {
   payPayrollSchema,
   payrollBonusSchema,
   reopenPayrollSchema,
+  retryPayoutsSchema,
   updatePayrollItemSchema,
   voidSchema,
 } from "@/modules/hr/schemas";
 
 /*
  * Monthly payroll, tied to the books:
- *   Draft      worked out from salaries, attendance, leave and advances; payroll
- *              adds allowances, bonus, tax and other deductions and can override
- *              overtime hours and the advance recovery; "recalculate" picks up
- *              later changes and keeps those edits.
+ *   Draft      worked out from salaries, attendance, leave, advances and the
+ *              staff claims approved and still owed (dated by the month's end,
+ *              not paid back on their own); payroll adds allowances, bonus, tax
+ *              and other deductions and can override overtime hours and the
+ *              advance recovery; "recalculate" picks up later changes and keeps
+ *              those edits. Take-home = basic + approved overtime (+ allowances,
+ *              bonus) + claims - (unpaid days + advance EMI + tax + other).
  *   Approve    (a second person by default) posts one entry dated the month's
  *              last day, a line per employee:
  *                Dr Salaries & Wages             gross pay
+ *                Dr Payable to Staff (Claims)    claims paid with the salary
  *                  Cr Advances to Employees      advance recovered
  *                  Cr Tax Deducted from Salaries tax (TDS)
  *                  Cr Other Income               other deductions (fines...)
  *                  Cr Salaries Payable           net pay
- *              and settles the advances recovered (oldest first). Approval is
- *              refused while the draft is out of date, so what was checked is
- *              what gets posted. The month's attendance, leave, holidays and
- *              salaries are then frozen.
- *   Pay        Accounts pays everyone or chosen employees in batches, each a
- *              payment voucher: Dr Salaries Payable (employee), Cr Cash / Bank.
- *              The run is PAID when every net pay is paid.
- *   Reopen     only with no live payments: the entry and the advance recoveries
- *              are reversed and the run is a draft again.
+ *              settles the advances recovered (oldest first) and ties the
+ *              claims to the line. Approval is refused while the draft is out of
+ *              date, so what was checked is what gets posted. The month's
+ *              attendance, leave, holidays and salaries are then frozen.
+ *   Pay        Accounts pays everyone, chosen employees or parts of salaries in
+ *              batches, each a payment voucher: Dr Salaries Payable (employee),
+ *              Cr Cash / Bank / Wallet, with a line per employee. A line is paid
+ *              once its parts add up to the net pay (its claims then count as
+ *              paid back); the run is PAID when every line is. Paid by bKash,
+ *              Nagad or Rocket with the payout plug on, the money is also sent
+ *              to each wallet in the background ("salary.payout" jobs).
+ *   Reopen     only with no live payments: the entry, the advance recoveries and
+ *              the claims' link are undone and the run is a draft again.
  */
 
 type Tx = Prisma.TransactionClient;
@@ -103,6 +126,7 @@ const MONEY_FIELDS = [
   "overtime",
   "unpaidLeaveDeduction",
   "advanceDeduction",
+  "reimbursements",
   "netPay",
 ] as const;
 
@@ -127,6 +151,21 @@ const itemInclude = {
   payment: {
     select: { id: true, number: true, date: true, method: true, voidedAt: true },
   },
+  paymentLines: {
+    where: { payment: { voidedAt: null } },
+    orderBy: { payment: { date: "asc" } },
+    select: {
+      id: true,
+      amount: true,
+      payout: true,
+      payoutError: true,
+      payment: { select: { id: true, number: true, date: true, method: true } },
+    },
+  },
+  claims: {
+    orderBy: [{ date: "asc" }, { number: "asc" }],
+    select: { id: true, number: true, kind: true, amount: true, approvedAmount: true },
+  },
 } satisfies Prisma.PayrollItemInclude;
 
 const runInclude = {
@@ -137,6 +176,17 @@ const runInclude = {
       account: { select: { id: true, code: true, name: true } },
       paidBy: { select: { id: true, name: true } },
       journalEntry: { select: { id: true, number: true, isReversed: true } },
+      lines: {
+        orderBy: { item: { employee: { code: "asc" } } },
+        select: {
+          id: true,
+          amount: true,
+          payout: true,
+          payoutError: true,
+          payoutReference: true,
+          item: { select: { netPay: true, employee: { select: { id: true, name: true } } } },
+        },
+      },
     },
   },
   journalEntry: { select: { id: true, number: true, date: true, isReversed: true } },
@@ -148,6 +198,10 @@ type ItemRow = Prisma.PayrollItemGetPayload<{ include: typeof itemInclude }>;
 type RunRow = Prisma.PayrollRunGetPayload<{ include: typeof runInclude }>;
 
 const runMonth = (run: { year: number; month: number }) => monthKey(run.year, run.month);
+
+/** "Rina", "Rina and Sumon", "Rina, Sumon and Jamal". */
+const listText = (names: string[]) =>
+  names.length <= 1 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
 
 /** Gross pay and total deductions of a stored line. */
 function itemTotals(i: PayrollItem) {
@@ -167,6 +221,8 @@ function presentItem(i: ItemRow, daysInMonth: number) {
       designation: i.employee.designation,
       department: i.employee.department,
       salaryMethod: i.employee.salaryMethod,
+      /** A bKash, Nagad or Rocket number is on file (salary can go to the wallet). */
+      hasWallet: Boolean(i.employee.walletNumber),
     },
     monthlySalary: i.monthlySalary.toFixed(2),
     dayRate: money(i.monthlySalary.dividedBy(daysInMonth)).toFixed(2),
@@ -194,9 +250,16 @@ function presentItem(i: ItemRow, daysInMonth: number) {
     taxDeduction: i.taxDeduction.toFixed(2),
     otherDeductions: i.otherDeductions.toFixed(2),
     totalDeductions: deductions.toFixed(2),
+    /** Approved staff claims paid back with this salary. */
+    reimbursements: i.reimbursements.toFixed(2),
+    /** The claim numbers paid back with it. */
+    claims: i.claims.map((c) => c.number),
     netPay: i.netPay.toFixed(2),
     note: i.note,
     paid: i.paymentId !== null,
+    /** Paid so far (a salary can be paid in parts) and what is left. */
+    paidAmount: i.paidAmount.toFixed(2),
+    balance: balanceOf(i).toFixed(2),
     payment: i.payment,
   };
 }
@@ -211,10 +274,11 @@ function presentRun(run: RunRow) {
         gross: t.gross.plus(gross),
         deductions: t.deductions.plus(deductions),
         net: t.net.plus(i.netPay),
-        paid: i.paymentId ? t.paid.plus(i.netPay) : t.paid,
+        paid: t.paid.plus(i.paidAmount),
+        reimbursements: t.reimbursements.plus(i.reimbursements),
       };
     },
-    { gross: ZERO, deductions: ZERO, net: ZERO, paid: ZERO },
+    { gross: ZERO, deductions: ZERO, net: ZERO, paid: ZERO, reimbursements: ZERO },
   );
   return {
     id: run.id,
@@ -227,6 +291,7 @@ function presentRun(run: RunRow) {
     totals: {
       gross: totals.gross.toFixed(2),
       deductions: totals.deductions.toFixed(2),
+      reimbursements: totals.reimbursements.toFixed(2),
       net: totals.net.toFixed(2),
       paid: totals.paid.toFixed(2),
       unpaid: totals.net.minus(totals.paid).toFixed(2),
@@ -252,6 +317,14 @@ function presentRun(run: RunRow) {
       journalEntry: p.journalEntry,
       voidedAt: p.voidedAt,
       voidReason: p.voidReason,
+      lines: p.lines.map((l) => ({
+        id: l.id,
+        employee: l.item.employee,
+        amount: l.amount.toFixed(2),
+        payout: l.payout,
+        payoutError: l.payoutError,
+        payoutReference: l.payoutReference,
+      })),
     })),
   };
 }
@@ -276,13 +349,13 @@ export async function listPayrollRuns(ctx: CompanyContext, raw: unknown = {}) {
   const runs = await ctx.db.payrollRun.findMany({
     where: q.year ? { year: q.year } : {},
     include: {
-      items: { select: { netPay: true, paymentId: true } },
+      items: { select: { netPay: true, paidAmount: true } },
       approvedBy: { select: { id: true, name: true } },
     },
     orderBy: [{ year: "desc" }, { month: "desc" }],
   });
   return runs.map((r) => {
-    const unpaid = r.items.filter((i) => !i.paymentId).reduce((t, i) => t.plus(i.netPay), ZERO);
+    const unpaid = r.items.reduce((t, i) => t.plus(balanceOf(i)), ZERO);
     return {
       id: r.id,
       month: runMonth(r),
@@ -324,16 +397,57 @@ type ItemFigures = {
   advanceEdited: boolean;
   taxDeduction: Prisma.Decimal;
   otherDeductions: Prisma.Decimal;
+  reimbursements: Prisma.Decimal;
   netPay: Prisma.Decimal;
   note: string | null;
 };
+
+type OwedClaim = Awaited<ReturnType<typeof claimsToPayBack>>[number];
 
 type Computed = {
   month: string;
   figures: Map<string, ItemFigures>;
   employees: Map<string, Employee>;
   advances: Map<string, ReturnType<typeof recoverable>[]>;
+  /** The claims each person's reimbursements pay back. */
+  claims: Map<string, OwedClaim[]>;
 };
+
+/**
+ * Approved staff claims a month's salaries pay back: dated by the month's end,
+ * not paid back on their own, not on another approved payroll, and their
+ * expense not voided. `lock` holds them (approval) so Accounts cannot pay them
+ * back separately at the same moment.
+ */
+async function claimsToPayBack(
+  tx: Tx,
+  companyId: string,
+  employeeIds: string[],
+  monthEnd: string,
+  lock = false,
+) {
+  if (employeeIds.length === 0) return [];
+  if (lock) {
+    await tx.$queryRaw`
+      SELECT "id" FROM "StaffClaim"
+      WHERE "companyId" = ${companyId} AND "employeeId" IN (${Prisma.join(employeeIds)})
+        AND "status" = 'APPROVED' AND "paidAt" IS NULL AND "payrollItemId" IS NULL
+      FOR UPDATE`;
+  }
+  return tx.staffClaim.findMany({
+    where: {
+      companyId,
+      employeeId: { in: employeeIds },
+      status: "APPROVED",
+      paidAt: null,
+      payrollItemId: null,
+      date: { lte: dateColumn(monthEnd) },
+      OR: [{ expenseId: null }, { expense: { voidedAt: null } }],
+    },
+    select: { id: true, number: true, employeeId: true, amount: true, approvedAmount: true },
+    orderBy: [{ date: "asc" }, { number: "asc" }],
+  });
+}
 
 /** True when the person's last working day falls in (or before the end of) the month. */
 function leavingIn(employee: Employee, month: string) {
@@ -351,16 +465,26 @@ async function computeRun(
   run: { year: number; month: number },
   existing: PayrollItem[],
   advanceRows?: Awaited<ReturnType<typeof lockOpenAdvances>>,
+  lockClaims = false,
 ): Promise<Computed> {
   const companyId = ctx.company.id;
   const tz = ctx.company.timezone;
   const month = runMonth(run);
   const { from, to } = monthRange(month);
   const employees = await employeesInPeriod(companyId, from, to, tx);
+  const owedClaims = await claimsToPayBack(
+    tx,
+    companyId,
+    employees.map((e) => e.id),
+    to,
+    lockClaims,
+  );
   const [{ rules }, inputs] = await Promise.all([
     loadRules(companyId, from, to, tx),
     loadEmploymentInputs(companyId, employees, from, to, tx),
   ]);
+  const claims = new Map<string, OwedClaim[]>();
+  for (const c of owedClaims) claims.set(c.employeeId, [...(claims.get(c.employeeId) ?? []), c]);
   const open =
     advanceRows ??
     (await tx.salaryAdvance.findMany({
@@ -389,6 +513,10 @@ async function computeRun(
     };
     const taxDeduction = prev?.taxDeduction ?? ZERO;
     const otherDeductions = prev?.otherDeductions ?? ZERO;
+    const reimbursements = (claims.get(e.id) ?? []).reduce(
+      (t, c) => t.plus(c.approvedAmount ?? c.amount),
+      ZERO,
+    );
     const room = Prisma.Decimal.max(0, grossPay(pay).minus(taxDeduction).minus(otherDeductions));
     const advanceDeduction = prev?.advanceEdited
       ? prev.advanceDeduction
@@ -413,11 +541,18 @@ async function computeRun(
       advanceEdited: prev?.advanceEdited ?? false,
       taxDeduction,
       otherDeductions,
-      netPay: netPay({ ...pay, advanceDeduction, taxDeduction, otherDeductions }),
+      reimbursements,
+      netPay: netPay({ ...pay, advanceDeduction, taxDeduction, otherDeductions, reimbursements }),
       note: prev?.note ?? null,
     });
   }
-  return { month, figures, employees: new Map(employees.map((e) => [e.id, e])), advances };
+  return {
+    month,
+    figures,
+    employees: new Map(employees.map((e) => [e.id, e])),
+    advances,
+    claims,
+  };
 }
 
 /** Lines whose deductions are more than the pay, or that recover more than is owed. */
@@ -744,6 +879,12 @@ function accrualLines(
   return items.flatMap((i) => [
     { accountId: acc.SALARIES, employeeId: i.employeeId, debit: grossPay(i), memo: label },
     {
+      accountId: acc.EMPLOYEE_PAYABLE,
+      employeeId: i.employeeId,
+      debit: i.reimbursements,
+      memo: "Claims paid back with the salary",
+    },
+    {
       accountId: acc.EMPLOYEE_ADVANCES,
       employeeId: i.employeeId,
       credit: i.advanceDeduction,
@@ -789,12 +930,12 @@ export async function approvePayrollRun(ctx: CompanyContext, runId: string, meta
       companyId,
       run.items.map((i) => i.employeeId),
     );
-    const computed = await computeRun(tx, ctx, run, run.items, locked);
+    const computed = await computeRun(tx, ctx, run, run.items, locked, true);
     const stale = outOfDate(run.items, computed);
     if (stale.length > 0) {
       throw new AppError(
         "CONFLICT",
-        `Attendance, leave, salaries or advances changed since this payroll was worked out (${stale.join(
+        `Attendance, leave, salaries, advances or staff claims changed since this payroll was worked out (${stale.join(
           ", ",
         )}). Recalculate it, check it, then approve.`,
       );
@@ -805,18 +946,20 @@ export async function approvePayrollRun(ctx: CompanyContext, runId: string, meta
     const acc = await ensureControlAccounts(companyId, tx);
     const lines = [...computed.figures.values()];
     const totalGross = lines.reduce((t, i) => t.plus(grossPay(i)), ZERO);
+    const totalClaims = lines.reduce((t, i) => t.plus(i.reimbursements), ZERO);
     const accrualDate = startOfDayInZone(monthRange(month).to, tz);
-    const entry = totalGross.gt(0)
-      ? await postJournalEntry(tx, {
-          companyId,
-          date: accrualDate,
-          description: `${label} — ${lines.length} employee(s)`,
-          sourceType: "PAYROLL",
-          sourceId: run.id,
-          postedById: ctx.user.id,
-          lines: accrualLines(lines, acc, label),
-        })
-      : null;
+    const entry =
+      totalGross.gt(0) || totalClaims.gt(0)
+        ? await postJournalEntry(tx, {
+            companyId,
+            date: accrualDate,
+            description: `${label} — ${lines.length} employee(s)`,
+            sourceType: "PAYROLL",
+            sourceId: run.id,
+            postedById: ctx.user.id,
+            lines: accrualLines(lines, acc, label),
+          })
+        : null;
 
     for (const item of run.items) {
       if (item.advanceDeduction.lte(0)) continue;
@@ -835,6 +978,25 @@ export async function approvePayrollRun(ctx: CompanyContext, runId: string, meta
           note: label,
         });
       }
+    }
+
+    // The claims each line pays back now belong to it: Accounts can no longer
+    // pay them back on their own, and they count as paid with the salary.
+    let claimsLinked = 0;
+    for (const item of run.items) {
+      const ids = (computed.claims.get(item.employeeId) ?? []).map((c) => c.id);
+      if (ids.length === 0) continue;
+      const linked = await tx.staffClaim.updateMany({
+        where: { id: { in: ids }, paidAt: null, payrollItemId: null },
+        data: { payrollItemId: item.id },
+      });
+      if (linked.count !== ids.length) {
+        throw new AppError(
+          "CONFLICT",
+          "Some staff claims were paid back meanwhile. Recalculate the payroll, check it, then approve.",
+        );
+      }
+      claimsLinked += ids.length;
     }
 
     const toPay = lines.some((i) => i.netPay.gt(0));
@@ -858,7 +1020,11 @@ export async function approvePayrollRun(ctx: CompanyContext, runId: string, meta
         entityId: run.id,
         summary: `Approved payroll for ${monthLabel(month)}: ${lines.length} employee(s), gross ${totalGross.toFixed(
           2,
-        )}, net ${run.totalNet.toFixed(2)}${entry ? `, ${entry.number}` : ""}`,
+        )}, net ${run.totalNet.toFixed(2)}${
+          claimsLinked > 0
+            ? `, ${claimsLinked} staff claim(s) paid back with it (${totalClaims.toFixed(2)})`
+            : ""
+        }${entry ? `, ${entry.number}` : ""}`,
       },
       tx,
     );
@@ -896,6 +1062,11 @@ export async function reopenPayrollRun(
     const restored = await reverseSettlementsTx(tx, ctx.company.id, {
       payrollItemIds: run.items.map((i) => i.id),
     });
+    // Its claims are owed on their own again (the reversal put them back in Payable to Staff).
+    const unlinked = await tx.staffClaim.updateMany({
+      where: { payrollItemId: { in: run.items.map((i) => i.id) } },
+      data: { payrollItemId: null },
+    });
     await tx.payrollRun.update({
       where: { id: run.id },
       data: {
@@ -915,7 +1086,7 @@ export async function reopenPayrollRun(
         entityId: run.id,
         summary: `Reopened payroll for ${label}${
           restored.gt(0) ? ` (advance recoveries of ${restored.toFixed(2)} undone)` : ""
-        }: ${reason}`,
+        }${unlinked.count > 0 ? ` (${unlinked.count} staff claim(s) owed on their own again)` : ""}: ${reason}`,
       },
       tx,
     );
@@ -927,7 +1098,19 @@ export async function reopenPayrollRun(
 // Paying salaries
 // =============================================================================
 
-/** Accounts pays net salaries (everyone not yet paid, or chosen lines) in one voucher. */
+/** Methods whose payments the payout plug can also send to the employee's wallet. */
+const PAYOUT_METHODS = new Set<PaymentMethod>(["BKASH", "NAGAD", "ROCKET"]);
+
+const isPayoutMethod = (method: PaymentMethod): method is PayoutWallet & PaymentMethod =>
+  PAYOUT_METHODS.has(method);
+
+/**
+ * Accounts pays net salaries in one voucher: everyone not yet paid, chosen
+ * lines, or parts of salaries (a line is paid once its parts add up to its net
+ * pay). Paid by bKash, Nagad or Rocket with `sendToWallets`, each amount is
+ * also sent to the employee's wallet through the payout plug, in the
+ * background.
+ */
 export async function payPayrollRun(
   ctx: CompanyContext,
   runId: string,
@@ -938,29 +1121,48 @@ export async function payPayrollRun(
   const input = payPayrollSchema.parse(raw);
   const companyId = ctx.company.id;
   const date = input.date ? toInstant(input.date, ctx.company.timezone) : new Date();
+  if (input.sendToWallets) {
+    if (!isPayoutMethod(input.method)) {
+      throw new AppError("VALIDATION", "Only bKash, Nagad or Rocket payments go to wallets.", {
+        sendToWallets: ["Pay by bKash, Nagad or Rocket to send it to their wallets."],
+      });
+    }
+    if (!payoutGateway()) {
+      throw new AppError(
+        "UNAVAILABLE",
+        "Wallet payouts are not connected yet. Send the money yourself, then record it here.",
+      );
+    }
+  }
   const paymentId = await prisma.$transaction(async (tx) => {
     const run = await lockRun(tx, ctx, runId);
     const label = monthLabel(runMonth(run));
-    const unpaid = run.items.filter((i) => !i.paymentId && i.netPay.gt(0));
-    assertAllowed(canPayPayroll(run, unpaid.length));
-    let items = unpaid;
-    if (input.itemIds) {
-      const wanted = new Set(input.itemIds);
-      items = unpaid.filter((i) => wanted.has(i.id));
-      if (items.length !== wanted.size) {
+    const open = run.items.filter((i) => balanceOf(i).gt(0));
+    assertAllowed(canPayPayroll(run, open.length));
+    const plan = salaryPaymentParts(run.items, { itemIds: input.itemIds, parts: input.parts });
+    if (!plan.ok) {
+      throw new AppError(
+        plan.message === "Nothing is left to pay." ? "CONFLICT" : "VALIDATION",
+        plan.message,
+      );
+    }
+    const itemOf = new Map(run.items.map((i) => [i.id, i]));
+    const parts = plan.parts.map((p) => ({ ...p, item: itemOf.get(p.itemId)! }));
+    const employees = await tx.employee.findMany({
+      where: { id: { in: parts.map((p) => p.item.employeeId) } },
+      select: { id: true, name: true, walletNumber: true, userId: true },
+    });
+    const employeeOf = new Map(employees.map((e) => [e.id, e]));
+    if (input.sendToWallets) {
+      const missing = employees.filter((e) => !e.walletNumber).map((e) => e.name);
+      if (missing.length > 0) {
         throw new AppError(
           "VALIDATION",
-          "Some chosen lines are not on this payroll, are already paid or have nothing to pay.",
+          `${listText(missing)} ${missing.length === 1 ? "has" : "have"} no wallet number. Add it on their page, or pay them another way.`,
         );
       }
     }
-    if (items.length === 0) throw new AppError("CONFLICT", "Nothing is left to pay.");
-    const employees = await tx.employee.findMany({
-      where: { id: { in: items.map((i) => i.employeeId) } },
-      select: { id: true, name: true },
-    });
-    const nameOf = new Map(employees.map((e) => [e.id, e.name]));
-    const total = items.reduce((t, i) => t.plus(i.netPay), ZERO);
+    const total = parts.reduce((t, p) => t.plus(p.amount), ZERO);
     const acc = await ensureControlAccounts(companyId, tx);
     const paidFrom = await cashAccountFor(tx, companyId, input.method, input.accountId);
     const payment = await tx.payrollPayment.create({
@@ -972,24 +1174,25 @@ export async function payPayrollRun(
         method: input.method,
         accountId: paidFrom,
         amount: total,
-        employeeCount: items.length,
+        employeeCount: parts.length,
         reference: input.reference ?? null,
         paidById: ctx.user.id,
       },
     });
+    const isPart = (p: (typeof parts)[number]) => !p.amount.equals(balanceOf(p.item));
     const entry = await postJournalEntry(tx, {
       companyId,
       date,
-      description: `${payment.number} — salaries for ${label} (${items.length} employee(s))`,
+      description: `${payment.number} — salaries for ${label} (${parts.length} employee(s))`,
       sourceType: "PAYROLL",
       sourceId: payment.id,
       postedById: ctx.user.id,
       lines: [
-        ...items.map((i) => ({
+        ...parts.map((p) => ({
           accountId: acc.SALARIES_PAYABLE,
-          employeeId: i.employeeId,
-          debit: i.netPay,
-          memo: `${nameOf.get(i.employeeId)} — ${label}`,
+          employeeId: p.item.employeeId,
+          debit: p.amount,
+          memo: `${employeeOf.get(p.item.employeeId)?.name} — ${label}${isPart(p) ? " (part)" : ""}`,
         })),
         { accountId: paidFrom, credit: total, memo: input.reference ?? payment.number },
       ],
@@ -998,14 +1201,58 @@ export async function payPayrollRun(
       where: { id: payment.id },
       data: { journalEntryId: entry.id },
     });
-    await tx.payrollItem.updateMany({
-      where: { id: { in: items.map((i) => i.id) } },
-      data: { paymentId: payment.id },
+    await tx.payrollPaymentLine.createMany({
+      data: parts.map((p) => ({
+        companyId,
+        paymentId: payment.id,
+        itemId: p.item.id,
+        amount: p.amount,
+        payout: input.sendToWallets ? ("QUEUED" as const) : null,
+      })),
     });
-    const allPaid = unpaid.length === items.length;
+    let finished = 0;
+    for (const p of parts) {
+      const paid = p.item.paidAmount.plus(p.amount);
+      const done = paid.gte(p.item.netPay);
+      await tx.payrollItem.update({
+        where: { id: p.item.id },
+        data: { paidAmount: paid, ...(done ? { paymentId: payment.id } : {}) },
+      });
+      const person = employeeOf.get(p.item.employeeId);
+      if (person?.userId) {
+        const how = `${p.amount.toFixed(2)} paid by ${METHOD_LABELS[input.method]}${
+          input.sendToWallets ? " to your wallet" : ""
+        }`;
+        await sendInApp(tx, companyId, [{ userId: person.userId, employeeId: person.id }], {
+          subject: done ? `Salary for ${label} paid` : `Part of your ${label} salary paid`,
+          body: done
+            ? `${how}. Your ${label} salary is paid in full.`
+            : `${how}. ${p.item.netPay.minus(paid).toFixed(2)} is still to come.`,
+          entityType: "MySalary",
+          entityId: p.item.id,
+        });
+      }
+      if (!done) continue;
+      finished += 1;
+      // Its claims are paid back with the last part of the salary.
+      await tx.staffClaim.updateMany({
+        where: { payrollItemId: p.item.id, paidAt: null },
+        data: { paidAt: date, paidById: ctx.user.id, paymentEntryId: entry.id },
+      });
+    }
+    const allPaid = finished === open.length;
     if (allPaid) {
       await tx.payrollRun.update({ where: { id: run.id }, data: { status: "PAID", paidAt: date } });
     }
+    if (input.sendToWallets) {
+      await enqueueJob(tx, {
+        kind: "salary.payout",
+        companyId,
+        payload: { paymentId: payment.id },
+        maxAttempts: 1,
+      });
+    }
+    const partly = parts.length - parts.filter((p) => !isPart(p)).length;
     await auditInCompany(
       ctx,
       meta,
@@ -1013,19 +1260,27 @@ export async function payPayrollRun(
         action: "CREATE",
         entityType: "PayrollPayment",
         entityId: payment.id,
-        summary: `Paid salaries for ${label}: ${total.toFixed(2)} to ${items.length} employee(s) (${
+        summary: `Paid salaries for ${label}: ${total.toFixed(2)} to ${parts.length} employee(s) (${
           input.method
-        }), ${payment.number}, ${entry.number}${allPaid ? "; payroll fully paid" : ""}`,
+        }${input.sendToWallets ? ", sent to their wallets" : ""})${
+          partly > 0 ? `, ${partly} in part` : ""
+        }, ${payment.number}, ${entry.number}${allPaid ? "; payroll fully paid" : ""}`,
       },
       tx,
     );
     return payment.id;
   }, TX_OPTIONS);
+  if (input.sendToWallets) kickJobWorker();
   const payment = await ctx.db.payrollPayment.findUniqueOrThrow({ where: { id: paymentId } });
   return { paymentId, number: payment.number, run: await getPayrollRun(ctx, runId) };
 }
 
-/** Voids a salary payment made by mistake: its entry is reversed and those people are unpaid again. */
+/**
+ * Voids a salary payment made by mistake: its entry is reversed, what it paid
+ * comes off each line (those people are owed it again, and the claims paid
+ * with a salary it finished are owed again), and wallet payouts not sent yet
+ * are stopped. Money a wallet already sent is not taken back.
+ */
 export async function voidPayrollPayment(
   ctx: CompanyContext,
   paymentId: string,
@@ -1040,7 +1295,10 @@ export async function voidPayrollPayment(
   await prisma.$transaction(async (tx) => {
     const run = await lockRun(tx, ctx, found.runId);
     await lockRow(tx, "PayrollPayment", paymentId);
-    const payment = await tx.payrollPayment.findUniqueOrThrow({ where: { id: paymentId } });
+    const payment = await tx.payrollPayment.findUniqueOrThrow({
+      where: { id: paymentId },
+      include: { lines: true },
+    });
     assertAllowed(
       canVoidSalaryPayment({ number: payment.number, voided: payment.voidedAt !== null }),
     );
@@ -1050,9 +1308,24 @@ export async function voidPayrollPayment(
         postedById: ctx.user.id,
       });
     }
+    const itemIds = payment.lines.map((l) => l.itemId);
+    for (const line of payment.lines) {
+      await tx.payrollItem.update({
+        where: { id: line.itemId },
+        data: { paidAmount: { decrement: line.amount }, paymentId: null },
+      });
+    }
     await tx.payrollItem.updateMany({
       where: { paymentId: payment.id },
       data: { paymentId: null },
+    });
+    await tx.staffClaim.updateMany({
+      where: { payrollItemId: { in: itemIds }, paidAt: { not: null } },
+      data: { paidAt: null, paidById: null, paymentEntryId: null },
+    });
+    const stopped = await tx.payrollPaymentLine.updateMany({
+      where: { paymentId: payment.id, payout: "QUEUED" },
+      data: { payout: "CANCELLED" },
     });
     await tx.payrollPayment.update({
       where: { id: payment.id },
@@ -1073,12 +1346,146 @@ export async function voidPayrollPayment(
         entityId: payment.id,
         summary: `Voided ${payment.number} (${payment.amount.toFixed(2)}, ${
           payment.employeeCount
-        } employee(s), payroll ${monthLabel(runMonth(run))}): ${reason}`,
+        } employee(s), payroll ${monthLabel(runMonth(run))})${
+          stopped.count > 0 ? `, ${stopped.count} wallet payout(s) stopped` : ""
+        }: ${reason}`,
       },
       tx,
     );
   }, TX_OPTIONS);
   return getPayrollRun(ctx, found.runId);
+}
+
+/** Sends the failed wallet payouts of a salary payment again (all, or chosen lines). */
+export async function retrySalaryPayouts(
+  ctx: CompanyContext,
+  paymentId: string,
+  raw: unknown = {},
+  meta?: RequestMeta,
+) {
+  assertCanPayMoney(ctx, "Only Accounts can send salaries.");
+  const input = retryPayoutsSchema.parse(raw);
+  if (!payoutGateway()) {
+    throw new AppError("UNAVAILABLE", "Wallet payouts are not connected yet.");
+  }
+  const payment = await ctx.db.payrollPayment.findUnique({ where: { id: paymentId } });
+  if (!payment) throw new AppError("NOT_FOUND", "Salary payment not found.");
+  if (payment.voidedAt) throw new AppError("CONFLICT", `${payment.number} is void.`);
+  const count = await prisma.$transaction(async (tx) => {
+    await lockRow(tx, "PayrollPayment", paymentId);
+    const again = await tx.payrollPaymentLine.updateMany({
+      where: {
+        paymentId,
+        payout: "FAILED",
+        ...(input.lineIds ? { id: { in: input.lineIds } } : {}),
+      },
+      data: { payout: "QUEUED", payoutError: null },
+    });
+    if (again.count === 0) throw new AppError("CONFLICT", "No failed payouts to send again.");
+    await enqueueJob(tx, {
+      kind: "salary.payout",
+      companyId: ctx.company.id,
+      payload: { paymentId },
+      maxAttempts: 1,
+    });
+    await auditInCompany(
+      ctx,
+      meta,
+      {
+        action: "UPDATE",
+        entityType: "PayrollPayment",
+        entityId: paymentId,
+        summary: `Sending ${again.count} failed wallet payout(s) of ${payment.number} again`,
+      },
+      tx,
+    );
+    return again.count;
+  }, TX_OPTIONS);
+  kickJobWorker();
+  return { paymentId, queued: count, run: await getPayrollRun(ctx, payment.runId) };
+}
+
+/**
+ * The "salary.payout" job: sends each waiting line of a salary payment to the
+ * employee's wallet through the payout plug and keeps what came back. A
+ * refusal marks the line FAILED for Accounts to send again or void; nothing is
+ * retried on its own, so money never goes twice.
+ */
+export async function runSalaryPayoutJob(job: Pick<BackgroundJob, "payload">): Promise<void> {
+  const paymentId = (job.payload as { paymentId?: unknown } | null)?.paymentId;
+  if (typeof paymentId !== "string") throw new Error("The job does not name a salary payment.");
+  const payment = await prisma.payrollPayment.findUnique({
+    where: { id: paymentId },
+    include: {
+      run: { select: { year: true, month: true } },
+      lines: {
+        where: { payout: "QUEUED" },
+        include: {
+          item: { select: { employee: { select: { code: true, walletNumber: true } } } },
+        },
+      },
+    },
+  });
+  if (!payment || payment.lines.length === 0) return;
+  if (payment.voidedAt) {
+    await prisma.payrollPaymentLine.updateMany({
+      where: { paymentId, payout: "QUEUED" },
+      data: { payout: "CANCELLED" },
+    });
+    return;
+  }
+  const gateway = payoutGateway();
+  const month = runMonth(payment.run);
+  let sent = 0;
+  for (const line of payment.lines) {
+    // Taken first, so a second run of the job never sends the same line again.
+    const taken = await prisma.payrollPaymentLine.updateMany({
+      where: { id: line.id, payout: "QUEUED" },
+      data: {
+        payout: "FAILED",
+        payoutError: "Stopped while sending: check the wallet statement before sending it again.",
+        payoutAt: new Date(),
+      },
+    });
+    if (taken.count === 0) continue;
+    const employee = line.item.employee;
+    let result: Awaited<ReturnType<typeof sendPayout>>;
+    try {
+      result = await sendPayout(
+        {
+          wallet: payment.method as PayoutWallet,
+          to: employee.walletNumber ?? "",
+          amount: line.amount.toFixed(2),
+          reference: `SAL-${month} ${employee.code}`,
+        },
+        gateway,
+      );
+    } catch (error) {
+      result = { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
+    if (result.ok) sent += 1;
+    await prisma.payrollPaymentLine.update({
+      where: { id: line.id },
+      data: result.ok
+        ? {
+            payout: "SENT",
+            payoutReference: result.providerReference,
+            payoutError: null,
+            payoutAt: new Date(),
+          }
+        : { payout: "FAILED", payoutError: result.error, payoutAt: new Date() },
+    });
+  }
+  await recordAudit({
+    companyId: payment.companyId,
+    userId: null,
+    action: "UPDATE",
+    entityType: "PayrollPayment",
+    entityId: payment.id,
+    summary: `Wallet payouts for ${payment.number}: ${sent} sent${
+      payment.lines.length > sent ? `, ${payment.lines.length - sent} failed` : ""
+    }`,
+  });
 }
 
 // =============================================================================
@@ -1106,6 +1513,12 @@ async function payslip(
       amount: i.overtime,
     },
     { label: "Bonus", amount: i.bonus },
+    {
+      label: i.claims.length
+        ? `Claims paid back (${i.claims.map((c) => c.number).join(", ")})`
+        : "Claims paid back",
+      amount: i.reimbursements,
+    },
   ].filter((e, index) => index === 0 || e.amount.gt(0));
   const deductions = [
     {
@@ -1154,15 +1567,34 @@ async function payslip(
     totalDeductions: totalDeductions.toFixed(2),
     netPay: i.netPay.toFixed(2),
     netPayInWords: amountInWords(i.netPay, ctx.company.currency),
-    payment: i.payment
-      ? {
-          status: "PAID" as const,
-          number: i.payment.number,
-          date: i.payment.date,
-          method: i.payment.method,
-        }
-      : { status: run.status === "DRAFT" ? ("DRAFT" as const) : ("UNPAID" as const) },
+    payment: paymentOf(run, i),
     note: i.note,
+  };
+}
+
+/** How a line stands: paid (when, how), paid in part so far, or not paid; with each part. */
+function paymentOf(run: { status: string }, i: ItemRow) {
+  const parts = i.paymentLines.map((l) => ({
+    number: l.payment.number,
+    date: l.payment.date,
+    method: l.payment.method,
+    amount: l.amount.toFixed(2),
+    payout: l.payout,
+  }));
+  const common = { paid: i.paidAmount.toFixed(2), balance: balanceOf(i).toFixed(2), parts };
+  if (i.payment) {
+    return {
+      status: "PAID" as const,
+      number: i.payment.number,
+      date: i.payment.date,
+      method: i.payment.method,
+      ...common,
+    };
+  }
+  if (i.paidAmount.gt(0)) return { status: "PART_PAID" as const, ...common };
+  return {
+    status: run.status === "DRAFT" ? ("DRAFT" as const) : ("UNPAID" as const),
+    ...common,
   };
 }
 
@@ -1206,6 +1638,8 @@ export async function myPayslips(ctx: CompanyContext) {
     label: monthLabel(runMonth(i.run)),
     netPay: i.netPay.toFixed(2),
     paid: i.paymentId !== null,
+    paidAmount: i.paidAmount.toFixed(2),
+    balance: balanceOf(i).toFixed(2),
   }));
 }
 

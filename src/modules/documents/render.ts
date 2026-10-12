@@ -1,3 +1,5 @@
+import { randomBytes } from "node:crypto";
+
 import {
   collectPdf,
   createPdf,
@@ -56,6 +58,26 @@ const DEFAULT_ACCENT = "#BE1434";
 
 const LOGO_BOX = { width: 150, height: 52 };
 
+/**
+ * PDF security for a signed record: AES-256, opened and printed by anyone, but
+ * changing it needs a password nobody keeps (a fresh random one each time).
+ */
+function lockedPdf(): Partial<PDFKit.PDFDocumentOptions> {
+  return {
+    pdfVersion: "1.7ext3",
+    ownerPassword: randomBytes(24).toString("base64url"),
+    permissions: {
+      printing: "highResolution",
+      modifying: false,
+      copying: true,
+      annotating: false,
+      fillingForms: false,
+      contentAccessibility: true,
+      documentAssembly: false,
+    },
+  };
+}
+
 const CELL_PAD = 5;
 const TABLE_SIZE = 8.2;
 const TABLE_LINE = 10.8;
@@ -90,6 +112,7 @@ class Writer {
     private readonly model: PrintDocument,
     private readonly logo: Buffer | null,
     private readonly images: ReadonlyMap<string, Buffer> = new Map(),
+    private readonly signed: ReadonlyMap<string, Buffer> = new Map(),
   ) {
     this.primary = safeHex(model.letterhead.primaryColor, DEFAULT_PRIMARY);
     this.accent = safeHex(model.letterhead.accentColor, DEFAULT_ACCENT);
@@ -312,18 +335,26 @@ class Writer {
       : 0;
     const room = leftWidth - (stamp ? badgeWidth + 12 : 0);
 
-    // 19 pt, or smaller for a long title so it fits beside the badge.
+    // 19 pt, or smaller for a long title so it fits beside the badge; one still
+    // too long at 12 pt goes on two lines at 15 pt rather than being cut.
     const titleText = title.toUpperCase();
     const spacingFor = (size: number) => size * 0.115;
+    const styleAt = (s: number) => ({ font: SERIF_BOLD, size: s, spacing: spacingFor(s) });
     let size = 19;
-    const widthAt = (s: number) =>
-      textWidth(this.doc, titleText, { font: SERIF_BOLD, size: s, spacing: spacingFor(s) });
+    const widthAt = (s: number) => textWidth(this.doc, titleText, styleAt(s));
     while (size > 12 && widthAt(size) > room) size -= 0.5;
-    const titleWidth = this.line(titleText, MARGIN.left, top + (19 - size) * 0.55, room, {
-      font: SERIF_BOLD,
-      size,
-      color: this.primary,
-      spacing: spacingFor(size),
+    let lines = [titleText];
+    if (widthAt(size) > room) {
+      size = 15;
+      lines = wrapText(this.doc, titleText, room, styleAt(size)).slice(0, 2);
+    }
+    let titleWidth = 0;
+    lines.forEach((text, i) => {
+      const drawn = this.line(text, MARGIN.left, top + (19 - size) * 0.55 + i * 19, room, {
+        ...styleAt(size),
+        color: this.primary,
+      });
+      if (i === 0) titleWidth = drawn;
     });
     if (stamp) {
       const color = stamp.tone === "danger" ? this.accent : this.primary;
@@ -340,7 +371,7 @@ class Writer {
         spacing: 1.2,
       });
     }
-    let leftY = top + 25;
+    let leftY = top + 25 + (lines.length - 1) * 19;
     if (subtitle) {
       for (const text of this.wrap(subtitle, leftWidth, SANS, 9.5).slice(0, 2)) {
         this.line(text, MARGIN.left, leftY, leftWidth, { font: SANS, size: 9.5 });
@@ -829,27 +860,57 @@ class Writer {
         labels.length === 1
           ? MARGIN.left + WIDTH - width
           : MARGIN.left + (i * (WIDTH - width)) / (labels.length - 1);
+      this.signatureImage(this.signed.get(label), x, y, width);
       this.rule(y, INK, 0.6, x, width);
       this.line(label, x, y + 5, width, { font: SANS, size: 7.4, color: MUTED, align: "center" });
     });
     this.y = y + 20;
+  }
+
+  /** A signature drawn by hand, standing on its line (a picture pdfkit cannot open is left out). */
+  private signatureImage(bytes: Buffer | undefined, x: number, lineY: number, width: number) {
+    if (!bytes) return;
+    let image: OpenedImage;
+    try {
+      image = (this.doc as unknown as PdfImages).openImage(bytes);
+    } catch {
+      return;
+    }
+    const box = { width, height: 44 };
+    const scale = Math.min(box.width / image.width, box.height / image.height);
+    const w = image.width * scale;
+    const h = image.height * scale;
+    (this.doc as unknown as PdfImages).image(image, x + (width - w) / 2, lineY - h - 2, {
+      width: w,
+      height: h,
+    });
   }
 }
 
 /**
  * The document as a PDF on letterhead. `images` holds the bytes of the rows'
  * reference pictures by file id (checked when uploaded); a row whose picture is
- * not there prints without it. `compress: false` keeps the page text readable (tests).
+ * not there prints without it. `signed` holds signatures drawn by hand (checked
+ * PNGs), printed on the signature line of the same label. `protect` locks the
+ * PDF against editing (it still opens, prints and copies without a password).
+ * `compress: false` keeps the page text readable (tests).
  */
 export async function renderDocumentPdf(
   model: PrintDocument,
-  options: { logo?: Buffer | null; images?: ReadonlyMap<string, Buffer>; compress?: boolean } = {},
+  options: {
+    logo?: Buffer | null;
+    images?: ReadonlyMap<string, Buffer>;
+    signed?: ReadonlyMap<string, Buffer>;
+    protect?: boolean;
+    compress?: boolean;
+  } = {},
 ): Promise<Buffer> {
   const doc = await createPdf({
     size: "A4",
     margins: MARGIN,
     bufferPages: true,
     compress: options.compress ?? true,
+    ...(options.protect ? lockedPdf() : {}),
     info: {
       Title: pdfInfo(
         [model.letterhead.name, model.title, model.reference].filter(Boolean).join(" - "),
@@ -861,7 +922,7 @@ export async function renderDocumentPdf(
     },
   });
   const done = collectPdf(doc);
-  const writer = new Writer(doc, model, options.logo ?? null, options.images);
+  const writer = new Writer(doc, model, options.logo ?? null, options.images, options.signed);
   writer.letterhead();
   if (model.type !== "LETTERHEAD") {
     writer.titleBlock();

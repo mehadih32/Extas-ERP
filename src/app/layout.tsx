@@ -11,6 +11,9 @@ export const metadata: Metadata = {
   title: { default: "Extas ERP", template: "%s · Extas ERP" },
   description: "Extas Enterprise ERP: sales, stock, production, accounts and HR in one place.",
   applicationName: "Extas ERP",
+  // Installing to the home screen (app/manifest.ts); iPhones use their own icon and title.
+  icons: { apple: "/icons/apple-touch-icon.png" },
+  appleWebApp: { capable: true, title: "Extas ERP", statusBarStyle: "default" },
   // A private business system: keep it out of search engines.
   robots: { index: false, follow: false },
 };

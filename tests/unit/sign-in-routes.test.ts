@@ -103,14 +103,28 @@ describe("the proxy in front of the screens", () => {
     expect(response.cookies.get(SESSION_COOKIE)).toBeUndefined();
   });
 
-  it("runs for screens only, not the API, Next.js' files or the icon", () => {
+  it("runs for screens only, not the API, Next.js' files, the icons or the app's install files", () => {
     const [pattern] = config.matcher;
     const matches = (path: string) => new RegExp(`^${pattern}$`).test(path);
     for (const path of ["/", "/sign-in", "/sales/12", "/select-company"]) {
       expect(matches(path), path).toBe(true);
     }
-    for (const path of ["/api/me", "/api/auth/login", "/_next/static/app.js", "/icon.svg"]) {
+    for (const path of [
+      "/api/me",
+      "/api/auth/login",
+      "/_next/static/app.js",
+      "/icon.svg",
+      // Installing the app: fetched without the session cookie.
+      "/manifest.webmanifest",
+      "/sw.js",
+      "/offline.html",
+      "/icons/icon-192.png",
+    ]) {
       expect(matches(path), path).toBe(false);
+    }
+    // Screens whose names merely start like those files still need a session.
+    for (const path of ["/iconsets", "/sw.json", "/manifest"]) {
+      expect(matches(path), path).toBe(true);
     }
   });
 });

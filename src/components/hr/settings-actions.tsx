@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { Field, FormAlert } from "@/components/forms/field";
-import { textOf } from "@/components/products/form-values";
+import { readAmount, textOf } from "@/components/products/form-values";
 import { FormDialog, problem } from "@/components/sales/dialogs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -71,12 +71,30 @@ export function HrRules({ rules, canManage }: { rules: Rules; canManage: boolean
           onSubmit={async (form) => {
             const weeklyOffDays = form.getAll("weeklyOffDays").map(Number);
             const officeStartTime = textOf(form, "officeStartTime");
+            const officeEndTime = textOf(form, "officeEndTime");
             const lateGraceMinutes = wholeOf(form, "lateGraceMinutes");
             const latesPerDeductionDay = wholeOf(form, "latesPerDeductionDay");
+            const overtimeMinMinutes = wholeOf(form, "overtimeMinMinutes");
+            const conveyanceRatePerKm = readAmount(textOf(form, "conveyanceRatePerKm"));
             const errors: Record<string, string> = {};
             if (weeklyOffDays.length > 6) errors.weeklyOffDays = "Keep at least one working day.";
             if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(officeStartTime)) {
               errors.officeStartTime = "Choose the time the office starts.";
+            }
+            if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(officeEndTime)) {
+              errors.officeEndTime = "Choose the time the working day ends.";
+            } else if (officeEndTime === officeStartTime) {
+              errors.officeEndTime = "The day must end at a different time than it starts.";
+            }
+            if (!(overtimeMinMinutes <= 240)) {
+              errors.overtimeMinMinutes = "Write the minutes, from 0 to 240.";
+            }
+            if (
+              conveyanceRatePerKm === null ||
+              conveyanceRatePerKm === "invalid" ||
+              conveyanceRatePerKm > 100_000
+            ) {
+              errors.conveyanceRatePerKm = "Write the fare for a km, like 30 (0 for no check).";
             }
             if (!(lateGraceMinutes <= 240)) {
               errors.lateGraceMinutes = "Write the minutes, from 0 to 240.";
@@ -88,9 +106,14 @@ export function HrRules({ rules, canManage }: { rules: Rules; canManage: boolean
             const result = await updateHrSettingsAction({
               weeklyOffDays,
               officeStartTime,
+              officeEndTime,
               lateGraceMinutes,
               latesPerDeductionDay,
               selfCheckIn: form.get("selfCheckIn") === "on",
+              gpsAttendance: form.get("gpsAttendance") === "on",
+              shadowOvertime: form.get("shadowOvertime") === "on",
+              overtimeMinMinutes,
+              conveyanceRatePerKm: conveyanceRatePerKm as number,
             });
             if (!result.ok) return result.error;
             setNotice("The rules are saved.");
@@ -135,21 +158,36 @@ export function HrRules({ rules, canManage }: { rules: Rules; canManage: boolean
                   />
                 </Field>
                 <Field
-                  id="rules-grace"
-                  label="Minutes of grace"
-                  hint="Arriving within these minutes is not late."
-                  error={fieldError("lateGraceMinutes")}
+                  id="rules-end"
+                  label="Working day ends at"
+                  hint="Staying later is overtime."
+                  error={fieldError("officeEndTime")}
                 >
                   <Input
-                    id="rules-grace"
-                    name="lateGraceMinutes"
-                    inputMode="numeric"
+                    id="rules-end"
+                    name="officeEndTime"
+                    type="time"
                     required
-                    defaultValue={rules.lateGraceMinutes}
-                    aria-invalid={Boolean(fieldError("lateGraceMinutes"))}
+                    defaultValue={rules.officeEndTime}
+                    aria-invalid={Boolean(fieldError("officeEndTime"))}
                   />
                 </Field>
               </div>
+              <Field
+                id="rules-grace"
+                label="Minutes of grace"
+                hint="Arriving within these minutes is not late."
+                error={fieldError("lateGraceMinutes")}
+              >
+                <Input
+                  id="rules-grace"
+                  name="lateGraceMinutes"
+                  inputMode="numeric"
+                  required
+                  defaultValue={rules.lateGraceMinutes}
+                  aria-invalid={Boolean(fieldError("lateGraceMinutes"))}
+                />
+              </Field>
               <Field
                 id="rules-lates"
                 label="Lates that cost a day's salary"
@@ -179,6 +217,68 @@ export function HrRules({ rules, canManage }: { rules: Rules; canManage: boolean
                   </span>
                 </span>
               </label>
+              <label className="flex cursor-pointer items-start gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  name="gpsAttendance"
+                  defaultChecked={rules.gpsAttendance}
+                  className={`${checkboxClass} mt-0.5`}
+                />
+                <span>
+                  Ask for location at check-in and while checked in
+                  <span className={smallText}>
+                    Checking in needs the phone&apos;s location, and the phone keeps sharing it
+                    until check-out, for the staff map. Check-ins away from the work place are
+                    flagged.
+                  </span>
+                </span>
+              </label>
+              <label className="flex cursor-pointer items-start gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  name="shadowOvertime"
+                  defaultChecked={rules.shadowOvertime}
+                  className={`${checkboxClass} mt-0.5`}
+                />
+                <span>
+                  Find overtime from check-outs
+                  <span className={smallText}>
+                    Staying after the working day ends, or working on a day off, goes to the
+                    Overtime tab for HR to approve. Staff never see these hours; only approved
+                    overtime is paid.
+                  </span>
+                </span>
+              </label>
+              <Field
+                id="rules-overtime-min"
+                label="Overtime counts after this many minutes"
+                hint="Shorter stays are not overtime. Overtime is counted in 15-minute steps."
+                error={fieldError("overtimeMinMinutes")}
+              >
+                <Input
+                  id="rules-overtime-min"
+                  name="overtimeMinMinutes"
+                  inputMode="numeric"
+                  required
+                  defaultValue={rules.overtimeMinMinutes}
+                  aria-invalid={Boolean(fieldError("overtimeMinMinutes"))}
+                />
+              </Field>
+              <Field
+                id="rules-conveyance-rate"
+                label="Usual conveyance fare per km"
+                hint="Staff claims for trips well above this are flagged for Accounts. 0 turns the check off."
+                error={fieldError("conveyanceRatePerKm")}
+              >
+                <Input
+                  id="rules-conveyance-rate"
+                  name="conveyanceRatePerKm"
+                  inputMode="decimal"
+                  required
+                  defaultValue={rules.conveyanceRatePerKm}
+                  aria-invalid={Boolean(fieldError("conveyanceRatePerKm"))}
+                />
+              </Field>
             </>
           )}
         </FormDialog>

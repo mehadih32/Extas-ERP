@@ -205,7 +205,9 @@ export function ExpenseActions({
           title={`Void ${e.number}?`}
           description={
             e.paymentType === "DUE"
-              ? `Its ${amount} comes off ${e.supplier?.name ?? "the supplier"}'s account and out of the expenses. It stays on record as void.`
+              ? e.supplier || !e.employee
+                ? `Its ${amount} comes off ${e.supplier?.name ?? "the supplier"}'s account and out of the expenses. It stays on record as void.`
+                : `Its ${amount} comes off what is owed to ${e.employee.name} for their claim, and out of the expenses. It stays on record as void.`
               : `Its ${amount} goes back into ${e.paidFrom?.name ?? "the account it was paid from"}${
                   /[1-9]/.test(e.fromAdvance) ? " and the employee's advance" : ""
                 }, and comes out of the expenses. It stays on record as void.`

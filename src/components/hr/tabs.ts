@@ -15,14 +15,24 @@ const SALARIES: readonly PermissionKey[] = ["hr.manage", "hr.payroll", "accounts
 
 /*
  * The HR & payroll area's tabs, shown to the people their Server Actions let
- * in: employees, attendance, leave and holidays read with any HR key; payroll
- * with the keys that see salaries; the advances register also opens to whoever
- * pays advances out (accounts.payments.record).
+ * in: employees, attendance, leave, holidays and the terms of employment read
+ * with any HR key; payroll with the keys that see salaries; the advances
+ * register also opens to whoever pays advances out (accounts.payments.record);
+ * staff claims (conveyance, local material) to HR and to Accounts, who decide
+ * and pay them; company items with staff read with any HR key (HR gives and
+ * takes them back); the overtime ledger (shadow overtime), the staff notice board
+ * and the staff map (where checked-in staff are now) only to HR (hr.manage).
  */
 export const HR_TABS: readonly HrTab[] = [
   { href: "/hr", label: "Overview", anyOf: HR_READ },
   { href: "/hr/employees", label: "Employees", anyOf: HR_READ },
   { href: "/hr/attendance", label: "Attendance", anyOf: HR_READ },
+  { href: "/hr/overtime", label: "Overtime", anyOf: ["hr.manage"] },
+  {
+    href: "/hr/claims",
+    label: "Claims",
+    anyOf: ["hr.manage", "expenses.manage", "accounts.payments.record"],
+  },
   { href: "/hr/leave", label: "Leave", anyOf: HR_READ },
   { href: "/hr/payroll", label: "Payroll", anyOf: SALARIES },
   {
@@ -30,7 +40,11 @@ export const HR_TABS: readonly HrTab[] = [
     label: "Advances",
     anyOf: [...SALARIES, "accounts.payments.record"],
   },
+  { href: "/hr/items", label: "Items", anyOf: HR_READ },
+  { href: "/hr/notices", label: "Notices", anyOf: ["hr.manage"] },
+  { href: "/hr/map", label: "Staff map", anyOf: ["hr.manage"] },
   { href: "/hr/settings", label: "Holidays & rules", anyOf: HR_READ },
+  { href: "/hr/terms", label: "Terms", anyOf: HR_READ },
 ];
 
 /** The tabs this person may open, in order; the first is where /hr goes. */
@@ -43,9 +57,12 @@ export function visibleHrTabs(permissions: Iterable<string>): HrTab[] {
 export const MY_HR_TABS: ReadonlyArray<{ href: string; label: string }> = [
   { href: "/me", label: "Today" },
   { href: "/me/tasks", label: "Tasks" },
+  { href: "/me/notices", label: "Notices" },
   { href: "/me/attendance", label: "Attendance" },
   { href: "/me/leave", label: "Leave" },
   { href: "/me/payslips", label: "Payslips" },
+  { href: "/me/ledger", label: "Money" },
   { href: "/me/advances", label: "Advances" },
+  { href: "/me/claims", label: "Claims" },
   { href: "/me/profile", label: "My details" },
 ];

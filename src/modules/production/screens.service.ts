@@ -362,7 +362,11 @@ function costEntries(
       return {
         ...base,
         label: e.head.name,
-        from: e.paidFrom ? `Paid from ${e.paidFrom.name}` : "Paid",
+        from: e.boughtBy
+          ? `Bought by ${e.boughtBy.name}, owed to them`
+          : e.paidFrom
+            ? `Paid from ${e.paidFrom.name}`
+            : "Paid",
         billId: null,
         paymentType: e.paymentType as PaymentType,
         billStatus: null,

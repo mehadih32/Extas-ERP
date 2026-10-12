@@ -16,6 +16,8 @@ export function PayslipView({ slip }: { slip: Payslip }) {
   const currency = c.currency;
   const details = payDetails(e);
   const row = "flex items-baseline justify-between gap-4 py-1.5";
+  const partText = (p: Payslip["parts"][number]) =>
+    `${money(p.amount, currency)} on ${formatDay(p.on)} by ${METHOD_LABELS[p.method]} (${p.number})`;
 
   return (
     <article
@@ -154,10 +156,14 @@ export function PayslipView({ slip }: { slip: Payslip }) {
 
       <p className="mt-4 text-[0.8125rem] text-muted-foreground">
         {slip.payment.status === "PAID"
-          ? `Paid on ${formatDay(slip.paidOn!)} by ${METHOD_LABELS[slip.payment.method]} (${slip.payment.number}).`
-          : slip.payment.status === "UNPAID"
-            ? "Not paid yet."
-            : "Not approved yet."}
+          ? slip.parts.length > 1
+            ? `Paid in ${slip.parts.length} parts: ${slip.parts.map(partText).join("; ")}.`
+            : `Paid on ${formatDay(slip.paidOn!)} by ${METHOD_LABELS[slip.payment.method]} (${slip.payment.number}).`
+          : slip.payment.status === "PART_PAID"
+            ? `Paid so far: ${slip.parts.map(partText).join("; ")}. Still to pay: ${money(slip.payment.balance, currency)}.`
+            : slip.payment.status === "UNPAID"
+              ? "Not paid yet."
+              : "Not approved yet."}
         {slip.note ? ` ${slip.note}` : ""}
       </p>
       {c.footer && (

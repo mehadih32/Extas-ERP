@@ -203,6 +203,8 @@ const purchaseItemSchema = z
     /** Required without an order line. */
     materialId: id.optional(),
     quantity,
+    /** What the supplier's challan said came, when it differs from what was weighed or counted. */
+    challanQuantity: quantity.nullish(),
     /** The bill price; defaults to the order line's price. */
     unitPrice: price.optional(),
     description: optionalText(500),

@@ -14,7 +14,8 @@ export type ProductionTab = {
  * The Production area's tabs, shown to the people their Server Actions let in:
  * master batches and projects read with production.view, deliveries with production.view or
  * production.stock_intake, bills need the costs as well (production.manage or
- * accounts.view), and cost heads are changed with production.manage.
+ * accounts.view), cost heads are changed with production.manage, and the supplier
+ * fault log is read with production.view (values follow the material-cost rule).
  */
 export const PRODUCTION_TABS: readonly ProductionTab[] = [
   { href: "/production", label: "Overview", anyOf: ["production.view"] },
@@ -32,6 +33,7 @@ export const PRODUCTION_TABS: readonly ProductionTab[] = [
     andAnyOf: ["production.manage", "accounts.view"],
   },
   { href: "/production/cost-heads", label: "Cost heads", anyOf: ["production.manage"] },
+  { href: "/production/faults", label: "Fault log", anyOf: ["production.view"] },
 ];
 
 /** The tabs this person may open, in order; the first is where /production goes. */

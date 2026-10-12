@@ -52,7 +52,7 @@ import {
 
 const TX_OPTIONS = { timeout: 30_000 };
 
-type IssueInput = ReturnType<typeof issueSchema.parse>;
+export type IssueInput = ReturnType<typeof issueSchema.parse>;
 
 function prepare(ctx: CompanyContext, input: IssueInput) {
   return {
@@ -65,103 +65,115 @@ function prepare(ctx: CompanyContext, input: IssueInput) {
 export async function issueToProduction(ctx: CompanyContext, raw: unknown, meta?: RequestMeta) {
   const input = issueSchema.parse(raw);
   assertCanKeepStore(ctx);
-  const companyId = ctx.company.id;
   const store = await resolveStore(ctx, input.warehouseId);
-  const { date, lines } = prepare(ctx, input);
+  const issueId = await runTransaction((tx) => writeIssue(tx, ctx, input, store, meta), TX_OPTIONS);
+  return getIssue(ctx, issueId);
+}
 
-  const issueId = await runTransaction(async (tx) => {
-    const project = (
-      await lockOpenProjects(
-        tx,
-        companyId,
-        [input.projectId],
-        "no more materials can be issued to it",
-      )
-    ).get(input.projectId)!;
-    const state = await lockMaterials(
+/**
+ * Writes one issue note inside the caller's transaction (a master batch issues
+ * to each of its styles in one go) and returns its id. The caller has checked
+ * the store keeper's permission and the store.
+ */
+export async function writeIssue(
+  tx: Prisma.TransactionClient,
+  ctx: CompanyContext,
+  input: IssueInput,
+  store: { id: string; name: string },
+  meta?: RequestMeta,
+) {
+  const companyId = ctx.company.id;
+  const { date, lines } = prepare(ctx, input);
+  const project = (
+    await lockOpenProjects(
       tx,
       companyId,
-      lines.map((l) => l.materialId),
-    );
-    lines.forEach((l, i) =>
-      assertUnitFits(state.get(l.materialId)!, l.quantity, `lines.${i}.quantity`),
-    );
-    const issue = await tx.materialIssue.create({
-      data: {
-        companyId,
-        number: await nextDocumentNumber(tx, companyId, "MATERIAL_ISSUE"),
-        kind: "ISSUE",
-        projectId: project.id,
-        warehouseId: store.id,
-        date,
-        receivedBy: input.receivedBy ?? null,
-        note: input.note ?? null,
-        createdById: ctx.user.id,
-      },
+      [input.projectId],
+      "no more materials can be issued to it",
+    )
+  ).get(input.projectId)!;
+  const state = await lockMaterials(
+    tx,
+    companyId,
+    lines.map((l) => l.materialId),
+  );
+  lines.forEach((l, i) =>
+    assertUnitFits(state.get(l.materialId)!, l.quantity, `lines.${i}.quantity`),
+  );
+  const issue = await tx.materialIssue.create({
+    data: {
+      companyId,
+      number: await nextDocumentNumber(tx, companyId, "MATERIAL_ISSUE"),
+      kind: "ISSUE",
+      projectId: project.id,
+      warehouseId: store.id,
+      date,
+      receivedBy: input.receivedBy ?? null,
+      note: input.note ?? null,
+      createdById: ctx.user.id,
+    },
+  });
+  const out = [];
+  for (const l of lines) {
+    const moved = await stockOut(tx, state, {
+      companyId,
+      createdById: ctx.user.id,
+      materialId: l.materialId,
+      warehouseId: store.id,
+      type: "ISSUE_TO_PRODUCTION",
+      quantity: l.quantity,
+      date,
+      note: input.note,
+      links: { productionProjectId: project.id, issueId: issue.id },
     });
-    const out = [];
-    for (const l of lines) {
-      const moved = await stockOut(tx, state, {
-        companyId,
-        createdById: ctx.user.id,
-        materialId: l.materialId,
-        warehouseId: store.id,
-        type: "ISSUE_TO_PRODUCTION",
-        quantity: l.quantity,
-        date,
-        note: input.note,
-        links: { productionProjectId: project.id, issueId: issue.id },
-      });
-      out.push({ material: state.get(l.materialId)!, quantity: l.quantity, ...moved });
-    }
-    const total = out.reduce((t, o) => t.plus(o.value), ZERO);
-    let journalEntryId: string | null = null;
-    if (total.gt(0)) {
-      const acc = await ensureControlAccounts(companyId, tx);
-      const entry = await postJournalEntry(tx, {
-        companyId,
-        date,
-        description: `Materials issued ${issue.number} to ${project.code}${
-          input.receivedBy ? ` (received by ${input.receivedBy})` : ""
-        }`,
-        sourceType: "MATERIAL_ISSUE",
-        sourceId: issue.id,
-        postedById: ctx.user.id,
-        lines: [
-          { accountId: acc.WORK_IN_PROGRESS, debit: total, memo: `${project.code} · materials` },
-          ...out.map((o) => ({
-            accountId: acc.RAW_MATERIALS,
-            credit: o.value,
-            memo: lineMemo(o.material, o.quantity),
-          })),
-        ],
-      });
-      journalEntryId = entry.id;
-      await linkMovementsToEntry(
-        tx,
-        out.map((o) => o.movement.id),
-        entry.id,
-      );
-    }
-    await tx.materialIssue.update({
-      where: { id: issue.id },
-      data: { totalValue: total, journalEntryId },
+    out.push({ material: state.get(l.materialId)!, quantity: l.quantity, ...moved });
+  }
+  const total = out.reduce((t, o) => t.plus(o.value), ZERO);
+  let journalEntryId: string | null = null;
+  if (total.gt(0)) {
+    const acc = await ensureControlAccounts(companyId, tx);
+    const entry = await postJournalEntry(tx, {
+      companyId,
+      date,
+      description: `Materials issued ${issue.number} to ${project.code}${
+        input.receivedBy ? ` (received by ${input.receivedBy})` : ""
+      }`,
+      sourceType: "MATERIAL_ISSUE",
+      sourceId: issue.id,
+      postedById: ctx.user.id,
+      lines: [
+        { accountId: acc.WORK_IN_PROGRESS, debit: total, memo: `${project.code} · materials` },
+        ...out.map((o) => ({
+          accountId: acc.RAW_MATERIALS,
+          credit: o.value,
+          memo: lineMemo(o.material, o.quantity),
+        })),
+      ],
     });
-    await refreshProjectCosts(tx, companyId, [project.id]);
-    await auditInCompany(
-      ctx,
-      meta,
-      {
-        action: "CREATE",
-        entityType: "MaterialIssue",
-        entityId: issue.id,
-        summary: `Issued ${issue.number} to ${project.code} from ${store.name}: ${describeLines(out)}`,
-      },
+    journalEntryId = entry.id;
+    await linkMovementsToEntry(
       tx,
+      out.map((o) => o.movement.id),
+      entry.id,
     );
-    return issue.id;
-  }, TX_OPTIONS);
-  return getIssue(ctx, issueId);
+  }
+  await tx.materialIssue.update({
+    where: { id: issue.id },
+    data: { totalValue: total, journalEntryId },
+  });
+  await refreshProjectCosts(tx, companyId, [project.id]);
+  await auditInCompany(
+    ctx,
+    meta,
+    {
+      action: "CREATE",
+      entityType: "MaterialIssue",
+      entityId: issue.id,
+      summary: `Issued ${issue.number} to ${project.code} from ${store.name}: ${describeLines(out)}`,
+    },
+    tx,
+  );
+  return issue.id;
 }
 
 /**

@@ -124,6 +124,7 @@ model Company {
   productionProjects   ProductionProject[]
   productionBatches    ProductionBatch[]
   productionContracts  ProductionContract[]
+  supplierFaults       SupplierFault[]
   materialNeeds        ProductionMaterialNeed[]
   supplierBills        SupplierBill[]
   stockIntakes         StockIntake[]
@@ -235,6 +236,8 @@ model User {
   productionBatches  ProductionBatch[]     @relation("ProductionBatchCreatedBy")
   contractsMade      ProductionContract[]  @relation("ProductionContractCreatedBy")
   contractsChanged   ProductionContract[]  @relation("ProductionContractUpdatedBy")
+  faultsLogged       SupplierFault[]       @relation("SupplierFaultCreatedBy")
+  faultsSettled      SupplierFault[]       @relation("SupplierFaultSettledBy")
   purchaseReturns    PurchaseReturn[]      @relation("PurchaseReturnCreatedBy")
   materialMovements  RawMaterialMovement[] @relation("MaterialMovementBy")
   refunds            Refund[]              @relation("RefundCreatedBy")
@@ -795,6 +798,7 @@ model RawMaterial {
   billItems   SupplierBillItem[]
   returnLines PurchaseReturnLine[]
   neededBy    ProductionMaterialNeed[]
+  faults      SupplierFault[]
 
   @@unique([companyId, code])
   @@index([companyId, kind, isActive])
@@ -938,13 +942,16 @@ model PurchaseOrderLineShare {
 
 /// Raw materials bought on a supplier bill and received into the bill's store.
 model SupplierBillItem {
-  id                  String  @id @default(cuid())
+  id                  String   @id @default(cuid())
   billId              String
   rawMaterialId       String
   purchaseOrderLineId String?
-  quantity            Decimal @db.Decimal(14, 3)
-  unitPrice           Decimal @db.Decimal(14, 4)
-  amount              Decimal @db.Decimal(14, 2)
+  quantity            Decimal  @db.Decimal(14, 3)
+  /// What the supplier's challan said came (null: not given); `quantity` is what was
+  /// actually weighed or counted, and the difference is the Short/Extra.
+  challanQuantity     Decimal? @db.Decimal(14, 3)
+  unitPrice           Decimal  @db.Decimal(14, 4)
+  amount              Decimal  @db.Decimal(14, 2)
   description         String?
 
   bill              SupplierBill         @relation(fields: [billId], references: [id], onDelete: Cascade)
@@ -1128,6 +1135,7 @@ model Party {
   productionsAsFactory ProductionProject[]  @relation("ProductionFactory")
   batchesAsFactory     ProductionBatch[]    @relation("BatchFactory")
   productionContracts  ProductionContract[] @relation("ContractParty")
+  faults               SupplierFault[]      @relation("SupplierFaults")
   campaignRecipients   CampaignRecipient[]
   generatedDocuments   GeneratedDocument[]
   projectSettlements   ProjectSettlement[]
@@ -1869,6 +1877,7 @@ model ProductionProject {
   targetLines          ProductionTargetLine[]
   materialNeeds        ProductionMaterialNeed[]
   orderShares          PurchaseOrderLineShare[]
+  faults               SupplierFault[]
   stageLogs            ProductionStageLog[]
   billAllocations      SupplierBillAllocation[]
   expenses             Expense[]
@@ -1915,6 +1924,7 @@ model ProductionBatch {
   projects  ProductionProject[]
   orders    PurchaseOrder[]
   contracts ProductionContract[]
+  faults    SupplierFault[]
 
   @@unique([companyId, code])
   @@index([companyId, createdAt])
@@ -2079,10 +2089,56 @@ model SupplierBill {
   payments             Payment[]
   rawMaterialMovements RawMaterialMovement[]
   purchaseReturns      PurchaseReturn[]
+  faults               SupplierFault[]
 
   @@unique([companyId, number])
   @@index([supplierId])
   @@index([purchaseOrderId])
+}
+
+/// The supplier Fault Log: something a supplier or factory owes for (goods short against
+/// the challan at receive, faulty fabric, missing pieces), with the value to deduct (null:
+/// to agree). It stays open until it is deducted from what they are paid or waived.
+model SupplierFault {
+  id            String              @id @default(cuid())
+  companyId     String
+  number        String // "FLT-2026-00001"
+  supplierId    String
+  kind          SupplierFaultKind
+  status        SupplierFaultStatus @default(OPEN)
+  batchId       String?
+  projectId     String?
+  rawMaterialId String?
+  /// The receive (raw material bill) it was found on.
+  billId        String?
+  /// How much was short or faulty, in the material's unit (or pieces).
+  quantity      Decimal?            @db.Decimal(14, 3)
+  /// The value to deduct (null: still to agree).
+  amount        Decimal?            @db.Decimal(14, 2)
+  note          String?
+  occurredOn    DateTime            @db.Date
+  /// Deducted or waived: when, by whom and why.
+  settledAt     DateTime?
+  settledById   String?
+  settledNote   String?
+  createdById   String?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  company     Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  supplier    Party              @relation("SupplierFaults", fields: [supplierId], references: [id])
+  batch       ProductionBatch?   @relation(fields: [batchId], references: [id], onDelete: SetNull)
+  project     ProductionProject? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  rawMaterial RawMaterial?       @relation(fields: [rawMaterialId], references: [id], onDelete: SetNull)
+  bill        SupplierBill?      @relation(fields: [billId], references: [id], onDelete: SetNull)
+  createdBy   User?              @relation("SupplierFaultCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  settledBy   User?              @relation("SupplierFaultSettledBy", fields: [settledById], references: [id], onDelete: SetNull)
+
+  @@unique([companyId, number])
+  @@index([companyId, status, occurredOn])
+  @@index([supplierId, status])
+  @@index([batchId])
+  @@index([billId])
 }
 
 /// Split Bill Logic: portion of a bill charged to a batch under an expense head.
@@ -4124,6 +4180,23 @@ enum ProductionKind {
   DROPSHIP
 }
 
+/// What a supplier fault is: short against the challan at receive, faulty fabric (a Fabric
+/// Fault Note), other quality faults, pieces missing from a factory delivery, or other.
+enum SupplierFaultKind {
+  SHORT_RECEIVE
+  FABRIC_FAULT
+  QUALITY
+  MISSING_PIECES
+  OTHER
+}
+
+/// Open until it is taken off what the supplier is paid (deducted) or let go (waived).
+enum SupplierFaultStatus {
+  OPEN
+  DEDUCTED
+  WAIVED
+}
+
 /// What a batch contract is for: the fabric, the accessories, or the making at the factory.
 enum ContractKind {
   FABRIC
@@ -4421,6 +4494,7 @@ enum DocumentType {
   STAFF_CLAIM // conveyance or local material claimed back by an employee (CLM-2026-00001)
   PRODUCTION_BATCH // a master batch of styles made together (MB-2026-00001)
   PRODUCTION_CONTRACT // a batch's fabric, accessories or factory (CM) agreement (AGR-2026-00001)
+  SUPPLIER_FAULT // a supplier Fault Log entry: short, faulty or missing (FLT-2026-00001)
 }
 
 enum TemplateFormat {

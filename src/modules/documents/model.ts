@@ -44,7 +44,8 @@ export type RecordPrintType =
   | "EMPLOYEE_360"
   | "TECH_PACK"
   | "PURCHASE_ORDER"
-  | "PRODUCTION_CONTRACT";
+  | "PRODUCTION_CONTRACT"
+  | "SUPPLIER_REPORT_CARD";
 
 /**
  * Bump when the layout changes, so documents printed again get the new look.

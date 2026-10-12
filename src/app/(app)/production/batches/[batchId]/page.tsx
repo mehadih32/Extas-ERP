@@ -10,6 +10,7 @@ import { BatchActions } from "@/components/production/batch-actions";
 import { BatchBadge, batchStatus, stylesText } from "@/components/production/batch-card";
 import { BatchContractsPanel } from "@/components/production/contracts";
 import { BatchGuardLine, GUARD_TONES, GUARD_WORDS } from "@/components/production/cost-guard";
+import { BatchFaultsPanel } from "@/components/production/faults";
 import { BatchMaterialsPanel } from "@/components/production/material-needs";
 import {
   BATCH_KIND_HINTS,
@@ -19,16 +20,19 @@ import {
 } from "@/components/production/labels";
 import { ProductionNoAccess } from "@/components/production/no-access";
 import { PiecesBar, ProjectCard, TimelineBar } from "@/components/production/project-card";
+import { FormAlert } from "@/components/forms/field";
 import { BackLink } from "@/components/settings/back-link";
 import { Fact, Panel, RecordHeader } from "@/components/sales/detail-bits";
 import { money } from "@/components/sales/labels";
 import { Button } from "@/components/ui/button";
+import { localDay } from "@/lib/dates";
 import { formatDay } from "@/lib/display";
 import { cn } from "@/lib/utils";
 import {
   getBatchContractsAction,
   getBatchMaterialsAction,
   getBatchScreenAction,
+  listFaultsAction,
 } from "@/server/actions/production.actions";
 import { requireCompanyPage } from "@/server/pages/guards";
 
@@ -54,11 +58,12 @@ export default async function BatchPage({
 }) {
   const ctx = await requireCompanyPage();
   const [{ batchId }, query] = await Promise.all([params, searchParams]);
-  const [result, materials, contracts] = await Promise.all([
+  const [result, materials, contracts, faults] = await Promise.all([
     getBatchScreenAction(batchId),
     getBatchMaterialsAction(batchId),
     // Production Managers and Accounts only; nobody else gets the panel.
     getBatchContractsAction(batchId),
+    listFaultsAction({ batchId, take: 5 }),
   ]);
   if (!result.ok) {
     if (result.error.code === "NOT_FOUND") notFound();
@@ -75,7 +80,11 @@ export default async function BatchPage({
         ? "The changes were saved."
         : one(query.ordered)
           ? `Purchase orders made: ${one(query.ordered)}. Print each one for its supplier from its page.`
-          : undefined;
+          : one(query.received)
+            ? `${one(query.received)} was received into the store.`
+            : one(query.issued)
+              ? `Issued to the styles: ${one(query.issued)}. Each style is charged only for what it took.`
+              : undefined;
   const guard = b.costs?.guard ?? null;
   const styleGuards = styles.filter((s) => s.costGuard && s.costGuard.level !== "OK");
 
@@ -94,6 +103,19 @@ export default async function BatchPage({
           }
         />
         <BatchActions screen={screen} notice={notice} />
+        {one(query.received) && one(query.faults) && (
+          <FormAlert>
+            {one(query.faults) === "1" ? "1 line came" : `${one(query.faults)} lines came`} short
+            against the challan beyond the allowance. It is in the{" "}
+            <Link
+              href={productionHref.faults({ batchId: b.id, status: "OPEN" })}
+              className="underline underline-offset-4"
+            >
+              fault log
+            </Link>{" "}
+            to deduct, and the Production Managers were alerted.
+          </FormAlert>
+        )}
         {b.styleCount > 0 && (
           <div className="grid gap-5 rounded-lg border bg-card p-5 sm:p-6 md:grid-cols-2 md:gap-8">
             {b.timeline && (
@@ -208,6 +230,14 @@ export default async function BatchPage({
             </Panel>
           )}
           {contracts.ok && <BatchContractsPanel data={contracts.data} />}
+          {faults.ok && (faults.data.items.length > 0 || faults.data.can.log) && (
+            <BatchFaultsPanel
+              data={faults.data}
+              batch={{ id: b.id, code: b.code }}
+              today={localDay(new Date(), ctx.company.timezone)}
+              currency={currency}
+            />
+          )}
           <Panel title="Details" id="details-heading">
             <dl className="mt-4 grid gap-4">
               <Fact label="How the goods are made">

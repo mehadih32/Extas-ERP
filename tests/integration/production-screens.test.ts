@@ -270,6 +270,7 @@ run("Production screens", () => {
       );
       expect(tabs.includes("/production/bills"), `${who}: bills tab`).toBe(view && costsShown);
       expect(tabs.includes("/production/cost-heads"), `${who}: cost heads tab`).toBe(manage);
+      expect(tabs.includes("/production/faults"), `${who}: fault log tab`).toBe(view);
 
       // Each screen's data comes exactly to the people its page is shown to.
       const overview = await getOverviewScreenAction();

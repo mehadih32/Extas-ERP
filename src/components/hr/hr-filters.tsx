@@ -1,6 +1,6 @@
 "use client";
 
-import { SearchIcon, XIcon } from "lucide-react";
+import { CheckIcon, SearchIcon, XIcon } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { useOptimistic, useTransition } from "react";
 
@@ -19,6 +19,34 @@ import {
 } from "./labels";
 import { clearedHrView, hrListSearch, type HrListView, isHrFiltered } from "./list-view";
 
+/** A quick filter that is on or off, like "Active only". */
+function Chip({
+  on,
+  onToggle,
+  children,
+}: {
+  on: boolean;
+  onToggle: (on: boolean) => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={on}
+      onClick={() => onToggle(!on)}
+      className={cn(
+        "inline-flex h-10 items-center gap-1.5 rounded-full border px-3.5 text-sm transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/25 md:h-9",
+        on
+          ? "border-primary bg-primary text-primary-foreground"
+          : "bg-card text-foreground hover:border-primary/40",
+      )}
+    >
+      {on && <CheckIcon className="size-3.5" aria-hidden />}
+      {children}
+    </button>
+  );
+}
+
 type Select = {
   key: string;
   label: string;
@@ -28,7 +56,8 @@ type Select = {
 
 /**
  * An HR list's filters: a search (employees), choices (department and status;
- * status and leave type) and "People who left too". A change reloads the list
+ * status and leave type) and, for employees, the quick filters "Active only",
+ * "Missing info" and "People who left too". A change reloads the list
  * from the server; the old list stays, dimmed, until the new one arrives. A
  * list opened for one employee names them, with a way back to everyone.
  */
@@ -117,7 +146,7 @@ export function HrFilters({
     <div className="grid min-w-0 grid-cols-1 content-start gap-5">
       <div className="grid gap-3 lg:flex lg:flex-wrap lg:items-center">
         {shown.list === "employees" && (
-          <form role="search" onSubmit={search} className="relative w-full lg:max-w-xs">
+          <form role="search" onSubmit={search} className="relative w-full lg:max-w-sm">
             <SearchIcon
               aria-hidden
               className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
@@ -129,7 +158,7 @@ export function HrFilters({
               defaultValue={shown.q}
               enterKeyHint="search"
               autoComplete="off"
-              placeholder="Name, code, phone or post"
+              placeholder="Name, ID, phone, email, post or department"
               aria-label="Search employees"
               className="pl-9"
             />
@@ -138,7 +167,12 @@ export function HrFilters({
         <div
           className={cn(
             "grid gap-2 md:flex md:items-center md:gap-3",
-            selects.length > 1 ? "grid-cols-2" : "grid-cols-1 sm:w-60",
+            selects.length > 1
+              ? // "Every department" needs a whole row on narrow phones.
+                shown.list === "employees"
+                ? "grid-cols-1 sm:grid-cols-2"
+                : "grid-cols-2"
+              : "grid-cols-1 sm:w-60",
           )}
         >
           {selects.map((select) => {
@@ -168,26 +202,26 @@ export function HrFilters({
           })}
         </div>
         {shown.list === "employees" && (
-          <label className="flex h-11 cursor-pointer items-center gap-2 text-sm md:h-9">
-            <input
-              type="checkbox"
-              className="size-4 cursor-pointer accent-primary"
-              checked={Boolean(shown.former)}
-              onChange={(e) => show({ ...shown, former: e.target.checked || undefined })}
-            />
-            People who left too
-          </label>
-        )}
-        {shown.list === "employees" && (
-          <label className="flex h-11 cursor-pointer items-center gap-2 text-sm md:h-9">
-            <input
-              type="checkbox"
-              className="size-4 cursor-pointer accent-primary"
-              checked={Boolean(shown.missing)}
-              onChange={(e) => show({ ...shown, missing: e.target.checked || undefined })}
-            />
-            Details missing
-          </label>
+          <div role="group" aria-label="Quick filters" className="flex flex-wrap gap-2">
+            <Chip
+              on={shown.status === "ACTIVE"}
+              onToggle={(on) => show({ ...shown, status: on ? "ACTIVE" : undefined })}
+            >
+              Active only
+            </Chip>
+            <Chip
+              on={Boolean(shown.missing)}
+              onToggle={(on) => show({ ...shown, missing: on || undefined })}
+            >
+              Missing info
+            </Chip>
+            <Chip
+              on={Boolean(shown.former)}
+              onToggle={(on) => show({ ...shown, former: on || undefined })}
+            >
+              People who left too
+            </Chip>
+          </div>
         )}
         {named && <p className="min-w-0 text-sm break-words text-muted-foreground">{named.text}</p>}
         {isHrFiltered(shown) && (

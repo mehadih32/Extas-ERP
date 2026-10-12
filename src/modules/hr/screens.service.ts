@@ -41,6 +41,7 @@ import {
 import { myNotices } from "@/modules/hr/notice.service";
 import { getMyOverview } from "@/modules/hr/portal.service";
 import { employeeAssets, listAssets, myAssets } from "@/modules/hr/asset.service";
+import { directoryExtras, directoryStats } from "@/modules/hr/directory.service";
 import { getClearance } from "@/modules/hr/exit.service";
 import { myMoney } from "@/modules/hr/ledger.service";
 import {
@@ -322,7 +323,11 @@ const employeeListSchema = z.object({
   take: z.coerce.number().int().min(1).max(100).optional(),
 });
 
-/** One row of the employee list; the salary only for people who see salaries. */
+/**
+ * One row of the employee directory: who they are, how to reach them, their
+ * photo, time here and whether they are on leave today; the salary only for
+ * people who see salaries.
+ */
 export async function listEmployeeRows(ctx: CompanyContext, raw: unknown = {}) {
   const q = employeeListSchema.parse(raw);
   const left = q.status === "RESIGNED" || q.status === "TERMINATED";
@@ -335,36 +340,60 @@ export async function listEmployeeRows(ctx: CompanyContext, raw: unknown = {}) {
     cursor: q.cursor,
     take: q.take ?? 30,
   });
+  const extras = await directoryExtras(ctx, page.items);
   return {
-    items: page.items.map((e) => ({
-      id: e.id,
-      code: e.code,
-      name: e.name,
-      designation: e.designation,
-      department: e.department,
-      phone: e.phone,
-      status: e.status as EmployeeStatus,
-      isCurrent: e.isCurrent,
-      joinDate: e.joinDate,
-      exitDate: e.exitDate,
-      hasLogin: e.portalLogin !== null,
-      salary: "salary" in e ? (e.salary as string) : null,
-      vaultGaps: e.vaultGaps,
-    })),
+    items: page.items.map((e) => {
+      const extra = extras.get(e.id)!;
+      return {
+        id: e.id,
+        code: e.code,
+        name: e.name,
+        designation: e.designation,
+        department: e.department,
+        phone: e.phone,
+        whatsapp: e.whatsapp,
+        email: e.email,
+        status: e.status as EmployeeStatus,
+        isCurrent: e.isCurrent,
+        joinDate: e.joinDate,
+        exitDate: e.exitDate,
+        hasLogin: e.portalLogin !== null,
+        /** The person looking at the list (nobody deactivates themselves). */
+        isMe: e.portalLogin?.id === ctx.user.id,
+        salary: "salary" in e ? (e.salary as string) : null,
+        vaultGaps: e.vaultGaps,
+        ...extra,
+      };
+    }),
     nextCursor: page.nextCursor,
   };
 }
 
 export type EmployeeListRow = Awaited<ReturnType<typeof listEmployeeRows>>["items"][number];
 
+/**
+ * The employee directory: the first page of people, the four counts over it,
+ * the departments to filter by, and what the person looking may do from each
+ * person's menu (give a task: reminders.manage; deactivate: HR).
+ */
 export async function getEmployeeList(ctx: CompanyContext, raw: unknown = {}) {
   const access = hrAccess(ctx);
-  const [rows, depts] = await Promise.all([listEmployeeRows(ctx, raw), departments(ctx)]);
+  const [rows, depts, stats] = await Promise.all([
+    listEmployeeRows(ctx, raw),
+    departments(ctx),
+    directoryStats(ctx),
+  ]);
   return {
     ...rows,
+    today: today(ctx),
+    stats,
     departments: depts,
     seeSalaries: access.salaries,
-    can: { add: access.manage },
+    can: {
+      add: access.manage,
+      assignTask: ctx.can("reminders.manage"),
+      deactivate: access.manage,
+    },
   };
 }
 

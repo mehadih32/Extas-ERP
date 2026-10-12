@@ -17,7 +17,7 @@ import { formatDay, formatMonth } from "@/lib/display";
  */
 
 export const EMPLOYEE_STATUS_LABELS: Record<EmployeeStatus, string> = {
-  ACTIVE: "Working",
+  ACTIVE: "Active",
   ON_LEAVE: "On long leave",
   RESIGNED: "Resigned",
   TERMINATED: "Terminated",
@@ -157,6 +157,10 @@ export const hrHref = {
   employees: "/hr/employees",
   employee: (id: string, year?: number) =>
     withQuery(`/hr/employees/${enc(id)}`, { year: year ? String(year) : undefined }),
+  /** Opens the profile with "Deactivate employee" already open. */
+  deactivate: (id: string) => `/hr/employees/${enc(id)}?deactivate=1`,
+  /** The employee's photo (one "Photo" paper; the browser keeps it). */
+  photo: (id: string, photoId: string) => `/api/hr/employees/${enc(id)}/photo?v=${enc(photoId)}`,
   newEmployee: "/hr/employees/new",
   editEmployee: (id: string) => `/hr/employees/${enc(id)}/edit`,
   employeeMonth: (id: string, month?: string) =>

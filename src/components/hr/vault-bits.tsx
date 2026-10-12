@@ -33,6 +33,9 @@ const MAX_FILE_BYTES = 10 * 1024 * 1024;
 /** Scans of an ID card stay readable at this size. */
 const SCAN_TARGET_BYTES = 350 * 1024;
 const SCAN_MAX_SIDE = 2000;
+/** A face photo: sharp on a profile and light enough for the employee directory. */
+const PHOTO_TARGET_BYTES = 80 * 1024;
+const PHOTO_MAX_SIDE = 800;
 
 /**
  * The four things a complete record holds, each ticked or marked missing:
@@ -178,16 +181,20 @@ export function VaultPapers({
               return problem({ file: "Files can be up to 10 MB." });
             }
             let upload = file;
+            const kind = textOf(values, "kind");
             if (file.type.startsWith("image/")) {
               try {
-                upload = await compressImage(file, SCAN_TARGET_BYTES, { maxSide: SCAN_MAX_SIDE });
+                upload =
+                  kind === "PHOTO"
+                    ? await compressImage(file, PHOTO_TARGET_BYTES, { maxSide: PHOTO_MAX_SIDE })
+                    : await compressImage(file, SCAN_TARGET_BYTES, { maxSide: SCAN_MAX_SIDE });
               } catch (error) {
                 return problem({ file: (error as Error).message });
               }
             }
             const form = new FormData();
             form.set("file", upload);
-            form.set("kind", textOf(values, "kind"));
+            form.set("kind", kind);
             const title = textOf(values, "title");
             if (title) form.set("title", title);
             const result = await add(form);

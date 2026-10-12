@@ -34,18 +34,21 @@ function dueOf(day: string, time: string, timeZone: string): string | null {
  */
 export function TaskDialog({
   task,
+  assignTo = null,
   timeZone,
   today,
   onDone,
   onClose,
 }: {
   task?: TaskView;
+  /** A new task's employee, already picked (opened from someone's page or the directory). */
+  assignTo?: EmployeeChoice | null;
   timeZone: string;
   today: string;
   onDone: (message: string, id: string) => void;
   onClose: () => void;
 }) {
-  const [assignee, setAssignee] = useState<EmployeeChoice | null>(task?.assignee ?? null);
+  const [assignee, setAssignee] = useState<EmployeeChoice | null>(task?.assignee ?? assignTo);
   const [project, setProject] = useState<ProjectOption | null>(task?.project ?? null);
   const editing = Boolean(task);
 

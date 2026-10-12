@@ -14,6 +14,7 @@ import * as employees from "@/modules/hr/employee.service";
 import * as exits from "@/modules/hr/exit.service";
 import * as leave from "@/modules/hr/leave.service";
 import * as location from "@/modules/hr/location.service";
+import * as logins from "@/modules/hr/login.service";
 import * as notices from "@/modules/hr/notice.service";
 import * as overtime from "@/modules/hr/overtime.service";
 import * as payroll from "@/modules/hr/payroll.service";
@@ -333,6 +334,16 @@ export const grantPortalAccessAction = async (employeeId: string, input: unknown
       temporaryPassword: granted.temporaryPassword,
     };
   });
+/** The System access card: the login's role, or switching it off or on (company.members.manage). */
+export const changeEmployeeLoginAction = async (employeeId: string, input: unknown) =>
+  change(async () =>
+    logins.changeEmployeeLogin(
+      await requirePermission("company.members.manage"),
+      employeeId,
+      input,
+      await getRequestMeta(),
+    ),
+  );
 export const revokePortalAccessAction = async (employeeId: string) =>
   change(async () =>
     employeeRef(

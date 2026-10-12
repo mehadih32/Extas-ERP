@@ -4,14 +4,12 @@ import {
   CalendarPlusIcon,
   FileBadgeIcon,
   HandCoinsIcon,
-  KeyRoundIcon,
   PencilIcon,
   PowerOffIcon,
   Trash2Icon,
   TrendingUpIcon,
   UndoIcon,
   UserMinusIcon,
-  UserXIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -32,26 +30,22 @@ import {
   deleteEmployeeAction,
   deleteSalaryRevisionAction,
   exitEmployeeAction,
-  grantPortalAccessAction,
   reinstateEmployeeAction,
   reviseSalaryAction,
-  revokePortalAccessAction,
 } from "@/server/actions/hr.actions";
 
 import { DeactivateDialog, isDeactivated } from "./exit-actions";
 import { dayCount, hrHref } from "./labels";
 import { useNotice } from "./use-notice";
 
-type Open = "salary" | "exit" | "deactivate" | "reinstate" | "login" | "logout" | "remove" | null;
-
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+type Open = "salary" | "exit" | "deactivate" | "reinstate" | "remove" | null;
 
 /**
  * What HR can do with an employee, each offered from the flags the screen came
  * with (screen.can, from hr/rules.ts): change their details or salary, record
- * leave, give an advance (Accounts), give or remove their login, record that
- * they left or undo it, deactivate them in one go (clearance check, login off,
- * certificate), and remove someone added by mistake.
+ * leave, give an advance (Accounts), record that they left or undo it,
+ * deactivate them in one go (clearance check, login off, certificate), and
+ * remove someone added by mistake. The login is on the System access card.
  */
 export function EmployeeActions({
   screen,
@@ -70,7 +64,6 @@ export function EmployeeActions({
     openDeactivate && screen.can.deactivate && screen.clearance ? "deactivate" : null,
   );
   const [notice, setNotice] = useNotice(initialNotice);
-  const [login, setLogin] = useState<{ email: string; password?: string } | null>(null);
   const { employee: e, can } = screen;
   const close = () => {
     // Opened from the directory: a refresh should not open it again.
@@ -93,8 +86,6 @@ export function EmployeeActions({
     can.changeSalary ||
     can.recordLeave ||
     can.giveAdvance ||
-    can.giveLogin ||
-    can.removeLogin ||
     can.exit ||
     can.reinstate ||
     can.remove;
@@ -137,28 +128,6 @@ export function EmployeeActions({
                 <HandCoinsIcon aria-hidden />
                 Give an advance
               </Link>
-            </Button>
-          )}
-          {can.giveLogin && !leaving && (
-            <Button
-              type="button"
-              variant="outline"
-              className="w-full sm:w-auto"
-              onClick={() => setOpen("login")}
-            >
-              <KeyRoundIcon aria-hidden />
-              Give a login
-            </Button>
-          )}
-          {can.removeLogin && (
-            <Button
-              type="button"
-              variant="outline"
-              className="w-full sm:w-auto"
-              onClick={() => setOpen("logout")}
-            >
-              <UserXIcon aria-hidden />
-              Remove the login
             </Button>
           )}
           {can.exit && (
@@ -213,24 +182,6 @@ export function EmployeeActions({
       )}
 
       {notice && <FormAlert tone="success">{notice}</FormAlert>}
-      {login && (
-        <FormAlert tone="success">
-          {e.name} now signs in as {login.email}.
-          {login.password ? (
-            <>
-              {" "}
-              Their temporary password is{" "}
-              <span className="rounded-sm bg-card px-1.5 py-0.5 font-mono tracking-wide">
-                {login.password}
-              </span>
-              . Hand it over now: it is shown once, and they choose their own when they first sign
-              in.
-            </>
-          ) : (
-            " They sign in with the password they already have."
-          )}
-        </FormAlert>
-      )}
 
       {open === "salary" && (
         <FormDialog
@@ -376,86 +327,6 @@ export function EmployeeActions({
             const result = await reinstateEmployeeAction(e.id);
             if (!result.ok) return result.error;
             done(`${e.name} is working here again.`);
-          }}
-        >
-          {() => null}
-        </FormDialog>
-      )}
-
-      {open === "login" && (
-        <FormDialog
-          title={`Give ${e.name} a login`}
-          description="With a login they check in from their phone, ask for leave, and see their payslips and advances, and nothing else of the company's. Someone new gets a temporary password to hand over."
-          submitLabel="Give the login"
-          pendingLabel="Giving"
-          errorTitle="We could not give the login"
-          onClose={close}
-          onSubmit={async (form) => {
-            const email = textOf(form, "email");
-            if (!EMAIL_PATTERN.test(email)) {
-              return problem({ email: "Enter an email like name@example.com." });
-            }
-            const result = await grantPortalAccessAction(e.id, {
-              email,
-              phone: textOf(form, "phone") || undefined,
-            });
-            if (!result.ok) return result.error;
-            setLogin({
-              email: result.data.email ?? email,
-              password: result.data.temporaryPassword,
-            });
-            close();
-          }}
-        >
-          {(fieldError) => (
-            <>
-              <Field
-                id="login-email"
-                label="Email they sign in with"
-                hint="Someone already in the company keeps their role and password."
-                error={fieldError("email")}
-              >
-                <Input
-                  id="login-email"
-                  name="email"
-                  type="email"
-                  inputMode="email"
-                  autoCapitalize="none"
-                  autoComplete="off"
-                  defaultValue={e.email ?? undefined}
-                  aria-invalid={Boolean(fieldError("email"))}
-                  aria-describedby={fieldError("email") ? "login-email-error" : "login-email-hint"}
-                  autoFocus
-                />
-              </Field>
-              <Field id="login-phone" label="Phone (optional)" error={fieldError("phone")}>
-                <Input
-                  id="login-phone"
-                  name="phone"
-                  type="tel"
-                  maxLength={30}
-                  defaultValue={e.phone ?? undefined}
-                />
-              </Field>
-            </>
-          )}
-        </FormDialog>
-      )}
-
-      {open === "logout" && (
-        <FormDialog
-          title={`Remove ${e.name}'s login?`}
-          description={`${e.login?.email ?? "Their login"} stops opening their HR records. A login that only had the Employee role is switched off for this company; anyone with another role keeps it.`}
-          submitLabel="Remove the login"
-          pendingLabel="Removing"
-          destructive
-          errorTitle="We could not remove the login"
-          onClose={close}
-          onSubmit={async () => {
-            const result = await revokePortalAccessAction(e.id);
-            if (!result.ok) return result.error;
-            setLogin(null);
-            done(`${e.name} no longer has a login.`);
           }}
         >
           {() => null}

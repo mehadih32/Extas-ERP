@@ -48,7 +48,13 @@ import {
   vaultGaps,
   vaultIncompleteWhere,
 } from "@/modules/hr/vault";
-import { addMember, setMemberActive } from "@/modules/rbac/member.service";
+import {
+  actorOf,
+  addMember,
+  changeMemberRole,
+  setMemberActive,
+} from "@/modules/rbac/member.service";
+import { canGrantRole } from "@/modules/rbac/rules";
 
 /*
  * Employee profiles (the "360" view), salary history, joining and leaving,
@@ -694,9 +700,11 @@ export async function deleteEmployee(ctx: CompanyContext, employeeId: string, me
 // =============================================================================
 
 /**
- * Gives an employee a portal login: links a user who is already in the
- * company, or creates one with the Employee role (the temporary password is
- * returned once, as when adding a member).
+ * Gives an employee a login: links a user who is already in the company, or
+ * creates one (the temporary password is returned once, as when adding a
+ * member). The login works in the Employee role unless someone who manages
+ * the company's users (company.members.manage) chooses another, under the
+ * same rules as the Team screen; a linked user moves to that role.
  */
 export async function grantPortalAccess(
   ctx: CompanyContext,
@@ -708,6 +716,7 @@ export async function grantPortalAccess(
   const input = portalAccessSchema.parse(raw);
   const employee = await loadEmployee(ctx, employeeId);
   assertAllowed(canGivePortalLogin({ ...state(employee), loginEmail: employee.user?.email }));
+  const chosenRole = input.roleId ? await grantableRole(ctx, input.roleId) : null;
   let userId = input.userId;
   let temporaryPassword: string | undefined;
   if (!userId && input.email) {
@@ -718,7 +727,8 @@ export async function grantPortalAccess(
     if (member) {
       userId = member.userId;
     } else {
-      const role = await ctx.db.role.findFirst({ where: { systemRole: "EMPLOYEE" } });
+      const role =
+        chosenRole ?? (await ctx.db.role.findFirst({ where: { systemRole: "EMPLOYEE" } }));
       if (!role) throw new AppError("NOT_FOUND", "The Employee role is missing.");
       const added = await addMember(
         ctx,
@@ -743,6 +753,9 @@ export async function grantPortalAccess(
   if (other) {
     throw new AppError("CONFLICT", `${membership.user.email} is already linked to ${other.name}.`);
   }
+  if (chosenRole && membership.roleId !== chosenRole.id) {
+    await changeMemberRole(ctx, membership.id, chosenRole.id, meta);
+  }
   await ctx.db.employee.update({ where: { id: employee.id }, data: { userId: membership.userId } });
   await auditInCompany(ctx, meta, {
     action: "UPDATE",
@@ -751,6 +764,17 @@ export async function grantPortalAccess(
     summary: `Linked ${employee.name} to the login ${membership.user.email} (employee portal)`,
   });
   return { employee: await getEmployee(ctx, employee.id), temporaryPassword };
+}
+
+/** A role chosen for a login: only by people who manage users, and only one they may grant. */
+async function grantableRole(ctx: CompanyContext, roleId: string) {
+  if (!ctx.can("company.members.manage")) {
+    throw new AppError("FORBIDDEN", "Only people who manage users can choose a login's role.");
+  }
+  const role = await ctx.db.role.findUnique({ where: { id: roleId } });
+  if (!role) throw new AppError("NOT_FOUND", "Role not found.");
+  assertAllowed(canGrantRole(actorOf(ctx), role));
+  return role;
 }
 
 /**

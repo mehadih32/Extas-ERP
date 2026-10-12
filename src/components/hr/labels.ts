@@ -157,6 +157,9 @@ export const hrHref = {
   employees: "/hr/employees",
   employee: (id: string, year?: number) =>
     withQuery(`/hr/employees/${enc(id)}`, { year: year ? String(year) : undefined }),
+  /** The profile on one of its tabs (and a year, for leave). */
+  employeeTab: (id: string, tab: string, year?: number) =>
+    withQuery(`/hr/employees/${enc(id)}`, { tab, year: year ? String(year) : undefined }),
   /** Opens the profile with "Deactivate employee" already open. */
   deactivate: (id: string) => `/hr/employees/${enc(id)}?deactivate=1`,
   /** The employee's photo (one "Photo" paper; the browser keeps it). */

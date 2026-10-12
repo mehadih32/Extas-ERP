@@ -4,6 +4,7 @@ import Link from "next/link";
 import { FlagBadge, MarkBadge } from "@/components/hr/badges";
 import { dayCount, hrHref, payDetails } from "@/components/hr/labels";
 import { CheckInButtons } from "@/components/hr/my-hr-actions";
+import { MyProfileWidget } from "@/components/hr/my-profile-widget";
 import { MyHrProblem } from "@/components/hr/no-access";
 import { postedText } from "@/components/hr/notice-labels";
 import { ScoreCard } from "@/components/hr/score-card";
@@ -26,11 +27,12 @@ const listText = (items: string[]) =>
   items.length <= 1 ? (items[0] ?? "") : `${items.slice(0, -1).join(", ")} and ${items.at(-1)}`;
 
 /**
- * The signed-in employee's own HR page (portal.self): their dashboard (a live
+ * The signed-in employee's own HR page (portal.self): their profile widget
+ * (photo, ID, post, time here and the full bio a tap away), their dashboard (a live
  * clock of their time with the company, their performance score with what
  * moved it, and the newest notices), checking in and out for today when HR
  * allows it, this month so far, leave left, their pay, advances still owed,
- * the latest payslips and their details. Only their own records.
+ * and the latest payslips. Only their own records.
  */
 export default async function MyHrPage() {
   const ctx = await requireCompanyPage();
@@ -57,6 +59,9 @@ export default async function MyHrPage() {
 
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
+      <div className="lg:col-span-2">
+        <MyProfileWidget profile={p} photoId={result.data.photoId} tenure={result.data.tenure} />
+      </div>
       {gaps.length > 0 && (
         <div className="lg:col-span-2">
           <FormAlert tone="note">
@@ -291,32 +296,6 @@ export default async function MyHrPage() {
                 owed, taken back from your salary.
               </>
             )}
-          </p>
-        </Panel>
-
-        <Panel title="My details" id="details-heading">
-          <dl className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
-            <Fact label="Name">{p.name}</Fact>
-            <Fact label="Employee code">{p.code}</Fact>
-            <Fact label="Job">
-              {[p.designation, p.department].filter(Boolean).join(", ") || "–"}
-            </Fact>
-            <Fact label="Joined">{formatDay(p.joinDate)}</Fact>
-            {p.exitDate && <Fact label="Leaving">{formatDay(p.exitDate)}</Fact>}
-            <Fact label="Phone">{p.phone ?? "–"}</Fact>
-            {p.email && <Fact label="Email">{p.email}</Fact>}
-            {p.bloodGroup && <Fact label="Blood group">{p.bloodGroup}</Fact>}
-            {p.emergencyContact && <Fact label="Emergency contact">{p.emergencyContact}</Fact>}
-            {p.address && (
-              <Fact label="Address" className="sm:col-span-2 lg:col-span-1 xl:col-span-2">
-                <span className="whitespace-pre-line">{p.address}</span>
-              </Fact>
-            )}
-          </dl>
-          <p className="mt-5 text-sm">
-            <Link href={hrHref.myProfile} className={linkClass}>
-              Update my details
-            </Link>
           </p>
         </Panel>
       </div>

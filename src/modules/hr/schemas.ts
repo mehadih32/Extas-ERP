@@ -200,10 +200,20 @@ export const portalAccessSchema = z
     userId: id.optional(),
     email: z.email().optional(),
     phone: z.string().trim().max(30).optional(),
+    /** The role the login works in (company.members.manage); the Employee role when left out. */
+    roleId: id.optional(),
   })
   .refine((v) => Boolean(v.userId) !== Boolean(v.email), {
     message: "Give either an existing user or an email for a new login",
     path: ["email"],
+  });
+
+/** The System access card: the login's role, or switching it off or on (company.members.manage). */
+export const loginChangeSchema = z
+  .object({ roleId: id.optional(), active: z.boolean().optional() })
+  .refine((v) => (v.roleId === undefined) !== (v.active === undefined), {
+    message: "Change either the role or whether the login is on",
+    path: ["roleId"],
   });
 
 export const statementSchema = z.object({

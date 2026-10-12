@@ -526,7 +526,8 @@ run("Raw materials screens", () => {
         ).toBe(true);
         expect(noteScreen.note.total, who).toBeNull();
         expect(panel.materialCost, who).toBeNull();
-        // No price or value reaches the store team anywhere on these screens.
+        // No price or value reaches the store team anywhere on these screens
+        // (record ids, which can hold "440" by chance, are left out of the search).
         const everything = JSON.stringify([
           overview,
           list,
@@ -536,7 +537,7 @@ run("Raw materials screens", () => {
           noteScreen,
           issueList,
           panel,
-        ]);
+        ]).replace(/\bc[a-z0-9]{24}\b/g, "<id>");
         expect(everything, who).not.toMatch(/432\.1|432\.45|440|450\.|22000|43245|397855/);
       }
     }

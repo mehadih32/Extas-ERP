@@ -439,15 +439,18 @@ export const myHrHelp: HelpSection = {
     },
     {
       slug: "my-hr-details",
-      title: "নিজের তথ্য ও বেতনের সারাংশ দেখবেন যেভাবে",
-      summary: "নিজের কোড, পদ, যোগদানের দিন, যোগাযোগ, বেতন ও বেতন কীভাবে দেওয়া হয় তা দেখা।",
+      title: "নিজের প্রোফাইল, পুরো বায়োডাটা ও বেতনের সারাংশ দেখবেন যেভাবে",
+      summary:
+        "My HR-এর ওপরের প্রোফাইল কার্ডে ছবি, কোড, পদ ও কত দিন আছেন দেখা; “View my full bio” চেপে NID, রক্তের গ্রুপ, জরুরি যোগাযোগসহ পুরো তথ্য দেখা; আর বেতন ও বেতন কীভাবে দেওয়া হয় তা দেখা।",
       keywords: [
         "my details",
         "profile",
+        "full bio",
         "employee code",
         "monthly salary",
         "আমার তথ্য",
         "প্রোফাইল",
+        "বায়োডাটা",
         "কর্মী কোড",
         "বেতন",
       ],
@@ -456,14 +459,24 @@ export const myHrHelp: HelpSection = {
       anyOf: ["portal.self"],
       steps: [
         {
-          text: "“My HR” > “Today” ট্যাবের নিচে “Pay” অংশে মাসিক বেতন ও “Paid by”, আর “My details”-এ নাম, কোড, পদ, যোগদানের দিন ও যোগাযোগ দেখবেন।",
+          text: "“My HR” > “Today” ট্যাবের একদম ওপরে আপনার প্রোফাইল কার্ড: ছবি, কর্মী কোড, নাম, পদ আর কোম্পানিতে কত দিন আছেন (যেমন 2 yrs 3 mos)। ছবি HR “Photo” কাগজ হিসেবে রাখলে বা আপনি “My papers”-এ দিলে দেখা যায়, না থাকলে নামের আদ্যক্ষর।",
           image: {
             id: "my-hr-details-1",
-            caption: "“Today” ট্যাবের “Pay” ও “My details” অংশ",
+            caption: "“Today” ট্যাবের ওপরে প্রোফাইল কার্ড ও “View my full bio” বোতাম",
           },
         },
         {
-          text: "কোনো তথ্য বাকি বা পুরোনো হলে “Update my details” চাপুন (“আমার তথ্য, রেফারেন্স ও কাগজপত্র দেবেন যেভাবে” নির্দেশিকা দেখুন)। নাম, কোড, পদ ও ফোন নম্বর HR বদলান।",
+          text: "“View my full bio” চাপলে একটি জানালায় সব তথ্য একসঙ্গে দেখবেন: “About me” (National ID, Date of birth, Blood group), “In an emergency” (Emergency contact ও Reference person), “Contact” (ফোন, WhatsApp, ইমেইল, ঠিকানা) আর “With the company” (যোগদানের দিন ও “Time here”)। যা দেওয়া হয়নি সেখানে “Not given yet” লেখা থাকে।",
+          image: {
+            id: "my-hr-details-2",
+            caption: "“View my full bio” জানালা",
+          },
+        },
+        {
+          text: "কোনো তথ্য বাকি বা পুরোনো হলে জানালার নিচে “Update my details” চাপুন (“আমার তথ্য, রেফারেন্স ও কাগজপত্র দেবেন যেভাবে” নির্দেশিকা দেখুন)। নাম, কোড, পদ ও ফোন নম্বর HR বদলান।",
+        },
+        {
+          text: "একই পাতার “Pay” অংশে মাসিক বেতন ও “Paid by” দেখবেন, আর “All payslips” চেপে সব বেতন স্লিপ।",
         },
       ],
     },

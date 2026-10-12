@@ -41,7 +41,7 @@ import {
 import { myNotices } from "@/modules/hr/notice.service";
 import { getMyOverview } from "@/modules/hr/portal.service";
 import { employeeAssets, listAssets, myAssets } from "@/modules/hr/asset.service";
-import { directoryExtras, directoryStats } from "@/modules/hr/directory.service";
+import { directoryExtras, directoryStats, latestPhotos } from "@/modules/hr/directory.service";
 import { getClearance } from "@/modules/hr/exit.service";
 import { myMoney } from "@/modules/hr/ledger.service";
 import {
@@ -72,6 +72,7 @@ import {
   mayVoidAdvance,
 } from "@/modules/hr/rules";
 import { listWorkPlaces, openShift } from "@/modules/hr/location.service";
+import { getSystemAccess } from "@/modules/hr/login.service";
 import { waitingClaims } from "@/modules/hr/claims.service";
 import { employeeScore, myScore } from "@/modules/hr/score.service";
 import { waitingOvertime } from "@/modules/hr/overtime.service";
@@ -79,6 +80,7 @@ import { getHrSettings, listHolidays, listLeaveTypes } from "@/modules/hr/settin
 import { vaultIncompleteWhere } from "@/modules/hr/vault";
 import { getEmployeeVault, getMyVault, listPayRequests } from "@/modules/hr/vault.service";
 import { staffToAgreeCount } from "@/modules/hr/terms.service";
+import { shortTenureText, tenureOn, tenureText } from "@/modules/hr/tenure";
 import { payoutStatus } from "@/modules/integrations/payouts";
 import { integrationStatus } from "@/modules/integrations/status";
 
@@ -459,7 +461,30 @@ export async function getEmployeeScreen(
   const deactivate =
     access.manage && canActOnOwnRecord(subject, me, "Someone else in HR deactivates you.").ok;
   /** Where they stand for leaving: items out, money either way, login, certificates. */
-  const clearance = deactivate ? await getClearance(ctx, e.id) : null;
+  const [clearance, photos, systemAccess] = await Promise.all([
+    deactivate ? getClearance(ctx, e.id) : null,
+    latestPhotos(ctx, [e.id]),
+    getSystemAccess(ctx, {
+      id: e.id,
+      name: e.name,
+      userId: e.portalLogin?.id ?? null,
+      exitDate: e.exitDate,
+    }),
+  ]);
+  /** The login is on while its membership here is (the System access card already read it). */
+  const loginOn = !e.portalLogin
+    ? false
+    : systemAccess?.login
+      ? systemAccess.login.active
+      : ((
+          await ctx.db.companyMembership.findFirst({
+            where: { userId: e.portalLogin.id },
+            select: { isActive: true },
+          })
+        )?.isActive ?? false);
+  /** Time here up to today, or to their last day once they left; none before they join. */
+  const until = e.isCurrent ? day : e.exitDate!;
+  const served = e.joinDate > day ? null : tenureOn(e.joinDate, until);
 
   return {
     today: day,
@@ -468,10 +493,14 @@ export async function getEmployeeScreen(
     score,
     assets,
     clearance,
+    /** The login, its role and switch (HR and people who manage users), else null. */
+    systemAccess,
     employee: {
       id: e.id,
       code: e.code,
       name: e.name,
+      photoId: photos.get(e.id) ?? null,
+      tenure: served ? { short: shortTenureText(served), text: tenureText(served) } : null,
       designation: e.designation,
       department: e.department,
       phone: e.phone,
@@ -493,7 +522,7 @@ export async function getEmployeeScreen(
       isCurrent: e.isCurrent,
       workPlace: e.workPlace,
       login: e.portalLogin
-        ? { email: e.portalLogin.email, active: e.portalLogin.status === "ACTIVE" }
+        ? { email: e.portalLogin.email, active: loginOn && e.portalLogin.status !== "SUSPENDED" }
         : null,
     },
     pay,
@@ -1118,6 +1147,7 @@ export async function getMyHrScreen(ctx: CompanyContext) {
     myNotices(ctx),
   ]);
   const day = o.today.date;
+  const photos = employee ? await latestPhotos(ctx, [employee.id]) : new Map<string, string>();
   const onLeave = employee
     ? await ctx.db.leaveRequest.findFirst({
         where: {
@@ -1149,6 +1179,15 @@ export async function getMyHrScreen(ctx: CompanyContext) {
       total: notices.items.length,
     },
     vaultGaps: o.profile.vaultGaps,
+    /** Their photo (newest picture "Photo" paper) for the profile widget. */
+    photoId: employee ? (photos.get(employee.id) ?? null) : null,
+    /** "2 yrs 3 mos" with the company (to the leaving day once gone), null before joining. */
+    tenure:
+      o.profile.joinDate > day
+        ? null
+        : shortTenureText(
+            tenureOn(o.profile.joinDate, o.profile.isCurrent ? day : (o.profile.exitDate ?? day)),
+          ),
     onLeaveToday: onLeave ? onLeave.leaveType.name : null,
     /** "21:40" when yesterday's check-in is still open. */
     openSince: lastNight?.checkIn ? localTime(lastNight.checkIn, ctx.company.timezone) : null,

@@ -54,7 +54,7 @@ export async function listMembers(ctx: CompanyContext) {
 }
 
 /** The person acting, as the member rules (rbac/rules.ts) see them. */
-function actorOf(ctx: CompanyContext): Actor {
+export function actorOf(ctx: CompanyContext): Actor {
   return {
     userId: ctx.user.id,
     systemRole: ctx.role?.systemRole ?? null,
@@ -78,7 +78,7 @@ async function getMembership(ctx: CompanyContext, membershipId: string) {
 }
 
 /** The company's active Super Admins other than this member (so it never loses its last one). */
-async function otherActiveSuperAdmins(ctx: CompanyContext, membershipId: string) {
+export async function otherActiveSuperAdmins(ctx: CompanyContext, membershipId: string) {
   return ctx.db.companyMembership.count({
     where: { id: { not: membershipId }, isActive: true, role: { systemRole: "SUPER_ADMIN" } },
   });

@@ -757,6 +757,9 @@ export const hrHelp: HelpSection = {
         "ভাতা",
         "claims with salary",
         "দাবি বেতনের সঙ্গে",
+        "deduction reason",
+        "কর্তনের কারণ",
+        "waiting claims",
       ],
       routes: ["/hr/payroll"],
       who: "যাঁদের বেতন তৈরির অনুমতি আছে: Super Admin ও Accounts।",
@@ -786,6 +789,13 @@ export const hrHelp: HelpSection = {
           text: "কারও লাইন বদলাতে “Change” চাপুন। “Allowances”, “Bonus”, “Tax deducted (TDS)”, “Other deductions”, “Overtime hours”, “Advance taken back” ও “Note on the payslip (optional)” ঠিক করে “Save the line” চাপুন।",
         },
         {
+          text: "“Other deductions”-এ টাকা কাটলে “Why other deductions are taken” ঘরে কারণ লিখুন (যেমন জরিমানা বা হারানো যন্ত্রাংশ)। কারণটি পে-স্লিপে ছাপা হয়। কারণ না থাকলে সারিতে লাল করে “say why before approving” লেখা থাকে।",
+          image: {
+            id: "hr-payroll-prepare-3",
+            caption: "লাইন বদলানোর জানালা: “Other deductions” ও তার কারণ লেখার ঘর",
+          },
+        },
+        {
           text: "সবার জন্য বোনাস দিতে “Add a bonus” চাপুন। “A share of each monthly salary” (শতাংশ) বা “The same amount for everyone” বেছে “Add the bonus” চাপুন।",
         },
         {
@@ -793,6 +803,9 @@ export const hrHelp: HelpSection = {
         },
         {
           text: "মাসের কোনো ওভারটাইম HR-এর অনুমোদনের অপেক্ষায় থাকলে খসড়ার ওপরে তা লেখা থাকে। শুধু অনুমোদিত ওভারটাইমই বেতনে যায়; HR অনুমোদন দিলে “Work it out again” চাপুন। HR “See the overtime” চেপে সেগুলো খুলতে পারেন।",
+        },
+        {
+          text: "মাসের কোনো দাবি (যাতায়াত বা লোকাল কেনাকাটা) এখনো Accounts-এর অনুমোদনের অপেক্ষায় থাকলে খসড়ার ওপরে কয়টি আর কত টাকা তা লেখা থাকে। অনুমোদিত দাবিই শুধু বেতনে যোগ হয়; অনুমোদনের পর “Work it out again” চাপুন। “See the claims” চেপে সেগুলো খুলুন।",
         },
       ],
       tips: [
@@ -830,6 +843,13 @@ export const hrHelp: HelpSection = {
           text: "“Payroll” ট্যাবে “To approve” লেখা মাসটি খুলুন, হিসাব মিলিয়ে “Approve” চাপুন। বেতন হিসাবের খাতায় যাবে এবং সেই মাসের হাজিরা ও ছুটি আটকে যাবে।",
         },
         {
+          text: "কারও বেতন থেকে “Other deductions” কাটা থাকলে অনুমোদনের জানালায় “Why are other deductions taken? Each reason prints on the payslip.” লেখা থাকে, প্রত্যেকের নাম ও টাকার পাশে কারণের ঘর। আগে লেখা কারণ ঘরে থাকে, দরকারে ঠিক করুন। সব কারণ না দিলে অনুমোদন হয় না।",
+          image: {
+            id: "hr-payroll-approve-pay-2",
+            caption: "অনুমোদনের জানালা: কর্তনের টাকা ও প্রত্যেকের কারণ লেখার ঘর",
+          },
+        },
+        {
           text: "এরপর Accounts “Pay salaries” চাপবেন। “Paid now”-এ যাঁদের দিচ্ছেন তাঁদের টিক দিন; প্রত্যেকের পাশে বাকি টাকা লেখা থাকে। কোন ক্যাশ, ব্যাংক বা ওয়ালেট থেকে দেবেন আর “Paid on” তারিখ দিয়ে “Record the payment” চাপুন।",
           image: {
             id: "hr-payroll-approve-pay-1",
@@ -858,9 +878,13 @@ export const hrHelp: HelpSection = {
     {
       slug: "hr-payslip",
       title: "পে-স্লিপ ছাপবেন যেভাবে",
-      summary: "কর্মীর মাসের আয়, কর্তন ও হাতে পাওয়া বেতনের পে-স্লিপ লেটারহেডে ছাপা।",
+      summary:
+        "কর্মীর মাসের আয়, কর্তন (প্রতিটির কারণসহ), বেতনের সঙ্গে ফেরত পাওয়া দাবি ও হাতে পাওয়া বেতনের পে-স্লিপ লেটারহেডে ছাপা।",
       keywords: [
         "payslip",
+        "deduction reason",
+        "claims paid back",
+        "কর্তনের কারণ",
         "pay slip",
         "salary slip",
         "print",
@@ -889,6 +913,20 @@ export const hrHelp: HelpSection = {
         },
         {
           text: "বেতন কয়েক ভাগে দেওয়া হলে পে-স্লিপের নিচে প্রতিটি ভাগ (তারিখ, কীভাবে, ভাউচার) আর কত বাকি লেখা থাকে। দাবির টাকা বেতনের সঙ্গে গেলে “Earnings”-এ দাবির নম্বরসহ আলাদা লাইন থাকে।",
+        },
+        {
+          text: "“Deductions”-এ প্রতিটি কর্তনের নিচে কারণ লেখা থাকে: অনুপস্থিতিতে কয় দিন অনুপস্থিত, বিনা বেতনে ছুটি বা দেরির জন্য কাটা; অগ্রিমের কিস্তিতে কোন অগ্রিম; অন্য কর্তনে অনুমোদনের সময় লেখা কারণ।",
+          image: {
+            id: "hr-payslip-2",
+            caption: "পে-স্লিপের কর্তন: প্রতিটি অঙ্কের নিচে তার কারণ",
+          },
+        },
+        {
+          text: "বেতনের সঙ্গে দাবি ফেরত গেলে নিচে “Claims paid back” ঘর থাকে। চাপলে প্রতিটি দাবির তারিখ, নম্বর, কোথা থেকে কোথায় বা কী কেনা আর কিসের জন্য দেখায়। খসড়ায় লেখা থাকে “Claims to pay back”। ছাপা ও PDF-এ পুরো তালিকা থাকে।",
+          image: {
+            id: "hr-payslip-3",
+            caption: "পে-স্লিপে বেতনের সঙ্গে ফেরত পাওয়া দাবির তালিকা",
+          },
         },
       ],
       tips: ["পে-স্লিপ ইমেইল বা WhatsApp-এ পাঠানো এখনো চালু হয়নি।"],

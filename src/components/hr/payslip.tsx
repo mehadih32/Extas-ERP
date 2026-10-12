@@ -2,12 +2,36 @@ import { METHOD_LABELS, money } from "@/components/sales/labels";
 import { formatDay } from "@/lib/display";
 import type { Payslip } from "@/modules/hr/screens.service";
 
+import { CLAIM_KIND_LABELS } from "./claim-labels";
 import { payDetails } from "./labels";
+
+/** The staff claims paid back with a salary: the day, what for and how much. */
+function ClaimLines({ slip, currency }: { slip: Payslip; currency: string }) {
+  return (
+    <ul className="divide-y text-sm">
+      {slip.claims.map((c) => (
+        <li key={c.id} className="flex items-baseline justify-between gap-4 py-1.5">
+          <span className="min-w-0">
+            <span className="block">
+              {formatDay(c.date)} · {c.number}
+              <span className="text-muted-foreground"> · {CLAIM_KIND_LABELS[c.kind]}</span>
+            </span>
+            <span className="block text-[0.8125rem] break-words text-muted-foreground">
+              {[c.what, c.purpose].filter(Boolean).join(" · ")}
+            </span>
+          </span>
+          <span className="whitespace-nowrap tabular-nums">{money(c.amount, currency)}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 /**
  * A payslip as it prints: the company's letterhead, the employee, the month's
- * attendance, earnings and deductions, and the take-home pay in figures and
- * words. A draft payroll's payslip says it is not final.
+ * attendance, earnings and deductions (each with why it is taken), the staff
+ * claims paid back with it, and the take-home pay in figures and words. A
+ * draft payroll's payslip says it is not final.
  */
 export function PayslipView({ slip }: { slip: Payslip }) {
   const c = slip.company;
@@ -129,7 +153,14 @@ export function PayslipView({ slip }: { slip: Payslip }) {
             )}
             {slip.deductions.map((x) => (
               <div key={x.label} className={row}>
-                <dt>{x.label}</dt>
+                <dt className="min-w-0">
+                  {x.label}
+                  {x.reason && (
+                    <span className="block text-[0.8125rem] break-words text-muted-foreground">
+                      {x.reason}
+                    </span>
+                  )}
+                </dt>
                 <dd className="whitespace-nowrap">{money(x.amount, currency)}</dd>
               </div>
             ))}
@@ -140,6 +171,40 @@ export function PayslipView({ slip }: { slip: Payslip }) {
           </dl>
         </section>
       </div>
+
+      {slip.claims.length > 0 && (
+        <section aria-label="Claims paid back" className="mt-6">
+          {/* A tap opens the list on screen; on paper it is always written out. */}
+          <details className="group rounded-md border print:hidden">
+            <summary className="flex cursor-pointer items-baseline justify-between gap-4 px-4 py-3 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/25">
+              <span>
+                <span className="font-medium">
+                  {slip.status === "DRAFT" ? "Claims to pay back" : "Claims paid back"} (
+                  {slip.claims.length})
+                </span>
+                <span className="block text-[0.8125rem] text-muted-foreground group-open:hidden">
+                  Tap to see each day and what it was for
+                </span>
+              </span>
+              <span className="whitespace-nowrap tabular-nums">
+                {money(slip.claimsTotal, currency)}
+              </span>
+            </summary>
+            <div className="border-t px-4 py-1">
+              <ClaimLines slip={slip} currency={currency} />
+            </div>
+          </details>
+          <div className="hidden print:block">
+            <h3 className="eyebrow border-b pb-2">Claims paid back</h3>
+            <ClaimLines slip={slip} currency={currency} />
+          </div>
+          {slip.claimsChanged && (
+            <p className="mt-2 text-[0.8125rem] text-destructive">
+              Staff claims changed since this payroll was worked out. Recalculate it to catch up.
+            </p>
+          )}
+        </section>
+      )}
 
       <section
         aria-label="Take-home pay"

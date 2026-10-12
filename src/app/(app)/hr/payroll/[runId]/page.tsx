@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { HeaderWithEye, PrivacyProvider } from "@/components/accounts/privacy";
+import { Amount, HeaderWithEye, PrivacyProvider } from "@/components/accounts/privacy";
 import { Stat } from "@/components/accounts/stat";
 import { SectionError } from "@/components/dashboard/section-error";
 import { FormAlert } from "@/components/forms/field";
@@ -87,6 +87,26 @@ export default async function PayrollRunPage({
                     className="font-medium underline underline-offset-4"
                   >
                     See the overtime
+                  </Link>
+                </>
+              )}
+            </FormAlert>
+          )}
+          {screen.claimsWaiting && (
+            <FormAlert tone="note">
+              {screen.claimsWaiting.count} staff{" "}
+              {screen.claimsWaiting.count === 1 ? "claim" : "claims"} from {run.label} (
+              <Amount>{money(screen.claimsWaiting.amount, currency)}</Amount>) still{" "}
+              {screen.claimsWaiting.count === 1 ? "waits" : "wait"} for Accounts. Approved claims
+              are paid back with the salary: once they are approved, use “Work it out again”.
+              {screen.claimsWaiting.open && (
+                <>
+                  {" "}
+                  <Link
+                    href={hrHref.claims(run.month, { status: "PENDING" })}
+                    className="font-medium underline underline-offset-4"
+                  >
+                    See the claims
                   </Link>
                 </>
               )}

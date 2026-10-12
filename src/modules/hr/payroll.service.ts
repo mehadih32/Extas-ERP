@@ -42,6 +42,7 @@ import {
   reverseSettlementsTx,
 } from "@/modules/hr/advance.service";
 import { monthKey, monthLabel, monthRange } from "@/modules/hr/calendar";
+import { claimWhat } from "@/modules/hr/claims";
 import { employeesInPeriod, loadEmploymentInputs, loadRules } from "@/modules/hr/month-data";
 import {
   allocateRecovery,
@@ -67,6 +68,7 @@ import {
   canVoidSalaryPayment,
 } from "@/modules/hr/rules";
 import {
+  approvePayrollSchema,
   createPayrollSchema,
   listPayrollSchema,
   payPayrollSchema,
@@ -249,6 +251,8 @@ function presentItem(i: ItemRow, daysInMonth: number) {
     advanceEdited: i.advanceEdited,
     taxDeduction: i.taxDeduction.toFixed(2),
     otherDeductions: i.otherDeductions.toFixed(2),
+    /** Why the other deductions are taken; needed before the payroll is approved. */
+    deductionReason: i.deductionReason,
     totalDeductions: deductions.toFixed(2),
     /** Approved staff claims paid back with this salary. */
     reimbursements: i.reimbursements.toFixed(2),
@@ -397,6 +401,7 @@ type ItemFigures = {
   advanceEdited: boolean;
   taxDeduction: Prisma.Decimal;
   otherDeductions: Prisma.Decimal;
+  deductionReason: string | null;
   reimbursements: Prisma.Decimal;
   netPay: Prisma.Decimal;
   note: string | null;
@@ -416,8 +421,22 @@ type Computed = {
 /**
  * Approved staff claims a month's salaries pay back: dated by the month's end,
  * not paid back on their own, not on another approved payroll, and their
- * expense not voided. `lock` holds them (approval) so Accounts cannot pay them
- * back separately at the same moment.
+ * expense not voided.
+ */
+const owedClaimsWhere = (companyId: string, employeeIds: string[], monthEnd: string) =>
+  ({
+    companyId,
+    employeeId: { in: employeeIds },
+    status: "APPROVED",
+    paidAt: null,
+    payrollItemId: null,
+    date: { lte: dateColumn(monthEnd) },
+    OR: [{ expenseId: null }, { expense: { voidedAt: null } }],
+  }) satisfies Prisma.StaffClaimWhereInput;
+
+/**
+ * The claims a month's salaries pay back (see owedClaimsWhere). `lock` holds
+ * them (approval) so Accounts cannot pay them back separately at the same moment.
  */
 async function claimsToPayBack(
   tx: Tx,
@@ -435,15 +454,7 @@ async function claimsToPayBack(
       FOR UPDATE`;
   }
   return tx.staffClaim.findMany({
-    where: {
-      companyId,
-      employeeId: { in: employeeIds },
-      status: "APPROVED",
-      paidAt: null,
-      payrollItemId: null,
-      date: { lte: dateColumn(monthEnd) },
-      OR: [{ expenseId: null }, { expense: { voidedAt: null } }],
-    },
+    where: owedClaimsWhere(companyId, employeeIds, monthEnd),
     select: { id: true, number: true, employeeId: true, amount: true, approvedAmount: true },
     orderBy: [{ date: "asc" }, { number: "asc" }],
   });
@@ -541,6 +552,8 @@ async function computeRun(
       advanceEdited: prev?.advanceEdited ?? false,
       taxDeduction,
       otherDeductions,
+      // The reason goes with the amount: none once nothing else is deducted.
+      deductionReason: otherDeductions.gt(0) ? (prev?.deductionReason ?? null) : null,
       reimbursements,
       netPay: netPay({ ...pay, advanceDeduction, taxDeduction, otherDeductions, reimbursements }),
       note: prev?.note ?? null,
@@ -751,6 +764,9 @@ export async function updatePayrollItem(
       ...(input.otherDeductions !== undefined
         ? { otherDeductions: money(input.otherDeductions) }
         : {}),
+      ...(input.deductionReason !== undefined
+        ? { deductionReason: input.deductionReason || null }
+        : {}),
       ...(input.note !== undefined ? { note: input.note ?? null } : {}),
       ...(input.overtimeHours !== undefined
         ? input.overtimeHours === null
@@ -766,6 +782,12 @@ export async function updatePayrollItem(
           : { advanceEdited: true, advanceDeduction: money(input.advanceDeduction) }
         : {}),
     };
+    // A new reason needs an amount; taking the amount off drops the old one.
+    if (input.deductionReason && edited.otherDeductions.lte(0)) {
+      throw new AppError("VALIDATION", "Give the amount deducted along with the reason.", {
+        otherDeductions: ["Give the amount deducted along with the reason."],
+      });
+    }
     const items = run.items.map((i) => (i.id === item.id ? edited : i));
     const computed = await computeRun(tx, ctx, run, items);
     const issues = problems(computed).filter((p) =>
@@ -914,10 +936,18 @@ function accrualLines(
 /**
  * Approves a draft: posts the month's salaries to the books, settles the
  * advances recovered and freezes the month. Refused while the draft is out of
- * date (attendance, leave, salaries or advances changed since it was worked out).
+ * date (attendance, leave, salaries or advances changed since it was worked out),
+ * and until every line with other deductions says why (`reasons`, by line id,
+ * fills in the ones that do not; the payslip prints them).
  */
-export async function approvePayrollRun(ctx: CompanyContext, runId: string, meta?: RequestMeta) {
+export async function approvePayrollRun(
+  ctx: CompanyContext,
+  runId: string,
+  meta?: RequestMeta,
+  raw: unknown = {},
+) {
   assertCanApprovePayroll(ctx);
+  const input = approvePayrollSchema.parse(raw ?? {});
   const companyId = ctx.company.id;
   const tz = ctx.company.timezone;
   await prisma.$transaction(async (tx) => {
@@ -942,6 +972,24 @@ export async function approvePayrollRun(ctx: CompanyContext, runId: string, meta
     }
     const issues = problems(computed);
     if (issues.length > 0) throw new AppError("VALIDATION", `${issues.join("; ")}.`);
+
+    // Nothing is taken from a salary without a reason on the payslip.
+    const missing: string[] = [];
+    for (const item of run.items) {
+      if (item.otherDeductions.lte(0)) continue;
+      const given = input.reasons?.[item.id] || null;
+      if (given && given !== item.deductionReason) {
+        await tx.payrollItem.update({ where: { id: item.id }, data: { deductionReason: given } });
+      } else if (!given && !item.deductionReason) {
+        missing.push(computed.employees.get(item.employeeId)?.name ?? "someone");
+      }
+    }
+    if (missing.length > 0) {
+      throw new AppError(
+        "VALIDATION",
+        `Say why the other deductions are taken from ${listText(missing)} before approving.`,
+      );
+    }
 
     const acc = await ensureControlAccounts(companyId, tx);
     const lines = [...computed.figures.values()];
@@ -1492,14 +1540,99 @@ export async function runSalaryPayoutJob(job: Pick<BackgroundJob, "payload">): P
 // Payslips
 // =============================================================================
 
+/** "1 day", "2.5 days". */
+const daysText = (n: number) => `${n} ${n === 1 ? "day" : "days"}`;
+
+/** "2 days absent, 1 day on unpaid leave, 1 day for 3 lates". */
+function unpaidDaysText(i: PayrollItem) {
+  const absent = i.absentDays.toNumber();
+  const unpaidLeave = i.unpaidLeaveDays.toNumber();
+  const forLates = i.unpaidDays.minus(i.absentDays).minus(i.unpaidLeaveDays).toNumber();
+  return [
+    absent > 0 && `${daysText(absent)} absent`,
+    unpaidLeave > 0 && `${daysText(unpaidLeave)} on unpaid leave`,
+    forLates > 0 &&
+      `${daysText(forLates)} for ${i.lateDays} ${i.lateDays === 1 ? "late" : "lates"}`,
+  ]
+    .filter(Boolean)
+    .join(", ");
+}
+
+const payslipClaimSelect = {
+  id: true,
+  number: true,
+  kind: true,
+  date: true,
+  amount: true,
+  approvedAmount: true,
+  purpose: true,
+  fromPlace: true,
+  toPlace: true,
+  item: true,
+  quantity: true,
+  project: { select: { code: true } },
+} satisfies Prisma.StaffClaimSelect;
+
+/**
+ * What a payslip explains beyond the figures: the claims paid back with it
+ * (on a draft, the ones it is going to pay back) and the advances it recovers.
+ */
+async function payslipExtras(
+  companyId: string,
+  run: { status: string },
+  i: ItemRow,
+  monthEnd: string,
+) {
+  const draft = run.status === "DRAFT";
+  const [claims, advances] = await Promise.all([
+    i.reimbursements.gt(0) || i.claims.length > 0
+      ? prisma.staffClaim.findMany({
+          where: draft
+            ? owedClaimsWhere(companyId, [i.employeeId], monthEnd)
+            : { payrollItemId: i.id },
+          select: payslipClaimSelect,
+          orderBy: [{ date: "asc" }, { number: "asc" }],
+        })
+      : [],
+    i.advanceDeduction.lte(0)
+      ? []
+      : draft
+        ? prisma.salaryAdvance.findMany({
+            where: { companyId, employeeId: i.employeeId, status: "OPEN" },
+            select: { number: true },
+            orderBy: [{ givenAt: "asc" }, { id: "asc" }],
+          })
+        : prisma.advanceSettlement
+            .findMany({
+              where: { payrollItemId: i.id, reversedAt: null },
+              select: { advance: { select: { number: true } } },
+              orderBy: { advance: { givenAt: "asc" } },
+            })
+            .then((rows) => rows.map((r) => r.advance)),
+  ]);
+  return { claims, advances: [...new Set(advances.map((a) => a.number))] };
+}
+
 async function payslip(
   ctx: CompanyContext,
   run: { year: number; month: number; status: string },
   i: ItemRow,
 ) {
   const month = runMonth(run);
-  const { days } = monthRange(month);
+  const { days, to } = monthRange(month);
   const rate = money(i.monthlySalary.dividedBy(days));
+  const extras = await payslipExtras(ctx.company.id, run, i, to);
+  const claims = extras.claims.map((c) => ({
+    id: c.id,
+    number: c.number,
+    kind: c.kind,
+    date: dateOnly(c.date)!,
+    /** "Office to Bank" or "Yarn (5 kg) for PRD-2026-00003". */
+    what: claimWhat(c),
+    purpose: c.purpose,
+    amount: (c.approvedAmount ?? c.amount).toFixed(2),
+  }));
+  const claimsTotal = extras.claims.reduce((t, c) => t.plus(c.approvedAmount ?? c.amount), ZERO);
   const earnings = [
     {
       label: i.basic.equals(i.monthlySalary) ? "Salary" : `Salary for days employed`,
@@ -1524,10 +1657,17 @@ async function payslip(
     {
       label: `Unpaid days (${i.unpaidDays.toNumber()} x ${rate.toFixed(2)})`,
       amount: i.unpaidLeaveDeduction,
+      reason: unpaidDaysText(i) || null,
     },
-    { label: "Advance recovery", amount: i.advanceDeduction },
-    { label: "Tax deducted (TDS)", amount: i.taxDeduction },
-    { label: "Other deductions", amount: i.otherDeductions },
+    {
+      label: "Advance recovery",
+      amount: i.advanceDeduction,
+      reason: extras.advances.length
+        ? `${run.status === "DRAFT" ? "Towards" : "Taken back on"} ${listText(extras.advances)}`
+        : null,
+    },
+    { label: "Tax deducted (TDS)", amount: i.taxDeduction, reason: null },
+    { label: "Other deductions", amount: i.otherDeductions, reason: i.deductionReason },
   ].filter((d) => d.amount.gt(0));
   const totalEarnings = earnings.reduce((t, e) => t.plus(e.amount), ZERO);
   const totalDeductions = deductions.reduce((t, d) => t.plus(d.amount), ZERO);
@@ -1562,7 +1702,20 @@ async function payslip(
       overtimeHours: i.overtimeHours.toFixed(2),
     },
     earnings: earnings.map((e) => ({ label: e.label, amount: e.amount.toFixed(2) })),
-    deductions: deductions.map((d) => ({ label: d.label, amount: d.amount.toFixed(2) })),
+    deductions: deductions.map((d) => ({
+      label: d.label,
+      amount: d.amount.toFixed(2),
+      /** Why it is taken: the days, the advance numbers or the reason typed in. */
+      reason: d.reason,
+    })),
+    /** Each staff claim paid back with the salary: the day, what it was for and how much. */
+    claims,
+    claimsTotal: claimsTotal.toFixed(2),
+    /**
+     * A draft only: the claims waiting to be paid back no longer add up to the
+     * line (one was approved or paid meanwhile); recalculating catches up.
+     */
+    claimsChanged: run.status === "DRAFT" && !claimsTotal.equals(i.reimbursements),
     totalEarnings: totalEarnings.toFixed(2),
     totalDeductions: totalDeductions.toFixed(2),
     netPay: i.netPay.toFixed(2),

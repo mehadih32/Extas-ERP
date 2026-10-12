@@ -73,7 +73,10 @@ export async function myMoney(ctx: CompanyContext) {
       ),
       ...minus("Advance taken back (EMI)", i.advanceDeduction),
       ...minus("Tax (TDS)", i.taxDeduction),
-      ...minus("Other deductions", i.otherDeductions),
+      ...minus(
+        i.deductionReason ? `Other deductions (${i.deductionReason})` : "Other deductions",
+        i.otherDeductions,
+      ),
     ];
     const month = monthKey(i.run.year, i.run.month);
     return {

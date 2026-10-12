@@ -1617,8 +1617,11 @@ sent straight to each person's wallet from the background queue; a failed payout
 for Accounts to send again or void, never retried on its own. A payment can be voided, and
 its people are owed that money again. A payroll can be reopened (its entry reversed and the
 advances owed again) only while none of it is paid. Every employee gets a payslip on the
-company letterhead, with the net pay in words and the parts paid, and sees their own payslips
-and a month-by-month money ledger in the portal.
+company letterhead, with the net pay in words and the parts paid, each deduction with why it
+is taken (the days missed, the advance recovered, or the reason given for other deductions,
+which approval asks for on every such line) and each staff claim paid back with its day and
+purpose, and sees their own payslips and a month-by-month money ledger in the portal. A draft
+also says how many of the month's claims still wait for Accounts.
 
 **Company items and leaving.** HR records the company items each person holds (laptop,
 phone, SIM, ID card, keys, uniform, tools, vehicle) and takes them back as returned, damaged

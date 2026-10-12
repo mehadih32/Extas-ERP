@@ -3008,6 +3008,9 @@ model PayrollItem {
   advanceEdited        Boolean @default(false)
   taxDeduction         Decimal @default(0) @db.Decimal(14, 2)
   otherDeductions      Decimal @default(0) @db.Decimal(14, 2)
+  /// Why the other deductions were taken (a fine, a loss): needed whenever
+  /// they are more than zero, shown on the payslip.
+  deductionReason      String?
   /// Approved staff claims paid back with this salary (not salary: no tax, not
   /// a salary cost). Take-home = gross pay + reimbursements - deductions.
   reimbursements       Decimal @default(0) @db.Decimal(14, 2)

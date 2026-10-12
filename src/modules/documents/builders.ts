@@ -1968,13 +1968,44 @@ export async function payslipDocument(ctx: CompanyContext, itemId: string): Prom
           { label: `Amount (${currency})`, align: "right", weight: 1.6 },
         ],
         rows: [
-          ...slip.deductions.map((x) => ({ cells: [x.label, money(x.amount, currency)] })),
+          ...slip.deductions.map((x) => ({
+            cells: [x.label, money(x.amount, currency)],
+            ...(x.reason ? { details: [x.reason] } : {}),
+          })),
           {
             cells: ["Total deductions", money(slip.totalDeductions, currency)],
             style: "subtotal" as const,
           },
         ],
       },
+      ...(slip.claims.length > 0
+        ? [
+            {
+              kind: "table" as const,
+              title: payment.status === "DRAFT" ? "Claims to pay back" : "Claims paid back",
+              columns: [
+                { label: "Date", weight: 1.3 },
+                { label: "Claim", weight: 1.4 },
+                { label: "What for", weight: 3.4 },
+                { label: `Amount (${currency})`, align: "right" as const, weight: 1.6 },
+              ],
+              rows: [
+                ...slip.claims.map((c) => ({
+                  cells: [
+                    formatDay(c.date),
+                    c.number,
+                    [c.what, c.purpose].filter(Boolean).join(" · "),
+                    money(c.amount, currency),
+                  ],
+                })),
+                {
+                  cells: ["Total", "", "", money(slip.claimsTotal, currency)],
+                  style: "subtotal" as const,
+                },
+              ],
+            },
+          ]
+        : []),
       {
         kind: "totals",
         rows: [

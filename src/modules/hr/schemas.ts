@@ -455,9 +455,19 @@ export const updatePayrollItemSchema = z
     overtimeHours: z.number().min(0).max(744).multipleOf(0.01).nullable(),
     /** Recovered from advances this month; null goes back to the scheduled recovery. */
     advanceDeduction: money.nullable(),
+    /** Why the other deductions are taken (a fine, a loss); printed on the payslip. */
+    deductionReason: optionalText(200),
     note: optionalText(300),
   })
   .partial();
+
+/**
+ * Approving a payroll: why each line's other deductions are taken, by line id,
+ * for the lines that do not say yet. Every line with other deductions needs one.
+ */
+export const approvePayrollSchema = z.object({
+  reasons: z.record(id, z.string().trim().max(200)).optional(),
+});
 
 /** Bonus for everyone (or the listed employees): a % of monthly salary or a fixed amount. */
 export const payrollBonusSchema = z

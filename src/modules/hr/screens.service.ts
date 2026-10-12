@@ -5,6 +5,7 @@ import { dateColumn, dateOnly, localDay, localTime } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import { queryBoolean } from "@/lib/query-params";
+import { ZERO } from "@/modules/accounts/balances";
 import { addDays, monthsBetween } from "@/modules/accounts/periods";
 import { listMoneyAccounts } from "@/modules/accounts/screens.service";
 import type { CompanyContext } from "@/modules/auth/context";
@@ -17,6 +18,7 @@ import {
   myAttendance,
 } from "@/modules/hr/attendance.service";
 import { monthKey, monthLabel, monthRange } from "@/modules/hr/calendar";
+import { claimAccess } from "@/modules/hr/claims";
 import {
   employeeDirectory,
   employeeRecords,
@@ -862,6 +864,22 @@ export async function getPayrollList(ctx: CompanyContext, raw: { year?: unknown 
   };
 }
 
+/** Staff claims from a month still waiting for Accounts, for the payroll's reminder. */
+async function claimsWaitingIn(ctx: CompanyContext, month: string, employeeIds: string[]) {
+  const { from, to } = monthRange(month);
+  const found = await ctx.db.staffClaim.aggregate({
+    where: {
+      status: "PENDING",
+      employeeId: { in: employeeIds },
+      date: { gte: dateColumn(from), lte: dateColumn(to) },
+    },
+    _count: { _all: true },
+    _sum: { amount: true },
+  });
+  const count = found._count._all;
+  return count > 0 ? { count, amount: (found._sum.amount ?? ZERO).toFixed(2) } : null;
+}
+
 /** One month's payroll: every employee's line, the payments, and what may be done. */
 export async function getPayrollScreen(ctx: CompanyContext, runId: string) {
   const access = hrAccess(ctx);
@@ -879,8 +897,18 @@ export async function getPayrollScreen(ctx: CompanyContext, runId: string) {
   const draft = canChangePayroll(state);
   const reopen = canReopenPayroll(state, live);
   const pay = canPayPayroll(state, unpaid.length);
-  // Shadow overtime still waiting for HR is not paid until it is approved.
-  const overtimeWaiting = draft.ok ? await waitingOvertime(ctx, run.month) : 0;
+  // Shadow overtime still waiting for HR is not paid until it is approved, nor
+  // are staff claims still waiting for Accounts.
+  const [overtimeWaiting, claimsWaiting] = draft.ok
+    ? await Promise.all([
+        waitingOvertime(ctx, run.month),
+        claimsWaitingIn(
+          ctx,
+          run.month,
+          run.items.map((i) => i.employee.id),
+        ),
+      ])
+    : [0, null];
   return {
     run,
     unpaid: unpaid.map((i) => ({
@@ -917,6 +945,11 @@ export async function getPayrollScreen(ctx: CompanyContext, runId: string) {
     },
     /** Where HR approves the month's overtime (hr.manage). */
     overtimeHref: overtimeWaiting > 0 && access.manage ? run.month : null,
+    /**
+     * A draft's staff claims from the month still waiting for Accounts: paid
+     * back with the salary only once approved. `open`: who may see the claims.
+     */
+    claimsWaiting: claimsWaiting && { ...claimsWaiting, open: claimAccess(ctx).see },
     payments: run.payments.map((p) => ({
       ...p,
       paidOn: localDay(p.date, ctx.company.timezone),

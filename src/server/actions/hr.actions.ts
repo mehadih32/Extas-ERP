@@ -7,9 +7,11 @@ import { runAction } from "@/lib/result";
 import { requireAnyPermission, requirePermission } from "@/modules/auth/context";
 import * as files from "@/modules/files/file.service";
 import * as advances from "@/modules/hr/advance.service";
+import * as assets from "@/modules/hr/asset.service";
 import * as attendance from "@/modules/hr/attendance.service";
 import * as claims from "@/modules/hr/claims.service";
 import * as employees from "@/modules/hr/employee.service";
+import * as exits from "@/modules/hr/exit.service";
 import * as leave from "@/modules/hr/leave.service";
 import * as location from "@/modules/hr/location.service";
 import * as notices from "@/modules/hr/notice.service";
@@ -498,6 +500,17 @@ export const voidPayrollPaymentAction = async (paymentId: string, input: unknown
       await payroll.voidPayrollPayment(await payOut(), paymentId, input, await getRequestMeta()),
     ),
   );
+/** Sends a salary payment's failed wallet payouts again (all, or { lineIds }). */
+export const retrySalaryPayoutsAction = async (paymentId: string, input: unknown = {}) =>
+  change(async () => {
+    const r = await payroll.retrySalaryPayouts(
+      await payOut(),
+      paymentId,
+      input,
+      await getRequestMeta(),
+    );
+    return { paymentId: r.paymentId, queued: r.queued };
+  });
 export const getPayslipAction = async (runId: string, itemId: string) =>
   runAction(async () => payroll.getPayslip(await salaryRead(), runId, itemId));
 
@@ -541,3 +554,34 @@ export const rejectPayRequestAction = async (requestId: string, input: unknown) 
     );
     return { id: r.id, status: r.status };
   });
+
+// --- Company items with staff (hr.view sees, hr.manage changes) --------------------------
+export const getAssetsScreenAction = async (query: unknown = {}) =>
+  runAction(async () => screens.getAssetsScreen(await hrRead(), query));
+export const issueAssetAction = async (input: unknown) =>
+  change(async () => {
+    const a = await assets.issueAsset(await hrManage(), input, await getRequestMeta());
+    return { id: a.id, name: a.name, employee: a.employee };
+  });
+export const returnAssetAction = async (assetId: string, input: unknown) =>
+  change(async () => {
+    const a = await assets.returnAsset(await hrManage(), assetId, input, await getRequestMeta());
+    return { id: a.id, returnCondition: a.returnCondition };
+  });
+export const undoAssetReturnAction = async (assetId: string) =>
+  change(async () => {
+    const a = await assets.undoAssetReturn(await hrManage(), assetId, await getRequestMeta());
+    return { id: a.id };
+  });
+export const removeAssetAction = async (assetId: string) =>
+  change(async () => assets.removeAsset(await hrManage(), assetId, await getRequestMeta()));
+
+// --- Leaving: deactivate and the clearance certificate (hr.manage) ------------------------
+export const getClearanceAction = async (employeeId: string) =>
+  runAction(async () => exits.getClearance(await hrManage(), employeeId));
+export const deactivateEmployeeAction = async (employeeId: string, input: unknown) =>
+  change(async () =>
+    exits.deactivateEmployee(await hrManage(), employeeId, input, await getRequestMeta()),
+  );
+export const remakeCertificateAction = async (employeeId: string) =>
+  change(async () => exits.remakeCertificate(await hrManage(), employeeId, await getRequestMeta()));

@@ -52,6 +52,12 @@ export function recordHref(ctx: Can, link: RecordLink | null): string | null {
       // A notice on the staff notice board: read it in My HR (HR without My HR sees the board).
       if (ctx.can("portal.self")) return `/me/notices#notice-${id}`;
       return ctx.can("hr.manage") ? `/hr/notices#notice-${id}` : null;
+    case "MyItems":
+      // A company item given to the employee or taken back: the list in My details.
+      return ctx.can("portal.self") ? "/me/profile#my-items" : null;
+    case "MySalary":
+      // A salary paid (in full or in part): the employee's money ledger.
+      return ctx.can("portal.self") ? "/me/ledger" : null;
     default:
       return null;
   }
@@ -71,4 +77,6 @@ export const RECORD_NOUNS: Record<string, string> = {
   StaffClaim: "the claim",
   MyClaim: "my claims",
   Notice: "the notice",
+  MyItems: "my items",
+  MySalary: "my money",
 };

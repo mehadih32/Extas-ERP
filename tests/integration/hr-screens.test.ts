@@ -52,6 +52,7 @@ import EmployeesPage from "@/app/(app)/hr/employees/page";
 import LeaveRequestPage from "@/app/(app)/hr/leave/[leaveId]/page";
 import NewLeavePage from "@/app/(app)/hr/leave/new/page";
 import LeavePage from "@/app/(app)/hr/leave/page";
+import CompanyItemsPage from "@/app/(app)/hr/items/page";
 import NoticesPage from "@/app/(app)/hr/notices/page";
 import HrOverviewPage from "@/app/(app)/hr/page";
 import PayrollRunPage from "@/app/(app)/hr/payroll/[runId]/page";
@@ -62,6 +63,7 @@ import HrTermsPage from "@/app/(app)/hr/terms/page";
 import MyAdvancesPage from "@/app/(app)/me/advances/page";
 import MyAttendancePage from "@/app/(app)/me/attendance/page";
 import MyClaimsPage from "@/app/(app)/me/claims/page";
+import MyLedgerPage from "@/app/(app)/me/ledger/page";
 import MyLeavePage from "@/app/(app)/me/leave/page";
 import MyNoticesPage from "@/app/(app)/me/notices/page";
 import MyHrPage from "@/app/(app)/me/page";
@@ -98,6 +100,7 @@ import {
   getClaimsLedgerAction,
   getEmployeeScoreAction,
   getNoticesScreenAction,
+  getAssetsScreenAction,
   getAttendanceScreenAction,
   getEmployeeFormAction,
   getEmployeeListAction,
@@ -339,6 +342,7 @@ run("HR & payroll screens", () => {
         ...(k.view ? ["/hr/leave"] : []),
         ...(k.salaries ? ["/hr/payroll"] : []),
         ...(k.advances ? ["/hr/advances"] : []),
+        ...(k.view ? ["/hr/items"] : []),
         ...(k.manage ? ["/hr/notices", "/hr/map"] : []),
         ...(k.view ? ["/hr/settings", "/hr/terms"] : []),
       ]);
@@ -365,6 +369,9 @@ run("HR & payroll screens", () => {
       expect((await getOvertimeLedgerAction({})).ok, `${who}: overtime`).toBe(k.manage);
       expect((await getClaimsLedgerAction({})).ok, `${who}: claims`).toBe(k.claims);
       expect((await getNoticesScreenAction({})).ok, `${who}: notices`).toBe(k.manage);
+      const items = await getAssetsScreenAction({});
+      expect(items.ok, `${who}: company items`).toBe(k.view);
+      if (items.ok) expect(items.data.can.manage, `${who}: give items`).toBe(k.manage);
       expect((await getEmployeeScoreAction(env.rahim.id)).ok, `${who}: score`).toBe(k.manage);
       expect((await getLeaveListAction({})).ok, `${who}: leave`).toBe(k.view);
       expect((await listLeaveRowsAction({})).ok, `${who}: more leave`).toBe(k.view);
@@ -407,6 +414,8 @@ run("HR & payroll screens", () => {
       }
       if (profile.ok) {
         expect(profile.data.score !== null, `${who}: score on the profile`).toBe(k.manage);
+        expect(profile.data.assets !== null, `${who}: items on the profile`).toBe(k.view);
+        expect(profile.data.clearance !== null, `${who}: clearance on the profile`).toBe(k.manage);
         expect(profile.data.pay !== null, `${who}: pay on the profile`).toBe(k.salaries);
         expect(JSON.stringify(profile.data).includes("30000"), `${who}: salary figure`).toBe(
           k.salaries,
@@ -474,6 +483,7 @@ run("HR & payroll screens", () => {
       expect(await rendered(HrTermsPage(listed)), `${who}: terms`).toBe(page(k.view));
       expect(await rendered(ClaimsPage(listed)), `${who}: claims`).toBe(page(k.claims));
       expect(await rendered(NoticesPage(listed)), `${who}: notices`).toBe(page(k.manage));
+      expect(await rendered(CompanyItemsPage(listed)), `${who}: items`).toBe(page(k.view));
     }
   });
 
@@ -695,6 +705,7 @@ run("HR & payroll screens", () => {
       expect(await rendered(MyPayslipsPage()), who).toBe(expected);
       expect(await rendered(MyAdvancesPage()), who).toBe(expected);
       expect(await rendered(MyClaimsPage()), `${who}: my claims`).toBe(expected);
+      expect(await rendered(MyLedgerPage()), `${who}: my money`).toBe(expected);
       // The notice board is for everyone with My HR, linked to an employee or not.
       expect(await rendered(MyNoticesPage()), `${who}: notices`).toBe(self ? "page" : "no access");
       expect(await rendered(MyDetailsPage()), `${who}: my details`).toBe(expected);

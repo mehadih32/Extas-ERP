@@ -562,7 +562,11 @@ Built one module at a time, each in its own pull request. So far:
     (with the allowance HR sets by hand), and for people who see salaries their pay, salary
     history, advances, payslips and a statement of what they owe and are owed. From there HR
     changes their details or salary, records leave, gives them a My HR login (the temporary
-    password shows once), records their leaving day and reinstates them.
+    password shows once), records their leaving day and reinstates them. The page lists the
+    company items they hold, and **Deactivate employee** does leaving in one go: the
+    clearance check (items still out hold it up; salary, advances and claims either way are
+    shown), the last working day, their login switched off and the Experience & Clearance
+    Certificate made and kept in their papers (made again later from the same button).
   - **Attendance**: a day's register: everyone's mark (present, late, half day, absent) with
     check-in and check-out times, overtime and a note, saved together; people on leave and
     days off are shown. A month's totals show the figures payroll uses for each person.
@@ -574,12 +578,20 @@ Built one module at a time, each in its own pull request. So far:
     draft whose lines (allowances, bonus, tax, other deductions, overtime, advance taken back)
     are checked and changed, with a bonus for everyone as a percentage or an amount. A second
     person approves it, which posts it to the books and freezes the month's attendance and
-    leave; Accounts then pays the ticked people from a cash, bank or wallet account. Each
-    person's **payslip** prints on the letterhead. A payroll is reopened only after its
+    leave; Accounts then pays the ticked people from a cash, bank or wallet account, all of
+    what each is owed or part of it (the rest is paid later and the line shows what is left).
+    Approved staff claims not paid back yet are added to the salary. With wallet payouts
+    connected, a bKash, Nagad or Rocket payment can be sent straight to each person's wallet,
+    with each payout's state and **Try again** for a failed one. Each person's **payslip**
+    prints on the letterhead with every part paid. A payroll is reopened only after its
     payments are voided.
   - **Advances**: salary advances, filtered by status and employee: given from a cash, bank or
     wallet account (or brought forward from before the ERP), taken back all at once or a
     monthly amount from a chosen payroll, with money returned in cash and voiding.
+  - **Items**: the company items with staff (laptop, phone, SIM, ID card, keys, uniform,
+    tools, vehicle), searchable by item, tag or person: who has each since when, given out
+    and taken back as returned, damaged or lost (with a note), and those still with people
+    who left.
   - **Holidays & rules**: the weekly days off, the office start time, the minutes of grace
     and how many lates cost a day's salary, whether staff check in themselves, the year's
     holidays, and the leave types with their yearly days.
@@ -598,8 +610,11 @@ Built one module at a time, each in its own pull request. So far:
   details), **Tasks** (the work given to them, soonest due first, to start, finish or reopen;
   whoever gave it hears about it), **Attendance** (their month day by day), **Leave** (what is
   left, their requests and asking for leave with a paper, withdrawing a request HR has not
-  decided), **Payslips** (each approved month, ready to print) and **Advances** (what is still
-  owed and how it is taken back). People who reach HR & payroll open My HR from the account
+  decided), **Payslips** (each approved month, ready to print, paid or part paid), **Money**
+  (each month's salary line by line: basic + approved overtime + claims − absence − advance
+  EMI = take-home, every part paid and what is still to come, with what they owe on advances)
+  and **Advances** (what is still owed and how it is taken back); **My details** also lists
+  the company items they hold. People who reach HR & payroll open My HR from the account
   menu.
 
   Sending payslips by email or WhatsApp comes with the integrations.
@@ -1590,11 +1605,27 @@ an Eid bonus), tax (TDS) and other deductions, and can change overtime hours or 
 recovery. Recalculating picks up later attendance, leave, salary and advance changes and
 keeps those edits. Someone holding the approval permission (Super Admin by default) then
 approves it; a draft that is out of date is refused, so what was checked is what gets posted. Approval posts one entry dated the month's last day
-and freezes the month's attendance, leave, holidays and salaries. Accounts then pays
-everyone, or chosen people in batches, from cash, bank or a wallet. A payment can be voided.
-A payroll can be reopened (its entry reversed and the advances owed again) only while none
-of it is paid. Every employee gets a payslip on the company letterhead, with the net pay in
-words, and sees their own payslips in the portal.
+and freezes the month's attendance, leave, holidays and salaries. Staff claims approved by
+the month's end and not paid back yet are paid with the salary: Basic + approved overtime +
+claims - (absence + advance EMI) = net pay (plus allowances, bonus, tax and other deductions
+when set). Approval ties those claims to the salary line, so they are not paid back twice;
+reopening unties them. Accounts then pays everyone, chosen people in batches, or part of a
+salary (a part paid now, the rest later), from cash, bank or a wallet; each line shows what
+is paid and what is left, and the payroll is paid when nothing is left. With wallet payouts
+connected (`PAYOUT_PROVIDER`, `log` for test mode), a bKash, Nagad or Rocket payment can be
+sent straight to each person's wallet from the background queue; a failed payout is marked
+for Accounts to send again or void, never retried on its own. A payment can be voided, and
+its people are owed that money again. A payroll can be reopened (its entry reversed and the
+advances owed again) only while none of it is paid. Every employee gets a payslip on the
+company letterhead, with the net pay in words and the parts paid, and sees their own payslips
+and a month-by-month money ledger in the portal.
+
+**Company items and leaving.** HR records the company items each person holds (laptop,
+phone, SIM, ID card, keys, uniform, tools, vehicle) and takes them back as returned, damaged
+or lost. "Deactivate employee" does leaving in one go: it is refused while items are still
+out, records the last working day (today or earlier), switches an Employee login off (other
+roles only for someone who manages users) and has the Experience & Clearance Certificate
+made in the background, a PDF locked against editing and kept in the employee's papers.
 
 **Employee portal.** With `portal.self`, an employee sees their own profile and pay details,
 leave balances, this month's attendance, advances and payslips, checks in and out, and asks
@@ -1738,6 +1769,7 @@ service worker `public/sw.js` make Extas ERP installable; phones are offered "In
 | Advance returned in cash     | Dr Cash / Bank / Wallet, Cr Advances to Employees                        |
 | Expense paid from an advance | Dr Expense, Cr Advances to Employees (and Cr Cash for any rest)          |
 | Payroll approved, per person | Dr Salaries & Wages (6200) gross pay, Cr Salaries Payable (2250) net pay |
+| ...claims paid with salary   | Dr Payable to Staff (2270), in the net pay                               |
 | ...and the deductions        | Cr Advances to Employees, Tax Deducted (2260), Other Income (4200)       |
 | Salaries paid                | Dr Salaries Payable (employee), Cr Cash / Bank / Wallet                  |
 | Staff claim approved         | Dr Conveyance or the project's cost head, Cr Payable to Staff (2270)     |
@@ -1762,7 +1794,8 @@ service worker `public/sw.js` make Extas ERP installable; phones are offered "In
 | `GET/POST /api/hr/payroll`, `GET/DELETE …/:id`                                        | Monthly payroll runs                                     |
 | `POST /api/hr/payroll/:id/recalculate` / `…/bonus`, `PATCH …/items/:id`               | Prepare the draft                                        |
 | `POST /api/hr/payroll/:id/approve` / `…/reopen`                                       | Post to the books / undo                                 |
-| `POST /api/hr/payroll/:id/pay`, `POST /api/hr/payroll/payments/:id/void`              | Pay salaries / void a payment                            |
+| `POST /api/hr/payroll/:id/pay`, `POST /api/hr/payroll/payments/:id/void`              | Pay salaries, in full or in part / void a payment        |
+| `POST /api/hr/payroll/payments/:id/retry-payouts`                                     | Send failed wallet payouts again                         |
 | `GET /api/hr/payroll/:id/items/:id/payslip`                                           | Payslip                                                  |
 | `GET /api/portal/me`, `…/attendance`, `…/payslips`, `…/advances`                      | Employee portal: my records                              |
 | `POST /api/portal/attendance/check-in` / `check-out`                                  | Employee portal: check in and out                        |
@@ -1790,6 +1823,11 @@ service worker `public/sw.js` make Extas ERP installable; phones are offered "In
 | `GET/POST /api/hr/notices?show=`, `PATCH …/:id`                                       | The notice board with who read each / post / change one  |
 | `POST /api/hr/notices/:id/take-down` / `…/put-back`                                   | Take a notice down / put it back up                      |
 | `GET /api/portal/notices`, `POST /api/portal/notices/read`                            | Employee portal: the notices up now / mark them read     |
+| `GET/POST /api/hr/items?show=`, `DELETE …/:id`                                        | Company items with staff / give one / remove a mistake   |
+| `POST /api/hr/items/:id/return` / `…/undo-return`                                     | Item back (good, damaged, lost) / undo                   |
+| `GET /api/hr/employees/:id/clearance`                                                 | Clearance check: items out, money either way, login      |
+| `POST /api/hr/employees/:id/deactivate` / `…/certificate`                             | Leave in one go / make the certificate again             |
+| `GET /api/portal/ledger`, `GET /api/portal/items`                                     | Employee portal: my money / company items with me        |
 
 `hr.view` sees profiles, attendance, leave and holidays, but no salaries. `hr.manage` adds
 and edits employees and salaries, marks attendance, approves leave and sets the HR rules.

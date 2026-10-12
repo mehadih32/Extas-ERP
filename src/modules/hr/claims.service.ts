@@ -18,7 +18,7 @@ import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { ensureGeneralExpenseHeads, headAccountId } from "@/modules/expenses/expense.service";
 import { isCompanyOwner, requireLinkedEmployee } from "@/modules/hr/access";
-import { monthLabel, monthRange, weekdayName } from "@/modules/hr/calendar";
+import { monthKey, monthLabel, monthRange, weekdayName } from "@/modules/hr/calendar";
 import {
   CLAIM_DECIDERS,
   type ClaimCheck,
@@ -368,33 +368,49 @@ export async function runClaimRouteJob(job: BackgroundJob) {
 // My HR: the employee's own claims
 // =============================================================================
 
+/** The payroll a claim is paid back with (set once that payroll is approved). */
+const salaryInclude = {
+  select: { runId: true, run: { select: { year: true, month: true } } },
+} satisfies Prisma.PayrollItemDefaultArgs;
+
 const myClaimInclude = {
   project: { select: { id: true, code: true, name: true } },
   receiptFile: { select: { id: true, fileName: true } },
   expense: { select: { voidedAt: true } },
+  payrollItem: salaryInclude,
 } satisfies Prisma.StaffClaimInclude;
+
+/** "October 2026": the salary a claim is paid back with. */
+const salaryMonth = (c: { payrollItem: { run: { year: number; month: number } } | null }) =>
+  c.payrollItem ? monthLabel(monthKey(c.payrollItem.run.year, c.payrollItem.run.month)) : null;
 
 type MyClaimRow = Prisma.StaffClaimGetPayload<{ include: typeof myClaimInclude }>;
 
-/** Approved, not paid back yet, and still in the books. */
+/** Approved, not paid back yet, not on an approved payroll, and still in the books. */
 const isOwed = (
-  c: Pick<StaffClaim, "status" | "paidAt"> & { expense: { voidedAt: Date | null } | null },
-) => c.status === "APPROVED" && c.paidAt === null && !c.expense?.voidedAt;
+  c: Pick<StaffClaim, "status" | "paidAt" | "payrollItemId"> & {
+    expense: { voidedAt: Date | null } | null;
+  },
+) =>
+  c.status === "APPROVED" && c.paidAt === null && c.payrollItemId === null && !c.expense?.voidedAt;
 
 /**
  * Where a claim stands for the person who made it:
  *   WAITING    with Accounts
  *   OWED       approved, to be paid back
+ *   SALARY     approved, paid back with a salary (that payroll is approved)
  *   PAID       paid back
  *   CANCELLED  approved, then its expense was voided by Accounts
  *   REJECTED / WITHDRAWN
  */
-export type MyClaimState = "WAITING" | "OWED" | "PAID" | "CANCELLED" | "REJECTED" | "WITHDRAWN";
+export type MyClaimState =
+  "WAITING" | "OWED" | "SALARY" | "PAID" | "CANCELLED" | "REJECTED" | "WITHDRAWN";
 
 function myState(c: MyClaimRow): MyClaimState {
   if (c.status === "PENDING") return "WAITING";
   if (c.status === "REJECTED" || c.status === "WITHDRAWN") return c.status;
   if (c.paidAt) return "PAID";
+  if (c.payrollItemId) return "SALARY";
   return c.expense?.voidedAt ? "CANCELLED" : "OWED";
 }
 
@@ -443,12 +459,15 @@ export async function getMyClaims(ctx: CompanyContext) {
       reason: c.reason,
       decidedAt: c.decidedAt ? localDay(c.decidedAt, tz) : null,
       paidAt: c.paidAt ? localDay(c.paidAt, tz) : null,
+      /** The salary it is (or was) paid back with: "October 2026". */
+      salary: salaryMonth(c),
       canWithdraw: c.status === "PENDING",
     };
   });
   const sum = (list: typeof rows, pick: (r: (typeof rows)[number]) => string) =>
     list.reduce((total, r) => total.plus(pick(r)), ZERO).toFixed(2);
-  const owed = rows.filter((r) => r.state === "OWED");
+  // Still to come, on their own or with a salary.
+  const owed = rows.filter((r) => r.state === "OWED" || r.state === "SALARY");
   const waiting = rows.filter((r) => r.state === "WAITING");
   const seen = new Set<string>();
   const recentRoutes: Array<{ from: string; to: string }> = [];
@@ -630,6 +649,7 @@ const ledgerInclude = {
   decidedBy: { select: { name: true } },
   paidBy: { select: { name: true } },
   paymentEntry: { select: { id: true, number: true } },
+  payrollItem: salaryInclude,
 } satisfies Prisma.StaffClaimInclude;
 
 type LedgerClaim = Prisma.StaffClaimGetPayload<{ include: typeof ledgerInclude }>;
@@ -693,6 +713,8 @@ function presentLedgerClaim(
       ? { id: c.expense.id, number: c.expense.number, voided: c.expense.voidedAt !== null }
       : null,
     costHead: c.costHead,
+    /** Paid back with this payroll's salaries (once it is approved). */
+    salary: c.payrollItem ? { label: salaryMonth(c)!, runId: c.payrollItem.runId } : null,
     paid: c.paidAt
       ? {
           on: localDay(c.paidAt, tz),
@@ -744,6 +766,7 @@ export async function getClaimsLedger(ctx: CompanyContext, raw: unknown = {}) {
       where: {
         status: "APPROVED",
         paidAt: null,
+        payrollItemId: null,
         OR: [{ expenseId: null }, { expense: { voidedAt: null } }],
       },
       select: {
@@ -1280,6 +1303,7 @@ export async function payBackClaims(ctx: CompanyContext, raw: unknown, meta?: Re
         employeeId: employee.id,
         status: "APPROVED",
         paidAt: null,
+        payrollItemId: null,
         OR: [{ expenseId: null }, { expense: { voidedAt: null } }],
       },
       orderBy: [{ date: "asc" }, { number: "asc" }],
@@ -1308,10 +1332,17 @@ export async function payBackClaims(ctx: CompanyContext, raw: unknown, meta?: Re
         { accountId: paidFrom, credit: total, memo: input.reference ?? undefined },
       ],
     });
-    await tx.staffClaim.updateMany({
-      where: { id: { in: claims.map((c) => c.id) } },
+    const marked = await tx.staffClaim.updateMany({
+      where: { id: { in: claims.map((c) => c.id) }, paidAt: null, payrollItemId: null },
       data: { paidAt: date, paidById: ctx.user.id, paymentEntryId: entry.id },
     });
+    if (marked.count !== claims.length) {
+      // A payroll took some of them to pay with the salary at the same moment.
+      throw new AppError(
+        "CONFLICT",
+        `Some of ${employee.name}'s claims were just put on a salary. Look again before paying.`,
+      );
+    }
     await auditInCompany(
       ctx,
       meta,
@@ -1344,7 +1375,10 @@ export async function payBackClaims(ctx: CompanyContext, raw: unknown, meta?: Re
   };
 }
 
-/** What a company owes an employee for approved claims not paid back yet. */
+/**
+ * What a company owes an employee for approved claims not paid back yet and
+ * not on an approved payroll (those are part of the salary owed).
+ */
 export async function owedForClaims(db: Db, companyId: string, employeeId: string) {
   const owed = await db.staffClaim.findMany({
     where: {
@@ -1352,6 +1386,7 @@ export async function owedForClaims(db: Db, companyId: string, employeeId: strin
       employeeId,
       status: "APPROVED",
       paidAt: null,
+      payrollItemId: null,
       OR: [{ expenseId: null }, { expense: { voidedAt: null } }],
     },
     select: { approvedAmount: true, amount: true },

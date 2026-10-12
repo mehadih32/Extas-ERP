@@ -246,10 +246,20 @@ export function grossPay(i: PayLine): Prisma.Decimal {
   );
 }
 
-/** Net pay: gross - advance recovery - tax - other deductions. */
-export function netPay(i: PayLine & Deductions): Prisma.Decimal {
+/**
+ * Net (take-home) pay: gross + approved claims paid back with the salary
+ * - advance recovery - tax - other deductions. So: basic + approved overtime
+ * (+ allowances, bonus) + reimbursements - (unpaid days + advance EMI + ...).
+ */
+export function netPay(
+  i: PayLine & Deductions & { reimbursements?: Prisma.Decimal.Value },
+): Prisma.Decimal {
   return money(
-    grossPay(i).minus(i.advanceDeduction).minus(i.taxDeduction).minus(i.otherDeductions),
+    grossPay(i)
+      .plus(i.reimbursements ?? 0)
+      .minus(i.advanceDeduction)
+      .minus(i.taxDeduction)
+      .minus(i.otherDeductions),
   );
 }
 
@@ -331,4 +341,79 @@ export function allocateRecovery(
     throw new RangeError(`Recovery is ${left.toFixed(2)} more than the advances owed.`);
   }
   return [...taken].map(([advanceId, amount]) => ({ advanceId, amount }));
+}
+
+// =============================================================================
+// Paying salaries, in full or in parts
+// =============================================================================
+
+export type SalaryLine = { id: string; netPay: Prisma.Decimal; paidAmount: Prisma.Decimal };
+
+/** What is still to pay on a salary line. */
+export function balanceOf(line: Pick<SalaryLine, "netPay" | "paidAmount">): Prisma.Decimal {
+  return Prisma.Decimal.max(ZERO, line.netPay.minus(line.paidAmount));
+}
+
+export type SalaryPaymentRequest = {
+  /** Pay these lines' whole balances. */
+  itemIds?: string[];
+  /** Pay these amounts (a part, or the rest, of each line). */
+  parts?: Array<{ itemId: string; amount: Prisma.Decimal.Value }>;
+};
+
+/**
+ * What one salary payment pays on each line: every balance left (nothing
+ * chosen), the chosen lines' balances, or the parts asked for, each more than
+ * zero and no more than the line's balance.
+ */
+export function salaryPaymentParts(
+  lines: SalaryLine[],
+  request: SalaryPaymentRequest,
+):
+  | { ok: true; parts: Array<{ itemId: string; amount: Prisma.Decimal }> }
+  | { ok: false; message: string } {
+  const open = lines.filter((l) => balanceOf(l).gt(0));
+  const byId = new Map(open.map((l) => [l.id, l]));
+  if (request.parts) {
+    const seen = new Set<string>();
+    const parts: Array<{ itemId: string; amount: Prisma.Decimal }> = [];
+    for (const p of request.parts) {
+      const line = byId.get(p.itemId);
+      if (!line || seen.has(p.itemId)) {
+        return {
+          ok: false,
+          message:
+            "Some chosen lines are not on this payroll, are already paid or are listed twice.",
+        };
+      }
+      seen.add(p.itemId);
+      const amount = money(p.amount);
+      if (amount.lte(0)) return { ok: false, message: "Each amount paid must be more than zero." };
+      const left = balanceOf(line);
+      if (amount.gt(left)) {
+        return {
+          ok: false,
+          message: `${amount.toFixed(2)} is more than the ${left.toFixed(2)} still to pay on a line.`,
+        };
+      }
+      parts.push({ itemId: line.id, amount });
+    }
+    return parts.length > 0
+      ? { ok: true, parts }
+      : { ok: false, message: "Nothing is left to pay." };
+  }
+  let chosen = open;
+  if (request.itemIds) {
+    const wanted = new Set(request.itemIds);
+    chosen = open.filter((l) => wanted.has(l.id));
+    if (chosen.length !== wanted.size) {
+      return {
+        ok: false,
+        message:
+          "Some chosen lines are not on this payroll, are already paid or have nothing to pay.",
+      };
+    }
+  }
+  if (chosen.length === 0) return { ok: false, message: "Nothing is left to pay." };
+  return { ok: true, parts: chosen.map((l) => ({ itemId: l.id, amount: balanceOf(l) })) };
 }

@@ -51,6 +51,9 @@ export const getMyAdvancesScreenAction = async () =>
   runAction(async () => screens.getMyAdvancesScreen(await self()));
 export const getMyProfileScreenAction = async () =>
   runAction(async () => screens.getMyProfileScreen(await self()));
+/** My money: salaries line by line, parts paid and what is still to come. */
+export const getMyLedgerScreenAction = async () =>
+  runAction(async () => screens.getMyLedgerScreen(await self()));
 
 export const getMyOverviewAction = async () =>
   runAction(async () => portal.getMyOverview(await self()));

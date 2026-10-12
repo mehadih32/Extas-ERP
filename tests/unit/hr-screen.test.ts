@@ -59,6 +59,7 @@ describe("HR & payroll in the menu, by role", () => {
     "Leave",
     "Payroll",
     "Advances",
+    "Items",
     "Notices",
     "Staff map",
     "Holidays & rules",
@@ -104,6 +105,7 @@ describe("HR & payroll in the menu, by role", () => {
       "Attendance",
       "Leave",
       "Payslips",
+      "Money",
       "Advances",
       "Claims",
       "My details",
@@ -116,6 +118,7 @@ describe("HR & payroll in the menu, by role", () => {
       "Employees",
       "Attendance",
       "Leave",
+      "Items",
       "Holidays & rules",
       "Terms",
     ]);

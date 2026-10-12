@@ -2,9 +2,11 @@
 
 import {
   CalendarPlusIcon,
+  FileBadgeIcon,
   HandCoinsIcon,
   KeyRoundIcon,
   PencilIcon,
+  PowerOffIcon,
   Trash2Icon,
   TrendingUpIcon,
   UndoIcon,
@@ -36,10 +38,11 @@ import {
   revokePortalAccessAction,
 } from "@/server/actions/hr.actions";
 
+import { DeactivateDialog, isDeactivated } from "./exit-actions";
 import { dayCount, hrHref } from "./labels";
 import { useNotice } from "./use-notice";
 
-type Open = "salary" | "exit" | "reinstate" | "login" | "logout" | "remove" | null;
+type Open = "salary" | "exit" | "deactivate" | "reinstate" | "login" | "logout" | "remove" | null;
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -47,7 +50,8 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
  * What HR can do with an employee, each offered from the flags the screen came
  * with (screen.can, from hr/rules.ts): change their details or salary, record
  * leave, give an advance (Accounts), give or remove their login, record that
- * they left or undo it, and remove someone added by mistake.
+ * they left or undo it, deactivate them in one go (clearance check, login off,
+ * certificate), and remove someone added by mistake.
  */
 export function EmployeeActions({
   screen,
@@ -69,9 +73,12 @@ export function EmployeeActions({
     close();
   };
   const leaving = Boolean(e.exitDate);
+  const clearance = can.deactivate ? screen.clearance : null;
+  const deactivated = clearance ? isDeactivated(clearance) : false;
 
   const any =
     can.edit ||
+    Boolean(clearance) ||
     can.changeSalary ||
     can.recordLeave ||
     can.giveAdvance ||
@@ -152,6 +159,21 @@ export function EmployeeActions({
             >
               <UserMinusIcon aria-hidden />
               {leaving ? "Change the leaving day" : "Record leaving"}
+            </Button>
+          )}
+          {clearance && (
+            <Button
+              type="button"
+              variant="outline"
+              className={
+                deactivated
+                  ? "w-full sm:w-auto"
+                  : "w-full text-destructive hover:text-destructive sm:w-auto"
+              }
+              onClick={() => setOpen("deactivate")}
+            >
+              {deactivated ? <FileBadgeIcon aria-hidden /> : <PowerOffIcon aria-hidden />}
+              {deactivated ? "Clearance certificate" : "Deactivate employee"}
             </Button>
           )}
           {can.reinstate && (
@@ -325,6 +347,10 @@ export function EmployeeActions({
             </>
           )}
         </FormDialog>
+      )}
+
+      {open === "deactivate" && clearance && (
+        <DeactivateDialog clearance={clearance} currency={currency} onClose={close} onDone={done} />
       )}
 
       {open === "reinstate" && (

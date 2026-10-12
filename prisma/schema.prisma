@@ -166,6 +166,8 @@ model Company {
   staffClaims          StaffClaim[]
   notices              Notice[]
   noticeReads          NoticeRead[]
+  payrollPaymentLines  PayrollPaymentLine[]
+  employeeAssets       EmployeeAsset[]
 }
 
 /// A person who can log in. Global across companies.
@@ -214,6 +216,8 @@ model User {
   noticesPosted      Notice[]              @relation("NoticeCreatedBy")
   noticesTakenDown   Notice[]              @relation("NoticeTakenDownBy")
   noticeReads        NoticeRead[]
+  assetsIssued       EmployeeAsset[]       @relation("EmployeeAssetIssuedBy")
+  assetsTakenBack    EmployeeAsset[]       @relation("EmployeeAssetReturnedTo")
   payrollsCreated    PayrollRun[]          @relation("PayrollCreatedBy")
   payrollsApproved   PayrollRun[]          @relation("PayrollApprovedBy")
   salariesPaid       PayrollPayment[]      @relation("PayrollPaidBy")
@@ -2361,6 +2365,7 @@ model Employee {
   position        StaffPosition?
   overtimeEntries OvertimeEntry[]
   staffClaims     StaffClaim[]
+  assets          EmployeeAsset[]
 
   @@unique([companyId, code])
   @@unique([companyId, userId])
@@ -2715,10 +2720,12 @@ model StaffClaim {
   /// on the project) and the production cost head it went under.
   expenseId      String?          @unique
   costHeadId     String?
-  /// Paid back by Accounts.
+  /// Paid back by Accounts, on its own or with a salary.
   paidAt         DateTime?
   paidById       String?
   paymentEntryId String?
+  /// The salary line it is paid back with, once that payroll is approved.
+  payrollItemId  String?
   createdById    String?
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
@@ -2733,12 +2740,14 @@ model StaffClaim {
   paidBy       User?              @relation("StaffClaimPaidBy", fields: [paidById], references: [id], onDelete: SetNull)
   createdBy    User?              @relation("StaffClaimCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   paymentEntry JournalEntry?      @relation(fields: [paymentEntryId], references: [id], onDelete: SetNull)
+  payrollItem  PayrollItem?       @relation(fields: [payrollItemId], references: [id], onDelete: SetNull)
 
   @@unique([companyId, number])
   @@index([companyId, status, date])
   @@index([employeeId, date])
   @@index([companyId, routeKey])
   @@index([projectId])
+  @@index([payrollItemId])
 }
 
 /// A notice on the staff notice board (My HR > Notices), posted by HR for
@@ -2783,6 +2792,38 @@ model NoticeRead {
 
   @@unique([noticeId, userId])
   @@index([companyId, userId])
+}
+
+/// A company item in an employee's hands (a laptop, phone, SIM, ID card, keys,
+/// uniform, tools): given on a day and returned (good, damaged or lost). Items
+/// not returned hold up the clearance when the person leaves.
+model EmployeeAsset {
+  id              String       @id @default(cuid())
+  companyId       String
+  employeeId      String
+  name            String
+  kind            AssetKind    @default(OTHER)
+  /// Serial number, asset tag or SIM number.
+  tag             String?
+  /// What it is worth, for a lost item.
+  value           Decimal?     @db.Decimal(14, 2)
+  issuedOn        DateTime     @db.Date
+  issueNote       String?
+  issuedById      String?
+  returnedOn      DateTime?    @db.Date
+  returnCondition AssetReturn?
+  returnNote      String?
+  returnedToId    String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  company    Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  issuedBy   User?    @relation("EmployeeAssetIssuedBy", fields: [issuedById], references: [id], onDelete: SetNull)
+  returnedTo User?    @relation("EmployeeAssetReturnedTo", fields: [returnedToId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, returnedOn])
+  @@index([employeeId, returnedOn])
 }
 
 /// A place staff check in at (an office, a factory floor, a shop), with the
@@ -2967,14 +3008,22 @@ model PayrollItem {
   advanceEdited        Boolean @default(false)
   taxDeduction         Decimal @default(0) @db.Decimal(14, 2)
   otherDeductions      Decimal @default(0) @db.Decimal(14, 2)
+  /// Approved staff claims paid back with this salary (not salary: no tax, not
+  /// a salary cost). Take-home = gross pay + reimbursements - deductions.
+  reimbursements       Decimal @default(0) @db.Decimal(14, 2)
   netPay               Decimal @db.Decimal(14, 2)
   note                 String?
+  /// Paid so far by live salary payments; a salary can be paid in parts.
+  paidAmount           Decimal @default(0) @db.Decimal(14, 2)
+  /// The payment that finished paying the line (null until it is paid in full).
   paymentId            String?
 
-  run         PayrollRun          @relation(fields: [runId], references: [id], onDelete: Cascade)
-  employee    Employee            @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  payment     PayrollPayment?     @relation(fields: [paymentId], references: [id], onDelete: SetNull)
-  settlements AdvanceSettlement[]
+  run          PayrollRun           @relation(fields: [runId], references: [id], onDelete: Cascade)
+  employee     Employee             @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  payment      PayrollPayment?      @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  settlements  AdvanceSettlement[]
+  paymentLines PayrollPaymentLine[]
+  claims       StaffClaim[]
 
   @@unique([runId, employeeId])
   @@index([employeeId])
@@ -3001,15 +3050,38 @@ model PayrollPayment {
   voidReason     String?
   createdAt      DateTime      @default(now())
 
-  company      Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  run          PayrollRun    @relation(fields: [runId], references: [id], onDelete: Cascade)
-  account      LedgerAccount @relation(fields: [accountId], references: [id])
-  journalEntry JournalEntry? @relation(fields: [journalEntryId], references: [id], onDelete: SetNull)
-  paidBy       User?         @relation("PayrollPaidBy", fields: [paidById], references: [id], onDelete: SetNull)
+  company      Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  run          PayrollRun           @relation(fields: [runId], references: [id], onDelete: Cascade)
+  account      LedgerAccount        @relation(fields: [accountId], references: [id])
+  journalEntry JournalEntry?        @relation(fields: [journalEntryId], references: [id], onDelete: SetNull)
+  paidBy       User?                @relation("PayrollPaidBy", fields: [paidById], references: [id], onDelete: SetNull)
   items        PayrollItem[]
+  lines        PayrollPaymentLine[]
 
   @@unique([companyId, number])
   @@index([runId])
+}
+
+/// How much of one employee's salary a payment paid (all of it, or a part).
+/// When paid through the wallet plug (bKash, Nagad, Rocket), the payout's state
+/// is kept here; null means Accounts handed the money over themselves.
+model PayrollPaymentLine {
+  id              String       @id @default(cuid())
+  companyId       String
+  paymentId       String
+  itemId          String
+  amount          Decimal      @db.Decimal(14, 2)
+  payout          PayoutState?
+  payoutReference String?
+  payoutError     String?
+  payoutAt        DateTime?
+
+  company Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  payment PayrollPayment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  item    PayrollItem    @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([paymentId])
+  @@index([itemId])
 }
 
 /// Cash advance given to an employee (or brought forward at go-live). It is
@@ -3678,6 +3750,35 @@ enum EmployeeDocumentKind {
   CONTRACT
   OTHER
   TERMS
+  CLEARANCE
+}
+
+/// A salary sent through the wallet plug: waiting to go, sent, refused by the
+/// wallet, or stopped because the payment was voided first.
+enum PayoutState {
+  QUEUED
+  SENT
+  FAILED
+  CANCELLED
+}
+
+enum AssetKind {
+  LAPTOP
+  PHONE
+  SIM
+  ID_CARD
+  KEY
+  UNIFORM
+  TOOL
+  VEHICLE
+  OTHER
+}
+
+/// How a company item came back.
+enum AssetReturn {
+  GOOD
+  DAMAGED
+  LOST
 }
 
 enum TermsSignMethod {

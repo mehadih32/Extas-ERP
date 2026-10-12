@@ -30,6 +30,7 @@ export const CLAIM_FLAG_LABELS: Record<StaffClaimFlag, string> = {
 export const MY_CLAIM_STATE_LABELS: Record<MyClaimState, string> = {
   WAITING: "Waiting for Accounts",
   OWED: "Approved, to be paid",
+  SALARY: "With the salary",
   PAID: "Paid back",
   CANCELLED: "Cancelled by Accounts",
   REJECTED: "Not approved",

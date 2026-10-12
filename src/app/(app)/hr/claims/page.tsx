@@ -426,9 +426,13 @@ export default async function ClaimsPage({
                     {r.expense.voided ? ". Accounts voided it, so nothing is owed." : "."}
                   </p>
                 )}
+                {r.salary && !r.paid && (
+                  <p className={smallText}>Paid back with the {r.salary.label} salary.</p>
+                )}
                 {r.paid && (
                   <p className={smallText}>
                     Paid back on {formatDay(r.paid.on)}
+                    {r.salary ? ` with the ${r.salary.label} salary` : ""}
                     {r.paid.by ? ` by ${r.paid.by}` : ""}
                     {r.paid.entry && (
                       <>

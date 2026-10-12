@@ -307,7 +307,7 @@ export const myHrHelp: HelpSection = {
       anyOf: ["portal.self"],
       steps: [
         {
-          text: "“My HR” > “Payslips” ট্যাব খুলুন। প্রতিটি মাসের “Take home” ও “Paid” বা “To be paid” দেখবেন।",
+          text: "“My HR” > “Payslips” ট্যাব খুলুন। প্রতিটি মাসের “Take home” ও “Paid”, “To be paid” বা “Part paid” দেখবেন। বেতনের একটা অংশ পেলে “Still to come”-এ বাকি টাকা দেখায়।",
           image: {
             id: "my-hr-payslips-1",
             caption: "“Payslips” ট্যাবে মাসের তালিকা",
@@ -318,7 +318,47 @@ export const myHrHelp: HelpSection = {
           text: "লেটারহেডে ছাপতে “PDF” চাপুন, ব্রাউজার দিয়ে ছাপতে “Print the payslip”।",
         },
       ],
-      tips: ["মাসের বেতন অনুমোদন হওয়ার পরেই পে-স্লিপ দেখা যায়।"],
+      tips: [
+        "মাসের বেতন অনুমোদন হওয়ার পরেই পে-স্লিপ দেখা যায়।",
+        "বেতন কোন হিসাবে কীভাবে এল, লাইন ধরে দেখতে “Money” ট্যাব খুলুন।",
+      ],
+    },
+    {
+      slug: "my-hr-ledger",
+      title: "নিজের বেতনের হিসাব লাইন ধরে দেখবেন যেভাবে (My money)",
+      summary:
+        "প্রতি মাসের বেতন কীভাবে হিসাব হলো (মূল বেতন + ওভারটাইম + দাবি − অনুপস্থিতি − অগ্রিমের কিস্তি), কত পেয়েছেন, কবে, কীভাবে আর কত বাকি, তা এক জায়গায় দেখা।",
+      keywords: [
+        "my money",
+        "ledger",
+        "salary breakdown",
+        "part paid",
+        "still to come",
+        "বেতনের হিসাব",
+        "আমার টাকা",
+        "বাকি বেতন",
+        "আংশিক বেতন",
+      ],
+      routes: ["/me/ledger"],
+      who: "যাঁদের My HR login আছে, শুধু নিজের হিসাব।",
+      anyOf: ["portal.self"],
+      steps: [
+        {
+          text: "“My HR” > “Money” ট্যাব খুলুন। ওপরে “Salary still to come” (অনুমোদিত কিন্তু এখনো না পাওয়া বেতন), “I owe on advances” আর “Claims to be paid back” দেখবেন।",
+          image: {
+            id: "my-hr-ledger-1",
+            caption: "“My money” পাতা: বাকি বেতন, অগ্রিমের দেনা ও মাসের হিসাব",
+          },
+        },
+        {
+          text: "প্রতিটি মাসে লাইন ধরে হিসাব থাকে: “Basic salary for the month”, অনুমোদিত ওভারটাইম, দাবির টাকা যোগ (+), আর অনুপস্থিতি ও “Advance taken back (EMI)” বিয়োগ (−)। শেষে “Take home”।",
+        },
+        {
+          text: "নিচে প্রতিটি পাওয়া অংশের তারিখ, কীভাবে (ক্যাশ, ব্যাংক, বিকাশ) আর ভাউচার নম্বর থাকে। ওয়ালেটে পাঠানো হলে তাও লেখা থাকে। পুরো পেলে “Paid in full”, না হলে কত বাকি দেখায়।",
+        },
+        { text: "মাসের নামে চাপলে সেই মাসের পে-স্লিপ খুলবে।" },
+      ],
+      tips: ["বেতন অনুমোদনের আগে খসড়া এখানে দেখায় না, কারণ অঙ্ক তখনো বদলাতে পারে।"],
     },
     {
       slug: "my-hr-advances",
@@ -389,12 +429,12 @@ export const myHrHelp: HelpSection = {
           text: "রসিদ বা মেমোর ছবি “Receipt or memo photo”-তে দিন (যাতায়াতে ঐচ্ছিক), তারপর “Send the claim” চাপুন। Accounts-এর কাছে খবর যায়।",
         },
         {
-          text: "প্রতিটি দাবির পাশে অবস্থা থাকে: “Waiting for Accounts”, “Approved, to be paid”, “Paid back” বা “Not approved” (কারণসহ)। সিদ্ধান্তের আগে ভুল দাবি তুলে নিতে “Withdraw” চাপুন।",
+          text: "প্রতিটি দাবির পাশে অবস্থা থাকে: “Waiting for Accounts”, “Approved, to be paid”, “With the salary” (মাসের বেতনের সঙ্গে আসবে), “Paid back” বা “Not approved” (কারণসহ)। সিদ্ধান্তের আগে ভুল দাবি তুলে নিতে “Withdraw” চাপুন।",
         },
       ],
       tips: [
         "চেক-ইন করা দিনের যাতায়াতই দাবি করুন। Accounts দাবিটি সেদিনের হাজিরা ও লোকেশনের সঙ্গে মিলিয়ে দেখে।",
-        "অনুমোদিত টাকা Accounts আলাদা করে ফেরত দেয়। টাকা পেলে দাবিটি “Paid back” দেখায়।",
+        "অনুমোদিত টাকা Accounts আলাদা করে ফেরত দেয়, নয়তো মাসের বেতনের সঙ্গে যোগ হয়ে আসে। টাকা পেলে দাবিটি “Paid back” দেখায়।",
       ],
     },
     {
@@ -443,6 +483,8 @@ export const myHrHelp: HelpSection = {
         "bkash number",
         "bank account",
         "আমার তথ্য",
+        "company items",
+        "অফিসের জিনিস",
         "রেফারেন্স",
         "এনআইডি",
         "রক্তের গ্রুপ",
@@ -480,11 +522,15 @@ export const myHrHelp: HelpSection = {
         {
           text: "NID কার্ডের ছবি (দুই পাশ), নিজের ছবি বা সনদ রাখতে “My papers”-এ “Add a paper” চাপুন, “What it is” বেছে ফোনের ক্যামেরায় ছবি তুলুন বা PDF দিন, তারপর “Add the paper”।",
         },
+        {
+          text: "অফিস থেকে পাওয়া ল্যাপটপ, ফোন, সিম বা আইডি কার্ড “Company items with me”-তে দেখাবে। চাকরি ছাড়ার সময় এগুলো HR-কে ফেরত দিন; না দিলে ছাড়পত্র (clearance) হয় না।",
+        },
       ],
       tips: [
         "আপনার কাগজপত্র শুধু আপনি আর HR দেখতে পারেন। নিজের যোগ করা কাগজ নিজে মুছতে পারেন।",
         "অন্য কারও নম্বরে বেতন নেওয়ার আবেদন HR বাতিল করতে পারেন; নিজের নামের হিসাব বা নম্বর দিন।",
         "চাকরির শর্তাবলির স্বাক্ষরিত কপি (“Signed terms of employment”) অ্যাপ নিজেই “My papers”-এ রাখে; এটি মোছা যায় না। শর্তাবলি আবার পড়তে নিচের “Read the terms of employment” চাপুন।",
+        "চাকরি ছাড়ার পর অভিজ্ঞতা ও ছাড়পত্র (“Experience and clearance certificate”) HR আপনার কাগজপত্রে রাখেন।",
       ],
     },
     {

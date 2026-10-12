@@ -22,6 +22,7 @@ const linkClass = "text-primary underline-offset-4 hover:underline";
 const STATE_TONES: Record<MyClaimState, Tone> = {
   WAITING: "warn",
   OWED: "open",
+  SALARY: "open",
   PAID: "done",
   CANCELLED: "closed",
   REJECTED: "closed",
@@ -128,7 +129,13 @@ export default async function MyClaimsPage() {
                       </p>
                     )}
                 {c.state === "PAID" && c.paidAt && (
-                  <p className="text-sm">Paid back on {formatDay(c.paidAt)}.</p>
+                  <p className="text-sm">
+                    Paid back on {formatDay(c.paidAt)}
+                    {c.salary ? `, with the ${c.salary} salary` : ""}.
+                  </p>
+                )}
+                {c.state === "SALARY" && c.salary && (
+                  <p className="text-sm">Comes with your {c.salary} salary.</p>
                 )}
                 {c.state === "CANCELLED" && (
                   <p className="text-sm">

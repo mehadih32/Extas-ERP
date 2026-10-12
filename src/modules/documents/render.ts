@@ -335,18 +335,26 @@ class Writer {
       : 0;
     const room = leftWidth - (stamp ? badgeWidth + 12 : 0);
 
-    // 19 pt, or smaller for a long title so it fits beside the badge.
+    // 19 pt, or smaller for a long title so it fits beside the badge; one still
+    // too long at 12 pt goes on two lines at 15 pt rather than being cut.
     const titleText = title.toUpperCase();
     const spacingFor = (size: number) => size * 0.115;
+    const styleAt = (s: number) => ({ font: SERIF_BOLD, size: s, spacing: spacingFor(s) });
     let size = 19;
-    const widthAt = (s: number) =>
-      textWidth(this.doc, titleText, { font: SERIF_BOLD, size: s, spacing: spacingFor(s) });
+    const widthAt = (s: number) => textWidth(this.doc, titleText, styleAt(s));
     while (size > 12 && widthAt(size) > room) size -= 0.5;
-    const titleWidth = this.line(titleText, MARGIN.left, top + (19 - size) * 0.55, room, {
-      font: SERIF_BOLD,
-      size,
-      color: this.primary,
-      spacing: spacingFor(size),
+    let lines = [titleText];
+    if (widthAt(size) > room) {
+      size = 15;
+      lines = wrapText(this.doc, titleText, room, styleAt(size)).slice(0, 2);
+    }
+    let titleWidth = 0;
+    lines.forEach((text, i) => {
+      const drawn = this.line(text, MARGIN.left, top + (19 - size) * 0.55 + i * 19, room, {
+        ...styleAt(size),
+        color: this.primary,
+      });
+      if (i === 0) titleWidth = drawn;
     });
     if (stamp) {
       const color = stamp.tone === "danger" ? this.accent : this.primary;
@@ -363,7 +371,7 @@ class Writer {
         spacing: 1.2,
       });
     }
-    let leftY = top + 25;
+    let leftY = top + 25 + (lines.length - 1) * 19;
     if (subtitle) {
       for (const text of this.wrap(subtitle, leftWidth, SANS, 9.5).slice(0, 2)) {
         this.line(text, MARGIN.left, leftY, leftWidth, { font: SANS, size: 9.5 });

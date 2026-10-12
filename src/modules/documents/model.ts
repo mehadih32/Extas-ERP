@@ -31,9 +31,10 @@ export type PrintType = (typeof PRINT_TYPES)[number];
 
 /**
  * Documents the app prints for its own records, outside the print archive and
- * the Print buttons: a signed copy of the terms of employment (hr/terms-pdf.ts).
+ * the Print buttons: a signed copy of the terms of employment (hr/terms-pdf.ts)
+ * and the experience and clearance certificate (hr/exit-pdf.ts).
  */
-export type RecordPrintType = "SIGNED_TERMS";
+export type RecordPrintType = "SIGNED_TERMS" | "CLEARANCE_CERTIFICATE";
 
 /**
  * Bump when the layout changes, so documents printed again get the new look.

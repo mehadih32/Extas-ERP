@@ -15,6 +15,7 @@ import {
 import { defaultEntitlement } from "@/modules/hr/leave.service";
 import {
   allocateRecovery,
+  balanceOf,
   type EmploymentInput,
   evaluateMonth,
   grossPay,
@@ -24,6 +25,7 @@ import {
   overtimePay,
   type RecoverableAdvance,
   salaryOn,
+  salaryPaymentParts,
   scheduledRecovery,
 } from "@/modules/hr/payroll-calc";
 
@@ -272,6 +274,74 @@ describe("monthly salary maths", () => {
         2,
       ),
     ).toBe("26250.00");
+    // Basic + approved overtime + claims - (absence + advance EMI) = take-home.
+    expect(
+      netPay({
+        ...line,
+        reimbursements: D(1500),
+        advanceDeduction: 2000,
+        taxDeduction: 500,
+        otherDeductions: 100,
+      }).toFixed(2),
+    ).toBe("27750.00");
+  });
+});
+
+describe("paying salaries in parts", () => {
+  const lines = [
+    { id: "rina", netPay: D(20000), paidAmount: D(0) },
+    { id: "sumon", netPay: D(15000), paidAmount: D(5000) },
+    { id: "jamal", netPay: D(12000), paidAmount: D(12000) },
+    { id: "zero", netPay: D(0), paidAmount: D(0) },
+  ];
+  const amounts = (r: ReturnType<typeof salaryPaymentParts>) =>
+    r.ok ? r.parts.map((p) => `${p.itemId} ${p.amount.toFixed(2)}`) : r.message;
+
+  it("knows what is left on a line", () => {
+    expect(balanceOf(lines[0]!).toFixed(2)).toBe("20000.00");
+    expect(balanceOf(lines[1]!).toFixed(2)).toBe("10000.00");
+    expect(balanceOf(lines[2]!).toFixed(2)).toBe("0.00");
+    expect(balanceOf({ netPay: D(100), paidAmount: D(150) }).toFixed(2)).toBe("0.00");
+  });
+
+  it("pays every balance left, or the chosen lines' balances", () => {
+    expect(amounts(salaryPaymentParts(lines, {}))).toEqual(["rina 20000.00", "sumon 10000.00"]);
+    expect(amounts(salaryPaymentParts(lines, { itemIds: ["sumon"] }))).toEqual(["sumon 10000.00"]);
+    expect(amounts(salaryPaymentParts(lines, { itemIds: ["jamal"] }))).toMatch(/already paid/);
+    expect(amounts(salaryPaymentParts(lines, { itemIds: ["nobody"] }))).toMatch(/not on this/);
+    expect(amounts(salaryPaymentParts([lines[2]!, lines[3]!], {}))).toBe("Nothing is left to pay.");
+  });
+
+  it("pays a part of a salary, never more than is left", () => {
+    expect(
+      amounts(
+        salaryPaymentParts(lines, {
+          parts: [
+            { itemId: "rina", amount: "7500.50" },
+            { itemId: "sumon", amount: 10000 },
+          ],
+        }),
+      ),
+    ).toEqual(["rina 7500.50", "sumon 10000.00"]);
+    expect(
+      amounts(salaryPaymentParts(lines, { parts: [{ itemId: "sumon", amount: 10000.01 }] })),
+    ).toBe("10000.01 is more than the 10000.00 still to pay on a line.");
+    expect(amounts(salaryPaymentParts(lines, { parts: [{ itemId: "rina", amount: 0 }] }))).toBe(
+      "Each amount paid must be more than zero.",
+    );
+    expect(
+      amounts(
+        salaryPaymentParts(lines, {
+          parts: [
+            { itemId: "rina", amount: 100 },
+            { itemId: "rina", amount: 100 },
+          ],
+        }),
+      ),
+    ).toMatch(/listed twice/);
+    expect(amounts(salaryPaymentParts(lines, { parts: [{ itemId: "jamal", amount: 1 }] }))).toMatch(
+      /already paid/,
+    );
   });
 });
 

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { MyItems } from "@/components/hr/asset-bits";
 import { MyDetailsForm, MyPapers, MyPayDetails } from "@/components/hr/my-details";
 import { MyHrProblem } from "@/components/hr/no-access";
 import { VaultChecklist } from "@/components/hr/vault-bits";
@@ -14,7 +15,8 @@ export const metadata: Metadata = { title: "My details" };
 
 /**
  * The employee's own data vault (portal.self): their details, filled once or
- * kept up to date, how they are paid (a change waits for HR), and their papers.
+ * kept up to date, the company items they hold, how they are paid (a change
+ * waits for HR), and their papers.
  * HR sees the same record.
  */
 export default async function MyDetailsPage() {
@@ -56,6 +58,10 @@ export default async function MyDetailsPage() {
               : "Fill in what is missing, so HR has everything they need."}
           </p>
           <VaultChecklist gaps={screen.gaps} />
+        </Panel>
+
+        <Panel title="Company items with me" id="my-items">
+          <MyItems items={screen.items} />
         </Panel>
 
         <Panel title="How I am paid" id="pay-heading">

@@ -1887,12 +1887,18 @@ export async function payslipDocument(ctx: CompanyContext, itemId: string): Prom
         ? (e.walletNumber ?? "")
         : "";
   const payment = slip.payment;
+  const partText = (p: (typeof payment.parts)[number]) =>
+    `${money(p.amount, currency)} on ${formatInstantDay(p.date, tz)} by ${PAYMENT_METHODS[p.method]} (${p.number})`;
   const paidLine =
     payment.status === "PAID"
-      ? `Paid on ${formatInstantDay(payment.date, tz)} by ${PAYMENT_METHODS[payment.method]} (${payment.number}).`
-      : payment.status === "UNPAID"
-        ? "Not paid yet."
-        : "Draft: this payroll is not approved yet, so these figures may change.";
+      ? payment.parts.length > 1
+        ? `Paid in ${payment.parts.length} parts: ${payment.parts.map(partText).join("; ")}.`
+        : `Paid on ${formatInstantDay(payment.date, tz)} by ${PAYMENT_METHODS[payment.method]} (${payment.number}).`
+      : payment.status === "PART_PAID"
+        ? `Paid so far: ${payment.parts.map(partText).join("; ")}. Still to pay: ${money(payment.balance, currency)}.`
+        : payment.status === "UNPAID"
+          ? "Not paid yet."
+          : "Draft: this payroll is not approved yet, so these figures may change.";
 
   const model = base(ctx, "PAYSLIP", {
     title: "Payslip",

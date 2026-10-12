@@ -561,56 +561,71 @@ export async function exitEmployee(
   assertCanManageHr(ctx, "Only HR can record that someone left.");
   const input = exitEmployeeSchema.parse(raw);
   const employee = await loadEmployee(ctx, employeeId);
+  await prisma.$transaction((tx) => recordExitTx(tx, ctx, employee, input, meta), TX_OPTIONS);
+  return getEmployee(ctx, employee.id);
+}
+
+/**
+ * The leaving record itself, inside the caller's transaction (recording that
+ * someone left, and deactivating them in one go): the day, the reason, later
+ * leave cancelled and leave allowances shared out again, in the activity log
+ * (with `note` added to the entry).
+ */
+export async function recordExitTx(
+  tx: Prisma.TransactionClient,
+  ctx: CompanyContext,
+  employee: { id: string; code: string; name: string; joinDate: Date; exitDate: Date | null },
+  input: { exitDate: string; status: "RESIGNED" | "TERMINATED"; reason?: string | null },
+  meta?: RequestMeta,
+  note = "",
+) {
   const join = dateOnly(employee.joinDate);
   if (input.exitDate < join) {
     throw new AppError("VALIDATION", `The last working day cannot be before joining (${join}).`);
   }
   const oldExit = dateOnly(employee.exitDate);
   const from = oldExit && oldExit < input.exitDate ? oldExit : input.exitDate;
-  await prisma.$transaction(async (tx) => {
-    await assertOpenFrom(tx, ctx.company.id, from.slice(0, 7), "the leaving day");
-    const later = await tx.leaveRequest.findMany({
-      where: {
-        employeeId: employee.id,
-        status: { in: ["PENDING", "APPROVED"] },
-        startDate: { gt: dateColumn(input.exitDate) },
-      },
-    });
-    await tx.leaveRequest.updateMany({
-      where: { id: { in: later.map((l) => l.id) } },
-      data: { status: "CANCELLED", decisionNote: `Left on ${input.exitDate}` },
-    });
-    await tx.employee.update({
-      where: { id: employee.id },
-      data: {
-        exitDate: dateColumn(input.exitDate),
-        exitReason: input.reason ?? null,
-        status: input.status,
-      },
-    });
-    // Allowances shared out by months worked change with the leaving day.
-    const types = await tx.leaveBalance.findMany({
-      where: { employeeId: employee.id, year: { gte: Number(from.slice(0, 4)) } },
-      select: { leaveTypeId: true, year: true },
-    });
-    for (const t of types) await syncLeaveBalanceTx(tx, employee.id, t.leaveTypeId, t.year);
-    await auditInCompany(
-      ctx,
-      meta,
-      {
-        action: "STATUS_CHANGE",
-        entityType: "Employee",
-        entityId: employee.id,
-        summary: `${employee.code} ${employee.name} ${input.status.toLowerCase()}, last working day ${
-          input.exitDate
-        }${later.length ? `; cancelled ${later.length} later leave request(s)` : ""}${
-          input.reason ? ` — ${input.reason}` : ""
-        }`,
-      },
-      tx,
-    );
-  }, TX_OPTIONS);
-  return getEmployee(ctx, employee.id);
+  await assertOpenFrom(tx, ctx.company.id, from.slice(0, 7), "the leaving day");
+  const later = await tx.leaveRequest.findMany({
+    where: {
+      employeeId: employee.id,
+      status: { in: ["PENDING", "APPROVED"] },
+      startDate: { gt: dateColumn(input.exitDate) },
+    },
+  });
+  await tx.leaveRequest.updateMany({
+    where: { id: { in: later.map((l) => l.id) } },
+    data: { status: "CANCELLED", decisionNote: `Left on ${input.exitDate}` },
+  });
+  await tx.employee.update({
+    where: { id: employee.id },
+    data: {
+      exitDate: dateColumn(input.exitDate),
+      exitReason: input.reason ?? null,
+      status: input.status,
+    },
+  });
+  // Allowances shared out by months worked change with the leaving day.
+  const types = await tx.leaveBalance.findMany({
+    where: { employeeId: employee.id, year: { gte: Number(from.slice(0, 4)) } },
+    select: { leaveTypeId: true, year: true },
+  });
+  for (const t of types) await syncLeaveBalanceTx(tx, employee.id, t.leaveTypeId, t.year);
+  await auditInCompany(
+    ctx,
+    meta,
+    {
+      action: "STATUS_CHANGE",
+      entityType: "Employee",
+      entityId: employee.id,
+      summary: `${employee.code} ${employee.name} ${input.status.toLowerCase()}, last working day ${
+        input.exitDate
+      }${later.length ? `; cancelled ${later.length} later leave request(s)` : ""}${
+        input.reason ? ` — ${input.reason}` : ""
+      }${note}`,
+    },
+    tx,
+  );
 }
 
 /** Undoes a leaving record (e.g. the resignation was withdrawn). */

@@ -1,5 +1,7 @@
 import {
   AdvanceStatus,
+  AssetKind,
+  AssetReturn,
   AttendanceStatus,
   EmployeeDocumentKind,
   EmployeeStatus,
@@ -459,15 +461,31 @@ export const payrollBonusSchema = z
     path: ["amount"],
   });
 
-export const payPayrollSchema = z.object({
-  /** Employees' payroll lines to pay; default: everyone not yet paid. */
-  itemIds: z.array(id).min(1).max(1000).optional(),
-  method: z.enum(PaymentMethod).default("CASH"),
-  /** Cash / bank / wallet ledger account; defaults by method. */
-  accountId: id.optional(),
-  date: dayOrInstant.optional(),
-  reference: optionalText(120),
-});
+export const payPayrollSchema = z
+  .object({
+    /** Employees' payroll lines to pay in full (what is left of each); default: everyone not yet paid. */
+    itemIds: z.array(id).min(1).max(1000).optional(),
+    /** Or amounts to pay on chosen lines: a part of a salary, or the rest of it. */
+    parts: z
+      .array(z.object({ itemId: id, amount: positiveMoney }))
+      .min(1)
+      .max(1000)
+      .optional(),
+    method: z.enum(PaymentMethod).default("CASH"),
+    /** Cash / bank / wallet ledger account; defaults by method. */
+    accountId: id.optional(),
+    date: dayOrInstant.optional(),
+    reference: optionalText(120),
+    /** Paid by bKash, Nagad or Rocket: also send each amount to the wallet (payout plug). */
+    sendToWallets: z.boolean().optional(),
+  })
+  .refine((v) => !(v.itemIds && v.parts), {
+    message: "Choose lines or amounts, not both.",
+    path: ["parts"],
+  });
+
+/** Wallet payouts that failed, to send again. */
+export const retryPayoutsSchema = z.object({ lineIds: z.array(id).min(1).max(1000).optional() });
 
 export const reopenPayrollSchema = z.object({ reason });
 
@@ -613,8 +631,8 @@ export const listPayRequestsSchema = z.object({
 
 /** A paper for the vault; the file itself comes with the upload. */
 export const employeeDocumentSchema = z.object({
-  // Signed terms are added by the app itself, never by hand.
-  kind: z.enum(EmployeeDocumentKind).exclude(["TERMS"]),
+  // Signed terms and the clearance certificate are made by the app itself, never by hand.
+  kind: z.enum(EmployeeDocumentKind).exclude(["TERMS", "CLEARANCE"]),
   title: optionalText(120),
 });
 
@@ -803,3 +821,44 @@ export const listNoticesSchema = z.object({
 
 /** The notices on the employee's screen, to mark as read. */
 export const readNoticesSchema = z.object({ noticeIds: z.array(id).max(200) });
+
+// --- Company items with staff, and leaving -----------------------------------------------------
+
+export const ASSET_SHOWS = ["out", "returned", "all"] as const;
+
+/** HR's list of company items: with staff now, back, or all; for one person or by name or tag. */
+export const listAssetsSchema = z.object({
+  show: z.enum(ASSET_SHOWS).catch("out").default("out"),
+  employeeId: id.optional(),
+  q: z.string().trim().max(80).optional(),
+});
+
+/** HR gives a company item to an employee. */
+export const issueAssetSchema = z.object({
+  employeeId: id,
+  name: z.string().trim().min(2, "Write what it is").max(120),
+  kind: z.enum(AssetKind).default("OTHER"),
+  tag: optionalText(80),
+  value: money.nullish(),
+  issuedOn: day,
+  note: optionalText(300),
+});
+
+/** The item came back: good, damaged or lost (the last two need a note). */
+export const returnAssetSchema = z
+  .object({
+    returnedOn: day,
+    condition: z.enum(AssetReturn),
+    note: optionalText(300),
+  })
+  .refine((v) => v.condition === "GOOD" || (v.note?.trim().length ?? 0) >= 3, {
+    message: "Say what happened",
+    path: ["note"],
+  });
+
+/**
+ * Deactivating someone in one go: their last working day (today or before),
+ * why they left, and an optional note; the login goes off and the experience
+ * and clearance certificate is made.
+ */
+export const deactivateEmployeeSchema = exitEmployeeSchema;

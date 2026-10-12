@@ -40,6 +40,9 @@ import {
 } from "@/modules/hr/payroll.service";
 import { myNotices } from "@/modules/hr/notice.service";
 import { getMyOverview } from "@/modules/hr/portal.service";
+import { employeeAssets, listAssets, myAssets } from "@/modules/hr/asset.service";
+import { getClearance } from "@/modules/hr/exit.service";
+import { myMoney } from "@/modules/hr/ledger.service";
 import {
   canActOnOwnRecord,
   canApproveLeave,
@@ -75,6 +78,7 @@ import { getHrSettings, listHolidays, listLeaveTypes } from "@/modules/hr/settin
 import { vaultIncompleteWhere } from "@/modules/hr/vault";
 import { getEmployeeVault, getMyVault, listPayRequests } from "@/modules/hr/vault.service";
 import { staffToAgreeCount } from "@/modules/hr/terms.service";
+import { payoutStatus } from "@/modules/integrations/payouts";
 import { integrationStatus } from "@/modules/integrations/status";
 
 /*
@@ -421,12 +425,20 @@ export async function getEmployeeScreen(
   const [vault, score] = access.manage
     ? await Promise.all([getEmployeeVault(ctx, e.id), employeeScore(ctx, e.id)])
     : [null, null];
+  /** Company items given to them (HR). */
+  const assets = access.view ? await employeeAssets(ctx, e.id) : null;
+  const deactivate =
+    access.manage && canActOnOwnRecord(subject, me, "Someone else in HR deactivates you.").ok;
+  /** Where they stand for leaving: items out, money either way, login, certificates. */
+  const clearance = deactivate ? await getClearance(ctx, e.id) : null;
 
   return {
     today: day,
     vault,
     /** The performance score and tenure (HR only). */
     score,
+    assets,
+    clearance,
     employee: {
       id: e.id,
       code: e.code,
@@ -470,6 +482,10 @@ export async function getEmployeeScreen(
       edit: access.manage,
       changeSalary: access.manage && salary?.ok === true,
       exit: access.manage,
+      /** Leaving in one go (clearance check, login off, certificate), or the certificate again. */
+      deactivate,
+      giveItem: access.manage && e.isCurrent,
+      changeItems: access.manage,
       reinstate: access.manage && canReinstate(subject).ok,
       remove: access.manage && canDeleteEmployee(subject, records).ok,
       giveLogin: access.manage && canGivePortalLogin(subject).ok,
@@ -798,9 +814,10 @@ export async function getPayrollScreen(ctx: CompanyContext, runId: string) {
     month: Number(run.month.slice(5, 7)),
   };
   const live = run.payments.filter((p) => !p.voidedAt).length;
-  const unpaid = run.items.filter(
-    (i) => !i.paid && /[1-9]/.test(i.netPay) && !i.netPay.startsWith("-"),
-  );
+  // Lines with something still to pay (a salary can be paid in parts).
+  const unpaid = run.items.filter((i) => /[1-9]/.test(i.balance) && !i.balance.startsWith("-"));
+  const payouts = payoutStatus();
+  const walletsOn = payouts.state !== "OFF";
   const draft = canChangePayroll(state);
   const reopen = canReopenPayroll(state, live);
   const pay = canPayPayroll(state, unpaid.length);
@@ -808,7 +825,15 @@ export async function getPayrollScreen(ctx: CompanyContext, runId: string) {
   const overtimeWaiting = draft.ok ? await waitingOvertime(ctx, run.month) : 0;
   return {
     run,
-    unpaid: unpaid.map((i) => ({ id: i.id, employee: i.employee, netPay: i.netPay })),
+    unpaid: unpaid.map((i) => ({
+      id: i.id,
+      employee: i.employee,
+      netPay: i.netPay,
+      paidAmount: i.paidAmount,
+      balance: i.balance,
+    })),
+    /** Salaries can go straight to bKash, Nagad or Rocket wallets (test mode moves no money). */
+    payouts: { on: walletsOn, test: payouts.state === "TEST" },
     moneyAccounts: access.pay && pay.ok ? await listMoneyAccounts(ctx) : [],
     today: today(ctx),
     can: {
@@ -841,6 +866,9 @@ export async function getPayrollScreen(ctx: CompanyContext, runId: string) {
         access.pay &&
         access.receive &&
         canVoidSalaryPayment({ number: p.number, voided: p.voidedAt !== null }).ok,
+      /** Wallet payouts that failed can be sent again. */
+      canRetry:
+        access.pay && walletsOn && !p.voidedAt && p.lines.some((l) => l.payout === "FAILED"),
     })),
   };
 }
@@ -849,10 +877,12 @@ export type PayrollScreen = Awaited<ReturnType<typeof getPayrollScreen>>;
 
 /** A payslip with the day it was paid in company time. */
 function withPaidOn(ctx: CompanyContext, slip: Awaited<ReturnType<typeof getPayslip>>) {
+  const tz = ctx.company.timezone;
   return {
     ...slip,
-    paidOn:
-      slip.payment.status === "PAID" ? localDay(slip.payment.date, ctx.company.timezone) : null,
+    paidOn: slip.payment.status === "PAID" ? localDay(slip.payment.date, tz) : null,
+    /** Each part paid, with its day in company time. */
+    parts: slip.payment.parts.map((p) => ({ ...p, on: localDay(p.date, tz) })),
   };
 }
 
@@ -1171,9 +1201,35 @@ export const MARK_STATUSES: readonly AttendanceStatus[] = ["PRESENT", "LATE", "H
 
 export { monthRange };
 
-/** My details: what the employee fills in, their papers and how they are paid. */
+/** My details: what the employee fills in, their papers, how they are paid and the company items they hold. */
 export async function getMyProfileScreen(ctx: CompanyContext) {
-  return getMyVault(ctx);
+  const [vault, items] = await Promise.all([getMyVault(ctx), myAssets(ctx)]);
+  return { ...vault, items };
 }
 
 export type MyProfileScreen = Awaited<ReturnType<typeof getMyProfileScreen>>;
+
+/** My money: each approved month's salary line by line, what is paid and what is still to come. */
+export async function getMyLedgerScreen(ctx: CompanyContext) {
+  return myMoney(ctx);
+}
+
+export type MyLedgerScreen = Awaited<ReturnType<typeof getMyLedgerScreen>>;
+
+// =============================================================================
+// Company items
+// =============================================================================
+
+/** HR's list of company items with staff, and who can be given one. */
+export async function getAssetsScreen(ctx: CompanyContext, raw: unknown = {}) {
+  const access = hrAccess(ctx);
+  const list = await listAssets(ctx, raw);
+  return {
+    ...list,
+    today: today(ctx),
+    people: access.manage ? await currentPeople(ctx) : [],
+    can: { manage: access.manage, openEmployee: access.view },
+  };
+}
+
+export type AssetsScreen = Awaited<ReturnType<typeof getAssetsScreen>>;

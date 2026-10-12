@@ -20,8 +20,10 @@ const SALARIES: readonly PermissionKey[] = ["hr.manage", "hr.payroll", "accounts
  * register also opens to whoever pays advances out (accounts.payments.record);
  * staff claims (conveyance, local material) to HR and to Accounts, who decide
  * and pay them; company items with staff read with any HR key (HR gives and
- * takes them back); the overtime ledger (shadow overtime), the staff notice board
- * and the staff map (where checked-in staff are now) only to HR (hr.manage).
+ * takes them back); the money drill-down (salary, conveyance, bonus and
+ * overtime by person and day) to hr.money.view (Super Admin unless granted);
+ * the overtime ledger (shadow overtime), the staff notice board and the staff
+ * map (where checked-in staff are now) only to HR (hr.manage).
  */
 export const HR_TABS: readonly HrTab[] = [
   { href: "/hr", label: "Overview", anyOf: HR_READ },
@@ -35,6 +37,7 @@ export const HR_TABS: readonly HrTab[] = [
   },
   { href: "/hr/leave", label: "Leave", anyOf: HR_READ },
   { href: "/hr/payroll", label: "Payroll", anyOf: SALARIES },
+  { href: "/hr/money", label: "Money", anyOf: ["hr.money.view"] },
   {
     href: "/hr/advances",
     label: "Advances",

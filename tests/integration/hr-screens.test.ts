@@ -107,6 +107,7 @@ import {
   getEmployeeMonthScreenAction,
   getEmployeeScreenAction,
   getHrOverviewScreenAction,
+  getMoneySummaryAction,
   getHrSettingsScreenAction,
   getLeaveFormAction,
   getLeaveListAction,
@@ -331,7 +332,8 @@ run("HR & payroll screens", () => {
       const k = keys(ctx);
 
       const inMenu = visibleNavItems([...ctx.permissions]).some((i) => i.href === "/hr");
-      expect(inMenu, who).toBe(k.view || k.advances || k.claims);
+      const seesMoney = ctx.can("hr.money.view");
+      expect(inMenu, who).toBe(k.view || k.advances || k.claims || seesMoney);
       expect(
         visibleHrTabs(ctx.permissions).map((t) => t.href),
         who,
@@ -341,6 +343,7 @@ run("HR & payroll screens", () => {
         ...(k.claims ? ["/hr/claims"] : []),
         ...(k.view ? ["/hr/leave"] : []),
         ...(k.salaries ? ["/hr/payroll"] : []),
+        ...(seesMoney ? ["/hr/money"] : []),
         ...(k.advances ? ["/hr/advances"] : []),
         ...(k.view ? ["/hr/items"] : []),
         ...(k.manage ? ["/hr/notices", "/hr/map"] : []),
@@ -348,6 +351,7 @@ run("HR & payroll screens", () => {
       ]);
 
       // Each screen's data comes exactly to the people its page is shown to.
+      expect((await getMoneySummaryAction({})).ok, `${who}: staff money`).toBe(seesMoney);
       const overview = await getHrOverviewScreenAction();
       expect(overview.ok, `${who}: overview`).toBe(k.view);
       const list = await getEmployeeListAction({});

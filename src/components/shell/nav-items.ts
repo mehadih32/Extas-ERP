@@ -55,6 +55,7 @@ export const HR_KEYS: readonly PermissionKey[] = [
   "hr.view",
   "hr.manage",
   "hr.payroll",
+  "hr.money.view",
   "accounts.view",
   "accounts.payments.record",
   "expenses.manage",

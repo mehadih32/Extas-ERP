@@ -27,7 +27,7 @@ type Party = { id: string; code: string; name: string };
 type Line = {
   key: string;
   /** The purchase order line the goods arrived on. */
-  orderLine: { id: string; ordered: string; pending: string } | null;
+  orderLine: { id: string; ordered: string; pending: string; priceLater: boolean } | null;
   material: { id: string; code: string; name: string; unit: MeasurementUnit };
   quantity: string;
   unitPrice: string;
@@ -68,7 +68,7 @@ export function PurchaseForm({
   const [lines, setLines] = useState<Line[]>(
     (order?.lines ?? []).map((l, i) => ({
       key: `item-start-${i}`,
-      orderLine: { id: l.id, ordered: l.ordered, pending: l.pending },
+      orderLine: { id: l.id, ordered: l.ordered, pending: l.pending, priceLater: l.priceLater },
       material: l.material,
       quantity: l.pending,
       unitPrice: l.unitPrice,
@@ -257,6 +257,11 @@ export function PurchaseForm({
                     <Field
                       id={`${line.key}-price`}
                       label={`Bill price per ${UNIT_ONE[line.material.unit]} (${currency})`}
+                      hint={
+                        line.orderLine?.priceLater
+                          ? "Priced at receive: enter the agreed price."
+                          : undefined
+                      }
                       error={err("unitPrice")}
                     >
                       <Input
@@ -266,7 +271,13 @@ export function PurchaseForm({
                         onChange={(e) => change(line.key, { unitPrice: e.target.value })}
                         autoComplete="off"
                         aria-invalid={Boolean(err("unitPrice"))}
-                        aria-describedby={err("unitPrice") ? `${line.key}-price-error` : undefined}
+                        aria-describedby={
+                          err("unitPrice")
+                            ? `${line.key}-price-error`
+                            : line.orderLine?.priceLater
+                              ? `${line.key}-price-hint`
+                              : undefined
+                        }
                       />
                     </Field>
                     <div className="grid gap-2">

@@ -41,6 +41,8 @@ const pickMaterials = () =>
     "materials.manage",
     "materials.purchase",
     "accounts.payments.record",
+    // A style's materials per piece.
+    "production.manage",
   );
 /** The supplier search: a material's usual supplier, an order's, a bill's. */
 const pickSuppliers = () =>

@@ -9,6 +9,7 @@ export type LockableTable =
   | "Quotation"
   | "SupplierBill"
   | "ProductionProject"
+  | "ProductionBatch"
   | "StockIntake"
   | "ProductVariant"
   | "FixedAsset"

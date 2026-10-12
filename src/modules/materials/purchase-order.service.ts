@@ -1,4 +1,4 @@
-import type { Prisma, PurchaseOrderStatus } from "@prisma/client";
+import type { MeasurementUnit, Party, Prisma, PurchaseOrderStatus } from "@prisma/client";
 
 import { dateColumn, dateOnly, localDay } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
@@ -33,6 +33,7 @@ import {
   ZERO,
 } from "@/modules/materials/valuation";
 import { assertPartyCanTransact } from "@/modules/parties/party.service";
+import { shareOut } from "@/modules/production/material-plan";
 import { isProjectClosed } from "@/modules/production/project-costs";
 
 /*
@@ -49,11 +50,16 @@ const TX_OPTIONS = { timeout: 30_000 };
 const orderInclude = {
   supplier: { select: { id: true, code: true, name: true, phone: true } },
   project: { select: { id: true, code: true, name: true, status: true } },
+  batch: { select: { id: true, code: true, name: true } },
   createdBy: { select: { id: true, name: true } },
   lines: {
     orderBy: { id: "asc" },
     include: {
       rawMaterial: { select: { id: true, code: true, name: true, kind: true, unit: true } },
+      shares: {
+        orderBy: { id: "asc" },
+        include: { project: { select: { id: true, code: true, name: true } } },
+      },
     },
   },
 } satisfies Prisma.PurchaseOrderInclude;
@@ -70,6 +76,8 @@ function presentOrder(ctx: CompanyContext, order: OrderRow) {
     status: order.status,
     supplier: order.supplier,
     project: order.project,
+    /** The master batch it was ordered for (its lines are shared out over the styles). */
+    batch: order.batch,
     orderDate: dateOnly(order.orderDate),
     expectedDate: expected,
     /** Still open past the expected date. */
@@ -90,7 +98,18 @@ function presentOrder(ctx: CompanyContext, order: OrderRow) {
       pending: pendingQuantity(l),
       unitPrice: cost(l.unitPrice),
       amount: cost(l.amount),
+      /** The price is agreed when the goods arrive (unitPrice and amount are 0 until then). */
+      priceLater: l.priceLater,
+      /** A picture for the supplier (a material picture). */
+      imageId: l.imageId,
       description: l.description,
+      /** What part is for which style, garment colour and size. */
+      shares: l.shares.map((sh) => ({
+        project: sh.project,
+        colorName: sh.colorName,
+        sizeName: sh.sizeName,
+        quantity: sh.quantity,
+      })),
     })),
   };
 }
@@ -101,7 +120,8 @@ async function prepareLines(
   lines: Array<{
     materialId: string;
     quantity: number;
-    unitPrice: number;
+    /** null: the price is agreed when the goods arrive. */
+    unitPrice: number | null;
     description?: string | null;
   }>,
 ) {
@@ -113,12 +133,13 @@ async function prepareLines(
     const m = materials.get(l.materialId)!;
     const quantity = qty(l.quantity);
     assertUnitFits(m, quantity, `lines.${i}.quantity`);
-    const unitPrice = unitCost(l.unitPrice);
+    const unitPrice = unitCost(l.unitPrice ?? 0);
     return {
       rawMaterialId: m.id,
       quantity,
       unitPrice,
       amount: money(quantity.times(unitPrice)),
+      priceLater: l.unitPrice === null,
       description: l.description ?? null,
     };
   });
@@ -143,7 +164,6 @@ async function assertOpenProject(ctx: CompanyContext, projectId: string) {
 export async function createPurchaseOrder(ctx: CompanyContext, raw: unknown, meta?: RequestMeta) {
   const input = createPurchaseOrderSchema.parse(raw);
   assertCanBuyMaterials(ctx);
-  const companyId = ctx.company.id;
   const supplier = await assertPartyCanTransact(ctx, input.supplierId, "PURCHASE");
   const project = input.projectId ? await assertOpenProject(ctx, input.projectId) : null;
   const orderDay = input.orderDate ?? localDay(new Date(), ctx.company.timezone);
@@ -153,38 +173,96 @@ export async function createPurchaseOrder(ctx: CompanyContext, raw: unknown, met
     });
   }
   const { lines, total } = await prepareLines(ctx, input.lines);
-  const orderId = await runTransaction(async (tx) => {
-    const order = await tx.purchaseOrder.create({
-      data: {
-        companyId,
-        number: await nextDocumentNumber(tx, companyId, "PURCHASE_ORDER"),
-        supplierId: supplier.id,
-        projectId: project?.id ?? null,
-        orderDate: dateColumn(orderDay),
-        expectedDate: input.expectedDate ? dateColumn(input.expectedDate) : null,
+  const orderId = await runTransaction(
+    async (tx) =>
+      insertPurchaseOrder(tx, ctx, meta, {
+        supplier,
+        project,
+        batch: null,
+        orderDay,
+        expectedDate: input.expectedDate ?? null,
         supplierRef: input.supplierRef ?? null,
-        totalAmount: total,
         notes: input.notes ?? null,
-        createdById: ctx.user.id,
-        lines: { create: lines },
-      },
-    });
-    await auditInCompany(
-      ctx,
-      meta,
-      {
-        action: "CREATE",
-        entityType: "PurchaseOrder",
-        entityId: order.id,
-        summary: `Purchase order ${order.number} to ${supplier.name}: ${lines.length} line(s), ${total.toFixed(2)}${
-          project ? ` for ${project.code}` : ""
-        }`,
-      },
-      tx,
-    );
-    return order.id;
-  }, TX_OPTIONS);
+        lines,
+        total,
+      }),
+    TX_OPTIONS,
+  );
   return getPurchaseOrder(ctx, orderId);
+}
+
+/** A line as it is written: worked out by prepareLines or for a batch, with its shares. */
+export type NewOrderLine = {
+  rawMaterialId: string;
+  quantity: Prisma.Decimal;
+  unitPrice: Prisma.Decimal;
+  amount: Prisma.Decimal;
+  priceLater: boolean;
+  imageId?: string | null;
+  description: string | null;
+  shares?: Array<{
+    projectId: string;
+    colorName: string | null;
+    sizeName: string | null;
+    quantity: Prisma.Decimal;
+  }>;
+};
+
+/** Writes a checked purchase order with its next number, and logs it. */
+export async function insertPurchaseOrder(
+  tx: Tx,
+  ctx: CompanyContext,
+  meta: RequestMeta | undefined,
+  order: {
+    supplier: Pick<Party, "id" | "name">;
+    project: { id: string; code: string } | null;
+    batch: { id: string; code: string } | null;
+    orderDay: string;
+    expectedDate: string | null;
+    supplierRef: string | null;
+    notes: string | null;
+    lines: NewOrderLine[];
+    total: Prisma.Decimal;
+  },
+) {
+  const companyId = ctx.company.id;
+  const created = await tx.purchaseOrder.create({
+    data: {
+      companyId,
+      number: await nextDocumentNumber(tx, companyId, "PURCHASE_ORDER"),
+      supplierId: order.supplier.id,
+      projectId: order.project?.id ?? null,
+      batchId: order.batch?.id ?? null,
+      orderDate: dateColumn(order.orderDay),
+      expectedDate: order.expectedDate ? dateColumn(order.expectedDate) : null,
+      supplierRef: order.supplierRef,
+      totalAmount: order.total,
+      notes: order.notes,
+      createdById: ctx.user.id,
+      lines: {
+        create: order.lines.map(({ shares, ...line }) => ({
+          ...line,
+          ...(shares?.length ? { shares: { create: shares } } : {}),
+        })),
+      },
+    },
+  });
+  const later = order.lines.filter((l) => l.priceLater).length;
+  const forWhat = order.batch ?? order.project;
+  await auditInCompany(
+    ctx,
+    meta,
+    {
+      action: "CREATE",
+      entityType: "PurchaseOrder",
+      entityId: created.id,
+      summary: `Purchase order ${created.number} to ${order.supplier.name}: ${order.lines.length} line(s), ${order.total.toFixed(2)}${
+        later > 0 ? ` (${later} priced at receive)` : ""
+      }${forWhat ? ` for ${forWhat.code}` : ""}`,
+    },
+    tx,
+  );
+  return created.id;
 }
 
 /** Locks an order for the rest of the transaction and reads it. */
@@ -229,10 +307,21 @@ export async function updatePurchaseOrder(
     assertAllowed(canChangeOrder(orderState(order)));
     if (prepared) {
       assertAllowed(canChangeOrderLines(orderState(order)));
+      const kept = await keptLineParts(tx, order.id);
       await tx.purchaseOrderLine.deleteMany({ where: { orderId: order.id } });
-      await tx.purchaseOrderLine.createMany({
-        data: prepared.lines.map((l) => ({ ...l, orderId: order.id })),
-      });
+      for (const line of prepared.lines) {
+        const old = kept.get(line.rawMaterialId);
+        await tx.purchaseOrderLine.create({
+          data: {
+            ...line,
+            orderId: order.id,
+            imageId: old?.imageId ?? null,
+            ...(old && old.shares.length > 0
+              ? { shares: { create: shareOut(line.quantity, old.shares, old.unit).map(asShare) } }
+              : {}),
+          },
+        });
+      }
     }
     const expectedDate =
       input.expectedDate === undefined
@@ -270,6 +359,78 @@ export async function updatePurchaseOrder(
     );
   }, TX_OPTIONS);
   return getPurchaseOrder(ctx, orderId);
+}
+
+/**
+ * What an order's lines carry beyond the form's fields, by material: the picture
+ * and the style-wise shares (set when it was made for a batch). Lines rewritten
+ * with the same material keep them, the shares in the same proportions.
+ */
+async function keptLineParts(tx: Tx, orderId: string) {
+  const lines = await tx.purchaseOrderLine.findMany({
+    where: { orderId },
+    orderBy: { id: "asc" },
+    include: { shares: { orderBy: { id: "asc" } }, rawMaterial: { select: { unit: true } } },
+  });
+  const kept = new Map<
+    string,
+    { imageId: string | null; unit: MeasurementUnit; shares: Array<ShareRow> }
+  >();
+  for (const l of lines) {
+    if (kept.has(l.rawMaterialId)) continue;
+    kept.set(l.rawMaterialId, { imageId: l.imageId, unit: l.rawMaterial.unit, shares: l.shares });
+  }
+  return kept;
+}
+
+type ShareRow = {
+  projectId: string;
+  colorName: string | null;
+  sizeName: string | null;
+  quantity: Prisma.Decimal;
+};
+
+const asShare = (s: ShareRow & { share: Prisma.Decimal }) => ({
+  projectId: s.projectId,
+  colorName: s.colorName,
+  sizeName: s.sizeName,
+  quantity: s.share,
+});
+
+/**
+ * After goods arrive on lines priced at receive: the price on the bill becomes
+ * the line's price (and later arrivals default to it), and the order's total
+ * counts it.
+ */
+export async function settleLaterPrices(
+  tx: Tx,
+  orderId: string,
+  billed: Array<{ purchaseOrderLineId: string | null; unitPrice: Prisma.Decimal }>,
+) {
+  const lines = await tx.purchaseOrderLine.findMany({
+    where: { orderId, priceLater: true },
+    select: { id: true, quantity: true },
+  });
+  let changed = false;
+  for (const line of lines) {
+    const item = billed.find((b) => b.purchaseOrderLineId === line.id);
+    if (!item) continue;
+    await tx.purchaseOrderLine.update({
+      where: { id: line.id },
+      data: {
+        unitPrice: item.unitPrice,
+        amount: money(line.quantity.times(item.unitPrice)),
+        priceLater: false,
+      },
+    });
+    changed = true;
+  }
+  if (!changed) return;
+  const all = await tx.purchaseOrderLine.findMany({ where: { orderId }, select: { amount: true } });
+  await tx.purchaseOrder.update({
+    where: { id: orderId },
+    data: { totalAmount: all.reduce((t, l) => t.plus(l.amount), ZERO) },
+  });
 }
 
 /** Cancels an order nothing has arrived on (the supplier will not deliver). */

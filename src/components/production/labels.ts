@@ -3,6 +3,7 @@ import type {
   CostAllocationMethod,
   ExpenseCategory,
   IntakeStatus,
+  MaterialSplit,
   PaymentType,
   ProductionKind,
   ProductionStage,
@@ -163,7 +164,45 @@ export const productionHref = {
   supplier: (id: string) => `/parties/suppliers/${encodeURIComponent(id)}`,
   buyer: (id: string) => `/parties/buyers/${encodeURIComponent(id)}`,
   file: (id: string) => `/api/files/${encodeURIComponent(id)}`,
+  /** A style's materials per piece and tech pack notes. */
+  materials: (projectId: string) =>
+    `/production/projects/${encodeURIComponent(projectId)}/materials`,
+  techPack: (projectId: string) =>
+    `/api/production/projects/${encodeURIComponent(projectId)}/tech-pack`,
+  /** "Make purchase orders" for a batch's materials. */
+  batchOrders: (batchId: string) => `/production/batches/${encodeURIComponent(batchId)}/orders/new`,
 };
+
+/** How a material per piece is ordered. */
+export const SPLIT_LABELS: Record<MaterialSplit, string> = {
+  TOTAL: "One total",
+  COLOUR: "By colour",
+  COLOUR_SIZE: "By colour and size",
+};
+
+export const SPLIT_HINTS: Record<MaterialSplit, string> = {
+  TOTAL: "Buttons, labels, thread: one quantity for all the pieces.",
+  COLOUR: "Body fabric: a quantity for each garment colour.",
+  COLOUR_SIZE: "Collars and cuffs: knitted for each colour and size.",
+};
+
+/** Where a material often goes, offered while typing. */
+export const PLACEMENT_SUGGESTIONS = [
+  "Main body",
+  "Collar",
+  "Cuff",
+  "Rib",
+  "Placket",
+  "Main label",
+  "Size label",
+  "Care label",
+  "Hang tag",
+  "Button",
+  "Zipper",
+  "Sewing thread",
+  "Poly bag",
+  "Carton",
+];
 
 /**
  * What a piece costs once a project's pieces are evened out: "BDT 103.09 a

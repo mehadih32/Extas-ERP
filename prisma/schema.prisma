@@ -123,6 +123,7 @@ model Company {
   salesReturns         SalesReturn[]
   productionProjects   ProductionProject[]
   productionBatches    ProductionBatch[]
+  materialNeeds        ProductionMaterialNeed[]
   supplierBills        SupplierBill[]
   stockIntakes         StockIntake[]
   ledgerAccounts       LedgerAccount[]
@@ -425,11 +426,13 @@ model FileAsset {
   supplierBills       SupplierBill[]
   expenses            Expense[]
   leaveRequests       LeaveRequest[]
-  paymentProofs       Payment[]            @relation("PaymentProof")
-  chequeProofs        Cheque[]             @relation("ChequeProof")
-  quotationImages     QuotationItem[]      @relation("QuotationItemImage")
+  paymentProofs       Payment[]                @relation("PaymentProof")
+  chequeProofs        Cheque[]                 @relation("ChequeProof")
+  quotationImages     QuotationItem[]          @relation("QuotationItemImage")
   employeeDocuments   EmployeeDocument[]
   staffClaims         StaffClaim[]
+  materialNeedImages  ProductionMaterialNeed[] @relation("MaterialNeedImage")
+  orderLineImages     PurchaseOrderLine[]      @relation("PurchaseOrderLineImage")
 
   @@index([companyId])
 }
@@ -781,13 +784,14 @@ model RawMaterial {
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
 
-  company     Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  supplier    Party?                @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  company     Company                  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  supplier    Party?                   @relation(fields: [supplierId], references: [id], onDelete: SetNull)
   stocks      RawMaterialStock[]
   movements   RawMaterialMovement[]
   orderLines  PurchaseOrderLine[]
   billItems   SupplierBillItem[]
   returnLines PurchaseReturnLine[]
+  neededBy    ProductionMaterialNeed[]
 
   @@unique([companyId, code])
   @@index([companyId, kind, isActive])
@@ -857,6 +861,8 @@ model PurchaseOrder {
   number       String
   supplierId   String
   projectId    String? // bought for this production project
+  /// Bought for the styles of a master batch (one order for all of them).
+  batchId      String?
   orderDate    DateTime            @db.Date
   expectedDate DateTime?           @db.Date // when the goods should be in-house
   status       PurchaseOrderStatus @default(OPEN)
@@ -872,6 +878,7 @@ model PurchaseOrder {
   company   Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
   supplier  Party               @relation(fields: [supplierId], references: [id])
   project   ProductionProject?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  batch     ProductionBatch?    @relation(fields: [batchId], references: [id], onDelete: SetNull)
   createdBy User?               @relation("PurchaseOrderCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   lines     PurchaseOrderLine[]
   bills     SupplierBill[]
@@ -880,6 +887,7 @@ model PurchaseOrder {
   @@unique([companyId, number])
   @@index([companyId, status, expectedDate])
   @@index([supplierId])
+  @@index([batchId])
 }
 
 model PurchaseOrderLine {
@@ -891,13 +899,38 @@ model PurchaseOrderLine {
   amount        Decimal @db.Decimal(14, 2)
   receivedQty   Decimal @default(0) @db.Decimal(14, 3) // on bills that are not void
   description   String?
+  /// The price is agreed when the goods arrive ("price at receive"); unitPrice is 0 until then.
+  priceLater    Boolean @default(false)
+  /// A sketch or photo for the supplier (the label artwork, the button).
+  imageId       String?
 
-  order       PurchaseOrder      @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  rawMaterial RawMaterial        @relation(fields: [rawMaterialId], references: [id])
+  order       PurchaseOrder            @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  rawMaterial RawMaterial              @relation(fields: [rawMaterialId], references: [id])
+  image       FileAsset?               @relation("PurchaseOrderLineImage", fields: [imageId], references: [id], onDelete: SetNull)
   billItems   SupplierBillItem[]
+  shares      PurchaseOrderLineShare[]
 
   @@index([orderId])
   @@index([rawMaterialId])
+}
+
+/// What part of an order line is for which style (and garment colour and size): the
+/// style-wise breakdown and the collar and cuff matrices printed on the order.
+model PurchaseOrderLineShare {
+  id        String  @id @default(cuid())
+  lineId    String
+  projectId String
+  /// The garment colour it is for, when the need is split by colour.
+  colorName String?
+  /// The garment size, when split by colour and size (collars, cuffs).
+  sizeName  String?
+  quantity  Decimal @db.Decimal(14, 3)
+
+  line    PurchaseOrderLine @relation(fields: [lineId], references: [id], onDelete: Cascade)
+  project ProductionProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([lineId])
+  @@index([projectId])
 }
 
 /// Raw materials bought on a supplier bill and received into the bill's store.
@@ -1812,6 +1845,8 @@ model ProductionProject {
   /// The most a piece should cost ("Target price"); the cost guard compares the live
   /// cost per piece (cost so far ÷ pieces to make) with it. Null: no target set.
   targetUnitCost Decimal?         @db.Decimal(14, 2)
+  /// Making notes printed on the tech pack (written by hand, or drafted by AI and edited).
+  techPackNotes  String?
   notes          String?
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
@@ -1825,6 +1860,8 @@ model ProductionProject {
   salesOrder           SalesOrder?              @relation(fields: [salesOrderId], references: [id], onDelete: SetNull)
   batch                ProductionBatch?         @relation(fields: [batchId], references: [id], onDelete: SetNull)
   targetLines          ProductionTargetLine[]
+  materialNeeds        ProductionMaterialNeed[]
+  orderShares          PurchaseOrderLineShare[]
   stageLogs            ProductionStageLog[]
   billAllocations      SupplierBillAllocation[]
   expenses             Expense[]
@@ -1869,9 +1906,41 @@ model ProductionBatch {
   factory   Party?              @relation("BatchFactory", fields: [factoryId], references: [id], onDelete: SetNull)
   createdBy User?               @relation("ProductionBatchCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   projects  ProductionProject[]
+  orders    PurchaseOrder[]
 
   @@unique([companyId, code])
   @@index([companyId, createdAt])
+}
+
+/// What one piece of a style takes of a raw material: a line of its bill of materials
+/// ("Materials per piece"). The project's pieces turn it into what to order and issue.
+model ProductionMaterialNeed {
+  id             String        @id @default(cuid())
+  companyId      String
+  projectId      String
+  rawMaterialId  String
+  /// How much one piece takes, in the material's unit (0.25 kg, 1.8 m, 2 pcs).
+  perPiece       Decimal       @db.Decimal(14, 4)
+  /// Ordered on top for cutting loss and spoilage, as a percent.
+  wastagePercent Decimal       @default(0) @db.Decimal(5, 2)
+  /// How it is ordered: one total, per garment colour (fabric), or per colour and size (collars, cuffs).
+  split          MaterialSplit @default(TOTAL)
+  /// Where it goes on the garment ("Main body", "Collar", "Back neck label").
+  placement      String?
+  /// A sketch or photo for the supplier and the factory.
+  imageId        String?
+  notes          String?
+  sortOrder      Int           @default(0)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  company     Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  project     ProductionProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  rawMaterial RawMaterial       @relation(fields: [rawMaterialId], references: [id])
+  image       FileAsset?        @relation("MaterialNeedImage", fields: [imageId], references: [id], onDelete: SetNull)
+
+  @@index([projectId])
+  @@index([rawMaterialId])
 }
 
 /// The pieces a project is to make of each SKU (a colour and size of a style): its
@@ -4012,6 +4081,13 @@ enum ProductionKind {
   CM
   READYMADE
   DROPSHIP
+}
+
+/// How a material need is ordered: one total, per garment colour, or per colour and size.
+enum MaterialSplit {
+  TOTAL
+  COLOUR
+  COLOUR_SIZE
 }
 
 enum BillStatus {

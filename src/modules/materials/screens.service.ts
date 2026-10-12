@@ -103,6 +103,7 @@ const href = {
   supplierReturn: (id: string) => `/materials/returns/${id}`,
   issue: (id: string) => `/materials/issues/${id}`,
   project: (id: string) => `/production/projects/${id}`,
+  batch: (id: string) => `/production/batches/${id}`,
 };
 
 /** The company's stores, the main one first. */
@@ -613,8 +614,30 @@ export async function getOrderScreen(ctx: CompanyContext, orderId: string) {
         pending: qty(l.pending),
         unitPrice: maybe(l.unitPrice, price),
         amount: maybe(l.amount, fixed),
+        priceLater: l.priceLater,
+        imageId: l.imageId,
         description: l.description,
+        /** The style-wise breakdown of an order made for a master batch. */
+        shares: l.shares.map((sh) => ({
+          project: {
+            id: sh.project.id,
+            code: sh.project.code,
+            name: sh.project.name,
+            href: access.openProject ? href.project(sh.project.id) : null,
+          },
+          colorName: sh.colorName,
+          sizeName: sh.sizeName,
+          quantity: qty(sh.quantity),
+        })),
       })),
+      batch: o.batch
+        ? {
+            ...o.batch,
+            href: access.openProject ? href.batch(o.batch.id) : null,
+          }
+        : null,
+      /** Lines still priced at receive. */
+      pricesLater: o.lines.filter((l) => l.priceLater).length,
       bills: o.bills.map((b) => ({
         id: b.id,
         number: b.number,
@@ -679,7 +702,8 @@ export async function getOrderForm(
           unit: l.material.unit,
         },
         quantity: qty(l.quantity),
-        unitPrice: l.unitPrice ? price(l.unitPrice) : "",
+        // A line priced at receive shows an empty price (and keeps it so when saved).
+        unitPrice: l.unitPrice && !l.priceLater ? price(l.unitPrice) : "",
         description: l.description ?? "",
       })),
       /** Why its lines can no longer change, or null. */
@@ -895,7 +919,9 @@ export async function getPurchaseForm(ctx: CompanyContext, options: { orderId?: 
           },
           ordered: qty(l.quantity),
           pending: qty(l.pending),
-          unitPrice: l.unitPrice ? price(l.unitPrice) : "",
+          unitPrice: l.unitPrice && !l.priceLater ? price(l.unitPrice) : "",
+          /** Priced at receive: the agreed price is entered now. */
+          priceLater: l.priceLater,
         })),
     };
   }

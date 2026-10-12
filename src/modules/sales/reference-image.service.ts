@@ -34,7 +34,7 @@ export const REFERENCE_LIMITS: ImageLimits = { maxSide: 2400, maxPixels: 4_000_0
 const inReferenceFolder = (storagePath: string) => storagePath.includes(`/${REFERENCE_FOLDER}/`);
 
 /** The picture's type and size, or a VALIDATION error saying what is wrong with it. */
-function checkReferenceImage(bytes: Buffer): ImageInfo {
+export function checkReferenceImage(bytes: Buffer): ImageInfo {
   if (bytes.length === 0) throw new AppError("VALIDATION", "The picture is empty.");
   if (bytes.length > MAX_REFERENCE_BYTES) {
     throw new AppError(

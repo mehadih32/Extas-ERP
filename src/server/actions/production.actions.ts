@@ -6,11 +6,15 @@ import { getRequestMeta } from "@/lib/request-meta";
 import { runAction } from "@/lib/result";
 import { requireAnyPermission, requirePermission } from "@/modules/auth/context";
 import * as files from "@/modules/files/file.service";
+import * as batchOrders from "@/modules/production/batch-orders.service";
 import * as batchScreens from "@/modules/production/batch-screens.service";
 import * as batches from "@/modules/production/batch.service";
 import * as challans from "@/modules/production/challan.service";
 import * as costs from "@/modules/production/cost.service";
 import * as intakes from "@/modules/production/intake.service";
+import * as pictures from "@/modules/production/material-image.service";
+import * as needs from "@/modules/production/material-need.service";
+import * as materialScreens from "@/modules/production/material-screens.service";
 import * as projects from "@/modules/production/project.service";
 import * as screens from "@/modules/production/screens.service";
 
@@ -38,6 +42,9 @@ const closeProject = () => requireAnyPermission("production.manage", "accounts.m
 /** The pickers on the project, bill and delivery forms. */
 const pickParties = () => requireAnyPermission("production.manage", "accounts.payments.record");
 const pickStyles = () => requireAnyPermission("production.manage", "production.stock_intake");
+/** Material pictures: on a style's materials (Production) or an order line (buyers). */
+const materialPictures = () => requireAnyPermission("production.manage", "materials.purchase");
+const buyMaterials = () => requirePermission("materials.purchase");
 const pickProjects = () =>
   requireAnyPermission("production.manage", "accounts.payments.record", "production.stock_intake");
 
@@ -120,6 +127,46 @@ export const updateBatchAction = async (batchId: string, input: unknown) =>
   );
 export const deleteBatchAction = async (batchId: string) =>
   change(async () => batches.deleteBatch(await manage(), batchId, await getRequestMeta()));
+
+// --- Materials per piece, tech pack and batch purchase orders ------------------------
+export const getNeedsPanelAction = async (projectId: string) =>
+  runAction(async () => materialScreens.getNeedsPanel(await view(), projectId));
+export const getNeedsFormAction = async (projectId: string) =>
+  runAction(async () => materialScreens.getNeedsForm(await manage(), projectId));
+export const setMaterialNeedsAction = async (projectId: string, input: unknown) =>
+  change(async () => {
+    const saved = await needs.setMaterialNeeds(
+      await manage(),
+      projectId,
+      input,
+      await getRequestMeta(),
+    );
+    return { id: saved.project.id, code: saved.project.code, needs: saved.needs.length };
+  });
+export const setTechPackNotesAction = async (projectId: string, input: unknown) =>
+  change(async () =>
+    needs.setTechPackNotes(await manage(), projectId, input, await getRequestMeta()),
+  );
+/** A first draft of the making notes (AI when it is set up, otherwise from rules); not saved. */
+export const draftTechPackNotesAction = async (projectId: string) =>
+  runAction(async () => needs.draftTechPackNotes(await manage(), projectId));
+export const uploadMaterialImageAction = async (form: FormData) =>
+  runAction(async () => {
+    const asset = await pictures.storeMaterialImage(
+      await materialPictures(),
+      await files.fileFromForm(form),
+      await getRequestMeta(),
+    );
+    return { id: asset.id, fileName: asset.fileName, sizeBytes: asset.sizeBytes };
+  });
+export const getBatchMaterialsAction = async (batchId: string) =>
+  runAction(async () => materialScreens.getBatchMaterials(await view(), batchId));
+export const getBatchOrdersFormAction = async (batchId: string) =>
+  runAction(async () => materialScreens.getBatchOrdersForm(await buyMaterials(), batchId));
+export const createBatchOrdersAction = async (batchId: string, input: unknown) =>
+  change(async () =>
+    batchOrders.createBatchOrders(await buyMaterials(), batchId, input, await getRequestMeta()),
+  );
 
 // --- Overview & projects -------------------------------------------------------------
 export const getProductionOverviewAction = async () =>

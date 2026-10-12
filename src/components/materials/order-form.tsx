@@ -73,13 +73,14 @@ export function OrderForm({ form: data, currency }: { form: OrderFormData; curre
     if (!locked && lines.length === 0) found.lines = "Add at least one material.";
     const parsed = lines.map((l, i) => {
       const q = readQuantity(l.quantity, l.material.unit);
-      const p = readPrice(l.unitPrice);
+      // An empty price is agreed when the goods arrive ("price at receive").
+      const p = l.unitPrice.trim() ? readPrice(l.unitPrice) : null;
       if (typeof q === "string") found[`lines.${i}.quantity`] = q;
       if (typeof p === "string") found[`lines.${i}.unitPrice`] = p;
       return {
         materialId: l.material.id,
         quantity: typeof q === "number" ? q : 0,
-        unitPrice: typeof p === "number" ? p : 0,
+        unitPrice: typeof p === "number" ? p : null,
         description: l.description.trim() || undefined,
       };
     });
@@ -238,6 +239,7 @@ export function OrderForm({ form: data, currency }: { form: OrderFormData; curre
                     <Field
                       id={`${line.key}-price`}
                       label={`Price per ${UNIT_ONE[line.material.unit]} (${currency})`}
+                      hint="Leave empty to agree the price at receive."
                       error={err("unitPrice")}
                     >
                       <Input
@@ -247,14 +249,19 @@ export function OrderForm({ form: data, currency }: { form: OrderFormData; curre
                         onChange={(e) => change(line.key, { unitPrice: e.target.value })}
                         disabled={locked}
                         autoComplete="off"
+                        placeholder="At receive"
                         aria-invalid={Boolean(err("unitPrice"))}
-                        aria-describedby={err("unitPrice") ? `${line.key}-price-error` : undefined}
+                        aria-describedby={
+                          err("unitPrice") ? `${line.key}-price-error` : `${line.key}-price-hint`
+                        }
                       />
                     </Field>
                     <div className="grid gap-2">
                       <span className="text-sm font-medium">Amount</span>
                       <span className="flex h-9 items-center text-sm tabular-nums">
-                        {money(lineAmount(line).toFixed(2), currency)}
+                        {line.unitPrice.trim()
+                          ? money(lineAmount(line).toFixed(2), currency)
+                          : "At receive"}
                       </span>
                     </div>
                   </div>

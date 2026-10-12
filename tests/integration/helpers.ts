@@ -23,6 +23,7 @@ export async function resetDb() {
   await prisma.stockIntake.deleteMany();
   await prisma.supplierBill.deleteMany();
   await prisma.purchaseOrder.deleteMany();
+  await prisma.productionMaterialNeed.deleteMany();
   await prisma.rawMaterialStock.deleteMany();
   await prisma.rawMaterial.deleteMany();
   await prisma.advanceSettlement.deleteMany();

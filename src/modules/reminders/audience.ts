@@ -23,6 +23,7 @@ export async function activeMembers(companyId: string, db: Db = prisma): Promise
           permissions: { select: { permission: { select: { key: true } } } },
         },
       },
+      permissionChanges: { select: { granted: true, permission: { select: { key: true } } } },
     },
   });
   return memberships.map((m) => ({
@@ -32,6 +33,7 @@ export async function activeMembers(companyId: string, db: Db = prisma): Promise
       isPlatformSuperAdmin: m.user.isSuperAdmin,
       systemRole: m.role.systemRole,
       grantedKeys: m.role.permissions.map((p) => p.permission.key),
+      changes: m.permissionChanges.map((c) => ({ key: c.permission.key, granted: c.granted })),
     }),
   }));
 }

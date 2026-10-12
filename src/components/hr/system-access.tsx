@@ -1,11 +1,19 @@
 "use client";
 
-import { KeyRoundIcon, PowerIcon, PowerOffIcon, ShieldIcon, UserXIcon } from "lucide-react";
+import {
+  KeyRoundIcon,
+  PowerIcon,
+  PowerOffIcon,
+  Settings2Icon,
+  ShieldIcon,
+  UserXIcon,
+} from "lucide-react";
 import { useState } from "react";
 
 import { Field, FormAlert } from "@/components/forms/field";
 import { textOf } from "@/components/products/form-values";
 import { FormDialog, problem } from "@/components/sales/dialogs";
+import { MemberAccessDialog } from "@/components/settings/team/member-access-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -22,7 +30,7 @@ import { useNotice } from "./use-notice";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-type Open = "give" | "role" | "off" | "on" | "remove" | null;
+type Open = "give" | "role" | "permissions" | "off" | "on" | "remove" | null;
 
 /** The role choices: the Employee role first, as most logins are staff checking in. */
 function RoleSelect({
@@ -58,7 +66,9 @@ function RoleSelect({
  * The System access card on an employee's profile: their login, the role it
  * works in, whether it is on and when it last signed in. HR gives or removes
  * the login; people who manage users also choose its role and switch it off
- * or on, under the same rules as Settings > Team (`access.can`).
+ * or on, under the same rules as Settings > Team (`access.can`). Changing the
+ * role, the ⚙ next to it and a newly given login open the permission matrix
+ * (every permission A to Z) as on Settings > Team.
  */
 export function SystemAccessCard({
   employee: e,
@@ -98,6 +108,32 @@ export function SystemAccessCard({
             <dd className="mt-1 flex items-center gap-1.5">
               <ShieldIcon className="size-4 text-muted-foreground" aria-hidden />
               {login.role.name}
+              {(login.permissions.added.length > 0 || login.permissions.removed.length > 0) && (
+                <span className="text-xs text-muted-foreground">
+                  (
+                  {[
+                    login.permissions.added.length > 0 && `${login.permissions.added.length} added`,
+                    login.permissions.removed.length > 0 &&
+                      `${login.permissions.removed.length} taken away`,
+                  ]
+                    .filter(Boolean)
+                    .join(", ")}
+                  )
+                </span>
+              )}
+              {(can.editPermissions || can.changeRole) && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  className="-my-1 size-9 text-muted-foreground md:size-7"
+                  onClick={() => setOpen("permissions")}
+                  aria-label={`Edit ${e.name}'s permissions`}
+                  title="Edit permissions"
+                >
+                  <Settings2Icon aria-hidden />
+                </Button>
+              )}
             </dd>
           </div>
           <div>
@@ -213,6 +249,8 @@ export function SystemAccessCard({
               setPassword(null);
               done(`${e.name} now signs in as ${signsInAs} with the password they already have.`);
             }
+            // The role is given: the permission matrix shows what it opens, to adjust.
+            if (can.editPermissions) setOpen("permissions");
           }}
         >
           {(fieldError) => (
@@ -259,28 +297,24 @@ export function SystemAccessCard({
         </FormDialog>
       )}
 
-      {open === "role" && login && (
-        <FormDialog
-          title={`Change ${e.name}'s role`}
-          description={`${login.email} works in the role chosen from their next page. Their HR records stay as they are.`}
-          submitLabel="Save the role"
-          pendingLabel="Saving"
-          errorTitle="We could not change the role"
-          onClose={close}
-          onSubmit={async (form) => {
-            const roleId = textOf(form, "roleId");
-            if (roleId === login.role.id) return problem({ roleId: "Choose another role." });
-            const result = await changeEmployeeLoginAction(e.id, { roleId });
-            if (!result.ok) return result.error;
-            done(`${e.name} now works as ${result.data.role.name}.`);
+      {(open === "role" || open === "permissions") && login && (
+        <MemberAccessDialog
+          member={{
+            id: login.id,
+            name: e.name,
+            isYou: login.isYou,
+            roleId: login.role.id,
+            permissions: login.permissions,
           }}
-        >
-          {(fieldError) => (
-            <Field id="login-new-role" label="Role" error={fieldError("roleId")}>
-              <RoleSelect id="login-new-role" roles={roles} defaultValue={login.role.id} />
-            </Field>
-          )}
-        </FormDialog>
+          roles={roles}
+          initialRoleId={
+            open === "role" ? roles.find((r) => r.id !== login.role.id)?.id : undefined
+          }
+          canChangeRole={can.changeRole}
+          canEditPermissions={can.editPermissions}
+          onClose={close}
+          onSaved={done}
+        />
       )}
 
       {(open === "off" || open === "on") && login && (

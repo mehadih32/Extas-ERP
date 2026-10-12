@@ -4,6 +4,7 @@ import {
   EllipsisVerticalIcon,
   KeyRoundIcon,
   RotateCcwKeyIcon,
+  Settings2Icon,
   UserCheckIcon,
   UserCogIcon,
   UserXIcon,
@@ -22,7 +23,7 @@ import {
 import { ROUTES } from "@/lib/routes";
 import type { TeamMember } from "@/modules/rbac/member.service";
 
-export type MemberAction = "role" | "reset" | "deactivate" | "reactivate";
+export type MemberAction = "role" | "permissions" | "reset" | "deactivate" | "reactivate";
 
 /** Whether the menu has anything in it for this member. */
 export function hasMemberActions(member: TeamMember): boolean {
@@ -64,6 +65,12 @@ export function MemberActions({
           <DropdownMenuItem onSelect={() => onAction("role", member)}>
             <UserCogIcon aria-hidden />
             Change role
+          </DropdownMenuItem>
+        )}
+        {can.editPermissions && (
+          <DropdownMenuItem onSelect={() => onAction("permissions", member)}>
+            <Settings2Icon aria-hidden />
+            Edit permissions
           </DropdownMenuItem>
         )}
         {can.resetPassword && (

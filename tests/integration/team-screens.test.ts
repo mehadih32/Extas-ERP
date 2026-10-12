@@ -51,6 +51,7 @@ import {
   getRolesAction,
   getTeamAction,
   resetMemberPasswordAction,
+  setMemberAccessAction,
   setMemberActiveAction,
   updateRoleAction,
 } from "@/server/actions/rbac.actions";
@@ -188,6 +189,17 @@ async function checkTeamScreen(userId: string, companyId: string, who: string): 
     }
     expect(m.can.changeRole, `${label}: change role`).toBe(m.roleChoices.length > 0);
 
+    // The permission matrix: one more (or one fewer) permission for them alone.
+    const roleKeys = team.roles.find((r) => r.id === m.role.id)!.permissions;
+    const ticked = await setMemberAccessAction(m.id, {
+      permissions: roleKeys.includes("notepad.use")
+        ? roleKeys.filter((key) => key !== "notepad.use")
+        : [...roleKeys, "notepad.use"],
+    });
+    expect(ticked.ok, `${label}: edit permissions`).toBe(m.can.editPermissions);
+    expectRuleRefusal(ticked, label);
+    if (ticked.ok) await prisma.memberPermission.deleteMany({ where: { membershipId: m.id } });
+
     if (m.isActive) {
       expect(m.can.reactivate, `${label}: reactivate`).toBe(false);
       const deactivated = await setMemberActiveAction(m.id, false);
@@ -290,7 +302,13 @@ async function checkRolesScreen(userId: string, companyId: string, who: string) 
   return screen;
 }
 
-const NOTHING = { changeRole: false, deactivate: false, reactivate: false, resetPassword: false };
+const NOTHING = {
+  changeRole: false,
+  editPermissions: false,
+  deactivate: false,
+  reactivate: false,
+  resetPassword: false,
+};
 
 const memberCalled = (team: Team, email: string) => team.members.find((m) => m.email === email)!;
 const roleCalled = (roles: RoleSummary[], name: string) => roles.find((r) => r.name === name)!;
@@ -313,12 +331,19 @@ run("team and roles screens offer exactly what the server allows", () => {
     expect(memberCalled(asOwner, "owner@extras.test")).toMatchObject({
       isYou: true,
       isPlatformOwner: true,
-      can: { changeRole: true, deactivate: false, reactivate: false, resetPassword: false },
+      can: {
+        changeRole: true,
+        editPermissions: false,
+        deactivate: false,
+        reactivate: false,
+        resetPassword: false,
+      },
     });
 
     const asAdmin = await checkTeamScreen(people.admin.user.id, company.id, "Super Admin");
     expect(memberCalled(asAdmin, "owner@extras.test").can).toEqual({
       changeRole: true,
+      editPermissions: false, // the platform owner always has everything
       deactivate: true,
       reactivate: false,
       resetPassword: false, // the platform owner's password is theirs alone
@@ -337,6 +362,7 @@ run("team and roles screens offer exactly what the server allows", () => {
     for (const m of asHr.members) expect(m.roleChoices, m.email).not.toContain(roles.SUPER_ADMIN);
     expect(memberCalled(asHr, "sales@extras.test").can).toEqual({
       changeRole: true,
+      editPermissions: false, // that needs company.roles.manage too
       deactivate: true,
       reactivate: false,
       resetPassword: true,
@@ -344,6 +370,7 @@ run("team and roles screens offer exactly what the server allows", () => {
     expect(memberCalled(asHr, "shared@extras.test").can.resetPassword).toBe(false);
     expect(memberCalled(asHr, "left@extras.test").can).toEqual({
       changeRole: true,
+      editPermissions: false,
       deactivate: false,
       reactivate: true,
       resetPassword: true,

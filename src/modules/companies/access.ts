@@ -23,7 +23,8 @@ const roleWithPermissions = {
 } as const;
 
 /**
- * Decides whether a user may work inside a company and with which permissions.
+ * Decides whether a user may work inside a company and with which permissions:
+ * their role's, with their own changes from the permission matrix on top.
  * Returns null when the company is inactive or the user has no active membership.
  */
 export async function resolveCompanyAccess(
@@ -35,7 +36,10 @@ export async function resolveCompanyAccess(
 
   const membership = await prisma.companyMembership.findUnique({
     where: { companyId_userId: { companyId, userId: user.id } },
-    include: { role: roleWithPermissions },
+    include: {
+      role: roleWithPermissions,
+      permissionChanges: { select: { granted: true, permission: { select: { key: true } } } },
+    },
   });
   const activeMembership = membership?.isActive ? membership : null;
 
@@ -50,6 +54,11 @@ export async function resolveCompanyAccess(
       isPlatformSuperAdmin: user.isSuperAdmin,
       systemRole: role?.systemRole ?? null,
       grantedKeys: role?.permissions.map((rp) => rp.permission.key) ?? [],
+      changes:
+        activeMembership?.permissionChanges.map((c) => ({
+          key: c.permission.key,
+          granted: c.granted,
+        })) ?? [],
     }),
   };
 }

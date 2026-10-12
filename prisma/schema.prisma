@@ -277,12 +277,30 @@ model CompanyMembership {
   isActive  Boolean  @default(true)
   joinedAt  DateTime @default(now())
 
-  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  role    Role    @relation(fields: [roleId], references: [id])
+  company           Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role              Role               @relation(fields: [roleId], references: [id])
+  permissionChanges MemberPermission[]
 
   @@unique([companyId, userId])
   @@index([roleId])
+}
+
+/// One person's change to what their role gives them (Settings > Team, the
+/// permission matrix): `granted` true adds a permission the role lacks, false
+/// takes away one it has. Applied on every request on top of the role
+/// (rbac/resolve.ts); Super Admins always keep every permission. Changing the
+/// person's role clears them.
+model MemberPermission {
+  membershipId String
+  permissionId String
+  granted      Boolean
+
+  membership CompanyMembership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  permission Permission        @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([membershipId, permissionId])
+  @@index([permissionId])
 }
 
 /// A role inside a company. The five blueprint roles plus Accounts are seeded as
@@ -311,7 +329,8 @@ model Permission {
   module      AppModule
   description String?
 
-  roles RolePermission[]
+  roles   RolePermission[]
+  members MemberPermission[]
 }
 
 model RolePermission {

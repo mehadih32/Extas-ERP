@@ -1,6 +1,6 @@
 "use client";
 
-import { SearchIcon, UserPlusIcon } from "lucide-react";
+import { SearchIcon, Settings2Icon, UserPlusIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { ConfirmDialog } from "@/components/feedback/confirm-dialog";
@@ -30,7 +30,7 @@ import type { Team, TeamMember } from "@/modules/rbac/member.service";
 import { resetMemberPasswordAction, setMemberActiveAction } from "@/server/actions/rbac.actions";
 
 import { type AddedMember, AddMemberDialog } from "./add-member-dialog";
-import { ChangeRoleDialog } from "./change-role-dialog";
+import { MemberAccessDialog } from "./member-access-dialog";
 import { type MemberAction, MemberActions } from "./member-actions";
 import { firstName, matchesSearch, memberStanding } from "./member-labels";
 import { type IssuedPassword, TemporaryPasswordDialog } from "./temporary-password-dialog";
@@ -55,11 +55,57 @@ function StandingBadge({ member }: { member: TeamMember }) {
   );
 }
 
-function RoleBadge({ member }: { member: TeamMember }) {
+/**
+ * The member's role, with their own changes to it ("+2 −1") and the ⚙ that
+ * opens the permission matrix: to change them, or to see in full what they
+ * may do.
+ */
+function RoleBadge({
+  member,
+  onPermissions,
+}: {
+  member: TeamMember;
+  onPermissions: (member: TeamMember) => void;
+}) {
+  const { added, removed } = member.permissions;
+  const changes = [
+    added.length > 0 && `+${added.length}`,
+    removed.length > 0 && `−${removed.length}`,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const spoken = [
+    added.length > 0 && `${added.length} added`,
+    removed.length > 0 && `${removed.length} taken away`,
+  ]
+    .filter(Boolean)
+    .join(", ");
   return (
-    <Badge variant={member.role.systemRole === "SUPER_ADMIN" ? "default" : "secondary"}>
-      {member.role.name}
-    </Badge>
+    <span className="inline-flex items-center gap-1">
+      <Badge variant={member.role.systemRole === "SUPER_ADMIN" ? "default" : "secondary"}>
+        {member.role.name}
+        {changes && (
+          <span
+            className="ml-1 font-mono text-[0.6875rem] opacity-80"
+            title={`Own permissions: ${spoken}`}
+          >
+            <span aria-hidden>{changes}</span>
+            <span className="sr-only">, own permissions: {spoken}</span>
+          </span>
+        )}
+      </Badge>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-sm"
+        className="size-9 text-muted-foreground md:size-7"
+        onClick={() => onPermissions(member)}
+        aria-label={`Edit ${member.name}'s permissions`}
+        title="Edit permissions"
+      >
+        <Settings2Icon aria-hidden />
+      </Button>
+    </span>
   );
 }
 
@@ -219,7 +265,7 @@ export function TeamScreen({ team, companyName }: { team: Team; companyName: str
                       </div>
                     </TableCell>
                     <TableCell>
-                      <RoleBadge member={member} />
+                      <RoleBadge member={member} onPermissions={(m) => act("permissions", m)} />
                     </TableCell>
                     <TableCell>
                       {memberStanding(member).tone === "active" ? (
@@ -254,7 +300,7 @@ export function TeamScreen({ team, companyName }: { team: Team; companyName: str
                   </div>
                 </div>
                 <div className="mt-3 flex flex-wrap items-center gap-2">
-                  <RoleBadge member={member} />
+                  <RoleBadge member={member} onPermissions={(m) => act("permissions", m)} />
                   <StandingBadge member={member} />
                   <WhoBadges member={member} />
                 </div>
@@ -270,6 +316,7 @@ export function TeamScreen({ team, companyName }: { team: Team; companyName: str
       {open?.kind === "add" && (
         <AddMemberDialog
           roles={grantable}
+          canEditPermissions={team.canEditPermissions}
           companyName={companyName}
           onClose={close}
           onAdded={(added) =>
@@ -290,13 +337,24 @@ export function TeamScreen({ team, companyName }: { team: Team; companyName: str
         />
       )}
 
-      {open?.kind === "role" && (
-        <ChangeRoleDialog
-          member={open.member}
-          choices={open.member.roleChoices.flatMap((id) => rolesById.get(id) ?? [])}
+      {(open?.kind === "role" || open?.kind === "permissions") && (
+        <MemberAccessDialog
+          member={{
+            id: open.member.id,
+            name: open.member.name,
+            isYou: open.member.isYou,
+            roleId: open.member.role.id,
+            permissions: open.member.permissions,
+          }}
+          roles={[open.member.role.id, ...open.member.roleChoices].flatMap(
+            (id) => rolesById.get(id) ?? [],
+          )}
+          initialRoleId={open.kind === "role" ? open.member.roleChoices[0] : undefined}
+          canChangeRole={open.member.can.changeRole}
+          canEditPermissions={open.member.can.editPermissions}
           onClose={close}
-          onChanged={(roleName) => {
-            setNotice(`${open.member.name} is now ${roleName}.`);
+          onSaved={(message) => {
+            setNotice(message);
             close();
           }}
         />

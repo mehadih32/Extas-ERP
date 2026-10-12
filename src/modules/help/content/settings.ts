@@ -45,6 +45,13 @@ export const settingsHelp: HelpSection = {
           },
         },
         {
+          text: "রোল সামলানোর অনুমতি থাকলে বোতামে লেখা থাকবে “Next: permissions”। চাপলে “Full disclosure permission matrix” খোলে: A থেকে Z সব অনুমতি, বেছে নেওয়া ভূমিকার গুলো টিক দেওয়া। যা তিনি দেখবেন না তার টিক তুলে দিন, বাড়তি কিছু দিতে টিক দিন। “Back” চাপলে আগের ঘরগুলোতে ফেরা যায়।",
+          image: {
+            id: "settings-add-person-4",
+            caption: "নতুন কর্মীর “Full disclosure permission matrix”: A থেকে Z সব অনুমতি",
+          },
+        },
+        {
           text: "“Add to the team” চাপুন। “Added to the team” জানালায় একটি “Temporary password” দেখাবে। এটি শুধু একবারই দেখা যায়।",
           image: {
             id: "settings-add-person-3",
@@ -89,7 +96,7 @@ export const settingsHelp: HelpSection = {
           text: "“Settings” > “Team” ট্যাব খুলুন। খোঁজার ঘরে নাম, ইমেইল, ফোন বা ভূমিকা লিখে মানুষটিকে খুঁজুন।",
         },
         {
-          text: "তাঁর সারির ডান পাশে তিন-বিন্দুর বোতামে চাপুন। মেনুতে “Change role”, “Reset password” ও “Deactivate” পাবেন।",
+          text: "তাঁর সারির ডান পাশে তিন-বিন্দুর বোতামে চাপুন। মেনুতে “Change role”, “Edit permissions”, “Reset password” ও “Deactivate” পাবেন।",
           image: {
             id: "settings-manage-member-1",
             caption:
@@ -97,7 +104,7 @@ export const settingsHelp: HelpSection = {
           },
         },
         {
-          text: "ভূমিকা বদলাতে “Change role” চাপুন, “New role” থেকে নতুন ভূমিকা বেছে নিয়ে “Change role” বোতামে চাপুন।",
+          text: "ভূমিকা বদলাতে “Change role” চাপুন। “Role” থেকে নতুন ভূমিকা বেছে নিন; নিচে সেই ভূমিকার সব অনুমতি টিক দেওয়া দেখাবে। দরকার হলে বদলে “Save role and permissions” চাপুন। নতুন ভূমিকা সবসময় নিজের অনুমতিগুলো দিয়েই শুরু হয়।",
         },
         {
           text: "কেউ পাসওয়ার্ড ভুলে গেলে “Reset password” চাপুন এবং নিশ্চিত করুন। তিনি সব জায়গা থেকে সাইন আউট হবেন এবং নতুন অস্থায়ী পাসওয়ার্ড দেখাবে, যা তাঁকে দিতে হবে।",
@@ -113,6 +120,53 @@ export const settingsHelp: HelpSection = {
         "নিজেকে বন্ধ বা রিসেট করা যায় না। নিজের পাসওয়ার্ড অ্যাকাউন্ট মেনুর “Change password” থেকে বদলান।",
         "কোম্পানিতে সবসময় অন্তত একজন সক্রিয় Super Admin থাকতে হয়, তাই শেষ Super Admin-কে বন্ধ করা যায় না।",
         "মেনুতে শুধু সেই কাজগুলোই দেখায় যা আপনি ওই মানুষটির জন্য করতে পারেন।",
+      ],
+    },
+    {
+      slug: "settings-member-permissions",
+      title: "একজন কর্মীর অনুমতি আলাদা করে ঠিক করবেন যেভাবে (Permission matrix)",
+      summary:
+        "ভূমিকার বাইরে একজনকে বাড়তি কিছু দেওয়া বা কিছু লুকিয়ে রাখা: A থেকে Z সব অনুমতি টিক বক্সসহ এক জানালায়।",
+      keywords: [
+        "permission matrix",
+        "edit permissions",
+        "permissions",
+        "hide",
+        "access",
+        "অনুমতি",
+        "লুকানো",
+        "টিক",
+        "পারমিশন",
+      ],
+      routes: ["/settings/team"],
+      who: "যাঁদের দল ও ভূমিকা দুটোই সামলানোর অনুমতি (company.members.manage ও company.roles.manage) আছে, সাধারণত Super Admin।",
+      steps: [
+        {
+          text: "“Settings” > “Team” খুলুন। কর্মীর ভূমিকার নামের পাশের ⚙ চাপুন (তিন-বিন্দুর মেনুতে “Edit permissions”-ও আছে)।",
+          image: {
+            id: "settings-member-permissions-1",
+            caption: "ভূমিকার পাশে ⚙ আর পরিবর্তন থাকলে “+2 −1” চিহ্ন",
+          },
+        },
+        {
+          text: "“Full disclosure permission matrix” জানালায় অ্যাপের সব অনুমতি A থেকে Z সাজানো, প্রতিটির পাশে টিক বক্স। টিক দেওয়া মানে তিনি সেটি দেখতে ও করতে পারবেন; টিক না থাকলে সেই অংশ তাঁর কাছ থেকে লুকানো থাকবে।",
+          image: {
+            id: "settings-member-permissions-2",
+            caption: "“Full disclosure permission matrix”: টিক বক্স, “Added” ও “Taken away” চিহ্ন",
+          },
+        },
+        {
+          text: "“Find a permission” ঘরে লিখে খুঁজুন। একসাথে বদলাতে “Tick all”, “Untick all” বা ভূমিকায় ফিরতে “As the role gives” চাপুন। ভূমিকার বাইরে দেওয়া অনুমতিতে “Added”, আর ভূমিকা থেকে সরানোটিতে “Taken away” লেখা থাকে।",
+        },
+        {
+          text: "শেষে “Save permissions” চাপুন। পরের ক্লিক থেকেই তিনি শুধু টিক দেওয়া জিনিসগুলো দেখবেন; মেনু থেকেও বাকিগুলো সরে যাবে।",
+        },
+      ],
+      tips: [
+        "Super Admin সবসময় সব অনুমতি পান; তাঁদের বক্স বদলানো যায় না।",
+        "নিজের অনুমতি নিজে বদলানো যায় না, অন্য একজন অ্যাডমিনকে বলুন।",
+        "ভূমিকা বদলালে আগের আলাদা পরিবর্তনগুলো মুছে নতুন ভূমিকার অনুমতি দিয়ে শুরু হয়।",
+        "শুধু দল সামলানোর অনুমতি থাকলে জানালাটি দেখা যায়, কিন্তু বক্স বদলানো যায় না।",
       ],
     },
     {

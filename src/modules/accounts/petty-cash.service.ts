@@ -36,14 +36,24 @@ const accountNameOf = (name: string) => `Petty cash — ${name}`;
 
 const holderSelect = { id: true, name: true, email: true } as const;
 
-/** People who may hold a box: active members whose role records expenses. */
+/**
+ * People who may hold a box: active members who record expenses, by their role
+ * (unless it was taken away from them) or given it for themselves.
+ */
 async function holderChoices(ctx: CompanyContext) {
+  const records = { permission: { key: "expenses.create" } } as const;
   const members = await prisma.companyMembership.findMany({
     where: {
       companyId: ctx.company.id,
       isActive: true,
       user: { status: "ACTIVE" },
-      role: { permissions: { some: { permission: { key: "expenses.create" } } } },
+      OR: [
+        {
+          role: { permissions: { some: records } },
+          permissionChanges: { none: { ...records, granted: false } },
+        },
+        { permissionChanges: { some: { ...records, granted: true } } },
+      ],
     },
     select: { user: { select: holderSelect } },
     orderBy: { user: { name: "asc" } },

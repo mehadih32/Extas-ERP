@@ -6,6 +6,8 @@ import { getRequestMeta } from "@/lib/request-meta";
 import { runAction } from "@/lib/result";
 import { requireAnyPermission, requirePermission } from "@/modules/auth/context";
 import * as files from "@/modules/files/file.service";
+import * as batchScreens from "@/modules/production/batch-screens.service";
+import * as batches from "@/modules/production/batch.service";
 import * as challans from "@/modules/production/challan.service";
 import * as costs from "@/modules/production/cost.service";
 import * as intakes from "@/modules/production/intake.service";
@@ -64,8 +66,16 @@ export const getProjectScreenAction = async (projectId: string) =>
   runAction(async () => screens.getProjectScreen(await view(), projectId));
 export const getProjectFormAction = async (
   projectId?: string,
-  from?: { orderId?: string; proformaId?: string; restockStyleId?: string },
+  from?: { orderId?: string; proformaId?: string; restockStyleId?: string; batchId?: string },
 ) => runAction(async () => screens.getProjectForm(await manage(), projectId, from));
+export const getBatchListAction = async (query: unknown) =>
+  runAction(async () => batchScreens.getBatchList(await view(), query));
+export const listBatchRowsAction = async (query: unknown) =>
+  runAction(async () => batchScreens.listBatchRows(await view(), query));
+export const getBatchScreenAction = async (batchId: string) =>
+  runAction(async () => batchScreens.getBatchScreen(await view(), batchId));
+export const getBatchFormAction = async (batchId?: string) =>
+  runAction(async () => batchScreens.getBatchForm(await manage(), batchId));
 /** Open sales orders and proformas a new project can start from (numbers, buyers, pieces). */
 export const findSalesToStartAction = async (query: { search?: string }) =>
   runAction(async () => screens.findSalesToStart(await manage(), query));
@@ -97,6 +107,19 @@ export const getBillFormAction = async (options: { projectId?: string } = {}) =>
   runAction(async () => screens.getBillForm(await recordCosts(), options));
 export const getCostHeadsScreenAction = async () =>
   runAction(async () => screens.getCostHeadsScreen(await view()));
+
+// --- Master batches ------------------------------------------------------------------
+const batchRef = (b: { id: string; code: string }) => ({ id: b.id, code: b.code });
+export const createBatchAction = async (input: unknown) =>
+  change(async () =>
+    batchRef(await batches.createBatch(await manage(), input, await getRequestMeta())),
+  );
+export const updateBatchAction = async (batchId: string, input: unknown) =>
+  change(async () =>
+    batchRef(await batches.updateBatch(await manage(), batchId, input, await getRequestMeta())),
+  );
+export const deleteBatchAction = async (batchId: string) =>
+  change(async () => batches.deleteBatch(await manage(), batchId, await getRequestMeta()));
 
 // --- Overview & projects -------------------------------------------------------------
 export const getProductionOverviewAction = async () =>

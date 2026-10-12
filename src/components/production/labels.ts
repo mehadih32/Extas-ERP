@@ -4,9 +4,12 @@ import type {
   ExpenseCategory,
   IntakeStatus,
   PaymentType,
+  ProductionKind,
   ProductionStage,
   ProductionStatus,
 } from "@prisma/client";
+
+import type { BatchState } from "@/modules/production/schemas";
 
 import { money } from "@/components/sales/labels";
 import { formatCount, groupDigits, usesLakhGrouping } from "@/lib/display";
@@ -31,6 +34,26 @@ export const PROJECT_STATUS_LABELS: Record<ProductionStatus, string> = {
   ON_HOLD: "On hold",
   COMPLETED: "Completed",
   CANCELLED: "Cancelled",
+};
+
+/** How a master batch's goods are made or bought. */
+export const BATCH_KIND_LABELS: Record<ProductionKind, string> = {
+  CM: "Made at a factory (CM)",
+  READYMADE: "Bought ready-made",
+  DROPSHIP: "Dropshipping",
+};
+
+export const BATCH_KIND_HINTS: Record<ProductionKind, string> = {
+  CM: "Our fabric and accessories, cut and made at a factory for a making charge.",
+  READYMADE: "Finished goods bought in bulk, labels changed to ours.",
+  DROPSHIP: "Sourced to order and sent straight on; nothing kept in our stock.",
+};
+
+export const BATCH_STATE_LABELS: Record<BatchState, string> = {
+  EMPTY: "No styles yet",
+  PLANNED: "Planned",
+  ACTIVE: "In production",
+  DONE: "Done",
 };
 
 export const DELIVERY_STATUS_LABELS: Record<IntakeStatus, string> = {
@@ -116,6 +139,10 @@ export function remainingText(timeline: {
 
 export const productionHref = {
   project: (id: string) => `/production/projects/${encodeURIComponent(id)}`,
+  batch: (id: string) => `/production/batches/${encodeURIComponent(id)}`,
+  editBatch: (id: string) => `/production/batches/${encodeURIComponent(id)}/edit`,
+  /** "Add a style" on a batch: a new project in it. */
+  addStyle: (batchId: string) => `/production/projects/new?batch=${encodeURIComponent(batchId)}`,
   delivery: (id: string) => `/production/deliveries/${encodeURIComponent(id)}`,
   bill: (id: string) => `/production/bills/${encodeURIComponent(id)}`,
   newDelivery: (projectId?: string) =>

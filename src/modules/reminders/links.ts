@@ -24,6 +24,8 @@ export function recordHref(ctx: Can, link: RecordLink | null): string | null {
       return `/planner/reminders/${id}`;
     case "ProductionProject":
       return ctx.can("production.view") ? `/production/projects/${id}` : null;
+    case "ProductionBatch":
+      return ctx.can("production.view") ? `/production/batches/${id}` : null;
     case "SalesOrder":
       return ctx.can("sales.view") ? `/sales/orders/${id}` : null;
     case "PurchaseOrder":
@@ -68,6 +70,7 @@ export const RECORD_NOUNS: Record<string, string> = {
   Task: "the task",
   Reminder: "the reminder",
   ProductionProject: "the project",
+  ProductionBatch: "the batch",
   SalesOrder: "the order",
   PurchaseOrder: "the purchase order",
   ComplianceDocument: "the licence",

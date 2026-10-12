@@ -117,19 +117,32 @@ describe("Production in the menu, by role", () => {
   it("gives Production Managers every tab", () => {
     const manager = role("PRODUCTION_MANAGER");
     expect(inMenu(manager)).toBe(true);
-    expect(tabs(manager)).toEqual(["Overview", "Projects", "Deliveries", "Bills", "Cost heads"]);
+    expect(tabs(manager)).toEqual([
+      "Overview",
+      "Batches",
+      "Projects",
+      "Deliveries",
+      "Bills",
+      "Cost heads",
+    ]);
   });
 
   it("keeps bills, with their costs, from the store team", () => {
     const store = role("WAREHOUSE_TEAM");
     expect(inMenu(store)).toBe(true);
-    expect(tabs(store)).toEqual(["Overview", "Projects", "Deliveries"]);
+    expect(tabs(store)).toEqual(["Overview", "Batches", "Projects", "Deliveries"]);
     // Someone who only receives goods lands on Deliveries.
     expect(tabs(["production.stock_intake"])).toEqual(["Deliveries"]);
   });
 
   it("shows Accounts the bills but not the cost heads to change", () => {
-    expect(tabs(role("ACCOUNTS"))).toEqual(["Overview", "Projects", "Deliveries", "Bills"]);
+    expect(tabs(role("ACCOUNTS"))).toEqual([
+      "Overview",
+      "Batches",
+      "Projects",
+      "Deliveries",
+      "Bills",
+    ]);
   });
 
   it("leaves Production out for sales staff", () => {

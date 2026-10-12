@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import type { ProjectCardData } from "@/modules/production/screens.service";
 
 import { ProjectBadge, StageBadge, TimelineBadge } from "./badges";
+import { CostGuardLine } from "./cost-guard";
 import { days, pieces, productionHref } from "./labels";
 
 type Timeline = ProjectCardData["timeline"];
@@ -152,6 +153,11 @@ export function ProjectCard({ project, currency }: { project: ProjectCardData; c
           <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm text-muted-foreground">
             <StageBadge stage={p.stage} />
             {p.factoryLabel && <span className="min-w-0 truncate">{p.factoryLabel}</span>}
+            {p.batch && (
+              <span className="min-w-0 truncate" title={p.batch.name}>
+                {p.batch.code}
+              </span>
+            )}
           </div>
         </div>
         <div className="grid gap-3">
@@ -162,6 +168,7 @@ export function ProjectCard({ project, currency }: { project: ProjectCardData; c
             completedOn={p.completedOn}
           />
           <PiecesBar quantities={p.quantities} currency={currency} />
+          {p.costGuard && <CostGuardLine guard={p.costGuard} currency={currency} />}
         </div>
         {p.costs && (
           <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-t pt-3 text-sm tabular-nums">

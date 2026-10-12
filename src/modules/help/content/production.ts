@@ -114,6 +114,16 @@ export const productionHelp: HelpSection = {
           text: "“Project name” লিখুন। ক্যাটালগে স্টাইল থাকলে “Style (optional)” বেছে নিন এবং “Category” দিন।",
         },
         {
+          text: "একসাথে বানানো কয়েকটি স্টাইলের একটি হলে “Master batch (optional)” থেকে ব্যাচটি বেছে নিন। ব্যাচের ফ্যাক্টরি আর শেষ করার তারিখ নিজে থেকে বসে যায়। একা একটি কাজ হলে “Not in a batch” রাখুন।",
+        },
+        {
+          text: "“Target price per piece”-এ এক পিসের সর্বোচ্চ খরচ লিখুন (না দিলেও চলে)। তাহলে প্রজেক্টের পাতায় ও কার্ডে “Cost guard” দাগ দেখায়: এখন পর্যন্ত খরচ ÷ বানানোর পিস, লক্ষ্য দামের তুলনায় কত শতাংশ।",
+          image: {
+            id: "production-new-project-4",
+            caption: "“Master batch (optional)” ও “Target price per piece” ঘর",
+          },
+        },
+        {
           text: "“How the factory is given”-এ “A supplier” বেছে “Factory supplier” থেকে ফ্যাক্টরি বেছে নিন। ফ্যাক্টরির প্রোফাইল না থাকলে “Just a name” বেছে “Factory name” লিখুন।",
           image: {
             id: "production-new-project-2",
@@ -134,15 +144,147 @@ export const productionHelp: HelpSection = {
           },
         },
         {
+          text: "প্রতিটি ঘর হাতে না লিখে সাইজের অনুপাতে ভরাতে স্টাইলের উপরে “Fill by size ratio” চাপুন। “Size ratio”-তে সংরক্ষিত অনুপাত বেছে নিন, অথবা “Type a ratio” বেছে প্রতিটি সাইজের জন্য একটি সংখ্যা লিখুন (যেমন 1:2:2:1)। “Pieces per colour”-এ এক রঙে মোট কত পিস লিখুন, “Colour”-এ “Every colour” বা একটি রং বেছে “Fill the boxes” চাপুন। ঘরগুলো অনুপাতে ভরে যায় এবং যোগফল ঠিক আপনার লেখা পিসের সমান হয়।",
+          image: {
+            id: "production-new-project-5",
+            caption: "“Fill by size ratio”: অনুপাত, এক রঙের পিস ও “Fill the boxes”",
+          },
+        },
+        {
           text: "এখনই কাজ শুরু হলে “In production now”, পরে শুরু হলে “Planned for later” বেছে নিন। তারপর “Create the project” চাপুন।",
         },
       ],
       tips: [
         "প্রজেক্টের কোড নিজে থেকে দেওয়া হয়।",
         "পরে কিছু বদলাতে প্রজেক্টের পাতায় “Edit” চাপুন।",
+        "সাইজের অনুপাত সংরক্ষণ করা থাকে Products-এর অনুপাত (ratio preset) তালিকায়; সেখানে রাখা অনুপাতগুলোই “Size ratio”-তে আসে।",
         "কোনো সেলস অর্ডার বা প্রোফর্মার মাল বানাতে হলে ফর্মের উপরে “Find a sales order or proforma”-এ সেটি খুঁজে বেছে নিন: ক্রেতা, স্টাইল আর রং ও সাইজের পিস নিজে থেকে বসে যায়। “সেলস অর্ডার বা প্রোফর্মা থেকে উৎপাদন শুরু” গাইডটি দেখুন।",
         "রং ও সাইজের ঘর থাকলে মোট পিস আলাদা করে বদলানো যায় না: ঘরগুলো বদলান, মোট নিজে বদলে যায়।",
         "হোম স্ক্রিনের “Action Zone”-এ কম স্টকের পাশে “Order now” চাপলেও এই ফর্ম খোলে, শিরোনাম “Restock …”: স্টাইল, ক্যাটাগরি ও “In-House” বসানো থাকে, রং ও সাইজের ঘর খালি থাকে, আর “Running low” লেখায় কোন রং ও সাইজ কম তা বলা থাকে।",
+      ],
+    },
+    {
+      slug: "production-batches",
+      title: "মাস্টার ব্যাচ (Master batch) খুলবেন ও স্টাইল যোগ করবেন যেভাবে",
+      summary:
+        "একসাথে বানানো কয়েকটি স্টাইলকে (যেমন তিন ব্র্যান্ডে ৫,০০০ পোলো শার্ট) একটি ব্যাচের নিচে রাখা: প্রতিটি স্টাইল নিজের রং-সাইজ, লক্ষ্য দাম, খরচ ও ডেলিভারি নিয়ে আলাদা প্রজেক্ট, আর ব্যাচ সব যোগ করে দেখায়।",
+      keywords: [
+        "master batch",
+        "batch",
+        "batches",
+        "styles",
+        "add a style",
+        "umbrella",
+        "child project",
+        "readymade",
+        "dropshipping",
+        "cm",
+        "মাস্টার ব্যাচ",
+        "ব্যাচ",
+        "স্টাইল যোগ",
+        "একসাথে উৎপাদন",
+        "রেডিমেড",
+        "ড্রপশিপিং",
+      ],
+      routes: ["/production/batches"],
+      who: "ব্যাচ দেখেন যাঁরা Production দেখতে পারেন। ব্যাচ খোলা, বদলানো ও স্টাইল যোগ করেন Production Manager ও Super Admin। টাকার অঙ্ক ও “Batch cost” শুধু যাঁরা খরচ দেখতে পারেন তাঁরা দেখেন।",
+      steps: [
+        {
+          text: "“Production” > “Batches” ট্যাব খুলুন। প্রতিটি ব্যাচ একটি কার্ড: কোড, কোন ধরনের কাজ, কয়টি স্টাইল (দেরির স্টাইল লাল), সময়ের দাগ, কত পিস স্টকে এসেছে, আর খরচ দেখার অনুমতি থাকলে খরচ ও ব্যাচের “Cost guard” দাগ।",
+          image: {
+            id: "production-batches-1",
+            caption: "“Batches” ট্যাবে ব্যাচের কার্ড",
+          },
+        },
+        {
+          text: "উপরের “All”, “In production”, “Planned”, “No styles yet” ও “Done” দিয়ে ব্যাচ ছাঁকুন, অথবা খোঁজের ঘরে ব্যাচের কোড, নাম, কোনো স্টাইল বা ফ্যাক্টরির নাম লিখে “Find” চাপুন।",
+        },
+        {
+          text: "নতুন ব্যাচের জন্য “New batch” চাপুন। “Batch name” লিখুন, “How the goods are made”-এ বেছে নিন: “Made at a factory (CM)” (নিজেদের কাপড়, ফ্যাক্টরি কেটে-সেলাই করে), “Bought ready-made” (তৈরি মাল কিনে লেবেল বদল) বা “Dropshipping” (অর্ডার অনুযায়ী এনে সরাসরি পাঠানো, স্টকে থাকে না)।",
+          image: {
+            id: "production-batches-2",
+            caption: "নতুন ব্যাচের ফর্ম: নাম, কাজের ধরন, ফ্যাক্টরি ও তারিখ",
+          },
+        },
+        {
+          text: "“Factory (optional)” ও “All done by (optional)” দিন। এরপর ব্যাচে যে স্টাইল যোগ করবেন, সেটি এই ফ্যাক্টরি আর তারিখ নিয়েই শুরু হবে (দরকারে স্টাইলে বদলানো যায়)। “Create the batch” চাপুন।",
+        },
+        {
+          text: "ব্যাচের পাতায় “Add a style” চাপুন। নতুন প্রজেক্টের ফর্ম খোলে, “Master batch (optional)”-এ ব্যাচটি বসানো থাকে। স্টাইল, রং ও সাইজের পিস (চাইলে “Fill by size ratio” দিয়ে) আর “Target price per piece” দিয়ে “Create the project” চাপুন। প্রতিটি স্টাইলের জন্য আবার “Add a style”।",
+          image: {
+            id: "production-batches-3",
+            caption: "ব্যাচের পাতা: “Add a style” ও স্টাইলের কার্ড",
+          },
+        },
+        {
+          text: "ব্যাচের পাতায় “Styles”-এর নিচে প্রতিটি স্টাইলের কার্ড থাকে: ধাপ, সময়, পিস আর তার নিজের খরচের দাগ। কোনো স্টাইল লক্ষ্য দামের কাছে বা বেশি হলে উপরে হলুদ বা লাল সতর্কতা দেখায়।",
+        },
+        {
+          text: "ডান পাশে “Batch cost”-এ সব স্টাইলের মোট খরচ, পিসপ্রতি খরচ, আর যেসব স্টাইলে লক্ষ্য দাম আছে তাদের মোট সীমার তুলনায় কত খরচ হয়েছে তা দাগে দেখায়। “Details”-এ ফ্যাক্টরি, শেষ করার তারিখ, বানানোর ও স্টকে আসা পিস।",
+        },
+        {
+          text: "আগে খোলা কোনো প্রজেক্টকে ব্যাচে আনতে সেই প্রজেক্টের “Edit” খুলে “Master batch (optional)” থেকে ব্যাচ বেছে সংরক্ষণ করুন। ব্যাচ থেকে বের করতে “Not in a batch” বেছে নিন।",
+        },
+      ],
+      tips: [
+        "ব্যাচের অবস্থা স্টাইলগুলো থেকে আসে: কোনো স্টাইল নেই হলে “No styles yet”, একটিও শুরু না হলে “Planned”, কোনোটা চললে “In production”, সব শেষ বা বাতিল হলে “Done”।",
+        "ব্যাচের নাম, ধরন, ফ্যাক্টরি বা তারিখ বদলাতে “Edit the batch” চাপুন। এতে আগের স্টাইলগুলো বদলায় না, শুধু নতুন স্টাইল নতুন ফ্যাক্টরি ও তারিখ নিয়ে শুরু হয়।",
+        "ভুল করে খোলা ব্যাচ, যার কোনো স্টাইল নেই, “Delete the batch” দিয়ে মুছে ফেলা যায়।",
+        "প্রজেক্টের কার্ডে ও তালিকায় ব্যাচের কোড (MB-…) দেখায়, আর প্রজেক্টের পাতার “Details”-এ “Master batch” থেকে ব্যাচে ফেরা যায়।",
+      ],
+    },
+    {
+      slug: "production-cost-guard",
+      title: "খরচ পাহারা (Cost guard) ও লক্ষ্য দাম কাজ করে যেভাবে",
+      summary:
+        "প্রতিটি স্টাইলের এক পিসের লক্ষ্য দাম (Target price) দিয়ে রাখলে এখন পর্যন্ত খরচ থেকে পিসপ্রতি খরচ হিসাব হয়; লক্ষ্যের ৮৫%-এ দাগ হলুদ, ১০০% পেরোলে লাল, আর সঙ্গে সঙ্গে ইনবক্সে বার্তা।",
+      keywords: [
+        "cost guard",
+        "target price",
+        "target cost",
+        "budget",
+        "over budget",
+        "cost per piece",
+        "alert",
+        "warning",
+        "খরচ পাহারা",
+        "লক্ষ্য দাম",
+        "বাজেট",
+        "পিসপ্রতি খরচ",
+        "সতর্কতা",
+      ],
+      routes: ["/production/projects/[projectId]"],
+      who: "যাঁরা প্রোডাকশনের খরচ দেখতে পারেন: Production Manager, Accounts ও Super Admin। লক্ষ্য দাম দেন Production Manager ও Super Admin; সতর্কবার্তা যায় Production Manager ও Super Admin-এর ইনবক্সে।",
+      anyOf: ["production.manage", "accounts.view"],
+      steps: [
+        {
+          text: "প্রজেক্ট খোলার সময় বা পরে “Edit”-এ “Target price per piece”-এ এক পিসের সর্বোচ্চ খরচ লিখুন, যেমন 450।",
+        },
+        {
+          text: "প্রজেক্টের পাতায় ডান পাশে “Cost guard” অংশে দেখায় “Cost a piece so far” (এখন পর্যন্ত মোট খরচ ÷ বানানোর পিস) আর “Target price”, কত শতাংশ হলো, আর পিসপ্রতি আরও কত খরচের জায়গা আছে।",
+          image: {
+            id: "production-cost-guard-1",
+            caption: "প্রজেক্টের পাতায় “Cost guard” অংশ",
+          },
+        },
+        {
+          text: "দাগের রং: লক্ষ্যের ৮৫%-এর নিচে সবুজ (“Within the target price”), ৮৫% থেকে হলুদ (“Near the target price”), আর ১০০% বা বেশি হলে লাল (“Over the target price”)।",
+        },
+        {
+          text: "বিল, খরচ বা কাঁচামাল দেওয়ার ফলে দাগ হলুদ বা লাল হলেই Production Manager ও Super Admin-এর ইনবক্সে বার্তা আসে, যার শিরোনামে “Near the target price” বা “Over the target price” আর প্রজেক্টের কোড থাকে। বার্তার “Open the project” চাপলে প্রজেক্ট খোলে।",
+          image: {
+            id: "production-cost-guard-2",
+            caption: "ইনবক্সে “Over the target price” বার্তা",
+          },
+        },
+        {
+          text: "“Overview” বোর্ডের কার্ডে, “Projects” তালিকায় ও ব্যাচের পাতায়ও প্রতিটি স্টাইলের ছোট দাগ থাকে, তাই কোন স্টাইল সীমা ছাড়াচ্ছে তা এক নজরে দেখা যায়।",
+        },
+      ],
+      tips: [
+        "পিসপ্রতি খরচ ধরা হয় বানানোর মোট পিস দিয়ে, তাই কাজ যত এগোয় আর খরচ যত যোগ হয়, দাগ তত বাড়ে। শেষে আসল পিসপ্রতি খরচ “Cost a piece” অংশে দেখায়।",
+        "লক্ষ্য দাম কমালে বা পিস বাড়ালে দাগ খারাপের দিকে গেলে তখনও বার্তা যায়।",
+        "লক্ষ্য দাম না থাকলে প্রজেক্টের পাতায় “Cost guard” অংশে মনে করিয়ে দেয়; মুছে দিতে “Target price per piece” খালি করে সংরক্ষণ করুন।",
       ],
     },
     {

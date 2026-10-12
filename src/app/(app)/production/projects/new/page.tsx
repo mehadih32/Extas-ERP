@@ -5,6 +5,7 @@ import { ProductionNoAccess } from "@/components/production/no-access";
 import { ProjectForm } from "@/components/production/project-form";
 import { StartFromSale } from "@/components/production/start-from-sale";
 import { BackLink } from "@/components/settings/back-link";
+import { productionHref } from "@/components/production/labels";
 import { salesHref } from "@/components/sales/labels";
 import { getProjectFormAction } from "@/server/actions/production.actions";
 import { requireCompanyPage } from "@/server/pages/guards";
@@ -39,6 +40,8 @@ export default async function NewProjectPage({
     orderId: one(query.order),
     proformaId: one(query.order) ? undefined : one(query.proforma),
     restockStyleId: one(query.order) || one(query.proforma) ? undefined : one(query.restock),
+    /** "Add a style" on a master batch. */
+    batchId: one(query.batch),
   };
   const result = await getProjectFormAction(undefined, from);
   // Production Managers start from a sale without opening Sales: back to the projects.
@@ -50,7 +53,9 @@ export default async function NewProjectPage({
         ? { href: salesHref.proforma(from.proformaId), label: "Back to the proforma" }
         : from.restockStyleId
           ? { href: "/", label: "Back to the Home screen" }
-          : { href: "/production/projects", label: "All projects" };
+          : from.batchId
+            ? { href: productionHref.batch(from.batchId), label: "Back to the batch" }
+            : { href: "/production/projects", label: "All projects" };
   if (!result.ok) {
     return (
       <div className="grid gap-6">
@@ -71,6 +76,7 @@ export default async function NewProjectPage({
   }
   const source = result.data.source;
   const restock = result.data.restock;
+  const batch = result.data.batch;
 
   return (
     <div className="grid gap-6">
@@ -81,21 +87,31 @@ export default async function NewProjectPage({
             ? `Start production for ${source.number}`
             : restock
               ? `Restock ${restock.style.code}`
-              : "New project"}
+              : batch
+                ? `Add a style to ${batch.code}`
+                : "New project"}
         </h2>
         <p className="mt-1 max-w-xl text-sm leading-relaxed text-muted-foreground">
           {source
             ? `Filled in from ${source.kind === "ORDER" ? "the order" : "the proforma"} for ${source.buyer.name}. Check the pieces per colour and size, choose the factory and create it.`
             : restock
               ? `${restock.style.name}, made In-House for our own stock. Fill in the pieces to make of each colour and size, choose the factory and create it.`
-              : "A batch to make in a factory. Its costs and deliveries are added once it is created."}
+              : batch
+                ? `${batch.name}: each style is a project of its own with its colours and sizes, target price, costs and deliveries. The batch adds them up.`
+                : "A batch to make in a factory. Its costs and deliveries are added once it is created."}
         </p>
       </div>
-      {!source && !restock && <StartFromSale currency={ctx.company.currency} />}
+      {!source && !restock && !batch && <StartFromSale currency={ctx.company.currency} />}
       {/* Keyed by the sale, so picking one in the search starts the form afresh. */}
       <ProjectForm
         key={
-          source ? `${source.kind}-${source.id}` : restock ? `restock-${restock.style.id}` : "new"
+          source
+            ? `${source.kind}-${source.id}`
+            : restock
+              ? `restock-${restock.style.id}`
+              : batch
+                ? `batch-${batch.id}`
+                : "new"
         }
         form={result.data}
         currency={ctx.company.currency}

@@ -236,25 +236,7 @@ export function PayrollActions({
       )}
 
       {open === "approve" && (
-        <FormDialog
-          title={`Approve ${run.label}?`}
-          description={`${run.employees} ${run.employees === 1 ? "employee" : "employees"}, ${money(run.totals.net, currency)} to take home. Approving posts the salaries to the books, takes advance recoveries off what employees owe and makes the month's attendance and leave final.`}
-          submitLabel="Approve"
-          pendingLabel="Approving"
-          errorTitle="We could not approve the payroll"
-          onClose={close}
-          onSubmit={async () => {
-            const result = await approvePayrollRunAction(run.id);
-            if (!result.ok) return result.error;
-            done(
-              result.data.status === "PAID"
-                ? `${run.label} is approved. Nothing is left to pay.`
-                : `${run.label} is approved. Accounts can now pay the salaries.`,
-            );
-          }}
-        >
-          {() => null}
-        </FormDialog>
+        <ApproveDialog run={run} currency={currency} onClose={close} onDone={done} />
       )}
 
       {open === "remove" && (
@@ -301,6 +283,81 @@ export function PayrollActions({
         <PayDialog screen={screen} currency={currency} onClose={close} onDone={done} />
       )}
     </div>
+  );
+}
+
+/**
+ * Approving a draft. Every line with other deductions needs a reason before
+ * the salaries go to the books: the ones not given yet are asked for here, and
+ * the ones given can be put better. Each prints on the payslip.
+ */
+function ApproveDialog({
+  run,
+  currency,
+  onClose,
+  onDone,
+}: {
+  run: PayrollScreen["run"];
+  currency: string;
+  onClose: () => void;
+  onDone: (message: string) => void;
+}) {
+  const deducted = run.items.filter((i) => !isZero(i.otherDeductions));
+  return (
+    <FormDialog
+      title={`Approve ${run.label}?`}
+      description={`${run.employees} ${run.employees === 1 ? "employee" : "employees"}, ${money(run.totals.net, currency)} to take home. Approving posts the salaries to the books, takes advance recoveries off what employees owe and makes the month's attendance and leave final.`}
+      submitLabel="Approve"
+      pendingLabel="Approving"
+      errorTitle="We could not approve the payroll"
+      onClose={onClose}
+      onSubmit={async (form) => {
+        const reasons: Record<string, string> = {};
+        const found: Record<string, string> = {};
+        for (const i of deducted) {
+          const reason = textOf(form, `reason-${i.id}`);
+          if (!reason) found[`reason-${i.id}`] = "Say why it is taken.";
+          else reasons[i.id] = reason;
+        }
+        if (Object.keys(found).length > 0) return problem(found);
+        const result = await approvePayrollRunAction(run.id, { reasons });
+        if (!result.ok) return result.error;
+        onDone(
+          result.data.status === "PAID"
+            ? `${run.label} is approved. Nothing is left to pay.`
+            : `${run.label} is approved. Accounts can now pay the salaries.`,
+        );
+      }}
+    >
+      {(fieldError) =>
+        deducted.length > 0 && (
+          <fieldset className="grid gap-4">
+            <legend className="mb-1 text-sm">
+              Why are other deductions taken? Each reason prints on the payslip.
+            </legend>
+            {deducted.map((i) => (
+              <Field
+                key={i.id}
+                id={`approve-reason-${i.id}`}
+                label={`${i.employee.name}, ${money(i.otherDeductions, currency)}`}
+                error={fieldError(`reason-${i.id}`)}
+              >
+                <Input
+                  id={`approve-reason-${i.id}`}
+                  name={`reason-${i.id}`}
+                  maxLength={200}
+                  autoComplete="off"
+                  required
+                  defaultValue={i.deductionReason ?? undefined}
+                  placeholder="For example: a damaged machine part"
+                  aria-invalid={Boolean(fieldError(`reason-${i.id}`))}
+                />
+              </Field>
+            ))}
+          </fieldset>
+        )
+      }
+    </FormDialog>
   );
 }
 
@@ -624,9 +681,17 @@ function LineDialog({
         if (hoursText !== "" && (!/^\d{1,3}(\.\d{1,2})?$/.test(hoursText) || hours! > 744)) {
           found.overtimeHours = "Enter hours like 12 or 12.5.";
         }
+        // The reason goes with the amount: taking the amount off drops the reason
+        // kept from before, but a new reason needs an amount.
+        let reason: string | null = textOf(form, "deductionReason") || null;
+        if (!values.otherDeductions && reason) {
+          if (reason === line.deductionReason) reason = null;
+          else found.otherDeductions = "Give the amount deducted along with the reason.";
+        }
         if (Object.keys(found).length > 0) return problem(found);
         const result = await updatePayrollItemAction(runId, line.id, {
           ...values,
+          deductionReason: reason,
           advanceDeduction: advance as number | null,
           overtimeHours: hours,
           note: textOf(form, "note") || null,
@@ -686,6 +751,23 @@ function LineDialog({
               />
             </Field>
           </div>
+          <Field
+            id="line-reason"
+            label="Why other deductions are taken"
+            hint="Printed on the payslip. Needed before the payroll is approved."
+            error={fieldError("deductionReason")}
+          >
+            <Input
+              id="line-reason"
+              name="deductionReason"
+              maxLength={200}
+              autoComplete="off"
+              defaultValue={line.deductionReason ?? undefined}
+              placeholder="For example: a damaged machine part"
+              aria-invalid={Boolean(fieldError("deductionReason"))}
+              aria-describedby="line-reason-hint"
+            />
+          </Field>
           <Field id="line-note" label="Note on the payslip (optional)" error={fieldError("note")}>
             <Input
               id="line-note"
@@ -699,6 +781,13 @@ function LineDialog({
       )}
     </FormDialog>
   );
+}
+
+/** ": a fine for a lost tool", or on a draft a reminder that a reason is needed. */
+function DeductionReason({ line, draft }: { line: Line; draft: boolean }) {
+  if (line.deductionReason) return <>: {line.deductionReason}</>;
+  if (!draft) return null;
+  return <span className="text-destructive">: say why before approving</span>;
 }
 
 /**
@@ -792,6 +881,12 @@ export function PayrollLines({ screen, currency }: { screen: PayrollScreen; curr
                 Claims paid back <Amount>{money(i.reimbursements, currency)}</Amount>
               </p>
             )}
+            {!isZero(i.otherDeductions) && (
+              <p className="mt-2 text-[0.8125rem] break-words text-muted-foreground">
+                Other deductions <Amount>{money(i.otherDeductions, currency)}</Amount>
+                <DeductionReason line={i} draft={run.status === "DRAFT"} />
+              </p>
+            )}
             {partPaid(i) && (
               <p className="mt-2 text-[0.8125rem] text-muted-foreground">
                 <Amount>{money(i.paidAmount, currency)}</Amount> paid,{" "}
@@ -856,6 +951,12 @@ export function PayrollLines({ screen, currency }: { screen: PayrollScreen; curr
                     "–"
                   ) : (
                     <Amount>{money(i.totalDeductions, currency)}</Amount>
+                  )}
+                  {!isZero(i.otherDeductions) && (
+                    <div className="ml-auto max-w-56 text-[0.8125rem] break-words whitespace-normal text-muted-foreground">
+                      other <Amount>{money(i.otherDeductions, currency)}</Amount>
+                      <DeductionReason line={i} draft={run.status === "DRAFT"} />
+                    </div>
                   )}
                 </TableCell>
                 <TableCell className="text-right font-medium whitespace-nowrap tabular-nums">

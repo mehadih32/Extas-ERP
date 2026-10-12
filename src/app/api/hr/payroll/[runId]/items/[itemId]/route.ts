@@ -9,8 +9,8 @@ export const dynamic = "force-dynamic";
 
 /**
  * PATCH /api/hr/payroll/:runId/items/:itemId — { allowances?, bonus?, taxDeduction?,
- * otherDeductions?, overtimeHours?, advanceDeduction?, note? } on a draft (null puts overtime /
- * advance back to automatic).
+ * otherDeductions?, deductionReason?, overtimeHours?, advanceDeduction?, note? } on a draft
+ * (null puts overtime / advance back to automatic).
  */
 export const PATCH = apiRoute<Params>(async (request, { runId, itemId }) =>
   payroll.updatePayrollItem(

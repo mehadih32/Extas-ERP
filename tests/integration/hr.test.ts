@@ -750,9 +750,18 @@ run("monthly payroll", () => {
       payment: { status: "UNPAID" },
     });
     expect(slip.netPayInWords).toMatch(/^Taka .* Only$/);
+    // Each deduction says why: the days behind it, and the advance it takes back.
     expect(slip.deductions).toEqual([
-      { label: expect.stringMatching(/^Unpaid days \(2 x /), amount: rahimCut.toFixed(2) },
-      { label: "Advance recovery", amount: "2000.00" },
+      {
+        label: expect.stringMatching(/^Unpaid days \(2 x /),
+        amount: rahimCut.toFixed(2),
+        reason: "1 day absent, 1 day for 3 lates",
+      },
+      {
+        label: "Advance recovery",
+        amount: "2000.00",
+        reason: expect.stringMatching(/^Taken back on ADV-/),
+      },
     ]);
     const mySlips = await payroll.myPayslips(env.staff.ctx);
     expect(mySlips).toEqual([

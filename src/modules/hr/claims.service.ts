@@ -25,6 +25,7 @@ import {
   claimAccess,
   type ClaimDuty,
   checkClaim,
+  claimWhat,
   routeKey,
 } from "@/modules/hr/claims";
 import type { Fix } from "@/modules/hr/geo";
@@ -91,19 +92,6 @@ function assertCanDecideClaims(ctx: CompanyContext) {
 }
 
 const amountText = (value: Prisma.Decimal | number) => money(value).toFixed(2);
-
-/** "Head office to Mirpur", or "Yarn (5 kg) for PRD-2026-00003". */
-function claimWhat(c: {
-  kind: StaffClaim["kind"];
-  fromPlace: string | null;
-  toPlace: string | null;
-  item: string | null;
-  quantity: string | null;
-  project?: { code: string } | null;
-}) {
-  if (c.kind === "CONVEYANCE") return `${c.fromPlace} to ${c.toPlace}`;
-  return `${c.item}${c.quantity ? ` (${c.quantity})` : ""}${c.project ? ` for ${c.project.code}` : ""}`;
-}
 
 const kindWord = (kind: StaffClaim["kind"]) =>
   kind === "CONVEYANCE" ? "conveyance" : "local material";

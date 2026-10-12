@@ -496,9 +496,11 @@ export const setPayrollBonusAction = async (runId: string, input: unknown) =>
   );
 export const deletePayrollRunAction = async (runId: string) =>
   change(async () => payroll.deletePayrollRun(await runPayroll(), runId, await getRequestMeta()));
-export const approvePayrollRunAction = async (runId: string) =>
+export const approvePayrollRunAction = async (runId: string, input: unknown = {}) =>
   change(async () =>
-    runRef(await payroll.approvePayrollRun(await approvePayroll(), runId, await getRequestMeta())),
+    runRef(
+      await payroll.approvePayrollRun(await approvePayroll(), runId, await getRequestMeta(), input),
+    ),
   );
 export const reopenPayrollRunAction = async (runId: string, input: unknown) =>
   change(async () =>

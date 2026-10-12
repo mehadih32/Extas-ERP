@@ -20,6 +20,19 @@ import {
  * employee never sees them. Pure functions, no database.
  */
 
+/** "Head office to Mirpur", or "Yarn (5 kg) for PRD-2026-00003". */
+export function claimWhat(c: {
+  kind: StaffClaimKind;
+  fromPlace: string | null;
+  toPlace: string | null;
+  item: string | null;
+  quantity: string | null;
+  project?: { code: string } | null;
+}) {
+  if (c.kind === "CONVEYANCE") return `${c.fromPlace} to ${c.toPlace}`;
+  return `${c.item}${c.quantity ? ` (${c.quantity})` : ""}${c.project ? ` for ${c.project.code}` : ""}`;
+}
+
 /** Who decides staff claims: approving one puts it in the books. */
 export const CLAIM_DECIDERS: readonly PermissionKey[] = [
   "expenses.manage",

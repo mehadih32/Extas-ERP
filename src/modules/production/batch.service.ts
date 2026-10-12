@@ -259,11 +259,13 @@ export async function updateBatch(
   return getBatch(ctx, batch.id);
 }
 
-/** Deletes a batch that has no styles (one made by mistake). */
+/** Deletes a batch that has no styles and no signed contract (one made by mistake). */
 export async function deleteBatch(ctx: CompanyContext, batchId: string, meta?: RequestMeta) {
   const batch = await ctx.db.productionBatch.findUnique({
     where: { id: batchId },
-    include: { _count: { select: { projects: true } } },
+    include: {
+      _count: { select: { projects: true, contracts: { where: { signedOn: { not: null } } } } },
+    },
   });
   if (!batch) throw new AppError("NOT_FOUND", "Master batch not found.");
   if (batch._count.projects > 0) {
@@ -271,6 +273,10 @@ export async function deleteBatch(ctx: CompanyContext, batchId: string, meta?: R
       "CONFLICT",
       `${batch.code} has ${batch._count.projects} ${batch._count.projects === 1 ? "style" : "styles"}; only an empty batch can be deleted.`,
     );
+  }
+  // Its draft contracts go with it; a signed one is kept.
+  if (batch._count.contracts > 0) {
+    throw new AppError("CONFLICT", `${batch.code} has a signed contract, so it is kept.`);
   }
   await prisma.$transaction(async (tx) => {
     await tx.productionBatch.delete({ where: { id: batch.id } });

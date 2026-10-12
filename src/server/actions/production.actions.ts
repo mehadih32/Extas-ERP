@@ -10,6 +10,7 @@ import * as batchOrders from "@/modules/production/batch-orders.service";
 import * as batchScreens from "@/modules/production/batch-screens.service";
 import * as batches from "@/modules/production/batch.service";
 import * as challans from "@/modules/production/challan.service";
+import * as contracts from "@/modules/production/contract.service";
 import * as costs from "@/modules/production/cost.service";
 import * as intakes from "@/modules/production/intake.service";
 import * as pictures from "@/modules/production/material-image.service";
@@ -45,6 +46,8 @@ const pickStyles = () => requireAnyPermission("production.manage", "production.s
 /** Material pictures: on a style's materials (Production) or an order line (buyers). */
 const materialPictures = () => requireAnyPermission("production.manage", "materials.purchase");
 const buyMaterials = () => requirePermission("materials.purchase");
+/** Contracts carry prices and CM: Production Managers and Accounts read them. */
+const readContracts = () => requireAnyPermission("production.manage", "accounts.view");
 const pickProjects = () =>
   requireAnyPermission("production.manage", "accounts.payments.record", "production.stock_intake");
 
@@ -167,6 +170,24 @@ export const createBatchOrdersAction = async (batchId: string, input: unknown) =
   change(async () =>
     batchOrders.createBatchOrders(await buyMaterials(), batchId, input, await getRequestMeta()),
   );
+
+// --- Batch contracts (fabric, accessories, factory CM) -------------------------------
+export const getBatchContractsAction = async (batchId: string) =>
+  runAction(async () => contracts.getBatchContracts(await readContracts(), batchId));
+export const getContractScreenAction = async (contractId: string) =>
+  runAction(async () => contracts.getContractScreen(await readContracts(), contractId));
+export const createContractAction = async (batchId: string, input: unknown) =>
+  change(async () =>
+    contracts.createContract(await manage(), batchId, input, await getRequestMeta()),
+  );
+export const updateContractAction = async (contractId: string, input: unknown) =>
+  change(async () =>
+    contracts.updateContract(await manage(), contractId, input, await getRequestMeta()),
+  );
+export const redraftContractAction = async (contractId: string) =>
+  runAction(async () => contracts.redraftContract(await manage(), contractId));
+export const deleteContractAction = async (contractId: string) =>
+  change(async () => contracts.deleteContract(await manage(), contractId, await getRequestMeta()));
 
 // --- Overview & projects -------------------------------------------------------------
 export const getProductionOverviewAction = async () =>

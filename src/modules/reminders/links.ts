@@ -48,6 +48,10 @@ export function recordHref(ctx: Can, link: RecordLink | null): string | null {
     case "MyClaim":
       // The employee's own claim, decided or paid back.
       return ctx.can("portal.self") ? "/me/claims" : null;
+    case "Notice":
+      // A notice on the staff notice board: read it in My HR (HR without My HR sees the board).
+      if (ctx.can("portal.self")) return `/me/notices#notice-${id}`;
+      return ctx.can("hr.manage") ? `/hr/notices#notice-${id}` : null;
     default:
       return null;
   }
@@ -66,4 +70,5 @@ export const RECORD_NOUNS: Record<string, string> = {
   Terms: "the terms",
   StaffClaim: "the claim",
   MyClaim: "my claims",
+  Notice: "the notice",
 };

@@ -180,6 +180,7 @@ export const hrHref = {
   overtime: (month?: string, status?: string) => withQuery("/hr/overtime", { month, status }),
   claims: (month?: string, filter: { status?: string; kind?: string } = {}) =>
     withQuery("/hr/claims", { month, ...filter }),
+  notices: (show?: string) => withQuery("/hr/notices", { show }),
   terms: (version?: number) =>
     withQuery("/hr/terms", { version: version ? String(version) : undefined }),
   journal: (id: string) => `/accounts/journal/${enc(id)}`,
@@ -192,6 +193,8 @@ export const hrHref = {
   myPayslip: (itemId: string) => `/me/payslips/${enc(itemId)}`,
   myAdvances: "/me/advances",
   myClaims: "/me/claims",
+  myNotices: "/me/notices",
+  myTasks: "/me/tasks",
   myProfile: "/me/profile",
 };
 

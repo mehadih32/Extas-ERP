@@ -10,7 +10,9 @@ import {
   REMINDER_STATUS_LABELS,
   whenText,
 } from "@/components/planner/labels";
+import { MarkTaskSeen } from "@/components/planner/mark-seen";
 import { TasksNoAccess } from "@/components/planner/no-access";
+import { SeenMark } from "@/components/planner/seen-mark";
 import { TaskActions } from "@/components/planner/task-actions";
 import { Fact, Panel, RecordHeader } from "@/components/sales/detail-bits";
 import { BackLink } from "@/components/settings/back-link";
@@ -50,6 +52,7 @@ export default async function TaskPage({
 
   return (
     <div className="grid grid-cols-1 gap-6">
+      {screen.mine && !t.seenAt && <MarkTaskSeen taskId={t.id} />}
       <BackLink href={plannerHref.tasks}>All tasks</BackLink>
       <RecordHeader
         eyebrow="Task"
@@ -95,6 +98,7 @@ export default async function TaskPage({
                     {t.assignee.code}
                     {!t.assignee.hasLogin && " · no login yet, told once WhatsApp is set up"}
                   </span>
+                  <SeenMark task={t} timeZone={tz} className="mt-1 text-[0.8125rem]" />
                 </>
               ) : (
                 "Nobody yet"

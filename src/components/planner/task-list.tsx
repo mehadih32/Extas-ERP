@@ -15,19 +15,23 @@ import { listTaskRowsAction } from "@/server/actions/reminders.actions";
 import { PriorityBadge, TaskBadge } from "./badges";
 import { plannerHref, whenText } from "./labels";
 import { taskListQuery, type TaskListView } from "./list-view";
+import { SeenMark } from "./seen-mark";
 
 const dueOf = (t: TaskRow) => (t.dueDay ? `Due ${whenText(t.dueDay, t.dueTime)}` : "No due day");
 
 /**
  * Tasks, soonest due first: cards on phones, a table on computers, each
- * opening the task, with "Show more" for the next page.
+ * opening the task, with whether the employee has seen it (✓✓) and "Show
+ * more" for the next page.
  */
 export function TaskList({
   initial,
   view,
+  timeZone,
 }: {
   initial: { items: TaskRow[]; nextCursor?: string };
   view: TaskListView;
+  timeZone: string;
 }) {
   const list = useLoadMore(initial, (cursor) => listTaskRowsAction(taskListQuery(view, cursor)));
 
@@ -55,6 +59,7 @@ export function TaskList({
                 {t.createdBy && (
                   <span className="text-muted-foreground">From {t.createdBy.name}</span>
                 )}
+                <SeenMark task={t} timeZone={timeZone} />
               </>
             }
           />
@@ -91,6 +96,7 @@ export function TaskList({
                         {t.assignee.code}
                         {!t.assignee.hasLogin && " · no login yet"}
                       </div>
+                      <SeenMark task={t} timeZone={timeZone} className="text-[0.8125rem]" />
                     </>
                   ) : (
                     <span className="text-muted-foreground">Nobody yet</span>

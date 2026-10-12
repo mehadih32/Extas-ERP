@@ -152,6 +152,9 @@ export const taskStatusSchema = z.object({ status: z.enum(TaskStatus) });
 /** What an employee may do with their own task: start it, finish it, or reopen it. */
 export const portalTaskStatusSchema = z.object({ status: z.enum(["TODO", "IN_PROGRESS", "DONE"]) });
 
+/** The tasks on the employee's screen, to mark as seen. */
+export const seenTasksSchema = z.object({ taskIds: z.array(id).max(200) });
+
 export const listTasksSchema = z.object({
   status: z.enum(TaskStatus).optional(),
   /** Only tasks still to do or in progress. */

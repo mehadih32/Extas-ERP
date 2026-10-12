@@ -16,7 +16,7 @@ const SHOW_LABELS: Record<MyTaskShow, string> = { open: "To do", done: "Done", a
 /**
  * The tasks given to the signed-in employee (portal.self), open ones first by
  * due day, with buttons to start, finish or reopen each. Whoever gave the task
- * hears about it in the app.
+ * hears about it in the app, and sees when it was first opened here (✓✓).
  */
 export default async function MyTasksPage({
   searchParams,
@@ -41,7 +41,7 @@ export default async function MyTasksPage({
         </h2>
         <p className="mt-1 max-w-xl text-sm leading-relaxed text-muted-foreground">
           Work given to you, soonest due first. Mark it started or done; whoever gave it hears about
-          it.
+          it. Once a task is on this page, whoever gave it sees that you have seen it.
         </p>
       </div>
       <ViewLinks

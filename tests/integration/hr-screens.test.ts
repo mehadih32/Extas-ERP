@@ -52,6 +52,7 @@ import EmployeesPage from "@/app/(app)/hr/employees/page";
 import LeaveRequestPage from "@/app/(app)/hr/leave/[leaveId]/page";
 import NewLeavePage from "@/app/(app)/hr/leave/new/page";
 import LeavePage from "@/app/(app)/hr/leave/page";
+import NoticesPage from "@/app/(app)/hr/notices/page";
 import HrOverviewPage from "@/app/(app)/hr/page";
 import PayrollRunPage from "@/app/(app)/hr/payroll/[runId]/page";
 import PayslipPage from "@/app/(app)/hr/payroll/[runId]/payslips/[itemId]/page";
@@ -62,6 +63,7 @@ import MyAdvancesPage from "@/app/(app)/me/advances/page";
 import MyAttendancePage from "@/app/(app)/me/attendance/page";
 import MyClaimsPage from "@/app/(app)/me/claims/page";
 import MyLeavePage from "@/app/(app)/me/leave/page";
+import MyNoticesPage from "@/app/(app)/me/notices/page";
 import MyHrPage from "@/app/(app)/me/page";
 import MyDetailsPage from "@/app/(app)/me/profile/page";
 import MyPayslipPage from "@/app/(app)/me/payslips/[itemId]/page";
@@ -94,6 +96,8 @@ import {
   getStaffMapScreenAction,
   getOvertimeLedgerAction,
   getClaimsLedgerAction,
+  getEmployeeScoreAction,
+  getNoticesScreenAction,
   getAttendanceScreenAction,
   getEmployeeFormAction,
   getEmployeeListAction,
@@ -335,7 +339,7 @@ run("HR & payroll screens", () => {
         ...(k.view ? ["/hr/leave"] : []),
         ...(k.salaries ? ["/hr/payroll"] : []),
         ...(k.advances ? ["/hr/advances"] : []),
-        ...(k.manage ? ["/hr/map"] : []),
+        ...(k.manage ? ["/hr/notices", "/hr/map"] : []),
         ...(k.view ? ["/hr/settings", "/hr/terms"] : []),
       ]);
 
@@ -360,6 +364,8 @@ run("HR & payroll screens", () => {
       expect((await getStaffMapScreenAction({})).ok, `${who}: staff map`).toBe(k.manage);
       expect((await getOvertimeLedgerAction({})).ok, `${who}: overtime`).toBe(k.manage);
       expect((await getClaimsLedgerAction({})).ok, `${who}: claims`).toBe(k.claims);
+      expect((await getNoticesScreenAction({})).ok, `${who}: notices`).toBe(k.manage);
+      expect((await getEmployeeScoreAction(env.rahim.id)).ok, `${who}: score`).toBe(k.manage);
       expect((await getLeaveListAction({})).ok, `${who}: leave`).toBe(k.view);
       expect((await listLeaveRowsAction({})).ok, `${who}: more leave`).toBe(k.view);
       expect((await getLeaveScreenAction(env.waiting.id)).ok, `${who}: leave request`).toBe(k.view);
@@ -400,6 +406,7 @@ run("HR & payroll screens", () => {
         expect(list.data.can.add, who).toBe(k.manage);
       }
       if (profile.ok) {
+        expect(profile.data.score !== null, `${who}: score on the profile`).toBe(k.manage);
         expect(profile.data.pay !== null, `${who}: pay on the profile`).toBe(k.salaries);
         expect(JSON.stringify(profile.data).includes("30000"), `${who}: salary figure`).toBe(
           k.salaries,
@@ -466,6 +473,7 @@ run("HR & payroll screens", () => {
       expect(await rendered(HrSettingsPage(listed)), `${who}: settings`).toBe(page(k.view));
       expect(await rendered(HrTermsPage(listed)), `${who}: terms`).toBe(page(k.view));
       expect(await rendered(ClaimsPage(listed)), `${who}: claims`).toBe(page(k.claims));
+      expect(await rendered(NoticesPage(listed)), `${who}: notices`).toBe(page(k.manage));
     }
   });
 
@@ -687,6 +695,8 @@ run("HR & payroll screens", () => {
       expect(await rendered(MyPayslipsPage()), who).toBe(expected);
       expect(await rendered(MyAdvancesPage()), who).toBe(expected);
       expect(await rendered(MyClaimsPage()), `${who}: my claims`).toBe(expected);
+      // The notice board is for everyone with My HR, linked to an employee or not.
+      expect(await rendered(MyNoticesPage()), `${who}: notices`).toBe(self ? "page" : "no access");
       expect(await rendered(MyDetailsPage()), `${who}: my details`).toBe(expected);
       const inMenu = visibleNavItems([...ctx.permissions]).some((i) => i.href === "/me");
       expect(inMenu, `${who}: My HR in the menu`).toBe(
@@ -699,6 +709,9 @@ run("HR & payroll screens", () => {
     expect(mine.profile.id).toBe(env.rahim.id);
     expect(mine.advances.outstanding).toBe("3000.00");
     expect(mine.latestPayslips.map((s) => s.itemId)).toEqual([rahimLine.id]);
+    expect(mine.score.employee.id).toBe(env.rahim.id);
+    expect(mine.score.tenure.joined).toBe("2025-01-01");
+    expect(mine.notices).toEqual({ latest: [], unread: 0, total: 0 });
     expect(data(await getMyMonthScreenAction({}), "month").employee.id).toBe(env.rahim.id);
     expect(data(await getMyAdvancesScreenAction(), "advances").items).toHaveLength(1);
     expect(data(await getMyPayslipsScreenAction(), "payslips").payslips).toHaveLength(1);

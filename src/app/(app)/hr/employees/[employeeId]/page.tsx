@@ -7,6 +7,7 @@ import { EmployeeBadge, FlagBadge, PayrollBadge } from "@/components/hr/badges";
 import { EmployeeActions, LeaveAllowances, SalaryHistory } from "@/components/hr/employee-actions";
 import { hrHref, payDetails } from "@/components/hr/labels";
 import { HrNoAccess } from "@/components/hr/no-access";
+import { ScoreCard } from "@/components/hr/score-card";
 import { VaultPanel } from "@/components/hr/vault-panel";
 import { Fact, Panel, RecordHeader } from "@/components/sales/detail-bits";
 import { isZero, METHOD_LABELS, money } from "@/components/sales/labels";
@@ -25,8 +26,9 @@ const one = (value: string | string[] | undefined) =>
 /**
  * One employee (hr.view, hr.manage or hr.payroll, like GET /api/hr/employees/:id):
  * their details, this month's attendance and their leave for a year; for
- * people who see salaries, their pay, salary history, advances and payslips.
- * HR changes them as hr/rules.ts allows.
+ * people who see salaries, their pay, salary history, advances and payslips;
+ * for HR, their performance score and data vault. HR changes them as
+ * hr/rules.ts allows.
  */
 export default async function EmployeePage({
   params,
@@ -202,6 +204,14 @@ export default async function EmployeePage({
         </div>
 
         <div className="grid min-w-0 grid-cols-1 content-start gap-6">
+          {screen.score && (
+            <Panel title="Performance score" id="score-heading">
+              <div className="mt-4">
+                <ScoreCard score={screen.score} mine={false} />
+              </div>
+            </Panel>
+          )}
+
           {vault && (
             <Panel
               title="Data vault"
@@ -308,7 +318,14 @@ export default async function EmployeePage({
 
           <Panel title="Details" id="details-heading">
             <dl className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
-              <Fact label="Joined">{formatDay(e.joinDate)}</Fact>
+              <Fact label="Joined">
+                {formatDay(e.joinDate)}
+                {screen.score && (
+                  <span className="block text-muted-foreground">
+                    {screen.score.tenure.text} with {ctx.company.name}
+                  </span>
+                )}
+              </Fact>
               {e.exitDate && (
                 <Fact label={e.isCurrent ? "Last working day" : "Left"}>
                   {formatDay(e.exitDate)}

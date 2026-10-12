@@ -12,8 +12,10 @@ import * as claims from "@/modules/hr/claims.service";
 import * as employees from "@/modules/hr/employee.service";
 import * as leave from "@/modules/hr/leave.service";
 import * as location from "@/modules/hr/location.service";
+import * as notices from "@/modules/hr/notice.service";
 import * as overtime from "@/modules/hr/overtime.service";
 import * as payroll from "@/modules/hr/payroll.service";
+import * as scores from "@/modules/hr/score.service";
 import * as screens from "@/modules/hr/screens.service";
 import * as settings from "@/modules/hr/settings.service";
 import * as vault from "@/modules/hr/vault.service";
@@ -143,6 +145,37 @@ export const recheckClaimAction = async (claimId: string) =>
   change(async () => claims.recheckClaim(await claimsDecide(), claimId));
 export const payBackClaimsAction = async (input: unknown) =>
   change(async () => claims.payBackClaims(await payOut(), input, await getRequestMeta()));
+
+// --- Notice board and performance scores (HR only) ----------------------------------------
+export const getNoticesScreenAction = async (query: unknown = {}) =>
+  runAction(async () => notices.listNotices(await hrManage(), query));
+export const postNoticeAction = async (input: unknown) =>
+  change(async () => {
+    const posted = await notices.postNotice(await hrManage(), input, await getRequestMeta());
+    return { id: posted.notice.id, told: posted.told, noLogin: posted.noLogin };
+  });
+export const updateNoticeAction = async (noticeId: string, input: unknown) =>
+  change(async () => {
+    const notice = await notices.updateNotice(
+      await hrManage(),
+      noticeId,
+      input,
+      await getRequestMeta(),
+    );
+    return { id: notice.id };
+  });
+export const takeDownNoticeAction = async (noticeId: string) =>
+  change(async () => {
+    const notice = await notices.takeDownNotice(await hrManage(), noticeId, await getRequestMeta());
+    return { id: notice.id };
+  });
+export const putBackNoticeAction = async (noticeId: string) =>
+  change(async () => {
+    const notice = await notices.putBackNotice(await hrManage(), noticeId, await getRequestMeta());
+    return { id: notice.id, state: notice.state };
+  });
+export const getEmployeeScoreAction = async (employeeId: string) =>
+  runAction(async () => scores.employeeScore(await hrManage(), employeeId));
 
 // --- Shadow overtime (HR only) -----------------------------------------------------------
 export const getOvertimeLedgerAction = async (query: unknown = {}) =>

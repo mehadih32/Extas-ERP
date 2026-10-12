@@ -164,6 +164,8 @@ model Company {
   staffPositions       StaffPosition[]
   overtimeEntries      OvertimeEntry[]
   staffClaims          StaffClaim[]
+  notices              Notice[]
+  noticeReads          NoticeRead[]
 }
 
 /// A person who can log in. Global across companies.
@@ -209,6 +211,9 @@ model User {
   claimsDecided      StaffClaim[]          @relation("StaffClaimDecidedBy")
   claimsPaid         StaffClaim[]          @relation("StaffClaimPaidBy")
   claimsCreated      StaffClaim[]          @relation("StaffClaimCreatedBy")
+  noticesPosted      Notice[]              @relation("NoticeCreatedBy")
+  noticesTakenDown   Notice[]              @relation("NoticeTakenDownBy")
+  noticeReads        NoticeRead[]
   payrollsCreated    PayrollRun[]          @relation("PayrollCreatedBy")
   payrollsApproved   PayrollRun[]          @relation("PayrollApprovedBy")
   salariesPaid       PayrollPayment[]      @relation("PayrollPaidBy")
@@ -2736,6 +2741,50 @@ model StaffClaim {
   @@index([projectId])
 }
 
+/// A notice on the staff notice board (My HR > Notices), posted by HR for
+/// every employee: shown until its last day or until it is taken down.
+model Notice {
+  id            String    @id @default(cuid())
+  companyId     String
+  title         String
+  body          String
+  /// Kept at the top of the board.
+  pinned        Boolean   @default(false)
+  /// The last day staff see it (none: until it is taken down).
+  showUntil     DateTime? @db.Date
+  /// Changed after it was posted.
+  editedAt      DateTime?
+  /// Taken down by HR: staff no longer see it.
+  takenDownAt   DateTime?
+  takenDownById String?
+  createdById   String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  company     Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  createdBy   User?        @relation("NoticeCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  takenDownBy User?        @relation("NoticeTakenDownBy", fields: [takenDownById], references: [id], onDelete: SetNull)
+  reads       NoticeRead[]
+
+  @@index([companyId, takenDownAt, createdAt])
+}
+
+/// Who has read a notice, and when (the first time they saw it on the board).
+model NoticeRead {
+  id        String   @id @default(cuid())
+  companyId String
+  noticeId  String
+  userId    String
+  readAt    DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  notice  Notice  @relation(fields: [noticeId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([noticeId, userId])
+  @@index([companyId, userId])
+}
+
 /// A place staff check in at (an office, a factory floor, a shop), with the
 /// radius inside which a check-in counts as being there.
 model WorkLocation {
@@ -3210,6 +3259,9 @@ model Task {
   priority    TaskPriority @default(MEDIUM)
   status      TaskStatus   @default(TODO)
   completedAt DateTime?
+  /// When the assignee first opened it in My HR (the read receipt, "Seen");
+  /// cleared when the task is given to someone else.
+  seenAt      DateTime?
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 

@@ -774,3 +774,32 @@ export const payBackClaimsSchema = z.object({
   /** When it was paid; default: now. */
   date: dayOrInstant.optional(),
 });
+
+// --- Notice board -----------------------------------------------------------------------------
+
+export const NOTICE_LIMITS = { title: 150, body: 5000 } as const;
+
+/** A notice HR posts for every employee; it shows until its last day, if one is set. */
+export const postNoticeSchema = z.object({
+  title: z.string().trim().min(1, "Write a title").max(NOTICE_LIMITS.title),
+  body: z.string().trim().min(1, "Write the notice").max(NOTICE_LIMITS.body),
+  pinned: z.boolean().default(false),
+  showUntil: day.nullish(),
+});
+
+export const updateNoticeSchema = z.object({
+  title: z.string().trim().min(1, "Write a title").max(NOTICE_LIMITS.title).optional(),
+  body: z.string().trim().min(1, "Write the notice").max(NOTICE_LIMITS.body).optional(),
+  pinned: z.boolean().optional(),
+  showUntil: day.nullish(),
+});
+
+export const NOTICE_SHOWS = ["current", "ended", "all"] as const;
+
+/** HR's list: notices staff see now, ended or taken down, or all. */
+export const listNoticesSchema = z.object({
+  show: z.enum(NOTICE_SHOWS).catch("current").default("current"),
+});
+
+/** The notices on the employee's screen, to mark as read. */
+export const readNoticesSchema = z.object({ noticeIds: z.array(id).max(200) });

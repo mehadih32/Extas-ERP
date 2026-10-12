@@ -70,7 +70,12 @@ export default async function TasksPage({
             </EmptyState>
           )
         ) : (
-          <TaskList key={taskListSearch(view)} initial={{ items, nextCursor }} view={view} />
+          <TaskList
+            key={taskListSearch(view)}
+            initial={{ items, nextCursor }}
+            view={view}
+            timeZone={ctx.company.timezone}
+          />
         )}
       </TaskFilters>
     </section>

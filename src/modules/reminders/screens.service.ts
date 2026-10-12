@@ -4,6 +4,7 @@ import { z } from "zod";
 import { localDay, localTime, startOfDayInZone } from "@/lib/dates";
 import { prisma } from "@/lib/prisma";
 import type { CompanyContext } from "@/modules/auth/context";
+import { linkedEmployee } from "@/modules/hr/access";
 import { listNotes, type NoteView } from "@/modules/notepad/note.service";
 import {
   type Acting,
@@ -168,9 +169,14 @@ export type TaskRow = TaskView;
 /** One task with what may be done with it, and the reminders sent about it. */
 export async function getTaskScreen(ctx: CompanyContext, taskId: string, now: Date = new Date()) {
   const task = await getTask(ctx, taskId, now);
-  const reminders = await listReminders(ctx, { all: true, taskId, take: 20 });
+  const [reminders, me] = await Promise.all([
+    listReminders(ctx, { all: true, taskId, take: 20 }),
+    linkedEmployee(ctx),
+  ]);
   return {
     task,
+    /** Given to the person looking: opening it here counts as seeing it. */
+    mine: me !== null && task.assignee?.id === me.id,
     /** The employee's and the project's pages, when this person's role opens them. */
     links: {
       assignee: task.assignee ? recordHref(ctx, { type: "Employee", id: task.assignee.id }) : null,

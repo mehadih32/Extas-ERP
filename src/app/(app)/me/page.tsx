@@ -5,6 +5,9 @@ import { FlagBadge, MarkBadge } from "@/components/hr/badges";
 import { dayCount, hrHref, payDetails } from "@/components/hr/labels";
 import { CheckInButtons } from "@/components/hr/my-hr-actions";
 import { MyHrProblem } from "@/components/hr/no-access";
+import { postedText } from "@/components/hr/notice-labels";
+import { ScoreCard } from "@/components/hr/score-card";
+import { TenureClock } from "@/components/hr/tenure-clock";
 import { Fact, Panel } from "@/components/sales/detail-bits";
 import { isZero, METHOD_LABELS, money } from "@/components/sales/labels";
 import { FormAlert } from "@/components/forms/field";
@@ -23,9 +26,11 @@ const listText = (items: string[]) =>
   items.length <= 1 ? (items[0] ?? "") : `${items.slice(0, -1).join(", ")} and ${items.at(-1)}`;
 
 /**
- * The signed-in employee's own HR page (portal.self): checking in and out for
- * today when HR allows it, this month so far, leave left, their pay, advances
- * still owed, the latest payslips and their details. Only their own records.
+ * The signed-in employee's own HR page (portal.self): their dashboard (a live
+ * clock of their time with the company, their performance score with what
+ * moved it, and the newest notices), checking in and out for today when HR
+ * allows it, this month so far, leave left, their pay, advances still owed,
+ * the latest payslips and their details. Only their own records.
  */
 export default async function MyHrPage() {
   const ctx = await requireCompanyPage();
@@ -48,6 +53,7 @@ export default async function MyHrPage() {
   const year = today.date.slice(0, 4);
   const pay = payDetails(p);
   const gaps = result.data.vaultGaps;
+  const { score, notices } = result.data;
 
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
@@ -61,8 +67,22 @@ export default async function MyHrPage() {
           </FormAlert>
         </div>
       )}
-      <div className="grid min-w-0 grid-cols-1 content-start gap-6">
-        <Panel title="Today" id="today-heading">
+      {/* On a phone, checking in comes first: Today goes above this band (see the column below). */}
+      <div className="order-2 grid grid-cols-1 gap-6 md:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] md:items-start lg:order-none lg:col-span-2">
+        <Panel title="My time here" id="tenure-heading">
+          <div className="mt-4">
+            <TenureClock company={ctx.company.name} tenure={score.tenure} />
+          </div>
+        </Panel>
+        <Panel title="My score" id="score-heading">
+          <div className="mt-4">
+            <ScoreCard score={score} mine />
+          </div>
+        </Panel>
+      </div>
+
+      <div className="contents lg:grid lg:min-w-0 lg:grid-cols-1 lg:content-start lg:gap-6">
+        <Panel title="Today" id="today-heading" className="order-1 lg:order-none">
           <p className="mt-1 text-sm text-muted-foreground">{formatLongDay(today.date)}</p>
           <div className="mt-4 grid gap-4">
             {mark ? (
@@ -96,6 +116,7 @@ export default async function MyHrPage() {
         <Panel
           title={`${formatMonth(thisMonth.month)} so far`}
           id="month-heading"
+          className="order-3 lg:order-none"
           action={
             <Link href={hrHref.myMonth()} className={`text-sm ${linkClass}`}>
               Day by day
@@ -120,6 +141,7 @@ export default async function MyHrPage() {
         <Panel
           title={`Leave in ${year}`}
           id="leave-heading"
+          className="order-3 lg:order-none"
           action={
             <Link href={hrHref.myLeave()} className={`text-sm ${linkClass}`}>
               Ask for leave
@@ -158,7 +180,48 @@ export default async function MyHrPage() {
         </Panel>
       </div>
 
-      <div className="grid min-w-0 grid-cols-1 content-start gap-6">
+      <div className="order-3 grid min-w-0 grid-cols-1 content-start gap-6 lg:order-none">
+        <Panel
+          title="Notice board"
+          id="notices-heading"
+          action={
+            <Link href={hrHref.myNotices} className={`text-sm ${linkClass}`}>
+              {notices.unread > 0 ? `${notices.unread} new` : "All notices"}
+            </Link>
+          }
+        >
+          {notices.latest.length === 0 ? (
+            <p className="mt-4 text-sm text-muted-foreground">No notices from HR right now.</p>
+          ) : (
+            <ul className="mt-4 grid divide-y" aria-label="Latest notices">
+              {notices.latest.map((n) => (
+                <li key={n.id} className="py-2.5 first:pt-0 last:pb-0">
+                  <Link
+                    href={`${hrHref.myNotices}#notice-${n.id}`}
+                    className="block rounded-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/25"
+                  >
+                    <span className="flex flex-wrap items-center gap-1.5">
+                      <span className="text-sm font-medium break-words text-primary">
+                        {n.title}
+                      </span>
+                      {n.pinned && <FlagBadge tone="open">Pinned</FlagBadge>}
+                      {n.readAt === null && <FlagBadge tone="warn">New</FlagBadge>}
+                    </span>
+                    <span className={smallText}>{postedText(n, ctx.company.timezone)}</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+          {notices.total > notices.latest.length && (
+            <p className="mt-3 text-sm">
+              <Link href={hrHref.myNotices} className={linkClass}>
+                See all {notices.total} notices
+              </Link>
+            </p>
+          )}
+        </Panel>
+
         <Panel
           title="Pay"
           id="pay-heading"

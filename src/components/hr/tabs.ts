@@ -19,8 +19,8 @@ const SALARIES: readonly PermissionKey[] = ["hr.manage", "hr.payroll", "accounts
  * with any HR key; payroll with the keys that see salaries; the advances
  * register also opens to whoever pays advances out (accounts.payments.record);
  * staff claims (conveyance, local material) to HR and to Accounts, who decide
- * and pay them; the overtime ledger (shadow overtime) and the staff map (where
- * checked-in staff are now) only to HR (hr.manage).
+ * and pay them; the overtime ledger (shadow overtime), the staff notice board
+ * and the staff map (where checked-in staff are now) only to HR (hr.manage).
  */
 export const HR_TABS: readonly HrTab[] = [
   { href: "/hr", label: "Overview", anyOf: HR_READ },
@@ -39,6 +39,7 @@ export const HR_TABS: readonly HrTab[] = [
     label: "Advances",
     anyOf: [...SALARIES, "accounts.payments.record"],
   },
+  { href: "/hr/notices", label: "Notices", anyOf: ["hr.manage"] },
   { href: "/hr/map", label: "Staff map", anyOf: ["hr.manage"] },
   { href: "/hr/settings", label: "Holidays & rules", anyOf: HR_READ },
   { href: "/hr/terms", label: "Terms", anyOf: HR_READ },
@@ -54,6 +55,7 @@ export function visibleHrTabs(permissions: Iterable<string>): HrTab[] {
 export const MY_HR_TABS: ReadonlyArray<{ href: string; label: string }> = [
   { href: "/me", label: "Today" },
   { href: "/me/tasks", label: "Tasks" },
+  { href: "/me/notices", label: "Notices" },
   { href: "/me/attendance", label: "Attendance" },
   { href: "/me/leave", label: "Leave" },
   { href: "/me/payslips", label: "Payslips" },

@@ -38,6 +38,7 @@ import {
   myPayslip,
   myPayslips,
 } from "@/modules/hr/payroll.service";
+import { myNotices } from "@/modules/hr/notice.service";
 import { getMyOverview } from "@/modules/hr/portal.service";
 import {
   canActOnOwnRecord,
@@ -68,6 +69,7 @@ import {
 } from "@/modules/hr/rules";
 import { listWorkPlaces, openShift } from "@/modules/hr/location.service";
 import { waitingClaims } from "@/modules/hr/claims.service";
+import { employeeScore, myScore } from "@/modules/hr/score.service";
 import { waitingOvertime } from "@/modules/hr/overtime.service";
 import { getHrSettings, listHolidays, listLeaveTypes } from "@/modules/hr/settings.service";
 import { vaultIncompleteWhere } from "@/modules/hr/vault";
@@ -416,11 +418,15 @@ export async function getEmployeeScreen(
       : null;
   const activeTypes = balances.filter((b) => b.leaveType.isActive);
   /** The data vault: what is missing, papers and pay detail changes (HR only). */
-  const vault = access.manage ? await getEmployeeVault(ctx, e.id) : null;
+  const [vault, score] = access.manage
+    ? await Promise.all([getEmployeeVault(ctx, e.id), employeeScore(ctx, e.id)])
+    : [null, null];
 
   return {
     today: day,
     vault,
+    /** The performance score and tenure (HR only). */
+    score,
     employee: {
       id: e.id,
       code: e.code,
@@ -1040,12 +1046,18 @@ export type HrSettingsScreen = Awaited<ReturnType<typeof getSettingsScreen>>;
 // =============================================================================
 
 /**
- * The signed-in employee's own page: today's check-in, this month's
- * attendance, leave left, advances owed, latest payslips and their details.
+ * The signed-in employee's own page: their dashboard (how long they have
+ * been with the company, their performance score and the notice board),
+ * today's check-in, this month's attendance, leave left, advances owed,
+ * latest payslips and their details.
  */
 export async function getMyHrScreen(ctx: CompanyContext) {
-  const o = await getMyOverview(ctx);
-  const employee = await linkedEmployee(ctx);
+  const [o, employee, score, notices] = await Promise.all([
+    getMyOverview(ctx),
+    linkedEmployee(ctx),
+    myScore(ctx),
+    myNotices(ctx),
+  ]);
   const day = o.today.date;
   const onLeave = employee
     ? await ctx.db.leaveRequest.findFirst({
@@ -1070,6 +1082,13 @@ export async function getMyHrScreen(ctx: CompanyContext) {
       : null;
   return {
     ...o,
+    score,
+    /** The newest notices up now (pinned first) and how many are new to them. */
+    notices: {
+      latest: notices.items.slice(0, 3),
+      unread: notices.unread,
+      total: notices.items.length,
+    },
     vaultGaps: o.profile.vaultGaps,
     onLeaveToday: onLeave ? onLeave.leaveType.name : null,
     /** "21:40" when yesterday's check-in is still open. */

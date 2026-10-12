@@ -59,12 +59,13 @@ describe("HR & payroll in the menu, by role", () => {
     "Leave",
     "Payroll",
     "Advances",
+    "Notices",
     "Staff map",
     "Holidays & rules",
     "Terms",
   ];
   /** Tabs for HR alone (hr.manage), which Accounts does not hold. */
-  const HR_ONLY = ["Overtime", "Staff map"];
+  const HR_ONLY = ["Overtime", "Notices", "Staff map"];
 
   it("gives the owner and Accounts every tab, and My HR from the account menu", () => {
     for (const name of ["SUPER_ADMIN", "ACCOUNTS"] as const) {
@@ -99,6 +100,7 @@ describe("HR & payroll in the menu, by role", () => {
     expect(MY_HR_TABS.map((t) => t.label)).toEqual([
       "Today",
       "Tasks",
+      "Notices",
       "Attendance",
       "Leave",
       "Payslips",

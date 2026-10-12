@@ -8,7 +8,8 @@ import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
-import { requireLinkedEmployee } from "@/modules/hr/access";
+import { linkedEmployee, requireLinkedEmployee } from "@/modules/hr/access";
+import { pushToUsers } from "@/modules/integrations/push";
 import { isActiveMember } from "@/modules/reminders/audience";
 import {
   canEditTask,
@@ -22,6 +23,7 @@ import {
   createTaskSchema,
   listTasksSchema,
   portalTaskStatusSchema,
+  seenTasksSchema,
   taskStatusSchema,
   updateTaskSchema,
 } from "@/modules/reminders/schemas";
@@ -33,7 +35,10 @@ import {
  * about it in the app through the login linked to their employee profile, sees
  * it in the employee portal and marks it started or done there; whoever created
  * it hears when it is done. Reminders before the due date come from the
- * TASK_DUE rule (rules.ts).
+ * TASK_DUE rule (rules.ts). A new task is also pushed to the assignee's phone
+ * once push notifications are connected (integrations/push.ts). The first time
+ * the assignee opens it in My HR is kept as its read receipt ("Seen"), which
+ * management sees with the task.
  *
  *   reminders.manage   create, assign, edit, cancel and see every task
  *   portal.self        the tasks assigned to you: start, finish or reopen them
@@ -82,6 +87,8 @@ function present(task: TaskRow, timeZone: string, today: string) {
     project: task.project,
     createdBy: task.createdBy,
     completedAt: task.completedAt,
+    /** When the assignee first opened it (null: not seen yet). */
+    seenAt: task.seenAt,
     createdAt: task.createdAt,
     updatedAt: task.updatedAt,
   };
@@ -160,6 +167,22 @@ async function tellAssignee(tx: Tx, ctx: CompanyContext, task: TaskRow, now: Dat
   );
 }
 
+/** Pushes a new task to the assignee's phone (nothing while push is off). */
+async function pushToAssignee(ctx: CompanyContext, task: TaskRow) {
+  const userId = task.assignee?.userId;
+  if (!userId || userId === ctx.user.id) return;
+  if (!(await isActiveMember(ctx.company.id, userId))) return;
+  await pushToUsers([userId], {
+    title: `New task: ${task.title}`,
+    body: `${ctx.user.name} gave you a task${dueText(task, ctx.company.timezone)}.`,
+    url: "/me/tasks",
+  });
+}
+
+/** Giving yourself a task: you have seen it already. */
+const seenWhenOwn = (ctx: CompanyContext, task: TaskRow, now: Date) =>
+  task.assignee?.userId === ctx.user.id ? now : null;
+
 export async function createTask(
   ctx: CompanyContext,
   raw: unknown,
@@ -183,6 +206,8 @@ export async function createTask(
       },
       include: taskInclude,
     });
+    const own = seenWhenOwn(ctx, task, now);
+    if (own) await tx.task.update({ where: { id: task.id }, data: { seenAt: own } });
     await tellAssignee(tx, ctx, task, now);
     await auditInCompany(
       ctx,
@@ -195,8 +220,9 @@ export async function createTask(
       },
       tx,
     );
-    return task;
+    return { ...task, seenAt: own };
   });
+  await pushToAssignee(ctx, created);
   return present(created, tz, today(ctx, now));
 }
 
@@ -226,10 +252,19 @@ export async function updateTask(
           ? { dueAt: input.dueAt ? toInstant(input.dueAt, tz) : null }
           : {}),
         ...(input.priority !== undefined ? { priority: input.priority } : {}),
+        // The new assignee has not seen it yet.
+        ...(reassigned ? { seenAt: null } : {}),
       },
       include: taskInclude,
     });
-    if (reassigned) await tellAssignee(tx, ctx, row, now);
+    if (reassigned) {
+      const own = seenWhenOwn(ctx, row, now);
+      if (own) {
+        await tx.task.update({ where: { id: row.id }, data: { seenAt: own } });
+        row.seenAt = own;
+      }
+      await tellAssignee(tx, ctx, row, now);
+    }
     await auditInCompany(
       ctx,
       meta,
@@ -243,6 +278,7 @@ export async function updateTask(
     );
     return row;
   });
+  if (reassigned) await pushToAssignee(ctx, updated);
   return present(updated, tz, today(ctx, now));
 }
 
@@ -437,4 +473,24 @@ export async function setMyTaskStatus(
   if (!task) throw new AppError("NOT_FOUND", "Task not found.");
   assertAllowed(canSetMyTaskStatus(task, status));
   return changeStatus(ctx, task, status, meta, now);
+}
+
+/**
+ * The read receipt: the tasks the signed-in person was given that are on
+ * their screen now are marked seen (once; the first time counts). Tasks given
+ * to anyone else are left alone. Returns how many were seen for the first time.
+ */
+export async function markTasksSeen(
+  ctx: CompanyContext,
+  raw: unknown,
+  now: Date = new Date(),
+): Promise<{ seen: number }> {
+  const { taskIds } = seenTasksSchema.parse(raw);
+  const employee = await linkedEmployee(ctx);
+  if (!employee || taskIds.length === 0) return { seen: 0 };
+  const { count } = await ctx.db.task.updateMany({
+    where: { id: { in: taskIds }, assigneeId: employee.id, seenAt: null },
+    data: { seenAt: now },
+  });
+  return { seen: count };
 }

@@ -1697,6 +1697,24 @@ back" (`accounts.payments.record`) settles everything owed to one person in one 
 Nobody decides or pays back their own claim (a Super Admin aside), and voiding the expense in
 Accounts cancels the claim.
 
+**Employee dashboard.** My HR opens on the person's own dashboard: "My time here" (a clock
+of their time with the company, ticking every second, with the next work anniversary), "My
+score" and the newest notices. The performance score (`src/modules/hr/score.ts`) is 0 to 10
+over the last 30 days, worked out from clear rules with no outside AI: attendance counts half
+(on time 1, late or a half day 0.5, absent 0; leave, holidays, days off and unmarked days
+left out), tasks done by their due day 30% (done late 0.5, overdue 0) and claims 20%
+(approved as sent 1, for less 0.5, rejected 0). A part with nothing to count is left out and
+the others share its points. The ring is green from 8, yellow from 5 and red below, and "What
+lost points" lists each day, task and claim with the points it cost. Overtime and the claim
+checks play no part, as staff never see them. HR sees the same on the employee's page
+(`hr.manage`). The first time the assignee opens a task in My HR is kept as its read receipt
+(`Task.seenAt`): the Planner shows ✓✓ "Seen" with the time, or ✓ "Not seen yet", and giving
+the task to someone else starts again. HR posts notices for every employee on the Notices tab
+(`/hr/notices`, `Notice`): kept at the top or not, with an optional last day, changed, taken
+down or put back. Staff read them in My HR > Notices; each person's first read is kept
+(`NoticeRead`), so HR sees who has read each notice and who has not yet. New tasks and notices
+reach the in-app inbox and, once `PUSH_PROVIDER` is set, the phone through the push plug.
+
 **Android app.** `mobile/` wraps the same web app in a Capacitor Android app that opens the
 company's server (`EXTAS_APP_URL` at build time). Its `DutyTracker` plugin
 (`mobile/android/app/src/main/java/com/extas/erp/`) starts a foreground location service
@@ -1768,6 +1786,10 @@ service worker `public/sw.js` make Extas ERP installable; phones are offered "In
 | `POST /api/hr/claims/:id/decide` / `…/recheck`, `POST /api/hr/claims/approve-all`     | Approve, change or reject a claim / check it again       |
 | `POST /api/hr/claims/pay-back`                                                        | Pay back everything owed to one person                   |
 | `GET/POST /api/portal/claims`, `POST …/:id/withdraw`                                  | Employee portal: my claims, send one, withdraw one       |
+| `GET /api/portal/score`, `GET /api/hr/employees/:id/score`                            | The performance score and tenure: mine / an employee's   |
+| `GET/POST /api/hr/notices?show=`, `PATCH …/:id`                                       | The notice board with who read each / post / change one  |
+| `POST /api/hr/notices/:id/take-down` / `…/put-back`                                   | Take a notice down / put it back up                      |
+| `GET /api/portal/notices`, `POST /api/portal/notices/read`                            | Employee portal: the notices up now / mark them read     |
 
 `hr.view` sees profiles, attendance, leave and holidays, but no salaries. `hr.manage` adds
 and edits employees and salaries, marks attendance, approves leave and sets the HR rules.
@@ -2278,6 +2300,7 @@ development; set `REMINDER_SCHEDULER=on` or `off` to choose.
 | `GET/POST /api/tasks`, `GET/PATCH/DELETE …/:id`           | Every task (soonest due first) / give one, edit or remove it                     |
 | `POST /api/tasks/:id/status`                              | To do, in progress, done or cancelled                                            |
 | `GET /api/portal/tasks`, `POST …/:id/status`              | The tasks given to you / start, finish or reopen one                             |
+| `POST /api/portal/tasks/seen`                             | The tasks given to you that you have opened (the read receipt, "Seen")           |
 | `GET/POST /api/reminders`, `GET/PATCH/DELETE …/:id`       | Reminders you set or are on (`all=1` for everyone's) / set, change, remove       |
 | `POST /api/reminders/:id/cancel` / `…/acknowledge`        | Stop one before it goes out / mark it as dealt with                              |
 | `GET /api/reminders/upcoming?days=`                       | The planner's agenda, with everything overdue                                    |

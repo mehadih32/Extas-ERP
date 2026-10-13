@@ -29,3 +29,6 @@ yarn-error.log*
 *.pem
 .vscode/
 .idea/
+
+# The production simulation report (npm run simulate:production with SIMULATION_REPORT set)
+simulation-report.md

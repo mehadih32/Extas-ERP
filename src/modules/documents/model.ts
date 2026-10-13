@@ -37,7 +37,8 @@ export type PrintType = (typeof PRINT_TYPES)[number];
  * a purchase order for the supplier (materials/order-pdf.service.ts), a
  * batch's supplier or factory agreement (production/contract.service.ts), its
  * final CM settlement (production/batch-money.service.ts) and its summary
- * (production/batch-summary.service.ts), made when asked for and not kept.
+ * (production/batch-summary.service.ts), and a fabric and trims booking
+ * (production/booking-pdf.service.ts), made when asked for and not kept.
  */
 export type RecordPrintType =
   | "SIGNED_TERMS"
@@ -48,7 +49,8 @@ export type RecordPrintType =
   | "PRODUCTION_CONTRACT"
   | "SUPPLIER_REPORT_CARD"
   | "CM_SETTLEMENT"
-  | "BATCH_SUMMARY";
+  | "BATCH_SUMMARY"
+  | "BOOKING";
 
 /**
  * Bump when the layout changes, so documents printed again get the new look.
@@ -113,7 +115,13 @@ export type Block =
     }
   | { kind: "figures"; figures: Array<{ label: string; value: string; hint?: string }> }
   | { kind: "text"; title: string; paragraphs: string[] }
-  | { kind: "list"; title: string; items: Array<{ label?: string; text: string }> }
+  | {
+      kind: "list";
+      title: string;
+      items: Array<{ label?: string; text: string }>;
+      /** 1. 2. 3. instead of bullets (terms and conditions). */
+      numbered?: boolean;
+    }
   | { kind: "note"; text: string }
   /** A heading opening a part of the document on its own page (an invoice's packing list). */
   | { kind: "heading"; title: string; subtitle?: string }
@@ -144,6 +152,12 @@ export type PrintDocument = {
   blocks: Block[];
   /** Signature lines at the end ("Authorised signature"). */
   signatures: string[];
+  /** Printed to be bound: a wider left margin on every page for the spiral's holes. */
+  binding?: boolean;
+  /** A QR code beside the title (a link to the record), with a caption under it. */
+  qr?: { data: string; caption?: string };
+  /** A line for initials at the foot of every page ("Supplier's initials"). */
+  initials?: string;
 };
 
 /** Recursively key-sorted JSON, so the hash never depends on key order. */

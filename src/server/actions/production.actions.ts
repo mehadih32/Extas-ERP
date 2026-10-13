@@ -6,6 +6,7 @@ import { getRequestMeta } from "@/lib/request-meta";
 import { runAction } from "@/lib/result";
 import { requireAnyPermission, requirePermission } from "@/modules/auth/context";
 import * as files from "@/modules/files/file.service";
+import * as actionLog from "@/modules/production/action-log.service";
 import * as batchIssue from "@/modules/production/batch-issue.service";
 import * as batchOrders from "@/modules/production/batch-orders.service";
 import * as batchScreens from "@/modules/production/batch-screens.service";
@@ -15,6 +16,7 @@ import * as contracts from "@/modules/production/contract.service";
 import * as costs from "@/modules/production/cost.service";
 import * as cutting from "@/modules/production/cutting.service";
 import * as faults from "@/modules/production/fault.service";
+import * as finishing from "@/modules/production/finishing.service";
 import * as intakes from "@/modules/production/intake.service";
 import * as pictures from "@/modules/production/material-image.service";
 import * as needs from "@/modules/production/material-need.service";
@@ -58,6 +60,8 @@ const keepStore = () => requirePermission("materials.manage");
 const readFaults = () => requireAnyPermission("production.view", "materials.view", "accounts.view");
 /** A photo for a fault: whoever logs faults (Production Managers and buyers). */
 const logFaults = () => requireAnyPermission("production.manage", "materials.purchase");
+/** Finishing counts and mending: Production Managers and the store, who receive goods. */
+const countFinishing = () => requireAnyPermission("production.manage", "production.stock_intake");
 const pickProjects = () =>
   requireAnyPermission("production.manage", "accounts.payments.record", "production.stock_intake");
 
@@ -265,6 +269,36 @@ export const fabricFaultNoteAction = async (projectId: string, input: unknown) =
   );
 export const getBatchDateWarningsAction = async (batchId: string) =>
   runAction(async () => cutting.batchDateWarnings(await view(), batchId));
+
+// --- Finishing, the full packing list and the action log -----------------------------
+export const getFinishingScreenAction = async (projectId: string) =>
+  runAction(async () => finishing.getFinishingScreen(await view(), projectId));
+export const createFinishingCountAction = async (projectId: string, input: unknown) =>
+  change(async () =>
+    finishing.createFinishingCount(
+      await countFinishing(),
+      projectId,
+      input,
+      await getRequestMeta(),
+    ),
+  );
+export const backFromMendingAction = async (projectId: string, input: unknown) =>
+  change(async () =>
+    finishing.backFromMending(await countFinishing(), projectId, input, await getRequestMeta()),
+  );
+export const deleteFinishingReportAction = async (reportId: string) =>
+  change(async () =>
+    finishing.deleteFinishingReport(await countFinishing(), reportId, await getRequestMeta()),
+  );
+/** Receive Full Packing List: A and B pieces to stock, missing ones to the fault log. */
+export const receivePackingListAction = async (projectId: string, input: unknown) =>
+  change(async () =>
+    finishing.receivePackingList(await intake(), projectId, input, await getRequestMeta()),
+  );
+export const getActionLogAction = async (
+  scope: { projectId: string } | { batchId: string },
+  query: unknown,
+) => runAction(async () => actionLog.getActionLog(await view(), scope, query));
 
 // --- Overview & projects -------------------------------------------------------------
 export const getProductionOverviewAction = async () =>

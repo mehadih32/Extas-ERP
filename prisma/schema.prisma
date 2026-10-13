@@ -127,6 +127,7 @@ model Company {
   supplierFaults       SupplierFault[]
   cuttingReports       CuttingReport[]
   embroideryJobs       EmbroideryJob[]
+  finishingReports     FinishingReport[]
   materialNeeds        ProductionMaterialNeed[]
   supplierBills        SupplierBill[]
   stockIntakes         StockIntake[]
@@ -241,6 +242,7 @@ model User {
   faultsLogged       SupplierFault[]       @relation("SupplierFaultCreatedBy")
   faultsSettled      SupplierFault[]       @relation("SupplierFaultSettledBy")
   cuttingReports     CuttingReport[]       @relation("CuttingReportCreatedBy")
+  finishingReports   FinishingReport[]     @relation("FinishingReportCreatedBy")
   embroideryJobs     EmbroideryJob[]       @relation("EmbroideryJobCreatedBy")
   purchaseReturns    PurchaseReturn[]      @relation("PurchaseReturnCreatedBy")
   materialMovements  RawMaterialMovement[] @relation("MaterialMovementBy")
@@ -444,6 +446,7 @@ model FileAsset {
   materialNeedImages  ProductionMaterialNeed[] @relation("MaterialNeedImage")
   orderLineImages     PurchaseOrderLine[]      @relation("PurchaseOrderLineImage")
   cuttingPhotos       CuttingReport[]          @relation("CuttingPhoto")
+  finishingFiles      FinishingReport[]        @relation("FinishingFile")
   faultPhotos         SupplierFault[]          @relation("SupplierFaultPhoto")
 
   @@index([companyId])
@@ -1891,6 +1894,7 @@ model ProductionProject {
   faults               SupplierFault[]
   cuttingReports       CuttingReport[]
   embroideryJobs       EmbroideryJob[]
+  finishingReports     FinishingReport[]
   stageLogs            ProductionStageLog[]
   billAllocations      SupplierBillAllocation[]
   expenses             Expense[]
@@ -2140,15 +2144,17 @@ model SupplierFault {
   createdAt     DateTime            @default(now())
   updatedAt     DateTime            @updatedAt
 
-  company     Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  supplier    Party              @relation("SupplierFaults", fields: [supplierId], references: [id])
-  photo       FileAsset?         @relation("SupplierFaultPhoto", fields: [photoId], references: [id], onDelete: SetNull)
-  batch       ProductionBatch?   @relation(fields: [batchId], references: [id], onDelete: SetNull)
-  project     ProductionProject? @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  rawMaterial RawMaterial?       @relation(fields: [rawMaterialId], references: [id], onDelete: SetNull)
-  bill        SupplierBill?      @relation(fields: [billId], references: [id], onDelete: SetNull)
-  createdBy   User?              @relation("SupplierFaultCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  settledBy   User?              @relation("SupplierFaultSettledBy", fields: [settledById], references: [id], onDelete: SetNull)
+  company      Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  supplier     Party              @relation("SupplierFaults", fields: [supplierId], references: [id])
+  photo        FileAsset?         @relation("SupplierFaultPhoto", fields: [photoId], references: [id], onDelete: SetNull)
+  batch        ProductionBatch?   @relation(fields: [batchId], references: [id], onDelete: SetNull)
+  project      ProductionProject? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  rawMaterial  RawMaterial?       @relation(fields: [rawMaterialId], references: [id], onDelete: SetNull)
+  bill         SupplierBill?      @relation(fields: [billId], references: [id], onDelete: SetNull)
+  createdBy    User?              @relation("SupplierFaultCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  settledBy    User?              @relation("SupplierFaultSettledBy", fields: [settledById], references: [id], onDelete: SetNull)
+  /// The full packing list whose missing pieces it is for.
+  packingLists FinishingReport[]  @relation("PackingListMissing")
 
   @@unique([companyId, number])
   @@index([companyId, status, occurredOn])
@@ -2192,6 +2198,48 @@ model CuttingReport {
 
   @@unique([companyId, number])
   @@index([projectId, cutOn])
+}
+
+enum FinishingKind {
+  COUNT // pieces graded at finishing: A, B, C (mending) and rejects
+  MENDING // C pieces back from mending as A, B or reject
+  PACKING_LIST // the full packing list: A and B to stock, and what is missing
+}
+
+/// Finishing and QC at the factory, by colour and size: a count grading pieces A, B or C
+/// (to mending) with rejects (sewing faults) kept apart; mended pieces coming back as A, B
+/// or reject; and the full packing list, which moves the A and B pieces not yet in stock to
+/// the Sales stock on one delivery and records what is missing (lost or stolen) in the
+/// factory's fault log. C pieces, rejects and missing pieces never reach stock.
+model FinishingReport {
+  id          String        @id @default(cuid())
+  companyId   String
+  projectId   String
+  number      String // "FIN-2026-00001"
+  kind        FinishingKind @default(COUNT)
+  countedOn   DateTime      @db.Date
+  /// [{ colorName, sizeName, a, b, c, reject, missing }]: null colour and size for a style
+  /// without a grid; c is negative on MENDING (pieces moved out of mending).
+  lines       Json
+  /// The packing list's delivery to stock (null when nothing new went to stock).
+  intakeId    String?       @unique
+  /// The packing list's missing pieces in the factory's fault log.
+  faultId     String?
+  /// A photo of the QC sheet or the factory's packing list.
+  fileId      String?
+  note        String?
+  createdById String?
+  createdAt   DateTime      @default(now())
+
+  company   Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  project   ProductionProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  intake    StockIntake?      @relation("PackingListDelivery", fields: [intakeId], references: [id], onDelete: SetNull)
+  fault     SupplierFault?    @relation("PackingListMissing", fields: [faultId], references: [id], onDelete: SetNull)
+  file      FileAsset?        @relation("FinishingFile", fields: [fileId], references: [id], onDelete: SetNull)
+  createdBy User?             @relation("FinishingReportCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@unique([companyId, number])
+  @@index([projectId, countedOn])
 }
 
 enum EmbroideryKind {
@@ -2282,6 +2330,8 @@ model StockIntake {
   corrections  StockIntake[]      @relation("IntakeCorrection")
   lines        StockIntakeLine[]
   lots         StockLot[]
+  /// The full packing list that made this delivery (Finishing).
+  packingList  FinishingReport?   @relation("PackingListDelivery")
 
   @@unique([companyId, number])
   @@index([projectId])
@@ -4586,6 +4636,7 @@ enum DocumentType {
   SUPPLIER_FAULT // a supplier Fault Log entry: short, faulty or missing (FLT-2026-00001)
   CUTTING_REPORT // pieces cut for a style by colour and size (CUT-2026-00001)
   EMBROIDERY_JOB // cut pieces out for embroidery or print (EMB-2026-00001)
+  FINISHING_REPORT // a finishing count, mending return or full packing list (FIN-2026-00001)
 }
 
 enum TemplateFormat {

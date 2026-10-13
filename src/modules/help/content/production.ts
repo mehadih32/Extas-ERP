@@ -706,6 +706,118 @@ export const productionHelp: HelpSection = {
       ],
     },
     {
+      slug: "production-finishing",
+      title: "ফিনিশিং, A/B/C গ্রেড আর পুরো প্যাকিং লিস্ট গ্রহণ করবেন যেভাবে",
+      summary:
+        "ফিনিশিংয়ে প্রতিটি পিস রং ও সাইজ অনুযায়ী A, B বা C (মেরামতে যাবে) গ্রেডে ভাগ করুন, সেলাইয়ের ভুলের রিজেক্ট আলাদা রাখুন। “Receive Full Packing List” চাপলে শুধু A ও B পিস সেলসের স্টকে যায়, হারানো বা চুরি যাওয়া পিস ফ্যাক্টরির ফল্ট লগে যায়, আর এক পিসের চূড়ান্ত খরচ হয় মোট খরচ ÷ (A + B)।",
+      keywords: [
+        "finishing",
+        "qc",
+        "a grade",
+        "b grade",
+        "c grade",
+        "mending",
+        "reject",
+        "missing",
+        "packing list",
+        "final unit cost",
+        "unit cost",
+        "ফিনিশিং",
+        "গ্রেড",
+        "মেরামত",
+        "রিজেক্ট",
+        "হারানো পিস",
+        "প্যাকিং লিস্ট",
+      ],
+      routes: [
+        "/production/projects/[projectId]/finishing",
+        "/production/projects/[projectId]/finishing/new",
+      ],
+      who: "পাতাটি দেখেন Production-এর সবাই, স্টোর ও Accounts। ফিনিশিং গণনা আর মেরামত থেকে ফেরত লেখেন Production Manager ও স্টোর; প্যাকিং লিস্ট গ্রহণ করেন যাঁরা পণ্য স্টকে তোলেন। স্টাইল বন্ধ করেন শুধু Production Manager। খরচ দেখেন Production Manager ও Accounts।",
+      anyOf: ["production.view"],
+      steps: [
+        {
+          text: "প্রজেক্টের পাতায় “Finishing and QC” অংশে কত পিস A, B, C, রিজেক্ট আর হারানো তা দেখায়। “Open finishing” চাপলে ফিনিশিংয়ের পুরো পাতা খোলে।",
+          image: {
+            id: "production-finishing-1",
+            caption: "প্রজেক্টের পাতায় “Finishing and QC” অংশ",
+          },
+        },
+        {
+          text: "“New finishing count” চাপুন। প্রতিটি রং ও সাইজের ঘরে কত পিস A-grade, B-grade, C (মেরামতে যাবে) আর Reject (সেলাইয়ের ভুল, ঠিক করা যায় না) লিখুন। যত পিস কাটা হয়েছে আর এমব্রয়ডারি থেকে ফিরেছে তার বেশি লেখা যায় না। QC শিটের ছবি দিয়ে “Save the finishing count” চাপুন।",
+          image: {
+            id: "production-finishing-2",
+            caption: "রং ও সাইজ অনুযায়ী A, B, C আর রিজেক্টের ঘর",
+          },
+        },
+        {
+          text: "C-grade পিস মেরামত হয়ে ফিরলে “Back from mending” চেপে লিখুন কত পিস A, কত B আর কত ঠিক হলো না (Reject)।",
+        },
+        {
+          text: "ফ্যাক্টরি পুরো প্যাকিং লিস্ট দিলে “Receive Full Packing List” চাপুন। যত পিস কাটা হয়েছে কিন্তু গোনা হয়নি, “Missing (lost or stolen)” ঘরে নিজে থেকে বসে যায়; যে পিস এখনো আসবে তার ঘরে 0 দিন। “Receive the packing list” চাপলে শুধু A ও B পিস একটি ডেলিভারিতে সেলসের স্টকে যায়; C, রিজেক্ট আর হারানো পিস স্টকে যায় না।",
+          image: {
+            id: "production-finishing-3",
+            caption: "“Receive Full Packing List” জানালা",
+          },
+        },
+        {
+          text: "হারানো পিস চূড়ান্ত খরচে ফ্যাক্টরির ফল্ট লগে যায়, যাতে CM থেকে কেটে রাখা যায়, আর Production Manager-রা সাথে সাথে বার্তা পান। Production Manager “Close the style now” টিক দিলে স্টাইলটি বন্ধ হয় আর স্টকের প্রতিটি পিসের খরচ সমান হয়ে যায়।",
+        },
+        {
+          text: "“Final unit cost” অংশে দেখায় মোট খরচ ÷ (A + B) = এক পিসের খরচ। C-grade, রিজেক্ট আর হারানো পিস স্টকে যায় না, তাই পুরো খরচ A ও B পিস বহন করে।",
+          image: {
+            id: "production-finishing-4",
+            caption: "“Pieces by grade” আর “Final unit cost”",
+          },
+        },
+        {
+          text: "প্যাকিং লিস্টের পরে মেরামত থেকে আরও A বা B পিস ফিরলে “Move mended pieces to stock” চেপে সেগুলো স্টকে তুলুন।",
+        },
+      ],
+      tips: [
+        "ভুল ফিনিশিং গণনা মুছে ফেলা যায়; প্যাকিং লিস্ট মোছা যায় না, তার ডেলিভারি ফিরিয়ে নিলে (undo) প্যাকিং লিস্টও বাতিল হয় আর নতুন করে নেওয়া যায়।",
+        "আগের ডেলিভারিতে কিছু পিস স্টকে উঠে থাকলে প্যাকিং লিস্ট শুধু বাকি A ও B পিস নেয়।",
+      ],
+    },
+    {
+      slug: "production-action-log",
+      title: "কে কখন কী করলেন: Action log দেখবেন যেভাবে",
+      summary:
+        "প্রতিটি স্টাইল আর মাস্টার ব্যাচের প্রতিটি কাজ (কে পণ্য গ্রহণ করলেন, কে কাটিং রিপোর্ট লিখলেন, কে কাপড় দিলেন) সময় ও নামসহ এক তালিকায়। এই তালিকা কেউ বদলাতে বা মুছতে পারেন না।",
+      keywords: [
+        "action log",
+        "audit",
+        "employee log",
+        "who did",
+        "history",
+        "activity",
+        "কাজের তালিকা",
+        "কে করলেন",
+        "ইতিহাস",
+      ],
+      routes: ["/production/projects/[projectId]/log", "/production/batches/[batchId]/log"],
+      who: "দেখেন Production Manager ও Accounts, কারণ কিছু লাইনে খরচের অঙ্ক থাকে।",
+      anyOf: ["production.manage", "accounts.view"],
+      steps: [
+        {
+          text: "স্টাইল বা মাস্টার ব্যাচের পাতায় “Action log” অংশে “Open the action log” চাপুন। মাস্টার ব্যাচের তালিকায় ব্যাচ আর তার সব স্টাইলের কাজ একসাথে থাকে।",
+        },
+        {
+          text: "দিন অনুযায়ী নতুন থেকে পুরোনো সাজানো থাকে: সময়, কে করলেন, কোন জিনিস (Cutting, Finishing, Delivery to stock, Material issue…) আর কী হলো।",
+          image: {
+            id: "production-action-log-1",
+            caption: "একটি স্টাইলের Action log",
+          },
+        },
+        {
+          text: "“Person” আর “What” বেছে “Show” চাপলে শুধু একজনের বা এক ধরনের কাজ দেখায়। পুরোনো কাজ দেখতে নিচে “Show older” চাপুন।",
+        },
+      ],
+      tips: [
+        "প্রতিটি কাজ যেই মুহূর্তে সেভ হয় সেই মুহূর্তেই এখানে লেখা হয়; পরে বদলানো বা মোছা যায় না।",
+      ],
+    },
+    {
       slug: "production-start-from-sales",
       title: "সেলস অর্ডার বা প্রোফর্মা থেকে উৎপাদন শুরু করবেন যেভাবে",
       summary:

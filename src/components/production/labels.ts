@@ -199,6 +199,14 @@ export const productionHref = {
   cutting: (projectId: string) => `/production/projects/${encodeURIComponent(projectId)}/cutting`,
   newCutting: (projectId: string) =>
     `/production/projects/${encodeURIComponent(projectId)}/cutting/new`,
+  /** A style's finishing and QC (A, B, C, rejects, missing) and its full packing list. */
+  finishing: (projectId: string) =>
+    `/production/projects/${encodeURIComponent(projectId)}/finishing`,
+  newFinishing: (projectId: string) =>
+    `/production/projects/${encodeURIComponent(projectId)}/finishing/new`,
+  /** The Employee Action Log of a style, or of a master batch and all its styles. */
+  projectLog: (projectId: string) => `/production/projects/${encodeURIComponent(projectId)}/log`,
+  batchLog: (batchId: string) => `/production/batches/${encodeURIComponent(batchId)}/log`,
 };
 
 /** What a supplier fault is for. */

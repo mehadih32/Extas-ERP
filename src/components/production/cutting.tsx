@@ -80,7 +80,7 @@ export function remapLines(error: ActionError, sent: number[], box: string): Act
 }
 
 /** Boxes of pieces, one per colour and size, as the dialogs read them. */
-function readBoxes(
+export function readBoxes(
   form: FormData,
   box: string,
   lines: Line[],
@@ -106,7 +106,7 @@ function readBoxes(
     : { lines: out, sent };
 }
 
-function PieceBoxes({
+export function PieceBoxes({
   box,
   lines,
   hint,

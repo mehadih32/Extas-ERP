@@ -36,6 +36,7 @@ import {
   readFabricUsed,
 } from "@/modules/production/cutting";
 import { canLogFaults, createFault } from "@/modules/production/fault.service";
+import { addUpGrades, linePieces, readGradeLines } from "@/modules/production/finishing";
 import { planStyles, styleGrids } from "@/modules/production/material-need.service";
 import { isProjectClosed } from "@/modules/production/project-costs";
 import { activeMembers, membersWith } from "@/modules/reminders/audience";
@@ -624,6 +625,36 @@ export async function createCuttingReport(
   };
 }
 
+/**
+ * Each cell's pieces cut and good (spoiled ones taken off) and those still out
+ * for embroidery or print, for finishing; null when no cutting was recorded.
+ */
+export async function cutByCell(
+  db: Pick<Prisma.TransactionClient, "cuttingReport" | "embroideryJob">,
+  projectId: string,
+) {
+  const [reports, jobs] = await Promise.all([
+    db.cuttingReport.findMany({ where: { projectId }, select: { lines: true } }),
+    db.embroideryJob.findMany({ where: { projectId }, select: { lines: true } }),
+  ]);
+  if (reports.length === 0) return null;
+  const cells = new Map<string, { good: number; out: number }>();
+  for (const [key, cut] of addUp(reports.map((r) => readCutLines(r.lines)))) {
+    cells.set(key, { good: cut, out: 0 });
+  }
+  for (const j of jobs) {
+    for (const l of readEmbroideryLines(j.lines)) {
+      const key = cellKey(l.colorName, l.sizeName);
+      const cell = cells.get(key) ?? { good: 0, out: 0 };
+      cells.set(key, {
+        good: cell.good - l.spoiled,
+        out: cell.out + l.sent - l.received - l.spoiled,
+      });
+    }
+  }
+  return cells;
+}
+
 async function reportsOf(ctx: CompanyContext, projectId: string) {
   const rows = await ctx.db.cuttingReport.findMany({
     where: { projectId },
@@ -669,6 +700,30 @@ export async function deleteCuttingReport(
             `${report.number}'s pieces went out for embroidery or print; it cannot be deleted.`,
           );
         }
+      }
+    }
+    // And what was counted at finishing.
+    const counted = addUpGrades(
+      (
+        await tx.finishingReport.findMany({
+          where: { projectId: project.id, NOT: { intake: { status: "REVERSED" } } },
+          select: { lines: true },
+        })
+      ).map((r) => readGradeLines(r.lines)),
+    );
+    const spoiled = new Map<string, number>();
+    for (const j of jobs) {
+      for (const l of readEmbroideryLines(j.lines)) {
+        const key = cellKey(l.colorName, l.sizeName);
+        spoiled.set(key, (spoiled.get(key) ?? 0) + l.spoiled);
+      }
+    }
+    for (const [key, grades] of counted) {
+      if (linePieces(grades) > (left.get(key) ?? 0) - (spoiled.get(key) ?? 0)) {
+        throw new AppError(
+          "CONFLICT",
+          `${report.number}'s pieces are counted at finishing; it cannot be deleted.`,
+        );
       }
     }
     await tx.cuttingReport.delete({ where: { id: report.id } });

@@ -133,7 +133,7 @@ async function resolveIntakeLines(
   }));
 }
 
-const lineRows = (intakeId: string, lines: LineInput[]) =>
+export const lineRows = (intakeId: string, lines: LineInput[]) =>
   lines.map((l) => ({
     intakeId,
     variantId: l.variantId,
@@ -447,6 +447,23 @@ export async function confirmIntake(
   meta?: RequestMeta,
 ) {
   const input = confirmIntakeSchema.parse(raw);
+  await prisma.$transaction((tx) => confirmIntakeTx(tx, ctx, intakeId, input, meta), {
+    timeout: 60_000,
+  });
+  return getIntake(ctx, intakeId);
+}
+
+/**
+ * Confirms a draft delivery inside the caller's transaction (confirmIntake,
+ * and the full packing list at finishing, which makes and confirms one).
+ */
+export async function confirmIntakeTx(
+  tx: Prisma.TransactionClient,
+  ctx: CompanyContext,
+  intakeId: string,
+  input: z.output<typeof confirmIntakeSchema>,
+  meta?: RequestMeta,
+) {
   if (input.completeProject && !ctx.can("production.manage")) {
     throw new AppError(
       "FORBIDDEN",
@@ -454,191 +471,185 @@ export async function confirmIntake(
     );
   }
   const companyId = ctx.company.id;
-  await prisma.$transaction(
-    async (tx) => {
-      await lockRow(tx, "StockIntake", intakeId);
-      const intake = await tx.stockIntake.findFirst({
-        where: { id: intakeId, companyId },
+  await lockRow(tx, "StockIntake", intakeId);
+  const intake = await tx.stockIntake.findFirst({
+    where: { id: intakeId, companyId },
+    include: {
+      lines: {
+        orderBy: { id: "asc" },
         include: {
-          lines: {
-            orderBy: { id: "asc" },
-            include: {
-              variant: {
-                select: { sku: true, isActive: true, style: { select: { isActive: true } } },
-              },
-            },
+          variant: {
+            select: { sku: true, isActive: true, style: { select: { isActive: true } } },
           },
         },
-      });
-      if (!intake) throw new AppError("NOT_FOUND", "Delivery not found.");
-      assertDraft(intake);
-      if (intake.lines.length === 0) {
-        throw new AppError("VALIDATION", "Add the received quantities first.");
-      }
-      if (!intake.projectId) {
-        throw new AppError("VALIDATION", "Choose the production project for this delivery.");
-      }
-      await lockRow(tx, "ProductionProject", intake.projectId);
-      const project = await tx.productionProject.findFirstOrThrow({
-        where: { id: intake.projectId, companyId },
-      });
-      assertCanReceive(project);
-      for (const line of intake.lines) {
-        if (!line.variant.isActive || !line.variant.style.isActive) {
-          throw new AppError(
-            "VALIDATION",
-            `${line.variant.sku} is archived; restore it before receiving stock.`,
-          );
-        }
-      }
-      let warehouseId = input.warehouseId ?? intake.warehouseId;
-      if (input.warehouseId) {
-        const warehouse = await tx.warehouse.findFirst({
-          where: { id: input.warehouseId, companyId, deletedAt: null },
-        });
-        if (!warehouse) throw new AppError("NOT_FOUND", "Warehouse not found.");
-      }
-      warehouseId ??= (await getDefaultWarehouse(ctx)).id;
-
-      const costs = await projectCostSummary(tx, companyId, project.id);
-      const plan = planIntakeCost({
-        lines: intake.lines.map((l) => ({
-          grade: l.grade,
-          quantity: l.quantity,
-          unitCost: l.unitCost,
-        })),
-        method: intake.costAllocation,
-        bGradeRatio: intake.bGradeCostRatio,
-        wip: costs.wip,
-        received: project.producedQtyA + project.producedQtyB,
-        target: project.targetQuantity,
-        final: Boolean(input.finalDelivery || input.completeProject),
-        totalOverride: input.totalCost,
-      });
-      if (plan.exceedsRemaining) {
-        throw new AppError(
-          "VALIDATION",
-          `Only ${costs.wip.toFixed(2)} of ${project.code}'s cost is left to move into stock.`,
-          { totalCost: [`At most ${costs.wip.toFixed(2)}`] },
-        );
-      }
-      if (plan.total.isZero() && !input.allowZeroCost) {
-        throw new AppError(
-          "VALIDATION",
-          intake.costAllocation === "MANUAL"
-            ? `Enter the cost per piece on the lines (manual costing), or confirm with "allow zero cost".`
-            : costs.totalCost.isZero()
-              ? `No cost is recorded on ${project.code} yet, so these pieces would enter stock at zero cost. Record its bills first, or confirm with "allow zero cost".`
-              : `${project.code} has no cost left for these pieces (it has all moved to stock). Confirm with "allow zero cost" to receive them anyway.`,
-        );
-      }
-
-      // Re-weight each SKU grade's average cost with the pieces coming in, so
-      // B-grade pieces valued lower never lower the cost of the A-grade ones.
-      const variantIds = [...new Set(intake.lines.map((l) => l.variantId))];
-      await lockRows(tx, "ProductVariant", variantIds);
-      const onHand = await onHandByGrade(tx, variantIds);
-      const variants = await tx.productVariant.findMany({
-        where: { id: { in: variantIds } },
-        select: { id: true, avgCost: true, bGradeAvgCost: true },
-      });
-      for (const v of variants) {
-        let data: Prisma.ProductVariantUpdateInput = {};
-        for (const grade of ["A_GRADE", "B_GRADE"] as const) {
-          let qty = 0;
-          let value = new Prisma.Decimal(0);
-          intake.lines.forEach((l, i) => {
-            if (l.variantId !== v.id || l.grade !== grade) return;
-            qty += l.quantity;
-            value = value.plus(plan.unitCosts[i]!.times(l.quantity));
-          });
-          if (qty === 0) continue;
-          const avg = weightedAverageCost(
-            onHand.get(gradeKey(v.id, grade)) ?? 0,
-            gradeCost(v, grade).toNumber(),
-            qty,
-            value.dividedBy(qty).toNumber(),
-          );
-          data = { ...data, ...gradeCostData(grade, avg) };
-        }
-        await tx.productVariant.update({ where: { id: v.id }, data });
-      }
-
-      // The delivery comes in as one numbered batch per style.
-      const lots = await openLots(tx, ctx, {
-        variantIds,
-        warehouseId,
-        source: "PRODUCTION",
-        intakeId: intake.id,
-      });
-      for (const [i, line] of intake.lines.entries()) {
-        const unitCost = plan.unitCosts[i]!;
-        const key = { variantId: line.variantId, warehouseId, grade: line.grade };
-        await tx.stockBalance.upsert({
-          where: { variantId_warehouseId_grade: key },
-          create: { ...key, companyId, quantity: line.quantity },
-          update: { quantity: { increment: line.quantity } },
-        });
-        await tx.stockMovement.create({
-          data: {
-            ...key,
-            companyId,
-            type: "PRODUCTION_IN",
-            quantity: line.quantity,
-            unitCost,
-            referenceType: "StockIntake",
-            referenceId: intake.id,
-            lotId: lots.get(line.variantId),
-            note: `${intake.number} · ${project.code}`,
-            createdById: ctx.user.id,
-          },
-        });
-        await tx.stockIntakeLine.update({ where: { id: line.id }, data: { unitCost } });
-      }
-
-      if (plan.total.gt(0)) {
-        const acc = await ensureControlAccounts(companyId, tx);
-        await postJournalEntry(tx, {
-          companyId,
-          description: `Goods received ${intake.number} — ${project.code} ${project.name}`,
-          sourceType: "STOCK_INTAKE",
-          sourceId: intake.id,
-          postedById: ctx.user.id,
-          lines: [
-            { accountId: acc.INVENTORY, debit: plan.total, memo: intake.number },
-            { accountId: acc.WORK_IN_PROGRESS, credit: plan.total, memo: project.code },
-          ],
-        });
-      }
-
-      const aGrade = intake.lines
-        .filter((l) => l.grade === "A_GRADE")
-        .reduce((s, l) => s + l.quantity, 0);
-      const bGrade = plan.pieces - aGrade;
-      await tx.stockIntake.update({
-        where: { id: intake.id },
-        data: { status: "CONFIRMED", confirmedAt: new Date(), totalCost: plan.total, warehouseId },
-      });
-      await tx.productionProject.update({
-        where: { id: project.id },
-        data: { producedQtyA: { increment: aGrade }, producedQtyB: { increment: bGrade } },
-      });
-      await auditInCompany(
-        ctx,
-        meta,
-        {
-          action: "STOCK_ADJUSTMENT",
-          entityType: "StockIntake",
-          entityId: intake.id,
-          summary: `Moved ${plan.pieces} pcs to stock from ${project.code} (${aGrade} A-grade, ${bGrade} B-grade), cost ${plan.total.toFixed(2)} — ${intake.number}`,
-        },
-        tx,
-      );
-      if (input.completeProject) await completeProjectTx(tx, ctx, project.id, {}, meta);
+      },
     },
-    { timeout: 60_000 },
+  });
+  if (!intake) throw new AppError("NOT_FOUND", "Delivery not found.");
+  assertDraft(intake);
+  if (intake.lines.length === 0) {
+    throw new AppError("VALIDATION", "Add the received quantities first.");
+  }
+  if (!intake.projectId) {
+    throw new AppError("VALIDATION", "Choose the production project for this delivery.");
+  }
+  await lockRow(tx, "ProductionProject", intake.projectId);
+  const project = await tx.productionProject.findFirstOrThrow({
+    where: { id: intake.projectId, companyId },
+  });
+  assertCanReceive(project);
+  for (const line of intake.lines) {
+    if (!line.variant.isActive || !line.variant.style.isActive) {
+      throw new AppError(
+        "VALIDATION",
+        `${line.variant.sku} is archived; restore it before receiving stock.`,
+      );
+    }
+  }
+  let warehouseId = input.warehouseId ?? intake.warehouseId;
+  if (input.warehouseId) {
+    const warehouse = await tx.warehouse.findFirst({
+      where: { id: input.warehouseId, companyId, deletedAt: null },
+    });
+    if (!warehouse) throw new AppError("NOT_FOUND", "Warehouse not found.");
+  }
+  warehouseId ??= (await getDefaultWarehouse(ctx)).id;
+
+  const costs = await projectCostSummary(tx, companyId, project.id);
+  const plan = planIntakeCost({
+    lines: intake.lines.map((l) => ({
+      grade: l.grade,
+      quantity: l.quantity,
+      unitCost: l.unitCost,
+    })),
+    method: intake.costAllocation,
+    bGradeRatio: intake.bGradeCostRatio,
+    wip: costs.wip,
+    received: project.producedQtyA + project.producedQtyB,
+    target: project.targetQuantity,
+    final: Boolean(input.finalDelivery || input.completeProject),
+    totalOverride: input.totalCost,
+  });
+  if (plan.exceedsRemaining) {
+    throw new AppError(
+      "VALIDATION",
+      `Only ${costs.wip.toFixed(2)} of ${project.code}'s cost is left to move into stock.`,
+      { totalCost: [`At most ${costs.wip.toFixed(2)}`] },
+    );
+  }
+  if (plan.total.isZero() && !input.allowZeroCost) {
+    throw new AppError(
+      "VALIDATION",
+      intake.costAllocation === "MANUAL"
+        ? `Enter the cost per piece on the lines (manual costing), or confirm with "allow zero cost".`
+        : costs.totalCost.isZero()
+          ? `No cost is recorded on ${project.code} yet, so these pieces would enter stock at zero cost. Record its bills first, or confirm with "allow zero cost".`
+          : `${project.code} has no cost left for these pieces (it has all moved to stock). Confirm with "allow zero cost" to receive them anyway.`,
+    );
+  }
+
+  // Re-weight each SKU grade's average cost with the pieces coming in, so
+  // B-grade pieces valued lower never lower the cost of the A-grade ones.
+  const variantIds = [...new Set(intake.lines.map((l) => l.variantId))];
+  await lockRows(tx, "ProductVariant", variantIds);
+  const onHand = await onHandByGrade(tx, variantIds);
+  const variants = await tx.productVariant.findMany({
+    where: { id: { in: variantIds } },
+    select: { id: true, avgCost: true, bGradeAvgCost: true },
+  });
+  for (const v of variants) {
+    let data: Prisma.ProductVariantUpdateInput = {};
+    for (const grade of ["A_GRADE", "B_GRADE"] as const) {
+      let qty = 0;
+      let value = new Prisma.Decimal(0);
+      intake.lines.forEach((l, i) => {
+        if (l.variantId !== v.id || l.grade !== grade) return;
+        qty += l.quantity;
+        value = value.plus(plan.unitCosts[i]!.times(l.quantity));
+      });
+      if (qty === 0) continue;
+      const avg = weightedAverageCost(
+        onHand.get(gradeKey(v.id, grade)) ?? 0,
+        gradeCost(v, grade).toNumber(),
+        qty,
+        value.dividedBy(qty).toNumber(),
+      );
+      data = { ...data, ...gradeCostData(grade, avg) };
+    }
+    await tx.productVariant.update({ where: { id: v.id }, data });
+  }
+
+  // The delivery comes in as one numbered batch per style.
+  const lots = await openLots(tx, ctx, {
+    variantIds,
+    warehouseId,
+    source: "PRODUCTION",
+    intakeId: intake.id,
+  });
+  for (const [i, line] of intake.lines.entries()) {
+    const unitCost = plan.unitCosts[i]!;
+    const key = { variantId: line.variantId, warehouseId, grade: line.grade };
+    await tx.stockBalance.upsert({
+      where: { variantId_warehouseId_grade: key },
+      create: { ...key, companyId, quantity: line.quantity },
+      update: { quantity: { increment: line.quantity } },
+    });
+    await tx.stockMovement.create({
+      data: {
+        ...key,
+        companyId,
+        type: "PRODUCTION_IN",
+        quantity: line.quantity,
+        unitCost,
+        referenceType: "StockIntake",
+        referenceId: intake.id,
+        lotId: lots.get(line.variantId),
+        note: `${intake.number} · ${project.code}`,
+        createdById: ctx.user.id,
+      },
+    });
+    await tx.stockIntakeLine.update({ where: { id: line.id }, data: { unitCost } });
+  }
+
+  if (plan.total.gt(0)) {
+    const acc = await ensureControlAccounts(companyId, tx);
+    await postJournalEntry(tx, {
+      companyId,
+      description: `Goods received ${intake.number} — ${project.code} ${project.name}`,
+      sourceType: "STOCK_INTAKE",
+      sourceId: intake.id,
+      postedById: ctx.user.id,
+      lines: [
+        { accountId: acc.INVENTORY, debit: plan.total, memo: intake.number },
+        { accountId: acc.WORK_IN_PROGRESS, credit: plan.total, memo: project.code },
+      ],
+    });
+  }
+
+  const aGrade = intake.lines
+    .filter((l) => l.grade === "A_GRADE")
+    .reduce((s, l) => s + l.quantity, 0);
+  const bGrade = plan.pieces - aGrade;
+  await tx.stockIntake.update({
+    where: { id: intake.id },
+    data: { status: "CONFIRMED", confirmedAt: new Date(), totalCost: plan.total, warehouseId },
+  });
+  await tx.productionProject.update({
+    where: { id: project.id },
+    data: { producedQtyA: { increment: aGrade }, producedQtyB: { increment: bGrade } },
+  });
+  await auditInCompany(
+    ctx,
+    meta,
+    {
+      action: "STOCK_ADJUSTMENT",
+      entityType: "StockIntake",
+      entityId: intake.id,
+      summary: `Moved ${plan.pieces} pcs to stock from ${project.code} (${aGrade} A-grade, ${bGrade} B-grade), cost ${plan.total.toFixed(2)} — ${intake.number}`,
+    },
+    tx,
   );
-  return getIntake(ctx, intakeId);
+  if (input.completeProject) await completeProjectTx(tx, ctx, project.id, {}, meta);
 }
 
 // =============================================================================

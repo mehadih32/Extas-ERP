@@ -9,6 +9,7 @@ import { TimelineBadge } from "@/components/production/badges";
 import { BatchActions } from "@/components/production/batch-actions";
 import { BatchBadge, batchStatus, stylesText } from "@/components/production/batch-card";
 import { BatchGuardLine, GUARD_TONES, GUARD_WORDS } from "@/components/production/cost-guard";
+import { BatchMaterialsPanel } from "@/components/production/material-needs";
 import {
   BATCH_KIND_HINTS,
   BATCH_KIND_LABELS,
@@ -23,7 +24,7 @@ import { money } from "@/components/sales/labels";
 import { Button } from "@/components/ui/button";
 import { formatDay } from "@/lib/display";
 import { cn } from "@/lib/utils";
-import { getBatchScreenAction } from "@/server/actions/production.actions";
+import { getBatchMaterialsAction, getBatchScreenAction } from "@/server/actions/production.actions";
 import { requireCompanyPage } from "@/server/pages/guards";
 
 export const metadata: Metadata = { title: "Master batch" };
@@ -48,7 +49,10 @@ export default async function BatchPage({
 }) {
   const ctx = await requireCompanyPage();
   const [{ batchId }, query] = await Promise.all([params, searchParams]);
-  const result = await getBatchScreenAction(batchId);
+  const [result, materials] = await Promise.all([
+    getBatchScreenAction(batchId),
+    getBatchMaterialsAction(batchId),
+  ]);
   if (!result.ok) {
     if (result.error.code === "NOT_FOUND") notFound();
     if (result.error.code === "FORBIDDEN") return <ProductionNoAccess />;
@@ -62,7 +66,9 @@ export default async function BatchPage({
       ? `${b.code} was created. Add its first style.`
       : one(query.saved) === "1"
         ? "The changes were saved."
-        : undefined;
+        : one(query.ordered)
+          ? `Purchase orders made: ${one(query.ordered)}. Print each one for its supplier from its page.`
+          : undefined;
   const guard = b.costs?.guard ?? null;
   const styleGuards = styles.filter((s) => s.costGuard && s.costGuard.level !== "OK");
 
@@ -158,6 +164,9 @@ export default async function BatchPage({
                 <ProjectCard key={style.id} project={style} currency={currency} />
               ))}
             </ul>
+          )}
+          {materials.ok && styles.length > 0 && (
+            <BatchMaterialsPanel data={materials.data} currency={currency} />
           )}
         </section>
 

@@ -148,7 +148,8 @@ export const listMovementsSchema = z.object({
 const orderLineSchema = z.object({
   materialId: id,
   quantity,
-  unitPrice: price,
+  /** Empty (null): the price is agreed when the goods arrive ("price at receive"). */
+  unitPrice: price.nullable(),
   description: optionalText(500),
 });
 

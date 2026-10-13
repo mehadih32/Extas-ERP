@@ -14,7 +14,10 @@ import { lockSupplierAccount, settleSupplierBills } from "@/modules/accounts/sup
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { assertAnyPermission, assertCanSeeMaterialCosts } from "@/modules/materials/access";
-import { refreshPurchaseOrders } from "@/modules/materials/purchase-order.service";
+import {
+  refreshPurchaseOrders,
+  settleLaterPrices,
+} from "@/modules/materials/purchase-order.service";
 import { canReceiveOnOrder, canVoidPurchase } from "@/modules/materials/rules";
 import { createPurchaseSchema, listPurchasesSchema, voidSchema } from "@/modules/materials/schemas";
 import {
@@ -105,6 +108,15 @@ export async function createPurchase(ctx: CompanyContext, raw: unknown, meta?: R
       throw new AppError("VALIDATION", `Line ${i + 1} names a different material from the order.`, {
         [`items.${i}.materialId`]: ["Leave empty or choose the order line's material"],
       });
+    }
+    if (line?.priceLater && item.unitPrice === undefined) {
+      throw new AppError(
+        "VALIDATION",
+        `Line ${i + 1} is priced at receive: enter the agreed price.`,
+        {
+          [`items.${i}.unitPrice`]: ["Enter the agreed price per unit"],
+        },
+      );
     }
     const quantity = qty(item.quantity);
     const unitPrice = unitCost(item.unitPrice ?? line!.unitPrice);
@@ -212,7 +224,10 @@ export async function createPurchase(ctx: CompanyContext, raw: unknown, meta?: R
     });
     await tx.supplierBill.update({ where: { id: bill.id }, data: { journalEntryId: entry.id } });
     await linkMovementsToEntry(tx, movementIds, entry.id);
-    if (order) await refreshPurchaseOrders(tx, [order.id]);
+    if (order) {
+      await refreshPurchaseOrders(tx, [order.id]);
+      await settleLaterPrices(tx, order.id, items);
+    }
     await auditInCompany(
       ctx,
       meta,

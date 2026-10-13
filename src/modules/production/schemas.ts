@@ -2,6 +2,7 @@ import {
   BillStatus,
   CostAllocationMethod,
   IntakeStatus,
+  MaterialSplit,
   PaymentMethod,
   PaymentType,
   ProductionKind,
@@ -118,6 +119,77 @@ export const listBatchesSchema = z.object({
   search: z.string().trim().max(100).optional(),
   cursor: z.string().optional(),
   take,
+});
+
+// --- Materials per piece and batch purchase orders ---------------------------------
+/** How much one piece takes, in the material's unit: up to 4 decimals (0.2850 kg). */
+const perPiece = z
+  .number()
+  .max(100_000)
+  .multipleOf(0.0001)
+  .refine((v) => v > 0, "Must be more than zero");
+
+const materialNeedSchema = z.object({
+  materialId: id,
+  perPiece,
+  /** Ordered on top for cutting loss, as a percent (5 for 5%). */
+  wastagePercent: z.number().min(0).max(100).multipleOf(0.01).optional(),
+  /** One total (default), per garment colour, or per colour and size (collars, cuffs). */
+  split: z.enum(MaterialSplit).optional(),
+  /** Where it goes on the garment ("Main body", "Collar", "Back neck label"). */
+  placement: optionalText(80),
+  /** A material picture uploaded first (uploadMaterialImageAction). */
+  imageId: id.nullish(),
+  notes: optionalText(500),
+});
+
+/** Replaces a style's materials per piece; an empty list clears them. */
+export const setMaterialNeedsSchema = z.object({ needs: z.array(materialNeedSchema).max(60) });
+
+export const techPackNotesSchema = z.object({ notes: optionalText(4000) });
+
+/** Raw material quantities: to the gram or millimetre (3 decimals). */
+const materialQuantity = z
+  .number()
+  .max(100_000_000)
+  .multipleOf(0.001)
+  .refine((v) => v > 0, "Must be more than zero");
+
+const batchOrderLineSchema = z.object({
+  materialId: id,
+  quantity: materialQuantity,
+  /** Empty: the price is agreed when the goods arrive ("price at receive"). */
+  unitPrice: z.number().min(0).max(100_000_000).multipleOf(0.0001).nullish(),
+  /** Defaults to the picture on the styles' materials. */
+  imageId: id.nullish(),
+  description: optionalText(500),
+});
+
+/** One purchase order per supplier for what the batch's styles need. */
+export const createBatchOrdersSchema = z.object({
+  orders: z
+    .array(
+      z.object({
+        supplierId: id,
+        expectedDate: z.iso.date().nullish(),
+        supplierRef: optionalText(60),
+        notes: optionalText(2000),
+        lines: z
+          .array(batchOrderLineSchema)
+          .min(1)
+          .max(100)
+          .refine(
+            (lines) => new Set(lines.map((l) => l.materialId)).size === lines.length,
+            "Each material can be on an order once",
+          ),
+      }),
+    )
+    .min(1)
+    .max(20)
+    .refine(
+      (orders) => new Set(orders.map((o) => o.supplierId)).size === orders.length,
+      "Put everything from one supplier on one order",
+    ),
 });
 
 export const setStageSchema = z.object({

@@ -5,6 +5,7 @@ import { useEffect, useId, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { compressImage, fileSize, PICTURE_OPTIONS } from "@/lib/compress-image";
+import type { ActionResult } from "@/lib/result";
 import { cn } from "@/lib/utils";
 import { uploadReferenceImageAction } from "@/server/actions/sales.actions";
 
@@ -34,12 +35,15 @@ export function PictureField({
   value,
   onChange,
   onBusy,
+  upload = uploadReferenceImageAction,
 }: {
   label: string;
   value: ItemPicture | null;
   onChange: (picture: ItemPicture | null) => void;
   /** Tells the form a picture is on its way (saving waits for it). */
   onBusy?: (busy: boolean) => void;
+  /** Where the picture is sent (a quotation's reference pictures by default). */
+  upload?: (form: FormData) => Promise<ActionResult<{ id: string }>>;
 }) {
   const id = useId();
   const input = useRef<HTMLInputElement>(null);
@@ -74,7 +78,7 @@ export function PictureField({
       }
       const form = new FormData();
       form.set("file", small);
-      const result = await uploadReferenceImageAction(form);
+      const result = await upload(form);
       if (!result.ok) {
         setProblem(result.error.message);
         return;

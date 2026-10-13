@@ -213,7 +213,7 @@ export const materialsHelp: HelpSection = {
           text: "“Supplier”, দরকার হলে “For the project (optional)”, “Order date”, “Expected by (optional)” ও “Their reference (optional)” দিন।",
         },
         {
-          text: "“Find a material to order” দিয়ে কাঁচামাল বেছে পরিমাণ ও দাম দিন। “Details for the supplier (optional)”-এ বিশেষ বিবরণ লিখুন (যেমন dyed navy, 72 inch)। আরও যোগ করতে “Add another material”।",
+          text: "“Find a material to order” দিয়ে কাঁচামাল বেছে পরিমাণ ও দাম দিন। দাম এখনো ঠিক না হলে দামের ঘর খালি রাখুন (“Leave empty to agree the price at receive.”): লাইনটি “At receive” হয়ে থাকে, আর মাল আসার সময় আসল দাম দেওয়া হয়। “Details for the supplier (optional)”-এ বিশেষ বিবরণ লিখুন (যেমন dyed navy, 72 inch)। আরও যোগ করতে “Add another material”।",
           image: {
             id: "materials-purchase-order-2",
             caption: "অর্ডারের লাইন: কাঁচামাল, পরিমাণ, দাম ও মোট",
@@ -222,6 +222,9 @@ export const materialsHelp: HelpSection = {
         { text: "“Raise the order” চাপুন। “Order total” নিচে দেখাবে।" },
         {
           text: "অর্ডারের পাতায় প্রতিটি লাইনে কত এসেছে দেখবেন। খোলা অর্ডার “Change” দিয়ে বদলানো যায়। কিছু না এলে “Cancel the order”, বাকিটা আর আসবে না হলে “Close: the rest will not come”।",
+        },
+        {
+          text: "সরবরাহকারীকে পাঠাতে “Print order (PDF)” চাপুন: লেটারহেডে অর্ডার, লাইনের ছবি, আর দাম না থাকলে “At receive”। মাস্টার ব্যাচের অর্ডারে পরের পাতাগুলোয় স্টাইল অনুযায়ী ভাগ আর কলার-কাফের রং × সাইজ ছক থাকে।",
         },
       ],
       tips: [
@@ -263,7 +266,7 @@ export const materialsHelp: HelpSection = {
           },
         },
         {
-          text: "“What came in”-এ অর্ডারের বাকি পরিমাণ আগে থেকে বসানো থাকে। যা এসেছে সেই পরিমাণ ও দাম ঠিক করুন। অর্ডারে নেই এমন কিছু এলে “Add something not on the order”।",
+          text: "“What came in”-এ অর্ডারের বাকি পরিমাণ আগে থেকে বসানো থাকে। যা এসেছে সেই পরিমাণ ও দাম ঠিক করুন। অর্ডারে দাম “At receive” থাকলে দামের ঘর খালি আসে (“Priced at receive: enter the agreed price.”); ঠিক হওয়া দাম লিখুন, তখন সেটিই অর্ডারের দাম হয়ে যায়। অর্ডারে নেই এমন কিছু এলে “Add something not on the order”।",
         },
         {
           text: "অনুমতি থাকলে “How it is paid”-এ “Due to the supplier” (বকেয়া) বা “Paid now” (এখনই পরিশোধ) বেছে নিন। অনুমতি না থাকলে বিল সরবরাহকারীর হিসাবে বকেয়া যায়, Accounts পরে দেন।",

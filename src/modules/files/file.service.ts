@@ -239,6 +239,7 @@ export async function getFileForDownload(ctx: CompanyContext, fileId: string) {
       orderLineImages: { select: { id: true }, take: 1 },
       cuttingPhotos: { select: { id: true }, take: 1 },
       faultPhotos: { select: { id: true }, take: 1 },
+      finishingFiles: { select: { id: true }, take: 1 },
     },
   });
   if (!asset) throw new AppError("NOT_FOUND", "File not found.");
@@ -280,7 +281,10 @@ export async function getFileForDownload(ctx: CompanyContext, fileId: string) {
     (asset.cuttingPhotos.length > 0 && ctx.can("production.view")) ||
     // A supplier fault's photo: everyone who reads the fault log.
     (asset.faultPhotos.length > 0 &&
-      (ctx.can("production.view") || ctx.can("materials.view") || ctx.can("accounts.view")));
+      (ctx.can("production.view") || ctx.can("materials.view") || ctx.can("accounts.view"))) ||
+    // A finishing count's QC sheet or a packing list: everyone who sees production.
+    (asset.finishingFiles.length > 0 &&
+      (ctx.can("production.view") || ctx.can("production.stock_intake")));
   // A raw material purchase's bill also opens to the people who see material purchases.
   const materialBill =
     !allowed &&

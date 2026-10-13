@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 
 import { SectionError } from "@/components/dashboard/section-error";
 import { EmptyState } from "@/components/products/bits";
+import { ActionLogLink } from "@/components/production/action-log";
 import { TimelineBadge } from "@/components/production/badges";
 import { BatchActions } from "@/components/production/batch-actions";
 import { BatchBadge, batchStatus, stylesText } from "@/components/production/batch-card";
@@ -257,6 +258,9 @@ export default async function BatchPage({
               today={localDay(new Date(), ctx.company.timezone)}
               currency={currency}
             />
+          )}
+          {(ctx.can("production.manage") || ctx.can("accounts.view")) && (
+            <ActionLogLink href={productionHref.batchLog(b.id)} of="batch" />
           )}
           <Panel title="Details" id="details-heading">
             <dl className="mt-4 grid gap-4">

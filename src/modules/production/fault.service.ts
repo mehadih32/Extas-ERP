@@ -213,39 +213,74 @@ export async function createFault(ctx: CompanyContext, raw: unknown, meta?: Requ
   if (input.projectId && !project) throw new AppError("NOT_FOUND", "Production project not found.");
   if (input.materialId && !material) throw new AppError("NOT_FOUND", "Raw material not found.");
   if (input.photoId && !photo) throw new AppError("NOT_FOUND", "Photo not found.");
-  const fault = await prisma.$transaction(async (tx) => {
-    const made = await tx.supplierFault.create({
-      data: {
-        companyId: ctx.company.id,
-        number: await nextDocumentNumber(tx, ctx.company.id, "SUPPLIER_FAULT"),
-        supplierId: supplier.id,
-        kind: input.kind,
-        batchId: batch?.id ?? project?.batchId ?? null,
-        projectId: project?.id ?? null,
-        rawMaterialId: material?.id ?? null,
-        quantity: input.quantity ?? null,
-        amount: input.amount ?? null,
-        note: input.note,
-        occurredOn: dateColumn(input.occurredOn ?? today),
-        photoId: photo?.id ?? null,
-        createdById: ctx.user.id,
-      },
-      select: { id: true, number: true },
-    });
-    await auditInCompany(
-      ctx,
-      meta,
-      {
-        action: "CREATE",
-        entityType: "SupplierFault",
-        entityId: made.id,
-        summary: `Logged ${made.number} for ${supplier.name}: ${FAULT_KIND_LABELS[input.kind].toLowerCase()}${input.amount ? `, ${input.amount.toFixed(2)} to deduct` : ""}`,
-      },
-      tx,
-    );
-    return made;
+  return prisma.$transaction((tx) =>
+    logFaultTx(tx, ctx, meta, {
+      supplier,
+      kind: input.kind,
+      batchId: batch?.id ?? project?.batchId ?? null,
+      projectId: project?.id ?? null,
+      rawMaterialId: material?.id ?? null,
+      quantity: input.quantity ?? null,
+      amount: input.amount ?? null,
+      note: input.note,
+      occurredOn: input.occurredOn ?? today,
+      photoId: photo?.id ?? null,
+    }),
+  );
+}
+
+/**
+ * Writes a fault and its audit line in the caller's transaction, for a
+ * supplier and records already checked (createFault, and the missing pieces
+ * of a full packing list at finishing).
+ */
+export async function logFaultTx(
+  tx: Prisma.TransactionClient,
+  ctx: CompanyContext,
+  meta: RequestMeta | undefined,
+  data: {
+    supplier: { id: string; name: string };
+    kind: SupplierFaultKind;
+    batchId: string | null;
+    projectId: string | null;
+    rawMaterialId: string | null;
+    quantity: number | null;
+    amount: number | null;
+    note: string;
+    occurredOn: string;
+    photoId: string | null;
+  },
+) {
+  const made = await tx.supplierFault.create({
+    data: {
+      companyId: ctx.company.id,
+      number: await nextDocumentNumber(tx, ctx.company.id, "SUPPLIER_FAULT"),
+      supplierId: data.supplier.id,
+      kind: data.kind,
+      batchId: data.batchId,
+      projectId: data.projectId,
+      rawMaterialId: data.rawMaterialId,
+      quantity: data.quantity,
+      amount: data.amount,
+      note: data.note,
+      occurredOn: dateColumn(data.occurredOn),
+      photoId: data.photoId,
+      createdById: ctx.user.id,
+    },
+    select: { id: true, number: true },
   });
-  return fault;
+  await auditInCompany(
+    ctx,
+    meta,
+    {
+      action: "CREATE",
+      entityType: "SupplierFault",
+      entityId: made.id,
+      summary: `Logged ${made.number} for ${data.supplier.name}: ${FAULT_KIND_LABELS[data.kind].toLowerCase()}${data.amount ? `, ${data.amount.toFixed(2)} to deduct` : ""}`,
+    },
+    tx,
+  );
+  return made;
 }
 
 /** Marks a fault deducted or waived (with a note), or puts it back to open. */

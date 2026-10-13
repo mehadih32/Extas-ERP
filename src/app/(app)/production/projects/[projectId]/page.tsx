@@ -11,9 +11,11 @@ import {
   StageBadge,
   TimelineBadge,
 } from "@/components/production/badges";
+import { ActionLogLink } from "@/components/production/action-log";
 import { CostGuardPanel } from "@/components/production/cost-guard";
 import { CostEntries, CostSummary, GradeCosts } from "@/components/production/cost-sheet";
 import { CuttingSummaryPanel } from "@/components/production/cutting-summary";
+import { FinishingSummaryPanel } from "@/components/production/finishing-summary";
 import { pieces, productionHref } from "@/components/production/labels";
 import { MaterialNeedsPanel } from "@/components/production/material-needs";
 import { MaterialsSent } from "@/components/production/materials-sent";
@@ -31,6 +33,7 @@ import type { ProjectScreen } from "@/modules/production/screens.service";
 import { getProjectMaterialsPanelAction } from "@/server/actions/materials.actions";
 import {
   getCuttingScreenAction,
+  getFinishingScreenAction,
   getNeedsPanelAction,
   getProjectScreenAction,
 } from "@/server/actions/production.actions";
@@ -93,6 +96,7 @@ function Deliveries({ screen, currency }: { screen: ProjectScreen; currency: str
  * One production project (production.view, like GET /api/production/projects/:id):
  * its time and pieces, how far it got through cutting, sewing and the other
  * stages, its cutting and embroidery with the cutting and sewing dates, its
+ * finishing (A, B and C grades, rejects, missing and the full packing list), its
  * materials per piece with the tech pack, its factory deliveries,
  * the raw materials the store handed it, the
  * materials sent to the factory on challans and,
@@ -109,11 +113,12 @@ export default async function ProjectPage({
 }) {
   const ctx = await requireCompanyPage();
   const [{ projectId }, query] = await Promise.all([params, searchParams]);
-  const [result, materials, needs, cutting] = await Promise.all([
+  const [result, materials, needs, cutting, finishing] = await Promise.all([
     getProjectScreenAction(projectId),
     getProjectMaterialsPanelAction(projectId),
     getNeedsPanelAction(projectId),
     getCuttingScreenAction(projectId),
+    getFinishingScreenAction(projectId),
   ]);
   if (!result.ok) {
     if (result.error.code === "NOT_FOUND") notFound();
@@ -179,6 +184,7 @@ export default async function ProjectPage({
             <StageLog log={p.log} />
           </Panel>
           {cutting.ok && <CuttingSummaryPanel screen={cutting.data} currency={currency} />}
+          {finishing.ok && <FinishingSummaryPanel screen={finishing.data} currency={currency} />}
           {p.targets && <TargetTable targets={p.targets} currency={currency} />}
           {needs.ok && <MaterialNeedsPanel panel={needs.data} currency={currency} />}
           <Deliveries screen={screen} currency={currency} />
@@ -226,6 +232,7 @@ export default async function ProjectPage({
               canOpenParty={can.openParty}
             />
           )}
+          {costs && <ActionLogLink href={productionHref.projectLog(p.id)} of="style" />}
           <Panel title="Details" id="details-heading">
             <dl className="mt-4 grid gap-4">
               {p.batch && (

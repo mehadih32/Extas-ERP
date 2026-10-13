@@ -1,0 +1,93 @@
+# The zero-touch production simulation, on a throwaway database made for the run:
+# "Premium Polo Export Q3" (5 brands, 1,000 pieces each) goes from the 1,00,000
+# advance CM to the final CM settlement and its journal entry on the app's own
+# services, every figure is checked, then it is wiped and every table is checked
+# to be exactly as it was. The Simulation Report (every amount it posted) is on
+# the run's Summary page and under "Artifacts". It runs by itself on every change
+# to production, accounts or the database, and from the Actions tab ("Run
+# workflow"). It never touches the live site: the code is in tests/simulation/.
+name: Production simulation
+
+on:
+  pull_request:
+    paths:
+      - "src/modules/production/**"
+      - "src/modules/accounts/**"
+      - "src/modules/parties/**"
+      - "src/modules/inventory/**"
+      - "src/modules/materials/**"
+      - "prisma/**"
+      - "tests/simulation/**"
+      - "tests/integration/production-simulation.test.ts"
+      - ".github/workflows/production-simulation.yml"
+  push:
+    branches: [main]
+    paths:
+      - "src/modules/production/**"
+      - "src/modules/accounts/**"
+      - "src/modules/parties/**"
+      - "src/modules/inventory/**"
+      - "src/modules/materials/**"
+      - "prisma/**"
+      - "tests/simulation/**"
+      - "tests/integration/production-simulation.test.ts"
+      - ".github/workflows/production-simulation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-simulation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  simulate:
+    name: Run the simulation and wipe it
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: extras
+          POSTGRES_PASSWORD: extras
+          POSTGRES_DB: extras_erp_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U extras -d extras_erp_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      TEST_DATABASE_URL: postgresql://extras:extras@localhost:5432/extras_erp_test?schema=public
+      SIMULATION_REPORT: simulation-report.md
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Run Premium Polo Export Q3, check every figure, wipe it
+        run: npm run simulate:production
+
+      - name: Put the Simulation Report on the Summary page
+        if: always()
+        run: |
+          if [ -f "$SIMULATION_REPORT" ]; then
+            cat "$SIMULATION_REPORT" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No report: the simulation stopped before the end. The step above says where." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: simulation-report
+          path: simulation-report.md
+          if-no-files-found: ignore

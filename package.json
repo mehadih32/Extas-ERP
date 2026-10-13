@@ -25,7 +25,8 @@
     "db:down": "docker compose down",
     "db:seed": "prisma db seed",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "simulate:production": "vitest run tests/integration/production-simulation.test.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

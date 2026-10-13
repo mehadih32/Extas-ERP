@@ -28,3 +28,6 @@
 		format json
 	}
 }
+
+# The demo site, while it is on (deploy/demo.caddy; README.md, "The demo site").
+import sites/*.caddy

@@ -300,6 +300,36 @@ From then on:
 - Running `sudo ./deploy/setup-auto-deploy.sh` again makes a new key and stops the old one.
   Put the new `SSH_PRIVATE_KEY` on GitHub afterwards.
 
+## The demo site
+
+A separate copy of the ERP for trying things out, at `demo.yourcompany.com`: the ERP's
+address with `demo` in place of its first part (`DEMO_DOMAIN` in `deploy/.env` sets another
+one). It has its own database, files and passwords, and it cannot reach the live database.
+The first time it starts it gets the owner and the companies, and the first company gets the
+**Five Style Polo** batch: 6,000 polo shirts in five styles, from the purchase orders to the
+final CM settlement and its journal entries. A yellow **Demo site** bar runs across the top
+of every page.
+
+To turn it on:
+
+1. Where your domain's DNS is managed, add an **A record**: name `demo`, value the same public
+   IP as the ERP's own record (step 2). If the DNS is on Cloudflare, set it to **DNS only**
+   (grey cloud).
+2. `deploy/demo.conf` says `DEMO_SITE=on`. The next update (each merge into main, or
+   `sudo ./deploy/deploy.sh`) adds the demo's own passwords and key to `deploy/.env`, starts it
+   once the ERP itself is up, and gets its HTTPS certificate.
+3. Open the address and sign in with the owner's email and password from the live ERP. Each
+   update copies that one password hash (nothing else) from the live database.
+
+The ERP never waits for the demo site: if the demo does not start, the update still finishes
+and says so. It needs about 1 GB more memory. Its data is in `/srv/extras-erp/demo` and is
+not backed up.
+
+To turn it off on this server, add `DEMO_SITE=off` to `deploy/.env` and run
+`sudo ./deploy/deploy.sh --no-pull`; its data stays. To start it again from a fresh copy, turn
+it off, delete `/srv/extras-erp/demo`, take the line out of `deploy/.env`, and run
+`sudo ./deploy/deploy.sh --no-pull` again. `sudo ./deploy/logs.sh demo-app` shows its log.
+
 ## The Android app
 
 Field staff who check in and then travel need the Android app: it keeps sharing their

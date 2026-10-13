@@ -45,7 +45,9 @@ import { type SimulationRecords, simulationRecords } from "./records";
  *   - the full packing lists (A and B to stock) and the final CM settlement with
  *     the penalties, which posts its journal entry.
  * The run keeps a manifest of everything it made and what it found before, so
- * wipeSimulation() (wipe.ts) can take it all away again.
+ * wipeSimulation() (tests/simulation/five-style-polo/wipe.ts) can take it all
+ * away again. It loads the demo site (load-demo.ts) and runs in the GitHub
+ * workflow "Production simulation" (tests/integration/five-style-polo.test.ts).
  */
 
 export const POLO_BATCH = "Five Style Polo";

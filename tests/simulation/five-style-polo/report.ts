@@ -5,7 +5,11 @@ import type { CompanyContext } from "@/modules/auth/context";
 import { getPartyBalance } from "@/modules/parties/ledger.service";
 import { getBatchSummary } from "@/modules/production/batch-summary.service";
 
-import { POLO_BATCH, POLO_STYLES, type SimulationManifest } from "./five-style-polo";
+import {
+  POLO_BATCH,
+  POLO_STYLES,
+  type SimulationManifest,
+} from "../../../prisma/demo/five-style-polo";
 
 /*
  * The Simulation Report of a Five Style Polo run, in Markdown (the GitHub job

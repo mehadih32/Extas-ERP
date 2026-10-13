@@ -3,6 +3,8 @@ import type { Metadata, Viewport } from "next";
 import "@/styles/globals.css";
 
 import { Toaster } from "@/components/feedback/toaster";
+import { DemoSiteBar } from "@/components/shell/demo-site-bar";
+import { env } from "@/lib/env";
 import { currentInterfaceStyle } from "@/modules/appearance/appearance.service";
 
 import { fontVariables } from "./fonts";
@@ -33,6 +35,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   return (
     <html lang="en" className={fontVariables} data-ui={style === "MODERN" ? "modern" : undefined}>
       <body>
+        {env.DEMO_SITE === "on" ? <DemoSiteBar /> : null}
         {children}
         <Toaster />
       </body>

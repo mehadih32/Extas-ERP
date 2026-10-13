@@ -9,7 +9,7 @@ need_root
 load_settings
 
 say "Services"
-compose ps --all
+demo_compose ps --all
 
 say "Health check"
 compose exec -T app node -e \

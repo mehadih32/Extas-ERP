@@ -9,7 +9,8 @@
 # (every amount posted) are on the run's Summary page and under "Artifacts". It
 # runs by itself on every change to production, accounts or the database, and
 # from the Actions tab ("Run workflow"). It never touches the live site: the code
-# is in tests/simulation/.
+# is in tests/simulation/ and prisma/demo/ (Five Style Polo, which also loads the
+# demo site: tests/integration/demo-site.test.ts).
 name: Production simulation
 
 on:
@@ -24,6 +25,7 @@ on:
       - "tests/simulation/**"
       - "tests/integration/production-simulation.test.ts"
       - "tests/integration/five-style-polo.test.ts"
+      - "tests/integration/demo-site.test.ts"
       - ".github/workflows/production-simulation.yml"
   push:
     branches: [main]
@@ -37,6 +39,7 @@ on:
       - "tests/simulation/**"
       - "tests/integration/production-simulation.test.ts"
       - "tests/integration/five-style-polo.test.ts"
+      - "tests/integration/demo-site.test.ts"
       - ".github/workflows/production-simulation.yml"
   workflow_dispatch:
 
@@ -86,6 +89,10 @@ jobs:
       - name: Run Five Style Polo (6,000 pieces, the real CM rules), check every figure, wipe it
         if: always()
         run: npm run simulate:five-style-polo
+
+      - name: Load the demo site's sample data (prisma/demo), once, on a fresh company
+        if: always()
+        run: npx vitest run tests/integration/demo-site.test.ts
 
       - name: Put the Simulation Reports on the Summary page
         if: always()

@@ -1,0 +1,27 @@
+# The demo site (README.md, "The demo site"). While it is on, deploy.sh keeps a
+# copy of this file in DATA_DIR/caddy/sites/, with __DEMO_DOMAIN__ replaced by
+# its address, and the Caddyfile reads it.
+__DEMO_DOMAIN__ {
+	encode zstd gzip
+
+	request_body {
+		max_size 25MB
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		# Practice data: search engines stay out.
+		X-Robots-Tag "noindex, nofollow"
+		-Server
+	}
+
+	reverse_proxy demo-app:3000
+
+	log {
+		output stdout
+		format json
+	}
+}

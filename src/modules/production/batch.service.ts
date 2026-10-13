@@ -143,6 +143,8 @@ function summarise(
     kind: batch.kind,
     factory: batch.factory,
     targetDate: batch.targetDate,
+    /** Rejects up to this share of the pieces cut cost the factory nothing ("2.00"). */
+    rejectTolerancePercent: batch.rejectTolerancePercent.toFixed(2),
     notes: batch.notes,
     createdAt: batch.createdAt,
     createdBy: batch.createdBy,
@@ -199,6 +201,9 @@ export async function createBatch(ctx: CompanyContext, raw: unknown, meta?: Requ
         kind: input.kind ?? "CM",
         factoryId,
         targetDate: input.targetDate ? toInstant(input.targetDate, tz) : null,
+        ...(input.rejectTolerancePercent !== undefined
+          ? { rejectTolerancePercent: input.rejectTolerancePercent }
+          : {}),
         notes: input.notes ?? null,
         createdById: ctx.user.id,
       },
@@ -234,6 +239,7 @@ export async function updateBatch(
   const data: Prisma.ProductionBatchUncheckedUpdateInput = {
     name: input.name,
     kind: input.kind,
+    rejectTolerancePercent: input.rejectTolerancePercent,
     notes: input.notes,
   };
   if (input.factoryId) {

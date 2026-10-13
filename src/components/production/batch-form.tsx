@@ -22,7 +22,14 @@ import { PartyPicker } from "./pickers";
 
 type Party = { id: string; code: string; name: string };
 
-const FIELDS = ["name", "kind", "factoryId", "targetDate", "notes"] as const;
+const FIELDS = [
+  "name",
+  "kind",
+  "factoryId",
+  "targetDate",
+  "rejectTolerancePercent",
+  "notes",
+] as const;
 type FieldName = (typeof FIELDS)[number];
 
 const KINDS: ProductionKind[] = ["CM", "READYMADE", "DROPSHIP"];
@@ -48,8 +55,15 @@ export function BatchForm({ form: data }: { form: BatchFormData }) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const name = textOf(form, "name");
+    const allowanceText = textOf(form, "rejectTolerancePercent");
+    const allowance = allowanceText === "" ? 2 : Number(allowanceText);
     const found: Partial<Record<FieldName, string>> = {};
     if (name.length < 2) found.name = "Give the batch a name.";
+    if (!Number.isFinite(allowance) || allowance < 0 || allowance > 100) {
+      found.rejectTolerancePercent = "Enter a share from 0 to 100.";
+    } else if (Math.round(allowance * 100) !== allowance * 100) {
+      found.rejectTolerancePercent = "Up to 2 decimal places.";
+    }
     setProblems(found);
     if (Object.keys(found).length > 0) return;
     const input = {
@@ -57,6 +71,7 @@ export function BatchForm({ form: data }: { form: BatchFormData }) {
       kind: (textOf(form, "kind") || "CM") as ProductionKind,
       factoryId: factory?.id ?? null,
       targetDate: textOf(form, "targetDate") || null,
+      rejectTolerancePercent: allowance,
       notes: textOf(form, "notes") || null,
     };
     startTransition(async () => {
@@ -135,6 +150,24 @@ export function BatchForm({ form: data }: { form: BatchFormData }) {
           />
         </Field>
       </div>
+
+      <Field
+        id="rejectTolerancePercent"
+        label="Reject allowance (%)"
+        hint="Rejects (sewing faults, bodies ruined attaching accessories) up to this share of the pieces cut cost the factory nothing. Each one over it is taken off their CM at the style's target price. Missing pieces are always taken off."
+        error={fieldError("rejectTolerancePercent")}
+      >
+        <Input
+          id="rejectTolerancePercent"
+          name="rejectTolerancePercent"
+          inputMode="decimal"
+          defaultValue={batch ? batch.rejectTolerancePercent.replace(/\.?0+$/, "") : "2"}
+          className="max-w-32"
+          autoComplete="off"
+          aria-invalid={Boolean(fieldError("rejectTolerancePercent"))}
+          aria-describedby={described("rejectTolerancePercent", true)}
+        />
+      </Field>
 
       <Field id="notes" label="Notes (optional)" error={fieldError("notes")}>
         <Textarea

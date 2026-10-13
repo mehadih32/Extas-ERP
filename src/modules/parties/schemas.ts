@@ -19,7 +19,13 @@ const phone = z
   .nullish();
 
 /** In the order they are shown. */
-export const SUPPLIER_CATEGORIES: SupplierCategory[] = ["FABRIC", "ACCESSORIES", "FOB", "CM"];
+export const SUPPLIER_CATEGORIES: SupplierCategory[] = [
+  "FABRIC",
+  "ACCESSORIES",
+  "FOB",
+  "CM",
+  "EMBROIDERY_PRINT",
+];
 
 const partyFields = {
   code: z
@@ -50,7 +56,7 @@ const partyFields = {
   /** What a supplier supplies, any number of them (none for buyers). */
   supplierCategories: z
     .array(z.enum(SupplierCategory))
-    .max(4)
+    .max(SUPPLIER_CATEGORIES.length)
     .transform((list) => SUPPLIER_CATEGORIES.filter((c) => list.includes(c)))
     .optional(),
 };

@@ -24,6 +24,8 @@ function presentBatch(b: BatchSummary, tz: string) {
     state: b.state,
     factory: b.factory ? { id: b.factory.id, name: b.factory.name } : null,
     targetOn: b.targetDate ? localDay(b.targetDate, tz) : null,
+    /** "2": rejects up to 2% of the pieces cut cost the factory nothing. */
+    rejectAllowance: b.rejectTolerancePercent.replace(/\.?0+$/, ""),
     notes: b.notes,
     createdOn: localDay(b.createdAt, tz),
     createdBy: b.createdBy?.name ?? null,
@@ -122,6 +124,7 @@ export async function getBatchForm(ctx: CompanyContext, batchId?: string) {
       kind: b.kind,
       factory: b.factory,
       targetOn: b.targetDate ? localDay(b.targetDate, tz) : null,
+      rejectTolerancePercent: b.rejectTolerancePercent,
       notes: b.notes,
     },
   };

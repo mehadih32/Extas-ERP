@@ -720,6 +720,21 @@ async function sourceLink(
         href: canOpenBill(ctx) ? `/production/batches/${settlement.batchId}/cm-settlement` : null,
       };
     }
+    case "SUPPLIER_FAULT": {
+      // Pieces spoiled at an embroidery or print house, taken off their Supplier Due.
+      const fault = await ctx.db.supplierFault.findUnique({
+        where: { id: sourceId },
+        select: { number: true, supplierId: true, batchId: true },
+      });
+      if (!fault) return null;
+      const query = new URLSearchParams(
+        fault.batchId ? { batchId: fault.batchId } : { supplierId: fault.supplierId },
+      );
+      return {
+        title: `Fault ${fault.number}, taken off the Supplier Due`,
+        href: production || ctx.can("accounts.view") ? `/production/faults?${query}` : null,
+      };
+    }
     case "MATERIAL_ISSUE": {
       const note = await ctx.db.materialIssue.findUnique({
         where: { id: sourceId },

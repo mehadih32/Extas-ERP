@@ -16,6 +16,7 @@ import { pieces, productionHref } from "@/components/production/labels";
 import { ProductionNoAccess } from "@/components/production/no-access";
 import { BackLink } from "@/components/settings/back-link";
 import { Fact } from "@/components/sales/detail-bits";
+import { money } from "@/components/sales/labels";
 import { formatCount } from "@/lib/display";
 import { getCuttingScreenAction } from "@/server/actions/production.actions";
 import { requireCompanyPage } from "@/server/pages/guards";
@@ -61,6 +62,10 @@ export default async function CuttingPage({
         : one(query.replaced)
           ? `${one(query.replaced)} was saved: ${one(query.pieces)} spoiled pieces cut again. Production was alerted.${
               one(query.logged) ? ` ${one(query.logged)} went into the fault log.` : ""
+            }${
+              one(query.charged) && one(query.off) && one(query.house)
+                ? ` ${one(query.charged)}: ${money(one(query.off)!, currency)} came off ${one(query.house)}'s Supplier Due.`
+                : ""
             }`
           : one(query.dates) === "1"
             ? "The cutting and sewing dates were saved."

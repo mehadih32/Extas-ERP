@@ -22,6 +22,8 @@ import { productionHref } from "./labels";
 /*
  * The final CM settlement of a master batch with its factory:
  *   Total CM - Deductions - Advance taken = Final payable.
+ * Rejects up to the batch's allowance (2% of the pieces cut unless changed) are
+ * free; each one over it is taken off at the style's target price.
  * Before it is saved, the person settling is asked whether the CM of the
  * C-grade pieces is taken off, and sees the payable change as they choose.
  * Saved, it shows as it stood, with its PDF bill and a way to undo it.
@@ -29,7 +31,10 @@ import { productionHref } from "./labels";
 
 type Draft = NonNullable<CmSettlementScreen["draft"]>;
 type Totals = Draft["keepC"];
-type View = Pick<Draft, "styles" | "faults" | "payments" | "cGradePieces" | "batch">;
+type View = Pick<Draft, "styles" | "faults" | "payments" | "cGradePieces" | "batch"> & {
+  /** null on settlements saved before the reject allowance. */
+  rejectAllowancePercent: string | null;
+};
 
 const head =
   "px-2 py-2 text-left text-[0.75rem] font-medium tracking-wide whitespace-nowrap text-muted-foreground";
@@ -45,6 +50,8 @@ function CmByStyle({ view, totals, currency }: { view: View; totals: Totals; cur
       <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
         The factory is paid its CM on every piece it handed over: A, B, C and rejects. Missing
         pieces are not paid for.
+        {view.rejectAllowancePercent !== null &&
+          ` Rejects up to ${view.rejectAllowancePercent}% of the pieces cut are free; the ones over it are taken off below.`}
       </p>
       <div className="mt-4 overflow-x-auto">
         <table className="w-full min-w-[36rem] border-collapse text-sm">
@@ -82,7 +89,14 @@ function CmByStyle({ view, totals, currency }: { view: View; totals: Totals; cur
                 <td className={num}>{count(s.a)}</td>
                 <td className={num}>{count(s.b)}</td>
                 <td className={num}>{count(s.c)}</td>
-                <td className={num}>{count(s.reject)}</td>
+                <td className={num}>
+                  {count(s.reject)}
+                  {s.overAllowance > 0 && (
+                    <span className="block text-[0.75rem] text-destructive">
+                      {count(s.overAllowance)} over
+                    </span>
+                  )}
+                </td>
                 <td className={num}>{count(s.pieces)}</td>
                 <td className={cn(num, "font-medium")}>{s.cm ? money(s.cm, currency) : "–"}</td>
               </tr>
@@ -129,7 +143,40 @@ function Deductions({
       <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
         The factory&apos;s open faults on this batch are taken off: missing pieces at the final unit
         cost, fabric faults and any other fault with a value.
+        {view.rejectAllowancePercent !== null &&
+          ` So are the rejects over the ${view.rejectAllowancePercent}% allowance (sewing faults, bodies ruined attaching accessories), each at the style's target price.`}
       </p>
+      {view.styles.some((s) => s.overAllowance > 0) && (
+        <ul className="mt-4 divide-y rounded-md border" aria-label="Rejects over the allowance">
+          {view.styles
+            .filter((s) => s.overAllowance > 0)
+            .map((s) => (
+              <li
+                key={s.id}
+                className="flex flex-wrap items-baseline justify-between gap-2 px-3 py-2.5"
+              >
+                <span className="min-w-0 text-sm">
+                  <span className="font-medium">Rejects over the allowance</span>
+                  <span className="text-muted-foreground"> · {s.code}</span>
+                  <span className="block text-[0.75rem] break-words text-muted-foreground">
+                    {formatCount(s.overAllowance, currency)} of {formatCount(s.reject, currency)}{" "}
+                    rejects; allowance {formatCount(s.allowance ?? 0, currency)} (
+                    {view.rejectAllowancePercent}% of {formatCount(s.cut ?? 0, currency)} cut)
+                    {s.targetPrice && ` at ${money(s.targetPrice, currency)} a piece`}
+                  </span>
+                </span>
+                <span
+                  className={cn(
+                    "text-sm tabular-nums",
+                    s.targetPrice ? "font-medium" : "text-muted-foreground",
+                  )}
+                >
+                  {s.targetPrice ? money(s.rejectPenalty, currency) : "No target price"}
+                </span>
+              </li>
+            ))}
+        </ul>
+      )}
       {view.faults.length === 0 ? (
         <p className="mt-4 text-sm text-muted-foreground">
           No open fault in the factory&apos;s log.
@@ -324,6 +371,13 @@ export function CmSettlementView({
           <FormAlert>
             Agree the CM a piece of {draft.warnings.noRate.join(", ")} on the factory agreement
             first; the settlement cannot be saved without it.
+          </FormAlert>
+        )}
+        {draft && draft.warnings.noTarget.length > 0 && (
+          <FormAlert tone="note">
+            {draft.warnings.noTarget.join(", ")}{" "}
+            {draft.warnings.noTarget.length === 1 ? "has" : "have"} rejects over the allowance but
+            no target price, so they are not charged. Set the target price on the style first.
           </FormAlert>
         )}
         {draft && draft.warnings.notPacked.length > 0 && (

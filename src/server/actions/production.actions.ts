@@ -8,6 +8,7 @@ import { requireAnyPermission, requirePermission } from "@/modules/auth/context"
 import * as files from "@/modules/files/file.service";
 import * as actionLog from "@/modules/production/action-log.service";
 import * as batchMoney from "@/modules/production/batch-money.service";
+import * as batchSummary from "@/modules/production/batch-summary.service";
 import * as batchIssue from "@/modules/production/batch-issue.service";
 import * as batchOrders from "@/modules/production/batch-orders.service";
 import * as batchScreens from "@/modules/production/batch-screens.service";
@@ -325,6 +326,8 @@ export const payForBatchAction = async (batchId: string, input: unknown) =>
   });
 export const getCmSettlementScreenAction = async (batchId: string) =>
   runAction(async () => batchMoney.getCmSettlementScreen(await readContracts(), batchId));
+export const getBatchSummaryAction = async (batchId: string) =>
+  runAction(async () => batchSummary.getBatchSummary(await readContracts(), batchId));
 export const settleCmAction = async (batchId: string, input: unknown) =>
   change(async () => {
     const r = await batchMoney.settleCm(

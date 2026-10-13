@@ -41,6 +41,7 @@ const KINDS: SupplierFaultKind[] = [
   "FABRIC_FAULT",
   "QUALITY",
   "MISSING_PIECES",
+  "SPOILED_PIECES",
   "OTHER",
 ];
 const STATUS_TONES: Record<SupplierFaultStatus, Tone> = {

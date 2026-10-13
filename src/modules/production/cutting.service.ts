@@ -8,6 +8,7 @@ import { prisma } from "@/lib/prisma";
 import { checkRateLimit } from "@/lib/rate-limit";
 import type { RequestMeta } from "@/lib/request-meta";
 import { lockRow } from "@/lib/row-lock";
+import { runTransaction } from "@/lib/transaction";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { readStoredFile } from "@/modules/files/file.service";
@@ -35,7 +36,15 @@ import {
   readEmbroideryLines,
   readFabricUsed,
 } from "@/modules/production/cutting";
-import { canLogFaults, createFault } from "@/modules/production/fault.service";
+import { lockSupplierAccount } from "@/modules/accounts/supplier-settlement";
+import { money } from "@/modules/production/costing";
+import {
+  canLogFaults,
+  chargesOwnSpoilage,
+  createFault,
+  deductFaultTx,
+  logFaultTx,
+} from "@/modules/production/fault.service";
 import { addUpGrades, linePieces, readGradeLines } from "@/modules/production/finishing";
 import { planStyles, styleGrids } from "@/modules/production/material-need.service";
 import { isProjectClosed } from "@/modules/production/project-costs";
@@ -389,7 +398,7 @@ export async function getCuttingScreen(ctx: CompanyContext, projectId: string) {
         receivedOn: true,
         lines: true,
         note: true,
-        party: { select: { id: true, name: true } },
+        party: { select: { id: true, name: true, supplierCategories: true } },
         replacements: { select: { lines: true } },
       },
       orderBy: [{ sentOn: "desc" }, { number: "desc" }],
@@ -493,7 +502,14 @@ export async function getCuttingScreen(ctx: CompanyContext, projectId: string) {
         id: j.id,
         number: j.number,
         kind: j.kind,
-        party: j.party,
+        party: j.party
+          ? {
+              id: j.party.id,
+              name: j.party.name,
+              /** An embroidery or print house: its spoiled pieces come off its own Supplier Due. */
+              chargesSpoilage: chargesOwnSpoilage(j.party.supplierCategories),
+            }
+          : null,
         sentOn: dateOnly(j.sentOn)!,
         dueOn: dateOnly(j.dueOn),
         receivedOn: dateOnly(j.receivedOn),
@@ -953,8 +969,44 @@ export async function sendToEmbroidery(
 }
 
 /**
+ * What a cut piece of a style is worth: the fabric issued to it (less what came
+ * back) over the pieces cut, replacements included. Collars, trims and
+ * accessories are not in a cut piece yet. Null while no fabric is issued or
+ * nothing is cut.
+ */
+export async function cutPieceCost(
+  db: Prisma.TransactionClient,
+  companyId: string,
+  projectId: string,
+) {
+  const [fabric, reports] = await Promise.all([
+    db.rawMaterialMovement.aggregate({
+      where: {
+        companyId,
+        productionProjectId: projectId,
+        type: { in: ["ISSUE_TO_PRODUCTION", "RETURN_FROM_PRODUCTION"] },
+        rawMaterial: { kind: "FABRIC" },
+      },
+      _sum: { value: true },
+    }),
+    db.cuttingReport.findMany({ where: { projectId }, select: { lines: true } }),
+  ]);
+  // Issues take value out of the store (negative), returns bring it back.
+  const value = new Prisma.Decimal(0).minus(fabric._sum.value ?? 0);
+  const cut = reports.reduce(
+    (t, r) => t + readCutLines(r.lines).reduce((n, l) => n + l.quantity, 0),
+    0,
+  );
+  if (cut <= 0 || value.lte(0)) return null;
+  return { perPiece: money(value.dividedBy(cut)), cut };
+}
+
+/**
  * Takes pieces back from embroidery or print, good and spoiled, a little at a
  * time if need be. Says how many came back spoiled, to replace from cutting.
+ * Pieces an embroidery or print house spoiled are theirs: they go in its fault
+ * log at the fabric in a cut piece and come off its own Supplier Due at once
+ * (never the factory's); with no fabric issued yet, the fault waits to be valued.
  */
 export async function receiveFromEmbroidery(
   ctx: CompanyContext,
@@ -966,80 +1018,132 @@ export async function receiveFromEmbroidery(
   assertCanRecord(ctx);
   const found = await ctx.db.embroideryJob.findUnique({
     where: { id: jobId },
-    select: { id: true, projectId: true, number: true, party: { select: { name: true } } },
+    select: {
+      id: true,
+      projectId: true,
+      number: true,
+      kind: true,
+      party: { select: { id: true, name: true, supplierCategories: true } },
+    },
   });
   if (!found) throw new AppError("NOT_FOUND", "Embroidery or print job not found.");
   const project = await loadProject(ctx, found.projectId);
   assertOpen(project);
   const today = localDay(new Date(), ctx.company.timezone);
   assertPastDay(input.receivedOn, today, "receivedOn", "Receiving");
-  const result = await prisma.$transaction(async (tx) => {
-    await lockRow(tx, "ProductionProject", project.id);
-    const job = await tx.embroideryJob.findUniqueOrThrow({
-      where: { id: found.id },
-      select: { lines: true },
-    });
-    const lines = readEmbroideryLines(job.lines);
-    let good = 0;
-    let bad = 0;
-    input.lines.forEach((l, i) => {
-      const line = lines.find(
-        (x) => cellKey(x.colorName, x.sizeName) === cellKey(l.colorName, l.sizeName),
-      );
-      if (!line) {
-        throw new AppError("VALIDATION", `Line ${i + 1} was not sent on ${found.number}.`, {
-          [`lines.${i}`]: ["Not on this job"],
+  const house =
+    found.party && chargesOwnSpoilage(found.party.supplierCategories) ? found.party : null;
+  const companyId = ctx.company.id;
+  const result = await runTransaction(
+    async (tx) => {
+      // The house's account before anything else (lock order): spoiled pieces move its Supplier Due.
+      if (house) await lockSupplierAccount(tx, companyId, house.id);
+      await lockRow(tx, "ProductionProject", project.id);
+      const job = await tx.embroideryJob.findUniqueOrThrow({
+        where: { id: found.id },
+        select: { lines: true },
+      });
+      const lines = readEmbroideryLines(job.lines);
+      let good = 0;
+      let bad = 0;
+      input.lines.forEach((l, i) => {
+        const line = lines.find(
+          (x) => cellKey(x.colorName, x.sizeName) === cellKey(l.colorName, l.sizeName),
+        );
+        if (!line) {
+          throw new AppError("VALIDATION", `Line ${i + 1} was not sent on ${found.number}.`, {
+            [`lines.${i}`]: ["Not on this job"],
+          });
+        }
+        const out = line.sent - line.received - line.spoiled;
+        if (l.received + l.spoiled > out) {
+          throw new AppError(
+            "VALIDATION",
+            `${[line.colorName, line.sizeName].filter(Boolean).join(" ") || "The style"}: only ${out} pieces are still out.`,
+            { [`lines.${i}`]: [`${out} still out`] },
+          );
+        }
+        line.received += l.received;
+        line.spoiled += l.spoiled;
+        good += l.received;
+        bad += l.spoiled;
+      });
+      if (good + bad === 0) {
+        throw new AppError("VALIDATION", "Enter the pieces that came back.", {
+          lines: ["Nothing came back"],
         });
       }
-      const out = line.sent - line.received - line.spoiled;
-      if (l.received + l.spoiled > out) {
-        throw new AppError(
-          "VALIDATION",
-          `${[line.colorName, line.sizeName].filter(Boolean).join(" ") || "The style"}: only ${out} pieces are still out.`,
-          { [`lines.${i}`]: [`${out} still out`] },
-        );
-      }
-      line.received += l.received;
-      line.spoiled += l.spoiled;
-      good += l.received;
-      bad += l.spoiled;
-    });
-    if (good + bad === 0) {
-      throw new AppError("VALIDATION", "Enter the pieces that came back.", {
-        lines: ["Nothing came back"],
+      const allBack = lines.every((l) => l.sent === l.received + l.spoiled);
+      await tx.embroideryJob.update({
+        where: { id: found.id },
+        data: {
+          lines,
+          receivedOn: allBack ? dateColumn(input.receivedOn ?? today) : null,
+        },
       });
-    }
-    const allBack = lines.every((l) => l.sent === l.received + l.spoiled);
-    await tx.embroideryJob.update({
-      where: { id: found.id },
-      data: {
-        lines,
-        receivedOn: allBack ? dateColumn(input.receivedOn ?? today) : null,
-      },
-    });
-    await auditInCompany(
-      ctx,
-      meta,
-      {
-        action: "UPDATE",
-        entityType: "EmbroideryJob",
-        entityId: found.id,
-        summary: `${found.number} (${project.code}): ${good} pieces back good${bad ? `, ${bad} spoiled` : ""}${allBack ? "; all back" : ""}`,
-      },
-      tx,
-    );
-    return {
-      good,
-      spoiled: bad,
-      spoiledLines: input.lines
-        .filter((l) => l.spoiled > 0)
-        .map((l) => ({
-          colorName: l.colorName ?? null,
-          sizeName: l.sizeName ?? null,
-          quantity: l.spoiled,
-        })),
-    };
-  });
+      await auditInCompany(
+        ctx,
+        meta,
+        {
+          action: "UPDATE",
+          entityType: "EmbroideryJob",
+          entityId: found.id,
+          summary: `${found.number} (${project.code}): ${good} pieces back good${bad ? `, ${bad} spoiled` : ""}${allBack ? "; all back" : ""}`,
+        },
+        tx,
+      );
+      let charged: {
+        number: string;
+        amount: string | null;
+        perPiece: string | null;
+        entry: string | null;
+      } | null = null;
+      if (house && bad > 0) {
+        const cost = await cutPieceCost(tx, companyId, project.id);
+        const amount = cost ? money(cost.perPiece.times(bad)) : null;
+        const what = found.kind === "PRINT" ? "print" : "embroidery";
+        const note = cost
+          ? `${bad} pieces of ${project.code} spoiled at ${what} on ${found.number}, at ${cost.perPiece.toFixed(2)} a cut piece (fabric issued ÷ ${cost.cut} pieces cut)`
+          : `${bad} pieces of ${project.code} spoiled at ${what} on ${found.number}; no materials issued yet, so the value is to agree`;
+        const fault = await logFaultTx(tx, ctx, meta, {
+          supplier: house,
+          kind: "SPOILED_PIECES",
+          batchId: project.batch?.id ?? null,
+          projectId: project.id,
+          rawMaterialId: null,
+          quantity: bad,
+          amount: amount ? amount.toNumber() : null,
+          note,
+          occurredOn: input.receivedOn ?? today,
+          photoId: null,
+        });
+        const entry =
+          amount && amount.gt(0)
+            ? await deductFaultTx(tx, ctx, { ...fault, amount, note }, house)
+            : null;
+        charged = {
+          number: fault.number,
+          amount: amount ? amount.toFixed(2) : null,
+          perPiece: cost ? cost.perPiece.toFixed(2) : null,
+          entry: entry?.number ?? null,
+        };
+      }
+      return {
+        good,
+        spoiled: bad,
+        /** The house's fault for the spoiled pieces, taken off its Supplier Due when valued. */
+        charged,
+        spoiledLines: input.lines
+          .filter((l) => l.spoiled > 0)
+          .map((l) => ({
+            colorName: l.colorName ?? null,
+            sizeName: l.sizeName ?? null,
+            quantity: l.spoiled,
+          })),
+      };
+    },
+    { timeout: 30_000 },
+  );
   return { id: found.id, number: found.number, ...result };
 }
 
@@ -1065,7 +1169,7 @@ export async function replaceFromCutting(
       projectId: true,
       lines: true,
       partyId: true,
-      party: { select: { name: true } },
+      party: { select: { name: true, supplierCategories: true } },
       replacements: { select: { lines: true } },
     },
   });
@@ -1139,7 +1243,9 @@ export async function replaceFromCutting(
     return made;
   });
   let fault: { id: string; number: string } | null = null;
-  if (input.logFault && job.partyId && canLogFaults(ctx)) {
+  // An embroidery or print house's spoiled pieces went in its fault log as they came back.
+  const loggedOnReceive = job.party ? chargesOwnSpoilage(job.party.supplierCategories) : false;
+  if (input.logFault && job.partyId && !loggedOnReceive && canLogFaults(ctx)) {
     fault = await createFault(
       ctx,
       {

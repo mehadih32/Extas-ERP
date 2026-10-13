@@ -5,7 +5,7 @@ export const partiesHelp: HelpSection = {
   id: "parties",
   title: "ক্রেতা ও সরবরাহকারী (Buyers & suppliers)",
   description:
-    "প্রতিটি ক্রেতা ও সরবরাহকারীর প্রোফাইল, ৩৬০° হিসাব, যোগাযোগ, গ্রেড, Blue Verified চিহ্ন, সরবরাহকারীর ধরন (Fabric, Accessories, FOB, CM), পাওনা-দেনা, হিসাবের স্টেটমেন্ট আর কে কত বকেয়া (Dues)।",
+    "প্রতিটি ক্রেতা ও সরবরাহকারীর প্রোফাইল, ৩৬০° হিসাব, যোগাযোগ, গ্রেড, Blue Verified চিহ্ন, সরবরাহকারীর ধরন (Fabric, Accessories, FOB, CM, Embroidery / Print), পাওনা-দেনা, হিসাবের স্টেটমেন্ট আর কে কত বকেয়া (Dues)।",
   href: "/parties",
   articles: [
     {
@@ -44,7 +44,7 @@ export const partiesHelp: HelpSection = {
           text: "খোঁজার ঘরে নাম, কোড, যোগাযোগের মানুষ, ফোন বা ইমেইল লিখুন। “Status”, “Grade”, “Buyer type” ও “Blue Verified only” দিয়ে ছাঁকুন। “Clear filters” দিয়ে আবার সব দেখুন।",
         },
         {
-          text: "“Suppliers” ট্যাবে “Buyer type”-এর জায়গায় “All categories” বাছাই থাকে: “Fabric”, “Accessories”, “FOB” বা “CM (Factory)” বেছে শুধু সেই ধরনের সরবরাহকারী দেখুন। তালিকার “Category” কলামে প্রত্যেকে কী সরবরাহ করেন তা লেখা থাকে।",
+          text: "“Suppliers” ট্যাবে “Buyer type”-এর জায়গায় “All categories” বাছাই থাকে: “Fabric”, “Accessories”, “FOB”, “CM (Factory)” বা “Embroidery / Print” বেছে শুধু সেই ধরনের সরবরাহকারী দেখুন। তালিকার “Category” কলামে প্রত্যেকে কী সরবরাহ করেন তা লেখা থাকে।",
         },
         {
           text: "তালিকার “Balance”-এ “Owes you” মানে তাঁর কাছে আপনার পাওনা, “You owe” মানে আপনার দেনা, “Settled” মানে কিছু বাকি নেই।",
@@ -299,6 +299,9 @@ export const partiesHelp: HelpSection = {
         "কাস্টমার যোগ",
         "ফ্যাক্টরি যোগ",
         "ক্রেডিট লিমিট",
+        "embroidery",
+        "print",
+        "এমব্রয়ডারি",
       ],
       routes: ["/parties/buyers/new", "/parties/suppliers/new"],
       who: "যাঁদের অ্যাকাউন্ট বদলানোর অনুমতি আছে: Super Admin ও Sales Executive।",
@@ -318,7 +321,10 @@ export const partiesHelp: HelpSection = {
           text: "“Name”, দরকার হলে “Code (optional)” ও “Grade (optional)” দিন।",
         },
         {
-          text: "সরবরাহকারী হলে “What they supply (optional)” অংশে যা যা প্রযোজ্য সবগুলোতে টিক দিন: “Fabric” (কাপড়), “Accessories” (বোতাম, লেবেল, ট্রিমস), “FOB” (অর্ডারমতো তৈরি পণ্য) বা “CM (Factory)” (কাটিং-সেলাইয়ের ফ্যাক্টরি)। একটি ফ্যাক্টরি একসঙ্গে “CM (Factory)” ও “FOB” দুটোই হতে পারে।",
+          text: "সরবরাহকারী হলে “What they supply (optional)” অংশে যা যা প্রযোজ্য সবগুলোতে টিক দিন: “Fabric” (কাপড়), “Accessories” (বোতাম, লেবেল, ট্রিমস), “FOB” (অর্ডারমতো তৈরি পণ্য), “CM (Factory)” (কাটিং-সেলাইয়ের ফ্যাক্টরি) বা “Embroidery / Print” (এমব্রয়ডারি বা প্রিন্টের কারখানা)। একটি ফ্যাক্টরি একসঙ্গে “CM (Factory)” ও “FOB” দুটোই হতে পারে।",
+        },
+        {
+          text: "“Embroidery / Print” টিক দেওয়া সরবরাহকারী নিজের নষ্ট করা পিসের দাম নিজে দেয়: কাটা পিস ফেরত আসার সময় নষ্ট পিস লিখলেই তা তাঁর ফল্ট লগে যায়, একটি কাটা পিসে যতটুকু কাপড় যায় তার দামে, আর সাথে সাথে তাঁর নিজের Supplier Due থেকে কমে যায়; ফ্যাক্টরির থেকে কখনো নয়।",
         },
         {
           text: "“Contact” অংশে “Contact person (optional)”, “Email (optional)”, “Phone (optional)”, “WhatsApp (optional)”, “Address (optional)”, “City (optional)” ও “Country” দিন।",

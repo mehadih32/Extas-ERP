@@ -32,7 +32,13 @@ export const PARTY_PAGE_SIZE = 30;
 const STATUSES: readonly PartyStatus[] = ["ACTIVE", "SETTLING", "DORMANT", "CLOSED"];
 const GRADES: readonly PartyGrade[] = ["A_PLUS", "A", "B", "C"];
 const TYPES: readonly BuyerType[] = ["RETAIL", "WHOLESALE", "B2B_CORPORATE"];
-const CATEGORIES: readonly SupplierCategory[] = ["FABRIC", "ACCESSORIES", "FOB", "CM"];
+const CATEGORIES: readonly SupplierCategory[] = [
+  "FABRIC",
+  "ACCESSORIES",
+  "FOB",
+  "CM",
+  "EMBROIDERY_PRINT",
+];
 
 const one = (params: SearchParams, key: string) => {
   const value = params[key];

@@ -20,6 +20,7 @@ import { readQuantity, UNIT_LABELS } from "@/components/materials/labels";
 import { SupplierPicker } from "@/components/materials/pickers";
 import { StatusBadge } from "@/components/sales/badges";
 import { Panel } from "@/components/sales/detail-bits";
+import { money } from "@/components/sales/labels";
 import { FormDialog } from "@/components/sales/dialogs";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -549,7 +550,15 @@ export function CuttingReports({ screen, currency }: { screen: CuttingScreen; cu
   );
 }
 
-type Replacing = { job: Job; spoiledNow: number };
+/** The house's fault for pieces that just came back spoiled (an embroidery or print house). */
+type Charged = {
+  number: string;
+  amount: string | null;
+  perPiece: string | null;
+  entry: string | null;
+};
+
+type Replacing = { job: Job; spoiledNow: number; charged?: Charged | null };
 
 /** Pieces out for embroidery or print, taking them back, and cutting the spoiled ones again. */
 export function EmbroideryJobs({ screen, currency }: { screen: CuttingScreen; currency: string }) {
@@ -645,6 +654,7 @@ export function EmbroideryJobs({ screen, currency }: { screen: CuttingScreen; cu
                   toReplaceLines: mergeLines(receiving.toReplaceLines, back.spoiledLines),
                 },
                 spoiledNow: back.spoiled,
+                charged: back.charged,
               });
               router.refresh();
             } else {
@@ -658,14 +668,20 @@ export function EmbroideryJobs({ screen, currency }: { screen: CuttingScreen; cu
           replacing={replacing}
           today={screen.today}
           canLogFault={screen.can.faultNote}
+          currency={currency}
           onClose={() => setReplacing(null)}
           onDone={(done) => {
+            const charged = replacing.charged;
             setReplacing(null);
-            router.push(
-              `${here}?replaced=${encodeURIComponent(done.number)}&pieces=${done.pieces}${
-                done.fault ? `&logged=${encodeURIComponent(done.fault.number)}` : ""
-              }`,
-            );
+            const query = new URLSearchParams({
+              replaced: done.number,
+              pieces: String(done.pieces),
+              ...(done.fault ? { logged: done.fault.number } : {}),
+              ...(charged?.entry && charged.amount && replacing.job.party
+                ? { charged: charged.number, off: charged.amount, house: replacing.job.party.name }
+                : {}),
+            });
+            router.push(`${here}?${query}`);
           }}
         />
       )}
@@ -700,6 +716,7 @@ function ReceiveDialog({
     good: number;
     spoiled: number;
     spoiledLines: Array<Line & { quantity: number }>;
+    charged: Charged | null;
   }) => void;
 }) {
   const out = job.lines
@@ -708,7 +725,11 @@ function ReceiveDialog({
   return (
     <FormDialog
       title={`Receive back on ${job.number}`}
-      description={`Pieces back from ${job.party?.name ?? "the house"}: good ones, and spoiled ones to cut again. Some can come back later.`}
+      description={`Pieces back from ${job.party?.name ?? "the house"}: good ones, and spoiled ones to cut again. Some can come back later.${
+        job.party?.chargesSpoilage
+          ? ` Spoiled pieces are ${job.party.name}'s: they come off its own Supplier Due at the fabric in a cut piece, never the factory's.`
+          : ""
+      }`}
       submitLabel="Take them back"
       pendingLabel="Saving"
       errorTitle="We could not take the pieces back"
@@ -794,15 +815,17 @@ function ReceiveDialog({
 }
 
 function ReplaceDialog({
-  replacing: { job, spoiledNow },
+  replacing: { job, spoiledNow, charged },
   today,
   canLogFault,
+  currency,
   onClose,
   onDone,
 }: {
   replacing: Replacing;
   today: string;
   canLogFault: boolean;
+  currency: string;
   onClose: () => void;
   onDone: (done: { number: string; pieces: number; fault: { number: string } | null }) => void;
 }) {
@@ -813,7 +836,13 @@ function ReplaceDialog({
       title={spoiledNow > 0 ? "Replace from cutting immediately?" : "Replace from cutting"}
       description={
         spoiledNow > 0
-          ? `${spoiledNow} ${spoiledNow === 1 ? "piece" : "pieces"} came back spoiled from ${job.number}. Cut them again now so the order stays complete.`
+          ? `${spoiledNow} ${spoiledNow === 1 ? "piece" : "pieces"} came back spoiled from ${job.number}. Cut them again now so the order stays complete.${
+              charged && job.party
+                ? charged.amount && charged.entry
+                  ? ` ${charged.number}: ${money(charged.amount, currency)} came off ${job.party.name}'s Supplier Due.`
+                  : ` ${charged.number} is in ${job.party.name}'s fault log, its value to agree.`
+                : ""
+            }`
           : `Cut the pieces spoiled on ${job.number} again. Production is alerted at once.`
       }
       submitLabel="Cut them again"
@@ -845,18 +874,26 @@ function ReplaceDialog({
             defaults={(i) => String(lines[i]!.quantity)}
             fieldError={fieldError}
           />
-          {job.party && canLogFault && (
-            <div className="flex items-start gap-3">
-              <Checkbox
-                id="replace-fault"
-                checked={logFault}
-                onCheckedChange={(v) => setLogFault(v === true)}
-                className="mt-0.5"
-              />
-              <label htmlFor="replace-fault" className="text-sm leading-snug">
-                Also log the spoiled pieces in {job.party.name}&apos;s fault log
-              </label>
-            </div>
+          {job.party?.chargesSpoilage ? (
+            <p className="text-[0.8125rem] leading-snug text-muted-foreground">
+              The spoiled pieces are in {job.party.name}&apos;s fault log already, taken off its own
+              Supplier Due, never the factory&apos;s.
+            </p>
+          ) : (
+            job.party &&
+            canLogFault && (
+              <div className="flex items-start gap-3">
+                <Checkbox
+                  id="replace-fault"
+                  checked={logFault}
+                  onCheckedChange={(v) => setLogFault(v === true)}
+                  className="mt-0.5"
+                />
+                <label htmlFor="replace-fault" className="text-sm leading-snug">
+                  Also log the spoiled pieces in {job.party.name}&apos;s fault log
+                </label>
+              </div>
+            )
           )}
         </>
       )}

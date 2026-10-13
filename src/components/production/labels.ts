@@ -207,6 +207,10 @@ export const productionHref = {
   /** The Employee Action Log of a style, or of a master batch and all its styles. */
   projectLog: (projectId: string) => `/production/projects/${encodeURIComponent(projectId)}/log`,
   batchLog: (batchId: string) => `/production/batches/${encodeURIComponent(batchId)}/log`,
+  /** A batch's whole money story on one page (cost, cost a piece, penalties, stock), and its PDF. */
+  batchSummary: (batchId: string) => `/production/batches/${encodeURIComponent(batchId)}/summary`,
+  batchSummaryPdf: (batchId: string) =>
+    `/api/production/batches/${encodeURIComponent(batchId)}/summary/pdf`,
   /** A batch's final CM settlement with its factory, and its PDF bill. */
   cmSettlement: (batchId: string) =>
     `/production/batches/${encodeURIComponent(batchId)}/cm-settlement`,
@@ -221,6 +225,7 @@ export const FAULT_KIND_LABELS: Record<SupplierFaultKind, string> = {
   QUALITY: "Quality fault",
   MISSING_PIECES: "Missing pieces",
   OTHER: "Other",
+  SPOILED_PIECES: "Spoiled at embroidery or print",
 };
 
 export const FAULT_STATUS_LABELS: Record<SupplierFaultStatus, string> = {

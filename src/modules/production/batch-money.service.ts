@@ -22,7 +22,12 @@ import type { CompanyContext } from "@/modules/auth/context";
 import { letterheadOf } from "@/modules/documents/builders";
 import { documentFileName, type PrintDocument } from "@/modules/documents/model";
 import { ON_DEMAND_PER_MINUTE, renderOnDemand } from "@/modules/documents/on-demand";
-import { cmPieces, cmSettlementMath, type CmStyleLine } from "@/modules/production/batch-money";
+import {
+  cmPieces,
+  cmSettlementMath,
+  type CmStyleLine,
+  rejectPenalty,
+} from "@/modules/production/batch-money";
 import { canSettleFaults } from "@/modules/production/fault.service";
 import { finishingProjectSelect, stateOf } from "@/modules/production/finishing.service";
 import { recordPartyActivity } from "@/modules/parties/party.service";
@@ -40,8 +45,10 @@ import { sendInApp } from "@/modules/reminders/notification.service";
  *   - The final CM settlement: each style's CM (its CM a piece × the A, B, C and
  *     rejected pieces the factory handed over), less the factory's open faults on
  *     the batch with a value (missing pieces at the final unit cost, fabric
- *     faults...) and, when the person settling chooses, the CM of the C-grade
- *     pieces, less the advance taken and what was paid for the styles:
+ *     faults...), the rejects over the batch's allowance (2% of the pieces cut
+ *     unless changed) at the style's target price and, when the person settling
+ *     chooses, the CM of the C-grade pieces, less the advance taken and what was
+ *     paid for the styles:
  *       Total CM - Deductions - Advance taken = Final payable.
  *     Saving it marks those faults deducted, keeps a statement (CMS-), printed
  *     as the factory's final bill, and takes the deductions off the factory's
@@ -86,6 +93,7 @@ const batchSelect = {
   id: true,
   code: true,
   name: true,
+  rejectTolerancePercent: true,
   factory: {
     select: { id: true, code: true, name: true, phone: true, supplierCategories: true },
   },
@@ -269,6 +277,15 @@ type SettlementStyle = {
   cGradeCm: string | null;
   /** The full packing list's number, once received. */
   packed: string | null;
+  /** Pieces cut and handed to the factory (spoiled ones taken off); null on older settlements. */
+  cut: number | null;
+  /** Rejects that cost the factory nothing: the batch's allowance of the pieces cut. */
+  allowance: number | null;
+  /** Rejects over the allowance, each charged at the target price. */
+  overAllowance: number;
+  /** The style's target price a piece, which each reject over the allowance is charged at. */
+  targetPrice: string | null;
+  rejectPenalty: string;
 };
 
 /** The settlement as it would be saved now, from the styles' finishing, the faults and the payments. */
@@ -277,15 +294,21 @@ async function draftOf(db: Db, ctx: CompanyContext, batchId: string) {
   const factory = batch.factory;
   const projects = await db.productionProject.findMany({
     where: { batchId: batch.id, companyId: ctx.company.id, status: { not: "CANCELLED" } },
-    select: { ...finishingProjectSelect, cmRate: true },
+    select: { ...finishingProjectSelect, cmRate: true, targetUnitCost: true },
     orderBy: { code: "asc" },
   });
+  const percent = batch.rejectTolerancePercent;
   const styles: SettlementStyle[] = [];
   const lines: CmStyleLine[] = [];
+  const penalties: Prisma.Decimal[] = [];
   for (const p of projects) {
     const state = await stateOf(db, ctx, p);
     const t = state.totals;
     const line: CmStyleLine = { cmRate: p.cmRate, a: t.a, b: t.b, c: t.c, reject: t.reject };
+    // The pieces the factory was handed: cut and good, or what it accounted for when no cut is kept.
+    const cut = t.cut ?? t.a + t.b + t.c + t.reject + t.missing;
+    const rule = rejectPenalty({ cut, rejects: t.reject, percent, rate: p.targetUnitCost });
+    penalties.push(rule.penalty);
     styles.push({
       id: p.id,
       code: p.code,
@@ -301,6 +324,11 @@ async function draftOf(db: Db, ctx: CompanyContext, batchId: string) {
       cm: p.cmRate ? fixed(p.cmRate.times(cmPieces(line))) : null,
       cGradeCm: p.cmRate ? fixed(p.cmRate.times(t.c)) : null,
       packed: state.packed ? state.packed.number : null,
+      cut,
+      allowance: rule.allowance,
+      overAllowance: rule.over,
+      targetPrice: p.targetUnitCost ? fixed(p.targetUnitCost) : null,
+      rejectPenalty: fixed(rule.penalty),
     });
     lines.push(line);
   }
@@ -350,12 +378,15 @@ async function draftOf(db: Db, ctx: CompanyContext, batchId: string) {
     const m = cmSettlementMath({
       styles: lines,
       faults: valued,
+      rejectPenalties: penalties,
       deductCGrade,
       paid: advance.plus(forStyles),
     });
     return {
       totalCm: fixed(m.totalCm),
       faults: fixed(m.faults),
+      /** Rejects over the allowance, at the styles' target price. */
+      rejects: fixed(m.rejects),
       cGradeCm: fixed(m.cGradeCm),
       deductions: fixed(m.deductions),
       advance: fixed(advance),
@@ -366,8 +397,14 @@ async function draftOf(db: Db, ctx: CompanyContext, batchId: string) {
   };
   const noRate = styles.filter((s) => s.cmRate === null && s.pieces > 0).map((s) => s.code);
   const notPacked = styles.filter((s) => !s.packed && s.status !== "COMPLETED").map((s) => s.code);
+  // Rejects over the allowance with no target price to charge them at.
+  const noTarget = styles
+    .filter((s) => s.overAllowance > 0 && s.targetPrice === null)
+    .map((s) => s.code);
   return {
     batch: { id: batch.id, code: batch.code, name: batch.name },
+    /** Rejects up to this share of the pieces cut cost the factory nothing ("2"). */
+    rejectAllowancePercent: percent.toFixed(2).replace(/\.?0+$/, ""),
     factory: factory
       ? { id: factory.id, code: factory.code, name: factory.name, phone: factory.phone }
       : null,
@@ -378,17 +415,38 @@ async function draftOf(db: Db, ctx: CompanyContext, batchId: string) {
     /** The sums without and with the C-grade CM taken off. */
     keepC: math(false),
     deductC: math(true),
-    warnings: { noRate, notPacked },
+    warnings: { noRate, notPacked, noTarget },
   };
 }
 
 type Draft = Awaited<ReturnType<typeof draftOf>>;
 
 /** What a saved settlement keeps: the draft as it stood, with the choice made. */
-type Snapshot = Omit<Draft, "keepC" | "deductC"> & {
+type Snapshot = Omit<Draft, "keepC" | "deductC" | "rejectAllowancePercent"> & {
+  /** null on settlements saved before the reject allowance. */
+  rejectAllowancePercent: string | null;
   deductCGrade: boolean;
   totals: Draft["keepC"];
 };
+
+/** A saved snapshot, with what settlements saved before the reject allowance did not keep. */
+function readSnapshot(value: Prisma.JsonValue): Snapshot {
+  const raw = value as unknown as Snapshot;
+  return {
+    ...raw,
+    rejectAllowancePercent: raw.rejectAllowancePercent ?? null,
+    styles: raw.styles.map((st) => ({
+      ...st,
+      cut: st.cut ?? null,
+      allowance: st.allowance ?? null,
+      overAllowance: st.overAllowance ?? 0,
+      targetPrice: st.targetPrice ?? null,
+      rejectPenalty: st.rejectPenalty ?? "0.00",
+    })),
+    warnings: { ...raw.warnings, noTarget: raw.warnings?.noTarget ?? [] },
+    totals: { ...raw.totals, rejects: raw.totals.rejects ?? "0.00" },
+  };
+}
 
 const settlementInclude = {
   createdBy: { select: { name: true } },
@@ -400,7 +458,7 @@ function present(
   ctx: CompanyContext,
   s: Prisma.CmSettlementGetPayload<{ include: typeof settlementInclude }>,
 ) {
-  const snapshot = s.snapshot as unknown as Snapshot;
+  const snapshot = readSnapshot(s.snapshot);
   return {
     id: s.id,
     number: s.number,
@@ -422,6 +480,32 @@ function present(
         }
       : null,
     snapshot,
+  };
+}
+
+/**
+ * The batch's CM figures for its summary: the settlement saved, or the draft as
+ * it would be saved now (the C-grade CM paid). Read inside the caller's checks.
+ */
+export async function cmFigures(ctx: CompanyContext, batchId: string) {
+  const standing = await standingSettlement(prisma, ctx, batchId);
+  if (standing) {
+    const snapshot = readSnapshot(standing.snapshot);
+    return {
+      saved: { id: standing.id, number: standing.number, posted: Boolean(standing.journalEntryId) },
+      totals: snapshot.totals,
+      styles: snapshot.styles,
+      faults: snapshot.faults,
+      rejectAllowancePercent: snapshot.rejectAllowancePercent,
+    };
+  }
+  const draft = await draftOf(prisma, ctx, batchId);
+  return {
+    saved: null,
+    totals: draft.keepC,
+    styles: draft.styles,
+    faults: draft.faults,
+    rejectAllowancePercent: draft.rejectAllowancePercent as string | null,
   };
 }
 
@@ -527,6 +611,7 @@ export async function settleCm(
       const number = await nextDocumentNumber(tx, companyId, "CM_SETTLEMENT");
       const snapshot: Snapshot = {
         batch,
+        rejectAllowancePercent: draft.rejectAllowancePercent,
         factory,
         styles: draft.styles,
         faults: draft.faults,
@@ -571,8 +656,9 @@ export async function settleCm(
       }
       // The deductions come off the factory's Supplier Due now: the batch's bills first.
       const faultsOff = new Prisma.Decimal(totals.faults);
+      const rejectsOff = new Prisma.Decimal(totals.rejects);
       const cGradeOff = input.deductCGrade ? new Prisma.Decimal(totals.cGradeCm) : ZERO;
-      const deducted = faultsOff.plus(cGradeOff);
+      const deducted = faultsOff.plus(rejectsOff).plus(cGradeOff);
       let entry: { id: string; number: string } | null = null;
       if (deducted.gt(0)) {
         const acc = await ensureControlAccounts(companyId, tx);
@@ -593,6 +679,11 @@ export async function settleCm(
               accountId: acc.SUPPLIER_DEDUCTIONS,
               credit: faultsOff,
               memo: `Faults taken off on ${number} (missing pieces, fabric faults…)`,
+            },
+            {
+              accountId: acc.SUPPLIER_DEDUCTIONS,
+              credit: rejectsOff,
+              memo: `Rejects over the ${draft.rejectAllowancePercent}% allowance taken off on ${number}, at the target price`,
             },
             {
               accountId: acc.SUPPLIER_DEDUCTIONS,
@@ -618,6 +709,10 @@ export async function settleCm(
           entityId: settlement.id,
           summary: `Final CM settlement ${number} for ${batch.code} with ${factory.name}: total CM ${amount(totals.totalCm)} - deductions ${amount(totals.deductions)}${
             input.deductCGrade ? " (with the C-grade CM)" : ""
+          }${
+            rejectsOff.gt(0)
+              ? ` (${amount(rejectsOff)} for rejects over the ${draft.rejectAllowancePercent}% allowance)`
+              : ""
           } - advance and payments ${amount(totals.paid)} = final payable ${amount(totals.payable)}${
             taken.length > 0
               ? `; ${taken.length} fault${taken.length === 1 ? "" : "s"} marked deducted`
@@ -752,7 +847,22 @@ export function cmSettlementDocument(
     }),
     { a: 0, b: 0, c: 0, reject: 0, pieces: 0 },
   );
+  const overRows = d.styles
+    .filter((st) => st.overAllowance > 0)
+    .map((st) => ({
+      cells: [
+        `Rejects over the ${d.rejectAllowancePercent ?? "2"}% allowance`,
+        `${st.code}, ${count(st.overAllowance)} of ${count(st.reject)} rejects`,
+        Number(st.rejectPenalty) > 0 ? amount(st.rejectPenalty) : "No target price",
+      ],
+      details: [
+        `Allowance ${count(st.allowance ?? 0)} of ${count(st.cut ?? 0)} pieces cut${
+          st.targetPrice ? `; ${amount(st.targetPrice)} a piece (target price)` : ""
+        }`,
+      ],
+    }));
   const deductionRows = [
+    ...overRows,
     ...d.faults.map((f) => ({
       cells: [
         `${f.number} · ${f.what}`,
@@ -826,6 +936,13 @@ export function cmSettlementDocument(
             details: [
               st.name,
               ...(st.missing > 0 ? [`${count(st.missing)} missing (not paid)`] : []),
+              ...(st.allowance !== null && st.reject > 0
+                ? [
+                    `Reject allowance ${count(st.allowance)} (${d.rejectAllowancePercent}% of ${count(st.cut ?? 0)} cut)${
+                      st.overAllowance > 0 ? `, ${count(st.overAllowance)} over` : ""
+                    }`,
+                  ]
+                : []),
             ],
           })),
           {

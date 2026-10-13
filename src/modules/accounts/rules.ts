@@ -15,7 +15,8 @@ import type { PermissionKey } from "@/modules/rbac/permissions";
 type Can = { can: (permission: PermissionKey) => boolean };
 type Amount = Prisma.Decimal | string | number;
 const positive = (v: Amount) => new Prisma.Decimal(v).gt(0);
-const lower = (text: string) => text.toLowerCase().replace(/_/g, " ");
+/** "PURCHASE_RETURN" -> "purchase return"; "CM_SETTLEMENT" -> "CM settlement". */
+const lower = (text: string) => text.toLowerCase().replace(/_/g, " ").replace(/^cm /, "CM ");
 
 const RECEIVE = "Only Accounts can record money received.";
 const PAY = "Only Accounts can record money paid out.";

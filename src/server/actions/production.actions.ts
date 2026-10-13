@@ -7,6 +7,7 @@ import { runAction } from "@/lib/result";
 import { requireAnyPermission, requirePermission } from "@/modules/auth/context";
 import * as files from "@/modules/files/file.service";
 import * as actionLog from "@/modules/production/action-log.service";
+import * as batchMoney from "@/modules/production/batch-money.service";
 import * as batchIssue from "@/modules/production/batch-issue.service";
 import * as batchOrders from "@/modules/production/batch-orders.service";
 import * as batchScreens from "@/modules/production/batch-screens.service";
@@ -62,6 +63,8 @@ const readFaults = () => requireAnyPermission("production.view", "materials.view
 const logFaults = () => requireAnyPermission("production.manage", "materials.purchase");
 /** Finishing counts and mending: Production Managers and the store, who receive goods. */
 const countFinishing = () => requireAnyPermission("production.manage", "production.stock_intake");
+/** Paying a factory or supplier for a batch (advance CM): Accounts only. */
+const payMoney = () => requirePermission("accounts.payments.record");
 const pickProjects = () =>
   requireAnyPermission("production.manage", "accounts.payments.record", "production.stock_intake");
 
@@ -299,6 +302,43 @@ export const getActionLogAction = async (
   scope: { projectId: string } | { batchId: string },
   query: unknown,
 ) => runAction(async () => actionLog.getActionLog(await view(), scope, query));
+
+// --- Batch money: Cost Setup, advance CM, final CM settlement ------------------------
+export const getBatchMoneyAction = async (batchId: string) =>
+  runAction(async () => batchMoney.getBatchMoney(await readContracts(), batchId));
+/** A batch cost (QC, travel...) on one style or split equally among its open styles. */
+export const addBatchCostAction = async (batchId: string, input: unknown) =>
+  change(async () => {
+    const r = await costs.addBatchCost(await recordCosts(), batchId, input, await getRequestMeta());
+    return { total: r.total, shares: r.shares };
+  });
+/** Accounts pays the factory (or a supplier) for the batch: an advance on the CM. */
+export const payForBatchAction = async (batchId: string, input: unknown) =>
+  change(async () => {
+    const r = await batchMoney.payForBatch(
+      await payMoney(),
+      batchId,
+      input,
+      await getRequestMeta(),
+    );
+    return { id: r.id, number: r.number, amount: r.amount, supplier: r.supplier?.name ?? null };
+  });
+export const getCmSettlementScreenAction = async (batchId: string) =>
+  runAction(async () => batchMoney.getCmSettlementScreen(await readContracts(), batchId));
+export const settleCmAction = async (batchId: string, input: unknown) =>
+  change(async () => {
+    const r = await batchMoney.settleCm(
+      await recordCosts(),
+      batchId,
+      input,
+      await getRequestMeta(),
+    );
+    return { id: r.id, number: r.number, payable: r.payable, faults: r.faults };
+  });
+export const undoCmSettlementAction = async (settlementId: string, input: unknown) =>
+  change(async () =>
+    batchMoney.undoCmSettlement(await recordCosts(), settlementId, input, await getRequestMeta()),
+  );
 
 // --- Overview & projects -------------------------------------------------------------
 export const getProductionOverviewAction = async () =>

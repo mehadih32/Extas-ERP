@@ -25,10 +25,12 @@ import type { CompanyContext } from "@/modules/auth/context";
 import { assertClaimNotPaidBack } from "@/modules/hr/claim-guard";
 import { projectMaterialUsage } from "@/modules/materials/usage";
 import { assertPartyCanTransact, recordPartyActivity } from "@/modules/parties/party.service";
+import { splitEqually } from "@/modules/production/batch-money";
 import { money, ZERO } from "@/modules/production/costing";
 import {
   assertCanPayOut,
   assertCanSeeProductionCosts,
+  isProjectClosed,
   lockOpenProjects,
   projectCostSummaries,
   projectCostSummary,
@@ -36,6 +38,7 @@ import {
 } from "@/modules/production/project-costs";
 import { canPayBill, canVoidBill } from "@/modules/production/rules";
 import {
+  addBatchCostSchema,
   addProjectCostSchema,
   costHeadSchema,
   createBillSchema,
@@ -735,53 +738,218 @@ export async function addProjectCost(
     const project = (
       await lockOpenProjects(tx, companyId, [projectId], "no more costs can be added")
     ).get(projectId)!;
-    const amount = money(input.amount);
-    const method = input.method ?? "CASH";
-    const paidFrom = await cashAccountFor(tx, companyId, method, input.accountId);
-    const acc = await ensureControlAccounts(companyId, tx);
-    const expense = await tx.expense.create({
-      data: {
-        companyId,
-        number: await nextDocumentNumber(tx, companyId, "EXPENSE_VOUCHER"),
-        date,
-        headId: head.id,
-        amount,
-        paymentType: "CASH_BANK",
-        paidFromAccountId: paidFrom,
-        projectId: project.id,
-        description:
-          [input.description, input.reference ? `Ref ${input.reference}` : null]
-            .filter(Boolean)
-            .join(" · ") || null,
-      },
+    await paidCostTx(tx, ctx, meta, { ...input, date, head, project, amount: money(input.amount) });
+  }, TX_OPTIONS);
+  return getProjectCostSheet(ctx, projectId);
+}
+
+/**
+ * A cost of a master batch (QC, travel...) by its Cost Setup: on one of its
+ * styles, or split equally among its open styles (to the cent, the odd cents to
+ * the first ones). Owed to a supplier, it is one bill split across the styles;
+ * paid now from cash or bank (Accounts), one cost on each style. Either way
+ * each style carries its share in its own cost.
+ */
+export async function addBatchCost(
+  ctx: CompanyContext,
+  batchId: string,
+  raw: unknown,
+  meta?: RequestMeta,
+) {
+  const input = addBatchCostSchema.parse(raw);
+  if (input.paymentType === "CASH_BANK") assertCanPayOut(ctx);
+  const companyId = ctx.company.id;
+  const batch = await ctx.db.productionBatch.findUnique({
+    where: { id: batchId },
+    select: {
+      id: true,
+      code: true,
+      projects: { select: { id: true, code: true, status: true }, orderBy: { code: "asc" } },
+    },
+  });
+  if (!batch) throw new AppError("NOT_FOUND", "Master batch not found.");
+  let styles: Array<{ id: string; code: string }>;
+  if (input.split === "ONE") {
+    const style = batch.projects.find((p) => p.id === input.projectId);
+    if (!style) {
+      throw new AppError("VALIDATION", "Choose one of the batch's styles.", {
+        projectId: ["Not a style of this batch"],
+      });
+    }
+    if (isProjectClosed(style)) {
+      throw new AppError(
+        "CONFLICT",
+        `${style.code} is ${style.status.toLowerCase()}; no more costs can be added.`,
+        { projectId: ["This style is closed"] },
+      );
+    }
+    styles = [style];
+  } else {
+    styles = batch.projects.filter((p) => !isProjectClosed(p));
+    if (styles.length === 0) {
+      throw new AppError("CONFLICT", `${batch.code} has no open style to share the cost.`);
+    }
+  }
+  const shares = splitEqually(input.amount, styles.length);
+  if (shares.some((share) => share.lte(0))) {
+    throw new AppError("VALIDATION", `Too little to split among ${styles.length} styles.`, {
+      amount: [`At least ${(styles.length / 100).toFixed(2)}`],
     });
-    const entry = await postJournalEntry(tx, {
-      companyId,
-      date,
-      description: `${expense.number} — ${head.name} for ${project.code}`,
-      sourceType: "EXPENSE",
-      sourceId: expense.id,
-      postedById: ctx.user.id,
-      lines: [
-        { accountId: acc.WORK_IN_PROGRESS, debit: amount, memo: `${project.code} · ${head.name}` },
-        { accountId: paidFrom, credit: amount, memo: input.reference ?? undefined },
-      ],
-    });
-    await tx.expense.update({ where: { id: expense.id }, data: { journalEntryId: entry.id } });
-    await refreshProjectCosts(tx, companyId, [project.id]);
-    await auditInCompany(
+  }
+  const date = input.date ? toInstant(input.date, ctx.company.timezone) : new Date();
+  const head = (await loadCostHeads(ctx, [input.expenseHeadId])).get(input.expenseHeadId)!;
+  const total = money(input.amount);
+  const splitNote =
+    styles.length > 1 ? `${batch.code}, split equally among ${styles.length} styles` : null;
+  const description = [input.description, splitNote].filter(Boolean).join(" · ") || undefined;
+  const auditBatch = (tx: Tx) =>
+    auditInCompany(
       ctx,
       meta,
       {
         action: "CREATE",
-        entityType: "Expense",
-        entityId: expense.id,
-        summary: `${expense.number}: ${amount.toFixed(2)} ${head.name} for ${project.code}, paid (${method})`,
+        entityType: "ProductionBatch",
+        entityId: batch.id,
+        summary: `Cost Setup: ${total.toFixed(2)} ${head.name} ${
+          styles.length > 1 ? `split equally among ${styles.length} styles` : "on one style"
+        } of ${batch.code} (${styles.map((st, i) => `${st.code} ${shares[i]!.toFixed(2)}`).join(", ")})`,
       },
       tx,
     );
-  }, TX_OPTIONS);
-  return getProjectCostSheet(ctx, projectId);
+
+  if (input.supplierId) {
+    const billInput: BillInput = {
+      supplierId: input.supplierId,
+      supplierRef: input.supplierRef,
+      billDate: date,
+      paymentType: input.paymentType,
+      method: input.method,
+      accountId: input.accountId,
+      reference: input.reference,
+      notes: splitNote ?? undefined,
+      allocations: styles.map((st, i) => ({
+        projectId: st.id,
+        expenseHeadId: head.id,
+        amount: shares[i]!.toNumber(),
+        description: input.description,
+      })),
+    };
+    const prepared = await prepareBill(ctx, billInput);
+    if (!input.allowDuplicate) {
+      await assertNotDuplicate(ctx, {
+        total,
+        date,
+        supplier: prepared.supplier,
+        supplierRef: input.supplierRef,
+      });
+    }
+    await prisma.$transaction(async (tx) => {
+      await createBillTx(tx, ctx, billInput, prepared, meta);
+      await auditBatch(tx);
+    }, TX_OPTIONS);
+  } else {
+    if (!input.allowDuplicate) {
+      await assertNotDuplicate(ctx, {
+        total: shares[0]!,
+        date,
+        projectId: styles[0]!.id,
+        headId: head.id,
+      });
+    }
+    await prisma.$transaction(async (tx) => {
+      const locked = await lockOpenProjects(
+        tx,
+        companyId,
+        styles.map((st) => st.id),
+        "no more costs can be added",
+      );
+      for (const [i, st] of styles.entries()) {
+        await paidCostTx(tx, ctx, meta, {
+          ...input,
+          description,
+          date,
+          head,
+          project: locked.get(st.id)!,
+          amount: shares[i]!,
+        });
+      }
+      await auditBatch(tx);
+    }, TX_OPTIONS);
+  }
+  return {
+    batch: { id: batch.id, code: batch.code },
+    total: total.toFixed(2),
+    shares: styles.map((st, i) => ({ id: st.id, code: st.code, amount: shares[i]!.toFixed(2) })),
+  };
+}
+
+/**
+ * One cost paid now from cash, bank or wallet on a project locked open in this
+ * transaction: Dr Work in Progress, Cr Cash / Bank / Wallet. Accounts only (the
+ * caller checks).
+ */
+export async function paidCostTx(
+  tx: Tx,
+  ctx: CompanyContext,
+  meta: RequestMeta | undefined,
+  input: {
+    project: { id: string; code: string };
+    head: { id: string; name: string };
+    amount: Prisma.Decimal;
+    date: Date;
+    method?: PaymentMethod;
+    accountId?: string;
+    reference?: string | null;
+    description?: string | null;
+  },
+) {
+  const companyId = ctx.company.id;
+  const { project, head, amount, date } = input;
+  const method = input.method ?? "CASH";
+  const paidFrom = await cashAccountFor(tx, companyId, method, input.accountId);
+  const acc = await ensureControlAccounts(companyId, tx);
+  const expense = await tx.expense.create({
+    data: {
+      companyId,
+      number: await nextDocumentNumber(tx, companyId, "EXPENSE_VOUCHER"),
+      date,
+      headId: head.id,
+      amount,
+      paymentType: "CASH_BANK",
+      paidFromAccountId: paidFrom,
+      projectId: project.id,
+      description:
+        [input.description, input.reference ? `Ref ${input.reference}` : null]
+          .filter(Boolean)
+          .join(" · ") || null,
+    },
+  });
+  const entry = await postJournalEntry(tx, {
+    companyId,
+    date,
+    description: `${expense.number} — ${head.name} for ${project.code}`,
+    sourceType: "EXPENSE",
+    sourceId: expense.id,
+    postedById: ctx.user.id,
+    lines: [
+      { accountId: acc.WORK_IN_PROGRESS, debit: amount, memo: `${project.code} · ${head.name}` },
+      { accountId: paidFrom, credit: amount, memo: input.reference ?? undefined },
+    ],
+  });
+  await tx.expense.update({ where: { id: expense.id }, data: { journalEntryId: entry.id } });
+  await refreshProjectCosts(tx, companyId, [project.id]);
+  await auditInCompany(
+    ctx,
+    meta,
+    {
+      action: "CREATE",
+      entityType: "Expense",
+      entityId: expense.id,
+      summary: `${expense.number}: ${amount.toFixed(2)} ${head.name} for ${project.code}, paid (${method})`,
+    },
+    tx,
+  );
+  return expense;
 }
 
 /** Voids a cost paid from cash / bank (its entry is reversed). Accounts only. */

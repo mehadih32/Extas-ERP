@@ -23,6 +23,7 @@ import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { getPartyBalance } from "@/modules/parties/ledger.service";
 import { recordPartyActivity } from "@/modules/parties/party.service";
+import { settledByProject } from "@/modules/production/settlement.service";
 
 /*
  * Paying a supplier on account (not against one bill): one payment voucher,
@@ -44,6 +45,7 @@ const paymentInclude = {
   account: { select: { id: true, code: true, name: true } },
   supplierBill: { select: { id: true, number: true } },
   project: { select: { id: true, code: true, name: true } },
+  batch: { select: { id: true, code: true, name: true } },
   journalEntry: { select: { id: true, number: true, isReversed: true } },
 } satisfies Prisma.PaymentInclude;
 
@@ -64,6 +66,8 @@ function presentPayment(p: PaymentRow) {
     bill: p.supplierBill,
     /** The production project it was paid for (settles that project's bills first). */
     project: p.project,
+    /** The master batch it was paid for (an advance; settles its styles' bills first). */
+    batch: p.batch,
     journalEntry: p.journalEntry,
     isVoid: p.journalEntry?.isReversed ?? false,
     createdAt: p.createdAt,
@@ -150,6 +154,20 @@ export async function paySupplier(ctx: CompanyContext, raw: unknown, meta?: Requ
       })
     : null;
   if (input.projectId && !project) throw new AppError("NOT_FOUND", "Production project not found.");
+  const batch = input.batchId
+    ? await ctx.db.productionBatch.findUnique({
+        where: { id: input.batchId },
+        select: { id: true, code: true },
+      })
+    : null;
+  if (input.batchId && !batch) throw new AppError("NOT_FOUND", "Master batch not found.");
+  if (batch && !settledByProject(supplier.supplierCategories)) {
+    throw new AppError(
+      "VALIDATION",
+      `${supplier.name} supplies accessories, which are paid on their running ledger, not by batch. Pay without a batch.`,
+      { batchId: ["Accessories are paid on the running ledger."] },
+    );
+  }
   if (project) {
     const owed = (await supplierProjectBalances(prisma, companyId, supplier.id)).get(project.id);
     if (!owed || owed.due.lte(0)) {
@@ -160,7 +178,11 @@ export async function paySupplier(ctx: CompanyContext, raw: unknown, meta?: Requ
       );
     }
   }
-  const forWhat = project ? `for ${project.code}` : "on account";
+  const forWhat = project
+    ? `for ${project.code}`
+    : batch
+      ? `for ${batch.code} (advance)`
+      : "on account";
 
   const result = await prisma.$transaction(async (tx) => {
     const paidFrom = await cashAccountFor(tx, companyId, input.method, input.accountId);
@@ -176,6 +198,7 @@ export async function paySupplier(ctx: CompanyContext, raw: unknown, meta?: Requ
         paymentDate,
         accountId: paidFrom,
         projectId: project?.id ?? null,
+        batchId: batch?.id ?? null,
         reference: input.reference ?? null,
         notes: input.notes ?? null,
       },
@@ -194,7 +217,11 @@ export async function paySupplier(ctx: CompanyContext, raw: unknown, meta?: Requ
           accountId: acc.PAYABLE,
           partyId: supplier.id,
           debit: amount,
-          memo: project ? `For ${project.code}` : "On account",
+          memo: project
+            ? `For ${project.code}`
+            : batch
+              ? `Advance for ${batch.code}`
+              : "On account",
         },
         { accountId: paidFrom, credit: amount, memo: input.reference ?? undefined },
       ],

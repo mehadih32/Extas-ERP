@@ -35,6 +35,7 @@ export const DEFAULT_PREFIXES: Partial<Record<DocumentType, string>> = {
   CUTTING_REPORT: "CUT",
   EMBROIDERY_JOB: "EMB",
   FINISHING_REPORT: "FIN",
+  CM_SETTLEMENT: "CMS",
 };
 
 /**

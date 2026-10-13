@@ -17,6 +17,8 @@ import { ensureControlAccounts } from "@/modules/accounts/control-accounts";
  * A payment made for one production project settles that project's bills
  * first (oldest first, up to the project's part of a bill split between
  * projects); what it does not need joins everything else, oldest due first.
+ * A payment made for a master batch (an advance on its CM) does the same for
+ * the bills of the batch's styles.
  */
 
 type Tx = Prisma.TransactionClient;
@@ -140,6 +142,31 @@ async function planSettlement(db: Db, companyId: string, supplierId: string) {
     _sum: { amount: true },
     orderBy: { projectId: "asc" },
   });
+  // Payments made for one master batch (advances), with the batch's styles.
+  const forBatches = await db.payment.groupBy({
+    by: ["batchId"],
+    where: {
+      companyId,
+      direction: "PAID",
+      partyId: supplierId,
+      supplierBillId: null,
+      projectId: null,
+      batchId: { not: null },
+      ...livePayment,
+    },
+    _sum: { amount: true },
+    orderBy: { batchId: "asc" },
+  });
+  const batchStyles = new Map<string, string[]>();
+  if (forBatches.length > 0) {
+    const styles = await db.productionProject.findMany({
+      where: { companyId, batchId: { in: forBatches.map((b) => b.batchId!) } },
+      select: { id: true, batchId: true },
+    });
+    for (const s of styles) {
+      batchStyles.set(s.batchId!, [...(batchStyles.get(s.batchId!) ?? []), s.id]);
+    }
+  }
 
   // The supplier's Payable lines that still count (an entry and its reversal cancel out).
   const acc = await ensureControlAccounts(companyId, db);
@@ -187,18 +214,20 @@ async function planSettlement(db: Db, companyId: string, supplierId: string) {
       (a.bill ? 1 : 0) - (b.bill ? 1 : 0),
   );
 
-  // Each project's payments settle its own bills first, oldest first.
+  // Each project's payments settle its own bills first, oldest first; then each
+  // batch's payments settle the bills of its styles.
   const forProject = new Map<string, Prisma.Decimal>();
   let paidForProjects = ZERO;
-  if (forProjects.length > 0) {
+  if (forProjects.length > 0 || forBatches.length > 0) {
     const shares = await billProjectShares(db, bills);
-    for (const row of forProjects) {
-      let left = row._sum.amount ?? ZERO;
+    const settleFirst = (amount: Prisma.Decimal, projectIds: string[]) => {
+      let left = amount;
       for (const due of dues) {
         if (left.lte(0)) break;
         const bill = due.bill;
-        const share = bill ? shares.get(bill.id)?.get(row.projectId!) : undefined;
-        if (!bill || !share) continue;
+        const forBill = bill ? shares.get(bill.id) : undefined;
+        const share = projectIds.reduce((t, p) => t.plus(forBill?.get(p) ?? ZERO), ZERO);
+        if (!bill || share.lte(0)) continue;
         const taken = forProject.get(bill.id) ?? ZERO;
         const open = Prisma.Decimal.min(
           projectPart(due.amount, share, bill.totalAmount),
@@ -210,6 +239,10 @@ async function planSettlement(db: Db, companyId: string, supplierId: string) {
         paidForProjects = paidForProjects.plus(applied);
         left = left.minus(applied);
       }
+    };
+    for (const row of forProjects) settleFirst(row._sum.amount ?? ZERO, [row.projectId!]);
+    for (const row of forBatches) {
+      settleFirst(row._sum.amount ?? ZERO, batchStyles.get(row.batchId!) ?? []);
     }
   }
 

@@ -34,9 +34,10 @@ export type PrintType = (typeof PRINT_TYPES)[number];
  * signed copy of the terms of employment (hr/terms-pdf.ts), the experience and
  * clearance certificate (hr/exit-pdf.ts), the employee 360° report
  * (hr/report.service.ts), a style's tech pack (production/tech-pack.service.ts),
- * a purchase order for the supplier (materials/order-pdf.service.ts) and a
- * batch's supplier or factory agreement (production/contract.service.ts), made
- * when asked for and not kept.
+ * a purchase order for the supplier (materials/order-pdf.service.ts), a
+ * batch's supplier or factory agreement (production/contract.service.ts) and
+ * its final CM settlement (production/batch-money.service.ts), made when asked
+ * for and not kept.
  */
 export type RecordPrintType =
   | "SIGNED_TERMS"
@@ -45,7 +46,8 @@ export type RecordPrintType =
   | "TECH_PACK"
   | "PURCHASE_ORDER"
   | "PRODUCTION_CONTRACT"
-  | "SUPPLIER_REPORT_CARD";
+  | "SUPPLIER_REPORT_CARD"
+  | "CM_SETTLEMENT";
 
 /**
  * Bump when the layout changes, so documents printed again get the new look.

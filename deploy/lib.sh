@@ -161,6 +161,39 @@ SQL
   wait_healthy demo-app
 }
 
+# Whether Caddy has the demo site's HTTPS certificate (DATA_DIR/caddy/data is its /data).
+demo_certificate_ready() {
+  local crt
+  for crt in "$DATA_DIR"/caddy/data/caddy/certificates/*/"$DEMO_DOMAIN/$DEMO_DOMAIN.crt"; do
+    case "$crt" in
+      *staging*) ;;
+      *) [ -s "$crt" ] && return 0 ;;
+    esac
+  done
+  return 1
+}
+
+# Says whether the demo site has its HTTPS certificate. Caddy gets it in the
+# background once the demo address's DNS record points at this server, so this
+# waits up to two minutes for it, then says what Let's Encrypt answered. GitHub's
+# log is public, so web and email addresses are left out of that answer.
+report_demo_certificate() {
+  local reason
+  for _ in $(seq 1 40); do
+    if demo_certificate_ready; then
+      say "The demo site's HTTPS certificate is ready"
+      return 0
+    fi
+    sleep 3
+  done
+  reason="$(compose logs --no-log-prefix --since 5m caddy 2>/dev/null |
+    grep -F "\"identifier\":\"$DEMO_DOMAIN\"" | grep -F '"could not get certificate from issuer"' |
+    grep -F letsencrypt | tail -n 1 | sed -n 's/.*"error":"\(.*\)"}$/\1/p' |
+    sed -E 's#https?://[^ ]+##g; s/ ?\[?mailto:[^] ]*\]?//g; s/[^ ]+@[^ ]+/an email address/g; s/\\"/"/g' |
+    cut -c1-300)" || true
+  say "The demo site has no HTTPS certificate yet, so its address does not open. Let's Encrypt said: ${reason:-nothing yet}. Caddy keeps trying by itself, and each update tries again at once"
+}
+
 # Stops the demo site, when it is running; its data stays in DATA_DIR/demo.
 stop_demo() {
   [ -n "$(demo_compose ps -aq demo-app demo-seed demo-db 2>/dev/null)" ] || return 0

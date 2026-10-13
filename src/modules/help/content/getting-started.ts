@@ -1,6 +1,6 @@
 import type { HelpSection } from "../types";
 
-/** Signing in, passwords, companies, finding your way, the inbox, the look of the app. */
+/** Signing in, passwords, companies, finding your way, the inbox, the look of the app, the demo site. */
 export const gettingStartedHelp: HelpSection = {
   id: "getting-started",
   title: "শুরু করুন (Getting started)",
@@ -374,6 +374,56 @@ export const gettingStartedHelp: HelpSection = {
       ],
       tips: [
         "একই কাজ বারবার চেষ্টা করলে কোনো লেনদেন দুবার হয়ে যেতে পারে। আগে তালিকায় দেখে নিন কাজটি হয়েছে কি না।",
+      ],
+    },
+    {
+      slug: "demo-site",
+      title: "ডেমো সাইটে অনুশীলন করবেন যেভাবে",
+      summary:
+        "আসল হিসাব না ছুঁয়ে Extas ERP চালিয়ে দেখার আলাদা ঠিকানা। সেখানে Five Style Polo ব্যাচটি শুরু থেকে শেষ পর্যন্ত আগে থেকেই আছে।",
+      keywords: [
+        "demo",
+        "demo site",
+        "practice",
+        "sample data",
+        "five style polo",
+        "ডেমো",
+        "ডেমো সাইট",
+        "অনুশীলন",
+        "প্র্যাকটিস",
+        "নমুনা",
+      ],
+      routes: [],
+      who: "যাঁকে অ্যাডমিন ডেমো সাইটের ঠিকানা দিয়েছেন। শুরুতে শুধু মালিক সাইন ইন করতে পারেন।",
+      steps: [
+        {
+          text: "ডেমো সাইট হলো Extas ERP-এর আলাদা একটি কপি, নিজের ডেটাবেস ও ফাইল নিয়ে। আসল ERP-এর ঠিকানায় শুরুর erp-এর জায়গায় demo লিখলে ডেমো সাইটের ঠিকানা পাবেন।",
+        },
+        {
+          text: "ডেমো সাইটের প্রতিটি পাতার একেবারে ওপরে হলুদ ফিতায় “Demo site” লেখা থাকে। এই লেখা দেখলে বুঝবেন আপনি ডেমো সাইটে আছেন, আসল ERP-এ নয়।",
+          image: {
+            id: "demo-site-1",
+            caption:
+              "ডেমো সাইটের ওপরের হলুদ ফিতা: “Demo site: practice data only. Nothing here reaches the live ERP.”",
+          },
+        },
+        {
+          text: "মালিক আসল ERP-এর একই ইমেইল ও পাসওয়ার্ড দিয়ে “Sign in” করবেন। অন্য কাউকে দেখাতে চাইলে ডেমো সাইটের Settings-এর “Team” ট্যাব থেকে তাঁকে যোগ করুন।",
+        },
+        {
+          text: "Production মেনুর “Batches” ট্যাবে Five Style Polo ব্যাচটি আছে: ৬,০০০ পিসের পাঁচটি স্টাইল, কাটিং, এমব্রয়ডারি, ফিনিশিং, ফল্ট লগ আর চূড়ান্ত CM সেটেলমেন্ট। ব্যাচ, স্টাইল, স্টক, সাপ্লায়ারের হিসাব আর জার্নাল এন্ট্রি খুলে দেখুন।",
+          image: {
+            id: "demo-site-2",
+            caption: "ডেমো সাইটে Five Style Polo ব্যাচের “Batch summary” পাতা",
+          },
+        },
+        {
+          text: "যেকোনো কাজ চালিয়ে দেখুন: অর্ডার, বিল, পেমেন্ট বা নতুন ব্যাচ। ডেমো সাইটে যা করবেন তা কখনো আসল ERP-এ যায় না।",
+        },
+      ],
+      tips: [
+        "আসল কাজ ডেমো সাইটে লিখবেন না। সেটি আসল হিসাবে কখনো যাবে না।",
+        "মালিকের ডেমো পাসওয়ার্ড সবসময় আসল ERP-এর পাসওয়ার্ডই থাকে। ডেমোতে বদলালেও পরের আপডেটে আবার আসলটি হয়ে যায়।",
       ],
     },
   ],

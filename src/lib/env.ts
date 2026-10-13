@@ -33,6 +33,8 @@ const serverEnvSchema = z.object({
     (v) => (v === "" ? undefined : v),
     z.enum(["on", "off"]).optional(),
   ),
+  /** The demo site (deploy/README.md, "The demo site"): "on" shows the "Demo site" bar on every page. */
+  DEMO_SITE: z.preprocess((v) => (v === "" ? undefined : v), z.enum(["on", "off"]).optional()),
   GOOGLE_DRIVE_CLIENT_ID: z.string().optional(),
   GOOGLE_DRIVE_CLIENT_SECRET: z.string().optional(),
 });

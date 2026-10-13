@@ -23,6 +23,7 @@ take_update_lock
 
 say "Preparing the data folders in $DATA_DIR"
 prepare_folders
+prepare_demo_site
 
 if db_running; then
   say "Saving a safety copy of the database"
@@ -54,9 +55,28 @@ if ! wait_healthy app; then
   die "the app did not start; the logs above say why."
 fi
 
+# The demo site starts after the ERP itself, so the ERP never waits on it.
+if [ -n "$DEMO_DOMAIN" ]; then
+  say "Starting the demo site"
+  if start_demo; then
+    say "The demo site is running"
+  else
+    demo_compose logs --tail 80 demo-seed demo-app || true
+    say "The demo site did not start; the live ERP is not affected. The logs above say why"
+  fi
+else
+  stop_demo
+fi
+# Caddy reads the demo site's part, or that it is gone. If it cannot, it keeps what it had.
+compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1 ||
+  say "HTTPS kept its earlier setup; see sudo ./deploy/logs.sh caddy"
+
 # Images and build steps left over from earlier versions.
 docker image prune -f >/dev/null
 docker builder prune -f --filter until=720h >/dev/null
 
 say "Extas ERP is running at https://$APP_DOMAIN"
 echo "Check it: https://$APP_DOMAIN/api/health should show \"status\":\"ok\"."
+if [ -n "$DEMO_DOMAIN" ]; then
+  echo "The demo site: https://$DEMO_DOMAIN (README.md, \"The demo site\")."
+fi

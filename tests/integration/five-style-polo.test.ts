@@ -30,7 +30,7 @@ import {
   poloPlan,
   POLO_STYLES,
   runFiveStylePolo,
-} from "../simulation/five-style-polo/five-style-polo";
+} from "../../prisma/demo/five-style-polo";
 import { fiveStylePoloReport, readFiveStylePolo } from "../simulation/five-style-polo/report";
 import { wipeSimulation } from "../simulation/five-style-polo/wipe";
 

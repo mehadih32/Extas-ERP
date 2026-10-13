@@ -4,8 +4,12 @@ import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import { lockSupplierAccount, settleSupplierBills } from "@/modules/accounts/supplier-settlement";
 import { deleteStoredFile } from "@/modules/files/file.service";
-import type { SimulationManifest } from "./five-style-polo";
-import { RECORD_NAMES, type SimulationRecords, simulationRecords } from "./records";
+import type { SimulationManifest } from "../../../prisma/demo/five-style-polo";
+import {
+  RECORD_NAMES,
+  type SimulationRecords,
+  simulationRecords,
+} from "../../../prisma/demo/records";
 
 /*
  * The wipe: deletes every record a simulation run made, from its batch and the

@@ -144,6 +144,8 @@ services:
       ACME_EMAIL: ${ACME_EMAIL:?Run deploy/configure.sh first}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # The demo site's part, while it is on (deploy.sh copies demo.caddy here).
+      - ${DATA_DIR:-/srv/extras-erp}/caddy/sites:/etc/caddy/sites:ro
       - ${DATA_DIR:-/srv/extras-erp}/caddy/data:/data
       - ${DATA_DIR:-/srv/extras-erp}/caddy/config:/config
     depends_on:
@@ -152,8 +154,118 @@ services:
     networks: [edge]
     logging: *logging
 
+  # --- The demo site (README.md, "The demo site") ----------------------------------
+  # A separate copy of the ERP at DEMO_DOMAIN, for trying things out: its own
+  # database, files and network, loaded with the Five Style Polo batch. It cannot
+  # reach the live database. Only deploy.sh starts it, while deploy/demo.conf says
+  # DEMO_SITE=on; the live ERP never waits for it.
+  demo-db:
+    profiles: [demo]
+    image: postgres:16-alpine
+    restart: unless-stopped
+    shm_size: 128mb
+    stop_grace_period: 1m
+    environment:
+      POSTGRES_DB: extras_demo
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DEMO_POSTGRES_PASSWORD:-}
+      POSTGRES_INITDB_ARGS: --data-checksums --encoding=UTF8 --locale=C.UTF-8
+      APP_DB_USER: extras_demo_app
+      APP_DB_PASSWORD: ${DEMO_APP_DB_PASSWORD:-}
+    command:
+      - postgres
+      - -c
+      - shared_buffers=128MB
+      - -c
+      - effective_cache_size=512MB
+      - -c
+      - max_connections=30
+      - -c
+      - idle_in_transaction_session_timeout=10min
+    volumes:
+      - ${DATA_DIR:-/srv/extras-erp}/demo/postgres:/var/lib/postgresql/data
+      - ./postgres/init-app-user.sh:/docker-entrypoint-initdb.d/10-app-user.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", 'pg_isready -U postgres -d "$${POSTGRES_DB}"']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+      start_interval: 2s
+    networks: [demo-internal]
+    logging: *logging
+
+  # Brings the demo database up to date, makes the owner and the companies, and
+  # loads the Five Style Polo batch the first time (prisma/demo/seed-demo.ts).
+  demo-seed:
+    profiles: [demo]
+    image: extras-erp-tools:latest
+    restart: "no"
+    command:
+      - sh
+      - -c
+      - >-
+        npx prisma migrate deploy && npx prisma db seed &&
+        npx tsx prisma/demo/seed-demo.ts && chown -R 1001:1001 /data/uploads
+    environment:
+      DATABASE_URL: postgresql://extras_demo_app:${DEMO_APP_DB_PASSWORD:-}@demo-db:5432/extras_demo?schema=public
+      DEMO_SITE: "on"
+      UPLOAD_DIR: /data/uploads
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-}
+      SEED_ADMIN_NAME: ${SEED_ADMIN_NAME:-Owner}
+      SEED_COMPANIES: ${SEED_COMPANIES:-Extas,Fabric Apparel}
+      # The live owner's password hash (deploy.sh), so the same password works here.
+      DEMO_OWNER_PASSWORD_HASH: ${DEMO_OWNER_PASSWORD_HASH:-}
+    volumes:
+      - ${DATA_DIR:-/srv/extras-erp}/demo/uploads:/data/uploads
+    depends_on:
+      demo-db:
+        condition: service_healthy
+    networks: [demo-internal]
+    logging: *logging
+
+  demo-app:
+    profiles: [demo]
+    image: extras-erp-app:latest
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 30s
+    environment:
+      APP_URL: https://${DEMO_DOMAIN:-demo.invalid}
+      DATABASE_URL: postgresql://extras_demo_app:${DEMO_APP_DB_PASSWORD:-}@demo-db:5432/extras_demo?schema=public&connection_limit=5
+      ENCRYPTION_KEY: ${DEMO_ENCRYPTION_KEY:-}
+      # Shows the "Demo site" bar on every page.
+      DEMO_SITE: "on"
+      # Practice data needs no backups.
+      BACKUP_SCHEDULER: "off"
+    volumes:
+      - ${DATA_DIR:-/srv/extras-erp}/demo/uploads:/data/uploads
+      - ${DATA_DIR:-/srv/extras-erp}/demo/backups:/data/backups
+    depends_on:
+      demo-db:
+        condition: service_healthy
+      demo-seed:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/api/health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+      start_interval: 3s
+    # demo-internal: the demo database only. edge: Caddy.
+    networks: [demo-internal, edge]
+    logging: *logging
+
 networks:
   # No internet access: the database stays private.
   internal:
+    internal: true
+  # The demo site's own, the same way; the live database is not on it.
+  demo-internal:
     internal: true
   edge: {}

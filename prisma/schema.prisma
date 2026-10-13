@@ -123,6 +123,7 @@ model Company {
   salesReturns         SalesReturn[]
   productionProjects   ProductionProject[]
   productionBatches    ProductionBatch[]
+  productionContracts  ProductionContract[]
   materialNeeds        ProductionMaterialNeed[]
   supplierBills        SupplierBill[]
   stockIntakes         StockIntake[]
@@ -232,6 +233,8 @@ model User {
   materialIssues     MaterialIssue[]       @relation("MaterialIssueCreatedBy")
   materialChallans   MaterialChallan[]     @relation("MaterialChallanCreatedBy")
   productionBatches  ProductionBatch[]     @relation("ProductionBatchCreatedBy")
+  contractsMade      ProductionContract[]  @relation("ProductionContractCreatedBy")
+  contractsChanged   ProductionContract[]  @relation("ProductionContractUpdatedBy")
   purchaseReturns    PurchaseReturn[]      @relation("PurchaseReturnCreatedBy")
   materialMovements  RawMaterialMovement[] @relation("MaterialMovementBy")
   refunds            Refund[]              @relation("RefundCreatedBy")
@@ -1105,7 +1108,7 @@ model Party {
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
 
-  company              Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  company              Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
   quotations           Quotation[]
   proformaInvoices     ProformaInvoice[]
   salesOrders          SalesOrder[]
@@ -1121,9 +1124,10 @@ model Party {
   rawMaterials         RawMaterial[]
   purchaseOrders       PurchaseOrder[]
   purchaseReturns      PurchaseReturn[]
-  productionsAsBuyer   ProductionProject[] @relation("ProductionBuyer")
-  productionsAsFactory ProductionProject[] @relation("ProductionFactory")
-  batchesAsFactory     ProductionBatch[]   @relation("BatchFactory")
+  productionsAsBuyer   ProductionProject[]  @relation("ProductionBuyer")
+  productionsAsFactory ProductionProject[]  @relation("ProductionFactory")
+  batchesAsFactory     ProductionBatch[]    @relation("BatchFactory")
+  productionContracts  ProductionContract[] @relation("ContractParty")
   campaignRecipients   CampaignRecipient[]
   generatedDocuments   GeneratedDocument[]
   projectSettlements   ProjectSettlement[]
@@ -1845,6 +1849,9 @@ model ProductionProject {
   /// The most a piece should cost ("Target price"); the cost guard compares the live
   /// cost per piece (cost so far ÷ pieces to make) with it. Null: no target set.
   targetUnitCost Decimal?         @db.Decimal(14, 2)
+  /// The making charge (CM) per piece agreed with the factory; printed on the factory
+  /// contract and the CM settlement. Null: not agreed yet.
+  cmRate         Decimal?         @db.Decimal(14, 2)
   /// Making notes printed on the tech pack (written by hand, or drafted by AI and edited).
   techPackNotes  String?
   notes          String?
@@ -1902,14 +1909,48 @@ model ProductionBatch {
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
 
-  company   Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  factory   Party?              @relation("BatchFactory", fields: [factoryId], references: [id], onDelete: SetNull)
-  createdBy User?               @relation("ProductionBatchCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  company   Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  factory   Party?               @relation("BatchFactory", fields: [factoryId], references: [id], onDelete: SetNull)
+  createdBy User?                @relation("ProductionBatchCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   projects  ProductionProject[]
   orders    PurchaseOrder[]
+  contracts ProductionContract[]
 
   @@unique([companyId, code])
   @@index([companyId, createdAt])
+}
+
+/// An agreement drafted for a master batch with one of its suppliers or its factory:
+/// the fabric, the accessories or the making (CM). Its clauses are drafted from the
+/// batch (worded by AI when set up, plain rules otherwise), reviewed and changed, and
+/// printed to sign. What it covers (the goods, or the styles and their CM) is always
+/// printed from the batch as it is now.
+model ProductionContract {
+  id          String       @id @default(cuid())
+  companyId   String
+  batchId     String
+  kind        ContractKind
+  partyId     String
+  number      String // "AGR-2026-00001"
+  /// The clauses in order: [{ "title": "Delivery", "text": "..." }].
+  clauses     Json
+  /// The day both sides signed it (null: still a draft).
+  signedOn    DateTime?    @db.Date
+  createdById String?
+  updatedById String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  company   Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  batch     ProductionBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  party     Party           @relation("ContractParty", fields: [partyId], references: [id])
+  createdBy User?           @relation("ProductionContractCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy User?           @relation("ProductionContractUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@unique([companyId, number])
+  @@unique([batchId, kind, partyId])
+  @@index([companyId, batchId])
+  @@index([partyId])
 }
 
 /// What one piece of a style takes of a raw material: a line of its bill of materials
@@ -4083,6 +4124,13 @@ enum ProductionKind {
   DROPSHIP
 }
 
+/// What a batch contract is for: the fabric, the accessories, or the making at the factory.
+enum ContractKind {
+  FABRIC
+  ACCESSORIES
+  FACTORY_CM
+}
+
 /// How a material need is ordered: one total, per garment colour, or per colour and size.
 enum MaterialSplit {
   TOTAL
@@ -4372,6 +4420,7 @@ enum DocumentType {
   MATERIAL_CHALLAN // materials sent to a factory for a production project (MC-2026-00001)
   STAFF_CLAIM // conveyance or local material claimed back by an employee (CLM-2026-00001)
   PRODUCTION_BATCH // a master batch of styles made together (MB-2026-00001)
+  PRODUCTION_CONTRACT // a batch's fabric, accessories or factory (CM) agreement (AGR-2026-00001)
 }
 
 enum TemplateFormat {

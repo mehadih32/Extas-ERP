@@ -8,6 +8,7 @@ import { EmptyState } from "@/components/products/bits";
 import { TimelineBadge } from "@/components/production/badges";
 import { BatchActions } from "@/components/production/batch-actions";
 import { BatchBadge, batchStatus, stylesText } from "@/components/production/batch-card";
+import { BatchContractsPanel } from "@/components/production/contracts";
 import { BatchGuardLine, GUARD_TONES, GUARD_WORDS } from "@/components/production/cost-guard";
 import { BatchMaterialsPanel } from "@/components/production/material-needs";
 import {
@@ -24,7 +25,11 @@ import { money } from "@/components/sales/labels";
 import { Button } from "@/components/ui/button";
 import { formatDay } from "@/lib/display";
 import { cn } from "@/lib/utils";
-import { getBatchMaterialsAction, getBatchScreenAction } from "@/server/actions/production.actions";
+import {
+  getBatchContractsAction,
+  getBatchMaterialsAction,
+  getBatchScreenAction,
+} from "@/server/actions/production.actions";
 import { requireCompanyPage } from "@/server/pages/guards";
 
 export const metadata: Metadata = { title: "Master batch" };
@@ -49,9 +54,11 @@ export default async function BatchPage({
 }) {
   const ctx = await requireCompanyPage();
   const [{ batchId }, query] = await Promise.all([params, searchParams]);
-  const [result, materials] = await Promise.all([
+  const [result, materials, contracts] = await Promise.all([
     getBatchScreenAction(batchId),
     getBatchMaterialsAction(batchId),
+    // Production Managers and Accounts only; nobody else gets the panel.
+    getBatchContractsAction(batchId),
   ]);
   if (!result.ok) {
     if (result.error.code === "NOT_FOUND") notFound();
@@ -200,6 +207,7 @@ export default async function BatchPage({
               )}
             </Panel>
           )}
+          {contracts.ok && <BatchContractsPanel data={contracts.data} />}
           <Panel title="Details" id="details-heading">
             <dl className="mt-4 grid gap-4">
               <Fact label="How the goods are made">

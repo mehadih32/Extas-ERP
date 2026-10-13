@@ -1,5 +1,6 @@
 import {
   BillStatus,
+  ContractKind,
   CostAllocationMethod,
   IntakeStatus,
   MaterialSplit,
@@ -190,6 +191,32 @@ export const createBatchOrdersSchema = z.object({
       (orders) => new Set(orders.map((o) => o.supplierId)).size === orders.length,
       "Put everything from one supplier on one order",
     ),
+});
+
+// --- Batch contracts ----------------------------------------------------------------
+/** Draft a fabric, accessories or factory (CM) agreement with one party for a batch. */
+export const createContractSchema = z.object({
+  kind: z.enum(ContractKind),
+  partyId: id,
+});
+
+const clause = z.object({
+  title: z.string().trim().min(1, "Give the clause a title").max(80),
+  text: z.string().trim().min(1, "Write what the clause says").max(2000),
+});
+
+/** The reviewed clauses, the day it was signed, and each style's CM per piece (factory). */
+export const updateContractSchema = z.object({
+  clauses: z.array(clause).min(1, "Keep at least one clause").max(30),
+  signedOn: z.iso.date().nullish(),
+  cmRates: z
+    .array(z.object({ projectId: id, cmRate: money.nullable() }))
+    .max(200)
+    .refine(
+      (rates) => new Set(rates.map((r) => r.projectId)).size === rates.length,
+      "Each style once",
+    )
+    .optional(),
 });
 
 export const setStageSchema = z.object({

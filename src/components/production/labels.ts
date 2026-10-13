@@ -1,5 +1,6 @@
 import type {
   BillStatus,
+  ContractKind,
   CostAllocationMethod,
   ExpenseCategory,
   IntakeStatus,
@@ -171,6 +172,18 @@ export const productionHref = {
     `/api/production/projects/${encodeURIComponent(projectId)}/tech-pack`,
   /** "Make purchase orders" for a batch's materials. */
   batchOrders: (batchId: string) => `/production/batches/${encodeURIComponent(batchId)}/orders/new`,
+  /** A batch's fabric, accessories or factory (CM) agreement, and its PDF. */
+  contract: (batchId: string, contractId: string) =>
+    `/production/batches/${encodeURIComponent(batchId)}/contracts/${encodeURIComponent(contractId)}`,
+  contractPdf: (contractId: string) =>
+    `/api/production/contracts/${encodeURIComponent(contractId)}/pdf`,
+};
+
+/** What a batch contract is for, short (the full titles are in contract-terms.ts). */
+export const CONTRACT_KIND_LABELS: Record<ContractKind, string> = {
+  FABRIC: "Fabric",
+  ACCESSORIES: "Accessories",
+  FACTORY_CM: "Factory (CM)",
 };
 
 /** How a material per piece is ordered. */

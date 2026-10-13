@@ -414,6 +414,63 @@ export const productionHelp: HelpSection = {
       ],
     },
     {
+      slug: "production-contracts",
+      title: "ব্যাচের কাপড়, অ্যাক্সেসরিজ ও ফ্যাক্টরির (CM) চুক্তি তৈরি ও প্রিন্ট করবেন যেভাবে",
+      summary:
+        "মাস্টার ব্যাচ থেকে এক চাপে তিন রকম চুক্তির খসড়া: কাপড়ের সরবরাহকারী, অ্যাক্সেসরিজের সরবরাহকারী আর ফ্যাক্টরির CM চুক্তি। ধারাগুলো পড়ে বদলান, স্টাইল অনুযায়ী CM দিন, তারপর PDF প্রিন্ট করে সই করান।",
+      keywords: [
+        "contract",
+        "agreement",
+        "fabric contract",
+        "accessories contract",
+        "factory contract",
+        "cm rate",
+        "cm per piece",
+        "draft again",
+        "signed on",
+        "চুক্তি",
+        "সিএম",
+        "ফ্যাক্টরি",
+      ],
+      routes: ["/production/batches/[batchId]/contracts/[contractId]"],
+      who: "চুক্তি তৈরি ও বদল করতে পারেন Production Manager ও Super Admin। দাম ও CM থাকায় দেখতে পারেন শুধু Production Manager, Accounts ও Super Admin।",
+      anyOf: ["production.manage", "accounts.view"],
+      steps: [
+        {
+          text: "ব্যাচের পাতায় “Contracts” অংশে “Ready to draft” তালিকায় ব্যাচের অর্ডার ও স্টাইল থেকে কোন সরবরাহকারী বা ফ্যাক্টরির সাথে কোন চুক্তি দরকার তা দেখায়। পাশের “Draft” চাপুন। তালিকায় না থাকলে “Draft for another supplier” চাপে ধরন ও সরবরাহকারী বেছে “Draft it” চাপুন।",
+          image: {
+            id: "production-contracts-1",
+            caption: "ব্যাচের পাতায় “Contracts” অংশ",
+          },
+        },
+        {
+          text: "খসড়া খুললে ডান দিকে “What is bought” বা “What is made” অংশে চুক্তিতে কী আছে দেখায়: সরবরাহকারীর অর্ডারের লাইন (দাম বা “price at receive”), অথবা ফ্যাক্টরির স্টাইল, পিস আর CM। এগুলো সবসময় ব্যাচ থেকে এখনকার অবস্থায় প্রিন্ট হয়।",
+        },
+        {
+          text: "ফ্যাক্টরির চুক্তিতে প্রতিটি স্টাইলের “CM per piece” লিখুন; এটা চুক্তিতে ছাপা হয় আর পরে চূড়ান্ত CM হিসাবে কাজে লাগে।",
+        },
+        {
+          text: "“Terms” অংশে প্রতিটি ধারার “Title” ও “What it says” পড়ে দরকার মতো বদলান, ওপরে সরান বা “Remove” করুন, নতুন ধারা লাগলে “Add a clause” চাপুন। ব্যাচ বদলালে “Draft again” চাপলে নতুন খসড়া বসে; AI চালু থাকলে লেখা সহজ করে দেয়, না থাকলে নিয়ম মেনে লেখা হয়।",
+          image: {
+            id: "production-contracts-2",
+            caption: "চুক্তির ধারা বদলানোর ফর্ম",
+          },
+        },
+        {
+          text: "“Save the contract” চাপুন, তারপর “Print (PDF)” চাপলে লেটারহেডে চুক্তি নামে: দুই পক্ষ, কী কেনা বা বানানো হচ্ছে, নম্বরসহ ধারা আর সইয়ের জায়গা। দুই পক্ষ সই করলে “Signed on (optional)” ঘরে তারিখ দিয়ে আবার সেভ করুন।",
+          image: {
+            id: "production-contracts-3",
+            caption: "চুক্তির PDF",
+          },
+        },
+      ],
+      tips: [
+        "সই হওয়া চুক্তির ধারা ও CM বদলানো যায় না; বদলাতে হলে আগে “Signed on (optional)” ঘর খালি করে সেভ করুন।",
+        "শুধু খসড়া চুক্তি “Delete the draft” দিয়ে মোছা যায়; সই হওয়া চুক্তি থাকলে ব্যাচটিও মোছা যায় না।",
+        "কাপড়ের চুক্তিতে ওজন কম-বেশি (Short/Extra) আর কাপড়ের ত্রুটির নিয়ম থাকে; অ্যাক্সেসরিজের চুক্তিতে চলমান হিসাব (Supplier Due); ফ্যাক্টরির চুক্তিতে A/B/C গ্রেড, Missing পিস আর অগ্রিম বাদ দিয়ে চূড়ান্ত পাওনা।",
+      ],
+    },
+    {
       slug: "production-start-from-sales",
       title: "সেলস অর্ডার বা প্রোফর্মা থেকে উৎপাদন শুরু করবেন যেভাবে",
       summary:

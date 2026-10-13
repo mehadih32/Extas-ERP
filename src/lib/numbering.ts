@@ -30,6 +30,7 @@ export const DEFAULT_PREFIXES: Partial<Record<DocumentType, string>> = {
   MATERIAL_CHALLAN: "MC",
   STAFF_CLAIM: "CLM",
   PRODUCTION_BATCH: "MB",
+  PRODUCTION_CONTRACT: "AGR",
 };
 
 /**

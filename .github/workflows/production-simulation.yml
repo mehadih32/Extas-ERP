@@ -1,11 +1,15 @@
-# The zero-touch production simulation, on a throwaway database made for the run:
-# "Premium Polo Export Q3" (5 brands, 1,000 pieces each) goes from the 1,00,000
-# advance CM to the final CM settlement and its journal entry on the app's own
-# services, every figure is checked, then it is wiped and every table is checked
-# to be exactly as it was. The Simulation Report (every amount it posted) is on
-# the run's Summary page and under "Artifacts". It runs by itself on every change
-# to production, accounts or the database, and from the Actions tab ("Run
-# workflow"). It never touches the live site: the code is in tests/simulation/.
+# The zero-touch production simulations, on a throwaway database made for the run:
+#   - "Premium Polo Export Q3" (5 brands, 1,000 pieces each) goes from the 1,00,000
+#     advance CM to the final CM settlement and its journal entry;
+#   - "Five Style Polo" (6,000 pieces, 5 styles S to XXL) runs the real CM rules:
+#     Demo Embo pays for the pieces it spoils, rejects over the 2% allowance and
+#     missing pieces come off the factory, with the overheads and the batch summary.
+# Each runs on the app's own services, every figure is checked, then it is wiped
+# and every table is checked to be exactly as it was. The Simulation Reports
+# (every amount posted) are on the run's Summary page and under "Artifacts". It
+# runs by itself on every change to production, accounts or the database, and
+# from the Actions tab ("Run workflow"). It never touches the live site: the code
+# is in tests/simulation/.
 name: Production simulation
 
 on:
@@ -19,6 +23,7 @@ on:
       - "prisma/**"
       - "tests/simulation/**"
       - "tests/integration/production-simulation.test.ts"
+      - "tests/integration/five-style-polo.test.ts"
       - ".github/workflows/production-simulation.yml"
   push:
     branches: [main]
@@ -31,6 +36,7 @@ on:
       - "prisma/**"
       - "tests/simulation/**"
       - "tests/integration/production-simulation.test.ts"
+      - "tests/integration/five-style-polo.test.ts"
       - ".github/workflows/production-simulation.yml"
   workflow_dispatch:
 
@@ -62,6 +68,7 @@ jobs:
     env:
       TEST_DATABASE_URL: postgresql://extras:extras@localhost:5432/extras_erp_test?schema=public
       SIMULATION_REPORT: simulation-report.md
+      FIVE_STYLE_POLO_REPORT: five-style-polo-report.md
     steps:
       - uses: actions/checkout@v4
 
@@ -76,18 +83,27 @@ jobs:
       - name: Run Premium Polo Export Q3, check every figure, wipe it
         run: npm run simulate:production
 
-      - name: Put the Simulation Report on the Summary page
+      - name: Run Five Style Polo (6,000 pieces, the real CM rules), check every figure, wipe it
+        if: always()
+        run: npm run simulate:five-style-polo
+
+      - name: Put the Simulation Reports on the Summary page
         if: always()
         run: |
-          if [ -f "$SIMULATION_REPORT" ]; then
-            cat "$SIMULATION_REPORT" >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "No report: the simulation stopped before the end. The step above says where." >> "$GITHUB_STEP_SUMMARY"
-          fi
+          for report in "$FIVE_STYLE_POLO_REPORT" "$SIMULATION_REPORT"; do
+            if [ -f "$report" ]; then
+              cat "$report" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "No $report: that simulation stopped before the end. Its step above says where." >> "$GITHUB_STEP_SUMMARY"
+            fi
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+          done
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: simulation-report
-          path: simulation-report.md
+          path: |
+            simulation-report.md
+            five-style-polo-report.md
           if-no-files-found: ignore

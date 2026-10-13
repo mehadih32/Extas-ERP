@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 /*
  * The real CM rules:
  *   - An embroidery or print house (a supplier of that type) owns the pieces it
- *     spoils: taking them back logs the fault at the style's cost a cut piece and
+ *     spoils: taking them back logs the fault at the fabric in a cut piece and
  *     takes it off the house's own Supplier Due at once, never the factory's.
  *     Reopening or waiving the fault puts it back; deducting it again takes it off.
  *   - Rejects up to the batch's allowance (2% of the pieces cut unless changed)

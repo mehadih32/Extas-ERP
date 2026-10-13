@@ -185,6 +185,8 @@ export const productionHelp: HelpSection = {
         "একসাথে উৎপাদন",
         "রেডিমেড",
         "ড্রপশিপিং",
+        "reject allowance",
+        "রিজেক্ট",
       ],
       routes: ["/production/batches"],
       who: "ব্যাচ দেখেন যাঁরা Production দেখতে পারেন। ব্যাচ খোলা, বদলানো ও স্টাইল যোগ করেন Production Manager ও Super Admin। টাকার অঙ্ক ও “Batch cost” শুধু যাঁরা খরচ দেখতে পারেন তাঁরা দেখেন।",
@@ -210,6 +212,9 @@ export const productionHelp: HelpSection = {
           text: "“Factory (optional)” ও “All done by (optional)” দিন। এরপর ব্যাচে যে স্টাইল যোগ করবেন, সেটি এই ফ্যাক্টরি আর তারিখ নিয়েই শুরু হবে (দরকারে স্টাইলে বদলানো যায়)। “Create the batch” চাপুন।",
         },
         {
+          text: "ফ্যাক্টরিতে (CM) বানানো ব্যাচে “Reject allowance (%)” থাকে, নিজে থেকে ২%। কাটা পিসের এই ভাগ পর্যন্ত রিজেক্ট (সেলাইয়ের ভুল, এক্সেসরিজ লাগাতে গিয়ে নষ্ট হওয়া বডি) ফ্যাক্টরির কোনো জরিমানা নেই; এর বেশি প্রতিটি রিজেক্ট স্টাইলের লক্ষ্য দামে (target price) ফ্যাক্টরির CM থেকে কাটা হয়। হারানো পিস সবসময় পুরোটাই কাটা হয়, কোনো ছাড় নেই। ব্যাচের পাতার “Details”-এ “Reject allowance” দেখায়।",
+        },
+        {
           text: "ব্যাচের পাতায় “Add a style” চাপুন। নতুন প্রজেক্টের ফর্ম খোলে, “Master batch (optional)”-এ ব্যাচটি বসানো থাকে। স্টাইল, রং ও সাইজের পিস (চাইলে “Fill by size ratio” দিয়ে) আর “Target price per piece” দিয়ে “Create the project” চাপুন। প্রতিটি স্টাইলের জন্য আবার “Add a style”।",
           image: {
             id: "production-batches-3",
@@ -231,6 +236,7 @@ export const productionHelp: HelpSection = {
         "ব্যাচের নাম, ধরন, ফ্যাক্টরি বা তারিখ বদলাতে “Edit the batch” চাপুন। এতে আগের স্টাইলগুলো বদলায় না, শুধু নতুন স্টাইল নতুন ফ্যাক্টরি ও তারিখ নিয়ে শুরু হয়।",
         "ভুল করে খোলা ব্যাচ, যার কোনো স্টাইল নেই, “Delete the batch” দিয়ে মুছে ফেলা যায়।",
         "প্রজেক্টের কার্ডে ও তালিকায় ব্যাচের কোড (MB-…) দেখায়, আর প্রজেক্টের পাতার “Details”-এ “Master batch” থেকে ব্যাচে ফেরা যায়।",
+        "পুরো ব্যাচের টাকার হিসাব এক পাতায় দেখতে “Batch cost”-এর পাশে “Batch summary” চাপুন। “ব্যাচের সারাংশ (Batch summary) দেখবেন ও PDF নেবেন যেভাবে” গাইডটি দেখুন।",
       ],
     },
     {
@@ -589,6 +595,7 @@ export const productionHelp: HelpSection = {
         "ত্রুটি",
         "কাটা",
         "রিপোর্ট কার্ড",
+        "spoiled at embroidery or print",
       ],
       routes: ["/production/faults"],
       who: "তালিকা দেখেন Production, স্টোর ও Accounts; টাকার অঙ্ক দেখেন শুধু Production Manager, Accounts ও Super Admin। ফল্ট লেখেন Production Manager; কাটা বা ছাড় দেন Production Manager ও Accounts।",
@@ -622,6 +629,7 @@ export const productionHelp: HelpSection = {
       tips: [
         "AI চালু থাকলে রিপোর্ট কার্ডের সারাংশ AI লেখে; না থাকলে হিসাব থেকে নিয়ম মেনে লেখা হয়।",
         "ব্যাচের পাতার “Fault log” অংশে শুধু সেই ব্যাচের ফল্ট দেখায়।",
+        "“Spoiled at embroidery or print” ফল্ট এমব্রয়ডারি বা প্রিন্টের কারখানার নষ্ট পিস থেকে নিজে থেকে আসে, আর আসার সাথেই Deducted: টাকাটা তাঁর Supplier Due থেকে কমে গেছে। “Put back to open” বা “Waive” চাপলে সেই কাটা টাকা আবার তাঁর Supplier Due-তে ফিরে আসে; আবার “Mark deducted” চাপলে আবার কমে।",
       ],
     },
     {
@@ -645,6 +653,7 @@ export const productionHelp: HelpSection = {
         "milestone",
         "cutting date",
         "sewing date",
+        "embroidery house",
         "কাটিং",
         "এমব্রয়ডারি",
         "প্রিন্ট",
@@ -687,7 +696,10 @@ export const productionHelp: HelpSection = {
           text: "কাটা পিস এমব্রয়ডারি বা প্রিন্টে পাঠাতে “Send for embroidery or print” চাপুন: কোথায়, কবে ফেরত আসবে আর রং ও সাইজ অনুযায়ী কত পিস। যত পিস কাটা আছে তার বেশি পাঠানো যায় না।",
         },
         {
-          text: "পিস ফেরত এলে “Receive back” চেপে ভালো আর নষ্ট পিস আলাদা লিখুন। নষ্ট পিস থাকলে সাথে সাথে “Replace from cutting immediately?” জিজ্ঞেস করে; “Cut them again” চাপলে নতুন কাটিং রিপোর্ট হয় আর Production-কে জানানো হয়। চাইলে নষ্ট পিস এমব্রয়ডারি হাউসের ফল্ট লগেও যায়। পরে করতে চাইলে “Replace from cutting” বোতাম থাকে।",
+          text: "পিস ফেরত এলে “Receive back” চেপে ভালো আর নষ্ট পিস আলাদা লিখুন। নষ্ট পিস থাকলে সাথে সাথে “Replace from cutting immediately?” জিজ্ঞেস করে; “Cut them again” চাপলে নতুন কাটিং রিপোর্ট হয় আর Production-কে জানানো হয়। পরে করতে চাইলে “Replace from cutting” বোতাম থাকে।",
+        },
+        {
+          text: "যেখানে পাঠিয়েছেন সেটি “Embroidery / Print” ধরনের সরবরাহকারী হলে নষ্ট পিসের দাম তাঁর: ফেরত নেওয়ার সাথে সাথে নষ্ট পিস তাঁর ফল্ট লগে “Spoiled at embroidery or print” হয়ে যায়, একটি কাটা পিসে যতটুকু কাপড় যায় তার দামে (ব্যাচে ইস্যু করা কাপড়ের দাম ÷ কাটা পিস), আর টাকাটা সাথে সাথে তাঁর নিজের Supplier Due থেকে কমে যায়; ফ্যাক্টরির থেকে কখনো নয়। অন্য কোথাও পাঠালে আগের মতো চাইলে টিক দিয়ে নষ্ট পিস তাঁর ফল্ট লগে পাঠান।",
           image: {
             id: "production-cutting-4",
             caption: "নষ্ট পিস আবার কাটার জিজ্ঞাসা",
@@ -869,7 +881,7 @@ export const productionHelp: HelpSection = {
       slug: "production-cm-settlement",
       title: "ফ্যাক্টরির ফাইনাল CM হিসাব আর PDF বিল করবেন যেভাবে",
       summary:
-        "মোট CM থেকে কাটাকাটি (হারানো পিস, কাপড়ের ত্রুটি, চাইলে C-গ্রেডের CM) আর নেওয়া অগ্রিম বাদ দিয়ে ফ্যাক্টরির শেষ পাওনা, তার PDF বিল, আর সেভ করলেই কাটাকাটির টাকা ফ্যাক্টরির Supplier Due থেকে নিজে থেকে কমে যাওয়া।",
+        "মোট CM থেকে কাটাকাটি (হারানো পিস, কাপড়ের ত্রুটি, ছাড়ের বেশি রিজেক্ট, চাইলে C-গ্রেডের CM) আর নেওয়া অগ্রিম বাদ দিয়ে ফ্যাক্টরির শেষ পাওনা, তার PDF বিল, আর সেভ করলেই কাটাকাটির টাকা ফ্যাক্টরির Supplier Due থেকে নিজে থেকে কমে যাওয়া।",
       keywords: [
         "cm settlement",
         "final bill",
@@ -884,6 +896,9 @@ export const productionHelp: HelpSection = {
         "কাটাকাটি",
         "শেষ পাওনা",
         "সাপ্লায়ারের পাওনা",
+        "reject allowance",
+        "rejects over the allowance",
+        "রিজেক্ট",
       ],
       routes: ["/production/batches/[batchId]/cm-settlement"],
       who: "দেখেন Production Manager ও Accounts; সেভ বা বাতিল করেন Production Manager ও যাঁরা টাকা দেন (Accounts)।",
@@ -891,13 +906,16 @@ export const productionHelp: HelpSection = {
       steps: [
         {
           text: "মাস্টার ব্যাচের “Factory money” অংশে “Work out the CM settlement” চাপুন। প্রতিটি স্টাইলের A, B, C আর reject পিস তার CM রেট দিয়ে গুণ করে মোট CM দেখায়। হারানো পিসের CM দেওয়া হয় না।",
+        },
+        {
+          text: "রিজেক্ট ব্যাচের “Reject allowance” (নিজে থেকে কাটা পিসের ২%) পর্যন্ত বিনা জরিমানায় থাকে। এর বেশি হলে স্টাইলের সারিতে কয়টি বেশি (“over”) দেখায়, আর কাটাকাটিতে “Rejects over the allowance” লাইনে প্রতিটি বেশি রিজেক্ট স্টাইলের লক্ষ্য দামে বসে। যেমন ১,২২৪ পিস কাটা হলে ২৪টি পর্যন্ত বিনা জরিমানায়; ৩৭টি রিজেক্ট হলে ১৩টির দাম কাটা হয়। কোনো স্টাইলে লক্ষ্য দাম না থাকলে একটি সতর্কতা দেখায়, সেই স্টাইলের রিজেক্টের জন্য কিছু কাটা হয় না।",
           image: {
             id: "production-cm-settlement-1",
             caption: "স্টাইল ধরে CM আর কাটাকাটি",
           },
         },
         {
-          text: "কাটাকাটিতে নিজে থেকে বসে ফ্যাক্টরির খোলা ফল্ট: হারানো পিসের দাম আর কাপড়ের ত্রুটি। C-গ্রেড পিসের CM কাটবেন কি না তা আপনি টিক দিয়ে ঠিক করেন; টিক দিলেই শেষ পাওনা বদলে যায়।",
+          text: "কাটাকাটিতে নিজে থেকে বসে ফ্যাক্টরির খোলা ফল্ট: হারানো পিসের দাম (কোনো ছাড় ছাড়াই, পুরোটা) আর কাপড়ের ত্রুটি। এমব্রয়ডারি বা প্রিন্টের কারখানার নষ্ট পিস এখানে আসে না, সেগুলো সেই কারখানার নিজের Supplier Due থেকে কাটা হয়। C-গ্রেড পিসের CM কাটবেন কি না তা আপনি টিক দিয়ে ঠিক করেন; টিক দিলেই শেষ পাওনা বদলে যায়।",
         },
         {
           text: "হিসাব: Total CM − Deductions − Advance taken = Final payable। ঠিক থাকলে “Save and make the PDF bill” চাপুন। এরপর “Download the PDF bill” দিয়ে ফ্যাক্টরির বিল নামান; Accounts-কে শেষ পাওনা জানানো হয়।",
@@ -914,6 +932,62 @@ export const productionHelp: HelpSection = {
         "সেভ করলে যে ফল্টগুলো কাটা হলো সেগুলো ফল্ট লগে Deducted হয়ে যায়। ভুল হলে “Undo the settlement” চাপুন; ফল্টগুলো আবার খোলা হয়ে যায় আর কাটাকাটির টাকা আবার ফ্যাক্টরির Supplier Due-তে ফিরে আসে।",
         "এই সুবিধা আসার আগে সেভ করা কোনো হিসাবে কাটাকাটি Supplier Due থেকে কমেনি; তার পাতায় একটি নোট তা জানায়। সেটি “Undo the settlement” করে আবার সেভ করলেই কাটাকাটি Supplier Due থেকে কমে যায়।",
         "কোনো স্টাইলের CM রেট ঠিক না থাকলে আগে ফ্যাক্টরির চুক্তিতে CM রেট দিন।",
+      ],
+    },
+    {
+      slug: "production-batch-summary",
+      title: "ব্যাচের সারাংশ (Batch summary) দেখবেন ও PDF নেবেন যেভাবে",
+      summary:
+        "এক পাতায় পুরো মাস্টার ব্যাচের টাকার গল্প: মোট খরচ, একটি ভালো পিসের খরচ, সরবরাহকারীদের থেকে কাটা জরিমানা, স্টাইল ধরে পিস ও খরচ, টাকা কোথায় গেল, আর গুদামে কত পিস কত দামে উঠল; সঙ্গে এর PDF।",
+      keywords: [
+        "batch summary",
+        "summary",
+        "cost a good piece",
+        "penalties",
+        "batch pdf",
+        "ব্যাচের সারাংশ",
+        "পিসপ্রতি খরচ",
+        "জরিমানা",
+        "কাটাকাটি",
+      ],
+      routes: ["/production/batches/[batchId]/summary"],
+      who: "দেখেন Production Manager, Accounts ও Super Admin (যাঁরা উৎপাদনের খরচ দেখতে পারেন)।",
+      anyOf: ["production.manage", "accounts.view"],
+      steps: [
+        {
+          text: "মাস্টার ব্যাচের পাতায় “Batch cost” অংশের পাশে “Batch summary” চাপুন।",
+          image: {
+            id: "production-batch-summary-1",
+            caption: "ব্যাচের পাতায় “Batch cost”-এর পাশে “Batch summary”",
+          },
+        },
+        {
+          text: "ওপরে “At a glance”: “Total cost” (ব্যাচের সব খরচ), “Cost a good piece” (মোট খরচ ÷ A ও B পিস, লক্ষ্য দামের পাশে), “Taken back from suppliers” (ফল্ট আর ছাড়ের বেশি রিজেক্টের জন্য কাটা টাকা) আর “In stock” (গুদামে ওঠা A ও B পিস)।",
+          image: {
+            id: "production-batch-summary-2",
+            caption: "“At a glance”: মোট খরচ, ভালো পিসের খরচ, কাটা টাকা, স্টক",
+          },
+        },
+        {
+          text: "“Pieces and cost by style”-এ প্রতিটি স্টাইলের লক্ষ্য, কাটা, A, B, C, রিজেক্ট, হারানো পিস, মোট খরচ আর এক পিসের খরচ দেখায়।",
+        },
+        {
+          text: "“Where the money went”-এ স্টোর থেকে দেওয়া কাপড় ও এক্সেসরিজ আর খরচের খাত (যেমন CM, এমব্রয়ডারি, QC) বড় থেকে ছোট করে, আর “Billed by supplier”-এ কোন সরবরাহকারী কত বিল করেছেন।",
+        },
+        {
+          text: "“Penalties and deductions”-এ ফ্যাক্টরির CM হিসাব (সেভ না হলে আজকের হিসাবে), “Rejects over the allowance” আর “Faults on the batch”। এমব্রয়ডারি বা প্রিন্টের কারখানার নষ্ট পিসের পাশে “Off their due” লেখা থাকে, মানে টাকাটা তাঁর Supplier Due থেকে কমে গেছে।",
+          image: {
+            id: "production-batch-summary-3",
+            caption: "“Penalties and deductions”: CM হিসাব, ছাড়ের বেশি রিজেক্ট ও ফল্ট",
+          },
+        },
+        {
+          text: "“Delivered to stock”-এ কোন গুদামে কত A ও B পিস কত দামে উঠল। পুরো পাতার PDF নিতে ওপরের “Download the PDF” চাপুন।",
+        },
+      ],
+      tips: [
+        "শুধু A ও B পিস স্টকে যায়, তাই পুরো খরচ ভালো পিসের ওপর পড়ে। কাটা টাকা “Deductions from Suppliers” খাতে আয় হিসেবে যায়, তাই নিট খরচ মোট খরচ থেকে সেটুকু কম।",
+        "PDF চাইলে তখনই বানানো হয়, রেখে দেওয়া হয় না; প্রতিবার সর্বশেষ হিসাব আসে।",
       ],
     },
     {

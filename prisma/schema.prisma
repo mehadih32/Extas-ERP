@@ -4401,7 +4401,7 @@ enum SupplierFaultKind {
   QUALITY
   MISSING_PIECES
   OTHER
-  /// Cut pieces spoiled at an embroidery or print house, at the style's cost a cut piece.
+  /// Cut pieces spoiled at an embroidery or print house, at the fabric in a cut piece.
   SPOILED_PIECES
 }
 

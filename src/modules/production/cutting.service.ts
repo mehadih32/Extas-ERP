@@ -47,7 +47,7 @@ import {
 } from "@/modules/production/fault.service";
 import { addUpGrades, linePieces, readGradeLines } from "@/modules/production/finishing";
 import { planStyles, styleGrids } from "@/modules/production/material-need.service";
-import { isProjectClosed, projectCostSummary } from "@/modules/production/project-costs";
+import { isProjectClosed } from "@/modules/production/project-costs";
 import { activeMembers, membersWith } from "@/modules/reminders/audience";
 import { sendInApp } from "@/modules/reminders/notification.service";
 
@@ -969,33 +969,44 @@ export async function sendToEmbroidery(
 }
 
 /**
- * What a cut piece of a style is worth: the fabric and materials issued to it
- * (less what came back) over the pieces cut, replacements included. Null while
- * nothing is issued or cut.
+ * What a cut piece of a style is worth: the fabric issued to it (less what came
+ * back) over the pieces cut, replacements included. Collars, trims and
+ * accessories are not in a cut piece yet. Null while no fabric is issued or
+ * nothing is cut.
  */
 export async function cutPieceCost(
   db: Prisma.TransactionClient,
   companyId: string,
   projectId: string,
 ) {
-  const [costs, reports] = await Promise.all([
-    projectCostSummary(db, companyId, projectId),
+  const [fabric, reports] = await Promise.all([
+    db.rawMaterialMovement.aggregate({
+      where: {
+        companyId,
+        productionProjectId: projectId,
+        type: { in: ["ISSUE_TO_PRODUCTION", "RETURN_FROM_PRODUCTION"] },
+        rawMaterial: { kind: "FABRIC" },
+      },
+      _sum: { value: true },
+    }),
     db.cuttingReport.findMany({ where: { projectId }, select: { lines: true } }),
   ]);
+  // Issues take value out of the store (negative), returns bring it back.
+  const value = new Prisma.Decimal(0).minus(fabric._sum.value ?? 0);
   const cut = reports.reduce(
     (t, r) => t + readCutLines(r.lines).reduce((n, l) => n + l.quantity, 0),
     0,
   );
-  if (cut <= 0 || costs.materialCost.lte(0)) return null;
-  return { perPiece: money(costs.materialCost.dividedBy(cut)), cut };
+  if (cut <= 0 || value.lte(0)) return null;
+  return { perPiece: money(value.dividedBy(cut)), cut };
 }
 
 /**
  * Takes pieces back from embroidery or print, good and spoiled, a little at a
  * time if need be. Says how many came back spoiled, to replace from cutting.
  * Pieces an embroidery or print house spoiled are theirs: they go in its fault
- * log at the style's cost a cut piece and come off its own Supplier Due at once
- * (never the factory's); with no cost known yet, the fault waits to be valued.
+ * log at the fabric in a cut piece and come off its own Supplier Due at once
+ * (never the factory's); with no fabric issued yet, the fault waits to be valued.
  */
 export async function receiveFromEmbroidery(
   ctx: CompanyContext,

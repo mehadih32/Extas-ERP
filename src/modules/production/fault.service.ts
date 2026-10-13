@@ -33,7 +33,7 @@ import { recordPartyActivity } from "@/modules/parties/party.service";
  *
  * Pieces spoiled at an embroidery or print house (a supplier of that type) are
  * that house's, never the factory's: taking them back logs the fault at the
- * style's cost a cut piece and takes it off the house's own Supplier Due at once
+ * fabric in a cut piece and takes it off the house's own Supplier Due at once
  * (Dr Accounts Payable, Cr Deductions from Suppliers). Reopening or waiving such
  * a fault reverses the entry; marking it deducted again posts it again. Other
  * faults are taken off by hand or by the factory's final CM settlement.

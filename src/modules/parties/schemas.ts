@@ -56,7 +56,7 @@ const partyFields = {
   /** What a supplier supplies, any number of them (none for buyers). */
   supplierCategories: z
     .array(z.enum(SupplierCategory))
-    .max(4)
+    .max(SUPPLIER_CATEGORIES.length)
     .transform((list) => SUPPLIER_CATEGORIES.filter((c) => list.includes(c)))
     .optional(),
 };

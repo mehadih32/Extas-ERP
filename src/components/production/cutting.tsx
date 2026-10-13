@@ -727,7 +727,7 @@ function ReceiveDialog({
       title={`Receive back on ${job.number}`}
       description={`Pieces back from ${job.party?.name ?? "the house"}: good ones, and spoiled ones to cut again. Some can come back later.${
         job.party?.chargesSpoilage
-          ? ` Spoiled pieces are ${job.party.name}'s: they come off its own Supplier Due at the style's cost a cut piece, never the factory's.`
+          ? ` Spoiled pieces are ${job.party.name}'s: they come off its own Supplier Due at the fabric in a cut piece, never the factory's.`
           : ""
       }`}
       submitLabel="Take them back"

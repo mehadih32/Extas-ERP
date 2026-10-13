@@ -321,6 +321,12 @@ To turn it on:
 3. Open the address and sign in with the owner's email and password from the live ERP. Each
    update copies that one password hash (nothing else) from the live database.
 
+Each update's log says whether the demo has its HTTPS certificate. Caddy can only get it once
+the `demo` record points at this server, so after a new record the address shows "This site
+can't provide a secure connection" for a while. Caddy keeps trying by itself, waiting longer
+after each failed try, and the next update makes it try again at once. While there is still
+no certificate, the log says what Let's Encrypt answered.
+
 The ERP never waits for the demo site: if the demo does not start, the update still finishes
 and says so. It needs about 1 GB more memory. Its data is in `/srv/extras-erp/demo` and is
 not backed up.

@@ -68,8 +68,13 @@ else
   stop_demo
 fi
 # Caddy reads the demo site's part, or that it is gone. If it cannot, it keeps what it had.
-compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1 ||
+# While the demo still has no HTTPS certificate, the reload is forced, so Caddy tries for
+# it at once: it waits longer after each failed try, and its DNS record may be new.
+reload=(caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile)
+if [ -n "$DEMO_DOMAIN" ] && ! demo_certificate_ready; then reload+=(--force); fi
+compose exec -T caddy "${reload[@]}" >/dev/null 2>&1 ||
   say "HTTPS kept its earlier setup; see sudo ./deploy/logs.sh caddy"
+if [ -n "$DEMO_DOMAIN" ]; then report_demo_certificate; fi
 
 # Images and build steps left over from earlier versions.
 docker image prune -f >/dev/null

@@ -523,7 +523,7 @@ export function BatchMoneyPanel({
           <p className="text-[0.8125rem] leading-relaxed text-muted-foreground">
             {data.settlement
               ? `Settled on ${data.settlement.number}: final payable ${money(data.settlement.payable, currency)}.`
-              : "Total CM - Deductions - Advance taken = Final payable, with the PDF bill for the factory."}
+              : "Total CM - Deductions - Advance taken = Final payable, with the PDF bill for the factory. The deductions come off the factory's Supplier Due when it is saved."}
           </p>
           <div>
             <Button asChild size="sm" variant={data.settlement ? "outline" : "default"}>

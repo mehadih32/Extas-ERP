@@ -107,6 +107,14 @@ export const CONTROL_ACCOUNTS = {
     subType: "OTHER_INCOME",
   },
   OTHER_INCOME: { code: "4200", name: "Other Income", type: "INCOME", subType: "OTHER_INCOME" },
+  // What a factory's final CM settlement takes off what they are owed: missing pieces,
+  // fabric faults and, when chosen, the CM of the C-grade pieces.
+  SUPPLIER_DEDUCTIONS: {
+    code: "4250",
+    name: "Deductions from Suppliers",
+    type: "INCOME",
+    subType: "OTHER_INCOME",
+  },
   COGS: { code: "5000", name: "Cost of Goods Sold", type: "EXPENSE", subType: "COGS" },
   PRODUCTION_LOSS: {
     code: "5100",

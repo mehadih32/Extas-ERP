@@ -18,7 +18,8 @@ import { ensureControlAccounts } from "@/modules/accounts/control-accounts";
  * first (oldest first, up to the project's part of a bill split between
  * projects); what it does not need joins everything else, oldest due first.
  * A payment made for a master batch (an advance on its CM) does the same for
- * the bills of the batch's styles.
+ * the bills of the batch's styles, and so do the deductions a final CM
+ * settlement takes off the factory's ledger.
  */
 
 type Tx = Prisma.TransactionClient;
@@ -157,16 +158,6 @@ async function planSettlement(db: Db, companyId: string, supplierId: string) {
     _sum: { amount: true },
     orderBy: { batchId: "asc" },
   });
-  const batchStyles = new Map<string, string[]>();
-  if (forBatches.length > 0) {
-    const styles = await db.productionProject.findMany({
-      where: { companyId, batchId: { in: forBatches.map((b) => b.batchId!) } },
-      select: { id: true, batchId: true },
-    });
-    for (const s of styles) {
-      batchStyles.set(s.batchId!, [...(batchStyles.get(s.batchId!) ?? []), s.id]);
-    }
-  }
 
   // The supplier's Payable lines that still count (an entry and its reversal cancel out).
   const acc = await ensureControlAccounts(companyId, db);
@@ -196,8 +187,17 @@ async function planSettlement(db: Db, companyId: string, supplierId: string) {
     bill,
   }));
   let debits = ZERO;
+  // What final CM settlements took off, by settlement: it settles its batch's bills first.
+  const deducted = new Map<string, Prisma.Decimal>();
   for (const line of lines) {
     debits = debits.plus(line.debit);
+    if (
+      line.sourceType === "CM_SETTLEMENT" &&
+      line.sourceId &&
+      new Prisma.Decimal(line.debit).gt(0)
+    ) {
+      deducted.set(line.sourceId, (deducted.get(line.sourceId) ?? ZERO).plus(line.debit));
+    }
     const isBill = line.sourceType === "SUPPLIER_BILL" && billIds.has(line.sourceId ?? "");
     if (!isBill && new Prisma.Decimal(line.credit).gt(0)) {
       dues.push({
@@ -214,11 +214,38 @@ async function planSettlement(db: Db, companyId: string, supplierId: string) {
       (a.bill ? 1 : 0) - (b.bill ? 1 : 0),
   );
 
+  const deductedForBatch = new Map<string, Prisma.Decimal>();
+  if (deducted.size > 0) {
+    const settlements = await db.cmSettlement.findMany({
+      where: { companyId, id: { in: [...deducted.keys()] } },
+      select: { id: true, batchId: true },
+      orderBy: { createdAt: "asc" },
+    });
+    for (const s of settlements) {
+      deductedForBatch.set(
+        s.batchId,
+        (deductedForBatch.get(s.batchId) ?? ZERO).plus(deducted.get(s.id) ?? ZERO),
+      );
+    }
+  }
+  const batchStyles = new Map<string, string[]>();
+  const batchIds = [...new Set([...forBatches.map((b) => b.batchId!), ...deductedForBatch.keys()])];
+  if (batchIds.length > 0) {
+    const styles = await db.productionProject.findMany({
+      where: { companyId, batchId: { in: batchIds } },
+      select: { id: true, batchId: true },
+    });
+    for (const s of styles) {
+      batchStyles.set(s.batchId!, [...(batchStyles.get(s.batchId!) ?? []), s.id]);
+    }
+  }
+
   // Each project's payments settle its own bills first, oldest first; then each
-  // batch's payments settle the bills of its styles.
+  // batch's payments settle the bills of its styles, and then what a final CM
+  // settlement took off the factory's ledger for the batch.
   const forProject = new Map<string, Prisma.Decimal>();
   let paidForProjects = ZERO;
-  if (forProjects.length > 0 || forBatches.length > 0) {
+  if (forProjects.length > 0 || batchIds.length > 0) {
     const shares = await billProjectShares(db, bills);
     const settleFirst = (amount: Prisma.Decimal, projectIds: string[]) => {
       let left = amount;
@@ -243,6 +270,9 @@ async function planSettlement(db: Db, companyId: string, supplierId: string) {
     for (const row of forProjects) settleFirst(row._sum.amount ?? ZERO, [row.projectId!]);
     for (const row of forBatches) {
       settleFirst(row._sum.amount ?? ZERO, batchStyles.get(row.batchId!) ?? []);
+    }
+    for (const [batchId, amount] of deductedForBatch) {
+      settleFirst(amount, batchStyles.get(batchId) ?? []);
     }
   }
 

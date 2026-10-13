@@ -353,6 +353,30 @@ export function CmSettlementView({
                 {standing.number}, settled {formatDay(standing.settledOn)}
                 {standing.by && ` by ${standing.by}`}.
               </p>
+              {standing.posted && (
+                <p className="text-sm">
+                  {money(standing.deductions, currency)} taken off{" "}
+                  {screen.factory?.name ?? "the factory"}&apos;s Supplier Due on{" "}
+                  {can.seeJournal ? (
+                    <Link
+                      href={`/accounts/journal/${standing.posted.id}`}
+                      className="font-medium underline-offset-4 hover:underline"
+                    >
+                      {standing.posted.number}
+                    </Link>
+                  ) : (
+                    <span className="font-medium">{standing.posted.number}</span>
+                  )}
+                  .
+                </p>
+              )}
+              {standing.notPosted && (
+                <FormAlert tone="note">
+                  Saved before deductions came off the Supplier Due by themselves. Undo it and save
+                  it again to take {money(standing.deductions, currency)} off{" "}
+                  {screen.factory?.name ?? "the factory"}&apos;s Supplier Due.
+                </FormAlert>
+              )}
               {standing.note && <p className="text-sm break-words">{standing.note}</p>}
               <Button asChild className="w-full sm:w-auto">
                 <a href={productionHref.cmSettlementPdf(standing.id)} download>
@@ -389,8 +413,13 @@ export function CmSettlementView({
                 {pending ? "Saving" : "Save and make the PDF bill"}
               </Button>
               <p className="text-[0.8125rem] leading-relaxed text-muted-foreground">
-                Saving marks the faults above deducted in the fault log and tells Accounts the final
-                payable. It can be undone.
+                Saving marks the faults above deducted in the fault log,{" "}
+                {Number(totals.deductions) > 0
+                  ? `takes the ${money(totals.deductions, currency)} of deductions off ${
+                      screen.factory?.name ?? "the factory"
+                    }'s Supplier Due at once, `
+                  : ""}
+                and tells Accounts the final payable. It can be undone.
               </p>
             </div>
           ) : (
@@ -423,7 +452,11 @@ export function CmSettlementView({
       {undoing && standing && (
         <FormDialog
           title={`Undo ${standing.number}?`}
-          description="The faults it took off go back to open in the fault log, and the batch can be settled again."
+          description={
+            standing.posted
+              ? `The faults it took off go back to open in the fault log, its ${money(standing.deductions, currency)} of deductions go back on the Supplier Due, and the batch can be settled again.`
+              : "The faults it took off go back to open in the fault log, and the batch can be settled again."
+          }
           submitLabel="Undo the settlement"
           pendingLabel="Undoing"
           destructive

@@ -11,7 +11,12 @@ import { prisma } from "@/lib/prisma";
 import { checkRateLimit } from "@/lib/rate-limit";
 import type { RequestMeta } from "@/lib/request-meta";
 import { lockRow } from "@/lib/row-lock";
+import { runTransaction } from "@/lib/transaction";
+import { ZERO } from "@/modules/accounts/balances";
+import { ensureControlAccounts } from "@/modules/accounts/control-accounts";
+import { postJournalEntry, reverseJournalEntry } from "@/modules/accounts/journal.service";
 import { paySupplier } from "@/modules/accounts/supplier-payment.service";
+import { lockSupplierAccount, settleSupplierBills } from "@/modules/accounts/supplier-settlement";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { letterheadOf } from "@/modules/documents/builders";
@@ -20,6 +25,7 @@ import { ON_DEMAND_PER_MINUTE, renderOnDemand } from "@/modules/documents/on-dem
 import { cmPieces, cmSettlementMath, type CmStyleLine } from "@/modules/production/batch-money";
 import { canSettleFaults } from "@/modules/production/fault.service";
 import { finishingProjectSelect, stateOf } from "@/modules/production/finishing.service";
+import { recordPartyActivity } from "@/modules/parties/party.service";
 import { assertCanSeeProductionCosts } from "@/modules/production/project-costs";
 import { settledByProject } from "@/modules/production/settlement.service";
 import { activeMembers, membersWith } from "@/modules/reminders/audience";
@@ -37,9 +43,12 @@ import { sendInApp } from "@/modules/reminders/notification.service";
  *     faults...) and, when the person settling chooses, the CM of the C-grade
  *     pieces, less the advance taken and what was paid for the styles:
  *       Total CM - Deductions - Advance taken = Final payable.
- *     Saving it marks those faults deducted and keeps a statement (CMS-), printed
- *     as the factory's final bill. It posts nothing: the factory's bills and
- *     payments are on their ledger already. Undoing it puts the faults back.
+ *     Saving it marks those faults deducted, keeps a statement (CMS-), printed
+ *     as the factory's final bill, and takes the deductions off the factory's
+ *     Supplier Due at once (Dr Accounts Payable, Cr Deductions from Suppliers);
+ *     that settles the bills of the batch's styles first, like a batch payment.
+ *     The factory's bills and payments are on their ledger already, so nothing
+ *     else is posted. Undoing it puts the faults back and reverses the entry.
  * Production Managers and Accounts see it; they (who mark faults deducted) save
  * and undo it. Only Accounts pays.
  */
@@ -381,11 +390,15 @@ type Snapshot = Omit<Draft, "keepC" | "deductC"> & {
   totals: Draft["keepC"];
 };
 
+const settlementInclude = {
+  createdBy: { select: { name: true } },
+  undoneBy: { select: { name: true } },
+  journalEntry: { select: { id: true, number: true } },
+} as const satisfies Prisma.CmSettlementInclude;
+
 function present(
   ctx: CompanyContext,
-  s: Prisma.CmSettlementGetPayload<{
-    include: { createdBy: { select: { name: true } }; undoneBy: { select: { name: true } } };
-  }>,
+  s: Prisma.CmSettlementGetPayload<{ include: typeof settlementInclude }>,
 ) {
   const snapshot = s.snapshot as unknown as Snapshot;
   return {
@@ -393,6 +406,11 @@ function present(
     number: s.number,
     settledOn: dateOnly(s.settledOn),
     deductCGrade: s.deductCGrade,
+    deductions: fixed(s.deductions),
+    /** The entry that took the deductions off the factory's Supplier Due. */
+    posted: s.journalEntry ? { id: s.journalEntry.id, number: s.journalEntry.number } : null,
+    /** Saved before deductions were posted: undo it and save it again to post them. */
+    notPosted: !s.journalEntry && s.deductions.gt(0),
     note: s.note,
     by: s.createdBy?.name ?? null,
     at: s.createdAt.toISOString(),
@@ -406,11 +424,6 @@ function present(
     snapshot,
   };
 }
-
-const settlementInclude = {
-  createdBy: { select: { name: true } },
-  undoneBy: { select: { name: true } },
-} as const;
 
 /** The CM settlement screen: the standing statement, or the draft to save, and the earlier ones undone. */
 export async function getCmSettlementScreen(ctx: CompanyContext, batchId: string) {
@@ -440,6 +453,8 @@ export async function getCmSettlementScreen(ctx: CompanyContext, batchId: string
         draft.styles.some((s) => s.pieces > 0),
       undo: settler && standing !== null,
       pay: ctx.can("accounts.payments.record"),
+      /** Open the entry on the factory's ledger in Accounts. */
+      seeJournal: ctx.can("accounts.view"),
     },
   };
 }
@@ -448,7 +463,8 @@ export type CmSettlementScreen = Awaited<ReturnType<typeof getCmSettlementScreen
 
 /**
  * Saves the final CM settlement: the statement as it stands, with the factory's
- * faults it takes off marked deducted. One at a time per batch.
+ * faults it takes off marked deducted and the deductions taken off the factory's
+ * Supplier Due. One at a time per batch.
  */
 export async function settleCm(
   ctx: CompanyContext,
@@ -464,8 +480,15 @@ export async function settleCm(
   }
   const input = settleCmSchema.parse(raw);
   const companyId = ctx.company.id;
-  const made = await prisma.$transaction(
+  const head = await prisma.productionBatch.findFirst({
+    where: { id: batchId, companyId },
+    select: { factoryId: true },
+  });
+  if (!head) throw new AppError("NOT_FOUND", "Master batch not found.");
+  const made = await runTransaction(
     async (tx) => {
+      // The factory's account before anything else (lock order), then the batch.
+      if (head.factoryId) await lockSupplierAccount(tx, companyId, head.factoryId);
       await lockRow(tx, "ProductionBatch", batchId);
       const draft = await draftOf(tx, ctx, batchId);
       const { batch, factory } = draft;
@@ -473,6 +496,12 @@ export async function settleCm(
         throw new AppError(
           "VALIDATION",
           `${batch.code} has no factory. Set its factory on the batch first.`,
+        );
+      }
+      if (factory.id !== head.factoryId) {
+        throw new AppError(
+          "CONFLICT",
+          `${batch.code}'s factory changed meanwhile. Open the settlement again.`,
         );
       }
       const standing = await standingSettlement(tx, ctx, batch.id);
@@ -540,7 +569,46 @@ export async function settleCm(
           throw new AppError("CONFLICT", "A fault changed meanwhile. Open the settlement again.");
         }
       }
-      const amount = (v: string) => formatAmount(v, 2, ctx.company.currency);
+      // The deductions come off the factory's Supplier Due now: the batch's bills first.
+      const faultsOff = new Prisma.Decimal(totals.faults);
+      const cGradeOff = input.deductCGrade ? new Prisma.Decimal(totals.cGradeCm) : ZERO;
+      const deducted = faultsOff.plus(cGradeOff);
+      let entry: { id: string; number: string } | null = null;
+      if (deducted.gt(0)) {
+        const acc = await ensureControlAccounts(companyId, tx);
+        entry = await postJournalEntry(tx, {
+          companyId,
+          description: `CM settlement ${number} for ${batch.code}: deductions taken off ${factory.name}'s Supplier Due`,
+          sourceType: "CM_SETTLEMENT",
+          sourceId: settlement.id,
+          postedById: ctx.user.id,
+          lines: [
+            {
+              accountId: acc.PAYABLE,
+              partyId: factory.id,
+              debit: deducted,
+              memo: `Deductions on ${number}`,
+            },
+            {
+              accountId: acc.SUPPLIER_DEDUCTIONS,
+              credit: faultsOff,
+              memo: `Faults taken off on ${number} (missing pieces, fabric faults…)`,
+            },
+            {
+              accountId: acc.SUPPLIER_DEDUCTIONS,
+              credit: cGradeOff,
+              memo: `CM of the C-grade pieces taken off on ${number}`,
+            },
+          ],
+        });
+        await tx.cmSettlement.update({
+          where: { id: settlement.id },
+          data: { journalEntryId: entry.id },
+        });
+        await settleSupplierBills(tx, companyId, factory.id);
+        await recordPartyActivity(factory.id, new Date(), tx);
+      }
+      const amount = (v: string | Prisma.Decimal) => formatAmount(v, 2, ctx.company.currency);
       await auditInCompany(
         ctx,
         meta,
@@ -554,6 +622,10 @@ export async function settleCm(
             taken.length > 0
               ? `; ${taken.length} fault${taken.length === 1 ? "" : "s"} marked deducted`
               : ""
+          }${
+            entry
+              ? `; ${amount(deducted)} taken off ${factory.name}'s Supplier Due on ${entry.number}`
+              : ""
           }`,
         },
         tx,
@@ -565,19 +637,33 @@ export async function settleCm(
         membersWith(members, ["accounts.payments.record"]).map((userId) => ({ userId })),
         {
           subject: `CM settled: ${batch.code}`,
-          body: `${number}: the final payable to ${factory.name} for ${batch.code} is ${amount(totals.payable)}.`,
+          body: `${number}: the final payable to ${factory.name} for ${batch.code} is ${amount(totals.payable)}.${
+            entry
+              ? ` ${amount(deducted)} of deductions came off their Supplier Due (${entry.number}).`
+              : ""
+          }`,
           entityType: "ProductionBatch",
           entityId: batch.id,
         },
       );
-      return { id: settlement.id, number, payable: totals.payable, faults: taken.length };
+      return {
+        id: settlement.id,
+        number,
+        payable: totals.payable,
+        faults: taken.length,
+        deducted: fixed(deducted),
+        entry: entry?.number ?? null,
+      };
     },
     { timeout: 60_000 },
   );
   return made;
 }
 
-/** Undoes a settlement saved by mistake (or to settle again): its faults are open again. */
+/**
+ * Undoes a settlement saved by mistake (or to settle again): its faults are open again
+ * and its deductions are back on the factory's Supplier Due.
+ */
 export async function undoCmSettlement(
   ctx: CompanyContext,
   settlementId: string,
@@ -592,12 +678,17 @@ export async function undoCmSettlement(
   }
   const { reason } = undoCmSettlementSchema.parse(raw);
   const companyId = ctx.company.id;
-  return prisma.$transaction(async (tx) => {
-    const settlement = await tx.cmSettlement.findFirst({
+  const found = await prisma.cmSettlement.findFirst({
+    where: { id: settlementId, companyId },
+    select: { factoryId: true },
+  });
+  if (!found) throw new AppError("NOT_FOUND", "CM settlement not found.");
+  return runTransaction(async (tx) => {
+    await lockSupplierAccount(tx, companyId, found.factoryId);
+    const settlement = await tx.cmSettlement.findFirstOrThrow({
       where: { id: settlementId, companyId },
-      select: { id: true, number: true, batchId: true, undoneAt: true },
+      select: { id: true, number: true, batchId: true, factoryId: true, journalEntryId: true },
     });
-    if (!settlement) throw new AppError("NOT_FOUND", "CM settlement not found.");
     await lockRow(tx, "ProductionBatch", settlement.batchId);
     const { count } = await tx.cmSettlement.updateMany({
       where: { id: settlement.id, undoneAt: null },
@@ -614,6 +705,14 @@ export async function undoCmSettlement(
         cmSettlementId: null,
       },
     });
+    // The deductions go back on the factory's Supplier Due.
+    if (settlement.journalEntryId) {
+      await reverseJournalEntry(tx, settlement.journalEntryId, {
+        description: `Undo CM settlement ${settlement.number}: ${reason}`,
+        postedById: ctx.user.id,
+      });
+      await settleSupplierBills(tx, companyId, settlement.factoryId);
+    }
     await auditInCompany(
       ctx,
       meta,
@@ -625,7 +724,7 @@ export async function undoCmSettlement(
           reopened.count > 0
             ? `; ${reopened.count} fault${reopened.count === 1 ? " is" : "s are"} open again`
             : ""
-        }`,
+        }${settlement.journalEntryId ? "; the deductions are back on the Supplier Due" : ""}`,
       },
       tx,
     );
@@ -796,6 +895,14 @@ export function cmSettlementDocument(
             ? `The CM of the ${count(d.cGradePieces)} C-grade pieces is paid (not taken off).`
             : "No C-grade pieces.",
       },
+      ...(s.posted
+        ? [
+            {
+              kind: "note" as const,
+              text: `The deductions (${amount(s.deductions)}) are taken off the factory's Supplier Due on ${s.posted.number}.`,
+            },
+          ]
+        : []),
       ...(s.note ? [{ kind: "text" as const, title: "Notes", paragraphs: [s.note] }] : []),
     ],
     signatures: ["Factory", "Production Manager", "Accounts"],

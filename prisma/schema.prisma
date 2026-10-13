@@ -2265,35 +2265,39 @@ model FinishingReport {
 /// marks the faults it took off deducted; undoing it puts them back to open. It posts
 /// nothing: the factory's bills and payments are already on their ledger.
 model CmSettlement {
-  id           String    @id @default(cuid())
-  companyId    String
-  batchId      String
-  factoryId    String
-  number       String // "CMS-2026-00001"
-  settledOn    DateTime  @db.Date
+  id             String    @id @default(cuid())
+  companyId      String
+  batchId        String
+  factoryId      String
+  number         String // "CMS-2026-00001"
+  settledOn      DateTime  @db.Date
   /// Whether the CM of the C-grade pieces was taken off (asked each time).
-  deductCGrade Boolean   @default(false)
-  totalCm      Decimal   @db.Decimal(14, 2)
-  deductions   Decimal   @db.Decimal(14, 2)
+  deductCGrade   Boolean   @default(false)
+  totalCm        Decimal   @db.Decimal(14, 2)
+  deductions     Decimal   @db.Decimal(14, 2)
   /// Advances paid for the batch and payments for its styles, before it was settled.
-  paid         Decimal   @db.Decimal(14, 2)
-  payable      Decimal   @db.Decimal(14, 2)
+  paid           Decimal   @db.Decimal(14, 2)
+  payable        Decimal   @db.Decimal(14, 2)
   /// Everything printed: { styles, faults, cGrade, payments, ... } as it stood.
-  snapshot     Json
-  note         String?
-  createdById  String?
-  createdAt    DateTime  @default(now())
+  snapshot       Json
+  note           String?
+  createdById    String?
+  createdAt      DateTime  @default(now())
   /// Undone (by mistake, or to settle again): the faults it took off are open again.
-  undoneAt     DateTime?
-  undoneById   String?
-  undoReason   String?
+  undoneAt       DateTime?
+  undoneById     String?
+  undoReason     String?
+  /// The deductions taken off the factory's Supplier Due (Dr Payable, Cr Deductions from
+  /// Suppliers); reversed when the settlement is undone. None when nothing was deducted.
+  journalEntryId String?   @unique
 
-  company   Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  batch     ProductionBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
-  factory   Party           @relation("CmSettlementFactory", fields: [factoryId], references: [id])
-  createdBy User?           @relation("CmSettlementCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  undoneBy  User?           @relation("CmSettlementUndoneBy", fields: [undoneById], references: [id], onDelete: SetNull)
-  faults    SupplierFault[]
+  company      Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  batch        ProductionBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  factory      Party           @relation("CmSettlementFactory", fields: [factoryId], references: [id])
+  createdBy    User?           @relation("CmSettlementCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  undoneBy     User?           @relation("CmSettlementUndoneBy", fields: [undoneById], references: [id], onDelete: SetNull)
+  journalEntry JournalEntry?   @relation(fields: [journalEntryId], references: [id], onDelete: SetNull)
+  faults       SupplierFault[]
 
   @@unique([companyId, number])
   @@index([batchId, createdAt])
@@ -2485,6 +2489,7 @@ model JournalEntry {
   purchaseReturn    PurchaseReturn?
   materialMovements RawMaterialMovement[]
   claimPayments     StaffClaim[]
+  cmSettlement      CmSettlement?
 
   @@unique([companyId, number])
   @@index([companyId, date])
@@ -4497,6 +4502,7 @@ enum JournalSource {
   PURCHASE_RETURN
   REFUND
   STAFF_CLAIM
+  CM_SETTLEMENT
 }
 
 enum AssetStatus {

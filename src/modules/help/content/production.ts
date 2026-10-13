@@ -869,7 +869,7 @@ export const productionHelp: HelpSection = {
       slug: "production-cm-settlement",
       title: "ফ্যাক্টরির ফাইনাল CM হিসাব আর PDF বিল করবেন যেভাবে",
       summary:
-        "মোট CM থেকে কাটাকাটি (হারানো পিস, কাপড়ের ত্রুটি, চাইলে C-গ্রেডের CM) আর নেওয়া অগ্রিম বাদ দিয়ে ফ্যাক্টরির শেষ পাওনা, আর তার PDF বিল।",
+        "মোট CM থেকে কাটাকাটি (হারানো পিস, কাপড়ের ত্রুটি, চাইলে C-গ্রেডের CM) আর নেওয়া অগ্রিম বাদ দিয়ে ফ্যাক্টরির শেষ পাওনা, তার PDF বিল, আর সেভ করলেই কাটাকাটির টাকা ফ্যাক্টরির Supplier Due থেকে নিজে থেকে কমে যাওয়া।",
       keywords: [
         "cm settlement",
         "final bill",
@@ -877,10 +877,13 @@ export const productionHelp: HelpSection = {
         "deduction",
         "final payable",
         "c-grade",
+        "supplier due",
+        "deductions from suppliers",
         "ফাইনাল হিসাব",
         "ফ্যাক্টরির বিল",
         "কাটাকাটি",
         "শেষ পাওনা",
+        "সাপ্লায়ারের পাওনা",
       ],
       routes: ["/production/batches/[batchId]/cm-settlement"],
       who: "দেখেন Production Manager ও Accounts; সেভ বা বাতিল করেন Production Manager ও যাঁরা টাকা দেন (Accounts)।",
@@ -898,6 +901,9 @@ export const productionHelp: HelpSection = {
         },
         {
           text: "হিসাব: Total CM − Deductions − Advance taken = Final payable। ঠিক থাকলে “Save and make the PDF bill” চাপুন। এরপর “Download the PDF bill” দিয়ে ফ্যাক্টরির বিল নামান; Accounts-কে শেষ পাওনা জানানো হয়।",
+        },
+        {
+          text: "সেভ করার সাথে সাথে কাটাকাটির মোট টাকা ফ্যাক্টরির Supplier Due (আমাদের কাছে তাদের পাওনা) থেকে নিজে থেকে কমে যায়; Accounts-কে আলাদা করে কিছু করতে হয় না। খাতায় একটি এন্ট্রি হয়, যা আগে এই ব্যাচের স্টাইলগুলোর বিল মেটায়, আর টাকাটা আয়ের খাত “Deductions from Suppliers”-এ জমা হয়। “Final payable” পাতায় দেখায় কত টাকা কোন এন্ট্রিতে (JV-…) কমানো হলো।",
           image: {
             id: "production-cm-settlement-2",
             caption: "শেষ পাওনা আর PDF বিল",
@@ -905,7 +911,8 @@ export const productionHelp: HelpSection = {
         },
       ],
       tips: [
-        "সেভ করলে যে ফল্টগুলো কাটা হলো সেগুলো ফল্ট লগে Deducted হয়ে যায়। ভুল হলে “Undo the settlement” চাপুন; ফল্টগুলো আবার খোলা হয়ে যায়।",
+        "সেভ করলে যে ফল্টগুলো কাটা হলো সেগুলো ফল্ট লগে Deducted হয়ে যায়। ভুল হলে “Undo the settlement” চাপুন; ফল্টগুলো আবার খোলা হয়ে যায় আর কাটাকাটির টাকা আবার ফ্যাক্টরির Supplier Due-তে ফিরে আসে।",
+        "এই সুবিধা আসার আগে সেভ করা কোনো হিসাবে কাটাকাটি Supplier Due থেকে কমেনি; তার পাতায় একটি নোট তা জানায়। সেটি “Undo the settlement” করে আবার সেভ করলেই কাটাকাটি Supplier Due থেকে কমে যায়।",
         "কোনো স্টাইলের CM রেট ঠিক না থাকলে আগে ফ্যাক্টরির চুক্তিতে CM রেট দিন।",
       ],
     },

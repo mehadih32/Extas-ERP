@@ -49,10 +49,19 @@ export default async function CmSettlementPage({
   }
   const screen = result.data;
   const { batch, factory } = screen;
+  const factoryName = factory?.name ?? "the factory";
   const notice = one(query.settled)
-    ? `${one(query.settled)} was saved. Download the PDF bill for ${factory?.name ?? "the factory"}; Accounts was told the final payable.`
+    ? `${one(query.settled)} was saved. ${
+        screen.standing?.posted
+          ? `Its deductions came off ${factoryName}'s Supplier Due, and Accounts was told the final payable.`
+          : "Accounts was told the final payable."
+      } Download the PDF bill for ${factoryName}.`
     : one(query.undone)
-      ? `${one(query.undone)} was undone. Its faults are open again.`
+      ? `${one(query.undone)} was undone. Its faults are open again${
+          screen.undone.find((u) => u.number === one(query.undone))?.posted
+            ? `, and its deductions are back on ${factoryName}'s Supplier Due`
+            : ""
+        }.`
       : undefined;
   return (
     <div className="grid gap-6">

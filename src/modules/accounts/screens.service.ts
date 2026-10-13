@@ -708,6 +708,18 @@ async function sourceLink(
         href: materials ? `/materials/returns/${sourceId}` : null,
       };
     }
+    case "CM_SETTLEMENT": {
+      // A factory's final CM settlement: its deductions off their Supplier Due.
+      const settlement = await ctx.db.cmSettlement.findUnique({
+        where: { id: sourceId },
+        select: { number: true, batchId: true, batch: { select: { code: true } } },
+      });
+      if (!settlement) return null;
+      return {
+        title: `CM settlement ${settlement.number}, ${settlement.batch.code}`,
+        href: canOpenBill(ctx) ? `/production/batches/${settlement.batchId}/cm-settlement` : null,
+      };
+    }
     case "MATERIAL_ISSUE": {
       const note = await ctx.db.materialIssue.findUnique({
         where: { id: sourceId },

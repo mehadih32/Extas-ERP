@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * open styles, or on one), advances paid to the factory for the batch (they
  * settle its styles' bills first), and the final CM settlement:
  *   Total CM - Deductions - Advance taken = Final payable.
+ * Its deductions come off the factory's Supplier Due at once (the batch's bills first).
  */
 vi.mock("next/cache", () => ({ revalidatePath: () => undefined, revalidateTag: () => undefined }));
 
@@ -13,6 +14,7 @@ import { prisma } from "@/lib/prisma";
 import * as catalog from "@/modules/inventory/catalog.service";
 import * as matrix from "@/modules/inventory/matrix.service";
 import * as styles from "@/modules/inventory/style.service";
+import { getPartyBalance } from "@/modules/parties/ledger.service";
 import * as parties from "@/modules/parties/party.service";
 import * as actionLog from "@/modules/production/action-log.service";
 import * as batchMoney from "@/modules/production/batch-money.service";
@@ -322,6 +324,26 @@ run("Production renovation: batch costs, advance CM and the final CM settlement"
       note: "Not the factory's",
     });
     await batchMoney.payForBatch(env.accounts, env.batch.id, { amount: 500 });
+    // An older bill from the same factory on a style outside the batch.
+    const other = await projects.createProject(env.pm, {
+      name: "Old order",
+      factoryId: env.factory.id,
+      targetDate: "2030-12-20",
+      targetQuantity: 10,
+    });
+    await costs.addProjectCost(env.pm, other.id, {
+      expenseHeadId: env.sewing.id,
+      amount: 500,
+      paymentType: "DUE",
+      supplierId: env.factory.id,
+      date: "2026-01-05",
+    });
+    const billOf = async (projectId: string) =>
+      prisma.supplierBill.findFirstOrThrow({ where: { allocations: { some: { projectId } } } });
+    /** What we owe the factory (their Supplier Due). */
+    const supplierDue = async () =>
+      (await getPartyBalance(env.accounts, env.factory.id)).neg().toFixed(2);
+    expect(await supplierDue()).toBe("1800.00");
 
     const screen = await batchMoney.getCmSettlementScreen(env.pm, env.batch.id);
     const draft = screen.draft!;
@@ -354,7 +376,27 @@ run("Production renovation: batch costs, advance CM and the final CM settlement"
 
     const made = await batchMoney.settleCm(env.pm, env.batch.id, { deductCGrade: true });
     expect(made.number).toMatch(/^CMS-\d{4}-\d{5}$/);
-    expect([made.payable, made.faults]).toEqual(["705.00", 2]);
+    expect([made.payable, made.faults, made.deducted]).toEqual(["705.00", 2, "415.00"]);
+
+    // The 415 of deductions came off the factory's Supplier Due at once: one entry,
+    // Dr Accounts Payable (the factory), Cr Deductions from Suppliers.
+    expect(await supplierDue()).toBe("1385.00");
+    const entry = await prisma.journalEntry.findFirstOrThrow({
+      where: { sourceType: "CM_SETTLEMENT", sourceId: made.id },
+      include: { lines: { include: { account: true }, orderBy: { debit: "desc" } } },
+    });
+    expect(entry.number).toBe(made.entry);
+    expect(
+      entry.lines.map((l) => [l.account.code, l.partyId, l.debit.toFixed(2), l.credit.toFixed(2)]),
+    ).toEqual([
+      ["2100", env.factory.id, "415.00", "0.00"],
+      ["4250", null, "0.00", "325.00"],
+      ["4250", null, "0.00", "90.00"],
+    ]);
+    expect(entry.lines[1]!.account.name).toBe("Deductions from Suppliers");
+    // It settles the batch's bill first, though the other one is older.
+    expect((await billOf(env.polo.id)).paidAmount.toFixed(2)).toBe("915.00");
+    expect((await billOf(other.id)).paidAmount.toFixed(2)).toBe("0.00");
     await expectAppError(
       batchMoney.settleCm(env.accounts, env.batch.id, { deductCGrade: false }),
       "CONFLICT",
@@ -375,15 +417,28 @@ run("Production renovation: batch costs, advance CM and the final CM settlement"
 
     const settled = await batchMoney.getCmSettlementScreen(env.accounts, env.batch.id);
     expect(settled.draft).toBeNull();
-    expect(settled.standing).toMatchObject({ number: made.number, deductCGrade: true });
+    expect(settled.standing).toMatchObject({
+      number: made.number,
+      deductCGrade: true,
+      deductions: "415.00",
+      posted: { id: entry.id, number: entry.number },
+      notPosted: false,
+    });
     expect(settled.standing!.snapshot.totals.payable).toBe("705.00");
+    expect(settled.can.seeJournal).toBe(true);
     const pdf = await batchMoney.cmSettlementPdf(env.accounts, made.id);
     expect(pdf.bytes.subarray(0, 4).toString()).toBe("%PDF");
     expect(pdf.fileName).toContain(made.number);
 
-    // Undone, its faults are open again and the batch can be settled again.
+    // Undone, its faults are open again, its deductions are back on the Supplier Due
+    // and the batch can be settled again.
     await batchMoney.undoCmSettlement(env.pm, made.id, { reason: "Counted the wrong carton" });
     expect(await prisma.supplierFault.count({ where: { status: "DEDUCTED" } })).toBe(0);
+    expect(await supplierDue()).toBe("1800.00");
+    expect(
+      (await prisma.journalEntry.findUniqueOrThrow({ where: { id: entry.id } })).isReversed,
+    ).toBe(true);
+    expect((await billOf(env.polo.id)).paidAmount.toFixed(2)).toBe("500.00");
     await expectAppError(
       batchMoney.undoCmSettlement(env.pm, made.id, { reason: "Again" }),
       "CONFLICT",
@@ -391,12 +446,49 @@ run("Production renovation: batch costs, advance CM and the final CM settlement"
     const again = await batchMoney.getCmSettlementScreen(env.pm, env.batch.id);
     expect(again.draft?.keepC.payable).toBe("795.00");
     expect(again.undone.map((u) => u.number)).toEqual([made.number]);
+
+    // Settled again without the C-grade CM: 325 off this time.
+    const remade = await batchMoney.settleCm(env.accounts, env.batch.id, { deductCGrade: false });
+    expect([remade.payable, remade.deducted]).toEqual(["795.00", "325.00"]);
+    expect(await supplierDue()).toBe("1475.00");
+    await batchMoney.undoCmSettlement(env.accounts, remade.id, { reason: "Wrong rate" });
+    expect(await supplierDue()).toBe("1800.00");
     const log = await actionLog.getActionLog(
       env.pm,
       { batchId: env.batch.id },
       { kind: "CmSettlement" },
     );
-    expect(log.rows.map((r) => r.action)).toEqual(["Status", "Exported", "Added"]);
+    expect(log.rows.map((r) => r.action)).toEqual([
+      "Status",
+      "Added",
+      "Status",
+      "Exported",
+      "Added",
+    ]);
+  });
+
+  it("posts nothing when there is nothing to deduct, and flags a settlement saved before", async () => {
+    await prisma.productionProject.update({ where: { id: env.polo.id }, data: { cmRate: 90 } });
+    await finishing.createFinishingCount(env.store, env.polo.id, {
+      lines: [{ colorName: "Navy", sizeName: "S", a: 5, b: 0, c: 0, reject: 0 }],
+    });
+    const made = await batchMoney.settleCm(env.pm, env.batch.id, { deductCGrade: false });
+    expect([made.deducted, made.entry]).toEqual(["0.00", null]);
+    expect(await prisma.journalEntry.count({ where: { sourceType: "CM_SETTLEMENT" } })).toBe(0);
+    const screen = await batchMoney.getCmSettlementScreen(env.pm, env.batch.id);
+    expect(screen.standing).toMatchObject({ posted: null, notPosted: false });
+    await batchMoney.undoCmSettlement(env.pm, made.id, { reason: "Not yet" });
+
+    // One saved before deductions were posted (no entry) asks to be saved again.
+    const old = await batchMoney.settleCm(env.pm, env.batch.id, { deductCGrade: false });
+    await prisma.cmSettlement.update({ where: { id: old.id }, data: { deductions: 120 } });
+    const flagged = await batchMoney.getCmSettlementScreen(env.pm, env.batch.id);
+    expect(flagged.standing).toMatchObject({ posted: null, notPosted: true });
+    // Undoing it reverses nothing.
+    await batchMoney.undoCmSettlement(env.pm, old.id, { reason: "Save it again" });
+    expect(await prisma.journalEntry.count()).toBe(
+      await prisma.journalEntry.count({ where: { sourceType: { not: "CM_SETTLEMENT" } } }),
+    );
   });
 
   it("will not settle without a CM rate or a factory", async () => {

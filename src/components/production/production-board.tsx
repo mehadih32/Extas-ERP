@@ -16,6 +16,7 @@ import { setProjectStageAction, undoStageMoveAction } from "@/server/actions/pro
 
 import { ProjectBadge, TimelineBadge } from "./badges";
 import { PROJECT_STATUS_LABELS, productionHref, STAGE_LABELS } from "./labels";
+import { CostGuardLine } from "./cost-guard";
 import { forWhom, PiecesBar, TimelineBar } from "./project-card";
 
 const COLUMN_LABELS: Record<BoardColumnKey, string> = {
@@ -71,6 +72,7 @@ function BoardCard({
         <p className="mt-1 text-[0.8125rem] break-words text-muted-foreground">
           {STAGE_LABELS[card.stage.key]} · {card.stage.number} of {card.stage.of}
           {card.factoryLabel ? ` · ${card.factoryLabel}` : ""}
+          {card.batch ? ` · ${card.batch.code}` : ""}
         </p>
       </div>
       <PiecesBar quantities={card.quantities} currency={currency} />
@@ -80,6 +82,7 @@ function BoardCard({
         targetOn={card.targetOn}
         completedOn={card.completedOn}
       />
+      {card.costGuard && <CostGuardLine guard={card.costGuard} currency={currency} />}
       {card.costs && (
         <p className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 border-t pt-2.5 text-[0.8125rem] tabular-nums">
           <span>

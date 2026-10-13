@@ -4,6 +4,7 @@ import {
   IntakeStatus,
   PaymentMethod,
   PaymentType,
+  ProductionKind,
   ProductionStage,
   ProductionStatus,
   StockGrade,
@@ -49,6 +50,10 @@ const projectFields = {
   /** Replaces the target grid; an empty list clears it. */
   targets: targets.optional(),
   notes: optionalText(4000),
+  /** The master batch it is one style of; null takes it out of its batch. */
+  batchId: id.nullish(),
+  /** The most a piece should cost (the cost guard's "Target price"); null clears it. */
+  targetUnitCost: positiveMoney.nullish(),
 };
 
 export const createProjectSchema = z
@@ -73,12 +78,43 @@ export const updateProjectSchema = z.object(projectFields).partial();
 
 export const listProjectsSchema = z.object({
   status: z.enum(ProductionStatus).optional(),
+  batchId: id.optional(),
   stage: z.enum(ProductionStage).optional(),
   buyerId: id.optional(),
   factoryId: id.optional(),
   inHouse: queryBoolean.optional(),
   /** Open projects past their target date. */
   overdue: queryBoolean.optional(),
+  search: z.string().trim().max(100).optional(),
+  cursor: z.string().optional(),
+  take,
+});
+
+// --- Master batches ------------------------------------------------------------------
+const batchFields = {
+  name: z.string().trim().min(2).max(160),
+  /** CM (cut and made at a factory), READYMADE (bought ready-made) or DROPSHIP. */
+  kind: z.enum(ProductionKind),
+  /** The factory its styles are made at; a new style starts with it. */
+  factoryId: id.nullish(),
+  /** The day it should all be done; a new style starts with it. */
+  targetDate: dayOrInstant.nullish(),
+  notes: optionalText(4000),
+};
+
+export const createBatchSchema = z.object({
+  ...batchFields,
+  kind: batchFields.kind.optional(),
+});
+export const updateBatchSchema = z.object(batchFields).partial();
+
+/** Planned (no style started), in production, or done (every style closed). */
+export const BATCH_STATES = ["EMPTY", "PLANNED", "ACTIVE", "DONE"] as const;
+export type BatchState = (typeof BATCH_STATES)[number];
+
+export const listBatchesSchema = z.object({
+  state: z.enum(BATCH_STATES).optional(),
+  kind: z.enum(ProductionKind).optional(),
   search: z.string().trim().max(100).optional(),
   cursor: z.string().optional(),
   take,

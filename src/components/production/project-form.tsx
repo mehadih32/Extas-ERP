@@ -3,7 +3,7 @@
 import { LoaderCircleIcon, PlusIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 
 import { ErrorDialog } from "@/components/feedback/error-dialog";
 import { Field, FormAlert } from "@/components/forms/field";
@@ -34,6 +34,8 @@ type Style = { id: string; code: string; name: string };
 
 const FIELDS = [
   "name",
+  "batchId",
+  "targetUnitCost",
   "categoryId",
   "styleId",
   "factoryId",
@@ -141,11 +143,15 @@ export function ProjectForm({ form: data, currency }: { form: ProjectFormData; c
   const [factoryMode, setFactoryMode] = useState<"PROFILE" | "NAME">(
     project && !project.factory && project.factoryName ? "NAME" : "PROFILE",
   );
-  const [factory, setFactory] = useState<Party | null>(project?.factory ?? null);
+  const [factory, setFactory] = useState<Party | null>(
+    project?.factory ?? (project ? null : (data.batch?.factory ?? null)),
+  );
   const [forWhom, setForWhom] = useState<"BUYER" | "IN_HOUSE">(
     project ? (project.buyer ? "BUYER" : "IN_HOUSE") : restock ? "IN_HOUSE" : "BUYER",
   );
   const [buyer, setBuyer] = useState<Party | null>(project?.buyer ?? source?.buyer ?? null);
+  const [batchId, setBatchId] = useState(project?.batch?.id ?? data.batch?.id ?? "");
+  const targetDateRef = useRef<HTMLInputElement>(null);
   const [blocks, setBlocks] = useState<TargetBlock[]>(() =>
     data.blocks.map((b, i) => ({
       key: `start-${i}`,
@@ -166,6 +172,16 @@ export function ProjectForm({ form: data, currency }: { form: ProjectFormData; c
       : source
         ? `${source.kind === "ORDER" ? "order" : "proforma"} ${source.number}`
         : null;
+
+  /** A new style picked into a batch starts with the batch's factory and target day. */
+  function chooseBatch(id: string) {
+    setBatchId(id);
+    if (project) return;
+    const batch = data.batches.find((b) => b.id === id);
+    if (!batch) return;
+    if (batch.factory && !factory && factoryMode === "PROFILE") setFactory(batch.factory);
+    if (batch.targetOn && targetDateRef.current) targetDateRef.current.value = batch.targetOn;
+  }
 
   function changeBlock(key: string, next: Partial<TargetBlock>) {
     setBlocks((all) => all.map((b) => (b.key === key ? { ...b, ...next } : b)));
@@ -212,6 +228,12 @@ export function ProjectForm({ form: data, currency }: { form: ProjectFormData; c
       if (forWhom === "BUYER" && !buyer && !buyerLocked) {
         found.buyerId = "Choose the buyer, or make it In-House.";
       }
+      const priceText = textOf(form, "targetUnitCost").replaceAll(",", "");
+      const price =
+        priceText === "" ? null : /^\d{1,9}(\.\d{1,2})?$/.test(priceText) ? Number(priceText) : NaN;
+      if (price !== null && !(price > 0)) {
+        found.targetUnitCost = "Enter the most a piece should cost, like 450 or 450.50.";
+      }
       input = {
         name,
         categoryId: categoryId || null,
@@ -225,6 +247,8 @@ export function ProjectForm({ form: data, currency }: { form: ProjectFormData; c
         ...(grid.lines.length > 0 ? {} : { targetQuantity: quantity }),
         targets: grid.lines,
         notes,
+        batchId: batchId || null,
+        targetUnitCost: price,
         ...(project ? {} : { status: textOf(form, "status") === "PLANNED" ? "PLANNED" : "ACTIVE" }),
         ...(source?.kind === "ORDER" ? { salesOrderId: source.id } : {}),
         ...(source?.kind === "PROFORMA" ? { proformaId: source.id } : {}),
@@ -271,6 +295,56 @@ export function ProjectForm({ form: data, currency }: { form: ProjectFormData; c
           autoFocus={!project}
         />
       </Field>
+
+      <div className="grid items-start gap-5 sm:grid-cols-2">
+        <Field
+          id="batchId"
+          label="Master batch (optional)"
+          hint={
+            batchId && !project
+              ? "A style of this batch: it starts with the batch's factory and target day."
+              : "Styles made together go under one batch."
+          }
+          error={fieldError("batchId")}
+        >
+          <NativeSelect
+            id="batchId"
+            value={batchId}
+            onChange={(e) => chooseBatch(e.target.value)}
+            disabled={closed}
+            containerClassName="sm:w-full"
+            className="md:h-10"
+            aria-invalid={Boolean(fieldError("batchId"))}
+            aria-describedby={described("batchId", true)}
+          >
+            <option value="">Not in a batch</option>
+            {data.batches.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.code} · {b.name}
+              </option>
+            ))}
+          </NativeSelect>
+        </Field>
+        <Field
+          id="targetUnitCost"
+          label={`Target price per piece (${currency}, optional)`}
+          hint="The most a piece should cost. The cost guard turns yellow at 85% of it and red once over."
+          error={fieldError("targetUnitCost")}
+        >
+          <Input
+            id="targetUnitCost"
+            name="targetUnitCost"
+            inputMode="decimal"
+            defaultValue={project?.targetUnitCost ?? ""}
+            placeholder="450.00"
+            disabled={closed}
+            autoComplete="off"
+            className="tabular-nums"
+            aria-invalid={Boolean(fieldError("targetUnitCost"))}
+            aria-describedby={described("targetUnitCost", true)}
+          />
+        </Field>
+      </div>
 
       <div className="grid items-start gap-5 sm:grid-cols-2">
         <Field
@@ -423,11 +497,14 @@ export function ProjectForm({ form: data, currency }: { form: ProjectFormData; c
               ? undefined
               : source && source.targetOn !== data.defaultTargetOn
                 ? "The order's ship-by day."
-                : "45 days on, unless changed."
+                : data.batch?.targetOn
+                  ? "The batch's target day."
+                  : "45 days on, unless changed."
           }
           error={fieldError("targetDate")}
         >
           <Input
+            ref={targetDateRef}
             id="targetDate"
             name="targetDate"
             type="date"
@@ -523,6 +600,7 @@ export function ProjectForm({ form: data, currency }: { form: ProjectFormData; c
                   currency={currency}
                   onChange={(quantities) => changeBlock(block.key, { quantities })}
                   onRemove={() => setBlocks((all) => all.filter((b) => b.key !== block.key))}
+                  ratioPresets={data.ratioPresets}
                 />
               ))}
             </ul>
@@ -602,7 +680,9 @@ export function ProjectForm({ form: data, currency }: { form: ProjectFormData; c
                   ? source.kind === "ORDER"
                     ? salesHref.order(source.id)
                     : salesHref.proforma(source.id)
-                  : "/production/projects"
+                  : data.batch
+                    ? productionHref.batch(data.batch.id)
+                    : "/production/projects"
             }
           >
             Cancel

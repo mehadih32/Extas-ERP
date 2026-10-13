@@ -12,9 +12,11 @@ import type { CompanyContext } from "@/modules/auth/context";
 import { assertPartyCanTransact } from "@/modules/parties/party.service";
 import { isWalkIn } from "@/modules/parties/walk-in";
 import { UNDO_STAGE_MINUTES } from "@/modules/production/board";
+import { costGuard } from "@/modules/production/cost-guard";
 import { ZERO } from "@/modules/production/costing";
 import { evenOutPieceCostTx } from "@/modules/production/piece-cost.service";
 import {
+  alertCostGuard,
   assertCanWriteOff,
   canSeeProductionCosts,
   type ProjectCostSummary,
@@ -69,6 +71,7 @@ const projectInclude = {
   buyer: { select: { id: true, code: true, name: true } },
   proforma: { select: { id: true, number: true, status: true } },
   salesOrder: { select: { id: true, number: true } },
+  batch: { select: { id: true, code: true, name: true } },
 } satisfies Prisma.ProductionProjectInclude;
 
 type ProjectRow = Prisma.ProductionProjectGetPayload<{ include: typeof projectInclude }>;
@@ -81,10 +84,13 @@ function projectCard(
   now: Date,
 ) {
   const produced = p.producedQtyA + p.producedQtyB;
+  const seeCosts = canSeeProductionCosts(ctx);
   return {
     id: p.id,
     code: p.code,
     name: p.name,
+    /** The master batch it is one style of. */
+    batch: p.batch,
     status: p.status,
     stage: stageBadge(p.stage),
     isInHouse: p.isInHouse,
@@ -108,8 +114,12 @@ function projectCard(
       remaining: Math.max(p.targetQuantity - produced, 0),
     },
     // Money figures only for roles that may see production costs.
+    targetUnitCost: seeCosts ? p.targetUnitCost : null,
+    /** Cost per piece so far against the target price (null without one). */
+    costGuard:
+      seeCosts && costs ? costGuard(costs.totalCost, p.targetQuantity, p.targetUnitCost) : null,
     costs:
-      costs && canSeeProductionCosts(ctx)
+      costs && seeCosts
         ? {
             ...costs,
             estimatedCostPerPiece: costs.totalCost
@@ -128,6 +138,7 @@ async function resolveProjectRefs(
     styleId?: string | null;
     factoryId?: string | null;
     buyerId?: string | null;
+    batchId?: string | null;
   },
 ) {
   const refs: {
@@ -135,6 +146,7 @@ async function resolveProjectRefs(
     styleId?: string | null;
     factoryId?: string | null;
     buyerId?: string | null;
+    batch?: { id: string; code: string; factoryId: string | null } | null;
   } = {};
   if (input.styleId) {
     const style = await ctx.db.style.findUnique({ where: { id: input.styleId } });
@@ -153,6 +165,18 @@ async function resolveProjectRefs(
   if (input.buyerId) {
     refs.buyerId = (await assertPartyCanTransact(ctx, input.buyerId, "SALE")).id;
   } else if (input.buyerId === null) refs.buyerId = null;
+  if (input.batchId) {
+    const batch = await ctx.db.productionBatch.findUnique({
+      where: { id: input.batchId },
+      select: { id: true, code: true, factoryId: true },
+    });
+    if (!batch) {
+      throw new AppError("NOT_FOUND", "Master batch not found.", {
+        batchId: ["Choose the batch again"],
+      });
+    }
+    refs.batch = batch;
+  } else if (input.batchId === null) refs.batch = null;
   return refs;
 }
 
@@ -318,6 +342,11 @@ export async function createProject(ctx: CompanyContext, raw: unknown, meta?: Re
   const targetDate = toInstant(input.targetDate, tz);
   assertDateOrder(ctx, startDate, targetDate);
   const status = input.status ?? "ACTIVE";
+  // A style of a batch is made at the batch's factory unless another is given.
+  const factoryId =
+    refs.factoryId ??
+    (input.factoryId === undefined && !input.factoryName ? refs.batch?.factoryId : null) ??
+    null;
 
   const project = await prisma.$transaction(async (tx) => {
     const created = await tx.productionProject.create({
@@ -327,10 +356,12 @@ export async function createProject(ctx: CompanyContext, raw: unknown, meta?: Re
         name: input.name,
         categoryId: refs.categoryId ?? (!refs.styleId && grid ? grid.categoryId : null),
         styleId: refs.styleId ?? grid?.styleId ?? null,
-        factoryId: refs.factoryId ?? null,
-        factoryName: refs.factoryId ? null : (input.factoryName ?? null),
+        factoryId,
+        factoryName: factoryId ? null : (input.factoryName ?? null),
         buyerId: refs.buyerId ?? null,
         isInHouse: !refs.buyerId,
+        batchId: refs.batch?.id ?? null,
+        targetUnitCost: input.targetUnitCost ?? null,
         proformaId: source?.proformaId ?? null,
         salesOrderId: source?.salesOrderId ?? null,
         status,
@@ -355,6 +386,8 @@ export async function createProject(ctx: CompanyContext, raw: unknown, meta?: Re
           grid?.lines.length ? ` in ${grid.lines.length} colours and sizes` : ""
         } by ${localDay(targetDate, tz)}${refs.buyerId ? "" : " (In-House)"}${
           source ? `, started from ${source.number}` : ""
+        }${refs.batch ? `, a style of ${refs.batch.code}` : ""}${
+          input.targetUnitCost ? `, target price ${input.targetUnitCost.toFixed(2)} a piece` : ""
         }`,
       },
       tx,
@@ -483,8 +516,34 @@ export async function updateProject(
     data.buyerId = refs.buyerId;
     data.isInHouse = !refs.buyerId;
   }
+  if (refs.batch !== undefined) data.batchId = refs.batch?.id ?? null;
+  if (input.targetUnitCost !== undefined) data.targetUnitCost = input.targetUnitCost;
+  const batchNote =
+    refs.batch !== undefined && (refs.batch?.id ?? null) !== project.batchId
+      ? refs.batch
+        ? ` (now a style of ${refs.batch.code})`
+        : " (taken out of its batch)"
+      : "";
   await prisma.$transaction(async (tx) => {
     await tx.productionProject.update({ where: { id: project.id }, data });
+    // A lower target price or more pieces can bring the cost guard near or over.
+    const targetQuantity = grid?.total || input.targetQuantity;
+    if (input.targetUnitCost !== undefined || targetQuantity !== undefined) {
+      await alertCostGuard(tx, ctx.company.id, [
+        {
+          project,
+          after: {
+            ...(input.targetUnitCost !== undefined
+              ? {
+                  targetUnitCost:
+                    input.targetUnitCost === null ? null : new Prisma.Decimal(input.targetUnitCost),
+                }
+              : {}),
+            ...(targetQuantity ? { targetQuantity } : {}),
+          },
+        },
+      ]);
+    }
     if (grid) {
       await tx.productionTargetLine.deleteMany({ where: { projectId: project.id } });
       if (grid.lines.length > 0) {
@@ -502,7 +561,7 @@ export async function updateProject(
         entityId: project.id,
         summary: `Updated ${project.code}: ${changed.join(", ")}${
           grid?.lines.length ? ` (${grid.total} pcs in ${grid.lines.length} colours and sizes)` : ""
-        }`,
+        }${batchNote}`,
       },
       tx,
     );
@@ -585,6 +644,7 @@ export async function listProjects(ctx: CompanyContext, raw: unknown = {}) {
   const tz = ctx.company.timezone;
   const and: Prisma.ProductionProjectWhereInput[] = [];
   if (q.status) and.push({ status: q.status });
+  if (q.batchId) and.push({ batchId: q.batchId });
   if (q.stage) and.push({ stage: q.stage });
   if (q.buyerId) and.push({ buyerId: q.buyerId });
   if (q.factoryId) and.push({ factoryId: q.factoryId });

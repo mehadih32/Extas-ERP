@@ -1,12 +1,16 @@
 import { Prisma, type ProductionStatus } from "@prisma/client";
 
 import type { Db } from "@/lib/db-types";
+import { groupAmount } from "@/lib/display";
 import { AppError } from "@/lib/errors";
 import { lockRows } from "@/lib/row-lock";
 import { CONTROL_ACCOUNTS, ensureControlAccounts } from "@/modules/accounts/control-accounts";
 import { postJournalEntry } from "@/modules/accounts/journal.service";
 import type { CompanyContext } from "@/modules/auth/context";
+import { costGuard, guardHeadline, guardWorsened } from "@/modules/production/cost-guard";
 import { money, ZERO } from "@/modules/production/costing";
+import { activeMembers, membersWith } from "@/modules/reminders/audience";
+import { sendInApp } from "@/modules/reminders/notification.service";
 
 /*
  * How production reaches the books:
@@ -118,13 +122,90 @@ export async function projectCostSummary(db: Db, companyId: string, projectId: s
   return (await projectCostSummaries(db, companyId, [projectId])).get(projectId)!;
 }
 
-/** Re-totals the cached `totalCost` on each project after a cost changes. */
+type GuardedProject = {
+  id: string;
+  code: string;
+  name: string;
+  totalCost: Prisma.Decimal;
+  targetQuantity: number;
+  targetUnitCost: Prisma.Decimal | null;
+};
+
+/**
+ * Re-totals the cached `totalCost` on each project after a cost changes, and
+ * raises the cost guard's alert on any whose cost per piece just came near its
+ * target price or went over it.
+ */
 export async function refreshProjectCosts(tx: Tx, companyId: string, projectIds: string[]) {
   const summaries = await projectCostSummaries(tx, companyId, projectIds);
+  const before = await tx.productionProject.findMany({
+    where: { id: { in: [...summaries.keys()] }, companyId },
+    select: {
+      id: true,
+      code: true,
+      name: true,
+      totalCost: true,
+      targetQuantity: true,
+      targetUnitCost: true,
+    },
+  });
   for (const [id, s] of summaries) {
     await tx.productionProject.update({ where: { id }, data: { totalCost: s.totalCost } });
   }
+  await alertCostGuard(
+    tx,
+    companyId,
+    before.map((p) => ({ project: p, after: { totalCost: summaries.get(p.id)!.totalCost } })),
+  );
   return summaries;
+}
+
+/**
+ * The cost guard's instant alert: each project whose guard got worse (fine to
+ * near its target price, or to over it) messages the people who run production
+ * (production.manage) in the app. `after` is what changed: its cost, or its
+ * target price and pieces when those were edited.
+ */
+export async function alertCostGuard(
+  tx: Tx,
+  companyId: string,
+  changes: ReadonlyArray<{
+    project: GuardedProject;
+    after: Partial<Pick<GuardedProject, "totalCost" | "targetQuantity" | "targetUnitCost">>;
+  }>,
+) {
+  const alerts = changes.flatMap(({ project: p, after }) => {
+    const was = costGuard(p.totalCost, p.targetQuantity, p.targetUnitCost);
+    const now = costGuard(
+      after.totalCost ?? p.totalCost,
+      after.targetQuantity ?? p.targetQuantity,
+      after.targetUnitCost === undefined ? p.targetUnitCost : after.targetUnitCost,
+    );
+    return now && guardWorsened(was?.level ?? null, now.level) ? [{ p, guard: now }] : [];
+  });
+  if (alerts.length === 0) return 0;
+  const company = await tx.company.findUniqueOrThrow({
+    where: { id: companyId },
+    select: { currency: true },
+  });
+  const members = await activeMembers(companyId, tx);
+  const to = membersWith(members, ["production.manage"]).map((userId) => ({ userId }));
+  const amount = (value: Prisma.Decimal) =>
+    `${company.currency} ${groupAmount(value.toFixed(2), company.currency)}`;
+  let sent = 0;
+  for (const { p, guard } of alerts) {
+    sent += await sendInApp(tx, companyId, to, {
+      subject: `${guardHeadline(guard.level)}: ${p.code}`,
+      body: `${p.name} now costs ${amount(guard.perPiece)} a piece against a target price of ${amount(guard.target)} (${guard.percent}%).${
+        guard.level === "OVER"
+          ? " Check its bills and costs before adding more."
+          : ` ${amount(guard.leftPerPiece)} a piece is left before it goes over.`
+      }`,
+      entityType: "ProductionProject",
+      entityId: p.id,
+    });
+  }
+  return sent;
 }
 
 const CLOSED: ProductionStatus[] = ["COMPLETED", "CANCELLED"];

@@ -12,12 +12,13 @@ export type ProductionTab = {
 
 /*
  * The Production area's tabs, shown to the people their Server Actions let in:
- * projects read with production.view, deliveries with production.view or
+ * master batches and projects read with production.view, deliveries with production.view or
  * production.stock_intake, bills need the costs as well (production.manage or
  * accounts.view), and cost heads are changed with production.manage.
  */
 export const PRODUCTION_TABS: readonly ProductionTab[] = [
   { href: "/production", label: "Overview", anyOf: ["production.view"] },
+  { href: "/production/batches", label: "Batches", anyOf: ["production.view"] },
   { href: "/production/projects", label: "Projects", anyOf: ["production.view"] },
   {
     href: "/production/deliveries",

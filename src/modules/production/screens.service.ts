@@ -16,11 +16,12 @@ import { ensureControlAccounts } from "@/modules/accounts/control-accounts";
 import { listMoneyAccounts } from "@/modules/accounts/screens.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { listSizes } from "@/modules/inventory/catalog.service";
-import { getStyleMatrix, matrixAxes } from "@/modules/inventory/matrix.service";
+import { getStyleMatrix, listRatioPresets, matrixAxes } from "@/modules/inventory/matrix.service";
 import { listCategoryOptions } from "@/modules/inventory/screens.service";
 import { getDefaultWarehouse, listWarehouses } from "@/modules/inventory/stock.service";
 import { listStyles } from "@/modules/inventory/style.service";
 import { canSeeMaterialCosts } from "@/modules/materials/access";
+import { findOpenBatches } from "@/modules/production/batch.service";
 import { boardColumns, nextStage } from "@/modules/production/board";
 import { projectChallans } from "@/modules/production/challan.service";
 import { isWalkIn } from "@/modules/parties/walk-in";
@@ -31,6 +32,7 @@ import {
   listBills,
   listCostHeads,
 } from "@/modules/production/cost.service";
+import type { CostGuard } from "@/modules/production/cost-guard";
 import { DEFAULT_B_GRADE_RATIO, evenCostPerPiece, money, ZERO } from "@/modules/production/costing";
 import { getIntake, listIntakes } from "@/modules/production/intake.service";
 import { projectPieceCosts } from "@/modules/production/piece-cost.service";
@@ -125,12 +127,28 @@ const partyOf = (party: PartyLike | null) =>
 
 type ProjectCard = Awaited<ReturnType<typeof listProjects>>["items"][number];
 
-function presentCard(card: ProjectCard, tz: string) {
+/** The cost guard as plain values: the level, the cost per piece and the target price. */
+export function presentGuard(guard: CostGuard | null) {
+  return guard
+    ? {
+        level: guard.level,
+        perPiece: fixed(guard.perPiece),
+        target: fixed(guard.target),
+        percent: guard.percent,
+        leftPerPiece: fixed(guard.leftPerPiece),
+      }
+    : null;
+}
+
+export type CostGuardData = NonNullable<ReturnType<typeof presentGuard>>;
+
+export function presentCard(card: ProjectCard, tz: string) {
   const t = card.timeline;
   return {
     id: card.id,
     code: card.code,
     name: card.name,
+    batch: card.batch ? { id: card.batch.id, code: card.batch.code, name: card.batch.name } : null,
     status: card.status,
     stage: card.stage,
     buyer: partyOf(card.buyer),
@@ -155,6 +173,9 @@ function presentCard(card: ProjectCard, tz: string) {
       timeElapsedPercent: t.timeElapsedPercent,
     },
     quantities: card.quantities,
+    /** Production Managers and Accounts only: the target price and the cost guard. */
+    targetUnitCost: card.targetUnitCost ? fixed(card.targetUnitCost) : null,
+    costGuard: presentGuard(card.costGuard),
     /** Production Managers and Accounts only. */
     costs: card.costs
       ? {
@@ -547,15 +568,33 @@ export type ProjectScreen = Awaited<ReturnType<typeof getProjectScreen>>;
 export async function getProjectForm(
   ctx: CompanyContext,
   projectId?: string,
-  from: { orderId?: string; proformaId?: string; restockStyleId?: string } = {},
+  from: { orderId?: string; proformaId?: string; restockStyleId?: string; batchId?: string } = {},
 ) {
   const tz = ctx.company.timezone;
   const today = localDay(new Date(), tz);
-  const categories = await listCategoryOptions(ctx);
+  const [categories, batches, presets] = await Promise.all([
+    listCategoryOptions(ctx),
+    findOpenBatches(ctx),
+    listRatioPresets(ctx),
+  ]);
+  // "Add a style" on a batch: the new project starts in it, at its factory and by its day.
+  const inBatch = from.batchId && !projectId ? batches.find((b) => b.id === from.batchId) : null;
+  if (from.batchId && !projectId && !inBatch) {
+    throw new AppError("NOT_FOUND", "That master batch is not open for new styles.");
+  }
   const base = {
     today,
-    defaultTargetOn: addDays(today, DEFAULT_PRODUCTION_LEAD_DAYS),
+    defaultTargetOn: inBatch?.targetOn ?? addDays(today, DEFAULT_PRODUCTION_LEAD_DAYS),
     categories: categories.map((c) => ({ id: c.id, label: c.path.join(" › ") })),
+    /** Open master batches a style can join, and the one it starts in. */
+    batches,
+    batch: inBatch ?? null,
+    /** Size ratios ("S 1, M 2, L 2, XL 1") to fill a colour's sizes from a total. */
+    ratioPresets: presets.map((p) => ({
+      id: p.id,
+      name: p.name,
+      entries: p.entries.map((e) => ({ sizeId: e.sizeId, sizeName: e.size.name, ratio: e.ratio })),
+    })),
   };
   if (!projectId) {
     if (from.restockStyleId && !from.orderId && !from.proformaId) {
@@ -587,13 +626,20 @@ export async function getProjectForm(
       buyer: { select: { id: true, code: true, name: true } },
       proforma: { select: { id: true, number: true } },
       salesOrder: { select: { id: true, number: true } },
+      batch: { select: { id: true, code: true, name: true } },
       targetLines: { select: { variantId: true, quantity: true } },
     },
   });
   if (!p) throw new AppError("NOT_FOUND", "Production project not found.");
   const closed = p.status === "COMPLETED" || p.status === "CANCELLED";
+  // Its own batch stays a choice even once that batch is done.
+  const batchChoices =
+    p.batch && !batches.some((b) => b.id === p.batch!.id)
+      ? [{ ...p.batch, kind: "CM" as const, factory: null, targetOn: null }, ...batches]
+      : batches;
   return {
     ...base,
+    batches: batchChoices,
     source: null,
     restock: null,
     blocks: await formBlocks(ctx, sumTargets(p.targetLines)),
@@ -601,6 +647,8 @@ export async function getProjectForm(
       id: p.id,
       code: p.code,
       name: p.name,
+      batch: p.batch,
+      targetUnitCost: p.targetUnitCost ? fixed(p.targetUnitCost) : null,
       status: p.status,
       categoryId: p.categoryId,
       style: p.style,

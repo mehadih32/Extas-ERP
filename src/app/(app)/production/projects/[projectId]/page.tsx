@@ -11,6 +11,7 @@ import {
   StageBadge,
   TimelineBadge,
 } from "@/components/production/badges";
+import { CostGuardPanel } from "@/components/production/cost-guard";
 import { CostEntries, CostSummary, GradeCosts } from "@/components/production/cost-sheet";
 import { pieces, productionHref } from "@/components/production/labels";
 import { MaterialsSent } from "@/components/production/materials-sent";
@@ -124,7 +125,13 @@ export default async function ProjectPage({
   return (
     <div className="grid grid-cols-1 gap-8 md:gap-10">
       <div className="grid gap-6">
-        <BackLink href="/production/projects">All projects</BackLink>
+        {p.batch ? (
+          <BackLink href={productionHref.batch(p.batch.id)}>
+            {p.batch.code} · {p.batch.name}
+          </BackLink>
+        ) : (
+          <BackLink href="/production/projects">All projects</BackLink>
+        )}
         <RecordHeader
           eyebrow={`${p.code} · ${forWhom(p)}`}
           title={p.name}
@@ -174,6 +181,25 @@ export default async function ProjectPage({
           {costs && <CostEntries costs={costs} currency={currency} />}
         </div>
         <div className="grid min-w-0 grid-cols-1 content-start gap-6">
+          {p.costGuard ? (
+            <CostGuardPanel guard={p.costGuard} currency={currency} />
+          ) : (
+            costs &&
+            can.edit &&
+            p.status !== "COMPLETED" &&
+            p.status !== "CANCELLED" && (
+              <Panel title="Cost guard" id="cost-guard-heading">
+                <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+                  No target price yet. Give one in{" "}
+                  <Link href={`${productionHref.project(p.id)}/edit`} className={linkClass}>
+                    Edit
+                  </Link>{" "}
+                  and a bar shows the cost per piece against it, yellow when it comes near and red
+                  once it goes over.
+                </p>
+              </Panel>
+            )
+          )}
           {costs && (
             <>
               <GradeCosts costs={costs} targetQuantity={p.quantities.target} currency={currency} />
@@ -190,6 +216,13 @@ export default async function ProjectPage({
           )}
           <Panel title="Details" id="details-heading">
             <dl className="mt-4 grid gap-4">
+              {p.batch && (
+                <Fact label="Master batch">
+                  <Link href={productionHref.batch(p.batch.id)} className={linkClass}>
+                    {p.batch.code} · {p.batch.name}
+                  </Link>
+                </Fact>
+              )}
               <Fact label="Made for">
                 {p.buyer ? (
                   can.openParty ? (

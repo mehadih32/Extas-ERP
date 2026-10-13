@@ -18,6 +18,7 @@ import { listProjectRowsAction } from "@/server/actions/production.actions";
 import { ProjectBadge, StageBadge, TimelineBadge } from "./badges";
 import { productionHref } from "./labels";
 import { projectListQuery, type ProjectListView } from "./list-view";
+import { GUARD_TONES } from "./cost-guard";
 import { forWhom, ProjectCard } from "./project-card";
 
 /**
@@ -63,6 +64,11 @@ export function ProjectList({
                 <TableCell className="py-3">
                   <RowLink href={productionHref.project(p.id)}>{p.code}</RowLink>
                   <div className="mt-1 max-w-72 truncate text-[0.8125rem]">{p.name}</div>
+                  {p.batch && (
+                    <div className="max-w-72 truncate text-[0.8125rem] text-muted-foreground">
+                      {p.batch.code} · {p.batch.name}
+                    </div>
+                  )}
                 </TableCell>
                 <TableCell>
                   <div className="max-w-56 truncate">{forWhom(p)}</div>
@@ -106,6 +112,13 @@ export function ProjectList({
                 {showCosts && (
                   <TableCell className="text-right whitespace-nowrap tabular-nums">
                     {p.costs ? money(p.costs.estimatedCostPerPiece, currency) : null}
+                    {p.costGuard && (
+                      <div
+                        className={cn("mt-1 text-[0.8125rem]", GUARD_TONES[p.costGuard.level].text)}
+                      >
+                        {p.costGuard.percent}% of {money(p.costGuard.target, currency)}
+                      </div>
+                    )}
                   </TableCell>
                 )}
               </TableRow>

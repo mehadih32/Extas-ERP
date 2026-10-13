@@ -124,13 +124,14 @@ describe("Production in the menu, by role", () => {
       "Deliveries",
       "Bills",
       "Cost heads",
+      "Fault log",
     ]);
   });
 
   it("keeps bills, with their costs, from the store team", () => {
     const store = role("WAREHOUSE_TEAM");
     expect(inMenu(store)).toBe(true);
-    expect(tabs(store)).toEqual(["Overview", "Batches", "Projects", "Deliveries"]);
+    expect(tabs(store)).toEqual(["Overview", "Batches", "Projects", "Deliveries", "Fault log"]);
     // Someone who only receives goods lands on Deliveries.
     expect(tabs(["production.stock_intake"])).toEqual(["Deliveries"]);
   });
@@ -142,6 +143,7 @@ describe("Production in the menu, by role", () => {
       "Projects",
       "Deliveries",
       "Bills",
+      "Fault log",
     ]);
   });
 

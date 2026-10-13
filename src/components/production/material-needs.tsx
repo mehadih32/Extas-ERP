@@ -1,4 +1,10 @@
-import { FileDownIcon, PencilIcon, ShoppingCartIcon } from "lucide-react";
+import {
+  FileDownIcon,
+  PackageCheckIcon,
+  PackageOpenIcon,
+  PencilIcon,
+  ShoppingCartIcon,
+} from "lucide-react";
 import Link from "next/link";
 
 import { OrderBadge } from "@/components/materials/badges";
@@ -276,6 +282,26 @@ export function BatchMaterialsPanel({
           ))}
           ; their fabric and accessories are not counted here.
         </p>
+      )}
+      {(data.can.receive || data.can.issue) && (
+        <div className="mt-5 flex flex-wrap gap-2 border-t pt-4">
+          {data.can.receive && (
+            <Button asChild size="sm" variant="outline">
+              <Link href={productionHref.receive(data.batch.id)}>
+                <PackageCheckIcon aria-hidden />
+                Receive a delivery
+              </Link>
+            </Button>
+          )}
+          {data.can.issue && (
+            <Button asChild size="sm" variant="outline">
+              <Link href={productionHref.issue(data.batch.id)}>
+                <PackageOpenIcon aria-hidden />
+                Issue to styles
+              </Link>
+            </Button>
+          )}
+        </div>
       )}
     </Panel>
   );

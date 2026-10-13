@@ -9,6 +9,8 @@ import type {
   ProductionKind,
   ProductionStage,
   ProductionStatus,
+  SupplierFaultKind,
+  SupplierFaultStatus,
 } from "@prisma/client";
 
 import type { BatchState } from "@/modules/production/schemas";
@@ -177,6 +179,37 @@ export const productionHref = {
     `/production/batches/${encodeURIComponent(batchId)}/contracts/${encodeURIComponent(contractId)}`,
   contractPdf: (contractId: string) =>
     `/api/production/contracts/${encodeURIComponent(contractId)}/pdf`,
+  /** The batch's central receive: a delivery on one of its orders, Challan vs Actual. */
+  receive: (batchId: string, orderId?: string) =>
+    `/production/batches/${encodeURIComponent(batchId)}/receive${
+      orderId ? `?order=${encodeURIComponent(orderId)}` : ""
+    }`,
+  /** Issuing the batch's materials from the store to its styles, colour by colour. */
+  issue: (batchId: string) => `/production/batches/${encodeURIComponent(batchId)}/issue`,
+  /** The supplier fault log, for one batch or supplier when given. */
+  faults: (filter: { batchId?: string; supplierId?: string; status?: string } = {}) => {
+    const query = new URLSearchParams(
+      Object.entries(filter).filter((e): e is [string, string] => Boolean(e[1])),
+    ).toString();
+    return `/production/faults${query ? `?${query}` : ""}`;
+  },
+  reportCard: (supplierId: string) =>
+    `/api/production/suppliers/${encodeURIComponent(supplierId)}/report-card`,
+};
+
+/** What a supplier fault is for. */
+export const FAULT_KIND_LABELS: Record<SupplierFaultKind, string> = {
+  SHORT_RECEIVE: "Short at receive",
+  FABRIC_FAULT: "Fabric fault",
+  QUALITY: "Quality fault",
+  MISSING_PIECES: "Missing pieces",
+  OTHER: "Other",
+};
+
+export const FAULT_STATUS_LABELS: Record<SupplierFaultStatus, string> = {
+  OPEN: "Open",
+  DEDUCTED: "Deducted",
+  WAIVED: "Waived",
 };
 
 /** What a batch contract is for, short (the full titles are in contract-terms.ts). */

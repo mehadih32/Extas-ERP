@@ -6,17 +6,20 @@ import { getRequestMeta } from "@/lib/request-meta";
 import { runAction } from "@/lib/result";
 import { requireAnyPermission, requirePermission } from "@/modules/auth/context";
 import * as files from "@/modules/files/file.service";
+import * as batchIssue from "@/modules/production/batch-issue.service";
 import * as batchOrders from "@/modules/production/batch-orders.service";
 import * as batchScreens from "@/modules/production/batch-screens.service";
 import * as batches from "@/modules/production/batch.service";
 import * as challans from "@/modules/production/challan.service";
 import * as contracts from "@/modules/production/contract.service";
 import * as costs from "@/modules/production/cost.service";
+import * as faults from "@/modules/production/fault.service";
 import * as intakes from "@/modules/production/intake.service";
 import * as pictures from "@/modules/production/material-image.service";
 import * as needs from "@/modules/production/material-need.service";
 import * as materialScreens from "@/modules/production/material-screens.service";
 import * as projects from "@/modules/production/project.service";
+import * as receive from "@/modules/production/receive.service";
 import * as screens from "@/modules/production/screens.service";
 
 /*
@@ -48,6 +51,10 @@ const materialPictures = () => requireAnyPermission("production.manage", "materi
 const buyMaterials = () => requirePermission("materials.purchase");
 /** Contracts carry prices and CM: Production Managers and Accounts read them. */
 const readContracts = () => requireAnyPermission("production.manage", "accounts.view");
+/** The store keeps and issues materials (materials.manage, Production Managers too). */
+const keepStore = () => requirePermission("materials.manage");
+/** The fault log: Production, the store and Accounts read it; the service checks the rest. */
+const readFaults = () => requireAnyPermission("production.view", "materials.view", "accounts.view");
 const pickProjects = () =>
   requireAnyPermission("production.manage", "accounts.payments.record", "production.stock_intake");
 
@@ -188,6 +195,28 @@ export const redraftContractAction = async (contractId: string) =>
   runAction(async () => contracts.redraftContract(await manage(), contractId));
 export const deleteContractAction = async (contractId: string) =>
   change(async () => contracts.deleteContract(await manage(), contractId, await getRequestMeta()));
+
+// --- Batch receive, issue and the supplier fault log ---------------------------------
+export const getBatchReceiveAction = async (batchId: string, orderId?: string) =>
+  runAction(async () => receive.getBatchReceive(await buyMaterials(), batchId, orderId));
+export const receiveBatchDeliveryAction = async (batchId: string, input: unknown) =>
+  change(async () =>
+    receive.receiveBatchDelivery(await buyMaterials(), batchId, input, await getRequestMeta()),
+  );
+export const getBatchIssueAction = async (batchId: string, warehouseId?: string) =>
+  runAction(async () => batchIssue.getBatchIssue(await keepStore(), batchId, warehouseId));
+export const issueToStylesAction = async (batchId: string, input: unknown) =>
+  change(async () =>
+    batchIssue.issueToStyles(await keepStore(), batchId, input, await getRequestMeta()),
+  );
+export const listFaultsAction = async (query: unknown) =>
+  runAction(async () => faults.listFaults(await readFaults(), query));
+export const createFaultAction = async (input: unknown) =>
+  change(async () => faults.createFault(await readFaults(), input, await getRequestMeta()));
+export const settleFaultAction = async (faultId: string, input: unknown) =>
+  change(async () =>
+    faults.settleFault(await readFaults(), faultId, input, await getRequestMeta()),
+  );
 
 // --- Overview & projects -------------------------------------------------------------
 export const getProductionOverviewAction = async () =>

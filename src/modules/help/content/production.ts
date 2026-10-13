@@ -471,6 +471,160 @@ export const productionHelp: HelpSection = {
       ],
     },
     {
+      slug: "production-batch-receive",
+      title: "ব্যাচের মাল এক জায়গায় রিসিভ করবেন যেভাবে (চালান বনাম আসল ওজন)",
+      summary:
+        "মাস্টার ব্যাচের সব স্টাইলের কাপড় ও অ্যাক্সেসরিজ এক জায়গায় রিসিভ: চালানে কত লেখা আর আসলে কত ওজন বা গোনা হলো তা পাশাপাশি লিখুন। বেশি কম এলে লাল সতর্কতা দেখায় আর সরবরাহকারীর Fault Log-এ উঠে যায়।",
+      keywords: [
+        "receive",
+        "central receive",
+        "challan",
+        "challan vs actual",
+        "actual weight",
+        "short",
+        "extra",
+        "short/extra",
+        "price at receive",
+        "রিসিভ",
+        "চালান",
+        "ওজন",
+        "কম এসেছে",
+      ],
+      routes: ["/production/batches/[batchId]/receive"],
+      who: "রিসিভ করেন যাঁরা কাঁচামাল কেনেন (materials.purchase): Production Manager ও Super Admin। মাল বাকিতে (Supplier Due) স্টোরে ঢোকে।",
+      anyOf: ["materials.purchase"],
+      steps: [
+        {
+          text: "ব্যাচের পাতায় “Materials” অংশের নিচে “Receive a delivery” চাপুন। ব্যাচের যেসব পারচেজ অর্ডারে মাল আসা বাকি সেগুলো দেখায়; যে অর্ডারের মাল এসেছে সেটি বেছে নিন। একটিই থাকলে নিজে থেকে বাছা হয়।",
+          image: {
+            id: "production-batch-receive-1",
+            caption: "ব্যাচের যেসব অর্ডারে মাল আসা বাকি",
+          },
+        },
+        {
+          text: "“Challan no. (optional)” ঘরে সরবরাহকারীর চালান নম্বর আর “Received on” ঘরে তারিখ দিন।",
+        },
+        {
+          text: "“Challan vs Actual” অংশে প্রতিটি লাইনে চালানে কত লেখা (“Challan says”) আর আসলে কত ওজন বা গোনা হলো তা লিখুন। লেখার সাথে সাথে নিচে দেখায়: সমান হলে Final Match, বেশি হলে Extra, কম হলে Short। কাপড়ে ২% আর বাকিতে ১%-এর বেশি কম হলে লাল হয়ে যায়।",
+          image: {
+            id: "production-batch-receive-2",
+            caption: "চালান বনাম আসল ওজন, লাল Short সতর্কতা সহ",
+          },
+        },
+        {
+          text: "অর্ডারে যে লাইনের দাম রিসিভে ঠিক হবে বলা ছিল, তার “Agreed price” ঘরে এখন দাম দিন। তারপর “Receive into the store” চাপুন। শুধু যা আসলে এসেছে তাই বিল হয়ে স্টোরে ঢোকে।",
+        },
+        {
+          text: "সীমার বেশি কম এলে সেই লাইন সরবরাহকারীর “Fault log”-এ লাইনের দামে উঠে যায় আর Production Manager-রা সাথে সাথে নোটিফিকেশন পান। ব্যাচের পাতায় লাল বার্তায় তা দেখায়।",
+          image: {
+            id: "production-batch-receive-3",
+            caption: "রিসিভের পর ব্যাচের পাতায় লাল বার্তা",
+          },
+        },
+      ],
+      tips: [
+        "কোনো লাইনের কিছুই না এলে ঘর খালি রাখুন; চালানে লেখা থাকলে আসল ঘরে 0 লিখুন, তাহলে পুরোটাই কম হিসেবে ধরা হয়।",
+        "Extra বা সীমার মধ্যে কম শুধু দেখায়, Fault Log-এ ওঠে না।",
+      ],
+    },
+    {
+      slug: "production-batch-issue",
+      title: "ব্যাচের কাপড় ও অ্যাক্সেসরিজ রং অনুযায়ী স্টাইলে ইস্যু করবেন যেভাবে",
+      summary:
+        "স্টোর থেকে মাস্টার ব্যাচের সব স্টাইলে এক সাথে মাল ইস্যু: প্রতিটি স্টাইলের প্রতিটি রঙের জন্য কত লাগবে, কত আগে দেওয়া হয়েছে আর কত বাকি তা দেখে লিখুন। প্রতিটি স্টাইলে শুধু যা নিল তার খরচই ওঠে।",
+      keywords: [
+        "issue",
+        "issue to styles",
+        "colour wise",
+        "color wise",
+        "store issue",
+        "fabric issue",
+        "fill what is still to issue",
+        "ইস্যু",
+        "রং অনুযায়ী",
+        "স্টোর",
+      ],
+      routes: ["/production/batches/[batchId]/issue"],
+      who: "ইস্যু করেন স্টোর (Warehouse Team), Production Manager ও Super Admin (materials.manage)। এই পাতায় দাম দেখায় না।",
+      anyOf: ["materials.manage"],
+      steps: [
+        {
+          text: "ব্যাচের পাতায় “Materials” অংশের নিচে “Issue to styles” চাপুন। প্রতিটি কাঁচামালের জন্য স্টোরে কত আছে, কত লাগবে, কত দেওয়া হয়েছে আর কত বাকি দেখায়।",
+        },
+        {
+          text: "প্রতিটি স্টাইলের নিচে রঙের ঘরে সেই রঙের জন্য কত দিচ্ছেন লিখুন। “Fill what is still to issue” চাপলে সব ঘরে বাকি পরিমাণ বসে যায়, দরকার মতো বদলান। নিচে মোট আর স্টোরে কত আছে দেখায়; বেশি হলে লাল হয়।",
+          image: {
+            id: "production-batch-issue-1",
+            caption: "রং অনুযায়ী স্টাইলে ইস্যুর ঘর",
+          },
+        },
+        {
+          text: "“Taken by (optional)” ঘরে কে নিল লিখে “Issue to the styles” চাপুন। প্রতিটি স্টাইলের জন্য আলাদা ইস্যু নোট (MI-) হয়, রঙের হিসাব নোটে লেখা থাকে, আর সব একসাথে হয় না হলে কোনোটাই হয় না।",
+          image: {
+            id: "production-batch-issue-2",
+            caption: "ইস্যুর পর ব্যাচের পাতায় নোটের নম্বর",
+          },
+        },
+      ],
+      tips: [
+        "স্টোরে কম থাকলে পুরো ইস্যু আটকে যায় আর কোন মাল কত আছে তা দেখায়।",
+        "বেঁচে যাওয়া মাল আগের মতো Materials > Issue notes থেকে ফেরত নিন; ফেরত নেওয়া পরিমাণ এখানে দেওয়া হিসাব থেকে বাদ যায়।",
+      ],
+    },
+    {
+      slug: "production-fault-log",
+      title: "সরবরাহকারীর Fault Log আর রিপোর্ট কার্ড ব্যবহার করবেন যেভাবে",
+      summary:
+        "রিসিভে কম আসা, কাপড়ের ত্রুটি, মানের সমস্যা আর হারানো পিস এক তালিকায়: কার কাছে কত টাকা কাটতে হবে, কোনটা কাটা হয়েছে বা ছাড় দেওয়া হয়েছে। এক চাপে সরবরাহকারীর ১২ মাসের রিপোর্ট কার্ড PDF।",
+      keywords: [
+        "fault log",
+        "supplier fault",
+        "deduction",
+        "deduct",
+        "waive",
+        "fabric fault",
+        "report card",
+        "supplier grade",
+        "ফল্ট",
+        "ত্রুটি",
+        "কাটা",
+        "রিপোর্ট কার্ড",
+      ],
+      routes: ["/production/faults"],
+      who: "তালিকা দেখেন Production, স্টোর ও Accounts; টাকার অঙ্ক দেখেন শুধু Production Manager, Accounts ও Super Admin। ফল্ট লেখেন Production Manager; কাটা বা ছাড় দেন Production Manager ও Accounts।",
+      anyOf: ["production.view"],
+      steps: [
+        {
+          text: "“Production” > “Fault log” ট্যাবে সব ফল্ট নতুনটা আগে দেখায়। ওপরের “Open”, “Deducted”, “Waived” দিয়ে বাছুন। ডান দিকে “Still to deduct” অংশে কোন সরবরাহকারীর কাছে কতগুলো খোলা আর কত টাকা কাটতে হবে দেখায়।",
+          image: {
+            id: "production-fault-log-1",
+            caption: "Fault log পাতা ও Still to deduct অংশ",
+          },
+        },
+        {
+          text: "কাপড়ে ফুটো, রঙের দাগ বা পিস হারালে “Log a fault” চাপুন: সরবরাহকারী, “What went wrong”, পরিমাণ, কত টাকা কাটবেন আর কী সমস্যা লিখে “Log the fault” চাপুন। ব্যাচের পাতা থেকে লিখলে ব্যাচ নিজে থেকে বসে।",
+          image: {
+            id: "production-fault-log-2",
+            caption: "Log a fault ফর্ম",
+          },
+        },
+        {
+          text: "সরবরাহকারীর পেমেন্ট থেকে কেটে নিলে “Mark deducted” চাপুন। ছাড় দিলে “Waive” চেপে কারণ লিখুন। ভুল হলে “Put back to open” চাপুন।",
+        },
+        {
+          text: "“Report card (PDF)” চাপলে সরবরাহকারীর গত ১২ মাসের রিপোর্ট কার্ড নামে: কত অর্ডার সময়মতো এসেছে, চালান বনাম আসল, Fault Log, চুক্তি, A থেকে D গ্রেড আর ছোট সারাংশ। যেকোনো সরবরাহকারীর জন্য “Supplier report card” অংশে তাকে বেছে নিন।",
+          image: {
+            id: "production-fault-log-3",
+            caption: "সরবরাহকারীর রিপোর্ট কার্ড PDF",
+          },
+        },
+      ],
+      tips: [
+        "AI চালু থাকলে রিপোর্ট কার্ডের সারাংশ AI লেখে; না থাকলে হিসাব থেকে নিয়ম মেনে লেখা হয়।",
+        "ব্যাচের পাতার “Fault log” অংশে শুধু সেই ব্যাচের ফল্ট দেখায়।",
+      ],
+    },
+    {
       slug: "production-start-from-sales",
       title: "সেলস অর্ডার বা প্রোফর্মা থেকে উৎপাদন শুরু করবেন যেভাবে",
       summary:

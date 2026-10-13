@@ -58,12 +58,31 @@ async function assertPurchase(ctx: CompanyContext, billId: string) {
   return bill;
 }
 
+/** A bill line as saved, for work done in the same transaction (the batch receive's faults). */
+export type CreatedBillItem = {
+  purchaseOrderLineId: string | null;
+  rawMaterialId: string;
+  quantity: Prisma.Decimal;
+  challanQuantity: Prisma.Decimal | null;
+  unitPrice: Prisma.Decimal;
+};
+
 /**
  * Records a supplier's bill for raw materials and receives the goods into the
  * store. Due bills: buyers (materials.purchase) or Accounts. Paid now:
  * Accounts only (accounts.payments.record).
  */
-export async function createPurchase(ctx: CompanyContext, raw: unknown, meta?: RequestMeta) {
+export async function createPurchase(
+  ctx: CompanyContext,
+  raw: unknown,
+  meta?: RequestMeta,
+  /** Runs inside the bill's transaction once it is saved (logging Short/Extra faults). */
+  afterCreate?: (
+    tx: Prisma.TransactionClient,
+    bill: { id: string; number: string; billDate: Date },
+    items: CreatedBillItem[],
+  ) => Promise<void>,
+) {
   const input = createPurchaseSchema.parse(raw);
   if (input.paymentType === "CASH_BANK") {
     assertCanPayMoney(
@@ -124,6 +143,10 @@ export async function createPurchase(ctx: CompanyContext, raw: unknown, meta?: R
       purchaseOrderLineId: line?.id ?? null,
       rawMaterialId: line?.rawMaterialId ?? item.materialId!,
       quantity,
+      challanQuantity:
+        item.challanQuantity === null || item.challanQuantity === undefined
+          ? null
+          : qty(item.challanQuantity),
       unitPrice,
       amount: money(quantity.times(unitPrice)),
       description: item.description ?? null,
@@ -228,6 +251,7 @@ export async function createPurchase(ctx: CompanyContext, raw: unknown, meta?: R
       await refreshPurchaseOrders(tx, [order.id]);
       await settleLaterPrices(tx, order.id, items);
     }
+    if (afterCreate) await afterCreate(tx, bill, items);
     await auditInCompany(
       ctx,
       meta,

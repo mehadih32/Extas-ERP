@@ -5,6 +5,7 @@ import { dateOnly, localDay } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import type { CompanyContext } from "@/modules/auth/context";
+import { OPEN_ORDER } from "@/modules/materials/material.service";
 import { batchMaterialPlan } from "@/modules/production/batch-orders.service";
 import {
   getMaterialNeeds,
@@ -188,6 +189,9 @@ export type NeedsForm = Awaited<ReturnType<typeof getNeedsForm>>;
  */
 export async function getBatchMaterials(ctx: CompanyContext, batchId: string) {
   const plan = await batchMaterialPlan(ctx, batchId);
+  const openOrders = await ctx.db.purchaseOrder.count({
+    where: { batchId: plan.batch.id, status: { in: OPEN_ORDER } },
+  });
   return {
     batch: plan.batch,
     styles: plan.styles.map((s) => ({ id: s.id, code: s.code, name: s.name, needs: s.needs })),
@@ -208,7 +212,14 @@ export async function getBatchMaterials(ctx: CompanyContext, batchId: string) {
       imageId: m.imageId,
       styles: m.styles,
     })),
-    can: { order: ctx.can("materials.purchase") && plan.styles.length > 0 },
+    openOrders,
+    can: {
+      order: ctx.can("materials.purchase") && plan.styles.length > 0,
+      /** The central receive: buyers, once an order of the batch has goods to come. */
+      receive: ctx.can("materials.purchase") && openOrders > 0,
+      /** Issuing to the styles: the store, once the styles have materials per piece. */
+      issue: ctx.can("materials.manage") && plan.materials.length > 0,
+    },
   };
 }
 

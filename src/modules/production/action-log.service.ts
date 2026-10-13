@@ -32,6 +32,7 @@ export const LOG_KINDS = {
   SupplierFault: "Fault log",
   Expense: "Cost",
   Payment: "Payment",
+  CmSettlement: "CM settlement",
 } as const;
 
 export type LogKind = keyof typeof LOG_KINDS;
@@ -95,6 +96,7 @@ async function recordsOf(ctx: CompanyContext, projectIds: string[], batchId: str
     payments,
     orders,
     contracts,
+    settlements,
   ] = await Promise.all([
     prisma.stockIntake.findMany({ where: project, select }),
     prisma.cuttingReport.findMany({ where: project, select }),
@@ -114,7 +116,13 @@ async function recordsOf(ctx: CompanyContext, projectIds: string[], batchId: str
       where: { projectId: { in: projectIds }, bill: { companyId } },
       select: { billId: true },
     }),
-    prisma.payment.findMany({ where: project, select }),
+    prisma.payment.findMany({
+      where: {
+        companyId,
+        OR: [{ projectId: { in: projectIds } }, ...(batchId ? [{ batchId }] : [])],
+      },
+      select,
+    }),
     prisma.purchaseOrder.findMany({
       where: {
         companyId,
@@ -124,6 +132,9 @@ async function recordsOf(ctx: CompanyContext, projectIds: string[], batchId: str
     }),
     batchId
       ? prisma.productionContract.findMany({ where: { companyId, batchId }, select })
+      : Promise.resolve([]),
+    batchId
+      ? prisma.cmSettlement.findMany({ where: { companyId, batchId }, select })
       : Promise.resolve([]),
   ]);
   const orderIds = ids(orders);
@@ -148,6 +159,7 @@ async function recordsOf(ctx: CompanyContext, projectIds: string[], batchId: str
     ["SupplierFault", ids(faults)],
     ["Expense", ids(expenses)],
     ["Payment", ids(payments)],
+    ["CmSettlement", ids(settlements)],
   ]);
 }
 

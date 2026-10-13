@@ -343,15 +343,25 @@ export const listInstallmentsSchema = z.object({
 
 // --- Supplier payments ------------------------------------------------------------------------
 
-export const paySupplierSchema = z.object({
-  supplierId: id,
-  amount: positiveMoney,
-  paymentDate: dayOrInstant.optional(),
-  /** Pay for this production project: its bills are settled first. */
-  projectId: id.optional(),
-  ...cashSide,
-  notes: optionalText(1000),
-});
+export const paySupplierSchema = z
+  .object({
+    supplierId: id,
+    amount: positiveMoney,
+    paymentDate: dayOrInstant.optional(),
+    /** Pay for this production project: its bills are settled first. */
+    projectId: id.optional(),
+    /**
+     * Pay for this master batch (an advance on its CM): the bills of its styles are
+     * settled first, and what is left stays on the supplier's ledger as an advance.
+     */
+    batchId: id.optional(),
+    ...cashSide,
+    notes: optionalText(1000),
+  })
+  .refine((v) => !(v.projectId && v.batchId), {
+    path: ["batchId"],
+    message: "Pay for one style or for its batch, not both",
+  });
 
 export const listSupplierPaymentsSchema = z.object({
   supplierId: id.optional(),

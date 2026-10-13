@@ -266,28 +266,51 @@ const cashPaymentFields = {
   reference: optionalText(120),
 };
 
+const costFields = {
+  expenseHeadId: id,
+  amount: positiveMoney,
+  paymentType: z.enum(PaymentType),
+  /** Required for Due; optional for Cash/Bank (keeps the supplier's history). */
+  supplierId: id.optional(),
+  supplierRef: optionalText(60),
+  date: dayOrInstant.optional(),
+  description: optionalText(500),
+  ...cashPaymentFields,
+  /** Enter it although it looks like a bill or cost already entered. */
+  allowDuplicate: z.boolean().optional(),
+};
+
+const dueNeedsSupplier = (
+  v: { paymentType: PaymentType; supplierId?: string },
+  ctx: z.RefinementCtx,
+) => {
+  if (v.paymentType === "DUE" && !v.supplierId) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["supplierId"],
+      message: "Choose the supplier this is due to",
+    });
+  }
+};
+
 /** One cost on one project: paid now (Cash/Bank) or owed to a supplier (Due). */
-export const addProjectCostSchema = z
+export const addProjectCostSchema = z.object(costFields).superRefine(dueNeedsSupplier);
+
+/**
+ * A cost of a master batch (QC, travel...) with its Cost Setup: on one style,
+ * or split equally among the batch's open styles.
+ */
+export const addBatchCostSchema = z
   .object({
-    expenseHeadId: id,
-    amount: positiveMoney,
-    paymentType: z.enum(PaymentType),
-    /** Required for Due; optional for Cash/Bank (keeps the supplier's history). */
-    supplierId: id.optional(),
-    supplierRef: optionalText(60),
-    date: dayOrInstant.optional(),
-    description: optionalText(500),
-    ...cashPaymentFields,
-    /** Enter it although it looks like a bill or cost already entered. */
-    allowDuplicate: z.boolean().optional(),
+    ...costFields,
+    split: z.enum(["EQUAL", "ONE"]),
+    /** The style it is for, when on one style. */
+    projectId: id.optional(),
   })
   .superRefine((v, ctx) => {
-    if (v.paymentType === "DUE" && !v.supplierId) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["supplierId"],
-        message: "Choose the supplier this is due to",
-      });
+    dueNeedsSupplier(v, ctx);
+    if (v.split === "ONE" && !v.projectId) {
+      ctx.addIssue({ code: "custom", path: ["projectId"], message: "Choose the style" });
     }
   });
 

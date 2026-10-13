@@ -128,6 +128,7 @@ model Company {
   cuttingReports       CuttingReport[]
   embroideryJobs       EmbroideryJob[]
   finishingReports     FinishingReport[]
+  cmSettlements        CmSettlement[]
   materialNeeds        ProductionMaterialNeed[]
   supplierBills        SupplierBill[]
   stockIntakes         StockIntake[]
@@ -196,71 +197,73 @@ model User {
   createdAt          DateTime   @default(now())
   updatedAt          DateTime   @updatedAt
 
-  memberships        CompanyMembership[]
-  sessions           Session[]
-  preference         UserPreference?
-  auditLogs          AuditLog[]
-  employeeProfiles   Employee[]
-  uploadedFiles      FileAsset[]
-  forceOverrides     SalesOrderItem[]      @relation("ForceOverrideBy")
-  returnInspections  SalesReturnItem[]     @relation("ReturnInspectedBy")
-  notes              Note[]
-  tasksCreated       Task[]                @relation("TaskCreatedBy")
-  remindersCreated   Reminder[]            @relation("ReminderCreatedBy")
-  remindersAcked     Reminder[]            @relation("ReminderAcknowledgedBy")
-  reminderTargets    ReminderRecipient[]
-  reminderRules      ReminderRule[]        @relation("ReminderRuleUpdatedBy")
-  notifications      NotificationLog[]
-  reportExports      ReportExport[]
-  journalEntries     JournalEntry[]        @relation("JournalPostedBy")
-  approvedLeaves     LeaveRequest[]        @relation("LeaveApprovedBy")
-  requestedLeaves    LeaveRequest[]        @relation("LeaveRequestedBy")
-  attendanceMarked   Attendance[]          @relation("AttendanceRecordedBy")
-  overtimeDecided    OvertimeEntry[]       @relation("OvertimeDecidedBy")
-  claimsDecided      StaffClaim[]          @relation("StaffClaimDecidedBy")
-  claimsPaid         StaffClaim[]          @relation("StaffClaimPaidBy")
-  claimsCreated      StaffClaim[]          @relation("StaffClaimCreatedBy")
-  noticesPosted      Notice[]              @relation("NoticeCreatedBy")
-  noticesTakenDown   Notice[]              @relation("NoticeTakenDownBy")
-  noticeReads        NoticeRead[]
-  assetsIssued       EmployeeAsset[]       @relation("EmployeeAssetIssuedBy")
-  assetsTakenBack    EmployeeAsset[]       @relation("EmployeeAssetReturnedTo")
-  payrollsCreated    PayrollRun[]          @relation("PayrollCreatedBy")
-  payrollsApproved   PayrollRun[]          @relation("PayrollApprovedBy")
-  salariesPaid       PayrollPayment[]      @relation("PayrollPaidBy")
-  advancesGiven      SalaryAdvance[]       @relation("AdvanceCreatedBy")
-  generatedDocs      GeneratedDocument[]
-  backupRuns         BackupRun[]
-  expensesCreated    Expense[]             @relation("ExpenseCreatedBy")
-  pettyCashHeld      PettyCashBox[]        @relation("PettyCashHolder")
-  purchaseOrders     PurchaseOrder[]       @relation("PurchaseOrderCreatedBy")
-  materialIssues     MaterialIssue[]       @relation("MaterialIssueCreatedBy")
-  materialChallans   MaterialChallan[]     @relation("MaterialChallanCreatedBy")
-  productionBatches  ProductionBatch[]     @relation("ProductionBatchCreatedBy")
-  contractsMade      ProductionContract[]  @relation("ProductionContractCreatedBy")
-  contractsChanged   ProductionContract[]  @relation("ProductionContractUpdatedBy")
-  faultsLogged       SupplierFault[]       @relation("SupplierFaultCreatedBy")
-  faultsSettled      SupplierFault[]       @relation("SupplierFaultSettledBy")
-  cuttingReports     CuttingReport[]       @relation("CuttingReportCreatedBy")
-  finishingReports   FinishingReport[]     @relation("FinishingReportCreatedBy")
-  embroideryJobs     EmbroideryJob[]       @relation("EmbroideryJobCreatedBy")
-  purchaseReturns    PurchaseReturn[]      @relation("PurchaseReturnCreatedBy")
-  materialMovements  RawMaterialMovement[] @relation("MaterialMovementBy")
-  refunds            Refund[]              @relation("RefundCreatedBy")
-  salesReturns       SalesReturn[]         @relation("SalesReturnCreatedBy")
-  creditAllocations  CreditAllocation[]    @relation("CreditAllocatedBy")
-  chequesRecorded    Cheque[]              @relation("ChequeRecordedBy")
-  intakesReversed    StockIntake[]         @relation("IntakeReversedBy")
-  settlementsMade    ProjectSettlement[]   @relation("SettlementMadeBy")
-  linesCleared       JournalLine[]         @relation("JournalLineClearedBy")
-  salesTargetsSet    SalesTarget[]         @relation("SalesTargetSetBy")
-  payRequestsMade    PayDetailsRequest[]   @relation("PayDetailsRequestedBy")
-  payRequestsDecided PayDetailsRequest[]   @relation("PayDetailsDecidedBy")
-  employeeDocsAdded  EmployeeDocument[]    @relation("EmployeeDocumentAddedBy")
-  termsWritten       TermsVersion[]        @relation("TermsVersionCreatedBy")
-  termsPublished     TermsVersion[]        @relation("TermsVersionPublishedBy")
-  termsAgreed        TermsAcceptance[]     @relation("TermsAcceptedBy")
-  oneTimeCodes       OneTimeCode[]
+  memberships         CompanyMembership[]
+  sessions            Session[]
+  preference          UserPreference?
+  auditLogs           AuditLog[]
+  employeeProfiles    Employee[]
+  uploadedFiles       FileAsset[]
+  forceOverrides      SalesOrderItem[]      @relation("ForceOverrideBy")
+  returnInspections   SalesReturnItem[]     @relation("ReturnInspectedBy")
+  notes               Note[]
+  tasksCreated        Task[]                @relation("TaskCreatedBy")
+  remindersCreated    Reminder[]            @relation("ReminderCreatedBy")
+  remindersAcked      Reminder[]            @relation("ReminderAcknowledgedBy")
+  reminderTargets     ReminderRecipient[]
+  reminderRules       ReminderRule[]        @relation("ReminderRuleUpdatedBy")
+  notifications       NotificationLog[]
+  reportExports       ReportExport[]
+  journalEntries      JournalEntry[]        @relation("JournalPostedBy")
+  approvedLeaves      LeaveRequest[]        @relation("LeaveApprovedBy")
+  requestedLeaves     LeaveRequest[]        @relation("LeaveRequestedBy")
+  attendanceMarked    Attendance[]          @relation("AttendanceRecordedBy")
+  overtimeDecided     OvertimeEntry[]       @relation("OvertimeDecidedBy")
+  claimsDecided       StaffClaim[]          @relation("StaffClaimDecidedBy")
+  claimsPaid          StaffClaim[]          @relation("StaffClaimPaidBy")
+  claimsCreated       StaffClaim[]          @relation("StaffClaimCreatedBy")
+  noticesPosted       Notice[]              @relation("NoticeCreatedBy")
+  noticesTakenDown    Notice[]              @relation("NoticeTakenDownBy")
+  noticeReads         NoticeRead[]
+  assetsIssued        EmployeeAsset[]       @relation("EmployeeAssetIssuedBy")
+  assetsTakenBack     EmployeeAsset[]       @relation("EmployeeAssetReturnedTo")
+  payrollsCreated     PayrollRun[]          @relation("PayrollCreatedBy")
+  payrollsApproved    PayrollRun[]          @relation("PayrollApprovedBy")
+  salariesPaid        PayrollPayment[]      @relation("PayrollPaidBy")
+  advancesGiven       SalaryAdvance[]       @relation("AdvanceCreatedBy")
+  generatedDocs       GeneratedDocument[]
+  backupRuns          BackupRun[]
+  expensesCreated     Expense[]             @relation("ExpenseCreatedBy")
+  pettyCashHeld       PettyCashBox[]        @relation("PettyCashHolder")
+  purchaseOrders      PurchaseOrder[]       @relation("PurchaseOrderCreatedBy")
+  materialIssues      MaterialIssue[]       @relation("MaterialIssueCreatedBy")
+  materialChallans    MaterialChallan[]     @relation("MaterialChallanCreatedBy")
+  productionBatches   ProductionBatch[]     @relation("ProductionBatchCreatedBy")
+  contractsMade       ProductionContract[]  @relation("ProductionContractCreatedBy")
+  contractsChanged    ProductionContract[]  @relation("ProductionContractUpdatedBy")
+  faultsLogged        SupplierFault[]       @relation("SupplierFaultCreatedBy")
+  faultsSettled       SupplierFault[]       @relation("SupplierFaultSettledBy")
+  cuttingReports      CuttingReport[]       @relation("CuttingReportCreatedBy")
+  finishingReports    FinishingReport[]     @relation("FinishingReportCreatedBy")
+  cmSettlementsMade   CmSettlement[]        @relation("CmSettlementCreatedBy")
+  cmSettlementsUndone CmSettlement[]        @relation("CmSettlementUndoneBy")
+  embroideryJobs      EmbroideryJob[]       @relation("EmbroideryJobCreatedBy")
+  purchaseReturns     PurchaseReturn[]      @relation("PurchaseReturnCreatedBy")
+  materialMovements   RawMaterialMovement[] @relation("MaterialMovementBy")
+  refunds             Refund[]              @relation("RefundCreatedBy")
+  salesReturns        SalesReturn[]         @relation("SalesReturnCreatedBy")
+  creditAllocations   CreditAllocation[]    @relation("CreditAllocatedBy")
+  chequesRecorded     Cheque[]              @relation("ChequeRecordedBy")
+  intakesReversed     StockIntake[]         @relation("IntakeReversedBy")
+  settlementsMade     ProjectSettlement[]   @relation("SettlementMadeBy")
+  linesCleared        JournalLine[]         @relation("JournalLineClearedBy")
+  salesTargetsSet     SalesTarget[]         @relation("SalesTargetSetBy")
+  payRequestsMade     PayDetailsRequest[]   @relation("PayDetailsRequestedBy")
+  payRequestsDecided  PayDetailsRequest[]   @relation("PayDetailsDecidedBy")
+  employeeDocsAdded   EmployeeDocument[]    @relation("EmployeeDocumentAddedBy")
+  termsWritten        TermsVersion[]        @relation("TermsVersionCreatedBy")
+  termsPublished      TermsVersion[]        @relation("TermsVersionPublishedBy")
+  termsAgreed         TermsAcceptance[]     @relation("TermsAcceptedBy")
+  oneTimeCodes        OneTimeCode[]
 }
 
 /// A signed-in device. `token` stores the SHA-256 hash of the cookie value, never
@@ -1145,6 +1148,7 @@ model Party {
   batchesAsFactory     ProductionBatch[]    @relation("BatchFactory")
   productionContracts  ProductionContract[] @relation("ContractParty")
   faults               SupplierFault[]      @relation("SupplierFaults")
+  cmSettlements        CmSettlement[]       @relation("CmSettlementFactory")
   embroideryJobs       EmbroideryJob[]      @relation("EmbroideryParty")
   campaignRecipients   CampaignRecipient[]
   generatedDocuments   GeneratedDocument[]
@@ -1500,6 +1504,9 @@ model Payment {
   shipmentId     String? // courier COD payout
   /// A payment to a supplier for one production project: it settles that project's bills first.
   projectId      String?
+  /// A payment to a factory or supplier for a master batch (an advance on its CM): it
+  /// settles the bills of the batch's styles first, and what is left stays as an advance.
+  batchId        String?
   reference      String? // cheque no, bKash trx id...
   isAdvance      Boolean          @default(false)
   notes          String?
@@ -1521,6 +1528,7 @@ model Payment {
   supplierBill SupplierBill?      @relation(fields: [supplierBillId], references: [id], onDelete: SetNull)
   shipment     Shipment?          @relation(fields: [shipmentId], references: [id], onDelete: SetNull)
   project      ProductionProject? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  batch        ProductionBatch?   @relation(fields: [batchId], references: [id], onDelete: SetNull)
   journalEntry JournalEntry?      @relation(fields: [journalEntryId], references: [id], onDelete: SetNull)
   proofFile    FileAsset?         @relation("PaymentProof", fields: [proofFileId], references: [id], onDelete: SetNull)
   allocations  CreditAllocation[]
@@ -1528,6 +1536,7 @@ model Payment {
 
   @@unique([companyId, number])
   @@index([companyId, paymentDate])
+  @@index([batchId])
   @@index([partyId])
   @@index([projectId])
 }
@@ -1935,13 +1944,16 @@ model ProductionBatch {
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
 
-  company   Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  factory   Party?               @relation("BatchFactory", fields: [factoryId], references: [id], onDelete: SetNull)
-  createdBy User?                @relation("ProductionBatchCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  projects  ProductionProject[]
-  orders    PurchaseOrder[]
-  contracts ProductionContract[]
-  faults    SupplierFault[]
+  company       Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  factory       Party?               @relation("BatchFactory", fields: [factoryId], references: [id], onDelete: SetNull)
+  createdBy     User?                @relation("ProductionBatchCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  projects      ProductionProject[]
+  orders        PurchaseOrder[]
+  contracts     ProductionContract[]
+  faults        SupplierFault[]
+  /// Advances paid for the batch (on the factory's CM).
+  payments      Payment[]
+  cmSettlements CmSettlement[]
 
   @@unique([companyId, code])
   @@index([companyId, createdAt])
@@ -2117,32 +2129,34 @@ model SupplierBill {
 /// the challan at receive, faulty fabric, missing pieces), with the value to deduct (null:
 /// to agree). It stays open until it is deducted from what they are paid or waived.
 model SupplierFault {
-  id            String              @id @default(cuid())
-  companyId     String
-  number        String // "FLT-2026-00001"
-  supplierId    String
-  kind          SupplierFaultKind
-  status        SupplierFaultStatus @default(OPEN)
-  batchId       String?
-  projectId     String?
-  rawMaterialId String?
+  id             String              @id @default(cuid())
+  companyId      String
+  number         String // "FLT-2026-00001"
+  supplierId     String
+  kind           SupplierFaultKind
+  status         SupplierFaultStatus @default(OPEN)
+  batchId        String?
+  projectId      String?
+  rawMaterialId  String?
   /// The receive (raw material bill) it was found on.
-  billId        String?
+  billId         String?
   /// How much was short or faulty, in the material's unit (or pieces).
-  quantity      Decimal?            @db.Decimal(14, 3)
+  quantity       Decimal?            @db.Decimal(14, 3)
   /// The value to deduct (null: still to agree).
-  amount        Decimal?            @db.Decimal(14, 2)
-  note          String?
-  occurredOn    DateTime            @db.Date
+  amount         Decimal?            @db.Decimal(14, 2)
+  note           String?
+  occurredOn     DateTime            @db.Date
   /// Deducted or waived: when, by whom and why.
-  settledAt     DateTime?
-  settledById   String?
-  settledNote   String?
+  settledAt      DateTime?
+  settledById    String?
+  settledNote    String?
   /// A photo of the fault (the Fabric Fault Note's picture of the faulty roll).
-  photoId       String?
-  createdById   String?
-  createdAt     DateTime            @default(now())
-  updatedAt     DateTime            @updatedAt
+  photoId        String?
+  /// The final CM settlement it was taken off (marked deducted by it).
+  cmSettlementId String?
+  createdById    String?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
 
   company      Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
   supplier     Party              @relation("SupplierFaults", fields: [supplierId], references: [id])
@@ -2155,11 +2169,13 @@ model SupplierFault {
   settledBy    User?              @relation("SupplierFaultSettledBy", fields: [settledById], references: [id], onDelete: SetNull)
   /// The full packing list whose missing pieces it is for.
   packingLists FinishingReport[]  @relation("PackingListMissing")
+  cmSettlement CmSettlement?      @relation(fields: [cmSettlementId], references: [id], onDelete: SetNull)
 
   @@unique([companyId, number])
   @@index([companyId, status, occurredOn])
   @@index([supplierId, status])
   @@index([batchId])
+  @@index([cmSettlementId])
   @@index([billId])
 }
 
@@ -2240,6 +2256,48 @@ model FinishingReport {
 
   @@unique([companyId, number])
   @@index([projectId, countedOn])
+}
+
+/// The final CM settlement of a master batch with its factory: the CM of each style's
+/// pieces (A, B, C and rejects at its CM a piece), less the factory's open faults on the
+/// batch (missing pieces, fabric faults...) and, when chosen, the CM of the C-grade pieces,
+/// less the advance taken and what was paid for its styles: the final payable. Saving it
+/// marks the faults it took off deducted; undoing it puts them back to open. It posts
+/// nothing: the factory's bills and payments are already on their ledger.
+model CmSettlement {
+  id           String    @id @default(cuid())
+  companyId    String
+  batchId      String
+  factoryId    String
+  number       String // "CMS-2026-00001"
+  settledOn    DateTime  @db.Date
+  /// Whether the CM of the C-grade pieces was taken off (asked each time).
+  deductCGrade Boolean   @default(false)
+  totalCm      Decimal   @db.Decimal(14, 2)
+  deductions   Decimal   @db.Decimal(14, 2)
+  /// Advances paid for the batch and payments for its styles, before it was settled.
+  paid         Decimal   @db.Decimal(14, 2)
+  payable      Decimal   @db.Decimal(14, 2)
+  /// Everything printed: { styles, faults, cGrade, payments, ... } as it stood.
+  snapshot     Json
+  note         String?
+  createdById  String?
+  createdAt    DateTime  @default(now())
+  /// Undone (by mistake, or to settle again): the faults it took off are open again.
+  undoneAt     DateTime?
+  undoneById   String?
+  undoReason   String?
+
+  company   Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  batch     ProductionBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  factory   Party           @relation("CmSettlementFactory", fields: [factoryId], references: [id])
+  createdBy User?           @relation("CmSettlementCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  undoneBy  User?           @relation("CmSettlementUndoneBy", fields: [undoneById], references: [id], onDelete: SetNull)
+  faults    SupplierFault[]
+
+  @@unique([companyId, number])
+  @@index([batchId, createdAt])
+  @@index([factoryId])
 }
 
 enum EmbroideryKind {
@@ -4637,6 +4695,7 @@ enum DocumentType {
   CUTTING_REPORT // pieces cut for a style by colour and size (CUT-2026-00001)
   EMBROIDERY_JOB // cut pieces out for embroidery or print (EMB-2026-00001)
   FINISHING_REPORT // a finishing count, mending return or full packing list (FIN-2026-00001)
+  CM_SETTLEMENT // a master batch's final CM settlement with its factory (CMS-2026-00001)
 }
 
 enum TemplateFormat {

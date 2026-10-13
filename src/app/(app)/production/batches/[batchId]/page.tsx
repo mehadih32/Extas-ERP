@@ -9,6 +9,7 @@ import { ActionLogLink } from "@/components/production/action-log";
 import { TimelineBadge } from "@/components/production/badges";
 import { BatchActions } from "@/components/production/batch-actions";
 import { BatchBadge, batchStatus, stylesText } from "@/components/production/batch-card";
+import { BatchMoneyPanel } from "@/components/production/batch-money";
 import { BatchContractsPanel } from "@/components/production/contracts";
 import { BatchGuardLine, GUARD_TONES, GUARD_WORDS } from "@/components/production/cost-guard";
 import { BatchFaultsPanel } from "@/components/production/faults";
@@ -33,6 +34,7 @@ import {
   getBatchContractsAction,
   getBatchDateWarningsAction,
   getBatchMaterialsAction,
+  getBatchMoneyAction,
   getBatchScreenAction,
   listFaultsAction,
 } from "@/server/actions/production.actions";
@@ -60,13 +62,15 @@ export default async function BatchPage({
 }) {
   const ctx = await requireCompanyPage();
   const [{ batchId }, query] = await Promise.all([params, searchParams]);
-  const [result, materials, contracts, faults, dates] = await Promise.all([
+  const [result, materials, contracts, faults, dates, batchMoney] = await Promise.all([
     getBatchScreenAction(batchId),
     getBatchMaterialsAction(batchId),
     // Production Managers and Accounts only; nobody else gets the panel.
     getBatchContractsAction(batchId),
     listFaultsAction({ batchId, take: 5 }),
     getBatchDateWarningsAction(batchId),
+    // Production Managers and Accounts only, like the contracts.
+    getBatchMoneyAction(batchId),
   ]);
   if (!result.ok) {
     if (result.error.code === "NOT_FOUND") notFound();
@@ -249,6 +253,17 @@ export default async function BatchPage({
                 )
               )}
             </Panel>
+          )}
+          {batchMoney.ok && (
+            <BatchMoneyPanel
+              data={batchMoney.data}
+              styles={styles
+                .filter((s) => s.status !== "COMPLETED" && s.status !== "CANCELLED")
+                .map((s) => ({ id: s.id, code: s.code, name: s.name }))}
+              canAddCost={ctx.can("production.manage") || ctx.can("accounts.payments.record")}
+              canPayNow={ctx.can("accounts.payments.record")}
+              currency={currency}
+            />
           )}
           {contracts.ok && <BatchContractsPanel data={contracts.data} />}
           {faults.ok && (faults.data.items.length > 0 || faults.data.can.log) && (

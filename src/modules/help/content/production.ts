@@ -818,6 +818,98 @@ export const productionHelp: HelpSection = {
       ],
     },
     {
+      slug: "production-batch-money",
+      title: "মাস্টার ব্যাচের খরচ ভাগ আর ফ্যাক্টরিকে অগ্রিম CM দেবেন যেভাবে",
+      summary:
+        "QC, যাতায়াতের মতো ব্যাচের খরচ সব স্টাইলে সমান ভাগে বা একটি স্টাইলে বসানো (Cost Setup), আর মাস্টার ব্যাচের নামে ফ্যাক্টরিকে অগ্রিম CM দেওয়া।",
+      keywords: [
+        "cost setup",
+        "split cost",
+        "qc cost",
+        "travel cost",
+        "advance cm",
+        "advance payment",
+        "factory payment",
+        "খরচ ভাগ",
+        "অগ্রিম",
+        "ফ্যাক্টরি পেমেন্ট",
+      ],
+      routes: ["/production/batches/[batchId]"],
+      who: "খরচ বসান Production Manager ও Accounts; টাকা দেন শুধু Accounts।",
+      anyOf: ["production.manage", "accounts.view"],
+      steps: [
+        {
+          text: "মাস্টার ব্যাচের পাতায় “Factory money” অংশে “Add a cost (QC, travel…)” চাপুন।",
+          image: {
+            id: "production-batch-money-1",
+            caption: "মাস্টার ব্যাচের Factory money অংশ",
+          },
+        },
+        {
+          text: "“Cost Setup”-এ বেছে নিন: সব খোলা স্টাইলে সমান ভাগ (পয়সা পর্যন্ত মিলিয়ে), নাকি “On one style”। তারপর খরচের খাত, টাকা আর কার কাছে বাকি তা দিন। সাপ্লায়ারের বাকি হলে একটিই বিল হয়, স্টাইলগুলোতে ভাগ করা।",
+          image: {
+            id: "production-batch-money-2",
+            caption: "খরচ সব স্টাইলে সমান ভাগ করা",
+          },
+        },
+        {
+          text: "ফ্যাক্টরিকে অগ্রিম দিতে Accounts “Pay an advance” চাপুন। টাকাটি মাস্টার ব্যাচের নামে থাকে: আগে ব্যাচের স্টাইলগুলোর বিল মেটায়, বাকিটা অগ্রিম হিসেবে থাকে। শেষে “Record the payment” চাপুন।",
+          image: {
+            id: "production-batch-money-3",
+            caption: "মাস্টার ব্যাচের নামে অগ্রিম CM",
+          },
+        },
+      ],
+      tips: [
+        "কাপড় আর ফ্যাক্টরির টাকা স্টাইল বা ব্যাচ ধরে মেটে (project-wise)। এক্সেসরিজ সাপ্লায়ারের টাকা এক চলতি হিসাবে যায়, যা তাঁর মোট Supplier Due থেকে কমে; তাই তাঁদের ব্যাচের নামে টাকা দেওয়া যায় না।",
+        "বন্ধ হয়ে যাওয়া স্টাইলে নতুন খরচ বসে না; সমান ভাগ হয় শুধু খোলা স্টাইলগুলোতে।",
+      ],
+    },
+    {
+      slug: "production-cm-settlement",
+      title: "ফ্যাক্টরির ফাইনাল CM হিসাব আর PDF বিল করবেন যেভাবে",
+      summary:
+        "মোট CM থেকে কাটাকাটি (হারানো পিস, কাপড়ের ত্রুটি, চাইলে C-গ্রেডের CM) আর নেওয়া অগ্রিম বাদ দিয়ে ফ্যাক্টরির শেষ পাওনা, আর তার PDF বিল।",
+      keywords: [
+        "cm settlement",
+        "final bill",
+        "factory bill",
+        "deduction",
+        "final payable",
+        "c-grade",
+        "ফাইনাল হিসাব",
+        "ফ্যাক্টরির বিল",
+        "কাটাকাটি",
+        "শেষ পাওনা",
+      ],
+      routes: ["/production/batches/[batchId]/cm-settlement"],
+      who: "দেখেন Production Manager ও Accounts; সেভ বা বাতিল করেন Production Manager ও যাঁরা টাকা দেন (Accounts)।",
+      anyOf: ["production.manage", "accounts.view"],
+      steps: [
+        {
+          text: "মাস্টার ব্যাচের “Factory money” অংশে “Work out the CM settlement” চাপুন। প্রতিটি স্টাইলের A, B, C আর reject পিস তার CM রেট দিয়ে গুণ করে মোট CM দেখায়। হারানো পিসের CM দেওয়া হয় না।",
+          image: {
+            id: "production-cm-settlement-1",
+            caption: "স্টাইল ধরে CM আর কাটাকাটি",
+          },
+        },
+        {
+          text: "কাটাকাটিতে নিজে থেকে বসে ফ্যাক্টরির খোলা ফল্ট: হারানো পিসের দাম আর কাপড়ের ত্রুটি। C-গ্রেড পিসের CM কাটবেন কি না তা আপনি টিক দিয়ে ঠিক করেন; টিক দিলেই শেষ পাওনা বদলে যায়।",
+        },
+        {
+          text: "হিসাব: Total CM − Deductions − Advance taken = Final payable। ঠিক থাকলে “Save and make the PDF bill” চাপুন। এরপর “Download the PDF bill” দিয়ে ফ্যাক্টরির বিল নামান; Accounts-কে শেষ পাওনা জানানো হয়।",
+          image: {
+            id: "production-cm-settlement-2",
+            caption: "শেষ পাওনা আর PDF বিল",
+          },
+        },
+      ],
+      tips: [
+        "সেভ করলে যে ফল্টগুলো কাটা হলো সেগুলো ফল্ট লগে Deducted হয়ে যায়। ভুল হলে “Undo the settlement” চাপুন; ফল্টগুলো আবার খোলা হয়ে যায়।",
+        "কোনো স্টাইলের CM রেট ঠিক না থাকলে আগে ফ্যাক্টরির চুক্তিতে CM রেট দিন।",
+      ],
+    },
+    {
       slug: "production-start-from-sales",
       title: "সেলস অর্ডার বা প্রোফর্মা থেকে উৎপাদন শুরু করবেন যেভাবে",
       summary:

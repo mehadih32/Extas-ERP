@@ -207,6 +207,11 @@ export const productionHref = {
   /** The Employee Action Log of a style, or of a master batch and all its styles. */
   projectLog: (projectId: string) => `/production/projects/${encodeURIComponent(projectId)}/log`,
   batchLog: (batchId: string) => `/production/batches/${encodeURIComponent(batchId)}/log`,
+  /** A batch's final CM settlement with its factory, and its PDF bill. */
+  cmSettlement: (batchId: string) =>
+    `/production/batches/${encodeURIComponent(batchId)}/cm-settlement`,
+  cmSettlementPdf: (settlementId: string) =>
+    `/api/production/cm-settlements/${encodeURIComponent(settlementId)}/pdf`,
 };
 
 /** What a supplier fault is for. */

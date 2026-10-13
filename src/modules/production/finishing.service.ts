@@ -92,7 +92,7 @@ function assertCanCount(ctx: CompanyContext) {
   }
 }
 
-const projectSelect = {
+export const finishingProjectSelect = {
   id: true,
   code: true,
   name: true,
@@ -106,12 +106,12 @@ const projectSelect = {
   batch: { select: { id: true, code: true, name: true } },
 } satisfies Prisma.ProductionProjectSelect;
 
-type Project = Prisma.ProductionProjectGetPayload<{ select: typeof projectSelect }>;
+type Project = Prisma.ProductionProjectGetPayload<{ select: typeof finishingProjectSelect }>;
 
 async function loadProject(ctx: CompanyContext, projectId: string) {
   const project = await ctx.db.productionProject.findUnique({
     where: { id: projectId },
-    select: projectSelect,
+    select: finishingProjectSelect,
   });
   if (!project) throw new AppError("NOT_FOUND", "Production project not found.");
   return project;
@@ -195,7 +195,7 @@ async function cellsOf(db: Db, project: Pick<Project, "id" | "styleId" | "target
 }
 
 /** Everything finishing works from, read in one go (inside a transaction when changing). */
-async function stateOf(db: Db, ctx: CompanyContext, project: Project) {
+export async function stateOf(db: Db, ctx: CompanyContext, project: Project) {
   const [cells, cut, stocked, rows] = await Promise.all([
     cellsOf(db, project),
     cutByCell(db, project.id),
@@ -589,7 +589,7 @@ export async function deleteFinishingReport(
   assertCanCount(ctx);
   const report = await ctx.db.finishingReport.findUnique({
     where: { id: reportId },
-    select: { id: true, number: true, kind: true, project: { select: projectSelect } },
+    select: { id: true, number: true, kind: true, project: { select: finishingProjectSelect } },
   });
   if (!report) throw new AppError("NOT_FOUND", "Finishing report not found.");
   const project = report.project;

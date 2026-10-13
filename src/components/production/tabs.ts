@@ -16,10 +16,17 @@ export type ProductionTab = {
  * production.stock_intake, bills need the costs as well (production.manage or
  * accounts.view), cost heads are changed with production.manage, and the supplier
  * fault log is read with production.view (values follow the material-cost rule).
+ * Fabric and trims bookings are read with production.view and made by buyers
+ * (materials.purchase), their prices following the material-cost rule too.
  */
 export const PRODUCTION_TABS: readonly ProductionTab[] = [
   { href: "/production", label: "Overview", anyOf: ["production.view"] },
   { href: "/production/batches", label: "Batches", anyOf: ["production.view"] },
+  {
+    href: "/production/bookings",
+    label: "Bookings",
+    anyOf: ["production.view", "materials.purchase"],
+  },
   { href: "/production/projects", label: "Projects", anyOf: ["production.view"] },
   {
     href: "/production/deliveries",

@@ -1,5 +1,7 @@
 "use client";
 
+import { ScrollTextIcon } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
@@ -13,6 +15,7 @@ import {
   UNIT_ONE,
 } from "@/components/materials/labels";
 import { SupplierPicker } from "@/components/materials/pickers";
+import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import type { BatchOrdersForm as FormData } from "@/modules/production/material-screens.service";
@@ -39,7 +42,8 @@ const isZero = (text: string) => !/[1-9]/.test(text);
  * need, grouped by their usual supplier, each starting at what is still to
  * order. One order is made per supplier; each line is shared out over the
  * styles, colours and sizes that need it. A price left empty is agreed when the
- * goods arrive.
+ * goods arrive. The batch's fabric is not ordered here: it is shown apart, with
+ * "Book fabric" to book it with a booking (the server refuses fabric here too).
  */
 export function BatchOrdersForm({ form: data, currency }: { form: FormData; currency: string }) {
   const router = useRouter();
@@ -138,12 +142,70 @@ export function BatchOrdersForm({ form: data, currency }: { form: FormData; curr
     });
   }
 
+  const fabricLeft = data.fabric.filter((m) => !isZero(m.toOrder));
+  const fabricCard = data.fabric.length > 0 && (
+    <section
+      aria-labelledby="fabric-booking-heading"
+      className="grid min-w-0 gap-3 rounded-lg border border-primary/25 bg-secondary/40 p-4 sm:p-5"
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h3 id="fabric-booking-heading" className="font-serif text-lg text-primary">
+            Fabric is booked with a booking
+          </h3>
+          <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+            {fabricLeft.length > 0
+              ? "Book the batch's fabric with its GSM, DIA or width, colours and terms. It counts as ordered for the styles as soon as the booking is made."
+              : "All the batch's fabric is booked or ordered."}
+          </p>
+        </div>
+        <Button
+          asChild
+          size="sm"
+          variant={fabricLeft.length > 0 ? "default" : "outline"}
+          className="w-full sm:w-auto"
+        >
+          <Link href={productionHref.newBooking(data.batch.id)}>
+            <ScrollTextIcon aria-hidden />
+            Book fabric
+          </Link>
+        </Button>
+      </div>
+      <ul className="grid gap-1 text-[0.8125rem] text-muted-foreground" aria-label="Fabric">
+        {data.fabric.map((m) => (
+          <li key={m.material.id} className="break-words tabular-nums">
+            <span className="font-medium text-foreground">
+              {m.material.code} · {m.material.name}
+            </span>{" "}
+            ·{" "}
+            {isZero(m.toOrder)
+              ? "all booked"
+              : `${quantityText(m.toOrder, m.material.unit, currency)} to book`}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+
+  if (groups.length === 0) {
+    return (
+      <div className="grid max-w-3xl gap-6">
+        {fabricCard}
+        <p className="text-sm text-muted-foreground">
+          The batch needs no trims or accessories yet. Give its styles their materials per piece to
+          order them here.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <form onSubmit={submit} className="grid max-w-3xl gap-6" noValidate>
       <p className="text-sm leading-relaxed text-muted-foreground">
         For {data.styles.map((s) => s.code).join(", ")}. Each quantity starts at what is still to
         order. Leave a price empty to agree it when the goods arrive; it is entered on receive.
       </p>
+      {fabricCard}
       {fieldError("orders") && <FormAlert>{fieldError("orders")}</FormAlert>}
       {groups.map((g) => {
         const err = (name: string) => fieldError(`${g.key}.${name}`);

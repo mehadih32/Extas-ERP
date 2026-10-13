@@ -3,6 +3,7 @@ import {
   PackageCheckIcon,
   PackageOpenIcon,
   PencilIcon,
+  ScrollTextIcon,
   ShoppingCartIcon,
 } from "lucide-react";
 import Link from "next/link";
@@ -202,18 +203,29 @@ export function BatchMaterialsPanel({
 }) {
   const without = data.styles.filter((s) => s.needs === 0);
   const left = data.materials.filter((m) => !isZero(m.toOrder));
+  // Fabric is booked with a booking; trims and accessories go on purchase orders.
+  const fabricLeft = left.some((m) => m.material.kind === "FABRIC");
+  const othersLeft = left.some((m) => m.material.kind !== "FABRIC");
   return (
     <Panel
       title="Materials"
       id="batch-materials-heading"
       action={
         data.can.order && data.materials.length > 0 ? (
-          <Button asChild size="sm" variant={left.length > 0 ? "default" : "outline"}>
-            <Link href={productionHref.batchOrders(data.batch.id)}>
-              <ShoppingCartIcon aria-hidden />
-              Make purchase orders
-            </Link>
-          </Button>
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button asChild size="sm" variant={fabricLeft ? "default" : "outline"}>
+              <Link href={productionHref.newBooking(data.batch.id)}>
+                <ScrollTextIcon aria-hidden />
+                Book fabric
+              </Link>
+            </Button>
+            <Button asChild size="sm" variant={othersLeft ? "default" : "outline"}>
+              <Link href={productionHref.batchOrders(data.batch.id)}>
+                <ShoppingCartIcon aria-hidden />
+                Make purchase orders
+              </Link>
+            </Button>
+          </div>
         ) : undefined
       }
     >

@@ -8,6 +8,7 @@ import { EmptyState } from "@/components/products/bits";
 import { ActionLogLink } from "@/components/production/action-log";
 import { TimelineBadge } from "@/components/production/badges";
 import { BatchActions } from "@/components/production/batch-actions";
+import { BatchBookingsPanel } from "@/components/production/batch-bookings";
 import { BatchBadge, batchStatus, stylesText } from "@/components/production/batch-card";
 import { BatchMoneyPanel } from "@/components/production/batch-money";
 import { BatchContractsPanel } from "@/components/production/contracts";
@@ -38,6 +39,7 @@ import {
   getBatchScreenAction,
   listFaultsAction,
 } from "@/server/actions/production.actions";
+import { getBatchBookingsAction } from "@/server/actions/booking.actions";
 import { requireCompanyPage } from "@/server/pages/guards";
 
 export const metadata: Metadata = { title: "Master batch" };
@@ -52,6 +54,7 @@ const linkClass = "text-primary underline-offset-4 hover:underline";
  * its styles add up to (days, pieces and, for Production Managers and Accounts,
  * the cost so far and the batch's cost guard) and a card per style with its own
  * stage, days, pieces and cost guard. A Production Manager adds styles here.
+ * Its fabric bookings are listed with "Book fabric" and "Attach a booking".
  */
 export default async function BatchPage({
   params,
@@ -62,7 +65,7 @@ export default async function BatchPage({
 }) {
   const ctx = await requireCompanyPage();
   const [{ batchId }, query] = await Promise.all([params, searchParams]);
-  const [result, materials, contracts, faults, dates, batchMoney] = await Promise.all([
+  const [result, materials, contracts, faults, dates, batchMoney, bookings] = await Promise.all([
     getBatchScreenAction(batchId),
     getBatchMaterialsAction(batchId),
     // Production Managers and Accounts only; nobody else gets the panel.
@@ -71,6 +74,7 @@ export default async function BatchPage({
     getBatchDateWarningsAction(batchId),
     // Production Managers and Accounts only, like the contracts.
     getBatchMoneyAction(batchId),
+    getBatchBookingsAction(batchId),
   ]);
   if (!result.ok) {
     if (result.error.code === "NOT_FOUND") notFound();
@@ -225,6 +229,7 @@ export default async function BatchPage({
         </section>
 
         <div className="grid min-w-0 grid-cols-1 content-start gap-6">
+          {bookings.ok && <BatchBookingsPanel data={bookings.data} currency={currency} />}
           {b.costs && (
             <Panel
               title="Batch cost"

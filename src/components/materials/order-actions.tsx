@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { FormAlert } from "@/components/forms/field";
+import { productionHref } from "@/components/production/labels";
 import { FormDialog, readReason, ReasonField } from "@/components/sales/dialogs";
 import { Button } from "@/components/ui/button";
 import type { OrderScreen } from "@/modules/materials/screens.service";
@@ -62,9 +63,16 @@ export function OrderActions({
           )}
           {can.edit && (
             <Button asChild variant="outline" className="w-full sm:w-auto">
-              <Link href={materialsHref.editOrder(o.id)}>
+              {/* A booking's items, specification and terms change on the booking. */}
+              <Link
+                href={
+                  o.bookingId
+                    ? productionHref.editBooking(o.bookingId)
+                    : materialsHref.editOrder(o.id)
+                }
+              >
                 <PencilIcon aria-hidden />
-                Change
+                {o.bookingId ? "Change the booking" : "Change"}
               </Link>
             </Button>
           )}

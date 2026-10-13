@@ -26,13 +26,20 @@ export const BUYER_TYPE_LABELS: Record<BuyerType, string> = {
 };
 
 /** What a supplier supplies, in the order they are shown. */
-export const SUPPLIER_CATEGORIES: SupplierCategory[] = ["FABRIC", "ACCESSORIES", "FOB", "CM"];
+export const SUPPLIER_CATEGORIES: SupplierCategory[] = [
+  "FABRIC",
+  "ACCESSORIES",
+  "FOB",
+  "CM",
+  "EMBROIDERY_PRINT",
+];
 
 export const SUPPLIER_CATEGORY_LABELS: Record<SupplierCategory, string> = {
   FABRIC: "Fabric",
   ACCESSORIES: "Accessories",
   FOB: "FOB",
   CM: "CM (Factory)",
+  EMBROIDERY_PRINT: "Embroidery / Print",
 };
 
 /** "Fabric, CM (Factory)", or "" for none. */
@@ -48,6 +55,8 @@ export const SUPPLIER_CATEGORY_HINTS: Record<SupplierCategory, string> = {
   ACCESSORIES: "Trims and accessories on a running ledger, whatever the project.",
   FOB: "Finished goods made to order, settled project by project.",
   CM: "A factory's cut and make, settled project by project.",
+  EMBROIDERY_PRINT:
+    "An embroidery or print house: the pieces it spoils come off its own Supplier Due, never the factory's.",
 };
 
 export const GRADE_LABELS: Record<PartyGrade, string> = {

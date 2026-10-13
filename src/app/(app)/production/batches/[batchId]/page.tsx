@@ -226,7 +226,20 @@ export default async function BatchPage({
 
         <div className="grid min-w-0 grid-cols-1 content-start gap-6">
           {b.costs && (
-            <Panel title="Batch cost" id="batch-cost-heading">
+            <Panel
+              title="Batch cost"
+              id="batch-cost-heading"
+              action={
+                b.styleCount > 0 ? (
+                  <Link
+                    href={productionHref.batchSummary(b.id)}
+                    className="text-sm font-medium text-primary underline-offset-4 hover:underline"
+                  >
+                    Batch summary
+                  </Link>
+                ) : undefined
+              }
+            >
               <dl className="mt-4 grid grid-cols-2 gap-4 tabular-nums">
                 <Fact label="Cost so far">{money(b.costs.totalCost, currency)}</Fact>
                 <Fact label="Cost a piece">
@@ -306,6 +319,15 @@ export default async function BatchPage({
                 <Fact label="To make">{pieces(b.quantities.target, currency)}</Fact>
                 <Fact label="In stock">{pieces(b.quantities.produced, currency)}</Fact>
               </div>
+              {b.kind === "CM" && (
+                <Fact label="Reject allowance">
+                  {b.rejectAllowance}% of the pieces cut
+                  <span className="mt-0.5 block text-[0.8125rem] text-muted-foreground">
+                    Rejects over it are taken off the factory&apos;s CM at the style&apos;s target
+                    price. Missing pieces always are.
+                  </span>
+                </Fact>
+              )}
               {b.createdBy && <Fact label="Opened by">{b.createdBy}</Fact>}
             </dl>
           </Panel>

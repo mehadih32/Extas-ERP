@@ -1930,19 +1930,23 @@ model ProductionProject {
 /// the batch adds them up. Its state follows its styles (none started: planned; all
 /// closed: done).
 model ProductionBatch {
-  id          String         @id @default(cuid())
-  companyId   String
-  code        String // "MB-2026-00001"
-  name        String
-  kind        ProductionKind @default(CM)
+  id                     String         @id @default(cuid())
+  companyId              String
+  code                   String // "MB-2026-00001"
+  name                   String
+  kind                   ProductionKind @default(CM)
   /// The factory its styles are made at; a new style starts with it.
-  factoryId   String?
+  factoryId              String?
   /// The day it should all be done; a new style starts with it.
-  targetDate  DateTime?
-  notes       String?
-  createdById String?
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
+  targetDate             DateTime?
+  /// Rejects (sewing faults, bodies ruined attaching accessories) up to this share of the
+  /// pieces cut cost the factory nothing; each one over it is taken off the CM settlement
+  /// at the style's target price.
+  rejectTolerancePercent Decimal        @default(2) @db.Decimal(5, 2)
+  notes                  String?
+  createdById            String?
+  createdAt              DateTime       @default(now())
+  updatedAt              DateTime       @updatedAt
 
   company       Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
   factory       Party?               @relation("BatchFactory", fields: [factoryId], references: [id], onDelete: SetNull)
@@ -2154,6 +2158,9 @@ model SupplierFault {
   photoId        String?
   /// The final CM settlement it was taken off (marked deducted by it).
   cmSettlementId String?
+  /// Taken off the supplier's Supplier Due by itself (pieces spoiled at an embroidery or
+  /// print house): Dr Payable, Cr Deductions from Suppliers; reversed when reopened or waived.
+  journalEntryId String?             @unique
   createdById    String?
   createdAt      DateTime            @default(now())
   updatedAt      DateTime            @updatedAt
@@ -2167,6 +2174,7 @@ model SupplierFault {
   bill         SupplierBill?      @relation(fields: [billId], references: [id], onDelete: SetNull)
   createdBy    User?              @relation("SupplierFaultCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   settledBy    User?              @relation("SupplierFaultSettledBy", fields: [settledById], references: [id], onDelete: SetNull)
+  journalEntry JournalEntry?      @relation(fields: [journalEntryId], references: [id], onDelete: SetNull)
   /// The full packing list whose missing pieces it is for.
   packingLists FinishingReport[]  @relation("PackingListMissing")
   cmSettlement CmSettlement?      @relation(fields: [cmSettlementId], references: [id], onDelete: SetNull)
@@ -2490,6 +2498,7 @@ model JournalEntry {
   materialMovements RawMaterialMovement[]
   claimPayments     StaffClaim[]
   cmSettlement      CmSettlement?
+  supplierFault     SupplierFault?
 
   @@unique([companyId, number])
   @@index([companyId, date])
@@ -4119,6 +4128,8 @@ enum SupplierCategory {
   ACCESSORIES
   FOB
   CM
+  /// An embroidery or print house: pieces it spoils are taken off its own Supplier Due.
+  EMBROIDERY_PRINT
 }
 
 enum BuyerType {
@@ -4390,6 +4401,8 @@ enum SupplierFaultKind {
   QUALITY
   MISSING_PIECES
   OTHER
+  /// Cut pieces spoiled at an embroidery or print house, at the style's cost a cut piece.
+  SPOILED_PIECES
 }
 
 /// Open until it is taken off what the supplier is paid (deducted) or let go (waived).
@@ -4503,6 +4516,7 @@ enum JournalSource {
   REFUND
   STAFF_CLAIM
   CM_SETTLEMENT
+  SUPPLIER_FAULT
 }
 
 enum AssetStatus {

@@ -19,7 +19,13 @@ const phone = z
   .nullish();
 
 /** In the order they are shown. */
-export const SUPPLIER_CATEGORIES: SupplierCategory[] = ["FABRIC", "ACCESSORIES", "FOB", "CM"];
+export const SUPPLIER_CATEGORIES: SupplierCategory[] = [
+  "FABRIC",
+  "ACCESSORIES",
+  "FOB",
+  "CM",
+  "EMBROIDERY_PRINT",
+];
 
 const partyFields = {
   code: z

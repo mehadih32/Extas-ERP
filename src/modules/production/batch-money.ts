@@ -37,14 +37,43 @@ export type CmStyleLine = {
 export const cmPieces = (s: CmStyleLine) => s.a + s.b + s.c + s.reject;
 
 /**
+ * The reject rule of a style: rejects (sewing faults, bodies ruined attaching
+ * accessories) up to `percent` of the pieces cut cost the factory nothing; each
+ * one over that is charged at `rate` (the style's target price). The allowance
+ * is in whole pieces, rounded down: 2% of 1,010 cut is 20 pieces.
+ */
+export function rejectPenalty(args: {
+  cut: number;
+  rejects: number;
+  percent: Num;
+  rate: Num | null;
+}) {
+  const allowance = new Prisma.Decimal(args.cut)
+    .times(args.percent)
+    .dividedBy(100)
+    .floor()
+    .toNumber();
+  const over = Math.max(args.rejects - allowance, 0);
+  return {
+    allowance,
+    over,
+    penalty:
+      args.rate !== null && over > 0 ? money(new Prisma.Decimal(args.rate).times(over)) : ZERO,
+  };
+}
+
+/**
  * Total CM - Deductions - Advance taken = Final payable. Deductions are the
- * factory's open faults with a value (missing pieces, fabric faults...) and,
- * when chosen, the CM of the C-grade pieces. The payable can go below zero
- * when the factory took more than it earned: it then owes the difference.
+ * factory's open faults with a value (missing pieces, fabric faults...), the
+ * rejects over the batch's allowance at the styles' target price and, when
+ * chosen, the CM of the C-grade pieces. The payable can go below zero when the
+ * factory took more than it earned: it then owes the difference.
  */
 export function cmSettlementMath(args: {
   styles: CmStyleLine[];
   faults: Num[];
+  /** Each style's charge for its rejects over the allowance. */
+  rejectPenalties?: Num[];
   deductCGrade: boolean;
   paid: Num;
 }) {
@@ -57,12 +86,17 @@ export function cmSettlementMath(args: {
     ZERO,
   );
   const faults = args.faults.reduce<Prisma.Decimal>((t, f) => t.plus(money(f)), ZERO);
-  const deductions = faults.plus(args.deductCGrade ? cGradeCm : ZERO);
+  const rejects = (args.rejectPenalties ?? []).reduce<Prisma.Decimal>(
+    (t, p) => t.plus(money(p)),
+    ZERO,
+  );
+  const deductions = faults.plus(rejects).plus(args.deductCGrade ? cGradeCm : ZERO);
   const paid = money(args.paid);
   return {
     totalCm,
     cGradeCm,
     faults,
+    rejects,
     deductions,
     paid,
     payable: totalCm.minus(deductions).minus(paid),

@@ -101,6 +101,13 @@ const batchFields = {
   factoryId: id.nullish(),
   /** The day it should all be done; a new style starts with it. */
   targetDate: dayOrInstant.nullish(),
+  /** Rejects up to this share of the pieces cut cost the factory nothing (2 unless changed). */
+  rejectTolerancePercent: z
+    .number()
+    .min(0, "0 or more")
+    .max(100, "100 at most")
+    .multipleOf(0.01, "Up to 2 decimal places")
+    .optional(),
   notes: optionalText(4000),
 };
 

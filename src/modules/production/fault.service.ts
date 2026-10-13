@@ -1,15 +1,26 @@
-import { Prisma, SupplierFaultKind, SupplierFaultStatus } from "@prisma/client";
+import {
+  Prisma,
+  type SupplierCategory,
+  SupplierFaultKind,
+  SupplierFaultStatus,
+} from "@prisma/client";
 import { z } from "zod";
 
 import { FAULT_KIND_LABELS } from "@/components/production/labels";
 import { dateColumn, dateOnly, localDay } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
+import { formatAmount } from "@/lib/format";
 import { nextDocumentNumber } from "@/lib/numbering";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
+import { runTransaction } from "@/lib/transaction";
+import { ensureControlAccounts } from "@/modules/accounts/control-accounts";
+import { postJournalEntry, reverseJournalEntry } from "@/modules/accounts/journal.service";
+import { lockSupplierAccount, settleSupplierBills } from "@/modules/accounts/supplier-settlement";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { canSeeMaterialCosts } from "@/modules/materials/access";
+import { recordPartyActivity } from "@/modules/parties/party.service";
 
 /*
  * The supplier Fault Log: what each supplier or factory owes for (short
@@ -19,6 +30,13 @@ import { canSeeMaterialCosts } from "@/modules/materials/access";
  * entry deducted (taken off a payment) or waived, with a note; a mistake goes
  * back to open. Values follow the material-cost rule; the store sees the log
  * without them.
+ *
+ * Pieces spoiled at an embroidery or print house (a supplier of that type) are
+ * that house's, never the factory's: taking them back logs the fault at the
+ * style's cost a cut piece and takes it off the house's own Supplier Due at once
+ * (Dr Accounts Payable, Cr Deductions from Suppliers). Reopening or waiving such
+ * a fault reverses the entry; marking it deducted again posts it again. Other
+ * faults are taken off by hand or by the factory's final CM settlement.
  */
 
 const id = z.string().min(1);
@@ -283,6 +301,74 @@ export async function logFaultTx(
   return made;
 }
 
+/** An embroidery or print house: the pieces it spoils come off its own Supplier Due. */
+export function chargesOwnSpoilage(categories: readonly SupplierCategory[]) {
+  return categories.includes("EMBROIDERY_PRINT");
+}
+
+/** Whether a fault is taken off its supplier's Supplier Due by itself when deducted. */
+function postsOnDeduct(f: {
+  kind: SupplierFaultKind;
+  amount: Prisma.Decimal | null;
+  supplier: { supplierCategories: SupplierCategory[] };
+}) {
+  return (
+    f.kind === "SPOILED_PIECES" &&
+    f.amount !== null &&
+    f.amount.gt(0) &&
+    chargesOwnSpoilage(f.supplier.supplierCategories)
+  );
+}
+
+/**
+ * Takes a fault's value off its supplier's Supplier Due and marks it deducted:
+ * Dr Accounts Payable (the supplier), Cr Deductions from Suppliers, settling
+ * their oldest bills. In the caller's transaction, after lockSupplierAccount.
+ */
+export async function deductFaultTx(
+  tx: Prisma.TransactionClient,
+  ctx: CompanyContext,
+  fault: { id: string; number: string; amount: Prisma.Decimal; note: string | null },
+  supplier: { id: string; name: string },
+  settledNote?: string,
+) {
+  const companyId = ctx.company.id;
+  const acc = await ensureControlAccounts(companyId, tx);
+  const entry = await postJournalEntry(tx, {
+    companyId,
+    description: `${fault.number}: spoiled pieces taken off ${supplier.name}'s Supplier Due`,
+    sourceType: "SUPPLIER_FAULT",
+    sourceId: fault.id,
+    postedById: ctx.user.id,
+    lines: [
+      {
+        accountId: acc.PAYABLE,
+        partyId: supplier.id,
+        debit: fault.amount,
+        memo: `Fault ${fault.number}`,
+      },
+      {
+        accountId: acc.SUPPLIER_DEDUCTIONS,
+        credit: fault.amount,
+        memo: fault.note ?? `Fault ${fault.number}`,
+      },
+    ],
+  });
+  await tx.supplierFault.update({
+    where: { id: fault.id },
+    data: {
+      status: "DEDUCTED",
+      settledAt: new Date(),
+      settledById: ctx.user.id,
+      settledNote: settledNote ?? `Taken off ${supplier.name}'s Supplier Due on ${entry.number}`,
+      journalEntryId: entry.id,
+    },
+  });
+  await settleSupplierBills(tx, companyId, supplier.id);
+  await recordPartyActivity(supplier.id, new Date(), tx);
+  return entry;
+}
+
 /** Marks a fault deducted or waived (with a note), or puts it back to open. */
 export async function settleFault(
   ctx: CompanyContext,
@@ -297,28 +383,67 @@ export async function settleFault(
       "Only Production Managers and Accounts mark faults deducted or waived.",
     );
   }
-  const fault = await ctx.db.supplierFault.findUnique({
+  const found = await ctx.db.supplierFault.findUnique({
     where: { id: faultId },
-    select: { id: true, number: true, status: true, supplier: { select: { name: true } } },
+    select: { id: true, supplierId: true },
   });
-  if (!fault) throw new AppError("NOT_FOUND", "Fault not found.");
-  if (fault.status === input.status) {
-    throw new AppError("CONFLICT", `${fault.number} is already ${input.status.toLowerCase()}.`);
-  }
+  if (!found) throw new AppError("NOT_FOUND", "Fault not found.");
   if (input.status === "WAIVED" && !input.note) {
     throw new AppError("VALIDATION", "Say why it is waived.", { note: ["Say why"] });
   }
+  const companyId = ctx.company.id;
   const open = input.status === "OPEN";
-  await prisma.$transaction(async (tx) => {
-    await tx.supplierFault.update({
-      where: { id: fault.id },
-      data: {
-        status: input.status,
-        settledAt: open ? null : new Date(),
-        settledById: open ? null : ctx.user.id,
-        settledNote: open ? null : (input.note ?? null),
+  const done = await runTransaction(async (tx) => {
+    // The supplier's account first (lock order): the fault may move their Supplier Due.
+    await lockSupplierAccount(tx, companyId, found.supplierId);
+    const fault = await tx.supplierFault.findUniqueOrThrow({
+      where: { id: found.id },
+      select: {
+        id: true,
+        number: true,
+        kind: true,
+        status: true,
+        amount: true,
+        note: true,
+        journalEntryId: true,
+        supplier: { select: { id: true, name: true, supplierCategories: true } },
       },
     });
+    if (fault.status === input.status) {
+      throw new AppError("CONFLICT", `${fault.number} is already ${input.status.toLowerCase()}.`);
+    }
+    let entry: { number: string; undone: boolean } | null = null;
+    if (fault.journalEntryId) {
+      // Leaving "deducted": its value goes back on the supplier's Supplier Due.
+      const reversal = await reverseJournalEntry(tx, fault.journalEntryId, {
+        description: `${fault.number} ${open ? "put back to open" : "waived"}: back on ${fault.supplier.name}'s Supplier Due`,
+        postedById: ctx.user.id,
+      });
+      await tx.supplierFault.update({ where: { id: fault.id }, data: { journalEntryId: null } });
+      await settleSupplierBills(tx, companyId, fault.supplier.id);
+      entry = { number: reversal.number, undone: true };
+    }
+    if (input.status === "DEDUCTED" && postsOnDeduct(fault)) {
+      const made = await deductFaultTx(
+        tx,
+        ctx,
+        { id: fault.id, number: fault.number, amount: fault.amount!, note: fault.note },
+        fault.supplier,
+        input.note ?? undefined,
+      );
+      entry = { number: made.number, undone: false };
+    } else {
+      await tx.supplierFault.update({
+        where: { id: fault.id },
+        data: {
+          status: input.status,
+          settledAt: open ? null : new Date(),
+          settledById: open ? null : ctx.user.id,
+          settledNote: open ? null : (input.note ?? null),
+        },
+      });
+    }
+    const value = fault.amount ? formatAmount(fault.amount, 2, ctx.company.currency) : "";
     await auditInCompany(
       ctx,
       meta,
@@ -326,10 +451,17 @@ export async function settleFault(
         action: "UPDATE",
         entityType: "SupplierFault",
         entityId: fault.id,
-        summary: `${fault.number} (${fault.supplier.name}) ${open ? "put back to open" : input.status === "DEDUCTED" ? "marked deducted" : "waived"}${input.note ? `: ${input.note}` : ""}`,
+        summary: `${fault.number} (${fault.supplier.name}) ${open ? "put back to open" : input.status === "DEDUCTED" ? "marked deducted" : "waived"}${input.note ? `: ${input.note}` : ""}${
+          entry
+            ? entry.undone
+              ? `; ${value} back on their Supplier Due (${entry.number})`
+              : `; ${value} taken off their Supplier Due (${entry.number})`
+            : ""
+        }`,
       },
       tx,
     );
+    return { number: fault.number, entry: entry?.number ?? null };
   });
-  return { id: fault.id, number: fault.number, status: input.status };
+  return { id: found.id, number: done.number, status: input.status, entry: done.entry };
 }

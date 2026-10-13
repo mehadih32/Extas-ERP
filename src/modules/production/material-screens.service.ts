@@ -228,7 +228,8 @@ export type BatchMaterials = Awaited<ReturnType<typeof getBatchMaterials>>;
 /**
  * The "Make purchase orders" form: the batch's materials grouped by their usual
  * supplier (the rest in a group to choose a supplier for), each with what is
- * still to order as the quantity to start from.
+ * still to order as the quantity to start from. Fabric is listed apart: it is
+ * booked with a booking (Production > Bookings), never on these orders.
  */
 export async function getBatchOrdersForm(ctx: CompanyContext, batchId: string) {
   const data = await getBatchMaterials(ctx, batchId);
@@ -244,6 +245,7 @@ export async function getBatchOrdersForm(ctx: CompanyContext, batchId: string) {
     }
   >();
   for (const m of data.materials) {
+    if (m.material.kind === "FABRIC") continue;
     const key = m.supplier?.id ?? "none";
     const group = groups.get(key) ?? {
       key,
@@ -257,6 +259,8 @@ export async function getBatchOrdersForm(ctx: CompanyContext, batchId: string) {
     today: localDay(new Date(), ctx.company.timezone),
     batch: data.batch,
     styles: data.styles,
+    /** The batch's fabric, to book with a booking instead. */
+    fabric: data.materials.filter((m) => m.material.kind === "FABRIC"),
     /** Suppliers first by name, the materials without one last. */
     groups: [...groups.values()].sort((a, b) =>
       !a.supplier ? 1 : !b.supplier ? -1 : a.supplier.name.localeCompare(b.supplier.name),

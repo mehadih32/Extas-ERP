@@ -28,6 +28,7 @@ import { createSession } from "@/modules/auth/session.service";
 import * as materials from "@/modules/materials/material.service";
 import * as parties from "@/modules/parties/party.service";
 import * as batchOrders from "@/modules/production/batch-orders.service";
+import * as bookings from "@/modules/production/booking.service";
 import * as batches from "@/modules/production/batch.service";
 import * as contracts from "@/modules/production/contract.service";
 import * as needs from "@/modules/production/material-need.service";
@@ -162,17 +163,21 @@ async function signInAs(env: Env, who: Who) {
   browser.cookies.set(SESSION_COOKIE, token);
 }
 
+/** The fabric booked with a booking (as a batch's fabric must be), the buttons on a batch order. */
 async function orderAll(env: Env) {
-  return batchOrders.createBatchOrders(env.pm, env.batch.id, {
+  const fabric = await bookings.createBooking(env.pm, {
+    source: "SUPPLIER_PO",
+    category: "KNITWEAR",
+    supplierId: env.mill.id,
+    batchId: env.batch.id,
+    expectedDate: "2030-11-15",
+    lines: [
+      { materialId: env.jersey.id, quantity: 115, unitPrice: 520 },
+      { materialId: env.rib.id, quantity: 9 },
+    ],
+  });
+  const trims = await batchOrders.createBatchOrders(env.pm, env.batch.id, {
     orders: [
-      {
-        supplierId: env.mill.id,
-        expectedDate: "2030-11-15",
-        lines: [
-          { materialId: env.jersey.id, quantity: 115, unitPrice: 520 },
-          { materialId: env.rib.id, quantity: 9 },
-        ],
-      },
       {
         supplierId: env.trims.id,
         expectedDate: "2030-11-20",
@@ -180,6 +185,10 @@ async function orderAll(env: Env) {
       },
     ],
   });
+  return {
+    batch: trims.batch,
+    orders: [{ id: fabric.orderId, number: fabric.number }, ...trims.orders],
+  };
 }
 
 run("Production renovation: batch contracts", () => {

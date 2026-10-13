@@ -179,6 +179,7 @@ const unitWord = (unit: string) =>
     GROSS: "gross",
     CONE: "cones",
     SET: "sets",
+    LB: "lb",
   })[unit] ?? unit.toLowerCase();
 const q = (n: number, unit: string) => `${round3(n)} ${unitWord(unit)}`;
 const cellName = (c: { colorName: string | null; sizeName: string | null }) =>

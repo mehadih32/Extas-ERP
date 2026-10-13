@@ -94,6 +94,7 @@ export const UNIT_LABELS: Record<MeasurementUnit, string> = {
   GROSS: "gross",
   CONE: "cones",
   SET: "sets",
+  LB: "lb",
 };
 
 /** Units that are counted whole: pieces, rolls, cones and sets. */

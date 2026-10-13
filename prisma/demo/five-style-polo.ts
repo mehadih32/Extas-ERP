@@ -15,6 +15,7 @@ import * as batchIssue from "@/modules/production/batch-issue.service";
 import * as batchMoney from "@/modules/production/batch-money.service";
 import * as batchOrders from "@/modules/production/batch-orders.service";
 import * as batches from "@/modules/production/batch.service";
+import * as bookings from "@/modules/production/booking.service";
 import * as contracts from "@/modules/production/contract.service";
 import * as costs from "@/modules/production/cost.service";
 import * as cutting from "@/modules/production/cutting.service";
@@ -886,20 +887,40 @@ async function runSteps(
             },
           ],
     );
+  // The fabric (and the collar sets knitted with it) is booked with the mill: a batch's
+  // fabric always is. The accessories go on the batch's own purchase orders.
+  await bookings.createBooking(ctx, {
+    source: "SUPPLIER_PO",
+    category: "KNITWEAR",
+    supplierId: mill.id,
+    batchId: batch.id,
+    expectedDate: addDays(today, 10),
+    title: POLO_BATCH,
+    styleRef: POLO_STYLES.map((s) => s.code).join(", "),
+    lines: [
+      {
+        materialId: fabricId,
+        quantity: FABRIC_ORDERED_KG,
+        unitPrice: FABRIC.price,
+        specs: {
+          role: "FABRIC",
+          fabricType: "Pique",
+          composition: "100% cotton",
+          weight: 220,
+          weightUnit: "GSM",
+          diaType: "OPEN",
+        },
+      },
+      ...POLO_STYLES.map((s) => ({
+        materialId: collarIds.get(s.code)!,
+        quantity: orderOf([needOf(s.code, 1, COLLAR_WASTAGE)]),
+        unitPrice: collarPrice.get(s.code)!,
+        specs: { role: "COLLAR" as const, colour: s.colour.name },
+      })),
+    ],
+  });
   await batchOrders.createBatchOrders(ctx, batch.id, {
     orders: [
-      {
-        supplierId: mill.id,
-        expectedDate: addDays(today, 10),
-        lines: [
-          { materialId: fabricId, quantity: FABRIC_ORDERED_KG, unitPrice: FABRIC.price },
-          ...POLO_STYLES.map((s) => ({
-            materialId: collarIds.get(s.code)!,
-            quantity: orderOf([needOf(s.code, 1, COLLAR_WASTAGE)]),
-            unitPrice: collarPrice.get(s.code)!,
-          })),
-        ],
-      },
       { supplierId: trims.id, expectedDate: addDays(today, 12), lines: accessoryLines("trims") },
       {
         supplierId: buttons.id,

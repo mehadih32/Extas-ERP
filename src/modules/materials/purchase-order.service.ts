@@ -51,6 +51,7 @@ const orderInclude = {
   supplier: { select: { id: true, code: true, name: true, phone: true } },
   project: { select: { id: true, code: true, name: true, status: true } },
   batch: { select: { id: true, code: true, name: true } },
+  booking: { select: { id: true } },
   createdBy: { select: { id: true, name: true } },
   lines: {
     orderBy: { id: "asc" },
@@ -78,6 +79,8 @@ function presentOrder(ctx: CompanyContext, order: OrderRow) {
     project: order.project,
     /** The master batch it was ordered for (its lines are shared out over the styles). */
     batch: order.batch,
+    /** Written as a booking: its lines and specification change on the booking. */
+    bookingId: order.booking?.id ?? null,
     orderDate: dateOnly(order.orderDate),
     expectedDate: expected,
     /** Still open past the expected date. */
@@ -200,6 +203,8 @@ export type NewOrderLine = {
   priceLater: boolean;
   imageId?: string | null;
   description: string | null;
+  /** A booking line's specification (production/booking-schemas.ts). */
+  specs?: Prisma.InputJsonValue;
   shares?: Array<{
     projectId: string;
     colorName: string | null;
@@ -270,7 +275,11 @@ async function lockOrder(tx: Tx, companyId: string, orderId: string) {
   await lockRow(tx, "PurchaseOrder", orderId);
   const order = await tx.purchaseOrder.findFirst({
     where: { id: orderId, companyId },
-    include: { lines: true, supplier: { select: { name: true } } },
+    include: {
+      lines: true,
+      supplier: { select: { name: true } },
+      booking: { select: { id: true } },
+    },
   });
   if (!order) throw new AppError("NOT_FOUND", "Purchase order not found.");
   return order;
@@ -307,6 +316,12 @@ export async function updatePurchaseOrder(
     assertAllowed(canChangeOrder(orderState(order)));
     if (prepared) {
       assertAllowed(canChangeOrderLines(orderState(order)));
+      if (order.booking) {
+        throw new AppError(
+          "CONFLICT",
+          `${order.number} is a booking; change its items on the booking (Production > Bookings), so their specification stays with them.`,
+        );
+      }
       const kept = await keptLineParts(tx, order.id);
       await tx.purchaseOrderLine.deleteMany({ where: { orderId: order.id } });
       for (const line of prepared.lines) {

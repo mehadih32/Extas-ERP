@@ -49,6 +49,7 @@ export const UNIT_LABELS: Record<MeasurementUnit, string> = {
   GROSS: "gross",
   CONE: "cones",
   SET: "sets",
+  LB: "lb",
 };
 
 /** Unit names to choose from. */
@@ -63,12 +64,14 @@ export const UNIT_NAMES: Record<MeasurementUnit, string> = {
   GROSS: "Gross (144 pieces)",
   CONE: "Cones",
   SET: "Sets",
+  LB: "Pounds (lb)",
 };
 
 export const UNITS: readonly MeasurementUnit[] = [
   "METER",
   "YARD",
   "KG",
+  "LB",
   "GRAM",
   "PCS",
   "DOZEN",
@@ -146,6 +149,7 @@ export const UNIT_ONE: Record<MeasurementUnit, string> = {
   GROSS: "gross",
   CONE: "cone",
   SET: "set",
+  LB: "lb",
 };
 
 /** A price per unit: "BDT 45.375 per m". */

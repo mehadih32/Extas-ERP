@@ -25,6 +25,8 @@ import { OPEN_STATUSES } from "@/modules/production/timeline";
  * and one purchase order per supplier with each line shared out over the styles,
  * colours and sizes it is for (the order's style-wise breakdown and its collar
  * and cuff matrices). A line can leave its price for when the goods arrive.
+ * Fabric is never ordered here: a batch's fabric is booked with a booking
+ * (booking.service.ts), which is shared out over the styles the same way.
  * Buyers only (materials.purchase), as on the purchase orders.
  */
 
@@ -173,6 +175,13 @@ export async function createBatchOrders(
     const lines: NewOrderLine[] = order.lines.map((l, li) => {
       const m = materials.get(l.materialId)!;
       const row = rows.get(l.materialId);
+      if (m.kind === "FABRIC") {
+        throw new AppError(
+          "VALIDATION",
+          `${m.code} ${m.name} is fabric. A batch's fabric is ordered with a booking: use "Book fabric", or attach a booking on ${plan.batch.code}.`,
+          { [`orders.${oi}.lines.${li}.materialId`]: ["Book fabric with a booking"] },
+        );
+      }
       if (!row) {
         throw new AppError(
           "VALIDATION",

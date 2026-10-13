@@ -39,7 +39,7 @@ import * as materials from "@/modules/materials/material.service";
 import * as parties from "@/modules/parties/party.service";
 import type { IntakeParser } from "@/modules/production/ai-intake";
 import * as batchIssue from "@/modules/production/batch-issue.service";
-import * as batchOrders from "@/modules/production/batch-orders.service";
+import * as bookings from "@/modules/production/booking.service";
 import * as batches from "@/modules/production/batch.service";
 import * as cutting from "@/modules/production/cutting.service";
 import * as faults from "@/modules/production/fault.service";
@@ -177,16 +177,15 @@ async function setup() {
   await needs.setMaterialNeeds(pm, tee.id, {
     needs: [{ materialId: jersey.id, perPiece: 0.2, split: "COLOUR", placement: "Main body" }],
   });
-  await batchOrders.createBatchOrders(pm, batch.id, {
-    orders: [
-      {
-        supplierId: mill.id,
-        expectedDate: "2030-11-15",
-        lines: [
-          { materialId: jersey.id, quantity: 50, unitPrice: 520 },
-          { materialId: rib.id, quantity: 3, unitPrice: 600 },
-        ],
-      },
+  await bookings.createBooking(pm, {
+    source: "SUPPLIER_PO",
+    category: "KNITWEAR",
+    supplierId: mill.id,
+    batchId: batch.id,
+    expectedDate: "2030-11-15",
+    lines: [
+      { materialId: jersey.id, quantity: 50, unitPrice: 520 },
+      { materialId: rib.id, quantity: 3, unitPrice: 600 },
     ],
   });
   const millOrderId = (

@@ -34,6 +34,7 @@ import * as materials from "@/modules/materials/material.service";
 import * as parties from "@/modules/parties/party.service";
 import * as batchIssue from "@/modules/production/batch-issue.service";
 import * as batchOrders from "@/modules/production/batch-orders.service";
+import * as bookings from "@/modules/production/booking.service";
 import * as batches from "@/modules/production/batch.service";
 import * as faults from "@/modules/production/fault.service";
 import * as needs from "@/modules/production/material-need.service";
@@ -171,16 +172,20 @@ async function setup() {
   await needs.setMaterialNeeds(pm, tee.id, {
     needs: [{ materialId: jersey.id, perPiece: 0.2, split: "COLOUR", placement: "Main body" }],
   });
+  // The fabric is booked (a batch's fabric always is); the buttons go on a batch order.
+  await bookings.createBooking(pm, {
+    source: "SUPPLIER_PO",
+    category: "KNITWEAR",
+    supplierId: mill.id,
+    batchId: batch.id,
+    expectedDate: "2030-11-15",
+    lines: [
+      { materialId: jersey.id, quantity: 50, unitPrice: 520 },
+      { materialId: rib.id, quantity: 5 },
+    ],
+  });
   const made = await batchOrders.createBatchOrders(pm, batch.id, {
     orders: [
-      {
-        supplierId: mill.id,
-        expectedDate: "2030-11-15",
-        lines: [
-          { materialId: jersey.id, quantity: 50, unitPrice: 520 },
-          { materialId: rib.id, quantity: 5 },
-        ],
-      },
       {
         supplierId: trims.id,
         expectedDate: "2030-11-20",
@@ -191,7 +196,7 @@ async function setup() {
   const orderOf = async (supplierId: string) =>
     (await prisma.purchaseOrder.findFirstOrThrow({ where: { supplierId }, select: { id: true } }))
       .id;
-  expect(made.orders).toHaveLength(2);
+  expect(made.orders).toHaveLength(1);
   return {
     company,
     people,

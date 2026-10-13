@@ -1,6 +1,12 @@
 import { randomUUID } from "node:crypto";
 
-import { Prisma, type PurchaseOrderStatus, type RawMaterial } from "@prisma/client";
+import {
+  type MeasurementUnit,
+  Prisma,
+  type PurchaseOrderStatus,
+  type RawMaterial,
+  type RawMaterialKind,
+} from "@prisma/client";
 
 import { dateColumn, dateOnly, dayRange, localDay } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
@@ -160,6 +166,86 @@ const assertCanEditCatalogue = (ctx: CompanyContext) =>
     ["materials.manage", "materials.purchase"],
     "You do not have permission to add or change raw materials.",
   );
+
+/** A material named by what it is rather than by its code (a booking's new line). */
+export type WantedMaterial = {
+  name: string;
+  kind: RawMaterialKind;
+  unit: MeasurementUnit;
+  color: string | null;
+  specification: string | null;
+  /** The usual supplier a new one starts with. */
+  supplierId: string | null;
+};
+
+/**
+ * The ids of the active materials with these names, kinds, units and colours
+ * (letter case aside), in the order asked for. Those the catalogue does not
+ * have yet are added with the next code of their kind, as createMaterial adds
+ * them (buyers and the store). Inside the caller's transaction.
+ */
+export async function findOrAddMaterials(
+  tx: Tx,
+  ctx: CompanyContext,
+  meta: RequestMeta | undefined,
+  wanted: readonly WantedMaterial[],
+): Promise<string[]> {
+  if (wanted.length === 0) return [];
+  const companyId = ctx.company.id;
+  await lockMaterialCodes(tx, companyId);
+  const found = new Map<string, string>();
+  const ids: string[] = [];
+  for (const w of wanted) {
+    const key = [w.kind, w.unit, w.name.toLowerCase(), (w.color ?? "").toLowerCase()].join("|");
+    let materialId = found.get(key);
+    if (!materialId) {
+      const existing = await tx.rawMaterial.findFirst({
+        where: {
+          companyId,
+          isActive: true,
+          kind: w.kind,
+          unit: w.unit,
+          name: { equals: w.name, mode: "insensitive" },
+          color: w.color ? { equals: w.color, mode: "insensitive" } : null,
+        },
+        orderBy: { createdAt: "asc" },
+        select: { id: true },
+      });
+      if (existing) {
+        materialId = existing.id;
+      } else {
+        assertCanEditCatalogue(ctx);
+        const created = await tx.rawMaterial.create({
+          data: {
+            companyId,
+            code: await nextMaterialCode(tx, companyId, CODE_PREFIX[w.kind]),
+            name: w.name,
+            kind: w.kind,
+            unit: w.unit,
+            color: w.color,
+            specification: w.specification,
+            supplierId: w.supplierId,
+          },
+        });
+        await auditInCompany(
+          ctx,
+          meta,
+          {
+            action: "CREATE",
+            entityType: "RawMaterial",
+            entityId: created.id,
+            summary: `Added raw material ${materialLabel(created)} (${created.kind.toLowerCase()}, counted in ${UNIT_LABELS[created.unit]}) from a booking`,
+          },
+          tx,
+        );
+        materialId = created.id;
+      }
+      found.set(key, materialId);
+    }
+    ids.push(materialId);
+  }
+  return ids;
+}
 
 export async function createMaterial(ctx: CompanyContext, raw: unknown, meta?: RequestMeta) {
   const input = createMaterialSchema.parse(raw);

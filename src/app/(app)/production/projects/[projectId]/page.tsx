@@ -13,6 +13,7 @@ import {
 } from "@/components/production/badges";
 import { CostGuardPanel } from "@/components/production/cost-guard";
 import { CostEntries, CostSummary, GradeCosts } from "@/components/production/cost-sheet";
+import { CuttingSummaryPanel } from "@/components/production/cutting-summary";
 import { pieces, productionHref } from "@/components/production/labels";
 import { MaterialNeedsPanel } from "@/components/production/material-needs";
 import { MaterialsSent } from "@/components/production/materials-sent";
@@ -28,7 +29,11 @@ import { money, salesHref } from "@/components/sales/labels";
 import { formatCount, formatDay } from "@/lib/display";
 import type { ProjectScreen } from "@/modules/production/screens.service";
 import { getProjectMaterialsPanelAction } from "@/server/actions/materials.actions";
-import { getNeedsPanelAction, getProjectScreenAction } from "@/server/actions/production.actions";
+import {
+  getCuttingScreenAction,
+  getNeedsPanelAction,
+  getProjectScreenAction,
+} from "@/server/actions/production.actions";
 import { requireCompanyPage } from "@/server/pages/guards";
 
 export const metadata: Metadata = { title: "Production project" };
@@ -87,7 +92,8 @@ function Deliveries({ screen, currency }: { screen: ProjectScreen; currency: str
 /**
  * One production project (production.view, like GET /api/production/projects/:id):
  * its time and pieces, how far it got through cutting, sewing and the other
- * stages, its materials per piece with the tech pack, its factory deliveries,
+ * stages, its cutting and embroidery with the cutting and sewing dates, its
+ * materials per piece with the tech pack, its factory deliveries,
  * the raw materials the store handed it, the
  * materials sent to the factory on challans and,
  * for Production Managers and Accounts, its costs with what an A- and a B-grade
@@ -103,10 +109,11 @@ export default async function ProjectPage({
 }) {
   const ctx = await requireCompanyPage();
   const [{ projectId }, query] = await Promise.all([params, searchParams]);
-  const [result, materials, needs] = await Promise.all([
+  const [result, materials, needs, cutting] = await Promise.all([
     getProjectScreenAction(projectId),
     getProjectMaterialsPanelAction(projectId),
     getNeedsPanelAction(projectId),
+    getCuttingScreenAction(projectId),
   ]);
   if (!result.ok) {
     if (result.error.code === "NOT_FOUND") notFound();
@@ -171,6 +178,7 @@ export default async function ProjectPage({
             <h4 className="eyebrow mt-8">Stage log</h4>
             <StageLog log={p.log} />
           </Panel>
+          {cutting.ok && <CuttingSummaryPanel screen={cutting.data} currency={currency} />}
           {p.targets && <TargetTable targets={p.targets} currency={currency} />}
           {needs.ok && <MaterialNeedsPanel panel={needs.data} currency={currency} />}
           <Deliveries screen={screen} currency={currency} />

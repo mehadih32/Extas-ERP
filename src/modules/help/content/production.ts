@@ -602,7 +602,7 @@ export const productionHelp: HelpSection = {
           },
         },
         {
-          text: "কাপড়ে ফুটো, রঙের দাগ বা পিস হারালে “Log a fault” চাপুন: সরবরাহকারী, “What went wrong”, পরিমাণ, কত টাকা কাটবেন আর কী সমস্যা লিখে “Log the fault” চাপুন। ব্যাচের পাতা থেকে লিখলে ব্যাচ নিজে থেকে বসে।",
+          text: "কাপড়ে ফুটো, রঙের দাগ বা পিস হারালে “Log a fault” চাপুন: সরবরাহকারী, “What went wrong”, পরিমাণ, কত টাকা কাটবেন আর কী সমস্যা লিখুন; চাইলে “Photo (optional)”-এ ছবি দিন। তারপর “Log the fault” চাপুন। ছবি ফল্টের সাথে “Photo of the fault” হয়ে থাকে। ব্যাচের পাতা থেকে লিখলে ব্যাচ নিজে থেকে বসে।",
           image: {
             id: "production-fault-log-2",
             caption: "Log a fault ফর্ম",
@@ -622,6 +622,87 @@ export const productionHelp: HelpSection = {
       tips: [
         "AI চালু থাকলে রিপোর্ট কার্ডের সারাংশ AI লেখে; না থাকলে হিসাব থেকে নিয়ম মেনে লেখা হয়।",
         "ব্যাচের পাতার “Fault log” অংশে শুধু সেই ব্যাচের ফল্ট দেখায়।",
+      ],
+    },
+    {
+      slug: "production-cutting",
+      title: "কাটিং রিপোর্ট, ক্রস-চেক আর এমব্রয়ডারি সামলাবেন যেভাবে",
+      summary:
+        "প্রতিদিনের কাটিং রং ও সাইজ অনুযায়ী লিখুন বা কাটিং শিটের ছবি থেকে AI দিয়ে পড়ান। সাথে সাথে কাপড়, কলার-কাফ আর এক্সেসরিজের সাথে মিলিয়ে কম পড়লে সতর্কবার্তা যায়। এমব্রয়ডারি বা প্রিন্টে পাঠানো, ফেরত নেওয়া, নষ্ট পিস আবার কাটা, কাটিং ও সেলাইয়ের তারিখ আর Fabric Fault Note এক পাতায়।",
+      keywords: [
+        "cutting",
+        "cutting report",
+        "cut",
+        "embroidery",
+        "print",
+        "replace from cutting",
+        "spoiled",
+        "cross-check",
+        "collar",
+        "cuff",
+        "pieces per kg",
+        "fabric fault note",
+        "milestone",
+        "cutting date",
+        "sewing date",
+        "কাটিং",
+        "এমব্রয়ডারি",
+        "প্রিন্ট",
+        "নষ্ট পিস",
+        "কলার",
+        "সেলাই",
+      ],
+      routes: [
+        "/production/projects/[projectId]/cutting",
+        "/production/projects/[projectId]/cutting/new",
+      ],
+      who: "পাতাটি দেখেন Production-এর সবাই, স্টোর ও Accounts। কাটিং, এমব্রয়ডারি আর তারিখ লেখেন Production Manager; Fabric Fault Note লেখেন Production Manager ও ক্রেতা (buyer)। টাকার অঙ্ক দেখেন শুধু যাঁরা উপকরণের দাম দেখেন।",
+      anyOf: ["production.view"],
+      steps: [
+        {
+          text: "প্রজেক্টের পাতায় “Cutting and embroidery” অংশে কত পিস কাটা হলো, কত পিস বাইরে আছে আর কাটিং ও সেলাইয়ের তারিখ দেখায়। “Open cutting” চাপলে কাটিংয়ের পুরো পাতা খোলে।",
+          image: {
+            id: "production-cutting-1",
+            caption: "প্রজেক্টের পাতায় “Cutting and embroidery” অংশ",
+          },
+        },
+        {
+          text: "“New cutting report” চাপুন। কাটিং শিটের ছবি দিয়ে “Read with AI” চাপলে রং ও সাইজের ঘরগুলো নিজে থেকে ভরে যায়; সেভ করার আগে প্রতিটি ঘর শিটের সাথে মিলিয়ে নিন। AI চালু না থাকলে ঘরে নিজে পিস লিখুন, ছবি তবুও রিপোর্টের সাথে থাকে।",
+          image: {
+            id: "production-cutting-2",
+            caption: "রং ও সাইজ অনুযায়ী কাটিং রিপোর্টের ফর্ম",
+          },
+        },
+        {
+          text: "“Fabric used (optional)”-এ কত কেজি কাপড় লেগেছে লিখলে প্রতি কেজিতে কত পিস হলো তা টেক প্যাকের সাথে মেলানো হয়। “Save the cutting report” চাপুন।",
+        },
+        {
+          text: "সেভ হলেই “Cross-checks” অংশে কাপড় (প্রতি কেজিতে পিস আর বাকি পিসের জন্য কাপড় আছে কিনা), রং ও সাইজ অনুযায়ী অর্ডার করা কলার-কাফ আর দেওয়া এক্সেসরিজ মিলিয়ে দেখায়। কিছু কম পড়লে লাল “Short” দেখায় আর Production Manager ও স্টোর সাথে সাথে বার্তা পান।",
+          image: {
+            id: "production-cutting-3",
+            caption: "“Pieces by colour and size” আর “Cross-checks” অংশ",
+          },
+        },
+        {
+          text: "কাটা পিস এমব্রয়ডারি বা প্রিন্টে পাঠাতে “Send for embroidery or print” চাপুন: কোথায়, কবে ফেরত আসবে আর রং ও সাইজ অনুযায়ী কত পিস। যত পিস কাটা আছে তার বেশি পাঠানো যায় না।",
+        },
+        {
+          text: "পিস ফেরত এলে “Receive back” চেপে ভালো আর নষ্ট পিস আলাদা লিখুন। নষ্ট পিস থাকলে সাথে সাথে “Replace from cutting immediately?” জিজ্ঞেস করে; “Cut them again” চাপলে নতুন কাটিং রিপোর্ট হয় আর Production-কে জানানো হয়। চাইলে নষ্ট পিস এমব্রয়ডারি হাউসের ফল্ট লগেও যায়। পরে করতে চাইলে “Replace from cutting” বোতাম থাকে।",
+          image: {
+            id: "production-cutting-4",
+            caption: "নষ্ট পিস আবার কাটার জিজ্ঞাসা",
+          },
+        },
+        {
+          text: "“Cutting and sewing dates” চেপে কাটিং ও সেলাই কবে শেষ হবে ঠিক করুন। তারিখের তিন দিন আগে থেকে আর পার হয়ে গেলে স্টাইলের পাতায় ও মাস্টার ব্যাচের পাতায় সতর্কবার্তা দেখায়।",
+        },
+        {
+          text: "কাটার সময় কাপড়ে ফুটো, রঙের দাগ বা শেড পেলে “Fabric Fault Note” চাপুন: কোন কাপড়, কত কেজি, কত টাকা কাটবেন, একটি ছবি আর কী সমস্যা লিখে “Log the Fabric Fault Note” চাপুন। এটি সরবরাহকারীর ফল্ট লগে যায়, পরের পেমেন্ট থেকে কাটার জন্য।",
+        },
+      ],
+      tips: [
+        "ভুল করে লেখা কাটিং রিপোর্ট মুছে ফেলা যায়, তবে যে রিপোর্টের পিস এমব্রয়ডারি বা প্রিন্টে গেছে সেটি মোছা যায় না।",
+        "নষ্ট পিস আবার কাটা না হওয়া পর্যন্ত কাটা পিসের হিসাব থেকে বাদ থাকে।",
       ],
     },
     {

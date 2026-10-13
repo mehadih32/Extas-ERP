@@ -31,6 +31,8 @@ export type ParsedPackingList = {
 };
 
 export type IntakeHints = {
+  /** What the photo is: a packing list (the default) or a cutting report. */
+  document?: "PACKING_LIST" | "CUTTING_REPORT";
   projectStyle: { code: string; name: string } | null;
   styleCodes: string[];
   colors: string[];
@@ -99,9 +101,14 @@ const TOOL = {
 
 export function buildIntakePrompt(hints: IntakeHints): string {
   const list = (values: string[]) => (values.length ? values.join(", ") : "(none on file)");
+  const cutting = hints.document === "CUTTING_REPORT";
   return [
-    "This is a garment factory's packing list for finished goods delivered to our warehouse.",
-    `Read it and call ${TOOL_NAME} with one line per colour and size (and grade).`,
+    cutting
+      ? "This is a garment factory's cutting report: the pieces cut for a style, by colour and size."
+      : "This is a garment factory's packing list for finished goods delivered to our warehouse.",
+    cutting
+      ? `Read it and call ${TOOL_NAME} with one line per colour and size cut (grade "A").`
+      : `Read it and call ${TOOL_NAME} with one line per colour and size (and grade).`,
     "",
     "Rules:",
     "- quantity is the number of pieces. If only cartons x pieces per carton are shown, multiply them.",
@@ -112,7 +119,7 @@ export function buildIntakePrompt(hints: IntakeHints): string {
     "- Use our names below when the printed name clearly means the same colour or size.",
     "",
     hints.projectStyle
-      ? `This delivery is for style ${hints.projectStyle.code} (${hints.projectStyle.name}).`
+      ? `This ${cutting ? "cutting" : "delivery"} is for style ${hints.projectStyle.code} (${hints.projectStyle.name}).`
       : "The style is not known in advance.",
     `Our style codes: ${list(hints.styleCodes)}`,
     `Our colours: ${list(hints.colors)}`,

@@ -75,7 +75,7 @@ async function loadBatch(ctx: CompanyContext, batchId: string) {
 }
 
 /** What each of the batch's open styles holds of each material (issued less returned). */
-async function heldByStyle(db: typeof prisma, companyId: string, projectIds: string[]) {
+export async function heldByStyle(db: typeof prisma, companyId: string, projectIds: string[]) {
   const rows = await db.rawMaterialMovement.groupBy({
     by: ["productionProjectId", "rawMaterialId"],
     where: {

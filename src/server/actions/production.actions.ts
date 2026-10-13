@@ -13,6 +13,7 @@ import * as batches from "@/modules/production/batch.service";
 import * as challans from "@/modules/production/challan.service";
 import * as contracts from "@/modules/production/contract.service";
 import * as costs from "@/modules/production/cost.service";
+import * as cutting from "@/modules/production/cutting.service";
 import * as faults from "@/modules/production/fault.service";
 import * as intakes from "@/modules/production/intake.service";
 import * as pictures from "@/modules/production/material-image.service";
@@ -55,6 +56,8 @@ const readContracts = () => requireAnyPermission("production.manage", "accounts.
 const keepStore = () => requirePermission("materials.manage");
 /** The fault log: Production, the store and Accounts read it; the service checks the rest. */
 const readFaults = () => requireAnyPermission("production.view", "materials.view", "accounts.view");
+/** A photo for a fault: whoever logs faults (Production Managers and buyers). */
+const logFaults = () => requireAnyPermission("production.manage", "materials.purchase");
 const pickProjects = () =>
   requireAnyPermission("production.manage", "accounts.payments.record", "production.stock_intake");
 
@@ -217,6 +220,51 @@ export const settleFaultAction = async (faultId: string, input: unknown) =>
   change(async () =>
     faults.settleFault(await readFaults(), faultId, input, await getRequestMeta()),
   );
+/** FormData with a `file` field: a photo of the fault (JPG, PNG, WebP or PDF, 10 MB max). */
+export const uploadFaultPhotoAction = async (form: FormData) =>
+  runAction(async () => {
+    const asset = await files.storeUpload(
+      await logFaults(),
+      await files.fileFromForm(form),
+      await getRequestMeta(),
+    );
+    return { id: asset.id, fileName: asset.fileName };
+  });
+
+// --- Cutting, embroidery and the cutting and sewing dates ----------------------------
+export const getCuttingScreenAction = async (projectId: string) =>
+  runAction(async () => cutting.getCuttingScreen(await view(), projectId));
+export const createCuttingReportAction = async (projectId: string, input: unknown) =>
+  change(async () =>
+    cutting.createCuttingReport(await manage(), projectId, input, await getRequestMeta()),
+  );
+export const deleteCuttingReportAction = async (reportId: string) =>
+  change(async () => cutting.deleteCuttingReport(await manage(), reportId, await getRequestMeta()));
+/** Reads an uploaded photo of the cutting sheet with AI; nothing is saved. */
+export const readCuttingPhotoAction = async (projectId: string, photoId: string) =>
+  runAction(async () => cutting.readCuttingPhoto(await manage(), projectId, photoId));
+export const setMilestonesAction = async (projectId: string, input: unknown) =>
+  change(async () =>
+    project(await cutting.setMilestones(await manage(), projectId, input, await getRequestMeta())),
+  );
+export const sendToEmbroideryAction = async (projectId: string, input: unknown) =>
+  change(async () =>
+    ref(await cutting.sendToEmbroidery(await manage(), projectId, input, await getRequestMeta())),
+  );
+export const receiveFromEmbroideryAction = async (jobId: string, input: unknown) =>
+  change(async () =>
+    cutting.receiveFromEmbroidery(await manage(), jobId, input, await getRequestMeta()),
+  );
+export const replaceFromCuttingAction = async (jobId: string, input: unknown) =>
+  change(async () =>
+    cutting.replaceFromCutting(await manage(), jobId, input, await getRequestMeta()),
+  );
+export const fabricFaultNoteAction = async (projectId: string, input: unknown) =>
+  change(async () =>
+    ref(await cutting.fabricFaultNote(await logFaults(), projectId, input, await getRequestMeta())),
+  );
+export const getBatchDateWarningsAction = async (batchId: string) =>
+  runAction(async () => cutting.batchDateWarnings(await view(), batchId));
 
 // --- Overview & projects -------------------------------------------------------------
 export const getProductionOverviewAction = async () =>

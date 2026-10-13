@@ -4,6 +4,7 @@ import type { SupplierFaultKind, SupplierFaultStatus } from "@prisma/client";
 import {
   BadgeCheckIcon,
   FileDownIcon,
+  PaperclipIcon,
   RotateCcwIcon,
   ShieldAlertIcon,
   TriangleAlertIcon,
@@ -26,7 +27,11 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import { formatDay } from "@/lib/display";
 import type { FaultItem, FaultList as FaultListData } from "@/modules/production/fault.service";
-import { createFaultAction, settleFaultAction } from "@/server/actions/production.actions";
+import {
+  createFaultAction,
+  settleFaultAction,
+  uploadFaultPhotoAction,
+} from "@/server/actions/production.actions";
 
 import { FAULT_KIND_LABELS, FAULT_STATUS_LABELS, productionHref } from "./labels";
 
@@ -97,6 +102,17 @@ function FaultCard({ fault: f, can, currency }: { fault: FaultItem; can: Can; cu
           .filter(Boolean)
           .join(" · ")}
       </p>
+      {f.photoId && (
+        <a
+          href={productionHref.file(f.photoId)}
+          target="_blank"
+          rel="noreferrer"
+          className={`inline-flex w-fit items-center gap-1.5 text-[0.8125rem] ${linkClass}`}
+        >
+          <PaperclipIcon className="size-3.5" aria-hidden />
+          Photo of the fault
+        </a>
+      )}
       {f.status !== "OPEN" && f.settledOn && (
         <p className="text-[0.8125rem] text-muted-foreground">
           {f.status === "DEDUCTED" ? "Deducted" : "Waived"} {formatDay(f.settledOn)}
@@ -263,8 +279,20 @@ export function LogFaultButton({
                 fieldErrors: { supplierId: ["Choose who it is against"] },
               };
             }
+            let photoId: string | null = null;
+            const photo = form.get("photo");
+            if (photo instanceof File && photo.size > 0) {
+              const upload = new FormData();
+              upload.set("file", photo);
+              const stored = await uploadFaultPhotoAction(upload);
+              if (!stored.ok) {
+                return { ...stored.error, fieldErrors: { photo: [stored.error.message] } };
+              }
+              photoId = stored.data.id;
+            }
             const result = await createFaultAction({
               supplierId: supplier.id,
+              photoId,
               kind: text("kind"),
               batchId: batch?.id ?? null,
               quantity: num("quantity"),
@@ -339,6 +367,20 @@ export function LogFaultButton({
                   maxLength={1000}
                   placeholder="Holes in 2 rolls of navy pique, 14 kg set aside"
                   aria-invalid={Boolean(fieldError("note"))}
+                />
+              </Field>
+              <Field
+                id="fault-photo"
+                label="Photo (optional)"
+                hint="Kept with the fault. JPG, PNG, WebP or PDF, up to 10 MB."
+                error={fieldError("photo")}
+              >
+                <Input
+                  id="fault-photo"
+                  name="photo"
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,application/pdf"
+                  className="h-auto py-1.5 file:mr-3"
                 />
               </Field>
             </>

@@ -195,6 +195,10 @@ export const productionHref = {
   },
   reportCard: (supplierId: string) =>
     `/api/production/suppliers/${encodeURIComponent(supplierId)}/report-card`,
+  /** A style's cutting, embroidery and print, and its cutting and sewing dates. */
+  cutting: (projectId: string) => `/production/projects/${encodeURIComponent(projectId)}/cutting`,
+  newCutting: (projectId: string) =>
+    `/production/projects/${encodeURIComponent(projectId)}/cutting/new`,
 };
 
 /** What a supplier fault is for. */

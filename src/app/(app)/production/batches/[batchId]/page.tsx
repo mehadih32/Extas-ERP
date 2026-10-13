@@ -30,6 +30,7 @@ import { formatDay } from "@/lib/display";
 import { cn } from "@/lib/utils";
 import {
   getBatchContractsAction,
+  getBatchDateWarningsAction,
   getBatchMaterialsAction,
   getBatchScreenAction,
   listFaultsAction,
@@ -58,12 +59,13 @@ export default async function BatchPage({
 }) {
   const ctx = await requireCompanyPage();
   const [{ batchId }, query] = await Promise.all([params, searchParams]);
-  const [result, materials, contracts, faults] = await Promise.all([
+  const [result, materials, contracts, faults, dates] = await Promise.all([
     getBatchScreenAction(batchId),
     getBatchMaterialsAction(batchId),
     // Production Managers and Accounts only; nobody else gets the panel.
     getBatchContractsAction(batchId),
     listFaultsAction({ batchId, take: 5 }),
+    getBatchDateWarningsAction(batchId),
   ]);
   if (!result.ok) {
     if (result.error.code === "NOT_FOUND") notFound();
@@ -114,6 +116,24 @@ export default async function BatchPage({
               fault log
             </Link>{" "}
             to deduct, and the Production Managers were alerted.
+          </FormAlert>
+        )}
+        {dates.ok && dates.data.length > 0 && (
+          <FormAlert tone={dates.data.some((w) => w.level === "LATE") ? "error" : "note"}>
+            <span className="font-medium">Cutting and sewing dates to watch</span>
+            <ul className="mt-1 grid gap-0.5" aria-label="Dates to watch">
+              {dates.data.map((w) => (
+                <li key={`${w.project.id}${w.text}`}>
+                  <Link
+                    href={productionHref.cutting(w.project.id)}
+                    className="font-medium underline underline-offset-4"
+                  >
+                    {w.project.code}
+                  </Link>{" "}
+                  {w.text}
+                </li>
+              ))}
+            </ul>
           </FormAlert>
         )}
         {b.styleCount > 0 && (

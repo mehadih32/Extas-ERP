@@ -41,6 +41,8 @@ export const createFaultSchema = z.object({
   amount: z.number().min(0).max(1_000_000_000).multipleOf(0.01).nullish(),
   note: z.string().trim().min(3, "Say what was wrong").max(1000),
   occurredOn: z.iso.date().optional(),
+  /** A photo of the fault (an uploaded file of this company). */
+  photoId: id.nullish(),
 });
 
 export const settleFaultSchema = z.object({
@@ -88,6 +90,7 @@ const faultSelect = {
   bill: { select: { id: true, number: true } },
   createdBy: { select: { name: true } },
   settledBy: { select: { name: true } },
+  photoId: true,
 } satisfies Prisma.SupplierFaultSelect;
 
 type FaultRow = Prisma.SupplierFaultGetPayload<{ select: typeof faultSelect }>;
@@ -114,6 +117,7 @@ function present(ctx: CompanyContext, f: FaultRow) {
     project: f.project,
     material: f.rawMaterial,
     bill: f.bill,
+    photoId: f.photoId,
   };
 }
 
@@ -188,7 +192,7 @@ export async function createFault(ctx: CompanyContext, raw: unknown, meta?: Requ
   if (!supplier || supplier.kind === "BUYER") {
     throw new AppError("NOT_FOUND", "Supplier not found.");
   }
-  const [batch, project, material] = await Promise.all([
+  const [batch, project, material, photo] = await Promise.all([
     input.batchId
       ? ctx.db.productionBatch.findUnique({ where: { id: input.batchId }, select: { id: true } })
       : null,
@@ -201,10 +205,14 @@ export async function createFault(ctx: CompanyContext, raw: unknown, meta?: Requ
     input.materialId
       ? ctx.db.rawMaterial.findUnique({ where: { id: input.materialId }, select: { id: true } })
       : null,
+    input.photoId
+      ? ctx.db.fileAsset.findUnique({ where: { id: input.photoId }, select: { id: true } })
+      : null,
   ]);
   if (input.batchId && !batch) throw new AppError("NOT_FOUND", "Master batch not found.");
   if (input.projectId && !project) throw new AppError("NOT_FOUND", "Production project not found.");
   if (input.materialId && !material) throw new AppError("NOT_FOUND", "Raw material not found.");
+  if (input.photoId && !photo) throw new AppError("NOT_FOUND", "Photo not found.");
   const fault = await prisma.$transaction(async (tx) => {
     const made = await tx.supplierFault.create({
       data: {
@@ -219,6 +227,7 @@ export async function createFault(ctx: CompanyContext, raw: unknown, meta?: Requ
         amount: input.amount ?? null,
         note: input.note,
         occurredOn: dateColumn(input.occurredOn ?? today),
+        photoId: photo?.id ?? null,
         createdById: ctx.user.id,
       },
       select: { id: true, number: true },

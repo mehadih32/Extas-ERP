@@ -125,6 +125,8 @@ model Company {
   productionBatches    ProductionBatch[]
   productionContracts  ProductionContract[]
   supplierFaults       SupplierFault[]
+  cuttingReports       CuttingReport[]
+  embroideryJobs       EmbroideryJob[]
   materialNeeds        ProductionMaterialNeed[]
   supplierBills        SupplierBill[]
   stockIntakes         StockIntake[]
@@ -238,6 +240,8 @@ model User {
   contractsChanged   ProductionContract[]  @relation("ProductionContractUpdatedBy")
   faultsLogged       SupplierFault[]       @relation("SupplierFaultCreatedBy")
   faultsSettled      SupplierFault[]       @relation("SupplierFaultSettledBy")
+  cuttingReports     CuttingReport[]       @relation("CuttingReportCreatedBy")
+  embroideryJobs     EmbroideryJob[]       @relation("EmbroideryJobCreatedBy")
   purchaseReturns    PurchaseReturn[]      @relation("PurchaseReturnCreatedBy")
   materialMovements  RawMaterialMovement[] @relation("MaterialMovementBy")
   refunds            Refund[]              @relation("RefundCreatedBy")
@@ -439,6 +443,8 @@ model FileAsset {
   staffClaims         StaffClaim[]
   materialNeedImages  ProductionMaterialNeed[] @relation("MaterialNeedImage")
   orderLineImages     PurchaseOrderLine[]      @relation("PurchaseOrderLineImage")
+  cuttingPhotos       CuttingReport[]          @relation("CuttingPhoto")
+  faultPhotos         SupplierFault[]          @relation("SupplierFaultPhoto")
 
   @@index([companyId])
 }
@@ -1136,6 +1142,7 @@ model Party {
   batchesAsFactory     ProductionBatch[]    @relation("BatchFactory")
   productionContracts  ProductionContract[] @relation("ContractParty")
   faults               SupplierFault[]      @relation("SupplierFaults")
+  embroideryJobs       EmbroideryJob[]      @relation("EmbroideryParty")
   campaignRecipients   CampaignRecipient[]
   generatedDocuments   GeneratedDocument[]
   projectSettlements   ProjectSettlement[]
@@ -1860,6 +1867,10 @@ model ProductionProject {
   /// The making charge (CM) per piece agreed with the factory; printed on the factory
   /// contract and the CM settlement. Null: not agreed yet.
   cmRate         Decimal?         @db.Decimal(14, 2)
+  /// Milestones: cutting and sewing to be done by these days (warnings when they come
+  /// near or pass). Null: not set.
+  cutBy          DateTime?        @db.Date
+  sewBy          DateTime?        @db.Date
   /// Making notes printed on the tech pack (written by hand, or drafted by AI and edited).
   techPackNotes  String?
   notes          String?
@@ -1878,6 +1889,8 @@ model ProductionProject {
   materialNeeds        ProductionMaterialNeed[]
   orderShares          PurchaseOrderLineShare[]
   faults               SupplierFault[]
+  cuttingReports       CuttingReport[]
+  embroideryJobs       EmbroideryJob[]
   stageLogs            ProductionStageLog[]
   billAllocations      SupplierBillAllocation[]
   expenses             Expense[]
@@ -2121,12 +2134,15 @@ model SupplierFault {
   settledAt     DateTime?
   settledById   String?
   settledNote   String?
+  /// A photo of the fault (the Fabric Fault Note's picture of the faulty roll).
+  photoId       String?
   createdById   String?
   createdAt     DateTime            @default(now())
   updatedAt     DateTime            @updatedAt
 
   company     Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
   supplier    Party              @relation("SupplierFaults", fields: [supplierId], references: [id])
+  photo       FileAsset?         @relation("SupplierFaultPhoto", fields: [photoId], references: [id], onDelete: SetNull)
   batch       ProductionBatch?   @relation(fields: [batchId], references: [id], onDelete: SetNull)
   project     ProductionProject? @relation(fields: [projectId], references: [id], onDelete: SetNull)
   rawMaterial RawMaterial?       @relation(fields: [rawMaterialId], references: [id], onDelete: SetNull)
@@ -2139,6 +2155,79 @@ model SupplierFault {
   @@index([supplierId, status])
   @@index([batchId])
   @@index([billId])
+}
+
+enum CuttingKind {
+  CUT // pieces cut for the style
+  REPLACEMENT // pieces cut again to replace ones spoiled outside (embroidery, print)
+}
+
+/// A cutting report: the pieces of a style cut on a day by colour and size, typed in or read
+/// by AI from a photo of the cutting sheet, with the fabric used for them.
+model CuttingReport {
+  id              String      @id @default(cuid())
+  companyId       String
+  projectId       String
+  number          String // "CUT-2026-00001"
+  kind            CuttingKind @default(CUT)
+  cutOn           DateTime    @db.Date
+  /// [{ colorName, sizeName, quantity }]: null colour and size for a style without a grid.
+  lines           Json
+  /// [{ materialId, quantity }]: the fabric used for these pieces, in its unit.
+  fabricUsed      Json        @default("[]")
+  photoId         String?
+  readByAi        Boolean     @default(false)
+  /// The embroidery or print job whose spoiled pieces a replacement cut is for.
+  embroideryJobId String?
+  note            String?
+  createdById     String?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  company       Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  project       ProductionProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  photo         FileAsset?        @relation("CuttingPhoto", fields: [photoId], references: [id], onDelete: SetNull)
+  embroideryJob EmbroideryJob?    @relation(fields: [embroideryJobId], references: [id], onDelete: SetNull)
+  createdBy     User?             @relation("CuttingReportCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@unique([companyId, number])
+  @@index([projectId, cutOn])
+}
+
+enum EmbroideryKind {
+  EMBROIDERY
+  PRINT
+}
+
+/// Cut pieces sent out for embroidery or print and what came back: good, and spoiled (to
+/// replace from cutting at once).
+model EmbroideryJob {
+  id          String         @id @default(cuid())
+  companyId   String
+  projectId   String
+  number      String // "EMB-2026-00001"
+  kind        EmbroideryKind @default(EMBROIDERY)
+  partyId     String?
+  sentOn      DateTime       @db.Date
+  /// When the pieces should be back.
+  dueOn       DateTime?      @db.Date
+  /// When the last pieces came back (null: some still out).
+  receivedOn  DateTime?      @db.Date
+  /// [{ colorName, sizeName, sent, received, spoiled }]
+  lines       Json
+  note        String?
+  createdById String?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  company      Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  project      ProductionProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  party        Party?            @relation("EmbroideryParty", fields: [partyId], references: [id], onDelete: SetNull)
+  createdBy    User?             @relation("EmbroideryJobCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  replacements CuttingReport[]
+
+  @@unique([companyId, number])
+  @@index([projectId, sentOn])
 }
 
 /// Split Bill Logic: portion of a bill charged to a batch under an expense head.
@@ -4495,6 +4584,8 @@ enum DocumentType {
   PRODUCTION_BATCH // a master batch of styles made together (MB-2026-00001)
   PRODUCTION_CONTRACT // a batch's fabric, accessories or factory (CM) agreement (AGR-2026-00001)
   SUPPLIER_FAULT // a supplier Fault Log entry: short, faulty or missing (FLT-2026-00001)
+  CUTTING_REPORT // pieces cut for a style by colour and size (CUT-2026-00001)
+  EMBROIDERY_JOB // cut pieces out for embroidery or print (EMB-2026-00001)
 }
 
 enum TemplateFormat {

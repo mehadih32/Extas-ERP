@@ -212,16 +212,16 @@ run("The Five Style Polo simulation", () => {
     // over the allowance, the C-grade CM and the advance.
     expect(s.penalties.cm.totals).toMatchObject({
       totalCm: "561839.00",
-      faults: "5084.97",
+      faults: "5108.16",
       rejects: "6370.91",
       cGradeCm: "4594.00",
-      deductions: "16049.88",
+      deductions: "16073.07",
       paid: "200000.00",
-      payable: "345789.12",
+      payable: "345765.93",
     });
     expect(s.penalties.cm.saved?.posted).toBe(true);
-    // 30,000 owed before + 5,61,839 CM bills - 2,00,000 advance - 16,049.88 deductions.
-    expect(await due(env.owner, env.factory.id)).toBe("375789.12");
+    // 30,000 owed before + 5,61,839 CM bills - 2,00,000 advance - 16,073.07 deductions.
+    expect(await due(env.owner, env.factory.id)).toBe("375765.93");
 
     // The overheads, split over the five styles.
     for (const [head, amount] of [
@@ -243,7 +243,7 @@ run("The Five Style Polo simulation", () => {
     });
     expect(stocked._sum.quantity).toBe(5945);
     expect(s.stock.a + s.stock.b).toBe(5945);
-    expect(s.money).toMatchObject({ recovered: "20291.08" });
+    expect(s.money).toMatchObject({ recovered: "20314.27" });
     expect(Number(s.money.perPiece)).toBeCloseTo(Number(s.money.totalCost) / 5945, 2);
 
     // The books balance.
@@ -255,11 +255,11 @@ run("The Five Style Polo simulation", () => {
 
     const figures = await readFiveStylePolo(env.owner, sim);
     expect(figures.dues.map((d) => [d.name, d.before, d.after])).toEqual([
-      ["Gazipur Knit Composite", "30000.00", "375789.12"],
+      ["Gazipur Knit Composite", "30000.00", "375765.93"],
       ["Narayanganj Fabric Mills", "0.00", expect.any(String)],
       ["Demo Embo", "0.00", "59686.04"],
-      ["Demo Trims House", "0.00", "69540.00"],
-      ["Demo Button & Poly", "0.00", "53605.00"],
+      ["Demo Trims House", "0.00", "69760.00"],
+      ["Demo Button & Poly", "0.00", "53790.00"],
     ]);
     const wiped = await wipeSimulation(sim);
     expect(wiped).toContain("ProductionBatch: 1");
@@ -269,7 +269,7 @@ run("The Five Style Polo simulation", () => {
       writeFileSync(process.env.FIVE_STYLE_POLO_REPORT, report);
     }
     expect(report).toContain("**Final payable to Gazipur Knit Composite** (CMS-");
-    expect(report).toContain("BDT 3,45,789.12");
+    expect(report).toContain("BDT 3,45,765.93");
     // Not a row left, and every row it touched as it was.
     expect(await fingerprint()).toEqual(before);
   });

@@ -219,6 +219,10 @@ describe("what the Accounts screens offer, from the same rules the services chec
     };
     expect(canReverseEntry(ACCOUNTS, entry).ok).toBe(true);
     expect(canReverseEntry(ACCOUNTS, { ...entry, sourceType: "SALE" }).ok).toBe(false);
+    expect(canReverseEntry(ACCOUNTS, { ...entry, sourceType: "SUPPLIER_FAULT" })).toMatchObject({
+      ok: false,
+      message: expect.stringContaining("undo it in the fault log"),
+    });
     expect(canReverseEntry(ACCOUNTS, { ...entry, isReversed: true }).ok).toBe(false);
     expect(canReverseEntry(ACCOUNTS, { ...entry, reversalOfId: "x" }).ok).toBe(false);
     // Reversing money paid out brings it back in, which needs the receipts key.

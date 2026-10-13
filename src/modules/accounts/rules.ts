@@ -50,6 +50,12 @@ type EntryState = {
  * by other modules are undone through their own documents (void the bill...).
  */
 export function canReverseEntry(ctx: Can, entry: EntryState): Verdict {
+  if (entry.sourceType === "SUPPLIER_FAULT") {
+    return refuse(
+      "CONFLICT",
+      `${entry.number} was made by a supplier fault; undo it in the fault log (put the fault back to open, or waive it).`,
+    );
+  }
   if (entry.sourceType !== "MANUAL" && entry.sourceType !== "TRANSFER") {
     return refuse(
       "CONFLICT",

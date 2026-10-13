@@ -213,6 +213,7 @@ const ACCESSORIES = [
   },
 ] as const;
 const ACCESSORY_WASTAGE = 3;
+const COLLAR_WASTAGE = 2;
 
 /** Overheads split equally over the batch's styles. */
 const OVERHEADS = [
@@ -818,7 +819,7 @@ async function runSteps(
         {
           materialId: collarIds.get(s.code)!,
           perPiece: 1,
-          wastagePercent: 2,
+          wastagePercent: COLLAR_WASTAGE,
           placement: "Collar and cuffs",
         },
         ...ACCESSORIES.map((a) => ({
@@ -858,8 +859,11 @@ async function runSteps(
   const cutOf = (code: string) => plans.get(code)!.reduce((t, z) => t + z.cut, 0);
   const spoiledOf = (code: string) => plans.get(code)!.reduce((t, z) => t + z.spoiled, 0);
   const allCut = POLO_STYLES.reduce((t, s) => t + cutOf(s.code), 0);
-  const orderOf = (perPiece: number, pieces: number) =>
-    Math.ceil((pieces * perPiece * (1 + ACCESSORY_WASTAGE / 100)) / 10) * 10;
+  /** What a style's cutting takes (spoiled pieces cut again included), with the wastage allowed. */
+  const needOf = (code: string, perPiece: number, wastage: number) =>
+    Math.ceil((cutOf(code) + spoiledOf(code)) * perPiece * (1 + wastage / 100));
+  /** Ordered: what the styles take, rounded up to tens. */
+  const orderOf = (needs: number[]) => Math.ceil(needs.reduce((t, n) => t + n, 0) / 10) * 10;
   const accessoryLines = (
     at: "trims" | "buttons",
   ): Array<{ materialId: string; quantity: number; unitPrice: number }> =>
@@ -867,13 +871,15 @@ async function runSteps(
       a.perBrand
         ? POLO_STYLES.map((s): { materialId: string; quantity: number; unitPrice: number } => ({
             materialId: accessoryOf(a.key, s.code),
-            quantity: orderOf(a.perPiece, cutOf(s.code)),
+            quantity: orderOf([needOf(s.code, a.perPiece, ACCESSORY_WASTAGE)]),
             unitPrice: a.price,
           }))
         : [
             {
               materialId: accessoryIds.get(a.key)!,
-              quantity: orderOf(a.perPiece, allCut),
+              quantity: orderOf(
+                POLO_STYLES.map((s) => needOf(s.code, a.perPiece, ACCESSORY_WASTAGE)),
+              ),
               unitPrice: a.price,
             },
           ],
@@ -887,7 +893,7 @@ async function runSteps(
           { materialId: fabricId, quantity: FABRIC_ORDERED_KG, unitPrice: FABRIC.price },
           ...POLO_STYLES.map((s) => ({
             materialId: collarIds.get(s.code)!,
-            quantity: orderOf(1, cutOf(s.code) + spoiledOf(s.code)),
+            quantity: orderOf([needOf(s.code, 1, COLLAR_WASTAGE)]),
             unitPrice: collarPrice.get(s.code)!,
           })),
         ],
@@ -950,11 +956,15 @@ async function runSteps(
         colorName: colours.get(s.code)!.name,
         quantity: round3(Math.round(cut * FABRIC.perPiece * FABRIC_ISSUE_EXTRA * 10) / 10),
       },
-      { projectId, materialId: collarIds.get(s.code)!, quantity: cut + spoiledOf(s.code) },
+      {
+        projectId,
+        materialId: collarIds.get(s.code)!,
+        quantity: needOf(s.code, 1, COLLAR_WASTAGE),
+      },
       ...ACCESSORIES.map((a) => ({
         projectId,
         materialId: accessoryOf(a.key, s.code),
-        quantity: Math.ceil(cut * a.perPiece * 1.02),
+        quantity: needOf(s.code, a.perPiece, ACCESSORY_WASTAGE),
       })),
     ];
   });
@@ -963,7 +973,7 @@ async function runSteps(
     lines: issueLines,
   });
   await step(
-    `Issued each style its fabric (2% over what its pieces take), collar and cuff sets and accessories: ${pcs(issueLines.length)} lines.`,
+    `Issued each style its fabric (2% over what its pieces take), and its collar and cuff sets and accessories with the wastage allowed (2% and 3%): ${pcs(issueLines.length)} lines.`,
   );
 
   // 10. Cutting: 2% over the pieces to make.

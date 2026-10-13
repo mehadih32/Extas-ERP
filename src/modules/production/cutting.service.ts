@@ -1103,7 +1103,7 @@ export async function receiveFromEmbroidery(
         const amount = cost ? money(cost.perPiece.times(bad)) : null;
         const what = found.kind === "PRINT" ? "print" : "embroidery";
         const note = cost
-          ? `${bad} pieces of ${project.code} spoiled at ${what} on ${found.number}, at ${cost.perPiece.toFixed(2)} a cut piece (materials issued ÷ ${cost.cut} pieces cut)`
+          ? `${bad} pieces of ${project.code} spoiled at ${what} on ${found.number}, at ${cost.perPiece.toFixed(2)} a cut piece (fabric issued ÷ ${cost.cut} pieces cut)`
           : `${bad} pieces of ${project.code} spoiled at ${what} on ${found.number}; no materials issued yet, so the value is to agree`;
         const fault = await logFaultTx(tx, ctx, meta, {
           supplier: house,

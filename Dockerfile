@@ -65,6 +65,9 @@ RUN groupadd --system --gid 1001 erp \
  && chown -R erp:erp /data
 COPY --from=builder --chown=erp:erp /app/.next/standalone ./
 COPY --from=builder --chown=erp:erp /app/.next/static ./.next/static
+# The standalone build leaves out public/: the favicon, the app icons, the service
+# worker and its offline page are served from here.
+COPY --from=builder --chown=erp:erp /app/public ./public
 USER erp
 EXPOSE 3000
 CMD ["node", "server.js"]

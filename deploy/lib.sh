@@ -200,3 +200,61 @@ stop_demo() {
   say "Stopping the demo site (its data stays in $DATA_DIR/demo)"
   demo_compose rm --stop --force demo-app demo-seed demo-db >/dev/null
 }
+
+# --- Going back after a failed update ---------------------------------------------
+
+# Keeps the version that runs now as :previous, so a failed update can go back to it
+# without building anything. False on a new server, where nothing runs yet.
+keep_running_version() {
+  docker image inspect extras-erp-app:latest >/dev/null 2>&1 || return 1
+  docker image inspect extras-erp-tools:latest >/dev/null 2>&1 || return 1
+  docker tag extras-erp-app:latest extras-erp-app:previous
+  docker tag extras-erp-tools:latest extras-erp-tools:previous
+}
+
+# Makes the kept version the one that runs (keep_running_version saved it).
+use_previous_version() {
+  docker tag extras-erp-app:previous extras-erp-app:latest
+  docker tag extras-erp-tools:previous extras-erp-tools:latest
+}
+
+# The changes to the database (prisma/migrations) this copy of the code has and the
+# database has not had yet, one a line; all of them when the database is new.
+pending_migrations() {
+  local applied dir name
+  applied="$(compose exec -T db psql -X -q -At -U postgres -d "$POSTGRES_DB" \
+    -c 'SELECT migration_name FROM _prisma_migrations WHERE finished_at IS NOT NULL' \
+    2>/dev/null)" || applied=""
+  for dir in "$(dirname "$DEPLOY_DIR")"/prisma/migrations/*/; do
+    name="$(basename "$dir")"
+    [ -f "$dir/migration.sql" ] || continue
+    grep -qxF "$name" <<<"$applied" || printf '%s\n' "$name"
+  done
+}
+
+# Puts the database back to a dump ($1, its path inside the database container, such
+# as /safety-copies/before-update-2026-10-14_120000/database.dump) in one transaction,
+# committed only once all of it has gone in: the database is either fully put back
+# or left as it was. Stop the app first.
+restore_database() {
+  # $1 to $3 are filled in inside the database container.
+  # shellcheck disable=SC2016
+  compose exec -T db sh -c '
+      set -o pipefail
+      {
+        echo "SET client_min_messages = warning; BEGIN; DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
+        pg_restore --no-owner --no-privileges --file=- "$1" || exit 1
+        echo "COMMIT;"
+      } | psql -q -v ON_ERROR_STOP=1 -U "$2" -d "$3" >/dev/null
+    ' restore "$1" "$APP_DB_USER" "$POSTGRES_DB"
+}
+
+# Opens every screen of the version that just started, the way the owner would
+# (scripts/check-update.ts), with a ten-minute session of its own; a "==> " line for
+# each problem. False when a screen or a PDF did not work.
+check_update() {
+  local email
+  email="$(setting SEED_ADMIN_EMAIL)"
+  compose run --rm --no-deps -T -e CHECK_URL=http://app:3000 -e CHECK_EMAIL="${email,,}" \
+    migrate npx tsx scripts/check-update.ts
+}

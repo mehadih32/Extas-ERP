@@ -231,11 +231,22 @@ sudo git pull
 sudo ./deploy/deploy.sh
 ```
 
-`deploy.sh` saves a safety copy of the database, builds the new version while the old one
-keeps running, brings the database up to date and restarts the ERP. The ERP pauses for
-less than a minute.
+`deploy.sh` builds the new version while the old one keeps running, saves a safety copy of
+the database, brings the database up to date, restarts the ERP and then opens every screen
+(and prints the booking PDFs) the way the owner would, to check the new version. The ERP
+pauses for less than a minute. When the update changes the database, the ERP closes to its
+users for a few minutes instead, from just before the safety copy until the check has
+passed, so nothing typed in that time can be lost.
 
-If an update goes wrong, go back to the version before it: find it with
+**A failed update goes back by itself.** When the new version cannot be built, nothing
+changes. When it does not start, or a screen or a PDF does not work in the check,
+`deploy.sh` goes back to the version that ran before it (kept as the `extras-erp-app:previous`
+and `extras-erp-tools:previous` images), and to the `before-update-…` safety copy of the
+database when the update had changed the database. It then stops with the reason, so the
+**Deploy** run on GitHub shows a red cross and lines saying "Went back". The full log on the
+server says what failed.
+
+To go back by hand to an older version, find it with
 `sudo git log --oneline -5`, then run `sudo git checkout <its code>` and
 `sudo ./deploy/deploy.sh`. If the update changed the database, also restore the
 `before-update-…` safety copy taken just before it. `sudo git checkout main` returns to the
@@ -431,7 +442,9 @@ set once:
 - **`deploy.sh` stops with an error.** It shows the logs that say why. If the error is
   about the network or a download (for example `Exit handler never called`), run it again:
   what was already downloaded is kept.
-- **The app does not start.** `sudo ./deploy/logs.sh app` shows why.
+- **The app does not start.** `sudo ./deploy/logs.sh app` shows why. After an update,
+  `deploy.sh` has already gone back to the version before it (see "Updating to a new
+  version"); the log in `/srv/extras-erp/deploy-logs` says what failed.
 - **Someone sees "An error occurred. Error Code: ERR-…".** Ask them for the code, then look
   it up in the app's log, with the part after `ERR-`:
   `sudo docker logs extras-erp-app-1 2>&1 | grep -B 15 -A 15 7F3K9Q2M`. The lines around it

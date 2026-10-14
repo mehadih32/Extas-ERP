@@ -27,6 +27,7 @@ export const BOOKING_PERMISSIONS: readonly PermissionKey[] = [
   "production.bookings.market",
   "production.bookings.attach",
   "production.bookings.close",
+  "production.bookings.approve",
 ];
 
 export const PRODUCTION_TABS: readonly ProductionTab[] = [

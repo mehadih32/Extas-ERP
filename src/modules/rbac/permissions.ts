@@ -128,6 +128,17 @@ export const PERMISSIONS = [
     module: "PRODUCTION",
     description: "Close or cancel bookings",
   },
+  {
+    key: "production.bookings.approve",
+    module: "PRODUCTION",
+    description:
+      "Approve bookings before they go to the supplier, and choose Fabric first for an order (the owner's by default)",
+  },
+  {
+    key: "production.techpack.approve",
+    module: "PRODUCTION",
+    description: "Lock a style's fabric part and approve its tech pack for production",
+  },
   // Parties
   { key: "parties.view", module: "PARTIES", description: "View buyer and supplier profiles" },
   {

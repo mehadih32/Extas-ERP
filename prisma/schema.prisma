@@ -108,6 +108,8 @@ model Company {
   rawMaterialStocks    RawMaterialStock[]
   purchaseOrders       PurchaseOrder[]
   bookings             Booking[]
+  bookingRevisions     BookingRevision[]
+  techPacks            TechPack[]
   materialIssues       MaterialIssue[]
   materialChallans     MaterialChallan[]
   purchaseReturns      PurchaseReturn[]
@@ -245,6 +247,12 @@ model User {
   materialIssues      MaterialIssue[]       @relation("MaterialIssueCreatedBy")
   materialChallans    MaterialChallan[]     @relation("MaterialChallanCreatedBy")
   productionBatches   ProductionBatch[]     @relation("ProductionBatchCreatedBy")
+  fabricFirstBatches  ProductionBatch[]     @relation("BatchFabricFirstBy")
+  bookingsApproved    Booking[]             @relation("BookingApprovedBy")
+  bookingsSent        Booking[]             @relation("BookingSentBy")
+  bookingRevisions    BookingRevision[]     @relation("BookingRevisionApprovedBy")
+  techPacksLocked     TechPack[]            @relation("TechPackFabricLockedBy")
+  techPacksApproved   TechPack[]            @relation("TechPackApprovedBy")
   contractsMade       ProductionContract[]  @relation("ProductionContractCreatedBy")
   contractsChanged    ProductionContract[]  @relation("ProductionContractUpdatedBy")
   faultsLogged        SupplierFault[]       @relation("SupplierFaultCreatedBy")
@@ -994,15 +1002,53 @@ model Booking {
   /// Collars and cuffs booked over the garment pieces, in percent (3 = 3% extra).
   collarExtraPercent Decimal          @default(0) @db.Decimal(5, 2)
   collarNotes        String?
+  /// Draft until approved; then sent to the supplier (Approve, then Mark as sent).
+  stage              BookingStage     @default(DRAFT)
+  /// 0 for the first approved booking (R0); each change after approval makes the next (R1, R2).
+  revision           Int              @default(0)
+  approvedAt         DateTime?
+  approvedById       String?
+  sentAt             DateTime?
+  sentById           String?
+  /// A draft revision's changes from the last approved one, and the fabric then at risk
+  /// when that one had been sent: { from, wasSent, changes: [{ item, was, now }], atRisk: [{ unit, quantity }] }.
+  revisionChanges    Json?
+  /// The fabric part of each style it covers when it was approved (tech-pack.ts), to show
+  /// when a style's fabric changes after the booking went out.
+  fabricBasis        Json?
   createdAt          DateTime         @default(now())
   updatedAt          DateTime         @updatedAt
 
   company       Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
   order         PurchaseOrder         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  approvedBy    User?                 @relation("BookingApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+  sentBy        User?                 @relation("BookingSentBy", fields: [sentById], references: [id], onDelete: SetNull)
   collarSizes   BookingCollarSize[]
   collarColours BookingCollarColour[]
+  revisions     BookingRevision[]
 
   @@index([companyId, source, category])
+  @@index([companyId, stage])
+}
+
+/// A booking as it was approved (R0, R1, R2...): what it said, kept when it changes.
+model BookingRevision {
+  id           String   @id @default(cuid())
+  companyId    String
+  bookingId    String
+  revision     Int
+  /// The booking's supplier, date, lines (with their specification and shares) and collar matrix.
+  snapshot     Json
+  approvedAt   DateTime @default(now())
+  approvedById String?
+  createdAt    DateTime @default(now())
+
+  company    Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  booking    Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  approvedBy User?   @relation("BookingRevisionApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+
+  @@unique([bookingId, revision])
+  @@index([companyId])
 }
 
 /// A size group of a booking's collar and cuff matrix ("S-M": collar 42 x 9 cm, cuff 38 x 3.5 cm).
@@ -2002,6 +2048,7 @@ model ProductionProject {
   targetLines          ProductionTargetLine[]
   materialNeeds        ProductionMaterialNeed[]
   orderShares          PurchaseOrderLineShare[]
+  techPack             TechPack?
   faults               SupplierFault[]
   cuttingReports       CuttingReport[]
   embroideryJobs       EmbroideryJob[]
@@ -2046,6 +2093,10 @@ model ProductionBatch {
   /// at the style's target price.
   rejectTolerancePercent Decimal        @default(2) @db.Decimal(5, 2)
   notes                  String?
+  /// Fabric first, the owner's choice for this order: its fabric is booked once each
+  /// style's fabric part is locked, before the full tech packs are approved.
+  fabricFirstAt          DateTime?
+  fabricFirstById        String?
   createdById            String?
   createdAt              DateTime       @default(now())
   updatedAt              DateTime       @updatedAt
@@ -2053,6 +2104,7 @@ model ProductionBatch {
   company       Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
   factory       Party?               @relation("BatchFactory", fields: [factoryId], references: [id], onDelete: SetNull)
   createdBy     User?                @relation("ProductionBatchCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  fabricFirstBy User?                @relation("BatchFabricFirstBy", fields: [fabricFirstById], references: [id], onDelete: SetNull)
   projects      ProductionProject[]
   orders        PurchaseOrder[]
   contracts     ProductionContract[]
@@ -2127,6 +2179,34 @@ model ProductionMaterialNeed {
 
   @@index([projectId])
   @@index([rawMaterialId])
+}
+
+/// The tech pack of a style in production (a project): drafted, its fabric part locked
+/// (for Fabric first), then approved for production. The parts it locks are read from
+/// the project (tech-pack.ts): the fabrics, their use per piece and the colour and size
+/// quantities.
+model TechPack {
+  id               String         @id @default(cuid())
+  companyId        String
+  projectId        String         @unique
+  status           TechPackStatus @default(DRAFT)
+  /// The fabric part as it was locked (fabrics, use per piece, colour and size quantities).
+  fabricLock       Json?
+  fabricLockedAt   DateTime?
+  fabricLockedById String?
+  /// The fabric part when the whole tech pack was approved.
+  approvedPart     Json?
+  approvedAt       DateTime?
+  approvedById     String?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  company        Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  project        ProductionProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  fabricLockedBy User?             @relation("TechPackFabricLockedBy", fields: [fabricLockedById], references: [id], onDelete: SetNull)
+  approvedBy     User?             @relation("TechPackApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+
+  @@index([companyId, status])
 }
 
 /// The pieces a project is to make of each SKU (a colour and size of a style): its
@@ -4228,6 +4308,20 @@ enum CollarStyle {
   AMBUSH_RIB
   TIPPING
   HONEYCOMB
+  MULTI_STRIPE
+}
+
+/// Where a booking is on its way to the supplier.
+enum BookingStage {
+  DRAFT
+  APPROVED
+  SENT
+}
+
+/// A tech pack is drafted, then approved (locked) for production.
+enum TechPackStatus {
+  DRAFT
+  APPROVED
 }
 
 /// The language a printed document's terms are in.

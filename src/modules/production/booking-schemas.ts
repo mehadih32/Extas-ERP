@@ -210,6 +210,12 @@ export const listBookingsSchema = z.object({
   cursor: id.optional(),
 });
 
+/** A stored line's specification, or just its role when it cannot be read. */
+export function readSpecs(json: unknown, kind: RawMaterialKind): z.infer<typeof lineSpecsSchema> {
+  const parsed = lineSpecsSchema.safeParse(json);
+  return parsed.success ? parsed.data : { role: kind === "FABRIC" ? "FABRIC" : "TRIM" };
+}
+
 export type CreateBookingInput = z.infer<typeof createBookingSchema>;
 export type BookingLineInput = z.infer<typeof bookingLineSchema>;
 export type CollarInput = z.infer<typeof collarSchema>;

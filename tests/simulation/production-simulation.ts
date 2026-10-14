@@ -403,6 +403,10 @@ export async function runSimulation(
   step(
     `Booked ${pcs(FABRIC_ORDERED_KG)} kg of fabric from ${mill.name} at ${bdt(FABRIC_PRICE)} a kg (booking ${booked.number}).`,
   );
+  // A booking is a draft until it is approved; then it goes to the mill.
+  await bookings.approveBooking(ctx, booked.id);
+  await bookings.markBookingSent(ctx, booked.id);
+  step(`Approved booking ${booked.number} (R0) and marked it as sent to ${mill.name}.`);
 
   // 6. The advance: 1,00,000 to the factory for the batch, from the bank.
   const advance = await batchMoney.payForBatch(ctx, batch.id, {

@@ -173,7 +173,7 @@ async function setup() {
     needs: [{ materialId: jersey.id, perPiece: 0.2, split: "COLOUR", placement: "Main body" }],
   });
   // The fabric is booked (a batch's fabric always is); the buttons go on a batch order.
-  await bookings.createBooking(pm, {
+  const booked = await bookings.createBooking(pm, {
     source: "SUPPLIER_PO",
     category: "KNITWEAR",
     supplierId: mill.id,
@@ -184,6 +184,8 @@ async function setup() {
       { materialId: rib.id, quantity: 5 },
     ],
   });
+  // The owner approves it, so its goods can arrive.
+  await bookings.approveBooking(owner, booked.id);
   const made = await batchOrders.createBatchOrders(pm, batch.id, {
     orders: [
       {

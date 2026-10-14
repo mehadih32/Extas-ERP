@@ -139,7 +139,14 @@ export type Block =
    * FS-1") shows in the header of each of its pages. On letterhead it prints as a
    * heading on a new page.
    */
-  | { kind: "section"; title: string; label?: string; subtitle?: string }
+  | {
+      kind: "section";
+      title: string;
+      label?: string;
+      subtitle?: string;
+      /** Names the part, so the pages it runs over can be listed (a booking book's cover). */
+      key?: string;
+    }
   /** Address boxes inside the document ("Supplier", "Deliver to"), as at the top. */
   | { kind: "parties"; parties: Array<{ heading: string; lines: string[] }> };
 

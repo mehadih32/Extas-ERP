@@ -63,7 +63,15 @@ export function BookingList({
             key={b.id}
             href={productionHref.booking(b.id)}
             eyebrow={`${b.number} · ${formatDay(b.orderDate)}`}
-            badges={<BookingBadges status={b.status} source={b.source} late={b.isOverdue} />}
+            badges={
+              <BookingBadges
+                status={b.status}
+                stage={b.stage}
+                revision={b.revision}
+                source={b.source}
+                late={b.isOverdue}
+              />
+            }
             title={b.title || b.supplier.name}
             details={[b.title ? b.supplier.name : null, what(b, currency)]
               .filter(Boolean)
@@ -101,7 +109,13 @@ export function BookingList({
                   <RowLink href={productionHref.booking(b.id)}>{b.number}</RowLink>
                   <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[0.8125rem] text-muted-foreground">
                     <span>{formatDay(b.orderDate)}</span>
-                    <BookingBadges status={b.status} source={b.source} late={b.isOverdue} />
+                    <BookingBadges
+                      status={b.status}
+                      stage={b.stage}
+                      revision={b.revision}
+                      source={b.source}
+                      late={b.isOverdue}
+                    />
                   </div>
                 </TableCell>
                 <TableCell>

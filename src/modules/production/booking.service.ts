@@ -59,14 +59,30 @@ import {
   type BookingLineInput,
   type CollarInput,
   createBookingSchema,
-  lineSpecsSchema,
   listBookingsSchema,
+  readSpecs,
   updateBookingPaperworkSchema,
   updateBookingSchema,
 } from "@/modules/production/booking-schemas";
+import {
+  afterChange,
+  approvalChecks,
+  assertChecksPass,
+  beforeChange,
+  bookingSnapshot,
+  fabricBasisOf,
+  styleChangesSince,
+} from "@/modules/production/booking-approval.service";
+import {
+  bookingDocNo,
+  readRevisionChanges,
+  revisionLabel,
+  visibleChanges,
+} from "@/modules/production/booking-revisions";
 import { standardTermsText } from "@/modules/production/booking-terms";
 import { assertMaterialImages } from "@/modules/production/material-image.service";
 import { styleGrids } from "@/modules/production/material-need.service";
+import { techPackStates } from "@/modules/production/tech-pack-approval.service";
 import { shareOut } from "@/modules/production/material-plan";
 import { OPEN_STATUSES } from "@/modules/production/timeline";
 import type { PermissionKey } from "@/modules/rbac/permissions";
@@ -92,6 +108,13 @@ import type { PermissionKey } from "@/modules/rbac/permissions";
  * make and change each kind, production.bookings.attach to put them on a batch
  * and take them off, and production.bookings.close to close or cancel them.
  * Whoever makes, attaches or closes bookings sees them too.
+ *
+ * A booking starts as a draft. The owner approves it (production.bookings.approve,
+ * after the checks in booking-approval.service.ts) and whoever makes that kind
+ * marks it as sent to the supplier; goods arrive only once it is approved. A
+ * change to its items after that makes a draft of its next revision (R1, R2),
+ * listing what changed, which is approved again. A market purchase added to
+ * stock as it is saved is bought already, so it starts as sent.
  */
 
 type Tx = Prisma.TransactionClient;
@@ -108,6 +131,7 @@ export const SEE_BOOKINGS: readonly PermissionKey[] = [
   "production.bookings.market",
   "production.bookings.attach",
   "production.bookings.close",
+  "production.bookings.approve",
 ];
 
 /** The permission that makes and changes each kind of booking. */
@@ -240,15 +264,11 @@ const bookingInclude = {
     orderBy: { sortOrder: "asc" },
     include: { quantities: { select: { sizeId: true, pieces: true, sets: true } } },
   },
+  approvedBy: { select: { id: true, name: true } },
+  sentBy: { select: { id: true, name: true } },
 } satisfies Prisma.BookingInclude;
 
 type BookingRow = Prisma.BookingGetPayload<{ include: typeof bookingInclude }>;
-
-/** A stored line's specification, or just its role when it cannot be read. */
-export function readSpecs(json: Prisma.JsonValue, kind: RawMaterialKind): LineSpecs {
-  const parsed = lineSpecsSchema.safeParse(json);
-  return parsed.success ? parsed.data : { role: kind === "FABRIC" ? "FABRIC" : "TRIM" };
-}
 
 function presentCollar(b: BookingRow) {
   if (!b.collarStyle) return null;
@@ -292,15 +312,28 @@ function presentBooking(ctx: CompanyContext, b: BookingRow) {
   const o = b.order;
   const day = localDay(new Date(), ctx.company.timezone);
   const expected = dateOnly(o.expectedDate);
-  const state = orderState(o);
+  const state = { ...orderState(o), awaitingApproval: b.stage === "DRAFT" };
   const buy = ctx.can("materials.purchase");
   const make = ctx.can(MAKE_BOOKING[b.source]);
   const end = ctx.can("production.bookings.close");
+  const open = canChangeOrder(state).ok;
   return {
     id: b.id,
     orderId: o.id,
     number: o.number,
+    /** The number as printed, with its revision ("PO-2026-00007-R1"). */
+    docNo: bookingDocNo(o.number, b.revision),
     status: o.status,
+    stage: b.stage,
+    revision: b.revision,
+    revisionLabel: revisionLabel(b.revision),
+    /** The days it was approved and sent, in the company's time zone. */
+    approvedOn: b.approvedAt ? localDay(b.approvedAt, ctx.company.timezone) : null,
+    approvedBy: b.approvedBy,
+    sentOn: b.sentAt ? localDay(b.sentAt, ctx.company.timezone) : null,
+    sentBy: b.sentBy,
+    /** What this revision changed from the last approved one (prices only for who sees them). */
+    changes: visibleChanges(readRevisionChanges(b.revisionChanges), cost("1") !== null),
     source: b.source,
     category: b.category,
     title: b.title,
@@ -353,6 +386,8 @@ function presentBooking(ctx: CompanyContext, b: BookingRow) {
       editPaperwork: make && canChangeOrder(state).ok,
       cancel: end && canCancelOrder(state).ok,
       close: end && canCloseOrder(state).ok,
+      approve: ctx.can("production.bookings.approve") && b.stage === "DRAFT" && open,
+      markSent: make && b.stage === "APPROVED" && open,
       attach: canAttach(ctx) && !o.batch && canChangeOrder(state).ok,
       detach: canAttach(ctx) && Boolean(o.batch) && !state.received,
       /** On a batch: its central receive; on its own: a supplier bill on the order (buyers, Accounts). */
@@ -362,17 +397,50 @@ function presentBooking(ctx: CompanyContext, b: BookingRow) {
   };
 }
 
-export type Booking = ReturnType<typeof presentBooking>;
+/** A booking as shown and printed (getBooking adds its checks and style changes). */
+export type BookingDetail = ReturnType<typeof presentBooking>;
 
-export async function getBooking(ctx: CompanyContext, bookingId: string): Promise<Booking> {
+/**
+ * A batch's bookings in full, oldest first, leaving out cancelled ones: the
+ * parts of its booking book.
+ */
+export async function batchBookingDetails(
+  ctx: CompanyContext,
+  batchId: string,
+): Promise<BookingDetail[]> {
+  assertCanSeeBookings(ctx);
+  const rows = await ctx.db.booking.findMany({
+    where: { order: { batchId, status: { not: "CANCELLED" } } },
+    include: bookingInclude,
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+  });
+  return rows.map((row) => presentBooking(ctx, row));
+}
+
+/**
+ * One booking, with the checks it must pass while it waits for approval and,
+ * once approved, the styles whose fabric changed since.
+ */
+export async function getBooking(ctx: CompanyContext, bookingId: string) {
   assertCanSeeBookings(ctx);
   const row = await ctx.db.booking.findUnique({
     where: { id: bookingId },
     include: bookingInclude,
   });
   if (!row) throw new AppError("NOT_FOUND", "Booking not found.");
-  return presentBooking(ctx, row);
+  const booking = presentBooking(ctx, row);
+  const ended = row.order.status === "CLOSED" || row.order.status === "CANCELLED";
+  // The booking was found through the company's own client; what it rests on is read by its id.
+  const [checks, styleChanges] = await Promise.all([
+    row.stage === "DRAFT" && !ended ? approvalChecks(prisma, row.id) : Promise.resolve([]),
+    row.stage !== "DRAFT" && !ended
+      ? styleChangesSince(prisma, row.fabricBasis)
+      : Promise.resolve([]),
+  ]);
+  return { ...booking, checks, styleChanges };
 }
+
+export type Booking = Awaited<ReturnType<typeof getBooking>>;
 
 /** The bookings, newest first: the list screen's rows (no lines, a fabric total per unit). */
 export async function listBookings(ctx: CompanyContext, raw: unknown = {}) {
@@ -407,6 +475,8 @@ export async function listBookings(ctx: CompanyContext, raw: unknown = {}) {
       category: true,
       title: true,
       styleRef: true,
+      stage: true,
+      revision: true,
       createdAt: true,
       order: {
         select: {
@@ -444,6 +514,8 @@ export async function listBookings(ctx: CompanyContext, raw: unknown = {}) {
         id: b.id,
         number: b.order.number,
         status: b.order.status,
+        stage: b.stage,
+        revision: b.revision,
         source: b.source,
         category: b.category,
         title: b.title,
@@ -832,7 +904,15 @@ export async function createBooking(
       total: orderLines.reduce((t, l) => t.plus(l.amount), ZERO),
     });
     const booking = await tx.booking.create({
-      data: { companyId: ctx.company.id, orderId, ...bookingFields(input, collar) },
+      data: {
+        companyId: ctx.company.id,
+        orderId,
+        ...bookingFields(input, collar),
+        // Bought and collected already: nothing is left to approve or send.
+        ...(input.receiveNow
+          ? { stage: "SENT" as const, sentAt: new Date(), sentById: ctx.user.id }
+          : {}),
+      },
       select: { id: true, order: { select: { number: true } } },
     });
     await writeCollar(tx, booking.id, collar);
@@ -964,6 +1044,8 @@ export async function updateBooking(
         "The booking was attached or taken off a batch meanwhile; open it again.",
       );
     }
+    // The approved booking it changes from, read before anything is written.
+    const before = await beforeChange(tx, ctx.company.id, bookingId);
     const expectedDate = expectedColumn(input.expectedDate ?? null, order.orderDate);
     const orderLines = await writeableLines(
       tx,
@@ -999,6 +1081,7 @@ export async function updateBooking(
     await tx.bookingCollarColour.deleteMany({ where: { bookingId } });
     await tx.booking.update({ where: { id: bookingId }, data: bookingFields(input, collar) });
     await writeCollar(tx, bookingId, collar);
+    const revised = await afterChange(tx, bookingId, before);
     await auditInCompany(
       ctx,
       meta,
@@ -1006,9 +1089,16 @@ export async function updateBooking(
         action: "UPDATE",
         entityType: "Booking",
         entityId: bookingId,
-        summary: `Updated booking ${bookingSummary(order.number, input.source, input.category, supplier.name)}: ${lines.length} item(s), ${total.toFixed(2)}${
-          collar ? `, ${collar.totals.totalSets} collar sets` : ""
-        }`,
+        summary:
+          `Updated booking ${bookingSummary(order.number, input.source, input.category, supplier.name)}: ${lines.length} item(s), ${total.toFixed(2)}${
+            collar ? `, ${collar.totals.totalSets} collar sets` : ""
+          }${
+            revised
+              ? `; now draft ${bookingDocNo(order.number, revised.revision)} (${revised.record.changes.length} change(s)${
+                  revised.record.wasSent ? " after it was sent" : ""
+                }), to be approved again`
+              : ""
+          }`.slice(0, 500),
       },
       tx,
     );
@@ -1110,6 +1200,163 @@ export async function closeBooking(
   assertCanClose(ctx);
   await endOrder(ctx, await orderIdOf(ctx, bookingId), raw, meta, "CLOSED");
   return getBooking(ctx, bookingId);
+}
+
+// =============================================================================
+// Approval
+// =============================================================================
+
+function assertCanApprove(ctx: CompanyContext) {
+  if (!ctx.can("production.bookings.approve")) {
+    throw new AppError(
+      "FORBIDDEN",
+      "You do not have permission to approve bookings (production.bookings.approve).",
+    );
+  }
+}
+
+/**
+ * Approves a draft booking (or a draft revision) once its checks pass: what it
+ * says is kept as that revision, with the fabric parts of the styles it is
+ * for, and its goods may arrive from then on. Nothing goes to the supplier:
+ * it is printed and sent, then marked as sent.
+ */
+export async function approveBooking(ctx: CompanyContext, bookingId: string, meta?: RequestMeta) {
+  assertCanApprove(ctx);
+  await runTransaction(async (tx) => {
+    const { order } = await lockBooking(tx, ctx, bookingId);
+    assertAllowed(canChangeOrder(orderState(order)));
+    const booking = await tx.booking.findUniqueOrThrow({
+      where: { id: bookingId },
+      select: { stage: true, revision: true },
+    });
+    const docNo = bookingDocNo(order.number, booking.revision);
+    if (booking.stage !== "DRAFT") {
+      throw new AppError("CONFLICT", `${docNo} is already approved.`);
+    }
+    assertChecksPass(docNo, await approvalChecks(tx, bookingId));
+    const snapshot = (await bookingSnapshot(tx, bookingId)) as unknown as Prisma.InputJsonValue;
+    const basis = await fabricBasisOf(tx, bookingId);
+    const now = new Date();
+    await tx.bookingRevision.upsert({
+      where: { bookingId_revision: { bookingId, revision: booking.revision } },
+      create: {
+        companyId: ctx.company.id,
+        bookingId,
+        revision: booking.revision,
+        snapshot,
+        approvedAt: now,
+        approvedById: ctx.user.id,
+      },
+      update: { snapshot, approvedAt: now, approvedById: ctx.user.id },
+    });
+    await tx.booking.update({
+      where: { id: bookingId },
+      data: {
+        stage: "APPROVED",
+        approvedAt: now,
+        approvedById: ctx.user.id,
+        fabricBasis: basis ? (basis as unknown as Prisma.InputJsonValue) : Prisma.JsonNull,
+      },
+    });
+    await auditInCompany(
+      ctx,
+      meta,
+      {
+        action: "UPDATE",
+        entityType: "Booking",
+        entityId: bookingId,
+        summary: `Approved booking ${docNo} to ${order.supplier.name}`,
+      },
+      tx,
+    );
+  }, TX_OPTIONS);
+  return getBooking(ctx, bookingId);
+}
+
+/** Marks an approved booking as sent to its supplier (it was printed and sent). */
+export async function markBookingSent(ctx: CompanyContext, bookingId: string, meta?: RequestMeta) {
+  assertCanMakeAny(ctx);
+  const current = await ctx.db.booking.findUnique({
+    where: { id: bookingId },
+    select: { source: true },
+  });
+  if (!current) throw new AppError("NOT_FOUND", "Booking not found.");
+  assertCanMake(ctx, current.source);
+  await runTransaction(async (tx) => {
+    const { order } = await lockBooking(tx, ctx, bookingId);
+    assertAllowed(canChangeOrder(orderState(order)));
+    const booking = await tx.booking.findUniqueOrThrow({
+      where: { id: bookingId },
+      select: { stage: true, revision: true },
+    });
+    const docNo = bookingDocNo(order.number, booking.revision);
+    if (booking.stage === "DRAFT") {
+      throw new AppError("CONFLICT", `${docNo} is a draft: it is approved before it is sent.`);
+    }
+    if (booking.stage === "SENT") {
+      throw new AppError("CONFLICT", `${docNo} is already marked as sent.`);
+    }
+    await tx.booking.update({
+      where: { id: bookingId },
+      data: { stage: "SENT", sentAt: new Date(), sentById: ctx.user.id },
+    });
+    await auditInCompany(
+      ctx,
+      meta,
+      {
+        action: "UPDATE",
+        entityType: "Booking",
+        entityId: bookingId,
+        summary: `Marked booking ${docNo} as sent to ${order.supplier.name}`,
+      },
+      tx,
+    );
+  }, TX_OPTIONS);
+  return getBooking(ctx, bookingId);
+}
+
+/**
+ * Fabric first for a master batch, the owner's call: its fabric is booked once
+ * each style's fabric part is locked, before the tech packs are approved (the
+ * trims still wait for them). Turned off, a tech pack not yet approved is only
+ * a warning on the approval.
+ */
+export async function setFabricFirst(
+  ctx: CompanyContext,
+  batchId: string,
+  on: boolean,
+  meta?: RequestMeta,
+) {
+  assertCanApprove(ctx);
+  const batch = await ctx.db.productionBatch.findUnique({
+    where: { id: batchId },
+    select: { id: true, code: true },
+  });
+  if (!batch) throw new AppError("NOT_FOUND", "Master batch not found.");
+  await runTransaction(async (tx) => {
+    await lockRow(tx, "ProductionBatch", batch.id);
+    await tx.productionBatch.update({
+      where: { id: batch.id },
+      data: on
+        ? { fabricFirstAt: new Date(), fabricFirstById: ctx.user.id }
+        : { fabricFirstAt: null, fabricFirstById: null },
+    });
+    await auditInCompany(
+      ctx,
+      meta,
+      {
+        action: "UPDATE",
+        entityType: "ProductionBatch",
+        entityId: batch.id,
+        summary: on
+          ? `Fabric first for ${batch.code}: its fabric is booked once each style's fabric part is locked`
+          : `Fabric first turned off for ${batch.code}`,
+      },
+      tx,
+    );
+  });
+  return { id: batch.id, code: batch.code, fabricFirst: on };
 }
 
 // =============================================================================
@@ -1224,16 +1471,25 @@ export async function detachBooking(ctx: CompanyContext, bookingId: string, meta
 /** The batch page's bookings: those on the batch, and the open ones that could be attached. */
 export async function getBatchBookings(ctx: CompanyContext, batchId: string) {
   assertCanSeeBookings(ctx);
-  const batch = await ctx.db.productionBatch.findUnique({
+  const found = await ctx.db.productionBatch.findUnique({
     where: { id: batchId },
-    select: { id: true, code: true, name: true },
+    select: {
+      id: true,
+      code: true,
+      name: true,
+      fabricFirstAt: true,
+      fabricFirstBy: { select: { name: true } },
+    },
   });
-  if (!batch) throw new AppError("NOT_FOUND", "Master batch not found.");
+  if (!found) throw new AppError("NOT_FOUND", "Master batch not found.");
+  const { fabricFirstAt, fabricFirstBy, ...batch } = found;
   const select = {
     id: true,
     source: true,
     category: true,
     title: true,
+    stage: true,
+    revision: true,
     order: {
       select: {
         number: true,
@@ -1251,6 +1507,13 @@ export async function getBatchBookings(ctx: CompanyContext, batchId: string) {
     },
   } satisfies Prisma.BookingSelect;
   const mayAttach = canAttach(ctx);
+  const styles = await ctx.db.productionProject.findMany({
+    where: { batchId: batch.id, status: { not: "CANCELLED" } },
+    select: { id: true, code: true, name: true, targetQuantity: true },
+    orderBy: { code: "asc" },
+  });
+  // The styles were found through the company's own client; their tech packs are read by id.
+  const techPacks = await techPackStates(prisma, styles);
   const [attached, open] = await Promise.all([
     ctx.db.booking.findMany({
       where: { order: { batchId: batch.id } },
@@ -1276,7 +1539,10 @@ export async function getBatchBookings(ctx: CompanyContext, batchId: string) {
     return {
       id: b.id,
       number: b.order.number,
+      docNo: bookingDocNo(b.order.number, b.revision),
       status: b.order.status,
+      stage: b.stage,
+      revision: b.revision,
       source: b.source,
       category: b.category,
       title: b.title,
@@ -1289,9 +1555,28 @@ export async function getBatchBookings(ctx: CompanyContext, batchId: string) {
   };
   return {
     batch,
+    /** Fabric first (the owner's call): when it was chosen and by whom, or null. */
+    fabricFirst: fabricFirstAt ? { at: fabricFirstAt, by: fabricFirstBy?.name ?? null } : null,
+    /** Each style's tech pack: draft or approved, its fabric part locked, changed since. */
+    styles: styles.map((st) => {
+      const state = techPacks.get(st.id)!;
+      return {
+        id: st.id,
+        code: st.code,
+        name: st.name,
+        status: state.status,
+        fabricLocked: state.fabricLocked,
+        changed: state.changes.length,
+        hasFabric: state.hasFabric,
+      };
+    }),
     attached: attached.map(present),
     attachable: open.map(present),
-    can: { attach: mayAttach, create: sourcesFor(ctx).length > 0 },
+    can: {
+      attach: mayAttach,
+      create: sourcesFor(ctx).length > 0,
+      fabricFirst: ctx.can("production.bookings.approve"),
+    },
   };
 }
 
@@ -1421,6 +1706,9 @@ export async function getBookingForm(
         orderDate: b.orderDate,
         canChangeItems: b.can.edit,
         canChangePaperwork: b.can.editPaperwork,
+        /** Changing the items of an approved booking makes its next revision, approved again. */
+        stage: b.stage,
+        revision: b.revision,
       },
       batch: b.batch,
       batchMaterials: [] as BatchPick[],

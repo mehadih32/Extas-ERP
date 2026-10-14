@@ -119,7 +119,7 @@ async function setup() {
   await needs.setMaterialNeeds(pm, polo.id, {
     needs: [{ materialId: pique.id, perPiece: 0.25, split: "COLOUR", placement: "Main body" }],
   });
-  await bookings.createBooking(pm, {
+  const booked = await bookings.createBooking(pm, {
     source: "SUPPLIER_PO",
     category: "KNITWEAR",
     supplierId: mill.id,
@@ -127,6 +127,8 @@ async function setup() {
     expectedDate: "2030-11-15",
     lines: [{ materialId: pique.id, quantity: 25, unitPrice: 700 }],
   });
+  // The owner approves it, so its goods can arrive.
+  await bookings.approveBooking(owner, booked.id);
   const order = await prisma.purchaseOrder.findFirstOrThrow({ where: { supplierId: mill.id } });
   const screen = await receive.getBatchReceive(pm, batch.id, order.id);
   await receive.receiveBatchDelivery(pm, batch.id, {

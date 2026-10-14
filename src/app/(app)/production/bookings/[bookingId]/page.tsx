@@ -6,6 +6,7 @@ import { SectionError } from "@/components/dashboard/section-error";
 import { FormAlert } from "@/components/forms/field";
 import { materialsHref, perUnit, quantity } from "@/components/materials/labels";
 import { BookingActions } from "@/components/production/booking-actions";
+import { BookingApproval } from "@/components/production/booking-approval";
 import { BookingBadges } from "@/components/production/booking-bits";
 import { productionHref } from "@/components/production/labels";
 import { MaterialThumb } from "@/components/production/material-thumb";
@@ -159,9 +160,13 @@ export default async function BookingPage({
     stock === "1"
       ? `${b.number} was saved and its goods are in the main store. The bill is Due to ${b.supplier.name}, and Accounts pays it.`
       : one(query.created) === "1"
-        ? `${b.number} was saved. Print the PDF and send it to ${b.supplier.name}.`
+        ? b.stage === "DRAFT"
+          ? `${b.number} was saved as a draft. Once it is approved, print the PDF and send it to ${b.supplier.name}.`
+          : `${b.number} was saved. Print the PDF and send it to ${b.supplier.name}.`
         : one(query.saved) === "1"
-          ? `${b.number} was saved. Print the PDF again for ${b.supplier.name}.`
+          ? b.stage === "DRAFT" && b.revision > 0
+            ? `${b.number} was saved as draft ${b.docNo}: approve it, then send it to ${b.supplier.name}.`
+            : `${b.number} was saved. Print the PDF again for ${b.supplier.name}.`
           : undefined;
   const terms = termLines(b.terms).map(splitTerm);
   const c = b.collar;
@@ -171,11 +176,17 @@ export default async function BookingPage({
       <div className="grid gap-6">
         <BackLink href={productionHref.bookings()}>All bookings</BackLink>
         <RecordHeader
-          eyebrow={`Booking ${b.number} · ${formatDay(b.orderDate)}`}
+          eyebrow={`Booking ${b.revision > 0 ? b.docNo : b.number} · ${formatDay(b.orderDate)}`}
           title={b.title || b.supplier.name}
           badges={
             <>
-              <BookingBadges status={b.status} source={b.source} late={b.isOverdue} />
+              <BookingBadges
+                status={b.status}
+                stage={b.stage}
+                revision={b.revision}
+                source={b.source}
+                late={b.isOverdue}
+              />
               {b.expectedDate && !ended && (
                 <span className="text-sm text-muted-foreground">
                   Deliver by {formatDay(b.expectedDate)}
@@ -196,6 +207,7 @@ export default async function BookingPage({
           </FormAlert>
         )}
         <BookingActions key={b.id} booking={b} notice={notice} orientation={orientation} />
+        <BookingApproval key={`${b.id}-${b.stage}-${b.revision}`} booking={b} />
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,8fr)_minmax(0,4fr)]">

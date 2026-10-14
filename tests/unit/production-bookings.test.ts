@@ -57,11 +57,14 @@ describe("Booking sums", () => {
     expect(fabricFor(1000, 0, 5, "YARD")).toBe(0);
   });
 
-  it("books collar sets over the pieces with the extra, rounded up", () => {
+  it("books collar sets over the pieces with the extra, rounded up, never fewer than 5 over", () => {
     expect(setsFor(500, 3)).toBe(515);
     expect(setsFor(333, 3)).toBe(343); // 342.99 → 343
     expect(setsFor(0, 3)).toBe(0);
-    expect(setsFor(100, 0)).toBe(100);
+    // At least 5 collars (and so 10 cuffs) over each colour and size, whatever the extra.
+    expect(setsFor(100, 0)).toBe(105);
+    expect(setsFor(60, 3)).toBe(65);
+    expect(setsFor(1000, 7)).toBe(1070);
     expect(cuffsFor(515, "PCS")).toBe(1030);
     expect(cuffsFor(515, "SET")).toBe(515);
   });
@@ -72,14 +75,15 @@ describe("Booking sums", () => {
       sizes: [{ label: "S-M" }, { label: "L-XL" }, { label: "2XL" }],
       colours: [{ pieces: [500, 400, 100] }, { pieces: [200, 0, 50] }],
     });
+    // 100 and 50 pieces at 3% would be 103 and 52: the 5 over each cell lifts them.
     expect(t.sets).toEqual([
-      [515, 412, 103],
-      [206, 0, 52],
+      [515, 412, 105],
+      [206, 0, 55],
     ]);
-    expect(t.bySize).toEqual([721, 412, 155]);
-    expect(t.byColour).toEqual([1030, 258]);
+    expect(t.bySize).toEqual([721, 412, 160]);
+    expect(t.byColour).toEqual([1032, 261]);
     expect(t.totalPieces).toBe(1250);
-    expect(t.totalSets).toBe(1288);
+    expect(t.totalSets).toBe(1293);
     expect(matrixQuantity("COLLAR", "PCS", 1288)).toBe(1288);
     expect(matrixQuantity("CUFF", "PCS", 1288)).toBe(2576);
     expect(matrixQuantity("TRIM", "PCS", 1288)).toBeNull();
@@ -289,13 +293,14 @@ describe("The booking wizard's working copy", () => {
 
   it("works quantities out live: the calculator and the matrix", () => {
     const draft = filledDraft();
-    expect(liveCollarTotals(draft.collar).totalSets).toBe(1030);
+    // A solid collar is booked 5% over by default: 525 + 420 + 105.
+    expect(liveCollarTotals(draft.collar).totalSets).toBe(1050);
     expect(lineQuantity(draft.lines[0]!, draft.collar)).toEqual({
       source: "calculator",
       value: 302.5,
     });
-    expect(lineQuantity(draft.lines[1]!, draft.collar)).toEqual({ source: "matrix", value: 1030 });
-    expect(lineQuantity(draft.lines[2]!, draft.collar)).toEqual({ source: "matrix", value: 2060 });
+    expect(lineQuantity(draft.lines[1]!, draft.collar)).toEqual({ source: "matrix", value: 1050 });
+    expect(lineQuantity(draft.lines[2]!, draft.collar)).toEqual({ source: "matrix", value: 2100 });
     expect(lineQuantity(draft.lines[3]!, draft.collar)).toEqual({ source: "typed", value: 300 });
   });
 
@@ -324,7 +329,7 @@ describe("The booking wizard's working copy", () => {
     expect(parsed.lines.map((l) => l.unitPrice ?? null)).toEqual([520, null, null, null, null]);
     expect(parsed.collar).toMatchObject({
       style: "SOLID",
-      extraPercent: 3,
+      extraPercent: 5,
       colours: [{ garmentColour: "Navy", collarColour: null, pieces: [500, 400, 100] }],
     });
     expect(parsed.terms?.split("\n").length).toBe(

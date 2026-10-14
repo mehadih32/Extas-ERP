@@ -889,7 +889,7 @@ async function runSteps(
     );
   // The fabric (and the collar sets knitted with it) is booked with the mill: a batch's
   // fabric always is. The accessories go on the batch's own purchase orders.
-  await bookings.createBooking(ctx, {
+  const booked = await bookings.createBooking(ctx, {
     source: "SUPPLIER_PO",
     category: "KNITWEAR",
     supplierId: mill.id,
@@ -919,6 +919,9 @@ async function runSteps(
       })),
     ],
   });
+  // A booking is a draft until it is approved; then it goes to the mill.
+  await bookings.approveBooking(ctx, booked.id);
+  await bookings.markBookingSent(ctx, booked.id);
   await batchOrders.createBatchOrders(ctx, batch.id, {
     orders: [
       { supplierId: trims.id, expectedDate: addDays(today, 12), lines: accessoryLines("trims") },

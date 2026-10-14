@@ -39,6 +39,7 @@ import {
   getBatchScreenAction,
   listFaultsAction,
 } from "@/server/actions/production.actions";
+import { pdfOrientationFor } from "@/modules/documents/book-frame";
 import { getBatchBookingsAction } from "@/server/actions/booking.actions";
 import { requireCompanyPage } from "@/server/pages/guards";
 
@@ -84,6 +85,7 @@ export default async function BatchPage({
   const screen = result.data;
   const { batch: b, styles, can } = screen;
   const currency = ctx.company.currency;
+  const orientation = await pdfOrientationFor(ctx);
   const notice =
     one(query.created) === "1"
       ? `${b.code} was created. Add its first style.`
@@ -229,7 +231,13 @@ export default async function BatchPage({
         </section>
 
         <div className="grid min-w-0 grid-cols-1 content-start gap-6">
-          {bookings.ok && <BatchBookingsPanel data={bookings.data} currency={currency} />}
+          {bookings.ok && (
+            <BatchBookingsPanel
+              data={bookings.data}
+              currency={currency}
+              orientation={orientation}
+            />
+          )}
           {b.costs && (
             <Panel
               title="Batch cost"

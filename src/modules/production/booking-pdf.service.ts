@@ -26,7 +26,8 @@ import {
   SOURCE_SHORT_LABELS,
   SOURCE_TITLES,
 } from "@/modules/production/booking-presets";
-import { type Booking, getBooking } from "@/modules/production/booking.service";
+import { type BookingDetail, getBooking } from "@/modules/production/booking.service";
+import { revisionLabel } from "@/modules/production/booking-revisions";
 import { splitTerm, termLines } from "@/modules/production/booking-terms";
 import { loadMaterialImages } from "@/modules/production/material-image.service";
 import { type SwatchRow, swatchListBlocks } from "@/modules/production/swatch-list";
@@ -52,12 +53,13 @@ import {
  * not see material prices get it without prices. Made when asked for and not kept.
  */
 
+type Booking = BookingDetail;
 type Line = Booking["lines"][number];
 
 const num = (n: number) => String(Number(n.toFixed(3)));
 
 /** The fabric table's specification columns for each garment family. */
-const SPEC_COLUMNS: Record<
+export const SPEC_COLUMNS: Record<
   GarmentCategory,
   Array<{ label: string; weight: number; value: (s: LineSpecs) => string }>
 > = {
@@ -182,7 +184,7 @@ const cm = (length: number | null, width: number | null) =>
   length !== null && width !== null ? `${num(length)} × ${num(width)} cm` : "—";
 
 /** The collar and cuff part: style and extra, measurements, sets per colour and size group. */
-function collarBlocks(c: NonNullable<Booking["collar"]>): Block[] {
+export function collarBlocks(c: NonNullable<Booking["collar"]>): Block[] {
   const cuffed = c.sizes.some((s) => s.cuffLength !== null);
   return [
     {
@@ -320,6 +322,30 @@ function swatchRows(fabric: Line[]): SwatchRow[] {
   return rows;
 }
 
+/**
+ * A revision's changes from the one before (R1 from R0), so the supplier sees
+ * what to change: each item as it was and as it is now.
+ */
+function changeBlocks(b: Booking): Block[] {
+  if (b.revision === 0 || !b.changes || b.changes.changes.length === 0) return [];
+  return [
+    {
+      kind: "table",
+      title: `Changes from ${revisionLabel(b.changes.from)}`,
+      columns: [
+        { label: "What changed", weight: 3 },
+        { label: "Was", weight: 2.2 },
+        { label: "Now", weight: 2.2 },
+      ],
+      rows: b.changes.changes.map((c) => ({ cells: [c.item, c.was, c.now] })),
+    },
+    {
+      kind: "note",
+      text: `This is revision ${b.revisionLabel} of ${b.number}. It replaces ${revisionLabel(b.changes.from)}: please work to this one.`,
+    },
+  ];
+}
+
 /** The booking's link in the ERP, for its QR code. */
 export const bookingLink = (bookingId: string) =>
   `${env.APP_URL.replace(/\/+$/, "")}/production/bookings/${encodeURIComponent(bookingId)}`;
@@ -379,11 +405,12 @@ export function bookingDocument(
     {
       kind: "section",
       title: `${sourceTitle} · ${supplier.name}`,
-      label: `${b.source === "MARKET_PURCHASE" ? "Market purchase" : "Booking"} · ${b.number}`,
+      label: `${b.source === "MARKET_PURCHASE" ? "Market purchase" : "Booking"} · ${b.docNo}`,
       subtitle: b.title ?? undefined,
     },
     { kind: "parties", parties },
     { kind: "note", text: details.join(" · ") },
+    ...changeBlocks(b),
     {
       kind: "figures",
       figures: [
@@ -467,16 +494,18 @@ export function bookingDocument(
     type: "BOOKING",
     title: sourceTitle,
     subtitle: [supplier.name, b.title].filter(Boolean).join(" · "),
-    reference: b.number,
+    reference: b.docNo,
     letterhead: letterheadOf(ctx.company),
     stamp:
       b.status === "CANCELLED"
         ? { text: "Cancelled", tone: "danger" }
         : b.status === "CLOSED"
           ? { text: "Closed", tone: "success" }
-          : undefined,
+          : b.stage === "DRAFT"
+            ? { text: "Draft", tone: "danger" }
+            : undefined,
     meta: [
-      { label: "Booking no.", value: b.number },
+      { label: "Booking no.", value: b.docNo },
       { label: "Date", value: formatDay(b.orderDate) },
       ...(b.expectedDate ? [{ label: "Deliver by", value: formatDay(b.expectedDate) }] : []),
       { label: "Source", value: SOURCE_SHORT_LABELS[b.source] },
@@ -494,7 +523,7 @@ export function bookingDocument(
     // The buyer is not named on a supplier's copy: the order reference only.
     frame: bookFrame(ctx.company, {
       orientation: options.orientation ?? "landscape",
-      docNo: b.number,
+      docNo: b.docNo,
       buyerPo: order,
       date: formatDay(b.orderDate),
     }),
@@ -524,10 +553,10 @@ export async function bookingPdf(
     action: "EXPORT",
     entityType: "Booking",
     entityId: b.id,
-    summary: `Printed booking ${b.number} to ${b.supplier.name} (${orientation})`,
+    summary: `Printed booking ${b.docNo}${b.stage === "DRAFT" ? " (draft)" : ""} to ${b.supplier.name} (${orientation})`,
   });
   return {
-    fileName: documentFileName(ctx.company.name, `Booking ${b.number} ${b.supplier.name}`),
+    fileName: documentFileName(ctx.company.name, `Booking ${b.docNo} ${b.supplier.name}`),
     bytes,
     orientation,
   };

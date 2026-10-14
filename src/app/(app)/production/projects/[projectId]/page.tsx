@@ -25,6 +25,7 @@ import { ProjectSuppliers } from "@/components/production/project-suppliers";
 import { forWhom, PiecesBar, TimelineBar } from "@/components/production/project-card";
 import { StageLog, StageTrack } from "@/components/production/stage-track";
 import { TargetTable } from "@/components/production/target-table";
+import { TechPackApprovalPanel } from "@/components/production/tech-pack-approval";
 import { BackLink } from "@/components/settings/back-link";
 import { Fact, Panel, RecordHeader } from "@/components/sales/detail-bits";
 import { money, salesHref } from "@/components/sales/labels";
@@ -36,6 +37,7 @@ import {
   getFinishingScreenAction,
   getNeedsPanelAction,
   getProjectScreenAction,
+  getTechPackAction,
 } from "@/server/actions/production.actions";
 import { requireCompanyPage } from "@/server/pages/guards";
 
@@ -113,12 +115,13 @@ export default async function ProjectPage({
 }) {
   const ctx = await requireCompanyPage();
   const [{ projectId }, query] = await Promise.all([params, searchParams]);
-  const [result, materials, needs, cutting, finishing] = await Promise.all([
+  const [result, materials, needs, cutting, finishing, techPack] = await Promise.all([
     getProjectScreenAction(projectId),
     getProjectMaterialsPanelAction(projectId),
     getNeedsPanelAction(projectId),
     getCuttingScreenAction(projectId),
     getFinishingScreenAction(projectId),
+    getTechPackAction(projectId),
   ]);
   if (!result.ok) {
     if (result.error.code === "NOT_FOUND") notFound();
@@ -187,6 +190,14 @@ export default async function ProjectPage({
           {finishing.ok && <FinishingSummaryPanel screen={finishing.data} currency={currency} />}
           {p.targets && <TargetTable targets={p.targets} currency={currency} />}
           {needs.ok && <MaterialNeedsPanel panel={needs.data} currency={currency} />}
+          {techPack.ok && (
+            <TechPackApprovalPanel
+              key={`${techPack.data.status}-${techPack.data.changes.length}`}
+              projectId={projectId}
+              code={p.code}
+              techPack={techPack.data}
+            />
+          )}
           <Deliveries screen={screen} currency={currency} />
           {materials.ok && (
             <ProjectMaterials

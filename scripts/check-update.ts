@@ -28,7 +28,7 @@ async function newestRecords(companyId: string): Promise<Record<string, string>>
     orderBy: { createdAt: "desc" as const },
     select: { id: true },
   };
-  const [booking, batch, project, buyer, style, employee, order] = await Promise.all([
+  const [booking, batch, project, buyer, style, employee, order, booked] = await Promise.all([
     prisma.booking.findFirst(newest),
     prisma.productionBatch.findFirst(newest),
     prisma.productionProject.findFirst(newest),
@@ -36,6 +36,12 @@ async function newestRecords(companyId: string): Promise<Record<string, string>>
     prisma.style.findFirst(newest),
     prisma.employee.findFirst(newest),
     prisma.purchaseOrder.findFirst(newest),
+    // The newest batch with a booking, for its booking book.
+    prisma.purchaseOrder.findFirst({
+      where: { companyId, batchId: { not: null }, booking: { isNot: null } },
+      orderBy: { createdAt: "desc" },
+      select: { batchId: true },
+    }),
   ]);
   const ids: Record<string, string> = { list: "buyers", section: "getting-started" };
   if (booking) ids.bookingId = booking.id;
@@ -45,6 +51,7 @@ async function newestRecords(companyId: string): Promise<Record<string, string>>
   if (style) ids.styleId = style.id;
   if (employee) ids.employeeId = employee.id;
   if (order) ids.orderId = order.id;
+  if (booked?.batchId) ids.bookedBatchId = booked.batchId;
   return ids;
 }
 
@@ -65,7 +72,10 @@ const RECORD_SCREENS = [
 ];
 
 /** PDFs worth printing after every update. */
-const RECORD_PDFS = [{ name: "Booking PDF", route: "/api/production/bookings/[bookingId]/pdf" }];
+const RECORD_PDFS = [
+  { name: "Booking PDF", route: "/api/production/bookings/[bookingId]/pdf" },
+  { name: "Booking book PDF", route: "/api/production/batches/[bookedBatchId]/booking-book" },
+];
 
 async function main() {
   const base = (process.env.CHECK_URL ?? "http://app:3000").replace(/\/+$/, "");
@@ -199,7 +209,10 @@ function pdfQueries(route: string): string[] {
 }
 
 /** PDFs printed either way round, checked both ways. */
-const ORIENTED_PDFS = new Set<string>(["/api/production/bookings/[bookingId]/pdf"]);
+const ORIENTED_PDFS = new Set<string>([
+  "/api/production/bookings/[bookingId]/pdf",
+  "/api/production/batches/[bookedBatchId]/booking-book",
+]);
 
 main()
   .catch((error) => {

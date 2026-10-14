@@ -46,6 +46,7 @@ export function OrientationDownload({
   description,
   orientation: initial,
   variant = "default",
+  size = "default",
   className = "w-full sm:w-auto",
 }: {
   href: string;
@@ -55,6 +56,7 @@ export function OrientationDownload({
   /** This person's last pick, or the company's default. */
   orientation: Orientation;
   variant?: "default" | "outline";
+  size?: "default" | "sm";
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -62,7 +64,13 @@ export function OrientationDownload({
 
   return (
     <>
-      <Button type="button" variant={variant} className={className} onClick={() => setOpen(true)}>
+      <Button
+        type="button"
+        variant={variant}
+        size={size}
+        className={className}
+        onClick={() => setOpen(true)}
+      >
         <FileDownIcon aria-hidden />
         {label}
       </Button>

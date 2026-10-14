@@ -581,6 +581,7 @@ export async function getOrderScreen(ctx: CompanyContext, orderId: string) {
     number: o.number,
     status: o.status,
     received: o.lines.some((l) => l.receivedQty.gt(0)),
+    awaitingApproval: o.awaitingApproval,
   };
   return {
     order: {
@@ -638,6 +639,8 @@ export async function getOrderScreen(ctx: CompanyContext, orderId: string) {
         : null,
       /** The booking this order is (its items change on the booking), or null. */
       bookingId: o.bookingId,
+      /** A booking still waiting for approval: nothing arrives on it until it is approved. */
+      awaitingApproval: o.awaitingApproval,
       /** Lines still priced at receive. */
       pricesLater: o.lines.filter((l) => l.priceLater).length,
       bills: o.bills.map((b) => ({
@@ -902,7 +905,12 @@ export async function getPurchaseForm(ctx: CompanyContext, options: { orderId?: 
   let order = null;
   if (options.orderId) {
     const o = await getPurchaseOrder(ctx, options.orderId);
-    const receiving = canReceiveOnOrder({ number: o.number, status: o.status, received: false });
+    const receiving = canReceiveOnOrder({
+      number: o.number,
+      status: o.status,
+      received: false,
+      awaitingApproval: o.awaitingApproval,
+    });
     if (!receiving.ok) throw new AppError(receiving.code, receiving.message);
     order = {
       id: o.id,

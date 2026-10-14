@@ -124,6 +124,8 @@ export const NAV_ITEMS: readonly NavItem[] = [
       "production.bookings.market",
       "production.bookings.attach",
       "production.bookings.close",
+      "production.bookings.approve",
+      "production.techpack.approve",
     ],
   },
   {

@@ -11,7 +11,11 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { cuffsFor } from "@/modules/production/booking-math";
-import { COLLAR_STYLE_LABELS, COLLAR_STYLES } from "@/modules/production/booking-presets";
+import {
+  COLLAR_EXTRA_BY_STYLE,
+  COLLAR_STYLE_LABELS,
+  COLLAR_STYLES,
+} from "@/modules/production/booking-presets";
 
 import {
   blankColour,
@@ -121,7 +125,16 @@ export function CollarStep({
                 id="collar-style"
                 containerClassName="sm:w-full"
                 value={collar.style}
-                onChange={(e) => set({ style: e.target.value as CollarStyle })}
+                onChange={(e) => {
+                  const style = e.target.value as CollarStyle;
+                  // The extra follows the style while it is still the old style's usual one.
+                  const usual = Number(collar.extraPercent) === COLLAR_EXTRA_BY_STYLE[collar.style];
+                  set(
+                    usual
+                      ? { style, extraPercent: String(COLLAR_EXTRA_BY_STYLE[style]) }
+                      : { style },
+                  );
+                }}
               >
                 {COLLAR_STYLES.map((s) => (
                   <option key={s} value={s}>
@@ -133,7 +146,7 @@ export function CollarStep({
             <Field
               id="collar-extra"
               label="Extra over the pieces (%)"
-              hint="For knitting and linking losses, usually 2 to 5"
+              hint="Usually 5 for solid and honeycomb, 7 for tipping, jacquard and stripes; never fewer than 5 collars and 10 cuffs over each colour and size"
               error={problem("collar.extraPercent")}
             >
               <Input

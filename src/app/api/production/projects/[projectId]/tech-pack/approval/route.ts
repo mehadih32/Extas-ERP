@@ -1,0 +1,35 @@
+import { z } from "zod";
+
+import { apiRoute, readJson } from "@/lib/api";
+import { getRequestMeta } from "@/lib/request-meta";
+import { requirePermission } from "@/modules/auth/context";
+import * as techPacks from "@/modules/production/tech-pack-approval.service";
+
+type Params = { projectId: string };
+
+export const dynamic = "force-dynamic";
+
+/**
+ * GET /api/production/projects/:projectId/tech-pack/approval — where the style's tech pack
+ * stands: draft or approved, its fabric part locked or not, and what changed since.
+ * Needs production.view.
+ */
+export const GET = apiRoute<Params>(async (_request, { projectId }) =>
+  techPacks.getTechPack(await requirePermission("production.view"), projectId),
+);
+
+const bodySchema = z.object({ action: z.enum(["lock-fabric", "approve"]) });
+
+/**
+ * POST /api/production/projects/:projectId/tech-pack/approval — { action: "lock-fabric" }
+ * locks the fabric part (Fabric first); { action: "approve" } approves the tech pack.
+ * Needs production.techpack.approve.
+ */
+export const POST = apiRoute<Params>(async (request, { projectId }) => {
+  const { action } = bodySchema.parse(await readJson(request));
+  const ctx = await requirePermission("production.techpack.approve");
+  const meta = await getRequestMeta();
+  return action === "approve"
+    ? techPacks.approveTechPack(ctx, projectId, meta)
+    : techPacks.lockFabricPart(ctx, projectId, meta);
+});

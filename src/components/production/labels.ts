@@ -184,6 +184,9 @@ export const productionHref = {
       : "/production/bookings/new",
   editBooking: (id: string) => `/production/bookings/${encodeURIComponent(id)}/edit`,
   bookingPdf: (id: string) => `/api/production/bookings/${encodeURIComponent(id)}/pdf`,
+  /** A batch's booking book: every booking of it in one PDF. */
+  bookingBook: (batchId: string) =>
+    `/api/production/batches/${encodeURIComponent(batchId)}/booking-book`,
   /** "Make purchase orders" for a batch's materials. */
   batchOrders: (batchId: string) => `/production/batches/${encodeURIComponent(batchId)}/orders/new`,
   /** A batch's fabric, accessories or factory (CM) agreement, and its PDF. */

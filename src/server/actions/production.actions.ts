@@ -26,6 +26,7 @@ import * as materialScreens from "@/modules/production/material-screens.service"
 import * as projects from "@/modules/production/project.service";
 import * as receive from "@/modules/production/receive.service";
 import * as screens from "@/modules/production/screens.service";
+import * as techPacks from "@/modules/production/tech-pack-approval.service";
 
 /*
  * Production Server Actions. Each returns { ok: true, data } or { ok: false, error }.
@@ -35,6 +36,8 @@ import * as screens from "@/modules/production/screens.service";
  *   accounts.payments.record  money paid out: Cash/Bank costs, paying bills (Accounts)
  *   accounts.manage           writing unrecovered cost off when completing / cancelling
  *   production.stock_intake   Move to Stock: deliveries, AI packing-list reading
+ *   production.techpack.approve  lock a style's fabric part (Fabric first) and approve
+ *                             its tech pack for production (the owner's by default)
  * Cost figures are shown to production.manage and accounts.view holders only.
  * Changes refresh the screens and hand back the record's id and code or number
  * only: the full records carry Decimal amounts, which do not cross to the
@@ -66,6 +69,7 @@ const logFaults = () => requireAnyPermission("production.manage", "materials.pur
 const countFinishing = () => requireAnyPermission("production.manage", "production.stock_intake");
 /** Paying a factory or supplier for a batch (advance CM): Accounts only. */
 const payMoney = () => requirePermission("accounts.payments.record");
+const approveTechPacks = () => requirePermission("production.techpack.approve");
 const pickProjects = () =>
   requireAnyPermission("production.manage", "accounts.payments.record", "production.stock_intake");
 
@@ -168,6 +172,20 @@ export const setTechPackNotesAction = async (projectId: string, input: unknown) 
   change(async () =>
     needs.setTechPackNotes(await manage(), projectId, input, await getRequestMeta()),
   );
+export const getTechPackAction = async (projectId: string) =>
+  runAction(async () => techPacks.getTechPack(await view(), projectId));
+/** Locks the style's fabric part as it is now, so its fabric can be booked first. */
+export const lockFabricPartAction = async (projectId: string) =>
+  change(async () => {
+    await techPacks.lockFabricPart(await approveTechPacks(), projectId, await getRequestMeta());
+    return { id: projectId };
+  });
+/** Approves the style's tech pack for production as it is now. */
+export const approveTechPackAction = async (projectId: string) =>
+  change(async () => {
+    await techPacks.approveTechPack(await approveTechPacks(), projectId, await getRequestMeta());
+    return { id: projectId };
+  });
 /** A first draft of the making notes (AI when it is set up, otherwise from rules); not saved. */
 export const draftTechPackNotesAction = async (projectId: string) =>
   runAction(async () => needs.draftTechPackNotes(await manage(), projectId));

@@ -218,6 +218,7 @@ const knitwear = (env: Env) => ({
   supplierId: env.mill.id,
   title: "Summer polo",
   styleRef: "PL-01",
+  expectedDate: "2030-11-15",
   garmentPieces: 1200,
   collar: {
     style: "TIPPING",
@@ -297,7 +298,16 @@ run("Bookings", () => {
     // The standard strict terms, with the collar clause.
     expect(b.terms).toBe(standardTermsText("SUPPLIER_PO", "KNITWEAR", "EN", { collar: true }));
     expect(b.batch).toBeNull();
-    expect(b.can).toMatchObject({ edit: true, attach: true, detach: false, receive: true });
+    // A new booking is a draft: nothing arrives on it until the owner approves it.
+    expect(b.stage).toBe("DRAFT");
+    expect(b.can).toMatchObject({
+      edit: true,
+      attach: true,
+      detach: false,
+      receive: false,
+      approve: false,
+      markSent: false,
+    });
 
     // The new fabric is in the catalogue with its specification and the mill as its supplier.
     const fabric = await prisma.rawMaterial.findUniqueOrThrow({
@@ -509,13 +519,14 @@ run("Bookings", () => {
     expect(doc).toMatchObject({
       type: "BOOKING",
       title: "Market Purchase Order",
-      reference: market.number,
+      reference: market.docNo,
+      stamp: { text: "Draft", tone: "danger" },
       qr: { data: link },
       initials: "Seller's initials",
       frame: { orientation: "landscape", tagline: "Manufacturing | Sourcing | Export" },
     });
     expect(doc.frame!.fields).toEqual([
-      { label: "Doc no", value: market.number },
+      { label: "Doc no", value: `${market.number}-R0` },
       { label: "Buyer · PO", value: "" },
       { label: "Date", value: expect.any(String) },
       { label: "Prepared by", value: "" },
@@ -549,7 +560,7 @@ run("Bookings", () => {
 
     const pdf = await bookingPdf(env.pm, market.id);
     expect(pdf.bytes.subarray(0, 5).toString()).toBe("%PDF-");
-    expect(pdf.fileName).toBe(`Extas - Booking ${market.number} Islampur Cloth Store.pdf`);
+    expect(pdf.fileName).toBe(`Extas - Booking ${market.docNo} Islampur Cloth Store.pdf`);
     // Landscape until the person picks; their pick is kept for the next download.
     expect(pdf.orientation).toBe("landscape");
     const upright = await bookingPdf(env.pm, market.id, undefined, "portrait");
@@ -585,6 +596,7 @@ run("Bookings", () => {
       source: "SUPPLIER_PO",
       category: "KNITWEAR",
       supplierId: env.mill.id,
+      expectedDate: "2030-11-15",
       lines: [
         { materialId: env.jersey.id, quantity: 60, unitPrice: 400 },
         { name: "Sewing thread", kind: "OTHER", unit: "CONE", quantity: 5 },
@@ -631,6 +643,7 @@ run("Bookings", () => {
 
     // On again, and once goods arrive it stays on the batch.
     data(await attachBookingAction(own.id, { batchId: env.batch.id }), "attach again");
+    await bookings.approveBooking(env.owner, own.id);
     const line = (await orders.getPurchaseOrder(env.pm, own.orderId)).lines[0]!;
     await purchases.createPurchase(env.pm, {
       purchaseOrderId: own.orderId,
@@ -695,9 +708,11 @@ run("Bookings", () => {
       collar: { ...knitwear(env).collar, extraPercent: 0 },
       lines: knitwear(env).lines.slice(0, 3),
     });
-    expect(changed.lines.map((l) => l.quantity)).toEqual(["302.5", "1100", "2200"]);
-    expect(changed.collar?.totalSets).toBe(1100);
+    // No extra, yet never fewer than 5 collars (10 cuffs) over each colour and size: 505 + 405 + 205.
+    expect(changed.lines.map((l) => l.quantity)).toEqual(["302.5", "1115", "2230"]);
+    expect(changed.collar?.totalSets).toBe(1115);
 
+    await bookings.approveBooking(env.owner, b.id);
     const fabricLine = changed.lines[0]!;
     await purchases.createPurchase(env.pm, {
       purchaseOrderId: changed.orderId,
@@ -716,7 +731,7 @@ run("Bookings", () => {
     });
     expect(paper.terms).toBe(standardTermsText("SUPPLIER_PO", "KNITWEAR", "BN", { collar: true }));
     expect(paper).toMatchObject({ paymentTerms: "30 days after delivery", supplierRef: "NF-778" });
-    expect(paper.lines.map((l) => l.quantity)).toEqual(["302.5", "1100", "2200"]);
+    expect(paper.lines.map((l) => l.quantity)).toEqual(["302.5", "1115", "2230"]);
 
     // Closed: the rest will not come, and nothing changes any more.
     const closed = await bookings.closeBooking(env.pm, b.id, { reason: "Mill stopped the line" });

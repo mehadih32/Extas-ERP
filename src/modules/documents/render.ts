@@ -152,6 +152,8 @@ class Writer {
   /** The part of the book each page belongs to (for its header), by page. */
   private readonly sections: string[] = [];
   private section = "";
+  /** The page each named part starts on (0-based), in order. */
+  readonly partStarts: Array<{ key: string; page: number }> = [];
   /** Whether the QR code is already printed (by the book's first page title). */
   private qrDone = false;
   /** Row pictures opened by pdfkit, by file id (null: it could not be read). */
@@ -371,6 +373,7 @@ class Writer {
     if (this.y > this.bookTop + 0.5) this.newPage();
     this.section = block.label ?? "";
     this.sections[this.sections.length - 1] = this.section;
+    if (block.key) this.partStarts.push({ key: block.key, page: this.sections.length - 1 });
     this.pageTitle(block.title, block.subtitle);
   }
 
@@ -1247,14 +1250,31 @@ class Writer {
  */
 export async function renderDocumentPdf(
   model: PrintDocument,
-  options: {
-    logo?: Buffer | null;
-    images?: ReadonlyMap<string, Buffer>;
-    signed?: ReadonlyMap<string, Buffer>;
-    protect?: boolean;
-    compress?: boolean;
-  } = {},
+  options: RenderOptions = {},
 ): Promise<Buffer> {
+  return (await renderWithParts(model, options)).bytes;
+}
+
+type RenderOptions = {
+  logo?: Buffer | null;
+  images?: ReadonlyMap<string, Buffer>;
+  signed?: ReadonlyMap<string, Buffer>;
+  protect?: boolean;
+  compress?: boolean;
+};
+
+/** The pages a named part of a book runs over, counted from 1. */
+export type PartPages = { key: string; first: number; last: number };
+
+/**
+ * The document as a PDF, with the pages each named part (a `section` with a
+ * `key`) runs over: a part runs until the next named part starts, the last one
+ * to the end. A booking book renders twice to print them on its cover.
+ */
+export async function renderWithParts(
+  model: PrintDocument,
+  options: RenderOptions = {},
+): Promise<{ bytes: Buffer; parts: PartPages[]; pages: number }> {
   const doc = await createPdf({
     size: "A4",
     layout: model.frame?.orientation === "landscape" ? "landscape" : "portrait",
@@ -1291,6 +1311,13 @@ export async function renderDocumentPdf(
     writer.watermarks();
     writer.footers();
   }
+  const pages = doc.bufferedPageRange().count;
   doc.end();
-  return done;
+  const starts = writer.partStarts;
+  const parts = starts.map((p, i) => ({
+    key: p.key,
+    first: p.page + 1,
+    last: Math.max(p.page + 1, i + 1 < starts.length ? starts[i + 1]!.page : pages),
+  }));
+  return { bytes: await done, parts, pages };
 }

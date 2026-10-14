@@ -11,6 +11,7 @@ import {
   NotebookPenIcon,
   ReceiptTextIcon,
   SettingsIcon,
+  SparklesIcon,
   ShieldCheckIcon,
   ShirtIcon,
   SpoolIcon,
@@ -44,6 +45,7 @@ export const HELP_ICONS: Record<string, LucideIcon> = {
   planner: NotebookPenIcon,
   compliance: ShieldCheckIcon,
   "my-hr": IdCardIcon,
+  ai: SparklesIcon,
   settings: SettingsIcon,
   "help-center": LifeBuoyIcon,
 };

@@ -1441,9 +1441,10 @@ hold either. Deliveries need `production.stock_intake`. Cost figures are shown o
 holders of `production.manage` or `accounts.view`, so the warehouse never sees them. Server
 Actions are in `src/server/actions/production.actions.ts`.
 
-AI reading needs `AI_API_KEY` (a Claude API key) and `AI_INTAKE_MODEL` (a Claude model that
-reads images and PDFs) in `.env`. Without them, deliveries are typed in. Uploads are kept
-under `UPLOAD_DIR`; photos sent to the AI reader can be up to 5 MB.
+AI reading works while the company's AI is on (AI Center), with its Claude key; the model
+is set on AI Center > Models ("Reading forms, photos and packing lists"). While AI is off,
+deliveries are typed in. Uploads are kept under `UPLOAD_DIR`; photos sent to the AI reader
+can be up to 5 MB.
 
 ## Accounts (backend)
 
@@ -1641,8 +1642,8 @@ also says how many of the month's claims still wait for Accounts.
 employees downloads one PDF with the last 12 months (whole months, or since joining):
 attendance, approved overtime and tasks, and for people who may see them the salary on
 approved payrolls and the conveyance claimed, month by month, with a short summary on top.
-The summary is written from the figures by rules; with `AI_API_KEY` and `AI_SUMMARY_MODEL`
-(or `AI_INTAKE_MODEL`) set, the Claude API words it from the same figures, without the
+The summary is written from the figures by rules; while the company's AI is on (AI Center),
+Claude words it from the same figures, without the
 person's name or contact details, in a few sentences, and the same figures are not asked
 about twice while the app runs. The PDF is made per request and not kept. "Share the report"
 sends it to WhatsApp, email or any app where the browser can share files (phones), and

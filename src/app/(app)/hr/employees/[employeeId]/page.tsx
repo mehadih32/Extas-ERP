@@ -18,7 +18,7 @@ import { Fact, Panel } from "@/components/sales/detail-bits";
 import { isZero, METHOD_LABELS, money } from "@/components/sales/labels";
 import { BackLink } from "@/components/settings/back-link";
 import { formatDay, formatMonth } from "@/lib/display";
-import { aiSummaryOn } from "@/modules/hr/report-summary";
+import { aiOn } from "@/modules/ai/claude";
 import { vaultScore } from "@/modules/hr/vault";
 import { getEmployeeScreenAction } from "@/server/actions/hr.actions";
 import { requireCompanyPage } from "@/server/pages/guards";
@@ -64,6 +64,7 @@ export default async function EmployeePage({
   const screen = result.data;
   const { employee: e, pay, leave, thisMonth, can, notes, vault, systemAccess } = screen;
   const currency = ctx.company.currency;
+  const aiWords = await aiOn(ctx.company.id);
   const notice =
     one(query.created) === "1"
       ? `${e.name} was added as ${e.code}.`
@@ -97,7 +98,7 @@ export default async function EmployeePage({
             <p className="mt-2 text-[0.8125rem] text-muted-foreground">
               The last 12 months on one PDF: attendance, overtime, tasks and, where your role shows
               them, salary and conveyance, with a summary on top
-              {aiSummaryOn() ? " written by AI" : ""}.
+              {aiWords ? " written by AI" : ""}.
             </p>
             <div className="mt-4">
               <ReportActions

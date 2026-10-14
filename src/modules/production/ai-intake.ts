@@ -1,13 +1,15 @@
+import type Anthropic from "@anthropic-ai/sdk";
 import type { StockGrade } from "@prisma/client";
 import { z } from "zod";
 
 import { AppError } from "@/lib/errors";
+import { type Ask, askerFor, toolInputOf } from "@/modules/ai/claude";
 
 /*
  * AI Photo Intake: reads a factory packing list (photo or PDF) into colour x
- * size quantity lines, then matches them to the style's SKUs. Uses the Claude
- * API when AI_API_KEY and AI_INTAKE_MODEL are set; nothing is stocked until a
- * person confirms.
+ * size quantity lines, then matches them to the style's SKUs. Uses Claude
+ * through the AI Center while the company's AI is on; nothing is stocked until
+ * a person confirms.
  */
 
 /** Images sent to the AI reader are capped at 5 MB; PDFs can use the full upload size. */
@@ -66,7 +68,8 @@ const toolInputSchema = z.object({
 
 const TOOL = {
   name: TOOL_NAME,
-  description: "Record every colour and size quantity line read from the factory packing list.",
+  description:
+    "Record every colour and size quantity line read from the factory packing list or cutting sheet.",
   input_schema: {
     type: "object",
     properties: {
@@ -129,17 +132,11 @@ export function buildIntakePrompt(hints: IntakeHints): string {
   ].join("\n");
 }
 
-/** Reads packing lists with the Claude API (Messages API, forced tool call). */
-export function claudeIntakeParser(options: {
-  apiKey: string;
-  model: string;
-  baseUrl?: string;
-  fetchImpl?: typeof fetch;
-}): IntakeParser {
-  const { model } = options;
-  const baseUrl = (options.baseUrl ?? "https://api.anthropic.com").replace(/\/$/, "");
-  const doFetch = options.fetchImpl ?? fetch;
-
+/**
+ * Reads packing lists and cutting sheets with Claude through the AI Center
+ * (the company's model for reading documents), asking it to call the tool.
+ */
+export function claudeIntakeParser(ask: Ask): IntakeParser {
   return {
     async parse(file, hints) {
       const isPdf = file.mimeType === "application/pdf";
@@ -150,11 +147,15 @@ export function claudeIntakeParser(options: {
         );
       }
       const data = file.bytes.toString("base64");
-      const body = {
-        model,
-        max_tokens: 8192,
-        tools: [TOOL],
-        tool_choice: { type: "tool", name: TOOL_NAME },
+      const cutting = hints.document === "CUTTING_REPORT";
+      const { message, model } = await ask({
+        task: "read.documents",
+        why: cutting
+          ? `Read a cutting sheet${hints.projectStyle ? ` for ${hints.projectStyle.code}` : ""}`
+          : `Read a packing list${hints.projectStyle ? ` for ${hints.projectStyle.code}` : ""}`,
+        maxTokens: 8192,
+        timeoutMs: 120_000,
+        tools: [TOOL as unknown as Anthropic.Tool],
         messages: [
           {
             role: "user",
@@ -164,52 +165,20 @@ export function claudeIntakeParser(options: {
                     type: "document",
                     source: { type: "base64", media_type: "application/pdf", data },
                   }
-                : { type: "image", source: { type: "base64", media_type: file.mimeType, data } },
+                : {
+                    type: "image",
+                    source: {
+                      type: "base64",
+                      media_type: file.mimeType as "image/jpeg" | "image/png" | "image/webp",
+                      data,
+                    },
+                  },
               { type: "text", text: buildIntakePrompt(hints) },
             ],
           },
         ],
-      };
-
-      let response: Response;
-      try {
-        response = await doFetch(`${baseUrl}/v1/messages`, {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            "x-api-key": options.apiKey,
-            "anthropic-version": "2023-06-01",
-          },
-          body: JSON.stringify(body),
-          signal: AbortSignal.timeout(120_000),
-        });
-      } catch (error) {
-        console.error("[ai-intake] request failed", error);
-        throw new AppError(
-          "UNAVAILABLE",
-          "The AI reader could not be reached. Try again, or enter the quantities by hand.",
-        );
-      }
-      if (!response.ok) {
-        const detail = await response.text().catch(() => "");
-        console.error(`[ai-intake] ${response.status}`, detail.slice(0, 500));
-        const message =
-          response.status === 401 || response.status === 403
-            ? "The AI reader refused the key. Check AI_API_KEY."
-            : response.status === 404
-              ? "The AI reader does not know this model. Check AI_INTAKE_MODEL."
-              : response.status === 429 || response.status === 529
-                ? "The AI reader is busy. Try again in a minute."
-                : "The AI reader could not read this file. Enter the quantities by hand.";
-        throw new AppError("UNAVAILABLE", message);
-      }
-
-      const json = (await response.json()) as {
-        model?: string;
-        content?: Array<{ type: string; name?: string; input?: unknown }>;
-      };
-      const call = json.content?.find((b) => b.type === "tool_use" && b.name === TOOL_NAME);
-      const parsed = toolInputSchema.safeParse(call?.input);
+      });
+      const parsed = toolInputSchema.safeParse(toolInputOf(message, TOOL_NAME));
       if (!parsed.success) {
         throw new AppError(
           "UNAVAILABLE",
@@ -229,19 +198,23 @@ export function claudeIntakeParser(options: {
           })),
         confidence: parsed.data.confidence,
         notes: parsed.data.notes?.trim() || null,
-        model: json.model ?? model,
+        model,
       };
     },
   };
 }
 
-/** The configured reader, or null until both AI_API_KEY and AI_INTAKE_MODEL are set. */
-export function defaultIntakeParser(): IntakeParser | null {
-  const apiKey = process.env.AI_API_KEY?.trim();
-  const model = process.env.AI_INTAKE_MODEL?.trim();
-  if (!apiKey || !model) return null;
-  return claudeIntakeParser({ apiKey, model });
+/** The company's reader, or null while its AI is off (AI Center). */
+export async function intakeParserFor(
+  companyId: string,
+  userId?: string | null,
+): Promise<IntakeParser | null> {
+  const ask = await askerFor(companyId, userId);
+  return ask ? claudeIntakeParser(ask) : null;
 }
+
+/** Why a photo was not read with AI, for the person typing the quantities in instead. */
+export const AI_READING_OFF = "AI reading is off (the owner turns AI on in AI Center).";
 
 // =============================================================================
 // Matching read lines to SKUs

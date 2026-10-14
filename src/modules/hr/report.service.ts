@@ -7,6 +7,7 @@ import { checkRateLimit } from "@/lib/rate-limit";
 import type { RequestMeta } from "@/lib/request-meta";
 import { ZERO } from "@/modules/accounts/balances";
 import { addDays, addMonths } from "@/modules/accounts/periods";
+import { askerFor } from "@/modules/ai/claude";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { registrationNumbers } from "@/modules/companies/letterhead";
@@ -469,7 +470,7 @@ export async function employeeReportPdf(
   checkRateLimit(`hr-report:${ctx.user.id}`, REPORTS_PER_MINUTE, 60_000);
   const data = await employeeReportData(ctx, employeeId, now);
   const [summary, logo, numbers] = await Promise.all([
-    summarise(data.facts),
+    askerFor(ctx.company.id, ctx.user.id).then((ask) => summarise(data.facts, ask)),
     loadPrintLogo(ctx.company.id),
     registrationNumbers(ctx.company.id),
   ]);

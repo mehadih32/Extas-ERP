@@ -1,6 +1,5 @@
 import { Prisma } from "@prisma/client";
 
-import { aiText } from "@/lib/ai-text";
 import { localDay } from "@/lib/dates";
 import type { Db } from "@/lib/db-types";
 import { AppError } from "@/lib/errors";
@@ -8,6 +7,7 @@ import { formatDay } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
 import { lockRow } from "@/lib/row-lock";
+import { aiText } from "@/modules/ai/ai-text";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { loadActiveMaterials } from "@/modules/materials/stock";
@@ -459,35 +459,41 @@ export async function draftTechPackNotes(ctx: CompanyContext, projectId: string)
   const data = await getMaterialNeeds(ctx, projectId);
   const { project: p, grid, needs } = data;
   const { colours, sizes } = gridAxes(grid);
-  const ai = await aiText({
-    instructions:
-      "You write the making notes on a garment tech pack for a factory in Bangladesh. " +
-      "Use plain, short English a factory supervisor understands. Write 6 to 10 bullet lines " +
-      "starting with '• ': fabric and where it goes, trims and their placement, collar and cuff " +
-      "matching, stitching and finishing checks, measurement checks before bulk cutting, and " +
-      "packing. Use only the facts given; do not invent measurements or prices.",
-    facts: {
-      style: p.name,
-      category: p.category?.name ?? null,
-      pieces: p.targetQuantity,
-      colours,
-      sizes,
-      finishBy: p.targetDate ? localDay(p.targetDate, ctx.company.timezone) : null,
-      materials: needs.map((n) => ({
-        material: n.material.name,
-        kind: n.material.kind,
-        specification: n.material.specification,
-        colour: n.material.color,
-        perPiece: perPieceText(n),
-        placement: n.placement,
-        orderedBy: n.split,
-        notes: n.notes,
-      })),
-      projectNotes: p.notes?.slice(0, 600) ?? null,
+  const ai = await aiText(
+    ctx.company.id,
+    {
+      why: `Making notes for the tech pack of ${p.code}`,
+      record: { type: "ProductionProject", id: p.id, label: p.code },
+      instructions:
+        "You write the making notes on a garment tech pack for a factory in Bangladesh. " +
+        "Use plain, short English a factory supervisor understands. Write 6 to 10 bullet lines " +
+        "starting with '• ': fabric and where it goes, trims and their placement, collar and cuff " +
+        "matching, stitching and finishing checks, measurement checks before bulk cutting, and " +
+        "packing. Use only the facts given; do not invent measurements or prices.",
+      facts: {
+        style: p.name,
+        category: p.category?.name ?? null,
+        pieces: p.targetQuantity,
+        colours,
+        sizes,
+        finishBy: p.targetDate ? localDay(p.targetDate, ctx.company.timezone) : null,
+        materials: needs.map((n) => ({
+          material: n.material.name,
+          kind: n.material.kind,
+          specification: n.material.specification,
+          colour: n.material.color,
+          perPiece: perPieceText(n),
+          placement: n.placement,
+          orderedBy: n.split,
+          notes: n.notes,
+        })),
+        projectNotes: p.notes?.slice(0, 600) ?? null,
+      },
+      maxTokens: 500,
+      maxChars: 2000,
     },
-    maxTokens: 500,
-    maxChars: 2000,
-  });
+    ctx.user.id,
+  );
   return ai
     ? { text: ai, byAi: true }
     : { text: ruleTechPackNotes(data, ctx.company.timezone), byAi: false };

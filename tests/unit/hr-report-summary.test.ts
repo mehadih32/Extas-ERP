@@ -1,17 +1,19 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { AppError } from "@/lib/errors";
 import {
-  aiSummaryOn,
   attendanceRate,
   type ReportFacts,
   ruleSummary,
   summarise,
 } from "@/modules/hr/report-summary";
 
+import { fakeAsk } from "../fixtures/claude";
+
 /*
  * The summary on top of an employee's 360° report: written by rules from the
- * figures, or worded by the Claude API from the same figures when a key is set,
- * asked once per set of figures, and back to the rules whenever the API fails.
+ * figures, or worded by Claude from the same figures while the company's AI is
+ * on, asked once per set of figures, and back to the rules whenever it fails.
  */
 
 const facts: ReportFacts = {
@@ -30,12 +32,6 @@ const facts: ReportFacts = {
     conveyance: { amount: "1830.00", trips: 9 },
   },
 };
-
-const reply = (text: string) =>
-  new Response(JSON.stringify({ content: [{ type: "text", text }] }), {
-    status: 200,
-    headers: { "content-type": "application/json" },
-  });
 
 describe("360° report summary", () => {
   afterEach(() => {
@@ -72,59 +68,37 @@ describe("360° report summary", () => {
     ).toMatch(/approved overtime\. 1 task is still open\.$/);
   });
 
-  it("uses the rules until an AI key and model are set", async () => {
-    vi.stubEnv("AI_API_KEY", "");
-    vi.stubEnv("AI_INTAKE_MODEL", "");
-    vi.stubEnv("AI_SUMMARY_MODEL", "");
-    const fetchImpl = vi.fn();
-    expect(aiSummaryOn()).toBe(false);
-    expect(await summarise(facts, { fetchImpl })).toEqual({
-      text: ruleSummary(facts),
-      by: "rules",
-    });
-    expect(fetchImpl).not.toHaveBeenCalled();
-    vi.stubEnv("AI_API_KEY", "key");
-    vi.stubEnv("AI_INTAKE_MODEL", "intake-model");
-    expect(aiSummaryOn()).toBe(true);
+  it("uses the rules while the company's AI is off", async () => {
+    expect(await summarise(facts, null)).toEqual({ text: ruleSummary(facts), by: "rules" });
+    expect(await summarise(facts)).toEqual({ text: ruleSummary(facts), by: "rules" });
   });
 
   it("asks the AI with the figures only, briefly, and once per set of figures", async () => {
-    vi.stubEnv("AI_API_KEY", "secret");
-    vi.stubEnv("AI_INTAKE_MODEL", "intake-model");
-    vi.stubEnv("AI_SUMMARY_MODEL", "summary-model");
-    const fetchImpl = vi.fn(async () => reply("  The employee was present on 96% of days.\n"));
-    const first = await summarise(facts, { fetchImpl });
+    const { ask, asked } = fakeAsk("  The employee was present on 96% of days.\n");
+    const first = await summarise(facts, ask);
     expect(first).toEqual({ text: "The employee was present on 96% of days.", by: "ai" });
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
-    const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
-    expect(url).toBe("https://api.anthropic.com/v1/messages");
-    expect((init.headers as Record<string, string>)["x-api-key"]).toBe("secret");
-    const body = JSON.parse(String(init.body));
-    expect(body).toMatchObject({ model: "summary-model", max_tokens: 200 });
-    expect(JSON.parse(body.messages[0].content)).toEqual(facts);
+    expect(ask).toHaveBeenCalledTimes(1);
+    expect(asked[0]).toMatchObject({ task: "text.write", effort: "low" });
+    expect(JSON.parse(String(asked[0]!.messages[0]!.content))).toEqual(facts);
     // Short instructions and the figures: a few hundred tokens at most.
-    expect(String(init.body).length).toBeLessThan(1500);
+    expect(
+      String(asked[0]!.system).length + String(asked[0]!.messages[0]!.content).length,
+    ).toBeLessThan(1500);
 
     // The same figures again: no second request.
-    expect(await summarise({ ...facts }, { fetchImpl })).toEqual(first);
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(await summarise({ ...facts }, ask)).toEqual(first);
+    expect(ask).toHaveBeenCalledTimes(1);
   });
 
   it("falls back to the rules when the AI fails", async () => {
-    vi.stubEnv("AI_API_KEY", "secret");
-    vi.stubEnv("AI_SUMMARY_MODEL", "summary-model");
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     const changed = { ...facts, overtimeHours: 1 };
-    const busy = vi.fn(async () => new Response("overloaded", { status: 529 }));
-    expect(await summarise(changed, { fetchImpl: busy })).toEqual({
+    const busy = fakeAsk(new AppError("UNAVAILABLE", "The AI is busy. Try again in a minute."));
+    expect(await summarise(changed, busy.ask)).toEqual({
       text: ruleSummary(changed),
       by: "rules",
     });
-    const down = vi.fn(async () => {
-      throw new TypeError("fetch failed");
-    });
-    expect((await summarise(changed, { fetchImpl: down })).by).toBe("rules");
-    const empty = vi.fn(async () => reply("   "));
-    expect((await summarise(changed, { fetchImpl: empty })).by).toBe("rules");
+    const empty = fakeAsk("   ");
+    expect((await summarise(changed, empty.ask)).by).toBe("rules");
   });
 });

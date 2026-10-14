@@ -26,8 +26,9 @@ import {
   weightedAverageCost,
 } from "@/modules/inventory/stock.service";
 import {
-  defaultIntakeParser,
+  AI_READING_OFF,
   type IntakeParser,
+  intakeParserFor,
   matchParsedLines,
   normalizeCode,
   type UnmatchedLine,
@@ -155,7 +156,8 @@ export async function createIntake(
   ctx: CompanyContext,
   raw: unknown,
   meta?: RequestMeta,
-  parser: IntakeParser | null = defaultIntakeParser(),
+  /** Tests pass their own reader; otherwise the company's (none while AI is off). */
+  parser?: IntakeParser | null,
 ) {
   const input = createIntakeSchema.parse(raw);
   const project = await ctx.db.productionProject.findUnique({ where: { id: input.projectId } });
@@ -225,7 +227,7 @@ export async function parseIntake(
   ctx: CompanyContext,
   intakeId: string,
   meta?: RequestMeta,
-  parser: IntakeParser | null = defaultIntakeParser(),
+  given?: IntakeParser | null,
 ) {
   const intake = await ctx.db.stockIntake.findUnique({
     where: { id: intakeId },
@@ -239,11 +241,9 @@ export async function parseIntake(
   if (!intake.sourceFile) {
     throw new AppError("VALIDATION", "Upload the factory packing list first.");
   }
+  const parser = given === undefined ? await intakeParserFor(ctx.company.id, ctx.user.id) : given;
   if (!parser) {
-    throw new AppError(
-      "UNAVAILABLE",
-      "AI reading is not set up yet (AI_API_KEY and AI_INTAKE_MODEL). Enter the quantities by hand.",
-    );
+    throw new AppError("UNAVAILABLE", `${AI_READING_OFF} Enter the quantities by hand.`);
   }
   const projectStyle = intake.project?.style ?? null;
   const [styles, colors, sizes, bytes] = await Promise.all([

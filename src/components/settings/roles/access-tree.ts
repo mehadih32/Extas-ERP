@@ -144,6 +144,15 @@ export const ACCESS_TREE: readonly AccessBranch[] = [
     leaf("reminders.manage", "Give tasks and reminders to other people"),
   ]),
   branch("backups", "Backups", [leaf("backups.manage", "Backups (platform owner only)")]),
+  branch(
+    "ai",
+    "AI Center",
+    [
+      leaf("ai.view", "See the AI Center"),
+      leaf("ai.manage", "Turn AI on or off and set what it may do"),
+    ],
+    "The AI itself never holds these: it can never change what it may do.",
+  ),
 ];
 
 const DESCRIPTIONS = new Map<string, string>(PERMISSIONS.map((p) => [p.key, p.description]));

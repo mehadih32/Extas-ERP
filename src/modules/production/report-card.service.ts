@@ -2,12 +2,12 @@ import { Prisma } from "@prisma/client";
 
 import { quantity as materialQuantity } from "@/components/materials/labels";
 import { FAULT_KIND_LABELS, FAULT_STATUS_LABELS } from "@/components/production/labels";
-import { aiText } from "@/lib/ai-text";
 import { addDays, dateOnly, daysBetween, localDay } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
 import { formatAmount, formatDay } from "@/lib/format";
 import { checkRateLimit } from "@/lib/rate-limit";
 import type { RequestMeta } from "@/lib/request-meta";
+import { aiText } from "@/modules/ai/ai-text";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { letterheadOf } from "@/modules/documents/builders";
@@ -210,8 +210,9 @@ export function ruleSummary(card: SupplierReportCard, currency: string): string 
 }
 
 /** The summary, worded by AI from the card's figures when it is set up. */
-export async function cardSummary(card: SupplierReportCard, currency: string) {
-  const ai = await aiText({
+export async function cardSummary(companyId: string, card: SupplierReportCard, currency: string) {
+  const ai = await aiText(companyId, {
+    why: `Report card summary for ${card.supplier.name}`,
     instructions:
       "You write a short supplier report card summary for a garment company in Bangladesh. " +
       "In 3 to 4 plain sentences: how reliable the supplier is on delivery days, how its " +
@@ -389,7 +390,7 @@ export function reportCardDocument(
 export async function reportCardPdf(ctx: CompanyContext, supplierId: string, meta?: RequestMeta) {
   checkRateLimit(`on-demand-print:${ctx.user.id}`, ON_DEMAND_PER_MINUTE, 60_000);
   const card = await supplierReportCard(ctx, supplierId);
-  const summary = await cardSummary(card, ctx.company.currency);
+  const summary = await cardSummary(ctx.company.id, card, ctx.company.currency);
   const bytes = await renderOnDemand(ctx, reportCardDocument(ctx, card, summary));
   await auditInCompany(ctx, meta, {
     action: "EXPORT",

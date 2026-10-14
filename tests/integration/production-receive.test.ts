@@ -556,7 +556,7 @@ run("Production renovation: central receive, colour-wise issue and the fault log
     // On time, but two faults: B, not A.
     expect(card.grade).toBe("B");
 
-    const summary = await cards.cardSummary(card, "BDT");
+    const summary = await cards.cardSummary(env.company.id, card, "BDT");
     expect(summary.byAi).toBe(false);
     expect(summary.text).toMatch(/delivered 1 of 1 orders on time \(100%\)/);
     expect(summary.text).toMatch(/2 of 2 delivery lines checked against the challan came short/);

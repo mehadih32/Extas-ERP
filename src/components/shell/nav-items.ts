@@ -11,6 +11,7 @@ import {
   SettingsIcon,
   ShieldCheckIcon,
   ShirtIcon,
+  SparklesIcon,
   SpoolIcon,
   UsersRoundIcon,
   WalletIcon,
@@ -210,6 +211,14 @@ export const NAV_ITEMS: readonly NavItem[] = [
     icon: IdCardIcon,
     anyOf: ["portal.self"],
     noneOf: HR_KEYS,
+  },
+  {
+    // Mehedi 2.0 and the AI: its switch, Control, models, requests and logs
+    // (components/ai/tabs.ts). Off until the owner turns it on.
+    href: "/ai",
+    label: "AI",
+    icon: SparklesIcon,
+    anyOf: ["ai.view", "ai.manage"],
   },
   {
     // Team, roles and company details (components/settings/tabs.ts).

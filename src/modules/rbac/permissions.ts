@@ -254,6 +254,18 @@ export const PERMISSIONS = [
     module: "BACKUPS",
     description: "Backups (platform owner only: a backup holds every company)",
   },
+  // AI Center
+  {
+    key: "ai.view",
+    module: "AI",
+    description: "See the AI Center: what the AI did, what waits for an answer, and Control",
+  },
+  {
+    key: "ai.manage",
+    module: "AI",
+    description:
+      "Turn AI on or off, set what it may do (Control), its models, key and PIN, and answer its requests (the owner's)",
+  },
 ] as const satisfies ReadonlyArray<{ key: string; module: AppModule; description: string }>;
 
 export type PermissionKey = (typeof PERMISSIONS)[number]["key"];

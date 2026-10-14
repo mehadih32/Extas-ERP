@@ -15,8 +15,9 @@ import { readStoredFile } from "@/modules/files/file.service";
 import { canSeeMaterialCosts } from "@/modules/materials/access";
 import {
   canonicalSize,
-  defaultIntakeParser,
+  AI_READING_OFF,
   type IntakeParser,
+  intakeParserFor,
   normalizeCode,
 } from "@/modules/production/ai-intake";
 import { heldByStyle } from "@/modules/production/batch-issue.service";
@@ -37,6 +38,7 @@ import {
   readFabricUsed,
 } from "@/modules/production/cutting";
 import { lockSupplierAccount } from "@/modules/accounts/supplier-settlement";
+import { aiOn } from "@/modules/ai/claude";
 import { money } from "@/modules/production/costing";
 import {
   canLogFaults,
@@ -535,7 +537,7 @@ export async function getCuttingScreen(ctx: CompanyContext, projectId: string) {
       record: ctx.can("production.manage") && open,
       faultNote: canLogFaults(ctx) && open,
       seeValues: canSeeMaterialCosts(ctx),
-      readAi: defaultIntakeParser() !== null,
+      readAi: await aiOn(ctx.company.id),
     },
   };
 }
@@ -767,17 +769,15 @@ export async function readCuttingPhoto(
   ctx: CompanyContext,
   projectId: string,
   photoId: string,
-  parser: IntakeParser | null = defaultIntakeParser(),
+  given?: IntakeParser | null,
 ) {
   assertCanRecord(ctx);
+  const parser = given === undefined ? await intakeParserFor(ctx.company.id, ctx.user.id) : given;
   const project = await loadProject(ctx, projectId);
   const file = await ctx.db.fileAsset.findUnique({ where: { id: photoId } });
   if (!file) throw new AppError("NOT_FOUND", "The photo was not found. Upload it again.");
   if (!parser) {
-    throw new AppError(
-      "UNAVAILABLE",
-      "AI reading is not set up yet (AI_API_KEY and AI_INTAKE_MODEL). Type the pieces into the grid.",
-    );
+    throw new AppError("UNAVAILABLE", `${AI_READING_OFF} Type the pieces into the grid.`);
   }
   checkRateLimit(`ai-cutting:${ctx.user.id}`, 10, 60_000);
   const cells = await cellsOf(project.id, project.targetQuantity);

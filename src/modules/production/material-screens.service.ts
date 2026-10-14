@@ -1,9 +1,9 @@
 import { type MeasurementUnit, Prisma, type PurchaseOrderStatus } from "@prisma/client";
 
-import { aiTextOn } from "@/lib/ai-text";
 import { dateOnly, localDay } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
+import { aiOn } from "@/modules/ai/claude";
 import type { CompanyContext } from "@/modules/auth/context";
 import { OPEN_ORDER } from "@/modules/materials/material.service";
 import { batchMaterialPlan } from "@/modules/production/batch-orders.service";
@@ -178,7 +178,7 @@ export async function getNeedsForm(ctx: CompanyContext, projectId: string) {
     })),
     techPackNotes: p.techPackNotes ?? "",
     /** Whether "Write with AI" uses AI (otherwise it drafts from rules). */
-    aiOn: aiTextOn(),
+    aiOn: await aiOn(ctx.company.id),
   };
 }
 

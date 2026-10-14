@@ -185,6 +185,11 @@ model Company {
   noticeReads          NoticeRead[]
   payrollPaymentLines  PayrollPaymentLine[]
   employeeAssets       EmployeeAsset[]
+  aiSettings           AiSettings?
+  aiControlCells       AiControlCell[]
+  aiGrants             AiGrant[]
+  aiPermissionRequests AiPermissionRequest[]
+  aiDeletionRequests   AiDeletionRequest[]
 }
 
 /// A person who can log in. Global across companies.
@@ -279,6 +284,11 @@ model User {
   termsPublished      TermsVersion[]        @relation("TermsVersionPublishedBy")
   termsAgreed         TermsAcceptance[]     @relation("TermsAcceptedBy")
   oneTimeCodes        OneTimeCode[]
+  aiSwitched          AiSettings[]          @relation("AiSettingsChangedBy")
+  aiCellsSet          AiControlCell[]       @relation("AiControlCellSetBy")
+  aiGrantsGiven       AiGrant[]             @relation("AiGrantGivenBy")
+  aiRequestsAnswered  AiPermissionRequest[] @relation("AiPermissionRequestAnsweredBy")
+  aiDeletionsAnswered AiDeletionRequest[]   @relation("AiDeletionRequestAnsweredBy")
 }
 
 /// A signed-in device. `token` stores the SHA-256 hash of the cookie value, never
@@ -404,6 +414,8 @@ model AuditLog {
   after      Json?
   ipAddress  String?
   userAgent  String?
+  /// Done by the AI (Mehedi 2.0) rather than by the person in userId: shown with an "AI" mark.
+  byAi       Boolean     @default(false)
   createdAt  DateTime    @default(now())
 
   company Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
@@ -4162,6 +4174,145 @@ enum SystemRole {
   ACCOUNTS
 }
 
+// =============================================================================
+// AI Center (v6.2): the switch, Control (Do / Ask / Off), grants and requests
+// =============================================================================
+
+/// One company's AI: off until the owner turns it on (no AI call is made while
+/// it is off or paused), its Claude key, the model per task and the PIN asked
+/// for money, prices and Deletion requests.
+model AiSettings {
+  id            String    @id @default(cuid())
+  companyId     String    @unique
+  enabled       Boolean   @default(false)
+  /// When the switch was last turned on or off, and by whom.
+  changedAt     DateTime?
+  changedById   String?
+  /// Paused (from the Mehedi 2.0 page or the bot): no AI work until resumed.
+  pausedAt      DateTime?
+  /// The Claude API key, sealed with ENCRYPTION_KEY (lib/crypto.ts); the
+  /// server's AI_API_KEY is used while it is empty.
+  apiKeySealed  String?
+  /// The key's last four characters, to recognise it.
+  apiKeyHint    String?
+  apiKeySetAt   DateTime?
+  /// The owner's model per task (task key to model id, modules/ai/models.ts);
+  /// the system's choice for the rest.
+  models        Json?
+  /// Fable 5.1 may be chosen for a task (off until the owner allows it).
+  allowFable    Boolean   @default(false)
+  /// The PIN's hash (lib/auth/password.ts), asked for money, prices and deletions.
+  pinHash       String?
+  pinSetAt      DateTime?
+  /// The AI's name in this company, on everything it writes ("Mehedi 2.0").
+  assistantName String    @default("Mehedi 2.0")
+  updatedAt     DateTime  @updatedAt
+
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  changedBy User?   @relation("AiSettingsChangedBy", fields: [changedById], references: [id], onDelete: SetNull)
+}
+
+/// A cell of Control the owner set: an area ("b:<id>") or an action
+/// ("k:<permission or AI action>") of the tree in modules/ai/control-tree.ts.
+/// Cells without a row follow the nearest area above them, else Ask.
+model AiControlCell {
+  id          String      @id @default(cuid())
+  companyId   String
+  node        String
+  state       AiCellState
+  updatedById String?
+  updatedAt   DateTime    @updatedAt
+
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  updatedBy User?   @relation("AiControlCellSetBy", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@unique([companyId, node])
+}
+
+/// A cell opened to Do for a while: one task, today, one record (an order) or
+/// until a date. When it runs out the cell is back to its own setting.
+model AiGrant {
+  id          String       @id @default(cuid())
+  companyId   String
+  node        String
+  scope       AiGrantScope
+  recordType  String?
+  recordId    String?
+  recordLabel String?
+  expiresAt   DateTime?
+  /// A one-task grant is used once.
+  usedAt      DateTime?
+  /// Ended early by the owner.
+  endedAt     DateTime?
+  grantedById String?
+  /// The permission request it answered, or the preset it came from.
+  requestId   String?
+  note        String?
+  createdAt   DateTime     @default(now())
+
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  grantedBy User?   @relation("AiGrantGivenBy", fields: [grantedById], references: [id], onDelete: SetNull)
+
+  @@index([companyId, expiresAt])
+}
+
+/// The AI asking for a cell that is Off ("To work out costing I need
+/// Production > Costing. Will you give it?"), answered Only this task, For
+/// today, Always or No.
+model AiPermissionRequest {
+  id           String          @id @default(cuid())
+  companyId    String
+  node         String
+  /// What it was asked to do, and why it needs the cell.
+  task         String
+  why          String?
+  recordType   String?
+  recordId     String?
+  recordLabel  String?
+  channel      AiChannel       @default(ERP)
+  /// Who is asking: the AI's name ("Mehedi 2.0 (AI)").
+  askedBy      String
+  status       AiRequestStatus @default(PENDING)
+  answeredById String?
+  answeredAt   DateTime?
+  /// On No: the owner's reason; the AI adds what else it can do.
+  note         String?
+  createdAt    DateTime        @default(now())
+
+  company    Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  answeredBy User?   @relation("AiPermissionRequestAnsweredBy", fields: [answeredById], references: [id], onDelete: SetNull)
+
+  @@index([companyId, status, createdAt])
+}
+
+/// The AI never deletes: it asks the owner to, with what, why and what happens
+/// if it stays. An approved request is carried out in the owner's name.
+model AiDeletionRequest {
+  id           String            @id @default(cuid())
+  companyId    String
+  /// The record, as people know it ("Booking PO-2026-00012 (draft)").
+  what         String
+  recordType   String
+  recordId     String
+  /// The record's page, to open it.
+  href         String?
+  why          String
+  ifKept       String
+  channel      AiChannel         @default(ERP)
+  askedBy      String
+  status       AiDeletionStatus  @default(PENDING)
+  answeredById String?
+  answeredAt   DateTime?
+  note         String?
+  doneAt       DateTime?
+  createdAt    DateTime          @default(now())
+
+  company    Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  answeredBy User?   @relation("AiDeletionRequestAnsweredBy", fields: [answeredById], references: [id], onDelete: SetNull)
+
+  @@index([companyId, status, createdAt])
+}
+
 enum AppModule {
   DASHBOARD
   SALES
@@ -4180,6 +4331,40 @@ enum AppModule {
   REMINDERS
   SETTINGS
   BACKUPS
+  AI
+}
+
+/// What the AI may do in a cell of Control.
+enum AiCellState {
+  DO
+  ASK
+  OFF
+}
+
+enum AiGrantScope {
+  ONCE
+  TODAY
+  RECORD
+  UNTIL
+}
+
+enum AiChannel {
+  ERP
+  BOT
+}
+
+enum AiRequestStatus {
+  PENDING
+  ONCE
+  TODAY
+  ALWAYS
+  REFUSED
+}
+
+enum AiDeletionStatus {
+  PENDING
+  APPROVED
+  REJECTED
 }
 
 enum AuditAction {

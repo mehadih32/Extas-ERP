@@ -1,7 +1,6 @@
 import { type ContractKind, type MeasurementUnit, Prisma } from "@prisma/client";
 
 import { quantity as materialQuantity, UNIT_LABELS } from "@/components/materials/labels";
-import { aiText, aiTextOn } from "@/lib/ai-text";
 import { dateColumn, dateOnly, localDay } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
 import { formatAmount, formatDay } from "@/lib/format";
@@ -11,6 +10,8 @@ import { checkRateLimit } from "@/lib/rate-limit";
 import type { RequestMeta } from "@/lib/request-meta";
 import { lockRow } from "@/lib/row-lock";
 import { runTransaction } from "@/lib/transaction";
+import { aiText } from "@/modules/ai/ai-text";
+import { aiOn } from "@/modules/ai/claude";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { letterheadOf } from "@/modules/documents/builders";
@@ -278,9 +279,13 @@ function contractFacts(
  * The clauses for a contract: the rules' draft, reworded by AI when it is set
  * up and its answer is usable (the same clauses, plainer, numbers kept).
  */
-async function draftClauses(facts: ContractFacts): Promise<{ clauses: Clause[]; byAi: boolean }> {
+async function draftClauses(
+  ctx: CompanyContext,
+  facts: ContractFacts,
+): Promise<{ clauses: Clause[]; byAi: boolean }> {
   const rules = ruleClauses(facts);
-  const ai = await aiText({
+  const ai = await aiText(ctx.company.id, {
+    why: `Word the clauses of the ${facts.party} agreement for ${facts.batch.code}`,
     instructions:
       "You help a garment company in Bangladesh draft a supplier or factory agreement. " +
       "You are given the facts and a draft of its clauses. Reword each clause in plain, short " +
@@ -406,7 +411,7 @@ export async function createContract(
       `None of ${batch.code}'s styles is made at ${party.name}. Choose the factory on a style first.`,
     );
   }
-  const { clauses } = await draftClauses(contractFacts(ctx, batch, input.kind, party, scope));
+  const { clauses } = await draftClauses(ctx, contractFacts(ctx, batch, input.kind, party, scope));
   const contract = await runTransaction(async (tx) => {
     await lockRow(tx, "ProductionBatch", batch.id);
     const made = await tx.productionContract.create({
@@ -492,7 +497,7 @@ export type ContractData = Awaited<ReturnType<typeof getContract>>;
 export async function redraftContract(ctx: CompanyContext, contractId: string) {
   assertCanChange(ctx);
   const { contract, batch, scope } = await getContract(ctx, contractId);
-  return draftClauses(contractFacts(ctx, batch, contract.kind, contract.party, scope));
+  return draftClauses(ctx, contractFacts(ctx, batch, contract.kind, contract.party, scope));
 }
 
 const sameClauses = (a: Clause[], b: Clause[]) =>
@@ -852,7 +857,7 @@ export async function getContractScreen(ctx: CompanyContext, contractId: string)
           }
         : null,
     today: localDay(new Date(), tz),
-    aiOn: aiTextOn(),
+    aiOn: await aiOn(ctx.company.id),
     can: { edit: ctx.can("production.manage") },
   };
 }

@@ -383,6 +383,7 @@ const UNIT_WORDS: Record<string, string> = {
   GROSS: "gross",
   CONE: "cone",
   SET: "set",
+  LB: "lb",
 };
 
 const trim = (d: Prisma.Decimal, places: number) => {

@@ -37,6 +37,7 @@ import * as purchases from "@/modules/materials/purchase.service";
 import * as parties from "@/modules/parties/party.service";
 import * as batchOrders from "@/modules/production/batch-orders.service";
 import * as batches from "@/modules/production/batch.service";
+import * as bookings from "@/modules/production/booking.service";
 import { storeMaterialImage } from "@/modules/production/material-image.service";
 import * as needs from "@/modules/production/material-need.service";
 import * as materialScreens from "@/modules/production/material-screens.service";
@@ -367,11 +368,9 @@ run("Purchase orders for a master batch", () => {
       [env.label.code, "140", "140", [env.polo.code]],
     ]);
     const form = await materialScreens.getBatchOrdersForm(env.pm, env.batch.id);
-    expect(form.groups.map((g) => g.supplier?.name ?? null)).toEqual([
-      "Dhaka Trims House",
-      "Narayanganj Fabrics",
-      null,
-    ]);
+    // Fabric is listed apart, to book with a booking; the rest by usual supplier.
+    expect(form.fabric.map((m) => m.material.code)).toEqual([env.jersey.code, env.rib.code]);
+    expect(form.groups.map((g) => g.supplier?.name ?? null)).toEqual(["Dhaka Trims House", null]);
 
     // The store may not buy.
     await signInAs(env, "store");
@@ -381,16 +380,26 @@ run("Purchase orders for a master batch", () => {
     expect(!refused.ok && refused.error.code).toBe("FORBIDDEN");
 
     await signInAs(env, "production");
-    const made = data(
+    // A batch's fabric is booked with a booking, never on its purchase orders.
+    await expectAppError(
+      batchOrders.createBatchOrders(env.pm, env.batch.id, {
+        orders: [{ supplierId: env.mill.id, lines: [{ materialId: env.jersey.id, quantity: 60 }] }],
+      }),
+      "VALIDATION",
+    );
+    const booked = await bookings.createBooking(env.pm, {
+      source: "SUPPLIER_PO",
+      category: "KNITWEAR",
+      supplierId: env.mill.id,
+      batchId: env.batch.id,
+      lines: [
+        { materialId: env.jersey.id, quantity: 60, unitPrice: null },
+        { materialId: env.rib.id, quantity: 4.2, unitPrice: 520 },
+      ],
+    });
+    const trimsMade = data(
       await createBatchOrdersAction(env.batch.id, {
         orders: [
-          {
-            supplierId: env.mill.id,
-            lines: [
-              { materialId: env.jersey.id, quantity: 60, unitPrice: null },
-              { materialId: env.rib.id, quantity: 4.2, unitPrice: 520 },
-            ],
-          },
           {
             supplierId: env.trims.id,
             lines: [
@@ -402,6 +411,7 @@ run("Purchase orders for a master batch", () => {
       }),
       "orders",
     );
+    const made = { orders: [{ id: booked.orderId, number: booked.number }, ...trimsMade.orders] };
     expect(made.orders).toHaveLength(2);
     const fabric = await orders.getPurchaseOrder(env.pm, made.orders[0]!.id);
     expect(fabric.batch?.id).toBe(env.batch.id);
@@ -481,19 +491,22 @@ run("Purchase orders for a master batch", () => {
   it("asks for the agreed price on receive and keeps the shares when the order changes", async () => {
     const env = await setup();
     await giveNeeds(env);
+    const booked = await bookings.createBooking(env.pm, {
+      source: "SUPPLIER_PO",
+      category: "KNITWEAR",
+      supplierId: env.mill.id,
+      batchId: env.batch.id,
+      lines: [{ materialId: env.jersey.id, quantity: 60 }],
+    });
     const made = await batchOrders.createBatchOrders(env.pm, env.batch.id, {
       orders: [
-        {
-          supplierId: env.mill.id,
-          lines: [{ materialId: env.jersey.id, quantity: 60 }],
-        },
         {
           supplierId: env.trims.id,
           lines: [{ materialId: env.buttons.id, quantity: 570, unitPrice: 1.5 }],
         },
       ],
     });
-    const [fabricId, trimsId] = made.orders.map((o) => o.id);
+    const [fabricId, trimsId] = [booked.orderId, made.orders[0]!.id];
     const fabric = await orders.getPurchaseOrder(env.pm, fabricId!);
     const line = fabric.lines[0]!;
 

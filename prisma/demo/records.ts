@@ -40,6 +40,10 @@ export async function simulationRecords(scope: SimulationScope, db: Db = prisma)
     where: { companyId, OR: [...byBatch, byProject, { supplierId: { in: partyIds } }] },
     select: { id: true },
   });
+  const bookings = await db.booking.findMany({
+    where: { companyId, orderId: { in: ids(orders) } },
+    select: { id: true },
+  });
   const bills = await db.supplierBill.findMany({
     where: {
       companyId,
@@ -155,6 +159,7 @@ export async function simulationRecords(scope: SimulationScope, db: Db = prisma)
   return {
     projectIds,
     orderIds: ids(orders),
+    bookingIds: ids(bookings),
     billIds: ids(bills),
     paymentIds: ids(payments),
     issueIds: ids(issues),
@@ -177,6 +182,7 @@ export async function simulationRecords(scope: SimulationScope, db: Db = prisma)
 export const RECORD_NAMES: Record<keyof SimulationRecords, string> = {
   projectIds: "styles",
   orderIds: "purchase orders",
+  bookingIds: "bookings",
   billIds: "supplier bills",
   paymentIds: "payments",
   issueIds: "material issues",

@@ -172,6 +172,18 @@ export const productionHref = {
     `/production/projects/${encodeURIComponent(projectId)}/materials`,
   techPack: (projectId: string) =>
     `/api/production/projects/${encodeURIComponent(projectId)}/tech-pack`,
+  /** Fabric and trims bookings (supplier POs and market purchases), and their PDF. */
+  bookings: (filter: { batchId?: string } = {}) =>
+    filter.batchId
+      ? `/production/bookings?batch=${encodeURIComponent(filter.batchId)}`
+      : "/production/bookings",
+  booking: (id: string) => `/production/bookings/${encodeURIComponent(id)}`,
+  newBooking: (batchId?: string) =>
+    batchId
+      ? `/production/bookings/new?batch=${encodeURIComponent(batchId)}`
+      : "/production/bookings/new",
+  editBooking: (id: string) => `/production/bookings/${encodeURIComponent(id)}/edit`,
+  bookingPdf: (id: string) => `/api/production/bookings/${encodeURIComponent(id)}/pdf`,
   /** "Make purchase orders" for a batch's materials. */
   batchOrders: (batchId: string) => `/production/batches/${encodeURIComponent(batchId)}/orders/new`,
   /** A batch's fabric, accessories or factory (CM) agreement, and its PDF. */

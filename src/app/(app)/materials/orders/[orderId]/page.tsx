@@ -10,6 +10,7 @@ import { materialsHref, perUnit, quantity } from "@/components/materials/labels"
 import { MaterialsNoAccess } from "@/components/materials/no-access";
 import { OrderActions } from "@/components/materials/order-actions";
 import { BillBadge } from "@/components/production/badges";
+import { productionHref } from "@/components/production/labels";
 import { MaterialThumb } from "@/components/production/material-thumb";
 import { Fact, Panel, RecordHeader, Totals } from "@/components/sales/detail-bits";
 import { money } from "@/components/sales/labels";
@@ -297,6 +298,16 @@ export default async function OrderPage({
           </Panel>
           <Panel title="Details" id="details-heading">
             <dl className="mt-4 grid gap-4">
+              {o.bookingId && (
+                <Fact label="Booking">
+                  <Link href={productionHref.booking(o.bookingId)} className={linkClass}>
+                    Open the booking
+                  </Link>
+                  <span className="mt-0.5 block text-[0.8125rem] text-muted-foreground">
+                    Its specification, collar and cuff matrix, terms and PDF.
+                  </span>
+                </Fact>
+              )}
               {o.batch && (
                 <Fact label="For the master batch">
                   {o.batch.href ? (

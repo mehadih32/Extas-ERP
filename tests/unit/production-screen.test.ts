@@ -120,6 +120,7 @@ describe("Production in the menu, by role", () => {
     expect(tabs(manager)).toEqual([
       "Overview",
       "Batches",
+      "Bookings",
       "Projects",
       "Deliveries",
       "Bills",
@@ -131,7 +132,14 @@ describe("Production in the menu, by role", () => {
   it("keeps bills, with their costs, from the store team", () => {
     const store = role("WAREHOUSE_TEAM");
     expect(inMenu(store)).toBe(true);
-    expect(tabs(store)).toEqual(["Overview", "Batches", "Projects", "Deliveries", "Fault log"]);
+    expect(tabs(store)).toEqual([
+      "Overview",
+      "Batches",
+      "Bookings",
+      "Projects",
+      "Deliveries",
+      "Fault log",
+    ]);
     // Someone who only receives goods lands on Deliveries.
     expect(tabs(["production.stock_intake"])).toEqual(["Deliveries"]);
   });
@@ -140,6 +148,7 @@ describe("Production in the menu, by role", () => {
     expect(tabs(role("ACCOUNTS"))).toEqual([
       "Overview",
       "Batches",
+      "Bookings",
       "Projects",
       "Deliveries",
       "Bills",

@@ -101,6 +101,7 @@ model Company {
   badStockEntries      BadStockEntry[]
   rawMaterialStocks    RawMaterialStock[]
   purchaseOrders       PurchaseOrder[]
+  bookings             Booking[]
   materialIssues       MaterialIssue[]
   materialChallans     MaterialChallan[]
   purchaseReturns      PurchaseReturn[]
@@ -902,6 +903,8 @@ model PurchaseOrder {
   lines     PurchaseOrderLine[]
   bills     SupplierBill[]
   reminders Reminder[]
+  /// Written as a booking (Production > Bookings): its source, garment family, terms and collar matrix.
+  booking   Booking?
 
   @@unique([companyId, number])
   @@index([companyId, status, expectedDate])
@@ -922,6 +925,9 @@ model PurchaseOrderLine {
   priceLater    Boolean @default(false)
   /// A sketch or photo for the supplier (the label artwork, the button).
   imageId       String?
+  /// On a booking: the line's specification (GSM, DIA, width, construction, yarn count,
+  /// colour...) and its role (fabric, collar, cuff, trim). See production/booking-schemas.ts.
+  specs         Json?
 
   order       PurchaseOrder            @relation(fields: [orderId], references: [id], onDelete: Cascade)
   rawMaterial RawMaterial              @relation(fields: [rawMaterialId], references: [id])
@@ -950,6 +956,93 @@ model PurchaseOrderLineShare {
 
   @@index([lineId])
   @@index([projectId])
+}
+
+/// A booking: a purchase order written the way the garment trade books fabric and trims,
+/// made on its own or for a master batch (attached through the order's batch). Its lines
+/// carry their specification (PurchaseOrderLine.specs); the goods arrive on the order as
+/// on any other (central receive, supplier bills). One booking per order.
+model Booking {
+  id                 String           @id @default(cuid())
+  companyId          String
+  orderId            String           @unique
+  source             BookingSource
+  category           GarmentCategory
+  /// What it is for, printed under the title ("Winter polo, five brands").
+  title              String?
+  /// The style or buyer reference it is booked for ("PQ-2201 Polo").
+  styleRef           String?
+  /// Garment pieces the booking is for (the fabric and collar sums start from it).
+  garmentPieces      Int?
+  /// Where the goods are to be delivered.
+  deliveryPlace      String?
+  /// Payment terms as printed (no money moves on a booking).
+  paymentTerms       String?
+  termsLanguage      DocumentLanguage @default(EN)
+  /// The terms and conditions as printed, one condition per line.
+  terms              String
+  collarStyle        CollarStyle?
+  /// Collars and cuffs booked over the garment pieces, in percent (3 = 3% extra).
+  collarExtraPercent Decimal          @default(0) @db.Decimal(5, 2)
+  collarNotes        String?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  company       Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  order         PurchaseOrder         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  collarSizes   BookingCollarSize[]
+  collarColours BookingCollarColour[]
+
+  @@index([companyId, source, category])
+}
+
+/// A size group of a booking's collar and cuff matrix ("S-M": collar 42 x 9 cm, cuff 38 x 3.5 cm).
+model BookingCollarSize {
+  id           String   @id @default(cuid())
+  bookingId    String
+  label        String
+  sortOrder    Int
+  collarLength Decimal  @db.Decimal(6, 2) // cm
+  collarWidth  Decimal  @db.Decimal(6, 2) // cm
+  cuffLength   Decimal? @db.Decimal(6, 2) // cm; none when the garment has no knit cuff
+  cuffWidth    Decimal? @db.Decimal(6, 2)
+
+  booking    Booking                 @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  quantities BookingCollarQuantity[]
+
+  @@index([bookingId])
+}
+
+/// A garment colour of a booking's collar and cuff matrix, with the collar's own colours.
+model BookingCollarColour {
+  id            String  @id @default(cuid())
+  bookingId     String
+  garmentColour String
+  collarColour  String
+  /// The tipping stripe's colour (tipping collars).
+  tippingColour String?
+  sortOrder     Int
+
+  booking    Booking                 @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  quantities BookingCollarQuantity[]
+
+  @@index([bookingId])
+}
+
+/// One cell of the collar and cuff matrix: the garment pieces of a colour and size group,
+/// and the sets booked for them (the pieces plus the extra, rounded up).
+model BookingCollarQuantity {
+  id       String @id @default(cuid())
+  colourId String
+  sizeId   String
+  pieces   Int
+  sets     Int
+
+  colour BookingCollarColour @relation(fields: [colourId], references: [id], onDelete: Cascade)
+  size   BookingCollarSize   @relation(fields: [sizeId], references: [id], onDelete: Cascade)
+
+  @@unique([colourId, sizeId])
+  @@index([sizeId])
 }
 
 /// Raw materials bought on a supplier bill and received into the bill's store.
@@ -4086,6 +4179,7 @@ enum MeasurementUnit {
   GROSS
   CONE
   SET
+  LB
 }
 
 enum RawMaterialMovementType {
@@ -4100,6 +4194,37 @@ enum RawMaterialMovementType {
   WASTAGE
   TRANSFER_OUT
   TRANSFER_IN
+}
+
+/// Where a booking's goods come from.
+enum BookingSource {
+  /// Ordered from a mill or trims supplier, made to the booking's specification.
+  SUPPLIER_PO
+  /// Ready stock bought on the open market (Islampur), checked at the shop.
+  MARKET_PURCHASE
+}
+
+/// The garment family a booking is for: it sets the fabric unit, the fabric's fields and the trims.
+enum GarmentCategory {
+  KNITWEAR
+  WOVEN
+  OUTERWEAR
+  SWEATER
+  OTHER
+}
+
+enum CollarStyle {
+  SOLID
+  JACQUARD_RIB
+  AMBUSH_RIB
+  TIPPING
+  HONEYCOMB
+}
+
+/// The language a printed document's terms are in.
+enum DocumentLanguage {
+  EN
+  BN
 }
 
 enum PurchaseOrderStatus {

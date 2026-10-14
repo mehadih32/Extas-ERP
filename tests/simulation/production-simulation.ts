@@ -13,7 +13,7 @@ import * as materials from "@/modules/materials/material.service";
 import { getPartyBalance } from "@/modules/parties/ledger.service";
 import * as batchIssue from "@/modules/production/batch-issue.service";
 import * as batchMoney from "@/modules/production/batch-money.service";
-import * as batchOrders from "@/modules/production/batch-orders.service";
+import * as bookings from "@/modules/production/booking.service";
 import * as batches from "@/modules/production/batch.service";
 import * as contracts from "@/modules/production/contract.service";
 import * as costs from "@/modules/production/cost.service";
@@ -385,15 +385,14 @@ export async function runSimulation(
     `Signed the factory CM agreement: ${SIMULATION_BRANDS.map((b) => `${b.brand} ${bdt(b.cmRate)}`).join(", ")} a piece.`,
   );
 
-  // 5. The fabric order: 1,150 kg at 640 a kg.
-  const ordered = await batchOrders.createBatchOrders(ctx, batch.id, {
-    orders: [
-      {
-        supplierId: mill.id,
-        expectedDate: addDays(today, 10),
-        lines: [{ materialId: fabric.id, quantity: FABRIC_ORDERED_KG, unitPrice: FABRIC_PRICE }],
-      },
-    ],
+  // 5. The fabric booking: 1,150 kg at 640 a kg (a batch's fabric is always booked).
+  const booked = await bookings.createBooking(ctx, {
+    source: "SUPPLIER_PO",
+    category: "KNITWEAR",
+    supplierId: mill.id,
+    batchId: batch.id,
+    expectedDate: addDays(today, 10),
+    lines: [{ materialId: fabric.id, quantity: FABRIC_ORDERED_KG, unitPrice: FABRIC_PRICE }],
   });
   const orderId = (
     await prisma.purchaseOrder.findFirstOrThrow({
@@ -402,7 +401,7 @@ export async function runSimulation(
     })
   ).id;
   step(
-    `Ordered ${pcs(FABRIC_ORDERED_KG)} kg of fabric from ${mill.name} at ${bdt(FABRIC_PRICE)} a kg (${ordered.orders.length} order).`,
+    `Booked ${pcs(FABRIC_ORDERED_KG)} kg of fabric from ${mill.name} at ${bdt(FABRIC_PRICE)} a kg (booking ${booked.number}).`,
   );
 
   // 6. The advance: 1,00,000 to the factory for the batch, from the bank.
@@ -605,6 +604,10 @@ async function linked(companyId: string, batchId: string) {
     where: { companyId, OR: [{ batchId }, byProject] },
     select: { id: true },
   });
+  const bookings = await prisma.booking.findMany({
+    where: { companyId, orderId: { in: ids(orders) } },
+    select: { id: true },
+  });
   const bills = await prisma.supplierBill.findMany({
     where: {
       companyId,
@@ -689,6 +692,7 @@ async function linked(companyId: string, batchId: string) {
   return {
     projectIds,
     orderIds: ids(orders),
+    bookingIds: ids(bookings),
     billIds: ids(bills),
     paymentIds: ids(payments),
     issueIds: ids(issues),

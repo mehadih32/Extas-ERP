@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { SectionError } from "@/components/dashboard/section-error";
+import { FormAlert } from "@/components/forms/field";
 import { BatchForm } from "@/components/production/batch-form";
 import { ProductionNoAccess } from "@/components/production/no-access";
 import { BackLink } from "@/components/settings/back-link";
@@ -34,6 +35,12 @@ export default async function NewBatchPage() {
           One umbrella for the styles made together. Create it, then add each style with its colours
           and sizes and its target price.
         </p>
+      </div>
+      <div className="max-w-2xl">
+        <FormAlert tone="note">
+          The batch&apos;s fabric is booked with a booking, not typed in here. Once the batch has
+          its styles, use &quot;Book fabric&quot; or &quot;Attach a booking&quot; on its page.
+        </FormAlert>
       </div>
       <BatchForm form={result.data} />
     </div>

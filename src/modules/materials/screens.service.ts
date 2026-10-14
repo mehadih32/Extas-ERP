@@ -636,6 +636,8 @@ export async function getOrderScreen(ctx: CompanyContext, orderId: string) {
             href: access.openProject ? href.batch(o.batch.id) : null,
           }
         : null,
+      /** The booking this order is (its items change on the booking), or null. */
+      bookingId: o.bookingId,
       /** Lines still priced at receive. */
       pricesLater: o.lines.filter((l) => l.priceLater).length,
       bills: o.bills.map((b) => ({

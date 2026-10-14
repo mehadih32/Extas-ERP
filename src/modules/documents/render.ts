@@ -1,5 +1,7 @@
 import { randomBytes } from "node:crypto";
 
+import qrcode from "qrcode-generator";
+
 import {
   collectPdf,
   createPdf,
@@ -36,12 +38,20 @@ import {
  * plain white paper so it prints well. Text is placed line by line (cut with "…"
  * when it cannot wrap), tables repeat their header on every page, and nothing is
  * ever drawn past the margins.
+ *
+ * A document meant to be bound (`binding`, a booking spiral-bound for the
+ * supplier) keeps a wider margin on the left for the holes on every page; it
+ * can carry a QR code beside its title (`qr`) and a line for initials at the
+ * foot of every page (`initials`), so each loose page is signed for.
  */
 
 const PAGE = { width: 595.28, height: 841.89 }; // A4 in points
 const MARGIN = { top: 36, bottom: 60, left: 46, right: 46 };
-const WIDTH = PAGE.width - MARGIN.left - MARGIN.right;
+/** The extra left margin of a bound document: room for the spiral's holes (about 8 mm). */
+const BINDING_GUTTER = 22;
 const BOTTOM = PAGE.height - MARGIN.bottom;
+/** The QR code beside the title: a square this wide, with its caption under it. */
+const QR_SIZE = 62;
 
 const SERIF_BOLD = "Times-Bold";
 const SANS = "Helvetica";
@@ -104,6 +114,9 @@ class Writer {
   private y = MARGIN.top;
   private readonly primary: string;
   private readonly accent: string;
+  /** Where the page's text starts (further in on a bound document) and how wide it runs. */
+  private readonly left: number;
+  private readonly width: number;
   /** Row pictures opened by pdfkit, by file id (null: it could not be read). */
   private readonly opened = new Map<string, OpenedImage | null>();
 
@@ -116,6 +129,8 @@ class Writer {
   ) {
     this.primary = safeHex(model.letterhead.primaryColor, DEFAULT_PRIMARY);
     this.accent = safeHex(model.letterhead.accentColor, DEFAULT_ACCENT);
+    this.left = MARGIN.left + (model.binding ? BINDING_GUTTER : 0);
+    this.width = PAGE.width - this.left - MARGIN.right;
   }
 
   // --- Primitives -----------------------------------------------------------
@@ -133,7 +148,7 @@ class Writer {
     return drawn;
   }
 
-  private rule(y: number, color: string, weight: number, x = MARGIN.left, length = WIDTH) {
+  private rule(y: number, color: string, weight: number, x = this.left, length = this.width) {
     this.doc
       .moveTo(x, y)
       .lineTo(x + length, y)
@@ -178,8 +193,8 @@ class Writer {
   letterhead() {
     const { letterhead } = this.model;
     const top = MARGIN.top;
-    const nameColumn = WIDTH * 0.6;
-    let nameX = MARGIN.left;
+    const nameColumn = this.width * 0.6;
+    let nameX = this.left;
     let logoHeight = 0;
 
     if (this.logo) {
@@ -191,17 +206,17 @@ class Writer {
       const scale = Math.min(LOGO_BOX.width / width, LOGO_BOX.height / height);
       const drawnWidth = width * scale;
       logoHeight = height * scale;
-      (this.doc as unknown as PdfImages).image(image, MARGIN.left, top, {
+      (this.doc as unknown as PdfImages).image(image, this.left, top, {
         width: drawnWidth,
         height: logoHeight,
       });
-      nameX = MARGIN.left + drawnWidth + 14;
+      nameX = this.left + drawnWidth + 14;
     }
 
     const showLegal = Boolean(letterhead.legalName && letterhead.legalName !== letterhead.name);
     const nameBlock = showLegal ? 34 : 22;
     const nameTop = top + Math.max(0, (logoHeight - nameBlock) / 2);
-    const nameWidth = MARGIN.left + nameColumn - nameX;
+    const nameWidth = this.left + nameColumn - nameX;
     this.line(letterhead.name, nameX, nameTop, nameWidth, {
       font: SERIF_BOLD,
       size: 20,
@@ -216,8 +231,8 @@ class Writer {
       });
     }
 
-    const contactX = MARGIN.left + nameColumn + 10;
-    const contactWidth = WIDTH - nameColumn - 10;
+    const contactX = this.left + nameColumn + 10;
+    const contactWidth = this.width - nameColumn - 10;
     let contactY = top + 2;
     const contactLines = (texts: string[]) => {
       for (const contact of texts) {
@@ -243,7 +258,7 @@ class Writer {
     const bottom = Math.max(top + logoHeight, nameTop + nameBlock, contactY);
     const ruleY = bottom + 9;
     this.rule(ruleY, this.primary, 1.3);
-    this.rule(ruleY + 3.4, this.accent, 0.8, MARGIN.left, 64);
+    this.rule(ruleY + 3.4, this.accent, 0.8, this.left, 64);
     this.y = ruleY + 22;
   }
 
@@ -251,13 +266,13 @@ class Writer {
   private continuationHeader() {
     const top = MARGIN.top;
     const { letterhead, title, reference } = this.model;
-    this.line(letterhead.name, MARGIN.left, top, WIDTH * 0.55, {
+    this.line(letterhead.name, this.left, top, this.width * 0.55, {
       font: SERIF_BOLD,
       size: 11.5,
       color: this.primary,
     });
     const right = [title, reference].filter(Boolean).join(" · ");
-    this.line(right, MARGIN.left + WIDTH * 0.55, top + 2.5, WIDTH * 0.45, {
+    this.line(right, this.left + this.width * 0.55, top + 2.5, this.width * 0.45, {
       font: SANS,
       size: 7.5,
       color: MUTED,
@@ -276,7 +291,7 @@ class Writer {
       this.doc.switchToPage(i);
       this.rule(y - 8, HAIRLINE, 0.6);
       if (type === "LETTERHEAD") {
-        this.line(letterhead.footer, MARGIN.left, y, WIDTH, {
+        this.line(letterhead.footer, this.left, y, this.width, {
           font: SANS,
           size: 7.2,
           color: MUTED,
@@ -285,7 +300,7 @@ class Writer {
         });
         continue;
       }
-      this.line(letterhead.footer, MARGIN.left, y, WIDTH * 0.62, {
+      this.line(letterhead.footer, this.left, y, this.width * 0.62, {
         font: SANS,
         size: 7,
         color: MUTED,
@@ -293,12 +308,24 @@ class Writer {
       const page = range.count > 1 ? `Page ${i - range.start + 1} of ${range.count}` : "";
       this.line(
         [reference, page].filter(Boolean).join(" · "),
-        MARGIN.left + WIDTH * 0.62,
+        this.left + this.width * 0.62,
         y,
-        WIDTH * 0.38,
+        this.width * 0.38,
         { font: SANS, size: 7, color: MUTED, align: "right" },
       );
+      if (this.model.initials) this.initialsLine(this.model.initials, y + 13);
     }
+  }
+
+  /** "Supplier's initials ________" at the foot of a page, on the right. */
+  private initialsLine(label: string, y: number) {
+    const style = { font: SANS, size: 7, color: MUTED };
+    const text = pdfText(label);
+    const width = textWidth(this.doc, text, style);
+    const lineLength = 110;
+    const x = this.left + this.width - lineLength;
+    this.line(text, x - width - 6, y, width + 2, { ...style, align: "right" });
+    this.rule(y + 8, MUTED, 0.5, x, lineLength);
   }
 
   /** A faint diagonal VOID / CANCELLED across every page. */
@@ -325,9 +352,12 @@ class Writer {
   // --- Title, details and parties --------------------------------------------
 
   titleBlock() {
-    const { title, subtitle, stamp, meta } = this.model;
+    const { title, subtitle, stamp, meta, qr } = this.model;
     const top = this.y;
-    const leftWidth = WIDTH * 0.56;
+    // A QR code takes the right-hand edge; the title and the details share the rest.
+    const qrRoom = qr ? QR_SIZE + 14 : 0;
+    const usable = this.width - qrRoom;
+    const leftWidth = usable * 0.56;
 
     const stampText = stamp ? pdfText(stamp.text.toUpperCase()) : "";
     const badgeWidth = stamp
@@ -350,7 +380,7 @@ class Writer {
     }
     let titleWidth = 0;
     lines.forEach((text, i) => {
-      const drawn = this.line(text, MARGIN.left, top + (19 - size) * 0.55 + i * 19, room, {
+      const drawn = this.line(text, this.left, top + (19 - size) * 0.55 + i * 19, room, {
         ...styleAt(size),
         color: this.primary,
       });
@@ -358,7 +388,7 @@ class Writer {
     });
     if (stamp) {
       const color = stamp.tone === "danger" ? this.accent : this.primary;
-      const x = MARGIN.left + titleWidth + 12;
+      const x = this.left + titleWidth + 12;
       this.doc
         .roundedRect(x, top + 2.5, badgeWidth, 15, 2)
         .lineWidth(0.9)
@@ -374,13 +404,13 @@ class Writer {
     let leftY = top + 25 + (lines.length - 1) * 19;
     if (subtitle) {
       for (const text of this.wrap(subtitle, leftWidth, SANS, 9.5).slice(0, 2)) {
-        this.line(text, MARGIN.left, leftY, leftWidth, { font: SANS, size: 9.5 });
+        this.line(text, this.left, leftY, leftWidth, { font: SANS, size: 9.5 });
         leftY += 12.5;
       }
     }
 
-    const boxX = MARGIN.left + WIDTH * 0.58;
-    const boxWidth = WIDTH * 0.42;
+    const boxX = this.left + usable * 0.58;
+    const boxWidth = usable * 0.42;
     const labelWidth = boxWidth * 0.42;
     let rightY = top + 2;
     for (const { label, value } of meta) {
@@ -392,7 +422,48 @@ class Writer {
       });
       rightY += 13.5;
     }
-    this.y = Math.max(leftY, rightY) + 12;
+    let qrBottom = 0;
+    if (qr) qrBottom = this.qrCode(qr, this.left + this.width - QR_SIZE, top);
+    this.y = Math.max(leftY, rightY, qrBottom) + 12;
+  }
+
+  /**
+   * A QR code of `qr.data` in a QR_SIZE square at (x, y), dark modules in ink on
+   * white with the quiet zone inside the square, and its caption under it.
+   * Returns where it ends. Data too long for a QR code is left out.
+   */
+  private qrCode(qr: NonNullable<PrintDocument["qr"]>, x: number, y: number): number {
+    let code: ReturnType<typeof qrcode>;
+    try {
+      code = qrcode(0, "M");
+      code.addData(qr.data);
+      code.make();
+    } catch {
+      return 0;
+    }
+    const count = code.getModuleCount();
+    const quiet = 2; // modules of white around it
+    const cell = QR_SIZE / (count + quiet * 2);
+    this.doc.rect(x, y, QR_SIZE, QR_SIZE).fill(WHITE);
+    this.doc.fillColor(INK);
+    for (let row = 0; row < count; row++) {
+      for (let col = 0; col < count; col++) {
+        if (!code.isDark(row, col)) continue;
+        // A hair wider than the cell, so neighbouring modules meet without seams.
+        this.doc
+          .rect(x + (col + quiet) * cell, y + (row + quiet) * cell, cell + 0.08, cell + 0.08)
+          .fill(INK);
+      }
+    }
+    this.doc.rect(x, y, QR_SIZE, QR_SIZE).lineWidth(0.5).strokeColor(HAIRLINE).stroke();
+    if (!qr.caption) return y + QR_SIZE;
+    this.line(qr.caption, x - 10, y + QR_SIZE + 3, QR_SIZE + 20, {
+      font: SANS,
+      size: 6,
+      color: MUTED,
+      align: "center",
+    });
+    return y + QR_SIZE + 11;
   }
 
   parties() {
@@ -401,7 +472,7 @@ class Writer {
     const gap = 12;
     // At most half the page wide, so a single address does not stretch across.
     const columns = Math.max(2, parties.length);
-    const width = (WIDTH - gap * (columns - 1)) / columns;
+    const width = (this.width - gap * (columns - 1)) / columns;
     const inner = width - 20;
     const boxes = parties.map((p) => {
       const lines: Array<{ text: string; strong: boolean }> = [];
@@ -418,7 +489,7 @@ class Writer {
       30;
     this.ensure(height);
     boxes.forEach((box, i) => {
-      const x = MARGIN.left + i * (width + gap);
+      const x = this.left + i * (width + gap);
       this.doc.roundedRect(x, this.y, width, height, 3).fill(tint(this.primary, 0.95));
       this.doc.rect(x, this.y, 2, height).fill(this.primary);
       this.label(box.heading, x + 12, this.y + 9, inner);
@@ -460,15 +531,42 @@ class Writer {
   }
 
   private sectionTitle(title: string) {
-    this.label(title, MARGIN.left, this.y, WIDTH, this.primary);
+    this.label(title, this.left, this.y, this.width, this.primary);
     this.y += 13;
   }
 
-  private columnBoxes(columns: Column[]): ColumnBox[] {
+  private columnBoxes(columns: Column[], rows: Row[] = []): ColumnBox[] {
     const total = columns.reduce((sum, c) => sum + (c.weight ?? 1), 0);
-    let x = MARGIN.left;
-    return columns.map((c) => {
-      const width = ((c.weight ?? 1) / total) * WIDTH;
+    let widths = columns.map((c) => ((c.weight ?? 1) / total) * this.width);
+    // A right-aligned column (quantities, rates, amounts) prints on one line: when its
+    // longest figure or its heading would be cut, it takes the room it needs from the
+    // text columns, so no figure ever ends in "…". Tables that already fit are unchanged.
+    const need = columns.map((c, i) => {
+      if (c.align !== "right") return 0;
+      const widest = Math.max(
+        textWidth(this.doc, c.label, { font: SANS_BOLD, size: 7.4, spacing: 0.3 }),
+        ...rows.map((r) =>
+          textWidth(this.doc, r.cells[i] ?? "", {
+            font: (r.style ?? "normal") === "normal" ? SANS : SANS_BOLD,
+            size: TABLE_SIZE,
+          }),
+        ),
+      );
+      return widest + 2 * CELL_PAD + 1;
+    });
+    const short = widths.reduce((sum, w, i) => sum + Math.max(0, need[i]! - w), 0);
+    const flexible = widths.reduce(
+      (sum, w, i) => (columns[i]!.align === "right" ? sum : sum + w),
+      0,
+    );
+    if (short > 0 && flexible > 2 * short) {
+      widths = widths.map((w, i) =>
+        columns[i]!.align === "right" ? Math.max(w, need[i]!) : w - short * (w / flexible),
+      );
+    }
+    let x = this.left;
+    return columns.map((c, i) => {
+      const width = widths[i]!;
       const box = { x, width, align: c.align ?? "left", check: c.check ?? false };
       x += width;
       return box;
@@ -476,7 +574,7 @@ class Writer {
   }
 
   private tableHeader(columns: Column[], boxes: ColumnBox[]) {
-    this.doc.rect(MARGIN.left, this.y, WIDTH, TABLE_HEADER).fill(this.primary);
+    this.doc.rect(this.left, this.y, this.width, TABLE_HEADER).fill(this.primary);
     columns.forEach((c, i) => {
       const box = boxes[i]!;
       this.line(c.label, box.x + CELL_PAD, this.y + 5.6, box.width - 2 * CELL_PAD, {
@@ -549,7 +647,7 @@ class Writer {
   }
 
   private table(block: Extract<Block, { kind: "table" }>) {
-    const boxes = this.columnBoxes(block.columns);
+    const boxes = this.columnBoxes(block.columns, block.rows);
     // Details go under the widest left-aligned column (the description).
     let detailColumn = 0;
     boxes.forEach((b, i) => {
@@ -562,7 +660,7 @@ class Writer {
     this.tableHeader(block.columns, boxes);
 
     if (block.rows.length === 0) {
-      this.line(block.empty ?? "Nothing to show.", MARGIN.left + CELL_PAD, this.y + 6, WIDTH, {
+      this.line(block.empty ?? "Nothing to show.", this.left + CELL_PAD, this.y + 6, this.width, {
         font: SANS_ITALIC,
         size: TABLE_SIZE,
         color: MUTED,
@@ -578,7 +676,7 @@ class Writer {
       const layout = layouts[index]!;
       if (this.ensure(layout.height)) {
         if (block.title) {
-          this.line(`${block.title} (continued)`, MARGIN.left, this.y, WIDTH, {
+          this.line(`${block.title} (continued)`, this.left, this.y, this.width, {
             font: SANS,
             size: 7.4,
             color: MUTED,
@@ -605,7 +703,7 @@ class Writer {
   ) {
     const style = row.style ?? "normal";
     const top = this.y;
-    if (shaded) this.doc.rect(MARGIN.left, top, WIDTH, layout.height).fill(ZEBRA);
+    if (shaded) this.doc.rect(this.left, top, this.width, layout.height).fill(ZEBRA);
     if (style !== "normal") {
       this.rule(
         top + 0.4,
@@ -688,9 +786,11 @@ class Writer {
 
   private totals(block: Extract<Block, { kind: "totals" }>) {
     const width = 236;
-    const x = MARGIN.left + WIDTH - width;
+    const x = this.left + this.width - width;
     const height = block.rows.reduce((h, r) => h + (r.strong ? 19 : 14.5), 0) + 4;
-    const words = block.words ? this.wrap(`In words: ${block.words}`, WIDTH, SANS_ITALIC, 8) : [];
+    const words = block.words
+      ? this.wrap(`In words: ${block.words}`, this.width, SANS_ITALIC, 8)
+      : [];
     this.ensure(height + words.length * 11 + 6);
     let y = this.y;
     for (const r of block.rows) {
@@ -717,7 +817,7 @@ class Writer {
     }
     this.y = y + 4;
     for (const text of words) {
-      this.line(text, MARGIN.left, this.y, WIDTH, { font: SANS_ITALIC, size: 8 });
+      this.line(text, this.left, this.y, this.width, { font: SANS_ITALIC, size: 8 });
       this.y += 11;
     }
     this.y += 12;
@@ -726,12 +826,12 @@ class Writer {
   private figures(block: Extract<Block, { kind: "figures" }>) {
     const perRow = Math.min(4, block.figures.length);
     const gap = 8;
-    const width = (WIDTH - gap * (perRow - 1)) / perRow;
+    const width = (this.width - gap * (perRow - 1)) / perRow;
     const height = 54;
     for (let i = 0; i < block.figures.length; i += perRow) {
       this.ensure(height + gap);
       block.figures.slice(i, i + perRow).forEach((f, j) => {
-        const x = MARGIN.left + j * (width + gap);
+        const x = this.left + j * (width + gap);
         this.doc.roundedRect(x, this.y, width, height, 3).fill(tint(this.primary, 0.94));
         this.label(f.label, x + 9, this.y + 9, width - 18);
         this.line(f.value, x + 9, this.y + 21, width - 18, { font: SERIF_BOLD, size: 13.5 });
@@ -749,7 +849,7 @@ class Writer {
   }
 
   private text(block: Extract<Block, { kind: "text" }>) {
-    const lines = block.paragraphs.flatMap((p) => this.wrap(p, WIDTH, SANS, 8.4));
+    const lines = block.paragraphs.flatMap((p) => this.wrap(p, this.width, SANS, 8.4));
     this.ensure(13 + Math.min(lines.length, 3) * 11.8);
     this.sectionTitle(block.title);
     for (const text of lines) {
@@ -758,7 +858,7 @@ class Writer {
         continue;
       }
       this.ensure(11.8);
-      this.line(text, MARGIN.left, this.y, WIDTH, { font: SANS, size: 8.4 });
+      this.line(text, this.left, this.y, this.width, { font: SANS, size: 8.4 });
       this.y += 11.8;
     }
     this.y += 10;
@@ -766,8 +866,8 @@ class Writer {
 
   /** "• Collar & cuff: the golden colour should be a little brighter", wrapped under the bullet. */
   private list(block: Extract<Block, { kind: "list" }>) {
-    const indent = 12;
-    const width = WIDTH - indent;
+    const indent = block.numbered ? 19 : 12;
+    const width = this.width - indent;
     const items = block.items.map((item) => {
       const label = item.label ? pdfText(`${item.label}:`) : "";
       const labelWidth = label ? textWidth(this.doc, label, { font: SANS_BOLD, size: 8.4 }) + 4 : 0;
@@ -790,15 +890,24 @@ class Writer {
     });
     this.ensure(13 + 11.8 * Math.min(2, items[0]?.lines.length ?? 1));
     this.sectionTitle(block.title);
-    for (const item of items) {
+    for (const [n, item] of items.entries()) {
       this.ensure(item.lines.length * 11.8);
-      this.line("•", MARGIN.left + 2, this.y, 8, {
-        font: SANS_BOLD,
-        size: 8.4,
-        color: this.primary,
-      });
+      if (block.numbered) {
+        this.line(`${n + 1}.`, this.left, this.y, indent - 5, {
+          font: SANS_BOLD,
+          size: 8.4,
+          color: this.primary,
+          align: "right",
+        });
+      } else {
+        this.line("•", this.left + 2, this.y, 8, {
+          font: SANS_BOLD,
+          size: 8.4,
+          color: this.primary,
+        });
+      }
       item.lines.forEach((text, i) => {
-        let x = MARGIN.left + indent;
+        let x = this.left + indent;
         let room = width;
         if (i === 0 && item.label) {
           this.line(item.label, x, this.y, width, { font: SANS_BOLD, size: 8.4 });
@@ -814,10 +923,10 @@ class Writer {
   }
 
   private note(text: string) {
-    const lines = this.wrap(text, WIDTH, SANS_ITALIC, 7.4);
+    const lines = this.wrap(text, this.width, SANS_ITALIC, 7.4);
     for (const l of lines) {
       this.ensure(10);
-      this.line(l, MARGIN.left, this.y, WIDTH, { font: SANS_ITALIC, size: 7.4, color: MUTED });
+      this.line(l, this.left, this.y, this.width, { font: SANS_ITALIC, size: 7.4, color: MUTED });
       this.y += 10;
     }
     this.y += 8;
@@ -825,9 +934,11 @@ class Writer {
 
   /** A part's title in the company colour, with a line under it and a rule. */
   private heading(block: Extract<Block, { kind: "heading" }>) {
-    const subtitle = block.subtitle ? this.wrap(block.subtitle, WIDTH, SANS, 9).slice(0, 2) : [];
+    const subtitle = block.subtitle
+      ? this.wrap(block.subtitle, this.width, SANS, 9).slice(0, 2)
+      : [];
     this.ensure(26 + subtitle.length * 12 + 60);
-    this.line(block.title.toUpperCase(), MARGIN.left, this.y, WIDTH, {
+    this.line(block.title.toUpperCase(), this.left, this.y, this.width, {
       font: SERIF_BOLD,
       size: 15,
       color: this.primary,
@@ -835,7 +946,7 @@ class Writer {
     });
     this.y += 21;
     for (const text of subtitle) {
-      this.line(text, MARGIN.left, this.y, WIDTH, { font: SANS, size: 9, color: MUTED });
+      this.line(text, this.left, this.y, this.width, { font: SANS, size: 9, color: MUTED });
       this.y += 12;
     }
     this.rule(this.y + 2, this.primary, 0.8);
@@ -853,13 +964,13 @@ class Writer {
     if (this.y + 60 > BOTTOM) this.newPage();
     const y = Math.max(this.y + 40, BOTTOM - 34);
     const gap = 40;
-    const width = Math.min(170, (WIDTH - gap * (labels.length - 1)) / labels.length);
+    const width = Math.min(170, (this.width - gap * (labels.length - 1)) / labels.length);
     labels.forEach((label, i) => {
       // One line sits on the right; two or more spread across the page.
       const x =
         labels.length === 1
-          ? MARGIN.left + WIDTH - width
-          : MARGIN.left + (i * (WIDTH - width)) / (labels.length - 1);
+          ? this.left + this.width - width
+          : this.left + (i * (this.width - width)) / (labels.length - 1);
       this.signatureImage(this.signed.get(label), x, y, width);
       this.rule(y, INK, 0.6, x, width);
       this.line(label, x, y + 5, width, { font: SANS, size: 7.4, color: MUTED, align: "center" });

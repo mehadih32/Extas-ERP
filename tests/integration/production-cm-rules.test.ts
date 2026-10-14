@@ -22,7 +22,7 @@ import { getPartyBalance } from "@/modules/parties/ledger.service";
 import * as parties from "@/modules/parties/party.service";
 import * as batchIssue from "@/modules/production/batch-issue.service";
 import * as batchMoney from "@/modules/production/batch-money.service";
-import * as batchOrders from "@/modules/production/batch-orders.service";
+import * as bookings from "@/modules/production/booking.service";
 import * as batchSummary from "@/modules/production/batch-summary.service";
 import * as batches from "@/modules/production/batch.service";
 import * as cutting from "@/modules/production/cutting.service";
@@ -119,14 +119,13 @@ async function setup() {
   await needs.setMaterialNeeds(pm, polo.id, {
     needs: [{ materialId: pique.id, perPiece: 0.25, split: "COLOUR", placement: "Main body" }],
   });
-  await batchOrders.createBatchOrders(pm, batch.id, {
-    orders: [
-      {
-        supplierId: mill.id,
-        expectedDate: "2030-11-15",
-        lines: [{ materialId: pique.id, quantity: 25, unitPrice: 700 }],
-      },
-    ],
+  await bookings.createBooking(pm, {
+    source: "SUPPLIER_PO",
+    category: "KNITWEAR",
+    supplierId: mill.id,
+    batchId: batch.id,
+    expectedDate: "2030-11-15",
+    lines: [{ materialId: pique.id, quantity: 25, unitPrice: 700 }],
   });
   const order = await prisma.purchaseOrder.findFirstOrThrow({ where: { supplierId: mill.id } });
   const screen = await receive.getBatchReceive(pm, batch.id, order.id);

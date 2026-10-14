@@ -100,6 +100,34 @@ export const PERMISSIONS = [
     module: "PRODUCTION",
     description: "Move finished goods to stock (AI / manual intake)",
   },
+  // Production > Bookings (fabric and trims bookings), each part on its own
+  {
+    key: "production.bookings.view",
+    module: "PRODUCTION",
+    description:
+      "See fabric and trims bookings, their terms and the PDF (prices need materials.purchase, production.manage or accounts.view)",
+  },
+  {
+    key: "production.bookings.supplier",
+    module: "PRODUCTION",
+    description: "Make and change supplier PO bookings (a mill or trims house makes the goods)",
+  },
+  {
+    key: "production.bookings.market",
+    module: "PRODUCTION",
+    description:
+      "Make and change ready stock bookings bought on the market (adding them to stock as they are saved also needs materials.purchase)",
+  },
+  {
+    key: "production.bookings.attach",
+    module: "PRODUCTION",
+    description: "Attach bookings to a master batch and take them off",
+  },
+  {
+    key: "production.bookings.close",
+    module: "PRODUCTION",
+    description: "Close or cancel bookings",
+  },
   // Parties
   { key: "parties.view", module: "PARTIES", description: "View buyer and supplier profiles" },
   {
@@ -256,6 +284,11 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<SystemRole, readonly PermissionKey
     "production.view",
     "production.manage",
     "production.stock_intake",
+    "production.bookings.view",
+    "production.bookings.supplier",
+    "production.bookings.market",
+    "production.bookings.attach",
+    "production.bookings.close",
     "inventory.view",
     "inventory.manage",
     "materials.view",
@@ -295,6 +328,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<SystemRole, readonly PermissionKey
     "sales.returns.qc",
     "production.view",
     "production.stock_intake",
+    "production.bookings.view",
     "portal.self",
     "notepad.use",
   ],
@@ -304,6 +338,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<SystemRole, readonly PermissionKey
     "dashboard.financials",
     "sales.view",
     "production.view",
+    "production.bookings.view",
     "materials.view",
     "parties.view",
     "parties.ledger.view",

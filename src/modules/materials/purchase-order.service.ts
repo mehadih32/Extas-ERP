@@ -455,8 +455,57 @@ export async function cancelPurchaseOrder(
   raw: unknown,
   meta?: RequestMeta,
 ) {
-  const { reason } = closeOrderSchema.parse(raw);
   assertCanBuyMaterials(ctx);
+  await endOrder(ctx, orderId, raw, meta, "CANCELLED");
+  return getPurchaseOrder(ctx, orderId);
+}
+
+/** Closes a partly received order: the rest will not come. */
+export async function closePurchaseOrder(
+  ctx: CompanyContext,
+  orderId: string,
+  raw: unknown,
+  meta?: RequestMeta,
+) {
+  assertCanBuyMaterials(ctx);
+  await endOrder(ctx, orderId, raw, meta, "CLOSED");
+  return getPurchaseOrder(ctx, orderId);
+}
+
+/**
+ * Cancels or closes an order with the reason given. The caller checks who may:
+ * buyers for purchase orders (above), the booking permissions for a booking's.
+ */
+export async function endOrder(
+  ctx: CompanyContext,
+  orderId: string,
+  raw: unknown,
+  meta: RequestMeta | undefined,
+  status: "CANCELLED" | "CLOSED",
+) {
+  const { reason } = closeOrderSchema.parse(raw);
+  if (status === "CLOSED") {
+    await runTransaction(async (tx) => {
+      const order = await lockOrder(tx, ctx.company.id, orderId);
+      assertAllowed(canCloseOrder(orderState(order)));
+      await tx.purchaseOrder.update({
+        where: { id: order.id },
+        data: { status: "CLOSED", closedReason: reason, closedAt: new Date() },
+      });
+      await auditInCompany(
+        ctx,
+        meta,
+        {
+          action: "STATUS_CHANGE",
+          entityType: "PurchaseOrder",
+          entityId: order.id,
+          summary: `Closed purchase order ${order.number} before everything arrived: ${reason}`,
+        },
+        tx,
+      );
+    }, TX_OPTIONS);
+    return;
+  }
   await runTransaction(async (tx) => {
     const order = await lockOrder(tx, ctx.company.id, orderId);
     assertAllowed(canCancelOrder(orderState(order)));
@@ -476,38 +525,6 @@ export async function cancelPurchaseOrder(
       tx,
     );
   }, TX_OPTIONS);
-  return getPurchaseOrder(ctx, orderId);
-}
-
-/** Closes a partly received order: the rest will not come. */
-export async function closePurchaseOrder(
-  ctx: CompanyContext,
-  orderId: string,
-  raw: unknown,
-  meta?: RequestMeta,
-) {
-  const { reason } = closeOrderSchema.parse(raw);
-  assertCanBuyMaterials(ctx);
-  await runTransaction(async (tx) => {
-    const order = await lockOrder(tx, ctx.company.id, orderId);
-    assertAllowed(canCloseOrder(orderState(order)));
-    await tx.purchaseOrder.update({
-      where: { id: order.id },
-      data: { status: "CLOSED", closedReason: reason, closedAt: new Date() },
-    });
-    await auditInCompany(
-      ctx,
-      meta,
-      {
-        action: "STATUS_CHANGE",
-        entityType: "PurchaseOrder",
-        entityId: order.id,
-        summary: `Closed purchase order ${order.number} before everything arrived: ${reason}`,
-      },
-      tx,
-    );
-  }, TX_OPTIONS);
-  return getPurchaseOrder(ctx, orderId);
 }
 
 /**

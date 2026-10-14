@@ -16,16 +16,26 @@ export type ProductionTab = {
  * production.stock_intake, bills need the costs as well (production.manage or
  * accounts.view), cost heads are changed with production.manage, and the supplier
  * fault log is read with production.view (values follow the material-cost rule).
- * Fabric and trims bookings are read with production.view and made by buyers
- * (materials.purchase), their prices following the material-cost rule too.
+ * Fabric and trims bookings are shown to anyone with a booking permission
+ * (production.bookings.*), their prices following the material-cost rule too.
  */
+
+/** Any booking permission opens the Bookings tab (booking.service SEE_BOOKINGS). */
+export const BOOKING_PERMISSIONS: readonly PermissionKey[] = [
+  "production.bookings.view",
+  "production.bookings.supplier",
+  "production.bookings.market",
+  "production.bookings.attach",
+  "production.bookings.close",
+];
+
 export const PRODUCTION_TABS: readonly ProductionTab[] = [
   { href: "/production", label: "Overview", anyOf: ["production.view"] },
   { href: "/production/batches", label: "Batches", anyOf: ["production.view"] },
   {
     href: "/production/bookings",
     label: "Bookings",
-    anyOf: ["production.view", "materials.purchase"],
+    anyOf: BOOKING_PERMISSIONS,
   },
   { href: "/production/projects", label: "Projects", anyOf: ["production.view"] },
   {

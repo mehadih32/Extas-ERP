@@ -120,7 +120,7 @@ function LineRow({
 }
 
 /**
- * One booking (production.view, materials.view or materials.purchase, like GET
+ * One booking (any booking permission, like GET
  * /api/production/bookings/:id): its fabric and trims with their
  * specification, the collar and cuff matrix, the style-wise breakdown on a
  * batch and the terms, with printing, changing, attaching, receiving, closing

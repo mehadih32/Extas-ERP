@@ -46,8 +46,8 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
  * Adds someone to the company. The role list holds only the roles this person may
  * give (Super Admin only for Super Admins), as the server checks again. For
  * people who manage roles, choosing the role opens the permission matrix next:
- * every permission A to Z with the role's ticked, to untick or add to before
- * the person is added.
+ * every permission as a tree (area > part > action) with the role's ticked, to
+ * untick or add to before the person is added.
  */
 export function AddMemberDialog({
   roles,
@@ -142,9 +142,9 @@ export function AddMemberDialog({
             <p className="eyebrow text-primary">Full disclosure permission matrix</p>
             <DialogTitle>What {firstName(details.name)} can see and do</DialogTitle>
             <DialogDescription>
-              Every permission in the app, A to Z, with what {role.name} gives ticked. Untick
-              anything {firstName(details.name)} should not see; it is hidden from them. Tick more
-              to give it to them alone.
+              Every permission in the app, by area, with what {role.name} gives ticked. Tick an area
+              to give all of it, or open it with its arrow to tick only some. Untick anything{" "}
+              {firstName(details.name)} should not see; it is hidden from them.
             </DialogDescription>
           </DialogHeader>
           <form
@@ -152,7 +152,7 @@ export function AddMemberDialog({
               event.preventDefault();
               add({ ...details, roleId, permissions: [...selected] });
             }}
-            className="flex min-h-0 flex-1 flex-col gap-4"
+            className="flex flex-col gap-4 sm:min-h-0 sm:flex-1"
             noValidate
           >
             <PermissionMatrix

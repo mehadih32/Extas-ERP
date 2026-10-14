@@ -9,11 +9,11 @@ export const dynamic = "force-dynamic";
 
 /**
  * POST /api/production/bookings/:bookingId/cancel — { reason }. Only while nothing has arrived on it (the supplier will not deliver).
- * Needs materials.purchase.
+ * Needs production.bookings.close.
  */
 export const POST = apiRoute<Params>(async (request, { bookingId }) =>
   bookings.cancelBooking(
-    await requirePermission("materials.purchase"),
+    await requirePermission("production.bookings.close"),
     bookingId,
     await readJson(request),
     await getRequestMeta(),

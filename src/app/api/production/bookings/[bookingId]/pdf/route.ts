@@ -4,6 +4,7 @@ import { PDF_MIME } from "@/lib/pdf";
 import { getRequestMeta } from "@/lib/request-meta";
 import { requireAnyPermission } from "@/modules/auth/context";
 import { bookingPdf } from "@/modules/production/booking-pdf.service";
+import { SEE_BOOKINGS } from "@/modules/production/booking.service";
 
 type Params = { bookingId: string };
 
@@ -19,11 +20,7 @@ export const dynamic = "force-dynamic";
 export async function GET(_request: Request, context: { params: Promise<Params> }) {
   try {
     const { bookingId } = await context.params;
-    const ctx = await requireAnyPermission(
-      "production.view",
-      "materials.view",
-      "materials.purchase",
-    );
+    const ctx = await requireAnyPermission(...SEE_BOOKINGS);
     const pdf = await bookingPdf(ctx, bookingId, await getRequestMeta());
     return fileResponse({ fileName: pdf.fileName, mimeType: PDF_MIME, bytes: pdf.bytes });
   } catch (error) {

@@ -1,6 +1,6 @@
 import { apiRoute, readJson } from "@/lib/api";
 import { getRequestMeta } from "@/lib/request-meta";
-import { requireAnyPermission, requirePermission } from "@/modules/auth/context";
+import { requireAnyPermission } from "@/modules/auth/context";
 import * as bookings from "@/modules/production/booking.service";
 
 export const dynamic = "force-dynamic";
@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
  */
 export const GET = apiRoute(async (request) =>
   bookings.listBookings(
-    await requireAnyPermission("production.view", "materials.view", "materials.purchase"),
+    await requireAnyPermission(...bookings.SEE_BOOKINGS),
     Object.fromEntries(new URL(request.url).searchParams),
   ),
 );
@@ -30,13 +30,14 @@ export const GET = apiRoute(async (request) =>
  * construction, yarnCount, gauge, finish, size, pieces, perDozen, lossPercent } }] }.
  * A purchase order with its specification; collar and cuff lines take their quantity from
  * the matrix. receiveNow (a market purchase on its own, every item priced) also puts the
- * goods into the main store on a bill Due to the seller; `intoStock` says how that went.
- * Needs materials.purchase.
+ * goods into the main store on a bill Due to the seller (that also needs materials.purchase);
+ * `intoStock` says how that went. Needs production.bookings.supplier or
+ * production.bookings.market for the kind of booking.
  */
 export const POST = apiRoute(
   async (request) =>
     bookings.createBooking(
-      await requirePermission("materials.purchase"),
+      await requireAnyPermission("production.bookings.supplier", "production.bookings.market"),
       await readJson(request),
       await getRequestMeta(),
     ),

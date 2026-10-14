@@ -14,7 +14,7 @@ import { requireCompanyPage } from "@/server/pages/guards";
 export const metadata: Metadata = { title: "Change booking" };
 
 /**
- * Changing a booking (materials.purchase): the whole wizard while nothing has
+ * Changing a booking (the permission for its kind): the whole wizard while nothing has
  * arrived on it (as updateBookingAction), only its paperwork once goods have
  * (as updateBookingPaperworkAction), and nothing once it is closed.
  */
@@ -24,11 +24,11 @@ export default async function EditBookingPage({
   params: Promise<{ bookingId: string }>;
 }) {
   const ctx = await requireCompanyPage();
-  if (!ctx.can("materials.purchase")) {
+  if (!ctx.can("production.bookings.supplier") && !ctx.can("production.bookings.market")) {
     return (
       <ProductionNoAccess title="Changing bookings is not part of your role">
-        Buyers change bookings (materials.purchase). Your administrator can give your role that
-        permission.
+        Changing bookings is in Production &gt; Bookings &gt; Add bookings. Your administrator can
+        give you that permission.
       </ProductionNoAccess>
     );
   }

@@ -444,7 +444,7 @@ export const productionHelp: HelpSection = {
         "রেডি স্টক",
       ],
       routes: ["/production/bookings"],
-      who: "বুকিং দেখেন যাঁরা Production দেখতে পারেন (Super Admin, Production Manager, Accounts, Warehouse Team)। বুকিং করেন ও বদলান যাঁদের কাঁচামাল কেনার অনুমতি আছে (Production Manager ও Super Admin)। দাম শুধু যাঁরা কাঁচামালের দাম দেখতে পারেন তাঁরা দেখেন।",
+      who: "বুকিং দেখেন যাঁদের “See bookings” বা বুকিংয়ের অন্য কোনো অনুমতি আছে (শুরুতে Super Admin, Production Manager, Accounts, Warehouse Team)। বুকিং করেন ও বদলান যাঁদের “Add bookings”-এর অনুমতি আছে (শুরুতে Production Manager ও Super Admin)। দাম শুধু যাঁরা কাঁচামালের দাম দেখতে পারেন তাঁরা দেখেন।",
       steps: [
         {
           text: "“Production” > “Bookings” ট্যাব খুলুন। নতুন বুকিং আগে উপরে থাকে। ফোনে প্রতিটি বুকিং একটি কার্ড, কম্পিউটারে একটি টেবিল: বুকিং নম্বর, তারিখ, অবস্থা, সরবরাহকারী, কী বুক হলো (কাপড়ের মোট কেজি বা গজ, কলারের সেট, কয়টি আইটেম), কোন ব্যাচের জন্য আর কবে দেওয়ার কথা।",
@@ -506,8 +506,8 @@ export const productionHelp: HelpSection = {
         "কনজাম্পশন",
       ],
       routes: ["/production/bookings/new"],
-      who: "যাঁদের কাঁচামাল কেনার অনুমতি আছে: Production Manager ও Super Admin।",
-      anyOf: ["materials.purchase"],
+      who: "যাঁদের “Add bookings”-এর অনুমতি আছে (শুরুতে Production Manager ও Super Admin): “Supplier PO (a mill or trims house)” থাকলে সাপ্লায়ার PO, “Ready stock (market purchase)” থাকলে বাজার থেকে কেনা। মাল সাথে সাথে স্টকে তুলতে কাঁচামাল কেনার অনুমতিও লাগে।",
+      anyOf: ["production.bookings.supplier", "production.bookings.market"],
       steps: [
         {
           text: "“Bookings” ট্যাবে “New booking” চাপুন। উপরে ধাপগুলো দেখায়: “Booking type”, “Fabric”, “Trims & accessories”, “Collar & cuff” (শুধু নিটে) ও “Terms & review”। ফোনে কততম ধাপে আছেন (যেমন 5টির মধ্যে 1) আর একটি দাগে কতদূর এগোলেন তা দেখায়।",
@@ -582,8 +582,8 @@ export const productionHelp: HelpSection = {
         "সেট",
       ],
       routes: ["/production/bookings/new"],
-      who: "যাঁদের কাঁচামাল কেনার অনুমতি আছে: Production Manager ও Super Admin।",
-      anyOf: ["materials.purchase"],
+      who: "যাঁদের “Add bookings”-এর অনুমতি আছে: শুরুতে Production Manager ও Super Admin।",
+      anyOf: ["production.bookings.supplier", "production.bookings.market"],
       steps: [
         {
           text: "নিটের বুকিংয়ে “Collar & cuff” ধাপে “Book collars and cuffs by size and colour” টিক দেওয়া থাকে। টিক তুলে দিলে কলার ও কাফ ট্রিমসের ধাপে লেখা পরিমাণেই বুক হয়।",
@@ -643,7 +643,7 @@ export const productionHelp: HelpSection = {
         "স্পাইরাল বাঁধাই",
       ],
       routes: ["/production/bookings/[bookingId]"],
-      who: "শর্তাবলি বদলান যাঁদের কাঁচামাল কেনার অনুমতি আছে। PDF প্রিন্ট করতে পারেন যিনি বুকিং দেখতে পারেন; দাম ছাড়া প্রিন্ট হয় যাঁরা দাম দেখতে পারেন না তাঁদের জন্য।",
+      who: "শর্তাবলি বদলান যাঁদের “Add bookings”-এর অনুমতি আছে। PDF প্রিন্ট করতে পারেন যিনি বুকিং দেখতে পারেন; দাম ছাড়া প্রিন্ট হয় যাঁরা দাম দেখতে পারেন না তাঁদের জন্য।",
       steps: [
         {
           text: "বুকিংয়ের শেষ ধাপ “Terms & review”-এ উৎস ও পোশাকের ধরন অনুযায়ী কড়া শর্তাবলি নিজে থেকে বসে থাকে, প্রতিটি শর্ত আলাদা ঘরে, নম্বরসহ।",
@@ -694,7 +694,7 @@ export const productionHelp: HelpSection = {
         "ব্যাচের কাপড়",
       ],
       routes: ["/production/batches/[batchId]"],
-      who: "“Book fabric” পান যাঁদের কাঁচামাল কেনার অনুমতি আছে। বুকিং ব্যাচে যোগ ও সরান তাঁরা আর Production Manager।",
+      who: "“Book fabric” পান যাঁদের “Add bookings”-এর অনুমতি আছে। বুকিং ব্যাচে যোগ ও সরান যাঁদের “Attach bookings to a batch” আছে (শুরুতে Production Manager ও Super Admin)।",
       steps: [
         {
           text: "ব্যাচের পাতায় ডান পাশে “Fabric bookings” অংশে ব্যাচের সব বুকিং দেখায়: নম্বর, সরবরাহকারী, কত কাপড় আর কবে দেওয়ার কথা। “Materials” অংশেও “Book fabric” বোতাম থাকে।",
@@ -745,8 +745,12 @@ export const productionHelp: HelpSection = {
         "মাল গ্রহণ",
       ],
       routes: ["/production/bookings/[bookingId]/edit"],
-      who: "যাঁদের কাঁচামাল কেনার অনুমতি আছে: Production Manager ও Super Admin। মাল নিতে পারেন তাঁরা, আর ব্যাচের বাইরের বুকিংয়ে Accounts-ও।",
-      anyOf: ["materials.purchase"],
+      who: "বদলান যাঁদের “Add bookings”-এর অনুমতি আছে, বন্ধ বা বাতিল করেন যাঁদের “Close or cancel bookings” আছে (শুরুতে Production Manager ও Super Admin)। মাল নেন যাঁদের কাঁচামাল কেনার অনুমতি আছে, আর ব্যাচের বাইরের বুকিংয়ে Accounts-ও।",
+      anyOf: [
+        "production.bookings.supplier",
+        "production.bookings.market",
+        "production.bookings.close",
+      ],
       steps: [
         {
           text: "বুকিংয়ের পাতায় “Change” চাপুন। মাল আসার আগে পাঁচ ধাপের পুরো ফর্ম খোলে, সব বদলে “Save the changes” চাপুন। ব্যাচে থাকা বুকিংয়ের নতুন লাইনও আবার স্টাইল অনুযায়ী ভাগ হয়।",

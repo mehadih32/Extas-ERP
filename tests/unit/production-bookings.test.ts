@@ -213,6 +213,7 @@ describe("Booking terms", () => {
 /** What getBookingForm hands a new booking with nothing chosen yet. */
 const blankForm = (over: Partial<BookingForm["values"]> = {}): BookingForm => ({
   today: "2026-10-13",
+  can: { sources: ["SUPPLIER_PO", "MARKET_PURCHASE"], receiveNow: true },
   booking: null,
   batch: null,
   batchMaterials: [],

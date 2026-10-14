@@ -40,6 +40,7 @@ import * as bookings from "@/modules/production/booking.service";
 import { standardTermsText } from "@/modules/production/booking-terms";
 import * as materialScreens from "@/modules/production/material-screens.service";
 import * as projects from "@/modules/production/project.service";
+import * as roles from "@/modules/rbac/role.service";
 import {
   attachBookingAction,
   createBookingAction,
@@ -731,5 +732,69 @@ run("Bookings", () => {
       attach: false,
       cancel: false,
     });
+  });
+
+  it("gives each part of bookings its own permission", async () => {
+    const env = await setup();
+    const person = async (email: string, name: string, permissions: string[]) => {
+      const role = await roles.createRole(env.owner, { name, permissions });
+      const user = await makeUser(email);
+      await addToCompany(user.id, env.company.id, role.id);
+      return contextFor(user.id, env.company.id);
+    };
+    const market = {
+      source: "MARKET_PURCHASE",
+      category: "WOVEN",
+      supplierId: env.seller.id,
+      lines: [{ name: "Poplin", kind: "FABRIC", unit: "YARD", quantity: 100, unitPrice: 170 }],
+    };
+    // Ready stock only: makes market purchases, not supplier POs, and cannot add
+    // to stock as it saves without the buyers' permission.
+    const shop = await person("shop@extas.test", "Market buyer", ["production.bookings.market"]);
+    const bought = await bookings.createBooking(shop, market);
+    expect(bought.can).toMatchObject({ edit: true, cancel: false, attach: false });
+    await expectAppError(bookings.createBooking(shop, knitwear(env)), "FORBIDDEN");
+    await expectAppError(
+      bookings.createBooking(shop, { ...market, receiveNow: true }),
+      "FORBIDDEN",
+    );
+    expect((await bookings.getBookingForm(shop)).can).toEqual({
+      sources: ["MARKET_PURCHASE"],
+      receiveNow: false,
+    });
+    await expectAppError(
+      bookings.cancelBooking(shop, bought.id, { reason: "Not needed" }),
+      "FORBIDDEN",
+    );
+    await expectAppError(
+      bookings.attachBooking(shop, bought.id, { batchId: env.batch.id }),
+      "FORBIDDEN",
+    );
+    const mill = await bookings.createBooking(env.pm, knitwear(env));
+    await expectAppError(
+      bookings.updateBookingPaperwork(shop, mill.id, { title: "Mine now" }),
+      "FORBIDDEN",
+    );
+
+    // Seeing only.
+    const viewer = await person("viewer@extas.test", "Booking viewer", [
+      "production.bookings.view",
+    ]);
+    const seen = await bookings.listBookings(viewer);
+    expect(seen.items).toHaveLength(2);
+    expect(seen.can.create).toBe(false);
+    await expectAppError(bookings.getBookingForm(viewer), "FORBIDDEN");
+
+    // Closing and cancelling only.
+    const closer = await person("closer@extas.test", "Booking closer", [
+      "production.bookings.close",
+    ]);
+    await bookings.cancelBooking(closer, bought.id, { reason: "The shop sold it" });
+    expect((await bookings.getBooking(closer, bought.id)).status).toBe("CANCELLED");
+
+    // Buying raw materials no longer opens bookings by itself.
+    const buyer = await person("buyer@extas.test", "Buyer", ["materials.purchase"]);
+    await expectAppError(bookings.listBookings(buyer), "FORBIDDEN");
+    await expectAppError(bookings.createBooking(buyer, market), "FORBIDDEN");
   });
 });

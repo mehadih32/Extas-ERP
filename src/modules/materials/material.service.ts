@@ -182,7 +182,8 @@ export type WantedMaterial = {
  * The ids of the active materials with these names, kinds, units and colours
  * (letter case aside), in the order asked for. Those the catalogue does not
  * have yet are added with the next code of their kind, as createMaterial adds
- * them (buyers and the store). Inside the caller's transaction.
+ * them (buyers and the store), or as a booking adds them (whoever makes
+ * bookings: Production > Bookings > Add bookings). Inside the caller's transaction.
  */
 export async function findOrAddMaterials(
   tx: Tx,
@@ -214,7 +215,16 @@ export async function findOrAddMaterials(
       if (existing) {
         materialId = existing.id;
       } else {
-        assertCanEditCatalogue(ctx);
+        assertAnyPermission(
+          ctx,
+          [
+            "materials.manage",
+            "materials.purchase",
+            "production.bookings.supplier",
+            "production.bookings.market",
+          ],
+          "You do not have permission to add raw materials.",
+        );
         const created = await tx.rawMaterial.create({
           data: {
             companyId,

@@ -17,7 +17,7 @@ const one = (value: string | string[] | undefined) =>
   typeof value === "string" && value ? value : undefined;
 
 /**
- * A new booking (materials.purchase, as createBookingAction): on its own, or
+ * A new booking (production.bookings.supplier or .market, as createBookingAction): on its own, or
  * for a master batch (?batch=) with the batch's fabric still to order, its
  * garment colours in the collar matrix and its other materials a tap away.
  */
@@ -27,11 +27,11 @@ export default async function NewBookingPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const ctx = await requireCompanyPage();
-  if (!ctx.can("materials.purchase")) {
+  if (!ctx.can("production.bookings.supplier") && !ctx.can("production.bookings.market")) {
     return (
       <ProductionNoAccess title="Booking fabric is not part of your role">
-        Buyers make bookings (materials.purchase). Your administrator can give your role that
-        permission.
+        Making bookings is in Production &gt; Bookings &gt; Add bookings. Your administrator can
+        give you that permission.
       </ProductionNoAccess>
     );
   }

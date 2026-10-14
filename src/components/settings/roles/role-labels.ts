@@ -1,11 +1,13 @@
-import type { AppModule, SystemRole } from "@prisma/client";
+import type { SystemRole } from "@prisma/client";
 
 import { MONEY_PERMISSIONS, PERMISSIONS, type PermissionKey } from "@/modules/rbac/permissions";
 
+import { ACCESS_TREE, leavesOf, permissionDescription } from "./access-tree";
+
 /*
- * How the Roles screens group and describe permissions. Every permission in the
- * catalogue (rbac/permissions.ts) belongs to exactly one group here; a test
- * keeps it that way as modules add keys.
+ * How the Roles screens group and describe permissions: by the main areas of the
+ * access tree (./access-tree.ts), which holds every permission in the catalogue
+ * (rbac/permissions.ts) exactly once; a test keeps it that way as modules add keys.
  */
 
 export type PermissionItem = { key: PermissionKey; description: string; money: boolean };
@@ -18,33 +20,6 @@ export type PermissionGroup = {
   permissions: PermissionItem[];
 };
 
-const SECTIONS: Array<{ id: string; label: string; modules: AppModule[]; note?: string }> = [
-  { id: "dashboard", label: "Dashboard", modules: ["DASHBOARD"] },
-  {
-    id: "administration",
-    label: "Company administration",
-    modules: ["SETTINGS"],
-    note: "These let people manage the team, the roles and the company details. Someone who can manage roles can give any role every permission, so keep them for people you trust with the whole company.",
-  },
-  { id: "sales", label: "Sales", modules: ["SALES", "RETAIL", "WHOLESALE"] },
-  { id: "stock", label: "Stock and raw materials", modules: ["INVENTORY"] },
-  { id: "production", label: "Production", modules: ["PRODUCTION"] },
-  { id: "parties", label: "Buyers and suppliers", modules: ["PARTIES"] },
-  {
-    id: "accounts",
-    label: "Accounts",
-    modules: ["ACCOUNTS"],
-    note: "Recording money in or out is kept to Accounts and Super Admin by default, so the people who sell or produce never record cash themselves.",
-  },
-  { id: "expenses", label: "Expenses", modules: ["EXPENSES"] },
-  { id: "hr", label: "HR and payroll", modules: ["HR"] },
-  { id: "compliance", label: "Licences and registrations", modules: ["COMPLIANCE"] },
-  { id: "documents", label: "Documents and letterhead", modules: ["TEMPLATES"] },
-  { id: "reports", label: "Reports", modules: ["REPORTS"] },
-  { id: "notepad", label: "Notepad and reminders", modules: ["NOTEPAD", "REMINDERS"] },
-  { id: "backups", label: "Backups", modules: ["BACKUPS"] },
-];
-
 const MONEY = new Set<string>(MONEY_PERMISSIONS);
 
 /** Whether a permission records money coming in or going out. */
@@ -52,15 +27,20 @@ export function isMoneyPermission(key: string): boolean {
   return MONEY.has(key);
 }
 
-/** The catalogue in the groups the role editor shows, each in catalogue order. */
-export const PERMISSION_GROUPS: readonly PermissionGroup[] = SECTIONS.map((section) => ({
-  id: section.id,
-  label: section.label,
-  note: section.note,
-  permissions: PERMISSIONS.filter((p) => (section.modules as string[]).includes(p.module)).map(
-    (p) => ({ key: p.key, description: p.description, money: MONEY.has(p.key) }),
-  ),
-})).filter((group) => group.permissions.length > 0);
+/**
+ * The catalogue in the groups the role screens list it by: the access tree's main
+ * areas, each with its permissions in the tree's order.
+ */
+export const PERMISSION_GROUPS: readonly PermissionGroup[] = ACCESS_TREE.map((area) => ({
+  id: area.id,
+  label: area.label,
+  note: area.note,
+  permissions: leavesOf(area).map((l) => ({
+    key: l.key,
+    description: permissionDescription(l.key),
+    money: MONEY.has(l.key),
+  })),
+}));
 
 export const PERMISSION_COUNT = PERMISSIONS.length;
 

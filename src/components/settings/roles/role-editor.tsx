@@ -1,6 +1,6 @@
 "use client";
 
-import { BanknoteIcon, LoaderCircleIcon, Trash2Icon } from "lucide-react";
+import { LoaderCircleIcon, Trash2Icon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
@@ -8,9 +8,7 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import { ConfirmDialog } from "@/components/feedback/confirm-dialog";
 import { ErrorDialog } from "@/components/feedback/error-dialog";
 import { Field, FormAlert } from "@/components/forms/field";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
@@ -23,7 +21,8 @@ import {
   updateRoleAction,
 } from "@/server/actions/rbac.actions";
 
-import { PERMISSION_COUNT, PERMISSION_GROUPS, warnsAboutMoney } from "./role-labels";
+import { AccessTree } from "./access-tree-view";
+import { PERMISSION_COUNT, warnsAboutMoney } from "./role-labels";
 
 const ROLES_PATH = "/settings/roles";
 
@@ -92,17 +91,6 @@ export function RoleEditor(props: Props) {
       set(value);
     };
   }
-  const toggle = edit((change: { keys: PermissionKey[]; on: boolean }) =>
-    setSelected((current) => {
-      const next = new Set(current);
-      for (const key of change.keys) {
-        if (change.on) next.add(key);
-        else next.delete(key);
-      }
-      return next;
-    }),
-  );
-
   function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const permissions = [...selected];
@@ -206,82 +194,15 @@ export function RoleEditor(props: Props) {
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">
             Tick what people in this role may see and do. Everything else stays hidden from them.
+            Ticking an area gives all of it; open it with its arrow to tick only some.
           </p>
         </div>
         {fieldError("permissions") && <FormAlert>{fieldError("permissions")}</FormAlert>}
-        {PERMISSION_GROUPS.map((group) => {
-          const keys = group.permissions.map((p) => p.key);
-          const count = keys.filter((key) => selected.has(key)).length;
-          const all = count === keys.length;
-          return (
-            <fieldset
-              key={group.id}
-              className="min-w-0 rounded-lg border bg-card"
-              aria-describedby={group.note ? `note-${group.id}` : undefined}
-            >
-              <legend className="sr-only">{group.label}</legend>
-              <div className="flex items-center justify-between gap-3 border-b px-5 py-3">
-                <p className="font-serif text-lg" aria-hidden>
-                  {group.label}
-                </p>
-                <div className="flex shrink-0 items-center gap-3">
-                  <span className="text-xs text-muted-foreground tabular-nums">
-                    {count} of {keys.length}
-                  </span>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => toggle({ keys, on: !all })}
-                    aria-label={`${all ? "Clear" : "Select all"}: ${group.label}`}
-                  >
-                    {all ? "Clear" : "Select all"}
-                  </Button>
-                </div>
-              </div>
-              {group.note && (
-                <p
-                  id={`note-${group.id}`}
-                  className="border-b bg-muted/40 px-5 py-2.5 text-[0.8125rem] leading-relaxed text-muted-foreground"
-                >
-                  {group.note}
-                </p>
-              )}
-              <ul className="divide-y">
-                {group.permissions.map((p) => {
-                  const id = `perm-${p.key}`;
-                  return (
-                    <li key={p.key}>
-                      <label
-                        htmlFor={id}
-                        className="flex min-h-12 cursor-pointer items-start gap-3 px-5 py-3 transition-colors hover:bg-muted/40"
-                      >
-                        <Checkbox
-                          id={id}
-                          checked={selected.has(p.key)}
-                          onCheckedChange={(on) => toggle({ keys: [p.key], on: on === true })}
-                          className="mt-0.5"
-                        />
-                        <span className="min-w-0 text-sm leading-relaxed">
-                          {p.description}
-                          {p.money && (
-                            <Badge variant="outline" className="ml-2 align-middle">
-                              <BanknoteIcon aria-hidden />
-                              Money
-                            </Badge>
-                          )}
-                          <span className="mt-0.5 block font-mono text-[0.6875rem] text-muted-foreground">
-                            {p.key}
-                          </span>
-                        </span>
-                      </label>
-                    </li>
-                  );
-                })}
-              </ul>
-            </fieldset>
-          );
-        })}
+        <AccessTree
+          label="Permissions"
+          selected={selected}
+          onChange={(next) => edit(setSelected)(next)}
+        />
       </section>
 
       {warnsAboutMoney(role, selected) && (

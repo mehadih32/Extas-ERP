@@ -9,11 +9,11 @@ export const dynamic = "force-dynamic";
 
 /**
  * POST /api/production/bookings/:bookingId/close — { reason }. Once part has arrived: the rest will not come.
- * Needs materials.purchase.
+ * Needs production.bookings.close.
  */
 export const POST = apiRoute<Params>(async (request, { bookingId }) =>
   bookings.closeBooking(
-    await requirePermission("materials.purchase"),
+    await requirePermission("production.bookings.close"),
     bookingId,
     await readJson(request),
     await getRequestMeta(),

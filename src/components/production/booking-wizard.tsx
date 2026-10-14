@@ -96,8 +96,12 @@ export function BookingWizard({ form: data, currency }: { form: BookingForm; cur
   const [dirty, setDirty] = useState(false);
   const topRef = useRef<HTMLDivElement>(null);
   const editing = data.booking;
-  /** A market purchase on its own can go into stock as it is saved. */
-  const canReceiveNow = !editing && !data.batch && draft.source === "MARKET_PURCHASE";
+  /**
+   * A market purchase on its own can go into stock as it is saved, by whoever may
+   * also buy raw materials (the server checks again).
+   */
+  const canReceiveNow =
+    data.can.receiveNow && !editing && !data.batch && draft.source === "MARKET_PURCHASE";
   const intoStock = receivesNow(draft) && canReceiveNow;
   const steps = stepsFor(draft);
   const at = Math.max(0, steps.indexOf(step));
@@ -285,7 +289,10 @@ export function BookingWizard({ form: data, currency }: { form: BookingForm; cur
             legend="Where the goods come from"
             value={draft.source}
             onChange={(source) => update({ source })}
-            options={BOOKING_SOURCES.map((s) => ({
+            // Only the kinds this person may book (Production > Bookings > Add bookings).
+            options={BOOKING_SOURCES.filter(
+              (s) => data.can.sources.includes(s) || s === draft.source,
+            ).map((s) => ({
               value: s,
               label: SOURCE_LABELS[s],
               hint: SOURCE_HINTS[s],

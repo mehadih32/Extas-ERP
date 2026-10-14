@@ -211,20 +211,24 @@ export function BatchMaterialsPanel({
       title="Materials"
       id="batch-materials-heading"
       action={
-        data.can.order && data.materials.length > 0 ? (
+        (data.can.book || data.can.order) && data.materials.length > 0 ? (
           <div className="flex flex-wrap justify-end gap-2">
-            <Button asChild size="sm" variant={fabricLeft ? "default" : "outline"}>
-              <Link href={productionHref.newBooking(data.batch.id)}>
-                <ScrollTextIcon aria-hidden />
-                Book fabric
-              </Link>
-            </Button>
-            <Button asChild size="sm" variant={othersLeft ? "default" : "outline"}>
-              <Link href={productionHref.batchOrders(data.batch.id)}>
-                <ShoppingCartIcon aria-hidden />
-                Make purchase orders
-              </Link>
-            </Button>
+            {data.can.book && (
+              <Button asChild size="sm" variant={fabricLeft ? "default" : "outline"}>
+                <Link href={productionHref.newBooking(data.batch.id)}>
+                  <ScrollTextIcon aria-hidden />
+                  Book fabric
+                </Link>
+              </Button>
+            )}
+            {data.can.order && (
+              <Button asChild size="sm" variant={othersLeft ? "default" : "outline"}>
+                <Link href={productionHref.batchOrders(data.batch.id)}>
+                  <ShoppingCartIcon aria-hidden />
+                  Make purchase orders
+                </Link>
+              </Button>
+            )}
           </div>
         ) : undefined
       }

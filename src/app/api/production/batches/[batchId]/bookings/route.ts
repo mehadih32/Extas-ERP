@@ -11,8 +11,5 @@ export const dynamic = "force-dynamic";
  * buyers and Production Managers, the open bookings that could be attached to it.
  */
 export const GET = apiRoute<Params>(async (_request, { batchId }) =>
-  bookings.getBatchBookings(
-    await requireAnyPermission("production.view", "materials.view", "materials.purchase"),
-    batchId,
-  ),
+  bookings.getBatchBookings(await requireAnyPermission(...bookings.SEE_BOOKINGS), batchId),
 );

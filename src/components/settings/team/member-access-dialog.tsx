@@ -56,8 +56,8 @@ const sameSet = (a: ReadonlySet<string>, b: ReadonlySet<string>) =>
 
 /**
  * The full disclosure permission matrix for one member, in a window: their role
- * (when they may be moved) and every permission in the app, A to Z, with what
- * the role gives ticked. Unticking hides that part of the app from them;
+ * (when they may be moved) and every permission in the app as a tree (area >
+ * part > action), with what the role gives ticked. Unticking hides that part of the app from them;
  * ticking more gives it to them alone. Choosing another role starts from that
  * role's permissions. Opens when a role is given (Change role, a new login) and
  * from the ⚙ next to someone's role.
@@ -150,11 +150,11 @@ export function MemberAccessDialog({
               : `${first}'s permissions`}
           </DialogTitle>
           <DialogDescription>
-            Every permission in the app, A to Z. {first} can see and use what is ticked; everything
-            left unticked is hidden from them.
+            Every permission in the app, by area. {first} can see and use what is ticked; everything
+            left unticked is hidden from them. Open an area with its arrow to tick only some of it.
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={submit} className="flex min-h-0 flex-1 flex-col gap-4" noValidate>
+        <form onSubmit={submit} className="flex flex-col gap-4 sm:min-h-0 sm:flex-1" noValidate>
           {canChangeRole && others.length > 0 ? (
             <Field id="access-role" label="Role" hint={hint ?? undefined}>
               <NativeSelect

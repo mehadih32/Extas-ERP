@@ -15,11 +15,10 @@ import { runTransaction } from "@/lib/transaction";
 import { assertAllowed } from "@/lib/verdict";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
-import { assertAnyPermission, assertCanBuyMaterials, costMask } from "@/modules/materials/access";
+import { assertAnyPermission, costMask } from "@/modules/materials/access";
 import { findOrAddMaterials, OPEN_ORDER } from "@/modules/materials/material.service";
 import {
-  cancelPurchaseOrder,
-  closePurchaseOrder,
+  endOrder,
   insertPurchaseOrder,
   type NewOrderLine,
   orderState,
@@ -31,7 +30,8 @@ import {
   canCloseOrder,
   canReceiveOnOrder,
 } from "@/modules/materials/rules";
-import { assertUnitFits, loadActiveMaterials } from "@/modules/materials/stock";
+import { createPurchase } from "@/modules/materials/purchase.service";
+import { assertUnitFits, loadActiveMaterials, resolveStore } from "@/modules/materials/stock";
 import { money, pendingQuantity, qty, unitCost, ZERO } from "@/modules/materials/valuation";
 import { assertPartyCanTransact } from "@/modules/parties/party.service";
 import {
@@ -69,6 +69,7 @@ import { assertMaterialImages } from "@/modules/production/material-image.servic
 import { styleGrids } from "@/modules/production/material-need.service";
 import { shareOut } from "@/modules/production/material-plan";
 import { OPEN_STATUSES } from "@/modules/production/timeline";
+import type { PermissionKey } from "@/modules/rbac/permissions";
 
 /*
  * Bookings (Production > Bookings): fabric, yarn and trims booked the way the
@@ -85,9 +86,12 @@ import { OPEN_STATUSES } from "@/modules/production/timeline";
  * out over the batch's styles, colours and sizes like the batch's own orders,
  * so they count as ordered. A batch's fabric is only ever ordered this way.
  *
- * Seen with production.view, materials.view or materials.purchase (prices as
- * the material-cost rule says); made and changed by buyers (materials.purchase);
- * attached and taken off by buyers and Production Managers.
+ * Each part has its own permission (Settings, the access tree: Production >
+ * Bookings): production.bookings.view to see them (prices as the material-cost
+ * rule says), production.bookings.supplier and production.bookings.market to
+ * make and change each kind, production.bookings.attach to put them on a batch
+ * and take them off, and production.bookings.close to close or cancel them.
+ * Whoever makes, attaches or closes bookings sees them too.
  */
 
 type Tx = Prisma.TransactionClient;
@@ -97,25 +101,72 @@ const TX_OPTIONS = { timeout: 30_000 };
 const trimmed = (d: Prisma.Decimal) => d.toFixed(3).replace(/\.?0+$/, "") || "0";
 const numberOf = (d: Prisma.Decimal | null) => (d === null ? null : d.toNumber());
 
+/** Who sees bookings: anyone holding a booking permission. */
+export const SEE_BOOKINGS: readonly PermissionKey[] = [
+  "production.bookings.view",
+  "production.bookings.supplier",
+  "production.bookings.market",
+  "production.bookings.attach",
+  "production.bookings.close",
+];
+
+/** The permission that makes and changes each kind of booking. */
+export const MAKE_BOOKING: Record<BookingSource, PermissionKey> = {
+  SUPPLIER_PO: "production.bookings.supplier",
+  MARKET_PURCHASE: "production.bookings.market",
+};
+
 function assertCanSeeBookings(ctx: CompanyContext) {
-  assertAnyPermission(
-    ctx,
-    ["production.view", "materials.view", "materials.purchase"],
-    "You do not have permission to see bookings.",
-  );
+  assertAnyPermission(ctx, SEE_BOOKINGS, "You do not have permission to see bookings.");
 }
 
-const canAttach = (ctx: CompanyContext) =>
-  ctx.can("materials.purchase") || ctx.can("production.manage");
+/** The kinds of booking this person may make. */
+export const sourcesFor = (ctx: Pick<CompanyContext, "can">): BookingSource[] =>
+  (Object.keys(MAKE_BOOKING) as BookingSource[]).filter((s) => ctx.can(MAKE_BOOKING[s]));
+
+function assertCanMakeAny(ctx: CompanyContext) {
+  if (sourcesFor(ctx).length === 0) {
+    throw new AppError(
+      "FORBIDDEN",
+      "You do not have permission to make bookings (production.bookings.supplier or production.bookings.market).",
+    );
+  }
+}
+
+function assertCanMake(ctx: CompanyContext, source: BookingSource) {
+  if (!ctx.can(MAKE_BOOKING[source])) {
+    throw new AppError(
+      "FORBIDDEN",
+      source === "SUPPLIER_PO"
+        ? "You do not have permission to make or change supplier PO bookings (production.bookings.supplier)."
+        : "You do not have permission to make or change ready stock bookings (production.bookings.market).",
+    );
+  }
+}
+
+const canAttach = (ctx: CompanyContext) => ctx.can("production.bookings.attach");
 
 function assertCanAttach(ctx: CompanyContext) {
   if (!canAttach(ctx)) {
     throw new AppError(
       "FORBIDDEN",
-      "Only buyers (materials.purchase) and Production Managers attach bookings to a batch.",
+      "You do not have permission to attach bookings to a batch (production.bookings.attach).",
     );
   }
 }
+
+function assertCanClose(ctx: CompanyContext) {
+  if (!ctx.can("production.bookings.close")) {
+    throw new AppError(
+      "FORBIDDEN",
+      "You do not have permission to close or cancel bookings (production.bookings.close).",
+    );
+  }
+}
+
+/** Adding to stock as it is saved writes a bill on credit, as receiving does. */
+const canReceiveNow = (ctx: Pick<CompanyContext, "can">) =>
+  ctx.can("materials.purchase") || ctx.can("accounts.payments.record");
 
 // =============================================================================
 // Reading
@@ -243,6 +294,8 @@ function presentBooking(ctx: CompanyContext, b: BookingRow) {
   const expected = dateOnly(o.expectedDate);
   const state = orderState(o);
   const buy = ctx.can("materials.purchase");
+  const make = ctx.can(MAKE_BOOKING[b.source]);
+  const end = ctx.can("production.bookings.close");
   return {
     id: b.id,
     orderId: o.id,
@@ -296,10 +349,10 @@ function presentBooking(ctx: CompanyContext, b: BookingRow) {
     collar: presentCollar(b),
     /** What this person may do with it now (the services refuse the rest). */
     can: {
-      edit: buy && canChangeOrderLines(state).ok,
-      editPaperwork: buy && canChangeOrder(state).ok,
-      cancel: buy && canCancelOrder(state).ok,
-      close: buy && canCloseOrder(state).ok,
+      edit: make && canChangeOrderLines(state).ok,
+      editPaperwork: make && canChangeOrder(state).ok,
+      cancel: end && canCancelOrder(state).ok,
+      close: end && canCloseOrder(state).ok,
       attach: canAttach(ctx) && !o.batch && canChangeOrder(state).ok,
       detach: canAttach(ctx) && Boolean(o.batch) && !state.received,
       /** On a batch: its central receive; on its own: a supplier bill on the order (buyers, Accounts). */
@@ -411,7 +464,7 @@ export async function listBookings(ctx: CompanyContext, raw: unknown = {}) {
       };
     }),
     nextCursor: hasMore ? page[page.length - 1]?.id : undefined,
-    can: { create: ctx.can("materials.purchase") },
+    can: { create: sourcesFor(ctx).length > 0 },
   };
 }
 
@@ -682,9 +735,66 @@ const bookingSummary = (
 ) =>
   `${number} (${SOURCE_LABELS[source].toLowerCase()}, ${CATEGORY_LABELS[category].toLowerCase()}) to ${supplier}`;
 
-export async function createBooking(ctx: CompanyContext, raw: unknown, meta?: RequestMeta) {
+/**
+ * A market purchase bought and collected goes into stock as it is saved: only
+ * on its own (a batch's goods arrive through the batch's central receive), and
+ * with every price known, since the bill is written at once.
+ */
+function assertCanReceiveNow(input: { source: BookingSource; batchId?: string | null }) {
+  if (input.source !== "MARKET_PURCHASE") {
+    throw new AppError(
+      "VALIDATION",
+      "Only a market purchase goes into stock as it is saved. A supplier PO is received when the goods arrive.",
+      { receiveNow: ["Only for a market purchase"] },
+    );
+  }
+  if (input.batchId) {
+    throw new AppError(
+      "VALIDATION",
+      "A batch's goods are received in the batch's central receive. Save the booking, then receive it there.",
+      { receiveNow: ["Not for a booking on a batch"] },
+    );
+  }
+}
+
+function assertPricesForReceive(lines: PreparedLine[]) {
+  const fieldErrors: Record<string, string[]> = {};
+  lines.forEach((l, i) => {
+    if (l.priceLater) fieldErrors[`lines.${i}.unitPrice`] = ["Enter the price paid"];
+  });
+  if (Object.keys(fieldErrors).length > 0) {
+    throw new AppError(
+      "VALIDATION",
+      "Enter the price paid for every item: the goods go into stock now.",
+      fieldErrors,
+    );
+  }
+  if (lines.every((l) => l.unitPrice.lte(0))) {
+    throw new AppError("VALIDATION", "The bill total must be more than zero.", {
+      lines: ["Enter the prices paid"],
+    });
+  }
+}
+
+/** How the goods of a booking saved with "add to stock now" went in. */
+export type IntoStock = { bill: string } | { problem: string } | null;
+
+export async function createBooking(
+  ctx: CompanyContext,
+  raw: unknown,
+  meta?: RequestMeta,
+): Promise<Booking & { intoStock: IntoStock }> {
   const input = createBookingSchema.parse(raw);
-  assertCanBuyMaterials(ctx);
+  assertCanMake(ctx, input.source);
+  if (input.receiveNow) {
+    assertCanReceiveNow(input);
+    if (!canReceiveNow(ctx)) {
+      throw new AppError(
+        "FORBIDDEN",
+        "Adding the goods to stock as they are saved writes a bill on credit, which needs materials.purchase. Save the booking, and a buyer receives it.",
+      );
+    }
+  }
   const supplier = await assertPartyCanTransact(ctx, input.supplierId, "PURCHASE");
   const today = localDay(new Date(), ctx.company.timezone);
   if (input.expectedDate && input.expectedDate < today) {
@@ -694,7 +804,12 @@ export async function createBooking(ctx: CompanyContext, raw: unknown, meta?: Re
   }
   const plan = input.batchId ? await batchPlan(ctx, input.batchId) : null;
   const { lines, collar } = await prepareLines(ctx, input);
-  const bookingId = await runTransaction(async (tx) => {
+  if (input.receiveNow) {
+    assertPricesForReceive(lines);
+    // The store must be there before anything is written.
+    await resolveStore(ctx);
+  }
+  const saved = await runTransaction(async (tx) => {
     if (plan) await lockRow(tx, "ProductionBatch", plan.batch.id);
     const orderLines = await writeableLines(
       tx,
@@ -734,9 +849,44 @@ export async function createBooking(ctx: CompanyContext, raw: unknown, meta?: Re
       },
       tx,
     );
-    return booking.id;
+    return { id: booking.id, orderId };
   }, TX_OPTIONS);
-  return getBooking(ctx, bookingId);
+  const intoStock = input.receiveNow ? await receiveInFull(ctx, saved.orderId, meta) : null;
+  return { ...(await getBooking(ctx, saved.id)), intoStock };
+}
+
+/**
+ * Receives everything on a just-saved market purchase into the main store, at
+ * its prices, on a bill Due to the seller (Accounts pays it). The booking is
+ * already saved: if this fails, the goods wait to be received the usual way.
+ */
+async function receiveInFull(
+  ctx: CompanyContext,
+  orderId: string,
+  meta: RequestMeta | undefined,
+): Promise<IntoStock> {
+  const lines = await ctx.db.purchaseOrderLine.findMany({
+    where: { orderId },
+    orderBy: { id: "asc" },
+    select: { id: true, quantity: true },
+  });
+  try {
+    const bill = await createPurchase(
+      ctx,
+      {
+        purchaseOrderId: orderId,
+        paymentType: "DUE",
+        items: lines.map((l) => ({ purchaseOrderLineId: l.id, quantity: l.quantity.toNumber() })),
+      },
+      meta,
+    );
+    return { bill: bill.number };
+  } catch (error) {
+    if (!(error instanceof AppError)) console.error("[bookings] receive now failed", error);
+    return {
+      problem: error instanceof AppError ? error.message : "The goods could not go into stock.",
+    };
+  }
 }
 
 /** Locks the booking's order for the transaction and reads what the rules need. */
@@ -794,12 +944,14 @@ export async function updateBooking(
   meta?: RequestMeta,
 ) {
   const input = updateBookingSchema.parse(raw);
-  assertCanBuyMaterials(ctx);
+  assertCanMakeAny(ctx);
   const current = await ctx.db.booking.findUnique({
     where: { id: bookingId },
-    select: { order: { select: { batchId: true } } },
+    select: { source: true, order: { select: { batchId: true } } },
   });
   if (!current) throw new AppError("NOT_FOUND", "Booking not found.");
+  assertCanMake(ctx, current.source);
+  assertCanMake(ctx, input.source);
   const supplier = await assertPartyCanTransact(ctx, input.supplierId, "PURCHASE");
   const plan = current.order.batchId ? await batchMaterialPlan(ctx, current.order.batchId) : null;
   const { lines, collar } = await prepareLines(ctx, input);
@@ -875,7 +1027,13 @@ export async function updateBookingPaperwork(
   meta?: RequestMeta,
 ) {
   const input = updateBookingPaperworkSchema.parse(raw);
-  assertCanBuyMaterials(ctx);
+  assertCanMakeAny(ctx);
+  const current = await ctx.db.booking.findUnique({
+    where: { id: bookingId },
+    select: { source: true },
+  });
+  if (!current) throw new AppError("NOT_FOUND", "Booking not found.");
+  assertCanMake(ctx, current.source);
   await runTransaction(async (tx) => {
     const { order } = await lockBooking(tx, ctx, bookingId);
     assertAllowed(canChangeOrder(orderState(order)));
@@ -937,7 +1095,8 @@ export async function cancelBooking(
   raw: unknown,
   meta?: RequestMeta,
 ) {
-  await cancelPurchaseOrder(ctx, await orderIdOf(ctx, bookingId), raw, meta);
+  assertCanClose(ctx);
+  await endOrder(ctx, await orderIdOf(ctx, bookingId), raw, meta, "CANCELLED");
   return getBooking(ctx, bookingId);
 }
 
@@ -948,7 +1107,8 @@ export async function closeBooking(
   raw: unknown,
   meta?: RequestMeta,
 ) {
-  await closePurchaseOrder(ctx, await orderIdOf(ctx, bookingId), raw, meta);
+  assertCanClose(ctx);
+  await endOrder(ctx, await orderIdOf(ctx, bookingId), raw, meta, "CLOSED");
   return getBooking(ctx, bookingId);
 }
 
@@ -1131,7 +1291,7 @@ export async function getBatchBookings(ctx: CompanyContext, batchId: string) {
     batch,
     attached: attached.map(present),
     attachable: open.map(present),
-    can: { attach: mayAttach, create: ctx.can("materials.purchase") },
+    can: { attach: mayAttach, create: sourcesFor(ctx).length > 0 },
   };
 }
 
@@ -1239,18 +1399,22 @@ async function collarFromBatch(styleIds: string[]): Promise<FormCollar | null> {
 /**
  * What the booking wizard starts with: a booking to change, or a new one (for
  * a batch: its fabric still to order, its garment colours in the collar matrix
- * and its other materials to add with a tap). Buyers only.
+ * and its other materials to add with a tap). For whoever makes bookings.
  */
 export async function getBookingForm(
   ctx: CompanyContext,
   from: { bookingId?: string; batchId?: string } = {},
 ) {
-  assertCanBuyMaterials(ctx);
+  assertCanMakeAny(ctx);
   const today = localDay(new Date(), ctx.company.timezone);
+  /** The kinds of booking this person may make, and whether they may add to stock as they save. */
+  const can = { sources: sourcesFor(ctx), receiveNow: canReceiveNow(ctx) };
   if (from.bookingId) {
     const b = await getBooking(ctx, from.bookingId);
+    assertCanMake(ctx, b.source);
     return {
       today,
+      can,
       booking: {
         id: b.id,
         number: b.number,
@@ -1317,7 +1481,7 @@ export async function getBookingForm(
   }
   let batch: { id: string; code: string; name: string } | null = null;
   let batchMaterials: BatchPick[] = [];
-  let values = blankValues();
+  let values = { ...blankValues(), source: can.sources[0]! };
   if (from.batchId) {
     const plan = await batchPlan(ctx, from.batchId);
     batch = plan.batch;
@@ -1364,6 +1528,7 @@ export async function getBookingForm(
   }
   return {
     today,
+    can,
     booking: null,
     batch,
     batchMaterials,

@@ -110,13 +110,21 @@ export const NAV_ITEMS: readonly NavItem[] = [
     anyOf: ["sales.view"],
   },
   {
-    // The production overview, projects, factory deliveries, supplier bills and
-    // cost heads (components/production/tabs.ts). The store team, who only
-    // receive goods, land on its Deliveries tab.
+    // The production overview, projects, factory deliveries, supplier bills,
+    // cost heads and bookings (components/production/tabs.ts). The store team, who
+    // only receive goods, land on its Deliveries tab.
     href: "/production",
     label: "Production",
     icon: FactoryIcon,
-    anyOf: ["production.view", "production.stock_intake"],
+    anyOf: [
+      "production.view",
+      "production.stock_intake",
+      "production.bookings.view",
+      "production.bookings.supplier",
+      "production.bookings.market",
+      "production.bookings.attach",
+      "production.bookings.close",
+    ],
   },
   {
     // Cash and bank, supplier payments, expenses, the journal, the chart of

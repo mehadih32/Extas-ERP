@@ -145,6 +145,7 @@ describe("Booking presets", () => {
       "Pocketing",
       "Interlining",
       "Collar bone",
+      "Button",
     ]);
     expect(CATEGORY_PRESETS.OUTERWEAR.fabricUnit).toBe("YARD");
     expect(CATEGORY_PRESETS.OUTERWEAR.trims.map((t) => t.name)).toEqual([
@@ -212,6 +213,7 @@ describe("Booking terms", () => {
 /** What getBookingForm hands a new booking with nothing chosen yet. */
 const blankForm = (over: Partial<BookingForm["values"]> = {}): BookingForm => ({
   today: "2026-10-13",
+  can: { sources: ["SUPPLIER_PO", "MARKET_PURCHASE"], receiveNow: true },
   booking: null,
   batch: null,
   batchMaterials: [],
@@ -280,6 +282,7 @@ describe("The booking wizard's working copy", () => {
       ["Pocketing", "YARD"],
       ["Interlining", "YARD"],
       ["Collar bone", "PCS"],
+      ["Button", "PCS"],
     ]);
     expect(stepsFor(woven)).toEqual(["setup", "fabric", "trims", "terms"]);
   });
@@ -327,6 +330,28 @@ describe("The booking wizard's working copy", () => {
     expect(parsed.terms?.split("\n").length).toBe(
       standardTerms("SUPPLIER_PO", "KNITWEAR", "EN", { collar: true }).length,
     );
+  });
+
+  it("asks for every price when a market purchase goes into stock as it is saved", () => {
+    const draft = filledDraft();
+    draft.expectedDate = "2026-10-20";
+    draft.receiveNow = true;
+    // A supplier PO waits for its goods, whatever the box said.
+    expect(buildInput(draft, "2026-10-13").input).toMatchObject({
+      receiveNow: false,
+      expectedDate: "2026-10-20",
+    });
+    expect(buildInput(draft, "2026-10-13").problems).toEqual({});
+    draft.source = "MARKET_PURCHASE";
+    const { input, problems } = buildInput(draft, "2026-10-13");
+    expect(input).toMatchObject({ receiveNow: true, expectedDate: null });
+    expect(problems).toEqual({
+      "lines.1.unitPrice": "Enter the price paid: the goods go into stock now.",
+      "lines.2.unitPrice": "Enter the price paid: the goods go into stock now.",
+      "lines.3.unitPrice": "Enter the price paid: the goods go into stock now.",
+      "lines.4.unitPrice": "Enter the price paid: the goods go into stock now.",
+    });
+    expect(stepOf("lines.1.unitPrice", draft)).toBe("trims");
   });
 
   it("finds every problem on its step before the server is asked", () => {

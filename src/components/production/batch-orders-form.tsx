@@ -159,17 +159,19 @@ export function BatchOrdersForm({ form: data, currency }: { form: FormData; curr
               : "All the batch's fabric is booked or ordered."}
           </p>
         </div>
-        <Button
-          asChild
-          size="sm"
-          variant={fabricLeft.length > 0 ? "default" : "outline"}
-          className="w-full sm:w-auto"
-        >
-          <Link href={productionHref.newBooking(data.batch.id)}>
-            <ScrollTextIcon aria-hidden />
-            Book fabric
-          </Link>
-        </Button>
+        {data.canBook && (
+          <Button
+            asChild
+            size="sm"
+            variant={fabricLeft.length > 0 ? "default" : "outline"}
+            className="w-full sm:w-auto"
+          >
+            <Link href={productionHref.newBooking(data.batch.id)}>
+              <ScrollTextIcon aria-hidden />
+              Book fabric
+            </Link>
+          </Button>
+        )}
       </div>
       <ul className="grid gap-1 text-[0.8125rem] text-muted-foreground" aria-label="Fabric">
         {data.fabric.map((m) => (

@@ -12,6 +12,7 @@ import { UNIT_LABELS } from "@/components/materials/labels";
 import { SupplierPicker } from "@/components/materials/pickers";
 import { money } from "@/components/sales/labels";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { formatDay } from "@/lib/display";
@@ -39,6 +40,7 @@ import {
   lineQuantity,
   liveCollarTotals,
   quantityLabel,
+  receivesNow,
   standardTermList,
   startDraft,
   type Step,
@@ -94,6 +96,13 @@ export function BookingWizard({ form: data, currency }: { form: BookingForm; cur
   const [dirty, setDirty] = useState(false);
   const topRef = useRef<HTMLDivElement>(null);
   const editing = data.booking;
+  /**
+   * A market purchase on its own can go into stock as it is saved, by whoever may
+   * also buy raw materials (the server checks again).
+   */
+  const canReceiveNow =
+    data.can.receiveNow && !editing && !data.batch && draft.source === "MARKET_PURCHASE";
+  const intoStock = receivesNow(draft) && canReceiveNow;
   const steps = stepsFor(draft);
   const at = Math.max(0, steps.indexOf(step));
   const last = at === steps.length - 1;
@@ -174,7 +183,11 @@ export function BookingWizard({ form: data, currency }: { form: BookingForm; cur
         return;
       }
       setDirty(false);
-      router.push(`${productionHref.booking(result.data.id)}?${editing ? "saved" : "created"}=1`);
+      const stocked = "stocked" in result.data ? result.data.stocked : null;
+      const stock = stocked === null ? "" : `&stock=${stocked ? "1" : "0"}`;
+      router.push(
+        `${productionHref.booking(result.data.id)}?${editing ? "saved" : "created"}=1${stock}`,
+      );
     });
   }
 
@@ -276,12 +289,39 @@ export function BookingWizard({ form: data, currency }: { form: BookingForm; cur
             legend="Where the goods come from"
             value={draft.source}
             onChange={(source) => update({ source })}
-            options={BOOKING_SOURCES.map((s) => ({
+            // Only the kinds this person may book (Production > Bookings > Add bookings).
+            options={BOOKING_SOURCES.filter(
+              (s) => data.can.sources.includes(s) || s === draft.source,
+            ).map((s) => ({
               value: s,
               label: SOURCE_LABELS[s],
               hint: SOURCE_HINTS[s],
             }))}
           />
+          {canReceiveNow && (
+            <div className="flex items-start gap-3 rounded-lg border bg-card p-4">
+              <Checkbox
+                id="booking-receive-now"
+                checked={draft.receiveNow}
+                onCheckedChange={(value) => update({ receiveNow: value === true })}
+                className="mt-0.5"
+                aria-describedby="booking-receive-now-hint"
+              />
+              <div className="grid gap-0.5">
+                <label htmlFor="booking-receive-now" className="cursor-pointer text-sm font-medium">
+                  Bought and collected: add to stock now
+                </label>
+                <p
+                  id="booking-receive-now-hint"
+                  className="text-[0.8125rem] leading-snug text-muted-foreground"
+                >
+                  No waiting for a delivery: the goods go into the main store when you save. Every
+                  item needs the price paid. The bill is saved as Due to the seller, and Accounts
+                  pays it.
+                </p>
+              </div>
+            </div>
+          )}
           <ChoiceCards<GarmentCategory>
             name="category"
             legend="Garment family"
@@ -342,20 +382,22 @@ export function BookingWizard({ form: data, currency }: { form: BookingForm; cur
             />
           </Field>
           <div className="grid items-start gap-4 sm:grid-cols-2">
-            <Field
-              id="booking-expected"
-              label="Deliver by (optional)"
-              error={problem("expectedDate")}
-            >
-              <Input
+            {!intoStock && (
+              <Field
                 id="booking-expected"
-                type="date"
-                min={editing ? undefined : data.today}
-                value={draft.expectedDate}
-                onChange={(e) => update({ expectedDate: e.target.value })}
-                aria-invalid={Boolean(problem("expectedDate"))}
-              />
-            </Field>
+                label="Deliver by (optional)"
+                error={problem("expectedDate")}
+              >
+                <Input
+                  id="booking-expected"
+                  type="date"
+                  min={editing ? undefined : data.today}
+                  value={draft.expectedDate}
+                  onChange={(e) => update({ expectedDate: e.target.value })}
+                  aria-invalid={Boolean(problem("expectedDate"))}
+                />
+              </Field>
+            )}
             <Field
               id="booking-ref"
               label="Supplier's reference (optional)"
@@ -433,6 +475,7 @@ export function BookingWizard({ form: data, currency }: { form: BookingForm; cur
           garmentPieces={draft.garmentPieces}
           batchPicks={data.batchMaterials}
           currency={currency}
+          priceNeeded={intoStock}
           problem={problem}
           onLines={(lines) => update({ lines })}
         />
@@ -508,7 +551,7 @@ export function BookingWizard({ form: data, currency }: { form: BookingForm; cur
               maxLength={2000}
             />
           </Field>
-          <Review draft={draft} currency={currency} />
+          <Review draft={draft} currency={currency} intoStock={intoStock} />
         </section>
       )}
 
@@ -548,6 +591,8 @@ export function BookingWizard({ form: data, currency }: { form: BookingForm; cur
               "Saving"
             ) : editing ? (
               "Save the changes"
+            ) : intoStock ? (
+              "Save and add to stock"
             ) : (
               "Save the booking"
             )
@@ -571,7 +616,15 @@ export function BookingWizard({ form: data, currency }: { form: BookingForm; cur
 }
 
 /** The booking at a glance before it is saved: who, what, how much and the collar sets. */
-function Review({ draft, currency }: { draft: Draft; currency: string }) {
+function Review({
+  draft,
+  currency,
+  intoStock,
+}: {
+  draft: Draft;
+  currency: string;
+  intoStock: boolean;
+}) {
   const totals = liveCollarTotals(draft.collar);
   const rows = draft.lines.map((l) => {
     const worked = lineQuantity(l, draft.collar);
@@ -609,10 +662,14 @@ function Review({ draft, currency }: { draft: Draft; currency: string }) {
           label={draft.source === "MARKET_PURCHASE" ? "Seller" : "Supplier"}
           value={draft.supplier?.name ?? "Not chosen"}
         />
-        <Figure
-          label="Deliver by"
-          value={draft.expectedDate ? formatDay(draft.expectedDate) : "Not set"}
-        />
+        {intoStock ? (
+          <Figure label="Into stock" value="When saved" />
+        ) : (
+          <Figure
+            label="Deliver by"
+            value={draft.expectedDate ? formatDay(draft.expectedDate) : "Not set"}
+          />
+        )}
       </dl>
       <ul className="grid divide-y rounded-md border" aria-label="Items to book">
         {rows.map(({ line, worked, specs }) => (

@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import type { CompanyContext } from "@/modules/auth/context";
 import { OPEN_ORDER } from "@/modules/materials/material.service";
 import { batchMaterialPlan } from "@/modules/production/batch-orders.service";
+import { sourcesFor } from "@/modules/production/booking.service";
 import {
   getMaterialNeeds,
   gridAxes,
@@ -214,6 +215,9 @@ export async function getBatchMaterials(ctx: CompanyContext, batchId: string) {
     })),
     openOrders,
     can: {
+      /** "Book fabric": whoever makes bookings of either kind (booking.service MAKE_BOOKING). */
+      book: sourcesFor(ctx).length > 0 && plan.styles.length > 0,
+      /** "Make purchase orders" for the trims and accessories: buyers. */
       order: ctx.can("materials.purchase") && plan.styles.length > 0,
       /** The central receive: buyers, once an order of the batch has goods to come. */
       receive: ctx.can("materials.purchase") && openOrders > 0,
@@ -261,6 +265,8 @@ export async function getBatchOrdersForm(ctx: CompanyContext, batchId: string) {
     styles: data.styles,
     /** The batch's fabric, to book with a booking instead. */
     fabric: data.materials.filter((m) => m.material.kind === "FABRIC"),
+    /** Whether "Book fabric" is offered next to it. */
+    canBook: data.can.book,
     /** Suppliers first by name, the materials without one last. */
     groups: [...groups.values()].sort((a, b) =>
       !a.supplier ? 1 : !b.supplier ? -1 : a.supplier.name.localeCompare(b.supplier.name),

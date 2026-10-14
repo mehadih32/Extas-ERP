@@ -184,6 +184,11 @@ export const createBookingSchema = z.object({
   ...bookingFields,
   /** Attached to this master batch at once (its fabric is booked here). */
   batchId: id.nullish(),
+  /**
+   * A market purchase already bought and collected: its goods go into the main
+   * store as it is saved, on a bill Due to the seller (every item needs its price).
+   */
+  receiveNow: z.boolean().default(false),
 });
 
 /** Everything, while nothing has arrived on the booking. */

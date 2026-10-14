@@ -43,10 +43,19 @@ const pickMaterials = () =>
     "accounts.payments.record",
     // A style's materials per piece.
     "production.manage",
+    // A booking's items (Production > Bookings > Add bookings).
+    "production.bookings.supplier",
+    "production.bookings.market",
   );
-/** The supplier search: a material's usual supplier, an order's, a bill's. */
+/** The supplier search: a material's usual supplier, an order's, a bill's, a booking's. */
 const pickSuppliers = () =>
-  requireAnyPermission("materials.manage", "materials.purchase", "accounts.payments.record");
+  requireAnyPermission(
+    "materials.manage",
+    "materials.purchase",
+    "accounts.payments.record",
+    "production.bookings.supplier",
+    "production.bookings.market",
+  );
 const pickProjects = () => requireAnyPermission("materials.manage", "materials.purchase");
 
 /** Runs a change and refreshes every screen that may show it. */

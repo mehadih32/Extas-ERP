@@ -1,6 +1,6 @@
 import { apiRoute, readJson } from "@/lib/api";
 import { getRequestMeta } from "@/lib/request-meta";
-import { requireAnyPermission, requirePermission } from "@/modules/auth/context";
+import { requireAnyPermission } from "@/modules/auth/context";
 import * as bookings from "@/modules/production/booking.service";
 
 export const dynamic = "force-dynamic";
@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
  */
 export const GET = apiRoute(async (request) =>
   bookings.listBookings(
-    await requireAnyPermission("production.view", "materials.view", "materials.purchase"),
+    await requireAnyPermission(...bookings.SEE_BOOKINGS),
     Object.fromEntries(new URL(request.url).searchParams),
   ),
 );
@@ -22,19 +22,22 @@ export const GET = apiRoute(async (request) =>
  * POST /api/production/bookings — { source: SUPPLIER_PO | MARKET_PURCHASE, category:
  * KNITWEAR | WOVEN | OUTERWEAR | SWEATER | OTHER, supplierId, batchId?, expectedDate?,
  * supplierRef?, title?, styleRef?, garmentPieces?, deliveryPlace?, paymentTerms?,
- * termsLanguage?: EN | BN, terms?, notes?, collar?: { style, extraPercent, notes?, sizes:
+ * termsLanguage?: EN | BN, terms?, notes?, receiveNow?, collar?: { style, extraPercent, notes?, sizes:
  * [{ label, collarLength, collarWidth, cuffLength?, cuffWidth? }], colours: [{
  * garmentColour, collarColour?, tippingColour?, pieces: [per size group] }] }, lines: [{
  * materialId | (name, kind, unit), quantity?, unitPrice?, description?, imageId?, specs?:
  * { role, fabricType, composition, colour, weight, weightUnit, dia, diaType, width,
  * construction, yarnCount, gauge, finish, size, pieces, perDozen, lossPercent } }] }.
  * A purchase order with its specification; collar and cuff lines take their quantity from
- * the matrix. Needs materials.purchase.
+ * the matrix. receiveNow (a market purchase on its own, every item priced) also puts the
+ * goods into the main store on a bill Due to the seller (that also needs materials.purchase);
+ * `intoStock` says how that went. Needs production.bookings.supplier or
+ * production.bookings.market for the kind of booking.
  */
 export const POST = apiRoute(
   async (request) =>
     bookings.createBooking(
-      await requirePermission("materials.purchase"),
+      await requireAnyPermission("production.bookings.supplier", "production.bookings.market"),
       await readJson(request),
       await getRequestMeta(),
     ),

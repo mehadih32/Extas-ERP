@@ -30,11 +30,11 @@ const pick = <T extends string>(list: readonly T[], value: string | undefined) =
   list.find((v) => v === value);
 
 /**
- * Fabric and trims bookings, newest first (production.view, materials.view or
- * materials.purchase, like GET /api/production/bookings): supplier POs to a
- * mill or trims house and ready stock bought on the open market, by source,
- * garment family and status. Amounts follow the material-cost rule; making a
- * booking is for buyers (materials.purchase).
+ * Fabric and trims bookings, newest first (any booking permission, like GET
+ * /api/production/bookings): supplier POs to a mill or trims house and ready
+ * stock bought on the open market, by source, garment family and status.
+ * Amounts follow the material-cost rule; making a booking needs
+ * production.bookings.supplier or production.bookings.market.
  */
 export default async function BookingsPage({
   searchParams,

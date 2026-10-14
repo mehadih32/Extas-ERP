@@ -68,7 +68,7 @@ function RoleSelect({
  * the login; people who manage users also choose its role and switch it off
  * or on, under the same rules as Settings > Team (`access.can`). Changing the
  * role, the ⚙ next to it and a newly given login open the permission matrix
- * (every permission A to Z) as on Settings > Team.
+ * (every permission as a tree, area > part > action) as on Settings > Team.
  */
 export function SystemAccessCard({
   employee: e,

@@ -222,6 +222,7 @@ export const CATEGORY_PRESETS: Record<GarmentCategory, CategoryPreset> = {
         role: "TRIM",
         detailsHint: "Plastic, 2.5 inches",
       },
+      { name: "Button", kind: "ACCESSORY", unit: "PCS", role: "TRIM", detailsHint: "14L, 4 holes" },
     ],
     collarMatrix: false,
     processLoss: 5,

@@ -114,6 +114,9 @@ describe("the proxy in front of the screens", () => {
       "/api/auth/login",
       "/_next/static/app.js",
       "/icon.svg",
+      // The browser tab's icon, asked for before anyone signs in.
+      "/favicon.ico",
+      "/favicon.svg",
       // Installing the app: fetched without the session cookie.
       "/manifest.webmanifest",
       "/sw.js",
@@ -123,7 +126,7 @@ describe("the proxy in front of the screens", () => {
       expect(matches(path), path).toBe(false);
     }
     // Screens whose names merely start like those files still need a session.
-    for (const path of ["/iconsets", "/sw.json", "/manifest"]) {
+    for (const path of ["/iconsets", "/sw.json", "/manifest", "/favicon.svgs"]) {
       expect(matches(path), path).toBe(true);
     }
   });

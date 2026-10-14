@@ -209,13 +209,24 @@ stop_demo() {
 
 # --- Going back after a failed update ---------------------------------------------
 
+# The image a service's container was made from, else the image named :latest.
+running_image() {
+  local id image
+  id="$(compose ps -a -q "$1" 2>/dev/null | head -n 1)"
+  [ -n "$id" ] && image="$(docker inspect -f '{{.Image}}' "$id" 2>/dev/null)" && [ -n "$image" ] &&
+    printf '%s' "$image" && return 0
+  docker image inspect -f '{{.Id}}' "$2" 2>/dev/null
+}
+
 # Keeps the version that runs now as :previous, so a failed update can go back to it
-# without building anything. False on a new server, where nothing runs yet.
+# without building anything. It takes the images the app's and the migrate step's
+# containers were made from: a build that failed half way may already have moved the
+# :latest names to the new version. False on a new server, where nothing runs yet.
 keep_running_version() {
-  docker image inspect extras-erp-app:latest >/dev/null 2>&1 || return 1
-  docker image inspect extras-erp-tools:latest >/dev/null 2>&1 || return 1
-  docker tag extras-erp-app:latest extras-erp-app:previous
-  docker tag extras-erp-tools:latest extras-erp-tools:previous
+  local app tools
+  app="$(running_image app extras-erp-app:latest)" && [ -n "$app" ] || return 1
+  tools="$(running_image migrate extras-erp-tools:latest)" && [ -n "$tools" ] || return 1
+  docker tag "$app" extras-erp-app:previous && docker tag "$tools" extras-erp-tools:previous
 }
 
 # Makes the kept version the one that runs (keep_running_version saved it).

@@ -40,8 +40,11 @@ if [ "$pull" = 1 ]; then
   compose pull db caddy
   build+=(--pull)
 fi
-compose "${build[@]}" ||
+if ! compose "${build[@]}"; then
+  # A part that was built is not kept: the :latest names stay on the running version.
+  [ "$can_go_back" = 1 ] && use_previous_version
   die "the new version could not be built; the log above says why. Nothing was changed: the ERP still runs the version it ran before."
+fi
 
 # Changes to the database the update brings, if any. While there are some, the ERP
 # closes to its users (HTTPS stops) from just before the safety copy until the new

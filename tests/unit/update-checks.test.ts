@@ -73,7 +73,7 @@ describe("deploy.sh", () => {
 
   it("keeps the running version before building, and builds before touching anything", () => {
     const keep = deploy.indexOf("keep_running_version");
-    const build = deploy.indexOf('compose "${build[@]}"');
+    const build = deploy.indexOf('if ! compose "${build[@]}"');
     const copy = deploy.indexOf("safety_copy");
     const up = deploy.indexOf("compose up -d --remove-orphans");
     expect(keep).toBeGreaterThan(0);
@@ -91,6 +91,16 @@ describe("deploy.sh", () => {
       /if \[ -n "\$pending" \] && \[ -n "\$copy" \]; then[\s\S]*?restore_database/,
     );
     expect(lib).toMatch(/docker tag extras-erp-app:previous extras-erp-app:latest/);
+  });
+
+  it("keeps the images the running containers were made from, not whatever is named latest", () => {
+    expect(lib).toMatch(/running_image app extras-erp-app:latest/);
+    expect(lib).toMatch(/running_image migrate extras-erp-tools:latest/);
+    expect(lib).toMatch(/docker inspect -f '\{\{\.Image\}\}'/);
+    // A build that failed half way leaves the :latest names on the running version.
+    expect(deploy).toMatch(
+      /if ! compose "\$\{build\[@\]\}"; then\s+#[^\n]*\n\s+\[ "\$can_go_back" = 1 \] && use_previous_version\s+die "the new version could not be built/,
+    );
   });
 
   it("does not start an update without a safety copy of the database", () => {

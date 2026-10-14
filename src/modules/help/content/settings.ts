@@ -301,6 +301,9 @@ export const settingsHelp: HelpSection = {
             caption: "“Letterhead” অংশ: লোগো, “Main colour”, “Accent colour” ও “Footer”",
           },
         },
+        {
+          text: "একই অংশে “Tagline”: বুকিং বুক ও বুকিংয়ের PDF-এর হেডারে কোম্পানির নামের নিচে ছাপা হয় (খালি রাখলে “Manufacturing | Sourcing | Export”)। “Booking books print”-এ বেছে নিন PDF শুরুতে “Landscape” না “Portrait” হবে। প্রত্যেকে ডাউনলোডের সময় নিজে বদলাতে পারেন, আর তাঁর শেষ বাছাই মনে থাকে। “Save” চাপুন।",
+        },
       ],
       tips: [
         "লোগো বদলালে আগে তৈরি করা PDF-এ পুরোনো লোগোই থাকবে, নতুন PDF-এ নতুন লোগো আসবে।",

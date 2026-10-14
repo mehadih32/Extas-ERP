@@ -14,6 +14,7 @@ import { Fact, Panel, RecordHeader, Totals } from "@/components/sales/detail-bit
 import { money } from "@/components/sales/labels";
 import { BackLink } from "@/components/settings/back-link";
 import { formatDay } from "@/lib/display";
+import { pdfOrientationFor } from "@/modules/documents/book-frame";
 import { specsText } from "@/modules/production/booking-math";
 import {
   CATEGORY_HINTS,
@@ -144,6 +145,7 @@ export default async function BookingPage({
     );
   }
   const b = result.data;
+  const orientation = await pdfOrientationFor(ctx);
   const currency = ctx.company.currency;
   const seeCosts = b.totalAmount !== null;
   const openMaterial = ctx.can("materials.view");
@@ -193,7 +195,7 @@ export default async function BookingPage({
             goods”.
           </FormAlert>
         )}
-        <BookingActions key={b.id} booking={b} notice={notice} />
+        <BookingActions key={b.id} booking={b} notice={notice} orientation={orientation} />
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,8fr)_minmax(0,4fr)]">

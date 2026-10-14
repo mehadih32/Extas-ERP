@@ -48,34 +48,40 @@ datasource db {
 
 /// A distinct business entity. All data is isolated per company.
 model Company {
-  id                    String    @id @default(cuid())
+  id                    String          @id @default(cuid())
   name                  String
-  slug                  String    @unique
+  slug                  String          @unique
   legalName             String?
   // Letterhead / branding info used on every PDF & the blank letterhead pad
   logoUrl               String?
   /// Uploaded logo (PNG or JPG) printed on the letterhead of every PDF.
-  logoFileId            String?   @unique
+  logoFileId            String?         @unique
   address               String?
   phone                 String?
   email                 String?
   website               String?
   letterheadFooter      String?
-  primaryColor          String    @default("#0B3D2E")
-  accentColor           String    @default("#BE1434")
-  currency              String    @default("BDT")
-  timezone              String    @default("Asia/Dhaka")
+  /// Printed under the name in the header of booking books and bookings; null prints
+  /// "Manufacturing | Sourcing | Export".
+  tagline               String?
+  /// Which way round booking books and bookings print until a person picks one (each
+  /// person's last pick is kept in UserPreference.pdfOrientation).
+  bookOrientation       PageOrientation @default(LANDSCAPE)
+  primaryColor          String          @default("#0B3D2E")
+  accentColor           String          @default("#BE1434")
+  currency              String          @default("BDT")
+  timezone              String          @default("Asia/Dhaka")
   /// When the terms of employment staff must have agreed to were published (null: no terms yet).
   /// Staff linked to a login agree before they work in the app (hr/terms.service.ts).
   termsRequiredSince    DateTime?
   // Business rules
-  lowStockThreshold     Int       @default(5)
-  defaultAdvancePercent Decimal   @default(30) @db.Decimal(5, 2)
-  dormantAfterMonths    Int       @default(6)
-  fiscalYearStartMonth  Int       @default(7) // 7 = July (Bangladesh income year July-June)
-  isActive              Boolean   @default(true)
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
+  lowStockThreshold     Int             @default(5)
+  defaultAdvancePercent Decimal         @default(30) @db.Decimal(5, 2)
+  dormantAfterMonths    Int             @default(6)
+  fiscalYearStartMonth  Int             @default(7) // 7 = July (Bangladesh income year July-June)
+  isActive              Boolean         @default(true)
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
 
   memberships          CompanyMembership[]
   sessions             Session[]
@@ -364,12 +370,15 @@ model RolePermission {
 
 /// Per-user UI preferences (e.g. which dashboard metric cards are hidden 👁).
 model UserPreference {
-  id              String         @id @default(cuid())
-  userId          String         @unique
+  id              String           @id @default(cuid())
+  userId          String           @unique
   hiddenMetrics   String[] // e.g. ["NET_PROFIT", "LIABILITIES"]
   dashboardLayout Json?
-  interfaceStyle  InterfaceStyle @default(LEGACY)
-  updatedAt       DateTime       @updatedAt
+  interfaceStyle  InterfaceStyle   @default(LEGACY)
+  /// The way round this person last printed a booking book or a booking (null: the
+  /// company's default, Company.bookOrientation).
+  pdfOrientation  PageOrientation?
+  updatedAt       DateTime         @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
@@ -4225,6 +4234,12 @@ enum CollarStyle {
 enum DocumentLanguage {
   EN
   BN
+}
+
+/// Which way round an A4 page prints (booking books and bookings).
+enum PageOrientation {
+  LANDSCAPE
+  PORTRAIT
 }
 
 enum PurchaseOrderStatus {

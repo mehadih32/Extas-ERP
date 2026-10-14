@@ -103,6 +103,11 @@ export type Row = {
    * the cell that holds the details. The writer is handed the pictures' bytes.
    */
   image?: string;
+  /**
+   * The row's least height in points, for a row left blank to be filled by hand (a
+   * fabric swatch is pasted into a row about 15 mm tall).
+   */
+  height?: number;
 };
 
 export type Block =
@@ -127,7 +132,37 @@ export type Block =
   | { kind: "heading"; title: string; subtitle?: string }
   /** Signature lines at the foot of this page, for a part that is signed on its own. */
   | { kind: "signatures"; labels: string[] }
-  | { kind: "pageBreak" };
+  | { kind: "pageBreak" }
+  /**
+   * A part of a book (a booking book's fabric booking for one mill) starting on a
+   * page of its own: `title` is printed as the page title, and `label` ("FABRIC ·
+   * FS-1") shows in the header of each of its pages. On letterhead it prints as a
+   * heading on a new page.
+   */
+  | { kind: "section"; title: string; label?: string; subtitle?: string }
+  /** Address boxes inside the document ("Supplier", "Deliver to"), as at the top. */
+  | { kind: "parties"; parties: Array<{ heading: string; lines: string[] }> };
+
+/** Which way round an A4 page prints. */
+export type Orientation = "portrait" | "landscape";
+
+/**
+ * The book frame (a booking book, a booking for the supplier) instead of the
+ * letterhead: A4 either way round, a blank strip 15 mm tall at the top of every
+ * page for binding, then on every page the header in three columns (the company
+ * and its tagline; the document's title and the part it is in; DOC NO, BUYER,
+ * DATE, PREPARED BY), navy tables, and the footer with the company's contacts
+ * and "PAGE 2 OF 9".
+ */
+export type BookFrame = {
+  orientation: Orientation;
+  /** Under the company's name ("Manufacturing | Sourcing | Export"). */
+  tagline: string;
+  /** The header's right column in small capitals; an empty value prints a line to write on. */
+  fields: Array<{ label: string; value: string }>;
+  /** The footer: "EXTAS | +8801764751616 | info@extas.com.bd | House-17, Road-08, Dhaka". */
+  contact: string;
+};
 
 export type Stamp = {
   text: string;
@@ -158,6 +193,8 @@ export type PrintDocument = {
   qr?: { data: string; caption?: string };
   /** A line for initials at the foot of every page ("Supplier's initials"). */
   initials?: string;
+  /** Printed in the book frame instead of on letterhead (see BookFrame). */
+  frame?: BookFrame;
 };
 
 /** Recursively key-sorted JSON, so the hash never depends on key order. */

@@ -510,11 +510,25 @@ run("Bookings", () => {
       type: "BOOKING",
       title: "Market Purchase Order",
       reference: market.number,
-      binding: true,
       qr: { data: link },
       initials: "Seller's initials",
+      frame: { orientation: "landscape", tagline: "Manufacturing | Sourcing | Export" },
     });
-    expect(doc.parties.map((p) => p.heading)).toEqual(["Seller", "Deliver to", "Booked for"]);
+    expect(doc.frame!.fields).toEqual([
+      { label: "Doc no", value: market.number },
+      { label: "Buyer · PO", value: "" },
+      { label: "Date", value: expect.any(String) },
+      { label: "Prepared by", value: "" },
+    ]);
+    const parties = doc.blocks.find((b) => b.kind === "parties");
+    expect(parties?.kind === "parties" && parties.parties.map((p) => p.heading)).toEqual([
+      "Seller",
+      "Deliver to",
+      "Booked for",
+    ]);
+    // The swatch list closes the booking, a row per fabric colour.
+    const swatches = doc.blocks.find((b) => b.kind === "section" && b.label === "Swatch list");
+    expect(swatches).toMatchObject({ title: "Fabric swatch list · Islampur Cloth Store" });
     const tables = doc.blocks.flatMap((b) => (b.kind === "table" ? [b] : []));
     expect(tables[0]!.title).toBe("Fabric · main fabric");
     expect(tables[0]!.columns.map((c) => c.label)).toEqual(
@@ -536,6 +550,15 @@ run("Bookings", () => {
     const pdf = await bookingPdf(env.pm, market.id);
     expect(pdf.bytes.subarray(0, 5).toString()).toBe("%PDF-");
     expect(pdf.fileName).toBe(`Extas - Booking ${market.number} Islampur Cloth Store.pdf`);
+    // Landscape until the person picks; their pick is kept for the next download.
+    expect(pdf.orientation).toBe("landscape");
+    const upright = await bookingPdf(env.pm, market.id, undefined, "portrait");
+    expect(upright.orientation).toBe("portrait");
+    expect((await bookingPdf(env.pm, market.id)).orientation).toBe("portrait");
+    expect((await bookingPdf(env.store, market.id)).orientation).toBe("landscape");
+    expect((await bookingPdf(env.pm, market.id, undefined, "sideways")).orientation).toBe(
+      "portrait",
+    );
 
     // A long booking runs on over pages, its table header repeated.
     const long = await bookings.createBooking(env.pm, {

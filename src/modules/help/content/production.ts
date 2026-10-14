@@ -937,6 +937,213 @@ export const productionHelp: HelpSection = {
       ],
     },
     {
+      slug: "production-tech-pack",
+      title: "স্টাইলের টেক প্যাক (Tech pack) তৈরি ও পূর্ণ করবেন যেভাবে",
+      summary:
+        "স্টাইলের টেক প্যাক পাতায় মাপের ছক, AI খসড়া, বিশেষজ্ঞের পরামর্শ, সংরক্ষিত রেফারেন্স, লোগো ও রং এক জায়গায়। প্রতিটি জিনিস সবুজ (নিশ্চিত), হলুদ (AI-এর অনুমান) বা লাল (নেই), আর উপরে কত শতাংশ পূর্ণ তা দেখায়।",
+      keywords: [
+        "tech pack",
+        "measurements",
+        "measurement chart",
+        "size chart",
+        "grading",
+        "ai draft",
+        "experts",
+        "review board",
+        "completeness",
+        "red cells",
+        "টেক প্যাক",
+        "মাপ",
+        "মাপের ছক",
+        "সাইজ চার্ট",
+        "গ্রেডিং",
+        "বিশেষজ্ঞ",
+      ],
+      routes: ["/production/projects/[projectId]/tech-pack"],
+      who: "দেখতে পারেন যাঁরা Production দেখতে পারেন। ছক, নির্দেশ, AI খসড়া, রেফারেন্স, লোগো ও রং বদলাতে পারেন Production Manager ও Super Admin। AI-এর বোতামগুলো আসে শুধু মালিক AI Center-এ AI চালু করলে।",
+      anyOf: ["production.view"],
+      steps: [
+        {
+          text: "স্টাইলের (প্রজেক্টের) পাতায় “Tech pack approval” অংশে “Open the tech pack” চাপুন। উপরে “Completeness” দেখায় কতটা সবুজ। চিহ্নের মানে: “Confirmed” (সবুজ ✓), “AI guess” (হলুদ ?), “Missing” (লাল !)।",
+          image: {
+            id: "production-tech-pack-1",
+            caption:
+              "টেক প্যাক পাতা: উপরে Completeness, নিচে মাপের ছক, AI খসড়া, রেফারেন্স, লোগো ও রং",
+          },
+        },
+        {
+          text: "“Measurements” অংশে “Make the chart” চাপুন। “Garment”, “Unit”, “Sizes”, “The buyer's size”, “Chest at that size”, “Chest measured” আর “Body length at that size” দিন। “Chest grade per size” খালি রাখলে পুরো বুকে প্রতি সাইজে 2 ইঞ্চি (5 সেমি)। বাকি সব মাপ ও সাইজ নিয়ম মেনে তৈরি হয়, হলুদ রঙে।",
+        },
+        {
+          text: "কোনো মাপে চাপ দিয়ে বদলান; আপনার দেওয়া মান সবুজ হয়। নিয়মে তৈরি পুরো সারি ঠিক থাকলে “Confirm” চাপুন। ছকে নেই এমন মাপ যোগ করতে “Add a measurement”। “Show in” দিয়ে ইঞ্চি বা সেমিতে দেখুন।",
+        },
+        {
+          text: "“Measurement sheet” চাপলে মাপের PDF, আর “Excel” চাপলে ইঞ্চি ও সেমি দুই শিটসহ Excel ফাইল নামে। “To settle with the buyer” অংশে থাকে যে প্রশ্নগুলো বায়ারের সাথে মেটাতে হবে।",
+        },
+        {
+          text: "“Instructions for AI” অংশে “Write instructions” চেপে প্রতিটি ভাগে আপনার নির্দেশ লিখুন (বাংলা বা ইংরেজিতে)। AI খসড়ার আগে এগুলো পড়ে, আর এগুলো তার নিজের অনুমানের চেয়ে বড়। বায়ারের ফাইলের সাথে না মিললে দুটোই লাল রঙে দেখায়, আপনি ঠিক করেন।",
+        },
+        {
+          text: "“AI draft” অংশে “Ask” বা “Auto” বেছে “Draft with AI” চাপুন। AI সংরক্ষিত রেফারেন্স, প্রতি পিসের কাঁচামাল, ছক ও আপনার নির্দেশ পড়ে খসড়া লেখে। প্রতিটি লাইনে “OK” বা “Change” চাপুন। নিচে থাকে “Questions from the AI” আর “Rules applied”।",
+        },
+        {
+          text: "“Experts” অংশে “Ask an expert” চেপে প্যাটার্ন মাস্টার, ফ্যাব্রিক ইঞ্জিনিয়ার বা QC ম্যানেজারকে প্রশ্ন করুন, বা “Let the AI pick”। অনুমোদনের আগে “Run the review board” চাপলে কাটিং মাস্টার ও হেড মার্চেন্ডাইজার খসড়াটি পরীক্ষা করেন।",
+        },
+        {
+          text: "লাল কিছু থাকলে (মাপ নেই, সিদ্ধান্ত না নেওয়া লাল লাইন, মালিকের টিক ছাড়া লোগো) “Tech pack approval” অংশে “Red cells keep it from approval” তালিকা দেখায় আর অনুমোদন হয় না। সব ঠিক হলে অনুমোদন করুন। “Tech pack PDF” চাপলে ছক, লোগো ও রংসহ PDF নামে।",
+        },
+      ],
+      tips: [
+        "AI খসড়া লেখে আর পরামর্শ দেয়; টেক প্যাকে নিজে কিছু বদলায় না, অনুমোদনও করে না।",
+        "আগে খরচ জানতে চাইলে (AI Center-এ ঠিক করা) AI চালানোর আগে আনুমানিক খরচ দেখায়: “Go on” চাপলে চলে, “Not now” চাপলে থামে।",
+        "“Make the chart again” চাপলে আপনার দেওয়া ও নিশ্চিত করা মান থেকে যায়; শুধু নিয়মে তৈরি মান নতুন করে হয়।",
+        "দাম, সরবরাহকারী বা মার্জিন কখনো AI-কে পাঠানো হয় না।",
+      ],
+    },
+    {
+      slug: "production-tech-pack-logos",
+      title: "টেক প্যাকে লোগো ও এমব্রয়ডারির মেশিন ফাইল রাখবেন যেভাবে",
+      summary:
+        "প্রতিটি লোগোর মাপ, সুতা ও কাপড় লিখে মেশিন ফাইল রাখুন: আগে বায়ারের ফাইল, না থাকলে এমব্রয়ডারি ফ্যাক্টরির পাঞ্চার, শেষে বায়ারের ভেক্টর থেকে খসড়া। প্রতিটি ফাইল মাপের সাথে মেলানো হয়; সেলাইয়ের নমুনা (sew-out) দেখে মালিক টিক দিলে ফাইলটি লক হয়।",
+      keywords: [
+        "logo",
+        "embroidery",
+        "dst",
+        "exp",
+        "pes",
+        "sew-out",
+        "digitizing",
+        "digitizing brief",
+        "puncher",
+        "vector",
+        "svg",
+        "tick for bulk",
+        "লোগো",
+        "এমব্রয়ডারি",
+        "পাঞ্চিং",
+        "সেলাইয়ের নমুনা",
+      ],
+      routes: ["/production/projects/[projectId]/tech-pack"],
+      who: "লোগো যোগ, ফাইল আপলোড ও ভেক্টর থেকে খসড়া: Production Manager ও Super Admin। বাল্কের জন্য টিক দেন যাঁদের “Tick logos for bulk after the sew-out” অনুমতি আছে; শুরুতে শুধু Super Admin।",
+      anyOf: ["production.view"],
+      steps: [
+        {
+          text: "টেক প্যাকের “Logos and embroidery” অংশে “Add a logo” চেপে নাম, “Placement”, “Width (mm)”, “Height (mm)”, “Threads”, “Thread colours”, “Fabric” আর জানা থাকলে “Approved stitches” দিন।",
+        },
+        {
+          text: "“Upload a file” চেপে বায়ারের আর্টওয়ার্ক (SVG, PDF, AI বা EPS), মেশিন ফাইল বা সেলাইয়ের নমুনার ছবি আপলোড করুন। মেশিন ফাইলের জন্য “From”-এ বেছে নিন বায়ারের ফাইল না ফ্যাক্টরির পাঞ্চারের।",
+        },
+        {
+          text: "মেশিন ফাইল (DST বা EXP) আপলোড হলেই “File check” দেখায়: সেলাই সংখ্যা, মাপ, রং আর সবচেয়ে লম্বা সেলাই। PASS মানে মাপ মিলেছে; WARN হলে কারণগুলো পড়ুন; FAIL হলে ফাইল ঠিক করাতে হবে।",
+        },
+        {
+          text: "বায়ারের বা পাঞ্চারের ফাইল না থাকলে আর আর্টওয়ার্ক SVG হলে “Draft from the vector” চাপুন: ভেক্টর থেকে খসড়া DST তৈরি হয়। খসড়াটি অবশ্যই ফ্যাক্টরিতে সেলাই করে দেখতে হয়।",
+        },
+        {
+          text: "“Digitizing brief” চাপলে পাঞ্চারের জন্য নির্দেশপত্র (PDF) নামে। “DST” বা “EXP” চাপলে অন্য মেশিনের জন্য একই ফাইল সেই ফরম্যাটে নামে।",
+        },
+        {
+          text: "মেশিন ফাইল আর সেলাইয়ের নমুনার ছবি থাকলে মালিক নমুনা দেখে “Tick for bulk” চাপেন। এরপর লোগো আর তার মেশিন ফাইল লক থাকে; বদলাতে হলে আগে “Take back the tick”।",
+        },
+      ],
+      tips: [
+        "Wilcom EMB ফাইল নেওয়া হয় না; পাঞ্চারের কাছে DST চান।",
+        "ছবি (JPG) থেকে কখনো লোগো তৈরি হয় না; বায়ারের ভেক্টর ফাইল লাগে।",
+        "AI কখনো লোগোতে টিক দেয় না; এটি মালিকের কাজ।",
+        "PES, JEF বা U01 ফাইলও রাখা যায়, তবে যাচাই হয় শুধু DST ও EXP।",
+      ],
+    },
+    {
+      slug: "production-tech-pack-colours",
+      title: "রং ও ল্যাব ডিপ (lab dip) যাচাই করবেন যেভাবে",
+      summary:
+        "প্রতিটি রঙের বায়ারের কোড ও ΔE সীমা দিন। ডাইং মিলের ল্যাব ডিপের প্রতিটি অপশন সীমার সাথে মিলিয়ে পাস বা ফেল দেখায়, কোনগুলো বায়ারকে পাঠাবেন বলে দেয়, আর বায়ারের উত্তর রাখা যায়।",
+      keywords: [
+        "colour",
+        "color",
+        "lab dip",
+        "delta e",
+        "cmc",
+        "pantone",
+        "dye",
+        "dyeing",
+        "metamerism",
+        "best can do",
+        "রং",
+        "ল্যাব ডিপ",
+        "ডাইং",
+        "প্যানটোন",
+      ],
+      routes: ["/production/projects/[projectId]/tech-pack"],
+      who: "রং, ল্যাব ডিপ ও বায়ারের উত্তর রাখেন Production Manager ও Super Admin। AI দিয়ে রিপোর্ট পড়া বা ছবি থেকে রং শুধু AI চালু থাকলে।",
+      anyOf: ["production.view"],
+      steps: [
+        {
+          text: "টেক প্যাকের “Colours and lab dips” অংশে “Add a colour” চেপে রঙের নাম, “Buyer's code”, “ΔE limit” (বায়ার না দিলে 1.0), “Main light” আর দরকার হলে “Second light” দিন।",
+        },
+        {
+          text: "মিলের রিপোর্ট এলে “Add lab dips” চেপে “Round” আর প্রতিটি অপশনের অক্ষর, ΔE এবং থাকলে dL, dC, dH ও MI লিখুন। AI চালু থাকলে “Read the mill's report” চেপে রিপোর্ট (PDF বা ছবি) দিন; AI সংখ্যাগুলো ফর্মে বসায়, আপনি রিপোর্টের সাথে মিলিয়ে সংরক্ষণ করুন।",
+        },
+        {
+          text: "প্রতিটি অপশনে PASS বা FAIL আর কারণ দেখায়: ΔE সীমার বেশি হলে ফেল, আর MI (মেটামেরিজম) 1-এর বেশি হলে ΔE পাস করলেও ফেল। নিচের লাইনে বলে কোন অপশনগুলো বায়ারকে পাঠাবেন বা মিলকে কী বলবেন।",
+        },
+        {
+          text: "বায়ার উত্তর দিলে “Buyer's answer” চেপে অনুমোদিত অপশন বেছে নিন, বা দুই রাউন্ডেও না মিললে “Best can do”। ভুল হলে “Open again”।",
+        },
+        {
+          text: "“Colour from a photo” চেপে ছবি দিলে AI আনুমানিক Pantone কোড বলে, পাশে “approx.” লেখা থাকে। এটি শুধু ধারণা; বায়ারের কোড আর মিলের ল্যাব ডিপই রং ঠিক করে।",
+        },
+      ],
+      tips: [
+        "বায়ার ল্যাব ডিপ অনুমোদন না করা পর্যন্ত বাল্ক ডাইং নয়।",
+        "হিদার, সাদা, নিয়ন ও ফ্রেঞ্চ টেরি রং সংখ্যা দিয়ে নয়, চোখে দেখে অনুমোদন হয়।",
+        "অনুমোদন না হওয়া রং হলুদ বা লাল দেখায়, তবে টেক প্যাক অনুমোদন আটকায় না।",
+      ],
+    },
+    {
+      slug: "production-save-to-tech-pack",
+      title: "ফোন থেকে ছবি বা লিংক টেক প্যাকে রাখবেন যেভাবে (Save to Tech Pack)",
+      summary:
+        "ফোনে কোনো ছবি বা পণ্যের পাতা খুলে Share চেপে Extas ERP বেছে নিন; “Save to Tech Pack” পাতায় স্টাইল বেছে ছোট নোট লিখে সংরক্ষণ করুন। AI খসড়ার সময় এগুলো পড়ে।",
+      keywords: [
+        "save to tech pack",
+        "share",
+        "reference",
+        "saved references",
+        "photo",
+        "link",
+        "poshmark",
+        "etsy",
+        "রেফারেন্স",
+        "শেয়ার",
+        "ছবি",
+        "লিংক",
+      ],
+      routes: ["/production/save"],
+      who: "যাঁদের Production বদলের অনুমতি আছে: Production Manager ও Super Admin।",
+      anyOf: ["production.manage"],
+      steps: [
+        {
+          text: "প্রথমবার ফোনে Extas ERP হোম স্ক্রিনে যোগ করুন (Add to Home Screen)। তাহলে ফোনের Share তালিকায় Extas ERP আসে।",
+        },
+        {
+          text: "কোনো ছবি বা পণ্যের পাতা (যেমন Etsy বা Poshmark) খুলে Share চাপুন, তারপর Extas ERP। “Save to Tech Pack” পাতা খোলে, ছবি ও লিংকসহ।",
+        },
+        {
+          text: "“Style code or name” ঘরে খুঁজে স্টাইল বেছে নিন, “Note”-এ ছোট নোট লিখুন (যেমন “4-hole MOP button, about 18L”) আর “Save to Tech Pack” চাপুন।",
+        },
+        {
+          text: "সংরক্ষণের পরে “Open the tech pack” চেপে “Saved references” অংশে দেখুন। কম্পিউটারে এই পাতায় সরাসরি লিংক বা ছবি দিয়েও রাখা যায়, বা টেক প্যাকে “Save a reference” চেপে।",
+        },
+      ],
+      tips: [
+        "সিস্টেম কখনো ওই সাইটগুলোতে নিজে ঢোকে না বা কপি করে না; শুধু আপনি যা শেয়ার করেন তা রাখে।",
+        "ছবি শুধু ভেতরের রেফারেন্স; কোনো AI প্রশিক্ষণে ব্যবহার হয় না।",
+        "শেয়ার করা ছবি 24 ঘণ্টার মধ্যে কোনো স্টাইলে রাখতে হয়; পরে হলে আবার শেয়ার করুন।",
+        "রেফারেন্স কেউ হাতে সরানো পর্যন্ত থাকে।",
+      ],
+    },
+    {
       slug: "production-contracts",
       title: "ব্যাচের কাপড়, অ্যাক্সেসরিজ ও ফ্যাক্টরির (CM) চুক্তি তৈরি ও প্রিন্ট করবেন যেভাবে",
       summary:

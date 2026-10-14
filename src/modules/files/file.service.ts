@@ -217,7 +217,7 @@ export async function readStoredFile(asset: { storagePath: string }): Promise<Bu
  * record it belongs to (a delivery's packing list, a supplier bill's scan, a
  * licence scan, a document template, an expense's receipt, a raw material
  * purchase's bill, a payment's or cheque's proof photo, a paper in an employee's
- * data vault, a staff claim's receipt). Saved reports
+ * data vault, a staff claim's receipt, a tech pack's reference or logo file). Saved reports
  * download through the Report Builder, which checks their figures.
  */
 export async function getFileForDownload(ctx: CompanyContext, fileId: string) {
@@ -240,6 +240,11 @@ export async function getFileForDownload(ctx: CompanyContext, fileId: string) {
       cuttingPhotos: { select: { id: true }, take: 1 },
       faultPhotos: { select: { id: true }, take: 1 },
       finishingFiles: { select: { id: true }, take: 1 },
+      techPackReferences: { select: { id: true }, take: 1 },
+      logoArtworks: { select: { id: true }, take: 1 },
+      logoMachineFiles: { select: { id: true }, take: 1 },
+      logoSewOuts: { select: { id: true }, take: 1 },
+      labDipReports: { select: { id: true }, take: 1 },
     },
   });
   if (!asset) throw new AppError("NOT_FOUND", "File not found.");
@@ -284,7 +289,16 @@ export async function getFileForDownload(ctx: CompanyContext, fileId: string) {
       (ctx.can("production.view") || ctx.can("materials.view") || ctx.can("accounts.view"))) ||
     // A finishing count's QC sheet or a packing list: everyone who sees production.
     (asset.finishingFiles.length > 0 &&
-      (ctx.can("production.view") || ctx.can("production.stock_intake")));
+      (ctx.can("production.view") || ctx.can("production.stock_intake"))) ||
+    // A tech pack's references, logo files, sew-out photos and lab dip reports:
+    // everyone who sees production.
+    (asset.techPackReferences.length +
+      asset.logoArtworks.length +
+      asset.logoMachineFiles.length +
+      asset.logoSewOuts.length +
+      asset.labDipReports.length >
+      0 &&
+      ctx.can("production.view"));
   // A raw material purchase's bill also opens to the people who see material purchases.
   const materialBill =
     !allowed &&

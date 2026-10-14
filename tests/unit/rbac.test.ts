@@ -1,3 +1,6 @@
+import { readdirSync, readFileSync } from "node:fs";
+import path from "node:path";
+
 import { SystemRole } from "@prisma/client";
 import { describe, expect, it } from "vitest";
 
@@ -72,6 +75,65 @@ describe("permission catalogue", () => {
       expect(can(role, "hr.manage")).toBe(role === "SUPER_ADMIN");
       expect(can(role, "hr.view")).toBe(role === "SUPER_ADMIN" || role === "ACCOUNTS");
     }
+  });
+});
+
+/** The permissions the first install's seed put in the Permission table. */
+const FIRST_INSTALL = new Set([
+  "dashboard.view",
+  "dashboard.financials",
+  "company.settings",
+  "company.members.manage",
+  "company.roles.manage",
+  "audit.view",
+  "sales.view",
+  "sales.quotation.manage",
+  "sales.order.create",
+  "sales.invoice.edit",
+  "sales.force_override",
+  "sales.returns.qc",
+  "sales.campaigns.manage",
+  "inventory.view",
+  "inventory.manage",
+  "production.view",
+  "production.manage",
+  "production.stock_intake",
+  "parties.view",
+  "parties.manage",
+  "parties.ledger.view",
+  "accounts.view",
+  "accounts.manage",
+  "accounts.receipts.record",
+  "accounts.payments.record",
+  "expenses.create",
+  "expenses.manage",
+  "hr.view",
+  "hr.manage",
+  "hr.payroll",
+  "portal.self",
+  "compliance.manage",
+  "templates.manage",
+  "reports.export",
+  "notepad.use",
+  "reminders.manage",
+  "backups.manage",
+]);
+
+describe("permission rows on live sites", () => {
+  it("adds every permission made after the first install in a migration", () => {
+    // Live sites only run migrations: a permission without its Permission row
+    // could not be given to a role or a person in the access tree.
+    const root = path.join(process.cwd(), "prisma", "migrations");
+    const inserted = new Set<string>();
+    for (const dir of readdirSync(root, { withFileTypes: true })) {
+      if (!dir.isDirectory()) continue;
+      const sql = readFileSync(path.join(root, dir.name, "migration.sql"), "utf8");
+      for (const insert of sql.match(/INSERT INTO "Permission"[^;]*;/g) ?? []) {
+        for (const [, key] of insert.matchAll(/'([a-z_]+\.[a-z_.]+)'/g)) inserted.add(key!);
+      }
+    }
+    const missing = ALL_PERMISSION_KEYS.filter((k) => !FIRST_INSTALL.has(k) && !inserted.has(k));
+    expect(missing).toEqual([]);
   });
 });
 

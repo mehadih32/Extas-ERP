@@ -23,5 +23,17 @@ export default function manifest(): MetadataRoute.Manifest {
       { src: "/icons/maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
     ],
     shortcuts: [{ name: "My HR", short_name: "My HR", url: "/me" }],
+    // Save to Tech Pack: a photo or link shared from the phone's Share button.
+    share_target: {
+      action: "/api/production/share",
+      method: "POST",
+      enctype: "multipart/form-data",
+      params: {
+        title: "title",
+        text: "text",
+        url: "url",
+        files: [{ name: "photo", accept: ["image/jpeg", "image/png", "image/webp"] }],
+      },
+    },
   };
 }

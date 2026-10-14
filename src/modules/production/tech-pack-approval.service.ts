@@ -9,6 +9,7 @@ import { runTransaction } from "@/lib/transaction";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { styleGrids } from "@/modules/production/material-need.service";
+import { techPackGaps } from "@/modules/production/tech-pack-gaps";
 import {
   diffFabricParts,
   type FabricChange,
@@ -21,10 +22,12 @@ import {
  * piece and the pieces per colour and size, tech-pack.ts) is locked first when
  * the owner chose Fabric first for the order, so its fabric can be booked
  * before the rest is settled; then the whole tech pack is approved for
- * production. Nothing is frozen: the style can still change, and what changed
- * since the lock or the approval shows in red until it is locked or approved
- * again. Read with production.view; locking and approving need
- * production.techpack.approve (the owner's by default).
+ * production, once no red cell is left (tech-pack-gaps.ts: a missing
+ * measurement, a red AI draft line, a logo without the owner's tick). Nothing
+ * is frozen: the style can still change, and what changed since the lock or
+ * the approval shows in red until it is locked or approved again. Read with
+ * production.view; locking and approving need production.techpack.approve
+ * (the owner's by default).
  */
 
 const trimmed = (d: Prisma.Decimal) => d.toFixed(4).replace(/\.?0+$/, "") || "0";
@@ -153,14 +156,23 @@ async function loadProject(ctx: CompanyContext, projectId: string) {
 export async function getTechPack(ctx: CompanyContext, projectId: string) {
   const project = await loadProject(ctx, projectId);
   // The style was found through the company's own client; its parts are read with it too.
-  const states = await techPackStates(prisma, [project]);
+  const [states, gaps] = await Promise.all([
+    techPackStates(prisma, [project]),
+    techPackGaps(prisma, project.id),
+  ]);
   const state = states.get(project.id)!;
   const may = ctx.can("production.techpack.approve");
   return {
     ...state,
+    /** The red cells that keep it from approval (lines people can read). */
+    gaps,
     can: {
       lock: may && state.hasFabric && (!state.fabricLocked || state.changes.length > 0),
-      approve: may && state.hasFabric && (state.status !== "APPROVED" || state.changes.length > 0),
+      approve:
+        may &&
+        state.hasFabric &&
+        gaps.length === 0 &&
+        (state.status !== "APPROVED" || state.changes.length > 0),
     },
   };
 }
@@ -238,6 +250,13 @@ export async function approveTechPack(ctx: CompanyContext, projectId: string, me
     await lockRow(tx, "ProductionProject", project.id);
     const part = (await fabricPartsOf(tx, [project])).get(project.id)!;
     assertHasFabric(project.code, part);
+    const gaps = await techPackGaps(tx, project.id);
+    if (gaps.length > 0) {
+      throw new AppError(
+        "CONFLICT",
+        `${project.code} still has red cells: ${gaps.join("; ")}. Fix them on its tech pack first.`,
+      );
+    }
     const now = new Date();
     const kept = part as unknown as Prisma.InputJsonValue;
     const approved = {

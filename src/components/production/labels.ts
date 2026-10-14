@@ -172,6 +172,9 @@ export const productionHref = {
     `/production/projects/${encodeURIComponent(projectId)}/materials`,
   techPack: (projectId: string) =>
     `/api/production/projects/${encodeURIComponent(projectId)}/tech-pack`,
+  /** A style's tech pack screen: chart, AI draft, references, logos and colours. */
+  techPackPage: (projectId: string) =>
+    `/production/projects/${encodeURIComponent(projectId)}/tech-pack`,
   /** Fabric and trims bookings (supplier POs and market purchases), and their PDF. */
   bookings: (filter: { batchId?: string } = {}) =>
     filter.batchId

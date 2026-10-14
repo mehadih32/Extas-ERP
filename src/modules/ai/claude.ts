@@ -91,7 +91,10 @@ export async function aiOn(companyId: string): Promise<boolean> {
 export class AiAskFirst extends AppError {
   readonly estimate: CostEstimate;
   constructor(estimate: CostEstimate) {
-    super("CONFLICT", estimate.askFirst ?? "The AI asks before this task.");
+    // The screens read `aiAskFirst` to offer "Go on" (and send costOk with it).
+    super("CONFLICT", estimate.askFirst ?? "The AI asks before this task.", {
+      aiAskFirst: [`${estimate.currency} ${estimate.cost}`],
+    });
     this.name = "AiAskFirst";
     this.estimate = estimate;
   }

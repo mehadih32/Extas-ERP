@@ -1,6 +1,7 @@
 "use client";
 
-import { LockIcon, ShieldCheckIcon } from "lucide-react";
+import { ClipboardListIcon, LockIcon, ShieldCheckIcon } from "lucide-react";
+import Link from "next/link";
 import { useState } from "react";
 
 import { FormAlert } from "@/components/forms/field";
@@ -13,18 +14,22 @@ import { approveTechPackAction, lockFabricPartAction } from "@/server/actions/pr
 /*
  * A style's tech pack approval on its page: draft, its fabric part locked
  * (Fabric first) or approved for production, and what changed in its fabric
- * since, in red, until it is locked or approved again. Locking and approving
- * are the owner's (production.techpack.approve).
+ * since, in red, until it is locked or approved again, and the red cells of
+ * the tech pack that keep it from approval. Locking and approving are the
+ * owner's (production.techpack.approve).
  */
 
 export function TechPackApprovalPanel({
   projectId,
   code,
   techPack: t,
+  onTechPack = false,
 }: {
   projectId: string;
   code: string;
   techPack: TechPack;
+  /** On the tech pack page itself: no "Open the tech pack" button. */
+  onTechPack?: boolean;
 }) {
   const [asking, setAsking] = useState<"lock" | "approve" | null>(null);
   const [notice, setNotice] = useState<string>();
@@ -39,6 +44,28 @@ export function TechPackApprovalPanel({
   return (
     <Panel title="Tech pack approval" id="tech-pack-approval-heading">
       <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{state}</p>
+      {!onTechPack && (
+        <p className="mt-3">
+          <Button asChild size="sm" variant="outline">
+            <Link href={`/production/projects/${projectId}/tech-pack`}>
+              <ClipboardListIcon aria-hidden />
+              Open the tech pack
+            </Link>
+          </Button>
+        </p>
+      )}
+      {t.gaps.length > 0 && (
+        <div className="mt-4 rounded-md border border-destructive/30 bg-destructive/5 p-3">
+          <p className="text-sm font-medium text-destructive">Red cells keep it from approval</p>
+          <ul className="mt-2 grid gap-1 text-[0.8125rem]">
+            {t.gaps.map((g) => (
+              <li key={g} className="break-words">
+                {g}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       {t.changes.length > 0 && (
         <div className="mt-4 rounded-md border border-destructive/30 bg-destructive/5 p-3">
           <p className="text-sm font-medium text-destructive">

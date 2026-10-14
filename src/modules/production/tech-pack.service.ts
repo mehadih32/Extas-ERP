@@ -10,6 +10,7 @@ import { letterheadOf } from "@/modules/documents/builders";
 import { documentFileName, type Block, type PrintDocument } from "@/modules/documents/model";
 import { ON_DEMAND_PER_MINUTE, renderOnDemand } from "@/modules/documents/on-demand";
 import { loadMaterialImages } from "@/modules/production/material-image.service";
+import { techPackExtraBlocks } from "@/modules/production/tech-pack-export";
 import {
   getMaterialNeeds,
   gridAxes,
@@ -21,7 +22,8 @@ import { quantity as materialQuantity, UNIT_LABELS } from "@/components/material
 /*
  * A style's tech pack for the factory: its pieces per colour and size, its
  * materials per piece with their pictures, where each goes and what the pieces
- * need in all, and the making notes. It carries no prices. Made when asked for
+ * need in all, its measurement chart, logos and colours, and the making notes.
+ * It carries no prices. Made when asked for
  * and not kept (each one is logged).
  */
 
@@ -66,7 +68,13 @@ export function gridTable(
   };
 }
 
-export function techPackDocument(ctx: CompanyContext, data: MaterialNeeds, notes: string | null) {
+export function techPackDocument(
+  ctx: CompanyContext,
+  data: MaterialNeeds,
+  notes: string | null,
+  /** The measurement chart, logos and colours (tech-pack-export.ts). */
+  extra: Block[] = [],
+) {
   const { project: p, grid, needs } = data;
   const currency = ctx.company.currency;
   const tz = ctx.company.timezone;
@@ -159,6 +167,7 @@ export function techPackDocument(ctx: CompanyContext, data: MaterialNeeds, notes
             trimmed,
           ),
         ),
+      ...extra,
       ...(notes?.trim()
         ? [
             {
@@ -183,7 +192,7 @@ export async function techPackPdf(ctx: CompanyContext, projectId: string, meta?:
   checkRateLimit(`on-demand-print:${ctx.user.id}`, ON_DEMAND_PER_MINUTE, 60_000);
   const data = await getMaterialNeeds(ctx, projectId);
   const p = data.project;
-  const model = techPackDocument(ctx, data, p.techPackNotes);
+  const model = techPackDocument(ctx, data, p.techPackNotes, await techPackExtraBlocks(ctx, p.id));
   const images = await loadMaterialImages(
     ctx.company.id,
     data.needs.map((n) => n.imageId),

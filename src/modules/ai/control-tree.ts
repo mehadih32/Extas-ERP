@@ -7,7 +7,7 @@ import { ACCESS_TREE, type AccessNode, isBranch } from "@/components/settings/ro
  * tree: every permission is a cell, without the ones the AI may never have
  * (managing the team and roles, backups, the AI Center itself), with the AI's
  * own actions added where they belong (sending to buyers and suppliers,
- * agreeing a CM, ticking a logo).
+ * agreeing a CM).
  *
  * Every cell starts at Ask. Setting an area sets everything in it; a cell can
  * then be set on its own (shown as an exception). Locked cells (money, prices,
@@ -53,8 +53,8 @@ export const NEVER_FOR_AI: ReadonlySet<string> = new Set([
 
 /**
  * Permissions that stay Ask under an area or preset set to Do: money in or out,
- * committing to a price, voiding or cancelling, and approvals that commit the
- * company to a supplier.
+ * committing to a price, voiding or cancelling, approvals that commit the
+ * company to a supplier, and the owner's logo tick.
  */
 export const LOCKED_PERMISSIONS: ReadonlySet<string> = new Set([
   "accounts.receipts.record",
@@ -69,6 +69,7 @@ export const LOCKED_PERMISSIONS: ReadonlySet<string> = new Set([
   "sales.force_override",
   "production.bookings.approve",
   "production.bookings.close",
+  "production.logo.approve",
 ]);
 
 /** The AI's own actions, added under these areas of the access tree. */
@@ -87,7 +88,6 @@ const AI_ACTIONS: Record<string, AiLeaf[]> = {
   production: [
     { key: "ai.production.costing", label: "Work out costing" },
     { key: "ai.production.techpack.draft", label: "Draft and check tech packs" },
-    { key: "ai.production.logo.tick", label: "Tick a logo", locked: true },
     { key: "ai.production.cm.agree", label: "Agree a CM with the factory", locked: true },
     { key: "ai.production.new_supplier", label: "Add a new supplier or factory" },
     { key: "ai.production.message.supplier", label: "Message suppliers and mills", locked: true },

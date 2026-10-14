@@ -83,115 +83,122 @@ model Company {
   createdAt             DateTime        @default(now())
   updatedAt             DateTime        @updatedAt
 
-  memberships          CompanyMembership[]
-  sessions             Session[]
-  roles                Role[]
-  auditLogs            AuditLog[]
-  files                FileAsset[]               @relation("CompanyFiles")
-  logoFile             FileAsset?                @relation("CompanyLogo", fields: [logoFileId], references: [id], onDelete: SetNull)
-  sequences            DocumentSequence[]
-  customFields         CustomFieldDefinition[]
-  categories           Category[]
-  brands               Brand[]
-  styles               Style[]
-  colors               Color[]
-  sizes                Size[]
-  variants             ProductVariant[]
-  ratioPresets         SizeRatioPreset[]
-  warehouses           Warehouse[]
-  stockBalances        StockBalance[]
-  stockMovements       StockMovement[]
-  stockLots            StockLot[]
-  rawMaterials         RawMaterial[]
-  rawMaterialMovements RawMaterialMovement[]
-  badStockEntries      BadStockEntry[]
-  rawMaterialStocks    RawMaterialStock[]
-  purchaseOrders       PurchaseOrder[]
-  bookings             Booking[]
-  bookingRevisions     BookingRevision[]
-  techPacks            TechPack[]
-  materialIssues       MaterialIssue[]
-  materialChallans     MaterialChallan[]
-  purchaseReturns      PurchaseReturn[]
-  parties              Party[]
-  campaigns            ReEngagementCampaign[]
-  quotations           Quotation[]
-  proformaInvoices     ProformaInvoice[]
-  salesOrders          SalesOrder[]
-  invoices             Invoice[]
-  packingLists         PackingList[]
-  deliveryChallans     DeliveryChallan[]
-  payments             Payment[]
-  refunds              Refund[]
-  creditAllocations    CreditAllocation[]
-  cheques              Cheque[]
-  integrations         SalesChannelIntegration[]
-  webhookEvents        WebhookEvent[]
-  courierAccounts      CourierAccount[]
-  shipments            Shipment[]
-  salesReturns         SalesReturn[]
-  productionProjects   ProductionProject[]
-  productionBatches    ProductionBatch[]
-  productionContracts  ProductionContract[]
-  supplierFaults       SupplierFault[]
-  cuttingReports       CuttingReport[]
-  embroideryJobs       EmbroideryJob[]
-  finishingReports     FinishingReport[]
-  cmSettlements        CmSettlement[]
-  materialNeeds        ProductionMaterialNeed[]
-  supplierBills        SupplierBill[]
-  stockIntakes         StockIntake[]
-  ledgerAccounts       LedgerAccount[]
-  journalEntries       JournalEntry[]
-  bankAccounts         BankAccount[]
-  pettyCashBoxes       PettyCashBox[]
-  fixedAssets          FixedAsset[]
-  capitalSources       CapitalSource[]
-  expenseHeads         ExpenseHead[]
-  expenses             Expense[]
-  adSpends             AdSpend[]
-  employees            Employee[]
-  hrSettings           HrSettings?
-  holidays             Holiday[]
-  attendance           Attendance[]
-  leaveTypes           LeaveType[]
-  leaveRequests        LeaveRequest[]
-  payrollRuns          PayrollRun[]
-  payrollPayments      PayrollPayment[]
-  salaryAdvances       SalaryAdvance[]
-  complianceDocuments  ComplianceDocument[]
-  templates            DocumentTemplate[]
-  generatedDocuments   GeneratedDocument[]
-  reportExports        ReportExport[]
-  notes                Note[]
-  tasks                Task[]
-  reminders            Reminder[]
-  reminderRules        ReminderRule[]
-  notifications        NotificationLog[]
-  projectSettlements   ProjectSettlement[]
-  salesTargets         SalesTarget[]
-  payDetailsRequests   PayDetailsRequest[]
-  employeeDocuments    EmployeeDocument[]
-  termsVersions        TermsVersion[]
-  termsAcceptances     TermsAcceptance[]
-  oneTimeCodes         OneTimeCode[]
-  backgroundJobs       BackgroundJob[]
-  workLocations        WorkLocation[]
-  locationPings        LocationPing[]
-  staffPositions       StaffPosition[]
-  overtimeEntries      OvertimeEntry[]
-  staffClaims          StaffClaim[]
-  notices              Notice[]
-  noticeReads          NoticeRead[]
-  payrollPaymentLines  PayrollPaymentLine[]
-  employeeAssets       EmployeeAsset[]
-  aiSettings           AiSettings?
-  aiControlCells       AiControlCell[]
-  aiGrants             AiGrant[]
-  aiPermissionRequests AiPermissionRequest[]
-  aiDeletionRequests   AiDeletionRequest[]
-  aiUsage              AiUsage[]
-  aiBudget             AiBudget?
+  memberships           CompanyMembership[]
+  sessions              Session[]
+  roles                 Role[]
+  auditLogs             AuditLog[]
+  files                 FileAsset[]               @relation("CompanyFiles")
+  logoFile              FileAsset?                @relation("CompanyLogo", fields: [logoFileId], references: [id], onDelete: SetNull)
+  sequences             DocumentSequence[]
+  customFields          CustomFieldDefinition[]
+  categories            Category[]
+  brands                Brand[]
+  styles                Style[]
+  colors                Color[]
+  sizes                 Size[]
+  variants              ProductVariant[]
+  ratioPresets          SizeRatioPreset[]
+  warehouses            Warehouse[]
+  stockBalances         StockBalance[]
+  stockMovements        StockMovement[]
+  stockLots             StockLot[]
+  rawMaterials          RawMaterial[]
+  rawMaterialMovements  RawMaterialMovement[]
+  badStockEntries       BadStockEntry[]
+  rawMaterialStocks     RawMaterialStock[]
+  purchaseOrders        PurchaseOrder[]
+  bookings              Booking[]
+  bookingRevisions      BookingRevision[]
+  techPacks             TechPack[]
+  techPackMeasurements  TechPackMeasurement[]
+  techPackReferences    TechPackReference[]
+  techPackLogos         TechPackLogo[]
+  techPackColours       TechPackColour[]
+  labDipOptions         LabDipOption[]
+  techPackAiDrafts      TechPackAiDraft[]
+  techPackExpertAnswers TechPackExpertAnswer[]
+  materialIssues        MaterialIssue[]
+  materialChallans      MaterialChallan[]
+  purchaseReturns       PurchaseReturn[]
+  parties               Party[]
+  campaigns             ReEngagementCampaign[]
+  quotations            Quotation[]
+  proformaInvoices      ProformaInvoice[]
+  salesOrders           SalesOrder[]
+  invoices              Invoice[]
+  packingLists          PackingList[]
+  deliveryChallans      DeliveryChallan[]
+  payments              Payment[]
+  refunds               Refund[]
+  creditAllocations     CreditAllocation[]
+  cheques               Cheque[]
+  integrations          SalesChannelIntegration[]
+  webhookEvents         WebhookEvent[]
+  courierAccounts       CourierAccount[]
+  shipments             Shipment[]
+  salesReturns          SalesReturn[]
+  productionProjects    ProductionProject[]
+  productionBatches     ProductionBatch[]
+  productionContracts   ProductionContract[]
+  supplierFaults        SupplierFault[]
+  cuttingReports        CuttingReport[]
+  embroideryJobs        EmbroideryJob[]
+  finishingReports      FinishingReport[]
+  cmSettlements         CmSettlement[]
+  materialNeeds         ProductionMaterialNeed[]
+  supplierBills         SupplierBill[]
+  stockIntakes          StockIntake[]
+  ledgerAccounts        LedgerAccount[]
+  journalEntries        JournalEntry[]
+  bankAccounts          BankAccount[]
+  pettyCashBoxes        PettyCashBox[]
+  fixedAssets           FixedAsset[]
+  capitalSources        CapitalSource[]
+  expenseHeads          ExpenseHead[]
+  expenses              Expense[]
+  adSpends              AdSpend[]
+  employees             Employee[]
+  hrSettings            HrSettings?
+  holidays              Holiday[]
+  attendance            Attendance[]
+  leaveTypes            LeaveType[]
+  leaveRequests         LeaveRequest[]
+  payrollRuns           PayrollRun[]
+  payrollPayments       PayrollPayment[]
+  salaryAdvances        SalaryAdvance[]
+  complianceDocuments   ComplianceDocument[]
+  templates             DocumentTemplate[]
+  generatedDocuments    GeneratedDocument[]
+  reportExports         ReportExport[]
+  notes                 Note[]
+  tasks                 Task[]
+  reminders             Reminder[]
+  reminderRules         ReminderRule[]
+  notifications         NotificationLog[]
+  projectSettlements    ProjectSettlement[]
+  salesTargets          SalesTarget[]
+  payDetailsRequests    PayDetailsRequest[]
+  employeeDocuments     EmployeeDocument[]
+  termsVersions         TermsVersion[]
+  termsAcceptances      TermsAcceptance[]
+  oneTimeCodes          OneTimeCode[]
+  backgroundJobs        BackgroundJob[]
+  workLocations         WorkLocation[]
+  locationPings         LocationPing[]
+  staffPositions        StaffPosition[]
+  overtimeEntries       OvertimeEntry[]
+  staffClaims           StaffClaim[]
+  notices               Notice[]
+  noticeReads           NoticeRead[]
+  payrollPaymentLines   PayrollPaymentLine[]
+  employeeAssets        EmployeeAsset[]
+  aiSettings            AiSettings?
+  aiControlCells        AiControlCell[]
+  aiGrants              AiGrant[]
+  aiPermissionRequests  AiPermissionRequest[]
+  aiDeletionRequests    AiDeletionRequest[]
+  aiUsage               AiUsage[]
+  aiBudget              AiBudget?
 }
 
 /// A person who can log in. Global across companies.
@@ -219,80 +226,84 @@ model User {
   auditLogs           AuditLog[]
   employeeProfiles    Employee[]
   uploadedFiles       FileAsset[]
-  forceOverrides      SalesOrderItem[]      @relation("ForceOverrideBy")
-  returnInspections   SalesReturnItem[]     @relation("ReturnInspectedBy")
+  forceOverrides      SalesOrderItem[]       @relation("ForceOverrideBy")
+  returnInspections   SalesReturnItem[]      @relation("ReturnInspectedBy")
   notes               Note[]
-  tasksCreated        Task[]                @relation("TaskCreatedBy")
-  remindersCreated    Reminder[]            @relation("ReminderCreatedBy")
-  remindersAcked      Reminder[]            @relation("ReminderAcknowledgedBy")
+  tasksCreated        Task[]                 @relation("TaskCreatedBy")
+  remindersCreated    Reminder[]             @relation("ReminderCreatedBy")
+  remindersAcked      Reminder[]             @relation("ReminderAcknowledgedBy")
   reminderTargets     ReminderRecipient[]
-  reminderRules       ReminderRule[]        @relation("ReminderRuleUpdatedBy")
+  reminderRules       ReminderRule[]         @relation("ReminderRuleUpdatedBy")
   notifications       NotificationLog[]
   reportExports       ReportExport[]
-  journalEntries      JournalEntry[]        @relation("JournalPostedBy")
-  approvedLeaves      LeaveRequest[]        @relation("LeaveApprovedBy")
-  requestedLeaves     LeaveRequest[]        @relation("LeaveRequestedBy")
-  attendanceMarked    Attendance[]          @relation("AttendanceRecordedBy")
-  overtimeDecided     OvertimeEntry[]       @relation("OvertimeDecidedBy")
-  claimsDecided       StaffClaim[]          @relation("StaffClaimDecidedBy")
-  claimsPaid          StaffClaim[]          @relation("StaffClaimPaidBy")
-  claimsCreated       StaffClaim[]          @relation("StaffClaimCreatedBy")
-  noticesPosted       Notice[]              @relation("NoticeCreatedBy")
-  noticesTakenDown    Notice[]              @relation("NoticeTakenDownBy")
+  journalEntries      JournalEntry[]         @relation("JournalPostedBy")
+  approvedLeaves      LeaveRequest[]         @relation("LeaveApprovedBy")
+  requestedLeaves     LeaveRequest[]         @relation("LeaveRequestedBy")
+  attendanceMarked    Attendance[]           @relation("AttendanceRecordedBy")
+  overtimeDecided     OvertimeEntry[]        @relation("OvertimeDecidedBy")
+  claimsDecided       StaffClaim[]           @relation("StaffClaimDecidedBy")
+  claimsPaid          StaffClaim[]           @relation("StaffClaimPaidBy")
+  claimsCreated       StaffClaim[]           @relation("StaffClaimCreatedBy")
+  noticesPosted       Notice[]               @relation("NoticeCreatedBy")
+  noticesTakenDown    Notice[]               @relation("NoticeTakenDownBy")
   noticeReads         NoticeRead[]
-  assetsIssued        EmployeeAsset[]       @relation("EmployeeAssetIssuedBy")
-  assetsTakenBack     EmployeeAsset[]       @relation("EmployeeAssetReturnedTo")
-  payrollsCreated     PayrollRun[]          @relation("PayrollCreatedBy")
-  payrollsApproved    PayrollRun[]          @relation("PayrollApprovedBy")
-  salariesPaid        PayrollPayment[]      @relation("PayrollPaidBy")
-  advancesGiven       SalaryAdvance[]       @relation("AdvanceCreatedBy")
+  assetsIssued        EmployeeAsset[]        @relation("EmployeeAssetIssuedBy")
+  assetsTakenBack     EmployeeAsset[]        @relation("EmployeeAssetReturnedTo")
+  payrollsCreated     PayrollRun[]           @relation("PayrollCreatedBy")
+  payrollsApproved    PayrollRun[]           @relation("PayrollApprovedBy")
+  salariesPaid        PayrollPayment[]       @relation("PayrollPaidBy")
+  advancesGiven       SalaryAdvance[]        @relation("AdvanceCreatedBy")
   generatedDocs       GeneratedDocument[]
   backupRuns          BackupRun[]
-  expensesCreated     Expense[]             @relation("ExpenseCreatedBy")
-  pettyCashHeld       PettyCashBox[]        @relation("PettyCashHolder")
-  purchaseOrders      PurchaseOrder[]       @relation("PurchaseOrderCreatedBy")
-  materialIssues      MaterialIssue[]       @relation("MaterialIssueCreatedBy")
-  materialChallans    MaterialChallan[]     @relation("MaterialChallanCreatedBy")
-  productionBatches   ProductionBatch[]     @relation("ProductionBatchCreatedBy")
-  fabricFirstBatches  ProductionBatch[]     @relation("BatchFabricFirstBy")
-  bookingsApproved    Booking[]             @relation("BookingApprovedBy")
-  bookingsSent        Booking[]             @relation("BookingSentBy")
-  bookingRevisions    BookingRevision[]     @relation("BookingRevisionApprovedBy")
-  techPacksLocked     TechPack[]            @relation("TechPackFabricLockedBy")
-  techPacksApproved   TechPack[]            @relation("TechPackApprovedBy")
-  contractsMade       ProductionContract[]  @relation("ProductionContractCreatedBy")
-  contractsChanged    ProductionContract[]  @relation("ProductionContractUpdatedBy")
-  faultsLogged        SupplierFault[]       @relation("SupplierFaultCreatedBy")
-  faultsSettled       SupplierFault[]       @relation("SupplierFaultSettledBy")
-  cuttingReports      CuttingReport[]       @relation("CuttingReportCreatedBy")
-  finishingReports    FinishingReport[]     @relation("FinishingReportCreatedBy")
-  cmSettlementsMade   CmSettlement[]        @relation("CmSettlementCreatedBy")
-  cmSettlementsUndone CmSettlement[]        @relation("CmSettlementUndoneBy")
-  embroideryJobs      EmbroideryJob[]       @relation("EmbroideryJobCreatedBy")
-  purchaseReturns     PurchaseReturn[]      @relation("PurchaseReturnCreatedBy")
-  materialMovements   RawMaterialMovement[] @relation("MaterialMovementBy")
-  refunds             Refund[]              @relation("RefundCreatedBy")
-  salesReturns        SalesReturn[]         @relation("SalesReturnCreatedBy")
-  creditAllocations   CreditAllocation[]    @relation("CreditAllocatedBy")
-  chequesRecorded     Cheque[]              @relation("ChequeRecordedBy")
-  intakesReversed     StockIntake[]         @relation("IntakeReversedBy")
-  settlementsMade     ProjectSettlement[]   @relation("SettlementMadeBy")
-  linesCleared        JournalLine[]         @relation("JournalLineClearedBy")
-  salesTargetsSet     SalesTarget[]         @relation("SalesTargetSetBy")
-  payRequestsMade     PayDetailsRequest[]   @relation("PayDetailsRequestedBy")
-  payRequestsDecided  PayDetailsRequest[]   @relation("PayDetailsDecidedBy")
-  employeeDocsAdded   EmployeeDocument[]    @relation("EmployeeDocumentAddedBy")
-  termsWritten        TermsVersion[]        @relation("TermsVersionCreatedBy")
-  termsPublished      TermsVersion[]        @relation("TermsVersionPublishedBy")
-  termsAgreed         TermsAcceptance[]     @relation("TermsAcceptedBy")
+  expensesCreated     Expense[]              @relation("ExpenseCreatedBy")
+  pettyCashHeld       PettyCashBox[]         @relation("PettyCashHolder")
+  purchaseOrders      PurchaseOrder[]        @relation("PurchaseOrderCreatedBy")
+  materialIssues      MaterialIssue[]        @relation("MaterialIssueCreatedBy")
+  materialChallans    MaterialChallan[]      @relation("MaterialChallanCreatedBy")
+  productionBatches   ProductionBatch[]      @relation("ProductionBatchCreatedBy")
+  fabricFirstBatches  ProductionBatch[]      @relation("BatchFabricFirstBy")
+  bookingsApproved    Booking[]              @relation("BookingApprovedBy")
+  bookingsSent        Booking[]              @relation("BookingSentBy")
+  bookingRevisions    BookingRevision[]      @relation("BookingRevisionApprovedBy")
+  techPacksLocked     TechPack[]             @relation("TechPackFabricLockedBy")
+  techPacksApproved   TechPack[]             @relation("TechPackApprovedBy")
+  techPackReferences  TechPackReference[]    @relation("TechPackReferenceSavedBy")
+  logosTicked         TechPackLogo[]         @relation("TechPackLogoTickedBy")
+  techPackAiDrafts    TechPackAiDraft[]      @relation("TechPackAiDraftBy")
+  expertQuestions     TechPackExpertAnswer[] @relation("TechPackExpertAskedBy")
+  contractsMade       ProductionContract[]   @relation("ProductionContractCreatedBy")
+  contractsChanged    ProductionContract[]   @relation("ProductionContractUpdatedBy")
+  faultsLogged        SupplierFault[]        @relation("SupplierFaultCreatedBy")
+  faultsSettled       SupplierFault[]        @relation("SupplierFaultSettledBy")
+  cuttingReports      CuttingReport[]        @relation("CuttingReportCreatedBy")
+  finishingReports    FinishingReport[]      @relation("FinishingReportCreatedBy")
+  cmSettlementsMade   CmSettlement[]         @relation("CmSettlementCreatedBy")
+  cmSettlementsUndone CmSettlement[]         @relation("CmSettlementUndoneBy")
+  embroideryJobs      EmbroideryJob[]        @relation("EmbroideryJobCreatedBy")
+  purchaseReturns     PurchaseReturn[]       @relation("PurchaseReturnCreatedBy")
+  materialMovements   RawMaterialMovement[]  @relation("MaterialMovementBy")
+  refunds             Refund[]               @relation("RefundCreatedBy")
+  salesReturns        SalesReturn[]          @relation("SalesReturnCreatedBy")
+  creditAllocations   CreditAllocation[]     @relation("CreditAllocatedBy")
+  chequesRecorded     Cheque[]               @relation("ChequeRecordedBy")
+  intakesReversed     StockIntake[]          @relation("IntakeReversedBy")
+  settlementsMade     ProjectSettlement[]    @relation("SettlementMadeBy")
+  linesCleared        JournalLine[]          @relation("JournalLineClearedBy")
+  salesTargetsSet     SalesTarget[]          @relation("SalesTargetSetBy")
+  payRequestsMade     PayDetailsRequest[]    @relation("PayDetailsRequestedBy")
+  payRequestsDecided  PayDetailsRequest[]    @relation("PayDetailsDecidedBy")
+  employeeDocsAdded   EmployeeDocument[]     @relation("EmployeeDocumentAddedBy")
+  termsWritten        TermsVersion[]         @relation("TermsVersionCreatedBy")
+  termsPublished      TermsVersion[]         @relation("TermsVersionPublishedBy")
+  termsAgreed         TermsAcceptance[]      @relation("TermsAcceptedBy")
   oneTimeCodes        OneTimeCode[]
-  aiSwitched          AiSettings[]          @relation("AiSettingsChangedBy")
-  aiCellsSet          AiControlCell[]       @relation("AiControlCellSetBy")
-  aiGrantsGiven       AiGrant[]             @relation("AiGrantGivenBy")
-  aiRequestsAnswered  AiPermissionRequest[] @relation("AiPermissionRequestAnsweredBy")
-  aiDeletionsAnswered AiDeletionRequest[]   @relation("AiDeletionRequestAnsweredBy")
-  aiUsage             AiUsage[]             @relation("AiUsageUser")
-  aiBudgetsSet        AiBudget[]            @relation("AiBudgetUpdatedBy")
+  aiSwitched          AiSettings[]           @relation("AiSettingsChangedBy")
+  aiCellsSet          AiControlCell[]        @relation("AiControlCellSetBy")
+  aiGrantsGiven       AiGrant[]              @relation("AiGrantGivenBy")
+  aiRequestsAnswered  AiPermissionRequest[]  @relation("AiPermissionRequestAnsweredBy")
+  aiDeletionsAnswered AiDeletionRequest[]    @relation("AiDeletionRequestAnsweredBy")
+  aiUsage             AiUsage[]              @relation("AiUsageUser")
+  aiBudgetsSet        AiBudget[]             @relation("AiBudgetUpdatedBy")
 }
 
 /// A signed-in device. `token` stores the SHA-256 hash of the cookie value, never
@@ -485,6 +496,11 @@ model FileAsset {
   cuttingPhotos       CuttingReport[]          @relation("CuttingPhoto")
   finishingFiles      FinishingReport[]        @relation("FinishingFile")
   faultPhotos         SupplierFault[]          @relation("SupplierFaultPhoto")
+  techPackReferences  TechPackReference[]      @relation("TechPackReferenceFile")
+  logoArtworks        TechPackLogo[]           @relation("TechPackLogoArtwork")
+  logoMachineFiles    TechPackLogo[]           @relation("TechPackLogoMachineFile")
+  logoSewOuts         TechPackLogo[]           @relation("TechPackLogoSewOut")
+  labDipReports       TechPackColour[]         @relation("TechPackColourReport")
 
   @@index([companyId])
 }
@@ -2214,15 +2230,232 @@ model TechPack {
   approvedPart     Json?
   approvedAt       DateTime?
   approvedById     String?
+  /// The garment, for the measurement chart's points of measure.
+  garmentKind      GarmentKind?
+  /// The chart's unit (inch or cm); the other is shown beside it.
+  measureUnit      MeasureUnit    @default(INCH)
+  /// Whether the buyer's chest is the full (round) or the half measure.
+  chestBasis       ChestBasis?
+  sizeRun          String[]       @default([])
+  baseSize         String?
+  /// What the chart could not settle from the buyer's few points (asked of the owner).
+  chartQuestions   String[]       @default([])
+  /// The owner's instructions for the AI, by section: General, Measurements,
+  /// Design, Trims & Labels, Print & Embroidery, Packing.
+  instructions     Json?
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
 
-  company        Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  project        ProductionProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  fabricLockedBy User?             @relation("TechPackFabricLockedBy", fields: [fabricLockedById], references: [id], onDelete: SetNull)
-  approvedBy     User?             @relation("TechPackApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+  company        Company                @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  project        ProductionProject      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  fabricLockedBy User?                  @relation("TechPackFabricLockedBy", fields: [fabricLockedById], references: [id], onDelete: SetNull)
+  approvedBy     User?                  @relation("TechPackApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+  measurements   TechPackMeasurement[]
+  references     TechPackReference[]
+  logos          TechPackLogo[]
+  colours        TechPackColour[]
+  aiDrafts       TechPackAiDraft[]
+  expertAnswers  TechPackExpertAnswer[]
 
   @@index([companyId, status])
+}
+
+/// One point of measure of a style's chart: its value per size in the tech
+/// pack's unit (null while missing) and where each came from: the buyer, the
+/// grading rules (an AI guess, yellow until someone confirms it) or a person.
+model TechPackMeasurement {
+  id         String   @id @default(cuid())
+  companyId  String
+  techPackId String
+  code       String
+  name       String
+  howTo      String?
+  rule       String?
+  tolerance  Decimal  @db.Decimal(8, 4)
+  critical   Boolean  @default(false)
+  sortOrder  Int      @default(0)
+  /// { "S": 20, "M": 21, ... } in the tech pack's unit; null is missing.
+  values     Json
+  /// { "S": "BUYER" | "RULE" | "OWNER", ... }
+  sources    Json
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  company  Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  techPack TechPack @relation(fields: [techPackId], references: [id], onDelete: Cascade)
+
+  @@unique([techPackId, code])
+  @@index([companyId])
+}
+
+/// A reference saved to a style's tech pack (Save to Tech Pack): a photo, a
+/// link, or both, with a short note. Internal reference only, kept until a
+/// person removes it; nothing is crawled.
+model TechPackReference {
+  id         String   @id @default(cuid())
+  companyId  String
+  techPackId String
+  fileId     String?
+  link       String?
+  note       String?
+  savedById  String?
+  createdAt  DateTime @default(now())
+
+  company  Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  techPack TechPack   @relation(fields: [techPackId], references: [id], onDelete: Cascade)
+  file     FileAsset? @relation("TechPackReferenceFile", fields: [fileId], references: [id], onDelete: SetNull)
+  savedBy  User?      @relation("TechPackReferenceSavedBy", fields: [savedById], references: [id], onDelete: SetNull)
+
+  @@index([techPackId, createdAt])
+  @@index([companyId])
+}
+
+/// A logo on a style: its spec, where its machine file came from (the buyer's
+/// file, the embroidery factory's puncher, or the AI's draft from the buyer's
+/// vector), the Logo File Tool's check, the sew-out photo and the owner's
+/// tick. Nothing goes to bulk without the tick.
+model TechPackLogo {
+  id               String      @id @default(cuid())
+  companyId        String
+  techPackId       String
+  name             String
+  placement        String?
+  widthMm          Decimal?    @db.Decimal(8, 2)
+  heightMm         Decimal?    @db.Decimal(8, 2)
+  /// Thread colours and codes, as the spec gives them.
+  threads          String?
+  colours          Int?
+  /// The fabric version: PQ piqué, SJ single jersey, IL interlock, FL fleece, WV woven...
+  fabric           String?
+  /// The stitch count of the approved file, once there is one.
+  approvedStitches Int?
+  /// A public reference to compare the stitch count with (e.g. "RL small pony").
+  reference        String?
+  source           LogoSource?
+  artworkFileId    String?
+  machineFileId    String?
+  machineFormat    String?
+  /// The Logo File Tool's check of the machine file: its facts, PASS / WARN / FAIL and notes.
+  fileCheck        Json?
+  sewOutFileId     String?
+  sewOutNote       String?
+  tickedById       String?
+  tickedAt         DateTime?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+
+  company     Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  techPack    TechPack   @relation(fields: [techPackId], references: [id], onDelete: Cascade)
+  artworkFile FileAsset? @relation("TechPackLogoArtwork", fields: [artworkFileId], references: [id], onDelete: SetNull)
+  machineFile FileAsset? @relation("TechPackLogoMachineFile", fields: [machineFileId], references: [id], onDelete: SetNull)
+  sewOutFile  FileAsset? @relation("TechPackLogoSewOut", fields: [sewOutFileId], references: [id], onDelete: SetNull)
+  tickedBy    User?      @relation("TechPackLogoTickedBy", fields: [tickedById], references: [id], onDelete: SetNull)
+
+  @@index([techPackId])
+  @@index([companyId])
+}
+
+/// A colour of a style: the buyer's code (the master), or the AI's approx.
+/// suggestion from a photo (never final), the buyer's ΔE CMC limit and lights,
+/// and the dye mill's lab dips. No bulk dyeing before the buyer approves one.
+model TechPackColour {
+  id             String           @id @default(cuid())
+  companyId      String
+  techPackId     String
+  name           String
+  code           String?
+  codeSource     ColourCodeSource @default(BUYER)
+  /// The approx. codes the AI suggested from a photo (X23), with its confidence.
+  photoEstimate  Json?
+  /// The buyer's ΔE CMC(2:1) limit (1.00 when the buyer gives none).
+  deltaLimit     Decimal          @default(1.0) @db.Decimal(5, 2)
+  primaryLight   String           @default("D65")
+  secondaryLight String?
+  status         LabDipStatus     @default(OPEN)
+  /// The option the buyer approved, e.g. "B, round 1".
+  approvedOption String?
+  /// The mill's latest lab dip report.
+  reportFileId   String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  company    Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  techPack   TechPack       @relation(fields: [techPackId], references: [id], onDelete: Cascade)
+  reportFile FileAsset?     @relation("TechPackColourReport", fields: [reportFileId], references: [id], onDelete: SetNull)
+  options    LabDipOption[]
+
+  @@unique([techPackId, name])
+  @@index([companyId])
+}
+
+/// One lab dip option from the dye mill's measured report: its ΔE CMC(2:1),
+/// DL, DC, DH and metamerism index under a light.
+model LabDipOption {
+  id        String   @id @default(cuid())
+  companyId String
+  colourId  String
+  round     Int
+  letter    String
+  light     String?
+  deltaE    Decimal  @db.Decimal(6, 2)
+  dl        Decimal? @db.Decimal(6, 2)
+  dc        Decimal? @db.Decimal(6, 2)
+  dh        Decimal? @db.Decimal(6, 2)
+  mi        Decimal? @db.Decimal(6, 2)
+  /// Read from the mill's report by the AI (a person checked it before saving).
+  readByAi  Boolean  @default(false)
+  note      String?
+  createdAt DateTime @default(now())
+
+  company Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  colour  TechPackColour @relation(fields: [colourId], references: [id], onDelete: Cascade)
+
+  @@unique([colourId, round, letter])
+  @@index([companyId])
+}
+
+/// An AI draft of a style's tech pack: what it found (each line green,
+/// yellow or red, with the person's OK or change), its questions and the
+/// owner's instructions it applied. Nothing in the tech pack changes by it.
+model TechPackAiDraft {
+  id          String         @id @default(cuid())
+  companyId   String
+  techPackId  String
+  mode        TechPackAiMode
+  model       String
+  output      Json
+  createdById String?
+  createdAt   DateTime       @default(now())
+
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  techPack  TechPack @relation(fields: [techPackId], references: [id], onDelete: Cascade)
+  createdBy User?    @relation("TechPackAiDraftBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([techPackId, createdAt])
+  @@index([companyId])
+}
+
+/// An expert's answer on a style (Ask an expert), or a review board finding list.
+model TechPackExpertAnswer {
+  id         String           @id @default(cuid())
+  companyId  String
+  techPackId String
+  expert     String
+  kind       ExpertAnswerKind
+  question   String
+  answer     String
+  /// A review's findings: [{ expert, finding, severity }].
+  findings   Json?
+  model      String
+  askedById  String?
+  createdAt  DateTime         @default(now())
+
+  company  Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  techPack TechPack @relation(fields: [techPackId], references: [id], onDelete: Cascade)
+  askedBy  User?    @relation("TechPackExpertAskedBy", fields: [askedById], references: [id], onDelete: SetNull)
+
+  @@index([techPackId, createdAt])
+  @@index([companyId])
 }
 
 /// The pieces a project is to make of each SKU (a colour and size of a style): its
@@ -4511,6 +4744,53 @@ enum BookingStage {
 enum TechPackStatus {
   DRAFT
   APPROVED
+}
+
+enum GarmentKind {
+  POLO
+  TEE
+  SHIRT
+}
+
+enum MeasureUnit {
+  INCH
+  CM
+}
+
+enum ChestBasis {
+  FULL
+  HALF
+}
+
+/// Where a logo's machine file comes from, in the order they are tried.
+enum LogoSource {
+  BUYER_FILE
+  FACTORY_PUNCHER
+  AI_FROM_VECTOR
+}
+
+enum ColourCodeSource {
+  BUYER
+  IMAGE_ESTIMATE
+}
+
+/// A colour's lab dips: open (the mill's options are judged as they come), the
+/// buyer approved one, or the mill's best can do (BCD) after two rounds.
+enum LabDipStatus {
+  OPEN
+  BUYER_APPROVED
+  BEST_CAN_DO
+}
+
+/// Ask: the AI stops at what it is unsure of. Auto: it leaves those yellow and goes on.
+enum TechPackAiMode {
+  ASK
+  AUTO
+}
+
+enum ExpertAnswerKind {
+  QUESTION
+  REVIEW
 }
 
 /// The language a printed document's terms are in.

@@ -51,7 +51,9 @@ export type RecordPrintType =
   | "CM_SETTLEMENT"
   | "BATCH_SUMMARY"
   | "BOOKING"
-  | "AI_COSTS";
+  | "AI_COSTS"
+  | "MEASUREMENTS"
+  | "DIGITIZING_BRIEF";
 
 /**
  * Bump when the layout changes, so documents printed again get the new look.

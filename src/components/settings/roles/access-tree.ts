@@ -92,6 +92,7 @@ export const ACCESS_TREE: readonly AccessBranch[] = [
       leaf("production.bookings.approve", "Approve bookings and choose Fabric first"),
     ]),
     leaf("production.techpack.approve", "Lock fabric parts and approve tech packs"),
+    leaf("production.logo.approve", "Tick logos for bulk after the sew-out"),
     leaf("production.stock_intake", "Move finished goods into stock"),
   ]),
   branch("parties", "Buyers and suppliers", [

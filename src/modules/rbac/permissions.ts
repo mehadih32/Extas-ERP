@@ -139,6 +139,12 @@ export const PERMISSIONS = [
     module: "PRODUCTION",
     description: "Lock a style's fabric part and approve its tech pack for production",
   },
+  {
+    key: "production.logo.approve",
+    module: "PRODUCTION",
+    description:
+      "Tick a logo for bulk after its sew-out (the owner's): its machine file is then locked",
+  },
   // Parties
   { key: "parties.view", module: "PARTIES", description: "View buyer and supplier profiles" },
   {

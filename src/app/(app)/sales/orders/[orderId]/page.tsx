@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { AiRecordBox } from "@/components/ai/record-box";
 import { SectionError } from "@/components/dashboard/section-error";
 import { PrintDocumentButton } from "@/components/documents/print-button";
 import { UseTemplateButton } from "@/components/reports/use-template";
@@ -23,6 +24,7 @@ import { formatCount, formatDay } from "@/lib/display";
 import { cn } from "@/lib/utils";
 import type { TemplateChoice } from "@/modules/reports/screens.service";
 import type { OrderScreen } from "@/modules/sales/screens.service";
+import { getAiRecordCostAction } from "@/server/actions/ai.actions";
 import { getOrderScreenAction } from "@/server/actions/sales.actions";
 import { templateChoicesAction } from "@/server/actions/templates.actions";
 import { requireCompanyPage } from "@/server/pages/guards";
@@ -246,10 +248,11 @@ export default async function OrderPage({
 }) {
   const ctx = await requireCompanyPage();
   const [{ orderId }, query] = await Promise.all([params, searchParams]);
-  const [result, invoiceTemplates, challanTemplates] = await Promise.all([
+  const [result, invoiceTemplates, challanTemplates, aiBox] = await Promise.all([
     getOrderScreenAction(orderId),
     templateChoicesAction("COMMERCIAL_INVOICE"),
     templateChoicesAction("DELIVERY_CHALLAN"),
+    getAiRecordCostAction("SalesOrder", orderId),
   ]);
   if (!result.ok) {
     if (result.error.code === "NOT_FOUND") notFound();
@@ -293,6 +296,7 @@ export default async function OrderPage({
             </>
           }
         />
+        {aiBox.ok && <AiRecordBox box={aiBox.data} />}
         {o.proforma && (
           <SalesFlow
             current="order"

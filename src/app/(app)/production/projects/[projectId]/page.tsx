@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { AiRecordBox } from "@/components/ai/record-box";
 import { SectionError } from "@/components/dashboard/section-error";
 import { FormAlert } from "@/components/forms/field";
 import { ProjectMaterials } from "@/components/materials/project-materials";
@@ -31,6 +32,7 @@ import { Fact, Panel, RecordHeader } from "@/components/sales/detail-bits";
 import { money, salesHref } from "@/components/sales/labels";
 import { formatCount, formatDay } from "@/lib/display";
 import type { ProjectScreen } from "@/modules/production/screens.service";
+import { getAiRecordCostAction } from "@/server/actions/ai.actions";
 import { getProjectMaterialsPanelAction } from "@/server/actions/materials.actions";
 import {
   getCuttingScreenAction,
@@ -115,13 +117,14 @@ export default async function ProjectPage({
 }) {
   const ctx = await requireCompanyPage();
   const [{ projectId }, query] = await Promise.all([params, searchParams]);
-  const [result, materials, needs, cutting, finishing, techPack] = await Promise.all([
+  const [result, materials, needs, cutting, finishing, techPack, aiBox] = await Promise.all([
     getProjectScreenAction(projectId),
     getProjectMaterialsPanelAction(projectId),
     getNeedsPanelAction(projectId),
     getCuttingScreenAction(projectId),
     getFinishingScreenAction(projectId),
     getTechPackAction(projectId),
+    getAiRecordCostAction("ProductionProject", projectId),
   ]);
   if (!result.ok) {
     if (result.error.code === "NOT_FOUND") notFound();
@@ -167,6 +170,7 @@ export default async function ProjectPage({
           </FormAlert>
         )}
         {notes.complete && <FormAlert tone="note">{notes.complete}</FormAlert>}
+        {aiBox.ok && <AiRecordBox box={aiBox.data} />}
         <ProjectActions key={p.id} screen={screen} currency={currency} notice={notice} />
         <div className="grid gap-5 rounded-lg border bg-card p-5 sm:p-6 md:grid-cols-2 md:gap-8">
           <TimelineBar

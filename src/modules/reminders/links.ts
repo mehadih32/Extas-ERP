@@ -60,6 +60,9 @@ export function recordHref(ctx: Can, link: RecordLink | null): string | null {
     case "MySalary":
       // A salary paid (in full or in part): the employee's money ledger.
       return ctx.can("portal.self") ? "/me/ledger" : null;
+    case "AiBudget":
+      // The AI's spending passed the alert percentage of the month's budget.
+      return ctx.can("ai.view") || ctx.can("ai.manage") ? "/ai/costs" : null;
     default:
       return null;
   }
@@ -82,4 +85,5 @@ export const RECORD_NOUNS: Record<string, string> = {
   Notice: "the notice",
   MyItems: "my items",
   MySalary: "my money",
+  AiBudget: "the AI costs",
 };

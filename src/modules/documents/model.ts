@@ -50,7 +50,8 @@ export type RecordPrintType =
   | "SUPPLIER_REPORT_CARD"
   | "CM_SETTLEMENT"
   | "BATCH_SUMMARY"
-  | "BOOKING";
+  | "BOOKING"
+  | "AI_COSTS";
 
 /**
  * Bump when the layout changes, so documents printed again get the new look.

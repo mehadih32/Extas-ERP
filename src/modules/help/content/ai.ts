@@ -1,11 +1,11 @@
 import type { HelpSection } from "../types";
 
-/** The AI Center: the main switch, what the AI may do (Control), its requests, models, logs and settings. */
+/** The AI Center: the main switch, what the AI may do (Control), its requests, costs and budget, models, logs and settings. */
 export const aiHelp: HelpSection = {
   id: "ai",
   title: "এআই সেন্টার (AI)",
   description:
-    "এআই (Mehedi 2.0) চালু বা বন্ধ করা, সে কী করতে পারবে তা ঠিক করা (Do / Ask / Off), তার অনুরোধের উত্তর দেওয়া, কোন কাজে কোন মডেল, তার সব কাজের লগ, আর Claude key ও PIN।",
+    "এআই (Mehedi 2.0) চালু বা বন্ধ করা, সে কী করতে পারবে তা ঠিক করা (Do / Ask / Off), তার অনুরোধের উত্তর দেওয়া, তার খরচ ও বাজেট, কোন কাজে কোন মডেল, তার সব কাজের লগ, আর Claude key ও PIN।",
   href: "/ai",
   articles: [
     {
@@ -45,6 +45,7 @@ export const aiHelp: HelpSection = {
         },
       ],
       tips: [
+        "“AI Home”-এ “This month's AI cost” ঘরে এ মাসের এআই খরচ আর বাজেটের কত শতাংশ গেছে দেখা যায়; বিস্তারিত “Budget & Costs”-এ।",
         "এআই কখনো কোনো ডেটা মুছে ফেলে না, আর কারও অনুমতি বা ভূমিকা বদলায় না।",
         "বায়ারের কাছে কিছু যায় না আপনার OK ছাড়া: উত্তর, ফলো-আপ, রিমাইন্ডার, ক্লেইম, কোটেশন বা ইনভয়েস। এআই খসড়া লেখে আর আপনাকে মনে করিয়ে দেয়।",
         "লাইভ সাইটে এআই বন্ধ থাকে যতক্ষণ না মালিক নিজে চালু করেন।",
@@ -140,6 +141,63 @@ export const aiHelp: HelpSection = {
         "মুছে ফেলার কোনো ঘর নেই: এআই কখনো কিছু মোছে না।",
         "এআই কখনো ভূমিকা, অনুমতি, Control বা ব্যাকআপ ছুঁতে পারে না।",
         "এআই বন্ধ থাকলেও আগে থেকে Control সাজিয়ে রাখা যায়।",
+      ],
+    },
+    {
+      slug: "ai-costs",
+      title: "এআই-এর খরচ দেখবেন ও বাজেট ঠিক করবেন যেভাবে (Budget & Costs)",
+      summary:
+        "Claude-কে প্রতিটি কল কে চেয়েছে, কোন কাজে, কেন, কোন রেকর্ডে, কোন মডেলে আর কত টাকা খরচ হলো; সঙ্গে মাসিক বাজেট, সীমা ও 80% সতর্কবার্তা।",
+      keywords: [
+        "budget",
+        "costs",
+        "cost",
+        "spend",
+        "limit",
+        "excel",
+        "pdf",
+        "বাজেট",
+        "খরচ",
+        "সীমা",
+        "টাকা",
+        "এআই খরচ",
+      ],
+      routes: ["/ai/costs"],
+      who: "খরচ দেখেন যাঁদের এআই সেন্টার খোলা; বাজেট ঠিক করেন শুধু মালিক (ai.manage)।",
+      steps: [
+        {
+          text: "“AI” > “Budget & Costs” খুলুন। উপরে সময় বেছে নিন: “Today”, “Last 7 days”, “30 days”, “This month” বা “Custom range” (তখন “From” ও “To” দিয়ে “Show”)।",
+          image: {
+            id: "ai-costs-1",
+            caption: "“Budget & Costs”: সময়, মোট খরচ ও দিনভিত্তিক চার্ট",
+          },
+        },
+        {
+          text: "উপরের ঘরগুলোতে এই সময়ের খরচ, এ মাসের খরচ ও বাজেট, “Month-end at this pace” (এভাবে চললে মাস শেষে কত), আর ব্যর্থ বা থামানো কল।",
+        },
+        {
+          text: "“Cost per day” চার্টে প্রতিদিনের খরচ; “Top 5 costliest calls”-এ সবচেয়ে দামি 5টি কল। নিচে কাজ, মডেল, এলাকা, এজেন্ট, ব্যক্তি আর অর্ডার বা টেক প্যাক অনুযায়ী ভাগ।",
+        },
+        {
+          text: "একজনের খরচ দেখতে “Person”-এ তাঁকে বেছে “Show” চাপুন। “Every call”-এ প্রতিটি কল: কখন, কে চেয়েছে, কোন কাজে, কেন, কোন রেকর্ডে, কোন মডেলে আর কত টাকা।",
+        },
+        {
+          text: "ফাইল লাগলে “PDF” বা “Excel” চাপুন। Excel-এ সব কল থাকে, যোগ-বিয়োগ ও ফিল্টার করা যায়।",
+        },
+        {
+          text: "মালিক “Budget and limits”-এ “Monthly budget”, “Daily limit”, “Limit per order or tech pack”, “Limit per person, per month”, “Limit per agent, per month” ও “Ask before a task above” দিতে পারেন; ফাঁকা রাখলে কোনো সীমা নেই। তারপর “Save the budget”।",
+          image: { id: "ai-costs-2", caption: "“Budget and limits”: বাজেট ও সীমার ঘর" },
+        },
+        {
+          text: "“Tell me at (% of the monthly budget)”-এ যত শতাংশে জানাতে চান (শুরুতে 80)। “At the limit”-এ বেছে নিন: “Stop new AI work” বা “Go on with the small model”।",
+        },
+      ],
+      tips: [
+        "Claude ডলারে বিল করে; খরচ টাকায় দেখাতে ডলারের দাম (“for one US dollar”) ঠিক রাখুন।",
+        "মাসিক বাজেট না দিলে বড় কাজের আগে এআই আনুমানিক খরচ জানিয়ে আপনার অনুমতি চায়।",
+        "দ্বিতীয় তালা হিসেবে Claude Console-এও মাসিক খরচের সীমা দিয়ে রাখুন।",
+        "এআই বন্ধ থাকলে কোনো কল হয় না, খরচ শূন্য।",
+        "প্রতিটি প্রজেক্ট, ব্যাচ ও সেলস অর্ডারের পাতায় ছোট বাক্সে এআই চালু কি না আর সেই রেকর্ডে এ পর্যন্ত এআই খরচ দেখা যায়।",
       ],
     },
     {

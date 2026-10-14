@@ -6,6 +6,14 @@ import { AppError } from "@/lib/errors";
 import type { AiRecord } from "./control.service";
 import type { AiTaskKey } from "./models";
 import { aiSettingsOf, apiKeyOf, companyModelFor, offReason, OFF_TEXT } from "./settings.service";
+import {
+  CHEAPER_MODEL,
+  checkBudget,
+  type CostEstimate,
+  estimateCost,
+  logUsage,
+  type UsageLine,
+} from "./usage.service";
 
 /*
  * The one door to Claude: every AI feature of the ERP calls it here, so the
@@ -13,6 +21,10 @@ import { aiSettingsOf, apiKeyOf, companyModelFor, offReason, OFF_TEXT } from "./
  * the cost log, what each call cost). Nothing is called while AI is off; the
  * caller then uses its own non-AI way. Calls go through the official
  * Anthropic SDK; tests put a stand-in in its place (standInForClaude).
+ *
+ * Each call writes its cost line (who asked, the task, why, the record, the
+ * model, the tokens and the cost), and the budget and limits are checked
+ * before it (AI Center > Budget & Costs).
  */
 
 export type ClaudeRequest = {
@@ -32,6 +44,8 @@ export type ClaudeRequest = {
   timeoutMs?: number;
   /** How hard it thinks: "low" for short wording, the model's own default otherwise. */
   effort?: "low" | "medium" | "high";
+  /** The person saw the estimate (AiAskFirst) and said go on. */
+  costOk?: boolean;
 };
 
 export type ClaudeAnswer = { message: Anthropic.Message; model: string };
@@ -69,6 +83,20 @@ export async function aiOn(companyId: string): Promise<boolean> {
   return (await aiReady(companyId)).on;
 }
 
+/**
+ * The owner wants to be asked before this call (above "Ask before a task
+ * above", or big work without a monthly budget): nothing was sent to Claude.
+ * The caller shows the estimate and asks again with costOk once agreed.
+ */
+export class AiAskFirst extends AppError {
+  readonly estimate: CostEstimate;
+  constructor(estimate: CostEstimate) {
+    super("CONFLICT", estimate.askFirst ?? "The AI asks before this task.");
+    this.name = "AiAskFirst";
+    this.estimate = estimate;
+  }
+}
+
 function friendly(error: unknown): AppError {
   if (error instanceof AppError) return error;
   if (
@@ -98,14 +126,63 @@ function friendly(error: unknown): AppError {
   return new AppError("UNAVAILABLE", "The AI could not answer. Try again.");
 }
 
+/** Writes a cost line; a line that cannot be written never breaks the call. */
+async function costLine(companyId: string, line: UsageLine) {
+  try {
+    await logUsage(companyId, line);
+  } catch (error) {
+    console.error("[ai] cost line not written", error instanceof Error ? error.message : error);
+  }
+}
+
+const tokensOf = (message: Anthropic.Message) => ({
+  input: message.usage?.input_tokens ?? 0,
+  output: message.usage?.output_tokens ?? 0,
+  cacheRead: message.usage?.cache_read_input_tokens ?? 0,
+  cacheWrite: message.usage?.cache_creation_input_tokens ?? 0,
+});
+
 /**
- * Asks Claude, on the model the company chose for the task. Throws
- * UNAVAILABLE (with a line people can read) when AI is off or the call fails.
+ * Asks Claude, on the model the company chose for the task, within the
+ * budget and limits. Throws UNAVAILABLE (with a line people can read) when AI
+ * is off, a limit is reached or the call fails, and AiAskFirst when the owner
+ * wants to see the estimate first.
  */
 export async function askClaude(companyId: string, request: ClaudeRequest): Promise<ClaudeAnswer> {
   const ready = await aiReady(companyId);
   if (!ready.on) throw new AppError("UNAVAILABLE", ready.text);
-  const model = companyModelFor(ready.settings, request.task);
+  const line = {
+    userId: request.userId ?? null,
+    agent: request.agent ?? ready.settings.assistantName,
+    task: request.task,
+    why: request.why,
+    record: request.record,
+  };
+  const chosen = companyModelFor(ready.settings, request.task);
+  let model: string = chosen;
+  let atLimit: string | null = null;
+  try {
+    const budget = await checkBudget(companyId, line);
+    if (!budget.go) {
+      await costLine(companyId, {
+        ...line,
+        model: chosen,
+        durationMs: 0,
+        result: "STOPPED",
+        note: budget.why,
+      });
+      throw new AppError("UNAVAILABLE", budget.why);
+    }
+    if (budget.cheaper) model = CHEAPER_MODEL;
+    atLimit = budget.why;
+    if (!request.costOk) {
+      const estimate = await estimateCost(companyId, model, request);
+      if (estimate.askFirst) throw new AiAskFirst(estimate);
+    }
+  } catch (error) {
+    throw friendly(error);
+  }
+
   const body: Anthropic.MessageCreateParamsNonStreaming = {
     model,
     max_tokens: request.maxTokens,
@@ -114,17 +191,35 @@ export async function askClaude(companyId: string, request: ClaudeRequest): Prom
     ...(request.tools ? { tools: request.tools } : {}),
     ...(request.effort ? { output_config: { effort: request.effort } } : {}),
   };
+  const started = Date.now();
+  let message: Anthropic.Message;
   try {
-    const message = await transport({
+    message = await transport({
       apiKey: ready.apiKey,
       body,
       timeoutMs: request.timeoutMs ?? 60_000,
     });
-    return { message, model: message.model ?? model };
   } catch (error) {
     console.error(`[ai] ${request.task} failed`, error instanceof Error ? error.message : error);
-    throw friendly(error);
+    const plain = friendly(error);
+    await costLine(companyId, {
+      ...line,
+      model,
+      durationMs: Date.now() - started,
+      result: "FAILED",
+      note: plain.message,
+    });
+    throw plain;
   }
+  await costLine(companyId, {
+    ...line,
+    model,
+    tokens: tokensOf(message),
+    durationMs: Date.now() - started,
+    result: "OK",
+    note: atLimit,
+  });
+  return { message, model: message.model ?? model };
 }
 
 /** A way to ask Claude: the company's (askerFor), or a stand-in in tests. */

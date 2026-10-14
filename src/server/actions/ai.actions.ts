@@ -2,20 +2,22 @@
 
 import { revalidatePath } from "next/cache";
 
+import { AppError } from "@/lib/errors";
 import { getRequestMeta } from "@/lib/request-meta";
 import { runAction } from "@/lib/result";
 import * as control from "@/modules/ai/control.service";
+import * as costs from "@/modules/ai/costs.service";
 import * as logs from "@/modules/ai/logs.service";
 import * as requests from "@/modules/ai/requests.service";
 import * as settings from "@/modules/ai/settings.service";
-import { requireAnyPermission, requirePermission } from "@/modules/auth/context";
+import { requireAnyPermission, requireCompany, requirePermission } from "@/modules/auth/context";
 
 /*
  * AI Center Server Actions. Each returns { ok: true, data } or { ok: false, error }.
- *   ai.view     see the AI Center: the switch, Control, Models, Logs and the
- *               AI's requests (ai.manage sees them too)
+ *   ai.view     see the AI Center: the switch, Control, Budget & Costs, Models,
+ *               Logs and the AI's requests (ai.manage sees them too)
  *   ai.manage   turn AI on or off, pause it, set Control (cells, presets,
- *               grants), the models, the Claude key and the PIN, and answer
+ *               grants), the budget, the models, the Claude key and the PIN, and answer
  *               the AI's permission and Deletion requests (the owner's)
  * The AI itself holds neither: it can never change what it may do.
  */
@@ -50,6 +52,24 @@ export const getAiLogsAction = async (filter?: string) =>
       filter && LOG_FILTER_VALUES.includes(filter) ? (filter as logs.LogFilter) : "all",
     ),
   );
+
+export const getCostsAction = async (query?: unknown) =>
+  runAction(async () => costs.getCosts(await view(), query ?? {}));
+
+export const getAiMonthCostAction = async () =>
+  runAction(async () => costs.getMonthCost(await view()));
+
+const BOX_RECORDS: readonly string[] = costs.AI_BOX_RECORDS;
+
+/** The AI box on a project, batch or order page (anyone signed in; the cost only for AI Center people). */
+export const getAiRecordCostAction = async (type: string, id: string) =>
+  runAction(async () => {
+    if (!BOX_RECORDS.includes(type)) throw new AppError("VALIDATION", "No AI box for this record.");
+    return costs.recordCost(await requireCompany(), { type, id: String(id).slice(0, 60) });
+  });
+
+export const setBudgetAction = async (input: unknown) =>
+  change(async () => costs.setBudget(await manage(), input, await getRequestMeta()));
 
 export const setAiSwitchAction = async (on: boolean) =>
   change(async () => settings.setAiSwitch(await manage(), on, await getRequestMeta()));

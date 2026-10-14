@@ -283,6 +283,7 @@ run("AI Center", () => {
       why: "c",
       maxTokens: 10,
       messages: [{ role: "user", content: "x" }],
+      costOk: true,
     });
     expect(calls.slice(1).map((c) => c.body.model)).toEqual([
       "claude-haiku-5-5",
@@ -294,6 +295,7 @@ run("AI Center", () => {
       why: "c",
       maxTokens: 10,
       messages: [{ role: "user", content: "x" }],
+      costOk: true,
     });
     expect(calls.at(-1)!.body.model).toBe("claude-fable-5-1");
     const models = await getModels(env.owner);

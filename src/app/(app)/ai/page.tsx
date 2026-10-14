@@ -4,22 +4,29 @@ import Link from "next/link";
 
 import { AiSwitch } from "@/components/ai/ai-switch";
 import { AiLogList } from "@/components/ai/log-list";
+import { AiMonthCostCard } from "@/components/ai/month-cost";
 import { AiNoAccess } from "@/components/ai/no-access";
 import { AiRequestsList } from "@/components/ai/requests-list";
 import { SectionError } from "@/components/dashboard/section-error";
 import { Panel } from "@/components/sales/detail-bits";
-import { getAiLogsAction, getAiStatusAction, getRequestsAction } from "@/server/actions/ai.actions";
+import {
+  getAiLogsAction,
+  getAiMonthCostAction,
+  getAiStatusAction,
+  getRequestsAction,
+} from "@/server/actions/ai.actions";
 
 export const metadata: Metadata = { title: "AI Center" };
 
 /**
  * AI Home (ai.view or ai.manage): the main switch (off until the owner turns
- * it on), what the AI waits for (permission and Deletion requests) and what
- * it did last.
+ * it on), this month's cost against the budget, what the AI waits for
+ * (permission and Deletion requests) and what it did last.
  */
 export default async function AiHomePage() {
-  const [status, requests, logs] = await Promise.all([
+  const [status, month, requests, logs] = await Promise.all([
     getAiStatusAction(),
+    getAiMonthCostAction(),
     getRequestsAction(),
     getAiLogsAction("ai"),
   ]);
@@ -33,6 +40,15 @@ export default async function AiHomePage() {
   return (
     <div className="grid gap-6">
       <AiSwitch status={status.data} />
+      {month.ok ? (
+        <AiMonthCostCard month={month.data} />
+      ) : (
+        <SectionError
+          title="This month's AI cost"
+          heading="The AI cost could not load"
+          error={month.error}
+        />
+      )}
       {requests.ok ? (
         <AiRequestsList requests={requests.data} pinSet={status.data.pinSet} />
       ) : (

@@ -190,6 +190,8 @@ model Company {
   aiGrants             AiGrant[]
   aiPermissionRequests AiPermissionRequest[]
   aiDeletionRequests   AiDeletionRequest[]
+  aiUsage              AiUsage[]
+  aiBudget             AiBudget?
 }
 
 /// A person who can log in. Global across companies.
@@ -289,6 +291,8 @@ model User {
   aiGrantsGiven       AiGrant[]             @relation("AiGrantGivenBy")
   aiRequestsAnswered  AiPermissionRequest[] @relation("AiPermissionRequestAnsweredBy")
   aiDeletionsAnswered AiDeletionRequest[]   @relation("AiDeletionRequestAnsweredBy")
+  aiUsage             AiUsage[]             @relation("AiUsageUser")
+  aiBudgetsSet        AiBudget[]            @relation("AiBudgetUpdatedBy")
 }
 
 /// A signed-in device. `token` stores the SHA-256 hash of the cookie value, never
@@ -4288,7 +4292,7 @@ model AiPermissionRequest {
 /// The AI never deletes: it asks the owner to, with what, why and what happens
 /// if it stays. An approved request is carried out in the owner's name.
 model AiDeletionRequest {
-  id           String            @id @default(cuid())
+  id           String           @id @default(cuid())
   companyId    String
   /// The record, as people know it ("Booking PO-2026-00012 (draft)").
   what         String
@@ -4298,14 +4302,14 @@ model AiDeletionRequest {
   href         String?
   why          String
   ifKept       String
-  channel      AiChannel         @default(ERP)
+  channel      AiChannel        @default(ERP)
   askedBy      String
-  status       AiDeletionStatus  @default(PENDING)
+  status       AiDeletionStatus @default(PENDING)
   answeredById String?
   answeredAt   DateTime?
   note         String?
   doneAt       DateTime?
-  createdAt    DateTime          @default(now())
+  createdAt    DateTime         @default(now())
 
   company    Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
   answeredBy User?   @relation("AiDeletionRequestAnsweredBy", fields: [answeredById], references: [id], onDelete: SetNull)
@@ -5212,4 +5216,86 @@ enum ReminderStatus {
 enum BackupTrigger {
   SCHEDULED
   MANUAL
+}
+
+/// One call to Claude (AI Center > Budget & Costs): who asked, for what, why,
+/// on which record and model, the tokens it used and what it cost. Written for
+/// every call, failed ones too (with no tokens), so nothing the AI spends is
+/// unaccounted for.
+model AiUsage {
+  id               String       @id @default(cuid())
+  companyId        String
+  /// The person who asked, or null when the system or the AI itself started it.
+  userId           String?
+  /// Who did it: the AI's name, an expert (X01–X25) or a work agent.
+  agent            String
+  /// The task key (models.ts AI_TASKS) and its ERP area.
+  task             String
+  module           String
+  why              String
+  recordType       String?
+  recordId         String?
+  recordLabel      String?
+  model            String
+  inputTokens      Int          @default(0)
+  outputTokens     Int          @default(0)
+  cacheReadTokens  Int          @default(0)
+  cacheWriteTokens Int          @default(0)
+  costUsd          Decimal      @default(0) @db.Decimal(12, 6)
+  /// In the company's money, at the rate of the day (AiBudget.usdRate).
+  cost             Decimal      @default(0) @db.Decimal(12, 2)
+  usdRate          Decimal      @db.Decimal(10, 4)
+  durationMs       Int          @default(0)
+  result           AiCallResult
+  /// Why it failed or was stopped, in plain words.
+  note             String?
+  createdAt        DateTime     @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user    User?   @relation("AiUsageUser", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, createdAt])
+  @@index([companyId, recordType, recordId])
+  @@index([companyId, userId, createdAt])
+}
+
+/// The AI's budget and limits (all optional, off until set). At the alert
+/// percentage the owner is told; at a limit new work stops, or continues on
+/// the small model when the owner chose that.
+model AiBudget {
+  id              String    @id @default(cuid())
+  companyId       String    @unique
+  /// Null = no monthly budget: the AI shows an estimate before big tasks and asks.
+  monthly         Decimal?  @db.Decimal(12, 2)
+  daily           Decimal?  @db.Decimal(12, 2)
+  perOrder        Decimal?  @db.Decimal(12, 2)
+  perStaffMonthly Decimal?  @db.Decimal(12, 2)
+  perAgentMonthly Decimal?  @db.Decimal(12, 2)
+  /// Ask the owner before a task estimated above this.
+  askAbove        Decimal?  @db.Decimal(12, 2)
+  alertPercent    Int       @default(80)
+  atLimit         AiAtLimit @default(STOP)
+  /// Taka per US dollar, for turning Claude's prices into the company's money.
+  usdRate         Decimal   @default(122) @db.Decimal(10, 4)
+  /// The month ("2026-10") the alert was last sent, so it is sent once a month.
+  alertedMonth    String?
+  updatedById     String?
+  updatedAt       DateTime  @updatedAt
+
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  updatedBy User?   @relation("AiBudgetUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+}
+
+enum AiCallResult {
+  OK
+  FAILED
+  /// Not sent: a budget or limit stopped it.
+  STOPPED
+}
+
+enum AiAtLimit {
+  /// New work stops until next month (or the limit is raised).
+  STOP
+  /// Small, urgent work goes on with the small model.
+  CHEAPER
 }

@@ -238,8 +238,9 @@ pauses for less than a minute. When the update changes the database, the ERP clo
 users for a few minutes instead, from just before the safety copy until the check has
 passed, so nothing typed in that time can be lost.
 
-**A failed update goes back by itself.** When the new version cannot be built, nothing
-changes. When it does not start, or a screen or a PDF does not work in the check,
+**A failed update goes back by itself.** When the new version cannot be built, or the
+safety copy of the database cannot be saved (a full disk, for example), nothing changes.
+When it does not start, or a screen or a PDF does not work in the check,
 `deploy.sh` goes back to the version that ran before it (kept as the `extras-erp-app:previous`
 and `extras-erp-tools:previous` images), and to the `before-update-…` safety copy of the
 database when the update had changed the database. It then stops with the reason, so the
@@ -257,8 +258,11 @@ earlier version for a while, turn them off first (below).
 
 Once this is set up, GitHub installs each new version by itself: after every merge into
 `main`, it signs in to the server and runs `deploy/auto-deploy.sh`, which gets the newest
-code and runs `deploy.sh`. The **Deploy** workflow in the repository's **Actions** tab shows
-each update and its steps. The full log stays on the server, in
+code and runs `deploy.sh`. Before it touches the server, the **Deploy** workflow runs the
+**Checks** on the merged code (types, lint, formatting, every test with a throwaway
+database, and the production build); when one fails, the server is not touched and the
+run shows a red cross at **Checks**. The same Checks run on every pull request. The
+**Deploy** workflow in the repository's **Actions** tab shows each update and its steps. The full log stays on the server, in
 `/srv/extras-erp/deploy-logs/`, because anyone can read the Actions logs while the
 repository is public.
 

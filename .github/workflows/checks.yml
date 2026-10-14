@@ -1,0 +1,63 @@
+# The checks every change must pass: types, lint, formatting, every test (with a
+# throwaway database) and the production build. They run on every pull request,
+# and the Deploy workflow runs them again on main before it touches the server,
+# so a change that fails them is never installed.
+name: Checks
+
+on:
+  pull_request:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  checks:
+    name: Tests and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: extras
+          POSTGRES_PASSWORD: extras
+          POSTGRES_DB: extras_erp_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U extras -d extras_erp_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      TEST_DATABASE_URL: postgresql://extras:extras@localhost:5432/extras_erp_test?schema=public
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Types
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Formatting
+        run: npm run format:check
+
+      - name: Every test
+        run: npm test
+
+      - name: Production build
+        run: npm run build

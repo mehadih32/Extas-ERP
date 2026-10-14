@@ -152,12 +152,15 @@ export default async function BookingPage({
   const trims = b.lines.filter((l) => l.role !== "FABRIC");
   const shared = b.lines.filter((l) => l.shares.length > 0);
   const priceLater = b.lines.filter((l) => l.priceLater).length;
+  const stock = one(query.created) === "1" ? one(query.stock) : undefined;
   const notice =
-    one(query.created) === "1"
-      ? `${b.number} was saved. Print the PDF and send it to ${b.supplier.name}.`
-      : one(query.saved) === "1"
-        ? `${b.number} was saved. Print the PDF again for ${b.supplier.name}.`
-        : undefined;
+    stock === "1"
+      ? `${b.number} was saved and its goods are in the main store. The bill is Due to ${b.supplier.name}, and Accounts pays it.`
+      : one(query.created) === "1"
+        ? `${b.number} was saved. Print the PDF and send it to ${b.supplier.name}.`
+        : one(query.saved) === "1"
+          ? `${b.number} was saved. Print the PDF again for ${b.supplier.name}.`
+          : undefined;
   const terms = termLines(b.terms).map(splitTerm);
   const c = b.collar;
 
@@ -182,6 +185,12 @@ export default async function BookingPage({
         {ended && b.closedReason && (
           <FormAlert tone="note">
             {b.status === "CANCELLED" ? "Cancelled" : "Closed"}: {b.closedReason}
+          </FormAlert>
+        )}
+        {stock === "0" && b.can.receive && (
+          <FormAlert>
+            {b.number} was saved, but its goods could not go into stock. Add them with “Receive the
+            goods”.
           </FormAlert>
         )}
         <BookingActions key={b.id} booking={b} notice={notice} />

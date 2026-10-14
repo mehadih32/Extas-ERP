@@ -31,7 +31,8 @@ import {
   canCloseOrder,
   canReceiveOnOrder,
 } from "@/modules/materials/rules";
-import { assertUnitFits, loadActiveMaterials } from "@/modules/materials/stock";
+import { createPurchase } from "@/modules/materials/purchase.service";
+import { assertUnitFits, loadActiveMaterials, resolveStore } from "@/modules/materials/stock";
 import { money, pendingQuantity, qty, unitCost, ZERO } from "@/modules/materials/valuation";
 import { assertPartyCanTransact } from "@/modules/parties/party.service";
 import {
@@ -682,9 +683,58 @@ const bookingSummary = (
 ) =>
   `${number} (${SOURCE_LABELS[source].toLowerCase()}, ${CATEGORY_LABELS[category].toLowerCase()}) to ${supplier}`;
 
-export async function createBooking(ctx: CompanyContext, raw: unknown, meta?: RequestMeta) {
+/**
+ * A market purchase bought and collected goes into stock as it is saved: only
+ * on its own (a batch's goods arrive through the batch's central receive), and
+ * with every price known, since the bill is written at once.
+ */
+function assertCanReceiveNow(input: { source: BookingSource; batchId?: string | null }) {
+  if (input.source !== "MARKET_PURCHASE") {
+    throw new AppError(
+      "VALIDATION",
+      "Only a market purchase goes into stock as it is saved. A supplier PO is received when the goods arrive.",
+      { receiveNow: ["Only for a market purchase"] },
+    );
+  }
+  if (input.batchId) {
+    throw new AppError(
+      "VALIDATION",
+      "A batch's goods are received in the batch's central receive. Save the booking, then receive it there.",
+      { receiveNow: ["Not for a booking on a batch"] },
+    );
+  }
+}
+
+function assertPricesForReceive(lines: PreparedLine[]) {
+  const fieldErrors: Record<string, string[]> = {};
+  lines.forEach((l, i) => {
+    if (l.priceLater) fieldErrors[`lines.${i}.unitPrice`] = ["Enter the price paid"];
+  });
+  if (Object.keys(fieldErrors).length > 0) {
+    throw new AppError(
+      "VALIDATION",
+      "Enter the price paid for every item: the goods go into stock now.",
+      fieldErrors,
+    );
+  }
+  if (lines.every((l) => l.unitPrice.lte(0))) {
+    throw new AppError("VALIDATION", "The bill total must be more than zero.", {
+      lines: ["Enter the prices paid"],
+    });
+  }
+}
+
+/** How the goods of a booking saved with "add to stock now" went in. */
+export type IntoStock = { bill: string } | { problem: string } | null;
+
+export async function createBooking(
+  ctx: CompanyContext,
+  raw: unknown,
+  meta?: RequestMeta,
+): Promise<Booking & { intoStock: IntoStock }> {
   const input = createBookingSchema.parse(raw);
   assertCanBuyMaterials(ctx);
+  if (input.receiveNow) assertCanReceiveNow(input);
   const supplier = await assertPartyCanTransact(ctx, input.supplierId, "PURCHASE");
   const today = localDay(new Date(), ctx.company.timezone);
   if (input.expectedDate && input.expectedDate < today) {
@@ -694,7 +744,12 @@ export async function createBooking(ctx: CompanyContext, raw: unknown, meta?: Re
   }
   const plan = input.batchId ? await batchPlan(ctx, input.batchId) : null;
   const { lines, collar } = await prepareLines(ctx, input);
-  const bookingId = await runTransaction(async (tx) => {
+  if (input.receiveNow) {
+    assertPricesForReceive(lines);
+    // The store must be there before anything is written.
+    await resolveStore(ctx);
+  }
+  const saved = await runTransaction(async (tx) => {
     if (plan) await lockRow(tx, "ProductionBatch", plan.batch.id);
     const orderLines = await writeableLines(
       tx,
@@ -734,9 +789,44 @@ export async function createBooking(ctx: CompanyContext, raw: unknown, meta?: Re
       },
       tx,
     );
-    return booking.id;
+    return { id: booking.id, orderId };
   }, TX_OPTIONS);
-  return getBooking(ctx, bookingId);
+  const intoStock = input.receiveNow ? await receiveInFull(ctx, saved.orderId, meta) : null;
+  return { ...(await getBooking(ctx, saved.id)), intoStock };
+}
+
+/**
+ * Receives everything on a just-saved market purchase into the main store, at
+ * its prices, on a bill Due to the seller (Accounts pays it). The booking is
+ * already saved: if this fails, the goods wait to be received the usual way.
+ */
+async function receiveInFull(
+  ctx: CompanyContext,
+  orderId: string,
+  meta: RequestMeta | undefined,
+): Promise<IntoStock> {
+  const lines = await ctx.db.purchaseOrderLine.findMany({
+    where: { orderId },
+    orderBy: { id: "asc" },
+    select: { id: true, quantity: true },
+  });
+  try {
+    const bill = await createPurchase(
+      ctx,
+      {
+        purchaseOrderId: orderId,
+        paymentType: "DUE",
+        items: lines.map((l) => ({ purchaseOrderLineId: l.id, quantity: l.quantity.toNumber() })),
+      },
+      meta,
+    );
+    return { bill: bill.number };
+  } catch (error) {
+    if (!(error instanceof AppError)) console.error("[bookings] receive now failed", error);
+    return {
+      problem: error instanceof AppError ? error.message : "The goods could not go into stock.",
+    };
+  }
 }
 
 /** Locks the booking's order for the transaction and reads what the rules need. */

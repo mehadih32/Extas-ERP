@@ -45,8 +45,15 @@ export const getBatchBookingsAction = async (batchId: string) =>
 export const listAttachableBatchesAction = async () =>
   runAction(async () => bookings.listAttachableBatches(await attach()));
 
+/** Also says how the goods went in when a market purchase was added to stock as it was saved. */
 export const createBookingAction = async (input: unknown) =>
-  change(async () => ref(await bookings.createBooking(await buy(), input, await getRequestMeta())));
+  change(async () => {
+    const booking = await bookings.createBooking(await buy(), input, await getRequestMeta());
+    const into = booking.intoStock;
+    /** null: not asked; true: in the store on a Due bill; false: saved, waiting to be received. */
+    const stocked: boolean | null = into ? "bill" in into : null;
+    return { ...ref(booking), stocked };
+  });
 
 export const updateBookingAction = async (bookingId: string, input: unknown) =>
   change(async () =>

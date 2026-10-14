@@ -122,7 +122,13 @@ export type Draft = {
   notes: string;
   lines: DraftLine[];
   collar: DraftCollar;
+  /** A market purchase bought and collected: into the store as it is saved. */
+  receiveNow: boolean;
 };
+
+/** True when this draft's goods go into stock as it is saved (a market purchase only). */
+export const receivesNow = (draft: Pick<Draft, "source" | "receiveNow">) =>
+  draft.source === "MARKET_PURCHASE" && draft.receiveNow;
 
 let counter = 0;
 /** A key for a new row (React lists), unique within the page. */
@@ -369,6 +375,7 @@ export function startDraft(form: BookingForm): Draft {
     notes: v.notes,
     lines,
     collar,
+    receiveNow: false,
   };
 }
 
@@ -544,6 +551,8 @@ function lineInput(
     const p = readPrice(line.unitPrice);
     if (typeof p === "string") problems[at("unitPrice")] = p;
     else unitPrice = p;
+  } else if (receivesNow(draft)) {
+    problems[at("unitPrice")] = "Enter the price paid: the goods go into stock now.";
   }
   return {
     ...(line.material
@@ -659,7 +668,8 @@ export function buildInput(draft: Draft, today: string) {
     problems.supplierId =
       draft.source === "MARKET_PURCHASE" ? "Choose the shop or seller." : "Choose the supplier.";
   }
-  if (draft.expectedDate && draft.expectedDate < today) {
+  const intoStock = receivesNow(draft);
+  if (draft.expectedDate && draft.expectedDate < today && !intoStock) {
     problems.expectedDate = "Choose today or a later day.";
   }
   let garmentPieces: number | null = null;
@@ -684,7 +694,7 @@ export function buildInput(draft: Draft, today: string) {
       source: draft.source,
       category: draft.category,
       supplierId: draft.supplier?.id ?? "",
-      expectedDate: draft.expectedDate || null,
+      expectedDate: intoStock ? null : draft.expectedDate || null,
       supplierRef: optional(draft.supplierRef),
       title: optional(draft.title),
       styleRef: optional(draft.styleRef),
@@ -696,6 +706,7 @@ export function buildInput(draft: Draft, today: string) {
       notes: optional(draft.notes),
       collar,
       lines,
+      receiveNow: intoStock,
     },
     problems,
   };

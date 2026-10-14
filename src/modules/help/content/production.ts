@@ -523,6 +523,9 @@ export const productionHelp: HelpSection = {
           text: "“Supplier (mill or trims house)” (বাজার থেকে কিনলে “Shop or seller”) খুঁজে বেছে নিন। চাইলে “Deliver by (optional)”, “Supplier's reference (optional)”, “Title (optional)”, “Style reference (optional)” ও “Garment pieces (optional)” দিন। পিসের সংখ্যা কাপড়ের হিসাবে নিজে থেকে বসে।",
         },
         {
+          text: "বাজার থেকে কিনে মাল হাতে নিয়ে এসেছেন? “Ready stock / market purchase” বেছে “Bought and collected: add to stock now” টিক দিন (শুধু ব্যাচ ছাড়া নতুন বুকিংয়ে)। তখন মাল আসার অপেক্ষা থাকে না: সংরক্ষণ করলেই মাল মূল স্টোরে ঢোকে। প্রতিটি আইটেমে কেনা দাম লিখতে হয়, আর শেষের বোতামটি হয় “Save and add to stock”। বিলটি বিক্রেতার কাছে বাকি হিসেবে থাকে, টাকা দেয় অ্যাকাউন্টস।",
+        },
+        {
           text: "“Next: …” চাপুন। দ্বিতীয় ধাপ “Fabric”: নিটে একক কেজি, আর ঘর “Fabric type”, “Composition”, “Colour”, “Weight” (GSM) ও “DIA (inches)” সাথে “Tube” বা “Open”। ওভেনে একক গজ বা মিটার, ঘর “Width (inches)”, “Construction” ও “Weight” (GSM বা oz/yd²)। সোয়েটারে একক পাউন্ড বা কেজি, ঘর “Yarn count” ও “Gauge (GG)”।",
           image: {
             id: "production-booking-new-2",
@@ -536,7 +539,7 @@ export const productionHelp: HelpSection = {
           text: "ক্যাটালগের কোনো কাপড় নিতে “Pick from the catalogue” চাপুন, না হলে নাম লিখুন: নতুন কাপড় বুকিং সংরক্ষণের সময় ক্যাটালগে যোগ হয়ে যায়। রিব বা কন্ট্রাস্ট কাপড়ের জন্য “Add another fabric”।",
         },
         {
-          text: "তৃতীয় ধাপ “Trims & accessories”: নিটে “Collar”, “Cuff”, “Twill tape” ও “Button”, ওভেনে “Pocketing”, “Interlining” ও “Collar bone”, আউটারওয়্যারে “Lining”, “Padding” ও “Zipper” নিজে থেকে বসে থাকে। প্রতিটির পরিমাণ লিখুন, দরকার না হলে “Remove”। মুছে ফেলা ট্রিম “Add back a standard trim” থেকে ফেরত আনা যায়, আর তালিকার বাইরের কিছু “Add custom item” দিয়ে যোগ করুন।",
+          text: "তৃতীয় ধাপ “Trims & accessories”: নিটে “Collar”, “Cuff”, “Twill tape” ও “Button”, ওভেনে “Pocketing”, “Interlining”, “Collar bone” ও “Button”, আউটারওয়্যারে “Lining”, “Padding” ও “Zipper” নিজে থেকে বসে থাকে। প্রতিটির পরিমাণ লিখুন, দরকার না হলে “Remove”। মুছে ফেলা ট্রিম “Add back a standard trim” থেকে ফেরত আনা যায়, আর তালিকার বাইরের কিছু “Add custom item” দিয়ে যোগ করুন।",
           image: {
             id: "production-booking-new-3",
             caption: "“Trims & accessories” ধাপ ও “Add custom item”",
@@ -752,7 +755,7 @@ export const productionHelp: HelpSection = {
           text: "মাল আসা শুরু হলে বোতামটি হয় “Change the paperwork”: শুধু তারিখ, রেফারেন্স, শিরোনাম, পেমেন্ট ও ডেলিভারির শর্ত, শর্তাবলি ও তার ভাষা আর নোট বদলায়। “Save the paperwork” চাপুন।",
         },
         {
-          text: "মাল এলে “Receive the goods” চাপুন। ব্যাচের বুকিং ব্যাচের “Receive a delivery” পাতায় খোলে (চালান বনাম আসল), আলাদা বুকিং “Materials”-এর সাধারণ মাল গ্রহণে।",
+          text: "মাল এলে “Receive the goods” চাপুন। ব্যাচের বুকিং ব্যাচের “Receive a delivery” পাতায় খোলে (চালান বনাম আসল), আলাদা বুকিং “Materials”-এর সাধারণ মাল গ্রহণে। “Bought and collected: add to stock now” দিয়ে রাখা বাজারের কেনাকাটা সংরক্ষণের সময়েই স্টোরে ঢুকে যায়, তাতে আর মাল নিতে হয় না।",
         },
         {
           text: "কিছু এসেছে কিন্তু বাকিটা আর আসবে না হলে “Close: the rest will not come”, কিছুই না এলে “Cancel the booking”। দুটোতেই কারণ লিখতে হয়, আর সরবরাহকারীকে জানাতে হয়।",

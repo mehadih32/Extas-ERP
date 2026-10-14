@@ -73,6 +73,7 @@ function LineCard({
   category,
   collar,
   currency,
+  priceNeeded,
   problem,
   onChange,
   onRemove,
@@ -82,6 +83,8 @@ function LineCard({
   category: GarmentCategory;
   collar: DraftCollar;
   currency: string;
+  /** Goods going into stock as the booking is saved need their price now. */
+  priceNeeded: boolean;
   problem: Problem;
   onChange: (next: Partial<DraftLine>) => void;
   onRemove: () => void;
@@ -438,12 +441,14 @@ function LineCard({
         <div className="grid items-start gap-3 sm:grid-cols-2">
           <Field
             id={id("price")}
-            label={`Price per ${UNIT_ONE[line.unit]} (${currency}, optional)`}
+            label={`Price per ${UNIT_ONE[line.unit]} (${currency}${priceNeeded ? "" : ", optional"})`}
             error={err("unitPrice")}
             hint={
               amount
                 ? `${money(amount, currency)} for this item`
-                : "Leave it empty to agree the price when the goods arrive."
+                : priceNeeded
+                  ? "The price paid: the goods go into stock as the booking is saved."
+                  : "Leave it empty to agree the price when the goods arrive."
             }
           >
             <Input
@@ -451,7 +456,7 @@ function LineCard({
               inputMode="decimal"
               value={line.unitPrice}
               onChange={(e) => onChange({ unitPrice: e.target.value })}
-              placeholder="At receive"
+              placeholder={priceNeeded ? "Price paid" : "At receive"}
               autoComplete="off"
               aria-invalid={Boolean(err("unitPrice"))}
             />
@@ -516,6 +521,7 @@ export function ItemsStep({
   garmentPieces,
   batchPicks,
   currency,
+  priceNeeded = false,
   problem,
   onLines,
 }: {
@@ -526,6 +532,7 @@ export function ItemsStep({
   garmentPieces: string;
   batchPicks: BookingBatchPick[];
   currency: string;
+  priceNeeded?: boolean;
   problem: Problem;
   onLines: (lines: DraftLine[]) => void;
 }) {
@@ -569,6 +576,7 @@ export function ItemsStep({
               category={category}
               collar={collar}
               currency={currency}
+              priceNeeded={priceNeeded}
               problem={problem}
               onChange={(next) =>
                 onLines(lines.map((l) => (l.key === line.key ? { ...l, ...next } : l)))

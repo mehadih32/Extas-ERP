@@ -127,6 +127,8 @@ export async function getPartyScreen(ctx: CompanyContext, partyId: string) {
       creditLimit: profile.creditLimit?.toFixed(2) ?? null,
       creditAvailable: profile.creditAvailable,
       paymentTermsDays: profile.paymentTermsDays,
+      tradePayment: profile.tradePayment,
+      monthlyCapacity: profile.monthlyCapacity,
       openingBalance: profile.openingBalance.toFixed(2),
       lastPayment: profile.lastPayment
         ? {
@@ -183,6 +185,8 @@ export async function getPartyForm(ctx: CompanyContext, partyId?: string) {
       grade: screen.grade,
       creditLimit: screen.creditLimit?.toFixed(2) ?? null,
       paymentTermsDays: screen.paymentTermsDays,
+      tradePayment: screen.tradePayment,
+      monthlyCapacity: screen.monthlyCapacity,
       notes: screen.notes,
       status: screen.status,
       isWalkIn: isWalkIn(screen),

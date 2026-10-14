@@ -145,6 +145,23 @@ export const PERMISSIONS = [
     description:
       "Tick a logo for bulk after its sew-out (the owner's): its machine file is then locked",
   },
+  // Costing (v6.2): costs and profit stay with the people given them.
+  {
+    key: "costing.view",
+    module: "PRODUCTION",
+    description:
+      "See order costing sheets with their costs and profit, supplier fabric quotes and the Order check card",
+  },
+  {
+    key: "costing.manage",
+    module: "PRODUCTION",
+    description: "Make and change order costing sheets and add supplier fabric quotes",
+  },
+  {
+    key: "costing.decide",
+    module: "PRODUCTION",
+    description: "Take or decline an order after its Order check card (the owner's)",
+  },
   // Parties
   { key: "parties.view", module: "PARTIES", description: "View buyer and supplier profiles" },
   {

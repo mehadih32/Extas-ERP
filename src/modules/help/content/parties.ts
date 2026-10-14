@@ -294,6 +294,10 @@ export const partiesHelp: HelpSection = {
         "factory",
         "credit limit",
         "payment terms",
+        "tt",
+        "lc",
+        "how they pay",
+        "monthly capacity",
         "নতুন ক্রেতা",
         "নতুন সরবরাহকারী",
         "কাস্টমার যোগ",
@@ -331,6 +335,9 @@ export const partiesHelp: HelpSection = {
         },
         {
           text: "“Terms” অংশে ক্রেতা সর্বোচ্চ কত বাকি রাখতে পারবেন (“Credit limit”, ফাঁকা মানে সীমা নেই), কত দিনে টাকা দেবেন (“Payment terms (days)”) ও “Tax ID (optional)” দিন।",
+        },
+        {
+          text: "রপ্তানির বায়ার হলে “How they pay”-এ “TT”, “Direct bank transfer” বা “LC” বেছে নিন; কোনো ডিফল্ট নেই, আর প্রতিটি কস্টিং শিটে বদলানো যায়। ফ্যাক্টরি হলে “Monthly capacity (pieces)”-এ মাসে কত পিস বানাতে পারে তা দিন: Order check card এটা দিয়ে দেখে ফ্যাক্টরিতে জায়গা আছে কি না।",
         },
         { text: "নোট লিখে “Add the buyer” (বা “Add the supplier”) চাপুন। নতুন প্রোফাইল খুলবে।" },
       ],

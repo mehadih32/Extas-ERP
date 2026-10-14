@@ -1144,6 +1144,134 @@ export const productionHelp: HelpSection = {
       ],
     },
     {
+      slug: "production-costing",
+      title: "অর্ডারের কস্টিং শিট বানাবেন যেভাবে (Costing)",
+      summary:
+        "বায়ার কোনো অর্ডারের কথা বললে নেওয়ার আগে খরচ হিসাব করুন: প্রতি ডজনে কাপড় (সাপ্লায়ারের কেজি প্রতি দাম), ট্রিমস, প্রিন্ট বা এমব্রয়ডারি, ফ্যাক্টরির সাথে ঠিক করা CM, আর এই অর্ডারের জন্য আপনার নিজের লাভ %। অফিস খরচ কস্টিংয়ে ধরা হয় না।",
+      keywords: [
+        "costing",
+        "cost sheet",
+        "order costing",
+        "profit",
+        "profit %",
+        "cm",
+        "fabric price",
+        "price per kg",
+        "supplier quote",
+        "fabric quote",
+        "fob price",
+        "tt",
+        "lc",
+        "bank transfer",
+        "কস্টিং",
+        "খরচ",
+        "লাভ",
+        "কাপড়ের দাম",
+        "কোটেশন",
+        "সিএম",
+      ],
+      routes: ["/production/costing"],
+      who: "যাঁদের কস্টিং দেখার অনুমতি আছে (“See costing sheets, costs, profit and the Order check card”); শুরুতে শুধু Super Admin। শিট বানাতে ও বদলাতে লাগে “Make costing sheets and add supplier fabric quotes”। অর্ডার নেওয়া বা না নেওয়ার সিদ্ধান্ত মালিকের।",
+      anyOf: ["costing.view"],
+      steps: [
+        {
+          text: "Production-এ “Costing” ট্যাবে যান, “New costing” চাপুন। “Order”-এ অর্ডারের নাম, “Buyer” ও “Factory” বেছে নিন, “Currency” দিন (কোম্পানির মুদ্রা না হলে বিনিময় হারও)।",
+          image: {
+            id: "production-costing-1",
+            caption: "কস্টিং শিট: উপরে Order check card, নিচে স্টাইলগুলোর প্রতি ডজনের খরচ",
+          },
+        },
+        {
+          text: "“Profit % for this order”-এ এই অর্ডারের লাভ % আপনি নিজে দিন। কোনো নির্দিষ্ট % বসানো থাকে না, সর্বনিম্নও নেই; না জানলে খালি রাখুন। এই বায়ারের আগের শিটের লাভ % পাশে শুধু ইঙ্গিত হিসেবে দেখায়।",
+        },
+        {
+          text: "“How the buyer pays”-এ “TT”, “Direct bank transfer” বা “LC” বেছে নিন। “As the buyer pays” রাখলে বায়ারের প্রোফাইলে যা আছে তা-ই আসে, আর প্রতিটি অর্ডারে আলাদা করে বদলানো যায়।",
+        },
+        {
+          text: "দাম থেকে যা কাটা যায় তা দিন: “Source tax %”, “Bank charges %” ও “Commission %”। তারপর “Ship date”, “Days for the fabric” (খালি মানে 30 দিন) ও “Days to make” (খালি মানে 25 দিন) দিন, “Risks”-এ প্রতি লাইনে একটি ঝুঁকি লিখে “Make the sheet” চাপুন।",
+        },
+        {
+          text: "“Add a style” চেপে প্রতিটি স্টাইল যোগ করুন: “Style or buyer's reference”, “Pieces”, কাপড় আর প্রতি ডজনে কত কাপড় (“Fabric a dozen (…)”)। নিট কাপড় কেজিতে, ওভেন গজে।",
+        },
+        {
+          text: "“Supplier's price per …” ঘরে সাপ্লায়ারের দেওয়া কেজি (বা গজ) প্রতি দাম দিন। “Fabric prices” চাপলে “Supplier quotes” আর “Paid on past bookings” পাশাপাশি দেখায়; যেটা চান তার নিচে “Use” চাপুন।",
+        },
+        {
+          text: "“Trims a dozen”, “Print, embroidery, wash a dozen” ও “Other a dozen” দিন। “CM (…)”-এ ফ্যাক্টরির সাথে এই স্টাইলের জন্য ঠিক করা CM দিন, আর “CM is”-এ “per piece” বা “per dozen”। আগে ঠিক করা CM তুলনার জন্য “CM agreed before, to compare:”-এ দেখায়।",
+        },
+        {
+          text: "বায়ার যে দাম বলেছেন বা আপনি যা কোট করবেন তা “Buyer's price a piece (…)”-এ দিয়ে “Save” চাপুন। প্রতিটি স্টাইলে দেখায় “Cost a dozen”, “Cost a piece”, “Price at your profit” ও “Profit at the buyer's price”।",
+        },
+        {
+          text: "কস্টিং পাতার নিচে “Supplier fabric quotes” অংশে “Add a supplier quote” চেপে মিলের কোটেশন রাখুন: “Supplier”, “Fabric”, “Price”, “Per” (kg বা yard), “Quoted on” ও “Good until” দিয়ে “Save the quote”।",
+        },
+      ],
+      tips: [
+        "দাম = খরচ ÷ (1 − সব % এর যোগফল)। যেমন প্রতি ডজনে খরচ 38.77, উৎসে কর 1%, ব্যাংক চার্জ 0.15% আর লাভ 7% হলে দাম 38.77 ÷ 0.9185 = প্রায় 42.21 প্রতি ডজন।",
+        "অফিস খরচ (ভাড়া, বেতন) কস্টিংয়ে ধরা হয় না।",
+        "কোনো অংশ (কাপড়ের দাম, CM) না দিলে স্টাইলে “Still missing” লেখা থাকে: খরচ তখন আসলের চেয়ে কম দেখায়।",
+        "কাপড়ের দাম কেজি প্রতি সাপ্লায়ারের কোটেশন থেকে নেওয়া হয়, সুতা থেকে হিসাব করে নয়।",
+        "CM মিনিট হিসেবে নয়: প্রতি স্টাইলে ফ্যাক্টরির সাথে ঠিক করা একটি দাম।",
+      ],
+    },
+    {
+      slug: "production-order-check",
+      title: "অর্ডার নেবেন কি না: Order check card পড়বেন যেভাবে",
+      summary:
+        "কস্টিং শিটের উপরে পাঁচটি পরীক্ষা: “Price vs cost”, “Time to ship”, “Factory”, “Buyer payment” ও “Risks”, প্রতিটি সবুজ, হলুদ বা লাল, সাথে এক লাইনে কারণ। কোনো স্কোর নেই, আর কার্ড কখনো নিজে অর্ডার বাতিল করে না: সিদ্ধান্ত আপনার।",
+      keywords: [
+        "order check",
+        "order check card",
+        "go no go",
+        "take order",
+        "decline order",
+        "capacity",
+        "monthly capacity",
+        "payment history",
+        "risks",
+        "eid",
+        "অর্ডার নেব কি না",
+        "ক্যাপাসিটি",
+        "ঝুঁকি",
+        "ঈদ",
+      ],
+      routes: ["/production/costing/[costingId]"],
+      who: "যাঁরা কস্টিং দেখতে পারেন তাঁরা কার্ড দেখেন। “Take the order” ও “Decline the order” শুধু মালিকের (“Take or decline an order”), আর AI কখনো এই অনুমতি পায় না।",
+      anyOf: ["costing.view"],
+      steps: [
+        {
+          text: "কস্টিং শিট খুলুন। উপরে “Order check card”: সবুজ মানে ঠিক আছে, হলুদ মানে আবার দেখুন, লাল মানে সমস্যা। প্রতিটির পাশে এক লাইনে কারণ।",
+          image: {
+            id: "production-order-check-1",
+            caption: "Order check card: পাঁচটি পরীক্ষা, প্রতিটি সবুজ, হলুদ বা লাল, সাথে কারণ",
+          },
+        },
+        {
+          text: "“Price vs cost”: বায়ারের দাম খরচের নিচে হলে লাল। আপনার লাভ %-এর নিচে হলে, লাভ % না দিলে, বায়ারের দাম না থাকলে বা কোনো খরচ বাকি থাকলে হলুদ। না হলে সবুজ।",
+        },
+        {
+          text: "“Time to ship”: কাপড়ের দিন (খালি হলে 30), বানানোর দিন (খালি হলে 25) আর শেষ করে বন্দরে পৌঁছাতে 7 দিন যোগ হয়। শিপ ডেট পর্যন্ত এত দিন না থাকলে লাল, 7 দিনের কম হাতে থাকলে হলুদ।",
+        },
+        {
+          text: "“Factory”: শিপ ডেট পর্যন্ত ফ্যাক্টরির হাতে থাকা পিস আর এই অর্ডার মিলে তার মাসিক ক্যাপাসিটির বেশি হলে লাল, 85%-এর বেশি হলে বা ক্যাপাসিটি দেওয়া না থাকলে হলুদ। ক্যাপাসিটি দিন সাপ্লায়ারের প্রোফাইলে “Monthly capacity (pieces)” ঘরে। ফ্যাক্টরি বাছা না থাকলে কোন ফ্যাক্টরিতে জায়গা আছে তা দেখায়।",
+        },
+        {
+          text: "“Buyer payment”: বায়ারের কোনো টাকা মেয়াদ পেরিয়ে বাকি থাকলে লাল। নতুন বায়ার (আগে কোনো ইনভয়েস নেই) বা কোনো ইনভয়েস দেরিতে (মেয়াদের 3 দিনের বেশি পরে) দিলে হলুদ। সব সময়মতো দিলে সবুজ।",
+        },
+        {
+          text: "“Risks”: আপনার লেখা ঝুঁকি, নতুন বায়ার, LC (কাগজ LC-র সাথে হুবহু মিলতে হবে) আর উৎপাদনের সময়ে ঈদ নিজে থেকে যোগ হয়। 1 বা 2টি ঝুঁকিতে হলুদ, 3 বা বেশি হলে বা শিপ ডেটের আগের 21 দিনে ঈদ পড়লে লাল।",
+        },
+        {
+          text: "পড়ে নিজে ঠিক করুন: “Your decision” অংশে “Take the order” বা “Decline the order” চাপুন, চাইলে কারণ লিখুন। এটা শিটে আর অ্যাক্টিভিটি লগে থাকে; বায়ারকে কিছু পাঠানো হয় না।",
+        },
+      ],
+      tips: [
+        "এই সীমাগুলো (30, 25, 7 দিন, 85%, 3 দিন, 21 দিন) শুরুর নিয়ম; বদলাতে চাইলে বলুন।",
+        "ঈদের তারিখ আসে HR-এর ছুটির তালিকা থেকে, নামে Eid শব্দ থাকলে।",
+        "কার্ড কোনো স্কোর দেয় না আর নিজে কখনো অর্ডার বাতিল করে না।",
+      ],
+    },
+    {
       slug: "production-contracts",
       title: "ব্যাচের কাপড়, অ্যাক্সেসরিজ ও ফ্যাক্টরির (CM) চুক্তি তৈরি ও প্রিন্ট করবেন যেভাবে",
       summary:

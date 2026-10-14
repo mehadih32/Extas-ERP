@@ -181,6 +181,9 @@ export const productionHref = {
       ? `/production/bookings?batch=${encodeURIComponent(filter.batchId)}`
       : "/production/bookings",
   booking: (id: string) => `/production/bookings/${encodeURIComponent(id)}`,
+  /** Order costing sheets with their Order check card. */
+  costings: () => "/production/costing",
+  costing: (id: string) => `/production/costing/${encodeURIComponent(id)}`,
   newBooking: (batchId?: string) =>
     batchId
       ? `/production/bookings/new?batch=${encodeURIComponent(batchId)}`

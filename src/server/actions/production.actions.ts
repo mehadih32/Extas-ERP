@@ -52,8 +52,11 @@ const intake = () => requirePermission("production.stock_intake");
 /** Closing a project: Production, or Accounts when leftover cost has to be written off. */
 const closeProject = () => requireAnyPermission("production.manage", "accounts.manage");
 /** The pickers on the project, bill and delivery forms. */
-const pickParties = () => requireAnyPermission("production.manage", "accounts.payments.record");
-const pickStyles = () => requireAnyPermission("production.manage", "production.stock_intake");
+/** Costing sheets pick their buyer, factory and styles with the same searches (no prices). */
+const pickParties = () =>
+  requireAnyPermission("production.manage", "accounts.payments.record", "costing.manage");
+const pickStyles = () =>
+  requireAnyPermission("production.manage", "production.stock_intake", "costing.manage");
 /** Material pictures: on a style's materials (Production) or an order line (buyers). */
 const materialPictures = () => requireAnyPermission("production.manage", "materials.purchase");
 const buyMaterials = () => requirePermission("materials.purchase");

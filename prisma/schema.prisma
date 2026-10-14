@@ -117,6 +117,9 @@ model Company {
   labDipOptions         LabDipOption[]
   techPackAiDrafts      TechPackAiDraft[]
   techPackExpertAnswers TechPackExpertAnswer[]
+  orderCostings         OrderCosting[]
+  orderCostingStyles    OrderCostingStyle[]
+  fabricQuotes          FabricQuote[]
   materialIssues        MaterialIssue[]
   materialChallans      MaterialChallan[]
   purchaseReturns       PurchaseReturn[]
@@ -271,6 +274,9 @@ model User {
   logosTicked         TechPackLogo[]         @relation("TechPackLogoTickedBy")
   techPackAiDrafts    TechPackAiDraft[]      @relation("TechPackAiDraftBy")
   expertQuestions     TechPackExpertAnswer[] @relation("TechPackExpertAskedBy")
+  costingsMade        OrderCosting[]         @relation("OrderCostingCreatedBy")
+  costingsDecided     OrderCosting[]         @relation("OrderCostingDecidedBy")
+  fabricQuotesAdded   FabricQuote[]          @relation("FabricQuoteCreatedBy")
   contractsMade       ProductionContract[]   @relation("ProductionContractCreatedBy")
   contractsChanged    ProductionContract[]   @relation("ProductionContractUpdatedBy")
   faultsLogged        SupplierFault[]        @relation("SupplierFaultCreatedBy")
@@ -601,6 +607,7 @@ model Style {
   variants           ProductVariant[]
   quotationItems     QuotationItem[]
   productionProjects ProductionProject[]
+  costingStyles      OrderCostingStyle[]
   stockLots          StockLot[]
 
   @@unique([companyId, code])
@@ -861,6 +868,7 @@ model RawMaterial {
   returnLines PurchaseReturnLine[]
   neededBy    ProductionMaterialNeed[]
   faults      SupplierFault[]
+  quotes      FabricQuote[]
 
   @@unique([companyId, code])
   @@index([companyId, kind, isActive])
@@ -1295,6 +1303,10 @@ model Party {
   statusChangedAt    DateTime?
   creditLimit        Decimal?           @db.Decimal(14, 2)
   paymentTermsDays   Int?
+  /// How a buyer pays for orders: TT, direct bank transfer or LC (no default; changeable per order).
+  tradePayment       TradePayment?
+  /// Pieces a factory can make in a month (the Order check card's factory check).
+  monthlyCapacity    Int?
   openingBalance     Decimal            @default(0) @db.Decimal(14, 2) // + receivable / - payable
   lastTransactionAt  DateTime? // drives dormant buyer filters
   notes              String?
@@ -1330,6 +1342,9 @@ model Party {
   faults               SupplierFault[]      @relation("SupplierFaults")
   cmSettlements        CmSettlement[]       @relation("CmSettlementFactory")
   embroideryJobs       EmbroideryJob[]      @relation("EmbroideryParty")
+  costingsAsBuyer      OrderCosting[]       @relation("CostingBuyer")
+  costingsAsFactory    OrderCosting[]       @relation("CostingFactory")
+  fabricQuotes         FabricQuote[]        @relation("FabricQuoteSupplier")
   campaignRecipients   CampaignRecipient[]
   generatedDocuments   GeneratedDocument[]
   projectSettlements   ProjectSettlement[]
@@ -1532,6 +1547,7 @@ model SalesOrder {
   reminders          Reminder[]
   /// Production projects started from it.
   productionProjects ProductionProject[]
+  costings           OrderCosting[]
 
   @@unique([companyId, number])
   @@unique([companyId, integrationId, externalOrderId])
@@ -2138,6 +2154,7 @@ model ProductionBatch {
   createdBy     User?                @relation("ProductionBatchCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   fabricFirstBy User?                @relation("BatchFabricFirstBy", fields: [fabricFirstById], references: [id], onDelete: SetNull)
   projects      ProductionProject[]
+  costings      OrderCosting[]
   orders        PurchaseOrder[]
   contracts     ProductionContract[]
   faults        SupplierFault[]
@@ -5419,6 +5436,7 @@ enum DocumentType {
   EMBROIDERY_JOB // cut pieces out for embroidery or print (EMB-2026-00001)
   FINISHING_REPORT // a finishing count, mending return or full packing list (FIN-2026-00001)
   CM_SETTLEMENT // a master batch's final CM settlement with its factory (CMS-2026-00001)
+  ORDER_COSTING // an order's costing sheet before it is taken (CST-2026-00001)
 }
 
 enum TemplateFormat {
@@ -5578,4 +5596,151 @@ enum AiAtLimit {
   STOP
   /// Small, urgent work goes on with the small model.
   CHEAPER
+}
+
+// ---------------------------------------------------------------- costing (v6.2)
+
+/// How a buyer pays for an order.
+enum TradePayment {
+  TT
+  BANK_TRANSFER
+  LC
+}
+
+/// What a fabric is priced and consumed in: knits by the kg, wovens by the yard.
+enum FabricUnit {
+  KG
+  YARD
+}
+
+/// The CM agreed with the factory: per piece or per dozen (never per minute).
+enum CmPer {
+  PIECE
+  DOZEN
+}
+
+/// The owner's word on an order after its Order check card: never automatic.
+enum CostingDecision {
+  TAKE
+  DECLINE
+}
+
+/// A fabric supplier's quoted price, per kg (per yard for wovens), shown beside
+/// other suppliers' quotes and past booking prices when an order is costed.
+model FabricQuote {
+  id          String     @id @default(cuid())
+  companyId   String
+  supplierId  String
+  /// The fabric in the materials list, when it is one.
+  materialId  String?
+  /// The fabric as quoted ("220 GSM piqué, 24/1 combed, 100% cotton").
+  fabric      String
+  unit        FabricUnit @default(KG)
+  price       Decimal    @db.Decimal(14, 4)
+  currency    String
+  quotedOn    DateTime   @db.Date
+  validUntil  DateTime?  @db.Date
+  note        String?
+  createdById String?
+  createdAt   DateTime   @default(now())
+
+  company   Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  supplier  Party               @relation("FabricQuoteSupplier", fields: [supplierId], references: [id], onDelete: Cascade)
+  material  RawMaterial?        @relation(fields: [materialId], references: [id], onDelete: SetNull)
+  createdBy User?               @relation("FabricQuoteCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  usedIn    OrderCostingStyle[]
+
+  @@index([companyId, materialId])
+  @@index([companyId, supplierId])
+}
+
+/// An order's costing sheet (CST-2026-00001), before the order is taken: the
+/// styles' costs per dozen, the owner's profit % for this order (no default),
+/// the percent lines grossed up on the price, and the owner's decision after
+/// the Order check card. No office overhead; CM fixed per style.
+model OrderCosting {
+  id                String           @id @default(cuid())
+  companyId         String
+  number            String
+  title             String
+  buyerId           String?
+  factoryId         String?
+  /// The order it became, or the master batch it is made in, when linked.
+  salesOrderId      String?
+  batchId           String?
+  currency          String
+  /// Taka per unit of the costing's currency, when it is not the company's own.
+  exchangeRate      Decimal?         @db.Decimal(12, 4)
+  /// The owner's profit % for this order. No default and no minimum.
+  profitPercent     Decimal?         @db.Decimal(5, 2)
+  /// Percent lines taken off the selling price (grossed up, not added on cost).
+  sourceTaxPercent  Decimal          @default(0) @db.Decimal(5, 2)
+  bankChargePercent Decimal          @default(0) @db.Decimal(5, 2)
+  commissionPercent Decimal          @default(0) @db.Decimal(5, 2)
+  /// Taken from the buyer when the costing is made; can be changed per order.
+  tradePayment      TradePayment?
+  shipDate          DateTime?        @db.Date
+  /// Days for the fabric to be in house, and for cutting, sewing and finishing.
+  fabricDays        Int?
+  makingDays        Int?
+  /// Risks the owner knows of ("Port congestion", "Gas shortage").
+  risks             String[]         @default([])
+  notes             String?
+  decision          CostingDecision?
+  decisionNote      String?
+  decidedById       String?
+  decidedAt         DateTime?
+  createdById       String?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  company    Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  buyer      Party?              @relation("CostingBuyer", fields: [buyerId], references: [id], onDelete: SetNull)
+  factory    Party?              @relation("CostingFactory", fields: [factoryId], references: [id], onDelete: SetNull)
+  salesOrder SalesOrder?         @relation(fields: [salesOrderId], references: [id], onDelete: SetNull)
+  batch      ProductionBatch?    @relation(fields: [batchId], references: [id], onDelete: SetNull)
+  decidedBy  User?               @relation("OrderCostingDecidedBy", fields: [decidedById], references: [id], onDelete: SetNull)
+  createdBy  User?               @relation("OrderCostingCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  styles     OrderCostingStyle[]
+
+  @@unique([companyId, number])
+  @@index([companyId, createdAt])
+  @@index([companyId, buyerId])
+}
+
+/// One style on a costing sheet, costed per dozen.
+model OrderCostingStyle {
+  id               String     @id @default(cuid())
+  companyId        String
+  costingId        String
+  styleId          String?
+  /// The style code or the buyer's reference ("EX-PL-001", "RL polo navy").
+  styleRef         String
+  description      String?
+  quantity         Int
+  fabricQuoteId    String?
+  fabricName       String?
+  fabricUnit       FabricUnit @default(KG)
+  /// Fabric per dozen, in kg (yards for wovens).
+  consumption      Decimal?   @db.Decimal(10, 4)
+  /// The supplier's price per kg (per yard), from a quote or typed.
+  fabricPrice      Decimal?   @db.Decimal(14, 4)
+  trimsPerDozen    Decimal    @default(0) @db.Decimal(14, 4)
+  /// Print, embroidery and washing, per dozen.
+  valueAddPerDozen Decimal    @default(0) @db.Decimal(14, 4)
+  /// Testing, inspection, transport to port and samples, per dozen.
+  otherPerDozen    Decimal    @default(0) @db.Decimal(14, 4)
+  /// The CM agreed with the factory for this style, per piece or per dozen.
+  cmAmount         Decimal?   @db.Decimal(14, 4)
+  cmPer            CmPer      @default(PIECE)
+  /// The buyer's price per piece, when known.
+  buyerPrice       Decimal?   @db.Decimal(14, 4)
+  sortOrder        Int        @default(0)
+
+  company Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  costing OrderCosting @relation(fields: [costingId], references: [id], onDelete: Cascade)
+  style   Style?       @relation(fields: [styleId], references: [id], onDelete: SetNull)
+  quote   FabricQuote? @relation(fields: [fabricQuoteId], references: [id], onDelete: SetNull)
+
+  @@index([costingId])
 }

@@ -70,6 +70,7 @@ export const LOCKED_PERMISSIONS: ReadonlySet<string> = new Set([
   "production.bookings.approve",
   "production.bookings.close",
   "production.logo.approve",
+  "costing.decide",
 ]);
 
 /** The AI's own actions, added under these areas of the access tree. */

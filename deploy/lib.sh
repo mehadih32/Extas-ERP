@@ -106,11 +106,17 @@ wait_healthy() {
 }
 
 # Saves the whole database to safety-copies/<name>/database.dump; prints the folder.
+# Fails (and leaves no half-written copy) when the copy cannot be saved, such as on
+# a full disk.
 safety_copy() {
   local dir="$DATA_DIR/safety-copies/$1"
-  mkdir -p "$dir"
-  compose exec -T db pg_dump -U "$APP_DB_USER" -d "$POSTGRES_DB" \
-    --format=custom --no-owner --no-privileges >"$dir/database.dump"
+  mkdir -p "$dir" || return 1
+  if ! compose exec -T db pg_dump -U "$APP_DB_USER" -d "$POSTGRES_DB" \
+    --format=custom --no-owner --no-privileges >"$dir/database.dump" ||
+    [ ! -s "$dir/database.dump" ]; then
+    rm -rf "$dir"
+    return 1
+  fi
   printf '%s' "$dir"
 }
 

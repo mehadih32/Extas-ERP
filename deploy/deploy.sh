@@ -59,7 +59,12 @@ if db_running; then
   fi
   say "Saving a safety copy of the database"
   copy="before-update-$(date +%Y-%m-%d_%H%M%S)"
-  echo "Saved in $(safety_copy "$copy")"
+  if ! saved="$(safety_copy "$copy")"; then
+    # Without a copy to go back to, the update does not start: the ERP opens again as it was.
+    [ -n "$pending" ] && compose up -d app caddy
+    die "the safety copy of the database could not be saved (is the disk full? sudo df -h), so the update was not installed. Nothing was changed: the ERP still runs the version it ran before."
+  fi
+  echo "Saved in $saved"
   # The newest 10 are kept.
   find "$DATA_DIR/safety-copies" -mindepth 1 -maxdepth 1 -name 'before-update-*' -printf '%T@ %p\n' |
     sort -rn | tail -n +11 | cut -d' ' -f2- | xargs -r rm -rf
@@ -82,6 +87,8 @@ go_back() {
   use_previous_version
   if compose up -d --no-build --remove-orphans && wait_healthy app; then
     say "Went back: the ERP runs the version from before the update again"
+    # The failed version's image, no longer used.
+    docker image prune -f >/dev/null 2>&1 || true
     die "the update was not installed ($reason). The full log on the server says why."
   fi
   compose ps

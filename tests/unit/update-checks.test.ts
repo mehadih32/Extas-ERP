@@ -93,6 +93,16 @@ describe("deploy.sh", () => {
     expect(lib).toMatch(/docker tag extras-erp-app:previous extras-erp-app:latest/);
   });
 
+  it("does not start an update without a safety copy of the database", () => {
+    expect(lib).toMatch(/\[ ! -s "\$dir\/database.dump" \]; then\s+rm -rf "\$dir"\s+return 1/);
+    expect(deploy).toMatch(
+      /if ! saved="\$\(safety_copy "\$copy"\)"; then[\s\S]*?die "the safety copy/,
+    );
+    expect(deploy.indexOf('die "the safety copy')).toBeLessThan(
+      deploy.indexOf("compose up -d --remove-orphans"),
+    );
+  });
+
   it("closes the ERP to its users while a database-changing update is checked", () => {
     expect(deploy).toMatch(/compose stop caddy app/);
     expect(deploy).toMatch(/passed its check[\s\S]*?compose up -d caddy/);

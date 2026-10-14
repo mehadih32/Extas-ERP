@@ -10,6 +10,7 @@ import * as costs from "@/modules/production/cost.service";
 import * as projects from "@/modules/production/project.service";
 
 import { POLO_BATCH, runFiveStylePolo, type SimulationManifest } from "./five-style-polo";
+import { loadTestBookings } from "./test-bookings";
 
 /*
  * The demo site's sample data (deploy/compose.yml, the demo services; deploy/README.md,
@@ -110,6 +111,16 @@ export async function loadFiveStylePoloDemo(
   try {
     await prepareCompany(ctx);
     return await runFiveStylePolo(ctx, { seed: 2026 });
+  } finally {
+    await done();
+  }
+}
+
+/** The four test bookings (./test-bookings.ts), made once as the owner, with their numbers. */
+export async function loadTestBookingsDemo(userId: string, companyId: string) {
+  const { ctx, done } = await signIn(userId, companyId);
+  try {
+    return await loadTestBookings(ctx);
   } finally {
     await done();
   }

@@ -240,6 +240,7 @@ passed, so nothing typed in that time can be lost.
 
 **A failed update goes back by itself.** When the new version cannot be built, or the
 safety copy of the database cannot be saved (a full disk, for example), nothing changes.
+With less than 5 GB free, `deploy.sh` first clears old build steps and unused images.
 When it does not start, or a screen or a PDF does not work in the check,
 `deploy.sh` goes back to the version that ran before it (kept as the `extras-erp-app:previous`
 and `extras-erp-tools:previous` images), and to the `before-update-…` safety copy of the

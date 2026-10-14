@@ -103,6 +103,14 @@ describe("deploy.sh", () => {
     );
   });
 
+  it("makes room before building when the disk is nearly full", () => {
+    const room = deploy.indexOf("Less than 5 GB is free");
+    expect(room).toBeGreaterThan(0);
+    expect(room).toBeLessThan(deploy.indexOf('if ! compose "${build[@]}"'));
+    // Only unused steps and untagged images: the kept :previous version stays.
+    expect(deploy).not.toMatch(/docker image prune -a/);
+  });
+
   it("does not start an update without a safety copy of the database", () => {
     expect(lib).toMatch(/\[ ! -s "\$dir\/database.dump" \]; then\s+rm -rf "\$dir"\s+return 1/);
     expect(deploy).toMatch(

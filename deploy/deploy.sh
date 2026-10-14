@@ -34,6 +34,15 @@ prepare_demo_site
 can_go_back=0
 keep_running_version && can_go_back=1
 
+# A build needs room: with less than 5 GB free, old build steps and unused images go first.
+docker_root="$(docker info -f '{{.DockerRootDir}}' 2>/dev/null || echo /var/lib/docker)"
+free_kb="$(df --output=avail -k "$docker_root" 2>/dev/null | tail -n 1 | tr -d ' ')"
+if [ -n "$free_kb" ] && [ "$free_kb" -lt $((5 * 1024 * 1024)) ]; then
+  say "Less than 5 GB is free on the server: clearing old build steps first"
+  docker builder prune -f >/dev/null 2>&1 || true
+  docker image prune -f >/dev/null 2>&1 || true
+fi
+
 say "Building the app (this takes a few minutes)"
 build=(build)
 if [ "$pull" = 1 ]; then

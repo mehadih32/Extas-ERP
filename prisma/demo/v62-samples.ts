@@ -84,7 +84,7 @@ export async function loadV62Samples(ctx: CompanyContext) {
       lines: lines.map(([style, colour, size, quantity]) => ({ style, colour, size, quantity })),
       quantity: 4500,
       shipDate: addDays(today, 110),
-      price: 4.2,
+      price: 3.25,
       currency: "USD",
       fabric: "Cotton pique 220 GSM",
       logo: "Chest embroidery, 7 cm",
@@ -123,7 +123,7 @@ export async function loadV62Samples(ctx: CompanyContext) {
       fabricQuoteId: quote.id,
       fabricName: "Cotton pique 220 GSM",
       fabricUnit: "KG",
-      consumption: "2.2",
+      consumption: "3.1",
       // The fabric price is the mill's quote, per kg.
       fabricPrice: "3.6",
       trimsPerDozen: "3",
@@ -132,7 +132,7 @@ export async function loadV62Samples(ctx: CompanyContext) {
       // CM is fixed per style with the factory.
       cmAmount: style.styleRef === "NW-PL-01" ? "1.25" : "1.1",
       cmPer: "PIECE",
-      buyerPrice: "4.2",
+      buyerPrice: "3.25",
     });
   }
 

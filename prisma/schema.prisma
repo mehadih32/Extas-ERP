@@ -211,6 +211,9 @@ model Company {
   mailSettings          CompanyMailSettings?
   aiBotLinks            AiBotLink[]
   aiBotMessages         AiBotMessage[]
+  aiOrderRuns           AiOrderRun[]
+  aiStaffUpdates        AiStaffUpdate[]
+  serverHealthRuns      ServerHealthRun[]
 }
 
 /// A person who can log in. Global across companies.
@@ -331,6 +334,10 @@ model User {
   mailSettingsSet     CompanyMailSettings[]  @relation("MailSettingsUpdatedBy")
   aiBotLinksOwned     AiBotLink[]            @relation("AiBotLinkOwner")
   aiBotLinksSet       AiBotLink[]            @relation("AiBotLinkUpdatedBy")
+  aiOrderRunsMade     AiOrderRun[]           @relation("AiOrderRunCreatedBy")
+  aiOrderRunsDecided  AiOrderRun[]           @relation("AiOrderRunDecidedBy")
+  aiStaffUpdates      AiStaffUpdate[]        @relation("AiStaffUpdateBy")
+  serverHealthRuns    ServerHealthRun[]      @relation("ServerHealthRunBy")
 }
 
 /// A signed-in device. `token` stores the SHA-256 hash of the cookie value, never
@@ -1371,6 +1378,7 @@ model Party {
   campaignRecipients   CampaignRecipient[]
   generatedDocuments   GeneratedDocument[]
   projectSettlements   ProjectSettlement[]
+  aiOrderRuns          AiOrderRun[]         @relation("AiOrderRunBuyer")
 
   @@unique([companyId, code])
   @@unique([companyId, systemRole])
@@ -1571,6 +1579,7 @@ model SalesOrder {
   /// Production projects started from it.
   productionProjects ProductionProject[]
   costings           OrderCosting[]
+  aiOrderRuns        AiOrderRun[]
 
   @@unique([companyId, number])
   @@unique([companyId, integrationId, externalOrderId])
@@ -4488,6 +4497,16 @@ model AiSettings {
   aiUserId         String?   @unique
   /// Hours after which the owner is reminded of a buyer draft not sent yet.
   replyRemindHours Int       @default(24)
+  /// The morning CEO brief (08:00) and the evening report (19:00), to the
+  /// owner's inbox and bot while the AI is on; the day each was last sent.
+  morningBrief     Boolean   @default(true)
+  eveningReport    Boolean   @default(true)
+  briefSentOn      String?
+  reportSentOn     String?
+  /// Server Health every Saturday at 09:00 (off until the platform owner turns
+  /// it on); the Saturday it last ran.
+  healthWeekly     Boolean   @default(false)
+  healthRanOn      String?
   updatedAt        DateTime  @updatedAt
 
   company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
@@ -5466,6 +5485,7 @@ enum DocumentType {
   FINISHING_REPORT // a finishing count, mending return or full packing list (FIN-2026-00001)
   CM_SETTLEMENT // a master batch's final CM settlement with its factory (CMS-2026-00001)
   ORDER_COSTING // an order's costing sheet before it is taken (CST-2026-00001)
+  AI_ORDER_RUN // an order Mehedi 2.0 takes in and follows (AO-2026-00001)
 }
 
 enum TemplateFormat {
@@ -5723,14 +5743,15 @@ model OrderCosting {
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
 
-  company    Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  buyer      Party?              @relation("CostingBuyer", fields: [buyerId], references: [id], onDelete: SetNull)
-  factory    Party?              @relation("CostingFactory", fields: [factoryId], references: [id], onDelete: SetNull)
-  salesOrder SalesOrder?         @relation(fields: [salesOrderId], references: [id], onDelete: SetNull)
-  batch      ProductionBatch?    @relation(fields: [batchId], references: [id], onDelete: SetNull)
-  decidedBy  User?               @relation("OrderCostingDecidedBy", fields: [decidedById], references: [id], onDelete: SetNull)
-  createdBy  User?               @relation("OrderCostingCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  styles     OrderCostingStyle[]
+  company     Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  buyer       Party?              @relation("CostingBuyer", fields: [buyerId], references: [id], onDelete: SetNull)
+  factory     Party?              @relation("CostingFactory", fields: [factoryId], references: [id], onDelete: SetNull)
+  salesOrder  SalesOrder?         @relation(fields: [salesOrderId], references: [id], onDelete: SetNull)
+  batch       ProductionBatch?    @relation(fields: [batchId], references: [id], onDelete: SetNull)
+  decidedBy   User?               @relation("OrderCostingDecidedBy", fields: [decidedById], references: [id], onDelete: SetNull)
+  createdBy   User?               @relation("OrderCostingCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  styles      OrderCostingStyle[]
+  aiOrderRuns AiOrderRun[]
 
   @@unique([companyId, number])
   @@index([companyId, createdAt])
@@ -6101,4 +6122,122 @@ model AiBotMessage {
 
   @@unique([channel, providerId])
   @@index([companyId, createdAt])
+}
+
+enum AiOrderRunStatus {
+  /// The form is being filled from the PO, order sheet or photos.
+  INTAKE
+  /// The plan is ready and waits for the owner's Approve.
+  WAITING_OWNER
+  APPROVED
+  /// Sent back by the owner with a note.
+  RETURNED
+  CANCELLED
+  DONE
+}
+
+enum AiOrderMode {
+  /// The first orders: he only shows what he would do.
+  DRY_RUN
+  /// Then each step asks the owner first.
+  ASK
+}
+
+/// A new order Mehedi 2.0 takes in (AI Center > Orders): the form filled from
+/// the buyer's PO, order sheet or photos, the checks, the costing sheet and
+/// Order check card, the plan for the owner's Approve, then the steps followed
+/// against the T&A dates. People do the ERP work; he never sends to a buyer.
+model AiOrderRun {
+  id              String           @id @default(cuid())
+  companyId       String
+  number          String
+  title           String
+  mode            AiOrderMode      @default(DRY_RUN)
+  status          AiOrderRunStatus @default(INTAKE)
+  buyerId         String?
+  costingId       String?
+  salesOrderId    String?
+  /// The form (modules/ai/orders/order-run.ts OrderFields).
+  fields          Json
+  /// What the form still needs.
+  missing         String[]         @default([])
+  /// The files it was read from (FileAsset ids).
+  fileIds         String[]         @default([])
+  /// The plan report: the AI's words when it wrote it, else the ERP's own.
+  plan            String?
+  planByAi        Boolean          @default(false)
+  plannedAt       DateTime?
+  /// What the AI work on this order may cost, in the company's money.
+  estimatedAiCost Decimal?         @db.Decimal(12, 2)
+  startedVia      AiChannel        @default(ERP)
+  createdById     String?
+  decidedById     String?
+  decidedAt       DateTime?
+  decisionNote    String?
+  /// The day late steps were last told to the owner (YYYY-MM-DD).
+  lateToldOn      String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  company    Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  buyer      Party?          @relation("AiOrderRunBuyer", fields: [buyerId], references: [id], onDelete: SetNull)
+  costing    OrderCosting?   @relation(fields: [costingId], references: [id], onDelete: SetNull)
+  salesOrder SalesOrder?     @relation(fields: [salesOrderId], references: [id], onDelete: SetNull)
+  createdBy  User?           @relation("AiOrderRunCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  decidedBy  User?           @relation("AiOrderRunDecidedBy", fields: [decidedById], references: [id], onDelete: SetNull)
+  updates    AiStaffUpdate[]
+
+  @@unique([companyId, number])
+  @@index([companyId, status])
+}
+
+/// What staff tell the AI from My Work ("fabric arrived", "cutting started",
+/// "problem"), in Bengali or English, optionally about one order.
+model AiStaffUpdate {
+  id        String   @id @default(cuid())
+  companyId String
+  runId     String?
+  userId    String?
+  text      String
+  /// Read as a problem: the owner is told at once.
+  problem   Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  company Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  run     AiOrderRun? @relation(fields: [runId], references: [id], onDelete: SetNull)
+  user    User?       @relation("AiStaffUpdateBy", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, createdAt])
+  @@index([runId])
+}
+
+enum ServerHealthTrigger {
+  WEEKLY
+  CHECK_NOW
+}
+
+/// One Server Health run (AI Center > Server Health, platform owner only):
+/// the checks made in code, the report in Bengali, and the safe fixes offered.
+model ServerHealthRun {
+  id          String              @id @default(cuid())
+  companyId   String
+  trigger     ServerHealthTrigger
+  startedById String?
+  startedAt   DateTime            @default(now())
+  finishedAt  DateTime?
+  /// OK, WARN or ERROR: the worst of the checks.
+  worst       String              @default("OK")
+  /// [{ key, label, level, detail }] (modules/ai/health/checks.ts).
+  checks      Json
+  /// The report in Bengali: the AI's when it wrote it, else the ERP's own.
+  report      String
+  reportByAi  Boolean             @default(false)
+  aiCost      Decimal?            @db.Decimal(12, 2)
+  /// [{ key, label, status, doneAt, result }]
+  fixes       Json
+
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  startedBy User?   @relation("ServerHealthRunBy", fields: [startedById], references: [id], onDelete: SetNull)
+
+  @@index([companyId, startedAt])
 }

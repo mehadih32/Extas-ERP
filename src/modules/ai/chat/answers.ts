@@ -767,7 +767,7 @@ export async function answerIntent(
       return status(turn);
     case "order.new":
       return reply(
-        "Send me the buyer's PO, order sheet or photos in AI Center > Chat and I start the order check. Until then, make the costing sheet in Production > Costing and tell me its number.",
+        "Open AI Center > Orders and press New order, then attach the buyer's PO, order sheet or photos. I read them, ask for what is missing, check the order and write the plan for your Approve.",
       );
     case "order.status":
       return orderStatus(turn, intent.ref);

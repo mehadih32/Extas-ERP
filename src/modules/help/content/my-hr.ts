@@ -65,6 +65,39 @@ export const myHrHelp: HelpSection = {
       ],
     },
     {
+      slug: "my-hr-tell-ai",
+      title: "এআই-কে অর্ডারের খবর জানাবেন যেভাবে (Tell AI)",
+      summary:
+        "ফ্যাব্রিক এসেছে, কাটিং শুরু, কোনো সমস্যা: বাংলায় বা ইংরেজিতে লিখে Mehedi 2.0-কে জানান। সমস্যা হলে মালিক সঙ্গে সঙ্গে জানতে পারেন।",
+      keywords: [
+        "tell ai",
+        "update",
+        "problem",
+        "order",
+        "mehedi 2.0",
+        "খবর",
+        "সমস্যা",
+        "আপডেট",
+        "এআই",
+      ],
+      routes: ["/me"],
+      who: "এআই চালু থাকলে My HR ও Production-এর কর্মীরা।",
+      anyOf: ["portal.self", "production.view", "production.manage"],
+      steps: [
+        {
+          text: "“My HR” পাতায় (বা “Production” > “Overview”-এ) “Tell AI” চাপুন।",
+          image: { id: "my-hr-tell-ai-1", caption: "“Tell the AI what happened” জানালা" },
+        },
+        {
+          text: "“About order”-এ কোন অর্ডারের খবর তা বেছে নিন (না জানলে “No order in particular”)। “What happened”-এ লিখুন কী হয়েছে, তারপর “Send”।",
+        },
+      ],
+      tips: [
+        "লেখায় সমস্যা, দেরি, কম এসেছে, নষ্ট বা আটকে আছে জাতীয় কথা থাকলে মালিক সঙ্গে সঙ্গে ইনবক্সে ও বটে পান; বাকি খবর সন্ধ্যার রিপোর্টে যায়।",
+        "এআই বন্ধ থাকলে “Tell AI” বোতাম দেখা যায় না।",
+      ],
+    },
+    {
       slug: "my-hr-dashboard",
       title: "আমার সময়, পারফরম্যান্স স্কোর ও নোটিশ দেখবেন যেভাবে (My HR ড্যাশবোর্ড)",
       summary:

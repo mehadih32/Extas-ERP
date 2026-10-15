@@ -8,6 +8,7 @@ import { StatusBadge } from "@/components/sales/badges";
 import { Panel } from "@/components/sales/detail-bits";
 import { FormDialog } from "@/components/sales/dialogs";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import type { AiStatus } from "@/modules/ai/settings.service";
 import {
@@ -16,12 +17,26 @@ import {
   setAssistantNameAction,
   setPinAction,
 } from "@/server/actions/ai.actions";
+import { setDailyNotesAction } from "@/server/actions/orders.actions";
 
 /*
  * AI Center > Settings (ai.manage): the Claude key (kept sealed, only its last
- * four characters shown), the PIN asked for money, prices and deletions, and
- * the AI's name on everything it writes.
+ * four characters shown), the PIN asked for money, prices and deletions, the
+ * AI's name on everything it writes, and the daily notes to the owner.
  */
+
+const NOTES = [
+  {
+    key: "morningBrief",
+    label: "Morning brief at 08:00",
+    hint: "Order steps due this week, what is late, what waits for you, yesterday's AI cost.",
+  },
+  {
+    key: "eveningReport",
+    label: "Evening report at 19:00",
+    hint: "What was done today, plans waiting for Approve, T&A slips, what staff told the AI, today's AI cost.",
+  },
+] as const;
 
 const day = (at: Date | string | null) =>
   at
@@ -127,6 +142,45 @@ export function AiSettingsForms({ status: s }: { status: AiStatus }) {
             for a person.
           </span>
         </p>
+      </Panel>
+
+      <Panel title="Daily notes" id="ai-notes-heading">
+        <p className="mt-2 text-sm text-muted-foreground">
+          Written by the ERP from its own data, at no AI cost, to your inbox and the bot while the
+          AI is on (Bangladesh time).
+        </p>
+        <div className="mt-3 grid gap-3">
+          {NOTES.map((n) => (
+            <label key={n.key} className="flex items-start gap-3 text-sm">
+              <Checkbox
+                className="mt-0.5"
+                checked={s[n.key]}
+                disabled={pending}
+                onCheckedChange={(on) =>
+                  startTransition(async () => {
+                    const result = await setDailyNotesAction({
+                      morningBrief: s.morningBrief,
+                      eveningReport: s.eveningReport,
+                      [n.key]: on === true,
+                    });
+                    setMessage(
+                      result.ok
+                        ? {
+                            tone: "success",
+                            text: `${n.label.split(" at ")[0]} ${on === true ? "on" : "off"}.`,
+                          }
+                        : { tone: "error", text: result.error.message },
+                    );
+                  })
+                }
+              />
+              <span>
+                <span className="font-medium">{n.label}</span>
+                <span className="block text-[0.8125rem] text-muted-foreground">{n.hint}</span>
+              </span>
+            </label>
+          ))}
+        </div>
       </Panel>
 
       {dialog === "key" && (

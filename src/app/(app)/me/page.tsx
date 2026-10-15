@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { TellAiSlot } from "@/components/ai/tell-ai-slot";
 import { FlagBadge, MarkBadge } from "@/components/hr/badges";
 import { dayCount, hrHref, payDetails } from "@/components/hr/labels";
 import { CheckInButtons } from "@/components/hr/my-hr-actions";
@@ -72,6 +73,7 @@ export default async function MyHrPage() {
           </FormAlert>
         </div>
       )}
+      <TellAiSlot className="lg:col-span-2" />
       {/* On a phone, checking in comes first: Today goes above this band (see the column below). */}
       <div className="order-2 grid grid-cols-1 gap-6 md:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] md:items-start lg:order-none lg:col-span-2">
         <Panel title="My time here" id="tenure-heading">

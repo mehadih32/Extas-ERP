@@ -19,28 +19,39 @@ export function OrderCheckCard({ rows }: { rows: CheckRow[] }) {
       <p className="mt-1 text-sm text-muted-foreground">
         Five checks to read before you take the order. It never declines anything: you decide.
       </p>
-      <ul className="mt-4 grid gap-2">
-        {rows.map((r) => {
-          const s = SIGNAL[r.signal];
-          return (
-            <li
-              key={r.key}
-              className={cn("flex items-start gap-3 rounded-md border bg-background p-3", s.row)}
-            >
-              <span
-                role="img"
-                aria-label={s.label}
-                title={s.label}
-                className={cn("mt-1 size-3 shrink-0 rounded-full", s.dot)}
-              />
-              <div className="min-w-0 text-sm">
-                <p className="font-medium">{r.label}</p>
-                <p className="mt-0.5 break-words text-muted-foreground">{r.reason}</p>
-              </div>
-            </li>
-          );
-        })}
-      </ul>
+      <CheckRows rows={rows} />
     </Panel>
+  );
+}
+
+/** Checks as rows, each with its green, yellow or red dot and its reason. */
+export function CheckRows({
+  rows,
+}: {
+  rows: ReadonlyArray<{ key: string; label: string; signal: CheckSignal; reason: string }>;
+}) {
+  return (
+    <ul className="mt-4 grid gap-2">
+      {rows.map((r) => {
+        const s = SIGNAL[r.signal];
+        return (
+          <li
+            key={r.key}
+            className={cn("flex items-start gap-3 rounded-md border bg-background p-3", s.row)}
+          >
+            <span
+              role="img"
+              aria-label={s.label}
+              title={s.label}
+              className={cn("mt-1 size-3 shrink-0 rounded-full", s.dot)}
+            />
+            <div className="min-w-0 text-sm">
+              <p className="font-medium">{r.label}</p>
+              <p className="mt-0.5 break-words text-muted-foreground">{r.reason}</p>
+            </div>
+          </li>
+        );
+      })}
+    </ul>
   );
 }

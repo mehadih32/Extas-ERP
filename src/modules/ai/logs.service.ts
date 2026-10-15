@@ -26,6 +26,9 @@ export const AI_CENTER_ENTITIES = [
   "HouseRule",
   "CompanyMailSettings",
   "AiBotLink",
+  "AiOrderRun",
+  "AiStaffUpdate",
+  "ServerHealthRun",
 ] as const;
 
 export const LOG_FILTERS = [

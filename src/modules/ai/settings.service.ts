@@ -44,6 +44,12 @@ export async function aiSettingsOf(companyId: string, db: Db = prisma): Promise<
       assistantName: "Mehedi 2.0",
       aiUserId: null,
       replyRemindHours: 24,
+      morningBrief: true,
+      eveningReport: true,
+      briefSentOn: null,
+      reportSentOn: null,
+      healthWeekly: false,
+      healthRanOn: null,
       updatedAt: new Date(0),
     }
   );
@@ -138,6 +144,8 @@ export async function getAiStatus(ctx: CompanyContext) {
     allowFable: settings.allowFable,
     assistantName: settings.assistantName,
     replyRemindHours: settings.replyRemindHours,
+    morningBrief: settings.morningBrief,
+    eveningReport: settings.eveningReport,
     can: { manage: ctx.can("ai.manage") },
   };
 }
@@ -339,6 +347,24 @@ export async function setReplyRemindHours(ctx: CompanyContext, input: unknown, m
     entityType: "AiSettings",
     entityId: ctx.company.id,
     summary: `Unsent buyer drafts remind the owner after ${hours} hours`,
+  });
+}
+
+export const dailyNotesSchema = z.object({
+  morningBrief: z.boolean(),
+  eveningReport: z.boolean(),
+});
+
+/** The morning brief (08:00) and the evening report (19:00) on or off. */
+export async function setDailyNotes(ctx: CompanyContext, input: unknown, meta?: RequestMeta) {
+  assertManage(ctx);
+  const notes = dailyNotesSchema.parse(input);
+  await saveSettings(ctx, notes);
+  await auditInCompany(ctx, meta, {
+    action: "UPDATE",
+    entityType: "AiSettings",
+    entityId: ctx.company.id,
+    summary: `Morning brief ${notes.morningBrief ? "on" : "off"}, evening report ${notes.eveningReport ? "on" : "off"}`,
   });
 }
 

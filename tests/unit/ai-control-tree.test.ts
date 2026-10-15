@@ -181,8 +181,12 @@ describe("Control: the AI's access tree", () => {
 
 describe("AI Center tabs and models", () => {
   it("shows the AI Center to the owner only by default, and Settings only with ai.manage", () => {
-    expect(visibleAiTabs(DEFAULT_ROLE_PERMISSIONS.SUPER_ADMIN).map((t) => t.label)).toEqual(
+    expect(visibleAiTabs(DEFAULT_ROLE_PERMISSIONS.SUPER_ADMIN, true).map((t) => t.label)).toEqual(
       AI_TABS.map((t) => t.label),
+    );
+    // Server Health looks at the whole server: the platform owner's only.
+    expect(visibleAiTabs(DEFAULT_ROLE_PERMISSIONS.SUPER_ADMIN).map((t) => t.label)).toEqual(
+      AI_TABS.filter((t) => t.label !== "Server Health").map((t) => t.label),
     );
     for (const role of ["PRODUCTION_MANAGER", "SALES_EXECUTIVE", "ACCOUNTS", "EMPLOYEE"] as const) {
       expect(visibleAiTabs(DEFAULT_ROLE_PERMISSIONS[role]), role).toEqual([]);
@@ -191,6 +195,7 @@ describe("AI Center tabs and models", () => {
     expect(visibleAiTabs(["ai.view"]).map((t) => t.label)).toEqual([
       "AI Home",
       "Mehedi 2.0",
+      "Orders",
       "Drafts",
       "Control",
       "Budget & Costs",

@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
+import { TellAiSlot } from "@/components/ai/tell-ai-slot";
 import { SectionError } from "@/components/dashboard/section-error";
 import { EmptyState } from "@/components/products/bits";
 import { ProductionNoAccess } from "@/components/production/no-access";
@@ -99,14 +100,17 @@ export default async function ProductionOverviewPage() {
             goods.
           </p>
         </div>
-        {canCreate && (
-          <Button asChild className="w-full sm:w-auto">
-            <Link href="/production/projects/new">
-              <PlusIcon aria-hidden />
-              New project
-            </Link>
-          </Button>
-        )}
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
+          <TellAiSlot />
+          {canCreate && (
+            <Button asChild className="w-full sm:w-auto">
+              <Link href="/production/projects/new">
+                <PlusIcon aria-hidden />
+                New project
+              </Link>
+            </Button>
+          )}
+        </div>
       </div>
 
       <section aria-label="Projects by status">

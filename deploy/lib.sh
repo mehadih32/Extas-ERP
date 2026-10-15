@@ -106,11 +106,17 @@ wait_healthy() {
 }
 
 # Saves the whole database to safety-copies/<name>/database.dump; prints the folder.
+# Fails (and leaves no half-written copy) when the copy cannot be saved, such as on
+# a full disk.
 safety_copy() {
   local dir="$DATA_DIR/safety-copies/$1"
-  mkdir -p "$dir"
-  compose exec -T db pg_dump -U "$APP_DB_USER" -d "$POSTGRES_DB" \
-    --format=custom --no-owner --no-privileges >"$dir/database.dump"
+  mkdir -p "$dir" || return 1
+  if ! compose exec -T db pg_dump -U "$APP_DB_USER" -d "$POSTGRES_DB" \
+    --format=custom --no-owner --no-privileges >"$dir/database.dump" ||
+    [ ! -s "$dir/database.dump" ]; then
+    rm -rf "$dir"
+    return 1
+  fi
   printf '%s' "$dir"
 }
 
@@ -199,4 +205,73 @@ stop_demo() {
   [ -n "$(demo_compose ps -aq demo-app demo-seed demo-db 2>/dev/null)" ] || return 0
   say "Stopping the demo site (its data stays in $DATA_DIR/demo)"
   demo_compose rm --stop --force demo-app demo-seed demo-db >/dev/null
+}
+
+# --- Going back after a failed update ---------------------------------------------
+
+# The image a service's container was made from, else the image named :latest.
+running_image() {
+  local id image
+  id="$(compose ps -a -q "$1" 2>/dev/null | head -n 1)"
+  [ -n "$id" ] && image="$(docker inspect -f '{{.Image}}' "$id" 2>/dev/null)" && [ -n "$image" ] &&
+    printf '%s' "$image" && return 0
+  docker image inspect -f '{{.Id}}' "$2" 2>/dev/null
+}
+
+# Keeps the version that runs now as :previous, so a failed update can go back to it
+# without building anything. It takes the images the app's and the migrate step's
+# containers were made from: a build that failed half way may already have moved the
+# :latest names to the new version. False on a new server, where nothing runs yet.
+keep_running_version() {
+  local app tools
+  app="$(running_image app extras-erp-app:latest)" && [ -n "$app" ] || return 1
+  tools="$(running_image migrate extras-erp-tools:latest)" && [ -n "$tools" ] || return 1
+  docker tag "$app" extras-erp-app:previous && docker tag "$tools" extras-erp-tools:previous
+}
+
+# Makes the kept version the one that runs (keep_running_version saved it).
+use_previous_version() {
+  docker tag extras-erp-app:previous extras-erp-app:latest
+  docker tag extras-erp-tools:previous extras-erp-tools:latest
+}
+
+# The changes to the database (prisma/migrations) this copy of the code has and the
+# database has not had yet, one a line; all of them when the database is new.
+pending_migrations() {
+  local applied dir name
+  applied="$(compose exec -T db psql -X -q -At -U postgres -d "$POSTGRES_DB" \
+    -c 'SELECT migration_name FROM _prisma_migrations WHERE finished_at IS NOT NULL' \
+    2>/dev/null)" || applied=""
+  for dir in "$(dirname "$DEPLOY_DIR")"/prisma/migrations/*/; do
+    name="$(basename "$dir")"
+    [ -f "$dir/migration.sql" ] || continue
+    grep -qxF "$name" <<<"$applied" || printf '%s\n' "$name"
+  done
+}
+
+# Puts the database back to a dump ($1, its path inside the database container, such
+# as /safety-copies/before-update-2026-10-14_120000/database.dump) in one transaction,
+# committed only once all of it has gone in: the database is either fully put back
+# or left as it was. Stop the app first.
+restore_database() {
+  # $1 to $3 are filled in inside the database container.
+  # shellcheck disable=SC2016
+  compose exec -T db sh -c '
+      set -o pipefail
+      {
+        echo "SET client_min_messages = warning; BEGIN; DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
+        pg_restore --no-owner --no-privileges --file=- "$1" || exit 1
+        echo "COMMIT;"
+      } | psql -q -v ON_ERROR_STOP=1 -U "$2" -d "$3" >/dev/null
+    ' restore "$1" "$APP_DB_USER" "$POSTGRES_DB"
+}
+
+# Opens every screen of the version that just started, the way the owner would
+# (scripts/check-update.ts), with a ten-minute session of its own; a "==> " line for
+# each problem. False when a screen or a PDF did not work.
+check_update() {
+  local email
+  email="$(setting SEED_ADMIN_EMAIL)"
+  compose run --rm --no-deps -T -e CHECK_URL=http://app:3000 -e CHECK_EMAIL="${email,,}" \
+    migrate npx tsx scripts/check-update.ts
 }

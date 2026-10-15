@@ -18,6 +18,7 @@ export type ProductionTab = {
  * fault log is read with production.view (values follow the material-cost rule).
  * Fabric and trims bookings are shown to anyone with a booking permission
  * (production.bookings.*), their prices following the material-cost rule too.
+ * Order costing sheets, with costs and profit, are for costing.view only.
  */
 
 /** Any booking permission opens the Bookings tab (booking.service SEE_BOOKINGS). */
@@ -27,6 +28,7 @@ export const BOOKING_PERMISSIONS: readonly PermissionKey[] = [
   "production.bookings.market",
   "production.bookings.attach",
   "production.bookings.close",
+  "production.bookings.approve",
 ];
 
 export const PRODUCTION_TABS: readonly ProductionTab[] = [
@@ -50,6 +52,7 @@ export const PRODUCTION_TABS: readonly ProductionTab[] = [
     andAnyOf: ["production.manage", "accounts.view"],
   },
   { href: "/production/cost-heads", label: "Cost heads", anyOf: ["production.manage"] },
+  { href: "/production/costing", label: "Costing", anyOf: ["costing.view"] },
   { href: "/production/faults", label: "Fault log", anyOf: ["production.view"] },
 ];
 

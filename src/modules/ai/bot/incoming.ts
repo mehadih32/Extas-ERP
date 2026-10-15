@@ -1,0 +1,644 @@
+import { type AiBotChannel, type AiBotLink, type BackgroundJob, Prisma } from "@prisma/client";
+import { ZodError } from "zod";
+
+import { decryptSecret, hashText } from "@/lib/crypto";
+import { AppError } from "@/lib/errors";
+import { prisma } from "@/lib/prisma";
+import { checkRateLimit } from "@/lib/rate-limit";
+import type { RequestMeta } from "@/lib/request-meta";
+import { tenantDb } from "@/lib/tenant-db";
+import type { CompanyContext } from "@/modules/auth/context";
+import { resolveCompanyAccess } from "@/modules/companies/access";
+import { readStoredFile } from "@/modules/files/file.service";
+import { enqueueJob } from "@/modules/jobs/queue";
+import { kickJobWorker } from "@/modules/jobs/worker";
+
+import type { CardStatus, ChatCard } from "../chat/cards";
+import { applyCard, cancelCard, sendChat } from "../chat/chat.service";
+import { storePrefix } from "../chat/intents";
+import { discardDraft, sendDraft } from "../drafts.service";
+import { decideHouseRule } from "../house-rules.service";
+import { answerDeletion, answerPermission, needsPin } from "../requests.service";
+import { aiSettingsOf, checkPin } from "../settings.service";
+import { logBot, senderFor } from "./bot.service";
+import type { Incoming } from "./channel";
+import { type BotOut, type ButtonPress, readButton, renderAnswer } from "./render";
+import { readTelegramUpdate } from "./telegram";
+import { readWhatsAppPayload, whatsappSignatureOk } from "./whatsapp";
+
+/*
+ * What reaches the bot. The webhook only checks who is calling (Telegram's
+ * secret token, Meta's signature), keeps the message once (a repeated delivery
+ * is dropped) and hands it to the background worker, so the provider gets its
+ * answer at once. The worker then:
+ *   - links the owner's account when the one-time code arrives;
+ *   - answers only the linked owner's own private chat (anyone else: nothing
+ *     is sent back, and the message is only logged);
+ *   - picks the store: the name at the start ("EXTAS: ..."), else the only
+ *     store linked to this chat, else one question;
+ *   - passes the words to Mehedi 2.0's chat (the same commands, Control and
+ *     log as in the ERP) and sends the answers back with their buttons;
+ *   - for money, prices and Deletion requests asks for the PIN, takes it
+ *     from the next message and removes that message from the chat.
+ */
+
+const PIN_MINUTES = 5;
+const CODE = /^(?:\/start\s+)?([A-Z2-9]{8})$/;
+
+const appUrl = () => (process.env.APP_URL || "http://localhost:3000").replace(/\/$/, "");
+
+const described = (m: Incoming) =>
+  m.text ?? (m.callback ? `[button] ${m.callback.data}` : m.media ? `[${m.media}]` : "[other]");
+
+/** A provider's unique message id was seen already (a repeated delivery). */
+const isRepeat = (error: unknown) =>
+  error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
+
+/** Keeps one incoming message and queues its handling; a stranger's is only logged. */
+async function keep(links: AiBotLink[], channel: AiBotChannel, botKey: string, m: Incoming) {
+  const first = links[0]!;
+  const now = new Date();
+  // Only the linked chat, or someone sending a link code while one is waiting, gets as far as the worker.
+  const known =
+    links.some((l) => l.linkedAt && l.chatId === m.chatId) ||
+    (CODE.test(m.text?.trim() ?? "") &&
+      links.some((l) => l.linkCodeUntil && l.linkCodeUntil > now));
+  // A stranger is never answered; past a few messages an hour they are not even logged.
+  if (!known && !strangerAllowed(first.id, m.chatId)) return;
+  try {
+    await prisma.$transaction(async (tx) => {
+      const row = await tx.aiBotMessage.create({
+        data: {
+          companyId: first.companyId,
+          linkId: first.id,
+          channel,
+          direction: "IN",
+          providerId: `${botKey}:${m.updateId}`,
+          chatId: m.chatId,
+          text: described(m).slice(0, known ? 2000 : 200),
+          status: known ? "RECEIVED" : "IGNORED",
+        },
+      });
+      if (known) {
+        await enqueueJob(tx, {
+          kind: "ai.bot.incoming",
+          companyId: first.companyId,
+          payload: {
+            messageId: row.id,
+            channel,
+            botKey,
+            incoming: m,
+          } as unknown as Prisma.InputJsonObject,
+          maxAttempts: 1,
+        });
+      }
+    });
+  } catch (error) {
+    if (isRepeat(error)) return;
+    throw error;
+  }
+  if (known) kickJobWorker();
+}
+
+/** A webhook call from Telegram. "unknown": no bot here has this secret. */
+export async function receiveTelegram(secret: string, raw: unknown): Promise<"ok" | "unknown"> {
+  const links = await prisma.aiBotLink.findMany({
+    where: { channel: "TELEGRAM", webhookKey: hashText(secret) },
+    orderBy: { createdAt: "asc" },
+  });
+  if (links.length === 0) return "unknown";
+  const m = readTelegramUpdate(raw);
+  if (m) await keep(links, "TELEGRAM", links[0]!.botKey, m);
+  return "ok";
+}
+
+/** Meta's webhook check: the challenge back when the verify token is one of ours. */
+export async function verifyWhatsApp(token: string): Promise<boolean> {
+  return (
+    (await prisma.aiBotLink.count({
+      where: { channel: "WHATSAPP", webhookKey: hashText(token) },
+    })) > 0
+  );
+}
+
+/** A webhook call from Meta, checked against the app secret of the number it came to. */
+export async function receiveWhatsApp(
+  rawBody: string,
+  signature: string | null,
+): Promise<"ok" | "unknown" | "bad-signature"> {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(rawBody);
+  } catch {
+    return "bad-signature";
+  }
+  const numbers = new Set<string>();
+  for (const entry of (
+    raw as {
+      entry?: Array<{ changes?: Array<{ value?: { metadata?: { phone_number_id?: string } } }> }>;
+    }
+  )?.entry ?? []) {
+    for (const change of entry.changes ?? []) {
+      const id = change.value?.metadata?.phone_number_id;
+      if (id) numbers.add(id);
+    }
+  }
+  if (numbers.size === 0) return "unknown";
+  const messages = readWhatsAppPayload(raw);
+  for (const phoneNumberId of numbers) {
+    const links = await prisma.aiBotLink.findMany({
+      where: { channel: "WHATSAPP", botKey: phoneNumberId },
+      orderBy: { createdAt: "asc" },
+    });
+    if (links.length === 0) return "unknown";
+    const signed = links.some(
+      (l) =>
+        l.appSecretSealed &&
+        whatsappSignatureOk(rawBody, signature, decryptSecret(l.appSecretSealed)),
+    );
+    if (!signed) return "bad-signature";
+    for (const m of messages.filter((x) => x.phoneNumberId === phoneNumberId)) {
+      await keep(links, "WHATSAPP", phoneNumberId, m);
+    }
+  }
+  return "ok";
+}
+
+// ---------------------------------------------------------------- the worker
+
+type IncomingJob = { messageId: string; channel: AiBotChannel; botKey: string; incoming: Incoming };
+
+/** The owner, as the bot works for them: their own permissions in the store, never more. */
+async function ownerContext(link: AiBotLink): Promise<CompanyContext | null> {
+  if (!link.ownerId) return null;
+  const user = await prisma.user.findUnique({
+    where: { id: link.ownerId },
+    select: {
+      id: true,
+      email: true,
+      name: true,
+      phone: true,
+      avatarUrl: true,
+      status: true,
+      isSuperAdmin: true,
+      mustChangePassword: true,
+    },
+  });
+  if (!user || user.status !== "ACTIVE" || user.mustChangePassword) return null;
+  const access = await resolveCompanyAccess(user, link.companyId);
+  if (!access?.permissions.has("ai.manage")) return null;
+  const now = new Date();
+  return {
+    // Not a sign-in: a stand-in for this one message, never saved.
+    session: {
+      id: `bot-${link.id}`,
+      userId: user.id,
+      token: "",
+      activeCompanyId: link.companyId,
+      userAgent: `${link.channel === "TELEGRAM" ? "Telegram" : "WhatsApp"} bot`,
+      ipAddress: null,
+      expiresAt: new Date(now.getTime() + 60_000),
+      lastSeenAt: now,
+      createdAt: now,
+    },
+    user,
+    ...access,
+    db: tenantDb(link.companyId),
+    can: (permission) => access.permissions.has(permission),
+  };
+}
+
+/** Sends one message and logs it; a refusal is logged, never thrown at the owner's work. */
+async function say(link: AiBotLink, chatId: string, out: BotOut) {
+  try {
+    await senderFor(link).send(chatId, { text: out.text, buttons: out.buttons });
+    await logBot(link, { direction: "OUT", chatId, text: out.text, status: "SENT" });
+  } catch (error) {
+    console.error("[bot] send failed", error instanceof Error ? error.message : error);
+    await logBot(link, {
+      direction: "OUT",
+      chatId,
+      text: out.text,
+      status: "FAILED",
+      error: error instanceof Error ? error.message : "Not sent",
+    });
+  }
+}
+
+const words = (text: string): BotOut => ({ text, buttons: [] });
+
+/** The report PDF itself, after the words. */
+async function sendReport(link: AiBotLink, chatId: string, exportId: string) {
+  const row = await prisma.reportExport.findFirst({
+    where: { id: exportId, companyId: link.companyId },
+    select: {
+      title: true,
+      file: { select: { storagePath: true, fileName: true, mimeType: true } },
+    },
+  });
+  if (!row?.file) return;
+  try {
+    await senderFor(link).file(
+      chatId,
+      { name: row.file.fileName, content: await readStoredFile(row.file), type: row.file.mimeType },
+      row.title,
+    );
+    await logBot(link, {
+      direction: "OUT",
+      chatId,
+      text: `[file] ${row.file.fileName}`,
+      status: "SENT",
+    });
+  } catch (error) {
+    await logBot(link, {
+      direction: "OUT",
+      chatId,
+      text: `[file] ${row.file.fileName}`,
+      status: "FAILED",
+      error: error instanceof Error ? error.message : "Not sent",
+    });
+  }
+}
+
+/** The background job: one message or button press from a bot. */
+export async function runBotIncomingJob(job: BackgroundJob) {
+  const { messageId, channel, botKey, incoming: m } = job.payload as unknown as IncomingJob;
+  const done = (status: "DONE" | "IGNORED", error?: string) =>
+    prisma.aiBotMessage.update({
+      where: { id: messageId },
+      data: { status, error: error ?? null },
+    });
+  const links = await prisma.aiBotLink.findMany({
+    where: { channel, botKey },
+    orderBy: { createdAt: "asc" },
+  });
+  if (!m.privateChat || links.length === 0) return void (await done("IGNORED"));
+
+  // The one-time code from AI Center > Bot links this chat to the owner.
+  const code = CODE.exec(m.text?.trim() ?? "")?.[1];
+  if (code) {
+    const now = new Date();
+    const link = links.find(
+      (l) => l.linkCodeHash === hashText(code) && l.linkCodeUntil && l.linkCodeUntil > now,
+    );
+    if (link) {
+      const claimed = await prisma.aiBotLink.updateMany({
+        where: { id: link.id, linkCodeHash: link.linkCodeHash },
+        data: {
+          chatId: m.chatId,
+          chatName: m.fromName?.slice(0, 120) ?? null,
+          linkedAt: now,
+          linkCodeHash: null,
+          linkCodeUntil: null,
+          lastInboundAt: now,
+        },
+      });
+      if (claimed.count === 1) {
+        const company = await prisma.company.findUniqueOrThrow({
+          where: { id: link.companyId },
+          select: { name: true },
+        });
+        await prisma.auditLog.create({
+          data: {
+            companyId: link.companyId,
+            userId: link.ownerId,
+            action: "UPDATE",
+            entityType: "AiBotLink",
+            entityId: link.companyId,
+            summary: `Bot: ${channel === "TELEGRAM" ? "Telegram" : "WhatsApp"} linked to ${m.fromName ?? "the owner's account"}`,
+          },
+        });
+        await say(
+          link,
+          m.chatId,
+          words(
+            `Linked: this chat now talks to Mehedi 2.0 for ${company.name}. Messages from anyone else get no answer. Write "help" to see what you can say.`,
+          ),
+        );
+        return void (await done("DONE"));
+      }
+    }
+  }
+
+  const mine = links.filter((l) => l.linkedAt && l.chatId === m.chatId);
+  if (mine.length === 0) return void (await done("IGNORED"));
+  await prisma.aiBotLink.updateMany({
+    where: { id: { in: mine.map((l) => l.id) } },
+    data: { lastInboundAt: new Date() },
+  });
+
+  try {
+    if (m.callback) await pressed(mine, m);
+    else await wrote(mine, m);
+    await done("DONE");
+  } catch (error) {
+    console.error("[bot] message failed", error);
+    await done("DONE", error instanceof Error ? error.message.slice(0, 300) : "Failed");
+    await say(
+      mine[0]!,
+      m.chatId,
+      words("Something went wrong on my side. Try again, or use the ERP."),
+    );
+  }
+}
+
+/** Which store a message is for: the name at its start, else the only store, else one waiting for a PIN. */
+async function storeFor(mine: AiBotLink[], text: string) {
+  if (mine.length === 1) return mine[0]!;
+  const companies = await prisma.company.findMany({
+    where: { id: { in: mine.map((l) => l.companyId) } },
+    select: { id: true, name: true },
+  });
+  const { store } = storePrefix(text);
+  if (store) {
+    const named = companies.find((c) => c.name.toLowerCase().startsWith(store.toLowerCase()));
+    if (named) return mine.find((l) => l.companyId === named.id)!;
+  }
+  const now = new Date();
+  const waiting = mine.filter((l) => l.pendingUntil && l.pendingUntil > now);
+  if (waiting.length === 1) return waiting[0]!;
+  return { ask: companies.map((c) => c.name) };
+}
+
+const meta = (link: AiBotLink): RequestMeta => ({
+  userAgent: `${link.channel === "TELEGRAM" ? "Telegram" : "WhatsApp"} bot`,
+});
+
+/** The owner wrote something: the PIN asked for, or words for Mehedi 2.0. */
+async function wrote(mine: AiBotLink[], m: Incoming) {
+  const text = m.text?.trim() ?? "";
+  const picked = await storeFor(mine, text);
+  if ("ask" in picked) {
+    return say(
+      mine[0]!,
+      m.chatId,
+      words(
+        `Which store? Start with its name, like "${picked.ask[0]}: status". Linked here: ${picked.ask.join(", ")}.`,
+      ),
+    );
+  }
+  const link = picked;
+  const ctx = await ownerContext(link);
+  if (!ctx) {
+    return say(
+      link,
+      m.chatId,
+      words("This bot is no longer linked to an owner. Link it again in AI Center > Bot."),
+    );
+  }
+  const sender = senderFor(link);
+
+  // A PIN asked for a moment ago: read it, take it out of the chat, and do what waited for it.
+  if (link.pendingUntil && link.pendingUntil > new Date() && link.pending && text) {
+    await sender.remove(m.chatId, m.messageId);
+    await prisma.aiBotLink.update({
+      where: { id: link.id },
+      data: { pending: Prisma.DbNull, pendingUntil: null },
+    });
+    if (/^(cancel|stop|বাতিল|না)$/i.test(text))
+      return say(link, m.chatId, words("Stopped: nothing changed."));
+    const waiting = link.pending as { press: ButtonPress; sourceId: string | null };
+    let right = false;
+    try {
+      right = await checkPin(link.companyId, text, ctx.user.id);
+    } catch (error) {
+      if (error instanceof AppError) return say(link, m.chatId, words(error.message));
+      throw error;
+    }
+    if (!right)
+      return say(
+        link,
+        m.chatId,
+        words("The PIN is not right. Press the button again to try again."),
+      );
+    return act(link, ctx, m.chatId, waiting.press, waiting.sourceId, text);
+  }
+
+  if (m.media) {
+    return say(
+      link,
+      m.chatId,
+      words(
+        'I read typed words for now: voice notes and files come later. Type what you need, or "help".',
+      ),
+    );
+  }
+  if (!text) return;
+  await sender.typing(m.chatId);
+  let rows: Awaited<ReturnType<typeof sendChat>>;
+  try {
+    rows = await sendChat(ctx, { text }, meta(link), "BOT");
+  } catch (error) {
+    if (error instanceof AppError) return say(link, m.chatId, words(error.message));
+    if (error instanceof ZodError)
+      return say(link, m.chatId, words("Write at most 2000 characters at a time."));
+    throw error;
+  }
+  for (const row of rows) {
+    const out = renderAnswer(
+      {
+        id: row.id,
+        text: row.text,
+        card: (row.card as ChatCard | null) ?? null,
+        cardStatus: (row.cardStatus as CardStatus | null) ?? null,
+      },
+      appUrl(),
+    );
+    await say(link, m.chatId, out);
+    if (out.exportId) await sendReport(link, m.chatId, out.exportId);
+  }
+}
+
+/** The store a pressed button belongs to: the store whose record it names. */
+async function storeOfPress(mine: AiBotLink[], press: ButtonPress) {
+  const where = { companyId: { in: mine.map((l) => l.companyId) } };
+  const select = { companyId: true } as const;
+  let row: { companyId: string } | null;
+  switch (press.kind) {
+    case "apply":
+    case "cancel":
+      row = await prisma.aiChatMessage.findFirst({
+        where: { id: press.messageId, ...where },
+        select,
+      });
+      break;
+    case "send":
+    case "discard":
+      row = await prisma.aiDraft.findFirst({ where: { id: press.draftId, ...where }, select });
+      break;
+    case "rule":
+      row = await prisma.houseRule.findFirst({ where: { id: press.ruleId, ...where }, select });
+      break;
+    case "permission":
+      row = await prisma.aiPermissionRequest.findFirst({
+        where: { id: press.requestId, ...where },
+        select,
+      });
+      break;
+    case "deletion":
+      row = await prisma.aiDeletionRequest.findFirst({
+        where: { id: press.requestId, ...where },
+        select,
+      });
+      break;
+  }
+  return row ? (mine.find((l) => l.companyId === row.companyId) ?? null) : null;
+}
+
+/** The owner pressed a button under a message. */
+async function pressed(mine: AiBotLink[], m: Incoming) {
+  const press = readButton(m.callback!.data);
+  const link = press ? await storeOfPress(mine, press) : null;
+  if (!press || !link) {
+    await senderFor(mine[0]!).ack(m.callback!.id, "This is not there any more.");
+    return;
+  }
+  await senderFor(link).ack(m.callback!.id);
+  const ctx = await ownerContext(link);
+  if (!ctx) {
+    return say(
+      link,
+      m.chatId,
+      words("This bot is no longer linked to an owner. Link it again in AI Center > Bot."),
+    );
+  }
+  return act(link, ctx, m.chatId, press, m.callback!.messageId, null);
+}
+
+/** Whether a press needs the PIN on the bot: money, prices and Deletion requests. */
+async function pinNeeded(ctx: CompanyContext, press: ButtonPress): Promise<string | null> {
+  switch (press.kind) {
+    case "apply": {
+      const row = await ctx.db.aiChatMessage.findFirst({
+        where: { id: press.messageId },
+        select: { card: true },
+      });
+      const card = row?.card as ChatCard | null;
+      return card?.type === "change" && card.action === "profit.set" ? "set the profit %" : null;
+    }
+    case "send": {
+      const draft = await ctx.db.aiDraft.findFirst({
+        where: { id: press.draftId },
+        select: { kind: true },
+      });
+      return draft && (draft.kind === "QUOTATION" || draft.kind === "INVOICE")
+        ? "send the price to the buyer"
+        : null;
+    }
+    case "permission": {
+      if (press.answer === "REFUSED") return null;
+      const request = await ctx.db.aiPermissionRequest.findFirst({
+        where: { id: press.requestId },
+        select: { node: true },
+      });
+      return request && needsPin(request.node) ? "give this permission (money or prices)" : null;
+    }
+    case "deletion":
+      return press.approve ? "approve the Deletion request" : null;
+    default:
+      return null;
+  }
+}
+
+/** Does what a button asks, in the owner's name; the PIN first where it is needed. */
+async function act(
+  link: AiBotLink,
+  ctx: CompanyContext,
+  chatId: string,
+  press: ButtonPress,
+  sourceId: string | null,
+  pin: string | null,
+) {
+  const sender = senderFor(link);
+  if (pin === null) {
+    const why = await pinNeeded(ctx, press);
+    if (why) {
+      const settings = await aiSettingsOf(link.companyId);
+      if (!settings.pinHash) {
+        return say(
+          link,
+          chatId,
+          words(
+            "Set your PIN first in AI Center > Settings: the bot asks for it for money, prices and Deletion requests.",
+          ),
+        );
+      }
+      await prisma.aiBotLink.update({
+        where: { id: link.id },
+        data: {
+          pending: { press, sourceId } as unknown as Prisma.InputJsonObject,
+          pendingUntil: new Date(Date.now() + PIN_MINUTES * 60_000),
+        },
+      });
+      return say(link, chatId, words(`Send your PIN to ${why}. (Write "বাতিল" to stop.)`));
+    }
+  }
+  const m = meta(link);
+  let result: string;
+  try {
+    switch (press.kind) {
+      case "apply":
+        await applyCard(ctx, press.messageId, m);
+        result = "Done.";
+        break;
+      case "cancel":
+        await cancelCard(ctx, press.messageId);
+        result = "Cancelled: nothing changed.";
+        break;
+      case "send": {
+        const draft = await ctx.db.aiDraft.findFirstOrThrow({
+          where: { id: press.draftId },
+          select: { subject: true, toAddress: true },
+        });
+        await sendDraft(ctx, press.draftId, m);
+        result = `Sent "${draft.subject}" to ${draft.toAddress}.`;
+        break;
+      }
+      case "discard":
+        await discardDraft(ctx, press.draftId, m);
+        result = "Discarded: it is kept in Drafts, not sent.";
+        break;
+      case "rule":
+        await decideHouseRule(ctx, press.ruleId, { approve: press.approve }, m);
+        result = press.approve
+          ? "Approved: the rule counts from now on."
+          : "Rejected: the rule does not count.";
+        break;
+      case "permission":
+        await answerPermission(
+          ctx,
+          press.requestId,
+          { answer: press.answer, pin: pin ?? undefined },
+          m,
+        );
+        result = press.answer === "REFUSED" ? "Answered: no." : "Answered: he may do it.";
+        break;
+      case "deletion":
+        await answerDeletion(
+          ctx,
+          press.requestId,
+          { approve: press.approve, pin: pin ?? undefined },
+          m,
+        );
+        result = press.approve
+          ? "Approved. Nothing is deleted by itself: delete it on its page in the ERP."
+          : "Refused: it stays.";
+        break;
+    }
+  } catch (error) {
+    if (error instanceof AppError) return say(link, chatId, words(`Not done: ${error.message}`));
+    throw error;
+  }
+  await sender.clearButtons(chatId, sourceId);
+  await say(link, chatId, words(result));
+}
+
+/** A cap on what one stranger can make the log keep (the bot never answers them). */
+function strangerAllowed(linkId: string, chatId: string) {
+  try {
+    checkRateLimit(`bot-stranger:${linkId}:${chatId}`, 20, 60 * 60_000);
+    return true;
+  } catch {
+    return false;
+  }
+}

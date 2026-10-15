@@ -1,7 +1,8 @@
 # Installs the newest code on the server after every merge into main, and from
-# the Actions tab with "Run workflow". It signs in over SSH with a key that can
-# only run deploy/auto-deploy.sh. Setting it up: deploy/README.md, "Updating by
-# itself after each merge".
+# the Actions tab with "Run workflow". It first runs the Checks (every test and the
+# production build) on that code, and touches the server only when they pass. It
+# signs in over SSH with a key that can only run deploy/auto-deploy.sh. Setting it
+# up: deploy/README.md, "Updating by itself after each merge".
 name: Deploy
 
 on:
@@ -18,8 +19,13 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  checks:
+    name: Checks
+    uses: ./.github/workflows/checks.yml
+
   deploy:
     name: Update the server
+    needs: checks
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:

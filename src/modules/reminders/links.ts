@@ -7,7 +7,11 @@ import type { PermissionKey } from "@/modules/rbac/permissions";
  * the Planner for management and in My HR for the employee it was given to.
  */
 
-type Can = { can: (permission: PermissionKey) => boolean };
+type Can = {
+  can: (permission: PermissionKey) => boolean;
+  /** The platform owner (Server Health). */
+  user?: { isSuperAdmin: boolean };
+};
 
 export type RecordLink = { type: string; id: string | null };
 
@@ -60,6 +64,26 @@ export function recordHref(ctx: Can, link: RecordLink | null): string | null {
     case "MySalary":
       // A salary paid (in full or in part): the employee's money ledger.
       return ctx.can("portal.self") ? "/me/ledger" : null;
+    case "AiBudget":
+      // The AI's spending passed the alert percentage of the month's budget.
+      return ctx.can("ai.view") || ctx.can("ai.manage") ? "/ai/costs" : null;
+    case "AiDraft":
+      // A draft Mehedi 2.0 made for the owner to send (a buyer's follow-up, a reply waiting).
+      return ctx.can("ai.view") || ctx.can("ai.manage") ? `/ai/drafts#draft-${id}` : null;
+    case "OrderCosting":
+      return ctx.can("costing.view") ? `/production/costing/${id}` : null;
+    case "HouseRule":
+      // A House Rule Mehedi 2.0 proposed, for the owner to approve.
+      return ctx.can("ai.view") || ctx.can("ai.manage") ? "/ai/mehedi#teach" : null;
+    case "AiRequest":
+      // Something the AI asks the owner for (permission, a Deletion request), or the morning brief.
+      return ctx.can("ai.view") || ctx.can("ai.manage") ? "/ai" : null;
+    case "AiOrderRun":
+      // An order given to Mehedi 2.0: a step late, or a problem staff told the AI.
+      return ctx.can("ai.view") || ctx.can("ai.manage") ? `/ai/orders/${id}` : null;
+    case "ServerHealthRun":
+      // The weekly Server Health check (the platform owner's).
+      return ctx.user?.isSuperAdmin ? "/ai/health" : null;
     default:
       return null;
   }
@@ -82,4 +106,11 @@ export const RECORD_NOUNS: Record<string, string> = {
   Notice: "the notice",
   MyItems: "my items",
   MySalary: "my money",
+  AiBudget: "the AI costs",
+  AiDraft: "the draft",
+  AiRequest: "the AI's requests",
+  OrderCosting: "the costing sheet",
+  HouseRule: "the House Rule",
+  AiOrderRun: "the order",
+  ServerHealthRun: "Server Health",
 };

@@ -95,6 +95,7 @@ describe("Accounts in the menu, by role", () => {
       ["/reports", "all"],
       ["/planner", "all"],
       ["/compliance", "all"],
+      ["/ai", "all"],
       ["/settings", "all"],
     ]);
     expect(topBarFold(6)).toBe("all");

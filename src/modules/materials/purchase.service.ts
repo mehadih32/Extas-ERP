@@ -178,11 +178,18 @@ export async function createPurchase(
     await lockSupplierAccount(tx, companyId, supplier.id);
     if (order) {
       await lockRow(tx, "PurchaseOrder", order.id);
-      const { status } = await tx.purchaseOrder.findUniqueOrThrow({
+      const { status, booking } = await tx.purchaseOrder.findUniqueOrThrow({
         where: { id: order.id },
-        select: { status: true },
+        select: { status: true, booking: { select: { stage: true } } },
       });
-      assertAllowed(canReceiveOnOrder({ number: order.number, status, received: false }));
+      assertAllowed(
+        canReceiveOnOrder({
+          number: order.number,
+          status,
+          received: false,
+          awaitingApproval: booking?.stage === "DRAFT",
+        }),
+      );
     }
     const state = await lockMaterials(
       tx,

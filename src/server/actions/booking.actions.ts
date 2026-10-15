@@ -16,6 +16,8 @@ import * as bookings from "@/modules/production/booking.service";
  *   production.bookings.market       make and change ready stock (market purchase) bookings
  *   production.bookings.attach       attach them to a batch and take them off
  *   production.bookings.close        close and cancel them
+ *   production.bookings.approve      approve them before they go to the supplier, and
+ *                                    choose Fabric first for a batch (the owner's)
  * Changes refresh the screens and hand back the booking's id and number only.
  */
 
@@ -25,6 +27,7 @@ const make = () =>
   requireAnyPermission("production.bookings.supplier", "production.bookings.market");
 const attach = () => requirePermission("production.bookings.attach");
 const end = () => requirePermission("production.bookings.close");
+const approve = () => requirePermission("production.bookings.approve");
 
 /** Runs a change and refreshes every screen that may show it. */
 const change = <T>(work: () => Promise<T>) =>
@@ -97,4 +100,22 @@ export const attachBookingAction = async (bookingId: string, input: unknown) =>
 export const detachBookingAction = async (bookingId: string) =>
   change(async () =>
     ref(await bookings.detachBooking(await attach(), bookingId, await getRequestMeta())),
+  );
+
+/** The owner's approval (production.bookings.approve); the checks must pass. */
+export const approveBookingAction = async (bookingId: string) =>
+  change(async () =>
+    ref(await bookings.approveBooking(await approve(), bookingId, await getRequestMeta())),
+  );
+
+/** Whoever makes that kind of booking marks it as sent once it is printed and sent. */
+export const markBookingSentAction = async (bookingId: string) =>
+  change(async () =>
+    ref(await bookings.markBookingSent(await make(), bookingId, await getRequestMeta())),
+  );
+
+/** Fabric first for a master batch, on or off (production.bookings.approve). */
+export const setFabricFirstAction = async (batchId: string, on: boolean) =>
+  change(async () =>
+    bookings.setFabricFirst(await approve(), batchId, on === true, await getRequestMeta()),
   );

@@ -172,18 +172,27 @@ export const productionHref = {
     `/production/projects/${encodeURIComponent(projectId)}/materials`,
   techPack: (projectId: string) =>
     `/api/production/projects/${encodeURIComponent(projectId)}/tech-pack`,
+  /** A style's tech pack screen: chart, AI draft, references, logos and colours. */
+  techPackPage: (projectId: string) =>
+    `/production/projects/${encodeURIComponent(projectId)}/tech-pack`,
   /** Fabric and trims bookings (supplier POs and market purchases), and their PDF. */
   bookings: (filter: { batchId?: string } = {}) =>
     filter.batchId
       ? `/production/bookings?batch=${encodeURIComponent(filter.batchId)}`
       : "/production/bookings",
   booking: (id: string) => `/production/bookings/${encodeURIComponent(id)}`,
+  /** Order costing sheets with their Order check card. */
+  costings: () => "/production/costing",
+  costing: (id: string) => `/production/costing/${encodeURIComponent(id)}`,
   newBooking: (batchId?: string) =>
     batchId
       ? `/production/bookings/new?batch=${encodeURIComponent(batchId)}`
       : "/production/bookings/new",
   editBooking: (id: string) => `/production/bookings/${encodeURIComponent(id)}/edit`,
   bookingPdf: (id: string) => `/api/production/bookings/${encodeURIComponent(id)}/pdf`,
+  /** A batch's booking book: every booking of it in one PDF. */
+  bookingBook: (batchId: string) =>
+    `/api/production/batches/${encodeURIComponent(batchId)}/booking-book`,
   /** "Make purchase orders" for a batch's materials. */
   batchOrders: (batchId: string) => `/production/batches/${encodeURIComponent(batchId)}/orders/new`,
   /** A batch's fabric, accessories or factory (CM) agreement, and its PDF. */

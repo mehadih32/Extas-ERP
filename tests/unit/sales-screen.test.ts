@@ -89,6 +89,7 @@ describe("the menu with Sales in it", () => {
       "/compliance",
       "/accounts/expenses",
       "/me",
+      "/ai",
       "/settings",
     ]);
     // Their printed quotations and invoices are under Reports & documents.
@@ -116,6 +117,7 @@ describe("the menu with Sales in it", () => {
       "/reports",
       "/planner",
       "/compliance",
+      "/ai",
       "/settings",
     ]);
     const seller = phoneTabs(visibleNavItems(["sales.view", "inventory.view", "parties.view"]));

@@ -1,6 +1,12 @@
 "use client";
 
-import type { BuyerType, PartyGrade, PartyKind, SupplierCategory } from "@prisma/client";
+import type {
+  BuyerType,
+  PartyGrade,
+  PartyKind,
+  SupplierCategory,
+  TradePayment,
+} from "@prisma/client";
 import { LoaderCircleIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -14,6 +20,7 @@ import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import type { ActionError } from "@/lib/result";
+import { TRADE_PAYMENT_LABELS, TRADE_PAYMENTS } from "@/modules/costing/costing-labels";
 import type { PartyForm as PartyFormData } from "@/modules/parties/screens.service";
 import { createPartyAction, updatePartyAction } from "@/server/actions/parties.actions";
 
@@ -46,6 +53,8 @@ const FIELDS = [
   "grade",
   "creditLimit",
   "paymentTermsDays",
+  "tradePayment",
+  "monthlyCapacity",
   "notes",
 ] as const;
 type FieldName = (typeof FIELDS)[number];
@@ -129,6 +138,16 @@ export function PartyForm({
     ) {
       found.paymentTermsDays = "Enter whole days, from 0 to 365.";
     }
+    const capacityText = textOf(form, "monthlyCapacity");
+    const capacity = capacityText === "" ? null : Number(capacityText.replace(/,/g, ""));
+    if (
+      supplies &&
+      editable("monthlyCapacity") &&
+      capacity !== null &&
+      !(Number.isInteger(capacity) && capacity >= 1 && capacity <= 10_000_000)
+    ) {
+      found.monthlyCapacity = "Enter whole pieces, from 1 to 10,000,000.";
+    }
     setProblems(found);
     if (Object.keys(found).length > 0) return;
 
@@ -149,6 +168,8 @@ export function PartyForm({
       taxId: textOf(form, "taxId") || null,
       creditLimit: sells ? (creditLimit as number | null) : null,
       paymentTermsDays: terms,
+      tradePayment: sells ? ((textOf(form, "tradePayment") || null) as TradePayment | null) : null,
+      monthlyCapacity: supplies ? capacity : null,
       notes: textOf(form, "notes") || null,
     };
     // Editing sends only what changed, so the activity log names just that.
@@ -484,6 +505,49 @@ export function PartyForm({
                 aria-describedby={described("paymentTermsDays", true)}
               />
             </Field>
+            {sells && (
+              <Field
+                id="tradePayment"
+                label="How they pay"
+                hint="For export orders. Each costing sheet can change it."
+                error={fieldError("tradePayment")}
+              >
+                <NativeSelect
+                  id="tradePayment"
+                  name="tradePayment"
+                  defaultValue={party?.tradePayment ?? ""}
+                  containerClassName="sm:w-full"
+                  className="md:h-10"
+                  aria-describedby={described("tradePayment", true)}
+                >
+                  <option value="">Not set</option>
+                  {TRADE_PAYMENTS.map((t) => (
+                    <option key={t} value={t}>
+                      {TRADE_PAYMENT_LABELS[t]}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </Field>
+            )}
+            {supplies && (
+              <Field
+                id="monthlyCapacity"
+                label="Monthly capacity (pieces)"
+                hint="For factories: what they can make in a month."
+                error={fieldError("monthlyCapacity")}
+              >
+                <Input
+                  id="monthlyCapacity"
+                  name="monthlyCapacity"
+                  inputMode="numeric"
+                  defaultValue={party?.monthlyCapacity ?? ""}
+                  placeholder="Not set"
+                  autoComplete="off"
+                  aria-invalid={Boolean(fieldError("monthlyCapacity"))}
+                  aria-describedby={described("monthlyCapacity", true)}
+                />
+              </Field>
+            )}
             <Field
               id="taxId"
               label="Tax ID (optional)"

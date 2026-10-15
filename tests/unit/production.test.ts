@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import type Anthropic from "@anthropic-ai/sdk";
+import { describe, expect, it } from "vitest";
 
 import { toInstant } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
@@ -6,7 +7,6 @@ import { detectFileType, safeFileName } from "@/modules/files/file.service";
 import {
   canonicalSize,
   claudeIntakeParser,
-  defaultIntakeParser,
   type IntakeHints,
   matchParsedLines,
   type MatchVariant,
@@ -36,6 +36,8 @@ import {
   targetTotal,
 } from "@/modules/production/targets";
 import { isStageBackward, projectTimeline, stageBadge } from "@/modules/production/timeline";
+
+import { claudeMessage, fakeAsk } from "../fixtures/claude";
 
 const TZ = "Asia/Dhaka";
 
@@ -406,18 +408,13 @@ describe("AI packing-list reader", () => {
     sizes: ["S", "M", "L"],
   };
 
-  afterEach(() => {
-    vi.restoreAllMocks();
-    vi.unstubAllEnvs();
-  });
-
-  it("sends the file to the Claude API and reads the recorded lines", async () => {
-    const fetchImpl = vi.fn<typeof fetch>(async () =>
-      Response.json({
-        model: "reader-model",
-        content: [
+  it("sends the file to Claude through the AI Center and reads the recorded lines", async () => {
+    const { ask, asked } = fakeAsk(
+      claudeMessage(
+        [
           {
             type: "tool_use",
+            id: "toolu_1",
             name: "record_packing_list",
             input: {
               lines: [
@@ -428,11 +425,12 @@ describe("AI packing-list reader", () => {
               confidence: 0.92,
               notes: "Carton 7 is smudged",
             },
-          },
+          } as Anthropic.ToolUseBlock,
         ],
-      }),
+        "reader-model",
+      ),
     );
-    const parser = claudeIntakeParser({ apiKey: "test-key", model: "reader-model", fetchImpl });
+    const parser = claudeIntakeParser(ask);
     expect(await parser.parse(file, hints)).toEqual({
       lines: [
         {
@@ -457,18 +455,12 @@ describe("AI packing-list reader", () => {
       model: "reader-model",
     });
 
-    const [url, init] = fetchImpl.mock.calls[0]!;
-    expect(url).toBe("https://api.anthropic.com/v1/messages");
-    expect(init?.headers).toMatchObject({
-      "x-api-key": "test-key",
-      "anthropic-version": "2023-06-01",
-    });
-    const body = JSON.parse(String(init?.body));
-    expect(body).toMatchObject({
-      model: "reader-model",
-      tool_choice: { type: "tool", name: "record_packing_list" },
-    });
-    expect(body.messages[0].content[0]).toMatchObject({
+    const request = asked[0]!;
+    expect(request.task).toBe("read.documents");
+    expect(request.why).toBe("Read a packing list for EX-PL-001");
+    expect(request.tools?.[0]?.name).toBe("record_packing_list");
+    const content = request.messages[0]!.content as Anthropic.ContentBlockParam[];
+    expect(content[0]).toMatchObject({
       type: "document",
       source: {
         type: "base64",
@@ -476,44 +468,24 @@ describe("AI packing-list reader", () => {
         data: file.bytes.toString("base64"),
       },
     });
-    expect(body.messages[0].content[1].text).toContain("style EX-PL-001 (Classic Polo)");
+    expect((content[1] as Anthropic.TextBlockParam).text).toContain(
+      "style EX-PL-001 (Classic Polo)",
+    );
   });
 
   it("explains failures so the delivery can be typed in instead", async () => {
-    vi.spyOn(console, "error").mockImplementation(() => {});
-    const reply = (response: Response) =>
-      claudeIntakeParser({
-        apiKey: "k",
-        model: "m",
-        fetchImpl: vi.fn<typeof fetch>(async () => response),
-      });
-
-    await expect(
-      reply(new Response("{}", { status: 401 })).parse(file, hints),
-    ).rejects.toMatchObject({
+    // Claude's own failures come back from the AI Center as readable lines.
+    const refused = claudeIntakeParser(
+      fakeAsk(new AppError("UNAVAILABLE", "Claude refused the key.")).ask,
+    );
+    await expect(refused.parse(file, hints)).rejects.toMatchObject({
       code: "UNAVAILABLE",
-      message: expect.stringContaining("AI_API_KEY"),
+      message: "Claude refused the key.",
     });
-    await expect(
-      reply(new Response("{}", { status: 404 })).parse(file, hints),
-    ).rejects.toMatchObject({
-      code: "UNAVAILABLE",
-      message: expect.stringContaining("AI_INTAKE_MODEL"),
-    });
-    const noLines = reply(Response.json({ content: [{ type: "text", text: "Sorry" }] }));
+    const noLines = claudeIntakeParser(fakeAsk("Sorry").ask);
     await expect(noLines.parse(file, hints)).rejects.toMatchObject({ code: "UNAVAILABLE" });
     const bigPhoto = { ...file, mimeType: "image/jpeg", bytes: Buffer.alloc(5 * 1024 * 1024 + 1) };
     await expect(noLines.parse(bigPhoto, hints)).rejects.toMatchObject({ code: "VALIDATION" });
-  });
-
-  it("is switched on only when both the key and the model are configured", () => {
-    vi.stubEnv("AI_API_KEY", "k");
-    vi.stubEnv("AI_INTAKE_MODEL", "");
-    expect(defaultIntakeParser()).toBeNull();
-    vi.stubEnv("AI_INTAKE_MODEL", "m");
-    expect(defaultIntakeParser()).not.toBeNull();
-    vi.stubEnv("AI_API_KEY", "");
-    expect(defaultIntakeParser()).toBeNull();
   });
 });
 

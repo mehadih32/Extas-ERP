@@ -496,8 +496,11 @@ run("Purchase orders for a master batch", () => {
       category: "KNITWEAR",
       supplierId: env.mill.id,
       batchId: env.batch.id,
+      expectedDate: "2030-11-15",
       lines: [{ materialId: env.jersey.id, quantity: 60 }],
     });
+    // Goods arrive once the owner has approved the booking.
+    await bookings.approveBooking(env.owner, booked.id);
     const made = await batchOrders.createBatchOrders(env.pm, env.batch.id, {
       orders: [
         {

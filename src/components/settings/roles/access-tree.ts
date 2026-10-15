@@ -89,6 +89,14 @@ export const ACCESS_TREE: readonly AccessBranch[] = [
       ]),
       leaf("production.bookings.attach", "Attach bookings to a batch"),
       leaf("production.bookings.close", "Close or cancel bookings"),
+      leaf("production.bookings.approve", "Approve bookings and choose Fabric first"),
+    ]),
+    leaf("production.techpack.approve", "Lock fabric parts and approve tech packs"),
+    leaf("production.logo.approve", "Tick logos for bulk after the sew-out"),
+    branch("production.costing", "Costing", [
+      leaf("costing.view", "See costing sheets, costs, profit and the Order check card"),
+      leaf("costing.manage", "Make costing sheets and add supplier fabric quotes"),
+      leaf("costing.decide", "Take or decline an order"),
     ]),
     leaf("production.stock_intake", "Move finished goods into stock"),
   ]),
@@ -142,6 +150,15 @@ export const ACCESS_TREE: readonly AccessBranch[] = [
     leaf("reminders.manage", "Give tasks and reminders to other people"),
   ]),
   branch("backups", "Backups", [leaf("backups.manage", "Backups (platform owner only)")]),
+  branch(
+    "ai",
+    "AI Center",
+    [
+      leaf("ai.view", "See the AI Center"),
+      leaf("ai.manage", "Turn AI on or off and set what it may do"),
+    ],
+    "The AI itself never holds these: it can never change what it may do.",
+  ),
 ];
 
 const DESCRIPTIONS = new Map<string, string>(PERMISSIONS.map((p) => [p.key, p.description]));

@@ -115,6 +115,16 @@ export default async function OrderPage({
             {o.closedOn ? ` on ${formatDay(o.closedOn)}` : ""}: {o.closedReason}
           </FormAlert>
         )}
+        {!ended && o.awaitingApproval && o.bookingId && (
+          <FormAlert tone="note">
+            This booking is a draft waiting for approval: its goods are received once it is approved
+            on{" "}
+            <Link href={productionHref.booking(o.bookingId)} className={linkClass}>
+              the booking
+            </Link>
+            .
+          </FormAlert>
+        )}
         <OrderActions key={o.id} screen={screen} notice={notice} />
       </div>
 

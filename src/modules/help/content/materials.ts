@@ -281,6 +281,7 @@ export const materialsHelp: HelpSection = {
       tips: [
         "Warehouse Team-এর জন্য “Purchases” ও “Supplier returns” ট্যাব থাকে না, কারণ সেখানে দাম থাকে।",
         "বিল বা প্যাকিং লিস্ট AI দিয়ে পড়ে নেওয়া এখনো চালু হয়নি।",
+        "বুকিং থেকে আসা অর্ডার “Draft” থাকলে তাতে মাল নেওয়া যায় না: আগে বুকিংয়ের পাতায় “Approve booking” লাগে।",
       ],
     },
     {

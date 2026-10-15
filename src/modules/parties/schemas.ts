@@ -5,6 +5,7 @@ import {
   PartyKind,
   PartyStatus,
   SupplierCategory,
+  TradePayment,
 } from "@prisma/client";
 import { z } from "zod";
 
@@ -51,6 +52,10 @@ const partyFields = {
   grade: z.enum(PartyGrade).nullish(),
   creditLimit: z.number().min(0).max(10_000_000_000).nullish(),
   paymentTermsDays: z.number().int().min(0).max(365).nullish(),
+  /** How a buyer pays for an export order (TT, a direct bank transfer or an LC); no default. */
+  tradePayment: z.enum(TradePayment).nullish(),
+  /** A factory's pieces a month, for the Order check card. */
+  monthlyCapacity: z.number().int().min(1).max(10_000_000).nullish(),
   notes: optionalText(4000),
   customFields: z.record(z.string(), z.unknown()).nullish(),
   /** What a supplier supplies, any number of them (none for buyers). */

@@ -95,7 +95,12 @@ export async function getBatchReceive(ctx: CompanyContext, batchId: string, orde
   const batch = await loadBatch(ctx, batchId);
   const tz = ctx.company.timezone;
   const orders = await ctx.db.purchaseOrder.findMany({
-    where: { batchId: batch.id, status: { in: OPEN_ORDER } },
+    // A booking waiting for approval takes no goods yet.
+    where: {
+      batchId: batch.id,
+      status: { in: OPEN_ORDER },
+      OR: [{ booking: null }, { booking: { stage: { not: "DRAFT" } } }],
+    },
     select: orderSelect,
     orderBy: [{ expectedDate: { sort: "asc", nulls: "last" } }, { number: "asc" }],
   });

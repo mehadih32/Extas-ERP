@@ -1,6 +1,7 @@
 import { holdsAny, isActivePath, NAV_ITEMS, type NavItem } from "@/components/shell/nav-items";
 
 import { accountsHelp } from "./content/accounts";
+import { aiHelp } from "./content/ai";
 import { complianceHelp } from "./content/compliance";
 import { dashboardHelp } from "./content/dashboard";
 import { gettingStartedHelp } from "./content/getting-started";
@@ -33,6 +34,7 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
   plannerHelp,
   complianceHelp,
   myHrHelp,
+  aiHelp,
   settingsHelp,
   helpCenterHelp,
 ];

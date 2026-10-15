@@ -18,6 +18,7 @@ import {
 import {
   type Align,
   type Block,
+  type BookFrame,
   type Column,
   type PrintDocument,
   type Row,
@@ -43,6 +44,14 @@ import {
  * supplier) keeps a wider margin on the left for the holes on every page; it
  * can carry a QR code beside its title (`qr`) and a line for initials at the
  * foot of every page (`initials`), so each loose page is signed for.
+ *
+ * A document in the book frame (`frame`, a booking book) prints instead on A4
+ * either way round: a blank strip 15 mm tall at the top of every page for
+ * binding, then the header on every page (the company and its tagline on the
+ * left, the title and the part of the book in the middle, DOC NO, BUYER, DATE
+ * and PREPARED BY on the right) over a navy rule, navy tables with a grid and
+ * every other row shaded, and the footer with the company's contacts and
+ * "PAGE 2 OF 9". Each part (`section`) starts on a page of its own.
  */
 
 const PAGE = { width: 595.28, height: 841.89 }; // A4 in points
@@ -52,6 +61,22 @@ const BINDING_GUTTER = 22;
 const BOTTOM = PAGE.height - MARGIN.bottom;
 /** The QR code beside the title: a square this wide, with its caption under it. */
 const QR_SIZE = 62;
+
+/** One millimetre in points. */
+const MM = 72 / 25.4;
+/**
+ * The book frame's margins: the blank strip at the top is for binding (no spiral
+ * holes at the side), with 11 mm at the sides and 6 mm at the foot.
+ */
+const BOOK_MARGIN = { top: 15 * MM, bottom: 6 * MM, left: 11 * MM, right: 11 * MM };
+/** The book header's height under the binding strip (its navy rule is at the bottom). */
+const BOOK_HEADER = 36;
+/** The room the footer takes above the bottom margin. */
+const BOOK_FOOTER = 15;
+const NAVY = "#1F4E79";
+const BOOK_ZEBRA = "#F1F5F9";
+const BOOK_BORDER = "#9FB4C8";
+const BOOK_TOTAL = "#DBE8F4";
 
 const SERIF_BOLD = "Times-Bold";
 const SANS = "Helvetica";
@@ -111,12 +136,26 @@ type PdfImages = {
 };
 
 class Writer {
-  private y = MARGIN.top;
+  private y: number;
   private readonly primary: string;
   private readonly accent: string;
   /** Where the page's text starts (further in on a bound document) and how wide it runs. */
   private readonly left: number;
   private readonly width: number;
+  /** The page (A4, either way round in the book frame) and where its text must end. */
+  private readonly page: { width: number; height: number };
+  private readonly bottom: number;
+  /** The book frame, when the document is printed in it instead of on letterhead. */
+  private readonly frame: BookFrame | null;
+  /** Where a book page's text starts, under its header. */
+  private readonly bookTop: number;
+  /** The part of the book each page belongs to (for its header), by page. */
+  private readonly sections: string[] = [];
+  private section = "";
+  /** The page each named part starts on (0-based), in order. */
+  readonly partStarts: Array<{ key: string; page: number }> = [];
+  /** Whether the QR code is already printed (by the book's first page title). */
+  private qrDone = false;
   /** Row pictures opened by pdfkit, by file id (null: it could not be read). */
   private readonly opened = new Map<string, OpenedImage | null>();
 
@@ -127,10 +166,31 @@ class Writer {
     private readonly images: ReadonlyMap<string, Buffer> = new Map(),
     private readonly signed: ReadonlyMap<string, Buffer> = new Map(),
   ) {
-    this.primary = safeHex(model.letterhead.primaryColor, DEFAULT_PRIMARY);
+    this.frame = model.frame ?? null;
     this.accent = safeHex(model.letterhead.accentColor, DEFAULT_ACCENT);
-    this.left = MARGIN.left + (model.binding ? BINDING_GUTTER : 0);
-    this.width = PAGE.width - this.left - MARGIN.right;
+    if (this.frame) {
+      const landscape = this.frame.orientation === "landscape";
+      this.page = landscape ? { width: PAGE.height, height: PAGE.width } : PAGE;
+      this.primary = NAVY;
+      this.left = BOOK_MARGIN.left;
+      this.width = this.page.width - BOOK_MARGIN.left - BOOK_MARGIN.right;
+      this.bookTop = BOOK_MARGIN.top + BOOK_HEADER + 12;
+      // The initials line sits above the footer, on the right.
+      this.bottom = this.page.height - BOOK_MARGIN.bottom - BOOK_FOOTER - (model.initials ? 16 : 0);
+    } else {
+      this.page = PAGE;
+      this.primary = safeHex(model.letterhead.primaryColor, DEFAULT_PRIMARY);
+      this.left = MARGIN.left + (model.binding ? BINDING_GUTTER : 0);
+      this.width = PAGE.width - this.left - MARGIN.right;
+      this.bookTop = MARGIN.top;
+      this.bottom = BOTTOM;
+    }
+    this.y = this.bookTop;
+  }
+
+  /** The font of titles and big figures: Times on letterhead, Helvetica in a book. */
+  private get display(): string {
+    return this.frame ? SANS_BOLD : SERIF_BOLD;
   }
 
   // --- Primitives -----------------------------------------------------------
@@ -166,14 +226,20 @@ class Writer {
 
   /** Starts a new page with the slim header when `height` does not fit; true if it did. */
   private ensure(height: number): boolean {
-    if (this.y + height <= BOTTOM) return false;
+    if (this.y + height <= this.bottom) return false;
     this.newPage();
     return true;
   }
 
   private newPage() {
     this.doc.addPage();
-    this.continuationHeader();
+    if (this.frame) {
+      // The header and footer are drawn at the end, with the page count.
+      this.sections.push(this.section);
+      this.y = this.bookTop;
+    } else {
+      this.continuationHeader();
+    }
   }
 
   /** Uppercase small label with letter spacing (section and column headings). */
@@ -282,6 +348,149 @@ class Writer {
     this.y = top + 32;
   }
 
+  // --- The book frame -----------------------------------------------------------
+
+  /**
+   * A book's first page: its text starts under the header. A book that does not
+   * open with a part of its own gets its subtitle (or title) as the page title.
+   */
+  bookStart() {
+    this.sections.push(this.section);
+    this.y = this.bookTop;
+    if (this.model.blocks[0]?.kind !== "section") {
+      this.pageTitle(this.model.subtitle || this.model.title);
+    }
+    if (this.model.parties.length > 0) this.partyBoxes(this.model.parties);
+  }
+
+  /** A part of the book on a page of its own, its title on top and its label in the header. */
+  private sectionStart(block: Extract<Block, { kind: "section" }>) {
+    if (!this.frame) {
+      this.newPage();
+      this.heading({ kind: "heading", title: block.title, subtitle: block.subtitle });
+      return;
+    }
+    if (this.y > this.bookTop + 0.5) this.newPage();
+    this.section = block.label ?? "";
+    this.sections[this.sections.length - 1] = this.section;
+    if (block.key) this.partStarts.push({ key: block.key, page: this.sections.length - 1 });
+    this.pageTitle(block.title, block.subtitle);
+  }
+
+  /** The page title in navy under the header, with the QR code beside the first one. */
+  private pageTitle(title: string, subtitle?: string) {
+    const qr = this.model.qr && !this.qrDone ? this.model.qr : null;
+    const room = this.width - (qr ? QR_SIZE + 14 : 0);
+    const top = this.y;
+    let y = top;
+    for (const text of this.wrap(title, room, SANS_BOLD, 13).slice(0, 2)) {
+      this.line(text, this.left, y, room, { font: SANS_BOLD, size: 13, color: NAVY });
+      y += 16;
+    }
+    if (subtitle) {
+      y += 1;
+      for (const text of this.wrap(subtitle, room, SANS, 8.6).slice(0, 3)) {
+        this.line(text, this.left, y, room, { font: SANS, size: 8.6, color: MUTED });
+        y += 11;
+      }
+    }
+    let qrBottom = 0;
+    if (qr) {
+      qrBottom = this.qrCode(qr, this.left + this.width - QR_SIZE, top);
+      this.qrDone = true;
+    }
+    this.y = Math.max(y, qrBottom) + 8;
+  }
+
+  /** Every book page's header and footer, now that the pages are counted. */
+  bookFrames() {
+    const frame = this.frame;
+    if (!frame) return;
+    const range = this.doc.bufferedPageRange();
+    for (let i = range.start; i < range.start + range.count; i++) {
+      this.doc.switchToPage(i);
+      const n = i - range.start;
+      this.bookHeader(frame, this.sections[n] ?? "");
+      const ruleY = this.page.height - BOOK_MARGIN.bottom - BOOK_FOOTER + 2;
+      this.rule(ruleY, NAVY, 0.9);
+      this.line(
+        `${frame.contact} • PAGE ${n + 1} OF ${range.count}`,
+        this.left,
+        ruleY + 4.5,
+        this.width,
+        { font: SANS_BOLD, size: 6.4, color: NAVY, align: "center", spacing: 0.2 },
+      );
+      if (this.model.initials) this.initialsLine(this.model.initials, ruleY - 14);
+    }
+  }
+
+  /**
+   * The header under the binding strip: the company and its tagline on the left,
+   * the document's title and the part of the book in the middle, the document's
+   * details in small capitals on the right (a line to write on when one is
+   * empty), and a navy rule under it all.
+   */
+  private bookHeader(frame: BookFrame, section: string) {
+    const top = BOOK_MARGIN.top;
+    const side = this.width * 0.3;
+    const middle = this.width - 2 * side;
+    this.line(this.model.letterhead.name, this.left, top + 2, side - 8, {
+      font: SANS_BOLD,
+      size: 13,
+      color: NAVY,
+    });
+    if (frame.tagline) {
+      this.line(frame.tagline, this.left, top + 19, side - 8, {
+        font: SANS,
+        size: 7,
+        color: MUTED,
+        spacing: 0.3,
+      });
+    }
+    const mx = this.left + side + 6;
+    const mw = middle - 12;
+    const titles = this.wrap(this.model.title, mw, SANS_BOLD, 10).slice(0, 2);
+    titles.forEach((text, i) => {
+      this.line(text, mx, top + 2 + i * 12, mw, {
+        font: SANS_BOLD,
+        size: 10,
+        color: NAVY,
+        align: "center",
+      });
+    });
+    if (section) {
+      this.line(section.toUpperCase(), mx, top + 4 + titles.length * 12, mw, {
+        font: SANS_BOLD,
+        size: 7.2,
+        color: MUTED,
+        align: "center",
+        spacing: 1,
+      });
+    }
+    const rx = this.left + side + middle + 6;
+    const rw = side - 6;
+    const labelWidth = Math.min(62, rw * 0.4);
+    frame.fields.slice(0, 4).forEach((field, i) => {
+      const y = top + 1 + i * 8.6;
+      this.line(field.label.toUpperCase(), rx, y + 0.7, labelWidth, {
+        font: SANS_BOLD,
+        size: 5.9,
+        color: MUTED,
+        spacing: 0.6,
+      });
+      if (field.value) {
+        this.line(field.value, rx + labelWidth, y, rw - labelWidth, {
+          font: SANS_BOLD,
+          size: 6.9,
+          align: "right",
+        });
+      } else {
+        this.rule(y + 6.8, MUTED, 0.5, rx + labelWidth + 4, rw - labelWidth - 4);
+      }
+    });
+    this.rule(top + BOOK_HEADER, NAVY, 2);
+  }
+
   /** The footer line on every page, with the reference and "Page 2 of 3" on documents. */
   footers() {
     const range = this.doc.bufferedPageRange();
@@ -333,15 +542,15 @@ class Writer {
     const stamp = this.model.stamp;
     if (stamp?.tone !== "danger") return;
     const range = this.doc.bufferedPageRange();
-    const size = 96;
+    const size = this.frame?.orientation === "landscape" ? 120 : 96;
     const style = { font: SANS_BOLD, size, spacing: 6 };
     const text = pdfText(stamp.text.toUpperCase());
     const width = textWidth(this.doc, text, style);
     for (let i = range.start; i < range.start + range.count; i++) {
       this.doc.switchToPage(i);
       this.doc.save();
-      const cx = PAGE.width / 2;
-      const cy = PAGE.height / 2;
+      const cx = this.page.width / 2;
+      const cy = this.page.height / 2;
       this.doc.rotate(-32, { origin: [cx, cy] });
       this.doc.fillColor(this.accent).fillOpacity(0.07);
       drawText(this.doc, text, cx - width / 2, cy - size * 0.36, style);
@@ -467,7 +676,11 @@ class Writer {
   }
 
   parties() {
-    const { parties } = this.model;
+    this.partyBoxes(this.model.parties);
+  }
+
+  /** Address boxes side by side, in a tint of the company colour. */
+  private partyBoxes(parties: PrintDocument["parties"]) {
     if (parties.length === 0) return;
     const gap = 12;
     // At most half the page wide, so a single address does not stretch across.
@@ -527,6 +740,10 @@ class Writer {
         return this.signatureLines(block.labels);
       case "pageBreak":
         return this.newPage();
+      case "section":
+        return this.sectionStart(block);
+      case "parties":
+        return this.partyBoxes(block.parties);
     }
   }
 
@@ -544,7 +761,7 @@ class Writer {
     const need = columns.map((c, i) => {
       if (c.align !== "right") return 0;
       const widest = Math.max(
-        textWidth(this.doc, c.label, { font: SANS_BOLD, size: 7.4, spacing: 0.3 }),
+        textWidth(this.doc, this.columnLabel(c), { font: SANS_BOLD, size: 7.4, spacing: 0.3 }),
         ...rows.map((r) =>
           textWidth(this.doc, r.cells[i] ?? "", {
             font: (r.style ?? "normal") === "normal" ? SANS : SANS_BOLD,
@@ -573,11 +790,16 @@ class Writer {
     });
   }
 
+  /** A column's heading: in capitals in the book frame. */
+  private columnLabel(c: Column): string {
+    return this.frame ? c.label.toUpperCase() : c.label;
+  }
+
   private tableHeader(columns: Column[], boxes: ColumnBox[]) {
     this.doc.rect(this.left, this.y, this.width, TABLE_HEADER).fill(this.primary);
     columns.forEach((c, i) => {
       const box = boxes[i]!;
-      this.line(c.label, box.x + CELL_PAD, this.y + 5.6, box.width - 2 * CELL_PAD, {
+      this.line(this.columnLabel(c), box.x + CELL_PAD, this.y + 5.6, box.width - 2 * CELL_PAD, {
         font: SANS_BOLD,
         size: 7.4,
         color: WHITE,
@@ -585,7 +807,14 @@ class Writer {
         spacing: 0.3,
       });
     });
+    if (this.frame) this.grid(boxes, this.y, TABLE_HEADER);
     this.y += TABLE_HEADER;
+  }
+
+  /** The book frame's table grid: a thin blue-grey line round every cell of a row. */
+  private grid(boxes: ColumnBox[], top: number, height: number) {
+    this.doc.lineWidth(0.5).strokeColor(BOOK_BORDER);
+    for (const box of boxes) this.doc.rect(box.x, top, box.width, height).stroke();
   }
 
   /** A row's picture, opened once; null when it was not handed over or cannot be read. */
@@ -643,7 +872,8 @@ class Writer {
       ) +
       2 * CELL_PAD -
       1;
-    return { cells, height, font, picture, detailColumn };
+    const tall = Math.max(height, row.height ?? 0);
+    return { cells, height: tall, font, picture, detailColumn };
   }
 
   private table(block: Extract<Block, { kind: "table" }>) {
@@ -666,7 +896,7 @@ class Writer {
         color: MUTED,
       });
       this.y += 22;
-      this.rule(this.y, HAIRLINE, 0.6);
+      this.rule(this.y, this.frame ? BOOK_BORDER : HAIRLINE, 0.6);
       this.y += 14;
       return;
     }
@@ -691,7 +921,7 @@ class Writer {
       // Every other plain row is shaded; a subtotal or total starts the pattern again.
       shade = style === "normal" ? !shade : false;
     });
-    this.rule(this.y, HAIRLINE, 0.6);
+    if (!this.frame) this.rule(this.y, HAIRLINE, 0.6);
     this.y += 12;
   }
 
@@ -703,8 +933,13 @@ class Writer {
   ) {
     const style = row.style ?? "normal";
     const top = this.y;
-    if (shaded) this.doc.rect(this.left, top, this.width, layout.height).fill(ZEBRA);
-    if (style !== "normal") {
+    if (this.frame) {
+      const fill = style === "total" ? BOOK_TOTAL : shaded ? BOOK_ZEBRA : null;
+      if (fill) this.doc.rect(this.left, top, this.width, layout.height).fill(fill);
+    } else if (shaded) {
+      this.doc.rect(this.left, top, this.width, layout.height).fill(ZEBRA);
+    }
+    if (style !== "normal" && !this.frame) {
       this.rule(
         top + 0.4,
         style === "total" ? this.primary : HAIRLINE,
@@ -743,6 +978,7 @@ class Writer {
         ly += DETAIL_LINE;
       }
     });
+    if (this.frame) this.grid(boxes, top, layout.height);
     this.y += layout.height;
   }
 
@@ -834,7 +1070,7 @@ class Writer {
         const x = this.left + j * (width + gap);
         this.doc.roundedRect(x, this.y, width, height, 3).fill(tint(this.primary, 0.94));
         this.label(f.label, x + 9, this.y + 9, width - 18);
-        this.line(f.value, x + 9, this.y + 21, width - 18, { font: SERIF_BOLD, size: 13.5 });
+        this.line(f.value, x + 9, this.y + 21, width - 18, { font: this.display, size: 13.5 });
         if (f.hint) {
           this.line(f.hint, x + 9, this.y + 39, width - 18, {
             font: SANS,
@@ -934,13 +1170,19 @@ class Writer {
 
   /** A part's title in the company colour, with a line under it and a rule. */
   private heading(block: Extract<Block, { kind: "heading" }>) {
+    if (this.frame) {
+      // In a book, a part's title looks like the page titles.
+      this.ensure(40 + 60);
+      this.pageTitle(block.title, block.subtitle);
+      return;
+    }
     const subtitle = block.subtitle
       ? this.wrap(block.subtitle, this.width, SANS, 9).slice(0, 2)
       : [];
     this.ensure(26 + subtitle.length * 12 + 60);
     this.line(block.title.toUpperCase(), this.left, this.y, this.width, {
-      font: SERIF_BOLD,
-      size: 15,
+      font: this.display,
+      size: this.frame ? 12 : 15,
       color: this.primary,
       spacing: 1.7,
     });
@@ -961,8 +1203,8 @@ class Writer {
   /** Signature lines near the bottom of this page (on a new one when there is no room). */
   private signatureLines(labels: string[]) {
     if (labels.length === 0) return;
-    if (this.y + 60 > BOTTOM) this.newPage();
-    const y = Math.max(this.y + 40, BOTTOM - 34);
+    if (this.y + 60 > this.bottom) this.newPage();
+    const y = Math.max(this.y + 40, this.bottom - 34);
     const gap = 40;
     const width = Math.min(170, (this.width - gap * (labels.length - 1)) / labels.length);
     labels.forEach((label, i) => {
@@ -1008,17 +1250,35 @@ class Writer {
  */
 export async function renderDocumentPdf(
   model: PrintDocument,
-  options: {
-    logo?: Buffer | null;
-    images?: ReadonlyMap<string, Buffer>;
-    signed?: ReadonlyMap<string, Buffer>;
-    protect?: boolean;
-    compress?: boolean;
-  } = {},
+  options: RenderOptions = {},
 ): Promise<Buffer> {
+  return (await renderWithParts(model, options)).bytes;
+}
+
+type RenderOptions = {
+  logo?: Buffer | null;
+  images?: ReadonlyMap<string, Buffer>;
+  signed?: ReadonlyMap<string, Buffer>;
+  protect?: boolean;
+  compress?: boolean;
+};
+
+/** The pages a named part of a book runs over, counted from 1. */
+export type PartPages = { key: string; first: number; last: number };
+
+/**
+ * The document as a PDF, with the pages each named part (a `section` with a
+ * `key`) runs over: a part runs until the next named part starts, the last one
+ * to the end. A booking book renders twice to print them on its cover.
+ */
+export async function renderWithParts(
+  model: PrintDocument,
+  options: RenderOptions = {},
+): Promise<{ bytes: Buffer; parts: PartPages[]; pages: number }> {
   const doc = await createPdf({
     size: "A4",
-    margins: MARGIN,
+    layout: model.frame?.orientation === "landscape" ? "landscape" : "portrait",
+    margins: model.frame ? BOOK_MARGIN : MARGIN,
     bufferPages: true,
     compress: options.compress ?? true,
     ...(options.protect ? lockedPdf() : {}),
@@ -1034,15 +1294,30 @@ export async function renderDocumentPdf(
   });
   const done = collectPdf(doc);
   const writer = new Writer(doc, model, options.logo ?? null, options.images, options.signed);
-  writer.letterhead();
-  if (model.type !== "LETTERHEAD") {
-    writer.titleBlock();
-    writer.parties();
+  if (model.frame) {
+    writer.bookStart();
     for (const block of model.blocks) writer.block(block);
     writer.signatures();
+    writer.watermarks();
+    writer.bookFrames();
+  } else {
+    writer.letterhead();
+    if (model.type !== "LETTERHEAD") {
+      writer.titleBlock();
+      writer.parties();
+      for (const block of model.blocks) writer.block(block);
+      writer.signatures();
+    }
+    writer.watermarks();
+    writer.footers();
   }
-  writer.watermarks();
-  writer.footers();
+  const pages = doc.bufferedPageRange().count;
   doc.end();
-  return done;
+  const starts = writer.partStarts;
+  const parts = starts.map((p, i) => ({
+    key: p.key,
+    first: p.page + 1,
+    last: Math.max(p.page + 1, i + 1 < starts.length ? starts[i + 1]!.page : pages),
+  }));
+  return { bytes: await done, parts, pages };
 }

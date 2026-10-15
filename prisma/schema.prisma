@@ -48,135 +48,172 @@ datasource db {
 
 /// A distinct business entity. All data is isolated per company.
 model Company {
-  id                    String    @id @default(cuid())
+  id                    String          @id @default(cuid())
   name                  String
-  slug                  String    @unique
+  slug                  String          @unique
   legalName             String?
   // Letterhead / branding info used on every PDF & the blank letterhead pad
   logoUrl               String?
   /// Uploaded logo (PNG or JPG) printed on the letterhead of every PDF.
-  logoFileId            String?   @unique
+  logoFileId            String?         @unique
   address               String?
   phone                 String?
   email                 String?
   website               String?
   letterheadFooter      String?
-  primaryColor          String    @default("#0B3D2E")
-  accentColor           String    @default("#BE1434")
-  currency              String    @default("BDT")
-  timezone              String    @default("Asia/Dhaka")
+  /// Printed under the name in the header of booking books and bookings; null prints
+  /// "Manufacturing | Sourcing | Export".
+  tagline               String?
+  /// Which way round booking books and bookings print until a person picks one (each
+  /// person's last pick is kept in UserPreference.pdfOrientation).
+  bookOrientation       PageOrientation @default(LANDSCAPE)
+  primaryColor          String          @default("#0B3D2E")
+  accentColor           String          @default("#BE1434")
+  currency              String          @default("BDT")
+  timezone              String          @default("Asia/Dhaka")
   /// When the terms of employment staff must have agreed to were published (null: no terms yet).
   /// Staff linked to a login agree before they work in the app (hr/terms.service.ts).
   termsRequiredSince    DateTime?
   // Business rules
-  lowStockThreshold     Int       @default(5)
-  defaultAdvancePercent Decimal   @default(30) @db.Decimal(5, 2)
-  dormantAfterMonths    Int       @default(6)
-  fiscalYearStartMonth  Int       @default(7) // 7 = July (Bangladesh income year July-June)
-  isActive              Boolean   @default(true)
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
+  lowStockThreshold     Int             @default(5)
+  defaultAdvancePercent Decimal         @default(30) @db.Decimal(5, 2)
+  dormantAfterMonths    Int             @default(6)
+  fiscalYearStartMonth  Int             @default(7) // 7 = July (Bangladesh income year July-June)
+  isActive              Boolean         @default(true)
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
 
-  memberships          CompanyMembership[]
-  sessions             Session[]
-  roles                Role[]
-  auditLogs            AuditLog[]
-  files                FileAsset[]               @relation("CompanyFiles")
-  logoFile             FileAsset?                @relation("CompanyLogo", fields: [logoFileId], references: [id], onDelete: SetNull)
-  sequences            DocumentSequence[]
-  customFields         CustomFieldDefinition[]
-  categories           Category[]
-  brands               Brand[]
-  styles               Style[]
-  colors               Color[]
-  sizes                Size[]
-  variants             ProductVariant[]
-  ratioPresets         SizeRatioPreset[]
-  warehouses           Warehouse[]
-  stockBalances        StockBalance[]
-  stockMovements       StockMovement[]
-  stockLots            StockLot[]
-  rawMaterials         RawMaterial[]
-  rawMaterialMovements RawMaterialMovement[]
-  badStockEntries      BadStockEntry[]
-  rawMaterialStocks    RawMaterialStock[]
-  purchaseOrders       PurchaseOrder[]
-  bookings             Booking[]
-  materialIssues       MaterialIssue[]
-  materialChallans     MaterialChallan[]
-  purchaseReturns      PurchaseReturn[]
-  parties              Party[]
-  campaigns            ReEngagementCampaign[]
-  quotations           Quotation[]
-  proformaInvoices     ProformaInvoice[]
-  salesOrders          SalesOrder[]
-  invoices             Invoice[]
-  packingLists         PackingList[]
-  deliveryChallans     DeliveryChallan[]
-  payments             Payment[]
-  refunds              Refund[]
-  creditAllocations    CreditAllocation[]
-  cheques              Cheque[]
-  integrations         SalesChannelIntegration[]
-  webhookEvents        WebhookEvent[]
-  courierAccounts      CourierAccount[]
-  shipments            Shipment[]
-  salesReturns         SalesReturn[]
-  productionProjects   ProductionProject[]
-  productionBatches    ProductionBatch[]
-  productionContracts  ProductionContract[]
-  supplierFaults       SupplierFault[]
-  cuttingReports       CuttingReport[]
-  embroideryJobs       EmbroideryJob[]
-  finishingReports     FinishingReport[]
-  cmSettlements        CmSettlement[]
-  materialNeeds        ProductionMaterialNeed[]
-  supplierBills        SupplierBill[]
-  stockIntakes         StockIntake[]
-  ledgerAccounts       LedgerAccount[]
-  journalEntries       JournalEntry[]
-  bankAccounts         BankAccount[]
-  pettyCashBoxes       PettyCashBox[]
-  fixedAssets          FixedAsset[]
-  capitalSources       CapitalSource[]
-  expenseHeads         ExpenseHead[]
-  expenses             Expense[]
-  adSpends             AdSpend[]
-  employees            Employee[]
-  hrSettings           HrSettings?
-  holidays             Holiday[]
-  attendance           Attendance[]
-  leaveTypes           LeaveType[]
-  leaveRequests        LeaveRequest[]
-  payrollRuns          PayrollRun[]
-  payrollPayments      PayrollPayment[]
-  salaryAdvances       SalaryAdvance[]
-  complianceDocuments  ComplianceDocument[]
-  templates            DocumentTemplate[]
-  generatedDocuments   GeneratedDocument[]
-  reportExports        ReportExport[]
-  notes                Note[]
-  tasks                Task[]
-  reminders            Reminder[]
-  reminderRules        ReminderRule[]
-  notifications        NotificationLog[]
-  projectSettlements   ProjectSettlement[]
-  salesTargets         SalesTarget[]
-  payDetailsRequests   PayDetailsRequest[]
-  employeeDocuments    EmployeeDocument[]
-  termsVersions        TermsVersion[]
-  termsAcceptances     TermsAcceptance[]
-  oneTimeCodes         OneTimeCode[]
-  backgroundJobs       BackgroundJob[]
-  workLocations        WorkLocation[]
-  locationPings        LocationPing[]
-  staffPositions       StaffPosition[]
-  overtimeEntries      OvertimeEntry[]
-  staffClaims          StaffClaim[]
-  notices              Notice[]
-  noticeReads          NoticeRead[]
-  payrollPaymentLines  PayrollPaymentLine[]
-  employeeAssets       EmployeeAsset[]
+  memberships           CompanyMembership[]
+  sessions              Session[]
+  roles                 Role[]
+  auditLogs             AuditLog[]
+  files                 FileAsset[]               @relation("CompanyFiles")
+  logoFile              FileAsset?                @relation("CompanyLogo", fields: [logoFileId], references: [id], onDelete: SetNull)
+  sequences             DocumentSequence[]
+  customFields          CustomFieldDefinition[]
+  categories            Category[]
+  brands                Brand[]
+  styles                Style[]
+  colors                Color[]
+  sizes                 Size[]
+  variants              ProductVariant[]
+  ratioPresets          SizeRatioPreset[]
+  warehouses            Warehouse[]
+  stockBalances         StockBalance[]
+  stockMovements        StockMovement[]
+  stockLots             StockLot[]
+  rawMaterials          RawMaterial[]
+  rawMaterialMovements  RawMaterialMovement[]
+  badStockEntries       BadStockEntry[]
+  rawMaterialStocks     RawMaterialStock[]
+  purchaseOrders        PurchaseOrder[]
+  bookings              Booking[]
+  bookingRevisions      BookingRevision[]
+  techPacks             TechPack[]
+  techPackMeasurements  TechPackMeasurement[]
+  techPackReferences    TechPackReference[]
+  techPackLogos         TechPackLogo[]
+  techPackColours       TechPackColour[]
+  labDipOptions         LabDipOption[]
+  techPackAiDrafts      TechPackAiDraft[]
+  techPackExpertAnswers TechPackExpertAnswer[]
+  orderCostings         OrderCosting[]
+  orderCostingStyles    OrderCostingStyle[]
+  fabricQuotes          FabricQuote[]
+  materialIssues        MaterialIssue[]
+  materialChallans      MaterialChallan[]
+  purchaseReturns       PurchaseReturn[]
+  parties               Party[]
+  campaigns             ReEngagementCampaign[]
+  quotations            Quotation[]
+  proformaInvoices      ProformaInvoice[]
+  salesOrders           SalesOrder[]
+  invoices              Invoice[]
+  packingLists          PackingList[]
+  deliveryChallans      DeliveryChallan[]
+  payments              Payment[]
+  refunds               Refund[]
+  creditAllocations     CreditAllocation[]
+  cheques               Cheque[]
+  integrations          SalesChannelIntegration[]
+  webhookEvents         WebhookEvent[]
+  courierAccounts       CourierAccount[]
+  shipments             Shipment[]
+  salesReturns          SalesReturn[]
+  productionProjects    ProductionProject[]
+  productionBatches     ProductionBatch[]
+  productionContracts   ProductionContract[]
+  supplierFaults        SupplierFault[]
+  cuttingReports        CuttingReport[]
+  embroideryJobs        EmbroideryJob[]
+  finishingReports      FinishingReport[]
+  cmSettlements         CmSettlement[]
+  materialNeeds         ProductionMaterialNeed[]
+  supplierBills         SupplierBill[]
+  stockIntakes          StockIntake[]
+  ledgerAccounts        LedgerAccount[]
+  journalEntries        JournalEntry[]
+  bankAccounts          BankAccount[]
+  pettyCashBoxes        PettyCashBox[]
+  fixedAssets           FixedAsset[]
+  capitalSources        CapitalSource[]
+  expenseHeads          ExpenseHead[]
+  expenses              Expense[]
+  adSpends              AdSpend[]
+  employees             Employee[]
+  hrSettings            HrSettings?
+  holidays              Holiday[]
+  attendance            Attendance[]
+  leaveTypes            LeaveType[]
+  leaveRequests         LeaveRequest[]
+  payrollRuns           PayrollRun[]
+  payrollPayments       PayrollPayment[]
+  salaryAdvances        SalaryAdvance[]
+  complianceDocuments   ComplianceDocument[]
+  templates             DocumentTemplate[]
+  generatedDocuments    GeneratedDocument[]
+  reportExports         ReportExport[]
+  notes                 Note[]
+  tasks                 Task[]
+  reminders             Reminder[]
+  reminderRules         ReminderRule[]
+  notifications         NotificationLog[]
+  projectSettlements    ProjectSettlement[]
+  salesTargets          SalesTarget[]
+  payDetailsRequests    PayDetailsRequest[]
+  employeeDocuments     EmployeeDocument[]
+  termsVersions         TermsVersion[]
+  termsAcceptances      TermsAcceptance[]
+  oneTimeCodes          OneTimeCode[]
+  backgroundJobs        BackgroundJob[]
+  workLocations         WorkLocation[]
+  locationPings         LocationPing[]
+  staffPositions        StaffPosition[]
+  overtimeEntries       OvertimeEntry[]
+  staffClaims           StaffClaim[]
+  notices               Notice[]
+  noticeReads           NoticeRead[]
+  payrollPaymentLines   PayrollPaymentLine[]
+  employeeAssets        EmployeeAsset[]
+  aiSettings            AiSettings?
+  aiControlCells        AiControlCell[]
+  aiGrants              AiGrant[]
+  aiPermissionRequests  AiPermissionRequest[]
+  aiDeletionRequests    AiDeletionRequest[]
+  aiUsage               AiUsage[]
+  aiBudget              AiBudget?
+  aiKnowledgeBooks      AiKnowledgeBook[]
+  aiTestRuns            AiTestRun[]
+  aiChatMessages        AiChatMessage[]
+  aiDrafts              AiDraft[]
+  aiFollowUps           AiFollowUp[]
+  houseRules            HouseRule[]
+  mailSettings          CompanyMailSettings?
+  aiBotLinks            AiBotLink[]
+  aiBotMessages         AiBotMessage[]
+  aiOrderRuns           AiOrderRun[]
+  aiStaffUpdates        AiStaffUpdate[]
+  serverHealthRuns      ServerHealthRun[]
 }
 
 /// A person who can log in. Global across companies.
@@ -204,67 +241,103 @@ model User {
   auditLogs           AuditLog[]
   employeeProfiles    Employee[]
   uploadedFiles       FileAsset[]
-  forceOverrides      SalesOrderItem[]      @relation("ForceOverrideBy")
-  returnInspections   SalesReturnItem[]     @relation("ReturnInspectedBy")
+  forceOverrides      SalesOrderItem[]       @relation("ForceOverrideBy")
+  returnInspections   SalesReturnItem[]      @relation("ReturnInspectedBy")
   notes               Note[]
-  tasksCreated        Task[]                @relation("TaskCreatedBy")
-  remindersCreated    Reminder[]            @relation("ReminderCreatedBy")
-  remindersAcked      Reminder[]            @relation("ReminderAcknowledgedBy")
+  tasksCreated        Task[]                 @relation("TaskCreatedBy")
+  remindersCreated    Reminder[]             @relation("ReminderCreatedBy")
+  remindersAcked      Reminder[]             @relation("ReminderAcknowledgedBy")
   reminderTargets     ReminderRecipient[]
-  reminderRules       ReminderRule[]        @relation("ReminderRuleUpdatedBy")
+  reminderRules       ReminderRule[]         @relation("ReminderRuleUpdatedBy")
   notifications       NotificationLog[]
   reportExports       ReportExport[]
-  journalEntries      JournalEntry[]        @relation("JournalPostedBy")
-  approvedLeaves      LeaveRequest[]        @relation("LeaveApprovedBy")
-  requestedLeaves     LeaveRequest[]        @relation("LeaveRequestedBy")
-  attendanceMarked    Attendance[]          @relation("AttendanceRecordedBy")
-  overtimeDecided     OvertimeEntry[]       @relation("OvertimeDecidedBy")
-  claimsDecided       StaffClaim[]          @relation("StaffClaimDecidedBy")
-  claimsPaid          StaffClaim[]          @relation("StaffClaimPaidBy")
-  claimsCreated       StaffClaim[]          @relation("StaffClaimCreatedBy")
-  noticesPosted       Notice[]              @relation("NoticeCreatedBy")
-  noticesTakenDown    Notice[]              @relation("NoticeTakenDownBy")
+  journalEntries      JournalEntry[]         @relation("JournalPostedBy")
+  approvedLeaves      LeaveRequest[]         @relation("LeaveApprovedBy")
+  requestedLeaves     LeaveRequest[]         @relation("LeaveRequestedBy")
+  attendanceMarked    Attendance[]           @relation("AttendanceRecordedBy")
+  overtimeDecided     OvertimeEntry[]        @relation("OvertimeDecidedBy")
+  claimsDecided       StaffClaim[]           @relation("StaffClaimDecidedBy")
+  claimsPaid          StaffClaim[]           @relation("StaffClaimPaidBy")
+  claimsCreated       StaffClaim[]           @relation("StaffClaimCreatedBy")
+  noticesPosted       Notice[]               @relation("NoticeCreatedBy")
+  noticesTakenDown    Notice[]               @relation("NoticeTakenDownBy")
   noticeReads         NoticeRead[]
-  assetsIssued        EmployeeAsset[]       @relation("EmployeeAssetIssuedBy")
-  assetsTakenBack     EmployeeAsset[]       @relation("EmployeeAssetReturnedTo")
-  payrollsCreated     PayrollRun[]          @relation("PayrollCreatedBy")
-  payrollsApproved    PayrollRun[]          @relation("PayrollApprovedBy")
-  salariesPaid        PayrollPayment[]      @relation("PayrollPaidBy")
-  advancesGiven       SalaryAdvance[]       @relation("AdvanceCreatedBy")
+  assetsIssued        EmployeeAsset[]        @relation("EmployeeAssetIssuedBy")
+  assetsTakenBack     EmployeeAsset[]        @relation("EmployeeAssetReturnedTo")
+  payrollsCreated     PayrollRun[]           @relation("PayrollCreatedBy")
+  payrollsApproved    PayrollRun[]           @relation("PayrollApprovedBy")
+  salariesPaid        PayrollPayment[]       @relation("PayrollPaidBy")
+  advancesGiven       SalaryAdvance[]        @relation("AdvanceCreatedBy")
   generatedDocs       GeneratedDocument[]
   backupRuns          BackupRun[]
-  expensesCreated     Expense[]             @relation("ExpenseCreatedBy")
-  pettyCashHeld       PettyCashBox[]        @relation("PettyCashHolder")
-  purchaseOrders      PurchaseOrder[]       @relation("PurchaseOrderCreatedBy")
-  materialIssues      MaterialIssue[]       @relation("MaterialIssueCreatedBy")
-  materialChallans    MaterialChallan[]     @relation("MaterialChallanCreatedBy")
-  productionBatches   ProductionBatch[]     @relation("ProductionBatchCreatedBy")
-  contractsMade       ProductionContract[]  @relation("ProductionContractCreatedBy")
-  contractsChanged    ProductionContract[]  @relation("ProductionContractUpdatedBy")
-  faultsLogged        SupplierFault[]       @relation("SupplierFaultCreatedBy")
-  faultsSettled       SupplierFault[]       @relation("SupplierFaultSettledBy")
-  cuttingReports      CuttingReport[]       @relation("CuttingReportCreatedBy")
-  finishingReports    FinishingReport[]     @relation("FinishingReportCreatedBy")
-  cmSettlementsMade   CmSettlement[]        @relation("CmSettlementCreatedBy")
-  cmSettlementsUndone CmSettlement[]        @relation("CmSettlementUndoneBy")
-  embroideryJobs      EmbroideryJob[]       @relation("EmbroideryJobCreatedBy")
-  purchaseReturns     PurchaseReturn[]      @relation("PurchaseReturnCreatedBy")
-  materialMovements   RawMaterialMovement[] @relation("MaterialMovementBy")
-  refunds             Refund[]              @relation("RefundCreatedBy")
-  salesReturns        SalesReturn[]         @relation("SalesReturnCreatedBy")
-  creditAllocations   CreditAllocation[]    @relation("CreditAllocatedBy")
-  chequesRecorded     Cheque[]              @relation("ChequeRecordedBy")
-  intakesReversed     StockIntake[]         @relation("IntakeReversedBy")
-  settlementsMade     ProjectSettlement[]   @relation("SettlementMadeBy")
-  linesCleared        JournalLine[]         @relation("JournalLineClearedBy")
-  salesTargetsSet     SalesTarget[]         @relation("SalesTargetSetBy")
-  payRequestsMade     PayDetailsRequest[]   @relation("PayDetailsRequestedBy")
-  payRequestsDecided  PayDetailsRequest[]   @relation("PayDetailsDecidedBy")
-  employeeDocsAdded   EmployeeDocument[]    @relation("EmployeeDocumentAddedBy")
-  termsWritten        TermsVersion[]        @relation("TermsVersionCreatedBy")
-  termsPublished      TermsVersion[]        @relation("TermsVersionPublishedBy")
-  termsAgreed         TermsAcceptance[]     @relation("TermsAcceptedBy")
+  expensesCreated     Expense[]              @relation("ExpenseCreatedBy")
+  pettyCashHeld       PettyCashBox[]         @relation("PettyCashHolder")
+  purchaseOrders      PurchaseOrder[]        @relation("PurchaseOrderCreatedBy")
+  materialIssues      MaterialIssue[]        @relation("MaterialIssueCreatedBy")
+  materialChallans    MaterialChallan[]      @relation("MaterialChallanCreatedBy")
+  productionBatches   ProductionBatch[]      @relation("ProductionBatchCreatedBy")
+  fabricFirstBatches  ProductionBatch[]      @relation("BatchFabricFirstBy")
+  bookingsApproved    Booking[]              @relation("BookingApprovedBy")
+  bookingsSent        Booking[]              @relation("BookingSentBy")
+  bookingRevisions    BookingRevision[]      @relation("BookingRevisionApprovedBy")
+  techPacksLocked     TechPack[]             @relation("TechPackFabricLockedBy")
+  techPacksApproved   TechPack[]             @relation("TechPackApprovedBy")
+  techPackReferences  TechPackReference[]    @relation("TechPackReferenceSavedBy")
+  logosTicked         TechPackLogo[]         @relation("TechPackLogoTickedBy")
+  techPackAiDrafts    TechPackAiDraft[]      @relation("TechPackAiDraftBy")
+  expertQuestions     TechPackExpertAnswer[] @relation("TechPackExpertAskedBy")
+  costingsMade        OrderCosting[]         @relation("OrderCostingCreatedBy")
+  costingsDecided     OrderCosting[]         @relation("OrderCostingDecidedBy")
+  fabricQuotesAdded   FabricQuote[]          @relation("FabricQuoteCreatedBy")
+  contractsMade       ProductionContract[]   @relation("ProductionContractCreatedBy")
+  contractsChanged    ProductionContract[]   @relation("ProductionContractUpdatedBy")
+  faultsLogged        SupplierFault[]        @relation("SupplierFaultCreatedBy")
+  faultsSettled       SupplierFault[]        @relation("SupplierFaultSettledBy")
+  cuttingReports      CuttingReport[]        @relation("CuttingReportCreatedBy")
+  finishingReports    FinishingReport[]      @relation("FinishingReportCreatedBy")
+  cmSettlementsMade   CmSettlement[]         @relation("CmSettlementCreatedBy")
+  cmSettlementsUndone CmSettlement[]         @relation("CmSettlementUndoneBy")
+  embroideryJobs      EmbroideryJob[]        @relation("EmbroideryJobCreatedBy")
+  purchaseReturns     PurchaseReturn[]       @relation("PurchaseReturnCreatedBy")
+  materialMovements   RawMaterialMovement[]  @relation("MaterialMovementBy")
+  refunds             Refund[]               @relation("RefundCreatedBy")
+  salesReturns        SalesReturn[]          @relation("SalesReturnCreatedBy")
+  creditAllocations   CreditAllocation[]     @relation("CreditAllocatedBy")
+  chequesRecorded     Cheque[]               @relation("ChequeRecordedBy")
+  intakesReversed     StockIntake[]          @relation("IntakeReversedBy")
+  settlementsMade     ProjectSettlement[]    @relation("SettlementMadeBy")
+  linesCleared        JournalLine[]          @relation("JournalLineClearedBy")
+  salesTargetsSet     SalesTarget[]          @relation("SalesTargetSetBy")
+  payRequestsMade     PayDetailsRequest[]    @relation("PayDetailsRequestedBy")
+  payRequestsDecided  PayDetailsRequest[]    @relation("PayDetailsDecidedBy")
+  employeeDocsAdded   EmployeeDocument[]     @relation("EmployeeDocumentAddedBy")
+  termsWritten        TermsVersion[]         @relation("TermsVersionCreatedBy")
+  termsPublished      TermsVersion[]         @relation("TermsVersionPublishedBy")
+  termsAgreed         TermsAcceptance[]      @relation("TermsAcceptedBy")
   oneTimeCodes        OneTimeCode[]
+  aiSwitched          AiSettings[]           @relation("AiSettingsChangedBy")
+  aiCellsSet          AiControlCell[]        @relation("AiControlCellSetBy")
+  aiGrantsGiven       AiGrant[]              @relation("AiGrantGivenBy")
+  aiRequestsAnswered  AiPermissionRequest[]  @relation("AiPermissionRequestAnsweredBy")
+  aiDeletionsAnswered AiDeletionRequest[]    @relation("AiDeletionRequestAnsweredBy")
+  aiUsage             AiUsage[]              @relation("AiUsageUser")
+  aiBudgetsSet        AiBudget[]             @relation("AiBudgetUpdatedBy")
+  aiAccountOf         AiSettings?            @relation("AiSettingsAiUser")
+  aiBooksEdited       AiKnowledgeBook[]      @relation("AiKnowledgeBookEditedBy")
+  aiTestRunsStarted   AiTestRun[]            @relation("AiTestRunStartedBy")
+  aiChatMessages      AiChatMessage[]        @relation("AiChatMessageUser")
+  aiDraftsWritten     AiDraft[]              @relation("AiDraftCreatedBy")
+  aiDraftsSent        AiDraft[]              @relation("AiDraftSentBy")
+  aiFollowUpsSet      AiFollowUp[]           @relation("AiFollowUpCreatedBy")
+  houseRulesProposed  HouseRule[]            @relation("HouseRuleProposedBy")
+  houseRulesDecided   HouseRule[]            @relation("HouseRuleDecidedBy")
+  mailSettingsSet     CompanyMailSettings[]  @relation("MailSettingsUpdatedBy")
+  aiBotLinksOwned     AiBotLink[]            @relation("AiBotLinkOwner")
+  aiBotLinksSet       AiBotLink[]            @relation("AiBotLinkUpdatedBy")
+  aiOrderRunsMade     AiOrderRun[]           @relation("AiOrderRunCreatedBy")
+  aiOrderRunsDecided  AiOrderRun[]           @relation("AiOrderRunDecidedBy")
+  aiStaffUpdates      AiStaffUpdate[]        @relation("AiStaffUpdateBy")
+  serverHealthRuns    ServerHealthRun[]      @relation("ServerHealthRunBy")
 }
 
 /// A signed-in device. `token` stores the SHA-256 hash of the cookie value, never
@@ -364,12 +437,15 @@ model RolePermission {
 
 /// Per-user UI preferences (e.g. which dashboard metric cards are hidden 👁).
 model UserPreference {
-  id              String         @id @default(cuid())
-  userId          String         @unique
+  id              String           @id @default(cuid())
+  userId          String           @unique
   hiddenMetrics   String[] // e.g. ["NET_PROFIT", "LIABILITIES"]
   dashboardLayout Json?
-  interfaceStyle  InterfaceStyle @default(LEGACY)
-  updatedAt       DateTime       @updatedAt
+  interfaceStyle  InterfaceStyle   @default(LEGACY)
+  /// The way round this person last printed a booking book or a booking (null: the
+  /// company's default, Company.bookOrientation).
+  pdfOrientation  PageOrientation?
+  updatedAt       DateTime         @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
@@ -387,6 +463,8 @@ model AuditLog {
   after      Json?
   ipAddress  String?
   userAgent  String?
+  /// Done by the AI (Mehedi 2.0) rather than by the person in userId: shown with an "AI" mark.
+  byAi       Boolean     @default(false)
   createdAt  DateTime    @default(now())
 
   company Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
@@ -452,6 +530,11 @@ model FileAsset {
   cuttingPhotos       CuttingReport[]          @relation("CuttingPhoto")
   finishingFiles      FinishingReport[]        @relation("FinishingFile")
   faultPhotos         SupplierFault[]          @relation("SupplierFaultPhoto")
+  techPackReferences  TechPackReference[]      @relation("TechPackReferenceFile")
+  logoArtworks        TechPackLogo[]           @relation("TechPackLogoArtwork")
+  logoMachineFiles    TechPackLogo[]           @relation("TechPackLogoMachineFile")
+  logoSewOuts         TechPackLogo[]           @relation("TechPackLogoSewOut")
+  labDipReports       TechPackColour[]         @relation("TechPackColourReport")
 
   @@index([companyId])
 }
@@ -552,6 +635,7 @@ model Style {
   variants           ProductVariant[]
   quotationItems     QuotationItem[]
   productionProjects ProductionProject[]
+  costingStyles      OrderCostingStyle[]
   stockLots          StockLot[]
 
   @@unique([companyId, code])
@@ -812,6 +896,7 @@ model RawMaterial {
   returnLines PurchaseReturnLine[]
   neededBy    ProductionMaterialNeed[]
   faults      SupplierFault[]
+  quotes      FabricQuote[]
 
   @@unique([companyId, code])
   @@index([companyId, kind, isActive])
@@ -985,15 +1070,53 @@ model Booking {
   /// Collars and cuffs booked over the garment pieces, in percent (3 = 3% extra).
   collarExtraPercent Decimal          @default(0) @db.Decimal(5, 2)
   collarNotes        String?
+  /// Draft until approved; then sent to the supplier (Approve, then Mark as sent).
+  stage              BookingStage     @default(DRAFT)
+  /// 0 for the first approved booking (R0); each change after approval makes the next (R1, R2).
+  revision           Int              @default(0)
+  approvedAt         DateTime?
+  approvedById       String?
+  sentAt             DateTime?
+  sentById           String?
+  /// A draft revision's changes from the last approved one, and the fabric then at risk
+  /// when that one had been sent: { from, wasSent, changes: [{ item, was, now }], atRisk: [{ unit, quantity }] }.
+  revisionChanges    Json?
+  /// The fabric part of each style it covers when it was approved (tech-pack.ts), to show
+  /// when a style's fabric changes after the booking went out.
+  fabricBasis        Json?
   createdAt          DateTime         @default(now())
   updatedAt          DateTime         @updatedAt
 
   company       Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
   order         PurchaseOrder         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  approvedBy    User?                 @relation("BookingApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+  sentBy        User?                 @relation("BookingSentBy", fields: [sentById], references: [id], onDelete: SetNull)
   collarSizes   BookingCollarSize[]
   collarColours BookingCollarColour[]
+  revisions     BookingRevision[]
 
   @@index([companyId, source, category])
+  @@index([companyId, stage])
+}
+
+/// A booking as it was approved (R0, R1, R2...): what it said, kept when it changes.
+model BookingRevision {
+  id           String   @id @default(cuid())
+  companyId    String
+  bookingId    String
+  revision     Int
+  /// The booking's supplier, date, lines (with their specification and shares) and collar matrix.
+  snapshot     Json
+  approvedAt   DateTime @default(now())
+  approvedById String?
+  createdAt    DateTime @default(now())
+
+  company    Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  booking    Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  approvedBy User?   @relation("BookingRevisionApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+
+  @@unique([bookingId, revision])
+  @@index([companyId])
 }
 
 /// A size group of a booking's collar and cuff matrix ("S-M": collar 42 x 9 cm, cuff 38 x 3.5 cm).
@@ -1208,6 +1331,10 @@ model Party {
   statusChangedAt    DateTime?
   creditLimit        Decimal?           @db.Decimal(14, 2)
   paymentTermsDays   Int?
+  /// How a buyer pays for orders: TT, direct bank transfer or LC (no default; changeable per order).
+  tradePayment       TradePayment?
+  /// Pieces a factory can make in a month (the Order check card's factory check).
+  monthlyCapacity    Int?
   openingBalance     Decimal            @default(0) @db.Decimal(14, 2) // + receivable / - payable
   lastTransactionAt  DateTime? // drives dormant buyer filters
   notes              String?
@@ -1243,9 +1370,15 @@ model Party {
   faults               SupplierFault[]      @relation("SupplierFaults")
   cmSettlements        CmSettlement[]       @relation("CmSettlementFactory")
   embroideryJobs       EmbroideryJob[]      @relation("EmbroideryParty")
+  costingsAsBuyer      OrderCosting[]       @relation("CostingBuyer")
+  costingsAsFactory    OrderCosting[]       @relation("CostingFactory")
+  fabricQuotes         FabricQuote[]        @relation("FabricQuoteSupplier")
+  aiDrafts             AiDraft[]            @relation("AiDraftParty")
+  aiFollowUps          AiFollowUp[]         @relation("AiFollowUpParty")
   campaignRecipients   CampaignRecipient[]
   generatedDocuments   GeneratedDocument[]
   projectSettlements   ProjectSettlement[]
+  aiOrderRuns          AiOrderRun[]         @relation("AiOrderRunBuyer")
 
   @@unique([companyId, code])
   @@unique([companyId, systemRole])
@@ -1445,6 +1578,8 @@ model SalesOrder {
   reminders          Reminder[]
   /// Production projects started from it.
   productionProjects ProductionProject[]
+  costings           OrderCosting[]
+  aiOrderRuns        AiOrderRun[]
 
   @@unique([companyId, number])
   @@unique([companyId, integrationId, externalOrderId])
@@ -1993,6 +2128,7 @@ model ProductionProject {
   targetLines          ProductionTargetLine[]
   materialNeeds        ProductionMaterialNeed[]
   orderShares          PurchaseOrderLineShare[]
+  techPack             TechPack?
   faults               SupplierFault[]
   cuttingReports       CuttingReport[]
   embroideryJobs       EmbroideryJob[]
@@ -2037,6 +2173,10 @@ model ProductionBatch {
   /// at the style's target price.
   rejectTolerancePercent Decimal        @default(2) @db.Decimal(5, 2)
   notes                  String?
+  /// Fabric first, the owner's choice for this order: its fabric is booked once each
+  /// style's fabric part is locked, before the full tech packs are approved.
+  fabricFirstAt          DateTime?
+  fabricFirstById        String?
   createdById            String?
   createdAt              DateTime       @default(now())
   updatedAt              DateTime       @updatedAt
@@ -2044,7 +2184,9 @@ model ProductionBatch {
   company       Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
   factory       Party?               @relation("BatchFactory", fields: [factoryId], references: [id], onDelete: SetNull)
   createdBy     User?                @relation("ProductionBatchCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  fabricFirstBy User?                @relation("BatchFabricFirstBy", fields: [fabricFirstById], references: [id], onDelete: SetNull)
   projects      ProductionProject[]
+  costings      OrderCosting[]
   orders        PurchaseOrder[]
   contracts     ProductionContract[]
   faults        SupplierFault[]
@@ -2118,6 +2260,251 @@ model ProductionMaterialNeed {
 
   @@index([projectId])
   @@index([rawMaterialId])
+}
+
+/// The tech pack of a style in production (a project): drafted, its fabric part locked
+/// (for Fabric first), then approved for production. The parts it locks are read from
+/// the project (tech-pack.ts): the fabrics, their use per piece and the colour and size
+/// quantities.
+model TechPack {
+  id               String         @id @default(cuid())
+  companyId        String
+  projectId        String         @unique
+  status           TechPackStatus @default(DRAFT)
+  /// The fabric part as it was locked (fabrics, use per piece, colour and size quantities).
+  fabricLock       Json?
+  fabricLockedAt   DateTime?
+  fabricLockedById String?
+  /// The fabric part when the whole tech pack was approved.
+  approvedPart     Json?
+  approvedAt       DateTime?
+  approvedById     String?
+  /// The garment, for the measurement chart's points of measure.
+  garmentKind      GarmentKind?
+  /// The chart's unit (inch or cm); the other is shown beside it.
+  measureUnit      MeasureUnit    @default(INCH)
+  /// Whether the buyer's chest is the full (round) or the half measure.
+  chestBasis       ChestBasis?
+  sizeRun          String[]       @default([])
+  baseSize         String?
+  /// What the chart could not settle from the buyer's few points (asked of the owner).
+  chartQuestions   String[]       @default([])
+  /// The owner's instructions for the AI, by section: General, Measurements,
+  /// Design, Trims & Labels, Print & Embroidery, Packing.
+  instructions     Json?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  company        Company                @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  project        ProductionProject      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  fabricLockedBy User?                  @relation("TechPackFabricLockedBy", fields: [fabricLockedById], references: [id], onDelete: SetNull)
+  approvedBy     User?                  @relation("TechPackApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+  measurements   TechPackMeasurement[]
+  references     TechPackReference[]
+  logos          TechPackLogo[]
+  colours        TechPackColour[]
+  aiDrafts       TechPackAiDraft[]
+  expertAnswers  TechPackExpertAnswer[]
+
+  @@index([companyId, status])
+}
+
+/// One point of measure of a style's chart: its value per size in the tech
+/// pack's unit (null while missing) and where each came from: the buyer, the
+/// grading rules (an AI guess, yellow until someone confirms it) or a person.
+model TechPackMeasurement {
+  id         String   @id @default(cuid())
+  companyId  String
+  techPackId String
+  code       String
+  name       String
+  howTo      String?
+  rule       String?
+  tolerance  Decimal  @db.Decimal(8, 4)
+  critical   Boolean  @default(false)
+  sortOrder  Int      @default(0)
+  /// { "S": 20, "M": 21, ... } in the tech pack's unit; null is missing.
+  values     Json
+  /// { "S": "BUYER" | "RULE" | "OWNER", ... }
+  sources    Json
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  company  Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  techPack TechPack @relation(fields: [techPackId], references: [id], onDelete: Cascade)
+
+  @@unique([techPackId, code])
+  @@index([companyId])
+}
+
+/// A reference saved to a style's tech pack (Save to Tech Pack): a photo, a
+/// link, or both, with a short note. Internal reference only, kept until a
+/// person removes it; nothing is crawled.
+model TechPackReference {
+  id         String   @id @default(cuid())
+  companyId  String
+  techPackId String
+  fileId     String?
+  link       String?
+  note       String?
+  savedById  String?
+  createdAt  DateTime @default(now())
+
+  company  Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  techPack TechPack   @relation(fields: [techPackId], references: [id], onDelete: Cascade)
+  file     FileAsset? @relation("TechPackReferenceFile", fields: [fileId], references: [id], onDelete: SetNull)
+  savedBy  User?      @relation("TechPackReferenceSavedBy", fields: [savedById], references: [id], onDelete: SetNull)
+
+  @@index([techPackId, createdAt])
+  @@index([companyId])
+}
+
+/// A logo on a style: its spec, where its machine file came from (the buyer's
+/// file, the embroidery factory's puncher, or the AI's draft from the buyer's
+/// vector), the Logo File Tool's check, the sew-out photo and the owner's
+/// tick. Nothing goes to bulk without the tick.
+model TechPackLogo {
+  id               String      @id @default(cuid())
+  companyId        String
+  techPackId       String
+  name             String
+  placement        String?
+  widthMm          Decimal?    @db.Decimal(8, 2)
+  heightMm         Decimal?    @db.Decimal(8, 2)
+  /// Thread colours and codes, as the spec gives them.
+  threads          String?
+  colours          Int?
+  /// The fabric version: PQ piqué, SJ single jersey, IL interlock, FL fleece, WV woven...
+  fabric           String?
+  /// The stitch count of the approved file, once there is one.
+  approvedStitches Int?
+  /// A public reference to compare the stitch count with (e.g. "RL small pony").
+  reference        String?
+  source           LogoSource?
+  artworkFileId    String?
+  machineFileId    String?
+  machineFormat    String?
+  /// The Logo File Tool's check of the machine file: its facts, PASS / WARN / FAIL and notes.
+  fileCheck        Json?
+  sewOutFileId     String?
+  sewOutNote       String?
+  tickedById       String?
+  tickedAt         DateTime?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+
+  company     Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  techPack    TechPack   @relation(fields: [techPackId], references: [id], onDelete: Cascade)
+  artworkFile FileAsset? @relation("TechPackLogoArtwork", fields: [artworkFileId], references: [id], onDelete: SetNull)
+  machineFile FileAsset? @relation("TechPackLogoMachineFile", fields: [machineFileId], references: [id], onDelete: SetNull)
+  sewOutFile  FileAsset? @relation("TechPackLogoSewOut", fields: [sewOutFileId], references: [id], onDelete: SetNull)
+  tickedBy    User?      @relation("TechPackLogoTickedBy", fields: [tickedById], references: [id], onDelete: SetNull)
+
+  @@index([techPackId])
+  @@index([companyId])
+}
+
+/// A colour of a style: the buyer's code (the master), or the AI's approx.
+/// suggestion from a photo (never final), the buyer's ΔE CMC limit and lights,
+/// and the dye mill's lab dips. No bulk dyeing before the buyer approves one.
+model TechPackColour {
+  id             String           @id @default(cuid())
+  companyId      String
+  techPackId     String
+  name           String
+  code           String?
+  codeSource     ColourCodeSource @default(BUYER)
+  /// The approx. codes the AI suggested from a photo (X23), with its confidence.
+  photoEstimate  Json?
+  /// The buyer's ΔE CMC(2:1) limit (1.00 when the buyer gives none).
+  deltaLimit     Decimal          @default(1.0) @db.Decimal(5, 2)
+  primaryLight   String           @default("D65")
+  secondaryLight String?
+  status         LabDipStatus     @default(OPEN)
+  /// The option the buyer approved, e.g. "B, round 1".
+  approvedOption String?
+  /// The mill's latest lab dip report.
+  reportFileId   String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  company    Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  techPack   TechPack       @relation(fields: [techPackId], references: [id], onDelete: Cascade)
+  reportFile FileAsset?     @relation("TechPackColourReport", fields: [reportFileId], references: [id], onDelete: SetNull)
+  options    LabDipOption[]
+
+  @@unique([techPackId, name])
+  @@index([companyId])
+}
+
+/// One lab dip option from the dye mill's measured report: its ΔE CMC(2:1),
+/// DL, DC, DH and metamerism index under a light.
+model LabDipOption {
+  id        String   @id @default(cuid())
+  companyId String
+  colourId  String
+  round     Int
+  letter    String
+  light     String?
+  deltaE    Decimal  @db.Decimal(6, 2)
+  dl        Decimal? @db.Decimal(6, 2)
+  dc        Decimal? @db.Decimal(6, 2)
+  dh        Decimal? @db.Decimal(6, 2)
+  mi        Decimal? @db.Decimal(6, 2)
+  /// Read from the mill's report by the AI (a person checked it before saving).
+  readByAi  Boolean  @default(false)
+  note      String?
+  createdAt DateTime @default(now())
+
+  company Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  colour  TechPackColour @relation(fields: [colourId], references: [id], onDelete: Cascade)
+
+  @@unique([colourId, round, letter])
+  @@index([companyId])
+}
+
+/// An AI draft of a style's tech pack: what it found (each line green,
+/// yellow or red, with the person's OK or change), its questions and the
+/// owner's instructions it applied. Nothing in the tech pack changes by it.
+model TechPackAiDraft {
+  id          String         @id @default(cuid())
+  companyId   String
+  techPackId  String
+  mode        TechPackAiMode
+  model       String
+  output      Json
+  createdById String?
+  createdAt   DateTime       @default(now())
+
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  techPack  TechPack @relation(fields: [techPackId], references: [id], onDelete: Cascade)
+  createdBy User?    @relation("TechPackAiDraftBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([techPackId, createdAt])
+  @@index([companyId])
+}
+
+/// An expert's answer on a style (Ask an expert), or a review board finding list.
+model TechPackExpertAnswer {
+  id         String           @id @default(cuid())
+  companyId  String
+  techPackId String
+  expert     String
+  kind       ExpertAnswerKind
+  question   String
+  answer     String
+  /// A review's findings: [{ expert, finding, severity }].
+  findings   Json?
+  model      String
+  askedById  String?
+  createdAt  DateTime         @default(now())
+
+  company  Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  techPack TechPack @relation(fields: [techPackId], references: [id], onDelete: Cascade)
+  askedBy  User?    @relation("TechPackExpertAskedBy", fields: [askedById], references: [id], onDelete: SetNull)
+
+  @@index([techPackId, createdAt])
+  @@index([companyId])
 }
 
 /// The pieces a project is to make of each SKU (a colour and size of a style): its
@@ -4073,6 +4460,161 @@ enum SystemRole {
   ACCOUNTS
 }
 
+// =============================================================================
+// AI Center (v6.2): the switch, Control (Do / Ask / Off), grants and requests
+// =============================================================================
+
+/// One company's AI: off until the owner turns it on (no AI call is made while
+/// it is off or paused), its Claude key, the model per task and the PIN asked
+/// for money, prices and Deletion requests.
+model AiSettings {
+  id               String    @id @default(cuid())
+  companyId        String    @unique
+  enabled          Boolean   @default(false)
+  /// When the switch was last turned on or off, and by whom.
+  changedAt        DateTime?
+  changedById      String?
+  /// Paused (from the Mehedi 2.0 page or the bot): no AI work until resumed.
+  pausedAt         DateTime?
+  /// The Claude API key, sealed with ENCRYPTION_KEY (lib/crypto.ts); the
+  /// server's AI_API_KEY is used while it is empty.
+  apiKeySealed     String?
+  /// The key's last four characters, to recognise it.
+  apiKeyHint       String?
+  apiKeySetAt      DateTime?
+  /// The owner's model per task (task key to model id, modules/ai/models.ts);
+  /// the system's choice for the rest.
+  models           Json?
+  /// Fable 5.1 may be chosen for a task (off until the owner allows it).
+  allowFable       Boolean   @default(false)
+  /// The PIN's hash (lib/auth/password.ts), asked for money, prices and deletions.
+  pinHash          String?
+  pinSetAt         DateTime?
+  /// The AI's name in this company, on everything it writes ("Mehedi 2.0").
+  assistantName    String    @default("Mehedi 2.0")
+  /// The AI's own account (it cannot sign in): what it does is written to the
+  /// activity log in its name, marked "AI".
+  aiUserId         String?   @unique
+  /// Hours after which the owner is reminded of a buyer draft not sent yet.
+  replyRemindHours Int       @default(24)
+  /// The morning CEO brief (08:00) and the evening report (19:00), to the
+  /// owner's inbox and bot while the AI is on; the day each was last sent.
+  morningBrief     Boolean   @default(true)
+  eveningReport    Boolean   @default(true)
+  briefSentOn      String?
+  reportSentOn     String?
+  /// Server Health every Saturday at 09:00 (off until the platform owner turns
+  /// it on); the Saturday it last ran.
+  healthWeekly     Boolean   @default(false)
+  healthRanOn      String?
+  updatedAt        DateTime  @updatedAt
+
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  changedBy User?   @relation("AiSettingsChangedBy", fields: [changedById], references: [id], onDelete: SetNull)
+  aiUser    User?   @relation("AiSettingsAiUser", fields: [aiUserId], references: [id], onDelete: SetNull)
+}
+
+/// A cell of Control the owner set: an area ("b:<id>") or an action
+/// ("k:<permission or AI action>") of the tree in modules/ai/control-tree.ts.
+/// Cells without a row follow the nearest area above them, else Ask.
+model AiControlCell {
+  id          String      @id @default(cuid())
+  companyId   String
+  node        String
+  state       AiCellState
+  updatedById String?
+  updatedAt   DateTime    @updatedAt
+
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  updatedBy User?   @relation("AiControlCellSetBy", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@unique([companyId, node])
+}
+
+/// A cell opened to Do for a while: one task, today, one record (an order) or
+/// until a date. When it runs out the cell is back to its own setting.
+model AiGrant {
+  id          String       @id @default(cuid())
+  companyId   String
+  node        String
+  scope       AiGrantScope
+  recordType  String?
+  recordId    String?
+  recordLabel String?
+  expiresAt   DateTime?
+  /// A one-task grant is used once.
+  usedAt      DateTime?
+  /// Ended early by the owner.
+  endedAt     DateTime?
+  grantedById String?
+  /// The permission request it answered, or the preset it came from.
+  requestId   String?
+  note        String?
+  createdAt   DateTime     @default(now())
+
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  grantedBy User?   @relation("AiGrantGivenBy", fields: [grantedById], references: [id], onDelete: SetNull)
+
+  @@index([companyId, expiresAt])
+}
+
+/// The AI asking for a cell that is Off ("To work out costing I need
+/// Production > Costing. Will you give it?"), answered Only this task, For
+/// today, Always or No.
+model AiPermissionRequest {
+  id           String          @id @default(cuid())
+  companyId    String
+  node         String
+  /// What it was asked to do, and why it needs the cell.
+  task         String
+  why          String?
+  recordType   String?
+  recordId     String?
+  recordLabel  String?
+  channel      AiChannel       @default(ERP)
+  /// Who is asking: the AI's name ("Mehedi 2.0 (AI)").
+  askedBy      String
+  status       AiRequestStatus @default(PENDING)
+  answeredById String?
+  answeredAt   DateTime?
+  /// On No: the owner's reason; the AI adds what else it can do.
+  note         String?
+  createdAt    DateTime        @default(now())
+
+  company    Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  answeredBy User?   @relation("AiPermissionRequestAnsweredBy", fields: [answeredById], references: [id], onDelete: SetNull)
+
+  @@index([companyId, status, createdAt])
+}
+
+/// The AI never deletes: it asks the owner to, with what, why and what happens
+/// if it stays. An approved request is carried out in the owner's name.
+model AiDeletionRequest {
+  id           String           @id @default(cuid())
+  companyId    String
+  /// The record, as people know it ("Booking PO-2026-00012 (draft)").
+  what         String
+  recordType   String
+  recordId     String
+  /// The record's page, to open it.
+  href         String?
+  why          String
+  ifKept       String
+  channel      AiChannel        @default(ERP)
+  askedBy      String
+  status       AiDeletionStatus @default(PENDING)
+  answeredById String?
+  answeredAt   DateTime?
+  note         String?
+  doneAt       DateTime?
+  createdAt    DateTime         @default(now())
+
+  company    Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  answeredBy User?   @relation("AiDeletionRequestAnsweredBy", fields: [answeredById], references: [id], onDelete: SetNull)
+
+  @@index([companyId, status, createdAt])
+}
+
 enum AppModule {
   DASHBOARD
   SALES
@@ -4091,6 +4633,40 @@ enum AppModule {
   REMINDERS
   SETTINGS
   BACKUPS
+  AI
+}
+
+/// What the AI may do in a cell of Control.
+enum AiCellState {
+  DO
+  ASK
+  OFF
+}
+
+enum AiGrantScope {
+  ONCE
+  TODAY
+  RECORD
+  UNTIL
+}
+
+enum AiChannel {
+  ERP
+  BOT
+}
+
+enum AiRequestStatus {
+  PENDING
+  ONCE
+  TODAY
+  ALWAYS
+  REFUSED
+}
+
+enum AiDeletionStatus {
+  PENDING
+  APPROVED
+  REJECTED
 }
 
 enum AuditAction {
@@ -4219,12 +4795,79 @@ enum CollarStyle {
   AMBUSH_RIB
   TIPPING
   HONEYCOMB
+  MULTI_STRIPE
+}
+
+/// Where a booking is on its way to the supplier.
+enum BookingStage {
+  DRAFT
+  APPROVED
+  SENT
+}
+
+/// A tech pack is drafted, then approved (locked) for production.
+enum TechPackStatus {
+  DRAFT
+  APPROVED
+}
+
+enum GarmentKind {
+  POLO
+  TEE
+  SHIRT
+}
+
+enum MeasureUnit {
+  INCH
+  CM
+}
+
+enum ChestBasis {
+  FULL
+  HALF
+}
+
+/// Where a logo's machine file comes from, in the order they are tried.
+enum LogoSource {
+  BUYER_FILE
+  FACTORY_PUNCHER
+  AI_FROM_VECTOR
+}
+
+enum ColourCodeSource {
+  BUYER
+  IMAGE_ESTIMATE
+}
+
+/// A colour's lab dips: open (the mill's options are judged as they come), the
+/// buyer approved one, or the mill's best can do (BCD) after two rounds.
+enum LabDipStatus {
+  OPEN
+  BUYER_APPROVED
+  BEST_CAN_DO
+}
+
+/// Ask: the AI stops at what it is unsure of. Auto: it leaves those yellow and goes on.
+enum TechPackAiMode {
+  ASK
+  AUTO
+}
+
+enum ExpertAnswerKind {
+  QUESTION
+  REVIEW
 }
 
 /// The language a printed document's terms are in.
 enum DocumentLanguage {
   EN
   BN
+}
+
+/// Which way round an A4 page prints (booking books and bookings).
+enum PageOrientation {
+  LANDSCAPE
+  PORTRAIT
 }
 
 enum PurchaseOrderStatus {
@@ -4841,6 +5484,8 @@ enum DocumentType {
   EMBROIDERY_JOB // cut pieces out for embroidery or print (EMB-2026-00001)
   FINISHING_REPORT // a finishing count, mending return or full packing list (FIN-2026-00001)
   CM_SETTLEMENT // a master batch's final CM settlement with its factory (CMS-2026-00001)
+  ORDER_COSTING // an order's costing sheet before it is taken (CST-2026-00001)
+  AI_ORDER_RUN // an order Mehedi 2.0 takes in and follows (AO-2026-00001)
 }
 
 enum TemplateFormat {
@@ -4918,4 +5563,681 @@ enum ReminderStatus {
 enum BackupTrigger {
   SCHEDULED
   MANUAL
+}
+
+/// One call to Claude (AI Center > Budget & Costs): who asked, for what, why,
+/// on which record and model, the tokens it used and what it cost. Written for
+/// every call, failed ones too (with no tokens), so nothing the AI spends is
+/// unaccounted for.
+model AiUsage {
+  id               String       @id @default(cuid())
+  companyId        String
+  /// The person who asked, or null when the system or the AI itself started it.
+  userId           String?
+  /// Who did it: the AI's name, an expert (X01–X25) or a work agent.
+  agent            String
+  /// The task key (models.ts AI_TASKS) and its ERP area.
+  task             String
+  module           String
+  why              String
+  recordType       String?
+  recordId         String?
+  recordLabel      String?
+  model            String
+  inputTokens      Int          @default(0)
+  outputTokens     Int          @default(0)
+  cacheReadTokens  Int          @default(0)
+  cacheWriteTokens Int          @default(0)
+  costUsd          Decimal      @default(0) @db.Decimal(12, 6)
+  /// In the company's money, at the rate of the day (AiBudget.usdRate).
+  cost             Decimal      @default(0) @db.Decimal(12, 2)
+  usdRate          Decimal      @db.Decimal(10, 4)
+  durationMs       Int          @default(0)
+  result           AiCallResult
+  /// Why it failed or was stopped, in plain words.
+  note             String?
+  createdAt        DateTime     @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user    User?   @relation("AiUsageUser", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, createdAt])
+  @@index([companyId, recordType, recordId])
+  @@index([companyId, userId, createdAt])
+}
+
+/// The AI's budget and limits (all optional, off until set). At the alert
+/// percentage the owner is told; at a limit new work stops, or continues on
+/// the small model when the owner chose that.
+model AiBudget {
+  id              String    @id @default(cuid())
+  companyId       String    @unique
+  /// Null = no monthly budget: the AI shows an estimate before big tasks and asks.
+  monthly         Decimal?  @db.Decimal(12, 2)
+  daily           Decimal?  @db.Decimal(12, 2)
+  perOrder        Decimal?  @db.Decimal(12, 2)
+  perStaffMonthly Decimal?  @db.Decimal(12, 2)
+  perAgentMonthly Decimal?  @db.Decimal(12, 2)
+  /// Ask the owner before a task estimated above this.
+  askAbove        Decimal?  @db.Decimal(12, 2)
+  alertPercent    Int       @default(80)
+  atLimit         AiAtLimit @default(STOP)
+  /// Taka per US dollar, for turning Claude's prices into the company's money.
+  usdRate         Decimal   @default(122) @db.Decimal(10, 4)
+  /// The month ("2026-10") the alert was last sent, so it is sent once a month.
+  alertedMonth    String?
+  updatedById     String?
+  updatedAt       DateTime  @updatedAt
+
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  updatedBy User?   @relation("AiBudgetUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+}
+
+enum AiCallResult {
+  OK
+  FAILED
+  /// Not sent: a budget or limit stopped it.
+  STOPPED
+}
+
+enum AiAtLimit {
+  /// New work stops until next month (or the limit is raised).
+  STOP
+  /// Small, urgent work goes on with the small model.
+  CHEAPER
+}
+
+// ---------------------------------------------------------------- costing (v6.2)
+
+/// How a buyer pays for an order.
+enum TradePayment {
+  TT
+  BANK_TRANSFER
+  LC
+}
+
+/// What a fabric is priced and consumed in: knits by the kg, wovens by the yard.
+enum FabricUnit {
+  KG
+  YARD
+}
+
+/// The CM agreed with the factory: per piece or per dozen (never per minute).
+enum CmPer {
+  PIECE
+  DOZEN
+}
+
+/// The owner's word on an order after its Order check card: never automatic.
+enum CostingDecision {
+  TAKE
+  DECLINE
+}
+
+/// A fabric supplier's quoted price, per kg (per yard for wovens), shown beside
+/// other suppliers' quotes and past booking prices when an order is costed.
+model FabricQuote {
+  id          String     @id @default(cuid())
+  companyId   String
+  supplierId  String
+  /// The fabric in the materials list, when it is one.
+  materialId  String?
+  /// The fabric as quoted ("220 GSM piqué, 24/1 combed, 100% cotton").
+  fabric      String
+  unit        FabricUnit @default(KG)
+  price       Decimal    @db.Decimal(14, 4)
+  currency    String
+  quotedOn    DateTime   @db.Date
+  validUntil  DateTime?  @db.Date
+  note        String?
+  createdById String?
+  createdAt   DateTime   @default(now())
+
+  company   Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  supplier  Party               @relation("FabricQuoteSupplier", fields: [supplierId], references: [id], onDelete: Cascade)
+  material  RawMaterial?        @relation(fields: [materialId], references: [id], onDelete: SetNull)
+  createdBy User?               @relation("FabricQuoteCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  usedIn    OrderCostingStyle[]
+
+  @@index([companyId, materialId])
+  @@index([companyId, supplierId])
+}
+
+/// An order's costing sheet (CST-2026-00001), before the order is taken: the
+/// styles' costs per dozen, the owner's profit % for this order (no default),
+/// the percent lines grossed up on the price, and the owner's decision after
+/// the Order check card. No office overhead; CM fixed per style.
+model OrderCosting {
+  id                String           @id @default(cuid())
+  companyId         String
+  number            String
+  title             String
+  buyerId           String?
+  factoryId         String?
+  /// The order it became, or the master batch it is made in, when linked.
+  salesOrderId      String?
+  batchId           String?
+  currency          String
+  /// Taka per unit of the costing's currency, when it is not the company's own.
+  exchangeRate      Decimal?         @db.Decimal(12, 4)
+  /// The owner's profit % for this order. No default and no minimum.
+  profitPercent     Decimal?         @db.Decimal(5, 2)
+  /// Percent lines taken off the selling price (grossed up, not added on cost).
+  sourceTaxPercent  Decimal          @default(0) @db.Decimal(5, 2)
+  bankChargePercent Decimal          @default(0) @db.Decimal(5, 2)
+  commissionPercent Decimal          @default(0) @db.Decimal(5, 2)
+  /// Taken from the buyer when the costing is made; can be changed per order.
+  tradePayment      TradePayment?
+  shipDate          DateTime?        @db.Date
+  /// Days for the fabric to be in house, and for cutting, sewing and finishing.
+  fabricDays        Int?
+  makingDays        Int?
+  /// Risks the owner knows of ("Port congestion", "Gas shortage").
+  risks             String[]         @default([])
+  notes             String?
+  decision          CostingDecision?
+  decisionNote      String?
+  decidedById       String?
+  decidedAt         DateTime?
+  createdById       String?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  company     Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  buyer       Party?              @relation("CostingBuyer", fields: [buyerId], references: [id], onDelete: SetNull)
+  factory     Party?              @relation("CostingFactory", fields: [factoryId], references: [id], onDelete: SetNull)
+  salesOrder  SalesOrder?         @relation(fields: [salesOrderId], references: [id], onDelete: SetNull)
+  batch       ProductionBatch?    @relation(fields: [batchId], references: [id], onDelete: SetNull)
+  decidedBy   User?               @relation("OrderCostingDecidedBy", fields: [decidedById], references: [id], onDelete: SetNull)
+  createdBy   User?               @relation("OrderCostingCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  styles      OrderCostingStyle[]
+  aiOrderRuns AiOrderRun[]
+
+  @@unique([companyId, number])
+  @@index([companyId, createdAt])
+  @@index([companyId, buyerId])
+}
+
+/// One style on a costing sheet, costed per dozen.
+model OrderCostingStyle {
+  id               String     @id @default(cuid())
+  companyId        String
+  costingId        String
+  styleId          String?
+  /// The style code or the buyer's reference ("EX-PL-001", "RL polo navy").
+  styleRef         String
+  description      String?
+  quantity         Int
+  fabricQuoteId    String?
+  fabricName       String?
+  fabricUnit       FabricUnit @default(KG)
+  /// Fabric per dozen, in kg (yards for wovens).
+  consumption      Decimal?   @db.Decimal(10, 4)
+  /// The supplier's price per kg (per yard), from a quote or typed.
+  fabricPrice      Decimal?   @db.Decimal(14, 4)
+  trimsPerDozen    Decimal    @default(0) @db.Decimal(14, 4)
+  /// Print, embroidery and washing, per dozen.
+  valueAddPerDozen Decimal    @default(0) @db.Decimal(14, 4)
+  /// Testing, inspection, transport to port and samples, per dozen.
+  otherPerDozen    Decimal    @default(0) @db.Decimal(14, 4)
+  /// The CM agreed with the factory for this style, per piece or per dozen.
+  cmAmount         Decimal?   @db.Decimal(14, 4)
+  cmPer            CmPer      @default(PIECE)
+  /// The buyer's price per piece, when known.
+  buyerPrice       Decimal?   @db.Decimal(14, 4)
+  sortOrder        Int        @default(0)
+
+  company Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  costing OrderCosting @relation(fields: [costingId], references: [id], onDelete: Cascade)
+  style   Style?       @relation(fields: [styleId], references: [id], onDelete: SetNull)
+  quote   FabricQuote? @relation(fields: [fabricQuoteId], references: [id], onDelete: SetNull)
+
+  @@index([costingId])
+}
+
+// =============================================================================
+// MEHEDI 2.0: BOOKS AND TESTS, CHAT, DRAFTS, FOLLOW-UPS, HOUSE RULES, EMAIL
+// =============================================================================
+
+/// A company's own text of one of Mehedi 2.0's books (K1–K5, X26), when the
+/// owner changed it; the books shipped with the app are used otherwise.
+model AiKnowledgeBook {
+  id          String   @id @default(cuid())
+  companyId   String
+  /// "K1".."K5" or "X26" (modules/ai/knowledge.ts).
+  code        String
+  text        String
+  /// A short fingerprint of the text: a test counts only for the text it was taken on.
+  version     String
+  updatedById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  updatedBy User?   @relation("AiKnowledgeBookEditedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@unique([companyId, code])
+}
+
+enum AiRunStatus {
+  RUNNING
+  DONE
+  FAILED
+}
+
+/// One end-of-book test of Mehedi 2.0: every question of the book, his answer,
+/// and whether it matched the expected one. A pass counts for a month.
+model AiTestRun {
+  id          String      @id @default(cuid())
+  companyId   String
+  book        String
+  bookVersion String
+  status      AiRunStatus @default(RUNNING)
+  total       Int
+  right       Int         @default(0)
+  passed      Boolean     @default(false)
+  /// [{ n, q, expected, answer, right, why }]
+  answers     Json?
+  model       String?
+  error       String?
+  startedById String?
+  createdAt   DateTime    @default(now())
+  finishedAt  DateTime?
+
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  startedBy User?   @relation("AiTestRunStartedBy", fields: [startedById], references: [id], onDelete: SetNull)
+
+  @@index([companyId, book, createdAt])
+}
+
+enum AiChatRole {
+  OWNER
+  AI
+}
+
+enum AiCardStatus {
+  PROPOSED
+  APPLIED
+  CANCELLED
+}
+
+/// A line of a person's chat with Mehedi 2.0 (the ERP chat, later the bot). A
+/// line can carry a card: a change waiting for Apply, an Order check card, a report.
+model AiChatMessage {
+  id         String        @id @default(cuid())
+  companyId  String
+  /// The person whose conversation it is.
+  userId     String
+  channel    AiChannel     @default(ERP)
+  role       AiChatRole
+  text       String
+  /// The command it was read as ("order.status", "report.pdf"...).
+  intent     String?
+  card       Json?
+  cardStatus AiCardStatus?
+  cardDoneAt DateTime?
+  createdAt  DateTime      @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user    User    @relation("AiChatMessageUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, userId, createdAt])
+}
+
+enum AiDraftKind {
+  BUYER_REPLY
+  BUYER_FOLLOW_UP
+  BUYER_CHASE
+  BUYER_CLAIM
+  QUOTATION
+  INVOICE
+  SUPPLIER
+  FACTORY
+  OTHER
+}
+
+enum AiDraftStatus {
+  DRAFT
+  SENT
+  DISCARDED
+  FAILED
+}
+
+/// A message Mehedi 2.0 (or a person) drafted. What goes to a buyer is only
+/// ever sent by the owner (Send, or "পাঠাও" in the chat).
+model AiDraft {
+  id          String        @id @default(cuid())
+  companyId   String
+  kind        AiDraftKind
+  partyId     String?
+  toAddress   String?
+  subject     String
+  body        String
+  recordType  String?
+  recordId    String?
+  recordLabel String?
+  status      AiDraftStatus @default(DRAFT)
+  /// Written by the AI (labelled "Mehedi 2.0 (AI)"), or by a person.
+  byAi        Boolean       @default(true)
+  createdById String?
+  /// When to remind the owner if it is still not sent.
+  remindAt    DateTime?
+  remindedAt  DateTime?
+  followUpId  String?
+  sentAt      DateTime?
+  sentById    String?
+  error       String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  party     Party?  @relation("AiDraftParty", fields: [partyId], references: [id], onDelete: SetNull)
+  createdBy User?   @relation("AiDraftCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  sentBy    User?   @relation("AiDraftSentBy", fields: [sentById], references: [id], onDelete: SetNull)
+
+  @@index([companyId, status, createdAt])
+  @@index([companyId, status, remindAt])
+}
+
+enum AiFollowUpStatus {
+  OPEN
+  DONE
+  CANCELLED
+}
+
+/// A follow-up date the owner set for an order: on the day Mehedi 2.0 reminds
+/// the owner with a draft for the buyer.
+model AiFollowUp {
+  id          String           @id @default(cuid())
+  companyId   String
+  partyId     String
+  recordType  String?
+  recordId    String?
+  recordLabel String?
+  dueOn       DateTime         @db.Date
+  note        String?
+  status      AiFollowUpStatus @default(OPEN)
+  /// The draft made on the day.
+  draftId     String?
+  remindedAt  DateTime?
+  createdById String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  party     Party   @relation("AiFollowUpParty", fields: [partyId], references: [id], onDelete: Cascade)
+  createdBy User?   @relation("AiFollowUpCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([companyId, status, dueOn])
+}
+
+enum HouseRuleScope {
+  ALL
+  BUYER
+  BRAND
+  ITEM
+}
+
+enum HouseRuleStatus {
+  PROPOSED
+  APPROVED
+  REJECTED
+  RETIRED
+}
+
+/// A rule the owner taught Mehedi 2.0 (Teach). It counts only once the owner
+/// approved it; scoped to everything, a buyer, a brand or an item.
+model HouseRule {
+  id           String          @id @default(cuid())
+  companyId    String
+  text         String
+  /// The owner's own words, when the AI worded the rule from them.
+  said         String?
+  scope        HouseRuleScope  @default(ALL)
+  /// The buyer, brand or item it is for.
+  scopeValue   String?
+  status       HouseRuleStatus @default(PROPOSED)
+  /// "Teach", "Chat", or what it was learned from.
+  source       String          @default("Teach")
+  byAi         Boolean         @default(false)
+  proposedById String?
+  decidedById  String?
+  decidedAt    DateTime?
+  note         String?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  company    Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  proposedBy User?   @relation("HouseRuleProposedBy", fields: [proposedById], references: [id], onDelete: SetNull)
+  decidedBy  User?   @relation("HouseRuleDecidedBy", fields: [decidedById], references: [id], onDelete: SetNull)
+
+  @@index([companyId, status])
+}
+
+/// The company's own mailbox for sending email (SMTP). The password is kept
+/// sealed (lib/crypto.ts) and never shown again; the server's SMTP_* settings
+/// stand in while a company has none.
+model CompanyMailSettings {
+  id             String    @id @default(cuid())
+  companyId      String    @unique
+  host           String
+  port           Int
+  /// SSL from the start (port 465); otherwise STARTTLS when the server offers it.
+  secure         Boolean   @default(false)
+  username       String?
+  passwordSealed String?
+  fromAddress    String
+  fromName       String?
+  testedAt       DateTime?
+  updatedById    String?
+  updatedAt      DateTime  @updatedAt
+
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  updatedBy User?   @relation("MailSettingsUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+}
+
+enum AiBotChannel {
+  TELEGRAM
+  WHATSAPP
+}
+
+enum AiBotDirection {
+  IN
+  OUT
+}
+
+enum AiBotMessageStatus {
+  RECEIVED
+  DONE
+  IGNORED
+  SENT
+  FAILED
+}
+
+/// A bot connection (AI Center > Bot): one per store and plug (Telegram now,
+/// WhatsApp later), linked with a one-time code to the owner's own account.
+/// Only that chat is answered. Tokens and secrets are sealed (lib/crypto.ts).
+model AiBotLink {
+  id                String       @id @default(cuid())
+  companyId         String
+  channel           AiBotChannel
+  /// The bot itself (Telegram: the number in its token; WhatsApp: the phone
+  /// number ID). Stores that share one bot are picked by the store's name.
+  botKey            String
+  /// "@extas_bot", or the WhatsApp number as Meta shows it.
+  botName           String?
+  /// The Telegram bot token, or the WhatsApp access token.
+  tokenSealed       String
+  /// WhatsApp: the app secret Meta signs its calls with.
+  appSecretSealed   String?
+  /// WhatsApp: the verify token the owner pastes into the Meta app.
+  verifyTokenSealed String?
+  /// The SHA-256 of the webhook's secret (Telegram's secret token, WhatsApp's verify token).
+  webhookKey        String
+  /// Why Telegram could not be pointed at this site, if it could not.
+  webhookError      String?
+  /// The owner who linked (or is linking) their account.
+  ownerId           String?
+  /// The owner's chat (Telegram) or number (WhatsApp); nobody else is answered.
+  chatId            String?
+  chatName          String?
+  linkedAt          DateTime?
+  linkCodeHash      String?
+  linkCodeUntil     DateTime?
+  /// A button pressed that waits for the PIN in the next message.
+  pending           Json?
+  pendingUntil      DateTime?
+  lastInboundAt     DateTime?
+  updatedById       String?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  company   Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  owner     User?          @relation("AiBotLinkOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  updatedBy User?          @relation("AiBotLinkUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  messages  AiBotMessage[]
+
+  @@unique([companyId, channel])
+  @@index([webhookKey])
+  @@index([channel, botKey])
+}
+
+/// Every message in and out of a bot (the bot's log in AI Center > Bot).
+model AiBotMessage {
+  id         String             @id @default(cuid())
+  companyId  String
+  linkId     String?
+  channel    AiBotChannel
+  direction  AiBotDirection
+  /// The provider's id of an incoming update, so a repeated delivery is handled once.
+  providerId String?
+  chatId     String?
+  text       String
+  status     AiBotMessageStatus
+  error      String?
+  createdAt  DateTime           @default(now())
+
+  company Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  link    AiBotLink? @relation(fields: [linkId], references: [id], onDelete: SetNull)
+
+  @@unique([channel, providerId])
+  @@index([companyId, createdAt])
+}
+
+enum AiOrderRunStatus {
+  /// The form is being filled from the PO, order sheet or photos.
+  INTAKE
+  /// The plan is ready and waits for the owner's Approve.
+  WAITING_OWNER
+  APPROVED
+  /// Sent back by the owner with a note.
+  RETURNED
+  CANCELLED
+  DONE
+}
+
+enum AiOrderMode {
+  /// The first orders: he only shows what he would do.
+  DRY_RUN
+  /// Then each step asks the owner first.
+  ASK
+}
+
+/// A new order Mehedi 2.0 takes in (AI Center > Orders): the form filled from
+/// the buyer's PO, order sheet or photos, the checks, the costing sheet and
+/// Order check card, the plan for the owner's Approve, then the steps followed
+/// against the T&A dates. People do the ERP work; he never sends to a buyer.
+model AiOrderRun {
+  id              String           @id @default(cuid())
+  companyId       String
+  number          String
+  title           String
+  mode            AiOrderMode      @default(DRY_RUN)
+  status          AiOrderRunStatus @default(INTAKE)
+  buyerId         String?
+  costingId       String?
+  salesOrderId    String?
+  /// The form (modules/ai/orders/order-run.ts OrderFields).
+  fields          Json
+  /// What the form still needs.
+  missing         String[]         @default([])
+  /// The files it was read from (FileAsset ids).
+  fileIds         String[]         @default([])
+  /// The plan report: the AI's words when it wrote it, else the ERP's own.
+  plan            String?
+  planByAi        Boolean          @default(false)
+  plannedAt       DateTime?
+  /// What the AI work on this order may cost, in the company's money.
+  estimatedAiCost Decimal?         @db.Decimal(12, 2)
+  startedVia      AiChannel        @default(ERP)
+  createdById     String?
+  decidedById     String?
+  decidedAt       DateTime?
+  decisionNote    String?
+  /// The day late steps were last told to the owner (YYYY-MM-DD).
+  lateToldOn      String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  company    Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  buyer      Party?          @relation("AiOrderRunBuyer", fields: [buyerId], references: [id], onDelete: SetNull)
+  costing    OrderCosting?   @relation(fields: [costingId], references: [id], onDelete: SetNull)
+  salesOrder SalesOrder?     @relation(fields: [salesOrderId], references: [id], onDelete: SetNull)
+  createdBy  User?           @relation("AiOrderRunCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  decidedBy  User?           @relation("AiOrderRunDecidedBy", fields: [decidedById], references: [id], onDelete: SetNull)
+  updates    AiStaffUpdate[]
+
+  @@unique([companyId, number])
+  @@index([companyId, status])
+}
+
+/// What staff tell the AI from My Work ("fabric arrived", "cutting started",
+/// "problem"), in Bengali or English, optionally about one order.
+model AiStaffUpdate {
+  id        String   @id @default(cuid())
+  companyId String
+  runId     String?
+  userId    String?
+  text      String
+  /// Read as a problem: the owner is told at once.
+  problem   Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  company Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  run     AiOrderRun? @relation(fields: [runId], references: [id], onDelete: SetNull)
+  user    User?       @relation("AiStaffUpdateBy", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, createdAt])
+  @@index([runId])
+}
+
+enum ServerHealthTrigger {
+  WEEKLY
+  CHECK_NOW
+}
+
+/// One Server Health run (AI Center > Server Health, platform owner only):
+/// the checks made in code, the report in Bengali, and the safe fixes offered.
+model ServerHealthRun {
+  id          String              @id @default(cuid())
+  companyId   String
+  trigger     ServerHealthTrigger
+  startedById String?
+  startedAt   DateTime            @default(now())
+  finishedAt  DateTime?
+  /// OK, WARN or ERROR: the worst of the checks.
+  worst       String              @default("OK")
+  /// [{ key, label, level, detail }] (modules/ai/health/checks.ts).
+  checks      Json
+  /// The report in Bengali: the AI's when it wrote it, else the ERP's own.
+  report      String
+  reportByAi  Boolean             @default(false)
+  aiCost      Decimal?            @db.Decimal(12, 2)
+  /// [{ key, label, status, doneAt, result }]
+  fixes       Json
+
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  startedBy User?   @relation("ServerHealthRunBy", fields: [startedById], references: [id], onDelete: SetNull)
+
+  @@index([companyId, startedAt])
 }

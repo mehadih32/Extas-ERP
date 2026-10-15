@@ -20,7 +20,14 @@ import { prisma } from "@/lib/prisma";
  */
 
 /** The kinds of work the queue knows (handlers.ts runs each). */
-export type JobKind = "terms.pdf" | "claim.route" | "salary.payout" | "exit.certificate";
+export type JobKind =
+  | "terms.pdf"
+  | "claim.route"
+  | "salary.payout"
+  | "exit.certificate"
+  | "ai.knowledge.test"
+  | "ai.bot.incoming"
+  | "ai.bot.push";
 
 export const STALE_AFTER_MS = 10 * 60_000;
 const FIRST_RETRY_MS = 30_000;

@@ -2,6 +2,7 @@ import type { GarmentCategory, MeasurementUnit } from "@prisma/client";
 
 import {
   CATEGORY_PRESETS,
+  COLLAR_MIN_EXTRA,
   DIA_LABELS,
   type DiaType,
   type LineRole,
@@ -44,11 +45,15 @@ export function fabricFor(
   return roundUpQuantity(((pieces / 12) * perDozen * (100 + lossPercent)) / 100, unit);
 }
 
-/** Collar and cuff sets for `pieces` garments with `extraPercent` booked over them. */
+/**
+ * Collar and cuff sets for `pieces` garments of one colour and size with
+ * `extraPercent` booked over them, and never fewer than 5 over (so at least 5
+ * collars and 10 cuffs extra in each cell of the matrix).
+ */
 export function setsFor(pieces: number, extraPercent: number): number {
   if (!Number.isInteger(pieces) || pieces <= 0) return 0;
   const bp = Math.round(Math.max(0, extraPercent) * 100); // hundredths of a percent
-  return Math.ceil((pieces * (10_000 + bp)) / 10_000);
+  return Math.max(Math.ceil((pieces * (10_000 + bp)) / 10_000), pieces + COLLAR_MIN_EXTRA);
 }
 
 /** Cuffs on the cuff line: two a set in pieces, one a set in sets (pairs). */

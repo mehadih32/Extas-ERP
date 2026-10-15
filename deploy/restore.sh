@@ -79,17 +79,8 @@ compose stop app
 
 say "Restoring the database"
 # One transaction, committed only once the whole backup has gone in: the database
-# is either fully restored or left as it was. ($1 to $3 are filled in inside the
-# database container.)
-# shellcheck disable=SC2016
-if ! compose exec -T db sh -c '
-    set -o pipefail
-    {
-      echo "SET client_min_messages = warning; BEGIN; DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
-      pg_restore --no-owner --no-privileges --file=- "$1" || exit 1
-      echo "COMMIT;"
-    } | psql -q -v ON_ERROR_STOP=1 -U "$2" -d "$3" >/dev/null
-  ' restore "$inside/database.dump" "$APP_DB_USER" "$POSTGRES_DB"; then
+# is either fully restored or left as it was.
+if ! restore_database "$inside/database.dump"; then
   compose up -d
   wait_healthy app || true
   die "the database could not be restored, so it was left as it was."

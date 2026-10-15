@@ -1128,7 +1128,7 @@ run("move to stock", () => {
       // 170 of the 200 pieces: 85% of the 4,000 cost.
       expect((await intakes.getIntake(env.pmCtx, draft.id)).totalCost?.toFixed(2)).toBe("3400.00");
 
-      // Without the AI reader set up, the draft is kept so quantities can be typed in.
+      // While AI is off, the draft is kept so quantities can be typed in.
       const typedIn = await intakes.createIntake(
         env.warehouseCtx,
         { projectId: project.id, sourceFileId: file.id },
@@ -1136,7 +1136,7 @@ run("move to stock", () => {
         null,
       );
       expect(typedIn).toMatchObject({ status: "DRAFT", pieces: { total: 0 } });
-      expect(typedIn.aiError).toContain("AI_API_KEY");
+      expect(typedIn.aiError).toContain("AI Center");
       await expectAppError(
         intakes.parseIntake(env.warehouseCtx, typedIn.id, undefined, null),
         "UNAVAILABLE",

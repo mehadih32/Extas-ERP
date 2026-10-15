@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { AiRecordBox } from "@/components/ai/record-box";
 import { SectionError } from "@/components/dashboard/section-error";
 import { EmptyState } from "@/components/products/bits";
 import { ActionLogLink } from "@/components/production/action-log";
@@ -39,6 +40,8 @@ import {
   getBatchScreenAction,
   listFaultsAction,
 } from "@/server/actions/production.actions";
+import { pdfOrientationFor } from "@/modules/documents/book-frame";
+import { getAiRecordCostAction } from "@/server/actions/ai.actions";
 import { getBatchBookingsAction } from "@/server/actions/booking.actions";
 import { requireCompanyPage } from "@/server/pages/guards";
 
@@ -65,17 +68,19 @@ export default async function BatchPage({
 }) {
   const ctx = await requireCompanyPage();
   const [{ batchId }, query] = await Promise.all([params, searchParams]);
-  const [result, materials, contracts, faults, dates, batchMoney, bookings] = await Promise.all([
-    getBatchScreenAction(batchId),
-    getBatchMaterialsAction(batchId),
-    // Production Managers and Accounts only; nobody else gets the panel.
-    getBatchContractsAction(batchId),
-    listFaultsAction({ batchId, take: 5 }),
-    getBatchDateWarningsAction(batchId),
-    // Production Managers and Accounts only, like the contracts.
-    getBatchMoneyAction(batchId),
-    getBatchBookingsAction(batchId),
-  ]);
+  const [result, materials, contracts, faults, dates, batchMoney, bookings, aiBox] =
+    await Promise.all([
+      getBatchScreenAction(batchId),
+      getBatchMaterialsAction(batchId),
+      // Production Managers and Accounts only; nobody else gets the panel.
+      getBatchContractsAction(batchId),
+      listFaultsAction({ batchId, take: 5 }),
+      getBatchDateWarningsAction(batchId),
+      // Production Managers and Accounts only, like the contracts.
+      getBatchMoneyAction(batchId),
+      getBatchBookingsAction(batchId),
+      getAiRecordCostAction("ProductionBatch", batchId),
+    ]);
   if (!result.ok) {
     if (result.error.code === "NOT_FOUND") notFound();
     if (result.error.code === "FORBIDDEN") return <ProductionNoAccess />;
@@ -84,6 +89,7 @@ export default async function BatchPage({
   const screen = result.data;
   const { batch: b, styles, can } = screen;
   const currency = ctx.company.currency;
+  const orientation = await pdfOrientationFor(ctx);
   const notice =
     one(query.created) === "1"
       ? `${b.code} was created. Add its first style.`
@@ -113,6 +119,7 @@ export default async function BatchPage({
             </>
           }
         />
+        {aiBox.ok && <AiRecordBox box={aiBox.data} />}
         <BatchActions screen={screen} notice={notice} />
         {one(query.received) && one(query.faults) && (
           <FormAlert>
@@ -229,7 +236,13 @@ export default async function BatchPage({
         </section>
 
         <div className="grid min-w-0 grid-cols-1 content-start gap-6">
-          {bookings.ok && <BatchBookingsPanel data={bookings.data} currency={currency} />}
+          {bookings.ok && (
+            <BatchBookingsPanel
+              data={bookings.data}
+              currency={currency}
+              orientation={orientation}
+            />
+          )}
           {b.costs && (
             <Panel
               title="Batch cost"

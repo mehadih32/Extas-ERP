@@ -173,7 +173,7 @@ async function setup() {
     needs: [{ materialId: jersey.id, perPiece: 0.2, split: "COLOUR", placement: "Main body" }],
   });
   // The fabric is booked (a batch's fabric always is); the buttons go on a batch order.
-  await bookings.createBooking(pm, {
+  const booked = await bookings.createBooking(pm, {
     source: "SUPPLIER_PO",
     category: "KNITWEAR",
     supplierId: mill.id,
@@ -184,6 +184,8 @@ async function setup() {
       { materialId: rib.id, quantity: 5 },
     ],
   });
+  // The owner approves it, so its goods can arrive.
+  await bookings.approveBooking(owner, booked.id);
   const made = await batchOrders.createBatchOrders(pm, batch.id, {
     orders: [
       {
@@ -554,7 +556,7 @@ run("Production renovation: central receive, colour-wise issue and the fault log
     // On time, but two faults: B, not A.
     expect(card.grade).toBe("B");
 
-    const summary = await cards.cardSummary(card, "BDT");
+    const summary = await cards.cardSummary(env.company.id, card, "BDT");
     expect(summary.byAi).toBe(false);
     expect(summary.text).toMatch(/delivered 1 of 1 orders on time \(100%\)/);
     expect(summary.text).toMatch(/2 of 2 delivery lines checked against the challan came short/);

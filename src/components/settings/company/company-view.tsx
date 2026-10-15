@@ -1,4 +1,5 @@
 import type { CompanyDetails } from "@/modules/companies/company.service";
+import { DEFAULT_TAGLINE } from "@/modules/documents/tagline";
 
 import { CompanyLogo } from "./company-logo";
 import { MONTHS } from "./company-options";
@@ -33,6 +34,11 @@ export function CompanyView({ details }: { details: CompanyDetails }) {
         <Row label="Website" value={details.website} />
         <Row label="Address" value={details.address} />
         <Row label="Letterhead footer" value={details.letterheadFooter} />
+        <Row label="Tagline" value={details.tagline ?? DEFAULT_TAGLINE} />
+        <Row
+          label="Booking books print"
+          value={details.bookOrientation === "PORTRAIT" ? "Portrait" : "Landscape"}
+        />
         <Row label="Currency" value={details.currency} />
         <Row label="Time zone" value={details.timezone.replaceAll("_", " ")} />
         <Row

@@ -11,6 +11,7 @@ import * as projects from "@/modules/production/project.service";
 
 import { POLO_BATCH, runFiveStylePolo, type SimulationManifest } from "./five-style-polo";
 import { loadTestBookings } from "./test-bookings";
+import { loadV62Samples } from "./v62-samples";
 
 /*
  * The demo site's sample data (deploy/compose.yml, the demo services; deploy/README.md,
@@ -121,6 +122,16 @@ export async function loadTestBookingsDemo(userId: string, companyId: string) {
   const { ctx, done } = await signIn(userId, companyId);
   try {
     return await loadTestBookings(ctx);
+  } finally {
+    await done();
+  }
+}
+
+/** The v6.2 sample order for Mehedi 2.0 (./v62-samples.ts), made once as the owner. */
+export async function loadV62SamplesDemo(userId: string, companyId: string) {
+  const { ctx, done } = await signIn(userId, companyId);
+  try {
+    return await loadV62Samples(ctx);
   } finally {
     await done();
   }

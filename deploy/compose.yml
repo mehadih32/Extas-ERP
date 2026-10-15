@@ -96,8 +96,12 @@ services:
       GOOGLE_DRIVE_CLIENT_ID: ${GOOGLE_DRIVE_CLIENT_ID:-}
       GOOGLE_DRIVE_CLIENT_SECRET: ${GOOGLE_DRIVE_CLIENT_SECRET:-}
       AI_API_KEY: ${AI_API_KEY:-}
-      AI_INTAKE_MODEL: ${AI_INTAKE_MODEL:-}
-      AI_SUMMARY_MODEL: ${AI_SUMMARY_MODEL:-}
+      # The company's mailbox for sending; the owner usually sets it in AI Center > Settings instead.
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
       SMS_PROVIDER: ${SMS_PROVIDER:-}
       SMS_HTTP_URL: ${SMS_HTTP_URL:-}
       SMS_HTTP_METHOD: ${SMS_HTTP_METHOD:-}

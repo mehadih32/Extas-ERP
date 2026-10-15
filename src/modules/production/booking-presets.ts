@@ -76,6 +76,7 @@ export const COLLAR_STYLES = [
   "AMBUSH_RIB",
   "TIPPING",
   "HONEYCOMB",
+  "MULTI_STRIPE",
 ] as const satisfies readonly CollarStyle[];
 
 export const COLLAR_STYLE_LABELS: Record<CollarStyle, string> = {
@@ -84,7 +85,24 @@ export const COLLAR_STYLE_LABELS: Record<CollarStyle, string> = {
   AMBUSH_RIB: "Ambush rib",
   TIPPING: "Tipping",
   HONEYCOMB: "Honeycomb",
+  MULTI_STRIPE: "Multi-stripe",
 };
+
+/**
+ * The usual extra over the pieces for each collar style (%): plain knits lose
+ * less than yarn-dyed tipping, jacquard and stripes. The owner changes it per booking.
+ */
+export const COLLAR_EXTRA_BY_STYLE: Record<CollarStyle, number> = {
+  SOLID: 5,
+  HONEYCOMB: 5,
+  TIPPING: 7,
+  JACQUARD_RIB: 7,
+  AMBUSH_RIB: 7,
+  MULTI_STRIPE: 7,
+};
+
+/** At least this many collars over the garment pieces of each colour and size (cuffs: twice). */
+export const COLLAR_MIN_EXTRA = 5;
 
 export const LANGUAGE_LABELS: Record<DocumentLanguage, string> = {
   EN: "English",
@@ -291,8 +309,8 @@ export const DEFAULT_COLLAR_SIZES = [
   { label: "2XL", collarLength: 46, collarWidth: 9, cuffLength: 38, cuffWidth: 3.5 },
 ] as const;
 
-/** Collars and cuffs booked over the pieces unless changed (knitting and linking losses). */
-export const DEFAULT_COLLAR_EXTRA = 3;
+/** Collars and cuffs booked over the pieces unless changed (a solid collar's usual extra). */
+export const DEFAULT_COLLAR_EXTRA = COLLAR_EXTRA_BY_STYLE.SOLID;
 
 /** The size group a garment size falls in ("M" is in "S-M"; "XXL" in "2XL"). */
 export function sizeGroupOf(size: string, groups: readonly string[]): number {

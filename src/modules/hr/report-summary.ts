@@ -1,14 +1,15 @@
 import { createHash } from "node:crypto";
 
 import { formatAmount, formatDay } from "@/lib/format";
+import { type Ask, textOf } from "@/modules/ai/claude";
 
 /*
  * The few sentences at the top of an employee's 360° report. Written from the
- * report's own figures by rules; when an AI key is set (AI_API_KEY with
- * AI_SUMMARY_MODEL, or the intake model), the Claude API words them instead
- * from the same figures: no name, phone or other personal detail is sent, the
- * answer is capped at a few sentences, and the same figures are never asked
- * about twice while the app runs. Any failure falls back to the rules.
+ * report's own figures by rules; while the company's AI is on (AI Center),
+ * Claude words them instead from the same figures: no name, phone or other
+ * personal detail is sent, the answer is capped at a few sentences, and the
+ * same figures are never asked about twice while the app runs. Any failure
+ * falls back to the rules.
  */
 
 export type ReportFacts = {
@@ -119,76 +120,33 @@ function keep(key: string, text: string) {
   if (kept.size > KEPT) kept.delete(kept.keys().next().value!);
 }
 
-export type SummaryOptions = {
-  apiKey?: string;
-  model?: string;
-  baseUrl?: string;
-  fetchImpl?: typeof fetch;
-};
-
-/** The configured AI writer's key and model, or null until both are set. */
-function aiConfig(options: SummaryOptions) {
-  // Settings left empty in .env arrive as "" and mean "not set".
-  const apiKey = (options.apiKey ?? process.env.AI_API_KEY)?.trim();
-  const model =
-    options.model?.trim() ||
-    process.env.AI_SUMMARY_MODEL?.trim() ||
-    process.env.AI_INTAKE_MODEL?.trim();
-  return apiKey && model ? { apiKey, model } : null;
-}
-
-/** Whether summaries are worded by AI (an AI key and model are set). */
-export function aiSummaryOn(): boolean {
-  return aiConfig({}) !== null;
-}
-
-/** The summary: by AI when it is set up and answers, otherwise by the rules. */
-export async function summarise(
-  facts: ReportFacts,
-  options: SummaryOptions = {},
-): Promise<ReportSummary> {
+/**
+ * The summary: worded by Claude when the company's AI is on (`ask` given) and
+ * it answers, otherwise by the rules.
+ */
+export async function summarise(facts: ReportFacts, ask?: Ask | null): Promise<ReportSummary> {
   const rules = ruleSummary(facts);
-  const config = aiConfig(options);
-  if (!config) return { text: rules, by: "rules" };
+  if (!ask) return { text: rules, by: "rules" };
   const figures = JSON.stringify(facts);
-  const key = createHash("sha256").update(`${config.model}\n${figures}`).digest("hex");
+  const key = createHash("sha256").update(figures).digest("hex");
   const known = kept.get(key);
   if (known) return { text: known, by: "ai" };
-
-  const baseUrl = (options.baseUrl ?? "https://api.anthropic.com").replace(/\/$/, "");
   try {
-    const response = await (options.fetchImpl ?? fetch)(`${baseUrl}/v1/messages`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-api-key": config.apiKey,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: config.model,
-        max_tokens: 200,
-        temperature: 0.2,
-        system: INSTRUCTIONS,
-        messages: [{ role: "user", content: figures }],
-      }),
-      signal: AbortSignal.timeout(15_000),
+    const { message } = await ask({
+      task: "text.write",
+      why: "Summary at the top of an employee's 360° report",
+      system: INSTRUCTIONS,
+      maxTokens: 1024,
+      effort: "low",
+      messages: [{ role: "user", content: figures }],
+      timeoutMs: 15_000,
     });
-    if (!response.ok) {
-      console.error(`[report-summary] ${response.status}`, (await response.text()).slice(0, 300));
-      return { text: rules, by: "rules" };
-    }
-    const json = (await response.json()) as { content?: Array<{ type: string; text?: string }> };
-    const text = (json.content ?? [])
-      .filter((b) => b.type === "text" && b.text)
-      .map((b) => b.text!.trim())
-      .join(" ")
-      .replace(/\s+/g, " ")
-      .trim();
+    const text = textOf(message).replace(/\s+/g, " ").trim().slice(0, 800);
     if (!text) return { text: rules, by: "rules" };
-    keep(key, text.slice(0, 800));
-    return { text: text.slice(0, 800), by: "ai" };
+    keep(key, text);
+    return { text, by: "ai" };
   } catch (error) {
-    console.error("[report-summary] request failed", error);
+    console.error("[report-summary]", error instanceof Error ? error.message : error);
     return { text: rules, by: "rules" };
   }
 }

@@ -128,6 +128,40 @@ export const PERMISSIONS = [
     module: "PRODUCTION",
     description: "Close or cancel bookings",
   },
+  {
+    key: "production.bookings.approve",
+    module: "PRODUCTION",
+    description:
+      "Approve bookings before they go to the supplier, and choose Fabric first for an order (the owner's by default)",
+  },
+  {
+    key: "production.techpack.approve",
+    module: "PRODUCTION",
+    description: "Lock a style's fabric part and approve its tech pack for production",
+  },
+  {
+    key: "production.logo.approve",
+    module: "PRODUCTION",
+    description:
+      "Tick a logo for bulk after its sew-out (the owner's): its machine file is then locked",
+  },
+  // Costing (v6.2): costs and profit stay with the people given them.
+  {
+    key: "costing.view",
+    module: "PRODUCTION",
+    description:
+      "See order costing sheets with their costs and profit, supplier fabric quotes and the Order check card",
+  },
+  {
+    key: "costing.manage",
+    module: "PRODUCTION",
+    description: "Make and change order costing sheets and add supplier fabric quotes",
+  },
+  {
+    key: "costing.decide",
+    module: "PRODUCTION",
+    description: "Take or decline an order after its Order check card (the owner's)",
+  },
   // Parties
   { key: "parties.view", module: "PARTIES", description: "View buyer and supplier profiles" },
   {
@@ -242,6 +276,18 @@ export const PERMISSIONS = [
     key: "backups.manage",
     module: "BACKUPS",
     description: "Backups (platform owner only: a backup holds every company)",
+  },
+  // AI Center
+  {
+    key: "ai.view",
+    module: "AI",
+    description: "See the AI Center: what the AI did, what waits for an answer, and Control",
+  },
+  {
+    key: "ai.manage",
+    module: "AI",
+    description:
+      "Turn AI on or off, set what it may do (Control), its models, key and PIN, and answer its requests (the owner's)",
   },
 ] as const satisfies ReadonlyArray<{ key: string; module: AppModule; description: string }>;
 

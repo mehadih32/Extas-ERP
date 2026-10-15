@@ -121,6 +121,8 @@ type OrderState = {
   status: PurchaseOrderStatus;
   /** Whether any of its goods have arrived. */
   received: boolean;
+  /** A booking still waiting for approval (a draft, or a changed revision). */
+  awaitingApproval?: boolean;
 };
 
 /** An order's dates, references and project change while it is open. */
@@ -169,13 +171,21 @@ export function canCloseOrder(order: OrderState): Verdict {
   );
 }
 
-/** Goods arrive on an order while it is open or partly received. */
+/** Goods arrive on an order while it is open or partly received (a booking once approved). */
 export function canReceiveOnOrder(order: OrderState): Verdict {
-  if (isOpen(order.status)) return ALLOWED;
-  return refuse(
-    "CONFLICT",
-    `${order.number} is ${ORDER_STATUS[order.status]}; goods can no longer arrive on it.`,
-  );
+  if (!isOpen(order.status)) {
+    return refuse(
+      "CONFLICT",
+      `${order.number} is ${ORDER_STATUS[order.status]}; goods can no longer arrive on it.`,
+    );
+  }
+  if (order.awaitingApproval) {
+    return refuse(
+      "CONFLICT",
+      `${order.number} is a draft booking: it is approved before goods arrive on it.`,
+    );
+  }
+  return ALLOWED;
 }
 
 // --- Purchases (supplier bills) and returns ----------------------------------------------

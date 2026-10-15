@@ -271,6 +271,13 @@ export function BookingWizard({ form: data, currency }: { form: BookingForm; cur
             Choose where the goods come from and the garment family. The family loads its fabric
             fields, its trims and, for knitwear, the collar and cuff matrix.
           </StepHeading>
+          {editing && editing.stage !== "DRAFT" && editing.canChangeItems && (
+            <FormAlert tone="note">
+              {editing.number} is {editing.stage === "SENT" ? "approved and sent" : "approved"}.
+              Changing its items makes revision R{editing.revision + 1}, a draft that is approved
+              again; the changes are listed on it in red.
+            </FormAlert>
+          )}
           {data.batch && (
             <FormAlert tone="note">
               For master batch{" "}

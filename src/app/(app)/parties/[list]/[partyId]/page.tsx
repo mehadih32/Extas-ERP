@@ -30,6 +30,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatCount, formatDay } from "@/lib/display";
 import { cn } from "@/lib/utils";
+import { TRADE_PAYMENT_LABELS } from "@/modules/costing/costing-labels";
 import { BUYER_HISTORIES, type BuyerHistory } from "@/modules/parties/buyer-360.service";
 import type { PartyScreen } from "@/modules/parties/screens.service";
 import { SUPPLIER_HISTORIES, type SupplierHistory } from "@/modules/parties/supplier-360.service";
@@ -139,6 +140,12 @@ function MoneyPanel({ screen, currency }: { screen: PartyScreen; currency: strin
               ? "On delivery"
               : `${m.paymentTermsDays} days`}
         </Fact>
+        {sells && m.tradePayment && (
+          <Fact label="How they pay">{TRADE_PAYMENT_LABELS[m.tradePayment]}</Fact>
+        )}
+        {party.kind !== "BUYER" && m.monthlyCapacity !== null && (
+          <Fact label="Monthly capacity">{m.monthlyCapacity.toLocaleString("en-US")} pieces</Fact>
+        )}
         <Fact label="Last payment">
           {m.lastPayment ? (
             <span className="tabular-nums">

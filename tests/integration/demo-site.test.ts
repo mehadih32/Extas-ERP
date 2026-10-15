@@ -3,14 +3,22 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 /*
  * The demo site's sample data (prisma/demo/load-demo.ts): it goes only into the
  * demo's own database, and loads the Five Style Polo batch once, on a company as
- * prisma/seed.ts leaves it, with the same figures as the GitHub run.
+ * prisma/seed.ts leaves it, with the same figures as the GitHub run, and the v6.2
+ * sample order for Mehedi 2.0 once, waiting for the owner's Approve.
  */
 vi.mock("next/cache", () => ({ revalidatePath: () => undefined, revalidateTag: () => undefined }));
 
 import { prisma } from "@/lib/prisma";
 import { getPartyBalance } from "@/modules/parties/ledger.service";
 import { getBatchSummary } from "@/modules/production/batch-summary.service";
-import { assertDemoDatabase, loadFiveStylePoloDemo } from "../../prisma/demo/load-demo";
+import { getRun } from "@/modules/ai/orders/order-run.service";
+import { getCosting } from "@/modules/costing/costing.service";
+
+import {
+  assertDemoDatabase,
+  loadFiveStylePoloDemo,
+  loadV62SamplesDemo,
+} from "../../prisma/demo/load-demo";
 
 import { addToCompany, contextFor, makeCompany, makeUser, resetDb } from "./helpers";
 
@@ -58,5 +66,48 @@ run("The demo site's sample data", () => {
     expect(await loadFiveStylePoloDemo(owner.id, company.id)).toBeNull();
     expect(await prisma.productionBatch.count({ where: { companyId: company.id } })).toBe(1);
     expect(await prisma.party.count({ where: { companyId: company.id } })).toBe(5);
+  }, 120_000);
+
+  it("loads the v6.2 sample order once, with its costing sheet and plan, the AI left off", async () => {
+    const { company, roles } = await makeCompany("Extas");
+    const owner = await makeUser("owner@extras.test", { isSuperAdmin: true });
+    await addToCompany(owner.id, company.id, roles.SUPER_ADMIN);
+
+    const loaded = await loadV62SamplesDemo(owner.id, company.id);
+    expect(loaded?.order).toMatch(/^AO-\d{4}-00001$/);
+    expect(loaded?.costing).toMatch(/^CST-\d{4}-00001$/);
+    expect(await prisma.session.count({ where: { userId: owner.id } })).toBe(0);
+
+    const ctx = await contextFor(owner.id, company.id);
+    const run = await prisma.aiOrderRun.findFirstOrThrow({ where: { companyId: company.id } });
+    const screen = await getRun(ctx, run.id);
+    expect(screen).toMatchObject({ status: "WAITING_OWNER", mode: "DRY_RUN", planByAi: false });
+    expect(screen.missing).toEqual([]);
+    expect(screen.checks.find((c) => c.key === "totals")?.signal).toBe("green");
+    expect(screen.plan).toContain("Dry run 1 of 5");
+    expect(screen.card?.map((r) => r.key)).toEqual([
+      "price",
+      "time",
+      "factory",
+      "payment",
+      "risks",
+    ]);
+
+    const sheet = await getCosting(ctx, run.costingId!);
+    expect(Number(sheet.profitPercent)).toBe(10);
+    expect(sheet.styles.map((s) => [s.styleRef, s.quantity, s.cmAmount, s.quote?.unit])).toEqual([
+      ["NW-PL-01", 3000, 1.25, "KG"],
+      ["NW-PL-02", 1500, 1.1, "KG"],
+    ]);
+    expect(sheet.styles.every((s) => s.fabricPrice === 3.6)).toBe(true);
+    expect(sheet.card.find((r) => r.key === "factory")?.signal).toBe("green");
+    expect(
+      await prisma.aiSettings.findFirst({ where: { companyId: company.id, enabled: true } }),
+    ).toBeNull();
+
+    // Once: the second time it adds nothing.
+    expect(await loadV62SamplesDemo(owner.id, company.id)).toBeNull();
+    expect(await prisma.aiOrderRun.count({ where: { companyId: company.id } })).toBe(1);
+    expect(await prisma.fabricQuote.count({ where: { companyId: company.id } })).toBe(1);
   }, 120_000);
 });

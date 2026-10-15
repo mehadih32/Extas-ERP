@@ -540,9 +540,10 @@ run("AI cost tracking", () => {
     expect(xlsx.fileName).toMatch(/\.xlsx$/);
     expect(xlsx.bytes.subarray(0, 2).toString()).toBe("PK");
     const audit = await prisma.auditLog.findMany({ where: { action: "EXPORT" } });
-    expect(audit.map((a) => a.summary)).toEqual([
-      expect.stringMatching(/^Made the AI costs PDF for /),
+    // Sorted: the two rows can come back in either order.
+    expect(audit.map((a) => a.summary).sort()).toEqual([
       expect.stringMatching(/^Made the AI costs Excel file for /),
+      expect.stringMatching(/^Made the AI costs PDF for /),
     ]);
   });
 

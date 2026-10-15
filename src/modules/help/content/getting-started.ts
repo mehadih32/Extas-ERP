@@ -1,6 +1,9 @@
 import type { HelpSection } from "../types";
 
-/** Signing in, passwords, companies, finding your way, the inbox, the look of the app, the demo site. */
+/**
+ * Signing in, passwords, companies, finding your way, the inbox, the look of the
+ * app, what is new in v6.2, the demo site.
+ */
 export const gettingStartedHelp: HelpSection = {
   id: "getting-started",
   title: "শুরু করুন (Getting started)",
@@ -377,6 +380,46 @@ export const gettingStartedHelp: HelpSection = {
       ],
     },
     {
+      slug: "whats-new-v62",
+      title: "v6.2-এ নতুন যা এসেছে",
+      summary:
+        "বুকিং বই ও নতুন PDF, এআই সেন্টার (মালিক চালু না করা পর্যন্ত বন্ধ), এআই-এর খরচের হিসাব, টেক প্যাকে এআই, কস্টিংয়ের নতুন নিয়ম ও Order check card, Mehedi 2.0, Telegram বট, অর্ডার অটোমেশন আর সার্ভার চেক: কোনটা কোথায় আর কোন গাইডে।",
+      keywords: [
+        "what's new",
+        "v6.2",
+        "new features",
+        "update",
+        "release",
+        "নতুন",
+        "আপডেট",
+        "নতুন ফিচার",
+      ],
+      routes: [],
+      who: "মালিক (ai.manage)। প্রতিটি অংশ যাঁদের ভূমিকায় খোলে তাঁরাই দেখেন।",
+      anyOf: ["ai.manage"],
+      steps: [
+        {
+          text: "বুকিং: “Production” > “Bookings”-এ বুকিংয়ের PDF এখন বইয়ের মতো: “Landscape” বা “Portrait” বেছে নেন, উপরে বাঁধাইয়ের ফাঁকা জায়গা, প্রতিটি পাতায় হেডার ও ফুটার, কাপড়ের সোয়াচ লিস্ট। ব্যাচের পাতায় “Booking book (PDF)” পুরো ব্যাচের সব বুকিং এক বইয়ে দেয়।",
+        },
+        {
+          text: "কস্টিং: “Production” > “Costing”-এ প্রতিটি অর্ডারে প্রফিট % আপনি দেন (কোনো নির্দিষ্ট হার নেই), অফিস খরচ ধরা হয় না, CM স্টাইলপ্রতি ফ্যাক্টরির সঙ্গে ঠিক করা, কাপড়ের দাম সাপ্লায়ারের কোটেশনের প্রতি কেজি দাম, আর পেমেন্ট বায়ার অনুযায়ী TT, ব্যাংক ট্রান্সফার বা LC। “Order check card” পাঁচটি চেক সবুজ, হলুদ বা লাল দাগে দেখায়; সিদ্ধান্ত আপনার।",
+        },
+        {
+          text: "এআই সেন্টার: মেনুর “AI” খুলুন। এআই শুরুতে বন্ধ, আর বন্ধ থাকলে কোনো খরচ নেই। চালু করলেও সব কাজ শুরুতে “Ask”: কিছু করার আগে আপনাকে জিজ্ঞেস করে। এআই কখনো কোনো ডেটা মোছে না, কারও অনুমতি বদলায় না, আর বায়ারের কাছে কিছু পাঠায় না আপনার OK ছাড়া।",
+        },
+        {
+          text: "খরচ: “Budget & Costs”-এ প্রতিটি এআই কাজের খরচ আর মাসের বাজেট। Mehedi 2.0: তার সঙ্গে চ্যাট, বই ও টেস্ট, House Rules আর বায়ারের খসড়া। “Bot”: Telegram থেকে একই কাজ। “Orders”: নতুন অর্ডার দিলে সে প্ল্যান লেখে আর ধাপগুলো T&A ধরে দেখে। “Server Health”: সার্ভার ঠিক আছে কিনা।",
+        },
+        {
+          text: "আপনার কাছ থেকে যা লাগবে (কাজ থামিয়ে রাখে না): Claude key (“AI” > “Settings” > “Add the key”), Telegram বট token (“AI” > “Bot” > “Connect a bot”), খসড়া ইমেইলে পাঠানোর ইমেইল লগইন (“AI” > “Settings” > “Email for sending”) আর একটি PIN (“Set a PIN”)। প্রতিটির ধাপ এআই সেন্টারের গাইডগুলোতে আছে।",
+        },
+      ],
+      tips: [
+        "ডেমো সাইটে সব নতুন জিনিস আগে চালিয়ে দেখুন: সেখানে একটি নমুনা অর্ডার আপনার Approve-এর অপেক্ষায় আছে।",
+        "লাইভ সাইটে এআই বন্ধ থাকে যতক্ষণ না আপনি নিজে চালু করেন।",
+      ],
+    },
+    {
       slug: "demo-site",
       title: "ডেমো সাইটে অনুশীলন করবেন যেভাবে",
       summary:
@@ -416,6 +459,9 @@ export const gettingStartedHelp: HelpSection = {
             id: "demo-site-2",
             caption: "ডেমো সাইটে Five Style Polo ব্যাচের “Batch summary” পাতা",
           },
+        },
+        {
+          text: "“AI” মেনুর “Orders” ট্যাবে একটি নমুনা অর্ডার (Sample: Nordic Wear pique polos) আপনার Approve-এর অপেক্ষায় আছে: তার ফর্ম, চেক, কস্টিং শিট (সাপ্লায়ারের প্রতি কেজি দামের কোটেশন, স্টাইলপ্রতি CM আর 10% প্রফিট), “Order check card” ও প্ল্যান দেখে “Approve” বা “Return” চেপে দেখুন। ডেমোতেও এআই বন্ধ থাকে; প্ল্যান ERP নিজে লেখে।",
         },
         {
           text: "যেকোনো কাজ চালিয়ে দেখুন: অর্ডার, বিল, পেমেন্ট বা নতুন ব্যাচ। ডেমো সাইটে যা করবেন তা কখনো আসল ERP-এ যায় না।",

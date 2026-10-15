@@ -12,6 +12,7 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import type { ActionError } from "@/lib/result";
 import type { CompanyDetails } from "@/modules/companies/company.service";
+import { DEFAULT_TAGLINE } from "@/modules/documents/tagline";
 import {
   removeCompanyLogoAction,
   updateCompanyProfileAction,
@@ -435,7 +436,7 @@ export function CompanyForms({
       <SettingsCard
         id="letterhead"
         title="Letterhead"
-        description="The logo, colours and footer printed on every PDF and on the blank letterhead pad."
+        description="The logo, colours and footer printed on every PDF and on the blank letterhead pad, and the booking book's tagline and page orientation."
         state={letterhead}
         before={<LogoControls logo={details.logo} />}
         onSubmit={(form) =>
@@ -443,6 +444,8 @@ export function CompanyForms({
             primaryColor: text(form, "primaryColor").toUpperCase(),
             accentColor: text(form, "accentColor").toUpperCase(),
             letterheadFooter: optional(form, "letterheadFooter"),
+            tagline: optional(form, "tagline"),
+            bookOrientation: text(form, "bookOrientation"),
           })
         }
       >
@@ -468,6 +471,32 @@ export function CompanyForms({
           multiline
           wide
         />
+        <TextField
+          state={letterhead}
+          name="tagline"
+          label="Tagline"
+          defaultValue={details.tagline}
+          hint={`Under your name in the booking book's header. Left empty, it reads “${DEFAULT_TAGLINE}”.`}
+          maxLength={120}
+        />
+        <Field
+          id="bookOrientation"
+          label="Booking books print"
+          hint="Until a person picks for themselves; each person's last pick is kept."
+          error={letterhead.fieldError("bookOrientation")}
+        >
+          <NativeSelect
+            id="bookOrientation"
+            name="bookOrientation"
+            defaultValue={details.bookOrientation}
+            containerClassName="sm:w-full"
+            className="md:h-10"
+            aria-describedby="bookOrientation-hint"
+          >
+            <option value="LANDSCAPE">Landscape</option>
+            <option value="PORTRAIT">Portrait</option>
+          </NativeSelect>
+        </Field>
       </SettingsCard>
 
       <SettingsCard

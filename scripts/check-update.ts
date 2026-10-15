@@ -102,6 +102,11 @@ async function main() {
     },
   });
   const headers = { cookie: `${SESSION_COOKIE}=${token}`, "user-agent": "Extas ERP update check" };
+  // Printing a PDF either way round keeps that pick for the owner; theirs is put back after.
+  const preference = await prisma.userPreference.findUnique({
+    where: { userId: owner.id },
+    select: { pdfOrientation: true },
+  });
   const failed: string[] = [];
   let opened = 0;
 
@@ -172,6 +177,12 @@ async function main() {
     }
   } finally {
     await prisma.session.delete({ where: { id: session.id } }).catch(() => undefined);
+    await prisma.userPreference
+      .updateMany({
+        where: { userId: owner.id },
+        data: { pdfOrientation: preference?.pdfOrientation ?? null },
+      })
+      .catch(() => undefined);
   }
 
   if (failed.length > 0) {
@@ -188,7 +199,7 @@ function pdfQueries(route: string): string[] {
 }
 
 /** PDFs printed either way round, checked both ways. */
-const ORIENTED_PDFS = new Set<string>();
+const ORIENTED_PDFS = new Set<string>(["/api/production/bookings/[bookingId]/pdf"]);
 
 main()
   .catch((error) => {

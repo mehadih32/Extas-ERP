@@ -41,6 +41,10 @@ export const companyProfileSchema = z.object({
   email: z.email("Enter a valid email address").nullish(),
   website: text(200).nullish(),
   letterheadFooter: text(500).nullish(),
+  /** Under the company's name in the booking book's header ("Manufacturing | Sourcing | Export"). */
+  tagline: text(120).nullish(),
+  /** Which way round a booking book prints until a person picks for themselves. */
+  bookOrientation: z.enum(["LANDSCAPE", "PORTRAIT"], "Choose Landscape or Portrait").optional(),
   primaryColor: hexColor.optional(),
   accentColor: hexColor.optional(),
   currency: z
@@ -148,6 +152,8 @@ export async function getCompanyDetails(ctx: CompanyContext) {
     email: company.email,
     website: company.website,
     letterheadFooter: company.letterheadFooter,
+    tagline: company.tagline,
+    bookOrientation: company.bookOrientation,
     primaryColor: company.primaryColor,
     accentColor: company.accentColor,
     currency: company.currency,

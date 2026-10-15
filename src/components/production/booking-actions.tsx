@@ -1,22 +1,16 @@
 "use client";
 
-import {
-  BanIcon,
-  CircleStopIcon,
-  FileDownIcon,
-  LinkIcon,
-  PencilIcon,
-  TruckIcon,
-  UnlinkIcon,
-} from "lucide-react";
+import { BanIcon, CircleStopIcon, LinkIcon, PencilIcon, TruckIcon, UnlinkIcon } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
+import { OrientationDownload } from "@/components/documents/orientation-download";
 import { Field, FormAlert } from "@/components/forms/field";
 import { materialsHref } from "@/components/materials/labels";
 import { FormDialog, problem, readReason, ReasonField } from "@/components/sales/dialogs";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
+import type { Orientation } from "@/modules/documents/model";
 import type { Booking } from "@/modules/production/booking.service";
 import {
   attachBookingAction,
@@ -91,9 +85,12 @@ function BatchSelect({ error }: { error?: string }) {
 export function BookingActions({
   booking: b,
   notice: initial,
+  orientation,
 }: {
   booking: Booking;
   notice?: string;
+  /** Which way round this person prints a booking: their last pick, or the company's default. */
+  orientation: Orientation;
 }) {
   const [open, setOpen] = useState<Open>(null);
   const [notice, setNotice] = useState(initial);
@@ -113,12 +110,13 @@ export function BookingActions({
   return (
     <div className="grid gap-4">
       <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-        <Button asChild className="w-full sm:w-auto">
-          <a href={productionHref.bookingPdf(b.id)} download>
-            <FileDownIcon aria-hidden />
-            Print booking (PDF)
-          </a>
-        </Button>
+        <OrientationDownload
+          href={productionHref.bookingPdf(b.id)}
+          label="Print booking (PDF)"
+          title={`Print booking ${b.number}`}
+          description="The PDF for the supplier, with a blank strip at the top for binding."
+          orientation={orientation}
+        />
         {(can.edit || can.editPaperwork) && (
           <Button asChild variant="outline" className="w-full sm:w-auto">
             <Link href={productionHref.editBooking(b.id)}>

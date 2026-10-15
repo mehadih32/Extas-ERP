@@ -6,11 +6,13 @@ import { checkRateLimit } from "@/lib/rate-limit";
 import type { RequestMeta } from "@/lib/request-meta";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
+import { bookFrame, downloadOrientation } from "@/modules/documents/book-frame";
 import { letterheadOf } from "@/modules/documents/builders";
 import {
   type Block,
   type Column,
   documentFileName,
+  type Orientation,
   type PrintDocument,
   type Row,
 } from "@/modules/documents/model";
@@ -27,6 +29,7 @@ import {
 import { type Booking, getBooking } from "@/modules/production/booking.service";
 import { splitTerm, termLines } from "@/modules/production/booking-terms";
 import { loadMaterialImages } from "@/modules/production/material-image.service";
+import { type SwatchRow, swatchListBlocks } from "@/modules/production/swatch-list";
 import {
   ORDER_STATUS_LABELS,
   quantity as materialQuantity,
@@ -34,17 +37,19 @@ import {
 } from "@/components/materials/labels";
 
 /*
- * A booking as the supplier gets it, to be spiral-bound: A4 on the letterhead
- * with a wide left margin for the holes, a QR code that opens the booking in
- * the ERP, the supplier's initials and "Page 2 of 7" at the foot of every page.
+ * A booking as the supplier gets it, in the book frame (documents/render.ts):
+ * A4 Landscape or Portrait as the person picks when downloading, a blank strip
+ * at the top for binding, the company's header and footer on every page with
+ * "PAGE 2 OF 7", a QR code that opens the booking in the ERP, and the supplier's
+ * initials at the foot of every page.
  * Then the fabric (or yarn) with its specification in columns of the garment
  * family (GSM and DIA for knitwear, width, construction and weight for woven,
  * count and gauge for sweaters), the trims, the collar and cuff matrix with
  * its measurements and sets, what each item is for by style (a booking on a
- * batch), the terms numbered in English or Bengali, and four signatures.
- * Tables run on over as many pages as they need, their header repeated and no
- * row ever cut in two. People who may not see material prices get it without
- * prices. Made when asked for and not kept.
+ * batch), the terms numbered in English or Bengali, four signatures, and the
+ * fabric swatch list on a page of its own. Tables run on over as many pages as
+ * they need, their header repeated and no row ever cut in two. People who may
+ * not see material prices get it without prices. Made when asked for and not kept.
  */
 
 type Line = Booking["lines"][number];
@@ -294,6 +299,27 @@ function styleBlocks(lines: Line[], currency: string): Block[] {
   ];
 }
 
+/** The swatch list's rows: each fabric line by style and colour on a batch, else by its colour. */
+function swatchRows(fabric: Line[]): SwatchRow[] {
+  const rows: SwatchRow[] = [];
+  for (const l of fabric) {
+    const name = l.specs.colour ?? l.material.color ?? l.material.name;
+    if (l.shares.length === 0) {
+      rows.push({ label: name, quantity: Number(l.quantity), unit: l.material.unit });
+      continue;
+    }
+    const byStyle = new Map<string, SwatchRow>();
+    for (const sh of l.shares) {
+      const label = `${sh.project.code} · ${sh.colorName ?? name}`;
+      const row = byStyle.get(label) ?? { label, quantity: 0, unit: l.material.unit };
+      row.quantity += Number(sh.quantity);
+      byStyle.set(label, row);
+    }
+    rows.push(...byStyle.values());
+  }
+  return rows;
+}
+
 /** The booking's link in the ERP, for its QR code. */
 export const bookingLink = (bookingId: string) =>
   `${env.APP_URL.replace(/\/+$/, "")}/production/bookings/${encodeURIComponent(bookingId)}`;
@@ -301,7 +327,7 @@ export const bookingLink = (bookingId: string) =>
 export function bookingDocument(
   ctx: CompanyContext,
   b: Booking,
-  options: { link?: string } = {},
+  options: { link?: string; orientation?: Orientation } = {},
 ): PrintDocument {
   const currency = ctx.company.currency;
   const show = canSeeMaterialCosts(ctx);
@@ -321,7 +347,43 @@ export function bookingDocument(
   const deliverTo = b.deliveryPlace?.trim()
     ? b.deliveryPlace.split(/\r?\n/)
     : [ctx.company.name, ...(ctx.company.address ? ctx.company.address.split(/\r?\n/) : [])];
+  const sourceTitle = SOURCE_TITLES[b.source];
+  const parties = [
+    {
+      heading: b.source === "MARKET_PURCHASE" ? "Seller" : "Supplier",
+      lines: [
+        supplier.name,
+        supplier.contactPerson,
+        supplier.phone,
+        [supplier.address, supplier.city].filter(Boolean).join(", "),
+      ].filter((l): l is string => Boolean(l)),
+    },
+    { heading: "Deliver to", lines: deliverTo },
+    {
+      heading: "Booked for",
+      lines: [
+        b.batch ? `${b.batch.name} (${b.batch.code})` : (b.title ?? "Raw material stock"),
+        b.styleRef ? `Styles: ${b.styleRef}` : null,
+        b.garmentPieces ? `${grouped(b.garmentPieces)} garment pieces` : null,
+      ].filter((l): l is string => Boolean(l)),
+    },
+  ];
+  const details = [
+    `Source: ${SOURCE_SHORT_LABELS[b.source]}`,
+    `Garment: ${CATEGORY_LABELS[b.category]}`,
+    b.supplierRef ? `Your ref.: ${b.supplierRef}` : null,
+    b.batch ? `Master batch: ${b.batch.code}` : null,
+    b.status !== "OPEN" ? `Status: ${ORDER_STATUS_LABELS[b.status]}` : null,
+  ].filter((d): d is string => Boolean(d));
   const blocks: Block[] = [
+    {
+      kind: "section",
+      title: `${sourceTitle} · ${supplier.name}`,
+      label: `${b.source === "MARKET_PURCHASE" ? "Market purchase" : "Booking"} · ${b.number}`,
+      subtitle: b.title ?? undefined,
+    },
+    { kind: "parties", parties },
+    { kind: "note", text: details.join(" · ") },
     {
       kind: "figures",
       figures: [
@@ -388,10 +450,22 @@ export function bookingDocument(
       numbered: true,
       items: terms.map((t) => (t.heading ? { label: t.heading, text: t.text } : { text: t.text })),
     },
+    {
+      kind: "signatures",
+      labels: [
+        "Prepared by",
+        "Merchandiser",
+        "Authorised signature",
+        b.source === "MARKET_PURCHASE" ? "Seller (sign & seal)" : "Supplier (sign & seal)",
+      ],
+    },
+    ...swatchListBlocks(supplier.name, swatchRows(fabric), currency),
   ];
+  // The order the goods are for: the master batch, else the styles named on the booking.
+  const order = b.batch?.code ?? b.styleRef ?? "";
   return {
     type: "BOOKING",
-    title: SOURCE_TITLES[b.source],
+    title: sourceTitle,
     subtitle: [supplier.name, b.title].filter(Boolean).join(" · "),
     reference: b.number,
     letterhead: letterheadOf(ctx.company),
@@ -411,44 +485,36 @@ export function bookingDocument(
       ...(b.batch ? [{ label: "Master batch", value: b.batch.code }] : []),
       ...(b.status !== "OPEN" ? [{ label: "Status", value: ORDER_STATUS_LABELS[b.status] }] : []),
     ],
-    parties: [
-      {
-        heading: b.source === "MARKET_PURCHASE" ? "Seller" : "Supplier",
-        lines: [
-          supplier.name,
-          supplier.contactPerson,
-          supplier.phone,
-          [supplier.address, supplier.city].filter(Boolean).join(", "),
-        ].filter((l): l is string => Boolean(l)),
-      },
-      { heading: "Deliver to", lines: deliverTo },
-      {
-        heading: "Booked for",
-        lines: [
-          b.batch ? `${b.batch.name} (${b.batch.code})` : (b.title ?? "Raw material stock"),
-          b.styleRef ? `Styles: ${b.styleRef}` : null,
-          b.garmentPieces ? `${grouped(b.garmentPieces)} garment pieces` : null,
-        ].filter((l): l is string => Boolean(l)),
-      },
-    ],
+    // The parties print inside the first part (blocks), under its title.
+    parties: [],
     blocks,
-    signatures: [
-      "Prepared by",
-      "Merchandiser",
-      "Authorised signature",
-      b.source === "MARKET_PURCHASE" ? "Seller (sign & seal)" : "Supplier (sign & seal)",
-    ],
-    binding: true,
+    signatures: [],
     qr: options.link ? { data: options.link, caption: "Scan to open the booking" } : undefined,
     initials: b.source === "MARKET_PURCHASE" ? "Seller's initials" : "Supplier's initials",
+    // The buyer is not named on a supplier's copy: the order reference only.
+    frame: bookFrame(ctx.company, {
+      orientation: options.orientation ?? "landscape",
+      docNo: b.number,
+      buyerPo: order,
+      date: formatDay(b.orderDate),
+    }),
   };
 }
 
-/** The booking's PDF for download (logged; nothing is kept). */
-export async function bookingPdf(ctx: CompanyContext, bookingId: string, meta?: RequestMeta) {
+/**
+ * The booking's PDF for download (logged; nothing is kept), Landscape or
+ * Portrait as asked (kept as this person's pick), else as they last printed.
+ */
+export async function bookingPdf(
+  ctx: CompanyContext,
+  bookingId: string,
+  meta?: RequestMeta,
+  asked?: string | null,
+) {
   checkRateLimit(`on-demand-print:${ctx.user.id}`, ON_DEMAND_PER_MINUTE, 60_000);
   const b = await getBooking(ctx, bookingId);
-  const model = bookingDocument(ctx, b, { link: bookingLink(b.id) });
+  const orientation = await downloadOrientation(ctx, asked);
+  const model = bookingDocument(ctx, b, { link: bookingLink(b.id), orientation });
   const images = await loadMaterialImages(
     ctx.company.id,
     b.lines.map((l) => l.imageId),
@@ -458,10 +524,11 @@ export async function bookingPdf(ctx: CompanyContext, bookingId: string, meta?: 
     action: "EXPORT",
     entityType: "Booking",
     entityId: b.id,
-    summary: `Printed booking ${b.number} to ${b.supplier.name}`,
+    summary: `Printed booking ${b.number} to ${b.supplier.name} (${orientation})`,
   });
   return {
     fileName: documentFileName(ctx.company.name, `Booking ${b.number} ${b.supplier.name}`),
     bytes,
+    orientation,
   };
 }

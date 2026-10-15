@@ -133,8 +133,10 @@ if [ -n "$DEMO_DOMAIN" ]; then
   say "Starting the demo site"
   if start_demo; then
     say "The demo site is running"
-    # The test bookings' numbers (prisma/demo/test-bookings.ts), for the Deploy log.
-    demo_compose logs --no-log-prefix demo-seed 2>/dev/null | grep -F 'Test booking' |
+    # The test bookings' numbers (prisma/demo/test-bookings.ts) and the v6.2 sample
+    # order (prisma/demo/v62-samples.ts), for the Deploy log.
+    demo_compose logs --no-log-prefix demo-seed 2>/dev/null |
+      grep -F -e 'Test booking' -e 'v6.2 sample order' |
       while read -r line; do say "Demo: $line"; done || true
   else
     demo_compose logs --tail 80 demo-seed demo-app || true

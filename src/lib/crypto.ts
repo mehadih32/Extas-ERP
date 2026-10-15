@@ -82,3 +82,17 @@ export function verifyPayload<T extends Record<string, unknown>>(token: string):
     return null;
   }
 }
+
+/**
+ * A stable secret derived from this server's key and an input (a bot's token
+ * gives its webhook secret): the same input always gives the same value, and
+ * nobody without ENCRYPTION_KEY can work it out.
+ */
+export function derivedSecret(purpose: string, input: string): string {
+  return createHmac("sha256", key("sign")).update(`${purpose}:${input}`).digest("base64url");
+}
+
+/** SHA-256 in hex, for looking up a secret by its hash without keeping it. */
+export function hashText(text: string): string {
+  return createHash("sha256").update(text).digest("hex");
+}

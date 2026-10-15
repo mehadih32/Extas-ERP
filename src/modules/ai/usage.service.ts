@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { activeMembers, membersWith } from "@/modules/reminders/audience";
 import { sendInApp } from "@/modules/reminders/notification.service";
 
+import { pushToBot } from "./bot/push";
 import type { AiRecord } from "./control.service";
 import { costUsd, taskInfo, type TokenUse } from "./models";
 
@@ -226,22 +227,20 @@ async function alertOnce(companyId: string, budget: AiBudget, now: Date, db: Db)
   if (claimed.count === 0) return;
   const owners = membersWith(await activeMembers(companyId, db), ["ai.manage"]);
   const percent = spent.dividedBy(budget.monthly!).times(100).toDecimalPlaces(0).toString();
+  const subject = `AI has used ${percent}% of this month's budget`;
+  const body = `${taka(spent, company.currency)} of ${taka(budget.monthly!, company.currency)} is spent. ${
+    budget.atLimit === "CHEAPER"
+      ? "At the budget, small work goes on with the small model."
+      : "At the budget, new AI work stops."
+  } See AI Center > Budget & Costs.`;
   await sendInApp(
     db,
     companyId,
     owners.map((userId) => ({ userId })),
-    {
-      subject: `AI has used ${percent}% of this month's budget`,
-      body: `${taka(spent, company.currency)} of ${taka(budget.monthly!, company.currency)} is spent. ${
-        budget.atLimit === "CHEAPER"
-          ? "At the budget, small work goes on with the small model."
-          : "At the budget, new AI work stops."
-      } See AI Center > Budget & Costs.`,
-      entityType: "AiBudget",
-      entityId: companyId,
-    },
+    { subject, body, entityType: "AiBudget", entityId: companyId },
     now,
   );
+  await pushToBot(companyId, { kind: "text", text: `${subject}. ${body}` });
 }
 
 /** The models that count as big work: their tasks show an estimate first without a budget. */

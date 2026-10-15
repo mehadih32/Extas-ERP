@@ -10,6 +10,7 @@ import type { CompanyContext } from "@/modules/auth/context";
 
 import { isLocked, isNode, mostFor, type NodeRef, nodeAt, pathText } from "./control-tree";
 import { type AiRecord, giveOneTaskGrant, giveTodayGrant } from "./control.service";
+import { pushToBot } from "./bot/push";
 import { aiLabel, aiSettingsOf, checkPin } from "./settings.service";
 
 /*
@@ -54,7 +55,7 @@ export async function askPermission(
     },
   });
   if (open) return open;
-  return prisma.aiPermissionRequest.create({
+  const request = await prisma.aiPermissionRequest.create({
     data: {
       companyId,
       node,
@@ -67,6 +68,9 @@ export async function askPermission(
       askedBy: aiLabel(settings),
     },
   });
+  // The owner hears of it on the bot too, with the answer buttons.
+  await pushToBot(companyId, { kind: "permission", requestId: request.id });
+  return request;
 }
 
 /** The AI asks the owner to delete a record (it never deletes anything itself). */
@@ -87,7 +91,7 @@ export async function askDeletion(
     where: { companyId, recordType: input.recordType, recordId: input.recordId, status: "PENDING" },
   });
   if (open) return open;
-  return prisma.aiDeletionRequest.create({
+  const request = await prisma.aiDeletionRequest.create({
     data: {
       companyId,
       what: input.what.slice(0, 200),
@@ -100,6 +104,8 @@ export async function askDeletion(
       askedBy: aiLabel(settings),
     },
   });
+  await pushToBot(companyId, { kind: "deletion", requestId: request.id });
+  return request;
 }
 
 function assertManage(ctx: CompanyContext) {
@@ -109,7 +115,7 @@ function assertManage(ctx: CompanyContext) {
 }
 
 /** A cell that needs the PIN: money, prices and anything that leaves the company. */
-const needsPin = (node: string) => node.startsWith("k:") && isLocked(node.slice(2));
+export const needsPin = (node: string) => node.startsWith("k:") && isLocked(node.slice(2));
 
 async function assertPin(ctx: CompanyContext, pin: string | undefined) {
   if (!(await checkPin(ctx.company.id, pin ?? "", ctx.user.id))) {

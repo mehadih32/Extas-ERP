@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { activeMembers, membersWith } from "@/modules/reminders/audience";
 import { sendInApp } from "@/modules/reminders/notification.service";
 
+import { pushToBot } from "./bot/push";
 import { askerFor } from "./claude";
 import { makeAiDraft } from "./drafts.service";
 import { aiLabel, aiSettingsOf } from "./settings.service";
@@ -14,6 +15,7 @@ import { aiLabel, aiSettingsOf } from "./settings.service";
  *      when it is on, else the plain one) and the owner is told.
  *   2. A buyer's draft is still not sent after the owner's time: the owner is
  *      reminded once.
+ * Both also go to the owner's bot when one is linked (AI Center > Bot).
  * Nothing is sent to anyone outside the company: the owner sends the drafts.
  * The owners are the people who answer the AI (ai.manage).
  */
@@ -105,6 +107,12 @@ async function remindCompany(company: { id: string; timezone: string }, now: Dat
       },
       now,
     );
+    // On the bot too, with Send and Discard under it.
+    await pushToBot(company.id, {
+      kind: "draft",
+      draftId: draft.id,
+      text: `Follow up with ${f.party.name} today: ${name} drafted it for you.`,
+    });
     followUps += 1;
   }
 
@@ -127,6 +135,11 @@ async function remindCompany(company: { id: string; timezone: string }, now: Dat
       },
       now,
     );
+    await pushToBot(company.id, {
+      kind: "draft",
+      draftId: d.id,
+      text: `Not sent yet: the draft${d.party ? ` for ${d.party.name}` : ""} is waiting for you.`,
+    });
     reminded += 1;
   }
   return { followUps, waiting: reminded };

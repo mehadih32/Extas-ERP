@@ -20,6 +20,7 @@ export const AI_TABS: readonly AiTab[] = [
   { href: "/ai/models", label: "Models", anyOf: AI_KEYS },
   { href: "/ai/knowledge", label: "Books & tests", anyOf: AI_KEYS },
   { href: "/ai/logs", label: "Logs", anyOf: AI_KEYS },
+  { href: "/ai/bot", label: "Bot", anyOf: ["ai.manage"] },
   { href: "/ai/settings", label: "Settings", anyOf: ["ai.manage"] },
 ];
 

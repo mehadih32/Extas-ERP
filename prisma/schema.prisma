@@ -209,6 +209,8 @@ model Company {
   aiFollowUps           AiFollowUp[]
   houseRules            HouseRule[]
   mailSettings          CompanyMailSettings?
+  aiBotLinks            AiBotLink[]
+  aiBotMessages         AiBotMessage[]
 }
 
 /// A person who can log in. Global across companies.
@@ -327,6 +329,8 @@ model User {
   houseRulesProposed  HouseRule[]            @relation("HouseRuleProposedBy")
   houseRulesDecided   HouseRule[]            @relation("HouseRuleDecidedBy")
   mailSettingsSet     CompanyMailSettings[]  @relation("MailSettingsUpdatedBy")
+  aiBotLinksOwned     AiBotLink[]            @relation("AiBotLinkOwner")
+  aiBotLinksSet       AiBotLink[]            @relation("AiBotLinkUpdatedBy")
 }
 
 /// A signed-in device. `token` stores the SHA-256 hash of the cookie value, never
@@ -6009,4 +6013,92 @@ model CompanyMailSettings {
 
   company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
   updatedBy User?   @relation("MailSettingsUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+}
+
+enum AiBotChannel {
+  TELEGRAM
+  WHATSAPP
+}
+
+enum AiBotDirection {
+  IN
+  OUT
+}
+
+enum AiBotMessageStatus {
+  RECEIVED
+  DONE
+  IGNORED
+  SENT
+  FAILED
+}
+
+/// A bot connection (AI Center > Bot): one per store and plug (Telegram now,
+/// WhatsApp later), linked with a one-time code to the owner's own account.
+/// Only that chat is answered. Tokens and secrets are sealed (lib/crypto.ts).
+model AiBotLink {
+  id                String       @id @default(cuid())
+  companyId         String
+  channel           AiBotChannel
+  /// The bot itself (Telegram: the number in its token; WhatsApp: the phone
+  /// number ID). Stores that share one bot are picked by the store's name.
+  botKey            String
+  /// "@extas_bot", or the WhatsApp number as Meta shows it.
+  botName           String?
+  /// The Telegram bot token, or the WhatsApp access token.
+  tokenSealed       String
+  /// WhatsApp: the app secret Meta signs its calls with.
+  appSecretSealed   String?
+  /// WhatsApp: the verify token the owner pastes into the Meta app.
+  verifyTokenSealed String?
+  /// The SHA-256 of the webhook's secret (Telegram's secret token, WhatsApp's verify token).
+  webhookKey        String
+  /// Why Telegram could not be pointed at this site, if it could not.
+  webhookError      String?
+  /// The owner who linked (or is linking) their account.
+  ownerId           String?
+  /// The owner's chat (Telegram) or number (WhatsApp); nobody else is answered.
+  chatId            String?
+  chatName          String?
+  linkedAt          DateTime?
+  linkCodeHash      String?
+  linkCodeUntil     DateTime?
+  /// A button pressed that waits for the PIN in the next message.
+  pending           Json?
+  pendingUntil      DateTime?
+  lastInboundAt     DateTime?
+  updatedById       String?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  company   Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  owner     User?          @relation("AiBotLinkOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  updatedBy User?          @relation("AiBotLinkUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  messages  AiBotMessage[]
+
+  @@unique([companyId, channel])
+  @@index([webhookKey])
+  @@index([channel, botKey])
+}
+
+/// Every message in and out of a bot (the bot's log in AI Center > Bot).
+model AiBotMessage {
+  id         String             @id @default(cuid())
+  companyId  String
+  linkId     String?
+  channel    AiBotChannel
+  direction  AiBotDirection
+  /// The provider's id of an incoming update, so a repeated delivery is handled once.
+  providerId String?
+  chatId     String?
+  text       String
+  status     AiBotMessageStatus
+  error      String?
+  createdAt  DateTime           @default(now())
+
+  company Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  link    AiBotLink? @relation(fields: [linkId], references: [id], onDelete: SetNull)
+
+  @@unique([channel, providerId])
+  @@index([companyId, createdAt])
 }

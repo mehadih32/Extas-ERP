@@ -25,6 +25,7 @@ export const AI_CENTER_ENTITIES = [
   "AiTestRun",
   "HouseRule",
   "CompanyMailSettings",
+  "AiBotLink",
 ] as const;
 
 export const LOG_FILTERS = [

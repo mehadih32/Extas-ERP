@@ -197,6 +197,55 @@ export const aiHelp: HelpSection = {
       ],
     },
     {
+      slug: "ai-bot",
+      title: "Telegram-এ Mehedi 2.0-এর সঙ্গে কথা বলবেন যেভাবে (Bot)",
+      summary:
+        "নিজের Telegram বট বানিয়ে ERP-তে যোগ করুন, তারপর এককালীন কোড দিয়ে নিজের অ্যাকাউন্ট লিংক করুন। ERP-র চ্যাটের সব কমান্ড বটেও চলে; বোতাম চেপে Apply, Send বা অনুমতির উত্তর দেওয়া যায়। শুধু আপনার নিজের চ্যাটই উত্তর পায়।",
+      keywords: [
+        "bot",
+        "telegram",
+        "whatsapp",
+        "botfather",
+        "token",
+        "link",
+        "বট",
+        "টেলিগ্রাম",
+        "হোয়াটসঅ্যাপ",
+        "মোবাইল",
+      ],
+      routes: ["/ai/bot"],
+      who: "শুধু মালিক (ai.manage)।",
+      anyOf: ["ai.manage"],
+      steps: [
+        {
+          text: "Telegram-এ @BotFather খুলে /newbot পাঠান। বটের একটি নাম দিন, তারপর একটি user name দিন যার শেষে “bot” থাকে। @BotFather যে token দেয় (যেমন 123456789:AA…), সেটি কপি করুন।",
+        },
+        {
+          text: "ERP-তে “AI” > “Bot” খুলুন, “Connect a bot” চাপুন, “Bot token” ঘরে token বসিয়ে “Connect” চাপুন। token লক করে রাখা হয়, আর কখনো দেখানো হয় না।",
+          image: { id: "ai-bot-1", caption: "“Bot”: Telegram, WhatsApp ও শেষ বার্তাগুলো" },
+        },
+        {
+          text: "“Link my account” চাপুন। একটি 8 অক্ষরের কোড আসে; “Open the bot with the code” চাপুন, Telegram খুললে Start চাপুন: কোডটি চলে যায় (না গেলে 10 মিনিটের মধ্যে কোডটি বটকে লিখে পাঠান)। তারপর পাতাটি refresh করুন: “Linked” দেখাবে।",
+        },
+        {
+          text: "এখন বটকে ERP-র চ্যাটের মতোই লিখুন: “status”, “আজকের সেল রিপোর্ট PDF দাও”, “CS-2026-0001 কস্টিং”, “help”। রিপোর্ট PDF ফাইল হয়ে চ্যাটে আসে। বদলের কার্ডের নিচে “Apply” ও “Cancel”, খসড়ার নিচে “Send” ও “Discard” বোতাম থাকে।",
+        },
+        {
+          text: "অনুমতি বা মুছে ফেলার অনুরোধ, ফলো-আপের খসড়া আর বাজেটের সতর্কতা বটেও আসে। টাকা, দাম বা মুছে ফেলার অনুমোদনে বট আপনার PIN চায়: PIN লিখে পাঠান, বট সেই বার্তাটি চ্যাট থেকে মুছে দেয়।",
+        },
+        {
+          text: "বট ঠিক আছে কিনা দেখতে “Send a test message” চাপুন। বন্ধ করতে “Unlink” (বট আর কারো কথা শোনে না) বা “Remove the bot”।",
+        },
+      ],
+      tips: [
+        "অন্য কেউ বটকে লিখলে বট কোনো উত্তর দেয় না; তার বার্তা শুধু “Last messages”-এ দেখা যায়।",
+        "এআই বন্ধ থাকলে বট শুধু “help” আর “status”-এর উত্তর দেয়, ERP-র চ্যাটের মতোই।",
+        "ডেমো সাইটের জন্য আলাদা বট বানান: একটি বট একসঙ্গে একটি সাইটেই চলে।",
+        "কয়েকটি স্টোর একই বট ব্যবহার করলে বার্তার শুরুতে স্টোরের নাম আর কোলন লিখুন (যেমন Extas: status)।",
+        "WhatsApp পরে: WhatsApp Business নম্বর পেলে “WhatsApp (for later)”-এ “Add the number” চেপে “Phone number ID”, “Access token” ও “App secret” দিন, তারপর দেখানো webhook ঠিকানা ও verify token Meta app-এ বসান।",
+      ],
+    },
+    {
       slug: "ai-drafts",
       title: "এআই-এর লেখা খসড়া দেখবেন, বদলাবেন ও পাঠাবেন যেভাবে",
       summary:

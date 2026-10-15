@@ -187,11 +187,15 @@ describe("AI Center tabs and models", () => {
     for (const role of ["PRODUCTION_MANAGER", "SALES_EXECUTIVE", "ACCOUNTS", "EMPLOYEE"] as const) {
       expect(visibleAiTabs(DEFAULT_ROLE_PERMISSIONS[role]), role).toEqual([]);
     }
+    // The chat is the owner's own (ai.manage), like Settings.
     expect(visibleAiTabs(["ai.view"]).map((t) => t.label)).toEqual([
       "AI Home",
+      "Mehedi 2.0",
+      "Drafts",
       "Control",
       "Budget & Costs",
       "Models",
+      "Books & tests",
       "Logs",
     ]);
   });

@@ -79,6 +79,7 @@ import {
   setControlCellAction,
 } from "@/server/actions/ai.actions";
 
+import { passAllBooks } from "../fixtures/ai-books";
 import { claudeMessage } from "../fixtures/claude";
 import { addToCompany, contextFor, makeCompany, makeUser, resetDb } from "./helpers";
 
@@ -106,6 +107,8 @@ async function setup() {
     return contextFor(user.id, companyId);
   };
   const owner = await join(roles.SUPER_ADMIN, "owner");
+  // Do counts only once Mehedi 2.0 has passed his books' tests (tested in ai-mehedi).
+  await passAllBooks(company.id);
   const watcherRole = await createRole(owner, {
     name: "AI Watcher",
     permissions: ["dashboard.view", "ai.view"],

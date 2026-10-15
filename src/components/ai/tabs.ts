@@ -12,9 +12,13 @@ export const AI_KEYS: readonly PermissionKey[] = ["ai.view", "ai.manage"];
 
 export const AI_TABS: readonly AiTab[] = [
   { href: "/ai", label: "AI Home", anyOf: AI_KEYS },
+  { href: "/ai/mehedi", label: "Mehedi 2.0", anyOf: AI_KEYS },
+  { href: "/ai/chat", label: "Chat", anyOf: ["ai.manage"] },
+  { href: "/ai/drafts", label: "Drafts", anyOf: AI_KEYS },
   { href: "/ai/control", label: "Control", anyOf: AI_KEYS },
   { href: "/ai/costs", label: "Budget & Costs", anyOf: AI_KEYS },
   { href: "/ai/models", label: "Models", anyOf: AI_KEYS },
+  { href: "/ai/knowledge", label: "Books & tests", anyOf: AI_KEYS },
   { href: "/ai/logs", label: "Logs", anyOf: AI_KEYS },
   { href: "/ai/settings", label: "Settings", anyOf: ["ai.manage"] },
 ];

@@ -29,7 +29,8 @@ import {
 
 export type ClaudeRequest = {
   task: AiTaskKey;
-  system?: string;
+  /** Plain text, or blocks (a long book marked for the prompt cache). */
+  system?: string | Anthropic.TextBlockParam[];
   messages: Anthropic.MessageParam[];
   maxTokens: number;
   tools?: Anthropic.Tool[];

@@ -63,6 +63,17 @@ export function recordHref(ctx: Can, link: RecordLink | null): string | null {
     case "AiBudget":
       // The AI's spending passed the alert percentage of the month's budget.
       return ctx.can("ai.view") || ctx.can("ai.manage") ? "/ai/costs" : null;
+    case "AiDraft":
+      // A draft Mehedi 2.0 made for the owner to send (a buyer's follow-up, a reply waiting).
+      return ctx.can("ai.view") || ctx.can("ai.manage") ? `/ai/drafts#draft-${id}` : null;
+    case "OrderCosting":
+      return ctx.can("costing.view") ? `/production/costing/${id}` : null;
+    case "HouseRule":
+      // A House Rule Mehedi 2.0 proposed, for the owner to approve.
+      return ctx.can("ai.view") || ctx.can("ai.manage") ? "/ai/mehedi#teach" : null;
+    case "AiRequest":
+      // Something the AI asks the owner for (permission, a Deletion request).
+      return ctx.can("ai.view") || ctx.can("ai.manage") ? "/ai" : null;
     default:
       return null;
   }
@@ -86,4 +97,8 @@ export const RECORD_NOUNS: Record<string, string> = {
   MyItems: "my items",
   MySalary: "my money",
   AiBudget: "the AI costs",
+  AiDraft: "the draft",
+  AiRequest: "the AI's requests",
+  OrderCosting: "the costing sheet",
+  HouseRule: "the House Rule",
 };

@@ -8,7 +8,7 @@ import { activeMembers, membersWith } from "@/modules/reminders/audience";
 import { sendInApp } from "@/modules/reminders/notification.service";
 
 import type { AiRecord } from "./control.service";
-import { costUsd, taskInfo } from "./models";
+import { costUsd, taskInfo, type TokenUse } from "./models";
 
 /*
  * What the AI spends (AI Center > Budget & Costs). Every call to Claude writes
@@ -247,12 +247,25 @@ async function alertOnce(companyId: string, budget: AiBudget, now: Date, db: Db)
 /** The models that count as big work: their tasks show an estimate first without a budget. */
 const BIG_MODELS: readonly string[] = ["claude-opus-5-5", "claude-fable-5-1"];
 
-/** About this many characters make one token; a picture or a PDF page about this many tokens. */
+/**
+ * About this many characters of English make one token; Bengali and other
+ * scripts take about a token a character. A picture or a PDF page about this many tokens.
+ */
 const CHARS_PER_TOKEN = 3.5;
 const TOKENS_PER_FILE = 1_600;
 
+/** Tokens of a text: Latin script by length, other scripts (Bengali) a token a character. */
+function textTokens(text: string): number {
+  let other = 0;
+  for (const ch of text) {
+    const code = ch.codePointAt(0)!;
+    if (code > 0x24f && (code < 0x2000 || code > 0x206f)) other += 1;
+  }
+  return (text.length - other) / CHARS_PER_TOKEN + other;
+}
+
 type Countable = {
-  system?: string;
+  system?: string | ReadonlyArray<{ type: string; text?: string }>;
   messages: ReadonlyArray<{ content: unknown }>;
   tools?: ReadonlyArray<unknown>;
   maxTokens: number;
@@ -260,21 +273,24 @@ type Countable = {
 
 /** A rough count of a request's input tokens (text by length, a picture or file at a flat rate). */
 export function estimateInputTokens(request: Countable): number {
-  let chars =
-    (request.system ?? "").length + (request.tools ? JSON.stringify(request.tools).length : 0);
+  const system =
+    typeof request.system === "string"
+      ? request.system
+      : (request.system ?? []).map((b) => b.text ?? "").join("");
+  let tokens = textTokens(system) + (request.tools ? textTokens(JSON.stringify(request.tools)) : 0);
   let files = 0;
   for (const m of request.messages) {
     if (typeof m.content === "string") {
-      chars += m.content.length;
+      tokens += textTokens(m.content);
       continue;
     }
     for (const block of (m.content ?? []) as Array<{ type?: string; text?: string }>) {
-      if (block.type === "text") chars += block.text?.length ?? 0;
+      if (block.type === "text") tokens += textTokens(block.text ?? "");
       else if (block.type === "image" || block.type === "document") files += 1;
-      else chars += JSON.stringify(block).length;
+      else tokens += textTokens(JSON.stringify(block));
     }
   }
-  return Math.ceil(chars / CHARS_PER_TOKEN) + files * TOKENS_PER_FILE;
+  return Math.ceil(tokens) + files * TOKENS_PER_FILE;
 }
 
 export type CostEstimate = {
@@ -297,19 +313,38 @@ export async function estimateCost(
   request: Countable,
   db: Db = prisma,
 ): Promise<CostEstimate> {
+  return estimateUse(
+    companyId,
+    model,
+    { input: estimateInputTokens(request), output: request.maxTokens },
+    {},
+    db,
+  );
+}
+
+/**
+ * The same for work of many calls, from its token counts (a book test: the
+ * books once, then read from the cache). `big` asks first without a monthly
+ * budget whatever the model.
+ */
+export async function estimateUse(
+  companyId: string,
+  model: string,
+  use: TokenUse,
+  options: { big?: boolean } = {},
+  db: Db = prisma,
+): Promise<CostEstimate> {
   const [budget, company] = await Promise.all([
     budgetOf(companyId, db),
     db.company.findUniqueOrThrow({ where: { id: companyId }, select: { currency: true } }),
   ]);
-  const usd = new Prisma.Decimal(
-    costUsd(model, { input: estimateInputTokens(request), output: request.maxTokens }).toFixed(6),
-  );
+  const usd = new Prisma.Decimal(costUsd(model, use).toFixed(6));
   const cost = usd.times(budget.usdRate).toDecimalPlaces(2, Prisma.Decimal.ROUND_UP);
   const about = `about ${taka(cost, company.currency)}`;
   let askFirst: string | null = null;
   if (budget.askAbove && cost.gt(budget.askAbove)) {
     askFirst = `This task may cost ${about}, above the ${taka(budget.askAbove, company.currency)} you asked to be asked about.`;
-  } else if (!budget.monthly && BIG_MODELS.includes(model)) {
+  } else if (!budget.monthly && (options.big || BIG_MODELS.includes(model))) {
     askFirst = `This is big work and may cost ${about}. No monthly budget is set, so the AI asks first.`;
   }
   return {

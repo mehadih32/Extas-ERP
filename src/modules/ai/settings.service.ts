@@ -42,6 +42,8 @@ export async function aiSettingsOf(companyId: string, db: Db = prisma): Promise<
       pinHash: null,
       pinSetAt: null,
       assistantName: "Mehedi 2.0",
+      aiUserId: null,
+      replyRemindHours: 24,
       updatedAt: new Date(0),
     }
   );
@@ -135,6 +137,7 @@ export async function getAiStatus(ctx: CompanyContext) {
     pinSet: settings.pinHash !== null,
     allowFable: settings.allowFable,
     assistantName: settings.assistantName,
+    replyRemindHours: settings.replyRemindHours,
     can: { manage: ctx.can("ai.manage") },
   };
 }
@@ -315,6 +318,27 @@ export async function setAssistantName(ctx: CompanyContext, input: unknown, meta
     entityType: "AiSettings",
     entityId: ctx.company.id,
     summary: `Named the AI "${name}"`,
+  });
+}
+
+export const replyRemindSchema = z.object({
+  hours: z.coerce
+    .number()
+    .int("Give whole hours")
+    .min(1, "Give at least 1 hour")
+    .max(168, "Give at most 168 hours (a week)"),
+});
+
+/** After how many hours an unsent buyer draft reminds the owner (24 to start with). */
+export async function setReplyRemindHours(ctx: CompanyContext, input: unknown, meta?: RequestMeta) {
+  assertManage(ctx);
+  const { hours } = replyRemindSchema.parse(input);
+  await saveSettings(ctx, { replyRemindHours: hours });
+  await auditInCompany(ctx, meta, {
+    action: "UPDATE",
+    entityType: "AiSettings",
+    entityId: ctx.company.id,
+    summary: `Unsent buyer drafts remind the owner after ${hours} hours`,
   });
 }
 

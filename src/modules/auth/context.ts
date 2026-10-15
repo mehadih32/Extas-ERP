@@ -34,6 +34,8 @@ export type CompanyContext = ValidSession &
     /** Prisma client that can only see this company's data. */
     db: TenantDb;
     can: (permission: PermissionKey) => boolean;
+    /** The AI acting through its own account (modules/ai/account.ts): its audit rows are marked "AI". */
+    byAi?: boolean;
   };
 
 /**

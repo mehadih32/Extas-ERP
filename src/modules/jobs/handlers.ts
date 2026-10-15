@@ -15,6 +15,8 @@ export const JOB_HANDLERS: Record<JobKind, () => Promise<JobHandler>> = {
   "claim.route": async () => (await import("@/modules/hr/claims.service")).runClaimRouteJob,
   "salary.payout": async () => (await import("@/modules/hr/payroll.service")).runSalaryPayoutJob,
   "exit.certificate": async () => (await import("@/modules/hr/exit-pdf")).runExitCertificateJob,
+  "ai.knowledge.test": async () =>
+    (await import("@/modules/ai/knowledge.service")).runKnowledgeTestJob,
 };
 
 export function isJobKind(kind: string): kind is JobKind {

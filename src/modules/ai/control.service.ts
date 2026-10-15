@@ -31,6 +31,7 @@ import {
   refOf,
   setCell,
 } from "./control-tree";
+import { BOOKS, testsMissingFor } from "./knowledge";
 import { aiSettingsOf, offReason, OFF_TEXT } from "./settings.service";
 
 /*
@@ -82,13 +83,34 @@ export type AiMay = {
  * May the AI do this action now (on this record)? Do: it does it itself; Ask:
  * it asks the owner first; Off: it asks for permission. Off while AI is
  * switched off or paused, or for anything that is not a cell (deleting, roles,
- * backups).
+ * backups). Do becomes Ask while Mehedi 2.0 has not passed the tests of the
+ * books the action needs (knowledge.ts).
  */
 export async function aiMay(
   companyId: string,
   key: string,
   record?: AiRecord,
   db: Db = prisma,
+): Promise<AiMay> {
+  const may = await cellMay(companyId, key, record, db);
+  if (may.state !== "DO") return may;
+  const missing = await testsMissingFor(companyId, key, new Date(), db);
+  if (missing.length === 0) return may;
+  return {
+    state: "ASK",
+    why: `Do waits for the ${missing.map((b) => BOOKS[b].title.split(" · ")[0]).join(", ")} test${
+      missing.length > 1 ? "s" : ""
+    }: until he passes, he asks you first`,
+    grantId: null,
+  };
+}
+
+/** What the cells and grants say, before the tests. */
+async function cellMay(
+  companyId: string,
+  key: string,
+  record: AiRecord | undefined,
+  db: Db,
 ): Promise<AiMay> {
   const settings = await aiSettingsOf(companyId, db);
   const off = offReason(settings);

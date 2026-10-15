@@ -17,6 +17,14 @@ export const AI_CENTER_ENTITIES = [
   "AiControl",
   "AiPermissionRequest",
   "AiDeletionRequest",
+  "AiBudget",
+  "AiChat",
+  "AiDraft",
+  "AiFollowUp",
+  "AiKnowledgeBook",
+  "AiTestRun",
+  "HouseRule",
+  "CompanyMailSettings",
 ] as const;
 
 export const LOG_FILTERS = [
@@ -42,7 +50,7 @@ export async function getAiLogs(ctx: CompanyContext, filter: LogFilter = "all") 
       where,
       orderBy: { createdAt: "desc" },
       take: PAGE,
-      include: { user: { select: { name: true } } },
+      include: { user: { select: { id: true, name: true } } },
     }),
   ]);
   return {
@@ -52,7 +60,8 @@ export async function getAiLogs(ctx: CompanyContext, filter: LogFilter = "all") 
       at: r.createdAt,
       byAi: r.byAi,
       who: r.byAi
-        ? `${aiLabel(settings)}${r.user ? ` for ${r.user.name}` : ""}`
+        ? // Done in the AI's own account, or (before it had one) for the person who asked.
+          `${aiLabel(settings)}${r.user && r.user.id !== settings.aiUserId ? ` for ${r.user.name}` : ""}`
         : (r.user?.name ?? "The system"),
       action: r.action,
       what: r.summary ?? r.entityType,

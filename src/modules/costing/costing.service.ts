@@ -442,6 +442,33 @@ export async function removeCostingStyle(
   return { id: line.id };
 }
 
+export const profitPercentSchema = z.object({
+  percent: z.coerce.number().min(-50, "At least −50%.").max(80, "At most 80%."),
+});
+
+/** The owner's profit % for this order alone (from the sheet, or Apply on a chat card). */
+export async function setProfitPercent(
+  ctx: CompanyContext,
+  costingId: string,
+  raw: unknown,
+  meta?: RequestMeta,
+) {
+  assertManage(ctx);
+  const costing = await loadCosting(ctx, costingId);
+  const { percent } = profitPercentSchema.parse(raw);
+  await ctx.db.orderCosting.update({
+    where: { id: costing.id },
+    data: { profitPercent: new Prisma.Decimal(percent.toFixed(2)) },
+  });
+  await auditInCompany(ctx, meta, {
+    action: "UPDATE",
+    entityType: "OrderCosting",
+    entityId: costing.id,
+    summary: `${costing.number}: profit ${costing.profitPercent?.toString() ?? "not set"}% → ${percent}%`,
+  });
+  return { id: costing.id };
+}
+
 /** The owner's word after the Order check card: never made by the system or the AI. */
 export async function decideCosting(
   ctx: CompanyContext,

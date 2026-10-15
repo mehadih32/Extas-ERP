@@ -1,11 +1,15 @@
 import type { HelpSection } from "../types";
 
-/** The AI Center: the main switch, what the AI may do (Control), its requests, costs and budget, models, logs and settings. */
+/**
+ * The AI Center: the main switch, Mehedi 2.0 (profile, Teach, chat, drafts,
+ * books and tests), what the AI may do (Control), its requests, costs and
+ * budget, models, logs and settings.
+ */
 export const aiHelp: HelpSection = {
   id: "ai",
   title: "এআই সেন্টার (AI)",
   description:
-    "এআই (Mehedi 2.0) চালু বা বন্ধ করা, সে কী করতে পারবে তা ঠিক করা (Do / Ask / Off), তার অনুরোধের উত্তর দেওয়া, তার খরচ ও বাজেট, কোন কাজে কোন মডেল, তার সব কাজের লগ, আর Claude key ও PIN।",
+    "এআই (Mehedi 2.0) চালু বা বন্ধ করা, তার সঙ্গে চ্যাট, তাকে নিয়ম শেখানো, তার খসড়া পাঠানো, তার বই ও টেস্ট, সে কী করতে পারবে (Do / Ask / Off), তার অনুরোধের উত্তর, খরচ ও বাজেট, মডেল, লগ, আর Claude key, PIN ও ইমেইল।",
   href: "/ai",
   articles: [
     {
@@ -94,6 +98,184 @@ export const aiHelp: HelpSection = {
       tips: [
         "একই প্রশ্ন একবারই আসে; উত্তর না দেওয়া পর্যন্ত এআই সেই কাজ করে না।",
         "বটের মাধ্যমে আসা অনুরোধে “From the bot” লেখা থাকে।",
+      ],
+    },
+    {
+      slug: "ai-mehedi",
+      title: "Mehedi 2.0-কে চিনবেন ও শেখাবেন যেভাবে (Teach)",
+      summary:
+        "Mehedi 2.0 আপনার এআই কপি (X26): সে কী কখনো করে না, Control-এ কতটা খোলা, এ মাসের খরচ, টেস্টের ফল, শেষ কাজ, আর Teach-এ আপনার নিয়ম (House Rules)।",
+      keywords: [
+        "mehedi 2.0",
+        "profile",
+        "teach",
+        "house rule",
+        "rule",
+        "x26",
+        "pause",
+        "মেহেদী",
+        "প্রোফাইল",
+        "নিয়ম",
+        "শেখানো",
+      ],
+      routes: ["/ai/mehedi"],
+      who: "দেখেন যাঁদের এআই সেন্টার খোলা; Pause আর Teach শুধু মালিকের (ai.manage)।",
+      steps: [
+        {
+          text: "“AI” > “Mehedi 2.0” খুলুন। উপরে তার নাম, অবস্থা (On, Paused, Off বা No key), আর চারটি সংখ্যা: “Do / Ask / Off”, “AI cost this month”, “Tests passed” ও “Waiting for you”।",
+          image: { id: "ai-mehedi-1", caption: "“Mehedi 2.0”: পরিচয়, অবস্থা ও চারটি সংখ্যা" },
+        },
+        {
+          text: "“What he never does” অংশে তার স্থায়ী সীমা: সে কিছু মোছে না, কারও অনুমতি বদলায় না, বাজেটের বাইরে খরচ করে না, আর বায়ারের কাছে কিছু পাঠায় না আপনার OK ছাড়া।",
+        },
+        {
+          text: "সব কাজ তখনই থামাতে “Pause” চাপুন; আবার চালু করতে “Resume”। চ্যাটে “সব থামাও” লিখলেও একই কাজ হয়।",
+        },
+        {
+          text: "নিয়ম শেখাতে “Teach” অংশে “Teach a rule” চাপুন। “Rule” ঘরে নিয়মটি লিখুন, “For”-এ বেছে নিন সব কিছুর জন্য নাকি একটি বায়ার, ব্র্যান্ড বা আইটেমের জন্য, তারপর “Save the proposal”।",
+          image: {
+            id: "ai-mehedi-2",
+            caption: "“Teach”: প্রস্তাব, চালু নিয়ম ও “Approve” / “Reject”",
+          },
+        },
+        {
+          text: "প্রস্তাবটি “To approve”-এ আসে। একই বিষয়ে আগের নিয়ম থাকলে নিচে লাল লেখায় দেখায়। “Approve” চাপলে নিয়মটি তখন থেকে তার বইয়ের উপরে খাটে; “Reject” চাপলে বাতিল।",
+        },
+        {
+          text: "চালু নিয়ম আর না চাইলে “House Rules in use”-এ তার পাশে “Retire” চাপুন।",
+        },
+      ],
+      tips: [
+        "চ্যাটে “নিয়ম:” বা “Rule:” দিয়ে শুরু করে লিখলেও নিয়মটি প্রস্তাব হিসেবে Teach-এ আসে।",
+        "Control-এ কোনো ঘর “Do” হলেও যতক্ষণ সে দরকারি বইয়ের টেস্ট পাস না করে, ততক্ষণ সে আগে আপনাকে জিজ্ঞেস করে।",
+      ],
+    },
+    {
+      slug: "ai-chat",
+      title: "Mehedi 2.0-এর সঙ্গে চ্যাট করবেন যেভাবে",
+      summary:
+        "বাংলা বা ইংরেজিতে লিখুন: অর্ডারের অবস্থা, রিপোর্ট PDF, এআই-এর খরচ, কস্টিং ও Order check card, ড্রাফট, কাজ, ফলো-আপ। কিছু বদলাতে হলে সে একটি কার্ড দেখায়; আপনি “Apply” চাপলে তবেই বদলায়।",
+      keywords: [
+        "chat",
+        "command",
+        "mehedi 2.0",
+        "report pdf",
+        "order status",
+        "apply",
+        "পাঠাও",
+        "চ্যাট",
+        "কমান্ড",
+        "রিপোর্ট",
+        "অর্ডারের অবস্থা",
+      ],
+      routes: ["/ai/chat"],
+      who: "শুধু মালিক (ai.manage)।",
+      anyOf: ["ai.manage"],
+      steps: [
+        {
+          text: "“AI” > “Chat” খুলুন। নিচের ঘরে লিখে “Send” চাপুন (বা Enter)। কী কী বলা যায় দেখতে “help” লিখুন বা “help” বোতাম চাপুন।",
+          image: { id: "ai-chat-1", caption: "“Chat”: বার্তা, কার্ড ও লেখার ঘর" },
+        },
+        {
+          text: "যেমন: “অর্ডার 2611-002-এর অবস্থা”, “আজকের সেল রিপোর্ট PDF দাও” (ইমেইলে চাইলে “ইমেইল” যোগ করুন), “শেষ 7 দিনের খরচ”, “CS-2026-0001 কস্টিং”।",
+        },
+        {
+          text: "কিছু বদলানোর কথা বললে (“আজকের জন্য Accounts খুলে দাও”, “CS-2026-0001 profit 12%”, “কাজ: …”, “Follow up: …”) সে একটি কার্ড দেখায়: কোন পাতা, আগে কী, পরে কী। “Apply” চাপলে আপনার নামে বদলায়; “Cancel” চাপলে কিছুই বদলায় না।",
+          image: { id: "ai-chat-2", caption: "বদলের কার্ড: “Apply”, “Edit” ও “Cancel”" },
+        },
+        {
+          text: "বায়ারের জন্য খসড়া চাইলে (“Draft follow-up to …”) খসড়াটি কার্ডে আসে। পাঠাতে “পাঠাও” লিখুন বা কার্ডের “Send” চাপুন; আপনি না পাঠালে বায়ারের কাছে কিছু যায় না।",
+        },
+        {
+          text: "কিছু মুছতে বললে সে মোছে না: আপনার কাছে Deletion request পাঠায়। “AI Home”-এ PIN দিয়ে সিদ্ধান্ত নিন।",
+        },
+      ],
+      tips: [
+        "এআই বন্ধ থাকলে চ্যাট শুধু “help” আর “status”-এর উত্তর দেয়; থামানো থাকলে “আবার চালু করো” লিখলে আবার কাজ শুরু করে।",
+        "Claude key না থাকলেও উপরের কমান্ডগুলো চলে; খোলা প্রশ্ন আর “@X07 …”-এর মতো বিশেষজ্ঞকে প্রশ্নের জন্য key লাগে।",
+        "সব কাজ এখনই থামাতে “সব থামাও” লিখুন।",
+      ],
+    },
+    {
+      slug: "ai-drafts",
+      title: "এআই-এর লেখা খসড়া দেখবেন, বদলাবেন ও পাঠাবেন যেভাবে",
+      summary:
+        "বায়ার, সাপ্লায়ার ও ফ্যাক্টরির জন্য খসড়া এখানে থাকে। বায়ারের খসড়া যায় শুধু আপনি “Send” চাপলে; না পাঠালে নির্দিষ্ট ঘণ্টা পরে মনে করিয়ে দেয়। ফলো-আপের দিনও এখানে ঠিক করেন।",
+      keywords: [
+        "drafts",
+        "send",
+        "email",
+        "follow-up",
+        "reminder",
+        "buyer",
+        "খসড়া",
+        "পাঠানো",
+        "ইমেইল",
+        "ফলো-আপ",
+      ],
+      routes: ["/ai/drafts"],
+      who: "দেখেন যাঁদের এআই সেন্টার খোলা; লেখা, পাঠানো ও বাতিল শুধু মালিকের (ai.manage)।",
+      steps: [
+        {
+          text: "“AI” > “Drafts” খুলুন। “Waiting”-এ যা পাঠানো বাকি, “Sent”-এ যা গেছে, “Discarded”-এ যা বাদ দিয়েছেন।",
+          image: { id: "ai-drafts-1", caption: "“Drafts”: খসড়ার তালিকা ও “Send”" },
+        },
+        {
+          text: "খসড়া পড়ে দরকার হলে “Edit” চাপুন: “To (email)”, “Subject” ও “Message” বদলে “Save”। তারপর “Send” চাপুন। ইমেইল ঠিকানা না থাকলে “Send” চাপা যায় না।",
+        },
+        {
+          text: "নিজে নতুন খসড়া লিখতে “New draft” চাপুন। “Kind” ও “For” বেছে নিন, “About” আর “Your points” লিখে “Write with AI” চাপলে এআই লিখে দেয়; দেখে “Save the draft”।",
+        },
+        {
+          text: "ফলো-আপের দিন ঠিক করতে “Follow-ups” অংশে “Set a follow-up” চাপুন: “Buyer”, “Day”, “Order” দিয়ে “Save”। সেদিন একটি খসড়া তৈরি হয় আর ইনবক্সে মনে করিয়ে দেয়।",
+        },
+        {
+          text: "দরকার না থাকলে খসড়ায় “Discard”, ফলো-আপে “Done” বা “Cancel” চাপুন।",
+        },
+      ],
+      tips: [
+        "ইমেইল পাঠাতে আগে “AI” > “Settings”-এ “Email for sending” ঠিক করুন।",
+        "কত ঘণ্টা পরে মনে করাবে তা “Settings”-এর “Reminder for unsent buyer drafts”-এ বদলান (শুরুতে 24 ঘণ্টা)।",
+      ],
+    },
+    {
+      slug: "ai-knowledge",
+      title: "Mehedi 2.0-এর বই ও টেস্ট দেখবেন যেভাবে (Books & tests)",
+      summary:
+        "সে K1–K5 আর নিজের X26 বই থেকে কাজ করে। প্রতিটি বইয়ের টেস্টে 8টির মধ্যে 7টি ঠিক হলে পাস; পাস 31 দিন চলে। পাস না করা পর্যন্ত তার “Do” ঘরও আগে জিজ্ঞেস করে।",
+      keywords: [
+        "books",
+        "tests",
+        "knowledge",
+        "k1",
+        "k5",
+        "x26",
+        "pass",
+        "বই",
+        "টেস্ট",
+        "পরীক্ষা",
+        "পাস",
+      ],
+      routes: ["/ai/knowledge", "/ai/knowledge/[code]"],
+      who: "দেখেন যাঁদের এআই সেন্টার খোলা; টেস্ট চালানো ও বই বদলানো শুধু মালিকের (ai.manage)।",
+      steps: [
+        {
+          text: "“AI” > “Books & tests” খুলুন। প্রতিটি বইয়ের পাশে টেস্টের অবস্থা: “Passed”, “Not passed”, “Due again”, “Running” বা “Not taken yet”।",
+          image: { id: "ai-knowledge-1", caption: "“Books & tests”: বই, টেস্টের অবস্থা ও নম্বর" },
+        },
+        {
+          text: "টেস্ট চালাতে বইগুলোর পাশে টিক দিয়ে “Run the tests” চাপুন। খরচ আগে জানানোর কথা থাকলে আনুমানিক খরচ দেখায়; রাজি হলে “Go on” চাপুন। কয়েক মিনিট পরে ফল আসে।",
+        },
+        {
+          text: "বইয়ের নাম চাপলে তার লেখা, প্রশ্ন ও প্রত্যাশিত উত্তর, আর আগের টেস্টে তার প্রতিটি উত্তর ও কেন ঠিক বা ভুল দেখা যায়।",
+          image: { id: "ai-knowledge-2", caption: "একটি বই: লেখা, প্রশ্ন ও আগের টেস্ট" },
+        },
+        {
+          text: "এই কোম্পানির জন্য বই বদলাতে “Change the text” চাপুন, বদলে “Save the text”। আগের লেখায় ফিরতে “Back to the shipped text”। বই বদলালে টেস্ট আবার দিতে হয়।",
+        },
+      ],
+      tips: [
+        "টেস্ট এআই-এর কাজ, তাই এআই চালু আর Claude key থাকতে হয়; খরচ “Budget & Costs”-এ দেখা যায়।",
       ],
     },
     {
@@ -244,10 +426,23 @@ export const aiHelp: HelpSection = {
     },
     {
       slug: "ai-settings",
-      title: "Claude key, PIN ও এআই-এর নাম ঠিক করবেন যেভাবে",
+      title: "Claude key, PIN, এআই-এর নাম ও ইমেইল ঠিক করবেন যেভাবে",
       summary:
         "এআই কাজ করে কোম্পানির Claude key দিয়ে (লক করে রাখা হয়, শেষ 4টি অক্ষর ছাড়া আর দেখা যায় না)। PIN চাওয়া হয় টাকা, দাম ও মুছে ফেলার অনুমোদনে।",
-      keywords: ["settings", "api key", "claude key", "pin", "name", "সেটিংস", "কী", "পিন", "নাম"],
+      keywords: [
+        "settings",
+        "api key",
+        "claude key",
+        "pin",
+        "name",
+        "email",
+        "smtp",
+        "সেটিংস",
+        "কী",
+        "পিন",
+        "নাম",
+        "ইমেইল",
+      ],
       routes: ["/ai/settings"],
       who: "শুধু মালিক (ai.manage)।",
       anyOf: ["ai.manage"],
@@ -264,6 +459,15 @@ export const aiHelp: HelpSection = {
         },
         {
           text: "এআই-এর নাম বদলাতে “Rename” চাপুন। সে যা লেখে সবকিছুর নিচে নামের সঙ্গে “(AI)” থাকে, যাতে কেউ মানুষ ভেবে ভুল না করে।",
+        },
+        {
+          text: "খসড়া ইমেইলে পাঠাতে “Email for sending”-এ “Add the email” চাপুন: “Mail server”, “Port”, “Sign-in name”, “Password” ও “From address” দিয়ে “Save”। তারপর “Send a test email” চেপে দেখে নিন।",
+        },
+        {
+          text: "Gmail হলে: Google Account-এ 2-Step Verification চালু করে App password বানান, তারপর smtp.gmail.com, port 587, আপনার Gmail ঠিকানা আর সেই App password দিন।",
+        },
+        {
+          text: "বায়ারের না-পাঠানো খসড়া কত ঘণ্টা পরে মনে করাবে, তা “Reminder for unsent buyer drafts”-এ “Change” চেপে ঠিক করুন।",
         },
       ],
       tips: [

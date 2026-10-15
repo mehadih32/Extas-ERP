@@ -14,6 +14,8 @@ export type AuditInput = {
   before?: Prisma.InputJsonValue;
   after?: Prisma.InputJsonValue;
   meta?: RequestMeta;
+  /** Done by the AI (its own account in userId): shown with an "AI" mark. */
+  byAi?: boolean;
 };
 
 /** Writes one row to the security / activity log. Pass `db` to join a transaction. */
@@ -30,6 +32,7 @@ export async function recordAudit(input: AuditInput, db: Db = prisma): Promise<v
       after: input.after,
       ipAddress: input.meta?.ipAddress,
       userAgent: input.meta?.userAgent,
+      byAi: input.byAi ?? false,
     },
   });
 }
@@ -66,12 +69,18 @@ export async function listAuditLogs(query: AuditQuery) {
   return { items, nextCursor: hasMore ? items[items.length - 1]?.id : undefined };
 }
 
-/** Shorthand for module services: stamps the company and acting user from the context. */
+/**
+ * Shorthand for module services: stamps the company and acting user from the
+ * context (the AI's own account, marked "AI", when the AI acts: modules/ai/account.ts).
+ */
 export async function auditInCompany(
-  ctx: { company: { id: string }; user: { id: string } },
+  ctx: { company: { id: string }; user: { id: string }; byAi?: boolean },
   meta: RequestMeta | undefined,
   input: Omit<AuditInput, "companyId" | "userId" | "meta">,
   db: Db = prisma,
 ): Promise<void> {
-  await recordAudit({ ...input, companyId: ctx.company.id, userId: ctx.user.id, meta }, db);
+  await recordAudit(
+    { ...input, companyId: ctx.company.id, userId: ctx.user.id, meta, byAi: ctx.byAi },
+    db,
+  );
 }

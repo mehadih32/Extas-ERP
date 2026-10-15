@@ -136,6 +136,12 @@ export const AI_TASKS = [
     model: "claude-sonnet-5-5",
     module: "AI",
   },
+  {
+    key: "knowledge.test",
+    label: "Book tests (K1–K5 and X26)",
+    model: "claude-sonnet-5-5",
+    module: "AI",
+  },
   // Small work: the small model.
   {
     key: "read.documents",

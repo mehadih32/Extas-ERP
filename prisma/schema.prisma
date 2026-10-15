@@ -202,6 +202,13 @@ model Company {
   aiDeletionRequests    AiDeletionRequest[]
   aiUsage               AiUsage[]
   aiBudget              AiBudget?
+  aiKnowledgeBooks      AiKnowledgeBook[]
+  aiTestRuns            AiTestRun[]
+  aiChatMessages        AiChatMessage[]
+  aiDrafts              AiDraft[]
+  aiFollowUps           AiFollowUp[]
+  houseRules            HouseRule[]
+  mailSettings          CompanyMailSettings?
 }
 
 /// A person who can log in. Global across companies.
@@ -310,6 +317,16 @@ model User {
   aiDeletionsAnswered AiDeletionRequest[]    @relation("AiDeletionRequestAnsweredBy")
   aiUsage             AiUsage[]              @relation("AiUsageUser")
   aiBudgetsSet        AiBudget[]             @relation("AiBudgetUpdatedBy")
+  aiAccountOf         AiSettings?            @relation("AiSettingsAiUser")
+  aiBooksEdited       AiKnowledgeBook[]      @relation("AiKnowledgeBookEditedBy")
+  aiTestRunsStarted   AiTestRun[]            @relation("AiTestRunStartedBy")
+  aiChatMessages      AiChatMessage[]        @relation("AiChatMessageUser")
+  aiDraftsWritten     AiDraft[]              @relation("AiDraftCreatedBy")
+  aiDraftsSent        AiDraft[]              @relation("AiDraftSentBy")
+  aiFollowUpsSet      AiFollowUp[]           @relation("AiFollowUpCreatedBy")
+  houseRulesProposed  HouseRule[]            @relation("HouseRuleProposedBy")
+  houseRulesDecided   HouseRule[]            @relation("HouseRuleDecidedBy")
+  mailSettingsSet     CompanyMailSettings[]  @relation("MailSettingsUpdatedBy")
 }
 
 /// A signed-in device. `token` stores the SHA-256 hash of the cookie value, never
@@ -1345,6 +1362,8 @@ model Party {
   costingsAsBuyer      OrderCosting[]       @relation("CostingBuyer")
   costingsAsFactory    OrderCosting[]       @relation("CostingFactory")
   fabricQuotes         FabricQuote[]        @relation("FabricQuoteSupplier")
+  aiDrafts             AiDraft[]            @relation("AiDraftParty")
+  aiFollowUps          AiFollowUp[]         @relation("AiFollowUpParty")
   campaignRecipients   CampaignRecipient[]
   generatedDocuments   GeneratedDocument[]
   projectSettlements   ProjectSettlement[]
@@ -4436,34 +4455,40 @@ enum SystemRole {
 /// it is off or paused), its Claude key, the model per task and the PIN asked
 /// for money, prices and Deletion requests.
 model AiSettings {
-  id            String    @id @default(cuid())
-  companyId     String    @unique
-  enabled       Boolean   @default(false)
+  id               String    @id @default(cuid())
+  companyId        String    @unique
+  enabled          Boolean   @default(false)
   /// When the switch was last turned on or off, and by whom.
-  changedAt     DateTime?
-  changedById   String?
+  changedAt        DateTime?
+  changedById      String?
   /// Paused (from the Mehedi 2.0 page or the bot): no AI work until resumed.
-  pausedAt      DateTime?
+  pausedAt         DateTime?
   /// The Claude API key, sealed with ENCRYPTION_KEY (lib/crypto.ts); the
   /// server's AI_API_KEY is used while it is empty.
-  apiKeySealed  String?
+  apiKeySealed     String?
   /// The key's last four characters, to recognise it.
-  apiKeyHint    String?
-  apiKeySetAt   DateTime?
+  apiKeyHint       String?
+  apiKeySetAt      DateTime?
   /// The owner's model per task (task key to model id, modules/ai/models.ts);
   /// the system's choice for the rest.
-  models        Json?
+  models           Json?
   /// Fable 5.1 may be chosen for a task (off until the owner allows it).
-  allowFable    Boolean   @default(false)
+  allowFable       Boolean   @default(false)
   /// The PIN's hash (lib/auth/password.ts), asked for money, prices and deletions.
-  pinHash       String?
-  pinSetAt      DateTime?
+  pinHash          String?
+  pinSetAt         DateTime?
   /// The AI's name in this company, on everything it writes ("Mehedi 2.0").
-  assistantName String    @default("Mehedi 2.0")
-  updatedAt     DateTime  @updatedAt
+  assistantName    String    @default("Mehedi 2.0")
+  /// The AI's own account (it cannot sign in): what it does is written to the
+  /// activity log in its name, marked "AI".
+  aiUserId         String?   @unique
+  /// Hours after which the owner is reminded of a buyer draft not sent yet.
+  replyRemindHours Int       @default(24)
+  updatedAt        DateTime  @updatedAt
 
   company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
   changedBy User?   @relation("AiSettingsChangedBy", fields: [changedById], references: [id], onDelete: SetNull)
+  aiUser    User?   @relation("AiSettingsAiUser", fields: [aiUserId], references: [id], onDelete: SetNull)
 }
 
 /// A cell of Control the owner set: an area ("b:<id>") or an action
@@ -5743,4 +5768,245 @@ model OrderCostingStyle {
   quote   FabricQuote? @relation(fields: [fabricQuoteId], references: [id], onDelete: SetNull)
 
   @@index([costingId])
+}
+
+// =============================================================================
+// MEHEDI 2.0: BOOKS AND TESTS, CHAT, DRAFTS, FOLLOW-UPS, HOUSE RULES, EMAIL
+// =============================================================================
+
+/// A company's own text of one of Mehedi 2.0's books (K1–K5, X26), when the
+/// owner changed it; the books shipped with the app are used otherwise.
+model AiKnowledgeBook {
+  id          String   @id @default(cuid())
+  companyId   String
+  /// "K1".."K5" or "X26" (modules/ai/knowledge.ts).
+  code        String
+  text        String
+  /// A short fingerprint of the text: a test counts only for the text it was taken on.
+  version     String
+  updatedById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  updatedBy User?   @relation("AiKnowledgeBookEditedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@unique([companyId, code])
+}
+
+enum AiRunStatus {
+  RUNNING
+  DONE
+  FAILED
+}
+
+/// One end-of-book test of Mehedi 2.0: every question of the book, his answer,
+/// and whether it matched the expected one. A pass counts for a month.
+model AiTestRun {
+  id          String      @id @default(cuid())
+  companyId   String
+  book        String
+  bookVersion String
+  status      AiRunStatus @default(RUNNING)
+  total       Int
+  right       Int         @default(0)
+  passed      Boolean     @default(false)
+  /// [{ n, q, expected, answer, right, why }]
+  answers     Json?
+  model       String?
+  error       String?
+  startedById String?
+  createdAt   DateTime    @default(now())
+  finishedAt  DateTime?
+
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  startedBy User?   @relation("AiTestRunStartedBy", fields: [startedById], references: [id], onDelete: SetNull)
+
+  @@index([companyId, book, createdAt])
+}
+
+enum AiChatRole {
+  OWNER
+  AI
+}
+
+enum AiCardStatus {
+  PROPOSED
+  APPLIED
+  CANCELLED
+}
+
+/// A line of a person's chat with Mehedi 2.0 (the ERP chat, later the bot). A
+/// line can carry a card: a change waiting for Apply, an Order check card, a report.
+model AiChatMessage {
+  id         String        @id @default(cuid())
+  companyId  String
+  /// The person whose conversation it is.
+  userId     String
+  channel    AiChannel     @default(ERP)
+  role       AiChatRole
+  text       String
+  /// The command it was read as ("order.status", "report.pdf"...).
+  intent     String?
+  card       Json?
+  cardStatus AiCardStatus?
+  cardDoneAt DateTime?
+  createdAt  DateTime      @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user    User    @relation("AiChatMessageUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, userId, createdAt])
+}
+
+enum AiDraftKind {
+  BUYER_REPLY
+  BUYER_FOLLOW_UP
+  BUYER_CHASE
+  BUYER_CLAIM
+  QUOTATION
+  INVOICE
+  SUPPLIER
+  FACTORY
+  OTHER
+}
+
+enum AiDraftStatus {
+  DRAFT
+  SENT
+  DISCARDED
+  FAILED
+}
+
+/// A message Mehedi 2.0 (or a person) drafted. What goes to a buyer is only
+/// ever sent by the owner (Send, or "পাঠাও" in the chat).
+model AiDraft {
+  id          String        @id @default(cuid())
+  companyId   String
+  kind        AiDraftKind
+  partyId     String?
+  toAddress   String?
+  subject     String
+  body        String
+  recordType  String?
+  recordId    String?
+  recordLabel String?
+  status      AiDraftStatus @default(DRAFT)
+  /// Written by the AI (labelled "Mehedi 2.0 (AI)"), or by a person.
+  byAi        Boolean       @default(true)
+  createdById String?
+  /// When to remind the owner if it is still not sent.
+  remindAt    DateTime?
+  remindedAt  DateTime?
+  followUpId  String?
+  sentAt      DateTime?
+  sentById    String?
+  error       String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  party     Party?  @relation("AiDraftParty", fields: [partyId], references: [id], onDelete: SetNull)
+  createdBy User?   @relation("AiDraftCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  sentBy    User?   @relation("AiDraftSentBy", fields: [sentById], references: [id], onDelete: SetNull)
+
+  @@index([companyId, status, createdAt])
+  @@index([companyId, status, remindAt])
+}
+
+enum AiFollowUpStatus {
+  OPEN
+  DONE
+  CANCELLED
+}
+
+/// A follow-up date the owner set for an order: on the day Mehedi 2.0 reminds
+/// the owner with a draft for the buyer.
+model AiFollowUp {
+  id          String           @id @default(cuid())
+  companyId   String
+  partyId     String
+  recordType  String?
+  recordId    String?
+  recordLabel String?
+  dueOn       DateTime         @db.Date
+  note        String?
+  status      AiFollowUpStatus @default(OPEN)
+  /// The draft made on the day.
+  draftId     String?
+  remindedAt  DateTime?
+  createdById String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  party     Party   @relation("AiFollowUpParty", fields: [partyId], references: [id], onDelete: Cascade)
+  createdBy User?   @relation("AiFollowUpCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([companyId, status, dueOn])
+}
+
+enum HouseRuleScope {
+  ALL
+  BUYER
+  BRAND
+  ITEM
+}
+
+enum HouseRuleStatus {
+  PROPOSED
+  APPROVED
+  REJECTED
+  RETIRED
+}
+
+/// A rule the owner taught Mehedi 2.0 (Teach). It counts only once the owner
+/// approved it; scoped to everything, a buyer, a brand or an item.
+model HouseRule {
+  id           String          @id @default(cuid())
+  companyId    String
+  text         String
+  /// The owner's own words, when the AI worded the rule from them.
+  said         String?
+  scope        HouseRuleScope  @default(ALL)
+  /// The buyer, brand or item it is for.
+  scopeValue   String?
+  status       HouseRuleStatus @default(PROPOSED)
+  /// "Teach", "Chat", or what it was learned from.
+  source       String          @default("Teach")
+  byAi         Boolean         @default(false)
+  proposedById String?
+  decidedById  String?
+  decidedAt    DateTime?
+  note         String?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  company    Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  proposedBy User?   @relation("HouseRuleProposedBy", fields: [proposedById], references: [id], onDelete: SetNull)
+  decidedBy  User?   @relation("HouseRuleDecidedBy", fields: [decidedById], references: [id], onDelete: SetNull)
+
+  @@index([companyId, status])
+}
+
+/// The company's own mailbox for sending email (SMTP). The password is kept
+/// sealed (lib/crypto.ts) and never shown again; the server's SMTP_* settings
+/// stand in while a company has none.
+model CompanyMailSettings {
+  id             String    @id @default(cuid())
+  companyId      String    @unique
+  host           String
+  port           Int
+  /// SSL from the start (port 465); otherwise STARTTLS when the server offers it.
+  secure         Boolean   @default(false)
+  username       String?
+  passwordSealed String?
+  fromAddress    String
+  fromName       String?
+  testedAt       DateTime?
+  updatedById    String?
+  updatedAt      DateTime  @updatedAt
+
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  updatedBy User?   @relation("MailSettingsUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
 }

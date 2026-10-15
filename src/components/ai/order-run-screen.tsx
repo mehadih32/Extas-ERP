@@ -17,6 +17,7 @@ import { useState, useTransition } from "react";
 
 import { askFirstOf } from "@/components/ai/ask-first";
 import { RUN_TONES } from "@/components/ai/orders-list";
+import { useWhen } from "@/components/ai/when";
 import { ConfirmDialog } from "@/components/feedback/confirm-dialog";
 import { Field, FormAlert } from "@/components/forms/field";
 import { CheckRows, OrderCheckCard } from "@/components/production/costing/order-check-card";
@@ -50,16 +51,6 @@ import {
  */
 
 type Result = { ok: true } | { ok: false; error: { message: string } };
-
-const when = (at: Date | string | null) =>
-  at
-    ? new Date(at).toLocaleString("en-GB", {
-        day: "numeric",
-        month: "short",
-        hour: "2-digit",
-        minute: "2-digit",
-      })
-    : "";
 
 const OPEN = ["INTAKE", "RETURNED", "WAITING_OWNER"];
 
@@ -107,6 +98,7 @@ const formOf = (r: Run): Form => ({
 });
 
 export function OrderRunScreen({ run: r }: { run: Run }) {
+  const when = useWhen();
   const [pending, startTransition] = useTransition();
   const [message, setMessage] = useState<{ tone: "success" | "error" | "note"; text: string }>();
   const [form, setForm] = useState<Form>(() => formOf(r));

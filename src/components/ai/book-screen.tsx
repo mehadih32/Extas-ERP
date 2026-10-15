@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useState, useTransition } from "react";
 
 import { TEST_TONES } from "@/components/ai/knowledge-screen";
+import { useWhen } from "@/components/ai/when";
 import { Field, FormAlert } from "@/components/forms/field";
 import { StatusBadge } from "@/components/sales/badges";
 import { Panel } from "@/components/sales/detail-bits";
@@ -20,18 +21,8 @@ import { resetBookAction, saveBookAction } from "@/server/actions/mehedi.actions
  * test runs with each answer and its mark.
  */
 
-const when = (at: Date | string | null) =>
-  at
-    ? new Date(at).toLocaleString("en-GB", {
-        day: "numeric",
-        month: "short",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-      })
-    : "";
-
 export function BookScreen({ book: b }: { book: Book }) {
+  const when = useWhen({ year: true });
   const [pending, startTransition] = useTransition();
   const [editing, setEditing] = useState(false);
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string }>();

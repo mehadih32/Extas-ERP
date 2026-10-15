@@ -3,6 +3,7 @@
 import { LinkIcon, MessageCircleIcon, SendIcon, Trash2Icon, UnlinkIcon } from "lucide-react";
 import { useState, useTransition } from "react";
 
+import { useWhen } from "@/components/ai/when";
 import { Field, FormAlert } from "@/components/forms/field";
 import { StatusBadge } from "@/components/sales/badges";
 import { Panel } from "@/components/sales/detail-bits";
@@ -28,16 +29,6 @@ import {
 type Channel = "TELEGRAM" | "WHATSAPP";
 type Result = { ok: true } | { ok: false; error: { message: string } };
 
-const when = (at: Date | string | null) =>
-  at
-    ? new Date(at).toLocaleString("en-GB", {
-        day: "numeric",
-        month: "short",
-        hour: "2-digit",
-        minute: "2-digit",
-      })
-    : "";
-
 const STATUS_TEXT: Record<string, string> = {
   RECEIVED: "Received",
   DONE: "Answered",
@@ -47,6 +38,7 @@ const STATUS_TEXT: Record<string, string> = {
 };
 
 export function BotScreen({ bot: b }: { bot: Bot }) {
+  const when = useWhen();
   const [pending, startTransition] = useTransition();
   const [dialog, setDialog] = useState<Channel | null>(null);
   const [code, setCode] = useState<{ channel: Channel; code: string; open: string | null } | null>(

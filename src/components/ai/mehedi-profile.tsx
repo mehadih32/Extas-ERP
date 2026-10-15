@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useState, useTransition } from "react";
 
 import { AiLogList } from "@/components/ai/log-list";
+import { useDay } from "@/components/ai/when";
 import { Field, FormAlert } from "@/components/forms/field";
 import { StatusBadge, type Tone } from "@/components/sales/badges";
 import { Panel } from "@/components/sales/detail-bits";
@@ -43,17 +44,13 @@ const SCOPES = [
   { value: "ITEM", label: "An item" },
 ] as const;
 
-const day = (at: Date | string | null) =>
-  at
-    ? new Date(at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
-    : "";
-
 const scopeText = (r: { scope: string; scopeValue: string | null }) =>
   r.scope === "ALL"
     ? "Everything"
     : `${SCOPES.find((s) => s.value === r.scope)?.label ?? r.scope}: ${r.scopeValue ?? ""}`;
 
 export function MehediProfile({ profile: m }: { profile: MehediScreen }) {
+  const day = useDay();
   const [pending, startTransition] = useTransition();
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string }>();
   const [teaching, setTeaching] = useState(false);

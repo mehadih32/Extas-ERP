@@ -4,6 +4,7 @@ import { BotIcon, ExternalLinkIcon, LockIcon } from "lucide-react";
 import Link from "next/link";
 import { useState, useTransition } from "react";
 
+import { useWhen } from "@/components/ai/when";
 import { FormAlert } from "@/components/forms/field";
 import { StatusBadge } from "@/components/sales/badges";
 import { Panel } from "@/components/sales/detail-bits";
@@ -18,14 +19,6 @@ import { answerDeletionAction, answerPermissionAction } from "@/server/actions/a
  * record on its own page). Money, prices, deletions and anything that leaves
  * the company ask for the PIN once it is set.
  */
-
-const when = (at: Date | string) =>
-  new Date(at).toLocaleString("en-GB", {
-    day: "numeric",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
 
 const ANSWER_BUTTONS = [
   { answer: "ONCE", label: "Only this task" },
@@ -63,6 +56,7 @@ function PinInput({
 }
 
 export function AiRequestsList({ requests: r, pinSet }: { requests: AiRequests; pinSet: boolean }) {
+  const when = useWhen();
   const [pending, startTransition] = useTransition();
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string }>();
   const [pins, setPins] = useState<Record<string, string>>({});

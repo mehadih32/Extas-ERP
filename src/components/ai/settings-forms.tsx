@@ -3,6 +3,7 @@
 import { KeyRoundIcon, LockIcon } from "lucide-react";
 import { useState, useTransition } from "react";
 
+import { useDay } from "@/components/ai/when";
 import { Field, FormAlert } from "@/components/forms/field";
 import { StatusBadge } from "@/components/sales/badges";
 import { Panel } from "@/components/sales/detail-bits";
@@ -38,12 +39,8 @@ const NOTES = [
   },
 ] as const;
 
-const day = (at: Date | string | null) =>
-  at
-    ? new Date(at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
-    : "";
-
 export function AiSettingsForms({ status: s }: { status: AiStatus }) {
+  const day = useDay();
   const [pending, startTransition] = useTransition();
   const [dialog, setDialog] = useState<"key" | "pin" | "name" | null>(null);
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string }>();

@@ -4,6 +4,7 @@ import { CalendarClockIcon, PenLineIcon, SendIcon, SparklesIcon } from "lucide-r
 import Link from "next/link";
 import { useState, useTransition } from "react";
 
+import { useWhen } from "@/components/ai/when";
 import { Field, FormAlert } from "@/components/forms/field";
 import { StatusBadge } from "@/components/sales/badges";
 import { Panel } from "@/components/sales/detail-bits";
@@ -38,19 +39,10 @@ const LISTS = [
   { value: "discarded", label: "Discarded" },
 ] as const;
 
-const when = (at: Date | string | null) =>
-  at
-    ? new Date(at).toLocaleString("en-GB", {
-        day: "numeric",
-        month: "short",
-        hour: "2-digit",
-        minute: "2-digit",
-      })
-    : "";
-
 type Draft = Drafts["drafts"][number];
 
 export function DraftsScreen({ drafts: d }: { drafts: Drafts }) {
+  const when = useWhen();
   const [pending, startTransition] = useTransition();
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string }>();
   const [editing, setEditing] = useState<Draft | null>(null);

@@ -3,6 +3,7 @@
 import { ChevronRightIcon, ClockIcon, LockIcon } from "lucide-react";
 import { useState, useTransition } from "react";
 
+import { useWhen } from "@/components/ai/when";
 import { Field, FormAlert } from "@/components/forms/field";
 import { Panel } from "@/components/sales/detail-bits";
 import { FormDialog } from "@/components/sales/dialogs";
@@ -161,17 +162,8 @@ function flatten(node: AiControlNode, path: string[] = []): Array<{ ref: string;
   return [...self, ...(node.children ?? []).flatMap((c) => flatten(c, here))];
 }
 
-const when = (at: Date | string | null) =>
-  at
-    ? new Date(at).toLocaleString("en-GB", {
-        day: "numeric",
-        month: "short",
-        hour: "2-digit",
-        minute: "2-digit",
-      })
-    : "until you end it";
-
 export function ControlPanel({ control: c }: { control: AiControl }) {
+  const when = useWhen();
   const [pending, startTransition] = useTransition();
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string }>();
   const [preset, setPreset] = useState<(typeof c.presets)[number] | null>(null);
@@ -274,7 +266,7 @@ export function ControlPanel({ control: c }: { control: AiControl }) {
                   <span className="font-medium break-words">{g.note ?? g.path}</span>
                   <span className="text-[0.8125rem] text-muted-foreground">
                     {g.record ? `${g.record} · ` : ""}
-                    Ends {when(g.expiresAt)}
+                    Ends {g.expiresAt ? when(g.expiresAt) : "until you end it"}
                     {g.by ? ` · opened by ${g.by}` : ""}
                   </span>
                 </div>

@@ -4,6 +4,7 @@ import { PauseIcon, PlayIcon, PowerIcon, PowerOffIcon } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 
+import { useWhen } from "@/components/ai/when";
 import { FormAlert } from "@/components/forms/field";
 import { StatusBadge } from "@/components/sales/badges";
 import { FormDialog } from "@/components/sales/dialogs";
@@ -17,18 +18,8 @@ import { setAiPausedAction, setAiSwitchAction } from "@/server/actions/ai.action
  * (ai.manage) turns it on or off.
  */
 
-const when = (at: Date | string | null) =>
-  at
-    ? new Date(at).toLocaleString("en-GB", {
-        day: "numeric",
-        month: "short",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-      })
-    : "";
-
 export function AiSwitch({ status: s }: { status: AiStatus }) {
+  const when = useWhen({ year: true });
   const [asking, setAsking] = useState<"on" | "off" | null>(null);
   const [notice, setNotice] = useState<string>();
   const state = !s.enabled ? "off" : s.paused ? "paused" : "on";

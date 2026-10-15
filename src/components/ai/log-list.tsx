@@ -1,5 +1,8 @@
+"use client";
+
 import { SparklesIcon } from "lucide-react";
 
+import { useWhen } from "@/components/ai/when";
 import type { AiLogs } from "@/modules/ai/logs.service";
 
 /*
@@ -7,16 +10,8 @@ import type { AiLogs } from "@/modules/ai/logs.service";
  * changes people made to what it may do.
  */
 
-const when = (at: Date | string) =>
-  new Date(at).toLocaleString("en-GB", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-
 export function AiLogList({ items, empty }: { items: AiLogs["items"]; empty: string }) {
+  const when = useWhen({ year: true });
   if (items.length === 0) {
     return <p className="mt-3 text-sm text-muted-foreground">{empty}</p>;
   }

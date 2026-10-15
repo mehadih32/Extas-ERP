@@ -3,6 +3,7 @@
 import { MailIcon } from "lucide-react";
 import { useState, useTransition } from "react";
 
+import { useDay } from "@/components/ai/when";
 import { Field, FormAlert } from "@/components/forms/field";
 import { StatusBadge } from "@/components/sales/badges";
 import { Panel } from "@/components/sales/detail-bits";
@@ -25,11 +26,6 @@ import {
  * buyer draft reminds the owner.
  */
 
-const day = (at: Date | string | null) =>
-  at
-    ? new Date(at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
-    : "";
-
 export function MailSettings({
   mail: m,
   replyRemindHours,
@@ -37,6 +33,7 @@ export function MailSettings({
   mail: MailSettingsScreen;
   replyRemindHours: number;
 }) {
+  const day = useDay();
   const [pending, startTransition] = useTransition();
   const [dialog, setDialog] = useState<"mail" | "hours" | null>(null);
   const [secure, setSecure] = useState(m.own?.secure ?? false);

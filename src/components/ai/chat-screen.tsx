@@ -4,6 +4,7 @@ import { BotIcon, CheckIcon, FileDownIcon, SendIcon, XIcon } from "lucide-react"
 import Link from "next/link";
 import { useEffect, useRef, useState, useTransition } from "react";
 
+import { useWhen } from "@/components/ai/when";
 import { FormAlert } from "@/components/forms/field";
 import { StatusBadge, type Tone } from "@/components/sales/badges";
 import { Button } from "@/components/ui/button";
@@ -25,14 +26,6 @@ import {
  */
 
 const SIGNAL_TONES: Record<string, Tone> = { green: "done", yellow: "open", red: "warn" };
-
-const time = (at: Date | string) =>
-  new Date(at).toLocaleString("en-GB", {
-    day: "numeric",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
 
 function CardView({
   message,
@@ -285,6 +278,7 @@ function CardView({
 }
 
 export function ChatScreen({ chat }: { chat: Chat }) {
+  const time = useWhen();
   const [pending, startTransition] = useTransition();
   const [text, setText] = useState("");
   const [error, setError] = useState<string>();

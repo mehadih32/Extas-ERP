@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useState, useTransition } from "react";
 
 import { askFirstOf } from "@/components/ai/ask-first";
+import { useDay } from "@/components/ai/when";
 import { FormAlert } from "@/components/forms/field";
 import { StatusBadge, type Tone } from "@/components/sales/badges";
 import { Panel } from "@/components/sales/detail-bits";
@@ -28,12 +29,8 @@ export const TEST_TONES: Record<string, Tone> = {
   NONE: "plain",
 };
 
-const day = (at: Date | string | null) =>
-  at
-    ? new Date(at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
-    : "";
-
 export function KnowledgeScreen({ knowledge: k }: { knowledge: Knowledge }) {
+  const day = useDay();
   const [pending, startTransition] = useTransition();
   const [picked, setPicked] = useState<string[]>([]);
   const [asked, setAsked] = useState<string | null>(null);

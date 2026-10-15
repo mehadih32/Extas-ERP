@@ -3,6 +3,7 @@
 import { ActivityIcon, WrenchIcon } from "lucide-react";
 import { useState, useTransition } from "react";
 
+import { useWhen } from "@/components/ai/when";
 import { FormAlert } from "@/components/forms/field";
 import { type Tone, StatusBadge } from "@/components/sales/badges";
 import { Panel } from "@/components/sales/detail-bits";
@@ -23,17 +24,6 @@ import {
 
 type Run = Health["runs"][number];
 
-const when = (at: Date | string | null) =>
-  at
-    ? new Date(at).toLocaleString("en-GB", {
-        day: "numeric",
-        month: "short",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-      })
-    : "";
-
 const WORST: Record<string, { text: string; tone: Tone }> = {
   OK: { text: "All is well", tone: "done" },
   WARN: { text: "Something to look at", tone: "open" },
@@ -48,6 +38,7 @@ const LEVEL: Record<string, { text: string; dot: string }> = {
 };
 
 export function HealthScreen({ health: h }: { health: Health }) {
+  const when = useWhen({ year: true });
   const [pending, startTransition] = useTransition();
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string }>();
   const [latest, ...earlier] = h.runs;
@@ -169,6 +160,7 @@ function RunPanel({
   pending: boolean;
   onFix: (runId: string, key: string) => void;
 }) {
+  const when = useWhen({ year: true });
   const worst = WORST[run.worst];
   return (
     <Panel

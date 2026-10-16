@@ -250,7 +250,10 @@ the number you type), with `deploy/bootstrap.sh`:
 Then point the web address at the new server's IP (step 2), and run
 `sudo ./deploy/setup-auto-deploy.sh` there for updates after each merge. The restore drill on
 GitHub (`.github/workflows/restore-drill.yml`) runs this command on a fresh virtual machine
-for every change to the backups or the deploy scripts, and reports how long it took.
+for every change to the backups or the deploy scripts, and reports how long it took: about
+7 minutes on GitHub's fresh Ubuntu 24.04 machine (6 min 51 s on 16 October 2026, with the
+demo data: install, build, download, restore and the check of all 136 screens). A smaller
+Azure server takes longer to build, so allow 10 to 20 minutes there.
 
 ## Updating to a new version
 
@@ -471,8 +474,7 @@ set once:
   when it is first created; changing them in the file does not change them there.
 - `ENCRYPTION_KEY`: changing it means connecting Google Drive again.
 - `DATA_DIR`: move the folder to the new place first (with the ERP stopped).
-- A new web address (`APP_DOMAIN`) needs its DNS record first (step 2) and, for Google
-  Drive, a new redirect URI.
+- A new web address (`APP_DOMAIN`) needs its DNS record first (step 2).
 
 ## When something goes wrong
 

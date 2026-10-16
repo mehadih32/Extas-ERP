@@ -289,6 +289,29 @@ describe("figures in a booking table are never cut (v6.3)", () => {
     for (const row of table.rows) for (const cell of row.cells) expect(lines).toContain(cell);
   });
 
+  it("keeps room for the words of the text columns in portrait, the figures sharing the rest", async () => {
+    // Portrait, 14 sizes: the colour columns were squeezed to "GA…" (found in the release samples).
+    const base = sizeTable(14, (r, s) => `${10 + r},${String(100 + 37 * s).padStart(3, "0")}`);
+    const table = {
+      ...base,
+      columns: [
+        { label: "Garment colour", weight: 2 },
+        { label: "Collar colour", weight: 2.2 },
+        ...base.columns.slice(1),
+      ],
+      rows: base.rows.map((r) => ({
+        ...r,
+        cells: ["Garment pieces", "Navy, tipping White", ...r.cells.slice(1)],
+      })),
+    };
+    const doc = framed([table], {}, "Rahima Akter", "portrait");
+    const pdf = await renderDocumentPdf(doc, { compress: false });
+    const all = pdfLines(pdf).join("\n");
+    expect(all).not.toContain("…");
+    for (const word of ["Garment", "pieces", "tipping", "White"]) expect(all).toContain(word);
+    for (const cell of table.rows[0]!.cells.slice(2)) expect(all).toContain(cell);
+  });
+
   it("leaves a table that already fits at the usual size", async () => {
     const table = sizeTable(4, () => "120");
     const pdf = await renderDocumentPdf(framed([table]), { compress: false });

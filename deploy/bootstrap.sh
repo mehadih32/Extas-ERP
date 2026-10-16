@@ -31,7 +31,7 @@ set -euo pipefail
 umask 022
 
 REPO=mehadih32/Extas-ERP
-RESTORE_TOOL_SHA256=3a4d29b5b0f177efde45edddbca3eab56525d53daf535a1edd27555355c78869
+RESTORE_TOOL_SHA256=59179fd8a2bfb543b7c502b7ec452c4802c83b8d5b8ffc60d1c98d4b863b19db
 # Drills only: a stand-in for raw.githubusercontent.com (the tool is still checked).
 RAW_BASE="${EXTAS_RAW_BASE:-https://raw.githubusercontent.com}"
 SEARCH_ROOTS="${EXTAS_SEARCH_ROOTS:-/opt /srv /home /root /var/lib /data /mnt}"
@@ -194,16 +194,18 @@ note "Ubuntu ${VERSION_ID}, $((memory_kb / 1024)) MB memory, $((free_kb / 1024 /
 step "Looking for an Extas ERP already on this server"
 detect_installs
 installs=()
+unfinished=0
 while IFS= read -r line; do
   IFS='|' read -r i_dir i_data i_domain i_running i_has_data <<<"$line"
   if [ -z "$i_running" ] && [ -z "$i_has_data" ]; then
+    unfinished=1
     [ "$i_dir" != "$DIR" ] || note "A restore that stopped half-way is in $DIR (no data yet): it goes on from here."
     continue
   fi
   installs+=("$line")
 done < <(list_installs | LC_ALL=C sort)
 if [ "${#installs[@]}" -eq 0 ]; then
-  note "None with data: nothing on this server is replaced."
+  [ "$unfinished" = 1 ] || note "None: this is a new server."
 else
   say "This server already has Extas ERP"
   for line in "${installs[@]}"; do

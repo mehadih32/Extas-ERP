@@ -192,6 +192,60 @@ run("the restore tool on a new server", () => {
       );
     });
   }
+  /**
+   * Runs the restore tool in a terminal (a pseudo-terminal, as PuTTY gives), with no
+   * answers file: each answer is typed when its question shows. Prints what the
+   * screen showed.
+   */
+  function typed(args: string[], replies: Array<[string, string]>): Promise<Ran> {
+    const driver = `
+import json, os, pty, select, sys, time
+replies = json.loads(os.environ["REPLIES"])
+pid, fd = pty.fork()
+if pid == 0:
+    os.execvp("python3", ["python3", "-I", *sys.argv[1:]])
+screen, seen, deadline = "", "", time.time() + 100
+while time.time() < deadline:
+    if select.select([fd], [], [], 0.5)[0]:
+        try:
+            data = os.read(fd, 4096).decode("utf-8", "replace")
+        except OSError:
+            break
+        if not data:
+            break
+        screen += data
+        seen += data
+    if replies and replies[0][0] in seen and seen.rstrip().endswith(":"):
+        time.sleep(0.2)
+        os.write(fd, (replies.pop(0)[1] + "\\r").encode())
+        seen = ""
+_, status = os.waitpid(pid, 0)
+sys.stdout.write(screen)
+sys.exit(os.waitstatus_to_exitcode(status))
+`;
+    return new Promise((resolve) => {
+      execFile(
+        "python3",
+        ["-I", "-c", driver, TOOL, ...args],
+        {
+          env: {
+            ...process.env,
+            RESTORE_ANSWERS: "",
+            REPLIES: JSON.stringify(replies),
+            GOOGLE_OAUTH_BASE: google.url,
+            GOOGLE_DRIVE_BASE: google.url,
+          },
+          timeout: 120_000,
+        },
+        (error, stdout, stderr) =>
+          resolve({
+            code: error ? (typeof error.code === "number" ? error.code : -1) : 0,
+            stdout,
+            stderr,
+          }),
+      );
+    });
+  }
   const client = { google_client_id: CLIENT_ID, google_client_secret: CLIENT_SECRET };
   const fetch = (answers: Record<string, string> = {}) =>
     tool(["fetch", "--work", work], { ...client, pick: "", ...answers });
@@ -227,6 +281,47 @@ run("the restore tool on a new server", () => {
   }
 
   describe("fetch: Google sign-in, the list of backups and opening one (G8)", () => {
+    it("asks each question on the keyboard in PuTTY, with the secrets hidden (A8)", async () => {
+      await connectDrive();
+      await setKey({ keepInDrive: false });
+      await prepareHost(SETTINGS);
+      const backup = await backUpNow();
+
+      const screen = await typed(
+        ["fetch", "--work", work],
+        [
+          ["Google client ID (", CLIENT_ID],
+          ["Google client secret (", CLIENT_SECRET],
+          ["Which backup?", ""],
+          ["Recovery key (", OWNER_KEY],
+        ],
+      );
+      expect(screen.stderr).toBe("");
+      expect(screen.stdout).toContain('Google client ID (from "Your restore details"');
+      expect(screen.stdout).toContain(`Got the client ID (${CLIENT_ID.length} characters`);
+      expect(screen.stdout).toContain("Recovery key (it stays hidden as you type):");
+      expect(screen.stdout).toContain("The backup is open:");
+      expect(screen.code).toBe(0);
+      // What is typed for a secret never shows on the screen.
+      for (const secret of [CLIENT_ID, CLIENT_SECRET, OWNER_KEY]) {
+        expect(screen.stdout).not.toContain(secret);
+      }
+      expect((await state()).name).toBe(backup.name);
+
+      // No keyboard (no terminal: setsid) and no answers file: a plain stop, not a hang.
+      const none = await new Promise<Ran>((resolve) => {
+        execFile(
+          "setsid",
+          ["-w", "python3", "-I", TOOL, "fetch", "--work", work],
+          { env: { ...process.env, RESTORE_ANSWERS: "" }, timeout: 60_000 },
+          (error, stdout, stderr) =>
+            resolve({ code: error ? Number(error.code ?? -1) : 0, stdout, stderr }),
+        );
+      });
+      expect(none.code).toBe(3);
+      expect(none.stderr).toContain("Error R25: there is no keyboard to answer");
+    });
+
     it("lists the backups newest first, opens the one picked, and fills in the key kept in Drive", async () => {
       await connectDrive();
       await setKey({ keepInDrive: true });

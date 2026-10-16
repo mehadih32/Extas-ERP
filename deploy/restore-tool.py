@@ -120,18 +120,24 @@ def ask(name, prompt, hidden=False):
     if given is not None:
         return _clean(given)
     try:
-        tty = open("/dev/tty", "r+", encoding="utf-8", errors="replace")
+        os.close(os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY))
     except OSError:
         fail("R25", f"there is no keyboard to answer \"{prompt.strip()}\". Run the command in PuTTY as the guide shows.")
-    with tty:
+    try:
         if hidden:
-            value = getpass.getpass(prompt, stream=tty)
+            # getpass asks on the terminal itself, with the typing hidden.
+            value = getpass.getpass(prompt)
         else:
-            tty.write(prompt)
-            tty.flush()
-            value = tty.readline()
+            # A terminal cannot seek, so it is opened once to write and once to read.
+            with open("/dev/tty", "w", encoding="utf-8") as screen:
+                screen.write(prompt)
+                screen.flush()
+            with open("/dev/tty", encoding="utf-8", errors="replace") as keyboard:
+                value = keyboard.readline()
             if not value:
-                fail("R25", "the keyboard closed before an answer came.")
+                raise EOFError
+    except EOFError:
+        fail("R25", "the keyboard closed before an answer came.")
     return _clean(value.rstrip("\r\n"))
 
 

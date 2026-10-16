@@ -246,7 +246,7 @@ describe("AI Center tabs and models", () => {
         cacheRead: 1_000_000,
         cacheWrite: 1_000_000,
       }),
-    ).toBeCloseTo(0.2 + 2.5, 6);
+    ).toBeCloseTo(0.1 + 2.5, 6);
     // Haiku over 100K prompt tokens is charged at the long-prompt price.
     expect(costUsd("claude-haiku-5-5", { input: 50_000, output: 1_000 })).toBeCloseTo(0.0055, 6);
     expect(costUsd("claude-haiku-5-5", { input: 200_000, output: 1_000 })).toBeCloseTo(0.1025, 6);

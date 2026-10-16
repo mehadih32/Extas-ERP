@@ -210,7 +210,8 @@ run("AI cost tracking", () => {
       }),
     );
     const row = await prisma.aiUsage.findFirstOrThrow();
-    // Sonnet 5.5: 10,000 in × $2 + 2,000 out × $10 + 5,000 cache × $0.20 per million = $0.041.
+    // Sonnet 5.5: 10,000 in × $2 + 2,000 out × $10 + 5,000 cache × $0.10 per million = $0.0405
+    // (cache hits at $0.10 on Anthropic's price page, checked 16 October 2026).
     expect(row).toMatchObject({
       companyId: env.company.id,
       userId: env.pm.user.id,
@@ -228,9 +229,9 @@ run("AI cost tracking", () => {
       result: "OK",
       note: null,
     });
-    expect(row.costUsd.toFixed(6)).toBe("0.041000");
-    // At the default 122 taka to the dollar: 5.002, rounded to 5.00.
-    expect(row.cost.toFixed(2)).toBe("5.00");
+    expect(row.costUsd.toFixed(6)).toBe("0.040500");
+    // At the default 122 taka to the dollar: 4.941, rounded to 4.94.
+    expect(row.cost.toFixed(2)).toBe("4.94");
     expect(row.usdRate.toFixed(2)).toBe("122.00");
     expect(row.durationMs).toBeGreaterThanOrEqual(0);
 

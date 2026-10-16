@@ -3,6 +3,7 @@
 import { FlaskConicalIcon, RefreshCwIcon } from "lucide-react";
 import { useState, useTransition } from "react";
 
+import { BlockedModels } from "@/components/ai/blocked-models";
 import { useDay } from "@/components/ai/when";
 import { Field, FormAlert } from "@/components/forms/field";
 import { StatusBadge, type Tone } from "@/components/sales/badges";
@@ -14,7 +15,8 @@ import { NativeSelect } from "@/components/ui/native-select";
 import type { ModelTestState } from "@/modules/ai/model-test-standing";
 import type { ModelTestResult } from "@/modules/ai/model-tests.service";
 import { AI_MODELS } from "@/modules/ai/models";
-import type { AiModelsScreen } from "@/modules/ai/settings.service";
+import { dayText, PRICE_FIELDS, usdText } from "@/modules/ai/price-list";
+import type { AiModelsScreen, PriceRow } from "@/modules/ai/settings.service";
 import {
   readProviderModelsAction,
   runModelTestAction,
@@ -30,8 +32,10 @@ import {
  * thinking work and smaller ones for the rest; the owner can change any task
  * or agent to any model the providers offer the keys. A model that is not one
  * of the ERP's own Claude models does a task on Do only after it passes that
- * task's test ("Run the test"); until then the AI asks first. Prices are the
- * owner's to keep up to date: a model without one shows "Price unknown".
+ * task's test ("Run the test"); until then the AI asks first. Prices: a
+ * section each for Claude, OpenAI and Gemini, from the providers' price pages
+ * (where from, and when checked), which the owner can change. A model with no
+ * price is blocked (v6.4 A7): it cannot be picked, and the AI never uses it.
  */
 
 type Message = { tone: "success" | "error"; text: string };
@@ -44,13 +48,21 @@ const TEST_TONES: Record<ModelTestState, Tone> = {
   NONE: "warn",
 };
 
-const PRICE_FROM = {
-  erp: "Claude price list",
-  owner: "Set by you",
-  unknown: "Price unknown",
-} as const;
+/** The price columns, in the price pages' words. */
+const PRICE_COLUMNS = [
+  ["input", "Input"],
+  ["output", "Output"],
+  ["cacheRead", "Cache read"],
+  ["cacheWrite", "Cache write"],
+  ["batchInput", "Batch input"],
+  ["batchOutput", "Batch output"],
+] as const satisfies ReadonlyArray<readonly [(typeof PRICE_FIELDS)[number], string]>;
 
-const dollars = (v: string | null) => (v === null ? "Price unknown" : `$${Number(v)}`);
+const COMPANY = { anthropic: "Anthropic", openai: "OpenAI", google: "Google" } as const;
+
+const price = (v: string | null) => (v === null ? "—" : usdText(Number(v)));
+
+const BLOCKED = "No price: blocked";
 
 function ModelOptions({ m, exclude }: { m: AiModelsScreen; exclude?: string }) {
   return (
@@ -73,9 +85,10 @@ function ModelOptions({ m, exclude }: { m: AiModelsScreen; exclude?: string }) {
             {p.models
               .filter((x) => x.ref !== exclude)
               .map((x) => (
-                <option key={x.ref} value={x.ref}>
+                <option key={x.ref} value={x.ref} disabled={!x.priced}>
                   {x.label}
                   {p.hasKey ? "" : " (no key now)"}
+                  {x.priced ? "" : ` (${BLOCKED})`}
                 </option>
               ))}
           </optgroup>
@@ -91,6 +104,7 @@ export function ModelsTable({ models: m }: { models: AiModelsScreen }) {
   const [testing, setTesting] = useState<string | null>(null);
   const [results, setResults] = useState<Record<string, ModelTestResult>>({});
   const [pricing, setPricing] = useState<{ model: string | null; label: string } | null>(null);
+  const priceRows = m.priceSections.flatMap((x) => [...x.rows, ...x.older]);
   const canManage = m.can.manage;
   const anyRead = m.providers.some((p) => p.models.length > 0);
   const nameOf = (ref: string) =>
@@ -141,6 +155,7 @@ export function ModelsTable({ models: m }: { models: AiModelsScreen }) {
   return (
     <div className="grid gap-6">
       {message && <FormAlert tone={message.tone}>{message.text}</FormAlert>}
+      <BlockedModels blocked={m.blocked} />
 
       <Panel
         title="Providers"
@@ -211,6 +226,7 @@ export function ModelsTable({ models: m }: { models: AiModelsScreen }) {
                         : ""}
                     </span>
                     <span className="flex flex-wrap items-center gap-2 text-[0.8125rem]">
+                      {t.blocked && <StatusBadge tone="warn">{BLOCKED}</StatusBadge>}
                       <StatusBadge tone={TEST_TONES[t.test.state]}>{t.test.text}</StatusBadge>
                       {t.test.state !== "BUILT_IN" && t.test.last && (
                         <span className="text-muted-foreground">
@@ -280,6 +296,11 @@ export function ModelsTable({ models: m }: { models: AiModelsScreen }) {
               <div className="grid min-w-0 gap-0.5">
                 <span className="text-sm font-medium break-words">{a.name}</span>
                 <span className="text-[0.8125rem] break-words text-muted-foreground">{a.what}</span>
+                {a.blocked && (
+                  <span>
+                    <StatusBadge tone="warn">{BLOCKED}</StatusBadge>
+                  </span>
+                )}
               </div>
               {canManage ? (
                 <NativeSelect
@@ -355,71 +376,57 @@ export function ModelsTable({ models: m }: { models: AiModelsScreen }) {
         }
       >
         <p className="mt-1 text-sm text-muted-foreground">
-          US dollars per million tokens (about 750,000 words). Providers change their prices: check
-          them on the provider&apos;s price page and set them here. A model without a price shows
-          &ldquo;Price unknown&rdquo; and its calls are not counted in the costs or the budget until
-          you set it.
+          US dollars per million tokens (about 750,000 words), from each provider&apos;s official
+          price page, with the day they were checked. Providers change their prices: when one
+          changes, put in the new price with &ldquo;Edit&rdquo;. A model with no price is blocked:
+          the AI never uses it and no work can be given to it until you add its price.
         </p>
-        <div className="mt-4 overflow-x-auto">
-          <table className="w-full min-w-[36rem] text-sm">
-            <thead>
-              <tr className="border-b text-left text-[0.8125rem] text-muted-foreground">
-                <th className="py-2 pr-3 font-medium">Model</th>
-                <th className="py-2 pr-3 text-right font-medium">Reading</th>
-                <th className="py-2 pr-3 text-right font-medium">Writing</th>
-                <th className="py-2 pr-3 text-right font-medium">Cache reading</th>
-                <th className="py-2 pr-3 font-medium">From</th>
-                {canManage && <th className="py-2" />}
-              </tr>
-            </thead>
-            <tbody>
-              {m.prices.map((x) => (
-                <tr key={x.model} className="border-b last:border-0">
-                  <td className="py-2 pr-3 font-medium">
-                    {x.label}
-                    {x.size && (
-                      <span className="block text-[0.75rem] font-normal text-muted-foreground">
-                        {x.size}
-                      </span>
-                    )}
-                  </td>
-                  <td className="py-2 pr-3 text-right tabular-nums">{dollars(x.input)}</td>
-                  <td className="py-2 pr-3 text-right tabular-nums">{dollars(x.output)}</td>
-                  <td className="py-2 pr-3 text-right tabular-nums">
-                    {x.cacheRead === null
-                      ? x.input === null
-                        ? ""
-                        : "As reading"
-                      : `$${Number(x.cacheRead)}`}
-                  </td>
-                  <td className="py-2 pr-3">
-                    <StatusBadge tone={x.from === "unknown" ? "warn" : "plain"}>
-                      {PRICE_FROM[x.from]}
-                    </StatusBadge>
-                  </td>
-                  {canManage && (
-                    <td className="py-2 text-right">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => setPricing({ model: x.model, label: x.label })}
-                      >
-                        Set the price
-                      </Button>
-                    </td>
-                  )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
       </Panel>
+
+      {m.priceSections.map((section) => (
+        <Panel
+          key={section.provider}
+          title={section.label}
+          id={`ai-prices-${section.provider}-heading`}
+        >
+          <p className="mt-1 text-sm text-muted-foreground">
+            From{" "}
+            <a
+              href={section.sourceUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="underline underline-offset-4"
+            >
+              {COMPANY[section.provider]}&apos;s price page
+            </a>
+            , checked on {dayText(section.checkedOn)}.
+          </p>
+          <PriceTable
+            rows={section.rows}
+            canManage={canManage}
+            day={day}
+            onEdit={(r) => setPricing({ model: r.model, label: r.label })}
+          />
+          {section.older.length > 0 && (
+            <details className="mt-3">
+              <summary className="cursor-pointer text-sm font-medium">
+                Older models ({section.older.length})
+              </summary>
+              <PriceTable
+                rows={section.older}
+                canManage={canManage}
+                day={day}
+                onEdit={(r) => setPricing({ model: r.model, label: r.label })}
+              />
+            </details>
+          )}
+        </Panel>
+      ))}
 
       {pricing && (
         <FormDialog
           title={pricing.model ? `Price of ${pricing.label}` : "Add a price"}
-          description="US dollars per million tokens, as on the provider's price page. Leave the prices empty to go back to the Claude price list (built-in models) or to Price unknown."
+          description="US dollars per million tokens, as on the provider's price page. Leave Input and Output empty to go back to the price page's price (a model on no price page then has no price, and is blocked)."
           submitLabel="Save the price"
           pendingLabel="Saving"
           errorTitle="We could not save the price"
@@ -427,9 +434,7 @@ export function ModelsTable({ models: m }: { models: AiModelsScreen }) {
           onSubmit={async (form) => {
             const result = await setModelPriceAction({
               model: pricing.model ?? String(form.get("model") ?? ""),
-              input: String(form.get("input") ?? ""),
-              output: String(form.get("output") ?? ""),
-              cacheRead: String(form.get("cacheRead") ?? ""),
+              ...Object.fromEntries(PRICE_FIELDS.map((f) => [f, String(form.get(f) ?? "")])),
             });
             if (!result.ok) return result.error;
             setMessage({ tone: "success", text: "The price is saved." });
@@ -437,7 +442,7 @@ export function ModelsTable({ models: m }: { models: AiModelsScreen }) {
           }}
         >
           {(fieldError) => {
-            const now = pricing.model ? m.prices.find((x) => x.model === pricing.model) : null;
+            const now = pricing.model ? priceRows.find((x) => x.model === pricing.model) : null;
             return (
               <div className="grid gap-4">
                 {!pricing.model && (
@@ -448,54 +453,176 @@ export function ModelsTable({ models: m }: { models: AiModelsScreen }) {
                       containerClassName="w-full"
                       required
                     >
-                      <ModelOptions m={m} />
+                      <PricedOptions m={m} />
                     </NativeSelect>
                   </Field>
                 )}
-                <Field
-                  id="price-input"
-                  label="Reading (input), $ per million"
-                  error={fieldError("input")}
-                >
-                  <Input
-                    id="price-input"
-                    name="input"
-                    inputMode="decimal"
-                    defaultValue={now?.from === "owner" ? (now.input ?? "") : ""}
-                    placeholder={now?.input ?? "Price unknown"}
-                  />
-                </Field>
-                <Field
-                  id="price-output"
-                  label="Writing (output), $ per million"
-                  error={fieldError("output")}
-                >
-                  <Input
-                    id="price-output"
-                    name="output"
-                    inputMode="decimal"
-                    defaultValue={now?.from === "owner" ? (now.output ?? "") : ""}
-                    placeholder={now?.output ?? "Price unknown"}
-                  />
-                </Field>
-                <Field
-                  id="price-cache"
-                  label="Cache reading, $ per million"
-                  hint="Empty: charged as reading."
-                  error={fieldError("cacheRead")}
-                >
-                  <Input
-                    id="price-cache"
-                    name="cacheRead"
-                    inputMode="decimal"
-                    defaultValue={now?.from === "owner" ? (now.cacheRead ?? "") : ""}
-                  />
-                </Field>
+                {now?.state === "owner" && now.setBy && (
+                  <p className="text-[0.8125rem] text-muted-foreground">
+                    Your price, set by {now.setBy}
+                    {now.setAt ? ` on ${day(now.setAt)}` : ""}.
+                  </p>
+                )}
+                <div className="grid gap-4 sm:grid-cols-2">
+                  {PRICE_COLUMNS.map(([f, title]) => (
+                    <Field
+                      key={f}
+                      id={`price-${f}`}
+                      label={`${title}, $ per million`}
+                      hint={PRICE_HINTS[f]}
+                      error={fieldError(f)}
+                    >
+                      <Input
+                        id={`price-${f}`}
+                        name={f}
+                        inputMode="decimal"
+                        defaultValue={now?.state === "owner" ? (now[f] ?? "") : ""}
+                        placeholder={
+                          now?.list?.[f] ?? (f === "input" || f === "output" ? "No price" : "")
+                        }
+                      />
+                    </Field>
+                  ))}
+                </div>
               </div>
             );
           }}
         </FormDialog>
       )}
+    </div>
+  );
+}
+
+const PRICE_HINTS: Partial<Record<(typeof PRICE_FIELDS)[number], string>> = {
+  cacheRead: "Empty: charged as input.",
+  cacheWrite: "Empty: charged as input (Claude: a quarter more).",
+  batchInput: "Empty: charged as plain work.",
+  batchOutput: "Empty: charged as plain work.",
+};
+
+/** Every model the owner can price: the built-in ones and those the providers offer. */
+function PricedOptions({ m }: { m: AiModelsScreen }) {
+  return (
+    <>
+      <optgroup label="Claude (built in)">
+        {AI_MODELS.map((x) => (
+          <option key={x.id} value={x.id}>
+            {x.label}
+          </option>
+        ))}
+      </optgroup>
+      {m.providers
+        .filter((p) => p.models.length > 0)
+        .map((p) => (
+          <optgroup
+            key={p.id}
+            label={p.id === "anthropic" ? "Claude (read from Anthropic)" : p.label}
+          >
+            {p.models.map((x) => (
+              <option key={x.ref} value={x.ref}>
+                {x.label}
+                {x.priced ? "" : ` (${BLOCKED})`}
+              </option>
+            ))}
+          </optgroup>
+        ))}
+    </>
+  );
+}
+
+/** One provider's prices: a row per model, with where each price came from. */
+function PriceTable({
+  rows,
+  canManage,
+  day,
+  onEdit,
+}: {
+  rows: readonly PriceRow[];
+  canManage: boolean;
+  day: (at: Date | string | null) => string;
+  onEdit: (row: PriceRow) => void;
+}) {
+  if (rows.length === 0) return null;
+  return (
+    <div className="mt-4 overflow-x-auto">
+      <table className="w-full min-w-[60rem] text-sm">
+        <thead>
+          <tr className="border-b text-left text-[0.8125rem] text-muted-foreground">
+            <th className="py-2 pr-3 font-medium">Model</th>
+            {PRICE_COLUMNS.map(([f, title]) => (
+              <th key={f} className="py-2 pr-3 text-right font-medium">
+                {title}
+              </th>
+            ))}
+            <th className="py-2 pr-3 font-medium">Where from</th>
+            <th className="py-2 pr-3 font-medium">Checked on</th>
+            {canManage && <th className="py-2" />}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((x) => (
+            <tr key={x.model} className="border-b align-top last:border-0">
+              <td className="max-w-[16rem] py-2 pr-3">
+                <span className="font-medium break-words">{x.label}</span>
+                <span className="block text-[0.75rem] break-words text-muted-foreground">
+                  {x.id}
+                  {x.builtIn ? " · Built in" : ""}
+                  {x.size ? ` · ${x.size}` : ""}
+                  {x.inUse ? " · In use" : ""}
+                </span>
+                {x.notes.map((n) => (
+                  <span key={n} className="block text-[0.75rem] break-words text-muted-foreground">
+                    {n}
+                  </span>
+                ))}
+              </td>
+              {PRICE_COLUMNS.map(([f]) => (
+                <td key={f} className="py-2 pr-3 text-right tabular-nums">
+                  {price(x[f])}
+                </td>
+              ))}
+              <td className="py-2 pr-3">
+                {x.state === "erp" && x.sourceUrl ? (
+                  <a
+                    href={x.sourceUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="underline underline-offset-4"
+                  >
+                    Price page
+                  </a>
+                ) : x.state === "owner" ? (
+                  <StatusBadge tone="plain">
+                    {x.setBy ? `Your price (${x.setBy})` : "Your price"}
+                  </StatusBadge>
+                ) : (
+                  <StatusBadge tone="warn">{BLOCKED}</StatusBadge>
+                )}
+              </td>
+              <td className="py-2 pr-3 whitespace-nowrap">
+                {x.state === "erp" && x.checkedOn
+                  ? dayText(x.checkedOn)
+                  : x.state === "owner"
+                    ? day(x.setAt)
+                    : "—"}
+              </td>
+              {canManage && (
+                <td className="py-2 text-right">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    aria-label={`Edit the price of ${x.label}`}
+                    onClick={() => onEdit(x)}
+                  >
+                    Edit
+                  </Button>
+                </td>
+              )}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

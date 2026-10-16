@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { AiSwitch } from "@/components/ai/ai-switch";
+import { BlockedModels } from "@/components/ai/blocked-models";
 import { AiLogList } from "@/components/ai/log-list";
 import { AiMonthCostCard } from "@/components/ai/month-cost";
 import { MorningBrief } from "@/components/ai/morning-brief";
@@ -22,9 +23,10 @@ export const metadata: Metadata = { title: "AI Center" };
 
 /**
  * AI Home (ai.view or ai.manage): the main switch (off until the owner turns
- * it on), the morning brief, today's and this month's cost (the month against
- * the budget), what the AI waits for (permission and Deletion requests) and
- * what it did last.
+ * it on), a warning about models with no price that have work (blocked), the
+ * morning brief, today's and this month's cost (the month against the
+ * budget), what the AI waits for (permission and Deletion requests) and what
+ * it did last.
  */
 export default async function AiHomePage() {
   const [status, brief, month, requests, logs] = await Promise.all([
@@ -44,6 +46,7 @@ export default async function AiHomePage() {
   return (
     <div className="grid gap-6">
       <AiSwitch status={status.data} />
+      <BlockedModels blocked={status.data.blockedModels} link />
       {brief.ok ? (
         <MorningBrief brief={brief.data} />
       ) : (

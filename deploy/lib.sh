@@ -414,13 +414,19 @@ restore_database() {
 }
 
 # Opens every screen of the version that just started, the way the owner would
-# (scripts/check-update.ts), with a ten-minute session of its own; a "==> " line for
-# each problem. False when a screen or a PDF did not work.
+# (scripts/check-update.ts), with a ten-minute session of its own; a "==> Problem: "
+# line for each problem. False when a screen or a PDF did not work.
 check_update() {
   local email
   email="$(setting SEED_ADMIN_EMAIL)"
   compose run --rm --no-deps -T -e CHECK_URL=http://app:3000 -e CHECK_EMAIL="${email,,}" \
     migrate npx tsx scripts/check-update.ts
+}
+
+# How many problems check_update's output (on stdin) reports: only its
+# "==> Problem: " lines, never the notes around them.
+check_problems() {
+  grep -c '^==> Problem: ' || true
 }
 
 # --- What the backups take from the server (README.md, "Backups") -------------------

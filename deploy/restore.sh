@@ -203,9 +203,14 @@ fi
 if [ "$check" = 1 ]; then
   step "Opening every screen to check the restored ERP"
   if ! check_output="$(check_update 2>&1)"; then
-    problems="$(grep '^==> ' <<<"$check_output" | sed 's/^==> //' | grep -v -e '^Opened ' -e '^Every screen' || true)"
+    count="$(check_problems <<<"$check_output")"
+    problems="$(sed -n 's/^==> Problem: //p' <<<"$check_output")"
     printf '%s\n' "$check_output"
-    outcome="Restored from $(basename "$folder"), but the check found problems: $(grep -c . <<<"$problems") screen(s) or PDF(s) did not open."
+    if [ "$count" -gt 0 ]; then
+      outcome="Restored from $(basename "$folder"), but the check found problems: $count screen(s) or PDF(s) did not open."
+    else
+      outcome="Restored from $(basename "$folder"), but the check after it did not finish; the restore log says why."
+    fi
   else
     printf '%s\n' "$check_output"
   fi

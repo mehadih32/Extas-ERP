@@ -191,9 +191,9 @@ describe("Caddy with Cloudflare's DNS module (deploy/caddy)", () => {
 
   it("is built from exact versions only: the builder, the Caddy it builds and the module", () => {
     const version = /^ARG CADDY_VERSION=(\d+\.\d+\.\d+)$/m.exec(dockerfile)?.[1];
-    const module = /^ARG CLOUDFLARE_MODULE=(v\d+\.\d+\.\d+)$/m.exec(dockerfile)?.[1];
+    const cloudflare = /^ARG CLOUDFLARE_MODULE=(v\d+\.\d+\.\d+)$/m.exec(dockerfile)?.[1];
     expect(version).toBeTruthy();
-    expect(module).toBeTruthy();
+    expect(cloudflare).toBeTruthy();
     const froms = [...dockerfile.matchAll(/^FROM (\S+)/gm)].map((m) => m[1]);
     expect(froms).toEqual([
       "caddy:${CADDY_VERSION}-builder-alpine",

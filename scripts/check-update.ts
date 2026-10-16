@@ -21,6 +21,8 @@ import { pinScrubReport } from "@/modules/ai/bot/pin-scrub";
 import { fillRoute, isFixedRoute, pdfProblem, screenProblem, screenRoutes } from "./update-checks";
 
 const say = (text: string) => console.log(`==> ${text}`);
+/** A failure, marked so restore.sh counts problems and never the notes around them. */
+const problem = (text: string) => say(`Problem: ${text}`);
 
 /** The newest records' ids, by the name each takes in a screen's address. */
 async function newestRecords(companyId: string): Promise<Record<string, string>> {
@@ -138,20 +140,22 @@ async function main() {
           redirect: "follow",
           signal: AbortSignal.timeout(60_000),
         });
-        const problem = screenProblem({
+        const trouble = screenProblem({
           status: response.status,
           url: response.url,
           body: await response.text(),
         });
-        if (problem) {
+        if (trouble) {
           failed.push(path);
-          say(`Screen ${path} ${problem}`);
+          problem(`Screen ${path} ${trouble}`);
         } else {
           opened += 1;
         }
       } catch (error) {
         failed.push(path);
-        say(`Screen ${path} did not answer (${error instanceof Error ? error.message : error})`);
+        problem(
+          `Screen ${path} did not answer (${error instanceof Error ? error.message : error})`,
+        );
       }
     }
     say(`Opened ${opened} of ${screens.length} screens without an error`);
@@ -169,20 +173,20 @@ async function main() {
             headers,
             signal: AbortSignal.timeout(120_000),
           });
-          const problem = pdfProblem({
+          const trouble = pdfProblem({
             status: response.status,
             type: response.headers.get("content-type") ?? "",
             bytes: new Uint8Array(await response.arrayBuffer()),
           });
-          if (problem) {
+          if (trouble) {
             failed.push(label);
-            say(`${label} ${problem}`);
+            problem(`${label} ${trouble}`);
           } else {
             say(`${label} printed`);
           }
         } catch (error) {
           failed.push(label);
-          say(`${label} did not answer (${error instanceof Error ? error.message : error})`);
+          problem(`${label} did not answer (${error instanceof Error ? error.message : error})`);
         }
       }
     }
@@ -239,7 +243,7 @@ const ORIENTED_PDFS = new Set<string>([
 
 main()
   .catch((error) => {
-    say(`The check could not run: ${error instanceof Error ? error.message : error}`);
+    problem(`The check could not run: ${error instanceof Error ? error.message : error}`);
     process.exitCode = 1;
   })
   .finally(() => prisma.$disconnect());

@@ -126,12 +126,20 @@ export function MehediProfile({ profile: m }: { profile: MehediScreen }) {
             )}
           </div>
         </div>
-        <dl className="grid gap-3 text-sm sm:grid-cols-4">
+        <dl className="grid gap-3 text-sm sm:grid-cols-3 lg:grid-cols-5">
           <div>
             <dt className="text-muted-foreground">Do / Ask / Off</dt>
             <dd className="font-medium tabular-nums">
               {m.control.DO} / {m.control.ASK} / {m.control.OFF}
               {m.control.granted > 0 && ` (${m.control.granted} opened for now)`}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-muted-foreground">AI cost today</dt>
+            <dd className="font-medium tabular-nums">
+              <Link href="/ai/costs?period=today" className="underline-offset-4 hover:underline">
+                {m.month.currency} {m.month.today.spent}
+              </Link>
             </dd>
           </div>
           <div>

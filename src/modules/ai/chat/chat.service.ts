@@ -14,6 +14,7 @@ import { createTask } from "@/modules/reminders/task.service";
 import { askerFor, type Ask, textOf } from "../claude";
 import { isNode, type NodeRef } from "../control-tree";
 import { applyPreset, opensLocked, setControlCell } from "../control.service";
+import { getMonthCost } from "../costs.service";
 import { DRAFT_KINDS } from "../draft-templates";
 import { setFollowUp } from "../drafts.service";
 import { expertById, expertPrompt } from "../experts";
@@ -108,7 +109,7 @@ function gate(intent: Intent, off: ReturnType<typeof offReason>): string | null 
     return 'I am paused. Say "আবার চালু করো" (or press Resume in AI Home) and ask again.';
   }
   if (off === "no-key" && (intent.kind === "free" || intent.kind === "expert")) {
-    return `I need the Claude key for questions like this (AI Center > Settings). These work now: ${COMMAND_HELP.slice(
+    return `I need an AI key (Claude, OpenAI or Gemini) for questions like this (AI Center > Settings). These work now: ${COMMAND_HELP.slice(
       0,
       6,
     )
@@ -384,6 +385,9 @@ async function runTool(turn: Turn, name: string, input: Record<string, unknown>)
   }
 }
 
+/** Where a chat turn was asked, for Budget & Costs: the bot, or the Chat screen. */
+const screenOfTurn = (turn: Turn) => (turn.channel === "BOT" ? "bot" : "/ai/chat");
+
 /** A free question: Claude answers as Mehedi 2.0, with the tools above. */
 async function askMehedi(turn: Turn, ask?: Ask | null): Promise<Reply> {
   const { ctx } = turn;
@@ -408,6 +412,7 @@ async function askMehedi(turn: Turn, ask?: Ask | null): Promise<Reply> {
       maxTokens: 2000,
       why: `Chat: ${turn.said.slice(0, 80)}`,
       agent: "Mehedi 2.0",
+      screen: screenOfTurn(turn),
     });
     const uses = message.content.filter((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
     if (uses.length === 0 || message.stop_reason !== "tool_use") {
@@ -456,6 +461,7 @@ async function askExpert(turn: Turn, id: string, question: string): Promise<Repl
     maxTokens: 1500,
     why: `${expert.id} asked in the chat`,
     agent: expert.id,
+    screen: screenOfTurn(turn),
   });
   return { text: `${expert.id} · ${expert.name}: ${textOf(message)}`, cards: [] };
 }
@@ -592,13 +598,14 @@ export async function cancelCard(ctx: CompanyContext, messageId: string) {
 /** The owner's chat: the last messages, oldest first, with each draft's state now. */
 export async function getChat(ctx: CompanyContext) {
   assertOwner(ctx);
-  const [rows, settings] = await Promise.all([
+  const [rows, settings, cost] = await Promise.all([
     prisma.aiChatMessage.findMany({
       where: { companyId: ctx.company.id, userId: ctx.user.id },
       orderBy: { createdAt: "desc" },
       take: 80,
     }),
     aiSettingsOf(ctx.company.id),
+    getMonthCost(ctx),
   ]);
   const draftIds = rows.flatMap((r) => {
     const card = r.card as ChatCard | null;
@@ -616,6 +623,8 @@ export async function getChat(ctx: CompanyContext) {
     label: aiLabel(settings),
     state: off ?? ("on" as const),
     stateText: off ? OFF_TEXT[off] : null,
+    /** Today's and this month's AI cost, over the chat. */
+    cost,
     messages: rows.reverse().map((r) => {
       const card = r.card as ChatCard | null;
       return {

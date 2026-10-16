@@ -22,8 +22,9 @@ export const metadata: Metadata = { title: "AI Center" };
 
 /**
  * AI Home (ai.view or ai.manage): the main switch (off until the owner turns
- * it on), the morning brief, this month's cost against the budget, what the
- * AI waits for (permission and Deletion requests) and what it did last.
+ * it on), the morning brief, today's and this month's cost (the month against
+ * the budget), what the AI waits for (permission and Deletion requests) and
+ * what it did last.
  */
 export default async function AiHomePage() {
   const [status, brief, month, requests, logs] = await Promise.all([
@@ -55,11 +56,7 @@ export default async function AiHomePage() {
       {month.ok ? (
         <AiMonthCostCard month={month.data} />
       ) : (
-        <SectionError
-          title="This month's AI cost"
-          heading="The AI cost could not load"
-          error={month.error}
-        />
+        <SectionError title="AI cost" heading="The AI cost could not load" error={month.error} />
       )}
       {requests.ok ? (
         <AiRequestsList requests={requests.data} pinSet={status.data.pinSet} />

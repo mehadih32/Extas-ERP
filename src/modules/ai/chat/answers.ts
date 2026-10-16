@@ -183,6 +183,11 @@ async function status(turn: Turn): Promise<Reply> {
     rows: [
       { label: "Tests passed", value: `${passed} of ${BOOK_CODES.length}`, href: "/ai/knowledge" },
       {
+        label: "AI cost today",
+        value: `${month.currency} ${month.today.spent}`,
+        href: "/ai/costs?period=today",
+      },
+      {
         label: "AI cost this month",
         value: `${month.currency} ${month.spent}${month.budget ? ` of ${month.budget}` : ""}`,
         href: "/ai/costs",

@@ -8,6 +8,7 @@ import { usePinPrompt } from "@/components/ai/pin-prompt";
 import { useWhen } from "@/components/ai/when";
 import { FormAlert } from "@/components/forms/field";
 import { StatusBadge, type Tone } from "@/components/sales/badges";
+import { money } from "@/components/sales/labels";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import type { ChatCard } from "@/modules/ai/chat/cards";
@@ -319,6 +320,24 @@ export function ChatScreen({ chat }: { chat: Chat }) {
     <div className="grid gap-4">
       {chat.stateText && <FormAlert tone="note">{chat.stateText}</FormAlert>}
       {pinDialog}
+      <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.8125rem] text-muted-foreground">
+        <span>
+          AI cost today:{" "}
+          <span className="font-medium text-foreground tabular-nums">
+            {money(chat.cost.today.spent, chat.cost.currency)}
+          </span>
+        </span>
+        <span>
+          This month:{" "}
+          <span className="font-medium text-foreground tabular-nums">
+            {money(chat.cost.spent, chat.cost.currency)}
+          </span>
+          {chat.cost.budget ? ` of ${money(chat.cost.budget, chat.cost.currency)}` : ""}
+        </span>
+        <Link href="/ai/costs?period=today" className="underline underline-offset-4">
+          Budget & Costs
+        </Link>
+      </p>
       <section
         aria-label={`Chat with ${chat.name}`}
         className="grid max-h-[65vh] min-h-64 gap-3 overflow-y-auto rounded-lg border bg-muted/30 p-3 sm:p-4"

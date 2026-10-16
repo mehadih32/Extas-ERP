@@ -7,10 +7,10 @@ import { requireAnyPermission } from "@/modules/auth/context";
 export const dynamic = "force-dynamic";
 
 /**
- * GET /api/ai/costs/export?period=&from=&to=&person=&format=pdf|xlsx — what the AI
- * spent in a period as a PDF (totals, breakdowns, the newest calls) or an Excel
- * workbook (every call). For the people who see the AI Center. Made for each
- * request, never kept.
+ * GET /api/ai/costs/export?period=&from=&to=&person=&by=&key=&format=pdf|xlsx — what
+ * the AI spent in a period as a PDF (totals, breakdowns, the newest calls) or an
+ * Excel workbook (every call, or every call of one breakdown row). For the people
+ * who see the AI Center. Made for each request, never kept.
  */
 export async function GET(request: Request) {
   try {
@@ -22,6 +22,8 @@ export async function GET(request: Request) {
       from: params.get("from") || undefined,
       to: params.get("to") || undefined,
       userId: params.get("person") || undefined,
+      by: params.get("by") || undefined,
+      key: params.get("key") ?? undefined,
     };
     const file = await costsFile(ctx, query, format, await getRequestMeta());
     return fileResponse(file);

@@ -40,8 +40,15 @@ import { addDays, localDay, startOfDayInZone } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import { AiAskFirst, askClaude, type ClaudeRequest, standInForClaude } from "@/modules/ai/claude";
-import { costsFile } from "@/modules/ai/costs-export";
-import { getCosts, getMonthCost, recordCost, setBudget } from "@/modules/ai/costs.service";
+import { costsDocument, costsFile } from "@/modules/ai/costs-export";
+import {
+  getCosts,
+  getMonthCost,
+  LINES_PER_PAGE,
+  recordCost,
+  setBudget,
+} from "@/modules/ai/costs.service";
+import { askHelp, getHelpAi } from "@/modules/ai/help-ai.service";
 import { setAiSwitch, setApiKey, setAssistantName } from "@/modules/ai/settings.service";
 import { recordHref } from "@/modules/reminders/links";
 import { createRole } from "@/modules/rbac/role.service";
@@ -131,6 +138,7 @@ async function line(
     task?: string;
     model?: string;
     agent?: string;
+    screen?: string;
     record?: { type: string; id: string; label: string };
   } = {},
 ) {
@@ -149,6 +157,7 @@ async function line(
       recordType: opts.record?.type ?? null,
       recordId: opts.record?.id ?? null,
       recordLabel: opts.record?.label ?? null,
+      screen: opts.screen ?? null,
       model: opts.model ?? "claude-sonnet-5-5",
       costUsd: new Prisma.Decimal(cost).dividedBy(122).toDecimalPlaces(6),
       cost,
@@ -529,6 +538,210 @@ run("AI cost tracking", () => {
     expect((await getCosts(env.owner)).budget.monthly).toBeNull();
   });
 
+  it("shows the costs by purpose and place in the ERP, any day, with one row's own calls and totals", async () => {
+    const order = { type: "SalesOrder", id: "cmorder0000000000000001x", label: "SO-2026-0001" };
+    await line(env.company.id, "4.00", { task: "chat", screen: "/ai/chat" });
+    await line(env.company.id, "2.00", { task: "chat", screen: "bot" });
+    await line(env.company.id, "6.00", { task: "message.draft", record: order });
+    await line(env.company.id, "1.50", {
+      task: "help.answer",
+      screen: "/help",
+      userId: env.pm.user.id,
+      agent: "Help AI",
+    });
+    // No screen, record or screen of its own: the background of its area.
+    await line(env.company.id, "3.00", { task: "data.gather" });
+    await line(env.company.id, "9.00", { daysAgo: 1, task: "server.health" });
+    await line(env.company.id, "5.00", { daysAgo: 3, task: "order.plan" });
+
+    const today = await getCosts(env.owner, { period: "today" });
+    expect(today.totals).toMatchObject({ cost: "16.50", calls: 5 });
+    expect(today.by.place.map((p) => [p.label, p.cost, p.calls, p.href])).toEqual([
+      ["Sales › Orders", "6.00", 1, null],
+      ["AI › Chat", "4.00", 1, "/ai/chat"],
+      ["Reports (in the background)", "3.00", 1, null],
+      ["The bot", "2.00", 1, null],
+      ["Help Center", "1.50", 1, "/help"],
+    ]);
+    expect(today.by.task.map((t) => [t.label, t.cost, t.calls])).toEqual([
+      ["Questions and answers", "6.00", 2],
+      ["Email and message drafts", "6.00", 1],
+      ["Gathering data and small checks", "3.00", 1],
+      ["Help questions", "1.50", 1],
+    ]);
+    // Every breakdown adds up to the period's total.
+    for (const rows of [today.by.task, today.by.place, today.by.agent, today.by.person]) {
+      expect(rows.reduce((t, r) => t + Number(r.cost), 0)).toBeCloseTo(16.5);
+      expect(rows.reduce((t, r) => t + r.calls, 0)).toBe(5);
+    }
+    expect(today.shown).toMatchObject({ filter: null, cost: "16.50", calls: 5, pages: 1 });
+
+    // One row: only its calls, with their total; the period's figures stay whole.
+    const chat = await getCosts(env.owner, { period: "today", by: "place", key: "/ai/chat" });
+    expect(chat.shown).toMatchObject({
+      filter: { by: "place", key: "/ai/chat", label: "AI › Chat" },
+      cost: "4.00",
+      calls: 1,
+    });
+    expect(chat.lines.map((l) => [l.cost, l.place.label])).toEqual([["4.00", "AI › Chat"]]);
+    expect(chat.totals.cost).toBe("16.50");
+    const chats = await getCosts(env.owner, { period: "today", by: "task", key: "chat" });
+    expect(chats.shown).toMatchObject({
+      filter: { label: "Questions and answers" },
+      cost: "6.00",
+      calls: 2,
+    });
+    const system = await getCosts(env.owner, { period: "today", by: "person", key: "-" });
+    expect(system.shown).toMatchObject({ filter: { label: "The system" }, calls: 4 });
+    const helper = await getCosts(env.owner, { period: "today", by: "agent", key: "Help AI" });
+    expect(helper.lines).toEqual([
+      expect.objectContaining({
+        who: "pm",
+        place: { key: "/help", label: "Help Center", href: "/help" },
+      }),
+    ]);
+    // A line about a record links to it, and its place is that record's kind of page.
+    const [drafted] = (
+      await getCosts(env.owner, { period: "today", by: "record", key: `SalesOrder:${order.id}` })
+    ).lines;
+    expect(drafted).toMatchObject({
+      record: "SO-2026-0001",
+      href: `/sales/orders/${order.id}`,
+      place: { key: "/sales/orders/[id]", label: "Sales › Orders", href: null },
+    });
+    // A row that is not there lists nothing; a made-up breakdown is ignored.
+    expect((await getCosts(env.owner, { period: "today", by: "model", key: "x" })).lines).toEqual(
+      [],
+    );
+    expect(
+      (await getCosts(env.owner, { period: "today", by: "nonsense", key: "x" })).shown.filter,
+    ).toBeNull();
+
+    // Yesterday, and any one day; a day still to come is refused.
+    const day0 = localDay(new Date(), TZ);
+    const yesterday = await getCosts(env.owner, { period: "yesterday" });
+    expect(yesterday.query).toMatchObject({ from: addDays(day0, -1), to: addDays(day0, -1) });
+    expect(yesterday.by.place).toEqual([
+      expect.objectContaining({ label: "AI › Health", cost: "9.00", href: "/ai/health" }),
+    ]);
+    const oneDay = await getCosts(env.owner, { period: "day", from: addDays(day0, -3) });
+    expect(oneDay.query).toMatchObject({ from: addDays(day0, -3), to: addDays(day0, -3) });
+    expect(oneDay.by.place.map((p) => p.label)).toEqual(["AI › Orders"]);
+    expect((await getCosts(env.owner, { period: "day" })).totals.cost).toBe("16.50");
+    await expectAppError(
+      getCosts(env.owner, { period: "day", from: addDays(day0, 1) }),
+      "VALIDATION",
+      /today or a day before/,
+    );
+
+    // Today's and this month's cost (AI Home, the chat, the Help AI).
+    const now = await getMonthCost(env.owner);
+    expect(now.today).toEqual({ spent: "16.50", calls: 5 });
+    expect(Number(now.spent)).toBeGreaterThanOrEqual(16.5);
+
+    // The PDF names the row, adds each breakdown's total and the places.
+    const doc = costsDocument(env.owner, chat);
+    const titles = doc.blocks.flatMap((b) => ("title" in b && b.title ? [b.title] : []));
+    expect(titles).toEqual(
+      expect.arrayContaining(["By purpose", "By place in the ERP", "Calls of AI › Chat"]),
+    );
+    const places = doc.blocks.find((b) => "title" in b && b.title === "By place in the ERP");
+    expect(places && "rows" in places && places.rows.at(-1)).toMatchObject({
+      style: "total",
+      cells: ["Total", "5", expect.stringContaining("16.50")],
+    });
+    expect(doc.meta).toEqual(expect.arrayContaining([{ label: "Only", value: "AI › Chat" }]));
+  });
+
+  it("lists the calls a page at a time, newest first", async () => {
+    const at = Date.now() - 60_000;
+    await prisma.aiUsage.createMany({
+      data: Array.from({ length: LINES_PER_PAGE + 5 }, (_, i) => ({
+        companyId: env.company.id,
+        agent: "Mehedi 2.0",
+        task: "chat",
+        module: "AI",
+        why: `Call ${i}`,
+        model: "claude-sonnet-5-5",
+        screen: "/ai/chat",
+        cost: "1.00",
+        costUsd: "0.008197",
+        usdRate: 122,
+        result: "OK" as const,
+        createdAt: new Date(at - i * 1000),
+      })),
+    });
+    const first = await getCosts(env.owner, { period: "today" });
+    expect(first.shown).toMatchObject({ page: 1, pages: 2, calls: LINES_PER_PAGE + 5 });
+    expect(first.lines).toHaveLength(LINES_PER_PAGE);
+    expect(first.lines[0]!.why).toBe("Call 0");
+    const second = await getCosts(env.owner, { period: "today", page: "2" });
+    expect(second.lines.map((l) => l.why)).toEqual(
+      Array.from({ length: 5 }, (_, i) => `Call ${LINES_PER_PAGE + i}`),
+    );
+    // Past the last page: the last page.
+    expect((await getCosts(env.owner, { period: "today", page: 99 })).shown.page).toBe(2);
+  });
+
+  it("keeps where each call was asked: the screen, or the bot", async () => {
+    standIn({ input_tokens: 1000, output_tokens: 100 });
+    await switchOn(env);
+    await askClaude(env.company.id, write({ screen: "/ai/chat?x=1#end" }));
+    await askClaude(env.company.id, write({ screen: "bot" }));
+    await askClaude(env.company.id, write({ screen: "https://elsewhere.test/x" }));
+    await askClaude(env.company.id, write({ screen: "//elsewhere.test" }));
+    const rows = await prisma.aiUsage.findMany({ orderBy: { createdAt: "asc" } });
+    expect(rows.map((r) => r.screen)).toEqual(["/ai/chat", "bot", null, null]);
+  });
+
+  it("answers Help questions from the guides while AI is on, with the cost only for AI Center viewers", async () => {
+    const sent: Array<{ system: unknown; content: unknown }> = [];
+    standInForClaude(async ({ body }) => {
+      sent.push({ system: body.system, content: body.messages[0]!.content });
+      return claudeMessage("1. Open “Buyers & suppliers”.\n2. Press “New party”.", body.model, {
+        input_tokens: 2000,
+        output_tokens: 300,
+      });
+    });
+    const question = "How do I add a new buyer?";
+    expect(await getHelpAi(env.pm)).toMatchObject({ on: false, cost: null });
+    expect((await getHelpAi(env.owner)).cost).toMatchObject({ today: { calls: 0 } });
+    await expectAppError(askHelp(env.pm, { question }), "UNAVAILABLE", /guides below/);
+    expect(sent).toHaveLength(0);
+
+    await switchOn(env);
+    expect(await getHelpAi(env.pm)).toMatchObject({ on: true, offText: null, cost: null });
+    const staff = await askHelp(env.pm, { question });
+    expect(staff.answer).toContain("New party");
+    expect(staff.guides.length).toBeGreaterThan(0);
+    expect(staff.guides.length).toBeLessThanOrEqual(4);
+    expect(staff.cost).toBeNull();
+    // It reads the guides that match, and only explains.
+    expect(sent[0]!.system).toMatch(/Help AI/);
+    expect(sent[0]!.system).toMatch(/never ask for passwords or PINs/);
+    expect(String(sent[0]!.content)).toContain(`The question: ${question}`);
+    expect(String(sent[0]!.content)).toContain(staff.guides[0]!.title);
+    expect(await prisma.aiUsage.findFirstOrThrow()).toMatchObject({
+      task: "help.answer",
+      agent: "Help AI",
+      screen: "/help",
+      userId: env.pm.user.id,
+      result: "OK",
+    });
+
+    const owner = await askHelp(env.owner, { question: "নতুন বায়ার কীভাবে যোগ করব?" });
+    expect(owner.cost?.today.calls).toBe(2);
+    expect(Number(owner.cost?.today.spent)).toBeGreaterThan(0);
+    await expect(askHelp(env.pm, { question: "a" })).rejects.toBeInstanceOf(ZodError);
+
+    const costs = await getCosts(env.owner, { period: "today" });
+    expect(costs.by.place).toEqual([
+      expect.objectContaining({ label: "Help Center", calls: 2, href: "/help" }),
+    ]);
+    expect(costs.by.task.map((t) => t.label)).toEqual(["Help questions"]);
+    expect(costs.by.agent.map((t) => t.label)).toEqual(["Help AI"]);
+  });
+
   it("makes the costs as a PDF or an Excel file", async () => {
     await line(env.company.id, "12.00", { userId: env.pm.user.id });
     await line(env.company.id, "3.00", { daysAgo: 2 });
@@ -538,10 +751,18 @@ run("AI cost tracking", () => {
     expect(pdf.bytes.subarray(0, 4).toString()).toBe("%PDF");
     const xlsx = await costsFile(env.owner, { period: "30d" }, "xlsx");
     expect(xlsx.fileName).toMatch(/\.xlsx$/);
+    // One row's calls only, from the screen's choice.
+    const one = await costsFile(
+      env.owner,
+      { period: "today", by: "person", key: env.pm.user.id },
+      "xlsx",
+    );
+    expect(one.bytes.subarray(0, 2).toString()).toBe("PK");
     expect(xlsx.bytes.subarray(0, 2).toString()).toBe("PK");
     const audit = await prisma.auditLog.findMany({ where: { action: "EXPORT" } });
     // Sorted: the two rows can come back in either order.
     expect(audit.map((a) => a.summary).sort()).toEqual([
+      expect.stringMatching(/^Made the AI costs Excel file for /),
       expect.stringMatching(/^Made the AI costs Excel file for /),
       expect.stringMatching(/^Made the AI costs PDF for /),
     ]);

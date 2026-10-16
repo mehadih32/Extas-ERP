@@ -71,6 +71,7 @@ export async function runModelTest(
         model,
         agent: "Model test",
         userId: ctx.user.id,
+        screen: "/ai/models",
         why: `Model test: ${label} on ${taskInfo(task)!.label} (${c.title})`,
         ...(c.ask.system ? { system: c.ask.system } : {}),
         messages: [{ role: "user", content: c.ask.prompt }],

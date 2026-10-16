@@ -6,12 +6,15 @@ import { Panel } from "@/components/sales/detail-bits";
 import { money } from "@/components/sales/labels";
 import type { AiMonthCost } from "@/modules/ai/costs.service";
 
-/** AI Home's cost card: this month's spending against the budget, with the alert past its percentage. */
+/**
+ * AI Home's cost card: today's and this month's spending, the month against the
+ * budget, with the alert past its percentage.
+ */
 export function AiMonthCostCard({ month: m }: { month: AiMonthCost }) {
   const alert = m.budget && m.percent !== null && m.percent >= m.alertPercent;
   return (
     <Panel
-      title="This month's AI cost"
+      title="AI cost"
       id="ai-month-heading"
       action={
         <Link
@@ -23,11 +26,27 @@ export function AiMonthCostCard({ month: m }: { month: AiMonthCost }) {
         </Link>
       }
     >
-      <p className="mt-2 font-serif text-2xl text-primary tabular-nums">
-        {money(m.spent, m.currency)}
-      </p>
-      <p className="mt-1 text-[0.8125rem] text-muted-foreground">
-        {m.calls} {m.calls === 1 ? "call" : "calls"} to Claude.{" "}
+      <dl className="mt-2 grid grid-cols-2 gap-3">
+        <div>
+          <dt className="text-[0.8125rem] text-muted-foreground">Today</dt>
+          <dd className="font-serif text-2xl text-primary tabular-nums">
+            {money(m.today.spent, m.currency)}
+          </dd>
+          <dd className="text-[0.75rem] text-muted-foreground">
+            {m.today.calls} {m.today.calls === 1 ? "call" : "calls"}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-[0.8125rem] text-muted-foreground">This month</dt>
+          <dd className="font-serif text-2xl text-primary tabular-nums">
+            {money(m.spent, m.currency)}
+          </dd>
+          <dd className="text-[0.75rem] text-muted-foreground">
+            {m.calls} {m.calls === 1 ? "call" : "calls"}
+          </dd>
+        </div>
+      </dl>
+      <p className="mt-2 text-[0.8125rem] text-muted-foreground">
         {m.budget
           ? `Budget ${money(m.budget, m.currency)} (${m.percent}% used).`
           : "No monthly budget is set: the AI asks before big work."}

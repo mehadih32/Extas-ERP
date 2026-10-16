@@ -7,6 +7,7 @@ import { getRequestMeta } from "@/lib/request-meta";
 import { runAction } from "@/lib/result";
 import * as control from "@/modules/ai/control.service";
 import * as costs from "@/modules/ai/costs.service";
+import * as helpAi from "@/modules/ai/help-ai.service";
 import * as logs from "@/modules/ai/logs.service";
 import * as modelTests from "@/modules/ai/model-tests.service";
 import * as prices from "@/modules/ai/prices.service";
@@ -22,6 +23,7 @@ import { requireAnyPermission, requireCompany, requirePermission } from "@/modul
  *               grants), the budget, the models and their prices and tests, the
  *               Claude, OpenAI and Gemini keys and the PIN, and answer
  *               the AI's permission and Deletion requests (the owner's)
+ *   (signed in) ask the Help AI on the Help Center (only while AI is on)
  * The AI itself holds neither: it can never change what it may do.
  */
 
@@ -66,6 +68,13 @@ export const getAiLogsAction = async (filter?: string) =>
 
 export const getCostsAction = async (query?: unknown) =>
   runAction(async () => costs.getCosts(await view(), query ?? {}));
+
+export const getHelpAiAction = async () =>
+  runAction(async () => helpAi.getHelpAi(await requireCompany()));
+
+/** A question to the Help AI: it answers from the manual and changes nothing. */
+export const askHelpAction = async (input: { question: string }) =>
+  runAction(async () => helpAi.askHelp(await requireCompany(), input));
 
 export const getAiMonthCostAction = async () =>
   runAction(async () => costs.getMonthCost(await view()));

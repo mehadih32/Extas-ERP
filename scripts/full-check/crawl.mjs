@@ -499,7 +499,7 @@ async function checkRole(browser, session, writes, deadline) {
   await context.close();
   const left = queue.length - next;
   say(
-    `${role} (${session.member}): ${screens} screens, ${pdfs} downloads${skipped ? `, ${skipped} writes stopped` : ""}${left > 0 ? `, ${left} not reached in time` : ""}`,
+    `${role} (${session.member}): ${screens} screens, ${pdfs} downloads${skipped ? `, ${skipped} ${skipped === 1 ? "write" : "writes"} stopped` : ""}${left > 0 ? `, ${left} not reached in time` : ""}`,
   );
   return {
     role,

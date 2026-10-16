@@ -543,6 +543,37 @@ run("pieces sold before stock arrived", () => {
     await expectBooksMatchStock(env);
   });
 
+  it("keeps Bug Guard quiet when an undone delivery's pieces had changed value", async () => {
+    const env = await setup();
+    const sku = env.navy.id;
+    const { intake } = await produce(env, 10000, [{ variantId: sku, quantity: 20 }]);
+    // 10 more at 200 bring the average to 400; 10 sold leave the 20 worth 8,000.
+    await stock.adjustStock(env.ctx, {
+      variantId: sku,
+      quantity: 10,
+      type: "OPENING",
+      unitCost: 200,
+    });
+    const order = await orders.createOrder(env.ctx, {
+      channel: "WHOLESALE",
+      partyId: env.buyer.id,
+      lines: [{ variantId: sku, quantity: 10 }],
+    });
+    await documents.createDeliveryChallan(env.ctx, order.id);
+    expect(await avgCost(sku)).toBe("400.0000");
+
+    // Undone: the 20 leave at 8,000, not the 10,000 they came in at.
+    await intakes.reverseIntake(env.pmCtx, intake.id, { reason: "Counted twice" });
+    expect(await onHand(sku)).toBe(0);
+    expect(
+      await prisma.journalEntry.count({
+        where: { companyId: env.company.id, description: { startsWith: "Stock value difference" } },
+      }),
+    ).toBe(1);
+    expect(await accountBalance(env, INVENTORY)).toBe("0.00");
+    await expectBooksMatchStock(env);
+  });
+
   it("keeps the books matching when the project is completed and its costs evened out", async () => {
     const env = await setup();
     const sku = env.navy.id; // never in stock: average cost 0

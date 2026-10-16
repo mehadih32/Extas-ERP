@@ -340,6 +340,12 @@ const INTAKES = "data.stock.intakes";
 async function intakes(ctx: CheckContext) {
   const companyId = ctx.companyId;
   const { timezone } = await companyOf(ctx);
+  // The delivery's own entry moves its cost out of work in progress. Undoing a
+  // delivery whose pieces were worth more or less by then posts a "Stock value
+  // difference" under the same delivery, between stock and production loss: not its cost.
+  const fromWorkInProgress = Prisma.sql`EXISTS (
+    SELECT 1 FROM "JournalLine" wl JOIN "LedgerAccount" wa ON wa.id = wl."accountId"
+    WHERE wl."entryId" = je.id AND wa.code = ${CONTROL_ACCOUNTS.WORK_IN_PROGRESS.code})`;
   const rows = await ctx.db.$queryRaw<
     Array<{
       id: string;
@@ -363,16 +369,16 @@ async function intakes(ctx: CheckContext) {
                         AND m."referenceId" = i.id), 0)::int AS moved,
            (SELECT COUNT(*) FROM "JournalEntry" je
              WHERE je."companyId" = i."companyId" AND je."sourceType" = 'STOCK_INTAKE'::"JournalSource"
-               AND je."sourceId" = i.id AND je."reversalOfId" IS NULL AND je."isReversed" = false)::int AS live,
+               AND je."sourceId" = i.id AND ${fromWorkInProgress} AND je."reversalOfId" IS NULL AND je."isReversed" = false)::int AS live,
            (SELECT COUNT(*) FROM "JournalEntry" je
              WHERE je."companyId" = i."companyId" AND je."sourceType" = 'STOCK_INTAKE'::"JournalSource"
-               AND je."sourceId" = i.id AND je."reversalOfId" IS NULL AND je."isReversed" = true)::int AS reversed,
+               AND je."sourceId" = i.id AND ${fromWorkInProgress} AND je."reversalOfId" IS NULL AND je."isReversed" = true)::int AS reversed,
            (SELECT SUM(jl.debit) FROM "JournalEntry" je JOIN "JournalLine" jl ON jl."entryId" = je.id
              WHERE je."companyId" = i."companyId" AND je."sourceType" = 'STOCK_INTAKE'::"JournalSource"
-               AND je."sourceId" = i.id AND je."reversalOfId" IS NULL AND je."isReversed" = false) AS debit,
+               AND je."sourceId" = i.id AND ${fromWorkInProgress} AND je."reversalOfId" IS NULL AND je."isReversed" = false) AS debit,
            (SELECT MIN(je.number) FROM "JournalEntry" je
              WHERE je."companyId" = i."companyId" AND je."sourceType" = 'STOCK_INTAKE'::"JournalSource"
-               AND je."sourceId" = i.id AND je."reversalOfId" IS NULL) AS "entryNumber"
+               AND je."sourceId" = i.id AND ${fromWorkInProgress} AND je."reversalOfId" IS NULL) AS "entryNumber"
     FROM "StockIntake" i
     WHERE i."companyId" = ${companyId}
     ORDER BY i.number`;

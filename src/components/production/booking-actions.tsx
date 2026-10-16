@@ -10,6 +10,7 @@ import { materialsHref } from "@/components/materials/labels";
 import { FormDialog, problem, readReason, ReasonField } from "@/components/sales/dialogs";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
+import { reach } from "@/lib/reach";
 import type { Orientation } from "@/modules/documents/model";
 import type { Booking } from "@/modules/production/booking.service";
 import {
@@ -31,7 +32,7 @@ function BatchSelect({ error }: { error?: string }) {
   const [failed, setFailed] = useState<string>();
   useEffect(() => {
     let live = true;
-    void listAttachableBatchesAction().then((result) => {
+    void reach(() => listAttachableBatchesAction()).then((result) => {
       if (!live) return;
       if (result.ok) setBatches(result.data);
       else setFailed(result.error.message);

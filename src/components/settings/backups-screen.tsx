@@ -29,6 +29,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { reach } from "@/lib/reach";
 import type { getBackupOverview, presentRun } from "@/modules/backups/backup.service";
 import type { DriveBackup } from "@/modules/backups/drive-copies";
 import {
@@ -665,11 +666,11 @@ function DriveBackupsPanel({
 
   useEffect(() => {
     if (!ready) return;
-    void listDriveBackupsAction().then((result) => {
+    void reach(() => listDriveBackupsAction()).then((result) => {
       if (result.ok) setItems(result.data.items);
       else setError(result.error.message);
     });
-    void restoreStatusAction().then((result) => {
+    void reach(() => restoreStatusAction()).then((result) => {
       if (result.ok && result.data.waiting) setWaiting(String(result.data.waiting.name));
     });
   }, [ready]);

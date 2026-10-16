@@ -14,6 +14,7 @@ import { money } from "@/components/sales/labels";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
+import { reach } from "@/lib/reach";
 import type { ActionError } from "@/lib/result";
 import type { BillForm, PartyOption } from "@/modules/production/screens.service";
 import {
@@ -150,7 +151,7 @@ export function AddCostDialog({
 
   useEffect(() => {
     let live = true;
-    void getBillFormAction({ projectId: project.id }).then((result) => {
+    void reach(() => getBillFormAction({ projectId: project.id })).then((result) => {
       if (!live) return;
       if (result.ok) setForm(result.data);
       else setLoadError(result.error.message);

@@ -70,13 +70,39 @@ function quoteIdent(name: string) {
   return `"${name}"`;
 }
 
+const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Drops a temporary database. A plain DROP first: Postgres itself stops an
+ * autovacuum worker that has just started on the fresh copy, which "WITH
+ * (FORCE)" may not do for the app's own (not superuser) database user. Tried a
+ * few times, then once more with FORCE for a connection left open.
+ */
+async function dropTestDatabase(name: string) {
+  const sql = `DROP DATABASE IF EXISTS ${quoteIdent(name)}`;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await prisma.$executeRawUnsafe(sql);
+      return;
+    } catch (error) {
+      if (attempt >= 5) {
+        await prisma.$executeRawUnsafe(`${sql} WITH (FORCE)`).catch(() => {
+          throw error;
+        });
+        return;
+      }
+      await pause(1000 * attempt);
+    }
+  }
+}
+
 /** Drops temporary databases a stopped test left behind. */
 async function dropLeftovers() {
   const rows = await prisma.$queryRaw<Array<{ datname: string }>>`
     SELECT datname FROM pg_database WHERE datname LIKE ${`${TEST_DB_PREFIX}%`}`;
   for (const { datname } of rows) {
     if (!datname.startsWith(TEST_DB_PREFIX)) continue;
-    await prisma.$executeRawUnsafe(`DROP DATABASE IF EXISTS ${quoteIdent(datname)} WITH (FORCE)`);
+    await dropTestDatabase(datname);
   }
 }
 
@@ -237,11 +263,9 @@ async function testRestore(runId: string, key: { key: Buffer; id: string }) {
     );
   } finally {
     if (created) {
-      await prisma
-        .$executeRawUnsafe(`DROP DATABASE IF EXISTS ${quoteIdent(database)} WITH (FORCE)`)
-        .catch((error: unknown) =>
-          console.error("[backups] could not drop the test database", error),
-        );
+      await dropTestDatabase(database).catch((error: unknown) =>
+        console.error("[backups] could not drop the test database", error),
+      );
     }
     await rm(work, { recursive: true, force: true });
   }

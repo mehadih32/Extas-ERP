@@ -27,6 +27,17 @@ export const KIND_TEXT: Record<ProblemKind, string> = {
   SCRIPT: "The screen had a script error",
 };
 
+/** The short label on each problem's badge. */
+export const KIND_LABEL: Record<ProblemKind, string> = {
+  ERROR: "Error",
+  BROKEN_LINK: "Broken link",
+  FAILED_REQUEST: "Did not load",
+  SLOW: "Slow",
+  PDF: "PDF",
+  SIGNED_OUT: "Signed out",
+  SCRIPT: "Script error",
+};
+
 export type RequestView = {
   state: "SENT" | "PR_OPEN" | "MERGED" | "STOPPED";
   issueNumber: number | null;

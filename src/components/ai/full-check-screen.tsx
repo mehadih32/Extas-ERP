@@ -21,6 +21,7 @@ import { Panel } from "@/components/sales/detail-bits";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { reach } from "@/lib/reach";
 import type { FullCheckScreen as Check } from "@/modules/ai/full-check/full-check.service";
 import {
   askClaudeCodeAction,
@@ -82,7 +83,7 @@ export function FullCheckScreen({ check: c }: { check: Check }) {
     done: string,
   ) =>
     startTransition(async () => {
-      const result = await work();
+      const result = await reach(work);
       setMessage(
         result.ok ? { tone: "success", text: done } : { tone: "error", text: result.error.message },
       );
@@ -395,7 +396,7 @@ function RunSummary({ run: r, when }: { run: Run; when: ReturnType<typeof useWhe
                   <td className="py-1 pr-3">{x.screens}</td>
                   <td className="py-1 pr-3">{x.pdfs}</td>
                   <td className="py-1 text-muted-foreground">
-                    {[x.note, x.skipped ? `${x.skipped} writes stopped` : null]
+                    {[x.note?.replace(/\.$/, ""), x.skipped ? `${x.skipped} writes stopped` : null]
                       .filter(Boolean)
                       .join(". ")}
                   </td>
@@ -426,7 +427,7 @@ function ProblemRow({
     <li className="grid gap-3 rounded-md border p-3 text-sm sm:grid-cols-[1fr_auto]">
       <div className="grid min-w-0 gap-1">
         <div className="flex flex-wrap items-center gap-2">
-          <StatusBadge tone={p.kind === "SLOW" ? "open" : "warn"}>{p.kindText}</StatusBadge>
+          <StatusBadge tone={p.kind === "SLOW" ? "open" : "warn"}>{p.kindLabel}</StatusBadge>
           <span className="text-muted-foreground">as {p.role}</span>
         </div>
         <p className="font-medium">{p.text}</p>

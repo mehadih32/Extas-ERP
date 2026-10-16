@@ -36,7 +36,9 @@ const PASS = process.env.PASS ?? "";
 const SLOW_MS = 6000;
 const PAGE_TIMEOUT_MS = 45_000;
 const MAX_SHOTS = 80;
-const TABS = 3;
+const TABS = 4;
+/** How long a screen may keep loading after it opened (its links prefetch, lists fill). */
+const SETTLE_MS = 1500;
 const ACTIONS = !!process.env.GITHUB_ACTIONS;
 
 if (SITE.protocol !== "https:" && SITE.hostname !== "localhost" && SITE.hostname !== "127.0.0.1") {
@@ -292,7 +294,7 @@ async function checkRole(browser, session, writes, deadline) {
         timeout: PAGE_TIMEOUT_MS,
       });
       const ms = Date.now() - started;
-      await page.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => {});
+      await page.waitForLoadState("networkidle", { timeout: SETTLE_MS }).catch(() => {});
       screens += 1;
       const now = new URL(page.url()).pathname;
       if (GATES[now] && GATES[now] !== GATES[path]) {
@@ -509,12 +511,15 @@ async function main() {
   );
   const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined });
   const total = (Number(process.env.MINUTES) || begun.minutes || 10) * 60_000;
-  const owner = Math.round(total * 0.35);
-  const each = Math.max(60_000, Math.round((total - owner) / Math.max(1, begun.roles.length - 1)));
+  const end = Date.now() + total;
   const summary = { roles: [], screens: 0, pdfs: 0, links: 0, seconds: 0 };
-  let at = Date.now();
   for (const [i, session] of begun.roles.entries()) {
-    const deadline = at + (i === 0 ? owner : each);
+    // The owner sees the most: a third of the time. The others share what is
+    // left, so time a role did not need goes to the next ones.
+    const left = Math.max(60_000, end - Date.now());
+    const deadline =
+      Date.now() +
+      (i === 0 ? Math.round(total * 0.35) : Math.round(left / (begun.roles.length - i)));
     const done = await checkRole(browser, session, begun.writes, deadline).catch((error) => ({
       role: session.role,
       member: session.member,
@@ -535,7 +540,6 @@ async function main() {
     summary.screens += done.screens;
     summary.pdfs += done.pdfs;
     summary.links += done.links;
-    at = Date.now();
   }
   await browser.close();
   for (const name of begun.notChecked ?? []) {

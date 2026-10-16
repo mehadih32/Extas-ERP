@@ -21,6 +21,7 @@ import { FormAlert } from "@/components/forms/field";
 import { StatusBadge } from "@/components/sales/badges";
 import { Panel } from "@/components/sales/detail-bits";
 import { Button } from "@/components/ui/button";
+import { reach } from "@/lib/reach";
 import type { SkillScreen as Skill } from "@/modules/ai/skills.service";
 import {
   addSkillFileAction,
@@ -75,7 +76,7 @@ export function SkillScreen({ skill: s }: { skill: Skill }) {
     done: string,
   ) =>
     startTransition(async () => {
-      const result = await work();
+      const result = await reach(work);
       setMessage(
         result.ok ? { tone: "success", text: done } : { tone: "error", text: result.error.message },
       );

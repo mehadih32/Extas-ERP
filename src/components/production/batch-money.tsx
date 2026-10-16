@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import { formatDay } from "@/lib/display";
+import { reach } from "@/lib/reach";
 import type { BatchMoney } from "@/modules/production/batch-money.service";
 import type { BillForm, PartyOption } from "@/modules/production/screens.service";
 import {
@@ -51,7 +52,7 @@ function useBillForm() {
   const [loadError, setLoadError] = useState<string>();
   useEffect(() => {
     let live = true;
-    void getBillFormAction({}).then((result) => {
+    void reach(() => getBillFormAction({})).then((result) => {
       if (!live) return;
       if (result.ok) setForm(result.data);
       else setLoadError(result.error.message);

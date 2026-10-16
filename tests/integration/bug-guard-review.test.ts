@@ -27,7 +27,9 @@ import { saveGitHub } from "@/modules/ai/full-check/full-check.service";
 import { prisma } from "@/lib/prisma";
 import { readOnly } from "@/lib/read-only";
 import { slowQueriesSince } from "@/lib/slow-queries";
+import { summaryText } from "@/modules/bug-guard/bot-texts";
 import { APP_CHECKS } from "@/modules/bug-guard/checks/app";
+import { PRODUCT_CHECKS } from "@/modules/bug-guard/checks/product";
 import { READ_ONLY_WHY } from "@/modules/bug-guard/runner";
 import type { CheckContext } from "@/modules/bug-guard/types";
 
@@ -38,7 +40,7 @@ const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
 
 /** Runs one of Bug Guard's real checks for a company, only reading. */
 function check(key: string, companyId: string, extra: Partial<CheckContext> = {}) {
-  const found = APP_CHECKS.find((c) => c.key === key)!;
+  const found = [...APP_CHECKS, ...PRODUCT_CHECKS].find((c) => c.key === key)!;
   const now = new Date();
   return readOnly(READ_ONLY_WHY, () =>
     found.run({
@@ -149,6 +151,45 @@ run("Bug Guard, after the review", () => {
       } finally {
         await gh.close();
       }
+    });
+  });
+
+  describe("Help searches that found nothing (L12)", () => {
+    it("reach the bot as counts only; the words stay in the ERP for the owner", async () => {
+      const { company } = await makeCompany("Extas");
+      const { localDay } = await import("@/lib/dates");
+      const day = localDay(new Date(), "Asia/Dhaka");
+      for (const [subject, count] of [
+        ["karim traders due", 3],
+        ["lc margin rahim", 2],
+      ] as const) {
+        await prisma.usageCount.create({
+          data: { companyId: company.id, day, kind: "HELP_MISS", subject, count },
+        });
+      }
+      const [finding] = await check("product.help-misses", company.id);
+      expect(finding!.title).not.toMatch(/karim|rahim|traders|margin/);
+      expect(finding!.title).toMatch(/2টি/);
+      expect(finding!.title).toMatch(/5 বার/);
+      // The words are in the evidence: shown on the Bug Guard screen, not on the bot.
+      expect(finding!.evidence).toEqual(
+        expect.arrayContaining([{ label: "karim traders due", value: "3 বার" }]),
+      );
+      const report = summaryText(
+        {
+          company: "Extas",
+          at: new Date(),
+          checked: 1,
+          failedChecks: [],
+          newCount: 1,
+          fixedCount: 0,
+          open: [
+            { severity: finding!.severity, title: finding!.title, href: finding!.href ?? null },
+          ],
+        },
+        "https://erp.test",
+      );
+      expect(report).not.toMatch(/karim|rahim/);
     });
   });
 });

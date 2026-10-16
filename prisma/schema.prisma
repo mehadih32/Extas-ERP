@@ -6967,8 +6967,9 @@ model ServerError {
   @@index([companyId, at])
 }
 
-/// How the ERP is used, counted per day (no one's data, only screens):
-/// screens opened, forms left half done, Help searches that found nothing.
+/// How the ERP is used, counted per day: screens opened, forms left half done
+/// (their route patterns only, never what was typed in a form), and the words of
+/// Help searches that found nothing (as typed; shown to the owner in the ERP only).
 model UsageCount {
   id        String    @id @default(cuid())
   companyId String

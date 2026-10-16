@@ -1,7 +1,6 @@
 import type { Prisma } from "@prisma/client";
 
 import { localDay } from "@/lib/dates";
-import { prisma } from "@/lib/prisma";
 import { aiOn } from "@/modules/ai/claude";
 import { EXPERTS } from "@/modules/ai/experts";
 import type { CompanyContext } from "@/modules/auth/context";
@@ -15,17 +14,19 @@ import {
   readDraft,
   type ReviewOutput,
 } from "@/modules/production/tech-pack-ai.service";
-import { getTechPack } from "@/modules/production/tech-pack-approval.service";
-import { techPackGaps } from "@/modules/production/tech-pack-gaps";
+import { getTechPackApproval } from "@/modules/production/tech-pack-approval.service";
 import {
+  assertView,
   getChart,
   INSTRUCTION_SECTIONS,
-  loadTechPackProject,
+  loadTechPack,
   readInstructions,
 } from "@/modules/production/tech-pack-spec.service";
 
 /*
- * A style's tech pack screen: its approval, the measurement chart, the
+ * A tech pack's screen: its own details (number, title, buyer, style,
+ * season, the buyer's brief) and the style in production it is linked to,
+ * its approval, the measurement chart, the
  * owner's instructions and the latest AI draft, saved references, logos,
  * colours with their lab dips, expert answers and review board findings,
  * the completeness % and the red gaps that keep it from being approved.
@@ -36,13 +37,14 @@ const num = (d: Prisma.Decimal | null) => (d === null ? null : Number(d));
 const fileLink = (f: { id: string; fileName: string; mimeType: string } | null) =>
   f ? { id: f.id, fileName: f.fileName, mimeType: f.mimeType } : null;
 
-export async function getTechPackScreen(ctx: CompanyContext, projectId: string) {
-  const project = await loadTechPackProject(ctx, projectId);
-  const [approval, chart, row, on, gaps] = await Promise.all([
-    getTechPack(ctx, project.id),
-    getChart(ctx, project.id),
+export async function getTechPackScreen(ctx: CompanyContext, techPackId: string) {
+  assertView(ctx);
+  const tp = await loadTechPack(ctx, techPackId);
+  const [approval, chart, row, on] = await Promise.all([
+    getTechPackApproval(ctx, tp),
+    getChart(ctx, tp.id),
     ctx.db.techPack.findUnique({
-      where: { projectId: project.id },
+      where: { id: tp.id },
       select: {
         instructions: true,
         references: {
@@ -81,9 +83,8 @@ export async function getTechPackScreen(ctx: CompanyContext, projectId: string) 
       },
     }),
     aiOn(ctx.company.id),
-    // The style was found through the company's own client; its gaps are read with it too.
-    techPackGaps(prisma, project.id),
   ]);
+  const gaps = approval.gaps;
 
   const logos = (row?.logos ?? []).map((l) => {
     const check = (l.fileCheck as unknown as FileCheck | null) ?? null;
@@ -157,16 +158,21 @@ export async function getTechPackScreen(ctx: CompanyContext, projectId: string) 
   });
 
   const latest = row?.aiDrafts[0] ?? null;
-  const draft = latest
-    ? {
-        id: latest.id,
-        mode: latest.mode,
-        model: latest.model,
-        day: localDay(latest.createdAt, ctx.company.timezone),
-        createdBy: latest.createdBy?.name ?? null,
-        output: readDraft(latest.output) as DraftOutput,
-      }
-    : null;
+  const output = latest ? (readDraft(latest.output) as DraftOutput) : null;
+  const draft =
+    latest && output
+      ? {
+          id: latest.id,
+          mode: latest.mode,
+          model: latest.model,
+          day: localDay(latest.createdAt, ctx.company.timezone),
+          /** The AI's account: the draft is the AI's work. */
+          createdBy: latest.createdBy?.name ?? null,
+          /** Who asked the AI for it. */
+          askedBy: output.askedBy ?? null,
+          output,
+        }
+      : null;
 
   const answers = (row?.expertAnswers ?? []).map((a) => ({
     id: a.id,
@@ -205,16 +211,35 @@ export async function getTechPackScreen(ctx: CompanyContext, projectId: string) 
   };
   const total = tally.green + tally.yellow + tally.red;
   const may = ctx.can("production.manage");
-  const open = !["COMPLETED", "CANCELLED"].includes(project.status);
+  const project = tp.project;
+  const open = !project || !["COMPLETED", "CANCELLED"].includes(project.status);
+  // Its links change only while nothing rests on them: not approved, fabric not locked.
+  const settled = approval.status === "APPROVED" || approval.fabricLocked;
 
   return {
-    project: {
-      id: project.id,
-      code: project.code,
-      name: project.name,
-      status: project.status,
-      style: project.style,
-      buyer: project.buyer?.name ?? null,
+    techPack: {
+      id: tp.id,
+      number: tp.number,
+      title: tp.title,
+      season: tp.season,
+      brief: tp.brief,
+      buyer: tp.buyer,
+      style: tp.style,
+      project: project
+        ? {
+            id: project.id,
+            code: project.code,
+            name: project.name,
+            status: project.status,
+            style: project.style,
+            buyer: project.buyer?.name ?? null,
+          }
+        : null,
+      createdBy: tp.createdBy?.name ?? null,
+      createdOn: localDay(tp.createdAt, ctx.company.timezone),
+      /** What the page and the AI box call it: the style's code once linked, else its number. */
+      code: tp.code,
+      name: tp.name,
     },
     approval,
     chart,
@@ -241,6 +266,7 @@ export async function getTechPackScreen(ctx: CompanyContext, projectId: string) 
       edit: may && open,
       ai: may && open && on,
       tick: ctx.can("production.logo.approve"),
+      link: may && open && !settled,
     },
   };
 }

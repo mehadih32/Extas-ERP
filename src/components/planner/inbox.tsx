@@ -48,6 +48,7 @@ const OPEN_WORDS: Record<string, string> = {
   Task: "Open the task",
   Reminder: "Open the reminder",
   ProductionProject: "Open the project",
+  TechPack: "Open the tech pack",
   ProductionBatch: "Open the batch",
   SalesOrder: "Open the order",
   PurchaseOrder: "Open the purchase order",

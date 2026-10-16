@@ -44,8 +44,8 @@ describe("a request that gets no answer", () => {
       "await reachSearch(() => searchRef.current(text))",
     );
     const save = source("src/components/production/tech-pack/save-form.tsx");
-    expect(save).toContain("await reach(() => pickTechPackProjectsAction(search))");
-    expect(save).toContain("await reach(() => addReferenceAction(chosen.id, form))");
+    expect(save).toContain("await reach(() => pickSaveTargetsAction(search))");
+    expect(save).toContain("await reach(() => saveToTechPackAction(chosen, form))");
     for (const file of [
       "src/components/ai/full-check-screen.tsx",
       "src/components/ai/skill-screen.tsx",

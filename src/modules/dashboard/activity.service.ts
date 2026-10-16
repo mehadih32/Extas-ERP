@@ -106,6 +106,7 @@ const LINKS: Record<string, Link> = {
   ProformaInvoice: { anyOf: ["sales.view"], href: salesHref.proforma },
   SalesReturn: { anyOf: ["sales.view"], href: salesHref.salesReturn },
   ProductionProject: { anyOf: ["production.view"], href: productionHref.project },
+  TechPack: { anyOf: ["production.view"], href: productionHref.techPackOf },
   StockIntake: {
     anyOf: ["production.view", "production.stock_intake"],
     href: productionHref.delivery,

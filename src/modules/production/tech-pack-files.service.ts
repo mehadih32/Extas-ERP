@@ -3,7 +3,6 @@ import { z } from "zod";
 
 import { AppError } from "@/lib/errors";
 import type { RequestMeta } from "@/lib/request-meta";
-import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import {
   deleteStoredFile,
@@ -39,8 +38,8 @@ import {
 import {
   assertCanChange,
   assertManage,
-  ensureTechPack,
-  loadTechPackProject,
+  loadTechPack,
+  logTechPack,
 } from "@/modules/production/tech-pack-spec.service";
 import { runTransaction } from "@/lib/transaction";
 
@@ -116,7 +115,7 @@ async function sharedFile(ctx: CompanyContext, fileId: string) {
 /** Saves a reference photo, link or both to a style's tech pack, with a short note. */
 export async function addReference(
   ctx: CompanyContext,
-  projectId: string,
+  techPackId: string,
   raw: unknown,
   upload?: { fileName: string; bytes: Buffer } | null,
   meta?: RequestMeta,
@@ -128,15 +127,14 @@ export async function addReference(
       link: ["Add a photo or a link to save."],
     });
   }
-  const project = await loadTechPackProject(ctx, projectId);
-  assertCanChange(project);
+  const tp = await loadTechPack(ctx, techPackId);
+  assertCanChange(tp);
   const file = upload
     ? await storeUpload(ctx, upload, meta)
     : input.sharedFileId
       ? await sharedFile(ctx, input.sharedFileId)
       : null;
   const reference = await runTransaction(async (tx) => {
-    const techPackId = await ensureTechPack(ctx, project.id, tx);
     const saved = await tx.techPackReference.create({
       data: {
         companyId: ctx.company.id,
@@ -148,42 +146,39 @@ export async function addReference(
       },
       select: { id: true },
     });
-    await auditInCompany(
+    await logTechPack(
       ctx,
       meta,
+      tp,
       {
         action: "CREATE",
-        entityType: "ProductionProject",
-        entityId: project.id,
-        summary: `${project.code}: saved a reference to the tech pack${input.link ? ` (${input.link.slice(0, 80)})` : ""}`,
+        summary: `${tp.code}: saved a reference to the tech pack${input.link ? ` (${input.link.slice(0, 80)})` : ""}`,
       },
       tx,
     );
     return saved;
   });
-  return { id: reference.id, projectId: project.id, code: project.code };
+  return { id: reference.id, techPackId: tp.id, code: tp.code };
 }
 
 /** Takes a reference off the tech pack (its photo stays in the files). */
 export async function removeReference(
   ctx: CompanyContext,
-  projectId: string,
+  techPackId: string,
   referenceId: string,
   meta?: RequestMeta,
 ) {
   assertManage(ctx);
-  const project = await loadTechPackProject(ctx, projectId);
+  const tp = await loadTechPack(ctx, techPackId);
   const reference = await ctx.db.techPackReference.findFirst({
-    where: { id: referenceId, techPack: { projectId: project.id } },
+    where: { id: referenceId, techPackId: tp.id },
     select: { id: true, link: true },
   });
   if (!reference) throw new AppError("NOT_FOUND", "That reference is not on this tech pack.");
   await ctx.db.techPackReference.delete({ where: { id: reference.id } });
-  await auditInCompany(ctx, meta, {
+  await logTechPack(ctx, meta, tp, {
     action: "DELETE",
-    entityType: "ProductionProject",
-    entityId: project.id,
-    summary: `${project.code}: took a reference off the tech pack${reference.link ? ` (${reference.link.slice(0, 80)})` : ""}`,
+    summary: `${tp.code}: took a reference off the tech pack${reference.link ? ` (${reference.link.slice(0, 80)})` : ""}`,
   });
   return { id: reference.id };
 }
@@ -222,13 +217,13 @@ export const logoSchema = z.object({
     .refine((v) => v === null || v in REFERENCE_STITCHES, "Pick one of the public references."),
 });
 
-async function loadLogo(ctx: CompanyContext, projectId: string, logoId: string) {
-  const project = await loadTechPackProject(ctx, projectId);
+async function loadLogo(ctx: CompanyContext, techPackId: string, logoId: string) {
+  const tp = await loadTechPack(ctx, techPackId);
   const logo = await ctx.db.techPackLogo.findFirst({
-    where: { id: logoId, techPack: { projectId: project.id } },
+    where: { id: logoId, techPackId: tp.id },
   });
   if (!logo) throw new AppError("NOT_FOUND", "That logo is not on this tech pack.");
-  return { project, logo };
+  return { tp, logo };
 }
 
 function assertNotTicked(logo: { name: string; tickedAt: Date | null }) {
@@ -243,25 +238,24 @@ function assertNotTicked(logo: { name: string; tickedAt: Date | null }) {
 /** Adds a logo to a style's tech pack, or changes its spec (not once it is ticked). */
 export async function saveLogo(
   ctx: CompanyContext,
-  projectId: string,
+  techPackId: string,
   logoId: string | null,
   raw: unknown,
   meta?: RequestMeta,
 ) {
   assertManage(ctx);
   const input = logoSchema.parse(raw);
-  const project = await loadTechPackProject(ctx, projectId);
-  assertCanChange(project);
+  const tp = await loadTechPack(ctx, techPackId);
+  assertCanChange(tp);
   const data = { ...input, fabric: input.fabric ?? null };
   const saved = await runTransaction(async (tx) => {
     let id: string;
     if (logoId) {
-      const { logo } = await loadLogo(ctx, project.id, logoId);
+      const { logo } = await loadLogo(ctx, tp.id, logoId);
       assertNotTicked(logo);
       await tx.techPackLogo.update({ where: { id: logo.id }, data });
       id = logo.id;
     } else {
-      const techPackId = await ensureTechPack(ctx, project.id, tx);
       id = (
         await tx.techPackLogo.create({
           data: { companyId: ctx.company.id, techPackId, ...data },
@@ -269,14 +263,13 @@ export async function saveLogo(
         })
       ).id;
     }
-    await auditInCompany(
+    await logTechPack(
       ctx,
       meta,
+      tp,
       {
         action: logoId ? "UPDATE" : "CREATE",
-        entityType: "ProductionProject",
-        entityId: project.id,
-        summary: `${project.code}: ${logoId ? "changed" : "added"} the logo ${input.name}`,
+        summary: `${tp.code}: ${logoId ? "changed" : "added"} the logo ${input.name}`,
       },
       tx,
     );
@@ -289,20 +282,18 @@ export async function saveLogo(
 
 export async function removeLogo(
   ctx: CompanyContext,
-  projectId: string,
+  techPackId: string,
   logoId: string,
   meta?: RequestMeta,
 ) {
   assertManage(ctx);
-  const { project, logo } = await loadLogo(ctx, projectId, logoId);
-  assertCanChange(project);
+  const { tp, logo } = await loadLogo(ctx, techPackId, logoId);
+  assertCanChange(tp);
   assertNotTicked(logo);
   await ctx.db.techPackLogo.delete({ where: { id: logo.id } });
-  await auditInCompany(ctx, meta, {
+  await logTechPack(ctx, meta, tp, {
     action: "DELETE",
-    entityType: "ProductionProject",
-    entityId: project.id,
-    summary: `${project.code}: took the logo ${logo.name} off the tech pack`,
+    summary: `${tp.code}: took the logo ${logo.name} off the tech pack`,
   });
   return { id: logo.id };
 }
@@ -453,7 +444,7 @@ export const logoFileSchema = z.object({
 /** The buyer's artwork, a machine file (from the buyer or the puncher) or the sew-out photo. */
 export async function uploadLogoFile(
   ctx: CompanyContext,
-  projectId: string,
+  techPackId: string,
   logoId: string,
   raw: unknown,
   upload: { fileName: string; bytes: Buffer },
@@ -461,8 +452,8 @@ export async function uploadLogoFile(
 ) {
   assertManage(ctx);
   const input = logoFileSchema.parse(raw);
-  const { project, logo } = await loadLogo(ctx, projectId, logoId);
-  assertCanChange(project);
+  const { tp, logo } = await loadLogo(ctx, techPackId, logoId);
+  assertCanChange(tp);
   assertNotTicked(logo);
   if (upload.bytes.length === 0) throw new AppError("VALIDATION", "The file is empty.");
   if (upload.bytes.length > MAX_UPLOAD_BYTES) {
@@ -505,11 +496,9 @@ export async function uploadLogoFile(
       : input.kind === "ARTWORK"
         ? "the buyer's artwork"
         : "the sew-out photo";
-  await auditInCompany(ctx, meta, {
+  await logTechPack(ctx, meta, tp, {
     action: "UPDATE",
-    entityType: "ProductionProject",
-    entityId: project.id,
-    summary: `${project.code}: added ${what} to the logo ${logo.name}`,
+    summary: `${tp.code}: added ${what} to the logo ${logo.name}`,
   });
   return { id: logo.id, check, picture: !type.vector && input.kind === "ARTWORK" };
 }
@@ -521,13 +510,13 @@ export async function uploadLogoFile(
  */
 export async function draftLogoFromVector(
   ctx: CompanyContext,
-  projectId: string,
+  techPackId: string,
   logoId: string,
   meta?: RequestMeta,
 ) {
   assertManage(ctx);
-  const { project, logo } = await loadLogo(ctx, projectId, logoId);
-  assertCanChange(project);
+  const { tp, logo } = await loadLogo(ctx, techPackId, logoId);
+  assertCanChange(tp);
   assertNotTicked(logo);
   if (logo.machineFileId && logo.source && logo.source !== "AI_FROM_VECTOR") {
     throw new AppError(
@@ -573,11 +562,9 @@ export async function draftLogoFromVector(
       fileCheck: check as unknown as Prisma.InputJsonValue,
     },
   });
-  await auditInCompany(ctx, meta, {
+  await logTechPack(ctx, meta, tp, {
     action: "UPDATE",
-    entityType: "ProductionProject",
-    entityId: project.id,
-    summary: `${project.code}: drafted ${name}.DST for the logo ${logo.name} from the buyer's vector (${check.stitches} stitches, ${check.verdict})`,
+    summary: `${tp.code}: drafted ${name}.DST for the logo ${logo.name} from the buyer's vector (${check.stitches} stitches, ${check.verdict})`,
   });
   return { id: logo.id, check };
 }
@@ -585,11 +572,11 @@ export async function draftLogoFromVector(
 /** The logo's machine file, as stored or turned into DST or EXP (one master, many files). */
 export async function logoMachineFile(
   ctx: CompanyContext,
-  projectId: string,
+  techPackId: string,
   logoId: string,
   format: "DST" | "EXP" | null,
 ) {
-  const { logo } = await loadLogo(ctx, projectId, logoId);
+  const { logo } = await loadLogo(ctx, techPackId, logoId);
   const file = logo.machineFileId
     ? await ctx.db.fileAsset.findUnique({ where: { id: logo.machineFileId } })
     : null;
@@ -630,12 +617,12 @@ function assertTick(ctx: CompanyContext) {
  */
 export async function tickLogo(
   ctx: CompanyContext,
-  projectId: string,
+  techPackId: string,
   logoId: string,
   meta?: RequestMeta,
 ) {
   assertTick(ctx);
-  const { project, logo } = await loadLogo(ctx, projectId, logoId);
+  const { tp, logo } = await loadLogo(ctx, techPackId, logoId);
   if (logo.tickedAt) return { id: logo.id };
   const check = logo.fileCheck as { verdict?: string } | null;
   const missing = [
@@ -655,33 +642,29 @@ export async function tickLogo(
     where: { id: logo.id },
     data: { tickedAt: new Date(), tickedById: ctx.user.id },
   });
-  await auditInCompany(ctx, meta, {
+  await logTechPack(ctx, meta, tp, {
     action: "STATUS_CHANGE",
-    entityType: "ProductionProject",
-    entityId: project.id,
-    summary: `${project.code}: ticked the logo ${logo.name} for bulk`,
+    summary: `${tp.code}: ticked the logo ${logo.name} for bulk`,
   });
   return { id: logo.id };
 }
 
 export async function untickLogo(
   ctx: CompanyContext,
-  projectId: string,
+  techPackId: string,
   logoId: string,
   meta?: RequestMeta,
 ) {
   assertTick(ctx);
-  const { project, logo } = await loadLogo(ctx, projectId, logoId);
+  const { tp, logo } = await loadLogo(ctx, techPackId, logoId);
   if (!logo.tickedAt) return { id: logo.id };
   await ctx.db.techPackLogo.update({
     where: { id: logo.id },
     data: { tickedAt: null, tickedById: null },
   });
-  await auditInCompany(ctx, meta, {
+  await logTechPack(ctx, meta, tp, {
     action: "STATUS_CHANGE",
-    entityType: "ProductionProject",
-    entityId: project.id,
-    summary: `${project.code}: took back the tick on the logo ${logo.name}`,
+    summary: `${tp.code}: took back the tick on the logo ${logo.name}`,
   });
   return { id: logo.id };
 }
@@ -702,27 +685,27 @@ export const colourSchema = z.object({
     .or(z.literal("").transform(() => null)),
 });
 
-async function loadColour(ctx: CompanyContext, projectId: string, colourId: string) {
-  const project = await loadTechPackProject(ctx, projectId);
+async function loadColour(ctx: CompanyContext, techPackId: string, colourId: string) {
+  const tp = await loadTechPack(ctx, techPackId);
   const colour = await ctx.db.techPackColour.findFirst({
-    where: { id: colourId, techPack: { projectId: project.id } },
+    where: { id: colourId, techPackId: tp.id },
   });
   if (!colour) throw new AppError("NOT_FOUND", "That colour is not on this tech pack.");
-  return { project, colour };
+  return { tp, colour };
 }
 
 /** Adds a colour with the buyer's code and limit, or changes it. */
 export async function saveColour(
   ctx: CompanyContext,
-  projectId: string,
+  techPackId: string,
   colourId: string | null,
   raw: unknown,
   meta?: RequestMeta,
 ) {
   assertManage(ctx);
   const input = colourSchema.parse(raw);
-  const project = await loadTechPackProject(ctx, projectId);
-  assertCanChange(project);
+  const tp = await loadTechPack(ctx, techPackId);
+  assertCanChange(tp);
   const data = {
     name: input.name,
     code: input.code,
@@ -735,7 +718,7 @@ export async function saveColour(
   const id = await runTransaction(async (tx) => {
     let saved: string;
     if (colourId) {
-      const { colour } = await loadColour(ctx, project.id, colourId);
+      const { colour } = await loadColour(ctx, tp.id, colourId);
       // The approximate code from a photo stays approximate when saved unchanged.
       const keptApprox = colour.codeSource === "IMAGE_ESTIMATE" && input.code === colour.code;
       await tx.techPackColour.update({
@@ -744,7 +727,6 @@ export async function saveColour(
       });
       saved = colour.id;
     } else {
-      const techPackId = await ensureTechPack(ctx, project.id, tx);
       const taken = await tx.techPackColour.count({ where: { techPackId, name: input.name } });
       if (taken > 0) throw new AppError("CONFLICT", `${input.name} is on this tech pack already.`);
       saved = (
@@ -754,14 +736,13 @@ export async function saveColour(
         })
       ).id;
     }
-    await auditInCompany(
+    await logTechPack(
       ctx,
       meta,
+      tp,
       {
         action: colourId ? "UPDATE" : "CREATE",
-        entityType: "ProductionProject",
-        entityId: project.id,
-        summary: `${project.code}: ${colourId ? "changed" : "added"} the colour ${input.name}${input.code ? ` (${input.code})` : ""}, limit ΔE ${input.deltaLimit.toFixed(2)}`,
+        summary: `${tp.code}: ${colourId ? "changed" : "added"} the colour ${input.name}${input.code ? ` (${input.code})` : ""}, limit ΔE ${input.deltaLimit.toFixed(2)}`,
       },
       tx,
     );
@@ -772,19 +753,17 @@ export async function saveColour(
 
 export async function removeColour(
   ctx: CompanyContext,
-  projectId: string,
+  techPackId: string,
   colourId: string,
   meta?: RequestMeta,
 ) {
   assertManage(ctx);
-  const { project, colour } = await loadColour(ctx, projectId, colourId);
-  assertCanChange(project);
+  const { tp, colour } = await loadColour(ctx, techPackId, colourId);
+  assertCanChange(tp);
   await ctx.db.techPackColour.delete({ where: { id: colour.id } });
-  await auditInCompany(ctx, meta, {
+  await logTechPack(ctx, meta, tp, {
     action: "DELETE",
-    entityType: "ProductionProject",
-    entityId: project.id,
-    summary: `${project.code}: took the colour ${colour.name} off the tech pack`,
+    summary: `${tp.code}: took the colour ${colour.name} off the tech pack`,
   });
   return { id: colour.id };
 }
@@ -834,15 +813,15 @@ export const labDipsSchema = z.object({
 /** A round of the mill's lab dip options with their measured report. */
 export async function addLabDips(
   ctx: CompanyContext,
-  projectId: string,
+  techPackId: string,
   colourId: string,
   raw: unknown,
   meta?: RequestMeta,
 ) {
   assertManage(ctx);
   const input = labDipsSchema.parse(raw);
-  const { project, colour } = await loadColour(ctx, projectId, colourId);
-  assertCanChange(project);
+  const { tp, colour } = await loadColour(ctx, techPackId, colourId);
+  assertCanChange(tp);
   const taken = await ctx.db.labDipOption.findMany({
     where: {
       colourId: colour.id,
@@ -868,34 +847,30 @@ export async function addLabDips(
   });
   const limit = Number(colour.deltaLimit);
   const passing = input.options.filter((o) => checkOption(o, limit).verdict === "PASS");
-  await auditInCompany(ctx, meta, {
+  await logTechPack(ctx, meta, tp, {
     action: "UPDATE",
-    entityType: "ProductionProject",
-    entityId: project.id,
-    summary: `${project.code}: ${colour.name} lab dips, round ${input.round}: ${input.options.length} option(s), ${passing.length} within ΔE ${limit.toFixed(2)}${input.readByAi ? " (read by AI, checked by a person)" : ""}`,
+    summary: `${tp.code}: ${colour.name} lab dips, round ${input.round}: ${input.options.length} option(s), ${passing.length} within ΔE ${limit.toFixed(2)}${input.readByAi ? " (read by AI, checked by a person)" : ""}`,
   });
   return { id: colour.id, passing: passing.map((o) => o.letter) };
 }
 
 export async function removeLabDip(
   ctx: CompanyContext,
-  projectId: string,
+  techPackId: string,
   optionId: string,
   meta?: RequestMeta,
 ) {
   assertManage(ctx);
-  const project = await loadTechPackProject(ctx, projectId);
+  const tp = await loadTechPack(ctx, techPackId);
   const option = await ctx.db.labDipOption.findFirst({
-    where: { id: optionId, colour: { techPack: { projectId: project.id } } },
+    where: { id: optionId, colour: { techPackId: tp.id } },
     include: { colour: { select: { name: true } } },
   });
   if (!option) throw new AppError("NOT_FOUND", "That lab dip is not on this tech pack.");
   await ctx.db.labDipOption.delete({ where: { id: option.id } });
-  await auditInCompany(ctx, meta, {
+  await logTechPack(ctx, meta, tp, {
     action: "DELETE",
-    entityType: "ProductionProject",
-    entityId: project.id,
-    summary: `${project.code}: took lab dip ${option.letter} (round ${option.round}) off ${option.colour.name}`,
+    summary: `${tp.code}: took lab dip ${option.letter} (round ${option.round}) off ${option.colour.name}`,
   });
   return { id: option.id };
 }
@@ -913,14 +888,14 @@ export const labDipStatusSchema = z.discriminatedUnion("status", [
  */
 export async function setLabDipStatus(
   ctx: CompanyContext,
-  projectId: string,
+  techPackId: string,
   colourId: string,
   raw: unknown,
   meta?: RequestMeta,
 ) {
   assertManage(ctx);
   const input = labDipStatusSchema.parse(raw);
-  const { project, colour } = await loadColour(ctx, projectId, colourId);
+  const { tp, colour } = await loadColour(ctx, techPackId, colourId);
   let approvedOption: string | null = null;
   if (input.status === "BUYER_APPROVED" && !input.optionId) {
     if (!visualOnly(colour.name)) {
@@ -940,16 +915,14 @@ export async function setLabDipStatus(
     where: { id: colour.id },
     data: { status: input.status, approvedOption },
   });
-  await auditInCompany(ctx, meta, {
+  await logTechPack(ctx, meta, tp, {
     action: "STATUS_CHANGE",
-    entityType: "ProductionProject",
-    entityId: project.id,
     summary:
       input.status === "BUYER_APPROVED"
-        ? `${project.code}: the buyer approved ${colour.name} lab dip ${approvedOption}`
+        ? `${tp.code}: the buyer approved ${colour.name} lab dip ${approvedOption}`
         : input.status === "BEST_CAN_DO"
-          ? `${project.code}: ${colour.name} goes ahead as the mill's best can do`
-          : `${project.code}: ${colour.name} lab dips are open again`,
+          ? `${tp.code}: ${colour.name} goes ahead as the mill's best can do`
+          : `${tp.code}: ${colour.name} lab dips are open again`,
   });
   return { id: colour.id };
 }
@@ -957,17 +930,17 @@ export async function setLabDipStatus(
 /** The mill's lab dip report, kept on the colour (the AI may read it). */
 export async function attachLabDipReport(
   ctx: CompanyContext,
-  projectId: string,
+  techPackId: string,
   colourId: string,
   upload: { fileName: string; bytes: Buffer },
   meta?: RequestMeta,
 ) {
   assertManage(ctx);
-  const { project, colour } = await loadColour(ctx, projectId, colourId);
+  const { tp, colour } = await loadColour(ctx, techPackId, colourId);
   const file = await storeUpload(ctx, upload, meta);
   await ctx.db.techPackColour.update({
     where: { id: colour.id },
     data: { reportFileId: file.id },
   });
-  return { id: colour.id, fileId: file.id, project };
+  return { id: colour.id, fileId: file.id, techPackId: tp.id };
 }

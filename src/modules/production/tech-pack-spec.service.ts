@@ -1,11 +1,14 @@
-import { Prisma } from "@prisma/client";
+import { type AuditAction, Prisma, type ProductionStatus } from "@prisma/client";
 import { z } from "zod";
 
 import type { Db } from "@/lib/db-types";
 import { AppError } from "@/lib/errors";
+import { nextDocumentNumber } from "@/lib/numbering";
+import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
 import { lockRow } from "@/lib/row-lock";
 import { runTransaction } from "@/lib/transaction";
+import { auditAsAi } from "@/modules/ai/account";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { isProjectClosed } from "@/modules/production/project-costs";
@@ -26,8 +29,10 @@ import {
 } from "@/modules/production/measurements";
 
 /*
- * A style's tech pack beside its fabric part: the measurement chart made from
- * the buyer's few points (S21) and the owner's instructions for the AI. Every
+ * A tech pack (v6.4: its own record, TP-2026-00001, started from a buyer's
+ * brief or from a production project, and linked to one when the order
+ * comes): the measurement chart made from the buyer's few points (S21) and
+ * the owner's instructions for the AI. Every
  * value carries where it came from: the buyer or a person (green, confirmed),
  * the grading rules (yellow, an AI guess until someone confirms it) or nothing
  * (red, missing). Making the chart again never loses what people typed. Read
@@ -72,10 +77,22 @@ function readSources(value: Prisma.JsonValue): CellSources {
 
 const trimmed = (d: Prisma.Decimal) => Number(d.toFixed(4));
 
-/** Projects the tech pack belongs to; a closed one keeps its tech pack as it is. */
-export async function loadTechPackProject(ctx: CompanyContext, projectId: string) {
-  const project = await ctx.db.productionProject.findUnique({
-    where: { id: projectId },
+// ---------------------------------------------------------------- the tech pack itself
+
+const techPackSelect = {
+  id: true,
+  number: true,
+  title: true,
+  season: true,
+  brief: true,
+  status: true,
+  fabricLockedAt: true,
+  createdAt: true,
+  updatedAt: true,
+  buyer: { select: { id: true, name: true } },
+  style: { select: { id: true, code: true, name: true } },
+  createdBy: { select: { name: true } },
+  project: {
     select: {
       id: true,
       code: true,
@@ -85,18 +102,68 @@ export async function loadTechPackProject(ctx: CompanyContext, projectId: string
       style: { select: { code: true, name: true } },
       buyer: { select: { name: true } },
     },
-  });
-  if (!project) throw new AppError("NOT_FOUND", "Production project not found.");
-  return project;
+  },
+} satisfies Prisma.TechPackSelect;
+
+type TechPackRow = Prisma.TechPackGetPayload<{ select: typeof techPackSelect }>;
+
+/**
+ * A tech pack as its pages and services see it: its own number, title, buyer,
+ * season and brief, and the style in production it is linked to once the order
+ * comes (null until then). `code` and `name` name it in the logs and the AI's
+ * cost lines; `record` is what they are kept against: the style in production
+ * once linked (so the style's log and AI box show it, as before v6.4), else the
+ * tech pack itself.
+ */
+export type TechPackDoc = TechPackRow & {
+  number: string;
+  code: string;
+  name: string;
+  record: { type: "ProductionProject" | "TechPack"; id: string; label: string };
+};
+
+export function techPackDoc(row: TechPackRow): TechPackDoc {
+  const number = row.number ?? "Tech pack";
+  const code = row.project?.code ?? number;
+  return {
+    ...row,
+    number,
+    code,
+    name: row.project?.name ?? (row.title || number),
+    record: row.project
+      ? { type: "ProductionProject", id: row.project.id, label: code }
+      : { type: "TechPack", id: row.id, label: code },
+  };
 }
 
-export type TechPackProject = Awaited<ReturnType<typeof loadTechPackProject>>;
+/** A tech pack of this company (not found for anyone else's). */
+export async function loadTechPack(ctx: CompanyContext, techPackId: string): Promise<TechPackDoc> {
+  const row = await ctx.db.techPack.findUnique({
+    where: { id: techPackId },
+    select: techPackSelect,
+  });
+  if (!row) throw new AppError("NOT_FOUND", "Tech pack not found.");
+  return techPackDoc(row);
+}
 
-export function assertCanChange(project: Pick<TechPackProject, "code" | "status">) {
-  if (isProjectClosed(project)) {
+/** A tech pack linked to a closed style (completed or cancelled) keeps as it is. */
+export function assertCanChange(tp: {
+  code: string;
+  project: { status: ProductionStatus } | null;
+}) {
+  if (tp.project && isProjectClosed(tp.project)) {
     throw new AppError(
       "CONFLICT",
-      `${project.code} is ${project.status.toLowerCase()}; its tech pack can no longer change.`,
+      `${tp.code} is ${tp.project.status.toLowerCase()}; its tech pack can no longer change.`,
+    );
+  }
+}
+
+export function assertView(ctx: CompanyContext) {
+  if (!ctx.can("production.view")) {
+    throw new AppError(
+      "FORBIDDEN",
+      "You do not have permission to see tech packs (production.view).",
     );
   }
 }
@@ -110,15 +177,134 @@ export function assertManage(ctx: CompanyContext) {
   }
 }
 
-/** The style's tech pack row, made when the first part of it is saved. */
-export async function ensureTechPack(ctx: CompanyContext, projectId: string, db: Db) {
-  const row = await db.techPack.upsert({
-    where: { projectId },
-    create: { companyId: ctx.company.id, projectId },
-    update: {},
-    select: { id: true },
+const touchTechPack = (db: Db, id: string) =>
+  db.techPack.update({ where: { id }, data: { updatedAt: new Date() }, select: { id: true } });
+
+/**
+ * Logs a change to a tech pack (under its style in production once linked, as
+ * before v6.4) and marks it updated for the list. An export changes nothing.
+ */
+export async function logTechPack(
+  ctx: { company: { id: string }; user: { id: string }; byAi?: boolean },
+  meta: RequestMeta | undefined,
+  tp: Pick<TechPackDoc, "id" | "record">,
+  input: { action: AuditAction; summary: string },
+  db: Db = prisma,
+) {
+  await auditInCompany(
+    ctx,
+    meta,
+    {
+      action: input.action,
+      entityType: tp.record.type,
+      entityId: tp.record.id,
+      summary: input.summary,
+    },
+    db,
+  );
+  if (input.action !== "EXPORT") await touchTechPack(db, tp.id);
+}
+
+/**
+ * Logs what the AI made on a tech pack in the AI's own name, marked AI, with
+ * the person who asked for it named (v6.4: the AI's work is never saved as the
+ * person's), and marks the tech pack updated.
+ */
+export async function logTechPackAiWork(
+  ctx: CompanyContext,
+  tp: Pick<TechPackDoc, "id" | "record">,
+  input: { action: "CREATE" | "UPDATE"; summary: string },
+  db: Db = prisma,
+) {
+  await auditAsAi(
+    ctx.company.id,
+    {
+      action: input.action,
+      entityType: tp.record.type,
+      entityId: tp.record.id,
+      summary: ctx.byAi ? input.summary : `${input.summary} (asked by ${ctx.user.name})`,
+    },
+    db,
+  );
+  await touchTechPack(db, tp.id);
+}
+
+/**
+ * A new tech pack row with the next number (TP-2026-00001). Pass the
+ * transaction, so the number is only taken when the tech pack is saved.
+ */
+export async function createTechPackRow(
+  ctx: CompanyContext,
+  db: Db,
+  data: {
+    title: string;
+    projectId?: string | null;
+    buyerId?: string | null;
+    styleId?: string | null;
+    season?: string | null;
+    brief?: string | null;
+  },
+) {
+  return db.techPack.create({
+    data: {
+      companyId: ctx.company.id,
+      number: await nextDocumentNumber(db, ctx.company.id, "TECH_PACK"),
+      createdById: ctx.user.id,
+      ...data,
+    },
+    select: { id: true, number: true },
   });
-  return row.id;
+}
+
+/** The id of a style in production's tech pack, or null while it has none. */
+export async function techPackIdOfProject(ctx: CompanyContext, projectId: string) {
+  const project = await ctx.db.productionProject.findUnique({
+    where: { id: projectId },
+    select: { id: true, techPack: { select: { id: true } } },
+  });
+  if (!project) throw new AppError("NOT_FOUND", "Production project not found.");
+  return project.techPack?.id ?? null;
+}
+
+/** A style in production's tech pack id, for its old addresses; not found when it has none. */
+export async function requireProjectTechPack(ctx: CompanyContext, projectId: string) {
+  const id = await techPackIdOfProject(ctx, projectId);
+  if (!id) throw new AppError("NOT_FOUND", "This production project has no tech pack yet.");
+  return id;
+}
+
+/**
+ * A style in production's tech pack, started (numbered, titled and filled from
+ * the style) the first time a part of it is saved from the project, as before
+ * v6.4. The project is locked while it looks, so two saves start one tech pack.
+ * Returns its id; inside a transaction, pass it.
+ */
+export async function ensureProjectTechPack(
+  ctx: CompanyContext,
+  projectId: string,
+  tx?: Prisma.TransactionClient,
+): Promise<string> {
+  const project = await ctx.db.productionProject.findUnique({
+    where: { id: projectId },
+    select: { id: true, name: true, buyerId: true, styleId: true },
+  });
+  if (!project) throw new AppError("NOT_FOUND", "Production project not found.");
+  const work = async (db: Prisma.TransactionClient) => {
+    await lockRow(db, "ProductionProject", project.id);
+    const found = await db.techPack.findUnique({
+      where: { projectId: project.id },
+      select: { id: true },
+    });
+    if (found) return found.id;
+    const made = await createTechPackRow(ctx, db, {
+      title: project.name,
+      projectId: project.id,
+      buyerId: project.buyerId,
+      styleId: project.styleId,
+    });
+    return made.id;
+  };
+  return tx ? work(tx) : runTransaction(work);
 }
 
 // ---------------------------------------------------------------- the chart
@@ -179,14 +365,14 @@ export type ChartInput = z.input<typeof chartSchema>;
  */
 export async function makeChart(
   ctx: CompanyContext,
-  projectId: string,
+  techPackId: string,
   raw: unknown,
   meta?: RequestMeta,
 ) {
   assertManage(ctx);
   const input = chartSchema.parse(raw);
-  const project = await loadTechPackProject(ctx, projectId);
-  assertCanChange(project);
+  const tp = await loadTechPack(ctx, techPackId);
+  assertCanChange(tp);
   const chart = gradeChart({
     item: input.garmentKind,
     unit: input.unit,
@@ -199,8 +385,7 @@ export async function makeChart(
     buyer: input.points.map((p) => ({ ...p, size: p.size.toUpperCase() })),
   });
   await runTransaction(async (tx) => {
-    await lockRow(tx, "ProductionProject", project.id);
-    const techPackId = await ensureTechPack(ctx, project.id, tx);
+    await lockRow(tx, "TechPack", tp.id);
     const before = await tx.techPackMeasurement.findMany({ where: { techPackId } });
     const kept = new Map(before.map((r) => [r.code, r]));
     const sameUnit = (
@@ -271,19 +456,18 @@ export async function makeChart(
         chartQuestions: chart.questions,
       },
     });
-    await auditInCompany(
+    await logTechPack(
       ctx,
       meta,
+      tp,
       {
         action: "UPDATE",
-        entityType: "ProductionProject",
-        entityId: project.id,
-        summary: `Made the measurement chart of ${project.code} from the buyer's points (${input.sizes.join(", ")}, ${chart.rows.length} measurements)`,
+        summary: `Made the measurement chart of ${tp.code} from the buyer's points (${input.sizes.join(", ")}, ${chart.rows.length} measurements)`,
       },
       tx,
     );
   });
-  return getChart(ctx, project.id);
+  return getChart(ctx, tp.id);
 }
 
 const cellSchema = z.object({
@@ -292,11 +476,11 @@ const cellSchema = z.object({
   value: z.union([z.literal("").transform(() => null), z.null(), measure]),
 });
 
-async function loadRow(ctx: CompanyContext, projectId: string, code: string) {
-  const project = await loadTechPackProject(ctx, projectId);
-  assertCanChange(project);
+async function loadRow(ctx: CompanyContext, techPackId: string, code: string) {
+  const tp = await loadTechPack(ctx, techPackId);
+  assertCanChange(tp);
   const techPack = await ctx.db.techPack.findUnique({
-    where: { projectId: project.id },
+    where: { id: tp.id },
     select: { id: true, sizeRun: true, measureUnit: true },
   });
   const row = techPack
@@ -305,19 +489,19 @@ async function loadRow(ctx: CompanyContext, projectId: string, code: string) {
       })
     : null;
   if (!techPack || !row) throw new AppError("NOT_FOUND", "That measurement is not in the chart.");
-  return { project, techPack, row };
+  return { tp, techPack, row };
 }
 
 /** One cell typed by a person: it turns green (or red when cleared). */
 export async function setMeasurement(
   ctx: CompanyContext,
-  projectId: string,
+  techPackId: string,
   raw: unknown,
   meta?: RequestMeta,
 ) {
   assertManage(ctx);
   const input = cellSchema.parse(raw);
-  const { project, techPack, row } = await loadRow(ctx, projectId, input.code);
+  const { tp, techPack, row } = await loadRow(ctx, techPackId, input.code);
   if (!techPack.sizeRun.includes(input.size)) {
     throw new AppError("VALIDATION", `${input.size} is not one of the chart's sizes.`);
   }
@@ -331,24 +515,22 @@ export async function setMeasurement(
     where: { id: row.id },
     data: { values, sources },
   });
-  await auditInCompany(ctx, meta, {
+  await logTechPack(ctx, meta, tp, {
     action: "UPDATE",
-    entityType: "ProductionProject",
-    entityId: project.id,
-    summary: `${project.code}: ${row.name} at ${input.size} ${was ?? "missing"} → ${values[input.size] ?? "missing"}`,
+    summary: `${tp.code}: ${row.name} at ${input.size} ${was ?? "missing"} → ${values[input.size] ?? "missing"}`,
   });
-  return getChart(ctx, project.id);
+  return getChart(ctx, tp.id);
 }
 
 /** Confirms a row's rule-made values as they are: they turn green. */
 export async function confirmMeasurementRow(
   ctx: CompanyContext,
-  projectId: string,
+  techPackId: string,
   code: string,
   meta?: RequestMeta,
 ) {
   assertManage(ctx);
-  const { project, row } = await loadRow(ctx, projectId, code);
+  const { tp, row } = await loadRow(ctx, techPackId, code);
   const values = readCells(row.values);
   const sources = readSources(row.sources);
   let confirmed = 0;
@@ -360,14 +542,12 @@ export async function confirmMeasurementRow(
   }
   if (confirmed > 0) {
     await ctx.db.techPackMeasurement.update({ where: { id: row.id }, data: { sources } });
-    await auditInCompany(ctx, meta, {
+    await logTechPack(ctx, meta, tp, {
       action: "UPDATE",
-      entityType: "ProductionProject",
-      entityId: project.id,
-      summary: `${project.code}: confirmed ${row.name} (${confirmed} size(s))`,
+      summary: `${tp.code}: confirmed ${row.name} (${confirmed} size(s))`,
     });
   }
-  return getChart(ctx, project.id);
+  return getChart(ctx, tp.id);
 }
 
 export const addRowSchema = z.object({
@@ -380,16 +560,16 @@ export const addRowSchema = z.object({
 /** A measurement the rules do not make (a pocket position, a label height): empty, so red. */
 export async function addMeasurementRow(
   ctx: CompanyContext,
-  projectId: string,
+  techPackId: string,
   raw: unknown,
   meta?: RequestMeta,
 ) {
   assertManage(ctx);
   const input = addRowSchema.parse(raw);
-  const project = await loadTechPackProject(ctx, projectId);
-  assertCanChange(project);
+  const tp = await loadTechPack(ctx, techPackId);
+  assertCanChange(tp);
   const techPack = await ctx.db.techPack.findUnique({
-    where: { projectId: project.id },
+    where: { id: tp.id },
     select: { id: true, sizeRun: true, _count: { select: { measurements: true } } },
   });
   if (!techPack || techPack.sizeRun.length === 0) {
@@ -418,32 +598,28 @@ export async function addMeasurementRow(
       sources: Object.fromEntries(techPack.sizeRun.map((s) => [s, "OWNER"])),
     },
   });
-  await auditInCompany(ctx, meta, {
+  await logTechPack(ctx, meta, tp, {
     action: "UPDATE",
-    entityType: "ProductionProject",
-    entityId: project.id,
-    summary: `${project.code}: added ${input.name} to the measurement chart`,
+    summary: `${tp.code}: added ${input.name} to the measurement chart`,
   });
-  return getChart(ctx, project.id);
+  return getChart(ctx, tp.id);
 }
 
 /** Takes a measurement out of the chart (it can be made again from the buyer's points). */
 export async function removeMeasurementRow(
   ctx: CompanyContext,
-  projectId: string,
+  techPackId: string,
   code: string,
   meta?: RequestMeta,
 ) {
   assertManage(ctx);
-  const { project, row } = await loadRow(ctx, projectId, code);
+  const { tp, row } = await loadRow(ctx, techPackId, code);
   await ctx.db.techPackMeasurement.delete({ where: { id: row.id } });
-  await auditInCompany(ctx, meta, {
+  await logTechPack(ctx, meta, tp, {
     action: "UPDATE",
-    entityType: "ProductionProject",
-    entityId: project.id,
-    summary: `${project.code}: took ${row.name} out of the measurement chart`,
+    summary: `${tp.code}: took ${row.name} out of the measurement chart`,
   });
-  return getChart(ctx, project.id);
+  return getChart(ctx, tp.id);
 }
 
 export type ChartLine = {
@@ -458,9 +634,9 @@ export type ChartLine = {
 };
 
 /** The style's chart as plain numbers (the screen, the PDF and the AI read it). */
-export async function getChart(ctx: CompanyContext, projectId: string) {
+export async function getChart(ctx: CompanyContext, techPackId: string) {
   const techPack = await ctx.db.techPack.findUnique({
-    where: { projectId },
+    where: { id: techPackId },
     select: {
       garmentKind: true,
       measureUnit: true,
@@ -512,29 +688,27 @@ const instructionsSchema = z.object(
 /** The owner's instructions for the AI, read before every draft; they outrank its guesses. */
 export async function setInstructions(
   ctx: CompanyContext,
-  projectId: string,
+  techPackId: string,
   raw: unknown,
   meta?: RequestMeta,
 ) {
   assertManage(ctx);
   const input = instructionsSchema.parse(raw);
-  const project = await loadTechPackProject(ctx, projectId);
-  assertCanChange(project);
+  const tp = await loadTechPack(ctx, techPackId);
+  assertCanChange(tp);
   const instructions = readInstructions(input as Prisma.JsonValue);
   await runTransaction(async (tx) => {
-    const techPackId = await ensureTechPack(ctx, project.id, tx);
     await tx.techPack.update({
       where: { id: techPackId },
       data: { instructions: instructions as Prisma.InputJsonValue },
     });
-    await auditInCompany(
+    await logTechPack(
       ctx,
       meta,
+      tp,
       {
         action: "UPDATE",
-        entityType: "ProductionProject",
-        entityId: project.id,
-        summary: `${project.code}: saved the instructions for the AI (${Object.keys(instructions).join(", ") || "none"})`,
+        summary: `${tp.code}: saved the instructions for the AI (${Object.keys(instructions).join(", ") || "none"})`,
       },
       tx,
     );

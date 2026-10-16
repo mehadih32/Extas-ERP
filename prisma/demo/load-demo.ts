@@ -13,6 +13,7 @@ import { POLO_BATCH, runFiveStylePolo, type SimulationManifest } from "./five-st
 import { loadTestBookings } from "./test-bookings";
 import { loadV62Samples } from "./v62-samples";
 import { loadV63Samples } from "./v63-samples";
+import { loadV64TechPack } from "./v64-tech-pack";
 
 /*
  * The demo site's sample data (deploy/compose.yml, the demo services; deploy/README.md,
@@ -143,6 +144,16 @@ export async function loadV63SamplesDemo(userId: string, companyId: string) {
   const { ctx, done } = await signIn(userId, companyId);
   try {
     return await loadV63Samples(ctx);
+  } finally {
+    await done();
+  }
+}
+
+/** The v6.4 sample tech pack from a buyer's brief (./v64-tech-pack.ts), made once as the owner. */
+export async function loadV64TechPackDemo(userId: string, companyId: string) {
+  const { ctx, done } = await signIn(userId, companyId);
+  try {
+    return await loadV64TechPack(ctx);
   } finally {
     await done();
   }

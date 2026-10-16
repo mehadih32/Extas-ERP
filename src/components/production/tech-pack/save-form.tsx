@@ -12,14 +12,16 @@ import { Textarea } from "@/components/ui/textarea";
 import { NOT_REACHED, reach } from "@/lib/reach";
 import type { ActionError } from "@/lib/result";
 import { cn } from "@/lib/utils";
-import { addReferenceAction, pickTechPackProjectsAction } from "@/server/actions/tech-pack.actions";
+import type { SaveTarget } from "@/modules/production/tech-pack-register.service";
+import { pickSaveTargetsAction, saveToTechPackAction } from "@/server/actions/tech-pack.actions";
 
 /*
- * The Save to Tech Pack form: the style (searched by code or name among the
- * open ones), the shared photo or one chosen here, the link and a note.
+ * The Save to Tech Pack form: the tech pack (one started from a buyer's brief,
+ * or an open style in production's own, searched by number, code or name),
+ * the shared photo or one chosen here, the link and a note.
  */
 
-type Pick = { id: string; code: string; name: string };
+type Pick = SaveTarget;
 
 export function SaveToTechPackForm({
   sharedFileId,
@@ -39,13 +41,13 @@ export function SaveToTechPackForm({
   const [loading, startLoading] = useTransition();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<ActionError>();
-  const [saved, setSaved] = useState<Pick | null>(null);
+  const [saved, setSaved] = useState<{ pick: Pick; techPackId: string } | null>(null);
 
   useEffect(() => {
     const timer = setTimeout(
       () =>
         startLoading(async () => {
-          const result = await reach(() => pickTechPackProjectsAction(search));
+          const result = await reach(() => pickSaveTargetsAction(search));
           setStyles(result.ok ? result.data : []);
           setUnreached(!result.ok && result.error.message === NOT_REACHED);
         }),
@@ -58,11 +60,11 @@ export function SaveToTechPackForm({
     return (
       <div className="grid max-w-xl gap-4 rounded-lg border bg-card p-5 sm:p-6">
         <FormAlert tone="success">
-          Saved to {saved.code} · {saved.name}.
+          Saved to {saved.pick.code} · {saved.pick.name}.
         </FormAlert>
         <div className="flex flex-wrap gap-2">
           <Button asChild>
-            <Link href={productionHref.techPackPage(saved.id)}>Open the tech pack</Link>
+            <Link href={productionHref.techPackOf(saved.techPackId)}>Open the tech pack</Link>
           </Button>
           <Button asChild variant="outline">
             <Link href="/production/save">Save another</Link>
@@ -78,24 +80,24 @@ export function SaveToTechPackForm({
       onSubmit={(event) => {
         event.preventDefault();
         if (!chosen) {
-          setError({ code: "VALIDATION", message: "Pick the style to save it to." });
+          setError({ code: "VALIDATION", message: "Pick the tech pack to save it to." });
           return;
         }
         const form = new FormData(event.currentTarget);
         if (sharedFileId) form.set("sharedFileId", sharedFileId);
         startTransition(async () => {
-          const result = await reach(() => addReferenceAction(chosen.id, form));
+          const result = await reach(() => saveToTechPackAction(chosen, form));
           if (!result.ok) {
             setError(result.error);
             return;
           }
-          setSaved(chosen);
+          setSaved({ pick: chosen, techPackId: result.data.techPackId });
         });
       }}
     >
       {problem && <FormAlert>{problem}</FormAlert>}
       <fieldset className="grid gap-2">
-        <legend className="text-sm font-medium">Style</legend>
+        <legend className="text-sm font-medium">Tech pack</legend>
         {chosen ? (
           <div className="flex items-center justify-between gap-3 rounded-md border p-3">
             <span className="min-w-0 break-words">
@@ -113,8 +115,8 @@ export function SaveToTechPackForm({
                 aria-hidden
               />
               <Input
-                aria-label="Find a style"
-                placeholder="Style code or name"
+                aria-label="Find a tech pack"
+                placeholder="Tech pack no., style code or name"
                 className="pl-9"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
@@ -124,15 +126,15 @@ export function SaveToTechPackForm({
               {loading && styles.length === 0 ? (
                 <li className="flex items-center gap-2 p-3 text-sm text-muted-foreground">
                   <LoaderCircleIcon className="size-4 animate-spin" aria-hidden />
-                  Finding styles
+                  Finding tech packs
                 </li>
               ) : styles.length === 0 ? (
                 <li className="p-3 text-sm text-muted-foreground">
-                  {unreached ? NOT_REACHED : "No open style matches."}
+                  {unreached ? NOT_REACHED : "No tech pack or open style matches."}
                 </li>
               ) : (
                 styles.map((s) => (
-                  <li key={s.id}>
+                  <li key={`${s.kind}-${s.id}`}>
                     <button
                       type="button"
                       className={cn(
@@ -142,6 +144,10 @@ export function SaveToTechPackForm({
                     >
                       <span className="min-w-0 break-words">
                         <span className="font-medium">{s.code}</span> · {s.name}
+                        <span className="block text-[0.8125rem] text-muted-foreground">
+                          {s.kind === "TECH_PACK" ? "Tech pack" : "Production project"}
+                          {s.buyer ? ` · ${s.buyer}` : ""}
+                        </span>
                       </span>
                       <CheckIcon className="size-4 opacity-0" aria-hidden />
                     </button>

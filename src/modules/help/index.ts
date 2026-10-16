@@ -16,6 +16,7 @@ import { productsHelp } from "./content/products";
 import { reportsHelp } from "./content/reports";
 import { salesHelp } from "./content/sales";
 import { settingsHelp } from "./content/settings";
+import { techPackHelp } from "./content/tech-pack";
 import { helpSearchEntry, type HelpSearchEntry } from "./search";
 import type { HelpArticle, HelpSection } from "./types";
 
@@ -25,6 +26,7 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
   dashboardHelp,
   salesHelp,
   productionHelp,
+  techPackHelp,
   accountsHelp,
   productsHelp,
   materialsHelp,

@@ -4,7 +4,6 @@ import { formatDay } from "@/lib/format";
 import { checkRateLimit } from "@/lib/rate-limit";
 import type { RequestMeta } from "@/lib/request-meta";
 import { buildXlsx, type XlsxCell } from "@/lib/xlsx";
-import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { letterheadOf } from "@/modules/documents/builders";
 import { type Block, documentFileName, type PrintDocument } from "@/modules/documents/model";
@@ -22,7 +21,9 @@ import { LOGO_FABRICS, LOGO_SOURCE_LABELS } from "@/modules/production/tech-pack
 import {
   type Chart,
   getChart,
-  loadTechPackProject,
+  loadTechPack,
+  logTechPack,
+  type TechPackDoc,
 } from "@/modules/production/tech-pack-spec.service";
 
 /*
@@ -44,6 +45,11 @@ export function measureText(value: number | null | undefined, unit: MeasureUnit)
 }
 
 const SOURCE_MARK = { BUYER: "", OWNER: "", RULE: " ?" } as const;
+
+/** What a sheet is made for: the tech pack's style in production, or the tech pack itself. */
+type SheetOf = Pick<TechPackDoc, "code" | "name" | "project">;
+
+const refLabel = (tp: SheetOf) => (tp.project ? "Project" : "Tech pack");
 
 /** The chart as a table: one row per point, a column per size, ± tolerance. */
 export function chartTable(chart: Chart, title = "Measurements"): Block {
@@ -92,17 +98,17 @@ const chartNotes = (chart: Chart): Block[] => [
 
 export function measurementsDocument(
   ctx: CompanyContext,
-  project: { code: string; name: string },
+  tp: SheetOf,
   chart: Chart,
 ): PrintDocument {
   return {
     type: "MEASUREMENTS",
     title: "Measurement Sheet",
-    subtitle: project.name,
-    reference: project.code,
+    subtitle: tp.name,
+    reference: tp.code,
     letterhead: letterheadOf(ctx.company),
     meta: [
-      { label: "Project", value: project.code },
+      { label: refLabel(tp), value: tp.code },
       { label: "Sizes", value: chart.sizes.join(", ") || "–" },
       ...(chart.baseSize ? [{ label: "Base size", value: chart.baseSize }] : []),
       { label: "Made on", value: formatDay(localDay(new Date(), ctx.company.timezone)) },
@@ -113,11 +119,7 @@ export function measurementsDocument(
   };
 }
 
-export function measurementsWorkbook(
-  ctx: CompanyContext,
-  project: { code: string; name: string },
-  chart: Chart,
-): Uint8Array {
+export function measurementsWorkbook(ctx: CompanyContext, tp: SheetOf, chart: Chart): Uint8Array {
   const sheet = (unit: MeasureUnit) => {
     const convert = (v: number | null | undefined) =>
       v === null || v === undefined
@@ -126,7 +128,7 @@ export function measurementsWorkbook(
           ? v
           : Math.round(convertMeasure(v, chart.unit) * 100) / 100;
     const rows: XlsxCell[][] = [
-      [{ value: `${project.code} · ${project.name}`, style: "title" }],
+      [{ value: `${tp.code} · ${tp.name}`, style: "title" }],
       [
         {
           value: `Measurements in ${UNIT_TEXT[unit]}${unit === chart.unit ? "" : ` (converted from ${UNIT_TEXT[chart.unit]})`}. "RULE" values are made by the grading rules and not yet confirmed.`,
@@ -160,7 +162,7 @@ export function measurementsWorkbook(
   };
   const other: MeasureUnit = chart.unit === "INCH" ? "CM" : "INCH";
   return buildXlsx([sheet(chart.unit), sheet(other)], {
-    title: `Measurements ${project.code}`,
+    title: `Measurements ${tp.code}`,
     creator: ctx.company.name,
     headerColor: ctx.company.primaryColor,
   });
@@ -169,30 +171,28 @@ export function measurementsWorkbook(
 /** The measurement sheet as a PDF or an Excel workbook (logged; nothing is kept). */
 export async function measurementsFile(
   ctx: CompanyContext,
-  projectId: string,
+  techPackId: string,
   format: "pdf" | "xlsx",
   meta?: RequestMeta,
 ) {
   checkRateLimit(`on-demand-print:${ctx.user.id}`, ON_DEMAND_PER_MINUTE, 60_000);
-  const project = await loadTechPackProject(ctx, projectId);
-  const chart = await getChart(ctx, project.id);
+  const tp = await loadTechPack(ctx, techPackId);
+  const chart = await getChart(ctx, tp.id);
   if (chart.rows.length === 0) {
-    throw new AppError("NOT_FOUND", `${project.code} has no measurement chart yet.`);
+    throw new AppError("NOT_FOUND", `${tp.code} has no measurement chart yet.`);
   }
   const bytes =
     format === "pdf"
-      ? await renderOnDemand(ctx, measurementsDocument(ctx, project, chart))
-      : measurementsWorkbook(ctx, project, chart);
-  await auditInCompany(ctx, meta, {
+      ? await renderOnDemand(ctx, measurementsDocument(ctx, tp, chart))
+      : measurementsWorkbook(ctx, tp, chart);
+  await logTechPack(ctx, meta, tp, {
     action: "EXPORT",
-    entityType: "ProductionProject",
-    entityId: project.id,
-    summary: `Made the measurement sheet of ${project.code} (${format === "pdf" ? "PDF" : "Excel"})`,
+    summary: `Made the measurement sheet of ${tp.code} (${format === "pdf" ? "PDF" : "Excel"})`,
   });
   return {
     fileName: documentFileName(
       ctx.company.name,
-      `Measurements ${project.code} ${project.name}`,
+      `Measurements ${tp.code} ${tp.name}`,
       format === "pdf" ? ".pdf" : ".xlsx",
     ),
     mimeType: format === "pdf" ? "application/pdf" : XLSX_MIME,
@@ -203,12 +203,13 @@ export async function measurementsFile(
 /** The chart, logos and colours for the tech pack PDF (after the materials). */
 export async function techPackExtraBlocks(
   ctx: CompanyContext,
-  projectId: string,
+  techPackId: string | null,
 ): Promise<Block[]> {
+  if (!techPackId) return [];
   const [chart, techPack] = await Promise.all([
-    getChart(ctx, projectId),
+    getChart(ctx, techPackId),
     ctx.db.techPack.findUnique({
-      where: { projectId },
+      where: { id: techPackId },
       select: {
         logos: { orderBy: { createdAt: "asc" } },
         colours: { orderBy: { createdAt: "asc" }, include: { options: true } },
@@ -295,14 +296,14 @@ export async function techPackExtraBlocks(
  */
 export async function digitizingBrief(
   ctx: CompanyContext,
-  projectId: string,
+  techPackId: string,
   logoId: string,
   meta?: RequestMeta,
 ) {
   checkRateLimit(`on-demand-print:${ctx.user.id}`, ON_DEMAND_PER_MINUTE, 60_000);
-  const project = await loadTechPackProject(ctx, projectId);
+  const tp = await loadTechPack(ctx, techPackId);
   const logo = await ctx.db.techPackLogo.findFirst({
-    where: { id: logoId, techPack: { projectId: project.id } },
+    where: { id: logoId, techPackId: tp.id },
     include: { artworkFile: true },
   });
   if (!logo) throw new AppError("NOT_FOUND", "That logo is not on this tech pack.");
@@ -316,11 +317,11 @@ export async function digitizingBrief(
   const model: PrintDocument = {
     type: "DIGITIZING_BRIEF",
     title: "Digitizing Brief",
-    subtitle: `${logo.name} · ${project.name}`,
-    reference: project.code,
+    subtitle: `${logo.name} · ${tp.name}`,
+    reference: tp.code,
     letterhead: letterheadOf(ctx.company),
     meta: [
-      { label: "Project", value: project.code },
+      { label: refLabel(tp), value: tp.code },
       { label: "Made on", value: formatDay(localDay(new Date(), ctx.company.timezone)) },
     ],
     parties: [],
@@ -385,14 +386,12 @@ export async function digitizingBrief(
     signatures: ["Embroidery factory", "Merchandiser"],
   };
   const bytes = await renderOnDemand(ctx, model, images);
-  await auditInCompany(ctx, meta, {
+  await logTechPack(ctx, meta, tp, {
     action: "EXPORT",
-    entityType: "ProductionProject",
-    entityId: project.id,
-    summary: `Made the digitizing brief for the logo ${logo.name} of ${project.code}`,
+    summary: `Made the digitizing brief for the logo ${logo.name} of ${tp.code}`,
   });
   return {
-    fileName: documentFileName(ctx.company.name, `Digitizing brief ${project.code} ${logo.name}`),
+    fileName: documentFileName(ctx.company.name, `Digitizing brief ${tp.code} ${logo.name}`),
     bytes,
   };
 }

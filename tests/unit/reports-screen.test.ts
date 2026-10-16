@@ -39,6 +39,7 @@ describe("Reports & documents in the menu, by role", () => {
     expect(nav(role("EMPLOYEE"))).not.toContain("/reports");
     // Under More on the phone, after HR & payroll.
     expect(phoneTabs(visibleNavItems(role("ACCOUNTS"))).more.map((i) => i.href)).toEqual([
+      "/tech-packs",
       "/materials",
       "/parties",
       "/hr",

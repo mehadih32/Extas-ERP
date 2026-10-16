@@ -1,81 +1,52 @@
-import { FileDownIcon } from "lucide-react";
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 
 import { SectionError } from "@/components/dashboard/section-error";
 import { productionHref } from "@/components/production/labels";
-import { AiPanel } from "@/components/production/tech-pack/ai-panel";
-import { ChartPanel } from "@/components/production/tech-pack/chart-panel";
-import { ColoursPanel } from "@/components/production/tech-pack/colours-panel";
-import { LogosPanel } from "@/components/production/tech-pack/logos-panel";
-import { ReferencesPanel } from "@/components/production/tech-pack/references-panel";
-import { Completeness, SignalLegend } from "@/components/production/tech-pack/signals";
-import { TechPackApprovalPanel } from "@/components/production/tech-pack-approval";
+import { ProductionNoAccess } from "@/components/production/no-access";
 import { BackLink } from "@/components/settings/back-link";
-import { Button } from "@/components/ui/button";
-import { getTechPackScreenAction } from "@/server/actions/tech-pack.actions";
+import { ProjectTechPackStart } from "@/components/tech-packs/project-start";
+import { getProjectTechPackAction } from "@/server/actions/tech-pack.actions";
 import { requireCompanyPage } from "@/server/pages/guards";
 
 export const metadata: Metadata = { title: "Tech pack" };
 
 /**
- * A style's tech pack: the measurement chart, the AI draft and the experts,
- * saved references, logos and colours, each marked green, yellow or red, and
- * the completeness %. Read with production.view; changes need production.manage.
+ * A style in production's tech pack, from its project (the address from
+ * before v6.4): opens the tech pack's own page, or, while the style has none,
+ * offers to start its tech pack or link one started from the buyer's brief.
+ * Nothing is made by opening it. Read with production.view.
  */
-export default async function TechPackPage({ params }: { params: Promise<{ projectId: string }> }) {
+export default async function ProjectTechPackPage({
+  params,
+}: {
+  params: Promise<{ projectId: string }>;
+}) {
   await requireCompanyPage();
   const { projectId } = await params;
-  const result = await getTechPackScreenAction(projectId);
+  const result = await getProjectTechPackAction(projectId);
   if (!result.ok) {
     if (result.error.code === "NOT_FOUND") notFound();
+    if (result.error.code === "FORBIDDEN") return <ProductionNoAccess />;
     return (
       <SectionError title="Tech pack" heading="The tech pack could not load" error={result.error} />
     );
   }
-  const screen = result.data;
-  const p = screen.project;
+  const start = result.data;
+  if (start.techPackId) redirect(productionHref.techPackOf(start.techPackId));
+  const p = start.project;
   return (
     <div className="grid gap-6">
       <BackLink href={productionHref.project(p.id)}>
         {p.code} · {p.name}
       </BackLink>
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div className="min-w-0">
-          <p className="eyebrow">
-            {p.style ? `${p.style.code} · ` : ""}
-            {p.buyer ?? "In-house"}
-          </p>
-          <h2 className="mt-2 font-serif text-2xl break-words text-primary">Tech pack</h2>
-        </div>
-        <Button asChild variant="outline" size="sm">
-          <a href={productionHref.techPack(p.id)} download>
-            <FileDownIcon aria-hidden />
-            Tech pack PDF
-          </a>
-        </Button>
+      <div className="min-w-0">
+        <h2 className="font-serif text-2xl break-words text-primary">Tech pack</h2>
+        <p className="mt-1 max-w-xl text-sm leading-relaxed text-muted-foreground">
+          {p.code} has no tech pack yet.
+        </p>
       </div>
-
-      <section
-        aria-label="Completeness"
-        className="grid gap-3 rounded-lg border bg-card p-5 sm:p-6"
-      >
-        <Completeness percent={screen.completeness} signals={screen.signals} />
-        <SignalLegend />
-      </section>
-
-      <TechPackApprovalPanel projectId={p.id} code={p.code} techPack={screen.approval} onTechPack />
-
-      <ChartPanel
-        projectId={p.id}
-        chart={screen.chart}
-        suggestion={screen.draft?.output.chart ?? null}
-        canEdit={screen.can.edit}
-      />
-      <AiPanel screen={screen} />
-      <ReferencesPanel screen={screen} />
-      <LogosPanel screen={screen} />
-      <ColoursPanel screen={screen} />
+      <ProjectTechPackStart project={p} can={start.can} />
     </div>
   );
 }

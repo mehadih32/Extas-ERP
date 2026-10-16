@@ -253,7 +253,7 @@ export const aiHelp: HelpSection = {
       tips: [
         "চালু থাকা স্কিলের নতুন ভার্সন পাস না করা পর্যন্ত সেই এজেন্টের কাজ Control-এ Do থাকলেও এআই আগে আপনাকে জিজ্ঞেস করে (Ask)।",
         "স্কিল কখনো নিরাপত্তার নিয়মের উপরে যায় না: এআই কিছু মোছে না, বায়ারের কাছে কিছু যায় না আপনার OK ছাড়া, আর টাকা ও দামে PIN লাগে।",
-        "নতুন টুল বা নতুন সংযোগের মতো কোড লাগে এমন কিছু স্কিল দিয়ে হয় না; সেগুলো আলাদাভাবে কোড করে যোগ করতে হয়।",
+        "নতুন টুল বা নতুন সংযোগের মতো কোড লাগে এমন কিছু স্কিল দিয়ে হয় না; সেগুলো “AI” > “Full check”-এর “Ask Claude Code” বাক্সে সাধারণ ভাষায় লিখুন।",
         "টেস্ট এজেন্টকে প্রশ্ন করে, তাই সামান্য খরচ হয় আর এআই চালু থাকতে হয়।",
       ],
     },
@@ -757,11 +757,80 @@ export const aiHelp: HelpSection = {
         {
           text: "আগের চেকগুলো “Earlier checks”-এ থাকে; তারিখে চাপলে খোলে।",
         },
+        {
+          text: "পুরো ERP-র প্রতিটি স্ক্রিন, PDF আর লিংক চেক করাতে পাশের “Full check” চাপুন (নিচের “Full check” গাইড দেখুন)।",
+        },
       ],
       tips: [
         "লাল দাগ থাকলে লিংক করা বটেও সঙ্গে সঙ্গে জানায়।",
         "এখান থেকে কোড বদলানো হয় না: কোডের যেকোনো বদল শুধু আপনার merge করা Pull Request দিয়ে হয়।",
         "অন্য কোনো সমস্যা হলে রিপোর্টটি ডেভেলপারকে পাঠান।",
+      ],
+    },
+    {
+      slug: "ai-full-check",
+      title: "পুরো ERP চেক করাবেন আর Claude Code দিয়ে ঠিক করাবেন যেভাবে (Full check)",
+      summary:
+        "এক চাপে GitHub-এর কম্পিউটার মালিক আর প্রতিটি রোল হিসেবে ERP-র প্রতিটি স্ক্রিন, PDF, লিংক আর যে বোতাম কিছু বদলায় না তা খুলে দেখে; সমস্যা আসে স্ক্রিনশটসহ সাধারণ ভাষায়। একটি বা সব সমস্যা Claude Code-কে পাঠালে সে টেস্টসহ সমাধানের Pull Request বানায়; চেক পাস করলে আপনি PIN দিয়ে এখান থেকেই merge করেন, তারপর নিরাপদ আপডেট নিজে চলে।",
+      keywords: [
+        "full check",
+        "check",
+        "claude code",
+        "github",
+        "fix",
+        "bug",
+        "broken link",
+        "screenshot",
+        "pull request",
+        "merge",
+        "চেক",
+        "সমস্যা",
+        "ঠিক করা",
+        "স্ক্রিনশট",
+      ],
+      routes: ["/ai/full-check"],
+      who: "শুধু প্ল্যাটফর্ম মালিক (Super Admin)। Merge করতে আপনার PIN লাগে।",
+      anyOf: ["ai.manage"],
+      steps: [
+        {
+          text: "একবারের কাজ (GitHub-এ, নিজে): (1) https://github.com/apps/claude খুলে Claude GitHub App টি ERP-র রিপোজিটরিতে Install করুন। (2) যে কম্পিউটারে Claude Code আছে সেখানে আপনার Claude সাবস্ক্রিপশনে সাইন ইন করে claude setup-token চালান; যে টোকেন দেখায় তা রিপোজিটরির Settings > Secrets and variables > Actions-এ New repository secret দিয়ে CLAUDE_CODE_OAUTH_TOKEN নামে রাখুন।",
+        },
+        {
+          text: "(3) GitHub-এর Settings > Developer settings > Personal access tokens > Fine-grained tokens থেকে নতুন টোকেন বানান: শুধু ERP-র রিপোজিটরি; Actions, Contents, Issues আর Pull requests: Read and write; Checks: Read only। মেয়াদ শেষের তারিখ মনে রাখুন।",
+        },
+        {
+          text: "“AI” > “Full check” খুলুন (বা “Server Health”-এ “Full check” চাপুন)। নিচের “GitHub” অংশে “Repository”-তে owner/name আর “Token”-এ টোকেনটি দিয়ে “Save” চাপুন, তারপর “Test the connection”। সব ঠিক থাকলে “Ready” দেখায়; না হলে কী বাকি তা লেখা থাকে। টোকেন তালাবদ্ধ থাকে, শুধু শেষের 4টি অক্ষর দেখায়; সরাতে “Take out”।",
+          image: { id: "ai-full-check-1", caption: "“GitHub”: রিপোজিটরি, টোকেন আর সংযোগের টেস্ট" },
+        },
+        {
+          text: "“Run the full check” চাপুন। প্রথমে “Starting on GitHub”, তারপর “Checking now” দেখায়; “Watch it on GitHub” চাপলে GitHub-এ চলা দেখা যায়। প্রায় 10 মিনিট লাগে, পাতা নিজেই নতুন হয়, আর শেষ হলে ইনবক্সে জানায় (সমস্যা থাকলে বটেও)।",
+        },
+        {
+          text: "“What the check found”-এ কোন রোল কয়টি স্ক্রিন আর PDF দেখেছে তার টেবিল, আর প্রতিটি সমস্যা: কী হয়েছে, কোন স্ক্রিনে, কোন রোল হিসেবে, আর স্ক্রিনশট (চাপলে বড় হয়)। “Details”-এ কারিগরি বিবরণ। যে রোলে কেউ নেই তা চেক হয় না, সেটাও লেখা থাকে।",
+          image: {
+            id: "ai-full-check-2",
+            caption: "“What the check found”: সমস্যা, স্ক্রিন আর স্ক্রিনশট",
+          },
+        },
+        {
+          text: "একটি সমস্যার পাশে “Fix with Claude Code”, বা সব একসঙ্গে “Fix all” চাপুন। ERP GitHub-এ একটি issue খোলে; Claude Code কারণ খুঁজে টেস্টসহ সমাধান করে Pull Request দেয়। নিচের “Claude Code” অংশে প্রতিটির অবস্থা দেখায়; ERP প্রতি 2 মিনিটে GitHub দেখে, আর “Look again” চাপলে এখনই দেখে।",
+        },
+        {
+          text: "নতুন কিছু চাইলে (নতুন টুল, নতুন সংযোগ, কোনো বদল) “Ask Claude Code” বাক্সে সাধারণ ভাষায় লিখে “Send to Claude Code” চাপুন। একই পথে Pull Request আসে।",
+        },
+        {
+          text: "চেক পাস করলে লেখা আসে “Fix ready: merge PR” আর নম্বর, ইনবক্স আর বটেও জানায়। “Merge” চাপুন, PIN দিন। তারপর স্বাভাবিক নিরাপদ আপডেট চলে: আগে সব টেস্ট, তারপর ব্যাকআপ, তারপর আপডেট; কিছু ভুল হলে নিজে আগের অবস্থায় ফেরে।",
+          image: {
+            id: "ai-full-check-3",
+            caption: "“Claude Code”: Pull Request-এর অবস্থা আর “Merge”",
+          },
+        },
+      ],
+      tips: [
+        "লাইভ সাইটে চেক শুধু পড়ে: কোনো ডেটা বদলায় না, লেখার প্রতিটি চেষ্টা ব্রাউজার আর ERP দুজনেই থামায়। যা লেখে তা ডেমো সাইটে চেক হয়।",
+        "চেকের সেশন রিপোর্ট আসার সঙ্গে শেষ হয় (বড়জোর 50 মিনিট)। চেক শুরু হয় এককালীন পাস আর GitHub-এর সই করা প্রমাণ দিয়ে, তাই অন্য কেউ এটি দিয়ে ঢুকতে পারে না।",
+        "Claude Code নিজে কখনো merge করে না; চেক ফেল করলে ERP তাকে 2 বার পর্যন্ত আবার ঠিক করতে বলে।",
+        "“GitHub did not start Claude Code” লেখা এলে Claude GitHub App আর CLAUDE_CODE_OAUTH_TOKEN ঠিক আছে কিনা দেখুন।",
       ],
     },
     {

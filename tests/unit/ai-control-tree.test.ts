@@ -189,9 +189,11 @@ describe("AI Center tabs and models", () => {
     expect(visibleAiTabs(DEFAULT_ROLE_PERMISSIONS.SUPER_ADMIN, true).map((t) => t.label)).toEqual(
       AI_TABS.map((t) => t.label),
     );
-    // Server Health looks at the whole server: the platform owner's only.
+    // Server Health and the Full check look at the whole server: the platform owner's only.
     expect(visibleAiTabs(DEFAULT_ROLE_PERMISSIONS.SUPER_ADMIN).map((t) => t.label)).toEqual(
-      AI_TABS.filter((t) => t.label !== "Server Health").map((t) => t.label),
+      AI_TABS.filter((t) => t.label !== "Server Health" && t.label !== "Full check").map(
+        (t) => t.label,
+      ),
     );
     for (const role of ["PRODUCTION_MANAGER", "SALES_EXECUTIVE", "ACCOUNTS", "EMPLOYEE"] as const) {
       expect(visibleAiTabs(DEFAULT_ROLE_PERMISSIONS[role]), role).toEqual([]);

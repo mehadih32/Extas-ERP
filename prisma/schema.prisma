@@ -208,6 +208,9 @@ model Company {
   aiModelTests          AiModelTest[]
   aiSkills              AiSkill[]
   aiSkillVersions       AiSkillVersion[]
+  fullCheckRuns         FullCheckRun[]
+  fullCheckProblems     FullCheckProblem[]
+  claudeCodeRequests    ClaudeCodeRequest[]
   aiChatMessages        AiChatMessage[]
   aiDrafts              AiDraft[]
   aiFollowUps           AiFollowUp[]
@@ -332,6 +335,8 @@ model User {
   aiModelPricesSet    AiModelPrice[]         @relation("AiModelPriceUpdatedBy")
   aiModelTestsRan     AiModelTest[]          @relation("AiModelTestRanBy")
   aiSkillVersions     AiSkillVersion[]       @relation("AiSkillVersionBy")
+  fullCheckRuns       FullCheckRun[]         @relation("FullCheckBy")
+  claudeCodeRequests  ClaudeCodeRequest[]    @relation("ClaudeCodeRequestBy")
   aiChatMessages      AiChatMessage[]        @relation("AiChatMessageUser")
   aiDraftsWritten     AiDraft[]              @relation("AiDraftCreatedBy")
   aiDraftsSent        AiDraft[]              @relation("AiDraftSentBy")
@@ -4507,65 +4512,73 @@ enum SystemRole {
 /// it is off or paused), its Claude key, the model per task and the PIN asked
 /// for money, prices and Deletion requests.
 model AiSettings {
-  id               String    @id @default(cuid())
-  companyId        String    @unique
-  enabled          Boolean   @default(false)
+  id                String    @id @default(cuid())
+  companyId         String    @unique
+  enabled           Boolean   @default(false)
   /// When the switch was last turned on or off, and by whom.
-  changedAt        DateTime?
-  changedById      String?
+  changedAt         DateTime?
+  changedById       String?
   /// Paused (from the Mehedi 2.0 page or the bot): no AI work until resumed.
-  pausedAt         DateTime?
+  pausedAt          DateTime?
   /// The Claude API key, sealed with ENCRYPTION_KEY (lib/crypto.ts); the
   /// server's AI_API_KEY is used while it is empty.
-  apiKeySealed     String?
+  apiKeySealed      String?
   /// The key's last four characters, to recognise it.
-  apiKeyHint       String?
-  apiKeySetAt      DateTime?
+  apiKeyHint        String?
+  apiKeySetAt       DateTime?
   /// The OpenAI and Gemini keys (v6.3), sealed the same way; only the last
   /// four characters are shown.
-  openaiKeySealed  String?
-  openaiKeyHint    String?
-  openaiKeySetAt   DateTime?
-  geminiKeySealed  String?
-  geminiKeyHint    String?
-  geminiKeySetAt   DateTime?
+  openaiKeySealed   String?
+  openaiKeyHint     String?
+  openaiKeySetAt    DateTime?
+  geminiKeySealed   String?
+  geminiKeyHint     String?
+  geminiKeySetAt    DateTime?
   /// The last Test of each provider's key: { anthropic|openai|google: { ok, at, note } }.
-  keyTests         Json?
+  keyTests          Json?
   /// The models each provider offers the key, as last read from the provider:
   /// { provider: { readAt, models: [{ id, label }] } } (modules/ai/providers.ts).
-  providerModels   Json?
+  providerModels    Json?
   /// The owner's model per agent (agent key to model, modules/ai/agents.ts);
   /// it wins over the task's model for that agent's work.
-  agentModels      Json?
+  agentModels       Json?
   /// The agents the owner switched off on AI Center > Agents (agent keys,
   /// modules/ai/agents.ts); Mehedi 2.0 himself follows the main switch.
-  agentsOff        String[]  @default([])
+  agentsOff         String[]  @default([])
   /// The owner's model per task (task key to model id, modules/ai/models.ts);
   /// the system's choice for the rest.
-  models           Json?
+  models            Json?
   /// Fable 5.1 may be chosen for a task (off until the owner allows it).
-  allowFable       Boolean   @default(false)
+  allowFable        Boolean   @default(false)
   /// The PIN's hash (lib/auth/password.ts), asked for money, prices and deletions.
-  pinHash          String?
-  pinSetAt         DateTime?
+  pinHash           String?
+  pinSetAt          DateTime?
   /// The AI's name in this company, on everything it writes ("Mehedi 2.0").
-  assistantName    String    @default("Mehedi 2.0")
+  assistantName     String    @default("Mehedi 2.0")
   /// The AI's own account (it cannot sign in): what it does is written to the
   /// activity log in its name, marked "AI".
-  aiUserId         String?   @unique
+  aiUserId          String?   @unique
   /// Hours after which the owner is reminded of a buyer draft not sent yet.
-  replyRemindHours Int       @default(24)
+  replyRemindHours  Int       @default(24)
   /// The morning CEO brief (08:00) and the evening report (19:00), to the
   /// owner's inbox and bot while the AI is on; the day each was last sent.
-  morningBrief     Boolean   @default(true)
-  eveningReport    Boolean   @default(true)
-  briefSentOn      String?
-  reportSentOn     String?
+  morningBrief      Boolean   @default(true)
+  eveningReport     Boolean   @default(true)
+  briefSentOn       String?
+  reportSentOn      String?
   /// Server Health every Saturday at 09:00 (off until the platform owner turns
   /// it on); the Saturday it last ran.
-  healthWeekly     Boolean   @default(false)
-  healthRanOn      String?
-  updatedAt        DateTime  @updatedAt
+  healthWeekly      Boolean   @default(false)
+  healthRanOn       String?
+  /// The GitHub repository ("owner/name") the Full check runs from and Claude
+  /// Code fixes (AI Center > Full check), and the owner's fine-grained token
+  /// for it, sealed like the keys; only its last four characters are shown.
+  githubRepo        String?
+  githubTokenSealed String?
+  githubTokenHint   String?
+  /// The last Test of the GitHub connection: { ok, at, notes }.
+  githubTest        Json?
+  updatedAt         DateTime  @updatedAt
 
   company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
   changedBy User?   @relation("AiSettingsChangedBy", fields: [changedById], references: [id], onDelete: SetNull)
@@ -6431,4 +6444,135 @@ model AiSkillVersion {
 
   @@unique([skillId, version])
   @@index([companyId, skillId])
+}
+
+/// AI Center > Full check: one check of the whole ERP. GitHub's computers run
+/// it (.github/workflows/full-check.yml): they open every screen as the owner
+/// and as each role, every PDF, link and button that changes nothing, and send
+/// the problems back with screenshots. On the live site the check's sessions
+/// cannot change anything (src/proxy.ts refuses every request of theirs that
+/// is not a read).
+model FullCheckRun {
+  id           String          @id @default(cuid())
+  companyId    String
+  /// "live" or "demo" (DEMO_SITE=on): on the demo site the check may write.
+  site         String
+  status       FullCheckStatus @default(STARTING)
+  /// One-time pass GitHub gives back for the check's sessions (sha256 only).
+  passHash     String?         @unique
+  passUsedAt   DateTime?
+  /// The key the check sends its report with (sha256 only).
+  reportHash   String?         @unique
+  /// The run on GitHub, when known.
+  githubRunUrl String?
+  /// What was checked: { roles: [{ role, member, screens, pdfs, skipped }], screens, pdfs, links, seconds }.
+  summary      Json?
+  /// Why it did not finish, in plain words.
+  note         String?
+  startedById  String?
+  startedAt    DateTime        @default(now())
+  finishedAt   DateTime?
+
+  company   Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  startedBy User?              @relation("FullCheckBy", fields: [startedById], references: [id], onDelete: SetNull)
+  problems  FullCheckProblem[]
+
+  @@index([companyId, startedAt])
+}
+
+enum FullCheckStatus {
+  /// Asked of GitHub; waiting for it to begin.
+  STARTING
+  RUNNING
+  DONE
+  /// Did not finish (GitHub refused, or no report came back in time).
+  FAILED
+}
+
+/// One problem a Full check found, in plain words, with its screen and screenshot.
+model FullCheckProblem {
+  id        String   @id @default(cuid())
+  companyId String
+  runId     String
+  /// The role the check had when it met the problem ("Owner", "Accounts"...).
+  role      String
+  /// ERROR, BROKEN_LINK, FAILED_REQUEST, SLOW, PDF, SIGNED_OUT or SCRIPT.
+  kind      String
+  /// The screen's address, and its pattern ("/production/projects/[projectId]").
+  screen    String
+  pattern   String?
+  /// The problem in plain words, and the technical detail for Claude Code.
+  text      String
+  detail    String?
+  ms        Int?
+  /// The screenshot in the uploads folder (lib: writeGeneratedFile).
+  shotPath  String?
+  /// The Claude Code request that fixes it, once sent.
+  requestId String?
+  createdAt DateTime @default(now())
+
+  company Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  run     FullCheckRun       @relation(fields: [runId], references: [id], onDelete: Cascade)
+  request ClaudeCodeRequest? @relation(fields: [requestId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, runId])
+  @@index([requestId])
+}
+
+/// "Fix with Claude Code" and "Ask Claude Code": a GitHub issue the ERP opens
+/// for the Claude Code GitHub Action, followed to its pull request, which the
+/// owner merges from the ERP (then the normal safe update runs).
+model ClaudeCodeRequest {
+  id          String                 @id @default(cuid())
+  companyId   String
+  kind        ClaudeCodeRequestKind
+  title       String
+  /// What was asked, in plain words (the problems, or the owner's request).
+  text        String
+  state       ClaudeCodeRequestState @default(SENT)
+  issueNumber Int?
+  issueUrl    String?
+  /// Claude Code's branch and pull request, once found.
+  branch      String?
+  prNumber    Int?
+  prUrl       String?
+  /// The pull request's checks: "running", "passed" or "failed", on its newest commit.
+  checks      String?
+  headSha     String?
+  /// The commit whose failed checks Claude Code was asked to fix, and how many times.
+  askedSha    String?
+  retries     Int                    @default(0)
+  /// Why it stopped, in plain words.
+  note        String?
+  /// When the ERP last looked on GitHub.
+  lookedAt    DateTime?
+  mergedAt    DateTime?
+  mergedById  String?
+  createdById String?
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
+
+  company   Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  createdBy User?              @relation("ClaudeCodeRequestBy", fields: [createdById], references: [id], onDelete: SetNull)
+  problems  FullCheckProblem[]
+
+  @@index([companyId, createdAt])
+  @@index([state])
+}
+
+enum ClaudeCodeRequestKind {
+  /// Fix one or more Full check problems.
+  FIX
+  /// A new request in plain words.
+  ASK
+}
+
+enum ClaudeCodeRequestState {
+  /// The issue is open; Claude Code is working on it.
+  SENT
+  /// A pull request is open (its checks may still run).
+  PR_OPEN
+  MERGED
+  /// Claude Code could not finish, or the pull request was closed unmerged.
+  STOPPED
 }

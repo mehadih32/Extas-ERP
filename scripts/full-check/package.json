@@ -1,0 +1,8 @@
+{
+  "name": "extas-erp-full-check",
+  "private": true,
+  "description": "The Full check's browser (see crawl.mjs and .github/workflows/full-check.yml).",
+  "dependencies": {
+    "playwright": "1.56.1"
+  }
+}

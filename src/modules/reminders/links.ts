@@ -87,6 +87,10 @@ export function recordHref(ctx: Can, link: RecordLink | null): string | null {
     case "BackupRun":
       // A backup, test restore or restore failed or finished (the platform owner's).
       return ctx.user?.isSuperAdmin ? "/settings/backups" : null;
+    case "FullCheckRun":
+    case "ClaudeCodeRequest":
+      // A Full check finished, or a Claude Code fix is ready (the platform owner's).
+      return ctx.user?.isSuperAdmin ? "/ai/full-check" : null;
     default:
       return null;
   }
@@ -117,4 +121,6 @@ export const RECORD_NOUNS: Record<string, string> = {
   AiOrderRun: "the order",
   ServerHealthRun: "Server Health",
   BackupRun: "Backups",
+  FullCheckRun: "the Full check",
+  ClaudeCodeRequest: "the Full check",
 };

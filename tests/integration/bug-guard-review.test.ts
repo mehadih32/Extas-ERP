@@ -22,6 +22,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("next/cache", () => ({ revalidatePath: () => undefined, revalidateTag: () => undefined }));
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
 
+import { POST as telegramWebhook } from "@/app/api/bot/telegram/webhook/route";
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import { readOnly } from "@/lib/read-only";
@@ -29,9 +30,16 @@ import { slowQueriesSince } from "@/lib/slow-queries";
 import { summaryText } from "@/modules/bug-guard/bot-texts";
 import { APP_CHECKS } from "@/modules/bug-guard/checks/app";
 import { PRODUCT_CHECKS } from "@/modules/bug-guard/checks/product";
+import { saveTelegram, startLink, telegramSecret } from "@/modules/ai/bot/bot.service";
+import { type BotCall, standInForBotApi } from "@/modules/ai/bot/channel";
+import { pushToBot } from "@/modules/ai/bot/push";
 import { saveGitHub, startFullCheck } from "@/modules/ai/full-check/full-check.service";
+import { alertOwner } from "@/modules/backups/backup-core";
 import { fixFinding, prepareByItself } from "@/modules/bug-guard/fixes.service";
 import { READ_ONLY_WHY } from "@/modules/bug-guard/runner";
+import { alarmOwner } from "@/modules/bug-guard/security";
+import type { CompanyContext } from "@/modules/auth/context";
+import { runDueJobs } from "@/modules/jobs/worker";
 import type { CheckContext } from "@/modules/bug-guard/types";
 
 import { type FakeGitHub, startFakeGitHub } from "../fixtures/fake-github";
@@ -86,6 +94,61 @@ function check(key: string, companyId: string, extra: Partial<CheckContext> = {}
       ...extra,
     }),
   );
+}
+
+const TOKEN = "123456789:AAH_test-token-abcdefghijklmnopqrstuv";
+
+/** Telegram, as a stand-in: every message sent, with the chat it went to. */
+function botApi() {
+  const sent: Array<{ chat: string; text: string }> = [];
+  let next = 100;
+  standInForBotApi(async (call: BotCall) => {
+    const tg = /^https:\/\/api\.telegram\.org\/bot([^/]+)\/(\w+)$/.exec(call.url);
+    if (!tg) throw new Error(`Unexpected call to ${call.url}`);
+    const json = (call.json ?? {}) as Record<string, unknown>;
+    if (tg[2] === "getMe") {
+      return {
+        status: 200,
+        body: { ok: true, result: { id: 123456789, username: "extas_ai_bot", first_name: "AI" } },
+      };
+    }
+    if (tg[2] === "sendMessage") {
+      sent.push({ chat: String(json.chat_id), text: String(json.text) });
+      return { status: 200, body: { ok: true, result: { message_id: (next += 1) } } };
+    }
+    return { status: 200, body: { ok: true, result: true } };
+  });
+  return { sent, to: (chat: number) => sent.filter((m) => m.chat === String(chat)) };
+}
+
+let updateId = 9000;
+/** Links the person's own Telegram chat to the store's bot, the way the owner does it. */
+async function linkBot(who: CompanyContext, chat: number) {
+  await saveTelegram(who, { token: TOKEN });
+  const { code } = await startLink(who, "TELEGRAM");
+  const response = await telegramWebhook(
+    new Request("https://erp.test/api/bot/telegram/webhook", {
+      method: "POST",
+      headers: {
+        "x-telegram-bot-api-secret-token": telegramSecret(TOKEN),
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        update_id: (updateId += 1),
+        message: {
+          message_id: updateId,
+          chat: { id: chat, type: "private" },
+          from: { id: chat, first_name: "Someone" },
+          text: `/start ${code}`,
+        },
+      }),
+    }),
+  );
+  expect(response.status).toBe(200);
+  await runDueJobs();
+  expect(
+    await prisma.aiBotLink.findFirstOrThrow({ where: { companyId: who.company.id } }),
+  ).toMatchObject({ chatId: String(chat), ownerId: who.user.id });
 }
 
 async function refusedInside(work: () => Promise<unknown>) {
@@ -246,6 +309,77 @@ run("Bug Guard, after the review", () => {
         "https://erp.test",
       );
       expect(report).not.toMatch(/karim|rahim/);
+    });
+  });
+
+  describe("alarms on the bot (S1)", () => {
+    afterEach(() => standInForBotApi(null));
+
+    it("go only to a bot linked by an active platform owner; ordinary AI pushes keep their rules", async () => {
+      const api = botApi();
+      const { company, owner, partner } = await setup();
+      // A partner in the Super Admin role (not the platform owner) linked the bot.
+      const PARTNER_CHAT = 700001;
+      await linkBot(partner, PARTNER_CHAT);
+      const before = api.sent.length;
+      await alarmOwner(
+        company.id,
+        "Sign-in from 203.0.113.9 blocked for 24 hours",
+        "Lift it with your PIN.",
+      );
+      await pushToBot(company.id, { kind: "text", text: "Bug Guard: সব ঠিক আছে" }, { alarm: true });
+      await runDueJobs();
+      expect(api.sent.slice(before)).toEqual([]);
+      // The inbox copy still reaches the platform owner.
+      expect(
+        await prisma.notificationLog.count({
+          where: { userId: owner.user.id, subject: { contains: "blocked for 24 hours" } },
+        }),
+      ).toBe(1);
+      expect(await prisma.notificationLog.count({ where: { userId: partner.user.id } })).toBe(0);
+
+      // Ordinary AI pushes keep today's rules: with the AI on, the linked chat gets them.
+      await prisma.aiSettings.upsert({
+        where: { companyId: company.id },
+        create: { companyId: company.id, enabled: true },
+        update: { enabled: true },
+      });
+      await pushToBot(company.id, { kind: "text", text: "Morning note" });
+      await runDueJobs();
+      expect(api.to(PARTNER_CHAT).map((m) => m.text)).toContain("Morning note");
+
+      // Once the platform owner links their own chat, the alarms reach it.
+      const OWNER_CHAT = 700002;
+      await linkBot(owner, OWNER_CHAT);
+      await alarmOwner(company.id, "A correction was not applied", "Nothing was changed.");
+      await runDueJobs();
+      expect(api.to(OWNER_CHAT).some((m) => m.text.includes("A correction was not applied"))).toBe(
+        true,
+      );
+    });
+
+    it("about backups go only to the platform company's owners, never another store's bot", async () => {
+      const api = botApi();
+      // The platform's own store is the oldest.
+      const platform = await setup("Extas");
+      const store = await setup("Other Store");
+      // The platform owner is a member of the other store too; its own admin linked its bot.
+      await addToCompany(platform.owner.user.id, store.company.id, store.roles.SUPER_ADMIN);
+      const OWNER_CHAT = 710001;
+      const STORE_CHAT = 710002;
+      await linkBot(platform.owner, OWNER_CHAT);
+      await linkBot(store.partner, STORE_CHAT);
+      const linked = api.sent.length;
+      await alertOwner("Backup failed", "The database copy could not be made.");
+      await runDueJobs();
+      const after = api.sent.slice(linked);
+      expect(after.map((m) => m.chat)).toEqual([String(OWNER_CHAT)]);
+      expect(after[0]!.text).toMatch(/^Backup failed/);
+      const inbox = await prisma.notificationLog.findMany({
+        where: { subject: "Backup failed" },
+        select: { companyId: true, userId: true },
+      });
+      expect(inbox).toEqual([{ companyId: platform.company.id, userId: platform.owner.user.id }]);
     });
   });
 });

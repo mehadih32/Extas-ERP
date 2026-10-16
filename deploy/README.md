@@ -300,6 +300,21 @@ so allow 20 to 30 minutes there.
 To see whether a server already has Extas ERP, without changing anything:
 `bash restore.sh --find`.
 
+## HTTPS behind Cloudflare
+
+With Cloudflare's proxy on (the orange cloud), Let's Encrypt cannot check the server over
+port 80. When `CLOUDFLARE_API_TOKEN` is in `deploy/.env` (the restore puts there the token
+saved on the Backups screen), `deploy.sh` builds Caddy with Cloudflare's DNS module
+(`deploy/caddy`, again every 30 days) and writes `tls/cloudflare.caddy` in the data folder,
+so certificates come through Cloudflare's DNS check instead. It checks the result first
+(`caddy validate`); if the module cannot be built or the check fails, it says "Note W06" and
+plain Caddy runs as before. Without a token nothing changes: plain `caddy:2-alpine` and the
+usual check over port 80.
+
+The token needs only **Zone → DNS → Edit** for the one domain (the Backups screen and the
+Help Center show the steps). It is sealed in the database and, inside every backup, locked
+with the owner's recovery key.
+
 ## Updating to a new version
 
 ```bash

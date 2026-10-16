@@ -1,0 +1,82 @@
+# Claude Code on GitHub (anthropics/claude-code-action). It answers "@claude"
+# in a new issue or in a comment: it reads the request, changes the code on a
+# branch of its own (claude/issue-<number>-...), runs the checks and opens a
+# pull request. Nothing is merged by it: the owner merges from the ERP (AI
+# Center > Full check, with the PIN), and the Deploy workflow installs it.
+#
+# The ERP's "Fix with Claude Code", "Fix all" and "Ask Claude Code" open such an
+# issue with the owner's GitHub token, so the issue's author is the owner. That
+# is what lets it run: the action only answers people with write access to the
+# repository, and never a bot unless it is listed in "allowed_bots" (none is
+# listed here, so no bot can start it). The ERP also comments "@claude" on the
+# pull request when its checks fail.
+#
+# Needs, once (the owner's steps in Help > Full check):
+#   - the Claude GitHub App installed on this repository (https://github.com/apps/claude);
+#   - the repository secret CLAUDE_CODE_OAUTH_TOKEN, made with "claude setup-token"
+#     on a computer signed in to the owner's Claude subscription.
+name: Claude Code
+
+on:
+  issues:
+    types: [opened]
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  id-token: write
+  actions: read
+
+concurrency:
+  group: claude-${{ github.event.issue.number || github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  claude:
+    name: Claude Code
+    if: >-
+      (github.event_name == 'issues' &&
+        (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude'))) ||
+      (github.event_name != 'issues' && contains(github.event.comment.body, '@claude'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: extras
+          POSTGRES_PASSWORD: extras
+          POSTGRES_DB: extras_erp_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U extras -d extras_erp_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      # A throwaway database for the tests Claude Code runs (never the live or demo site).
+      TEST_DATABASE_URL: postgresql://extras:extras@localhost:5432/extras_erp_test?schema=public
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          claude_args: >-
+            --max-turns 120
+            --allowedTools "Bash(npm run typecheck),Bash(npm run lint),Bash(npm run format:check),Bash(npm run format),Bash(npm test),Bash(npm test:*),Bash(npx vitest:*),Bash(npx prettier:*),Bash(npx tsc:*),Bash(npx prisma generate),Bash(npx prisma validate),Bash(npx prisma format),Bash(npx prisma migrate diff:*),Bash(git:*),Bash(ls:*),Bash(cat:*),Bash(grep:*),Bash(find:*)"

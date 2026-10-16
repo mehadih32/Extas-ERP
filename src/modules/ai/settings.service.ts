@@ -77,6 +77,10 @@ export async function aiSettingsOf(companyId: string, db: Db = prisma): Promise<
       reportSentOn: null,
       healthWeekly: false,
       healthRanOn: null,
+      githubRepo: null,
+      githubTokenSealed: null,
+      githubTokenHint: null,
+      githubTest: null,
       updatedAt: new Date(0),
     }
   );

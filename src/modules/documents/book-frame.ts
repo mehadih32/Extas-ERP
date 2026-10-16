@@ -72,12 +72,19 @@ export function contactLine(
 /**
  * The frame of a booking book or a booking: its orientation, the company's
  * tagline and contacts from the Company record (so each company prints its
- * own), and the header's DOC NO, BUYER · PO, DATE and PREPARED BY (left blank
- * to write on).
+ * own), and the header's DOC NO, BUYER · PO, DATE and PREPARED BY: the name of
+ * the person who made it, with a line beside it to sign on (a blank line to
+ * write on when there is no name).
  */
 export function bookFrame(
   company: Pick<Company, "name" | "phone" | "email" | "address" | "tagline">,
-  options: { orientation: Orientation; docNo: string; buyerPo: string; date: string },
+  options: {
+    orientation: Orientation;
+    docNo: string;
+    buyerPo: string;
+    date: string;
+    preparedBy?: string | null;
+  },
 ): BookFrame {
   return {
     orientation: options.orientation,
@@ -86,7 +93,7 @@ export function bookFrame(
       { label: "Doc no", value: options.docNo },
       { label: "Buyer · PO", value: options.buyerPo },
       { label: "Date", value: options.date },
-      { label: "Prepared by", value: "" },
+      { label: "Prepared by", value: options.preparedBy?.trim() ?? "", sign: true },
     ],
     contact: contactLine(company),
   };

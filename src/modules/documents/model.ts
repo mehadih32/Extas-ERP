@@ -58,8 +58,10 @@ export type RecordPrintType =
 /**
  * Bump when the layout changes, so documents printed again get the new look.
  * 2: Bengali text prints in Noto Sans Bengali instead of "?".
+ * 3: no figure is cut (smaller text, then the table is split), long names wrap to a
+ *    second line instead of ending in "…", and the page number is always whole.
  */
-export const LAYOUT_VERSION = 2;
+export const LAYOUT_VERSION = 3;
 
 export type Letterhead = {
   name: string;
@@ -168,8 +170,11 @@ export type BookFrame = {
   orientation: Orientation;
   /** Under the company's name ("Manufacturing | Sourcing | Export"). */
   tagline: string;
-  /** The header's right column in small capitals; an empty value prints a line to write on. */
-  fields: Array<{ label: string; value: string }>;
+  /**
+   * The header's right column in small capitals; an empty value prints a line to
+   * write on. `sign`: a signature line beside the value (PREPARED BY and its name).
+   */
+  fields: Array<{ label: string; value: string; sign?: boolean }>;
   /** The footer: "EXTAS | +8801764751616 | info@extas.com.bd | House-17, Road-08, Dhaka". */
   contact: string;
 };

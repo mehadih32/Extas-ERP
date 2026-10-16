@@ -526,6 +526,8 @@ export function bookingDocument(
       docNo: b.docNo,
       buyerPo: order,
       date: formatDay(b.orderDate),
+      // PREPARED BY: whoever made the booking, with a line beside it to sign.
+      preparedBy: b.createdBy?.name ?? null,
     }),
   };
 }

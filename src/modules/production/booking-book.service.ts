@@ -563,8 +563,22 @@ export function bookingBookDocument(
       docNo: data.batch.code,
       buyerPo: buyers || "In-house",
       date: formatDay(data.today),
+      preparedBy: preparedBy(data, ctx.user.name),
     }),
   };
+}
+
+/**
+ * PREPARED BY on the book: whoever made its bookings (one name, two, or the
+ * first two and how many more), else the person printing it.
+ */
+export function preparedBy(data: Pick<BookData, "bookings">, printer: string): string {
+  const makers = [
+    ...new Set(data.bookings.flatMap((b) => (b.createdBy?.name ? [b.createdBy.name] : []))),
+  ];
+  if (makers.length === 0) return printer;
+  if (makers.length <= 2) return makers.join(", ");
+  return `${makers.slice(0, 2).join(", ")} +${makers.length - 2}`;
 }
 
 /** What the booking book is made from: the batch, its styles with their codes, its bookings. */

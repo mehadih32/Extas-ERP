@@ -392,6 +392,15 @@ export function CostsScreen({ costs: c }: { costs: AiCosts }) {
       >
         {peak === 0 ? (
           <p className="mt-2 text-sm text-muted-foreground">No AI cost in this period.</p>
+        ) : c.perDay.length === 1 ? (
+          // One day has no chart to draw (it would be one block): its total, in words.
+          <p className="mt-2 text-sm">
+            {formatDay(c.perDay[0]!.day)}:{" "}
+            <span className="font-medium tabular-nums">{money(c.perDay[0]!.cost, cur)}</span>
+            <span className="text-muted-foreground">
+              . Pick a longer period to see the cost day by day.
+            </span>
+          </p>
         ) : (
           <div className="mt-4 overflow-x-auto">
             <div

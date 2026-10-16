@@ -115,6 +115,10 @@ places disagree, the newer instruction wins.
 - Every page has a guide route, every menu item a help section, every section an icon. Picture ids are
   `<slug>-<n>`, unique, with Bengali captions. Pictures are taken automatically from demo data.
 - New Bengali text uses Western digits (0-9).
+- Pictures: one per guide, of its own page, with a red numbered mark on what each step is about, taken on the
+  demo site's sample data (`npm run help:shots`, or the "Help pictures" workflow on GitHub). A changed screen
+  brings its new picture in the same PR (the picture test fails on a stale one). Before every Release PR every
+  picture is taken again (`ALL=1 npm run help:shots` on a copy of the demo data, or the workflow with "all").
 
 ## 6. Safety on the live site
 

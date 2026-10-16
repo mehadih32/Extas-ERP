@@ -1,0 +1,132 @@
+# The Help Center's automatic pictures (v6.4): one picture of each guide's page, taken
+# on the demo site's sample data, with a red numbered mark on the button or field
+# each step is about. tests/unit/help-guides.test.ts fails when a screen changed
+# and its picture is old, so a pull request that changes a screen also brings its
+# new picture; before every Release PR all of them are taken again.
+#
+# Run it by hand from the Actions tab ("Run workflow") on a branch: it builds the
+# app on a throwaway database with the demo data (nothing here reaches the live or
+# demo site), takes the pictures (every one, or only the old ones) and hands them
+# back as the "help-pictures" download, to commit to that branch. On a computer
+# with the demo data, `ALL=1 npm run help:shots` does the same (scripts/help/plan.ts).
+name: Help pictures
+
+on:
+  workflow_dispatch:
+    inputs:
+      all:
+        description: "Take every picture again (a release), not only the old ones"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: help-pictures-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pictures:
+    name: Take the Help Center's pictures
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: extras
+          POSTGRES_PASSWORD: extras
+          POSTGRES_DB: extras_demo
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U extras -d extras_demo"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      # The demo site's own database name: the demo data loads nowhere else.
+      DATABASE_URL: postgresql://extras:extras@localhost:5432/extras_demo?schema=public
+      DEMO_SITE: "on"
+      SEED_ADMIN_EMAIL: owner@layout-check.invalid
+      SEED_ADMIN_NAME: Demo Owner
+      SEED_COMPANIES: Extas,Fabric Apparel
+      # Nobody signs in with a password here: the pictures get a session of their own.
+      DEMO_OWNER_PASSWORD_HASH: no-password-sign-in
+      APP_URL: http://localhost:3000
+      UPLOAD_DIR: ${{ github.workspace }}/.layout-uploads
+      BACKUP_SCHEDULER: "off"
+      REMINDER_SCHEDULER: "off"
+      HOUSEKEEPING_SCHEDULER: "off"
+      JOB_WORKER: "off"
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Keys for this run only
+        run: |
+          key=$(openssl rand -hex 32)
+          echo "::add-mask::$key"
+          echo "ENCRYPTION_KEY=$key" >> "$GITHUB_ENV"
+          password=$(openssl rand -hex 16)
+          echo "::add-mask::$password"
+          echo "SEED_ADMIN_PASSWORD=$password" >> "$GITHUB_ENV"
+
+      - name: The demo site's database and sample data
+        run: |
+          mkdir -p "$UPLOAD_DIR"
+          npx prisma migrate deploy
+          npx prisma db seed
+          npx tsx prisma/demo/seed-demo.ts
+
+      - name: Build
+        run: npm run build
+
+      - name: Start the app
+        run: |
+          cp -r .next/static .next/standalone/.next/static
+          cp -r public .next/standalone/public
+          nohup node .next/standalone/server.js > app.log 2>&1 &
+          for i in $(seq 1 60); do
+            curl -sf -o /dev/null http://localhost:3000/sign-in && exit 0
+            sleep 2
+          done
+          echo "The app did not start:"; tail -50 app.log; exit 1
+        env:
+          PORT: "3000"
+          HOSTNAME: 127.0.0.1
+
+      - name: Install the browser
+        working-directory: scripts/full-check
+        run: |
+          npm install --no-package-lock --no-audit --no-fund
+          npx playwright install --with-deps chromium
+
+      - name: Take the pictures
+        run: |
+          LAYOUT_SESSION_FILE="$RUNNER_TEMP/session" npx tsx scripts/layout-session.ts
+          COOKIE=$(cat "$RUNNER_TEMP/session") && echo "::add-mask::$COOKIE" && export COOKIE
+          npm run help:shots
+        env:
+          SITE: http://localhost:3000
+          ALL: ${{ inputs.all && '1' || '' }}
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: help-pictures
+          path: |
+            public/help/shots
+            src/modules/help/pictures.json
+            app.log
+          if-no-files-found: ignore

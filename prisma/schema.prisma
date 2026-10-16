@@ -204,6 +204,8 @@ model Company {
   aiBudget              AiBudget?
   aiKnowledgeBooks      AiKnowledgeBook[]
   aiTestRuns            AiTestRun[]
+  aiModelPrices         AiModelPrice[]
+  aiModelTests          AiModelTest[]
   aiChatMessages        AiChatMessage[]
   aiDrafts              AiDraft[]
   aiFollowUps           AiFollowUp[]
@@ -325,6 +327,8 @@ model User {
   aiAccountOf         AiSettings?            @relation("AiSettingsAiUser")
   aiBooksEdited       AiKnowledgeBook[]      @relation("AiKnowledgeBookEditedBy")
   aiTestRunsStarted   AiTestRun[]            @relation("AiTestRunStartedBy")
+  aiModelPricesSet    AiModelPrice[]         @relation("AiModelPriceUpdatedBy")
+  aiModelTestsRan     AiModelTest[]          @relation("AiModelTestRanBy")
   aiChatMessages      AiChatMessage[]        @relation("AiChatMessageUser")
   aiDraftsWritten     AiDraft[]              @relation("AiDraftCreatedBy")
   aiDraftsSent        AiDraft[]              @relation("AiDraftSentBy")
@@ -4412,6 +4416,26 @@ model BackupConfig {
   retentionDays       Int      @default(30)
   isEnabled           Boolean  @default(true)
   updatedAt           DateTime @updatedAt
+
+  /// How many backups to keep in Google Drive (the newest checked one always stays).
+  keepCount             Int       @default(30)
+  /// The owner's own Google Cloud client ("TVs and Limited Input devices"), set on
+  /// the Backups screen; GOOGLE_DRIVE_CLIENT_ID / _SECRET are used while it is empty.
+  googleClientId        String?
+  googleClientSecretRef String? // sealed with ENCRYPTION_KEY
+  /// A Google sign-in waiting for the owner's phone (the device code, sealed) and when it ends.
+  googleDeviceRef       String?
+  googleDeviceExpiresAt DateTime?
+  /// The recovery key that locks every backup, sealed with ENCRYPTION_KEY. It is
+  /// shown to the owner once; recoveryKeyId names it in each backup's manifest.
+  recoveryKeyRef        String?
+  recoveryKeyId         String?
+  recoveryKeyMadeAt     DateTime?
+  /// When the owner said they had written it down (until then the screen asks again).
+  recoveryKeySavedAt    DateTime?
+  /// The weekly test restore into a temporary database (Saturdays 04:00 by default).
+  testRestoreEnabled    Boolean   @default(true)
+  testRestoreSchedule   String    @default("0 4 * * 6")
 }
 
 model BackupRun {
@@ -4428,6 +4452,18 @@ model BackupRun {
   filesDeletedAt   DateTime? // local files removed by the retention rule
   triggeredById    String?
   error            String?
+  /// A daily backup, an update's safety copy, the weekly test restore or a restore.
+  kind             BackupKind    @default(BACKUP)
+  /// The backup's name: its folder on the server and in Drive ("2026-10-16_020000").
+  name             String?
+  /// Which recovery key locked it (BackupConfig.recoveryKeyId); null: not locked.
+  keyId            String?
+  /// Its copy in Google Drive was checked byte for byte (size and MD5); the server's copy then goes.
+  checkedAt        DateTime?
+  /// A test restore's or a restore's findings (tables, rows, checks), and for a
+  /// restore which backup it put back.
+  report           Json?
+  sourceName       String?
 
   triggeredBy User? @relation(fields: [triggeredById], references: [id], onDelete: SetNull)
 
@@ -4482,6 +4518,22 @@ model AiSettings {
   /// The key's last four characters, to recognise it.
   apiKeyHint       String?
   apiKeySetAt      DateTime?
+  /// The OpenAI and Gemini keys (v6.3), sealed the same way; only the last
+  /// four characters are shown.
+  openaiKeySealed  String?
+  openaiKeyHint    String?
+  openaiKeySetAt   DateTime?
+  geminiKeySealed  String?
+  geminiKeyHint    String?
+  geminiKeySetAt   DateTime?
+  /// The last Test of each provider's key: { anthropic|openai|google: { ok, at, note } }.
+  keyTests         Json?
+  /// The models each provider offers the key, as last read from the provider:
+  /// { provider: { readAt, models: [{ id, label }] } } (modules/ai/providers.ts).
+  providerModels   Json?
+  /// The owner's model per agent (agent key to model, modules/ai/agents.ts);
+  /// it wins over the task's model for that agent's work.
+  agentModels      Json?
   /// The owner's model per task (task key to model id, modules/ai/models.ts);
   /// the system's choice for the rest.
   models           Json?
@@ -5565,6 +5617,13 @@ enum BackupTrigger {
   MANUAL
 }
 
+enum BackupKind {
+  BACKUP
+  SAFETY_COPY
+  TEST_RESTORE
+  RESTORE
+}
+
 /// One call to Claude (AI Center > Budget & Costs): who asked, for what, why,
 /// on which record and model, the tokens it used and what it cost. Written for
 /// every call, failed ones too (with no tokens), so nothing the AI spends is
@@ -5583,7 +5642,13 @@ model AiUsage {
   recordType       String?
   recordId         String?
   recordLabel      String?
+  /// The model ("claude-…", "openai:…" or "google:…", modules/ai/providers.ts).
   model            String
+  /// anthropic, openai or google.
+  provider         String       @default("anthropic")
+  /// False when the model had no price (AI Center > Models > Prices): the
+  /// cost is then 0 and the screens say "price unknown".
+  costKnown        Boolean      @default(true)
   inputTokens      Int          @default(0)
   outputTokens     Int          @default(0)
   cacheReadTokens  Int          @default(0)
@@ -5624,6 +5689,9 @@ model AiBudget {
   atLimit         AiAtLimit @default(STOP)
   /// Taka per US dollar, for turning Claude's prices into the company's money.
   usdRate         Decimal   @default(122) @db.Decimal(10, 4)
+  /// A monthly limit per provider, in the company's money:
+  /// { anthropic?: "5000.00", openai?: "…", google?: "…" }.
+  providerLimits  Json?
   /// The month ("2026-10") the alert was last sent, so it is sent once a month.
   alertedMonth    String?
   updatedById     String?
@@ -5848,6 +5916,54 @@ model AiTestRun {
   startedBy User?   @relation("AiTestRunStartedBy", fields: [startedById], references: [id], onDelete: SetNull)
 
   @@index([companyId, book, createdAt])
+}
+
+/// A model's price (AI Center > Models > Prices), US dollars per million
+/// tokens. The built-in Claude models have the ERP's own prices until one is
+/// set here; any other model has none ("price unknown") until the owner sets it.
+model AiModelPrice {
+  id            String   @id @default(cuid())
+  companyId     String
+  /// The model ("claude-…", "openai:…" or "google:…").
+  model         String
+  provider      String
+  /// Null: not known.
+  inputPerM     Decimal? @db.Decimal(12, 4)
+  outputPerM    Decimal? @db.Decimal(12, 4)
+  cacheReadPerM Decimal? @db.Decimal(12, 4)
+  updatedById   String?
+  updatedAt     DateTime @updatedAt
+
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  updatedBy User?   @relation("AiModelPriceUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@unique([companyId, model])
+}
+
+/// One run of a task's test on a model (AI Center > Models): a model that is
+/// not one of the ERP's own Claude models does a task on Do only after it
+/// passes that task's test (modules/ai/model-tests.ts).
+model AiModelTest {
+  id        String   @id @default(cuid())
+  companyId String
+  task      String
+  model     String
+  provider  String
+  /// The test's version: a pass counts while the test is the same.
+  version   String
+  passed    Boolean  @default(false)
+  right     Int      @default(0)
+  total     Int
+  /// [{ case, title, ok, why, answer }]
+  details   Json?
+  error     String?
+  ranById   String?
+  createdAt DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  ranBy   User?   @relation("AiModelTestRanBy", fields: [ranById], references: [id], onDelete: SetNull)
+
+  @@index([companyId, task, model, createdAt])
 }
 
 enum AiChatRole {

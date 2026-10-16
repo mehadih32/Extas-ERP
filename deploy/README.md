@@ -156,42 +156,61 @@ it at the first sign-in. Running it again only adds what is missing.
 
 ## Backups
 
-**Every day at 02:00 Bangladesh time** the ERP backs up everything (every company) into
-`/srv/extras-erp/backups/<date_time>/`:
+**Every day at 02:00 Bangladesh time** (the owner can change it on the Backups screen,
+**Settings → Backups**) the ERP backs up everything, every company:
 
 - `database.dump`: the whole database
 - `media.tar.gz`: the uploaded and generated files
-- `manifest.json`: the size and checksum of each file
+- `server.json`: this server's `ENCRYPTION_KEY`, so a new server can open the settings sealed
+  in the database (Google, AI keys, bots)
+- `manifest.json`: the size and checksums of each file
 
-Backups are kept for **30 days**; the newest good one is always kept. A backup missed while
-the server was off runs as soon as it is back, so the first one runs a minute after the
-first install. The owner can change the time, how long backups are kept and whether files
-are included in the backup settings, or start a backup by hand.
+**Backups go to the owner's Google Drive, not the server.** Each file is locked
+(AES-256-GCM) with the owner's **recovery key** before it leaves the server, sent to a folder
+of its own inside "Extas ERP Backups" in Drive, and checked there byte for byte (size and
+MD5). Only then is the server's copy deleted. A backup that did not reach Drive stays on the
+server and is sent again within the hour; the owner gets an alert in the ERP's inbox and on
+the bot whenever a backup fails or does not reach Drive. Drive keeps the newest 30 backups
+(the owner sets how many) and the newest 10 update safety copies.
 
-**Safety copies.** Before every update and every restore, the scripts also save a copy of
-the database in `/srv/extras-erp/safety-copies/`. The newest 10 update copies are kept.
+Until the owner has made the recovery key and connected Google Drive, backups stay on the
+server, unlocked, and the Backups screen says so. To set it up:
 
-**Keep a copy away from the server.** A backup that only lives on the server is lost with
-the server. Use at least one of these:
+1. **Google Cloud, once** (the Help Center has the same steps in Bengali, under Settings):
+   in the [Google Cloud console](https://console.cloud.google.com) make a project, enable the
+   **Google Drive API**, set up the **OAuth consent screen** (External) with the one scope
+   `drive.file`, and press **Publish app** so it is **In production**: while it is in
+   "Testing", Google ends the connection after 7 days. Then under **Credentials** make an
+   **OAuth client ID** of the type **TVs and Limited Input devices**. Paste its ID and secret
+   on the Backups screen ("Save the Google client"). They can also go in
+   `GOOGLE_DRIVE_CLIENT_ID` and `GOOGLE_DRIVE_CLIENT_SECRET` in `deploy/.env`.
+2. **Connect Google Drive** on the Backups screen: it shows a code to enter at
+   google.com/device on a phone. No web address needs to be registered with Google.
+3. **Make the recovery key**: it is shown once. Write it down and keep it away from the
+   server. Without it no backup can be opened, by anyone.
 
-- **Azure Backup** of the whole server (step 1).
-- **Google Drive**, built into the ERP. Each daily backup is also uploaded to a folder in the
-  owner's Google Drive, and old ones are removed there too. To set it up:
-  1. In the [Google Cloud console](https://console.cloud.google.com), create a project,
-     enable the **Google Drive API**, and set up the **OAuth consent screen**.
-  2. Under **Credentials**, create an **OAuth client ID** of type **Web application**, with
-     the authorised redirect URI `https://erp.yourcompany.com/api/backups/google/callback`.
-  3. Put its client ID and secret in `GOOGLE_DRIVE_CLIENT_ID` and
-     `GOOGLE_DRIVE_CLIENT_SECRET` in `deploy/.env` (`sudo nano deploy/.env`), then run
-     `sudo ./deploy/deploy.sh`.
-  4. The owner connects their Google account once, from the backup settings. That button
-     arrives with the screens.
-- **Your own computer**: copy a day's backup over SSH, from your computer:
-  ```bash
-  scp -i path/to/your-key.pem -r erpadmin@SERVER_IP:/srv/extras-erp/backups/2026-10-04_020000 .
-  ```
+**Safety copies.** Before every update and every restore, the scripts save a copy of the
+database in `/srv/extras-erp/safety-copies/`, for the automatic rollback. It stays on the
+server for 24 hours (a cron job clears older ones) and is also locked and sent to Drive.
+
+**The weekly test restore.** Every Saturday at 04:00 the ERP downloads the newest backup
+from Drive, opens it with the recovery key and restores it into a temporary database of its
+own (`extas_restore_test_…`, never the live or the demo database), checks it (tables,
+migrations, row counts against today, every journal entry balanced, the files) and drops it.
+The result goes to the owner's inbox. `deploy.sh` lets the app's database user make that
+temporary database.
 
 ## Restoring a backup
+
+**From the Backups screen** (the usual way): pick a backup in the "Backups in Google Drive"
+list, press **Restore**, give the PIN and type `RESTORE`. The ERP downloads it, checks every
+file, opens it with the recovery key and hands it to the server. On the server,
+`deploy/restore-request.sh` (started by a systemd path unit that `deploy.sh` installs) runs
+`restore.sh`: a safety copy of the database first, then the restore, then every screen is
+opened to check it. When the ERP does not start on the restored data, it goes back to the
+safety copy by itself. The owner gets the result in the inbox.
+
+**By hand**, for a backup folder on the server (unlocked):
 
 ```bash
 sudo ./deploy/restore.sh /srv/extras-erp/backups/2026-10-04_020000
@@ -201,7 +220,7 @@ It checks the backup's files against their checksums, asks you to type `RESTORE`
 safety copy of the database as it is now, then puts back the database and the uploaded
 files and starts the ERP again. The database is restored in one step: if anything goes
 wrong, it is left exactly as it was. The files that were there before are kept next to the
-new ones (`uploads.before-restore-…`).
+new ones (`uploads.before-restore-…`). Add `--check` to open every screen afterwards.
 
 To undo a restore, restore the safety copy it names at the end:
 
@@ -209,19 +228,32 @@ To undo a restore, restore the safety copy it names at the end:
 sudo ./deploy/restore.sh /srv/extras-erp/safety-copies/before-restore-2026-10-05_101500
 ```
 
-To restore a backup from Google Drive or your computer, first copy its folder into
-`/srv/extras-erp/backups/` on the server, then run `restore.sh` on it.
-
 ## Moving to a new server
 
-If the server is lost, or to move to a bigger one:
+If the server is lost, or to move to a bigger one, one command does it all on a fresh
+Ubuntu 24.04 server: the Backups screen shows it under **Restore on a new server** ("Show
+the command"); keep a copy with the recovery key. On the new server (step 1 above, then sign
+in as in step 3), paste it. It asks for a GitHub token (only while the repository is
+private: a fine-grained token with **Contents: Read** on this repository; press Enter
+otherwise), the web address and the recovery key, then shows a Google sign-in code to enter
+at google.com/device on a phone. It lists the backups in Drive and restores the newest (or
+the number you type), with `deploy/bootstrap.sh`:
 
-1. Do steps 1 to 5 on the new server, and point the web address at its IP (step 2).
-2. If you kept the old `deploy/.env`, copy its `ENCRYPTION_KEY` line into the new
-   `deploy/.env` (`sudo nano deploy/.env`). Otherwise the owner connects Google Drive again
-   after the move.
-3. Run `sudo ./deploy/deploy.sh` (step 6). Skip step 7: the backup brings the accounts back.
-4. Copy the latest backup folder into `/srv/extras-erp/backups/` and restore it, as above.
+1. installs Docker, the firewall and the rest (`setup-server.sh`), and gets the code into
+   `/opt/extras-erp`;
+2. downloads the backup, checks every file and opens it with the recovery key
+   (`scripts/drive-restore.ts`);
+3. writes `deploy/.env` (`configure.sh`) with the old server's `ENCRYPTION_KEY` from the
+   backup, installs the ERP (`deploy.sh`) and restores the backup (`restore.sh --check`);
+4. waits for the HTTPS certificate and says how long it all took.
+
+Then point the web address at the new server's IP (step 2), and run
+`sudo ./deploy/setup-auto-deploy.sh` there for updates after each merge. The restore drill on
+GitHub (`.github/workflows/restore-drill.yml`) runs this command on a fresh virtual machine
+for every change to the backups or the deploy scripts, and reports how long it took: about
+7 minutes on GitHub's fresh Ubuntu 24.04 machine (6 min 51 s on 16 October 2026, with the
+demo data: install, build, download, restore and the check of all 136 screens). A smaller
+Azure server takes longer to build, so allow 10 to 20 minutes there.
 
 ## Updating to a new version
 
@@ -442,8 +474,7 @@ set once:
   when it is first created; changing them in the file does not change them there.
 - `ENCRYPTION_KEY`: changing it means connecting Google Drive again.
 - `DATA_DIR`: move the folder to the new place first (with the ERP stopped).
-- A new web address (`APP_DOMAIN`) needs its DNS record first (step 2) and, for Google
-  Drive, a new redirect URI.
+- A new web address (`APP_DOMAIN`) needs its DNS record first (step 2).
 
 ## When something goes wrong
 

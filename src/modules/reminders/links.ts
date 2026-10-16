@@ -84,6 +84,9 @@ export function recordHref(ctx: Can, link: RecordLink | null): string | null {
     case "ServerHealthRun":
       // The weekly Server Health check (the platform owner's).
       return ctx.user?.isSuperAdmin ? "/ai/health" : null;
+    case "BackupRun":
+      // A backup, test restore or restore failed or finished (the platform owner's).
+      return ctx.user?.isSuperAdmin ? "/settings/backups" : null;
     default:
       return null;
   }
@@ -113,4 +116,5 @@ export const RECORD_NOUNS: Record<string, string> = {
   HouseRule: "the House Rule",
   AiOrderRun: "the order",
   ServerHealthRun: "Server Health",
+  BackupRun: "Backups",
 };

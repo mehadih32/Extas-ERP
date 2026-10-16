@@ -15,7 +15,8 @@ import { setBudgetAction } from "@/server/actions/ai.actions";
  * The AI's budget and limits (ai.manage). Every limit is optional and empty
  * means none: without a monthly budget the AI shows an estimate before a big
  * task and asks. At the alert percentage the owner is told; at a limit new
- * work stops, or small work goes on with the small model.
+ * work stops, or small work goes on with the small model. Each provider
+ * (Claude, OpenAI, Gemini) can have its own monthly limit too.
  */
 
 const LIMITS = [
@@ -41,6 +42,12 @@ const LIMITS = [
     label: "Ask before a task above",
     hint: "Asks you first when a task is estimated above this.",
   },
+] as const;
+
+const PROVIDER_LIMITS = [
+  { id: "anthropic", label: "Claude" },
+  { id: "openai", label: "OpenAI" },
+  { id: "google", label: "Gemini" },
 ] as const;
 
 export function BudgetForm({
@@ -74,7 +81,8 @@ export function BudgetForm({
       >
         <p className="text-sm text-muted-foreground">
           All optional: leave a box empty for no limit. Amounts are in {currency}. Set a spend limit
-          in the Claude Console too, so the bill can never go past it.
+          on each provider&apos;s own site too (Claude Console, OpenAI, Google AI Studio), so the
+          bill can never go past it.
         </p>
         <div className="grid gap-4 sm:grid-cols-2">
           {LIMITS.map((l) => (
@@ -123,7 +131,7 @@ export function BudgetForm({
           <Field
             id="budget-rate"
             label={`${currency} for one US dollar`}
-            hint="Claude charges in dollars; costs show in your money at this rate."
+            hint="The providers charge in dollars; costs show in your money at this rate."
             error={fieldError("usdRate")}
           >
             <Input
@@ -134,6 +142,30 @@ export function BudgetForm({
               required
             />
           </Field>
+        </div>
+        <div className="grid gap-2">
+          <p className="text-sm font-medium">Limit per provider, per month</p>
+          <p className="text-[0.8125rem] text-muted-foreground">
+            What each provider&apos;s models may cost in a month. Empty: no limit.
+          </p>
+          <div className="grid gap-4 sm:grid-cols-3">
+            {PROVIDER_LIMITS.map((p) => (
+              <Field
+                key={p.id}
+                id={`budget-limit-${p.id}`}
+                label={p.label}
+                error={fieldError(`limit_${p.id}`)}
+              >
+                <Input
+                  id={`budget-limit-${p.id}`}
+                  name={`limit_${p.id}`}
+                  inputMode="decimal"
+                  defaultValue={b.providerLimits[p.id] ?? ""}
+                  placeholder="No limit"
+                />
+              </Field>
+            ))}
+          </div>
         </div>
         {error && !error.fieldErrors && <FormAlert>{error.message}</FormAlert>}
         {saved && <FormAlert tone="success">The budget is saved.</FormAlert>}

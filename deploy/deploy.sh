@@ -94,9 +94,8 @@ if db_running; then
     die "the safety copy of the database could not be saved (is the disk full? sudo df -h), so the update was not installed. Nothing was changed: the ERP still runs the version it ran before."
   fi
   echo "Saved in $saved"
-  # The newest 10 are kept.
-  find "$DATA_DIR/safety-copies" -mindepth 1 -maxdepth 1 -name 'before-update-*' -printf '%T@ %p\n' |
-    sort -rn | tail -n +11 | cut -d' ' -f2- | xargs -r rm -rf
+  # Kept on the server for 24 hours (the ERP also locks it and sends it to Google Drive).
+  prune_safety_copies
 fi
 
 # A failed update: back to the version that ran before it, and to the safety copy of
@@ -150,6 +149,13 @@ if [ -n "$pending" ]; then
   say "The new version passed its check: opening the ERP to its users again"
   compose up -d caddy
 fi
+
+# Backups: the weekly test restore's temporary database, Restore from the Backups
+# screen, and clearing safety copies after 24 hours. None of it can fail the update.
+allow_test_restores ||
+  say "The weekly test restore may not make its temporary database; it says so on the Backups screen"
+install_backup_helpers ||
+  say "Restore from the Backups screen is not set up on this server (no systemd); restore with deploy/restore.sh"
 
 # The demo site starts after the ERP itself, so the ERP never waits on it.
 if [ -n "$DEMO_DOMAIN" ]; then

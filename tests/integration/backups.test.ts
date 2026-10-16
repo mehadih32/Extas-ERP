@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -8,13 +8,34 @@ import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ZodError } from "zod";
 
-import { decryptSecret, encryptSecret, signPayload } from "@/lib/crypto";
+import { decryptSecret, encryptSecret } from "@/lib/crypto";
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
+import { setPin } from "@/modules/ai/settings.service";
+import type { CompanyContext } from "@/modules/auth/context";
+import { currentKey, driveToken } from "@/modules/backups/backup-core";
 import * as backups from "@/modules/backups/backup.service";
-import { backupTick } from "@/modules/backups/scheduler";
+import { newRecoveryKey } from "@/modules/backups/crypt";
+import {
+  fetchBackup,
+  listDriveBackups,
+  sendSafetyCopies,
+  sendUnsent,
+} from "@/modules/backups/drive-copies";
+import {
+  recordRestoreResult,
+  requestRestore,
+  restoreStatus,
+} from "@/modules/backups/restore.service";
+import { backupTick, testRestoreTick } from "@/modules/backups/scheduler";
+import {
+  runTestRestore,
+  TEST_DB_PREFIX,
+  type TestRestoreReport,
+} from "@/modules/backups/test-restore";
 
-import { makeCompany, makeUser, resetDb } from "./helpers";
+import { type FakeGoogle, startFakeGoogle } from "../../scripts/fake-google";
+import { addToCompany, contextFor, makeCompany, makeUser, resetDb } from "./helpers";
 
 const exec = promisify(execFile);
 const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
@@ -34,89 +55,6 @@ async function expectAppError(promise: Promise<unknown>, code: string) {
 }
 
 const sha256 = (data: Buffer) => createHash("sha256").update(data).digest("hex");
-
-type GoogleCall = { method: string; url: URL; headers: Record<string, string>; body: unknown };
-
-/**
- * A stand-in for Google's sign-in and Drive APIs (fetch is replaced); returns the
- * requests made, in order.
- */
-function fakeGoogle(
-  opts: {
-    tokenError?: string;
-    noRefreshToken?: boolean;
-    rootGone?: boolean;
-    quotaFull?: boolean;
-    oldFolders?: string[];
-  } = {},
-) {
-  const calls: GoogleCall[] = [];
-  let folders = 0;
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async (input: string | URL, init: RequestInit = {}) => {
-      const url = new URL(String(input));
-      const method = init.method ?? "GET";
-      const headers = (init.headers ?? {}) as Record<string, string>;
-      const body =
-        init.body instanceof URLSearchParams
-          ? Object.fromEntries(init.body)
-          : typeof init.body === "string"
-            ? (JSON.parse(init.body) as unknown)
-            : init.body;
-      calls.push({ method, url, headers, body });
-      const name = (body as { name?: string } | undefined)?.name;
-
-      if (url.host === "oauth2.googleapis.com" && url.pathname === "/token") {
-        if (opts.tokenError) return Response.json({ error: opts.tokenError }, { status: 400 });
-        return Response.json({
-          access_token: "access-1",
-          ...(opts.noRefreshToken ? {} : { refresh_token: "refresh-new" }),
-        });
-      }
-      if (url.host === "oauth2.googleapis.com" && url.pathname === "/revoke") {
-        return new Response(null, { status: 200 });
-      }
-      if (url.host === "upload.example") return Response.json({ id: `file${url.pathname}` });
-      if (url.pathname === "/drive/v3/about") {
-        return Response.json({ user: { emailAddress: "owner@gmail.com" } });
-      }
-      if (url.pathname === "/upload/drive/v3/files") {
-        if (opts.quotaFull) {
-          return Response.json(
-            { error: { message: "The user's Drive storage quota has been exceeded." } },
-            { status: 403 },
-          );
-        }
-        return new Response(null, { headers: { location: `https://upload.example/${name}` } });
-      }
-      if (url.pathname === "/drive/v3/files" && method === "POST") {
-        folders += 1;
-        return Response.json({ id: `folder-${folders}`, name });
-      }
-      if (url.pathname === "/drive/v3/files") {
-        return Response.json({
-          files: (opts.oldFolders ?? []).map((id) => ({
-            id,
-            name: id,
-            createdTime: "2026-01-01T00:00:00.000Z",
-          })),
-        });
-      }
-      const fileId = url.pathname.match(/^\/drive\/v3\/files\/([^/]+)$/)?.[1];
-      if (fileId && method === "DELETE") return new Response(null, { status: 204 });
-      if (fileId) {
-        return opts.rootGone
-          ? Response.json({ error: { message: "File not found." } }, { status: 404 })
-          : Response.json({ id: fileId, trashed: false });
-      }
-      throw new Error(`Unexpected request: ${method} ${url.href}`);
-    }),
-  );
-  return calls;
-}
-
-const describeCall = (c: GoogleCall) => `${c.method} ${c.url.host}${c.url.pathname}`;
 
 run("daily backups", () => {
   let dir: string;
@@ -191,8 +129,13 @@ run("daily backups", () => {
         trigger: "MANUAL",
         status: "SUCCEEDED",
         files: { database: true, media: true, manifest: true },
+        kind: "BACKUP",
+        keyId: null,
+        checkedAt: null,
         onGoogleDrive: false,
-        driveError: null,
+        // Not locked yet, so it stays on the server and says why.
+        driveError:
+          "Kept on the server only: make the recovery key on the Backups screen. Backups are locked with it before they go to Google Drive.",
         filesDeletedAt: null,
         error: null,
         triggeredBy: { id: owner.userId, name: "owner" },
@@ -587,87 +530,93 @@ run("daily backups", () => {
   });
 
   describe("Google Drive", () => {
-    /** As if the owner had connected Drive and the app had made its folder. */
-    async function connected(folderId: string) {
-      const config = await backups.getBackupConfig();
-      await prisma.backupConfig.update({
-        where: { id: config.id },
-        data: {
-          credentialsRef: encryptSecret("refresh-1"),
-          googleDriveAccount: "owner@gmail.com",
-          googleDriveFolderId: folderId,
-        },
-      });
+    let google: FakeGoogle;
+    let ctx: CompanyContext;
+
+    beforeEach(async () => {
+      google = await startFakeGoogle({ email: "owner@gmail.com" }, 0);
+      vi.stubEnv("GOOGLE_OAUTH_BASE", google.url);
+      vi.stubEnv("GOOGLE_DRIVE_BASE", google.url);
+      const { company, roles } = await makeCompany("Extras");
+      await addToCompany(owner.userId, company.id, roles.SUPER_ADMIN);
+      ctx = await contextFor(owner.userId, company.id);
+    });
+
+    afterEach(async () => {
+      await google.close();
+    });
+
+    const folders = () => [...google.files.values()].filter((f) => f.mimeType === FOLDER);
+    const backupFolders = () => folders().filter((f) => f.appProperties.extas === "backup");
+    const inbox = async () =>
+      (
+        await prisma.notificationLog.findMany({
+          where: { userId: owner.userId },
+          orderBy: { createdAt: "asc" },
+        })
+      ).map((n) => n.subject);
+
+    /** The owner's steps on the Backups screen: the code on the phone, then the recovery key. */
+    async function connectDrive() {
+      await backups.startGoogleSignIn(owner);
+      expect((await backups.checkGoogleSignIn(owner)).status).toBe("connected");
+    }
+    async function readyToSend() {
+      await connectDrive();
+      return backups.makeRecoveryKey(ctx, {});
     }
 
-    it("connects the owner's account and forgets it on disconnect", async () => {
-      const { url, redirectUri } = backups.googleConnectUrl(owner);
-      expect(redirectUri).toBe("https://erp.example.com/api/backups/google/callback");
-      const state = new URL(url).searchParams.get("state")!;
-      const calls = fakeGoogle();
-
-      // The answer only counts for the owner who asked, while the link is fresh.
-      const someone = await makeUser("someone@extras.test", { isSuperAdmin: true });
-      await expectAppError(
-        backups.completeGoogleConnect({ userId: someone.id }, { state, code: "code-1" }),
-        "FORBIDDEN",
-      );
-      const expired = signPayload({ u: owner.userId, p: "drive-backup" }, -60);
-      await expectAppError(
-        backups.completeGoogleConnect(owner, { state: expired, code: "code-1" }),
-        "FORBIDDEN",
-      );
-      await expectAppError(
-        backups.completeGoogleConnect(owner, { state, error: "access_denied" }),
-        "VALIDATION",
-      );
-      expect(calls).toEqual([]);
-
-      // Google adds its own parameters to the return address.
-      const result = await backups.completeGoogleConnect(owner, {
-        state,
-        code: "code-1",
-        scope: "https://www.googleapis.com/auth/drive.file",
-        authuser: "0",
+    it("connects Drive with a code on the owner's phone, and forgets it on disconnect", async () => {
+      google.options.pendingPolls = 1;
+      const code = await backups.startGoogleSignIn(owner);
+      expect(code.userCode).toMatch(/^[A-Z]{4}-[A-Z]{4}$/);
+      expect(code.verificationUrl).toMatch(/^https?:\/\//);
+      expect((await backups.getBackupOverview()).config.googleDrive).toMatchObject({
+        connected: false,
+        signingIn: true,
       });
-      expect(result.googleDrive).toEqual({
+      // Until the owner says yes on the phone, the screen keeps asking.
+      expect((await backups.checkGoogleSignIn(owner)).status).toBe("waiting");
+      const done = await backups.checkGoogleSignIn(owner);
+      expect(done.status).toBe("connected");
+      expect(done.config.googleDrive).toMatchObject({
         available: true,
         connected: true,
         account: "owner@gmail.com",
-        folderId: "folder-1",
+        signingIn: false,
       });
-      expect(calls.map(describeCall)).toEqual([
-        "POST oauth2.googleapis.com/token",
-        "GET www.googleapis.com/drive/v3/about",
-        "POST www.googleapis.com/drive/v3/files",
-      ]);
-      expect(calls[0]!.body).toMatchObject({
-        code: "code-1",
-        grant_type: "authorization_code",
-        client_id: "client-123.apps.googleusercontent.com",
-        redirect_uri: "https://erp.example.com/api/backups/google/callback",
+
+      // One labelled folder for every backup, found again on the next connection.
+      const [root] = folders();
+      expect(folders()).toHaveLength(1);
+      expect(root).toMatchObject({
+        name: "Extas ERP Backups",
+        appProperties: { extas: "backups" },
       });
-      expect(calls[2]!.body).toEqual({ name: "Extas ERP Backups", mimeType: FOLDER });
+      expect(done.config.googleDrive.folderId).toBe(root!.id);
 
       // The refresh token is stored sealed, and never shown.
       const config = await backups.getBackupConfig();
       expect(config.credentialsRef).toMatch(/^v1:/);
-      expect(config.credentialsRef).not.toContain("refresh-new");
-      expect(decryptSecret(config.credentialsRef!)).toBe("refresh-new");
-      expect(JSON.stringify(await backups.getBackupOverview())).not.toContain(
-        config.credentialsRef!,
-      );
+      const refresh = decryptSecret(config.credentialsRef!);
+      expect(google.refreshTokens.has(refresh)).toBe(true);
+      expect(JSON.stringify(await backups.getBackupOverview())).not.toContain(refresh);
 
-      const before = calls.length;
-      const disconnected = await backups.disconnectGoogleDrive(owner);
-      expect(disconnected.googleDrive).toEqual({
-        available: true,
-        connected: false,
-        account: null,
-        folderId: null,
-      });
-      expect(calls.slice(before).map(describeCall)).toEqual(["POST oauth2.googleapis.com/revoke"]);
-      expect(calls.at(-1)!.url.searchParams.get("token")).toBe("refresh-new");
+      const off = await backups.disconnectGoogleDrive(owner);
+      expect(off.googleDrive).toMatchObject({ connected: false, account: null, folderId: null });
+      expect(google.refreshTokens.has(refresh)).toBe(false);
+      google.options.pendingPolls = 0;
+      await connectDrive();
+      expect(folders()).toHaveLength(1);
+      expect((await backups.getBackupConfig()).googleDriveFolderId).toBe(root!.id);
+
+      // The owner says no on the phone: nothing changes.
+      await backups.disconnectGoogleDrive(owner);
+      google.options.deny = true;
+      await backups.startGoogleSignIn(owner);
+      expect((await backups.checkGoogleSignIn(owner)).status).toBe("denied");
+      expect((await backups.getBackupConfig()).credentialsRef).toBeNull();
+
       expect(
         (
           await prisma.auditLog.findMany({
@@ -676,111 +625,361 @@ run("daily backups", () => {
           })
         ).map((a) => a.summary),
       ).toEqual([
+        "Started connecting Google Drive (a code for the owner's phone)",
         "Connected Google Drive for backups (owner@gmail.com)",
         "Disconnected Google Drive (owner@gmail.com); backups stay on the server only",
+        "Started connecting Google Drive (a code for the owner's phone)",
+        "Connected Google Drive for backups (owner@gmail.com)",
+        "Disconnected Google Drive (owner@gmail.com); backups stay on the server only",
+        "Started connecting Google Drive (a code for the owner's phone)",
       ]);
-
-      // Without a refresh token the connection would not last: refused.
-      fakeGoogle({ noRefreshToken: true });
-      await expectAppError(
-        backups.completeGoogleConnect(owner, { state, code: "code-2" }),
-        "UNAVAILABLE",
-      );
-      expect((await backups.getBackupConfig()).credentialsRef).toBeNull();
     });
 
-    it("copies each backup to a dated folder in Drive and clears old copies there", async () => {
-      await connected("root-1");
-      const calls = fakeGoogle({ oldFolders: ["old-1", "folder-1"] });
-      const done = await backUpNow();
-      expect(done).toMatchObject({ status: "SUCCEEDED", onGoogleDrive: true, driveError: null });
-      const stamp = path.basename(await folderOf(done.id));
-
-      expect(calls.map(describeCall)).toEqual([
-        "POST oauth2.googleapis.com/token",
-        "GET www.googleapis.com/drive/v3/files/root-1",
-        "POST www.googleapis.com/drive/v3/files",
-        "POST www.googleapis.com/upload/drive/v3/files",
-        "PUT upload.example/manifest.json",
-        "POST www.googleapis.com/upload/drive/v3/files",
-        "PUT upload.example/database.dump",
-        "POST www.googleapis.com/upload/drive/v3/files",
-        "PUT upload.example/media.tar.gz",
-        "GET www.googleapis.com/drive/v3/files",
-        "DELETE www.googleapis.com/drive/v3/files/old-1",
-      ]);
-      expect(calls[0]!.body).toMatchObject({
-        grant_type: "refresh_token",
-        refresh_token: "refresh-1",
+    it("shows the recovery key once, and needs the PIN to make a new one", async () => {
+      const made = await backups.makeRecoveryKey(ctx, {});
+      expect(made.recoveryKey).toMatch(/^([0-9A-Z]{4}-){13}[0-9A-Z]{4}$/);
+      expect(made.replaced).toBe(false);
+      const overview = await backups.getBackupOverview();
+      expect(overview.config.recoveryKey).toMatchObject({
+        made: true,
+        id: made.keyId,
+        savedAt: null,
       });
-      expect(calls[2]!.body).toEqual({ name: stamp, mimeType: FOLDER, parents: ["root-1"] });
-      expect(
-        calls.filter((c) => c.url.pathname === "/upload/drive/v3/files").map((c) => c.body),
-      ).toEqual([
-        { name: "manifest.json", parents: ["folder-1"] },
-        { name: "database.dump", parents: ["folder-1"] },
-        { name: "media.tar.gz", parents: ["folder-1"] },
-      ]);
-      expect(
-        calls
-          .filter((c) => c.url.host === "www.googleapis.com")
-          .every((c) => c.headers.Authorization === "Bearer access-1"),
-      ).toBe(true);
-      // Every byte of the dump went up.
-      const dump = await readFile(path.join(backupDir, stamp, "database.dump"));
-      const put = calls.find((c) => c.url.href === "https://upload.example/database.dump")!;
-      expect(put.headers["Content-Range"]).toBe(`bytes 0-${dump.length - 1}/${dump.length}`);
-      expect(sha256(Buffer.from(put.body as Uint8Array))).toBe(sha256(dump));
-      const listing = calls.find(
-        (c) => c.method === "GET" && c.url.pathname === "/drive/v3/files",
-      )!;
-      expect(listing.url.searchParams.get("q")).toContain("'root-1' in parents");
+      expect(JSON.stringify(overview)).not.toContain(made.recoveryKey);
+      expect(JSON.stringify(await backups.getBackupConfig())).not.toContain(made.recoveryKey);
 
-      const saved = await prisma.backupRun.findUniqueOrThrow({ where: { id: done.id } });
-      expect(saved.driveFileId).toBe("folder-1");
+      // The owner proves it is written down with its last group (typed any way).
+      await expectAppError(backups.confirmRecoveryKey(owner, { lastGroup: "ZZZZ" }), "VALIDATION");
+      const last = made.recoveryKey.split("-").at(-1)!;
+      const confirmed = await backups.confirmRecoveryKey(owner, { lastGroup: last.toLowerCase() });
+      expect(confirmed.recoveryKey.savedAt).not.toBeNull();
+
+      // A new key (old backups then open only with the old one) needs the PIN.
+      const noPin = await expectAppError(backups.makeRecoveryKey(ctx, {}), "VALIDATION");
+      expect(noPin.details).toHaveProperty("pinNotSet");
+      await setPin(ctx, { pin: "2468" });
+      await expectAppError(backups.makeRecoveryKey(ctx, {}), "VALIDATION");
+      await expectAppError(backups.makeRecoveryKey(ctx, { pin: "1111" }), "VALIDATION");
+      const second = await backups.makeRecoveryKey(ctx, { pin: "2468" });
+      expect(second).toMatchObject({ replaced: true });
+      expect(second.keyId).not.toBe(made.keyId);
+      expect((await backups.getBackupOverview()).config.recoveryKey.savedAt).toBeNull();
+      expect(
+        (await prisma.auditLog.findMany({ where: { entityType: "BackupConfig" } })).map(
+          (a) => a.summary,
+        ),
+      ).toEqual(
+        expect.arrayContaining([
+          `Made the backup recovery key (${made.keyId})`,
+          `Confirmed the backup recovery key (${made.keyId}) is written down`,
+          `Made a new backup recovery key (${second.keyId}); backups before it open only with the old key (${made.keyId})`,
+        ]),
+      );
     });
 
-    it("makes the backup folder again when it was deleted from Drive", async () => {
-      await connected("root-1");
-      const calls = fakeGoogle({ rootGone: true });
+    it("locks each backup, sends it to Drive, checks Google's copy, then deletes the server's", async () => {
+      const made = await readyToSend();
       const done = await backUpNow();
-      expect(done.onGoogleDrive).toBe(true);
-      const stamp = path.basename(await folderOf(done.id));
-      expect(
-        calls
-          .filter((c) => c.method === "POST" && c.url.pathname === "/drive/v3/files")
-          .map((c) => c.body),
-      ).toEqual([
-        { name: "Extas ERP Backups", mimeType: FOLDER },
-        { name: stamp, mimeType: FOLDER, parents: ["folder-1"] },
+      expect(done).toMatchObject({
+        status: "SUCCEEDED",
+        kind: "BACKUP",
+        keyId: made.keyId,
+        onGoogleDrive: true,
+        driveError: null,
+        files: { database: false, media: false, manifest: false },
+      });
+      expect(done.checkedAt).not.toBeNull();
+      expect(done.filesDeletedAt).not.toBeNull();
+      // Nothing of it is left on the server.
+      expect((await readdir(backupDir)).filter((n) => !n.startsWith("."))).toEqual([]);
+
+      const [folder] = backupFolders();
+      expect(folder).toMatchObject({
+        name: done.name,
+        appProperties: { extas: "backup", kind: "BACKUP", checked: "yes", keyId: made.keyId },
+      });
+      const inside = [...google.files.values()].filter((f) => f.parents.includes(folder!.id));
+      expect(inside.map((f) => f.name).sort()).toEqual([
+        "database.dump.locked",
+        "manifest.json",
+        "media.tar.gz.locked",
+        "server.json.locked",
       ]);
-      expect((await backups.getBackupOverview()).config.googleDrive.folderId).toBe("folder-1");
+      // Google holds only locked bytes: no company name, no dump header.
+      for (const file of inside.filter((f) => f.name.endsWith(".locked"))) {
+        expect(file.data!.subarray(0, 8).toString()).toBe("EXTASBK1");
+        expect(file.data!.includes("PGDMP")).toBe(false);
+        expect(file.data!.includes("extras.png")).toBe(false);
+      }
+
+      // The recovery key opens it again, every file checked.
+      const config = await backups.getBackupConfig();
+      const token = (await driveToken(config))!;
+      const opened = await fetchBackup(
+        token,
+        { id: folder!.id, name: folder!.name },
+        path.join(dir, "opened"),
+        currentKey(config)!,
+      );
+      expect((await readFile(opened.database)).subarray(0, 5).toString()).toBe("PGDMP");
+      expect(opened.server).toMatchObject({
+        encryptionKey: "test-encryption-key-0123456789",
+        ownerEmail: "owner@extras.test",
+        appUrl: "https://erp.example.com",
+      });
+      const unpacked = path.join(dir, "unpacked");
+      await mkdir(unpacked);
+      await exec("tar", ["-xzf", opened.media!, "-C", unpacked]);
+      expect(await readFile(path.join(unpacked, "logos", "extras.png"), "utf8")).toBe(
+        "not really a png",
+      );
+
+      // Another key does not open it.
+      const other = { key: Buffer.alloc(32, 7), id: "0000" };
+      await expect(
+        fetchBackup(token, { id: folder!.id, name: folder!.name }, path.join(dir, "other"), other),
+      ).rejects.toThrow(/another recovery key/);
+
+      expect((await listDriveBackups()).items).toEqual([
+        expect.objectContaining({
+          name: done.name,
+          kind: "BACKUP",
+          checked: true,
+          keyId: made.keyId,
+        }),
+      ]);
     });
 
-    it("keeps the backup on the server when the Drive copy fails, and says why", async () => {
-      await connected("root-1");
-      fakeGoogle({ tokenError: "invalid_grant" });
-      const revoked = await backUpNow();
-      expect(revoked).toMatchObject({
+    it("keeps a backup on the server when Drive refuses it, tells the owner, and sends it again", async () => {
+      await readyToSend();
+      google.options.quotaFull = true;
+      const refused = await backUpNow();
+      expect(refused).toMatchObject({
         status: "SUCCEEDED",
         onGoogleDrive: false,
-        driveError:
-          "Google Drive access was revoked or expired: connect Google Drive again. The backup is saved on the server.",
+        checkedAt: null,
         files: { database: true, media: true, manifest: true },
       });
+      expect(refused.driveError).toMatch(/^Saved on the server, but not in Google Drive: .*quota/);
+      // No half-sent folder is left in Drive.
+      expect(backupFolders()).toEqual([]);
+      expect(await inbox()).toEqual(["Backup not in Google Drive"]);
 
-      fakeGoogle({ quotaFull: true });
-      const full = await backUpNow();
-      expect(full.driveError).toBe(
-        "Saved on the server, but not on Google Drive: Uploading manifest.json failed: The user's Drive storage quota has been exceeded. (HTTP 403)",
+      // Within the hour it goes again, by itself.
+      google.options.quotaFull = false;
+      expect(await sendUnsent(Date.now())).toBe(0);
+      expect(await sendUnsent(Date.now() + 2 * 3_600_000)).toBe(1);
+      const sent = await backups.getBackupRun(refused.id);
+      expect(sent).toMatchObject({ onGoogleDrive: true, driveError: null });
+      expect(sent.checkedAt).not.toBeNull();
+      expect(backupFolders()).toHaveLength(1);
+    });
+
+    it("throws away a Drive copy that arrived damaged, and keeps the server's", async () => {
+      await readyToSend();
+      google.options.damageUploads = true;
+      const damaged = await backUpNow();
+      expect(damaged.onGoogleDrive).toBe(false);
+      expect(damaged.driveError).toMatch(/does not match the server's/);
+      expect(damaged.files.database).toBe(true);
+      expect(backupFolders()).toEqual([]);
+    });
+
+    it("keeps the chosen number of backups in Drive", async () => {
+      await readyToSend();
+      await backups.updateBackupConfig(owner, { keepCount: 2 });
+      const names: string[] = [];
+      for (let i = 0; i < 3; i++) names.push((await backUpNow()).name!);
+      expect(new Set(names).size).toBe(3);
+      const kept = (await listDriveBackups()).items.map((b) => b.name);
+      expect(kept).toHaveLength(2);
+      expect(kept).not.toContain(names[0]);
+    });
+
+    it("restores the newest backup into a temporary database every week, checks it and drops it", async () => {
+      await readyToSend();
+      await makeCompany("Extras Kids");
+      const backup = await backUpNow();
+
+      const tested = await runTestRestore({ trigger: "MANUAL", actor: owner, wait: true });
+      expect(tested).toMatchObject({
+        kind: "TEST_RESTORE",
+        status: "SUCCEEDED",
+        sourceName: backup.name,
+      });
+      const report = tested.report as unknown as TestRestoreReport;
+      expect(report).toMatchObject({
+        backup: backup.name,
+        ledgerBalanced: true,
+        mediaFiles: 1,
+        counts: { Company: { backup: 2, now: 2 }, User: { backup: 1, now: 1 } },
+      });
+      expect(report.tables).toBeGreaterThan(50);
+      expect(report.newestMigration).toMatch(/^\d{14}_/);
+      // The temporary database is gone; the live one was never touched.
+      const left = await prisma.$queryRaw<Array<{ datname: string }>>`
+        SELECT datname FROM pg_database WHERE datname LIKE ${`${TEST_DB_PREFIX}%`}`;
+      expect(left).toEqual([]);
+      expect(await prisma.company.count()).toBe(2);
+      expect(await inbox()).toContain("Test restore worked");
+
+      // The weekly clock: once per scheduled time.
+      await prisma.backupRun.deleteMany({ where: { kind: "TEST_RESTORE" } });
+      const weekly = await testRestoreTick();
+      expect(weekly).toMatchObject({
+        kind: "TEST_RESTORE",
+        trigger: "SCHEDULED",
+        status: "SUCCEEDED",
+      });
+      expect(await testRestoreTick()).toBeNull();
+
+      // A backup the current key cannot open: the test fails and the owner hears of it.
+      await setPin(ctx, { pin: "2468" });
+      await backups.makeRecoveryKey(ctx, { pin: "2468" });
+      const failed = await runTestRestore({ trigger: "MANUAL", actor: owner, wait: true });
+      expect(failed.status).toBe("FAILED");
+      expect(failed.error).toMatch(/another recovery key/);
+      expect(await inbox()).toContain("Test restore failed");
+    });
+
+    it("restores from the screen with the PIN and RESTORE, handing the opened backup to the server", async () => {
+      await readyToSend();
+      await setPin(ctx, { pin: "2468" });
+      const backup = await backUpNow();
+      const [folder] = backupFolders();
+      const ask = (input: Record<string, unknown>) =>
+        requestRestore(ctx, { folderId: folder!.id, ...input });
+
+      // The server's helper (deploy.sh installs it) must be there.
+      await expectAppError(ask({ pin: "2468", confirm: "RESTORE" }), "UNAVAILABLE");
+      await writeFile(path.join(backupDir, ".restore-helper"), "");
+      await expectAppError(ask({ pin: "2468", confirm: "restore" }), "VALIDATION");
+      await expectAppError(ask({ confirm: "RESTORE" }), "VALIDATION");
+      await expectAppError(ask({ pin: "1111", confirm: "RESTORE" }), "VALIDATION");
+      await expectAppError(
+        requestRestore(ctx, { folderId: "nope", pin: "2468", confirm: "RESTORE" }),
+        "NOT_FOUND",
       );
 
-      // The server's ENCRYPTION_KEY changed: the stored connection cannot be opened.
-      vi.stubEnv("ENCRYPTION_KEY", "a-different-key-0123456789");
-      const rekeyed = await backUpNow();
-      expect(rekeyed.status).toBe("SUCCEEDED");
-      expect(rekeyed.driveError).toMatch(/could not be unlocked/);
-      expect(await readdir(backupDir)).toHaveLength(3);
+      expect(await ask({ pin: "2468", confirm: "RESTORE" })).toMatchObject({ name: backup.name });
+      const opened = path.join(backupDir, "restores", backup.name!);
+      expect((await readdir(opened)).sort()).toEqual([
+        "database.dump",
+        "manifest.json",
+        "media.tar.gz",
+      ]);
+      const manifest = JSON.parse(await readFile(path.join(opened, "manifest.json"), "utf8")) as {
+        format: number;
+        files: Array<{ name: string; sha256: string }>;
+      };
+      expect(manifest.format).toBe(1);
+      for (const file of manifest.files) {
+        expect(sha256(await readFile(path.join(opened, file.name)))).toBe(file.sha256);
+      }
+      const request = JSON.parse(
+        await readFile(path.join(backupDir, "restore-request.json"), "utf8"),
+      ) as {
+        folder: string;
+        requestedAt: string;
+        signature: string;
+      };
+      expect(request.folder).toBe(`restores/${backup.name}`);
+      expect(request.signature).toBe(
+        createHmac("sha256", "test-encryption-key-0123456789")
+          .update(`${request.folder}|${request.requestedAt}`)
+          .digest("hex"),
+      );
+      expect((await restoreStatus()).waiting).toMatchObject({ name: backup.name });
+      await expectAppError(ask({ pin: "2468", confirm: "RESTORE" }), "CONFLICT");
+
+      // The server restored it (deploy/restore-request.sh): the ERP records it and tells the owner.
+      await rm(path.join(backupDir, "restore-request.json"));
+      await writeFile(
+        path.join(backupDir, "restore-result.json"),
+        JSON.stringify({ ok: true, name: backup.name, safetyCopy: "before-restore-x", checks: [] }),
+      );
+      expect(await recordRestoreResult()).toBe(true);
+      expect(await recordRestoreResult()).toBe(false);
+      const runs = await prisma.backupRun.findMany({ where: { kind: "RESTORE" } });
+      expect(runs.map((r) => r.status)).toEqual(["SUCCEEDED", "SUCCEEDED"]);
+      const recorded = runs.find(
+        (r) => (r.report as { safetyCopy?: string } | null)?.safetyCopy === "before-restore-x",
+      );
+      expect(recorded).toMatchObject({ sourceName: backup.name });
+      expect(await inbox()).toContain("Restore finished");
+    });
+
+    it("sends deploy.sh's safety copies to Drive, locked, and leaves the server's copy alone", async () => {
+      await readyToSend();
+      const copies = path.join(dir, "safety-copies");
+      const copy = path.join(copies, "before-update-2026-10-16_010000");
+      await mkdir(copy, { recursive: true });
+      await writeFile(path.join(copy, "database.dump"), "PGDMP the database before the update");
+      vi.stubEnv("SAFETY_COPY_DIR", copies);
+      // Still being written: wait.
+      expect(await sendSafetyCopies(Date.now())).toBe(0);
+      expect(await sendSafetyCopies(Date.now() + 5 * 60_000)).toBe(1);
+      expect(await sendSafetyCopies(Date.now() + 10 * 60_000)).toBe(0);
+      expect(await readFile(path.join(copy, "database.dump"), "utf8")).toContain("PGDMP");
+      expect((await listDriveBackups()).items).toEqual([
+        expect.objectContaining({
+          name: "before-update-2026-10-16_010000",
+          kind: "SAFETY_COPY",
+          checked: true,
+        }),
+      ]);
+      // The weekly test restore never takes a safety copy for a backup.
+      expect((await runTestRestore({ trigger: "MANUAL", actor: owner, wait: true })).error).toMatch(
+        /no checked backup/,
+      );
+    });
+
+    it("lets a new server sign in, list the backups and open the newest (drive-restore.ts)", async () => {
+      const made = await readyToSend();
+      const backup = await backUpNow();
+      const keyFile = path.join(dir, "recovery-key");
+      const env = {
+        ...process.env,
+        GOOGLE_CLIENT_ID: "client-123.apps.googleusercontent.com",
+        GOOGLE_CLIENT_SECRET: "client-secret",
+        GOOGLE_OAUTH_BASE: google.url,
+        GOOGLE_DRIVE_BASE: google.url,
+        RECOVERY_KEY_FILE: keyFile,
+        OUT_DIR: path.join(dir, "new-server"),
+        SERVER_FILE: path.join(dir, "server.json"),
+        PICK: "newest",
+      };
+      const script = ["tsx", "scripts/drive-restore.ts"];
+
+      await writeFile(keyFile, `${made.recoveryKey.toLowerCase().replace(/-/g, " ")}\n`);
+      const { stdout } = await exec("npx", script, { env, timeout: 60_000 });
+      expect(stdout).toMatch(/Enter this code: +[A-Z]{4}-[A-Z]{4}/);
+      expect(stdout).toContain(`Signed in to Google as owner@gmail.com`);
+      expect(stdout).toContain(backup.name!);
+      // The key file is gone once read; the backup is ready for restore.sh.
+      await expect(readFile(keyFile)).rejects.toThrow();
+      const opened = path.join(dir, "new-server", backup.name!);
+      expect((await readdir(opened)).sort()).toEqual([
+        "database.dump",
+        "manifest.json",
+        "media.tar.gz",
+      ]);
+      expect(JSON.parse(await readFile(path.join(dir, "server.json"), "utf8"))).toMatchObject({
+        name: backup.name,
+        encryptionKey: "test-encryption-key-0123456789",
+        ownerEmail: "owner@extras.test",
+      });
+      expect(await restoredCompanies(path.join(opened, "database.dump"))).toEqual(["Extras"]);
+
+      // A wrong key opens nothing.
+      await writeFile(keyFile, newRecoveryKey());
+      const failure = await exec("npx", script, { env, timeout: 60_000 }).then(
+        () => null,
+        (e: { stderr: string }) => e,
+      );
+      expect(failure?.stderr).toMatch(
+        /none of the 1 backup\(s\) in Drive is checked and locked with this recovery key/,
+      );
     });
   });
 });

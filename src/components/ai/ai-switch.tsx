@@ -82,12 +82,12 @@ export function AiSwitch({ status: s }: { status: AiStatus }) {
         )}
       </div>
 
-      {s.enabled && !s.key && (
+      {s.enabled && !s.providers.some((p) => p.key) && (
         <FormAlert tone="note">
-          AI has no Claude key yet, so it cannot work.{" "}
+          AI has no key yet, so it cannot work.{" "}
           {s.can.manage ? (
             <Link href="/ai/settings" className="underline underline-offset-4">
-              Add the key in Settings
+              Add a Claude, OpenAI or Gemini key in Settings
             </Link>
           ) : (
             "The owner adds it in Settings."

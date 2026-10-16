@@ -129,10 +129,12 @@ function Lines({
             {l.note && <span className="text-[0.8125rem] text-muted-foreground">{l.note}</span>}
           </div>
           <div className="text-sm tabular-nums sm:text-right">
-            <div className="font-medium">{money(l.cost, currency)}</div>
+            <div className="font-medium">
+              {l.costKnown ? money(l.cost, currency) : "Price unknown"}
+            </div>
             <div className="text-[0.75rem] text-muted-foreground">
-              ${l.costUsd} · {l.tokens.input.toLocaleString("en")} in /{" "}
-              {l.tokens.output.toLocaleString("en")} out
+              {l.costKnown ? `$${l.costUsd}` : l.provider} · {l.tokens.input.toLocaleString("en")}{" "}
+              in / {l.tokens.output.toLocaleString("en")} out
             </div>
           </div>
         </li>
@@ -312,6 +314,33 @@ export function CostsScreen({ costs: c }: { costs: AiCosts }) {
           <p className="mt-2 text-sm text-muted-foreground">Nothing in this period.</p>
         ) : (
           <Lines lines={c.top} currency={cur} timeZone={c.timeZone} />
+        )}
+      </Panel>
+
+      <Panel title="Bill per provider" id="ai-cost-provider-heading">
+        <ul className="mt-3 divide-y">
+          {c.by.provider.map((p) => (
+            <li
+              key={p.key}
+              className="flex flex-wrap items-baseline justify-between gap-2 py-2 text-sm"
+            >
+              <span className="font-medium">{p.label}</span>
+              <span className="text-right tabular-nums">
+                {money(p.cost, cur)}
+                <span className="block text-[0.75rem] text-muted-foreground">
+                  {p.calls} {p.calls === 1 ? "call" : "calls"}
+                  {p.priceUnknown > 0 ? `, ${p.priceUnknown} with the price unknown` : ""}
+                  {p.limit ? ` · limit ${money(p.limit, cur)} a month` : ""}
+                </span>
+              </span>
+            </li>
+          ))}
+        </ul>
+        {c.totals.priceUnknown > 0 && (
+          <p className="mt-2 text-[0.8125rem] text-muted-foreground">
+            Calls on a model with the price unknown are not in these totals: set its price on AI
+            Center &gt; Models.
+          </p>
         )}
       </Panel>
 

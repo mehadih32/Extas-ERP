@@ -85,7 +85,10 @@ demo_compose() {
 prepare_folders() {
   mkdir -p "$DATA_DIR"/{postgres,uploads,backups,safety-copies,caddy/data,caddy/config,caddy/sites}
   chown "$APP_UID:$APP_UID" "$DATA_DIR/uploads" "$DATA_DIR/backups"
-  chmod 700 "$DATA_DIR/safety-copies"
+  # Root writes the safety copies; the app only reads them, to lock them and send
+  # them to Google Drive.
+  chown root:"$APP_UID" "$DATA_DIR/safety-copies"
+  chmod 750 "$DATA_DIR/safety-copies"
 }
 
 db_running() {
@@ -117,7 +120,55 @@ safety_copy() {
     rm -rf "$dir"
     return 1
   fi
+  # Readable by the app (to send to Google Drive), by nobody else.
+  chown -R root:"$APP_UID" "$dir" && chmod 750 "$dir" && chmod 640 "$dir/database.dump"
   printf '%s' "$dir"
+}
+
+# Safety copies stay on the server for 24 hours; Google Drive keeps them after that.
+prune_safety_copies() {
+  find "$DATA_DIR/safety-copies" -mindepth 1 -maxdepth 1 -type d -name 'before-*' -mmin +1440 \
+    -exec rm -rf {} + 2>/dev/null || true
+}
+
+# The weekly test restore puts the newest backup into a temporary database of its own,
+# so the app's database user may make (and drop) databases. It never touches another.
+allow_test_restores() {
+  compose exec -T db psql -q -U postgres -d "$POSTGRES_DB" \
+    -c "ALTER ROLE \"$APP_DB_USER\" CREATEDB" >/dev/null 2>&1
+}
+
+# The server's helpers for backups (README.md, "Backups"): systemd starts
+# restore-request.sh when the ERP leaves a restore asked for on the Backups screen,
+# and cron clears safety copies older than 24 hours every hour. The mark file tells
+# the ERP that Restore on the screen works here.
+install_backup_helpers() {
+  command -v systemctl >/dev/null || return 1
+  cat >/etc/systemd/system/extras-erp-restore.path <<EOF
+[Unit]
+Description=Extas ERP: a restore asked for on the Backups screen
+
+[Path]
+PathExists=$DATA_DIR/backups/restore-request.json
+
+[Install]
+WantedBy=multi-user.target
+EOF
+  cat >/etc/systemd/system/extras-erp-restore.service <<EOF
+[Unit]
+Description=Extas ERP: restore the backup asked for on the Backups screen
+
+[Service]
+Type=oneshot
+ExecStart=$DEPLOY_DIR/restore-request.sh
+EOF
+  cat >/etc/cron.d/extras-erp-safety-copies <<EOF
+# Extas ERP (deploy.sh): safety copies stay on the server for 24 hours; Google Drive keeps them.
+17 * * * * root find $DATA_DIR/safety-copies -mindepth 1 -maxdepth 1 -type d -name 'before-*' -mmin +1440 -exec rm -rf {} + 2>/dev/null
+EOF
+  systemctl daemon-reload || return 1
+  systemctl enable --now extras-erp-restore.path >/dev/null 2>&1 || return 1
+  install -o "$APP_UID" -g "$APP_UID" -m 644 /dev/null "$DATA_DIR/backups/.restore-helper"
 }
 
 # --- The demo site (README.md, "The demo site") ---------------------------------

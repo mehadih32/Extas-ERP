@@ -124,11 +124,13 @@ async function defaultBranch(gh: GitHub): Promise<string> {
   return (await call<Repo>(gh, "GET", repoPath(gh))).data.default_branch;
 }
 
-/** Starts the Full check on GitHub's computers. */
+/**
+ * Starts the Full check on GitHub's computers, from the main branch: the ERP
+ * takes only that workflow's proof (oidc.ts), whatever the default branch is.
+ */
 export async function dispatchFullCheck(gh: GitHub, inputs: Record<string, string>) {
-  const ref = await defaultBranch(gh);
   await call(gh, "POST", `${repoPath(gh)}/actions/workflows/${FULL_CHECK_WORKFLOW}/dispatches`, {
-    ref,
+    ref: MAIN,
     inputs,
   });
 }

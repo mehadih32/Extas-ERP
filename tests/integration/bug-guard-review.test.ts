@@ -23,6 +23,7 @@ vi.mock("next/cache", () => ({ revalidatePath: () => undefined, revalidateTag: (
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
 
 import { AppError } from "@/lib/errors";
+import { saveGitHub } from "@/modules/ai/full-check/full-check.service";
 import { prisma } from "@/lib/prisma";
 import { readOnly } from "@/lib/read-only";
 import { slowQueriesSince } from "@/lib/slow-queries";
@@ -30,7 +31,8 @@ import { APP_CHECKS } from "@/modules/bug-guard/checks/app";
 import { READ_ONLY_WHY } from "@/modules/bug-guard/runner";
 import type { CheckContext } from "@/modules/bug-guard/types";
 
-import { makeCompany, resetDb } from "./helpers";
+import { startFakeGitHub } from "../fixtures/fake-github";
+import { addToCompany, contextFor, makeCompany, makeUser, resetDb } from "./helpers";
 
 const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
 
@@ -124,6 +126,29 @@ run("Bug Guard, after the review", () => {
       );
       expect(JSON.stringify(finding)).not.toMatch(/Their private|at theirs|ERR-THEIRS/);
       expect(finding!.code?.stack).toEqual(["at ours"]);
+    });
+  });
+
+  describe("the Full check (S12)", () => {
+    it("is started on the main branch, the only one whose proof the ERP takes", async () => {
+      const gh = await startFakeGitHub("extas/erp");
+      try {
+        vi.stubEnv("GITHUB_API_URL", gh.url);
+        vi.stubEnv("GITHUB_OIDC_ISSUER", gh.issuer);
+        const { company, roles } = await makeCompany("Extas");
+        const user = await makeUser("owner@extas.test", { isSuperAdmin: true });
+        await addToCompany(user.id, company.id, roles.SUPER_ADMIN);
+        const owner = await contextFor(user.id, company.id);
+        await saveGitHub(owner, { repo: "extas/erp", token: gh.token });
+        // Someone made another branch the default on GitHub.
+        gh.state.defaultBranch = "develop";
+        const { startFullCheck } = await import("@/modules/ai/full-check/full-check.service");
+        await startFullCheck(owner);
+        const dispatch = gh.calls.find((c) => c.path.endsWith("/full-check.yml/dispatches"))!;
+        expect(dispatch.body).toMatchObject({ ref: "main" });
+      } finally {
+        await gh.close();
+      }
     });
   });
 });

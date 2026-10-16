@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { copyFile, mkdir, readdir, readFile, rm, stat } from "node:fs/promises";
 import path from "node:path";
 
@@ -7,8 +8,8 @@ import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import {
   alertOwner,
+  backupLock,
   backupRoot,
-  currentKey,
   driveRoot,
   driveToken,
   getBackupConfig,
@@ -22,6 +23,7 @@ import {
   sealFolder,
 } from "@/modules/backups/backup.service";
 import { type DriveBackup, listBackupFolders } from "@/modules/backups/drive-fetch";
+import { findRootFiles, putRootFile } from "@/modules/backups/drive-root";
 import * as drive from "@/modules/backups/google-drive";
 
 export { type DriveBackup, type FetchedBackup, fetchBackup } from "@/modules/backups/drive-fetch";
@@ -29,11 +31,13 @@ export { type DriveBackup, type FetchedBackup, fetchBackup } from "@/modules/bac
 /*
  * Google Drive's copies. Each backup goes to its own folder inside "Extas ERP
  * Backups"; every file Google keeps is checked against the server's (its size
- * and MD5), and only then is the folder labelled "checked" and the server's
- * copy deleted. A backup that did not reach Drive stays on the server and is
- * sent again within the hour. Update safety copies (deploy.sh, kept on the
- * server for 24 hours) are locked and sent too. Drive keeps the newest
- * `keepCount` backups and the newest 10 safety copies.
+ * and MD5), and only then is the folder labelled "checked". The server keeps
+ * its own copy too, of the newest `serverKeep` backups (G2); Drive keeps each
+ * backup for `driveKeepDays` days (or for ever), and never deletes the newest.
+ * A backup that did not reach Drive stays on the server and is sent again
+ * within the hour. Update safety copies (deploy.sh, kept on the server for 24
+ * hours) are locked and sent too; Drive keeps the newest 10 of them. The keys
+ * file sits beside the backups in Drive, so the recovery key alone opens them.
  */
 
 /** Safety copies kept in Drive. */
@@ -54,12 +58,13 @@ export async function sendToDrive(runId: string): Promise<BackupRun> {
   let token: string | null = null;
   try {
     if (!folder) throw new Error("the backup's files are not on the server any more");
-    if (!run.keyId) throw new Error("the backup is not locked: make the recovery key first");
+    if (!run.keyId) throw new Error("the backup is not locked: set your recovery key first");
     token = await driveToken(config);
     if (!token) throw new Error("Google Drive is not connected");
     const manifestPath = path.join(folder, "manifest.json");
     const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
       createdAt: string;
+      format?: number;
       files: ManifestFile[];
     };
     const rootId = await driveRoot(config, token);
@@ -91,14 +96,19 @@ export async function sendToDrive(runId: string): Promise<BackupRun> {
       checked: "yes",
       bytes: String(bytes),
       keyId: run.keyId,
+      format: String(manifest.format ?? 2),
     });
     const checked = await prisma.backupRun.update({
       where: { id: run.id },
       data: { driveFileId: made, checkedAt: new Date(), driveError: null },
     });
-    // Checked: the server's copy goes (a safety copy's original is deploy.sh's to delete).
-    await rm(folder, { recursive: true, force: true });
     lastTry.delete(run.id);
+    await ensureKeysFile(config, token, rootId).catch((error: unknown) =>
+      console.error("[backups] the keys file is not in Drive", reasonFor(error)),
+    );
+    if (run.kind !== "SAFETY_COPY") return checked;
+    // A safety copy's locked copy goes once Google's is checked (deploy.sh deletes its original).
+    await rm(folder, { recursive: true, force: true });
     return prisma.backupRun.update({
       where: { id: checked.id },
       data: { filesDeletedAt: new Date() },
@@ -120,7 +130,7 @@ export async function sendToDrive(runId: string): Promise<BackupRun> {
 /** Sends again, once an hour, the backups that did not reach Drive. */
 export async function sendUnsent(now = Date.now()): Promise<number> {
   const config = await getBackupConfig();
-  if (!config.credentialsRef || !config.recoveryKeyRef) return 0;
+  if (!config.credentialsRef) return 0;
   const waiting = await prisma.backupRun.findMany({
     where: {
       kind: { in: ["BACKUP", "SAFETY_COPY"] },
@@ -147,7 +157,7 @@ export async function sendSafetyCopies(now = Date.now()): Promise<number> {
   const source = safetyCopyRoot();
   if (!source) return 0;
   const config = await getBackupConfig();
-  const key = currentKey(config);
+  const key = backupLock(config);
   if (!key || !config.credentialsRef) return 0;
   let sent = 0;
   for (const entry of await readdir(source, { withFileTypes: true }).catch(() => [])) {
@@ -228,11 +238,30 @@ export async function listDriveBackups(): Promise<{ connected: boolean; items: D
 }
 
 /**
- * Drive keeps the newest `keepCount` checked backups and the newest 10 safety
- * copies; a copy never checked goes after a day. On the server, backups that
- * never reached Drive are kept for the retention period (the newest stays).
+ * The keys file (public key, private key locked with the recovery key) beside
+ * the backups in Drive: put there, or replaced, when it is not the current one.
  */
-export async function pruneBackups(config: BackupConfig) {
+export async function ensureKeysFile(config: BackupConfig, token: string, rootId: string) {
+  if (!config.lockedKeyFile || !config.keyPairId) return false;
+  const sha = createHash("sha256").update(config.lockedKeyFile).digest("hex");
+  const there = await findRootFiles(token, rootId, "keys");
+  if (there.length === 1 && there[0]!.appProperties?.sha256 === sha) return false;
+  await putRootFile(token, rootId, "keys", Buffer.from(config.lockedKeyFile), {
+    pairId: config.keyPairId,
+    sha256: sha,
+  });
+  return true;
+}
+
+/**
+ * The owner's keeping rules (G2). On the server: the newest `serverKeep`
+ * backups (a backup is kept until a newer one is made, even when it is not in
+ * Drive yet); a safety copy's locked copy is kept for the retention period
+ * while it waits for Drive. In Drive: each checked backup for `driveKeepDays`
+ * days (null: for ever), never the newest; the newest 10 safety copies; a copy
+ * never checked goes after a day.
+ */
+export async function pruneBackups(config: BackupConfig, now = new Date()) {
   let removed = 0;
   const token = await driveToken(config).catch(() => null);
   if (token) {
@@ -240,13 +269,16 @@ export async function pruneBackups(config: BackupConfig) {
       id: f.folderId,
       ...f,
     }));
-    const dayAgo = new Date(Date.now() - 86_400_000).toISOString();
+    const dayAgo = new Date(now.getTime() - 86_400_000).toISOString();
     const checked = folders.filter((f) => f.checked);
+    const backups = checked.filter((f) => f.kind === "BACKUP");
+    const cutoff =
+      config.driveKeepDays === null
+        ? null
+        : new Date(now.getTime() - config.driveKeepDays * 86_400_000).toISOString();
     const keep = new Set([
-      ...checked
-        .filter((f) => f.kind === "BACKUP")
-        .slice(0, config.keepCount)
-        .map((f) => f.id),
+      ...backups.slice(0, 1).map((f) => f.id),
+      ...backups.filter((f) => cutoff === null || f.createdAt >= cutoff).map((f) => f.id),
       ...checked
         .filter((f) => f.kind === "SAFETY_COPY")
         .slice(0, SAFETY_COPIES_KEPT)
@@ -259,25 +291,29 @@ export async function pruneBackups(config: BackupConfig) {
     }
   }
 
-  const cutoff = new Date(Date.now() - config.retentionDays * 86_400_000);
-  const newest = await prisma.backupRun.findFirst({
+  // The server: the newest `serverKeep` backups.
+  const onServer = await prisma.backupRun.findMany({
     where: { kind: "BACKUP", status: "SUCCEEDED", filesDeletedAt: null },
-    orderBy: { startedAt: "desc" },
-    select: { id: true },
+    orderBy: [{ startedAt: "desc" }, { id: "desc" }],
   });
-  const old = await prisma.backupRun.findMany({
-    where: {
-      kind: { in: ["BACKUP", "SAFETY_COPY"] },
-      startedAt: { lt: cutoff },
-      filesDeletedAt: null,
-      status: { in: ["SUCCEEDED", "FAILED"] },
-      ...(newest ? { id: { not: newest.id } } : {}),
-    },
-  });
+  const safetyCutoff = new Date(now.getTime() - config.retentionDays * 86_400_000);
+  const old = [
+    ...onServer.slice(Math.max(1, config.serverKeep)),
+    ...(await prisma.backupRun.findMany({
+      where: {
+        OR: [
+          { kind: "SAFETY_COPY", startedAt: { lt: safetyCutoff } },
+          { kind: { in: ["BACKUP", "SAFETY_COPY"] }, status: "FAILED" },
+        ],
+        filesDeletedAt: null,
+        status: { in: ["SUCCEEDED", "FAILED"] },
+      },
+    })),
+  ];
   for (const run of old) {
     const folder = runFolder(run);
     if (folder) await rm(folder, { recursive: true, force: true });
-    await prisma.backupRun.update({ where: { id: run.id }, data: { filesDeletedAt: new Date() } });
+    await prisma.backupRun.update({ where: { id: run.id }, data: { filesDeletedAt: now } });
     removed += 1;
   }
   return removed;

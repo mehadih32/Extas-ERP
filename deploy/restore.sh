@@ -12,6 +12,8 @@
 #   --check        open every screen afterwards, as after an update (the full check)
 #   --result FILE  write how it went, as JSON (restore-request.sh, bootstrap.sh)
 #   --status FILE  write each step as it starts, as JSON (the Backups screen shows it)
+#   --counts FILE  write every table's row count just after the restore, as JSON
+#                  (bootstrap.sh compares them with the backup's manifest)
 # shellcheck source=deploy/lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
@@ -19,6 +21,7 @@ confirmed=0
 check=0
 result_file=""
 status_file=""
+counts_file=""
 folder_arg=""
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -30,6 +33,10 @@ while [ $# -gt 0 ]; do
       ;;
     --status)
       status_file="${2:-}"
+      shift
+      ;;
+    --counts)
+      counts_file="${2:-}"
       shift
       ;;
     -*) die "unknown option $1" ;;
@@ -143,6 +150,22 @@ if ! restore_database "$inside/database.dump"; then
   compose up -d
   wait_healthy app || true
   fail "the database could not be restored, so it was left as it was."
+fi
+
+if [ -n "$counts_file" ]; then
+  # Counted before the app starts, so nothing has been added yet (the same count as
+  # src/modules/backups/contents.ts makes for the manifest).
+  step "Counting the records in every table"
+  compose exec -T db psql -X -q -At -U postgres -d "$POSTGRES_DB" >"$counts_file" <<'SQL' ||
+SELECT coalesce(json_object_agg(table_name, n ORDER BY table_name), '{}')
+  FROM (SELECT table_name::text AS table_name,
+               (xpath('/row/n/text()',
+                 query_to_xml(format('SELECT count(*) AS n FROM %I.%I', table_schema, table_name),
+                              false, true, '')))[1]::text::bigint AS n
+          FROM information_schema.tables
+         WHERE table_schema = 'public' AND table_type = 'BASE TABLE') AS t;
+SQL
+    say "The records could not be counted; the restore goes on without the count"
 fi
 
 if [ -n "$media" ]; then

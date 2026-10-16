@@ -197,7 +197,7 @@ export async function checkBackups(now: Date): Promise<HealthCheck> {
     return result(
       "backups",
       "WARN",
-      "Daily backups are switched off.",
+      "Backups are switched off.",
       "প্রতিদিনের ব্যাকআপ বন্ধ আছে। Settings-এ চালু করুন।",
     );
   }

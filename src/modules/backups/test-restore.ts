@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { rm } from "node:fs/promises";
+import { mkdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 
@@ -22,14 +22,26 @@ import {
   reasonFor,
 } from "@/modules/backups/backup-core";
 import { claimRun, getBackupRun } from "@/modules/backups/backup.service";
+import {
+  compareContents,
+  listFiles,
+  totalRecords,
+  type UploadFile,
+} from "@/modules/backups/contents";
 import { fetchBackup, listDriveBackups } from "@/modules/backups/drive-copies";
+import { checkBackupFiles } from "@/modules/backups/drive-fetch";
+import { parseKeyFile } from "@/modules/backups/keys";
+import { recoveryKeyFromDrive } from "@/modules/backups/recovery-key.service";
 
 /*
- * The weekly proof that the backups work: the newest checked backup is
- * downloaded from Google Drive, opened with the recovery key, and restored into
- * a temporary database of its own on the same database server (never the live
- * or the demo site's database), which is checked and then dropped. The result
- * goes to the owner's inbox (and the bot when it fails).
+ * The monthly restore drill (G11): the newest checked backup is downloaded from
+ * Google Drive, opened with the recovery key (kept in Drive, or typed for this
+ * drill), and restored into a temporary database of its own on the same
+ * database server (never the live or the demo site's database). Every table's
+ * row count and every file's checksum are compared with the backup's manifest;
+ * then the temporary database is dropped. Without the recovery key it checks
+ * every file's checksum only, and says the full drill needs the key. The result
+ * goes to the owner's inbox and Telegram.
  */
 
 const exec = promisify(execFile);
@@ -52,6 +64,7 @@ const COUNTED = [
 ] as const;
 
 export type TestRestoreReport = {
+  mode: "full";
   backup: string;
   backupAt: string;
   downloadedBytes: number;
@@ -59,9 +72,13 @@ export type TestRestoreReport = {
   migrations: number;
   newestMigration: string | null;
   counts: Record<string, { backup: number; now: number }>;
+  /** Every record and file the backup's manifest lists, against what came back (v6.4 backups). */
+  records: { expected: number; back: number } | null;
+  files: { expected: number; back: number } | null;
   /** Every journal entry's debits equal its credits in the restored copy. */
   ledgerBalanced: boolean;
   mediaFiles: number | null;
+  problems: string[];
   seconds: number;
 };
 
@@ -118,18 +135,35 @@ async function liveCount(table: string): Promise<number> {
   return Number(rows[0]?.n ?? 0);
 }
 
+/** Every table's row count in a restored copy (the same query as the backup's). */
+async function countIn(env: NodeJS.ProcessEnv): Promise<Record<string, number>> {
+  const out = await psql(
+    env,
+    `SELECT table_name || '|' || (xpath('/row/n/text()', query_to_xml(format('SELECT count(*) AS n FROM %I.%I', table_schema, table_name), false, true, '')))[1]::text FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'`,
+  );
+  const tables: Record<string, number> = {};
+  for (const line of out.split("\n").filter(Boolean)) {
+    const at = line.lastIndexOf("|");
+    tables[line.slice(0, at)] = Number(line.slice(at + 1));
+  }
+  return tables;
+}
+
 /**
- * Runs the test restore now. The scheduler runs it weekly (no actor); "Test a
- * restore now" on the Backups screen waits for nothing and returns the run.
+ * Runs the restore drill now (G11). The scheduler runs it once a month (no
+ * actor); "Run drill now" on the Backups screen returns at once with the run.
+ * The recovery key typed there is used for this drill only and never kept.
  */
 export async function runTestRestore(
-  options: { trigger: BackupTrigger; actor?: Actor | null; wait?: boolean },
+  options: {
+    trigger: BackupTrigger;
+    actor?: Actor | null;
+    wait?: boolean;
+    recoveryKey?: string | null;
+  },
   meta?: RequestMeta,
 ) {
   const config = await getBackupConfig();
-  const key = currentKey(config);
-  if (!key)
-    throw new AppError("CONFLICT", "Make the recovery key first: backups are locked with it.");
   if (!config.credentialsRef) throw new AppError("CONFLICT", "Connect Google Drive first.");
   const actor = options.actor ?? null;
   const run = await claimRun(options.trigger, actor, "TEST_RESTORE");
@@ -137,16 +171,19 @@ export async function runTestRestore(
     action: "CREATE",
     entityType: "BackupRun",
     entityId: run.id,
-    summary: `${options.trigger === "MANUAL" ? "Started" : "Scheduled"} a test restore into a temporary database`,
+    summary: `${options.trigger === "MANUAL" ? "Started" : "Scheduled"} a restore drill into a temporary database${options.recoveryKey ? " (recovery key typed for this drill)" : ""}`,
   });
-  const job = testRestore(run.id, key).catch((error: unknown) =>
-    console.error("[backups] test restore failed", error),
+  const job = drill(run.id, options.recoveryKey ?? null).catch((error: unknown) =>
+    console.error("[backups] restore drill failed", error),
   );
   if (options.wait ?? options.trigger === "SCHEDULED") await job;
   return getBackupRun(run.id);
 }
 
-async function testRestore(runId: string, key: { key: Buffer; id: string }) {
+const FULL_NEEDS_KEY =
+  "The full drill needs your recovery key: keep it in Google Drive, or type it in Run drill now.";
+
+async function drill(runId: string, typedKey: string | null) {
   const started = Date.now();
   const work = path.join(backupRoot(), ".test-restore");
   const database = `${TEST_DB_PREFIX}${Date.now().toString(36)}${randomBytes(3).toString("hex")}`;
@@ -166,8 +203,50 @@ async function testRestore(runId: string, key: { key: Buffer; id: string }) {
     if (!newest) throw new Error("there is no checked backup in Google Drive yet");
     backupName = newest.name;
     await prisma.backupRun.update({ where: { id: runId }, data: { sourceName: newest.name } });
-    const fetched = await fetchBackup(token, { id: newest.folderId, name: newest.name }, work, key);
+    const folder = { id: newest.folderId, name: newest.name };
 
+    // The keys: the one typed for this drill, else the one kept in Drive; v6.3's for its backups.
+    const recoveryKey = typedKey ?? (await recoveryKeyFromDrive(config).catch(() => null)) ?? null;
+    const legacy = currentKey(config)?.key ?? null;
+    const ownKeyFile = config.lockedKeyFile ? [parseKeyFile(config.lockedKeyFile)] : [];
+    const isPublic = newest.format === 3;
+    if ((isPublic && !recoveryKey) || (!isPublic && !legacy && !recoveryKey)) {
+      const checked = await checkBackupFiles(token, folder, work);
+      const report = {
+        mode: "checksums" as const,
+        backup: newest.name,
+        backupAt: checked.manifest.createdAt,
+        files: checked.files,
+        downloadedBytes: checked.bytes,
+        problems: checked.problems,
+        note: FULL_NEEDS_KEY,
+        seconds: Math.round((Date.now() - started) / 1000),
+      };
+      const failed = checked.problems.length > 0;
+      await prisma.backupRun.update({
+        where: { id: runId },
+        data: {
+          status: failed ? "FAILED" : "SUCCEEDED",
+          finishedAt: new Date(),
+          report: report as unknown as Prisma.InputJsonObject,
+          error: failed ? checked.problems.join(" ") : null,
+        },
+      });
+      await alertOwner(
+        failed ? "Restore drill failed" : "Restore drill: checksums only",
+        failed
+          ? `The ${newest.name} backup in Google Drive is not whole: ${checked.problems.join(" ")}`
+          : `All ${checked.files} files of the ${newest.name} backup are whole in Google Drive. ${FULL_NEEDS_KEY}`,
+        runId,
+      );
+      return;
+    }
+
+    const fetched = await fetchBackup(token, folder, work, {
+      recoveryKey,
+      legacy,
+      keyFiles: ownKeyFile,
+    });
     try {
       await prisma.$executeRawUnsafe(`CREATE DATABASE ${quoteIdent(database)}`);
     } catch (error) {
@@ -182,12 +261,8 @@ async function testRestore(runId: string, key: { key: Buffer; id: string }) {
       ["--no-owner", "--no-privileges", "--exit-on-error", "-d", database, fetched.database],
       { env, ...LONG_JOB },
     );
-    const tables = Number(
-      await psql(
-        env,
-        "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public'",
-      ),
-    );
+    const restoredTables = await countIn(env);
+    const tables = Object.keys(restoredTables).length;
     const migrations = Number(await psql(env, 'SELECT count(*) FROM "_prisma_migrations"'));
     const newestMigration =
       (await psql(
@@ -196,8 +271,10 @@ async function testRestore(runId: string, key: { key: Buffer; id: string }) {
       )) || null;
     const counts: TestRestoreReport["counts"] = {};
     for (const table of COUNTED) {
-      const inBackup = Number(await psql(env, `SELECT count(*) FROM "${table}"`).catch(() => "0"));
-      counts[table] = { backup: inBackup, now: await liveCount(table).catch(() => 0) };
+      counts[table] = {
+        backup: restoredTables[table] ?? 0,
+        now: await liveCount(table).catch(() => 0),
+      };
     }
     const unbalanced = Number(
       await psql(
@@ -205,12 +282,24 @@ async function testRestore(runId: string, key: { key: Buffer; id: string }) {
         'SELECT count(*) FROM (SELECT "entryId" FROM "JournalLine" GROUP BY "entryId" HAVING sum(debit) <> sum(credit)) x',
       ),
     );
+    let restoredFiles: UploadFile[] | null = null;
     let mediaFiles: number | null = null;
     if (fetched.media) {
-      const { stdout } = await exec("tar", ["-tzf", fetched.media], LONG_JOB);
-      mediaFiles = stdout.split("\n").filter((l) => l && !l.endsWith("/")).length;
+      const unpacked = path.join(work, "files");
+      await mkdir(unpacked, { recursive: true });
+      await exec("tar", ["-xzf", fetched.media, "-C", unpacked], LONG_JOB);
+      restoredFiles = await listFiles(unpacked);
+      mediaFiles = restoredFiles.length;
     }
+    // A v6.4 backup lists every table and file: compare them all, exactly.
+    const compared = fetched.manifest.tables
+      ? compareContents(
+          { tables: fetched.manifest.tables, files: fetched.manifest.uploads ?? [] },
+          { tables: restoredTables, files: restoredFiles ?? [] },
+        )
+      : null;
     const report: TestRestoreReport = {
+      mode: "full",
       backup: newest.name,
       backupAt: fetched.manifest.createdAt,
       downloadedBytes: newest.bytes ?? 0,
@@ -218,14 +307,18 @@ async function testRestore(runId: string, key: { key: Buffer; id: string }) {
       migrations,
       newestMigration,
       counts,
+      records: compared ? { expected: compared.records, back: totalRecords(restoredTables) } : null,
+      files: compared ? { expected: compared.files, back: mediaFiles ?? 0 } : null,
       ledgerBalanced: unbalanced === 0,
       mediaFiles,
+      problems: compared?.problems ?? [],
       seconds: Math.round((Date.now() - started) / 1000),
     };
     const problems = [
       ...(tables < 10 ? [`only ${tables} tables came back`] : []),
-      ...(counts.Company!.backup === 0 ? ["no company came back"] : []),
+      ...((restoredTables.Company ?? 0) === 0 ? ["no company came back"] : []),
       ...(unbalanced > 0 ? [`${unbalanced} journal entries do not balance`] : []),
+      ...(compared?.problems.slice(0, 20) ?? []),
     ];
     await prisma.backupRun.update({
       where: { id: runId },
@@ -236,13 +329,15 @@ async function testRestore(runId: string, key: { key: Buffer; id: string }) {
         error: problems.length ? `The restored copy is not right: ${problems.join("; ")}.` : null,
       },
     });
-    const summary = `${newest.name}: ${tables} tables, ${counts.Company!.backup} companies, ${counts.SalesOrder!.backup} sales orders, ${counts.Invoice!.backup} invoices${mediaFiles !== null ? `, ${mediaFiles} files` : ""}, in ${report.seconds} seconds.`;
+    const summary = compared
+      ? `All ${compared.records} records and ${compared.files} files are back (${newest.name}, ${report.seconds} seconds).`
+      : `${newest.name}: ${tables} tables, ${counts.Company!.backup} companies, ${counts.SalesOrder!.backup} sales orders, ${counts.Invoice!.backup} invoices${mediaFiles !== null ? `, ${mediaFiles} files` : ""}, in ${report.seconds} seconds.`;
     if (problems.length) {
-      await alertOwner("Test restore failed", `${problems.join("; ")} (${summary})`, runId);
+      await alertOwner("Restore drill failed", `${problems.join("; ")} (${newest.name})`, runId);
     } else {
       await alertOwner(
-        "Test restore worked",
-        `The newest backup restored into a temporary database: ${summary}`,
+        "Restore drill worked",
+        `The newest backup restored into a temporary database, which was then deleted. ${summary}`,
         runId,
       );
     }
@@ -257,7 +352,7 @@ async function testRestore(runId: string, key: { key: Buffer; id: string }) {
       },
     });
     await alertOwner(
-      "Test restore failed",
+      "Restore drill failed",
       `${backupName ? `The ${backupName} backup` : "The newest backup"} could not be restored into a temporary database: ${reasonFor(error)}`,
       runId,
     );

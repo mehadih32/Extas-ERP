@@ -321,14 +321,17 @@ export async function listFiles(token: string, folderId: string) {
 }
 
 /** Uploads a file from disk in resumable pieces, so large dumps survive slow links. */
-export async function uploadFile(
+/** What a new file in Drive is called and labelled (the name defaults to the file's own). */
+export type UploadMeta = { name?: string; appProperties?: Record<string, string> };
+
+async function openSession(
   token: string,
-  filePath: string,
+  name: string,
+  size: number,
   folderId: string,
-  mimeType = "application/octet-stream",
-): Promise<DriveFile> {
-  const name = path.basename(filePath);
-  const { size } = await stat(filePath);
+  mimeType: string,
+  appProperties?: Record<string, string>,
+): Promise<string> {
   const start = await fetch(`${uploadApi()}/files?uploadType=resumable&fields=${FILE_FIELDS}`, {
     method: "POST",
     headers: {
@@ -337,11 +340,56 @@ export async function uploadFile(
       "X-Upload-Content-Type": mimeType,
       "X-Upload-Content-Length": String(size),
     },
-    body: JSON.stringify({ name, parents: [folderId] }),
+    body: JSON.stringify({
+      name,
+      parents: [folderId],
+      ...(appProperties ? { appProperties } : {}),
+    }),
   });
   if (!start.ok) throw await failure(start, `Uploading ${name} failed`);
   const session = start.headers.get("location");
   if (!session) throw new DriveError("Google Drive did not open an upload session.", 502);
+  return session;
+}
+
+/**
+ * A small file from memory (the keys file, the restore guide): it never touches
+ * the server's disk.
+ */
+export async function uploadBytes(
+  token: string,
+  data: Buffer,
+  folderId: string,
+  name: string,
+  mimeType: string,
+  appProperties?: Record<string, string>,
+): Promise<DriveFile> {
+  const session = await openSession(token, name, data.length, folderId, mimeType, appProperties);
+  const response = await fetch(session, {
+    method: "PUT",
+    headers:
+      data.length === 0
+        ? { "Content-Range": "bytes */0" }
+        : {
+            "Content-Length": String(data.length),
+            "Content-Range": `bytes 0-${data.length - 1}/${data.length}`,
+          },
+    ...(data.length ? { body: new Uint8Array(data) } : {}),
+  });
+  if (!response.ok) throw await failure(response, `Uploading ${name} failed`);
+  return (await response.json()) as DriveFile;
+}
+
+export async function uploadFile(
+  token: string,
+  filePath: string,
+  folderId: string,
+  mimeType = "application/octet-stream",
+  meta: UploadMeta = {},
+): Promise<DriveFile> {
+  const name = meta.name ?? path.basename(filePath);
+  const { size } = await stat(filePath);
+  const session = await openSession(token, name, size, folderId, mimeType, meta.appProperties);
 
   if (size === 0) {
     const done = await fetch(session, { method: "PUT", headers: { "Content-Range": "bytes */0" } });
@@ -392,6 +440,17 @@ export async function downloadFile(token: string, fileId: string, to: string): P
   if (!response.ok || !response.body)
     throw await failure(response, "Downloading from Drive failed");
   await pipeline(Readable.fromWeb(response.body as never), createWriteStream(to));
+}
+
+/** Downloads a small file into memory (at most `limit` bytes). */
+export async function downloadBytes(token: string, fileId: string, limit = 5 * 1024 * 1024) {
+  const response = await fetch(`${api()}/files/${encodeURIComponent(fileId)}?alt=media`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) throw await failure(response, "Downloading from Drive failed");
+  const data = Buffer.from(await response.arrayBuffer());
+  if (data.length > limit) throw new DriveError("The file in Drive is larger than expected.", 413);
+  return data;
 }
 
 /** Deletes a file or folder the ERP made (a folder goes with everything in it). */

@@ -45,6 +45,67 @@ load_settings() {
   # The demo site's address, for compose.yml (empty while it is off).
   DEMO_DOMAIN="$(demo_domain)"
   export DEMO_DOMAIN
+  choose_caddy
+}
+
+# --- HTTPS (README.md, "HTTPS behind Cloudflare") ----------------------------------
+
+PLAIN_CADDY=caddy:2-alpine
+CLOUDFLARE_CADDY=extras-erp-caddy:latest
+
+# Which Caddy runs, for compose.yml: the one with Cloudflare's DNS module while
+# deploy.sh has set it up (a Cloudflare token in deploy/.env, that Caddy built and
+# DATA_DIR/caddy/tls/cloudflare.caddy written), else plain Caddy as always. The
+# Cloudflare part never stays without the Caddy that reads it.
+choose_caddy() {
+  local part="$DATA_DIR/caddy/tls/cloudflare.caddy"
+  CADDY_IMAGE="$PLAIN_CADDY"
+  if [ -f "$part" ]; then
+    if [ -n "$(setting CLOUDFLARE_API_TOKEN)" ] && docker image inspect "$CLOUDFLARE_CADDY" >/dev/null 2>&1; then
+      CADDY_IMAGE="$CLOUDFLARE_CADDY"
+    else
+      rm -f "$part"
+    fi
+  fi
+  export CADDY_IMAGE
+}
+
+# With a Cloudflare token in deploy/.env (the restore puts the one saved on the
+# Backups screen there), HTTPS certificates come through Cloudflare's DNS check,
+# which works with Cloudflare's proxy on: Caddy is built with Cloudflare's DNS
+# module (deploy/caddy, again every 30 days for its updates). Without a token,
+# or when that Caddy cannot be built or checked, plain Caddy runs as before and
+# Let's Encrypt checks over port 80.
+prepare_https() {
+  local part="$DATA_DIR/caddy/tls/cloudflare.caddy" created
+  mkdir -p "$DATA_DIR/caddy/tls"
+  if [ -z "$(setting CLOUDFLARE_API_TOKEN)" ]; then
+    rm -f "$part"
+    choose_caddy
+    return 0
+  fi
+  created="$(docker image inspect -f '{{.Created}}' "$CLOUDFLARE_CADDY" 2>/dev/null || true)"
+  if [ -z "$created" ] || [ "$(date -d "$created" +%s 2>/dev/null || echo 0)" -lt "$(date -d '30 days ago' +%s)" ]; then
+    say "HTTPS through Cloudflare's DNS check: building Caddy with Cloudflare's module (a few minutes)"
+    if ! docker build --pull -q -t "$CLOUDFLARE_CADDY" "$DEPLOY_DIR/caddy" >/dev/null; then
+      [ -n "$created" ] || {
+        rm -f "$part"
+        choose_caddy
+        say "Note W06: Caddy with Cloudflare's module could not be built, so HTTPS stays as before (Let's Encrypt checks over port 80)"
+        return 0
+      }
+      say "Caddy with Cloudflare's module could not be rebuilt; the one built before stays"
+    fi
+  fi
+  printf '# Written by deploy.sh: certificates through Cloudflare'"'"'s DNS check.\nacme_dns cloudflare {env.CLOUDFLARE_API_TOKEN}\n' >"$part"
+  chmod 644 "$part"
+  choose_caddy
+  if ! compose run --rm --no-deps -T caddy \
+    caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1; then
+    rm -f "$part"
+    choose_caddy
+    say "Note W06: Cloudflare's DNS check did not check out, so HTTPS stays as before (Let's Encrypt checks over port 80)"
+  fi
 }
 
 # The demo site's address (README.md, "The demo site"), or nothing while it is
@@ -83,7 +144,7 @@ demo_compose() {
 
 # The folders on the server that hold the data, each owned by whoever writes it.
 prepare_folders() {
-  mkdir -p "$DATA_DIR"/{postgres,uploads,backups,safety-copies,caddy/data,caddy/config,caddy/sites}
+  mkdir -p "$DATA_DIR"/{postgres,uploads,backups,safety-copies,caddy/data,caddy/config,caddy/sites,caddy/tls}
   chown "$APP_UID:$APP_UID" "$DATA_DIR/uploads" "$DATA_DIR/backups"
   # Root writes the safety copies; the app only reads them, to lock them and send
   # them to Google Drive.
@@ -162,12 +223,33 @@ Description=Extas ERP: restore the backup asked for on the Backups screen
 Type=oneshot
 ExecStart=$DEPLOY_DIR/restore-request.sh
 EOF
+  # The owner's backup public key, written by the ERP when the recovery key is set:
+  # deploy/.env is locked with it at once (lock-settings.sh), not only at the next update.
+  cat >/etc/systemd/system/extras-erp-settings-lock.path <<EOF
+[Unit]
+Description=Extas ERP: lock the server's settings for the backups when the backup key changes
+
+[Path]
+PathChanged=$DATA_DIR/backups/backup-public-key.json
+
+[Install]
+WantedBy=multi-user.target
+EOF
+  cat >/etc/systemd/system/extras-erp-settings-lock.service <<EOF
+[Unit]
+Description=Extas ERP: lock the server's settings for the backups
+
+[Service]
+Type=oneshot
+ExecStart=$DEPLOY_DIR/lock-settings.sh
+EOF
   cat >/etc/cron.d/extras-erp-safety-copies <<EOF
 # Extas ERP (deploy.sh): safety copies stay on the server for 24 hours; Google Drive keeps them.
 17 * * * * root find $DATA_DIR/safety-copies -mindepth 1 -maxdepth 1 -type d -name 'before-*' -mmin +1440 -exec rm -rf {} + 2>/dev/null
 EOF
   systemctl daemon-reload || return 1
   systemctl enable --now extras-erp-restore.path >/dev/null 2>&1 || return 1
+  systemctl enable --now extras-erp-settings-lock.path >/dev/null 2>&1 || return 1
   install -o "$APP_UID" -g "$APP_UID" -m 644 /dev/null "$DATA_DIR/backups/.restore-helper"
 }
 
@@ -335,4 +417,92 @@ check_update() {
   email="$(setting SEED_ADMIN_EMAIL)"
   compose run --rm --no-deps -T -e CHECK_URL=http://app:3000 -e CHECK_EMAIL="${email,,}" \
     migrate npx tsx scripts/check-update.ts
+}
+
+# --- What the backups take from the server (README.md, "Backups") -------------------
+
+# The data folder's mark, so the restore command (bootstrap.sh) finds this ERP
+# wherever its data is, and never restores over it without its web address typed.
+mark_data_folder() {
+  cat >"$DATA_DIR/.extas-erp-data" <<EOF
+# Extas ERP's data folder (deploy.sh). The restore command looks for this file.
+APP_DOMAIN=$APP_DOMAIN
+INSTALL_DIR=$(dirname "$DEPLOY_DIR")
+EOF
+  chmod 644 "$DATA_DIR/.extas-erp-data"
+}
+
+# For the backups, in DATA_DIR/backups/.host (the app reads it, never writes it):
+# the running version (version.json: the commit and the SHA-256 of the restore
+# command's bootstrap.sh there), the code at that version as a git bundle, and
+# deploy/.env locked for the owner's backup public key. So a backup holds
+# everything a new server needs, with no GitHub sign-in.
+record_host_files() {
+  local host="$DATA_DIR/backups/.host" repo commit sha version
+  repo="$(dirname "$DEPLOY_DIR")"
+  commit="$(git -C "$repo" rev-parse HEAD 2>/dev/null)" || return 1
+  sha="$(git -C "$repo" show HEAD:deploy/bootstrap.sh 2>/dev/null | sha256sum | cut -d' ' -f1)"
+  version="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1])).get("version", ""))' "$repo/package.json" 2>/dev/null || true)"
+  install -d -o root -g "$APP_UID" -m 750 "$host"
+  if [ "$(cat "$host/code.commit" 2>/dev/null)" != "$commit" ] || [ ! -s "$host/code.bundle" ]; then
+    rm -f "$host/code.commit"
+    # A bundle of a shallow copy would not make the next one after a restore: the whole history.
+    if [ "$(git -C "$repo" rev-parse --is-shallow-repository 2>/dev/null)" = true ]; then
+      GIT_TERMINAL_PROMPT=0 git -C "$repo" fetch -q --unshallow origin >/dev/null 2>&1 || true
+    fi
+    if git -C "$repo" bundle create "$host/code.bundle.new" HEAD >/dev/null 2>&1; then
+      chown root:"$APP_UID" "$host/code.bundle.new"
+      chmod 640 "$host/code.bundle.new"
+      mv -f "$host/code.bundle.new" "$host/code.bundle"
+      printf '%s\n' "$commit" >"$host/code.commit"
+    else
+      # No bundle rather than one of another version: the backups then say the code is missing.
+      rm -f "$host/code.bundle.new" "$host/code.bundle"
+    fi
+  fi
+  printf '{"commit":"%s","bootstrapSha256":"%s","deployedAt":"%s","version":"%s"}\n' \
+    "$commit" "$sha" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$version" >"$host/version.json.new"
+  chmod 644 "$host/version.json.new"
+  mv -f "$host/version.json.new" "$host/version.json"
+  lock_settings
+}
+
+# deploy/.env locked for the owner's backup public key (BACKUP_DIR/backup-public-key.json,
+# which the ERP writes when the owner sets the recovery key), in the tools image with
+# no network (scripts/lock-settings.ts). The plain settings never leave this server;
+# without the owner's key nothing is written.
+lock_settings() {
+  local host="$DATA_DIR/backups/.host" key="$DATA_DIR/backups/backup-public-key.json"
+  if [ ! -s "$key" ]; then
+    rm -f "$host/settings.env.locked" "$host/settings.env.json"
+    return 0
+  fi
+  install -d -o root -g "$APP_UID" -m 750 "$host"
+  rm -f "$host/settings.env.locked.new" "$host/settings.env.json.new"
+  if ! docker run --rm -i --network none -v "$key:/in/key.json:ro" -v "$host:/out" \
+    extras-erp-tools:latest npx tsx scripts/lock-settings.ts <"$ENV_FILE" >/dev/null; then
+    rm -f "$host/settings.env.locked.new" "$host/settings.env.json.new"
+    return 1
+  fi
+  chown root:"$APP_UID" "$host/settings.env.locked.new" "$host/settings.env.json.new"
+  chmod 640 "$host/settings.env.locked.new" "$host/settings.env.json.new"
+  mv -f "$host/settings.env.locked.new" "$host/settings.env.locked"
+  mv -f "$host/settings.env.json.new" "$host/settings.env.json"
+}
+
+# No GitHub token stays on the server in plain text (A8): the old restore kept one
+# for a private repository. While the code can be read without it (the repository
+# is public), it is deleted and git stops using it.
+forget_github_token() {
+  local file=/root/.extras-erp-git-credentials repo url
+  [ -f "$file" ] || return 0
+  repo="$(dirname "$DEPLOY_DIR")"
+  url="$(git -C "$repo" remote get-url origin 2>/dev/null)" || return 0
+  if GIT_TERMINAL_PROMPT=0 git -c credential.helper= ls-remote --heads "$url" main >/dev/null 2>&1; then
+    git -C "$repo" config --unset-all credential.helper 2>/dev/null || true
+    shred -u "$file" 2>/dev/null || rm -f "$file"
+    say "The GitHub token kept on this server is deleted: the code needs none to update"
+  else
+    say "This server still keeps a GitHub token (GitHub could not be reached without it); it is tried again at the next update"
+  fi
 }

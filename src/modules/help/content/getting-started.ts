@@ -1246,7 +1246,7 @@ export const gettingStartedHelp: HelpSection = {
           text: "বুকিংয়ের PDF: অনেক সাইজেও কোনো সংখ্যা কাটা পড়ে না (লেখা ছোট হয়, তারপর টেবিল ভাগ হয়), লম্বা নাম ও ঠিকানা দ্বিতীয় লাইনে যায়, পাতার নম্বর কখনো কাটে না, আর PREPARED BY-তে বুকিং যিনি বানিয়েছেন তাঁর নাম ও সইয়ের লাইন।",
         },
         {
-          text: "ব্যাকআপ: “Settings” > “Backups”-এ “Connect Google Drive” দিয়ে আপনার Drive যুক্ত করুন, “Daily time” আর “How many to keep in Drive” ঠিক করুন, দরকারে “Back up now”। প্রতিটি ব্যাকআপ তালাবদ্ধ হয়ে Drive-এ যায়; “Recovery key” একবারই দেখায়, যত্নে রাখুন। প্রতি সপ্তাহে একটি আলাদা ডেটাবেসে রিস্টোর করে দেখা হয় ব্যাকআপ কাজ করে কিনা। “Restore on a new server”-এ নতুন সার্ভারে এক কমান্ডে পুরো ERP ফেরানোর কমান্ড।",
+          text: "ব্যাকআপ: “Settings” > “Backups”-এ “Set your recovery key” দিয়ে নিজের পছন্দের রিকভারি কী ঠিক করুন, “Connect Google Drive” দিয়ে আপনার Drive যুক্ত করুন, আর “When to back up” অংশে কখন ব্যাকআপ হবে ঠিক করুন (শুরুতে দিনে দুবার), দরকারে “Back up now”। প্রতিটি ব্যাকআপ তালাবদ্ধ হয়ে Drive-এ যায়। প্রতি মাসে একটি অস্থায়ী ডেটাবেসে রিস্টোর করে দেখা হয় সব রেকর্ড ও ফাইল ফেরে কিনা। “Download the restore guide” দিয়ে নতুন সার্ভারে পুরো ERP ফেরানোর গাইড নামিয়ে রাখুন।",
           image: {
             id: "whats-new-v63-1",
             caption: "“Backups”: Google Drive, সময়, কয়টি রাখবেন আর রিস্টোর",

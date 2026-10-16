@@ -18,8 +18,11 @@ import {
   reasonFor,
 } from "@/modules/backups/backup-core";
 import { claimRun } from "@/modules/backups/backup.service";
+import { BackupKeyError } from "@/modules/backups/crypt";
 import { fetchBackup, listDriveBackups } from "@/modules/backups/drive-copies";
 import { readyForRestore } from "@/modules/backups/drive-fetch";
+import { parseKeyFile } from "@/modules/backups/keys";
+import { recoveryKeyFromDrive } from "@/modules/backups/recovery-key.service";
 import { restoreRequestSchema } from "@/modules/backups/schemas";
 
 /*
@@ -27,7 +30,8 @@ import { restoreRequestSchema } from "@/modules/backups/schemas";
  * it runs, so it does the part it can and hands the rest to the server:
  *   1. the owner picks a backup in Drive, gives the PIN and types RESTORE;
  *   2. the ERP downloads it, checks every file and opens it with the recovery
- *      key into BACKUP_DIR/restores/<name>, and leaves a signed request;
+ *      key (kept in Google Drive, or typed with the PIN; a v6.3 backup with its
+ *      key card) into BACKUP_DIR/restores/<name>, and leaves a signed request;
  *   3. on the server, deploy/restore-request.sh (started by systemd when the
  *      request appears; deploy.sh installs it) runs deploy/restore.sh: a safety
  *      copy of the database first, then the restore, then the full check of
@@ -96,8 +100,6 @@ export async function requestRestore(ctx: CompanyContext, raw: unknown, meta?: R
     throw new AppError("CONFLICT", "A restore is already waiting for the server.");
   }
   const config = await getBackupConfig();
-  const key = currentKey(config);
-  if (!key) throw new AppError("CONFLICT", "Make the recovery key first.");
   const token = await driveToken(config);
   if (!token) throw new AppError("CONFLICT", "Connect Google Drive first.");
   const backup = (await listDriveBackups()).items.find((b) => b.folderId === input.folderId);
@@ -114,11 +116,18 @@ export async function requestRestore(ctx: CompanyContext, raw: unknown, meta?: R
     summary: `Asked to restore the backup ${backup.name} (PIN given, RESTORE typed)`,
   });
   try {
+    // The key typed on the screen, else the one kept in Drive; v6.3's for its own backups.
+    const recoveryKey =
+      input.key?.trim() || (await recoveryKeyFromDrive(config).catch(() => null)) || null;
     const fetched = await fetchBackup(
       token,
       { id: backup.folderId, name: backup.name },
       path.join(root, "restores"),
-      key,
+      {
+        recoveryKey,
+        legacy: currentKey(config)?.key ?? null,
+        keyFiles: config.lockedKeyFile ? [parseKeyFile(config.lockedKeyFile)] : [],
+      },
     );
     // restore.sh checks the plain files against this manifest; this server keeps its own key.
     await readyForRestore(fetched);
@@ -154,6 +163,9 @@ export async function requestRestore(ctx: CompanyContext, raw: unknown, meta?: R
         sourceName: backup.name,
       },
     });
+    if (error instanceof BackupKeyError) {
+      throw new AppError("VALIDATION", error.message, { key: [error.message] });
+    }
     throw error instanceof AppError ? error : new AppError("UNAVAILABLE", reasonFor(error));
   }
 }

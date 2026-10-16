@@ -14,13 +14,13 @@ export const dynamic = "force-dynamic";
  * embroidery factory's puncher (size, threads, position, fabric, the formats needed and
  * the sew-out test). Made for each request, never kept.
  */
-export async function GET(_request: Request, context: { params: Promise<Params> }) {
+export async function GET(request: Request, context: { params: Promise<Params> }) {
   try {
     const { techPackId, logoId } = await context.params;
     const ctx = await requirePermission("production.view");
     const pdf = await digitizingBrief(ctx, techPackId, logoId, await getRequestMeta());
     return fileResponse({ fileName: pdf.fileName, mimeType: PDF_MIME, bytes: pdf.bytes });
   } catch (error) {
-    return apiErrorResponse(error);
+    return apiErrorResponse(error, request);
   }
 }

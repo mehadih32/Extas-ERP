@@ -15,13 +15,13 @@ export const dynamic = "force-dynamic";
  * until then its own, from the buyer's brief and what is on it. No prices. Made for
  * each request, never kept.
  */
-export async function GET(_request: Request, context: { params: Promise<Params> }) {
+export async function GET(request: Request, context: { params: Promise<Params> }) {
   try {
     const { techPackId } = await context.params;
     const ctx = await requirePermission("production.view");
     const pdf = await techPackPdfOf(ctx, techPackId, await getRequestMeta());
     return fileResponse({ fileName: pdf.fileName, mimeType: PDF_MIME, bytes: pdf.bytes });
   } catch (error) {
-    return apiErrorResponse(error);
+    return apiErrorResponse(error, request);
   }
 }

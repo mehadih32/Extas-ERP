@@ -20,6 +20,6 @@ export async function GET(request: Request, context: { params: Promise<Params> }
     const format = new URL(request.url).searchParams.get("format") === "xlsx" ? "xlsx" : "pdf";
     return fileResponse(await measurementsFile(ctx, techPackId, format, await getRequestMeta()));
   } catch (error) {
-    return apiErrorResponse(error);
+    return apiErrorResponse(error, request);
   }
 }

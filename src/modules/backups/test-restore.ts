@@ -28,6 +28,7 @@ import {
   totalRecords,
   type UploadFile,
 } from "@/modules/backups/contents";
+import { checkCodeBundle } from "@/modules/backups/code-bundle";
 import { fetchBackup, listDriveBackups } from "@/modules/backups/drive-copies";
 import { checkBackupFiles } from "@/modules/backups/drive-fetch";
 import { parseKeyFile } from "@/modules/backups/keys";
@@ -78,6 +79,8 @@ export type TestRestoreReport = {
   /** Every journal entry's debits equal its credits in the restored copy. */
   ledgerBalanced: boolean;
   mediaFiles: number | null;
+  /** The code at the backup's version (G15): "whole", what is wrong with it, or null when the backup has none. */
+  code: string | null;
   problems: string[];
   seconds: number;
 };
@@ -291,6 +294,10 @@ async function drill(runId: string, typedKey: string | null) {
       restoredFiles = await listFiles(unpacked);
       mediaFiles = restoredFiles.length;
     }
+    // The code inside it: whole, and the backup's version (G15).
+    const codeProblem = fetched.code
+      ? await checkCodeBundle(fetched.code, fetched.manifest.commit ?? null)
+      : null;
     // A v6.4 backup lists every table and file: compare them all, exactly.
     const compared = fetched.manifest.tables
       ? compareContents(
@@ -311,6 +318,7 @@ async function drill(runId: string, typedKey: string | null) {
       files: compared ? { expected: compared.files, back: mediaFiles ?? 0 } : null,
       ledgerBalanced: unbalanced === 0,
       mediaFiles,
+      code: fetched.code ? (codeProblem ?? "whole") : null,
       problems: compared?.problems ?? [],
       seconds: Math.round((Date.now() - started) / 1000),
     };
@@ -318,6 +326,7 @@ async function drill(runId: string, typedKey: string | null) {
       ...(tables < 10 ? [`only ${tables} tables came back`] : []),
       ...((restoredTables.Company ?? 0) === 0 ? ["no company came back"] : []),
       ...(unbalanced > 0 ? [`${unbalanced} journal entries do not balance`] : []),
+      ...(codeProblem ? [codeProblem] : []),
       ...(compared?.problems.slice(0, 20) ?? []),
     ];
     await prisma.backupRun.update({

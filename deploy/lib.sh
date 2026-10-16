@@ -460,14 +460,17 @@ record_host_files() {
     if [ "$(git -C "$repo" rev-parse --is-shallow-repository 2>/dev/null)" = true ]; then
       GIT_TERMINAL_PROMPT=0 git -C "$repo" fetch -q --unshallow origin >/dev/null 2>&1 || true
     fi
-    if git -C "$repo" bundle create "$host/code.bundle.new" HEAD >/dev/null 2>&1; then
+    if git -C "$repo" bundle create "$host/code.bundle.new" HEAD >/dev/null 2>&1 &&
+      code_bundle_whole "$host/code.bundle.new" "$commit"; then
       chown root:"$APP_UID" "$host/code.bundle.new"
       chmod 640 "$host/code.bundle.new"
       mv -f "$host/code.bundle.new" "$host/code.bundle"
       printf '%s\n' "$commit" >"$host/code.commit"
     else
-      # No bundle rather than one of another version: the backups then say the code is missing.
+      # No bundle rather than one of another version or a broken one: the backups
+      # then say the code is missing, and the next update makes it again.
       rm -f "$host/code.bundle.new" "$host/code.bundle"
+      say "The code bundle for the backups did not check out, so backups say the code is missing until the next update"
     fi
   fi
   printf '{"commit":"%s","bootstrapSha256":"%s","deployedAt":"%s","version":"%s"}\n' \
@@ -475,6 +478,25 @@ record_host_files() {
   chmod 644 "$host/version.json.new"
   mv -f "$host/version.json.new" "$host/version.json"
   lock_settings
+}
+
+# Whether a code bundle ($1) is whole and holds the commit $2: git unpacks it into
+# an empty repository of its own, which checks every object in it and that it
+# needs no history from elsewhere, then walks everything the commit needs.
+code_bundle_whole() {
+  local check heads status=0
+  check="$(mktemp -d)"
+  if git init -q "$check" >/dev/null 2>&1 &&
+    git -C "$check" bundle verify -q "$1" >/dev/null 2>&1 &&
+    heads="$(git -C "$check" bundle unbundle "$1" 2>/dev/null)" &&
+    [[ $'\n'"$heads" == *$'\n'"$2 "* ]] &&
+    git -C "$check" rev-list --objects "$2" >/dev/null 2>&1; then
+    status=0
+  else
+    status=1
+  fi
+  rm -rf "$check"
+  return "$status"
 }
 
 # deploy/.env locked for the owner's backup public key (BACKUP_DIR/backup-public-key.json,

@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { encryptSecret } from "@/lib/crypto";
 import { AppError } from "@/lib/errors";
@@ -35,6 +35,7 @@ import { runTestRestore, TEST_DB_PREFIX } from "@/modules/backups/test-restore";
 
 import { type FakeCloudflare, startFakeCloudflare } from "../../scripts/fake-cloudflare";
 import { type FakeGoogle, startFakeGoogle } from "../../scripts/fake-google";
+import { makeCodeBundle } from "./code-bundle-fixture";
 import { addToCompany, contextFor, makeCompany, makeUser, resetDb } from "./helpers";
 
 /*
@@ -50,7 +51,9 @@ const sha256 = (data: Buffer | string) => createHash("sha256").update(data).dige
 const hoursAgo = (h: number) => new Date(Date.now() - h * 3_600_000);
 const OWNER_KEY = "Padma river at dawn, 1971!";
 const PIN = "2468";
-const COMMIT = "c0ffee".padEnd(40, "0");
+/** The code at the running version: a real git bundle and its commit (G15). */
+let COMMIT: string;
+let CODE_BUNDLE: Buffer;
 const BOOTSTRAP_SHA = "ab".repeat(32);
 const CF_TOKEN = "cf_token_only_dns_for_extas_0123456789abcd";
 
@@ -78,6 +81,9 @@ type Manifest = {
 
 // Real backups, restores and PDFs: slow on a busy machine, so 2 minutes each.
 run("v6.4 backups", { timeout: 120_000 }, () => {
+  beforeAll(async () => {
+    ({ commit: COMMIT, bundle: CODE_BUNDLE } = await makeCodeBundle());
+  });
   let dir: string;
   let backupDir: string;
   let uploadDir: string;
@@ -149,6 +155,7 @@ run("v6.4 backups", { timeout: 120_000 }, () => {
   async function prepareHost(
     lock: PublicKey | null,
     env = "APP_DOMAIN=erp.extasbd.com\nPOSTGRES_PASSWORD=pg-secret-1\n",
+    code: Buffer = CODE_BUNDLE,
   ) {
     const host = hostRoot();
     await mkdir(host, { recursive: true });
@@ -161,7 +168,7 @@ run("v6.4 backups", { timeout: 120_000 }, () => {
         version: "6.4.0",
       }),
     );
-    await writeFile(path.join(host, "code.bundle"), "# v2 git bundle\nthe code at the commit\n");
+    await writeFile(path.join(host, "code.bundle"), code);
     if (lock) {
       const plain = path.join(dir, "settings.env");
       await writeFile(plain, env);
@@ -404,7 +411,7 @@ run("v6.4 backups", { timeout: 120_000 }, () => {
       );
       expect((await readFile(opened.database)).subarray(0, 5).toString()).toBe("PGDMP");
       expect(await readFile(opened.settings!, "utf8")).toContain("POSTGRES_PASSWORD=pg-secret-1");
-      expect(await readFile(opened.code!, "utf8")).toContain("the code at the commit");
+      expect(await readFile(opened.code!)).toEqual(CODE_BUNDLE);
       expect(opened.server).toMatchObject({
         encryptionKey: "test-encryption-key-0123456789",
         appDomain: "erp.extasbd.com",
@@ -897,6 +904,7 @@ run("v6.4 backups", { timeout: 120_000 }, () => {
         mode: "full",
         records: { expected: manifest.records, back: manifest.records },
         files: { expected: 2, back: 2 },
+        code: "whole",
         problems: [],
         ledgerBalanced: true,
       });
@@ -913,6 +921,24 @@ run("v6.4 backups", { timeout: 120_000 }, () => {
       await prisma.backupRun.deleteMany({ where: { kind: "TEST_RESTORE" } });
       expect(await testRestoreTick()).toMatchObject({ kind: "TEST_RESTORE", trigger: "SCHEDULED" });
       expect(await testRestoreTick()).toBeNull();
+    });
+
+    it("finds a damaged code bundle in the backup (G15)", async () => {
+      await connectDrive();
+      await setKey();
+      const spoiled = Buffer.from(CODE_BUNDLE);
+      spoiled[spoiled.length - 30]! ^= 1;
+      await prepareHost(
+        backupLock(await backups.getBackupConfig())!.key as PublicKey,
+        undefined,
+        spoiled,
+      );
+      await backUpNow();
+      const drilled = await runTestRestore({ trigger: "MANUAL", actor: owner, wait: true });
+      expect(drilled.status).toBe("FAILED");
+      expect(drilled.report).toMatchObject({ code: "the code in the backup is damaged" });
+      expect(drilled.error).toContain("the code in the backup is damaged");
+      expect(await inbox()).toContain("Restore drill failed");
     });
 
     it("checks checksums only without the key, and uses a typed key once", async () => {

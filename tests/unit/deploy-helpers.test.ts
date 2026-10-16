@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
-import { readFileSync } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
+import { existsSync, readFileSync } from "node:fs";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -70,5 +70,57 @@ describe("counting the problems the check after a restore found (G10)", () => {
     expect(pushes.length).toBeGreaterThanOrEqual(4);
     for (const push of pushes) expect(push).toMatch(/problem\($/);
     expect(check).toMatch(/problem\(`The check could not run/);
+  });
+});
+
+describe("the code bundle the server makes for the backups (G15)", () => {
+  async function repoWithCommits() {
+    const repo = path.join(dir, "install");
+    const git = (...args: string[]) =>
+      new Promise<string>((resolve, reject) =>
+        execFile("git", ["-C", repo, ...args], (error, stdout) =>
+          error ? reject(error) : resolve(stdout.trim()),
+        ),
+      );
+    await new Promise((resolve) => execFile("git", ["init", "-q", repo], resolve));
+    await git("config", "user.email", "test@example.invalid");
+    await git("config", "user.name", "Test");
+    await mkdir(path.join(repo, "deploy"));
+    await writeFile(path.join(repo, "deploy", "bootstrap.sh"), "echo restore\n");
+    await git("add", ".");
+    await git("commit", "-q", "-m", "one");
+    await git("commit", "-q", "--allow-empty", "-m", "two");
+    return { repo, commit: await git("rev-parse", "HEAD") };
+  }
+  /** record_host_files with stand-in folders; git may be wrapped to spoil the bundle. */
+  const record = (repo: string, wrap = "") =>
+    withLib(
+      `DEPLOY_DIR="${repo}/deploy"; DATA_DIR="${dir}/data"; ENV_FILE="${dir}/env"; APP_UID=$(id -u)
+${wrap}
+record_host_files; echo "exit $?"`,
+    );
+
+  it("keeps a bundle only when git finds it whole and it holds the running commit", async () => {
+    const { repo, commit } = await repoWithCommits();
+    const done = await record(repo);
+    expect(done.stdout).toContain("exit 0");
+    const host = path.join(dir, "data", "backups", ".host");
+    expect(readFileSync(path.join(host, "code.commit"), "utf8").trim()).toBe(commit);
+    expect(readFileSync(path.join(host, "code.bundle")).subarray(0, 15).toString()).toBe(
+      "# v2 git bundle",
+    );
+  });
+
+  it("keeps no bundle when the one just made is damaged, rather than a broken one", async () => {
+    const { repo } = await repoWithCommits();
+    // A stand-in git that spoils the bundle it makes.
+    const spoil = `git() { command git "$@"; local code=$?; if [ "\${3:-} \${4:-}" = "bundle create" ]; then truncate -s -30 "$5"; fi; return $code; }`;
+    const done = await record(repo, spoil);
+    expect(done.stdout).toContain("exit 0");
+    expect(done.stdout + done.stderr).toMatch(/The code bundle for the backups did not check out/);
+    const host = path.join(dir, "data", "backups", ".host");
+    expect(existsSync(path.join(host, "code.bundle"))).toBe(false);
+    expect(existsSync(path.join(host, "code.bundle.new"))).toBe(false);
+    expect(existsSync(path.join(host, "code.commit"))).toBe(false);
   });
 });

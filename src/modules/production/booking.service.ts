@@ -3,6 +3,7 @@ import {
   type GarmentCategory,
   type MeasurementUnit,
   Prisma,
+  type PurchaseOrderStatus,
   type RawMaterialKind,
 } from "@prisma/client";
 
@@ -14,6 +15,7 @@ import { lockRow } from "@/lib/row-lock";
 import { runTransaction } from "@/lib/transaction";
 import { assertAllowed } from "@/lib/verdict";
 import { auditInCompany } from "@/modules/audit/audit.service";
+import { isAiAddress } from "@/modules/ai/ai-address";
 import type { CompanyContext } from "@/modules/auth/context";
 import { assertAnyPermission, costMask } from "@/modules/materials/access";
 import { findOrAddMaterials, OPEN_ORDER } from "@/modules/materials/material.service";
@@ -55,6 +57,7 @@ import {
   sizeGroupOf,
 } from "@/modules/production/booking-presets";
 import {
+  approveBookingSchema,
   attachBookingSchema,
   type BookingLineInput,
   type CollarInput,
@@ -71,6 +74,7 @@ import {
   beforeChange,
   bookingSnapshot,
   fabricBasisOf,
+  fabricRisks,
   styleChangesSince,
 } from "@/modules/production/booking-approval.service";
 import {
@@ -434,13 +438,17 @@ export async function getBooking(ctx: CompanyContext, bookingId: string) {
   const [checks, styleChanges] = await Promise.all([
     row.stage === "DRAFT" && !ended ? approvalChecks(prisma, row.id) : Promise.resolve([]),
     row.stage !== "DRAFT" && !ended
-      ? styleChangesSince(prisma, row.fabricBasis)
+      ? styleChangesSince(prisma, row.fabricBasis, row.id)
       : Promise.resolve([]),
   ]);
   return { ...booking, checks, styleChanges };
 }
 
 export type Booking = Awaited<ReturnType<typeof getBooking>>;
+
+/** An approved or sent booking still open: its styles' fabric changes are flagged. */
+const flagged = (b: { stage: string; order: { status: PurchaseOrderStatus } }) =>
+  b.stage !== "DRAFT" && OPEN_ORDER.includes(b.order.status);
 
 /** The bookings, newest first: the list screen's rows (no lines, a fabric total per unit). */
 export async function listBookings(ctx: CompanyContext, raw: unknown = {}) {
@@ -477,6 +485,7 @@ export async function listBookings(ctx: CompanyContext, raw: unknown = {}) {
       styleRef: true,
       stage: true,
       revision: true,
+      fabricBasis: true,
       createdAt: true,
       order: {
         select: {
@@ -501,6 +510,8 @@ export async function listBookings(ctx: CompanyContext, raw: unknown = {}) {
   });
   const hasMore = rows.length > take;
   const page = hasMore ? rows.slice(0, take) : rows;
+  // The rows were found through the company's own client; what they rest on is read by id.
+  const risks = await fabricRisks(prisma, page.filter(flagged));
   return {
     items: page.map((b) => {
       const expected = dateOnly(b.order.expectedDate);
@@ -533,6 +544,8 @@ export async function listBookings(ctx: CompanyContext, raw: unknown = {}) {
           (t, c) => t + c.quantities.reduce((s, q) => s + q.sets, 0),
           0,
         ),
+        /** In red: styles whose fabric changed since it was approved, and the fabric at risk. */
+        fabricRisk: risks.get(b.id) ?? null,
       };
     }),
     nextCursor: hasMore ? page[page.length - 1]?.id : undefined,
@@ -999,6 +1012,14 @@ async function lockBooking(tx: Tx, ctx: CompanyContext, bookingId: string) {
   return { bookingId, order };
 }
 
+/** For the activity log: the draft revision a change made, if it made one. */
+const revisedText = (number: string, revised: Awaited<ReturnType<typeof afterChange>>) =>
+  revised
+    ? `; now draft ${bookingDocNo(number, revised.revision)} (${revised.record.changes.length} change(s)${
+        revised.record.wasSent ? " after it was sent" : ""
+      }), to be approved again`
+    : "";
+
 /** The order's expected day, never before the order day. */
 function expectedColumn(expectedDate: string | null | undefined, orderDate: Date) {
   if (expectedDate === undefined) return undefined;
@@ -1092,13 +1113,7 @@ export async function updateBooking(
         summary:
           `Updated booking ${bookingSummary(order.number, input.source, input.category, supplier.name)}: ${lines.length} item(s), ${total.toFixed(2)}${
             collar ? `, ${collar.totals.totalSets} collar sets` : ""
-          }${
-            revised
-              ? `; now draft ${bookingDocNo(order.number, revised.revision)} (${revised.record.changes.length} change(s)${
-                  revised.record.wasSent ? " after it was sent" : ""
-                }), to be approved again`
-              : ""
-          }`.slice(0, 500),
+          }${revisedText(order.number, revised)}`.slice(0, 500),
       },
       tx,
     );
@@ -1109,6 +1124,9 @@ export async function updateBooking(
 /**
  * The paperwork of an open booking, also after goods have arrived: the expected
  * day, references, delivery place, payment terms, the terms and their language.
+ * What the supplier is told (the in-house date, delivery place, payment terms
+ * and the terms) is part of the approval: changed after it, the booking becomes
+ * a draft of its next revision, approved again.
  */
 export async function updateBookingPaperwork(
   ctx: CompanyContext,
@@ -1131,6 +1149,8 @@ export async function updateBookingPaperwork(
       where: { id: bookingId },
       select: { source: true, category: true, collarStyle: true },
     });
+    // The approved booking it changes from, read before anything is written.
+    const before = await beforeChange(tx, ctx.company.id, bookingId);
     await tx.purchaseOrder.update({
       where: { id: order.id },
       data: {
@@ -1154,6 +1174,7 @@ export async function updateBookingPaperwork(
           }),
       },
     });
+    const revised = await afterChange(tx, bookingId, before);
     await auditInCompany(
       ctx,
       meta,
@@ -1161,7 +1182,11 @@ export async function updateBookingPaperwork(
         action: "UPDATE",
         entityType: "Booking",
         entityId: bookingId,
-        summary: `Updated the paperwork of booking ${order.number} to ${order.supplier.name}`,
+        summary:
+          `Updated the paperwork of booking ${order.number} to ${order.supplier.name}${revisedText(order.number, revised)}`.slice(
+            0,
+            500,
+          ),
       },
       tx,
     );
@@ -1219,10 +1244,24 @@ function assertCanApprove(ctx: CompanyContext) {
  * Approves a draft booking (or a draft revision) once its checks pass: what it
  * says is kept as that revision, with the fabric parts of the styles it is
  * for, and its goods may arrive from then on. Nothing goes to the supplier:
- * it is printed and sent, then marked as sent.
+ * it is printed and sent, then marked as sent. A person (never the AI) may
+ * approve past a check that allows it (collar, cuff and trims before the tech
+ * pack is approved) by giving a reason, which the activity log keeps.
  */
-export async function approveBooking(ctx: CompanyContext, bookingId: string, meta?: RequestMeta) {
+export async function approveBooking(
+  ctx: CompanyContext,
+  bookingId: string,
+  meta?: RequestMeta,
+  raw: unknown = {},
+) {
   assertCanApprove(ctx);
+  const { overrideReason } = approveBookingSchema.parse(raw);
+  if (overrideReason && isAiAddress(ctx.user.email)) {
+    throw new AppError(
+      "FORBIDDEN",
+      "Only a person may approve a booking past a check. The AI asks the owner.",
+    );
+  }
   await runTransaction(async (tx) => {
     const { order } = await lockBooking(tx, ctx, bookingId);
     assertAllowed(canChangeOrder(orderState(order)));
@@ -1234,7 +1273,11 @@ export async function approveBooking(ctx: CompanyContext, bookingId: string, met
     if (booking.stage !== "DRAFT") {
       throw new AppError("CONFLICT", `${docNo} is already approved.`);
     }
-    assertChecksPass(docNo, await approvalChecks(tx, bookingId));
+    const checks = await approvalChecks(tx, bookingId);
+    assertChecksPass(docNo, checks, overrideReason);
+    const passed = overrideReason
+      ? checks.filter((c) => c.state === "block" && c.override).map((c) => c.text)
+      : [];
     const snapshot = (await bookingSnapshot(tx, bookingId)) as unknown as Prisma.InputJsonValue;
     const basis = await fabricBasisOf(tx, bookingId);
     const now = new Date();
@@ -1266,7 +1309,10 @@ export async function approveBooking(ctx: CompanyContext, bookingId: string, met
         action: "UPDATE",
         entityType: "Booking",
         entityId: bookingId,
-        summary: `Approved booking ${docNo} to ${order.supplier.name}`,
+        summary: (passed.length > 0
+          ? `Approved booking ${docNo} to ${order.supplier.name} past a check (${passed.join("; ")}). Reason: ${overrideReason}`
+          : `Approved booking ${docNo} to ${order.supplier.name}`
+        ).slice(0, 500),
       },
       tx,
     );
@@ -1392,6 +1438,8 @@ export async function attachBooking(
       );
     }
     assertAllowed(canChangeOrder(orderState(order)));
+    // Attached after approval, it is approved again: the batch's checks (tech packs, Fabric first) apply.
+    const before = await beforeChange(tx, ctx.company.id, bookingId);
     const missing: string[] = [];
     for (const line of order.lines) {
       await tx.purchaseOrderLineShare.deleteMany({ where: { lineId: line.id } });
@@ -1408,6 +1456,7 @@ export async function attachBooking(
       }
     }
     await tx.purchaseOrder.update({ where: { id: order.id }, data: { batchId: plan.batch.id } });
+    const revised = await afterChange(tx, bookingId, before);
     await auditInCompany(
       ctx,
       meta,
@@ -1415,9 +1464,13 @@ export async function attachBooking(
         action: "UPDATE",
         entityType: "Booking",
         entityId: bookingId,
-        summary: `Attached booking ${order.number} (${order.supplier.name}) to ${plan.batch.code}: ${
-          order.lines.length - missing.length
-        } of ${order.lines.length} item(s) count for its styles`,
+        summary:
+          `Attached booking ${order.number} (${order.supplier.name}) to ${plan.batch.code}: ${
+            order.lines.length - missing.length
+          } of ${order.lines.length} item(s) count for its styles${revisedText(order.number, revised)}`.slice(
+            0,
+            500,
+          ),
       },
       tx,
     );
@@ -1449,10 +1502,12 @@ export async function detachBooking(ctx: CompanyContext, bookingId: string, meta
       where: { id: order.batchId },
       select: { code: true },
     });
+    const before = await beforeChange(tx, ctx.company.id, bookingId);
     await tx.purchaseOrderLineShare.deleteMany({
       where: { lineId: { in: order.lines.map((l) => l.id) } },
     });
     await tx.purchaseOrder.update({ where: { id: order.id }, data: { batchId: null } });
+    const revised = await afterChange(tx, bookingId, before);
     await auditInCompany(
       ctx,
       meta,
@@ -1460,7 +1515,11 @@ export async function detachBooking(ctx: CompanyContext, bookingId: string, meta
         action: "UPDATE",
         entityType: "Booking",
         entityId: bookingId,
-        summary: `Took booking ${order.number} (${order.supplier.name}) off ${batch.code}`,
+        summary:
+          `Took booking ${order.number} (${order.supplier.name}) off ${batch.code}${revisedText(order.number, revised)}`.slice(
+            0,
+            500,
+          ),
       },
       tx,
     );
@@ -1490,6 +1549,7 @@ export async function getBatchBookings(ctx: CompanyContext, batchId: string) {
     title: true,
     stage: true,
     revision: true,
+    fabricBasis: true,
     order: {
       select: {
         number: true,
@@ -1529,6 +1589,7 @@ export async function getBatchBookings(ctx: CompanyContext, batchId: string) {
         })
       : Promise.resolve([]),
   ]);
+  const risks = await fabricRisks(prisma, attached.filter(flagged));
   const present = (b: (typeof attached)[number]) => {
     const fabric = new Map<MeasurementUnit, Prisma.Decimal>();
     for (const l of b.order.lines) {
@@ -1550,6 +1611,8 @@ export async function getBatchBookings(ctx: CompanyContext, batchId: string) {
       expectedDate: dateOnly(b.order.expectedDate),
       itemCount: b.order.lines.length,
       fabric: [...fabric].map(([unit, total]) => ({ unit, quantity: trimmed(total) })),
+      /** In red: styles whose fabric changed since it was approved, and the fabric at risk. */
+      fabricRisk: risks.get(b.id) ?? null,
       canDetach: mayAttach && !received,
     };
   };

@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { FormFooter, usePageForm } from "@/components/accounts/form-bits";
-import { Field } from "@/components/forms/field";
+import { Field, FormAlert } from "@/components/forms/field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import type { BookingForm } from "@/modules/production/booking.service";
@@ -18,6 +18,7 @@ import { productionHref } from "./labels";
  * The paperwork of a booking goods have arrived on (buyers): the delivery day,
  * the references, where to deliver, the payment terms, the terms and their
  * language and the notes. Its items, supplier and matrix stay as they are.
+ * What the supplier is told needs the owner's approval again once approved.
  */
 export function BookingPaperworkForm({ form: data }: { form: BookingForm }) {
   const router = useRouter();
@@ -42,6 +43,14 @@ export function BookingPaperworkForm({ form: data }: { form: BookingForm }) {
 
   return (
     <form onSubmit={submit} className="grid max-w-3xl gap-6" noValidate>
+      {booking.stage !== "DRAFT" && (
+        <FormAlert tone="note">
+          {booking.number} is {booking.stage === "SENT" ? "approved and sent" : "approved"}. A
+          change to Deliver by, Deliver to, Payment terms or the terms makes revision R
+          {booking.revision + 1}, a draft that is approved again before it goes to the supplier. The
+          title, references and notes change on their own.
+        </FormAlert>
+      )}
       <div className="grid items-start gap-4 sm:grid-cols-2">
         <Field id="paper-expected" label="Deliver by (optional)" error={fieldError("expectedDate")}>
           <Input

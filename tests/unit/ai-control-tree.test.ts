@@ -98,6 +98,9 @@ describe("Control: the AI's access tree", () => {
       "production.bookings.approve",
       "ai.production.booking.send",
       "ai.production.cm.agree",
+      // Locked at Ask in v6.3: sending fabric first, and campaigns to win back quiet buyers.
+      "ai.production.fabric_first",
+      "sales.campaigns.manage",
     ]) {
       expect(isLocked(key), key).toBe(true);
       expect(readCell(all, `k:${key}`), key).toEqual({
@@ -129,8 +132,10 @@ describe("Control: the AI's access tree", () => {
         "ai.buyer.claim",
         "ai.sales.quotation.send",
         "ai.sales.invoice.send",
+        "sales.campaigns.manage",
       ]),
     );
+    expect(mostFor("sales.campaigns.manage")).toBe("ASK");
     expect(mostFor("production.view")).toBe("DO");
   });
 

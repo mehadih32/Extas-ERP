@@ -26,6 +26,10 @@ import { parseModel, PROVIDER_IDS } from "@/modules/ai/providers";
  * changes, and the rule that a model with no price is never counted as cost 0.
  */
 
+/** An OpenAI model's own page, where its price is given. */
+const MODEL_PAGE = (ref: string) =>
+  `https://developers.openai.com/api/docs/models/${ref.replace(/^openai:/, "")}`;
+
 const listed = (ref: string) => {
   const m = listedModel(ref);
   if (!m) throw new Error(`${ref} is not on the list`);
@@ -80,7 +84,8 @@ describe("the built-in price list", () => {
         refs.add(m.ref);
         expect(parseModel(m.ref)?.provider, m.ref).toBe(l.provider);
         expect(m.label.trim().length, m.ref).toBeGreaterThan(1);
-        expect(m.sourceUrl, m.ref).toBe(l.sourceUrl);
+        // The section's price page, or (OpenAI) the model's own page when its price is there.
+        expect([l.sourceUrl, MODEL_PAGE(m.ref)], m.ref).toContain(m.sourceUrl);
         expect(m.checkedOn, m.ref).toMatch(/^\d{4}-\d{2}-\d{2}$/);
         expect(m.input, m.ref).toBeGreaterThan(0);
         expect(m.output, m.ref).toBeGreaterThan(0);
@@ -95,6 +100,48 @@ describe("the built-in price list", () => {
         if (m.long) expect(m.long.input, m.ref).toBeGreaterThanOrEqual(m.input);
       }
     }
+  });
+
+  it("cites for each OpenAI model the page its price is on; those not on the price page are older", () => {
+    const openai = priceListOf("openai").models;
+    // On OpenAI's price page (16 October 2026): its flagship models and GPT-5.6 Sol.
+    const onPricePage = ["gpt-6-astra", "gpt-6.1-sol", "gpt-6-luna", "gpt-5.6-sol"];
+    expect(
+      openai.filter((m) => m.sourceUrl === priceListOf("openai").sourceUrl).map((m) => m.ref),
+    ).toEqual(onPricePage.map((id) => `openai:${id}`));
+    expect(openai.filter((m) => !m.older).map((m) => m.ref)).toEqual(
+      onPricePage.map((id) => `openai:${id}`),
+    );
+    // Every other one: its own model page, under "Older models".
+    for (const m of openai.filter((x) => !onPricePage.includes(x.ref.slice(7)))) {
+      expect(m.sourceUrl, m.ref).toBe(MODEL_PAGE(m.ref));
+      expect(m.older, m.ref).toBe(true);
+    }
+    // As those pages give them: long prompts are over 272K input tokens.
+    expect(listed("openai:gpt-6-sol")).toMatchObject({
+      input: 2,
+      output: 10,
+      cacheRead: 0.2,
+      cacheWrite: 2.5,
+      batchInput: 1,
+      batchOutput: 5,
+      long: { above: 272_000, input: 4, output: 15, cacheRead: 0.4, cacheWrite: 5 },
+    });
+    expect(listed("openai:gpt-5.6-terra")).toMatchObject({
+      input: 2,
+      output: 12,
+      cacheRead: 0.2,
+      cacheWrite: 2.5,
+      long: { above: 272_000, input: 4, output: 18 },
+    });
+    expect(listed("openai:gpt-5.6-luna")).toMatchObject({
+      input: 0.2,
+      output: 1.2,
+      cacheRead: 0.02,
+      cacheWrite: 0.25,
+      long: { above: 272_000, input: 0.4, output: 1.8 },
+    });
+    expect(listed("openai:o4-mini")).toMatchObject({ input: 1.1, output: 4.4, cacheRead: 0.275 });
   });
 
   it("prices every one of the ERP's own Claude models", () => {

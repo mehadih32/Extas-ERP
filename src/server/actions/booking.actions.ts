@@ -39,6 +39,10 @@ const change = <T>(work: () => Promise<T>) =>
 
 const ref = (b: { id: string; number: string }) => ({ id: b.id, number: b.number });
 
+/** The revision that waits for approval after a change that made one ("PO-2026-00007-R1"), or null. */
+const waiting = (b: { stage: string; revision: number; docNo: string }) =>
+  b.stage === "DRAFT" && b.revision > 0 ? b.docNo : null;
+
 export const listBookingsAction = async (query: unknown = {}) =>
   runAction(async () => bookings.listBookings(await see(), query));
 
@@ -94,18 +98,29 @@ export const attachBookingAction = async (bookingId: string, input: unknown) =>
       input,
       await getRequestMeta(),
     );
-    return { ...ref(done.booking), unmatched: done.unmatched };
+    return { ...ref(done.booking), unmatched: done.unmatched, waiting: waiting(done.booking) };
   });
 
 export const detachBookingAction = async (bookingId: string) =>
-  change(async () =>
-    ref(await bookings.detachBooking(await attach(), bookingId, await getRequestMeta())),
-  );
+  change(async () => {
+    const done = await bookings.detachBooking(await attach(), bookingId, await getRequestMeta());
+    return { ...ref(done), waiting: waiting(done) };
+  });
 
-/** The owner's approval (production.bookings.approve); the checks must pass. */
-export const approveBookingAction = async (bookingId: string) =>
+/**
+ * The owner's approval (production.bookings.approve); the checks must pass, or
+ * the owner gives a reason to approve past one that allows it.
+ */
+export const approveBookingAction = async (bookingId: string, overrideReason?: string) =>
   change(async () =>
-    ref(await bookings.approveBooking(await approve(), bookingId, await getRequestMeta())),
+    ref(
+      await bookings.approveBooking(
+        await approve(),
+        bookingId,
+        await getRequestMeta(),
+        overrideReason ? { overrideReason } : {},
+      ),
+    ),
   );
 
 /** Whoever makes that kind of booking marks it as sent once it is printed and sent. */

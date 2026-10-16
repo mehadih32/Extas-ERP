@@ -11,6 +11,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  */
 vi.mock("next/cache", () => ({ revalidatePath: () => undefined, revalidateTag: () => undefined }));
 
+import type { Prisma } from "@prisma/client";
+
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import * as catalog from "@/modules/inventory/catalog.service";
@@ -345,6 +347,254 @@ run("Booking approval and revisions", () => {
   });
 });
 
+run("What the supplier is told needs approval again (v6.3)", () => {
+  beforeEach(resetDb);
+
+  /** The paperwork as the form sends it: every field, changed or not. */
+  const paperwork = (more: Record<string, unknown> = {}) => ({
+    expectedDate: "2030-11-15",
+    title: "Winter jersey",
+    deliveryPlace: "Gazipur store",
+    paymentTerms: "30 days after delivery",
+    termsLanguage: "EN",
+    terms: "Fabric must match the approved lab dip.\nDeliver in rolls of 20 kg.",
+    ...more,
+  });
+
+  it("makes R1 when the in-house date, delivery place, payment terms or terms change after approval", async () => {
+    const env = await setup();
+    const made = await bookings.createBooking(
+      env.pm,
+      fabricBooking(env, 60, {
+        expectedDate: "2030-11-15",
+        deliveryPlace: "Gazipur store",
+        paymentTerms: "30 days after delivery",
+        terms: "Fabric must match the approved lab dip.\nDeliver in rolls of 20 kg.",
+      }),
+    );
+    await bookings.approveBooking(env.owner, made.id);
+    await bookings.markBookingSent(env.pm, made.id);
+
+    // The title, references and notes are the company's own: no revision.
+    const titled = await bookings.updateBookingPaperwork(
+      env.pm,
+      made.id,
+      paperwork({ title: "Winter jersey, first lot", supplierRef: "NF-881", notes: "Call first" }),
+    );
+    expect(titled).toMatchObject({ stage: "SENT", revision: 0 });
+
+    // A new delivery place makes R1, a draft that waits for approval; nothing arrives meanwhile.
+    const moved = await bookings.updateBookingPaperwork(
+      env.pm,
+      made.id,
+      paperwork({ deliveryPlace: "Ashulia cutting floor" }),
+    );
+    expect(moved).toMatchObject({ stage: "DRAFT", revision: 1, docNo: `${made.number}-R1` });
+    expect(moved.changes?.changes).toEqual([
+      { item: "Delivery place", was: "Gazipur store", now: "Ashulia cutting floor" },
+    ]);
+    await expectAppError(receiveOne(env, made.orderId, made.lines[0]!.id), "CONFLICT");
+    await bookings.approveBooking(env.owner, made.id);
+
+    // The in-house date, payment terms and one line of the terms: R2, each listed.
+    const r2 = await bookings.updateBookingPaperwork(
+      env.pm,
+      made.id,
+      paperwork({
+        expectedDate: "2030-11-25",
+        deliveryPlace: "Ashulia cutting floor",
+        paymentTerms: "LC at sight",
+        terms: "Fabric must match the approved lab dip.\nDeliver in rolls of 25 kg.",
+      }),
+    );
+    expect(r2).toMatchObject({ stage: "DRAFT", revision: 2 });
+    expect(r2.changes?.changes).toEqual([
+      { item: "In-house date", was: "2030-11-15", now: "2030-11-25" },
+      { item: "Payment terms", was: "30 days after delivery", now: "LC at sight" },
+      {
+        item: "Terms and conditions",
+        was: "Line 2: Deliver in rolls of 20 kg.",
+        now: "Line 2: Deliver in rolls of 25 kg.",
+      },
+    ]);
+    const log = await prisma.auditLog.findMany({
+      where: { entityType: "Booking", entityId: made.id, summary: { contains: "paperwork" } },
+      orderBy: { createdAt: "asc" },
+      select: { summary: true },
+    });
+    expect(log.at(-1)?.summary).toContain(`now draft ${made.number}-R2`);
+  });
+
+  it("compares a booking approved before v6.3 with its paperwork as it stands", async () => {
+    const env = await setup();
+    const made = await bookings.createBooking(
+      env.pm,
+      fabricBooking(env, 60, { expectedDate: "2030-11-15", paymentTerms: "30 days" }),
+    );
+    await bookings.approveBooking(env.owner, made.id);
+    // A snapshot kept by v6.2 had no paperwork and no batch.
+    const kept = await prisma.bookingRevision.findUniqueOrThrow({
+      where: { bookingId_revision: { bookingId: made.id, revision: 0 } },
+    });
+    const old = Object.fromEntries(
+      Object.entries(kept.snapshot as Record<string, Prisma.InputJsonValue>).filter(
+        ([key]) => key !== "paperwork" && key !== "batch",
+      ),
+    );
+    await prisma.bookingRevision.update({ where: { id: kept.id }, data: { snapshot: old } });
+
+    const changed = await bookings.updateBookingPaperwork(
+      env.pm,
+      made.id,
+      paperwork({ paymentTerms: "60 days", deliveryPlace: null, title: null, terms: null }),
+    );
+    expect(changed).toMatchObject({ stage: "DRAFT", revision: 1 });
+    expect(changed.changes?.changes).toEqual([
+      { item: "Payment terms", was: "30 days", now: "60 days" },
+    ]);
+    const filled = await prisma.bookingRevision.findUniqueOrThrow({ where: { id: kept.id } });
+    expect(filled.snapshot).toMatchObject({ batch: null, paperwork: { paymentTerms: "30 days" } });
+  });
+
+  it("makes a revision when an approved booking goes on a batch, so the batch's checks apply", async () => {
+    const env = await setup();
+    // Buttons approved on their own: no style, so no tech pack to wait for.
+    const made = await bookings.createBooking(env.pm, {
+      source: "SUPPLIER_PO",
+      category: "KNITWEAR",
+      supplierId: env.trims.id,
+      expectedDate: "2030-11-20",
+      lines: [{ materialId: env.buttons.id, quantity: 720, unitPrice: 2 }],
+    });
+    await bookings.approveBooking(env.owner, made.id);
+    const attached = await bookings.attachBooking(env.pm, made.id, { batchId: env.batch.id });
+    expect(attached.booking).toMatchObject({ stage: "DRAFT", revision: 1 });
+    expect(attached.booking.changes?.changes).toContainEqual({
+      item: "Master batch",
+      was: "None",
+      now: env.batch.code,
+    });
+    // On the batch, the buttons wait for the styles' tech packs.
+    const seen = await bookings.getBooking(env.owner, made.id);
+    expect(seen.checks).toContainEqual({
+      text: `Collar, cuff and trims wait for the tech pack of ${env.polo.code}, ${env.tee.code} to be approved`,
+      state: "block",
+      override: true,
+    });
+    await expectAppError(
+      bookings.approveBooking(env.owner, made.id),
+      "CONFLICT",
+      /Collar, cuff and trims wait for the tech pack/,
+    );
+
+    // Taken off again after approval: another revision.
+    await techPacks.approveTechPack(env.owner, env.polo.id);
+    await techPacks.approveTechPack(env.owner, env.tee.id);
+    await bookings.approveBooking(env.owner, made.id);
+    const off = await bookings.detachBooking(env.pm, made.id);
+    expect(off).toMatchObject({ stage: "DRAFT", revision: 2 });
+    expect(off.changes?.changes).toContainEqual({
+      item: "Master batch",
+      was: env.batch.code,
+      now: "None",
+    });
+  });
+
+  it("counts an item in no style's materials list for every style of the batch", async () => {
+    const env = await setup();
+    await bookings.setFabricFirst(env.owner, env.batch.id, true);
+    const rib = await materials.createMaterial(env.pm, {
+      name: "1x1 Rib 220 GSM",
+      kind: "FABRIC",
+      unit: "KG",
+      supplierId: env.mill.id,
+    });
+    const tape = await materials.createMaterial(env.pm, {
+      name: "Neck Tape 10 mm",
+      kind: "TRIM",
+      unit: "PCS",
+      supplierId: env.trims.id,
+    });
+    const made = await bookings.createBooking(env.pm, {
+      source: "SUPPLIER_PO",
+      category: "KNITWEAR",
+      supplierId: env.mill.id,
+      batchId: env.batch.id,
+      expectedDate: "2030-11-20",
+      lines: [
+        { materialId: rib.id, quantity: 12, unitPrice: 450 },
+        { materialId: tape.id, quantity: 300, unitPrice: 1 },
+      ],
+    });
+    const seen = await bookings.getBooking(env.owner, made.id);
+    expect(seen.checks).toEqual(
+      expect.arrayContaining([
+        {
+          text: `${rib.code}, ${tape.code} are in no style's materials list: counted for every style of ${env.batch.code}`,
+          state: "warn",
+        },
+        {
+          text: `Fabric first: lock the fabric part of ${env.polo.code}, ${env.tee.code}`,
+          state: "block",
+        },
+        {
+          text: `Collar, cuff and trims wait for the tech pack of ${env.polo.code}, ${env.tee.code} to be approved`,
+          state: "block",
+          override: true,
+        },
+      ]),
+    );
+    // A reason passes the trims check, never the fabric lock.
+    await expectAppError(
+      bookings.approveBooking(env.owner, made.id, undefined, {
+        overrideReason: "Buyer is waiting",
+      }),
+      "CONFLICT",
+      /lock the fabric part/,
+    );
+  });
+
+  it("lets the owner approve collar, cuff and trims before the tech pack with a reason, kept in the log", async () => {
+    const env = await setup();
+    const made = await bookings.createBooking(env.pm, {
+      source: "SUPPLIER_PO",
+      category: "KNITWEAR",
+      supplierId: env.trims.id,
+      batchId: env.batch.id,
+      expectedDate: "2030-11-20",
+      lines: [{ materialId: env.buttons.id, quantity: 720, unitPrice: 2 }],
+    });
+    await expectAppError(
+      bookings.approveBooking(env.owner, made.id),
+      "CONFLICT",
+      /Collar, cuff and trims wait for the tech pack/,
+    );
+    await expect(
+      bookings.approveBooking(env.owner, made.id, undefined, { overrideReason: "ok" }),
+    ).rejects.toThrow(/at least 5 characters/);
+    // The AI never approves past a check.
+    const { asAi } = await import("@/modules/ai/account");
+    await expectAppError(
+      bookings.approveBooking(await asAi(env.owner), made.id, undefined, {
+        overrideReason: "Buyer is waiting for buttons",
+      }),
+      "FORBIDDEN",
+      /Only a person/,
+    );
+    const approved = await bookings.approveBooking(env.owner, made.id, undefined, {
+      overrideReason: "Buyer confirmed the buttons by email",
+    });
+    expect(approved).toMatchObject({ stage: "APPROVED", revision: 0 });
+    const log = await prisma.auditLog.findFirstOrThrow({
+      where: { entityType: "Booking", entityId: made.id, summary: { startsWith: "Approved" } },
+      select: { summary: true },
+    });
+    expect(log.summary).toBe(
+      `Approved booking ${made.number}-R0 to Dhaka Trims House past a check (Collar, cuff and trims wait for the tech pack of ${env.polo.code}, ${env.tee.code} to be approved). Reason: Buyer confirmed the buttons by email`,
+    );
+  });
+});
+
 run("Fabric first and tech pack approval", () => {
   beforeEach(resetDb);
 
@@ -422,18 +672,36 @@ run("Fabric first and tech pack approval", () => {
     ]);
     expect(changed.can.approve).toBe(true);
     const onBooking = await bookings.getBooking(env.pm, fabric.id);
+    // The fabric booked for the polo is at risk: in red on the booking, the list and the batch.
+    const poloKg = fabric.lines[0]!.shares.filter((sh) => sh.project.id === env.polo.id).reduce(
+      (t, sh) => t + Number(sh.quantity),
+      0,
+    );
+    const atRisk = [{ unit: "KG", quantity: String(Number(poloKg.toFixed(3))) }];
     expect(onBooking.styleChanges).toEqual([
       {
         project: { id: env.polo.id, code: env.polo.code, name: "Brand A polo" },
         changes: changed.changes,
+        atRisk,
       },
     ]);
+    const listed = await bookings.listBookings(env.pm, { batchId: env.batch.id });
+    expect(listed.items.map((b) => [b.id, b.fabricRisk])).toEqual(
+      expect.arrayContaining([
+        [fabric.id, { styles: [env.polo.code], atRisk }],
+        [buttons.id, null],
+      ]),
+    );
     const panel = await bookings.getBatchBookings(env.pm, env.batch.id);
     expect(panel.fabricFirst).toMatchObject({ by: expect.any(String) });
     expect(panel.styles.map((s) => [s.code, s.status, s.changed])).toEqual([
       [env.polo.code, "APPROVED", 1],
       [env.tee.code, "APPROVED", 0],
     ]);
+    expect(panel.attached.find((b) => b.id === fabric.id)?.fabricRisk).toEqual({
+      styles: [env.polo.code],
+      atRisk,
+    });
 
     // Off again, an unapproved tech pack is only a warning.
     await bookings.setFabricFirst(env.owner, env.batch.id, false);

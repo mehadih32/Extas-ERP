@@ -919,8 +919,12 @@ async function runSteps(
       })),
     ],
   });
-  // A booking is a draft until it is approved; then it goes to the mill.
-  await bookings.approveBooking(ctx, booked.id);
+  // A booking is a draft until it is approved; then it goes to the mill. The collars are
+  // booked with the fabric before the tech packs are approved, so the owner approves past
+  // that check with a reason, which the activity log keeps.
+  await bookings.approveBooking(ctx, booked.id, undefined, {
+    overrideReason: "Simulation: collars booked with the fabric, tech packs follow",
+  });
   await bookings.markBookingSent(ctx, booked.id);
   await batchOrders.createBatchOrders(ctx, batch.id, {
     orders: [

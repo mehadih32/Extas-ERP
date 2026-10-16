@@ -1,11 +1,19 @@
 "use client";
 
-import { CheckIcon, SendIcon, ShieldCheckIcon, TriangleAlertIcon, XIcon } from "lucide-react";
+import {
+  CheckIcon,
+  SendIcon,
+  ShieldAlertIcon,
+  ShieldCheckIcon,
+  TriangleAlertIcon,
+  XIcon,
+} from "lucide-react";
 import { useState } from "react";
 
-import { FormAlert } from "@/components/forms/field";
+import { Field, FormAlert } from "@/components/forms/field";
 import { FormDialog } from "@/components/sales/dialogs";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import { formatDay } from "@/lib/display";
 import { atRiskText, revisionLabel } from "@/modules/production/booking-revisions";
 import type { Booking } from "@/modules/production/booking.service";
@@ -30,10 +38,12 @@ const CHECK_ICON = {
 const CHECK_WORD = { ok: "Passed", warn: "Warning", block: "To put right" } as const;
 
 export function BookingApproval({ booking: b }: { booking: Booking }) {
-  const [asking, setAsking] = useState<"approve" | "sent" | null>(null);
+  const [asking, setAsking] = useState<"approve" | "override" | "sent" | null>(null);
   const [notice, setNotice] = useState<string>();
   const ended = b.status === "CLOSED" || b.status === "CANCELLED";
   const blocks = b.checks.filter((c) => c.state === "block");
+  // Only blocks the owner may approve past with a reason (collar, cuff and trims before the tech pack).
+  const overridable = blocks.length > 0 && blocks.every((c) => c.override);
   const changes = b.changes && b.revision > 0 ? b.changes : null;
   const waiting = b.stage === "DRAFT";
 
@@ -71,6 +81,12 @@ export function BookingApproval({ booking: b }: { booking: Booking }) {
                 >
                   <ShieldCheckIcon aria-hidden />
                   Approve booking
+                </Button>
+              )}
+              {b.can.approve && overridable && (
+                <Button type="button" variant="outline" onClick={() => setAsking("override")}>
+                  <ShieldAlertIcon aria-hidden />
+                  Approve with a reason
                 </Button>
               )}
               {b.can.markSent && (
@@ -167,6 +183,11 @@ export function BookingApproval({ booking: b }: { booking: Booking }) {
                 <p className="font-medium">
                   {s.project.code} · {s.project.name}
                 </p>
+                {s.atRisk.length > 0 && (
+                  <p className="font-medium text-destructive">
+                    Fabric at risk: {atRiskText(s.atRisk)}
+                  </p>
+                )}
                 <ul className="grid gap-0.5 text-[0.8125rem]">
                   {s.changes.map((c) => (
                     <li key={`${c.item}|${c.was}|${c.now}`} className="break-words">
@@ -212,6 +233,55 @@ export function BookingApproval({ booking: b }: { booking: Booking }) {
               </ul>
             ) : null
           }
+        </FormDialog>
+      )}
+
+      {asking === "override" && (
+        <FormDialog
+          title={`Approve ${b.docNo} with a reason?`}
+          description="Collar, cuff and trims are booked before the tech pack is approved. Say why it cannot wait: the reason is kept in the activity log with your name."
+          submitLabel="Approve booking"
+          pendingLabel="Approving"
+          errorTitle="We could not approve the booking"
+          onClose={() => setAsking(null)}
+          onSubmit={async (form) => {
+            const reason = String(form.get("overrideReason") ?? "").trim();
+            if (reason.length < 5) {
+              return {
+                code: "VALIDATION",
+                message: "Give a reason of at least 5 characters.",
+                fieldErrors: { overrideReason: ["Give a reason of at least 5 characters"] },
+              };
+            }
+            const result = await approveBookingAction(b.id, reason);
+            if (!result.ok) return result.error;
+            setNotice(
+              `${b.docNo} was approved with your reason. Print it and send it to ${b.supplier.name}.`,
+            );
+            setAsking(null);
+          }}
+        >
+          {(fieldError) => (
+            <div className="grid gap-3">
+              <ul className="grid gap-1.5 text-sm">
+                {blocks.map((c) => (
+                  <li key={c.text} className="flex gap-2">
+                    {CHECK_ICON.block}
+                    <span className="text-destructive">{c.text}</span>
+                  </li>
+                ))}
+              </ul>
+              <Field id="override-reason" label="Reason" error={fieldError("overrideReason")}>
+                <Textarea
+                  id="override-reason"
+                  name="overrideReason"
+                  rows={3}
+                  maxLength={400}
+                  aria-invalid={Boolean(fieldError("overrideReason"))}
+                />
+              </Field>
+            </div>
+          )}
         </FormDialog>
       )}
 

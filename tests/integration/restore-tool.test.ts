@@ -66,7 +66,8 @@ const COUNT_SQL = `SELECT coalesce(json_object_agg(table_name, n ORDER BY table_
 type Ran = { code: number; stdout: string; stderr: string };
 type State = Record<string, unknown>;
 
-run("the restore tool on a new server", () => {
+// Real backups, restores and Python runs: slow on a busy machine, so 2 minutes each.
+run("the restore tool on a new server", { timeout: 120_000 }, () => {
   let dir: string;
   let backupDir: string;
   let uploadDir: string;
@@ -100,7 +101,7 @@ run("the restore tool on a new server", () => {
     const { company, roles } = await makeCompany("Extas");
     await addToCompany(owner.userId, company.id, roles.SUPER_ADMIN);
     ctx = await contextFor(owner.userId, company.id);
-  });
+  }, 60_000); // the first one of a run can take over 10 s on a busy machine
 
   afterEach(async () => {
     vi.unstubAllEnvs();

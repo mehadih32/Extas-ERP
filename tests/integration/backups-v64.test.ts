@@ -76,7 +76,8 @@ type Manifest = {
   files: Array<{ name: string; bytes: number; sha256: string; plain?: { name: string } }>;
 };
 
-run("v6.4 backups", () => {
+// Real backups, restores and PDFs: slow on a busy machine, so 2 minutes each.
+run("v6.4 backups", { timeout: 120_000 }, () => {
   let dir: string;
   let backupDir: string;
   let uploadDir: string;
@@ -106,7 +107,7 @@ run("v6.4 backups", () => {
     const { company, roles } = await makeCompany("Extas");
     await addToCompany(owner.userId, company.id, roles.SUPER_ADMIN);
     ctx = await contextFor(owner.userId, company.id);
-  });
+  }, 60_000);
 
   afterEach(async () => {
     vi.unstubAllEnvs();

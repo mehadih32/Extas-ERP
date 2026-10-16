@@ -10,14 +10,17 @@ import type { CompanyContext } from "@/modules/auth/context";
 import { listAccessibleCompanies, resolveCompanyAccess } from "@/modules/companies/access";
 import { recordHref } from "@/modules/reminders/links";
 
-import { modelInfo, taskInfo } from "./models";
+import { taskInfo } from "./models";
 import { aiOn } from "./claude";
-import { budgetOf, periodStarts } from "./usage.service";
+import { isProvider, modelLabel, parseModel, PROVIDERS, providerInfo } from "./providers";
+import { aiSettingsOf, readModelsOf } from "./settings.service";
+import { budgetOf, periodStarts, providerLimitsOf } from "./usage.service";
 
 /*
  * AI Center > Budget & Costs: the budget and limits form, and what the AI
  * spent, by period (today, the last 7 or 30 days, this month, any range),
- * broken down by task, model, area, agent, person, record and store, with
+ * broken down by provider (Claude, OpenAI, Gemini), task, model, area, agent,
+ * person, record and store, with
  * the cost per day, the five costliest calls, the month-end projection and
  * every line with its reason. Read with ai.view or ai.manage; the budget is
  * changed with ai.manage.
@@ -116,7 +119,7 @@ async function loadCosts(ctx: CompanyContext, raw: unknown) {
   };
 
   const { monthStart } = periodStarts(now, tz);
-  const [lines, budget, monthSum, people, on] = await Promise.all([
+  const [lines, budget, monthSum, people, on, settings] = await Promise.all([
     ctx.db.aiUsage.findMany({
       where,
       orderBy: { createdAt: "desc" },
@@ -131,7 +134,13 @@ async function loadCosts(ctx: CompanyContext, raw: unknown) {
       select: { user: { select: { id: true, name: true } } },
     }),
     aiOn(ctx.company.id),
+    aiSettingsOf(ctx.company.id),
   ]);
+  const read = readModelsOf(settings);
+  const nameOf = (ref: string) => {
+    const provider = parseModel(ref)?.provider;
+    return modelLabel(ref, provider ? read[provider]?.models : undefined);
+  };
 
   const total = lines.reduce((t, l) => t.plus(l.cost), ZERO);
   const totalUsd = lines.reduce((t, l) => t.plus(l.costUsd), ZERO);
@@ -161,8 +170,11 @@ async function loadCosts(ctx: CompanyContext, raw: unknown) {
     why: l.why,
     record: l.recordLabel,
     href: recordHref(ctx, l.recordType ? { type: l.recordType, id: l.recordId } : null),
-    model: modelInfo(l.model)?.label ?? l.model,
+    model: nameOf(l.model),
+    provider: isProvider(l.provider) ? providerInfo(l.provider).label : l.provider,
     tokens: { input: l.inputTokens, output: l.outputTokens, cacheRead: l.cacheReadTokens },
+    /** False: the model had no price; the cost is shown as "price unknown". */
+    costKnown: l.costKnown,
     cost: l.cost.toFixed(2),
     costUsd: l.costUsd.toFixed(4),
     result: l.result,
@@ -180,6 +192,8 @@ async function loadCosts(ctx: CompanyContext, raw: unknown) {
       calls: lines.length,
       failed: lines.filter((l) => l.result === "FAILED").length,
       stopped: lines.filter((l) => l.result === "STOPPED").length,
+      /** Calls on a model without a price: not in the totals. */
+      priceUnknown: lines.filter((l) => !l.costKnown).length,
       tokens: {
         input: lines.reduce((t, l) => t + l.inputTokens, 0),
         output: lines.reduce((t, l) => t + l.outputTokens, 0),
@@ -197,13 +211,26 @@ async function loadCosts(ctx: CompanyContext, raw: unknown) {
     },
     perDay: [...perDay.entries()].map(([day, cost]) => ({ day, cost: cost.toFixed(2) })),
     by: {
+      provider: PROVIDERS.map((p) => {
+        const mine = lines.filter((l) => l.provider === p.id);
+        const spent = mine.reduce((t, l) => t.plus(l.cost), ZERO);
+        const monthLimit = providerLimitsOf(budget)[p.id] ?? null;
+        return {
+          key: p.id,
+          label: p.label,
+          cost: spent.toFixed(2),
+          calls: mine.length,
+          priceUnknown: mine.filter((l) => !l.costKnown).length,
+          limit: monthLimit?.toFixed(2) ?? null,
+        };
+      }),
       task: slices(lines, (i) => ({
         key: lines[i]!.task,
         label: taskInfo(lines[i]!.task)?.label ?? lines[i]!.task,
       })),
       model: slices(lines, (i) => ({
         key: lines[i]!.model,
-        label: modelInfo(lines[i]!.model)?.label ?? lines[i]!.model,
+        label: nameOf(lines[i]!.model),
       })),
       module: slices(lines, (i) => ({ key: lines[i]!.module, label: lines[i]!.module })),
       agent: slices(lines, (i) => ({ key: lines[i]!.agent, label: lines[i]!.agent })),
@@ -241,6 +268,9 @@ async function loadCosts(ctx: CompanyContext, raw: unknown) {
       alertPercent: budget.alertPercent,
       atLimit: budget.atLimit,
       usdRate: budget.usdRate.toFixed(2),
+      providerLimits: Object.fromEntries(
+        PROVIDERS.map((p) => [p.id, providerLimitsOf(budget)[p.id]?.toFixed(2) ?? null]),
+      ) as Record<(typeof PROVIDERS)[number]["id"], string | null>,
     },
     can: { manage: ctx.can("ai.manage") },
   };
@@ -307,6 +337,10 @@ export const budgetSchema = z.object({
   perStaffMonthly: amount.nullish(),
   perAgentMonthly: amount.nullish(),
   askAbove: amount.nullish(),
+  /** A monthly limit per provider. */
+  limit_anthropic: amount.nullish(),
+  limit_openai: amount.nullish(),
+  limit_google: amount.nullish(),
   alertPercent: z.coerce.number().int().min(10, "Use 10 to 100").max(100, "Use 10 to 100"),
   atLimit: z.enum(["STOP", "CHEAPER"]),
   usdRate: z
@@ -334,6 +368,15 @@ export async function setBudget(ctx: CompanyContext, input: unknown, meta?: Requ
     alertPercent: b.alertPercent,
     atLimit: b.atLimit,
     usdRate: b.usdRate,
+    providerLimits: Object.fromEntries(
+      (
+        [
+          ["anthropic", b.limit_anthropic],
+          ["openai", b.limit_openai],
+          ["google", b.limit_google],
+        ] as const
+      ).filter(([, v]) => v),
+    ),
     updatedById: ctx.user.id,
   };
   await prisma.aiBudget.upsert({
@@ -346,7 +389,11 @@ export async function setBudget(ctx: CompanyContext, input: unknown, meta?: Requ
     action: "UPDATE",
     entityType: "AiSettings",
     entityId: ctx.company.id,
-    summary: `AI budget: monthly ${money(data.monthly)}, daily ${money(data.daily)}, alert at ${data.alertPercent}%, at the limit ${data.atLimit === "STOP" ? "stop" : "small model"}, 1 USD = ${data.usdRate}`,
+    summary: `AI budget: monthly ${money(data.monthly)}, daily ${money(data.daily)}, alert at ${data.alertPercent}%, at the limit ${data.atLimit === "STOP" ? "stop" : "small model"}, 1 USD = ${data.usdRate}${PROVIDERS.filter(
+      (p) => data.providerLimits[p.id],
+    )
+      .map((p) => `, ${p.label} ${money(data.providerLimits[p.id] ?? null)} a month`)
+      .join("")}`,
   });
 }
 

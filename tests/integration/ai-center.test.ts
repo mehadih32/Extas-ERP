@@ -203,7 +203,7 @@ run("AI Center", () => {
     expect(await getAiStatus(env.owner)).toMatchObject({
       enabled: true,
       working: false,
-      offText: expect.stringContaining("no Claude key"),
+      offText: expect.stringContaining("no key yet"),
       changedBy: "owner",
     });
     // On, but without a key nothing is called.

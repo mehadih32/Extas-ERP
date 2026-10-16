@@ -269,6 +269,25 @@ describe("figures in a booking table are never cut (v6.3)", () => {
     expect(lines.filter((l) => l === "Colour 1").length).toBe(continued.length + 1);
   });
 
+  it("wraps a column heading that is wider than its column, never cutting it", async () => {
+    // The collar matrix with 14 size groups printed "GARMENT COL…" (found in the release samples).
+    const base = sizeTable(14, (r, s) => `${10 + r},${String(100 + s).padStart(3, "0")}`);
+    const table = {
+      ...base,
+      columns: [
+        { label: "Garment colour", weight: 2 },
+        { label: "Collar colour", weight: 2.2 },
+        ...base.columns.slice(1),
+      ],
+      rows: base.rows.map((r) => ({ ...r, cells: [r.cells[0]!, "Navy", ...r.cells.slice(1)] })),
+    };
+    const pdf = await renderDocumentPdf(framed([table]), { compress: false });
+    const lines = pdfLines(pdf);
+    expect(lines.join("\n")).not.toContain("…");
+    expect(lines.join("\n")).toMatch(/GARMENT\s+COLOUR|GARMENT[\s\S]*COLOUR/);
+    for (const row of table.rows) for (const cell of row.cells) expect(lines).toContain(cell);
+  });
+
   it("leaves a table that already fits at the usual size", async () => {
     const table = sizeTable(4, () => "120");
     const pdf = await renderDocumentPdf(framed([table]), { compress: false });

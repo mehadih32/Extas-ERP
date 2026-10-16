@@ -127,6 +127,8 @@ const HEADER_RATIO = 7.4 / TABLE_SIZE;
 const DETAIL_SIZE = 7;
 const DETAIL_LINE = 9.4;
 const TABLE_HEADER = 18;
+/** A column heading too wide for its column wraps to this many lines; it is never cut. */
+const MAX_HEADER_LINES = 3;
 const MAX_CELL_LINES = 8;
 /** A row's reference picture: a square this wide, before the details' text. */
 const THUMB = 58;
@@ -958,20 +960,48 @@ class Writer {
     return this.frame ? c.label.toUpperCase() : c.label;
   }
 
+  /** Each column heading's lines: one, or wrapped when the column is narrower than it. */
+  private headerLines(columns: Column[], boxes: ColumnBox[]): string[][] {
+    const style = { font: SANS_BOLD, size: this.tableSize * HEADER_RATIO, spacing: 0.3 };
+    return columns.map((c, i) => {
+      const text = this.columnLabel(c);
+      const width = boxes[i]!.width - 2 * CELL_PAD;
+      if (textWidth(this.doc, text, style) <= width) return [text];
+      return wrapText(this.doc, text, width, style).slice(0, MAX_HEADER_LINES);
+    });
+  }
+
+  /** The heading row's height: taller when a heading wraps. */
+  private headerHeight(lines: string[][]): number {
+    const most = Math.max(1, ...lines.map((l) => l.length));
+    return TABLE_HEADER + (most - 1) * this.tableSize * HEADER_RATIO * 1.25;
+  }
+
   private tableHeader(columns: Column[], boxes: ColumnBox[]) {
-    this.doc.rect(this.left, this.y, this.width, TABLE_HEADER).fill(this.primary);
+    const lines = this.headerLines(columns, boxes);
+    const height = this.headerHeight(lines);
+    const size = this.tableSize * HEADER_RATIO;
+    this.doc.rect(this.left, this.y, this.width, height).fill(this.primary);
     columns.forEach((c, i) => {
       const box = boxes[i]!;
-      this.line(this.columnLabel(c), box.x + CELL_PAD, this.y + 5.6, box.width - 2 * CELL_PAD, {
-        font: SANS_BOLD,
-        size: this.tableSize * HEADER_RATIO,
-        color: WHITE,
-        align: box.align,
-        spacing: 0.3,
+      lines[i]!.forEach((text, n) => {
+        this.line(
+          text,
+          box.x + CELL_PAD,
+          this.y + 5.6 + n * size * 1.25,
+          box.width - 2 * CELL_PAD,
+          {
+            font: SANS_BOLD,
+            size,
+            color: WHITE,
+            align: box.align,
+            spacing: 0.3,
+          },
+        );
       });
     });
-    if (this.frame) this.grid(boxes, this.y, TABLE_HEADER);
-    this.y += TABLE_HEADER;
+    if (this.frame) this.grid(boxes, this.y, height);
+    this.y += height;
   }
 
   /** The book frame's table grid: a thin blue-grey line round every cell of a row. */
@@ -1101,7 +1131,8 @@ class Writer {
     });
     const layouts = block.rows.map((row) => this.layoutRow(row, boxes, detailColumn));
     const titleHeight = block.title ? 13 : 0;
-    this.ensure(titleHeight + TABLE_HEADER + (layouts[0]?.height ?? 20));
+    const header = this.headerHeight(this.headerLines(block.columns, boxes));
+    this.ensure(titleHeight + header + (layouts[0]?.height ?? 20));
     if (block.title) this.sectionTitle(block.title);
     this.tableHeader(block.columns, boxes);
 

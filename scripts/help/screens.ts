@@ -118,6 +118,18 @@ function stringsIn(expr: ts.Expression | undefined, out: string[]) {
   } else if (ts.isParenthesizedExpression(expr)) stringsIn(expr.expression, out);
 }
 
+/** Text shown only at some widths (`sm:hidden`, `hidden sm:inline`): "Arrange" on a phone, "Arrange sections" wider. */
+function showsAtSomeWidths(el: ts.JsxElement): boolean {
+  return el.openingElement.attributes.properties.some(
+    (a) =>
+      ts.isJsxAttribute(a) &&
+      a.name.getText() === "className" &&
+      a.initializer !== undefined &&
+      ts.isStringLiteral(a.initializer) &&
+      /(^|\s)([a-z0-9]+:)?hidden(\s|$)/.test(a.initializer.text),
+  );
+}
+
 /** The words of a button: its own text, without icons and without passing states ("Saving…"). */
 function textOf(el: ts.JsxElement): string[] {
   const plain: string[] = [];
@@ -129,10 +141,15 @@ function textOf(el: ts.JsxElement): string[] {
       stringsIn(node.expression, found);
       if (found.length === 1 && ts.isStringLiteral(node.expression!)) plain.push(found[0]!);
       else alternatives.push(...found);
-    } else if (ts.isJsxElement(node)) node.children.forEach(visit);
+    } else if (ts.isJsxElement(node)) {
+      // A label for one width is its own label, not part of the other one.
+      if (showsAtSomeWidths(node)) alternatives.push(...textOf(node));
+      else node.children.forEach(visit);
+    }
   };
   el.children.forEach(visit);
-  const main = plain.join(" ").replace(/\s+/g, " ").trim();
+  // "Run the tests ({picked.length})" is the button "Run the tests": the count is not a word.
+  const main = plain.join(" ").replace(/\(\s*\)/g, "").replace(/\s+/g, " ").trim();
   return [main, ...alternatives.map((a) => a.replace(/\s+/g, " ").trim())];
 }
 

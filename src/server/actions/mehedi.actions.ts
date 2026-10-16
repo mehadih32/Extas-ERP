@@ -63,8 +63,16 @@ export const sendChatAction = async (input: unknown) =>
     return null;
   });
 
-export const applyCardAction = async (messageId: string) =>
-  change(async () => chat.applyCard(await manage(), messageId, await getRequestMeta()));
+/** Apply on a change card; a price or a locked cell to Do needs the PIN. */
+export const applyCardAction = async (messageId: string, pin?: string) =>
+  change(async () =>
+    chat.applyCard(
+      await manage(),
+      messageId,
+      await getRequestMeta(),
+      typeof pin === "string" ? pin : undefined,
+    ),
+  );
 
 export const cancelCardAction = async (messageId: string) =>
   change(async () => chat.cancelCard(await manage(), messageId));
@@ -91,8 +99,16 @@ export const writeDraftWithAiAction = async (input: unknown) =>
 export const updateDraftAction = async (draftId: string, input: unknown) =>
   change(async () => drafts.updateDraft(await manage(), draftId, input, await getRequestMeta()));
 
-export const sendDraftAction = async (draftId: string) =>
-  change(async () => drafts.sendDraft(await manage(), draftId, await getRequestMeta()));
+/** Sends a draft; a quotation or an invoice needs the PIN. */
+export const sendDraftAction = async (draftId: string, pin?: string) =>
+  change(async () =>
+    drafts.sendDraft(
+      await manage(),
+      draftId,
+      await getRequestMeta(),
+      typeof pin === "string" ? pin : undefined,
+    ),
+  );
 
 export const discardDraftAction = async (draftId: string) =>
   change(async () => drafts.discardDraft(await manage(), draftId, await getRequestMeta()));

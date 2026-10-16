@@ -443,8 +443,9 @@ export async function draftTechPack(
       },
       select: { id: true },
     });
+    // The AI's own work: marked AI in the log (asked for by the person named).
     await auditInCompany(
-      ctx,
+      { ...ctx, byAi: true },
       meta,
       {
         action: "CREATE",
@@ -616,8 +617,9 @@ export async function askExpert(
       },
       select: { id: true },
     });
+    // The AI's own work: marked AI in the log (asked for by the person named).
     await auditInCompany(
-      ctx,
+      { ...ctx, byAi: true },
       meta,
       {
         action: "CREATE",
@@ -762,8 +764,9 @@ export async function runReviewBoard(
       },
       select: { id: true },
     });
+    // The AI's own work: marked AI in the log (asked for by the person named).
     await auditInCompany(
-      ctx,
+      { ...ctx, byAi: true },
       meta,
       {
         action: "CREATE",
@@ -1037,8 +1040,9 @@ export async function estimateColourFromPhoto(
           : { code: estimate.codes[0]!.code, codeSource: "IMAGE_ESTIMATE" as const }),
       },
     });
+    // The AI's own work: marked AI in the log (asked for by the person named).
     await auditInCompany(
-      ctx,
+      { ...ctx, byAi: true },
       meta,
       {
         action: "UPDATE",

@@ -15,13 +15,15 @@ import { type Ask, askerFor, toolInputOf } from "./claude";
 import type { AiRecord } from "./control.service";
 import { BUYER_KINDS, DRAFT_KIND_LABELS, DRAFT_KINDS, templateDraft } from "./draft-templates";
 import { mehediSystem } from "./persona";
-import { aiLabel, aiSettingsOf } from "./settings.service";
+import { aiLabel, aiSettingsOf, type PinProof, requirePin } from "./settings.service";
 
 /*
  * Drafts (AI Center > Drafts): the messages Mehedi 2.0 (or a person) drafted
  * for buyers, suppliers and factories. A buyer's message (replies, follow-ups,
  * payment reminders, claims, quotations, invoices) is only ever sent by the
- * owner: Send here, or "পাঠাও" in the chat. When one waits longer than the
+ * owner: Send here, or Send under it in the chat or on the bot ("পাঠাও" only
+ * shows the draft again to confirm). A quotation or an invoice (a price) needs
+ * the owner's PIN on every path. When one waits longer than the
  * owner's time, the owner is reminded. Follow-ups: the dates the owner set per
  * order; on the day a draft is made and the owner reminded (ai-reminders.ts).
  */
@@ -281,11 +283,20 @@ export async function updateDraft(
   });
 }
 
+/** Drafts that carry a price for the buyer: sending one needs the PIN. */
+export const PRICE_DRAFTS: ReadonlySet<AiDraftKind> = new Set(["QUOTATION", "INVOICE"]);
+
 /**
  * Sends a draft by email from the company's mailbox. Only the owner sends; for
- * a buyer this is the owner's OK (v6.2: nothing reaches a buyer without it).
+ * a buyer this is the owner's OK (v6.2: nothing reaches a buyer without it). A
+ * quotation or an invoice needs the PIN (set first) on every path.
  */
-export async function sendDraft(ctx: CompanyContext, draftId: string, meta?: RequestMeta) {
+export async function sendDraft(
+  ctx: CompanyContext,
+  draftId: string,
+  meta?: RequestMeta,
+  pin?: PinProof,
+) {
   assertManage(ctx);
   const draft = await openDraft(ctx, draftId);
   if (draft.status === "SENT") throw new AppError("CONFLICT", "This draft was sent already.");
@@ -295,6 +306,7 @@ export async function sendDraft(ctx: CompanyContext, draftId: string, meta?: Req
       toAddress: ["Give the email address"],
     });
   }
+  if (PRICE_DRAFTS.has(draft.kind)) await requirePin(ctx, pin, "send a price to the buyer");
   // Only one send at a time: a second press while the first is going finds it claimed.
   const claimed = await prisma.aiDraft.updateMany({
     where: { id: draftId, status: { in: ["DRAFT", "FAILED"] }, sentAt: null },

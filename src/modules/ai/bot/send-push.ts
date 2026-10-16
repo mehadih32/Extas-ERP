@@ -11,7 +11,8 @@ import { type BotOut, renderDeletion, renderDraft, renderPermission } from "./re
 
 /*
  * Sends a push (push.ts) to each linked bot of a company. A draft is also kept
- * in the owner's chat, so "পাঠাও" (or its Send button) sends exactly it. A
+ * in the owner's chat, so "পাঠাও" shows exactly it again and its Send button
+ * sends exactly it. A
  * request already answered is not pushed. A push that fails is logged and not
  * tried again: everything it says is waiting in the ERP too.
  */

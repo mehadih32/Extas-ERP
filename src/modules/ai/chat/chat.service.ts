@@ -12,13 +12,22 @@ import { setProfitPercent } from "@/modules/costing/costing.service";
 import { createTask } from "@/modules/reminders/task.service";
 
 import { askerFor, type Ask, textOf } from "../claude";
-import { applyPreset, setControlCell } from "../control.service";
+import { isNode, type NodeRef } from "../control-tree";
+import { applyPreset, opensLocked, setControlCell } from "../control.service";
 import { DRAFT_KINDS } from "../draft-templates";
 import { setFollowUp } from "../drafts.service";
 import { expertById, expertPrompt } from "../experts";
 import { searchBooks } from "../knowledge";
 import { mehediSystem } from "../persona";
-import { aiLabel, aiSettingsOf, offReason, OFF_TEXT } from "../settings.service";
+import {
+  aiLabel,
+  aiSettingsOf,
+  offReason,
+  OFF_TEXT,
+  PIN_CHECKED,
+  type PinProof,
+  requirePin,
+} from "../settings.service";
 import {
   answerIntent,
   costingAnswer,
@@ -465,10 +474,31 @@ async function cardMessage(ctx: CompanyContext, messageId: string) {
 
 const p = (params: Record<string, unknown>, key: string) => params[key] ?? null;
 
-/** Apply on a change card: the change is made in the owner's name, then said in the chat. */
-export async function applyCard(ctx: CompanyContext, messageId: string, meta?: RequestMeta) {
+/** What a change card needs the PIN for (a price, a locked cell to Do), or null. */
+export function cardPinReason(card: Extract<ChatCard, { type: "change" }>): string | null {
+  if (card.action === "profit.set") return "set the profit % (a price)";
+  if (card.action === "control.cell" && card.params.state === "DO") {
+    const node = String(card.params.node ?? "");
+    if (isNode(node) && opensLocked(node as NodeRef))
+      return `let the AI do "${card.title}" by itself`;
+  }
+  return null;
+}
+
+/**
+ * Apply on a change card: the change is made in the owner's name, then said in
+ * the chat. A price or a locked cell going to Do needs the PIN first.
+ */
+export async function applyCard(
+  ctx: CompanyContext,
+  messageId: string,
+  meta?: RequestMeta,
+  pin?: PinProof,
+) {
   assertOwner(ctx);
   const { row, card } = await cardMessage(ctx, messageId);
+  const why = cardPinReason(card);
+  if (why) await requirePin(ctx, pin, why);
   const claimed = await prisma.aiChatMessage.updateMany({
     where: { id: row.id, companyId: ctx.company.id, cardStatus: "PROPOSED" },
     data: { cardStatus: "APPLIED", cardDoneAt: new Date() },
@@ -485,6 +515,8 @@ export async function applyCard(ctx: CompanyContext, messageId: string, meta?: R
           ctx,
           { node: p(card.params, "node"), state: p(card.params, "state") },
           meta,
+          // Checked above when the cell needed it.
+          why ? PIN_CHECKED : undefined,
         );
         break;
       case "profit.set":

@@ -30,7 +30,7 @@ export const DRAFT_KIND_LABELS: Record<AiDraftKind, string> = {
   OTHER: "Other message",
 };
 
-/** What reaches a buyer: only ever sent by the owner (Send, or "পাঠাও"). */
+/** What reaches a buyer: only ever sent by the owner (Send under the draft). */
 export const BUYER_KINDS: ReadonlySet<AiDraftKind> = new Set([
   "BUYER_REPLY",
   "BUYER_FOLLOW_UP",

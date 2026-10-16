@@ -8,18 +8,22 @@ import { runTransaction } from "@/lib/transaction";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 
+import type { PermissionKey } from "@/modules/rbac/permissions";
+
+import { auditAsAi } from "./account";
 import { isLocked, isNode, mostFor, type NodeRef, nodeAt, pathText } from "./control-tree";
 import { type AiRecord, giveOneTaskGrant, giveTodayGrant } from "./control.service";
 import { pushToBot } from "./bot/push";
-import { aiLabel, aiSettingsOf, checkPin } from "./settings.service";
+import { aiLabel, aiSettingsOf, type PinProof, requirePin } from "./settings.service";
 
 /*
  * What the AI asks the owner for. A permission request: a cell it needs is Off
  * ("To work out costing I need Production > Work out costing. Will you give
  * it?"), answered Only this task, For today, Always or No. A Deletion request:
  * the AI never deletes; it says what, why and what happens if it stays, and the
- * owner decides (and deletes it in their own name). The PIN, once set, is
- * asked for money, prices and deletions.
+ * owner decides: approving runs the ERP's own delete (cancel) in the owner's
+ * name, with its normal checks. The PIN must be set, and is asked for money,
+ * prices and deletions. Each request is written to the log, marked AI.
  */
 
 export const ANSWERS = [
@@ -68,6 +72,12 @@ export async function askPermission(
       askedBy: aiLabel(settings),
     },
   });
+  await auditAsAi(companyId, {
+    action: "CREATE",
+    entityType: "AiPermissionRequest",
+    entityId: request.id,
+    summary: `Asked the owner for permission: ${pathText(node)} (${request.task.slice(0, 120)})`,
+  });
   // The owner hears of it on the bot too, with the answer buttons.
   await pushToBot(companyId, { kind: "permission", requestId: request.id });
   return request;
@@ -104,6 +114,12 @@ export async function askDeletion(
       askedBy: aiLabel(settings),
     },
   });
+  await auditAsAi(companyId, {
+    action: "CREATE",
+    entityType: "AiDeletionRequest",
+    entityId: request.id,
+    summary: `Sent the owner a Deletion request: ${request.what}`,
+  });
   await pushToBot(companyId, { kind: "deletion", requestId: request.id });
   return request;
 }
@@ -117,12 +133,6 @@ function assertManage(ctx: CompanyContext) {
 /** A cell that needs the PIN: money, prices and anything that leaves the company. */
 export const needsPin = (node: string) => node.startsWith("k:") && isLocked(node.slice(2));
 
-async function assertPin(ctx: CompanyContext, pin: string | undefined) {
-  if (!(await checkPin(ctx.company.id, pin ?? "", ctx.user.id))) {
-    throw new AppError("VALIDATION", "The PIN is not right.", { pin: ["The PIN is not right"] });
-  }
-}
-
 export const answerSchema = z.object({
   answer: z.enum(["ONCE", "TODAY", "ALWAYS", "REFUSED"]),
   note: z.string().trim().max(500).optional(),
@@ -135,6 +145,7 @@ export async function answerPermission(
   requestId: string,
   input: unknown,
   meta?: RequestMeta,
+  checked?: PinProof,
 ) {
   assertManage(ctx);
   const { answer, note, pin } = answerSchema.parse(input);
@@ -143,7 +154,9 @@ export async function answerPermission(
   if (request.status !== "PENDING") {
     throw new AppError("CONFLICT", "This request was answered already.");
   }
-  if (answer !== "REFUSED" && needsPin(request.node)) await assertPin(ctx, pin);
+  if (answer !== "REFUSED" && needsPin(request.node)) {
+    await requirePin(ctx, checked ?? pin, "give this permission (money or prices)");
+  }
   const path = isNode(request.node) ? pathText(request.node as NodeRef) : request.node;
   const record: AiRecord | undefined =
     request.recordType && request.recordId
@@ -189,6 +202,77 @@ export async function answerPermission(
   });
 }
 
+/** The kinds of record a Deletion request can be for, and the ERP's own delete for each. */
+const DELETES: Record<
+  string,
+  { what: string; permissions: PermissionKey[]; run: DeleteRun } | undefined
+> = {
+  SalesOrder: {
+    what: "an order",
+    permissions: ["sales.order.create"],
+    run: async (ctx, id, reason, meta) => {
+      const { cancelOrder } = await import("@/modules/sales/order.service");
+      await cancelOrder(ctx, id, { reason }, meta);
+    },
+  },
+  PurchaseOrder: {
+    what: "a booking or a material order",
+    permissions: [],
+    run: async (ctx, id, reason, meta) => {
+      const booking = await ctx.db.booking.findFirst({
+        where: { orderId: id },
+        select: { id: true },
+      });
+      if (booking) {
+        assertMay(ctx, ["production.bookings.close"]);
+        const { cancelBooking } = await import("@/modules/production/booking.service");
+        await cancelBooking(ctx, booking.id, { reason }, meta);
+      } else {
+        assertMay(ctx, ["materials.purchase"]);
+        const { cancelPurchaseOrder } = await import("@/modules/materials/purchase-order.service");
+        await cancelPurchaseOrder(ctx, id, { reason }, meta);
+      }
+    },
+  },
+  Party: {
+    what: "a buyer or a supplier",
+    permissions: ["parties.manage"],
+    run: async (ctx, id, reason, meta) => {
+      // A party is never removed: its account is closed (settling while money is still due).
+      const { changePartyStatus } = await import("@/modules/parties/party.service");
+      await changePartyStatus(ctx, id, { status: "CLOSED", reason }, meta);
+    },
+  },
+  ProductionProject: {
+    what: "a production order",
+    permissions: ["production.manage"],
+    run: async (ctx, id, reason, meta) => {
+      const { cancelProject } = await import("@/modules/production/project.service");
+      await cancelProject(ctx, id, { reason }, meta);
+    },
+  },
+};
+
+type DeleteRun = (
+  ctx: CompanyContext,
+  recordId: string,
+  reason: string,
+  meta: RequestMeta | undefined,
+) => Promise<void>;
+
+/** The person's own permission for the delete, as on the record's page. */
+function assertMay(ctx: CompanyContext, permissions: PermissionKey[]) {
+  if (permissions.length > 0 && !permissions.some((p) => ctx.can(p))) {
+    throw new AppError(
+      "FORBIDDEN",
+      "You do not have the permission to delete this on its own page, so it is not deleted.",
+    );
+  }
+}
+
+/** Whether a Deletion request can be asked for this kind of record (the ERP deletes it). */
+export const canBeDeleted = (recordType: string) => DELETES[recordType] !== undefined;
+
 export const deletionAnswerSchema = z.object({
   approve: z.boolean(),
   note: z.string().trim().max(500).optional(),
@@ -196,27 +280,53 @@ export const deletionAnswerSchema = z.object({
 });
 
 /**
- * Answers a Deletion request. Approving it does not delete anything by
- * itself: the owner deletes the record on its own page, in their own name,
- * and the request is kept with the answer.
+ * Answers a Deletion request. Approving it (with the PIN) runs the ERP's own
+ * delete for the record (a cancel, as on its page) in the owner's name, with
+ * the page's normal checks: when they say no, nothing is deleted and the
+ * request stays open with the reason. The AI itself never deletes.
  */
 export async function answerDeletion(
   ctx: CompanyContext,
   requestId: string,
   input: unknown,
   meta?: RequestMeta,
+  checked?: PinProof,
 ) {
   assertManage(ctx);
   const { approve, note, pin } = deletionAnswerSchema.parse(input);
-  if (approve) await assertPin(ctx, pin);
+  if (approve) await requirePin(ctx, checked ?? pin, "approve the Deletion request");
   const request = await ctx.db.aiDeletionRequest.findFirst({ where: { id: requestId } });
   if (!request) throw new AppError("NOT_FOUND", "This request is not there any more.");
+  if (request.status !== "PENDING") {
+    throw new AppError("CONFLICT", "This request was answered already.");
+  }
+  if (approve) {
+    const remove = DELETES[request.recordType];
+    if (!remove) {
+      throw new AppError(
+        "CONFLICT",
+        `The ERP has no delete for this kind of record (${request.recordType}). Refuse the request, or change the record on its page.`,
+      );
+    }
+    assertMay(ctx, remove.permissions);
+    const reason = `Deletion request approved: ${request.why}`.slice(0, 500);
+    try {
+      await remove.run(ctx, request.recordId, reason, meta);
+    } catch (error) {
+      if (error instanceof AppError) {
+        throw new AppError(error.code, `Not deleted: ${error.message}`, error.details);
+      }
+      throw error;
+    }
+  }
+  const now = new Date();
   const claimed = await prisma.aiDeletionRequest.updateMany({
     where: { id: requestId, status: "PENDING" },
     data: {
       status: approve ? "APPROVED" : "REJECTED",
       answeredById: ctx.user.id,
-      answeredAt: new Date(),
+      answeredAt: now,
+      doneAt: approve ? now : null,
       note: note ?? null,
     },
   });
@@ -225,7 +335,9 @@ export async function answerDeletion(
     action: "STATUS_CHANGE",
     entityType: "AiDeletionRequest",
     entityId: requestId,
-    summary: `${approve ? "Approved" : "Refused"} the AI's Deletion request: ${request.what}`,
+    summary: approve
+      ? `Approved the AI's Deletion request and deleted ${request.what}`
+      : `Refused the AI's Deletion request: ${request.what}`,
   });
 }
 

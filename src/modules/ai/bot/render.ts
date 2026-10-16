@@ -213,7 +213,7 @@ export function renderDeletion(request: {
   ifKept: string;
 }): BotOut {
   return {
-    text: `Deletion request: ${request.what}\nWhy: ${request.why}\nIf it is kept: ${request.ifKept}\nApproving does not delete it: you delete it on its page.`,
+    text: `Deletion request: ${request.what}\nWhy: ${request.why}\nIf it is kept: ${request.ifKept}\nApproving (with your PIN) deletes it (cancels it) in your name, with its page's checks.`,
     buttons: [
       [
         { label: "Approve", data: `dr:${request.id}:y` },

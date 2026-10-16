@@ -136,7 +136,7 @@ export function readIntent(raw: string): Intent {
     return { kind: "ai.resume" };
   }
 
-  // "পাঠাও" alone (or "send it"): the draft shown last goes, nothing else.
+  // "পাঠাও" alone (or "send it"): the draft shown last is shown again to confirm (nothing is sent by words).
   if (N(/^(পাঠাও|পাঠিয়ে দাও|send|send it|send now)[.!।]?$/i).test(text))
     return { kind: "draft.send" };
 
@@ -270,7 +270,10 @@ export const COMMAND_HELP: ReadonlyArray<{ say: string; does: string }> = [
     does: "A change card: supplier messages go without asking (buyers stay drafts).",
   },
   { say: "Draft follow-up to <buyer>, about <order>", does: "A draft for you to check and send." },
-  { say: "পাঠাও", does: "Sends the draft shown last. Nothing reaches a buyer any other way." },
+  {
+    say: "পাঠাও",
+    does: "Shows the draft shown last again, with its buyer and subject: press Send under it to send it.",
+  },
   { say: "নিয়ম: <the rule>", does: "A House Rule proposal; it counts once you approve it." },
   { say: "কাজ: <what>, <who>কে, কাল পর্যন্ত", does: "A change card that makes a task." },
   { say: "Follow up: <buyer>, in 3 days, <order>", does: "A change card: the follow-up date." },

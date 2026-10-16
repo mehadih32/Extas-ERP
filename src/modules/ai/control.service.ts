@@ -32,7 +32,7 @@ import {
   setCell,
 } from "./control-tree";
 import { BOOKS, testsMissingFor } from "./knowledge";
-import { aiSettingsOf, offReason, OFF_TEXT } from "./settings.service";
+import { aiSettingsOf, offReason, OFF_TEXT, type PinProof, requirePin } from "./settings.service";
 
 /*
  * Control (AI Center > Control): the Do / Ask / Off cells the owner sets, the
@@ -232,7 +232,18 @@ export type AiControlNode = ScreenNode;
 export const cellSchema = z.object({
   node: z.string().refine(isNode, "Pick a cell of Control"),
   state: z.enum(["DO", "ASK", "OFF"]),
+  /** Asked when a locked cell (money, prices, approvals, messages out) is opened. */
+  pin: z.string().optional(),
 });
+
+/** A locked cell itself (not an area): opening it to Do needs the PIN. */
+export const opensLocked = (ref: NodeRef) => ref.startsWith("k:") && isLocked(ref.slice(2));
+
+/** The PIN before a locked cell goes to Do (or is opened by a grant). */
+async function pinForLocked(ctx: CompanyContext, ref: NodeRef, pin: PinProof) {
+  if (!opensLocked(ref)) return;
+  await requirePin(ctx, pin, `let the AI do "${nodeAt(ref).label}" by itself`);
+}
 
 async function saveRows(
   ctx: CompanyContext,
@@ -260,9 +271,14 @@ async function saveRows(
 }
 
 /** Sets a cell to Do, Ask or Off; everything under an area follows it. */
-export async function setControlCell(ctx: CompanyContext, input: unknown, meta?: RequestMeta) {
+export async function setControlCell(
+  ctx: CompanyContext,
+  input: unknown,
+  meta?: RequestMeta,
+  checked?: PinProof,
+) {
   assertManage(ctx);
-  const { node, state } = cellSchema.parse(input);
+  const { node, state, pin } = cellSchema.parse(input);
   const ref = node as NodeRef;
   if (state === "DO" && ref.startsWith("k:") && mostFor(ref.slice(2)) === "ASK") {
     throw new AppError(
@@ -270,6 +286,7 @@ export async function setControlCell(ctx: CompanyContext, input: unknown, meta?:
       "What goes to a buyer always waits for your OK: it can be Ask or Off, never Do.",
     );
   }
+  if (state === "DO") await pinForLocked(ctx, ref, checked ?? pin);
   await runTransaction(async (tx) => {
     const before = await cellRows(ctx.company.id, tx);
     await saveRows(ctx, before, setCell(before, ref, state), tx);
@@ -343,6 +360,7 @@ export const grantSchema = z
         label: z.string().max(200).optional(),
       })
       .optional(),
+    pin: z.string().optional(),
   })
   .refine((g) => g.scope !== "UNTIL" || Boolean(g.until), {
     message: "Pick the last day",
@@ -363,6 +381,7 @@ export async function giveGrant(
 ) {
   assertManage(ctx);
   const g = grantSchema.parse(input);
+  await pinForLocked(ctx, g.node as NodeRef, g.pin);
   const today = localDay(new Date(), ctx.company.timezone);
   if (g.scope === "UNTIL" && g.until! < today) {
     throw new AppError("VALIDATION", "Pick today or a later day.", {

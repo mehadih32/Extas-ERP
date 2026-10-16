@@ -17,7 +17,9 @@ import { aiLabel, aiSettingsOf } from "./settings.service";
  *      reminded once.
  * Both also go to the owner's bot when one is linked (AI Center > Bot).
  * Nothing is sent to anyone outside the company: the owner sends the drafts.
- * The owners are the people who answer the AI (ai.manage).
+ * The owners are the people who answer the AI (ai.manage). While the AI is
+ * switched off or paused, none of it runs: no drafts, no reminders, nothing
+ * on the bot (a follow-up date waits until the AI is on again).
  */
 
 export type AiReminderRun = { followUps: number; waiting: number };
@@ -45,6 +47,8 @@ export async function runAiReminders(
 }
 
 async function remindCompany(company: { id: string; timezone: string }, now: Date) {
+  const settings = await aiSettingsOf(company.id);
+  if (!settings.enabled || settings.pausedAt) return { followUps: 0, waiting: 0 };
   const today = localDay(now, company.timezone);
   const [due, waiting] = await Promise.all([
     prisma.aiFollowUp.findMany({
@@ -70,7 +74,6 @@ async function remindCompany(company: { id: string; timezone: string }, now: Dat
   const owners = membersWith(await activeMembers(company.id), ["ai.manage"]).map((userId) => ({
     userId,
   }));
-  const settings = await aiSettingsOf(company.id);
   const name = aiLabel(settings);
   // The AI words the drafts only while it is on (not paused, with a key).
   const ask = await askerFor(company.id);

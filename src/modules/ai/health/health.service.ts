@@ -169,7 +169,11 @@ export async function runServerHealth(
   });
   if (worst === "ERROR") {
     const bad = checks.filter((c) => c.level === "ERROR").map((c) => `${c.label}: ${c.detail}`);
-    await pushToBot(companyId, { kind: "text", text: `Server Health: ${bad.join(" ")}` });
+    await pushToBot(
+      companyId,
+      { kind: "text", text: `Server Health: ${bad.join(" ")}` },
+      { alarm: true },
+    );
   }
   return run;
 }

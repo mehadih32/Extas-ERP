@@ -3,6 +3,7 @@
 import { ChevronRightIcon, ClockIcon, LockIcon } from "lucide-react";
 import { useState, useTransition } from "react";
 
+import { PinField, usePinPrompt } from "@/components/ai/pin-prompt";
 import { useWhen } from "@/components/ai/when";
 import { Field, FormAlert } from "@/components/forms/field";
 import { Panel } from "@/components/sales/detail-bits";
@@ -170,9 +171,14 @@ export function ControlPanel({ control: c }: { control: AiControl }) {
   const [granting, setGranting] = useState(false);
   const canManage = c.can.manage;
 
+  const { withPin, dialog: pinDialog } = usePinPrompt();
+
+  // A locked cell going to Do asks for the PIN (set first).
   const setNode = (node: AiControlNode, state: CellState) =>
     startTransition(async () => {
-      const result = await setControlCellAction({ node: node.ref, state });
+      const result = await withPin((pin) =>
+        setControlCellAction({ node: node.ref, state, ...(pin ? { pin } : {}) }),
+      );
       setMessage(
         result.ok
           ? {
@@ -191,6 +197,7 @@ export function ControlPanel({ control: c }: { control: AiControl }) {
         </FormAlert>
       )}
       {message && <FormAlert tone={message.tone}>{message.text}</FormAlert>}
+      {pinDialog}
 
       {canManage && (
         <Panel title="Presets" id="presets-heading">
@@ -350,10 +357,12 @@ function GrantDialog({
       onSubmit={async (form) => {
         const node = String(form.get("node") ?? "");
         const until = String(form.get("until") ?? "");
+        const pin = String(form.get("pin") ?? "");
         const result = await giveGrantAction({
           node,
           scope,
           ...(scope === "UNTIL" ? { until } : {}),
+          ...(pin ? { pin } : {}),
         });
         if (!result.ok) return result.error;
         onDone(
@@ -390,6 +399,11 @@ function GrantDialog({
               <Input id="grant-until" name="until" type="date" required />
             </Field>
           )}
+          <PinField
+            id="grant-pin"
+            error={fieldError("pin") ?? fieldError("pinNotSet")}
+            hint="Asked only for locked cells (money, prices, approvals, messages out)."
+          />
         </div>
       )}
     </FormDialog>

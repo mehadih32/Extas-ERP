@@ -58,6 +58,14 @@ export async function audit(
 }
 
 /**
+ * The backup settings row as it is, writing nothing (Server Health and Bug
+ * Guard only read): null before backups were ever set up.
+ */
+export async function readBackupConfig(): Promise<BackupConfig | null> {
+  return prisma.backupConfig.findFirst({ orderBy: { updatedAt: "asc" } });
+}
+
+/**
  * The single platform-wide backup settings row (created with the defaults). A
  * row still on a v6.3 schedule the owner had changed gets the closest v6.4
  * schedule, once (schedule.ts).

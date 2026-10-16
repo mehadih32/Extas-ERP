@@ -99,7 +99,13 @@ export type CorrectionPlan =
 
 /** A safe security step (security.ts). */
 export type SecurityAction =
-  | { kind: "END_SESSION"; sessionId: string; userId: string }
+  | {
+      kind: "END_SESSION";
+      sessionId: string;
+      userId: string;
+      /** More sign-ins of the same person from the same new places, ended with it. */
+      sessionIds?: string[];
+    }
   | { kind: "BLOCK_SOURCE"; source: string; failures: number }
   | { kind: "UNBLOCK_SOURCE"; blockId: string };
 

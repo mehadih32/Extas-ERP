@@ -129,6 +129,20 @@ async function settled(companyId: string) {
   throw new Error("Bug Guard is still running");
 }
 
+/** Waits for a run's report: it is queued just after the run is marked done. */
+async function reported(companyId: string, trigger: "NOW" | "TELEGRAM" | "SCHEDULE") {
+  for (let i = 0; i < 1200; i += 1) {
+    const run = await prisma.bugGuardRun.findFirst({
+      where: { companyId, trigger },
+      orderBy: { startedAt: "desc" },
+      select: { reportSentAt: true },
+    });
+    if (run?.reportSentAt) return;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error("Bug Guard's report did not go out");
+}
+
 const TOKEN = "123456789:AAH_test-token-abcdefghijklmnopqrstuv";
 const OWNER_CHAT = 555001;
 
@@ -717,6 +731,117 @@ run("Bug Guard", () => {
       );
     });
 
+    it("reads the backups on the owner's own schedule, writing nothing, even on a v6.3 settings row", async () => {
+      const backupsCheck = (now: Date) =>
+        startBugGuard(env.company.id, "NOW", env.owner.user.id, {
+          checks: SECURITY_CHECKS.filter((c) => c.key === "security.certificate-backups"),
+          wait: true,
+          fullCheck: false,
+          report: false,
+          now,
+        });
+      const backupFinding = () =>
+        prisma.bugGuardFinding.findUnique({
+          where: { companyId_key: { companyId: env.company.id, key: "security.server:backups" } },
+        });
+      const backedUp = (at: string) =>
+        prisma.backupRun.create({
+          data: {
+            trigger: "SCHEDULED",
+            status: "SUCCEEDED",
+            startedAt: new Date(at),
+            finishedAt: new Date(at),
+            checkedAt: new Date(at),
+          },
+        });
+      // A settings row from v6.3 (a cron, no schedule yet): every day at 03:00.
+      await prisma.backupConfig.deleteMany();
+      await prisma.backupConfig.create({
+        data: { id: "default", cronSchedule: "0 3 * * *", scheduleMode: null },
+      });
+      await backedUp("2026-10-19T21:05:00Z");
+      const first = await backupsCheck(new Date("2026-10-20T12:00:00Z"));
+      const run = await runOf(first.id);
+      expect(run.status).toBe("DONE");
+      expect((run.checks as Array<{ status: string }>)[0]!.status).not.toBe("FAILED");
+      expect(await backupFinding()).toBeNull();
+      expect(
+        (await prisma.backupConfig.findUniqueOrThrow({ where: { id: "default" } })).scheduleMode,
+      ).toBeNull();
+
+      // Once a week, on Mondays: a backup on Monday is still fine on Tuesday,
+      // and a Monday with no backup is urgent.
+      await prisma.backupConfig.update({
+        where: { id: "default" },
+        data: { scheduleMode: "WEEKLY", scheduleWeekdays: [1], scheduleTimes: ["03:00"] },
+      });
+      await prisma.backupRun.deleteMany();
+      await backedUp("2026-10-18T21:05:00Z");
+      await backupsCheck(new Date("2026-10-20T12:00:00Z"));
+      expect(await backupFinding()).toBeNull();
+      await backupsCheck(new Date("2026-10-27T12:00:00Z"));
+      expect(await backupFinding()).toMatchObject({ status: "OPEN", severity: "URGENT" });
+    });
+
+    it("tells once per person about sign-ins from new places, and Fix ends all of those sign-ins", async () => {
+      const office = "198.51.100.7";
+      const earlier = new Date(Date.now() - 30 * 24 * 60 * 60_000);
+      for (const who of [env.staff, env.owner]) {
+        await prisma.auditLog.create({
+          data: {
+            companyId: env.company.id,
+            userId: who.user.id,
+            action: "LOGIN",
+            entityType: "Session",
+            ipAddress: office,
+            createdAt: earlier,
+          },
+        });
+      }
+      const signIn = (who: string, ip: string) =>
+        login({ email: `${who}@extas.test`, password: PASSWORD }, { ipAddress: ip });
+      // Next to the office (the same network): not a new place.
+      await signIn("staff", "198.51.100.20");
+      const away = ["203.0.113.5", "203.0.113.6", "192.0.2.9"];
+      for (const ip of away) await signIn("staff", ip);
+      await signIn("owner", "192.0.2.10");
+      // Nobody to compare with: someone who never signed in before.
+      await signIn("other", "203.0.113.99");
+
+      const r = await startBugGuard(env.company.id, "NOW", env.owner.user.id, {
+        checks: SECURITY_CHECKS.filter((c) => c.key === "security.new-places"),
+        wait: true,
+        fullCheck: false,
+        report: false,
+      });
+      expect((await runOf(r.id)).status).toBe("DONE");
+      const found = await prisma.bugGuardFinding.findMany({
+        where: { companyId: env.company.id, check: "security.new-places" },
+      });
+      expect(found).toHaveLength(2);
+      const staffName = (await prisma.user.findUniqueOrThrow({ where: { id: env.staff.user.id } }))
+        .name;
+      const staff = found.find((f) => f.title.startsWith(staffName))!;
+      expect(staff.title).toContain("2টি নতুন জায়গা");
+      for (const ip of away) expect(staff.title).toContain(ip);
+      expect(staff.fixKind).toBe("SECURITY");
+      const owner = found.find((f) => f.id !== staff.id)!;
+      expect(owner).toMatchObject({ fixKind: "MANUAL", action: null });
+
+      await setPin(env.owner, { pin: PIN });
+      await fixFinding(env.owner, staff.id, { pin: PIN });
+      const live = (ips: string[]) =>
+        prisma.session.count({
+          where: {
+            userId: env.staff.user.id,
+            ipAddress: { in: ips },
+            expiresAt: { gt: new Date() },
+          },
+        });
+      expect(await live(away)).toBe(0);
+      expect(await live(["198.51.100.20"])).toBe(1);
+    });
+
     it("takes a security step from a finding only with the PIN", async () => {
       const ip = "203.0.113.77";
       for (let i = 0; i < 6; i += 1) await wrong(`x${i}@x.test`, ip);
@@ -817,6 +942,7 @@ run("Bug Guard", () => {
         status: "DONE",
         startedById: env.owner.user.id,
       });
+      await reported(env.company.id, "TELEGRAM");
       const before = api.said().length;
       await runDueJobs();
       expect(

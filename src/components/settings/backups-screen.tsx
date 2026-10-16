@@ -821,7 +821,7 @@ function RecoveryKeyPanel({ config, setMessage }: PanelProps) {
                   </span>
                 </label>
               )}
-              <PinField id="key-pin" error={fieldError("pin")} />
+              <PinField id="key-pin" error={fieldError("pin") ?? fieldError("pinNotSet")} />
             </>
           )}
         </FormDialog>
@@ -866,7 +866,7 @@ function RecoveryKeyPanel({ config, setMessage }: PanelProps) {
                   <Input id="keep-key" name="key" type="password" autoComplete="current-password" />
                 </Field>
               )}
-              <PinField id="keep-pin" error={fieldError("pin")} />
+              <PinField id="keep-pin" error={fieldError("pin") ?? fieldError("pinNotSet")} />
             </>
           )}
         </FormDialog>
@@ -1196,7 +1196,7 @@ function CloudflarePanel({ config, setMessage }: PanelProps) {
               <Field id="cf-token" label="API token" error={fieldError("token")}>
                 <Input id="cf-token" name="token" type="password" autoComplete="off" />
               </Field>
-              <PinField id="cf-pin" error={fieldError("pin")} />
+              <PinField id="cf-pin" error={fieldError("pin") ?? fieldError("pinNotSet")} />
             </>
           )}
         </FormDialog>
@@ -1217,7 +1217,9 @@ function CloudflarePanel({ config, setMessage }: PanelProps) {
             setMessage({ tone: "note", text: "The Cloudflare token is removed." });
           }}
         >
-          {(fieldError) => <PinField id="cf-remove-pin" error={fieldError("pin")} />}
+          {(fieldError) => (
+            <PinField id="cf-remove-pin" error={fieldError("pin") ?? fieldError("pinNotSet")} />
+          )}
         </FormDialog>
       )}
     </Panel>
@@ -1360,7 +1362,7 @@ function DriveBackupsPanel({
                   <Input id="restore-key" name="key" type="password" autoComplete="off" />
                 </Field>
               )}
-              <PinField id="restore-pin" error={fieldError("pin")} />
+              <PinField id="restore-pin" error={fieldError("pin") ?? fieldError("pinNotSet")} />
               <Field id="restore-confirm" label="Type RESTORE" error={fieldError("confirm")}>
                 <Input id="restore-confirm" name="confirm" autoComplete="off" />
               </Field>

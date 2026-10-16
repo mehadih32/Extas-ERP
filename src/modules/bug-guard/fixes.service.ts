@@ -207,13 +207,31 @@ async function securityStep(
   let done: string;
   switch (action.kind) {
     case "END_SESSION": {
-      const ended = await endSession({
-        sessionId: action.sessionId,
-        companyId: ctx.company.id,
-        byId: ctx.user.id,
-        why: "the owner chose it in Bug Guard",
-      });
-      done = `${ended.name}'s sign-in was ended. They can sign in again with their password.`;
+      const ids = [...new Set([action.sessionId, ...(action.sessionIds ?? [])])];
+      let name = "";
+      let count = 0;
+      for (const sessionId of ids) {
+        try {
+          const ended = await endSession({
+            sessionId,
+            companyId: ctx.company.id,
+            byId: ctx.user.id,
+            why: "the owner chose it in Bug Guard",
+          });
+          name = ended.name;
+          count += 1;
+        } catch (error) {
+          // One of several that ended by itself meanwhile: the others still end.
+          const gone =
+            error instanceof AppError && (error.code === "CONFLICT" || error.code === "NOT_FOUND");
+          if (!gone || ids.length === 1) throw error;
+        }
+      }
+      if (count === 0) throw new AppError("CONFLICT", "Those sign-ins have ended already.");
+      done =
+        count === 1
+          ? `${name}'s sign-in was ended. They can sign in again with their password.`
+          : `${count} of ${name}'s sign-ins were ended. They can sign in again with their password.`;
       break;
     }
     case "BLOCK_SOURCE": {

@@ -263,7 +263,21 @@ const failedLogins: Check = {
   },
 };
 
-/** Sign-ins from a place the person never signed in from (in 90 days). */
+/**
+ * The network an address belongs to: addresses next to each other (the same
+ * office or the same phone company's block) are one place.
+ */
+export function networkOf(ip: string): string {
+  if (ip.includes(":")) return ip.split(":").slice(0, 4).join(":");
+  const parts = ip.split(".");
+  return parts.length === 4 ? parts.slice(0, 3).join(".") : ip;
+}
+
+/**
+ * Sign-ins from a place the person never signed in from (in 90 days): one
+ * finding per person, with every new place, so a phone that changes its
+ * address does not fill the report.
+ */
 const newPlaces: Check = {
   key: "security.new-places",
   area: "SECURITY",
@@ -281,58 +295,73 @@ const newPlaces: Check = {
       take: 300,
       select: { userId: true, ipAddress: true, entityId: true, createdAt: true },
     });
-    const seen = new Set<string>();
-    const out: Found[] = [];
+    const byPerson = new Map<string, typeof logins>();
     for (const login of logins) {
-      const pair = `${login.userId}:${login.ipAddress}`;
-      if (seen.has(pair)) continue;
-      seen.add(pair);
+      const list = byPerson.get(login.userId!) ?? [];
+      list.push(login);
+      byPerson.set(login.userId!, list);
+    }
+    const out: Found[] = [];
+    for (const [userId, theirs] of byPerson) {
       const before = await ctx.db.auditLog.findMany({
         where: {
           action: "LOGIN",
-          userId: login.userId,
+          userId,
           createdAt: { lt: ctx.since, gte: new Date(ctx.since.getTime() - 90 * DAY) },
         },
         select: { ipAddress: true },
         take: 200,
       });
       // Someone new has no old places to compare with.
-      if (before.length === 0 || before.some((b) => b.ipAddress === login.ipAddress)) continue;
+      if (before.length === 0) continue;
+      const known = new Set(before.map((b) => networkOf(b.ipAddress ?? "")));
+      const fresh = theirs.filter((l) => !known.has(networkOf(l.ipAddress!)));
+      if (fresh.length === 0) continue;
+      const ips = [...new Set(fresh.map((l) => l.ipAddress!))];
+      const networks = [...new Set(ips.map(networkOf))].sort();
       const user = await ctx.db.user.findUnique({
-        where: { id: login.userId! },
+        where: { id: userId },
         select: { name: true, isSuperAdmin: true },
       });
-      const session = login.entityId
-        ? await ctx.db.session.findFirst({
-            where: { id: login.entityId, expiresAt: { gt: ctx.now } },
+      const sessionIds = fresh.flatMap((l) => (l.entityId ? [l.entityId] : []));
+      const sessions = sessionIds.length
+        ? await ctx.db.session.findMany({
+            where: { id: { in: sessionIds }, expiresAt: { gt: ctx.now } },
             select: { id: true },
           })
-        : null;
+        : [];
+      const live = sessionIds.filter((id) => sessions.some((s) => s.id === id));
       const mine = !!user?.isSuperAdmin;
+      const shown =
+        ips.slice(0, 5).join(", ") + (ips.length > 5 ? ` ও আরও ${ips.length - 5}টি` : "");
+      const many = networks.length > 1;
       out.push({
-        key: `security.new-place:${login.userId}:${login.ipAddress}`,
+        key: `security.new-place:${userId}:${networks.join("+")}`.slice(0, 300),
         area: "SECURITY",
         severity: "IMPORTANT",
-        title: `${user?.name ?? "একজন"} নতুন জায়গা থেকে ঢুকেছেন (${login.ipAddress})।`,
+        title: many
+          ? `${user?.name ?? "একজন"} ${networks.length}টি নতুন জায়গা থেকে ঢুকেছেন (${shown})।`
+          : `${user?.name ?? "একজন"} নতুন জায়গা থেকে ঢুকেছেন (${shown})।`,
         href: "/settings/team",
-        place: login.ipAddress!,
+        place: ips.slice(0, 3).join(", "),
         why: "নতুন জায়গা মানে নতুন ফোন, নতুন ইন্টারনেট বা অন্য কেউ তার পাসওয়ার্ড দিয়ে ঢুকেছে।",
         fix: mine
           ? "আপনি নিজে হলে Ignore চাপুন। আপনি না হলে এখনই পাসওয়ার্ড বদলান।"
-          : session
-            ? "তাকে জিজ্ঞেস করুন। তিনি না হলে Fix চাপুন (PIN দিয়ে): ওই সাইন-ইনটা বন্ধ হবে, তারপর তার পাসওয়ার্ড বদলান।"
+          : live.length
+            ? `তাকে জিজ্ঞেস করুন। তিনি না হলে Fix চাপুন (PIN দিয়ে): ${live.length > 1 ? "ওই সাইন-ইনগুলো" : "ওই সাইন-ইনটা"} বন্ধ হবে, তারপর তার পাসওয়ার্ড বদলান।`
             : "তাকে জিজ্ঞেস করুন। তিনি না হলে তার পাসওয়ার্ড বদলান।",
-        fixKind: !mine && session ? "SECURITY" : "MANUAL",
+        fixKind: !mine && live.length ? "SECURITY" : "MANUAL",
         evidence: [
-          { label: "কখন", value: login.createdAt.toISOString().slice(0, 16).replace("T", " ") },
+          { label: "কখন", value: fresh[0]!.createdAt.toISOString().slice(0, 16).replace("T", " ") },
+          { label: "কতবার", value: String(fresh.length) },
           {
             label: "আগের জায়গা",
             value: [...new Set(before.map((b) => b.ipAddress ?? "-"))].slice(0, 3).join(", "),
           },
         ],
         action:
-          !mine && session
-            ? { kind: "END_SESSION", sessionId: session.id, userId: login.userId! }
+          !mine && live.length
+            ? { kind: "END_SESSION", sessionId: live[0]!, userId, sessionIds: live.slice(1) }
             : null,
       });
       if (out.length >= 20) break;

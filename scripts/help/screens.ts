@@ -10,13 +10,6 @@ import ts from "typescript";
  * of those files change (so a guide's pictures can be known to be old).
  */
 
-export type Screen = {
-  /** "/sales/orders/[orderId]" */
-  route: string;
-  /** The page file and every screen file it uses, repository-relative, sorted. */
-  files: string[];
-};
-
 const APP_GROUPS = ["(app)", "(auth)", "(gate)"];
 
 function walk(dir: string, match: (file: string) => boolean): string[] {
@@ -183,4 +176,73 @@ export function fingerprint(root: string, files: string[]): string {
     hash.update("\0");
   }
   return hash.digest("hex").slice(0, 16);
+}
+
+// ------------------------------------------------------------- the pictures
+
+/** The frame around every signed-in page (menu, top bar): drawn in every picture, explained in Getting started. */
+export const shellFiles = (root: string) =>
+  new Set(screenFiles(root, path.join(root, "src", "app", "(app)", "layout.tsx")));
+
+/** The English labels a text quotes (“Issue the invoice”), in order. */
+export const quotedLabels = (text: string) =>
+  [...text.matchAll(/“([^”]+)”/g)].map((m) => m[1]!).filter((l) => /[A-Za-z]/.test(l));
+
+type Guide = {
+  routes: string[];
+  steps: Array<{ text: string }>;
+  shot?: { route?: string; open?: string };
+};
+
+/** The page a guide's picture is taken on ("/" for a guide about the whole app). */
+export const shotRoute = (guide: Guide) => guide.shot?.route ?? guide.routes[0] ?? "/";
+
+/** Changes when what the picture marks changes: the page, the button pressed first, the steps' labels. */
+export function guideHash(guide: Guide): string {
+  return createHash("sha256")
+    .update(
+      JSON.stringify({
+        route: shotRoute(guide),
+        open: guide.shot?.open ?? null,
+        marks: guide.steps.map((step) => quotedLabels(step.text)),
+      }),
+    )
+    .digest("hex")
+    .slice(0, 16);
+}
+
+/**
+ * The page pattern an address belongs to: "/parties/buyers" is the page
+ * "/parties/[list]"; a pattern stays itself. Null when no page draws it.
+ */
+export function patternOf(root: string, route: string): string | null {
+  const all = pages(root).map((p) => p.route);
+  if (all.includes(route)) return route;
+  const parts = route.split("/").filter(Boolean);
+  const fits = all.filter((pattern) => {
+    const want = pattern.split("/").filter(Boolean);
+    return (
+      want.length === parts.length &&
+      want.every((w, i) => w === parts[i] || (/^\[.*\]$/.test(w) && !parts[i]!.startsWith("[")))
+    );
+  });
+  // The most fixed parts wins ("/parties/dues" over "/parties/[list]").
+  fits.sort((a, b) => a.split("[").length - b.split("[").length);
+  return fits[0] ?? null;
+}
+
+/** The page file of an address or pattern, or null. */
+export function pageFileOf(root: string, route: string): string | null {
+  const pattern = patternOf(root, route);
+  return pages(root).find((p) => p.route === pattern)?.file ?? null;
+}
+
+/** Changes when a file that draws the page (not the frame around it) changes. */
+export function screenFingerprint(root: string, route: string, shell = shellFiles(root)): string {
+  const file = pageFileOf(root, route);
+  if (!file) return "no-page";
+  return fingerprint(
+    root,
+    screenFiles(root, file).filter((f) => !shell.has(f)),
+  );
 }

@@ -1,12 +1,23 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
 import { HELP_SECTIONS } from "@/modules/help";
+import { HELP_PICTURES } from "@/modules/help/pictures";
 import type { HelpArticle } from "@/modules/help/types";
 
-import { pages, pressables, screenFiles, isPassingState } from "../../scripts/help/screens";
+import {
+  guideHash,
+  isPassingState,
+  pages,
+  patternOf,
+  pressables,
+  screenFiles,
+  screenFingerprint,
+  shellFiles,
+  shotRoute,
+} from "../../scripts/help/screens";
 
 /*
  * v6.4 E: every guide explains What (what the screen is and what each part
@@ -54,7 +65,7 @@ const explains = (article: HelpArticle, label: string) =>
   (article.fields ?? []).some((f) => f.label === label) || saysOf(article).includes(`“${label}”`);
 
 /** The files of the frame around every page (menu, top bar): their buttons are the "Getting started" guides'. */
-const SHELL = new Set(screenFiles(ROOT, path.join(ROOT, "src", "app", "(app)", "layout.tsx")));
+const SHELL = shellFiles(ROOT);
 
 describe("What, Why and How in every guide", () => {
   it("every guide says what it is and why it matters, in Bengali", () => {
@@ -164,5 +175,61 @@ describe("Every button and tab on every screen has its guide", () => {
       .filter((label) => !isPassingState(label))
       .filter((label) => !start.some(({ article }) => explains(article, label)));
     expect(missing).toEqual([]);
+  });
+});
+
+describe("Every guide has its automatic picture, and it is not old", () => {
+  const HOW = "Take it with: npm run help:shots (scripts/help/plan.ts says how)";
+
+  it("knows a guide's page and what its picture marks", () => {
+    expect(patternOf(ROOT, "/parties/buyers")).toBe("/parties/[list]");
+    expect(patternOf(ROOT, "/parties/dues")).toBe("/parties/dues");
+    expect(patternOf(ROOT, "/no/such/page")).toBeNull();
+    const guide = { routes: ["/sales/orders"], steps: [{ text: "“Issue the invoice” চাপুন" }] };
+    expect(shotRoute(guide)).toBe("/sales/orders");
+    expect(shotRoute({ ...guide, routes: [] })).toBe("/");
+    // Other words in a step keep the picture; another button needs a new one.
+    expect(guideHash({ ...guide, steps: [{ text: "এবার “Issue the invoice”" }] })).toBe(
+      guideHash(guide),
+    );
+    expect(guideHash({ ...guide, steps: [{ text: "“Void”" }] })).not.toBe(guideHash(guide));
+    expect(guideHash({ ...guide, shot: { open: "New order" } })).not.toBe(guideHash(guide));
+  });
+
+  it("every guide has a picture of its own page, and the file is there", () => {
+    const missing = articles
+      .filter(({ article }) => {
+        const picture = HELP_PICTURES[article.slug];
+        return (
+          !picture ||
+          picture.route !== shotRoute(article) ||
+          !existsSync(path.join(ROOT, "public", picture.src))
+        );
+      })
+      .map(({ section, article }) => `${section.id}/${article.slug}`);
+    expect(missing, HOW).toEqual([]);
+  });
+
+  it("a guide whose screen or steps changed has a new picture", () => {
+    const old = articles
+      .filter(({ article }) => HELP_PICTURES[article.slug])
+      .filter(({ article }) => {
+        const picture = HELP_PICTURES[article.slug]!;
+        return (
+          picture.screen !== screenFingerprint(ROOT, shotRoute(article), SHELL) ||
+          picture.guide !== guideHash(article)
+        );
+      })
+      .map(({ section, article }) => `${section.id}/${article.slug}`);
+    expect(old, HOW).toEqual([]);
+  });
+
+  it("marks only steps the guide has", () => {
+    const bad = articles
+      .filter(({ article }) =>
+        (HELP_PICTURES[article.slug]?.marks ?? []).some((n) => n < 1 || n > article.steps.length),
+      )
+      .map(({ section, article }) => `${section.id}/${article.slug}`);
+    expect(bad).toEqual([]);
   });
 });

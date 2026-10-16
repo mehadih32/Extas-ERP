@@ -1,11 +1,19 @@
-import { ArrowRightCircleIcon, CircleAlertIcon, InfoIcon, TargetIcon } from "lucide-react";
+import {
+  ArrowRightCircleIcon,
+  CircleAlertIcon,
+  ExternalLinkIcon,
+  InfoIcon,
+  TargetIcon,
+} from "lucide-react";
 import type { ReactNode } from "react";
 
+import type { HelpPicture } from "@/modules/help/pictures";
 import type { HelpField } from "@/modules/help/types";
 
 /*
- * The parts of a guide around its steps: What it is, Why it matters, every
- * button and field and what it means, what happens next, and common mistakes.
+ * The parts of a guide around its steps: What it is, Why it matters, its
+ * picture with the steps' numbers marked, every button and field and what it
+ * means, what happens next, and common mistakes.
  */
 
 function Part({
@@ -123,5 +131,49 @@ export function GuideAfter({ next, mistakes }: { next?: string; mistakes?: strin
         </Part>
       )}
     </>
+  );
+}
+
+/** The guide's automatic picture, with a red numbered mark for each step it shows. */
+export function GuidePicture({ picture, title }: { picture: HelpPicture; title: string }) {
+  return (
+    <figure className="grid gap-2">
+      <a
+        href={picture.src}
+        target="_blank"
+        rel="noreferrer"
+        className="block overflow-hidden rounded-md border bg-card"
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element -- a fixed picture, served as it is */}
+        <img
+          src={picture.src}
+          width={picture.width}
+          height={picture.height}
+          alt={`${title}: ছবিতে ধাপগুলোর নম্বর লাল দাগে দেখানো`}
+          loading="lazy"
+          className="h-auto w-full"
+        />
+      </a>
+      <figcaption
+        lang="bn"
+        className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground"
+      >
+        <span>
+          {picture.marks.length > 0
+            ? "ছবির লাল নম্বরগুলো নিচের ধাপের নম্বর।"
+            : "এই পাতাটি যেমন দেখায়।"}{" "}
+          ডেমো সাইটের নমুনা ডেটা থেকে নিজে থেকে তোলা, {picture.taken}।
+        </span>
+        <a
+          href={picture.src}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-1 underline-offset-4 hover:underline"
+        >
+          <ExternalLinkIcon className="size-3.5" aria-hidden />
+          বড় করে দেখুন
+        </a>
+      </figcaption>
+    </figure>
   );
 }

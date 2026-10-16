@@ -35,3 +35,6 @@ simulation-report.md
 
 # Bug Guard: npm audit report made inside the Docker build
 npm-audit.json
+
+# The Help Center pictures plan (npm run help:shots)
+.help-shots/

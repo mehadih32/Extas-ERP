@@ -1,19 +1,22 @@
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import { getBackupConfig, runBackup, settleFinishedRuns } from "@/modules/backups/backup.service";
-import { previousRun } from "@/modules/backups/cron";
 import { sendSafetyCopies, sendUnsent } from "@/modules/backups/drive-copies";
+import { writeHostKey } from "@/modules/backups/recovery-key.service";
 import { recordRestoreResult } from "@/modules/backups/restore.service";
+import { drillDueAt, previousRunAt, scheduleOf } from "@/modules/backups/schedule";
+import { watchBackups } from "@/modules/backups/status";
 import { runTestRestore } from "@/modules/backups/test-restore";
 
 /*
  * The backup clock. Started once per server process (instrumentation.ts);
- * every minute it checks whether the latest scheduled time has a backup yet (a
- * backup missed while the server was down runs as soon as it is back), and the
- * same for the weekly test restore. It also sends again what did not reach
- * Google Drive, sends new update safety copies, and records a restore the
- * server finished. When several processes run, the single-job lock lets only
- * one of them start each job.
+ * every minute it checks whether the latest scheduled time (the owner's
+ * schedule, schedule.ts) has a backup yet (a backup missed while the server was
+ * down runs as soon as it is back), and the same for the monthly restore drill.
+ * It also sends again what did not reach Google Drive, sends new update safety
+ * copies, records a restore the server finished, and tells the owner when a
+ * backup failed or is late (status.ts). When several processes run, the
+ * single-job lock lets only one of them start each job.
  */
 
 const CHECK_EVERY_MS = 60_000;
@@ -26,7 +29,7 @@ export async function backupTick(now: Date = new Date()) {
   try {
     const config = await getBackupConfig();
     if (!config.isEnabled) return null;
-    const due = previousRun(config.cronSchedule, config.timezone, now);
+    const due = previousRunAt(scheduleOf(config), config.timezone, now);
     if (!due) return null;
     const done = await prisma.backupRun.findFirst({
       where: { kind: "BACKUP", trigger: "SCHEDULED", startedAt: { gte: due } },
@@ -42,12 +45,12 @@ export async function backupTick(now: Date = new Date()) {
   }
 }
 
-/** Starts the weekly test restore if one is due (and Drive and the recovery key are ready). */
+/** Starts the monthly restore drill if one is due (and Drive is connected). */
 export async function testRestoreTick(now: Date = new Date()) {
   try {
     const config = await getBackupConfig();
-    if (!config.testRestoreEnabled || !config.credentialsRef || !config.recoveryKeyRef) return null;
-    const due = previousRun(config.testRestoreSchedule, config.timezone, now);
+    if (!config.testRestoreEnabled || !config.credentialsRef) return null;
+    const due = drillDueAt(config, config.timezone, now);
     if (!due) return null;
     const done = await prisma.backupRun.findFirst({
       where: { kind: "TEST_RESTORE", trigger: "SCHEDULED", startedAt: { gte: due } },
@@ -63,7 +66,7 @@ export async function testRestoreTick(now: Date = new Date()) {
     return await runTestRestore({ trigger: "SCHEDULED" });
   } catch (error) {
     if (conflict(error)) return null;
-    console.error("[backups] scheduled test restore could not start", error);
+    console.error("[backups] scheduled restore drill could not start", error);
     return null;
   }
 }
@@ -79,6 +82,9 @@ export async function backupClock(now: Date = new Date()) {
   await sendUnsent(now.getTime()).catch((e: unknown) =>
     console.error("[backups] backups not sent again", e),
   );
+  await watchBackups(now).catch((e: unknown) =>
+    console.error("[backups] could not check the backups' health", e),
+  );
 }
 
 export function startBackupScheduler() {
@@ -88,9 +94,13 @@ export function startBackupScheduler() {
   void settleFinishedRuns().catch((error: unknown) =>
     console.error("[backups] could not check unfinished backups", error),
   );
+  // The public key for the server's own settings file (a restored or new data folder lacks it).
+  void getBackupConfig()
+    .then(writeHostKey)
+    .catch((error: unknown) => console.error("[backups] could not write the public key", error));
   timer = setInterval(() => void backupClock(), CHECK_EVERY_MS);
   timer.unref();
-  console.log("[backups] daily backup scheduler started");
+  console.log("[backups] backup scheduler started");
 }
 
 export function stopBackupScheduler() {

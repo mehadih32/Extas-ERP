@@ -1,3 +1,4 @@
+import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 
 import type { BackupConfig } from "@prisma/client";
@@ -7,9 +8,15 @@ import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
 import { pushToBot } from "@/modules/ai/bot/push";
 import { recordAudit } from "@/modules/audit/audit.service";
-import { backupKey, keyId as nameKey, parseRecoveryKey } from "@/modules/backups/crypt";
+import {
+  backupKey,
+  keyId as nameKey,
+  parseRecoveryKey,
+  type PublicKey,
+} from "@/modules/backups/crypt";
 import { ROOT_LABEL } from "@/modules/backups/drive-fetch";
 import * as drive from "@/modules/backups/google-drive";
+import { scheduleColumns, scheduleOf } from "@/modules/backups/schedule";
 import { sendInApp } from "@/modules/reminders/notification.service";
 
 /*
@@ -50,9 +57,19 @@ export async function audit(
   await recordAudit({ ...input, companyId: null, userId: actor?.userId ?? null, meta });
 }
 
-/** The single platform-wide backup settings row (created with the defaults). */
+/**
+ * The single platform-wide backup settings row (created with the defaults). A
+ * row still on a v6.3 schedule the owner had changed gets the closest v6.4
+ * schedule, once (schedule.ts).
+ */
 export async function getBackupConfig(): Promise<BackupConfig> {
   const existing = await prisma.backupConfig.findFirst({ orderBy: { updatedAt: "asc" } });
+  if (existing && !existing.scheduleMode) {
+    return prisma.backupConfig.update({
+      where: { id: existing.id },
+      data: scheduleColumns(scheduleOf(existing)),
+    });
+  }
   if (existing) return existing;
   return prisma.backupConfig.upsert({
     where: { id: "default" },
@@ -102,12 +119,94 @@ export async function driveRoot(config: BackupConfig, token: string): Promise<st
   return id;
 }
 
-/** The key that locks backups now, and its name; null before the owner makes a recovery key. */
+/**
+ * The v6.3 key that locked backups (made by the ERP and kept sealed), and its
+ * name; null once the owner has set their own recovery key (it is then
+ * removed), or before any key.
+ */
 export function currentKey(config: BackupConfig): { key: Buffer; id: string } | null {
   if (!config.recoveryKeyRef) return null;
   const key = backupKey(parseRecoveryKey(decryptSecret(config.recoveryKeyRef)));
   return { key, id: nameKey(key) };
 }
+
+/** What locks a new backup: the owner's public key (v6.4), else the v6.3 key, else nothing. */
+export type BackupLock = { id: string; key: PublicKey | Buffer };
+
+export function backupLock(config: BackupConfig): BackupLock | null {
+  if (config.publicKey && config.keyPairId) {
+    return {
+      id: config.keyPairId,
+      key: { pairId: config.keyPairId, key: Buffer.from(config.publicKey, "base64url") },
+    };
+  }
+  return currentKey(config);
+}
+
+/**
+ * What the server (deploy.sh, on the host) leaves for the backups in
+ * BACKUP_DIR/.host at each update: the code at the running version as a git
+ * bundle (code.bundle), deploy/.env locked to the backup public key
+ * (settings.env.locked, with settings.env.json), and version.json.
+ */
+export function hostRoot(): string {
+  return path.join(backupRoot(), ".host");
+}
+
+export type HostVersion = {
+  /** The git commit the server runs. */
+  commit: string | null;
+  /** SHA-256 of deploy/bootstrap.sh at that commit (the restore command checks it). */
+  bootstrapSha256: string | null;
+  deployedAt: string | null;
+  version: string | null;
+};
+
+/** The running version, as deploy.sh recorded it; empty fields when it has not yet. */
+export async function hostVersion(): Promise<HostVersion> {
+  try {
+    const raw = JSON.parse(await readFile(path.join(hostRoot(), "version.json"), "utf8")) as Record<
+      string,
+      unknown
+    >;
+    const text = (v: unknown, pattern: RegExp) =>
+      typeof v === "string" && pattern.test(v) ? v : null;
+    return {
+      commit: text(raw.commit, /^[0-9a-f]{40}$/),
+      bootstrapSha256: text(raw.bootstrapSha256, /^[0-9a-f]{64}$/),
+      deployedAt: text(raw.deployedAt, /^\d{4}-\d{2}-\d{2}T/),
+      version: text(raw.version, /^[\w.+-]{1,40}$/),
+    };
+  } catch {
+    return { commit: null, bootstrapSha256: null, deployedAt: null, version: null };
+  }
+}
+
+/** The restore guide PDFs the ERP keeps for every backup (no secrets in them). */
+export function guideRoot(): string {
+  return path.join(backupRoot(), ".guide");
+}
+
+export const GUIDE_FILES = ["restore-guide-bn.pdf", "restore-guide-en.pdf"] as const;
+
+/** The guide PDFs that are built, Bangla first. */
+export async function guideFiles(): Promise<string[]> {
+  const found: string[] = [];
+  for (const name of GUIDE_FILES) {
+    const file = path.join(guideRoot(), name);
+    if (
+      await stat(file).then(
+        (s) => s.isFile() && s.size > 0,
+        () => false,
+      )
+    )
+      found.push(file);
+  }
+  return found;
+}
+
+/** The public key for the server (deploy.sh locks deploy/.env with it, on the host). */
+export const HOST_KEY_FILE = "backup-public-key.json";
 
 /**
  * Tells the platform owner at once: a message in the ERP's inbox, in every

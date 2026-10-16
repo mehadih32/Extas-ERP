@@ -13,15 +13,15 @@ import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import { setPin } from "@/modules/ai/settings.service";
 import type { CompanyContext } from "@/modules/auth/context";
-import { currentKey, driveToken } from "@/modules/backups/backup-core";
+import { driveToken } from "@/modules/backups/backup-core";
 import * as backups from "@/modules/backups/backup.service";
-import { newRecoveryKey } from "@/modules/backups/crypt";
 import {
   fetchBackup,
   listDriveBackups,
   sendSafetyCopies,
   sendUnsent,
 } from "@/modules/backups/drive-copies";
+import { setRecoveryKey } from "@/modules/backups/recovery-key.service";
 import {
   recordRestoreResult,
   requestRestore,
@@ -135,7 +135,7 @@ run("daily backups", () => {
         onGoogleDrive: false,
         // Not locked yet, so it stays on the server and says why.
         driveError:
-          "Kept on the server only: make the recovery key on the Backups screen. Backups are locked with it before they go to Google Drive.",
+          "Kept on the server only: set your recovery key on the Backups screen. Backups are locked with it before they go to Google Drive.",
         filesDeletedAt: null,
         error: null,
         triggeredBy: { id: owner.userId, name: "owner" },
@@ -195,10 +195,10 @@ run("daily backups", () => {
         pgDump: expect.stringMatching(/^pg_dump \(PostgreSQL\) \d+/),
       });
       expect(overview.config).toMatchObject({
-        cronSchedule: "0 2 * * *",
+        scheduleText: "Every day at 02:00 and 14:00",
         timezone: "Asia/Dhaka",
-        includeMedia: true,
-        retentionDays: 30,
+        serverKeep: 4,
+        driveKeepDays: 90,
         isEnabled: true,
         googleDrive: { available: true, connected: false, account: null, folderId: null },
       });
@@ -259,20 +259,21 @@ run("daily backups", () => {
       }
     });
 
-    it("leaves out the uploaded files when asked, or when there are none", async () => {
+    // v6.4 (G3): every backup holds every uploaded file; v6.3's "leave out the
+    // uploaded files" setting is gone.
+    it("always saves the uploaded files, and an empty archive when there are none", async () => {
       await backups.updateBackupConfig(owner, { includeMedia: false });
-      const withoutMedia = await backUpNow();
-      expect(withoutMedia.files).toEqual({ database: true, media: false, manifest: true });
-      await expectAppError(backups.getBackupFile(owner, withoutMedia.id, "media"), "NOT_FOUND");
+      const withMedia = await backUpNow();
+      expect(withMedia.files).toEqual({ database: true, media: true, manifest: true });
 
-      await backups.updateBackupConfig(owner, { includeMedia: true });
       await rm(uploadDir, { recursive: true, force: true });
       const nothingUploaded = await backUpNow();
-      expect(nothingUploaded.files).toEqual({ database: true, media: false, manifest: true });
+      expect(nothingUploaded.files).toEqual({ database: true, media: true, manifest: true });
       const manifest = JSON.parse(
         await readFile(path.join(await folderOf(nothingUploaded.id), "manifest.json"), "utf8"),
-      ) as { files: Array<{ name: string }> };
-      expect(manifest.files.map((f) => f.name)).toEqual(["database.dump"]);
+      ) as { files: Array<{ name: string }>; uploads: unknown[] };
+      expect(manifest.files.map((f) => f.name)).toEqual(["database.dump", "media.tar.gz"]);
+      expect(manifest.uploads).toEqual([]);
     });
 
     it("never archives the backups themselves when they sit inside the uploads folder", async () => {
@@ -412,10 +413,9 @@ run("daily backups", () => {
   });
 
   describe("retention", () => {
-    it("deletes backups past the retention period from the server", async () => {
-      const oldest = await backUpNow();
-      const oldestFolder = await folderOf(oldest.id);
-      await prisma.backupRun.update({ where: { id: oldest.id }, data: { startedAt: daysAgo(31) } });
+    // v6.4 (G2): the server keeps the newest `serverKeep` backups (default 4),
+    // not every backup of the last 30 days.
+    it("keeps the newest backups on the server and clears failed runs", async () => {
       const failedLongAgo = await prisma.backupRun.create({
         data: {
           trigger: "SCHEDULED",
@@ -425,32 +425,29 @@ run("daily backups", () => {
           error: "pg_dump was not found on the server.",
         },
       });
-      const recent = await backUpNow();
-      await prisma.backupRun.update({ where: { id: recent.id }, data: { startedAt: daysAgo(29) } });
-      const recentFolder = await folderOf(recent.id);
-      // Each finished backup clears what is past the 30 days.
-      const latest = await backUpNow();
-      const latestFolder = await folderOf(latest.id);
-
-      expect((await readdir(backupDir)).sort()).toEqual(
-        [path.basename(recentFolder), path.basename(latestFolder)].sort(),
+      const made = [];
+      for (let i = 0; i < 5; i++) made.push(await backUpNow());
+      const [oldest, , , , latest] = made;
+      expect((await readdir(backupDir)).filter((n) => !n.startsWith(".")).sort()).toEqual(
+        made
+          .slice(1)
+          .map((r) => r.name)
+          .sort(),
       );
-      expect(oldestFolder).not.toBe(recentFolder);
-      const removed = await backups.getBackupRun(oldest.id);
+      const removed = await backups.getBackupRun(oldest!.id);
       expect(removed.files).toEqual({ database: false, media: false, manifest: false });
       expect(removed.filesDeletedAt).not.toBeNull();
       expect(removed.status).toBe("SUCCEEDED");
-      await expectAppError(backups.getBackupFile(owner, oldest.id, "database"), "CONFLICT");
+      await expectAppError(backups.getBackupFile(owner, oldest!.id, "database"), "CONFLICT");
       expect((await backups.getBackupRun(failedLongAgo.id)).filesDeletedAt).not.toBeNull();
-      expect((await backups.getBackupRun(recent.id)).files.database).toBe(true);
+      expect((await backups.getBackupRun(latest!.id)).files.database).toBe(true);
 
       // The history stays, newest first, a page at a time.
       const page1 = await backups.listBackupRuns({ take: "2" });
-      expect(page1.items.map((r) => r.id)).toEqual([latest.id, recent.id]);
-      expect(page1.nextCursor).toBe(recent.id);
-      const page2 = await backups.listBackupRuns({ take: "2", cursor: page1.nextCursor });
-      expect(page2.items.map((r) => r.id)).toEqual([oldest.id, failedLongAgo.id]);
-      expect(page2.nextCursor).toBeUndefined();
+      expect(page1.items.map((r) => r.id)).toEqual([made[4]!.id, made[3]!.id]);
+      expect(page1.nextCursor).toBe(made[3]!.id);
+      const all = await backups.listBackupRuns({ take: "10" });
+      expect(all.items.map((r) => r.id).at(-1)).toBe(failedLongAgo.id);
     });
   });
 
@@ -487,18 +484,17 @@ run("daily backups", () => {
       await expect(backups.updateBackupConfig(owner, { timezone: "Mars/Olympus" })).rejects.toThrow(
         ZodError,
       );
-      await expect(backups.updateBackupConfig(owner, { retentionDays: 0 })).rejects.toThrow(
-        ZodError,
-      );
+      await expect(backups.updateBackupConfig(owner, { serverKeep: 0 })).rejects.toThrow(ZodError);
 
+      // v6.3's "daily time" still sets every day at that time.
       const updated = await backups.updateBackupConfig(owner, {
-        cronSchedule: "30 3 * * *",
-        retentionDays: 14,
+        dailyTime: "03:30",
+        serverKeep: 5,
       });
       expect(updated).toMatchObject({
-        cronSchedule: "30 3 * * *",
+        scheduleText: "Every day at 03:30",
         timezone: "Asia/Dhaka",
-        retentionDays: 14,
+        serverKeep: 5,
         isEnabled: true,
       });
       const next = updated.nextRunAt!;
@@ -519,7 +515,7 @@ run("daily backups", () => {
         }),
       ).toMatchObject({
         userId: owner.userId,
-        summary: expect.stringContaining("cronSchedule=30 3 * * *"),
+        summary: "Changed backup settings: schedule: Every day at 03:30, keep 5 on the server",
       });
 
       const off = await backups.updateBackupConfig(owner, { isEnabled: false });
@@ -556,6 +552,7 @@ run("daily backups", () => {
         })
       ).map((n) => n.subject);
 
+    const OWNER_KEY = "my own recovery sentence";
     /** The owner's steps on the Backups screen: the code on the phone, then the recovery key. */
     async function connectDrive() {
       await backups.startGoogleSignIn(owner);
@@ -563,7 +560,13 @@ run("daily backups", () => {
     }
     async function readyToSend() {
       await connectDrive();
-      return backups.makeRecoveryKey(ctx, {});
+      await setPin(ctx, { pin: "2468" });
+      const set = await setRecoveryKey(ctx, {
+        pin: "2468",
+        key: OWNER_KEY,
+        confirm: OWNER_KEY,
+      });
+      return { keyId: set.config.recoveryKey.pairId!, recoveryKey: OWNER_KEY };
     }
 
     it("connects Drive with a code on the owner's phone, and forgets it on disconnect", async () => {
@@ -635,49 +638,11 @@ run("daily backups", () => {
       ]);
     });
 
-    it("shows the recovery key once, and needs the PIN to make a new one", async () => {
-      const made = await backups.makeRecoveryKey(ctx, {});
-      expect(made.recoveryKey).toMatch(/^([0-9A-Z]{4}-){13}[0-9A-Z]{4}$/);
-      expect(made.replaced).toBe(false);
-      const overview = await backups.getBackupOverview();
-      expect(overview.config.recoveryKey).toMatchObject({
-        made: true,
-        id: made.keyId,
-        savedAt: null,
-      });
-      expect(JSON.stringify(overview)).not.toContain(made.recoveryKey);
-      expect(JSON.stringify(await backups.getBackupConfig())).not.toContain(made.recoveryKey);
+    // v6.3's "shows the recovery key once" test is replaced by the owner's own
+    // key (tests/integration/backups-v64.test.ts, "the owner's recovery key").
 
-      // The owner proves it is written down with its last group (typed any way).
-      await expectAppError(backups.confirmRecoveryKey(owner, { lastGroup: "ZZZZ" }), "VALIDATION");
-      const last = made.recoveryKey.split("-").at(-1)!;
-      const confirmed = await backups.confirmRecoveryKey(owner, { lastGroup: last.toLowerCase() });
-      expect(confirmed.recoveryKey.savedAt).not.toBeNull();
-
-      // A new key (old backups then open only with the old one) needs the PIN.
-      const noPin = await expectAppError(backups.makeRecoveryKey(ctx, {}), "VALIDATION");
-      expect(noPin.details).toHaveProperty("pinNotSet");
-      await setPin(ctx, { pin: "2468" });
-      await expectAppError(backups.makeRecoveryKey(ctx, {}), "VALIDATION");
-      await expectAppError(backups.makeRecoveryKey(ctx, { pin: "1111" }), "VALIDATION");
-      const second = await backups.makeRecoveryKey(ctx, { pin: "2468" });
-      expect(second).toMatchObject({ replaced: true });
-      expect(second.keyId).not.toBe(made.keyId);
-      expect((await backups.getBackupOverview()).config.recoveryKey.savedAt).toBeNull();
-      expect(
-        (await prisma.auditLog.findMany({ where: { entityType: "BackupConfig" } })).map(
-          (a) => a.summary,
-        ),
-      ).toEqual(
-        expect.arrayContaining([
-          `Made the backup recovery key (${made.keyId})`,
-          `Confirmed the backup recovery key (${made.keyId}) is written down`,
-          `Made a new backup recovery key (${second.keyId}); backups before it open only with the old key (${made.keyId})`,
-        ]),
-      );
-    });
-
-    it("locks each backup, sends it to Drive, checks Google's copy, then deletes the server's", async () => {
+    // v6.4 (G2): the server keeps its copy (the newest few) after Google's is checked.
+    it("locks each backup, sends it to Drive, checks Google's copy, and keeps the server's", async () => {
       const made = await readyToSend();
       const done = await backUpNow();
       expect(done).toMatchObject({
@@ -686,12 +651,10 @@ run("daily backups", () => {
         keyId: made.keyId,
         onGoogleDrive: true,
         driveError: null,
-        files: { database: false, media: false, manifest: false },
+        files: { database: true, media: true, manifest: true },
       });
       expect(done.checkedAt).not.toBeNull();
-      expect(done.filesDeletedAt).not.toBeNull();
-      // Nothing of it is left on the server.
-      expect((await readdir(backupDir)).filter((n) => !n.startsWith("."))).toEqual([]);
+      expect(done.filesDeletedAt).toBeNull();
 
       const [folder] = backupFolders();
       expect(folder).toMatchObject({
@@ -700,6 +663,7 @@ run("daily backups", () => {
       });
       const inside = [...google.files.values()].filter((f) => f.parents.includes(folder!.id));
       expect(inside.map((f) => f.name).sort()).toEqual([
+        "backup-keys.json",
         "database.dump.locked",
         "manifest.json",
         "media.tar.gz.locked",
@@ -707,7 +671,7 @@ run("daily backups", () => {
       ]);
       // Google holds only locked bytes: no company name, no dump header.
       for (const file of inside.filter((f) => f.name.endsWith(".locked"))) {
-        expect(file.data!.subarray(0, 8).toString()).toBe("EXTASBK1");
+        expect(file.data!.subarray(0, 8).toString()).toBe("EXTASPK1");
         expect(file.data!.includes("PGDMP")).toBe(false);
         expect(file.data!.includes("extras.png")).toBe(false);
       }
@@ -719,7 +683,7 @@ run("daily backups", () => {
         token,
         { id: folder!.id, name: folder!.name },
         path.join(dir, "opened"),
-        currentKey(config)!,
+        { recoveryKey: OWNER_KEY },
       );
       expect((await readFile(opened.database)).subarray(0, 5).toString()).toBe("PGDMP");
       expect(opened.server).toMatchObject({
@@ -735,10 +699,11 @@ run("daily backups", () => {
       );
 
       // Another key does not open it.
-      const other = { key: Buffer.alloc(32, 7), id: "0000" };
       await expect(
-        fetchBackup(token, { id: folder!.id, name: folder!.name }, path.join(dir, "other"), other),
-      ).rejects.toThrow(/another recovery key/);
+        fetchBackup(token, { id: folder!.id, name: folder!.name }, path.join(dir, "other"), {
+          recoveryKey: "somebody else's key",
+        }),
+      ).rejects.toThrow(/not the one these backups were locked with/);
 
       expect((await listDriveBackups()).items).toEqual([
         expect.objectContaining({
@@ -785,18 +750,10 @@ run("daily backups", () => {
       expect(backupFolders()).toEqual([]);
     });
 
-    it("keeps the chosen number of backups in Drive", async () => {
-      await readyToSend();
-      await backups.updateBackupConfig(owner, { keepCount: 2 });
-      const names: string[] = [];
-      for (let i = 0; i < 3; i++) names.push((await backUpNow()).name!);
-      expect(new Set(names).size).toBe(3);
-      const kept = (await listDriveBackups()).items.map((b) => b.name);
-      expect(kept).toHaveLength(2);
-      expect(kept).not.toContain(names[0]);
-    });
+    // v6.3's "keep N backups in Drive" became "keep them N days" (backups-v64.test.ts, "keeping").
 
-    it("restores the newest backup into a temporary database every week, checks it and drops it", async () => {
+    // v6.4 (G11): monthly, compared with the manifest (more in backups-v64.test.ts).
+    it("restores the newest backup into a temporary database every month, checks it and drops it", async () => {
       await readyToSend();
       await makeCompany("Extras Kids");
       const backup = await backUpNow();
@@ -821,9 +778,9 @@ run("daily backups", () => {
         SELECT datname FROM pg_database WHERE datname LIKE ${`${TEST_DB_PREFIX}%`}`;
       expect(left).toEqual([]);
       expect(await prisma.company.count()).toBe(2);
-      expect(await inbox()).toContain("Test restore worked");
+      expect(await inbox()).toContain("Restore drill worked");
 
-      // The weekly clock: once per scheduled time.
+      // The monthly clock: once per scheduled time.
       await prisma.backupRun.deleteMany({ where: { kind: "TEST_RESTORE" } });
       const weekly = await testRestoreTick();
       expect(weekly).toMatchObject({
@@ -833,18 +790,20 @@ run("daily backups", () => {
       });
       expect(await testRestoreTick()).toBeNull();
 
-      // A backup the current key cannot open: the test fails and the owner hears of it.
-      await setPin(ctx, { pin: "2468" });
-      await backups.makeRecoveryKey(ctx, { pin: "2468" });
-      const failed = await runTestRestore({ trigger: "MANUAL", actor: owner, wait: true });
+      // A key typed for the drill that does not open it: the drill fails and the owner hears of it.
+      const failed = await runTestRestore({
+        trigger: "MANUAL",
+        actor: owner,
+        wait: true,
+        recoveryKey: "not the owner's key",
+      });
       expect(failed.status).toBe("FAILED");
-      expect(failed.error).toMatch(/another recovery key/);
-      expect(await inbox()).toContain("Test restore failed");
+      expect(failed.error).toMatch(/not the one these backups were locked with/);
+      expect(await inbox()).toContain("Restore drill failed");
     });
 
     it("restores from the screen with the PIN and RESTORE, handing the opened backup to the server", async () => {
       await readyToSend();
-      await setPin(ctx, { pin: "2468" });
       const backup = await backUpNow();
       const [folder] = backupFolders();
       const ask = (input: Record<string, unknown>) =>
@@ -871,8 +830,10 @@ run("daily backups", () => {
       const manifest = JSON.parse(await readFile(path.join(opened, "manifest.json"), "utf8")) as {
         format: number;
         files: Array<{ name: string; sha256: string }>;
+        tables: Record<string, number>;
       };
       expect(manifest.format).toBe(1);
+      expect(manifest.tables.Company).toBe(1);
       for (const file of manifest.files) {
         expect(sha256(await readFile(path.join(opened, file.name)))).toBe(file.sha256);
       }
@@ -928,7 +889,7 @@ run("daily backups", () => {
           checked: true,
         }),
       ]);
-      // The weekly test restore never takes a safety copy for a backup.
+      // The drill never takes a safety copy for a backup.
       expect((await runTestRestore({ trigger: "MANUAL", actor: owner, wait: true })).error).toMatch(
         /no checked backup/,
       );
@@ -951,7 +912,7 @@ run("daily backups", () => {
       };
       const script = ["tsx", "scripts/drive-restore.ts"];
 
-      await writeFile(keyFile, `${made.recoveryKey.toLowerCase().replace(/-/g, " ")}\n`);
+      await writeFile(keyFile, `${made.recoveryKey}\n`);
       const { stdout } = await exec("npx", script, { env, timeout: 60_000 });
       expect(stdout).toMatch(/Enter this code: +[A-Z]{4}-[A-Z]{4}/);
       expect(stdout).toContain(`Signed in to Google as owner@gmail.com`);
@@ -972,14 +933,12 @@ run("daily backups", () => {
       expect(await restoredCompanies(path.join(opened, "database.dump"))).toEqual(["Extras"]);
 
       // A wrong key opens nothing.
-      await writeFile(keyFile, newRecoveryKey());
+      await writeFile(keyFile, "not the owner's key at all");
       const failure = await exec("npx", script, { env, timeout: 60_000 }).then(
         () => null,
         (e: { stderr: string }) => e,
       );
-      expect(failure?.stderr).toMatch(
-        /none of the 1 backup\(s\) in Drive is checked and locked with this recovery key/,
-      );
+      expect(failure?.stderr).toMatch(/not the one these backups were locked with/);
     });
   });
 });

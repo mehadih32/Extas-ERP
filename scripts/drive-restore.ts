@@ -18,7 +18,6 @@
 import { readFile, rm, writeFile } from "node:fs/promises";
 import { createInterface } from "node:readline/promises";
 
-import { backupKey, keyId, parseRecoveryKey } from "@/modules/backups/crypt";
 import {
   type DriveBackup,
   fetchBackup,
@@ -72,14 +71,14 @@ async function signIn(client: drive.GoogleClient): Promise<string> {
   stop("the sign-in code expired before it was used. Run the command again.");
 }
 
-async function choose(backups: DriveBackup[], pick: string, key: string): Promise<DriveBackup> {
-  const usable = backups.filter((b) => b.checked && (!b.keyId || b.keyId === key));
+async function choose(backups: DriveBackup[], pick: string): Promise<DriveBackup> {
+  const usable = backups.filter((b) => b.checked);
   if (pick === "newest") {
     const newest = usable.find((b) => b.kind === "BACKUP") ?? usable[0];
     if (!newest) {
       stop(
         backups.length
-          ? `none of the ${backups.length} backup(s) in Drive is checked and locked with this recovery key (${key}).`
+          ? `none of the ${backups.length} backup(s) in Drive is checked.`
           : "there are no backups in the Extas ERP Backups folder yet.",
       );
     }
@@ -97,7 +96,7 @@ async function choose(backups: DriveBackup[], pick: string, key: string): Promis
       const answer = (
         await readline.question("Press Enter for the newest, or type a number: ")
       ).trim();
-      if (!answer) return choose(backups, "newest", key);
+      if (!answer) return choose(backups, "newest");
       const chosen = backups[Number(answer) - 1];
       if (!chosen || !/^\d+$/.test(answer)) {
         console.log(`  Type a number from 1 to ${backups.length}.`);
@@ -105,10 +104,6 @@ async function choose(backups: DriveBackup[], pick: string, key: string): Promis
       }
       if (!chosen.checked) {
         console.log("  That one was never checked in Drive; pick a checked one.");
-        continue;
-      }
-      if (chosen.keyId && chosen.keyId !== key) {
-        console.log(`  That one is locked with another recovery key (${chosen.keyId}).`);
         continue;
       }
       return chosen;
@@ -125,17 +120,14 @@ async function main() {
   const serverFile = need("SERVER_FILE");
   const pick = process.env.PICK?.trim() || "newest";
 
-  let key: { key: Buffer; id: string };
+  let recoveryKey: string;
   try {
-    const raw = await readFile(keyFile, "utf8");
-    const opened = backupKey(parseRecoveryKey(raw));
-    key = { key: opened, id: keyId(opened) };
+    recoveryKey = (await readFile(keyFile, "utf8")).trim();
   } catch (error) {
     stop(error instanceof Error ? error.message : String(error));
   } finally {
     await rm(keyFile, { force: true });
   }
-  say(`Recovery key ${key.id} accepted`);
 
   const token = await signIn(client);
   const account = await drive.accountEmail(token).catch(() => null);
@@ -156,21 +148,19 @@ async function main() {
   backups.slice(0, 30).forEach((b, i) => {
     const when = b.createdAt ? b.createdAt.replace("T", " ").slice(0, 16) : "?";
     const kind = b.kind === "SAFETY_COPY" ? "safety copy" : "backup";
-    const state = !b.checked
-      ? "NOT checked"
-      : b.keyId && b.keyId !== key.id
-        ? `other key ${b.keyId}`
-        : "checked";
+    const state = !b.checked ? "NOT checked" : `checked, key ${b.keyId ?? "none"}`;
     console.log(
       `  ${String(i + 1).padStart(3)}. ${when} UTC  ${size(b.bytes).padStart(9)}  ${kind.padEnd(11)} ${state}  ${b.name}`,
     );
   });
   console.log("");
 
-  const chosen = await choose(backups, pick, key.id);
+  const chosen = await choose(backups, pick);
   say(`Downloading ${chosen.name} (${size(chosen.bytes)}) and opening it with the recovery key`);
   const started = Date.now();
-  const fetched = await fetchBackup(token, { id: chosen.folderId, name: chosen.name }, outDir, key);
+  const fetched = await fetchBackup(token, { id: chosen.folderId, name: chosen.name }, outDir, {
+    recoveryKey,
+  });
   const server = await readyForRestore(fetched);
   say(
     `Downloaded, checked and opened in ${Math.round((Date.now() - started) / 1000)} seconds: ${fetched.dir}`,

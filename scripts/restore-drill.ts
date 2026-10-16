@@ -1,8 +1,9 @@
 /**
  * The old server's half of the restore drill (.github/workflows/restore-drill.yml).
  * On a database loaded with the demo data it does what the owner does on the
- * Backups screen: makes the recovery key, connects Google Drive with the code on
- * the phone, and backs up, until the backup is locked, in Drive and checked. A
+ * Backups screen: connects Google Drive with the code on the phone, sets the
+ * recovery key (kept in Drive), and backs up, until the backup is locked, in
+ * Drive and checked. A
  * stand-in for Google (scripts/fake-google.ts) plays Google's part. Then
  * deploy/bootstrap.sh builds a new server from that backup.
  *   DATABASE_URL, BACKUP_DIR, ENCRYPTION_KEY, PG_DUMP_PATH   the old server
@@ -15,15 +16,22 @@
 import { writeFile } from "node:fs/promises";
 
 import { prisma } from "@/lib/prisma";
+import { tenantDb } from "@/lib/tenant-db";
 import type { CompanyContext } from "@/modules/auth/context";
+import type { PermissionKey } from "@/modules/rbac/permissions";
+import { setPin } from "@/modules/ai/settings.service";
 import {
   checkGoogleSignIn,
-  confirmRecoveryKey,
   getBackupRun,
-  makeRecoveryKey,
   runBackup,
   startGoogleSignIn,
 } from "@/modules/backups/backup.service";
+import { setRecoveryKey } from "@/modules/backups/recovery-key.service";
+import { resolveCompanyAccess } from "@/modules/companies/access";
+
+/** The drill's own recovery key and PIN (a practice database only). */
+const DRILL_KEY = "restore drill practice key 2026";
+const DRILL_PIN = "2468";
 
 const say = (text: string) => console.log(`==> ${text}`);
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -50,14 +58,15 @@ async function main() {
     include: { memberships: { take: 1 } },
   });
   const actor = { userId: owner.id };
+  const companyId = owner.memberships[0]!.companyId;
+  const access = (await resolveCompanyAccess(owner, companyId))!;
+  // The owner in their company, as on the Backups screen (for the PIN).
   const ctx = {
     user: owner,
-    companyId: owner.memberships[0]!.companyId,
+    ...access,
+    db: tenantDb(companyId),
+    can: (p: PermissionKey) => access.permissions.has(p),
   } as unknown as CompanyContext;
-
-  const made = await makeRecoveryKey(ctx, {});
-  await confirmRecoveryKey(actor, { lastGroup: made.recoveryKey.split("-").at(-1) });
-  say(`Recovery key ${made.keyId} made and confirmed`);
 
   const code = await startGoogleSignIn(actor);
   say(`Google sign-in code ${code.userCode} at ${code.verificationUrl}`);
@@ -69,6 +78,15 @@ async function main() {
     await wait(code.interval * 1000);
   }
   say("Google Drive connected");
+
+  await setPin(ctx, { pin: DRILL_PIN });
+  const set = await setRecoveryKey(ctx, {
+    pin: DRILL_PIN,
+    key: DRILL_KEY,
+    confirm: DRILL_KEY,
+    keepInDrive: true,
+  });
+  say(`Recovery key set (key ${set.config.recoveryKey.pairId}), kept in Google Drive`);
 
   const started = await runBackup({ trigger: "MANUAL", actor });
   let run = started;
@@ -98,7 +116,7 @@ async function main() {
       .map(([t, n]) => `${n} ${t}`)
       .join(", ")}`,
   );
-  await writeFile(process.env.RECOVERY_KEY_OUT ?? "recovery-key", `${made.recoveryKey}\n`, {
+  await writeFile(process.env.RECOVERY_KEY_OUT ?? "recovery-key", `${DRILL_KEY}\n`, {
     mode: 0o600,
   });
   await writeFile(

@@ -4442,8 +4442,69 @@ model BackupConfig {
   /// When the owner said they had written it down (until then the screen asks again).
   recoveryKeySavedAt    DateTime?
   /// The weekly test restore into a temporary database (Saturdays 04:00 by default).
+  /// v6.4: it is the monthly drill (drillDay, drillTime); this still turns it on and off.
   testRestoreEnabled    Boolean   @default(true)
   testRestoreSchedule   String    @default("0 4 * * 6")
+
+  /// v6.4 schedule, in `timezone` (it replaces cronSchedule): HOURS every
+  /// `scheduleEvery` hours from the first of `scheduleTimes`, each day; DAYS every
+  /// `scheduleEvery` days (counted from `scheduleStartDay`) at `scheduleTimes`;
+  /// WEEKLY on `scheduleWeekdays` (0 = Sunday) at `scheduleTimes`; DATES on the
+  /// listed "YYYY-MM-DD HH:MM" `scheduleDates`. Null: still the v6.3 cron, read
+  /// once into the closest of these.
+  scheduleMode        BackupScheduleMode? @default(DAYS)
+  scheduleEvery       Int                 @default(1)
+  scheduleTimes       String[]            @default(["02:00", "14:00"])
+  scheduleWeekdays    Int[]               @default([])
+  scheduleDates       String[]            @default([])
+  scheduleStartDay    String?
+  /// How many of the newest backups stay on the server (3 to 7); Google Drive
+  /// keeps every backup for `driveKeepDays` days (null: for ever).
+  serverKeep          Int                 @default(4)
+  driveKeepDays       Int?                @default(90)
+  /// The owner's own recovery key (A9): never kept. A key pair made when it is
+  /// set: the public key locks every backup; the private key is kept only locked
+  /// with a key made from the recovery key (scrypt), as the keys file (JSON).
+  keyPairId           String?
+  publicKey           String?
+  lockedKeyFile       String?
+  keySetAt            DateTime?
+  /// Earlier key pairs ([{ id, from, to }]), to say which backups need which key.
+  earlierKeyPairs     Json?
+  /// The v6.3 generated key, retired when the owner set their own: backups made
+  /// before then open only with the old key card.
+  legacyKeyId         String?
+  legacyKeyRetiredAt  DateTime?
+  /// Keep the recovery key in the Drive backup folder (in the restore guide and
+  /// a small file the restore reads), and when it was last put there.
+  keepKeyInDrive      Boolean             @default(true)
+  keyInDriveAt        DateTime?
+  /// Cloudflare, so a restore points the domain at the new server and gets HTTPS
+  /// behind Cloudflare's proxy: the zone ("extasbd.com"), its id, the API token
+  /// sealed with ENCRYPTION_KEY and its last 4 characters, and the last good test.
+  cloudflareZone      String?
+  cloudflareZoneId    String?
+  cloudflareTokenRef  String?
+  cloudflareTokenHint String?
+  cloudflareCheckedAt DateTime?
+  /// The backup problem the owner was last told of ("failed", "late",
+  /// "not-in-drive"), so each problem is told once, and its recovery once.
+  alertProblem        String?
+  alertSentAt         DateTime?
+  /// The monthly drill: day of the month (1 to 28) and time.
+  drillDay            Int                 @default(1)
+  drillTime           String              @default("04:00")
+  /// The restore guide in the Drive backup folder: what it was built from (a
+  /// hash) and when, so it is rebuilt each month and whenever it changes.
+  guideHash           String?
+  guideBuiltAt        DateTime?
+}
+
+enum BackupScheduleMode {
+  HOURS
+  DAYS
+  WEEKLY
+  DATES
 }
 
 model BackupRun {

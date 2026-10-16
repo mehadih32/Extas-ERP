@@ -1,41 +1,51 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 
-import type { BackupConfig, BackupKind, BackupRun, BackupTrigger } from "@prisma/client";
+import type { BackupConfig, BackupKind, BackupRun, BackupTrigger, Prisma } from "@prisma/client";
 
 import { decryptSecret, encryptSecret } from "@/lib/crypto";
 import { localDay } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
-import type { CompanyContext } from "@/modules/auth/context";
 import {
   type Actor,
-  alertOwner,
   audit,
+  backupLock,
+  type BackupLock,
   backupRoot,
-  currentKey,
   driveRoot,
   getBackupConfig,
   googleClient,
+  guideFiles,
+  hostRoot,
+  type HostVersion,
+  hostVersion,
   pgDumpBinary,
-  pgEnvironment,
   reasonFor,
 } from "@/modules/backups/backup-core";
-import { nextRun, parseCron } from "@/modules/backups/cron";
-import { lockFile, newRecoveryKey, parseRecoveryKey } from "@/modules/backups/crypt";
+import { contentsOf, dumpWithCounts, listFiles, packFiles } from "@/modules/backups/contents";
+import { parseCron } from "@/modules/backups/cron";
+import { lockedForPair, lockFile } from "@/modules/backups/crypt";
 import * as drive from "@/modules/backups/google-drive";
+import {
+  DEFAULT_SCHEDULE,
+  describeSchedule,
+  nextDrillAt,
+  nextRunAt,
+  scheduleColumns,
+  scheduleFromCron,
+  scheduleOf,
+} from "@/modules/backups/schedule";
 import {
   backupConfigSchema,
   type BackupFileKind,
   googleClientSchema,
   listBackupRunsSchema,
-  recoveryKeyConfirmSchema,
-  recoveryKeyMakeSchema,
 } from "@/modules/backups/schemas";
 import { uploadRoot } from "@/modules/files/file.service";
 
@@ -47,25 +57,35 @@ export {
 } from "@/modules/backups/backup-core";
 
 /*
- * Daily backups of the whole platform (every company), run by the scheduler
- * (scheduler.ts) or by hand ("Back up now"):
- *   database.dump   pg_dump of the database (custom format: restore with pg_restore)
- *   media.tar.gz    the uploaded files (logos, packing lists, bill scans)
- *   server.json     this server's ENCRYPTION_KEY, so a new server can open the
- *                   sealed settings (Google, AI keys, bots) after a restore
- *   manifest.json   sizes, SHA-256 checksums and how to restore
- * Each file is locked with the owner's recovery key (crypt.ts) and sent to a
- * folder in the owner's Google Drive (drive-copies.ts); once Google's copy is
- * checked byte for byte the server's copy is deleted. Until the owner makes a
- * recovery key and connects Drive, backups stay on the server, unlocked and
- * without server.json, and the Backups screen says so. Only one backup job runs
- * at a time. Platform owner only.
+ * Backups of the whole platform (every company), run on the owner's schedule
+ * (scheduler.ts, schedule.ts) or by hand ("Back up now"). Each one is complete,
+ * so a new server needs nothing else (G3):
+ *   database.dump     pg_dump of the database (custom format)
+ *   media.tar.gz      every uploaded and generated file (UPLOAD_DIR)
+ *   code.bundle       the code at the running version (a git bundle, made by
+ *                     deploy.sh at each update)
+ *   settings.env      the server's settings file, deploy/.env, with every
+ *                     password and key (locked by the server itself, deploy.sh)
+ *   server.json       the restore facts: ENCRYPTION_KEY, the web address, the
+ *                     Google client and the Cloudflare token
+ *   backup-keys.json  the keys file (its private key locked with the owner's
+ *                     recovery key), so the recovery key alone opens the backup
+ *   the restore guide (Bangla and English PDF, no secrets)
+ *   manifest.json     every table's row count and every file's size and SHA-256,
+ *                     the code's commit and version, and the date
+ * Every file but the keys file, the guides and the manifest is locked with the
+ * owner's public key (crypt.ts, keys.ts: format 3). Until the owner sets a
+ * recovery key, a backup made with v6.3's generated key is locked with that one
+ * (format 2), and with no key at all it stays on the server, unlocked, without
+ * the settings (format 1). Locked backups go to the owner's Google Drive
+ * (drive-copies.ts). The server keeps the newest few (serverKeep), Drive keeps
+ * them for driveKeepDays. Only one backup job runs at a time. Platform owner only.
  */
 
 const exec = promisify(execFile);
-const LONG_JOB = { timeout: 2 * 60 * 60 * 1000, maxBuffer: 10 * 1024 * 1024 };
 /** A run still "running" after this long was cut off (the server stopped). */
 const STALE_RUN_MS = 6 * 60 * 60 * 1000;
+const REPOSITORY = () => process.env.GITHUB_REPOSITORY?.trim() || "mehadih32/Extas-ERP";
 
 // =============================================================================
 // Settings
@@ -80,17 +100,19 @@ async function pgDumpVersion(): Promise<string | null> {
   }
 }
 
-/** "02:00" from a daily cron ("0 2 * * *"); null for any other schedule. */
-export function dailyTimeOf(cron: string): string | null {
-  const m = cron.trim().match(/^(\d{1,2}) (\d{1,2}) \* \* \*$/);
-  if (!m) return null;
-  return `${m[2]!.padStart(2, "0")}:${m[1]!.padStart(2, "0")}`;
+export type EarlierKeyPair = { pairId: string; setAt: string | null; until: string };
+
+export function earlierKeyPairs(config: BackupConfig): EarlierKeyPair[] {
+  return Array.isArray(config.earlierKeyPairs)
+    ? (config.earlierKeyPairs as unknown as EarlierKeyPair[])
+    : [];
 }
 
-function presentConfig(config: BackupConfig) {
+export function presentConfig(config: BackupConfig, now = new Date()) {
+  const schedule = scheduleOf(config);
   let next: Date | null = null;
   try {
-    next = config.isEnabled ? nextRun(config.cronSchedule, config.timezone) : null;
+    next = config.isEnabled ? nextRunAt(schedule, config.timezone, now) : null;
   } catch {
     next = null;
   }
@@ -100,26 +122,21 @@ function presentConfig(config: BackupConfig) {
     config.googleDeviceExpiresAt &&
     config.googleDeviceExpiresAt > new Date();
   return {
-    cronSchedule: config.cronSchedule,
-    dailyTime: dailyTimeOf(config.cronSchedule),
+    schedule,
+    /** The schedule in plain words ("Every day at 02:00 and 14:00"). */
+    scheduleText: describeSchedule(schedule),
     timezone: config.timezone,
-    includeMedia: config.includeMedia,
-    retentionDays: config.retentionDays,
-    keepCount: config.keepCount,
     isEnabled: config.isEnabled,
     nextRunAt: next,
-    testRestore: {
+    /** Backups kept on the server (3 to 7). */
+    serverKeep: config.serverKeep,
+    /** Days each backup stays in Google Drive; null: kept for ever. */
+    driveKeepDays: config.driveKeepDays,
+    drill: {
       enabled: config.testRestoreEnabled,
-      schedule: config.testRestoreSchedule,
-      nextRunAt: (() => {
-        try {
-          return config.testRestoreEnabled
-            ? nextRun(config.testRestoreSchedule, config.timezone)
-            : null;
-        } catch {
-          return null;
-        }
-      })(),
+      day: config.drillDay,
+      time: config.drillTime,
+      nextRunAt: config.testRestoreEnabled ? nextDrillAt(config, config.timezone, now) : null,
     },
     googleDrive: {
       /** A Google client is set (on the Backups screen, or in the server's settings). */
@@ -133,10 +150,29 @@ function presentConfig(config: BackupConfig) {
       signingIn: Boolean(signingIn),
     },
     recoveryKey: {
-      made: Boolean(config.recoveryKeyRef),
-      id: config.recoveryKeyId,
-      madeAt: config.recoveryKeyMadeAt,
-      savedAt: config.recoveryKeySavedAt,
+      /** The owner has set their own recovery key (v6.4). */
+      set: Boolean(config.publicKey && config.keyPairId),
+      /** The key pair's name, written on every backup it locks. */
+      pairId: config.keyPairId,
+      setAt: config.keySetAt,
+      keepInDrive: config.keepKeyInDrive,
+      /** When the recovery key was last put in Google Drive; null: not there now. */
+      inDriveAt: config.keyInDriveAt,
+      /** v6.3's generated key still locks new backups (the owner has not set their own yet). */
+      legacyInUse: !config.publicKey && config.recoveryKeyRef ? { id: config.recoveryKeyId } : null,
+      /** v6.3's generated key, retired: backups made before then open only with its key card. */
+      legacy: config.legacyKeyId
+        ? { id: config.legacyKeyId, retiredAt: config.legacyKeyRetiredAt }
+        : null,
+      /** Earlier key pairs (a forgotten recovery key): backups up to `until` need that key. */
+      earlier: earlierKeyPairs(config),
+    },
+    cloudflare: {
+      set: Boolean(config.cloudflareTokenRef),
+      zone: config.cloudflareZone,
+      /** The token's last 4 characters, to tell tokens apart (the token is never shown). */
+      tokenHint: config.cloudflareTokenHint,
+      checkedAt: config.cloudflareCheckedAt,
     },
     updatedAt: config.updatedAt,
   };
@@ -156,7 +192,7 @@ export function presentRun(run: BackupRun & { triggeredBy?: { id: string; name: 
       ? Math.round((run.finishedAt.getTime() - run.startedAt.getTime()) / 1000)
       : null,
     sizeBytes: run.sizeBytes === null ? null : Number(run.sizeBytes),
-    /** Locked with the recovery key of this name; null: not locked. */
+    /** Locked with this key (the owner's key pair, or v6.3's key); null: not locked. */
     keyId: run.keyId,
     /** Files still on the server, ready to download. */
     files: {
@@ -177,41 +213,37 @@ export function presentRun(run: BackupRun & { triggeredBy?: { id: string; name: 
 }
 
 /**
- * The one command that restores the newest backup on a new server
- * (deploy/bootstrap.sh). It asks for a GitHub token first, for a private
- * repository; for a public one the owner just presses Enter.
+ * The one command that restores on a new server (G8): it downloads the small
+ * public bootstrap script at the running version's commit, checks its SHA-256
+ * and runs it. It holds no secret: the script asks for everything it needs as
+ * hidden input. Null until deploy.sh has recorded the running version.
  */
-export function restoreCommand(config: BackupConfig): string {
-  const repo = process.env.GITHUB_REPOSITORY?.trim() || "mehadih32/Extas-ERP";
-  const client = googleClient(config);
-  const google = client
-    ? ` GOOGLE_CLIENT_ID='${client.clientId}' GOOGLE_CLIENT_SECRET='${client.clientSecret}'`
-    : "";
+export function restoreCommand(host: Pick<HostVersion, "commit" | "bootstrapSha256">) {
+  if (!host.commit || !host.bootstrapSha256) return null;
   return (
-    'read -rsp "GitHub token (press Enter if the repository is public): " T; echo; ' +
-    'curl -fsSL -H "Accept: application/vnd.github.raw" ${T:+-H "Authorization: Bearer $T"} ' +
-    `https://api.github.com/repos/${repo}/contents/deploy/bootstrap.sh -o bootstrap.sh && ` +
-    `sudo GITHUB_REPOSITORY=${repo} GITHUB_TOKEN="$T"${google} bash bootstrap.sh`
+    `curl -fsSL https://raw.githubusercontent.com/${REPOSITORY()}/${host.commit}/deploy/bootstrap.sh -o restore.sh` +
+    ` && echo "${host.bootstrapSha256}  restore.sh" | sha256sum -c` +
+    ` && sudo bash restore.sh ${host.commit}`
   );
 }
 
-/** The restore command, shown on request (it holds the Google client's secret); recorded. */
-export async function showRestoreCommand(actor: Actor, meta?: RequestMeta) {
-  const config = await getBackupConfig();
-  await audit(actor, meta, {
-    action: "EXPORT",
-    entityType: "BackupConfig",
-    entityId: config.id,
-    summary: "Showed the one-command restore for a new server",
-  });
-  return { command: restoreCommand(config), googleReady: googleClient(config) !== null };
+/** The new-server facts for the screen and the guide: the command, and what it checks. */
+export async function newServerFacts() {
+  const host = await hostVersion();
+  return {
+    command: restoreCommand(host),
+    commit: host.commit,
+    bootstrapSha256: host.bootstrapSha256,
+    version: host.version,
+    deployedAt: host.deployedAt,
+  };
 }
 
 /** Settings, Drive connection, recovery key, the last runs and whether pg_dump is installed. */
 export async function getBackupOverview() {
   const config = await getBackupConfig();
   const include = { triggeredBy: { select: { id: true, name: true } } };
-  const [lastRun, lastSuccess, lastTest, unsent, pgDump] = await Promise.all([
+  const [lastRun, lastSuccess, lastTest, unsent, pgDump, newServer, guides] = await Promise.all([
     prisma.backupRun.findFirst({
       where: { kind: "BACKUP" },
       orderBy: { startedAt: "desc" },
@@ -236,39 +268,86 @@ export async function getBackupOverview() {
       },
     }),
     pgDumpVersion(),
+    newServerFacts(),
+    guideFiles(),
   ]);
+  const { backupHealth } = await import("@/modules/backups/status");
   return {
     config: presentConfig(config),
+    health: await backupHealth(config),
     lastRun: lastRun ? presentRun(lastRun) : null,
     lastSuccess: lastSuccess ? presentRun(lastSuccess) : null,
     lastTestRestore: lastTest ? presentRun(lastTest) : null,
     /** Backups on the server not yet checked in Google Drive. */
     notSent: unsent,
+    newServer,
+    /** The restore guide is ready to download. */
+    guideReady: guides.length > 0,
     server: { backupDir: backupRoot(), pgDump },
   };
 }
 
 export async function updateBackupConfig(actor: Actor, raw: unknown, meta?: RequestMeta) {
-  const { dailyTime, ...input } = backupConfigSchema.parse(raw);
-  const data: Partial<BackupConfig> = { ...input };
-  if (dailyTime) {
-    const [h, m] = dailyTime.split(":").map(Number) as [number, number];
-    data.cronSchedule = `${m} ${h} * * *`;
-  }
-  if (data.cronSchedule) parseCron(data.cronSchedule);
-  if (data.testRestoreSchedule) parseCron(data.testRestoreSchedule);
+  const input = backupConfigSchema.parse(raw);
   const config = await getBackupConfig();
+  const data: Prisma.BackupConfigUpdateInput = {};
+  const said: string[] = [];
+  if (input.schedule) {
+    Object.assign(data, scheduleColumns(input.schedule));
+  } else if (input.dailyTime) {
+    // v6.3's "daily time": every day at that time.
+    Object.assign(
+      data,
+      scheduleColumns({ ...DEFAULT_SCHEDULE, mode: "DAYS", every: 1, times: [input.dailyTime] }),
+    );
+  } else if (input.cronSchedule) {
+    parseCron(input.cronSchedule);
+    data.cronSchedule = input.cronSchedule;
+    Object.assign(data, scheduleColumns(scheduleFromCron(input.cronSchedule)));
+  }
+  if (data.scheduleMode) {
+    said.push(
+      `schedule: ${describeSchedule(scheduleOf({ ...config, ...(data as Partial<BackupConfig>) }))}`,
+    );
+  }
+  if (input.timezone !== undefined) {
+    data.timezone = input.timezone;
+    said.push(`timezone: ${input.timezone}`);
+  }
+  if (input.isEnabled !== undefined) {
+    data.isEnabled = input.isEnabled;
+    said.push(input.isEnabled ? "backups on" : "backups off");
+  }
+  if (input.serverKeep !== undefined) {
+    data.serverKeep = input.serverKeep;
+    said.push(`keep ${input.serverKeep} on the server`);
+  }
+  if (input.driveKeepDays !== undefined) {
+    data.driveKeepDays = input.driveKeepDays;
+    said.push(
+      input.driveKeepDays === null
+        ? "keep in Google Drive for ever"
+        : `keep in Google Drive for ${input.driveKeepDays} days`,
+    );
+  }
+  if (input.drillEnabled !== undefined) {
+    data.testRestoreEnabled = input.drillEnabled;
+    said.push(input.drillEnabled ? "monthly drill on" : "monthly drill off");
+  }
+  if (input.drillDay !== undefined) {
+    data.drillDay = input.drillDay;
+    said.push(`drill on day ${input.drillDay}`);
+  }
+  if (input.drillTime !== undefined) {
+    data.drillTime = input.drillTime;
+    said.push(`drill at ${input.drillTime}`);
+  }
   const updated = await prisma.backupConfig.update({ where: { id: config.id }, data });
   await audit(actor, meta, {
     action: "UPDATE",
     entityType: "BackupConfig",
     entityId: config.id,
-    summary: `Changed backup settings: ${Object.entries({
-      ...input,
-      ...(dailyTime ? { dailyTime } : {}),
-    })
-      .map(([k, v]) => `${k}=${String(v)}`)
-      .join(", ")}`,
+    summary: `Changed backup settings: ${said.join(", ") || "nothing"}`,
   });
   return presentConfig(updated);
 }
@@ -423,85 +502,6 @@ export async function disconnectGoogleDrive(actor: Actor, meta?: RequestMeta) {
     summary: `Disconnected Google Drive${config.googleDriveAccount ? ` (${config.googleDriveAccount})` : ""}; backups stay on the server only`,
   });
   return presentConfig(updated);
-}
-
-// =============================================================================
-// The recovery key
-// =============================================================================
-
-/**
- * Makes the recovery key and shows it this once. A second key needs the PIN:
- * backups locked with the old key then open only with the old key.
- */
-export async function makeRecoveryKey(
-  ctx: CompanyContext,
-  raw: unknown,
-  meta?: RequestMeta,
-): Promise<{ recoveryKey: string; keyId: string; replaced: boolean }> {
-  const input = recoveryKeyMakeSchema.parse(raw);
-  const config = await getBackupConfig();
-  if (config.recoveryKeyRef) {
-    const { requirePin } = await import("@/modules/ai/settings.service");
-    await requirePin(ctx, input.pin, "make a new recovery key");
-  }
-  const recoveryKey = newRecoveryKey();
-  const updated = await prisma.backupConfig.update({
-    where: { id: config.id },
-    data: {
-      recoveryKeyRef: encryptSecret(recoveryKey),
-      recoveryKeyMadeAt: new Date(),
-      recoveryKeySavedAt: null,
-      recoveryKeyId: null,
-    },
-  });
-  const id = currentKey(updated)!.id;
-  await prisma.backupConfig.update({ where: { id: config.id }, data: { recoveryKeyId: id } });
-  await audit({ userId: ctx.user.id }, meta, {
-    action: "UPDATE",
-    entityType: "BackupConfig",
-    entityId: config.id,
-    summary: config.recoveryKeyRef
-      ? `Made a new backup recovery key (${id}); backups before it open only with the old key (${config.recoveryKeyId})`
-      : `Made the backup recovery key (${id})`,
-  });
-  return { recoveryKey, keyId: id, replaced: Boolean(config.recoveryKeyRef) };
-}
-
-/** The owner proves they wrote the key down: they type its last group of four. */
-export async function confirmRecoveryKey(actor: Actor, raw: unknown, meta?: RequestMeta) {
-  const { lastGroup } = recoveryKeyConfirmSchema.parse(raw);
-  const config = await getBackupConfig();
-  if (!config.recoveryKeyRef) throw new AppError("CONFLICT", "Make the recovery key first.");
-  const written = decryptSecret(config.recoveryKeyRef).split("-").at(-1);
-  const typed = lastGroup.toUpperCase().replace(/O/g, "0").replace(/[IL]/g, "1");
-  if (typed !== written) {
-    throw new AppError("VALIDATION", "That is not the last group of your recovery key.", {
-      lastGroup: ["Not the last group of the key: check your copy"],
-    });
-  }
-  const updated = await prisma.backupConfig.update({
-    where: { id: config.id },
-    data: { recoveryKeySavedAt: new Date() },
-  });
-  await audit(actor, meta, {
-    action: "UPDATE",
-    entityType: "BackupConfig",
-    entityId: config.id,
-    summary: `Confirmed the backup recovery key (${config.recoveryKeyId}) is written down`,
-  });
-  return presentConfig(updated);
-}
-
-/** Whether a typed recovery key is the one the server locks backups with (for the restore screen). */
-export function isCurrentRecoveryKey(config: BackupConfig, typed: string): boolean {
-  try {
-    return (
-      Boolean(config.recoveryKeyRef) &&
-      parseRecoveryKey(typed).equals(parseRecoveryKey(decryptSecret(config.recoveryKeyRef!)))
-    );
-  } catch {
-    return false;
-  }
 }
 
 // =============================================================================
@@ -674,6 +674,14 @@ export function stampFor(at: Date, timeZone: string) {
   return `${localDay(at, timeZone)}_${time}`;
 }
 
+/** The run's folder on the server, only if it is safely inside BACKUP_DIR. */
+export function runFolder(run: Pick<BackupRun, "dbDumpPath">): string | null {
+  if (!run.dbDumpPath) return null;
+  const root = backupRoot();
+  const folder = path.dirname(path.resolve(root, run.dbDumpPath));
+  return folder.startsWith(root + path.sep) ? folder : null;
+}
+
 async function exists(p: string) {
   return stat(p).then(
     () => true,
@@ -681,26 +689,10 @@ async function exists(p: string) {
   );
 }
 
-async function hasFiles(dir: string) {
-  try {
-    return (await readdir(dir)).length > 0;
-  } catch {
-    return false;
-  }
-}
-
 async function sha256(file: string): Promise<string> {
   const hash = createHash("sha256");
   for await (const chunk of createReadStream(file)) hash.update(chunk as Buffer);
   return hash.digest("hex");
-}
-
-/** The run's folder on the server, only if it is safely inside BACKUP_DIR. */
-export function runFolder(run: Pick<BackupRun, "dbDumpPath">): string | null {
-  if (!run.dbDumpPath) return null;
-  const root = backupRoot();
-  const folder = path.dirname(path.resolve(root, run.dbDumpPath));
-  return folder.startsWith(root + path.sep) ? folder : null;
 }
 
 export type ManifestFile = {
@@ -713,21 +705,36 @@ export type ManifestFile = {
   plain?: { name: string; bytes: number; sha256: string };
 };
 
+/** A file the server locked itself (deploy.sh: the settings file), with its plain facts. */
+export type PrelockedFile = {
+  file: string;
+  plain: { name: string; bytes: number; sha256: string };
+};
+
+/** The manifest's format: 1 not locked, 2 v6.3's key, 3 the owner's public key. */
+export function formatOf(lock: BackupLock | null): 1 | 2 | 3 {
+  if (!lock) return 1;
+  return Buffer.isBuffer(lock.key) ? 2 : 3;
+}
+
 /**
- * Writes the manifest; when a key is given, every file is locked first and
- * only the locked files stay. Returns the files as written, with their sizes.
+ * Writes the manifest. With a lock, every file in `plainFiles` is locked first
+ * and only the locked file stays; `prelocked` files were locked already (by the
+ * server) and `readable` ones stay as they are (the keys file and the guide:
+ * nothing secret). Returns the files as written, with their sizes.
  */
 export async function sealFolder(
   dir: string,
   plainFiles: string[],
-  key: { key: Buffer; id: string } | null,
+  lock: BackupLock | null,
   about: Record<string, unknown>,
+  extra: { prelocked?: PrelockedFile[]; readable?: string[] } = {},
 ): Promise<{ files: ManifestFile[]; size: number; manifest: string }> {
   const files: ManifestFile[] = [];
   for (const file of plainFiles) {
-    if (key) {
+    if (lock) {
       const locked = `${file}.locked`;
-      const facts = await lockFile(key.key, file, locked);
+      const facts = await lockFile(lock.key, file, locked);
       await rm(file, { force: true });
       files.push({
         name: path.basename(locked),
@@ -744,25 +751,51 @@ export async function sealFolder(
       });
     }
   }
+  for (const { file, plain } of extra.prelocked ?? []) {
+    files.push({
+      name: path.basename(file),
+      bytes: (await stat(file)).size,
+      sha256: await sha256(file),
+      md5: createHash("md5")
+        .update(await readFile(file))
+        .digest("hex"),
+      plain,
+    });
+  }
+  for (const file of extra.readable ?? []) {
+    const data = await readFile(file);
+    files.push({
+      name: path.basename(file),
+      bytes: data.length,
+      sha256: createHash("sha256").update(data).digest("hex"),
+      md5: createHash("md5").update(data).digest("hex"),
+    });
+  }
+  const format = formatOf(lock);
   const manifest = path.join(dir, "manifest.json");
   await writeFile(
     manifest,
     JSON.stringify(
       {
         app: "Extas ERP",
-        format: key ? 2 : 1,
-        locked: Boolean(key),
-        keyId: key?.id ?? null,
+        format,
+        locked: Boolean(lock),
+        keyId: lock?.id ?? null,
         ...about,
         files,
-        restore: key
-          ? [
-              "Locked with the owner's recovery key: restore with deploy/bootstrap.sh on a new server, or Restore on the Backups screen.",
-            ]
-          : [
-              "Database: pg_restore --clean --if-exists --no-owner --dbname=<database> database.dump",
-              "Uploaded files: tar -xzf media.tar.gz -C <UPLOAD_DIR>",
-            ],
+        restore:
+          format === 3
+            ? [
+                "Locked with the owner's backup key: restore on a new server with the one command in the restore guide (deploy/bootstrap.sh), or with Restore on the Backups screen. The recovery key opens backup-keys.json.",
+              ]
+            : format === 2
+              ? [
+                  "Locked with the v6.3 recovery key (the key card): restore with deploy/bootstrap.sh on a new server, or Restore on the Backups screen.",
+                ]
+              : [
+                  "Database: pg_restore --clean --if-exists --no-owner --dbname=<database> database.dump",
+                  "Uploaded files: tar -xzf media.tar.gz -C <UPLOAD_DIR>",
+                ],
       },
       null,
       2,
@@ -782,6 +815,125 @@ async function platformOwnerEmail(): Promise<string | null> {
   return owner?.email ?? null;
 }
 
+/** What a new server needs before the ERP runs there (inside a locked backup only). */
+export type RestoreFacts = {
+  format: 2;
+  encryptionKey: string | null;
+  appUrl: string | null;
+  appDomain: string | null;
+  ownerEmail: string | null;
+  createdAt: string;
+  google: { clientId: string; clientSecret: string } | null;
+  cloudflare: { zone: string; zoneId: string | null; token: string } | null;
+};
+
+export async function restoreFacts(config: BackupConfig, createdAt: Date): Promise<RestoreFacts> {
+  const appUrl = process.env.APP_URL ?? null;
+  let appDomain: string | null = null;
+  try {
+    appDomain = appUrl ? new URL(appUrl).hostname : null;
+  } catch {
+    appDomain = null;
+  }
+  let cloudflare: RestoreFacts["cloudflare"] = null;
+  if (config.cloudflareTokenRef && config.cloudflareZone) {
+    try {
+      cloudflare = {
+        zone: config.cloudflareZone,
+        zoneId: config.cloudflareZoneId,
+        token: decryptSecret(config.cloudflareTokenRef),
+      };
+    } catch {
+      cloudflare = null;
+    }
+  }
+  return {
+    format: 2,
+    encryptionKey: process.env.ENCRYPTION_KEY ?? null,
+    appUrl,
+    appDomain,
+    // A new server checks every screen as this owner after the restore.
+    ownerEmail: await platformOwnerEmail(),
+    createdAt: createdAt.toISOString(),
+    google: googleClient(config),
+    cloudflare,
+  };
+}
+
+/** Why a part is not in a backup, in plain words (for the report and the screen). */
+export const MISSING = {
+  code: "The code at the running version: the server makes it at each update, and has not yet.",
+  settings:
+    "The server's settings file (deploy/.env): the server locks it with your backup key at each update and within a minute of setting the key, and has not yet.",
+  settingsNeedsKey:
+    "The server's settings file (deploy/.env): it is put in backups once you set your own recovery key.",
+} as const;
+
+/**
+ * The parts deploy.sh leaves in BACKUP_DIR/.host, copied into the backup
+ * folder: the code bundle (when it is the running version's), and the settings
+ * file locked with this very key pair.
+ */
+async function hostParts(dir: string, lock: BackupLock | null, host: HostVersion) {
+  const out: { code: string | null; settings: PrelockedFile | null; missing: string[] } = {
+    code: null,
+    settings: null,
+    missing: [],
+  };
+  const bundle = path.join(hostRoot(), "code.bundle");
+  if (host.commit && (await exists(bundle))) {
+    out.code = path.join(dir, "code.bundle");
+    await copyFile(bundle, out.code);
+  } else {
+    out.missing.push(MISSING.code);
+  }
+  if (formatOf(lock) !== 3) {
+    out.missing.push(MISSING.settingsNeedsKey);
+    return out;
+  }
+  try {
+    const lockedPath = path.join(hostRoot(), "settings.env.locked");
+    const facts = JSON.parse(
+      await readFile(path.join(hostRoot(), "settings.env.json"), "utf8"),
+    ) as {
+      pairId?: string;
+      plain?: { bytes?: number; sha256?: string };
+      locked?: { sha256?: string };
+    };
+    const head = await readFile(lockedPath).then((b) => b.subarray(0, 64));
+    if (
+      facts.pairId !== lock!.id ||
+      lockedForPair(head) !== lock!.id ||
+      typeof facts.plain?.bytes !== "number" ||
+      !/^[0-9a-f]{64}$/.test(facts.plain.sha256 ?? "") ||
+      facts.locked?.sha256 !== (await sha256(lockedPath))
+    ) {
+      throw new Error("not locked with this key");
+    }
+    const copy = path.join(dir, "settings.env.locked");
+    await copyFile(lockedPath, copy);
+    out.settings = {
+      file: copy,
+      plain: { name: "settings.env", bytes: facts.plain.bytes, sha256: facts.plain.sha256! },
+    };
+  } catch {
+    out.missing.push(MISSING.settings);
+  }
+  return out;
+}
+
+export type BackupReport = {
+  format: 1 | 2 | 3;
+  tables: number;
+  records: number;
+  files: number;
+  fileBytes: number;
+  commit: string | null;
+  version: string | null;
+  /** Parts not in this backup, in plain words. */
+  missing: string[];
+};
+
 /** Makes the backup files for a claimed run, sends them to Drive and prunes old ones. */
 async function executeRun(run: BackupRun): Promise<BackupRun> {
   const config = await getBackupConfig();
@@ -794,57 +946,75 @@ async function executeRun(run: BackupRun): Promise<BackupRun> {
   });
   if (taken || (await exists(path.join(root, stamp)))) stamp = `${stamp}_${run.id.slice(-6)}`;
   const dir = path.join(root, stamp);
-  let key: { key: Buffer; id: string } | null = null;
+  let lock: BackupLock | null = null;
 
   try {
-    key = currentKey(config);
+    lock = backupLock(config);
     await mkdir(dir, { recursive: true });
+    const host = await hostVersion();
+
+    // The database, and every table's row count at the same moment.
     const db = path.join(dir, "database.dump");
-    await exec(pgDumpBinary(), ["--format=custom", "--no-owner", "--no-privileges", "--file", db], {
-      ...LONG_JOB,
-      env: { ...process.env, ...pgEnvironment(process.env.DATABASE_URL ?? "") },
-    });
+    const tables = await dumpWithCounts(db);
 
-    let media: string | null = null;
+    // Every uploaded and generated file; never the backups themselves when
+    // BACKUP_DIR sits inside UPLOAD_DIR.
     const uploads = uploadRoot();
-    if (config.includeMedia && (await hasFiles(uploads))) {
-      media = path.join(dir, "media.tar.gz");
-      const args = ["-czf", media, "-C", uploads];
-      // Never archive the backups themselves when BACKUP_DIR sits inside UPLOAD_DIR.
-      const inside = path.relative(uploads, root);
-      if (inside && !inside.startsWith("..") && !path.isAbsolute(inside)) {
-        args.push(`--exclude=./${inside}`);
-      }
-      args.push(".");
-      await exec("tar", args, LONG_JOB);
-    }
+    const inside = path.relative(uploads, root);
+    const skip = inside && !inside.startsWith("..") && !path.isAbsolute(inside) ? root : undefined;
+    const uploaded = await listFiles(uploads, skip);
+    const media = path.join(dir, "media.tar.gz");
+    await packFiles(uploads, uploaded, media);
+    const contents = contentsOf(tables, uploaded);
 
-    // The server's own key goes only into a locked backup, never into a plain one.
-    const server = key ? path.join(dir, "server.json") : null;
+    const parts = await hostParts(dir, lock, host);
+    // The restore facts go only into a locked backup, never into a plain one.
+    const server = lock ? path.join(dir, "server.json") : null;
     if (server) {
-      await writeFile(
-        server,
-        JSON.stringify({
-          encryptionKey: process.env.ENCRYPTION_KEY ?? null,
-          appUrl: process.env.APP_URL ?? null,
-          // A new server checks every screen as this owner after the restore.
-          ownerEmail: await platformOwnerEmail(),
-          createdAt: run.startedAt.toISOString(),
-        }),
-        { mode: 0o600 },
-      );
+      await writeFile(server, JSON.stringify(await restoreFacts(config, run.startedAt)), {
+        mode: 0o600,
+      });
     }
+    const readable: string[] = [];
+    if (formatOf(lock) === 3 && config.lockedKeyFile) {
+      const keys = path.join(dir, "backup-keys.json");
+      await writeFile(keys, config.lockedKeyFile);
+      readable.push(keys);
+    }
+    for (const guide of await guideFiles()) {
+      const copy = path.join(dir, path.basename(guide));
+      await copyFile(guide, copy);
+      readable.push(copy);
+    }
+    const report: BackupReport = {
+      format: formatOf(lock),
+      tables: Object.keys(contents.tables).length,
+      records: contents.records,
+      files: contents.files.length,
+      fileBytes: contents.fileBytes,
+      commit: host.commit,
+      version: host.version,
+      missing: parts.missing,
+    };
     const sealed = await sealFolder(
       dir,
-      [db, ...(media ? [media] : []), ...(server ? [server] : [])],
-      key,
+      [db, media, ...(parts.code ? [parts.code] : []), ...(server ? [server] : [])],
+      lock,
       {
         createdAt: run.startedAt.toISOString(),
         timezone: config.timezone,
         kind: "BACKUP",
         trigger: run.trigger,
         companies: await prisma.company.count(),
+        version: host.version,
+        commit: host.commit,
+        records: contents.records,
+        tables: contents.tables,
+        uploads: contents.files,
+        uploadBytes: contents.fileBytes,
+        missing: parts.missing,
       },
+      { prelocked: parts.settings ? [parts.settings] : [], readable },
     );
     const dbName = sealed.files.find((f) => f.name.startsWith("database.dump"))!.name;
     const mediaName = sealed.files.find((f) => f.name.startsWith("media.tar.gz"))?.name;
@@ -852,10 +1022,11 @@ async function executeRun(run: BackupRun): Promise<BackupRun> {
       where: { id: run.id },
       data: {
         name: stamp,
-        keyId: key?.id ?? null,
+        keyId: lock?.id ?? null,
         dbDumpPath: path.relative(root, path.join(dir, dbName)),
         mediaArchivePath: mediaName ? path.relative(root, path.join(dir, mediaName)) : null,
         sizeBytes: BigInt(sealed.size),
+        report: report as unknown as Prisma.InputJsonObject,
       },
     });
   } catch (error) {
@@ -864,7 +1035,9 @@ async function executeRun(run: BackupRun): Promise<BackupRun> {
       where: { id: run.id },
       data: { status: "FAILED", finishedAt: new Date(), error: reasonFor(error) },
     });
-    await alertOwner(
+    const { raiseProblem } = await import("@/modules/backups/status");
+    await raiseProblem(
+      "failed",
       "Backup failed",
       `The ${stamp} backup could not be made: ${failed.error}`,
       run.id,
@@ -878,18 +1051,20 @@ async function executeRun(run: BackupRun): Promise<BackupRun> {
     data: {
       status: "SUCCEEDED",
       finishedAt: new Date(),
-      driveError: !key
-        ? "Kept on the server only: make the recovery key on the Backups screen. Backups are locked with it before they go to Google Drive."
+      driveError: !lock
+        ? "Kept on the server only: set your recovery key on the Backups screen. Backups are locked with it before they go to Google Drive."
         : !config.credentialsRef
           ? "Kept on the server only: Google Drive is not connected."
           : null,
     },
   });
-  if (key && config.credentialsRef) {
+  if (lock && config.credentialsRef) {
     const { sendToDrive } = await import("@/modules/backups/drive-copies");
     finished = await sendToDrive(finished.id);
     if (!finished.checkedAt) {
-      await alertOwner(
+      const { raiseProblem } = await import("@/modules/backups/status");
+      await raiseProblem(
+        "not-in-drive",
         "Backup not in Google Drive",
         `The ${stamp} backup was made but not saved in Google Drive (${finished.driveError}). It stays on the server and is sent again within the hour.`,
         run.id,
@@ -901,6 +1076,12 @@ async function executeRun(run: BackupRun): Promise<BackupRun> {
     await pruneBackups(await getBackupConfig());
   } catch (error) {
     console.error("[backups] removing old backups failed", error);
+  }
+  try {
+    const { watchBackups } = await import("@/modules/backups/status");
+    await watchBackups();
+  } catch (error) {
+    console.error("[backups] could not check the backups' health", error);
   }
   return finished;
 }
@@ -930,7 +1111,8 @@ export async function runBackup(
         data: { status: "FAILED", finishedAt: new Date(), error: reasonFor(error) },
       })
       .catch((inner: unknown) => console.error("[backups] could not record the failure", inner));
-    await alertOwner("Backup failed", reasonFor(error), run.id);
+    const { raiseProblem } = await import("@/modules/backups/status");
+    await raiseProblem("failed", "Backup failed", reasonFor(error), run.id);
   });
   if (options.wait ?? options.trigger === "SCHEDULED") await job;
   return getBackupRun(run.id);
@@ -950,8 +1132,8 @@ export async function getBackupFile(
     throw new AppError(
       "CONFLICT",
       run.checkedAt
-        ? "This backup is in Google Drive; the server's copy was deleted once Google's copy was checked."
-        : "This backup's files were removed by the retention rule.",
+        ? "This backup is in Google Drive; the server keeps only the newest backups."
+        : "This backup's files were removed from the server (it keeps only the newest backups).",
     );
   }
   const folder = runFolder(run);

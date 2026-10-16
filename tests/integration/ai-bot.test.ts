@@ -683,12 +683,13 @@ run("The bot", () => {
     const link = await prisma.aiBotLink.findFirstOrThrow();
     // The v6.3 update ran the wipe (prisma/migrations/20261124090000_hide_bot_pins) once;
     // these messages came before it, the last ones after it.
-    const [{ finishedAt }] = await prisma.$queryRawUnsafe<Array<{ finishedAt: Date }>>(
+    const [wipe] = await prisma.$queryRawUnsafe<Array<{ finishedAt: Date }>>(
       `SELECT finished_at AS "finishedAt" FROM "_prisma_migrations"
        WHERE migration_name = '20261124090000_hide_bot_pins' AND finished_at IS NOT NULL`,
     );
-    const before = (m: number) => new Date(finishedAt!.getTime() - m * 60_000);
-    const after = (m: number) => new Date(finishedAt!.getTime() + m * 60_000);
+    const finishedAt = wipe!.finishedAt;
+    const before = (m: number) => new Date(finishedAt.getTime() - m * 60_000);
+    const after = (m: number) => new Date(finishedAt.getTime() + m * 60_000);
     const keep = (text: string, n: number, at: Date, direction: "IN" | "OUT" = "IN") =>
       prisma.aiBotMessage.create({
         data: {

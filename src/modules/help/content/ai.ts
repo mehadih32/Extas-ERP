@@ -49,7 +49,7 @@ export const aiHelp: HelpSection = {
         },
       ],
       tips: [
-        "“AI Home”-এ “This month's AI cost” ঘরে এ মাসের এআই খরচ আর বাজেটের কত শতাংশ গেছে দেখা যায়; বিস্তারিত “Budget & Costs”-এ।",
+        "“AI Home”-এর “AI cost” ঘরে “Today” (আজকের) আর “This month” (এ মাসের) এআই খরচ, আর বাজেটের কত শতাংশ গেছে দেখা যায়; বিস্তারিত “Budget & Costs”-এ।",
         "“AI Home”-এর “Morning brief”-এ এ সপ্তাহে কোন অর্ডারের কোন ধাপ বাকি, কী দেরি, কী আপনার অপেক্ষায় আর গতকালের এআই খরচ থাকে।",
         "এআই কখনো কোনো ডেটা মুছে ফেলে না, আর কারও অনুমতি বা ভূমিকা বদলায় না।",
         "বায়ারের কাছে কিছু যায় না আপনার OK ছাড়া: উত্তর, ফলো-আপ, রিমাইন্ডার, ক্লেইম, কোটেশন বা ইনভয়েস। এআই খসড়া লেখে আর আপনাকে মনে করিয়ে দেয়।",
@@ -123,8 +123,8 @@ export const aiHelp: HelpSection = {
       who: "দেখেন যাঁদের এআই সেন্টার খোলা; Pause আর Teach শুধু মালিকের (ai.manage)।",
       steps: [
         {
-          text: "“AI” > “Mehedi 2.0” খুলুন। উপরে তার নাম, অবস্থা (On, Paused, Off বা No key), আর চারটি সংখ্যা: “Do / Ask / Off”, “AI cost this month”, “Tests passed” ও “Waiting for you”।",
-          image: { id: "ai-mehedi-1", caption: "“Mehedi 2.0”: পরিচয়, অবস্থা ও চারটি সংখ্যা" },
+          text: "“AI” > “Mehedi 2.0” খুলুন। উপরে তার নাম, অবস্থা (On, Paused, Off বা No key), আর পাঁচটি সংখ্যা: “Do / Ask / Off”, “AI cost today”, “AI cost this month”, “Tests passed” ও “Waiting for you”। আজকের খরচে চাপলে আজকের সব কল খোলে।",
+          image: { id: "ai-mehedi-1", caption: "“Mehedi 2.0”: পরিচয়, অবস্থা ও পাঁচটি সংখ্যা" },
         },
         {
           text: "“What he never does” অংশে তার স্থায়ী সীমা: সে কিছু মোছে না, কারও অনুমতি বদলায় না, বাজেটের বাইরে খরচ করে না, আর বায়ারের কাছে কিছু পাঠায় না আপনার OK ছাড়া।",
@@ -176,7 +176,7 @@ export const aiHelp: HelpSection = {
       anyOf: ["ai.manage"],
       steps: [
         {
-          text: "“AI” > “Chat” খুলুন। নিচের ঘরে লিখে “Send” চাপুন (বা Enter)। কী কী বলা যায় দেখতে “help” লিখুন বা “help” বোতাম চাপুন।",
+          text: "“AI” > “Chat” খুলুন। উপরে “AI cost today” আর এ মাসের (“This month”) এআই খরচ দেখা যায়। নিচের ঘরে লিখে “Send” চাপুন (বা Enter)। কী কী বলা যায় দেখতে “help” লিখুন বা “help” বোতাম চাপুন; “status” লিখলে আজকের ও এ মাসের খরচও জানায়।",
           image: { id: "ai-chat-1", caption: "“Chat”: বার্তা, কার্ড ও লেখার ঘর" },
         },
         {
@@ -459,7 +459,7 @@ export const aiHelp: HelpSection = {
       slug: "ai-costs",
       title: "এআই-এর খরচ দেখবেন ও বাজেট ঠিক করবেন যেভাবে (Budget & Costs)",
       summary:
-        "এআই-এর প্রতিটি কল (Claude, OpenAI বা Gemini) কে চেয়েছে, কোন কাজে, কেন, কোন রেকর্ডে, কোন মডেলে আর কত টাকা খরচ হলো; প্রোভাইডার অনুযায়ী বিল, মাসিক বাজেট, সীমা ও 80% সতর্কবার্তা।",
+        "আজ, গতকাল, যেকোনো দিন বা সময়ে এআই-এর প্রতিটি কল (Claude, OpenAI বা Gemini) কে চেয়েছে, কী কাজে, ERP-র কোন পাতায়, কোন রেকর্ডে, কোন এজেন্ট ও মডেলে আর কত টাকা খরচ হলো, প্রতিটি ভাগের মোটসহ; প্রোভাইডার অনুযায়ী বিল, মাসিক বাজেট, সীমা ও 80% সতর্কবার্তা।",
       keywords: [
         "budget",
         "costs",
@@ -473,12 +473,17 @@ export const aiHelp: HelpSection = {
         "সীমা",
         "টাকা",
         "এআই খরচ",
+        "আজকের খরচ",
+        "purpose",
+        "place",
+        "screen",
+        "কোন পাতায়",
       ],
       routes: ["/ai/costs"],
       who: "খরচ দেখেন যাঁদের এআই সেন্টার খোলা; বাজেট ঠিক করেন শুধু মালিক (ai.manage)।",
       steps: [
         {
-          text: "“AI” > “Budget & Costs” খুলুন। উপরে সময় বেছে নিন: “Today”, “Last 7 days”, “30 days”, “This month” বা “Custom range” (তখন “From” ও “To” দিয়ে “Show”)।",
+          text: "“AI” > “Budget & Costs” খুলুন। উপরে সময় বেছে নিন: “Today”, “Yesterday”, “One day” (তখন “Day”-এ দিনটি দিয়ে “Show”), “Last 7 days”, “30 days”, “This month” বা “Custom range” (তখন “From” ও “To” দিয়ে “Show”)।",
           image: {
             id: "ai-costs-1",
             caption: "“Budget & Costs”: সময়, মোট খরচ ও দিনভিত্তিক চার্ট",
@@ -488,16 +493,26 @@ export const aiHelp: HelpSection = {
           text: "উপরের ঘরগুলোতে এই সময়ের খরচ, এ মাসের খরচ ও বাজেট, “Month-end at this pace” (এভাবে চললে মাস শেষে কত), আর ব্যর্থ বা থামানো কল।",
         },
         {
-          text: "“Cost per day” চার্টে প্রতিদিনের খরচ; “Top 5 costliest calls”-এ সবচেয়ে দামি 5টি কল। “Bill per provider”-এ Claude, OpenAI ও Gemini আলাদা: কত খরচ, কতটি কল, আর মাসিক সীমা থাকলে তা। নিচে কাজ, মডেল, এলাকা, এজেন্ট, ব্যক্তি আর অর্ডার বা টেক প্যাক অনুযায়ী ভাগ।",
+          text: "“Cost per day” চার্টে প্রতিদিনের খরচ; “Top 5 costliest calls”-এ সবচেয়ে দামি 5টি কল। “Bill per provider”-এ Claude, OpenAI ও Gemini আলাদা: কত খরচ, কতটি কল, আর মাসিক সীমা থাকলে তা।",
+        },
+        {
+          text: "নিচে ভাগ করে খরচ: “By purpose” (কী কাজে), “By place in the ERP” (কোন পাতায় চাওয়া হয়েছিল, যেমন “AI › Chat”, “Help Center” বা অর্ডারের পাতা; বটের কাজ “The bot”), “By model”, “By agent”, “By area”, “By person” আর “By order and tech pack”। প্রতিটি ভাগের নিচে “Total”; 10টির বেশি সারি থাকলে “Show all” চাপুন।",
+          image: {
+            id: "ai-costs-3",
+            caption: "“By purpose” ও “By place in the ERP”: প্রতিটি সারির খরচ, কল আর নিচে মোট",
+          },
+        },
+        {
+          text: "কোনো সারির নামে চাপলে নিচে “Calls of one row” খোলে: শুধু সেই সারির কলগুলো, তাদের মোট খরচসহ। সব কলে ফিরতে “Show every call”। পাতা বা রেকর্ডের পাশে “Open” চাপলে সেই পাতাটি খোলে। অনেক কল হলে “Newer” ও “Older” দিয়ে পাতা বদলান।",
         },
         {
           text: "যে মডেলের দাম দেওয়া নেই তার কলে খরচের জায়গায় “Price unknown” লেখা থাকে, আর সেই কল মোট খরচ ও বাজেটে গোনা হয় না। দাম দিতে “Models” পাতার “Prices” অংশে যান।",
         },
         {
-          text: "একজনের খরচ দেখতে “Person”-এ তাঁকে বেছে “Show” চাপুন। “Every call”-এ প্রতিটি কল: কখন, কে চেয়েছে, কোন কাজে, কেন, কোন রেকর্ডে, কোন মডেলে আর কত টাকা।",
+          text: "একজনের খরচ দেখতে “Person”-এ তাঁকে বেছে “Show” চাপুন। “Every call”-এ প্রতিটি কল: কখন, কে চেয়েছে, কোন কাজে, কেন, কোন এজেন্ট ও মডেলে, ERP-র কোন পাতায়, কোন রেকর্ডে (চাপলে রেকর্ডটি খোলে) আর কত টাকা।",
         },
         {
-          text: "ফাইল লাগলে “PDF” বা “Excel” চাপুন। Excel-এ সব কল থাকে, যোগ-বিয়োগ ও ফিল্টার করা যায়।",
+          text: "ফাইল লাগলে “PDF” বা “Excel” চাপুন। Excel-এ সব কল থাকে (একটি সারি বেছে নিলে শুধু তার কল), প্রতিটি ভাগের মোটসহ; যোগ-বিয়োগ ও ফিল্টার করা যায়।",
         },
         {
           text: "মালিক “Budget and limits”-এ “Monthly budget”, “Daily limit”, “Limit per order or tech pack”, “Limit per person, per month”, “Limit per agent, per month” ও “Ask before a task above” দিতে পারেন; ফাঁকা রাখলে কোনো সীমা নেই। তারপর “Save the budget”।",
@@ -515,6 +530,8 @@ export const aiHelp: HelpSection = {
         "মাসিক বাজেট না দিলে বড় কাজের আগে এআই আনুমানিক খরচ জানিয়ে আপনার অনুমতি চায়।",
         "দ্বিতীয় তালা হিসেবে প্রতিটি প্রোভাইডারের নিজের সাইটেও (Claude Console, OpenAI, Google AI Studio) মাসিক খরচের সীমা দিয়ে রাখুন।",
         "এআই বন্ধ থাকলে কোনো কল হয় না, খরচ শূন্য।",
+        "আজকের ও এ মাসের খরচ “AI Home”, “Mehedi 2.0”, “Chat” আর সহায়তা কেন্দ্রের “Ask the Help AI”-তেও দেখা যায় (শুধু যাঁদের এআই সেন্টার খোলা)।",
+        "নতুন এই সংস্করণের আগের কলে পাতার নাম রাখা হয়নি: সেগুলোর জায়গা রেকর্ডের পাতা বা কাজের নিজের পাতা থেকে দেখানো হয়।",
         "প্রতিটি প্রজেক্ট, ব্যাচ ও সেলস অর্ডারের পাতায় ছোট বাক্সে এআই চালু কি না আর সেই রেকর্ডে এ পর্যন্ত এআই খরচ দেখা যায়।",
       ],
     },

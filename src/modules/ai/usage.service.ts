@@ -180,12 +180,21 @@ export async function checkBudget(
       };
 }
 
+/** A screen's address as kept on a cost line: "/…" without the query, or "bot". */
+export function screenOf(screen: string | null | undefined): string | null {
+  if (screen === "bot") return "bot";
+  if (!screen?.startsWith("/") || screen.startsWith("//")) return null;
+  return screen.split(/[?#]/)[0]!.slice(0, 300) || null;
+}
+
 export type UsageLine = {
   userId?: string | null;
   agent: string;
   task: string;
   why: string;
   record?: AiRecord;
+  /** The screen it was asked on, or "bot". */
+  screen?: string | null;
   model: string;
   tokens?: { input: number; output: number; cacheRead: number; cacheWrite: number };
   durationMs: number;
@@ -219,6 +228,7 @@ export async function logUsage(
       recordType: line.record?.type ?? null,
       recordId: line.record?.id ?? null,
       recordLabel: line.record?.label?.slice(0, 200) ?? null,
+      screen: screenOf(line.screen),
       model: line.model,
       provider: providerOf(line.model),
       costKnown: priced.known,

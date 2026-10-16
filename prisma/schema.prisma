@@ -5642,6 +5642,10 @@ model AiUsage {
   recordType       String?
   recordId         String?
   recordLabel      String?
+  /// Where in the ERP it was asked: the screen's address ("/ai/chat",
+  /// "/help"), "bot" for the bot, or null (then the record's page or the
+  /// task's own screen stands for it, costs.service.ts placeOf).
+  screen           String?
   /// The model ("claude-…", "openai:…" or "google:…", modules/ai/providers.ts).
   model            String
   /// anthropic, openai or google.

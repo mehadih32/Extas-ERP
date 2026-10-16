@@ -54,6 +54,8 @@ export type ClaudeRequest = {
   costOk?: boolean;
   /** This model instead of the task's (a model's test on AI Center > Models). */
   model?: string;
+  /** The screen it was asked on ("/ai/chat", "/help") or "bot", for Budget & Costs. */
+  screen?: string;
 };
 
 export type ClaudeAnswer = { message: Anthropic.Message; model: string };
@@ -211,6 +213,7 @@ export async function askClaude(companyId: string, request: ClaudeRequest): Prom
     task: request.task,
     why: request.why,
     record: request.record,
+    screen: request.screen,
   };
   const chosen = request.model ?? modelForWork(settings, request.task, line.agent);
   let model: string = chosen;

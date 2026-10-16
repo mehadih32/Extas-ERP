@@ -307,6 +307,10 @@ export const productionHelp: HelpSection = {
           text: "রং ও সাইজের ঘর খুলতে স্টাইল খুঁজে বেছে নিন। একটি স্টাইল দেওয়ার পর ঘরটির নাম হয় “Another style (optional)”, আরও স্টাইল যোগ করতে।",
         },
         {
+          label: "Fill in …'s colours and sizes",
+          text: "স্টাইল বাছার পর এই বোতাম আসে (… জায়গায় স্টাইলের কোড, যেমন PL-101)। চাপলে সেই স্টাইলের প্রতিটি রং ও সাইজের ঘর ফর্মে খোলে, আর ঘরগুলোর যোগফলই হয় “Pieces to make”। প্রজেক্ট বদলানোর পাতাতেও একই বোতাম।",
+        },
+        {
           label: "When it starts",
           text: "“In production now” মানে আজ থেকেই “Fabric sourcing” ধাপে চালু; “Planned for later” মানে পরে শুরু হবে, এর মধ্যেও খরচ যোগ করা যায়। শুধু নতুন প্রজেক্টে দেখায়।",
         },

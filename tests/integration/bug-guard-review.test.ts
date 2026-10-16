@@ -23,20 +23,54 @@ vi.mock("next/cache", () => ({ revalidatePath: () => undefined, revalidateTag: (
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
 
 import { AppError } from "@/lib/errors";
-import { saveGitHub } from "@/modules/ai/full-check/full-check.service";
 import { prisma } from "@/lib/prisma";
 import { readOnly } from "@/lib/read-only";
 import { slowQueriesSince } from "@/lib/slow-queries";
 import { summaryText } from "@/modules/bug-guard/bot-texts";
 import { APP_CHECKS } from "@/modules/bug-guard/checks/app";
 import { PRODUCT_CHECKS } from "@/modules/bug-guard/checks/product";
+import { saveGitHub, startFullCheck } from "@/modules/ai/full-check/full-check.service";
+import { fixFinding, prepareByItself } from "@/modules/bug-guard/fixes.service";
 import { READ_ONLY_WHY } from "@/modules/bug-guard/runner";
 import type { CheckContext } from "@/modules/bug-guard/types";
 
-import { startFakeGitHub } from "../fixtures/fake-github";
+import { type FakeGitHub, startFakeGitHub } from "../fixtures/fake-github";
 import { addToCompany, contextFor, makeCompany, makeUser, resetDb } from "./helpers";
 
 const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
+
+/** A store with its platform owner, a partner in the Super Admin role (not the platform owner) and staff. */
+async function setup(name = "Extas") {
+  const { company, roles } = await makeCompany(name);
+  const slug = name.toLowerCase().replace(/\s+/g, "-");
+  const join = async (roleId: string, who: string, isSuperAdmin = false) => {
+    const user = await makeUser(`${who}@${slug}.test`, { isSuperAdmin });
+    await addToCompany(user.id, company.id, roleId);
+    return contextFor(user.id, company.id);
+  };
+  const owner = await join(roles.SUPER_ADMIN, "owner", true);
+  const partner = await join(roles.SUPER_ADMIN, "partner");
+  const staff = await join(roles.ACCOUNTS, "staff");
+  return { company, roles, owner, partner, staff };
+}
+
+/** A Bug Guard finding as a run keeps it. */
+function finding(companyId: string, key: string, extra: Record<string, unknown> = {}) {
+  return prisma.bugGuardFinding.create({
+    data: {
+      companyId,
+      key,
+      check: key.split(":")[0]!,
+      area: "APP",
+      severity: "URGENT",
+      title: `সমস্যা ${key}`,
+      why: "কারণ",
+      fix: "সমাধান",
+      fixKind: "MANUAL",
+      ...extra,
+    },
+  });
+}
 
 /** Runs one of Bug Guard's real checks for a company, only reading. */
 function check(key: string, companyId: string, extra: Partial<CheckContext> = {}) {
@@ -132,25 +166,47 @@ run("Bug Guard, after the review", () => {
   });
 
   describe("the Full check (S12)", () => {
+    let gh: FakeGitHub;
+    beforeEach(async () => {
+      gh = await startFakeGitHub("extas/erp");
+      vi.stubEnv("GITHUB_API_URL", gh.url);
+      vi.stubEnv("GITHUB_OIDC_ISSUER", gh.issuer);
+    });
+    afterEach(async () => {
+      await gh.close();
+    });
+
     it("is started on the main branch, the only one whose proof the ERP takes", async () => {
-      const gh = await startFakeGitHub("extas/erp");
-      try {
-        vi.stubEnv("GITHUB_API_URL", gh.url);
-        vi.stubEnv("GITHUB_OIDC_ISSUER", gh.issuer);
-        const { company, roles } = await makeCompany("Extas");
-        const user = await makeUser("owner@extas.test", { isSuperAdmin: true });
-        await addToCompany(user.id, company.id, roles.SUPER_ADMIN);
-        const owner = await contextFor(user.id, company.id);
-        await saveGitHub(owner, { repo: "extas/erp", token: gh.token });
-        // Someone made another branch the default on GitHub.
-        gh.state.defaultBranch = "develop";
-        const { startFullCheck } = await import("@/modules/ai/full-check/full-check.service");
-        await startFullCheck(owner);
-        const dispatch = gh.calls.find((c) => c.path.endsWith("/full-check.yml/dispatches"))!;
-        expect(dispatch.body).toMatchObject({ ref: "main" });
-      } finally {
-        await gh.close();
-      }
+      const { owner } = await setup();
+      await saveGitHub(owner, { repo: "extas/erp", token: gh.token });
+      // Someone made another branch the default on GitHub.
+      gh.state.defaultBranch = "develop";
+      await startFullCheck(owner);
+      const dispatch = gh.calls.find((c) => c.path.endsWith("/full-check.yml/dispatches"))!;
+      expect(dispatch.body).toMatchObject({ ref: "main" });
+    });
+
+    it("logs what Bug Guard sends to Claude Code by itself as Bug Guard's, not the owner's (S10)", async () => {
+      const { company, owner } = await setup();
+      await saveGitHub(owner, { repo: "extas/erp", token: gh.token });
+      const code = (route: string) => ({
+        fixKind: "CODE",
+        code: { route, method: "GET", status: 500, errorType: "TypeError", stack: [], times: 2 },
+      });
+      const byItself = await finding(company.id, "app.error:a", code("/sales"));
+      const pressed = await finding(company.id, "app.error:b", code("/parties"));
+      await prepareByItself(company.id, [byItself.id]);
+      await fixFinding(owner, pressed.id);
+      const logged = await prisma.auditLog.findMany({
+        where: { companyId: company.id, entityType: "ClaudeCodeRequest" },
+        orderBy: { createdAt: "asc" },
+      });
+      expect(logged).toHaveLength(2);
+      expect(logged[0]).toMatchObject({ userId: null });
+      expect(logged[0]!.summary).toMatch(/^Bug Guard \(automatic\): Sent to Claude Code/);
+      // The owner's own press stays in the owner's name.
+      expect(logged[1]).toMatchObject({ userId: owner.user.id });
+      expect(logged[1]!.summary).toMatch(/^Sent to Claude Code/);
     });
   });
 

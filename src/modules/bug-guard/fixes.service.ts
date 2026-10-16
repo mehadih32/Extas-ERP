@@ -138,6 +138,7 @@ async function askForCodeFix(
       summary: `Bug Guard: ${finding.title}`,
     },
     meta,
+    byGuard,
   );
   await prisma.bugGuardFinding.update({
     where: { id: finding.id },

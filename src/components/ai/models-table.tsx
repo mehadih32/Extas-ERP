@@ -234,7 +234,7 @@ export function ModelsTable({ models: m }: { models: AiModelsScreen }) {
                   {canManage ? (
                     <NativeSelect
                       aria-label={`Model for ${t.label}`}
-                      containerClassName="sm:w-72"
+                      containerClassName="sm:w-72 sm:shrink-0"
                       value={t.chosen ?? ""}
                       disabled={pending}
                       onChange={(e) => chooseTask(t, e.target.value)}
@@ -284,7 +284,7 @@ export function ModelsTable({ models: m }: { models: AiModelsScreen }) {
               {canManage ? (
                 <NativeSelect
                   aria-label={`Model for ${a.name}`}
-                  containerClassName="sm:w-72"
+                  containerClassName="sm:w-72 sm:shrink-0"
                   value={a.model ?? ""}
                   disabled={pending}
                   onChange={(e) => chooseAgent(a, e.target.value)}

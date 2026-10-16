@@ -246,7 +246,8 @@ class Writer {
    * Long text that must not be cut (a company's name, a buyer, an address): its
    * size and lines. One line at the given size if it fits, else smaller down to
    * `minSize`, else wrapped onto up to `maxLines` lines at the largest size that
-   * takes; only past all that is the last line cut.
+   * takes (and, when `fits` is given, whose lines it says have the room); only
+   * past all that is the last line cut.
    */
   private fitLines(
     text: string,
@@ -254,6 +255,7 @@ class Writer {
     style: TextStyle,
     minSize: number,
     maxLines: number,
+    fits: (lines: number, size: number) => boolean = () => true,
   ): { size: number; lines: string[] } {
     const one = (size: number) => textWidth(this.doc, pdfText(text), { ...style, size }) <= width;
     for (let size = style.size; size >= minSize - 0.001; size -= 0.5) {
@@ -261,7 +263,8 @@ class Writer {
     }
     for (let size = style.size; size >= minSize - 0.001; size -= 0.5) {
       const lines = wrapText(this.doc, text, width, { ...style, size });
-      if (lines.length <= maxLines && !lines.some((l) => l.endsWith("…"))) return { size, lines };
+      const whole = !lines.some((l) => l.endsWith("…"));
+      if (lines.length <= maxLines && whole && fits(lines.length, size)) return { size, lines };
     }
     const lines = wrapText(this.doc, text, width, { ...style, size: minSize });
     if (lines.length <= maxLines) return { size: minSize, lines };
@@ -528,13 +531,15 @@ class Writer {
     const side = this.width * 0.3;
     const middle = this.width - 2 * side;
     // A long name gets smaller, then takes a second line (the tagline moves down), and a
-    // third in portrait if it must (the tagline then has no room): never cut.
+    // third in portrait if it must (the tagline then has no room), always above the
+    // rule: never cut.
     const name = this.fitLines(
       this.model.letterhead.name,
       side - 8,
       { font: SANS_BOLD, size: 13 },
       9,
       3,
+      (lines, size) => 2 + (lines - 1) * (size + 1.5) + size * 1.16 <= BOOK_HEADER - 1.5,
     );
     name.lines.forEach((text, i) => {
       this.line(text, this.left, top + 2 + i * (name.size + 1.5), side - 8, {

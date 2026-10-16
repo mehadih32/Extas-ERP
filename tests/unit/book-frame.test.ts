@@ -336,6 +336,11 @@ describe("long names in the book frame wrap instead of being cut (v6.3)", () => 
     const all = pdfLines(pdf).join("\n");
     expect(all).not.toContain("…");
     for (const word of name.split(" ")) expect(all).toContain(word);
+    // Its last line sits above the header's rule (36pt under the top margin), not on it.
+    const rule = 841.89 - 15 * MM - 36;
+    const last = pdfTextBlocks(pdf).filter((b) => b.text.includes("Limited") && b.y > rule);
+    expect(last.length).toBeGreaterThan(0);
+    for (const block of last) expect(block.y).toBeGreaterThan(rule + 2);
   });
 
   it("wraps a long buyer and order in the header's right column", async () => {

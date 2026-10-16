@@ -206,6 +206,8 @@ model Company {
   aiTestRuns            AiTestRun[]
   aiModelPrices         AiModelPrice[]
   aiModelTests          AiModelTest[]
+  aiSkills              AiSkill[]
+  aiSkillVersions       AiSkillVersion[]
   aiChatMessages        AiChatMessage[]
   aiDrafts              AiDraft[]
   aiFollowUps           AiFollowUp[]
@@ -329,6 +331,7 @@ model User {
   aiTestRunsStarted   AiTestRun[]            @relation("AiTestRunStartedBy")
   aiModelPricesSet    AiModelPrice[]         @relation("AiModelPriceUpdatedBy")
   aiModelTestsRan     AiModelTest[]          @relation("AiModelTestRanBy")
+  aiSkillVersions     AiSkillVersion[]       @relation("AiSkillVersionBy")
   aiChatMessages      AiChatMessage[]        @relation("AiChatMessageUser")
   aiDraftsWritten     AiDraft[]              @relation("AiDraftCreatedBy")
   aiDraftsSent        AiDraft[]              @relation("AiDraftSentBy")
@@ -4534,6 +4537,9 @@ model AiSettings {
   /// The owner's model per agent (agent key to model, modules/ai/agents.ts);
   /// it wins over the task's model for that agent's work.
   agentModels      Json?
+  /// The agents the owner switched off on AI Center > Agents (agent keys,
+  /// modules/ai/agents.ts); Mehedi 2.0 himself follows the main switch.
+  agentsOff        String[]  @default([])
   /// The owner's model per task (task key to model id, modules/ai/models.ts);
   /// the system's choice for the rest.
   models           Json?
@@ -6360,4 +6366,69 @@ model ServerHealthRun {
   startedBy User?   @relation("ServerHealthRunBy", fields: [startedById], references: [id], onDelete: SetNull)
 
   @@index([companyId, startedAt])
+}
+
+/// A skill the owner teaches an AI agent on AI Center > Skills, in plain words
+/// (modules/ai/skills.service.ts). Never deleted: switched off instead. Each
+/// change is a new version (AiSkillVersion); undo brings an older one back as
+/// the newest. The newest version of every skill that is on goes into the
+/// agent's instructions; while it has not passed its test, the agent's work
+/// that would be Do asks the owner first.
+model AiSkill {
+  id        String   @id @default(cuid())
+  companyId String
+  /// The agent (modules/ai/agents.ts): "mehedi", an expert ("X05"), "help"…
+  agent     String
+  /// Off: kept with its versions, but not used.
+  on        Boolean  @default(true)
+  /// The newest version's number (the one in use).
+  version   Int      @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company  Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  versions AiSkillVersion[]
+
+  @@index([companyId, agent])
+}
+
+/// One version of a skill: what it says, its knowledge and its test.
+model AiSkillVersion {
+  id          String    @id @default(cuid())
+  companyId   String
+  skillId     String
+  version     Int
+  name        String
+  /// When the agent uses it.
+  whenToUse   String
+  steps       String
+  dos         String?
+  donts       String?
+  /// Teaching by example, each also a test question: [{ situation, answer }].
+  examples    Json
+  /// Knowledge typed in (notes, a price list, a rule of thumb).
+  notes       String?
+  /// Uploaded knowledge (PDFs, photos of pages): [{ fileId, name, text }],
+  /// the text as the AI read it, or null until read.
+  files       Json?
+  /// What changed, in a line ("Undo: back to version 2").
+  change      String?
+  /// The test of this version: RUNNING (in the background), DONE or FAILED
+  /// (it could not finish: testError says why); when, on which model, passed
+  /// or not, and [{ situation, expected, answer, right, why }].
+  testStatus  String?
+  testError   String?
+  testedAt    DateTime?
+  testModel   String?
+  passed      Boolean?
+  testResult  Json?
+  createdById String?
+  createdAt   DateTime  @default(now())
+
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  skill     AiSkill @relation(fields: [skillId], references: [id], onDelete: Cascade)
+  createdBy User?   @relation("AiSkillVersionBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@unique([skillId, version])
+  @@index([companyId, skillId])
 }

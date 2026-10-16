@@ -3,11 +3,13 @@ import type { AiSettings } from "@prisma/client";
 
 import { AppError } from "@/lib/errors";
 
+import { agentKeyOf, aiAgents } from "./agents";
 import type { AiRecord } from "./control.service";
 import { type AiTaskKey, taskInfo } from "./models";
 import { callGemini, callOpenAI, ProviderError } from "./provider-calls";
 import { modelLabel, parseModel, type ProviderId, providerInfo, providerOf } from "./providers";
 import { aiSettingsOf, keyFor, modelForWork, offReason, OFF_TEXT } from "./settings.service";
+import { agentSkillsText } from "./skills-prompt";
 import {
   CHEAPER_MODEL,
   checkBudget,
@@ -56,6 +58,10 @@ export type ClaudeRequest = {
   model?: string;
   /** The screen it was asked on ("/ai/chat", "/help") or "bot", for Budget & Costs. */
   screen?: string;
+  /** A skill being tested: it goes into the agent's instructions even while off. */
+  withSkill?: string;
+  /** A skill's test runs while its agent is switched off. */
+  evenIfAgentOff?: boolean;
 };
 
 export type ClaudeAnswer = { message: Anthropic.Message; model: string };
@@ -215,6 +221,26 @@ export async function askClaude(companyId: string, request: ClaudeRequest): Prom
     record: request.record,
     screen: request.screen,
   };
+  // The agent: switched off on AI Center > Agents, it does nothing (Mehedi 2.0
+  // follows the main switch); its skills join its instructions.
+  const agentKey = agentKeyOf(line.agent, settings.assistantName);
+  if (
+    agentKey &&
+    agentKey !== "mehedi" &&
+    settings.agentsOff.includes(agentKey) &&
+    !request.evenIfAgentOff
+  ) {
+    const name = aiAgents(settings.assistantName).find((a) => a.key === agentKey)?.name;
+    throw new AppError(
+      "UNAVAILABLE",
+      `${name ?? line.agent} is switched off. The owner turns it on in AI Center > Agents.`,
+    );
+  }
+  const skills =
+    agentKey && request.task !== "knowledge.test"
+      ? await agentSkillsText(companyId, agentKey, request.withSkill)
+      : null;
+  const system = withSkills(request.system, skills);
   const chosen = request.model ?? modelForWork(settings, request.task, line.agent);
   let model: string = chosen;
   let swapped: string | null = null;
@@ -245,7 +271,7 @@ export async function askClaude(companyId: string, request: ClaudeRequest): Prom
     }
     atLimit = budget.why;
     if (!request.costOk) {
-      const estimate = await estimateCost(companyId, model, request);
+      const estimate = await estimateCost(companyId, model, { ...request, system });
       if (estimate.askFirst) throw new AiAskFirst(estimate);
     }
   } catch (error) {
@@ -257,7 +283,7 @@ export async function askClaude(companyId: string, request: ClaudeRequest): Prom
     model: parseModel(model)?.id ?? model,
     max_tokens: request.maxTokens,
     messages: request.messages,
-    ...(request.system ? { system: request.system } : {}),
+    ...(system ? { system } : {}),
     ...(request.tools ? { tools: request.tools } : {}),
     ...(request.effort ? { output_config: { effort: request.effort } } : {}),
   };
@@ -291,6 +317,17 @@ export async function askClaude(companyId: string, request: ClaudeRequest): Prom
     note: [swapped, atLimit].filter(Boolean).join(". ") || null,
   });
   return { message, model: provider === "anthropic" ? (message.model ?? model) : model };
+}
+
+/** The instructions with the agent's skills after them (cached book blocks stay first). */
+function withSkills(
+  system: ClaudeRequest["system"],
+  skills: string | null,
+): ClaudeRequest["system"] {
+  if (!skills) return system;
+  if (!system) return skills;
+  if (typeof system === "string") return `${system}\n\n${skills}`;
+  return [...system, { type: "text", text: skills }];
 }
 
 /** A way to ask Claude: the company's (askerFor), or a stand-in in tests. */

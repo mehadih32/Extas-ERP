@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { AppError } from "@/lib/errors";
 import { getRequestMeta } from "@/lib/request-meta";
 import { runAction } from "@/lib/result";
+import * as agentsScreen from "@/modules/ai/agents.service";
 import * as control from "@/modules/ai/control.service";
 import * as costs from "@/modules/ai/costs.service";
 import * as helpAi from "@/modules/ai/help-ai.service";
@@ -13,7 +14,9 @@ import * as modelTests from "@/modules/ai/model-tests.service";
 import * as prices from "@/modules/ai/prices.service";
 import * as requests from "@/modules/ai/requests.service";
 import * as settings from "@/modules/ai/settings.service";
+import * as skills from "@/modules/ai/skills.service";
 import { requireAnyPermission, requireCompany, requirePermission } from "@/modules/auth/context";
+import { MAX_UPLOAD_BYTES } from "@/modules/files/file.service";
 
 /*
  * AI Center Server Actions. Each returns { ok: true, data } or { ok: false, error }.
@@ -22,7 +25,8 @@ import { requireAnyPermission, requireCompany, requirePermission } from "@/modul
  *   ai.manage   turn AI on or off, pause it, set Control (cells, presets,
  *               grants), the budget, the models and their prices and tests, the
  *               Claude, OpenAI and Gemini keys and the PIN, and answer
- *               the AI's permission and Deletion requests (the owner's)
+ *               the AI's permission and Deletion requests (the owner's), switch
+ *               agents on or off, and teach, change, undo and test skills
  *   (signed in) ask the Help AI on the Help Center (only while AI is on)
  * The AI itself holds neither: it can never change what it may do.
  */
@@ -161,3 +165,63 @@ export const answerDeletionAction = async (requestId: string, input: unknown) =>
   change(async () =>
     requests.answerDeletion(await manage(), requestId, input, await getRequestMeta()),
   );
+
+// ---------------------------------------------------------------- agents and skills
+
+export const getAgentsAction = async () =>
+  runAction(async () => agentsScreen.getAgents(await view()));
+
+export const setAgentOnAction = async (input: { agent: string; on: boolean }) =>
+  change(async () => agentsScreen.setAgentOn(await manage(), input, await getRequestMeta()));
+
+export const listSkillsAction = async (agent?: string) =>
+  runAction(async () =>
+    skills.listSkills(await view(), agent && /^[a-zA-Z0-9]{1,20}$/.test(agent) ? agent : undefined),
+  );
+
+export const getSkillAction = async (id: string) =>
+  runAction(async () => skills.getSkill(await view(), String(id).slice(0, 60)));
+
+export const createSkillAction = async (agent: string, input: unknown) =>
+  changeWith(async () =>
+    skills.createSkill(await manage(), String(agent), input, await getRequestMeta()),
+  );
+
+export const updateSkillAction = async (id: string, input: unknown) =>
+  changeWith(async () => skills.updateSkill(await manage(), id, input, await getRequestMeta()));
+
+/** Undo: an older version comes back as the newest. */
+export const undoSkillAction = async (id: string, version: number) =>
+  changeWith(async () => skills.undoSkill(await manage(), id, { version }, await getRequestMeta()));
+
+export const setSkillOnAction = async (id: string, on: boolean) =>
+  change(async () => skills.setSkillOn(await manage(), id, on === true, await getRequestMeta()));
+
+/** A PDF or a photo of pages as the skill's knowledge (`file`). */
+export const addSkillFileAction = async (id: string, form: FormData) =>
+  changeWith(async () => {
+    const ctx = await manage();
+    const file = form.get("file");
+    if (!(file instanceof File) || file.size === 0) {
+      throw new AppError("VALIDATION", "Choose a PDF or a photo to add.");
+    }
+    if (file.size > MAX_UPLOAD_BYTES) throw new AppError("VALIDATION", "Files can be up to 10 MB.");
+    return skills.addSkillFile(
+      ctx,
+      id,
+      { fileName: file.name, bytes: Buffer.from(await file.arrayBuffer()) },
+      await getRequestMeta(),
+    );
+  });
+
+export const readSkillFileAction = async (id: string, fileId: string) =>
+  changeWith(async () => skills.readSkillFile(await manage(), id, fileId, await getRequestMeta()));
+
+export const removeSkillFileAction = async (id: string, fileId: string) =>
+  changeWith(async () =>
+    skills.removeSkillFile(await manage(), id, fileId, await getRequestMeta()),
+  );
+
+/** Starts the skill's test in the background (it asks the AI, so it costs a little). */
+export const startSkillTestAction = async (id: string) =>
+  change(async () => skills.startSkillTest(await manage(), id, await getRequestMeta()));

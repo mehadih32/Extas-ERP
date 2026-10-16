@@ -46,7 +46,8 @@ export async function getHelpAi(ctx: CompanyContext) {
 
 export type HelpAi = Awaited<ReturnType<typeof getHelpAi>>;
 
-const SYSTEM = (company: string) =>
+/** The Help AI's instructions (also used to test its skills). */
+export const HELP_AI_SYSTEM = (company: string) =>
   [
     `You are the Help AI of ${company}'s ERP (Extas ERP). You explain how to use the ERP to its staff.`,
     "Answer only from the guides given with the question. Never invent a screen, button or field: if the guides do not cover it, say so in one line and suggest asking the admin.",
@@ -86,7 +87,7 @@ export async function askHelp(ctx: CompanyContext, input: unknown) {
     userId: ctx.user.id,
     screen: "/help",
     why: `Help question: ${question.slice(0, 200)}`,
-    system: SYSTEM(ctx.company.name),
+    system: HELP_AI_SYSTEM(ctx.company.name),
     messages: [
       {
         role: "user",

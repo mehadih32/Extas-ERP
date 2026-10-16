@@ -32,9 +32,10 @@ import {
   setCell,
 } from "./control-tree";
 import { BOOKS, testsMissingFor } from "./knowledge";
-import { TASK_LABELS } from "./model-tests";
+import { TASK_LABELS, tasksFor } from "./model-tests";
 import { modelTestsMissingFor } from "./model-tests.service";
 import { aiSettingsOf, offReason, OFF_TEXT, type PinProof, requirePin } from "./settings.service";
+import { skillsMissingFor } from "./skills-prompt";
 
 /*
  * Control (AI Center > Control): the Do / Ask / Off cells the owner sets, the
@@ -109,12 +110,23 @@ export async function aiMay(
     };
   }
   const untested = await modelTestsMissingFor(companyId, key, db);
-  if (untested.length === 0) return may;
-  const first = untested[0]!;
+  if (untested.length > 0) {
+    const first = untested[0]!;
+    return {
+      state: "ASK",
+      why: `Do waits for ${first.label} to pass the "${TASK_LABELS[first.task]}" test on AI Center > Models${
+        untested.length > 1 ? ` (and ${untested.length - 1} more)` : ""
+      }: until then he asks you first`,
+      grantId: null,
+    };
+  }
+  const settings = await aiSettingsOf(companyId, db);
+  const skills = await skillsMissingFor(companyId, tasksFor(key), settings.agentsOff, db);
+  if (skills.length === 0) return may;
   return {
     state: "ASK",
-    why: `Do waits for ${first.label} to pass the "${TASK_LABELS[first.task]}" test on AI Center > Models${
-      untested.length > 1 ? ` (and ${untested.length - 1} more)` : ""
+    why: `Do waits for the skill "${skills[0]!.name}" to pass its test on AI Center > Skills${
+      skills.length > 1 ? ` (and ${skills.length - 1} more)` : ""
     }: until then he asks you first`,
     grantId: null,
   };

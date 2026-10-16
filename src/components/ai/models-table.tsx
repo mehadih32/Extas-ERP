@@ -4,6 +4,7 @@ import { FlaskConicalIcon, RefreshCwIcon } from "lucide-react";
 import { useState, useTransition } from "react";
 
 import { BlockedModels } from "@/components/ai/blocked-models";
+import { PinField } from "@/components/ai/pin-prompt";
 import { useDay } from "@/components/ai/when";
 import { Field, FormAlert } from "@/components/forms/field";
 import { StatusBadge, type Tone } from "@/components/sales/badges";
@@ -34,8 +35,9 @@ import {
  * of the ERP's own Claude models does a task on Do only after it passes that
  * task's test ("Run the test"); until then the AI asks first. Prices: a
  * section each for Claude, OpenAI and Gemini, from the providers' price pages
- * (where from, and when checked), which the owner can change. A model with no
- * price is blocked (v6.4 A7): it cannot be picked, and the AI never uses it.
+ * (where from, and when checked), which the owner can change with the PIN. A
+ * model with no price is blocked (v6.4 A7): it cannot be picked, and the AI
+ * never uses it.
  */
 
 type Message = { tone: "success" | "error"; text: string };
@@ -435,6 +437,7 @@ export function ModelsTable({ models: m }: { models: AiModelsScreen }) {
             const result = await setModelPriceAction({
               model: pricing.model ?? String(form.get("model") ?? ""),
               ...Object.fromEntries(PRICE_FIELDS.map((f) => [f, String(form.get(f) ?? "")])),
+              pin: String(form.get("pin") ?? ""),
             });
             if (!result.ok) return result.error;
             setMessage({ tone: "success", text: "The price is saved." });
@@ -484,6 +487,11 @@ export function ModelsTable({ models: m }: { models: AiModelsScreen }) {
                     </Field>
                   ))}
                 </div>
+                <PinField
+                  id="price-pin"
+                  error={fieldError("pin") ?? fieldError("pinNotSet")}
+                  hint="Setting or clearing a price asks for your PIN."
+                />
               </div>
             );
           }}

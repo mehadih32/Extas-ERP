@@ -27,6 +27,7 @@ import {
   setAgentModel,
   setAiSwitch,
   setApiKey,
+  setPin,
   setProviderKey,
   setTaskModel,
   testProviderKey,
@@ -50,6 +51,8 @@ async function expectAppError(promise: Promise<unknown>, code: string, message?:
   return error as AppError;
 }
 
+const PIN = "2468";
+
 async function setup() {
   const { company, roles } = await makeCompany("Extas");
   const join = async (roleId: string, who: string) => {
@@ -59,6 +62,8 @@ async function setup() {
   };
   const owner = await join(roles.SUPER_ADMIN, "owner");
   await passAllBooks(company.id);
+  // Setting a model's price asks for the owner's PIN.
+  await setPin(owner, { pin: PIN });
   return { company, owner, pm: await join(roles.PRODUCTION_MANAGER, "pm") };
 }
 
@@ -89,10 +94,20 @@ run("AI with Claude, OpenAI and Gemini", () => {
       expect((await testProviderKey(env.owner, p)).ok).toBe(true);
     }
     if (providers.includes("openai")) {
-      await setModelPrice(env.owner, { model: "openai:gpt-test", input: "1.25", output: "10" });
+      await setModelPrice(env.owner, {
+        model: "openai:gpt-test",
+        input: "1.25",
+        output: "10",
+        pin: PIN,
+      });
     }
     if (providers.includes("google")) {
-      await setModelPrice(env.owner, { model: "google:gemini-test", input: "0.3", output: "2.5" });
+      await setModelPrice(env.owner, {
+        model: "google:gemini-test",
+        input: "0.3",
+        output: "2.5",
+        pin: PIN,
+      });
     }
   }
 
@@ -246,7 +261,12 @@ run("AI with Claude, OpenAI and Gemini", () => {
     expect(line.costUsd.toFixed(6)).toBe("0.003250");
 
     // The owner's new price counts from the next call.
-    await setModelPrice(env.owner, { model: "openai:gpt-test", input: "2.5", output: "10" });
+    await setModelPrice(env.owner, {
+      model: "openai:gpt-test",
+      input: "2.5",
+      output: "10",
+      pin: PIN,
+    });
     fake.answers.openai.push(openaiText("Second answer."));
     await ask(env);
     line = await prisma.aiUsage.findFirstOrThrow({ orderBy: { createdAt: "desc" } });
@@ -477,7 +497,12 @@ run("AI with Claude, OpenAI and Gemini", () => {
     );
     await connect("openai");
     await setApiKey(env.owner, { key: fake.keys.anthropic });
-    await setModelPrice(env.owner, { model: "openai:gpt-test", input: "1.25", output: "10" });
+    await setModelPrice(env.owner, {
+      model: "openai:gpt-test",
+      input: "1.25",
+      output: "10",
+      pin: PIN,
+    });
     await setTaskModel(env.owner, { task: "text.write", model: "openai:gpt-test" });
     await setBudget(env.owner, {
       limit_openai: "0.10",

@@ -296,4 +296,44 @@ describe("the price the owner sets", () => {
       output: null,
     });
   });
+
+  it("never takes a price of 0: input and output above 0, the others empty or above 0", () => {
+    const refused = (more: Record<string, string>) => {
+      const parsed = priceSchema.safeParse({
+        model: "openai:gpt-test",
+        input: "1.25",
+        output: "10",
+        ...more,
+      });
+      expect(parsed.success, JSON.stringify(more)).toBe(false);
+      return parsed.error!.issues.map((i) => [i.path.join("."), i.message]);
+    };
+    expect(refused({ input: "0" })).toEqual([["input", "More than 0 dollars, like 2.50"]]);
+    expect(refused({ output: "0.00" })).toEqual([["output", "More than 0 dollars, like 2.50"]]);
+    expect(refused({ input: "$0", output: "0" })).toHaveLength(2);
+    for (const f of ["cacheRead", "cacheWrite", "batchInput", "batchOutput"]) {
+      expect(refused({ [f]: "0" })).toEqual([[f, "Empty, or more than 0 dollars, like 2.50"]]);
+    }
+    // The smallest price a page gives is taken, and the others may stay empty.
+    expect(
+      priceSchema.parse({
+        model: "openai:gpt-test",
+        input: "0.0001",
+        output: "0.005",
+        cacheRead: "0.0001",
+        cacheWrite: "",
+      }),
+    ).toMatchObject({ input: "0.0001", output: "0.005", cacheRead: "0.0001", cacheWrite: null });
+  });
+
+  it("leaves a model on no price list blocked when its price is cleared, never at cost 0", () => {
+    const cleared = priceSchema.parse({ model: "openai:gpt-test", input: "", output: "" });
+    expect(cleared).toMatchObject({ input: null, output: null });
+    // Cleared: the owner's row goes, and the model has no price again.
+    expect(priceFor(bookOf(), "openai:gpt-test")).toBeNull();
+    expect(costIn(bookOf(), "openai:gpt-test", { input: 10, output: 5 })).toEqual({
+      usd: 0,
+      known: false,
+    });
+  });
 });

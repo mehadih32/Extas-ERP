@@ -37,17 +37,21 @@ export type Price = PriceRule & {
 /** The owner's prices in the company, by model. */
 export type PriceBook = ReadonlyMap<string, Price>;
 
-const num = (v: Prisma.Decimal | null) => (v === null ? null : v.toNumber());
+/** A kept price; 0 (which v6.3 took) is none: work is never counted as free. */
+const num = (v: Prisma.Decimal | null) => (v === null || !v.gt(0) ? null : v.toNumber());
 
 export async function priceBook(companyId: string, db: Db = prisma): Promise<PriceBook> {
   const rows = await db.aiModelPrice.findMany({ where: { companyId } });
   const book = new Map<string, Price>();
   for (const r of rows) {
-    // A row without prices only remembers the day a notice went out.
-    if (r.inputPerM === null || r.outputPerM === null) continue;
+    // A row without prices only remembers the day a notice went out; one with an
+    // input or output price of 0 has no price either (blocked, never cost 0).
+    const input = num(r.inputPerM);
+    const output = num(r.outputPerM);
+    if (input === null || output === null) continue;
     book.set(r.model, {
-      input: r.inputPerM.toNumber(),
-      output: r.outputPerM.toNumber(),
+      input,
+      output,
       cacheRead: num(r.cacheReadPerM),
       cacheWrite: num(r.cacheWritePerM),
       batchInput: num(r.batchInputPerM),
@@ -167,14 +171,24 @@ export async function warnBlocked(
   }
 }
 
-const perMillion = z
-  .union([z.string(), z.number()])
-  .transform((v) => String(v).trim().replace(/^\$/, ""))
-  .refine(
-    (v) => v === "" || (/^\d{1,6}(\.\d{1,4})?$/.test(v) && Number(v) >= 0),
-    "Dollars per million tokens, like 2.50",
-  )
-  .transform((v) => (v === "" ? null : v));
+const DOLLARS = /^\d{1,6}(\.\d{1,4})?$/;
+
+/**
+ * A price in dollars per million tokens, or empty. Never 0: a price of 0
+ * would count the model's work as free (v6.4 A7), so a price is more than 0.
+ */
+const perMillion = (zero: string) =>
+  z
+    .union([z.string(), z.number()])
+    .transform((v) => String(v).trim().replace(/^\$/, ""))
+    .refine((v) => v === "" || DOLLARS.test(v), "Dollars per million tokens, like 2.50")
+    .refine((v) => v === "" || !DOLLARS.test(v) || Number(v) > 0, zero)
+    .transform((v) => (v === "" ? null : v));
+
+/** Input and output: empty only to clear the price (both), else more than 0. */
+const mainPrice = perMillion("More than 0 dollars, like 2.50");
+/** Cache and batch prices: empty (charged as plain work) or more than 0. */
+const otherPrice = perMillion("Empty, or more than 0 dollars, like 2.50");
 
 export const priceSchema = z
   .object({
@@ -184,12 +198,12 @@ export const priceSchema = z
       .min(1)
       .max(140)
       .refine((m) => parseModel(m) !== null, "Pick a model"),
-    input: perMillion.nullish(),
-    output: perMillion.nullish(),
-    cacheRead: perMillion.nullish(),
-    cacheWrite: perMillion.nullish(),
-    batchInput: perMillion.nullish(),
-    batchOutput: perMillion.nullish(),
+    input: mainPrice.nullish(),
+    output: mainPrice.nullish(),
+    cacheRead: otherPrice.nullish(),
+    cacheWrite: otherPrice.nullish(),
+    batchInput: otherPrice.nullish(),
+    batchOutput: otherPrice.nullish(),
   })
   .transform((p) => ({
     model: p.model,
@@ -207,14 +221,22 @@ export const priceSchema = z
 
 const decimal = (v: string | null) => (v === null ? null : new Prisma.Decimal(v));
 
+/** The PIN sent with a price (checked, never kept). */
+const pinSchema = z.object({ pin: z.string().max(20).optional() });
+
 /**
  * Sets a model's price (any price on the provider's page); empty input and
  * output put the built-in price back (or, for a model on no list, no price:
- * blocked). Only the owner (ai.manage); every change is in the audit log.
+ * blocked). Only the owner (ai.manage), with the PIN like every price action
+ * (CLAUDE.md section 2); every change is in the audit log.
  */
 export async function setModelPrice(ctx: CompanyContext, input: unknown, meta?: RequestMeta) {
   if (!ctx.can("ai.manage")) throw new AppError("FORBIDDEN", "Only the owner sets the AI prices.");
   const p = priceSchema.parse(input);
+  const { pin } = pinSchema.parse(input);
+  // settings.service reads the prices, so it is loaded only when the PIN is checked.
+  const { requirePin } = await import("./settings.service");
+  await requirePin(ctx, pin, p.input === null ? "clear a model's price" : "set a model's price");
   const model = normalModel(p.model);
   const provider = parseModel(model)!.provider;
   const label = modelLabel(model);

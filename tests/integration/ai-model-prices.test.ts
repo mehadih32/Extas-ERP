@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ZodError } from "zod";
 
 /*
  * v6.4 F and A7: AI Center > Models lists Claude, OpenAI and Gemini models with
@@ -19,13 +20,21 @@ import { recordHref } from "@/modules/reminders/links";
 import { startTests } from "@/modules/ai/knowledge.service";
 import { runModelTest } from "@/modules/ai/model-tests.service";
 import { estimateOrderAi } from "@/modules/ai/orders/order-run.service";
-import { setModelPrice, warnBlocked } from "@/modules/ai/prices.service";
+import {
+  costIn,
+  hasPrice,
+  priceBook,
+  priceFor,
+  setModelPrice,
+  warnBlocked,
+} from "@/modules/ai/prices.service";
 import {
   getAiStatus,
   getModels,
   setAgentModel,
   setAiSwitch,
   setApiKey,
+  setPin,
   setProviderKey,
   setTaskModel,
 } from "@/modules/ai/settings.service";
@@ -35,6 +44,8 @@ import { claudeMessage } from "../fixtures/claude";
 import { addToCompany, contextFor, makeCompany, makeUser, resetDb } from "./helpers";
 
 const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
+
+const PIN = "2468";
 
 const KEYS = {
   anthropic: "sk-ant-api03-test0123456789abcdWXYZ",
@@ -68,6 +79,8 @@ async function setup() {
   await setApiKey(owner, { key: KEYS.anthropic });
   await setProviderKey(owner, { provider: "openai", key: KEYS.openai });
   await setProviderKey(owner, { provider: "google", key: KEYS.google });
+  // Setting a model's price asks for the owner's PIN.
+  await setPin(owner, { pin: PIN });
   const readAt = new Date().toISOString();
   await prisma.aiSettings.update({
     where: { companyId: company.id },
@@ -190,6 +203,7 @@ run("Model prices for Claude, OpenAI and Gemini (v6.4 F, A7)", () => {
       input: "3",
       output: "15",
       cacheWrite: "3.75",
+      pin: PIN,
     });
     let row = (await getModels(env.owner)).priceSections[0]!.rows.find(
       (r) => r.model === "claude-opus-5-5",
@@ -213,7 +227,7 @@ run("Model prices for Claude, OpenAI and Gemini (v6.4 F, A7)", () => {
     expect(line).toMatchObject({ model: "claude-opus-5-5", costKnown: true, result: "OK" });
     expect(line.costUsd.toFixed(6)).toBe("0.060000");
 
-    await setModelPrice(env.owner, { model: "claude-opus-5-5", input: "", output: "" });
+    await setModelPrice(env.owner, { model: "claude-opus-5-5", input: "", output: "", pin: PIN });
     row = (await getModels(env.owner)).priceSections[0]!.rows.find(
       (r) => r.model === "claude-opus-5-5",
     )!;
@@ -228,6 +242,90 @@ run("Model prices for Claude, OpenAI and Gemini (v6.4 F, A7)", () => {
         "Opus 5.5: price set back to the built-in price list",
       ]),
     );
+  });
+
+  it("asks for the owner's PIN to set or clear a price, and never takes a price of 0", async () => {
+    const price = { model: "openai:gpt-test", input: "1.25", output: "10" };
+    // No PIN yet: the owner is told to set one first (the screen's PIN box shows it).
+    await prisma.aiSettings.update({
+      where: { companyId: env.company.id },
+      data: { pinHash: null },
+    });
+    const notSet = await expectAppError(setModelPrice(env.owner, price), "VALIDATION");
+    expect(notSet.details?.pinNotSet).toHaveLength(1);
+    await setPin(env.owner, { pin: PIN });
+    const none = await expectAppError(
+      setModelPrice(env.owner, price),
+      "VALIDATION",
+      "Give your PIN to set a model's price.",
+    );
+    expect(none.details?.pin).toEqual(["Give your PIN to set a model's price"]);
+    await expectAppError(
+      setModelPrice(env.owner, { ...price, pin: "1357" }),
+      "VALIDATION",
+      "The PIN is not right.",
+    );
+    expect(await hasPrice(env.company.id, "openai:gpt-test")).toBe(false);
+    await setModelPrice(env.owner, { ...price, pin: PIN });
+    expect(await hasPrice(env.company.id, "openai:gpt-test")).toBe(true);
+
+    // Clearing needs it too; a model on no price list is then blocked again.
+    const cleared = { model: "openai:gpt-test", input: "", output: "" };
+    await expectAppError(
+      setModelPrice(env.owner, cleared),
+      "VALIDATION",
+      "Give your PIN to clear a model's price.",
+    );
+    expect(await hasPrice(env.company.id, "openai:gpt-test")).toBe(true);
+    await setModelPrice(env.owner, { ...cleared, pin: PIN });
+    expect(await hasPrice(env.company.id, "openai:gpt-test")).toBe(false);
+    await expectAppError(
+      setTaskModel(env.owner, { task: "text.write", model: "openai:gpt-test" }),
+      "VALIDATION",
+      /gpt-test \(OpenAI\) has no price yet, so it is blocked/,
+    );
+
+    // A price of 0 is refused on its field, before the PIN is even looked at.
+    await expect(
+      setModelPrice(env.owner, { ...price, input: "0", pin: PIN }),
+    ).rejects.toBeInstanceOf(ZodError);
+    expect(await hasPrice(env.company.id, "openai:gpt-test")).toBe(false);
+    // A 0 kept before v6.4 is no price at all: blocked, never counted as free work.
+    await prisma.aiModelPrice.create({
+      data: {
+        companyId: env.company.id,
+        model: "openai:gpt-test",
+        provider: "openai",
+        inputPerM: new Prisma.Decimal(0),
+        outputPerM: new Prisma.Decimal(10),
+      },
+    });
+    expect(await hasPrice(env.company.id, "openai:gpt-test")).toBe(false);
+    await prisma.aiModelPrice.updateMany({
+      where: { companyId: env.company.id, model: "openai:gpt-test" },
+      data: { inputPerM: new Prisma.Decimal(1.25), cacheReadPerM: new Prisma.Decimal(0) },
+    });
+    // A cache price of 0 is no cache price: cache reading is charged as plain input.
+    const book = await priceBook(env.company.id);
+    expect(priceFor(book, "openai:gpt-test")).toMatchObject({ input: 1.25, cacheRead: null });
+    expect(costIn(book, "openai:gpt-test", { input: 0, output: 0, cacheRead: 1_000_000 })).toEqual({
+      usd: 1.25,
+      known: true,
+    });
+
+    const audit = await prisma.auditLog.findMany({
+      where: {
+        companyId: env.company.id,
+        entityType: "AiSettings",
+        summary: { startsWith: "gpt-test" },
+      },
+      select: { summary: true },
+      orderBy: { createdAt: "asc" },
+    });
+    expect(audit.map((a) => a.summary)).toEqual([
+      "gpt-test (OpenAI): price set to $1.25 input, $10 output per million tokens",
+      "gpt-test (OpenAI): price set back to none (blocked until it has one)",
+    ]);
   });
 
   it("will not give work to a model with no price, and marks it in the pickers", async () => {
@@ -251,7 +349,12 @@ run("Model prices for Claude, OpenAI and Gemini (v6.4 F, A7)", () => {
     );
     // A model on the price list, and one the owner priced, can be given work.
     await setTaskModel(env.owner, { task: "text.write", model: "openai:gpt-6.1-sol" });
-    await setModelPrice(env.owner, { model: "openai:gpt-test", input: "1.25", output: "10" });
+    await setModelPrice(env.owner, {
+      model: "openai:gpt-test",
+      input: "1.25",
+      output: "10",
+      pin: PIN,
+    });
     await setTaskModel(env.owner, { task: "chat", model: "openai:gpt-test" });
     await ask(env, { task: "chat" });
     expect(sent.at(-1)).toEqual({ provider: "openai", model: "gpt-test" });
@@ -318,7 +421,12 @@ run("Model prices for Claude, OpenAI and Gemini (v6.4 F, A7)", () => {
     expect(await prisma.aiTestRun.count()).toBe(runs);
 
     // Once it has a price, the same work runs and its cost is known.
-    await setModelPrice(env.owner, { model: "openai:gpt-test", input: "1.25", output: "10" });
+    await setModelPrice(env.owner, {
+      model: "openai:gpt-test",
+      input: "1.25",
+      output: "10",
+      pin: PIN,
+    });
     await ask(env, { task: "chat" });
     expect(sent).toEqual([{ provider: "openai", model: "gpt-test" }]);
   });
@@ -408,7 +516,12 @@ run("Model prices for Claude, OpenAI and Gemini (v6.4 F, A7)", () => {
     expect((await getModels(env.owner)).blocked.map((b) => b.model)).toContain("openai:gpt-test");
 
     // Priced: no longer blocked anywhere.
-    await setModelPrice(env.owner, { model: "openai:gpt-test", input: "1.25", output: "10" });
+    await setModelPrice(env.owner, {
+      model: "openai:gpt-test",
+      input: "1.25",
+      output: "10",
+      pin: PIN,
+    });
     expect((await getAiStatus(env.owner)).blockedModels.map((b) => b.model)).toEqual([
       "google:gemini-test",
     ]);

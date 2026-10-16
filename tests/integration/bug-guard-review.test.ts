@@ -37,13 +37,14 @@ import { saveGitHub, startFullCheck } from "@/modules/ai/full-check/full-check.s
 import { alertOwner } from "@/modules/backups/backup-core";
 import { fixFinding, prepareByItself } from "@/modules/bug-guard/fixes.service";
 import { READ_ONLY_WHY } from "@/modules/bug-guard/runner";
-import { alarmOwner } from "@/modules/bug-guard/security";
+import { alarmOwner, BLOCKED_TEXT } from "@/modules/bug-guard/security";
+import { login } from "@/modules/auth/auth.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { runDueJobs } from "@/modules/jobs/worker";
 import type { CheckContext } from "@/modules/bug-guard/types";
 
 import { type FakeGitHub, startFakeGitHub } from "../fixtures/fake-github";
-import { addToCompany, contextFor, makeCompany, makeUser, resetDb } from "./helpers";
+import { addToCompany, contextFor, makeCompany, makeUser, PASSWORD, resetDb } from "./helpers";
 
 const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
 
@@ -149,6 +150,31 @@ async function linkBot(who: CompanyContext, chat: number) {
   expect(
     await prisma.aiBotLink.findFirstOrThrow({ where: { companyId: who.company.id } }),
   ).toMatchObject({ chatId: String(chat), ownerId: who.user.id });
+}
+
+async function expectAppError(promise: Promise<unknown>, code: string, message?: string | RegExp) {
+  const error = await promise.then(
+    () => null,
+    (e: unknown) => e,
+  );
+  expect(error, "expected an AppError").toBeInstanceOf(AppError);
+  expect((error as AppError).code).toBe(code);
+  if (message) expect((error as AppError).message).toMatch(message);
+  return error as AppError;
+}
+
+const wrong = (email: string, ip: string) =>
+  login({ email, password: "not-the-password" }, { ipAddress: ip }).catch(() => undefined);
+
+/** Moves everything that happened from a place back in time (as if it were hours ago). */
+async function agePlace(ip: string, hours: number) {
+  const rows = await prisma.auditLog.findMany({ where: { ipAddress: ip } });
+  for (const row of rows) {
+    await prisma.auditLog.update({
+      where: { id: row.id },
+      data: { createdAt: new Date(row.createdAt.getTime() - hours * 60 * 60_000) },
+    });
+  }
 }
 
 async function refusedInside(work: () => Promise<unknown>) {
@@ -380,6 +406,119 @@ run("Bug Guard, after the review", () => {
         select: { companyId: true, userId: true },
       });
       expect(inbox).toEqual([{ companyId: platform.company.id, userId: platform.owner.user.id }]);
+    });
+  });
+
+  describe("a blocked place (S3)", () => {
+    it("lets in only the platform owner with the right password, the account lock still applying", async () => {
+      const { company, owner, partner } = await setup();
+      const ip = "203.0.113.40";
+      for (let i = 0; i < 10; i += 1) await wrong(`nobody${i}@x.test`, ip);
+      expect(await prisma.loginBlock.count({ where: { source: ip, liftedAt: null } })).toBe(1);
+      const signIn = (email: string, password = PASSWORD) =>
+        login({ email, password }, { ipAddress: ip });
+
+      // Everyone else stays out, even with the right password.
+      await expectAppError(signIn("staff@extas.test"), "ACCOUNT_LOCKED", BLOCKED_TEXT);
+      await expectAppError(signIn("partner@extas.test"), "ACCOUNT_LOCKED", BLOCKED_TEXT);
+      await expectAppError(signIn("nobody@extas.test"), "ACCOUNT_LOCKED", BLOCKED_TEXT);
+      expect(
+        (await prisma.user.findUniqueOrThrow({ where: { id: partner.user.id } })).failedLoginCount,
+      ).toBe(0);
+
+      // The owner's wrong password: the same words as for anyone, and it counts toward the lock.
+      await expectAppError(signIn("owner@extas.test", "wrong-one"), "ACCOUNT_LOCKED", BLOCKED_TEXT);
+      expect(
+        (await prisma.user.findUniqueOrThrow({ where: { id: owner.user.id } })).failedLoginCount,
+      ).toBe(1);
+
+      // The right password: in, logged as a Bug Guard event, and the owner is told.
+      const done = await signIn("owner@extas.test");
+      expect(done.token).toBeTruthy();
+      expect(
+        await prisma.bugGuardEvent.findFirst({
+          where: { companyId: company.id, kind: "OWNER_PASSED_BLOCK" },
+        }),
+      ).toMatchObject({ byId: owner.user.id, summary: expect.stringContaining(ip) });
+      expect(
+        await prisma.notificationLog.count({
+          where: { userId: owner.user.id, subject: { contains: "blocked place" } },
+        }),
+      ).toBe(1);
+      // The block stays for everyone else.
+      await expectAppError(signIn("staff@extas.test"), "ACCOUNT_LOCKED", BLOCKED_TEXT);
+
+      // A locked account stays locked, right password or not.
+      for (let i = 0; i < 5; i += 1) await signIn("owner@extas.test", "wrong-again").catch(() => 0);
+      expect(
+        (await prisma.user.findUniqueOrThrow({ where: { id: owner.user.id } })).lockedUntil,
+      ).not.toBeNull();
+      await expectAppError(signIn("owner@extas.test"), "ACCOUNT_LOCKED");
+      expect(await prisma.bugGuardEvent.count({ where: { kind: "OWNER_PASSED_BLOCK" } })).toBe(1);
+
+      // A suspended platform owner stays out too.
+      const other = await makeUser("second-owner@extas.test", { isSuperAdmin: true });
+      await prisma.user.update({ where: { id: other.id }, data: { status: "SUSPENDED" } });
+      await expectAppError(signIn("second-owner@extas.test"), "ACCOUNT_LOCKED", BLOCKED_TEXT);
+    });
+  });
+
+  describe("known places (S4)", () => {
+    it("never counts a sign-in Bug Guard stopped, so the same place is stopped again later", async () => {
+      await setup();
+      const ip = "192.0.2.77";
+      const burst = async () => {
+        await wrong("ghost@x.test", ip);
+        await wrong("owner@extas.test", ip);
+        await wrong("partner@extas.test", ip);
+      };
+      await burst();
+      await expectAppError(
+        login({ email: "staff@extas.test", password: PASSWORD }, { ipAddress: ip }),
+        "ACCOUNT_LOCKED",
+        /looked unsafe/,
+      );
+      // Hours later the same place tries again: the stopped sign-in made it no "team place".
+      await agePlace(ip, 3);
+      await burst();
+      await expectAppError(
+        login({ email: "staff@extas.test", password: PASSWORD }, { ipAddress: ip }),
+        "ACCOUNT_LOCKED",
+        /looked unsafe/,
+      );
+      expect(await prisma.bugGuardEvent.count({ where: { kind: "SESSION_ENDED" } })).toBe(2);
+      // And many wrong passwords from there get it blocked.
+      await agePlace(ip, 3);
+      for (let i = 0; i < 10; i += 1) await wrong(`x${i}@x.test`, ip);
+      expect(await prisma.loginBlock.count({ where: { source: ip, liftedAt: null } })).toBe(1);
+    });
+
+    it("counts only the team's own sign-ins from before the wrong passwords began", async () => {
+      const { company, roles } = await setup();
+      // A sign-in in the middle of the wrong passwords does not make the place known.
+      const ip = "198.51.100.88";
+      for (let i = 0; i < 5; i += 1) await wrong(`a${i}@x.test`, ip);
+      await login({ email: "staff@extas.test", password: PASSWORD }, { ipAddress: ip });
+      for (let i = 0; i < 5; i += 1) await wrong(`b${i}@x.test`, ip);
+      expect(await prisma.loginBlock.count({ where: { source: ip, liftedAt: null } })).toBe(1);
+
+      // Someone who left (no longer a member) signing in there earlier does not either.
+      const gone = await makeUser("gone@extas.test");
+      const membership = await addToCompany(gone.id, company.id, roles.ACCOUNTS);
+      await prisma.companyMembership.update({
+        where: { id: membership.id },
+        data: { isActive: false },
+      });
+      const ip2 = "198.51.100.99";
+      await login({ email: "gone@extas.test", password: PASSWORD }, { ipAddress: ip2 });
+      for (let i = 0; i < 10; i += 1) await wrong(`c${i}@x.test`, ip2);
+      expect(await prisma.loginBlock.count({ where: { source: ip2, liftedAt: null } })).toBe(1);
+
+      // The office: a member signed in there before; never blocked by itself.
+      const office = "198.51.100.7";
+      await login({ email: "staff@extas.test", password: PASSWORD }, { ipAddress: office });
+      for (let i = 0; i < 12; i += 1) await wrong(`typo${i}@x.test`, office);
+      expect(await prisma.loginBlock.count({ where: { source: office } })).toBe(0);
     });
   });
 });

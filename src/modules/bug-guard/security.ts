@@ -13,6 +13,9 @@ import type { RequestMeta } from "@/lib/request-meta";
  *   - end a suspicious session (a sign-in from a new place that came right
  *     after wrong passwords for several accounts from there), by itself,
  *     telling the owner at once; never the owner's own;
+ *   - a blocked place still lets an active platform owner in with the right
+ *     password (their account lock still applies), so the owner can never be
+ *     locked out by it; the owner is told each time, and nobody else passes;
  *   - with the owner's PIN (fixes.service.ts): block or unblock a source, end a
  *     session (never the owner's).
  * It never changes a password, a role or a permission, and never deletes anyone.
@@ -45,9 +48,15 @@ export async function isOwnersPlace(db: Reader, source: string, now: Date): Prom
   return found > 0;
 }
 
+/** How the audit log marks a sign-in Bug Guard ended (endSession): such a place is never "known". */
+export const ENDED_BY_GUARD = "Sign-in ended by Bug Guard";
+
 /**
- * A place the team signs in from: a sign-in from there in the 30 days before
- * (not counting the one being looked at).
+ * A place the team signs in from: a sign-in from there in the 30 days before,
+ * by an active member of a store on this site (sign-in and blocks are for the
+ * whole site), made before the wrong passwords from there began this hour.
+ * Never a sign-in Bug Guard ended as suspicious, nor the one being looked at:
+ * an attacker's own sign-in must not make their place look like the office.
  */
 export async function isKnownPlace(
   db: Pick<PrismaClient, "auditLog">,
@@ -55,15 +64,46 @@ export async function isKnownPlace(
   now: Date,
   exceptSessionId?: string,
 ): Promise<boolean> {
-  const found = await db.auditLog.count({
+  const firstFailure = await db.auditLog.findFirst({
+    where: {
+      action: "LOGIN_FAILED",
+      ipAddress: source,
+      createdAt: { gte: new Date(now.getTime() - BLOCK_WINDOW_MS), lte: now },
+    },
+    orderBy: { createdAt: "asc" },
+    select: { createdAt: true },
+  });
+  const logins = await db.auditLog.findMany({
     where: {
       action: "LOGIN",
       ipAddress: source,
-      createdAt: { gte: new Date(now.getTime() - 30 * 86_400_000) },
+      createdAt: {
+        gte: new Date(now.getTime() - 30 * 86_400_000),
+        lt: firstFailure?.createdAt ?? now,
+      },
+      user: { status: "ACTIVE", memberships: { some: { isActive: true } } },
       ...(exceptSessionId ? { NOT: { entityId: exceptSessionId } } : {}),
     },
+    orderBy: { createdAt: "desc" },
+    take: 200,
+    select: { entityId: true },
   });
-  return found > 0;
+  if (logins.length === 0) return false;
+  const sessions = logins.flatMap((l) => (l.entityId ? [l.entityId] : []));
+  const ended = new Set(
+    (
+      await db.auditLog.findMany({
+        where: {
+          action: "LOGOUT",
+          entityType: "Session",
+          entityId: { in: sessions },
+          summary: { startsWith: ENDED_BY_GUARD },
+        },
+        select: { entityId: true },
+      })
+    ).map((e) => e.entityId),
+  );
+  return logins.some((l) => !l.entityId || !ended.has(l.entityId));
 }
 
 /** The block on a place now, if any. */
@@ -75,9 +115,37 @@ export async function activeBlock(source: string | undefined, now: Date = new Da
   });
 }
 
-/** Sign-in refuses a blocked place before it even looks at the password. */
-export async function refuseBlockedPlace(meta: RequestMeta, now: Date = new Date()) {
-  if (await activeBlock(meta.ipAddress, now)) throw new AppError("ACCOUNT_LOCKED", BLOCKED_TEXT);
+/** The refusal at a blocked place: the same words for everyone, owner or not. */
+export const blockedError = () => new AppError("ACCOUNT_LOCKED", BLOCKED_TEXT);
+
+/** Whether an account may pass a blocked place (with the right password): an active platform owner. */
+export const passesBlock = (user: { isSuperAdmin: boolean; status: string } | null) =>
+  !!user && user.isSuperAdmin && user.status === "ACTIVE";
+
+/** After the platform owner signed in from a blocked place: logged, and the owner is told. */
+export async function ownerPassedBlock(user: { id: string; name: string }, source: string) {
+  try {
+    const companyId = await platformCompanyId();
+    if (!companyId) return;
+    await prisma.bugGuardEvent.create({
+      data: {
+        companyId,
+        kind: "OWNER_PASSED_BLOCK",
+        summary: `${user.name} signed in from ${source}, a blocked place, with the right password`,
+        byId: user.id,
+      },
+    });
+    await alarmOwner(
+      companyId,
+      `${user.name} signed in from a blocked place`,
+      `From ${source}, with the right password. Sign-in from there stays stopped for everyone else. If it was not you, change your password now.`,
+    );
+  } catch (error) {
+    console.error(
+      "[bug-guard] owner's sign-in not logged",
+      error instanceof Error ? error.message : error,
+    );
+  }
 }
 
 /** The platform's own store: the oldest company (it gets the server's checks and alarms). */
@@ -182,7 +250,7 @@ export async function endSession(input: {
   const now = input.now ?? new Date();
   const session = await prisma.session.findUnique({
     where: { id: input.sessionId },
-    select: { id: true, user: { select: { name: true, isSuperAdmin: true } } },
+    select: { id: true, userId: true, user: { select: { name: true, isSuperAdmin: true } } },
   });
   if (!session) throw new AppError("NOT_FOUND", "That sign-in has ended already.");
   if (session.user.isSuperAdmin) {
@@ -199,6 +267,17 @@ export async function endSession(input: {
     `Ended ${session.user.name}'s sign-in: ${input.why}`,
     input.byId,
   );
+  // In the audit log too, beside its sign-in: its place never counts as "known" (isKnownPlace).
+  await prisma.auditLog.create({
+    data: {
+      companyId: input.companyId,
+      userId: session.userId,
+      action: "LOGOUT",
+      entityType: "Session",
+      entityId: session.id,
+      summary: `${ENDED_BY_GUARD}: ${input.why}`.slice(0, 500),
+    },
+  });
   return { name: session.user.name };
 }
 

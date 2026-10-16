@@ -6,7 +6,8 @@
 // presses tabs and the buttons that only open a menu or window, and notes every
 // problem: an error screen, a broken link (a 404, or an address with
 // "[projectId]" in it), a part that did not load, a script error, a slow screen,
-// a PDF that is not a PDF, or being sent to sign in. It also checks each screen's
+// a PDF that is not a PDF or that cuts a figure short or misses a page number
+// (pdf-text.mjs), or being sent to sign in. It also checks each screen's
 // layout at the four widths (390, 768, 1366 and 1920 px: text cut or overlapping,
 // a screen wider than the window, a menu item out of reach, wrong fonts; the rules
 // are in layout.mjs): the owner's role on every screen at every width, the other
@@ -36,6 +37,7 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 
 import { checkLayout, HEIGHTS, problemLine, RULES, WIDTHS } from "./layout.mjs";
+import { pdfProblems } from "./pdf-text.mjs";
 import { GATES, NEVER, patternFinder, PUBLIC, screenRoutes } from "./routes.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -502,6 +504,29 @@ async function checkRole(browser, session, writes, deadline, first) {
             status: response.status() >= 400 ? response.status() : null,
           },
         );
+      } else if (bytes.subarray(0, 5).toString("latin1") === "%PDF-") {
+        // Its text: no figure cut short with "…", the page number on every page.
+        let found = [];
+        try {
+          found = pdfProblems(bytes);
+        } catch {
+          found = [];
+        }
+        if (found.length) {
+          await note(
+            null,
+            role,
+            "PDF",
+            from,
+            found.some((p) => p.what === "CUT_FIGURE")
+              ? "A PDF cuts a figure short"
+              : "A PDF has a page without its page number",
+            found
+              .slice(0, 8)
+              .map((p) => `GET ${path} ${p.detail}${p.text ? `\n  ${p.text}` : ""}`)
+              .join("\n"),
+          );
+        }
       }
     } catch (error) {
       await note(

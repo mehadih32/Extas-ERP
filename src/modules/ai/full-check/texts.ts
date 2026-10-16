@@ -201,7 +201,7 @@ function requestLines(detail: string | null): string[] {
       continue;
     }
     const m =
-      /^(GET|HEAD|POST|PUT|PATCH|DELETE) (\S+) (answered (\d{3})|took (\d+) ms|failed|sent a file that is not a PDF|sent a web page instead of the file)/.exec(
+      /^(GET|HEAD|POST|PUT|PATCH|DELETE) (\S+) (answered (\d{3})|took (\d+) ms|failed|sent a file that is not a PDF|sent a web page instead of the file|has a figure cut short with "…" on page \d{1,4}|has no page number on page \d{1,4})/.exec(
         line.trim(),
       );
     if (!m) continue;

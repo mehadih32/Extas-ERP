@@ -95,6 +95,7 @@ services:
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:?Run deploy/configure.sh first}
       GOOGLE_DRIVE_CLIENT_ID: ${GOOGLE_DRIVE_CLIENT_ID:-}
       GOOGLE_DRIVE_CLIENT_SECRET: ${GOOGLE_DRIVE_CLIENT_SECRET:-}
+      SAFETY_COPY_DIR: /data/safety-copies
       AI_API_KEY: ${AI_API_KEY:-}
       # The company's mailbox for sending; the owner usually sets it in AI Center > Settings instead.
       SMTP_HOST: ${SMTP_HOST:-}
@@ -115,6 +116,9 @@ services:
     volumes:
       - ${DATA_DIR:-/srv/extras-erp}/uploads:/data/uploads
       - ${DATA_DIR:-/srv/extras-erp}/backups:/data/backups
+      # The update and restore safety copies, read-only: the app locks each and
+      # sends it to Google Drive too (the server keeps them for 24 hours).
+      - ${DATA_DIR:-/srv/extras-erp}/safety-copies:/data/safety-copies:ro
     depends_on:
       db:
         condition: service_healthy

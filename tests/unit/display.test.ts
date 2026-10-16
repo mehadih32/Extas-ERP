@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  countOf,
   formatCount,
   formatDay,
   formatDayRange,
@@ -12,6 +13,7 @@ import {
 import { errorCodeFor, errorMessageFor, randomErrorCode } from "@/lib/error-code";
 import { newErrorId } from "@/lib/errors";
 import { formatAmount } from "@/lib/format";
+import { renderCard } from "@/modules/ai/bot/render";
 
 describe("amounts and counts on screen", () => {
   it("groups Bangladeshi and Indian amounts in lakhs and crores", () => {
@@ -39,6 +41,28 @@ describe("amounts and counts on screen", () => {
     expect(formatCount(124500, "USD")).toBe("124,500");
     expect(formatCount(-1500, "BDT")).toBe("-1,500");
     expect(formatCount(0, "BDT")).toBe("0");
+  });
+
+  it("says 1 call and 7 calls, never 1 calls (seen on AI Center > Agents)", () => {
+    expect(countOf(1, "call")).toBe("1 call");
+    expect(countOf(0, "call")).toBe("0 calls");
+    expect(countOf(7, "AI call")).toBe("7 AI calls");
+    expect(countOf(3, "entry", "entries")).toBe("3 entries");
+    const card = (calls: number) =>
+      renderCard(
+        {
+          type: "costs",
+          period: "Today",
+          currency: "BDT",
+          total: "2.71",
+          calls,
+          byTask: [],
+          byAgent: [],
+        },
+        { messageId: "m1", status: null, appUrl: "https://erp.example.com" },
+      ).text;
+    expect(card(1)).toMatch(/^Today: BDT 2\.71 for 1 AI call$/m);
+    expect(card(4)).toContain("for 4 AI calls");
   });
 });
 

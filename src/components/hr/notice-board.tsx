@@ -65,7 +65,7 @@ export function MyNoticeBoard({
     if (sent.current) return;
     sent.current = true;
     const unread = items.filter((n) => n.readAt === null).map((n) => n.id);
-    if (unread.length > 0) void markMyNoticesReadAction(unread);
+    if (unread.length > 0) void markMyNoticesReadAction(unread).catch(() => {});
   }, [items]);
 
   return (

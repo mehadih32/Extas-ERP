@@ -217,6 +217,7 @@ export function BatchBookingsPanel({
                   stage={b.stage}
                   revision={b.revision}
                   source={b.source}
+                  risk={b.fabricRisk}
                 />
                 {b.expectedDate && (
                   <span className="text-[0.8125rem] text-muted-foreground">
@@ -278,7 +279,7 @@ export function BatchBookingsPanel({
       {open === "attach" && (
         <FormDialog
           title={`Attach a booking to ${batch.code}`}
-          description="Open bookings not on a batch. Its items are shared out over the batch's styles, colours and sizes, so they count as ordered for them."
+          description="Open bookings not on a batch. Its items are shared out over the batch's styles, colours and sizes, so they count as ordered for them. An approved booking becomes its next revision and is approved again."
           submitLabel="Attach"
           pendingLabel="Attaching"
           errorTitle="We could not attach the booking"
@@ -289,10 +290,14 @@ export function BatchBookingsPanel({
             if (!bookingId) return problem({ bookingId: "Choose the booking to attach." });
             const result = await attachBookingAction(bookingId, { batchId: batch.id });
             if (!result.ok) return result.error;
+            const again = result.data.waiting
+              ? ` ${result.data.waiting} now waits for approval again, with the batch's checks.`
+              : "";
             setNotice(
-              result.data.unmatched.length > 0
+              (result.data.unmatched.length > 0
                 ? `${result.data.number} was attached. Not needed by the batch's styles, so not counted for them: ${result.data.unmatched.join(", ")}.`
-                : `${result.data.number} was attached; every item counts for the batch's styles.`,
+                : `${result.data.number} was attached; every item counts for the batch's styles.`) +
+                again,
             );
             close();
           }}
@@ -320,7 +325,7 @@ export function BatchBookingsPanel({
       {open && typeof open === "object" && (
         <FormDialog
           title={`Take ${open.detach.number} off ${batch.code}?`}
-          description="Nothing has arrived on it yet. Its items stop counting as ordered for the batch's styles; the booking itself stays as it is."
+          description="Nothing has arrived on it yet. Its items stop counting as ordered for the batch's styles. An approved booking becomes its next revision and is approved again."
           submitLabel="Take it off"
           pendingLabel="Taking it off"
           errorTitle="We could not take the booking off the batch"
@@ -328,7 +333,11 @@ export function BatchBookingsPanel({
           onSubmit={async () => {
             const result = await detachBookingAction(open.detach.id);
             if (!result.ok) return result.error;
-            setNotice(`${open.detach.number} was taken off ${batch.code}.`);
+            setNotice(
+              `${open.detach.number} was taken off ${batch.code}.${
+                result.data.waiting ? ` ${result.data.waiting} now waits for approval again.` : ""
+              }`,
+            );
             close();
           }}
         >

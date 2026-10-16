@@ -1,9 +1,9 @@
 "use client";
 
-import { KeyRoundIcon, LockIcon } from "lucide-react";
+import { LockIcon } from "lucide-react";
 import { useState, useTransition } from "react";
 
-import { useDay } from "@/components/ai/when";
+import { ProviderKeys } from "@/components/ai/provider-keys";
 import { Field, FormAlert } from "@/components/forms/field";
 import { StatusBadge } from "@/components/sales/badges";
 import { Panel } from "@/components/sales/detail-bits";
@@ -12,17 +12,12 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import type { AiStatus } from "@/modules/ai/settings.service";
-import {
-  removeApiKeyAction,
-  setApiKeyAction,
-  setAssistantNameAction,
-  setPinAction,
-} from "@/server/actions/ai.actions";
+import { setAssistantNameAction, setPinAction } from "@/server/actions/ai.actions";
 import { setDailyNotesAction } from "@/server/actions/orders.actions";
 
 /*
- * AI Center > Settings (ai.manage): the Claude key (kept sealed, only its last
- * four characters shown), the PIN asked for money, prices and deletions, the
+ * AI Center > Settings (ai.manage): the Claude, OpenAI and Gemini keys (kept
+ * sealed, only their last four characters shown; provider-keys.tsx), the PIN asked for money, prices and deletions, the
  * AI's name on everything it writes, and the daily notes to the owner.
  */
 
@@ -40,66 +35,15 @@ const NOTES = [
 ] as const;
 
 export function AiSettingsForms({ status: s }: { status: AiStatus }) {
-  const day = useDay();
   const [pending, startTransition] = useTransition();
-  const [dialog, setDialog] = useState<"key" | "pin" | "name" | null>(null);
+  const [dialog, setDialog] = useState<"pin" | "name" | null>(null);
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string }>();
 
   return (
     <div className="grid gap-6">
       {message && <FormAlert tone={message.tone}>{message.text}</FormAlert>}
 
-      <Panel
-        title="Claude key"
-        id="ai-key-heading"
-        action={
-          <Button type="button" size="sm" onClick={() => setDialog("key")}>
-            <KeyRoundIcon aria-hidden />
-            {s.key?.own ? "Change the key" : "Add the key"}
-          </Button>
-        }
-      >
-        <div className="mt-2 grid gap-2 text-sm">
-          {s.key?.own ? (
-            <p>
-              The company&apos;s own key, ending <span className="font-mono">{s.key.hint}</span>,
-              saved on {day(s.key.setAt)}. It is kept locked and never shown again.
-            </p>
-          ) : s.key ? (
-            <p>The server&apos;s key is used until you add the company&apos;s own key.</p>
-          ) : (
-            <p className="text-muted-foreground">
-              No key yet. Without it the AI cannot work, even when it is switched on.
-            </p>
-          )}
-          <p className="text-[0.8125rem] text-muted-foreground">
-            Get a key at console.anthropic.com: sign in, open API Keys, press Create Key and copy it
-            (it starts with sk-ant-). Set a monthly spend limit there too.
-          </p>
-          {s.key?.own && (
-            <div>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                disabled={pending}
-                onClick={() =>
-                  startTransition(async () => {
-                    const result = await removeApiKeyAction();
-                    setMessage(
-                      result.ok
-                        ? { tone: "success", text: "The key is removed." }
-                        : { tone: "error", text: result.error.message },
-                    );
-                  })
-                }
-              >
-                Remove the key
-              </Button>
-            </div>
-          )}
-        </div>
-      </Panel>
+      <ProviderKeys status={s} />
 
       <Panel
         title="PIN"
@@ -179,36 +123,6 @@ export function AiSettingsForms({ status: s }: { status: AiStatus }) {
           ))}
         </div>
       </Panel>
-
-      {dialog === "key" && (
-        <FormDialog
-          title={s.key?.own ? "Change the Claude key" : "Add the Claude key"}
-          description="Paste the key from console.anthropic.com. It is locked before it is saved; afterwards only its last four characters are shown."
-          submitLabel="Save the key"
-          pendingLabel="Saving"
-          errorTitle="We could not save the key"
-          onClose={() => setDialog(null)}
-          onSubmit={async (form) => {
-            const result = await setApiKeyAction({ key: String(form.get("key") ?? "") });
-            if (!result.ok) return result.error;
-            setMessage({ tone: "success", text: "The key is saved." });
-            setDialog(null);
-          }}
-        >
-          {(fieldError) => (
-            <Field id="ai-key" label="Claude key" error={fieldError("key")}>
-              <Input
-                id="ai-key"
-                name="key"
-                type="password"
-                autoComplete="off"
-                placeholder="sk-ant-..."
-                required
-              />
-            </Field>
-          )}
-        </FormDialog>
-      )}
 
       {dialog === "pin" && (
         <FormDialog

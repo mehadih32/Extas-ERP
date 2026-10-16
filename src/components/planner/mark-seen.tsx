@@ -16,7 +16,7 @@ export function useMarkTasksSeen(taskIds: readonly string[]) {
     const fresh = key.split(",").filter((id) => id && !sent.current.has(id));
     if (fresh.length === 0) return;
     for (const id of fresh) sent.current.add(id);
-    void markMyTasksSeenAction(fresh);
+    void markMyTasksSeenAction(fresh).catch(() => {});
   }, [key]);
 }
 

@@ -3,8 +3,8 @@ import { runReminders } from "@/modules/reminders/engine";
 /*
  * The reminder clock. Started once per server process (instrumentation.ts);
  * every minute it sends the reminders that are due (engine.ts), Mehedi 2.0's
- * reminders, briefs and late order steps to the owner, and the weekly Server
- * Health when it is on. A run still going when the next minute comes is not
+ * reminders, briefs and late order steps to the owner, the Full check's
+ * follow-ups on GitHub, and the weekly Server Health when it is on. A run still going when the next minute comes is not
  * doubled.
  */
 
@@ -27,6 +27,14 @@ export async function reminderTick(now: Date = new Date()) {
     if (now.getUTCMinutes() === 5) {
       const { runOrderFollowUps } = await import("@/modules/ai/orders/order-run.service");
       await runOrderFollowUps(now).catch((error) => console.error("[orders] run failed", error));
+    }
+    // The Full check: checks that never reported end, and Claude Code's fixes are
+    // followed on GitHub, every two minutes (ai/full-check/full-check.service.ts).
+    if (now.getUTCMinutes() % 2 === 0) {
+      const { runFullCheckClock } = await import("@/modules/ai/full-check/full-check.service");
+      await runFullCheckClock(now).catch((error) =>
+        console.error("[full-check] run failed", error),
+      );
     }
     // The weekly Server Health, when turned on (ai/health/health.service.ts).
     const { runWeeklyHealth } = await import("@/modules/ai/health/health.service");

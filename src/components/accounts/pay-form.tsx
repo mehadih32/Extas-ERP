@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import { formatDay } from "@/lib/display";
+import { reach } from "@/lib/reach";
 import type {
   PartyOption,
   PayForm as PayFormData,
@@ -102,7 +103,7 @@ export function PayForm({ form: data, currency }: { form: PayFormData; currency:
   useEffect(() => {
     if (!supplierId || loaded?.id === supplierId) return;
     let live = true;
-    void getSupplierDuesAction(supplierId).then((result) => {
+    void reach(() => getSupplierDuesAction(supplierId)).then((result) => {
       if (!live) return;
       setLoaded(
         result.ok

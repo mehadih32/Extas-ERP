@@ -9,7 +9,9 @@
  *      printed as "Test booking" lines, which deploy.sh repeats in the Deploy log.
  *      A failure there is printed and the demo still starts;
  *   4. and the v6.2 sample order for Mehedi 2.0 (./v62-samples.ts), once, waiting
- *      for the owner's Approve (the AI stays off).
+ *      for the owner's Approve (the AI stays off);
+ *   5. and the v6.3 sample skill for the fabric expert X05 (./v63-samples.ts),
+ *      once, waiting for its test.
  * It stops, loading nothing, unless DEMO_SITE=on and the database is the demo's own.
  *   SEED_ADMIN_EMAIL          the owner's email
  *   DEMO_OWNER_PASSWORD_HASH  the owner's password hash on the live ERP
@@ -24,6 +26,7 @@ import {
   loadFiveStylePoloDemo,
   loadTestBookingsDemo,
   loadV62SamplesDemo,
+  loadV63SamplesDemo,
 } from "./load-demo";
 
 async function main() {
@@ -70,6 +73,17 @@ async function main() {
     );
   } catch (error) {
     console.error("! v6.2 sample order: it could not be made", error);
+  }
+
+  try {
+    const skill = await loadV63SamplesDemo(owner.id, company.id);
+    console.log(
+      skill
+        ? `✓ v6.3 sample skill "${skill.name}" for the fabric expert, waiting for its test`
+        : "✓ The v6.3 sample skill is there already",
+    );
+  } catch (error) {
+    console.error("! v6.3 sample skill: it could not be made", error);
   }
 }
 

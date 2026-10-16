@@ -1,18 +1,21 @@
 import type { Metadata } from "next";
 
+import { HelpAsk } from "@/components/help/help-ask";
 import { HelpSearch } from "@/components/help/help-search";
 import { SectionCards } from "@/components/help/section-cards";
 import { roleLabel } from "@/components/shell/labels";
 import { localDay } from "@/lib/dates";
 import { HELP_SECTIONS, helpSearchEntries, sectionOpen } from "@/modules/help";
+import { getHelpAiAction } from "@/server/actions/ai.actions";
 import { requireCompanyPage } from "@/server/pages/guards";
 
 export const metadata: Metadata = { title: "Help Center" };
 
 /**
  * The Help Center: the manual in Bengali, part by part, with a search box that
- * answers as people type. Everyone may read every guide; guides about pages a
- * person's role does not open say so.
+ * answers as people type, and the Help AI (while AI is on) that answers a
+ * question from the guides. Everyone may read every guide; guides about pages
+ * a person's role does not open say so.
  */
 export default async function HelpPage({
   searchParams,
@@ -21,7 +24,7 @@ export default async function HelpPage({
 }) {
   const ctx = await requireCompanyPage();
   const permissions = [...ctx.permissions];
-  const q = (await searchParams).q;
+  const [q, helpAi] = await Promise.all([searchParams.then((p) => p.q), getHelpAiAction()]);
   const initialQuery = typeof q === "string" ? q.slice(0, 200) : "";
   const parts = HELP_SECTIONS.map((section) => ({
     section,
@@ -45,6 +48,7 @@ export default async function HelpPage({
           একটি বিভাগ খুলুন।
         </p>
       </header>
+      {helpAi.ok && <HelpAsk helpAi={helpAi.data} />}
       <HelpSearch
         entries={helpSearchEntries(permissions)}
         initialQuery={initialQuery}

@@ -1,0 +1,209 @@
+import { createSign, generateKeyPairSync, type KeyObject } from "node:crypto";
+import { createServer, type IncomingMessage } from "node:http";
+import type { AddressInfo } from "node:net";
+
+/*
+ * A stand-in for the GitHub API and GitHub Actions' token issuer in tests
+ * (GITHUB_API_URL and GITHUB_OIDC_ISSUER point here): the repository, the
+ * workflows and their runs, issues, branches, pull requests, check runs, merges
+ * and comments the Full check uses, kept in `state` for each test to shape.
+ * `actionsToken` signs a token the way GitHub Actions does.
+ */
+
+export type FakePull = {
+  number: number;
+  html_url: string;
+  state: "open" | "closed";
+  merged_at: string | null;
+  title: string;
+  body: string | null;
+  head: { ref: string; sha: string };
+};
+
+export type FakeRun = {
+  id: number;
+  html_url: string;
+  status: string;
+  conclusion: string | null;
+  display_title: string;
+  created_at: string;
+};
+
+export type FakeGitHub = {
+  url: string;
+  issuer: string;
+  token: string;
+  calls: Array<{ method: string; path: string; body: Record<string, unknown> | null }>;
+  state: {
+    repo: string;
+    permissions: { push: boolean; admin: boolean };
+    workflows: Record<string, "active" | "disabled_manually" | null>;
+    runs: Record<string, FakeRun[]>;
+    issues: Array<{ number: number; title: string; body: string }>;
+    comments: Array<{ number: number; body: string }>;
+    branches: string[];
+    ahead: Record<string, number>;
+    pulls: FakePull[];
+    checks: Record<string, Array<{ name: string; status: string; conclusion: string | null }>>;
+    merged: Array<{ number: number; sha: string }>;
+  };
+  /** A GitHub Actions token (OpenID Connect), signed with the fake issuer's key or another. */
+  actionsToken: (claims: Record<string, unknown>, opts?: { otherKey?: boolean }) => string;
+  close: () => Promise<void>;
+};
+
+async function bodyOf(req: IncomingMessage) {
+  const chunks: Buffer[] = [];
+  for await (const c of req) chunks.push(c as Buffer);
+  const text = Buffer.concat(chunks).toString("utf8");
+  try {
+    return text ? (JSON.parse(text) as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
+function sign(key: KeyObject, kid: string, claims: Record<string, unknown>) {
+  const head = Buffer.from(JSON.stringify({ alg: "RS256", typ: "JWT", kid })).toString("base64url");
+  const body = Buffer.from(JSON.stringify(claims)).toString("base64url");
+  const signer = createSign("RSA-SHA256");
+  signer.update(`${head}.${body}`);
+  return `${head}.${body}.${signer.sign(key).toString("base64url")}`;
+}
+
+export async function startFakeGitHub(
+  repo = "extas/erp",
+  token = "github_pat_test0123456789abcdefWXYZ",
+): Promise<FakeGitHub> {
+  const issuerKey = generateKeyPairSync("rsa", { modulusLength: 2048 });
+  const otherKey = generateKeyPairSync("rsa", { modulusLength: 2048 });
+  const jwk = {
+    ...issuerKey.publicKey.export({ format: "jwk" }),
+    kid: "gh-1",
+    alg: "RS256",
+    use: "sig",
+  };
+  const calls: FakeGitHub["calls"] = [];
+  const state: FakeGitHub["state"] = {
+    repo,
+    permissions: { push: true, admin: true },
+    workflows: { "full-check.yml": "active", "claude.yml": "active" },
+    runs: {},
+    issues: [],
+    comments: [],
+    branches: [],
+    ahead: {},
+    pulls: [],
+    checks: {},
+    merged: [],
+  };
+  const server = createServer(async (req, res) => {
+    const url = new URL(req.url ?? "/", "http://localhost");
+    const body = await bodyOf(req);
+    const path = url.pathname;
+    calls.push({ method: req.method ?? "GET", path: `${path}${url.search}`, body });
+    const send = (status: number, json?: unknown) => {
+      res.writeHead(status, { "Content-Type": "application/json" });
+      res.end(json === undefined ? "" : JSON.stringify(json));
+    };
+    if (path === "/oidc/.well-known/jwks") return send(200, { keys: [jwk] });
+    if (req.headers.authorization !== `Bearer ${token}`) {
+      return send(401, { message: "Bad credentials" });
+    }
+    const base = `/repos/${state.repo}`;
+    if (!path.startsWith(base)) return send(404, { message: "Not Found" });
+    const rest = path.slice(base.length);
+    let m: RegExpMatchArray | null;
+    if (rest === "" && req.method === "GET") {
+      return send(200, {
+        default_branch: "main",
+        private: true,
+        permissions: { ...state.permissions, pull: true },
+      });
+    }
+    if ((m = rest.match(/^\/actions\/workflows\/([^/]+)$/))) {
+      const found = state.workflows[m[1]!];
+      return found ? send(200, { state: found }) : send(404, { message: "Not Found" });
+    }
+    if ((m = rest.match(/^\/actions\/workflows\/([^/]+)\/dispatches$/)) && req.method === "POST") {
+      return state.workflows[m[1]!] ? send(204) : send(404, { message: "Not Found" });
+    }
+    if ((m = rest.match(/^\/actions\/workflows\/([^/]+)\/runs$/))) {
+      return send(200, { workflow_runs: state.runs[m[1]!] ?? [] });
+    }
+    if (rest === "/issues" && req.method === "POST") {
+      const number = 100 + state.issues.length + state.pulls.length;
+      state.issues.push({ number, title: String(body?.title), body: String(body?.body) });
+      return send(201, { number, html_url: `https://github.com/${state.repo}/issues/${number}` });
+    }
+    if ((m = rest.match(/^\/issues\/(\d+)\/comments$/)) && req.method === "POST") {
+      state.comments.push({ number: Number(m[1]), body: String(body?.body) });
+      return send(201, { id: state.comments.length });
+    }
+    if ((m = rest.match(/^\/git\/matching-refs\/heads\/(.+)$/))) {
+      const prefix = m[1]!;
+      return send(
+        200,
+        state.branches.filter((b) => b.startsWith(prefix)).map((b) => ({ ref: `refs/heads/${b}` })),
+      );
+    }
+    if ((m = rest.match(/^\/compare\/main\.\.\.(.+)$/))) {
+      return send(200, { ahead_by: state.ahead[decodeURIComponent(m[1]!)] ?? 0 });
+    }
+    if (rest === "/pulls" && req.method === "GET") return send(200, [...state.pulls].reverse());
+    if (rest === "/pulls" && req.method === "POST") {
+      const number = 100 + state.issues.length + state.pulls.length;
+      const pull: FakePull = {
+        number,
+        html_url: `https://github.com/${state.repo}/pull/${number}`,
+        state: "open",
+        merged_at: null,
+        title: String(body?.title),
+        body: String(body?.body),
+        head: { ref: String(body?.head), sha: `sha-pr-${number}` },
+      };
+      state.pulls.push(pull);
+      return send(201, pull);
+    }
+    if ((m = rest.match(/^\/pulls\/(\d+)$/))) {
+      const pull = state.pulls.find((p) => p.number === Number(m![1]));
+      return pull ? send(200, pull) : send(404, { message: "Not Found" });
+    }
+    if ((m = rest.match(/^\/pulls\/(\d+)\/merge$/)) && req.method === "PUT") {
+      const pull = state.pulls.find((p) => p.number === Number(m![1]));
+      if (!pull || pull.head.sha !== body?.sha)
+        return send(409, { message: "Head branch was modified" });
+      pull.state = "closed";
+      pull.merged_at = new Date().toISOString();
+      state.merged.push({ number: pull.number, sha: pull.head.sha });
+      return send(200, { merged: true });
+    }
+    if ((m = rest.match(/^\/commits\/([^/]+)\/check-runs$/))) {
+      return send(200, { check_runs: state.checks[m[1]!] ?? [] });
+    }
+    return send(404, { message: "Not Found" });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const issuer = `${url}/oidc`;
+  return {
+    url,
+    issuer,
+    token,
+    calls,
+    state,
+    actionsToken: (claims, opts) =>
+      sign(opts?.otherKey ? otherKey.privateKey : issuerKey.privateKey, "gh-1", {
+        iss: issuer,
+        iat: Math.floor(Date.now() / 1000),
+        nbf: Math.floor(Date.now() / 1000),
+        exp: Math.floor(Date.now() / 1000) + 300,
+        repository: state.repo,
+        workflow_ref: `${state.repo}/.github/workflows/full-check.yml@refs/heads/main`,
+        event_name: "workflow_dispatch",
+        run_id: "4242",
+        ...claims,
+      }),
+    close: () => new Promise<void>((resolve) => server.close(() => resolve())),
+  };
+}

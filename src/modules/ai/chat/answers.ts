@@ -22,6 +22,7 @@ import { askDeletion, askPermission, canBeDeleted } from "../requests.service";
 import { aiLabel, aiSettingsOf, offReason, OFF_TEXT, setAiPaused } from "../settings.service";
 import type { ChatCard } from "./cards";
 import { COMMAND_HELP, type Intent, type ReportKind, type ReportPeriod } from "./intents";
+import { countOf } from "@/lib/display";
 
 /*
  * Mehedi 2.0's answers to the chat's commands (intents.ts), the same on the
@@ -182,6 +183,11 @@ async function status(turn: Turn): Promise<Reply> {
     title: aiLabel(settings),
     rows: [
       { label: "Tests passed", value: `${passed} of ${BOOK_CODES.length}`, href: "/ai/knowledge" },
+      {
+        label: "AI cost today",
+        value: `${month.currency} ${month.today.spent}`,
+        href: "/ai/costs?period=today",
+      },
       {
         label: "AI cost this month",
         value: `${month.currency} ${month.spent}${month.budget ? ` of ${month.budget}` : ""}`,
@@ -398,7 +404,7 @@ async function costSummary(turn: Turn, days: number): Promise<Reply> {
   return reply(
     costs.totals.calls === 0
       ? `${period}: no AI work, no cost.`
-      : `${period}: ${costs.currency} ${costs.totals.cost} for ${costs.totals.calls} AI calls.`,
+      : `${period}: ${costs.currency} ${costs.totals.cost} for ${countOf(costs.totals.calls, "AI call")}.`,
     {
       type: "costs",
       period,

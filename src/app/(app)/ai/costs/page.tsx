@@ -11,10 +11,11 @@ export const metadata: Metadata = { title: "AI Budget & Costs" };
 const one = (v: string | string[] | undefined) => (typeof v === "string" && v ? v : undefined);
 
 /**
- * Budget & Costs (ai.view or ai.manage): what the AI spent in a period, by
- * task, model, area, agent, person, record and store, every call with its
- * reason, and a PDF or Excel file of it; the owner (ai.manage) sets the
- * budget and limits here.
+ * Budget & Costs (ai.view or ai.manage): what the AI spent in a period (today,
+ * yesterday, any day or range), by provider, purpose, place in the ERP, model,
+ * agent, area, person, record and store, every call with its reason (or only
+ * one row's calls), and a PDF or Excel file of it; the owner (ai.manage) sets
+ * the budget and limits here.
  */
 export default async function AiCostsPage({
   searchParams,
@@ -27,6 +28,9 @@ export default async function AiCostsPage({
     from: one(params.from),
     to: one(params.to),
     userId: one(params.person),
+    by: one(params.by),
+    key: typeof params.key === "string" ? params.key : undefined,
+    page: one(params.page),
   });
   if (!result.ok) {
     if (result.error.code === "FORBIDDEN") return <AiNoAccess />;

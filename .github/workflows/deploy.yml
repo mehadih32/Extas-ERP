@@ -55,10 +55,12 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           # Only the server's own key is accepted, so no other machine can pose as it.
           printf '%s %s\n' "$host" "$(printf '%s' "$SSH_HOST_KEY" | tr -d '\r\n')" >~/.ssh/known_hosts
-          ssh -T -i ~/.ssh/deploy_key \
-            -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes \
-            -o ConnectTimeout=30 -o ServerAliveInterval=30 -o ServerAliveCountMax=10 \
-            "$user@$host" deploy </dev/null
+          # The server installs exactly the commit the Checks passed on, never a newer one.
+          printf '%s\n' "$GITHUB_SHA" |
+            ssh -T -i ~/.ssh/deploy_key \
+              -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes \
+              -o ConnectTimeout=30 -o ServerAliveInterval=30 -o ServerAliveCountMax=10 \
+              "$user@$host" deploy
 
       - name: Remove the key from GitHub's machine
         if: always()

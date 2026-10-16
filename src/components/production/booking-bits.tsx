@@ -9,11 +9,12 @@ import { FlagBadge, OrderBadge } from "@/components/materials/badges";
 import { quantity } from "@/components/materials/labels";
 import { StatusBadge } from "@/components/sales/badges";
 import { SOURCE_SHORT_LABELS } from "@/modules/production/booking-presets";
-import { revisionLabel, STAGE_LABELS } from "@/modules/production/booking-revisions";
+import { atRiskText, revisionLabel, STAGE_LABELS } from "@/modules/production/booking-revisions";
 
 /*
  * Small pieces the booking screens share: the badges on a booking (its stage,
- * order status, supplier PO or market purchase, late) and its fabric in one line.
+ * order status, supplier PO or market purchase, late, a style's fabric changed
+ * since it was approved) and its fabric in one line.
  */
 
 /** Short names for the list and the badges. */
@@ -42,6 +43,7 @@ export function BookingBadges({
   revision = 0,
   source,
   late,
+  risk,
 }: {
   status: PurchaseOrderStatus;
   /** Shown while the booking is open (a closed or cancelled one shows its status only). */
@@ -49,6 +51,8 @@ export function BookingBadges({
   revision?: number;
   source?: BookingSource;
   late?: boolean;
+  /** Styles whose fabric changed since it was approved, and the fabric then at risk. */
+  risk?: FabricRiskFlag | null;
 }) {
   const ended = status === "CLOSED" || status === "CANCELLED";
   return (
@@ -57,7 +61,28 @@ export function BookingBadges({
       <OrderBadge status={status} />
       {source && <SourceBadge source={source} />}
       {late && <FlagBadge>Late</FlagBadge>}
+      {risk && !ended && <FabricRiskBadge risk={risk} />}
     </>
+  );
+}
+
+export type FabricRiskFlag = {
+  styles: string[];
+  atRisk: ReadonlyArray<{ unit: MeasurementUnit; quantity: string }>;
+};
+
+/** In red: "Fabric changed · 56.9 kg at risk", naming the styles on hover and to screen readers. */
+export function FabricRiskBadge({ risk }: { risk: FabricRiskFlag }) {
+  const styles = `Fabric changed on ${risk.styles.join(", ")} since it was approved`;
+  return (
+    <span title={styles}>
+      <StatusBadge tone="warn" className="border-destructive/60 font-semibold">
+        <span className="sr-only">{styles}: </span>
+        {risk.atRisk.length > 0
+          ? `Fabric changed · ${atRiskText([...risk.atRisk])} at risk`
+          : "Fabric changed"}
+      </StatusBadge>
+    </span>
   );
 }
 

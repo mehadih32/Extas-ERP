@@ -10,6 +10,8 @@ import { pgEnvironment } from "@/modules/backups/backup.service";
 import { nextRun, parseCron, previousRun } from "@/modules/backups/cron";
 import * as drive from "@/modules/backups/google-drive";
 
+import { startFakeGoogle } from "../../scripts/fake-google";
+
 const TZ = "Asia/Dhaka";
 
 function expectAppError(fn: () => unknown, code: string) {
@@ -142,28 +144,40 @@ describe("pg_dump connection settings", () => {
 });
 
 describe("Google Drive client", () => {
-  beforeEach(() => {
-    vi.stubEnv("GOOGLE_DRIVE_CLIENT_ID", "client-123.apps.googleusercontent.com");
-    vi.stubEnv("GOOGLE_DRIVE_CLIENT_SECRET", "shh");
-    vi.stubEnv("APP_URL", "https://erp.example.com/");
+  const client = { clientId: "client-123.apps.googleusercontent.com", clientSecret: "shh" };
+
+  it("signs in with a code for the owner's phone, for the drive.file scope only", async () => {
+    const google = await startFakeGoogle({ pendingPolls: 1 }, 0);
+    vi.stubEnv("GOOGLE_OAUTH_BASE", google.url);
+    const sent = vi.spyOn(globalThis, "fetch");
+    try {
+      const start = await drive.startDeviceSignIn(client);
+      expect(start).toMatchObject({ userCode: "ABCD-EFGH", interval: 1 });
+      expect(start.expiresAt.getTime()).toBeGreaterThan(Date.now());
+      expect(await drive.pollDeviceSignIn(client, start.deviceCode)).toEqual({ status: "waiting" });
+      const done = await drive.pollDeviceSignIn(client, start.deviceCode);
+      expect(done).toMatchObject({ status: "connected" });
+      const asked = sent.mock.calls[0]![1]!.body as URLSearchParams;
+      expect(asked.get("scope")).toBe("https://www.googleapis.com/auth/drive.file");
+      expect(asked.get("client_id")).toBe(client.clientId);
+
+      google.options.deny = true;
+      const refused = await drive.startDeviceSignIn(client);
+      expect(await drive.pollDeviceSignIn(client, refused.deviceCode)).toEqual({
+        status: "denied",
+      });
+    } finally {
+      sent.mockRestore();
+      await google.close();
+    }
   });
 
-  it("builds the consent link for the drive.file scope with a refresh token", () => {
-    expect(drive.driveConfigured()).toBe(true);
-    expect(drive.redirectUri()).toBe("https://erp.example.com/api/backups/google/callback");
-    const url = new URL(drive.authorizationUrl("state-abc"));
-    expect(url.origin + url.pathname).toBe("https://accounts.google.com/o/oauth2/v2/auth");
-    expect(Object.fromEntries(url.searchParams)).toMatchObject({
-      client_id: "client-123.apps.googleusercontent.com",
-      redirect_uri: "https://erp.example.com/api/backups/google/callback",
-      scope: "https://www.googleapis.com/auth/drive.file",
-      access_type: "offline",
-      prompt: "consent",
-      state: "state-abc",
-    });
-    vi.stubEnv("GOOGLE_DRIVE_CLIENT_SECRET", "");
-    expect(drive.driveConfigured()).toBe(false);
-    expectAppError(() => drive.authorizationUrl("x"), "UNAVAILABLE");
+  it("says which kind of Google client is needed when Google refuses it", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json({ error: "invalid_client" }, { status: 401 })),
+    );
+    await expect(drive.startDeviceSignIn(client)).rejects.toThrow(/TVs and Limited Input devices/);
   });
 
   it("marks a revoked refresh token as needing a new connection", async () => {
@@ -171,7 +185,7 @@ describe("Google Drive client", () => {
       "fetch",
       vi.fn(async () => Response.json({ error: "invalid_grant" }, { status: 400 })),
     );
-    const error = await drive.accessToken("old-token").catch((e: unknown) => e);
+    const error = await drive.accessToken(client, "old-token").catch((e: unknown) => e);
     expect(error).toBeInstanceOf(drive.DriveError);
     expect(error).toMatchObject({ status: 400, reconnect: true });
   });

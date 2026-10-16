@@ -24,7 +24,7 @@ import {
   versionOf,
 } from "./knowledge";
 import { mehediSystem } from "./persona";
-import { companyModelFor, aiSettingsOf } from "./settings.service";
+import { aiSettingsOf, modelForWork } from "./settings.service";
 import { estimateInputTokens, estimateUse } from "./usage.service";
 
 /*
@@ -211,7 +211,7 @@ export async function startTests(ctx: CompanyContext, input: unknown, meta?: Req
     // The whole run: each book once in full, then from the cache for the other
     // questions, an answer per question, and the marking.
     const settings = await aiSettingsOf(ctx.company.id);
-    const model = companyModelFor(settings, "knowledge.test");
+    const model = modelForWork(settings, "knowledge.test");
     const use = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
     for (const code of books) {
       const count = tests[code]?.questions.length ?? 0;

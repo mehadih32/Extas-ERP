@@ -9,6 +9,7 @@ import { productionHref } from "@/components/production/labels";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { NOT_REACHED, reach } from "@/lib/reach";
 import type { ActionError } from "@/lib/result";
 import { cn } from "@/lib/utils";
 import { addReferenceAction, pickTechPackProjectsAction } from "@/server/actions/tech-pack.actions";
@@ -33,6 +34,7 @@ export function SaveToTechPackForm({
 }) {
   const [search, setSearch] = useState("");
   const [styles, setStyles] = useState<Pick[]>([]);
+  const [unreached, setUnreached] = useState(false);
   const [chosen, setChosen] = useState<Pick | null>(null);
   const [loading, startLoading] = useTransition();
   const [pending, startTransition] = useTransition();
@@ -43,8 +45,9 @@ export function SaveToTechPackForm({
     const timer = setTimeout(
       () =>
         startLoading(async () => {
-          const result = await pickTechPackProjectsAction(search);
+          const result = await reach(() => pickTechPackProjectsAction(search));
           setStyles(result.ok ? result.data : []);
+          setUnreached(!result.ok && result.error.message === NOT_REACHED);
         }),
       250,
     );
@@ -81,7 +84,7 @@ export function SaveToTechPackForm({
         const form = new FormData(event.currentTarget);
         if (sharedFileId) form.set("sharedFileId", sharedFileId);
         startTransition(async () => {
-          const result = await addReferenceAction(chosen.id, form);
+          const result = await reach(() => addReferenceAction(chosen.id, form));
           if (!result.ok) {
             setError(result.error);
             return;
@@ -124,7 +127,9 @@ export function SaveToTechPackForm({
                   Finding styles
                 </li>
               ) : styles.length === 0 ? (
-                <li className="p-3 text-sm text-muted-foreground">No open style matches.</li>
+                <li className="p-3 text-sm text-muted-foreground">
+                  {unreached ? NOT_REACHED : "No open style matches."}
+                </li>
               ) : (
                 styles.map((s) => (
                   <li key={s.id}>

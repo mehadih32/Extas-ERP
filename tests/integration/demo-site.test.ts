@@ -3,8 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 /*
  * The demo site's sample data (prisma/demo/load-demo.ts): it goes only into the
  * demo's own database, and loads the Five Style Polo batch once, on a company as
- * prisma/seed.ts leaves it, with the same figures as the GitHub run, and the v6.2
- * sample order for Mehedi 2.0 once, waiting for the owner's Approve.
+ * prisma/seed.ts leaves it, with the same figures as the GitHub run, the v6.2
+ * sample order for Mehedi 2.0 once, waiting for the owner's Approve, and the v6.3
+ * sample skill for the fabric expert once, waiting for its test.
  */
 vi.mock("next/cache", () => ({ revalidatePath: () => undefined, revalidateTag: () => undefined }));
 
@@ -12,13 +13,16 @@ import { prisma } from "@/lib/prisma";
 import { getPartyBalance } from "@/modules/parties/ledger.service";
 import { getBatchSummary } from "@/modules/production/batch-summary.service";
 import { getRun } from "@/modules/ai/orders/order-run.service";
+import { getSkill } from "@/modules/ai/skills.service";
 import { getCosting } from "@/modules/costing/costing.service";
 
 import {
   assertDemoDatabase,
   loadFiveStylePoloDemo,
   loadV62SamplesDemo,
+  loadV63SamplesDemo,
 } from "../../prisma/demo/load-demo";
+import { V63_SAMPLE_SKILL } from "../../prisma/demo/v63-samples";
 
 import { addToCompany, contextFor, makeCompany, makeUser, resetDb } from "./helpers";
 
@@ -110,4 +114,29 @@ run("The demo site's sample data", () => {
     expect(await prisma.aiOrderRun.count({ where: { companyId: company.id } })).toBe(1);
     expect(await prisma.fabricQuote.count({ where: { companyId: company.id } })).toBe(1);
   }, 120_000);
+
+  it("teaches the fabric expert the v6.3 sample skill once, waiting for its test", async () => {
+    const { company, roles } = await makeCompany("Extas");
+    const owner = await makeUser("owner@extras.test", { isSuperAdmin: true });
+    await addToCompany(owner.id, company.id, roles.SUPER_ADMIN);
+
+    const loaded = await loadV63SamplesDemo(owner.id, company.id);
+    expect(loaded?.name).toBe(V63_SAMPLE_SKILL);
+    expect(await prisma.session.count({ where: { userId: owner.id } })).toBe(0);
+
+    const ctx = await contextFor(owner.id, company.id);
+    const skill = await getSkill(ctx, loaded!.id);
+    expect(skill).toMatchObject({
+      agent: "X05",
+      agentName: "X05 Textile Engineer: Fabric",
+      on: true,
+    });
+    expect(skill.newest).toMatchObject({ version: 1, name: V63_SAMPLE_SKILL });
+    expect(skill.newest.examples).toHaveLength(2);
+    expect(skill.newest.test).toMatchObject({ standing: "UNTESTED", text: "Not tested" });
+
+    // Once: the second time it adds nothing.
+    expect(await loadV63SamplesDemo(owner.id, company.id)).toBeNull();
+    expect(await prisma.aiSkill.count({ where: { companyId: company.id } })).toBe(1);
+  });
 });

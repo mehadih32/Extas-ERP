@@ -94,45 +94,38 @@
   "questions": [
    {
     "n": 1,
-    "q": "খরচ 75.87/dz, % লাইন মোট 11.15%। FOB/dz কত?",
-    "expected": "75.87 ÷ 0.8885 = 85.39 (পিসে 7.12); % কাটা হয় বিক্রির দামের ওপর, তাই 75.87 × 1.1115 = 84.33 ভুল। v6.2: এই 11.15%-এ পুরোনো 3% অফিস খরচ আর 7% লাভ ধরা; এখন অফিস খরচ কস্টিংয়ে নেই, আর লাভ % মালিক প্রতিটা অর্ডারে দেন।",
-    "v62": "The 11.15% total (FOB = cost ÷ 0.8885) includes the old 7% profit and 3% overhead. v6.2: overhead is not part of costing and profit % is set by the owner per order (no default, no floor). The gross-up method itself still holds."
+    "q": "খরচ 75.99/dz। Source tax 1%, export চার্জ 0.15%, commission নেই, আর মালিক এই অর্ডারে লাভ 8% দিয়েছেন। FOB/dz কত?",
+    "expected": "75.99 ÷ (1 − 0.0915) = 75.99 ÷ 0.9085 = 83.64 (পিসে 6.97)। % লাইন কাটা হয় বিক্রির দামের ওপর, তাই 75.99 × 1.0915 = 82.94 ভুল। অফিস খরচ costing-এ নেই, আর লাভ % মালিক প্রতিটা অর্ডারে দেন; কোনো ডিফল্ট বা floor নেই।"
    },
    {
     "n": 2,
-    "q": "Yarn 3.50, knitting 0.18, knitting loss 2%, dyeing 1.35, process loss 10%। কাপড়ের দাম/kg?",
-    "expected": "v6.2: কাপড়ের দাম সুতা থেকে বানানো হয় না; সাপ্লায়ার কেজিতে যে দাম বলে সেটাই, কয়েকজনের দাম আর আগের দাম পাশাপাশি দেখে। (3.68 × 1.02 + 1.35) ÷ 0.90 = 5.67 হিসাবটা শুধু সাপ্লায়ারের দাম যাচাইয়ের রেফারেন্স।",
-    "v62": "Builds the fabric price per kg from yarn. v6.2: fabric price is the supplier's quoted price per kg (per yard for woven), shown with other quotes and past prices; K3's own v6.2 note keeps this calculation only as a reference for checking a supplier's price."
+    "q": "Fleece-এর জন্য সাপ্লায়ার A বলে 5.85 USD/kg, B বলে 6.05; আগের অর্ডারে 5.80 ছিল। costing-এ কাপড়ের দাম কীভাবে বসাবে?",
+    "expected": "সাপ্লায়ারের কেজির দামই বসবে, quote-এর তারিখসহ; সুতা থেকে দাম বানাবে না। তিনটা দাম পাশাপাশি দেখাবে: A আগের চেয়ে 0.05 বেশি, B 0.25 বেশি। GSM, রঙ, finish আর মেয়াদ মিলিয়ে নেবে। কোন সাপ্লায়ার, মালিক ঠিক করবেন। সুতার হিসাব শুধু অস্বাভাবিক দাম যাচাইয়ের রেফারেন্স।"
    },
    {
     "n": 3,
-    "q": "ফ্যাক্টরি A পলোর CM 7.20/dz, SMV 12। B চায় 8.40/dz, বলে SMV 11, IE বলে 12। rate/min কত?",
-    "expected": "v6.2: CM মিনিট বা SMV ধরে নয়; প্রতিটা স্টাইলে ফ্যাক্টরির সাথে চুক্তি করা ফিক্সড দাম (পিস বা ডজনে)। তাই rate/min দিয়ে সিদ্ধান্ত নেবে না; A 7.20/dz আর B 8.40/dz আগের CM-এর সাথে তুলনা শুধু তথ্য হিসেবে দেখাবে, CM ঠিক করবেন মালিক (Ask)।",
-    "v62": "CM rate per minute (CM ÷ SMV). v6.2: CM is a fixed price per style per order agreed with the factory (per piece or per dozen); no per-minute or SMV calculation; comparison with past CM is information only."
+    "q": "পলোতে ফ্যাক্টরি A চায় পিসে 0.60, B চায় 0.70 আর বলে SMV 11। আগের অর্ডারে একই স্টাইলে 0.62 ছিল। CM কীভাবে ঠিক হবে?",
+    "expected": "CM মিনিট বা SMV দিয়ে হিসাব হয় না; প্রতিটা স্টাইলে ফ্যাক্টরির সাথে চুক্তি করা ফিক্সড দাম (পিসে বা ডজনে: A 7.20/dz, B 8.40/dz)। আগের 0.62-এর সাথে তুলনা শুধু তথ্য: A 0.02 কম, B 0.08 বেশি; B-এর দামে কী কী ধরা জিজ্ঞেস করবে। কাকে দেবে আর কত, মালিক ঠিক করবেন (Ask); চুক্তিতে CM-এর ভেতরে কী কী আছে লেখা থাকবে।"
    },
    {
     "n": 4,
-    "q": "হুডি 300 carton (60 × 40 × 35 cm), air রেট 3.90/kg, লাভ 1,793। পুরো air-এর খরচ আর লাভের কত গুণ?",
-    "expected": "14 kg × 300 = 4,200 kg × 3.90 = 16,380; প্রায় 9.1 গুণ।",
-    "v62": "The profit figure 1,793 comes from the old 7% profit assumption; the air-freight arithmetic is unaffected."
+    "q": "হুডি 300 carton (60 × 40 × 35 cm), air রেট 3.90/kg, অর্ডারে লাভ (মালিকের 8%) 2,007। পুরো air-এর খরচ আর লাভের কত গুণ?",
+    "expected": "14 kg × 300 = 4,200 kg × 3.90 = 16,380; লাভের প্রায় 8.2 গুণ।"
    },
    {
     "n": 5,
-    "q": "একই অর্ডার 8 দিন দেরি। Academy-র নিয়মে কত কাটবে?",
-    "expected": "6–10 দিনে 6% = 1,537। air-এর চেয়ে অনেক সস্তা।",
-    "v62": "FOB 25,617 was built with the old ÷ 0.8885 gross-up (7% profit, 3% overhead) and CM per minute; the 6% penalty arithmetic is unaffected."
+    "q": "একই অর্ডার (FOB 25,093) 8 দিন দেরি। Academy-র নিয়মে কত কাটবে?",
+    "expected": "6–10 দিনে 6% = 25,093 × 6% = 1,506। air-এর (16,380) চেয়ে অনেক সস্তা।"
    },
    {
     "n": 6,
-    "q": "FOB 25,617, 90 দিনের usance, discount বছরে 8%। খরচ কত, লাভের কত %?",
-    "expected": "25,617 × 0.08 × 90/360 = 512; লাভের (1,793) প্রায় 29%।",
-    "v62": "The profit figure 1,793 (and so the 29%) comes from the old 7% profit assumption; the discount cost (512) is unaffected."
+    "q": "FOB 25,093, 90 দিনের usance, discount বছরে 8%। খরচ কত, আর অর্ডারের লাভের (2,007) কত %?",
+    "expected": "25,093 × 0.08 × 90/360 = 502; লাভের প্রায় 25%। তাই usance হলে এই খরচ costing-এর finance লাইনে আগেই যোগ করবে।"
    },
    {
     "n": 7,
-    "q": "Score: margin 2, capacity 4, payment 2, technical 4, material 4, কৌশল 4 (weight 25/20/20/15/10/10)। ফল কী?",
-    "expected": "v6.2: score আর 70/55-এর সীমা বাদ; কোনো সংখ্যা দেবে না। বদলে অর্ডার চেক কার্ড: দাম বনাম খরচ, শিপের সময়, ফ্যাক্টরি, বায়ারের পেমেন্ট, ঝুঁকি, প্রতিটা সবুজ, হলুদ বা লাল আর এক লাইনের কারণ। সিদ্ধান্ত মালিকের; Mehedi নিজে অর্ডার ফেরায় না।",
-    "v62": "Go/no-go score and the 70/55 thresholds are removed in v6.2. Replaced by the Order check card: five checks (price vs cost, time to ship, factory capacity, buyer's payment history, risks), each green, yellow or red with a reason; no auto-decline; the owner decides."
+    "q": "নতুন বায়ার, হুডি 3,600 পিস, বায়ার বলে পিসে 6.80; খরচ পিসে 6.33, মালিকের লাভ 8% (দাম 6.97)। শিপ 75 দিনে, ফ্যাক্টরি এই অর্ডারসহ মাসের capacity-র 70%, ঝুঁকি 1টা। কী দেখাবে?",
+    "expected": "কোনো score বা সংখ্যা দেবে না। Order check card: দাম বনাম খরচ হলুদ (6.80 খরচের ওপরে, কিন্তু লাভ প্রায় 5.7%, 8%-এর নিচে); শিপের সময় সবুজ (30 + 25 + 7 = 62 দিন, হাতে 13); ফ্যাক্টরি সবুজ (85%-এর নিচে); বায়ারের পেমেন্ট হলুদ (নতুন বায়ার); ঝুঁকি হলুদ (1টা)। প্রতিটার পাশে কারণ, আর 8%-এর কাছে যাওয়ার বিকল্প। সিদ্ধান্ত মালিকের; Mehedi নিজে অর্ডার ফেরায় না বা quote পাঠায় না।"
    },
    {
     "n": 8,
@@ -141,15 +134,13 @@
    },
    {
     "n": 9,
-    "q": "শার্টে imported কাপড়ে FOB 80.53/dz, দেশিতে 83.83 আর 1.5% incentive। কখন দেশি নেবে?",
-    "expected": "দেশি নিট 82.57, মানে 2.04 বেশি। কিন্তু lead time 20–25 দিন কম, finance কম, LDC-র origin ঝুঁকি কম। slack 20 দিনের কম বা EU delivery 2027-এর পরে হলে দেশি।",
-    "v62": "FOB 80.53 and 83.83 were built with CM per minute (SMV 22 × 0.055 × 12) and the ÷ 0.8885 gross-up (7% profit, 3% overhead); the comparison logic is unaffected."
+    "q": "শার্টে imported কাপড়ে FOB 78.62/dz, দেশিতে 81.85 আর 1.5% cash incentive। কখন দেশি নেবে?",
+    "expected": "দেশি নিট 81.85 − 1.23 = 80.62, মানে ডজনে 2.00 বেশি (পিসে 0.17)। কিন্তু lead time 20–25 দিন কম, finance কম, LDC-র origin ঝুঁকি কম। slack 20 দিনের কম বা EU delivery 2027-এর পরে হলে দেশি।"
    },
    {
     "n": 10,
-    "q": "টাকায় খরচ 13.70/dz। রেট 123 থেকে 119 হলে USD-তে খরচ কত বাড়ে?",
-    "expected": "13.70 × 123 ÷ 119 = 14.16; ডজনে 0.46 বেশি।",
-    "v62": "The 13.70/dz taka cost includes 2.56 office overhead (the old 3%), which v6.2 removes from costing; the exchange-rate arithmetic is unaffected."
+    "q": "টাকায় খরচ ডজনে 11.50 (ট্রাক ও C&F 0.90, sample 1.00, CM 9.60)। রেট 123 থেকে 119 হলে USD-তে খরচ কত বাড়ে?",
+    "expected": "11.50 × 123 ÷ 119 = 11.89; ডজনে 0.39 বেশি, লাভের (6.69/dz) প্রায় 6%। অফিস খরচ costing-এ নেই, তাই এই হিসাবে নেই।"
    },
    {
     "n": 11,
@@ -159,8 +150,7 @@
    {
     "n": 12,
     "q": "কোন 5টা সিদ্ধান্ত Mehedi 2.0 মালিকের আলাদা Do ছাড়া নিজে নেবে না, আর কোনটা কখনোই না?",
-    "expected": "নতুন বায়ার বা DP/DA/open account; নতুন ফ্যাক্টরি বা সাপ্লায়ার; দাম বা CM পাকা করা (v6.2: লাভ % মালিক প্রতিটা অর্ডারে দেন, floor নেই); air freight বা FOB-এর 1%-এর বেশি claim মেনে নেওয়া (এগুলো শুরুতে Ask); বায়ারের কাছে যা যায় তা সবসময় মালিকের অনুমতিতে। কখনোই না: ডেটা মুছে ফেলা, শুধু Deletion request।",
-    "v62": "\"floor-এর নিচে দাম\" relies on the old minimum profit (floor); v6.2 has no floor and the owner sets profit per order. The other items remain owner decisions."
+    "expected": "নতুন বায়ার বা বায়ারের পেমেন্টের শর্ত (TT, ব্যাংক ট্রান্সফার বা LC-র বাইরে কিছু); নতুন ফ্যাক্টরি বা সাপ্লায়ার; দাম, লাভ % বা CM পাকা করা (লাভ % মালিক প্রতিটা অর্ডারে দেন, floor নেই); air freight বা FOB-এর 1%-এর বেশি claim মেনে নেওয়া (এগুলো শুরুতে Ask); বায়ারের কাছে যা যায় তা সবসময় মালিকের অনুমতিতে। কখনোই না: ডেটা মুছে ফেলা, শুধু Deletion request।"
    }
   ]
  },

@@ -54,7 +54,7 @@ export const NEVER_FOR_AI: ReadonlySet<string> = new Set([
 /**
  * Permissions that stay Ask under an area or preset set to Do: money in or out,
  * committing to a price, voiding or cancelling, approvals that commit the
- * company to a supplier, and the owner's logo tick.
+ * company to a supplier, campaigns to buyers, and the owner's logo tick.
  */
 export const LOCKED_PERMISSIONS: ReadonlySet<string> = new Set([
   "accounts.receipts.record",
@@ -67,6 +67,7 @@ export const LOCKED_PERMISSIONS: ReadonlySet<string> = new Set([
   "sales.order.create",
   "sales.invoice.edit",
   "sales.force_override",
+  "sales.campaigns.manage",
   "production.bookings.approve",
   "production.bookings.close",
   "production.logo.approve",
@@ -96,7 +97,7 @@ const AI_ACTIONS: Record<string, AiLeaf[]> = {
   ],
   "production.bookings": [
     { key: "ai.production.booking.send", label: "Send a booking to the supplier", locked: true },
-    { key: "ai.production.fabric_first", label: "Send fabric first" },
+    { key: "ai.production.fabric_first", label: "Send fabric first", locked: true },
   ],
   hr: [
     { key: "ai.hr.notice.draft", label: "Draft notices" },
@@ -107,13 +108,15 @@ const AI_ACTIONS: Record<string, AiLeaf[]> = {
 
 /**
  * What goes to a buyer (replies, follow-ups, reminders, claims, quotations,
- * invoices) is never Do, not even by hand: the AI drafts it and reminds the
- * owner, who sends it. The owner can only choose between Ask and Off.
+ * invoices, campaigns to win back quiet buyers) is never Do, not even by hand:
+ * the AI drafts it and reminds the owner, who sends it. The owner can only
+ * choose between Ask and Off.
  */
 export const BUYER_ACTIONS: ReadonlySet<string> = new Set([
   ...AI_ACTIONS.sales!.map((l) => l.key),
   "ai.sales.quotation.send",
   "ai.sales.invoice.send",
+  "sales.campaigns.manage",
 ]);
 
 /** The AI's actions that leave the company or commit it; never Do through an area or preset. */

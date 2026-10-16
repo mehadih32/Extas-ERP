@@ -529,7 +529,8 @@ run("Bookings", () => {
       { label: "Doc no", value: `${market.number}-R0` },
       { label: "Buyer · PO", value: "" },
       { label: "Date", value: expect.any(String) },
-      { label: "Prepared by", value: "" },
+      // The person who made the booking, with a line beside the name to sign.
+      { label: "Prepared by", value: "production", sign: true },
     ]);
     const parties = doc.blocks.find((b) => b.kind === "parties");
     expect(parties?.kind === "parties" && parties.parties.map((p) => p.heading)).toEqual([
@@ -643,7 +644,14 @@ run("Bookings", () => {
 
     // On again, and once goods arrive it stays on the batch.
     data(await attachBookingAction(own.id, { batchId: env.batch.id }), "attach again");
-    await bookings.approveBooking(env.owner, own.id);
+    // The thread is in no style's materials list, so it waits for the tech packs like any
+    // trim (v6.3): the owner approves past that with a reason.
+    await expect(bookings.approveBooking(env.owner, own.id)).rejects.toThrow(
+      /Collar, cuff and trims wait for the tech pack/,
+    );
+    await bookings.approveBooking(env.owner, own.id, undefined, {
+      overrideReason: "Thread is ordinary stock for every style",
+    });
     const line = (await orders.getPurchaseOrder(env.pm, own.orderId)).lines[0]!;
     await purchases.createPurchase(env.pm, {
       purchaseOrderId: own.orderId,

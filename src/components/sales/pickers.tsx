@@ -8,6 +8,7 @@ import { GRADE_LABELS } from "@/components/parties/labels";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatCount } from "@/lib/display";
+import { reachSearch } from "@/lib/reach";
 import { cn } from "@/lib/utils";
 import type { BuyerOption, SaleStyle } from "@/modules/sales/screens.service";
 import { findBuyersAction, findSaleStylesAction } from "@/server/actions/sales.actions";
@@ -58,7 +59,7 @@ export function SearchList<T extends { id: string }>({
     const timer = setTimeout(() => {
       const ask = ++asked.current;
       startTransition(async () => {
-        const found = await searchRef.current(text);
+        const found = await reachSearch(() => searchRef.current(text));
         if (ask !== asked.current) return;
         if (typeof found === "string") {
           setProblem(found);

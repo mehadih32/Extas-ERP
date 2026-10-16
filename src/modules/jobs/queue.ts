@@ -26,6 +26,7 @@ export type JobKind =
   | "salary.payout"
   | "exit.certificate"
   | "ai.knowledge.test"
+  | "ai.skill.test"
   | "ai.bot.incoming"
   | "ai.bot.push";
 

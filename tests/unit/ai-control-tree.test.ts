@@ -98,6 +98,9 @@ describe("Control: the AI's access tree", () => {
       "production.bookings.approve",
       "ai.production.booking.send",
       "ai.production.cm.agree",
+      // Locked at Ask in v6.3: sending fabric first, and campaigns to win back quiet buyers.
+      "ai.production.fabric_first",
+      "sales.campaigns.manage",
     ]) {
       expect(isLocked(key), key).toBe(true);
       expect(readCell(all, `k:${key}`), key).toEqual({
@@ -129,8 +132,10 @@ describe("Control: the AI's access tree", () => {
         "ai.buyer.claim",
         "ai.sales.quotation.send",
         "ai.sales.invoice.send",
+        "sales.campaigns.manage",
       ]),
     );
+    expect(mostFor("sales.campaigns.manage")).toBe("ASK");
     expect(mostFor("production.view")).toBe("DO");
   });
 
@@ -184,9 +189,11 @@ describe("AI Center tabs and models", () => {
     expect(visibleAiTabs(DEFAULT_ROLE_PERMISSIONS.SUPER_ADMIN, true).map((t) => t.label)).toEqual(
       AI_TABS.map((t) => t.label),
     );
-    // Server Health looks at the whole server: the platform owner's only.
+    // Server Health and the Full check look at the whole server: the platform owner's only.
     expect(visibleAiTabs(DEFAULT_ROLE_PERMISSIONS.SUPER_ADMIN).map((t) => t.label)).toEqual(
-      AI_TABS.filter((t) => t.label !== "Server Health").map((t) => t.label),
+      AI_TABS.filter((t) => t.label !== "Server Health" && t.label !== "Full check").map(
+        (t) => t.label,
+      ),
     );
     for (const role of ["PRODUCTION_MANAGER", "SALES_EXECUTIVE", "ACCOUNTS", "EMPLOYEE"] as const) {
       expect(visibleAiTabs(DEFAULT_ROLE_PERMISSIONS[role]), role).toEqual([]);
@@ -195,6 +202,8 @@ describe("AI Center tabs and models", () => {
     expect(visibleAiTabs(["ai.view"]).map((t) => t.label)).toEqual([
       "AI Home",
       "Mehedi 2.0",
+      "Agents",
+      "Skills",
       "Orders",
       "Drafts",
       "Control",

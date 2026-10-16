@@ -10,6 +10,7 @@ import { materialsHref } from "@/components/materials/labels";
 import { FormDialog, problem, readReason, ReasonField } from "@/components/sales/dialogs";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
+import { reach } from "@/lib/reach";
 import type { Orientation } from "@/modules/documents/model";
 import type { Booking } from "@/modules/production/booking.service";
 import {
@@ -31,7 +32,7 @@ function BatchSelect({ error }: { error?: string }) {
   const [failed, setFailed] = useState<string>();
   useEffect(() => {
     let live = true;
-    void listAttachableBatchesAction().then((result) => {
+    void reach(() => listAttachableBatchesAction()).then((result) => {
       if (!live) return;
       if (result.ok) setBatches(result.data);
       else setFailed(result.error.message);
@@ -190,7 +191,7 @@ export function BookingActions({
       {open === "attach" && (
         <FormDialog
           title={`Attach ${b.number} to a master batch`}
-          description="Its items are shared out over the batch's styles, colours and sizes, so they count as ordered for them, and its goods are received in the batch's central receive."
+          description="Its items are shared out over the batch's styles, colours and sizes, so they count as ordered for them, and its goods are received in the batch's central receive. An approved booking becomes its next revision and is approved again."
           submitLabel="Attach"
           pendingLabel="Attaching"
           errorTitle="We could not attach the booking"
@@ -200,10 +201,13 @@ export function BookingActions({
             if (!batchId) return problem({ batchId: "Choose the batch." });
             const result = await attachBookingAction(b.id, { batchId });
             if (!result.ok) return result.error;
+            const again = result.data.waiting
+              ? ` ${result.data.waiting} now waits for approval again, with the batch's checks.`
+              : "";
             done(
-              result.data.unmatched.length > 0
+              (result.data.unmatched.length > 0
                 ? `${b.number} was attached. Not needed by the batch's styles, so not counted for them: ${result.data.unmatched.join(", ")}.`
-                : `${b.number} was attached; every item counts for the batch's styles.`,
+                : `${b.number} was attached; every item counts for the batch's styles.`) + again,
             );
           }}
         >
@@ -214,7 +218,7 @@ export function BookingActions({
       {open === "detach" && b.batch && (
         <FormDialog
           title={`Take ${b.number} off ${b.batch.code}?`}
-          description="Nothing has arrived on it yet. Its items stop counting as ordered for the batch's styles; the booking itself stays as it is."
+          description="Nothing has arrived on it yet. Its items stop counting as ordered for the batch's styles. An approved booking becomes its next revision and is approved again."
           submitLabel="Take it off"
           pendingLabel="Taking it off"
           errorTitle="We could not take the booking off the batch"
@@ -222,7 +226,11 @@ export function BookingActions({
           onSubmit={async () => {
             const result = await detachBookingAction(b.id);
             if (!result.ok) return result.error;
-            done(`${b.number} was taken off ${b.batch?.code}.`);
+            done(
+              `${b.number} was taken off ${b.batch?.code}.${
+                result.data.waiting ? ` ${result.data.waiting} now waits for approval again.` : ""
+              }`,
+            );
           }}
         >
           {() => null}

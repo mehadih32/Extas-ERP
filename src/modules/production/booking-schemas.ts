@@ -199,6 +199,16 @@ export const updateBookingPaperworkSchema = z.object(paperworkFields);
 
 export const attachBookingSchema = z.object({ batchId: id });
 
+/** Approving past a check that allows it (collar, cuff and trims before the tech pack) takes a reason. */
+export const approveBookingSchema = z.object({
+  overrideReason: z
+    .string()
+    .trim()
+    .min(5, "Give a reason of at least 5 characters")
+    .max(400)
+    .optional(),
+});
+
 export const listBookingsSchema = z.object({
   search: z.string().trim().max(100).optional(),
   source: z.enum(BookingSource).optional(),

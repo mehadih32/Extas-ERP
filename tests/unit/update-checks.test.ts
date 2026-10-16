@@ -125,4 +125,62 @@ describe("deploy.sh", () => {
     expect(deploy).toMatch(/compose stop caddy app/);
     expect(deploy).toMatch(/passed its check[\s\S]*?compose up -d caddy/);
   });
+
+  it("goes back to the earlier version, never the new build, when the safety copy fails", () => {
+    // Starting the new build would run its database changes without a copy (v6.3 review).
+    expect(deploy).toMatch(
+      /if ! saved="\$\(safety_copy "\$copy"\)"; then[\s\S]*?\[ "\$can_go_back" = 1 \] && use_previous_version\s+\[ -n "\$pending" \] && \{ compose up -d --no-build app caddy \|\| true; \}\s+die "the safety copy/,
+    );
+    expect(deploy).not.toMatch(/\[ -n "\$pending" \] && compose up -d app caddy/);
+  });
+
+  it("does not update an ERP whose database is not running", () => {
+    const refuse = deploy.indexOf(
+      'if ! db_running && [ -s "$DATA_DIR/postgres/PG_VERSION" ]; then',
+    );
+    expect(refuse).toBeGreaterThan(0);
+    expect(refuse).toBeLessThan(deploy.indexOf("compose up -d --remove-orphans"));
+    expect(deploy.slice(refuse, refuse + 400)).toMatch(
+      /use_previous_version[\s\S]*?die "the database is not running/,
+    );
+  });
+
+  it("starts the earlier version even when the database cannot be put back", () => {
+    const back = deploy.slice(
+      deploy.indexOf("go_back() {"),
+      deploy.indexOf("\n}\n", deploy.indexOf("go_back() {")),
+    );
+    expect(back).toMatch(/if ! restore_database[\s\S]*?restored=0/);
+    // No stop between the failed restore and starting the earlier version.
+    expect(
+      back.slice(back.indexOf("restored=0"), back.indexOf("use_previous_version")),
+    ).not.toMatch(/die /);
+    expect(back).toMatch(
+      /use_previous_version\s+if compose up -d --no-build --remove-orphans && wait_healthy app/,
+    );
+    // Log lines on the way back never stop the script.
+    expect(back).toMatch(/compose ps \|\| true/);
+    expect(back).toMatch(/compose logs --tail 80 migrate app \|\| true/);
+    expect(deploy).not.toMatch(/^\s*compose (ps|logs --tail 80 [a-z ]+)$/m);
+  });
+
+  it("clears every unused build step when space is short, then measures again", () => {
+    expect(deploy).toMatch(/docker builder prune -a -f/);
+    expect(deploy).toMatch(/Free space now/);
+    expect(deploy).toMatch(/-lt \$\(\(3 \* 1024 \* 1024\)\)[\s\S]*?die "only/);
+  });
+});
+
+describe("auto-deploy.sh", () => {
+  const auto = readFileSync("deploy/auto-deploy.sh", "utf8");
+  const workflow = readFileSync(".github/workflows/deploy.yml", "utf8");
+
+  it("installs exactly the commit whose checks passed", () => {
+    expect(workflow).toMatch(/printf '%s\\n' "\$GITHUB_SHA" \|\s+ssh /);
+    expect(auto).toMatch(/IFS= read -r -t 10 wanted/);
+    expect(auto).toMatch(/\^\[0-9a-f\]\{40\}\$/);
+    expect(auto).toMatch(/merge-base --is-ancestor "\$wanted" origin\/main/);
+    expect(auto).toMatch(/merge --quiet --ff-only "\$target"/);
+    expect(auto).toMatch(/rev-parse HEAD\)" != "\$wanted"/);
+  });
 });

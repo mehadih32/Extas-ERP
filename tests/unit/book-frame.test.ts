@@ -200,3 +200,208 @@ describe("book-frame PDFs", () => {
     for (const block of pdfTextBlocks(pdf)) expect(block.y).toBeLessThan(841.89 - 15 * MM);
   });
 });
+
+/** A booking frame document holding only `blocks`, under a company named `name`. */
+function framed(
+  blocks: PrintDocument["blocks"],
+  company: Partial<typeof COMPANY> = {},
+  preparedBy: string | null = "Rahima Akter",
+  orientation: "landscape" | "portrait" = "landscape",
+): PrintDocument {
+  const doc = sampleBook(orientation);
+  return {
+    ...doc,
+    letterhead: { ...doc.letterhead, name: company.name ?? COMPANY.name },
+    blocks,
+    frame: bookFrame(
+      { ...COMPANY, ...company },
+      {
+        orientation,
+        docNo: "PO-2026-00007",
+        buyerPo: "MB-2026-00001",
+        date: "15 Oct 2026",
+        preparedBy,
+      },
+    ),
+  };
+}
+
+/** A colour-by-size table: a text column, then one right-aligned column per size and a total. */
+function sizeTable(sizes: number, figure: (row: number, size: number) => string) {
+  const labels = Array.from({ length: sizes }, (_, i) => `Size ${i + 1}`);
+  return {
+    kind: "table" as const,
+    title: "Quantities",
+    columns: [
+      { label: "Colour", weight: 2 },
+      ...labels.map((label) => ({ label, align: "right" as const })),
+      { label: "Total", align: "right" as const },
+    ],
+    rows: Array.from({ length: 3 }, (_, r) => ({
+      cells: [
+        `Colour ${r + 1}`,
+        ...labels.map((_, s) => figure(r, s)),
+        figure(r, sizes).replace(/^/, "9"),
+      ],
+    })),
+  };
+}
+
+describe("figures in a booking table are never cut (v6.3)", () => {
+  it("shrinks the text so twelve sizes of five-figure quantities print whole", async () => {
+    const table = sizeTable(12, (r, s) => `${12 + r},${String(345 + s).padStart(3, "0")}`);
+    const pdf = await renderDocumentPdf(framed([table]), { compress: false });
+    const lines = pdfLines(pdf);
+    expect(lines.join("\n")).not.toContain("…");
+    for (const row of table.rows) for (const cell of row.cells) expect(lines).toContain(cell);
+    // One table: nothing had to be split.
+    expect(lines.filter((l) => l.startsWith("QUANTITIES"))).toEqual(["QUANTITIES"]);
+  });
+
+  it("splits the sizes over more tables, each with the colour again, when even the smallest text is too big", async () => {
+    const table = sizeTable(30, (r, s) => `${100 + r},${String(100 + s).padStart(3, "0")}.50`);
+    const pdf = await renderDocumentPdf(framed([table]), { compress: false });
+    const lines = pdfLines(pdf);
+    expect(lines.join("\n")).not.toContain("…");
+    for (const row of table.rows) for (const cell of row.cells) expect(lines).toContain(cell);
+    const continued = lines.filter((l) => l.startsWith("QUANTITIES (CONTINUED: SIZE "));
+    expect(continued.length).toBeGreaterThanOrEqual(1);
+    // Every part repeats the colours.
+    expect(lines.filter((l) => l === "Colour 1").length).toBe(continued.length + 1);
+  });
+
+  it("wraps a column heading that is wider than its column, never cutting it", async () => {
+    // The collar matrix with 14 size groups printed "GARMENT COL…" (found in the release samples).
+    const base = sizeTable(14, (r, s) => `${10 + r},${String(100 + s).padStart(3, "0")}`);
+    const table = {
+      ...base,
+      columns: [
+        { label: "Garment colour", weight: 2 },
+        { label: "Collar colour", weight: 2.2 },
+        ...base.columns.slice(1),
+      ],
+      rows: base.rows.map((r) => ({ ...r, cells: [r.cells[0]!, "Navy", ...r.cells.slice(1)] })),
+    };
+    const pdf = await renderDocumentPdf(framed([table]), { compress: false });
+    const lines = pdfLines(pdf);
+    expect(lines.join("\n")).not.toContain("…");
+    expect(lines.join("\n")).toMatch(/GARMENT\s+COLOUR|GARMENT[\s\S]*COLOUR/);
+    for (const row of table.rows) for (const cell of row.cells) expect(lines).toContain(cell);
+  });
+
+  it("keeps room for the words of the text columns in portrait, the figures sharing the rest", async () => {
+    // Portrait, 14 sizes: the colour columns were squeezed to "GA…" (found in the release samples).
+    const base = sizeTable(14, (r, s) => `${10 + r},${String(100 + 37 * s).padStart(3, "0")}`);
+    const table = {
+      ...base,
+      columns: [
+        { label: "Garment colour", weight: 2 },
+        { label: "Collar colour", weight: 2.2 },
+        ...base.columns.slice(1),
+      ],
+      rows: base.rows.map((r) => ({
+        ...r,
+        cells: ["Garment pieces", "Navy, tipping White", ...r.cells.slice(1)],
+      })),
+    };
+    const doc = framed([table], {}, "Rahima Akter", "portrait");
+    const pdf = await renderDocumentPdf(doc, { compress: false });
+    const all = pdfLines(pdf).join("\n");
+    expect(all).not.toContain("…");
+    for (const word of ["Garment", "pieces", "tipping", "White"]) expect(all).toContain(word);
+    for (const cell of table.rows[0]!.cells.slice(2)) expect(all).toContain(cell);
+  });
+
+  it("leaves a table that already fits at the usual size", async () => {
+    const table = sizeTable(4, () => "120");
+    const pdf = await renderDocumentPdf(framed([table]), { compress: false });
+    const lines = pdfLines(pdf);
+    expect(lines.filter((l) => l.startsWith("QUANTITIES"))).toEqual(["QUANTITIES"]);
+    expect(lines).toContain("SIZE 4");
+  });
+});
+
+describe("long names in the book frame wrap instead of being cut (v6.3)", () => {
+  const LONG_NAME = "Extas Apparel Manufacturing Sourcing and Export Private Limited Company";
+  const LONG_ADDRESS =
+    "House-17, Road-08, Block C, Nikunja-02, Khilkhet, Dhaka 1229, Bangladesh, near the Jamuna Future Park gate 3";
+
+  it("prints the page number whole and the company name and address in full", async () => {
+    const company = {
+      ...COMPANY,
+      name: LONG_NAME,
+      address: LONG_ADDRESS,
+      email: "merchandising.department@extas.com.bd",
+    };
+    const doc = framed([{ kind: "text", title: "Note", paragraphs: ["One page."] }], company);
+    const pdf = await renderDocumentPdf(doc, { compress: false });
+    const lines = pdfLines(pdf);
+    const all = lines.join("\n");
+    expect(all).not.toContain("…");
+    const pages = pageCount(pdf);
+    expect(lines).toContain(`PAGE 1 OF ${pages}`);
+    // The name and the contact line wrap to a second line, every word kept.
+    const words = (s: string) => s.split(/\s+/).filter(Boolean);
+    for (const word of words(LONG_NAME)) expect(all).toContain(word);
+    for (const word of words(contactLine(company))) expect(all).toContain(word);
+  });
+
+  it("keeps a very long company name whole in portrait too (three lines)", async () => {
+    // Found in the release samples: portrait's narrower header cut it on the second line.
+    const name = "Extas Apparel Sourcing and Garment Manufacturing International Limited";
+    const doc = framed(
+      [{ kind: "text", title: "Note", paragraphs: ["One page."] }],
+      { ...COMPANY, name },
+      "Rahima Akter",
+      "portrait",
+    );
+    const pdf = await renderDocumentPdf(doc, { compress: false });
+    const all = pdfLines(pdf).join("\n");
+    expect(all).not.toContain("…");
+    for (const word of name.split(" ")) expect(all).toContain(word);
+    // Its last line sits above the header's rule (36pt under the top margin), not on it.
+    const rule = 841.89 - 15 * MM - 36;
+    const last = pdfTextBlocks(pdf).filter((b) => b.text.includes("Limited") && b.y > rule);
+    expect(last.length).toBeGreaterThan(0);
+    for (const block of last) expect(block.y).toBeGreaterThan(rule + 2);
+  });
+
+  it("wraps a long buyer and order in the header's right column", async () => {
+    const doc = framed([{ kind: "note", text: "x" }]);
+    doc.frame!.fields[1]!.value =
+      "Northern Lights Fashion Retail Group International · PO NLF-2026-0001234-A";
+    const pdf = await renderDocumentPdf(doc, { compress: false });
+    const all = pdfLines(pdf).join("\n");
+    expect(all).not.toContain("…");
+    for (const word of ["Northern", "International", "NLF-2026-0001234-A"])
+      expect(all).toContain(word);
+  });
+});
+
+describe("PREPARED BY names the person who made the booking (v6.3)", () => {
+  it("prints the name beside a signature line", async () => {
+    const pdf = await renderDocumentPdf(framed([{ kind: "note", text: "x" }]), {
+      compress: false,
+    });
+    const lines = pdfLines(pdf);
+    expect(lines).toContain("PREPARED BY");
+    expect(lines).toContain("Rahima Akter");
+    expect(
+      bookFrame(COMPANY, {
+        orientation: "portrait",
+        docNo: "1",
+        buyerPo: "",
+        date: "",
+        preparedBy: "  Karim ",
+      }).fields.at(-1),
+    ).toEqual({ label: "Prepared by", value: "Karim", sign: true });
+  });
+
+  it("leaves a line to write on when nobody is known", async () => {
+    const pdf = await renderDocumentPdf(framed([{ kind: "note", text: "x" }], {}, null), {
+      compress: false,
+    });
+    expect(pdfLines(pdf)).toContain("PREPARED BY");
+    expect(pdfLines(pdf)).not.toContain("Rahima Akter");
+  });
+});

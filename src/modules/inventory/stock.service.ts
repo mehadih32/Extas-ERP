@@ -23,7 +23,7 @@ import {
   stockOnHand,
 } from "@/modules/dashboard/stock-figures";
 import { isCompanyOwner } from "@/modules/hr/access";
-import { gradeCost, gradeCostData } from "@/modules/inventory/costs";
+import { gradeCost, gradeCostData, receiveAtCost } from "@/modules/inventory/costs";
 import { openLots } from "@/modules/inventory/lot.service";
 import { refuseTakenName, sameName } from "@/modules/inventory/names";
 import { canDeleteWarehouse, type WarehouseHold } from "@/modules/inventory/rules";
@@ -54,6 +54,8 @@ import { SHIPMENT_OPEN } from "@/modules/sales/rules";
  *     Count shortage       Dr Inventory Loss         Cr Inventory
  *     Count surplus        Dr Inventory              Cr Inventory Loss
  *     Damage & QC reject   Dr Inventory Loss         Cr Inventory
+ *     Pieces sold before   Dr Inventory              Cr Cost of Goods Sold
+ *     stock arrived        (or the other way round; receiveAtCostTx)
  *   (deliveries from production and sales post their own entries). Inventory
  *   Loss (5150) took over from Production & Inventory Losses (5100) in October
  *   2026; entries posted before stay where they are.
@@ -452,16 +454,59 @@ async function decrementBalance(
   }
 }
 
-/** New weighted average after receiving `quantity` pieces at `unitCost`. */
-export function weightedAverageCost(
-  onHand: number,
-  currentAvg: number,
-  quantity: number,
-  unitCost: number,
-): number {
-  const base = Math.max(onHand, 0);
-  if (base + quantity <= 0) return unitCost;
-  return (base * currentAvg + quantity * unitCost) / (base + quantity);
+/**
+ * Pieces coming in at a cost (a delivery from production, opening stock or a
+ * correction with a cost, a cancelled order's delivered pieces back in stock)
+ * re-weight their SKU grade's average cost. When the grade was below zero,
+ * the first of them are pieces already sold at the old average: their cost of
+ * sales is put right at the incoming cost (receiveAtCost), so Finished Goods
+ * Inventory keeps matching the pieces on hand at average cost:
+ *   cost overstated     Dr Finished Goods Inventory   Cr Cost of Goods Sold
+ *   cost understated    Dr Cost of Goods Sold         Cr Finished Goods Inventory
+ * Inside the caller's transaction with the SKU locked, after the movement that
+ * brings the pieces in (the entry's source); `onHand` (every warehouse) and
+ * `average` are the grade's from before they came.
+ */
+export async function receiveAtCostTx(
+  tx: Tx,
+  ctx: CompanyContext,
+  args: {
+    variant: { id: string; sku: string };
+    grade: StockGrade;
+    onHand: number;
+    average: Prisma.Decimal.Value;
+    quantity: number;
+    unitCost: Prisma.Decimal.Value;
+    movementId: string;
+  },
+) {
+  const { variant, grade } = args;
+  const received = receiveAtCost(args.onHand, args.average, args.quantity, args.unitCost);
+  await tx.productVariant.update({
+    where: { id: variant.id },
+    data: gradeCostData(grade, received.average),
+  });
+  if (!received.trueUp.isZero()) {
+    const acc = await ensureControlAccounts(ctx.company.id, tx);
+    const amount = received.trueUp.abs();
+    const pieces = `${variant.sku}${grade === "B_GRADE" ? " (B-grade)" : ""} × ${received.filled}`;
+    await postJournalEntry(tx, {
+      companyId: ctx.company.id,
+      description: `Cost of pieces sold before stock arrived — ${pieces}`,
+      sourceType: "STOCK_ADJUSTMENT",
+      sourceId: args.movementId,
+      postedById: ctx.user.id,
+      lines: received.trueUp.gt(0)
+        ? [
+            { accountId: acc.INVENTORY, debit: amount, memo: pieces },
+            { accountId: acc.COGS, credit: amount, memo: pieces },
+          ]
+        : [
+            { accountId: acc.COGS, debit: amount, memo: pieces },
+            { accountId: acc.INVENTORY, credit: amount, memo: pieces },
+          ],
+    });
+  }
 }
 
 /** The SKU's grade costs, locked so no other change re-weights them meanwhile. */
@@ -501,6 +546,8 @@ async function applyAdjustment(tx: Tx, ctx: CompanyContext, change: Adjustment) 
     quantity > 0 && change.unitCost !== undefined ? new Prisma.Decimal(change.unitCost) : average;
   const value = unitCost.times(Math.abs(quantity)).toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
 
+  // The grade's pieces before incoming ones with a cost, which re-weight its average.
+  let before: number | undefined;
   if (quantity < 0) {
     await decrementBalance(tx, key, -quantity);
   } else {
@@ -509,16 +556,7 @@ async function applyAdjustment(tx: Tx, ctx: CompanyContext, change: Adjustment) 
         where: { variantId: variant.id, grade },
         _sum: { quantity: true },
       });
-      const avg = weightedAverageCost(
-        onHand._sum.quantity ?? 0,
-        average.toNumber(),
-        quantity,
-        change.unitCost,
-      );
-      await tx.productVariant.update({
-        where: { id: variant.id },
-        data: gradeCostData(grade, avg),
-      });
+      before = onHand._sum.quantity ?? 0;
     }
     await tx.stockBalance.upsert({
       where: { variantId_warehouseId_grade: key },
@@ -564,6 +602,17 @@ async function applyAdjustment(tx: Tx, ctx: CompanyContext, change: Adjustment) 
               { accountId: other, debit: value, memo },
               { accountId: acc.INVENTORY, credit: value, memo },
             ],
+    });
+  }
+  if (before !== undefined) {
+    await receiveAtCostTx(tx, ctx, {
+      variant,
+      grade,
+      onHand: before,
+      average,
+      quantity,
+      unitCost,
+      movementId: created.id,
     });
   }
   return created;

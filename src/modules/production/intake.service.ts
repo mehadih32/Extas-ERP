@@ -22,8 +22,8 @@ import {
 import { lotsOfIntake, openLots } from "@/modules/inventory/lot.service";
 import {
   getDefaultWarehouse,
+  receiveAtCostTx,
   resolveWarehouse,
-  weightedAverageCost,
 } from "@/modules/inventory/stock.service";
 import {
   AI_READING_OFF,
@@ -548,8 +548,7 @@ export async function confirmIntakeTx(
     );
   }
 
-  // Re-weight each SKU grade's average cost with the pieces coming in, so
-  // B-grade pieces valued lower never lower the cost of the A-grade ones.
+  // Each SKU grade's stock and average cost before the pieces come in.
   const variantIds = [...new Set(intake.lines.map((l) => l.variantId))];
   await lockRows(tx, "ProductVariant", variantIds);
   const onHand = await onHandByGrade(tx, variantIds);
@@ -557,27 +556,7 @@ export async function confirmIntakeTx(
     where: { id: { in: variantIds } },
     select: { id: true, avgCost: true, bGradeAvgCost: true },
   });
-  for (const v of variants) {
-    let data: Prisma.ProductVariantUpdateInput = {};
-    for (const grade of ["A_GRADE", "B_GRADE"] as const) {
-      let qty = 0;
-      let value = new Prisma.Decimal(0);
-      intake.lines.forEach((l, i) => {
-        if (l.variantId !== v.id || l.grade !== grade) return;
-        qty += l.quantity;
-        value = value.plus(plan.unitCosts[i]!.times(l.quantity));
-      });
-      if (qty === 0) continue;
-      const avg = weightedAverageCost(
-        onHand.get(gradeKey(v.id, grade)) ?? 0,
-        gradeCost(v, grade).toNumber(),
-        qty,
-        value.dividedBy(qty).toNumber(),
-      );
-      data = { ...data, ...gradeCostData(grade, avg) };
-    }
-    await tx.productVariant.update({ where: { id: v.id }, data });
-  }
+  const costsById = new Map(variants.map((v) => [v.id, v]));
 
   // The delivery comes in as one numbered batch per style.
   const lots = await openLots(tx, ctx, {
@@ -586,6 +565,7 @@ export async function confirmIntakeTx(
     source: "PRODUCTION",
     intakeId: intake.id,
   });
+  const movementIds: string[] = [];
   for (const [i, line] of intake.lines.entries()) {
     const unitCost = plan.unitCosts[i]!;
     const key = { variantId: line.variantId, warehouseId, grade: line.grade };
@@ -594,7 +574,7 @@ export async function confirmIntakeTx(
       create: { ...key, companyId, quantity: line.quantity },
       update: { quantity: { increment: line.quantity } },
     });
-    await tx.stockMovement.create({
+    const movement = await tx.stockMovement.create({
       data: {
         ...key,
         companyId,
@@ -608,6 +588,7 @@ export async function confirmIntakeTx(
         createdById: ctx.user.id,
       },
     });
+    movementIds.push(movement.id);
     await tx.stockIntakeLine.update({ where: { id: line.id }, data: { unitCost } });
   }
 
@@ -623,6 +604,21 @@ export async function confirmIntakeTx(
         { accountId: acc.INVENTORY, debit: plan.total, memo: intake.number },
         { accountId: acc.WORK_IN_PROGRESS, credit: plan.total, memo: project.code },
       ],
+    });
+  }
+
+  // Re-weight each SKU grade's average cost with its pieces (one line per SKU
+  // grade), so B-grade pieces valued lower never lower the cost of the A-grade
+  // ones, and put right the cost of pieces sold before they came.
+  for (const [i, line] of intake.lines.entries()) {
+    await receiveAtCostTx(tx, ctx, {
+      variant: { id: line.variantId, sku: line.variant.sku },
+      grade: line.grade,
+      onHand: onHand.get(gradeKey(line.variantId, line.grade)) ?? 0,
+      average: gradeCost(costsById.get(line.variantId)!, line.grade),
+      quantity: line.quantity,
+      unitCost: plan.unitCosts[i]!,
+      movementId: movementIds[i]!,
     });
   }
 

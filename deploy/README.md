@@ -239,12 +239,17 @@ users for a few minutes instead, from just before the safety copy until the chec
 passed, so nothing typed in that time can be lost.
 
 **A failed update goes back by itself.** When the new version cannot be built, or the
-safety copy of the database cannot be saved (a full disk, for example), nothing changes.
-With less than 5 GB free, `deploy.sh` first clears old build steps and unused images.
-When it does not start, or a screen or a PDF does not work in the check,
+safety copy of the database cannot be saved (a full disk, for example), nothing changes:
+the version that ran before keeps running, and the new one never starts. When the
+database is not running, the update is not installed at all, because no safety copy can be
+saved. With less than 5 GB free, `deploy.sh` first clears every old build step
+(`docker builder prune -a`) and unused images, then measures the free space again; under
+3 GB even then, it stops before changing anything. When it does not start, or a screen or a PDF does not work in the check,
 `deploy.sh` goes back to the version that ran before it (kept as the `extras-erp-app:previous`
 and `extras-erp-tools:previous` images), and to the `before-update-…` safety copy of the
-database when the update had changed the database. It then stops with the reason, so the
+database when the update had changed the database. If putting the database back fails,
+the earlier version still starts on the database as it is, so the ERP is never left down,
+and the run says to restore the safety copy by hand. It then stops with the reason, so the
 **Deploy** run on GitHub shows a red cross and lines saying "Went back". The full log on the
 server says what failed.
 
@@ -258,8 +263,10 @@ earlier version for a while, turn them off first (below).
 ## Updating by itself after each merge
 
 Once this is set up, GitHub installs each new version by itself: after every merge into
-`main`, it signs in to the server and runs `deploy/auto-deploy.sh`, which gets the newest
-code and runs `deploy.sh`. Before it touches the server, the **Deploy** workflow runs the
+`main`, it signs in to the server and runs `deploy/auto-deploy.sh`, which gets the code
+and runs `deploy.sh`. GitHub sends the exact commit its Checks passed on, and the server
+installs that commit, never a newer one that has not been checked (if the server already
+has newer code, nothing is installed and the run says so). Before it touches the server, the **Deploy** workflow runs the
 **Checks** on the merged code (types, lint, formatting, every test with a throwaway
 database, and the production build); when one fails, the server is not touched and the
 run shows a red cross at **Checks**. The same Checks run on every pull request. The

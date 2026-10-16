@@ -529,7 +529,8 @@ run("Bookings", () => {
       { label: "Doc no", value: `${market.number}-R0` },
       { label: "Buyer · PO", value: "" },
       { label: "Date", value: expect.any(String) },
-      { label: "Prepared by", value: "" },
+      // The person who made the booking, with a line beside the name to sign.
+      { label: "Prepared by", value: "production", sign: true },
     ]);
     const parties = doc.blocks.find((b) => b.kind === "parties");
     expect(parties?.kind === "parties" && parties.parties.map((p) => p.heading)).toEqual([

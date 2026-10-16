@@ -11,6 +11,7 @@ import {
   findHelpArticle,
   HELP_SECTIONS,
   helpSearchEntries,
+  listPageOf,
   sectionOpen,
 } from "@/modules/help";
 import { missingFeaturePrompt, PROMPT_HEADING, quotedSearch } from "@/modules/help/prompt";
@@ -43,6 +44,26 @@ const permissionsOf = (role: keyof typeof DEFAULT_ROLE_PERMISSIONS) => [
   ...DEFAULT_ROLE_PERMISSIONS[role],
 ];
 const BENGALI = /[ঀ-৿]/;
+
+// The app's pages, as route patterns: ["sales", "orders", "[orderId]"].
+const pages = ["(app)", "(auth)", "(gate)"]
+  .map((group) => join(SRC, "app", group))
+  .flatMap((group) =>
+    filesUnder(group, (path) => path.endsWith(`${sep}page.tsx`)).map((path) =>
+      relative(group, path).split(sep).slice(0, -1),
+    ),
+  );
+const segments = (route: string) => route.split("/").filter(Boolean);
+/** A guide's route covers a page when it is the page or a page above it ([id] matches anything). */
+const covers = (route: string, page: string[]) => {
+  const parts = segments(route);
+  if (parts.length === 0) return page.length === 0;
+  return (
+    parts.length <= page.length &&
+    parts.every((part, i) => page[i]!.startsWith("[") || page[i] === part)
+  );
+};
+const show = (page: string[]) => `/${page.join("/")}`;
 
 describe("the manual's content", () => {
   it("has a section for every menu entry, with an icon", () => {
@@ -94,26 +115,6 @@ describe("the manual's content", () => {
       }
     }
   });
-
-  // The app's pages, as route patterns: ["sales", "orders", "[orderId]"].
-  const pages = ["(app)", "(auth)", "(gate)"]
-    .map((group) => join(SRC, "app", group))
-    .flatMap((group) =>
-      filesUnder(group, (path) => path.endsWith(`${sep}page.tsx`)).map((path) =>
-        relative(group, path).split(sep).slice(0, -1),
-      ),
-    );
-  const segments = (route: string) => route.split("/").filter(Boolean);
-  /** A guide's route covers a page when it is the page or a page above it ([id] matches anything). */
-  const covers = (route: string, page: string[]) => {
-    const parts = segments(route);
-    if (parts.length === 0) return page.length === 0;
-    return (
-      parts.length <= page.length &&
-      parts.every((part, i) => page[i]!.startsWith("[") || page[i] === part)
-    );
-  };
-  const show = (page: string[]) => `/${page.join("/")}`;
 
   it("has a guide for every page of the app", () => {
     const routes = articles.flatMap(({ article }) => article.routes);
@@ -205,7 +206,10 @@ describe("who each guide is for", () => {
       const permissions = permissionsOf(role);
       const appearance = find("getting-started", "appearance");
       expect(articleOpen(appearance, permissions), role).toBe(true);
-      expect(articleLink(appearance, permissions), role).toBe("/settings/appearance");
+      expect(articleLink(appearance, permissions), role).toEqual({
+        href: "/settings/appearance",
+        pick: false,
+      });
       expect(articleOpen(find("getting-started", "inbox"), permissions), role).toBe(true);
       expect(articleOpen(find("help-center", "help-missing-feature"), permissions), role).toBe(
         true,
@@ -216,10 +220,47 @@ describe("who each guide is for", () => {
   it("links a guide to a page only when the role opens it", () => {
     const employee = permissionsOf("EMPLOYEE");
     expect(articleLink(find("hr", "hr-payroll-prepare"), employee)).toBeNull();
-    expect(articleLink(find("hr", "hr-payroll-prepare"), permissionsOf("ACCOUNTS"))).toBe(
+    expect(articleLink(find("hr", "hr-payroll-prepare"), permissionsOf("ACCOUNTS"))?.href).toBe(
       "/hr/payroll",
     );
-    expect(articleLink(find("my-hr", "my-hr-leave"), employee)).toBe("/me/leave");
+    expect(articleLink(find("my-hr", "my-hr-leave"), employee)?.href).toBe("/me/leave");
+  });
+
+  it("never links to a page of one record, which would open Page not found (v6.3)", () => {
+    // "/production/projects/[projectId]/tech-pack" is opened from the list of orders.
+    expect(listPageOf("/production/projects/[projectId]/tech-pack")).toBe("/production/projects");
+    expect(listPageOf("/production/batches/[batchId]/contracts/[contractId]")).toBe(
+      "/production/batches",
+    );
+    expect(listPageOf("/sales/orders")).toBe("/sales/orders");
+    const roles = Object.keys(DEFAULT_ROLE_PERMISSIONS) as Array<
+      keyof typeof DEFAULT_ROLE_PERMISSIONS
+    >;
+    let picks = 0;
+    for (const role of roles) {
+      for (const { article } of articles) {
+        const link = articleLink(article, permissionsOf(role));
+        if (!link) continue;
+        expect(link.href, `${article.slug} (${role})`).not.toContain("[");
+        expect(
+          pages.some(
+            (page) => page.length === segments(link.href).length && covers(link.href, page),
+          ),
+          `${article.slug} (${role}): ${link.href} is not a page`,
+        ).toBe(true);
+        if (link.pick) picks++;
+      }
+    }
+    expect(picks).toBeGreaterThan(0);
+    const techPack = articles.find(
+      ({ article }) =>
+        article.routes.length > 0 &&
+        article.routes.every((r) => r.startsWith("/production/projects/[projectId]")),
+    );
+    expect(articleLink(techPack!.article, permissionsOf("SUPER_ADMIN"))).toEqual({
+      href: "/production/projects",
+      pick: true,
+    });
   });
 
   it("lists every guide in the search for everyone, marking the ones their role does not open", () => {

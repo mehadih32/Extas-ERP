@@ -82,12 +82,19 @@ export default async function HelpArticlePage({ params }: { params: Params }) {
           </p>
         )}
         {link ? (
-          <Button asChild variant="outline" className="h-11 justify-self-start sm:h-9">
-            <Link href={link}>
-              <ExternalLinkIcon aria-hidden />
-              Open this page
-            </Link>
-          </Button>
+          <div className="grid justify-items-start gap-1.5">
+            <Button asChild variant="outline" className="h-11 sm:h-9">
+              <Link href={link.href}>
+                <ExternalLinkIcon aria-hidden />
+                {link.pick ? "Open the list" : "Open this page"}
+              </Link>
+            </Button>
+            {link.pick && (
+              <p lang="bn" className="text-sm text-muted-foreground">
+                এই পাতাটি একটি নির্দিষ্ট অর্ডার বা রেকর্ডের। তালিকা খুলে যেটি দরকার সেটি বেছে নিন।
+              </p>
+            )}
+          </div>
         ) : (
           article.routes.length > 0 && (
             <p

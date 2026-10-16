@@ -43,12 +43,13 @@ const serverErrors: Check = {
   area: "APP",
   label: "Server errors",
   async run(ctx) {
+    // This store's errors (and the server's own, in the platform's store); never another store's.
+    const ours = {
+      OR: [{ companyId: ctx.companyId }, ...(ctx.platform ? [{ companyId: null }] : [])],
+    };
     const rows = await ctx.db.serverError.groupBy({
       by: ["routeType", "path", "errorName"],
-      where: {
-        at: { gte: ctx.since },
-        OR: [{ companyId: ctx.companyId }, ...(ctx.platform ? [{ companyId: null }] : [])],
-      },
+      where: { at: { gte: ctx.since }, ...ours },
       _count: { _all: true },
       _max: { at: true },
       orderBy: { _count: { routeType: "desc" } },
@@ -63,6 +64,7 @@ const serverErrors: Check = {
           path: row.path,
           errorName: row.errorName,
           at: { gte: ctx.since },
+          ...ours,
         },
         orderBy: { at: "desc" },
         select: { method: true, stack: true, message: true, errorId: true },

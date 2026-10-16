@@ -26,11 +26,29 @@ import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import { readOnly } from "@/lib/read-only";
 import { slowQueriesSince } from "@/lib/slow-queries";
+import { APP_CHECKS } from "@/modules/bug-guard/checks/app";
 import { READ_ONLY_WHY } from "@/modules/bug-guard/runner";
+import type { CheckContext } from "@/modules/bug-guard/types";
 
 import { makeCompany, resetDb } from "./helpers";
 
 const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
+
+/** Runs one of Bug Guard's real checks for a company, only reading. */
+function check(key: string, companyId: string, extra: Partial<CheckContext> = {}) {
+  const found = APP_CHECKS.find((c) => c.key === key)!;
+  const now = new Date();
+  return readOnly(READ_ONLY_WHY, () =>
+    found.run({
+      companyId,
+      now,
+      since: new Date(now.getTime() - 86_400_000),
+      platform: false,
+      db: prisma,
+      ...extra,
+    }),
+  );
+}
 
 async function refusedInside(work: () => Promise<unknown>) {
   // Awaited inside: a Prisma query starts only when it is awaited.
@@ -73,6 +91,39 @@ run("Bug Guard, after the review", () => {
       expect(slowQueriesSince(since)).toEqual([
         expect.objectContaining({ model: "RawSQL", operation: "$queryRawUnsafe" }),
       ]);
+    });
+  });
+
+  describe("server errors (S8)", () => {
+    it("show the company's own error message and stack, never another company's", async () => {
+      const { company: mine } = await makeCompany("Extas");
+      const { company: theirs } = await makeCompany("Other Store");
+      const error = (companyId: string, at: Date, message: string, stack: string) =>
+        prisma.serverError.create({
+          data: {
+            companyId,
+            at,
+            routeType: "render",
+            method: "GET",
+            path: "/sales/orders/[id]",
+            errorName: "TypeError",
+            message,
+            stack: [stack],
+            errorId: companyId === mine.id ? "ERR-MINE" : "ERR-THEIRS",
+          },
+        });
+      await error(mine.id, new Date(Date.now() - 60 * 60_000), "Our own message", "at ours");
+      // The other store's error is newer: it must not be shown to this store.
+      await error(theirs.id, new Date(Date.now() - 60_000), "Their private message", "at theirs");
+      const [finding] = await check("app.server-errors", mine.id);
+      expect(finding!.evidence).toEqual(
+        expect.arrayContaining([
+          { label: "বার্তা", value: "Our own message" },
+          { label: "এরর কোড", value: "ERR-MINE" },
+        ]),
+      );
+      expect(JSON.stringify(finding)).not.toMatch(/Their private|at theirs|ERR-THEIRS/);
+      expect(finding!.code?.stack).toEqual(["at ours"]);
     });
   });
 });

@@ -5,15 +5,14 @@ import { AppError } from "@/lib/errors";
 import { nextDocumentNumber } from "@/lib/numbering";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
-import { lockRow } from "@/lib/row-lock";
+import { lockRow, lockRows } from "@/lib/row-lock";
 import { assertAllowed } from "@/lib/verdict";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { letterhead } from "@/modules/companies/letterhead";
 import { canSeeFinancials } from "@/modules/dashboard/access";
 import { reverseJournalEntry } from "@/modules/accounts/journal.service";
-import { gradeCostData } from "@/modules/inventory/costs";
-import { resolveWarehouse, weightedAverageCost } from "@/modules/inventory/stock.service";
+import { receiveAtCostTx, resolveWarehouse } from "@/modules/inventory/stock.service";
 import { assertPartyCanTransact, recordPartyActivity } from "@/modules/parties/party.service";
 import {
   createDeliveryChallanTx,
@@ -687,29 +686,25 @@ async function restockDeliveredTx(
     back.set(key, entry);
   }
   let pieces = 0;
-  // One SKU at a time in a fixed order, so two of these never wait on each other.
-  for (const entry of [...back.values()].sort((a, b) => a.variantId.localeCompare(b.variantId))) {
-    if (entry.pieces <= 0) continue;
-    await lockRow(tx, "ProductVariant", entry.variantId);
+  const coming = [...back.values()]
+    .filter((e) => e.pieces > 0)
+    .sort((a, b) => a.variantId.localeCompare(b.variantId));
+  // Every SKU first, in a fixed order, so two of these never wait on each other.
+  await lockRows(
+    tx,
+    "ProductVariant",
+    coming.map((e) => e.variantId),
+  );
+  for (const entry of coming) {
     const variant = await tx.productVariant.findUniqueOrThrow({
       where: { id: entry.variantId },
-      select: { avgCost: true },
+      select: { sku: true, avgCost: true },
     });
     const onHand = await tx.stockBalance.aggregate({
       where: { variantId: entry.variantId, grade: "A_GRADE" },
       _sum: { quantity: true },
     });
     const unitCost = entry.value.dividedBy(entry.pieces);
-    const average = weightedAverageCost(
-      onHand._sum.quantity ?? 0,
-      variant.avgCost.toNumber(),
-      entry.pieces,
-      unitCost.toNumber(),
-    );
-    await tx.productVariant.update({
-      where: { id: entry.variantId },
-      data: gradeCostData("A_GRADE", average),
-    });
     const key = {
       variantId: entry.variantId,
       warehouseId: entry.warehouseId,
@@ -720,7 +715,7 @@ async function restockDeliveredTx(
       create: { ...key, companyId: ctx.company.id, quantity: entry.pieces },
       update: { quantity: { increment: entry.pieces } },
     });
-    await tx.stockMovement.create({
+    const movement = await tx.stockMovement.create({
       data: {
         ...key,
         companyId: ctx.company.id,
@@ -732,6 +727,16 @@ async function restockDeliveredTx(
         note: `${order.number} cancelled`,
         createdById: ctx.user.id,
       },
+    });
+    // They re-weight the average cost and put right the cost of pieces sold short meanwhile.
+    await receiveAtCostTx(tx, ctx, {
+      variant: { id: entry.variantId, sku: variant.sku },
+      grade: "A_GRADE",
+      onHand: onHand._sum.quantity ?? 0,
+      average: variant.avgCost,
+      quantity: entry.pieces,
+      unitCost,
+      movementId: movement.id,
     });
     pieces += entry.pieces;
   }

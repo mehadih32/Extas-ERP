@@ -135,12 +135,14 @@ function textOf(el: ts.JsxElement): string[] {
   const plain: string[] = [];
   const alternatives: string[] = [];
   const visit = (node: ts.Node) => {
-    if (ts.isJsxText(node)) plain.push(node.text);
+    if (ts.isJsxText(node)) plain.push(decode(node.text));
     else if (ts.isJsxExpression(node)) {
       const found: string[] = [];
       stringsIn(node.expression, found);
       if (found.length === 1 && ts.isStringLiteral(node.expression!)) plain.push(found[0]!);
-      else alternatives.push(...found);
+      else if (found.length > 0) alternatives.push(...found);
+      // A name or a number the screen fills in ("Load the {category} items").
+      else if (node.expression) plain.push(FILLED);
     } else if (ts.isJsxElement(node)) {
       // A label for one width is its own label, not part of the other one.
       if (showsAtSomeWidths(node)) alternatives.push(...textOf(node));
@@ -148,10 +150,32 @@ function textOf(el: ts.JsxElement): string[] {
     }
   };
   el.children.forEach(visit);
-  // "Run the tests ({picked.length})" is the button "Run the tests": the count is not a word.
-  const main = plain.join(" ").replace(/\(\s*\)/g, "").replace(/\s+/g, " ").trim();
+  const main = plain
+    .join("")
+    .replace(/\s+/g, " ")
+    // "Run the tests ({picked.length})" is the button "Run the tests": the count is not a word.
+    .replace(new RegExp(`\\(\\s*${FILLED}?\\s*\\)`, "g"), "")
+    // "{icon} Save" is "Save"; "Fill in {code}'s colours" is "Fill in …'s colours".
+    .replace(new RegExp(`^[\\s${FILLED}]+|[\\s${FILLED}]+$`, "g"), "")
+    .replaceAll(FILLED, "…")
+    .replace(/\s+/g, " ")
+    .trim();
   return [main, ...alternatives.map((a) => a.replace(/\s+/g, " ").trim())];
 }
+
+/** Stands for what the screen fills in, until it is shown as "…". */
+const FILLED = "\u0001";
+
+const ENTITIES: Record<string, string> = {
+  apos: "'",
+  quot: '"',
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  nbsp: " ",
+};
+const decode = (text: string) =>
+  text.replace(/&(apos|quot|amp|lt|gt|nbsp);/g, (_, e: string) => ENTITIES[e]!);
 
 const SMALL = new Set(["the", "your", "out", "a", "an", "up", "in", "it", "to"]);
 

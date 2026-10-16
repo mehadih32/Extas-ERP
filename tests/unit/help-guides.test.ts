@@ -67,6 +67,16 @@ const explains = (article: HelpArticle, label: string) =>
 /** The files of the frame around every page (menu, top bar): their buttons are the "Getting started" guides'. */
 const SHELL = shellFiles(ROOT);
 
+/** Whether the app shows a label; "…" stands for a name the screen fills in ("Load the … items"). */
+const shows = (app: string, label: string) =>
+  app.includes(label) ||
+  new RegExp(
+    label
+      .split("…")
+      .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+      .join(".{1,80}?"),
+  ).test(app);
+
 describe("What, Why and How in every guide", () => {
   it("every guide says what it is and why it matters, in Bengali", () => {
     const missing = articles
@@ -122,7 +132,7 @@ describe("What, Why and How in every guide", () => {
       .replace(/\s+/g, " ");
     const missing = articles.flatMap(({ section, article }) =>
       (article.fields ?? [])
-        .filter((f) => !app.includes(f.label))
+        .filter((f) => !shows(app, f.label))
         .map((f) => `${section.id}/${article.slug}: ${f.label}`),
     );
     expect(missing).toEqual([]);

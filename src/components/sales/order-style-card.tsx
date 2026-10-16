@@ -454,7 +454,7 @@ function MatrixGrid({
                       />
                       <span
                         className={cn(
-                          "mt-0.5 block text-center text-[0.6875rem] tabular-nums",
+                          "mt-0.5 block text-center text-xs tabular-nums",
                           ready === 0
                             ? "font-bold text-destructive"
                             : isShort

@@ -26,6 +26,7 @@
     "db:seed": "prisma db seed",
     "test": "vitest run",
     "test:watch": "vitest",
+    "layout:check": "node scripts/full-check/layout-run.mjs",
     "simulate:production": "vitest run tests/integration/production-simulation.test.ts",
     "simulate:five-style-polo": "vitest run tests/integration/five-style-polo.test.ts"
   },

@@ -6,8 +6,12 @@
 // presses tabs and the buttons that only open a menu or window, and notes every
 // problem: an error screen, a broken link (a 404, or an address with
 // "[projectId]" in it), a part that did not load, a script error, a slow screen,
-// a PDF that is not a PDF, or being sent to sign in. Each problem gets a
-// screenshot. The report and the screenshots go back to the ERP.
+// a PDF that is not a PDF, or being sent to sign in. It also checks each screen's
+// layout at the four widths (390, 768, 1366 and 1920 px: text cut or overlapping,
+// a screen wider than the window, a menu item out of reach, wrong fonts; the rules
+// are in layout.mjs): the owner's role on every screen at every width, the other
+// roles on their home screen at every width and their other screens on a phone.
+// Each problem gets a screenshot. The report and the screenshots go back to the ERP.
 //
 // This log is public (the repository is), so it names only the kind of problem
 // and the screen's route ("/sales/orders/[id]"): never the screen's text, an
@@ -26,11 +30,13 @@
 //            GitHub the workflow's "id-token: write" gives the real one)
 // Needs only Playwright with Chromium. Exit code 1: the check could not start or report.
 
-import { readdirSync, statSync } from "node:fs";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { chromium } from "playwright";
+
+import { checkLayout, HEIGHTS, problemLine, RULES, WIDTHS } from "./layout.mjs";
+import { GATES, NEVER, patternFinder, PUBLIC, screenRoutes } from "./routes.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const APP_DIR = resolve(here, "../../src/app");
@@ -89,56 +95,8 @@ async function api(path, { body, key, bytes } = {}) {
 
 // ---------------------------------------------------------------- the screens
 
-/** Every screen's address pattern, from the page files ("/production/projects/[projectId]"). */
-function screenRoutes(dir) {
-  const routes = [];
-  const walk = (d) => {
-    for (const name of readdirSync(d)) {
-      const path = join(d, name);
-      if (statSync(path).isDirectory()) {
-        if (name !== "api") walk(path);
-      } else if (name === "page.tsx") {
-        const parts = relative(dir, d)
-          .split(sep)
-          .filter(Boolean)
-          .filter((p) => !/^\(.*\)$/.test(p));
-        routes.push(`/${parts.join("/")}`);
-      }
-    }
-  };
-  walk(dir);
-  return routes.sort();
-}
-
 const ROUTES = screenRoutes(APP_DIR);
-const PATTERNS = ROUTES.map((route) => ({
-  route,
-  dynamic: route.includes("["),
-  re: new RegExp(`^${route.replace(/\[\.\.\.[^\]]+\]/g, ".+").replace(/\[[^\]]+\]/g, "[^/]+")}$`),
-}));
-const PUBLIC = new Set(["/sign-in", "/forgot-password", "/reset-password", "/sign-up", "/invite"]);
-const GATES = {
-  "/sign-in": "sign in",
-  "/change-password": "change their password",
-  "/select-company": "choose a company",
-  "/terms": "accept the terms of employment",
-};
-
-function patternOf(path) {
-  const fixed = PATTERNS.find((p) => !p.dynamic && p.route === path);
-  if (fixed) return fixed.route;
-  const all = PATTERNS.filter((p) => p.re.test(path));
-  all.sort((a, b) => a.route.split("[").length - b.route.split("[").length);
-  return all[0]?.route ?? null;
-}
-
-/** Links that would change something, sign out, or leave the ERP. */
-const NEVER = [
-  /^\/sign-out/,
-  /^\/logout/,
-  /^\/api\/auth\//,
-  /\/(send|delete|approve|cancel|void|merge|restore)(\/|$|\?)/,
-];
+const patternOf = patternFinder(ROUTES);
 
 /** Downloads worth fetching: PDFs and files. */
 const DOWNLOAD =
@@ -199,7 +157,7 @@ async function note(page, role, kind, screen, text, detail, ms, facts = {}) {
   }
 }
 
-async function checkRole(browser, session, writes, deadline) {
+async function checkRole(browser, session, writes, deadline, first) {
   const role = session.role;
   const context = await browser.newContext({
     viewport: { width: 1366, height: 900 },
@@ -237,6 +195,40 @@ async function checkRole(browser, session, writes, deadline) {
   let pdfs = 0;
   let links = 0;
   let gate = null;
+  /** Menus already found whole at a width (the top bar is the same on every screen). */
+  const menusSeen = new Set();
+
+  /**
+   * The screen's layout at the four widths (layout.mjs), as one LAYOUT problem with
+   * a screenshot at the first width that has one. The owner's role: every screen at
+   * every width; the other roles: the home screen at every width, the rest on a phone.
+   */
+  async function checkScreenLayout(page, path, ms) {
+    const widths = first || path === "/" ? WIDTHS : [WIDTHS[0]];
+    const found = [];
+    for (const width of widths) {
+      if (Date.now() > deadline) break;
+      found.push(...(await checkLayout(page, { width, seen: menusSeen }).catch(() => [])));
+    }
+    if (found.length) {
+      const at = found[0].width;
+      await page.setViewportSize({ width: at, height: HEIGHTS[at] ?? 900 }).catch(() => {});
+      const rules = [...new Set(found.map((p) => p.what))];
+      await note(
+        page,
+        role,
+        "LAYOUT",
+        path,
+        rules.map((what) => RULES[what] ?? what).join("; "),
+        found
+          .slice(0, 24)
+          .map((p) => `${problemLine(p)}\n  ${p.detail}`)
+          .join("\n"),
+        ms,
+      );
+    }
+    await page.setViewportSize({ width: 1366, height: 900 }).catch(() => {});
+  }
 
   function add(href, from) {
     let url;
@@ -429,6 +421,7 @@ async function checkRole(browser, session, writes, deadline) {
         as.map((a) => a.getAttribute("href") ?? ""),
       );
       for (const href of hrefs) add(href, path);
+      await checkScreenLayout(page, path, ms);
       await pressSafe(page, path);
     } catch (error) {
       await note(
@@ -583,15 +576,17 @@ async function main() {
     const deadline =
       Date.now() +
       (i === 0 ? Math.round(total * 0.35) : Math.round(left / (begun.roles.length - i)));
-    const done = await checkRole(browser, session, begun.writes, deadline).catch((error) => ({
-      role: session.role,
-      member: session.member,
-      screens: 0,
-      pdfs: 0,
-      skipped: 0,
-      links: 0,
-      note: `The check stopped: ${String(error?.message ?? error).split("\n")[0]}`,
-    }));
+    const done = await checkRole(browser, session, begun.writes, deadline, i === 0).catch(
+      (error) => ({
+        role: session.role,
+        member: session.member,
+        screens: 0,
+        pdfs: 0,
+        skipped: 0,
+        links: 0,
+        note: `The check stopped: ${String(error?.message ?? error).split("\n")[0]}`,
+      }),
+    );
     summary.roles.push({
       role: done.role,
       member: done.member,

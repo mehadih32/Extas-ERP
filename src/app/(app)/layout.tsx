@@ -8,6 +8,7 @@ import { visibleNavItems } from "@/components/shell/nav-items";
 import { Sidebar } from "@/components/shell/sidebar";
 import { SIDEBAR_COOKIE, sidebarModeFrom } from "@/components/shell/sidebar-state";
 import { TopBar } from "@/components/shell/top-bar";
+import { TruncatedTitles } from "@/components/shell/truncated-titles";
 import type { ShellUser } from "@/components/shell/types";
 import { ROUTES } from "@/lib/routes";
 import { currentInterfaceStyle } from "@/modules/appearance/appearance.service";
@@ -45,6 +46,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const companies = me.companies.map((c) => ({ id: c.id, name: c.name, roleName: c.roleName }));
   const activeCompany = { id: me.activeCompany.id, name: me.activeCompany.name };
   const modern = (await currentInterfaceStyle()) === "MODERN";
+  // Every section this person may open: the layout checks (scripts/full-check/layout.mjs)
+  // check each can be reached at every width, in a menu marked data-layout-nav.
+  const menu = visibleNavItems(me.permissions)
+    .map((item) => item.href)
+    .join(" ");
 
   const skipLink = (
     <a
@@ -61,13 +67,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <BottomNav permissions={me.permissions} user={user} companyName={activeCompany.name} />
       {dutyTracker}
       <InstallApp />
+      <TruncatedTitles />
     </>
   );
 
   if (modern) {
     const sidebar = sidebarModeFrom((await cookies()).get(SIDEBAR_COOKIE)?.value);
     return (
-      <div className="flex min-h-dvh">
+      <div className="flex min-h-dvh" data-layout-expect={menu}>
         {skipLink}
         <Sidebar
           permissions={me.permissions}
@@ -99,7 +106,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   }
 
   return (
-    <div className="flex min-h-dvh flex-col">
+    <div className="flex min-h-dvh flex-col" data-layout-expect={menu}>
       {skipLink}
       <TopBar
         user={user}

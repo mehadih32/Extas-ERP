@@ -35,8 +35,15 @@ export const aiHelp: HelpSection = {
       who: "যাঁদের এআই সেন্টার দেখার অনুমতি আছে তাঁরা দেখেন; চালু-বন্ধ করেন শুধু মালিক (ai.manage)।",
       steps: [
         {
-          text: "মেনু থেকে “AI” খুলুন। “AI Home” ট্যাবে উপরেই দেখবেন এআই এখন চালু, থামানো না বন্ধ: “AI is on”, “AI is paused” বা “AI is off”।",
+          text: "মেনু থেকে “AI” খুলুন; প্রথমে “AI Home” পাতা খোলে। উপরেই দেখবেন এআই এখন চালু, থামানো না বন্ধ: “AI is on”, “AI is paused” বা “AI is off”।",
           image: { id: "ai-switch-1", caption: "“AI Home”: মূল সুইচ ও তার অবস্থা" },
+        },
+        {
+          text: "এআই সেন্টারের পাতাগুলো চারটি দলে ভাগ করা: “Mehedi & Agents” (“AI Home”, “Mehedi 2.0”, “Agents”, “Skills”, “Chat”), “Work” (“Orders”, “Drafts”, “Bot”), “Money” (“Budget & Costs”, “Models”) আর “System” (“Control”, “Books & tests”, “Logs”, “Settings”; সার্ভারের মালিক এখানে “Server Health” ও “Full check”-ও পান)। উপরের সারিতে দল বেছে নিন; তার নিচে সেই দলের পাতাগুলো পুরো নামে দেখায়। ছোট পর্দায় নামগুলো পরের লাইনে চলে যায়, কোনো নাম কাটা পড়ে না। আপনার ভূমিকায় যে পাতা খোলা নেই, তা দেখায় না।",
+          image: {
+            id: "ai-switch-2",
+            caption: "এআই সেন্টারের চারটি দল আর “System” দলের পাতাগুলো",
+          },
         },
         {
           text: "চালু করতে “Turn AI on” চাপুন, জানালায় আবার “Turn AI on” চাপুন। চালু হলেও Control-এর সব ঘর শুরুতে “Ask”, তাই কিছু করার আগে এআই আপনাকে জিজ্ঞেস করবে।",
@@ -51,6 +58,7 @@ export const aiHelp: HelpSection = {
       tips: [
         "“AI Home”-এর “AI cost” ঘরে “Today” (আজকের) আর “This month” (এ মাসের) এআই খরচ, আর বাজেটের কত শতাংশ গেছে দেখা যায়; বিস্তারিত “Budget & Costs”-এ।",
         "“AI Home”-এর “Morning brief”-এ এ সপ্তাহে কোন অর্ডারের কোন ধাপ বাকি, কী দেরি, কী আপনার অপেক্ষায় আর গতকালের এআই খরচ থাকে।",
+        "কোন পাতা কোন দলে মনে না থাকলে: খরচ ও মডেল “Money”-তে, অর্ডার, খসড়া ও বট “Work”-এ, আর নিয়ন্ত্রণ, লগ ও সেটিংস “System”-এ।",
         "এআই কখনো কোনো ডেটা মুছে ফেলে না, আর কারও অনুমতি বা ভূমিকা বদলায় না।",
         "বায়ারের কাছে কিছু যায় না আপনার OK ছাড়া: উত্তর, ফলো-আপ, রিমাইন্ডার, ক্লেইম, কোটেশন বা ইনভয়েস। এআই খসড়া লেখে আর আপনাকে মনে করিয়ে দেয়।",
         "লাইভ সাইটে এআই বন্ধ থাকে যতক্ষণ না মালিক নিজে চালু করেন।",
@@ -87,7 +95,7 @@ export const aiHelp: HelpSection = {
           text: "অনুমতির অনুরোধে চারটি উত্তর: “Only this task” (শুধু এই একবার), “For today” (আজকের দিন), “Always” (ঘরটি “Do” হয়ে যায়) বা “No”।",
         },
         {
-          text: "টাকা, দাম বা কোম্পানির বাইরে যায় এমন ঘরের জন্য PIN চাওয়া হয়। PIN আগে “AI” > “Settings”-এ ঠিক করতে হয়: না থাকলে উত্তরের বদলে “Set a PIN” লেখা আসে। “PIN” ঘরে PIN লিখে তারপর উত্তর দিন।",
+          text: "টাকা, দাম বা কোম্পানির বাইরে যায় এমন ঘরের জন্য PIN চাওয়া হয়। PIN আগে “AI” > “System” > “Settings”-এ ঠিক করতে হয়: না থাকলে উত্তরের বদলে “Set a PIN” লেখা আসে। “PIN” ঘরে PIN লিখে তারপর উত্তর দিন।",
         },
         {
           text: "“Deletion request”-এ এআই লেখে কী মুছতে চায়, কেন, আর না মুছলে কী হবে। “Open it” চেপে রেকর্ডটি দেখুন, তারপর “Approve” বা “Refuse”।",
@@ -123,7 +131,7 @@ export const aiHelp: HelpSection = {
       who: "দেখেন যাঁদের এআই সেন্টার খোলা; Pause আর Teach শুধু মালিকের (ai.manage)।",
       steps: [
         {
-          text: "“AI” > “Mehedi 2.0” খুলুন। উপরে তার নাম, অবস্থা (On, Paused, Off বা No key), আর পাঁচটি সংখ্যা: “Do / Ask / Off”, “AI cost today”, “AI cost this month”, “Tests passed” ও “Waiting for you”। আজকের খরচে চাপলে আজকের সব কল খোলে।",
+          text: "“AI” > “Mehedi & Agents” > “Mehedi 2.0” খুলুন। উপরে তার নাম, অবস্থা (On, Paused, Off বা No key), আর পাঁচটি সংখ্যা: “Do / Ask / Off”, “AI cost today”, “AI cost this month”, “Tests passed” ও “Waiting for you”। আজকের খরচে চাপলে আজকের সব কল খোলে।",
           image: { id: "ai-mehedi-1", caption: "“Mehedi 2.0”: পরিচয়, অবস্থা ও পাঁচটি সংখ্যা" },
         },
         {
@@ -176,7 +184,7 @@ export const aiHelp: HelpSection = {
       who: "দেখেন যাঁদের এআই সেন্টার খোলা; চালু-বন্ধ শুধু মালিক (ai.manage)।",
       steps: [
         {
-          text: "“AI” > “Agents” খুলুন। সবার উপরে Mehedi 2.0: তার কাজ, মডেল, Control-এ কয়টি ঘর Do, Ask ও Off, আর “Today” ও “This month”-এর খরচ। “Skills, books and last runs” চাপলে তার স্কিল, বইয়ের টেস্ট আর শেষ 5টি কাজ খোলে।",
+          text: "“AI” > “Mehedi & Agents” > “Agents” খুলুন। সবার উপরে Mehedi 2.0: তার কাজ, মডেল, Control-এ কয়টি ঘর Do, Ask ও Off, আর “Today” ও “This month”-এর খরচ। “Skills, books and last runs” চাপলে তার স্কিল, বইয়ের টেস্ট আর শেষ 5টি কাজ খোলে।",
           image: {
             id: "ai-agents-1",
             caption: "“Agents”: উপরে Mehedi 2.0, নিচে তার অধীনের এজেন্টরা",
@@ -223,7 +231,7 @@ export const aiHelp: HelpSection = {
       who: "দেখেন যাঁদের এআই সেন্টার খোলা; শেখানো, বদলানো, টেস্ট আর Undo শুধু মালিক (ai.manage)। এআই নিজে স্কিল বদলাতে পারে না।",
       steps: [
         {
-          text: "“AI” > “Skills” খুলুন। সব স্কিলের তালিকা: কোন এজেন্টের, কোন ভার্সন, কয়টি উদাহরণ ও ফাইল, আর টেস্টের অবস্থা (“Passed”, “Not passed”, “Not tested”)। “Agent” থেকে একজন এজেন্ট বেছে “Show” চাপলে শুধু তার স্কিল দেখায়।",
+          text: "“AI” > “Mehedi & Agents” > “Skills” খুলুন। সব স্কিলের তালিকা: কোন এজেন্টের, কোন ভার্সন, কয়টি উদাহরণ ও ফাইল, আর টেস্টের অবস্থা (“Passed”, “Not passed”, “Not tested”)। “Agent” থেকে একজন এজেন্ট বেছে “Show” চাপলে শুধু তার স্কিল দেখায়।",
           image: {
             id: "ai-skills-1",
             caption: "“Skills”: এজেন্ট অনুযায়ী স্কিল আর টেস্টের অবস্থা",
@@ -253,7 +261,7 @@ export const aiHelp: HelpSection = {
       tips: [
         "চালু থাকা স্কিলের নতুন ভার্সন পাস না করা পর্যন্ত সেই এজেন্টের কাজ Control-এ Do থাকলেও এআই আগে আপনাকে জিজ্ঞেস করে (Ask)।",
         "স্কিল কখনো নিরাপত্তার নিয়মের উপরে যায় না: এআই কিছু মোছে না, বায়ারের কাছে কিছু যায় না আপনার OK ছাড়া, আর টাকা ও দামে PIN লাগে।",
-        "নতুন টুল বা নতুন সংযোগের মতো কোড লাগে এমন কিছু স্কিল দিয়ে হয় না; সেগুলো “AI” > “Full check”-এর “Ask Claude Code” বাক্সে সাধারণ ভাষায় লিখুন।",
+        "নতুন টুল বা নতুন সংযোগের মতো কোড লাগে এমন কিছু স্কিল দিয়ে হয় না; সেগুলো “AI” > “System” > “Full check”-এর “Ask Claude Code” বাক্সে সাধারণ ভাষায় লিখুন।",
         "টেস্ট এজেন্টকে প্রশ্ন করে, তাই সামান্য খরচ হয় আর এআই চালু থাকতে হয়।",
       ],
     },
@@ -280,7 +288,7 @@ export const aiHelp: HelpSection = {
       anyOf: ["ai.manage"],
       steps: [
         {
-          text: "“AI” > “Chat” খুলুন। উপরে “AI cost today” আর এ মাসের (“This month”) এআই খরচ দেখা যায়। নিচের ঘরে লিখে “Send” চাপুন (বা Enter)। কী কী বলা যায় দেখতে “help” লিখুন বা “help” বোতাম চাপুন; “status” লিখলে আজকের ও এ মাসের খরচও জানায়।",
+          text: "“AI” > “Mehedi & Agents” > “Chat” খুলুন। উপরে “AI cost today” আর এ মাসের (“This month”) এআই খরচ দেখা যায়। নিচের ঘরে লিখে “Send” চাপুন (বা Enter)। কী কী বলা যায় দেখতে “help” লিখুন বা “help” বোতাম চাপুন; “status” লিখলে আজকের ও এ মাসের খরচও জানায়।",
           image: { id: "ai-chat-1", caption: "“Chat”: বার্তা, কার্ড ও লেখার ঘর" },
         },
         {
@@ -334,7 +342,7 @@ export const aiHelp: HelpSection = {
       who: "দেখেন যাঁদের এআই সেন্টার দেখার অনুমতি আছে; নতুন অর্ডার, Approve ও Return শুধু মালিক (ai.manage)।",
       steps: [
         {
-          text: "“AI” > “Orders” খুলুন, “New order” চাপুন। “Order name” দিন; জানা থাকলে “Buyer” ও “PO number”; তারপর “Start”।",
+          text: "“AI” > “Work” > “Orders” খুলুন, “New order” চাপুন। “Order name” দিন; জানা থাকলে “Buyer” ও “PO number”; তারপর “Start”।",
           image: { id: "ai-orders-1", caption: "“Orders”: নতুন অর্ডার ও প্রতিটির অবস্থা" },
         },
         {
@@ -396,7 +404,7 @@ export const aiHelp: HelpSection = {
           text: "Telegram-এ @BotFather খুলে /newbot পাঠান। বটের একটি নাম দিন, তারপর একটি user name দিন যার শেষে “bot” থাকে। @BotFather যে token দেয় (যেমন 123456789:AA…), সেটি কপি করুন।",
         },
         {
-          text: "ERP-তে “AI” > “Bot” খুলুন, “Connect a bot” চাপুন, “Bot token” ঘরে token বসিয়ে “Connect” চাপুন। token লক করে রাখা হয়, আর কখনো দেখানো হয় না।",
+          text: "ERP-তে “AI” > “Work” > “Bot” খুলুন, “Connect a bot” চাপুন, “Bot token” ঘরে token বসিয়ে “Connect” চাপুন। token লক করে রাখা হয়, আর কখনো দেখানো হয় না।",
           image: { id: "ai-bot-1", caption: "“Bot”: Telegram, WhatsApp ও শেষ বার্তাগুলো" },
         },
         {
@@ -445,7 +453,7 @@ export const aiHelp: HelpSection = {
       who: "দেখেন যাঁদের এআই সেন্টার খোলা; লেখা, পাঠানো ও বাতিল শুধু মালিকের (ai.manage)।",
       steps: [
         {
-          text: "“AI” > “Drafts” খুলুন। “Waiting”-এ যা পাঠানো বাকি, “Sent”-এ যা গেছে, “Discarded”-এ যা বাদ দিয়েছেন।",
+          text: "“AI” > “Work” > “Drafts” খুলুন। “Waiting”-এ যা পাঠানো বাকি, “Sent”-এ যা গেছে, “Discarded”-এ যা বাদ দিয়েছেন।",
           image: { id: "ai-drafts-1", caption: "“Drafts”: খসড়ার তালিকা ও “Send”" },
         },
         {
@@ -462,7 +470,7 @@ export const aiHelp: HelpSection = {
         },
       ],
       tips: [
-        "ইমেইল পাঠাতে আগে “AI” > “Settings”-এ “Email for sending” ঠিক করুন।",
+        "ইমেইল পাঠাতে আগে “AI” > “System” > “Settings”-এ “Email for sending” ঠিক করুন।",
         "কত ঘণ্টা পরে মনে করাবে তা “Settings”-এর “Reminder for unsent buyer drafts”-এ বদলান (শুরুতে 24 ঘণ্টা)।",
         "এআই বন্ধ বা থামানো থাকলে ফলো-আপের দিনে খসড়া হয় না, মনে করানোও হয় না; এআই চালু করলে আবার শুরু হয়।",
       ],
@@ -489,7 +497,7 @@ export const aiHelp: HelpSection = {
       who: "দেখেন যাঁদের এআই সেন্টার খোলা; টেস্ট চালানো ও বই বদলানো শুধু মালিকের (ai.manage)।",
       steps: [
         {
-          text: "“AI” > “Books & tests” খুলুন। প্রতিটি বইয়ের পাশে টেস্টের অবস্থা: “Passed”, “Not passed”, “Due again”, “Running” বা “Not taken yet”।",
+          text: "“AI” > “System” > “Books & tests” খুলুন। প্রতিটি বইয়ের পাশে টেস্টের অবস্থা: “Passed”, “Not passed”, “Due again”, “Running” বা “Not taken yet”।",
           image: { id: "ai-knowledge-1", caption: "“Books & tests”: বই, টেস্টের অবস্থা ও নম্বর" },
         },
         {
@@ -530,7 +538,7 @@ export const aiHelp: HelpSection = {
       who: "দেখেন যাঁদের এআই সেন্টার খোলা; বদলান শুধু মালিক (ai.manage)।",
       steps: [
         {
-          text: "“AI” > “Control” খুলুন। “What the AI may do” অংশে ভূমিকার অনুমতির মতোই একটি গাছ, প্রতিটি ঘরে তিনটি বোতাম: “Do” (নিজে করবে), “Ask” (আগে জিজ্ঞেস করবে), “Off” (করবে না)।",
+          text: "“AI” > “System” > “Control” খুলুন। “What the AI may do” অংশে ভূমিকার অনুমতির মতোই একটি গাছ, প্রতিটি ঘরে তিনটি বোতাম: “Do” (নিজে করবে), “Ask” (আগে জিজ্ঞেস করবে), “Off” (করবে না)।",
           image: { id: "ai-control-1", caption: "“Control”: Do / Ask / Off সহ গাছ" },
         },
         {
@@ -587,7 +595,7 @@ export const aiHelp: HelpSection = {
       who: "খরচ দেখেন যাঁদের এআই সেন্টার খোলা; বাজেট ঠিক করেন শুধু মালিক (ai.manage)।",
       steps: [
         {
-          text: "“AI” > “Budget & Costs” খুলুন। উপরে সময় বেছে নিন: “Today”, “Yesterday”, “One day” (তখন “Day”-এ দিনটি দিয়ে “Show”), “Last 7 days”, “30 days”, “This month” বা “Custom range” (তখন “From” ও “To” দিয়ে “Show”)।",
+          text: "“AI” > “Money” > “Budget & Costs” খুলুন। উপরে সময় বেছে নিন: “Today”, “Yesterday”, “One day” (তখন “Day”-এ দিনটি দিয়ে “Show”), “Last 7 days”, “30 days”, “This month” বা “Custom range” (তখন “From” ও “To” দিয়ে “Show”)।",
           image: {
             id: "ai-costs-1",
             caption: "“Budget & Costs”: সময়, মোট খরচ ও দিনভিত্তিক চার্ট",
@@ -666,7 +674,7 @@ export const aiHelp: HelpSection = {
       who: "দেখেন যাঁদের এআই সেন্টার খোলা; বদলান শুধু মালিক (ai.manage)।",
       steps: [
         {
-          text: "আগে “AI” > “Settings”-এ যে প্রোভাইডারের মডেল চান তার key দিন আর “Test” চাপুন। তারপর “AI” > “Models” খুলুন। “Providers” অংশে দেখায় কোন প্রোভাইডারের key আছে আর কয়টি মডেল পড়া হয়েছে। নতুন মডেল এলে “Read models from providers” চাপুন: তালিকা সরাসরি প্রোভাইডার থেকে পড়া হয়।",
+          text: "আগে “AI” > “System” > “Settings”-এ যে প্রোভাইডারের মডেল চান তার key দিন আর “Test” চাপুন। তারপর “AI” > “Money” > “Models” খুলুন। “Providers” অংশে দেখায় কোন প্রোভাইডারের key আছে আর কয়টি মডেল পড়া হয়েছে। নতুন মডেল এলে “Read models from providers” চাপুন: তালিকা সরাসরি প্রোভাইডার থেকে পড়া হয়।",
           image: {
             id: "ai-models-1",
             caption: "“Models”: প্রোভাইডার, কাজ অনুযায়ী মডেল ও পরীক্ষার অবস্থা",
@@ -707,7 +715,7 @@ export const aiHelp: HelpSection = {
       who: "যাঁদের এআই সেন্টার খোলা।",
       steps: [
         {
-          text: "“AI” > “Logs” খুলুন। “Everything”-এ সব; “Done by the AI”-তে শুধু এআই-এর কাজ; “Changes to the AI”-তে শুধু মানুষের করা বদল।",
+          text: "“AI” > “System” > “Logs” খুলুন। “Everything”-এ সব; “Done by the AI”-তে শুধু এআই-এর কাজ; “Changes to the AI”-তে শুধু মানুষের করা বদল।",
           image: { id: "ai-logs-1", caption: "“Logs”: এআই-এর কাজ ও বদলের তালিকা" },
         },
         {
@@ -739,7 +747,7 @@ export const aiHelp: HelpSection = {
       anyOf: ["ai.manage"],
       steps: [
         {
-          text: "“AI” > “Server Health” খুলুন, “Check now” চাপুন। প্রতিটি চেক সবুজ (ঠিক আছে), হলুদ (দেখতে হবে) বা লাল (আজই ঠিক করুন) দাগ নিয়ে দেখায়।",
+          text: "“AI” > “System” > “Server Health” খুলুন, “Check now” চাপুন। প্রতিটি চেক সবুজ (ঠিক আছে), হলুদ (দেখতে হবে) বা লাল (আজই ঠিক করুন) দাগ নিয়ে দেখায়।",
           image: {
             id: "ai-health-1",
             caption: "“Server Health”: চেক, বাংলা রিপোর্ট ও নিরাপদ সমাধান",
@@ -805,7 +813,7 @@ export const aiHelp: HelpSection = {
           text: "এতে ERP-র “Merge” আর Deploy আগের মতোই চলে: দুটোই Pull Request দিয়ে যায়, আর Tests and build পাস না করলে GitHub নিজেই merge আটকায়। পরে কখনো GitHub-এ main-এ সরাসরি কিছু বদলাতে চাইলে Pull Request খুলে করুন।",
         },
         {
-          text: "“AI” > “Full check” খুলুন (বা “Server Health”-এ “Full check” চাপুন)। নিচের “GitHub” অংশে “Repository”-তে owner/name আর “Token”-এ টোকেনটি দিয়ে “Save” চাপুন, তারপর “Test the connection”। সব ঠিক থাকলে “Ready” দেখায়; না হলে কী বাকি তা লেখা থাকে। টোকেন তালাবদ্ধ থাকে, শুধু শেষের 4টি অক্ষর দেখায়; সরাতে “Take out”।",
+          text: "“AI” > “System” > “Full check” খুলুন (বা “Server Health”-এ “Full check” চাপুন)। নিচের “GitHub” অংশে “Repository”-তে owner/name আর “Token”-এ টোকেনটি দিয়ে “Save” চাপুন, তারপর “Test the connection”। সব ঠিক থাকলে “Ready” দেখায়; না হলে কী বাকি তা লেখা থাকে। টোকেন তালাবদ্ধ থাকে, শুধু শেষের 4টি অক্ষর দেখায়; সরাতে “Take out”।",
           image: { id: "ai-full-check-1", caption: "“GitHub”: রিপোজিটরি, টোকেন আর সংযোগের টেস্ট" },
         },
         {
@@ -836,6 +844,7 @@ export const aiHelp: HelpSection = {
         },
       ],
       tips: [
+        "চেক প্রতিটি স্ক্রিনের চেহারাও দেখে, চারটি মাপে: ফোন (390 px), ট্যাবলেট (768 px), ল্যাপটপ (1366 px) আর বড় পর্দা (1920 px)। লেখা কাটা পড়া বা একটার ওপর আরেকটা, পর্দার চেয়ে চওড়া স্ক্রিন, হাতের নাগালের বাইরে বোতাম বা মেনুর কোনো অংশ, অ্যাপের ফন্ট ছাড়া অন্য ফন্ট, খুব ছোট লেখা বা ঠিকমতো না দেখানো বাংলা: এগুলো “Layout” সমস্যা হিসেবে আসে। মালিকের রোলে প্রতিটি স্ক্রিন চার মাপেই দেখা হয়, অন্য রোলে মূলত ফোনের মাপে। প্রতিটি Pull Request-এও GitHub একই চেক ডেমো ডেটায় চালায়, তাই এমন ভুল লাইভে যাওয়ার আগেই ধরা পড়ে।",
         "লাইভ সাইটে চেক শুধু পড়ে: কোনো ডেটা বদলায় না। লেখার প্রতিটি চেষ্টা ব্রাউজার থামায়, ERP-র দরজা থামায়, আর সার্ভার নিজেও ডেটাবেসে চেকের প্রতিটি লেখা আটকায়, কোনো স্ক্রিন খোলার সময় নিজে থেকে লিখতে গেলেও। API-র যে পথগুলো শুধু পড়ে বলে তালিকায় আছে চেক শুধু সেগুলোই খোলে; নতুন পথ তালিকায় না ওঠা পর্যন্ত বন্ধ। ব্যাকআপ নামানো বা Google সংযোগের মতো পথ কোনো সাইটেই খোলে না। যা লেখে তা ডেমো সাইটে চেক হয়।",
         "চেকের সেশন রিপোর্ট আসার সঙ্গে শেষ হয় (বড়জোর 50 মিনিট)। চেক শুরু হয় এককালীন পাস আর GitHub-এর সই করা প্রমাণ দিয়ে, আর শুধু main শাখার ওয়ার্কফ্লো থেকে (অন্য শাখায় বদলানো কপি থেকে নয়), তাই অন্য কেউ এটি দিয়ে ঢুকতে পারে না।",
         "GitHub-এ চেকের লগ সবাই দেখতে পারে, তাই সেখানে শুধু সমস্যার ধরন আর স্ক্রিনের পথের ছাঁচ লেখা থাকে; বিস্তারিত আর স্ক্রিনশট শুধু এই পাতায়।",
@@ -873,7 +882,7 @@ export const aiHelp: HelpSection = {
           text: "key নিন: Claude-এর জন্য console.anthropic.com > API Keys (শুরুতে sk-ant-), OpenAI-এর জন্য platform.openai.com > API keys (শুরুতে sk-), Gemini-র জন্য aistudio.google.com > Get API key (শুরুতে AIza)। প্রতিটি সাইটে মাসিক খরচের সীমাও দিয়ে রাখুন।",
         },
         {
-          text: "“AI” > “Settings” খুলুন। প্রতিটি প্রোভাইডারের আলাদা অংশে “Add the key” চাপুন, key বসিয়ে “Save the key”। বদলাতে “Change the key”, সরাতে “Remove the key”।",
+          text: "“AI” > “System” > “Settings” খুলুন। প্রতিটি প্রোভাইডারের আলাদা অংশে “Add the key” চাপুন, key বসিয়ে “Save the key”। বদলাতে “Change the key”, সরাতে “Remove the key”।",
           image: {
             id: "ai-settings-1",
             caption: "“Settings”: Claude, OpenAI ও Gemini key, PIN ও এআই-এর নাম",

@@ -1,0 +1,153 @@
+# The layout checks (v6.4): every screen at the four widths the ERP must work at,
+# 390 px (phone), 768 px (tablet), 1366 px (laptop) and 1920 px (large desktop),
+# on the demo site's sample data. A screen fails when text is cut or overlaps, the
+# screen is wider than the window, a button or a menu item cannot be reached, the
+# text is not in the app's fonts or too small, Bengali text is in a font without
+# Bengali letters, or a table is empty with no word on what to do next. So the
+# same kind of bug fails here before it can go live.
+#
+# It runs on every pull request that changes the screens, on a throwaway database
+# made for the run (nothing here reaches the live site), and by hand from the
+# Actions tab ("Run workflow"). The code is in scripts/full-check/layout.mjs (the
+# same checks the Full check makes) and layout-run.mjs; `npm run layout:check`
+# runs it against any address.
+name: Layout checks
+
+on:
+  pull_request:
+    paths:
+      - "src/**"
+      - "public/**"
+      - "package.json"
+      - "package-lock.json"
+      - "prisma/**"
+      - "scripts/full-check/**"
+      - "scripts/layout-session.ts"
+      - ".github/workflows/layout-checks.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: layout-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  layout:
+    name: Every screen at 390, 768, 1366 and 1920 px
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: extras
+          POSTGRES_PASSWORD: extras
+          POSTGRES_DB: extras_demo
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U extras -d extras_demo"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      # The demo site's own database name: the demo data loads nowhere else.
+      DATABASE_URL: postgresql://extras:extras@localhost:5432/extras_demo?schema=public
+      DEMO_SITE: "on"
+      SEED_ADMIN_EMAIL: owner@layout-check.invalid
+      SEED_ADMIN_NAME: Owner
+      SEED_COMPANIES: Extas,Fabric Apparel
+      # Nobody signs in with a password here: the check gets a session of its own.
+      DEMO_OWNER_PASSWORD_HASH: no-password-sign-in
+      APP_URL: http://localhost:3000
+      UPLOAD_DIR: ${{ github.workspace }}/.layout-uploads
+      BACKUP_SCHEDULER: "off"
+      REMINDER_SCHEDULER: "off"
+      HOUSEKEEPING_SCHEDULER: "off"
+      JOB_WORKER: "off"
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Keys for this run only
+        run: |
+          key=$(openssl rand -hex 32)
+          echo "::add-mask::$key"
+          echo "ENCRYPTION_KEY=$key" >> "$GITHUB_ENV"
+          password=$(openssl rand -hex 16)
+          echo "::add-mask::$password"
+          echo "SEED_ADMIN_PASSWORD=$password" >> "$GITHUB_ENV"
+
+      - name: The demo site's database and sample data
+        run: |
+          mkdir -p "$UPLOAD_DIR"
+          npx prisma migrate deploy
+          npx prisma db seed
+          npx tsx prisma/demo/seed-demo.ts
+
+      - name: Build
+        run: npm run build
+
+      - name: Start the app
+        run: |
+          cp -r .next/static .next/standalone/.next/static
+          cp -r public .next/standalone/public
+          nohup node .next/standalone/server.js > app.log 2>&1 &
+          for i in $(seq 1 60); do
+            curl -sf -o /dev/null http://localhost:3000/sign-in && exit 0
+            sleep 2
+          done
+          echo "The app did not start:"; tail -50 app.log; exit 1
+        env:
+          PORT: "3000"
+          HOSTNAME: 127.0.0.1
+
+      - name: Install the browser
+        working-directory: scripts/full-check
+        run: |
+          npm install --no-package-lock --no-audit --no-fund
+          npx playwright install --with-deps chromium
+
+      - name: The checks find what they must (fixture screens)
+        run: node scripts/full-check/layout-selftest.mjs
+
+      - name: Every screen, top menu
+        run: |
+          LAYOUT_SESSION_FILE="$RUNNER_TEMP/session" LAYOUT_LOOK=LEGACY npx tsx scripts/layout-session.ts
+          COOKIE=$(cat "$RUNNER_TEMP/session") && echo "::add-mask::$COOKIE" && export COOKIE
+          node scripts/full-check/layout-run.mjs
+        env:
+          SITE: http://localhost:3000
+          MINUTES: "30"
+          OUT: layout-shots/top-menu
+
+      - name: Every screen, side menu (the modern look)
+        if: always()
+        run: |
+          LAYOUT_SESSION_FILE="$RUNNER_TEMP/session" LAYOUT_LOOK=MODERN npx tsx scripts/layout-session.ts
+          COOKIE=$(cat "$RUNNER_TEMP/session") && echo "::add-mask::$COOKIE" && export COOKIE
+          node scripts/full-check/layout-run.mjs
+        env:
+          SITE: http://localhost:3000
+          MINUTES: "30"
+          OUT: layout-shots/side-menu
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: layout-problems
+          path: |
+            layout-shots
+            app.log
+          if-no-files-found: ignore

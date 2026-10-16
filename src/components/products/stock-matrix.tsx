@@ -65,12 +65,12 @@ function CellButton({
         {count(cell.available)}
       </span>
       {extras.length > 0 && (
-        <span className="mt-1 text-[0.6875rem] leading-none whitespace-nowrap text-muted-foreground tabular-nums">
+        <span className="mt-1 text-xs leading-none whitespace-nowrap text-muted-foreground tabular-nums">
           {extras.join(" · ")}
         </span>
       )}
       {!cell.isActive && (
-        <span className="mt-1 text-[0.6875rem] leading-none text-muted-foreground">Off</span>
+        <span className="mt-1 text-xs leading-none text-muted-foreground">Off</span>
       )}
     </button>
   );
@@ -215,7 +215,7 @@ export function StockMatrix({
               <tr>
                 <th
                   scope="col"
-                  className="sticky left-0 z-10 h-10 min-w-[8.5rem] border-r border-b bg-card px-4 text-left text-[0.6875rem] font-medium tracking-[0.12em] text-muted-foreground uppercase"
+                  className="sticky left-0 z-10 h-10 min-w-[8.5rem] border-r border-b bg-card px-4 text-left text-xs font-medium tracking-[0.12em] text-muted-foreground uppercase"
                 >
                   Colour
                 </th>
@@ -223,14 +223,14 @@ export function StockMatrix({
                   <th
                     key={size.id}
                     scope="col"
-                    className="h-10 min-w-[4.75rem] border-b px-2.5 text-right text-[0.6875rem] font-medium tracking-[0.12em] text-muted-foreground uppercase"
+                    className="h-10 min-w-[4.75rem] border-b px-2.5 text-right text-xs font-medium tracking-[0.12em] text-muted-foreground uppercase"
                   >
                     {size.name}
                   </th>
                 ))}
                 <th
                   scope="col"
-                  className="h-10 min-w-[5rem] border-b border-l bg-muted/40 px-4 text-right text-[0.6875rem] font-medium tracking-[0.12em] text-muted-foreground uppercase"
+                  className="h-10 min-w-[5rem] border-b border-l bg-muted/40 px-4 text-right text-xs font-medium tracking-[0.12em] text-muted-foreground uppercase"
                 >
                   Total
                 </th>
@@ -277,7 +277,7 @@ export function StockMatrix({
               <tr>
                 <th
                   scope="row"
-                  className="sticky left-0 z-10 border-t border-r bg-muted px-4 py-3 text-left text-[0.6875rem] font-medium tracking-[0.12em] text-muted-foreground uppercase"
+                  className="sticky left-0 z-10 border-t border-r bg-muted px-4 py-3 text-left text-xs font-medium tracking-[0.12em] text-muted-foreground uppercase"
                 >
                   Total
                 </th>

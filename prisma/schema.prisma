@@ -6500,7 +6500,7 @@ model FullCheckProblem {
   runId     String
   /// The role the check had when it met the problem ("Owner", "Accounts"...).
   role      String
-  /// ERROR, BROKEN_LINK, FAILED_REQUEST, SLOW, PDF, SIGNED_OUT or SCRIPT.
+  /// ERROR, BROKEN_LINK, FAILED_REQUEST, SLOW, PDF, SIGNED_OUT, SCRIPT or LAYOUT.
   kind      String
   /// The screen's address, and its pattern ("/production/projects/[projectId]").
   screen    String

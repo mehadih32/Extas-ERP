@@ -7,7 +7,7 @@ export function Wordmark({ className }: { className?: string }) {
       <span className="font-serif text-[1.3rem] leading-none font-medium tracking-[0.22em] uppercase">
         Extas
       </span>
-      <span className="text-[0.625rem] leading-none font-medium tracking-[0.32em] uppercase opacity-70">
+      <span className="text-xs leading-none font-medium tracking-[0.28em] uppercase opacity-70">
         ERP
       </span>
     </span>

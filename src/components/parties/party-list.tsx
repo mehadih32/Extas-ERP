@@ -64,7 +64,7 @@ function PartyCard({
         className="group block rounded-lg border bg-card p-4 transition-colors outline-none hover:border-primary/40 focus-visible:ring-[3px] focus-visible:ring-ring/25"
       >
         <div className="flex items-start justify-between gap-3">
-          <p className="eyebrow truncate">
+          <p className="eyebrow min-w-0 break-words">
             {party.code} · {kindLabel(party)}
           </p>
           <div className="-my-1 flex shrink-0 gap-1.5">

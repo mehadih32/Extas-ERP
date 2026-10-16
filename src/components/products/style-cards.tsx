@@ -64,7 +64,7 @@ function StyleCardItem({
           )}
         </div>
         <div className="min-w-0 flex-1 pt-0.5">
-          <p className="eyebrow truncate">{style.code}</p>
+          <p className="eyebrow min-w-0 break-words">{style.code}</p>
           <p className="mt-1 truncate text-sm text-muted-foreground">{where}</p>
         </div>
         <StatusBadge tone={pill.tone} className="rounded-full px-2">

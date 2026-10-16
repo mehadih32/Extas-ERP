@@ -383,8 +383,8 @@ export function ChatScreen({ chat }: { chat: Chat }) {
                 <p
                   className={
                     m.role === "OWNER"
-                      ? "mt-1 text-right text-[0.6875rem] opacity-75"
-                      : "mt-1 text-[0.6875rem] text-muted-foreground"
+                      ? "mt-1 text-right text-xs opacity-75"
+                      : "mt-1 text-xs text-muted-foreground"
                   }
                 >
                   {time(m.at)}

@@ -117,7 +117,7 @@ export default async function ReconcilePage({
 
         <StatementCompare cleared={s.cleared} currency={currency} />
 
-        <section aria-labelledby="lines-heading" className="grid gap-4">
+        <section aria-labelledby="lines-heading" className="grid min-w-0 grid-cols-1 gap-4">
           <h3 id="lines-heading" className="sr-only">
             Lines
           </h3>

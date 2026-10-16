@@ -86,7 +86,7 @@ export function InsightsTabs({
               {t.count ? (
                 <span
                   className={cn(
-                    "rounded-full px-1.5 py-px text-[0.6875rem] leading-4 font-medium tabular-nums",
+                    "rounded-full px-1.5 py-px text-xs leading-4 font-medium tabular-nums",
                     t.alert
                       ? "bg-destructive text-destructive-foreground"
                       : "bg-muted text-muted-foreground",

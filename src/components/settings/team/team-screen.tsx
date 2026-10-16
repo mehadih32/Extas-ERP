@@ -85,10 +85,7 @@ function RoleBadge({
       <Badge variant={member.role.systemRole === "SUPER_ADMIN" ? "default" : "secondary"}>
         {member.role.name}
         {changes && (
-          <span
-            className="ml-1 font-mono text-[0.6875rem] opacity-80"
-            title={`Own permissions: ${spoken}`}
-          >
+          <span className="ml-1 font-mono text-xs opacity-80" title={`Own permissions: ${spoken}`}>
             <span aria-hidden>{changes}</span>
             <span className="sr-only">, own permissions: {spoken}</span>
           </span>
@@ -151,7 +148,7 @@ export function TeamScreen({ team, companyName }: { team: Team; companyName: str
   };
 
   return (
-    <section aria-labelledby="team-heading" className="grid gap-6">
+    <section aria-labelledby="team-heading" className="grid min-w-0 grid-cols-1 gap-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h2 id="team-heading" className="font-serif text-2xl text-primary">

@@ -47,7 +47,7 @@ function ZoneCard({
           <Icon className="size-4 text-primary" aria-hidden />
           {title}
           {count > 0 && (
-            <span className="rounded-full bg-destructive px-1.5 py-px text-[0.6875rem] leading-4 font-medium tracking-normal text-destructive-foreground tabular-nums">
+            <span className="rounded-full bg-destructive px-1.5 py-px text-xs leading-4 font-medium tracking-normal text-destructive-foreground tabular-nums">
               {count}
             </span>
           )}

@@ -29,6 +29,7 @@ export function BottomNav({
   return (
     <nav
       aria-label="Main"
+      data-layout-nav
       className="pb-safe fixed inset-x-0 bottom-0 z-40 border-t bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/85 md:hidden print:hidden"
     >
       <ul
@@ -44,7 +45,7 @@ export function BottomNav({
                 href={item.href}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "relative flex h-full flex-col items-center justify-center gap-1 text-[0.625rem] tracking-[0.02em] uppercase transition-colors min-[400px]:text-[0.6875rem] min-[400px]:tracking-[0.06em]",
+                  "relative flex h-full flex-col items-center justify-center gap-1 text-xs leading-none transition-colors",
                   active ? "text-primary" : "text-muted-foreground hover:text-foreground",
                 )}
               >

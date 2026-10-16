@@ -204,9 +204,7 @@ export function ColoursPanel({ screen }: { screen: TechPackScreen }) {
                             <td className="py-1.5 pr-2 font-medium">
                               {o.letter}
                               {o.readByAi && (
-                                <span className="ml-1 text-[0.6875rem] text-muted-foreground">
-                                  AI
-                                </span>
+                                <span className="ml-1 text-xs text-muted-foreground">AI</span>
                               )}
                             </td>
                             <td className="py-1.5 pr-2">{o.light ?? c.primaryLight}</td>

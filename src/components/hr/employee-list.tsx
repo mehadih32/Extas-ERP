@@ -282,7 +282,7 @@ export function EmployeeList({
               <div className="flex items-start gap-3">
                 <EmployeeAvatar employeeId={e.id} photoId={e.photoId} name={e.name} size="lg" />
                 <div className="min-w-0 flex-1">
-                  <p className="eyebrow truncate">{e.code}</p>
+                  <p className="eyebrow min-w-0 break-words">{e.code}</p>
                   <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
                     <NameLink e={e} stretched />
                     <ContactLinks name={e.name} phone={e.phone} whatsapp={e.whatsapp} size="sm" />

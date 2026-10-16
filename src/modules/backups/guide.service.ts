@@ -18,7 +18,7 @@ import {
   hostVersion,
 } from "@/modules/backups/backup-core";
 import { restoreCommandLines } from "@/modules/backups/backup.service";
-import { parseRestoreKeyFile, putRootFile, readRootFile } from "@/modules/backups/drive-root";
+import { putRootFile } from "@/modules/backups/drive-root";
 import { guideContentVersion, type GuideLang } from "@/modules/backups/restore-guide";
 import { type GuideDetails, restoreGuidePdf } from "@/modules/backups/restore-guide-pdf";
 
@@ -146,12 +146,14 @@ export async function ensureLocalGuides(now = new Date()): Promise<boolean> {
 
 // --- In the Drive backup folder: the copy with details -------------------------------
 
-/** The recovery key kept in Drive (restore-key.json), when the owner keeps it there. */
+/**
+ * The recovery key kept in Drive, when the owner keeps it there: only the
+ * current pair's, and only when it opens the current keys file, so the guide
+ * never prints an old key (G3).
+ */
 async function keptKey(config: BackupConfig, token: string, rootId: string) {
-  if (!config.keepKeyInDrive || !config.keyPairId) return null;
-  const found = await readRootFile(token, rootId, "restoreKey");
-  const file = found ? parseRestoreKeyFile(found.data) : null;
-  return file && file.pairId === config.keyPairId ? file.recoveryKey : null;
+  const { keptRecoveryKey } = await import("@/modules/backups/recovery-key.service");
+  return keptRecoveryKey(config, token, rootId);
 }
 
 /**

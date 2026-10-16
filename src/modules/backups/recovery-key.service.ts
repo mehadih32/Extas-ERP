@@ -24,12 +24,15 @@ import {
 import { BackupKeyError } from "@/modules/backups/crypt";
 import { ensureKeysFile } from "@/modules/backups/drive-copies";
 import {
+  findRootFiles,
+  newestFirst,
+  ofPair,
   parseRestoreKeyFile,
-  readRootFile,
-  removeRootFiles,
   putRootFile,
+  removeRootFiles,
   restoreKeyFile,
 } from "@/modules/backups/drive-root";
+import { downloadBytes } from "@/modules/backups/google-drive";
 import {
   keyStrength,
   makeKeyFile,
@@ -110,13 +113,21 @@ async function keyInDrive(
     const rootId = await driveRoot(config, token);
     await ensureKeysFile(config, token, rootId);
     if (keep && recoveryKey && config.keyPairId) {
+      // One copy per key pair (G3): the older pairs' copies stay, so after "I
+      // forgot my current key" the backups made before still open by themselves.
+      // This pair's earlier copies (an older key) and copies of pairs that no
+      // backup needs go.
+      const kept = new Set(earlierKeyPairs(config).map((p) => p.pairId));
+      const pairId = config.keyPairId;
       await putRootFile(
         token,
         rootId,
         "restoreKey",
-        restoreKeyFile(config.keyPairId, recoveryKey),
-        {
-          pairId: config.keyPairId,
+        restoreKeyFile(pairId, recoveryKey),
+        { pairId },
+        (file) => {
+          const of = file.appProperties?.pairId;
+          return !of || of === pairId || !kept.has(of);
         },
       );
     } else {
@@ -130,14 +141,41 @@ async function keyInDrive(
   }
 }
 
+/**
+ * The current recovery key kept in Drive (restore-key.json of the current key
+ * pair), only when it really opens the current keys file: an older key, or
+ * another pair's, is never used or printed (G3).
+ */
+export async function keptRecoveryKey(
+  config: BackupConfig,
+  token: string,
+  rootId: string,
+): Promise<string | null> {
+  if (!config.keepKeyInDrive || !config.keyPairId || !config.lockedKeyFile) return null;
+  const keys = parseKeyFile(config.lockedKeyFile);
+  const copies = newestFirst(
+    (await findRootFiles(token, rootId, "restoreKey")).filter(ofPair(config.keyPairId)),
+  );
+  // The newest copy that opens the keys file (a few at most: each try is slow on purpose).
+  for (const copy of copies.slice(0, 3)) {
+    const file = parseRestoreKeyFile(await downloadBytes(token, copy.id));
+    if (!file || file.pairId !== config.keyPairId) continue;
+    try {
+      await openKeyFile(keys, file.recoveryKey);
+      return file.recoveryKey;
+    } catch (error) {
+      if (!(error instanceof BackupKeyError)) throw error;
+    }
+  }
+  return null;
+}
+
 /** The recovery key kept in Drive (restore-key.json), when the owner keeps it there. */
 export async function recoveryKeyFromDrive(config: BackupConfig): Promise<string | null> {
   if (!config.keepKeyInDrive || !config.keyPairId) return null;
   const token = await driveToken(config);
   if (!token) return null;
-  const found = await readRootFile(token, await driveRoot(config, token), "restoreKey");
-  const file = found ? parseRestoreKeyFile(found.data) : null;
-  return file && file.pairId === config.keyPairId ? file.recoveryKey : null;
+  return keptRecoveryKey(config, token, await driveRoot(config, token));
 }
 
 export async function setRecoveryKey(ctx: CompanyContext, raw: unknown, meta?: RequestMeta) {

@@ -27,6 +27,7 @@ import {
 } from "@/modules/backups/crypt";
 import { fetchBackup, listDriveBackups } from "@/modules/backups/drive-copies";
 import { readyForRestore } from "@/modules/backups/drive-fetch";
+import { guideTick } from "@/modules/backups/guide.service";
 import { parseKeyFile } from "@/modules/backups/keys";
 import * as keys from "@/modules/backups/recovery-key.service";
 import { requestRestore } from "@/modules/backups/restore.service";
@@ -36,6 +37,7 @@ import { runTestRestore, TEST_DB_PREFIX } from "@/modules/backups/test-restore";
 
 import { type FakeCloudflare, startFakeCloudflare } from "../../scripts/fake-cloudflare";
 import { type FakeGoogle, startFakeGoogle } from "../../scripts/fake-google";
+import { pdfLines } from "../fixtures/pdf";
 import { makeCodeBundle } from "./code-bundle-fixture";
 import { addToCompany, contextFor, makeCompany, makeUser, resetDb } from "./helpers";
 
@@ -509,6 +511,7 @@ run("v6.4 backups", { timeout: 120_000 }, () => {
     });
 
     it("makes a new pair when the key is forgotten, and says which backups need the old one", async () => {
+      await connectDrive();
       const first = await setKey();
       const forgot = await keys.setRecoveryKey(ctx, {
         pin: PIN,
@@ -526,6 +529,66 @@ run("v6.4 backups", { timeout: 120_000 }, () => {
           `Backups made before now \\(key ${oldPair}\\) open only with your old recovery key`,
         ),
       );
+
+      // G3: Drive keeps one restore-key.json per pair, so the old backups still open.
+      const newPair = forgot.config.recoveryKey.pairId!;
+      const copies = () =>
+        labelled("restore-key").map((f) => ({
+          pair: f.appProperties.pairId,
+          key: (JSON.parse(f.data!.toString()) as { recoveryKey: string }).recoveryKey,
+        }));
+      expect(copies()).toEqual([
+        { pair: oldPair, key: OWNER_KEY },
+        { pair: newPair, key: "my second key, written down" },
+      ]);
+      expect(await keys.recoveryKeyFromDrive(await backups.getBackupConfig())).toBe(
+        "my second key, written down",
+      );
+      const guide = pdfLines(labelled("guide-en")[0]!.data!).join("\n");
+      expect(guide).toContain("my second key, written down");
+      expect(guide).not.toContain(OWNER_KEY);
+
+      // Changed again (same pair): that pair's older copy goes; the old pair's stays.
+      await keys.setRecoveryKey(ctx, {
+        pin: PIN,
+        key: "my third key, also written",
+        confirm: "my third key, also written",
+        currentKey: "my second key, written down",
+      });
+      expect(copies()).toEqual([
+        { pair: oldPair, key: OWNER_KEY },
+        { pair: newPair, key: "my third key, also written" },
+      ]);
+
+      // A stale copy (an older key of this pair, made last) is never used or printed.
+      const root = rootFiles().find((f) => f.appProperties.extas === "restore-key")!;
+      google.files.set("stale", {
+        ...root,
+        id: "stale",
+        appProperties: { extas: "restore-key", pairId: newPair },
+        createdTime: new Date(Date.now() + 60_000).toISOString(),
+        data: Buffer.from(
+          JSON.stringify({
+            app: "Extas ERP",
+            kind: "restore-key",
+            pairId: newPair,
+            recoveryKey: "my second key, written down",
+            savedAt: new Date().toISOString(),
+          }),
+        ),
+      });
+      expect(await keys.recoveryKeyFromDrive(await backups.getBackupConfig())).toBe(
+        "my third key, also written",
+      );
+      expect(await guideTick(new Date(Date.now() + 40 * 86_400_000))).toBe("made");
+      const later = pdfLines(labelled("guide-en")[0]!.data!).join("\n");
+      expect(later).toContain("my third key, also written");
+      expect(later).not.toContain("my second key, written down");
+      expect(later).not.toContain(OWNER_KEY);
+
+      // Taken out of Drive: every copy goes.
+      await keys.setKeepKeyInDrive(ctx, { pin: PIN, keep: false });
+      expect(labelled("restore-key")).toEqual([]);
     });
 
     it("retires v6.3's generated key, whose backups still open with the old key card", async () => {

@@ -19,9 +19,12 @@ import {
   RULES,
   safeSelector,
   scrollsOnPurpose,
+  tabRowHides,
   textOverlaps,
   WIDTHS,
 } from "../../scripts/full-check/layout.mjs";
+import { PRESSABLE, safeToPress } from "../../scripts/full-check/press.mjs";
+import { siteKind } from "../../scripts/full-check/routes.mjs";
 import {
   fixIssue,
   KIND_LABEL,
@@ -79,6 +82,9 @@ describe("The layout checks' rules", () => {
       clientHeight: 20,
       titled: false,
       lineClamp: false,
+      strict: false,
+      inCell: false,
+      cutOk: false,
     };
     expect(clipsOwnText(cut)).toBe("x");
     // "..." alone hides the rest; with a tooltip ("title") the whole text is reachable.
@@ -91,6 +97,47 @@ describe("The layout checks' rules", () => {
     const tall = { ...cut, scrollWidth: 80, scrollHeight: 60 };
     expect(clipsOwnText(tall)).toBe("y");
     expect(clipsOwnText({ ...tall, titled: true, lineClamp: true })).toBeNull();
+  });
+
+  it('count "..." as cut on a phone or a tablet, and on a button, link, tab or heading at any width', () => {
+    const dots = {
+      overflowX: "hidden",
+      overflowY: "hidden",
+      textOverflow: "ellipsis",
+      scrollWidth: 140,
+      clientWidth: 80,
+      scrollHeight: 20,
+      clientHeight: 20,
+      titled: true,
+      lineClamp: false,
+      strict: true,
+      inCell: false,
+      cutOk: false,
+    };
+    // A page title, a button or a tab cut with "...": a tooltip does not help on a phone.
+    expect(clipsOwnText(dots)).toBe("x");
+    expect(clipsOwnText({ ...dots, scrollWidth: 80, scrollHeight: 60, lineClamp: true })).toBe("y");
+    // In a table cell, a long name may end in "..." (its tooltip and its record hold it whole).
+    expect(clipsOwnText({ ...dots, inCell: true })).toBeNull();
+    expect(clipsOwnText({ ...dots, inCell: true, titled: false })).toBe("x");
+    // Marked on purpose (data-layout-cut-ok): the whole value is one tap away.
+    expect(clipsOwnText({ ...dots, cutOk: true, titled: false })).toBeNull();
+    // Cut with no "..." at all is cut, even in a table cell or marked.
+    expect(clipsOwnText({ ...dots, textOverflow: "clip", inCell: true, cutOk: true })).toBe("x");
+  });
+
+  it("count a row of tabs or menu links that scrolls sideways as cut, unless it gives a cue", () => {
+    const row = { overflowX: "auto", scrollWidth: 420, clientWidth: 358, cue: false };
+    // Its scroll bar shows on a computer, not on a phone until it is moved: the tabs past
+    // the edge look cut (the HR profile's "Details" at 390 px).
+    expect(tabRowHides(row)).toBe(true);
+    expect(tabRowHides({ ...row, overflowX: "scroll" })).toBe(true);
+    expect(tabRowHides({ ...row, cue: true })).toBe(false);
+    // A row that wraps or fits hides nothing.
+    expect(tabRowHides({ ...row, scrollWidth: 358 })).toBe(false);
+    expect(tabRowHides({ ...row, overflowX: "visible" })).toBe(false);
+    // Hidden overflow is "text cut by its box", found by the text rule.
+    expect(tabRowHides({ ...row, overflowX: "hidden" })).toBe(false);
   });
 
   it("count a row that scrolls as cut when its scroll bar is hidden and it gives no cue", () => {
@@ -193,6 +240,7 @@ describe("The layout checks' rules", () => {
     expect(lib.textOverlaps(box(0, 0, 100, 20), box(10, 2, 120, 22))).toBe(true);
     expect(lib.isTiny(11)).toBe(true);
     expect(lib.isBengaliFamily("bengali", "U+0980-09FE")).toBe(true);
+    expect(Object.keys(lib)).toContain("tabRowHides");
   });
 });
 
@@ -273,11 +321,65 @@ describe("Where the layout checks run", () => {
   });
 
   it("make their session only in a database made for checks, never the live ERP's", () => {
-    expect(isCheckDatabase("extras_demo")).toBe(true);
     expect(isCheckDatabase("extras_layout")).toBe(true);
     expect(isCheckDatabase("extras_erp_ui_b")).toBe(true);
     expect(isCheckDatabase("extras_erp")).toBe(false);
     expect(isCheckDatabase("extras_erp_test")).toBe(false);
     expect(isCheckDatabase(undefined)).toBe(false);
+    // "extras_demo" is the demo site's own database: only GitHub's throwaway copy of it
+    // (the layout check's run) may get a session, never the demo site.
+    expect(isCheckDatabase("extras_demo", {})).toBe(false);
+    expect(isCheckDatabase("extras_demo", { GITHUB_ACTIONS: "true" })).toBe(false);
+    expect(
+      isCheckDatabase("extras_demo", { GITHUB_ACTIONS: "true", LAYOUT_THROWAWAY_DB: "yes" }),
+    ).toBe(true);
+    expect(isCheckDatabase("extras_demo", { LAYOUT_THROWAWAY_DB: "yes" })).toBe(false);
+    for (const yml of ["layout-checks.yml", "help-pictures.yml"])
+      expect(read(`.github/workflows/${yml}`)).toContain('LAYOUT_THROWAWAY_DB: "yes"');
+    expect(read("scripts/layout-session.ts")).not.toMatch(/the demo's own \(extras_demo\)/);
+  });
+
+  it("never run against the live ERP: only a copy on this computer or a demo site", () => {
+    expect(siteKind(new URL("http://localhost:3000"))).toBe("copy");
+    expect(siteKind(new URL("http://127.0.0.1:3400"))).toBe("copy");
+    expect(siteKind(new URL("https://demo.extasbd.com"))).toBe("demo");
+    expect(siteKind(new URL("https://erp.extasbd.com"))).toBe("live");
+    expect(siteKind(new URL("https://erp.example.com"))).toBe("live");
+    const run = read("scripts/full-check/layout-run.mjs");
+    expect(run).toContain('siteKind(SITE) === "live"');
+    expect(run).toMatch(/process\.exit\(1\)/);
+  });
+
+  it("press only tabs and buttons that open a window, never one that could change something", () => {
+    for (const words of [
+      ["Delete order"],
+      ["", "Delete"],
+      ["", "", "Remove this line"],
+      ["Record payment"],
+      ["Send to buyer"],
+      ["Approve"],
+      ["Save"],
+    ])
+      expect(safeToPress(...words)).toBe(false);
+    for (const words of [["Details"], ["Overview"], ["Leave"], ["", "Show the filters"]])
+      expect(safeToPress(...words)).toBe(true);
+    expect(PRESSABLE.dialogs).toContain('[aria-haspopup="dialog"]');
+    expect(PRESSABLE.dialogs).toContain('[role="tab"]');
+  });
+
+  it("go with tab rows that wrap on a phone, never scroll sideways (the app's and the dashboard's)", () => {
+    const tabs = read("src/components/ui/tabs.tsx");
+    expect(tabs).toContain("flex-wrap");
+    expect(tabs).not.toContain("overflow-x-auto");
+    expect(read("src/components/dashboard/insights-tabs.tsx")).not.toContain("overflow-x-auto");
+  });
+
+  it("check the layout of every tab and window they open, on a phone at least", () => {
+    for (const file of ["scripts/full-check/crawl.mjs", "scripts/full-check/layout-run.mjs"]) {
+      const code = read(file);
+      expect(code).toContain('from "./press.mjs"');
+      expect(code).toMatch(/pressSafe\(page, \{[\s\S]*look:/);
+      expect(code).toContain("checkLayout(page");
+    }
   });
 });

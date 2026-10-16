@@ -4,8 +4,11 @@
  * first company, lasting two hours. GitHub's layout check runs it on a throwaway
  * copy of the demo site's database (.github/workflows/layout-checks.yml).
  *
- * It only runs on a database made for checks: the demo's own (extras_demo) or a
- * copy whose name starts with extras_layout or extras_erp_ui; never the live ERP's.
+ * It only runs on a database made for checks: a copy whose name starts with
+ * extras_layout or extras_erp_ui; never the live ERP's nor the demo site's. GitHub's
+ * layout check loads the demo data into a throwaway database that must be called
+ * extras_demo (prisma/demo/load-demo.ts); only there, on GitHub with
+ * LAYOUT_THROWAWAY_DB=yes, is that name accepted.
  *   SEED_ADMIN_EMAIL     whose screens to check (the owner)
  *   LAYOUT_LOOK          LEGACY (the top menu, the default) or MODERN (the side menu):
  *                        the look the owner's screens are checked in
@@ -16,9 +19,18 @@ import { writeFileSync } from "node:fs";
 import { generateSessionToken, hashSessionToken } from "@/lib/auth/token";
 import { prisma } from "@/lib/prisma";
 
-/** The databases a check session may be made in. */
-export function isCheckDatabase(name: string | null | undefined): boolean {
-  return name === "extras_demo" || /^extras_(layout|erp_ui)\w*$/.test(name ?? "");
+/**
+ * The databases a check session may be made in: a copy made for checks, or GitHub's
+ * throwaway copy of the demo data (named like the demo site's own, extras_demo).
+ */
+export function isCheckDatabase(
+  name: string | null | undefined,
+  env: Record<string, string | undefined> = process.env,
+): boolean {
+  if (name === "extras_demo") {
+    return env.GITHUB_ACTIONS === "true" && env.LAYOUT_THROWAWAY_DB === "yes";
+  }
+  return /^extras_(layout|erp_ui)\w*$/.test(name ?? "");
 }
 
 async function main() {

@@ -47,6 +47,8 @@ jobs:
     env:
       # The demo site's own database name: the demo data loads nowhere else.
       DATABASE_URL: postgresql://extras:extras@localhost:5432/extras_demo?schema=public
+      # A throwaway made for the run: scripts/layout-session.ts may make its session here.
+      LAYOUT_THROWAWAY_DB: "yes"
       DEMO_SITE: "on"
       SEED_ADMIN_EMAIL: owner@layout-check.invalid
       SEED_ADMIN_NAME: Demo Owner

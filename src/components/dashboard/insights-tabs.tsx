@@ -74,7 +74,7 @@ export function InsightsTabs({
             of buttons (every count stays in sight); underlined tabs from tablets up. */}
         <TabsList
           aria-label="Insights"
-          className="grid grid-cols-2 gap-2 overflow-visible border-b-0 sm:flex sm:gap-6 sm:overflow-x-auto sm:border-b"
+          className="grid grid-cols-2 gap-2 border-b-0 sm:flex sm:gap-x-6 sm:gap-y-1 sm:border-b"
         >
           {tabs.map((t) => (
             <TabsTrigger

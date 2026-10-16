@@ -677,6 +677,19 @@ run("Tech pack AI", () => {
     const usage = await prisma.aiUsage.findMany({ select: { recordId: true, task: true } });
     expect(new Set(usage.map((u) => u.recordId))).toEqual(new Set([env.polo.id]));
     expect(usage.length).toBe(sent.length);
+    // What the AI wrote is marked AI in the log; a person's decision on a line is not.
+    const log = await prisma.auditLog.findMany({
+      where: { entityType: "ProductionProject", entityId: env.polo.id },
+      select: { summary: true, byAi: true },
+    });
+    const marked = (pattern: RegExp) => log.filter((a) => pattern.test(a.summary ?? ""));
+    expect(marked(/AI drafted the tech pack/).every((a) => a.byAi)).toBe(true);
+    expect(marked(/AI drafted the tech pack/)).toHaveLength(2);
+    expect(marked(/review board found/).every((a) => a.byAi)).toBe(true);
+    expect(marked(/approx\. colour from a photo/).every((a) => a.byAi)).toBe(true);
+    expect(
+      log.filter((a) => !a.byAi && /AI drafted|review board|approx\./.test(a.summary ?? "")),
+    ).toEqual([]);
   });
 
   it("approves the tech pack once nothing is red", async () => {

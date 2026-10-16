@@ -4,6 +4,7 @@ import { CalendarClockIcon, PenLineIcon, SendIcon, SparklesIcon } from "lucide-r
 import Link from "next/link";
 import { useState, useTransition } from "react";
 
+import { usePinPrompt } from "@/components/ai/pin-prompt";
 import { useWhen } from "@/components/ai/when";
 import { Field, FormAlert } from "@/components/forms/field";
 import { StatusBadge } from "@/components/sales/badges";
@@ -28,8 +29,9 @@ import {
 
 /*
  * AI Center > Drafts: what Mehedi 2.0 (or the owner) drafted. A buyer's
- * message goes only when the owner presses Send; an unsent one reminds the
- * owner after the hours set in Settings. Follow-ups: on the day, a draft is
+ * message goes only when the owner presses Send (a quotation or an invoice
+ * asks for the PIN); an unsent one reminds the owner after the hours set in
+ * Settings. Follow-ups: on the day, a draft is
  * made and the owner reminded.
  */
 
@@ -50,6 +52,7 @@ export function DraftsScreen({ drafts: d }: { drafts: Drafts }) {
   const [following, setFollowing] = useState(false);
   const [words, setWords] = useState<{ subject: string; body: string; byAi: boolean } | null>(null);
   const [aiError, setAiError] = useState<string>();
+  const { withPin, dialog: pinDialog } = usePinPrompt();
   const manage = d.can.manage;
 
   const run = (
@@ -66,6 +69,7 @@ export function DraftsScreen({ drafts: d }: { drafts: Drafts }) {
   return (
     <div className="grid gap-6">
       {message && <FormAlert tone={message.tone}>{message.text}</FormAlert>}
+      {pinDialog}
 
       <Panel
         title="Drafts"
@@ -88,8 +92,8 @@ export function DraftsScreen({ drafts: d }: { drafts: Drafts }) {
         }
       >
         <p className="mt-2 text-sm text-muted-foreground">
-          Nothing reaches a buyer until you press Send (or say &ldquo;পাঠাও&rdquo; in the chat). An
-          unsent buyer draft reminds you after {d.replyRemindHours} hours.
+          Nothing reaches a buyer until you press Send. A quotation or an invoice asks for your PIN.
+          An unsent buyer draft reminds you after {d.replyRemindHours} hours.
         </p>
         <nav aria-label="Draft lists" className="mt-4 flex flex-wrap gap-2">
           {LISTS.map((l) => (
@@ -143,7 +147,12 @@ export function DraftsScreen({ drafts: d }: { drafts: Drafts }) {
                       type="button"
                       size="sm"
                       disabled={pending || !x.toAddress}
-                      onClick={() => run(() => sendDraftAction(x.id), `Sent to ${x.toAddress}.`)}
+                      onClick={() =>
+                        run(
+                          () => withPin((pin) => sendDraftAction(x.id, pin)),
+                          `Sent to ${x.toAddress}.`,
+                        )
+                      }
                     >
                       <SendIcon aria-hidden />
                       Send

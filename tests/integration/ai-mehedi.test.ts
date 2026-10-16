@@ -74,7 +74,9 @@ import { mehediSystem } from "@/modules/ai/persona";
 import {
   getAiStatus,
   OFF_TEXT,
+  setAiPaused,
   setAiSwitch,
+  setPin,
   setApiKey,
   setReplyRemindHours,
 } from "@/modules/ai/settings.service";
@@ -90,6 +92,8 @@ import {
   standInForMail,
 } from "@/modules/mail/mail.service";
 import * as parties from "@/modules/parties/party.service";
+import { createProject } from "@/modules/production/project.service";
+import { addMember } from "@/modules/rbac/member.service";
 import { createRole } from "@/modules/rbac/role.service";
 import {
   getChatAction,
@@ -245,6 +249,49 @@ run("Mehedi 2.0", () => {
     });
     // In no team: no list shows him and no role can be given to him.
     expect(await prisma.companyMembership.count({ where: { userId: account.id } })).toBe(0);
+    // His address can never be added to a team, in this store or another (v6.3).
+    const role = await prisma.role.findFirstOrThrow({
+      where: { companyId: env.company.id, systemRole: "SUPER_ADMIN" },
+    });
+    await expect(
+      addMember(env.owner, { email: account.email, name: "Taking over", roleId: role.id }),
+    ).rejects.toBeInstanceOf(ZodError);
+    await expect(
+      addMember(env.owner, {
+        email: `ai-someother@ai.invalid`,
+        name: "Not a person",
+        roleId: role.id,
+      }),
+    ).rejects.toBeInstanceOf(ZodError);
+    // Nor his account, whatever address it ends up with.
+    await prisma.user.update({ where: { id: account.id }, data: { email: "bot@extas.test" } });
+    await expectAppError(
+      addMember(env.owner, { email: "bot@extas.test", name: "Taking over", roleId: role.id }),
+      "VALIDATION",
+      /kept for the AI's own account/,
+    );
+    await prisma.user.update({ where: { id: account.id }, data: { email: account.email } });
+    // An account someone made at the address before is locked again before the AI uses it.
+    const other = await makeCompany("Second store");
+    const squatter = await makeUser(`ai-${other.company.id}@ai.invalid`);
+    await addToCompany(squatter.id, other.company.id, other.roles.SUPER_ADMIN);
+    await prisma.session.create({
+      data: {
+        userId: squatter.id,
+        token: "squatter-token",
+        expiresAt: new Date(Date.now() + 3_600_000),
+      },
+    });
+    const taken = await aiAccountOf(other.company.id);
+    expect(taken.id).toBe(squatter.id);
+    expect(await prisma.user.findUniqueOrThrow({ where: { id: squatter.id } })).toMatchObject({
+      passwordHash: null,
+      status: "SUSPENDED",
+    });
+    expect(
+      await prisma.companyMembership.count({ where: { userId: squatter.id, isActive: true } }),
+    ).toBe(0);
+    expect(await prisma.session.count({ where: { userId: squatter.id } })).toBe(0);
     expect(
       (await prisma.aiSettings.findUniqueOrThrow({ where: { companyId: env.company.id } }))
         .aiUserId,
@@ -407,6 +454,19 @@ run("Mehedi 2.0", () => {
       scope: "BUYER",
       scopeValue: "Nordic Wear AB",
     });
+    // A rule the AI worded is marked AI in the log; the owner's own words are not.
+    const worded = await proposeHouseRule(
+      env.owner,
+      { text: "Nordic Wear pays by TT within 30 days" },
+      undefined,
+      { byAi: true, said: "nordic pays tt 30 days" },
+    );
+    const logged = await prisma.auditLog.findMany({
+      where: { entityType: "HouseRule", entityId: { in: [rule.id, worded.id] } },
+    });
+    expect(logged.find((a) => a.entityId === rule.id)?.byAi).toBe(false);
+    expect(logged.find((a) => a.entityId === worded.id)?.byAi).toBe(true);
+    await prisma.houseRule.delete({ where: { id: worded.id } });
     expect(rule).toMatchObject({ status: "PROPOSED", source: "Teach", byAi: false });
     expect(await systemText(env.company.id)).not.toContain(said);
 
@@ -532,6 +592,22 @@ run("Mehedi 2.0", () => {
     });
 
     const now = new Date();
+    // While the AI is off or paused nothing runs: no draft, no reminder (v6.3).
+    expect(await runAiReminders(now, { companyId: env.company.id })).toEqual({
+      followUps: 0,
+      waiting: 0,
+    });
+    await setAiSwitch(env.owner, true);
+    await setAiPaused(env.owner, true);
+    expect(
+      await runAiReminders(new Date(now.getTime() + 25 * 3_600_000), {
+        companyId: env.company.id,
+      }),
+    ).toEqual({ followUps: 0, waiting: 0 });
+    expect(await prisma.aiDraft.count({ where: { kind: "BUYER_FOLLOW_UP" } })).toBe(0);
+    expect(await prisma.notificationLog.count()).toBe(0);
+    await setAiPaused(env.owner, false);
+
     expect(await runAiReminders(now, { companyId: env.company.id })).toEqual({
       followUps: 1,
       waiting: 0,
@@ -684,7 +760,19 @@ run("Mehedi 2.0", () => {
     expect(
       (await prisma.orderCosting.findUniqueOrThrow({ where: { id } })).profitPercent?.toString(),
     ).toBe("8");
-    await applyCard(env.owner, profit!.id);
+    // A price: the PIN must be set first, and given (v6.3).
+    await expectAppError(applyCard(env.owner, profit!.id), "VALIDATION", /^Set your PIN first/);
+    await setPin(env.owner, { pin: "1357" });
+    await expectAppError(applyCard(env.owner, profit!.id), "VALIDATION", /Give your PIN/);
+    await expectAppError(
+      applyCard(env.owner, profit!.id, undefined, "9999"),
+      "VALIDATION",
+      "The PIN is not right.",
+    );
+    expect(
+      (await prisma.aiChatMessage.findUniqueOrThrow({ where: { id: profit!.id } })).cardStatus,
+    ).toBe("PROPOSED");
+    await applyCard(env.owner, profit!.id, undefined, "1357");
     expect(
       (await prisma.orderCosting.findUniqueOrThrow({ where: { id } })).profitPercent?.toString(),
     ).toBe("12.5");
@@ -713,7 +801,7 @@ run("Mehedi 2.0", () => {
     // A card that fails is offered again.
     const [again] = await say(`${number} profit 15%`);
     await prisma.orderCosting.delete({ where: { id } });
-    await expectAppError(applyCard(env.owner, again!.id), "NOT_FOUND");
+    await expectAppError(applyCard(env.owner, again!.id, undefined, "1357"), "NOT_FOUND");
     expect(
       (await prisma.aiChatMessage.findUniqueOrThrow({ where: { id: again!.id } })).cardStatus,
     ).toBe("PROPOSED");
@@ -721,23 +809,36 @@ run("Mehedi 2.0", () => {
 
   it("never deletes: asking to delete becomes a Deletion request", async () => {
     await setAiSwitch(env.owner, true);
-    const { id, number } = await sheet(env);
-    const [answer] = await say(`delete ${number}`);
+    const { number } = await sheet(env);
+    // A costing sheet is never deleted in the ERP: nothing is asked.
+    const [sheetAnswer] = await say(`delete ${number}`);
+    expect(sheetAnswer!.text).toMatch(/cannot be deleted in the ERP \(it keeps costing sheets\)/);
+    expect(await prisma.aiDeletionRequest.count()).toBe(0);
+    const project = await createProject(env.owner, {
+      name: "Old sample polo",
+      factoryName: "Own sewing floor",
+      targetDate: addDays(localDay(new Date(), env.company.timezone), 30),
+      targetQuantity: 50,
+      status: "PLANNED",
+    });
+    const [answer] = await say(`delete ${project.code}`);
     expect(answer!.text).toMatch(/^I never delete anything\. I sent you a Deletion request/);
     expect(await prisma.aiDeletionRequest.findFirstOrThrow()).toMatchObject({
-      recordType: "OrderCosting",
-      recordId: id,
+      recordType: "ProductionProject",
+      recordId: project.id,
       status: "PENDING",
       channel: "ERP",
       askedBy: LABEL,
     });
-    expect(await prisma.orderCosting.count()).toBe(1);
+    expect(
+      (await prisma.productionProject.findUniqueOrThrow({ where: { id: project.id } })).status,
+    ).toBe("PLANNED");
     const [old] = await say("পুরোনো ড্রাফট বুকিংগুলো মুছে দাও");
     expect(old!.text).toBe("There are no draft bookings older than 30 days. Nothing to ask.");
     expect(await prisma.aiDeletionRequest.count()).toBe(1);
   });
 
-  it("writes taught rules down for approval, and sends a draft only when the owner says পাঠাও", async () => {
+  it("writes taught rules down for approval; পাঠাও only shows the draft again, Send sends it", async () => {
     await setAiSwitch(env.owner, true);
     await say("নিয়ম: Nordic Wear-এর কলার সবসময় 3 1/4 ইঞ্চি");
     expect(await prisma.houseRule.findFirstOrThrow()).toMatchObject({
@@ -759,11 +860,18 @@ run("Mehedi 2.0", () => {
       to: "orders@nordicwear.test",
     });
     expect(sent).toHaveLength(0);
-    const [gone] = await say("পাঠাও");
-    expect(gone!.text).toMatch(/^Sent ".+" to orders@nordicwear\.test\.$/);
+    const draftId = (cardOf(drafted!) as { draftId: string }).draftId;
+    // Words never send: the exact draft comes back with its buyer and subject, to confirm.
+    const [shown] = await say("পাঠাও");
+    expect(shown!.text).toMatch(
+      /^Send this one\? To Nordic Wear AB \(orders@nordicwear\.test\): ".+"\. Press Send under it to send it\. Nothing goes until you press it\.$/,
+    );
+    expect(cardOf(shown!)).toMatchObject({ type: "draft", draftId });
+    expect(sent).toHaveLength(0);
+    await sendDraft(env.owner, draftId);
     expect(sent).toHaveLength(1);
     const [twice] = await say("পাঠাও");
-    expect(twice!.text).toBe("Not sent: This draft was sent already.");
+    expect(twice!.text).toMatch(/^The draft shown last here \(".+"\) was sent already\./);
     expect(sent).toHaveLength(1);
     expect((await getChat(env.owner)).messages.find((m) => m.id === drafted!.id)?.draftStatus).toBe(
       "SENT",

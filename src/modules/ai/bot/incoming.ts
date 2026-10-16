@@ -16,10 +16,11 @@ import { kickJobWorker } from "@/modules/jobs/worker";
 import type { CardStatus, ChatCard } from "../chat/cards";
 import { applyCard, cancelCard, sendChat } from "../chat/chat.service";
 import { storePrefix } from "../chat/intents";
-import { discardDraft, sendDraft } from "../drafts.service";
+import { discardDraft, PRICE_DRAFTS, sendDraft } from "../drafts.service";
 import { decideHouseRule } from "../house-rules.service";
+import { cardPinReason } from "../chat/chat.service";
 import { answerDeletion, answerPermission, needsPin } from "../requests.service";
-import { aiSettingsOf, checkPin } from "../settings.service";
+import { aiSettingsOf, checkPin, PIN_CHECKED } from "../settings.service";
 import { logBot, senderFor } from "./bot.service";
 import type { Incoming } from "./channel";
 import { type BotOut, type ButtonPress, readButton, renderAnswer } from "./render";
@@ -35,11 +36,14 @@ import { readWhatsAppPayload, whatsappSignatureOk } from "./whatsapp";
  *   - answers only the linked owner's own private chat (anyone else: nothing
  *     is sent back, and the message is only logged);
  *   - picks the store: the name at the start ("EXTAS: ..."), else the only
- *     store linked to this chat, else one question;
+ *     store linked to this chat, else one question; the message is kept in
+ *     that store's log (stores sharing one bot each see only their own);
  *   - passes the words to Mehedi 2.0's chat (the same commands, Control and
  *     log as in the ERP) and sends the answers back with their buttons;
- *   - for money, prices and Deletion requests asks for the PIN, takes it
- *     from the next message and removes that message from the chat.
+ *   - for money, prices, locked cells and Deletion requests asks for the PIN,
+ *     takes it from the next message and removes that message from the chat.
+ *     The PIN is checked the moment it arrives and never kept: the log, the
+ *     background job and AI Center > Bot only ever see "[PIN]".
  */
 
 const PIN_MINUTES = 5;
@@ -54,40 +58,92 @@ const described = (m: Incoming) =>
 const isRepeat = (error: unknown) =>
   error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
 
+/** What the log, the job and the screen keep instead of a PIN. */
+export const PIN_TEXT = "[PIN]";
+
+const STOP_WORDS = /^(cancel|stop|বাতিল|না)$/i;
+
+/** A PIN check made as the message arrived: per waiting store, right, wrong, or why not. */
+type PinChecks = Record<string, { right: boolean; problem?: string }>;
+
+/**
+ * The PIN a waiting store asked for, checked now (so it is never written
+ * anywhere): null when no store of this chat waits for one, or the owner wrote
+ * "বাতিল".
+ */
+async function checkPinNow(mine: AiBotLink[], m: Incoming, now: Date): Promise<PinChecks | null> {
+  const text = m.text?.trim() ?? "";
+  if (!text || m.callback || STOP_WORDS.test(text)) return null;
+  const waiting = mine.filter((l) => l.pending && l.pendingUntil && l.pendingUntil > now);
+  if (waiting.length === 0) return null;
+  const checks: PinChecks = {};
+  for (const link of waiting) {
+    try {
+      checks[link.id] = { right: await checkPin(link.companyId, text, link.ownerId ?? link.id) };
+    } catch (error) {
+      if (!(error instanceof AppError)) throw error;
+      checks[link.id] = { right: false, problem: error.message };
+    }
+  }
+  return checks;
+}
+
+/** The store a message is for, when it can be told now; null when the worker must ask. */
+async function storeOfMessage(mine: AiBotLink[], m: Incoming) {
+  if (mine.length === 0) return null;
+  if (m.callback) {
+    const press = readButton(m.callback.data);
+    return press ? storeOfPress(mine, press) : null;
+  }
+  const picked = await storeFor(mine, m.text?.trim() ?? "");
+  return "ask" in picked ? null : picked;
+}
+
 /** Keeps one incoming message and queues its handling; a stranger's is only logged. */
 async function keep(links: AiBotLink[], channel: AiBotChannel, botKey: string, m: Incoming) {
   const first = links[0]!;
   const now = new Date();
+  const mine = links.filter((l) => l.linkedAt && l.chatId === m.chatId);
+  const code = CODE.exec(m.text?.trim() ?? "")?.[1];
+  const linking = code
+    ? links.find(
+        (l) => l.linkCodeHash === hashText(code) && l.linkCodeUntil && l.linkCodeUntil > now,
+      )
+    : undefined;
   // Only the linked chat, or someone sending a link code while one is waiting, gets as far as the worker.
   const known =
-    links.some((l) => l.linkedAt && l.chatId === m.chatId) ||
-    (CODE.test(m.text?.trim() ?? "") &&
-      links.some((l) => l.linkCodeUntil && l.linkCodeUntil > now));
+    mine.length > 0 ||
+    (code !== undefined && links.some((l) => l.linkCodeUntil && l.linkCodeUntil > now));
   // A stranger is never answered; past a few messages an hour they are not even logged.
   if (!known && !strangerAllowed(first.id, m.chatId)) return;
+  const pin = known ? await checkPinNow(mine, m, now) : null;
+  // Kept in the store it is for (the worker moves it if it can only tell later).
+  const store = linking ?? (known ? await storeOfMessage(mine, m) : null) ?? mine[0] ?? first;
+  const incoming: Incoming = pin ? { ...m, text: PIN_TEXT } : m;
   try {
     await prisma.$transaction(async (tx) => {
       const row = await tx.aiBotMessage.create({
         data: {
-          companyId: first.companyId,
-          linkId: first.id,
+          companyId: store.companyId,
+          linkId: store.id,
           channel,
           direction: "IN",
           providerId: `${botKey}:${m.updateId}`,
           chatId: m.chatId,
-          text: described(m).slice(0, known ? 2000 : 200),
+          text: described(incoming).slice(0, known ? 2000 : 200),
           status: known ? "RECEIVED" : "IGNORED",
         },
       });
       if (known) {
         await enqueueJob(tx, {
           kind: "ai.bot.incoming",
-          companyId: first.companyId,
+          companyId: store.companyId,
           payload: {
             messageId: row.id,
             channel,
             botKey,
-            incoming: m,
+            incoming,
+            ...(pin ? { pin } : {}),
           } as unknown as Prisma.InputJsonObject,
           maxAttempts: 1,
         });
@@ -166,7 +222,22 @@ export async function receiveWhatsApp(
 
 // ---------------------------------------------------------------- the worker
 
-type IncomingJob = { messageId: string; channel: AiBotChannel; botKey: string; incoming: Incoming };
+type IncomingJob = {
+  messageId: string;
+  channel: AiBotChannel;
+  botKey: string;
+  incoming: Incoming;
+  /** The PIN's check, made when it arrived (the PIN itself is not here). */
+  pin?: PinChecks;
+};
+
+/** Moves a kept message to the store it turned out to be for. */
+async function keepUnder(messageId: string, link: AiBotLink) {
+  await prisma.aiBotMessage.updateMany({
+    where: { id: messageId, NOT: { linkId: link.id } },
+    data: { companyId: link.companyId, linkId: link.id },
+  });
+}
 
 /** The owner, as the bot works for them: their own permissions in the store, never more. */
 async function ownerContext(link: AiBotLink): Promise<CompanyContext | null> {
@@ -262,7 +333,7 @@ async function sendReport(link: AiBotLink, chatId: string, exportId: string) {
 
 /** The background job: one message or button press from a bot. */
 export async function runBotIncomingJob(job: BackgroundJob) {
-  const { messageId, channel, botKey, incoming: m } = job.payload as unknown as IncomingJob;
+  const { messageId, channel, botKey, incoming: m, pin } = job.payload as unknown as IncomingJob;
   const done = (status: "DONE" | "IGNORED", error?: string) =>
     prisma.aiBotMessage.update({
       where: { id: messageId },
@@ -328,8 +399,8 @@ export async function runBotIncomingJob(job: BackgroundJob) {
   });
 
   try {
-    if (m.callback) await pressed(mine, m);
-    else await wrote(mine, m);
+    if (m.callback) await pressed(mine, m, messageId);
+    else await wrote(mine, m, messageId, pin ?? null);
     await done("DONE");
   } catch (error) {
     console.error("[bot] message failed", error);
@@ -365,7 +436,7 @@ const meta = (link: AiBotLink): RequestMeta => ({
 });
 
 /** The owner wrote something: the PIN asked for, or words for Mehedi 2.0. */
-async function wrote(mine: AiBotLink[], m: Incoming) {
+async function wrote(mine: AiBotLink[], m: Incoming, messageId: string, pin: PinChecks | null) {
   const text = m.text?.trim() ?? "";
   const picked = await storeFor(mine, text);
   if ("ask" in picked) {
@@ -378,6 +449,7 @@ async function wrote(mine: AiBotLink[], m: Incoming) {
     );
   }
   const link = picked;
+  await keepUnder(messageId, link);
   const ctx = await ownerContext(link);
   if (!ctx) {
     return say(
@@ -388,30 +460,25 @@ async function wrote(mine: AiBotLink[], m: Incoming) {
   }
   const sender = senderFor(link);
 
-  // A PIN asked for a moment ago: read it, take it out of the chat, and do what waited for it.
+  // A PIN asked for a moment ago (checked when it arrived): take it out of the
+  // chat, and do what waited for it.
   if (link.pendingUntil && link.pendingUntil > new Date() && link.pending && text) {
     await sender.remove(m.chatId, m.messageId);
     await prisma.aiBotLink.update({
       where: { id: link.id },
       data: { pending: Prisma.DbNull, pendingUntil: null },
     });
-    if (/^(cancel|stop|বাতিল|না)$/i.test(text))
-      return say(link, m.chatId, words("Stopped: nothing changed."));
+    if (STOP_WORDS.test(text)) return say(link, m.chatId, words("Stopped: nothing changed."));
     const waiting = link.pending as { press: ButtonPress; sourceId: string | null };
-    let right = false;
-    try {
-      right = await checkPin(link.companyId, text, ctx.user.id);
-    } catch (error) {
-      if (error instanceof AppError) return say(link, m.chatId, words(error.message));
-      throw error;
-    }
-    if (!right)
+    const check = pin?.[link.id];
+    if (check?.problem) return say(link, m.chatId, words(check.problem));
+    if (!check?.right)
       return say(
         link,
         m.chatId,
         words("The PIN is not right. Press the button again to try again."),
       );
-    return act(link, ctx, m.chatId, waiting.press, waiting.sourceId, text);
+    return act(link, ctx, m.chatId, waiting.press, waiting.sourceId, PIN_CHECKED);
   }
 
   if (m.media) {
@@ -486,13 +553,14 @@ async function storeOfPress(mine: AiBotLink[], press: ButtonPress) {
 }
 
 /** The owner pressed a button under a message. */
-async function pressed(mine: AiBotLink[], m: Incoming) {
+async function pressed(mine: AiBotLink[], m: Incoming, messageId: string) {
   const press = readButton(m.callback!.data);
   const link = press ? await storeOfPress(mine, press) : null;
   if (!press || !link) {
     await senderFor(mine[0]!).ack(m.callback!.id, "This is not there any more.");
     return;
   }
+  await keepUnder(messageId, link);
   await senderFor(link).ack(m.callback!.id);
   const ctx = await ownerContext(link);
   if (!ctx) {
@@ -505,7 +573,7 @@ async function pressed(mine: AiBotLink[], m: Incoming) {
   return act(link, ctx, m.chatId, press, m.callback!.messageId, null);
 }
 
-/** Whether a press needs the PIN on the bot: money, prices and Deletion requests. */
+/** Whether a press needs the PIN: money, prices, locked cells and Deletion requests. */
 async function pinNeeded(ctx: CompanyContext, press: ButtonPress): Promise<string | null> {
   switch (press.kind) {
     case "apply": {
@@ -514,16 +582,14 @@ async function pinNeeded(ctx: CompanyContext, press: ButtonPress): Promise<strin
         select: { card: true },
       });
       const card = row?.card as ChatCard | null;
-      return card?.type === "change" && card.action === "profit.set" ? "set the profit %" : null;
+      return card?.type === "change" ? cardPinReason(card) : null;
     }
     case "send": {
       const draft = await ctx.db.aiDraft.findFirst({
         where: { id: press.draftId },
         select: { kind: true },
       });
-      return draft && (draft.kind === "QUOTATION" || draft.kind === "INVOICE")
-        ? "send the price to the buyer"
-        : null;
+      return draft && PRICE_DRAFTS.has(draft.kind) ? "send the price to the buyer" : null;
     }
     case "permission": {
       if (press.answer === "REFUSED") return null;
@@ -547,7 +613,7 @@ async function act(
   chatId: string,
   press: ButtonPress,
   sourceId: string | null,
-  pin: string | null,
+  pin: typeof PIN_CHECKED | null,
 ) {
   const sender = senderFor(link);
   if (pin === null) {
@@ -559,7 +625,7 @@ async function act(
           link,
           chatId,
           words(
-            "Set your PIN first in AI Center > Settings: the bot asks for it for money, prices and Deletion requests.",
+            "Set your PIN first in AI Center > Settings: the bot asks for it for money, prices, locked cells and Deletion requests.",
           ),
         );
       }
@@ -578,7 +644,7 @@ async function act(
   try {
     switch (press.kind) {
       case "apply":
-        await applyCard(ctx, press.messageId, m);
+        await applyCard(ctx, press.messageId, m, pin ?? undefined);
         result = "Done.";
         break;
       case "cancel":
@@ -590,7 +656,7 @@ async function act(
           where: { id: press.draftId },
           select: { subject: true, toAddress: true },
         });
-        await sendDraft(ctx, press.draftId, m);
+        await sendDraft(ctx, press.draftId, m, pin ?? undefined);
         result = `Sent "${draft.subject}" to ${draft.toAddress}.`;
         break;
       }
@@ -605,23 +671,13 @@ async function act(
           : "Rejected: the rule does not count.";
         break;
       case "permission":
-        await answerPermission(
-          ctx,
-          press.requestId,
-          { answer: press.answer, pin: pin ?? undefined },
-          m,
-        );
+        await answerPermission(ctx, press.requestId, { answer: press.answer }, m, pin ?? undefined);
         result = press.answer === "REFUSED" ? "Answered: no." : "Answered: he may do it.";
         break;
       case "deletion":
-        await answerDeletion(
-          ctx,
-          press.requestId,
-          { approve: press.approve, pin: pin ?? undefined },
-          m,
-        );
+        await answerDeletion(ctx, press.requestId, { approve: press.approve }, m, pin ?? undefined);
         result = press.approve
-          ? "Approved. Nothing is deleted by itself: delete it on its page in the ERP."
+          ? "Approved: it is deleted (cancelled) in your name."
           : "Refused: it stays.";
         break;
     }

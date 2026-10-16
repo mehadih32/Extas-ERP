@@ -71,6 +71,7 @@ import {
 } from "@/modules/ai/settings.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { intakeParserFor } from "@/modules/production/ai-intake";
+import { createProject } from "@/modules/production/project.service";
 import { createRole } from "@/modules/rbac/role.service";
 import {
   getAiStatusAction,
@@ -474,19 +475,29 @@ run("AI Center", () => {
       giveGrant(env.owner, { node: "k:accounts.view", scope: "UNTIL", until: addDays(today, -1) }),
       "VALIDATION",
     );
-    await giveGrant(env.owner, {
-      node: "k:accounts.receipts.record",
-      scope: "UNTIL",
-      until: addDays(today, 2),
-    });
+    // Opening a locked money cell asks for the PIN, which must be set first.
+    const grant = { node: "k:accounts.receipts.record", scope: "UNTIL", until: addDays(today, 2) };
+    await expectAppError(giveGrant(env.owner, grant), "VALIDATION", /^Set your PIN first/);
+    await setPin(env.owner, { pin: "8642" });
+    await expectAppError(giveGrant(env.owner, grant), "VALIDATION", /Give your PIN/);
+    await expectAppError(
+      giveGrant(env.owner, { ...grant, pin: "1111" }),
+      "VALIDATION",
+      /not right/,
+    );
+    expect(await prisma.aiGrant.count()).toBe(0);
+    await giveGrant(env.owner, { ...grant, pin: "8642" });
     expect((await aiMay(env.company.id, "accounts.receipts.record")).state).toBe("DO");
+    // An unlocked cell needs no PIN.
+    await giveGrant(env.owner, { node: "k:accounts.view", scope: "TODAY" });
     const control = await getControl(env.owner);
-    expect(control.grants).toHaveLength(1);
-    expect(control.grants[0]).toMatchObject({ scope: "UNTIL", by: "owner" });
+    expect(control.grants).toHaveLength(2);
+    const money = control.grants.find((g) => g.scope === "UNTIL")!;
+    expect(money).toMatchObject({ scope: "UNTIL", by: "owner" });
 
-    await endGrant(env.owner, control.grants[0]!.id);
+    await endGrant(env.owner, money.id);
     expect((await aiMay(env.company.id, "accounts.receipts.record")).state).toBe("OFF");
-    expect((await getControl(env.owner)).grants).toHaveLength(0);
+    expect((await getControl(env.owner)).grants).toHaveLength(1);
 
     // A grant that has run out opens nothing.
     await prisma.aiGrant.create({
@@ -498,7 +509,27 @@ run("AI Center", () => {
       },
     });
     expect((await aiMay(env.company.id, "production.view")).state).toBe("OFF");
-    await expectAppError(endGrant(env.pm, control.grants[0]!.id), "FORBIDDEN");
+    await expectAppError(endGrant(env.pm, money.id), "FORBIDDEN");
+  });
+
+  it("asks for the PIN before a locked cell goes to Do, on Control and on a chat card", async () => {
+    await switchOn(env);
+    const cell = { node: "k:accounts.payments.record", state: "DO" };
+    await expectAppError(setControlCell(env.owner, cell), "VALIDATION", /^Set your PIN first/);
+    await setPin(env.owner, { pin: "8642" });
+    await expectAppError(setControlCell(env.owner, cell), "VALIDATION", /Give your PIN/);
+    await expectAppError(
+      setControlCell(env.owner, { ...cell, pin: "1111" }),
+      "VALIDATION",
+      "The PIN is not right.",
+    );
+    expect((await aiMay(env.company.id, "accounts.payments.record")).state).toBe("ASK");
+    await setControlCell(env.owner, { ...cell, pin: "8642" });
+    expect((await aiMay(env.company.id, "accounts.payments.record")).state).toBe("DO");
+    // Ask, Off and areas never need it (an area on Do still holds its locked cells at Ask).
+    await setControlCell(env.owner, { node: "k:accounts.payments.record", state: "ASK" });
+    await setControlCell(env.owner, { node: "b:accounts", state: "DO" });
+    expect((await aiMay(env.company.id, "accounts.payments.record")).state).toBe("ASK");
   });
 
   it("asks for what is Off, and the owner answers: only this task, for today, always or no", async () => {
@@ -561,7 +592,9 @@ run("AI Center", () => {
       key: "ai.buyer.follow_up",
       task: "Follow up with Rahim Traders",
     });
-    await answerPermission(env.owner, buyer.id, { answer: "ALWAYS" });
+    // A buyer message is locked: answering it needs the PIN.
+    await setPin(env.owner, { pin: "1357" });
+    await answerPermission(env.owner, buyer.id, { answer: "ALWAYS", pin: "1357" });
     expect((await aiMay(env.company.id, "ai.buyer.follow_up")).state).toBe("ASK");
 
     // No.
@@ -619,9 +652,8 @@ run("AI Center", () => {
     await answerPermission(env.owner, price.id, { answer: "REFUSED" });
   });
 
-  it("never deletes: a Deletion request waits for the owner, who deletes in their own name", async () => {
+  it("never deletes: a Deletion request waits for the owner; approving deletes in the owner's name", async () => {
     await switchOn(env);
-    await setPin(env.owner, { pin: "2468" });
     const party = await prisma.party.create({
       data: {
         companyId: env.company.id,
@@ -650,20 +682,44 @@ run("AI Center", () => {
       answerDeletion(env.pm, asked.id, { approve: true, pin: "2468" }),
       "FORBIDDEN",
     );
+    // With no PIN set yet, approving waits for one (v6.3: set it first).
+    const notSet = await expectAppError(
+      answerDeletion(env.owner, asked.id, { approve: true, pin: "2468" }),
+      "VALIDATION",
+      /^Set your PIN first in AI Center > Settings\./,
+    );
+    expect(notSet.details).toHaveProperty("pinNotSet");
+    await setPin(env.owner, { pin: "2468" });
     await expectAppError(
       answerDeletion(env.owner, asked.id, { approve: true }),
       "VALIDATION",
       /PIN/,
     );
+    await expectAppError(
+      answerDeletion(env.owner, asked.id, { approve: true, pin: "1357" }),
+      "VALIDATION",
+      "The PIN is not right.",
+    );
+    expect(
+      (await prisma.aiDeletionRequest.findUniqueOrThrow({ where: { id: asked.id } })).status,
+    ).toBe("PENDING");
     await answerDeletion(env.owner, asked.id, { approve: true, pin: "2468" });
-    // Approved, and still there: the owner deletes it on its own page.
-    expect(await prisma.party.findUnique({ where: { id: party.id } })).not.toBeNull();
+    // Approved and done: the party's own delete (its account closed) ran in the owner's name.
+    expect(await prisma.party.findUniqueOrThrow({ where: { id: party.id } })).toMatchObject({
+      status: "CLOSED",
+    });
     expect(
       await prisma.aiDeletionRequest.findUniqueOrThrow({ where: { id: asked.id } }),
     ).toMatchObject({
       status: "APPROVED",
-      doneAt: null,
+      answeredById: env.owner.user.id,
+      doneAt: expect.any(Date),
     });
+    expect(
+      await prisma.auditLog.findFirstOrThrow({
+        where: { entityType: "Party", entityId: party.id, action: "STATUS_CHANGE" },
+      }),
+    ).toMatchObject({ userId: env.owner.user.id, byAi: false });
     await expectAppError(answerDeletion(env.owner, asked.id, { approve: false }), "CONFLICT");
 
     const second = await askDeletion(env.company.id, { ...request, recordId: "another" });
@@ -675,10 +731,55 @@ run("AI Center", () => {
       where: { companyId: env.company.id, entityType: "AiDeletionRequest" },
       orderBy: { createdAt: "asc" },
     });
-    expect(audit.map((a) => a.summary)).toEqual([
-      "Approved the AI's Deletion request: Duplicate buyer Rahim Traders (copy)",
-      "Refused the AI's Deletion request: Duplicate buyer Rahim Traders (copy)",
+    // Each request is in the log, marked AI; each answer, in the owner's name.
+    expect(audit.map((a) => [a.summary, a.byAi])).toEqual([
+      ["Sent the owner a Deletion request: Duplicate buyer Rahim Traders (copy)", true],
+      [
+        "Approved the AI's Deletion request and deleted Duplicate buyer Rahim Traders (copy)",
+        false,
+      ],
+      ["Sent the owner a Deletion request: Duplicate buyer Rahim Traders (copy)", true],
+      ["Refused the AI's Deletion request: Duplicate buyer Rahim Traders (copy)", false],
     ]);
+  });
+
+  it("runs an approved Deletion request through the record's own checks", async () => {
+    await switchOn(env);
+    await setPin(env.owner, { pin: "2468" });
+    const project = await createProject(env.owner, {
+      name: "Old sample polo",
+      factoryName: "Own sewing floor",
+      targetDate: addDays(localDay(new Date(), env.company.timezone), 30),
+      targetQuantity: 100,
+      status: "PLANNED",
+    });
+    const asked = await askDeletion(env.company.id, {
+      what: `Production order ${project.code}`,
+      recordType: "ProductionProject",
+      recordId: project.id,
+      why: "It was never started.",
+      ifKept: "It stays in the list.",
+    });
+    await answerDeletion(env.owner, asked.id, { approve: true, pin: "2468" });
+    expect(
+      await prisma.productionProject.findUniqueOrThrow({ where: { id: project.id } }),
+    ).toMatchObject({ status: "CANCELLED" });
+    // A kind of record the ERP never deletes stays pending, with the reason.
+    const sheet = await askDeletion(env.company.id, {
+      what: "Costing sheet CS-1",
+      recordType: "OrderCosting",
+      recordId: "cs-1",
+      why: "Old",
+      ifKept: "Nothing",
+    });
+    await expectAppError(
+      answerDeletion(env.owner, sheet.id, { approve: true, pin: "2468" }),
+      "CONFLICT",
+      /no delete for this kind of record/,
+    );
+    expect(
+      (await prisma.aiDeletionRequest.findUniqueOrThrow({ where: { id: sheet.id } })).status,
+    ).toBe("PENDING");
   });
 
   it("logs what the AI did under its name, and every change to it", async () => {

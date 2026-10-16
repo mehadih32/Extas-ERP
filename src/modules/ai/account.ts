@@ -3,18 +3,19 @@ import { prisma } from "@/lib/prisma";
 import type { CompanyContext } from "@/modules/auth/context";
 import type { PermissionKey } from "@/modules/rbac/permissions";
 
+import { aiEmail } from "./ai-address";
 import { NEVER_FOR_AI } from "./control-tree";
 import { aiLabel, aiSettingsOf } from "./settings.service";
 
 /*
  * The AI's own account in a company. It is a user that can never sign in (no
  * password, suspended, an address that cannot receive mail) and belongs to no
- * team, so it shows in no team list and no role can be given to it. What the
+ * team, so it shows in no team list and no role can be given to it; its
+ * address can never be added to a team or used by a person (ai-address.ts),
+ * and an account found at it is locked again before the AI uses it. What the
  * AI does is written to the activity log in its name and marked "AI"; what the
  * owner does from the chat (Apply on a change card) stays in the owner's name.
  */
-
-const aiEmail = (companyId: string) => `ai-${companyId}@ai.invalid`;
 
 export type AiAccount = { id: string; name: string; email: string };
 
@@ -39,9 +40,15 @@ export async function aiAccountOf(companyId: string, db: Db = prisma): Promise<A
   const user = await db.user.upsert({
     where: { email: aiEmail(companyId) },
     create: { email: aiEmail(companyId), name, passwordHash: null, status: "SUSPENDED" },
-    update: { name },
+    // Never a person's way in: no password, suspended, in no team, signed out.
+    update: { name, passwordHash: null, status: "SUSPENDED", mustChangePassword: false },
     select: { id: true, name: true, email: true },
   });
+  await db.companyMembership.updateMany({
+    where: { userId: user.id, isActive: true },
+    data: { isActive: false },
+  });
+  await db.session.deleteMany({ where: { userId: user.id } });
   await db.aiSettings.upsert({
     where: { companyId },
     create: { companyId, aiUserId: user.id },

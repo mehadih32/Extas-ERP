@@ -15,9 +15,10 @@ import { answerDeletionAction, answerPermissionAction } from "@/server/actions/a
 
 /*
  * What the AI waits for: permission requests (a cell it needs is Off) and
- * Deletion requests (it never deletes; the owner decides and deletes the
- * record on its own page). Money, prices, deletions and anything that leaves
- * the company ask for the PIN once it is set.
+ * Deletion requests (it never deletes; when the owner approves, the record's
+ * own delete runs in the owner's name, with its page's checks). Money, prices,
+ * deletions and anything that leaves the company ask for the PIN, which must
+ * be set first.
  */
 
 const ANSWER_BUTTONS = [
@@ -25,6 +26,19 @@ const ANSWER_BUTTONS = [
   { answer: "TODAY", label: "For today" },
   { answer: "ALWAYS", label: "Always" },
 ] as const;
+
+function NoPin() {
+  return (
+    <p className="text-[0.8125rem] text-muted-foreground">
+      <LockIcon aria-hidden className="mr-1 inline size-3.5" />
+      This asks for your PIN.{" "}
+      <Link href="/ai/settings" className="underline underline-offset-4">
+        Set a PIN
+      </Link>{" "}
+      first in AI Center &gt; Settings.
+    </p>
+  );
+}
 
 function PinInput({
   id,
@@ -111,13 +125,16 @@ export function AiRequestsList({ requests: r, pinSet }: { requests: AiRequests; 
               </div>
               {canAnswer ? (
                 <div className="grid gap-2">
-                  {p.needsPin && pinSet && (
-                    <PinInput
-                      id={`pin-${p.id}`}
-                      value={pins[p.id] ?? ""}
-                      onChange={(v) => setPins({ ...pins, [p.id]: v })}
-                    />
-                  )}
+                  {p.needsPin &&
+                    (pinSet ? (
+                      <PinInput
+                        id={`pin-${p.id}`}
+                        value={pins[p.id] ?? ""}
+                        onChange={(v) => setPins({ ...pins, [p.id]: v })}
+                      />
+                    ) : (
+                      <NoPin />
+                    ))}
                   <div className="flex flex-wrap gap-2">
                     {ANSWER_BUTTONS.map((b) => (
                       <Button
@@ -189,12 +206,14 @@ export function AiRequestsList({ requests: r, pinSet }: { requests: AiRequests; 
               </div>
               {canAnswer ? (
                 <div className="grid gap-2">
-                  {pinSet && (
+                  {pinSet ? (
                     <PinInput
                       id={`pin-${d.id}`}
                       value={pins[d.id] ?? ""}
                       onChange={(v) => setPins({ ...pins, [d.id]: v })}
                     />
+                  ) : (
+                    <NoPin />
                   )}
                   <div className="flex flex-wrap gap-2">
                     <Button
@@ -204,7 +223,7 @@ export function AiRequestsList({ requests: r, pinSet }: { requests: AiRequests; 
                       onClick={() =>
                         run(
                           () => answerDeletionAction(d.id, { approve: true, pin: pins[d.id] }),
-                          "Approved. The AI does not delete it: delete it on its own page, in your name.",
+                          `Approved: ${d.what} is deleted (cancelled) in your name.`,
                         )
                       }
                     >

@@ -302,14 +302,48 @@ export async function setPin(ctx: CompanyContext, input: unknown, meta?: Request
 }
 
 /**
- * Whether the PIN is right (true when none is set yet). At most ten tries in
+ * Whether the PIN is right (never while none is set). At most ten tries in
  * fifteen minutes per person, so it cannot be guessed.
  */
 export async function checkPin(companyId: string, pin: string, userId: string): Promise<boolean> {
   const settings = await aiSettingsOf(companyId);
-  if (!settings.pinHash) return true;
+  if (!settings.pinHash) return false;
   checkRateLimit(`ai-pin:${companyId}:${userId}`, 10, 15 * 60_000);
   return /^\d{4,8}$/.test(pin) && verifyPassword(pin, settings.pinHash);
+}
+
+/**
+ * A PIN the bot already checked when it arrived (bot/incoming.ts): the
+ * message itself is never kept, so what follows only learns that it was right.
+ * Server code only; nothing a browser sends can be this.
+ */
+export const PIN_CHECKED: unique symbol = Symbol("pin-checked");
+
+export type PinProof = string | typeof PIN_CHECKED | undefined;
+
+export const PIN_NOT_SET = "Set your PIN first in AI Center > Settings.";
+
+/**
+ * The PIN for money, prices, deletions and locked cells, on every path (the
+ * ERP, the chat, the bot): it must be set first, and given right. The errors
+ * name the field "pin" (or "pinNotSet"), so a screen knows to ask for it.
+ */
+export async function requirePin(ctx: CompanyContext, pin: PinProof, what: string) {
+  if (pin === PIN_CHECKED) return;
+  const settings = await aiSettingsOf(ctx.company.id);
+  if (!settings.pinHash) {
+    throw new AppError("VALIDATION", `${PIN_NOT_SET} It is asked to ${what}.`, {
+      pinNotSet: [PIN_NOT_SET],
+    });
+  }
+  if (!pin) {
+    throw new AppError("VALIDATION", `Give your PIN to ${what}.`, {
+      pin: [`Give your PIN to ${what}`],
+    });
+  }
+  if (!(await checkPin(ctx.company.id, pin, ctx.user.id))) {
+    throw new AppError("VALIDATION", "The PIN is not right.", { pin: ["The PIN is not right"] });
+  }
 }
 
 export const assistantNameSchema = z.object({

@@ -125,7 +125,9 @@ describe("Chat answers as bot messages", () => {
       why: "Empty",
       ifKept: "Nothing",
     });
-    expect(deletion.text).toContain("Approving does not delete it");
+    expect(deletion.text).toContain(
+      "Approving (with your PIN) deletes it (cancels it) in your name",
+    );
     expect(deletion.buttons.flat().map((b) => readButton(b.data))).toEqual([
       { kind: "deletion", requestId: ID, approve: true },
       { kind: "deletion", requestId: ID, approve: false },

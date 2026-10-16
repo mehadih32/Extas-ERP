@@ -9,6 +9,7 @@ import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
 import { recordAudit } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
+import { AI_ADDRESS_TEXT, isAiAddress } from "@/modules/ai/ai-address";
 import { emailSchema } from "@/modules/auth/schemas";
 import { revokeAllUserSessions } from "@/modules/auth/session.service";
 import { ALL_PERMISSION_KEYS, type PermissionKey } from "@/modules/rbac/permissions";
@@ -26,7 +27,7 @@ import {
 } from "@/modules/rbac/rules";
 
 export const addMemberSchema = z.object({
-  email: emailSchema,
+  email: emailSchema.refine((email) => !isAiAddress(email), AI_ADDRESS_TEXT),
   name: z
     .string()
     .trim()
@@ -217,6 +218,10 @@ export async function addMember(ctx: CompanyContext, rawInput: unknown, meta: Re
     : NO_CHANGES;
   const changed = changesText(changes);
   let user = await prisma.user.findUnique({ where: { email: input.email } });
+  // The AI's own account (in any company) never joins a team.
+  if (user && (await prisma.aiSettings.count({ where: { aiUserId: user.id } })) > 0) {
+    throw new AppError("VALIDATION", AI_ADDRESS_TEXT, { email: [AI_ADDRESS_TEXT] });
+  }
   if (changed) {
     assertMayEditPermissions(ctx, {
       userId: user?.id ?? "",

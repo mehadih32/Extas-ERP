@@ -4,6 +4,7 @@ import { BotIcon, CheckIcon, FileDownIcon, SendIcon, XIcon } from "lucide-react"
 import Link from "next/link";
 import { useEffect, useRef, useState, useTransition } from "react";
 
+import { usePinPrompt } from "@/components/ai/pin-prompt";
 import { useWhen } from "@/components/ai/when";
 import { FormAlert } from "@/components/forms/field";
 import { StatusBadge, type Tone } from "@/components/sales/badges";
@@ -22,7 +23,8 @@ import {
 /*
  * AI Center > Chat: the owner talks to Mehedi 2.0 in Bengali or English.
  * Commands are answered at once; a change waits on its card for Apply; a draft
- * for a buyer goes only when the owner sends it ("পাঠাও" or Send).
+ * for a buyer goes only when the owner presses Send under it ("পাঠাও" shows it
+ * again to confirm). Prices, deletions and locked cells ask for the PIN.
  */
 
 const SIGNAL_TONES: Record<string, Tone> = { green: "done", yellow: "open", red: "warn" };
@@ -282,6 +284,7 @@ export function ChatScreen({ chat }: { chat: Chat }) {
   const [pending, startTransition] = useTransition();
   const [text, setText] = useState("");
   const [error, setError] = useState<string>();
+  const { withPin, dialog: pinDialog } = usePinPrompt();
   const end = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -315,6 +318,7 @@ export function ChatScreen({ chat }: { chat: Chat }) {
   return (
     <div className="grid gap-4">
       {chat.stateText && <FormAlert tone="note">{chat.stateText}</FormAlert>}
+      {pinDialog}
       <section
         aria-label={`Chat with ${chat.name}`}
         className="grid max-h-[65vh] min-h-64 gap-3 overflow-y-auto rounded-lg border bg-muted/30 p-3 sm:p-4"
@@ -351,9 +355,9 @@ export function ChatScreen({ chat }: { chat: Chat }) {
                     message={m}
                     card={m.card}
                     busy={pending}
-                    onApply={() => run(() => applyCardAction(m.id))}
+                    onApply={() => run(() => withPin((pin) => applyCardAction(m.id, pin)))}
                     onCancel={() => run(() => cancelCardAction(m.id))}
-                    onSend={(draftId) => run(() => sendDraftAction(draftId))}
+                    onSend={(draftId) => run(() => withPin((pin) => sendDraftAction(draftId, pin)))}
                   />
                 )}
                 <p

@@ -112,7 +112,8 @@ export async function proposeHouseRule(
       proposedById: ctx.user.id,
     },
   });
-  await auditInCompany(ctx, meta, {
+  // Worded by the AI: the log row is marked AI (the owner's own words stay theirs).
+  await auditInCompany({ ...ctx, byAi: from.byAi ?? false }, meta, {
     action: "CREATE",
     entityType: "HouseRule",
     entityId: row.id,

@@ -15,10 +15,10 @@ import { asAi } from "../account";
 import { aiMay } from "../control.service";
 import { getMonthCost, getCosts } from "../costs.service";
 import { BUYER_KINDS, DRAFT_ACTION } from "../draft-templates";
-import { makeAiDraft } from "../drafts.service";
+import { makeAiDraft, PRICE_DRAFTS } from "../drafts.service";
 import { proposeHouseRule } from "../house-rules.service";
 import { BOOK_CODES, testStanding } from "../knowledge";
-import { askDeletion, askPermission } from "../requests.service";
+import { askDeletion, askPermission, canBeDeleted } from "../requests.service";
 import { aiLabel, aiSettingsOf, offReason, OFF_TEXT, setAiPaused } from "../settings.service";
 import type { ChatCard } from "./cards";
 import { COMMAND_HELP, type Intent, type ReportKind, type ReportPeriod } from "./intents";
@@ -540,6 +540,11 @@ async function deletion(
   }
   const found = await findRecord(ctx, intent.ref);
   if (!found) return reply(`I found no record numbered "${intent.ref}".`);
+  if (!canBeDeleted(found.type)) {
+    return reply(
+      `${found.label} cannot be deleted in the ERP (it keeps costing sheets). Open it and press "Decline the order" if it should not go ahead.`,
+    );
+  }
   await askDeletion(ctx.company.id, {
     what: found.label,
     recordType: found.type,
@@ -550,7 +555,7 @@ async function deletion(
     channel: turn.channel,
   });
   return reply(
-    `I never delete anything. I sent you a Deletion request for ${found.label}: decide it in AI Home (your PIN is asked).`,
+    `I never delete anything. I sent you a Deletion request for ${found.label}: decide it in AI Home (your PIN is asked; approving deletes it in your name).`,
     {
       type: "requests",
       count: 1,
@@ -560,6 +565,12 @@ async function deletion(
   );
 }
 
+/**
+ * "পাঠাও" / "send" typed: nothing is sent by words. The draft shown last in
+ * this chat (the one the owner is looking at, never the newest in Drafts) is
+ * shown again with its buyer and subject, and goes only when the owner presses
+ * Send under it (a quotation or an invoice asks for the PIN there).
+ */
 async function draftSend(turn: Turn): Promise<Reply> {
   const { ctx } = turn;
   const last = await ctx.db.aiChatMessage.findMany({
@@ -571,14 +582,38 @@ async function draftSend(turn: Turn): Promise<Reply> {
   const shown = last.map((m) => m.card as ChatCard | null).find((c) => c?.type === "draft");
   if (!shown || shown.type !== "draft")
     return reply("There is no draft in this chat to send. Open Drafts to send one.");
-  const { sendDraft } = await import("../drafts.service");
-  try {
-    await sendDraft(ctx, shown.draftId, turn.meta);
-  } catch (error) {
-    if (error instanceof AppError) return reply(`Not sent: ${error.message}`);
-    throw error;
+  const draft = await ctx.db.aiDraft.findFirst({
+    where: { id: shown.draftId },
+    select: {
+      id: true,
+      kind: true,
+      status: true,
+      subject: true,
+      toAddress: true,
+      body: true,
+      party: { select: { name: true } },
+    },
+  });
+  if (!draft || (draft.status !== "DRAFT" && draft.status !== "FAILED")) {
+    return reply(
+      `The draft shown last here ("${shown.subject}") was ${draft?.status === "SENT" ? "sent" : "put aside"} already. Nothing else is sent: open Drafts to pick one.`,
+    );
   }
-  return reply(`Sent "${shown.subject}"${shown.to ? ` to ${shown.to}` : ""}.`);
+  const buyer = draft.party?.name ?? shown.party ?? "no party";
+  return reply(
+    `Send this one? To ${buyer}${draft.toAddress ? ` (${draft.toAddress})` : ""}: "${draft.subject}". Press Send under it to send it${
+      PRICE_DRAFTS.has(draft.kind) ? " (it has a price, so your PIN is asked)" : ""
+    }. Nothing goes until you press it.`,
+    {
+      type: "draft",
+      draftId: draft.id,
+      subject: draft.subject,
+      to: draft.toAddress,
+      party: draft.party?.name ?? shown.party,
+      forBuyer: shown.forBuyer,
+      body: draft.body,
+    },
+  );
 }
 
 /** A party named in the chat (any kind), the closest match first. */
@@ -594,7 +629,7 @@ async function partyNamed(ctx: CompanyContext, name: string, buyersOnly = false)
   });
 }
 
-/** Drafts a message; for a buyer it waits for the owner's Send (or "পাঠাও"). */
+/** Drafts a message; for a buyer it waits for the owner's Send under it. */
 export async function writeDraft(
   turn: Turn,
   input: { party: string; about: string | null; points?: string | null; kind?: AiDraftKind | null },
@@ -624,9 +659,9 @@ export async function writeDraft(
   );
   const forBuyer = BUYER_KINDS.has(kind);
   return reply(
-    `${forBuyer ? "A draft for the buyer: nothing goes until you send it." : "A draft for you to check."} Say "পাঠাও" to send it${
+    `${forBuyer ? "A draft for the buyer: nothing goes until you send it." : "A draft for you to check."} Press Send under it to send it${
       draft.toAddress ? ` to ${draft.toAddress}` : " (add the email address in Drafts first)"
-    }, or change it in Drafts.`,
+    }${PRICE_DRAFTS.has(kind) ? " (your PIN is asked)" : ""}, or change it in Drafts.`,
     {
       type: "draft",
       draftId: draft.id,

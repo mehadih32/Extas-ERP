@@ -1,5 +1,5 @@
 import { createHmac } from "node:crypto";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -58,10 +58,12 @@ import { type BotCall, standInForBotApi } from "@/modules/ai/bot/channel";
 import { sendChat } from "@/modules/ai/chat/chat.service";
 import { setAiSwitch, setPin } from "@/modules/ai/settings.service";
 import * as costing from "@/modules/costing/costing.service";
-import { setFollowUp } from "@/modules/ai/drafts.service";
+import { pushToBot } from "@/modules/ai/bot/push";
+import { makeAiDraft, setFollowUp } from "@/modules/ai/drafts.service";
 import { runDueJobs } from "@/modules/jobs/worker";
 import { saveMailSettings, standInForMail } from "@/modules/mail/mail.service";
 import * as parties from "@/modules/parties/party.service";
+import { createProject } from "@/modules/production/project.service";
 import { createRole } from "@/modules/rbac/role.service";
 import { getBotAction, saveTelegramAction } from "@/server/actions/bot.actions";
 
@@ -424,7 +426,7 @@ run("The bot", () => {
     await setPin(env.owner, { pin: "2468" });
     await telegram(press(OWNER_CHAT, profit!.callback_data));
     expect(api.said(OWNER_CHAT).at(-1)).toBe(
-      'Send your PIN to set the profit %. (Write "বাতিল" to stop.)',
+      'Send your PIN to set the profit % (a price). (Write "বাতিল" to stop.)',
     );
     const wrong = typed(OWNER_CHAT, "1111");
     await telegram(wrong);
@@ -444,13 +446,31 @@ run("The bot", () => {
       (await prisma.orderCosting.findUniqueOrThrow({ where: { id } })).profitPercent?.toString(),
     ).toBe("12.5");
     expect(api.said(OWNER_CHAT).at(-1)).toBe("Done.");
-    // The PIN never reaches the chat's log.
-    expect(await prisma.aiChatMessage.count({ where: { text: { contains: "2468" } } })).toBe(0);
+    // The PIN is never kept: not in the chat, the bot's log, the job or AI Center > Bot.
+    for (const pin of ["2468", "1111"]) {
+      expect(await prisma.aiChatMessage.count({ where: { text: { contains: pin } } })).toBe(0);
+      expect(await prisma.aiBotMessage.count({ where: { text: { contains: pin } } })).toBe(0);
+      const jobs = await prisma.backgroundJob.findMany({ where: { kind: "ai.bot.incoming" } });
+      expect(JSON.stringify(jobs.map((j) => j.payload))).not.toContain(pin);
+      expect(JSON.stringify(await getBot(env.owner))).not.toContain(pin);
+    }
+    expect(await prisma.aiBotMessage.count({ where: { text: "[PIN]", direction: "IN" } })).toBe(2);
+
+    // A costing sheet is never deleted: Mehedi says so, nothing is asked.
+    await sendChat(env.owner, { text: `delete ${number}` });
+    expect(await prisma.aiDeletionRequest.count()).toBe(0);
 
     // A Deletion request asked in the ERP chat reaches the bot with its buttons.
-    await sendChat(env.owner, { text: `delete ${number}` });
+    const project = await createProject(env.owner, {
+      name: "Old sample polo",
+      factoryName: "Own sewing floor",
+      targetDate: addDays(localDay(new Date(), "Asia/Dhaka"), 30),
+      targetQuantity: 50,
+      status: "PLANNED",
+    });
+    await sendChat(env.owner, { text: `delete ${project.code}` });
     await runDueJobs();
-    expect(api.said(OWNER_CHAT).at(-1)).toMatch(/^Deletion request: .*Pique polos/);
+    expect(api.said(OWNER_CHAT).at(-1)).toMatch(/^Deletion request: .*Old sample polo/);
     const [approve] = api.buttons(OWNER_CHAT);
     expect(approve).toMatchObject({
       text: "Approve",
@@ -458,10 +478,80 @@ run("The bot", () => {
     });
     await telegram(press(OWNER_CHAT, approve!.callback_data));
     await telegram(typed(OWNER_CHAT, "2468"));
-    expect(await prisma.aiDeletionRequest.findFirstOrThrow()).toMatchObject({ status: "APPROVED" });
-    // Approving deletes nothing by itself.
-    expect(await prisma.orderCosting.count()).toBe(1);
-    expect(api.said(OWNER_CHAT).at(-1)).toMatch(/^Approved\. Nothing is deleted by itself/);
+    expect(await prisma.aiDeletionRequest.findFirstOrThrow()).toMatchObject({
+      status: "APPROVED",
+      doneAt: expect.any(Date),
+    });
+    // Approving runs the order's own delete (a cancel) in the owner's name.
+    expect(
+      await prisma.productionProject.findUniqueOrThrow({ where: { id: project.id } }),
+    ).toMatchObject({ status: "CANCELLED" });
+    expect(api.said(OWNER_CHAT).at(-1)).toBe("Approved: it is deleted (cancelled) in your name.");
+  });
+
+  it("sends a typed পাঠাও only after the owner presses Send under the exact draft, with the PIN for a price", async () => {
+    const api = botApi();
+    await linkOwner(env);
+    await setAiSwitch(env.owner, true);
+    const mail: string[] = [];
+    standInForMail(async (_config, m) => {
+      mail.push(m.subject);
+      return { messageId: "<m1@mail.test>" };
+    });
+    await saveMailSettings(env.owner, {
+      host: "smtp.gmail.com",
+      port: "587",
+      secure: false,
+      username: "owner@extas.test",
+      password: "app-pass-word-1234",
+      fromAddress: "owner@extas.test",
+    });
+    // Two drafts wait: the quotation was shown on the bot (the one the owner is
+    // looking at); a newer one was never shown, and is never picked.
+    const quote = await makeAiDraft(env.company.id, {
+      kind: "QUOTATION",
+      partyId: env.buyer.id,
+      about: "pique polos",
+    });
+    await pushToBot(env.company.id, {
+      kind: "draft",
+      draftId: quote.id,
+      text: "A quotation is ready.",
+    });
+    await runDueJobs();
+    await prisma.aiDraft.create({
+      data: {
+        companyId: env.company.id,
+        kind: "BUYER_REPLY",
+        partyId: env.buyer.id,
+        toAddress: "orders@nordicwear.test",
+        subject: "The newest draft",
+        body: "Hello",
+      },
+    });
+
+    await telegram(typed(OWNER_CHAT, "পাঠাও"));
+    expect(mail).toEqual([]);
+    expect(api.said(OWNER_CHAT).at(-1)).toContain(
+      `Send this one? To Nordic Wear AB (orders@nordicwear.test): "${quote.subject}". Press Send under it to send it (it has a price, so your PIN is asked).`,
+    );
+    const [send] = api.buttons(OWNER_CHAT);
+    expect(send).toMatchObject({ text: "Send", callback_data: `sd:${quote.id}` });
+    await telegram(press(OWNER_CHAT, send!.callback_data));
+    expect(api.said(OWNER_CHAT).at(-1)).toMatch(/^Set your PIN first/);
+    await setPin(env.owner, { pin: "1357" });
+    await telegram(press(OWNER_CHAT, send!.callback_data));
+    expect(api.said(OWNER_CHAT).at(-1)).toBe(
+      'Send your PIN to send the price to the buyer. (Write "বাতিল" to stop.)',
+    );
+    await telegram(typed(OWNER_CHAT, "1357"));
+    expect(mail).toEqual([quote.subject]);
+    expect(await prisma.aiDraft.findUniqueOrThrow({ where: { id: quote.id } })).toMatchObject({
+      status: "SENT",
+    });
+    expect(
+      (await prisma.aiDraft.findFirstOrThrow({ where: { subject: "The newest draft" } })).status,
+    ).toBe("DRAFT");
   });
 
   it("brings drafts to the owner and sends one only when the owner presses Send", async () => {
@@ -485,6 +575,13 @@ run("The bot", () => {
       dueOn: localDay(new Date(), env.company.timezone),
       recordLabel: "PO 4501",
     });
+    // With the AI off nothing is drafted and nothing reaches the bot.
+    await runAiReminders(new Date(), { companyId: env.company.id });
+    await pushToBot(env.company.id, { kind: "text", text: "Should not go" });
+    await runDueJobs();
+    expect(api.said(OWNER_CHAT).some((t) => t.startsWith("Follow up"))).toBe(false);
+    expect(api.said(OWNER_CHAT)).not.toContain("Should not go");
+    await setAiSwitch(env.owner, true);
     await runAiReminders(new Date(), { companyId: env.company.id });
     await runDueJobs();
     expect(api.said(OWNER_CHAT).at(-1)).toMatch(
@@ -501,7 +598,6 @@ run("The bot", () => {
     );
 
     // A rule taught on the bot is approved with its button.
-    await setAiSwitch(env.owner, true);
     await telegram(typed(OWNER_CHAT, "নিয়ম: Nordic Wear-এর কলার সবসময় 3 1/4 ইঞ্চি"));
     const [approve] = api.buttons(OWNER_CHAT);
     await telegram(press(OWNER_CHAT, approve!.callback_data));
@@ -509,6 +605,87 @@ run("The bot", () => {
       status: "APPROVED",
       source: "Bot",
     });
+  });
+
+  it("wipes the PINs the bot kept before v6.3, and nothing else", async () => {
+    botApi();
+    await linkOwner(env);
+    const link = await prisma.aiBotLink.findFirstOrThrow();
+    const keep = (text: string, n: number) =>
+      prisma.aiBotMessage.create({
+        data: {
+          companyId: env.company.id,
+          linkId: link.id,
+          channel: "TELEGRAM",
+          direction: "IN",
+          providerId: `old:${n}`,
+          chatId: String(OWNER_CHAT),
+          text,
+          status: "DONE",
+        },
+      });
+    await keep("4321", 1);
+    await keep("status", 2);
+    await keep("PO 4501 is late", 3);
+    await prisma.backgroundJob.create({
+      data: {
+        kind: "ai.bot.incoming",
+        companyId: env.company.id,
+        status: "SUCCEEDED",
+        payload: { messageId: "m1", incoming: { chatId: "1", text: " 98765 " } },
+      },
+    });
+    await prisma.aiChatMessage.create({
+      data: {
+        companyId: env.company.id,
+        userId: env.owner.user.id,
+        channel: "BOT",
+        role: "OWNER",
+        text: "2468",
+      },
+    });
+    await prisma.aiChatMessage.create({
+      data: {
+        companyId: env.company.id,
+        userId: env.owner.user.id,
+        channel: "ERP",
+        role: "OWNER",
+        text: "2026",
+      },
+    });
+    const sql = await readFile(
+      path.join(process.cwd(), "prisma/migrations/20261124090000_hide_bot_pins/migration.sql"),
+      "utf8",
+    );
+    for (const statement of sql
+      .replace(/--.*$/gm, "")
+      .split(";")
+      .filter((x) => x.trim())) {
+      await prisma.$executeRawUnsafe(statement);
+    }
+    const texts = (
+      await prisma.aiBotMessage.findMany({
+        where: { providerId: { startsWith: "old:" } },
+        orderBy: { providerId: "asc" },
+      })
+    ).map((m) => m.text);
+    expect(texts).toEqual(["[PIN]", "status", "PO 4501 is late"]);
+    const job = await prisma.backgroundJob.findFirstOrThrow({
+      where: { kind: "ai.bot.incoming", payload: { path: ["messageId"], equals: "m1" } },
+    });
+    expect(job.payload).toMatchObject({
+      messageId: "m1",
+      incoming: { chatId: "1", text: "[PIN]" },
+    });
+    // Only what came from the bot: a number typed in the ERP chat stays.
+    const chat = await prisma.aiChatMessage.findMany({ select: { channel: true, text: true } });
+    expect(chat).toEqual(
+      expect.arrayContaining([
+        { channel: "BOT", text: "[PIN]" },
+        { channel: "ERP", text: "2026" },
+      ]),
+    );
+    expect(chat).toHaveLength(2);
   });
 
   it("picks the store by its name when stores share one bot", async () => {
@@ -531,6 +708,16 @@ run("The bot", () => {
       await prisma.aiChatMessage.count({ where: { companyId: uttara.company.id, role: "OWNER" } }),
     ).toBe(1);
     expect(await prisma.aiChatMessage.count({ where: { companyId: env.company.id } })).toBe(0);
+    // Each message is kept in its own store's bot log, not the oldest store's.
+    const kept = async (text: string) =>
+      prisma.aiBotMessage.findFirstOrThrow({ where: { direction: "IN", text } });
+    expect((await kept("Extas Uttara: status")).companyId).toBe(uttara.company.id);
+    expect((await kept(code)).companyId).toBe(uttara.company.id);
+    await telegram(typed(OWNER_CHAT, "Extas: status"));
+    expect((await kept("Extas: status")).companyId).toBe(env.company.id);
+    const screen = await getBot(ownerThere);
+    expect(screen.messages.map((m) => m.text)).toContain("Extas Uttara: status");
+    expect(screen.messages.map((m) => m.text)).not.toContain("Extas: status");
   });
 
   it("has the WhatsApp plug ready: Meta's calls are checked and only the owner's number is answered", async () => {

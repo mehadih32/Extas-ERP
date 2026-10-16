@@ -6,6 +6,7 @@ import * as bank from "@/modules/accounts/bank.service";
 import { ensureControlAccounts } from "@/modules/accounts/control-accounts";
 import * as moneyInOut from "@/modules/accounts/money-in-out.service";
 import * as pettyCash from "@/modules/accounts/petty-cash.service";
+import * as reports from "@/modules/accounts/reports.service";
 import * as screens from "@/modules/accounts/screens.service";
 import * as vouchers from "@/modules/accounts/voucher.service";
 import * as expenses from "@/modules/expenses/expense.service";
@@ -183,6 +184,66 @@ run("Money in/out: add fund, withdraw, bank charge", () => {
     expect(cashBank.moneyInOut?.can.addFund).toBe(true);
     const overview = await screens.getOverviewScreen(env.accounts.ctx);
     expect(overview.moneyInOut?.can.bankCharge).toBe(true);
+  });
+
+  it("reverses a wrong Add fund or Withdraw from its journal entry, keeping both in the books", async () => {
+    const owner = await prisma.capitalSource.findFirstOrThrow({
+      where: { companyId: env.company.id, kind: "OWNER_CAPITAL" },
+    });
+    const latest = () =>
+      prisma.journalEntry.findFirstOrThrow({
+        where: {
+          companyId: env.company.id,
+          sourceType: { in: ["CAPITAL", "INSTALLMENT"] },
+          reversalOfId: null,
+          isReversed: false,
+        },
+        orderBy: { createdAt: "desc" },
+      });
+
+    // 25,000 put in by mistake: the entry's screen offers "Reverse" to Accounts.
+    await moneyInOut.addFund(env.accounts.ctx, {
+      ownerId: owner.id,
+      accountId: env.city.ledgerAccount.id,
+      amount: 25000,
+    });
+    const wrong = await latest();
+    const screen = await screens.getJournalEntryScreen(env.accounts.ctx, wrong.id);
+    expect(screen.can.reverse).toBe(true);
+    expect(screen.notes.reverse).toBeNull();
+    await expect(
+      vouchers.reverseJournalVoucher(env.production.ctx, wrong.id, { reason: "Not mine" }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+
+    const reversal = await vouchers.reverseJournalVoucher(env.accounts.ctx, wrong.id, {
+      reason: "Wrong owner chosen",
+    });
+    expect(reversal.reversalOf?.id).toBe(wrong.id);
+    expect(await env.balance(env.city.ledgerAccount.id)).toBe("0.00");
+    expect(
+      (await prisma.capitalSource.findUniqueOrThrow({ where: { id: owner.id } })).outstanding,
+    ).toEqual(owner.outstanding);
+    expect((await screens.getJournalEntryScreen(env.accounts.ctx, wrong.id)).can.reverse).toBe(
+      false,
+    );
+    await expect(
+      vouchers.reverseJournalVoucher(env.accounts.ctx, wrong.id, { reason: "Again please" }),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+
+    // A withdrawal taken by mistake comes back the same way.
+    await moneyInOut.withdrawFund(env.accounts.ctx, {
+      ownerId: owner.id,
+      accountId: env.acc.CASH,
+      amount: 8000,
+    });
+    const drawing = await latest();
+    await vouchers.reverseJournalVoucher(env.accounts.ctx, drawing.id, {
+      reason: "Recorded twice",
+    });
+    expect(await env.balance(env.acc.DRAWINGS)).toBe("0.00");
+    expect(await env.balance(env.acc.CASH)).toBe("100000.00");
+    const books = await reports.getBooksCheck(env.accounts.ctx);
+    expect(books.checks.filter((c) => !c.ok)).toEqual([]);
   });
 });
 

@@ -45,9 +45,13 @@ type EntryState = {
   lines: CashLine[];
 };
 
+/** Owner's money (Add fund, Withdraw) and loan entries: no document of their own to void. */
+const CAPITAL_SOURCES: readonly JournalSource[] = ["CAPITAL", "INSTALLMENT"];
+
 /**
- * Journal vouchers and transfers are undone with a mirror entry; entries made
- * by other modules are undone through their own documents (void the bill...).
+ * Journal vouchers, transfers and the owner's money in or out are undone with a
+ * mirror entry; entries made by other modules are undone through their own
+ * documents (void the bill...).
  */
 export function canReverseEntry(ctx: Can, entry: EntryState): Verdict {
   if (entry.sourceType === "SUPPLIER_FAULT") {
@@ -56,7 +60,8 @@ export function canReverseEntry(ctx: Can, entry: EntryState): Verdict {
       `${entry.number} was made by a supplier fault; undo it in the fault log (put the fault back to open, or waive it).`,
     );
   }
-  if (entry.sourceType !== "MANUAL" && entry.sourceType !== "TRANSFER") {
+  const capital = CAPITAL_SOURCES.includes(entry.sourceType);
+  if (entry.sourceType !== "MANUAL" && entry.sourceType !== "TRANSFER" && !capital) {
     return refuse(
       "CONFLICT",
       `${entry.number} was made by ${lower(entry.sourceType)}; undo it there (void the document).`,
@@ -64,7 +69,7 @@ export function canReverseEntry(ctx: Can, entry: EntryState): Verdict {
   }
   if (entry.reversalOfId) return refuse("CONFLICT", `${entry.number} is itself a reversal.`);
   if (entry.isReversed) return refuse("CONFLICT", `${entry.number} was already reversed.`);
-  if (entry.sourceType === "MANUAL" && !ctx.can("accounts.manage")) {
+  if ((entry.sourceType === "MANUAL" || capital) && !ctx.can("accounts.manage")) {
     return refuse("FORBIDDEN", "Only Accounts can do this.");
   }
   if (entry.sourceType === "TRANSFER" && !ctx.can("accounts.payments.record")) {

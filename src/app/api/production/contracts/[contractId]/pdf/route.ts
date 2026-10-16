@@ -14,13 +14,13 @@ export const dynamic = "force-dynamic";
  * sign: letterhead, both sides, what it covers, its numbered clauses and signature lines.
  * Made for each request, never kept.
  */
-export async function GET(_request: Request, context: { params: Promise<Params> }) {
+export async function GET(request: Request, context: { params: Promise<Params> }) {
   try {
     const { contractId } = await context.params;
     const ctx = await requireAnyPermission("production.manage", "accounts.view");
     const pdf = await contractPdf(ctx, contractId, await getRequestMeta());
     return fileResponse({ fileName: pdf.fileName, mimeType: PDF_MIME, bytes: pdf.bytes });
   } catch (error) {
-    return apiErrorResponse(error);
+    return apiErrorResponse(error, request);
   }
 }

@@ -117,6 +117,8 @@ export type CodeFacts = {
   stack?: string[];
   /** Full check problems behind it, when it came from one. */
   problemIds?: string[];
+  /** More route patterns it is about (screens without a guide). */
+  routes?: string[];
   /** How often it happened since the last run. */
   times?: number;
 };
@@ -153,6 +155,11 @@ export type CheckContext = {
   /** This company also gets the checks of the server itself (the oldest company). */
   platform: boolean;
   db: PrismaClient;
+  /**
+   * When what the check reads was seen, if earlier than now (the Full check's
+   * findings date from its own run): a fix merged after that is not judged on it.
+   */
+  observed?: (at: Date) => void;
 };
 
 export type Check = {

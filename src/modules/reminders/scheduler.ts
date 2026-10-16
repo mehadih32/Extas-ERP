@@ -4,8 +4,9 @@ import { runReminders } from "@/modules/reminders/engine";
  * The reminder clock. Started once per server process (instrumentation.ts);
  * every minute it sends the reminders that are due (engine.ts), Mehedi 2.0's
  * reminders, briefs and late order steps to the owner, the Full check's
- * follow-ups on GitHub, and the weekly Server Health when it is on. A run still going when the next minute comes is not
- * doubled.
+ * follow-ups on GitHub, the weekly Server Health when it is on, and Bug Guard's
+ * schedule (bug-guard/clock.ts). A run still going when the next minute comes
+ * is not doubled.
  */
 
 const CHECK_EVERY_MS = 60_000;
@@ -39,6 +40,10 @@ export async function reminderTick(now: Date = new Date()) {
     // The weekly Server Health, when turned on (ai/health/health.service.ts).
     const { runWeeklyHealth } = await import("@/modules/ai/health/health.service");
     await runWeeklyHealth(now).catch((error) => console.error("[health] run failed", error));
+    // Bug Guard: its schedule, checks after fixes, corrections after their
+    // backup, and the weekly summary (bug-guard/clock.ts).
+    const { runBugGuardClock } = await import("@/modules/bug-guard/clock");
+    await runBugGuardClock(now).catch((error) => console.error("[bug-guard] clock failed", error));
     return result;
   } catch (error) {
     console.error("[reminders] run failed", error);

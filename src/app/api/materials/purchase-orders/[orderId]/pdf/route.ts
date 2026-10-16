@@ -15,13 +15,13 @@ export const dynamic = "force-dynamic";
  * master batch the style-wise breakdown and the collar and cuff matrices. Prices only
  * for people who see material prices. Made for each request, never kept.
  */
-export async function GET(_request: Request, context: { params: Promise<Params> }) {
+export async function GET(request: Request, context: { params: Promise<Params> }) {
   try {
     const { orderId } = await context.params;
     const ctx = await requirePermission("materials.view");
     const pdf = await purchaseOrderPdf(ctx, orderId, await getRequestMeta());
     return fileResponse({ fileName: pdf.fileName, mimeType: PDF_MIME, bytes: pdf.bytes });
   } catch (error) {
-    return apiErrorResponse(error);
+    return apiErrorResponse(error, request);
   }
 }

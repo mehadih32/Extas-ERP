@@ -6634,26 +6634,28 @@ model BugGuardSettings {
 
 /// One Bug Guard run: what it checked and how it went (its findings are BugGuardFinding).
 model BugGuardRun {
-  id             String            @id @default(cuid())
-  companyId      String
-  trigger        BugGuardTrigger
-  status         BugGuardRunStatus @default(RUNNING)
-  startedById    String?
-  startedAt      DateTime          @default(now())
-  finishedAt     DateTime?
+  id              String            @id @default(cuid())
+  companyId       String
+  trigger         BugGuardTrigger
+  status          BugGuardRunStatus @default(RUNNING)
+  startedById     String?
+  startedAt       DateTime          @default(now())
+  finishedAt      DateTime?
   /// [{ key, area, label, status, found, ms, note }] (modules/bug-guard/types.ts CheckResult).
-  checks         Json              @default("[]")
-  urgent         Int               @default(0)
-  important      Int               @default(0)
-  later          Int               @default(0)
+  checks          Json              @default("[]")
+  urgent          Int               @default(0)
+  important       Int               @default(0)
+  later           Int               @default(0)
   /// Found for the first time in this run, and put right since the last one.
-  newCount       Int               @default(0)
-  fixedCount     Int               @default(0)
+  newCount        Int               @default(0)
+  fixedCount      Int               @default(0)
   /// The Full check it asked GitHub for (every screen, PDF and the layout checks).
-  fullCheckRunId String?
+  fullCheckRunId  String?
+  /// When that Full check's findings were taken in (it reports later, from GitHub).
+  fullCheckSeenAt DateTime?
   /// Why it stopped, or what it could not check, in plain words.
-  note           String?
-  reportSentAt   DateTime?
+  note            String?
+  reportSentAt    DateTime?
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
@@ -6799,6 +6801,8 @@ enum BugGuardCorrectionStatus {
   FAILED
   /// The figures changed since it was prepared: prepare it again.
   STALE
+  /// The owner cancelled it: nothing changed.
+  CANCELLED
 }
 
 /// Bug Guard's own audit log: every check, finding, fix, who approved it and the result.

@@ -8,6 +8,7 @@ import { visibleNavItems } from "@/components/shell/nav-items";
 import { Sidebar } from "@/components/shell/sidebar";
 import { SIDEBAR_COOKIE, sidebarModeFrom } from "@/components/shell/sidebar-state";
 import { TopBar } from "@/components/shell/top-bar";
+import { UsageBeacon } from "@/components/shell/usage-beacon";
 import type { ShellUser } from "@/components/shell/types";
 import { ROUTES } from "@/lib/routes";
 import { currentInterfaceStyle } from "@/modules/appearance/appearance.service";
@@ -61,6 +62,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <BottomNav permissions={me.permissions} user={user} companyName={activeCompany.name} />
       {dutyTracker}
       <InstallApp />
+      {/* How the ERP is used, for Bug Guard; the Full check's own visits are not counted. */}
+      {!current?.session.checkRoleId && <UsageBeacon />}
     </>
   );
 

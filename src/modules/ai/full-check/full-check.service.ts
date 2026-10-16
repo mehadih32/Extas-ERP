@@ -25,6 +25,8 @@ import {
   carefulFiles,
   FIX_CHECKS_COMMENT,
   fixIssue,
+  type GuardFacts,
+  guardIssue,
   KIND_LABEL,
   KIND_TEXT,
   PROBLEM_KINDS,
@@ -249,21 +251,31 @@ async function endSessions(runId: string) {
 /** Asks GitHub to run the Full check now. */
 export async function startFullCheck(ctx: CompanyContext, meta?: RequestMeta) {
   assertPlatform(ctx);
-  const gh = await needGitHub(ctx.company.id);
+  const run = await startFullCheckFor(ctx.company.id, ctx.user.id);
+  await auditInCompany(ctx, meta, {
+    action: "CREATE",
+    entityType: "FullCheckRun",
+    entityId: run.id,
+    summary: `Started a Full check of the ${run.site} site`,
+  });
+  return { id: run.id };
+}
+
+/**
+ * Asks GitHub for a Full check of a company: the owner's "Run the Full check
+ * now", or Bug Guard's run (no one pressing, startedById null).
+ */
+export async function startFullCheckFor(companyId: string, startedById: string | null) {
+  const gh = await needGitHub(companyId);
   const site = appUrl();
-  await finishStale(new Date(), ctx.company.id);
+  await finishStale(new Date(), companyId);
   const going = await prisma.fullCheckRun.findFirst({
-    where: { companyId: ctx.company.id, status: { in: ["STARTING", "RUNNING"] } },
+    where: { companyId, status: { in: ["STARTING", "RUNNING"] } },
   });
   if (going) throw new AppError("CONFLICT", "A Full check is running already.");
   const pass = randomBytes(24).toString("base64url");
   const run = await prisma.fullCheckRun.create({
-    data: {
-      companyId: ctx.company.id,
-      site: siteOf(),
-      passHash: sha256(pass),
-      startedById: ctx.user.id,
-    },
+    data: { companyId, site: siteOf(), passHash: sha256(pass), startedById },
   });
   try {
     await github.dispatchFullCheck(gh, { site, run: run.id, pass });
@@ -279,13 +291,7 @@ export async function startFullCheck(ctx: CompanyContext, meta?: RequestMeta) {
     });
     throw error;
   }
-  await auditInCompany(ctx, meta, {
-    action: "CREATE",
-    entityType: "FullCheckRun",
-    entityId: run.id,
-    summary: `Started a Full check of the ${run.site} site`,
-  });
-  return { id: run.id };
+  return { id: run.id, site: run.site };
 }
 
 export const beginSchema = z.object({
@@ -609,6 +615,33 @@ export async function askClaudeCode(ctx: CompanyContext, input: unknown, meta?: 
   const at = when(new Date());
   const issue = (number: number) => askIssue({ text, site: siteOf(), at, issue: number });
   return openRequest(ctx, gh, { kind: "ASK", issue, text, problemIds: [], meta });
+}
+
+/**
+ * Bug Guard's "Fix" on a finding with a code fix: its Full check problems go
+ * as "Fix with Claude Code" does; anything else (a server error, a slow
+ * database call, packages, screens without a guide) as an issue with only the
+ * safe facts (texts.ts guardIssue).
+ */
+export async function sendGuardFix(
+  ctx: CompanyContext,
+  input: { facts: GuardFacts; problemIds?: string[]; summary: string },
+  meta?: RequestMeta,
+) {
+  assertPlatform(ctx);
+  if (input.problemIds?.length) return sendFix(ctx, { problemIds: input.problemIds }, meta);
+  checkRateLimit(`claude-code:${ctx.company.id}`, 10, 60 * 60_000);
+  const gh = await needGitHub(ctx.company.id);
+  const at = when(new Date());
+  const issue = (number: number) =>
+    guardIssue({ facts: input.facts, site: siteOf(), at, issue: number });
+  return openRequest(ctx, gh, {
+    kind: "FIX",
+    issue,
+    text: input.summary.slice(0, 4000),
+    problemIds: [],
+    meta,
+  });
 }
 
 async function openRequest(

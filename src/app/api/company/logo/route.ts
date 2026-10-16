@@ -8,11 +8,11 @@ import { fileFromRequest } from "@/modules/files/file.service";
 export const dynamic = "force-dynamic";
 
 /** GET /api/company/logo — the letterhead logo image (404 when there is none). */
-export async function GET() {
+export async function GET(request: Request) {
   try {
     return fileResponse(await logos.getCompanyLogo(await requireCompany()), "inline");
   } catch (error) {
-    return apiErrorResponse(error);
+    return apiErrorResponse(error, request);
   }
 }
 

@@ -277,6 +277,88 @@ export function askIssue(input: { text: string; site: string; at: string; issue:
   return { title, body };
 }
 
+/** The safe facts of a Bug Guard finding (modules/bug-guard/types.ts CodeFacts). */
+export type GuardFacts = {
+  route: string;
+  method?: string | null;
+  status?: number | null;
+  errorType?: string | null;
+  stack?: string[];
+  times?: number;
+  routes?: string[];
+};
+
+/** A route as an issue may name it (a pattern; the database and package.json as they are). */
+const guardRoute = (route: string) =>
+  /^database: [A-Za-z]{1,60}\.[A-Za-z$]{1,40}$/.test(route) || route === "package.json"
+    ? route
+    : safeRoute(route);
+
+/**
+ * The issue for a Bug Guard finding with a code fix: only the route pattern,
+ * the error's type, the status, how often, and stack lines from the ERP's own
+ * code. Never a message, a screen's text or anything from the ERP's data.
+ */
+export function guardIssue(input: { facts: GuardFacts; site: string; at: string; issue: number }): {
+  title: string;
+  body: string;
+} {
+  const f = input.facts;
+  const route = guardRoute(f.route);
+  const type = errorTypeOf(f.errorType);
+  let what: string[];
+  let title: string;
+  if (type === "SlowQuery") {
+    title = `Bug Guard: slow database call ${route.replace(/^database: /, "")}`;
+    what = [
+      `The database call \`${route.replace(/^database: /, "")}\` took over a second ${f.times ?? 1} time(s) on the live site.`,
+      "Find why (a missing index, a query in a loop, too much loaded at once) and make it fast without changing what it returns.",
+    ];
+  } else if (type === "VulnerablePackages") {
+    title = "Bug Guard: packages with known weaknesses";
+    what = [
+      "`npm audit` reports high or critical weaknesses in the ERP's packages.",
+      "Update them to safe versions (keep the major versions where you can), keep everything working and run the whole test suite.",
+    ];
+  } else if (type === "MissingHelpGuide") {
+    const routes = [...new Set([f.route, ...(f.routes ?? [])].map(safeRoute))].slice(0, 20);
+    title = `Bug Guard: ${routes.length} screen(s) without a Help guide`;
+    what = [
+      "People use these screens, and they have no guide in the Help Center:",
+      ...routes.map((r) => `- \`${r}\``),
+      "Write a Bengali guide for each, as CLAUDE.md and `tests/unit/help-center.test.ts` require.",
+    ];
+  } else {
+    const facts = [
+      f.method ? `method ${f.method.replace(/[^A-Z]/g, "")}` : null,
+      f.status ? `status ${f.status}` : null,
+      type ? `error type ${type}` : null,
+      f.times ? `${f.times} time(s) since the last check` : null,
+    ].filter(Boolean);
+    title = `Bug Guard: ${type ?? "an error"} on ${route}`;
+    const stack = ourStackLines(f.stack);
+    what = [
+      `**An error on \`${route}\`**${facts.length ? ` (${facts.join(", ")})` : ""}.`,
+      ...(stack.length
+        ? ["Stack lines from the ERP's own code:", "```", ...stack, "```"]
+        : ["No stack lines from the ERP's own code were kept: find the cause from the route."]),
+    ];
+  }
+  const body = [
+    `@claude please fix this problem, found by the ERP's Bug Guard on the ${input.site === "demo" ? "demo" : "live"} site.`,
+    "",
+    "### What Bug Guard found",
+    ...what,
+    "",
+    "What the screens showed and the data behind them stay private in the ERP.",
+    "",
+    howTo(input.issue),
+    "",
+    `_Sent from the ERP (AI Center > Bug Guard) on ${input.at}._`,
+  ].join("\n");
+  return { title: title.slice(0, 200), body };
+}
+
 /**
  * Changed files that run, build or install the ERP, or set the rules for
  * Claude Code: the owner is asked to look twice before merging these.

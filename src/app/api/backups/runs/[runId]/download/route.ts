@@ -39,6 +39,6 @@ export async function GET(request: Request, context: { params: Promise<Params> }
       },
     });
   } catch (error) {
-    return apiErrorResponse(error);
+    return apiErrorResponse(error, request);
   }
 }

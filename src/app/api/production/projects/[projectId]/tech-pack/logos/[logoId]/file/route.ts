@@ -20,6 +20,6 @@ export async function GET(request: Request, context: { params: Promise<Params> }
     const format = asked === "DST" || asked === "EXP" ? asked : null;
     return fileResponse(await logoMachineFile(ctx, projectId, logoId, format));
   } catch (error) {
-    return apiErrorResponse(error);
+    return apiErrorResponse(error, request);
   }
 }

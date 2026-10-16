@@ -156,6 +156,8 @@ allow_test_restores ||
   say "The weekly test restore may not make its temporary database; it says so on the Backups screen"
 install_backup_helpers ||
   say "Restore from the Backups screen is not set up on this server (no systemd); restore with deploy/restore.sh"
+install_host_status ||
+  say "Bug Guard cannot see this server's own updates; it says nothing about them"
 
 # The demo site starts after the ERP itself, so the ERP never waits on it.
 if [ -n "$DEMO_DOMAIN" ]; then

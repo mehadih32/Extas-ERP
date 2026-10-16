@@ -32,3 +32,6 @@ yarn-error.log*
 
 # The production simulation report (npm run simulate:production with SIMULATION_REPORT set)
 simulation-report.md
+
+# Bug Guard: npm audit report made inside the Docker build
+npm-audit.json

@@ -42,6 +42,10 @@ RUN --mount=type=cache,target=/root/.npm \
 FROM deps AS builder
 COPY . .
 RUN npm run build
+# Bug Guard's "Packages with known weaknesses" check reads npm's own report on the
+# packages the app runs with. No answer from npm (offline) leaves an empty report.
+RUN (timeout 120 npm audit --omit=dev --json > npm-audit.json || true); \
+    test -s npm-audit.json || echo '{}' > npm-audit.json
 
 # --- Migrations and the first-run seed -------------------------------------------
 FROM deps AS tools
@@ -68,6 +72,7 @@ COPY --from=builder --chown=erp:erp /app/.next/static ./.next/static
 # The standalone build leaves out public/: the favicon, the app icons, the service
 # worker and its offline page are served from here.
 COPY --from=builder --chown=erp:erp /app/public ./public
+COPY --from=builder --chown=erp:erp /app/npm-audit.json ./npm-audit.json
 USER erp
 EXPOSE 3000
 CMD ["node", "server.js"]

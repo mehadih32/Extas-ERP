@@ -22,7 +22,7 @@ export async function GET(request: Request, context: { params: Promise<Params> }
     );
     return fileResponse(file, download ? "attachment" : "inline");
   } catch (error) {
-    return apiErrorResponse(error);
+    return apiErrorResponse(error, request);
   }
 }
 

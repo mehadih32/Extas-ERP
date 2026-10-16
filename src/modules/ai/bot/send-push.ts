@@ -8,6 +8,10 @@ import { BUYER_KINDS } from "../draft-templates";
 import { logBot, senderFor } from "./bot.service";
 import type { BotPush } from "./push";
 import { type BotOut, renderDeletion, renderDraft, renderPermission } from "./render";
+import { type FindingText, renderCorrection, renderFinding } from "@/modules/bug-guard/bot-texts";
+import type { CorrectionPlan } from "@/modules/bug-guard/types";
+
+const appUrl = () => (process.env.APP_URL || "http://localhost:3000").replace(/\/$/, "");
 
 /*
  * Sends a push (push.ts) to each linked bot of a company. A draft is also kept
@@ -45,7 +49,7 @@ async function render(
 ): Promise<BotOut | null> {
   switch (push.kind) {
     case "text":
-      return { text: push.text, buttons: [] };
+      return { text: push.text, buttons: push.buttons ?? [] };
     case "permission": {
       const request = await prisma.aiPermissionRequest.findFirst({
         where: { id: push.requestId, companyId, status: "PENDING" },
@@ -64,6 +68,28 @@ async function render(
       });
       if (!request) return null;
       return renderDeletion(request);
+    }
+    case "guard": {
+      const f = await prisma.bugGuardFinding.findFirst({
+        where: { id: push.findingId, companyId, status: "OPEN" },
+      });
+      if (!f) return null;
+      return renderFinding(
+        {
+          ...f,
+          evidence: (f.evidence as FindingText["evidence"]) ?? null,
+          correction: (f.correction as CorrectionPlan | null) ?? null,
+        },
+        appUrl(),
+      );
+    }
+    case "guard-correction": {
+      const c = await prisma.bugGuardCorrection.findFirst({
+        where: { id: push.correctionId, companyId, status: { in: ["PREPARED", "APPLIED"] } },
+        include: { finding: { select: { title: true } } },
+      });
+      if (!c) return null;
+      return renderCorrection({ ...c, title: c.finding.title }, appUrl());
     }
     case "draft": {
       const draft = await prisma.aiDraft.findFirst({

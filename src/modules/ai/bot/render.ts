@@ -9,6 +9,9 @@ import { countOf } from "@/lib/display";
  *   hr:<rule>:y|n Approve or reject a House Rule
  *   pr:<request>:ONCE|TODAY|ALWAYS|REFUSED  answer a permission request
  *   dr:<request>:y|n                        answer a Deletion request
+ *   bg:<finding>:f|i|l   Bug Guard: Fix, Ignore, Remind me later
+ *   bg:run:<company>     Bug Guard: Run now
+ *   bc:<correction>:a|x|u  Bug Guard: Apply, Cancel or Undo a correction
  * Pure: no database and no network.
  */
 
@@ -159,7 +162,13 @@ export type ButtonPress =
   | { kind: "send" | "discard"; draftId: string }
   | { kind: "rule"; ruleId: string; approve: boolean }
   | { kind: "permission"; requestId: string; answer: "ONCE" | "TODAY" | "ALWAYS" | "REFUSED" }
-  | { kind: "deletion"; requestId: string; approve: boolean };
+  | { kind: "deletion"; requestId: string; approve: boolean }
+  | { kind: "guard"; findingId: string; choice: "fix" | "ignore" | "later" }
+  | { kind: "guard-run"; companyId: string }
+  | { kind: "guard-correction"; correctionId: string; choice: "apply" | "cancel" | "undo" };
+
+const GUARD_CHOICE = { f: "fix", i: "ignore", l: "later" } as const;
+const CORRECTION_CHOICE = { a: "apply", x: "cancel", u: "undo" } as const;
 
 const ID = "[a-z0-9]{10,40}";
 
@@ -181,6 +190,18 @@ export function readButton(data: string): ButtonPress | null {
   }
   m = new RegExp(`^dr:(${ID}):(y|n)$`).exec(data);
   if (m) return { kind: "deletion", requestId: m[1]!, approve: m[2] === "y" };
+  m = new RegExp(`^bg:run:(${ID})$`).exec(data);
+  if (m) return { kind: "guard-run", companyId: m[1]! };
+  m = new RegExp(`^bg:(${ID}):(f|i|l)$`).exec(data);
+  if (m) return { kind: "guard", findingId: m[1]!, choice: GUARD_CHOICE[m[2] as "f" | "i" | "l"] };
+  m = new RegExp(`^bc:(${ID}):(a|x|u)$`).exec(data);
+  if (m) {
+    return {
+      kind: "guard-correction",
+      correctionId: m[1]!,
+      choice: CORRECTION_CHOICE[m[2] as "a" | "x" | "u"],
+    };
+  }
   return null;
 }
 

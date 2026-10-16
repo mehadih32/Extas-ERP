@@ -28,6 +28,16 @@ async function runOne(now: Date): Promise<boolean> {
   } catch (error) {
     const state = await failJob(job, error);
     console.error(`[jobs] ${job.kind} ${job.id} failed (try ${job.attempts}, ${state})`, error);
+    if (state === "FAILED") {
+      // Gave up: kept for Bug Guard (the job's kind and the error, not its payload).
+      const { recordServerError } = await import("@/modules/bug-guard/server-errors");
+      await recordServerError({
+        error,
+        routeType: "job",
+        path: job.kind,
+        companyId: job.companyId,
+      });
+    }
   }
   return true;
 }

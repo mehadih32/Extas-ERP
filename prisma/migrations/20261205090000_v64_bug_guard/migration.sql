@@ -21,7 +21,7 @@ CREATE TYPE "BugGuardFixKind" AS ENUM ('CODE', 'DATA', 'SECURITY', 'MANUAL', 'NO
 CREATE TYPE "BugGuardFindingStatus" AS ENUM ('OPEN', 'IGNORED', 'SNOOZED', 'FIXING', 'FIXED', 'GONE');
 
 -- CreateEnum
-CREATE TYPE "BugGuardCorrectionStatus" AS ENUM ('PREPARED', 'BACKING_UP', 'APPLIED', 'UNDONE', 'FAILED', 'STALE');
+CREATE TYPE "BugGuardCorrectionStatus" AS ENUM ('PREPARED', 'BACKING_UP', 'APPLIED', 'UNDONE', 'FAILED', 'STALE', 'CANCELLED');
 
 -- CreateEnum
 CREATE TYPE "UsageKind" AS ENUM ('VIEW', 'ABANDONED', 'HELP_MISS');
@@ -63,6 +63,7 @@ CREATE TABLE "BugGuardRun" (
     "newCount" INTEGER NOT NULL DEFAULT 0,
     "fixedCount" INTEGER NOT NULL DEFAULT 0,
     "fullCheckRunId" TEXT,
+    "fullCheckSeenAt" TIMESTAMP(3),
     "note" TEXT,
     "reportSentAt" TIMESTAMP(3),
 

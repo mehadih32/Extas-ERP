@@ -14,13 +14,13 @@ export const dynamic = "force-dynamic";
  * pieces per colour and size, materials per piece with pictures, collar and cuff matrices
  * and making notes. No prices. Made for each request, never kept.
  */
-export async function GET(_request: Request, context: { params: Promise<Params> }) {
+export async function GET(request: Request, context: { params: Promise<Params> }) {
   try {
     const { projectId } = await context.params;
     const ctx = await requirePermission("production.view");
     const pdf = await techPackPdf(ctx, projectId, await getRequestMeta());
     return fileResponse({ fileName: pdf.fileName, mimeType: PDF_MIME, bytes: pdf.bytes });
   } catch (error) {
-    return apiErrorResponse(error);
+    return apiErrorResponse(error, request);
   }
 }

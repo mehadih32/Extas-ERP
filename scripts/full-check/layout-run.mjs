@@ -215,7 +215,12 @@ async function main() {
   const pages = await Promise.all(Array.from({ length: TABS }, () => context.newPage()));
   let next = 0;
   await Promise.all(
-    pages.map(async (page) => {
+    pages.map(async (first) => {
+      let page = first;
+      // A tab whose page crashed (the browser ran out of memory) cannot open anything
+      // more: the next screen gets a new tab.
+      let crashed = false;
+      page.on("crash", () => (crashed = true));
       while (!gate && Date.now() < deadline) {
         const path = queue[next++];
         if (!path) {
@@ -224,6 +229,12 @@ async function main() {
           continue;
         }
         await visit(page, path);
+        if (crashed) {
+          await page.close().catch(() => {});
+          page = await context.newPage();
+          crashed = false;
+          page.on("crash", () => (crashed = true));
+        }
       }
     }),
   );

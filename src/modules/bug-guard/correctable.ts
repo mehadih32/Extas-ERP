@@ -31,6 +31,78 @@ export const CORRECTABLE: Record<string, Correctable> = {
     kind: "decimal",
     inCompany: (companyId) => ({ companyId }),
   },
+  // Written only by refreshOrderPayments (sales/posting.ts), and on edit and cancel by the
+  // same rule: paid = money held on the order (received - refunds + credit used), due =
+  // total - paid (0 once cancelled).
+  SalesOrder: {
+    client: "salesOrder",
+    fields: {
+      paidAmount: "the payments and credit on the order, less its refunds",
+      dueAmount: "the order's total less what is paid on it",
+    },
+    kind: "decimal",
+    inCompany: (companyId) => ({ companyId }),
+  },
+  // refreshOrderPayments again (a void invoice keeps what was paid and owes nothing).
+  Invoice: {
+    client: "invoice",
+    fields: {
+      paidAmount: "the payments and credit on its order, less its refunds",
+      dueAmount: "the invoice's total less what is paid on it",
+    },
+    kind: "decimal",
+    inCompany: (companyId) => ({ companyId }),
+  },
+  // refreshProformaPayments: received on the proforma less its refunds.
+  ProformaInvoice: {
+    client: "proformaInvoice",
+    fields: { advancePaid: "the payments on the proforma, less its refunds" },
+    kind: "decimal",
+    inCompany: (companyId) => ({ companyId }),
+  },
+  // settleSupplierBills (accounts/supplier-settlement.ts) after every change to the
+  // supplier's Payable lines; a void bill has 0 and 0.
+  SupplierBill: {
+    client: "supplierBill",
+    fields: {
+      paidAmount: "what the supplier's Payable ledger has settled on the bill",
+      dueAmount: "the bill's total less what is settled on it",
+    },
+    kind: "decimal",
+    inCompany: (companyId) => ({ companyId }),
+  },
+  // saveFigures (hr/payroll.service.ts) only.
+  PayrollRun: {
+    client: "payrollRun",
+    fields: {
+      totalGross: "the month's salary lines (gross)",
+      totalNet: "the month's salary lines (net pay)",
+    },
+    kind: "decimal",
+    inCompany: (companyId) => ({ companyId }),
+  },
+  // Paying and voiding salary payments only, by the line's amount.
+  PayrollItem: {
+    client: "payrollItem",
+    fields: { paidAmount: "the salary payments of the line that are not void" },
+    kind: "decimal",
+    inCompany: (companyId) => ({ run: { companyId } }),
+  },
+  // applySettlementTx / its undo and void (hr/advance.service.ts): amount - settlements not
+  // reversed (0 once void).
+  SalaryAdvance: {
+    client: "salaryAdvance",
+    fields: { outstanding: "the advance less what was recovered or paid back" },
+    kind: "decimal",
+    inCompany: (companyId) => ({ companyId }),
+  },
+  // refreshProjectCosts (production/project-costs.ts) only: a cached roll-up.
+  ProductionProject: {
+    client: "productionProject",
+    fields: { totalCost: "the project's bills, direct costs and materials issued" },
+    kind: "decimal",
+    inCompany: (companyId) => ({ companyId }),
+  },
 };
 
 /** The entry for a model's field, or null when Bug Guard may not change it. */

@@ -380,3 +380,24 @@ export async function billsOutOfStep(companyId: string) {
   }
   return outOfStep;
 }
+
+/**
+ * The same, with what each bill should show, read through `db` (Bug Guard's
+ * data checks). It only reads while the company's control accounts are all
+ * there (planSettlement adds a missing one).
+ */
+export async function billsOutOfStepIn(db: Db, companyId: string) {
+  const suppliers = await db.supplierBill.findMany({
+    where: { companyId, status: { not: "VOID" } },
+    distinct: ["supplierId"],
+    select: { supplierId: true },
+  });
+  const outOfStep: Array<PlannedBill & { supplierId: string }> = [];
+  for (const { supplierId } of suppliers) {
+    const plan = await planSettlement(db, companyId, supplierId);
+    for (const bill of plan.bills) {
+      if (!isCurrent(bill)) outOfStep.push({ ...bill, supplierId });
+    }
+  }
+  return outOfStep;
+}

@@ -21,9 +21,10 @@ import { sendInApp } from "@/modules/reminders/notification.service";
 import { auditAsAi } from "../account";
 import { pushToBot } from "../bot/push";
 import { type Ask, askerFor, toolInputOf } from "../claude";
-import { costUsd, type TokenUse } from "../models";
+import type { TokenUse } from "../models";
 import { mehediSystem } from "../persona";
-import { aiSettingsOf, companyModelFor } from "../settings.service";
+import { costIn, priceBook } from "../prices.service";
+import { aiSettingsOf, modelForWork } from "../settings.service";
 import { budgetOf } from "../usage.service";
 import {
   DRY_RUNS,
@@ -594,13 +595,20 @@ const ORDER_WORK: ReadonlyArray<{
   { task: "read.updates", use: { input: 40_000, output: 8_000 }, perStyle: false },
 ];
 
-/** What the AI work on this order may cost, on the company's models and dollar rate. */
+/**
+ * What the AI work on this order may cost, on the company's models, prices
+ * and dollar rate (work on a model without a price counts as nothing).
+ */
 export async function estimateOrderAi(companyId: string, styles: number) {
-  const [settings, budget] = await Promise.all([aiSettingsOf(companyId), budgetOf(companyId)]);
+  const [settings, budget, book] = await Promise.all([
+    aiSettingsOf(companyId),
+    budgetOf(companyId),
+    priceBook(companyId),
+  ]);
   let usd = 0;
   for (const w of ORDER_WORK) {
     const times = w.perStyle ? Math.max(1, styles) : 1;
-    usd += costUsd(companyModelFor(settings, w.task), w.use) * times;
+    usd += costIn(book, modelForWork(settings, w.task), w.use).usd * times;
   }
   return new Prisma.Decimal(usd.toFixed(6))
     .times(budget.usdRate)

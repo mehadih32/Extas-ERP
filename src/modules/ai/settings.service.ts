@@ -11,14 +11,31 @@ import type { RequestMeta } from "@/lib/request-meta";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 
-import { AI_TASKS, type AiTaskKey, modelFor, MODEL_IDS, TASK_KEYS } from "./models";
+import { agentKeyOf, aiAgents } from "./agents";
+import { AI_MODELS, AI_TASKS, type AiTaskKey, modelFor, TASK_KEYS } from "./models";
+import { modelTestRuns, MODEL_TEST_TEXT, standingOf } from "./model-test-standing";
+import { listModels, ProviderError } from "./provider-calls";
+import {
+  BUILT_IN_MODELS,
+  isBuiltIn,
+  modelLabel,
+  modelRef,
+  parseModel,
+  PROVIDERS,
+  PROVIDER_IDS,
+  type ProviderId,
+  providerInfo,
+  type ReadModel,
+} from "./providers";
 
 /*
- * A company's AI switch, key, models and PIN (AI Center > Control, Models and
+ * A company's AI switch, keys, models and PIN (AI Center > Control, Models and
  * Settings). AI starts off: with the switch off or paused nothing calls the
  * AI, every feature falls back to its own non-AI way, and the AI costs nothing.
- * The Claude key is kept sealed (lib/crypto.ts) and never shown again; the
- * server's AI_API_KEY stands in while the company has none of its own. Only
+ * The Claude, OpenAI and Gemini keys are kept sealed (lib/crypto.ts) and never
+ * shown again; the server's AI_API_KEY stands in for Claude while the company
+ * has no Claude key of its own. Any model of any provider can be picked for
+ * any task and any agent (from the models read from the provider). Only
  * people with ai.manage (the owner by default) change any of it; the AI itself
  * never can.
  */
@@ -37,6 +54,15 @@ export async function aiSettingsOf(companyId: string, db: Db = prisma): Promise<
       apiKeySealed: null,
       apiKeyHint: null,
       apiKeySetAt: null,
+      openaiKeySealed: null,
+      openaiKeyHint: null,
+      openaiKeySetAt: null,
+      geminiKeySealed: null,
+      geminiKeyHint: null,
+      geminiKeySetAt: null,
+      keyTests: null,
+      providerModels: null,
+      agentModels: null,
       models: null,
       allowFable: false,
       pinHash: null,
@@ -68,20 +94,89 @@ export function apiKeyOf(settings: Pick<AiSettings, "apiKeySealed">): string | n
   return process.env.AI_API_KEY?.trim() || null;
 }
 
+type KeyFields = Pick<AiSettings, "apiKeySealed" | "openaiKeySealed" | "geminiKeySealed">;
+
+function unseal(sealed: string | null, provider: ProviderId): string | null {
+  if (!sealed) return null;
+  try {
+    return decryptSecret(sealed);
+  } catch (error) {
+    console.error(
+      `[ai] the stored ${providerInfo(provider).label} key could not be unlocked`,
+      error,
+    );
+    return null;
+  }
+}
+
+/** A provider's key in this company (Claude's: its own, else the server's AI_API_KEY), or null. */
+export function keyFor(settings: KeyFields, provider: ProviderId): string | null {
+  if (provider === "openai") return unseal(settings.openaiKeySealed, provider);
+  if (provider === "google") return unseal(settings.geminiKeySealed, provider);
+  return apiKeyOf(settings);
+}
+
 export type AiOff = "switched-off" | "paused" | "no-key";
 
-/** Why the AI is not working now, or null when it is. */
+/** Why the AI is not working now, or null when it is (a key of any provider will do). */
 export function offReason(settings: AiSettings): AiOff | null {
   if (!settings.enabled) return "switched-off";
   if (settings.pausedAt) return "paused";
-  return apiKeyOf(settings) ? null : "no-key";
+  return PROVIDER_IDS.some((p) => keyFor(settings, p)) ? null : "no-key";
 }
 
 export const OFF_TEXT: Record<AiOff, string> = {
   "switched-off": "AI is switched off. The owner turns it on in AI Center.",
   paused: "AI is paused. The owner resumes it in AI Center.",
-  "no-key": "AI has no Claude key yet. The owner adds it in AI Center > Settings.",
+  "no-key":
+    "AI has no key yet. The owner adds a Claude, OpenAI or Gemini key in AI Center > Settings.",
 };
+
+function jsonMap(raw: unknown): Record<string, unknown> {
+  return raw && typeof raw === "object" && !Array.isArray(raw)
+    ? (raw as Record<string, unknown>)
+    : {};
+}
+
+/** The models each provider offered the key when last read. */
+export function readModelsOf(settings: Pick<AiSettings, "providerModels">) {
+  const raw = jsonMap(settings.providerModels);
+  const out: Partial<Record<ProviderId, { readAt: string; models: ReadModel[] }>> = {};
+  for (const p of PROVIDER_IDS) {
+    const entry = jsonMap(raw[p]);
+    if (!Array.isArray(entry.models)) continue;
+    out[p] = {
+      readAt: String(entry.readAt ?? ""),
+      models: (entry.models as unknown[]).flatMap((m) => {
+        const x = jsonMap(m);
+        return typeof x.id === "string" ? [{ id: x.id, label: String(x.label ?? x.id) }] : [];
+      }),
+    };
+  }
+  return out;
+}
+
+export type KeyTest = { ok: boolean; at: string; note: string };
+
+function keyTestsOf(settings: Pick<AiSettings, "keyTests">) {
+  const raw = jsonMap(settings.keyTests);
+  const out: Partial<Record<ProviderId, KeyTest>> = {};
+  for (const p of PROVIDER_IDS) {
+    const t = jsonMap(raw[p]);
+    if (typeof t.ok === "boolean")
+      out[p] = { ok: t.ok, at: String(t.at ?? ""), note: String(t.note ?? "") };
+  }
+  return out;
+}
+
+/** The models chosen per agent (the owner's picks only). */
+export function agentModelsOf(settings: Pick<AiSettings, "agentModels">): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(jsonMap(settings.agentModels)).filter(
+      (e): e is [string, string] => typeof e[1] === "string" && parseModel(e[1]) !== null,
+    ),
+  );
+}
 
 /** The models chosen per task (the owner's picks only). */
 export function chosenModels(settings: Pick<AiSettings, "models">): Record<string, string> {
@@ -97,6 +192,14 @@ export function chosenModels(settings: Pick<AiSettings, "models">): Record<strin
 /** The model a task runs on in this company. */
 export function companyModelFor(settings: AiSettings, task: AiTaskKey) {
   return modelFor(task, chosenModels(settings), settings.allowFable);
+}
+
+/** The model an agent's work on a task runs on: the agent's own model, else the task's. */
+export function modelForWork(settings: AiSettings, task: AiTaskKey, agent?: string | null) {
+  const key = agentKeyOf(agent, settings.assistantName);
+  const own = key ? agentModelsOf(settings)[key] : undefined;
+  if (own && !(own === "claude-fable-5-1" && !settings.allowFable)) return own;
+  return companyModelFor(settings, task);
 }
 
 function assertManage(ctx: CompanyContext) {
@@ -140,6 +243,37 @@ export async function getAiStatus(ctx: CompanyContext) {
       : process.env.AI_API_KEY?.trim()
         ? { own: false as const, hint: null, setAt: null }
         : null,
+    /** Each provider's key (never the key itself) and its last Test. */
+    providers: PROVIDERS.map((p) => {
+      const tests = keyTestsOf(settings);
+      const read = readModelsOf(settings)[p.id];
+      const own =
+        p.id === "openai"
+          ? settings.openaiKeySealed && {
+              hint: settings.openaiKeyHint,
+              setAt: settings.openaiKeySetAt,
+            }
+          : p.id === "google"
+            ? settings.geminiKeySealed && {
+                hint: settings.geminiKeyHint,
+                setAt: settings.geminiKeySetAt,
+              }
+            : settings.apiKeySealed && { hint: settings.apiKeyHint, setAt: settings.apiKeySetAt };
+      return {
+        id: p.id,
+        label: p.label,
+        company: p.company,
+        keyStarts: p.keyStarts,
+        keyPage: p.keyPage,
+        key: own
+          ? { own: true as const, ...own }
+          : p.id === "anthropic" && process.env.AI_API_KEY?.trim()
+            ? { own: false as const, hint: null, setAt: null }
+            : null,
+        test: tests[p.id] ?? null,
+        models: read?.models.length ?? null,
+      };
+    }),
     pinSet: settings.pinHash !== null,
     allowFable: settings.allowFable,
     assistantName: settings.assistantName,
@@ -221,26 +355,266 @@ export async function removeApiKey(ctx: CompanyContext, meta?: RequestMeta) {
   });
 }
 
+/** The OpenAI and Gemini keys (Claude's is apiKeySchema). */
+export const providerKeySchema = z.discriminatedUnion("provider", [
+  z.object({
+    provider: z.literal("openai"),
+    key: z
+      .string()
+      .trim()
+      .min(20, "Paste the whole key: it starts with sk-")
+      .max(400, "This is longer than an OpenAI key")
+      .regex(/^sk-[A-Za-z0-9_-]+$/, "An OpenAI key starts with sk- and has no spaces"),
+  }),
+  z.object({
+    provider: z.literal("google"),
+    key: z
+      .string()
+      .trim()
+      .min(30, "Paste the whole key: it starts with AIza")
+      .max(200, "This is longer than a Gemini key")
+      .regex(/^[A-Za-z0-9_-]+$/, "A Gemini key has letters, digits, - and _ only, no spaces"),
+  }),
+]);
+
+const KEY_COLUMNS = {
+  openai: { sealed: "openaiKeySealed", hint: "openaiKeyHint", setAt: "openaiKeySetAt" },
+  google: { sealed: "geminiKeySealed", hint: "geminiKeyHint", setAt: "geminiKeySetAt" },
+} as const;
+
+/** Keeps the company's OpenAI or Gemini key, sealed; only its last four characters are shown. */
+export async function setProviderKey(ctx: CompanyContext, input: unknown, meta?: RequestMeta) {
+  assertManage(ctx);
+  const { provider, key } = providerKeySchema.parse(input);
+  const c = KEY_COLUMNS[provider];
+  await saveSettings(ctx, {
+    [c.sealed]: encryptSecret(key),
+    [c.hint]: key.slice(-4),
+    [c.setAt]: new Date(),
+  });
+  await forgetRead(ctx, provider);
+  await auditInCompany(ctx, meta, {
+    action: "UPDATE",
+    entityType: "AiSettings",
+    entityId: ctx.company.id,
+    summary: `Saved ${provider === "openai" ? "an OpenAI" : "a Gemini"} key ending ${key.slice(-4)}`,
+  });
+}
+
+/** Removes the company's OpenAI or Gemini key: its models run on the task's own Claude model. */
+export async function removeProviderKey(
+  ctx: CompanyContext,
+  provider: unknown,
+  meta?: RequestMeta,
+) {
+  assertManage(ctx);
+  const p = z.enum(["openai", "google"]).parse(provider);
+  const c = KEY_COLUMNS[p];
+  await saveSettings(ctx, { [c.sealed]: null, [c.hint]: null, [c.setAt]: null });
+  await forgetRead(ctx, p);
+  await auditInCompany(ctx, meta, {
+    action: "UPDATE",
+    entityType: "AiSettings",
+    entityId: ctx.company.id,
+    summary: `Removed the company's ${providerInfo(p).label} key`,
+  });
+}
+
+/** A new or removed key: its last Test and the models read with the old key no longer hold. */
+async function forgetRead(ctx: CompanyContext, provider: ProviderId) {
+  const settings = await aiSettingsOf(ctx.company.id);
+  const tests = { ...jsonMap(settings.keyTests) };
+  const read = { ...jsonMap(settings.providerModels) };
+  delete tests[provider];
+  delete read[provider];
+  await saveSettings(ctx, {
+    keyTests: tests as Prisma.InputJsonValue,
+    providerModels: read as Prisma.InputJsonValue,
+  });
+}
+
+function plainProviderError(provider: ProviderId, error: unknown) {
+  const label = providerInfo(provider).label;
+  if (error instanceof ProviderError) {
+    if (error.status === 401 || error.status === 403) return `${label} refused the key.`;
+    if (error.status === 429) return `${label} says the key is busy or out of credit.`;
+    if (error.status === 0) return `${label} could not be reached: ${error.message.slice(0, 120)}`;
+    return `${label} answered ${error.status}: ${error.message.slice(0, 160)}`;
+  }
+  return `${label} could not be asked: ${error instanceof Error ? error.message.slice(0, 160) : "unknown"}`;
+}
+
+/**
+ * Tests a provider's key by reading the models it offers (free: no AI work is
+ * asked, so it works while AI is off) and keeps the list for Models.
+ */
+export async function testProviderKey(ctx: CompanyContext, provider: unknown, meta?: RequestMeta) {
+  assertManage(ctx);
+  const p = z.enum(PROVIDER_IDS).parse(provider);
+  const settings = await aiSettingsOf(ctx.company.id);
+  const key = keyFor(settings, p);
+  if (!key) throw new AppError("VALIDATION", `Add the ${providerInfo(p).label} key first.`);
+  const at = new Date().toISOString();
+  let test: KeyTest;
+  let models: ReadModel[] | null = null;
+  try {
+    models = await listModels(p, key);
+    test = {
+      ok: true,
+      at,
+      note: `Works: ${models.length} model${models.length === 1 ? "" : "s"} offered`,
+    };
+  } catch (error) {
+    test = { ok: false, at, note: plainProviderError(p, error) };
+  }
+  const tests = { ...jsonMap(settings.keyTests), [p]: test };
+  const read = models
+    ? { ...jsonMap(settings.providerModels), [p]: { readAt: at, models } }
+    : jsonMap(settings.providerModels);
+  await saveSettings(ctx, {
+    keyTests: tests as Prisma.InputJsonValue,
+    providerModels: read as Prisma.InputJsonValue,
+  });
+  await auditInCompany(ctx, meta, {
+    action: "UPDATE",
+    entityType: "AiSettings",
+    entityId: ctx.company.id,
+    summary: `Tested the ${providerInfo(p).label} key: ${test.note}`,
+  });
+  return test;
+}
+
+/** Reads the models of every provider that has a key ("Read models from providers"). */
+export async function readProviderModels(ctx: CompanyContext, meta?: RequestMeta) {
+  assertManage(ctx);
+  const settings = await aiSettingsOf(ctx.company.id);
+  const out: Array<{ provider: ProviderId; test: KeyTest }> = [];
+  for (const p of PROVIDER_IDS) {
+    if (!keyFor(settings, p)) continue;
+    out.push({ provider: p, test: await testProviderKey(ctx, p, meta) });
+  }
+  if (out.length === 0)
+    throw new AppError("VALIDATION", "Add a key on AI Center > Settings first.");
+  return out;
+}
+
+/** A model the owner may pick now: one of the ERP's own, or one read from a provider with a key. */
+function assertPickable(settings: AiSettings, model: string) {
+  if (isBuiltIn(model)) return;
+  const ref = parseModel(model);
+  if (!ref)
+    throw new AppError("VALIDATION", "Pick a model from the list.", {
+      model: ["Pick a model from the list"],
+    });
+  const label = providerInfo(ref.provider).label;
+  if (!keyFor(settings, ref.provider)) {
+    throw new AppError("VALIDATION", `Add the ${label} key on AI Center > Settings first.`, {
+      model: [`Add the ${label} key first`],
+    });
+  }
+  if (!readModelsOf(settings)[ref.provider]?.models.some((m) => m.id === ref.id)) {
+    throw new AppError(
+      "VALIDATION",
+      `${label} did not offer this model to the key: read the models again.`,
+      {
+        model: ["Read the models again"],
+      },
+    );
+  }
+}
+
 export const modelChoiceSchema = z.object({
   task: z.enum(TASK_KEYS),
   /** null puts the system's choice back. */
-  model: z.enum(MODEL_IDS).nullable(),
+  model: z.string().trim().max(140).nullable(),
 });
 
-/** The model per task, as Models shows it: the system's choice and the owner's. */
+export const agentModelSchema = z.object({
+  agent: z.string().trim().min(1).max(60),
+  /** null: the agent works on each task's model. */
+  model: z.string().trim().max(140).nullable(),
+});
+
+/**
+ * Models as the screen shows it: per task the system's choice, the owner's and
+ * the test standing of the model it runs on; per agent its own model; the
+ * models each provider offers; and the price of every model in use.
+ */
 export async function getModels(ctx: CompanyContext) {
-  const settings = await aiSettingsOf(ctx.company.id);
+  const [settings, runs, prices] = await Promise.all([
+    aiSettingsOf(ctx.company.id),
+    modelTestRuns(ctx.company.id),
+    prisma.aiModelPrice.findMany({ where: { companyId: ctx.company.id } }),
+  ]);
   const chosen = chosenModels(settings);
-  return {
-    allowFable: settings.allowFable,
-    tasks: AI_TASKS.map((t) => ({
+  const agentModels = agentModelsOf(settings);
+  const read = readModelsOf(settings);
+  const known = (ref: string) => {
+    const r = parseModel(ref);
+    return r ? read[r.provider]?.models : undefined;
+  };
+  const label = (ref: string) => modelLabel(ref, known(ref));
+  const providers = PROVIDERS.map((p) => ({
+    id: p.id,
+    label: p.label,
+    hasKey: keyFor(settings, p.id) !== null,
+    readAt: read[p.id]?.readAt ?? null,
+    models: (read[p.id]?.models ?? [])
+      .map((m) => ({ ref: modelRef(p.id, m.id), label: m.label }))
+      .filter((m) => !BUILT_IN_MODELS.includes(m.ref)),
+  }));
+  const tasks = AI_TASKS.map((t) => {
+    const runsOn = modelFor(t.key, chosen, settings.allowFable);
+    const standing = standingOf(runs, t.key, runsOn);
+    return {
       key: t.key,
       label: t.label,
       module: t.module,
       system: t.model,
       chosen: chosen[t.key] ?? null,
-      runsOn: modelFor(t.key, chosen, settings.allowFable),
-    })),
+      runsOn,
+      runsOnLabel: label(runsOn),
+      test: { ...standing, text: MODEL_TEST_TEXT[standing.state] },
+    };
+  });
+  const agents = aiAgents(settings.assistantName).map((a) => ({
+    ...a,
+    model: agentModels[a.key] ?? null,
+    modelLabel: agentModels[a.key] ? label(agentModels[a.key]!) : null,
+  }));
+  // Prices: the ERP's own models, every model in use, and every price the owner set.
+  const owner = new Map(prices.map((p) => [p.model, p]));
+  const inUse = new Set<string>([
+    ...BUILT_IN_MODELS,
+    ...tasks.map((t) => t.runsOn),
+    ...Object.values(agentModels),
+    ...owner.keys(),
+  ]);
+  const priceRows = [...inUse].map((ref) => {
+    const own = AI_MODELS.find((m) => m.id === ref);
+    const set = owner.get(ref);
+    const known = set && set.inputPerM !== null && set.outputPerM !== null;
+    return {
+      model: ref,
+      label: label(ref),
+      provider: parseModel(ref)?.provider ?? "anthropic",
+      size: own?.size ?? null,
+      from: known ? ("owner" as const) : own ? ("erp" as const) : ("unknown" as const),
+      input: known ? set.inputPerM!.toString() : own ? String(own.input) : null,
+      output: known ? set.outputPerM!.toString() : own ? String(own.output) : null,
+      cacheRead: known
+        ? (set.cacheReadPerM?.toString() ?? null)
+        : own
+          ? String(own.cacheRead)
+          : null,
+    };
+  });
+  return {
+    allowFable: settings.allowFable,
+    tasks,
+    agents,
+    providers,
+    prices: priceRows,
     can: { manage: ctx.can("ai.manage") },
   };
 }
@@ -251,6 +625,7 @@ export async function setTaskModel(ctx: CompanyContext, input: unknown, meta?: R
   assertManage(ctx);
   const { task, model } = modelChoiceSchema.parse(input);
   const settings = await aiSettingsOf(ctx.company.id);
+  if (model) assertPickable(settings, model);
   const chosen = chosenModels(settings);
   const system = AI_TASKS.find((t) => t.key === task)!.model;
   if (model === null || model === system) delete chosen[task];
@@ -261,6 +636,26 @@ export async function setTaskModel(ctx: CompanyContext, input: unknown, meta?: R
     entityType: "AiSettings",
     entityId: ctx.company.id,
     summary: `${AI_TASKS.find((t) => t.key === task)!.label}: ${model && model !== system ? model : `back to ${system}`}`,
+  });
+}
+
+/** Gives an agent its own model (any provider), or puts it back on each task's model. */
+export async function setAgentModel(ctx: CompanyContext, input: unknown, meta?: RequestMeta) {
+  assertManage(ctx);
+  const { agent, model } = agentModelSchema.parse(input);
+  const settings = await aiSettingsOf(ctx.company.id);
+  const found = aiAgents(settings.assistantName).find((a) => a.key === agent);
+  if (!found) throw new AppError("VALIDATION", "Pick one of the agents.");
+  if (model) assertPickable(settings, model);
+  const chosen = agentModelsOf(settings);
+  if (model) chosen[agent] = model;
+  else delete chosen[agent];
+  await saveSettings(ctx, { agentModels: chosen });
+  await auditInCompany(ctx, meta, {
+    action: "UPDATE",
+    entityType: "AiSettings",
+    entityId: ctx.company.id,
+    summary: `${found.name}: ${model ? `works on ${model}` : "back to each task's model"}`,
   });
 }
 

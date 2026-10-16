@@ -8,6 +8,8 @@ import { runAction } from "@/lib/result";
 import * as control from "@/modules/ai/control.service";
 import * as costs from "@/modules/ai/costs.service";
 import * as logs from "@/modules/ai/logs.service";
+import * as modelTests from "@/modules/ai/model-tests.service";
+import * as prices from "@/modules/ai/prices.service";
 import * as requests from "@/modules/ai/requests.service";
 import * as settings from "@/modules/ai/settings.service";
 import { requireAnyPermission, requireCompany, requirePermission } from "@/modules/auth/context";
@@ -17,7 +19,8 @@ import { requireAnyPermission, requireCompany, requirePermission } from "@/modul
  *   ai.view     see the AI Center: the switch, Control, Budget & Costs, Models,
  *               Logs and the AI's requests (ai.manage sees them too)
  *   ai.manage   turn AI on or off, pause it, set Control (cells, presets,
- *               grants), the budget, the models, the Claude key and the PIN, and answer
+ *               grants), the budget, the models and their prices and tests, the
+ *               Claude, OpenAI and Gemini keys and the PIN, and answer
  *               the AI's permission and Deletion requests (the owner's)
  * The AI itself holds neither: it can never change what it may do.
  */
@@ -33,6 +36,14 @@ const change = <T>(work: () => Promise<T>) =>
     await work();
     revalidatePath("/", "layout");
     return null;
+  });
+
+/** The same, handing back what the change found (a key test, a model test). */
+const changeWith = <T>(work: () => Promise<T>) =>
+  runAction(async () => {
+    const out = await work();
+    revalidatePath("/", "layout");
+    return out;
   });
 
 export const getAiStatusAction = async () =>
@@ -100,6 +111,31 @@ export const setApiKeyAction = async (input: unknown) =>
 
 export const removeApiKeyAction = async () =>
   change(async () => settings.removeApiKey(await manage(), await getRequestMeta()));
+
+export const setProviderKeyAction = async (input: unknown) =>
+  change(async () => settings.setProviderKey(await manage(), input, await getRequestMeta()));
+
+export const removeProviderKeyAction = async (provider: string) =>
+  change(async () => settings.removeProviderKey(await manage(), provider, await getRequestMeta()));
+
+/** Tests a key by reading the provider's models (free; works while AI is off). */
+export const testProviderKeyAction = async (provider: string) =>
+  changeWith(async () =>
+    settings.testProviderKey(await manage(), provider, await getRequestMeta()),
+  );
+
+export const readProviderModelsAction = async () =>
+  changeWith(async () => settings.readProviderModels(await manage(), await getRequestMeta()));
+
+export const setAgentModelAction = async (input: unknown) =>
+  change(async () => settings.setAgentModel(await manage(), input, await getRequestMeta()));
+
+export const setModelPriceAction = async (input: unknown) =>
+  change(async () => prices.setModelPrice(await manage(), input, await getRequestMeta()));
+
+/** Runs a task's test on a model (asks the model, so it costs a little and needs AI on). */
+export const runModelTestAction = async (input: unknown) =>
+  changeWith(async () => modelTests.runModelTest(await manage(), input, await getRequestMeta()));
 
 export const setPinAction = async (input: unknown) =>
   change(async () => settings.setPin(await manage(), input, await getRequestMeta()));

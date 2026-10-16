@@ -1,5 +1,6 @@
 /*
- * Which Claude model does which task. The owner's rule: the big model only for
+ * Which model does which task (the ERP's own Claude models here; OpenAI and
+ * Gemini models, read from the providers, in providers.ts). The owner's rule: the big model only for
  * thinking work, smaller ones for everything else; Fable 5.1 stays off until
  * the owner allows it for a very hard problem. The system's choices below can
  * be changed per task on AI Center > Models. Prices are US dollars per million
@@ -184,14 +185,18 @@ export const TASK_KEYS = AI_TASKS.map((t) => t.key) as unknown as readonly [
 
 export const taskInfo = (key: string): AiTask | null => AI_TASKS.find((t) => t.key === key) ?? null;
 
-/** The model a task runs on: the owner's choice, else the system's. */
+/** A model the owner may pick: one of the ERP's own, or another provider's ("openai:…", modules/ai/providers.ts). */
+const PICKABLE =
+  /^((anthropic|openai|google):[A-Za-z0-9][A-Za-z0-9._\-/:@]{0,119}|claude-[A-Za-z0-9._\-]{1,100})$/;
+
+/** The model a task runs on: the owner's choice (any provider), else the system's. */
 export function modelFor(
   task: AiTaskKey,
   chosen: Readonly<Record<string, string>> | null | undefined,
   fableAllowed: boolean,
-): AiModelId {
+): string {
   const pick = chosen?.[task];
-  const model = (pick && modelInfo(pick) ? pick : taskInfo(task)!.model) as AiModelId;
+  const model = pick && (modelInfo(pick) || PICKABLE.test(pick)) ? pick : taskInfo(task)!.model;
   // Fable 5.1 only runs while the owner allows it; otherwise the task's own default.
   if (model === "claude-fable-5-1" && !fableAllowed) return taskInfo(task)!.model;
   return model;

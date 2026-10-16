@@ -127,6 +127,8 @@ const HEADER_RATIO = 7.4 / TABLE_SIZE;
 const DETAIL_SIZE = 7;
 const DETAIL_LINE = 9.4;
 const TABLE_HEADER = 18;
+/** The most a text column claims for its longest word; a longer one may still be cut. */
+const MAX_WORD_NEED = 80;
 /** A column heading too wide for its column wraps to this many lines; it is never cut. */
 const MAX_HEADER_LINES = 3;
 const MAX_CELL_LINES = 8;
@@ -525,13 +527,14 @@ class Writer {
     const top = BOOK_MARGIN.top;
     const side = this.width * 0.3;
     const middle = this.width - 2 * side;
-    // A long name gets smaller, then takes a second line (the tagline moves down): never cut.
+    // A long name gets smaller, then takes a second line (the tagline moves down), and a
+    // third in portrait if it must (the tagline then has no room): never cut.
     const name = this.fitLines(
       this.model.letterhead.name,
       side - 8,
       { font: SANS_BOLD, size: 13 },
       9,
-      2,
+      3,
     );
     name.lines.forEach((text, i) => {
       this.line(text, this.left, top + 2 + i * (name.size + 1.5), side - 8, {
@@ -540,7 +543,8 @@ class Writer {
         color: NAVY,
       });
     });
-    const taglineY = name.lines.length > 1 ? top + 2 + 2 * (name.size + 1.5) + 1 : top + 19;
+    const taglineY =
+      name.lines.length > 1 ? top + 2 + name.lines.length * (name.size + 1.5) + 1 : top + 19;
     if (frame.tagline && taglineY + 7 <= top + BOOK_HEADER - 1) {
       this.line(frame.tagline, this.left, taglineY, side - 8, {
         font: SANS,
@@ -921,10 +925,68 @@ class Writer {
     return { widths, need, short, flexible };
   }
 
-  /** Whether every figure fits on its line at `size`. */
+  /**
+   * How wide each text column must be so no word in it is cut (its heading, its
+   * cells and the details under them), up to MAX_WORD_NEED: a word longer than
+   * that may still be cut, as before.
+   */
+  private wordNeeds(columns: Column[], rows: Row[], size: number): number[] {
+    const longest = (text: string, style: TextStyle) =>
+      Math.max(
+        0,
+        ...text.split(/\s+/).map((word) => (word ? textWidth(this.doc, word, style) : 0)),
+      );
+    return columns.map((c, i) => {
+      if (c.align === "right" || c.check) return 0;
+      let widest = longest(this.columnLabel(c), {
+        font: SANS_BOLD,
+        size: size * HEADER_RATIO,
+        spacing: 0.3,
+      });
+      for (const r of rows) {
+        const font = (r.style ?? "normal") === "normal" ? SANS : SANS_BOLD;
+        widest = Math.max(widest, longest(r.cells[i] ?? "", { font, size }));
+        for (const d of r.details ?? []) {
+          widest = Math.max(widest, longest(d, { font: SANS, size: DETAIL_SIZE }));
+        }
+      }
+      const swatch = i === 0 && rows.some((r) => r.swatch) ? 11 : 0;
+      return Math.min(MAX_WORD_NEED, widest) + swatch + 2 * CELL_PAD + 1;
+    });
+  }
+
+  /**
+   * Each column's width at `size`, or null when it cannot be done without cutting
+   * a figure or a word. First the usual way: figure columns take what they lack
+   * from the text columns (at most half of their room). When that would leave a
+   * text column too narrow for its words (a booking with many sizes in portrait),
+   * every column gets what it needs and the room comes from the columns with more.
+   */
+  private layoutWidths(columns: Column[], rows: Row[], size: number): number[] | null {
+    const { need, short, flexible, widths } = this.shortfall(columns, rows, size);
+    const words = this.wordNeeds(columns, rows, size);
+    let usual: number[] | null = widths;
+    if (short > 0) {
+      usual =
+        flexible > 2 * short
+          ? widths.map((w, i) =>
+              columns[i]!.align === "right" ? Math.max(w, need[i]!) : w - short * (w / flexible),
+            )
+          : null;
+    }
+    if (usual && usual.every((w, i) => w >= words[i]! - 0.01)) return usual;
+    const least = columns.map((c, i) => (c.align === "right" ? need[i]! : words[i]!));
+    const deficit = widths.reduce((sum, w, i) => sum + Math.max(0, least[i]! - w), 0);
+    const surplus = widths.reduce((sum, w, i) => sum + Math.max(0, w - least[i]!), 0);
+    if (deficit > surplus) return null;
+    return widths.map((w, i) =>
+      w <= least[i]! ? least[i]! : w - (deficit * (w - least[i]!)) / surplus,
+    );
+  }
+
+  /** Whether every figure, and every word of the text columns, fits at `size`. */
   private figuresFit(columns: Column[], rows: Row[], size: number): boolean {
-    const { short, flexible } = this.shortfall(columns, rows, size);
-    return short <= 0 || flexible > 2 * short;
+    return this.layoutWidths(columns, rows, size) !== null;
   }
 
   /** The largest text size, from the usual one down to the smallest, at which the figures fit. */
@@ -938,14 +1000,11 @@ class Writer {
   private columnBoxes(columns: Column[], rows: Row[] = []): ColumnBox[] {
     // A right-aligned column (quantities, rates, amounts) prints on one line: when its
     // longest figure or its heading would be cut, it takes the room it needs from the
-    // text columns, so no figure ever ends in "…". Tables that already fit are unchanged.
-    const { need, short, flexible, widths: start } = this.shortfall(columns, rows, this.tableSize);
-    let widths = start;
-    if (short > 0 && flexible > 2 * short) {
-      widths = widths.map((w, i) =>
-        columns[i]!.align === "right" ? Math.max(w, need[i]!) : w - short * (w / flexible),
-      );
-    }
+    // text columns, so no figure ever ends in "…", and no text column gets too narrow
+    // for its words (layoutWidths). Tables that already fit are unchanged.
+    const widths =
+      this.layoutWidths(columns, rows, this.tableSize) ??
+      this.shortfall(columns, rows, this.tableSize).widths;
     let x = this.left;
     return columns.map((c, i) => {
       const width = widths[i]!;

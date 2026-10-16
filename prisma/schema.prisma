@@ -4412,6 +4412,26 @@ model BackupConfig {
   retentionDays       Int      @default(30)
   isEnabled           Boolean  @default(true)
   updatedAt           DateTime @updatedAt
+
+  /// How many backups to keep in Google Drive (the newest checked one always stays).
+  keepCount             Int       @default(30)
+  /// The owner's own Google Cloud client ("TVs and Limited Input devices"), set on
+  /// the Backups screen; GOOGLE_DRIVE_CLIENT_ID / _SECRET are used while it is empty.
+  googleClientId        String?
+  googleClientSecretRef String? // sealed with ENCRYPTION_KEY
+  /// A Google sign-in waiting for the owner's phone (the device code, sealed) and when it ends.
+  googleDeviceRef       String?
+  googleDeviceExpiresAt DateTime?
+  /// The recovery key that locks every backup, sealed with ENCRYPTION_KEY. It is
+  /// shown to the owner once; recoveryKeyId names it in each backup's manifest.
+  recoveryKeyRef        String?
+  recoveryKeyId         String?
+  recoveryKeyMadeAt     DateTime?
+  /// When the owner said they had written it down (until then the screen asks again).
+  recoveryKeySavedAt    DateTime?
+  /// The weekly test restore into a temporary database (Saturdays 04:00 by default).
+  testRestoreEnabled    Boolean   @default(true)
+  testRestoreSchedule   String    @default("0 4 * * 6")
 }
 
 model BackupRun {
@@ -4428,6 +4448,18 @@ model BackupRun {
   filesDeletedAt   DateTime? // local files removed by the retention rule
   triggeredById    String?
   error            String?
+  /// A daily backup, an update's safety copy, the weekly test restore or a restore.
+  kind             BackupKind    @default(BACKUP)
+  /// The backup's name: its folder on the server and in Drive ("2026-10-16_020000").
+  name             String?
+  /// Which recovery key locked it (BackupConfig.recoveryKeyId); null: not locked.
+  keyId            String?
+  /// Its copy in Google Drive was checked byte for byte (size and MD5); the server's copy then goes.
+  checkedAt        DateTime?
+  /// A test restore's or a restore's findings (tables, rows, checks), and for a
+  /// restore which backup it put back.
+  report           Json?
+  sourceName       String?
 
   triggeredBy User? @relation(fields: [triggeredById], references: [id], onDelete: SetNull)
 
@@ -5563,6 +5595,13 @@ enum ReminderStatus {
 enum BackupTrigger {
   SCHEDULED
   MANUAL
+}
+
+enum BackupKind {
+  BACKUP
+  SAFETY_COPY
+  TEST_RESTORE
+  RESTORE
 }
 
 /// One call to Claude (AI Center > Budget & Costs): who asked, for what, why,

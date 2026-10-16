@@ -350,5 +350,173 @@ export const settingsHelp: HelpSection = {
         "মুদ্রা বদলালে আগে রেকর্ড করা টাকার অঙ্ক বদলায় না। সময় অঞ্চল বদলালে রিপোর্টের দিনের সীমা সরে যায়, তাই সাবধানে বদলান।",
       ],
     },
+    {
+      slug: "backups-google-setup",
+      title: "ব্যাকআপের জন্য Google-এর এককালীন সেটআপ যেভাবে করবেন",
+      summary:
+        "Google Cloud-এ একবার একটি ক্লায়েন্ট বানানো, যাতে ERP শুধু নিজের বানানো ব্যাকআপ ফাইলগুলো আপনার Google Drive-এ রাখতে পারে।",
+      keywords: [
+        "google setup",
+        "google cloud",
+        "client id",
+        "client secret",
+        "drive.file",
+        "in production",
+        "tv client",
+        "গুগল সেটআপ",
+        "গুগল ড্রাইভ",
+        "ক্লায়েন্ট",
+      ],
+      routes: ["/settings/backups"],
+      who: "শুধু প্ল্যাটফর্মের মালিক (সব কোম্পানির মালিক Super Admin)।",
+      steps: [
+        {
+          text: "কম্পিউটারে console.cloud.google.com খুলে যে Google অ্যাকাউন্টে ব্যাকআপ রাখবেন সেটি দিয়ে ঢুকুন। উপরের প্রজেক্ট তালিকা থেকে নতুন প্রজেক্ট বানান, নাম দিন Extas ERP Backups।",
+        },
+        {
+          text: "বাম মেনুর APIs and Services > Library-তে গিয়ে Google Drive API খুঁজে Enable চাপুন।",
+        },
+        {
+          text: "APIs and Services > OAuth consent screen খুলুন। User type: External, অ্যাপের নাম Extas ERP, আপনার ইমেইল দিন। Scopes-এ শুধু একটি স্কোপ যোগ করুন: drive.file (অ্যাপ নিজে যে ফাইল বানায় শুধু সেগুলো)। এর বেশি কোনো স্কোপ দেবেন না।",
+        },
+        {
+          text: "একই পাতায় Publishing status-এ Publish app চেপে অ্যাপটিকে In production করুন। Testing অবস্থায় থাকলে Google 7 দিন পর সংযোগ কেটে দেয় এবং ব্যাকআপ Drive-এ যাওয়া বন্ধ হয়ে যায়।",
+        },
+        {
+          text: "APIs and Services > Credentials > Create credentials > OAuth client ID চাপুন। Application type হিসেবে “TVs and Limited Input devices” বেছে নিন, নাম দিন Extas ERP, তারপর Create চাপুন।",
+        },
+        {
+          text: "যে Client ID ও Client secret দেখাবে তা কপি করুন। ERP-তে “Settings” > “Backups” খুলে “Google Drive” অংশে “Client ID” ও “Client secret” ঘরে বসিয়ে “Save the Google client” চাপুন।",
+          image: {
+            id: "backups-google-setup-1",
+            caption:
+              "“Google Drive” অংশে “Client ID”, “Client secret” ও “Save the Google client” বোতাম",
+          },
+        },
+      ],
+      tips: [
+        "অ্যাপ যাচাই (verification) চাইলে চিন্তা করবেন না: drive.file স্কোপের জন্য Google সাধারণত যাচাই চায় না। প্রথমবার সাইন ইনে সতর্কবার্তা এলে Advanced > Go to Extas ERP চেপে এগোন।",
+        "এই একই ক্লায়েন্ট নতুন সার্ভারেও কাজে লাগে: “Restore on a new server” কমান্ডে এটি থাকে। তাই ক্লায়েন্টটি মুছবেন না।",
+        "Client secret কাউকে পাঠাবেন না; এটি ERP-তে তালা দিয়ে রাখা হয় এবং আর পুরোটা দেখানো হয় না।",
+      ],
+    },
+    {
+      slug: "backups-drive-key",
+      title: "ব্যাকআপ Google Drive-এ পাঠানো ও রিকভারি কী বানানো যেভাবে",
+      summary:
+        "Google Drive যুক্ত করা, রিকভারি কী একবার দেখে লিখে রাখা, প্রতিদিনের সময় ও কতগুলো রাখা হবে ঠিক করা, আর ব্যাকআপ ব্যর্থ হলে সতর্কবার্তা পাওয়া।",
+      keywords: [
+        "backup",
+        "backups",
+        "google drive",
+        "recovery key",
+        "back up now",
+        "daily backup",
+        "keep",
+        "ব্যাকআপ",
+        "রিকভারি কী",
+        "গুগল ড্রাইভ",
+        "দৈনিক ব্যাকআপ",
+      ],
+      routes: ["/settings/backups"],
+      who: "শুধু প্ল্যাটফর্মের মালিক (সব কোম্পানির মালিক Super Admin)।",
+      steps: [
+        {
+          text: "“Settings” > “Backups” খুলুন। উপরে “Backups are not safe yet.” লেখা থাকলে নিচের ধাপগুলো এখনো বাকি।",
+          image: {
+            id: "backups-drive-key-1",
+            caption: "“Backups” পাতা: শেষ ব্যাকআপ, পরের ব্যাকআপ ও “Back up now” বোতাম",
+          },
+        },
+        {
+          text: "“Google Drive” অংশে “Connect Google Drive” চাপুন। একটি কোড দেখাবে। ফোনে google.com/device খুলে কোডটি লিখুন, তারপর নিজের Google অ্যাকাউন্ট বেছে অনুমতি দিন। পাতাটি নিজেই বুঝে নেয়, কিছু চাপতে হয় না।",
+          image: {
+            id: "backups-drive-key-2",
+            caption: "ফোনে দেওয়ার জন্য Google সাইন-ইন কোড",
+          },
+        },
+        {
+          text: "“Recovery key” অংশে “Make the recovery key” চাপুন। কাগজ-কলম হাতে নিয়ে “Show me the key” চাপুন। 14টি চার অক্ষরের দল দেখাবে: সবগুলো কাগজে লিখুন বা “Copy” চেপে পাসওয়ার্ড ম্যানেজারে রাখুন। এটি আর কখনো দেখানো হবে না।",
+          image: {
+            id: "backups-drive-key-3",
+            caption: "“Your recovery key”: একবারই দেখানো রিকভারি কী ও “I wrote it down” বোতাম",
+          },
+        },
+        {
+          text: "“I wrote it down” চাপুন। “Check your copy” জানালায় “Last group” ঘরে কী-র শেষ চার অক্ষর লিখে “Confirm” চাপুন। এরপর থেকে প্রতিটি ব্যাকআপ এই কী দিয়ে তালা দিয়ে Drive-এ যায়।",
+        },
+        {
+          text: "“When and how many” অংশে “Daily time” (প্রতিদিন কখন) ও “How many to keep in Drive” (কতগুলো রাখা হবে) ঠিক করে “Save” চাপুন। সবচেয়ে নতুন যাচাই করা ব্যাকআপ সবসময় থেকে যায়।",
+        },
+        {
+          text: "এখনই একটি ব্যাকআপ নিতে “Back up now” চাপুন। কয়েক মিনিট পর “Backups in Google Drive” তালিকায় তারিখ, আকার ও “Checked” দেখাবে। “Checked” মানে Google-এর কপি সার্ভারের কপির সঙ্গে বাইট ধরে মিলিয়ে দেখা হয়েছে, তারপর সার্ভারের কপি মুছে ফেলা হয়েছে।",
+          image: {
+            id: "backups-drive-key-4",
+            caption: "“Backups in Google Drive” তালিকা: “Date”, “Size”, “Checked in Drive”",
+          },
+        },
+      ],
+      tips: [
+        "রিকভারি কী ছাড়া কোনো ব্যাকআপ খোলা যায় না, ERP-ও পারে না। কী হারালে নতুন কী বানান (“Make a new recovery key”, PIN লাগে), তবে পুরনো ব্যাকআপগুলো শুধু পুরনো কী দিয়েই খোলে।",
+        "ব্যাকআপ ব্যর্থ হলে বা Drive-এ না গেলে ERP-র ইনবক্সে ও বটে সঙ্গে সঙ্গে সতর্কবার্তা আসে। Drive-এ না যাওয়া ব্যাকআপ সার্ভারে থাকে এবং এক ঘণ্টার মধ্যে আবার পাঠানো হয়।",
+        "আপডেটের আগের নিরাপত্তা কপিও (“Update safety copy”) তালা দিয়ে Drive-এ যায়; সার্ভারে সেটি 24 ঘণ্টা থাকে, যাতে আপডেট ব্যর্থ হলে সঙ্গে সঙ্গে ফেরা যায়।",
+      ],
+    },
+    {
+      slug: "backups-restore",
+      title: "ব্যাকআপ থেকে ফেরত আনা ও নতুন সার্ভারে চালু করা যেভাবে",
+      summary:
+        "Drive-এর একটি ব্যাকআপ এই সার্ভারে ফেরত আনা, প্রতি সপ্তাহের পরীক্ষামূলক রিস্টোর দেখা, আর সার্ভার হারালে এক কমান্ডে নতুন সার্ভারে সব ফেরত আনা।",
+      keywords: [
+        "restore",
+        "test restore",
+        "new server",
+        "disaster",
+        "command",
+        "bootstrap",
+        "রিস্টোর",
+        "ফেরত আনা",
+        "নতুন সার্ভার",
+        "পরীক্ষা",
+      ],
+      routes: ["/settings/backups"],
+      who: "শুধু প্ল্যাটফর্মের মালিক (সব কোম্পানির মালিক Super Admin)।",
+      steps: [
+        {
+          text: "“Backups in Google Drive” তালিকায় যে ব্যাকআপে ফিরতে চান তার সারিতে “Restore” চাপুন। মনে রাখবেন: এতে সব কোম্পানির সব তথ্য ওই ব্যাকআপের মতো হয়ে যায়।",
+        },
+        {
+          text: "জানালায় আপনার PIN দিন এবং “Type RESTORE” ঘরে বড় হাতের অক্ষরে RESTORE লিখে “Restore” চাপুন। ERP ব্যাকআপটি নামিয়ে, প্রতিটি ফাইল মিলিয়ে, রিকভারি কী দিয়ে খুলে সার্ভারের হাতে দেয়।",
+          image: {
+            id: "backups-restore-1",
+            caption: "“Restore” জানালা: PIN ও “Type RESTORE” ঘর",
+          },
+        },
+        {
+          text: "সার্ভার প্রথমে বর্তমান তথ্যের একটি নিরাপত্তা কপি রাখে, তারপর ব্যাকআপ বসায় এবং সব স্ক্রিন খুলে পরীক্ষা করে। কয়েক মিনিট ERP বন্ধ থাকে। শেষ হলে ইনবক্সে “Restore finished” আসে, সঙ্গে আগের অবস্থায় ফেরার নিরাপত্তা কপির নাম। ERP চালু না হলে সার্ভার নিজেই আগের অবস্থায় ফিরে যায়।",
+        },
+        {
+          text: "প্রতি সপ্তাহে ERP নিজে সবচেয়ে নতুন ব্যাকআপটি একটি অস্থায়ী ডাটাবেসে ফেরত এনে পরীক্ষা করে মুছে ফেলে; লাইভ বা ডেমো সাইটে কিছু বদলায় না। ফল দেখাবে “Last test restore” ঘরে, আর ইনবক্সে “Test restore worked” বা “Test restore failed”। নিজে এখনই চালাতে “Test a restore now” চাপুন।",
+        },
+        {
+          text: "সার্ভার পুরো হারালে: আগে থেকেই “Restore on a new server” অংশে “Show the command” চেপে কমান্ডটি “Copy” করে রিকভারি কী-র সঙ্গে নিরাপদে রাখুন। দরকারের দিন Azure-এ নতুন Ubuntu সার্ভার বানিয়ে তাতে ঢুকে কমান্ডটি পেস্ট করুন।",
+          image: {
+            id: "backups-restore-2",
+            caption: "“Restore on a new server” অংশে এক লাইনের কমান্ড ও “Copy” বোতাম",
+          },
+        },
+        {
+          text: "কমান্ড জিজ্ঞেস করবে: GitHub token (রিপোজিটরি পাবলিক হলে শুধু Enter), ওয়েব ঠিকানা, আর রিকভারি কী। তারপর একটি Google কোড দেখাবে: ফোনে google.com/device খুলে কোডটি দিন। এরপর Drive-এর ব্যাকআপের তালিকা দেখাবে; Enter চাপলে সবচেয়ে নতুনটি, নম্বর লিখলে সেটি। বাকিটা সে নিজে করে: সব ইনস্টল, রিস্টোর, HTTPS চালু ও প্রতিটি স্ক্রিন পরীক্ষা, শেষে কত সময় লাগল তা জানায়।",
+        },
+        {
+          text: "শেষে ওয়েব ঠিকানার DNS নতুন সার্ভারের IP-তে বদলান (আগের মতো A রেকর্ড)। কয়েক মিনিটের মধ্যে HTTPS নিজে চালু হয় এবং আগের পাসওয়ার্ড দিয়েই সবাই ঢুকতে পারেন।",
+        },
+      ],
+      tips: [
+        "রিস্টোর ভুল হলে ফেরা যায়: ইনবক্সের বার্তায় যে নিরাপত্তা কপির নাম থাকে, সেটি দিয়ে আবার রিস্টোর করুন (সার্ভারে sudo ./deploy/restore.sh)।",
+        "রিপোজিটরি প্রাইভেট হলে কমান্ডের জন্য GitHub-এ একটি টোকেন লাগে (Fine-grained token, শুধু এই রিপোজিটরির Contents: Read)। সার্ভার পরে আপডেট আনতে টোকেনটি রেখে দেয়।",
+        "কমান্ডে Google ক্লায়েন্টের তথ্য থাকে, তাই কমান্ডটিও রিকভারি কী-র মতো গোপন রাখুন।",
+      ],
+    },
   ],
 };

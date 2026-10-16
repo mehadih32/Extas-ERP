@@ -135,6 +135,12 @@ export const PERMISSIONS = [
       "Approve bookings before they go to the supplier, and choose Fabric first for an order (the owner's by default)",
   },
   {
+    key: "production.bookings.override",
+    module: "PRODUCTION",
+    description:
+      "Approve collar, cuff and trims bookings before the tech pack is approved, with a reason (the owner's)",
+  },
+  {
     key: "production.techpack.approve",
     module: "PRODUCTION",
     description: "Lock a style's fabric part and approve its tech pack for production",

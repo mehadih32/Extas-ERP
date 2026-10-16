@@ -9,6 +9,10 @@
 // a PDF that is not a PDF, or being sent to sign in. Each problem gets a
 // screenshot. The report and the screenshots go back to the ERP.
 //
+// This log is public (the repository is), so it names only the kind of problem
+// and the screen's route ("/sales/orders/[id]"): never the screen's text, an
+// id or anything else from the ERP's data. The ERP keeps that, privately.
+//
 // On the live site the check only reads: this browser stops every request that
 // is not a read, and the ERP refuses them too (src/proxy.ts). On the demo site
 // (the ERP says "writes") the buttons it presses may also write.
@@ -150,7 +154,25 @@ const problems = [];
 const seen = new Set();
 const shots = new Map();
 
-async function note(page, role, kind, screen, text, detail, ms) {
+/**
+ * The error's type and its stack lines (the ERP keeps only the lines from its
+ * own code for an issue on GitHub, src/modules/ai/full-check/texts.ts).
+ */
+function errorFacts(error) {
+  if (!error || typeof error !== "object") return {};
+  const type = typeof error.name === "string" ? error.name.slice(0, 80) : null;
+  const stack =
+    typeof error.stack === "string"
+      ? error.stack
+          .split("\n")
+          .filter((l) => /^\s*at /.test(l))
+          .slice(0, 20)
+          .map((l) => l.slice(0, 300))
+      : [];
+  return { errorType: type, stack };
+}
+
+async function note(page, role, kind, screen, text, detail, ms, facts = {}) {
   const pattern = patternOf(screen.split("?")[0]) ?? null;
   const key = `${kind}|${pattern ?? screen}|${text.replace(/\d+/g, "#")}`;
   if (seen.has(key)) return;
@@ -164,8 +186,11 @@ async function note(page, role, kind, screen, text, detail, ms) {
     text: text.slice(0, 500),
     detail: detail ? String(detail).slice(0, 4000) : null,
     ms: ms ?? null,
+    status: facts.status ?? null,
+    errorType: facts.errorType ?? null,
+    stack: facts.stack ?? [],
   });
-  say(`  problem: ${kind} ${screen}: ${text}`);
+  say(`  problem: ${kind} on ${pattern ?? "a screen"}`);
   if (page && shots.size < MAX_SHOTS) {
     const shot = await page
       .screenshot({ type: "jpeg", quality: 60, timeout: 10_000 })
@@ -261,8 +286,13 @@ async function checkRole(browser, session, writes, deadline) {
 
   async function visit(page, path) {
     const errors = [];
+    const thrown = [];
     const failed = [];
-    const onError = (e) => errors.push(e.message);
+    const statuses = [];
+    const onError = (e) => {
+      errors.push(e.message);
+      thrown.push(e);
+    };
     const onConsole = (m) => {
       if (m.type() !== "error") return;
       const text = m.text();
@@ -276,6 +306,7 @@ async function checkRole(browser, session, writes, deadline) {
         return;
       if (u.pathname.startsWith("/api/full-check/")) return;
       failed.push(`${r.request().method()} ${u.pathname} answered ${r.status()}`);
+      statuses.push(r.status());
     };
     const onFailed = (r) => {
       const why = r.failure()?.errorText ?? "";
@@ -333,6 +364,7 @@ async function checkRole(browser, session, writes, deadline) {
           `The screen answered ${status}`,
           `GET ${path} answered ${status}`,
           ms,
+          { status },
         );
       }
       const body = await page
@@ -355,6 +387,7 @@ async function checkRole(browser, session, writes, deadline) {
           "The screen showed an error",
           `${code ? `${code}: ` : ""}${body.slice(0, 600)}`,
           ms,
+          errorFacts(thrown[0]),
         );
       }
       if (errors.length) {
@@ -366,6 +399,7 @@ async function checkRole(browser, session, writes, deadline) {
           "The screen had a script error",
           errors.slice(0, 5).join("\n"),
           ms,
+          errorFacts(thrown[0]),
         );
       }
       if (failed.length) {
@@ -377,6 +411,7 @@ async function checkRole(browser, session, writes, deadline) {
           "Part of the screen did not load",
           failed.slice(0, 8).join("\n"),
           ms,
+          { status: statuses[0] ?? null },
         );
       }
       if (ms > SLOW_MS) {
@@ -403,6 +438,8 @@ async function checkRole(browser, session, writes, deadline) {
         path,
         "The screen did not open",
         String(error?.message ?? error).split("\n")[0],
+        undefined,
+        { errorType: typeof error?.name === "string" ? error.name.slice(0, 80) : null },
       );
     } finally {
       page.off("pageerror", onError);
@@ -460,7 +497,18 @@ async function checkRole(browser, session, writes, deadline) {
         why = "sent a web page instead of the file";
       }
       if (why) {
-        await note(null, role, "PDF", from, "A PDF or file did not open", `GET ${path} ${why}`);
+        await note(
+          null,
+          role,
+          "PDF",
+          from,
+          "A PDF or file did not open",
+          `GET ${path} ${why}`,
+          null,
+          {
+            status: response.status() >= 400 ? response.status() : null,
+          },
+        );
       }
     } catch (error) {
       await note(

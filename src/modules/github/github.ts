@@ -164,43 +164,160 @@ export async function openIssue(gh: GitHub, issue: { title: string; body: string
   return { number: data.number, url: data.html_url };
 }
 
-type Pull = {
+/** Rewrites an issue's text (the ERP adds the issue's own number once GitHub gave it). */
+export async function updateIssue(gh: GitHub, number: number, body: string) {
+  await call(gh, "PATCH", `${repoPath(gh)}/issues/${number}`, { body });
+}
+
+export type Pull = {
   number: number;
   html_url: string;
   state: "open" | "closed";
   merged_at: string | null;
   title: string;
   body: string | null;
-  head: { ref: string; sha: string };
+  /** Who opened it. */
+  user: { login: string; type?: string } | null;
+  /** Its branch, and the repository the branch is in (another one for a fork). */
+  head: { ref: string; sha: string; repo: { full_name: string } | null };
+  base: { ref: string };
+  /** How many files it changes. */
+  changed_files?: number;
   mergeable?: boolean | null;
 };
 
+/** The only branch a fix may go into (the Deploy workflow installs what lands there). */
+export const MAIN = "main";
+
+/** The branch the Claude Code GitHub Action makes for an issue: "claude/issue-<n>-<time>". */
+export const issueBranchPrefix = (issue: number) => `claude/issue-${issue}-`;
+
 /**
- * Claude Code's work on an issue: its branch (claude/issue-<n>-...) and the
- * pull request from it, or one that names the issue ("#<n>").
+ * Claude Code's GitHub App, as GitHub names it on pull requests and commits
+ * (CLAUDE_BOT_LOGINS can name it differently, comma-separated).
+ */
+export const claudeBots = () =>
+  (process.env.CLAUDE_BOT_LOGINS || "claude[bot]")
+    .split(",")
+    .map((b) => b.trim().toLowerCase())
+    .filter(Boolean);
+
+/**
+ * Claude Code's work on an issue: its branch (claude/issue-<n>-...) in this
+ * repository, and the pull request from that branch. Never a pull request that
+ * only names the issue ("#<n>"), and never one from a fork.
  */
 export async function findWork(
   gh: GitHub,
   issue: number,
 ): Promise<{ branch: string | null; pull: Pull | null }> {
+  const prefix = issueBranchPrefix(issue);
   const { data: refs } = await call<Array<{ ref: string }>>(
     gh,
     "GET",
-    `${repoPath(gh)}/git/matching-refs/heads/claude/issue-${issue}-`,
+    `${repoPath(gh)}/git/matching-refs/heads/${prefix}`,
   );
-  const branch = refs.at(-1)?.ref.replace(/^refs\/heads\//, "") ?? null;
-  const { data: pulls } = await call<Pull[]>(
-    gh,
-    "GET",
-    `${repoPath(gh)}/pulls?state=all&sort=created&direction=desc&per_page=50`,
-  );
-  const names = new RegExp(`(^|[^\\w])#${issue}(?!\\d)`);
-  const pull =
-    pulls.find((p) => branch && p.head.ref === branch) ??
-    pulls.find((p) => p.head.ref.startsWith(`claude/issue-${issue}-`)) ??
-    pulls.find((p) => names.test(`${p.title}\n${p.body ?? ""}`)) ??
-    null;
-  return { branch: pull?.head.ref ?? branch, pull };
+  const branches = refs
+    .map((r) => r.ref.replace(/^refs\/heads\//, ""))
+    .filter((b) => b.startsWith(prefix));
+  const owner = gh.repo.split("/")[0]!;
+  // The newest branch first; each asked for by name, so only this repository's branch counts.
+  for (const branch of [...branches].reverse()) {
+    const { data: pulls } = await call<Pull[]>(
+      gh,
+      "GET",
+      `${repoPath(gh)}/pulls?state=all&per_page=10&head=${encodeURIComponent(`${owner}:${branch}`)}`,
+    );
+    const pull = pulls.find((p) => p.head.ref === branch && sameRepo(gh, p)) ?? null;
+    if (pull) return { branch, pull };
+  }
+  return { branch: branches.at(-1) ?? null, pull: null };
+}
+
+const sameRepo = (gh: GitHub, pull: Pull) =>
+  pull.head.repo?.full_name.toLowerCase() === gh.repo.toLowerCase();
+
+type Commit = {
+  sha: string;
+  author: { login: string } | null;
+  committer: { login: string } | null;
+  commit?: { verification?: { verified?: boolean } };
+};
+
+export type PullFile = { name: string; status: string; added: number; removed: number };
+
+export type Vetted = {
+  /** Claude Code's own fix for the issue, into the main branch. */
+  ok: boolean;
+  /** Why not, in plain words. */
+  problem: string | null;
+  /** Who opened it on GitHub. */
+  author: string;
+  /** The commit it was checked at (only that one may be merged). */
+  sha: string;
+  /** The files it changes (the first 100) and how many there are. */
+  files: PullFile[];
+  filesTotal: number;
+};
+
+/**
+ * Whether a pull request is Claude Code's own fix for an issue: from the
+ * issue's branch in this repository (not a fork), into the main branch,
+ * opened by Claude Code's GitHub App or by the ERP itself, and every commit
+ * made and signed by Claude Code's GitHub App, up to the one checked. Also the
+ * files it changes, for the owner to see before Merge.
+ */
+export async function vetPull(
+  gh: GitHub,
+  pull: Pull,
+  issue: number,
+  openedByErp: boolean,
+): Promise<Vetted> {
+  const bots = claudeBots();
+  const isBot = (login: string | undefined | null) => !!login && bots.includes(login.toLowerCase());
+  const [{ data: commits }, { data: files }] = await Promise.all([
+    call<Commit[]>(gh, "GET", `${repoPath(gh)}/pulls/${pull.number}/commits?per_page=100`),
+    call<Array<{ filename: string; status: string; additions: number; deletions: number }>>(
+      gh,
+      "GET",
+      `${repoPath(gh)}/pulls/${pull.number}/files?per_page=100`,
+    ),
+  ]);
+  const author = pull.user?.login ?? "someone";
+  let problem: string | null = null;
+  if (!sameRepo(gh, pull)) problem = "it comes from another repository (a fork)";
+  else if (!pull.head.ref.startsWith(issueBranchPrefix(issue)))
+    problem = `it is not on Claude Code's branch for issue #${issue}`;
+  else if (pull.base.ref !== MAIN) problem = `it goes into ${pull.base.ref}, not into ${MAIN}`;
+  else if (!openedByErp && !isBot(pull.user?.login))
+    problem = `it was not opened by Claude Code (opened by ${author})`;
+  else if (commits.length === 0 || commits.length >= 100)
+    problem = "its commits could not all be checked";
+  else if (!commits.some((c) => c.sha === pull.head.sha))
+    problem = "its newest commit could not be checked";
+  else {
+    const stranger = commits.find(
+      (c) =>
+        !(isBot(c.author?.login) || isBot(c.committer?.login)) ||
+        c.commit?.verification?.verified !== true,
+    );
+    if (stranger) {
+      problem = `a change in it is not Claude Code's (${stranger.author?.login ?? stranger.committer?.login ?? "unknown"}, commit ${stranger.sha.slice(0, 7)})`;
+    }
+  }
+  return {
+    ok: problem === null,
+    problem,
+    author,
+    sha: pull.head.sha,
+    files: files.map((f) => ({
+      name: f.filename,
+      status: f.status,
+      added: f.additions,
+      removed: f.deletions,
+    })),
+    filesTotal: Math.max(pull.changed_files ?? 0, files.length),
+  };
 }
 
 /** Whether the branch has commits the main branch does not. */

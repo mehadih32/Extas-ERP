@@ -364,6 +364,10 @@ model Session {
   expiresAt       DateTime
   lastSeenAt      DateTime @default(now())
   createdAt       DateTime @default(now())
+  /// A Full check session (its own check account, never a real person's): the
+  /// role whose screens it sees, and whether it also sees the platform owner's.
+  checkRoleId     String?
+  checkPlatform   Boolean  @default(false)
 
   user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   activeCompany Company? @relation(fields: [activeCompanyId], references: [id], onDelete: SetNull)
@@ -6505,6 +6509,11 @@ model FullCheckProblem {
   text      String
   detail    String?
   ms        Int?
+  /// What may go into a GitHub issue (never screen text or business data): the
+  /// status code, the error's type and stack lines from the ERP's own code.
+  status    Int?
+  errorType String?
+  stack     String[] @default([])
   /// The screenshot in the uploads folder (lib: writeGeneratedFile).
   shotPath  String?
   /// The Claude Code request that fixes it, once sent.
@@ -6523,34 +6532,42 @@ model FullCheckProblem {
 /// for the Claude Code GitHub Action, followed to its pull request, which the
 /// owner merges from the ERP (then the normal safe update runs).
 model ClaudeCodeRequest {
-  id          String                 @id @default(cuid())
-  companyId   String
-  kind        ClaudeCodeRequestKind
-  title       String
+  id            String                 @id @default(cuid())
+  companyId     String
+  kind          ClaudeCodeRequestKind
+  title         String
   /// What was asked, in plain words (the problems, or the owner's request).
-  text        String
-  state       ClaudeCodeRequestState @default(SENT)
-  issueNumber Int?
-  issueUrl    String?
+  text          String
+  state         ClaudeCodeRequestState @default(SENT)
+  issueNumber   Int?
+  issueUrl      String?
   /// Claude Code's branch and pull request, once found.
-  branch      String?
-  prNumber    Int?
-  prUrl       String?
+  branch        String?
+  prNumber      Int?
+  prUrl         String?
   /// The pull request's checks: "running", "passed" or "failed", on its newest commit.
-  checks      String?
-  headSha     String?
+  checks        String?
+  headSha       String?
   /// The commit whose failed checks Claude Code was asked to fix, and how many times.
-  askedSha    String?
-  retries     Int                    @default(0)
+  askedSha      String?
+  retries       Int                    @default(0)
   /// Why it stopped, in plain words.
-  note        String?
+  note          String?
+  /// Who opened the pull request, whether the ERP did, whether it passed the
+  /// checks that make it Claude Code's own fix (prProblem says why not), and the
+  /// files it changes, shown to the owner before Merge.
+  prAuthor      String?
+  prOpenedByErp Boolean                @default(false)
+  prVetted      Boolean                @default(false)
+  prProblem     String?
+  prFiles       Json?
   /// When the ERP last looked on GitHub.
-  lookedAt    DateTime?
-  mergedAt    DateTime?
-  mergedById  String?
-  createdById String?
-  createdAt   DateTime               @default(now())
-  updatedAt   DateTime               @updatedAt
+  lookedAt      DateTime?
+  mergedAt      DateTime?
+  mergedById    String?
+  createdById   String?
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
 
   company   Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
   createdBy User?              @relation("ClaudeCodeRequestBy", fields: [createdById], references: [id], onDelete: SetNull)

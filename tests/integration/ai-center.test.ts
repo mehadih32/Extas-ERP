@@ -782,6 +782,64 @@ run("AI Center", () => {
     ).toBe("PENDING");
   });
 
+  it("claims an approved Deletion request first, so its delete runs only once", async () => {
+    await switchOn(env);
+    await setPin(env.owner, { pin: "2468" });
+    const project = await createProject(env.owner, {
+      name: "Old sample polo",
+      factoryName: "Own sewing floor",
+      targetDate: addDays(localDay(new Date(), env.company.timezone), 30),
+      targetQuantity: 100,
+      status: "PLANNED",
+    });
+    const asked = await askDeletion(env.company.id, {
+      what: `Production order ${project.code}`,
+      recordType: "ProductionProject",
+      recordId: project.id,
+      why: "It was never started.",
+      ifKept: "It stays in the list.",
+    });
+    // Approved twice at the same moment (two screens, or the screen and the bot).
+    const results = await Promise.allSettled([
+      answerDeletion(env.owner, asked.id, { approve: true, pin: "2468" }),
+      answerDeletion(env.owner, asked.id, { approve: true, pin: "2468" }),
+    ]);
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    const refused = results.find((r) => r.status === "rejected") as PromiseRejectedResult;
+    expect(refused.reason).toBeInstanceOf(AppError);
+    expect((refused.reason as AppError).message).toBe("This request was answered already.");
+    const cancels = await prisma.auditLog.count({
+      where: { entityType: "ProductionProject", entityId: project.id, action: "STATUS_CHANGE" },
+    });
+    expect(cancels).toBe(1);
+    expect(
+      await prisma.aiDeletionRequest.findUniqueOrThrow({ where: { id: asked.id } }),
+    ).toMatchObject({ status: "APPROVED", doneAt: expect.any(Date) });
+
+    // When the record's own checks say no, the claim is given back: still waiting, with why.
+    const again = await askDeletion(env.company.id, {
+      what: `Production order ${project.code} (again)`,
+      recordType: "ProductionProject",
+      recordId: project.id,
+      why: "Asked twice.",
+      ifKept: "Nothing.",
+    });
+    const error = await expectAppError(
+      answerDeletion(env.owner, again.id, { approve: true, pin: "2468" }),
+      "CONFLICT",
+      /^Not deleted: /,
+    );
+    expect(
+      await prisma.aiDeletionRequest.findUniqueOrThrow({ where: { id: again.id } }),
+    ).toMatchObject({
+      status: "PENDING",
+      answeredById: null,
+      answeredAt: null,
+      doneAt: null,
+      note: error.message,
+    });
+  });
+
   it("logs what the AI did under its name, and every change to it", async () => {
     await setAiSwitch(env.owner, true);
     await setAssistantName(env.owner, { name: "Mehedi 2.0" });

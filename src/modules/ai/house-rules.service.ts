@@ -7,6 +7,8 @@ import type { RequestMeta } from "@/lib/request-meta";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 
+import { aiAccountOf, auditAsAi } from "./account";
+
 /*
  * Teach: the owner tells Mehedi 2.0 a rule in plain words ("for this buyer the
  * collar is always 3 1/4 inch"). It becomes a House Rule proposal, scoped to
@@ -100,6 +102,8 @@ export async function proposeHouseRule(
 ) {
   assertManage(ctx);
   const rule = houseRuleSchema.parse(input);
+  // Worded by the AI: saved under the AI's own account, never the person's.
+  const ai = from.byAi ? await aiAccountOf(ctx.company.id) : null;
   const row = await prisma.houseRule.create({
     data: {
       companyId: ctx.company.id,
@@ -109,16 +113,26 @@ export async function proposeHouseRule(
       said: from.said?.slice(0, 1000) ?? null,
       byAi: from.byAi ?? false,
       source: from.source ?? "Teach",
-      proposedById: ctx.user.id,
+      proposedById: ai?.id ?? ctx.user.id,
     },
   });
-  // Worded by the AI: the log row is marked AI (the owner's own words stay theirs).
-  await auditInCompany({ ...ctx, byAi: from.byAi ?? false }, meta, {
-    action: "CREATE",
-    entityType: "HouseRule",
-    entityId: row.id,
-    summary: `Proposed a House Rule: ${rule.text}`,
-  });
+  // Worded by the AI: the log row is the AI's, marked AI, naming whose words it
+  // came from (the person's own rules stay theirs).
+  if (ai) {
+    await auditAsAi(ctx.company.id, {
+      action: "CREATE",
+      entityType: "HouseRule",
+      entityId: row.id,
+      summary: `Proposed a House Rule from what ${ctx.user.name} said: ${rule.text}`,
+    });
+  } else {
+    await auditInCompany(ctx, meta, {
+      action: "CREATE",
+      entityType: "HouseRule",
+      entityId: row.id,
+      summary: `Proposed a House Rule: ${rule.text}`,
+    });
+  }
   return row;
 }
 

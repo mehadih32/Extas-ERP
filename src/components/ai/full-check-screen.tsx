@@ -44,6 +44,7 @@ import {
 type Message = { tone: "success" | "error"; text: string };
 type Run = Check["runs"][number];
 type Problem = Check["problems"][number];
+type Fix = NonNullable<Check["requests"][number]["fix"]>;
 
 /** How often the page looks again while a check runs or a fix is on its way. */
 const WATCH_MS = 15_000;
@@ -330,7 +331,8 @@ export function FullCheckScreen({ check: c }: { check: Check }) {
                     </a>
                   )}
                 </div>
-                {r.canMerge && (
+                {r.state === "PR_OPEN" && r.fix && <FixFacts fix={r.fix} />}
+                {r.canMerge && r.headSha && (
                   <div>
                     <Button
                       type="button"
@@ -338,7 +340,8 @@ export function FullCheckScreen({ check: c }: { check: Check }) {
                       disabled={pending}
                       onClick={() =>
                         startTransition(async () => {
-                          const result = await withPin((pin) => mergeFixAction(r.id, { pin }));
+                          const sha = r.headSha!;
+                          const result = await withPin((pin) => mergeFixAction(r.id, { pin, sha }));
                           setMessage(
                             result.ok
                               ? {
@@ -363,6 +366,46 @@ export function FullCheckScreen({ check: c }: { check: Check }) {
       </Panel>
 
       <GitHubPanel github={c.github} pending={pending} run={run} />
+    </div>
+  );
+}
+
+/** How many changed files are listed before "and N more". */
+const FILES_SHOWN = 15;
+
+/** Who opened a fix's pull request and the files it changes, read before Merge. */
+function FixFacts({ fix }: { fix: Fix }) {
+  const careful = new Set(fix.careful);
+  return (
+    <div className="grid gap-2 rounded-md bg-muted/40 p-2 text-xs">
+      <p>
+        Opened by <span className="font-medium">{fix.author ?? "someone"}</span>
+        {fix.openedByErp ? " (the ERP opened it from Claude Code's branch)" : ""}. It changes{" "}
+        {fix.filesTotal} file{fix.filesTotal === 1 ? "" : "s"}:
+      </p>
+      <ul className="grid gap-1">
+        {fix.files.slice(0, FILES_SHOWN).map((f) => (
+          <li key={f.name} className="flex min-w-0 flex-wrap items-center gap-x-2">
+            <code className="min-w-0 break-all">{f.name}</code>
+            <span className="text-muted-foreground">
+              +{f.added} −{f.removed}
+            </span>
+            {careful.has(f.name) && <StatusBadge tone="warn">Look twice</StatusBadge>}
+          </li>
+        ))}
+        {fix.filesTotal > FILES_SHOWN && (
+          <li className="text-muted-foreground">
+            and {fix.filesTotal - FILES_SHOWN} more on GitHub
+          </li>
+        )}
+      </ul>
+      {fix.careful.length > 0 && (
+        <p className="text-amber-700 dark:text-amber-400">
+          {fix.careful.length === 1 ? "One file" : `${fix.careful.length} files`} marked “Look
+          twice” run, build or install the ERP, or set Claude Code&apos;s rules: open the pull
+          request on GitHub and read them before you merge.
+        </p>
+      )}
     </div>
   );
 }
@@ -506,6 +549,10 @@ function AskPanel({
         <p className="text-muted-foreground">
           A new ability or a change, in plain words (English or Bengali). Claude Code makes it with
           a test on GitHub; you merge it here when its checks pass.
+        </p>
+        <p className="text-amber-700 dark:text-amber-400">
+          What you write becomes a GitHub issue that anyone who can see the repository reads. Leave
+          out buyer names, prices, phone numbers and other business data.
         </p>
         <Field id="ask-claude-code" label="What should Claude Code build or change?">
           <Textarea

@@ -17,8 +17,31 @@ export type FakePull = {
   merged_at: string | null;
   title: string;
   body: string | null;
-  head: { ref: string; sha: string };
+  /** Who opened it. */
+  user: { login: string; type: "User" | "Bot" };
+  head: { ref: string; sha: string; repo: { full_name: string } | null };
+  base: { ref: string };
 };
+
+export type FakeCommit = {
+  sha: string;
+  author: { login: string; type?: string } | null;
+  committer: { login: string; type?: string } | null;
+  verified: boolean;
+};
+
+export type FakeFile = { filename: string; status: string; additions: number; deletions: number };
+
+/** Claude Code's GitHub App, as GitHub shows it. */
+export const CLAUDE_BOT = { login: "claude[bot]", type: "Bot" as const };
+
+/** A commit made by Claude Code's GitHub App (signed through GitHub's API). */
+export const claudeCommit = (sha: string): FakeCommit => ({
+  sha,
+  author: { login: CLAUDE_BOT.login, type: "Bot" },
+  committer: { login: CLAUDE_BOT.login, type: "Bot" },
+  verified: true,
+});
 
 export type FakeRun = {
   id: number;
@@ -46,6 +69,13 @@ export type FakeGitHub = {
     pulls: FakePull[];
     checks: Record<string, Array<{ name: string; status: string; conclusion: string | null }>>;
     merged: Array<{ number: number; sha: string }>;
+    /** The token's own GitHub account (it opens the ERP's pull requests). */
+    tokenUser: string;
+    /** The commits on each branch (Claude Code's own by default). */
+    branchCommits: Record<string, FakeCommit[]>;
+    /** The commits and changed files of each pull request. */
+    pullCommits: Record<number, FakeCommit[]>;
+    pullFiles: Record<number, FakeFile[]>;
   };
   /** A GitHub Actions token (OpenID Connect), signed with the fake issuer's key or another. */
   actionsToken: (claims: Record<string, unknown>, opts?: { otherKey?: boolean }) => string;
@@ -96,6 +126,10 @@ export async function startFakeGitHub(
     pulls: [],
     checks: {},
     merged: [],
+    tokenUser: "owner-on-github",
+    branchCommits: {},
+    pullCommits: {},
+    pullFiles: {},
   };
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
@@ -136,6 +170,12 @@ export async function startFakeGitHub(
       state.issues.push({ number, title: String(body?.title), body: String(body?.body) });
       return send(201, { number, html_url: `https://github.com/${state.repo}/issues/${number}` });
     }
+    if ((m = rest.match(/^\/issues\/(\d+)$/)) && req.method === "PATCH") {
+      const issue = state.issues.find((i) => i.number === Number(m![1]));
+      if (!issue) return send(404, { message: "Not Found" });
+      if (body?.body !== undefined) issue.body = String(body.body);
+      return send(200, { number: issue.number });
+    }
     if ((m = rest.match(/^\/issues\/(\d+)\/comments$/)) && req.method === "POST") {
       state.comments.push({ number: Number(m[1]), body: String(body?.body) });
       return send(201, { id: state.comments.length });
@@ -150,9 +190,25 @@ export async function startFakeGitHub(
     if ((m = rest.match(/^\/compare\/main\.\.\.(.+)$/))) {
       return send(200, { ahead_by: state.ahead[decodeURIComponent(m[1]!)] ?? 0 });
     }
-    if (rest === "/pulls" && req.method === "GET") return send(200, [...state.pulls].reverse());
+    if (rest === "/pulls" && req.method === "GET") {
+      // GitHub's "head" filter: "owner:branch", pull requests from this repository's branch only.
+      const head = url.searchParams.get("head");
+      const owner = state.repo.split("/")[0];
+      return send(
+        200,
+        [...state.pulls]
+          .reverse()
+          .filter(
+            (p) =>
+              !head ||
+              (head === `${owner}:${p.head.ref}` &&
+                p.head.repo?.full_name.toLowerCase() === state.repo.toLowerCase()),
+          ),
+      );
+    }
     if (rest === "/pulls" && req.method === "POST") {
       const number = 100 + state.issues.length + state.pulls.length;
+      const branch = String(body?.head);
       const pull: FakePull = {
         number,
         html_url: `https://github.com/${state.repo}/pull/${number}`,
@@ -160,14 +216,51 @@ export async function startFakeGitHub(
         merged_at: null,
         title: String(body?.title),
         body: String(body?.body),
-        head: { ref: String(body?.head), sha: `sha-pr-${number}` },
+        user: { login: state.tokenUser, type: "User" },
+        head: { ref: branch, sha: `sha-pr-${number}`, repo: { full_name: state.repo } },
+        base: { ref: String(body?.base) },
       };
       state.pulls.push(pull);
+      state.pullCommits[number] ??= state.branchCommits[branch] ?? [claudeCommit(pull.head.sha)];
       return send(201, pull);
     }
     if ((m = rest.match(/^\/pulls\/(\d+)$/))) {
       const pull = state.pulls.find((p) => p.number === Number(m![1]));
       return pull ? send(200, pull) : send(404, { message: "Not Found" });
+    }
+    if ((m = rest.match(/^\/pulls\/(\d+)\/commits$/))) {
+      const pull = state.pulls.find((p) => p.number === Number(m![1]));
+      if (!pull) return send(404, { message: "Not Found" });
+      // Claude Code's pushes since: its own commits, up to the newest.
+      const known = state.pullCommits[pull.number] ?? [];
+      const commits = known.some((c) => c.sha === pull.head.sha)
+        ? known
+        : [...known, claudeCommit(pull.head.sha)];
+      return send(
+        200,
+        commits.map((c) => ({
+          sha: c.sha,
+          author: c.author,
+          committer: c.committer,
+          commit: { verification: { verified: c.verified } },
+        })),
+      );
+    }
+    if ((m = rest.match(/^\/pulls\/(\d+)\/files$/))) {
+      const pull = state.pulls.find((p) => p.number === Number(m![1]));
+      if (!pull) return send(404, { message: "Not Found" });
+      return send(
+        200,
+        state.pullFiles[pull.number] ?? [
+          {
+            filename: "src/modules/sales/order.service.ts",
+            status: "modified",
+            additions: 4,
+            deletions: 1,
+          },
+          { filename: "tests/unit/order.test.ts", status: "added", additions: 20, deletions: 0 },
+        ],
+      );
     }
     if ((m = rest.match(/^\/pulls\/(\d+)\/merge$/)) && req.method === "PUT") {
       const pull = state.pulls.find((p) => p.number === Number(m![1]));
@@ -200,6 +293,7 @@ export async function startFakeGitHub(
         exp: Math.floor(Date.now() / 1000) + 300,
         repository: state.repo,
         workflow_ref: `${state.repo}/.github/workflows/full-check.yml@refs/heads/main`,
+        ref: "refs/heads/main",
         event_name: "workflow_dispatch",
         run_id: "4242",
         ...claims,

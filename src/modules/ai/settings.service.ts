@@ -713,6 +713,15 @@ export async function checkPin(companyId: string, pin: string, userId: string): 
 }
 
 /**
+ * Whether digits are the PIN, without counting a try: only for the bot to
+ * hide a PIN sent when nothing asked for one (bot/incoming.ts limits how often).
+ */
+export async function pinMatches(companyId: string, pin: string): Promise<boolean> {
+  const settings = await aiSettingsOf(companyId);
+  return !!settings.pinHash && /^\d{4,8}$/.test(pin) && verifyPassword(pin, settings.pinHash);
+}
+
+/**
  * A PIN the bot already checked when it arrived (bot/incoming.ts): the
  * message itself is never kept, so what follows only learns that it was right.
  * Server code only; nothing a browser sends can be this.

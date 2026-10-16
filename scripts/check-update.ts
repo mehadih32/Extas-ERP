@@ -16,6 +16,7 @@ import { join } from "node:path";
 import { SESSION_COOKIE } from "@/lib/auth/session-cookie";
 import { generateSessionToken, hashSessionToken } from "@/lib/auth/token";
 import { prisma } from "@/lib/prisma";
+import { pinScrubReport } from "@/modules/ai/bot/pin-scrub";
 
 import { fillRoute, isFixedRoute, pdfProblem, screenProblem, screenRoutes } from "./update-checks";
 
@@ -195,11 +196,33 @@ async function main() {
       .catch(() => undefined);
   }
 
+  await pinReport();
+
   if (failed.length > 0) {
     say(`The check found ${failed.length} problem(s): ${failed.slice(0, 10).join(", ")}`);
     process.exitCode = 1;
   } else {
     say("Every screen checked opened without an error");
+  }
+}
+
+/**
+ * Bot messages hidden as a PIN that did not follow a PIN request (the v6.3
+ * update hid every 4 to 8 digit message): counts and days only, never words.
+ */
+async function pinReport() {
+  try {
+    const r = await pinScrubReport();
+    if (r.notAfterRequest === 0) {
+      say(`Bot PINs: ${r.hidden} hidden, every one typed after the bot asked for the PIN`);
+      return;
+    }
+    const days = [...new Set(r.notAfterRequestDates.map((d) => d.toISOString().slice(0, 10)))];
+    say(
+      `Bot PINs: ${r.hidden} hidden; ${r.notAfterRequest} did not follow a PIN request (${days.slice(0, 10).join(", ")}): they may have been order numbers, and the backup made before the v6.3 update still has their words`,
+    );
+  } catch (error) {
+    say(`Bot PINs: not counted (${error instanceof Error ? error.message : error})`);
   }
 }
 

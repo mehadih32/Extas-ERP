@@ -34,6 +34,7 @@ import * as needs from "@/modules/production/material-need.service";
 import * as projects from "@/modules/production/project.service";
 import * as receive from "@/modules/production/receive.service";
 import * as techPacks from "@/modules/production/tech-pack-approval.service";
+import { createRole } from "@/modules/rbac/role.service";
 
 import { pdfLines } from "../fixtures/pdf";
 import { addToCompany, contextFor, makeCompany, makeUser, resetDb } from "./helpers";
@@ -580,6 +581,44 @@ run("What the supplier is told needs approval again (v6.3)", () => {
       }),
       "FORBIDDEN",
       /Only a person/,
+    );
+    // Approving bookings is not enough to approve past the tech pack: only the owner, or
+    // whoever the owner gives "production.bookings.override".
+    const company = await prisma.company.findFirstOrThrow();
+    const approverRole = await createRole(env.owner, {
+      name: "Booking approver",
+      permissions: ["production.bookings.view", "production.bookings.approve"],
+    });
+    const approver = await makeUser("approver@extas.test");
+    await addToCompany(approver.id, company.id, approverRole.id);
+    const approverCtx = await contextFor(approver.id, company.id);
+    expect((await bookings.getBooking(approverCtx, made.id)).can).toMatchObject({
+      approve: true,
+      override: false,
+    });
+    expect((await bookings.getBooking(env.owner, made.id)).can.override).toBe(true);
+    await expectAppError(
+      bookings.approveBooking(approverCtx, made.id, undefined, {
+        overrideReason: "Buyer is waiting for buttons",
+      }),
+      "FORBIDDEN",
+      /owner/,
+    );
+    const trusted = await createRole(env.owner, {
+      name: "Trusted approver",
+      permissions: [
+        "production.bookings.view",
+        "production.bookings.approve",
+        "production.bookings.override",
+      ],
+    });
+    const deputy = await makeUser("deputy@extas.test");
+    await addToCompany(deputy.id, company.id, trusted.id);
+    expect(
+      (await bookings.getBooking(await contextFor(deputy.id, company.id), made.id)).can.override,
+    ).toBe(true);
+    expect((await prisma.booking.findUniqueOrThrow({ where: { id: made.id } })).stage).toBe(
+      "DRAFT",
     );
     const approved = await bookings.approveBooking(env.owner, made.id, undefined, {
       overrideReason: "Buyer confirmed the buttons by email",

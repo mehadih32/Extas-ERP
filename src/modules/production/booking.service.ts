@@ -391,6 +391,8 @@ function presentBooking(ctx: CompanyContext, b: BookingRow) {
       cancel: end && canCancelOrder(state).ok,
       close: end && canCloseOrder(state).ok,
       approve: ctx.can("production.bookings.approve") && b.stage === "DRAFT" && open,
+      /** Approve past the tech pack check (collar, cuff, trims), with a reason. */
+      override: mayOverride(ctx) && b.stage === "DRAFT" && open,
       markSent: make && b.stage === "APPROVED" && open,
       attach: canAttach(ctx) && !o.batch && canChangeOrder(state).ok,
       detach: canAttach(ctx) && Boolean(o.batch) && !state.received,
@@ -1231,6 +1233,16 @@ export async function closeBooking(
 // Approval
 // =============================================================================
 
+/**
+ * Approving past a check (collar, cuff and trims before the tech pack is
+ * approved) is the owner's, or someone the owner gave
+ * production.bookings.override: never the AI, and not every approver.
+ */
+const mayOverride = (ctx: CompanyContext) =>
+  ctx.can("production.bookings.approve") &&
+  ctx.can("production.bookings.override") &&
+  !isAiAddress(ctx.user.email);
+
 function assertCanApprove(ctx: CompanyContext) {
   if (!ctx.can("production.bookings.approve")) {
     throw new AppError(
@@ -1244,9 +1256,10 @@ function assertCanApprove(ctx: CompanyContext) {
  * Approves a draft booking (or a draft revision) once its checks pass: what it
  * says is kept as that revision, with the fabric parts of the styles it is
  * for, and its goods may arrive from then on. Nothing goes to the supplier:
- * it is printed and sent, then marked as sent. A person (never the AI) may
- * approve past a check that allows it (collar, cuff and trims before the tech
- * pack is approved) by giving a reason, which the activity log keeps.
+ * it is printed and sent, then marked as sent. The owner, or a person the
+ * owner gave production.bookings.override (never the AI), may approve past a
+ * check that allows it (collar, cuff and trims before the tech pack is
+ * approved) by giving a reason, which the activity log keeps.
  */
 export async function approveBooking(
   ctx: CompanyContext,
@@ -1260,6 +1273,12 @@ export async function approveBooking(
     throw new AppError(
       "FORBIDDEN",
       "Only a person may approve a booking past a check. The AI asks the owner.",
+    );
+  }
+  if (overrideReason && !mayOverride(ctx)) {
+    throw new AppError(
+      "FORBIDDEN",
+      "Only the owner, or someone the owner allowed (production.bookings.override), may approve a booking before its tech pack is approved.",
     );
   }
   await runTransaction(async (tx) => {

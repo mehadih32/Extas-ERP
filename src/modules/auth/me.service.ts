@@ -1,14 +1,32 @@
 import type { ValidSession } from "@/modules/auth/session.service";
-import { listAccessibleCompanies, resolveCompanyAccess } from "@/modules/companies/access";
+import {
+  type CompanySummary,
+  listAccessibleCompanies,
+  resolveCompanyAccess,
+} from "@/modules/companies/access";
+
+const pickSummary = (c: CompanySummary): CompanySummary => ({
+  id: c.id,
+  name: c.name,
+  slug: c.slug,
+  logoUrl: c.logoUrl,
+});
 
 /**
  * Everything the app shell needs after sign-in: the user, the companies for the
  * switcher, the active company and the user's permissions there.
  */
 export async function getMe(current: ValidSession) {
-  const companies = await listAccessibleCompanies(current.user);
   const companyId = current.session.activeCompanyId;
-  const access = companyId ? await resolveCompanyAccess(current.user, companyId) : null;
+  const access = companyId
+    ? await resolveCompanyAccess(current.user, companyId, current.session.checkRoleId)
+    : null;
+  // A Full check session sees only the company of the role it checks.
+  const companies = current.session.checkRoleId
+    ? access
+      ? [{ ...pickSummary(access.company), roleName: access.role?.name ?? null }]
+      : []
+    : await listAccessibleCompanies(current.user);
   return {
     user: current.user,
     companies,

@@ -411,6 +411,8 @@ export async function getCostsWithLines(ctx: CompanyContext, raw: unknown = {}) 
  * of, with what its AI spent in the same period. Shown only with two or more.
  */
 async function storeTotals(ctx: CompanyContext, start: Date, end: Date) {
+  // A Full check session sees only its own company.
+  if (ctx.session.checkRoleId) return [];
   const companies = await listAccessibleCompanies(ctx.user);
   if (companies.length < 2) return [];
   const seen = [];

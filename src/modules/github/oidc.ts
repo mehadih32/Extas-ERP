@@ -58,11 +58,11 @@ export type ActionsClaims = {
 
 /**
  * Checks a GitHub Actions token: signed by GitHub, for this audience, from
- * `repo`'s workflow file `workflow` (on any branch), not expired.
+ * `repo`'s workflow file `workflow` as it is on `branch`, run on `branch`, not expired.
  */
 export async function verifyActionsToken(
   token: string,
-  want: { repo: string; workflow: string; audience: string },
+  want: { repo: string; workflow: string; audience: string; branch: string },
   now: Date = new Date(),
 ): Promise<ActionsClaims> {
   const refuse = (why: string): never => {
@@ -107,6 +107,14 @@ export async function verifyActionsToken(
       .startsWith(`${repository}/.github/workflows/${want.workflow}@`.toLowerCase())
   ) {
     refuse("it comes from another workflow");
+  }
+  // Only the workflow as it is on main, run on main: a copy changed on another
+  // branch (or a pull request) could ask for anything.
+  if (
+    !workflowRef.endsWith(`@refs/heads/${want.branch}`) ||
+    String(claims.ref ?? "") !== `refs/heads/${want.branch}`
+  ) {
+    refuse(`it was not run from the ${want.branch} branch`);
   }
   return {
     repository,

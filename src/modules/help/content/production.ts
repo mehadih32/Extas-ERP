@@ -823,7 +823,7 @@ export const productionHelp: HelpSection = {
           text: "বুকিংয়ের পাতার উপরে অনুমোদনের আগের চেকগুলো দেখায়। সবুজ টিক মানে ঠিক আছে, হলুদ মানে সতর্কতা (যেমন কাপড়ের বুকিংয়ে স্টাইলের টেক প্যাক এখনো অনুমোদিত নয়), লাল মানে আগে ঠিক করতে হবে, যেমন “Set the in-house date (Deliver by) in the paperwork”। লাল কিছু থাকলে “Approve booking” বোতাম কাজ করে না।",
         },
         {
-          text: "কলার, কাফ আর ট্রিমস অপেক্ষা করে স্টাইলের পুরো টেক প্যাক অনুমোদন পর্যন্ত: লাল লাইনে লেখা থাকে “Collar, cuff and trims wait for the tech pack of … to be approved”। খুব দরকার হলে মালিক “Approve with a reason” চেপে “Reason” ঘরে কারণ লিখে (অন্তত ৫ অক্ষর) “Approve booking” দিতে পারেন। কারণটি আপনার নামসহ কার্যকলাপের লগে থাকে। AI কখনো এভাবে অনুমোদন করে না।",
+          text: "কলার, কাফ আর ট্রিমস অপেক্ষা করে স্টাইলের পুরো টেক প্যাক অনুমোদন পর্যন্ত: লাল লাইনে লেখা থাকে “Collar, cuff and trims wait for the tech pack of … to be approved”। খুব দরকার হলে মালিক “Approve with a reason” চেপে “Reason” ঘরে কারণ লিখে (অন্তত ৫ অক্ষর) “Approve booking” দিতে পারেন। কারণটি আপনার নামসহ কার্যকলাপের লগে থাকে। অন্য কেউ (যিনি বুকিং অনুমোদন করেন তিনিও) এটা পারেন শুধু যদি মালিক তাঁর রোলে “Approve collar, cuff and trims before the tech pack is approved (with a reason)” টিক দেন; না থাকলে বোতামটি দেখায়ই না। AI কখনো এভাবে অনুমোদন করে না।",
           image: {
             id: "production-booking-approval-1",
             caption: "লাল চেকসহ বুকিং আর “Approve with a reason” বোতাম",

@@ -26,13 +26,37 @@ const roleWithPermissions = {
  * Decides whether a user may work inside a company and with which permissions:
  * their role's, with their own changes from the permission matrix on top.
  * Returns null when the company is inactive or the user has no active membership.
+ *
+ * A Full check session (its own check account, which is no one's colleague and
+ * has no membership) passes the role it checks: it gets exactly that role's
+ * permissions in that role's company, and nowhere else.
  */
 export async function resolveCompanyAccess(
   user: { id: string; isSuperAdmin: boolean },
   companyId: string,
+  checkRoleId?: string | null,
 ): Promise<CompanyAccess | null> {
   const company = await prisma.company.findUnique({ where: { id: companyId } });
   if (!company || !company.isActive) return null;
+
+  if (checkRoleId) {
+    const role = await prisma.role.findFirst({
+      where: { id: checkRoleId, companyId },
+      ...roleWithPermissions,
+    });
+    if (!role) return null;
+    return {
+      company,
+      membershipId: null,
+      role: { id: role.id, name: role.name, systemRole: role.systemRole },
+      permissions: resolvePermissions({
+        isPlatformSuperAdmin: user.isSuperAdmin,
+        systemRole: role.systemRole,
+        grantedKeys: role.permissions.map((rp) => rp.permission.key),
+        changes: [],
+      }),
+    };
+  }
 
   const membership = await prisma.companyMembership.findUnique({
     where: { companyId_userId: { companyId, userId: user.id } },

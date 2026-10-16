@@ -280,10 +280,11 @@ export const deletionAnswerSchema = z.object({
 });
 
 /**
- * Answers a Deletion request. Approving it (with the PIN) runs the ERP's own
- * delete for the record (a cancel, as on its page) in the owner's name, with
- * the page's normal checks: when they say no, nothing is deleted and the
- * request stays open with the reason. The AI itself never deletes.
+ * Answers a Deletion request. Approving it (with the PIN) claims the request
+ * first, then runs the ERP's own delete for the record (a cancel, as on its
+ * page) in the owner's name, with the page's normal checks, so it runs only
+ * once: when the checks say no, nothing is deleted and the request waits again
+ * with the reason. The AI itself never deletes.
  */
 export async function answerDeletion(
   ctx: CompanyContext,
@@ -300,8 +301,8 @@ export async function answerDeletion(
   if (request.status !== "PENDING") {
     throw new AppError("CONFLICT", "This request was answered already.");
   }
+  const remove = approve ? DELETES[request.recordType] : undefined;
   if (approve) {
-    const remove = DELETES[request.recordType];
     if (!remove) {
       throw new AppError(
         "CONFLICT",
@@ -309,19 +310,11 @@ export async function answerDeletion(
       );
     }
     assertMay(ctx, remove.permissions);
-    const reason = `Deletion request approved: ${request.why}`.slice(0, 500);
-    try {
-      await remove.run(ctx, request.recordId, reason, meta);
-    } catch (error) {
-      if (error instanceof AppError) {
-        throw new AppError(error.code, `Not deleted: ${error.message}`, error.details);
-      }
-      throw error;
-    }
   }
+  // Claimed first, so the delete runs once even when it is approved twice at once.
   const now = new Date();
   const claimed = await prisma.aiDeletionRequest.updateMany({
-    where: { id: requestId, status: "PENDING" },
+    where: { id: requestId, companyId: ctx.company.id, status: "PENDING" },
     data: {
       status: approve ? "APPROVED" : "REJECTED",
       answeredById: ctx.user.id,
@@ -331,6 +324,28 @@ export async function answerDeletion(
     },
   });
   if (claimed.count === 0) throw new AppError("CONFLICT", "This request was answered already.");
+  if (remove) {
+    const reason = `Deletion request approved: ${request.why}`.slice(0, 500);
+    try {
+      await remove.run(ctx, request.recordId, reason, meta);
+    } catch (error) {
+      // The record's own checks said no: nothing was deleted, and the request
+      // waits again, with why.
+      const why = `Not deleted: ${error instanceof AppError ? error.message : "the ERP could not delete it."}`;
+      await prisma.aiDeletionRequest.updateMany({
+        where: { id: requestId, status: "APPROVED", answeredAt: now },
+        data: {
+          status: "PENDING",
+          answeredById: null,
+          answeredAt: null,
+          doneAt: null,
+          note: why.slice(0, 500),
+        },
+      });
+      if (error instanceof AppError) throw new AppError(error.code, why, error.details);
+      throw error;
+    }
+  }
   await auditInCompany(ctx, meta, {
     action: "STATUS_CHANGE",
     entityType: "AiDeletionRequest",

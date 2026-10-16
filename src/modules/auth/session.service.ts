@@ -65,6 +65,11 @@ export async function validateSessionToken(token: string): Promise<ValidSession 
   if (row.user.status !== "ACTIVE") return null;
 
   const { user, ...current } = row;
+  if (current.checkRoleId) {
+    // A Full check session (its own check account): it never writes, not even
+    // "last seen", and sees the platform owner's screens only when it checks them.
+    return { session: current, user: { ...user, isSuperAdmin: current.checkPlatform } };
+  }
   const renew = current.expiresAt.getTime() - now < RENEW_WHEN_REMAINING_MS;
   const touch = now - current.lastSeenAt.getTime() > LAST_SEEN_RESOLUTION_MS;
   let session: Session = current;

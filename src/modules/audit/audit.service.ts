@@ -2,6 +2,7 @@ import type { AuditAction, Prisma } from "@prisma/client";
 
 import type { Db } from "@/lib/db-types";
 import { prisma } from "@/lib/prisma";
+import { readOnlyReason } from "@/lib/read-only";
 import type { RequestMeta } from "@/lib/request-meta";
 
 export type AuditInput = {
@@ -20,6 +21,9 @@ export type AuditInput = {
 
 /** Writes one row to the security / activity log. Pass `db` to join a transaction. */
 export async function recordAudit(input: AuditInput, db: Db = prisma): Promise<void> {
+  // Work that may only read (a Full check session on the live site, Bug Guard's
+  // checks) writes nothing, not even this row: what it opened is not logged.
+  if (await readOnlyReason()) return;
   await db.auditLog.create({
     data: {
       companyId: input.companyId ?? null,

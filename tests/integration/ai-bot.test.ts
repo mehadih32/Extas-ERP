@@ -55,6 +55,7 @@ import {
   unlinkBot,
 } from "@/modules/ai/bot/bot.service";
 import { type BotCall, standInForBotApi } from "@/modules/ai/bot/channel";
+import { pinScrubReport } from "@/modules/ai/bot/pin-scrub";
 import { sendChat } from "@/modules/ai/chat/chat.service";
 import { setAiSwitch, setPin } from "@/modules/ai/settings.service";
 import * as costing from "@/modules/costing/costing.service";
@@ -607,32 +608,125 @@ run("The bot", () => {
     });
   });
 
-  it("wipes the PINs the bot kept before v6.3, and nothing else", async () => {
+  it("hides a PIN typed after its five minutes, or when nothing asked for it, everywhere, and does nothing with it", async () => {
+    const api = botApi();
+    await linkOwner(env);
+    await setAiSwitch(env.owner, true);
+    await setPin(env.owner, { pin: "2468" });
+    const { id, number } = await costing.createCosting(env.owner, {
+      title: "Pique polos",
+      buyerId: env.buyer.id,
+      factoryId: env.mill.id,
+      currency: "USD",
+      exchangeRate: "120",
+      profitPercent: "8",
+      sourceTaxPercent: "",
+      bankChargePercent: "",
+      commissionPercent: "",
+      shipDate: addDays(localDay(new Date(), "Asia/Dhaka"), 120),
+      fabricDays: "",
+      makingDays: "",
+      risks: [],
+      notes: "",
+    });
+    await telegram(typed(OWNER_CHAT, `${number} profit 12.5%`));
+    const [profit] = api.buttons(OWNER_CHAT);
+    await telegram(press(OWNER_CHAT, profit!.callback_data));
+    expect(api.said(OWNER_CHAT).at(-1)).toMatch(/^Send your PIN to set the profit %/);
+    // Six minutes later the owner types the PIN: too late, but it is hidden all the same.
+    await prisma.aiBotLink.updateMany({
+      data: { pendingUntil: new Date(Date.now() - 60_000) },
+    });
+    const late = typed(OWNER_CHAT, "2468");
+    await telegram(late);
+    expect(api.calls.filter((c) => c.method === "deleteMessage").at(-1)?.json).toMatchObject({
+      message_id: late.message.message_id,
+    });
+    expect(api.said(OWNER_CHAT).at(-1)).toBe(
+      "The PIN request ran out after 5 minutes, so nothing was done and your PIN was hidden. Press the button again.",
+    );
+    expect(
+      (await prisma.orderCosting.findUniqueOrThrow({ where: { id } })).profitPercent?.toString(),
+    ).toBe("8");
+    expect((await prisma.aiBotLink.findFirstOrThrow()).pending).toBeNull();
+
+    // The PIN typed when nothing asked for it: hidden too, and never sent to the AI.
+    const stray = typed(OWNER_CHAT, " 2468 ");
+    await telegram(stray);
+    expect(api.calls.filter((c) => c.method === "deleteMessage").at(-1)?.json).toMatchObject({
+      message_id: stray.message.message_id,
+    });
+    expect(api.said(OWNER_CHAT).at(-1)).toBe(
+      "That was your PIN, so it was hidden and nothing was done. Send it only when the bot asks for it.",
+    );
+    // An order number is not a PIN: it goes to Mehedi 2.0 as typed.
+    await telegram(typed(OWNER_CHAT, "4501"));
+    expect(await prisma.aiBotMessage.count({ where: { text: "4501", direction: "IN" } })).toBe(1);
+
+    for (const where of [
+      prisma.aiChatMessage.count({ where: { text: { contains: "2468" } } }),
+      prisma.aiBotMessage.count({ where: { text: { contains: "2468" } } }),
+    ]) {
+      expect(await where).toBe(0);
+    }
+    const jobs = await prisma.backgroundJob.findMany({ where: { kind: "ai.bot.incoming" } });
+    expect(JSON.stringify(jobs.map((j) => j.payload))).not.toContain("2468");
+    expect(JSON.stringify(await getBot(env.owner))).not.toContain("2468");
+    expect(await prisma.aiBotMessage.count({ where: { text: "[PIN]", direction: "IN" } })).toBe(2);
+  });
+
+  it("wipes only the PINs typed after the bot asked for one, and reports any other number it hid", async () => {
     botApi();
     await linkOwner(env);
     const link = await prisma.aiBotLink.findFirstOrThrow();
-    const keep = (text: string, n: number) =>
+    const minutesAgo = (m: number) => new Date(Date.now() - m * 60_000);
+    const keep = (text: string, n: number, at: Date, direction: "IN" | "OUT" = "IN") =>
       prisma.aiBotMessage.create({
         data: {
           companyId: env.company.id,
           linkId: link.id,
           channel: "TELEGRAM",
-          direction: "IN",
+          direction,
           providerId: `old:${n}`,
           chatId: String(OWNER_CHAT),
           text,
           status: "DONE",
+          createdAt: at,
         },
       });
-    await keep("4321", 1);
-    await keep("status", 2);
-    await keep("PO 4501 is late", 3);
-    await prisma.backgroundJob.create({
+    // An hour ago the bot asked for the PIN, and it came a minute later.
+    await keep(
+      'Send your PIN to set the profit % (a price). (Write "বাতিল" to stop.)',
+      0,
+      minutesAgo(60),
+      "OUT",
+    );
+    const pin = await keep("4321", 1, minutesAgo(59));
+    await keep("status", 2, minutesAgo(30));
+    await keep("PO 4501 is late", 3, minutesAgo(20));
+    // An order number typed long after any PIN request is not a PIN.
+    const order = await keep("98765", 4, minutesAgo(10));
+    for (const [message, text] of [
+      [pin, "4321"],
+      [order, " 98765 "],
+    ] as const) {
+      await prisma.backgroundJob.create({
+        data: {
+          kind: "ai.bot.incoming",
+          companyId: env.company.id,
+          status: "SUCCEEDED",
+          payload: { messageId: message.id, incoming: { chatId: "1", text } },
+        },
+      });
+    }
+    await prisma.aiChatMessage.create({
       data: {
-        kind: "ai.bot.incoming",
         companyId: env.company.id,
-        status: "SUCCEEDED",
-        payload: { messageId: "m1", incoming: { chatId: "1", text: " 98765 " } },
+        userId: env.owner.user.id,
+        channel: "BOT",
+        role: "OWNER",
+        text: "2468",
+        createdAt: minutesAgo(58),
       },
     });
     await prisma.aiChatMessage.create({
@@ -641,7 +735,8 @@ run("The bot", () => {
         userId: env.owner.user.id,
         channel: "BOT",
         role: "OWNER",
-        text: "2468",
+        text: "55012",
+        createdAt: minutesAgo(5),
       },
     });
     await prisma.aiChatMessage.create({
@@ -665,27 +760,41 @@ run("The bot", () => {
     }
     const texts = (
       await prisma.aiBotMessage.findMany({
-        where: { providerId: { startsWith: "old:" } },
+        where: { providerId: { startsWith: "old:" }, direction: "IN" },
         orderBy: { providerId: "asc" },
       })
     ).map((m) => m.text);
-    expect(texts).toEqual(["[PIN]", "status", "PO 4501 is late"]);
-    const job = await prisma.backgroundJob.findFirstOrThrow({
-      where: { kind: "ai.bot.incoming", payload: { path: ["messageId"], equals: "m1" } },
-    });
-    expect(job.payload).toMatchObject({
-      messageId: "m1",
-      incoming: { chatId: "1", text: "[PIN]" },
-    });
-    // Only what came from the bot: a number typed in the ERP chat stays.
+    expect(texts).toEqual(["[PIN]", "status", "PO 4501 is late", "98765"]);
+    const jobText = async (messageId: string) =>
+      (
+        (
+          await prisma.backgroundJob.findFirstOrThrow({
+            where: { kind: "ai.bot.incoming", payload: { path: ["messageId"], equals: messageId } },
+          })
+        ).payload as { incoming: { text: string } }
+      ).incoming.text;
+    expect(await jobText(pin.id)).toBe("[PIN]");
+    expect(await jobText(order.id)).toBe(" 98765 ");
+    // Only what came from the bot after a PIN request: a number typed in the ERP chat stays.
     const chat = await prisma.aiChatMessage.findMany({ select: { channel: true, text: true } });
     expect(chat).toEqual(
       expect.arrayContaining([
         { channel: "BOT", text: "[PIN]" },
+        { channel: "BOT", text: "55012" },
         { channel: "ERP", text: "2026" },
       ]),
     );
-    expect(chat).toHaveLength(2);
+    expect(chat).toHaveLength(3);
+
+    // The v6.3 wipe on the live site took every 4-8 digit message: the report says how
+    // many of those did not follow a PIN request (they may have been order numbers).
+    await keep("[PIN]", 5, minutesAgo(3));
+    expect(await pinScrubReport()).toMatchObject({
+      hidden: 2,
+      afterRequest: 1,
+      notAfterRequest: 1,
+    });
+    expect((await pinScrubReport()).notAfterRequestDates).toHaveLength(1);
   });
 
   it("picks the store by its name when stores share one bot", async () => {

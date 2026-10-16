@@ -805,7 +805,13 @@ export async function checkLayout(
   await page.waitForTimeout(settleMs);
   await page.evaluate("document.fonts.ready.then(() => new Promise(requestAnimationFrame))");
   const collect = () => page.evaluate(`(${inPage.toString()})(${LIB_SOURCE})`);
-  const found = await collect();
+  let found = await collect();
+  if (found.problems.length) {
+    // A screen still starting up (its scripts not running yet, so no tooltips; a
+    // part still moving into place) looks once more before anything is reported.
+    await page.waitForTimeout(1000);
+    found = await collect();
+  }
   const problems = found.problems.map((p) => ({ kind: "LAYOUT", width, ...p }));
   let gaps = await menuGaps(page, found.menus, { width, seen, open: menus });
   if (gaps.length && menus) {

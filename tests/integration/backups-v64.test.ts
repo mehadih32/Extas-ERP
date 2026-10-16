@@ -93,6 +93,8 @@ run("v6.4 backups", { timeout: 120_000 }, () => {
   let google: FakeGoogle;
 
   beforeEach(async () => {
+    // The machine's own free disk never decides these tests (G7 has its own).
+    vi.spyOn(disk, "freeBytes").mockResolvedValue(null);
     await resetDb();
     dir = await mkdtemp(path.join(os.tmpdir(), "extas-v64-"));
     backupDir = path.join(dir, "backups");
@@ -652,7 +654,7 @@ run("v6.4 backups", { timeout: 120_000 }, () => {
     it("keeps backups in Drive for the days chosen, never the newest, or for ever", async () => {
       await connectDrive();
       await setKey();
-      await backups.updateBackupConfig(owner, { driveKeepDays: 30 });
+      await backups.updateBackupConfig(ctx, { driveKeepDays: 30, pin: PIN });
       const a = await backUpNow();
       const b = await backUpNow();
       // a is 40 days old in Drive.
@@ -663,7 +665,7 @@ run("v6.4 backups", { timeout: 120_000 }, () => {
       await backups.updateBackupConfig(owner, { driveKeepDays: null });
       await backUpNow();
       expect((await listDriveBackups()).items.map((x) => x.name)).toContain(a.name);
-      await backups.updateBackupConfig(owner, { driveKeepDays: 30 });
+      await backups.updateBackupConfig(ctx, { driveKeepDays: 30, pin: PIN });
       const c = await backUpNow();
       const names = (await listDriveBackups()).items.map((x) => x.name);
       expect(names).not.toContain(a.name);
@@ -676,6 +678,81 @@ run("v6.4 backups", { timeout: 120_000 }, () => {
       const { pruneBackups } = await import("@/modules/backups/drive-copies");
       await pruneBackups(await backups.getBackupConfig());
       expect((await listDriveBackups()).items).toHaveLength(1);
+    });
+  });
+
+  describe("making the backups less safe needs the PIN and tells the owner (R-BAK G12)", () => {
+    const told = async () => (await inbox()).filter((s) => s === "Backups made less safe");
+
+    it("switching backups off, and keeping them in Drive for fewer days", async () => {
+      // No PIN yet: the screen shows "set your PIN first".
+      const noPin = await expectAppError(
+        backups.updateBackupConfig(ctx, { isEnabled: false }),
+        "VALIDATION",
+      );
+      expect(Object.keys(noPin.details ?? {})).toEqual(["pinNotSet"]);
+      await setPin(ctx, { pin: PIN });
+      const missing = await expectAppError(
+        backups.updateBackupConfig(ctx, { isEnabled: false }),
+        "VALIDATION",
+      );
+      expect(missing.message).toBe("Give your PIN to switch backups off.");
+      await expectAppError(
+        backups.updateBackupConfig(ctx, { isEnabled: false, pin: "1111" }),
+        "VALIDATION",
+      );
+      // Only the platform owner in a company can give the PIN.
+      await expectAppError(
+        backups.updateBackupConfig(owner, { isEnabled: false, pin: PIN }),
+        "FORBIDDEN",
+      );
+      expect((await backups.getBackupConfig()).isEnabled).toBe(true);
+      expect(await told()).toEqual([]);
+
+      await backups.updateBackupConfig(ctx, { isEnabled: false, pin: PIN });
+      expect((await backups.getBackupConfig()).isEnabled).toBe(false);
+      expect(await told()).toHaveLength(1);
+      const alert = await prisma.notificationLog.findFirstOrThrow({
+        where: { subject: "Backups made less safe" },
+      });
+      expect(alert.body).toMatch(/switched backups off/);
+      expect(alert.body).not.toContain(PIN);
+
+      // Safer changes, and other settings, need no PIN and tell no one.
+      await backups.updateBackupConfig(owner, { isEnabled: true, driveKeepDays: 365 });
+      await backups.updateBackupConfig(owner, { driveKeepDays: null });
+      await backups.updateBackupConfig(owner, {
+        schedule: { mode: "DAYS", every: 1, times: ["03:00"] },
+        serverKeep: 5,
+      });
+      expect(await told()).toHaveLength(1);
+
+      // For ever -> 30 days is fewer days.
+      const shorter = await expectAppError(
+        backups.updateBackupConfig(ctx, { driveKeepDays: 30 }),
+        "VALIDATION",
+      );
+      expect(shorter.message).toBe("Give your PIN to keep backups in Google Drive for fewer days.");
+      await backups.updateBackupConfig(ctx, { driveKeepDays: 30, pin: PIN });
+      await backups.updateBackupConfig(ctx, { driveKeepDays: 60 });
+      expect(await told()).toHaveLength(2);
+      const audit = await prisma.auditLog.findMany({ where: { entityType: "BackupConfig" } });
+      expect(JSON.stringify(audit)).not.toContain(PIN);
+    });
+
+    it("disconnecting Google Drive", async () => {
+      await connectDrive();
+      await setPin(ctx, { pin: PIN });
+      await expectAppError(backups.disconnectGoogleDrive(ctx, {}), "VALIDATION");
+      await expectAppError(backups.disconnectGoogleDrive(owner, { pin: PIN }), "FORBIDDEN");
+      expect((await backups.getBackupConfig()).credentialsRef).not.toBeNull();
+      const off = await backups.disconnectGoogleDrive(ctx, { pin: PIN });
+      expect(off.googleDrive.connected).toBe(false);
+      expect(await told()).toHaveLength(1);
+      const alert = await prisma.notificationLog.findFirstOrThrow({
+        where: { subject: "Backups made less safe" },
+      });
+      expect(alert.body).toMatch(/disconnected Google Drive/);
     });
   });
 
@@ -784,7 +861,8 @@ run("v6.4 backups", { timeout: 120_000 }, () => {
       await watchBackups();
       expect((await inbox()).filter((s) => s === "Backup is late")).toHaveLength(1);
       // Switched off: not late.
-      await backups.updateBackupConfig(owner, { isEnabled: false });
+      await setPin(ctx, { pin: PIN });
+      await backups.updateBackupConfig(ctx, { isEnabled: false, pin: PIN });
       expect((await backupHealth()).problem).toBeNull();
     });
   });
@@ -806,7 +884,7 @@ run("v6.4 backups", { timeout: 120_000 }, () => {
       expect(await readdir(backupDir)).not.toContain(skipped.name);
       await backUpNow();
       await watchBackups();
-      expect((await inbox()).filter((s) => s.startsWith("Backup"))).toEqual([
+      expect((await inbox()).filter((s) => s?.startsWith("Backup"))).toEqual([
         "Backup skipped: the server's disk is nearly full",
       ]);
       // Enough room again (or a disk that cannot be measured): backups run.
@@ -814,7 +892,6 @@ run("v6.4 backups", { timeout: 120_000 }, () => {
       expect((await backUpNow()).status).toBe("SUCCEEDED");
       free.mockResolvedValue(null);
       expect((await backUpNow()).status).toBe("SUCCEEDED");
-      free.mockRestore();
     });
 
     it("skips the drill without room for the backup it downloads", async () => {
@@ -822,7 +899,7 @@ run("v6.4 backups", { timeout: 120_000 }, () => {
       await setKey();
       await prepareHost(backupLock(await backups.getBackupConfig())!.key as PublicKey);
       const backup = await backUpNow();
-      const free = vi.spyOn(disk, "freeBytes").mockResolvedValue(DISK_MARGIN_BYTES);
+      vi.spyOn(disk, "freeBytes").mockResolvedValue(DISK_MARGIN_BYTES);
       const drilled = await runTestRestore({ trigger: "MANUAL", actor: owner, wait: true });
       expect(drilled).toMatchObject({ status: "FAILED", sourceName: backup.name });
       expect(drilled.error).toMatch(/^Skipped: the server has .* free, and a restore drill needs/);
@@ -831,7 +908,6 @@ run("v6.4 backups", { timeout: 120_000 }, () => {
       expect(left).toEqual([]);
       expect(await inbox()).toContain("Restore drill skipped: the server's disk is nearly full");
       expect(await inbox()).not.toContain("Restore drill failed");
-      free.mockRestore();
     });
   });
 

@@ -17,9 +17,10 @@ import { runTestRestore } from "@/modules/backups/test-restore";
 /*
  * Backup Server Actions (Settings > Backups). A backup holds every company's
  * data, so all of them are for the platform owner only. Downloads are plain
- * HTTP routes (/api/backups/...). The recovery key, the Cloudflare token and
- * Restore also need the company's PIN, so they run in the company the owner is
- * working in.
+ * HTTP routes (/api/backups/...). The recovery key, the Cloudflare token,
+ * Restore, and making the backups less safe (switching them off, fewer days in
+ * Drive, disconnecting Drive) also need the company's PIN, so they run in the
+ * company the owner is working in.
  */
 
 const owner = async () => {
@@ -47,8 +48,11 @@ export const getBackupOverviewAction = async () =>
     await owner();
     return backups.getBackupOverview();
   });
+/** Switching backups off or keeping them in Drive for fewer days also needs the PIN. */
 export const updateBackupConfigAction = async (input: unknown) =>
-  change(async () => backups.updateBackupConfig(await owner(), input, await getRequestMeta()));
+  change(async () =>
+    backups.updateBackupConfig(await ownerInCompany(), input, await getRequestMeta()),
+  );
 export const listBackupRunsAction = async (query: unknown) =>
   runAction(async () => {
     await owner();
@@ -92,8 +96,11 @@ export const startGoogleSignInAction = async () =>
 /** Whether the owner said yes on their phone; connects Drive when they did. */
 export const checkGoogleSignInAction = async () =>
   change(async () => backups.checkGoogleSignIn(await owner(), await getRequestMeta()));
-export const disconnectGoogleDriveAction = async () =>
-  change(async () => backups.disconnectGoogleDrive(await owner(), await getRequestMeta()));
+/** Needs the PIN: new backups then stay on the server only. */
+export const disconnectGoogleDriveAction = async (input: unknown) =>
+  change(async () =>
+    backups.disconnectGoogleDrive(await ownerInCompany(), input, await getRequestMeta()),
+  );
 
 // The recovery key (set by the owner, with the PIN)
 /** Sets or changes the owner's own recovery key; it is never stored or shown again. */

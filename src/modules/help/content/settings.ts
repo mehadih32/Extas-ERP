@@ -1071,7 +1071,7 @@ export const settingsHelp: HelpSection = {
           },
         },
         {
-          text: "“Back up on this schedule” টিক দেওয়া রাখুন, নইলে নিজে ব্যাকআপ হয় না। “Keep on this server” ঘরে বাছুন সার্ভারে সবচেয়ে নতুন কয়টি ব্যাকআপ থাকবে (3 থেকে 7, শুরুতে 4)। “Keep in Google Drive for (days)” ঘরে লিখুন Drive-এ প্রতিটি ব্যাকআপ কত দিন থাকবে (শুরুতে 90), অথবা “Keep for ever” টিক দিন। সবচেয়ে নতুন ব্যাকআপটি কখনো মোছা হয় না। শেষে “Save” চাপুন।",
+          text: "“Back up on this schedule” টিক দেওয়া রাখুন, নইলে নিজে ব্যাকআপ হয় না। “Keep on this server” ঘরে বাছুন সার্ভারে সবচেয়ে নতুন কয়টি ব্যাকআপ থাকবে (3 থেকে 7, শুরুতে 4)। “Keep in Google Drive for (days)” ঘরে লিখুন Drive-এ প্রতিটি ব্যাকআপ কত দিন থাকবে (শুরুতে 90), অথবা “Keep for ever” টিক দিন। সবচেয়ে নতুন ব্যাকআপটি কখনো মোছা হয় না। শেষে “Save” চাপুন। টিক তুলে ব্যাকআপ বন্ধ করলে বা Drive-এ আগের চেয়ে কম দিন রাখলে ব্যাকআপ কম নিরাপদ হয়, তাই “Save”-এর উপরে “PIN” ঘর আসে: PIN দিয়ে তবেই সেভ হয়, আর ইনবক্সে ও Telegram-এ Backups made less safe বার্তা আসে।",
         },
         {
           text: "এখনই একটি ব্যাকআপ নিতে “Back up now” চাপুন। কয়েক মিনিট পর উপরের লাইন সবুজ হয়, “Last backup” ঘরে “Checked in Drive” আসে, আর “Backups in Google Drive” তালিকায় তারিখ, আকার ও “Checked” দেখায়। “Checked” মানে Google-এর কপি সার্ভারের কপির সঙ্গে ফাইল ধরে মিলিয়ে দেখা হয়েছে।",
@@ -1086,7 +1086,7 @@ export const settingsHelp: HelpSection = {
           text: "কী পরে Drive-এ রাখতে “Put my key in Google Drive” চাপুন, “Recovery key” ঘরে কী একবার আর PIN দিয়ে “Put it in Drive” চাপুন। Drive থেকে সরাতে “Take my key out of Google Drive” চাপুন, PIN দিয়ে “Take it out” চাপুন; তখন রিস্টোরের সময় কী নিজে টাইপ করতে হয়।",
         },
         {
-          text: "Drive-এর সংযোগ কাটতে “Google Drive” অংশে “Disconnect” চাপুন। Drive-এ থাকা ব্যাকআপ মোছে না, কিন্তু নতুন ব্যাকআপ তখন শুধু এই সার্ভারে থাকে। আবার যুক্ত করতে “Connect Google Drive” চাপুন।",
+          text: "Drive-এর সংযোগ কাটতে “Google Drive” অংশে “Disconnect” চাপুন। “Disconnect Google Drive” জানালায় PIN দিয়ে আবার “Disconnect” চাপুন। Drive-এ থাকা ব্যাকআপ মোছে না, কিন্তু নতুন ব্যাকআপ তখন শুধু এই সার্ভারে থাকে, আর ইনবক্সে ও Telegram-এ Backups made less safe বার্তা আসে। আবার যুক্ত করতে “Connect Google Drive” চাপুন।",
         },
       ],
       tips: [
@@ -1209,7 +1209,7 @@ export const settingsHelp: HelpSection = {
         },
         {
           label: "Back up on this schedule",
-          text: "টিক থাকলে উপরের সময়সূচিতে নিজে ব্যাকআপ হয়। টিক তুললে শুধু “Back up now” চাপলে হয়, আর উপরের বড় লাইন হলুদ বা লাল হয়ে মনে করিয়ে দেয়।",
+          text: "টিক থাকলে উপরের সময়সূচিতে নিজে ব্যাকআপ হয়। টিক তুললে শুধু “Back up now” চাপলে হয়, আর উপরের বড় লাইন হলুদ বা লাল হয়ে মনে করিয়ে দেয়। টিক তুলে সেভ করতে PIN লাগে, আর আপনাকে Telegram-এও জানানো হয়, যাতে অন্য কেউ চুপচাপ ব্যাকআপ বন্ধ করতে না পারে।",
         },
         {
           label: "Keep on this server",
@@ -1217,7 +1217,7 @@ export const settingsHelp: HelpSection = {
         },
         {
           label: "Keep in Google Drive for (days)",
-          text: "Drive-এ প্রতিটি ব্যাকআপ কত দিন থাকবে, 7 থেকে 3650 (শুরুতে 90)। এর পর Drive থেকে সরে যায়, তবে সবচেয়ে নতুনটি কখনো সরে না। আপডেটের নিরাপত্তা কপির সবচেয়ে নতুন 10টি আলাদা থাকে।",
+          text: "Drive-এ প্রতিটি ব্যাকআপ কত দিন থাকবে, 7 থেকে 3650 (শুরুতে 90)। এর পর Drive থেকে সরে যায়, তবে সবচেয়ে নতুনটি কখনো সরে না। আপডেটের নিরাপত্তা কপির সবচেয়ে নতুন 10টি আলাদা থাকে। আগের চেয়ে কম দিন করলে PIN লাগে আর Telegram-এ জানানো হয়; বেশি দিন করতে লাগে না।",
         },
         {
           label: "Keep for ever",
@@ -1269,7 +1269,7 @@ export const settingsHelp: HelpSection = {
         },
         {
           label: "PIN",
-          text: "যে কোম্পানিতে এখন কাজ করছেন তার PIN (4 থেকে 8 অঙ্ক)। কী ঠিক করা, বদলানো, আর Drive-এ রাখা বা সরানো, সবকটিতেই লাগে। PIN ঠিক করা না থাকলে আগে “AI” > “System” > “Settings”-এ “Set a PIN” দিয়ে ঠিক করুন।",
+          text: "যে কোম্পানিতে এখন কাজ করছেন তার PIN (4 থেকে 8 অঙ্ক)। কী ঠিক করা, বদলানো, আর Drive-এ রাখা বা সরানো, সবকটিতেই লাগে; ব্যাকআপ বন্ধ করা, Drive-এ কম দিন রাখা আর Drive-এর সংযোগ কাটাতেও লাগে। PIN ঠিক করা না থাকলে আগে “AI” > “System” > “Settings”-এ “Set a PIN” দিয়ে ঠিক করুন।",
         },
         {
           label: "Save the key",
@@ -1309,7 +1309,11 @@ export const settingsHelp: HelpSection = {
         },
         {
           label: "Disconnect",
-          text: "Drive-এর সংযোগ কাটে আর Google-এর অনুমতি ফিরিয়ে নেয়। Drive-এ থাকা ব্যাকআপ মোছে না, কিন্তু নতুন ব্যাকআপ শুধু সার্ভারে থাকে। নিশ্চিত করতে চায় না, তাই ভেবে চাপুন।",
+          text: "“Disconnect Google Drive” জানালা খোলে; PIN দিয়ে আবার “Disconnect” চাপলে Drive-এর সংযোগ কাটে আর Google-এর অনুমতি ফিরিয়ে নেয়। Drive-এ থাকা ব্যাকআপ মোছে না, কিন্তু নতুন ব্যাকআপ শুধু সার্ভারে থাকে, আর ইনবক্সে ও Telegram-এ Backups made less safe বার্তা আসে।",
+        },
+        {
+          label: "Disconnect Google Drive",
+          text: "সংযোগ কাটার আগের জানালা: বলে নতুন ব্যাকআপ শুধু এই সার্ভারে থাকবে। “PIN” ঘরে PIN দিয়ে “Disconnect” চাপুন, না চাইলে “Cancel”।",
         },
         {
           label: "Try again",

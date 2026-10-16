@@ -15,6 +15,7 @@ import { setPin } from "@/modules/ai/settings.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { driveToken } from "@/modules/backups/backup-core";
 import * as backups from "@/modules/backups/backup.service";
+import { disk } from "@/modules/backups/disk";
 import {
   fetchBackup,
   listDriveBackups,
@@ -63,6 +64,8 @@ run("daily backups", () => {
   let owner: { userId: string };
 
   beforeEach(async () => {
+    // The machine's own free disk never decides these tests (G7 has its own).
+    vi.spyOn(disk, "freeBytes").mockResolvedValue(null);
     await resetDb();
     dir = await mkdtemp(path.join(os.tmpdir(), "extras-backups-"));
     backupDir = path.join(dir, "backups");
@@ -518,7 +521,12 @@ run("daily backups", () => {
         summary: "Changed backup settings: schedule: Every day at 03:30, keep 5 on the server",
       });
 
-      const off = await backups.updateBackupConfig(owner, { isEnabled: false });
+      // Switching off needs the owner's PIN, in a company (R-BAK G12).
+      const { company, roles } = await makeCompany("Extras");
+      await addToCompany(owner.userId, company.id, roles.SUPER_ADMIN);
+      const ctx = await contextFor(owner.userId, company.id);
+      await setPin(ctx, { pin: "2468" });
+      const off = await backups.updateBackupConfig(ctx, { isEnabled: false, pin: "2468" });
       expect(off.nextRunAt).toBeNull();
       expect(await backupTick()).toBeNull();
       expect(await prisma.backupRun.count()).toBe(0);
@@ -605,7 +613,8 @@ run("daily backups", () => {
       expect(google.refreshTokens.has(refresh)).toBe(true);
       expect(JSON.stringify(await backups.getBackupOverview())).not.toContain(refresh);
 
-      const off = await backups.disconnectGoogleDrive(owner);
+      await setPin(ctx, { pin: "2468" });
+      const off = await backups.disconnectGoogleDrive(ctx, { pin: "2468" });
       expect(off.googleDrive).toMatchObject({ connected: false, account: null, folderId: null });
       expect(google.refreshTokens.has(refresh)).toBe(false);
       google.options.pendingPolls = 0;
@@ -614,7 +623,7 @@ run("daily backups", () => {
       expect((await backups.getBackupConfig()).googleDriveFolderId).toBe(root!.id);
 
       // The owner says no on the phone: nothing changes.
-      await backups.disconnectGoogleDrive(owner);
+      await backups.disconnectGoogleDrive(ctx, { pin: "2468" });
       google.options.deny = true;
       await backups.startGoogleSignIn(owner);
       expect((await backups.checkGoogleSignIn(owner)).status).toBe("denied");

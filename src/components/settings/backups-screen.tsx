@@ -386,6 +386,14 @@ function SchedulePanel({ config, setMessage }: PanelProps) {
   const [weekdays, setWeekdays] = useState<number[]>(s.weekdays);
   const [dates, setDates] = useState<string[]>(s.dates.length ? s.dates : [""]);
   const [forever, setForever] = useState(config.driveKeepDays === null);
+  const [enabled, setEnabled] = useState(config.isEnabled);
+  const [days, setDays] = useState(String(config.driveKeepDays ?? 90));
+  // Switching backups off, or fewer days in Drive, needs the PIN (G12).
+  const fewerDays =
+    !forever &&
+    Number(days) > 0 &&
+    (config.driveKeepDays === null || Number(days) < config.driveKeepDays);
+  const lessSafe = (config.isEnabled && !enabled) || fewerDays;
 
   const schedule = () => {
     if (mode === "HOURS") return { mode, every: Number(every), times: times.slice(0, 1) };
@@ -394,6 +402,7 @@ function SchedulePanel({ config, setMessage }: PanelProps) {
     return { mode, dates: dates.filter(Boolean).map((d) => d.replace("T", " ")) };
   };
   const scheduleError = Object.entries(errors).find(([k]) => k.startsWith("schedule"))?.[1]?.[0];
+  const fieldError = (name: string) => errors[name]?.[0];
 
   return (
     <Panel title="When to back up" id="backups-schedule-heading">
@@ -405,12 +414,13 @@ function SchedulePanel({ config, setMessage }: PanelProps) {
           startTransition(async () => {
             const result = await updateBackupConfigAction({
               schedule: schedule(),
-              isEnabled: form.get("isEnabled") === "on",
+              isEnabled: enabled,
               serverKeep: Number(form.get("serverKeep")),
-              driveKeepDays: forever ? null : Number(form.get("driveKeepDays")),
+              driveKeepDays: forever ? null : Number(days),
               drillEnabled: form.get("drillEnabled") === "on",
               drillDay: Number(form.get("drillDay")),
               drillTime: String(form.get("drillTime") ?? ""),
+              pin: lessSafe ? String(form.get("pin") ?? "") || undefined : undefined,
             });
             setErrors(result.ok ? {} : (result.error.fieldErrors ?? {}));
             setMessage(
@@ -515,7 +525,12 @@ function SchedulePanel({ config, setMessage }: PanelProps) {
           </div>
         )}
         <label className="flex items-center gap-2">
-          <input type="checkbox" name="isEnabled" defaultChecked={config.isEnabled} />
+          <input
+            type="checkbox"
+            name="isEnabled"
+            checked={enabled}
+            onChange={(e) => setEnabled(e.target.checked)}
+          />
           Back up on this schedule
         </label>
 
@@ -553,7 +568,8 @@ function SchedulePanel({ config, setMessage }: PanelProps) {
                 min={7}
                 max={3650}
                 disabled={forever}
-                defaultValue={config.driveKeepDays ?? 90}
+                value={days}
+                onChange={(e) => setDays(e.target.value)}
               />
             </Field>
             <label className="flex items-center gap-2">
@@ -598,6 +614,15 @@ function SchedulePanel({ config, setMessage }: PanelProps) {
             </Field>
           </div>
         </div>
+        {lessSafe && (
+          <div className="grid gap-2 sm:max-w-xs">
+            <PinField
+              id="schedule-pin"
+              hint="Needed to switch backups off or keep them in Google Drive for fewer days. You are told on Telegram too."
+              error={fieldError("pin") ?? fieldError("pinNotSet")}
+            />
+          </div>
+        )}
         <div>
           <Button type="submit" disabled={pending}>
             Save
@@ -887,6 +912,7 @@ function DrivePanel({ config, setMessage }: PanelProps) {
     interval: number;
   } | null>(null);
   const [editing, setEditing] = useState(!config.googleDrive.available);
+  const [disconnecting, setDisconnecting] = useState(false);
 
   // While a code is shown, ask every few seconds whether the owner said yes on their phone.
   useEffect(() => {
@@ -939,19 +965,7 @@ function DrivePanel({ config, setMessage }: PanelProps) {
             size="sm"
             variant="outline"
             disabled={pending}
-            onClick={() =>
-              startTransition(async () => {
-                const result = await disconnectGoogleDriveAction();
-                setMessage(
-                  result.ok
-                    ? {
-                        tone: "note",
-                        text: "Google Drive is disconnected; backups stay on this server only.",
-                      }
-                    : { tone: "error", text: result.error.message },
-                );
-              })
-            }
+            onClick={() => setDisconnecting(true)}
           >
             Disconnect
           </Button>
@@ -1009,6 +1023,35 @@ function DrivePanel({ config, setMessage }: PanelProps) {
           </p>
         )}
       </div>
+      {disconnecting && (
+        <FormDialog
+          destructive
+          title="Disconnect Google Drive"
+          description="New backups then stay on this server only, and are lost with it. The backups already in Drive stay there. You are told on Telegram too."
+          submitLabel="Disconnect"
+          pendingLabel="Disconnecting"
+          errorTitle="Google Drive was not disconnected"
+          onClose={() => setDisconnecting(false)}
+          onSubmit={async (form) => {
+            const result = await disconnectGoogleDriveAction({
+              pin: form.get("pin") || undefined,
+            });
+            if (!result.ok) return result.error;
+            setDisconnecting(false);
+            setMessage({
+              tone: "note",
+              text: "Google Drive is disconnected; backups stay on this server only.",
+            });
+          }}
+        >
+          {(fieldError) => (
+            <PinField
+              id="drive-disconnect-pin"
+              error={fieldError("pin") ?? fieldError("pinNotSet")}
+            />
+          )}
+        </FormDialog>
+      )}
     </Panel>
   );
 }

@@ -13,6 +13,7 @@ import { setPin } from "@/modules/ai/settings.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { backupLock, guideRoot, hostRoot } from "@/modules/backups/backup-core";
 import * as backups from "@/modules/backups/backup.service";
+import { disk } from "@/modules/backups/disk";
 import * as cloudflare from "@/modules/backups/cloudflare";
 import {
   backupKey,
@@ -77,6 +78,8 @@ run("the restore tool on a new server", { timeout: 120_000 }, () => {
   let google: FakeGoogle;
 
   beforeEach(async () => {
+    // The machine's own free disk never decides these tests (G7 has its own).
+    vi.spyOn(disk, "freeBytes").mockResolvedValue(null);
     await resetDb();
     resetGuideRetry();
     dir = await mkdtemp(path.join(os.tmpdir(), "extas-restore-tool-"));

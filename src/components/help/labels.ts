@@ -1,5 +1,6 @@
 import {
   BookOpenIcon,
+  ClipboardListIcon,
   FactoryIcon,
   FileTextIcon,
   HandshakeIcon,
@@ -36,6 +37,7 @@ export const HELP_ICONS: Record<string, LucideIcon> = {
   dashboard: LayoutDashboardIcon,
   sales: ReceiptTextIcon,
   production: FactoryIcon,
+  "tech-pack": ClipboardListIcon,
   accounts: LandmarkIcon,
   products: ShirtIcon,
   materials: SpoolIcon,

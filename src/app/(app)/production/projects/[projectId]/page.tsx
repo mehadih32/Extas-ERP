@@ -196,7 +196,7 @@ export default async function ProjectPage({
           {needs.ok && <MaterialNeedsPanel panel={needs.data} currency={currency} />}
           {techPack.ok && (
             <TechPackApprovalPanel
-              key={`${techPack.data.status}-${techPack.data.changes.length}`}
+              key={`${techPack.data.status}-${techPack.data.changes.length}-${techPack.data.techPackId ?? ""}`}
               projectId={projectId}
               code={p.code}
               techPack={techPack.data}

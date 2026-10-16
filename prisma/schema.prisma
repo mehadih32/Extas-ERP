@@ -295,6 +295,7 @@ model User {
   bookingsApproved    Booking[]              @relation("BookingApprovedBy")
   bookingsSent        Booking[]              @relation("BookingSentBy")
   bookingRevisions    BookingRevision[]      @relation("BookingRevisionApprovedBy")
+  techPacksCreated    TechPack[]             @relation("TechPackCreatedBy")
   techPacksLocked     TechPack[]             @relation("TechPackFabricLockedBy")
   techPacksApproved   TechPack[]             @relation("TechPackApprovedBy")
   techPackReferences  TechPackReference[]    @relation("TechPackReferenceSavedBy")
@@ -662,6 +663,7 @@ model Style {
   productionProjects ProductionProject[]
   costingStyles      OrderCostingStyle[]
   stockLots          StockLot[]
+  techPacks          TechPack[]
 
   @@unique([companyId, code])
   @@index([companyId, categoryId])
@@ -1404,6 +1406,7 @@ model Party {
   generatedDocuments   GeneratedDocument[]
   projectSettlements   ProjectSettlement[]
   aiOrderRuns          AiOrderRun[]         @relation("AiOrderRunBuyer")
+  techPacks            TechPack[]           @relation("TechPackBuyer")
 
   @@unique([companyId, code])
   @@unique([companyId, systemRole])
@@ -2294,7 +2297,20 @@ model ProductionMaterialNeed {
 model TechPack {
   id               String         @id @default(cuid())
   companyId        String
-  projectId        String         @unique
+  /// Its number, e.g. "TP-2026-00001" (unique per company; set on every new tech pack).
+  number           String?
+  /// What it is called in the list: "Nordic polo SS27".
+  title            String         @default("")
+  /// The style in production it is linked to, once the order comes (one tech pack per style).
+  projectId        String?        @unique
+  /// The buyer it is for, and the catalogue style it is linked to (both optional).
+  buyerId          String?
+  styleId          String?
+  /// The buyer's season, as the buyer writes it ("SS27", "Winter 2026").
+  season           String?
+  /// The buyer's brief as received: what they asked for, before any order.
+  brief            String?
+  createdById      String?
   status           TechPackStatus @default(DRAFT)
   /// The fabric part as it was locked (fabrics, use per piece, colour and size quantities).
   fabricLock       Json?
@@ -2321,7 +2337,10 @@ model TechPack {
   updatedAt        DateTime       @updatedAt
 
   company        Company                @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  project        ProductionProject      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project        ProductionProject?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  buyer          Party?                 @relation("TechPackBuyer", fields: [buyerId], references: [id], onDelete: SetNull)
+  style          Style?                 @relation(fields: [styleId], references: [id], onDelete: SetNull)
+  createdBy      User?                  @relation("TechPackCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   fabricLockedBy User?                  @relation("TechPackFabricLockedBy", fields: [fabricLockedById], references: [id], onDelete: SetNull)
   approvedBy     User?                  @relation("TechPackApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
   measurements   TechPackMeasurement[]
@@ -2331,7 +2350,12 @@ model TechPack {
   aiDrafts       TechPackAiDraft[]
   expertAnswers  TechPackExpertAnswer[]
 
+  @@unique([companyId, number])
   @@index([companyId, status])
+  @@index([companyId, updatedAt])
+  @@index([companyId, buyerId])
+  @@index([companyId, styleId])
+  @@index([companyId, season])
 }
 
 /// One point of measure of a style's chart: its value per size in the tech
@@ -5572,6 +5596,7 @@ enum DocumentType {
   CM_SETTLEMENT // a master batch's final CM settlement with its factory (CMS-2026-00001)
   ORDER_COSTING // an order's costing sheet before it is taken (CST-2026-00001)
   AI_ORDER_RUN // an order Mehedi 2.0 takes in and follows (AO-2026-00001)
+  TECH_PACK // a tech pack, from a buyer's brief or a style in production (TP-2026-00001)
 }
 
 enum TemplateFormat {

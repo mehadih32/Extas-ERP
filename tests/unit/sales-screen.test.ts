@@ -79,6 +79,7 @@ describe("the menu with Sales in it", () => {
       "/",
       "/sales",
       "/production",
+      "/tech-packs",
       "/accounts",
       "/products",
       "/materials",
@@ -109,7 +110,9 @@ describe("the menu with Sales in it", () => {
   it("keeps four sections on the phone's tab bar and moves the rest under More", () => {
     const everything = phoneTabs(visibleNavItems(all));
     expect(everything.tabs.map((i) => i.href)).toEqual(["/", "/sales", "/production", "/accounts"]);
+    // Tech Pack always sits under More on the phone (v6.4), first.
     expect(everything.more.map((i) => i.href)).toEqual([
+      "/tech-packs",
       "/products",
       "/materials",
       "/parties",

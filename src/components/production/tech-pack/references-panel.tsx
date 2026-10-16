@@ -23,7 +23,7 @@ import { addReferenceAction, removeReferenceAction } from "@/server/actions/tech
  */
 
 export function ReferencesPanel({ screen }: { screen: TechPackScreen }) {
-  const { project, references, can } = screen;
+  const { techPack, references, can } = screen;
   const [adding, setAdding] = useState(false);
   const [removing, setRemoving] = useState<string | null>(null);
 
@@ -124,7 +124,7 @@ export function ReferencesPanel({ screen }: { screen: TechPackScreen }) {
           errorTitle="We could not save the reference"
           onClose={() => setAdding(false)}
           onSubmit={async (form) => {
-            const result = await addReferenceAction(project.id, form);
+            const result = await addReferenceAction(techPack.id, form);
             if (!result.ok) return result.error;
             setAdding(false);
           }}
@@ -170,7 +170,7 @@ export function ReferencesPanel({ screen }: { screen: TechPackScreen }) {
           destructive
           onClose={() => setRemoving(null)}
           onConfirm={async () => {
-            const result = await removeReferenceAction(project.id, removing);
+            const result = await removeReferenceAction(techPack.id, removing);
             if (!result.ok) return result.error;
             setRemoving(null);
           }}

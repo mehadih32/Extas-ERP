@@ -68,7 +68,9 @@ describe("Accounts in the menu, by role", () => {
     expect(tabs(role("ACCOUNTS"))).toEqual(all);
     const accounts = phoneTabs(visibleNavItems(role("ACCOUNTS")));
     expect(accounts.tabs.map((i) => i.href)).toEqual(["/", "/sales", "/production", "/accounts"]);
+    // Tech Pack always opens from More on the phone (v6.4); Accounts keeps its tab.
     expect(accounts.more.map((i) => i.href)).toEqual([
+      "/tech-packs",
       "/materials",
       "/parties",
       "/hr",
@@ -87,9 +89,10 @@ describe("Accounts in the menu, by role", () => {
       ["/", null],
       ["/sales", null],
       ["/production", null],
+      ["/tech-packs", "md"],
       ["/accounts", "md"],
-      ["/products", "md"],
-      ["/materials", "lg"],
+      ["/products", "lg"],
+      ["/materials", "all"],
       ["/parties", "all"],
       ["/hr", "all"],
       ["/reports", "all"],

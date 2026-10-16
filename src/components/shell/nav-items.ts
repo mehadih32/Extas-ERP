@@ -1,4 +1,5 @@
 import {
+  ClipboardListIcon,
   FactoryIcon,
   FileTextIcon,
   HandshakeIcon,
@@ -33,6 +34,8 @@ export type NavItem = {
   anyOf: readonly PermissionKey[];
   /** ...unless they hold any of these (they reach the same screens another way). */
   noneOf?: readonly PermissionKey[];
+  /** On the phone, always under "More", so the tab bar keeps the sections it had. */
+  phoneMore?: boolean;
 };
 
 /**
@@ -130,6 +133,16 @@ export const NAV_ITEMS: readonly NavItem[] = [
       "production.logo.approve",
       "costing.view",
     ],
+  },
+  {
+    // Every tech pack: started from a buyer's brief and references before any
+    // order, or by a style in production, and linked to the style when the
+    // order comes (modules/production/tech-pack-register.service.ts).
+    href: "/tech-packs",
+    label: "Tech Pack",
+    icon: ClipboardListIcon,
+    anyOf: ["production.view"],
+    phoneMore: true,
   },
   {
     // Cash and bank, supplier payments, expenses, the journal, the chart of
@@ -250,10 +263,13 @@ export function visibleNavItems(permissions: readonly string[]): NavItem[] {
 /** Sections that fit in the phone's tab bar; the rest go under "More" with the account menu. */
 export const PHONE_TABS = 4;
 
-/** The phone's tab bar: up to PHONE_TABS sections as tabs, and the rest for the "More" menu. */
+/**
+ * The phone's tab bar: up to PHONE_TABS sections as tabs, and the rest, in menu
+ * order, for the "More" menu (with the sections that always sit there).
+ */
 export function phoneTabs(items: readonly NavItem[]): { tabs: NavItem[]; more: NavItem[] } {
-  if (items.length <= PHONE_TABS) return { tabs: [...items], more: [] };
-  return { tabs: items.slice(0, PHONE_TABS), more: items.slice(PHONE_TABS) };
+  const tabs = items.filter((item) => !item.phoneMore).slice(0, PHONE_TABS);
+  return { tabs, more: items.filter((item) => !tabs.includes(item)) };
 }
 
 /**

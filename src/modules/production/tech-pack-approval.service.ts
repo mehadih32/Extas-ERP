@@ -10,6 +10,7 @@ import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { styleGrids } from "@/modules/production/material-need.service";
 import { techPackGaps } from "@/modules/production/tech-pack-gaps";
+import { ensureProjectTechPack, loadTechPack } from "@/modules/production/tech-pack-spec.service";
 import {
   diffFabricParts,
   type FabricChange,
@@ -155,15 +156,24 @@ async function loadProject(ctx: CompanyContext, projectId: string) {
 /** A style's tech pack: its state and what this person may do with it. */
 export async function getTechPack(ctx: CompanyContext, projectId: string) {
   const project = await loadProject(ctx, projectId);
+  const linked = await ctx.db.techPack.findUnique({
+    where: { projectId: project.id },
+    select: { id: true, number: true },
+  });
   // The style was found through the company's own client; its parts are read with it too.
   const [states, gaps] = await Promise.all([
     techPackStates(prisma, [project]),
-    techPackGaps(prisma, project.id),
+    techPackGaps(prisma, linked?.id ?? null),
   ]);
   const state = states.get(project.id)!;
   const may = ctx.can("production.techpack.approve");
   return {
     ...state,
+    /** The style's tech pack (null until one is started or linked). */
+    techPackId: linked?.id ?? null,
+    number: linked?.number ?? null,
+    /** A tech pack is approved through its style in production; this one has it. */
+    needsProject: false as boolean,
     /** The red cells that keep it from approval (lines people can read). */
     gaps,
     can: {
@@ -178,6 +188,31 @@ export async function getTechPack(ctx: CompanyContext, projectId: string) {
 }
 
 export type TechPack = Awaited<ReturnType<typeof getTechPack>>;
+
+/**
+ * A tech pack's approval as its own page shows it: its style's, once linked;
+ * until then a draft that waits for a style in production (nothing to lock or
+ * approve without the style's fabric part).
+ */
+export async function getTechPackApproval(
+  ctx: CompanyContext,
+  tp: { id: string; number: string; project: { id: string } | null },
+): Promise<TechPack> {
+  if (tp.project) return getTechPack(ctx, tp.project.id);
+  // The tech pack was found through the company's own client; its parts are read with it too.
+  const [row, gaps] = await Promise.all([
+    prisma.techPack.findUnique({ where: { id: tp.id }, select: techPackSelect }),
+    techPackGaps(prisma, tp.id),
+  ]);
+  return {
+    ...techPackState(row, { fabrics: [], pieces: [] }),
+    techPackId: tp.id,
+    number: tp.number,
+    needsProject: true,
+    gaps,
+    can: { lock: false, approve: false },
+  };
+}
 
 function assertCanApprove(ctx: CompanyContext) {
   if (!ctx.can("production.techpack.approve")) {
@@ -198,29 +233,58 @@ function assertHasFabric(code: string, part: FabricPart) {
 }
 
 /**
+ * The style's tech pack inside the transaction, with the style locked: started
+ * if it has none yet, or, when a tech pack was named, refused if the link
+ * changed meanwhile.
+ */
+async function techPackForApproval(
+  ctx: CompanyContext,
+  tx: Prisma.TransactionClient,
+  project: { id: string; code: string },
+  expected: string | undefined,
+) {
+  await lockRow(tx, "ProductionProject", project.id);
+  if (expected) {
+    const found = await tx.techPack.findUnique({
+      where: { projectId: project.id },
+      select: { id: true },
+    });
+    if (found?.id !== expected) {
+      throw new AppError(
+        "CONFLICT",
+        `The tech pack of ${project.code} changed meanwhile. Open it again.`,
+      );
+    }
+    return expected;
+  }
+  return ensureProjectTechPack(ctx, project.id, tx);
+}
+
+/**
  * Locks a style's fabric part as it is now (Fabric first): its fabric can then
  * be booked before the whole tech pack is approved. Locking again takes the
  * part's changes in.
  */
-export async function lockFabricPart(ctx: CompanyContext, projectId: string, meta?: RequestMeta) {
+export async function lockFabricPart(
+  ctx: CompanyContext,
+  projectId: string,
+  meta?: RequestMeta,
+  techPackId?: string,
+) {
   assertCanApprove(ctx);
   const project = await loadProject(ctx, projectId);
   await runTransaction(async (tx) => {
-    await lockRow(tx, "ProductionProject", project.id);
+    const id = await techPackForApproval(ctx, tx, project, techPackId);
     const part = (await fabricPartsOf(tx, [project])).get(project.id)!;
     assertHasFabric(project.code, part);
     const now = new Date();
-    const lock = part as unknown as Prisma.InputJsonValue;
-    await tx.techPack.upsert({
-      where: { projectId: project.id },
-      create: {
-        companyId: ctx.company.id,
-        projectId: project.id,
-        fabricLock: lock,
+    await tx.techPack.update({
+      where: { id },
+      data: {
+        fabricLock: part as unknown as Prisma.InputJsonValue,
         fabricLockedAt: now,
         fabricLockedById: ctx.user.id,
       },
-      update: { fabricLock: lock, fabricLockedAt: now, fabricLockedById: ctx.user.id },
     });
     await auditInCompany(
       ctx,
@@ -243,14 +307,19 @@ export async function lockFabricPart(ctx: CompanyContext, projectId: string, met
  * Approves a style's tech pack for production as it is now (its fabric part
  * locked with it). Approving again takes the changes in.
  */
-export async function approveTechPack(ctx: CompanyContext, projectId: string, meta?: RequestMeta) {
+export async function approveTechPack(
+  ctx: CompanyContext,
+  projectId: string,
+  meta?: RequestMeta,
+  techPackId?: string,
+) {
   assertCanApprove(ctx);
   const project = await loadProject(ctx, projectId);
   await runTransaction(async (tx) => {
-    await lockRow(tx, "ProductionProject", project.id);
+    const id = await techPackForApproval(ctx, tx, project, techPackId);
     const part = (await fabricPartsOf(tx, [project])).get(project.id)!;
     assertHasFabric(project.code, part);
-    const gaps = await techPackGaps(tx, project.id);
+    const gaps = await techPackGaps(tx, id);
     if (gaps.length > 0) {
       throw new AppError(
         "CONFLICT",
@@ -259,19 +328,17 @@ export async function approveTechPack(ctx: CompanyContext, projectId: string, me
     }
     const now = new Date();
     const kept = part as unknown as Prisma.InputJsonValue;
-    const approved = {
-      status: "APPROVED" as const,
-      approvedPart: kept,
-      approvedAt: now,
-      approvedById: ctx.user.id,
-      fabricLock: kept,
-      fabricLockedAt: now,
-      fabricLockedById: ctx.user.id,
-    };
-    await tx.techPack.upsert({
-      where: { projectId: project.id },
-      create: { companyId: ctx.company.id, projectId: project.id, ...approved },
-      update: approved,
+    await tx.techPack.update({
+      where: { id },
+      data: {
+        status: "APPROVED",
+        approvedPart: kept,
+        approvedAt: now,
+        approvedById: ctx.user.id,
+        fabricLock: kept,
+        fabricLockedAt: now,
+        fabricLockedById: ctx.user.id,
+      },
     });
     await auditInCompany(
       ctx,
@@ -286,4 +353,37 @@ export async function approveTechPack(ctx: CompanyContext, projectId: string, me
     );
   });
   return getTechPack(ctx, project.id);
+}
+
+/** The style in production a tech pack is linked to; approval needs one. */
+async function linkedProjectOf(ctx: CompanyContext, techPackId: string) {
+  assertCanApprove(ctx);
+  const tp = await loadTechPack(ctx, techPackId);
+  if (!tp.project) {
+    throw new AppError(
+      "CONFLICT",
+      `${tp.number} is not linked to a style in production yet. Link it to a production project first: its fabric part and pieces come from there.`,
+    );
+  }
+  return { techPackId: tp.id, projectId: tp.project.id };
+}
+
+/** Locks the fabric part of a tech pack's style in production (from the tech pack's page). */
+export async function lockFabricPartOf(
+  ctx: CompanyContext,
+  techPackId: string,
+  meta?: RequestMeta,
+) {
+  const linked = await linkedProjectOf(ctx, techPackId);
+  return lockFabricPart(ctx, linked.projectId, meta, linked.techPackId);
+}
+
+/** Approves a tech pack for its style in production (from the tech pack's page). */
+export async function approveTechPackOf(
+  ctx: CompanyContext,
+  techPackId: string,
+  meta?: RequestMeta,
+) {
+  const linked = await linkedProjectOf(ctx, techPackId);
+  return approveTechPack(ctx, linked.projectId, meta, linked.techPackId);
 }

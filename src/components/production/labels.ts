@@ -172,9 +172,16 @@ export const productionHref = {
     `/production/projects/${encodeURIComponent(projectId)}/materials`,
   techPack: (projectId: string) =>
     `/api/production/projects/${encodeURIComponent(projectId)}/tech-pack`,
-  /** A style's tech pack screen: chart, AI draft, references, logos and colours. */
+  /** A style's tech pack from its project: opens it, or starts or links one. */
   techPackPage: (projectId: string) =>
     `/production/projects/${encodeURIComponent(projectId)}/tech-pack`,
+  /** Every tech pack (the Tech Pack menu). */
+  techPacks: () => "/tech-packs",
+  newTechPack: () => "/tech-packs/new",
+  /** A tech pack's page: chart, AI draft, references, logos, colours and approval. */
+  techPackOf: (techPackId: string) => `/tech-packs/${encodeURIComponent(techPackId)}`,
+  /** A tech pack's PDF by the tech pack (its style's once linked). */
+  techPackPdf: (techPackId: string) => `/api/tech-packs/${encodeURIComponent(techPackId)}/pdf`,
   /** Fabric and trims bookings (supplier POs and market purchases), and their PDF. */
   bookings: (filter: { batchId?: string } = {}) =>
     filter.batchId

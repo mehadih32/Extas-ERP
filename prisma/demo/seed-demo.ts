@@ -11,7 +11,9 @@
  *   4. and the v6.2 sample order for Mehedi 2.0 (./v62-samples.ts), once, waiting
  *      for the owner's Approve (the AI stays off);
  *   5. and the v6.3 sample skill for the fabric expert X05 (./v63-samples.ts),
- *      once, waiting for its test.
+ *      once, waiting for its test;
+ *   6. and the v6.4 sample tech pack from a buyer's brief (./v64-tech-pack.ts),
+ *      once, not linked to a production project.
  * It stops, loading nothing, unless DEMO_SITE=on and the database is the demo's own.
  *   SEED_ADMIN_EMAIL          the owner's email
  *   DEMO_OWNER_PASSWORD_HASH  the owner's password hash on the live ERP
@@ -27,6 +29,7 @@ import {
   loadTestBookingsDemo,
   loadV62SamplesDemo,
   loadV63SamplesDemo,
+  loadV64TechPackDemo,
 } from "./load-demo";
 
 async function main() {
@@ -84,6 +87,17 @@ async function main() {
     );
   } catch (error) {
     console.error("! v6.3 sample skill: it could not be made", error);
+  }
+
+  try {
+    const techPack = await loadV64TechPackDemo(owner.id, company.id);
+    console.log(
+      techPack
+        ? `✓ v6.4 sample tech pack ${techPack.number} from a buyer's brief, not linked yet`
+        : "✓ The v6.4 sample tech pack is there already",
+    );
+  } catch (error) {
+    console.error("! v6.4 sample tech pack: it could not be made", error);
   }
 }
 

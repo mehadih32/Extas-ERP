@@ -789,9 +789,14 @@ run("v6.4 backups", () => {
         clientSecret: "GOCSPX-the-owners-secret",
       });
       const { newServer } = await backups.getBackupOverview();
-      expect(newServer.command).toBe(
-        `curl -fsSL https://raw.githubusercontent.com/mehadih32/Extas-ERP/${COMMIT}/deploy/bootstrap.sh -o restore.sh && echo "${BOOTSTRAP_SHA}  restore.sh" | sha256sum -c && sudo bash restore.sh ${COMMIT}`,
-      );
+      // Four lines, each but the last ending in "&&": a PDF may copy them as one line or four.
+      expect(newServer.commandLines).toEqual([
+        `c=${COMMIT} &&`,
+        "curl -fsSL https://raw.githubusercontent.com/mehadih32/Extas-ERP/$c/deploy/bootstrap.sh -o restore.sh &&",
+        `echo "${BOOTSTRAP_SHA} restore.sh" | sha256sum -c &&`,
+        "sudo bash restore.sh $c",
+      ]);
+      expect(newServer.command).toBe(newServer.commandLines!.join(" "));
       expect(newServer.command).not.toContain("GOCSPX");
       expect(newServer.command).not.toMatch(/token|secret|GITHUB_|Authorization/i);
     });

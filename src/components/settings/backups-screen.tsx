@@ -161,7 +161,7 @@ function StatusPanel({
             <DatabaseBackupIcon aria-hidden />
             Back up now
           </Button>
-          <GuideLinks ready={overview.guideReady} />
+          <GuideLinks />
         </div>
       }
     >
@@ -275,15 +275,8 @@ function StatusPanel({
   );
 }
 
-function GuideLinks({ ready }: { ready: boolean }) {
-  if (!ready) {
-    return (
-      <Button type="button" variant="outline" disabled title="The guide is made after the update">
-        <DownloadIcon aria-hidden />
-        Download the restore guide
-      </Button>
-    );
-  }
+/** The restore guide with "Your restore details", made when it is asked for. */
+function GuideLinks() {
   return (
     <>
       <Button asChild variant="outline">
@@ -1384,7 +1377,7 @@ function DriveBackupsPanel({
 // =============================================================================
 
 function NewServerPanel({ overview }: { overview: Overview }) {
-  const { command } = overview.newServer;
+  const { command, commandLines } = overview.newServer;
   const [copied, setCopied] = useState(false);
   return (
     <Panel
@@ -1392,7 +1385,7 @@ function NewServerPanel({ overview }: { overview: Overview }) {
       id="backups-new-server-heading"
       action={
         <div className="flex flex-wrap gap-2">
-          <GuideLinks ready={overview.guideReady} />
+          <GuideLinks />
         </div>
       }
     >
@@ -1405,7 +1398,7 @@ function NewServerPanel({ overview }: { overview: Overview }) {
         {command ? (
           <div className="grid min-w-0 gap-2">
             <pre className="max-w-full overflow-x-auto rounded-md border bg-muted/40 p-3 font-mono text-xs break-all whitespace-pre-wrap">
-              {command}
+              {commandLines ? commandLines.join("\n") : command}
             </pre>
             <div className="flex flex-wrap items-center gap-2">
               <Button

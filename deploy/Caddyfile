@@ -3,6 +3,10 @@
 # are sent on to https://.
 {
 	email {$ACME_EMAIL}
+	# Certificates through Cloudflare's DNS check, while a Cloudflare token is set
+	# (deploy.sh writes tls/cloudflare.caddy; README.md, "HTTPS behind Cloudflare").
+	# Without it, Let's Encrypt checks over port 80 as always.
+	import tls/*.caddy
 }
 
 {$APP_DOMAIN} {

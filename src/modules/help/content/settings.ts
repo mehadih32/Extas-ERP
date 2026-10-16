@@ -1,4 +1,21 @@
-import type { HelpSection } from "../types";
+import { GUIDE_ERRORS, GUIDE_PARTS } from "@/modules/backups/restore-guide";
+
+import type { HelpSection, HelpStep } from "../types";
+
+/**
+ * The restore guide's steps (the same words as its PDF, in Bengali): each
+ * step's number, title and action, and what to watch for.
+ */
+const newServerSteps: HelpStep[] = GUIDE_PARTS.flatMap((part) =>
+  part.steps.map((step) => ({
+    text: `${step.id}. ${step.title.bn}: ${step.text.bn}${step.tip ? ` খেয়াল রাখুন: ${step.tip.bn}` : ""}`,
+  })),
+);
+
+/** The restore command's errors and notes, one tip each. */
+const newServerErrors = GUIDE_ERRORS.map(
+  (error) => `${error.code}: ${error.meaning.bn} যা করবেন: ${error.todo.bn}`,
+);
 
 /** Settings: the team, roles and permissions, and the company's details and rules. */
 export const settingsHelp: HelpSection = {
@@ -575,6 +592,40 @@ export const settingsHelp: HelpSection = {
         "রিস্টোর ভুল হলে ফেরা যায়: ইনবক্সের বার্তায় যে নিরাপত্তা কপির নাম থাকে, সেটি দিয়ে আবার রিস্টোর করুন (সার্ভারে sudo ./deploy/restore.sh)।",
         "মহড়া কখনো লাইভ বা ডেমো ডাটাবেসে হাত দেয় না: শুধু extas_restore_test_ নামের অস্থায়ী ডাটাবেসে কাজ করে এবং শেষে সেটি মুছে দেয়।",
         "সার্ভার আপডেট হলে কমান্ডটি নতুন সংস্করণের সঙ্গে মিলিয়ে বদলায়; পুরনো কমান্ডও কাজ করে, তবে নতুন গাইড নামিয়ে রাখা ভালো।",
+      ],
+    },
+    {
+      slug: "backups-new-server",
+      title: "সার্ভার হারালে নতুন সার্ভারে সব ফেরত আনবেন যেভাবে (রিস্টোর গাইড)",
+      summary:
+        "Azure-এ নতুন সার্ভার বানানো থেকে PuTTY, এক লাইনের কমান্ড, প্রশ্নের উত্তর, ফোনে Google সাইন-ইন আর ERP খুলে দেখা পর্যন্ত প্রতিটি ধাপ, সঙ্গে প্রতিটি ভুলের কোড ও তখন কী করবেন।",
+      keywords: [
+        "new server",
+        "restore guide",
+        "server lost",
+        "azure",
+        "putty",
+        "one command",
+        "error code",
+        "cloudflare",
+        "নতুন সার্ভার",
+        "রিস্টোর গাইড",
+        "সার্ভার হারানো",
+        "পুটি",
+        "ভুলের কোড",
+      ],
+      routes: ["/settings/backups"],
+      who: "শুধু প্ল্যাটফর্মের মালিক (সব কোম্পানির মালিক Super Admin)।",
+      steps: [
+        {
+          text: "আগে থেকেই তৈরি থাকুন: “Settings” > “Backups” খুলে “Download the restore guide” চাপুন (ইংরেজিতে চাইলে “English copy”)। এই PDF-এ সব ধাপ বড় ছবিসহ আছে, আর “Your restore details” ঘরে আপনার ওয়েব ঠিকানা ও Google client লেখা থাকে। কম্পিউটারে রেখে দিন। একই গাইড Google Drive-এর “Extas ERP Backups” ফোল্ডারেও থাকে, প্রতি মাসে ও কিছু বদলালেই নতুন করে বানানো হয়।",
+        },
+        ...newServerSteps,
+      ],
+      tips: [
+        "কমান্ড কোথাও থেমে গেলে স্ক্রিনে Error R12 বা Note W03 ধরনের কোড আসে। নিচে প্রতিটি কোডের মানে আর তখন কী করবেন লেখা আছে। কমান্ড আবার চালালে কোনো ক্ষতি হয় না।",
+        ...newServerErrors,
+        "এই সার্ভারে আগে থেকেই Extas ERP থাকলে কমান্ড তার তথ্য বদলায় না, যতক্ষণ না আপনি তার ওয়েব ঠিকানা টাইপ করে নিশ্চিত করেন; আর সেই সার্ভারের নিজের ENCRYPTION_KEY কখনো বদলায় না।",
       ],
     },
   ],

@@ -216,15 +216,26 @@ export function presentRun(run: BackupRun & { triggeredBy?: { id: string; name: 
  * The one command that restores on a new server (G8): it downloads the small
  * public bootstrap script at the running version's commit, checks its SHA-256
  * and runs it. It holds no secret: the script asks for everything it needs as
- * hidden input. Null until deploy.sh has recorded the running version.
+ * hidden input. Four lines, each but the last ending in "&&", so it works
+ * whether a PDF viewer copies it as four lines or as one; one space between
+ * the checksum and the file name (sha256sum reads that too), as copying from a
+ * PDF may merge two. Null until deploy.sh has recorded the running version.
  */
-export function restoreCommand(host: Pick<HostVersion, "commit" | "bootstrapSha256">) {
+export function restoreCommandLines(
+  host: Pick<HostVersion, "commit" | "bootstrapSha256">,
+): string[] | null {
   if (!host.commit || !host.bootstrapSha256) return null;
-  return (
-    `curl -fsSL https://raw.githubusercontent.com/${REPOSITORY()}/${host.commit}/deploy/bootstrap.sh -o restore.sh` +
-    ` && echo "${host.bootstrapSha256}  restore.sh" | sha256sum -c` +
-    ` && sudo bash restore.sh ${host.commit}`
-  );
+  return [
+    `c=${host.commit} &&`,
+    `curl -fsSL https://raw.githubusercontent.com/${REPOSITORY()}/$c/deploy/bootstrap.sh -o restore.sh &&`,
+    `echo "${host.bootstrapSha256} restore.sh" | sha256sum -c &&`,
+    "sudo bash restore.sh $c",
+  ];
+}
+
+/** The one command on one line (the screen's "Copy the command"). */
+export function restoreCommand(host: Pick<HostVersion, "commit" | "bootstrapSha256">) {
+  return restoreCommandLines(host)?.join(" ") ?? null;
 }
 
 /** The new-server facts for the screen and the guide: the command, and what it checks. */
@@ -232,6 +243,7 @@ export async function newServerFacts() {
   const host = await hostVersion();
   return {
     command: restoreCommand(host),
+    commandLines: restoreCommandLines(host),
     commit: host.commit,
     bootstrapSha256: host.bootstrapSha256,
     version: host.version,
@@ -243,7 +255,7 @@ export async function newServerFacts() {
 export async function getBackupOverview() {
   const config = await getBackupConfig();
   const include = { triggeredBy: { select: { id: true, name: true } } };
-  const [lastRun, lastSuccess, lastTest, unsent, pgDump, newServer, guides] = await Promise.all([
+  const [lastRun, lastSuccess, lastTest, unsent, pgDump, newServer] = await Promise.all([
     prisma.backupRun.findFirst({
       where: { kind: "BACKUP" },
       orderBy: { startedAt: "desc" },
@@ -269,7 +281,6 @@ export async function getBackupOverview() {
     }),
     pgDumpVersion(),
     newServerFacts(),
-    guideFiles(),
   ]);
   const { backupHealth } = await import("@/modules/backups/status");
   return {
@@ -281,8 +292,6 @@ export async function getBackupOverview() {
     /** Backups on the server not yet checked in Google Drive. */
     notSent: unsent,
     newServer,
-    /** The restore guide is ready to download. */
-    guideReady: guides.length > 0,
     server: { backupDir: backupRoot(), pgDump },
   };
 }
@@ -819,6 +828,8 @@ async function platformOwnerEmail(): Promise<string | null> {
 export type RestoreFacts = {
   format: 2;
   encryptionKey: string | null;
+  /** Keys of servers restored onto this one (ENCRYPTION_OLD_KEYS): they open older secrets. */
+  encryptionOldKeys: string[];
   appUrl: string | null;
   appDomain: string | null;
   ownerEmail: string | null;
@@ -850,6 +861,10 @@ export async function restoreFacts(config: BackupConfig, createdAt: Date): Promi
   return {
     format: 2,
     encryptionKey: process.env.ENCRYPTION_KEY ?? null,
+    encryptionOldKeys: (process.env.ENCRYPTION_OLD_KEYS ?? "")
+      .split(",")
+      .map((k) => k.trim())
+      .filter(Boolean),
     appUrl,
     appDomain,
     // A new server checks every screen as this owner after the restore.

@@ -2,6 +2,7 @@ import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import { getBackupConfig, runBackup, settleFinishedRuns } from "@/modules/backups/backup.service";
 import { sendSafetyCopies, sendUnsent } from "@/modules/backups/drive-copies";
+import { ensureLocalGuides, guideTick } from "@/modules/backups/guide.service";
 import { writeHostKey } from "@/modules/backups/recovery-key.service";
 import { recordRestoreResult } from "@/modules/backups/restore.service";
 import { drillDueAt, previousRunAt, scheduleOf } from "@/modules/backups/schedule";
@@ -15,8 +16,9 @@ import { runTestRestore } from "@/modules/backups/test-restore";
  * down runs as soon as it is back), and the same for the monthly restore drill.
  * It also sends again what did not reach Google Drive, sends new update safety
  * copies, records a restore the server finished, and tells the owner when a
- * backup failed or is late (status.ts). When several processes run, the
- * single-job lock lets only one of them start each job.
+ * backup failed or is late (status.ts), and keeps the restore guide up to date
+ * on the server and in Google Drive (guide.service.ts). When several
+ * processes run, the single-job lock lets only one of them start each job.
  */
 
 const CHECK_EVERY_MS = 60_000;
@@ -85,6 +87,9 @@ export async function backupClock(now: Date = new Date()) {
   await watchBackups(now).catch((e: unknown) =>
     console.error("[backups] could not check the backups' health", e),
   );
+  await guideTick(now).catch((e: unknown) =>
+    console.error("[backups] the restore guide could not be made", e),
+  );
 }
 
 export function startBackupScheduler() {
@@ -98,6 +103,10 @@ export function startBackupScheduler() {
   void getBackupConfig()
     .then(writeHostKey)
     .catch((error: unknown) => console.error("[backups] could not write the public key", error));
+  // The guide for the backups (no details in it), before the first backup.
+  void ensureLocalGuides().catch((error: unknown) =>
+    console.error("[backups] the restore guide could not be made", error),
+  );
   timer = setInterval(() => void backupClock(), CHECK_EVERY_MS);
   timer.unref();
   console.log("[backups] backup scheduler started");

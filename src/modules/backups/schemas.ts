@@ -117,3 +117,6 @@ export const restoreRequestSchema = z.object({
 });
 
 export const backupFileSchema = z.object({ file: z.enum(BACKUP_FILES) });
+
+/** The restore guide's language: Bangla (bn) or English (en). */
+export const guideLangSchema = z.enum(["bn", "en"]);

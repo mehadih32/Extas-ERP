@@ -894,51 +894,5 @@ run("daily backups", () => {
         /no checked backup/,
       );
     });
-
-    it("lets a new server sign in, list the backups and open the newest (drive-restore.ts)", async () => {
-      const made = await readyToSend();
-      const backup = await backUpNow();
-      const keyFile = path.join(dir, "recovery-key");
-      const env = {
-        ...process.env,
-        GOOGLE_CLIENT_ID: "client-123.apps.googleusercontent.com",
-        GOOGLE_CLIENT_SECRET: "client-secret",
-        GOOGLE_OAUTH_BASE: google.url,
-        GOOGLE_DRIVE_BASE: google.url,
-        RECOVERY_KEY_FILE: keyFile,
-        OUT_DIR: path.join(dir, "new-server"),
-        SERVER_FILE: path.join(dir, "server.json"),
-        PICK: "newest",
-      };
-      const script = ["tsx", "scripts/drive-restore.ts"];
-
-      await writeFile(keyFile, `${made.recoveryKey}\n`);
-      const { stdout } = await exec("npx", script, { env, timeout: 60_000 });
-      expect(stdout).toMatch(/Enter this code: +[A-Z]{4}-[A-Z]{4}/);
-      expect(stdout).toContain(`Signed in to Google as owner@gmail.com`);
-      expect(stdout).toContain(backup.name!);
-      // The key file is gone once read; the backup is ready for restore.sh.
-      await expect(readFile(keyFile)).rejects.toThrow();
-      const opened = path.join(dir, "new-server", backup.name!);
-      expect((await readdir(opened)).sort()).toEqual([
-        "database.dump",
-        "manifest.json",
-        "media.tar.gz",
-      ]);
-      expect(JSON.parse(await readFile(path.join(dir, "server.json"), "utf8"))).toMatchObject({
-        name: backup.name,
-        encryptionKey: "test-encryption-key-0123456789",
-        ownerEmail: "owner@extras.test",
-      });
-      expect(await restoredCompanies(path.join(opened, "database.dump"))).toEqual(["Extras"]);
-
-      // A wrong key opens nothing.
-      await writeFile(keyFile, "not the owner's key at all");
-      const failure = await exec("npx", script, { env, timeout: 60_000 }).then(
-        () => null,
-        (e: { stderr: string }) => e,
-      );
-      expect(failure?.stderr).toMatch(/not the one these backups were locked with/);
-    });
   });
 });

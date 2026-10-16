@@ -52,3 +52,32 @@ export function fitTabs({
     more: all.filter((i) => !shown.has(i)),
   };
 }
+
+/** A row's tabs as last measured: which fit (`fit`), for which list of tabs (`key`). */
+export type MeasuredFit = { key: string; fit: TabFit };
+
+/**
+ * The tabs to show in the row and under "More". Until the row is measured, or when
+ * the tabs have changed since it was (another section's tabs, a tab added or taken
+ * away), every tab is in the row: a measurement of other tabs never picks places
+ * these tabs do not have.
+ */
+export function placeTabs<T>(
+  tabs: readonly T[],
+  measured: MeasuredFit | null,
+  key: string,
+): { shown: T[]; under: T[]; measured: boolean } {
+  const fit = measured?.key === key ? measured.fit : null;
+  const places = fit ? [...fit.shown, ...fit.more] : [];
+  const fits =
+    fit !== null &&
+    places.length === tabs.length &&
+    new Set(places).size === tabs.length &&
+    places.every((i) => Number.isInteger(i) && i >= 0 && i < tabs.length);
+  if (!fits) return { shown: [...tabs], under: [], measured: false };
+  return {
+    shown: fit.shown.map((i) => tabs[i]!),
+    under: fit.more.map((i) => tabs[i]!),
+    measured: true,
+  };
+}

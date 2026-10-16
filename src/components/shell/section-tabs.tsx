@@ -14,7 +14,7 @@ import {
 import { cn } from "@/lib/utils";
 
 import { activeTabHref } from "./nav-items";
-import { fitTabs, type TabFit } from "./tab-fit";
+import { fitTabs, type MeasuredFit, placeTabs } from "./tab-fit";
 
 const tabClass =
   "-mb-px inline-flex shrink-0 items-center gap-1 rounded-t-sm border-b-2 pt-1 pb-3 text-sm whitespace-nowrap transition-colors outline-none focus-visible:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50";
@@ -50,7 +50,7 @@ export function SectionTabs({
   const currentIndex = tabs.findIndex((tab) => tab.href === current);
   const rowRef = useRef<HTMLDivElement>(null);
   const measureRef = useRef<HTMLDivElement>(null);
-  const [fit, setFit] = useState<TabFit | null>(null);
+  const [measured, setMeasured] = useState<MeasuredFit | null>(null);
   const signature = tabs.map((tab) => `${tab.href} ${tab.label}`).join("|");
 
   useLayoutEffect(() => {
@@ -69,10 +69,13 @@ export function SectionTabs({
         gap: parseFloat(getComputedStyle(measure).columnGap) || 0,
         current: currentIndex,
       });
-      setFit((prev) =>
-        prev && prev.shown.join() === next.shown.join() && prev.more.join() === next.more.join()
+      setMeasured((prev) =>
+        prev &&
+        prev.key === signature &&
+        prev.fit.shown.join() === next.shown.join() &&
+        prev.fit.more.join() === next.more.join()
           ? prev
-          : next,
+          : { key: signature, fit: next },
       );
     };
     update();
@@ -83,8 +86,8 @@ export function SectionTabs({
     return () => observer.disconnect();
   }, [currentIndex, signature]);
 
-  const shown = fit ? fit.shown.map((i) => tabs[i]!) : tabs;
-  const under = fit ? fit.more.map((i) => tabs[i]!) : [];
+  // The tabs as measured; every tab until the row is measured for these very tabs.
+  const { shown, under, measured: fitted } = placeTabs(tabs, measured, signature);
 
   return (
     <nav
@@ -115,7 +118,7 @@ export function SectionTabs({
         ref={rowRef}
         className={cn(
           "flex w-full items-end gap-6",
-          !fit && "[scrollbar-width:thin] overflow-x-auto overflow-y-hidden",
+          !fitted && "[scrollbar-width:thin] overflow-x-auto overflow-y-hidden",
         )}
       >
         {shown.map((tab) => {

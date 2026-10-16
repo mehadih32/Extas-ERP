@@ -1,45 +1,19 @@
+import { costOf, listedModel } from "./price-list";
+
 /*
  * Which model does which task (the ERP's own Claude models here; OpenAI and
  * Gemini models, read from the providers, in providers.ts). The owner's rule: the big model only for
  * thinking work, smaller ones for everything else; Fable 5.1 stays off until
  * the owner allows it for a very hard problem. The system's choices below can
- * be changed per task on AI Center > Models. Prices are US dollars per million
- * tokens, from the Claude price list (October 2026).
+ * be changed per task on AI Center > Models. Their prices are on the built-in
+ * price list (price-list.ts), with every other provider's.
  */
 
 export const AI_MODELS = [
-  {
-    id: "claude-opus-5-5",
-    label: "Opus 5.5",
-    size: "Big",
-    input: 4,
-    output: 20,
-    cacheRead: 0.2,
-  },
-  {
-    id: "claude-sonnet-5-5",
-    label: "Sonnet 5.5",
-    size: "Medium",
-    input: 2,
-    output: 10,
-    cacheRead: 0.2,
-  },
-  {
-    id: "claude-haiku-5-5",
-    label: "Haiku 5.5",
-    size: "Small",
-    input: 0.1,
-    output: 0.5,
-    cacheRead: 0.01,
-  },
-  {
-    id: "claude-fable-5-1",
-    label: "Fable 5.1",
-    size: "Largest (off unless you allow it)",
-    input: 10,
-    output: 50,
-    cacheRead: 0.25,
-  },
+  { id: "claude-opus-5-5", label: "Opus 5.5", size: "Big" },
+  { id: "claude-sonnet-5-5", label: "Sonnet 5.5", size: "Medium" },
+  { id: "claude-haiku-5-5", label: "Haiku 5.5", size: "Small" },
+  { id: "claude-fable-5-1", label: "Fable 5.1", size: "Largest (off unless you allow it)" },
 ] as const;
 
 export type AiModelId = (typeof AI_MODELS)[number]["id"];
@@ -51,36 +25,23 @@ export const MODEL_IDS = AI_MODELS.map((m) => m.id) as unknown as readonly [
 
 export const modelInfo = (id: string) => AI_MODELS.find((m) => m.id === id) ?? null;
 
-/** Writing to the prompt cache costs a quarter more than plain input. */
-export const CACHE_WRITE_FACTOR = 1.25;
-
-/**
- * Haiku 5.5 costs more when a prompt is over 100K tokens ($0.50 / $2.50).
- * The ERP's prompts stay far below that; the higher price is used above it.
- */
-const HAIKU_LONG = { above: 100_000, input: 0.5, output: 2.5 };
-
 export type TokenUse = {
   input: number;
   output: number;
   cacheRead?: number;
   cacheWrite?: number;
+  /** Sent through the provider's batch service (its batch prices). */
+  batch?: boolean;
 };
 
-/** What a call cost in US dollars, from its token counts. */
+/**
+ * What a call to one of the ERP's own Claude models cost in US dollars, at the
+ * built-in price list (long-prompt prices included); 0 for any
+ * other model (prices.service.ts costIn knows every price).
+ */
 export function costUsd(model: string, use: TokenUse): number {
-  const m = modelInfo(model);
-  if (!m) return 0;
-  const prompt = use.input + (use.cacheRead ?? 0) + (use.cacheWrite ?? 0);
-  const long = m.id === "claude-haiku-5-5" && prompt > HAIKU_LONG.above;
-  const input = long ? HAIKU_LONG.input : m.input;
-  const output = long ? HAIKU_LONG.output : m.output;
-  const dollars =
-    use.input * input +
-    use.output * output +
-    (use.cacheRead ?? 0) * m.cacheRead +
-    (use.cacheWrite ?? 0) * input * CACHE_WRITE_FACTOR;
-  return dollars / 1_000_000;
+  const m = modelInfo(model) && listedModel(model);
+  return m ? costOf(m, use, "anthropic") : 0;
 }
 
 export type AiTask = {

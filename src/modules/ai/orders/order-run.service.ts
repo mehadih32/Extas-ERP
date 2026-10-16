@@ -24,7 +24,8 @@ import { type Ask, askerFor, toolInputOf } from "../claude";
 import type { TokenUse } from "../models";
 import { mehediSystem } from "../persona";
 import { costIn, priceBook } from "../prices.service";
-import { aiSettingsOf, modelForWork } from "../settings.service";
+import { modelLabel, providerOf } from "../providers";
+import { aiSettingsOf, modelForWork, readModelsOf } from "../settings.service";
 import { budgetOf } from "../usage.service";
 import {
   DRY_RUNS,
@@ -597,7 +598,8 @@ const ORDER_WORK: ReadonlyArray<{
 
 /**
  * What the AI work on this order may cost, on the company's models, prices
- * and dollar rate (work on a model without a price counts as nothing).
+ * and dollar rate. Work on a model with no price is blocked (v6.4 A7): it is
+ * not counted, and the models are named so the plan says so.
  */
 export async function estimateOrderAi(companyId: string, styles: number) {
   const [settings, budget, book] = await Promise.all([
@@ -605,14 +607,22 @@ export async function estimateOrderAi(companyId: string, styles: number) {
     budgetOf(companyId),
     priceBook(companyId),
   ]);
+  const read = readModelsOf(settings);
   let usd = 0;
+  const blocked = new Set<string>();
   for (const w of ORDER_WORK) {
     const times = w.perStyle ? Math.max(1, styles) : 1;
-    usd += costIn(book, modelForWork(settings, w.task), w.use).usd * times;
+    const model = modelForWork(settings, w.task);
+    const priced = costIn(book, model, w.use);
+    if (!priced.known) blocked.add(modelLabel(model, read[providerOf(model)]?.models));
+    usd += priced.usd * times;
   }
-  return new Prisma.Decimal(usd.toFixed(6))
-    .times(budget.usdRate)
-    .toDecimalPlaces(0, Prisma.Decimal.ROUND_UP);
+  return {
+    cost: new Prisma.Decimal(usd.toFixed(6))
+      .times(budget.usdRate)
+      .toDecimalPlaces(0, Prisma.Decimal.ROUND_UP),
+    blocked: [...blocked],
+  };
 }
 
 async function factoryLine(ctx: CompanyContext, costingCheck: CheckRow[] | null) {
@@ -639,6 +649,8 @@ function planText(input: {
   profit: string | null;
   factory: string;
   estimate: string;
+  /** Models with no price that work on this order would use (blocked). */
+  blocked: string[];
   mode: "DRY_RUN" | "ASK";
   dryRunNo: number;
 }) {
@@ -673,6 +685,11 @@ function planText(input: {
     ...(risks.length ? risks.map((r) => `- ${r.label}: ${r.reason}`) : ["- None found."]),
     "",
     `AI cost for this order: about ${input.estimate} (an estimate).`,
+    ...(input.blocked.length
+      ? [
+          `Not counted: ${input.blocked.join(", ")} ${input.blocked.length === 1 ? "has" : "have"} no price yet, so that work is blocked until the price is added in AI Center > Models.`,
+        ]
+      : []),
   ].join("\n");
 }
 
@@ -726,7 +743,8 @@ export async function makePlan(
     costingNumber: costing?.number ?? null,
     profit: costing?.profitPercent?.toString() ?? null,
     factory: await factoryLine(ctx, card),
-    estimate: money(estimate, ctx.company.currency),
+    estimate: money(estimate.cost, ctx.company.currency),
+    blocked: estimate.blocked,
     mode,
     dryRunNo: approved + 1,
   });
@@ -776,7 +794,7 @@ export async function makePlan(
       plannedAt: new Date(),
       mode,
       status: "WAITING_OWNER",
-      estimatedAiCost: estimate,
+      estimatedAiCost: estimate.cost,
     },
   });
   if (planByAi) {

@@ -67,6 +67,9 @@ export function recordHref(ctx: Can, link: RecordLink | null): string | null {
     case "AiBudget":
       // The AI's spending passed the alert percentage of the month's budget.
       return ctx.can("ai.view") || ctx.can("ai.manage") ? "/ai/costs" : null;
+    case "AiModelPrice":
+      // Something tried to use a model with no price (blocked): its price on Models.
+      return ctx.can("ai.view") || ctx.can("ai.manage") ? "/ai/models#ai-prices-heading" : null;
     case "AiDraft":
       // A draft Mehedi 2.0 made for the owner to send (a buyer's follow-up, a reply waiting).
       return ctx.can("ai.view") || ctx.can("ai.manage") ? `/ai/drafts#draft-${id}` : null;
@@ -114,6 +117,7 @@ export const RECORD_NOUNS: Record<string, string> = {
   MyItems: "my items",
   MySalary: "my money",
   AiBudget: "the AI costs",
+  AiModelPrice: "the model prices",
   AiDraft: "the draft",
   AiRequest: "the AI's requests",
   OrderCosting: "the costing sheet",

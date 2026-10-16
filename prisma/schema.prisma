@@ -5941,21 +5941,30 @@ model AiTestRun {
   @@index([companyId, book, createdAt])
 }
 
-/// A model's price (AI Center > Models > Prices), US dollars per million
-/// tokens. The built-in Claude models have the ERP's own prices until one is
-/// set here; any other model has none ("price unknown") until the owner sets it.
+/// The owner's price of a model (AI Center > Models), US dollars per million
+/// tokens, over the built-in price list (modules/ai/price-list.ts). A model on
+/// no list and without a price here is blocked (v6.4 A7). A row without prices
+/// only remembers the day the owner was told such a model is blocked.
 model AiModelPrice {
-  id            String   @id @default(cuid())
-  companyId     String
+  id              String   @id @default(cuid())
+  companyId       String
   /// The model ("claude-…", "openai:…" or "google:…").
-  model         String
-  provider      String
+  model           String
+  provider        String
   /// Null: not known.
-  inputPerM     Decimal? @db.Decimal(12, 4)
-  outputPerM    Decimal? @db.Decimal(12, 4)
-  cacheReadPerM Decimal? @db.Decimal(12, 4)
-  updatedById   String?
-  updatedAt     DateTime @updatedAt
+  inputPerM       Decimal? @db.Decimal(12, 4)
+  outputPerM      Decimal? @db.Decimal(12, 4)
+  cacheReadPerM   Decimal? @db.Decimal(12, 4)
+  /// Writing to the provider's prompt cache (v6.4); null: as input (Claude: a quarter more).
+  cacheWritePerM  Decimal? @db.Decimal(12, 4)
+  /// Work through the provider's batch service (v6.4); null: as plain work.
+  batchInputPerM  Decimal? @db.Decimal(12, 4)
+  batchOutputPerM Decimal? @db.Decimal(12, 4)
+  /// The company day (YYYY-MM-DD) the owner was last told this model is blocked
+  /// for having no price: once a day per model (v6.4).
+  blockedNoticeOn String?
+  updatedById     String?
+  updatedAt       DateTime @updatedAt
 
   company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
   updatedBy User?   @relation("AiModelPriceUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)

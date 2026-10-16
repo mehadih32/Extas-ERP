@@ -455,7 +455,7 @@ export const gettingStartedHelp: HelpSection = {
           },
         },
         {
-          text: "এআই: “AI” > “Settings”-এ Claude, OpenAI ও Gemini-র key, প্রতিটির টেস্টসহ। “Models”-এ “Read models from providers” দিয়ে প্রতিটি কোম্পানির মডেলের তালিকা, “Which model does which task”-এ যেকোনো কাজে যেকোনো মডেল, আর “Prices”-এ দামের টেবিল (জানা না থাকলে “Price unknown”)। নতুন মডেল সেই কাজের টেস্ট পাস না করা পর্যন্ত Do-তে কাজ করে না; সব নিরাপত্তার নিয়ম সব কোম্পানির জন্য একই।",
+          text: "এআই: “AI” > “Settings”-এ Claude, OpenAI ও Gemini-র key, প্রতিটির টেস্টসহ। “Models”-এ “Read models from providers” দিয়ে প্রতিটি কোম্পানির মডেলের তালিকা, “Which model does which task”-এ যেকোনো কাজে যেকোনো মডেল, আর “Prices”-এ Claude, OpenAI ও Gemini-র দাম, প্রোভাইডারের অফিশিয়াল দামের পাতা থেকে (দাম না থাকলে মডেলটি “No price: blocked”: এআই তাতে কিছু পাঠায় না)। নতুন মডেল সেই কাজের টেস্ট পাস না করা পর্যন্ত Do-তে কাজ করে না; সব নিরাপত্তার নিয়ম সব কোম্পানির জন্য একই।",
         },
         {
           text: "খরচ: “Budget & Costs”-এ “Today”, “Yesterday”, “One day” বা “Custom range”; প্রতিটি খরচ “By purpose”, “By place in the ERP”, “By agent” ও “By model” অনুযায়ী মোটসহ। “Bill per provider”-এ Claude, OpenAI ও Gemini-র আলাদা বিল, চাইলে “Limit per provider, per month”। আজকের ও এ মাসের খরচ চ্যাটে, Help Center-এর “Ask the Help AI”-তে আর “AI Home”-এ দেখায়।",

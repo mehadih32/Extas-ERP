@@ -6,7 +6,8 @@ import { ZodError } from "zod";
  * v6.3 D: AI with Claude, OpenAI and Gemini. Each provider's key is kept
  * locked and tested for free by reading its models from the provider; any
  * task and any agent can run on any provider's model through the one door,
- * with its cost per provider (or "price unknown") and a monthly limit per
+ * with its cost per provider (a model with no price is blocked since v6.4,
+ * tests/integration/ai-model-prices.test.ts) and a monthly limit per
  * provider; a model that is not built in does a task on Do only after it
  * passes that task's test; and every safety rule is the same on every
  * provider. The providers are a local stand-in speaking their HTTP APIs.
@@ -77,12 +78,21 @@ run("AI with Claude, OpenAI and Gemini", () => {
   let fake: FakeAi;
   let env: Env;
 
-  /** AI on, with the OpenAI and Gemini keys saved and their models read. */
+  /**
+   * AI on, with the OpenAI and Gemini keys saved, their models read, and the
+   * test models priced (since v6.4 a model with no price is blocked).
+   */
   async function connect(...providers: Array<"openai" | "google">) {
     await setAiSwitch(env.owner, true);
     for (const p of providers) {
       await setProviderKey(env.owner, { provider: p, key: fake.keys[p] });
       expect((await testProviderKey(env.owner, p)).ok).toBe(true);
+    }
+    if (providers.includes("openai")) {
+      await setModelPrice(env.owner, { model: "openai:gpt-test", input: "1.25", output: "10" });
+    }
+    if (providers.includes("google")) {
+      await setModelPrice(env.owner, { model: "google:gemini-test", input: "0.3", output: "2.5" });
     }
   }
 
@@ -196,6 +206,12 @@ run("AI with Claude, OpenAI and Gemini", () => {
       "VALIDATION",
       /did not offer/,
     );
+    // Only a model with a price (v6.4 A7).
+    await expectAppError(
+      setTaskModel(env.owner, { task: "text.write", model: "openai:gpt-test-mini" }),
+      "VALIDATION",
+      /gpt-test-mini \(OpenAI\) has no price yet, so it is blocked/,
+    );
     await setTaskModel(env.owner, { task: "text.write", model: "openai:gpt-test" });
     await setTaskModel(env.owner, { task: "chat", model: "google:gemini-test" });
 
@@ -223,18 +239,19 @@ run("AI with Claude, OpenAI and Gemini", () => {
       model: "openai:gpt-test",
       inputTokens: 1000,
       outputTokens: 200,
-      costKnown: false,
+      costKnown: true,
       result: "OK",
     });
-    expect(line.cost.toFixed(2)).toBe("0.00");
+    // 1,000 × $1.25 + 200 × $10 per million.
+    expect(line.costUsd.toFixed(6)).toBe("0.003250");
 
-    // With its price set, the cost is worked out.
-    await setModelPrice(env.owner, { model: "openai:gpt-test", input: "1.25", output: "10" });
+    // The owner's new price counts from the next call.
+    await setModelPrice(env.owner, { model: "openai:gpt-test", input: "2.5", output: "10" });
     fake.answers.openai.push(openaiText("Second answer."));
     await ask(env);
     line = await prisma.aiUsage.findFirstOrThrow({ orderBy: { createdAt: "desc" } });
     expect(line.costKnown).toBe(true);
-    expect(line.costUsd.toFixed(6)).toBe("0.003250");
+    expect(line.costUsd.toFixed(6)).toBe("0.004500");
 
     // Gemini, with a tool call and its answer on the next turn.
     const tools: Anthropic.Tool[] = [
@@ -312,12 +329,12 @@ run("AI with Claude, OpenAI and Gemini", () => {
     const costs = await getCosts(env.owner, { period: "today" });
     expect(costs.by.provider).toEqual([
       expect.objectContaining({ key: "anthropic", calls: 0 }),
-      expect.objectContaining({ key: "openai", calls: 3, priceUnknown: 1 }),
-      expect.objectContaining({ key: "google", calls: 2, priceUnknown: 2 }),
+      expect.objectContaining({ key: "openai", calls: 3, priceUnknown: 0 }),
+      expect.objectContaining({ key: "google", calls: 2, priceUnknown: 0 }),
     ]);
-    expect(costs.totals.priceUnknown).toBe(3);
+    expect(costs.totals.priceUnknown).toBe(0);
     expect(costs.lines.find((l) => l.provider === "Gemini")).toMatchObject({
-      costKnown: false,
+      costKnown: true,
       model: "Gemini Test (Gemini)",
     });
   });

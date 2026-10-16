@@ -979,10 +979,7 @@ export const GUIDE_ERRORS: GuideError[] = [
   {
     code: "R23",
     shown: "another restore is already running on this server",
-    meaning: fix(
-      "এই সার্ভারে আরেকটি রিস্টোর চলছে।",
-      "Another restore is running on this server.",
-    ),
+    meaning: fix("এই সার্ভারে আরেকটি রিস্টোর চলছে।", "Another restore is running on this server."),
     todo: fix(
       "সেটি শেষ হতে দিন (40 মিনিট পর্যন্ত), তারপর কমান্ড আবার চালান।",
       "Let it finish (up to 40 minutes), then run the command again.",

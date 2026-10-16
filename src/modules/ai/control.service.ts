@@ -32,7 +32,10 @@ import {
   setCell,
 } from "./control-tree";
 import { BOOKS, testsMissingFor } from "./knowledge";
+import { TASK_LABELS, tasksFor } from "./model-tests";
+import { modelTestsMissingFor } from "./model-tests.service";
 import { aiSettingsOf, offReason, OFF_TEXT, type PinProof, requirePin } from "./settings.service";
+import { skillsMissingFor } from "./skills-prompt";
 
 /*
  * Control (AI Center > Control): the Do / Ask / Off cells the owner sets, the
@@ -84,7 +87,9 @@ export type AiMay = {
  * it asks the owner first; Off: it asks for permission. Off while AI is
  * switched off or paused, or for anything that is not a cell (deleting, roles,
  * backups). Do becomes Ask while Mehedi 2.0 has not passed the tests of the
- * books the action needs (knowledge.ts).
+ * books the action needs (knowledge.ts), and while a model of another
+ * provider (or any model not built in) that the action's AI work runs on has
+ * not passed that work's test (model-tests.ts): the same rules on every provider.
  */
 export async function aiMay(
   companyId: string,
@@ -95,12 +100,34 @@ export async function aiMay(
   const may = await cellMay(companyId, key, record, db);
   if (may.state !== "DO") return may;
   const missing = await testsMissingFor(companyId, key, new Date(), db);
-  if (missing.length === 0) return may;
+  if (missing.length > 0) {
+    return {
+      state: "ASK",
+      why: `Do waits for the ${missing.map((b) => BOOKS[b].title.split(" · ")[0]).join(", ")} test${
+        missing.length > 1 ? "s" : ""
+      }: until he passes, he asks you first`,
+      grantId: null,
+    };
+  }
+  const untested = await modelTestsMissingFor(companyId, key, db);
+  if (untested.length > 0) {
+    const first = untested[0]!;
+    return {
+      state: "ASK",
+      why: `Do waits for ${first.label} to pass the "${TASK_LABELS[first.task]}" test on AI Center > Models${
+        untested.length > 1 ? ` (and ${untested.length - 1} more)` : ""
+      }: until then he asks you first`,
+      grantId: null,
+    };
+  }
+  const settings = await aiSettingsOf(companyId, db);
+  const skills = await skillsMissingFor(companyId, tasksFor(key), settings.agentsOff, db);
+  if (skills.length === 0) return may;
   return {
     state: "ASK",
-    why: `Do waits for the ${missing.map((b) => BOOKS[b].title.split(" · ")[0]).join(", ")} test${
-      missing.length > 1 ? "s" : ""
-    }: until he passes, he asks you first`,
+    why: `Do waits for the skill "${skills[0]!.name}" to pass its test on AI Center > Skills${
+      skills.length > 1 ? ` (and ${skills.length - 1} more)` : ""
+    }: until then he asks you first`,
     grantId: null,
   };
 }

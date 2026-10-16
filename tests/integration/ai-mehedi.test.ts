@@ -677,6 +677,7 @@ run("Mehedi 2.0", () => {
       type: "facts",
       rows: expect.arrayContaining([
         { label: "Tests passed", value: "0 of 6", href: "/ai/knowledge" },
+        { label: "AI cost today", value: "BDT 0.00", href: "/ai/costs?period=today" },
       ]),
     });
 
@@ -693,7 +694,7 @@ run("Mehedi 2.0", () => {
     [answer] = await say("শেষ ৭ দিনের খরচ");
     expect(answer!.text).toBe("Last 7 days: no AI work, no cost.");
     [answer] = await say("What do you think of the new buyer?");
-    expect(answer!.text).toMatch(/^I need the Claude key/);
+    expect(answer!.text).toMatch(/^I need an AI key \(Claude, OpenAI or Gemini\)/);
 
     // The report PDF is made in his name, for the owner.
     [answer] = await say("আজকের সেল রিপোর্ট PDF দাও");
@@ -705,6 +706,12 @@ run("Mehedi 2.0", () => {
     );
 
     const chat = await getChat(env.owner);
+    // Today's and this month's AI cost show over the chat.
+    expect(chat.cost).toMatchObject({
+      today: { spent: "0.00", calls: 0 },
+      spent: "0.00",
+      currency: "BDT",
+    });
     expect(chat.messages.filter((m) => m.role === "OWNER")).toHaveLength(10);
     expect(chat.messages.at(-1)).toMatchObject({ role: "AI", channel: "ERP" });
     // Each owner's chat is their own.

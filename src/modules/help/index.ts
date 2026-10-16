@@ -76,10 +76,33 @@ export function articleOpen(article: HelpArticle, permissions: readonly string[]
   return article.routes.length === 0 || article.routes.some((r) => routeOpen(r, permissions));
 }
 
-/** The first page of a guide this person may open, to link to from the guide. */
-export function articleLink(article: HelpArticle, permissions: readonly string[]): string | null {
+/**
+ * The list a page of one record is opened from: its address up to the first part that
+ * names the record ("/production/projects/[projectId]/tech-pack" is opened from
+ * "/production/projects").
+ */
+export function listPageOf(route: string): string {
+  const at = route.indexOf("/[");
+  return at < 0 ? route : route.slice(0, at) || "/";
+}
+
+/** Where a guide's button goes; `pick`: to the list, to pick the order or record first. */
+export type ArticleLink = { href: string; pick: boolean };
+
+/**
+ * The page of a guide this person may open, to link to from the guide: its first page
+ * that needs no record picked, else the list the first record page is opened from (a
+ * link to "/production/projects/[projectId]" itself would open "Page not found").
+ */
+export function articleLink(
+  article: HelpArticle,
+  permissions: readonly string[],
+): ArticleLink | null {
   if (article.anyOf && !holdsAny(permissions, article.anyOf)) return null;
-  return article.routes.find((r) => article.anyOf || routeOpen(r, permissions)) ?? null;
+  const open = article.routes.filter((r) => article.anyOf || routeOpen(r, permissions));
+  const direct = open.find((r) => !r.includes("["));
+  if (direct) return { href: direct, pick: false };
+  return open[0] ? { href: listPageOf(open[0]), pick: true } : null;
 }
 
 /** Every guide, flattened for the search box, marked open or not for this person. */

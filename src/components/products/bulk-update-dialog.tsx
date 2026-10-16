@@ -18,6 +18,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { reach } from "@/lib/reach";
 import type { ActionError } from "@/lib/result";
 import { cn } from "@/lib/utils";
 import type { StyleScreen } from "@/modules/inventory/screens.service";
@@ -81,11 +82,13 @@ export function BulkUpdateDialog({
   useEffect(() => {
     if (loaded?.key === want) return;
     let live = true;
-    void getStyleMatrixAction(screen.style.id, warehouseId || undefined).then((result) => {
-      if (!live) return;
-      if (result.ok) setLoaded({ key: want, matrix: result.data });
-      else setError(result.error);
-    });
+    void reach(() => getStyleMatrixAction(screen.style.id, warehouseId || undefined)).then(
+      (result) => {
+        if (!live) return;
+        if (result.ok) setLoaded({ key: want, matrix: result.data });
+        else setError(result.error);
+      },
+    );
     return () => {
       live = false;
     };

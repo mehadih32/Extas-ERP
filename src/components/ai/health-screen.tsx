@@ -1,6 +1,7 @@
 "use client";
 
-import { ActivityIcon, WrenchIcon } from "lucide-react";
+import { ActivityIcon, ScanSearchIcon, WrenchIcon } from "lucide-react";
+import Link from "next/link";
 import { useState, useTransition } from "react";
 
 import { useWhen } from "@/components/ai/when";
@@ -87,10 +88,18 @@ export function HealthScreen({ health: h }: { health: Health }) {
         title="Server Health"
         id="health-heading"
         action={
-          <Button type="button" size="sm" disabled={pending} onClick={checkNow}>
-            <ActivityIcon aria-hidden />
-            Check now
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" size="sm" disabled={pending} onClick={checkNow}>
+              <ActivityIcon aria-hidden />
+              Check now
+            </Button>
+            <Button asChild size="sm" variant="outline">
+              <Link href="/ai/full-check">
+                <ScanSearchIcon aria-hidden />
+                Full check
+              </Link>
+            </Button>
+          </div>
         }
       >
         <div className="mt-2 grid gap-3 text-sm">

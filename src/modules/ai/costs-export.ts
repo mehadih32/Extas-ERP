@@ -1,4 +1,4 @@
-import { formatDay } from "@/lib/display";
+import { countOf, formatDay } from "@/lib/display";
 import { formatAmount } from "@/lib/format";
 import { checkRateLimit } from "@/lib/rate-limit";
 import type { RequestMeta } from "@/lib/request-meta";
@@ -36,7 +36,21 @@ export function costsDocument(ctx: CompanyContext, c: AiCosts): PrintDocument {
       { label: "Calls", align: "right" as const },
       { label: `Cost (${cur})`, align: "right" as const, weight: 1.4 },
     ],
-    rows: rows.map((r) => ({ cells: [r.label, String(r.calls), amount(r.cost)] })),
+    rows: [
+      ...rows.map((r) => ({ cells: [r.label, String(r.calls), amount(r.cost)] })),
+      ...(rows.length > 1
+        ? [
+            {
+              style: "total" as const,
+              cells: [
+                "Total",
+                String(rows.reduce((t, r) => t + r.calls, 0)),
+                amount(rows.reduce((t, r) => t + Number(r.cost), 0).toFixed(2)),
+              ],
+            },
+          ]
+        : []),
+    ],
     empty: "Nothing in this period.",
   });
   return {
@@ -51,6 +65,7 @@ export function costsDocument(ctx: CompanyContext, c: AiCosts): PrintDocument {
       ...(c.query.userId
         ? [{ label: "Person", value: c.people.find((p) => p.id === c.query.userId)?.name ?? "" }]
         : []),
+      ...(c.shown.filter ? [{ label: "Only", value: c.shown.filter.label }] : []),
     ],
     parties: [],
     blocks: [
@@ -75,7 +90,9 @@ export function costsDocument(ctx: CompanyContext, c: AiCosts): PrintDocument {
           { label: `Month-end at this pace (${cur})`, value: amount(c.month.projection) },
         ],
       },
-      breakdown("By task", c.by.task),
+      breakdown("By provider", c.by.provider),
+      breakdown("By purpose", c.by.task),
+      breakdown("By place in the ERP", c.by.place),
       breakdown("By model", c.by.model),
       breakdown("By area", c.by.module),
       breakdown("By agent", c.by.agent),
@@ -83,11 +100,14 @@ export function costsDocument(ctx: CompanyContext, c: AiCosts): PrintDocument {
       breakdown("By order and tech pack", c.by.record),
       {
         kind: "table",
-        title:
-          c.totals.calls > c.lines.length ? `The newest ${c.lines.length} calls` : "Every call",
+        title: c.shown.filter
+          ? `Calls of ${c.shown.filter.label}${c.shown.calls > c.lines.length ? `: the newest ${c.lines.length}` : ""}`
+          : c.totals.calls > c.lines.length
+            ? `The newest ${c.lines.length} calls`
+            : "Every call",
         columns: [
           { label: "When", weight: 1.3 },
-          { label: "Task and why", weight: 3.5 },
+          { label: "Purpose and why", weight: 3.5 },
           { label: "Who asked", weight: 1.4 },
           { label: "Model" },
           { label: `Cost (${cur})`, align: "right", weight: 1.2 },
@@ -104,11 +124,16 @@ export function costsDocument(ctx: CompanyContext, c: AiCosts): PrintDocument {
             l.task,
             l.who,
             l.model,
-            amount(l.cost),
+            l.costKnown ? amount(l.cost) : "price unknown",
           ],
-          details: [l.why, ...(l.record ? [l.record] : []), ...(l.note ? [l.note] : [])],
+          details: [
+            l.why,
+            l.place.label,
+            ...(l.record ? [l.record] : []),
+            ...(l.note ? [l.note] : []),
+          ],
         })),
-        empty: "No call to Claude in this period.",
+        empty: "No AI call in this period.",
       },
     ],
     signatures: [],
@@ -132,6 +157,14 @@ function costsWorkbook(ctx: CompanyContext, c: AiCosts, lines: AiCosts["lines"])
         { value: r.calls, style: "int" as const },
         { value: Number(r.cost), style: "money" as const },
       ]),
+      [
+        { value: "Total", style: "header" as const },
+        { value: rows.reduce((t, r) => t + r.calls, 0), style: "int" as const },
+        {
+          value: Number(rows.reduce((t, r) => t + Number(r.cost), 0).toFixed(2)),
+          style: "money" as const,
+        },
+      ],
     ],
     widths: [44, 10, 16],
     freezeRows: 4,
@@ -140,15 +173,19 @@ function costsWorkbook(ctx: CompanyContext, c: AiCosts, lines: AiCosts["lines"])
     { value: new Date(l.at), style: "date" as const },
     { value: l.task },
     { value: l.why },
+    { value: l.place.label },
     { value: l.record },
     { value: l.who },
     { value: l.agent },
     { value: l.model },
+    { value: l.provider },
     { value: l.tokens.input, style: "int" as const },
     { value: l.tokens.output, style: "int" as const },
     { value: l.tokens.cacheRead, style: "int" as const },
-    { value: Number(l.costUsd), style: "money" as const },
-    { value: Number(l.cost), style: "money" as const },
+    l.costKnown
+      ? { value: Number(l.costUsd), style: "money" as const }
+      : { value: "price unknown" },
+    l.costKnown ? { value: Number(l.cost), style: "money" as const } : { value: "price unknown" },
     { value: l.result === "OK" ? "Done" : l.result === "FAILED" ? "Failed" : "Stopped" },
     { value: l.note },
   ]);
@@ -157,16 +194,22 @@ function costsWorkbook(ctx: CompanyContext, c: AiCosts, lines: AiCosts["lines"])
       name: "Calls",
       rows: [
         title(`AI calls: ${rangeText(c)}`),
-        note(`${c.totals.calls} calls, ${c.currency} ${c.totals.cost} (US$ ${c.totals.costUsd})`),
+        note(
+          c.shown.filter
+            ? `${c.shown.filter.label}: ${countOf(c.shown.calls, "call")}, ${c.currency} ${c.shown.cost}`
+            : `${countOf(c.totals.calls, "call")}, ${c.currency} ${c.totals.cost} (US$ ${c.totals.costUsd})`,
+        ),
         [],
         head([
           "When",
-          "Task",
+          "Purpose",
           "Why",
+          "Place",
           "Record",
           "Who asked",
           "Agent",
           "Model",
+          "Provider",
           "Tokens in",
           "Tokens out",
           "Cache read",
@@ -177,11 +220,13 @@ function costsWorkbook(ctx: CompanyContext, c: AiCosts, lines: AiCosts["lines"])
         ]),
         ...callRows,
       ],
-      widths: [12, 28, 48, 24, 18, 16, 12, 11, 11, 11, 11, 12, 10, 30],
+      widths: [12, 28, 48, 26, 24, 18, 16, 12, 10, 11, 11, 11, 11, 12, 10, 30],
       freezeRows: 4,
-      filter: { firstRow: 4, lastRow: 4 + callRows.length, columns: 14 },
+      filter: { firstRow: 4, lastRow: 4 + callRows.length, columns: 16 },
     },
-    sheetOf("By task", c.by.task),
+    sheetOf("By provider", c.by.provider),
+    sheetOf("By purpose", c.by.task),
+    sheetOf("By place", c.by.place),
     sheetOf("By model", c.by.model),
     sheetOf("By area", c.by.module),
     sheetOf("By agent", c.by.agent),

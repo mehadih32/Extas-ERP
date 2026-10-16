@@ -9,14 +9,17 @@ import { sendInApp } from "@/modules/reminders/notification.service";
 
 import { pushToBot } from "./bot/push";
 import type { AiRecord } from "./control.service";
-import { costUsd, taskInfo, type TokenUse } from "./models";
+import { taskInfo, type TokenUse } from "./models";
+import { costIn, priceBook } from "./prices.service";
+import { modelLabel, PROVIDERS, type ProviderId, providerInfo, providerOf } from "./providers";
 
 /*
- * What the AI spends (AI Center > Budget & Costs). Every call to Claude writes
- * one line: who asked, the task, why, the record, the model, the tokens and
- * the cost, in dollars and in the company's money at the rate the owner set.
+ * What the AI spends (AI Center > Budget & Costs). Every call to the AI
+ * (Claude, OpenAI or Gemini) writes one line: who asked, the task, why, the
+ * record, the model and its provider, the tokens and the cost (at the prices
+ * on AI Center > Models; "price unknown" when a model has none), in dollars and in the company's money at the rate the owner set.
  * Before a call the budget and limits are checked (all optional, off until
- * set): at a limit new work stops, or goes on with the small model when the
+ * set; a monthly limit per provider too): at a limit new work stops, or goes on with the small model when the
  * owner chose that; at the alert percentage the owner is told once a month.
  */
 
@@ -39,6 +42,7 @@ export async function budgetOf(companyId: string, db: Db = prisma): Promise<AiBu
       alertPercent: 80,
       atLimit: "STOP",
       usdRate: new Prisma.Decimal(122),
+      providerLimits: null,
       alertedMonth: null,
       updatedById: null,
       updatedAt: new Date(0),
@@ -54,6 +58,19 @@ export function periodStarts(now: Date, timeZone: string) {
     monthStart: startOfDayInZone(`${today.slice(0, 7)}-01`, timeZone),
     dayStart: startOfDayInZone(today, timeZone),
   };
+}
+
+/** The monthly limit per provider (company money), as the owner set them. */
+export function providerLimitsOf(budget: Pick<AiBudget, "providerLimits">) {
+  const raw = budget.providerLimits;
+  const out: Partial<Record<ProviderId, Prisma.Decimal>> = {};
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return out;
+  for (const p of PROVIDERS) {
+    const v = (raw as Record<string, unknown>)[p.id];
+    if (typeof v === "string" && /^\d{1,10}(\.\d{1,2})?$/.test(v))
+      out[p.id] = new Prisma.Decimal(v);
+  }
+  return out;
 }
 
 /** What was spent (company money) since `from`, for the lines matching `where`. */
@@ -83,7 +100,7 @@ const taka = (value: Prisma.Decimal, currency: string) =>
  */
 export async function checkBudget(
   companyId: string,
-  call: { userId?: string | null; agent: string; record?: AiRecord },
+  call: { userId?: string | null; agent: string; record?: AiRecord; provider?: ProviderId },
   now: Date = new Date(),
   db: Db = prisma,
 ): Promise<BudgetCheck> {
@@ -95,7 +112,10 @@ export async function checkBudget(
     budget.perStaffMonthly,
     budget.perAgentMonthly,
   ];
-  if (limits.every((l) => l === null)) return { go: true, cheaper: false, why: null };
+  const providerLimit = call.provider ? (providerLimitsOf(budget)[call.provider] ?? null) : null;
+  if (limits.every((l) => l === null) && !providerLimit) {
+    return { go: true, cheaper: false, why: null };
+  }
   const company = await db.company.findUniqueOrThrow({
     where: { id: companyId },
     select: { timezone: true, currency: true },
@@ -142,6 +162,14 @@ export async function checkBudget(
   ) {
     reached.push(`${call.agent}'s limit for the month (${money(budget.perAgentMonthly)})`);
   }
+  if (
+    providerLimit &&
+    (await spentSince(companyId, monthStart, { provider: call.provider }, db)).gte(providerLimit)
+  ) {
+    reached.push(
+      `the ${providerInfo(call.provider!).label} limit for the month (${money(providerLimit)})`,
+    );
+  }
   if (reached.length === 0) return { go: true, cheaper: false, why: null };
   const what = `The AI has used ${reached.join(" and ")}.`;
   return budget.atLimit === "CHEAPER"
@@ -152,12 +180,21 @@ export async function checkBudget(
       };
 }
 
+/** A screen's address as kept on a cost line: "/…" without the query, or "bot". */
+export function screenOf(screen: string | null | undefined): string | null {
+  if (screen === "bot") return "bot";
+  if (!screen?.startsWith("/") || screen.startsWith("//")) return null;
+  return screen.split(/[?#]/)[0]!.slice(0, 300) || null;
+}
+
 export type UsageLine = {
   userId?: string | null;
   agent: string;
   task: string;
   why: string;
   record?: AiRecord;
+  /** The screen it was asked on, or "bot". */
+  screen?: string | null;
   model: string;
   tokens?: { input: number; output: number; cacheRead: number; cacheWrite: number };
   durationMs: number;
@@ -175,9 +212,10 @@ export async function logUsage(
   now: Date = new Date(),
   db: Db = prisma,
 ) {
-  const budget = await budgetOf(companyId, db);
+  const [budget, book] = await Promise.all([budgetOf(companyId, db), priceBook(companyId, db)]);
   const tokens = line.tokens ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
-  const usd = new Prisma.Decimal(costUsd(line.model, tokens).toFixed(6));
+  const priced = costIn(book, line.model, tokens);
+  const usd = new Prisma.Decimal(priced.usd.toFixed(6));
   const cost = usd.times(budget.usdRate).toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
   const row = await db.aiUsage.create({
     data: {
@@ -190,7 +228,10 @@ export async function logUsage(
       recordType: line.record?.type ?? null,
       recordId: line.record?.id ?? null,
       recordLabel: line.record?.label?.slice(0, 200) ?? null,
+      screen: screenOf(line.screen),
       model: line.model,
+      provider: providerOf(line.model),
+      costKnown: priced.known,
       inputTokens: tokens.input,
       outputTokens: tokens.output,
       cacheReadTokens: tokens.cacheRead,
@@ -296,6 +337,8 @@ export type CostEstimate = {
   model: string;
   usd: string;
   cost: string;
+  /** False when the model has no price yet (AI Center > Models > Prices). */
+  known: boolean;
   currency: string;
   /** Set when the owner wants to be asked first, with the reason. */
   askFirst: string | null;
@@ -333,23 +376,31 @@ export async function estimateUse(
   options: { big?: boolean } = {},
   db: Db = prisma,
 ): Promise<CostEstimate> {
-  const [budget, company] = await Promise.all([
+  const [budget, company, book] = await Promise.all([
     budgetOf(companyId, db),
     db.company.findUniqueOrThrow({ where: { id: companyId }, select: { currency: true } }),
+    priceBook(companyId, db),
   ]);
-  const usd = new Prisma.Decimal(costUsd(model, use).toFixed(6));
+  const priced = costIn(book, model, use);
+  const usd = new Prisma.Decimal(priced.usd.toFixed(6));
   const cost = usd.times(budget.usdRate).toDecimalPlaces(2, Prisma.Decimal.ROUND_UP);
   const about = `about ${taka(cost, company.currency)}`;
   let askFirst: string | null = null;
-  if (budget.askAbove && cost.gt(budget.askAbove)) {
+  if (!priced.known) {
+    // No guess: with "Ask before a task above" set, the owner is asked.
+    if (budget.askAbove) {
+      askFirst = `The price of ${modelLabel(model)} is not known, so this task's cost cannot be worked out first. Set its price on AI Center > Models > Prices.`;
+    }
+  } else if (budget.askAbove && cost.gt(budget.askAbove)) {
     askFirst = `This task may cost ${about}, above the ${taka(budget.askAbove, company.currency)} you asked to be asked about.`;
   } else if (!budget.monthly && (options.big || BIG_MODELS.includes(model))) {
     askFirst = `This is big work and may cost ${about}. No monthly budget is set, so the AI asks first.`;
   }
   return {
     model,
-    usd: usd.toFixed(4),
-    cost: cost.toFixed(2),
+    usd: priced.known ? usd.toFixed(4) : "?",
+    cost: priced.known ? cost.toFixed(2) : "price unknown",
+    known: priced.known,
     currency: company.currency,
     askFirst,
   };

@@ -45,6 +45,19 @@ describe("AI cost periods", () => {
     expect(
       costsHref({ period: "custom", from: "2026-10-01", to: "2026-10-05", userId: "u1" }),
     ).toBe("/ai/costs?period=custom&from=2026-10-01&to=2026-10-05&person=u1");
+    // One day, one breakdown row and a page of its calls.
+    expect(costsHref({ period: "day", from: "2026-10-03", to: "2026-10-03" })).toBe(
+      "/ai/costs?period=day&from=2026-10-03",
+    );
+    expect(costsHref({ period: "yesterday", from: "2026-10-03" })).toBe(
+      "/ai/costs?period=yesterday",
+    );
+    expect(costsHref({ period: "today", by: "place", key: "/ai/chat", page: 2 })).toBe(
+      "/ai/costs?period=today&by=place&key=%2Fai%2Fchat&page=2",
+    );
+    expect(costsHref({ period: "today", by: "place", key: null, page: 1 })).toBe(
+      "/ai/costs?period=today",
+    );
   });
 });
 

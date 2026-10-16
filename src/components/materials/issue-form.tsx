@@ -11,6 +11,7 @@ import { textOf } from "@/components/products/form-values";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
+import { reach } from "@/lib/reach";
 import type {
   IssueForm as IssueFormData,
   ProjectHolding,
@@ -69,7 +70,7 @@ export function IssueForm({
   useEffect(() => {
     if (issuing || !projectId || held?.id === projectId) return;
     let live = true;
-    void getProjectHoldingsAction(projectId).then((result) => {
+    void reach(() => getProjectHoldingsAction(projectId)).then((result) => {
       if (!live) return;
       setHeld(
         result.ok

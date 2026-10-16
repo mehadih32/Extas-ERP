@@ -99,3 +99,31 @@ export function searchHelp(entries: HelpSearchEntry[], query: string): HelpSearc
   // Array.prototype.sort is stable, so equal scores keep the manual's order.
   return results.sort((a, b) => b.score - a.score);
 }
+
+/**
+ * The guides that best match a question written in full ("কীভাবে নতুন বায়ার
+ * যোগ করব?"): any word may match, and guides matching more words, in their
+ * titles and keywords, come first. For the Help AI, which reads the best few.
+ */
+export function rankHelp(
+  entries: HelpSearchEntry[],
+  question: string,
+  limit = 5,
+): HelpSearchResult[] {
+  const words = searchWords(question).filter((w) => w.length > 1);
+  if (words.length === 0) return [];
+  const results: HelpSearchResult[] = [];
+  for (const entry of entries) {
+    const title = normalizeHelpText(entry.title);
+    const section = normalizeHelpText(entry.sectionTitle);
+    let score = 0;
+    let matched = 0;
+    for (const word of words) {
+      const s = wordScore(word, entry, title, section);
+      if (s > 0) matched += 1;
+      score += s;
+    }
+    if (matched > 0) results.push({ ...entry, score: score + matched * 3 });
+  }
+  return results.sort((a, b) => b.score - a.score).slice(0, limit);
+}

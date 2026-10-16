@@ -34,13 +34,21 @@ prepare_demo_site
 can_go_back=0
 keep_running_version && can_go_back=1
 
-# A build needs room: with less than 5 GB free, old build steps and unused images go first.
+# A build needs room: with less than 5 GB free, every unused build step and untagged image
+# goes first (the kept :previous version stays), then the free space is measured again.
+# Under 3 GB even then, the update stops before anything changes.
 docker_root="$(docker info -f '{{.DockerRootDir}}' 2>/dev/null || echo /var/lib/docker)"
-free_kb="$(df --output=avail -k "$docker_root" 2>/dev/null | tail -n 1 | tr -d ' ')"
-if [ -n "$free_kb" ] && [ "$free_kb" -lt $((5 * 1024 * 1024)) ]; then
-  say "Less than 5 GB is free on the server: clearing old build steps first"
-  docker builder prune -f >/dev/null 2>&1 || true
+free_kb() { df --output=avail -k "$docker_root" 2>/dev/null | tail -n 1 | tr -d ' '; }
+free="$(free_kb)"
+if [ -n "$free" ] && [ "$free" -lt $((5 * 1024 * 1024)) ]; then
+  say "Less than 5 GB is free on the server ($((free / 1024 / 1024)) GB): clearing old build steps first"
+  docker builder prune -a -f >/dev/null 2>&1 || true
   docker image prune -f >/dev/null 2>&1 || true
+  free="$(free_kb)"
+  say "Free space now: $((free / 1024 / 1024)) GB"
+  if [ -n "$free" ] && [ "$free" -lt $((3 * 1024 * 1024)) ]; then
+    die "only $((free / 1024 / 1024)) GB is free on the server even after clearing old build steps, and an update needs about 3 GB. Nothing was changed: the ERP still runs the version it ran before. See what takes the room with: sudo du -xh -d1 / | sort -h"
+  fi
 fi
 
 say "Building the app (this takes a few minutes)"
@@ -62,6 +70,13 @@ fi
 pending=""
 copy=""
 services=()
+# An ERP whose database is not running is not updated: no safety copy could be saved, and
+# starting it here would bring the database up to date without one. Only a new server
+# (no database yet) goes on without a copy.
+if ! db_running && [ -s "$DATA_DIR/postgres/PG_VERSION" ]; then
+  [ "$can_go_back" = 1 ] && use_previous_version
+  die "the database is not running, so no safety copy could be saved and the update was not installed. Nothing was changed. See why with: sudo ./deploy/status.sh"
+fi
 if db_running; then
   pending="$(pending_migrations)"
   if [ -n "$pending" ]; then
@@ -72,14 +87,15 @@ if db_running; then
   say "Saving a safety copy of the database"
   copy="before-update-$(date +%Y-%m-%d_%H%M%S)"
   if ! saved="$(safety_copy "$copy")"; then
-    # Without a copy to go back to, the update does not start: the ERP opens again as it was.
-    [ -n "$pending" ] && compose up -d app caddy
+    # Without a copy to go back to, the update does not start: the version that ran before
+    # opens again as it was (never the new build, whose start would change the database).
+    [ "$can_go_back" = 1 ] && use_previous_version
+    [ -n "$pending" ] && { compose up -d --no-build app caddy || true; }
     die "the safety copy of the database could not be saved (is the disk full? sudo df -h), so the update was not installed. Nothing was changed: the ERP still runs the version it ran before."
   fi
   echo "Saved in $saved"
-  # The newest 10 are kept.
-  find "$DATA_DIR/safety-copies" -mindepth 1 -maxdepth 1 -name 'before-update-*' -printf '%T@ %p\n' |
-    sort -rn | tail -n +11 | cut -d' ' -f2- | xargs -r rm -rf
+  # Kept on the server for 24 hours (the ERP also locks it and sends it to Google Drive).
+  prune_safety_copies
 fi
 
 # A failed update: back to the version that ran before it, and to the safety copy of
@@ -91,33 +107,39 @@ go_back() {
     die "$reason; the logs above say why. There is no earlier version on this server to go back to."
   say "The update failed ($reason). Going back to the version that ran before it"
   compose stop app >/dev/null 2>&1 || true
+  local restored=1
   if [ -n "$pending" ] && [ -n "$copy" ]; then
     say "Putting the database back as it was just before the update"
-    restore_database "/safety-copies/$copy/database.dump" ||
-      die "the database could not be put back, so it was left as it was. Put it back by hand: sudo ./deploy/restore.sh $DATA_DIR/safety-copies/$copy"
+    if ! restore_database "/safety-copies/$copy/database.dump"; then
+      # The ERP does not stay down for it: the earlier version starts on the database as it is.
+      restored=0
+      say "The database could not be put back, so it was left as it was. The earlier version starts on it anyway; put it back by hand later: sudo ./deploy/restore.sh $DATA_DIR/safety-copies/$copy"
+    fi
   fi
   use_previous_version
   if compose up -d --no-build --remove-orphans && wait_healthy app; then
     say "Went back: the ERP runs the version from before the update again"
     # The failed version's image, no longer used.
     docker image prune -f >/dev/null 2>&1 || true
+    [ "$restored" = 1 ] ||
+      die "the update was not installed ($reason), and the database could not be put back as it was: the ERP runs the earlier version on it. Put it back by hand: sudo ./deploy/restore.sh $DATA_DIR/safety-copies/$copy"
     die "the update was not installed ($reason). The full log on the server says why."
   fi
-  compose ps
-  compose logs --tail 80 migrate app
+  compose ps || true
+  compose logs --tail 80 migrate app || true
   die "the earlier version did not start either; the logs above say why. The safety copy of the database is in $DATA_DIR/safety-copies/$copy."
 }
 
 say "Starting the database, bringing it up to date, then starting the app"
 if ! compose up -d --remove-orphans "${services[@]}"; then
-  compose logs --tail 80 migrate app
+  compose logs --tail 80 migrate app || true
   go_back "the database could not be brought up to date, or the app could not start"
 fi
 
 say "Waiting for the app to answer"
 if ! wait_healthy app; then
-  compose ps
-  compose logs --tail 80 app
+  compose ps || true
+  compose logs --tail 80 app || true
   go_back "the new version did not start"
 fi
 
@@ -127,6 +149,13 @@ if [ -n "$pending" ]; then
   say "The new version passed its check: opening the ERP to its users again"
   compose up -d caddy
 fi
+
+# Backups: the weekly test restore's temporary database, Restore from the Backups
+# screen, and clearing safety copies after 24 hours. None of it can fail the update.
+allow_test_restores ||
+  say "The weekly test restore may not make its temporary database; it says so on the Backups screen"
+install_backup_helpers ||
+  say "Restore from the Backups screen is not set up on this server (no systemd); restore with deploy/restore.sh"
 
 # The demo site starts after the ERP itself, so the ERP never waits on it.
 if [ -n "$DEMO_DOMAIN" ]; then
@@ -155,8 +184,10 @@ compose exec -T caddy "${reload[@]}" >/dev/null 2>&1 ||
 if [ -n "$DEMO_DOMAIN" ]; then report_demo_certificate; fi
 
 # Images and build steps left over from earlier versions.
-docker image prune -f >/dev/null
-docker builder prune -f --filter until=720h >/dev/null
+docker image prune -f >/dev/null || true
+docker builder prune -f --filter until=720h >/dev/null || true
+free="$(free_kb)"
+[ -n "$free" ] && say "Free space on the server: $((free / 1024 / 1024)) GB"
 
 say "Extas ERP is running at https://$APP_DOMAIN"
 echo "Check it: https://$APP_DOMAIN/api/health should show \"status\":\"ok\"."

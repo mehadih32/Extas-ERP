@@ -8,7 +8,9 @@ import { requireCompanyPage } from "@/server/pages/guards";
  */
 export default async function SettingsLayout({ children }: { children: React.ReactNode }) {
   const ctx = await requireCompanyPage();
-  const tabs = visibleSettingsTabs(ctx.permissions).map(({ href, label }) => ({ href, label }));
+  const tabs = visibleSettingsTabs(ctx.permissions, ctx.user.isSuperAdmin).map(
+    ({ href, label }) => ({ href, label }),
+  );
 
   return (
     <div className="grid grid-cols-1 gap-8 md:gap-10">

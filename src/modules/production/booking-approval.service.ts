@@ -1,4 +1,4 @@
-import { Prisma } from "@prisma/client";
+import { type MeasurementUnit, Prisma } from "@prisma/client";
 
 import { dateOnly } from "@/lib/dates";
 import type { Db } from "@/lib/db-types";
@@ -19,6 +19,7 @@ import {
   readFabricBasis,
 } from "@/modules/production/tech-pack";
 import { fabricPartsOf, techPackStates } from "@/modules/production/tech-pack-approval.service";
+import { OPEN_STATUSES } from "@/modules/production/timeline";
 
 /*
  * What a booking's approval rests on: the snapshot kept for each approved
@@ -35,6 +36,10 @@ const trimmed = (d: Prisma.Decimal) => d.toFixed(3).replace(/\.?0+$/, "") || "0"
 const snapshotSelect = {
   category: true,
   garmentPieces: true,
+  deliveryPlace: true,
+  paymentTerms: true,
+  termsLanguage: true,
+  terms: true,
   collarStyle: true,
   collarExtraPercent: true,
   collarSizes: { orderBy: { sortOrder: "asc" }, select: { id: true, label: true } },
@@ -47,6 +52,7 @@ const snapshotSelect = {
       number: true,
       expectedDate: true,
       supplier: { select: { id: true, name: true } },
+      batch: { select: { code: true } },
       lines: {
         orderBy: { id: "asc" },
         select: {
@@ -123,6 +129,13 @@ export function snapshotOf(b: SnapshotRow): BookingSnapshot {
           ),
         }
       : null,
+    batch: b.order.batch?.code ?? null,
+    paperwork: {
+      deliveryPlace: b.deliveryPlace,
+      paymentTerms: b.paymentTerms,
+      termsLanguage: b.termsLanguage,
+      terms: b.terms,
+    },
   };
 }
 
@@ -149,7 +162,7 @@ export function readSnapshot(json: unknown): BookingSnapshot | null {
 // Revisions
 // =============================================================================
 
-/** Where a booking stood before a change to its items. */
+/** Where a booking stood before it changed. */
 export type BeforeChange = {
   stage: "DRAFT" | "APPROVED" | "SENT";
   revision: number;
@@ -159,9 +172,35 @@ export type BeforeChange = {
 };
 
 /**
- * Read before a booking's items change: the approved snapshot the change is
- * compared with. A booking approved before revisions were kept (one made
- * earlier, counted as sent) gets its snapshot now, as revision 0.
+ * A snapshot kept before v6.3 has no paperwork and no batch: they are taken
+ * as they stand now (before the change) and kept with it, so a change to them
+ * from now on makes a revision too.
+ */
+async function completed(
+  tx: Tx,
+  bookingId: string,
+  revision: number,
+  base: BookingSnapshot | null,
+): Promise<BookingSnapshot | null> {
+  if (!base || (base.paperwork && base.batch !== undefined)) return base;
+  const now = await bookingSnapshot(tx, bookingId);
+  const whole: BookingSnapshot = {
+    ...base,
+    batch: base.batch === undefined ? now.batch : base.batch,
+    paperwork: base.paperwork ?? now.paperwork,
+  };
+  await tx.bookingRevision.updateMany({
+    where: { bookingId, revision },
+    data: { snapshot: whole as unknown as Prisma.InputJsonValue },
+  });
+  return whole;
+}
+
+/**
+ * Read before a booking changes (its items, its paperwork or its batch): the
+ * approved snapshot the change is compared with. A booking approved before
+ * revisions were kept (one made earlier, counted as sent) gets its snapshot
+ * now, as revision 0.
  */
 export async function beforeChange(tx: Tx, companyId: string, bookingId: string) {
   const b = await tx.booking.findUniqueOrThrow({
@@ -187,7 +226,7 @@ export async function beforeChange(tx: Tx, companyId: string, bookingId: string)
     return {
       stage: b.stage,
       revision: b.revision,
-      base: readSnapshot(kept?.snapshot),
+      base: await completed(tx, bookingId, b.revision - 1, readSnapshot(kept?.snapshot)),
       wasSent: readRevisionChanges(b.revisionChanges)?.wasSent ?? false,
     } satisfies BeforeChange;
   }
@@ -195,7 +234,7 @@ export async function beforeChange(tx: Tx, companyId: string, bookingId: string)
     where: { bookingId_revision: { bookingId, revision: b.revision } },
     select: { snapshot: true },
   });
-  let base = readSnapshot(kept?.snapshot);
+  let base = await completed(tx, bookingId, b.revision, readSnapshot(kept?.snapshot));
   if (!base) {
     base = await bookingSnapshot(tx, bookingId);
     await tx.bookingRevision.upsert({
@@ -220,7 +259,7 @@ export async function beforeChange(tx: Tx, companyId: string, bookingId: string)
 }
 
 /**
- * After a booking's items changed: an approved or sent booking becomes a draft
+ * After a booking changed: an approved or sent booking becomes a draft
  * of its next revision (R1, R2...) listing what changed, and the fabric at risk
  * when the last one had been sent; a draft revision's list is brought up to
  * date. Nothing changes when the items came out the same. Says whether it made
@@ -268,6 +307,8 @@ export type ApprovalCheck = {
   text: string;
   /** ok: passed; block: must be put right first; warn: may be approved anyway. */
   state: "ok" | "block" | "warn";
+  /** A block the owner may approve past, giving a reason (kept in the activity log). */
+  override?: true;
 };
 
 const checkSelect = {
@@ -301,10 +342,13 @@ const checkSelect = {
 /**
  * The checks a booking passes before it is approved: it books something, each
  * item's shares add up to it, the collar and cuff items match the matrix, the
- * in-house date is set, and the styles it is for are ready. With Fabric first
- * on its batch, fabric waits for each style's fabric part to be locked and
- * everything else for the tech pack to be approved; without it, a tech pack
- * not yet approved is only a warning.
+ * in-house date is set, and the styles it is for are ready:
+ *  - collar, cuff and trims wait for each style's tech pack to be approved (the
+ *    owner may approve past this, giving a reason);
+ *  - fabric, with Fabric first on its batch, waits for each style's fabric part
+ *    to be locked; without it, a tech pack not yet approved is only a warning.
+ * On a batch, an item in no style's materials list counts for every open style
+ * of the batch, so the gate cannot be skipped by booking something unlisted.
  */
 export async function approvalChecks(db: Db, bookingId: string): Promise<ApprovalCheck[]> {
   const b = await db.booking.findUniqueOrThrow({ where: { id: bookingId }, select: checkSelect });
@@ -361,63 +405,85 @@ export async function approvalChecks(db: Db, bookingId: string): Promise<Approva
       (l.specs.role === "FABRIC" ? fabricFor : restFor).add(s.project.id);
     }
   }
+  const batch = b.order.batch;
+  const unlisted = batch ? lines.filter((l) => l.shares.length === 0) : [];
+  if (batch && unlisted.length > 0) {
+    const styles = await db.productionProject.findMany({
+      where: { batchId: batch.id, status: { in: [...OPEN_STATUSES] } },
+      select: { id: true, code: true, targetQuantity: true },
+      orderBy: { code: "asc" },
+    });
+    for (const l of unlisted) {
+      for (const st of styles) {
+        projects.set(st.id, st);
+        (l.specs.role === "FABRIC" ? fabricFor : restFor).add(st.id);
+      }
+    }
+    if (styles.length > 0) {
+      checks.push({
+        text: `${unlisted.map((l) => l.rawMaterial.code).join(", ")} ${unlisted.length === 1 ? "is" : "are"} in no style's materials list: counted for every style of ${batch.code}`,
+        state: "warn",
+      });
+    }
+  }
   if (projects.size > 0) {
     const states = await techPackStates(db, [...projects.values()]);
     const code = (id: string) => projects.get(id)!.code;
-    const fabricFirst = Boolean(b.order.batch?.fabricFirstAt);
-    if (fabricFirst) {
+    const notApproved = (ids: Set<string>) =>
+      [...ids].filter((id) => states.get(id)!.status !== "APPROVED");
+    const fabricFirst = Boolean(batch?.fabricFirstAt);
+    if (fabricFirst && fabricFor.size > 0) {
       const unlocked = [...fabricFor].filter((id) => !states.get(id)!.fabricLocked);
       const changed = [...fabricFor].filter(
         (id) => states.get(id)!.fabricLocked && states.get(id)!.changes.length > 0,
       );
-      if (fabricFor.size > 0) {
-        checks.push(
-          unlocked.length === 0 && changed.length === 0
-            ? { text: "Fabric first: each style's fabric part is locked", state: "ok" }
-            : {
-                text: [
-                  unlocked.length > 0
-                    ? `Fabric first: lock the fabric part of ${unlocked.map(code).join(", ")}`
-                    : null,
-                  changed.length > 0
-                    ? `the fabric of ${changed.map(code).join(", ")} changed since it was locked: lock it again`
-                    : null,
-                ]
-                  .filter(Boolean)
-                  .join("; "),
-                state: "block",
-              },
-        );
-      }
-      const waiting = [...restFor].filter((id) => states.get(id)!.status !== "APPROVED");
-      if (restFor.size > 0) {
-        checks.push(
-          waiting.length === 0
-            ? { text: "The tech packs of its styles are approved", state: "ok" }
-            : {
-                text: `Fabric first: trims wait for the tech pack of ${waiting.map(code).join(", ")} to be approved`,
-                state: "block",
-              },
-        );
-      }
-    } else {
-      const waiting = [...projects.keys()].filter((id) => states.get(id)!.status !== "APPROVED");
       checks.push(
-        waiting.length === 0
-          ? { text: "The tech packs of its styles are approved", state: "ok" }
+        unlocked.length === 0 && changed.length === 0
+          ? { text: "Fabric first: each style's fabric part is locked", state: "ok" }
           : {
-              text: `The tech pack of ${waiting.map(code).join(", ")} is not approved yet`,
-              state: "warn",
+              text: [
+                unlocked.length > 0
+                  ? `Fabric first: lock the fabric part of ${unlocked.map(code).join(", ")}`
+                  : null,
+                changed.length > 0
+                  ? `the fabric of ${changed.map(code).join(", ")} changed since it was locked: lock it again`
+                  : null,
+              ]
+                .filter(Boolean)
+                .join("; "),
+              state: "block",
             },
       );
+    }
+    const restWaiting = notApproved(restFor);
+    const fabricWaiting = fabricFirst ? [] : notApproved(fabricFor);
+    if (restWaiting.length > 0) {
+      checks.push({
+        text: `Collar, cuff and trims wait for the tech pack of ${restWaiting.map(code).join(", ")} to be approved`,
+        state: "block",
+        override: true,
+      });
+    }
+    if (fabricWaiting.length > 0) {
+      checks.push({
+        text: `The tech pack of ${fabricWaiting.map(code).join(", ")} is not approved yet`,
+        state: "warn",
+      });
+    }
+    const gated = restFor.size > 0 || (!fabricFirst && fabricFor.size > 0);
+    if (gated && restWaiting.length === 0 && fabricWaiting.length === 0) {
+      checks.push({ text: "The tech packs of its styles are approved", state: "ok" });
     }
   }
   return checks;
 }
 
-/** Refuses an approval while a check blocks it. */
-export function assertChecksPass(number: string, checks: ApprovalCheck[]) {
-  const blocks = checks.filter((c) => c.state === "block");
+/**
+ * Refuses an approval while a check blocks it. With the owner's reason, the
+ * blocks the owner may approve past (override) let it through; the others never.
+ */
+export function assertChecksPass(number: string, checks: ApprovalCheck[], reason?: string) {
+  const blocks = checks.filter((c) => c.state === "block" && !(reason && c.override));
   if (blocks.length > 0) {
     throw new AppError(
       "CONFLICT",
@@ -445,17 +511,64 @@ export async function fabricBasisOf(db: Db, bookingId: string) {
   return Object.fromEntries(parts) as Record<string, FabricPart>;
 }
 
+/** Fabric booked, per unit. */
+export type FabricAmount = { unit: MeasurementUnit; quantity: string };
+
 /** A style whose fabric changed after the booking was approved on it. */
 export type StyleChange = {
   project: { id: string; code: string; name: string };
   changes: FabricChange[];
+  /** The fabric this booking has for the style: made to the old fabric part. */
+  atRisk: FabricAmount[];
 };
 
+const addUp = (amounts: Map<MeasurementUnit, Prisma.Decimal>): FabricAmount[] =>
+  [...amounts].map(([unit, total]) => ({ unit, quantity: trimmed(total) }));
+
+/** The fabric each booking has for each style, per unit (its fabric lines' shares). */
+async function fabricShares(db: Db, bookingIds: string[], projectIds: string[]) {
+  const shares = await db.purchaseOrderLineShare.findMany({
+    where: {
+      projectId: { in: projectIds },
+      line: { order: { booking: { id: { in: bookingIds } } } },
+    },
+    select: {
+      projectId: true,
+      quantity: true,
+      line: {
+        select: {
+          specs: true,
+          rawMaterial: { select: { kind: true, unit: true } },
+          order: { select: { booking: { select: { id: true } } } },
+        },
+      },
+    },
+  });
+  const byBooking = new Map<string, Map<string, Map<MeasurementUnit, Prisma.Decimal>>>();
+  for (const s of shares) {
+    if (readSpecs(s.line.specs, s.line.rawMaterial.kind).role !== "FABRIC") continue;
+    const bookingId = s.line.order.booking?.id;
+    if (!bookingId) continue;
+    const styles = byBooking.get(bookingId) ?? new Map();
+    byBooking.set(bookingId, styles);
+    const units = styles.get(s.projectId) ?? new Map<MeasurementUnit, Prisma.Decimal>();
+    styles.set(s.projectId, units);
+    const unit = s.line.rawMaterial.unit;
+    units.set(unit, (units.get(unit) ?? new Prisma.Decimal(0)).plus(s.quantity));
+  }
+  return byBooking;
+}
+
 /**
- * The styles whose fabric changed since the booking was approved (fabricBasis):
- * once the booking has gone out, the supplier may be making the old fabric.
+ * The styles whose fabric changed since the booking was approved (fabricBasis),
+ * with the fabric the booking has for each: once the booking has gone out, the
+ * supplier may be making the old fabric.
  */
-export async function styleChangesSince(db: Db, fabricBasis: unknown): Promise<StyleChange[]> {
+export async function styleChangesSince(
+  db: Db,
+  fabricBasis: unknown,
+  bookingId: string,
+): Promise<StyleChange[]> {
   const basis = readFabricBasis(fabricBasis);
   if (basis.size === 0) return [];
   const projects = await db.productionProject.findMany({
@@ -464,10 +577,63 @@ export async function styleChangesSince(db: Db, fabricBasis: unknown): Promise<S
     orderBy: { code: "asc" },
   });
   const parts = await fabricPartsOf(db, projects);
-  return projects.flatMap((p) => {
+  const changed = projects.flatMap((p) => {
     const changes = diffFabricParts(basis.get(p.id)!, parts.get(p.id)!);
     return changes.length > 0
       ? [{ project: { id: p.id, code: p.code, name: p.name }, changes }]
       : [];
   });
+  if (changed.length === 0) return [];
+  const booked = await fabricShares(
+    db,
+    [bookingId],
+    changed.map((c) => c.project.id),
+  );
+  const styles = booked.get(bookingId);
+  return changed.map((c) => ({ ...c, atRisk: addUp(styles?.get(c.project.id) ?? new Map()) }));
+}
+
+/** A red flag for a list: the styles whose fabric changed and the fabric at risk. */
+export type FabricRisk = { styles: string[]; atRisk: FabricAmount[] };
+
+/**
+ * For the booking list and the batch page: each approved or sent booking whose
+ * styles' fabric changed since it was approved, with the fabric it has for
+ * them. One read for all the rows.
+ */
+export async function fabricRisks(
+  db: Db,
+  rows: ReadonlyArray<{ id: string; fabricBasis: unknown }>,
+): Promise<Map<string, FabricRisk>> {
+  const risks = new Map<string, FabricRisk>();
+  const bases = rows
+    .map((r) => ({ id: r.id, basis: readFabricBasis(r.fabricBasis) }))
+    .filter((r) => r.basis.size > 0);
+  if (bases.length === 0) return risks;
+  const ids = [...new Set(bases.flatMap((r) => [...r.basis.keys()]))];
+  const projects = await db.productionProject.findMany({
+    where: { id: { in: ids } },
+    select: { id: true, code: true, targetQuantity: true },
+    orderBy: { code: "asc" },
+  });
+  const parts = await fabricPartsOf(db, projects);
+  const changedFor = new Map<string, typeof projects>();
+  for (const r of bases) {
+    const changed = projects.filter(
+      (p) => r.basis.has(p.id) && diffFabricParts(r.basis.get(p.id)!, parts.get(p.id)!).length > 0,
+    );
+    if (changed.length > 0) changedFor.set(r.id, changed);
+  }
+  if (changedFor.size === 0) return risks;
+  const booked = await fabricShares(db, [...changedFor.keys()], ids);
+  for (const [bookingId, changed] of changedFor) {
+    const total = new Map<MeasurementUnit, Prisma.Decimal>();
+    for (const p of changed) {
+      for (const [unit, quantity] of booked.get(bookingId)?.get(p.id) ?? []) {
+        total.set(unit, (total.get(unit) ?? new Prisma.Decimal(0)).plus(quantity));
+      }
+    }
+    risks.set(bookingId, { styles: changed.map((p) => p.code), atRisk: addUp(total) });
+  }
+  return risks;
 }

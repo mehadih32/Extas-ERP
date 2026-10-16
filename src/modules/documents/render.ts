@@ -116,9 +116,21 @@ function lockedPdf(): Partial<PDFKit.PDFDocumentOptions> {
 const CELL_PAD = 5;
 const TABLE_SIZE = 8.2;
 const TABLE_LINE = 10.8;
+/**
+ * The smallest a table's text gets so its figures fit (many sizes on a booking):
+ * below it, the figure columns are split over two or more tables instead. A
+ * figure is never cut.
+ */
+const MIN_TABLE_SIZE = 6;
+/** A column heading's size, in step with the table's text. */
+const HEADER_RATIO = 7.4 / TABLE_SIZE;
 const DETAIL_SIZE = 7;
 const DETAIL_LINE = 9.4;
 const TABLE_HEADER = 18;
+/** The most a text column claims for its longest word; a longer one may still be cut. */
+const MAX_WORD_NEED = 80;
+/** A column heading too wide for its column wraps to this many lines; it is never cut. */
+const MAX_HEADER_LINES = 3;
 const MAX_CELL_LINES = 8;
 /** A row's reference picture: a square this wide, before the details' text. */
 const THUMB = 58;
@@ -158,6 +170,12 @@ class Writer {
   private qrDone = false;
   /** Row pictures opened by pdfkit, by file id (null: it could not be read). */
   private readonly opened = new Map<string, OpenedImage | null>();
+  /** The text size of the table being drawn (smaller when its figures need the room). */
+  private tableSize = TABLE_SIZE;
+
+  private get tableLine() {
+    return (TABLE_LINE / TABLE_SIZE) * this.tableSize;
+  }
 
   constructor(
     private readonly doc: PDFKit.PDFDocument,
@@ -224,6 +242,42 @@ class Writer {
       .flatMap((part) => (part.trim() ? wrapText(this.doc, part, width, { font, size }) : [""]));
   }
 
+  /**
+   * Long text that must not be cut (a company's name, a buyer, an address): its
+   * size and lines. One line at the given size if it fits, else smaller down to
+   * `minSize`, else wrapped onto up to `maxLines` lines at the largest size that
+   * takes (and, when `fits` is given, whose lines it says have the room); only
+   * past all that is the last line cut.
+   */
+  private fitLines(
+    text: string,
+    width: number,
+    style: TextStyle,
+    minSize: number,
+    maxLines: number,
+    fits: (lines: number, size: number) => boolean = () => true,
+  ): { size: number; lines: string[] } {
+    const one = (size: number) => textWidth(this.doc, pdfText(text), { ...style, size }) <= width;
+    for (let size = style.size; size >= minSize - 0.001; size -= 0.5) {
+      if (one(size)) return { size, lines: [pdfText(text)] };
+    }
+    for (let size = style.size; size >= minSize - 0.001; size -= 0.5) {
+      const lines = wrapText(this.doc, text, width, { ...style, size });
+      const whole = !lines.some((l) => l.endsWith("…"));
+      if (lines.length <= maxLines && whole && fits(lines.length, size)) return { size, lines };
+    }
+    const lines = wrapText(this.doc, text, width, { ...style, size: minSize });
+    if (lines.length <= maxLines) return { size: minSize, lines };
+    const kept = lines.slice(0, maxLines);
+    kept[maxLines - 1] = fitText(
+      this.doc,
+      `${kept[maxLines - 1]} ${lines.slice(maxLines).join(" ")}`,
+      width,
+      { ...style, size: minSize },
+    );
+    return { size: minSize, lines: kept };
+  }
+
   /** Starts a new page with the slim header when `height` does not fit; true if it did. */
   private ensure(height: number): boolean {
     if (this.y + height <= this.bottom) return false;
@@ -283,13 +337,19 @@ class Writer {
     const nameBlock = showLegal ? 34 : 22;
     const nameTop = top + Math.max(0, (logoHeight - nameBlock) / 2);
     const nameWidth = this.left + nameColumn - nameX;
-    this.line(letterhead.name, nameX, nameTop, nameWidth, {
-      font: SERIF_BOLD,
-      size: 20,
-      color: this.primary,
+    // A long name gets smaller, then takes a second line: it is never cut.
+    const name = this.fitLines(letterhead.name, nameWidth, { font: SERIF_BOLD, size: 20 }, 14, 2);
+    const nameStep = name.size * 1.15;
+    name.lines.forEach((text, i) => {
+      this.line(text, nameX, nameTop + i * nameStep, nameWidth, {
+        font: SERIF_BOLD,
+        size: name.size,
+        color: this.primary,
+      });
     });
+    const nameDrop = (name.lines.length - 1) * nameStep;
     if (showLegal) {
-      this.line(letterhead.legalName!.toUpperCase(), nameX, nameTop + 25, nameWidth, {
+      this.line(letterhead.legalName!.toUpperCase(), nameX, nameTop + 25 + nameDrop, nameWidth, {
         font: SANS,
         size: 6.8,
         color: MUTED,
@@ -321,7 +381,7 @@ class Writer {
       contactLines(registrations);
     }
 
-    const bottom = Math.max(top + logoHeight, nameTop + nameBlock, contactY);
+    const bottom = Math.max(top + logoHeight, nameTop + nameBlock + nameDrop, contactY);
     const ruleY = bottom + 9;
     this.rule(ruleY, this.primary, 1.3);
     this.rule(ruleY + 3.4, this.accent, 0.8, this.left, 64);
@@ -332,20 +392,38 @@ class Writer {
   private continuationHeader() {
     const top = MARGIN.top;
     const { letterhead, title, reference } = this.model;
-    this.line(letterhead.name, this.left, top, this.width * 0.55, {
-      font: SERIF_BOLD,
-      size: 11.5,
-      color: this.primary,
+    const name = this.fitLines(
+      letterhead.name,
+      this.width * 0.55,
+      { font: SERIF_BOLD, size: 11.5 },
+      8.5,
+      2,
+    );
+    name.lines.forEach((text, i) => {
+      this.line(text, this.left, top + i * (name.size + 2), this.width * 0.55, {
+        font: SERIF_BOLD,
+        size: name.size,
+        color: this.primary,
+      });
     });
-    const right = [title, reference].filter(Boolean).join(" · ");
-    this.line(right, this.left + this.width * 0.55, top + 2.5, this.width * 0.45, {
-      font: SANS,
-      size: 7.5,
-      color: MUTED,
-      align: "right",
+    const right = this.fitLines(
+      [title, reference].filter(Boolean).join(" · "),
+      this.width * 0.45 - 6,
+      { font: SANS, size: 7.5 },
+      6.5,
+      2,
+    );
+    right.lines.forEach((text, i) => {
+      this.line(text, this.left + this.width * 0.55 + 6, top + 2.5 + i * 9, this.width * 0.45 - 6, {
+        font: SANS,
+        size: right.size,
+        color: MUTED,
+        align: "right",
+      });
     });
-    this.rule(top + 18, this.primary, 0.8);
-    this.y = top + 32;
+    const drop = Math.max((name.lines.length - 1) * (name.size + 2), (right.lines.length - 1) * 9);
+    this.rule(top + 18 + drop, this.primary, 0.8);
+    this.y = top + 32 + drop;
   }
 
   // --- The book frame -----------------------------------------------------------
@@ -413,15 +491,33 @@ class Writer {
       this.bookHeader(frame, this.sections[n] ?? "");
       const ruleY = this.page.height - BOOK_MARGIN.bottom - BOOK_FOOTER + 2;
       this.rule(ruleY, NAVY, 0.9);
-      this.line(
-        `${frame.contact} • PAGE ${n + 1} OF ${range.count}`,
-        this.left,
-        ruleY + 4.5,
-        this.width,
-        { font: SANS_BOLD, size: 6.4, color: NAVY, align: "center", spacing: 0.2 },
-      );
+      this.bookFooter(frame.contact, `PAGE ${n + 1} OF ${range.count}`, ruleY + 4.5);
       if (this.model.initials) this.initialsLine(this.model.initials, ruleY - 14);
     }
+  }
+
+  /**
+   * The book footer: "contacts • PAGE 2 OF 9" centred when it fits. Else the page
+   * number stays whole on the right and the contacts wrap onto two lines beside
+   * it: the page number is never cut.
+   */
+  private bookFooter(contact: string, page: string, y: number) {
+    const style = { font: SANS_BOLD, size: 6.4, spacing: 0.2 };
+    const whole = `${contact} • ${page}`;
+    if (textWidth(this.doc, pdfText(whole), style) <= this.width) {
+      this.line(whole, this.left, y, this.width, { ...style, color: NAVY, align: "center" });
+      return;
+    }
+    const pageWidth = textWidth(this.doc, page, style);
+    this.line(page, this.left + this.width - pageWidth, y, pageWidth + 1, {
+      ...style,
+      color: NAVY,
+    });
+    const room = this.width - pageWidth - 14;
+    const text = this.fitLines(contact, room, style, 5.6, 2);
+    text.lines.forEach((line, i) => {
+      this.line(line, this.left, y + i * 7, room, { ...style, size: text.size, color: NAVY });
+    });
   }
 
   /**
@@ -434,13 +530,28 @@ class Writer {
     const top = BOOK_MARGIN.top;
     const side = this.width * 0.3;
     const middle = this.width - 2 * side;
-    this.line(this.model.letterhead.name, this.left, top + 2, side - 8, {
-      font: SANS_BOLD,
-      size: 13,
-      color: NAVY,
+    // A long name gets smaller, then takes a second line (the tagline moves down), and a
+    // third in portrait if it must (the tagline then has no room), always above the
+    // rule: never cut.
+    const name = this.fitLines(
+      this.model.letterhead.name,
+      side - 8,
+      { font: SANS_BOLD, size: 13 },
+      9,
+      3,
+      (lines, size) => 2 + (lines - 1) * (size + 1.5) + size * 1.16 <= BOOK_HEADER - 1.5,
+    );
+    name.lines.forEach((text, i) => {
+      this.line(text, this.left, top + 2 + i * (name.size + 1.5), side - 8, {
+        font: SANS_BOLD,
+        size: name.size,
+        color: NAVY,
+      });
     });
-    if (frame.tagline) {
-      this.line(frame.tagline, this.left, top + 19, side - 8, {
+    const taglineY =
+      name.lines.length > 1 ? top + 2 + name.lines.length * (name.size + 1.5) + 1 : top + 19;
+    if (frame.tagline && taglineY + 7 <= top + BOOK_HEADER - 1) {
+      this.line(frame.tagline, this.left, taglineY, side - 8, {
         font: SANS,
         size: 7,
         color: MUTED,
@@ -470,24 +581,54 @@ class Writer {
     const rx = this.left + side + middle + 6;
     const rw = side - 6;
     const labelWidth = Math.min(62, rw * 0.4);
-    frame.fields.slice(0, 4).forEach((field, i) => {
-      const y = top + 1 + i * 8.6;
+    const room = rw - labelWidth;
+    const fields = frame.fields.slice(0, 4).map((field) => {
+      // A name signed for keeps room for the signature line beside it.
+      const width = field.sign ? room * 0.55 : room;
+      const fit = field.value
+        ? this.fitLines(field.value, width, { font: SANS_BOLD, size: 6.9 }, 5.4, 2)
+        : { size: 6.9, lines: [] as string[] };
+      return { field, width, fit };
+    });
+    // A value that needs a second line (a long buyer or batch name) gets it: the rows
+    // close up so the column still ends above the rule. Nothing is cut.
+    const lineCount = fields.reduce((n, f) => n + Math.max(1, f.fit.lines.length), 0);
+    const step = Math.min(8.6, (BOOK_HEADER - 2) / lineCount);
+    let y = top + 1;
+    for (const { field, width, fit } of fields) {
       this.line(field.label.toUpperCase(), rx, y + 0.7, labelWidth, {
         font: SANS_BOLD,
         size: 5.9,
         color: MUTED,
         spacing: 0.6,
       });
-      if (field.value) {
-        this.line(field.value, rx + labelWidth, y, rw - labelWidth, {
-          font: SANS_BOLD,
-          size: 6.9,
-          align: "right",
+      if (fit.lines.length === 0) {
+        this.rule(y + 6.8, MUTED, 0.5, rx + labelWidth + 4, room - 4);
+      } else if (field.sign) {
+        // The name, then the line to sign on beside it.
+        let drawn = 0;
+        fit.lines.forEach((text, i) => {
+          drawn = Math.max(
+            drawn,
+            this.line(text, rx + labelWidth + 2, y + i * step, width, {
+              font: SANS_BOLD,
+              size: fit.size,
+            }),
+          );
         });
+        const lineX = rx + labelWidth + 2 + drawn + 5;
+        this.rule(y + 6.8, MUTED, 0.5, lineX, rx + rw - lineX);
       } else {
-        this.rule(y + 6.8, MUTED, 0.5, rx + labelWidth + 4, rw - labelWidth - 4);
+        fit.lines.forEach((text, i) => {
+          this.line(text, rx + labelWidth, y + i * step, width, {
+            font: SANS_BOLD,
+            size: fit.size,
+            align: "right",
+          });
+        });
       }
-    });
+      y += Math.max(1, fit.lines.length) * step;
+    }
     this.rule(top + BOOK_HEADER, NAVY, 2);
   }
 
@@ -752,35 +893,123 @@ class Writer {
     this.y += 13;
   }
 
-  private columnBoxes(columns: Column[], rows: Row[] = []): ColumnBox[] {
-    const total = columns.reduce((sum, c) => sum + (c.weight ?? 1), 0);
-    let widths = columns.map((c) => ((c.weight ?? 1) / total) * this.width);
-    // A right-aligned column (quantities, rates, amounts) prints on one line: when its
-    // longest figure or its heading would be cut, it takes the room it needs from the
-    // text columns, so no figure ever ends in "…". Tables that already fit are unchanged.
-    const need = columns.map((c, i) => {
+  /** How wide each right-aligned column (figures) must be for its figures and heading at `size`. */
+  private figureNeeds(columns: Column[], rows: Row[], size: number): number[] {
+    return columns.map((c, i) => {
       if (c.align !== "right") return 0;
       const widest = Math.max(
-        textWidth(this.doc, this.columnLabel(c), { font: SANS_BOLD, size: 7.4, spacing: 0.3 }),
+        textWidth(this.doc, this.columnLabel(c), {
+          font: SANS_BOLD,
+          size: size * HEADER_RATIO,
+          spacing: 0.3,
+        }),
         ...rows.map((r) =>
           textWidth(this.doc, r.cells[i] ?? "", {
             font: (r.style ?? "normal") === "normal" ? SANS : SANS_BOLD,
-            size: TABLE_SIZE,
+            size,
           }),
         ),
       );
       return widest + 2 * CELL_PAD + 1;
     });
+  }
+
+  /**
+   * How much room the figure columns lack at `size`, and the text columns' room
+   * they may take it from (up to half of it).
+   */
+  private shortfall(columns: Column[], rows: Row[], size: number) {
+    const total = columns.reduce((sum, c) => sum + (c.weight ?? 1), 0);
+    const widths = columns.map((c) => ((c.weight ?? 1) / total) * this.width);
+    const need = this.figureNeeds(columns, rows, size);
     const short = widths.reduce((sum, w, i) => sum + Math.max(0, need[i]! - w), 0);
     const flexible = widths.reduce(
       (sum, w, i) => (columns[i]!.align === "right" ? sum : sum + w),
       0,
     );
-    if (short > 0 && flexible > 2 * short) {
-      widths = widths.map((w, i) =>
-        columns[i]!.align === "right" ? Math.max(w, need[i]!) : w - short * (w / flexible),
+    return { widths, need, short, flexible };
+  }
+
+  /**
+   * How wide each text column must be so no word in it is cut (its heading, its
+   * cells and the details under them), up to MAX_WORD_NEED: a word longer than
+   * that may still be cut, as before.
+   */
+  private wordNeeds(columns: Column[], rows: Row[], size: number): number[] {
+    const longest = (text: string, style: TextStyle) =>
+      Math.max(
+        0,
+        ...text.split(/\s+/).map((word) => (word ? textWidth(this.doc, word, style) : 0)),
       );
+    return columns.map((c, i) => {
+      if (c.align === "right" || c.check) return 0;
+      let widest = longest(this.columnLabel(c), {
+        font: SANS_BOLD,
+        size: size * HEADER_RATIO,
+        spacing: 0.3,
+      });
+      for (const r of rows) {
+        const font = (r.style ?? "normal") === "normal" ? SANS : SANS_BOLD;
+        widest = Math.max(widest, longest(r.cells[i] ?? "", { font, size }));
+        for (const d of r.details ?? []) {
+          widest = Math.max(widest, longest(d, { font: SANS, size: DETAIL_SIZE }));
+        }
+      }
+      const swatch = i === 0 && rows.some((r) => r.swatch) ? 11 : 0;
+      return Math.min(MAX_WORD_NEED, widest) + swatch + 2 * CELL_PAD + 1;
+    });
+  }
+
+  /**
+   * Each column's width at `size`, or null when it cannot be done without cutting
+   * a figure or a word. First the usual way: figure columns take what they lack
+   * from the text columns (at most half of their room). When that would leave a
+   * text column too narrow for its words (a booking with many sizes in portrait),
+   * every column gets what it needs and the room comes from the columns with more.
+   */
+  private layoutWidths(columns: Column[], rows: Row[], size: number): number[] | null {
+    const { need, short, flexible, widths } = this.shortfall(columns, rows, size);
+    const words = this.wordNeeds(columns, rows, size);
+    let usual: number[] | null = widths;
+    if (short > 0) {
+      usual =
+        flexible > 2 * short
+          ? widths.map((w, i) =>
+              columns[i]!.align === "right" ? Math.max(w, need[i]!) : w - short * (w / flexible),
+            )
+          : null;
     }
+    if (usual && usual.every((w, i) => w >= words[i]! - 0.01)) return usual;
+    const least = columns.map((c, i) => (c.align === "right" ? need[i]! : words[i]!));
+    const deficit = widths.reduce((sum, w, i) => sum + Math.max(0, least[i]! - w), 0);
+    const surplus = widths.reduce((sum, w, i) => sum + Math.max(0, w - least[i]!), 0);
+    if (deficit > surplus) return null;
+    return widths.map((w, i) =>
+      w <= least[i]! ? least[i]! : w - (deficit * (w - least[i]!)) / surplus,
+    );
+  }
+
+  /** Whether every figure, and every word of the text columns, fits at `size`. */
+  private figuresFit(columns: Column[], rows: Row[], size: number): boolean {
+    return this.layoutWidths(columns, rows, size) !== null;
+  }
+
+  /** The largest text size, from the usual one down to the smallest, at which the figures fit. */
+  private sizeFor(columns: Column[], rows: Row[]): number | null {
+    for (let size = TABLE_SIZE; size >= MIN_TABLE_SIZE - 0.001; size -= 0.4) {
+      if (this.figuresFit(columns, rows, size)) return Math.round(size * 10) / 10;
+    }
+    return null;
+  }
+
+  private columnBoxes(columns: Column[], rows: Row[] = []): ColumnBox[] {
+    // A right-aligned column (quantities, rates, amounts) prints on one line: when its
+    // longest figure or its heading would be cut, it takes the room it needs from the
+    // text columns, so no figure ever ends in "…", and no text column gets too narrow
+    // for its words (layoutWidths). Tables that already fit are unchanged.
+    const widths =
+      this.layoutWidths(columns, rows, this.tableSize) ??
+      this.shortfall(columns, rows, this.tableSize).widths;
     let x = this.left;
     return columns.map((c, i) => {
       const width = widths[i]!;
@@ -795,20 +1024,48 @@ class Writer {
     return this.frame ? c.label.toUpperCase() : c.label;
   }
 
+  /** Each column heading's lines: one, or wrapped when the column is narrower than it. */
+  private headerLines(columns: Column[], boxes: ColumnBox[]): string[][] {
+    const style = { font: SANS_BOLD, size: this.tableSize * HEADER_RATIO, spacing: 0.3 };
+    return columns.map((c, i) => {
+      const text = this.columnLabel(c);
+      const width = boxes[i]!.width - 2 * CELL_PAD;
+      if (textWidth(this.doc, text, style) <= width) return [text];
+      return wrapText(this.doc, text, width, style).slice(0, MAX_HEADER_LINES);
+    });
+  }
+
+  /** The heading row's height: taller when a heading wraps. */
+  private headerHeight(lines: string[][]): number {
+    const most = Math.max(1, ...lines.map((l) => l.length));
+    return TABLE_HEADER + (most - 1) * this.tableSize * HEADER_RATIO * 1.25;
+  }
+
   private tableHeader(columns: Column[], boxes: ColumnBox[]) {
-    this.doc.rect(this.left, this.y, this.width, TABLE_HEADER).fill(this.primary);
+    const lines = this.headerLines(columns, boxes);
+    const height = this.headerHeight(lines);
+    const size = this.tableSize * HEADER_RATIO;
+    this.doc.rect(this.left, this.y, this.width, height).fill(this.primary);
     columns.forEach((c, i) => {
       const box = boxes[i]!;
-      this.line(this.columnLabel(c), box.x + CELL_PAD, this.y + 5.6, box.width - 2 * CELL_PAD, {
-        font: SANS_BOLD,
-        size: 7.4,
-        color: WHITE,
-        align: box.align,
-        spacing: 0.3,
+      lines[i]!.forEach((text, n) => {
+        this.line(
+          text,
+          box.x + CELL_PAD,
+          this.y + 5.6 + n * size * 1.25,
+          box.width - 2 * CELL_PAD,
+          {
+            font: SANS_BOLD,
+            size,
+            color: WHITE,
+            align: box.align,
+            spacing: 0.3,
+          },
+        );
       });
     });
-    if (this.frame) this.grid(boxes, this.y, TABLE_HEADER);
-    this.y += TABLE_HEADER;
+    if (this.frame) this.grid(boxes, this.y, height);
+    this.y += height;
   }
 
   /** The book frame's table grid: a thin blue-grey line round every cell of a row. */
@@ -849,7 +1106,7 @@ class Writer {
         box.check && !bold
           ? [] // a tick box instead of text
           : box.align === "left"
-            ? this.wrap(text, width, font, TABLE_SIZE).slice(0, MAX_CELL_LINES)
+            ? this.wrap(text, width, font, this.tableSize).slice(0, MAX_CELL_LINES)
             : [text];
       const details =
         i === detailColumn
@@ -863,11 +1120,11 @@ class Writer {
       Math.max(
         ...cells.map(
           (c) =>
-            c.lines.length * TABLE_LINE +
+            c.lines.length * this.tableLine +
             c.details.length * DETAIL_LINE +
             (c.details.length ? 1.5 : 0),
         ),
-        TABLE_LINE,
+        this.tableLine,
         picture ? THUMB : 0,
       ) +
       2 * CELL_PAD -
@@ -876,7 +1133,60 @@ class Writer {
     return { cells, height: tall, font, picture, detailColumn };
   }
 
+  /**
+   * A table at the largest text size its figures fit at. When they do not fit
+   * even at the smallest, its figure columns are split over two or more tables,
+   * each with the text columns again (a booking with many sizes): no figure is
+   * ever cut.
+   */
   private table(block: Extract<Block, { kind: "table" }>) {
+    const size = this.sizeFor(block.columns, block.rows);
+    if (size !== null) return this.tableAt(block, size);
+    const keep = block.columns.flatMap((c, i) => (c.align === "right" ? [] : [i]));
+    const figures = block.columns.flatMap((c, i) => (c.align === "right" ? [i] : []));
+    const pick = (indexes: number[]) => {
+      const order = [...indexes].sort((a, b) => a - b);
+      return {
+        ...block,
+        columns: order.map((i) => block.columns[i]!),
+        rows: block.rows.map((r) => ({ ...r, cells: order.map((i) => r.cells[i] ?? "") })),
+      };
+    };
+    const groups: number[][] = [];
+    let group: number[] = [];
+    for (const i of figures) {
+      const next = [...group, i];
+      const part = pick([...keep, ...next]);
+      if (group.length > 0 && !this.figuresFit(part.columns, part.rows, MIN_TABLE_SIZE)) {
+        groups.push(group);
+        group = [i];
+      } else {
+        group = next;
+      }
+    }
+    if (group.length > 0) groups.push(group);
+    groups.forEach((g, n) => {
+      const part = pick([...keep, ...g]);
+      const first = block.columns[g[0]!]!.label;
+      const last = block.columns[g[g.length - 1]!]!.label;
+      const title =
+        n === 0
+          ? block.title
+          : `${block.title ?? "Table"} (continued: ${first === last ? first : `${first} to ${last}`})`;
+      this.tableAt({ ...part, title }, this.sizeFor(part.columns, part.rows) ?? MIN_TABLE_SIZE);
+    });
+  }
+
+  private tableAt(block: Extract<Block, { kind: "table" }>, size: number) {
+    this.tableSize = size;
+    try {
+      this.drawTable(block);
+    } finally {
+      this.tableSize = TABLE_SIZE;
+    }
+  }
+
+  private drawTable(block: Extract<Block, { kind: "table" }>) {
     const boxes = this.columnBoxes(block.columns, block.rows);
     // Details go under the widest left-aligned column (the description).
     let detailColumn = 0;
@@ -885,14 +1195,15 @@ class Writer {
     });
     const layouts = block.rows.map((row) => this.layoutRow(row, boxes, detailColumn));
     const titleHeight = block.title ? 13 : 0;
-    this.ensure(titleHeight + TABLE_HEADER + (layouts[0]?.height ?? 20));
+    const header = this.headerHeight(this.headerLines(block.columns, boxes));
+    this.ensure(titleHeight + header + (layouts[0]?.height ?? 20));
     if (block.title) this.sectionTitle(block.title);
     this.tableHeader(block.columns, boxes);
 
     if (block.rows.length === 0) {
       this.line(block.empty ?? "Nothing to show.", this.left + CELL_PAD, this.y + 6, this.width, {
         font: SANS_ITALIC,
-        size: TABLE_SIZE,
+        size: this.tableSize,
         color: MUTED,
       });
       this.y += 22;
@@ -967,10 +1278,10 @@ class Writer {
       for (const text of cell.lines) {
         this.line(text, x, ly, cell.width, {
           font: layout.font,
-          size: TABLE_SIZE,
+          size: this.tableSize,
           align: box.align,
         });
-        ly += TABLE_LINE;
+        ly += this.tableLine;
       }
       if (cell.details.length) ly += 1.5;
       for (const text of cell.details) {

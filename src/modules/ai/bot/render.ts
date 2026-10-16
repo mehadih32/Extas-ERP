@@ -1,4 +1,5 @@
 import type { CardStatus, ChatCard } from "../chat/cards";
+import { countOf } from "@/lib/display";
 
 /*
  * Chat cards as bot messages: plain text (no markup to escape) and rows of
@@ -97,7 +98,7 @@ export function renderCard(
     case "costs":
       return {
         text: [
-          `${card.period}: ${card.currency} ${card.total} for ${card.calls} AI calls`,
+          `${card.period}: ${card.currency} ${card.total} for ${countOf(card.calls, "AI call")}`,
           ...card.byTask.map((t) => `• ${t.label}: ${card.currency} ${t.cost} (${t.calls})`),
         ].join("\n"),
         buttons: [],

@@ -1,0 +1,76 @@
+# The ERP's Full check (AI Center > Full check, next to Server Health). The ERP
+# starts it with the GitHub token the owner saved there: GitHub's computer opens
+# every screen of the site as the owner and as each role, every PDF, every link
+# and every button that changes nothing, and sends the problems with screenshots
+# back to the ERP. About 10 minutes.
+#
+# How it is kept safe:
+#   - the ERP sends a one-time pass with the run, and the check also shows the
+#     ERP GitHub's signed proof that it is this workflow in this repository
+#     ("id-token: write"), so the pass alone opens nothing;
+#   - on the live site the check's sessions can only read: its browser stops
+#     every other request and the ERP refuses them too (src/proxy.ts). Only on
+#     the demo site may it press buttons that write;
+#   - its sessions end when the report is in (at the latest after 50 minutes).
+# It is started by the ERP only; "Run workflow" by hand has no pass, so it stops.
+# The code is in scripts/full-check/crawl.mjs.
+name: Full check
+
+run-name: Full check ${{ inputs.run }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      site:
+        description: The ERP's address (the ERP fills this in)
+        required: true
+        type: string
+      run:
+        description: The check's id in the ERP
+        required: true
+        type: string
+      pass:
+        description: The one-time pass (the ERP fills this in)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: full-check-${{ inputs.site }}
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Check every screen
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SITE: ${{ inputs.site }}
+      RUN: ${{ inputs.run }}
+      PASS: ${{ inputs.pass }}
+    steps:
+      - name: Hide the pass
+        run: echo "::add-mask::$PASS"
+
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            scripts/full-check
+            src/app
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Install the browser
+        working-directory: scripts/full-check
+        run: |
+          npm install --no-package-lock --no-audit --no-fund
+          npx playwright install --with-deps chromium
+
+      - name: Check every screen
+        run: node scripts/full-check/crawl.mjs

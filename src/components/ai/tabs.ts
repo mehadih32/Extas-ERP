@@ -12,14 +12,16 @@ export type AiTab = {
 /*
  * The AI Center's tabs. Everything is read with ai.view or ai.manage (the
  * owner, by default); changing anything, and the Settings tab with the key and
- * the PIN, needs ai.manage. The AI itself holds neither. Server Health is the
- * platform owner's only.
+ * the PIN, needs ai.manage. The AI itself holds neither. Server Health and the
+ * Full check are the platform owner's only.
  */
 export const AI_KEYS: readonly PermissionKey[] = ["ai.view", "ai.manage"];
 
 export const AI_TABS: readonly AiTab[] = [
   { href: "/ai", label: "AI Home", anyOf: AI_KEYS },
   { href: "/ai/mehedi", label: "Mehedi 2.0", anyOf: AI_KEYS },
+  { href: "/ai/agents", label: "Agents", anyOf: AI_KEYS },
+  { href: "/ai/skills", label: "Skills", anyOf: AI_KEYS },
   { href: "/ai/chat", label: "Chat", anyOf: ["ai.manage"] },
   { href: "/ai/orders", label: "Orders", anyOf: AI_KEYS },
   { href: "/ai/drafts", label: "Drafts", anyOf: AI_KEYS },
@@ -30,6 +32,7 @@ export const AI_TABS: readonly AiTab[] = [
   { href: "/ai/logs", label: "Logs", anyOf: AI_KEYS },
   { href: "/ai/bot", label: "Bot", anyOf: ["ai.manage"] },
   { href: "/ai/health", label: "Server Health", anyOf: ["ai.manage"], platformOwner: true },
+  { href: "/ai/full-check", label: "Full check", anyOf: ["ai.manage"], platformOwner: true },
   { href: "/ai/settings", label: "Settings", anyOf: ["ai.manage"] },
 ];
 

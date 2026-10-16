@@ -17,6 +17,7 @@ export const JOB_HANDLERS: Record<JobKind, () => Promise<JobHandler>> = {
   "exit.certificate": async () => (await import("@/modules/hr/exit-pdf")).runExitCertificateJob,
   "ai.knowledge.test": async () =>
     (await import("@/modules/ai/knowledge.service")).runKnowledgeTestJob,
+  "ai.skill.test": async () => (await import("@/modules/ai/skills.service")).runSkillTestJob,
   "ai.bot.incoming": async () => (await import("@/modules/ai/bot/incoming")).runBotIncomingJob,
   "ai.bot.push": async () => (await import("@/modules/ai/bot/push")).runBotPushJob,
 };

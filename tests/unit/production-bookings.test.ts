@@ -31,6 +31,7 @@ import {
   GARMENT_CATEGORIES,
   sizeGroupOf,
 } from "@/modules/production/booking-presets";
+import { firstDifference, paperworkChanges } from "@/modules/production/booking-revisions";
 import { createBookingSchema } from "@/modules/production/booking-schemas";
 import type { BookingForm } from "@/modules/production/booking.service";
 import {
@@ -414,5 +415,47 @@ describe("The booking wizard's working copy", () => {
     expect(buildPaperwork(draft, "2026-10-05").problems.expectedDate).toMatch(/booking date/);
     draft.expectedDate = "2026-10-05";
     expect(buildPaperwork(draft, "2026-10-05").problems).toEqual({});
+  });
+});
+
+describe("What changed in a booking's paperwork", () => {
+  const paper = {
+    deliveryPlace: "Gazipur store",
+    paymentTerms: null,
+    termsLanguage: "EN" as const,
+    terms: "Match the lab dip.\nRolls of 20 kg.\nNo shading.",
+  };
+
+  it("names the first line of the terms that differs and counts the rest", () => {
+    expect(firstDifference("a\nb\nc", "a\nb\nc")).toBeNull();
+    expect(firstDifference("a\nb\nc", "a\nB\nC")).toEqual({
+      was: "Line 2: b",
+      now: "Line 2: B (+1 more line)",
+    });
+    expect(firstDifference("a", "a\nnew one\nand two")).toEqual({
+      was: "Line 2: None",
+      now: "Line 2: new one (+1 more line)",
+    });
+  });
+
+  it("lists the delivery place, payment terms, language and terms the supplier is told", () => {
+    expect(paperworkChanges(paper, { ...paper })).toEqual([]);
+    expect(
+      paperworkChanges(paper, {
+        deliveryPlace: "  ",
+        paymentTerms: "LC at sight",
+        termsLanguage: "BN",
+        terms: "Match the lab dip.\nRolls of 25 kg.\nNo shading.",
+      }),
+    ).toEqual([
+      { item: "Delivery place", was: "Gazipur store", now: "Not set" },
+      { item: "Payment terms", was: "Not set", now: "LC at sight" },
+      { item: "Terms language", was: "English", now: "বাংলা" },
+      {
+        item: "Terms and conditions",
+        was: "Line 2: Rolls of 20 kg.",
+        now: "Line 2: Rolls of 25 kg.",
+      },
+    ]);
   });
 });

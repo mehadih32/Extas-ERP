@@ -70,6 +70,7 @@ export function BookingList({
                 revision={b.revision}
                 source={b.source}
                 late={b.isOverdue}
+                risk={b.fabricRisk}
               />
             }
             title={b.title || b.supplier.name}
@@ -115,6 +116,7 @@ export function BookingList({
                       revision={b.revision}
                       source={b.source}
                       late={b.isOverdue}
+                      risk={b.fabricRisk}
                     />
                   </div>
                 </TableCell>

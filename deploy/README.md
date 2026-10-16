@@ -315,6 +315,13 @@ The token needs only **Zone → DNS → Edit** for the one domain (the Backups s
 Help Center show the steps). It is sealed in the database and, inside every backup, locked
 with the owner's recovery key.
 
+Behind the proxy every visitor reaches the server from a Cloudflare address. The Caddyfile
+(`servers` block) trusts only Cloudflare's published ranges (https://www.cloudflare.com/ips)
+to name the visitor (`CF-Connecting-IP`), and hands the app that one address, so sign-ins,
+the audit log and Bug Guard's blocks see the real visitor. Anyone not coming through
+Cloudflare is known by their own address, whatever headers they send. If Cloudflare ever
+changes its list, update the `trusted_proxies` line.
+
 ## Updating to a new version
 
 ```bash

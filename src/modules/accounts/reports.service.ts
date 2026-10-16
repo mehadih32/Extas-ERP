@@ -452,7 +452,7 @@ export async function getAccountsOverview(ctx: CompanyContext) {
     ctx.db.payrollRun.count({ where: { status: "DRAFT" } }),
     prisma.payrollItem.findMany({
       where: { paymentId: null, netPay: { gt: 0 }, run: { companyId, status: "APPROVED" } },
-      select: { runId: true, netPay: true },
+      select: { runId: true, netPay: true, paidAmount: true },
     }),
   ]);
 
@@ -536,7 +536,10 @@ export async function getAccountsOverview(ctx: CompanyContext) {
       awaitingPayment: {
         payrolls: new Set(unpaidSalaries.map((i) => i.runId)).size,
         employees: unpaidSalaries.length,
-        amount: unpaidSalaries.reduce((t, i) => t.plus(i.netPay), ZERO).toFixed(2),
+        // What is still owed: a salary paid in parts counts only its rest.
+        amount: unpaidSalaries
+          .reduce((t, i) => t.plus(i.netPay).minus(i.paidAmount), ZERO)
+          .toFixed(2),
       },
     },
   };
@@ -865,7 +868,7 @@ export async function getBooksCheck(ctx: CompanyContext) {
     prisma.payrollItem.groupBy({
       by: ["employeeId"],
       where: { paymentId: null, run: { companyId, status: { in: ["APPROVED", "PAID"] } } },
-      _sum: { netPay: true },
+      _sum: { netPay: true, paidAmount: true },
     }),
   ]);
   checks.push(
@@ -882,7 +885,13 @@ export async function getBooksCheck(ctx: CompanyContext) {
       "Salaries payable match approved net pay not yet paid",
       // A liability: its balance is credit minus debit.
       new Map([...payableLedger].map(([id, v]) => [id, v.neg()])),
-      new Map(unpaidPay.map((i) => [i.employeeId, i._sum.netPay ?? ZERO])),
+      // A salary paid in parts still owes only its rest.
+      new Map(
+        unpaidPay.map((i) => [
+          i.employeeId,
+          (i._sum.netPay ?? ZERO).minus(i._sum.paidAmount ?? ZERO),
+        ]),
+      ),
     ),
   );
 

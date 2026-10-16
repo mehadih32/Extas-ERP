@@ -200,6 +200,8 @@ describe("AI Center tabs and models", () => {
     expect(visibleAiTabs(["ai.view"]).map((t) => t.label)).toEqual([
       "AI Home",
       "Mehedi 2.0",
+      "Agents",
+      "Skills",
       "Orders",
       "Drafts",
       "Control",

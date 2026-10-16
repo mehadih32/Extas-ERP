@@ -63,6 +63,7 @@ export async function aiSettingsOf(companyId: string, db: Db = prisma): Promise<
       keyTests: null,
       providerModels: null,
       agentModels: null,
+      agentsOff: [],
       models: null,
       allowFable: false,
       pinHash: null,

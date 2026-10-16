@@ -217,7 +217,8 @@ export async function readStoredFile(asset: { storagePath: string }): Promise<Bu
  * record it belongs to (a delivery's packing list, a supplier bill's scan, a
  * licence scan, a document template, an expense's receipt, a raw material
  * purchase's bill, a payment's or cheque's proof photo, a paper in an employee's
- * data vault, a staff claim's receipt, a tech pack's reference or logo file). Saved reports
+ * data vault, a staff claim's receipt, a tech pack's reference or logo file, an
+ * AI skill's knowledge for the people who see the AI Center). Saved reports
  * download through the Report Builder, which checks their figures.
  */
 export async function getFileForDownload(ctx: CompanyContext, fileId: string) {
@@ -308,7 +309,15 @@ export async function getFileForDownload(ctx: CompanyContext, fileId: string) {
     (await ctx.db.supplierBill.count({
       where: { attachmentId: asset.id, items: { some: {} } },
     })) > 0;
-  if (!allowed && !materialBill) {
+  // A skill's knowledge (AI Center > Skills): the people who see the AI Center.
+  const skillFile =
+    !allowed &&
+    !materialBill &&
+    (ctx.can("ai.view") || ctx.can("ai.manage")) &&
+    (await ctx.db.aiSkillVersion.count({
+      where: { files: { array_contains: [{ fileId: asset.id }] } },
+    })) > 0;
+  if (!allowed && !materialBill && !skillFile) {
     throw new AppError("FORBIDDEN", "You do not have permission to open this file.");
   }
   return {

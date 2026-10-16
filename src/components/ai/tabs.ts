@@ -20,6 +20,8 @@ export const AI_KEYS: readonly PermissionKey[] = ["ai.view", "ai.manage"];
 export const AI_TABS: readonly AiTab[] = [
   { href: "/ai", label: "AI Home", anyOf: AI_KEYS },
   { href: "/ai/mehedi", label: "Mehedi 2.0", anyOf: AI_KEYS },
+  { href: "/ai/agents", label: "Agents", anyOf: AI_KEYS },
+  { href: "/ai/skills", label: "Skills", anyOf: AI_KEYS },
   { href: "/ai/chat", label: "Chat", anyOf: ["ai.manage"] },
   { href: "/ai/orders", label: "Orders", anyOf: AI_KEYS },
   { href: "/ai/drafts", label: "Drafts", anyOf: AI_KEYS },

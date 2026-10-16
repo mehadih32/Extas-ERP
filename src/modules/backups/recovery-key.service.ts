@@ -43,7 +43,8 @@ import { keepKeyInDriveSchema, setRecoveryKeySchema } from "@/modules/backups/sc
 
 /*
  * The owner's own recovery key (A9, G4, G5), set on the Backups screen with the
- * PIN. Any word, sentence or pattern of 8 or more characters, typed twice;
+ * PIN. Any word, sentence or pattern of 6 or more characters (10 or more is
+ * safer: a warning, not a block), typed twice;
  * never made up by the ERP. It makes a key pair: the server keeps the public
  * key (it locks every backup) and the keys file (the private key, locked with
  * the recovery key). The recovery key itself and the open private key are never

@@ -295,7 +295,7 @@ run("v6.4 backups", { timeout: 120_000 }, () => {
         keys.setRecoveryKey(ctx, { pin: PIN, key: "short", confirm: "short" }),
         "VALIDATION",
       );
-      expect(short.details).toEqual({ key: ["Use at least 8 characters"] });
+      expect(short.details).toEqual({ key: ["Use at least 6 characters"] });
       const differ = await expectAppError(
         keys.setRecoveryKey(ctx, { pin: PIN, key: OWNER_KEY, confirm: `${OWNER_KEY}x` }),
         "VALIDATION",

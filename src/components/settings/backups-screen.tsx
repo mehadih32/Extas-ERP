@@ -622,7 +622,7 @@ function KeyFields({ fieldError }: { fieldError: (name: string) => string | unde
         label="New recovery key"
         hint={
           strength?.hint ??
-          "Any word, sentence or pattern you will remember, at least 8 characters."
+          "Any word, sentence or pattern you will remember, at least 6 characters (10 or more is safer)."
         }
         error={fieldError("key")}
       >

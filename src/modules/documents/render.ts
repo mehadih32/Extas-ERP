@@ -127,6 +127,10 @@ const HEADER_RATIO = 7.4 / TABLE_SIZE;
 const DETAIL_SIZE = 7;
 const DETAIL_LINE = 9.4;
 const TABLE_HEADER = 18;
+/** The most a text column claims for its longest word; a longer one may still be cut. */
+const MAX_WORD_NEED = 80;
+/** A column heading too wide for its column wraps to this many lines; it is never cut. */
+const MAX_HEADER_LINES = 3;
 const MAX_CELL_LINES = 8;
 /** A row's reference picture: a square this wide, before the details' text. */
 const THUMB = 58;
@@ -242,7 +246,8 @@ class Writer {
    * Long text that must not be cut (a company's name, a buyer, an address): its
    * size and lines. One line at the given size if it fits, else smaller down to
    * `minSize`, else wrapped onto up to `maxLines` lines at the largest size that
-   * takes; only past all that is the last line cut.
+   * takes (and, when `fits` is given, whose lines it says have the room); only
+   * past all that is the last line cut.
    */
   private fitLines(
     text: string,
@@ -250,6 +255,7 @@ class Writer {
     style: TextStyle,
     minSize: number,
     maxLines: number,
+    fits: (lines: number, size: number) => boolean = () => true,
   ): { size: number; lines: string[] } {
     const one = (size: number) => textWidth(this.doc, pdfText(text), { ...style, size }) <= width;
     for (let size = style.size; size >= minSize - 0.001; size -= 0.5) {
@@ -257,7 +263,8 @@ class Writer {
     }
     for (let size = style.size; size >= minSize - 0.001; size -= 0.5) {
       const lines = wrapText(this.doc, text, width, { ...style, size });
-      if (lines.length <= maxLines && !lines.some((l) => l.endsWith("…"))) return { size, lines };
+      const whole = !lines.some((l) => l.endsWith("…"));
+      if (lines.length <= maxLines && whole && fits(lines.length, size)) return { size, lines };
     }
     const lines = wrapText(this.doc, text, width, { ...style, size: minSize });
     if (lines.length <= maxLines) return { size: minSize, lines };
@@ -523,13 +530,16 @@ class Writer {
     const top = BOOK_MARGIN.top;
     const side = this.width * 0.3;
     const middle = this.width - 2 * side;
-    // A long name gets smaller, then takes a second line (the tagline moves down): never cut.
+    // A long name gets smaller, then takes a second line (the tagline moves down), and a
+    // third in portrait if it must (the tagline then has no room), always above the
+    // rule: never cut.
     const name = this.fitLines(
       this.model.letterhead.name,
       side - 8,
       { font: SANS_BOLD, size: 13 },
       9,
-      2,
+      3,
+      (lines, size) => 2 + (lines - 1) * (size + 1.5) + size * 1.16 <= BOOK_HEADER - 1.5,
     );
     name.lines.forEach((text, i) => {
       this.line(text, this.left, top + 2 + i * (name.size + 1.5), side - 8, {
@@ -538,7 +548,8 @@ class Writer {
         color: NAVY,
       });
     });
-    const taglineY = name.lines.length > 1 ? top + 2 + 2 * (name.size + 1.5) + 1 : top + 19;
+    const taglineY =
+      name.lines.length > 1 ? top + 2 + name.lines.length * (name.size + 1.5) + 1 : top + 19;
     if (frame.tagline && taglineY + 7 <= top + BOOK_HEADER - 1) {
       this.line(frame.tagline, this.left, taglineY, side - 8, {
         font: SANS,
@@ -919,10 +930,68 @@ class Writer {
     return { widths, need, short, flexible };
   }
 
-  /** Whether every figure fits on its line at `size`. */
+  /**
+   * How wide each text column must be so no word in it is cut (its heading, its
+   * cells and the details under them), up to MAX_WORD_NEED: a word longer than
+   * that may still be cut, as before.
+   */
+  private wordNeeds(columns: Column[], rows: Row[], size: number): number[] {
+    const longest = (text: string, style: TextStyle) =>
+      Math.max(
+        0,
+        ...text.split(/\s+/).map((word) => (word ? textWidth(this.doc, word, style) : 0)),
+      );
+    return columns.map((c, i) => {
+      if (c.align === "right" || c.check) return 0;
+      let widest = longest(this.columnLabel(c), {
+        font: SANS_BOLD,
+        size: size * HEADER_RATIO,
+        spacing: 0.3,
+      });
+      for (const r of rows) {
+        const font = (r.style ?? "normal") === "normal" ? SANS : SANS_BOLD;
+        widest = Math.max(widest, longest(r.cells[i] ?? "", { font, size }));
+        for (const d of r.details ?? []) {
+          widest = Math.max(widest, longest(d, { font: SANS, size: DETAIL_SIZE }));
+        }
+      }
+      const swatch = i === 0 && rows.some((r) => r.swatch) ? 11 : 0;
+      return Math.min(MAX_WORD_NEED, widest) + swatch + 2 * CELL_PAD + 1;
+    });
+  }
+
+  /**
+   * Each column's width at `size`, or null when it cannot be done without cutting
+   * a figure or a word. First the usual way: figure columns take what they lack
+   * from the text columns (at most half of their room). When that would leave a
+   * text column too narrow for its words (a booking with many sizes in portrait),
+   * every column gets what it needs and the room comes from the columns with more.
+   */
+  private layoutWidths(columns: Column[], rows: Row[], size: number): number[] | null {
+    const { need, short, flexible, widths } = this.shortfall(columns, rows, size);
+    const words = this.wordNeeds(columns, rows, size);
+    let usual: number[] | null = widths;
+    if (short > 0) {
+      usual =
+        flexible > 2 * short
+          ? widths.map((w, i) =>
+              columns[i]!.align === "right" ? Math.max(w, need[i]!) : w - short * (w / flexible),
+            )
+          : null;
+    }
+    if (usual && usual.every((w, i) => w >= words[i]! - 0.01)) return usual;
+    const least = columns.map((c, i) => (c.align === "right" ? need[i]! : words[i]!));
+    const deficit = widths.reduce((sum, w, i) => sum + Math.max(0, least[i]! - w), 0);
+    const surplus = widths.reduce((sum, w, i) => sum + Math.max(0, w - least[i]!), 0);
+    if (deficit > surplus) return null;
+    return widths.map((w, i) =>
+      w <= least[i]! ? least[i]! : w - (deficit * (w - least[i]!)) / surplus,
+    );
+  }
+
+  /** Whether every figure, and every word of the text columns, fits at `size`. */
   private figuresFit(columns: Column[], rows: Row[], size: number): boolean {
-    const { short, flexible } = this.shortfall(columns, rows, size);
-    return short <= 0 || flexible > 2 * short;
+    return this.layoutWidths(columns, rows, size) !== null;
   }
 
   /** The largest text size, from the usual one down to the smallest, at which the figures fit. */
@@ -936,14 +1005,11 @@ class Writer {
   private columnBoxes(columns: Column[], rows: Row[] = []): ColumnBox[] {
     // A right-aligned column (quantities, rates, amounts) prints on one line: when its
     // longest figure or its heading would be cut, it takes the room it needs from the
-    // text columns, so no figure ever ends in "…". Tables that already fit are unchanged.
-    const { need, short, flexible, widths: start } = this.shortfall(columns, rows, this.tableSize);
-    let widths = start;
-    if (short > 0 && flexible > 2 * short) {
-      widths = widths.map((w, i) =>
-        columns[i]!.align === "right" ? Math.max(w, need[i]!) : w - short * (w / flexible),
-      );
-    }
+    // text columns, so no figure ever ends in "…", and no text column gets too narrow
+    // for its words (layoutWidths). Tables that already fit are unchanged.
+    const widths =
+      this.layoutWidths(columns, rows, this.tableSize) ??
+      this.shortfall(columns, rows, this.tableSize).widths;
     let x = this.left;
     return columns.map((c, i) => {
       const width = widths[i]!;
@@ -958,20 +1024,48 @@ class Writer {
     return this.frame ? c.label.toUpperCase() : c.label;
   }
 
+  /** Each column heading's lines: one, or wrapped when the column is narrower than it. */
+  private headerLines(columns: Column[], boxes: ColumnBox[]): string[][] {
+    const style = { font: SANS_BOLD, size: this.tableSize * HEADER_RATIO, spacing: 0.3 };
+    return columns.map((c, i) => {
+      const text = this.columnLabel(c);
+      const width = boxes[i]!.width - 2 * CELL_PAD;
+      if (textWidth(this.doc, text, style) <= width) return [text];
+      return wrapText(this.doc, text, width, style).slice(0, MAX_HEADER_LINES);
+    });
+  }
+
+  /** The heading row's height: taller when a heading wraps. */
+  private headerHeight(lines: string[][]): number {
+    const most = Math.max(1, ...lines.map((l) => l.length));
+    return TABLE_HEADER + (most - 1) * this.tableSize * HEADER_RATIO * 1.25;
+  }
+
   private tableHeader(columns: Column[], boxes: ColumnBox[]) {
-    this.doc.rect(this.left, this.y, this.width, TABLE_HEADER).fill(this.primary);
+    const lines = this.headerLines(columns, boxes);
+    const height = this.headerHeight(lines);
+    const size = this.tableSize * HEADER_RATIO;
+    this.doc.rect(this.left, this.y, this.width, height).fill(this.primary);
     columns.forEach((c, i) => {
       const box = boxes[i]!;
-      this.line(this.columnLabel(c), box.x + CELL_PAD, this.y + 5.6, box.width - 2 * CELL_PAD, {
-        font: SANS_BOLD,
-        size: this.tableSize * HEADER_RATIO,
-        color: WHITE,
-        align: box.align,
-        spacing: 0.3,
+      lines[i]!.forEach((text, n) => {
+        this.line(
+          text,
+          box.x + CELL_PAD,
+          this.y + 5.6 + n * size * 1.25,
+          box.width - 2 * CELL_PAD,
+          {
+            font: SANS_BOLD,
+            size,
+            color: WHITE,
+            align: box.align,
+            spacing: 0.3,
+          },
+        );
       });
     });
-    if (this.frame) this.grid(boxes, this.y, TABLE_HEADER);
-    this.y += TABLE_HEADER;
+    if (this.frame) this.grid(boxes, this.y, height);
+    this.y += height;
   }
 
   /** The book frame's table grid: a thin blue-grey line round every cell of a row. */
@@ -1101,7 +1195,8 @@ class Writer {
     });
     const layouts = block.rows.map((row) => this.layoutRow(row, boxes, detailColumn));
     const titleHeight = block.title ? 13 : 0;
-    this.ensure(titleHeight + TABLE_HEADER + (layouts[0]?.height ?? 20));
+    const header = this.headerHeight(this.headerLines(block.columns, boxes));
+    this.ensure(titleHeight + header + (layouts[0]?.height ?? 20));
     if (block.title) this.sectionTitle(block.title);
     this.tableHeader(block.columns, boxes);
 

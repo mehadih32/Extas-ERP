@@ -206,8 +206,9 @@ function framed(
   blocks: PrintDocument["blocks"],
   company: Partial<typeof COMPANY> = {},
   preparedBy: string | null = "Rahima Akter",
+  orientation: "landscape" | "portrait" = "landscape",
 ): PrintDocument {
-  const doc = sampleBook("landscape");
+  const doc = sampleBook(orientation);
   return {
     ...doc,
     letterhead: { ...doc.letterhead, name: company.name ?? COMPANY.name },
@@ -215,7 +216,7 @@ function framed(
     frame: bookFrame(
       { ...COMPANY, ...company },
       {
-        orientation: "landscape",
+        orientation,
         docNo: "PO-2026-00007",
         buyerPo: "MB-2026-00001",
         date: "15 Oct 2026",
@@ -269,6 +270,25 @@ describe("figures in a booking table are never cut (v6.3)", () => {
     expect(lines.filter((l) => l === "Colour 1").length).toBe(continued.length + 1);
   });
 
+  it("wraps a column heading that is wider than its column, never cutting it", async () => {
+    // The collar matrix with 14 size groups printed "GARMENT COL…" (found in the release samples).
+    const base = sizeTable(14, (r, s) => `${10 + r},${String(100 + s).padStart(3, "0")}`);
+    const table = {
+      ...base,
+      columns: [
+        { label: "Garment colour", weight: 2 },
+        { label: "Collar colour", weight: 2.2 },
+        ...base.columns.slice(1),
+      ],
+      rows: base.rows.map((r) => ({ ...r, cells: [r.cells[0]!, "Navy", ...r.cells.slice(1)] })),
+    };
+    const pdf = await renderDocumentPdf(framed([table]), { compress: false });
+    const lines = pdfLines(pdf);
+    expect(lines.join("\n")).not.toContain("…");
+    expect(lines.join("\n")).toMatch(/GARMENT\s+COLOUR|GARMENT[\s\S]*COLOUR/);
+    for (const row of table.rows) for (const cell of row.cells) expect(lines).toContain(cell);
+  });
+
   it("leaves a table that already fits at the usual size", async () => {
     const table = sizeTable(4, () => "120");
     const pdf = await renderDocumentPdf(framed([table]), { compress: false });
@@ -301,6 +321,26 @@ describe("long names in the book frame wrap instead of being cut (v6.3)", () => 
     const words = (s: string) => s.split(/\s+/).filter(Boolean);
     for (const word of words(LONG_NAME)) expect(all).toContain(word);
     for (const word of words(contactLine(company))) expect(all).toContain(word);
+  });
+
+  it("keeps a very long company name whole in portrait too (three lines)", async () => {
+    // Found in the release samples: portrait's narrower header cut it on the second line.
+    const name = "Extas Apparel Sourcing and Garment Manufacturing International Limited";
+    const doc = framed(
+      [{ kind: "text", title: "Note", paragraphs: ["One page."] }],
+      { ...COMPANY, name },
+      "Rahima Akter",
+      "portrait",
+    );
+    const pdf = await renderDocumentPdf(doc, { compress: false });
+    const all = pdfLines(pdf).join("\n");
+    expect(all).not.toContain("…");
+    for (const word of name.split(" ")) expect(all).toContain(word);
+    // Its last line sits above the header's rule (36pt under the top margin), not on it.
+    const rule = 841.89 - 15 * MM - 36;
+    const last = pdfTextBlocks(pdf).filter((b) => b.text.includes("Limited") && b.y > rule);
+    expect(last.length).toBeGreaterThan(0);
+    for (const block of last) expect(block.y).toBeGreaterThan(rule + 2);
   });
 
   it("wraps a long buyer and order in the header's right column", async () => {

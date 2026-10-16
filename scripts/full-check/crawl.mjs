@@ -339,8 +339,14 @@ async function checkRole(browser, session, writes, deadline) {
         .locator("body")
         .innerText({ timeout: 5000 })
         .catch(() => "");
-      const code = /Error Code: (ERR-[\w-]+)/.exec(body)?.[1];
-      if (status < 400 && (code || /Something went wrong/i.test(body))) {
+      // The ERP's error window (its code box), or Next.js' own crash page. Not the
+      // words alone: the Help Center's guide on errors quotes them.
+      const box = await page.$('[data-testid="error-code"]').catch(() => null);
+      const code = box ? ((await box.innerText().catch(() => "")) || "").trim() : null;
+      const crashed = /Application error: a (client|server)-side exception has occurred/i.test(
+        body,
+      );
+      if (status < 400 && (box || crashed)) {
         await note(
           page,
           role,
@@ -411,8 +417,10 @@ async function checkRole(browser, session, writes, deadline) {
     const pattern = patternOf(path.split("?")[0]);
     if (!pattern || pressed.has(pattern)) return;
     pressed.add(pattern);
+    // The top bar's menus are the same on every screen: pressed once, on the home screen.
+    const within = path === "/" ? "" : "#main ";
     const buttons = await page
-      .locator('[role="tab"], button[aria-haspopup], summary')
+      .locator(`${within}[role="tab"], ${within}button[aria-haspopup], ${within}summary`)
       .all()
       .catch(() => []);
     let n = 0;
@@ -443,7 +451,14 @@ async function checkRole(browser, session, writes, deadline) {
         bytes.subarray(0, 5).toString("latin1") !== "%PDF-"
       ) {
         why = "sent a file that is not a PDF";
-      } else if (type.includes("text/html")) why = "sent a web page instead of the file";
+      } else if (
+        type.includes("text/html") &&
+        // An HTML template is a file too: it comes as an attachment, or sandboxed.
+        !/attachment/i.test(response.headers()["content-disposition"] ?? "") &&
+        !/sandbox/.test(response.headers()["content-security-policy"] ?? "")
+      ) {
+        why = "sent a web page instead of the file";
+      }
       if (why) {
         await note(null, role, "PDF", from, "A PDF or file did not open", `GET ${path} ${why}`);
       }
@@ -484,7 +499,7 @@ async function checkRole(browser, session, writes, deadline) {
   await context.close();
   const left = queue.length - next;
   say(
-    `${role} (${session.member}): ${screens} screens, ${pdfs} downloads${skipped ? `, ${skipped} writes stopped` : ""}${left > 0 ? `, ${left} not reached in time` : ""}`,
+    `${role} (${session.member}): ${screens} screens, ${pdfs} downloads${skipped ? `, ${skipped} ${skipped === 1 ? "write" : "writes"} stopped` : ""}${left > 0 ? `, ${left} not reached in time` : ""}`,
   );
   return {
     role,

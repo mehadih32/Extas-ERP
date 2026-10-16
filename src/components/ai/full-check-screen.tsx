@@ -396,7 +396,12 @@ function RunSummary({ run: r, when }: { run: Run; when: ReturnType<typeof useWhe
                   <td className="py-1 pr-3">{x.screens}</td>
                   <td className="py-1 pr-3">{x.pdfs}</td>
                   <td className="py-1 text-muted-foreground">
-                    {[x.note?.replace(/\.$/, ""), x.skipped ? `${x.skipped} writes stopped` : null]
+                    {[
+                      x.note?.replace(/\.$/, ""),
+                      x.skipped
+                        ? `${x.skipped} ${x.skipped === 1 ? "write" : "writes"} stopped`
+                        : null,
+                    ]
                       .filter(Boolean)
                       .join(". ")}
                   </td>

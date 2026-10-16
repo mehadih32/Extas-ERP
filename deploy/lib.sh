@@ -73,11 +73,12 @@ choose_caddy() {
 # With a Cloudflare token in deploy/.env (the restore puts the one saved on the
 # Backups screen there), HTTPS certificates come through Cloudflare's DNS check,
 # which works with Cloudflare's proxy on: Caddy is built with Cloudflare's DNS
-# module (deploy/caddy, again every 30 days for its updates). Without a token,
+# module (deploy/caddy: exact versions; built again every 30 days for the base
+# image's fixes, and at once when deploy/caddy changes). Without a token,
 # or when that Caddy cannot be built or checked, plain Caddy runs as before and
 # Let's Encrypt checks over port 80.
 prepare_https() {
-  local part="$DATA_DIR/caddy/tls/cloudflare.caddy" created
+  local part="$DATA_DIR/caddy/tls/cloudflare.caddy" created build built
   mkdir -p "$DATA_DIR/caddy/tls"
   if [ -z "$(setting CLOUDFLARE_API_TOKEN)" ]; then
     rm -f "$part"
@@ -85,9 +86,12 @@ prepare_https() {
     return 0
   fi
   created="$(docker image inspect -f '{{.Created}}' "$CLOUDFLARE_CADDY" 2>/dev/null || true)"
-  if [ -z "$created" ] || [ "$(date -d "$created" +%s 2>/dev/null || echo 0)" -lt "$(date -d '30 days ago' +%s)" ]; then
+  # Which deploy/caddy the image was built from (its Dockerfile's checksum).
+  build="$(sha256sum "$DEPLOY_DIR/caddy/Dockerfile" | cut -c1-16)"
+  built="$(docker image inspect -f '{{index .Config.Labels "extas.caddy-build"}}' "$CLOUDFLARE_CADDY" 2>/dev/null || true)"
+  if [ -z "$created" ] || [ "$built" != "$build" ] || [ "$(date -d "$created" +%s 2>/dev/null || echo 0)" -lt "$(date -d '30 days ago' +%s)" ]; then
     say "HTTPS through Cloudflare's DNS check: building Caddy with Cloudflare's module (a few minutes)"
-    if ! docker build --pull -q -t "$CLOUDFLARE_CADDY" "$DEPLOY_DIR/caddy" >/dev/null; then
+    if ! docker build --pull -q --label "extas.caddy-build=$build" -t "$CLOUDFLARE_CADDY" "$DEPLOY_DIR/caddy" >/dev/null; then
       [ -n "$created" ] || {
         rm -f "$part"
         choose_caddy

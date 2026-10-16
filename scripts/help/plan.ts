@@ -37,10 +37,9 @@ const guides = HELP_SECTIONS.flatMap((section) =>
       slug: article.slug,
       section: section.id,
       route,
-      // Signed-out pages (sign in, change password...) are taken without a session.
-      signedOut: pages(root).some(
-        (p) => p.route === route && !p.file.includes(`${path.sep}(app)${path.sep}`),
-      ),
+      // The sign-in page is the only one shown without a session (src/proxy.ts);
+      // changing the password, choosing a company and the terms need one.
+      signedOut: route === "/sign-in",
       open: article.shot?.open ?? null,
       steps: article.steps.map((step) => quotedLabels(step.text)),
       screen: screenFingerprint(root, route, shell),

@@ -83,14 +83,16 @@ async function addressOf(page, pattern) {
     const paths = links
       .map((href) => {
         try {
-          const url = new URL(href, location.origin);
-          return url.origin === location.origin ? url.pathname : null;
+          // Read here in Node, not in the page: the site's own links only.
+          const url = new URL(href, SITE);
+          return url.origin === SITE.origin ? url.pathname : null;
         } catch {
           return null;
         }
       })
       .filter((p) => p && !NEVER.some((n) => n.test(p)));
-    const hit = paths.find((p) => re.test(p));
+    // A record's own address, not a page of its own that fits too ("/production/projects/new").
+    const hit = paths.find((p) => re.test(p) && !fixed.has(p));
     if (hit) return hit;
     // One step further: record pages under a record (a project's tech pack).
     for (const p of paths) {

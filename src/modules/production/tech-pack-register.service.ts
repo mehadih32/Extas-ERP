@@ -8,7 +8,7 @@ import { lockRow } from "@/lib/row-lock";
 import { runTransaction } from "@/lib/transaction";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
-import { storeUpload } from "@/modules/files/file.service";
+import { deleteStoredFile, storeUpload } from "@/modules/files/file.service";
 import { isWalkIn } from "@/modules/parties/walk-in";
 import { isProjectClosed } from "@/modules/production/project-costs";
 import { referenceSchema } from "@/modules/production/tech-pack-files.service";
@@ -132,7 +132,45 @@ export async function createTechPack(
   await assertBuyer(ctx, input.buyerId);
   if (input.styleId) await findStyle(ctx, input.styleId);
   const stored: Array<{ id: string }> = [];
-  for (const upload of uploads) stored.push(await storeUpload(ctx, upload, meta));
+  try {
+    for (const upload of uploads) stored.push(await storeUpload(ctx, upload, meta));
+    return await startTechPack(ctx, input, stored, meta);
+  } catch (error) {
+    // Not started: the photos stored for it are not kept (nothing points to them).
+    await dropUnused(ctx, stored);
+    throw error;
+  }
+}
+
+/** Removes stored photos no tech pack points to (record and bytes); a failure here is only logged. */
+async function dropUnused(ctx: CompanyContext, stored: ReadonlyArray<{ id: string }>) {
+  if (stored.length === 0) return;
+  try {
+    const unused = await ctx.db.fileAsset.findMany({
+      where: { id: { in: stored.map((f) => f.id) }, techPackReferences: { none: {} } },
+      select: { id: true, storagePath: true },
+    });
+    for (const file of unused) {
+      const { count } = await ctx.db.fileAsset.deleteMany({
+        where: { id: file.id, techPackReferences: { none: {} } },
+      });
+      if (count > 0) await deleteStoredFile(file);
+    }
+  } catch (error) {
+    console.error(
+      "[tech-pack] photos of a tech pack that was not started were not removed",
+      error instanceof Error ? error.message : error,
+    );
+  }
+}
+
+/** The new tech pack with its references, once its photos are stored. */
+async function startTechPack(
+  ctx: CompanyContext,
+  input: z.infer<typeof startSchema>,
+  stored: ReadonlyArray<{ id: string }>,
+  meta?: RequestMeta,
+) {
   const from = input.brief
     ? " from the buyer's brief"
     : stored.length > 0 || input.link
@@ -382,7 +420,11 @@ export type TechPackList = Awaited<ReturnType<typeof listTechPacks>>;
 
 // ---------------------------------------------------------------- details
 
-/** Changes a tech pack's title, buyer, season and brief. */
+/**
+ * Changes a tech pack's title, buyer, season and brief. Once it is approved,
+ * its title, buyer and brief stay as approved, like its links; its season (a
+ * label to find it by) still changes.
+ */
 export async function updateTechPackDetails(
   ctx: CompanyContext,
   techPackId: string,
@@ -395,6 +437,22 @@ export async function updateTechPackDetails(
   assertCanChange(tp);
   await assertBuyer(ctx, input.buyerId);
   await runTransaction(async (tx) => {
+    await lockRow(tx, "TechPack", tp.id);
+    const now = await tx.techPack.findUniqueOrThrow({
+      where: { id: tp.id },
+      select: { status: true, title: true, buyerId: true, brief: true },
+    });
+    if (
+      now.status === "APPROVED" &&
+      (input.title !== now.title ||
+        (input.buyerId !== undefined && input.buyerId !== now.buyerId) ||
+        (input.brief !== undefined && input.brief !== now.brief))
+    ) {
+      throw new AppError(
+        "CONFLICT",
+        `${tp.number} is approved: its title, buyer and brief no longer change. Its season still can.`,
+      );
+    }
     await tx.techPack.update({
       where: { id: tp.id },
       data: {

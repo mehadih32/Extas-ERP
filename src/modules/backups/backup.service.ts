@@ -31,6 +31,7 @@ import {
 import { contentsOf, dumpWithCounts, listFiles, packFiles } from "@/modules/backups/contents";
 import { parseCron } from "@/modules/backups/cron";
 import { lockedForPair, lockFile } from "@/modules/backups/crypt";
+import { needRoom, NoRoomError } from "@/modules/backups/disk";
 import * as drive from "@/modules/backups/google-drive";
 import {
   DEFAULT_SCHEDULE,
@@ -962,6 +963,31 @@ async function executeRun(run: BackupRun): Promise<BackupRun> {
   if (taken || (await exists(path.join(root, stamp)))) stamp = `${stamp}_${run.id.slice(-6)}`;
   const dir = path.join(root, stamp);
   let lock: BackupLock | null = null;
+
+  // Room for it first (G7): twice the last backup's size and a margin, else skipped.
+  try {
+    const last = await prisma.backupRun.findFirst({
+      where: { kind: "BACKUP", status: "SUCCEEDED", sizeBytes: { not: null } },
+      orderBy: { startedAt: "desc" },
+      select: { sizeBytes: true },
+    });
+    await needRoom(root, Number(last?.sizeBytes ?? 0), "backup");
+  } catch (error) {
+    if (!(error instanceof NoRoomError)) throw error;
+    const skipped = await prisma.backupRun.update({
+      where: { id: run.id },
+      data: { status: "FAILED", finishedAt: new Date(), error: error.message },
+    });
+    // The same kind as a failed backup, so the status check does not tell it twice.
+    const { raiseProblem } = await import("@/modules/backups/status");
+    await raiseProblem(
+      "failed",
+      "Backup skipped: the server's disk is nearly full",
+      `The ${stamp} backup was not made. ${error.message}`,
+      run.id,
+    );
+    return skipped;
+  }
 
   try {
     lock = backupLock(config);

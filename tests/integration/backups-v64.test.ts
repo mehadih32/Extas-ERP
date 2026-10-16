@@ -16,6 +16,7 @@ import { backupLock, driveToken, hostRoot } from "@/modules/backups/backup-core"
 import * as backups from "@/modules/backups/backup.service";
 import * as cloudflare from "@/modules/backups/cloudflare";
 import { countTables } from "@/modules/backups/contents";
+import { disk, DISK_MARGIN_BYTES } from "@/modules/backups/disk";
 import {
   backupKey,
   keyId,
@@ -785,6 +786,52 @@ run("v6.4 backups", { timeout: 120_000 }, () => {
       // Switched off: not late.
       await backups.updateBackupConfig(owner, { isEnabled: false });
       expect((await backupHealth()).problem).toBeNull();
+    });
+  });
+
+  describe("free disk before a backup or a drill (R-BAK G7)", () => {
+    it("skips a backup without twice the last backup's size and a margin free, and tells the owner once", async () => {
+      const done = await backUpNow();
+      expect(done.status).toBe("SUCCEEDED");
+      const last = Number(
+        (await prisma.backupRun.findUniqueOrThrow({ where: { id: done.id } })).sizeBytes,
+      );
+      const free = vi.spyOn(disk, "freeBytes");
+      free.mockResolvedValue(2 * last + DISK_MARGIN_BYTES - 1);
+      const skipped = await backUpNow();
+      expect(skipped.status).toBe("FAILED");
+      expect(skipped.error).toMatch(
+        /^Skipped: the server has .* free, and a backup needs at least/,
+      );
+      expect(await readdir(backupDir)).not.toContain(skipped.name);
+      await backUpNow();
+      await watchBackups();
+      expect((await inbox()).filter((s) => s.startsWith("Backup"))).toEqual([
+        "Backup skipped: the server's disk is nearly full",
+      ]);
+      // Enough room again (or a disk that cannot be measured): backups run.
+      free.mockResolvedValue(2 * last + DISK_MARGIN_BYTES + 1);
+      expect((await backUpNow()).status).toBe("SUCCEEDED");
+      free.mockResolvedValue(null);
+      expect((await backUpNow()).status).toBe("SUCCEEDED");
+      free.mockRestore();
+    });
+
+    it("skips the drill without room for the backup it downloads", async () => {
+      await connectDrive();
+      await setKey();
+      await prepareHost(backupLock(await backups.getBackupConfig())!.key as PublicKey);
+      const backup = await backUpNow();
+      const free = vi.spyOn(disk, "freeBytes").mockResolvedValue(DISK_MARGIN_BYTES);
+      const drilled = await runTestRestore({ trigger: "MANUAL", actor: owner, wait: true });
+      expect(drilled).toMatchObject({ status: "FAILED", sourceName: backup.name });
+      expect(drilled.error).toMatch(/^Skipped: the server has .* free, and a restore drill needs/);
+      const left = await prisma.$queryRaw<Array<{ datname: string }>>`
+        SELECT datname FROM pg_database WHERE datname LIKE ${`${TEST_DB_PREFIX}%`}`;
+      expect(left).toEqual([]);
+      expect(await inbox()).toContain("Restore drill skipped: the server's disk is nearly full");
+      expect(await inbox()).not.toContain("Restore drill failed");
+      free.mockRestore();
     });
   });
 

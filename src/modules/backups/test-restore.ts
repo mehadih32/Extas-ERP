@@ -29,6 +29,7 @@ import {
   type UploadFile,
 } from "@/modules/backups/contents";
 import { checkCodeBundle } from "@/modules/backups/code-bundle";
+import { needRoom, NoRoomError } from "@/modules/backups/disk";
 import { fetchBackup, listDriveBackups } from "@/modules/backups/drive-copies";
 import { checkBackupFiles } from "@/modules/backups/drive-fetch";
 import { parseKeyFile } from "@/modules/backups/keys";
@@ -207,6 +208,8 @@ async function drill(runId: string, typedKey: string | null) {
     backupName = newest.name;
     await prisma.backupRun.update({ where: { id: runId }, data: { sourceName: newest.name } });
     const folder = { id: newest.folderId, name: newest.name };
+    // Room to download and open it (G7): twice its size and a margin, else skipped.
+    await needRoom(backupRoot(), newest.bytes ?? 0, "restore drill");
 
     // The keys: the one typed for this drill, else the one kept in Drive; v6.3's for its backups.
     const recoveryKey = typedKey ?? (await recoveryKeyFromDrive(config).catch(() => null)) ?? null;
@@ -360,11 +363,19 @@ async function drill(runId: string, typedKey: string | null) {
         sourceName: backupName,
       },
     });
-    await alertOwner(
-      "Restore drill failed",
-      `${backupName ? `The ${backupName} backup` : "The newest backup"} could not be restored into a temporary database: ${reasonFor(error)}`,
-      runId,
-    );
+    if (error instanceof NoRoomError) {
+      await alertOwner(
+        "Restore drill skipped: the server's disk is nearly full",
+        `The restore drill did not run. ${error.message}`,
+        runId,
+      );
+    } else {
+      await alertOwner(
+        "Restore drill failed",
+        `${backupName ? `The ${backupName} backup` : "The newest backup"} could not be restored into a temporary database: ${reasonFor(error)}`,
+        runId,
+      );
+    }
   } finally {
     if (created) {
       await dropTestDatabase(database).catch((error: unknown) =>

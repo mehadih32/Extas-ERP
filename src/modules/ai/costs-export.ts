@@ -1,4 +1,4 @@
-import { formatDay } from "@/lib/display";
+import { countOf, formatDay } from "@/lib/display";
 import { formatAmount } from "@/lib/format";
 import { checkRateLimit } from "@/lib/rate-limit";
 import type { RequestMeta } from "@/lib/request-meta";
@@ -196,8 +196,8 @@ function costsWorkbook(ctx: CompanyContext, c: AiCosts, lines: AiCosts["lines"])
         title(`AI calls: ${rangeText(c)}`),
         note(
           c.shown.filter
-            ? `${c.shown.filter.label}: ${c.shown.calls} calls, ${c.currency} ${c.shown.cost}`
-            : `${c.totals.calls} calls, ${c.currency} ${c.totals.cost} (US$ ${c.totals.costUsd})`,
+            ? `${c.shown.filter.label}: ${countOf(c.shown.calls, "call")}, ${c.currency} ${c.shown.cost}`
+            : `${countOf(c.totals.calls, "call")}, ${c.currency} ${c.totals.cost} (US$ ${c.totals.costUsd})`,
         ),
         [],
         head([

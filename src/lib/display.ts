@@ -78,3 +78,8 @@ export function formatDayRange(from: string, to: string): string {
   if (fm !== tm) return `${fd} ${MONTHS[fm - 1]} – ${formatDay(to)}`;
   return `${fd} – ${formatDay(to)}`;
 }
+
+/** A count with its noun: "1 call", "7 calls" ("1 entry", "3 entries" with `many`). */
+export function countOf(n: number, one: string, many = `${one}s`): string {
+  return `${n} ${n === 1 ? one : many}`;
+}

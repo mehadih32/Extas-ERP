@@ -13,6 +13,7 @@ import { money } from "@/components/sales/labels";
 import { Button } from "@/components/ui/button";
 import type { AiAgentsScreen } from "@/modules/ai/agents.service";
 import { setAgentOnAction } from "@/server/actions/ai.actions";
+import { countOf } from "@/lib/display";
 
 /*
  * AI Center > Agents: Mehedi 2.0 at the top and every agent under him. Each
@@ -51,14 +52,18 @@ function Costs({ a, currency }: { a: Agent; currency: string }) {
         <dt className="text-muted-foreground">Today</dt>
         <dd className="font-medium tabular-nums">
           {money(a.today.cost, currency)}{" "}
-          <span className="font-normal text-muted-foreground">({a.today.calls} calls)</span>
+          <span className="font-normal text-muted-foreground">
+            ({countOf(a.today.calls, "call")})
+          </span>
         </dd>
       </div>
       <div>
         <dt className="text-muted-foreground">This month</dt>
         <dd className="font-medium tabular-nums">
           {money(a.month.cost, currency)}{" "}
-          <span className="font-normal text-muted-foreground">({a.month.calls} calls)</span>
+          <span className="font-normal text-muted-foreground">
+            ({countOf(a.month.calls, "call")})
+          </span>
         </dd>
       </div>
     </dl>

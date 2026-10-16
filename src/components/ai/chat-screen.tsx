@@ -20,6 +20,7 @@ import {
   sendChatAction,
   sendDraftAction,
 } from "@/server/actions/mehedi.actions";
+import { countOf } from "@/lib/display";
 
 /*
  * AI Center > Chat: the owner talks to Mehedi 2.0 in Bengali or English.
@@ -199,7 +200,7 @@ function CardView({
       return (
         <div className={box}>
           <p className="font-medium">
-            {card.period}: {card.currency} {card.total} · {card.calls} calls
+            {card.period}: {card.currency} {card.total} · {countOf(card.calls, "call")}
           </p>
           {card.byTask.length > 0 && (
             <ul className="grid gap-0.5 text-[0.8125rem]">

@@ -3,9 +3,12 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { ACCESS_TREE, leavesOf } from "@/components/settings/roles/access-tree";
+import { PHONE_TABS, TOP_BAR_TABS } from "@/components/shell/nav-items";
 import { HELP_SECTIONS } from "@/modules/help";
 import { HELP_PICTURES } from "@/modules/help/pictures";
 import type { HelpArticle } from "@/modules/help/types";
+import { PERMISSIONS } from "@/modules/rbac/permissions";
 
 import {
   guideHash,
@@ -45,6 +48,21 @@ const covers = (route: string, page: string[]) => {
   if (parts.length > page.length) return false;
   return parts.every((p, i) => p === page[i] || (dynamic(p) && dynamic(page[i]!)));
 };
+
+/** Every word of a guide: its title, search words, What, Why, How, pictures, buttons, tips and mistakes. */
+const textsOf = (article: HelpArticle) => [
+  article.title,
+  article.summary,
+  ...article.keywords,
+  article.who ?? "",
+  article.what ?? "",
+  article.why ?? "",
+  article.next ?? "",
+  ...article.steps.flatMap((s) => [s.text, s.image?.caption ?? ""]),
+  ...(article.tips ?? []),
+  ...(article.mistakes ?? []),
+  ...(article.fields ?? []).flatMap((f) => [f.label, f.text]),
+];
 
 /** Everything a guide says, to find the words of a button in. */
 const saysOf = (article: HelpArticle) =>
@@ -138,19 +156,60 @@ describe("What, Why and How in every guide", () => {
     expect(missing).toEqual([]);
   });
 
-  it("writes numbers with Western digits in the new parts", () => {
-    const bad = articles
-      .filter(({ article }) =>
-        [
-          article.what ?? "",
-          article.why ?? "",
-          article.next ?? "",
-          ...(article.mistakes ?? []),
-          ...(article.fields ?? []).map((f) => f.text),
-        ].some((text) => BENGALI_DIGIT.test(text)),
-      )
-      .map(({ section, article }) => `${section.id}/${article.slug}`);
+  it("writes numbers with Western digits (0-9) in every word of every guide (v6.4 L7)", () => {
+    const bad = articles.flatMap(({ section, article }) =>
+      textsOf(article)
+        .filter((text) => BENGALI_DIGIT.test(text))
+        .map((text) => `${section.id}/${article.slug}: ${text.slice(0, 60)}`),
+    );
+    for (const section of HELP_SECTIONS) {
+      for (const text of [section.title, section.description]) {
+        if (BENGALI_DIGIT.test(text)) bad.push(`${section.id}: ${text.slice(0, 60)}`);
+      }
+    }
     expect(bad).toEqual([]);
+  });
+
+  it("writes numbers with Western digits on the Help Center's own screens too", () => {
+    const help = [
+      path.join(ROOT, "src", "components", "help"),
+      path.join(ROOT, "src", "app", "(app)", "help"),
+      path.join(ROOT, "src", "modules", "help"),
+    ];
+    const files = (dir: string): string[] =>
+      readdirSync(dir).flatMap((name) => {
+        const full = path.join(dir, name);
+        if (statSync(full).isDirectory()) return files(full);
+        return /\.(tsx?|json)$/.test(name) ? [full] : [];
+      });
+    const bad = help
+      .flatMap(files)
+      .filter((file) => BENGALI_DIGIT.test(readFileSync(file, "utf8")))
+      .map((file) => path.relative(ROOT, file));
+    expect(bad).toEqual([]);
+  });
+
+  it("names a permission by its words on the Roles screen, never by its code (v6.4 L11)", () => {
+    const words = new Map(ACCESS_TREE.flatMap(leavesOf).map((leaf) => [leaf.key, leaf.label]));
+    const bad = articles.flatMap(({ section, article }) =>
+      textsOf(article).flatMap((text) =>
+        PERMISSIONS.filter(({ key }) =>
+          new RegExp(`(^|[^\\w.])${key.replace(/\./g, "\\.")}(?![\\w.])`).test(text),
+        ).map(({ key }) => `${section.id}/${article.slug}: ${key} → “${words.get(key)}”`),
+      ),
+    );
+    expect(bad).toEqual([]);
+  });
+
+  it("counts the top bar's sections at each width as the app shows them (v6.4 L11)", () => {
+    // Tailwind's widths: md from 768 px (tablets), lg from 1024 px, xl from 1280 px,
+    // so a 1366 px laptop and a 1920 px screen show TOP_BAR_TABS.xl sections.
+    const menu = articles.find(({ article }) => article.slug === "find-your-way")!.article;
+    expect(menu.what).toContain(
+      `ট্যাবলেটে ${TOP_BAR_TABS.md}টি, 1024 থেকে 1279 px চওড়া ছোট ল্যাপটপে ${TOP_BAR_TABS.lg}টি, ` +
+        `সাধারণ ল্যাপটপ (1366 px) ও বড় পর্দায় ${TOP_BAR_TABS.xl}টি`,
+    );
+    expect(menu.what).toContain(`প্রথম ${PHONE_TABS}টি অংশ`);
   });
 });
 

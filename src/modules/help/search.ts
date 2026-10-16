@@ -23,13 +23,15 @@ export type HelpSearchResult = HelpSearchEntry & { score: number };
 
 /**
  * Text ready for matching: one Unicode form, lower case, no joiners (ZWJ/ZWNJ
- * change how Bengali looks, not what it says), punctuation as spaces.
+ * change how Bengali looks, not what it says), Bengali digits as Western ones
+ * (guides write 0-9; a search may be typed either way), punctuation as spaces.
  */
 export function normalizeHelpText(text: string): string {
   return text
     .normalize("NFC")
     .toLowerCase()
     .replace(/[\u200c\u200d]/g, "")
+    .replace(/[\u09e6-\u09ef]/g, (d) => String(d.charCodeAt(0) - 0x09e6))
     .replace(/[^\p{L}\p{M}\p{N}]+/gu, " ")
     .trim();
 }

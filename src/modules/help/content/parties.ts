@@ -237,7 +237,6 @@ export const partiesHelp: HelpSection = {
         "top style",
         "order history",
         "payment history",
-        "৩৬০",
         "মোট বিক্রি",
         "গড় অর্ডার",
         "মেয়াদোত্তীর্ণ",

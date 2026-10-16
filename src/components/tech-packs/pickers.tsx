@@ -45,8 +45,8 @@ function Chosen({
 
 const optionText = (main: string, sub?: string | null) => (
   <span className="grid min-w-0 gap-0.5">
-    <span className="truncate text-sm font-medium">{main}</span>
-    {sub && <span className="truncate text-[0.8125rem] text-muted-foreground">{sub}</span>}
+    <span className="text-sm font-medium break-words">{main}</span>
+    {sub && <span className="text-[0.8125rem] break-words text-muted-foreground">{sub}</span>}
   </span>
 );
 

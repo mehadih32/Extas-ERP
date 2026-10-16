@@ -94,8 +94,8 @@ export function WriteLetterButton({
                   {party ? (
                     <div className="flex min-w-0 items-center justify-between gap-3 rounded-md border bg-card px-3 py-2">
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-medium">{party.name}</p>
-                        <p className="truncate text-[0.8125rem] text-muted-foreground">
+                        <p className="text-sm font-medium break-words">{party.name}</p>
+                        <p className="text-[0.8125rem] break-words text-muted-foreground">
                           {[party.code, KIND_LABELS[party.kind], party.city]
                             .filter(Boolean)
                             .join(" · ")}
@@ -125,8 +125,8 @@ export function WriteLetterButton({
                       onPick={setParty}
                       renderOption={(p) => (
                         <span className="grid gap-0.5">
-                          <span className="truncate text-sm font-medium">{p.name}</span>
-                          <span className="truncate text-[0.8125rem] text-muted-foreground">
+                          <span className="text-sm font-medium break-words">{p.name}</span>
+                          <span className="text-[0.8125rem] break-words text-muted-foreground">
                             {[p.code, KIND_LABELS[p.kind], p.city].filter(Boolean).join(" · ")}
                           </span>
                         </span>

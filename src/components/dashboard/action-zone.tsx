@@ -133,7 +133,7 @@ function OverdueCard({ data }: { data: ActionZoneData }) {
                   className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0"
                 >
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">
+                    <p className="text-sm font-medium break-words">
                       {href ? (
                         <Link
                           href={href}
@@ -145,7 +145,7 @@ function OverdueCard({ data }: { data: ActionZoneData }) {
                         name
                       )}
                     </p>
-                    <p className="truncate text-[0.8125rem] text-muted-foreground">
+                    <p className="text-[0.8125rem] break-words text-muted-foreground">
                       {row.invoices === 1
                         ? row.numbers[0]
                         : `${formatCount(row.invoices, currency)} invoices`}
@@ -229,8 +229,8 @@ function LowStockCard({ data }: { data: ActionZoneData }) {
                 className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0"
               >
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">{row.styleName}</p>
-                  <p className="truncate text-[0.8125rem] text-muted-foreground">
+                  <p className="text-sm font-medium break-words">{row.styleName}</p>
+                  <p className="text-[0.8125rem] break-words text-muted-foreground">
                     {row.colorName} · {row.sizeName} · {row.sku}
                   </p>
                 </div>

@@ -98,7 +98,7 @@ export default async function BookingsPage({
       </div>
 
       <div className="grid gap-3">
-        <nav aria-label="Booking source" className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1">
+        <nav aria-label="Booking source" className="flex flex-wrap gap-1.5">
           {[undefined, ...BOOKING_SOURCES].map((s) => (
             <Link
               key={s ?? "all"}

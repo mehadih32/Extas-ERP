@@ -99,7 +99,7 @@ export default async function BatchesPage({
             Find
           </Button>
         </form>
-        <nav aria-label="Batch state" className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1">
+        <nav aria-label="Batch state" className="flex flex-wrap gap-1.5">
           {[undefined, ...STATE_CHIPS].map((s) => (
             <Link
               key={s ?? "all"}

@@ -50,10 +50,10 @@ export function StartFromSale({ currency }: { currency: string }) {
         }
         renderOption={(sale) => (
           <span className="grid gap-0.5">
-            <span className="truncate text-sm font-medium">
+            <span className="text-sm font-medium break-words">
               {sale.number} · {sale.buyer}
             </span>
-            <span className="truncate text-[0.8125rem] text-muted-foreground">
+            <span className="text-[0.8125rem] break-words text-muted-foreground">
               {[
                 sale.kind === "ORDER" ? "Sales order" : "Proforma",
                 sale.orderStatus

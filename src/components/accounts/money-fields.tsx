@@ -124,8 +124,8 @@ export function AccountsPartyPicker({
     return (
       <div className="flex min-w-0 items-center justify-between gap-3 rounded-md border bg-card px-3 py-2">
         <div className="min-w-0">
-          <p className="truncate text-sm font-medium">{value.name}</p>
-          <p className="truncate text-[0.8125rem] text-muted-foreground">{value.code}</p>
+          <p className="text-sm font-medium break-words">{value.name}</p>
+          <p className="text-[0.8125rem] break-words text-muted-foreground">{value.code}</p>
         </div>
         <Button
           type="button"
@@ -155,8 +155,8 @@ export function AccountsPartyPicker({
       onPick={onChange}
       renderOption={(p) => (
         <span className="grid gap-0.5">
-          <span className="truncate text-sm font-medium">{p.name}</span>
-          <span className="truncate text-[0.8125rem] text-muted-foreground">
+          <span className="text-sm font-medium break-words">{p.name}</span>
+          <span className="text-[0.8125rem] break-words text-muted-foreground">
             {[p.code, p.phone, p.city].filter(Boolean).join(" · ")}
           </span>
         </span>

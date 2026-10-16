@@ -172,7 +172,7 @@ export function ChartPanel({
               </NativeSelect>
             </label>
           </div>
-          <div className="-mx-5 overflow-x-auto px-5 sm:-mx-6 sm:px-6">
+          <div className="relative -mx-5 overflow-x-auto px-5 sm:-mx-6 sm:px-6">
             <table className="w-full min-w-max border-collapse text-sm">
               <thead>
                 <tr className="border-b text-left text-[0.8125rem] text-muted-foreground">

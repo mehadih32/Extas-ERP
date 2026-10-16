@@ -289,7 +289,7 @@ export function SkillScreen({ skill: s }: { skill: Skill }) {
                     href={`/api/files/${f.fileId}`}
                     target="_blank"
                     rel="noreferrer"
-                    className="truncate underline underline-offset-4"
+                    className="min-w-0 break-all underline underline-offset-4"
                   >
                     {f.name}
                   </a>

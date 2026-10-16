@@ -72,7 +72,11 @@ jobs:
           sudo -u postgres createdb -O drill extras_demo
           npx prisma migrate deploy
           npx prisma db seed
-          npx tsx prisma/demo/seed-demo.ts
+          # The demo loader signs the owner in with the live ERP's password hash; here
+          # the "live" password is the one the seed just set.
+          DEMO_OWNER_PASSWORD_HASH="$(sudo -u postgres psql -d extras_demo -tAc \
+            "SELECT \"passwordHash\" FROM \"User\" WHERE email = '$SEED_ADMIN_EMAIL'")" \
+            npx tsx prisma/demo/seed-demo.ts
 
       - name: "Old server: recovery key, Google Drive, Back up now"
         env:

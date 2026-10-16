@@ -335,7 +335,7 @@ export const gettingStartedHelp: HelpSection = {
           },
         },
         {
-          text: "প্রতিটি অংশের ভেতরে উপরের দিকে ট্যাব থাকে, যেমন Sales-এ “Orders”, “Quotations”, “Proformas”, “Invoices” ও “Payments”। ফোনে ট্যাবগুলো ডানে-বাঁয়ে সরিয়ে দেখুন।",
+          text: "প্রতিটি অংশের ভেতরে উপরের দিকে ট্যাব থাকে, যেমন Sales-এ “Orders”, “Quotations”, “Proformas”, “Invoices” ও “Payments”। পর্দায় সব ট্যাবের জায়গা না হলে যেগুলো ধরে না সেগুলো সারির শেষে “More”-এর ভেতরে থাকে; যে ট্যাবে আছেন সেটি সবসময় সারিতে দেখায়। কোনো ট্যাবের নাম কখনো কাটা পড়ে না।",
         },
         {
           text: "বাম দিকের উপরে “Extas ERP” লেখায় চাপলে যেকোনো জায়গা থেকে ড্যাশবোর্ডে ফিরে আসবেন।",
@@ -1180,7 +1180,7 @@ export const gettingStartedHelp: HelpSection = {
           text: "খরচ: “Budget & Costs”-এ প্রতিটি এআই কাজের খরচ আর মাসের বাজেট। Mehedi 2.0: তার সঙ্গে চ্যাট, বই ও টেস্ট, House Rules আর বায়ারের খসড়া। “Bot”: Telegram থেকে একই কাজ। “Orders”: নতুন অর্ডার দিলে সে প্ল্যান লেখে আর ধাপগুলো T&A ধরে দেখে। “Server Health”: সার্ভার ঠিক আছে কিনা।",
         },
         {
-          text: "আপনার কাছ থেকে যা লাগবে (কাজ থামিয়ে রাখে না): Claude key (“AI” > “Settings” > “Add the key”), Telegram বট token (“AI” > “Bot” > “Connect a bot”), খসড়া ইমেইলে পাঠানোর ইমেইল লগইন (“AI” > “Settings” > “Email for sending”) আর একটি PIN (“Set a PIN”)। প্রতিটির ধাপ এআই সেন্টারের গাইডগুলোতে আছে।",
+          text: "আপনার কাছ থেকে যা লাগবে (কাজ থামিয়ে রাখে না): Claude key (“AI” > “System” > “Settings” > “Add the key”), Telegram বট token (“AI” > “Work” > “Bot” > “Connect a bot”), খসড়া ইমেইলে পাঠানোর ইমেইল লগইন (“AI” > “System” > “Settings” > “Email for sending”) আর একটি PIN (“Set a PIN”)। প্রতিটির ধাপ এআই সেন্টারের গাইডগুলোতে আছে।",
         },
       ],
       fields: [
@@ -1253,7 +1253,7 @@ export const gettingStartedHelp: HelpSection = {
           },
         },
         {
-          text: "এআই: “AI” > “Settings”-এ Claude, OpenAI ও Gemini-র key, প্রতিটির টেস্টসহ। “Models”-এ “Read models from providers” দিয়ে প্রতিটি কোম্পানির মডেলের তালিকা, “Which model does which task”-এ যেকোনো কাজে যেকোনো মডেল, আর “Prices”-এ Claude, OpenAI ও Gemini-র দাম, প্রোভাইডারের অফিশিয়াল দামের পাতা থেকে (দাম না থাকলে মডেলটি “No price: blocked”: এআই তাতে কিছু পাঠায় না)। নতুন মডেল সেই কাজের টেস্ট পাস না করা পর্যন্ত Do-তে কাজ করে না; সব নিরাপত্তার নিয়ম সব কোম্পানির জন্য একই।",
+          text: "এআই: “AI” > “System” > “Settings”-এ Claude, OpenAI ও Gemini-র key, প্রতিটির টেস্টসহ। “Money” > “Models”-এ “Read models from providers” দিয়ে প্রতিটি কোম্পানির মডেলের তালিকা, “Which model does which task”-এ যেকোনো কাজে যেকোনো মডেল, আর “Prices”-এ Claude, OpenAI ও Gemini-র দাম, প্রোভাইডারের অফিশিয়াল দামের পাতা থেকে (দাম না থাকলে মডেলটি “No price: blocked”: এআই তাতে কিছু পাঠায় না)। নতুন মডেল সেই কাজের টেস্ট পাস না করা পর্যন্ত Do-তে কাজ করে না; সব নিরাপত্তার নিয়ম সব কোম্পানির জন্য একই।",
         },
         {
           text: "খরচ: “Budget & Costs”-এ “Today”, “Yesterday”, “One day” বা “Custom range”; প্রতিটি খরচ “By purpose”, “By place in the ERP”, “By agent” ও “By model” অনুযায়ী মোটসহ। “Bill per provider”-এ Claude, OpenAI ও Gemini-র আলাদা বিল, চাইলে “Limit per provider, per month”। আজকের ও এ মাসের খরচ চ্যাটে, Help Center-এর “Ask the Help AI”-তে আর “AI Home”-এ দেখায়।",
@@ -1269,7 +1269,7 @@ export const gettingStartedHelp: HelpSection = {
           },
         },
         {
-          text: "আপনার কাছ থেকে যা লাগবে (কাজ থামিয়ে রাখে না): Google Cloud-এর একবারের সেটআপ (“Backups” গাইড), Claude GitHub App ইনস্টল, CLAUDE_CODE_OAUTH_TOKEN secret আর GitHub token (“Full check” গাইড), আর OpenAI ও Gemini-র key (“AI” > “Settings”)।",
+          text: "আপনার কাছ থেকে যা লাগবে (কাজ থামিয়ে রাখে না): Google Cloud-এর একবারের সেটআপ (“Backups” গাইড), Claude GitHub App ইনস্টল, CLAUDE_CODE_OAUTH_TOKEN secret আর GitHub token (“Full check” গাইড), আর OpenAI ও Gemini-র key (“AI” > “System” > “Settings”)।",
         },
       ],
       fields: [
@@ -1349,10 +1349,10 @@ export const gettingStartedHelp: HelpSection = {
           },
         },
         {
-          text: "“AI” মেনুর “Orders” ট্যাবে একটি নমুনা অর্ডার (Sample: Nordic Wear pique polos) আপনার Approve-এর অপেক্ষায় আছে: তার ফর্ম, চেক, কস্টিং শিট (সাপ্লায়ারের প্রতি কেজি দামের কোটেশন, স্টাইলপ্রতি CM আর 10% প্রফিট), “Order check card” ও প্ল্যান দেখে “Approve” বা “Return” চেপে দেখুন। ডেমোতেও এআই বন্ধ থাকে; প্ল্যান ERP নিজে লেখে।",
+          text: "“AI” মেনুর “Work” দলের “Orders” পাতায় একটি নমুনা অর্ডার (Sample: Nordic Wear pique polos) আপনার Approve-এর অপেক্ষায় আছে: তার ফর্ম, চেক, কস্টিং শিট (সাপ্লায়ারের প্রতি কেজি দামের কোটেশন, স্টাইলপ্রতি CM আর 10% প্রফিট), “Order check card” ও প্ল্যান দেখে “Approve” বা “Return” চেপে দেখুন। ডেমোতেও এআই বন্ধ থাকে; প্ল্যান ERP নিজে লেখে।",
         },
         {
-          text: "“AI” মেনুর “Skills” ট্যাবে ফ্যাব্রিকের এক্সপার্ট X05-কে শেখানো একটি নমুনা স্কিল আছে (Sample: pique polo fabric check): কখন কাজে লাগবে, ধাপ, দুটি উদাহরণ আর ভার্সন খুলে দেখুন, বদলে দেখুন, “Undo to this version” দিয়ে ফিরে যান। ডেমোতে এআই বন্ধ, তাই স্কিলটি “Not tested”; এআই চালু করলে “Run the test” চাপলে এক্সপার্ট প্রতিটি উদাহরণের উত্তর দেয় আর ERP নম্বর দেয়।",
+          text: "“AI” মেনুর “Mehedi & Agents” দলের “Skills” পাতায় ফ্যাব্রিকের এক্সপার্ট X05-কে শেখানো একটি নমুনা স্কিল আছে (Sample: pique polo fabric check): কখন কাজে লাগবে, ধাপ, দুটি উদাহরণ আর ভার্সন খুলে দেখুন, বদলে দেখুন, “Undo to this version” দিয়ে ফিরে যান। ডেমোতে এআই বন্ধ, তাই স্কিলটি “Not tested”; এআই চালু করলে “Run the test” চাপলে এক্সপার্ট প্রতিটি উদাহরণের উত্তর দেয় আর ERP নম্বর দেয়।",
         },
         {
           text: "যেকোনো কাজ চালিয়ে দেখুন: অর্ডার, বিল, পেমেন্ট বা নতুন ব্যাচ। ডেমো সাইটে যা করবেন তা কখনো আসল ERP-এ যায় না।",

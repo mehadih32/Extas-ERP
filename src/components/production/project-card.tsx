@@ -138,7 +138,7 @@ export function ProjectCard({ project, currency }: { project: ProjectCardData; c
       >
         <div>
           <div className="flex items-start justify-between gap-3">
-            <p className="eyebrow min-w-0 truncate">
+            <p className="eyebrow min-w-0 break-words">
               {p.code} · {forWhom(p)}
             </p>
             <div className="-my-1 flex shrink-0 flex-wrap justify-end gap-1.5">

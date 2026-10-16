@@ -65,7 +65,11 @@ export function MainNav({ permissions, className }: { permissions: string[]; cla
   });
 
   return (
-    <nav aria-label="Main" className={cn("items-stretch gap-3.5 self-stretch lg:gap-6", className)}>
+    <nav
+      aria-label="Main"
+      data-layout-nav
+      className={cn("items-stretch gap-3.5 self-stretch lg:gap-6", className)}
+    >
       {items.map((item, index) => {
         const active = index === activeIndex;
         const fold = topBarFold(index);
@@ -90,6 +94,7 @@ export function MainNav({ permissions, className }: { permissions: string[]; cla
       {lastFold && (
         <DropdownMenu>
           <DropdownMenuTrigger
+            data-layout-more
             className={cn(
               linkClass,
               "cursor-pointer gap-1",

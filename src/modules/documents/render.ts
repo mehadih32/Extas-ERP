@@ -1332,7 +1332,20 @@ class Writer {
   }
 
   private totals(block: Extract<Block, { kind: "totals" }>) {
-    const width = 236;
+    const labelStyle = (strong?: boolean): TextStyle =>
+      strong ? { font: SANS_BOLD, size: 9.4 } : { font: SANS, size: 8.4 };
+    const valueStyle = (strong?: boolean): TextStyle =>
+      strong ? { font: SANS_BOLD, size: 10 } : { font: SANS, size: 8.4 };
+    const valueWidth = (r: (typeof block.rows)[number]) =>
+      textWidth(this.doc, pdfText(r.value), valueStyle(r.strong));
+    // Wide enough for every name and its figure side by side ("Final payable to
+    // the factory (CMS-...)"), up to the page's width: no name is cut while there is room.
+    const need = Math.max(
+      ...block.rows.map(
+        (r) => textWidth(this.doc, pdfText(r.label), labelStyle(r.strong)) + valueWidth(r) + 24,
+      ),
+    );
+    const width = Math.min(this.width, Math.max(236, need));
     const x = this.left + this.width - width;
     const height = block.rows.reduce((h, r) => h + (r.strong ? 19 : 14.5), 0) + 4;
     const words = block.words
@@ -1341,24 +1354,21 @@ class Writer {
     this.ensure(height + words.length * 11 + 6);
     let y = this.y;
     for (const r of block.rows) {
+      // The name takes what the figure leaves; the figure is never cut.
+      const labelWidth = Math.max(width * 0.4, width - valueWidth(r) - 20);
       if (r.strong) {
         this.rule(y + 1, this.primary, 0.9, x, width);
         y += 5;
-        this.line(r.label, x + 4, y, width * 0.5, { font: SANS_BOLD, size: 9.4 });
-        this.line(r.value, x + width * 0.4, y - 0.5, width * 0.6 - 4, {
-          font: SANS_BOLD,
-          size: 10,
+        this.line(r.label, x + 4, y, labelWidth, labelStyle(true));
+        this.line(r.value, x, y - 0.5, width - 4, {
+          ...valueStyle(true),
           color: this.primary,
           align: "right",
         });
         y += 14;
       } else {
-        this.line(r.label, x + 4, y, width * 0.55, { font: SANS, size: 8.4, color: MUTED });
-        this.line(r.value, x + width * 0.4, y, width * 0.6 - 4, {
-          font: SANS,
-          size: 8.4,
-          align: "right",
-        });
+        this.line(r.label, x + 4, y, labelWidth, { ...labelStyle(), color: MUTED });
+        this.line(r.value, x, y, width - 4, { ...valueStyle(), align: "right" });
         y += 14.5;
       }
     }
@@ -1374,16 +1384,31 @@ class Writer {
     const perRow = Math.min(4, block.figures.length);
     const gap = 8;
     const width = (this.width - gap * (perRow - 1)) / perRow;
-    const height = 54;
+    const inner = width - 18;
+    const LABEL: TextStyle = { font: SANS_BOLD, size: 6.8, spacing: 1.1 };
+    const LABEL_LINE = 8.6;
     for (let i = 0; i < block.figures.length; i += perRow) {
+      const row = block.figures.slice(i, i + perRow).map((f) => {
+        // A long name ("Taken back from suppliers") takes two lines, a big figure a
+        // smaller size: neither is cut while it can be shown whole.
+        const label = wrapText(this.doc, f.label.toUpperCase(), inner, LABEL).slice(0, 2);
+        const value = this.fitLines(f.value, inner, { font: this.display, size: 13.5 }, 9, 1);
+        return { f, label, value };
+      });
+      const extra = (Math.max(...row.map((r) => r.label.length)) - 1) * LABEL_LINE;
+      const height = 54 + extra;
       this.ensure(height + gap);
-      block.figures.slice(i, i + perRow).forEach((f, j) => {
+      row.forEach(({ f, label, value }, j) => {
         const x = this.left + j * (width + gap);
         this.doc.roundedRect(x, this.y, width, height, 3).fill(tint(this.primary, 0.94));
-        this.label(f.label, x + 9, this.y + 9, width - 18);
-        this.line(f.value, x + 9, this.y + 21, width - 18, { font: this.display, size: 13.5 });
+        label.forEach((text, k) => this.label(text, x + 9, this.y + 9 + k * LABEL_LINE, inner));
+        const lift = (13.5 - value.size) / 2;
+        this.line(value.lines[0] ?? "", x + 9, this.y + 21 + extra + lift, inner, {
+          font: this.display,
+          size: value.size,
+        });
         if (f.hint) {
-          this.line(f.hint, x + 9, this.y + 39, width - 18, {
+          this.line(f.hint, x + 9, this.y + 39 + extra, inner, {
             font: SANS,
             size: 6.8,
             color: MUTED,

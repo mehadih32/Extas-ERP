@@ -327,7 +327,7 @@ export default async function BookingPage({
                       {c.sizes.map((s) => (
                         <th key={s.id} scope="col" className="px-3 py-2 text-right font-medium">
                           {s.label}
-                          <span className="block text-[0.6875rem] font-normal">
+                          <span className="block text-xs font-normal">
                             {s.collarLength}×{s.collarWidth}
                             {s.cuffLength && s.cuffWidth ? ` · ${s.cuffLength}×${s.cuffWidth}` : ""}
                           </span>
@@ -354,7 +354,7 @@ export default async function BookingPage({
                           <td key={c.sizes[j]!.id} className="px-3 py-2 text-right">
                             {n ? count(n) : "–"}
                             {row.pieces[j] ? (
-                              <span className="block text-[0.6875rem] text-muted-foreground">
+                              <span className="block text-xs text-muted-foreground">
                                 {count(row.pieces[j]!)} pcs
                               </span>
                             ) : null}

@@ -135,7 +135,7 @@ export function RefundList({
           const card = (
             <>
               <div className="flex items-start justify-between gap-3">
-                <p className="eyebrow min-w-0 truncate">
+                <p className="eyebrow min-w-0 break-words">
                   {r.number} · {formatDay(r.refundedOn)}
                 </p>
                 <div className="-my-1 shrink-0">

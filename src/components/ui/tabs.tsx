@@ -15,13 +15,16 @@ function Tabs({ className, ...props }: React.ComponentProps<typeof TabsPrimitive
   );
 }
 
-/** Editorial tabs: an underlined row that scrolls sideways on narrow phones. */
+/**
+ * Editorial tabs: an underlined row that scrolls sideways on narrow phones, with its
+ * scroll bar showing so a tab past the edge is not taken for a cut word.
+ */
 function TabsList({ className, ...props }: React.ComponentProps<typeof TabsPrimitive.List>) {
   return (
     <TabsPrimitive.List
       data-slot="tabs-list"
       className={cn(
-        "flex w-full [scrollbar-width:none] items-end gap-6 overflow-x-auto border-b [&::-webkit-scrollbar]:hidden",
+        "flex w-full [scrollbar-width:thin] items-end gap-6 overflow-x-auto overflow-y-hidden border-b",
         className,
       )}
       {...props}

@@ -128,7 +128,7 @@ function MetricCardView({ card, currency }: { card: MetricCard; currency: string
         <ScopeEye scope={card.key} label={card.label} className="-mt-1.5 -mr-1.5" />
       </header>
       <p className="mt-4 flex min-w-0 flex-wrap items-baseline gap-x-2">
-        <span className="text-[0.6875rem] font-medium tracking-[0.14em] text-muted-foreground">
+        <span className="text-xs font-medium tracking-[0.14em] text-muted-foreground">
           {currency}
         </span>
         <span

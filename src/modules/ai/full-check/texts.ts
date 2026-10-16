@@ -18,6 +18,7 @@ export const PROBLEM_KINDS = [
   "PDF",
   "SIGNED_OUT",
   "SCRIPT",
+  "LAYOUT",
 ] as const;
 
 export type ProblemKind = (typeof PROBLEM_KINDS)[number];
@@ -30,6 +31,7 @@ export const KIND_TEXT: Record<ProblemKind, string> = {
   PDF: "A PDF did not open",
   SIGNED_OUT: "The check was sent to the sign-in screen",
   SCRIPT: "The screen had a script error",
+  LAYOUT: "Text is cut or does not fit the screen",
 };
 
 /** The short label on each problem's badge. */
@@ -41,7 +43,39 @@ export const KIND_LABEL: Record<ProblemKind, string> = {
   PDF: "PDF",
   SIGNED_OUT: "Signed out",
   SCRIPT: "Script error",
+  LAYOUT: "Layout",
 };
+
+/**
+ * The layout checks' rules (scripts/full-check/layout.mjs, RULES: the same words),
+ * for a LAYOUT problem's lines in an issue.
+ */
+export const LAYOUT_RULES = {
+  OVERFLOW: "The screen is wider than the window",
+  CUT_TEXT: "Text is cut",
+  OVERLAP: "Text or buttons overlap",
+  OFF_SCREEN: "A button or link is off the screen",
+  MENU: "A menu item cannot be reached",
+  FONT: "Text is not in the app's fonts",
+  BENGALI: "Bengali text is not in a Bengali font",
+  TINY: "Text is too small to read",
+  EMPTY_TABLE: "A table is empty and does not say what to do next",
+} as const;
+
+/**
+ * Where on the screen a layout problem is, as the layout checks give it: tag names,
+ * the app's own class names and :nth-of-type only. Anything else (an attribute's
+ * value, text, an id) makes it "(an element)" (layout.mjs, safeSelector: the same rule).
+ */
+export function safeLayoutPlace(selector: string): string {
+  const s = selector.trim();
+  if (!s || s.length > 300) return "(an element)";
+  return /^[a-z][a-z0-9-]*(?:[.:][\w\-[\]%./:()#]*|\s>\s[a-z][a-z0-9-]*|\[data-slot\])*$/i.test(
+    s,
+  ) && !/[\u0080-\uFFFF]/.test(s)
+    ? s
+    : "(an element)";
+}
 
 export type RequestView = {
   state: "SENT" | "PR_OPEN" | "MERGED" | "STOPPED";
@@ -156,6 +190,14 @@ function requestLines(detail: string | null): string[] {
     const link = /^Link: (\S+) \(on (\S+)\)$/.exec(line.trim());
     if (link) {
       out.push(`a link to ${safeRoute(link[1]!)} on ${safeRoute(link[2]!)}`);
+      continue;
+    }
+    // "LAYOUT 390 CUT_TEXT nav > a.shrink-0": the width, the rule and the place.
+    const layout = /^LAYOUT (\d{3,4}) ([A-Z_]+) (.+)$/.exec(line.trim());
+    if (layout) {
+      const rule = LAYOUT_RULES[layout[2] as keyof typeof LAYOUT_RULES];
+      if (rule) out.push(`${layout[1]} px: ${rule} at ${safeLayoutPlace(layout[3]!)}`);
+      if (out.length >= 8) break;
       continue;
     }
     const m =

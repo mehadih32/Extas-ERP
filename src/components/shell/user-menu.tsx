@@ -86,7 +86,7 @@ export function UserMenu({
           >
             <span
               aria-hidden
-              className="inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-primary-foreground text-[0.6875rem] font-semibold tracking-wider text-primary"
+              className="inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-primary-foreground text-xs font-semibold tracking-wider text-primary"
             >
               {user.initials}
             </span>
@@ -103,11 +103,12 @@ export function UserMenu({
           </DropdownMenuTrigger>
         ) : (
           <DropdownMenuTrigger
+            data-layout-more={more ? "" : undefined}
             aria-label={
               more ? `More: ${sections.map((s) => s.label).join(", ")} and your account` : undefined
             }
             className={cn(
-              "relative flex h-full w-full cursor-pointer flex-col items-center justify-center gap-1 text-[0.625rem] tracking-[0.02em] uppercase outline-none data-[state=open]:text-primary min-[400px]:text-[0.6875rem] min-[400px]:tracking-[0.06em]",
+              "relative flex h-full w-full cursor-pointer flex-col items-center justify-center gap-1 text-xs leading-none outline-none data-[state=open]:text-primary",
               activeSection ? "text-primary" : "text-muted-foreground",
               className,
             )}

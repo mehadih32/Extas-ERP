@@ -165,7 +165,7 @@ export function StaffMap({ screen, person }: { screen: StaffMapScreen; person: s
       ref={box}
       role="region"
       aria-label="Map of staff positions"
-      className="relative z-0 h-[22rem] w-full overflow-hidden rounded-lg border bg-muted sm:h-[28rem]"
+      className="relative z-0 h-[22rem] w-full overflow-hidden rounded-lg border bg-muted font-sans! sm:h-[28rem]"
     />
   );
 }

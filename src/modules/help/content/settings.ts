@@ -1092,7 +1092,7 @@ export const settingsHelp: HelpSection = {
         },
         {
           label: "PIN",
-          text: "আপনার PIN (4 থেকে 8 অঙ্ক)। PIN ঠিক করা না থাকলে আগে “AI” > “Settings”-এ “Set a PIN” দিয়ে ঠিক করুন।",
+          text: "আপনার PIN (4 থেকে 8 অঙ্ক)। PIN ঠিক করা না থাকলে আগে “AI” > “System” > “Settings”-এ “Set a PIN” দিয়ে ঠিক করুন।",
         },
         {
           label: "Show me the key",
@@ -1264,7 +1264,7 @@ export const settingsHelp: HelpSection = {
         },
         {
           label: "PIN",
-          text: "আপনার PIN। ঠিক করা না থাকলে আগে “AI” > “Settings”-এ ঠিক করুন।",
+          text: "আপনার PIN। ঠিক করা না থাকলে আগে “AI” > “System” > “Settings”-এ ঠিক করুন।",
         },
         {
           label: "Type RESTORE",

@@ -57,7 +57,7 @@ export function BatchCard({ batch: b, currency }: { batch: BatchCardData; curren
       >
         <div>
           <div className="flex items-start justify-between gap-3">
-            <p className="eyebrow min-w-0 truncate">
+            <p className="eyebrow min-w-0 break-words">
               {b.code} · {KIND_SHORT[b.kind]}
             </p>
             <div className="-my-1 flex shrink-0 flex-wrap justify-end gap-1.5">

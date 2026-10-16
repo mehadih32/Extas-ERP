@@ -249,12 +249,52 @@ class Writer {
     this.y += 2;
   }
 
+  /**
+   * The columns' widths, by weight; a column too narrow for its heading's longest
+   * word or its widest cell ("Available", "Bottle Green") takes the room it needs
+   * from the columns that have room to spare. When the table cannot fit it all,
+   * the figures keep their room and the text columns share the rest by weight.
+   */
   private columnLayout(table: ReportTable) {
     const weights = table.columns.map((c) => c.weight ?? DEFAULT_WEIGHT[c.kind]);
-    const total = weights.reduce((a, b) => a + b, 0);
+    const sum = (list: number[]) => list.reduce((a, b) => a + b, 0);
+    const total = sum(weights);
+    const need = table.columns.map((c, i) => {
+      const words = c.label
+        .split(/\s+/)
+        .map((w) => textWidth(this.doc, w, { font: BOLD, size: TABLE_SIZE }));
+      const cells = table.rows.map(
+        (r) =>
+          textWidth(this.doc, formatCell(r.cells[i] ?? null, c.kind, this.currency), {
+            font: (r.style ?? "normal") === "normal" ? REGULAR : BOLD,
+            size: TABLE_SIZE,
+          }) + (i === 0 && r.indent ? 10 : 0),
+      );
+      return Math.max(0, ...words, ...cells) + 2 * CELL_PAD + 1;
+    });
+    let widths = weights.map((w) => (w / total) * WIDTH);
+    const short = sum(widths.map((w, i) => Math.max(0, need[i]! - w)));
+    if (short > 0) {
+      const slack = widths.map((w, i) => Math.max(0, w - need[i]!));
+      if (sum(slack) >= short) {
+        const take = short / sum(slack);
+        widths = widths.map((w, i) => (need[i]! > w ? need[i]! : w - slack[i]! * take));
+      } else {
+        const text = table.columns.map((c) => c.kind === "text");
+        const fixed = sum(widths.map((w, i) => (text[i] ? 0 : Math.max(w, need[i]!))));
+        const textWeight = sum(weights.filter((_, i) => text[i]));
+        const rest = Math.max(0, WIDTH - fixed);
+        widths = widths.map((w, i) =>
+          text[i] ? (weights[i]! / textWeight) * rest : Math.max(w, need[i]!),
+        );
+        // Never wider than the page: scale everything down when even the figures are too wide.
+        const scale = Math.min(1, WIDTH / sum(widths));
+        widths = widths.map((w) => w * scale);
+      }
+    }
     let x = MARGIN.left;
     return table.columns.map((c, i) => {
-      const width = (weights[i]! / total) * WIDTH;
+      const width = widths[i]!;
       const col = { x, width, kind: c.kind, align: alignOf(c.kind) };
       x += width;
       return col;

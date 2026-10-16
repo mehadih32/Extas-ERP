@@ -172,4 +172,17 @@ describe("The workflows", () => {
     // No bot may start it.
     expect(yml).not.toMatch(/^\s+allowed_bots:/m);
   });
+
+  it("Full check: knows the error window by its code box, not by the words a guide quotes", () => {
+    const crawler = read("scripts/full-check/crawl.mjs");
+    expect(crawler).toContain(`page.$('[data-testid="error-code"]')`);
+    expect(crawler).not.toMatch(/Something went wrong/);
+    expect(read("src/components/feedback/error-dialog.tsx")).toContain('data-testid="error-code"');
+    // A download that is an HTML file (a document template) is not a web page in its place.
+    expect(crawler).toContain(
+      '!/attachment/i.test(response.headers()["content-disposition"] ?? "")',
+    );
+    // The guide on errors quotes them, which the first run took for an error.
+    expect(read("src/modules/help/content/getting-started.ts")).toContain("“Something went wrong”");
+  });
 });

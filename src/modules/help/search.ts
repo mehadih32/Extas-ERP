@@ -46,8 +46,13 @@ export function helpSearchEntry(
 ): HelpSearchEntry {
   const body = [
     article.summary,
+    article.what ?? "",
+    article.why ?? "",
     article.who ?? "",
     ...article.steps.map((step) => step.text),
+    ...(article.fields ?? []).flatMap((field) => [field.label, field.text]),
+    article.next ?? "",
+    ...(article.mistakes ?? []),
     ...(article.tips ?? []),
   ].join(" ");
   return {

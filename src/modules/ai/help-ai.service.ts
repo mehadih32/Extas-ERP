@@ -12,7 +12,8 @@ import { getMonthCost } from "./costs.service";
 /*
  * The Help AI (Help Center > "Ask the Help AI"): anyone signed in asks how to
  * do something, in Bengali or English, and the AI answers from the guides of
- * the manual that match the question best, naming the guides it read. It only
+ * the manual that match the question best (their What, Why, How, buttons and
+ * fields, what happens next and common mistakes), naming the guides it read. It only
  * explains: it has no tools and changes nothing. It answers only while the
  * company's AI is on (the guides and the search work without it), its cost
  * line says "Help AI" on the Help Center, and the people who see the AI
@@ -32,6 +33,9 @@ const PER_MINUTE = 6;
 
 /** Guides read for one question. */
 const GUIDES = 4;
+
+/** The most of one guide the AI reads (the longest guides list every button). */
+const GUIDE_CHARS = 12_000;
 
 /** The AI cost for the people who see the AI Center; null for everyone else. */
 async function costFor(ctx: CompanyContext) {
@@ -76,9 +80,18 @@ export async function askHelp(ctx: CompanyContext, input: unknown) {
       [
         `## ${article.title} (${section.title})${open ? "" : " [not open to this person's role]"}`,
         article.summary,
+        ...(article.what ? [`What: ${article.what}`] : []),
+        ...(article.why ? [`Why: ${article.why}`] : []),
+        "How:",
         ...article.steps.map((s, i) => `${i + 1}. ${s.text}`),
+        ...(article.fields?.length ? ["Buttons and fields:"] : []),
+        ...(article.fields ?? []).map((f) => `- "${f.label}": ${f.text}`),
+        ...(article.next ? [`What happens next: ${article.next}`] : []),
+        ...(article.mistakes ?? []).map((m) => `- Common mistake: ${m}`),
         ...(article.tips ?? []).map((t) => `- ${t}`),
-      ].join("\n"),
+      ]
+        .join("\n")
+        .slice(0, GUIDE_CHARS),
     )
     .join("\n\n");
   const { message } = await askClaude(ctx.company.id, {

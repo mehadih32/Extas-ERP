@@ -11,6 +11,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { GuideAfter, GuideFields, GuideWhatWhy } from "@/components/help/guide-parts";
 import { HelpImageSlot } from "@/components/help/help-image";
 import { bnDigits, helpHref, NOT_IN_ROLE } from "@/components/help/labels";
 import { Button } from "@/components/ui/button";
@@ -25,7 +26,11 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
   return { title: found ? `${found.article.title} · Help Center` : "Help Center" };
 }
 
-/** One guide: what it is for, who can do it, and the steps with their screenshots. */
+/**
+ * One guide: What the screen is, Why it matters, who can do it, How (the steps
+ * with their pictures), every button and field, what happens next and common
+ * mistakes.
+ */
 export default async function HelpArticlePage({ params }: { params: Params }) {
   const ctx = await requireCompanyPage();
   const permissions = [...ctx.permissions];
@@ -108,9 +113,11 @@ export default async function HelpArticlePage({ params }: { params: Params }) {
         )}
       </header>
 
+      <GuideWhatWhy what={article.what} why={article.why} />
+
       <section aria-labelledby="steps-heading" className="grid gap-4">
         <h2 id="steps-heading" lang="bn" className="text-lg font-medium">
-          ধাপে ধাপে
+          কীভাবে করবেন, ধাপে ধাপে
         </h2>
         <ol className="grid grid-cols-1 gap-4">
           {article.steps.map((step, i) => (
@@ -137,6 +144,9 @@ export default async function HelpArticlePage({ params }: { params: Params }) {
           ))}
         </ol>
       </section>
+
+      <GuideFields fields={article.fields} />
+      <GuideAfter next={article.next} mistakes={article.mistakes} />
 
       {article.tips && article.tips.length > 0 && (
         <section

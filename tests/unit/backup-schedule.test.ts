@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+
 import { ZodError } from "zod";
 
+import * as shared from "@/lib/schedule";
 import {
   type BackupSchedule,
   DEFAULT_SCHEDULE,
@@ -71,7 +75,7 @@ describe("every N hours from a start time", () => {
     );
   });
 
-  it("refuses more than 12 hours or more than one start time", () => {
+  it("refuses more than 12 hours (for backups) or more than one start time", () => {
     expect(() => schedule({ mode: "HOURS", every: 13, times: ["01:00"] })).toThrow(ZodError);
     expect(() => schedule({ mode: "HOURS", every: 2, times: ["01:00", "02:00"] })).toThrow(
       ZodError,
@@ -261,5 +265,28 @@ describe("the monthly drill", () => {
     expect(iso(nextDrillAt(config, TZ, dhaka("2026-12-16 10:00")))).toBe(
       iso(dhaka("2027-01-01 04:00")),
     );
+  });
+});
+
+describe("the shared schedule (src/lib/schedule.ts, also used by Bug Guard)", () => {
+  it("allows every 1 to 24 hours; only backups stop at 12", () => {
+    const daily = shared.scheduleSchema.parse({ mode: "HOURS", every: 24, times: ["03:00"] });
+    expect(timesOnDay(daily, "2026-10-02")).toEqual(["03:00"]);
+    expect(shared.describeSchedule(daily)).toBe("Every day at 03:00");
+    expect(iso(shared.nextRunAt(daily, TZ, dhaka("2026-10-02 03:00")))).toBe(
+      iso(dhaka("2026-10-03 03:00")),
+    );
+    expect(() =>
+      shared.scheduleSchema.parse({ mode: "HOURS", every: 25, times: ["03:00"] }),
+    ).toThrow(ZodError);
+    expect(() => schedule({ mode: "HOURS", every: 24, times: ["03:00"] })).toThrow(ZodError);
+  });
+
+  it("is the same calculator backups use, with no database and nothing from the modules", () => {
+    expect(nextRunAt).toBe(shared.nextRunAt);
+    expect(previousRunAt).toBe(shared.previousRunAt);
+    const source = readFileSync(path.join(process.cwd(), "src/lib/schedule.ts"), "utf8");
+    const imports = [...source.matchAll(/from "([^"]+)"/g)].map((m) => m[1]);
+    expect(imports.sort()).toEqual(["@/lib/dates", "zod"]);
   });
 });

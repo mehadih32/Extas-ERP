@@ -404,6 +404,26 @@ run("invoice PDF, picture and hub", () => {
     expect(reissued.revisedAt).toBeNull();
   });
 
+  it("refuses a due day before the invoice date, as the screen does (the same day is fine)", async () => {
+    const env = await setup();
+    const order = await navyOrder(env);
+    await documents.voidInvoice(env.ctx, order.invoice!.id, { reason: "Start again" });
+    const early = await expectAppError(
+      documents.issueInvoice(env.ctx, order.id, {
+        issueDate: new Date("2026-10-09T06:00:00Z"),
+        dueDate: new Date("2026-10-03T06:00:00Z"),
+      }),
+      "VALIDATION",
+    );
+    expect(early.details?.dueDate?.[0]).toBe("Choose a day on or after the invoice date.");
+    // 02:00 in Dhaka on the invoice's own day: earlier in the day, still the same day.
+    const sameDay = await documents.issueInvoice(env.ctx, order.id, {
+      issueDate: new Date("2026-10-09T06:00:00Z"),
+      dueDate: new Date("2026-10-08T20:00:00Z"),
+    });
+    expect(sameDay.dueDate).toEqual(new Date("2026-10-08T20:00:00Z"));
+  });
+
   it("voids and cancels after delivery: stock back at cost, sale and cost of goods reversed", async () => {
     const env = await setup();
     const opening = await accountNet(env.company.id, "INVENTORY");

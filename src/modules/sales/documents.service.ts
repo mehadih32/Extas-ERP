@@ -1,6 +1,6 @@
 import type { InvoiceStatus, Prisma } from "@prisma/client";
 
-import { dayRange } from "@/lib/dates";
+import { dayRange, localDay } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
 import { nextDocumentNumber } from "@/lib/numbering";
 import { prisma } from "@/lib/prisma";
@@ -95,6 +95,13 @@ export async function issueInvoiceTx(
       : terms
         ? new Date(issueDate.getTime() + terms * 86_400_000)
         : null;
+  // As the screen: due on the invoice's own day or later (days in the company's timezone).
+  const tz = ctx.company.timezone;
+  if (dueDate && localDay(dueDate, tz) < localDay(issueDate, tz)) {
+    throw new AppError("VALIDATION", "Please check the highlighted fields.", {
+      dueDate: ["Choose a day on or after the invoice date."],
+    });
+  }
   const number = await nextDocumentNumber(tx, ctx.company.id, "COMMERCIAL_INVOICE");
   // What the buyer owed before this bill, read before the bill is posted. Shown only.
   let previousDue: Prisma.Decimal | null = null;

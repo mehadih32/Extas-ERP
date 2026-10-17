@@ -171,8 +171,11 @@ a restore needs nothing else (no old server, no GitHub sign-in):
 - `manifest.json`: the row count of every table and the size and checksum of every file
 - `backup-keys.json` and the restore guide PDFs (Bangla and English)
 
-`deploy.sh` leaves the code bundle, the version and `deploy/.env` (locked) in
-`/srv/extras-erp/backups/.host` at every update, for the backups to take. The plain
+`deploy.sh` leaves the code bundle, the version, `deploy/.env` (locked) and that version's
+`bootstrap.sh` and `restore-tool.py` in `/srv/extras-erp/backups/.host` at every update, for
+the backups to take. The ERP also keeps the last two, as `restore.sh` and `restore-tool.py`,
+beside the guide in the Drive backup folder: a restore then needs nothing from GitHub (the
+guide's R06 says how). The plain
 settings never leave the server: `scripts/lock-settings.ts` locks them in the tools image,
 with no network, for the owner's public key.
 

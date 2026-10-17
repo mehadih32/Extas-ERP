@@ -184,3 +184,50 @@ describe("finding an Extas ERP already on the server (A6)", () => {
     expect((await choose(["srv"], "")).code).toBe(0);
   });
 });
+
+describe("the restore tool without GitHub (G17)", () => {
+  let root: string;
+  beforeEach(async () => {
+    root = await mkdtemp(path.join(os.tmpdir(), "extas-tool-"));
+  });
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  /** restore.sh as the owner saved it, with or without restore-tool.py beside it. */
+  async function saved(tool: string | null) {
+    await writeFile(path.join(root, "restore.sh"), await readFile(BOOTSTRAP));
+    if (tool !== null) await writeFile(path.join(root, "restore-tool.py"), tool);
+    else await rm(path.join(root, "restore-tool.py"), { force: true });
+    const out = path.join(root, "work");
+    await mkdir(out, { recursive: true });
+    return exec("bash", [path.join(root, "restore.sh"), "--tool", out], {
+      // GitHub cannot be reached.
+      env: { ...process.env, EXTAS_RAW_BASE: "http://127.0.0.1:9" },
+    }).then(
+      ({ stdout }) => ({ code: 0, stdout, stderr: "", out }),
+      (error: { code?: number; stdout?: string; stderr?: string }) => ({
+        code: Number(error.code ?? 1),
+        stdout: error.stdout ?? "",
+        stderr: error.stderr ?? "",
+        out,
+      }),
+    );
+  }
+
+  it("uses the copy beside restore.sh (from the Drive folder) when it is the right one", async () => {
+    const real = await readFile(path.join(process.cwd(), "deploy", "restore-tool.py"), "utf8");
+    const used = await saved(real);
+    expect(used.code).toBe(0);
+    expect(used.stdout).toContain("the restore tool beside this script");
+    expect(await readFile(path.join(used.out, "restore-tool.py"), "utf8")).toBe(real);
+  });
+
+  it("never uses a changed copy, and says R06 when GitHub cannot be reached either", async () => {
+    const changed = await saved("print('not the tool')\n");
+    expect(changed.code).toBe(2);
+    expect(changed.stderr).toContain("Error R06");
+    const none = await saved(null);
+    expect(none.stderr).toContain("Error R06");
+  });
+});

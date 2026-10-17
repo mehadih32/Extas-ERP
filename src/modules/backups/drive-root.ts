@@ -13,6 +13,9 @@ import * as drive from "@/modules/backups/google-drive";
  *   Extas ERP restore guide (Bangla).pdf / (English).pdf
  *                            the restore guide (G6, G7), with the recovery key
  *                            printed in it while the owner keeps it in Drive
+ *   restore.sh, restore-tool.py
+ *                            the restore command and its tool of the running
+ *                            version (G17): a restore needs nothing from GitHub
  */
 
 export const ROOT_FILES = {
@@ -28,6 +31,8 @@ export const ROOT_FILES = {
     name: "Extas ERP restore guide (English).pdf",
     mime: "application/pdf",
   },
+  restoreScript: { label: "restore-script", name: "restore.sh", mime: "text/plain" },
+  restoreTool: { label: "restore-tool", name: "restore-tool.py", mime: "text/plain" },
 } as const;
 
 export type RootFile = keyof typeof ROOT_FILES;

@@ -28,6 +28,8 @@
 #   sudo bash restore.sh [commit]     the restore
 #   bash restore.sh --find            only says which Extas ERP this server has
 #   bash restore.sh --choose          only the A6 decision (drills and tests)
+# Without GitHub (G17): restore.sh and restore-tool.py from the Drive backup folder,
+# side by side in one folder; the tool beside the script is used when it is the right one.
 set -euo pipefail
 umask 022
 
@@ -189,11 +191,36 @@ choose_install() {
   fi
 }
 
+# The restore tool ($1): the copy beside this script when it is the right one (from
+# the Drive backup folder, when GitHub cannot be reached: G17), else from GitHub at
+# the same commit. Either way it must match RESTORE_TOOL_SHA256.
+get_restore_tool() {
+  local here
+  here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  if [ -f "$here/restore-tool.py" ] &&
+    echo "$RESTORE_TOOL_SHA256  $here/restore-tool.py" | sha256sum -c --quiet - >/dev/null 2>&1; then
+    cp "$here/restore-tool.py" "$1"
+    note "Using the restore tool beside this script (restore-tool.py, from the Drive backup folder)."
+    return 0
+  fi
+  curl -fsSL --retry 3 "$RAW_BASE/$REPO/$ref/deploy/restore-tool.py" -o "$1" 2>/dev/null ||
+    fail R06 "the restore tool could not be downloaded from GitHub. Check that the VM has internet access, then paste the command again."
+  echo "$RESTORE_TOOL_SHA256  $1" | sha256sum -c --quiet - >/dev/null 2>&1 ||
+    fail R07 "the restore tool downloaded is not the expected one (its checksum differs). Copy the command from the newest guide and paste it again."
+}
+
 if [ "${1:-}" = --find ]; then
   detect_installs
   list_installs | LC_ALL=C sort
   exit 0
 fi
+# Tests only: gets and checks the restore tool into the folder $2; nothing else.
+if [ "${1:-}" = --tool ]; then
+  ref=main
+  get_restore_tool "${2:?}/restore-tool.py"
+  exit 0
+fi
+
 # Drills and tests only: the A6 decision alone; nothing is changed.
 if [ "${1:-}" = --choose ]; then
   detect_installs
@@ -270,10 +297,7 @@ cleanup() {
   [ -z "$restore_dir" ] || rm -rf "$restore_dir"
 }
 trap cleanup EXIT
-curl -fsSL --retry 3 "$RAW_BASE/$REPO/$ref/deploy/restore-tool.py" -o "$WORK/restore-tool.py" ||
-  fail R06 "the restore tool could not be downloaded from GitHub. Check that the VM has internet access, then paste the command again."
-echo "$RESTORE_TOOL_SHA256  $WORK/restore-tool.py" | sha256sum -c --quiet - >/dev/null 2>&1 ||
-  fail R07 "the restore tool downloaded is not the expected one (its checksum differs). Copy the command from the newest guide and paste it again."
+get_restore_tool "$WORK/restore-tool.py"
 tool() { python3 -I "$WORK/restore-tool.py" "$@"; }
 note "Done."
 

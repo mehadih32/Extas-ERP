@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { mkdir, mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
 import os from "node:os";
@@ -122,6 +123,30 @@ record_host_files; echo "exit $?"`,
     expect(existsSync(path.join(host, "code.bundle"))).toBe(false);
     expect(existsSync(path.join(host, "code.bundle.new"))).toBe(false);
     expect(existsSync(path.join(host, "code.commit"))).toBe(false);
+  });
+
+  it("keeps the restore command and its tool of the running version, for the Drive folder (G17)", async () => {
+    const { repo } = await repoWithCommits();
+    await writeFile(path.join(repo, "deploy", "restore-tool.py"), "print('tool')\n");
+    await new Promise((resolve) =>
+      execFile("git", ["-C", repo, "add", "."], () =>
+        execFile("git", ["-C", repo, "commit", "-q", "-m", "tool"], resolve),
+      ),
+    );
+    // A change not committed is not the running version: never copied.
+    await writeFile(path.join(repo, "deploy", "bootstrap.sh"), "echo changed\n");
+    expect((await record(repo)).stdout).toContain("exit 0");
+    const host = path.join(dir, "data", "backups", ".host");
+    expect(readFileSync(path.join(host, "restore.sh"), "utf8")).toBe("echo restore\n");
+    expect(readFileSync(path.join(host, "restore-tool.py"), "utf8")).toBe("print('tool')\n");
+    expect(statSync(path.join(host, "restore.sh")).mode & 0o777).toBe(0o644);
+    // Its checksum is the one the guide's command checks.
+    const version = JSON.parse(readFileSync(path.join(host, "version.json"), "utf8")) as {
+      bootstrapSha256: string;
+    };
+    expect(version.bootstrapSha256).toBe(
+      createHash("sha256").update("echo restore\n").digest("hex"),
+    );
   });
 });
 

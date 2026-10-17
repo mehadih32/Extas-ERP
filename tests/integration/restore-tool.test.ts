@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { chmod, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -753,6 +753,52 @@ sys.exit(os.waitstatus_to_exitcode(status))
       await keys.setKeepKeyInDrive(ctx, { pin: PIN, keep: false });
       expect(guideText("guide-en")).not.toContain(OWNER_KEY);
       expect(guideText("guide-en")).toContain(CLIENT_ID);
+    });
+
+    it("puts restore.sh and restore-tool.py beside it, so a restore needs nothing from GitHub (G17)", async () => {
+      await connectDrive();
+      await setKey({ keepInDrive: true });
+      await prepareHost(SETTINGS);
+      const host = hostRoot();
+      const version = async (script: string, commit: string) => {
+        await writeFile(path.join(host, "restore.sh"), script);
+        await writeFile(path.join(host, "restore-tool.py"), `print('${commit}')\n`);
+        await writeFile(
+          path.join(host, "version.json"),
+          JSON.stringify({
+            commit,
+            // The checksum the guide's command checks restore.sh against.
+            bootstrapSha256: createHash("sha256").update(script).digest("hex"),
+            deployedAt: new Date().toISOString(),
+            version: "6.4.0",
+          }),
+        );
+      };
+      const copies = () =>
+        ["restore-script", "restore-tool"].flatMap((label) =>
+          labelled(label).map((f) => [f.name, f.data!.toString()]),
+        );
+      await version("echo one\n", "1".repeat(40));
+      expect(await guideTick()).toBe("made");
+      expect(copies()).toEqual([
+        ["restore.sh", "echo one\n"],
+        ["restore-tool.py", `print('${"1".repeat(40)}')\n`],
+      ]);
+      expect(guideText("guide-en")).toContain("restore-tool.py");
+
+      // A new version: made again, one of each.
+      await version("echo two\n", "2".repeat(40));
+      expect(await guideTick()).toBe("made");
+      expect(copies()).toEqual([
+        ["restore.sh", "echo two\n"],
+        ["restore-tool.py", `print('${"2".repeat(40)}')\n`],
+      ]);
+
+      // A restore.sh that is not the one the guide's command checks is never put there.
+      await writeFile(path.join(host, "restore.sh"), "echo changed\n");
+      vi.stubEnv("APP_URL", "https://erp2.extasbd.com");
+      expect(await guideTick()).toBe("made");
+      expect(copies()[0]).toEqual(["restore.sh", "echo two\n"]);
     });
 
     it("is on the server and in every backup without details, and downloads without the key", async () => {

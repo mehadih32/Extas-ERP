@@ -596,6 +596,16 @@ record_host_files() {
       say "The code bundle for the backups did not check out, so backups say the code is missing until the next update"
     fi
   fi
+  # The restore command and its tool of this version, which the ERP puts beside the
+  # guide in the Drive backup folder (G17): a restore then needs nothing from GitHub.
+  if git -C "$repo" show HEAD:deploy/bootstrap.sh >"$host/restore.sh.new" 2>/dev/null &&
+    git -C "$repo" show HEAD:deploy/restore-tool.py >"$host/restore-tool.py.new" 2>/dev/null; then
+    chmod 644 "$host/restore.sh.new" "$host/restore-tool.py.new"
+    mv -f "$host/restore.sh.new" "$host/restore.sh"
+    mv -f "$host/restore-tool.py.new" "$host/restore-tool.py"
+  else
+    rm -f "$host/restore.sh.new" "$host/restore-tool.py.new"
+  fi
   printf '{"commit":"%s","bootstrapSha256":"%s","deployedAt":"%s","version":"%s"}\n' \
     "$commit" "$sha" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$version" >"$host/version.json.new"
   chmod 644 "$host/version.json.new"

@@ -112,6 +112,12 @@ export const GUIDE_NEEDS: Text[] = [
   },
 ];
 
+/** When nothing comes from GitHub (G17): the copies in the Drive backup folder. */
+const NO_GITHUB: Text = {
+  bn: "GitHub থেকে কিছুতেই না নামলে (GitHub বন্ধ, বা রিপোজিটরি আর খোলা নেই): Google Drive-এর “Extas ERP Backups” ফোল্ডারে restore.sh আর restore-tool.py আছে। দুটিই কম্পিউটারে নামান, WinSCP দিয়ে সার্ভারের হোম ফোল্ডারে রাখুন (B-এর ঠিকানা, নাম ও পাসওয়ার্ড দিয়ে), তারপর PuTTY-তে কমান্ডের শেষ দুই লাইন (echo দিয়ে শুরু) পেস্ট করে চালান।",
+  en: "If nothing comes from GitHub (GitHub is down, or the repository is no longer open): the “Extas ERP Backups” folder in Google Drive has restore.sh and restore-tool.py. Download both to your computer, put them in the server's home folder with WinSCP (with the address, user name and password from B), then paste the command's last two lines (from echo) in PuTTY and run them.",
+};
+
 export const GUIDE_RULES: Text[] = [
   {
     bn: "ধাপগুলো ক্রম অনুযায়ী করুন, কোনোটা বাদ দেবেন না।",
@@ -811,8 +817,8 @@ export const GUIDE_ERRORS: GuideError[] = [
     shown: "the restore tool could not be downloaded from GitHub",
     meaning: fix("সার্ভার GitHub-এ পৌঁছাতে পারেনি।", "The server could not reach GitHub."),
     todo: fix(
-      "কয়েক মিনিট পরে কমান্ড আবার চালান। বারবার হলে Azure-এ সার্ভারের ইন্টারনেট (Networking) ঠিক আছে কি না দেখুন।",
-      "Run the command again in a few minutes. If it keeps happening, check the VM's internet (Networking) in Azure.",
+      `কয়েক মিনিট পরে কমান্ড আবার চালান। বারবার হলে Azure-এ সার্ভারের ইন্টারনেট (Networking) ঠিক আছে কি না দেখুন। ${NO_GITHUB.bn}`,
+      `Run the command again in a few minutes. If it keeps happening, check the VM's internet (Networking) in Azure. ${NO_GITHUB.en}`,
     ),
   },
   {
@@ -1186,16 +1192,16 @@ export const OTHER_MESSAGES: OtherMessage[] = [
     shown: "curl: (6) Could not resolve host",
     where: fix("PuTTY, কমান্ডের শুরুতে", "PuTTY, at the start of the command"),
     todo: fix(
-      "সার্ভারের ইন্টারনেট এখনো তৈরি নয়; 2 মিনিট পরে আবার চালান।",
-      "The VM's internet is not ready yet; run it again in 2 minutes.",
+      "সার্ভারের ইন্টারনেট এখনো তৈরি নয়; 2 মিনিট পরে আবার চালান। বারবার হলে ভুলের তালিকায় R06 দেখুন।",
+      "The VM's internet is not ready yet; run it again in 2 minutes. If it keeps happening, see R06 in the list of errors.",
     ),
   },
   {
     shown: "curl: (22) The requested URL returned error: 404",
     where: fix("PuTTY, কমান্ডের শুরুতে", "PuTTY, at the start of the command"),
     todo: fix(
-      "কমান্ডটি পুরো কপি হয়নি; C1 থেকে আবার কপি করুন। আবার হলে Google Drive-এর সবচেয়ে নতুন গাইড থেকে কমান্ড নিন।",
-      "The command was not copied whole; copy it again from C1. If it happens again, take the command from the newest guide in Google Drive.",
+      `কমান্ডটি পুরো কপি হয়নি; C1 থেকে আবার কপি করুন। আবার হলে Google Drive-এর সবচেয়ে নতুন গাইড থেকে কমান্ড নিন। ${NO_GITHUB.bn}`,
+      `The command was not copied whole; copy it again from C1. If it happens again, take the command from the newest guide in Google Drive. ${NO_GITHUB.en}`,
     ),
   },
   {

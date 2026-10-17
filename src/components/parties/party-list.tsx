@@ -83,7 +83,7 @@ function PartyCard({
         </p>
         {categories && <p className="mt-1 text-sm">{categories}</p>}
         {(contact || party.city) && (
-          <p className="mt-1 truncate text-sm text-muted-foreground">
+          <p className="mt-1 text-sm break-words text-muted-foreground">
             {[contact, party.city].filter(Boolean).join(" · ")}
           </p>
         )}

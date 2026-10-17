@@ -52,8 +52,11 @@ jobs:
           --health-timeout 5s
           --health-retries 20
     env:
-      # The demo site's own database name: the demo data loads nowhere else.
+      # The demo site's own database name: the demo data loads nowhere else. This one
+      # is a throwaway made for the run, so the check may make its session in it
+      # (scripts/layout-session.ts accepts that name only here).
       DATABASE_URL: postgresql://extras:extras@localhost:5432/extras_demo?schema=public
+      LAYOUT_THROWAWAY_DB: "yes"
       DEMO_SITE: "on"
       SEED_ADMIN_EMAIL: owner@layout-check.invalid
       SEED_ADMIN_NAME: Owner

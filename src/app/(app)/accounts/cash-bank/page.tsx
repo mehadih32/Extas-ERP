@@ -134,10 +134,10 @@ export default async function CashBankPage() {
                     />
                     <div className="grid min-w-0 flex-1 grid-cols-1">
                       <div className="flex items-start justify-between gap-2">
-                        <p className="truncate font-medium">{b.bankName}</p>
+                        <p className="font-medium break-words">{b.bankName}</p>
                         {!b.isActive && <OffBadge>Closed</OffBadge>}
                       </div>
-                      <p className="truncate text-[0.8125rem] text-muted-foreground">
+                      <p className="text-[0.8125rem] break-words text-muted-foreground">
                         {b.accountNumber}
                         {b.branch ? ` · ${b.branch}` : ""}
                       </p>
@@ -170,8 +170,8 @@ export default async function CashBankPage() {
                   <Link href={accountsHref.account(a.id)} className={cardClass}>
                     <Icon className="mt-0.5 size-5 shrink-0 text-muted-foreground" aria-hidden />
                     <div className="grid min-w-0 flex-1 grid-cols-1">
-                      <p className="truncate font-medium">{a.name}</p>
-                      <p className="truncate text-[0.8125rem] text-muted-foreground">
+                      <p className="font-medium break-words">{a.name}</p>
+                      <p className="text-[0.8125rem] break-words text-muted-foreground">
                         {KIND_LABELS[a.kind]} · {a.code}
                       </p>
                       <Balance amount={a.balance} currency={currency} />
@@ -245,10 +245,10 @@ export default async function CashBankPage() {
                       />
                       <div className="grid min-w-0 flex-1 grid-cols-1">
                         <div className="flex items-start justify-between gap-2">
-                          <p className="truncate font-medium">{b.name}</p>
+                          <p className="font-medium break-words">{b.name}</p>
                           {!b.isActive && <OffBadge>Closed</OffBadge>}
                         </div>
-                        <p className="truncate text-[0.8125rem] text-muted-foreground">
+                        <p className="text-[0.8125rem] break-words text-muted-foreground">
                           Held by {b.holder.name}
                         </p>
                         <Balance amount={b.balance} currency={currency} />

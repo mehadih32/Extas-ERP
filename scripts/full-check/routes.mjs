@@ -65,3 +65,15 @@ export const NEVER = [
   /^\/api\/auth\//,
   /\/(send|delete|approve|cancel|void|merge|restore)(\/|$|\?)/,
 ];
+
+/**
+ * What kind of site an address is: "copy" (a copy on this computer), "demo" (a demo
+ * site, demo.<domain>, with practice data) or "live" (anything else: a live ERP with a
+ * company's real data, where only the Full check may look, and only read).
+ */
+export function siteKind(url) {
+  const host = url.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  if (host === "localhost" || host === "127.0.0.1" || host === "::1") return "copy";
+  if (host.startsWith("demo.")) return "demo";
+  return "live";
+}

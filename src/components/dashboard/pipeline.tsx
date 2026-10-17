@@ -57,7 +57,7 @@ function ProjectBar({
         </p>
         <DueText project={project} />
       </div>
-      <p className="mt-0.5 truncate text-[0.8125rem] text-muted-foreground">
+      <p className="mt-0.5 text-[0.8125rem] break-words text-muted-foreground">
         {project.code} · {project.buyer ?? "In-House"}
       </p>
       <div

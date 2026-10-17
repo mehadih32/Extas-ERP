@@ -14,9 +14,10 @@
 //
 // It sets the window to that width, lets the screen settle and looks for:
 //   OVERFLOW     the screen is wider than the window (it scrolls sideways);
-//   CUT_TEXT     text cut by its box (hidden overflow, or "..." with no tooltip that
-//                holds the whole text), by a row that scrolls with a hidden scroll bar,
-//                or by the window's edge;
+//   CUT_TEXT     text cut by its box (hidden overflow, or "..."; see below), by a row
+//                that scrolls with a hidden scroll bar, or by the window's edge; and a
+//                row of tabs or menu links that scrolls sideways (on a phone its scroll
+//                bar does not show, so the tabs past the edge look cut);
 //   OVERLAP      text over other text, or a button or link over another;
 //   OFF_SCREEN   a button, link or field outside the window, where no scrolling reaches it;
 //   MENU         a menu item the person may open that cannot be reached at this width:
@@ -26,6 +27,11 @@
 //   BENGALI      Bengali text in a font with no Bengali letters (it would show as boxes);
 //   TINY         readable text smaller than 12 px;
 //   EMPTY_TABLE  a table with no rows that does not say what to do next.
+// Text cut short with "..." (or a line clamp) is cut text on a phone and a tablet (390
+// and 768 px: no pointer shows a tooltip there), and at every width on a button, a
+// link, a tab, a menu item or a heading. It is allowed only in a table cell (with a
+// tooltip that holds the whole text), on an element marked data-layout-cut-ok, and in
+// plain text on a laptop or a large desktop with such a tooltip.
 // It skips what is hidden on purpose (display:none, visibility:hidden, the sr-only
 // text for screen readers, aria-hidden and inert parts, data-layout-ignore), rows
 // that scroll on purpose with a visible scroll bar (a wide table in its scrolling
@@ -44,6 +50,8 @@
 //   data-layout-nav             on each menu whose links count for the nearest data-layout-expect
 //   data-layout-more            on a "More" button: its menu holds the rest
 //   data-layout-scroll-cue      on a row that scrolls with a cue of its own (not cut)
+//   data-layout-cut-ok          on text that may end in "..." because its whole value is
+//                               one tap away (use it sparingly: a file name that opens the file)
 //   data-layout-ignore          on a decorative part the checks skip
 //
 // The rules' arithmetic is in small pure functions (LIB below), tested with Vitest
@@ -70,6 +78,9 @@ export const RULES = {
 
 /** The smallest readable text, in CSS pixels. */
 export const MIN_TEXT_PX = 12;
+
+/** Up to this width (a phone, a tablet) text cut with "..." is always cut: no pointer, no tooltip. */
+export const STRICT_UP_TO = 768;
 
 /** How many problems of one rule one check reports (the first ones say enough). */
 const PER_RULE = 6;
@@ -123,20 +134,35 @@ export function isTiny(fontSizePx) {
 
 /**
  * Whether a box cuts its own text: "x" (sideways) or "y" (lines cut off), or null.
- * "..." (text-overflow: ellipsis) or a line clamp is fine when a tooltip holds the
- * whole text (`titled`).
+ * Text cut short with "..." (text-overflow: ellipsis) or a line clamp is fine only:
+ *   - on an element marked data-layout-cut-ok (`cutOk`: the whole value is one tap away);
+ *   - in a table cell (`inCell`) with a tooltip that holds the whole text (`titled`);
+ *   - with such a tooltip when not `strict`: `strict` is a phone or a tablet, or a
+ *     button, link, tab, menu item or heading, where the text must show whole.
  */
 export function clipsOwnText(box) {
   const hides = (o) => o === "hidden" || o === "clip";
   const wide = box.scrollWidth > box.clientWidth + 1;
   const tall = box.scrollHeight > box.clientHeight + 1;
+  const allowed = box.cutOk || (box.titled && (box.inCell || !box.strict));
   if (hides(box.overflowX) && wide) {
-    return box.titled && box.textOverflow === "ellipsis" ? null : "x";
+    return allowed && box.textOverflow === "ellipsis" ? null : "x";
   }
   if (hides(box.overflowY) && tall) {
-    return box.titled && box.lineClamp ? null : "y";
+    return allowed && box.lineClamp ? null : "y";
   }
   return null;
+}
+
+/**
+ * Whether a row of tabs or menu links hides some of them: it scrolls sideways and
+ * gives no cue of its own (data-layout-scroll-cue). A phone shows no scroll bar until
+ * the row is moved, so the tabs past the edge look cut. Such a row wraps, or puts the
+ * rest under "More" (components/shell/section-tabs.tsx).
+ */
+export function tabRowHides(row) {
+  const scrolls = row.overflowX === "auto" || row.overflowX === "scroll";
+  return scrolls && row.scrollWidth > row.clientWidth + 1 && !row.cue;
 }
 
 /**
@@ -236,6 +262,7 @@ const LIB = [
   hasBengali,
   isTiny,
   clipsOwnText,
+  tabRowHides,
   scrollsOnPurpose,
   intersection,
   textOverlaps,
@@ -245,8 +272,9 @@ const LIB = [
 
 export const LIB_SOURCE = `(() => {
 const MIN_TEXT_PX = ${MIN_TEXT_PX};
+const STRICT_UP_TO = ${STRICT_UP_TO};
 ${LIB.map((fn) => fn.toString()).join("\n")}
-return { ${LIB.map((fn) => fn.name).join(", ")} };
+return { ${LIB.map((fn) => fn.name).join(", ")}, STRICT_UP_TO };
 })()`;
 
 // ---------------------------------------------------------------- inside the page
@@ -367,6 +395,21 @@ async function inPage(lib) {
     return has();
   }
   const isField = (el) => el.closest("input, textarea, select, [contenteditable='true']");
+  /** Buttons, links, tabs, menu items and headings: their text must show whole at every width. */
+  const MUST_SHOW =
+    "button, a[href], summary, [role='button'], [role='link'], [role='tab'], [role='menuitem'], [role='menuitemcheckbox'], [role='menuitemradio'], h1, h2, h3, h4, h5, h6, [role='heading']";
+  const CELL =
+    "td, th, [role='cell'], [role='gridcell'], [role='columnheader'], [role='rowheader']";
+  const kindOf = (el) =>
+    el.closest("[role='tab']")
+      ? "a tab"
+      : el.closest("[role^='menuitem']")
+        ? "a menu item"
+        : el.closest("h1, h2, h3, h4, h5, h6, [role='heading']")
+          ? "a heading"
+          : el.closest("a[href], [role='link']")
+            ? "a link"
+            : "a button";
 
   // ---- which layer an element is in (fixed and sticky bars float over the page)
   const layerCache = new Map();
@@ -515,6 +558,10 @@ async function inPage(lib) {
   // 2. text cut
   for (const t of texts) {
     const { el, cs, text, rects } = t;
+    const control = el.closest(MUST_SHOW);
+    const strict = W <= lib.STRICT_UP_TO || Boolean(control);
+    const lineClamp = Boolean(cs.webkitLineClamp && cs.webkitLineClamp !== "none");
+    const hasTitle = titled(el);
     const own = lib.clipsOwnText({
       overflowX: cs.overflowX,
       overflowY: cs.overflowY,
@@ -523,14 +570,25 @@ async function inPage(lib) {
       clientWidth: el.clientWidth,
       scrollHeight: el.scrollHeight,
       clientHeight: el.clientHeight,
-      titled: titled(el),
-      lineClamp: cs.webkitLineClamp && cs.webkitLineClamp !== "none",
+      titled: hasTitle,
+      lineClamp,
+      strict,
+      inCell: Boolean(el.closest(CELL)),
+      cutOk: Boolean(el.closest("[data-layout-cut-ok]")),
     });
     if (own && lib.isReadable(text)) {
+      const dots = own === "x" ? cs.textOverflow === "ellipsis" : lineClamp;
+      const why = !dots
+        ? ""
+        : !hasTitle
+          ? ", shown with ... and no tooltip with the whole text"
+          : control
+            ? `, shown with ...: ${kindOf(el)} must show its whole text`
+            : `, shown with ...: at ${W} px there is no pointer to show its tooltip`;
       add(
         "CUT_TEXT",
         el,
-        `${quote(text)} does not fit its box${own === "x" ? " (cut at the side" : " (lines cut off"}${cs.textOverflow === "ellipsis" ? ", shown with ... and no tooltip with the whole text)" : ")"}`,
+        `${quote(text)} does not fit its box (${own === "x" ? "cut at the side" : "lines cut off"}${why})`,
       );
       continue;
     }
@@ -556,6 +614,27 @@ async function inPage(lib) {
       }
     }
     if (reported) continue;
+  }
+
+  // 2b. a row of tabs or menu links that scrolls sideways with no cue of its own
+  for (const row of document.body.querySelectorAll("[role='tablist'], nav, nav *")) {
+    if (!shown(row)) continue;
+    const cs = styleOf(row);
+    if (cs.overflowX !== "auto" && cs.overflowX !== "scroll") continue;
+    const hides = lib.tabRowHides({
+      overflowX: cs.overflowX,
+      scrollWidth: row.scrollWidth,
+      clientWidth: row.clientWidth,
+      cue: Boolean(row.closest("[data-layout-scroll-cue]")),
+    });
+    if (!hides) continue;
+    // Only a row of tabs or links: a wide table or picture in a menu is not one.
+    if (!row.querySelector("a[href], [role='tab'], button")) continue;
+    add(
+      "CUT_TEXT",
+      row,
+      `A row of ${row.closest("[role='tablist']") ? "tabs" : "menu links"} is ${row.scrollWidth} px wide in a ${row.clientWidth} px space and scrolls sideways: on a phone the ones past the edge look cut (it should wrap, or put the rest under "More")`,
+    );
   }
 
   // 3. overlap: text over text, and controls over controls, in the same layer
@@ -792,7 +871,9 @@ function linksInOpenMenu() {
  *   width     the window's width (one of WIDTHS)
  *   height    the window's height (default: HEIGHTS[width], or 900)
  *   settleMs  how long the screen may take to lay itself out again (default 350)
- *   menus     open the "More" menus to check every menu item is reachable (default true)
+ *   menus     check every menu item is reachable, opening the "More" menus (default true);
+ *             false: no menu check (a tab or a window the screen opened: the menus were
+ *             checked with the screen)
  *   seen      a Set the caller keeps between screens: a menu found whole at a width is
  *             not opened again there (the top bar is the same on every screen)
  */
@@ -813,12 +894,12 @@ export async function checkLayout(
     found = await collect();
   }
   const problems = found.problems.map((p) => ({ kind: "LAYOUT", width, ...p }));
-  let gaps = await menuGaps(page, found.menus, { width, seen, open: menus });
-  if (gaps.length && menus) {
+  let gaps = menus ? await menuGaps(page, found.menus, { width, seen, open: true }) : [];
+  if (gaps.length) {
     // A screen still settling (a menu drawn again after the resize) can swallow a
     // click: look once more, from scratch, before calling a menu item unreachable.
     await page.waitForTimeout(800);
-    gaps = await menuGaps(page, (await collect()).menus, { width, seen, open: menus });
+    gaps = await menuGaps(page, (await collect()).menus, { width, seen, open: true });
   }
   problems.push(...gaps);
   return dedupe(problems.map((p) => ({ ...p, where: safeSelector(p.where) })));

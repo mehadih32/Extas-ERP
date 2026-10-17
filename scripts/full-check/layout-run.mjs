@@ -4,8 +4,10 @@
 // throwaway database; `npm run layout:check` runs it against any address, e.g. a
 // copy started on this computer. It opens every screen of the code (and one of each
 // kind of record screen it finds a link to), checks it at 390, 768, 1366 and 1920 px,
-// and fails (exit code 1) when any screen has a problem. It only opens screens and
-// "More" menus: it presses nothing else.
+// then presses each of its tabs and each button that opens a window, and checks each
+// tab and window the same way (press.mjs: never a button that could change
+// something). It fails (exit code 1) when any screen has a problem. It runs only on a
+// copy on this computer or a demo site, never on a live ERP (routes.mjs, siteKind).
 //
 //   SITE      the ERP's address (default http://localhost:3000)
 //   COOKIE    a session for the person whose screens are checked (the value of the
@@ -15,6 +17,7 @@
 //   PATHS     or only these addresses, comma-separated (no links followed)
 //   MINUTES   the time for the whole check (default 40)
 //   TABS      screens checked at the same time (default 3)
+//   PRESS     off: do not press tabs and window buttons (default: on)
 //   OUT       a folder for a screenshot of each screen with a problem (optional)
 //   REPORT    a file for the problems as JSON (optional)
 //   CHROMIUM_PATH  a Chromium to use instead of Playwright's own
@@ -28,7 +31,8 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 
 import { checkLayout, RULES, safeSelector, WIDTHS } from "./layout.mjs";
-import { GATES, NEVER, patternFinder, PUBLIC, screenRoutes } from "./routes.mjs";
+import { PRESSABLE, pressSafe } from "./press.mjs";
+import { GATES, NEVER, patternFinder, PUBLIC, screenRoutes, siteKind } from "./routes.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const SITE = new URL(process.env.SITE || "http://localhost:3000");
@@ -44,10 +48,22 @@ const OUT = process.env.OUT ?? "";
 const ROUTES = screenRoutes(resolve(here, "../../src/app"));
 const patternOf = patternFinder(ROUTES);
 
+if (siteKind(SITE) === "live") {
+  console.error(
+    `${SITE.host} is not a copy on this computer nor a demo site (demo.<domain>), so it may be a live ERP with real data. The layout checks press tabs and open windows: run them on a copy (scripts/layout-session.ts makes a session there) or on the demo site. Nothing was checked.`,
+  );
+  process.exit(1);
+}
+if (siteKind(SITE) === "demo") {
+  console.log(
+    `Checking the demo site ${SITE.host}: screens, tabs and windows are only opened, nothing is saved.`,
+  );
+}
 if (!COOKIE) {
   console.error("Set COOKIE to a session (scripts/layout-session.ts makes one).");
   process.exit(1);
 }
+const PRESS = process.env.PRESS !== "off";
 if (OUT) mkdirSync(OUT, { recursive: true });
 
 /** Only these addresses, when given (PATHS="/sales,/ai/orders/x1"): no links followed. */
@@ -141,6 +157,39 @@ async function visit(page, path) {
     }
     problems.push(...found);
   }
+  if (PRESS && Date.now() < deadline) {
+    // Each tab and window the screen opens, at the same widths: only what the screen
+    // itself did not already show. The top bar's windows are pressed on the home screen.
+    const key = (p) => `${p.width}|${p.what}|${p.where}`;
+    const known = new Set(problems.map(key));
+    let views = 0;
+    await pressSafe(page, {
+      selector: PRESSABLE.dialogs,
+      within: path === "/" ? "" : "#main ",
+      max: 8,
+      deadline,
+      look: async (view) => {
+        views += 1;
+        for (const width of widths) {
+          if (Date.now() > deadline) break;
+          const found = (await checkLayout(page, { width, menus: false }).catch(() => [])).filter(
+            (p) => !known.has(key(p)),
+          );
+          if (found.length && OUT) {
+            const name = `${(patternOf(path) ?? path).replace(/[^\w-]+/g, "_")}-${view.kind}${views}-${width}.png`;
+            await page.screenshot({ path: join(OUT, name) }).catch(() => {});
+          }
+          for (const p of found) {
+            known.add(key(p));
+            problems.push({
+              ...p,
+              detail: `After pressing "${view.label}" (${view.kind}): ${p.detail}`,
+            });
+          }
+        }
+      },
+    });
+  }
   results.push({ path, pattern: patternOf(path), ms: Date.now() - started, problems });
   const n = problems.length;
   console.log(`${n ? "x" : "ok"} ${patternOf(path) ?? path}${n ? `: ${n} problems` : ""}`);
@@ -166,7 +215,12 @@ async function main() {
   const pages = await Promise.all(Array.from({ length: TABS }, () => context.newPage()));
   let next = 0;
   await Promise.all(
-    pages.map(async (page) => {
+    pages.map(async (first) => {
+      let page = first;
+      // A tab whose page crashed (the browser ran out of memory) cannot open anything
+      // more: the next screen gets a new tab.
+      let crashed = false;
+      page.on("crash", () => (crashed = true));
       while (!gate && Date.now() < deadline) {
         const path = queue[next++];
         if (!path) {
@@ -175,6 +229,12 @@ async function main() {
           continue;
         }
         await visit(page, path);
+        if (crashed) {
+          await page.close().catch(() => {});
+          page = await context.newPage();
+          crashed = false;
+          page.on("crash", () => (crashed = true));
+        }
       }
     }),
   );

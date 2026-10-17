@@ -226,7 +226,7 @@ export function BookingWizard({ form: data, currency }: { form: BookingForm; cur
           />
         </div>
         <nav aria-label="Booking steps">
-          <ol className="flex gap-1.5 overflow-x-auto pb-1 sm:gap-2">
+          <ol className="flex flex-wrap gap-1.5 sm:gap-2">
             {steps.map((s, i) => {
               const current = s === step;
               const done = i < at;

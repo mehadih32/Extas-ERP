@@ -108,7 +108,7 @@ export default async function StylePage({
           {facts.map(([label, value]) => (
             <div key={label} className="min-w-0">
               <dt className="eyebrow">{label}</dt>
-              <dd className="mt-1 truncate text-sm tabular-nums">{value}</dd>
+              <dd className="mt-1 text-sm break-words tabular-nums">{value}</dd>
             </div>
           ))}
         </dl>

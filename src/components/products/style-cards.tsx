@@ -65,7 +65,7 @@ function StyleCardItem({
         </div>
         <div className="min-w-0 flex-1 pt-0.5">
           <p className="eyebrow min-w-0 break-words">{style.code}</p>
-          <p className="mt-1 truncate text-sm text-muted-foreground">{where}</p>
+          <p className="mt-1 text-sm break-words text-muted-foreground">{where}</p>
         </div>
         <StatusBadge tone={pill.tone} className="rounded-full px-2">
           {pill.label}
@@ -75,7 +75,7 @@ function StyleCardItem({
         href={`/products/${style.id}`}
         className="mt-3 flex items-start justify-between gap-2 font-serif text-xl leading-snug text-primary outline-none after:absolute after:inset-0 after:rounded-xl focus-visible:after:ring-[3px] focus-visible:after:ring-ring/25"
       >
-        <span className="line-clamp-2 min-w-0 break-words">{style.name}</span>
+        <span className="min-w-0 break-words">{style.name}</span>
         <ChevronRightIcon
           aria-hidden
           className="mt-1.5 size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5"

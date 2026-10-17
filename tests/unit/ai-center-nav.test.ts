@@ -3,7 +3,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { AI_GROUPS, AI_TABS, type AiTab, aiNavigation, visibleAiTabs } from "@/components/ai/tabs";
-import { fitTabs } from "@/components/shell/tab-fit";
+import { fitTabs, placeTabs } from "@/components/shell/tab-fit";
 import { DEFAULT_ROLE_PERMISSIONS } from "@/modules/rbac/permissions";
 
 /*
@@ -136,6 +136,33 @@ describe("A section's tab row", () => {
       shown: [4],
       more: [0, 1, 2, 3, 5],
     });
+  });
+
+  it("never uses a measurement of other tabs (another section's, or before a tab came or went)", () => {
+    const six = ["a", "b", "c", "d", "e", "f"];
+    const measured = { key: six.join("|"), fit: { shown: [0, 5], more: [1, 2, 3, 4] } };
+    expect(placeTabs(six, measured, six.join("|"))).toEqual({
+      shown: ["a", "f"],
+      under: ["b", "c", "d", "e"],
+      measured: true,
+    });
+    // The tabs changed before the row was measured again: every tab shows, none is lost.
+    const three = ["x", "y", "z"];
+    expect(placeTabs(three, measured, three.join("|"))).toEqual({
+      shown: ["x", "y", "z"],
+      under: [],
+      measured: false,
+    });
+    // Even a measurement that claims to be of these tabs, with places they do not have.
+    expect(placeTabs(three, { key: "x|y|z", fit: { shown: [0, 4], more: [1] } }, "x|y|z")).toEqual({
+      shown: ["x", "y", "z"],
+      under: [],
+      measured: false,
+    });
+    expect(placeTabs(three, null, "x|y|z").shown).toEqual(three);
+    const tabs = read("src/components/shell/section-tabs.tsx");
+    expect(tabs).toContain("placeTabs(");
+    expect(tabs).not.toMatch(/fit\.(shown|more)\.map\(\(i\) => tabs\[i\]!\)/);
   });
 
   it("is the one tab row of every section: More, a focus ring and aria-current", () => {

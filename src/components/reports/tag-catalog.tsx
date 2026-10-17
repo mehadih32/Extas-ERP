@@ -26,8 +26,8 @@ export function TagCatalog({ catalog }: { catalog: TemplateScreen["catalog"] }) 
                 className="flex min-w-0 items-center justify-between gap-2 border-b py-1.5"
               >
                 <span className="min-w-0">
-                  <code className="block truncate text-[0.8125rem] font-medium">{c.tag}</code>
-                  <span className="block truncate text-[0.75rem] text-muted-foreground">
+                  <code className="block text-[0.8125rem] font-medium break-words">{c.tag}</code>
+                  <span className="block text-[0.75rem] break-words text-muted-foreground">
                     {c.label}
                     {c.alsoAs.length > 0 && ` · also ${c.alsoAs.join(", ")}`}
                   </span>

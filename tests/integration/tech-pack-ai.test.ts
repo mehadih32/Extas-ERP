@@ -1,3 +1,6 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+
 import type Anthropic from "@anthropic-ai/sdk";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ZodError } from "zod";
@@ -707,6 +710,46 @@ run("Tech pack AI", () => {
     }
     const shown = (await getTechPackScreen(env.pm, env.tp)).draft!;
     expect(shown).toMatchObject({ createdBy: account.name, askedBy: "pm" });
+    // An expert's answer and the review board's findings: written by the AI, asked by pm.
+    const answers = await prisma.techPackExpertAnswer.findMany({
+      select: { kind: true, createdById: true, askedById: true },
+    });
+    expect(answers.map((a) => a.kind).sort()).toEqual(["QUESTION", "REVIEW"]);
+    for (const a of answers) {
+      expect(a, a.kind).toMatchObject({ createdById: account.id, askedById: env.pm.user.id });
+    }
+  });
+
+  it("gives the answers kept before v6.4 their company's AI account as the author", async () => {
+    const account = await aiAccountOf(env.company.id);
+    const old = await prisma.techPackExpertAnswer.create({
+      data: {
+        companyId: env.company.id,
+        techPackId: env.tp,
+        expert: "X10",
+        kind: "QUESTION",
+        question: "How much shrinkage?",
+        answer: "5% in length",
+        model: "claude-sonnet-5-5",
+        askedById: env.pm.user.id,
+      },
+    });
+    expect(old.createdById).toBeNull();
+    const sql = await readFile(
+      path.join(
+        process.cwd(),
+        "prisma/migrations/20261214090000_tech_pack_expert_author/migration.sql",
+      ),
+      "utf8",
+    );
+    const backfill = sql.slice(sql.indexOf('UPDATE "TechPackExpertAnswer"'));
+    await prisma.$executeRawUnsafe(backfill);
+    expect(
+      await prisma.techPackExpertAnswer.findUniqueOrThrow({
+        where: { id: old.id },
+        select: { createdById: true, askedById: true },
+      }),
+    ).toEqual({ createdById: account.id, askedById: env.pm.user.id });
   });
 
   it("approves the tech pack once nothing is red", async () => {

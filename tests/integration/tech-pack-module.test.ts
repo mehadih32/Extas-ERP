@@ -1,4 +1,6 @@
 import { readFileSync } from "node:fs";
+import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type Anthropic from "@anthropic-ai/sdk";
@@ -969,5 +971,69 @@ run("Tech Pack as its own module", () => {
       where: { entityType: "TechPack", entityId: id, action: "UPDATE" },
     });
     expect(log?.summary).toBe(`${number}: changed its details`);
+  });
+
+  it("keeps an approved tech pack's title, buyer and brief; its season can still change", async () => {
+    const { id, number } = await fromBrief(env);
+    await register.linkTechPackToProject(env.pm, id, { projectId: env.polo.id });
+    await approval.approveTechPackOf(env.owner, id);
+    const kept = { title: "Nordic polo SS27", buyerId: env.nordic.id, brief: BRIEF };
+    for (const change of [
+      { title: "Nordic polo SS28" },
+      { buyerId: env.hansa.id },
+      { buyerId: "" },
+      { brief: "Another brief" },
+      { brief: "" },
+    ]) {
+      await expectAppError(
+        register.updateTechPackDetails(env.pm, id, { ...kept, season: "SS27", ...change }),
+        "CONFLICT",
+        new RegExp(`^${number} is approved: its title, buyer and brief no longer change`),
+      );
+    }
+    expect(await prisma.techPack.findUniqueOrThrow({ where: { id } })).toMatchObject({
+      title: "Nordic polo SS27",
+      buyerId: env.nordic.id,
+      brief: BRIEF,
+      season: "SS27",
+    });
+    // Its season (a label to find it by) still changes, with the rest sent as it is.
+    await register.updateTechPackDetails(env.pm, id, { ...kept, season: "SS27 drop 2" });
+    expect((await prisma.techPack.findUniqueOrThrow({ where: { id } })).season).toBe("SS27 drop 2");
+    await register.updateTechPackDetails(env.pm, id, { title: kept.title, season: "SS27" });
+    expect((await prisma.techPack.findUniqueOrThrow({ where: { id } })).season).toBe("SS27");
+  });
+
+  it("keeps no file of a tech pack that could not be started", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "extras-tech-pack-start-"));
+    vi.stubEnv("UPLOAD_DIR", dir);
+    const kept = async () =>
+      (await readdir(dir, { recursive: true, withFileTypes: true })).filter((f) => f.isFile());
+    try {
+      const before = await prisma.fileAsset.count();
+      // The second file is not a photo or a PDF: nothing starts, and the first photo goes too.
+      await expectAppError(
+        register.createTechPack(env.pm, { title: "Hansa tee" }, [
+          photo(),
+          { fileName: "notes.txt", bytes: Buffer.from("not a photo") },
+        ]),
+        "VALIDATION",
+      );
+      // The tech pack cannot be saved after its photos were: they go too.
+      vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("The database went away"));
+      await expect(
+        register.createTechPack(env.pm, { title: "Hansa tee" }, [photo(), photo("back.png")]),
+      ).rejects.toThrow("The database went away");
+      expect(await prisma.techPack.count({ where: { title: "Hansa tee" } })).toBe(0);
+      expect(await prisma.fileAsset.count()).toBe(before);
+      expect(await kept()).toEqual([]);
+
+      // Started, its photos stay.
+      await register.createTechPack(env.pm, { title: "Hansa tee" }, [photo(), photo("back.png")]);
+      expect(await prisma.fileAsset.count()).toBe(before + 2);
+      expect(await kept()).toHaveLength(2);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });

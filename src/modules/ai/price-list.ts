@@ -13,6 +13,11 @@ import type { ProviderId } from "./providers";
  * Claude the 5-minute write, the only one the ERP uses); "Batch" the price of
  * work sent through the provider's batch service. Null: the page gives no such
  * price. Plain data and functions, used by the screens too.
+ *
+ * OpenAI's price page lists only its newest models; every other OpenAI model
+ * cites its own model page (developers.openai.com/api/docs/models/<id>), where
+ * its price is, and is listed under "Older models". Its batch prices are half
+ * the plain ones, as OpenAI's Batch API guide says for every model.
  */
 
 export type PriceFields = {
@@ -67,7 +72,8 @@ export type PriceList = {
   models: readonly ListedModel[];
 };
 
-type Row = Omit<ListedModel, "sourceUrl" | "checkedOn">;
+/** A model's row; `sourceUrl` only when its price is on a page of its own. */
+type Row = Omit<ListedModel, "sourceUrl" | "checkedOn"> & { sourceUrl?: string };
 
 const p = (
   input: number,
@@ -90,12 +96,18 @@ function list(
     label,
     sourceUrl,
     checkedOn,
-    models: rows.map((r) => ({ ...r, sourceUrl, checkedOn })),
+    models: rows.map((r) => ({ ...r, sourceUrl: r.sourceUrl ?? sourceUrl, checkedOn })),
   };
 }
 
-/** Prompts over 272K tokens on OpenAI's newer models; over 200K on Gemini's Pro models. */
+/** Prompts over 272K input tokens on OpenAI's newer models; over 200K on Gemini's Pro models. */
 const OPENAI_LONG = 272_000;
+
+/** An OpenAI model that is not on the price page: its own page gives its price, and it is older. */
+const openaiPage = (id: string) => ({
+  older: true,
+  sourceUrl: `https://developers.openai.com/api/docs/models/${id}`,
+});
 const GEMINI_LONG = 200_000;
 
 export const PRICE_LISTS: readonly PriceList[] = [
@@ -144,12 +156,6 @@ export const PRICE_LISTS: readonly PriceList[] = [
       long: { above: OPENAI_LONG, ...p(4, 15, 0.2, 5, 2, 7.5) },
     },
     {
-      ref: "openai:gpt-6-sol",
-      label: "GPT-6 Sol",
-      ...p(2, 10, 0.2, 2.5, 1, 5),
-      long: { above: OPENAI_LONG, ...p(4, 15, 0.4, 5, 2, 7.5) },
-    },
-    {
       ref: "openai:gpt-6-luna",
       label: "GPT-6 Luna",
       ...p(0.1, 0.5, 0.01, 0.125, 0.05, 0.25),
@@ -162,83 +168,117 @@ export const PRICE_LISTS: readonly PriceList[] = [
       long: { above: OPENAI_LONG, ...p(8, 30, 0.8, 10, 4, 15) },
     },
     {
+      ref: "openai:gpt-6-sol",
+      label: "GPT-6 Sol",
+      ...openaiPage("gpt-6-sol"),
+      ...p(2, 10, 0.2, 2.5, 1, 5),
+      long: { above: OPENAI_LONG, ...p(4, 15, 0.4, 5, 2, 7.5) },
+    },
+    {
       ref: "openai:gpt-5.6-terra",
       label: "GPT-5.6 Terra",
+      ...openaiPage("gpt-5.6-terra"),
       ...p(2, 12, 0.2, 2.5, 1, 6),
       long: { above: OPENAI_LONG, ...p(4, 18, 0.4, 5, 2, 9) },
     },
     {
       ref: "openai:gpt-5.6-luna",
       label: "GPT-5.6 Luna",
+      ...openaiPage("gpt-5.6-luna"),
       ...p(0.2, 1.2, 0.02, 0.25, 0.1, 0.6),
       long: { above: OPENAI_LONG, ...p(0.4, 1.8, 0.04, 0.5, 0.2, 0.9) },
     },
     {
       ref: "openai:gpt-5.5",
       label: "GPT-5.5",
-      older: true,
+      ...openaiPage("gpt-5.5"),
       ...p(5, 30, 0.5, null, 2.5, 15),
       long: { above: OPENAI_LONG, ...p(10, 45, 1, null, 5, 22.5) },
     },
     {
       ref: "openai:gpt-5.4",
       label: "GPT-5.4",
-      older: true,
+      ...openaiPage("gpt-5.4"),
       ...p(2.5, 15, 0.25, null, 1.25, 7.5),
       long: { above: OPENAI_LONG, ...p(5, 22.5, 0.5, null, 2.5, 11.25) },
     },
     {
       ref: "openai:gpt-5.4-mini",
       label: "GPT-5.4 mini",
-      older: true,
+      ...openaiPage("gpt-5.4-mini"),
       ...p(0.75, 4.5, 0.075, null, 0.375, 2.25),
     },
     {
       ref: "openai:gpt-5.4-nano",
       label: "GPT-5.4 nano",
-      older: true,
+      ...openaiPage("gpt-5.4-nano"),
       ...p(0.2, 1.25, 0.02, null, 0.1, 0.625),
     },
-    { ref: "openai:gpt-5.2", label: "GPT-5.2", older: true, ...p(1.75, 14, 0.175, null, 0.875, 7) },
-    { ref: "openai:gpt-5.1", label: "GPT-5.1", older: true, ...p(1.25, 10, 0.125, null, 0.625, 5) },
-    { ref: "openai:gpt-5", label: "GPT-5", older: true, ...p(1.25, 10, 0.125, null, 0.625, 5) },
+    {
+      ref: "openai:gpt-5.2",
+      label: "GPT-5.2",
+      ...openaiPage("gpt-5.2"),
+      ...p(1.75, 14, 0.175, null, 0.875, 7),
+    },
+    {
+      ref: "openai:gpt-5.1",
+      label: "GPT-5.1",
+      ...openaiPage("gpt-5.1"),
+      ...p(1.25, 10, 0.125, null, 0.625, 5),
+    },
+    {
+      ref: "openai:gpt-5",
+      label: "GPT-5",
+      ...openaiPage("gpt-5"),
+      ...p(1.25, 10, 0.125, null, 0.625, 5),
+    },
     {
       ref: "openai:gpt-5-mini",
       label: "GPT-5 mini",
-      older: true,
+      ...openaiPage("gpt-5-mini"),
       ...p(0.25, 2, 0.025, null, 0.125, 1),
     },
     {
       ref: "openai:gpt-5-nano",
       label: "GPT-5 nano",
-      older: true,
+      ...openaiPage("gpt-5-nano"),
       ...p(0.05, 0.4, 0.005, null, 0.025, 0.2),
     },
-    { ref: "openai:gpt-4.1", label: "GPT-4.1", older: true, ...p(2, 8, 0.5, null, 1, 4) },
+    {
+      ref: "openai:gpt-4.1",
+      label: "GPT-4.1",
+      ...openaiPage("gpt-4.1"),
+      ...p(2, 8, 0.5, null, 1, 4),
+    },
     {
       ref: "openai:gpt-4.1-mini",
       label: "GPT-4.1 mini",
-      older: true,
+      ...openaiPage("gpt-4.1-mini"),
       ...p(0.4, 1.6, 0.1, null, 0.2, 0.8),
     },
     {
       ref: "openai:gpt-4.1-nano",
       label: "GPT-4.1 nano",
-      older: true,
+      ...openaiPage("gpt-4.1-nano"),
       ...p(0.1, 0.4, 0.025, null, 0.05, 0.2),
     },
-    { ref: "openai:gpt-4o", label: "GPT-4o", older: true, ...p(2.5, 10, 1.25, null, 1.25, 5) },
+    {
+      ref: "openai:gpt-4o",
+      label: "GPT-4o",
+      ...openaiPage("gpt-4o"),
+      ...p(2.5, 10, 1.25, null, 1.25, 5),
+    },
     {
       ref: "openai:gpt-4o-mini",
       label: "GPT-4o mini",
-      older: true,
+      ...openaiPage("gpt-4o-mini"),
       ...p(0.15, 0.6, 0.075, null, 0.075, 0.3),
     },
-    { ref: "openai:o3", label: "o3", older: true, ...p(2, 8, 0.5, null, 1, 4) },
+    { ref: "openai:o3", label: "o3", ...openaiPage("o3"), ...p(2, 8, 0.5, null, 1, 4) },
     {
       ref: "openai:o4-mini",
       label: "o4-mini",
-      older: true,
+      ...openaiPage("o4-mini"),
       ...p(1.1, 4.4, 0.275, null, 0.55, 2.2),
     },
   ]),

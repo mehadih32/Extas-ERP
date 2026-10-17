@@ -673,13 +673,23 @@ run("The bot", () => {
     expect(JSON.stringify(jobs.map((j) => j.payload))).not.toContain("2468");
     expect(JSON.stringify(await getBot(env.owner))).not.toContain("2468");
     expect(await prisma.aiBotMessage.count({ where: { text: "[PIN]", direction: "IN" } })).toBe(2);
+    // The report after an update counts only what the v6.3 wipe hid, never these PINs.
+    expect(await pinScrubReport()).toMatchObject({ hidden: 0, notAfterRequest: 0 });
   });
 
-  it("wipes only the PINs typed after the bot asked for one, and reports any other number it hid", async () => {
+  it("hid every 4 to 8 digit bot message at the v6.3 update, and reports only those that did not follow a PIN request", async () => {
     botApi();
     await linkOwner(env);
     const link = await prisma.aiBotLink.findFirstOrThrow();
-    const minutesAgo = (m: number) => new Date(Date.now() - m * 60_000);
+    // The v6.3 update ran the wipe (prisma/migrations/20261124090000_hide_bot_pins) once;
+    // these messages came before it, the last ones after it.
+    const [wipe] = await prisma.$queryRawUnsafe<Array<{ finishedAt: Date }>>(
+      `SELECT finished_at AS "finishedAt" FROM "_prisma_migrations"
+       WHERE migration_name = '20261124090000_hide_bot_pins' AND finished_at IS NOT NULL`,
+    );
+    const finishedAt = wipe!.finishedAt;
+    const before = (m: number) => new Date(finishedAt.getTime() - m * 60_000);
+    const after = (m: number) => new Date(finishedAt.getTime() + m * 60_000);
     const keep = (text: string, n: number, at: Date, direction: "IN" | "OUT" = "IN") =>
       prisma.aiBotMessage.create({
         data: {
@@ -694,18 +704,18 @@ run("The bot", () => {
           createdAt: at,
         },
       });
-    // An hour ago the bot asked for the PIN, and it came a minute later.
+    // The bot asked for the PIN, and it came a minute later.
     await keep(
       'Send your PIN to set the profit % (a price). (Write "বাতিল" to stop.)',
       0,
-      minutesAgo(60),
+      before(60),
       "OUT",
     );
-    const pin = await keep("4321", 1, minutesAgo(59));
-    await keep("status", 2, minutesAgo(30));
-    await keep("PO 4501 is late", 3, minutesAgo(20));
-    // An order number typed long after any PIN request is not a PIN.
-    const order = await keep("98765", 4, minutesAgo(10));
+    const pin = await keep("4321", 1, before(59));
+    await keep("status", 2, before(30));
+    await keep("PO 4501 is late", 3, before(20));
+    // An order number typed long after any PIN request: the v6.3 wipe took it all the same.
+    const order = await keep("98765", 4, before(10));
     for (const [message, text] of [
       [pin, "4321"],
       [order, " 98765 "],
@@ -719,35 +729,23 @@ run("The bot", () => {
         },
       });
     }
-    await prisma.aiChatMessage.create({
-      data: {
-        companyId: env.company.id,
-        userId: env.owner.user.id,
-        channel: "BOT",
-        role: "OWNER",
-        text: "2468",
-        createdAt: minutesAgo(58),
-      },
-    });
-    await prisma.aiChatMessage.create({
-      data: {
-        companyId: env.company.id,
-        userId: env.owner.user.id,
-        channel: "BOT",
-        role: "OWNER",
-        text: "55012",
-        createdAt: minutesAgo(5),
-      },
-    });
-    await prisma.aiChatMessage.create({
-      data: {
-        companyId: env.company.id,
-        userId: env.owner.user.id,
-        channel: "ERP",
-        role: "OWNER",
-        text: "2026",
-      },
-    });
+    for (const [channel, text] of [
+      ["BOT", "2468"],
+      ["BOT", "55012"],
+      ["ERP", "2026"],
+    ] as const) {
+      await prisma.aiChatMessage.create({
+        data: {
+          companyId: env.company.id,
+          userId: env.owner.user.id,
+          channel,
+          role: "OWNER",
+          text,
+          createdAt: before(5),
+        },
+      });
+    }
+    // The wipe as the v6.3 update shipped it: never changed since (it ran on the live site).
     const sql = await readFile(
       path.join(process.cwd(), "prisma/migrations/20261124090000_hide_bot_pins/migration.sql"),
       "utf8",
@@ -764,7 +762,7 @@ run("The bot", () => {
         orderBy: { providerId: "asc" },
       })
     ).map((m) => m.text);
-    expect(texts).toEqual(["[PIN]", "status", "PO 4501 is late", "98765"]);
+    expect(texts).toEqual(["[PIN]", "status", "PO 4501 is late", "[PIN]"]);
     const jobText = async (messageId: string) =>
       (
         (
@@ -774,27 +772,27 @@ run("The bot", () => {
         ).payload as { incoming: { text: string } }
       ).incoming.text;
     expect(await jobText(pin.id)).toBe("[PIN]");
-    expect(await jobText(order.id)).toBe(" 98765 ");
-    // Only what came from the bot after a PIN request: a number typed in the ERP chat stays.
+    expect(await jobText(order.id)).toBe("[PIN]");
+    // Only what came from the bot: a number typed in the ERP chat stays.
     const chat = await prisma.aiChatMessage.findMany({ select: { channel: true, text: true } });
     expect(chat).toEqual(
       expect.arrayContaining([
         { channel: "BOT", text: "[PIN]" },
-        { channel: "BOT", text: "55012" },
         { channel: "ERP", text: "2026" },
       ]),
     );
-    expect(chat).toHaveLength(3);
+    expect(chat.filter((c) => c.text === "[PIN]")).toHaveLength(2);
 
-    // The v6.3 wipe on the live site took every 4-8 digit message: the report says how
-    // many of those did not follow a PIN request (they may have been order numbers).
-    await keep("[PIN]", 5, minutesAgo(3));
-    expect(await pinScrubReport()).toMatchObject({
-      hidden: 2,
-      afterRequest: 1,
-      notAfterRequest: 1,
-    });
-    expect((await pinScrubReport()).notAfterRequestDates).toHaveLength(1);
+    // After the update the bot hides a late or stray PIN as it comes (v6.4): those are
+    // PINs, never counted as numbers the wipe may have taken.
+    await keep("[PIN]", 5, after(3));
+    await keep("[PIN]", 6, after(90));
+    // The report after each update counts only what the v6.3 wipe hid: of those, the
+    // ones that did not follow a PIN request may have been order numbers.
+    const report = await pinScrubReport();
+    expect(report).toMatchObject({ hidden: 2, afterRequest: 1, notAfterRequest: 1 });
+    expect(report.notAfterRequestDates).toEqual([before(10)]);
+    expect(report.wipedAt).toEqual(finishedAt);
   });
 
   it("picks the store by its name when stores share one bot", async () => {

@@ -207,19 +207,26 @@ async function main() {
 }
 
 /**
- * Bot messages hidden as a PIN that did not follow a PIN request (the v6.3
- * update hid every 4 to 8 digit message): counts and days only, never words.
+ * Bot messages the v6.3 update hid as a PIN (it took every 4 to 8 digit
+ * message) that did not follow a PIN request: counts and days only, never
+ * words. PINs the bot hid as they came since then are not counted.
  */
 async function pinReport() {
   try {
     const r = await pinScrubReport();
+    if (!r.wipedAt) {
+      say("Bot PINs: the v6.3 PIN wipe never ran on this database, so it hid nothing");
+      return;
+    }
     if (r.notAfterRequest === 0) {
-      say(`Bot PINs: ${r.hidden} hidden, every one typed after the bot asked for the PIN`);
+      say(
+        `Bot PINs: the v6.3 update hid ${r.hidden}, every one typed after the bot asked for the PIN`,
+      );
       return;
     }
     const days = [...new Set(r.notAfterRequestDates.map((d) => d.toISOString().slice(0, 10)))];
     say(
-      `Bot PINs: ${r.hidden} hidden; ${r.notAfterRequest} did not follow a PIN request (${days.slice(0, 10).join(", ")}): they may have been order numbers, and the backup made before the v6.3 update still has their words`,
+      `Bot PINs: the v6.3 update hid ${r.hidden}; ${r.notAfterRequest} did not follow a PIN request (${days.slice(0, 10).join(", ")}): they may have been order numbers, and the backup made before the v6.3 update still has their words`,
     );
   } catch (error) {
     say(`Bot PINs: not counted (${error instanceof Error ? error.message : error})`);

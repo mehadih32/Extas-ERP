@@ -25,7 +25,8 @@ import { BuyerPicker, type Choice, ProjectPicker, StylePicker } from "./pickers"
  * A tech pack's own details (number, title, buyer, style, season, the
  * buyer's brief) and its links: the style in production it belongs to once
  * the order comes, and a catalogue style. Links change only while it is not
- * approved and its fabric part is not locked.
+ * approved and its fabric part is not locked. Once approved, its title, buyer
+ * and brief stay as approved too; only its season still changes.
  */
 
 type Asking = "details" | "project" | "unproject" | "style" | "unstyle" | null;
@@ -41,6 +42,7 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
 
 export function TechPackDetailsPanel({ screen }: { screen: TechPackScreen }) {
   const { techPack: t, can, approval } = screen;
+  const approved = approval.status === "APPROVED";
   const [asking, setAsking] = useState<Asking>(null);
   const [notice, setNotice] = useState<string>();
   const [buyer, setBuyer] = useState<Choice | null>(null);
@@ -68,7 +70,7 @@ export function TechPackDetailsPanel({ screen }: { screen: TechPackScreen }) {
             }}
           >
             <PencilIcon aria-hidden />
-            Edit details
+            {approved ? "Edit the season" : "Edit details"}
           </Button>
         ) : undefined
       }
@@ -151,10 +153,11 @@ export function TechPackDetailsPanel({ screen }: { screen: TechPackScreen }) {
           )}
         </div>
       ) : (
-        (approval.status === "APPROVED" || approval.fabricLocked) && (
+        (approved || approval.fabricLocked) && (
           <p className="mt-4 text-[0.8125rem] text-muted-foreground">
-            {approval.status === "APPROVED" ? "Approved" : "Its fabric part is locked"}: its links
-            no longer change.
+            {approved
+              ? "Approved: its title, buyer, brief and links no longer change."
+              : "Its fabric part is locked: its links no longer change."}
           </p>
         )
       )}
@@ -162,47 +165,62 @@ export function TechPackDetailsPanel({ screen }: { screen: TechPackScreen }) {
       {asking === "details" && (
         <FormDialog
           title={`Edit ${t.number}`}
-          description="The title, buyer, season and the buyer's brief."
+          description={
+            approved
+              ? "Approved: the title, buyer and brief no longer change. The season still can."
+              : "The title, buyer, season and the buyer's brief."
+          }
           submitLabel="Save details"
           pendingLabel="Saving"
           errorTitle="We could not save the details"
           className="sm:max-w-2xl"
           onClose={close}
           onSubmit={async (form) => {
-            const result = await updateTechPackDetailsAction(t.id, {
-              title: form.get("title"),
-              buyerId: buyer?.id ?? "",
-              season: form.get("season"),
-              brief: form.get("brief"),
-            });
+            const result = await updateTechPackDetailsAction(
+              t.id,
+              approved
+                ? { title: t.title, season: form.get("season") }
+                : {
+                    title: form.get("title"),
+                    buyerId: buyer?.id ?? "",
+                    season: form.get("season"),
+                    brief: form.get("brief"),
+                  },
+            );
             if (!result.ok) return result.error;
             done("The details are saved.");
           }}
         >
           {(fieldError) => (
             <>
-              <Field id="tpd-title" label="Title" error={fieldError("title")}>
-                <Input id="tpd-title" name="title" defaultValue={t.title} maxLength={160} />
-              </Field>
-              <div className="grid gap-2">
-                <span className="text-sm font-medium">Buyer</span>
-                <BuyerPicker id="tpd-buyer" value={buyer} onChange={setBuyer} />
-                {fieldError("buyerId") && (
-                  <p className="text-[0.8125rem] text-destructive">{fieldError("buyerId")}</p>
-                )}
-              </div>
+              {!approved && (
+                <>
+                  <Field id="tpd-title" label="Title" error={fieldError("title")}>
+                    <Input id="tpd-title" name="title" defaultValue={t.title} maxLength={160} />
+                  </Field>
+                  <div className="grid gap-2">
+                    <span className="text-sm font-medium">Buyer</span>
+                    <BuyerPicker id="tpd-buyer" value={buyer} onChange={setBuyer} />
+                    {fieldError("buyerId") && (
+                      <p className="text-[0.8125rem] text-destructive">{fieldError("buyerId")}</p>
+                    )}
+                  </div>
+                </>
+              )}
               <Field id="tpd-season" label="Season" error={fieldError("season")}>
                 <Input id="tpd-season" name="season" defaultValue={t.season ?? ""} maxLength={40} />
               </Field>
-              <Field id="tpd-brief" label="Buyer's brief" error={fieldError("brief")}>
-                <Textarea
-                  id="tpd-brief"
-                  name="brief"
-                  rows={6}
-                  defaultValue={t.brief ?? ""}
-                  maxLength={5000}
-                />
-              </Field>
+              {!approved && (
+                <Field id="tpd-brief" label="Buyer's brief" error={fieldError("brief")}>
+                  <Textarea
+                    id="tpd-brief"
+                    name="brief"
+                    rows={6}
+                    defaultValue={t.brief ?? ""}
+                    maxLength={5000}
+                  />
+                </Field>
+              )}
             </>
           )}
         </FormDialog>

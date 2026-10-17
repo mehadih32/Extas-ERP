@@ -234,6 +234,9 @@ export async function findWork(
   return { branch: branches.at(-1) ?? null, pull: null };
 }
 
+/** GitHub's own signer: the committer of what GitHub makes on github.com for someone. */
+const GITHUB_SIGNER = "web-flow";
+
 const sameRepo = (gh: GitHub, pull: Pull) =>
   pull.head.repo?.full_name.toLowerCase() === gh.repo.toLowerCase();
 
@@ -264,8 +267,10 @@ export type Vetted = {
  * Whether a pull request is Claude Code's own fix for an issue: from the
  * issue's branch in this repository (not a fork), into the main branch,
  * opened by Claude Code's GitHub App or by the ERP itself, and every commit
- * made and signed by Claude Code's GitHub App, up to the one checked. Also the
- * files it changes, for the owner to see before Merge.
+ * verified and made by Claude Code's GitHub App, up to the one checked: the
+ * App is its committer, or GitHub's own signer is the committer with the App
+ * as its author (made on github.com for the App). Also the files it changes,
+ * for the owner to see before Merge.
  */
 export async function vetPull(
   gh: GitHub,
@@ -296,13 +301,20 @@ export async function vetPull(
   else if (!commits.some((c) => c.sha === pull.head.sha))
     problem = "its newest commit could not be checked";
   else {
+    // Anyone can name the App as a commit's author; only the committer shows who made it.
+    const signedForBot = (c: Commit) =>
+      c.committer?.login === GITHUB_SIGNER && isBot(c.author?.login);
     const stranger = commits.find(
       (c) =>
-        !(isBot(c.author?.login) || isBot(c.committer?.login)) ||
+        !(isBot(c.committer?.login) || signedForBot(c)) ||
         c.commit?.verification?.verified !== true,
     );
     if (stranger) {
-      problem = `a change in it is not Claude Code's (${stranger.author?.login ?? stranger.committer?.login ?? "unknown"}, commit ${stranger.sha.slice(0, 7)})`;
+      const who =
+        stranger.committer?.login === GITHUB_SIGNER
+          ? stranger.author?.login
+          : (stranger.committer?.login ?? stranger.author?.login);
+      problem = `a change in it is not Claude Code's (${who ?? "unknown"}, commit ${stranger.sha.slice(0, 7)})`;
     }
   }
   return {

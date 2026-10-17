@@ -50,12 +50,14 @@ import { setPin } from "@/modules/ai/settings.service";
 import { login } from "@/modules/auth/auth.service";
 import { validateSessionToken } from "@/modules/auth/session.service";
 import { resolveCompanyAccess } from "@/modules/companies/access";
+import { vetPull } from "@/modules/github/github";
 import { addMember } from "@/modules/rbac/member.service";
 import { createRole } from "@/modules/rbac/role.service";
 
 import {
   claudeCommit,
   CLAUDE_BOT,
+  type FakeCommit,
   type FakeGitHub,
   type FakePull,
   startFakeGitHub,
@@ -902,5 +904,57 @@ run("Full check and Claude Code", () => {
     await look(good.id);
     await mergeFix(env.owner, good.id, { pin: "2468", sha: "sha-newer" });
     expect(gh.state.merged).toEqual([{ number: pull.number, sha: "sha-newer" }]);
+  });
+
+  it("counts a commit as Claude Code's only when its App committed it, or GitHub signed it for its App", async () => {
+    const gitHub = { repo: REPO, token: gh.token };
+    const issue = 77;
+    const pull: FakePull = {
+      number: 700,
+      html_url: `https://github.com/${REPO}/pull/700`,
+      state: "open",
+      merged_at: null,
+      title: "A fix",
+      body: null,
+      user: CLAUDE_BOT,
+      head: {
+        ref: `claude/issue-${issue}-20261016-0700`,
+        sha: "sha-700",
+        repo: { full_name: REPO },
+      },
+      base: { ref: "main" },
+    };
+    gh.state.pulls.push(pull);
+    /** GitHub's own signer, the committer of what is made on github.com for someone. */
+    const webFlow = { login: "web-flow", type: "User" };
+    const stranger = { login: "stranger", type: "User" };
+    const vet = async (
+      author: FakeCommit["author"],
+      committer: FakeCommit["committer"],
+      verified = true,
+    ) => {
+      gh.state.pullCommits[pull.number] = [{ sha: pull.head.sha, author, committer, verified }];
+      return vetPull(gitHub, pull as unknown as Parameters<typeof vetPull>[1], issue, false);
+    };
+    // Committed by Claude Code's App, signed by GitHub.
+    expect(await vet(CLAUDE_BOT, CLAUDE_BOT)).toMatchObject({ ok: true, problem: null });
+    // Made on github.com for the App (GitHub's signer commits it, the App is the author).
+    expect(await vet(CLAUDE_BOT, webFlow)).toMatchObject({ ok: true, problem: null });
+    // The App committed it, naming someone else as the author: still the App's commit.
+    expect(await vet(stranger, CLAUDE_BOT)).toMatchObject({ ok: true, problem: null });
+    // Anyone can write the App's name as the author: a person's own commit is not the App's.
+    expect(await vet(CLAUDE_BOT, stranger)).toMatchObject({
+      ok: false,
+      problem: "a change in it is not Claude Code's (stranger, commit sha-700)",
+    });
+    // A person's edit on github.com (GitHub's signer, the person as the author).
+    expect(await vet(stranger, webFlow)).toMatchObject({
+      ok: false,
+      problem: "a change in it is not Claude Code's (stranger, commit sha-700)",
+    });
+    // Nobody GitHub knows as the committer, or not verified: never.
+    expect((await vet(CLAUDE_BOT, null)).ok).toBe(false);
+    expect((await vet(CLAUDE_BOT, CLAUDE_BOT, false)).ok).toBe(false);
+    expect((await vet(CLAUDE_BOT, webFlow, false)).ok).toBe(false);
   });
 });

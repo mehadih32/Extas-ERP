@@ -617,6 +617,8 @@ export async function askExpert(ctx: CompanyContext, techPackId: string, raw: un
     throw new AppError("UNAVAILABLE", "The expert did not return a readable answer. Try again.");
   }
   const saved = await runTransaction(async (tx) => {
+    // Written by the AI: saved under its own account, naming who asked.
+    const ai = await aiAccountOf(ctx.company.id, tx);
     const row = await tx.techPackExpertAnswer.create({
       data: {
         companyId: ctx.company.id,
@@ -628,6 +630,7 @@ export async function askExpert(ctx: CompanyContext, techPackId: string, raw: un
         findings: parsed.data as unknown as Prisma.InputJsonValue,
         model,
         askedById: ctx.user.id,
+        createdById: ai.id,
       },
       select: { id: true },
     });
@@ -756,6 +759,8 @@ export async function runReviewBoard(ctx: CompanyContext, techPackId: string, ra
     input.costOk,
   );
   const saved = await runTransaction(async (tx) => {
+    // Written by the AI: saved under its own account, naming who asked.
+    const ai = await aiAccountOf(ctx.company.id, tx);
     const row = await tx.techPackExpertAnswer.create({
       data: {
         companyId: ctx.company.id,
@@ -767,6 +772,7 @@ export async function runReviewBoard(ctx: CompanyContext, techPackId: string, ra
         findings: review.findings as unknown as Prisma.InputJsonValue,
         model,
         askedById: ctx.user.id,
+        createdById: ai.id,
       },
       select: { id: true },
     });

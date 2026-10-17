@@ -302,6 +302,7 @@ model User {
   logosTicked         TechPackLogo[]         @relation("TechPackLogoTickedBy")
   techPackAiDrafts    TechPackAiDraft[]      @relation("TechPackAiDraftBy")
   expertQuestions     TechPackExpertAnswer[] @relation("TechPackExpertAskedBy")
+  expertAnswersMade   TechPackExpertAnswer[] @relation("TechPackExpertAnswerBy")
   costingsMade        OrderCosting[]         @relation("OrderCostingCreatedBy")
   costingsDecided     OrderCosting[]         @relation("OrderCostingDecidedBy")
   fabricQuotesAdded   FabricQuote[]          @relation("FabricQuoteCreatedBy")
@@ -2535,22 +2536,25 @@ model TechPackAiDraft {
 
 /// An expert's answer on a style (Ask an expert), or a review board finding list.
 model TechPackExpertAnswer {
-  id         String           @id @default(cuid())
-  companyId  String
-  techPackId String
-  expert     String
-  kind       ExpertAnswerKind
-  question   String
-  answer     String
+  id          String           @id @default(cuid())
+  companyId   String
+  techPackId  String
+  expert      String
+  kind        ExpertAnswerKind
+  question    String
+  answer      String
   /// A review's findings: [{ expert, finding, severity }].
-  findings   Json?
-  model      String
-  askedById  String?
-  createdAt  DateTime         @default(now())
+  findings    Json?
+  model       String
+  askedById   String?
+  /// Who wrote it: the company's AI account (v6.4), never the person who asked.
+  createdById String?
+  createdAt   DateTime         @default(now())
 
-  company  Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  techPack TechPack @relation(fields: [techPackId], references: [id], onDelete: Cascade)
-  askedBy  User?    @relation("TechPackExpertAskedBy", fields: [askedById], references: [id], onDelete: SetNull)
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  techPack  TechPack @relation(fields: [techPackId], references: [id], onDelete: Cascade)
+  askedBy   User?    @relation("TechPackExpertAskedBy", fields: [askedById], references: [id], onDelete: SetNull)
+  createdBy User?    @relation("TechPackExpertAnswerBy", fields: [createdById], references: [id], onDelete: SetNull)
 
   @@index([techPackId, createdAt])
   @@index([companyId])

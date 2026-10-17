@@ -33,6 +33,7 @@ import {
   shotRoute,
   unreadLabels,
 } from "../../scripts/help/screens";
+import { branchUnderTest, picturesMayWait } from "../../scripts/help/old-pictures";
 import { UNREAD_LABELS } from "./help-unread";
 
 /*
@@ -432,6 +433,10 @@ describe("Every button and tab on every screen has its guide", () => {
 
 describe("Every guide has its automatic picture, and it is not old", () => {
   const HOW = "Take it with: npm run help:shots (scripts/help/plan.ts says how)";
+  // v6.4 L1: Claude Code's fix branches (claude/issue-…) cannot take pictures, and
+  // main is where those fixes land; there the pictures may wait for the next
+  // release (it takes all of them again) and Bug Guard lists the old ones.
+  const MAY_WAIT = picturesMayWait(branchUnderTest());
 
   it("knows a guide's page and what its picture marks", () => {
     expect(patternOf(ROOT, "/parties/buyers")).toBe("/parties/[list]");
@@ -448,7 +453,7 @@ describe("Every guide has its automatic picture, and it is not old", () => {
     expect(guideHash({ ...guide, shot: { open: "New order" } })).not.toBe(guideHash(guide));
   });
 
-  it("every guide has a picture of its own page, and the file is there", () => {
+  it.skipIf(MAY_WAIT)("every guide has a picture of its own page, and the file is there", () => {
     const missing = articles
       .filter(({ article }) => {
         const picture = HELP_PICTURES[article.slug];
@@ -462,7 +467,7 @@ describe("Every guide has its automatic picture, and it is not old", () => {
     expect(missing, HOW).toEqual([]);
   });
 
-  it("a guide whose screen or steps changed has a new picture", () => {
+  it.skipIf(MAY_WAIT)("a guide whose screen or steps changed has a new picture", () => {
     const old = articles
       .filter(({ article }) => HELP_PICTURES[article.slug])
       .filter(({ article }) => {
@@ -476,7 +481,7 @@ describe("Every guide has its automatic picture, and it is not old", () => {
     expect(old, HOW).toEqual([]);
   });
 
-  it("marks only steps the guide has", () => {
+  it.skipIf(MAY_WAIT)("marks only steps the guide has", () => {
     const bad = articles
       .filter(({ article }) =>
         (HELP_PICTURES[article.slug]?.marks ?? []).some((n) => n < 1 || n > article.steps.length),

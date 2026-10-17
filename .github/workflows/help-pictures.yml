@@ -2,7 +2,9 @@
 # on the demo site's sample data, with a red numbered mark on the button or field
 # each step is about. tests/unit/help-guides.test.ts fails when a screen changed
 # and its picture is old, so a pull request that changes a screen also brings its
-# new picture; before every Release PR all of them are taken again.
+# new picture; before every Release PR all of them are taken again. Only Claude
+# Code's fix branches (claude/issue-...) and main may keep old pictures: Bug Guard
+# lists them (scripts/help/list-old-pictures.ts, v6.4 L1).
 #
 # Run it by hand from the Actions tab ("Run workflow") on a branch: it builds the
 # app on a throwaway database with the demo data (nothing here reaches the live or

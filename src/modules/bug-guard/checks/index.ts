@@ -2,6 +2,7 @@ import type { Check } from "../types";
 import { AI_CHECKS } from "./ai";
 import { APP_CHECKS } from "./app";
 import { DATA_CHECKS } from "./data";
+import { oldHelpPictures } from "./help-pictures";
 import { PRODUCT_CHECKS } from "./product";
 import { SECURITY_CHECKS } from "./security";
 
@@ -11,5 +12,6 @@ export const ALL_CHECKS: readonly Check[] = [
   ...DATA_CHECKS,
   ...SECURITY_CHECKS,
   ...PRODUCT_CHECKS,
+  oldHelpPictures,
   ...AI_CHECKS,
 ];

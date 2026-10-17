@@ -2968,7 +2968,7 @@ export const aiHelp: HelpSection = {
         },
         {
           label: "Screens and server",
-          text: "সমস্যা কোন এলাকার: “Screens and server”, “Data and accounts”, “Security”, “Product” (ERP কীভাবে ব্যবহার হচ্ছে, যেমন কোন পাতার গাইড নেই) বা “AI”। পাশে লেখা থাকে কবে প্রথম পাওয়া গেছে, বা কতবার দেখা গেছে।",
+          text: "সমস্যা কোন এলাকার: “Screens and server”, “Data and accounts”, “Security”, “Product” (ERP কীভাবে ব্যবহার হচ্ছে, যেমন কোন পাতার গাইড নেই বা কোন গাইডের ছবি পুরোনো) বা “AI”। পাশে লেখা থাকে কবে প্রথম পাওয়া গেছে, বা কতবার দেখা গেছে।",
         },
         {
           label: "Where",

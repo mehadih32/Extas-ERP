@@ -3,7 +3,9 @@
  * guides need a new picture, and what to mark on it. A guide needs one when it
  * has none yet, when its screen's code changed since the picture was taken, or
  * when its steps now point at other buttons (tests/unit/help-guides.test.ts
- * fails until then). Step 2, scripts/full-check/help-shots.mjs, takes them.
+ * fails until then, except on Claude Code's fix branches and main: see
+ * scripts/help/old-pictures.ts). Step 2, scripts/full-check/help-shots.mjs,
+ * takes them.
  *
  *   ALL=1       plan every guide again (a new release, or new sample data)
  *   ONLY        only these guides, comma-separated slugs

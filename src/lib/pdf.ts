@@ -56,16 +56,45 @@ const STAND_INS: Array<[RegExp, string]> = [
   [/≈/g, "~"],
 ];
 
+/** Fractions the built-in fonts lack (they have ¼, ½ and ¾): 17⅜ prints as 17 3/8. */
+const FRACTIONS: Record<string, string> = {
+  "⅐": "1/7",
+  "⅑": "1/9",
+  "⅒": "1/10",
+  "⅓": "1/3",
+  "⅔": "2/3",
+  "⅕": "1/5",
+  "⅖": "2/5",
+  "⅗": "3/5",
+  "⅘": "4/5",
+  "⅙": "1/6",
+  "⅚": "5/6",
+  "⅛": "1/8",
+  "⅜": "3/8",
+  "⅝": "5/8",
+  "⅞": "7/8",
+};
+
+function fractionsWritten(text: string): string {
+  return text.replace(
+    /(\d?)([\u2150-\u215e])/g,
+    (_match, whole: string, fraction: string) =>
+      `${whole ? `${whole} ` : ""}${FRACTIONS[fraction]}`,
+  );
+}
+
 /**
  * Text the PDF fonts can draw on one line: Western European and Bengali text is
- * kept, common symbols get stand-ins (STAND_INS), whitespace becomes single
+ * kept, common symbols and fractions get stand-ins, whitespace becomes single
  * spaces, and other characters become "?".
  */
 export function pdfText(text: string): string {
   // Invisible characters go first: JavaScript counts the BOM as whitespace.
   const visible = STAND_INS.reduce(
     (out, [symbol, standIn]) => out.replace(symbol, standIn),
-    [...text.normalize("NFC")].filter((c) => !INVISIBLE.has(c.codePointAt(0)!)).join(""),
+    fractionsWritten(
+      [...text.normalize("NFC")].filter((c) => !INVISIBLE.has(c.codePointAt(0)!)).join(""),
+    ),
   );
   const codes = [...visible.replace(/\s+/g, " ")].map((c) => c.codePointAt(0)!);
   let out = "";

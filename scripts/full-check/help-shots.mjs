@@ -130,27 +130,57 @@ async function mark(page, steps, inDialog) {
       const W = document.documentElement.clientWidth;
       // Only what the picture shows: the page down to its cut, or the screen with a dialog open.
       const limit = inDialog ? innerHeight : maxHeight;
+      // A menu or tab link to another page ("AI" > "System" > "Settings" in a step
+      // that ends on this page) is marked only when the step names nothing else here.
+      const away = (el) => {
+        const link = el.closest("a[href]");
+        if (!link || link.getAttribute("aria-current")) return false;
+        if (!link.closest("nav, header, [role=tablist], [data-layout-nav]")) return false;
+        const to = new URL(link.href, location.href);
+        return to.origin === location.origin && to.pathname !== location.pathname;
+      };
       const used = new Set();
       const marks = [];
       steps.forEach((labels, i) => {
-        for (const label of labels) {
-          const want = norm(label);
-          const el = candidates.find((c) => !used.has(c) && name(c).some((n) => n === want));
-          if (!el) continue;
-          used.add(el);
-          const r = el.getBoundingClientRect();
-          if (r.top + scrollY + r.height > limit - 8 || r.left + r.width < 0 || r.left > W)
-            continue;
-          marks.push({
-            n: i + 1,
-            x: r.left + scrollX,
-            y: r.top + scrollY,
-            w: r.width,
-            h: r.height,
-          });
-          return;
+        for (const pass of [false, true]) {
+          for (const label of labels) {
+            const want = norm(label);
+            const el = candidates.find(
+              (c) => !used.has(c) && (pass || !away(c)) && name(c).some((n) => n === want),
+            );
+            if (!el) continue;
+            const r = el.getBoundingClientRect();
+            if (r.top + scrollY + r.height > limit - 8 || r.left + r.width < 0 || r.left > W)
+              continue;
+            used.add(el);
+            marks.push({
+              n: i + 1,
+              x: r.left + scrollX,
+              y: r.top + scrollY,
+              w: r.width,
+              h: r.height,
+            });
+            return;
+          }
         }
       });
+      // Where the words are, so a number never sits on top of them.
+      const words = [];
+      const walker = document.createTreeWalker(scope, NodeFilter.SHOW_TEXT);
+      while (walker.nextNode()) {
+        const text = walker.currentNode;
+        if (!text.textContent?.trim()) continue;
+        const range = document.createRange();
+        range.selectNodeContents(text);
+        for (const r of range.getClientRects()) {
+          if (r.width > 0 && r.height > 0) {
+            words.push({ x: r.left + scrollX, y: r.top + scrollY, w: r.width, h: r.height });
+          }
+        }
+      }
+      const placed = [];
+      const meets = (a, b) =>
+        a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
       const layer = document.createElement("div");
       layer.setAttribute("data-help-marks", "");
       layer.style.cssText =
@@ -165,16 +195,35 @@ async function mark(page, steps, inDialog) {
         const spots = [
           [m.x - 44, m.y - 30, m.x - 4, m.y - 4 + mid],
           [m.x + m.w + 16, m.y - 30, m.x + m.w + 4, m.y - 4 + mid],
+          [m.x - 42, m.y + m.h / 2 - 14, m.x - 4, m.y + m.h / 2],
+          [m.x + m.w + 14, m.y + m.h / 2 - 14, m.x + m.w + 4, m.y + m.h / 2],
           [m.x + 8, m.y - 46, m.x + 22, m.y - 4],
           [m.x + 8, m.y + m.h + 18, m.x + 22, m.y + m.h + 4],
         ];
         const fits = ([x, y]) => x >= 4 && x <= W - 34 && y >= 4 && y <= limit - 34;
-        const [bx, by, x2, y2] = spots.find(fits) ?? [
+        // The spot that covers the fewest words and other marks (none, where it can).
+        const covered = ([x, y]) => {
+          const box = { x: x - 2, y: y - 2, w: 32, h: 32 };
+          let area = 0;
+          for (const r of [...words, ...placed, ...marks]) {
+            if (!meets(box, r)) continue;
+            area +=
+              (Math.min(box.x + box.w, r.x + r.w) - Math.max(box.x, r.x)) *
+              (Math.min(box.y + box.h, r.y + r.h) - Math.max(box.y, r.y));
+          }
+          return area;
+        };
+        const best = spots
+          .filter(fits)
+          .map((spot, order) => ({ spot, order, area: covered(spot) }))
+          .sort((a, b) => a.area - b.area || a.order - b.order)[0]?.spot;
+        const [bx, by, x2, y2] = best ?? [
           Math.min(Math.max(m.x + 4, 4), W - 34),
           Math.min(Math.max(m.y + 2, 4), limit - 34),
           null,
           null,
         ];
+        placed.push({ x: bx, y: by, w: 28, h: 28 });
         const badge = document.createElement("div");
         badge.textContent = String(m.n);
         badge.style.cssText = `position:absolute;left:${bx}px;top:${by}px;width:28px;height:28px;border-radius:50%;background:${RED};color:#fff;font:700 15px/28px system-ui,sans-serif;text-align:center;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4)`;

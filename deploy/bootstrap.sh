@@ -27,6 +27,7 @@
 # Every question and every error code (R01, W01...) is in the restore guide.
 #   sudo bash restore.sh [commit]     the restore
 #   bash restore.sh --find            only says which Extas ERP this server has
+#   bash restore.sh --choose          only the A6 decision (drills and tests)
 set -euo pipefail
 umask 022
 
@@ -139,9 +140,65 @@ list_installs() {
   done
 }
 
+# The A6 decision: on a server that already has Extas ERP (running, or with data),
+# the restore goes on only over the one whose web address is typed, and only when
+# its program folder and settings are there (its own keys stay). Sets DIR and DATA.
+choose_install() {
+  local line typed chosen i_dir i_data i_domain i_running i_has_data unfinished=0
+  local installs=()
+  while IFS= read -r line; do
+    IFS='|' read -r i_dir i_data i_domain i_running i_has_data <<<"$line"
+    if [ -z "$i_running" ] && [ -z "$i_has_data" ]; then
+      unfinished=1
+      [ "$i_dir" != "$DIR" ] || note "A restore that stopped half-way is in $DIR (no data yet): it goes on from here."
+      continue
+    fi
+    installs+=("$line")
+  done < <(list_installs | LC_ALL=C sort)
+  if [ "${#installs[@]}" -eq 0 ]; then
+    [ "$unfinished" = 1 ] || note "None: this is a new server."
+  else
+    say "This server already has Extas ERP"
+    for line in "${installs[@]}"; do
+      IFS='|' read -r i_dir i_data i_domain i_running i_has_data <<<"$line"
+      note "Program folder: ${i_dir:-not found}"
+      note "Data folder:    ${i_data:-not found}"
+      note "Web address:    ${i_domain:-not known}"
+      note "Running now:    ${i_running:-no}"
+      echo
+    done
+    note "Restoring here REPLACES ALL its data with the backup (a safety copy of the data as"
+    note "it is now is saved first). Its own keys and passwords stay."
+    typed="$(plain_domain "$(answer replace 'Type the web address of the ERP on this server to replace its data, or press Enter to stop: ')")"
+    chosen=""
+    for line in "${installs[@]}"; do
+      IFS='|' read -r i_dir i_data i_domain i_running i_has_data <<<"$line"
+      if [ -n "$typed" ] && { [ "$typed" = "$(plain_domain "$i_domain")" ] ||
+        { [ -z "$i_domain" ] && [ "$typed" = "$i_data" ]; }; }; then
+        chosen="$line"
+      fi
+    done
+    [ -n "$chosen" ] ||
+      fail R04 "stopped: the web address typed is not the one of the ERP on this server, so nothing was changed."
+    IFS='|' read -r i_dir i_data i_domain i_running i_has_data <<<"$chosen"
+    { [ -n "$i_dir" ] && [ -f "$i_dir/deploy/.env" ]; } ||
+      fail R29 "this server has Extas ERP data in $i_data but not its program folder and settings, so it cannot be restored over safely. Move the data away (sudo mv $i_data $i_data.old), then paste the command again."
+    DIR="$i_dir"
+    DATA="$i_data"
+    note "Restoring over the ERP in $DIR (data in $DATA)."
+  fi
+}
+
 if [ "${1:-}" = --find ]; then
   detect_installs
   list_installs | LC_ALL=C sort
+  exit 0
+fi
+# Drills and tests only: the A6 decision alone; nothing is changed.
+if [ "${1:-}" = --choose ]; then
+  detect_installs
+  choose_install
+  echo "CHOSEN $DIR|$DATA"
   exit 0
 fi
 
@@ -193,49 +250,7 @@ note "Ubuntu ${VERSION_ID}, $((memory_kb / 1024)) MB memory, $((free_kb / 1024 /
 
 step "Looking for an Extas ERP already on this server"
 detect_installs
-installs=()
-unfinished=0
-while IFS= read -r line; do
-  IFS='|' read -r i_dir i_data i_domain i_running i_has_data <<<"$line"
-  if [ -z "$i_running" ] && [ -z "$i_has_data" ]; then
-    unfinished=1
-    [ "$i_dir" != "$DIR" ] || note "A restore that stopped half-way is in $DIR (no data yet): it goes on from here."
-    continue
-  fi
-  installs+=("$line")
-done < <(list_installs | LC_ALL=C sort)
-if [ "${#installs[@]}" -eq 0 ]; then
-  [ "$unfinished" = 1 ] || note "None: this is a new server."
-else
-  say "This server already has Extas ERP"
-  for line in "${installs[@]}"; do
-    IFS='|' read -r i_dir i_data i_domain i_running i_has_data <<<"$line"
-    note "Program folder: ${i_dir:-not found}"
-    note "Data folder:    ${i_data:-not found}"
-    note "Web address:    ${i_domain:-not known}"
-    note "Running now:    ${i_running:-no}"
-    echo
-  done
-  note "Restoring here REPLACES ALL its data with the backup (a safety copy of the data as"
-  note "it is now is saved first). Its own keys and passwords stay."
-  typed="$(plain_domain "$(answer replace 'Type the web address of the ERP on this server to replace its data, or press Enter to stop: ')")"
-  chosen=""
-  for line in "${installs[@]}"; do
-    IFS='|' read -r i_dir i_data i_domain i_running i_has_data <<<"$line"
-    if [ -n "$typed" ] && { [ "$typed" = "$(plain_domain "$i_domain")" ] ||
-      { [ -z "$i_domain" ] && [ "$typed" = "$i_data" ]; }; }; then
-      chosen="$line"
-    fi
-  done
-  [ -n "$chosen" ] ||
-    fail R04 "stopped: the web address typed is not the one of the ERP on this server, so nothing was changed."
-  IFS='|' read -r i_dir i_data i_domain i_running i_has_data <<<"$chosen"
-  { [ -n "$i_dir" ] && [ -f "$i_dir/deploy/.env" ]; } ||
-    fail R29 "this server has Extas ERP data in $i_data but not its program folder and settings, so it cannot be restored over safely. Move the data away (sudo mv $i_data $i_data.old), then paste the command again."
-  DIR="$i_dir"
-  DATA="$i_data"
-  note "Restoring over the ERP in $DIR (data in $DATA)."
-fi
+choose_install
 
 step "Installing the restore tools"
 export DEBIAN_FRONTEND=noninteractive

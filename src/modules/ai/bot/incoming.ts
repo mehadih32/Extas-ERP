@@ -48,6 +48,8 @@ import { readWhatsAppPayload, whatsappSignatureOk } from "./whatsapp";
  */
 
 const PIN_MINUTES = 5;
+/** "bug guard", "bug guard now", "বাগ গার্ড": Bug Guard runs now. */
+const GUARD_WORDS = /^\s*(bug ?guard|বাগ ?গার্ড)(\s+(now|run|চালাও|এখন))?\s*[.!]?\s*$/i;
 const CODE = /^(?:\/start\s+)?([A-Z2-9]{8})$/;
 
 const appUrl = () => (process.env.APP_URL || "http://localhost:3000").replace(/\/$/, "");
@@ -576,6 +578,20 @@ async function wrote(mine: AiBotLink[], m: Incoming, messageId: string, pin: Pin
     );
   }
   if (!text) return;
+  if (GUARD_WORDS.test(storePrefix(text).rest)) {
+    const { guardPress } = await import("@/modules/bug-guard/bot-actions");
+    return say(
+      link,
+      m.chatId,
+      await guardPress(
+        ctx,
+        { kind: "guard-run", companyId: link.companyId },
+        meta(link),
+        undefined,
+        appUrl(),
+      ),
+    );
+  }
   await sender.typing(m.chatId);
   let rows: Awaited<ReturnType<typeof sendChat>>;
   try {
@@ -633,6 +649,23 @@ async function storeOfPress(mine: AiBotLink[], press: ButtonPress) {
         select,
       });
       break;
+    case "guard":
+      row = await prisma.bugGuardFinding.findFirst({
+        where: { id: press.findingId, ...where },
+        select,
+      });
+      break;
+    case "guard-correction":
+      row = await prisma.bugGuardCorrection.findFirst({
+        where: { id: press.correctionId, ...where },
+        select,
+      });
+      break;
+    case "guard-run":
+      row = mine.some((l) => l.companyId === press.companyId)
+        ? { companyId: press.companyId }
+        : null;
+      break;
   }
   return row ? (mine.find((l) => l.companyId === row.companyId) ?? null) : null;
 }
@@ -686,6 +719,20 @@ async function pinNeeded(ctx: CompanyContext, press: ButtonPress): Promise<strin
     }
     case "deletion":
       return press.approve ? "approve the Deletion request" : null;
+    case "guard": {
+      if (press.choice !== "fix") return null;
+      const finding = await ctx.db.bugGuardFinding.findFirst({
+        where: { id: press.findingId },
+        select: { fixKind: true },
+      });
+      return finding?.fixKind === "SECURITY" ? "take this security step" : null;
+    }
+    case "guard-correction":
+      return press.choice === "apply"
+        ? "apply a data correction"
+        : press.choice === "undo"
+          ? "undo a data correction"
+          : null;
     default:
       return null;
   }
@@ -765,6 +812,14 @@ async function act(
           ? "Approved: it is deleted (cancelled) in your name."
           : "Refused: it stays.";
         break;
+      case "guard":
+      case "guard-run":
+      case "guard-correction": {
+        const { guardPress } = await import("@/modules/bug-guard/bot-actions");
+        const out = await guardPress(ctx, press, m, pin ?? undefined, appUrl());
+        await sender.clearButtons(chatId, sourceId);
+        return say(link, chatId, out);
+      }
     }
   } catch (error) {
     if (error instanceof AppError) return say(link, chatId, words(`Not done: ${error.message}`));

@@ -33,10 +33,24 @@ export async function register() {
  * Called for every error Next.js catches while showing a screen or running a
  * Server Action. The screen shows the person "Error Code: ERR-<digest>"; this
  * puts the same code in the server log next to Next.js' own report of the error,
- * so support can find it ("When something goes wrong" in deploy/README.md).
+ * so support can find it ("When something goes wrong" in deploy/README.md), and
+ * keeps the error for Bug Guard (modules/bug-guard/server-errors.ts).
  */
-export const onRequestError: Instrumentation.onRequestError = (error, request, context) => {
+export const onRequestError: Instrumentation.onRequestError = async (error, request, context) => {
   const digest = (error as { digest?: unknown } | null)?.digest;
-  if (typeof digest !== "string") return;
-  console.error(`[ERR-${digest}] ${request.method} ${request.path} (${context.routeType})`);
+  if (typeof digest === "string") {
+    console.error(`[ERR-${digest}] ${request.method} ${request.path} (${context.routeType})`);
+  }
+  if (process.env.NEXT_RUNTIME !== "nodejs") return;
+  // Kept for Bug Guard: the route's pattern and the error, never the screen's data.
+  const { recordServerError } = await import("@/modules/bug-guard/server-errors");
+  const cookie = request.headers.cookie;
+  await recordServerError({
+    error,
+    routeType: context.routeType,
+    method: request.method,
+    path: context.routePath || request.path,
+    digest: typeof digest === "string" ? digest : null,
+    cookie: Array.isArray(cookie) ? cookie.join("; ") : (cookie ?? null),
+  });
 };

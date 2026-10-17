@@ -21,6 +21,6 @@ export async function GET(request: Request, context: { params: Promise<Params> }
     const file = await measurementsFile(ctx, projectId, format, await getRequestMeta());
     return fileResponse(file);
   } catch (error) {
-    return apiErrorResponse(error);
+    return apiErrorResponse(error, request);
   }
 }

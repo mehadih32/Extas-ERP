@@ -15,6 +15,7 @@ import {
   revokeSession,
   type SessionUser,
 } from "@/modules/auth/session.service";
+import { afterFailedLogin, afterLogin, refuseBlockedPlace } from "@/modules/bug-guard/security";
 import { pickDefaultCompanyId } from "@/modules/companies/access";
 
 export const MAX_FAILED_LOGINS = 5;
@@ -35,6 +36,8 @@ export type LoginResult = {
  */
 export async function login(rawInput: LoginInput, meta: RequestMeta = {}): Promise<LoginResult> {
   const { email, password } = loginSchema.parse(rawInput);
+  // A place Bug Guard blocked after many wrong passwords (modules/bug-guard/security.ts).
+  await refuseBlockedPlace(meta);
   const user = await prisma.user.findUnique({ where: { email } });
 
   if (!user || !user.passwordHash) {
@@ -46,6 +49,7 @@ export async function login(rawInput: LoginInput, meta: RequestMeta = {}): Promi
       summary: `Failed login for ${email} (unknown account)`,
       meta,
     });
+    await afterFailedLogin(meta);
     throw new AppError("INVALID_CREDENTIALS", INVALID_CREDENTIALS);
   }
 
@@ -77,6 +81,7 @@ export async function login(rawInput: LoginInput, meta: RequestMeta = {}): Promi
       summary: locked ? "Wrong password; account locked for 15 minutes" : "Wrong password",
       meta,
     });
+    await afterFailedLogin(meta);
     throw new AppError("INVALID_CREDENTIALS", INVALID_CREDENTIALS);
   }
 
@@ -108,6 +113,13 @@ export async function login(rawInput: LoginInput, meta: RequestMeta = {}): Promi
     companyId: activeCompanyId,
     meta,
   });
+  // Right after wrong passwords for several accounts from the same place: ended at once.
+  if (await afterLogin(updatedUser, session.id, meta)) {
+    throw new AppError(
+      "ACCOUNT_LOCKED",
+      "This sign-in looked unsafe, so it was stopped. Try again later, or ask the owner.",
+    );
+  }
 
   return {
     token,

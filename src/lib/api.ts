@@ -38,9 +38,13 @@ export async function readJson(request: Request): Promise<unknown> {
 
 type RouteContext<P> = { params: Promise<P> };
 
-/** The JSON error envelope `{ ok: false, error }` with the matching HTTP status. */
-export function apiErrorResponse(error: unknown): NextResponse {
+/**
+ * The JSON error envelope `{ ok: false, error }` with the matching HTTP status.
+ * An unexpected error is kept for Bug Guard too, with the request's route.
+ */
+export function apiErrorResponse(error: unknown, request?: Request): NextResponse {
   const safe = toActionError(error);
+  if (safe.code === "INTERNAL" && request) noteUnexpected(error, request);
   return NextResponse.json({ ok: false, error: safe }, { status: httpStatusFor(safe.code) });
 }
 
@@ -58,7 +62,22 @@ export function apiRoute<P = Record<string, never>>(
       const data = await handler(request, await context.params);
       return NextResponse.json({ ok: true, data }, { status: options.successStatus ?? 200 });
     } catch (error) {
-      return apiErrorResponse(error);
+      return apiErrorResponse(error, request);
     }
   };
+}
+
+/** Keeps an unexpected error for Bug Guard: the route and the error, never the request's data. */
+function noteUnexpected(error: unknown, request: Request) {
+  void import("@/modules/bug-guard/server-errors")
+    .then(({ recordServerError }) =>
+      recordServerError({
+        error,
+        routeType: "api",
+        method: request.method,
+        path: new URL(request.url).pathname,
+        cookie: request.headers.get("cookie"),
+      }),
+    )
+    .catch(() => undefined);
 }

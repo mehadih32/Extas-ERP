@@ -171,6 +171,16 @@ EOF
   install -o "$APP_UID" -g "$APP_UID" -m 644 /dev/null "$DATA_DIR/backups/.restore-helper"
 }
 
+# Bug Guard's view of the server (host-status.sh): Ubuntu updates waiting and a
+# restart needed, written every morning and after every update. It only reads.
+install_host_status() {
+  cat >/etc/cron.d/extras-erp-host-status <<EOF
+# Extas ERP (deploy.sh): tells Bug Guard whether the server has updates waiting.
+41 4 * * * root $DEPLOY_DIR/host-status.sh >/dev/null 2>&1
+EOF
+  "$DEPLOY_DIR/host-status.sh" >/dev/null 2>&1
+}
+
 # --- The demo site (README.md, "The demo site") ---------------------------------
 
 # Its own passwords, key, folders and HTTPS part while it is on; no HTTPS part while

@@ -14,13 +14,13 @@ export const dynamic = "force-dynamic";
  * PDF: CM by style, the deductions, the advance taken and the final payable
  * (production.manage or accounts.view).
  */
-export async function GET(_request: Request, context: { params: Promise<Params> }) {
+export async function GET(request: Request, context: { params: Promise<Params> }) {
   try {
     const { settlementId } = await context.params;
     const ctx = await requireAnyPermission("production.manage", "accounts.view");
     const pdf = await cmSettlementPdf(ctx, settlementId, await getRequestMeta());
     return fileResponse({ fileName: pdf.fileName, mimeType: PDF_MIME, bytes: pdf.bytes });
   } catch (error) {
-    return apiErrorResponse(error);
+    return apiErrorResponse(error, request);
   }
 }

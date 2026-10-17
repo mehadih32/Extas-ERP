@@ -221,6 +221,14 @@ model Company {
   aiOrderRuns           AiOrderRun[]
   aiStaffUpdates        AiStaffUpdate[]
   serverHealthRuns      ServerHealthRun[]
+  bugGuardSettings      BugGuardSettings?
+  bugGuardRuns          BugGuardRun[]
+  bugGuardFindings      BugGuardFinding[]
+  bugGuardCorrections   BugGuardCorrection[]
+  bugGuardEvents        BugGuardEvent[]
+  loginBlocks           LoginBlock[]
+  serverErrors          ServerError[]
+  usageCounts           UsageCount[]
 }
 
 /// A person who can log in. Global across companies.
@@ -350,6 +358,7 @@ model User {
   aiOrderRunsDecided  AiOrderRun[]           @relation("AiOrderRunDecidedBy")
   aiStaffUpdates      AiStaffUpdate[]        @relation("AiStaffUpdateBy")
   serverHealthRuns    ServerHealthRun[]      @relation("ServerHealthRunBy")
+  bugGuardEvents      BugGuardEvent[]        @relation("BugGuardEventBy")
 }
 
 /// A signed-in device. `token` stores the SHA-256 hash of the cookie value, never
@@ -5360,6 +5369,8 @@ enum JournalSource {
   STAFF_CLAIM
   CM_SETTLEMENT
   SUPPLIER_FAULT
+  /// An adjusting entry Bug Guard posted with the owner's PIN (modules/bug-guard/corrections.ts).
+  CORRECTION
 }
 
 enum AssetStatus {
@@ -6592,4 +6603,295 @@ enum ClaudeCodeRequestState {
   MERGED
   /// Claude Code could not finish, or the pull request was closed unmerged.
   STOPPED
+}
+
+// ---------------------------------------------------------------- Bug Guard
+
+/// Bug Guard (AI Center > Bug Guard, the platform owner's auditor): its schedule
+/// and choices, one row per company (modules/bug-guard/settings.service.ts).
+model BugGuardSettings {
+  companyId    String    @id
+  /// When it runs (lib/schedule.ts): every N hours, every N days, weekly on chosen
+  /// days, or chosen dates and times. Default: every 3 days at 02:00.
+  schedule     Json
+  timezone     String    @default("Asia/Dhaka")
+  /// Off by default: open fix pull requests and prepare data corrections by itself.
+  /// Applying and merging always wait for the owner.
+  autoPrepare  Boolean   @default(false)
+  /// The weekly summary (even when all is well): day (0 Sunday ... 6 Saturday) and time.
+  weeklyDay    Int       @default(6)
+  weeklyTime   String    @default("10:00")
+  /// The local day ("YYYY-MM-DD") of the last weekly summary sent.
+  weeklySentOn String?
+  nextRunAt    DateTime?
+  lastRunAt    DateTime?
+  updatedById  String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+}
+
+/// One Bug Guard run: what it checked and how it went (its findings are BugGuardFinding).
+model BugGuardRun {
+  id              String            @id @default(cuid())
+  companyId       String
+  trigger         BugGuardTrigger
+  status          BugGuardRunStatus @default(RUNNING)
+  startedById     String?
+  startedAt       DateTime          @default(now())
+  finishedAt      DateTime?
+  /// [{ key, area, label, status, found, ms, note }] (modules/bug-guard/types.ts CheckResult).
+  checks          Json              @default("[]")
+  urgent          Int               @default(0)
+  important       Int               @default(0)
+  later           Int               @default(0)
+  /// Found for the first time in this run, and put right since the last one.
+  newCount        Int               @default(0)
+  fixedCount      Int               @default(0)
+  /// The Full check it asked GitHub for (every screen, PDF and the layout checks).
+  fullCheckRunId  String?
+  /// When that Full check's findings were taken in (it reports later, from GitHub).
+  fullCheckSeenAt DateTime?
+  /// Why it stopped, or what it could not check, in plain words.
+  note            String?
+  reportSentAt    DateTime?
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, startedAt])
+  @@index([status])
+}
+
+enum BugGuardTrigger {
+  SCHEDULE
+  NOW
+  TELEGRAM
+  /// Again after a fix was merged or a correction applied.
+  AFTER_FIX
+}
+
+enum BugGuardRunStatus {
+  RUNNING
+  DONE
+  FAILED
+}
+
+/// One problem Bug Guard found, kept from run to run by its key: what is wrong,
+/// where, why it matters, the proposed fix, and what became of it.
+model BugGuardFinding {
+  id           String                @id @default(cuid())
+  companyId    String
+  /// The same problem keeps the same key ("data.stock:<id>").
+  key          String
+  check        String
+  area         BugGuardArea
+  severity     BugGuardSeverity
+  /// In simple Bengali (Western digits).
+  title        String
+  href         String?
+  place        String?
+  why          String
+  fix          String
+  fixKind      BugGuardFixKind
+  /// [{ label, value }]
+  evidence     Json?
+  /// The exact correction (before -> after) for DATA, the safe step for SECURITY,
+  /// the safe facts for Claude Code for CODE (modules/bug-guard/types.ts).
+  correction   Json?
+  action       Json?
+  code         Json?
+  status       BugGuardFindingStatus @default(OPEN)
+  snoozedUntil DateTime?
+  firstRunId   String?
+  lastRunId    String?
+  firstSeenAt  DateTime              @default(now())
+  lastSeenAt   DateTime              @default(now())
+  seenCount    Int                   @default(1)
+  /// When a run no longer found it (status GONE or FIXED).
+  goneAt       DateTime?
+  /// Claude Code's request for a code fix (ClaudeCodeRequest).
+  requestId    String?
+  /// Whether the owner has heard of it (sent in a report).
+  reportedAt   DateTime?
+  decidedById  String?
+  decidedAt    DateTime?
+
+  company     Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  corrections BugGuardCorrection[]
+
+  @@unique([companyId, key])
+  @@index([companyId, status])
+}
+
+enum BugGuardArea {
+  APP
+  DATA
+  SECURITY
+  PRODUCT
+  AI
+}
+
+enum BugGuardSeverity {
+  URGENT
+  IMPORTANT
+  LATER
+}
+
+enum BugGuardFixKind {
+  CODE
+  DATA
+  SECURITY
+  MANUAL
+  NONE
+}
+
+enum BugGuardFindingStatus {
+  OPEN
+  /// The owner chose Ignore: not reported again (unless it gets worse).
+  IGNORED
+  /// "Remind me later": quiet until snoozedUntil.
+  SNOOZED
+  /// A fix is on its way (a pull request, a prepared correction).
+  FIXING
+  FIXED
+  /// A later run did not find it any more.
+  GONE
+}
+
+/// A data or accounting correction: prepared, then applied with the owner's PIN
+/// after a backup, and undoable. Never edits or deletes history: a stored total
+/// is put back to what its records add up to, or an adjusting entry is posted.
+model BugGuardCorrection {
+  id                 String                   @id @default(cuid())
+  companyId          String
+  findingId          String
+  /// The plan, exactly as shown to the owner (types.ts CorrectionPlan).
+  plan               Json
+  /// Before -> after, in Bengali.
+  summary            String
+  status             BugGuardCorrectionStatus @default(PREPARED)
+  /// The backup made just before it was applied.
+  backupRunId        String?
+  journalEntryId     String?
+  undoJournalEntryId String?
+  preparedById       String?
+  preparedByGuard    Boolean                  @default(false)
+  appliedById        String?
+  appliedAt          DateTime?
+  undoneById         String?
+  undoneAt           DateTime?
+  error              String?
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
+
+  company Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  finding BugGuardFinding @relation(fields: [findingId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, status])
+  @@index([findingId])
+}
+
+enum BugGuardCorrectionStatus {
+  PREPARED
+  /// Waiting for its backup to finish.
+  BACKING_UP
+  APPLIED
+  UNDONE
+  FAILED
+  /// The figures changed since it was prepared: prepare it again.
+  STALE
+  /// The owner cancelled it: nothing changed.
+  CANCELLED
+}
+
+/// Bug Guard's own audit log: every check, finding, fix, who approved it and the result.
+model BugGuardEvent {
+  id           String   @id @default(cuid())
+  companyId    String
+  runId        String?
+  findingId    String?
+  correctionId String?
+  /// RUN, FOUND, GONE, REPORT, FIX_ASKED, PREPARED, APPLIED, UNDONE, IGNORED,
+  /// SNOOZED, REOPENED, SESSION_ENDED, SOURCE_BLOCKED, SOURCE_UNBLOCKED, SETTINGS, FAILED.
+  kind         String
+  /// Who approved it; none when Bug Guard did it by itself.
+  byId         String?
+  summary      String
+  createdAt    DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  by      User?   @relation("BugGuardEventBy", fields: [byId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, createdAt])
+  @@index([findingId])
+}
+
+/// A login source (an IP address) Bug Guard blocked after repeated failed
+/// sign-ins, or the owner did. Sign-in from it is refused until blockedUntil.
+/// companyId: the store whose Bug Guard blocked it (sign-in is for the whole site).
+model LoginBlock {
+  id           String    @id @default(cuid())
+  companyId    String?
+  source       String
+  reason       String
+  failures     Int       @default(0)
+  blockedAt    DateTime  @default(now())
+  blockedUntil DateTime
+  liftedAt     DateTime?
+  liftedById   String?
+
+  company Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
+
+  @@index([source, blockedUntil])
+}
+
+/// An error the server hit while showing a screen, answering the API or running
+/// a job (instrumentation.ts, lib/result.ts): the route pattern and the error's
+/// type and stack lines, never a screen's text or a person's data.
+model ServerError {
+  id        String   @id @default(cuid())
+  /// The store, when known (null: the server itself).
+  companyId String?
+  at        DateTime @default(now())
+  /// render, route, action, proxy, api or job.
+  routeType String
+  method    String?
+  /// The route pattern ("/sales/orders/[id]") or the job's kind.
+  path      String
+  errorName String
+  /// The error's message, cut short, with numbers and addresses taken out.
+  message   String
+  stack     String[]
+  digest    String?
+  errorId   String?
+
+  company Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([at])
+  @@index([companyId, at])
+}
+
+/// How the ERP is used, counted per day (no one's data, only screens):
+/// screens opened, forms left half done, Help searches that found nothing.
+model UsageCount {
+  id        String    @id @default(cuid())
+  companyId String
+  /// "YYYY-MM-DD" (Bangladesh time).
+  day       String
+  kind      UsageKind
+  /// The screen's route pattern, or the words searched in Help.
+  subject   String
+  count     Int       @default(0)
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, day, kind, subject])
+  @@index([companyId, kind, day])
+}
+
+enum UsageKind {
+  VIEW
+  ABANDONED
+  HELP_MISS
 }

@@ -28,6 +28,6 @@ export async function GET(request: Request) {
     const file = await costsFile(ctx, query, format, await getRequestMeta());
     return fileResponse(file);
   } catch (error) {
-    return apiErrorResponse(error);
+    return apiErrorResponse(error, request);
   }
 }

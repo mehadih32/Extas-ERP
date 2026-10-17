@@ -15,6 +15,7 @@ import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { missingFeaturePrompt, quotedSearch } from "@/modules/help/prompt";
+import { sendUsage } from "@/components/shell/usage-beacon";
 import { type HelpSearchEntry, searchHelp, searchWords } from "@/modules/help/search";
 
 import { bnDigits, helpHref, NOT_IN_ROLE } from "./labels";
@@ -136,6 +137,14 @@ export function HelpSearch({
   const results = useMemo(() => searchHelp(entries, deferred), [entries, deferred]);
   const [askAnyway, setAskAnyway] = useState(false);
   const searching = searchWords(deferred).length > 0;
+
+  // Words that found nothing are counted for Bug Guard (a guide may be missing).
+  useEffect(() => {
+    if (!searching || results.length > 0) return;
+    const words = deferred.trim();
+    const timer = setTimeout(() => sendUsage({ kind: "HELP_MISS", subject: words }), 2500);
+    return () => clearTimeout(timer);
+  }, [searching, results.length, deferred]);
 
   // Keep ?q= in the address so a search survives going back from a guide.
   useEffect(() => {

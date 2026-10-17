@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
  * last 12 months as a PDF: on-time deliveries, Challan vs Actual, the fault log, contracts, a
  * grade and a summary. Values on it: Production Managers, buyers and Accounts.
  */
-export async function GET(_request: Request, context: { params: Promise<Params> }) {
+export async function GET(request: Request, context: { params: Promise<Params> }) {
   try {
     const { supplierId } = await context.params;
     const ctx = await requireAnyPermission(
@@ -25,6 +25,6 @@ export async function GET(_request: Request, context: { params: Promise<Params> 
     const pdf = await reportCardPdf(ctx, supplierId, await getRequestMeta());
     return fileResponse({ fileName: pdf.fileName, mimeType: PDF_MIME, bytes: pdf.bytes });
   } catch (error) {
-    return apiErrorResponse(error);
+    return apiErrorResponse(error, request);
   }
 }

@@ -11,14 +11,17 @@ import { kickJobWorker } from "@/modules/jobs/worker";
  * background worker, so the work that pushes is never held up or broken by
  * Telegram or Meta; nothing is pushed while no bot is linked, nor while the AI
  * is switched off or paused. An alert about the server itself (a failed backup,
- * Server Health) is the exception: it is the owner's own alarm, AI or not.
+ * Server Health, Bug Guard) is the exception: it is the owner's own alarm, AI or not.
  */
 
 export type BotPush =
-  | { kind: "text"; text: string }
+  | { kind: "text"; text: string; buttons?: Array<Array<{ label: string; data: string }>> }
   | { kind: "draft"; draftId: string; text: string }
   | { kind: "permission"; requestId: string }
-  | { kind: "deletion"; requestId: string };
+  | { kind: "deletion"; requestId: string }
+  /** Bug Guard: one problem with Fix, Ignore and Remind me later; a correction with Apply or Undo. */
+  | { kind: "guard"; findingId: string }
+  | { kind: "guard-correction"; correctionId: string };
 
 /** Queues a push to the company's linked bots (none linked, or the AI off: nothing happens). */
 export async function pushToBot(

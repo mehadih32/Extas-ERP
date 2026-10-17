@@ -873,6 +873,12 @@ async function sourceLink(
       });
       return asset ? { title: asset.name, href: `/accounts/assets/${sourceId}` } : null;
     }
+    case "CORRECTION":
+      // An adjusting entry Bug Guard posted with the owner's PIN; undone there.
+      return {
+        title: "Bug Guard correction",
+        href: ctx.user.isSuperAdmin ? `/ai/bug-guard?correction=${sourceId}` : null,
+      };
     default:
       return null;
   }

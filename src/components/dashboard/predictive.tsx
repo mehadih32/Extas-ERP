@@ -235,7 +235,7 @@ function TopBuyerCard({ data, topBuyer }: { data: PredictiveInsights; topBuyer: 
                   <span className="w-4 shrink-0 text-[0.8125rem] text-muted-foreground tabular-nums">
                     {i + 2}
                   </span>
-                  <span className="min-w-0 flex-1 truncate text-sm">{name(row)}</span>
+                  <span className="min-w-0 flex-1 text-sm break-words">{name(row)}</span>
                   <span className="shrink-0 text-sm tabular-nums">{amount(row.net)}</span>
                 </li>
               ))}

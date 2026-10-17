@@ -679,6 +679,10 @@ export const gettingStartedHelp: HelpSection = {
           label: "Try again",
           text: "আপনার চেহারার তথ্য লোড না হলে “Your look could not load” লেখার নিচে আসে; চাপলে আবার চেষ্টা করে।",
         },
+        {
+          label: "Appearance",
+          text: "“Settings”-এর ট্যাব: নিজের চেহারা বাছার পাতা খোলে। সবাই দেখেন, কারণ চেহারা প্রত্যেকের নিজের।",
+        },
       ],
       next: "সেভ করলে পাতা নিজে থেকে নতুন করে খোলে আর সবুজ বাক্সে লেখা আসে কোন চেহারা চালু হলো। চেহারাটি আপনার অ্যাকাউন্টে মনে থাকে: অন্য কম্পিউটারে বা অন্য কোম্পানিতে সাইন ইন করলেও একই চেহারা পাবেন। অন্য কারও পর্দা বদলায় না, আর কোনো তথ্যও বদলায় না।",
       mistakes: [
@@ -998,6 +1002,43 @@ export const gettingStartedHelp: HelpSection = {
           label: "Clear the search",
           text: "খোঁজার ঘরের ডান কোণের ক্রস: লেখা মুছে আবার পুরো তালিকা দেখায়।",
         },
+        {
+          label: "Method",
+          text: "টাকা কীভাবে দেওয়া বা নেওয়া হলো (কোনো পাতায় এই ঘরের নাম “Paid by”): “Cash” নগদ, “Bank transfer” ব্যাংক থেকে ব্যাংকে, “Cheque” চেক, “Card” কার্ড, আর মোবাইল ওয়ালেট “bKash”, “Nagad” ও “Rocket”। বিক্রির পাতায় “Courier cash on delivery” (কুরিয়ার মাল পৌঁছে টাকা তোলে) আর “Other”-ও থাকে। ব্যাংক, চেক বা ওয়ালেট হলে পাশের ঘরে রেফারেন্স বা ট্রানজ্যাকশন নম্বর লিখুন, পরে মেলাতে কাজে লাগে।",
+        },
+        {
+          label: "Unit",
+          text: "কোন এককে গোনা বা মাপা হয়: “Pieces (pcs)” পিস, “Dozens” ডজন, “Gross (144 pieces)” গ্রোস, “Sets” সেট, “Kilograms (kg)” কেজি, “Grams (g)” গ্রাম, “Pounds (lb)” পাউন্ড, “Metres (m)” মিটার, “Yards (yd)” গজ, “Rolls” রোল আর “Cones” কোন (সুতার)। যে এককে কেনেন ও স্টকে রাখেন সেটিই বাছুন; পরে বদলালে আগের হিসাবের সঙ্গে মেলে না।",
+        },
+        {
+          label: "Currency",
+          text: "দাম বা টাকা কোন মুদ্রায়: “Bangladeshi taka (BDT)”, “US dollar (USD)”, “Euro (EUR)”, “Pound sterling (GBP)”, “Indian rupee (INR)”, “Chinese yuan (CNY)”, “UAE dirham (AED)”, “Saudi riyal (SAR)”, “Malaysian ringgit (MYR)”, “Singapore dollar (SGD)”, “Japanese yen (JPY)”, “Canadian dollar (CAD)” ও “Australian dollar (AUD)”। কোম্পানি অন্য মুদ্রা ব্যবহার করলে সেটিও তালিকার ওপরে থাকে। বায়ার যে মুদ্রায় দাম দেন সেটিই বাছুন, যেমন ইউরোপের বায়ারের জন্য EUR।",
+        },
+        {
+          label: "Month",
+          text: "মাস বাছার তালিকা: “January”, “February”, “March”, “April”, “May”, “June”, “July”, “August”, “September”, “October”, “November” ও “December”। যেমন অর্থবছর জুলাইয়ে শুরু হলে “July” বাছুন।",
+        },
+        {
+          label: "Days",
+          text: "সপ্তাহের দিন বাছার ঘর: “Saturday”, “Sunday”, “Monday”, “Tuesday”, “Wednesday”, “Thursday” ও “Friday”। যে দিনগুলোতে কাজটি হবে (বা যেগুলো ছুটি) সেগুলোতে টিক দিন; একাধিক দিন বাছা যায়।",
+        },
+        {
+          label: "Blood group",
+          text: "কর্মীর রক্তের গ্রুপ: “A+”, “A-”, “B+”, “B-”, “AB+”, “AB-”, “O+” বা “O-”। জরুরি সময়ে কাজে লাগে; না জানলে খালি রাখুন।",
+        },
+        {
+          label: "Make the file",
+          text: "কাগজের পাতার “Template” বোতামের জানালায়: বাছা নিজস্ব ডিজাইনে (Reports & documents › Templates) এই কাগজের তথ্য বসিয়ে ফাইল তৈরি করে। তৈরি হলে “Download” বা “Open the PDF” আসে, আর ফাইলটি ছাপা কাগজের তালিকায় থেকে যায়।",
+        },
+        {
+          label: "Remove the picture",
+          text: "রেফারেন্স ছবির পাশের ক্রস: ছবিটি সরিয়ে দেয়, PDF-এ আর ছাপা হয় না। সেভ না করা পর্যন্ত আগের ছবি রেকর্ডে থাকে।",
+        },
+        {
+          label: "From",
+          text: "দুটি তারিখের ঘর পাশাপাশি থাকলে প্রথমটি: এই দিন থেকে তালিকা দেখায়। অন্য কাজে “From” থাকলে সেই পাতার নির্দেশিকায় লেখা।",
+        },
+        { label: "To", text: "দ্বিতীয় তারিখের ঘর: এই দিন পর্যন্ত তালিকা দেখায়।" },
       ],
       next: "আসল বোতাম চাপার পর কাজ শেষ হলে জানালা নিজে বন্ধ হয়, পাতা নতুন তথ্য দেখায়, আর অনেক জায়গায় সবুজ বাক্সে লেখা আসে কী হলো। কাজ না হলে জানালা খোলা থাকে আর লাল লেখায় কারণ দেখায়, যাতে ঠিক করে আবার চাপতে পারেন। “Cancel” বা “Close”-এর পর কিছুই বদলায় না।",
       mistakes: [

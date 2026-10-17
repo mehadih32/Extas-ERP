@@ -88,7 +88,7 @@ export const partiesHelp: HelpSection = {
         },
         {
           label: "All statuses",
-          text: "অবস্থা দিয়ে ছাঁকা: “Active” (চালু), “Dormant” (অনেক দিন অর্ডার নেই), “Settling” (বন্ধ করা হয়েছে, কিন্তু টাকা বাকি) বা “Closed” (বন্ধ)।",
+          text: "অবস্থা দিয়ে ছাঁকা: “Active” (চালু), “Dormant” (অনেক দিন অর্ডার নেই), “Settling” (বন্ধ করা হয়েছে, কিন্তু টাকা বাকি) বা “Closed” (বন্ধ)। এটি “Status” ঘরের প্রথম লাইন।",
         },
         {
           label: "All grades",
@@ -96,7 +96,7 @@ export const partiesHelp: HelpSection = {
         },
         {
           label: "All types",
-          text: "শুধু “Buyers” ট্যাবে। ক্রেতার ধরন দিয়ে ছাঁকা: “Wholesale” (পাইকারি), “Corporate (B2B)” (কোম্পানি বা রপ্তানির বায়ার) বা “Retail” (খুচরা)।",
+          text: "শুধু “Buyers” ট্যাবে। ক্রেতার ধরন দিয়ে ছাঁকা: “Wholesale” (পাইকারি), “Corporate (B2B)” (কোম্পানি বা রপ্তানির বায়ার) বা “Retail” (খুচরা)। এটি “Buyer type” ঘরের প্রথম লাইন।",
         },
         {
           label: "All categories",
@@ -685,7 +685,12 @@ export const partiesHelp: HelpSection = {
         "print",
         "এমব্রয়ডারি",
       ],
-      routes: ["/parties/buyers/new", "/parties/suppliers/new", "/parties/[list]/new"],
+      routes: [
+        "/parties/buyers/new",
+        "/parties/suppliers/new",
+        "/parties/[list]/new",
+        "/parties/[list]/[partyId]/edit",
+      ],
       who: "যাঁদের অ্যাকাউন্ট বদলানোর অনুমতি আছে: Super Admin ও Sales Executive।",
       anyOf: ["parties.manage"],
       what: "“New buyer” বা “New supplier” ফর্মে নতুন অ্যাকাউন্ট খোলা হয়। এখন শুধু নাম দিলেই চলে, বাকি সব পরে দেওয়া যায়। ফর্মে চারটি অংশ: “Who they are” (অ্যাকাউন্টের ধরন, ক্রেতার ধরন, সরবরাহকারী কী সরবরাহ করেন), “Name” (নাম, কোড ও গ্রেড), “Contact” (যোগাযোগের মানুষ, ইমেইল, ফোন, WhatsApp, ঠিকানা, শহর, দেশ) আর “Terms” (ক্রেডিট সীমা, পরিশোধের মেয়াদ, কীভাবে টাকা দেন, ফ্যাক্টরির মাসিক ক্ষমতা, ট্যাক্স নম্বর)। শেষে “Notes”। একই ফর্ম পরে “Edit details”-এ খোলে।",

@@ -100,11 +100,11 @@ export const plannerHelp: HelpSection = {
         },
         {
           label: "Add a reminder",
-          text: "রিমাইন্ডারের জানালা খোলে (“Reminders” গাইড দেখুন)। যোগ হলে রিমাইন্ডারের পাতা খোলে।",
+          text: "রিমাইন্ডারের জানালা খোলে (“Reminders” গাইড দেখুন)। যোগ হলে রিমাইন্ডারের পাতা খোলে। জানালায় “Remind about”, “Note (optional)”, “Day”, “Time”, “Repeats” (“Every day”, “Every week”, “Every month” বা “Every year”), “Last day (optional)” ও “Who hears about it” পূরণ করে “Add the reminder” চাপুন। কোনো রিমাইন্ডার “Change” করলে বোতামের নাম “Save the reminder”। কাউকে তালিকা থেকে সরাতে নামের পাশের ক্রস “Take … off”। প্রতিটি ঘরের মানে রিমাইন্ডারের গাইডে।",
         },
         {
           label: "Give a task",
-          text: "কর্মীকে কাজ দেওয়ার জানালা খোলে (“Tasks” গাইড দেখুন)। শুধু ম্যানেজাররা পান।",
+          text: "কর্মীকে কাজ দেওয়ার জানালা খোলে (“Tasks” গাইড দেখুন)। শুধু ম্যানেজাররা পান। জানালায় “What needs doing”, “Given to (optional)”, “Due day (optional)”, “Time (optional)”, “Priority” (“Low”, “Medium”, “High” বা “Urgent”), “Production project (optional)” ও “Details (optional)” পূরণ করে “Give the task” চাপুন। কোনো কাজ “Change” করলে বোতামের নাম “Save the task”। প্রতিটি ঘরের মানে কাজ দেওয়ার গাইডে।",
         },
         {
           label: "Change",
@@ -260,6 +260,10 @@ export const plannerHelp: HelpSection = {
         {
           label: "Try again",
           text: "নোটপ্যাড লোড না হলে লাল বাক্সে আসে; চাপলে আবার চেষ্টা হয়।",
+        },
+        {
+          label: "Save",
+          text: "কোনো লাইন বা নোট “Change” করলে “Add”-এর জায়গায় এই বোতাম আসে: বদলটি রাখে।",
         },
       ],
       next: "নোটপ্যাড শুধু আপনার জন্য: কাউকে কিছু যায় না, কোনো রিমাইন্ডারও বাজে না। নির্দিষ্ট দিন ও সময়ে মনে করাতে চাইলে “Reminders” ট্যাবে রিমাইন্ডার দিন; অন্য কাউকে কাজ দিতে “Tasks” ট্যাব।",
@@ -510,7 +514,7 @@ export const plannerHelp: HelpSection = {
         },
         {
           label: "Who hears about it",
-          text: "শুধু ম্যানেজাররা দেখেন: কারা পাবেন। শুরুতে আপনি নিজে (you)। “Add someone by name” দিয়ে আরও যোগ করুন, নামের পাশের ✕ দিয়ে সরান। login নেই এমন কর্মীর পাশে “no login yet” থাকে। কাউকে না রাখলে সংরক্ষণ হয় না।",
+          text: "শুধু ম্যানেজাররা দেখেন: কারা পাবেন। শুরুতে আপনি নিজে (you)। “Add someone by name” দিয়ে আরও যোগ করুন, নামের পাশের ✕ দিয়ে সরান। login নেই এমন কর্মীর পাশে “no login yet” থাকে। কাউকে না রাখলে সংরক্ষণ হয় না। যোগ করা নামের পাশের ক্রস “Take … off” (… জায়গায় নাম) তাঁকে তালিকা থেকে সরায়।",
         },
         {
           label: "Add the reminder",
@@ -522,11 +526,11 @@ export const plannerHelp: HelpSection = {
         },
         {
           label: "Every reminder",
-          text: "তালিকা ছাঁকুন: “Every reminder” (সব), “Still to go out”, “Gone out”, “Dealt with” বা “Cancelled”।",
+          text: "তালিকা ছাঁকুন: “Every reminder” (সব), “Still to go out”, “Gone out”, “Dealt with” বা “Cancelled”। এটি “Which reminders” ঘর।",
         },
         {
           label: "Any kind",
-          text: "“Set by hand” (মানুষের দেওয়া) বা “Automatic” (অ্যাপের নিয়মে তৈরি) আলাদা করে দেখুন।",
+          text: "“Set by hand” (মানুষের দেওয়া) বা “Automatic” (অ্যাপের নিয়মে তৈরি) আলাদা করে দেখুন। এটি “Set by hand or automatic” ঘর।",
         },
         {
           label: "Everyone's reminders",
@@ -676,11 +680,11 @@ export const plannerHelp: HelpSection = {
         },
         {
           label: "Who hears about it",
-          text: "টিক বাক্স: বিষয় অনুযায়ী দায়িত্বে থাকা মানুষ (যেমন যাঁরা প্রোডাকশন সামলান) আর রেকর্ডের নিজের মানুষ (যেমন যিনি অর্ডার দিয়েছেন, বা কাজের কর্মী)।",
+          text: "টিক বাক্স: বিষয় অনুযায়ী দায়িত্বে থাকা মানুষ (যেমন যাঁরা প্রোডাকশন সামলান) আর রেকর্ডের নিজের মানুষ (যেমন যিনি অর্ডার দিয়েছেন, বা কাজের কর্মী)। বিষয় অনুযায়ী দায়িত্বের টিকের নাম: “People who manage production” (প্রোডাকশনের সময়সীমা), “People who buy materials” (মাল ইন-হাউস), “People who take sales orders” (শিপমেন্ট) বা “People who see the licences” (লাইসেন্স ও নিবন্ধন নবায়ন)।",
         },
         {
           label: "Also tell (optional)",
-          text: "আর যাঁদের জানাতে চান, নাম দিয়ে খুঁজে যোগ করুন; কাউকে না দিলে “Nobody else.”।",
+          text: "আর যাঁদের জানাতে চান, নাম দিয়ে খুঁজে যোগ করুন; কাউকে না দিলে “Nobody else.”। যোগ করা নামের পাশের ক্রস “Take … off” (… জায়গায় নাম) তাঁকে তালিকা থেকে সরায়।",
         },
         {
           label: "Save",

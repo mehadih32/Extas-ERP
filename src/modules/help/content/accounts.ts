@@ -217,7 +217,7 @@ export const accountsHelp: HelpSection = {
         },
         {
           label: "Market due",
-          text: "সব ক্রেতা মিলে আমাদের কাছে কত বাকি রেখেছেন, তাঁদের দেওয়া অগ্রিম বাদ দিয়ে, আর কতজন ক্রেতা বাকি রেখেছেন।",
+          text: "সব ক্রেতা মিলে আমাদের কাছে কত বাকি রেখেছেন, তাঁদের দেওয়া অগ্রিম বাদ দিয়ে, আর কতজন ক্রেতা বাকি রেখেছেন। কেউ কিছু বাকি না রাখলে নিচে লেখা থাকে “No buyer owes anything”।",
         },
         {
           label: "See who owes",
@@ -225,7 +225,7 @@ export const accountsHelp: HelpSection = {
         },
         {
           label: "Market payable",
-          text: "সরবরাহকারী, ফ্যাক্টরি ও CMT-কে আমাদের কত দিতে হবে, আমাদের দেওয়া অগ্রিম বাদ দিয়ে।",
+          text: "সরবরাহকারী, ফ্যাক্টরি ও CMT-কে আমাদের কত দিতে হবে, আমাদের দেওয়া অগ্রিম বাদ দিয়ে। কাউকে কিছু দিতে না হলে লেখা থাকে “Nothing owed to suppliers”।",
         },
         {
           label: "See who we owe",
@@ -749,6 +749,10 @@ export const accountsHelp: HelpSection = {
           label: "Remove it",
           text: "নিশ্চিত করলে কেনা ও অবচয়ের এন্ট্রি উল্টে যায় (দুটোই খাতায় থাকে), আর যে অ্যাকাউন্ট থেকে টাকা গিয়েছিল সেখানে ফেরত আসে।",
         },
+        {
+          label: "Reason",
+          text: "“Sell or scrap” জানালায় কেন সম্পদটি বিক্রি বা বাদ দেওয়া হলো, অন্তত 5 অক্ষরে, যেমন পুরনো কম্প্রেসর স্ক্র্যাপে বিক্রি। কাজের লগে থেকে যায়।",
+        },
       ],
       next: "কেনা লেখার সঙ্গে সঙ্গে খাতায় এন্ট্রি ওঠে: টাকা দিলে সেই অ্যাকাউন্টের ব্যালান্স কমে, বাকিতে কিনলে সরবরাহকারীর দেনা বাড়ে (“Pay a supplier” দিয়ে শোধ করুন)। প্রতি মাস শেষে তালিকার ওপরে অবচয়ের লেখা এলে “Post depreciation” চাপুন; লাভ-ক্ষতির হিসাবে Depreciation খরচ আর ব্যালান্স শিটে সম্পদের দাম ঠিক থাকে।",
       mistakes: [
@@ -1063,7 +1067,7 @@ export const accountsHelp: HelpSection = {
           text: "কে টাকা রাখবেন আর খরচ লিখবেন। শুধু তাঁদের নাম আসে যাঁদের খরচ রেকর্ডের অনুমতি আছে।",
         },
         {
-          label: "Usual amount",
+          label: "Usual amount (…, optional)",
           text: "ঐচ্ছিক: প্রতিবার বাক্স কত পর্যন্ত ভরেন, যেমন 5,000 টাকা। এটি একটি নির্দেশনা, সীমা নয়; কম থাকলে বাক্সের পাতায় কত কম তা দেখায়।",
         },
         {
@@ -2162,6 +2166,10 @@ export const accountsHelp: HelpSection = {
           label: "Journal entry",
           text: "অনুমোদনের পরে খাতার এন্ট্রির নম্বর; চাপলে এন্ট্রিটি খোলে।",
         },
+        {
+          label: "Take it from …'s advance first, if they hold one",
+          text: "কর্মীর নামে খরচ অনুমোদনের জানালায় এই টিক আগে থেকেই দেওয়া থাকে: খরচের টাকা আগে সেই কর্মীর হাতে থাকা অগ্রিম থেকে কাটা হয়, অগ্রিমে না কুলালে বাকিটা বাছা অ্যাকাউন্ট থেকে যায়। টিক তুলে দিলে অগ্রিম যেমন আছে তেমনই থাকে, পুরো টাকা বাছা অ্যাকাউন্ট থেকে যায়।",
+        },
       ],
       next: "অনুমোদন করলে দাবিটি “In the books” হয়, কর্মীকে দেওয়া টাকা অ্যাকাউন্ট থেকে কমে (বা অগ্রিম থেকে কাটে), আর খরচ খাত ধরে লাভ-ক্ষতির হিসাবে যায়। “Overview”-এর “Waiting for Accounts” থেকে দাবিটি সরে যায়। ভুল অনুমোদন হলে দাবির পাতা থেকে “Void” করুন; মোছা যায় না।",
       mistakes: [
@@ -2226,7 +2234,7 @@ export const accountsHelp: HelpSection = {
         },
         {
           label: "Kind",
-          text: "খাতের ধরন: Rent, Utilities, Salaries, Marketing, Courier, Office, Repairs, Conveyance, Food বা Other। Salaries ধরনের খাতে কর্মীর নাম দিলে খরচ কর্মীর বেতনের পাতায় দেখায়।",
+          text: "খাতের ধরন: Rent, Utilities, Salaries, Marketing, Courier, Office, Repairs, Conveyance, Food বা Other। Salaries ধরনের খাতে কর্মীর নাম দিলে খরচ কর্মীর বেতনের পাতায় দেখায়। ধরনগুলো: “Rent” (ভাড়া), “Utilities” (বিদ্যুৎ, পানি, গ্যাস), “Salaries”, “Marketing”, “Courier”, “Office”, “Repairs” (মেরামত), “Conveyance” (যাতায়াত), “Food” (খাবার) আর “Other”। ধরন ঠিক করে খরচটি খাতার কোন হিসাবে যাবে, যদি না “Posts to”-তে অন্য খাত বাছেন।",
         },
         {
           label: "Posts to",
@@ -2319,7 +2327,7 @@ export const accountsHelp: HelpSection = {
         },
         {
           label: "Made by",
-          text: "কী থেকে তৈরি তা দিয়ে ছাঁকা: Journal voucher, Transfer, Sale, Payment, Expense, Supplier bill, Payroll, Depreciation, Supplier fault, Bug Guard correction ইত্যাদি। এন্ট্রির পাতায়ও একই নাম দেখায়।",
+          text: "কী থেকে তৈরি তা দিয়ে ছাঁকা: Journal voucher, Transfer, Sale, Payment, Expense, Supplier bill, Payroll, Depreciation, Supplier fault, Bug Guard correction ইত্যাদি। এন্ট্রির পাতায়ও একই নাম দেখায়। ফিল্টারে বাছা যায় “Journal voucher” (হাতে লেখা ভাউচার), “Transfer” (এক অ্যাকাউন্ট থেকে আরেকটিতে টাকা সরানো) ও “Sale”। তালিকায় প্রতিটি এন্ট্রির পাশেও লেখা থাকে সেটি কোন কাজ থেকে এসেছে, যেমন “Payment”, “Supplier bill”, “Expense”, “Payroll”, “Salary advance”, “Damage & QC rejects”, “Factory delivery”, “Sales return”, “Courier payout”, “Capital or loan”, “Installment”, “Depreciation”, “Opening balance”, “Production”, “Fixed asset”, “Stock adjustment”, “Materials issued”, “Return to supplier”, “Refund”, “Staff claims”, “CM settlement”, “Supplier fault” বা “Bug Guard correction”। এগুলো সেই কাজের পাতায় কাজ করলে অ্যাপ নিজে লেখে।",
         },
         {
           label: "All entries",
@@ -2461,7 +2469,7 @@ export const accountsHelp: HelpSection = {
         },
         {
           label: "Buyer",
-          text: "ক্রেতার পাওনা বা অগ্রিমের খাত বাছলে এই ঘর আসে; ক্রেতা বেছে নিতেই হয়। দেনার খাতে একইভাবে Supplier আসে।",
+          text: "ক্রেতার পাওনা বা অগ্রিমের খাত বাছলে এই ঘর আসে; ক্রেতা বেছে নিতেই হয়। দেনার খাতে একইভাবে Supplier আসে। সরবরাহকারীর খাতের লাইনে (যেমন “Owed to suppliers”) এই ঘরের নাম “Supplier”: কোন সরবরাহকারীর হিসাবে লাইনটি যাবে তা বাছুন।",
         },
         {
           label: "Note on this line (optional)",
@@ -2549,7 +2557,7 @@ export const accountsHelp: HelpSection = {
         },
         {
           label: "Kind",
-          text: "খাতের ধরন, যেমন Cash in hand, Mobile wallet, Other asset, Other liability, Sales, Other income বা খরচের ধরন। নিচে লেখা থাকে কোন ধরনে কী রাখা হয়।",
+          text: "খাতের ধরন, যেমন Cash in hand, Mobile wallet, Other asset, Other liability, Sales, Other income বা খরচের ধরন। নিচে লেখা থাকে কোন ধরনে কী রাখা হয়। নতুন খাতে বাছা যায়: “Cash in hand”, “Mobile wallet”, “Other asset”, “Advances to employees”, “Other liability”, “Sales”, “Other income”, “Stock and production losses”, “Running costs”, “Salaries”, “Marketing”, “Courier” ও “Finance costs”। বাকি ধরনগুলো অ্যাপ নিজে খোলে ও চালায়, হাতে বানানো যায় না: “Bank” (ব্যাংক অ্যাকাউন্ট যোগ হয় “Add a bank account” দিয়ে), “Owed by buyers”, “Stock”, “Raw materials”, “Returns waiting for QC”, “Fixed asset”, “Depreciation so far”, “Owed to suppliers”, “Buyer advances”, “Loan”, “Investor”, “Capital”, “Retained earnings”, “Drawings” ও “Cost of goods sold”।",
         },
         {
           label: "Code (optional)",

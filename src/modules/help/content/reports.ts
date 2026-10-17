@@ -598,7 +598,7 @@ export const reportsHelp: HelpSection = {
         },
         {
           label: "As it is",
-          text: "অক্ষরের ধরন: যেমন আছে তেমন; অন্য বিকল্প CAPITALS (সব বড় হাতের) ও small letters (সব ছোট হাতের)।",
+          text: "অক্ষরের ধরন: যেমন আছে তেমন; অন্য বিকল্প “CAPITALS” (সব বড় হাতের) ও “small letters” (সব ছোট হাতের)।",
         },
         {
           label: "Save what the tags print",
@@ -658,7 +658,7 @@ export const reportsHelp: HelpSection = {
         },
         {
           label: "Line up",
-          text: "চওড়া দিলে লেখা বাঁয়ে, মাঝে বা ডানে (Left, Centre, Right) সাজানো যায়।",
+          text: "চওড়া দিলে লেখা বাঁয়ে, মাঝে বা ডানে (“Left”, “Centre”, “Right”) সাজানো যায়।",
         },
         {
           label: "Bold",
@@ -687,6 +687,22 @@ export const reportsHelp: HelpSection = {
         {
           label: "About this template",
           text: "ফাইলের ধরন, কোন কাগজের জন্য, ফাইল, পাতার সংখ্যা, এটি থেকে কয়টি কাগজ তৈরি হয়েছে আর শেষ কবে বদলানো হলো।",
+        },
+        {
+          label: "What … prints",
+          text: "“What the tags print”-এ প্রতিটি ট্যাগের পাশের প্রথম তালিকা (… জায়গায় ট্যাগের নাম): ট্যাগটি কোন তথ্য ছাপবে।",
+        },
+        {
+          label: "Letter case of",
+          text: "প্রতিটি ট্যাগের পাশের দ্বিতীয় তালিকা: “As it is”, “CAPITALS” বা “small letters”।",
+        },
+        {
+          label: "What it prints",
+          text: "পাতায় নতুন ট্যাগ বসানোর সময়ের তালিকা (“Pick what it prints”): তথ্য বাছলেই ট্যাগটি সেই জায়গায় বসে।",
+        },
+        {
+          label: "Prints nothing",
+          text: "“Placed tags”-এ কোনো ট্যাগের তথ্য বাছা না থাকলে লাল করে এটি লেখা থাকে; ট্যাগটিতে চেপে “Prints”-এ তথ্য বেছে দিন।",
         },
       ],
       next: "সেভ করার পরে টেমপ্লেটটি সঙ্গে সঙ্গে কাজে লাগে: কোটেশন, প্রোফর্মা, ইনভয়েস বা চালানের পাতায় “Template” চাপলে এটি পূরণ হয়, আর তৈরি কাগজ “Printed documents”-এ থাকে। টেমপ্লেট বন্ধ বা মুছলেও আগে বানানো কাগজ থেকে যায়। ক্রেতাকে কিছুই নিজে থেকে পাঠানো হয় না।",

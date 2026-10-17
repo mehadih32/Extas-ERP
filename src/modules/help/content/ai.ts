@@ -136,6 +136,15 @@ export const aiHelp: HelpSection = {
           label: "Try again",
           text: "এআই সেন্টারের যেকোনো পাতায় কোনো অংশ লোড না হলে লাল বাক্সে এই বোতাম আসে। চাপলে সেই অংশ আবার আনা হয়; বাকি পাতা চলতেই থাকে। বারবার না এলে বাক্সের লেখাটি ডেভেলপারকে পাঠান।",
         },
+        {
+          label: "Mehedi & Agents",
+          text: "এআই সেন্টারের প্রথম দলের ট্যাব: “AI Home”, “Mehedi 2.0”, “Agents”, “Skills” আর (মালিকের জন্য) “Chat” পাতা। চাপলে নিচের সারিতে এই দলের পাতাগুলো আসে।",
+        },
+        {
+          label: "Work",
+          text: "কাজের দলের ট্যাব: “Orders”, “Drafts” আর (মালিকের জন্য) “Bot” পাতা।",
+        },
+        { label: "Money", text: "খরচের দলের ট্যাব: “Budget & Costs” আর “Models” পাতা।" },
       ],
       next: "চালু করলে এআই Control-এর ঘর মেনে কাজ শুরু করে: ঘর Ask হলে আগে আপনাকে জিজ্ঞেস করে (“Waiting for your answer”-এ, আর বট লিংক থাকলে বটেও), Do হলে নিজে করে, Off হলে করে না। প্রতিটি চালু, বন্ধ, Pause আর Resume আপনার নামে “Logs”-এ থাকে। এআই চালু থাকলে সকাল 8টায় সকালের সারাংশ আর সন্ধ্যা 7টায় দিনের রিপোর্ট ইনবক্সে ও বটে আসে (“AI” > “System” > “Settings”-এ চালু থাকলে)। চালুর পর “Control”-এ ঠিক করুন এআই কোন কাজ নিজে করবে, আর “Budget & Costs”-এ মাসিক বাজেট দিন।",
       mistakes: [
@@ -1150,7 +1159,7 @@ export const aiHelp: HelpSection = {
         },
         {
           label: "Make the costing sheet",
-          text: "প্রতিটি স্টাইলের পিস আর বায়ারের দাম নিয়ে কস্টিং শিট বানায়। লাইন না থাকলে চাপা যায় না; কস্টিং সামলানোর অনুমতি (“Make costing sheets and add supplier fabric quotes”) লাগে।",
+          text: "প্রতিটি স্টাইলের পিস আর বায়ারের দাম নিয়ে কস্টিং শিট বানায়। লাইন না থাকলে চাপা যায় না; কস্টিং সামলানোর অনুমতি (“Make costing sheets and add supplier fabric quotes”) লাগে। জানালায় আজকের “Exchange rate” দিয়ে “Make” চাপলে শিট তৈরি হয়।",
         },
         {
           label: "Exchange rate",
@@ -1463,7 +1472,7 @@ export const aiHelp: HelpSection = {
         },
         {
           label: "Kind",
-          text: "খসড়ার ধরন: বায়ারকে উত্তর, ফলো-আপ, টাকার রিমাইন্ডার, ক্লেইমের উত্তর, কোটেশন, ইনভয়েস, সাপ্লায়ার বা মিলকে বার্তা, ফ্যাক্টরিকে বার্তা, বা অন্য। কোটেশন আর ইনভয়েস পাঠাতে PIN লাগে।",
+          text: "খসড়ার ধরন: বায়ারকে উত্তর, ফলো-আপ, টাকার রিমাইন্ডার, ক্লেইমের উত্তর, কোটেশন, ইনভয়েস, সাপ্লায়ার বা মিলকে বার্তা, ফ্যাক্টরিকে বার্তা, বা অন্য। কোটেশন আর ইনভয়েস পাঠাতে PIN লাগে। ধরনগুলো: “Follow-up to a buyer” (শুরুতে এটিই বাছা থাকে), “Reply to a buyer”, “Quotation to a buyer”, “Invoice to a buyer”, “Payment reminder to a buyer”, “Claim answer to a buyer”, “Message to a supplier or mill”, “Message to the factory” ও “Other message”।",
         },
         {
           label: "For",
@@ -2118,7 +2127,7 @@ export const aiHelp: HelpSection = {
         },
         {
           label: "Limit per provider, per month",
-          text: "Claude, OpenAI আর Gemini-র জন্য আলাদা মাসিক সীমা। একটি সীমায় পৌঁছালে শুধু তার মডেলের নতুন কাজ থামে।",
+          text: "Claude, OpenAI আর Gemini-র জন্য আলাদা মাসিক সীমা। একটি সীমায় পৌঁছালে শুধু তার মডেলের নতুন কাজ থামে। তিনটি ঘর: “Claude”, “OpenAI” ও “Gemini”, প্রতিটিতে সেই প্রোভাইডারের মডেলগুলোর মাসের সীমা।",
         },
         {
           label: "Save the budget",
@@ -2284,7 +2293,7 @@ export const aiHelp: HelpSection = {
         },
         {
           label: "Claude (built in)",
-          text: "তালিকায় ERP-র নিজের Claude মডেলের দল। নিচে আলাদা দলে প্রোভাইডার থেকে পড়া মডেল থাকে (Claude-এরগুলো “Claude (read from Anthropic)” নামে)। key সরানো থাকলে নামের পাশে “no key now”, দাম না থাকলে “No price: blocked” লেখা আর সেটি বাছা যায় না।",
+          text: "তালিকায় ERP-র নিজের Claude মডেলের দল। নিচে আলাদা দলে প্রোভাইডার থেকে পড়া মডেল থাকে (Claude-এরগুলো “Claude (read from Anthropic)” নামে)। key সরানো থাকলে নামের পাশে “no key now”, দাম না থাকলে “No price: blocked” লেখা আর সেটি বাছা যায় না। এই দলে আছে “Opus 5.5” (বড়), “Sonnet 5.5” (মাঝারি), “Haiku 5.5” (ছোট) আর “Fable 5.1” (সবচেয়ে বড়, আপনি না খুললে বন্ধ)।",
         },
         {
           label: "Set by the owner",

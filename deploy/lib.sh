@@ -572,6 +572,27 @@ lock_settings() {
   mv -f "$host/settings.env.json.new" "$host/settings.env.json"
 }
 
+# The v6.3 restore command set GITHUB_TOKEN and the Google client (its secret
+# written out) on its command line, so they may be in shell history (G14): root's,
+# and that of the user who pasted it. Only the lines that set GITHUB_TOKEN= or
+# GOOGLE_CLIENT_ID= / GOOGLE_CLIENT_SECRET= go; the rest stays, with its owner and
+# mode. Nothing of those lines is printed. Files to clean may be given (tests).
+forget_secrets_in_history() {
+  local pattern='GITHUB_TOKEN=|GOOGLE_CLIENT_(ID|SECRET)=' file kept total=0 found
+  [ $# -gt 0 ] || set -- /root/.bash_history /home/*/.bash_history
+  for file in "$@"; do
+    if [ ! -f "$file" ] || [ -L "$file" ]; then continue; fi
+    found="$(grep -cE "$pattern" "$file" 2>/dev/null || true)"
+    [ "${found:-0}" -gt 0 ] || continue
+    kept="$(grep -vE "$pattern" "$file" || true)"
+    # Written back into the same file, so its owner and mode stay.
+    if [ -n "$kept" ]; then printf '%s\n' "$kept" >"$file"; else : >"$file"; fi
+    total=$((total + found))
+  done
+  [ "$total" -eq 0 ] ||
+    say "$total line$([ "$total" -eq 1 ] || echo s) with a GitHub token or the Google client were taken out of shell history"
+}
+
 # No GitHub token stays on the server in plain text (A8): the old restore kept one
 # for a private repository. While the code can be read without it (the repository
 # is public), it is deleted and git stops using it.

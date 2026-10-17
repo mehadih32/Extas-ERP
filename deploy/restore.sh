@@ -94,6 +94,7 @@ need_root
 load_settings
 take_update_lock
 prune_old_uploads
+forget_secrets_in_history || true
 [ -n "$folder_arg" ] || fail "say which backup to restore, for example: sudo $0 $DATA_DIR/backups/2026-10-04_020000"
 folder="$(realpath -e "$folder_arg" 2>/dev/null)" || fail "$folder_arg does not exist."
 data="$(realpath -e "$DATA_DIR")"

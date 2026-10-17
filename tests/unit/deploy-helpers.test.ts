@@ -211,3 +211,45 @@ write_restored_mark "${folder}" "${dir}/kept.json" "${mark}"; echo "exit $?"`,
     );
   });
 });
+
+describe("the v6.3 restore command's secrets in shell history (G14)", () => {
+  it("takes out only the lines that set the GitHub token or the Google client, printing none of them", async () => {
+    const root = path.join(dir, "root_history");
+    const user = path.join(dir, "user_history");
+    const secret = "GOCSPX-very-secret-value";
+    await writeFile(
+      root,
+      [
+        "ls -la",
+        `curl -fsSLo bootstrap.sh https://example.invalid && sudo GITHUB_REPOSITORY=x/y GITHUB_TOKEN="$T" GOOGLE_CLIENT_ID='1-abc.apps.googleusercontent.com' GOOGLE_CLIENT_SECRET='${secret}' bash bootstrap.sh`,
+        "sudo ./deploy/deploy.sh",
+        "",
+      ].join("\n"),
+      { mode: 0o600 },
+    );
+    await writeFile(user, `export GITHUB_TOKEN=ghp_abcdef123456\ncd /opt\n`, { mode: 0o640 });
+    const done = await withLib(`forget_secrets_in_history "${root}" "${user}" "${dir}/none"`);
+    expect(done.code).toBe(0);
+    expect(readFileSync(root, "utf8")).toBe("ls -la\nsudo ./deploy/deploy.sh\n");
+    expect(readFileSync(user, "utf8")).toBe("cd /opt\n");
+    expect(statSync(root).mode & 0o777).toBe(0o600);
+    expect(statSync(user).mode & 0o777).toBe(0o640);
+    const shown = done.stdout + done.stderr;
+    expect(shown).toContain(
+      "2 lines with a GitHub token or the Google client were taken out of shell history",
+    );
+    for (const hidden of [secret, "ghp_abcdef123456", "1-abc"]) expect(shown).not.toContain(hidden);
+    // Nothing to take out: nothing said.
+    const again = await withLib(`forget_secrets_in_history "${root}" "${user}"`);
+    expect(again.stdout + again.stderr).toBe("");
+  });
+
+  it("runs at every update and every restore", () => {
+    const deploy = readFileSync(path.join("deploy", "deploy.sh"), "utf8");
+    const restore = readFileSync(path.join("deploy", "restore.sh"), "utf8");
+    expect(deploy).toMatch(/forget_secrets_in_history \|\| true/);
+    expect(restore).toMatch(/forget_secrets_in_history \|\| true/);
+    const lib = readFileSync(path.join("deploy", "lib.sh"), "utf8");
+    expect(lib).toMatch(/set -- \/root\/\.bash_history \/home\/\*\/\.bash_history/);
+  });
+});

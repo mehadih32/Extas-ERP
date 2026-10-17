@@ -11,7 +11,7 @@ import {
 import os from "node:os";
 import path from "node:path";
 
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { ACCESS_TREE, leavesOf } from "@/components/settings/roles/access-tree";
 import { PHONE_TABS, TOP_BAR_TABS } from "@/components/shell/nav-items";
@@ -229,17 +229,23 @@ describe("The reader finds every word people press or pick (v6.4 L6)", () => {
   // A small app of its own, written for this test: the reader follows the words
   // through constants, lists of tabs, tables of words and components that show
   // what they are given, as the app's screens do.
-  const app = mkdtempSync(path.join(os.tmpdir(), "help-words-"));
-  afterAll(() => rmSync(app, { recursive: true, force: true }));
+  // Written only when its tests run (a filtered run skips it and leaves nothing behind).
+  let app = "";
+  let files: string[] = [];
+  afterAll(() => {
+    if (app) rmSync(app, { recursive: true, force: true });
+  });
   const write = (rel: string, text: string) => {
     mkdirSync(path.dirname(path.join(app, rel)), { recursive: true });
     writeFileSync(path.join(app, rel), text);
     return rel;
   };
-  const files = [
-    write(
-      "src/components/x/tabs.ts",
-      `export const X_TABS = [
+  beforeAll(() => {
+    app = mkdtempSync(path.join(os.tmpdir(), "help-words-"));
+    files = [
+      write(
+        "src/components/x/tabs.ts",
+        `export const X_TABS = [
          { href: "/x/one", label: "First tab" },
          { href: "/x/two", label: "Second tab" },
        ];
@@ -247,10 +253,10 @@ describe("The reader finds every word people press or pick (v6.4 L6)", () => {
          return X_TABS.filter(() => held.length > 0);
        }
        export const KIND_LABELS: Record<string, string> = { A: "Kind one", B: "Kind two" };`,
-    ),
-    write(
-      "src/components/x/row.tsx",
-      `export function RowOfTabs({ tabs }: { tabs: Array<{ href: string; label: string }> }) {
+      ),
+      write(
+        "src/components/x/row.tsx",
+        `export function RowOfTabs({ tabs }: { tabs: Array<{ href: string; label: string }> }) {
          const under = tabs.length > 3 ? tabs.slice(3).map((t) => t) : [];
          return <div>{under.map((tab) => <DropdownMenuItem key={tab.href}>{tab.label}</DropdownMenuItem>)}</div>;
        }
@@ -266,10 +272,10 @@ describe("The reader finds every word people press or pick (v6.4 L6)", () => {
        export function WhyField({ label = "Reason given" }: { label?: string }) {
          return <Field label={label} />;
        }`,
-    ),
-    write(
-      "src/app/(app)/x/page.tsx",
-      `import { KIND_LABELS, visibleXTabs } from "@/components/x/tabs";
+      ),
+      write(
+        "src/app/(app)/x/page.tsx",
+        `import { KIND_LABELS, visibleXTabs } from "@/components/x/tabs";
        import { Field, PrintButton, RowOfTabs, SignOut, WhyField } from "../../../components/x/row";
        const RANGES = [{ value: "week", label: "This week" }, { value: "month", label: "This month" }];
        export default function Page({ kind, held, who }: { kind: string; held: string[]; who: string }) {
@@ -299,8 +305,9 @@ describe("The reader finds every word people press or pick (v6.4 L6)", () => {
            </div>
          );
        }`,
-    ),
-  ];
+      ),
+    ];
+  });
 
   it("reads tabs given to a component, constants, lists, tables, icon buttons, options and labels", () => {
     const words = pressables(app, files);

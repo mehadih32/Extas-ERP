@@ -87,7 +87,15 @@ export function SectionTabs({
   }, [currentIndex, signature]);
 
   // The tabs as measured; every tab until the row is measured for these very tabs.
-  const { shown, under, measured: fitted } = placeTabs(tabs, measured, signature);
+  // Placed by their places in the list, so the Help reader sees each tab's own words.
+  const placed = placeTabs(
+    tabs.map((_, i) => i),
+    measured,
+    signature,
+  );
+  const fitted = placed.measured;
+  const shown = fitted ? placed.shown.map((i) => tabs[i]!) : tabs;
+  const under = placed.under.map((i) => tabs[i]!);
 
   return (
     <nav

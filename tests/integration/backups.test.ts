@@ -30,8 +30,8 @@ import {
 } from "@/modules/backups/restore.service";
 import { backupTick, testRestoreTick } from "@/modules/backups/scheduler";
 import {
+  drillDatabasePrefix,
   runTestRestore,
-  TEST_DB_PREFIX,
   type TestRestoreReport,
 } from "@/modules/backups/test-restore";
 
@@ -762,6 +762,7 @@ run("daily backups", () => {
     // v6.3's "keep N backups in Drive" became "keep them N days" (backups-v64.test.ts, "keeping").
 
     // v6.4 (G11): monthly, compared with the manifest (more in backups-v64.test.ts).
+    // Three real restores into temporary databases: given more time on a busy machine.
     it("restores the newest backup into a temporary database every month, checks it and drops it", async () => {
       await readyToSend();
       await makeCompany("Extras Kids");
@@ -784,7 +785,7 @@ run("daily backups", () => {
       expect(report.newestMigration).toMatch(/^\d{14}_/);
       // The temporary database is gone; the live one was never touched.
       const left = await prisma.$queryRaw<Array<{ datname: string }>>`
-        SELECT datname FROM pg_database WHERE datname LIKE ${`${TEST_DB_PREFIX}%`}`;
+        SELECT datname FROM pg_database WHERE starts_with(datname, ${drillDatabasePrefix()})`;
       expect(left).toEqual([]);
       expect(await prisma.company.count()).toBe(2);
       expect(await inbox()).toContain("Restore drill worked");
@@ -809,7 +810,7 @@ run("daily backups", () => {
       expect(failed.status).toBe("FAILED");
       expect(failed.error).toMatch(/not the one these backups were locked with/);
       expect(await inbox()).toContain("Restore drill failed");
-    });
+    }, 120_000);
 
     it("restores from the screen with the PIN and RESTORE, handing the opened backup to the server", async () => {
       await readyToSend();

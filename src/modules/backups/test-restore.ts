@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { mkdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -50,6 +50,18 @@ const exec = promisify(execFile);
 const LONG_JOB = { timeout: 2 * 60 * 60 * 1000, maxBuffer: 50 * 1024 * 1024 };
 /** Temporary databases are named so; nothing else is ever dropped. */
 export const TEST_DB_PREFIX = "extas_restore_test_";
+
+/**
+ * This ERP's own temporary databases: the prefix and a tag of its live
+ * database's name (extas_restore_test_<8 hex>_), so a drill never drops one of
+ * another ERP sharing the database server. The full name stays well under
+ * Postgres' 63 characters.
+ */
+export function drillDatabasePrefix(
+  live = pgEnvironment(process.env.DATABASE_URL ?? "").PGDATABASE ?? "",
+): string {
+  return `${TEST_DB_PREFIX}${createHash("sha256").update(live).digest("hex").slice(0, 8)}_`;
+}
 
 /** Tables counted in the backup and today, to show the backup holds the business. */
 const COUNTED = [
@@ -117,12 +129,12 @@ async function dropTestDatabase(name: string) {
   }
 }
 
-/** Drops temporary databases a stopped test left behind. */
-async function dropLeftovers() {
+/** Drops this ERP's temporary databases a stopped drill left behind (only its own prefix). */
+async function dropLeftovers(prefix: string) {
   const rows = await prisma.$queryRaw<Array<{ datname: string }>>`
-    SELECT datname FROM pg_database WHERE datname LIKE ${`${TEST_DB_PREFIX}%`}`;
+    SELECT datname FROM pg_database WHERE starts_with(datname, ${prefix})`;
   for (const { datname } of rows) {
-    if (!datname.startsWith(TEST_DB_PREFIX)) continue;
+    if (!datname.startsWith(prefix)) continue;
     await dropTestDatabase(datname);
   }
 }
@@ -190,16 +202,18 @@ const FULL_NEEDS_KEY =
 async function drill(runId: string, typedKey: string | null) {
   const started = Date.now();
   const work = path.join(backupRoot(), ".test-restore");
-  const database = `${TEST_DB_PREFIX}${Date.now().toString(36)}${randomBytes(3).toString("hex")}`;
   const liveUrl = process.env.DATABASE_URL ?? "";
+  let database = "";
   let backupName: string | null = null;
   let created = false;
   try {
     const live = pgEnvironment(liveUrl).PGDATABASE;
-    if (database === live || !database.startsWith(TEST_DB_PREFIX)) {
+    const prefix = drillDatabasePrefix(live);
+    database = `${prefix}${Date.now().toString(36)}${randomBytes(3).toString("hex")}`;
+    if (database === live || !database.startsWith(prefix) || database.length > 63) {
       throw new Error("refused: the temporary database must not be the live one");
     }
-    await dropLeftovers();
+    await dropLeftovers(prefix);
     const config = await getBackupConfig();
     const token = await driveToken(config);
     if (!token) throw new Error("Google Drive is not connected");

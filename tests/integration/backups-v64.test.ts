@@ -34,7 +34,7 @@ import * as keys from "@/modules/backups/recovery-key.service";
 import { requestRestore } from "@/modules/backups/restore.service";
 import { backupTick, testRestoreTick } from "@/modules/backups/scheduler";
 import { backupHealth, watchBackups } from "@/modules/backups/status";
-import { runTestRestore, TEST_DB_PREFIX } from "@/modules/backups/test-restore";
+import { drillDatabasePrefix, runTestRestore } from "@/modules/backups/test-restore";
 
 import { type FakeCloudflare, startFakeCloudflare } from "../../scripts/fake-cloudflare";
 import { type FakeGoogle, startFakeGoogle } from "../../scripts/fake-google";
@@ -968,7 +968,7 @@ run("v6.4 backups", { timeout: 120_000 }, () => {
       expect(drilled).toMatchObject({ status: "FAILED", sourceName: backup.name });
       expect(drilled.error).toMatch(/^Skipped: the server has .* free, and a restore drill needs/);
       const left = await prisma.$queryRaw<Array<{ datname: string }>>`
-        SELECT datname FROM pg_database WHERE datname LIKE ${`${TEST_DB_PREFIX}%`}`;
+        SELECT datname FROM pg_database WHERE starts_with(datname, ${drillDatabasePrefix()})`;
       expect(left).toEqual([]);
       expect(await inbox()).toContain("Restore drill skipped: the server's disk is nearly full");
       expect(await inbox()).not.toContain("Restore drill failed");
@@ -1075,6 +1075,35 @@ run("v6.4 backups", { timeout: 120_000 }, () => {
   });
 
   describe("the monthly drill (G11)", () => {
+    it("drops only this ERP's own temporary databases, never another ERP's on the same server", async () => {
+      const mine = drillDatabasePrefix();
+      expect(mine).toMatch(/^extas_restore_test_[0-9a-f]{8}_$/);
+      // Another ERP on the same database server (another live database name).
+      const theirs = drillDatabasePrefix("another_erp");
+      expect(theirs).not.toBe(mine);
+      const leftover = `${mine}leftover`;
+      const other = `${theirs}drilling`;
+      await prisma.$executeRawUnsafe(`DROP DATABASE IF EXISTS "${other}"`);
+      await prisma.$executeRawUnsafe(`CREATE DATABASE "${leftover}"`);
+      await prisma.$executeRawUnsafe(`CREATE DATABASE "${other}"`);
+      try {
+        await connectDrive();
+        await setKey();
+        await prepareHost(backupLock(await backups.getBackupConfig())!.key as PublicKey);
+        await backUpNow();
+        const drilled = await runTestRestore({ trigger: "MANUAL", actor: owner, wait: true });
+        expect(drilled.status).toBe("SUCCEEDED");
+        const names = (
+          await prisma.$queryRaw<Array<{ datname: string }>>`SELECT datname FROM pg_database`
+        ).map((d) => d.datname);
+        expect(names.filter((n) => n.startsWith(mine))).toEqual([]);
+        expect(names).toContain(other);
+      } finally {
+        await prisma.$executeRawUnsafe(`DROP DATABASE IF EXISTS "${other}"`);
+        await prisma.$executeRawUnsafe(`DROP DATABASE IF EXISTS "${leftover}"`);
+      }
+    });
+
     it("restores the newest backup into a temporary database only, and compares everything", async () => {
       await connectDrive();
       await setKey();
@@ -1096,7 +1125,7 @@ run("v6.4 backups", { timeout: 120_000 }, () => {
         ledgerBalanced: true,
       });
       const left = await prisma.$queryRaw<Array<{ datname: string }>>`
-        SELECT datname FROM pg_database WHERE datname LIKE ${`${TEST_DB_PREFIX}%`}`;
+        SELECT datname FROM pg_database WHERE starts_with(datname, ${drillDatabasePrefix()})`;
       expect(left).toEqual([]);
       expect(await inbox()).toContain("Restore drill worked");
       const note = await prisma.notificationLog.findFirst({

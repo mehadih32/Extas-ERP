@@ -140,7 +140,7 @@ export function StockHistory({
                   <div className="min-w-0">
                     <p className="font-medium">{what(m)}</p>
                     {m.lot && <p className="text-xs text-muted-foreground">Lot {m.lot}</p>}
-                    <p className="truncate text-sm text-muted-foreground">
+                    <p className="text-sm break-words text-muted-foreground">
                       {sku(m)} · {m.variant.sku}
                     </p>
                   </div>

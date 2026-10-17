@@ -19,16 +19,23 @@ import { REQUESTED_PATH_HEADER, ROUTES, signInPath } from "@/lib/routes";
  *     The screen is told which page was asked for, in case it finds the session
  *     ended (signed out elsewhere, password changed) and has to send them to sign in.
  *   - The Full check's sessions (lib/auth/check-token.ts) only read on the live
- *     site: anything else they send, to a screen or the API, is refused here.
+ *     site, and on the API only the routes listed as read-only (deny by
+ *     default); a few routes they never open on any site. Anything else is
+ *     refused here, and the server refuses their writes again underneath
+ *     (lib/read-only.ts).
  */
 export function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
   const token = request.cookies.get(SESSION_COOKIE)?.value;
-  if (!checkMayDo(request.method, token, process.env.DEMO_SITE === "on")) {
+  if (!checkMayDo(request.method, token, process.env.DEMO_SITE === "on", pathname)) {
     return NextResponse.json(
       {
         ok: false,
-        error: { code: "FORBIDDEN", message: "The Full check only reads on the live site." },
+        error: {
+          code: "FORBIDDEN",
+          message:
+            "The Full check only reads, and only what is listed as safe for it (lib/auth/check-token.ts).",
+        },
       },
       { status: 403 },
     );

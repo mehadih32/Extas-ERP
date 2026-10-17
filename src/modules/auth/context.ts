@@ -63,7 +63,7 @@ const loadCompanyAccess = cache(async (): Promise<{ ctx: CompanyContext; termsDu
   if (!companyId) {
     throw new AppError("NO_COMPANY", "Select a company to continue.");
   }
-  const access = await resolveCompanyAccess(current.user, companyId);
+  const access = await resolveCompanyAccess(current.user, companyId, current.session.checkRoleId);
   if (!access) {
     throw new AppError(
       "NO_COMPANY",

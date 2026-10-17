@@ -15,6 +15,14 @@ import { ZodError } from "zod";
  * only pushed a branch, asks again when checks fail (twice at most), tells the
  * owner when a fix is ready, and merges it only with the PIN. Only the
  * platform owner does any of it. GitHub is a stand-in (tests/fixtures/fake-github.ts).
+ *
+ * v6.4 A: a fix is ready only when it is Claude Code's own work (its GitHub
+ * App's commits) for that exact issue, from a branch of this repository, into
+ * main, never a pull request that merely names "#n"; the owner sees who opened
+ * it and the files it changes, and merges exactly the commit shown. Issues
+ * carry no screen text or business data. The check's sessions belong to its
+ * own check account, one per role, never a real person's login, and only a
+ * run of the workflow on main may open a check.
  */
 
 import { hashSessionToken } from "@/lib/auth/token";
@@ -39,9 +47,19 @@ import {
 } from "@/modules/ai/full-check/full-check.service";
 import { FIX_CHECKS_COMMENT } from "@/modules/ai/full-check/texts";
 import { setPin } from "@/modules/ai/settings.service";
+import { login } from "@/modules/auth/auth.service";
+import { validateSessionToken } from "@/modules/auth/session.service";
+import { resolveCompanyAccess } from "@/modules/companies/access";
+import { addMember } from "@/modules/rbac/member.service";
 import { createRole } from "@/modules/rbac/role.service";
 
-import { type FakeGitHub, startFakeGitHub } from "../fixtures/fake-github";
+import {
+  claudeCommit,
+  CLAUDE_BOT,
+  type FakeGitHub,
+  type FakePull,
+  startFakeGitHub,
+} from "../fixtures/fake-github";
 import { addToCompany, contextFor, makeCompany, makeUser, resetDb } from "./helpers";
 
 const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
@@ -168,7 +186,7 @@ run("Full check and Claude Code", () => {
     expect(audits.map((a) => a.summary).join("\n")).not.toContain(gh.token);
   });
 
-  it("opens a check once, only with the pass and GitHub's proof, as the owner and one member per role", async () => {
+  it("opens a check once, only with the pass and GitHub's proof from main, with its own check account per role", async () => {
     await connect();
     const { id, inputs } = await started();
     expect(inputs).toMatchObject({ site: SITE, run: id });
@@ -221,30 +239,102 @@ run("Full check and Claude Code", () => {
       "FORBIDDEN",
       /GitHub Actions/,
     );
+    // Only the workflow as it is on main: never a copy changed on another branch.
+    await expectAppError(
+      beginCheck({
+        run: id,
+        pass: inputs.pass,
+        proof: proof({
+          workflow_ref: `${REPO}/.github/workflows/full-check.yml@refs/heads/try-something`,
+          ref: "refs/heads/try-something",
+        }),
+      }),
+      "FORBIDDEN",
+      /main/,
+    );
+    await expectAppError(
+      beginCheck({ run: id, pass: inputs.pass, proof: proof({ ref: "refs/heads/try-something" }) }),
+      "FORBIDDEN",
+      /main/,
+    );
 
     // None of that used the pass up.
     const begun = await beginCheck({ run: id, pass: inputs.pass, proof: proof() });
     expect(begun.writes).toBe(false);
     expect(begun.minutes).toBe(10);
-    expect(begun.roles[0]).toMatchObject({ role: "Owner", member: expect.any(String) });
+    expect(begun.roles[0]).toMatchObject({ role: "Owner", member: "Full check (Owner)" });
+    // Every role is checked, with or without members; the Owner's role is the owner's view.
+    const roles = await prisma.role.findMany({ where: { companyId: env.company.id } });
     const roleNames = begun.roles.map((r) => r.role);
-    expect(roleNames).toContain("Accounts");
-    expect(roleNames).toContain("Production Manager");
-    // The partner shares the owner's role; the platform owner in Sales and the AI never stand in.
-    expect(roleNames.filter((r) => r === "Super Admin")).toEqual([]);
-    expect(roleNames).not.toContain("Sales Executive");
-    expect(begun.notChecked).toContain("Sales Executive");
-    expect(begun.notChecked).toContain("Checker");
-    expect(begun.notChecked).toContain("Employee");
+    expect(roleNames.slice(1).sort()).toEqual(
+      roles
+        .filter((r) => r.systemRole !== "SUPER_ADMIN")
+        .map((r) => r.name)
+        .sort(),
+    );
+    expect(begun.notChecked).toEqual([]);
     for (const s of begun.roles) expect(s.cookie.startsWith("fullcheck.")).toBe(true);
+
+    // Every session is a check account's (one per role), never a real person's login.
     const sessions = await prisma.session.findMany({ where: { userAgent: `Full check ${id}` } });
     expect(sessions).toHaveLength(begun.roles.length);
-    expect(sessions.map((s) => s.token)).toContain(hashSessionToken(begun.roles[0]!.cookie));
-    const ownerSession = sessions.find(
-      (s) => s.token === hashSessionToken(begun.roles[0]!.cookie),
-    )!;
-    expect(ownerSession.userId).toBe(env.owner.user.id);
-    expect(ownerSession.expiresAt.getTime() - Date.now()).toBeLessThanOrEqual(50 * 60_000);
+    const sessionOf = (role: string) =>
+      sessions.find(
+        (s) => s.token === hashSessionToken(begun.roles.find((r) => r.role === role)!.cookie),
+      )!;
+    const superAdmin = roles.find((r) => r.systemRole === "SUPER_ADMIN")!;
+    const people = [env.owner.user.id, env.partner.user.id];
+    for (const s of sessions) {
+      const account = await prisma.user.findUniqueOrThrow({ where: { id: s.userId } });
+      expect(account.email).toBe(`check-${s.checkRoleId}@check.invalid`);
+      expect(account).toMatchObject({ passwordHash: null, isSuperAdmin: false });
+      expect(account.name).toMatch(/^Full check \(.+\)$/);
+      expect(people).not.toContain(account.id);
+      // It is no one's colleague: no membership, so no team list, inbox or role ever shows it.
+      expect(await prisma.companyMembership.count({ where: { userId: account.id } })).toBe(0);
+      expect(s.expiresAt.getTime() - Date.now()).toBeLessThanOrEqual(50 * 60_000);
+    }
+    expect(new Set(sessions.map((s) => s.userId)).size).toBe(sessions.length);
+    const checkUser = await prisma.user.findUniqueOrThrow({
+      where: { id: sessionOf("Checker").userId },
+    });
+    expect(checkUser.name).toBe("Full check (Checker)");
+    expect(sessionOf("Owner")).toMatchObject({ checkRoleId: superAdmin.id, checkPlatform: true });
+    expect(sessionOf("Checker")).toMatchObject({
+      checkRoleId: env.checkerRole.id,
+      checkPlatform: false,
+    });
+
+    // A check session sees exactly its role (and the owner's view the platform owner's).
+    const owner = await validateSessionToken(begun.roles[0]!.cookie);
+    expect(owner!.user.isSuperAdmin).toBe(true);
+    const checker = await validateSessionToken(
+      begun.roles.find((r) => r.role === "Checker")!.cookie,
+    );
+    expect(checker!.user.isSuperAdmin).toBe(false);
+    const access = await resolveCompanyAccess(
+      checker!.user,
+      env.company.id,
+      checker!.session.checkRoleId,
+    );
+    expect([...access!.permissions]).toEqual(["dashboard.view"]);
+    expect(access!.role?.name).toBe("Checker");
+    // A check session never writes, not even "last seen".
+    const before = await prisma.session.update({
+      where: { id: sessionOf("Checker").id },
+      data: { lastSeenAt: new Date(Date.now() - 3_600_000) },
+    });
+    await validateSessionToken(begun.roles.find((r) => r.role === "Checker")!.cookie);
+    expect(
+      (await prisma.session.findUniqueOrThrow({ where: { id: before.id } })).lastSeenAt,
+    ).toEqual(before.lastSeenAt);
+    // The check account can never sign in or be added to a team.
+    await expect(
+      login({ email: checkUser.email, password: "anything-at-all-1" }),
+    ).rejects.toBeInstanceOf(AppError);
+    await expect(
+      addMember(env.owner, { email: checkUser.email, name: "Someone", roleId: superAdmin.id }),
+    ).rejects.toBeInstanceOf(ZodError);
 
     const row = await prisma.fullCheckRun.findUniqueOrThrow({ where: { id } });
     expect(row).toMatchObject({ status: "RUNNING", passHash: null });
@@ -376,9 +466,17 @@ run("Full check and Claude Code", () => {
         {
           role: "Owner",
           kind: "ERROR",
-          screen: "/sales/orders",
-          text: "The screen showed an error",
-          detail: "ERR-123: ```boom```",
+          screen: "/sales/orders?q=Rahim%20Textiles",
+          pattern: "/sales/orders",
+          text: "The screen showed an error for Rahim Textiles",
+          detail: "ERR-123: ```boom``` Rahim Textiles owes 45,000",
+          status: 500,
+          errorType: "TypeError",
+          stack: [
+            "    at OrderRow (https://erp.test/_next/static/chunks/app-orders.js:1:2345)",
+            "    at Rahim Textiles owes 45000",
+            "    at f (https://evil.example/x.js:1:1)",
+          ],
           shot: true,
         },
         {
@@ -393,13 +491,40 @@ run("Full check and Claude Code", () => {
     const problemId = problems[0]!.id;
 
     await expectAppError(sendFix(env.partner, { problemIds: [problemId] }), "FORBIDDEN");
+    // A name that shows if it leaks (the helper's is a plain word).
+    await prisma.user.update({ where: { id: env.owner.user.id }, data: { name: "Mehadi Hasan" } });
     const sent = await sendFix(env.owner, { problemIds: [problemId] });
     const issue = gh.state.issues.find((i) => i.number === sent.issueNumber)!;
     expect(issue.body.startsWith("@claude ")).toBe(true);
-    expect(issue.title).toBe("Full check: The screen showed an error (/sales/orders)");
+    expect(issue.title).toBe("Full check: Error on /sales/orders");
     expect(issue.body).toContain("`/sales/orders`");
-    expect(issue.body).toContain("ERR-123: '''boom'''");
-    expect(issue.body).toContain("Fixes #");
+    // Only the screen's path, the error's type and code, the status and our own stack lines.
+    expect(issue.body).toContain("ERR-123");
+    expect(issue.body).toContain("500");
+    expect(issue.body).toContain("TypeError");
+    expect(issue.body).toContain("at OrderRow (/_next/static/chunks/app-orders.js:1:2345)");
+    const company = await prisma.company.findUniqueOrThrow({ where: { id: env.company.id } });
+    for (const leak of [
+      "Rahim",
+      "45,000",
+      "45000",
+      "boom",
+      "evil.example",
+      "owner@extas.test",
+      company.name,
+      "Mehadi",
+    ]) {
+      expect(issue.body, leak).not.toContain(leak);
+      expect(issue.title, leak).not.toContain(leak);
+    }
+    // Claude Code works on the issue's own branch; the ERP opens the pull request.
+    expect(issue.body).toContain(`claude/issue-${sent.issueNumber}-`);
+    expect(issue.body).toContain("Never push to `main`");
+    expect(issue.body).toContain("CLAUDE.md");
+    // The problem's full detail and screenshot stay in the ERP, for the owner only.
+    const kept = await prisma.fullCheckProblem.findUniqueOrThrow({ where: { id: problemId } });
+    expect(kept).toMatchObject({ status: 500, errorType: "TypeError" });
+    expect(kept.detail).toContain("boom");
     await expectAppError(sendFix(env.owner, { problemIds: [problemId] }), "VALIDATION", /already/);
     // "Fix all" takes the rest of the check.
     const all = await sendFix(env.owner, { runId: id });
@@ -475,12 +600,15 @@ run("Full check and Claude Code", () => {
     expect(told.userId).toBe(env.owner.user.id);
 
     // Merging asks for the PIN (set one first), and never merges failed checks.
-    await expectAppError(mergeFix(env.partner, gaveUp.id, {}), "FORBIDDEN");
-    const noPin = await expectAppError(mergeFix(env.owner, gaveUp.id, {}), "VALIDATION");
+    await expectAppError(mergeFix(env.partner, gaveUp.id, { sha: "sha-3" }), "FORBIDDEN");
+    const noPin = await expectAppError(
+      mergeFix(env.owner, gaveUp.id, { sha: "sha-3" }),
+      "VALIDATION",
+    );
     expect(noPin.details?.pinNotSet).toBeTruthy();
     await setPin(env.owner, { pin: "2468" });
     await expectAppError(
-      mergeFix(env.owner, gaveUp.id, { pin: "2468" }),
+      mergeFix(env.owner, gaveUp.id, { pin: "2468", sha: "sha-3" }),
       "VALIDATION",
       /checks failed/,
     );
@@ -501,16 +629,39 @@ run("Full check and Claude Code", () => {
     expect(shown).toMatchObject({
       canMerge: true,
       stateText: `Fix ready: merge PR #${pull.number}`,
+      headSha: "sha-4",
+      fix: {
+        author: gh.state.tokenUser,
+        openedByErp: true,
+        files: [
+          { name: "src/modules/sales/order.service.ts", added: 4, removed: 1, status: "modified" },
+          { name: "tests/unit/order.test.ts", added: 20, removed: 0, status: "added" },
+        ],
+        filesTotal: 2,
+        careful: [],
+      },
     });
     expect(screen.problems.find((p) => p.id === problemId)!.request!.text).toBe(
       `Fix ready: merge PR #${pull.number}`,
     );
 
-    const askPin = await expectAppError(mergeFix(env.owner, gaveUp.id, {}), "VALIDATION");
+    const askPin = await expectAppError(
+      mergeFix(env.owner, gaveUp.id, { sha: "sha-4" }),
+      "VALIDATION",
+    );
     expect(askPin.details?.pin).toBeTruthy();
-    await expectAppError(mergeFix(env.owner, gaveUp.id, { pin: "1111" }), "VALIDATION");
+    await expectAppError(
+      mergeFix(env.owner, gaveUp.id, { pin: "1111", sha: "sha-4" }),
+      "VALIDATION",
+    );
+    // Only the commit the owner looked at is merged.
+    await expectAppError(
+      mergeFix(env.owner, gaveUp.id, { pin: "2468", sha: "sha-3" }),
+      "CONFLICT",
+      /changed since you looked/,
+    );
     expect(gh.state.merged).toEqual([]);
-    const merged = await mergeFix(env.owner, gaveUp.id, { pin: "2468" });
+    const merged = await mergeFix(env.owner, gaveUp.id, { pin: "2468", sha: "sha-4" });
     expect(merged.deploys).toBe(`https://github.com/${REPO}/actions/workflows/deploy.yml`);
     expect(gh.state.merged).toEqual([{ number: pull.number, sha: "sha-4" }]);
     expect(await request()).toMatchObject({ state: "MERGED", mergedById: env.owner.user.id });
@@ -554,6 +705,8 @@ run("Full check and Claude Code", () => {
     });
 
     const closed = await asked("Show the cutting date on the batch page.");
+    const closedBranch = `claude/issue-${closed.issueNumber}-20261016-0200`;
+    gh.state.branches.push(closedBranch);
     gh.state.pulls.push({
       number: 900,
       html_url: "https://github.com/pull/900",
@@ -561,7 +714,9 @@ run("Full check and Claude Code", () => {
       merged_at: null,
       title: "Show the cutting date",
       body: `Fixes #${closed.issueNumber}`,
-      head: { ref: "someone/branch", sha: "sha-x" },
+      user: CLAUDE_BOT,
+      head: { ref: closedBranch, sha: "sha-x", repo: { full_name: REPO } },
+      base: { ref: "main" },
     });
     expect(await followRequest(gitHub, closed)).toMatchObject({
       state: "STOPPED",
@@ -574,5 +729,178 @@ run("Full check and Claude Code", () => {
     const before = gh.calls.length;
     await lookAgain(env.owner);
     expect(gh.calls.length).toBe(before);
+  });
+
+  it("offers a fix for merging only when Claude Code made it for that issue, from this repository, into main", async () => {
+    await connect();
+    const gitHub = { repo: REPO, token: gh.token };
+    await setPin(env.owner, { pin: "2468" });
+    const asked = async (text: string) => {
+      const r = await askClaudeCode(env.owner, { text });
+      return prisma.claudeCodeRequest.findFirstOrThrow({ where: { issueNumber: r.issueNumber } });
+    };
+    let next = 500;
+    /** A pull request on GitHub (Claude Code's own, into main, unless told otherwise). */
+    const pullFor = (branch: string, change: Partial<FakePull> = {}): FakePull => {
+      const number = next++;
+      const pull: FakePull = {
+        number,
+        html_url: `https://github.com/${REPO}/pull/${number}`,
+        state: "open",
+        merged_at: null,
+        title: "A fix",
+        body: null,
+        user: CLAUDE_BOT,
+        head: { ref: branch, sha: `sha-${number}`, repo: { full_name: REPO } },
+        base: { ref: "main" },
+        ...change,
+      };
+      gh.state.pulls.push(pull);
+      gh.state.checks[pull.head.sha] = [
+        { name: "Tests and build", status: "completed", conclusion: "success" },
+      ];
+      return pull;
+    };
+    const look = async (id: string) =>
+      followRequest(gitHub, await prisma.claudeCodeRequest.findUniqueOrThrow({ where: { id } }));
+    const shown = async (id: string) =>
+      (await getFullCheck(env.owner)).requests.find((r) => r.id === id)!;
+
+    // 1. A pull request that only names the issue ("Fixes #n") is never taken.
+    const named = await asked("Show the buyer's country on the order screen.");
+    pullFor("someone/feature", {
+      user: { login: "stranger", type: "User" },
+      title: `Fixes #${named.issueNumber}`,
+      body: `Closes #${named.issueNumber}`,
+    });
+    expect(await look(named.id)).toMatchObject({ state: "SENT", prNumber: null });
+
+    // 2. Claude Code's branch name copied in a fork is never taken either.
+    const forked = await asked("Add a cutting date column to the batch list.");
+    const forkBranch = `claude/issue-${forked.issueNumber}-20261016-0300`;
+    pullFor(forkBranch, {
+      user: { login: "stranger", type: "User" },
+      head: { ref: forkBranch, sha: "sha-fork", repo: { full_name: "stranger/erp" } },
+    });
+    expect(await look(forked.id)).toMatchObject({ state: "SENT", prNumber: null });
+
+    // 3. On Claude Code's branch, but someone else opened it, or it goes elsewhere, or
+    //    has a commit that is not Claude Code's: shown, never offered for merging.
+    const cases: Array<[string, Partial<FakePull> | null, RegExp]> = [
+      [
+        "opened by a person",
+        { user: { login: "stranger", type: "User" } },
+        /not opened by Claude Code/,
+      ],
+      ["into another branch", { base: { ref: "develop" } }, /not into main/],
+      ["with a stranger's commit", null, /not Claude Code's/],
+    ];
+    for (const [what, change, why] of cases) {
+      const r = await asked(`Make the stock list sortable (${what}).`);
+      const branch = `claude/issue-${r.issueNumber}-20261016-0400`;
+      gh.state.branches.push(branch);
+      const pull = pullFor(branch, change ?? {});
+      if (!change) {
+        gh.state.pullCommits[pull.number] = [
+          claudeCommit("sha-a"),
+          {
+            sha: pull.head.sha,
+            author: { login: "stranger", type: "User" },
+            committer: { login: "stranger", type: "User" },
+            verified: false,
+          },
+        ];
+      }
+      const looked = await look(r.id);
+      expect(looked, what).toMatchObject({
+        state: "PR_OPEN",
+        prNumber: pull.number,
+        prVetted: false,
+      });
+      expect(looked.prProblem, what).toMatch(why);
+      const view = await shown(r.id);
+      expect(view.canMerge, what).toBe(false);
+      expect(view.stateText, what).toMatch(/cannot be merged here/);
+      await expectAppError(
+        mergeFix(env.owner, r.id, { pin: "2468", sha: pull.head.sha }),
+        "VALIDATION",
+        /cannot be merged here/,
+      );
+      // The owner is never told it is ready.
+      expect(
+        await prisma.notificationLog.count({
+          where: { entityId: r.id, subject: { startsWith: "Fix ready" } },
+        }),
+      ).toBe(0);
+    }
+    // The issue's number must match exactly: issue 5's branch is not issue 50's.
+    const exact = await asked("Print the packing list in landscape.");
+    gh.state.branches.push(`claude/issue-${exact.issueNumber}0-20261016-0500`);
+    pullFor(`claude/issue-${exact.issueNumber}0-20261016-0500`);
+    expect(await look(exact.id)).toMatchObject({ state: "SENT", prNumber: null });
+
+    // 4. Claude Code's own pull request into main: the owner sees who made it and
+    //    every changed file (with a warning on the ones that run or deploy the ERP).
+    const good = await asked("Show the season on the tech pack list.");
+    const branch = `claude/issue-${good.issueNumber}-20261016-0600`;
+    gh.state.branches.push(branch);
+    const pull = pullFor(branch);
+    gh.state.pullFiles[pull.number] = [
+      {
+        filename: "src/components/production/tech-pack-list.tsx",
+        status: "modified",
+        additions: 12,
+        deletions: 3,
+      },
+      { filename: ".github/workflows/deploy.yml", status: "modified", additions: 1, deletions: 1 },
+    ];
+    expect(await look(good.id)).toMatchObject({
+      state: "PR_OPEN",
+      prVetted: true,
+      prProblem: null,
+      prAuthor: "claude[bot]",
+      prOpenedByErp: false,
+      checks: "passed",
+    });
+    expect(await shown(good.id)).toMatchObject({
+      canMerge: true,
+      headSha: pull.head.sha,
+      fix: {
+        author: "claude[bot]",
+        openedByErp: false,
+        filesTotal: 2,
+        careful: [".github/workflows/deploy.yml"],
+      },
+    });
+    // Claude Code pushes again after the owner looked: the merge waits for a new look.
+    const seen = pull.head.sha;
+    pull.head.sha = "sha-newer";
+    gh.state.checks["sha-newer"] = [
+      { name: "Tests and build", status: "completed", conclusion: "success" },
+    ];
+    await expectAppError(
+      mergeFix(env.owner, good.id, { pin: "2468", sha: seen }),
+      "CONFLICT",
+      /changed since you looked/,
+    );
+    expect(gh.state.merged).toEqual([]);
+    // A stranger's commit pushed onto Claude Code's branch is caught at merge time too.
+    gh.state.pullCommits[pull.number] = [
+      {
+        sha: "sha-newer",
+        author: { login: "stranger", type: "User" },
+        committer: { login: "stranger", type: "User" },
+        verified: false,
+      },
+    ];
+    await expectAppError(
+      mergeFix(env.owner, good.id, { pin: "2468", sha: "sha-newer" }),
+      "VALIDATION",
+      /cannot be merged here/,
+    );
+    gh.state.pullCommits[pull.number] = [claudeCommit(seen), claudeCommit("sha-newer")];
+    await look(good.id);
+    await mergeFix(env.owner, good.id, { pin: "2468", sha: "sha-newer" });
+    expect(gh.state.merged).toEqual([{ number: pull.number, sha: "sha-newer" }]);
   });
 });

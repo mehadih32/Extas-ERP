@@ -77,13 +77,19 @@ export function BookingApproval({ booking: b }: { booking: Booking }) {
                   type="button"
                   onClick={() => setAsking("approve")}
                   disabled={blocks.length > 0}
-                  title={blocks.length > 0 ? "Put the red items right first" : undefined}
+                  title={
+                    blocks.length === 0
+                      ? undefined
+                      : overridable && !b.can.override
+                        ? "Put the red items right first, or ask the owner to approve it with a reason"
+                        : "Put the red items right first"
+                  }
                 >
                   <ShieldCheckIcon aria-hidden />
                   Approve booking
                 </Button>
               )}
-              {b.can.approve && overridable && (
+              {b.can.override && overridable && (
                 <Button type="button" variant="outline" onClick={() => setAsking("override")}>
                   <ShieldAlertIcon aria-hidden />
                   Approve with a reason

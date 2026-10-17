@@ -42,8 +42,12 @@ export type AiNode = AiLeaf | AiBranch;
 
 export const isAiBranch = (node: AiNode): node is AiBranch => "children" in node;
 
-/** Permissions the AI never gets: the team, roles, backups and its own controls. */
+/**
+ * Permissions the AI never gets: the team, roles, backups, its own controls,
+ * and approving a booking past a check (only a person, with a reason).
+ */
 export const NEVER_FOR_AI: ReadonlySet<string> = new Set([
+  "production.bookings.override",
   "company.members.manage",
   "company.roles.manage",
   "backups.manage",

@@ -20,11 +20,12 @@ import { discardDraft, PRICE_DRAFTS, sendDraft } from "../drafts.service";
 import { decideHouseRule } from "../house-rules.service";
 import { cardPinReason } from "../chat/chat.service";
 import { answerDeletion, answerPermission, needsPin } from "../requests.service";
-import { aiSettingsOf, checkPin, PIN_CHECKED } from "../settings.service";
+import { aiSettingsOf, checkPin, PIN_CHECKED, pinMatches } from "../settings.service";
 import { logBot, senderFor } from "./bot.service";
 import type { Incoming } from "./channel";
 import { type BotOut, type ButtonPress, readButton, renderAnswer } from "./render";
 import { readTelegramUpdate } from "./telegram";
+import { PIN_TEXT } from "./pin-scrub";
 import { readWhatsAppPayload, whatsappSignatureOk } from "./whatsapp";
 
 /*
@@ -59,7 +60,7 @@ const isRepeat = (error: unknown) =>
   error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
 
 /** What the log, the job and the screen keep instead of a PIN. */
-export const PIN_TEXT = "[PIN]";
+export { PIN_TEXT };
 
 const STOP_WORDS = /^(cancel|stop|বাতিল|না)$/i;
 
@@ -86,6 +87,45 @@ async function checkPinNow(mine: AiBotLink[], m: Incoming, now: Date): Promise<P
     }
   }
   return checks;
+}
+
+/** A message that looks like a PIN: 4 to 8 digits and nothing else. */
+const LOOKS_LIKE_PIN = /^\s*\d{4,8}\s*$/;
+
+/** A PIN request that ran out this long ago still makes digits a (late) PIN. */
+const LATE_PIN_MINUTES = 60;
+
+/** Digits checked against the PIN when nothing asked for one, per owner and hour. */
+const STRAY_CHECKS_PER_HOUR = 5;
+
+/**
+ * Digits that are a PIN although no store waits for one now (v6.4 A5), so
+ * they are hidden everywhere too: "late" when a store asked for the PIN and
+ * the five minutes ran out (in the last hour), "stray" when they are the PIN
+ * of a store of this chat. A few checks an hour at most, so the bot never
+ * becomes a way to guess the PIN; past that, digits are words as usual.
+ */
+async function hiddenPin(
+  mine: AiBotLink[],
+  m: Incoming,
+  now: Date,
+): Promise<"late" | "stray" | null> {
+  const text = m.text ?? "";
+  if (m.callback || !LOOKS_LIKE_PIN.test(text)) return null;
+  const since = now.getTime() - LATE_PIN_MINUTES * 60_000;
+  if (mine.some((l) => l.pending && l.pendingUntil && l.pendingUntil.getTime() > since)) {
+    return "late";
+  }
+  for (const link of mine) {
+    const owner = link.ownerId ?? link.id;
+    try {
+      checkRateLimit(`ai-pin-stray:${link.companyId}:${owner}`, STRAY_CHECKS_PER_HOUR, 3_600_000);
+    } catch {
+      continue;
+    }
+    if (await pinMatches(link.companyId, text.trim())) return "stray";
+  }
+  return null;
 }
 
 /** The store a message is for, when it can be told now; null when the worker must ask. */
@@ -117,9 +157,12 @@ async function keep(links: AiBotLink[], channel: AiBotChannel, botKey: string, m
   // A stranger is never answered; past a few messages an hour they are not even logged.
   if (!known && !strangerAllowed(first.id, m.chatId)) return;
   const pin = known ? await checkPinNow(mine, m, now) : null;
+  const hidden = known && !pin ? await hiddenPin(mine, m, now) : null;
   // Kept in the store it is for (the worker moves it if it can only tell later).
-  const store = linking ?? (known ? await storeOfMessage(mine, m) : null) ?? mine[0] ?? first;
-  const incoming: Incoming = pin ? { ...m, text: PIN_TEXT } : m;
+  const store = hidden
+    ? (mine.find((l) => l.pending) ?? mine[0]!)
+    : (linking ?? (known ? await storeOfMessage(mine, m) : null) ?? mine[0] ?? first);
+  const incoming: Incoming = pin || hidden ? { ...m, text: PIN_TEXT } : m;
   try {
     await prisma.$transaction(async (tx) => {
       const row = await tx.aiBotMessage.create({
@@ -144,6 +187,7 @@ async function keep(links: AiBotLink[], channel: AiBotChannel, botKey: string, m
             botKey,
             incoming,
             ...(pin ? { pin } : {}),
+            ...(hidden ? { hidden } : {}),
           } as unknown as Prisma.InputJsonObject,
           maxAttempts: 1,
         });
@@ -229,6 +273,8 @@ type IncomingJob = {
   incoming: Incoming;
   /** The PIN's check, made when it arrived (the PIN itself is not here). */
   pin?: PinChecks;
+  /** A PIN typed after its five minutes, or when nothing asked for it (hiddenPin). */
+  hidden?: "late" | "stray";
 };
 
 /** Moves a kept message to the store it turned out to be for. */
@@ -271,6 +317,8 @@ async function ownerContext(link: AiBotLink): Promise<CompanyContext | null> {
       expiresAt: new Date(now.getTime() + 60_000),
       lastSeenAt: now,
       createdAt: now,
+      checkRoleId: null,
+      checkPlatform: false,
     },
     user,
     ...access,
@@ -333,7 +381,14 @@ async function sendReport(link: AiBotLink, chatId: string, exportId: string) {
 
 /** The background job: one message or button press from a bot. */
 export async function runBotIncomingJob(job: BackgroundJob) {
-  const { messageId, channel, botKey, incoming: m, pin } = job.payload as unknown as IncomingJob;
+  const {
+    messageId,
+    channel,
+    botKey,
+    incoming: m,
+    pin,
+    hidden,
+  } = job.payload as unknown as IncomingJob;
   const done = (status: "DONE" | "IGNORED", error?: string) =>
     prisma.aiBotMessage.update({
       where: { id: messageId },
@@ -400,6 +455,7 @@ export async function runBotIncomingJob(job: BackgroundJob) {
 
   try {
     if (m.callback) await pressed(mine, m, messageId);
+    else if (hidden) await hidePin(mine, m, hidden);
     else await wrote(mine, m, messageId, pin ?? null);
     await done("DONE");
   } catch (error) {
@@ -411,6 +467,35 @@ export async function runBotIncomingJob(job: BackgroundJob) {
       words("Something went wrong on my side. Try again, or use the ERP."),
     );
   }
+}
+
+/**
+ * A PIN that came too late, or when nothing asked for it: taken out of the
+ * chat, a request that ran out is ended, and nothing else is done with it.
+ */
+async function hidePin(mine: AiBotLink[], m: Incoming, hidden: "late" | "stray") {
+  const link = mine.find((l) => l.pending) ?? mine[0]!;
+  await senderFor(link).remove(m.chatId, m.messageId);
+  if (hidden === "late") {
+    await prisma.aiBotLink.updateMany({
+      where: { id: { in: mine.map((l) => l.id) }, pendingUntil: { lte: new Date() } },
+      data: { pending: Prisma.DbNull, pendingUntil: null },
+    });
+    return say(
+      link,
+      m.chatId,
+      words(
+        "The PIN request ran out after 5 minutes, so nothing was done and your PIN was hidden. Press the button again.",
+      ),
+    );
+  }
+  return say(
+    link,
+    m.chatId,
+    words(
+      "That was your PIN, so it was hidden and nothing was done. Send it only when the bot asks for it.",
+    ),
+  );
 }
 
 /** Which store a message is for: the name at its start, else the only store, else one waiting for a PIN. */

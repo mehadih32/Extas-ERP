@@ -17,11 +17,12 @@ import * as github from "@/modules/github/github";
 import { verifyActionsToken } from "@/modules/github/oidc";
 import { sendInApp } from "@/modules/reminders/notification.service";
 
-import { AI_EMAIL_DOMAIN } from "../ai-address";
 import { pushToBot } from "../bot/push";
 import { type PinProof, requirePin } from "../settings.service";
+import { checkAccountFor } from "./check-account";
 import {
   askIssue,
+  carefulFiles,
   FIX_CHECKS_COMMENT,
   fixIssue,
   KIND_LABEL,
@@ -37,13 +38,20 @@ import {
  * button asks GitHub to run .github/workflows/full-check.yml: GitHub's
  * computers open every screen as the owner and as each role, every PDF, every
  * link and every button that changes nothing, and send back the problems with
- * screenshots. The check fetches its sessions with a one-time pass and sends
- * its report with a key of its own; on the live site its sessions can only
- * read (src/proxy.ts). Each problem can go to Claude Code ("Fix with Claude
- * Code", or "Fix all"), and the owner can ask for something new ("Ask Claude
- * Code"): the ERP opens a GitHub issue for the Claude Code GitHub Action,
- * follows it to its pull request, asks Claude Code again when its checks fail,
- * and the owner merges it here with the PIN; the Deploy workflow installs it.
+ * screenshots. The check fetches its sessions with a one-time pass and
+ * GitHub's proof that it is the workflow on main, and sends its report with a
+ * key of its own. Its sessions belong to its own check accounts, one per role
+ * (check-account.ts), never a real person's login; on the live site they can
+ * only read (src/proxy.ts, src/lib/read-only.ts). Each problem can go to
+ * Claude Code ("Fix with Claude Code", or "Fix all"), and the owner can ask
+ * for something new ("Ask Claude Code"): the ERP opens a GitHub issue for the
+ * Claude Code GitHub Action (only the screen's route, status code, error type
+ * and the ERP's own stack lines: the text, data and screenshots stay here),
+ * follows it to the pull request on Claude Code's own branch for that issue,
+ * asks Claude Code again when its checks fail, and offers it for merging only
+ * when it is Claude Code's own work into main (github.vetPull). The owner sees
+ * who opened it and the files it changes, and merges exactly that commit here
+ * with the PIN; the Deploy workflow installs it.
  */
 
 /** The pass must be used this soon after the start. */
@@ -312,7 +320,7 @@ export async function beginCheck(input: unknown, now: Date = new Date()) {
   if (!repo) throw new AppError("FORBIDDEN", "GitHub is not connected any more.");
   const claims = await verifyActionsToken(
     proof,
-    { repo, workflow: github.FULL_CHECK_WORKFLOW, audience: appUrl() },
+    { repo, workflow: github.FULL_CHECK_WORKFLOW, audience: appUrl(), branch: github.MAIN },
     now,
   );
   const reportKey = randomBytes(32).toString("base64url");
@@ -331,54 +339,40 @@ export async function beginCheck(input: unknown, now: Date = new Date()) {
   });
   if (taken.count !== 1) throw new AppError("FORBIDDEN", "This pass was used already.");
 
-  const members = await prisma.companyMembership.findMany({
-    where: { companyId: run.companyId, isActive: true },
-    orderBy: { joinedAt: "asc" },
-    select: {
-      userId: true,
-      role: { select: { id: true, name: true, systemRole: true } },
-      user: { select: { name: true, email: true, status: true, isSuperAdmin: true } },
-    },
-  });
-  const usable = members.filter(
-    (m) =>
-      m.user.status === "ACTIVE" && !m.user.email.toLowerCase().endsWith(`@${AI_EMAIL_DOMAIN}`),
-  );
-  const owner = usable.find((m) => m.userId === run.startedById);
-  if (!owner) throw new AppError("NOT_FOUND", "The owner who started the check is not a member.");
-  const roles = [owner];
+  // Every role of the company, each with its own check account: the owner's
+  // view first (the Super Admin role, with the platform owner's screens).
   const allRoles = await prisma.role.findMany({
     where: { companyId: run.companyId },
     orderBy: [{ isSystem: "desc" }, { name: "asc" }],
-    select: { id: true, name: true },
+    select: { id: true, name: true, systemRole: true },
   });
-  const notChecked: string[] = [];
-  for (const role of allRoles) {
-    if (role.id === owner.role.id) continue;
-    // A member of the role who is not a platform owner (they would see more than the role).
-    const member = usable.find((m) => m.role.id === role.id && !m.user.isSuperAdmin);
-    if (member) roles.push(member);
-    else notChecked.push(role.name);
-  }
+  const ownerRole = allRoles.find((r) => r.systemRole === "SUPER_ADMIN");
+  if (!ownerRole) throw new AppError("NOT_FOUND", "The company has no Super Admin role.");
+  const checks = [
+    { role: ownerRole, label: "Owner", platform: true },
+    ...allRoles
+      .filter((r) => r.id !== ownerRole.id)
+      .map((r) => ({ role: r, label: r.name, platform: false })),
+  ];
   const expiresAt = new Date(now.getTime() + SESSION_MINUTES * 60_000);
   const sessions = [];
-  for (const [i, m] of roles.entries()) {
+  for (const check of checks) {
+    const account = await checkAccountFor(check.role, check.label);
     const token = `${CHECK_TOKEN_PREFIX}${generateSessionToken()}`;
     await prisma.session.create({
       data: {
-        userId: m.userId,
+        userId: account.id,
         token: hashSessionToken(token),
         activeCompanyId: run.companyId,
         userAgent: sessionTag(run.id),
         expiresAt,
+        checkRoleId: check.role.id,
+        checkPlatform: check.platform,
       },
     });
-    sessions.push({
-      role: i === 0 ? "Owner" : m.role.name,
-      member: m.user.name,
-      cookie: token,
-    });
+    sessions.push({ role: check.label, member: account.name, cookie: token });
   }
+  const notChecked: string[] = [];
   return {
     site: run.site,
     /** On the live site the check only reads. */
@@ -398,6 +392,10 @@ const problemSchema = z.object({
   text: z.string().trim().min(1).max(500),
   detail: z.string().max(4000).nullish(),
   ms: z.number().int().min(0).max(3_600_000).nullish(),
+  /** The status code the screen or a request answered, the error's type and its stack lines. */
+  status: z.number().int().min(100).max(599).nullish(),
+  errorType: z.string().trim().max(80).nullish(),
+  stack: z.array(z.string().max(300)).max(20).nullish(),
   shot: z.boolean().default(false),
 });
 
@@ -458,6 +456,9 @@ export async function receiveReport(key: string, input: unknown, now: Date = new
             text: p.text,
             detail: p.detail ?? null,
             ms: p.ms ?? null,
+            status: p.status ?? null,
+            errorType: p.errorType || null,
+            stack: p.stack ?? [],
           },
           select: { id: true },
         }),
@@ -570,14 +571,15 @@ export async function sendFix(ctx: CompanyContext, input: unknown, meta?: Reques
   if (problems.length === 0) {
     throw new AppError("VALIDATION", "These problems were sent to Claude Code already.");
   }
-  const issue = fixIssue({
-    problems: problems.map((p) => ({ ...p, kind: p.kind as ProblemKind })),
-    site: appUrl(),
-    company: ctx.company.name,
-    by: ctx.user.name,
-    at: when(new Date()),
-    runId: problems[0]!.runId,
-  });
+  const at = when(new Date());
+  const issue = (number: number) =>
+    fixIssue({
+      problems: problems.map((p) => ({ ...p, kind: p.kind as ProblemKind })),
+      site: siteOf(),
+      at,
+      runId: problems[0]!.runId,
+      issue: number,
+    });
   return openRequest(ctx, gh, {
     kind: "FIX",
     issue,
@@ -604,13 +606,8 @@ export async function askClaudeCode(ctx: CompanyContext, input: unknown, meta?: 
   checkRateLimit(`claude-code:${ctx.company.id}`, 10, 60 * 60_000);
   const gh = await needGitHub(ctx.company.id);
   const { text } = askSchema.parse(input);
-  const issue = askIssue({
-    text,
-    site: appUrl(),
-    company: ctx.company.name,
-    by: ctx.user.name,
-    at: when(new Date()),
-  });
+  const at = when(new Date());
+  const issue = (number: number) => askIssue({ text, site: siteOf(), at, issue: number });
   return openRequest(ctx, gh, { kind: "ASK", issue, text, problemIds: [], meta });
 }
 
@@ -619,20 +616,32 @@ async function openRequest(
   gh: github.GitHub,
   r: {
     kind: "FIX" | "ASK";
-    issue: { title: string; body: string };
+    /** The issue, given its number (0 before GitHub gives one). */
+    issue: (number: number) => { title: string; body: string };
     text: string;
     problemIds: string[];
     meta?: RequestMeta;
   },
 ) {
   // The issue first: if GitHub refuses, nothing is kept.
-  const opened = await github.openIssue(gh, r.issue);
+  const first = r.issue(0);
+  const opened = await github.openIssue(gh, first);
+  // Then its own number in it (Claude Code's branch carries it). If that fails,
+  // the issue still says "this issue's number", which Claude Code knows.
+  await github
+    .updateIssue(gh, opened.number, r.issue(opened.number).body)
+    .catch((error: unknown) =>
+      console.error(
+        `[full-check] issue #${opened.number} not updated`,
+        error instanceof Error ? error.message : error,
+      ),
+    );
   const request = await prisma.$transaction(async (tx) => {
     const made = await tx.claudeCodeRequest.create({
       data: {
         companyId: ctx.company.id,
         kind: r.kind,
-        title: r.issue.title,
+        title: first.title,
         text: r.text,
         issueNumber: opened.number,
         issueUrl: opened.url,
@@ -651,7 +660,7 @@ async function openRequest(
     action: "CREATE",
     entityType: "ClaudeCodeRequest",
     entityId: request.id,
-    summary: `${r.kind === "FIX" ? "Sent to Claude Code" : "Asked Claude Code"}: ${r.issue.title} (issue #${opened.number})`,
+    summary: `${r.kind === "FIX" ? "Sent to Claude Code" : "Asked Claude Code"}: ${first.title} (issue #${opened.number})`,
   });
   return { id: request.id, issueNumber: opened.number, issueUrl: opened.url };
 }
@@ -669,9 +678,18 @@ async function tellOwner(r: Request, subject: string, body: string) {
   await pushToBot(r.companyId, { kind: "text", text: `${subject}. ${body}` });
 }
 
-/** Looks on GitHub once for one request and moves it on. */
+/** The files a request's pull request changes, as kept. */
+type FixFiles = { files: github.PullFile[]; total: number };
+
+/**
+ * Looks on GitHub once for one request and moves it on. A pull request counts
+ * only when it is on Claude Code's own branch for the issue; each look checks
+ * again that it is Claude Code's own work into main (github.vetPull), and the
+ * owner hears "Fix ready" only then.
+ */
 export async function followRequest(gh: github.GitHub, r: Request, now: Date = new Date()) {
   const data: Prisma.ClaudeCodeRequestUpdateInput = { lookedAt: now };
+  let openedByErp = r.prOpenedByErp;
   if (r.state === "SENT" && r.issueNumber) {
     const work = await github.findWork(gh, r.issueNumber);
     let pull = work.pull;
@@ -687,6 +705,7 @@ export async function followRequest(gh: github.GitHub, r: Request, now: Date = n
           title: r.title,
           body: pullBody(r.issueNumber),
         });
+        openedByErp = true;
       } else if (!busy && runs.length > 0) {
         const failed = runs.every((run) => run.conclusion !== "success");
         data.state = "STOPPED";
@@ -708,10 +727,11 @@ export async function followRequest(gh: github.GitHub, r: Request, now: Date = n
       data.branch = pull.head.ref;
       data.state = "PR_OPEN";
       data.note = null;
+      data.prOpenedByErp = openedByErp;
     }
   }
   const prNumber = (data.prNumber as number | undefined) ?? r.prNumber;
-  if ((data.state ?? r.state) === "PR_OPEN" && prNumber) {
+  if ((data.state ?? r.state) === "PR_OPEN" && prNumber && r.issueNumber) {
     const pull = await github.getPull(gh, prNumber);
     if (pull.merged_at) {
       data.state = "MERGED";
@@ -720,18 +740,30 @@ export async function followRequest(gh: github.GitHub, r: Request, now: Date = n
       data.state = "STOPPED";
       data.note = `PR #${prNumber} was closed without merging.`;
     } else {
+      const vet = await github.vetPull(gh, pull, r.issueNumber, openedByErp);
       const checks = await github.checksOf(gh, pull.head.sha);
+      Object.assign(data, vetted(vet));
       data.checks = checks;
       data.headSha = pull.head.sha;
-      if (checks === "passed" && (r.checks !== "passed" || r.headSha !== pull.head.sha)) {
+      const fresh = r.checks !== "passed" || r.headSha !== pull.head.sha || !r.prVetted;
+      if (!vet.ok) {
+        if (r.prProblem !== vet.problem) {
+          await tellOwner(
+            r,
+            `PR #${prNumber} cannot be merged here`,
+            `${r.title}: ${vet.problem}. Look at it on GitHub; the ERP never merges it.`,
+          );
+        }
+      } else if (checks === "passed" && fresh) {
         data.note = null;
         await tellOwner(
           r,
           `Fix ready: merge PR #${prNumber}`,
-          `${r.title}. Its checks passed; merge it in AI Center > Full check (the PIN is asked).`,
+          `${r.title}. Its checks passed; look at who made it and the files it changes, then merge it in AI Center > Full check (the PIN is asked).`,
         );
       }
-      if (checks === "failed" && r.askedSha !== pull.head.sha) {
+      // Claude Code is asked to fix failed checks only on its own work.
+      if (vet.ok && checks === "failed" && r.askedSha !== pull.head.sha) {
         if (r.retries < MAX_RETRIES) {
           await github.comment(gh, prNumber, FIX_CHECKS_COMMENT);
           data.askedSha = pull.head.sha;
@@ -747,6 +779,14 @@ export async function followRequest(gh: github.GitHub, r: Request, now: Date = n
   }
   return prisma.claudeCodeRequest.update({ where: { id: r.id }, data });
 }
+
+/** What a look at a pull request keeps: who opened it, whether it may be merged, its files. */
+const vetted = (vet: github.Vetted) => ({
+  prAuthor: vet.author,
+  prVetted: vet.ok,
+  prProblem: vet.problem,
+  prFiles: { files: vet.files, total: vet.filesTotal } satisfies FixFiles as Prisma.InputJsonValue,
+});
 
 /** The clock (every two minutes): checks that never reported end; open requests move on. */
 export async function runFullCheckClock(now: Date = new Date()) {
@@ -787,9 +827,20 @@ export async function lookAgain(ctx: CompanyContext) {
   for (const r of open) await followRequest(gh, r);
 }
 
-export const mergeSchema = z.object({ pin: z.string().max(20).optional() });
+export const mergeSchema = z.object({
+  pin: z.string().max(20).optional(),
+  /** The commit the owner looked at: only that one is merged. */
+  sha: z
+    .string()
+    .trim()
+    .regex(/^[\w-]{1,64}$/, "Look at the fix again before merging"),
+});
 
-/** Merges a ready fix (with the PIN): the Deploy workflow then installs it safely. */
+/**
+ * Merges a ready fix (with the PIN): exactly the commit the owner looked at,
+ * checked once more as Claude Code's own work into main. The Deploy workflow
+ * then installs it safely.
+ */
 export async function mergeFix(
   ctx: CompanyContext,
   id: string,
@@ -798,16 +849,30 @@ export async function mergeFix(
   checked?: PinProof,
 ) {
   assertPlatform(ctx);
-  const { pin } = mergeSchema.parse(input);
+  const { pin, sha } = mergeSchema.parse(input);
   await requirePin(ctx, checked ?? pin, "merge a change into the live ERP");
   const gh = await needGitHub(ctx.company.id);
   const r = await ctx.db.claudeCodeRequest.findFirst({ where: { id } });
   if (!r) throw new AppError("NOT_FOUND", "There is no such request.");
-  if (r.state !== "PR_OPEN" || !r.prNumber) {
+  if (r.state !== "PR_OPEN" || !r.prNumber || !r.issueNumber) {
     throw new AppError("VALIDATION", "There is no open pull request to merge for this request.");
   }
   const pull = await github.getPull(gh, r.prNumber);
   if (pull.state !== "open") throw new AppError("CONFLICT", `PR #${r.prNumber} is not open.`);
+  if (pull.head.sha !== sha) {
+    throw new AppError(
+      "CONFLICT",
+      "The fix changed since you looked: look at it again before merging.",
+    );
+  }
+  const vet = await github.vetPull(gh, pull, r.issueNumber, r.prOpenedByErp);
+  if (!vet.ok) {
+    await prisma.claudeCodeRequest.update({
+      where: { id: r.id },
+      data: { ...vetted(vet), headSha: pull.head.sha },
+    });
+    throw new AppError("VALIDATION", `PR #${r.prNumber} cannot be merged here: ${vet.problem}.`);
+  }
   const checks = await github.checksOf(gh, pull.head.sha);
   if (checks !== "passed") {
     throw new AppError(
@@ -826,7 +891,7 @@ export async function mergeFix(
     action: "UPDATE",
     entityType: "ClaudeCodeRequest",
     entityId: r.id,
-    summary: `Merged PR #${r.prNumber} (${r.title}): the safe update installs it`,
+    summary: `Merged PR #${r.prNumber} (${r.title}) at commit ${sha.slice(0, 7)}, opened by ${vet.author}, ${vet.filesTotal} file${vet.filesTotal === 1 ? "" : "s"}: the safe update installs it`,
   });
   return { deploys: `https://github.com/${gh.repo}/actions/workflows/deploy.yml` };
 }
@@ -891,6 +956,8 @@ export async function getFullCheck(ctx: CompanyContext, runId?: string) {
               prNumber: true,
               checks: true,
               note: true,
+              prVetted: true,
+              prProblem: true,
             },
           },
         },
@@ -955,8 +1022,23 @@ export async function getFullCheck(ctx: CompanyContext, runId?: string) {
       by: r.createdBy?.name ?? null,
       createdAt: r.createdAt,
       mergedAt: r.mergedAt,
-      canMerge: r.state === "PR_OPEN" && r.checks === "passed",
+      headSha: r.headSha,
+      /** Who made the pull request and what it changes, shown before Merge. */
+      fix: r.prNumber ? fixOf(r) : null,
+      canMerge: r.state === "PR_OPEN" && r.checks === "passed" && r.prVetted && !!r.headSha,
     })),
+  };
+}
+
+function fixOf(r: Request) {
+  const kept = (r.prFiles as FixFiles | null) ?? { files: [], total: 0 };
+  return {
+    author: r.prAuthor,
+    openedByErp: r.prOpenedByErp,
+    files: kept.files,
+    filesTotal: kept.total,
+    /** Files that run, build or install the ERP, or set Claude Code's rules: look twice. */
+    careful: carefulFiles(kept.files.map((f) => f.name)),
   };
 }
 

@@ -466,6 +466,13 @@ run("Mehedi 2.0", () => {
     });
     expect(logged.find((a) => a.entityId === rule.id)?.byAi).toBe(false);
     expect(logged.find((a) => a.entityId === worded.id)?.byAi).toBe(true);
+    // The AI's proposal is saved under the AI's own account, never the owner's.
+    const ai = await aiAccountOf(env.company.id);
+    expect(worded.proposedById).toBe(ai.id);
+    expect(rule.proposedById).toBe(env.owner.user.id);
+    expect(logged.find((a) => a.entityId === worded.id)?.userId).toBe(ai.id);
+    expect(logged.find((a) => a.entityId === worded.id)?.summary).toContain(env.owner.user.name);
+    expect(logged.find((a) => a.entityId === rule.id)?.userId).toBe(env.owner.user.id);
     await prisma.houseRule.delete({ where: { id: worded.id } });
     expect(rule).toMatchObject({ status: "PROPOSED", source: "Teach", byAi: false });
     expect(await systemText(env.company.id)).not.toContain(said);

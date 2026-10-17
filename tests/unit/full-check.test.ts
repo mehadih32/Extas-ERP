@@ -1,17 +1,28 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { CHECK_TOKEN_PREFIX, checkMayDo, isCheckToken } from "@/lib/auth/check-token";
+import {
+  CHECK_NEVER_ROUTES,
+  CHECK_READ_ROUTES,
+  CHECK_TOKEN_PREFIX,
+  checkMayDo,
+  isCheckToken,
+} from "@/lib/auth/check-token";
+import { checkSessionReadOnly } from "@/lib/read-only";
 import { SESSION_COOKIE } from "@/lib/auth/session-cookie";
 import {
   askIssue,
+  carefulFiles,
+  errorTypeOf,
   FIX_CHECKS_COMMENT,
   fixIssue,
   KIND_TEXT,
+  ourStackLines,
   PROBLEM_KINDS,
   pullBody,
   requestText,
+  safeRoute,
 } from "@/modules/ai/full-check/texts";
 import { config } from "@/proxy";
 
@@ -31,15 +42,69 @@ describe("Full check sessions", () => {
     expect(isCheckToken(token)).toBe(true);
     expect(isCheckToken("abc")).toBe(false);
     expect(isCheckToken(undefined)).toBe(false);
-    for (const method of ["GET", "HEAD", "OPTIONS"])
-      expect(checkMayDo(method, token, false)).toBe(true);
-    for (const method of ["POST", "PUT", "PATCH", "DELETE"]) {
-      expect(checkMayDo(method, token, false), method).toBe(false);
-      expect(checkMayDo(method, token, true), method).toBe(true);
+    for (const method of ["GET", "HEAD"]) expect(checkMayDo(method, token, false, "/")).toBe(true);
+    for (const method of ["POST", "PUT", "PATCH", "DELETE", "OPTIONS"]) {
+      expect(checkMayDo(method, token, false, "/sales"), method).toBe(false);
+      expect(checkMayDo(method, token, true, "/sales"), method).toBe(true);
       // Everyone else is untouched.
-      expect(checkMayDo(method, "an-ordinary-session", false), method).toBe(true);
-      expect(checkMayDo(method, undefined, false), method).toBe(true);
+      expect(checkMayDo(method, "an-ordinary-session", false, "/sales"), method).toBe(true);
+      expect(checkMayDo(method, undefined, false, "/sales"), method).toBe(true);
     }
+    // The server refuses their writes too, whatever the route (lib/read-only.ts).
+    expect(checkSessionReadOnly(token, false)).toBe(true);
+    expect(checkSessionReadOnly(token, true)).toBe(false);
+    expect(checkSessionReadOnly("an-ordinary-session", false)).toBe(false);
+    expect(checkSessionReadOnly(undefined, false)).toBe(false);
+  });
+
+  it("on the live site reach only screens and the API's read-only routes (deny by default)", () => {
+    const token = `${CHECK_TOKEN_PREFIX}abc`;
+    expect(checkMayDo("GET", token, false, "/sales/orders")).toBe(true);
+    expect(checkMayDo("GET", token, false, "/api/accounts/reports/trial-balance")).toBe(true);
+    expect(checkMayDo("GET", token, false, "/api/production/projects/cm1x/tech-pack")).toBe(true);
+    expect(checkMayDo("HEAD", token, false, "/api/materials/purchase-orders/cm2y/pdf")).toBe(true);
+    // A GET that starts something, or hands out a whole backup: never, not even on the demo site.
+    for (const path of [
+      "/api/backups/google/connect",
+      "/api/backups/runs/cm3z/download",
+      "/api/bot/whatsapp/webhook",
+    ]) {
+      expect(checkMayDo("GET", token, false, path), path).toBe(false);
+      expect(checkMayDo("GET", token, true, path), path).toBe(false);
+    }
+    // A route nobody listed is refused until it is.
+    expect(checkMayDo("GET", token, false, "/api/something-new")).toBe(false);
+    expect(checkMayDo("GET", token, false, "/api/accounts/reports/trial-balance/../x")).toBe(false);
+    expect(checkMayDo("POST", token, false, "/api/accounts/journal")).toBe(false);
+    // Everyone else is untouched.
+    expect(checkMayDo("GET", "x", false, "/api/backups/google/connect")).toBe(true);
+  });
+
+  it("know every API route that answers GET: read-only for the check, or never", () => {
+    const api = path.join(root, "src/app/api");
+    const routes: string[] = [];
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) walk(full);
+        else if (
+          entry.name === "route.ts" &&
+          /export (const|async function|function) GET\b/.test(readFileSync(full, "utf8"))
+        )
+          routes.push(`/api${path.dirname(full).slice(api.length).split(path.sep).join("/")}`);
+      }
+    };
+    walk(api);
+    expect(routes.length).toBeGreaterThan(200);
+    const never = CHECK_NEVER_ROUTES.map((n) => n.route);
+    for (const route of routes) {
+      expect(
+        CHECK_READ_ROUTES.includes(route) !== never.includes(route),
+        `${route}: list it in CHECK_READ_ROUTES (it only reads) or CHECK_NEVER_ROUTES (lib/auth/check-token.ts)`,
+      ).toBe(true);
+    }
+    for (const route of [...CHECK_READ_ROUTES, ...never]) expect(routes, route).toContain(route);
+    for (const n of CHECK_NEVER_ROUTES) expect(n.why.length, n.route).toBeGreaterThan(10);
   });
 
   it("are caught on the API by the session cookie alone (others' uploads never pass the proxy)", () => {
@@ -71,51 +136,107 @@ describe("Claude Code issues", () => {
     ms: null,
   };
 
-  it("start with @claude, name the screens, and ask for a test and a pull request", () => {
+  it("start with @claude, name the screens, and ask for a test, on the issue's own branch", () => {
     const one = fixIssue({
       problems: [problem],
-      site: "https://erp.test",
-      company: "Extas",
-      by: "Mehadi",
+      site: "live",
       at: "2026-10-16 05:00 UTC",
       runId: "run1",
+      issue: 41,
     });
-    expect(one.title).toBe(
-      "Full check: A link leads to a page that does not exist (404) (/help/production-batches)",
-    );
+    expect(one.title).toBe("Full check: Broken link on /help/[slug]");
     expect(one.body.startsWith("@claude please fix this problem")).toBe(true);
-    expect(one.body).toContain("seen as the Accounts role");
-    expect(one.body).toContain("(screen `/help/[slug]`)");
-    // A fence in the detail cannot break out of its block.
-    expect(one.body).toContain("'''");
+    expect(one.body).toContain("`/help/[slug]`");
+    expect(one.body).toContain("GET /production/projects/[projectId] answered 404");
     expect(one.body).toContain("Add a test that fails without the fix");
     expect(one.body).toContain("src/modules/help/content");
     expect(one.body).toContain("Never delete data");
-    expect(one.body).toContain("Do not merge it");
+    expect(one.body).toContain("Never push to `main`");
+    expect(one.body).toContain("claude/issue-41-");
+    expect(one.body).toContain("CLAUDE.md");
+    // The role, the site's address and who sent it stay in the ERP.
+    expect(one.body).not.toContain("Accounts");
+    expect(one.body).not.toContain("https://");
 
     const many = fixIssue({
-      problems: [problem, { ...problem, kind: "SLOW", ms: 7200, screen: "/accounts" }],
-      site: "https://erp.test",
-      company: "Extas",
-      by: "Mehadi",
+      problems: [
+        problem,
+        { ...problem, kind: "SLOW", ms: 7200, screen: "/accounts", pattern: null },
+      ],
+      site: "live",
       at: "2026-10-16 05:00 UTC",
       runId: "run1",
+      issue: 42,
     });
     expect(many.title).toBe("Full check: fix 2 problems found on 2026-10-16");
     expect(many.body).toContain("(7.2 s)");
 
-    const ask = askIssue({
-      text: `${"x".repeat(120)}\nmore`,
-      site: "https://erp.test",
-      company: "Extas",
-      by: "Mehadi",
-      at: "now",
-    });
+    const ask = askIssue({ text: `${"x".repeat(120)}\nmore`, site: "live", at: "now", issue: 43 });
     expect(ask.title).toBe(`ERP request: ${"x".repeat(90)}...`);
     expect(ask.body.startsWith("@claude please build this request")).toBe(true);
     expect(FIX_CHECKS_COMMENT.startsWith("@claude ")).toBe(true);
     expect(FIX_CHECKS_COMMENT).toContain("Do not skip or switch off a test");
     expect(pullBody(12).startsWith("Fixes #12\n")).toBe(true);
+  });
+
+  it("carry no screen text or business data: only paths, status codes, error types and our own stack lines", () => {
+    expect(safeRoute("/sales/orders/cm4x1y2z3a4b5c6d7e8f9g0h1?q=Rahim%20Textiles#top")).toBe(
+      "/sales/orders/[id]",
+    );
+    expect(safeRoute("/parties/Rahim%20Textiles/statement")).toBe("/parties/[id]/statement");
+    expect(safeRoute("/production/projects/[projectId]/tech-pack")).toBe(
+      "/production/projects/[projectId]/tech-pack",
+    );
+    expect(safeRoute("/help/production/production-batches")).toBe(
+      "/help/production/production-batches",
+    );
+    expect(safeRoute("/sales/orders/SO-2026-00042")).toBe("/sales/orders/[id]");
+    expect(safeRoute("/hr/payroll/2026-10")).toBe("/hr/payroll/[id]");
+    expect(safeRoute("not a path")).toBe("(a screen)");
+    expect(errorTypeOf("TypeError")).toBe("TypeError");
+    expect(errorTypeOf("PrismaClientKnownRequestError")).toBe("PrismaClientKnownRequestError");
+    expect(errorTypeOf("Rahim owes 45000")).toBeNull();
+    expect(
+      ourStackLines([
+        "TypeError: Cannot read properties of undefined (reading 'Rahim')",
+        "    at OrderRow (https://erp.extasbd.com/_next/static/chunks/app-1a2b.js:1:2345)",
+        "    at https://erp.extasbd.com/_next/static/chunks/main.js:2:10",
+        "    at Rahim Textiles owes 45000",
+        "    at f (https://cdn.other.com/x.js:1:1)",
+        "    at async load (/app/.next/server/chunks/ssr/src_modules_x.js:10:5)",
+        "    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)",
+        "    at Object.query (/app/node_modules/@prisma/client/runtime/library.js:1:2)",
+      ]),
+    ).toEqual([
+      "at OrderRow (/_next/static/chunks/app-1a2b.js:1:2345)",
+      "at /_next/static/chunks/main.js:2:10",
+      "at async load (/.next/server/chunks/ssr/src_modules_x.js:10:5)",
+    ]);
+    // Files that run or install the ERP get a warning before Merge.
+    expect(
+      carefulFiles([
+        "src/modules/sales/order.service.ts",
+        ".github/workflows/deploy.yml",
+        "deploy/deploy.sh",
+        "Dockerfile",
+        "package.json",
+        "package-lock.json",
+        "prisma/migrations/20261201090000_x/migration.sql",
+        "CLAUDE.md",
+        ".claude/settings.json",
+        "src/proxy.ts",
+      ]),
+    ).toEqual([
+      ".github/workflows/deploy.yml",
+      "deploy/deploy.sh",
+      "Dockerfile",
+      "package.json",
+      "package-lock.json",
+      "prisma/migrations/20261201090000_x/migration.sql",
+      "CLAUDE.md",
+      ".claude/settings.json",
+      "src/proxy.ts",
+    ]);
   });
 
   it("says where each request stands in plain words", () => {
@@ -130,6 +251,16 @@ describe("Claude Code issues", () => {
       "Merged PR #9: the safe update installs it",
     );
     expect(requestText({ ...at, state: "STOPPED", note: "Closed." })).toBe("Closed.");
+    // A pull request that is not Claude Code's own work is never "ready".
+    expect(
+      requestText({
+        ...at,
+        state: "PR_OPEN",
+        checks: "passed",
+        prVetted: false,
+        prProblem: "it was not opened by Claude Code",
+      }),
+    ).toBe("PR #9 cannot be merged here: it was not opened by Claude Code");
     for (const kind of PROBLEM_KINDS) expect(KIND_TEXT[kind]).toBeTruthy();
   });
 });
@@ -160,17 +291,34 @@ describe("The workflows", () => {
     }
   });
 
-  it("Claude Code: answers @claude from people with write access, never a bot", () => {
+  it("Claude Code: answers @claude from the owner only, never a bot, and can never push to main", () => {
     const yml = read(".github/workflows/claude.yml");
     expect(yml).toContain("uses: anthropics/claude-code-action@v1");
     expect(yml).toContain("claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}");
     expect(yml).toMatch(/issues:\n\s+types: \[opened\]/);
     expect(yml).toMatch(/issue_comment:\n\s+types: \[created\]/);
     expect(yml).toContain("contains(github.event.issue.body, '@claude')");
+    expect(yml).toContain("github.actor == github.repository_owner");
     expect(yml).toContain("id-token: write");
     expect(yml).toContain("TEST_DATABASE_URL:");
     // No bot may start it.
     expect(yml).not.toMatch(/^\s+allowed_bots:/m);
+    // Its commits go through GitHub's API onto its own branch; git itself cannot write.
+    expect(yml).toContain("use_commit_signing: true");
+    expect(yml).toContain("persist-credentials: false");
+    expect(yml).toMatch(/permissions:\n\s+contents: read\n/);
+    const allowed = /--allowedTools "([^"]+)"/.exec(yml)![1]!.split(",");
+    // Nothing that could write to GitHub or run a shell of its own.
+    for (const tool of allowed) {
+      expect(tool).not.toMatch(/^Bash\((find|curl|wget|gh|bash|sh|env|xargs|node)\b/);
+    }
+    for (const tool of allowed.filter((t) => t.startsWith("Bash(git"))) {
+      expect(tool).toMatch(/^Bash\(git (status|diff|log|show)(:\*)?\)$/);
+    }
+    expect(allowed).not.toContain("Bash(git:*)");
+    expect(allowed).not.toContain("Bash(find:*)");
+    const denied = /--disallowedTools "([^"]+)"/.exec(yml)![1]!.split(",");
+    expect(denied).toContain("Bash(git push:*)");
   });
 
   it("Full check: knows the error window by its code box, not by the words a guide quotes", () => {

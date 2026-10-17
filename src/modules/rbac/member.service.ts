@@ -10,6 +10,7 @@ import type { RequestMeta } from "@/lib/request-meta";
 import { recordAudit } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { AI_ADDRESS_TEXT, isAiAddress } from "@/modules/ai/ai-address";
+import { CHECK_ADDRESS_TEXT, isCheckAddress } from "@/modules/ai/full-check/check-account";
 import { emailSchema } from "@/modules/auth/schemas";
 import { revokeAllUserSessions } from "@/modules/auth/session.service";
 import { ALL_PERMISSION_KEYS, type PermissionKey } from "@/modules/rbac/permissions";
@@ -27,7 +28,9 @@ import {
 } from "@/modules/rbac/rules";
 
 export const addMemberSchema = z.object({
-  email: emailSchema.refine((email) => !isAiAddress(email), AI_ADDRESS_TEXT),
+  email: emailSchema
+    .refine((email) => !isAiAddress(email), AI_ADDRESS_TEXT)
+    .refine((email) => !isCheckAddress(email), CHECK_ADDRESS_TEXT),
   name: z
     .string()
     .trim()

@@ -198,7 +198,7 @@ export async function switchCompany(
   companyId: string,
   meta: RequestMeta = {},
 ) {
-  const access = await resolveCompanyAccess(current.user, companyId);
+  const access = await resolveCompanyAccess(current.user, companyId, current.session.checkRoleId);
   if (!access) throw new AppError("FORBIDDEN", "You do not have access to that company.");
 
   await setSessionCompany(current.session.id, companyId);

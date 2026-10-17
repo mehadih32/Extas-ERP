@@ -4,6 +4,7 @@ import { AppError } from "@/lib/errors";
 import { checkRateLimit } from "@/lib/rate-limit";
 import type { CompanyContext } from "@/modules/auth/context";
 import { findHelpArticle, helpSearchEntries } from "@/modules/help";
+import { guideText } from "@/modules/help/guide-text";
 import { rankHelp } from "@/modules/help/search";
 
 import { aiReady, askClaude, textOf } from "./claude";
@@ -33,9 +34,6 @@ const PER_MINUTE = 6;
 
 /** Guides read for one question. */
 const GUIDES = 4;
-
-/** The most of one guide the AI reads (the longest guides list every button). */
-const GUIDE_CHARS = 12_000;
 
 /** The AI cost for the people who see the AI Center; null for everyone else. */
 async function costFor(ctx: CompanyContext) {
@@ -75,24 +73,9 @@ export async function askHelp(ctx: CompanyContext, input: unknown) {
     const hit = findHelpArticle(r.sectionId, r.slug);
     return hit ? [{ ...hit, open: r.open }] : [];
   });
+  // Each guide whole (v6.4 L13), so the AI knows every button the guide explains.
   const book = guides
-    .map(({ section, article, open }) =>
-      [
-        `## ${article.title} (${section.title})${open ? "" : " [not open to this person's role]"}`,
-        article.summary,
-        ...(article.what ? [`What: ${article.what}`] : []),
-        ...(article.why ? [`Why: ${article.why}`] : []),
-        "How:",
-        ...article.steps.map((s, i) => `${i + 1}. ${s.text}`),
-        ...(article.fields?.length ? ["Buttons and fields:"] : []),
-        ...(article.fields ?? []).map((f) => `- "${f.label}": ${f.text}`),
-        ...(article.next ? [`What happens next: ${article.next}`] : []),
-        ...(article.mistakes ?? []).map((m) => `- Common mistake: ${m}`),
-        ...(article.tips ?? []).map((t) => `- ${t}`),
-      ]
-        .join("\n")
-        .slice(0, GUIDE_CHARS),
-    )
+    .map(({ section, article, open }) => guideText(section, article, open))
     .join("\n\n");
   const { message } = await askClaude(ctx.company.id, {
     task: "help.answer",

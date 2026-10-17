@@ -18,7 +18,7 @@ import { missingFeaturePrompt, quotedSearch } from "@/modules/help/prompt";
 import { sendUsage } from "@/components/shell/usage-beacon";
 import { type HelpSearchEntry, searchHelp, searchWords } from "@/modules/help/search";
 
-import { bnDigits, helpHref, NOT_IN_ROLE } from "./labels";
+import { helpHref, NOT_IN_ROLE } from "./labels";
 
 /** Copies text, saying so for a moment. */
 function CopyButton({ text, label }: { text: string; label: string }) {
@@ -196,7 +196,7 @@ export function HelpSearch({
         <div className="grid gap-4">
           <p role="status" lang="bn" className="text-sm text-muted-foreground">
             {results.length > 0
-              ? `${bnDigits(results.length)}টি নির্দেশিকা পাওয়া গেছে`
+              ? `${results.length}টি নির্দেশিকা পাওয়া গেছে`
               : "কোনো নির্দেশিকা পাওয়া যায়নি"}
           </p>
           {results.length > 0 && (

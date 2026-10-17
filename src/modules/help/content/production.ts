@@ -186,7 +186,7 @@ export const productionHelp: HelpSection = {
         { text: "কার্ডের নামে চাপলে সেই প্রজেক্টের পাতা খুলবে।" },
       ],
       tips: [
-        "“Undo” শুধু ধাপ বদলের ১০ মিনিটের মধ্যে কাজ করে। পরে ফেরাতে প্রজেক্টের পাতায় “Change the stage” ব্যবহার করুন, তখন কারণ লিখতে হয়।",
+        "“Undo” শুধু ধাপ বদলের 10 মিনিটের মধ্যে কাজ করে। পরে ফেরাতে প্রজেক্টের পাতায় “Change the stage” ব্যবহার করুন, তখন কারণ লিখতে হয়।",
         "“Finishing” কলামের কার্ডে “Move to …” থাকে না: কাজ শেষ হলে প্রজেক্টের পাতায় “Complete the project” চাপুন।",
         "পরিকল্পিত (Planned) প্রজেক্ট শুরু করতে প্রজেক্টের পাতায় “Start production” চাপুন।",
         "সময় শেষ হতে কাছাকাছি হলে দাগ হলুদ হয়, আর দেরি হলে কার্ড লাল হয়।",
@@ -231,7 +231,7 @@ export const productionHelp: HelpSection = {
           text: "একসাথে বানানো কয়েকটি স্টাইলের একটি হলে ব্যাচ বেছে নিন; ব্যাচের ফ্যাক্টরি আর শেষ করার তারিখ বসে যায়। একা কাজ হলে “Not in a batch”।",
         },
         {
-          label: "Target price per piece",
+          label: "Target price per piece (…, optional)",
           text: "এক পিসের সর্বোচ্চ খরচ (না দিলেও চলে)। দিলে “Cost guard” দাগ দেখায় আর লক্ষ্যের কাছে বা বেশি গেলে বার্তা আসে।",
         },
         {
@@ -286,7 +286,7 @@ export const productionHelp: HelpSection = {
         },
         {
           label: "Type a ratio",
-          text: "প্রতিটি সাইজের জন্য একটি সংখ্যা, কোলন দিয়ে আলাদা, যেমন 1:2:2:1।",
+          text: "প্রতিটি সাইজের জন্য একটি সংখ্যা, কোলন দিয়ে আলাদা, যেমন 1:2:2:1। এটি বাছলে “Ratio” ঘর আসে, সেখানেই সংখ্যাগুলো লিখুন।",
         },
         {
           label: "Pieces per colour",
@@ -369,7 +369,7 @@ export const productionHelp: HelpSection = {
           text: "“Who it is made for”-এ কোনো ক্রেতার জন্য হলে “A buyer” বেছে “Buyer” দিন। নিজেদের দোকান বা স্টকের জন্য হলে “In-House”।",
         },
         {
-          text: "“Starts” ও “Due” তারিখ দিন। শুরু থেকে ৪৫ দিন পরের তারিখ আগে থেকে বসানো থাকে। “Pieces to make”-এ মোট কত পিস বানাতে হবে লিখুন।",
+          text: "“Starts” ও “Due” তারিখ দিন। শুরু থেকে 45 দিন পরের তারিখ আগে থেকে বসানো থাকে। “Pieces to make”-এ মোট কত পিস বানাতে হবে লিখুন।",
         },
         {
           text: "চাইলে রং ও সাইজ অনুযায়ী পিসও দিতে পারেন (না দিলেও চলে)। “Pieces per colour and size” অংশে “Style to fill in” থেকে স্টাইল বেছে নিন, প্রতিটি রঙের নিচে সাইজের ঘরে পিস লিখুন। তখন “Pieces to make” নিজে থেকে ঘরগুলোর যোগফল দেখায়।",
@@ -402,7 +402,7 @@ export const productionHelp: HelpSection = {
       slug: "production-batches",
       title: "মাস্টার ব্যাচ (Master batch) খুলবেন ও স্টাইল যোগ করবেন যেভাবে",
       summary:
-        "একসাথে বানানো কয়েকটি স্টাইলকে (যেমন তিন ব্র্যান্ডে ৫,০০০ পোলো শার্ট) একটি ব্যাচের নিচে রাখা: প্রতিটি স্টাইল নিজের রং-সাইজ, লক্ষ্য দাম, খরচ ও ডেলিভারি নিয়ে আলাদা প্রজেক্ট, আর ব্যাচ সব যোগ করে দেখায়।",
+        "একসাথে বানানো কয়েকটি স্টাইলকে (যেমন তিন ব্র্যান্ডে 5,000 পোলো শার্ট) একটি ব্যাচের নিচে রাখা: প্রতিটি স্টাইল নিজের রং-সাইজ, লক্ষ্য দাম, খরচ ও ডেলিভারি নিয়ে আলাদা প্রজেক্ট, আর ব্যাচ সব যোগ করে দেখায়।",
       keywords: [
         "master batch",
         "batch",
@@ -507,6 +507,22 @@ export const productionHelp: HelpSection = {
           text: "“Batch cost”-এর পাশের লিংক: পুরো ব্যাচের টাকার সারাংশ ও তার PDF।",
         },
         { label: "Try again", text: "পাতার কোনো অংশ লোড না হলে চাপুন; অংশটি আবার আনা হয়।" },
+        {
+          label: "Find a batch",
+          text: "তালিকার ওপরের খোঁজের ঘর: ব্যাচের কোড, নাম, কোনো স্টাইল বা ফ্যাক্টরির নাম লিখে “Find” চাপুন।",
+        },
+        {
+          label: "Make purchase orders",
+          text: "ব্যাচের পাতার “Materials” অংশের ওপরে, ব্যাচে কাঁচামাল থাকলে: ব্যাচের সব স্টাইলের ট্রিমস ও এক্সেসরিজ একবারে সরবরাহকারী অনুযায়ী পারচেজ অর্ডার করার পাতা খোলে। কিছু অর্ডার বাকি থাকলে বোতামটি গাঢ় রঙের।",
+        },
+        {
+          label: "Receive a delivery",
+          text: "“Materials” অংশের নিচে: ব্যাচের জন্য আসা কাপড় বা এক্সেসরিজ স্টোরে নেওয়ার পাতা খোলে।",
+        },
+        {
+          label: "Issue to styles",
+          text: "“Materials” অংশের নিচে: স্টোরে আসা উপকরণ ব্যাচের স্টাইলগুলোতে দেওয়ার পাতা খোলে।",
+        },
       ],
       next: "“Create the batch” চাপলে ব্যাচের পাতা খোলে আর বলে প্রথম স্টাইল যোগ করতে। প্রতিটি স্টাইল যোগ করলে তা ব্যাচের নিচে একটি প্রজেক্ট হয়; ব্যাচের অবস্থা স্টাইলগুলো থেকে নিজে বদলায়। এরপর স্টাইলে কাঁচামাল দিন, “Book fabric” দিয়ে কাপড় বুক করুন, “Make purchase orders” দিয়ে ট্রিমস অর্ডার করুন, চুক্তি বানান, মাল এলে “Receive a delivery” আর স্টাইলে দিতে “Issue to styles”। শেষে “Work out the CM settlement” দিয়ে ফ্যাক্টরির হিসাব মেটান।",
       mistakes: [
@@ -537,7 +553,7 @@ export const productionHelp: HelpSection = {
           text: "“Factory (optional)” ও “All done by (optional)” দিন। এরপর ব্যাচে যে স্টাইল যোগ করবেন, সেটি এই ফ্যাক্টরি আর তারিখ নিয়েই শুরু হবে (দরকারে স্টাইলে বদলানো যায়)। “Create the batch” চাপুন।",
         },
         {
-          text: "ফ্যাক্টরিতে (CM) বানানো ব্যাচে “Reject allowance (%)” থাকে, নিজে থেকে ২%। কাটা পিসের এই ভাগ পর্যন্ত রিজেক্ট (সেলাইয়ের ভুল, এক্সেসরিজ লাগাতে গিয়ে নষ্ট হওয়া বডি) ফ্যাক্টরির কোনো জরিমানা নেই; এর বেশি প্রতিটি রিজেক্ট স্টাইলের লক্ষ্য দামে (target price) ফ্যাক্টরির CM থেকে কাটা হয়। হারানো পিস সবসময় পুরোটাই কাটা হয়, কোনো ছাড় নেই। ব্যাচের পাতার “Details”-এ “Reject allowance” দেখায়।",
+          text: "ফ্যাক্টরিতে (CM) বানানো ব্যাচে “Reject allowance (%)” থাকে, নিজে থেকে 2%। কাটা পিসের এই ভাগ পর্যন্ত রিজেক্ট (সেলাইয়ের ভুল, এক্সেসরিজ লাগাতে গিয়ে নষ্ট হওয়া বডি) ফ্যাক্টরির কোনো জরিমানা নেই; এর বেশি প্রতিটি রিজেক্ট স্টাইলের লক্ষ্য দামে (target price) ফ্যাক্টরির CM থেকে কাটা হয়। হারানো পিস সবসময় পুরোটাই কাটা হয়, কোনো ছাড় নেই। ব্যাচের পাতার “Details”-এ “Reject allowance” দেখায়।",
         },
         {
           text: "ব্যাচের পাতায় “Add a style” চাপুন। নতুন প্রজেক্টের ফর্ম খোলে, “Master batch (optional)”-এ ব্যাচটি বসানো থাকে। স্টাইল, রং ও সাইজের পিস (চাইলে “Fill by size ratio” দিয়ে) আর “Target price per piece” দিয়ে “Create the project” চাপুন। প্রতিটি স্টাইলের জন্য আবার “Add a style”।",
@@ -568,7 +584,7 @@ export const productionHelp: HelpSection = {
       slug: "production-cost-guard",
       title: "খরচ পাহারা (Cost guard) ও লক্ষ্য দাম কাজ করে যেভাবে",
       summary:
-        "প্রতিটি স্টাইলের এক পিসের লক্ষ্য দাম (Target price) দিয়ে রাখলে এখন পর্যন্ত খরচ থেকে পিসপ্রতি খরচ হিসাব হয়; লক্ষ্যের ৮৫%-এ দাগ হলুদ, ১০০% পেরোলে লাল, আর সঙ্গে সঙ্গে ইনবক্সে বার্তা।",
+        "প্রতিটি স্টাইলের এক পিসের লক্ষ্য দাম (Target price) দিয়ে রাখলে এখন পর্যন্ত খরচ থেকে পিসপ্রতি খরচ হিসাব হয়; লক্ষ্যের 85%-এ দাগ হলুদ, 100% পেরোলে লাল, আর সঙ্গে সঙ্গে ইনবক্সে বার্তা।",
       keywords: [
         "cost guard",
         "target price",
@@ -591,7 +607,7 @@ export const productionHelp: HelpSection = {
       why: "বায়িং হাউসের লাভ চলে যায় ছোট ছোট বাড়তি খরচে: একবার বাড়তি এমব্রয়ডারি, একবার এয়ারে ট্রিমস আনা। ধরুন একটি টি-শার্টের লক্ষ্য দাম পিসপ্রতি 450 টাকা, 3,000 পিস। কাপড় আর CM-এর বিল বসার পরেই দাগ হলুদ হলো (পিসপ্রতি 390 টাকা, 87%): তখনই Production Manager-এর ইনবক্সে বার্তা আসে, আর বাকি ট্রিমস ও প্যাকিংয়ে খরচ সামলানোর সময় থাকে। মাস শেষে হিসাব করে জানার চেয়ে চলতে চলতে জানা অনেক বেশি কাজের।",
       fields: [
         {
-          label: "Target price per piece",
+          label: "Target price per piece (…, optional)",
           text: "প্রজেক্টের নতুন বা “Edit” ফর্মে এক পিসের সর্বোচ্চ খরচ লিখুন। খালি করে সংরক্ষণ করলে লক্ষ্য দাম মুছে যায়।",
         },
         {
@@ -635,7 +651,7 @@ export const productionHelp: HelpSection = {
           },
         },
         {
-          text: "দাগের রং: লক্ষ্যের ৮৫%-এর নিচে সবুজ (“Within the target price”), ৮৫% থেকে হলুদ (“Near the target price”), আর ১০০% বা বেশি হলে লাল (“Over the target price”)।",
+          text: "দাগের রং: লক্ষ্যের 85%-এর নিচে সবুজ (“Within the target price”), 85% থেকে হলুদ (“Near the target price”), আর 100% বা বেশি হলে লাল (“Over the target price”)।",
         },
         {
           text: "বিল, খরচ বা কাঁচামাল দেওয়ার ফলে দাগ হলুদ বা লাল হলেই Production Manager ও Super Admin-এর ইনবক্সে বার্তা আসে, যার শিরোনামে “Near the target price” বা “Over the target price” আর প্রজেক্টের কোড থাকে। বার্তার “Open the project” চাপলে প্রজেক্ট খোলে।",
@@ -782,6 +798,10 @@ export const productionHelp: HelpSection = {
           text: "ব্যাচের “Materials” অংশের বোতাম: পাওয়া উপকরণ স্টাইলগুলোতে দেওয়ার পাতা খোলে।",
         },
         { label: "Try again", text: "পাতা লোড না হলে চাপুন।" },
+        {
+          label: "Move … up",
+          text: "উপকরণের সারির পাশের তীর (… জায়গায় উপকরণের কোড): সারিটিকে এক ধাপ ওপরে তোলে।",
+        },
       ],
       next: "সংরক্ষণের পর স্টাইলের পাতায় প্রতিটি কাঁচামালের নিচে দেখায় কত লাগবে, কত অর্ডার হয়েছে আর কত বাকি; ব্যাচে থাকলে ব্যাচের “Materials” অংশে সব স্টাইলের হিসাব যোগ হয়ে অর্ডারের জন্য তৈরি থাকে। “Tech pack (PDF)” চাপলে নতুন তথ্য দিয়ে টেক প্যাক PDF নামে। টেক প্যাক অনুমোদনের পরে কাপড় বদলালে তা লাল রঙে দেখায়, তাই বদলের পরে মালিককে আবার অনুমোদন করতে বলুন।",
       mistakes: [
@@ -894,8 +914,8 @@ export const productionHelp: HelpSection = {
           text: "শুরুতে বাকি পরিমাণ বসানো থাকে; দরকার হলে বদলান। টিক তুলে দিলে সেই কাঁচামাল অর্ডারে যায় না।",
         },
         {
-          label: "Price per",
-          text: "এককের দাম (না দিলেও চলে)। খালি রাখলে লাইনটি “At receive”, মাল আসার সময় দাম দেওয়া হয়।",
+          label: "Price per … (…, optional)",
+          text: "এককের দাম (… জায়গায় একক আর মুদ্রা; না দিলেও চলে)। খালি রাখলে লাইনটি “At receive”, মাল আসার সময় দাম দেওয়া হয়।",
         },
         {
           label: "Make the purchase orders",
@@ -994,11 +1014,11 @@ export const productionHelp: HelpSection = {
         },
         {
           label: "All garments",
-          text: "পোশাকের ধরন দিয়ে ছাঁকা: “Knitwear”, “Woven”, “Outerwear”, “Sweater” বা “Other”।",
+          text: "পোশাকের ধরন দিয়ে ছাঁকা: “Knitwear”, “Woven”, “Outerwear”, “Sweater” বা “Other”। এটি “Garment” ঘরের প্রথম লাইন: পোশাকের পরিবার বাছলে শুধু সেই বুকিংগুলো দেখায়।",
         },
         {
           label: "Any status",
-          text: "অর্ডারের অবস্থা দিয়ে ছাঁকা: “Open”, “Part received”, “Received”, “Closed” বা “Cancelled”।",
+          text: "অর্ডারের অবস্থা দিয়ে ছাঁকা: “Open”, “Part received”, “Received”, “Closed” বা “Cancelled”। এটি “Status” ঘরের প্রথম লাইন।",
         },
         { label: "Find", text: "খোঁজ আর বাছাই অনুযায়ী তালিকা দেখায়।" },
         { label: "Booking", text: "বুকিং নম্বর (চাপলে বুকিং খোলে), তারিখ আর অবস্থার চিহ্ন।" },
@@ -1054,7 +1074,7 @@ export const productionHelp: HelpSection = {
     },
     {
       slug: "production-booking-new",
-      title: "নতুন বুকিং করবেন যেভাবে (৫ ধাপ)",
+      title: "নতুন বুকিং করবেন যেভাবে (5 ধাপ)",
       summary:
         "পাঁচ ছোট ধাপে বুকিং: উৎস ও পোশাকের ধরন, কাপড় (ধরন অনুযায়ী ঘর আর হিসাব করে পরিমাণ), ট্রিমস (নিজে থেকে বসানো, সাথে “Add custom item”), কলার-কাফের ছক, তারপর শর্তাবলি ও শেষবার মিলিয়ে দেখা।",
       keywords: [
@@ -1081,7 +1101,7 @@ export const productionHelp: HelpSection = {
         "ডায়া",
         "কনজাম্পশন",
       ],
-      routes: ["/production/bookings/new"],
+      routes: ["/production/bookings/new", "/production/bookings/[bookingId]/edit"],
       who: "যাঁদের “Add bookings”-এর অনুমতি আছে (শুরুতে Production Manager ও Super Admin): “Supplier PO (a mill or trims house)” থাকলে সাপ্লায়ার PO, “Ready stock (market purchase)” থাকলে বাজার থেকে কেনা। মাল সাথে সাথে স্টকে তুলতে কাঁচামাল কেনার অনুমতিও লাগে।",
       anyOf: ["production.bookings.supplier", "production.bookings.market"],
       what: "নতুন বুকিংয়ের পাঁচ ধাপের ফর্ম। উপরে ধাপের সারি: “Booking type”, “Fabric”, “Trims & accessories”, “Collar & cuff” (শুধু নিটে) আর “Terms & review”; ধাপের নামে চেপে যেকোনো ধাপে যাওয়া যায়, ভুল থাকা ধাপ লাল। প্রথম ধাপে উৎস (“Supplier PO” বা “Ready stock / market purchase”), পোশাকের ধরন, সরবরাহকারী, তারিখ, রেফারেন্স আর পিস। “Fabric” ধাপে প্রতিটি কাপড় একটি কার্ড: ধরন অনুযায়ী স্পেসিফিকেশনের ঘর (GSM, DIA, চওড়া, কাউন্ট, গেজ), পরিমাণ সরাসরি বা হিসাব করে, দাম আর নোট। “Trims & accessories” ধাপে ধরন অনুযায়ী আদর্শ ট্রিমস বসানো থাকে। শেষ ধাপে পেমেন্ট, ডেলিভারির জায়গা, শর্তাবলি (ইংরেজি বা বাংলা), নোট আর “Check before saving”-এ পুরো বুকিং একবার।",
@@ -1152,7 +1172,10 @@ export const productionHelp: HelpSection = {
         { label: "Fabric type", text: "যেমন Single jersey, Pique।" },
         { label: "Composition", text: "যেমন 100% cotton বা 60/40 CVC।" },
         { label: "Colour", text: "কাপড়ের রং, যেমন Navy।" },
-        { label: "Weight", text: "নিট ও ওভেনে GSM; ওভেনে চাইলে oz/yd², “Weight unit” থেকে বেছে।" },
+        {
+          label: "Weight",
+          text: "নিট ও ওভেনে GSM; ওভেনে চাইলে oz/yd², “Weight unit” থেকে বেছে। একক দুটি: “GSM” ও “oz/yd²”।",
+        },
         {
           label: "DIA (inches)",
           text: "নিট কাপড়ের ডায়া, ইঞ্চিতে; পাশে “Tube or open” থেকে “Tube” বা “Open”।",
@@ -1192,14 +1215,20 @@ export const productionHelp: HelpSection = {
           label: "Trims & accessories",
           text: "তৃতীয় ধাপ: ধরন অনুযায়ী আদর্শ ট্রিমস বসানো থাকে (নিটে “Collar”, “Cuff”, “Twill tape”, “Button”), প্রতিটির পরিমাণ লিখুন।",
         },
-        { label: "Kind", text: "ট্রিমের ধরন, কাঁচামালের তালিকার মতো।" },
+        {
+          label: "Kind",
+          text: "ট্রিমের ধরন, কাঁচামালের তালিকার মতো। বাছা যায় “Trims”, “Accessories”, “Packaging” বা “Other”।",
+        },
         { label: "Unit", text: "এককের ঘর, যেমন pcs, set, kg।" },
         {
           label: "Counts as",
-          text: "কোনো আইটেম কলার বা কাফ হিসেবে গুনতে বেছে নিন; কলারের ছক তখন তার পরিমাণ দেয়।",
+          text: "কোনো আইটেম কলার বা কাফ হিসেবে গুনতে বেছে নিন; কলারের ছক তখন তার পরিমাণ দেয়। সাধারণ ট্রিম হলে “A trim”; কলার বা কাফ হলে সেটি বাছুন।",
         },
         { label: "Add custom item", text: "তালিকার বাইরের কোনো ট্রিম যোগ করে।" },
-        { label: "Add back a standard trim", text: "মুছে ফেলা আদর্শ ট্রিম আবার যোগ করে।" },
+        {
+          label: "Add back a standard trim",
+          text: "মুছে ফেলা আদর্শ ট্রিম আবার যোগ করে। প্রতিটি বোতামে ট্রিমের নাম থাকে, যেমন “Collar bone”, “Twill tape” বা “Zipper”; চাপলে সেই লাইন আবার যোগ হয়।",
+        },
         {
           label: "From the batch's materials",
           text: "ব্যাচ থেকে বুকিং হলে ব্যাচের কাঁচামাল এক চাপে যোগ করে, কতটুকু অর্ডার বাকি তাসহ।",
@@ -1227,7 +1256,7 @@ export const productionHelp: HelpSection = {
         { label: "Keep mine", text: "ভাষা বদলের সময় আপনার লেখা শর্তাবলি রেখে দেয়।" },
         {
           label: "Add a condition",
-          text: "নতুন খালি শর্তের ঘর যোগ করে। কোলনের আগে শিরোনাম লিখলে PDF-এ মোটা অক্ষরে ছাপা হয়।",
+          text: "নতুন খালি শর্তের ঘর যোগ করে। কোলনের আগে শিরোনাম লিখলে PDF-এ মোটা অক্ষরে ছাপা হয়। প্রতিটি শর্ত আলাদা ঘরে, যার নাম “Condition” আর ক্রমিক নম্বর।",
         },
         {
           label: "Reset to the standard terms",
@@ -1253,6 +1282,8 @@ export const productionHelp: HelpSection = {
           text: "একই ফর্ম আগের বুকিং বদলাতে খুললে (বুকিংয়ের পাতার “Change”) শেষ বোতামের নাম এটি; “বুকিং বদলাবেন …” গাইডটি দেখুন।",
         },
         { label: "Try again", text: "ফর্ম লোড না হলে চাপুন।" },
+        { label: "Finish / wash", text: "কাপড়ের ফিনিশ বা ওয়াশ, যেমন enzyme বা silicone।" },
+        { label: "Size / details", text: "ট্রিমের মাপ বা বিবরণ, যেমন বোতামের 18L, 4 ছিদ্র।" },
       ],
       next: "“Save the booking” চাপলে বুকিং একটি নম্বর পায় (পারচেজ অর্ডারের নম্বরে) আর “Draft” থাকে: মালিক চেকগুলো দেখে “Approve booking” না দেওয়া পর্যন্ত সরবরাহকারীকে পাঠানো বা মাল নেওয়া যায় না। নতুন নামের কাপড় ও আইটেম কাঁচামালের তালিকায় যোগ হয়। ব্যাচ থেকে বুকিং করলে প্রতিটি লাইন ব্যাচের স্টাইল, রং ও সাইজে ভাগ হয়। “Save and add to stock” দিলে বুকিং সরাসরি “Sent” হয়, মাল স্টোরে ঢোকে আর বিল বিক্রেতার কাছে বাকি থাকে।",
       mistakes: [
@@ -1287,7 +1318,7 @@ export const productionHelp: HelpSection = {
           },
         },
         {
-          text: "পরিমাণ সরাসরি লিখতে “Type it”, হিসাব করাতে “Work it out” চাপুন: “Garment pieces”, “Consumption per dozen (…)” আর “Process loss (%)” দিলে বুক করার পরিমাণ নিজে বেরিয়ে আসে (পিস ÷ ১২ × প্রতি ডজনে কাপড় + লস, উপরের দিকে রাউন্ড)। দাম জানলে “Price per …” ঘরে লিখুন, না জানলে খালি রাখুন, মাল আসার সময় দাম দেওয়া হবে।",
+          text: "পরিমাণ সরাসরি লিখতে “Type it”, হিসাব করাতে “Work it out” চাপুন: “Garment pieces”, “Consumption per dozen (…)” আর “Process loss (%)” দিলে বুক করার পরিমাণ নিজে বেরিয়ে আসে (পিস ÷ 12 × প্রতি ডজনে কাপড় + লস, উপরের দিকে রাউন্ড)। দাম জানলে “Price per …” ঘরে লিখুন, না জানলে খালি রাখুন, মাল আসার সময় দাম দেওয়া হবে।",
         },
         {
           text: "ক্যাটালগের কোনো কাপড় নিতে “Pick from the catalogue” চাপুন, না হলে নাম লিখুন: নতুন কাপড় বুকিং সংরক্ষণের সময় ক্যাটালগে যোগ হয়ে যায়। রিব বা কন্ট্রাস্ট কাপড়ের জন্য “Add another fabric”।",
@@ -1336,7 +1367,7 @@ export const productionHelp: HelpSection = {
         "ফ্ল্যাট নিট",
         "সেট",
       ],
-      routes: ["/production/bookings/new"],
+      routes: ["/production/bookings/new", "/production/bookings/[bookingId]/edit"],
       who: "যাঁদের “Add bookings”-এর অনুমতি আছে: শুরুতে Production Manager ও Super Admin।",
       anyOf: ["production.bookings.supplier", "production.bookings.market"],
       what: "নিটের বুকিংয়ের চতুর্থ ধাপ “Collar & cuff”: পোলোর ফ্ল্যাট-নিট কলার ও কাফ সাইজ গ্রুপ আর পোশাকের রং অনুযায়ী বুক করার ছক। উপরে “Book collars and cuffs by size and colour” টিক; তারপর “Collar style”, “Extra over the pieces (%)”; “Size groups and measurements (cm)”-এ প্রতিটি গ্রুপের নাম, কলারের দৈর্ঘ্য × প্রস্থ আর কাফের মাপ; “Garment pieces by colour”-এ প্রতিটি রঙের পোশাক, কলার ও টিপিংয়ের রং আর প্রতিটি সাইজ গ্রুপের পিস। নিচে মোট: “Garment pieces”, “Collar sets to knit”, কাফ, “Extra”, আর সাইজ গ্রুপ অনুযায়ী মাপ, পিস ও সেটের টেবিল।",
@@ -1360,7 +1391,10 @@ export const productionHelp: HelpSection = {
           label: "Size groups and measurements (cm)",
           text: "প্রতিটি সাইজ গ্রুপের নাম আর কলার ও কাফের মাপ, সেন্টিমিটারে।",
         },
-        { label: "Size group", text: "গ্রুপের নাম, যেমন S-M, L-XL, 2XL।" },
+        {
+          label: "Size group",
+          text: "গ্রুপের নাম, যেমন S-M, L-XL, 2XL। নতুন ছকে শুরুতে তিনটি দল থাকে: “S-M”, “L-XL” ও “2XL”, প্রতিটির কলার ও কাফের মাপসহ; নাম ও মাপ বদলানো যায়।",
+        },
         { label: "Collar", text: "কলারের দৈর্ঘ্য × প্রস্থ, যেমন 42 × 9।" },
         {
           label: "Cuff (optional)",
@@ -1413,10 +1447,10 @@ export const productionHelp: HelpSection = {
           text: "“Collar style” থেকে বেছে নিন: “Solid”, “Jacquard rib”, “Ambush rib”, “Tipping” বা “Honeycomb”। “Tipping” বাছলে প্রতিটি রঙে “Tipping colour” ঘর আসে।",
         },
         {
-          text: "“Extra over the pieces (%)”-এ নিটিং ও লিংকিংয়ের লসের জন্য অতিরিক্ত ভাগ দিন (নিজে থেকে ৩%)।",
+          text: "“Extra over the pieces (%)”-এ নিটিং ও লিংকিংয়ের লসের জন্য অতিরিক্ত ভাগ দিন (নিজে থেকে 3%)।",
         },
         {
-          text: "“Size groups and measurements (cm)”-এ প্রতিটি “Size group”-এর নাম (যেমন S-M), “Collar” দৈর্ঘ্য × প্রস্থ আর “Cuff (optional)” দৈর্ঘ্য × প্রস্থ দিন (যেমন 38 × 3.5)। নতুন গ্রুপের জন্য “Add size group”, এতে কলার নিজে থেকে ২ সেমি লম্বা বসে।",
+          text: "“Size groups and measurements (cm)”-এ প্রতিটি “Size group”-এর নাম (যেমন S-M), “Collar” দৈর্ঘ্য × প্রস্থ আর “Cuff (optional)” দৈর্ঘ্য × প্রস্থ দিন (যেমন 38 × 3.5)। নতুন গ্রুপের জন্য “Add size group”, এতে কলার নিজে থেকে 2 সেমি লম্বা বসে।",
         },
         {
           text: "“Garment pieces by colour”-এ প্রতিটি রঙের জন্য “Garment colour” লিখুন, কলার অন্য রঙের হলে “Collar colour”, তারপর প্রতিটি সাইজ গ্রুপের ঘরে পোশাকের পিস। প্রতিটি ঘরের নিচে সেই ঘরের সেট আর রঙের নিচে মোট সেট সাথে সাথে দেখায়। আরেকটি রঙের জন্য “Add colour”।",
@@ -1431,7 +1465,7 @@ export const productionHelp: HelpSection = {
       ],
       tips: [
         "সেট = পিস + অতিরিক্ত ভাগ, প্রতিটি ঘরে উপরের দিকে রাউন্ড করা; তাই মাল কখনো কম পড়ে না।",
-        "কাফ পিসে বুক হলে প্রতি সেটে ২টি গোনা হয়, সেটে বুক হলে ১টি।",
+        "কাফ পিসে বুক হলে প্রতি সেটে 2টি গোনা হয়, সেটে বুক হলে 1টি।",
         "ছক চালু থাকলে ট্রিমসে অন্তত একটি “Collar” বা “Cuff” আইটেম লাগে, আর সেগুলোর একক পিস বা সেট হতে হয়। কোনো আইটেম কলার বা কাফ হিসেবে গুনতে “Counts as” থেকে বেছে নিন।",
         "ব্যাচ থেকে বুকিং করলে ব্যাচের স্টাইলগুলোর রং ও সাইজের পিস সাইজ গ্রুপ অনুযায়ী নিজে থেকে বসে যায় (M যায় S-M-এ, XXL যায় 2XL-এ)।",
       ],
@@ -1440,7 +1474,7 @@ export const productionHelp: HelpSection = {
       slug: "production-booking-print",
       title: "বুকিংয়ের শর্তাবলি বাংলা বা ইংরেজিতে দেবেন ও PDF প্রিন্ট করবেন যেভাবে",
       summary:
-        "মান, GSM ও DIA-র সহনসীমা, শেড, ৪-পয়েন্ট ত্রুটি নীতি আর ন্যাপস বা লোমশ কাপড়ের কড়া শর্তাবলি ইংরেজি বা বাংলায় নিজে থেকে বসে; তারপর Landscape বা Portrait-এ PDF: উপরে বাঁধাইয়ের ফাঁকা জায়গা, প্রতিটি পাতায় কোম্পানির হেডার ও ফুটার, নেভি টেবিল, QR কোড, কাপড়ের সোয়াচ লিস্ট আর সরবরাহকারীর সই।",
+        "মান, GSM ও DIA-র সহনসীমা, শেড, 4-পয়েন্ট ত্রুটি নীতি আর ন্যাপস বা লোমশ কাপড়ের কড়া শর্তাবলি ইংরেজি বা বাংলায় নিজে থেকে বসে; তারপর Landscape বা Portrait-এ PDF: উপরে বাঁধাইয়ের ফাঁকা জায়গা, প্রতিটি পাতায় কোম্পানির হেডার ও ফুটার, নেভি টেবিল, QR কোড, কাপড়ের সোয়াচ লিস্ট আর সরবরাহকারীর সই।",
       keywords: [
         "terms and conditions",
         "bengali terms",
@@ -1533,14 +1567,14 @@ export const productionHelp: HelpSection = {
           text: "বুকিং সংরক্ষণের পর তার পাতায় “Print booking (PDF)” চাপুন। একটি ছোট জানালা জিজ্ঞেস করে “Which way round?”: “Landscape” (পাতা আড়াআড়ি) বা “Portrait” (পাতা লম্বালম্বি)। বেছে নিয়ে “Download the PDF” চাপুন। আপনার শেষ বাছাই মনে থাকে; প্রথমবার “Landscape” বাছাই করা থাকে।",
         },
         {
-          text: "A4 PDF-এর প্রতিটি পাতার উপরে ১৫ মিমি ফাঁকা জায়গা থাকে বাঁধাইয়ের জন্য। তার নিচে হেডার: বাঁয়ে কোম্পানির নাম ও ট্যাগলাইন, মাঝে ডকুমেন্টের নাম, ডানে DOC NO, BUYER · PO, DATE আর PREPARED BY: যিনি বুকিংটি বানিয়েছেন তাঁর নাম, পাশে সইয়ের রেখা। কোম্পানির নাম, ক্রেতা বা ঠিকানা লম্বা হলে কেটে “…” হয় না, দ্বিতীয় লাইনে যায়। প্রথম পাতায় QR কোড (স্ক্যান করলে বুকিংটি খোলে), তারপর নেভি রঙের মাথাসহ কাপড় ও ট্রিমসের টেবিল, কলার-কাফের ছক আলাদা পাতায়, ব্যাচে থাকলে স্টাইল অনুযায়ী ভাগ, নম্বর দেওয়া শর্তাবলি আর চারটি সই।",
+          text: "A4 PDF-এর প্রতিটি পাতার উপরে 15 মিমি ফাঁকা জায়গা থাকে বাঁধাইয়ের জন্য। তার নিচে হেডার: বাঁয়ে কোম্পানির নাম ও ট্যাগলাইন, মাঝে ডকুমেন্টের নাম, ডানে DOC NO, BUYER · PO, DATE আর PREPARED BY: যিনি বুকিংটি বানিয়েছেন তাঁর নাম, পাশে সইয়ের রেখা। কোম্পানির নাম, ক্রেতা বা ঠিকানা লম্বা হলে কেটে “…” হয় না, দ্বিতীয় লাইনে যায়। প্রথম পাতায় QR কোড (স্ক্যান করলে বুকিংটি খোলে), তারপর নেভি রঙের মাথাসহ কাপড় ও ট্রিমসের টেবিল, কলার-কাফের ছক আলাদা পাতায়, ব্যাচে থাকলে স্টাইল অনুযায়ী ভাগ, নম্বর দেওয়া শর্তাবলি আর চারটি সই।",
           image: {
             id: "production-booking-print-2",
             caption: "বুকিংয়ের PDF: হেডার, QR কোড, কাপড়ের টেবিল ও ফুটার",
           },
         },
         {
-          text: "কাপড় থাকলে শেষ পাতায় “Fabric swatch list”: স্টাইল ও রং অনুযায়ী এক সারি করে, প্রতিটিতে প্রায় ১৫ মিমি উঁচু “Swatch paste area” (কাপড় এলে সোয়াচ আঠা দিয়ে লাগান), পরিমাণ, আর হাতে লেখার জন্য “No. of rolls” ও “Cutting report”। শেষ সারিতে সরবরাহকারীর মোট কাপড়।",
+          text: "কাপড় থাকলে শেষ পাতায় “Fabric swatch list”: স্টাইল ও রং অনুযায়ী এক সারি করে, প্রতিটিতে প্রায় 15 মিমি উঁচু “Swatch paste area” (কাপড় এলে সোয়াচ আঠা দিয়ে লাগান), পরিমাণ, আর হাতে লেখার জন্য “No. of rolls” ও “Cutting report”। শেষ সারিতে সরবরাহকারীর মোট কাপড়।",
         },
         {
           text: "প্রতিটি পাতার নিচে নেভি রেখার নিচে কোম্পানির নাম, ফোন, ইমেইল ও ঠিকানা আর পাতার নম্বর (যেমন PAGE 2 OF 5), তার উপরে সরবরাহকারীর ছোট সইয়ের জায়গা (“Supplier's initials”, বাজার থেকে কেনায় “Seller's initials”)। টেবিল কয়েক পাতা জুড়ে চললে প্রতিটি পাতায় টেবিলের মাথা আবার ছাপা হয়, কোনো সারি দুই পাতায় ভাঙে না। কোনো সংখ্যা কখনো কাটা হয় না: সাইজ বা কলাম অনেক হলে আগে অক্ষর ছোট হয়, তাতেও না ধরলে টেবিল দুই বা বেশি ভাগে ছাপা হয়, প্রতিটি ভাগে রঙ বা বিবরণের কলাম আবার থাকে আর শিরোনামে লেখা থাকে কোন কলাম থেকে কোন কলাম (continued)। পাতার নম্বর সবসময় পুরো ছাপা হয়।",
@@ -1612,6 +1646,10 @@ export const productionHelp: HelpSection = {
         },
         { label: "Cancel", text: "খোলা জানালা কিছু না বদলে বন্ধ করে।" },
         { label: "Try again", text: "অংশটি লোড না হলে চাপুন।" },
+        {
+          label: "Turn it off",
+          text: "Fabric first চালু থাকলে নিশ্চিত করার জানালার বোতাম: Fabric first বন্ধ করে। এরপর বুকিং সাধারণ নিয়মে অনুমোদন হয়, টেক প্যাক অনুমোদিত না থাকলে সতর্কবার্তাসহ।",
+        },
       ],
       next: "বুকিং ব্যাচে যোগ হলে তার প্রতিটি লাইন ব্যাচের স্টাইল, রং ও সাইজে ভাগ হয়, আর ব্যাচের “Materials” অংশে সেই কাপড় “ordered” দেখায়। অনুমোদিত বুকিং যোগ বা সরালে তা নতুন সংশোধনী (R1) হয়ে “Draft” হয়: মালিককে আবার অনুমোদন করতে বলুন। অনুমোদনের পরে সরবরাহকারীকে ছাপা বুকিং দিন; মাল এলে ব্যাচের “Receive a delivery” দিয়ে নিন।",
       mistakes: [
@@ -1851,7 +1889,7 @@ export const productionHelp: HelpSection = {
           text: "বুকিংয়ের পাতার উপরে অনুমোদনের আগের চেকগুলো দেখায়। সবুজ টিক মানে ঠিক আছে, হলুদ মানে সতর্কতা (যেমন কাপড়ের বুকিংয়ে স্টাইলের টেক প্যাক এখনো অনুমোদিত নয়), লাল মানে আগে ঠিক করতে হবে, যেমন “Set the in-house date (Deliver by) in the paperwork”। লাল কিছু থাকলে “Approve booking” বোতাম কাজ করে না।",
         },
         {
-          text: "কলার, কাফ আর ট্রিমস অপেক্ষা করে স্টাইলের পুরো টেক প্যাক অনুমোদন পর্যন্ত: লাল লাইনে লেখা থাকে “Collar, cuff and trims wait for the tech pack of … to be approved”। খুব দরকার হলে মালিক “Approve with a reason” চেপে “Reason” ঘরে কারণ লিখে (অন্তত ৫ অক্ষর) “Approve booking” দিতে পারেন। কারণটি আপনার নামসহ কার্যকলাপের লগে থাকে। অন্য কেউ (যিনি বুকিং অনুমোদন করেন তিনিও) এটা পারেন শুধু যদি মালিক তাঁর রোলে “Approve collar, cuff and trims before the tech pack is approved (with a reason)” টিক দেন; না থাকলে বোতামটি দেখায়ই না। AI কখনো এভাবে অনুমোদন করে না।",
+          text: "কলার, কাফ আর ট্রিমস অপেক্ষা করে স্টাইলের পুরো টেক প্যাক অনুমোদন পর্যন্ত: লাল লাইনে লেখা থাকে “Collar, cuff and trims wait for the tech pack of … to be approved”। খুব দরকার হলে মালিক “Approve with a reason” চেপে “Reason” ঘরে কারণ লিখে (অন্তত 5 অক্ষর) “Approve booking” দিতে পারেন। কারণটি আপনার নামসহ কার্যকলাপের লগে থাকে। অন্য কেউ (যিনি বুকিং অনুমোদন করেন তিনিও) এটা পারেন শুধু যদি মালিক তাঁর রোলে “Approve collar, cuff and trims before the tech pack is approved (with a reason)” টিক দেন; না থাকলে বোতামটি দেখায়ই না। AI কখনো এভাবে অনুমোদন করে না।",
           image: {
             id: "production-booking-approval-1",
             caption: "লাল চেকসহ বুকিং আর “Approve with a reason” বোতাম",
@@ -2214,7 +2252,10 @@ export const productionHelp: HelpSection = {
         { label: "Description", text: "ছোট বিবরণ, যেমন পিকে পোলো, বুকে এমব্রয়ডারি।" },
         { label: "Pieces", text: "এই স্টাইলের কত পিস।" },
         { label: "Fabric", text: "কাপড়ের নাম।" },
-        { label: "Priced per", text: "কাপড়ের দাম কেজিতে (নিট) না গজে (ওভেন)।" },
+        {
+          label: "Priced per",
+          text: "কাপড়ের দাম কেজিতে (নিট) না গজে (ওভেন)। বিকল্প “kg (knits)” আর “yard (wovens)”।",
+        },
         { label: "Fabric a dozen", text: "প্রতি 12 পিসে কত কাপড়।" },
         {
           label: "Supplier's price per",
@@ -2256,12 +2297,31 @@ export const productionHelp: HelpSection = {
           label: "Add a supplier quote",
           text: "নতুন কোটেশনের জানালা: “Supplier”, “Fabric”, “Price”, “Per”, “Currency”, “Quoted on”, “Good until” ও “Note”।",
         },
-        { label: "Per", text: "কোটেশন কেজি প্রতি না গজ প্রতি।" },
+        {
+          label: "Per",
+          text: "কোটেশন কেজি প্রতি না গজ প্রতি। বাছা যায় “kg” বা “yard” (ওভেন কাপড়ে)।",
+        },
         { label: "Quoted on", text: "কবে কোটেশন দিলেন।" },
         { label: "Good until", text: "কোটেশন কতদিন চলবে; পেরোলে তালিকায় লেখা থাকে কবে শেষ হলো।" },
         { label: "Save the quote", text: "কোটেশন রাখে; পরে “Fabric prices”-এ দেখায়।" },
         { label: "Cancel", text: "জানালা কিছু না বদলে বন্ধ করে।" },
         { label: "Try again", text: "পাতা লোড না হলে চাপুন।" },
+        {
+          label: "Take off …'s quote",
+          text: "সরবরাহকারীর কোটের পাশের ক্রস (… জায়গায় সরবরাহকারীর নাম): কোটটি তালিকা থেকে সরায়। নিশ্চিত করতে জানালায় “Take off” চাপুন। যে শিটে কোটটি আগে ব্যবহার হয়েছে সেগুলোর কাপড়ের দাম বদলায় না।",
+        },
+        {
+          label: "Take … off the sheet",
+          text: "স্টাইলের পাশের ময়লার ঝুড়ি (… জায়গায় স্টাইলের কোড): নিশ্চিত করার জানালায় “Take off” চাপলে স্টাইলটির খরচ এই শিট থেকে সরে, আর কিছু বদলায় না।",
+        },
+        {
+          label: "Find fabric prices",
+          text: "“Fabric prices”-এর খোঁজের ঘর: কাপড়ের নাম লিখে খুঁজুন, যেমন cotton pique।",
+        },
+        {
+          label: "CM",
+          text: "স্টাইলের কার্ডে প্রতি ডজনে CM খরচ; নিচে ছোট করে ফ্যাক্টরির সাথে ঠিক করা দাম আর তা পিস না ডজন প্রতি। দাম না দিলে “Missing”।",
+        },
       ],
       next: "স্টাইল যোগ করলেই শিটের উপরের “Order check card” নতুন করে হিসাব হয়। পড়ে মালিক “Your decision”-এ অর্ডার নেন বা ফিরিয়ে দেন; কিছুই ক্রেতাকে পাঠানো হয় না। অর্ডার নিলে বিক্রির দিকে কোটেশন বা অর্ডার বানান আর উৎপাদনের জন্য প্রজেক্ট খুলুন; কোটেশনগুলো পরের শিটেও কাজে লাগে।",
       mistakes: [
@@ -2484,7 +2544,10 @@ export const productionHelp: HelpSection = {
         { label: "Title", text: "ধারার শিরোনাম।" },
         { label: "What it says", text: "ধারার লেখা; অনুচ্ছেদের মাঝে একটি খালি লাইন রাখুন।" },
         { label: "Remove", text: "ধারাটি সরায়; তীর চিহ্নে ধারা উপরে সরে।" },
-        { label: "Add a clause", text: "নতুন খালি ধারা যোগ করে।" },
+        {
+          label: "Add a clause",
+          text: "নতুন খালি ধারা যোগ করে। প্রতিটি ধারার পাশের তীর “Move clause … up” (… জায়গায় ধারার নম্বর) ধারাটিকে এক ধাপ ওপরে তোলে।",
+        },
         {
           label: "Signed on (optional)",
           text: "দুই পক্ষ সই করলে তারিখ দিন; তারপর ধারা ও CM আর বদলায় না। বদলাতে আগে ঘরটি খালি করে সংরক্ষণ করুন।",
@@ -2555,7 +2618,7 @@ export const productionHelp: HelpSection = {
         "কম এসেছে",
       ],
       routes: ["/production/batches/[batchId]/receive"],
-      who: "রিসিভ করেন যাঁরা কাঁচামাল কেনেন (materials.purchase): Production Manager ও Super Admin। মাল বাকিতে (Supplier Due) স্টোরে ঢোকে।",
+      who: "রিসিভ করেন যাঁরা কাঁচামাল কেনেন (“Buy: purchase orders, bills on credit and returns” অনুমতি): Production Manager ও Super Admin। মাল বাকিতে (Supplier Due) স্টোরে ঢোকে।",
       anyOf: ["materials.purchase"],
       what: "মাস্টার ব্যাচের “Receive for the batch” পাতা: ব্যাচের যেসব পারচেজ অর্ডার বা বুকিংয়ে মাল আসা বাকি, তার একটি বেছে মাল স্টোরে তোলা। উপরে “Challan no. (optional)”, “Received on” আর “Into the store”; তারপর “Challan vs Actual” অংশে প্রতিটি লাইনে “Challan says (…)”, আসল ওজন বা গোনা (“Actual weight (…)” বা “Actual count (…)”), আর দামের ঘর (রিসিভে দাম ঠিক হওয়ার লাইনে “Agreed price”)। লেখার সাথে সাথে প্রতিটি লাইনের নিচে Final Match, Extra বা Short দেখায়, সীমার বেশি কম হলে লাল। শেষে “Notes (optional)” আর “Receive into the store”।",
       why: "চালানে 1,000 kg লেখা থাকলেও আসল ওজনে প্রায়ই কম হয়, আর না মাপলে পুরো টাকাই দিতে হয়। এখানে চালান আর আসল পাশাপাশি লিখলে শুধু যা এসেছে তার বিল হয়, আর কাপড়ে 2% বা অন্য মালে 1%-এর বেশি কম হলে লাইনটি সরবরাহকারীর Fault Log-এ টাকাসহ উঠে যায়। যেমন নেভি জার্সি 1,000 kg-এর চালানে আসল 965 kg: 35 kg-এর দাম পরের পেমেন্ট থেকে কাটার জন্য লগে থাকে, Production Manager সাথে সাথে বার্তা পান।",
@@ -2603,7 +2666,7 @@ export const productionHelp: HelpSection = {
           text: "“Challan no. (optional)” ঘরে সরবরাহকারীর চালান নম্বর আর “Received on” ঘরে তারিখ দিন।",
         },
         {
-          text: "“Challan vs Actual” অংশে প্রতিটি লাইনে চালানে কত লেখা (“Challan says”) আর আসলে কত ওজন বা গোনা হলো তা লিখুন। লেখার সাথে সাথে নিচে দেখায়: সমান হলে Final Match, বেশি হলে Extra, কম হলে Short। কাপড়ে ২% আর বাকিতে ১%-এর বেশি কম হলে লাল হয়ে যায়।",
+          text: "“Challan vs Actual” অংশে প্রতিটি লাইনে চালানে কত লেখা (“Challan says”) আর আসলে কত ওজন বা গোনা হলো তা লিখুন। লেখার সাথে সাথে নিচে দেখায়: সমান হলে Final Match, বেশি হলে Extra, কম হলে Short। কাপড়ে 2% আর বাকিতে 1%-এর বেশি কম হলে লাল হয়ে যায়।",
           image: {
             id: "production-batch-receive-2",
             caption: "চালান বনাম আসল ওজন, লাল Short সতর্কতা সহ",
@@ -2643,7 +2706,7 @@ export const productionHelp: HelpSection = {
         "স্টোর",
       ],
       routes: ["/production/batches/[batchId]/issue"],
-      who: "ইস্যু করেন স্টোর (Warehouse Team), Production Manager ও Super Admin (materials.manage)। এই পাতায় দাম দেখায় না।",
+      who: "ইস্যু করেন স্টোর (Warehouse Team), Production Manager ও Super Admin (“Run the store: count, issue, move and wastage” অনুমতি)। এই পাতায় দাম দেখায় না।",
       anyOf: ["materials.manage"],
       what: "মাস্টার ব্যাচের “Issue to styles” পাতা: স্টোর থেকে ব্যাচের সব স্টাইলে এক সাথে কাপড় ও অ্যাক্সেসরিজ দেওয়া। উপরে “From the store”, “Issued on” আর “Taken by (optional)”; তারপর “Fill what is still to issue” ও “Clear”। প্রতিটি কাঁচামালের একটি অংশ: স্টোরে কত আছে, আর প্রতিটি স্টাইলের নিচে প্রতিটি রঙের ঘর (রং না থাকলে “All colours”), সাথে কত লাগবে, আগে কত দেওয়া হয়েছে আর কত বাকি। নিচে মোট আর স্টোরে কত আছে; বেশি হলে লাল। এই পাতায় দাম দেখায় না।",
       why: "তিনটি স্টাইলের জন্য এক বস্তা কাপড় একসাথে কাটিংয়ে গেলে কোন স্টাইল কত নিল তা না লিখলে প্রতিটি স্টাইলের খরচ ভুল হয়। এখানে রং ধরে লিখলে প্রতিটি স্টাইলে আলাদা ইস্যু নোট হয় আর শুধু যা নিল তার খরচই তার ঘাড়ে ওঠে। যেমন নেভি কাপড়ের 600 kg থেকে স্টাইল A 350 kg আর স্টাইল B 250 kg নিল: দুটো আলাদা নোট, দুটো স্টাইলের খরচ ঠিক, আর স্টোরের হিসাবও মেলে।",
@@ -2705,7 +2768,7 @@ export const productionHelp: HelpSection = {
       slug: "production-fault-log",
       title: "সরবরাহকারীর Fault Log আর রিপোর্ট কার্ড ব্যবহার করবেন যেভাবে",
       summary:
-        "রিসিভে কম আসা, কাপড়ের ত্রুটি, মানের সমস্যা আর হারানো পিস এক তালিকায়: কার কাছে কত টাকা কাটতে হবে, কোনটা কাটা হয়েছে বা ছাড় দেওয়া হয়েছে। এক চাপে সরবরাহকারীর ১২ মাসের রিপোর্ট কার্ড PDF।",
+        "রিসিভে কম আসা, কাপড়ের ত্রুটি, মানের সমস্যা আর হারানো পিস এক তালিকায়: কার কাছে কত টাকা কাটতে হবে, কোনটা কাটা হয়েছে বা ছাড় দেওয়া হয়েছে। এক চাপে সরবরাহকারীর 12 মাসের রিপোর্ট কার্ড PDF।",
       keywords: [
         "fault log",
         "supplier fault",
@@ -2740,11 +2803,11 @@ export const productionHelp: HelpSection = {
         { label: "Change", text: "বেছে নেওয়া সরবরাহকারীর বাছাই মুছে আবার খুঁজতে দেয়।" },
         {
           label: "What went wrong",
-          text: "ফল্টের ধরন: কম আসা, কাপড়ের ত্রুটি, মানের ত্রুটি, হারানো পিস বা অন্য।",
+          text: "ফল্টের ধরন: কম আসা, কাপড়ের ত্রুটি, মানের ত্রুটি, হারানো পিস বা অন্য। বাছা যায় “Short at receive” (রিসিভে কম), “Fabric fault” (কাপড়ের ত্রুটি), “Quality fault” (মানের সমস্যা), “Missing pieces” (হারানো পিস), “Spoiled at embroidery or print” (এমব্রয়ডারি বা প্রিন্টে নষ্ট) বা “Other”।",
         },
         { label: "On", text: "কবে ঘটল।" },
         { label: "How much (optional)", text: "পরিমাণ, যেমন 35 kg বা 24 পিস।" },
-        { label: "Value to deduct", text: "পরের পেমেন্ট থেকে কত টাকা কাটবেন।" },
+        { label: "Value to deduct (…, optional)", text: "পরের পেমেন্ট থেকে কত টাকা কাটবেন।" },
         { label: "What was wrong", text: "সমস্যার বিবরণ।" },
         {
           label: "Photo (optional)",
@@ -2798,7 +2861,7 @@ export const productionHelp: HelpSection = {
           text: "সরবরাহকারীর পেমেন্ট থেকে কেটে নিলে “Mark deducted” চাপুন। ছাড় দিলে “Waive” চেপে কারণ লিখুন। ভুল হলে “Put back to open” চাপুন।",
         },
         {
-          text: "“Report card (PDF)” চাপলে সরবরাহকারীর গত ১২ মাসের রিপোর্ট কার্ড নামে: কত অর্ডার সময়মতো এসেছে, চালান বনাম আসল, Fault Log, চুক্তি, A থেকে D গ্রেড আর ছোট সারাংশ। যেকোনো সরবরাহকারীর জন্য “Supplier report card” অংশে তাকে বেছে নিন।",
+          text: "“Report card (PDF)” চাপলে সরবরাহকারীর গত 12 মাসের রিপোর্ট কার্ড নামে: কত অর্ডার সময়মতো এসেছে, চালান বনাম আসল, Fault Log, চুক্তি, A থেকে D গ্রেড আর ছোট সারাংশ। যেকোনো সরবরাহকারীর জন্য “Supplier report card” অংশে তাকে বেছে নিন।",
           image: {
             id: "production-fault-log-3",
             caption: "সরবরাহকারীর রিপোর্ট কার্ড PDF",
@@ -2926,7 +2989,7 @@ export const productionHelp: HelpSection = {
         { label: "Supplier", text: "কার বিরুদ্ধে ফল্ট; দরকার হলে বদলান।" },
         { label: "Faulty fabric", text: "কত কেজি (বা গজ) কাপড়ে ত্রুটি।" },
         {
-          label: "Value to deduct",
+          label: "Value to deduct (…, optional)",
           text: "কত টাকা কাটবেন; না জানলে খালি রাখুন। শুধু যাঁরা উপকরণের দাম দেখেন তাঁরা এই ঘর দেখেন।",
         },
         {
@@ -2981,7 +3044,7 @@ export const productionHelp: HelpSection = {
         },
         {
           label: "Pieces to cut again",
-          text: "রং ও সাইজ ধরে কত পিস আবার কাটলেন; নষ্ট পিসের সংখ্যা আগে থেকে বসানো থাকে।",
+          text: "রং ও সাইজ ধরে কত পিস আবার কাটলেন; নষ্ট পিসের সংখ্যা আগে থেকে বসানো থাকে। নষ্ট পিস নিজে থেকে হাউসের ফল্ট লগে না উঠলে নিচে টিক থাকে “Also log the spoiled pieces in …'s fault log” (… জায়গায় হাউসের নাম): টিক দিলে নষ্ট পিস তাদের ফল্ট লগে ওঠে, তাদের পাওনা থেকে কাটার জন্য।",
         },
         {
           label: "Cut them again",
@@ -3002,6 +3065,10 @@ export const productionHelp: HelpSection = {
         { label: "Change", text: "বেছে নেওয়া সরবরাহকারীর পাশে: বাছাই মুছে আবার খুঁজতে দেয়।" },
         { label: "Cancel", text: "ফর্ম বা জানালা কিছু না রেখে বন্ধ করে।" },
         { label: "Try again", text: "পাতা লোড না হলে আবার চেষ্টা করে।" },
+        {
+          label: "All pieces",
+          text: "রং বা সাইজ ছাড়া স্টাইলে পিসের ঘর একটিই, এই নামে: সব পিস একসঙ্গে লিখুন।",
+        },
       ],
       next: "কাটা পিস সেলাইয়ের পরে ফিনিশিংয়ে যায়: “Finishing and QC” পাতায় প্রতিটি পিস A, B, C বা রিজেক্টে গোনা হয়, আর গোনা পিস কাটা ও ফেরত পিসের বেশি হতে পারে না। Fabric Fault Note আর নষ্ট পিস ফল্ট লগে যায়; ফ্যাক্টরির ফল্ট শেষে মাস্টার ব্যাচের CM হিসাবে কাটা হয়।",
       mistakes: [
@@ -3144,7 +3211,7 @@ export const productionHelp: HelpSection = {
           text: "প্যাকিং লিস্টের ছবি বা PDF, সর্বোচ্চ 10 MB; ডেলিভারির সাথে থাকে।",
         },
         {
-          label: "take the pieces in at no cost",
+          label: "No cost is recorded on … yet: take the pieces in at no cost",
           text: "স্টাইলে এখনো কোনো খরচ লেখা না থাকলে এই টিক আসে; টিক দিলে পিস শূন্য খরচে স্টকে ওঠে। খরচ আসার কথা থাকলে আগে খরচ বসান।",
         },
         {
@@ -3213,6 +3280,10 @@ export const productionHelp: HelpSection = {
         },
         { label: "Cancel", text: "জানালা বা ফর্ম কিছু না রেখে বন্ধ করে।" },
         { label: "Try again", text: "পাতা লোড না হলে আবার চেষ্টা করে।" },
+        {
+          label: "All pieces",
+          text: "রং বা সাইজ ছাড়া স্টাইলে পিসের ঘর একটিই, এই নামে: সব পিস একসঙ্গে লিখুন।",
+        },
       ],
       next: "প্যাকিং লিস্টের পরে A ও B পিস একটি ডেলিভারি হিসেবে সেলসের স্টকে থাকে; ডেলিভারির পাতা থেকে তা দেখা বা ভুল হলে ফিরিয়ে নেওয়া যায়। হারানো পিস আর ছাড়ের বেশি রিজেক্ট মাস্টার ব্যাচের CM হিসাবে কাটা হয়: সব স্টাইলের প্যাকিং লিস্ট হলে ব্যাচের পাতায় “Work out the CM settlement” চাপুন।",
       mistakes: [
@@ -3366,8 +3437,8 @@ export const productionHelp: HelpSection = {
           text: "খরচের জানালা খোলে। দেখেন Production Manager ও যাঁরা টাকা দেন (Accounts); কোনো খোলা স্টাইল না থাকলে বোতাম থাকে না।",
         },
         {
-          label: "Split equally among all",
-          text: "সব খোলা স্টাইলে সমান ভাগ, পয়সা পর্যন্ত মিলিয়ে; বাড়তি পয়সা প্রথম স্টাইলগুলোতে যায়।",
+          label: "Split equally among all … open styles",
+          text: "সব খোলা স্টাইলে সমান ভাগ (… জায়গায় কয়টি স্টাইল), পয়সা পর্যন্ত মিলিয়ে; বাড়তি পয়সা প্রথম স্টাইলগুলোতে যায়।",
         },
         { label: "On one style", text: "পুরো খরচ একটি স্টাইলে।" },
         { label: "Style", text: "“On one style” বাছলে কোন স্টাইল।" },
@@ -3520,7 +3591,7 @@ export const productionHelp: HelpSection = {
           text: "যে ফল্টে টাকা বসানো হয়নি তার পাশে দেখায়; টাকা ঠিক না হওয়া পর্যন্ত সেটি কাটা হয় না।",
         },
         {
-          label: "Deduct the CM of the",
+          label: "Deduct the CM of the … C-grade pieces",
           text: "C-গ্রেড পিস থাকলে এই টিক আসে। সিদ্ধান্ত আপনার: টিক দিলে C-গ্রেড পিসের CM কাটা হয়, না দিলে ফ্যাক্টরি সেগুলোর CM পায়। টিক দিলেই শেষ পাওনা বদলে যায়।",
         },
         { label: "Total deductions", text: "সব কাটাকাটির যোগফল।" },
@@ -3560,7 +3631,7 @@ export const productionHelp: HelpSection = {
           text: "মাস্টার ব্যাচের “Factory money” অংশে “Work out the CM settlement” চাপুন। প্রতিটি স্টাইলের A, B, C আর reject পিস তার CM রেট দিয়ে গুণ করে মোট CM দেখায়। হারানো পিসের CM দেওয়া হয় না।",
         },
         {
-          text: "রিজেক্ট ব্যাচের “Reject allowance” (নিজে থেকে কাটা পিসের ২%) পর্যন্ত বিনা জরিমানায় থাকে। এর বেশি হলে স্টাইলের সারিতে কয়টি বেশি (“over”) দেখায়, আর কাটাকাটিতে “Rejects over the allowance” লাইনে প্রতিটি বেশি রিজেক্ট স্টাইলের লক্ষ্য দামে বসে। যেমন ১,২২৪ পিস কাটা হলে ২৪টি পর্যন্ত বিনা জরিমানায়; ৩৭টি রিজেক্ট হলে ১৩টির দাম কাটা হয়। কোনো স্টাইলে লক্ষ্য দাম না থাকলে একটি সতর্কতা দেখায়, সেই স্টাইলের রিজেক্টের জন্য কিছু কাটা হয় না।",
+          text: "রিজেক্ট ব্যাচের “Reject allowance” (নিজে থেকে কাটা পিসের 2%) পর্যন্ত বিনা জরিমানায় থাকে। এর বেশি হলে স্টাইলের সারিতে কয়টি বেশি (“over”) দেখায়, আর কাটাকাটিতে “Rejects over the allowance” লাইনে প্রতিটি বেশি রিজেক্ট স্টাইলের লক্ষ্য দামে বসে। যেমন 1,224 পিস কাটা হলে 24টি পর্যন্ত বিনা জরিমানায়; 37টি রিজেক্ট হলে 13টির দাম কাটা হয়। কোনো স্টাইলে লক্ষ্য দাম না থাকলে একটি সতর্কতা দেখায়, সেই স্টাইলের রিজেক্টের জন্য কিছু কাটা হয় না।",
           image: {
             id: "production-cm-settlement-1",
             caption: "স্টাইল ধরে CM আর কাটাকাটি",
@@ -3865,7 +3936,7 @@ export const productionHelp: HelpSection = {
         },
         {
           label: "Move to",
-          text: "প্রধান বোতাম “Move to …” এখনকার ধাপ শেষ করে পরের ধাপে নেয়। “Change the stage” জানালাতেও এই ঘরে যেকোনো ধাপ বাছা যায়; পেছনের ধাপের পাশে লেখা থাকে back, for rework।",
+          text: "প্রধান বোতাম “Move to …” এখনকার ধাপ শেষ করে পরের ধাপে নেয়। “Change the stage” জানালাতেও এই ঘরে যেকোনো ধাপ বাছা যায়; পেছনের ধাপের পাশে লেখা থাকে back, for rework। ধাপের ক্রম: “Fabric sourcing”, “Cutting”, “Sewing”, “Wash and QC”, “Finishing”, শেষে “Completed”।",
         },
         { label: "Note (optional)", text: "ধাপ বদলের সাথে মন্তব্য, যেমন কত পিস কাটা হলো।" },
         {
@@ -3939,7 +4010,7 @@ export const productionHelp: HelpSection = {
           text: "এক ধাপ শেষ হলে “Move to …” বোতামে চাপুন (যেমন “Move to Sewing”)। চাইলে “Note (optional)”-এ মন্তব্য লিখুন।",
         },
         {
-          text: "নোট ছাড়া দ্রুত বদলাতে “Production” > “Overview”-এর বোর্ডে প্রজেক্টের কার্ডে “Move to …” চাপুন। ভুল হলে ১০ মিনিটের মধ্যে বার্তার “Undo” চাপলে আগের ধাপে ফিরে যায়।",
+          text: "নোট ছাড়া দ্রুত বদলাতে “Production” > “Overview”-এর বোর্ডে প্রজেক্টের কার্ডে “Move to …” চাপুন। ভুল হলে 10 মিনিটের মধ্যে বার্তার “Undo” চাপলে আগের ধাপে ফিরে যায়।",
         },
         {
           text: "অন্য কোনো ধাপে যেতে “Change the stage” চাপুন এবং “Move to” থেকে ধাপ বেছে নিন। পেছনের ধাপে ফেরত পাঠালে (যেমন সেলাই ভুলের জন্য) “Why it goes back”-এ কারণ লিখতেই হবে।",
@@ -4044,7 +4115,7 @@ export const productionHelp: HelpSection = {
           text: "“Same cost for every piece”, “B-grade pieces cost less” বা “Type the cost per piece”।",
         },
         {
-          label: "A B-grade piece carries",
+          label: "A B-grade piece carries (% of an A-grade piece's cost)",
           text: "B-grade পিস একটি A-grade পিসের খরচের কত % বহন করবে, যেমন 50।",
         },
         { label: "An A-grade piece cost", text: "হাতে লিখলে: একটি A-grade পিসের খরচ।" },
@@ -4475,7 +4546,7 @@ export const productionHelp: HelpSection = {
         "একাধিক প্রজেক্টে ভাগ হওয়া বড় বিল “Bills” ট্যাব থেকে লিখুন (পরের নির্দেশিকা)।",
         "কাঁচামাল Raw materials থেকে প্রজেক্টে ইস্যু করলে তার খরচও নিজে থেকে যোগ হয়।",
         "প্রজেক্ট শেষ হলে “Cost a piece”-এ সব পিসের একই খরচ দেখায়: যত খরচ স্টকে গেছে ÷ যত পিস পাওয়া গেছে, যে ডেলিভারিতেই আসুক না কেন।",
-        "একই খরচ দুবার লেখা ঠেকাতে অ্যাপ আগে সতর্ক করে: একই সরবরাহকারীর একই বিল নম্বর; নম্বর না থাকলে ৩ দিনের মধ্যে একই সরবরাহকারীর একই অঙ্ক; সরবরাহকারী না থাকলে একই দিনে একই প্রজেক্ট, খাত ও অঙ্ক। মিলে যাওয়াটা দেখে সত্যিই আলাদা হলে “It is a different one: enter it anyway” টিক দিয়ে আবার চাপুন।",
+        "একই খরচ দুবার লেখা ঠেকাতে অ্যাপ আগে সতর্ক করে: একই সরবরাহকারীর একই বিল নম্বর; নম্বর না থাকলে 3 দিনের মধ্যে একই সরবরাহকারীর একই অঙ্ক; সরবরাহকারী না থাকলে একই দিনে একই প্রজেক্ট, খাত ও অঙ্ক। মিলে যাওয়াটা দেখে সত্যিই আলাদা হলে “It is a different one: enter it anyway” টিক দিয়ে আবার চাপুন।",
       ],
     },
     {
@@ -4611,7 +4682,7 @@ export const productionHelp: HelpSection = {
       tips: [
         "খাত (cost head) না থাকলে আগে “Cost heads” ট্যাবে যোগ করুন।",
         "একজন সরবরাহকারীর সব বিল একসঙ্গে পরিশোধ করতে Accounts-এর “Supplier payments” ব্যবহার করুন।",
-        "একই সরবরাহকারীর একই বিল নম্বর আগে লেখা থাকলে, বা নম্বর ছাড়া ৩ দিনের মধ্যে একই অঙ্কের বিল থাকলে, সেভ করার আগে অ্যাপ সেই বিলটি দেখিয়ে সতর্ক করে। একই বিল হলে বাতিল করুন; আলাদা হলে “It is a different one: enter it anyway” টিক দিয়ে আবার “Save the bill” চাপুন।",
+        "একই সরবরাহকারীর একই বিল নম্বর আগে লেখা থাকলে, বা নম্বর ছাড়া 3 দিনের মধ্যে একই অঙ্কের বিল থাকলে, সেভ করার আগে অ্যাপ সেই বিলটি দেখিয়ে সতর্ক করে। একই বিল হলে বাতিল করুন; আলাদা হলে “It is a different one: enter it anyway” টিক দিয়ে আবার “Save the bill” চাপুন।",
       ],
     },
     {
@@ -4694,7 +4765,7 @@ export const productionHelp: HelpSection = {
           },
         },
         {
-          text: "একই সঙ্গে প্রজেক্টের প্রতিটি পিসের খরচ সমান হয়ে যায়: স্টকে যাওয়া মোট খরচ ÷ পাওয়া পিস। যেমন ১,০০০ পিসের অর্ডারে ৯৭০ পিস এলে আর মোট খরচ ১,০০,০০০ হলে প্রতিটি পিসের খরচ ১০৩.০৯। এই খরচ নিজে থেকে ইনভেন্টরির গড় খরচে বসে, তাই পরের বিক্রির লাভ সঠিক দেখায়। “B-grade pieces cost less” বেছে থাকলে B-grade পিস তার ভাগ অনুযায়ী কম খরচ বহন করে।",
+          text: "একই সঙ্গে প্রজেক্টের প্রতিটি পিসের খরচ সমান হয়ে যায়: স্টকে যাওয়া মোট খরচ ÷ পাওয়া পিস। যেমন 1,000 পিসের অর্ডারে 970 পিস এলে আর মোট খরচ 1,00,000 হলে প্রতিটি পিসের খরচ 103.09। এই খরচ নিজে থেকে ইনভেন্টরির গড় খরচে বসে, তাই পরের বিক্রির লাভ সঠিক দেখায়। “B-grade pieces cost less” বেছে থাকলে B-grade পিস তার ভাগ অনুযায়ী কম খরচ বহন করে।",
         },
         {
           text: "কাজ বন্ধ হয়ে গেলে “Cancel the project” চাপুন এবং একইভাবে কারণ লিখে নিশ্চিত করুন।",
@@ -4780,7 +4851,7 @@ export const productionHelp: HelpSection = {
       tips: [
         "শেষ হওয়া প্রজেক্টের বাকি টাকা পরেও সেই প্রজেক্টের নামে দেওয়া যায়: Accounts > “Supplier payments” > “Pay a supplier”-এ “Apply to a project (optional)”।",
         "কোনো ডেলিভারি পূর্বাবস্থায় ফেরালে (undo) প্রজেক্ট আবার চালু হয়, আগের হিসাব আর খাটে না; আবার শেষ করলে নতুন করে মেলানো হয়।",
-        "সরবরাহকারীর সব প্রজেক্টের হিসাব একসঙ্গে দেখতে তাঁর প্রোফাইলের ৩৬০° অংশ দেখুন।",
+        "সরবরাহকারীর সব প্রজেক্টের হিসাব একসঙ্গে দেখতে তাঁর প্রোফাইলের 360° অংশ দেখুন।",
         "এই সুবিধা চালুর আগে শেষ হওয়া প্রজেক্টও শেষ হওয়ার দিন থেকে “Settled” ধরা হয়, ব্যালান্স শূন্য দেখায়। সেগুলোর আলাদা হিসাব রাখা নেই, তাই তাঁর বিলে আজ যা বাকি, সেটাই তাঁর খাতায় থাকা টাকা হিসেবে দেখায়।",
       ],
     },
@@ -4877,9 +4948,12 @@ export const productionHelp: HelpSection = {
         },
         {
           label: "Status",
-          text: "“All projects” বা একটি অবস্থা; “Late” বাছলে শুধু দেরির প্রজেক্ট।",
+          text: "“All projects” বা একটি অবস্থা; “Late” বাছলে শুধু দেরির প্রজেক্ট। অবস্থাগুলো: “Planned”, “In production”, “On hold”, “Completed” ও “Cancelled”।",
         },
-        { label: "Stage", text: "“All stages” বা একটি ধাপ।" },
+        {
+          label: "Stage",
+          text: "“All stages” বা একটি ধাপ। ধাপগুলো: “Fabric sourcing”, “Cutting”, “Sewing”, “Wash and QC”, “Finishing” ও “Completed”।",
+        },
         { label: "Clear filters", text: "সব ছাঁকনি মুছে পুরো তালিকা দেখায়।" },
         { label: "New project", text: "নতুন প্রজেক্টের পাতা খোলে (Production Manager)।" },
         {

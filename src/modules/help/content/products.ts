@@ -1057,7 +1057,7 @@ export const productsHelp: HelpSection = {
       fields: [
         {
           label: "Period",
-          text: "কোন সময়ের লেখা দেখবেন: “All time”, “Today”, “Past 7 days”, “This month”, “Last month”, অর্থবছর ইত্যাদি। ওপরের তিনটি সংখ্যাও সেই সময়ের।",
+          text: "কোন সময়ের লেখা দেখবেন: “All time”, “Today”, “Past 7 days”, “This month”, “Last month”, অর্থবছর ইত্যাদি। ওপরের তিনটি সংখ্যাও সেই সময়ের। আরও আছে “Past month”, “Past year”, “This financial year” আর “Last financial year”।",
         },
         {
           label: "Record damage",
@@ -1089,7 +1089,7 @@ export const productsHelp: HelpSection = {
         },
         {
           label: "Grade",
-          text: "A-grade না B-grade পিস সরবে; বোতামে প্রতিটি গ্রেডে তাকে কত পিস আছে লেখা থাকে।",
+          text: "“A-grade” না “B-grade” পিস সরবে; বোতামে প্রতিটি গ্রেডে তাকে কত পিস আছে লেখা থাকে।",
         },
         {
           label: "Pieces",
@@ -1310,6 +1310,18 @@ export const productsHelp: HelpSection = {
         {
           label: "Try again",
           text: "সেটআপ লোড না হলে লাল বাক্সে আসে; চাপলে আবার আনার চেষ্টা হয়।",
+        },
+        {
+          label: "Save the name",
+          text: "ক্যাটাগরি বা ব্র্যান্ডের নামে চাপলে নামটি সেখানেই লেখার ঘর হয়ে যায়; নতুন নাম লিখে পাশের টিক চিহ্ন চাপলে নাম বদলায়।",
+        },
+        {
+          label: "Keep the old name",
+          text: "সেই ঘরের পাশের ক্রস চিহ্ন (বা Esc চাবি): বদল না রেখে আগের নাম ফেরায়।",
+        },
+        {
+          label: "Size",
+          text: "সাইজ যোগ বা নাম বদলের জানালার ঘর: সাইজের নাম, যেমন XL বা 32। বড় হাতের অক্ষরে লেখা হয়।",
         },
       ],
       next: "নতুন রং, সাইজ, ক্যাটাগরি ও ব্র্যান্ড সাথে সাথে স্টাইলের ফর্ম ও “Colours and sizes” জানালায় আসে। সাইজের ক্রম বদলালে সব স্টাইলের ছক ও স্টক শিট নতুন ক্রমে দেখায়। নতুন গুদাম স্টক গণনা, Bulk update, উৎপাদনের ডেলিভারি আর অর্ডারে বাছাই করা যায়।",

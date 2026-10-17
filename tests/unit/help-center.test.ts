@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 
+import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
 import { HELP_ICONS } from "@/components/help/labels";
@@ -35,6 +36,32 @@ function filesUnder(dir: string, match: (path: string) => boolean): string[] {
     if (statSync(path).isDirectory()) return filesUnder(path, match);
     return match(path) ? [path] : [];
   });
+}
+
+/**
+ * A file's code without its comments (v6.4 L10): a guide quotes what a screen
+ * shows, and words in a comment are shown to no one.
+ */
+function withoutComments(path: string, text: string): string {
+  const sf = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, false, ts.ScriptKind.TSX);
+  const out = text.split("");
+  const blank = (from: number, to: number) => {
+    for (let i = from; i < to; i++) if (out[i] !== "\n") out[i] = " ";
+  };
+  const comments = (ranges: ts.CommentRange[] | undefined) =>
+    ranges?.forEach((r) => blank(r.pos, r.end));
+  const visit = (node: ts.Node) => {
+    // `{/* a note */}` in JSX: braces holding only a comment.
+    if (ts.isJsxExpression(node) && !node.expression) blank(node.getStart(sf), node.end);
+    if (!ts.isJsxText(node)) {
+      comments(ts.getLeadingCommentRanges(text, node.pos));
+      comments(ts.getTrailingCommentRanges(text, node.end));
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+  comments(ts.getLeadingCommentRanges(text, sf.endOfFileToken.pos));
+  return out.join("");
 }
 
 const articles = HELP_SECTIONS.flatMap((section) =>
@@ -142,10 +169,30 @@ describe("the manual's content", () => {
     }
   });
 
+  it("reads the words a screen shows, never its code comments", () => {
+    const code = [
+      "// Ask someone who may sell beyond stock.",
+      "/** The owner's note. */",
+      "export const a = <p>{/* hidden words */}Save the order</p>; // trailing note",
+      'const url = "https://example.com"; /* end */',
+    ].join("\n");
+    const left = withoutComments("x.tsx", code);
+    for (const gone of [
+      "sell beyond stock",
+      "owner's note",
+      "hidden words",
+      "trailing note",
+      "end",
+    ])
+      expect(left).not.toContain(gone);
+    expect(left).toContain("Save the order");
+    expect(left).toContain('"https://example.com"');
+  });
+
   it("quotes only buttons, fields and labels the app shows", () => {
-    // Everything the screens say, with JSX entities and line breaks evened out.
+    // Everything the screens say (never their comments), with JSX entities and line breaks evened out.
     const app = filesUnder(SRC, (path) => /\.tsx?$/.test(path) && !path.startsWith(CONTENT))
-      .map((path) => readFileSync(path, "utf8"))
+      .map((path) => withoutComments(path, readFileSync(path, "utf8")))
       .join("\n")
       .replaceAll("&apos;", "'")
       .replaceAll("&amp;", "&")
@@ -158,6 +205,9 @@ describe("the manual's content", () => {
       "Add the buyer",
       "Add the supplier",
       "Saved. You are using the Modern look.",
+      // A place in the AI costs, the menu words joined with "›"; the vault's corner count.
+      "AI › Chat",
+      "3 of 4 filled",
     ]);
     const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const missing: string[] = [];
@@ -170,7 +220,8 @@ describe("the manual's content", () => {
       }
     }
     expect(missing).toEqual([]);
-  });
+    // Reading every file of the app without its comments takes a while on a busy machine.
+  }, 180_000);
 
   it("writes Bengali as it is, not as \\u escapes", () => {
     for (const file of filesUnder(CONTENT, (path) => path.endsWith(".ts"))) {
@@ -298,6 +349,13 @@ describe("the search", () => {
     expect(normalizeHelpText("র\u200d্যাক")).toBe(normalizeHelpText("র্যাক"));
     expect(searchWords("Invoice, invoice; INVOICE")).toEqual(["invoice"]);
     expect(top("INVOICE")).toBe(top("invoice"));
+  });
+
+  it("finds a guide whether its numbers are typed in Bengali or Western digits (v6.4 L7)", () => {
+    // Guides write numbers in Western digits; a search typed in Bengali digits still finds them.
+    expect(normalizeHelpText("৩৬০° রিপোর্ট")).toBe("360 রিপোর্ট");
+    expect(top("৩৬০ রিপোর্ট")).toBeDefined();
+    expect(top("৩৬০ রিপোর্ট")).toBe(top("360 রিপোর্ট"));
   });
 });
 

@@ -53,6 +53,14 @@ describe("pdfText", () => {
     expect(pdfText("漢字 নাম 😀")).toBe("? নাম ?");
   });
 
+  it("writes common symbols the fonts lack with ones they have, never as ?", () => {
+    // The tech pack's critical points and colour limits, and inch marks in measurements.
+    expect(pdfText("★ Chest, full")).toBe("* Chest, full");
+    expect(pdfText("Limit (ΔE CMC 2:1)")).toBe("Limit (dE CMC 2:1)");
+    expect(pdfText("40″ chest, 1′ hem, −0.5 tol")).toBe("40\" chest, 1' hem, -0.5 tol");
+    expect(pdfText("Sent → Accepted, ≤ 2% ≥ 1 ≈ 3")).toBe("Sent -> Accepted, <= 2% >= 1 ~ 3");
+  });
+
   it("keeps zero-width joiners only beside Bengali letters", () => {
     expect(pdfText("র\u200dয")).toBe("র\u200dয");
     expect(pdfText("a\u200db\u200cc")).toBe("abc");

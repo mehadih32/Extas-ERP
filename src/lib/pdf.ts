@@ -39,14 +39,34 @@ function isLatinChar(code: number): boolean {
 }
 
 /**
+ * Common symbols the built-in fonts lack, written with ones they have, so they
+ * never print as "?" (a tech pack's "?" means a value still to confirm).
+ */
+const STAND_INS: Array<[RegExp, string]> = [
+  [/ΔE/g, "dE"],
+  [/Δ/g, "Delta "],
+  [/[★☆]/g, "*"],
+  [/″/g, '"'],
+  [/′/g, "'"],
+  [/−/g, "-"],
+  [/→/g, "->"],
+  [/←/g, "<-"],
+  [/≤/g, "<="],
+  [/≥/g, ">="],
+  [/≈/g, "~"],
+];
+
+/**
  * Text the PDF fonts can draw on one line: Western European and Bengali text is
- * kept, whitespace becomes single spaces, and other characters become "?".
+ * kept, common symbols get stand-ins (STAND_INS), whitespace becomes single
+ * spaces, and other characters become "?".
  */
 export function pdfText(text: string): string {
   // Invisible characters go first: JavaScript counts the BOM as whitespace.
-  const visible = [...text.normalize("NFC")]
-    .filter((c) => !INVISIBLE.has(c.codePointAt(0)!))
-    .join("");
+  const visible = STAND_INS.reduce(
+    (out, [symbol, standIn]) => out.replace(symbol, standIn),
+    [...text.normalize("NFC")].filter((c) => !INVISIBLE.has(c.codePointAt(0)!)).join(""),
+  );
   const codes = [...visible.replace(/\s+/g, " ")].map((c) => c.codePointAt(0)!);
   let out = "";
   let replaced = false;

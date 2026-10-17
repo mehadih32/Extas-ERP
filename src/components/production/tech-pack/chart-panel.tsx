@@ -56,12 +56,12 @@ type Chart = TechPackScreen["chart"];
 type Suggestion = NonNullable<NonNullable<TechPackScreen["draft"]>["output"]["chart"]>;
 
 export function ChartPanel({
-  projectId,
+  techPackId,
   chart,
   suggestion,
   canEdit,
 }: {
-  projectId: string;
+  techPackId: string;
   chart: Chart;
   /** The buyer's points the AI draft read from their sheet, to start the form with. */
   suggestion: Suggestion | null;
@@ -78,7 +78,7 @@ export function ChartPanel({
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<ActionError>();
   const has = chart.rows.length > 0;
-  const base = `/api/production/projects/${projectId}/tech-pack/measurements`;
+  const base = `/api/tech-packs/${techPackId}/measurements`;
   const start = {
     garmentKind: chart.garmentKind ?? (suggestion ? undefined : "POLO"),
     unit: chart.unit,
@@ -100,7 +100,7 @@ export function ChartPanel({
 
   const confirm = (code: string) =>
     startTransition(async () => {
-      const result = await confirmMeasurementRowAction(projectId, code);
+      const result = await confirmMeasurementRowAction(techPackId, code);
       setError(result.ok ? undefined : result.error);
     });
 
@@ -172,7 +172,7 @@ export function ChartPanel({
               </NativeSelect>
             </label>
           </div>
-          <div className="-mx-5 overflow-x-auto px-5 sm:-mx-6 sm:px-6">
+          <div className="relative -mx-5 overflow-x-auto px-5 sm:-mx-6 sm:px-6">
             <table className="w-full min-w-max border-collapse text-sm">
               <thead>
                 <tr className="border-b text-left text-[0.8125rem] text-muted-foreground">
@@ -361,7 +361,7 @@ export function ChartPanel({
           className="sm:max-w-xl"
           onClose={() => setAsking(null)}
           onSubmit={async (form) => {
-            const result = await makeChartAction(projectId, Object.fromEntries(form));
+            const result = await makeChartAction(techPackId, Object.fromEntries(form));
             if (!result.ok) return result.error;
             setAsking(null);
           }}
@@ -476,7 +476,7 @@ export function ChartPanel({
           errorTitle="We could not save the measurement"
           onClose={() => setAsking(null)}
           onSubmit={async (form) => {
-            const result = await setMeasurementAction(projectId, {
+            const result = await setMeasurementAction(techPackId, {
               code: asking.code,
               size: asking.size,
               value: String(form.get("value") ?? "").trim(),
@@ -512,7 +512,7 @@ export function ChartPanel({
           errorTitle="We could not add the measurement"
           onClose={() => setAsking(null)}
           onSubmit={async (form) => {
-            const result = await addMeasurementRowAction(projectId, {
+            const result = await addMeasurementRowAction(techPackId, {
               name: form.get("name"),
               howTo: form.get("howTo"),
               tolerance: form.get("tolerance") || undefined,
@@ -561,7 +561,7 @@ export function ChartPanel({
           errorTitle="We could not remove the measurement"
           onClose={() => setAsking(null)}
           onSubmit={async () => {
-            const result = await removeMeasurementRowAction(projectId, asking.code);
+            const result = await removeMeasurementRowAction(techPackId, asking.code);
             if (!result.ok) return result.error;
             setAsking(null);
           }}

@@ -123,7 +123,7 @@ export function RowCard({
         className="group block rounded-lg border bg-card p-4 transition-colors outline-none hover:border-primary/40 focus-visible:ring-[3px] focus-visible:ring-ring/25"
       >
         <div className="flex items-start justify-between gap-3">
-          <p className="eyebrow min-w-0 truncate">{eyebrow}</p>
+          <p className="eyebrow min-w-0 break-words">{eyebrow}</p>
           {badges && (
             <div className="-my-1 flex shrink-0 flex-wrap justify-end gap-1.5">{badges}</div>
           )}

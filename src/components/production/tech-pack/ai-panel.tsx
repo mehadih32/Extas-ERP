@@ -94,7 +94,7 @@ function AskFirst({ state, pending }: { state: ReturnType<typeof useAiRun>; pend
 }
 
 export function AiPanel({ screen }: { screen: TechPackScreen }) {
-  const { project, draft, can, aiOn } = screen;
+  const { techPack, draft, can, aiOn } = screen;
   const [mode, setMode] = useState<"ASK" | "AUTO">("ASK");
   const [asking, setAsking] = useState<
     | { kind: "instructions" }
@@ -115,7 +115,7 @@ export function AiPanel({ screen }: { screen: TechPackScreen }) {
 
   const ok = (index: number) =>
     startTransition(async () => {
-      const result = await decideDraftLineAction(project.id, draft!.id, { index, decision: "OK" });
+      const result = await decideDraftLineAction(techPack.id, draft!.id, { index, decision: "OK" });
       setLineError(result.ok ? undefined : result.error);
     });
 
@@ -183,7 +183,7 @@ export function AiPanel({ screen }: { screen: TechPackScreen }) {
                 size="sm"
                 disabled={drafting.pending}
                 onClick={() =>
-                  drafting.run((costOk) => draftTechPackAction(project.id, { mode, costOk }))
+                  drafting.run((costOk) => draftTechPackAction(techPack.id, { mode, costOk }))
                 }
               >
                 <SparklesIcon aria-hidden />
@@ -200,6 +200,7 @@ export function AiPanel({ screen }: { screen: TechPackScreen }) {
               <p className="eyebrow">
                 {draft.mode === "AUTO" ? "Auto" : "Ask"} draft
                 {draft.createdBy ? ` by ${draft.createdBy}` : ""}
+                {draft.askedBy ? `, asked by ${draft.askedBy}` : ""}
               </p>
               <p className="mt-1 font-medium">{draft.output.item}</p>
             </div>
@@ -317,7 +318,7 @@ export function AiPanel({ screen }: { screen: TechPackScreen }) {
                 variant="outline"
                 disabled={reviewing.pending}
                 onClick={() =>
-                  reviewing.run((costOk) => runReviewBoardAction(project.id, { costOk }))
+                  reviewing.run((costOk) => runReviewBoardAction(techPack.id, { costOk }))
                 }
               >
                 <UsersIcon aria-hidden />
@@ -391,7 +392,7 @@ export function AiPanel({ screen }: { screen: TechPackScreen }) {
           className="sm:max-w-2xl"
           onClose={() => setAsking(null)}
           onSubmit={async (form) => {
-            const result = await setInstructionsAction(project.id, Object.fromEntries(form));
+            const result = await setInstructionsAction(techPack.id, Object.fromEntries(form));
             if (!result.ok) return result.error;
             setAsking(null);
           }}
@@ -427,7 +428,7 @@ export function AiPanel({ screen }: { screen: TechPackScreen }) {
           errorTitle="We could not change the line"
           onClose={() => setAsking(null)}
           onSubmit={async (form) => {
-            const result = await decideDraftLineAction(project.id, draft.id, {
+            const result = await decideDraftLineAction(techPack.id, draft.id, {
               index: asking.index,
               decision: "CHANGE",
               text: String(form.get("text") ?? ""),
@@ -457,7 +458,7 @@ export function AiPanel({ screen }: { screen: TechPackScreen }) {
             setAsking(null);
           }}
           onSubmit={async (form) => {
-            const result = await askExpertAction(project.id, {
+            const result = await askExpertAction(techPack.id, {
               expert: form.get("expert"),
               question: form.get("question"),
               costOk: expertCostOk,

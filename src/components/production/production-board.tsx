@@ -52,7 +52,7 @@ function BoardCard({
     >
       <div>
         <div className="flex items-start justify-between gap-2">
-          <p className="eyebrow min-w-0 truncate">
+          <p className="eyebrow min-w-0 break-words">
             {card.code} · {forWhom(card)}
           </p>
           <div className="-my-1 flex shrink-0 flex-wrap justify-end gap-1.5">

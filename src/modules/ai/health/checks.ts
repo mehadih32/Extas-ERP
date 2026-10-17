@@ -3,7 +3,9 @@ import { freemem, totalmem } from "node:os";
 import { connect } from "node:tls";
 
 import { prisma } from "@/lib/prisma";
-import { backupRoot, getBackupConfig } from "@/modules/backups/backup.service";
+import { readBackupConfig } from "@/modules/backups/backup-core";
+import { backupRoot } from "@/modules/backups/backup.service";
+import { backupHealth } from "@/modules/backups/status";
 import { uploadRoot } from "@/modules/files/file.service";
 import { STALE_AFTER_MS } from "@/modules/jobs/queue";
 
@@ -191,21 +193,23 @@ export async function checkDatabase(): Promise<HealthCheck> {
   return result("database", "OK", line, `ডেটাবেস দ্রুত উত্তর দিচ্ছে (${ms} ms)।`);
 }
 
+/**
+ * The backups, on the owner's own schedule (the Backups screen's line): a
+ * failed or late backup, or none yet, is an error; one that is only on this
+ * server (not in Google Drive) is a warning. It only reads.
+ */
 export async function checkBackups(now: Date): Promise<HealthCheck> {
-  const config = await getBackupConfig();
-  if (!config.isEnabled) {
+  const config = await readBackupConfig();
+  if (config && !config.isEnabled) {
     return result(
       "backups",
       "WARN",
-      "Daily backups are switched off.",
-      "প্রতিদিনের ব্যাকআপ বন্ধ আছে। Settings-এ চালু করুন।",
+      "Backups are switched off.",
+      "ব্যাকআপ বন্ধ আছে। “Settings > Backups” এ চালু করুন।",
     );
   }
-  const [last, success] = await Promise.all([
-    prisma.backupRun.findFirst({ orderBy: { startedAt: "desc" } }),
-    prisma.backupRun.findFirst({ where: { status: "SUCCEEDED" }, orderBy: { startedAt: "desc" } }),
-  ]);
-  if (!success) {
+  const health = config ? await backupHealth(config, now) : null;
+  if (!health || (!health.lastBackupAt && health.problem?.kind !== "failed")) {
     return result(
       "backups",
       "ERROR",
@@ -213,25 +217,35 @@ export async function checkBackups(now: Date): Promise<HealthCheck> {
       "এখনো কোনো ব্যাকআপ সফল হয়নি।",
     );
   }
-  const hours = Math.floor((now.getTime() - success.startedAt.getTime()) / HOUR);
-  const line = `The last good backup is ${hours} hours old.`;
-  if (hours > 72)
+  const hours = health.lastBackupAt
+    ? Math.floor((now.getTime() - health.lastBackupAt.getTime()) / HOUR)
+    : null;
+  const age = hours === null ? "" : ` শেষ সফল ব্যাকআপ ${hours} ঘণ্টা আগের।`;
+  if (health.problem?.kind === "failed") {
+    return result("backups", "ERROR", health.line, `শেষ ব্যাকআপ ব্যর্থ হয়েছে।${age}`);
+  }
+  if (health.problem?.kind === "late") {
     return result(
       "backups",
       "ERROR",
-      line,
-      `শেষ সফল ব্যাকআপ ${hours} ঘণ্টা আগের: ব্যাকআপ চলছে না।`,
-    );
-  if (last && last.status === "FAILED") {
-    return result(
-      "backups",
-      "WARN",
-      `The last backup failed (${last.error ?? "no reason given"}). ${line}`,
-      `শেষ ব্যাকআপ ব্যর্থ হয়েছে; শেষ সফল ব্যাকআপ ${hours} ঘণ্টা আগের।`,
+      health.line,
+      `সময়মতো ব্যাকআপ শুরু হয়নি: সার্ভার চলছে কিনা দেখুন।${age}`,
     );
   }
-  if (hours > 26) return result("backups", "WARN", line, `শেষ সফল ব্যাকআপ ${hours} ঘণ্টা আগের।`);
-  return result("backups", "OK", line, `ব্যাকআপ ঠিক আছে (শেষটি ${hours} ঘণ্টা আগে)।`);
+  if (health.level === "good") {
+    return result(
+      "backups",
+      "OK",
+      health.line,
+      `ব্যাকআপ ঠিক আছে (শেষটি ${hours} ঘণ্টা আগে, Google Drive-এ রাখা)।`,
+    );
+  }
+  return result(
+    "backups",
+    "WARN",
+    health.line,
+    `শেষ ব্যাকআপ শুধু এই সার্ভারে আছে, Google Drive-এ যায়নি।${age}`,
+  );
 }
 
 export async function checkCertificate(probes: Probes, now: Date): Promise<HealthCheck> {

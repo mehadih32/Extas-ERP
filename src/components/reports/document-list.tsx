@@ -87,7 +87,7 @@ export function DocumentList({
         {list.items.map((d) => (
           <li key={d.id} className="grid min-w-0 grid-cols-1 rounded-lg border bg-card p-4">
             <div className="flex items-start justify-between gap-3">
-              <p className="eyebrow min-w-0 truncate">{d.typeLabel}</p>
+              <p className="eyebrow min-w-0 break-words">{d.typeLabel}</p>
               <div className="-my-1 flex shrink-0 gap-1.5">
                 <TemplateBadge d={d} />
               </div>

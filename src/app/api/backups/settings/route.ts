@@ -1,6 +1,7 @@
 import { apiRoute, readJson } from "@/lib/api";
 import { getRequestMeta } from "@/lib/request-meta";
-import { requirePlatformSuperAdmin } from "@/modules/auth/context";
+import { AppError } from "@/lib/errors";
+import { requireCompany, requirePlatformSuperAdmin } from "@/modules/auth/context";
 import * as backups from "@/modules/backups/backup.service";
 
 export const dynamic = "force-dynamic";
@@ -16,12 +17,14 @@ export const GET = apiRoute(async () => {
   return backups.getBackupOverview();
 });
 
-/** PATCH /api/backups/settings — schedule, timezone, media, retention, on/off. */
+/**
+ * PATCH /api/backups/settings — schedule, timezone, retention, on/off. Switching
+ * backups off or fewer days in Google Drive also needs "pin" (the company's PIN).
+ */
 export const PATCH = apiRoute(async (request) => {
-  const { user } = await requirePlatformSuperAdmin();
-  return backups.updateBackupConfig(
-    { userId: user.id },
-    await readJson(request),
-    await getRequestMeta(),
-  );
+  const ctx = await requireCompany();
+  if (!ctx.user.isSuperAdmin) {
+    throw new AppError("FORBIDDEN", "Only the platform owner can do this.");
+  }
+  return backups.updateBackupConfig(ctx, await readJson(request), await getRequestMeta());
 });

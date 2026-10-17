@@ -12,12 +12,12 @@ export const dynamic = "force-dynamic";
  * files saved). Open to its uploader and to roles that can see the record it belongs to: a
  * delivery, a supplier bill, a licence or a document template.
  */
-export async function GET(_request: Request, context: { params: Promise<Params> }) {
+export async function GET(request: Request, context: { params: Promise<Params> }) {
   try {
     const { fileId } = await context.params;
     const { asset, bytes } = await files.getFileForDownload(await requireCompany(), fileId);
     return fileResponse({ fileName: asset.fileName, mimeType: asset.mimeType, bytes }, "inline");
   } catch (error) {
-    return apiErrorResponse(error);
+    return apiErrorResponse(error, request);
   }
 }

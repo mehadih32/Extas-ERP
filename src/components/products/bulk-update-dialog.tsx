@@ -187,7 +187,7 @@ export function BulkUpdateDialog({
                   <tr>
                     <th
                       scope="col"
-                      className="sticky left-0 z-10 h-10 min-w-[6.5rem] border-r border-b bg-card px-3 text-left text-[0.6875rem] font-medium tracking-[0.12em] text-muted-foreground uppercase sm:min-w-[8rem]"
+                      className="sticky left-0 z-10 h-10 min-w-[6.5rem] border-r border-b bg-card px-3 text-left text-xs font-medium tracking-[0.12em] text-muted-foreground uppercase sm:min-w-[8rem]"
                     >
                       Colour
                     </th>
@@ -195,7 +195,7 @@ export function BulkUpdateDialog({
                       <th
                         key={size.id}
                         scope="col"
-                        className="h-10 min-w-[4.5rem] border-b px-1.5 text-center text-[0.6875rem] font-medium tracking-[0.12em] text-muted-foreground uppercase"
+                        className="h-10 min-w-[4.5rem] border-b px-1.5 text-center text-xs font-medium tracking-[0.12em] text-muted-foreground uppercase"
                       >
                         {size.name}
                       </th>

@@ -65,7 +65,8 @@ describe("AI cost sums", () => {
   it("prices a call by its tokens, cache reads and writes included", () => {
     expect(costUsd("claude-opus-5-5", { input: 1_000_000, output: 0 })).toBe(4);
     expect(costUsd("claude-sonnet-5-5", { input: 0, output: 1_000_000 })).toBe(10);
-    expect(costUsd("claude-sonnet-5-5", { input: 0, output: 0, cacheRead: 1_000_000 })).toBe(0.2);
+    // Sonnet 5.5 cache hits: $0.10 on Anthropic's price page (checked 16 October 2026).
+    expect(costUsd("claude-sonnet-5-5", { input: 0, output: 0, cacheRead: 1_000_000 })).toBe(0.1);
     expect(costUsd("claude-haiku-5-5", { input: 0, output: 0, cacheWrite: 10_000 })).toBeCloseTo(
       0.00125,
       10,

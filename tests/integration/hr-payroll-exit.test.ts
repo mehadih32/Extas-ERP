@@ -317,6 +317,15 @@ run("HR & payroll: claims with salary, parts, payouts and leaving", () => {
     );
     expect(recordHref(env.sumonCtx, { type: "MySalary", id: sumonLine.id })).toBe("/me/ledger");
 
+    // The books count only what is still owed on a part-paid salary.
+    await expectBooksOk(env);
+    const open = first.run.items.filter((i) => Number(i.balance) > 0);
+    const owed = open.reduce((t, i) => t + Number(i.balance), 0).toFixed(2);
+    expect((await reports.getAccountsOverview(env.accounts)).payroll).toMatchObject({
+      salariesPayable: owed,
+      awaitingPayment: { payrolls: 1, employees: open.length, amount: owed },
+    });
+
     // The rest for everyone: the payroll is paid, and the claim with it.
     const rest = await payroll.payPayrollRun(env.accounts, draft.id, { method: "CASH" }, meta);
     expect(rest.run.status).toBe("PAID");

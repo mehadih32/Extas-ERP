@@ -42,6 +42,15 @@ RUN --mount=type=cache,target=/root/.npm \
 FROM deps AS builder
 COPY . .
 RUN npm run build
+# Bug Guard's "Packages with known weaknesses" check reads npm's own report on the
+# packages the app runs with. No answer from npm (offline) leaves an empty report.
+RUN (timeout 120 npm audit --omit=dev --json > npm-audit.json || true); \
+    test -s npm-audit.json || echo '{}' > npm-audit.json
+# Bug Guard's "Help pictures out of date" check reads the guides whose picture is
+# older than their screen or steps (v6.4 L1; scripts/help/list-old-pictures.ts).
+# A list that cannot be made leaves an empty one: the build never stops for it.
+RUN (timeout 300 npx tsx scripts/help/list-old-pictures.ts help-pictures-old.json || true); \
+    test -s help-pictures-old.json || echo '{}' > help-pictures-old.json
 
 # --- Migrations and the first-run seed -------------------------------------------
 FROM deps AS tools
@@ -68,6 +77,8 @@ COPY --from=builder --chown=erp:erp /app/.next/static ./.next/static
 # The standalone build leaves out public/: the favicon, the app icons, the service
 # worker and its offline page are served from here.
 COPY --from=builder --chown=erp:erp /app/public ./public
+COPY --from=builder --chown=erp:erp /app/npm-audit.json ./npm-audit.json
+COPY --from=builder --chown=erp:erp /app/help-pictures-old.json ./help-pictures-old.json
 USER erp
 EXPOSE 3000
 CMD ["node", "server.js"]

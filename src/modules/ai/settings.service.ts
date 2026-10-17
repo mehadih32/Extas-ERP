@@ -12,8 +12,17 @@ import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 
 import { agentKeyOf, aiAgents } from "./agents";
-import { AI_MODELS, AI_TASKS, type AiTaskKey, modelFor, TASK_KEYS } from "./models";
+import { AI_TASKS, type AiTaskKey, modelFor, modelInfo, TASK_KEYS } from "./models";
 import { modelTestRuns, MODEL_TEST_TEXT, standingOf } from "./model-test-standing";
+import { listedModel, PRICE_FIELDS, PRICE_LISTS, priceNotes, type PriceFields } from "./price-list";
+import {
+  blockedText,
+  normalModel,
+  type Price,
+  type PriceBook,
+  priceBook,
+  priceFor,
+} from "./prices.service";
 import { listModels, ProviderError } from "./provider-calls";
 import {
   BUILT_IN_MODELS,
@@ -227,7 +236,10 @@ async function saveSettings(
 
 /** What the AI Center shows about the switch, the key and the PIN (never the key itself). */
 export async function getAiStatus(ctx: CompanyContext) {
-  const settings = await aiSettingsOf(ctx.company.id);
+  const [settings, book] = await Promise.all([
+    aiSettingsOf(ctx.company.id),
+    priceBook(ctx.company.id),
+  ]);
   const changedBy = settings.changedById
     ? await prisma.user.findUnique({
         where: { id: settings.changedById },
@@ -280,6 +292,8 @@ export async function getAiStatus(ctx: CompanyContext) {
       };
     }),
     pinSet: settings.pinHash !== null,
+    /** Models with no price that have work: blocked (v6.4 A7). */
+    blockedModels: blockedInUse(settings, book),
     allowFable: settings.allowFable,
     assistantName: settings.assistantName,
     replyRemindHours: settings.replyRemindHours,
@@ -528,6 +542,41 @@ function assertPickable(settings: AiSettings, model: string) {
   }
 }
 
+/** What the screens call a model, with the names its provider gave. */
+function labelIn(settings: Pick<AiSettings, "providerModels">, ref: string) {
+  const parsed = parseModel(ref);
+  return modelLabel(ref, parsed ? readModelsOf(settings)[parsed.provider]?.models : undefined);
+}
+
+/** A model with no price cannot be given work (v6.4 A7). */
+async function assertPriced(ctx: CompanyContext, settings: AiSettings, model: string) {
+  if (priceFor(await priceBook(ctx.company.id), model)) return;
+  throw new AppError("VALIDATION", blockedText(labelIn(settings, model)), {
+    model: ["No price: blocked"],
+  });
+}
+
+export type BlockedModel = { model: string; label: string; where: string[] };
+
+/**
+ * The models with no price that have work: the tasks and agents set to them
+ * (v6.4 A7). They are blocked, so the owner is warned on AI Home and Models.
+ */
+export function blockedInUse(settings: AiSettings, book: PriceBook): BlockedModel[] {
+  const where = new Map<string, string[]>();
+  const note = (model: string, what: string) => {
+    if (priceFor(book, model)) return;
+    where.set(model, [...(where.get(model) ?? []), what]);
+  };
+  const chosen = chosenModels(settings);
+  for (const t of AI_TASKS) note(modelFor(t.key, chosen, settings.allowFable), t.label);
+  const own = agentModelsOf(settings);
+  for (const a of aiAgents(settings.assistantName)) {
+    if (own[a.key]) note(own[a.key]!, a.name);
+  }
+  return [...where].map(([model, w]) => ({ model, label: labelIn(settings, model), where: w }));
+}
+
 export const modelChoiceSchema = z.object({
   task: z.enum(TASK_KEYS),
   /** null puts the system's choice back. */
@@ -540,32 +589,132 @@ export const agentModelSchema = z.object({
   model: z.string().trim().max(140).nullable(),
 });
 
+type PriceStrings = Record<keyof PriceFields, string | null>;
+
+const priceStrings = (p: PriceFields): PriceStrings =>
+  Object.fromEntries(
+    PRICE_FIELDS.map((f) => [f, p[f] === null ? null : String(p[f])]),
+  ) as PriceStrings;
+
+const NO_PRICE: PriceStrings = Object.fromEntries(
+  PRICE_FIELDS.map((f) => [f, null]),
+) as PriceStrings;
+
+export type PriceRow = PriceStrings & {
+  model: string;
+  label: string;
+  /** The provider's own name of the model (without the "openai:" part). */
+  id: string;
+  /** One of the ERP's own Claude models, and its size ("Big"). */
+  builtIn: boolean;
+  size: string | null;
+  /** A task or an agent is set to it. */
+  inUse: boolean;
+  /** "erp": the price page's price; "owner": the owner's own; "blocked": no price. */
+  state: "erp" | "owner" | "blocked";
+  /** The price page's price, when the model is on the list (kept in view under the owner's). */
+  list: PriceStrings | null;
+  /** The page's other prices: long prompts, an announced change. */
+  notes: string[];
+  sourceUrl: string | null;
+  checkedOn: string | null;
+  /** Who set the owner's price, and when. */
+  setBy: string | null;
+  setAt: Date | null;
+};
+
+/**
+ * The Prices sections of Models: per provider, its models on the price list
+ * (older ones apart), the models the owner priced, and any model in use with
+ * no price (blocked).
+ */
+async function priceSections(settings: AiSettings, book: PriceBook, inUse: ReadonlySet<string>) {
+  const setters = [...new Set([...book.values()].flatMap((p) => (p.setById ? [p.setById] : [])))];
+  const names = new Map(
+    (
+      await prisma.user.findMany({
+        where: { id: { in: setters } },
+        select: { id: true, name: true },
+      })
+    ).map((u) => [u.id, u.name]),
+  );
+  // Which list entry each model in use is (a Claude snapshot is its model's).
+  const used = new Set(
+    [...inUse].map((ref) => listedModel(normalModel(ref))?.ref ?? normalModel(ref)),
+  );
+  const row = (ref: string, price: Price | null): PriceRow => {
+    const listed = listedModel(ref);
+    return {
+      model: ref,
+      label: listed?.ref === ref ? listed.label : labelIn(settings, ref),
+      id: parseModel(ref)?.id ?? ref,
+      builtIn: isBuiltIn(ref),
+      size: modelInfo(ref)?.size ?? null,
+      inUse: used.has(ref),
+      state: price ? price.from : "blocked",
+      ...(price ? priceStrings(price) : NO_PRICE),
+      list: listed ? priceStrings(listed) : null,
+      notes: price?.from === "erp" && listed ? priceNotes(listed) : [],
+      sourceUrl: price?.from === "erp" ? (listed?.sourceUrl ?? null) : null,
+      checkedOn: price?.from === "erp" ? (listed?.checkedOn ?? null) : null,
+      setBy: price?.from === "owner" ? (names.get(price.setById ?? "") ?? null) : null,
+      setAt: price?.from === "owner" ? (price.setAt ?? null) : null,
+    };
+  };
+  return PRICE_LISTS.map((l) => {
+    const rows: PriceRow[] = [];
+    const older: PriceRow[] = [];
+    for (const m of l.models) {
+      const r = row(m.ref, priceFor(book, m.ref));
+      (m.older && !r.inUse && r.state !== "owner" ? older : rows).push(r);
+    }
+    const onList = new Set(l.models.map((m) => m.ref));
+    const mine = (ref: string) => parseModel(ref)?.provider === l.provider && !onList.has(ref);
+    // The owner's prices of models on no list, then models in use with no price.
+    for (const ref of [...book.keys()].filter(mine).sort())
+      rows.push(row(ref, priceFor(book, ref)));
+    for (const ref of [...used].filter((r) => mine(r) && !book.has(r)).sort()) {
+      if (!listedModel(ref)) rows.push(row(ref, null));
+    }
+    return {
+      provider: l.provider,
+      label: l.label,
+      sourceUrl: l.sourceUrl,
+      checkedOn: l.checkedOn,
+      rows,
+      older,
+    };
+  });
+}
+
 /**
  * Models as the screen shows it: per task the system's choice, the owner's and
  * the test standing of the model it runs on; per agent its own model; the
- * models each provider offers; and the price of every model in use.
+ * models each provider offers (marked when they have no price); the prices of
+ * Claude, OpenAI and Gemini models; and the models with no price that have
+ * work (blocked).
  */
 export async function getModels(ctx: CompanyContext) {
-  const [settings, runs, prices] = await Promise.all([
+  const [settings, runs, book] = await Promise.all([
     aiSettingsOf(ctx.company.id),
     modelTestRuns(ctx.company.id),
-    prisma.aiModelPrice.findMany({ where: { companyId: ctx.company.id } }),
+    priceBook(ctx.company.id),
   ]);
   const chosen = chosenModels(settings);
   const agentModels = agentModelsOf(settings);
   const read = readModelsOf(settings);
-  const known = (ref: string) => {
-    const r = parseModel(ref);
-    return r ? read[r.provider]?.models : undefined;
-  };
-  const label = (ref: string) => modelLabel(ref, known(ref));
+  const label = (ref: string) => labelIn(settings, ref);
+  const priced = (ref: string) => priceFor(book, ref) !== null;
   const providers = PROVIDERS.map((p) => ({
     id: p.id,
     label: p.label,
     hasKey: keyFor(settings, p.id) !== null,
     readAt: read[p.id]?.readAt ?? null,
     models: (read[p.id]?.models ?? [])
-      .map((m) => ({ ref: modelRef(p.id, m.id), label: m.label }))
+      .map((m) => {
+        const ref = modelRef(p.id, m.id);
+        return { ref, label: m.label, priced: priced(ref) };
+      })
       .filter((m) => !BUILT_IN_MODELS.includes(m.ref)),
   }));
   const tasks = AI_TASKS.map((t) => {
@@ -579,6 +728,7 @@ export async function getModels(ctx: CompanyContext) {
       chosen: chosen[t.key] ?? null,
       runsOn,
       runsOnLabel: label(runsOn),
+      blocked: !priced(runsOn),
       test: { ...standing, text: MODEL_TEST_TEXT[standing.state] },
     };
   });
@@ -586,40 +736,16 @@ export async function getModels(ctx: CompanyContext) {
     ...a,
     model: agentModels[a.key] ?? null,
     modelLabel: agentModels[a.key] ? label(agentModels[a.key]!) : null,
+    blocked: agentModels[a.key] ? !priced(agentModels[a.key]!) : false,
   }));
-  // Prices: the ERP's own models, every model in use, and every price the owner set.
-  const owner = new Map(prices.map((p) => [p.model, p]));
-  const inUse = new Set<string>([
-    ...BUILT_IN_MODELS,
-    ...tasks.map((t) => t.runsOn),
-    ...Object.values(agentModels),
-    ...owner.keys(),
-  ]);
-  const priceRows = [...inUse].map((ref) => {
-    const own = AI_MODELS.find((m) => m.id === ref);
-    const set = owner.get(ref);
-    const known = set && set.inputPerM !== null && set.outputPerM !== null;
-    return {
-      model: ref,
-      label: label(ref),
-      provider: parseModel(ref)?.provider ?? "anthropic",
-      size: own?.size ?? null,
-      from: known ? ("owner" as const) : own ? ("erp" as const) : ("unknown" as const),
-      input: known ? set.inputPerM!.toString() : own ? String(own.input) : null,
-      output: known ? set.outputPerM!.toString() : own ? String(own.output) : null,
-      cacheRead: known
-        ? (set.cacheReadPerM?.toString() ?? null)
-        : own
-          ? String(own.cacheRead)
-          : null,
-    };
-  });
+  const inUse = new Set<string>([...tasks.map((t) => t.runsOn), ...Object.values(agentModels)]);
   return {
     allowFable: settings.allowFable,
     tasks,
     agents,
     providers,
-    prices: priceRows,
+    priceSections: await priceSections(settings, book, inUse),
+    blocked: blockedInUse(settings, book),
     can: { manage: ctx.can("ai.manage") },
   };
 }
@@ -630,7 +756,10 @@ export async function setTaskModel(ctx: CompanyContext, input: unknown, meta?: R
   assertManage(ctx);
   const { task, model } = modelChoiceSchema.parse(input);
   const settings = await aiSettingsOf(ctx.company.id);
-  if (model) assertPickable(settings, model);
+  if (model) {
+    assertPickable(settings, model);
+    await assertPriced(ctx, settings, model);
+  }
   const chosen = chosenModels(settings);
   const system = AI_TASKS.find((t) => t.key === task)!.model;
   if (model === null || model === system) delete chosen[task];
@@ -651,7 +780,10 @@ export async function setAgentModel(ctx: CompanyContext, input: unknown, meta?: 
   const settings = await aiSettingsOf(ctx.company.id);
   const found = aiAgents(settings.assistantName).find((a) => a.key === agent);
   if (!found) throw new AppError("VALIDATION", "Pick one of the agents.");
-  if (model) assertPickable(settings, model);
+  if (model) {
+    assertPickable(settings, model);
+    await assertPriced(ctx, settings, model);
+  }
   const chosen = agentModelsOf(settings);
   if (model) chosen[agent] = model;
   else delete chosen[agent];

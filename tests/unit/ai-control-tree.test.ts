@@ -189,16 +189,19 @@ describe("AI Center tabs and models", () => {
     expect(visibleAiTabs(DEFAULT_ROLE_PERMISSIONS.SUPER_ADMIN, true).map((t) => t.label)).toEqual(
       AI_TABS.map((t) => t.label),
     );
-    // Server Health and the Full check look at the whole server: the platform owner's only.
+    // Server Health, the Full check and Bug Guard look at the whole server: the platform owner's only.
+    expect(AI_TABS.filter((t) => t.platformOwner).map((t) => t.label)).toEqual([
+      "Server Health",
+      "Full check",
+      "Bug Guard",
+    ]);
     expect(visibleAiTabs(DEFAULT_ROLE_PERMISSIONS.SUPER_ADMIN).map((t) => t.label)).toEqual(
-      AI_TABS.filter((t) => t.label !== "Server Health" && t.label !== "Full check").map(
-        (t) => t.label,
-      ),
+      AI_TABS.filter((t) => !t.platformOwner).map((t) => t.label),
     );
     for (const role of ["PRODUCTION_MANAGER", "SALES_EXECUTIVE", "ACCOUNTS", "EMPLOYEE"] as const) {
       expect(visibleAiTabs(DEFAULT_ROLE_PERMISSIONS[role]), role).toEqual([]);
     }
-    // The chat is the owner's own (ai.manage), like Settings.
+    // The chat is the owner's own (ai.manage), like Settings. Group by group (v6.4).
     expect(visibleAiTabs(["ai.view"]).map((t) => t.label)).toEqual([
       "AI Home",
       "Mehedi 2.0",
@@ -206,9 +209,9 @@ describe("AI Center tabs and models", () => {
       "Skills",
       "Orders",
       "Drafts",
-      "Control",
       "Budget & Costs",
       "Models",
+      "Control",
       "Books & tests",
       "Logs",
     ]);
@@ -243,7 +246,7 @@ describe("AI Center tabs and models", () => {
         cacheRead: 1_000_000,
         cacheWrite: 1_000_000,
       }),
-    ).toBeCloseTo(0.2 + 2.5, 6);
+    ).toBeCloseTo(0.1 + 2.5, 6);
     // Haiku over 100K prompt tokens is charged at the long-prompt price.
     expect(costUsd("claude-haiku-5-5", { input: 50_000, output: 1_000 })).toBeCloseTo(0.0055, 6);
     expect(costUsd("claude-haiku-5-5", { input: 200_000, output: 1_000 })).toBeCloseTo(0.1025, 6);

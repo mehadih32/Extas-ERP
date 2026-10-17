@@ -14,6 +14,12 @@ import { AppError } from "@/lib/errors";
  * WhatsApp keys later) are sealed with AES-256-GCM under ENCRYPTION_KEY, and
  * small payloads that travel through the browser (OAuth state) are signed.
  * Read at call time so tests and a changed .env take effect.
+ *
+ * ENCRYPTION_OLD_KEYS (comma-separated, usually empty): the keys of a server
+ * whose backup was restored onto this one. The restore never replaces this
+ * server's own ENCRYPTION_KEY (deploy/bootstrap.sh), so the secrets sealed on
+ * the old server still open with the old key; everything new is sealed with
+ * ENCRYPTION_KEY.
  */
 
 function secret(): string {
@@ -28,8 +34,23 @@ function secret(): string {
 }
 
 /** Separate 32-byte keys for sealing and signing, both derived from ENCRYPTION_KEY. */
-const key = (purpose: "seal" | "sign") =>
-  createHash("sha256").update(`${purpose}:${secret()}`).digest();
+const key = (purpose: "seal" | "sign", from = secret()) =>
+  createHash("sha256").update(`${purpose}:${from}`).digest();
+
+/** Keys of earlier servers, only for opening what they sealed. */
+function oldSealKeys(): Buffer[] {
+  return (process.env.ENCRYPTION_OLD_KEYS ?? "")
+    .split(",")
+    .map((k) => k.trim())
+    .filter((k) => k.length >= 16)
+    .map((k) => key("seal", k));
+}
+
+function openWith(sealKey: Buffer, raw: Buffer): string {
+  const decipher = createDecipheriv("aes-256-gcm", sealKey, raw.subarray(0, 12));
+  decipher.setAuthTag(raw.subarray(12, 28));
+  return Buffer.concat([decipher.update(raw.subarray(28)), decipher.final()]).toString("utf8");
+}
 
 export function encryptSecret(plain: string): string {
   const iv = randomBytes(12);
@@ -44,16 +65,17 @@ export function decryptSecret(sealed: string): string {
     throw new AppError("INTERNAL", "Stored secret is in an unknown format.");
   }
   const raw = Buffer.from(payload, "base64url");
-  try {
-    const decipher = createDecipheriv("aes-256-gcm", key("seal"), raw.subarray(0, 12));
-    decipher.setAuthTag(raw.subarray(12, 28));
-    return Buffer.concat([decipher.update(raw.subarray(28)), decipher.final()]).toString("utf8");
-  } catch {
-    throw new AppError(
-      "UNAVAILABLE",
-      "A stored secret could not be unlocked (was ENCRYPTION_KEY changed?). Connect the service again.",
-    );
+  for (const sealKey of [key("seal"), ...oldSealKeys()]) {
+    try {
+      return openWith(sealKey, raw);
+    } catch {
+      // The next key, if any.
+    }
   }
+  throw new AppError(
+    "UNAVAILABLE",
+    "A stored secret could not be unlocked (was ENCRYPTION_KEY changed?). Connect the service again.",
+  );
 }
 
 /** `payload.signature`, both base64url; the payload carries its own expiry. */

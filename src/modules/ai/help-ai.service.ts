@@ -4,6 +4,7 @@ import { AppError } from "@/lib/errors";
 import { checkRateLimit } from "@/lib/rate-limit";
 import type { CompanyContext } from "@/modules/auth/context";
 import { findHelpArticle, helpSearchEntries } from "@/modules/help";
+import { guideText } from "@/modules/help/guide-text";
 import { rankHelp } from "@/modules/help/search";
 
 import { aiReady, askClaude, textOf } from "./claude";
@@ -12,7 +13,8 @@ import { getMonthCost } from "./costs.service";
 /*
  * The Help AI (Help Center > "Ask the Help AI"): anyone signed in asks how to
  * do something, in Bengali or English, and the AI answers from the guides of
- * the manual that match the question best, naming the guides it read. It only
+ * the manual that match the question best (their What, Why, How, buttons and
+ * fields, what happens next and common mistakes), naming the guides it read. It only
  * explains: it has no tools and changes nothing. It answers only while the
  * company's AI is on (the guides and the search work without it), its cost
  * line says "Help AI" on the Help Center, and the people who see the AI
@@ -71,15 +73,9 @@ export async function askHelp(ctx: CompanyContext, input: unknown) {
     const hit = findHelpArticle(r.sectionId, r.slug);
     return hit ? [{ ...hit, open: r.open }] : [];
   });
+  // Each guide whole (v6.4 L13), so the AI knows every button the guide explains.
   const book = guides
-    .map(({ section, article, open }) =>
-      [
-        `## ${article.title} (${section.title})${open ? "" : " [not open to this person's role]"}`,
-        article.summary,
-        ...article.steps.map((s, i) => `${i + 1}. ${s.text}`),
-        ...(article.tips ?? []).map((t) => `- ${t}`),
-      ].join("\n"),
-    )
+    .map(({ section, article, open }) => guideText(section, article, open))
     .join("\n\n");
   const { message } = await askClaude(ctx.company.id, {
     task: "help.answer",

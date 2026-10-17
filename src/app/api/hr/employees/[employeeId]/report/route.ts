@@ -14,13 +14,13 @@ export const dynamic = "force-dynamic";
  * the last 12 months of attendance, approved overtime and tasks, and the salary and
  * conveyance for people who see them, with a summary. Made for each request, never kept.
  */
-export async function GET(_request: Request, context: { params: Promise<Params> }) {
+export async function GET(request: Request, context: { params: Promise<Params> }) {
   try {
     const { employeeId } = await context.params;
     const ctx = await requireAnyPermission("hr.view", "hr.manage", "hr.payroll");
     const pdf = await employeeReportPdf(ctx, employeeId, await getRequestMeta());
     return fileResponse({ fileName: pdf.fileName, mimeType: PDF_MIME, bytes: pdf.bytes });
   } catch (error) {
-    return apiErrorResponse(error);
+    return apiErrorResponse(error, request);
   }
 }

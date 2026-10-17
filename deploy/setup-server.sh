@@ -61,4 +61,9 @@ if [ -z "$(swapon --show --noheadings)" ]; then
 fi
 swapon --show
 
-say "The server is ready. Next: sudo ./deploy/configure.sh"
+if [ -n "${EXTAS_RESTORE:-}" ]; then
+  # The restore (bootstrap.sh) goes on by itself: no next step to show.
+  say "The server is ready."
+else
+  say "The server is ready. Next: sudo ./deploy/configure.sh"
+fi

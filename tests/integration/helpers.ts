@@ -74,6 +74,9 @@ export async function resetDb() {
   await prisma.size.deleteMany();
   await prisma.warehouse.deleteMany();
   await prisma.backupRun.deleteMany();
+  // Bug Guard's rows that may outlive a company (the server's own).
+  await prisma.loginBlock.deleteMany();
+  await prisma.serverError.deleteMany();
   await prisma.backupConfig.deleteMany();
   await prisma.session.deleteMany();
   await prisma.companyMembership.deleteMany();

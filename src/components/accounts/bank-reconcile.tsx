@@ -151,7 +151,7 @@ export function ReconcileChecklist({
   );
 
   return (
-    <div className="grid gap-4">
+    <div className="grid min-w-0 grid-cols-1 gap-4">
       {can.tick && show === "open" && lines.length > 0 && (
         <div>
           <Button

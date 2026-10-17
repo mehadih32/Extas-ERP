@@ -5,18 +5,24 @@ import Link from "next/link";
 import { useState } from "react";
 
 import { FormAlert } from "@/components/forms/field";
+import { productionHref } from "@/components/production/labels";
 import { Panel } from "@/components/sales/detail-bits";
 import { FormDialog } from "@/components/sales/dialogs";
 import { Button } from "@/components/ui/button";
 import type { TechPack } from "@/modules/production/tech-pack-approval.service";
 import { approveTechPackAction, lockFabricPartAction } from "@/server/actions/production.actions";
+import {
+  approveTechPackOfAction,
+  lockFabricPartOfAction,
+} from "@/server/actions/tech-pack.actions";
 
 /*
  * A style's tech pack approval on its page: draft, its fabric part locked
  * (Fabric first) or approved for production, and what changed in its fabric
  * since, in red, until it is locked or approved again, and the red cells of
  * the tech pack that keep it from approval. Locking and approving are the
- * owner's (production.techpack.approve).
+ * owner's (production.techpack.approve). A tech pack not linked to a style in
+ * production yet waits for one: its fabric part comes from there.
  */
 
 export function TechPackApprovalPanel({
@@ -25,7 +31,8 @@ export function TechPackApprovalPanel({
   techPack: t,
   onTechPack = false,
 }: {
-  projectId: string;
+  /** The style in production (null on a tech pack not linked to one yet). */
+  projectId: string | null;
   code: string;
   techPack: TechPack;
   /** On the tech pack page itself: no "Open the tech pack" button. */
@@ -34,22 +41,37 @@ export function TechPackApprovalPanel({
   const [asking, setAsking] = useState<"lock" | "approve" | null>(null);
   const [notice, setNotice] = useState<string>();
   const approved = t.status === "APPROVED";
-  const state = approved
-    ? `Approved for production${t.approvedBy ? ` by ${t.approvedBy}` : ""}.`
-    : t.fabricLocked
-      ? `Fabric part locked${t.fabricLockedBy ? ` by ${t.fabricLockedBy}` : ""}: its fabric can be booked first. The rest of the tech pack is still a draft.`
-      : t.hasFabric
-        ? "Draft. Lock the fabric part to book the fabric first, or approve the whole tech pack."
-        : "Draft. Add the style's fabric to its materials per piece first.";
+  // On the tech pack's page it is approved by the tech pack, else by the style.
+  const byTechPack = onTechPack && t.techPackId ? t.techPackId : null;
+  const lock = () =>
+    byTechPack ? lockFabricPartOfAction(byTechPack) : lockFabricPartAction(projectId ?? "");
+  const approve = () =>
+    byTechPack ? approveTechPackOfAction(byTechPack) : approveTechPackAction(projectId ?? "");
+  const state = t.needsProject
+    ? "Draft. Link it to a production project to lock its fabric part or approve it: its fabric and pieces come from the project."
+    : approved
+      ? `Approved for production${t.approvedBy ? ` by ${t.approvedBy}` : ""}.`
+      : t.fabricLocked
+        ? `Fabric part locked${t.fabricLockedBy ? ` by ${t.fabricLockedBy}` : ""}: its fabric can be booked first. The rest of the tech pack is still a draft.`
+        : t.hasFabric
+          ? "Draft. Lock the fabric part to book the fabric first, or approve the whole tech pack."
+          : "Draft. Add the style's fabric to its materials per piece first.";
   return (
     <Panel title="Tech pack approval" id="tech-pack-approval-heading">
+      {t.number && !onTechPack && <p className="eyebrow mt-2">{t.number}</p>}
       <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{state}</p>
-      {!onTechPack && (
+      {!onTechPack && projectId && (
         <p className="mt-3">
           <Button asChild size="sm" variant="outline">
-            <Link href={`/production/projects/${projectId}/tech-pack`}>
+            <Link
+              href={
+                t.techPackId
+                  ? productionHref.techPackOf(t.techPackId)
+                  : productionHref.techPackPage(projectId)
+              }
+            >
               <ClipboardListIcon aria-hidden />
-              Open the tech pack
+              {t.techPackId ? "Open the tech pack" : "Start or link a tech pack"}
             </Link>
           </Button>
         </p>
@@ -116,7 +138,7 @@ export function TechPackApprovalPanel({
           errorTitle="We could not lock the fabric part"
           onClose={() => setAsking(null)}
           onSubmit={async () => {
-            const result = await lockFabricPartAction(projectId);
+            const result = await lock();
             if (!result.ok) return result.error;
             setNotice(`The fabric part of ${code} is locked.`);
             setAsking(null);
@@ -134,7 +156,7 @@ export function TechPackApprovalPanel({
           errorTitle="We could not approve the tech pack"
           onClose={() => setAsking(null)}
           onSubmit={async () => {
-            const result = await approveTechPackAction(projectId);
+            const result = await approve();
             if (!result.ok) return result.error;
             setNotice(`The tech pack of ${code} is approved for production.`);
             setAsking(null);

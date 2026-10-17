@@ -31,8 +31,8 @@ function Chosen({
   return (
     <div className="flex min-w-0 items-center justify-between gap-3 rounded-md border bg-card px-3 py-2">
       <div className="min-w-0">
-        <p className="truncate text-sm font-medium">{title}</p>
-        {detail && <p className="truncate text-[0.8125rem] text-muted-foreground">{detail}</p>}
+        <p className="text-sm font-medium break-words">{title}</p>
+        {detail && <p className="text-[0.8125rem] break-words text-muted-foreground">{detail}</p>}
       </div>
       {!locked && (
         <Button
@@ -100,8 +100,8 @@ export function PartyPicker({
       onPick={onChange}
       renderOption={(p) => (
         <span className="grid gap-0.5">
-          <span className="truncate text-sm font-medium">{p.name}</span>
-          <span className="truncate text-[0.8125rem] text-muted-foreground">
+          <span className="text-sm font-medium break-words">{p.name}</span>
+          <span className="text-[0.8125rem] break-words text-muted-foreground">
             {[p.code, p.phone, p.city].filter(Boolean).join(" · ")}
           </span>
         </span>
@@ -159,10 +159,10 @@ export function ProjectPicker({
       onPick={onChange}
       renderOption={(p) => (
         <span className="grid gap-0.5">
-          <span className="truncate text-sm font-medium">
+          <span className="text-sm font-medium break-words">
             {p.code} · {p.name}
           </span>
-          <span className="truncate text-[0.8125rem] text-muted-foreground">
+          <span className="text-[0.8125rem] break-words text-muted-foreground">
             {[p.buyerLabel, PROJECT_STATUS_LABELS[p.status], STAGE_LABELS[p.stage]].join(" · ")}
           </span>
         </span>
@@ -217,10 +217,10 @@ export function ProductionStylePicker({
       onPick={onChange}
       renderOption={(s) => (
         <span className="grid gap-0.5">
-          <span className="truncate text-sm font-medium">
+          <span className="text-sm font-medium break-words">
             {s.code} · {s.name}
           </span>
-          <span className="truncate text-[0.8125rem] text-muted-foreground">
+          <span className="text-[0.8125rem] break-words text-muted-foreground">
             {s.skuCount} {s.skuCount === 1 ? "SKU" : "SKUs"}
           </span>
         </span>

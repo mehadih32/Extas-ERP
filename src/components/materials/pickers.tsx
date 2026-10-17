@@ -36,8 +36,8 @@ export function Chosen({
   return (
     <div className="flex min-w-0 items-center justify-between gap-3 rounded-md border bg-card px-3 py-2">
       <div className="min-w-0">
-        <p className="truncate text-sm font-medium">{title}</p>
-        {detail && <p className="truncate text-[0.8125rem] text-muted-foreground">{detail}</p>}
+        <p className="text-sm font-medium break-words">{title}</p>
+        {detail && <p className="text-[0.8125rem] break-words text-muted-foreground">{detail}</p>}
       </div>
       {!locked && (
         <Button
@@ -99,10 +99,10 @@ export function MaterialPicker({
         onPick={onPick}
         renderOption={(m) => (
           <span className="grid gap-0.5">
-            <span className="truncate text-sm font-medium">
+            <span className="text-sm font-medium break-words">
               {m.code} · {m.name}
             </span>
-            <span className="truncate text-[0.8125rem] text-muted-foreground">
+            <span className="text-[0.8125rem] break-words text-muted-foreground">
               {KIND_LABELS[m.kind]} · {quantity(m.quantity, m.unit, currency)} on hand
             </span>
           </span>
@@ -156,8 +156,8 @@ export function SupplierPicker({
       onPick={onChange}
       renderOption={(p) => (
         <span className="grid gap-0.5">
-          <span className="truncate text-sm font-medium">{p.name}</span>
-          <span className="truncate text-[0.8125rem] text-muted-foreground">
+          <span className="text-sm font-medium break-words">{p.name}</span>
+          <span className="text-[0.8125rem] break-words text-muted-foreground">
             {[p.code, p.phone, p.city].filter(Boolean).join(" · ")}
           </span>
         </span>
@@ -207,10 +207,10 @@ export function MaterialsProjectPicker({
       onPick={onChange}
       renderOption={(p) => (
         <span className="grid gap-0.5">
-          <span className="truncate text-sm font-medium">
+          <span className="text-sm font-medium break-words">
             {p.code} · {p.name}
           </span>
-          <span className="truncate text-[0.8125rem] text-muted-foreground">
+          <span className="text-[0.8125rem] break-words text-muted-foreground">
             {p.buyerLabel} · {PROJECT_STATUS_LABELS[p.status]}
           </span>
         </span>

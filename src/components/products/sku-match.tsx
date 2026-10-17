@@ -25,11 +25,11 @@ export function SkuMatchCard({ sku, currency }: { sku: SkuMatch; currency: strin
         </p>
         <p className="mt-2 flex items-center gap-2 font-medium">
           <Swatch hex={sku.color.hexCode} />
-          <span className="truncate">
+          <span className="min-w-0 break-words">
             {sku.sku} · {variantName(sku)}
           </span>
         </p>
-        <p className="mt-1 truncate text-sm text-muted-foreground">
+        <p className="mt-1 text-sm break-words text-muted-foreground">
           {sku.style.name} ({sku.style.code}){sku.barcode ? ` · Barcode ${sku.barcode}` : ""}
           {sku.isActive ? "" : " · Not offered for sale"}
         </p>

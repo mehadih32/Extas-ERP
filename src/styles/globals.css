@@ -95,7 +95,7 @@
 @layer utilities {
   /* Small capitals labels: "TOTAL ACTIVE STOCK VALUE". */
   .eyebrow {
-    @apply text-[0.6875rem] font-medium tracking-[0.18em] text-muted-foreground uppercase;
+    @apply text-xs font-medium tracking-[0.18em] text-muted-foreground uppercase;
   }
   /* Room for the phone's home bar under the bottom navigation. */
   .pb-safe {

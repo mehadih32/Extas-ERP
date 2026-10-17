@@ -11,10 +11,12 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { GuideAfter, GuideFields, GuidePicture, GuideWhatWhy } from "@/components/help/guide-parts";
 import { HelpImageSlot } from "@/components/help/help-image";
-import { bnDigits, helpHref, NOT_IN_ROLE } from "@/components/help/labels";
+import { helpHref, NOT_IN_ROLE } from "@/components/help/labels";
 import { Button } from "@/components/ui/button";
 import { articleLink, findHelpArticle } from "@/modules/help";
+import { HELP_PICTURES } from "@/modules/help/pictures";
 import { requireCompanyPage } from "@/server/pages/guards";
 
 type Params = Promise<{ section: string; slug: string }>;
@@ -25,7 +27,11 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
   return { title: found ? `${found.article.title} · Help Center` : "Help Center" };
 }
 
-/** One guide: what it is for, who can do it, and the steps with their screenshots. */
+/**
+ * One guide: What the screen is, Why it matters, who can do it, How (the steps
+ * with their pictures), every button and field, what happens next and common
+ * mistakes.
+ */
 export default async function HelpArticlePage({ params }: { params: Params }) {
   const ctx = await requireCompanyPage();
   const permissions = [...ctx.permissions];
@@ -37,6 +43,8 @@ export default async function HelpArticlePage({ params }: { params: Params }) {
   const index = section.articles.indexOf(article);
   const previous = section.articles[index - 1];
   const next = section.articles[index + 1];
+  const picture = HELP_PICTURES[article.slug];
+  const marked = new Set(picture?.marks ?? []);
 
   return (
     <article className="grid grid-cols-1 gap-8">
@@ -108,27 +116,39 @@ export default async function HelpArticlePage({ params }: { params: Params }) {
         )}
       </header>
 
+      <GuideWhatWhy what={article.what} why={article.why} />
+
       <section aria-labelledby="steps-heading" className="grid gap-4">
         <h2 id="steps-heading" lang="bn" className="text-lg font-medium">
-          ধাপে ধাপে
+          কীভাবে করবেন, ধাপে ধাপে
         </h2>
+        {picture && <GuidePicture picture={picture} title={article.title} />}
         <ol className="grid grid-cols-1 gap-4">
           {article.steps.map((step, i) => (
             <li key={i} className="grid gap-3 rounded-lg border bg-card p-4 sm:p-5">
               <div className="flex items-start gap-3">
+                {/* The same number as the red mark on the picture above. */}
                 <span
                   aria-hidden
-                  lang="bn"
-                  className="inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-medium text-primary-foreground"
+                  title={marked.has(i + 1) ? "ছবিতে এই নম্বর দেখুন" : undefined}
+                  className={`inline-flex size-8 shrink-0 items-center justify-center rounded-full text-sm font-medium ${
+                    marked.has(i + 1)
+                      ? "bg-red-600 text-white"
+                      : "bg-primary text-primary-foreground"
+                  }`}
                 >
-                  {bnDigits(i + 1)}
+                  {i + 1}
                 </span>
-                <p lang="bn" className="min-w-0 pt-1 text-[0.9375rem] leading-[1.8]">
-                  <span className="sr-only">Step {i + 1}: </span>
+                <p lang="bn" className="min-w-0 pt-1 text-[0.9375rem] leading-[1.8] break-words">
+                  <span className="sr-only">
+                    Step {i + 1}
+                    {marked.has(i + 1) ? " (marked on the picture)" : ""}:{" "}
+                  </span>
                   {step.text}
                 </p>
               </div>
-              {step.image && (
+              {/* A step's own picture; the guide's picture above stands in until it is added. */}
+              {step.image && (step.image.src || !picture) && (
                 <div className="sm:pl-11">
                   <HelpImageSlot image={step.image} />
                 </div>
@@ -137,6 +157,9 @@ export default async function HelpArticlePage({ params }: { params: Params }) {
           ))}
         </ol>
       </section>
+
+      <GuideFields fields={article.fields} />
+      <GuideAfter next={article.next} mistakes={article.mistakes} />
 
       {article.tips && article.tips.length > 0 && (
         <section

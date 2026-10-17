@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
 import { assertAllowed } from "@/lib/verdict";
 import { money, ZERO } from "@/modules/accounts/balances";
+import { reverseCapitalEntry } from "@/modules/accounts/capital.service";
 import { isCashSubType, isPartySubType } from "@/modules/accounts/chart";
 import { manualPostingBlock } from "@/modules/accounts/chart.service";
 import { postJournalEntry, reverseJournalEntry } from "@/modules/accounts/journal.service";
@@ -237,6 +238,15 @@ export async function reverseJournalVoucher(
       })),
     }),
   );
+  // The owner's money in or out: its capital account and installments follow.
+  if (entry.sourceType === "CAPITAL" || entry.sourceType === "INSTALLMENT") {
+    await reverseCapitalEntry(ctx, entry.sourceId ?? "", entry.id, input, meta);
+    const made = await ctx.db.journalEntry.findFirstOrThrow({
+      where: { reversalOfId: entry.id },
+      select: { id: true },
+    });
+    return getJournalEntry(ctx, made.id);
+  }
 
   const reversal = await prisma.$transaction(async (tx) => {
     const created = await reverseJournalEntry(tx, entry.id, {

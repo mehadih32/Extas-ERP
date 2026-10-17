@@ -1,10 +1,9 @@
 import { Prisma } from "@prisma/client";
 import { describe, expect, it } from "vitest";
 
-import { gradeCost, gradeCostData, removeAtCost } from "@/modules/inventory/costs";
+import { gradeCost, gradeCostData, receiveAtCost, removeAtCost } from "@/modules/inventory/costs";
 import { buildSku, colorSkuCode } from "@/modules/inventory/matrix.service";
 import { capToAvailable, fillByPacks, fillByTotal } from "@/modules/inventory/ratio";
-import { weightedAverageCost } from "@/modules/inventory/stock.service";
 
 const ratio = [
   { sizeId: "S", ratio: 1 },
@@ -45,13 +44,39 @@ describe("SKU codes", () => {
 });
 
 describe("weighted average cost", () => {
+  const received = (r: { average: Prisma.Decimal; filled: number; trueUp: Prisma.Decimal }) => [
+    r.average.toDecimalPlaces(4).toFixed(4),
+    r.filled,
+    r.trueUp.toFixed(2),
+  ];
+
   it("blends existing stock with the new receipt", () => {
-    expect(weightedAverageCost(10, 100, 10, 200)).toBe(150);
+    expect(received(receiveAtCost(10, 100, 10, 200))).toEqual(["150.0000", 0, "0.00"]);
   });
 
-  it("uses the new cost when there was no stock (or negative stock)", () => {
-    expect(weightedAverageCost(0, 0, 5, 250)).toBe(250);
-    expect(weightedAverageCost(-3, 90, 5, 250)).toBe(250);
+  it("uses the new cost when there was no stock", () => {
+    expect(received(receiveAtCost(0, 0, 5, 250))).toEqual(["250.0000", 0, "0.00"]);
+  });
+
+  it("costs the pieces sold before stock came at the incoming cost", () => {
+    // 3 sold short at 90 each: the first 3 of the 5 coming in at 250 are those pieces,
+    // so their cost was understated by 3 x 160 = 480; the 2 left stand at 250.
+    expect(received(receiveAtCost(-3, 90, 5, 250))).toEqual(["250.0000", 3, "-480.00"]);
+    // The demo copy: 36 sold short at 1,100, then 70 in at 557.4324 (cost overstated).
+    expect(received(receiveAtCost(-36, 1100, 70, "557.4324"))).toEqual([
+      "557.4324",
+      36,
+      "19532.43",
+    ]);
+  });
+
+  it("keeps the average while stock stays at or below zero", () => {
+    // 50 short at 100; 20 in at 60 fill 20 of them, 30 are still short at 100.
+    expect(received(receiveAtCost(-50, 100, 20, 60))).toEqual(["100.0000", 20, "800.00"]);
+    // Exactly back to zero: nothing is left to value, the average stays too.
+    expect(received(receiveAtCost(-20, 100, 20, 60))).toEqual(["100.0000", 20, "800.00"]);
+    // The next pieces then fill the rest at their own cost.
+    expect(received(receiveAtCost(-30, 100, 50, 70))).toEqual(["70.0000", 30, "900.00"]);
   });
 });
 
@@ -80,8 +105,13 @@ describe("grade costs", () => {
 
   it("takes all the value when no pieces are left, keeping the last average", () => {
     expect(fixed(removeAtCost(10, 55, 10, 100))).toEqual(["55.0000", "550.0000"]);
-    // Sold past zero: nothing is valued, nothing leaves.
-    expect(fixed(removeAtCost(-2, 50, 3, 40))).toEqual(["50.0000", "0.0000"]);
+  });
+
+  it("values pieces taken below zero at the average, as the stock register does", () => {
+    // Sold past zero in another warehouse: 2 short at 50, 3 more out leave 5 short at 50.
+    expect(fixed(removeAtCost(-2, 50, 3, 40))).toEqual(["50.0000", "150.0000"]);
+    // 10 on hand at 500 (another warehouse 10 short): 20 out leave 10 short at 500.
+    expect(fixed(removeAtCost(10, 500, 20, 500))).toEqual(["500.0000", "10000.0000"]);
   });
 
   it("never leaves a negative value: the pieces left keep cost 0", () => {

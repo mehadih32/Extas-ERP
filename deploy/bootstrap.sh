@@ -1,218 +1,500 @@
 #!/usr/bin/env bash
-# Sets up Extas ERP on a fresh Ubuntu server from a backup in Google Drive, in one
-# go: it installs everything, asks for the web address and the recovery key, shows
-# a Google sign-in code to enter on a phone, lists the backups in Drive, restores
-# the newest (or the one picked), starts the ERP with HTTPS and opens every screen
-# to check it. The Backups screen shows the exact command to paste (it holds the
-# Google client); it downloads this file and runs:
-#   sudo GITHUB_REPOSITORY=owner/repo GITHUB_TOKEN=... GOOGLE_CLIENT_ID=... \
-#     GOOGLE_CLIENT_SECRET=... bash bootstrap.sh
-# GITHUB_TOKEN is only needed while the repository is private: a token that can read
-# it (GitHub, Settings > Developer settings > Fine-grained tokens, Contents: Read).
-# The server keeps it (root only) for later updates.
-# Answers can also be given as environment variables, for a run without questions:
-#   APP_DOMAIN, ACME_EMAIL, RECOVERY_KEY, PICK (newest, ask, or a backup's name),
-#   INSTALL_DIR (/opt/extras-erp), DATA_DIR (/srv/extras-erp), BRANCH (main),
-#   DEMO_SITE (on/off), HTTPS_WAIT (seconds to wait for the certificate, 300).
+# Extas ERP: the one restore command (the restore guide, part C). It brings the
+# whole ERP back on a new Ubuntu server from a backup in Google Drive: it
+# installs what is needed, signs in to Google with a code on the phone, lists
+# the backups newest first, downloads and checks the one picked (Enter: the
+# newest), opens it with the recovery key (read from Drive when the owner keeps
+# it there), restores the database, the files, the settings and the code,
+# points the web address at this server in Cloudflare, gets HTTPS, starts the
+# ERP and the demo site, runs the checks and compares every table and file with
+# the backup's list.
+#
+# It is public and holds no secret, and it needs no GitHub sign-in: the code
+# comes from the backup itself. The command in the restore guide downloads it
+# at a fixed version (a commit), checks its SHA-256 and runs it:
+#   c=<commit> &&
+#   curl -fsSL https://raw.githubusercontent.com/mehadih32/Extas-ERP/$c/deploy/bootstrap.sh -o restore.sh &&
+#   echo "<sha256> restore.sh" | sha256sum -c &&
+#   sudo bash restore.sh $c
+# It downloads deploy/restore-tool.py from the same commit and checks it against
+# RESTORE_TOOL_SHA256 below (tests/unit/restore-guide.test.ts keeps the two
+# the same). Secrets (the Google client, the recovery key) are asked only by the
+# restore tool, as hidden input; none goes on a command line, on the screen or
+# into the log (/var/log/extas-erp-restore.log).
+#
+# On a server that already has Extas ERP, nothing is replaced unless its web
+# address is typed to confirm; its own ENCRYPTION_KEY is never replaced.
+# Every question and every error code (R01, W01...) is in the restore guide.
+#   sudo bash restore.sh [commit]     the restore
+#   bash restore.sh --find            only says which Extas ERP this server has
+#   bash restore.sh --choose          only the A6 decision (drills and tests)
+# Without GitHub (G17): restore.sh and restore-tool.py from the Drive backup folder,
+# side by side in one folder; the tool beside the script is used when it is the right one.
 set -euo pipefail
+umask 022
+
+REPO=mehadih32/Extas-ERP
+RESTORE_TOOL_SHA256=a9f8d4849ef9fe610a126d1c938bcd482dba6b585b91c657dc3f44a1704a71a7
+# Drills only: a stand-in for raw.githubusercontent.com (the tool is still checked).
+RAW_BASE="${EXTAS_RAW_BASE:-https://raw.githubusercontent.com}"
+SEARCH_ROOTS="${EXTAS_SEARCH_ROOTS:-/opt /srv /home /root /var/lib /data /mnt}"
+# Drills only: a smaller disk than a real server needs (a test machine's own disk).
+MIN_FREE_GB="${EXTAS_MIN_FREE_GB:-20}"
+DIR=/opt/extras-erp
+DATA=/srv/extras-erp
+WORK=/var/lib/extas-erp-restore
+LOG=/var/log/extas-erp-restore.log
 
 started="$(date +%s)"
+step_no=0
+step() {
+  step_no=$((step_no + 1))
+  printf '\n==> Step %s: %s\n' "$step_no" "$*"
+}
 say() { printf '\n==> %s\n' "$*"; }
-die() {
-  printf '\nError: %s\n' "$*" >&2
-  exit 1
+note() { printf '    %s\n' "$*"; }
+fail() {
+  local code="$1"
+  shift
+  printf '\nError %s: %s\n(Look up %s in the restore guide'"'"'s list of errors.)\n' "$code" "$*" "$code" >&2
+  exit 2
+}
+warn() {
+  local code="$1"
+  shift
+  printf '\nNote %s: %s\n(Look up %s in the restore guide'"'"'s list of errors.)\n' "$code" "$*" "$code"
 }
 
-REPO="${GITHUB_REPOSITORY:-mehadih32/Extas-ERP}"
-TOKEN="${GITHUB_TOKEN:-}"
-DIR="${INSTALL_DIR:-/opt/extras-erp}"
-DATA="${DATA_DIR:-/srv/extras-erp}"
-BRANCH="${BRANCH:-main}"
-PICK="${PICK:-}"
+# A setting from a settings file (the last line wins).
+env_get() {
+  [ -f "$1" ] || return 0
+  sed -n "s/^$2=//p" "$1" 2>/dev/null | tail -n 1
+}
 
-[ "$(id -u)" -eq 0 ] || die "run it with sudo (the command on the Backups screen does)."
-# shellcheck source=/dev/null
-. /etc/os-release
-[ "${ID:-}" = ubuntu ] || die "this is for a new Ubuntu server (24.04 LTS); this one runs ${PRETTY_NAME:-something else}."
-[[ "$REPO" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || die "GITHUB_REPOSITORY \"$REPO\" is not owner/name."
-[[ "$DATA" == /* ]] || die "DATA_DIR must be a full path, like /srv/extras-erp."
-if [ -e "$DATA/postgres/PG_VERSION" ]; then
-  die "this server already has an Extas ERP database in $DATA. To restore a backup on it, use the Backups screen or sudo ./deploy/restore.sh."
-fi
-if [ -z "${GOOGLE_CLIENT_ID:-}" ] || [ -z "${GOOGLE_CLIENT_SECRET:-}" ]; then
-  die "the Google client is missing: copy the whole command from the ERP's Backups screen (New server). Without the ERP, see deploy/README.md, \"Moving to a new server\"."
-fi
+# answer NAME "question": from the drill's answers file (RESTORE_ANSWERS) when it
+# has NAME, else typed. Only for answers that are not secret.
+answer() {
+  local name="$1" prompt="$2" value=""
+  if [ -n "${RESTORE_ANSWERS:-}" ] && grep -q "^$name=" "$RESTORE_ANSWERS" 2>/dev/null; then
+    env_get "$RESTORE_ANSWERS" "$name"
+    return 0
+  fi
+  { : </dev/tty; } 2>/dev/null ||
+    fail R25 "there is no keyboard to answer \"$prompt\". Run the command in PuTTY as the guide shows."
+  read -r -p "$prompt" value </dev/tty
+  printf '%s' "$value"
+}
 
-# ask NAME "question" [default] [secret]: keeps NAME if it is already set.
-ask() {
-  local answer="${!1:-}"
-  while [ -z "$answer" ]; do
-    [ -t 0 ] || die "$1 is not set, and there is no keyboard to ask for it."
-    if [ "${4:-}" = secret ]; then
-      read -rsp "$2: " answer
-      echo
-    elif [ -n "${3:-}" ]; then
-      read -rp "$2 [$3]: " answer
-      answer="${answer:-$3}"
-    else
-      read -rp "$2: " answer
-    fi
+plain_domain() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -e 's#^https\?://##' -e 's#/.*$##' -e 's/[[:space:]]//g'; }
+
+# --- An Extas ERP already on this server (A6) ------------------------------------
+
+declare -A found_dirs=() found_data=() running_dirs=()
+
+# Every Extas ERP on this server: a running one (Docker's extras-erp project), its
+# program folder (deploy/compose.yml) and its data (deploy.sh's mark, or a
+# database folder), in any of the usual folders.
+detect_installs() {
+  local wd f root
+  if command -v docker >/dev/null 2>&1; then
+    while IFS= read -r wd; do
+      [ -n "$wd" ] || continue
+      found_dirs["$(dirname "$wd")"]=1
+      running_dirs["$(dirname "$wd")"]=1
+    done < <(docker ps --filter label=com.docker.compose.project=extras-erp \
+      --format '{{index .Labels "com.docker.compose.project.working_dir"}}' 2>/dev/null | sort -u)
+  fi
+  for root in $SEARCH_ROOTS; do
+    [ -d "$root" ] || continue
+    while IFS= read -r f; do
+      grep -qx 'name: extras-erp' "$f" 2>/dev/null && found_dirs["$(dirname "$(dirname "$f")")"]=1
+    done < <(find "$root" -maxdepth 4 -path '*/deploy/compose.yml' -type f 2>/dev/null)
+    while IFS= read -r f; do
+      case "$f" in
+        */demo/postgres/PG_VERSION) ;; # the demo site's, inside the ERP's data folder
+        */.extas-erp-data) found_data["$(dirname "$f")"]=1 ;;
+        */postgres/PG_VERSION) found_data["$(dirname "$(dirname "$f")")"]=1 ;;
+      esac
+    done < <(find "$root" -maxdepth 5 \( -name .extas-erp-data -o -path '*/postgres/PG_VERSION' \) -type f 2>/dev/null)
   done
-  printf -v "$1" '%s' "$answer"
 }
 
-say "Extas ERP: a new server from a Google Drive backup"
-ask APP_DOMAIN "Web address for the ERP (for example erp.extasbd.com)"
-APP_DOMAIN="$(printf '%s' "$APP_DOMAIN" | tr '[:upper:]' '[:lower:]' | sed -e 's#^https\?://##' -e 's#/.*$##')"
-[[ "$APP_DOMAIN" =~ ^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$ || "$APP_DOMAIN" == localhost ]] ||
-  die "\"$APP_DOMAIN\" is not a web address like erp.yourcompany.com."
-ask RECOVERY_KEY "Recovery key (56 letters and digits; it is not shown as you type)" "" secret
-# The full check of the key is in drive-restore.ts; this catches a paste that went wrong.
-plain_key="$(printf '%s' "$RECOVERY_KEY" | tr -d ' \t\r\n-')"
-[ "${#plain_key}" -eq 56 ] || die "a recovery key is 56 letters and digits (14 groups of 4); the one given has ${#plain_key}."
+# Whether a data folder holds an ERP's data: its database, or deploy.sh's mark.
+has_data() { [ -n "$1" ] && { [ -f "$1/postgres/PG_VERSION" ] || [ -f "$1/.extas-erp-data" ]; }; }
 
-say "Installing git and curl"
-export DEBIAN_FRONTEND=noninteractive
-apt-get update -qq
-apt-get install -y -qq ca-certificates curl git python3 >/dev/null
+# One line for each install found:
+#   program folder|data folder|web address|running|has data
+# A program folder that neither runs nor has data (a restore stopped half-way, when
+# the connection dropped) has nothing to lose: the restore goes on over it.
+list_installs() {
+  local dir data domain claimed=" "
+  for dir in "${!found_dirs[@]}"; do
+    data="$(env_get "$dir/deploy/.env" DATA_DIR)"
+    [ -f "$dir/deploy/.env" ] && data="${data:-/srv/extras-erp}"
+    domain="$(env_get "$dir/deploy/.env" APP_DOMAIN)"
+    [ -n "$data" ] && claimed+="$(realpath -m "$data") "
+    printf '%s|%s|%s|%s|%s\n' "$dir" "$data" "$domain" "${running_dirs[$dir]:+yes}" \
+      "$(has_data "$data" && echo yes)"
+  done
+  for data in "${!found_data[@]}"; do
+    case "$claimed" in *" $(realpath -m "$data") "*) continue ;; esac
+    printf '|%s|%s||yes\n' "$data" "$(env_get "$data/.extas-erp-data" APP_DOMAIN)"
+  done
+}
 
-say "Getting the code from GitHub ($REPO)"
-credentials=/root/.extras-erp-git-credentials
-if [ -n "$TOKEN" ]; then
-  # Kept (root only) so the server can fetch updates while the repository is private.
-  (
-    umask 077
-    printf 'https://x-access-token:%s@github.com\n' "$TOKEN" >"$credentials"
-  )
-fi
-git_auth=()
-if [ -f "$credentials" ]; then git_auth=(-c "credential.helper=store --file=$credentials"); fi
-if [ -d "$DIR/.git" ]; then
-  git -C "$DIR" "${git_auth[@]}" fetch --quiet origin "$BRANCH" ||
-    die "could not get the code from GitHub. If the repository is private, run the command again and paste a GitHub token that can read it."
-  git -C "$DIR" checkout --quiet "$BRANCH"
-  git -C "$DIR" merge --quiet --ff-only "origin/$BRANCH"
-else
-  GIT_TERMINAL_PROMPT=0 git "${git_auth[@]}" clone --quiet --branch "$BRANCH" "https://github.com/$REPO.git" "$DIR" ||
-    die "could not get the code from GitHub. If the repository is private, run the command again and paste a GitHub token that can read it."
-fi
-if [ -f "$credentials" ]; then
-  git -C "$DIR" config credential.helper "store --file=$credentials"
-fi
-cd "$DIR"
-echo "Code: $(git log -1 --format='%h (%s)')"
-
-say "Preparing the server (system updates, Docker, firewall)"
-./deploy/setup-server.sh
-
-say "Building the tools (a few minutes)"
-docker build --quiet --target tools -t extras-erp-tools:latest . >/dev/null
-
-mkdir -p "$DATA/backups/restores"
-work="$(mktemp -d)"
-chmod 700 "$work"
-trap 'rm -rf "$work"' EXIT
-(
-  umask 077
-  printf '%s\n' "$RECOVERY_KEY" >"$work/recovery-key"
-)
-unset RECOVERY_KEY plain_key
-
-say "Finding the backups in Google Drive"
-tty=()
-if [ -t 0 ] && [ -t 1 ]; then tty=(-it); fi
-if [ -z "$PICK" ]; then
-  PICK=newest
-  [ -t 0 ] && PICK=ask
-fi
-google_env=(-e GOOGLE_CLIENT_ID -e GOOGLE_CLIENT_SECRET)
-# Only for the restore drill (.github/workflows/restore-drill.yml), which stands in for Google.
-if [ -n "${GOOGLE_OAUTH_BASE:-}" ]; then google_env+=(-e GOOGLE_OAUTH_BASE); fi
-if [ -n "${GOOGLE_DRIVE_BASE:-}" ]; then google_env+=(-e GOOGLE_DRIVE_BASE); fi
-docker run --rm "${tty[@]}" --add-host host.docker.internal:host-gateway \
-  "${google_env[@]}" -e PICK="$PICK" \
-  -e RECOVERY_KEY_FILE=/work/recovery-key -e SERVER_FILE=/work/server.json \
-  -e OUT_DIR=/data/backups/restores \
-  -v "$work:/work" -v "$DATA/backups:/data/backups" \
-  extras-erp-tools:latest npx tsx scripts/drive-restore.ts ||
-  die "the backup could not be taken from Google Drive; the lines above say why. Nothing was installed yet: run the command again."
-
-fact() { python3 -c 'import json, sys; v = json.load(open(sys.argv[1])).get(sys.argv[2]); print(v or "")' "$work/server.json" "$1"; }
-name="$(fact name)"
-old_key="$(fact encryptionKey)"
-owner="$(fact ownerEmail)"
-if [ -z "$name" ] || [ ! -d "$DATA/backups/restores/$name" ]; then die "the opened backup is missing."; fi
-chown -R 1001:1001 "$DATA/backups"
-
-say "Writing this server's settings"
-if [ ! -f deploy/.env ]; then
-  ask ACME_EMAIL "Email for HTTPS certificate notices" "$owner"
-  SEED_ADMIN_EMAIL="${owner:-$ACME_EMAIL}"
-  export APP_DOMAIN ACME_EMAIL SEED_ADMIN_EMAIL
-  SEED_ADMIN_NAME=Owner SEED_COMPANIES=Extas DATA_DIR="$DATA" ./deploy/configure.sh
-fi
-set_setting() {
-  local file=deploy/.env
-  if grep -q "^$1=" "$file"; then
-    NAME="$1" VALUE="$2" python3 - "$file" <<'PY'
-import os, sys
-path, name, value = sys.argv[1], os.environ["NAME"], os.environ["VALUE"]
-lines = open(path).read().splitlines()
-lines = [f"{name}={value}" if line.startswith(f"{name}=") else line for line in lines]
-open(path, "w").write("\n".join(lines) + "\n")
-PY
+# The A6 decision: on a server that already has Extas ERP (running, or with data),
+# the restore goes on only over the one whose web address is typed, and only when
+# its program folder and settings are there (its own keys stay). Sets DIR and DATA.
+choose_install() {
+  local line typed chosen i_dir i_data i_domain i_running i_has_data unfinished=0
+  local installs=()
+  while IFS= read -r line; do
+    IFS='|' read -r i_dir i_data i_domain i_running i_has_data <<<"$line"
+    if [ -z "$i_running" ] && [ -z "$i_has_data" ]; then
+      unfinished=1
+      [ "$i_dir" != "$DIR" ] || note "A restore that stopped half-way is in $DIR (no data yet): it goes on from here."
+      continue
+    fi
+    installs+=("$line")
+  done < <(list_installs | LC_ALL=C sort)
+  if [ "${#installs[@]}" -eq 0 ]; then
+    [ "$unfinished" = 1 ] || note "None: this is a new server."
   else
-    printf '%s=%s\n' "$1" "$2" >>"$file"
+    say "This server already has Extas ERP"
+    for line in "${installs[@]}"; do
+      IFS='|' read -r i_dir i_data i_domain i_running i_has_data <<<"$line"
+      note "Program folder: ${i_dir:-not found}"
+      note "Data folder:    ${i_data:-not found}"
+      note "Web address:    ${i_domain:-not known}"
+      note "Running now:    ${i_running:-no}"
+      echo
+    done
+    note "Restoring here REPLACES ALL its data with the backup (a safety copy of the data as"
+    note "it is now is saved first). Its own keys and passwords stay."
+    typed="$(plain_domain "$(answer replace 'Type the web address of the ERP on this server to replace its data, or press Enter to stop: ')")"
+    chosen=""
+    for line in "${installs[@]}"; do
+      IFS='|' read -r i_dir i_data i_domain i_running i_has_data <<<"$line"
+      if [ -n "$typed" ] && { [ "$typed" = "$(plain_domain "$i_domain")" ] ||
+        { [ -z "$i_domain" ] && [ "$typed" = "$i_data" ]; }; }; then
+        chosen="$line"
+      fi
+    done
+    [ -n "$chosen" ] ||
+      fail R04 "stopped: the web address typed is not the one of the ERP on this server, so nothing was changed."
+    IFS='|' read -r i_dir i_data i_domain i_running i_has_data <<<"$chosen"
+    { [ -n "$i_dir" ] && [ -f "$i_dir/deploy/.env" ]; } ||
+      fail R29 "this server has Extas ERP data in $i_data but not its program folder and settings, so it cannot be restored over safely. Move the data away (sudo mv $i_data $i_data.old), then paste the command again."
+    DIR="$i_dir"
+    DATA="$i_data"
+    note "Restoring over the ERP in $DIR (data in $DATA)."
   fi
 }
-# The old server's key opens the settings sealed in the database (Google Drive, AI keys, bots).
-if [ -n "$old_key" ]; then set_setting ENCRYPTION_KEY "$old_key"; fi
-if [ -n "$owner" ]; then set_setting SEED_ADMIN_EMAIL "$owner"; fi
-set_setting GOOGLE_DRIVE_CLIENT_ID "$GOOGLE_CLIENT_ID"
-set_setting GOOGLE_DRIVE_CLIENT_SECRET "$GOOGLE_CLIENT_SECRET"
-if [ -n "${DEMO_SITE:-}" ]; then set_setting DEMO_SITE "$DEMO_SITE"; fi
-chmod 600 deploy/.env
 
-say "Installing the ERP"
-./deploy/deploy.sh
+# The restore tool ($1): the copy beside this script when it is the right one (from
+# the Drive backup folder, when GitHub cannot be reached: G17), else from GitHub at
+# the same commit. Either way it must match RESTORE_TOOL_SHA256.
+get_restore_tool() {
+  local here
+  here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  if [ -f "$here/restore-tool.py" ] &&
+    echo "$RESTORE_TOOL_SHA256  $here/restore-tool.py" | sha256sum -c --quiet - >/dev/null 2>&1; then
+    cp "$here/restore-tool.py" "$1"
+    note "Using the restore tool beside this script (restore-tool.py, from the Drive backup folder)."
+    return 0
+  fi
+  curl -fsSL --retry 3 "$RAW_BASE/$REPO/$ref/deploy/restore-tool.py" -o "$1" 2>/dev/null ||
+    fail R06 "the restore tool could not be downloaded from GitHub. Check that the VM has internet access, then paste the command again."
+  echo "$RESTORE_TOOL_SHA256  $1" | sha256sum -c --quiet - >/dev/null 2>&1 ||
+    fail R07 "the restore tool downloaded is not the expected one (its checksum differs). Copy the command from the newest guide and paste it again."
+}
 
-say "Restoring the backup $name"
-result="$work/restore-result.json"
-./deploy/restore.sh --yes --check --result "$result" "$DATA/backups/restores/$name" ||
-  die "the restore did not finish; the lines above say why. The ERP runs without the backup's data."
-rm -rf "${DATA:?}/backups/restores/$name"
-
-https_ok=0
-if [ "$APP_DOMAIN" = localhost ]; then
-  curl -skf --max-time 10 https://localhost/api/health >/dev/null && https_ok=1
-else
-  say "Waiting for the HTTPS certificate for $APP_DOMAIN"
-  deadline=$(($(date +%s) + ${HTTPS_WAIT:-300}))
-  while [ "$(date +%s)" -lt "$deadline" ]; do
-    if curl -sf --max-time 10 "https://$APP_DOMAIN/api/health" >/dev/null; then
-      https_ok=1
-      break
-    fi
-    sleep 10
-  done
+if [ "${1:-}" = --find ]; then
+  detect_installs
+  list_installs | LC_ALL=C sort
+  exit 0
 fi
+# Tests only: gets and checks the restore tool into the folder $2; nothing else.
+if [ "${1:-}" = --tool ]; then
+  ref=main
+  get_restore_tool "${2:?}/restore-tool.py"
+  exit 0
+fi
+
+# Drills and tests only: the A6 decision alone; nothing is changed.
+if [ "${1:-}" = --choose ]; then
+  detect_installs
+  choose_install
+  echo "CHOSEN $DIR|$DATA"
+  exit 0
+fi
+
+# --- Checks before anything changes ------------------------------------------------
+
+[ "$(id -u)" -eq 0 ] ||
+  fail R01 "run it with sudo: paste the whole command from the guide, which has sudo in it."
+commit="${1:-}"
+[ -z "$commit" ] || [[ "$commit" =~ ^[0-9a-f]{40}$ ]] ||
+  fail R24 "\"$commit\" after restore.sh is not a version (40 letters and digits). Copy the whole command from the guide again."
+ref="${commit:-main}"
+
+# shellcheck source=/dev/null
+. /etc/os-release
+major="${VERSION_ID%%.*}"
+{ [ "${ID:-}" = ubuntu ] && [ "${major:-0}" -ge 22 ]; } 2>/dev/null ||
+  fail R02 "this server runs ${PRETTY_NAME:-another system}. Make the VM with Ubuntu Server 24.04 LTS (step A6 in the guide)."
+
+mkdir -p "$(dirname "$LOG")"
+touch "$LOG" && chmod 600 "$LOG"
+# One restore at a time. One that is already running (its PuTTY connection dropped)
+# is shown here until it ends, instead of a second one starting.
+exec 8>/run/extas-erp-restore.lock
+if ! flock -n 8; then
+  other="$(cat /run/extas-erp-restore.pid 2>/dev/null || true)"
+  if [[ "$other" =~ ^[0-9]+$ ]] && kill -0 "$other" 2>/dev/null; then
+    say "A restore is already running on this server (it goes on when the connection drops). Here it is, until it ends:"
+    tail -n 40 --pid="$other" -f "$LOG" || true
+    say "That restore has ended: its last lines are above. If they end with an error, paste the command again."
+    exit 0
+  fi
+  fail R23 "another restore is already running on this server. Wait for it to finish, then paste the command again."
+fi
+echo "$$" >/run/extas-erp-restore.pid
+# A dropped PuTTY connection does not stop the restore: it goes on, into the log.
+trap '' HUP
+exec > >(tee --output-error=warn -a "$LOG") 2>&1
+
+say "Extas ERP: bringing the ERP back from a Google Drive backup ($(date '+%d %B %Y %H:%M'))"
+
+step "Checking this server"
+memory_kb="$(awk '/^MemTotal:/ {print $2}' /proc/meminfo)"
+free_kb="$(df --output=avail -k / | tail -n 1 | tr -d ' ')"
+[ "${memory_kb:-0}" -ge 3400000 ] ||
+  fail R03 "this server has $((memory_kb / 1024)) MB of memory; the ERP needs 4 GB. Make the VM again with size B2s or larger (step A7 in the guide)."
+[ "${free_kb:-0}" -ge $((MIN_FREE_GB * 1024 * 1024)) ] ||
+  fail R03 "this server has $((free_kb / 1024 / 1024)) GB free on its disk; the ERP needs at least 20 GB. Make the VM again with a 64 GB disk (step A10 in the guide)."
+note "Ubuntu ${VERSION_ID}, $((memory_kb / 1024)) MB memory, $((free_kb / 1024 / 1024)) GB free disk: fine."
+
+step "Looking for an Extas ERP already on this server"
+detect_installs
+choose_install
+
+step "Installing the restore tools"
+export DEBIAN_FRONTEND=noninteractive
+apt_get() { apt-get -o DPkg::Lock::Timeout=900 -q "$@"; }
+# An install cut off earlier (the VM restarted) is finished first, or nothing installs.
+dpkg --configure -a >/dev/null 2>&1 || true
+if ! { apt_get update >/dev/null && apt_get install -y --no-install-recommends \
+  ca-certificates curl git python3 python3-cryptography >/dev/null; }; then
+  fail R05 "the restore tools could not be installed. Wait 5 minutes (a new server installs its own updates first), then paste the command again."
+fi
+rm -rf "$WORK"
+install -d -m 700 "$WORK"
+restore_dir=""
+cleanup() {
+  # The opened backup is plain data and secrets: it never stays on the disk.
+  rm -rf "$WORK"
+  [ -z "$restore_dir" ] || rm -rf "$restore_dir"
+}
+trap cleanup EXIT
+get_restore_tool "$WORK/restore-tool.py"
+tool() { python3 -I "$WORK/restore-tool.py" "$@"; }
+note "Done."
+
+step "Signing in to Google and downloading the backup"
+tool fetch --work "$WORK" || exit 3
+name="$(tool fact --work "$WORK" name)"
+backup_commit="$(tool fact --work "$WORK" commit)"
+cp "$WORK/restore/manifest.json" "$WORK/manifest.json"
+
+step "Putting the ERP's code in place"
+if [ -n "$(tool fact --work "$WORK" hasCode)" ]; then
+  # git checks a bundle only inside a repository: an empty one of its own.
+  rm -rf "$WORK/code-check"
+  { git init -q "$WORK/code-check" && git -C "$WORK/code-check" bundle verify -q "$WORK/code.bundle"; } >/dev/null 2>&1 ||
+    fail R15 "the code inside the backup is damaged. Pick another backup (paste the command again)."
+  rm -rf "$WORK/code-check"
+  if [ -d "$DIR/.git" ]; then
+    [ -z "$(git -C "$DIR" status --porcelain --untracked-files=no)" ] ||
+      fail R26 "the code in $DIR has changes of its own, so it was not replaced. Nothing was changed."
+    git -C "$DIR" fetch -q "$WORK/code.bundle" HEAD || fail R15 "the code inside the backup could not be read."
+  else
+    if [ -e "$DIR" ] && [ -n "$(ls -A "$DIR" 2>/dev/null)" ]; then
+      fail R26 "the folder $DIR already has other files in it, so the code was not put there. Nothing was changed."
+    fi
+    git clone -q --no-checkout "$WORK/code.bundle" "$DIR" || fail R15 "the code inside the backup could not be read."
+  fi
+  git -C "$DIR" checkout -q -B main "${backup_commit:-FETCH_HEAD}" 2>/dev/null ||
+    git -C "$DIR" checkout -q -B main FETCH_HEAD 2>/dev/null ||
+    git -C "$DIR" checkout -q -B main HEAD ||
+    fail R15 "the backup's version of the code could not be put in place."
+else
+  # A backup from before v6.4 has no code inside: the public code from GitHub, no sign-in.
+  note "This backup has no code inside (it is from before v6.4): taking the code from GitHub."
+  want="${backup_commit:-main}"
+  if [ ! -d "$DIR/.git" ]; then
+    GIT_TERMINAL_PROMPT=0 git clone -q "https://github.com/$REPO.git" "$DIR" ||
+      fail R15 "the code could not be downloaded from GitHub. Check the VM's internet access, then paste the command again."
+  fi
+  GIT_TERMINAL_PROMPT=0 git -C "$DIR" fetch -q origin "$want" 2>/dev/null ||
+    GIT_TERMINAL_PROMPT=0 git -C "$DIR" fetch -q origin main ||
+    fail R15 "the code could not be downloaded from GitHub."
+  git -C "$DIR" checkout -q -B main FETCH_HEAD || fail R15 "the code could not be put in place."
+fi
+git -C "$DIR" remote set-url origin "https://github.com/$REPO.git" 2>/dev/null ||
+  git -C "$DIR" remote add origin "https://github.com/$REPO.git"
+note "Code: $(git -C "$DIR" log -1 --format='%h, %cd' --date=format:'%d %B %Y')"
+
+step "Writing this server's settings"
+env_file="$DIR/deploy/.env"
+status=0
+tool env --work "$WORK" --env "$env_file" || status=$?
+if [ "$status" = 5 ]; then
+  # A backup from before v6.4 has no settings file: new settings, with its web address and owner.
+  domain="$(plain_domain "$(tool fact --work "$WORK" appDomain)")"
+  [ -n "$domain" ] || domain="$(plain_domain "$(answer domain 'Web address for the ERP (for example erp.extasbd.com): ')")"
+  owner="$(tool fact --work "$WORK" ownerEmail)"
+  email="$(answer acme_email "Email for HTTPS certificate notices [$owner]: ")"
+  email="${email:-$owner}"
+  APP_DOMAIN="$domain" ACME_EMAIL="$email" SEED_ADMIN_EMAIL="${owner:-$email}" SEED_ADMIN_NAME=Owner \
+    SEED_COMPANIES=Extas DATA_DIR="$DATA" "$DIR/deploy/configure.sh" </dev/null >/dev/null ||
+    fail R16 "the server's settings could not be written (the web address or the email is not right)."
+  tool env --work "$WORK" --env "$env_file" || fail R16 "the server's settings could not be written."
+elif [ "$status" != 0 ]; then
+  exit 3
+fi
+chmod 600 "$env_file"
+DATA="$(env_get "$env_file" DATA_DIR)"
+DATA="${DATA:-/srv/extras-erp}"
+APP_DOMAIN="$(env_get "$env_file" APP_DOMAIN)"
+note "Web address: $APP_DOMAIN; data folder: $DATA"
+
+step "Pointing the web address at this server"
+tool dns --work "$WORK" --deploy "$DIR/deploy" ||
+  warn W02 "Cloudflare could not be reached, so the web address was not changed. Point it to this server's Public IP address (see W01)."
+# Until the web address points here, the restored ERP waits on standby (G2): no
+# backups, reminders or other clocks, so two ERPs never run at once (a practice
+# run, or the old server still in use). deploy/go-live.sh ends it.
+standby=1
+[ -z "$(tool fact --work "$WORK" dnsMoved)" ] || standby=0
+
+step "Preparing the server (system updates, Docker, firewall: about 5 minutes)"
+EXTAS_RESTORE=1 "$DIR/deploy/setup-server.sh" || fail R17 "the server could not be prepared; the lines above say why. Paste the command again."
+
+step "Installing the ERP (building it takes about 10 to 20 minutes)"
+"$DIR/deploy/deploy.sh" || fail R18 "the ERP could not be installed; the lines above say why. Paste the command again: it picks up where it stopped."
+
+step "Restoring the database and the files"
+mkdir -p "$DATA/backups/restores"
+# Before the restored database first starts (src/modules/backups/standby.ts reads it).
+if [ "$standby" = 1 ]; then
+  install -m 644 /dev/null "$DATA/backups/.standby"
+else
+  rm -f "$DATA/backups/.standby"
+fi
+restore_dir="$DATA/backups/restores/$name"
+rm -rf "$restore_dir"
+mv "$WORK/restore" "$restore_dir"
+counts=()
+grep -q -- '--counts' "$DIR/deploy/restore.sh" && counts=(--counts "$WORK/counts.json")
+"$DIR/deploy/restore.sh" --yes --check --result "$WORK/restore-result.json" "${counts[@]}" "$restore_dir" ||
+  fail R19 "the backup could not be restored; the lines above say why. The ERP runs without the backup's data. Paste the command again."
+rm -rf "$restore_dir"
+restore_dir=""
+
+step "Starting the demo site"
+demo_note="off"
+demo=0
+(
+  cd "$DIR"
+  # shellcheck source=/dev/null
+  source deploy/lib.sh
+  load_settings
+  [ -n "$DEMO_DOMAIN" ] || exit 10
+  prepare_demo_site
+  [ -n "$DEMO_DOMAIN" ] || exit 11
+  start_demo
+  compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile --force >/dev/null 2>&1 || true
+) || demo=$?
+case "$demo" in
+  0) demo_note="running" ;;
+  10) note "The demo site is off on this server." ;;
+  *)
+    demo_note="not started"
+    warn W04 "the demo site did not start; the ERP itself is not affected. It starts again with the next update."
+    ;;
+esac
+
+step "Running the checks"
+screen_problems="$(python3 -c 'import json, sys; print(len(json.load(open(sys.argv[1])).get("checks", [])))' "$WORK/restore-result.json" 2>/dev/null || echo "?")"
+if [ -x "$DIR/deploy/bug-guard.sh" ]; then
+  # Every company, only reading; its report goes to the inbox and Telegram (G1).
+  bug_guard=0
+  "$DIR/deploy/bug-guard.sh" --after-restore || bug_guard=$?
+  case "$bug_guard" in
+    0) checks_note="Bug Guard ran (nothing urgent or important)" ;;
+    1)
+      checks_note="Bug Guard ran (it found problems)"
+      warn W05 "Bug Guard found problems after the restore; they are in the ERP's inbox and on Telegram."
+      ;;
+    *)
+      checks_note="Bug Guard ran (not everything was checked)"
+      warn W05 "Bug Guard could not check everything after the restore; it checks again on its own schedule."
+      ;;
+  esac
+else
+  note "Bug Guard is not part of this version; the full check (every screen and PDF opened as the owner) ran above."
+  checks_note="full check"
+fi
+if [ "$screen_problems" != 0 ]; then
+  warn W05 "$screen_problems screen(s) or PDF(s) did not open in the check (listed above). The ERP runs; tell the developer."
+fi
+
+step "Comparing every table and file with the backup"
+compare=0
+tool compare --work "$WORK" --manifest "$WORK/manifest.json" --counts "$WORK/counts.json" \
+  --uploads "$DATA/uploads" --result "$WORK/compare.json" || compare=$?
+
+step "Checking HTTPS"
+https_ok=0
+deadline=$(($(date +%s) + ${HTTPS_WAIT:-300}))
+while [ "$(date +%s)" -lt "$deadline" ]; do
+  if [ "$APP_DOMAIN" = localhost ]; then
+    curl -skf --max-time 10 https://localhost/api/health >/dev/null 2>&1 && https_ok=1 && break
+  elif curl -sf --max-time 10 --resolve "$APP_DOMAIN:443:127.0.0.1" "https://$APP_DOMAIN/api/health" >/dev/null 2>&1; then
+    https_ok=1
+    break
+  fi
+  sleep 10
+done
+ip="$(curl -s --max-time 10 https://1.1.1.1/cdn-cgi/trace 2>/dev/null | sed -n 's/^ip=//p')" || true
+[ "$https_ok" = 1 ] || [ "$standby" = 1 ] || warn W03 "https://$APP_DOMAIN has no HTTPS certificate yet. Check that $APP_DOMAIN points to this server (${ip:-its Public IP address}) and that ports 80 and 443 are open in Azure; the certificate then comes by itself within a few minutes."
 
 took=$(($(date +%s) - started))
-problems="$(python3 -c 'import json, sys; print(len(json.load(open(sys.argv[1])).get("checks", [])))' "$result" 2>/dev/null || echo "?")"
-say "Done in $((took / 60)) min $((took % 60)) s"
-echo "Restored: $name"
-if [ "$problems" = 0 ]; then
-  echo "Full check: every screen opened."
+say "Finished in $((took / 60)) min $((took % 60)) s"
+note "Backup: $name"
+python3 - "$WORK/compare.json" <<'PY' || true
+import json, sys
+try:
+    r = json.load(open(sys.argv[1]))
+except (OSError, ValueError):
+    sys.exit(0)
+if r.get("ok") and r["compared"]["records"] and r["compared"]["files"]:
+    print(f"    All {r['records']:,} records and {r['files']:,} files are back.")
+elif r.get("ok"):
+    print("    The backup is back (it had no list of its tables and files to compare with).")
+else:
+    print(f"    Not everything is back: {len(r['problems'])} problem(s), listed above (R20).")
+PY
+if [ "$standby" = 1 ]; then
+  warn W10 "this ERP waits on standby: $APP_DOMAIN still points to the other server, so it makes no backups and sends no reminders. When this server is the one to use (the old one is off), point the web address here (step F6) and run: cd $DIR && sudo ./deploy/go-live.sh"
+elif [ "$https_ok" = 1 ]; then
+  note "The ERP is running at https://$APP_DOMAIN : sign in as before."
 else
-  echo "Full check: $problems screen(s) or PDF(s) did not open; see the lines above."
+  note "The ERP is running; https://$APP_DOMAIN opens once its address points here (W03)."
 fi
-if [ "$https_ok" = 1 ]; then
-  echo "The ERP is running at https://$APP_DOMAIN"
-else
-  ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
-  echo "The ERP is running, but https://$APP_DOMAIN does not answer yet. Point the web address"
-  echo "at this server's public IP (deploy/README.md, step 2; this server's own address is ${ip:-?})."
-  echo "The certificate then comes by itself within a few minutes."
-fi
-echo "Next: sign in as before. To let GitHub update this server after each merge, run"
-echo "  cd $DIR && sudo ./deploy/setup-auto-deploy.sh"
+if [ "$demo_note" = running ]; then note "The demo site is running too."; fi
+note "Checks: $checks_note; ${screen_problems} problem(s) found."
+note "The full log of this restore: sudo less $LOG"
+note "Next (part F of the guide): let GitHub update this server again: cd $DIR && sudo ./deploy/setup-auto-deploy.sh"
+[ "$compare" = 0 ] || exit 4

@@ -15,9 +15,10 @@ import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { missingFeaturePrompt, quotedSearch } from "@/modules/help/prompt";
+import { sendUsage } from "@/components/shell/usage-beacon";
 import { type HelpSearchEntry, searchHelp, searchWords } from "@/modules/help/search";
 
-import { bnDigits, helpHref, NOT_IN_ROLE } from "./labels";
+import { helpHref, NOT_IN_ROLE } from "./labels";
 
 /** Copies text, saying so for a moment. */
 function CopyButton({ text, label }: { text: string; label: string }) {
@@ -137,6 +138,14 @@ export function HelpSearch({
   const [askAnyway, setAskAnyway] = useState(false);
   const searching = searchWords(deferred).length > 0;
 
+  // Words that found nothing are counted for Bug Guard (a guide may be missing).
+  useEffect(() => {
+    if (!searching || results.length > 0) return;
+    const words = deferred.trim();
+    const timer = setTimeout(() => sendUsage({ kind: "HELP_MISS", subject: words }), 2500);
+    return () => clearTimeout(timer);
+  }, [searching, results.length, deferred]);
+
   // Keep ?q= in the address so a search survives going back from a guide.
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -187,7 +196,7 @@ export function HelpSearch({
         <div className="grid gap-4">
           <p role="status" lang="bn" className="text-sm text-muted-foreground">
             {results.length > 0
-              ? `${bnDigits(results.length)}টি নির্দেশিকা পাওয়া গেছে`
+              ? `${results.length}টি নির্দেশিকা পাওয়া গেছে`
               : "কোনো নির্দেশিকা পাওয়া যায়নি"}
           </p>
           {results.length > 0 && (

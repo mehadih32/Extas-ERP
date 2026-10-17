@@ -70,7 +70,7 @@ export function SalesFlow({
                 <span
                   aria-hidden
                   className={cn(
-                    "grid size-4 shrink-0 place-items-center rounded-full border text-[0.625rem] tabular-nums",
+                    "grid size-5 shrink-0 place-items-center rounded-full border text-xs tabular-nums",
                     record && "border-primary bg-primary text-primary-foreground",
                   )}
                 >

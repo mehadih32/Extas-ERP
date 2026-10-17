@@ -6,8 +6,8 @@ import { AppError } from "@/lib/errors";
 import type { RequestMeta } from "@/lib/request-meta";
 import { askClaude, type ClaudeRequest, toolInputOf } from "@/modules/ai/claude";
 import { EXPERTS, expertById, expertPrompt, LIGHT_BOARD, pickExperts } from "@/modules/ai/experts";
+import { aiAccountOf } from "@/modules/ai/account";
 import type { AiTaskKey } from "@/modules/ai/models";
-import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { detectFileType, readStoredFile, storeUpload } from "@/modules/files/file.service";
 import { getMaterialNeeds, perPieceText } from "@/modules/production/material-need.service";
@@ -16,21 +16,27 @@ import { LIGHTS } from "@/modules/production/tech-pack-labels";
 import {
   assertCanChange,
   assertManage,
-  ensureTechPack,
   getChart,
-  loadTechPackProject,
+  loadTechPack,
+  logTechPack,
+  logTechPackAiWork,
   readInstructions,
+  type TechPackDoc,
 } from "@/modules/production/tech-pack-spec.service";
 import { runTransaction } from "@/lib/transaction";
 
 /*
  * Tech pack AI, through the AI Center (its switch, models, budget and cost
- * log): the AI draft of a style's tech pack from its references, materials,
- * chart and the owner's instructions (each line green, yellow or red, with OK
- * or Change), Ask an expert, the light review board (the cutting master and
- * the head merchandiser), reading the dye mill's lab dip report, and an
- * approx. colour code from a photo. The AI only drafts and advises: nothing in
- * the tech pack changes until a person saves it. Changes need production.manage.
+ * log): the AI draft of a tech pack from the buyer's brief, its references,
+ * the style's materials (once linked to a style in production), the chart and
+ * the owner's instructions (each line green, yellow or red, with OK or
+ * Change), Ask an expert, the light review board (the cutting master and the
+ * head merchandiser), reading the dye mill's lab dip report, and an approx.
+ * colour code from a photo. The AI only drafts and advises: nothing in the
+ * tech pack changes until a person saves it. What the AI makes (a draft, an
+ * answer, findings, a colour estimate) is logged in the AI's own account,
+ * marked AI, naming the person who asked (v6.4); a draft is saved under the AI's
+ * account. Changes need production.manage.
  */
 
 /** Photos and PDFs sent with a draft, at most. */
@@ -54,12 +60,8 @@ export type Signal = (typeof SIGNALS)[number];
 
 const aiOptions = z.object({ costOk: z.boolean().default(false) });
 
-/** The record each AI call is logged against: the style. */
-const recordOf = (project: { id: string; code: string }) => ({
-  type: "ProductionProject",
-  id: project.id,
-  label: project.code,
-});
+/** The record each AI call is logged against: the style in production once linked, else the tech pack. */
+const recordOf = (tp: Pick<TechPackDoc, "record">) => tp.record;
 
 async function ask(
   ctx: CompanyContext,
@@ -89,13 +91,18 @@ function fileBlock(mimeType: string, bytes: Buffer): FileBlock | null {
   return null;
 }
 
-/** What the AI is told about a style: no prices, no suppliers. */
-export async function techPackFacts(ctx: CompanyContext, projectId: string) {
+/**
+ * What the AI is told about a style: no prices, no suppliers. A tech pack
+ * started from the buyer's brief, before any order, has no pieces or materials
+ * yet: the AI works from the brief, its references and the chart.
+ */
+export async function techPackFacts(ctx: CompanyContext, techPackId: string) {
+  const tp = await loadTechPack(ctx, techPackId);
   const [needs, chart, techPack] = await Promise.all([
-    getMaterialNeeds(ctx, projectId),
-    getChart(ctx, projectId),
+    tp.project ? getMaterialNeeds(ctx, tp.project.id) : null,
+    getChart(ctx, tp.id),
     ctx.db.techPack.findUnique({
-      where: { projectId },
+      where: { id: tp.id },
       select: {
         instructions: true,
         references: {
@@ -118,24 +125,42 @@ export async function techPackFacts(ctx: CompanyContext, projectId: string) {
       },
     }),
   ]);
-  const p = needs.project;
+  const p = needs?.project ?? null;
   return {
-    project: p,
+    tp,
     facts: {
-      style: {
-        code: p.code,
-        name: p.name,
-        catalogStyle: p.style ? `${p.style.code} ${p.style.name}` : null,
-        category: p.category?.name ?? null,
-        madeFor: p.buyer?.name ?? "In-House",
-        pieces: p.targetQuantity,
+      techPack: {
+        number: tp.number,
+        title: tp.title,
+        buyer: tp.buyer?.name ?? null,
+        season: tp.season,
+        catalogStyle: tp.style ? `${tp.style.code} ${tp.style.name}` : null,
       },
-      piecesPerColourAndSize: needs.grid.map((c) => ({
+      buyerBrief: tp.brief,
+      style: p
+        ? {
+            code: p.code,
+            name: p.name,
+            catalogStyle: p.style ? `${p.style.code} ${p.style.name}` : null,
+            category: p.category?.name ?? null,
+            madeFor: p.buyer?.name ?? "In-House",
+            pieces: p.targetQuantity,
+          }
+        : {
+            code: tp.number,
+            name: tp.title,
+            catalogStyle: tp.style ? `${tp.style.code} ${tp.style.name}` : null,
+            category: null,
+            madeFor: tp.buyer?.name ?? "Not given yet",
+            pieces: null,
+            note: "No order or production project yet: work from the buyer's brief and the references.",
+          },
+      piecesPerColourAndSize: (needs?.grid ?? []).map((c) => ({
         colour: c.colorName,
         size: c.sizeName,
         pieces: c.quantity,
       })),
-      materialsPerPiece: needs.needs.map((n) => ({
+      materialsPerPiece: (needs?.needs ?? []).map((n) => ({
         material: n.material.name,
         kind: n.material.kind,
         specification: n.material.specification,
@@ -144,7 +169,7 @@ export async function techPackFacts(ctx: CompanyContext, projectId: string) {
         perPiece: perPieceText(n),
         notes: n.notes,
       })),
-      makingNotes: p.techPackNotes,
+      makingNotes: p?.techPackNotes ?? null,
       measurementChart: {
         unit: chart.unit,
         sizes: chart.sizes,
@@ -266,6 +291,8 @@ export type DraftOutput = {
   chart: z.infer<typeof draftToolInput>["chart"] | null;
   /** The light review board, in Auto mode. */
   review?: ReviewOutput | null;
+  /** The person who asked the AI for the draft (the draft is saved under the AI's account). */
+  askedBy?: string | null;
 };
 
 const DRAFT_TOOL_DEF = {
@@ -342,7 +369,7 @@ const DRAFT_TOOL_DEF = {
 
 function draftSystem(companyName: string, mode: "ASK" | "AUTO") {
   return [
-    `You are the tech pack orchestrator of the ${companyName} ERP, a buying house in Bangladesh making menswear for export in partner factories. You draft a style's tech pack from the buyer's reference photos and links, the style's materials, its measurement chart and the owner's instructions. Call ${DRAFT_TOOL} once.`,
+    `You are the tech pack orchestrator of the ${companyName} ERP, a buying house in Bangladesh making menswear for export in partner factories. You draft a style's tech pack from the buyer's brief, reference photos and links, the style's materials (none yet before the order), its measurement chart and the owner's instructions. Call ${DRAFT_TOOL} once.`,
     "",
     "Rules:",
     "- The owner's instructions outrank your own guesses. If an instruction conflicts with the buyer's file, do not choose: make the line red and give both values (e.g. buyer sheet chest 21\", owner said 21.5\").",
@@ -363,22 +390,17 @@ export const draftSchema = aiOptions.extend({ mode: z.enum(["ASK", "AUTO"]).defa
  * The AI's draft of a style's tech pack. In Auto mode the light review board
  * checks it straight after. Saved as a draft: nothing in the tech pack changes.
  */
-export async function draftTechPack(
-  ctx: CompanyContext,
-  projectId: string,
-  raw: unknown,
-  meta?: RequestMeta,
-) {
+export async function draftTechPack(ctx: CompanyContext, techPackId: string, raw: unknown) {
   assertManage(ctx);
   const input = draftSchema.parse(raw);
-  const { project, facts, instructions, files } = await techPackFacts(ctx, projectId);
-  assertCanChange(project);
+  const { tp, facts, instructions, files } = await techPackFacts(ctx, techPackId);
+  assertCanChange(tp);
   const blocks = await referenceBlocks(ctx, files);
   const { message, model } = await ask(ctx, {
     task: "techpack.draft",
     agent: "Tech pack orchestrator",
-    why: `Tech pack draft for ${project.code}`,
-    record: recordOf(project),
+    why: `Tech pack draft for ${tp.code}`,
+    record: recordOf(tp),
     system: draftSystem(ctx.company.name, input.mode),
     maxTokens: 8192,
     timeoutMs: 180_000,
@@ -428,30 +450,30 @@ export async function draftTechPack(
   };
   if (input.mode === "AUTO") {
     // The estimate was agreed for the draft; the board's check is part of the same work.
-    output.review = (await boardReview(ctx, project, facts, output, true)).review;
+    output.review = (await boardReview(ctx, tp, facts, output, true)).review;
   }
+  // Who asked for it is kept with the draft; the draft itself is the AI's (v6.4).
+  output.askedBy = ctx.user.name;
   const saved = await runTransaction(async (tx) => {
-    const techPackId = await ensureTechPack(ctx, project.id, tx);
+    const ai = await aiAccountOf(ctx.company.id, tx);
     const draft = await tx.techPackAiDraft.create({
       data: {
         companyId: ctx.company.id,
-        techPackId,
+        techPackId: tp.id,
         mode: input.mode,
         model,
         output: output as unknown as Prisma.InputJsonValue,
-        createdById: ctx.user.id,
+        createdById: ai.id,
       },
       select: { id: true },
     });
-    // The AI's own work: marked AI in the log (asked for by the person named).
-    await auditInCompany(
-      { ...ctx, byAi: true },
-      meta,
+    // The AI's own work: in its name and marked AI in the log, naming who asked.
+    await logTechPackAiWork(
+      ctx,
+      tp,
       {
         action: "CREATE",
-        entityType: "ProductionProject",
-        entityId: project.id,
-        summary: `${project.code}: AI drafted the tech pack (${input.mode === "ASK" ? "Ask" : "Auto"} mode, ${output.lines.length} lines, ${output.questions.length} question(s))`,
+        summary: `${tp.code}: AI drafted the tech pack (${input.mode === "ASK" ? "Ask" : "Auto"} mode, ${output.lines.length} lines, ${output.questions.length} question(s))`,
       },
       tx,
     );
@@ -479,16 +501,16 @@ const decisionSchema = z.discriminatedUnion("decision", [
 /** A person's OK on a draft line, or their change to it: the line turns green. */
 export async function decideDraftLine(
   ctx: CompanyContext,
-  projectId: string,
+  techPackId: string,
   draftId: string,
   raw: unknown,
   meta?: RequestMeta,
 ) {
   assertManage(ctx);
   const input = decisionSchema.parse(raw);
-  const project = await loadTechPackProject(ctx, projectId);
+  const tp = await loadTechPack(ctx, techPackId);
   const draft = await ctx.db.techPackAiDraft.findFirst({
-    where: { id: draftId, techPack: { projectId: project.id } },
+    where: { id: draftId, techPackId: tp.id },
   });
   const output = draft ? readDraft(draft.output) : null;
   if (!draft || !output) throw new AppError("NOT_FOUND", "That draft is not on this tech pack.");
@@ -505,14 +527,12 @@ export async function decideDraftLine(
     where: { id: draft.id },
     data: { output: output as unknown as Prisma.InputJsonValue },
   });
-  await auditInCompany(ctx, meta, {
+  await logTechPack(ctx, meta, tp, {
     action: "UPDATE",
-    entityType: "ProductionProject",
-    entityId: project.id,
     summary:
       input.decision === "OK"
-        ? `${project.code}: OK on the AI draft line "${was.slice(0, 80)}"`
-        : `${project.code}: changed the AI draft line "${was.slice(0, 60)}" to "${input.text.slice(0, 60)}"`,
+        ? `${tp.code}: OK on the AI draft line "${was.slice(0, 80)}"`
+        : `${tp.code}: changed the AI draft line "${was.slice(0, 60)}" to "${input.text.slice(0, 60)}"`,
   });
   return { id: draft.id };
 }
@@ -563,22 +583,17 @@ export const askExpertSchema = aiOptions.extend({
  * Ask an expert about a style: the one picked, or the one the question calls.
  * The answer is saved on the tech pack; nothing changes by it.
  */
-export async function askExpert(
-  ctx: CompanyContext,
-  projectId: string,
-  raw: unknown,
-  meta?: RequestMeta,
-) {
+export async function askExpert(ctx: CompanyContext, techPackId: string, raw: unknown) {
   assertManage(ctx);
   const input = askExpertSchema.parse(raw);
-  const { project, facts } = await techPackFacts(ctx, projectId);
+  const { tp, facts } = await techPackFacts(ctx, techPackId);
   const expert =
     input.expert === "AUTO" ? pickExperts(input.question, 1)[0]! : expertById(input.expert)!;
   const { message, model } = await ask(ctx, {
     task: "chat",
     agent: `${expert.id} ${expert.name}`,
-    why: `Ask ${expert.id} about ${project.code}`,
-    record: recordOf(project),
+    why: `Ask ${expert.id} about ${tp.code}`,
+    record: recordOf(tp),
     system: expertPrompt(expert, ctx.company.name),
     maxTokens: 4096,
     timeoutMs: 120_000,
@@ -602,7 +617,8 @@ export async function askExpert(
     throw new AppError("UNAVAILABLE", "The expert did not return a readable answer. Try again.");
   }
   const saved = await runTransaction(async (tx) => {
-    const techPackId = await ensureTechPack(ctx, project.id, tx);
+    // Written by the AI: saved under its own account, naming who asked.
+    const ai = await aiAccountOf(ctx.company.id, tx);
     const row = await tx.techPackExpertAnswer.create({
       data: {
         companyId: ctx.company.id,
@@ -614,18 +630,17 @@ export async function askExpert(
         findings: parsed.data as unknown as Prisma.InputJsonValue,
         model,
         askedById: ctx.user.id,
+        createdById: ai.id,
       },
       select: { id: true },
     });
-    // The AI's own work: marked AI in the log (asked for by the person named).
-    await auditInCompany(
-      { ...ctx, byAi: true },
-      meta,
+    // The AI's own work: in the AI's name, marked AI (asked for by the person named).
+    await logTechPackAiWork(
+      ctx,
+      tp,
       {
         action: "CREATE",
-        entityType: "ProductionProject",
-        entityId: project.id,
-        summary: `${project.code}: asked ${expert.id} ${expert.name} "${input.question.slice(0, 80)}"`,
+        summary: `${tp.code}: asked ${expert.id} ${expert.name} "${input.question.slice(0, 80)}"`,
       },
       tx,
     );
@@ -681,7 +696,7 @@ const REVIEW_TOOL_DEF = {
 
 async function boardReview(
   ctx: CompanyContext,
-  project: { id: string; code: string },
+  tp: Pick<TechPackDoc, "code" | "record">,
   facts: unknown,
   draft: DraftOutput | null,
   costOk: boolean,
@@ -690,8 +705,8 @@ async function boardReview(
   const { message, model } = await ask(ctx, {
     task: "techpack.draft",
     agent: "Review board",
-    why: `Review board for ${project.code}`,
-    record: recordOf(project),
+    why: `Review board for ${tp.code}`,
+    record: recordOf(tp),
     system: [
       `You are the light review board of the ${ctx.company.name} ERP: two seats check a style's tech pack before the owner approves it.`,
       ...seats.map((e) => `- ${e.id} ${e.name}: ${e.writes}.`),
@@ -727,29 +742,25 @@ async function boardReview(
 }
 
 /** The light review board (cutting master and head merchandiser) on the tech pack as it is. */
-export async function runReviewBoard(
-  ctx: CompanyContext,
-  projectId: string,
-  raw: unknown,
-  meta?: RequestMeta,
-) {
+export async function runReviewBoard(ctx: CompanyContext, techPackId: string, raw: unknown) {
   assertManage(ctx);
   const input = aiOptions.parse(raw ?? {});
-  const { project, facts } = await techPackFacts(ctx, projectId);
+  const { tp, facts } = await techPackFacts(ctx, techPackId);
   const latest = await ctx.db.techPackAiDraft.findFirst({
-    where: { techPack: { projectId: project.id } },
+    where: { techPackId: tp.id },
     orderBy: { createdAt: "desc" },
     select: { output: true },
   });
   const { review, model } = await boardReview(
     ctx,
-    project,
+    tp,
     facts,
     latest ? readDraft(latest.output) : null,
     input.costOk,
   );
   const saved = await runTransaction(async (tx) => {
-    const techPackId = await ensureTechPack(ctx, project.id, tx);
+    // Written by the AI: saved under its own account, naming who asked.
+    const ai = await aiAccountOf(ctx.company.id, tx);
     const row = await tx.techPackExpertAnswer.create({
       data: {
         companyId: ctx.company.id,
@@ -761,18 +772,17 @@ export async function runReviewBoard(
         findings: review.findings as unknown as Prisma.InputJsonValue,
         model,
         askedById: ctx.user.id,
+        createdById: ai.id,
       },
       select: { id: true },
     });
-    // The AI's own work: marked AI in the log (asked for by the person named).
-    await auditInCompany(
-      { ...ctx, byAi: true },
-      meta,
+    // The AI's own work: in the AI's name, marked AI (asked for by the person named).
+    await logTechPackAiWork(
+      ctx,
+      tp,
       {
         action: "CREATE",
-        entityType: "ProductionProject",
-        entityId: project.id,
-        summary: `${project.code}: the review board found ${review.findings.filter((f) => f.severity === "red").length} red and ${review.findings.filter((f) => f.severity === "yellow").length} yellow point(s)`,
+        summary: `${tp.code}: the review board found ${review.findings.filter((f) => f.severity === "red").length} red and ${review.findings.filter((f) => f.severity === "yellow").length} yellow point(s)`,
       },
       tx,
     );
@@ -833,13 +843,13 @@ const LAB_TOOL_DEF = {
   },
 } as const;
 
-async function loadColour(ctx: CompanyContext, projectId: string, colourId: string) {
-  const project = await loadTechPackProject(ctx, projectId);
+async function loadColour(ctx: CompanyContext, techPackId: string, colourId: string) {
+  const tp = await loadTechPack(ctx, techPackId);
   const colour = await ctx.db.techPackColour.findFirst({
-    where: { id: colourId, techPack: { projectId: project.id } },
+    where: { id: colourId, techPackId: tp.id },
   });
   if (!colour) throw new AppError("NOT_FOUND", "That colour is not on this tech pack.");
-  return { project, colour };
+  return { tp, colour };
 }
 
 /** A PDF or a photo the AI can read (photos up to 5 MB), checked before it is stored. */
@@ -864,7 +874,7 @@ function assertReadable(upload: { bytes: Buffer }, photoOnly: boolean) {
  */
 export async function readLabDipReport(
   ctx: CompanyContext,
-  projectId: string,
+  techPackId: string,
   colourId: string,
   raw: unknown,
   upload: { fileName: string; bytes: Buffer },
@@ -872,7 +882,7 @@ export async function readLabDipReport(
 ) {
   assertManage(ctx);
   const input = aiOptions.parse(raw ?? {});
-  const { project, colour } = await loadColour(ctx, projectId, colourId);
+  const { tp, colour } = await loadColour(ctx, techPackId, colourId);
   assertReadable(upload, false);
   const file = await storeUpload(ctx, upload, meta);
   await ctx.db.techPackColour.update({
@@ -883,8 +893,8 @@ export async function readLabDipReport(
   const { message } = await ask(ctx, {
     task: "read.documents",
     agent: "X06 Textile Engineer: Dyeing & Colour",
-    why: `Read the lab dip report of ${colour.name} for ${project.code}`,
-    record: recordOf(project),
+    why: `Read the lab dip report of ${colour.name} for ${tp.code}`,
+    record: recordOf(tp),
     maxTokens: 4096,
     timeoutMs: 120_000,
     tools: [LAB_TOOL_DEF as unknown as Anthropic.Tool],
@@ -967,7 +977,7 @@ const ESTIMATE_TOOL_DEF = {
  */
 export async function estimateColourFromPhoto(
   ctx: CompanyContext,
-  projectId: string,
+  techPackId: string,
   colourId: string,
   raw: unknown,
   upload: { fileName: string; bytes: Buffer },
@@ -975,7 +985,7 @@ export async function estimateColourFromPhoto(
 ) {
   assertManage(ctx);
   const input = aiOptions.parse(raw ?? {});
-  const { project, colour } = await loadColour(ctx, projectId, colourId);
+  const { tp, colour } = await loadColour(ctx, techPackId, colourId);
   assertReadable(upload, true);
   const file = await storeUpload(ctx, upload, meta);
   const block = fileBlock(file.mimeType, upload.bytes)!;
@@ -983,8 +993,8 @@ export async function estimateColourFromPhoto(
   const { message } = await ask(ctx, {
     task: "read.documents",
     agent: `${expert.id} ${expert.name}`,
-    why: `Colour from a photo: ${colour.name} for ${project.code}`,
-    record: recordOf(project),
+    why: `Colour from a photo: ${colour.name} for ${tp.code}`,
+    record: recordOf(tp),
     system: [
       expertPrompt(expert, ctx.company.name),
       "- A photo cannot give an exact code: these are approx. suggestions only. Without a reference card in the photo, confidence is low.",
@@ -1020,7 +1030,6 @@ export async function estimateColourFromPhoto(
     photoId: file.id,
   };
   await runTransaction(async (tx) => {
-    const techPackId = await ensureTechPack(ctx, project.id, tx);
     await tx.techPackReference.create({
       data: {
         companyId: ctx.company.id,
@@ -1040,15 +1049,13 @@ export async function estimateColourFromPhoto(
           : { code: estimate.codes[0]!.code, codeSource: "IMAGE_ESTIMATE" as const }),
       },
     });
-    // The AI's own work: marked AI in the log (asked for by the person named).
-    await auditInCompany(
-      { ...ctx, byAi: true },
-      meta,
+    // The AI's own work: in the AI's name, marked AI (asked for by the person named).
+    await logTechPackAiWork(
+      ctx,
+      tp,
       {
         action: "UPDATE",
-        entityType: "ProductionProject",
-        entityId: project.id,
-        summary: `${project.code}: approx. colour from a photo for ${colour.name}: ${estimate.codes.map((c) => c.code).join(", ") || "none"} (${estimate.confidence} confidence)`,
+        summary: `${tp.code}: approx. colour from a photo for ${colour.name}: ${estimate.codes.map((c) => c.code).join(", ") || "none"} (${estimate.confidence} confidence)`,
       },
       tx,
     );

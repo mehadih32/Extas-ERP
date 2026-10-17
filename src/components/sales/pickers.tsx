@@ -180,8 +180,8 @@ export function BuyerPicker({
     return (
       <div className="flex min-w-0 items-center justify-between gap-3 rounded-md border bg-card px-3 py-2">
         <div className="min-w-0">
-          <p className="truncate text-sm font-medium">{value.name}</p>
-          <p className="truncate text-[0.8125rem] text-muted-foreground">{value.code}</p>
+          <p className="text-sm font-medium break-words">{value.name}</p>
+          <p className="text-[0.8125rem] break-words text-muted-foreground">{value.code}</p>
         </div>
         {!locked && (
           <Button
@@ -213,7 +213,7 @@ export function BuyerPicker({
       renderOption={(b) => (
         <span className="grid gap-0.5">
           <span className="flex items-center gap-1.5 text-sm font-medium">
-            <span className="min-w-0 truncate">{b.name}</span>
+            <span className="min-w-0 break-words">{b.name}</span>
             {b.isVerified && <VerifiedBadge />}
             {b.grade && (
               <span className="text-[0.75rem] text-muted-foreground">
@@ -221,7 +221,7 @@ export function BuyerPicker({
               </span>
             )}
           </span>
-          <span className="truncate text-[0.8125rem] text-muted-foreground">
+          <span className="text-[0.8125rem] break-words text-muted-foreground">
             {[b.code, b.phone, b.city].filter(Boolean).join(" · ")}
             {b.balance !== null && /[1-9]/.test(b.balance) && (
               <span className={cn(b.balance.startsWith("-") ? "" : "text-destructive")}>
@@ -268,10 +268,10 @@ export function StylePicker({
       onPick={onPick}
       renderOption={(s) => (
         <span className="grid gap-0.5">
-          <span className="truncate text-sm font-medium">
+          <span className="text-sm font-medium break-words">
             {s.code} · {s.name}
           </span>
-          <span className="truncate text-[0.8125rem] text-muted-foreground tabular-nums">
+          <span className="text-[0.8125rem] break-words text-muted-foreground tabular-nums">
             Wholesale {s.wholesalePrice} · Retail {s.retailPrice} ·{" "}
             {formatCount(s.available, currency)} ready
           </span>

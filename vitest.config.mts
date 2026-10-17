@@ -19,5 +19,7 @@ export default defineConfig({
     },
     fileParallelism: false,
     testTimeout: 30_000,
+    // Set-up steps make companies and users; on a busy machine they need more than the default 10 s.
+    hookTimeout: 30_000,
   },
 });

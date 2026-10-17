@@ -18,6 +18,7 @@ export const PROBLEM_KINDS = [
   "PDF",
   "SIGNED_OUT",
   "SCRIPT",
+  "LAYOUT",
 ] as const;
 
 export type ProblemKind = (typeof PROBLEM_KINDS)[number];
@@ -30,6 +31,7 @@ export const KIND_TEXT: Record<ProblemKind, string> = {
   PDF: "A PDF did not open",
   SIGNED_OUT: "The check was sent to the sign-in screen",
   SCRIPT: "The screen had a script error",
+  LAYOUT: "Text is cut or does not fit the screen",
 };
 
 /** The short label on each problem's badge. */
@@ -41,7 +43,39 @@ export const KIND_LABEL: Record<ProblemKind, string> = {
   PDF: "PDF",
   SIGNED_OUT: "Signed out",
   SCRIPT: "Script error",
+  LAYOUT: "Layout",
 };
+
+/**
+ * The layout checks' rules (scripts/full-check/layout.mjs, RULES: the same words),
+ * for a LAYOUT problem's lines in an issue.
+ */
+export const LAYOUT_RULES = {
+  OVERFLOW: "The screen is wider than the window",
+  CUT_TEXT: "Text is cut",
+  OVERLAP: "Text or buttons overlap",
+  OFF_SCREEN: "A button or link is off the screen",
+  MENU: "A menu item cannot be reached",
+  FONT: "Text is not in the app's fonts",
+  BENGALI: "Bengali text is not in a Bengali font",
+  TINY: "Text is too small to read",
+  EMPTY_TABLE: "A table is empty and does not say what to do next",
+} as const;
+
+/**
+ * Where on the screen a layout problem is, as the layout checks give it: tag names,
+ * the app's own class names and :nth-of-type only. Anything else (an attribute's
+ * value, text, an id) makes it "(an element)" (layout.mjs, safeSelector: the same rule).
+ */
+export function safeLayoutPlace(selector: string): string {
+  const s = selector.trim();
+  if (!s || s.length > 300) return "(an element)";
+  return /^[a-z][a-z0-9-]*(?:[.:][\w\-[\]%./:()#]*|\s>\s[a-z][a-z0-9-]*|\[data-slot\])*$/i.test(
+    s,
+  ) && !/[\u0080-\uFFFF]/.test(s)
+    ? s
+    : "(an element)";
+}
 
 export type RequestView = {
   state: "SENT" | "PR_OPEN" | "MERGED" | "STOPPED";
@@ -158,8 +192,16 @@ function requestLines(detail: string | null): string[] {
       out.push(`a link to ${safeRoute(link[1]!)} on ${safeRoute(link[2]!)}`);
       continue;
     }
+    // "LAYOUT 390 CUT_TEXT nav > a.shrink-0": the width, the rule and the place.
+    const layout = /^LAYOUT (\d{3,4}) ([A-Z_]+) (.+)$/.exec(line.trim());
+    if (layout) {
+      const rule = LAYOUT_RULES[layout[2] as keyof typeof LAYOUT_RULES];
+      if (rule) out.push(`${layout[1]} px: ${rule} at ${safeLayoutPlace(layout[3]!)}`);
+      if (out.length >= 8) break;
+      continue;
+    }
     const m =
-      /^(GET|HEAD|POST|PUT|PATCH|DELETE) (\S+) (answered (\d{3})|took (\d+) ms|failed|sent a file that is not a PDF|sent a web page instead of the file)/.exec(
+      /^(GET|HEAD|POST|PUT|PATCH|DELETE) (\S+) (answered (\d{3})|took (\d+) ms|failed|sent a file that is not a PDF|sent a web page instead of the file|has a figure cut short with "…" on page \d{1,4}|has no page number on page \d{1,4})/.exec(
         line.trim(),
       );
     if (!m) continue;
@@ -275,6 +317,88 @@ export function askIssue(input: { text: string; site: string; at: string; issue:
     `_Sent from the ERP (AI Center > Full check > Ask Claude Code) on ${input.at}._`,
   ].join("\n");
   return { title, body };
+}
+
+/** The safe facts of a Bug Guard finding (modules/bug-guard/types.ts CodeFacts). */
+export type GuardFacts = {
+  route: string;
+  method?: string | null;
+  status?: number | null;
+  errorType?: string | null;
+  stack?: string[];
+  times?: number;
+  routes?: string[];
+};
+
+/** A route as an issue may name it (a pattern; the database and package.json as they are). */
+const guardRoute = (route: string) =>
+  /^database: [A-Za-z]{1,60}\.[A-Za-z$]{1,40}$/.test(route) || route === "package.json"
+    ? route
+    : safeRoute(route);
+
+/**
+ * The issue for a Bug Guard finding with a code fix: only the route pattern,
+ * the error's type, the status, how often, and stack lines from the ERP's own
+ * code. Never a message, a screen's text or anything from the ERP's data.
+ */
+export function guardIssue(input: { facts: GuardFacts; site: string; at: string; issue: number }): {
+  title: string;
+  body: string;
+} {
+  const f = input.facts;
+  const route = guardRoute(f.route);
+  const type = errorTypeOf(f.errorType);
+  let what: string[];
+  let title: string;
+  if (type === "SlowQuery") {
+    title = `Bug Guard: slow database call ${route.replace(/^database: /, "")}`;
+    what = [
+      `The database call \`${route.replace(/^database: /, "")}\` took over a second ${f.times ?? 1} time(s) on the live site.`,
+      "Find why (a missing index, a query in a loop, too much loaded at once) and make it fast without changing what it returns.",
+    ];
+  } else if (type === "VulnerablePackages") {
+    title = "Bug Guard: packages with known weaknesses";
+    what = [
+      "`npm audit` reports high or critical weaknesses in the ERP's packages.",
+      "Update them to safe versions (keep the major versions where you can), keep everything working and run the whole test suite.",
+    ];
+  } else if (type === "MissingHelpGuide") {
+    const routes = [...new Set([f.route, ...(f.routes ?? [])].map(safeRoute))].slice(0, 20);
+    title = `Bug Guard: ${routes.length} screen(s) without a Help guide`;
+    what = [
+      "People use these screens, and they have no guide in the Help Center:",
+      ...routes.map((r) => `- \`${r}\``),
+      "Write a Bengali guide for each, as CLAUDE.md and `tests/unit/help-center.test.ts` require.",
+    ];
+  } else {
+    const facts = [
+      f.method ? `method ${f.method.replace(/[^A-Z]/g, "")}` : null,
+      f.status ? `status ${f.status}` : null,
+      type ? `error type ${type}` : null,
+      f.times ? `${f.times} time(s) since the last check` : null,
+    ].filter(Boolean);
+    title = `Bug Guard: ${type ?? "an error"} on ${route}`;
+    const stack = ourStackLines(f.stack);
+    what = [
+      `**An error on \`${route}\`**${facts.length ? ` (${facts.join(", ")})` : ""}.`,
+      ...(stack.length
+        ? ["Stack lines from the ERP's own code:", "```", ...stack, "```"]
+        : ["No stack lines from the ERP's own code were kept: find the cause from the route."]),
+    ];
+  }
+  const body = [
+    `@claude please fix this problem, found by the ERP's Bug Guard on the ${input.site === "demo" ? "demo" : "live"} site.`,
+    "",
+    "### What Bug Guard found",
+    ...what,
+    "",
+    "What the screens showed and the data behind them stay private in the ERP.",
+    "",
+    howTo(input.issue),
+    "",
+    `_Sent from the ERP (AI Center > Bug Guard) on ${input.at}._`,
+  ].join("\n");
+  return { title: title.slice(0, 200), body };
 }
 
 /**

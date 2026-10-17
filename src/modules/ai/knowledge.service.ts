@@ -9,7 +9,15 @@ import type { CompanyContext } from "@/modules/auth/context";
 import { enqueueJob } from "@/modules/jobs/queue";
 import { kickJobWorker } from "@/modules/jobs/worker";
 
-import { type Ask, AiAskFirst, aiReady, askClaude, textOf, toolInputOf } from "./claude";
+import {
+  type Ask,
+  AiAskFirst,
+  aiReady,
+  askClaude,
+  blockIfUnpriced,
+  textOf,
+  toolInputOf,
+} from "./claude";
 import {
   BOOK_CODES,
   type BookCode,
@@ -200,6 +208,15 @@ export async function startTests(ctx: CompanyContext, input: unknown, meta?: Req
   const { books, costOk } = startTestsSchema.parse(input);
   const ready = await aiReady(ctx.company.id);
   if (!ready.on) throw new AppError("UNAVAILABLE", ready.text);
+  // A model with no price is blocked (v6.4 A7): no test starts on it.
+  const blocked = await blockIfUnpriced(
+    ctx.company.id,
+    ready.settings,
+    // The tests run as Mehedi 2.0 (askClaude's agent when none is named).
+    modelForWork(ready.settings, "knowledge.test", ready.settings.assistantName),
+    "The book tests",
+  );
+  if (blocked) throw new AppError("UNAVAILABLE", blocked);
   const standing = await testStanding(ctx.company.id);
   const busy = books.filter((b) => standing[b].running);
   if (busy.length > 0) {

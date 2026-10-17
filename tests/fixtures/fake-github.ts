@@ -59,6 +59,8 @@ export type FakeGitHub = {
   calls: Array<{ method: string; path: string; body: Record<string, unknown> | null }>;
   state: {
     repo: string;
+    /** The repository's default branch as GitHub says it ("main" unless a test changes it). */
+    defaultBranch?: string;
     permissions: { push: boolean; admin: boolean };
     workflows: Record<string, "active" | "disabled_manually" | null>;
     runs: Record<string, FakeRun[]>;
@@ -150,7 +152,7 @@ export async function startFakeGitHub(
     let m: RegExpMatchArray | null;
     if (rest === "" && req.method === "GET") {
       return send(200, {
-        default_branch: "main",
+        default_branch: state.defaultBranch ?? "main",
         private: true,
         permissions: { ...state.permissions, pull: true },
       });

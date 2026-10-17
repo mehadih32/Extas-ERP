@@ -3,6 +3,25 @@
 # are sent on to https://.
 {
 	email {$ACME_EMAIL}
+	# Certificates through Cloudflare's DNS check, while a Cloudflare token is set
+	# (deploy.sh writes tls/cloudflare.caddy; README.md, "HTTPS behind Cloudflare").
+	# Without it, Let's Encrypt checks over port 80 as always.
+	import tls/*.caddy
+
+	# The visitor's own address, also behind Cloudflare's proxy (the orange
+	# cloud), where every request reaches here from a Cloudflare address: only
+	# a request that comes from one of Cloudflare's published ranges
+	# (https://www.cloudflare.com/ips, read 2026-10-16; update this list if
+	# Cloudflare changes it) may name its visitor, in CF-Connecting-IP.
+	# Anyone else is known by the address they connect from, whatever headers
+	# they send, so nobody can pretend to be another address (Bug Guard blocks
+	# a place by its address). Strict: X-Forwarded-For is read from the right,
+	# so an address a visitor typed in front is never taken.
+	servers {
+		trusted_proxies static 173.245.48.0/20 103.21.244.0/22 103.22.200.0/22 103.31.4.0/22 141.101.64.0/18 108.162.192.0/18 190.93.240.0/20 188.114.96.0/20 197.234.240.0/22 198.41.128.0/17 162.158.0.0/15 104.16.0.0/13 104.24.0.0/14 172.64.0.0/13 131.0.72.0/22 2400:cb00::/32 2606:4700::/32 2803:f800::/32 2405:b500::/32 2405:8100::/32 2a06:98c0::/29 2c0f:f248::/32
+		trusted_proxies_strict
+		client_ip_headers CF-Connecting-IP X-Forwarded-For
+	}
 }
 
 {$APP_DOMAIN} {
@@ -21,7 +40,11 @@
 		-Server
 	}
 
-	reverse_proxy app:3000
+	# The app gets only the address settled above (src/lib/request-meta.ts),
+	# never a list a visitor could have started.
+	reverse_proxy app:3000 {
+		header_up X-Forwarded-For {client_ip}
+	}
 
 	log {
 		output stdout

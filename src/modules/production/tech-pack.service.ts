@@ -11,6 +11,7 @@ import { documentFileName, type Block, type PrintDocument } from "@/modules/docu
 import { ON_DEMAND_PER_MINUTE, renderOnDemand } from "@/modules/documents/on-demand";
 import { loadMaterialImages } from "@/modules/production/material-image.service";
 import { techPackExtraBlocks } from "@/modules/production/tech-pack-export";
+import { assertView, loadTechPack, logTechPack } from "@/modules/production/tech-pack-spec.service";
 import {
   getMaterialNeeds,
   gridAxes,
@@ -24,7 +25,9 @@ import { quantity as materialQuantity, UNIT_LABELS } from "@/components/material
  * materials per piece with their pictures, where each goes and what the pieces
  * need in all, its measurement chart, logos and colours, and the making notes.
  * It carries no prices. Made when asked for
- * and not kept (each one is logged).
+ * and not kept (each one is logged). A tech pack started from a buyer's brief
+ * (v6.4) has a PDF of its own until it is linked: its details, the brief, the
+ * chart, logos and colours; once linked, its PDF is its style's.
  */
 
 const SPLIT_TEXT = {
@@ -187,12 +190,32 @@ export function techPackDocument(
   return model;
 }
 
+const briefBlock = (brief: string | null): Block[] =>
+  brief?.trim()
+    ? [
+        {
+          kind: "text",
+          title: "Buyer's brief",
+          paragraphs: brief.trim().split(/\r?\n/).filter(Boolean),
+        },
+      ]
+    : [];
+
 /** The tech pack's PDF for download (logged; nothing is kept). */
 export async function techPackPdf(ctx: CompanyContext, projectId: string, meta?: RequestMeta) {
   checkRateLimit(`on-demand-print:${ctx.user.id}`, ON_DEMAND_PER_MINUTE, 60_000);
   const data = await getMaterialNeeds(ctx, projectId);
   const p = data.project;
-  const model = techPackDocument(ctx, data, p.techPackNotes, await techPackExtraBlocks(ctx, p.id));
+  // Read only: a style without a tech pack yet gets its PDF without one being started.
+  const tp = await ctx.db.techPack.findUnique({
+    where: { projectId: p.id },
+    select: { id: true, number: true, brief: true },
+  });
+  const model = techPackDocument(ctx, data, p.techPackNotes, [
+    ...briefBlock(tp?.brief ?? null),
+    ...(await techPackExtraBlocks(ctx, tp?.id ?? null)),
+  ]);
+  if (tp?.number) model.meta.splice(1, 0, { label: "Tech pack", value: tp.number });
   const images = await loadMaterialImages(
     ctx.company.id,
     data.needs.map((n) => n.imageId),
@@ -205,4 +228,58 @@ export async function techPackPdf(ctx: CompanyContext, projectId: string, meta?:
     summary: `Made the tech pack of ${p.code} (${data.needs.length} material(s))`,
   });
   return { fileName: documentFileName(ctx.company.name, `Tech pack ${p.code} ${p.name}`), bytes };
+}
+
+/**
+ * A tech pack's PDF by the tech pack: its style's, once linked to a style in
+ * production; until then its own, from the brief and what is on it.
+ */
+export async function techPackPdfOf(ctx: CompanyContext, techPackId: string, meta?: RequestMeta) {
+  assertView(ctx);
+  const tp = await loadTechPack(ctx, techPackId);
+  if (tp.project) return techPackPdf(ctx, tp.project.id, meta);
+  checkRateLimit(`on-demand-print:${ctx.user.id}`, ON_DEMAND_PER_MINUTE, 60_000);
+  const tz = ctx.company.timezone;
+  const model: PrintDocument = {
+    type: "TECH_PACK",
+    title: "Tech Pack",
+    subtitle: tp.title || tp.number,
+    reference: tp.number,
+    letterhead: letterheadOf(ctx.company),
+    meta: [
+      { label: "Tech pack", value: tp.number },
+      ...(tp.style ? [{ label: "Style", value: tp.style.code }] : []),
+      ...(tp.season ? [{ label: "Season", value: tp.season }] : []),
+      { label: "Made on", value: formatDay(localDay(new Date(), tz)) },
+    ],
+    parties: [
+      {
+        heading: "Style",
+        lines: [
+          tp.title || tp.number,
+          ...(tp.style ? [`${tp.style.code} · ${tp.style.name}`] : []),
+          tp.buyer ? `Made for ${tp.buyer.name}` : "Buyer not given yet",
+        ],
+      },
+    ],
+    blocks: [
+      ...briefBlock(tp.brief),
+      {
+        kind: "note",
+        text: "No production project yet: the pieces per colour and size and the materials per piece come when it is linked to one.",
+      },
+      ...(await techPackExtraBlocks(ctx, tp.id)),
+      { kind: "note", text: "This tech pack carries no prices." },
+    ],
+    signatures: ["Merchandiser", "Production Manager"],
+  };
+  const bytes = await renderOnDemand(ctx, model);
+  await logTechPack(ctx, meta, tp, {
+    action: "EXPORT",
+    summary: `Made the tech pack PDF of ${tp.number}`,
+  });
+  return {
+    fileName: documentFileName(ctx.company.name, `Tech pack ${tp.number} ${tp.title}`.trim()),
+    bytes,
+  };
 }

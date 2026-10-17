@@ -28,7 +28,7 @@ export function SignalMark({ signal, className }: { signal: Signal; className?: 
       aria-label={s.label}
       title={s.label}
       className={cn(
-        "inline-flex size-5 shrink-0 items-center justify-center rounded-full text-[0.6875rem] font-semibold",
+        "inline-flex size-5 shrink-0 items-center justify-center rounded-full text-xs font-semibold",
         MARK[signal],
         className,
       )}

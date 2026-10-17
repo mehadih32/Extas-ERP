@@ -45,6 +45,71 @@ load_settings() {
   # The demo site's address, for compose.yml (empty while it is off).
   DEMO_DOMAIN="$(demo_domain)"
   export DEMO_DOMAIN
+  choose_caddy
+}
+
+# --- HTTPS (README.md, "HTTPS behind Cloudflare") ----------------------------------
+
+PLAIN_CADDY=caddy:2-alpine
+CLOUDFLARE_CADDY=extras-erp-caddy:latest
+
+# Which Caddy runs, for compose.yml: the one with Cloudflare's DNS module while
+# deploy.sh has set it up (a Cloudflare token in deploy/.env, that Caddy built and
+# DATA_DIR/caddy/tls/cloudflare.caddy written), else plain Caddy as always. The
+# Cloudflare part never stays without the Caddy that reads it.
+choose_caddy() {
+  local part="$DATA_DIR/caddy/tls/cloudflare.caddy"
+  CADDY_IMAGE="$PLAIN_CADDY"
+  if [ -f "$part" ]; then
+    if [ -n "$(setting CLOUDFLARE_API_TOKEN)" ] && docker image inspect "$CLOUDFLARE_CADDY" >/dev/null 2>&1; then
+      CADDY_IMAGE="$CLOUDFLARE_CADDY"
+    else
+      rm -f "$part"
+    fi
+  fi
+  export CADDY_IMAGE
+}
+
+# With a Cloudflare token in deploy/.env (the restore puts the one saved on the
+# Backups screen there), HTTPS certificates come through Cloudflare's DNS check,
+# which works with Cloudflare's proxy on: Caddy is built with Cloudflare's DNS
+# module (deploy/caddy: exact versions; built again every 30 days for the base
+# image's fixes, and at once when deploy/caddy changes). Without a token,
+# or when that Caddy cannot be built or checked, plain Caddy runs as before and
+# Let's Encrypt checks over port 80.
+prepare_https() {
+  local part="$DATA_DIR/caddy/tls/cloudflare.caddy" created build built
+  mkdir -p "$DATA_DIR/caddy/tls"
+  if [ -z "$(setting CLOUDFLARE_API_TOKEN)" ]; then
+    rm -f "$part"
+    choose_caddy
+    return 0
+  fi
+  created="$(docker image inspect -f '{{.Created}}' "$CLOUDFLARE_CADDY" 2>/dev/null || true)"
+  # Which deploy/caddy the image was built from (its Dockerfile's checksum).
+  build="$(sha256sum "$DEPLOY_DIR/caddy/Dockerfile" | cut -c1-16)"
+  built="$(docker image inspect -f '{{index .Config.Labels "extas.caddy-build"}}' "$CLOUDFLARE_CADDY" 2>/dev/null || true)"
+  if [ -z "$created" ] || [ "$built" != "$build" ] || [ "$(date -d "$created" +%s 2>/dev/null || echo 0)" -lt "$(date -d '30 days ago' +%s)" ]; then
+    say "HTTPS through Cloudflare's DNS check: building Caddy with Cloudflare's module (a few minutes)"
+    if ! docker build --pull -q --label "extas.caddy-build=$build" -t "$CLOUDFLARE_CADDY" "$DEPLOY_DIR/caddy" >/dev/null; then
+      [ -n "$created" ] || {
+        rm -f "$part"
+        choose_caddy
+        say "Note W06: Caddy with Cloudflare's module could not be built, so HTTPS stays as before (Let's Encrypt checks over port 80)"
+        return 0
+      }
+      say "Caddy with Cloudflare's module could not be rebuilt; the one built before stays"
+    fi
+  fi
+  printf '# Written by deploy.sh: certificates through Cloudflare'"'"'s DNS check.\nacme_dns cloudflare {env.CLOUDFLARE_API_TOKEN}\n' >"$part"
+  chmod 644 "$part"
+  choose_caddy
+  if ! compose run --rm --no-deps -T caddy \
+    caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1; then
+    rm -f "$part"
+    choose_caddy
+    say "Note W06: Cloudflare's DNS check did not check out, so HTTPS stays as before (Let's Encrypt checks over port 80)"
+  fi
 }
 
 # The demo site's address (README.md, "The demo site"), or nothing while it is
@@ -83,7 +148,7 @@ demo_compose() {
 
 # The folders on the server that hold the data, each owned by whoever writes it.
 prepare_folders() {
-  mkdir -p "$DATA_DIR"/{postgres,uploads,backups,safety-copies,caddy/data,caddy/config,caddy/sites}
+  mkdir -p "$DATA_DIR"/{postgres,uploads,backups,safety-copies,caddy/data,caddy/config,caddy/sites,caddy/tls}
   chown "$APP_UID:$APP_UID" "$DATA_DIR/uploads" "$DATA_DIR/backups"
   # Root writes the safety copies; the app only reads them, to lock them and send
   # them to Google Drive.
@@ -131,6 +196,126 @@ prune_safety_copies() {
     -exec rm -rf {} + 2>/dev/null || true
 }
 
+# The uploaded files a restore set aside (uploads.before-restore-*, and
+# uploads.failed-restore-* from one that went back) stay 30 days, then go (G9).
+prune_old_uploads() {
+  find "$DATA_DIR" -mindepth 1 -maxdepth 1 -type d \
+    \( -name 'uploads.before-restore-*' -o -name 'uploads.failed-restore-*' \) -mtime +30 \
+    -exec rm -rf {} + 2>/dev/null || true
+}
+
+# For the ERP when it starts after a restore (src/modules/backups/after-restore.ts),
+# in DATA_DIR/backups/.restored.json, which only the app reads: the backup's name and
+# time (its own run, left running in it, is then finished), and the server's backup
+# settings saved just before the restore ($2, a file; empty: none), which the ERP puts
+# back (a restore from the screen: the recovery key, schedule and Google Drive stay).
+write_restored_mark() {
+  local folder="$1" kept="$2" mark="$3" ok=0
+  NAME="$(basename "$folder")" python3 - "$folder/manifest.json" "$kept" "$mark" <<'PY' || ok=1
+import datetime, json, os, sys
+try:
+    created = json.load(open(sys.argv[1])).get("createdAt")
+except Exception:
+    created = None
+kept = None
+if sys.argv[2]:
+    text = open(sys.argv[2]).read().strip()
+    kept = json.loads(text) if text else None
+mark = {
+    "name": os.environ["NAME"],
+    # BACKUP_DIR/restores/<name>: opened from its checked copy in Google Drive.
+    "fromDrive": os.path.basename(os.path.dirname(os.path.dirname(os.path.abspath(sys.argv[1]))))
+    == "restores",
+    "backupCreatedAt": created if isinstance(created, str) else None,
+    "restoredAt": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    "keptSettings": kept,
+}
+new = sys.argv[3] + ".new"
+fd = os.open(new, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+with os.fdopen(fd, "w") as f:
+    json.dump(mark, f)
+os.chmod(new, 0o600)
+os.replace(new, sys.argv[3])
+PY
+  # The saved settings never stay in a file of their own.
+  [ -z "$kept" ] || rm -f "$kept"
+  [ "$ok" = 0 ] || return 1
+  chown "$APP_UID:$APP_UID" "$mark" 2>/dev/null || true
+}
+
+# Bug Guard on the ERP running here (bug-guard.sh, after a restore; G1): leaves a
+# request in the backups folder ($1), which the ERP's clock takes within a minute
+# (src/modules/bug-guard/after-restore.ts), and prints its answer, waiting up to
+# $2 seconds. 0: nothing urgent or important; 1: something urgent or important
+# (in the ERP's inbox and on Telegram); 2: not everything was checked, or no answer.
+run_bug_guard() {
+  local dir="$1" wait="${2:-1200}" at deadline status=0
+  local request="$1/bug-guard-request.json" result="$1/bug-guard-result.json"
+  at="$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)"
+  rm -f "$result"
+  printf '{"requestedAt": "%s"}\n' "$at" >"$request.new"
+  chown "$APP_UID:$APP_UID" "$request.new" 2>/dev/null || true
+  mv -f "$request.new" "$request"
+  deadline=$(($(date +%s) + wait))
+  until [ -f "$result" ] && grep -qF "\"requestedAt\": \"$at\"" <(tr -d '\n' <"$result" | sed 's/":  *"/": "/g'); do
+    if [ "$(date +%s)" -ge "$deadline" ]; then
+      rm -f "$request"
+      say "Bug Guard did not answer within $((wait / 60)) minute(s); it checks again on its own schedule"
+      return 2
+    fi
+    sleep "${BUG_GUARD_POLL:-5}"
+  done
+  python3 - "$result" <<'PY' || status=$?
+import json, sys
+r = json.load(open(sys.argv[1]))
+companies = r.get("companies", [])
+lines, serious, unchecked = [], 0, 0
+for c in companies:
+    if c.get("status") == "DONE":
+        serious += c.get("urgent", 0) + c.get("important", 0)
+        line = f"{c['name']}: {c.get('urgent', 0)} urgent, {c.get('important', 0)} important, {c.get('later', 0)} can wait"
+        if c.get("failedChecks"):
+            unchecked += 1
+            line += f" ({c['failedChecks']} check(s) could not finish)"
+    else:
+        unchecked += 1
+        line = f"{c['name']}: not checked ({c.get('note') or 'it stopped'})"
+    lines.append(line)
+n = len(companies)
+head = f"Bug Guard ran on {n} compan{'y' if n == 1 else 'ies'}"
+if serious:
+    print(f"\n==> {head}: it found urgent or important problems; they are in the ERP's inbox and on Telegram")
+elif unchecked or not r.get("ok", False):
+    print(f"\n==> {head}: not everything could be checked; it checks again on its own schedule")
+else:
+    print(f"\n==> {head}: nothing urgent or important")
+for line in lines:
+    print(f"    {line}")
+sys.exit(1 if serious else 2 if unchecked or not r.get("ok", False) else 0)
+PY
+  rm -f "$result"
+  return "$status"
+}
+
+# Ends the standby a restore left on a second server (G2: DATA_DIR/backups/.standby,
+# which the app reads, src/modules/backups/standby.ts) once this ERP's web address is
+# typed ($1 the backups folder, $2 the web address). Its clocks then start within a minute.
+leave_standby() {
+  local dir="$1" domain="${2,,}" typed=""
+  if [ ! -f "$dir/.standby" ]; then
+    say "This ERP is not on standby: it is the one in use already"
+    return 0
+  fi
+  say "This makes this server the Extas ERP in use"
+  echo "Its backups, reminders and other clocks start within a minute. Do it only when the"
+  echo "old server is off or will not be used again, and $domain points to this server."
+  read -r -p "Type $domain to go on, or press Enter to stop: " typed || true
+  typed="$(printf '%s' "$typed" | tr '[:upper:]' '[:lower:]' | sed -e 's#^https\?://##' -e 's#/.*$##' -e 's/[[:space:]]//g')"
+  { [ -n "$typed" ] && [ "$typed" = "$domain" ]; } || die "stopped: nothing was changed."
+  rm -f "$dir/.standby"
+  say "Done: this ERP is the one in use; its clocks start within a minute"
+}
+
 # The weekly test restore puts the newest backup into a temporary database of its own,
 # so the app's database user may make (and drop) databases. It never touches another.
 allow_test_restores() {
@@ -140,7 +325,8 @@ allow_test_restores() {
 
 # The server's helpers for backups (README.md, "Backups"): systemd starts
 # restore-request.sh when the ERP leaves a restore asked for on the Backups screen,
-# and cron clears safety copies older than 24 hours every hour. The mark file tells
+# and cron clears safety copies older than 24 hours every hour, and the uploaded
+# files a restore set aside after 30 days. The mark file tells
 # the ERP that Restore on the screen works here.
 install_backup_helpers() {
   command -v systemctl >/dev/null || return 1
@@ -162,13 +348,46 @@ Description=Extas ERP: restore the backup asked for on the Backups screen
 Type=oneshot
 ExecStart=$DEPLOY_DIR/restore-request.sh
 EOF
+  # The owner's backup public key, written by the ERP when the recovery key is set:
+  # deploy/.env is locked with it at once (lock-settings.sh), not only at the next update.
+  cat >/etc/systemd/system/extras-erp-settings-lock.path <<EOF
+[Unit]
+Description=Extas ERP: lock the server's settings for the backups when the backup key changes
+
+[Path]
+PathChanged=$DATA_DIR/backups/backup-public-key.json
+
+[Install]
+WantedBy=multi-user.target
+EOF
+  cat >/etc/systemd/system/extras-erp-settings-lock.service <<EOF
+[Unit]
+Description=Extas ERP: lock the server's settings for the backups
+
+[Service]
+Type=oneshot
+ExecStart=$DEPLOY_DIR/lock-settings.sh
+EOF
   cat >/etc/cron.d/extras-erp-safety-copies <<EOF
 # Extas ERP (deploy.sh): safety copies stay on the server for 24 hours; Google Drive keeps them.
 17 * * * * root find $DATA_DIR/safety-copies -mindepth 1 -maxdepth 1 -type d -name 'before-*' -mmin +1440 -exec rm -rf {} + 2>/dev/null
+# The uploaded files a restore set aside stay 30 days.
+23 3 * * * root find $DATA_DIR -mindepth 1 -maxdepth 1 -type d \( -name 'uploads.before-restore-*' -o -name 'uploads.failed-restore-*' \) -mtime +30 -exec rm -rf {} + 2>/dev/null
 EOF
   systemctl daemon-reload || return 1
   systemctl enable --now extras-erp-restore.path >/dev/null 2>&1 || return 1
+  systemctl enable --now extras-erp-settings-lock.path >/dev/null 2>&1 || return 1
   install -o "$APP_UID" -g "$APP_UID" -m 644 /dev/null "$DATA_DIR/backups/.restore-helper"
+}
+
+# Bug Guard's view of the server (host-status.sh): Ubuntu updates waiting and a
+# restart needed, written every morning and after every update. It only reads.
+install_host_status() {
+  cat >/etc/cron.d/extras-erp-host-status <<EOF
+# Extas ERP (deploy.sh): tells Bug Guard whether the server has updates waiting.
+41 4 * * * root $DEPLOY_DIR/host-status.sh >/dev/null 2>&1
+EOF
+  "$DEPLOY_DIR/host-status.sh" >/dev/null 2>&1
 }
 
 # --- The demo site (README.md, "The demo site") ---------------------------------
@@ -318,11 +537,158 @@ restore_database() {
 }
 
 # Opens every screen of the version that just started, the way the owner would
-# (scripts/check-update.ts), with a ten-minute session of its own; a "==> " line for
-# each problem. False when a screen or a PDF did not work.
+# (scripts/check-update.ts), with a ten-minute session of its own; a "==> Problem: "
+# line for each problem. False when a screen or a PDF did not work.
 check_update() {
   local email
   email="$(setting SEED_ADMIN_EMAIL)"
   compose run --rm --no-deps -T -e CHECK_URL=http://app:3000 -e CHECK_EMAIL="${email,,}" \
     migrate npx tsx scripts/check-update.ts
+}
+
+# How many problems check_update's output (on stdin) reports: only its
+# "==> Problem: " lines, never the notes around them.
+check_problems() {
+  grep -c '^==> Problem: ' || true
+}
+
+# --- What the backups take from the server (README.md, "Backups") -------------------
+
+# The data folder's mark, so the restore command (bootstrap.sh) finds this ERP
+# wherever its data is, and never restores over it without its web address typed.
+mark_data_folder() {
+  cat >"$DATA_DIR/.extas-erp-data" <<EOF
+# Extas ERP's data folder (deploy.sh). The restore command looks for this file.
+APP_DOMAIN=$APP_DOMAIN
+INSTALL_DIR=$(dirname "$DEPLOY_DIR")
+EOF
+  chmod 644 "$DATA_DIR/.extas-erp-data"
+}
+
+# For the backups, in DATA_DIR/backups/.host (the app reads it, never writes it):
+# the running version (version.json: the commit and the SHA-256 of the restore
+# command's bootstrap.sh there), the code at that version as a git bundle, and
+# deploy/.env locked for the owner's backup public key. So a backup holds
+# everything a new server needs, with no GitHub sign-in.
+record_host_files() {
+  local host="$DATA_DIR/backups/.host" repo commit sha version
+  repo="$(dirname "$DEPLOY_DIR")"
+  commit="$(git -C "$repo" rev-parse HEAD 2>/dev/null)" || return 1
+  sha="$(git -C "$repo" show HEAD:deploy/bootstrap.sh 2>/dev/null | sha256sum | cut -d' ' -f1)"
+  version="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1])).get("version", ""))' "$repo/package.json" 2>/dev/null || true)"
+  install -d -o root -g "$APP_UID" -m 750 "$host"
+  if [ "$(cat "$host/code.commit" 2>/dev/null)" != "$commit" ] || [ ! -s "$host/code.bundle" ]; then
+    rm -f "$host/code.commit"
+    # A bundle of a shallow copy would not make the next one after a restore: the whole history.
+    if [ "$(git -C "$repo" rev-parse --is-shallow-repository 2>/dev/null)" = true ]; then
+      GIT_TERMINAL_PROMPT=0 git -C "$repo" fetch -q --unshallow origin >/dev/null 2>&1 || true
+    fi
+    if git -C "$repo" bundle create "$host/code.bundle.new" HEAD >/dev/null 2>&1 &&
+      code_bundle_whole "$host/code.bundle.new" "$commit"; then
+      chown root:"$APP_UID" "$host/code.bundle.new"
+      chmod 640 "$host/code.bundle.new"
+      mv -f "$host/code.bundle.new" "$host/code.bundle"
+      printf '%s\n' "$commit" >"$host/code.commit"
+    else
+      # No bundle rather than one of another version or a broken one: the backups
+      # then say the code is missing, and the next update makes it again.
+      rm -f "$host/code.bundle.new" "$host/code.bundle"
+      say "The code bundle for the backups did not check out, so backups say the code is missing until the next update"
+    fi
+  fi
+  # The restore command and its tool of this version, which the ERP puts beside the
+  # guide in the Drive backup folder (G17): a restore then needs nothing from GitHub.
+  if git -C "$repo" show HEAD:deploy/bootstrap.sh >"$host/restore.sh.new" 2>/dev/null &&
+    git -C "$repo" show HEAD:deploy/restore-tool.py >"$host/restore-tool.py.new" 2>/dev/null; then
+    chmod 644 "$host/restore.sh.new" "$host/restore-tool.py.new"
+    mv -f "$host/restore.sh.new" "$host/restore.sh"
+    mv -f "$host/restore-tool.py.new" "$host/restore-tool.py"
+  else
+    rm -f "$host/restore.sh.new" "$host/restore-tool.py.new"
+  fi
+  printf '{"commit":"%s","bootstrapSha256":"%s","deployedAt":"%s","version":"%s"}\n' \
+    "$commit" "$sha" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$version" >"$host/version.json.new"
+  chmod 644 "$host/version.json.new"
+  mv -f "$host/version.json.new" "$host/version.json"
+  lock_settings
+}
+
+# Whether a code bundle ($1) is whole and holds the commit $2: git unpacks it into
+# an empty repository of its own, which checks every object in it and that it
+# needs no history from elsewhere, then walks everything the commit needs.
+code_bundle_whole() {
+  local check heads status=0
+  check="$(mktemp -d)"
+  if git init -q "$check" >/dev/null 2>&1 &&
+    git -C "$check" bundle verify -q "$1" >/dev/null 2>&1 &&
+    heads="$(git -C "$check" bundle unbundle "$1" 2>/dev/null)" &&
+    [[ $'\n'"$heads" == *$'\n'"$2 "* ]] &&
+    git -C "$check" rev-list --objects "$2" >/dev/null 2>&1; then
+    status=0
+  else
+    status=1
+  fi
+  rm -rf "$check"
+  return "$status"
+}
+
+# deploy/.env locked for the owner's backup public key (BACKUP_DIR/backup-public-key.json,
+# which the ERP writes when the owner sets the recovery key), in the tools image with
+# no network (scripts/lock-settings.ts). The plain settings never leave this server;
+# without the owner's key nothing is written.
+lock_settings() {
+  local host="$DATA_DIR/backups/.host" key="$DATA_DIR/backups/backup-public-key.json"
+  if [ ! -s "$key" ]; then
+    rm -f "$host/settings.env.locked" "$host/settings.env.json"
+    return 0
+  fi
+  install -d -o root -g "$APP_UID" -m 750 "$host"
+  rm -f "$host/settings.env.locked.new" "$host/settings.env.json.new"
+  if ! docker run --rm -i --network none -v "$key:/in/key.json:ro" -v "$host:/out" \
+    extras-erp-tools:latest npx tsx scripts/lock-settings.ts <"$ENV_FILE" >/dev/null; then
+    rm -f "$host/settings.env.locked.new" "$host/settings.env.json.new"
+    return 1
+  fi
+  chown root:"$APP_UID" "$host/settings.env.locked.new" "$host/settings.env.json.new"
+  chmod 640 "$host/settings.env.locked.new" "$host/settings.env.json.new"
+  mv -f "$host/settings.env.locked.new" "$host/settings.env.locked"
+  mv -f "$host/settings.env.json.new" "$host/settings.env.json"
+}
+
+# The v6.3 restore command set GITHUB_TOKEN and the Google client (its secret
+# written out) on its command line, so they may be in shell history (G14): root's,
+# and that of the user who pasted it. Only the lines that set GITHUB_TOKEN= or
+# GOOGLE_CLIENT_ID= / GOOGLE_CLIENT_SECRET= go; the rest stays, with its owner and
+# mode. Nothing of those lines is printed. Files to clean may be given (tests).
+forget_secrets_in_history() {
+  local pattern='GITHUB_TOKEN=|GOOGLE_CLIENT_(ID|SECRET)=' file kept total=0 found
+  [ $# -gt 0 ] || set -- /root/.bash_history /home/*/.bash_history
+  for file in "$@"; do
+    if [ ! -f "$file" ] || [ -L "$file" ]; then continue; fi
+    found="$(grep -cE "$pattern" "$file" 2>/dev/null || true)"
+    [ "${found:-0}" -gt 0 ] || continue
+    kept="$(grep -vE "$pattern" "$file" || true)"
+    # Written back into the same file, so its owner and mode stay.
+    if [ -n "$kept" ]; then printf '%s\n' "$kept" >"$file"; else : >"$file"; fi
+    total=$((total + found))
+  done
+  [ "$total" -eq 0 ] ||
+    say "$total line$([ "$total" -eq 1 ] || echo s) with a GitHub token or the Google client were taken out of shell history"
+}
+
+# No GitHub token stays on the server in plain text (A8): the old restore kept one
+# for a private repository. While the code can be read without it (the repository
+# is public), it is deleted and git stops using it.
+forget_github_token() {
+  local file=/root/.extras-erp-git-credentials repo url
+  [ -f "$file" ] || return 0
+  repo="$(dirname "$DEPLOY_DIR")"
+  url="$(git -C "$repo" remote get-url origin 2>/dev/null)" || return 0
+  if GIT_TERMINAL_PROMPT=0 git -c credential.helper= ls-remote --heads "$url" main >/dev/null 2>&1; then
+    git -C "$repo" config --unset-all credential.helper 2>/dev/null || true
+    shred -u "$file" 2>/dev/null || rm -f "$file"
+    say "The GitHub token kept on this server is deleted: the code needs none to update"
+  else
+    say "This server still keeps a GitHub token (GitHub could not be reached without it); it is tried again at the next update"
+  fi
 }

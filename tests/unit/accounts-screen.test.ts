@@ -68,7 +68,9 @@ describe("Accounts in the menu, by role", () => {
     expect(tabs(role("ACCOUNTS"))).toEqual(all);
     const accounts = phoneTabs(visibleNavItems(role("ACCOUNTS")));
     expect(accounts.tabs.map((i) => i.href)).toEqual(["/", "/sales", "/production", "/accounts"]);
+    // Tech Pack always opens from More on the phone (v6.4); Accounts keeps its tab.
     expect(accounts.more.map((i) => i.href)).toEqual([
+      "/tech-packs",
       "/materials",
       "/parties",
       "/hr",
@@ -87,9 +89,10 @@ describe("Accounts in the menu, by role", () => {
       ["/", null],
       ["/sales", null],
       ["/production", null],
+      ["/tech-packs", "md"],
       ["/accounts", "md"],
-      ["/products", "md"],
-      ["/materials", "lg"],
+      ["/products", "lg"],
+      ["/materials", "all"],
       ["/parties", "all"],
       ["/hr", "all"],
       ["/reports", "all"],
@@ -210,7 +213,7 @@ describe("what the Accounts screens offer, from the same rules the services chec
     ).toBe(true);
   });
 
-  it("reverses only hand-written vouchers and transfers, once", () => {
+  it("reverses only hand-written vouchers, transfers and the owner's money in or out, once", () => {
     const entry = {
       number: "JV-0001",
       sourceType: "MANUAL" as const,
@@ -230,6 +233,13 @@ describe("what the Accounts screens offer, from the same rules the services chec
     expect(canReverseEntry(holding("accounts.manage", "accounts.payments.record"), entry).ok).toBe(
       false,
     );
+    // Add fund and Withdraw have no document of their own: Accounts reverses the entry.
+    const fund = { ...entry, sourceType: "CAPITAL" as const };
+    expect(canReverseEntry(ACCOUNTS, fund).ok).toBe(true);
+    expect(canReverseEntry(ACCOUNTS, { ...fund, sourceType: "INSTALLMENT" }).ok).toBe(true);
+    expect(
+      canReverseEntry(holding("accounts.payments.record", "accounts.receipts.record"), fund),
+    ).toMatchObject({ ok: false, code: "FORBIDDEN" });
   });
 
   it("voids a supplier payment once, with both money keys for cash", () => {

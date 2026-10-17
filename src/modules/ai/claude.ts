@@ -6,9 +6,17 @@ import { AppError } from "@/lib/errors";
 import { agentKeyOf, aiAgents } from "./agents";
 import type { AiRecord } from "./control.service";
 import { type AiTaskKey, taskInfo } from "./models";
+import { blockedText, priceBook, priceFor, warnBlocked } from "./prices.service";
 import { callGemini, callOpenAI, ProviderError } from "./provider-calls";
 import { modelLabel, parseModel, type ProviderId, providerInfo, providerOf } from "./providers";
-import { aiSettingsOf, keyFor, modelForWork, offReason, OFF_TEXT } from "./settings.service";
+import {
+  aiSettingsOf,
+  keyFor,
+  modelForWork,
+  offReason,
+  OFF_TEXT,
+  readModelsOf,
+} from "./settings.service";
 import { agentSkillsText } from "./skills-prompt";
 import {
   CHEAPER_MODEL,
@@ -31,7 +39,8 @@ import {
  *
  * Each call writes its cost line (who asked, the task, why, the record, the
  * model, the tokens and the cost), and the budget and limits are checked
- * before it (AI Center > Budget & Costs).
+ * before it (AI Center > Budget & Costs). A model with no price is never
+ * called (v6.4 A7): its cost could not be counted.
  */
 
 export type ClaudeRequest = {
@@ -196,6 +205,23 @@ const tokensOf = (message: Anthropic.Message) => ({
   cacheWrite: message.usage?.cache_creation_input_tokens ?? 0,
 });
 
+/**
+ * Refuses work on a model with no price (v6.4 A7), before anything is sent:
+ * the plain line, and a notice to the owner (once a day per model). Returns
+ * the line for the caller's cost line; null when the model has a price.
+ */
+export async function blockIfUnpriced(
+  companyId: string,
+  settings: Pick<AiSettings, "providerModels">,
+  model: string,
+  work: string,
+): Promise<string | null> {
+  if (priceFor(await priceBook(companyId), model)) return null;
+  const label = modelLabel(model, readModelsOf(settings)[providerOf(model)]?.models);
+  await warnBlocked(companyId, model, { label, work });
+  return blockedText(label);
+}
+
 const noKeyText = (provider: ProviderId) =>
   provider === "anthropic"
     ? "AI has no Claude key yet. The owner adds it in AI Center > Settings."
@@ -270,6 +296,22 @@ export async function askClaude(companyId: string, request: ClaudeRequest): Prom
       model = CHEAPER_MODEL;
     }
     atLimit = budget.why;
+    const blocked = await blockIfUnpriced(
+      companyId,
+      settings,
+      model,
+      `"${taskInfo(request.task)?.label ?? request.task}" work by ${line.agent}`,
+    );
+    if (blocked) {
+      await costLine(companyId, {
+        ...line,
+        model,
+        durationMs: 0,
+        result: "STOPPED",
+        note: blocked,
+      });
+      throw new AppError("UNAVAILABLE", blocked);
+    }
     if (!request.costOk) {
       const estimate = await estimateCost(companyId, model, { ...request, system });
       if (estimate.askFirst) throw new AiAskFirst(estimate);

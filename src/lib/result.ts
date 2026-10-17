@@ -51,7 +51,29 @@ export async function runAction<T>(fn: () => Promise<T>): Promise<ActionResult<T
   } catch (error) {
     // Let Next.js redirects / notFound propagate.
     if (isNextControlFlowError(error)) throw error;
-    return { ok: false, error: toActionError(error) };
+    const safe = toActionError(error);
+    if (safe.code === "INTERNAL") void noteActionError(error, safe.errorId);
+    return { ok: false, error: safe };
+  }
+}
+
+/** Keeps an unexpected Server Action error for Bug Guard, with the screen it came from. */
+async function noteActionError(error: unknown, errorId: string | undefined) {
+  try {
+    const { headers } = await import("next/headers");
+    const all = await headers();
+    const from = all.get("referer");
+    const { recordServerError } = await import("@/modules/bug-guard/server-errors");
+    await recordServerError({
+      error,
+      routeType: "action",
+      method: "POST",
+      path: from ? new URL(from).pathname : "/",
+      errorId,
+      cookie: all.get("cookie"),
+    });
+  } catch {
+    // Outside a request (a test or a script): nothing to keep.
   }
 }
 

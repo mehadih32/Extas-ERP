@@ -27,6 +27,6 @@ export async function GET(request: Request, context: { params: Promise<Params> }
     const pdf = await bookingBookPdf(ctx, batchId, await getRequestMeta(), orientation);
     return fileResponse({ fileName: pdf.fileName, mimeType: PDF_MIME, bytes: pdf.bytes });
   } catch (error) {
-    return apiErrorResponse(error);
+    return apiErrorResponse(error, request);
   }
 }

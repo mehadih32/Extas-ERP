@@ -3,11 +3,18 @@
 // session for the owner and one member of each role, then, role by role:
 // opens every screen (found from the page files in src/app), follows the links
 // it finds to record screens, downloads the PDFs and files the screens link to,
-// presses tabs and the buttons that only open a menu or window, and notes every
-// problem: an error screen, a broken link (a 404, or an address with
+// presses tabs and the buttons that only open a menu or window (press.mjs), and
+// notes every problem: an error screen, a broken link (a 404, or an address with
 // "[projectId]" in it), a part that did not load, a script error, a slow screen,
-// a PDF that is not a PDF, or being sent to sign in. Each problem gets a
-// screenshot. The report and the screenshots go back to the ERP.
+// a PDF that is not a PDF or that cuts a figure short or misses a page number
+// (pdf-text.mjs), or being sent to sign in. It also checks each screen's
+// layout at the four widths (390, 768, 1366 and 1920 px: text cut or overlapping,
+// a screen wider than the window, a menu item out of reach, wrong fonts; the rules
+// are in layout.mjs): the owner's role on every screen at every width, the other
+// roles on their home screen at every width and their other screens on a phone.
+// Each tab it shows and each window it opens is checked the same way, on a phone
+// at least (the owner's role at every width in the first half of its time).
+// Each problem gets a screenshot. The report and the screenshots go back to the ERP.
 //
 // This log is public (the repository is), so it names only the kind of problem
 // and the screen's route ("/sales/orders/[id]"): never the screen's text, an
@@ -26,11 +33,15 @@
 //            GitHub the workflow's "id-token: write" gives the real one)
 // Needs only Playwright with Chromium. Exit code 1: the check could not start or report.
 
-import { readdirSync, statSync } from "node:fs";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { chromium } from "playwright";
+
+import { checkLayout, HEIGHTS, problemLine, RULES, WIDTHS } from "./layout.mjs";
+import { pdfProblems } from "./pdf-text.mjs";
+import { PRESSABLE, pressSafe } from "./press.mjs";
+import { GATES, NEVER, patternFinder, PUBLIC, screenRoutes } from "./routes.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const APP_DIR = resolve(here, "../../src/app");
@@ -89,64 +100,12 @@ async function api(path, { body, key, bytes } = {}) {
 
 // ---------------------------------------------------------------- the screens
 
-/** Every screen's address pattern, from the page files ("/production/projects/[projectId]"). */
-function screenRoutes(dir) {
-  const routes = [];
-  const walk = (d) => {
-    for (const name of readdirSync(d)) {
-      const path = join(d, name);
-      if (statSync(path).isDirectory()) {
-        if (name !== "api") walk(path);
-      } else if (name === "page.tsx") {
-        const parts = relative(dir, d)
-          .split(sep)
-          .filter(Boolean)
-          .filter((p) => !/^\(.*\)$/.test(p));
-        routes.push(`/${parts.join("/")}`);
-      }
-    }
-  };
-  walk(dir);
-  return routes.sort();
-}
-
 const ROUTES = screenRoutes(APP_DIR);
-const PATTERNS = ROUTES.map((route) => ({
-  route,
-  dynamic: route.includes("["),
-  re: new RegExp(`^${route.replace(/\[\.\.\.[^\]]+\]/g, ".+").replace(/\[[^\]]+\]/g, "[^/]+")}$`),
-}));
-const PUBLIC = new Set(["/sign-in", "/forgot-password", "/reset-password", "/sign-up", "/invite"]);
-const GATES = {
-  "/sign-in": "sign in",
-  "/change-password": "change their password",
-  "/select-company": "choose a company",
-  "/terms": "accept the terms of employment",
-};
-
-function patternOf(path) {
-  const fixed = PATTERNS.find((p) => !p.dynamic && p.route === path);
-  if (fixed) return fixed.route;
-  const all = PATTERNS.filter((p) => p.re.test(path));
-  all.sort((a, b) => a.route.split("[").length - b.route.split("[").length);
-  return all[0]?.route ?? null;
-}
-
-/** Links that would change something, sign out, or leave the ERP. */
-const NEVER = [
-  /^\/sign-out/,
-  /^\/logout/,
-  /^\/api\/auth\//,
-  /\/(send|delete|approve|cancel|void|merge|restore)(\/|$|\?)/,
-];
+const patternOf = patternFinder(ROUTES);
 
 /** Downloads worth fetching: PDFs and files. */
 const DOWNLOAD =
   /^\/api\/.*(\/pdf|\/download|\/export|\/excel|booking-book|tech-pack|\/print|\/file)(\/|$|\?)/;
-
-/** Buttons never pressed, even on the demo site. */
-const DANGER =
-  /delete|remove|take out|cancel|void|send|approve|reject|pay|merge|restore|sign out|log out|switch off|turn off|pause|save|submit|confirm|record|post|apply|run|start|teach|test|reset|close|archive|lock|upload|import|generate|create|add|new|refund|settle|discard|retire|grant|revoke/i;
 
 // ---------------------------------------------------------------- the check
 
@@ -199,8 +158,9 @@ async function note(page, role, kind, screen, text, detail, ms, facts = {}) {
   }
 }
 
-async function checkRole(browser, session, writes, deadline) {
+async function checkRole(browser, session, writes, deadline, first) {
   const role = session.role;
+  const begun = Date.now();
   const context = await browser.newContext({
     viewport: { width: 1366, height: 900 },
     acceptDownloads: false,
@@ -237,6 +197,52 @@ async function checkRole(browser, session, writes, deadline) {
   let pdfs = 0;
   let links = 0;
   let gate = null;
+  /** Menus already found whole at a width (the top bar is the same on every screen). */
+  const menusSeen = new Set();
+
+  /** One LAYOUT problem for what was found, with a screenshot at the first width that has one. */
+  async function noteLayout(page, path, found, ms, view) {
+    const at = found[0].width;
+    await page.setViewportSize({ width: at, height: HEIGHTS[at] ?? 900 }).catch(() => {});
+    const rules = [...new Set(found.map((p) => p.what))];
+    const where = !view
+      ? ""
+      : view.kind === "window"
+        ? " (in a window the screen opens)"
+        : " (on one of the screen's tabs)";
+    await note(
+      page,
+      role,
+      "LAYOUT",
+      path,
+      `${rules.map((what) => RULES[what] ?? what).join("; ")}${where}`,
+      [
+        ...(view ? [`After pressing "${view.label}" (${view.kind}):`] : []),
+        ...found.slice(0, 24).map((p) => `${problemLine(p)}\n  ${p.detail}`),
+      ].join("\n"),
+      ms,
+    );
+  }
+
+  /**
+   * The screen's layout at the four widths (layout.mjs), as one LAYOUT problem. The
+   * owner's role: every screen at every width; the other roles: the home screen at
+   * every width, the rest on a phone. Returns what it found.
+   */
+  async function checkScreenLayout(page, path, ms) {
+    const widths = first || path === "/" ? WIDTHS : [WIDTHS[0]];
+    const found = [];
+    for (const width of widths) {
+      if (Date.now() > deadline) break;
+      found.push(...(await checkLayout(page, { width, seen: menusSeen }).catch(() => [])));
+    }
+    if (found.length) await noteLayout(page, path, found, ms);
+    await page.setViewportSize({ width: 1366, height: 900 }).catch(() => {});
+    return found;
+  }
+
+  /** The same problem at the same width and place (a tab shows the rest of the screen too). */
+  const layoutKey = (p) => `${p.width}|${p.what}|${p.where}`;
 
   function add(href, from) {
     let url;
@@ -429,7 +435,8 @@ async function checkRole(browser, session, writes, deadline) {
         as.map((a) => a.getAttribute("href") ?? ""),
       );
       for (const href of hrefs) add(href, path);
-      await pressSafe(page, path);
+      const layout = await checkScreenLayout(page, path, ms);
+      await pressAndLook(page, path, layout, ms);
     } catch (error) {
       await note(
         page,
@@ -450,27 +457,36 @@ async function checkRole(browser, session, writes, deadline) {
   }
 
   const pressed = new Set();
-  async function pressSafe(page, path) {
+  /**
+   * Presses the screen's tabs and the buttons that only open a menu or a window
+   * (press.mjs: never one that could change something), once for each kind of screen,
+   * and checks the layout of each tab and window: on a phone, and at every width for
+   * the owner's role in the first half of its time. Only what the screen itself did
+   * not already show is noted.
+   */
+  async function pressAndLook(page, path, before, ms) {
     const pattern = patternOf(path.split("?")[0]);
     if (!pattern || pressed.has(pattern)) return;
     pressed.add(pattern);
-    // The top bar's menus are the same on every screen: pressed once, on the home screen.
-    const within = path === "/" ? "" : "#main ";
-    const buttons = await page
-      .locator(`${within}[role="tab"], ${within}button[aria-haspopup], ${within}summary`)
-      .all()
-      .catch(() => []);
-    let n = 0;
-    for (const button of buttons) {
-      if (n >= 6 || Date.now() > deadline) break;
-      const text = ((await button.innerText({ timeout: 1000 }).catch(() => "")) || "").trim();
-      if (DANGER.test(text)) continue;
-      if (!(await button.isVisible().catch(() => false))) continue;
-      await button.click({ timeout: 3000 }).catch(() => {});
-      n += 1;
-      await page.waitForTimeout(300);
-      await page.keyboard.press("Escape").catch(() => {});
-    }
+    const known = new Set(before.map(layoutKey));
+    await pressSafe(page, {
+      selector: PRESSABLE.all,
+      // The top bar's menus are the same on every screen: pressed once, on the home screen.
+      within: path === "/" ? "" : "#main ",
+      max: 6,
+      deadline,
+      look: async (view) => {
+        const all = first && Date.now() < begun + (deadline - begun) / 2;
+        const found = [];
+        for (const width of all ? WIDTHS : [WIDTHS[0]]) {
+          if (Date.now() > deadline) break;
+          found.push(...(await checkLayout(page, { width, menus: false }).catch(() => [])));
+        }
+        const fresh = found.filter((p) => !known.has(layoutKey(p)));
+        for (const p of fresh) known.add(layoutKey(p));
+        if (fresh.length) await noteLayout(page, path, fresh, ms, view);
+      },
+    });
   }
 
   async function fetchDownload(entry) {
@@ -509,6 +525,29 @@ async function checkRole(browser, session, writes, deadline) {
             status: response.status() >= 400 ? response.status() : null,
           },
         );
+      } else if (bytes.subarray(0, 5).toString("latin1") === "%PDF-") {
+        // Its text: no figure cut short with "…", the page number on every page.
+        let found = [];
+        try {
+          found = pdfProblems(bytes);
+        } catch {
+          found = [];
+        }
+        if (found.length) {
+          await note(
+            null,
+            role,
+            "PDF",
+            from,
+            found.some((p) => p.what === "CUT_FIGURE")
+              ? "A PDF cuts a figure short"
+              : "A PDF has a page without its page number",
+            found
+              .slice(0, 8)
+              .map((p) => `GET ${path} ${p.detail}${p.text ? `\n  ${p.text}` : ""}`)
+              .join("\n"),
+          );
+        }
       }
     } catch (error) {
       await note(
@@ -583,15 +622,17 @@ async function main() {
     const deadline =
       Date.now() +
       (i === 0 ? Math.round(total * 0.35) : Math.round(left / (begun.roles.length - i)));
-    const done = await checkRole(browser, session, begun.writes, deadline).catch((error) => ({
-      role: session.role,
-      member: session.member,
-      screens: 0,
-      pdfs: 0,
-      skipped: 0,
-      links: 0,
-      note: `The check stopped: ${String(error?.message ?? error).split("\n")[0]}`,
-    }));
+    const done = await checkRole(browser, session, begun.writes, deadline, i === 0).catch(
+      (error) => ({
+        role: session.role,
+        member: session.member,
+        screens: 0,
+        pdfs: 0,
+        skipped: 0,
+        links: 0,
+        note: `The check stopped: ${String(error?.message ?? error).split("\n")[0]}`,
+      }),
+    );
     summary.roles.push({
       role: done.role,
       member: done.member,

@@ -26,7 +26,20 @@ export type HelpStep = {
   image?: HelpImage;
 };
 
-/** One task explained step by step ("How to make a quotation"). */
+/** A button, tab, field, filter or option on the screen, and what it means. */
+export type HelpField = {
+  /** The app's own English words, exactly as the screen shows them ("Issue the invoice"). */
+  label: string;
+  /** Bengali: what it is or does, what to type or choose, and when to use it. */
+  text: string;
+};
+
+/**
+ * One task explained: What the screen is, Why it matters (with a real example),
+ * and How, step by step ("How to make a quotation"). tests/unit/help-guides.test.ts
+ * checks that every guide has What, Why and How and that every button and tab
+ * on a screen is explained by a guide of that screen.
+ */
 export type HelpArticle = {
   /** Unique, URL-safe, English: "sales-quotation". */
   slug: string;
@@ -50,9 +63,26 @@ export type HelpArticle = {
    * Without it, the menu entry that holds the first matching route decides.
    */
   anyOf?: readonly PermissionKey[];
+  /** Bengali (What): what this screen or feature is, and what each part of it shows. */
+  what?: string;
+  /** Bengali (Why): why it matters and when to use it, with a real buying-house example. */
+  why?: string;
+  /** How: everything you can do there, step by step. */
   steps: HelpStep[];
-  /** Bengali: good to know, limits, common mistakes. */
+  /** Every button, tab, field, filter and option on the screen, top to bottom. */
+  fields?: HelpField[];
+  /** Bengali: what happens after this work, and what to do next. */
+  next?: string;
+  /** Bengali: common mistakes, and how to avoid or put them right. */
+  mistakes?: string[];
+  /** Bengali: good to know, limits. */
   tips?: string[];
+  /**
+   * The guide's automatic picture (scripts/help/shots.ts): the page it is taken
+   * on, when not the first of `routes`, and a button pressed first to open the
+   * dialog the steps are about (only one that opens something, never one that saves).
+   */
+  shot?: { route?: string; open?: string };
 };
 
 /** One section of the app (Sales, Production...) and its guides. */

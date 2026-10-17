@@ -21,6 +21,8 @@ import { pinScrubReport } from "@/modules/ai/bot/pin-scrub";
 import { fillRoute, isFixedRoute, pdfProblem, screenProblem, screenRoutes } from "./update-checks";
 
 const say = (text: string) => console.log(`==> ${text}`);
+/** A failure, marked so restore.sh counts problems and never the notes around them. */
+const problem = (text: string) => say(`Problem: ${text}`);
 
 /** The newest records' ids, by the name each takes in a screen's address. */
 async function newestRecords(companyId: string): Promise<Record<string, string>> {
@@ -138,20 +140,22 @@ async function main() {
           redirect: "follow",
           signal: AbortSignal.timeout(60_000),
         });
-        const problem = screenProblem({
+        const trouble = screenProblem({
           status: response.status,
           url: response.url,
           body: await response.text(),
         });
-        if (problem) {
+        if (trouble) {
           failed.push(path);
-          say(`Screen ${path} ${problem}`);
+          problem(`Screen ${path} ${trouble}`);
         } else {
           opened += 1;
         }
       } catch (error) {
         failed.push(path);
-        say(`Screen ${path} did not answer (${error instanceof Error ? error.message : error})`);
+        problem(
+          `Screen ${path} did not answer (${error instanceof Error ? error.message : error})`,
+        );
       }
     }
     say(`Opened ${opened} of ${screens.length} screens without an error`);
@@ -169,20 +173,20 @@ async function main() {
             headers,
             signal: AbortSignal.timeout(120_000),
           });
-          const problem = pdfProblem({
+          const trouble = pdfProblem({
             status: response.status,
             type: response.headers.get("content-type") ?? "",
             bytes: new Uint8Array(await response.arrayBuffer()),
           });
-          if (problem) {
+          if (trouble) {
             failed.push(label);
-            say(`${label} ${problem}`);
+            problem(`${label} ${trouble}`);
           } else {
             say(`${label} printed`);
           }
         } catch (error) {
           failed.push(label);
-          say(`${label} did not answer (${error instanceof Error ? error.message : error})`);
+          problem(`${label} did not answer (${error instanceof Error ? error.message : error})`);
         }
       }
     }
@@ -207,19 +211,26 @@ async function main() {
 }
 
 /**
- * Bot messages hidden as a PIN that did not follow a PIN request (the v6.3
- * update hid every 4 to 8 digit message): counts and days only, never words.
+ * Bot messages the v6.3 update hid as a PIN (it took every 4 to 8 digit
+ * message) that did not follow a PIN request: counts and days only, never
+ * words. PINs the bot hid as they came since then are not counted.
  */
 async function pinReport() {
   try {
     const r = await pinScrubReport();
+    if (!r.wipedAt) {
+      say("Bot PINs: the v6.3 PIN wipe never ran on this database, so it hid nothing");
+      return;
+    }
     if (r.notAfterRequest === 0) {
-      say(`Bot PINs: ${r.hidden} hidden, every one typed after the bot asked for the PIN`);
+      say(
+        `Bot PINs: the v6.3 update hid ${r.hidden}, every one typed after the bot asked for the PIN`,
+      );
       return;
     }
     const days = [...new Set(r.notAfterRequestDates.map((d) => d.toISOString().slice(0, 10)))];
     say(
-      `Bot PINs: ${r.hidden} hidden; ${r.notAfterRequest} did not follow a PIN request (${days.slice(0, 10).join(", ")}): they may have been order numbers, and the backup made before the v6.3 update still has their words`,
+      `Bot PINs: the v6.3 update hid ${r.hidden}; ${r.notAfterRequest} did not follow a PIN request (${days.slice(0, 10).join(", ")}): they may have been order numbers, and the backup made before the v6.3 update still has their words`,
     );
   } catch (error) {
     say(`Bot PINs: not counted (${error instanceof Error ? error.message : error})`);
@@ -239,7 +250,7 @@ const ORIENTED_PDFS = new Set<string>([
 
 main()
   .catch((error) => {
-    say(`The check could not run: ${error instanceof Error ? error.message : error}`);
+    problem(`The check could not run: ${error instanceof Error ? error.message : error}`);
     process.exitCode = 1;
   })
   .finally(() => prisma.$disconnect());

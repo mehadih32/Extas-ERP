@@ -1,21 +1,21 @@
+import { AiNav } from "@/components/ai/ai-nav";
 import { visibleAiTabs } from "@/components/ai/tabs";
 import { AiTimeZone } from "@/components/ai/when";
-import { SectionTabs } from "@/components/shell/section-tabs";
 import { requireCompanyPage } from "@/server/pages/guards";
 
 /**
  * The AI Center: the switch and what waits for an answer (AI Home), what the
- * AI may do (Control), its models, its logs and its settings, each tab shown
- * only to people whose role opens it (components/ai/tabs.ts). Each page checks
- * again through its Server Action. Times on these screens are in the company's
- * time zone (components/ai/when.tsx).
+ * AI may do (Control), its models, its logs and its settings, in four groups
+ * (Mehedi & Agents, Work, Money, System), each page shown only to people whose
+ * role opens it (components/ai/tabs.ts). Each page checks again through its
+ * Server Action. Times on these screens are in the company's time zone
+ * (components/ai/when.tsx).
  */
 export default async function AiLayout({ children }: { children: React.ReactNode }) {
   const ctx = await requireCompanyPage();
-  const tabs = visibleAiTabs(ctx.permissions, ctx.user.isSuperAdmin).map(({ href, label }) => ({
-    href,
-    label,
-  }));
+  const tabs = visibleAiTabs(ctx.permissions, ctx.user.isSuperAdmin).map(
+    ({ href, label, group }) => ({ href, label, group }),
+  );
 
   return (
     <div className="grid grid-cols-1 gap-8 md:gap-10">
@@ -26,7 +26,7 @@ export default async function AiLayout({ children }: { children: React.ReactNode
             AI Center
           </h1>
         </div>
-        {tabs.length > 0 && <SectionTabs label="AI Center" tabs={tabs} />}
+        {tabs.length > 0 && <AiNav tabs={tabs} />}
       </header>
       <AiTimeZone timeZone={ctx.company.timezone}>{children}</AiTimeZone>
     </div>

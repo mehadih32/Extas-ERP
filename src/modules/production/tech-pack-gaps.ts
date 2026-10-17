@@ -16,9 +16,11 @@ function redLines(output: unknown): number {
   return (lines as Line[]).filter((l) => l?.signal === "red" && !l.decision).length;
 }
 
-export async function techPackGaps(db: Db, projectId: string): Promise<string[]> {
+/** The gaps of a tech pack by its id (none when there is no tech pack yet). */
+export async function techPackGaps(db: Db, techPackId: string | null): Promise<string[]> {
+  if (!techPackId) return [];
   const techPack = await db.techPack.findUnique({
-    where: { projectId },
+    where: { id: techPackId },
     select: {
       measurements: { orderBy: { sortOrder: "asc" }, select: { name: true, values: true } },
       aiDrafts: { orderBy: { createdAt: "desc" }, take: 1, select: { output: true } },

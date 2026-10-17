@@ -104,7 +104,7 @@ export default async function NewSalesReturnPage({
                   href={`/sales/returns/new?invoice=${encodeURIComponent(inv.id)}`}
                   className="group block rounded-lg border bg-card p-4 transition-colors outline-none hover:border-primary/40 focus-visible:ring-[3px] focus-visible:ring-ring/25"
                 >
-                  <p className="eyebrow truncate">
+                  <p className="eyebrow min-w-0 break-words">
                     {inv.number} · {formatDay(inv.issuedOn)}
                   </p>
                   <p className="mt-2 font-serif text-lg leading-snug break-words text-primary">

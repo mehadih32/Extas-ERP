@@ -131,7 +131,7 @@ export function Sidebar({
         />
       </div>
 
-      <nav aria-label="Main" className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
+      <nav aria-label="Main" data-layout-nav className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
         <ul className="grid gap-0.5">
           {items.map((item) => {
             const active = isActivePath(pathname, item.href);
@@ -173,7 +173,7 @@ export function Sidebar({
             {unread > 0 && (
               <span
                 aria-hidden
-                className="absolute -top-1.5 -right-2 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[0.625rem] leading-none font-semibold text-destructive-foreground tabular-nums ring-2 ring-primary"
+                className="absolute -top-1.5 -right-2 inline-flex h-4.5 min-w-4.5 items-center justify-center rounded-full bg-destructive px-1 text-xs leading-none font-semibold text-destructive-foreground tabular-nums ring-2 ring-primary"
               >
                 {unread > 99 ? "99+" : unread}
               </span>

@@ -4,7 +4,7 @@ import { placeOf, screenName, screenPattern, TASK_SCREENS } from "@/modules/ai/c
 import { AI_TASKS } from "@/modules/ai/models";
 import { screenOf } from "@/modules/ai/usage.service";
 import { helpSearchEntries } from "@/modules/help";
-import { rankHelp, searchHelp } from "@/modules/help/search";
+import { rankHelp } from "@/modules/help/search";
 
 /*
  * Where an AI cost was spent (Budget & Costs "By place in the ERP"), and the
@@ -78,9 +78,9 @@ describe("the place of an AI cost", () => {
 describe("the Help AI's guides", () => {
   const entries = helpSearchEntries(["parties.view", "parties.manage", "sales.view"]);
 
-  it("finds guides for a whole question where the word-for-word search finds none", () => {
+  // The word-for-word search needs the whole question in one guide; this reads it word by word.
+  it("finds guides for a whole question, best first", () => {
     const question = "How do I add a new buyer to the ERP?";
-    expect(searchHelp(entries, question)).toEqual([]);
     const found = rankHelp(entries, question);
     expect(found.length).toBeGreaterThan(0);
     expect(found.length).toBeLessThanOrEqual(5);

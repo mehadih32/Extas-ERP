@@ -53,6 +53,24 @@ describe("pdfText", () => {
     expect(pdfText("漢字 নাম 😀")).toBe("? নাম ?");
   });
 
+  it("writes common symbols the fonts lack with ones they have, never as ?", () => {
+    // The tech pack's critical points and colour limits, and inch marks in measurements.
+    expect(pdfText("★ Chest, full")).toBe("* Chest, full");
+    expect(pdfText("Limit (ΔE CMC 2:1)")).toBe("Limit (dE CMC 2:1)");
+    expect(pdfText("40″ chest, 1′ hem, −0.5 tol")).toBe("40\" chest, 1' hem, -0.5 tol");
+    expect(pdfText("Sent → Accepted, ≤ 2% ≥ 1 ≈ 3")).toBe("Sent -> Accepted, <= 2% >= 1 ~ 3");
+  });
+
+  it("writes eighths and other fractions the fonts lack as 3/8, and keeps ¼ ½ ¾", () => {
+    // Measurements are in ⅛ inch; the fonts have only ¼, ½ and ¾.
+    expect(pdfText("17⅜ ?")).toBe("17 3/8 ?");
+    expect(pdfText("⅛")).toBe("1/8");
+    expect(pdfText("9⅝, 10⅞, 2⅓, ⅚")).toBe("9 5/8, 10 7/8, 2 1/3, 5/6");
+    expect(pdfText("29½ and 9¼ and ¾")).toBe("29½ and 9¼ and ¾");
+    const all = "⅐⅑⅒⅓⅔⅕⅖⅗⅘⅙⅚⅛⅜⅝⅞";
+    for (const fraction of all) expect(pdfText(`1${fraction}`)).not.toContain("?");
+  });
+
   it("keeps zero-width joiners only beside Bengali letters", () => {
     expect(pdfText("র\u200dয")).toBe("র\u200dয");
     expect(pdfText("a\u200db\u200cc")).toBe("abc");

@@ -25,6 +25,9 @@ export function readOnly<T>(why: string, run: () => Promise<T>): Promise<T> {
   return work.run({ why }, run);
 }
 
+/** Whether this runs inside readOnly() work (Bug Guard's checks), not a request. */
+export const insideReadOnlyWork = () => work.getStore() !== undefined;
+
 /** Whether a session's token may only read here (a Full check session, not on the demo site). */
 export const checkSessionReadOnly = (token: string | undefined, demoSite: boolean) =>
   isCheckToken(token) && !demoSite;
@@ -71,7 +74,37 @@ export const WRITE_OPERATIONS: ReadonlySet<string> = new Set([
   "$executeRawUnsafe",
 ]);
 
-const RAW_QUERIES = new Set(["$queryRaw", "$queryRawUnsafe"]);
+/** Raw queries: allowed while they only read (readsOnly); a typed one is judged by its SQL too. */
+const RAW_QUERIES = new Set(["$queryRaw", "$queryRawUnsafe", "$queryRawTyped"]);
+
+/*
+ * Server functions a SELECT can call that change or lock something: end or
+ * cancel sessions, take advisory locks, reload settings, write files or large
+ * objects, reach other databases, run other SQL from a string, reset the
+ * statistics, send notifications, manage replication. A read never needs them.
+ */
+const SIDE_EFFECTS = new RegExp(
+  [
+    "pg_(terminate|cancel)_backend",
+    "pg_(try_)?advisory\\w*",
+    "pg_(reload_conf|rotate_logfile|switch_wal|switch_xlog|promote|create_restore_point|import_system_collations)",
+    "pg_(create|drop|copy)_\\w*",
+    "pg_\\w*replication\\w*",
+    "pg_logical_\\w+",
+    "pg_stat_reset\\w*",
+    "pg_notify",
+    "pg_file_\\w+",
+    "lo_\\w+",
+    "dblink\\w*",
+    "(query|cursor)_to_xml\\w*",
+  ]
+    .map((name) => `\\b${name}\\s*\\(`)
+    .join("|"),
+  "i",
+);
+
+/** SELECT ... FOR UPDATE / FOR NO KEY UPDATE / FOR SHARE / FOR KEY SHARE: row locks. */
+const ROW_LOCK = /\bfor\s+(no\s+key\s+|key\s+)?(update|share)\b/i;
 
 /** The SQL of a raw query, from either form of call. */
 function sqlOf(args: unknown): string {
@@ -100,9 +133,15 @@ export function readsOnly(sql: string): boolean {
     .trim()
     .replace(/;\s*$/, "");
   if (!/^(select|with|show|explain)\b/i.test(text)) return false;
-  // Data-changing words anywhere (a WITH ... UPDATE, SELECT ... INTO, or a second statement).
-  return !/\b(insert|update|delete|merge|truncate|drop|alter|create|grant|revoke|copy|call|do|into|lock|vacuum|refresh|set_config|nextval|setval|pg_advisory_lock)\b|;/i.test(
-    text.replace(/'(?:[^']|'')*'/g, "''").replace(/"(?:[^"]|"")*"/g, '""'),
+  const bare = text.replace(/'(?:[^']|'')*'/g, "''").replace(/"(?:[^"]|"")*"/g, '""');
+  // Data-changing words anywhere (a WITH ... UPDATE, SELECT ... INTO, or a second statement),
+  // functions with side effects, and row locks.
+  return (
+    !/\b(insert|update|delete|merge|truncate|drop|alter|create|grant|revoke|copy|call|do|into|lock|vacuum|refresh|set_config|nextval|setval|pg_advisory_lock)\b|;/i.test(
+      bare,
+    ) &&
+    !SIDE_EFFECTS.test(bare) &&
+    !ROW_LOCK.test(bare)
   );
 }
 

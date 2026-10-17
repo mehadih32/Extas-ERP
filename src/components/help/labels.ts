@@ -1,5 +1,6 @@
 import {
   BookOpenIcon,
+  ClipboardListIcon,
   FactoryIcon,
   FileTextIcon,
   HandshakeIcon,
@@ -18,16 +19,9 @@ import {
   UsersRoundIcon,
 } from "lucide-react";
 
-const BENGALI_DIGITS = "০১২৩৪৫৬৭৮৯";
-
-/** A number in Bengali digits: 12 → "১২". */
-export function bnDigits(value: number | string): string {
-  return String(value).replace(/[0-9]/g, (d) => BENGALI_DIGITS[Number(d)]!);
-}
-
-/** "১২টি নির্দেশিকা" */
+/** "12টি নির্দেশিকা": the manual writes numbers in Western digits (CLAUDE.md section 5). */
 export function guideCount(count: number): string {
-  return `${bnDigits(count)}টি নির্দেশিকা`;
+  return `${count}টি নির্দেশিকা`;
 }
 
 /** Each part of the manual's icon, matching the menu. */
@@ -36,6 +30,7 @@ export const HELP_ICONS: Record<string, LucideIcon> = {
   dashboard: LayoutDashboardIcon,
   sales: ReceiptTextIcon,
   production: FactoryIcon,
+  "tech-pack": ClipboardListIcon,
   accounts: LandmarkIcon,
   products: ShirtIcon,
   materials: SpoolIcon,

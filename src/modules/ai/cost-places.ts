@@ -22,7 +22,7 @@ export const TASK_SCREENS: Partial<Record<AiTaskKey, string>> = {
   "bot.command": "bot",
   "help.answer": "/help",
   "booking.check": "/production/bookings",
-  "techpack.draft": "/production/projects",
+  "techpack.draft": "/tech-packs",
 };
 
 /** A part of an address that names one record (a cuid, a uuid, a long number). */

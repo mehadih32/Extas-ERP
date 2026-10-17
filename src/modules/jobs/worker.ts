@@ -28,6 +28,16 @@ async function runOne(now: Date): Promise<boolean> {
   } catch (error) {
     const state = await failJob(job, error);
     console.error(`[jobs] ${job.kind} ${job.id} failed (try ${job.attempts}, ${state})`, error);
+    if (state === "FAILED") {
+      // Gave up: kept for Bug Guard (the job's kind and the error, not its payload).
+      const { recordServerError } = await import("@/modules/bug-guard/server-errors");
+      await recordServerError({
+        error,
+        routeType: "job",
+        path: job.kind,
+        companyId: job.companyId,
+      });
+    }
   }
   return true;
 }
@@ -45,6 +55,10 @@ export async function runDueJobs(limit = JOBS_PER_TICK, now?: () => Date): Promi
 }
 
 export async function jobTick(): Promise<number | null> {
+  // A copy on standby after a restore runs no job (the backup's own queue would
+  // send its messages a second time); they wait until it goes live (G2).
+  const { onStandby } = await import("@/modules/backups/standby");
+  if (await onStandby()) return null;
   if (running) {
     again = true;
     return null;

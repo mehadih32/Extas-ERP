@@ -53,7 +53,7 @@ export function PeoplePicker({
               key={keyOf(p)}
               className="inline-flex max-w-full min-w-0 items-center gap-1 rounded-full border bg-secondary py-1 pr-1 pl-3 text-sm text-primary"
             >
-              <span className="truncate">{p.name}</span>
+              <span className="break-words">{p.name}</span>
               {p.note && (
                 <span className="shrink-0 text-[0.75rem] text-muted-foreground">({p.note})</span>
               )}
@@ -111,7 +111,7 @@ function Chosen({ text, detail, onClear }: { text: string; detail?: string; onCl
   return (
     <div className="flex min-w-0 items-center justify-between gap-3 rounded-md border bg-card px-3 py-2">
       <span className="grid min-w-0 gap-0.5">
-        <span className="truncate text-sm font-medium">{text}</span>
+        <span className="text-sm font-medium break-words">{text}</span>
         {detail && <span className="text-[0.8125rem] text-muted-foreground">{detail}</span>}
       </span>
       <Button type="button" variant="ghost" size="sm" onClick={onClear}>

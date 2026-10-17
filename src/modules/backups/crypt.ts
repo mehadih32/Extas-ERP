@@ -2,7 +2,12 @@ import {
   createCipheriv,
   createDecipheriv,
   createHash,
+  createPrivateKey,
+  createPublicKey,
+  diffieHellman,
+  generateKeyPairSync,
   hkdfSync,
+  type KeyObject,
   randomBytes,
   timingSafeEqual,
 } from "node:crypto";
@@ -26,9 +31,23 @@ import { pipeline } from "node:stream/promises";
  * each locked with AES-256-GCM under a key for this file alone (HKDF of the
  * backup key and the salt) and a nonce counting the pieces. The last piece is
  * marked as last, so a file cut short or with pieces swapped never opens.
+ *
+ * v6.4 (A9) locks with a public key instead: the server keeps only the public
+ * key of the owner's key pair (keys.ts); the private key that opens the files
+ * is itself locked with the owner's own recovery key. Such a file starts with
+ * "EXTASPK1", the key pair's id (8 letters), and a fresh X25519 public key made
+ * for this file alone; the key for the rest (an ordinary "EXTASBK1" file as
+ * above) is HKDF-SHA256 of the X25519 shared secret, salted with both public
+ * keys. Only the private key works it out again. deploy/restore-tool.py reads
+ * every format the same way, without the ERP.
  */
 
 const MAGIC = Buffer.from("EXTASBK1", "ascii");
+const PK_MAGIC = Buffer.from("EXTASPK1", "ascii");
+const PAIR_ID_BYTES = 8;
+const X25519_BYTES = 32;
+/** "EXTASPK1", the key pair's id and the file's own public key. */
+const PK_HEADER_BYTES = PK_MAGIC.length + PAIR_ID_BYTES + X25519_BYTES;
 const SALT_BYTES = 16;
 const HEADER_BYTES = MAGIC.length + SALT_BYTES;
 const TAG_BYTES = 16;
@@ -154,8 +173,8 @@ function lockPiece(key: Buffer, index: number, plain: Buffer, last: boolean): Bu
   return Buffer.concat([length, body, cipher.getAuthTag()]);
 }
 
-/** Locks a stream of backup bytes. */
-export function lockStream(key: Buffer): Transform {
+/** Locks a stream of backup bytes; `prefix` goes first (a public-key file's header). */
+export function lockStream(key: Buffer, prefix: Buffer = Buffer.alloc(0)): Transform {
   const salt = randomBytes(SALT_BYTES);
   const pieceKey = fileKey(key, salt);
   let pending = Buffer.alloc(0);
@@ -164,7 +183,7 @@ export function lockStream(key: Buffer): Transform {
   return new Transform({
     transform(chunk: Buffer, _encoding, done: TransformCallback) {
       if (!started) {
-        this.push(Buffer.concat([MAGIC, salt]));
+        this.push(Buffer.concat([prefix, MAGIC, salt]));
         started = true;
       }
       pending = Buffer.concat([pending, chunk]);
@@ -176,25 +195,136 @@ export function lockStream(key: Buffer): Transform {
       done();
     },
     flush(done: TransformCallback) {
-      if (!started) this.push(Buffer.concat([MAGIC, salt]));
+      if (!started) this.push(Buffer.concat([prefix, MAGIC, salt]));
       this.push(lockPiece(pieceKey, index, pending, true));
       done();
     },
   });
 }
 
+// --- Public-key files (v6.4) -------------------------------------------------------
+
+/** A key pair's public half: its id and the raw X25519 key. */
+export type PublicKey = { pairId: string; key: Buffer };
+/** The private keys that may open a file, by key pair id. */
+export type PrivateKeys = Map<string, KeyObject>;
+/** What opens a locked file: the v6.3 backup key, the owner's private keys, or both. */
+export type Opener = Buffer | { legacy?: Buffer | null; privateKeys?: PrivateKeys };
+
+const b64url = (bytes: Buffer) => bytes.toString("base64url");
+
+export function publicKeyObject(raw: Buffer): KeyObject {
+  return createPublicKey({ key: { kty: "OKP", crv: "X25519", x: b64url(raw) }, format: "jwk" });
+}
+
+/** The raw 32 bytes of an X25519 key (public, or the private half with `d`). */
+export function rawKey(key: KeyObject, part: "x" | "d" = "x"): Buffer {
+  const jwk = key.export({ format: "jwk" }) as { x?: string; d?: string };
+  return Buffer.from(jwk[part]!, "base64url");
+}
+
+export function privateKeyObject(d: Buffer, x: Buffer): KeyObject {
+  return createPrivateKey({
+    key: { kty: "OKP", crv: "X25519", d: b64url(d), x: b64url(x) },
+    format: "jwk",
+  });
+}
+
+function publicFileKey(shared: Buffer, ephemeral: Buffer, recipient: Buffer): Buffer {
+  return Buffer.from(
+    hkdfSync(
+      "sha256",
+      shared,
+      Buffer.concat([ephemeral, recipient]),
+      "extas-erp public-key file v1",
+      32,
+    ),
+  );
+}
+
+/** A file's header and key, locked for the owner's public key. */
+function sealFor(recipient: PublicKey): { header: Buffer; key: Buffer } {
+  if (!/^[0-9A-F]{8}$/.test(recipient.pairId) || recipient.key.length !== X25519_BYTES) {
+    throw new BackupKeyError("The backup public key is not right.");
+  }
+  const eph = generateKeyPairSync("x25519");
+  const ephRaw = rawKey(eph.publicKey);
+  const shared = diffieHellman({
+    privateKey: eph.privateKey,
+    publicKey: publicKeyObject(recipient.key),
+  });
+  return {
+    header: Buffer.concat([PK_MAGIC, Buffer.from(recipient.pairId, "ascii"), ephRaw]),
+    key: publicFileKey(shared, ephRaw, recipient.key),
+  };
+}
+
+/** Locks a stream of bytes for the owner's public key: only their private key opens it. */
+export function lockStreamFor(recipient: PublicKey): Transform {
+  const { header, key } = sealFor(recipient);
+  return lockStream(key, header);
+}
+
+/** The key pair a public-key file was locked for; null for any other file. */
+export function lockedForPair(head: Buffer): string | null {
+  if (head.length < PK_MAGIC.length + PAIR_ID_BYTES) return null;
+  if (!head.subarray(0, PK_MAGIC.length).equals(PK_MAGIC)) return null;
+  return head.subarray(PK_MAGIC.length, PK_MAGIC.length + PAIR_ID_BYTES).toString("ascii");
+}
+
+function openerKeys(opener: Opener) {
+  return Buffer.isBuffer(opener)
+    ? { legacy: opener, privateKeys: new Map() as PrivateKeys }
+    : { legacy: opener.legacy ?? null, privateKeys: opener.privateKeys ?? new Map() };
+}
+
 /** Whether the bytes so far could be the start of a locked file. */
 function startsLocked(bytes: Buffer): boolean {
   const n = Math.min(bytes.length, MAGIC.length);
-  return bytes.length > 0 && bytes.subarray(0, n).equals(MAGIC.subarray(0, n));
+  if (bytes.length === 0) return false;
+  const head = bytes.subarray(0, n);
+  return head.equals(MAGIC.subarray(0, n)) || head.equals(PK_MAGIC.subarray(0, n));
 }
 
-/** Opens a locked stream; it fails on a wrong key, a changed byte or a file cut short. */
-export function unlockStream(key: Buffer): Transform {
+/**
+ * Opens a locked stream (a v6.3 file with the backup key, or a v6.4 file with the
+ * private key of its pair); it fails on a wrong key, a changed byte or a file cut short.
+ */
+export function unlockStream(opener: Opener): Transform {
+  const keys = openerKeys(opener);
   let pending = Buffer.alloc(0);
+  let key: Buffer | null = null;
   let pieceKey: Buffer | null = null;
   let index = 0;
   let finished = false;
+
+  /** The key for the v1 part, once the start of the file says which one. */
+  const resolveKey = (): boolean => {
+    if (key) return true;
+    if (pending.length < MAGIC.length) return false;
+    if (pending.subarray(0, MAGIC.length).equals(MAGIC)) {
+      if (!keys.legacy) {
+        throw new BackupKeyError(
+          "This backup was locked with the old (v6.3) recovery key: type the key from the old key card.",
+        );
+      }
+      key = keys.legacy;
+      return true;
+    }
+    if (pending.length < PK_HEADER_BYTES) return false;
+    const pairId = lockedForPair(pending)!;
+    const privateKey = keys.privateKeys.get(pairId);
+    if (!privateKey) {
+      throw new BackupKeyError(
+        `This backup was locked with another recovery key (key ${pairId}); the key given does not open it.`,
+      );
+    }
+    const ephRaw = pending.subarray(PK_MAGIC.length + PAIR_ID_BYTES, PK_HEADER_BYTES);
+    const shared = diffieHellman({ privateKey, publicKey: publicKeyObject(ephRaw) });
+    key = publicFileKey(shared, Buffer.from(ephRaw), rawKey(privateKey, "x"));
+    pending = pending.subarray(PK_HEADER_BYTES);
+    return true;
+  };
 
   /** One piece, tried as a middle piece and then as the last one. */
   const open = (body: Buffer, tag: Buffer): Buffer => {
@@ -226,8 +356,12 @@ export function unlockStream(key: Buffer): Transform {
           if (!startsLocked(pending)) {
             throw new BackupKeyError("This is not a locked Extas ERP backup file.");
           }
+          if (!resolveKey()) return done();
           if (pending.length < HEADER_BYTES) return done();
-          pieceKey = fileKey(key, pending.subarray(MAGIC.length, HEADER_BYTES));
+          if (!pending.subarray(0, MAGIC.length).equals(MAGIC)) {
+            throw new BackupKeyError("The backup file is damaged.");
+          }
+          pieceKey = fileKey(key!, pending.subarray(MAGIC.length, HEADER_BYTES));
           pending = pending.subarray(HEADER_BYTES);
         }
         while (pending.length >= 4) {
@@ -280,17 +414,21 @@ export function measure(): Transform & {
 
 export type FileFacts = { bytes: number; sha256: string; md5: string };
 
-/** Locks `from` into `to`; the facts of the plain file and of the locked one. */
-export async function lockFile(key: Buffer, from: string, to: string) {
+/**
+ * Locks `from` into `to` with the v6.3 backup key, or for the owner's public key;
+ * the facts of the plain file and of the locked one.
+ */
+export async function lockFile(key: Buffer | PublicKey, from: string, to: string) {
   const plain = measure();
   const locked = measure();
-  await pipeline(createReadStream(from), plain, lockStream(key), locked, createWriteStream(to));
+  const lock = Buffer.isBuffer(key) ? lockStream(key) : lockStreamFor(key);
+  await pipeline(createReadStream(from), plain, lock, locked, createWriteStream(to));
   return { plain: plain.result(), locked: locked.result() };
 }
 
 /** Opens the locked `from` into `to`; the facts of the plain file. */
-export async function unlockFile(key: Buffer, from: string, to: string): Promise<FileFacts> {
+export async function unlockFile(opener: Opener, from: string, to: string): Promise<FileFacts> {
   const plain = measure();
-  await pipeline(createReadStream(from), unlockStream(key), plain, createWriteStream(to));
+  await pipeline(createReadStream(from), unlockStream(opener), plain, createWriteStream(to));
   return plain.result();
 }

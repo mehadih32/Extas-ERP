@@ -4,6 +4,8 @@ import { Prisma } from "@prisma/client";
 export type LockableTable =
   | "Company"
   | "Party"
+  | "JournalEntry"
+  | "Payment"
   | "SalesOrder"
   | "ProformaInvoice"
   | "Quotation"
@@ -30,7 +32,8 @@ export type LockableTable =
   | "Refund"
   | "SalesReturn"
   | "Cheque"
-  | "StaffClaim";
+  | "StaffClaim"
+  | "TechPack";
 
 /**
  * Locks rows until the transaction ends (`SELECT ... FOR UPDATE`), so two people

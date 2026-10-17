@@ -57,7 +57,7 @@ const STATUS_TEXT = {
 const signed = (n: number | null) => (n === null ? "" : n > 0 ? `+${n.toFixed(2)}` : n.toFixed(2));
 
 export function ColoursPanel({ screen }: { screen: TechPackScreen }) {
-  const { project, colours, can } = screen;
+  const { techPack, colours, can } = screen;
   const [open, setOpen] = useState<
     | { kind: "colour"; colour: Colour | null }
     | { kind: "remove"; colour: Colour }
@@ -204,9 +204,7 @@ export function ColoursPanel({ screen }: { screen: TechPackScreen }) {
                             <td className="py-1.5 pr-2 font-medium">
                               {o.letter}
                               {o.readByAi && (
-                                <span className="ml-1 text-[0.6875rem] text-muted-foreground">
-                                  AI
-                                </span>
+                                <span className="ml-1 text-xs text-muted-foreground">AI</span>
                               )}
                             </td>
                             <td className="py-1.5 pr-2">{o.light ?? c.primaryLight}</td>
@@ -245,7 +243,7 @@ export function ColoursPanel({ screen }: { screen: TechPackScreen }) {
                                   variant="ghost"
                                   aria-label={`Remove option ${o.letter} of round ${o.round}`}
                                   disabled={pending}
-                                  onClick={() => run(() => removeLabDipAction(project.id, o.id))}
+                                  onClick={() => run(() => removeLabDipAction(techPack.id, o.id))}
                                 >
                                   <Trash2Icon aria-hidden />
                                 </Button>
@@ -334,7 +332,7 @@ export function ColoursPanel({ screen }: { screen: TechPackScreen }) {
                         variant="ghost"
                         disabled={pending}
                         onClick={() =>
-                          run(() => setLabDipStatusAction(project.id, c.id, { status: "OPEN" }))
+                          run(() => setLabDipStatusAction(techPack.id, c.id, { status: "OPEN" }))
                         }
                       >
                         Open again
@@ -349,7 +347,7 @@ export function ColoursPanel({ screen }: { screen: TechPackScreen }) {
       )}
 
       {open?.kind === "colour" && (
-        <ColourDialog projectId={project.id} colour={open.colour} onClose={() => setOpen(null)} />
+        <ColourDialog techPackId={techPack.id} colour={open.colour} onClose={() => setOpen(null)} />
       )}
 
       {open?.kind === "remove" && (
@@ -361,7 +359,7 @@ export function ColoursPanel({ screen }: { screen: TechPackScreen }) {
           destructive
           onClose={() => setOpen(null)}
           onConfirm={async () => {
-            const result = await removeColourAction(project.id, open.colour.id);
+            const result = await removeColourAction(techPack.id, open.colour.id);
             if (!result.ok) return result.error;
             setOpen(null);
           }}
@@ -370,7 +368,7 @@ export function ColoursPanel({ screen }: { screen: TechPackScreen }) {
 
       {open?.kind === "dips" && (
         <LabDipsDialog
-          projectId={project.id}
+          techPackId={techPack.id}
           colour={open.colour}
           round={open.round}
           options={open.options}
@@ -387,7 +385,7 @@ export function ColoursPanel({ screen }: { screen: TechPackScreen }) {
           accept="application/pdf,image/jpeg,image/png,image/webp"
           submitLabel="Read"
           onClose={() => setOpen(null)}
-          send={(form) => readLabDipReportAction(project.id, open.colour.id, form)}
+          send={(form) => readLabDipReportAction(techPack.id, open.colour.id, form)}
           onDone={(data) => {
             const read = data as {
               round: number | null;
@@ -413,24 +411,28 @@ export function ColoursPanel({ screen }: { screen: TechPackScreen }) {
           accept="image/jpeg,image/png,image/webp"
           submitLabel="Suggest"
           onClose={() => setOpen(null)}
-          send={(form) => estimateColourAction(project.id, open.colour.id, form)}
+          send={(form) => estimateColourAction(techPack.id, open.colour.id, form)}
           onDone={() => setOpen(null)}
         />
       )}
 
       {open?.kind === "approve" && (
-        <ApproveDialog projectId={project.id} colour={open.colour} onClose={() => setOpen(null)} />
+        <ApproveDialog
+          techPackId={techPack.id}
+          colour={open.colour}
+          onClose={() => setOpen(null)}
+        />
       )}
     </Panel>
   );
 }
 
 function ColourDialog({
-  projectId,
+  techPackId,
   colour,
   onClose,
 }: {
-  projectId: string;
+  techPackId: string;
   colour: Colour | null;
   onClose: () => void;
 }) {
@@ -444,7 +446,7 @@ function ColourDialog({
       onClose={onClose}
       onSubmit={async (form) => {
         const result = await saveColourAction(
-          projectId,
+          techPackId,
           colour?.id ?? null,
           Object.fromEntries(form),
         );
@@ -530,7 +532,7 @@ const EMPTY: ReadOption = {
 };
 
 function LabDipsDialog({
-  projectId,
+  techPackId,
   colour,
   round,
   options,
@@ -538,7 +540,7 @@ function LabDipsDialog({
   notes,
   onClose,
 }: {
-  projectId: string;
+  techPackId: string;
   colour: Colour;
   round: number;
   options: ReadOption[];
@@ -568,7 +570,7 @@ function LabDipsDialog({
       onClose={onClose}
       onSubmit={async (form) => {
         const value = (key: string) => String(form.get(key) ?? "");
-        const result = await addLabDipsAction(projectId, colour.id, {
+        const result = await addLabDipsAction(techPackId, colour.id, {
           round: value("round"),
           readByAi,
           options: rows.map((_, i) => ({
@@ -743,11 +745,11 @@ function AiUploadDialog({
 }
 
 function ApproveDialog({
-  projectId,
+  techPackId,
   colour,
   onClose,
 }: {
-  projectId: string;
+  techPackId: string;
   colour: Colour;
   onClose: () => void;
 }) {
@@ -769,7 +771,7 @@ function ApproveDialog({
           answer === "BUYER_APPROVED"
             ? { status: answer, ...(optionId ? { optionId: String(optionId) } : {}) }
             : { status: answer };
-        const result = await setLabDipStatusAction(projectId, colour.id, input);
+        const result = await setLabDipStatusAction(techPackId, colour.id, input);
         if (!result.ok) return result.error;
         onClose();
       }}

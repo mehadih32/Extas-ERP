@@ -55,13 +55,13 @@ const VERDICT_TONE = {
   FAIL: "text-destructive",
 } as const;
 
-const logoUrl = (projectId: string, logoId: string, end: string) =>
-  `/api/production/projects/${encodeURIComponent(projectId)}/tech-pack/logos/${encodeURIComponent(logoId)}/${end}`;
+const logoUrl = (techPackId: string, logoId: string, end: string) =>
+  `/api/tech-packs/${encodeURIComponent(techPackId)}/logos/${encodeURIComponent(logoId)}/${end}`;
 
 const mm = (n: number | null) => (n === null ? null : `${n} mm`);
 
 export function LogosPanel({ screen }: { screen: TechPackScreen }) {
-  const { project, logos, can } = screen;
+  const { techPack, logos, can } = screen;
   const [open, setOpen] = useState<
     | { kind: "spec"; logo: Logo | null }
     | { kind: "upload"; logo: Logo }
@@ -164,7 +164,7 @@ export function LogosPanel({ screen }: { screen: TechPackScreen }) {
                       {logo.machineFile ? (
                         <>
                           <a
-                            href={logoUrl(project.id, logo.id, "file")}
+                            href={logoUrl(techPack.id, logo.id, "file")}
                             className="text-primary underline-offset-4 hover:underline"
                           >
                             {logo.machineFile.fileName}
@@ -229,14 +229,14 @@ export function LogosPanel({ screen }: { screen: TechPackScreen }) {
                       size="sm"
                       variant="outline"
                       disabled={pending}
-                      onClick={() => run(() => draftLogoFromVectorAction(project.id, logo.id))}
+                      onClick={() => run(() => draftLogoFromVectorAction(techPack.id, logo.id))}
                     >
                       <SparklesIcon aria-hidden />
                       Draft from the vector
                     </Button>
                   )}
                   <Button type="button" size="sm" variant="ghost" asChild>
-                    <a href={logoUrl(project.id, logo.id, "brief")} download>
+                    <a href={logoUrl(techPack.id, logo.id, "brief")} download>
                       <FileTextIcon aria-hidden />
                       Digitizing brief
                     </a>
@@ -244,13 +244,13 @@ export function LogosPanel({ screen }: { screen: TechPackScreen }) {
                   {logo.machineFile && logo.check && (
                     <>
                       <Button type="button" size="sm" variant="ghost" asChild>
-                        <a href={`${logoUrl(project.id, logo.id, "file")}?format=DST`} download>
+                        <a href={`${logoUrl(techPack.id, logo.id, "file")}?format=DST`} download>
                           <DownloadIcon aria-hidden />
                           DST
                         </a>
                       </Button>
                       <Button type="button" size="sm" variant="ghost" asChild>
-                        <a href={`${logoUrl(project.id, logo.id, "file")}?format=EXP`} download>
+                        <a href={`${logoUrl(techPack.id, logo.id, "file")}?format=EXP`} download>
                           <DownloadIcon aria-hidden />
                           EXP
                         </a>
@@ -269,7 +269,7 @@ export function LogosPanel({ screen }: { screen: TechPackScreen }) {
                       size="sm"
                       variant="outline"
                       disabled={pending}
-                      onClick={() => run(() => untickLogoAction(project.id, logo.id))}
+                      onClick={() => run(() => untickLogoAction(techPack.id, logo.id))}
                     >
                       <UndoIcon aria-hidden />
                       Take back the tick
@@ -283,11 +283,11 @@ export function LogosPanel({ screen }: { screen: TechPackScreen }) {
       )}
 
       {open?.kind === "spec" && (
-        <LogoSpecDialog projectId={project.id} logo={open.logo} onClose={() => setOpen(null)} />
+        <LogoSpecDialog techPackId={techPack.id} logo={open.logo} onClose={() => setOpen(null)} />
       )}
 
       {open?.kind === "upload" && (
-        <UploadDialog projectId={project.id} logo={open.logo} onClose={() => setOpen(null)} />
+        <UploadDialog techPackId={techPack.id} logo={open.logo} onClose={() => setOpen(null)} />
       )}
 
       {open?.kind === "remove" && (
@@ -299,7 +299,7 @@ export function LogosPanel({ screen }: { screen: TechPackScreen }) {
           destructive
           onClose={() => setOpen(null)}
           onConfirm={async () => {
-            const result = await removeLogoAction(project.id, open.logo.id);
+            const result = await removeLogoAction(techPack.id, open.logo.id);
             if (!result.ok) return result.error;
             setOpen(null);
           }}
@@ -314,7 +314,7 @@ export function LogosPanel({ screen }: { screen: TechPackScreen }) {
           pendingLabel="Ticking"
           onClose={() => setOpen(null)}
           onConfirm={async () => {
-            const result = await tickLogoAction(project.id, open.logo.id);
+            const result = await tickLogoAction(techPack.id, open.logo.id);
             if (!result.ok) return result.error;
             setOpen(null);
           }}
@@ -356,11 +356,11 @@ function FileLine({
 }
 
 function LogoSpecDialog({
-  projectId,
+  techPackId,
   logo,
   onClose,
 }: {
-  projectId: string;
+  techPackId: string;
   logo: Logo | null;
   onClose: () => void;
 }) {
@@ -374,7 +374,7 @@ function LogoSpecDialog({
       className="sm:max-w-xl"
       onClose={onClose}
       onSubmit={async (form) => {
-        const result = await saveLogoAction(projectId, logo?.id ?? null, Object.fromEntries(form));
+        const result = await saveLogoAction(techPackId, logo?.id ?? null, Object.fromEntries(form));
         if (!result.ok) return result.error;
         onClose();
       }}
@@ -483,11 +483,11 @@ function LogoSpecDialog({
 }
 
 function UploadDialog({
-  projectId,
+  techPackId,
   logo,
   onClose,
 }: {
-  projectId: string;
+  techPackId: string;
   logo: Logo;
   onClose: () => void;
 }) {
@@ -503,7 +503,7 @@ function UploadDialog({
       errorTitle="We could not upload the file"
       onClose={onClose}
       onSubmit={async (form) => {
-        const result = await uploadLogoFileAction(projectId, logo.id, form);
+        const result = await uploadLogoFileAction(techPackId, logo.id, form);
         if (!result.ok) return result.error;
         onClose();
       }}

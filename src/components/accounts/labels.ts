@@ -115,6 +115,7 @@ export const SOURCE_LABELS: Record<JournalSource, string> = {
   STAFF_CLAIM: "Staff claims",
   CM_SETTLEMENT: "CM settlement",
   SUPPLIER_FAULT: "Supplier fault",
+  CORRECTION: "Bug Guard correction",
 };
 
 /** The journal's "made by" filter, in the order people look for them. */
@@ -139,6 +140,7 @@ export const SOURCE_FILTERS: readonly JournalSource[] = [
   "PURCHASE_RETURN",
   "CM_SETTLEMENT",
   "SUPPLIER_FAULT",
+  "CORRECTION",
   "FIXED_ASSET",
   "DEPRECIATION",
   "CAPITAL",

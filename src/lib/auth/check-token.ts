@@ -27,6 +27,10 @@ export const CHECK_NEVER_ROUTES: ReadonlyArray<{ route: string; why: string }> =
     why: "It asks Google Drive for the list of backups, with the owner's Google sign-in.",
   },
   {
+    route: "/api/backups/guide",
+    why: "It makes the restore guide with the restore details, and records who downloaded it.",
+  },
+  {
     route: "/api/backups/runs/[runId]/download",
     why: "It hands out a whole backup of the ERP: no check needs one.",
   },
@@ -259,6 +263,10 @@ export const CHECK_READ_ROUTES: readonly string[] = [
   "/api/sales/summary",
   "/api/tasks",
   "/api/tasks/[taskId]",
+  "/api/tech-packs/[techPackId]/logos/[logoId]/brief",
+  "/api/tech-packs/[techPackId]/logos/[logoId]/file",
+  "/api/tech-packs/[techPackId]/measurements",
+  "/api/tech-packs/[techPackId]/pdf",
   "/api/templates",
   "/api/templates/[templateId]",
   "/api/templates/[templateId]/file",

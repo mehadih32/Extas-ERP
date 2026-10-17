@@ -35,7 +35,7 @@ export function InboxBell({ unread }: { unread: number }) {
       {unread > 0 && (
         <span
           aria-hidden
-          className="absolute -top-0.5 -right-0.5 inline-flex h-4.5 min-w-4.5 items-center justify-center rounded-full bg-destructive px-1 text-[0.6875rem] leading-none font-semibold text-destructive-foreground tabular-nums ring-2 ring-primary"
+          className="absolute -top-0.5 -right-0.5 inline-flex h-4.5 min-w-4.5 items-center justify-center rounded-full bg-destructive px-1 text-xs leading-none font-semibold text-destructive-foreground tabular-nums ring-2 ring-primary"
         >
           {unread > 99 ? "99+" : unread}
         </span>
@@ -48,6 +48,7 @@ const OPEN_WORDS: Record<string, string> = {
   Task: "Open the task",
   Reminder: "Open the reminder",
   ProductionProject: "Open the project",
+  TechPack: "Open the tech pack",
   ProductionBatch: "Open the batch",
   SalesOrder: "Open the order",
   PurchaseOrder: "Open the purchase order",

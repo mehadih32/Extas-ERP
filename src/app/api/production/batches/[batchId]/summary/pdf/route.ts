@@ -14,13 +14,13 @@ export const dynamic = "force-dynamic";
  * cost, cost a good piece, penalties and deductions, and stock (production.manage or
  * accounts.view).
  */
-export async function GET(_request: Request, context: { params: Promise<Params> }) {
+export async function GET(request: Request, context: { params: Promise<Params> }) {
   try {
     const { batchId } = await context.params;
     const ctx = await requireAnyPermission("production.manage", "accounts.view");
     const pdf = await batchSummaryPdf(ctx, batchId, await getRequestMeta());
     return fileResponse({ fileName: pdf.fileName, mimeType: PDF_MIME, bytes: pdf.bytes });
   } catch (error) {
-    return apiErrorResponse(error);
+    return apiErrorResponse(error, request);
   }
 }

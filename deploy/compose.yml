@@ -93,6 +93,9 @@ services:
       APP_URL: https://${APP_DOMAIN:?Run deploy/configure.sh first}
       DATABASE_URL: postgresql://${APP_DB_USER:-extras_app}:${APP_DB_PASSWORD}@db:5432/${POSTGRES_DB:-extras_erp}?schema=public&connection_limit=10
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:?Run deploy/configure.sh first}
+      # Keys of a server restored over (bootstrap.sh never replaces ENCRYPTION_KEY):
+      # they still open the secrets they sealed. Comma-separated; usually empty.
+      ENCRYPTION_OLD_KEYS: ${ENCRYPTION_OLD_KEYS:-}
       GOOGLE_DRIVE_CLIENT_ID: ${GOOGLE_DRIVE_CLIENT_ID:-}
       GOOGLE_DRIVE_CLIENT_SECRET: ${GOOGLE_DRIVE_CLIENT_SECRET:-}
       SAFETY_COPY_DIR: /data/safety-copies
@@ -140,8 +143,10 @@ services:
     logging: *logging
 
   # HTTPS: gets and renews the Let's Encrypt certificate and sends traffic to the app.
+  # Plain Caddy; while a Cloudflare token is in deploy/.env, Caddy with Cloudflare's
+  # DNS module instead (deploy.sh builds it from deploy/caddy and sets CADDY_IMAGE).
   caddy:
-    image: caddy:2-alpine
+    image: ${CADDY_IMAGE:-caddy:2-alpine}
     restart: unless-stopped
     ports:
       - "80:80"
@@ -150,8 +155,12 @@ services:
     environment:
       APP_DOMAIN: ${APP_DOMAIN:?Run deploy/configure.sh first}
       ACME_EMAIL: ${ACME_EMAIL:?Run deploy/configure.sh first}
+      # Only read while certificates come through Cloudflare's DNS check.
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:-}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Cloudflare's DNS check, while it is on (deploy.sh writes cloudflare.caddy here).
+      - ${DATA_DIR:-/srv/extras-erp}/caddy/tls:/etc/caddy/tls:ro
       # The demo site's part, while it is on (deploy.sh copies demo.caddy here).
       - ${DATA_DIR:-/srv/extras-erp}/caddy/sites:/etc/caddy/sites:ro
       - ${DATA_DIR:-/srv/extras-erp}/caddy/data:/data

@@ -23,9 +23,20 @@ import { claudeMessage } from "../fixtures/claude";
  * marking.
  */
 
+/** The owner's prices (the ERP's own Claude models are on the built-in price list). */
 const BOOK: PriceBook = new Map([
-  ["claude-sonnet-5-5", { input: 2, output: 10, cacheRead: 0.2, from: "erp" as const }],
-  ["openai:gpt-test", { input: 1.25, output: 10, cacheRead: null, from: "owner" as const }],
+  [
+    "openai:gpt-test",
+    {
+      input: 1.25,
+      output: 10,
+      cacheRead: null,
+      cacheWrite: null,
+      batchInput: null,
+      batchOutput: null,
+      from: "owner" as const,
+    },
+  ],
 ]);
 
 describe("model names", () => {

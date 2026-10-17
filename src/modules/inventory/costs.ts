@@ -42,6 +42,43 @@ export async function onHandByGrade(db: Db, variantIds: string[]): Promise<Map<s
 }
 
 /**
+ * Brings `quantity` pieces in at `unitCost` to a SKU grade holding `onHand`
+ * pieces (every warehouse) at `average`, re-weighting the average.
+ *
+ * Below zero, pieces were sold before they were in stock (Sales' Force
+ * Override) and left at `average`. The first pieces in are those pieces, so
+ * they were really worth `unitCost`: `filled` counts them and `trueUp` is what
+ * their cost of sales was overstated by (negative: understated), rounded like
+ * a posting. While stock stays at or below zero the average stays, so the
+ * pieces still short are put right when the next pieces come in; above zero
+ * it is the incoming pieces' cost.
+ */
+export function receiveAtCost(
+  onHand: number,
+  average: Prisma.Decimal.Value,
+  quantity: number,
+  unitCost: Prisma.Decimal.Value,
+): { average: Prisma.Decimal; filled: number; trueUp: Prisma.Decimal } {
+  const current = new Prisma.Decimal(average);
+  const cost = new Prisma.Decimal(unitCost);
+  const after = onHand + quantity;
+  if (onHand >= 0) {
+    if (after <= 0) return { average: cost, filled: 0, trueUp: ZERO };
+    return {
+      average: current.times(onHand).plus(cost.times(quantity)).dividedBy(after),
+      filled: 0,
+      trueUp: ZERO,
+    };
+  }
+  const filled = Math.min(-onHand, quantity);
+  return {
+    average: after > 0 ? cost : current,
+    filled,
+    trueUp: current.minus(cost).times(filled).toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP),
+  };
+}
+
+/**
  * Takes back out `quantity` pieces that came in at `unitCost` from a SKU grade
  * holding `onHand` pieces at `average`, the reverse of re-weighting the average
  * when they came in. Returns the average the pieces left keep and the value
@@ -50,8 +87,9 @@ export async function onHandByGrade(db: Db, variantIds: string[]): Promise<Map<s
  * Usually that value is quantity x unitCost and the rest get back the average
  * they had before. When stock at other costs came and went in between, the
  * grade may hold less value than that: then all of its value leaves and the
- * rest are left at cost 0. When no pieces are left, all the value leaves and
- * the average stays as the cost of the last pieces held.
+ * rest are left at cost 0. When no pieces are left, or the grade goes below
+ * zero (pieces sold short in another warehouse), the pieces leave at the
+ * average, which stays: the stock register values what is short at it too.
  */
 export function removeAtCost(
   onHand: number,
@@ -62,7 +100,7 @@ export function removeAtCost(
   const current = new Prisma.Decimal(average);
   const value = current.times(Math.max(onHand, 0));
   const left = onHand - quantity;
-  if (left <= 0) return { average: current, removed: value };
+  if (left <= 0) return { average: current, removed: current.times(quantity) };
   const out = new Prisma.Decimal(unitCost).times(quantity);
   const rest = value.minus(out);
   if (rest.isNegative()) return { average: ZERO, removed: value };

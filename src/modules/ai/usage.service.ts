@@ -10,14 +10,16 @@ import { sendInApp } from "@/modules/reminders/notification.service";
 import { pushToBot } from "./bot/push";
 import type { AiRecord } from "./control.service";
 import { taskInfo, type TokenUse } from "./models";
-import { costIn, priceBook } from "./prices.service";
+import { blockedText, costIn, priceBook } from "./prices.service";
 import { modelLabel, PROVIDERS, type ProviderId, providerInfo, providerOf } from "./providers";
 
 /*
  * What the AI spends (AI Center > Budget & Costs). Every call to the AI
  * (Claude, OpenAI or Gemini) writes one line: who asked, the task, why, the
  * record, the model and its provider, the tokens and the cost (at the prices
- * on AI Center > Models; "price unknown" when a model has none), in dollars and in the company's money at the rate the owner set.
+ * on AI Center > Models; a model with none is blocked since v6.4, and older
+ * lines without a price say "price unknown"), in dollars and in the company's
+ * money at the rate the owner set.
  * Before a call the budget and limits are checked (all optional, off until
  * set; a monthly limit per provider too): at a limit new work stops, or goes on with the small model when the
  * owner chose that; at the alert percentage the owner is told once a month.
@@ -337,7 +339,7 @@ export type CostEstimate = {
   model: string;
   usd: string;
   cost: string;
-  /** False when the model has no price yet (AI Center > Models > Prices). */
+  /** False when the model has no price yet (AI Center > Models): it is blocked. */
   known: boolean;
   currency: string;
   /** Set when the owner wants to be asked first, with the reason. */
@@ -387,10 +389,8 @@ export async function estimateUse(
   const about = `about ${taka(cost, company.currency)}`;
   let askFirst: string | null = null;
   if (!priced.known) {
-    // No guess: with "Ask before a task above" set, the owner is asked.
-    if (budget.askAbove) {
-      askFirst = `The price of ${modelLabel(model)} is not known, so this task's cost cannot be worked out first. Set its price on AI Center > Models > Prices.`;
-    }
+    // No guess: a model with no price is blocked (askClaude refuses it, v6.4 A7).
+    askFirst = blockedText(modelLabel(model));
   } else if (budget.askAbove && cost.gt(budget.askAbove)) {
     askFirst = `This task may cost ${about}, above the ${taka(budget.askAbove, company.currency)} you asked to be asked about.`;
   } else if (!budget.monthly && (options.big || BIG_MODELS.includes(model))) {

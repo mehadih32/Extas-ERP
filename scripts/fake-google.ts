@@ -74,10 +74,8 @@ function present(file: FakeFile, fields: string | null) {
       : {}),
   };
   if (!fields) return all;
-  const wanted = fields
-    .replace(/^files\(|\)$/g, "")
-    .split(",")
-    .map((f) => f.trim());
+  // "files(id,name)" or "nextPageToken,files(id,name)" (a list), or "id,name" (one file).
+  const wanted = (fields.match(/files\(([^)]*)\)/)?.[1] ?? fields).split(",").map((f) => f.trim());
   return Object.fromEntries(Object.entries(all).filter(([k]) => wanted.includes(k)));
 }
 

@@ -221,6 +221,14 @@ model Company {
   aiOrderRuns           AiOrderRun[]
   aiStaffUpdates        AiStaffUpdate[]
   serverHealthRuns      ServerHealthRun[]
+  bugGuardSettings      BugGuardSettings?
+  bugGuardRuns          BugGuardRun[]
+  bugGuardFindings      BugGuardFinding[]
+  bugGuardCorrections   BugGuardCorrection[]
+  bugGuardEvents        BugGuardEvent[]
+  loginBlocks           LoginBlock[]
+  serverErrors          ServerError[]
+  usageCounts           UsageCount[]
 }
 
 /// A person who can log in. Global across companies.
@@ -287,12 +295,14 @@ model User {
   bookingsApproved    Booking[]              @relation("BookingApprovedBy")
   bookingsSent        Booking[]              @relation("BookingSentBy")
   bookingRevisions    BookingRevision[]      @relation("BookingRevisionApprovedBy")
+  techPacksCreated    TechPack[]             @relation("TechPackCreatedBy")
   techPacksLocked     TechPack[]             @relation("TechPackFabricLockedBy")
   techPacksApproved   TechPack[]             @relation("TechPackApprovedBy")
   techPackReferences  TechPackReference[]    @relation("TechPackReferenceSavedBy")
   logosTicked         TechPackLogo[]         @relation("TechPackLogoTickedBy")
   techPackAiDrafts    TechPackAiDraft[]      @relation("TechPackAiDraftBy")
   expertQuestions     TechPackExpertAnswer[] @relation("TechPackExpertAskedBy")
+  expertAnswersMade   TechPackExpertAnswer[] @relation("TechPackExpertAnswerBy")
   costingsMade        OrderCosting[]         @relation("OrderCostingCreatedBy")
   costingsDecided     OrderCosting[]         @relation("OrderCostingDecidedBy")
   fabricQuotesAdded   FabricQuote[]          @relation("FabricQuoteCreatedBy")
@@ -350,6 +360,7 @@ model User {
   aiOrderRunsDecided  AiOrderRun[]           @relation("AiOrderRunDecidedBy")
   aiStaffUpdates      AiStaffUpdate[]        @relation("AiStaffUpdateBy")
   serverHealthRuns    ServerHealthRun[]      @relation("ServerHealthRunBy")
+  bugGuardEvents      BugGuardEvent[]        @relation("BugGuardEventBy")
 }
 
 /// A signed-in device. `token` stores the SHA-256 hash of the cookie value, never
@@ -653,6 +664,7 @@ model Style {
   productionProjects ProductionProject[]
   costingStyles      OrderCostingStyle[]
   stockLots          StockLot[]
+  techPacks          TechPack[]
 
   @@unique([companyId, code])
   @@index([companyId, categoryId])
@@ -1395,6 +1407,7 @@ model Party {
   generatedDocuments   GeneratedDocument[]
   projectSettlements   ProjectSettlement[]
   aiOrderRuns          AiOrderRun[]         @relation("AiOrderRunBuyer")
+  techPacks            TechPack[]           @relation("TechPackBuyer")
 
   @@unique([companyId, code])
   @@unique([companyId, systemRole])
@@ -2285,7 +2298,20 @@ model ProductionMaterialNeed {
 model TechPack {
   id               String         @id @default(cuid())
   companyId        String
-  projectId        String         @unique
+  /// Its number, e.g. "TP-2026-00001" (unique per company; set on every new tech pack).
+  number           String?
+  /// What it is called in the list: "Nordic polo SS27".
+  title            String         @default("")
+  /// The style in production it is linked to, once the order comes (one tech pack per style).
+  projectId        String?        @unique
+  /// The buyer it is for, and the catalogue style it is linked to (both optional).
+  buyerId          String?
+  styleId          String?
+  /// The buyer's season, as the buyer writes it ("SS27", "Winter 2026").
+  season           String?
+  /// The buyer's brief as received: what they asked for, before any order.
+  brief            String?
+  createdById      String?
   status           TechPackStatus @default(DRAFT)
   /// The fabric part as it was locked (fabrics, use per piece, colour and size quantities).
   fabricLock       Json?
@@ -2312,7 +2338,10 @@ model TechPack {
   updatedAt        DateTime       @updatedAt
 
   company        Company                @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  project        ProductionProject      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project        ProductionProject?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  buyer          Party?                 @relation("TechPackBuyer", fields: [buyerId], references: [id], onDelete: SetNull)
+  style          Style?                 @relation(fields: [styleId], references: [id], onDelete: SetNull)
+  createdBy      User?                  @relation("TechPackCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   fabricLockedBy User?                  @relation("TechPackFabricLockedBy", fields: [fabricLockedById], references: [id], onDelete: SetNull)
   approvedBy     User?                  @relation("TechPackApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
   measurements   TechPackMeasurement[]
@@ -2322,7 +2351,12 @@ model TechPack {
   aiDrafts       TechPackAiDraft[]
   expertAnswers  TechPackExpertAnswer[]
 
+  @@unique([companyId, number])
   @@index([companyId, status])
+  @@index([companyId, updatedAt])
+  @@index([companyId, buyerId])
+  @@index([companyId, styleId])
+  @@index([companyId, season])
 }
 
 /// One point of measure of a style's chart: its value per size in the tech
@@ -2502,22 +2536,25 @@ model TechPackAiDraft {
 
 /// An expert's answer on a style (Ask an expert), or a review board finding list.
 model TechPackExpertAnswer {
-  id         String           @id @default(cuid())
-  companyId  String
-  techPackId String
-  expert     String
-  kind       ExpertAnswerKind
-  question   String
-  answer     String
+  id          String           @id @default(cuid())
+  companyId   String
+  techPackId  String
+  expert      String
+  kind        ExpertAnswerKind
+  question    String
+  answer      String
   /// A review's findings: [{ expert, finding, severity }].
-  findings   Json?
-  model      String
-  askedById  String?
-  createdAt  DateTime         @default(now())
+  findings    Json?
+  model       String
+  askedById   String?
+  /// Who wrote it: the company's AI account (v6.4), never the person who asked.
+  createdById String?
+  createdAt   DateTime         @default(now())
 
-  company  Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  techPack TechPack @relation(fields: [techPackId], references: [id], onDelete: Cascade)
-  askedBy  User?    @relation("TechPackExpertAskedBy", fields: [askedById], references: [id], onDelete: SetNull)
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  techPack  TechPack @relation(fields: [techPackId], references: [id], onDelete: Cascade)
+  askedBy   User?    @relation("TechPackExpertAskedBy", fields: [askedById], references: [id], onDelete: SetNull)
+  createdBy User?    @relation("TechPackExpertAnswerBy", fields: [createdById], references: [id], onDelete: SetNull)
 
   @@index([techPackId, createdAt])
   @@index([companyId])
@@ -4446,8 +4483,69 @@ model BackupConfig {
   /// When the owner said they had written it down (until then the screen asks again).
   recoveryKeySavedAt    DateTime?
   /// The weekly test restore into a temporary database (Saturdays 04:00 by default).
+  /// v6.4: it is the monthly drill (drillDay, drillTime); this still turns it on and off.
   testRestoreEnabled    Boolean   @default(true)
   testRestoreSchedule   String    @default("0 4 * * 6")
+
+  /// v6.4 schedule, in `timezone` (it replaces cronSchedule): HOURS every
+  /// `scheduleEvery` hours from the first of `scheduleTimes`, each day; DAYS every
+  /// `scheduleEvery` days (counted from `scheduleStartDay`) at `scheduleTimes`;
+  /// WEEKLY on `scheduleWeekdays` (0 = Sunday) at `scheduleTimes`; DATES on the
+  /// listed "YYYY-MM-DD HH:MM" `scheduleDates`. Null: still the v6.3 cron, read
+  /// once into the closest of these.
+  scheduleMode        BackupScheduleMode? @default(DAYS)
+  scheduleEvery       Int                 @default(1)
+  scheduleTimes       String[]            @default(["02:00", "14:00"])
+  scheduleWeekdays    Int[]               @default([])
+  scheduleDates       String[]            @default([])
+  scheduleStartDay    String?
+  /// How many of the newest backups stay on the server (3 to 7); Google Drive
+  /// keeps every backup for `driveKeepDays` days (null: for ever).
+  serverKeep          Int                 @default(4)
+  driveKeepDays       Int?                @default(90)
+  /// The owner's own recovery key (A9): never kept. A key pair made when it is
+  /// set: the public key locks every backup; the private key is kept only locked
+  /// with a key made from the recovery key (scrypt), as the keys file (JSON).
+  keyPairId           String?
+  publicKey           String?
+  lockedKeyFile       String?
+  keySetAt            DateTime?
+  /// Earlier key pairs ([{ id, from, to }]), to say which backups need which key.
+  earlierKeyPairs     Json?
+  /// The v6.3 generated key, retired when the owner set their own: backups made
+  /// before then open only with the old key card.
+  legacyKeyId         String?
+  legacyKeyRetiredAt  DateTime?
+  /// Keep the recovery key in the Drive backup folder (in the restore guide and
+  /// a small file the restore reads), and when it was last put there.
+  keepKeyInDrive      Boolean             @default(true)
+  keyInDriveAt        DateTime?
+  /// Cloudflare, so a restore points the domain at the new server and gets HTTPS
+  /// behind Cloudflare's proxy: the zone ("extasbd.com"), its id, the API token
+  /// sealed with ENCRYPTION_KEY and its last 4 characters, and the last good test.
+  cloudflareZone      String?
+  cloudflareZoneId    String?
+  cloudflareTokenRef  String?
+  cloudflareTokenHint String?
+  cloudflareCheckedAt DateTime?
+  /// The backup problem the owner was last told of ("failed", "late",
+  /// "not-in-drive"), so each problem is told once, and its recovery once.
+  alertProblem        String?
+  alertSentAt         DateTime?
+  /// The monthly drill: day of the month (1 to 28) and time.
+  drillDay            Int                 @default(1)
+  drillTime           String              @default("04:00")
+  /// The restore guide in the Drive backup folder: what it was built from (a
+  /// hash) and when, so it is rebuilt each month and whenever it changes.
+  guideHash           String?
+  guideBuiltAt        DateTime?
+}
+
+enum BackupScheduleMode {
+  HOURS
+  DAYS
+  WEEKLY
+  DATES
 }
 
 model BackupRun {
@@ -5360,6 +5458,8 @@ enum JournalSource {
   STAFF_CLAIM
   CM_SETTLEMENT
   SUPPLIER_FAULT
+  /// An adjusting entry Bug Guard posted with the owner's PIN (modules/bug-guard/corrections.ts).
+  CORRECTION
 }
 
 enum AssetStatus {
@@ -5561,6 +5661,7 @@ enum DocumentType {
   CM_SETTLEMENT // a master batch's final CM settlement with its factory (CMS-2026-00001)
   ORDER_COSTING // an order's costing sheet before it is taken (CST-2026-00001)
   AI_ORDER_RUN // an order Mehedi 2.0 takes in and follows (AO-2026-00001)
+  TECH_PACK // a tech pack, from a buyer's brief or a style in production (TP-2026-00001)
 }
 
 enum TemplateFormat {
@@ -5945,21 +6046,30 @@ model AiTestRun {
   @@index([companyId, book, createdAt])
 }
 
-/// A model's price (AI Center > Models > Prices), US dollars per million
-/// tokens. The built-in Claude models have the ERP's own prices until one is
-/// set here; any other model has none ("price unknown") until the owner sets it.
+/// The owner's price of a model (AI Center > Models), US dollars per million
+/// tokens, over the built-in price list (modules/ai/price-list.ts). A model on
+/// no list and without a price here is blocked (v6.4 A7). A row without prices
+/// only remembers the day the owner was told such a model is blocked.
 model AiModelPrice {
-  id            String   @id @default(cuid())
-  companyId     String
+  id              String   @id @default(cuid())
+  companyId       String
   /// The model ("claude-…", "openai:…" or "google:…").
-  model         String
-  provider      String
+  model           String
+  provider        String
   /// Null: not known.
-  inputPerM     Decimal? @db.Decimal(12, 4)
-  outputPerM    Decimal? @db.Decimal(12, 4)
-  cacheReadPerM Decimal? @db.Decimal(12, 4)
-  updatedById   String?
-  updatedAt     DateTime @updatedAt
+  inputPerM       Decimal? @db.Decimal(12, 4)
+  outputPerM      Decimal? @db.Decimal(12, 4)
+  cacheReadPerM   Decimal? @db.Decimal(12, 4)
+  /// Writing to the provider's prompt cache (v6.4); null: as input (Claude: a quarter more).
+  cacheWritePerM  Decimal? @db.Decimal(12, 4)
+  /// Work through the provider's batch service (v6.4); null: as plain work.
+  batchInputPerM  Decimal? @db.Decimal(12, 4)
+  batchOutputPerM Decimal? @db.Decimal(12, 4)
+  /// The company day (YYYY-MM-DD) the owner was last told this model is blocked
+  /// for having no price: once a day per model (v6.4).
+  blockedNoticeOn String?
+  updatedById     String?
+  updatedAt       DateTime @updatedAt
 
   company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
   updatedBy User?   @relation("AiModelPriceUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
@@ -6500,7 +6610,7 @@ model FullCheckProblem {
   runId     String
   /// The role the check had when it met the problem ("Owner", "Accounts"...).
   role      String
-  /// ERROR, BROKEN_LINK, FAILED_REQUEST, SLOW, PDF, SIGNED_OUT or SCRIPT.
+  /// ERROR, BROKEN_LINK, FAILED_REQUEST, SLOW, PDF, SIGNED_OUT, SCRIPT or LAYOUT.
   kind      String
   /// The screen's address, and its pattern ("/production/projects/[projectId]").
   screen    String
@@ -6592,4 +6702,296 @@ enum ClaudeCodeRequestState {
   MERGED
   /// Claude Code could not finish, or the pull request was closed unmerged.
   STOPPED
+}
+
+// ---------------------------------------------------------------- Bug Guard
+
+/// Bug Guard (AI Center > Bug Guard, the platform owner's auditor): its schedule
+/// and choices, one row per company (modules/bug-guard/settings.service.ts).
+model BugGuardSettings {
+  companyId    String    @id
+  /// When it runs (lib/schedule.ts): every N hours, every N days, weekly on chosen
+  /// days, or chosen dates and times. Default: every 3 days at 02:00.
+  schedule     Json
+  timezone     String    @default("Asia/Dhaka")
+  /// Off by default: open fix pull requests and prepare data corrections by itself.
+  /// Applying and merging always wait for the owner.
+  autoPrepare  Boolean   @default(false)
+  /// The weekly summary (even when all is well): day (0 Sunday ... 6 Saturday) and time.
+  weeklyDay    Int       @default(6)
+  weeklyTime   String    @default("10:00")
+  /// The local day ("YYYY-MM-DD") of the last weekly summary sent.
+  weeklySentOn String?
+  nextRunAt    DateTime?
+  lastRunAt    DateTime?
+  updatedById  String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+}
+
+/// One Bug Guard run: what it checked and how it went (its findings are BugGuardFinding).
+model BugGuardRun {
+  id              String            @id @default(cuid())
+  companyId       String
+  trigger         BugGuardTrigger
+  status          BugGuardRunStatus @default(RUNNING)
+  startedById     String?
+  startedAt       DateTime          @default(now())
+  finishedAt      DateTime?
+  /// [{ key, area, label, status, found, ms, note }] (modules/bug-guard/types.ts CheckResult).
+  checks          Json              @default("[]")
+  urgent          Int               @default(0)
+  important       Int               @default(0)
+  later           Int               @default(0)
+  /// Found for the first time in this run, and put right since the last one.
+  newCount        Int               @default(0)
+  fixedCount      Int               @default(0)
+  /// The Full check it asked GitHub for (every screen, PDF and the layout checks).
+  fullCheckRunId  String?
+  /// When that Full check's findings were taken in (it reports later, from GitHub).
+  fullCheckSeenAt DateTime?
+  /// Why it stopped, or what it could not check, in plain words.
+  note            String?
+  reportSentAt    DateTime?
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, startedAt])
+  @@index([status])
+}
+
+enum BugGuardTrigger {
+  SCHEDULE
+  NOW
+  TELEGRAM
+  /// Again after a fix was merged or a correction applied.
+  AFTER_FIX
+}
+
+enum BugGuardRunStatus {
+  RUNNING
+  DONE
+  FAILED
+}
+
+/// One problem Bug Guard found, kept from run to run by its key: what is wrong,
+/// where, why it matters, the proposed fix, and what became of it.
+model BugGuardFinding {
+  id           String                @id @default(cuid())
+  companyId    String
+  /// The same problem keeps the same key ("data.stock:<id>").
+  key          String
+  check        String
+  area         BugGuardArea
+  severity     BugGuardSeverity
+  /// In simple Bengali (Western digits).
+  title        String
+  href         String?
+  place        String?
+  why          String
+  fix          String
+  fixKind      BugGuardFixKind
+  /// [{ label, value }]
+  evidence     Json?
+  /// The exact correction (before -> after) for DATA, the safe step for SECURITY,
+  /// the safe facts for Claude Code for CODE (modules/bug-guard/types.ts).
+  correction   Json?
+  action       Json?
+  code         Json?
+  status       BugGuardFindingStatus @default(OPEN)
+  snoozedUntil DateTime?
+  firstRunId   String?
+  lastRunId    String?
+  firstSeenAt  DateTime              @default(now())
+  lastSeenAt   DateTime              @default(now())
+  seenCount    Int                   @default(1)
+  /// When a run no longer found it (status GONE or FIXED).
+  goneAt       DateTime?
+  /// Claude Code's request for a code fix (ClaudeCodeRequest).
+  requestId    String?
+  /// Whether the owner has heard of it (sent in a report).
+  reportedAt   DateTime?
+  decidedById  String?
+  decidedAt    DateTime?
+
+  company     Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  corrections BugGuardCorrection[]
+
+  @@unique([companyId, key])
+  @@index([companyId, status])
+}
+
+enum BugGuardArea {
+  APP
+  DATA
+  SECURITY
+  PRODUCT
+  AI
+}
+
+enum BugGuardSeverity {
+  URGENT
+  IMPORTANT
+  LATER
+}
+
+enum BugGuardFixKind {
+  CODE
+  DATA
+  SECURITY
+  MANUAL
+  NONE
+}
+
+enum BugGuardFindingStatus {
+  OPEN
+  /// The owner chose Ignore: not reported again (unless it gets worse).
+  IGNORED
+  /// "Remind me later": quiet until snoozedUntil.
+  SNOOZED
+  /// A fix is on its way (a pull request, a prepared correction).
+  FIXING
+  FIXED
+  /// A later run did not find it any more.
+  GONE
+}
+
+/// A data or accounting correction: prepared, then applied with the owner's PIN
+/// after a backup, and undoable. Never edits or deletes history: a stored total
+/// is put back to what its records add up to, or an adjusting entry is posted.
+model BugGuardCorrection {
+  id                 String                   @id @default(cuid())
+  companyId          String
+  findingId          String
+  /// The plan, exactly as shown to the owner (types.ts CorrectionPlan).
+  plan               Json
+  /// Before -> after, in Bengali.
+  summary            String
+  status             BugGuardCorrectionStatus @default(PREPARED)
+  /// The backup made just before it was applied.
+  backupRunId        String?
+  journalEntryId     String?
+  undoJournalEntryId String?
+  preparedById       String?
+  preparedByGuard    Boolean                  @default(false)
+  appliedById        String?
+  appliedAt          DateTime?
+  undoneById         String?
+  undoneAt           DateTime?
+  error              String?
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
+
+  company Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  finding BugGuardFinding @relation(fields: [findingId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, status])
+  @@index([findingId])
+}
+
+enum BugGuardCorrectionStatus {
+  PREPARED
+  /// Waiting for its backup to finish.
+  BACKING_UP
+  APPLIED
+  UNDONE
+  FAILED
+  /// The figures changed since it was prepared: prepare it again.
+  STALE
+  /// The owner cancelled it: nothing changed.
+  CANCELLED
+}
+
+/// Bug Guard's own audit log: every check, finding, fix, who approved it and the result.
+model BugGuardEvent {
+  id           String   @id @default(cuid())
+  companyId    String
+  runId        String?
+  findingId    String?
+  correctionId String?
+  /// RUN, FOUND, GONE, REPORT, FIX_ASKED, PREPARED, APPLIED, UNDONE, IGNORED,
+  /// SNOOZED, REOPENED, SESSION_ENDED, SOURCE_BLOCKED, SOURCE_UNBLOCKED, SETTINGS, FAILED.
+  kind         String
+  /// Who approved it; none when Bug Guard did it by itself.
+  byId         String?
+  summary      String
+  createdAt    DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  by      User?   @relation("BugGuardEventBy", fields: [byId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, createdAt])
+  @@index([findingId])
+}
+
+/// A login source (an IP address) Bug Guard blocked after repeated failed
+/// sign-ins, or the owner did. Sign-in from it is refused until blockedUntil.
+/// companyId: the store whose Bug Guard blocked it (sign-in is for the whole site).
+model LoginBlock {
+  id           String    @id @default(cuid())
+  companyId    String?
+  source       String
+  reason       String
+  failures     Int       @default(0)
+  blockedAt    DateTime  @default(now())
+  blockedUntil DateTime
+  liftedAt     DateTime?
+  liftedById   String?
+
+  company Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
+
+  @@index([source, blockedUntil])
+}
+
+/// An error the server hit while showing a screen, answering the API or running
+/// a job (instrumentation.ts, lib/result.ts): the route pattern and the error's
+/// type and stack lines, never a screen's text or a person's data.
+model ServerError {
+  id        String   @id @default(cuid())
+  /// The store, when known (null: the server itself).
+  companyId String?
+  at        DateTime @default(now())
+  /// render, route, action, proxy, api or job.
+  routeType String
+  method    String?
+  /// The route pattern ("/sales/orders/[id]") or the job's kind.
+  path      String
+  errorName String
+  /// The error's message, cut short, with numbers and addresses taken out.
+  message   String
+  stack     String[]
+  digest    String?
+  errorId   String?
+
+  company Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([at])
+  @@index([companyId, at])
+}
+
+/// How the ERP is used, counted per day: screens opened, forms left half done
+/// (their route patterns only, never what was typed in a form), and the words of
+/// Help searches that found nothing (as typed; shown to the owner in the ERP only).
+model UsageCount {
+  id        String    @id @default(cuid())
+  companyId String
+  /// "YYYY-MM-DD" (Bangladesh time).
+  day       String
+  kind      UsageKind
+  /// The screen's route pattern, or the words searched in Help.
+  subject   String
+  count     Int       @default(0)
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, day, kind, subject])
+  @@index([companyId, kind, day])
+}
+
+enum UsageKind {
+  VIEW
+  ABANDONED
+  HELP_MISS
 }

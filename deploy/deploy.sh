@@ -28,6 +28,8 @@ take_update_lock
 
 say "Preparing the data folders in $DATA_DIR"
 prepare_folders
+mark_data_folder || true
+prepare_https || { rm -f "$DATA_DIR/caddy/tls/cloudflare.caddy" && choose_caddy; }
 prepare_demo_site
 
 # The version running now is kept, so a failed update can go back to it.
@@ -54,7 +56,9 @@ fi
 say "Building the app (this takes a few minutes)"
 build=(build)
 if [ "$pull" = 1 ]; then
-  compose pull db caddy
+  compose pull db
+  # Caddy with Cloudflare's module is built here (prepare_https), not downloaded.
+  if [ "$CADDY_IMAGE" = "$PLAIN_CADDY" ]; then compose pull caddy; fi
   build+=(--pull)
 fi
 if ! compose "${build[@]}"; then
@@ -150,12 +154,20 @@ if [ -n "$pending" ]; then
   compose up -d caddy
 fi
 
-# Backups: the weekly test restore's temporary database, Restore from the Backups
-# screen, and clearing safety copies after 24 hours. None of it can fail the update.
+# Backups: the monthly restore drill's temporary database, Restore from the Backups
+# screen, locking the settings when the backup key changes, clearing safety copies
+# after 24 hours, and what every backup takes from the server (this version's code
+# and the locked settings). None of it can fail the update.
 allow_test_restores ||
-  say "The weekly test restore may not make its temporary database; it says so on the Backups screen"
+  say "The monthly restore drill may not make its temporary database; it says so on the Backups screen"
 install_backup_helpers ||
   say "Restore from the Backups screen is not set up on this server (no systemd); restore with deploy/restore.sh"
+install_host_status ||
+  say "Bug Guard cannot see this server's own updates; it says nothing about them"
+record_host_files ||
+  say "The backups could not take this version's code or settings this time; the Backups screen says what is missing"
+forget_github_token || true
+forget_secrets_in_history || true
 
 # The demo site starts after the ERP itself, so the ERP never waits on it.
 if [ -n "$DEMO_DOMAIN" ]; then

@@ -1,16 +1,21 @@
-# The restore drill: proves that the one command on the Backups screen builds a
+# The restore drill: proves that the one command in the restore guide builds a
 # working ERP on a fresh Ubuntu server from a backup in Google Drive, and times it.
 # GitHub's runner is a fresh Ubuntu 24.04 virtual machine on Azure, like the ERP's
 # server; Docker is taken off it first, so the command installs everything itself.
 #   1. "Old server": the demo data in a database of its own; the owner's steps on the
-#      Backups screen (recovery key, Google Drive, Back up now) run on the app's own
-#      services, until the locked backup is in Drive and checked.
-#   2. "New server": deploy/bootstrap.sh, exactly as the Backups screen shows it,
-#      with the web address "localhost" (HTTPS from Caddy's own certificate).
-#   3. The restored ERP answers over HTTPS, every screen opened as the owner, and
-#      its rows match the old server's.
-# Google's part (the phone sign-in and Drive) is played by scripts/fake-google.ts:
-# a real Google account cannot be used here. The real sign-in, the real DNS and the
+#      Backups screen (Google Drive, recovery key kept in Drive), what deploy.sh
+#      leaves for the backups (the code bundle, the version, deploy/.env locked with
+#      the owner's public key), then Back up now, until the backup is in Drive and
+#      checked.
+#   2. "New server": the command exactly as the guide prints it for this commit
+#      (downloaded from raw.githubusercontent.com, checked with sha256sum, no GitHub
+#      sign-in), with the web address "localhost" (HTTPS from Caddy's own
+#      certificate). The answers a person types come from a file only its owner can
+#      read; the recovery key is not in it: the restore reads it from Drive.
+#   3. The command itself compares every table and file with the backup's list; the
+#      restored ERP answers over HTTPS.
+# Google's part (the phone sign-in and Drive) is played by scripts/fake-google.ts: a
+# real Google account cannot be used here. The real sign-in, Cloudflare and the
 # Let's Encrypt certificate are not part of the drill.
 name: Restore drill
 
@@ -18,8 +23,8 @@ on:
   pull_request:
     paths:
       - "deploy/**"
-      - "scripts/drive-restore.ts"
       - "scripts/restore-drill.ts"
+      - "scripts/lock-settings.ts"
       - "scripts/fake-google.ts"
       - "src/modules/backups/**"
       - ".github/workflows/restore-drill.yml"
@@ -36,15 +41,21 @@ jobs:
   drill:
     name: New server from a Drive backup
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 75
     env:
       OLD_DB: postgresql://drill:drill@localhost:5432/extras_demo?schema=public
       SEED_ADMIN_EMAIL: owner@drill.test
       GOOGLE_DRIVE_CLIENT_ID: drill.apps.googleusercontent.com
-      GOOGLE_DRIVE_CLIENT_SECRET: drill-secret
+      GOOGLE_DRIVE_CLIENT_SECRET: drill-secret-not-real
       FAKE: http://localhost:9400
+      # The commit the restore command is pinned to: this pull request's own.
+      COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.COMMIT }}
+          # The whole history, as on the server: the code bundle must make the next one.
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -78,7 +89,15 @@ jobs:
             "SELECT \"passwordHash\" FROM \"User\" WHERE email = '$SEED_ADMIN_EMAIL'")" \
             npx tsx prisma/demo/seed-demo.ts
 
-      - name: "Old server: recovery key, Google Drive, Back up now"
+      - name: "Old server: its settings (deploy/.env)"
+        run: |
+          sudo APP_DOMAIN=localhost ACME_EMAIL=owner@drill.test SEED_ADMIN_EMAIL="$SEED_ADMIN_EMAIL" \
+            SEED_ADMIN_NAME=Owner SEED_COMPANIES=Extas DATA_DIR=/srv/extras-erp \
+            ./deploy/configure.sh </dev/null
+          sudo install -m 600 -o "$(id -u)" deploy/.env "$RUNNER_TEMP/old-server.env"
+          sudo rm deploy/.env
+
+      - name: "Old server: Google Drive, recovery key, what deploy.sh leaves, Back up now"
         env:
           DATABASE_URL: ${{ env.OLD_DB }}
           BACKUP_DIR: ${{ runner.temp }}/old-backups
@@ -86,12 +105,26 @@ jobs:
           PG_DUMP_PATH: /usr/lib/postgresql/16/bin/pg_dump
           GOOGLE_OAUTH_BASE: ${{ env.FAKE }}
           GOOGLE_DRIVE_BASE: ${{ env.FAKE }}
-          RECOVERY_KEY_OUT: ${{ runner.temp }}/recovery-key
-          FACTS_OUT: ${{ runner.temp }}/old-server.json
+          COMMAND_OUT: ${{ runner.temp }}/restore-command.txt
         run: |
           mkdir -p "$BACKUP_DIR" "$UPLOAD_DIR"
-          # The old server's own key: the new server must carry it over from the backup.
-          ENCRYPTION_KEY="$(openssl rand -hex 32)" npx tsx scripts/restore-drill.ts
+          # The old server's own key, from its settings: the new server carries it over.
+          ENCRYPTION_KEY="$(sed -n 's/^ENCRYPTION_KEY=//p' "$RUNNER_TEMP/old-server.env")"
+          export ENCRYPTION_KEY
+          npx tsx scripts/restore-drill.ts keys
+          # What deploy/lib.sh (record_host_files, lock_settings) leaves on a server.
+          host="$BACKUP_DIR/.host"
+          mkdir -p "$host"
+          git bundle create "$host/code.bundle" HEAD
+          printf '{"commit":"%s","bootstrapSha256":"%s","deployedAt":"%s","version":"%s"}\n' \
+            "$(git rev-parse HEAD)" "$(git show HEAD:deploy/bootstrap.sh | sha256sum | cut -d' ' -f1)" \
+            "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(node -p 'require("./package.json").version')" >"$host/version.json"
+          KEY_FILE="$BACKUP_DIR/backup-public-key.json" OUT_DIR="$host" \
+            npx tsx scripts/lock-settings.ts <"$RUNNER_TEMP/old-server.env"
+          mv "$host/settings.env.locked.new" "$host/settings.env.locked"
+          mv "$host/settings.env.json.new" "$host/settings.env.json"
+          rm "$RUNNER_TEMP/old-server.env"
+          npx tsx scripts/restore-drill.ts backup
           sudo systemctl stop postgresql.service
 
       - name: Take Docker off the runner (a fresh server has none)
@@ -101,50 +134,51 @@ jobs:
           sudo rm -rf /var/lib/docker /etc/docker /usr/libexec/docker /usr/local/bin/docker-compose
           sudo rm -f /usr/bin/docker /usr/local/bin/docker
           if command -v docker; then echo "::error::Docker is still installed"; exit 1; fi
-          # The stand-in for Google is on this machine: the new server's tools reach it
-          # through Docker's bridge, which the firewall would otherwise close.
-          sudo ufw allow 9400/tcp comment "restore drill: stand-in for Google"
+          # Room on the disk, as on the 64 GB disk the guide asks for (the command needs 20 GB).
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
 
-      - name: "New server: the one command from the Backups screen"
-        env:
-          GH_TOKEN: ${{ github.token }}
-          BRANCH: ${{ github.head_ref || github.ref_name }}
+      - name: "New server: the one command from the restore guide"
         run: |
           start=$(date +%s)
-          # What the Backups screen shows, with the answers given up front.
-          curl -fsSL -H "Accept: application/vnd.github.raw" -H "Authorization: Bearer $GH_TOKEN" \
-            "https://api.github.com/repos/$GITHUB_REPOSITORY/contents/deploy/bootstrap.sh?ref=$BRANCH" -o bootstrap.sh
-          sudo GITHUB_REPOSITORY="$GITHUB_REPOSITORY" GITHUB_TOKEN="$GH_TOKEN" BRANCH="$BRANCH" \
-            GOOGLE_CLIENT_ID="$GOOGLE_DRIVE_CLIENT_ID" GOOGLE_CLIENT_SECRET="$GOOGLE_DRIVE_CLIENT_SECRET" \
-            GOOGLE_OAUTH_BASE=http://host.docker.internal:9400 GOOGLE_DRIVE_BASE=http://host.docker.internal:9400 \
-            APP_DOMAIN=localhost ACME_EMAIL=owner@drill.test PICK=newest DEMO_SITE=off \
-            RECOVERY_KEY="$(cat "$RUNNER_TEMP/recovery-key")" \
-            bash bootstrap.sh </dev/null 2>&1 | tee "$RUNNER_TEMP/bootstrap.log"
+          # What a person types, from a file only its owner can read (the drill has no keyboard).
+          answers="$RUNNER_TEMP/answers"
+          install -m 600 /dev/null "$answers"
+          printf '%s\n' "google_client_id=$GOOGLE_DRIVE_CLIENT_ID" \
+            "google_client_secret=$GOOGLE_DRIVE_CLIENT_SECRET" "pick=" "dns=" >"$answers"
+          cat "$RUNNER_TEMP/restore-command.txt"
+          mkdir -p "$RUNNER_TEMP/new-server"
+          cd "$RUNNER_TEMP/new-server"
+          # The command as the guide prints it; only its last line also names the
+          # stand-in for Google and the answers file.
+          sed -e 's#^sudo bash restore.sh#sudo RESTORE_ANSWERS="$1" GOOGLE_OAUTH_BASE="$2" GOOGLE_DRIVE_BASE="$2" bash restore.sh#' \
+            "$RUNNER_TEMP/restore-command.txt" >command.sh
+          grep -q 'RESTORE_ANSWERS' command.sh
+          set -o pipefail
+          bash command.sh "$answers" "$FAKE" </dev/null 2>&1 | tee "$RUNNER_TEMP/bootstrap.log"
           took=$(($(date +%s) - start))
           echo "TOOK=$took" >>"$GITHUB_ENV"
 
       - name: Check the new server
         run: |
-          cd /opt/extras-erp
           curl -skf https://localhost/api/health
           echo
-          grep -q "Full check: every screen opened." "$RUNNER_TEMP/bootstrap.log"
+          grep -E "^    All [0-9,]+ records and [0-9,]+ files are back\.$" "$RUNNER_TEMP/bootstrap.log"
+          grep -qE "Checks: (full check|Bug Guard ran[^;]*); 0 problem\(s\) found\." "$RUNNER_TEMP/bootstrap.log"
+          # localhost has no web address to move: the restored ERP is not left on standby (G2).
+          if grep -q "Note W10" "$RUNNER_TEMP/bootstrap.log"; then
+            echo "::error::The restored ERP was left on standby"
+            exit 1
+          fi
+          grep -q "Your recovery key is kept in Google Drive: it is filled in by itself" "$RUNNER_TEMP/bootstrap.log"
           docker --version
-          python3 - "$RUNNER_TEMP/old-server.json" <<'PY'
-          import json, subprocess, sys
-          old = json.load(open(sys.argv[1]))
-          bad = []
-          for table, count in old["counts"].items():
-              out = subprocess.run(
-                  ["sudo", "docker", "compose", "-f", "deploy/compose.yml", "--env-file", "deploy/.env",
-                   "exec", "-T", "db", "psql", "-U", "postgres", "-d", "extras_erp", "-tAc",
-                   f'SELECT count(*) FROM "{table}"'],
-                  check=True, capture_output=True, text=True).stdout.strip()
-              print(f"{table}: old server {count}, new server {out}")
-              if int(out) != count:
-                  bad.append(table)
-          sys.exit(f"Rows differ in: {', '.join(bad)}" if bad else 0)
-          PY
+          # No secret in the log.
+          if sudo grep -q -e "$GOOGLE_DRIVE_CLIENT_SECRET" -e "restore drill practice key" /var/log/extas-erp-restore.log; then
+            echo "::error::A secret is in the restore log"
+            exit 1
+          fi
+          # Nothing of the opened backup stays on the disk.
+          sudo test ! -e /var/lib/extas-erp-restore
 
       - name: Report
         if: always()
@@ -152,11 +186,11 @@ jobs:
           {
             echo "## Restore drill"
             if [ -n "${TOOK:-}" ]; then
-              echo "The one command took **$((TOOK / 60)) min $((TOOK % 60)) s** on a fresh Ubuntu 24.04 VM (install, build, Drive download, restore, full check)."
+              echo "The one command took **$((TOOK / 60)) min $((TOOK % 60)) s** on a fresh Ubuntu 24.04 VM (install, build, Drive download, restore, checks)."
             fi
             echo
             echo '```'
-            grep -E '^(==>|Error|Restored|Full check|The ERP)' "$RUNNER_TEMP/bootstrap.log" 2>/dev/null | tail -60 || true
+            grep -E '^(==>|Error|Note|    All|    Not everything)' "$RUNNER_TEMP/bootstrap.log" 2>/dev/null | tail -80 || true
             echo '```'
           } >>"$GITHUB_STEP_SUMMARY"
 

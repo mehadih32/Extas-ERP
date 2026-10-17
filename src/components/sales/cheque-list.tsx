@@ -68,7 +68,7 @@ export function ChequeList({
         {rows.map((c) => (
           <li key={c.id} className="grid min-w-0 grid-cols-1 gap-3 rounded-lg border bg-card p-4">
             <div className="flex items-start justify-between gap-3">
-              <p className="eyebrow min-w-0 truncate">
+              <p className="eyebrow min-w-0 break-words">
                 Cheque {c.chequeNo} · dated {formatDay(c.chequeDate)}
               </p>
               <div className="-my-1 shrink-0">

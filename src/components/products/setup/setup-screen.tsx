@@ -335,7 +335,7 @@ export function SetupScreen({ setup }: { setup: CatalogSetup }) {
                 const row = (
                   <>
                     <span className="w-14 font-medium break-words">{size.name}</span>
-                    <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+                    <span className="min-w-0 flex-1 text-xs break-words text-muted-foreground">
                       {usage(size.variantCount, "SKU", "SKUs")}
                     </span>
                     {canManage && (
@@ -530,10 +530,10 @@ export function SetupScreen({ setup }: { setup: CatalogSetup }) {
                 <li key={w.id} className="flex min-h-14 items-center gap-3 py-2">
                   <div className="min-w-0 flex-1">
                     <p className="flex items-center gap-2 font-medium">
-                      <span className="truncate">{w.name}</span>
+                      <span className="break-words">{w.name}</span>
                       {w.isDefault && <Badge variant="secondary">Default</Badge>}
                     </p>
-                    <p className="truncate text-xs text-muted-foreground">
+                    <p className="text-xs break-words text-muted-foreground">
                       {[w.address, holding(w)].filter(Boolean).join(" · ")}
                     </p>
                   </div>

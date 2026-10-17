@@ -107,7 +107,11 @@ places disagree, the newer instruction wins.
 ## 5. Help Center (CRITICAL RULE, forever)
 
 - Every feature added, changed or removed updates the Bengali Help Center (`src/modules/help/content/*.ts`) in
-  the same PR. A changed screen updates its guide and its pictures in the same PR; the tests fail otherwise.
+  the same PR. A changed screen updates its guide and its pictures in the same PR. What the tests check: every
+  button, tab, option and field name a screen shows is explained in the `fields` list ("প্রতিটা বোতাম আর ঘরের
+  মানে") of a guide that covers that screen (a quote in the steps does not count), and every label a guide
+  quotes is in the app's code. They cannot tell whether a guide still says what the screen does: the author and
+  the reviewer check that.
 - Each screen's guide has What, Why (with real buying-house examples) and How (step by step, tips, common
   mistakes, what happens next), covering every section, tab, button and option on it.
 - Guides quote the app's English labels exactly, in “curly quotes”; the test checks each quoted label exists in
@@ -115,6 +119,12 @@ places disagree, the newer instruction wins.
 - Every page has a guide route, every menu item a help section, every section an icon. Picture ids are
   `<slug>-<n>`, unique, with Bengali captions. Pictures are taken automatically from demo data.
 - New Bengali text uses Western digits (0-9).
+- Pictures: one per guide, of its own page, with a red numbered mark on what each step is about, taken on the
+  demo site's sample data (`npm run help:shots`, or the "Help pictures" workflow on GitHub). A changed screen
+  brings its new picture in the same PR (the picture test fails on a stale one). Only Claude Code fix branches
+  (`claude/issue-*`) and `main` may keep old pictures, because Claude Code on GitHub cannot take them: Bug Guard
+  lists them under Can wait. Before every Release PR every picture is taken again (`ALL=1 npm run help:shots` on
+  a copy of the demo data, or the workflow with "all").
 
 ## 6. Safety on the live site
 
@@ -157,6 +167,9 @@ money, or turn off backups or its own checks. Every check, finding, fix, approva
 
 ## 9. Decisions log (newest first)
 
+- 2026-10-17 (v6.4 review): Help pictures may be out of date only on Claude Code fix branches (`claude/issue-*`)
+  and on `main`; Bug Guard lists those guides and every release retakes all pictures. A screen's word counts as
+  explained only in a guide's `fields` list.
 - 2026-10-16 (v6.4): CLAUDE.md holds every standing rule. Fix PRs count as "Fix ready" only when Claude's GitHub
   App made them for that exact issue, from a branch in this repo, into `main`. GitHub issues never carry screen
   text or business data. The Claude Action may not push to `main` or run git write commands. Full check sessions

@@ -190,7 +190,7 @@ export default async function HrOverviewPage() {
                         <span className="block text-sm font-medium text-primary">
                           {l.employee.name}
                         </span>
-                        <span className="block truncate text-[0.8125rem] text-muted-foreground">
+                        <span className="block text-[0.8125rem] break-words text-muted-foreground">
                           {l.leaveType.name} · {leaveDates(l)}
                         </span>
                       </span>
@@ -292,7 +292,7 @@ export default async function HrOverviewPage() {
                     key={r.employee.id}
                     className="flex items-start justify-between gap-3 py-3 first:pt-0 last:pb-0"
                   >
-                    <span className="min-w-0 truncate text-sm">{r.employee.name}</span>
+                    <span className="min-w-0 text-sm break-words">{r.employee.name}</span>
                     <span className="text-[0.8125rem] whitespace-nowrap text-muted-foreground">
                       {r.leaveType}
                       {r.halfDay ? ", half day" : ""}
@@ -304,7 +304,7 @@ export default async function HrOverviewPage() {
                     key={e.id}
                     className="flex items-start justify-between gap-3 py-3 first:pt-0 last:pb-0"
                   >
-                    <span className="min-w-0 truncate text-sm">{e.name}</span>
+                    <span className="min-w-0 text-sm break-words">{e.name}</span>
                     <span className="text-[0.8125rem] whitespace-nowrap text-destructive">
                       Absent
                     </span>
@@ -437,7 +437,7 @@ export default async function HrOverviewPage() {
                       }
                       className={rowLink}
                     >
-                      <span className="min-w-0 truncate text-sm font-medium">{d.name}</span>
+                      <span className="min-w-0 text-sm font-medium break-words">{d.name}</span>
                       <span className="text-sm whitespace-nowrap text-muted-foreground">
                         {count(d.count)}
                       </span>

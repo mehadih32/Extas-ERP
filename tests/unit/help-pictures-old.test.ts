@@ -20,8 +20,12 @@ import { guideHash, screenFingerprint, shellFiles, shotRoute } from "../../scrip
  */
 
 const ROOT = path.resolve(__dirname, "../..");
-const tmp = mkdtempSync(path.join(os.tmpdir(), "help-pictures-old-"));
-afterAll(() => rmSync(tmp, { recursive: true, force: true }));
+// Made on first use, so a run that skips these tests leaves nothing behind.
+let made = "";
+const tmp = () => (made ||= mkdtempSync(path.join(os.tmpdir(), "help-pictures-old-")));
+afterAll(() => {
+  if (made) rmSync(made, { recursive: true, force: true });
+});
 
 describe("Which branch may leave Help pictures out of date (v6.4 L1)", () => {
   it("only a Claude Code fix branch, and main once a pull request is in", () => {
@@ -63,8 +67,6 @@ describe("The list of out-of-date pictures the build leaves for Bug Guard (v6.4 
     (a) => a.slug === "sales-quotation",
   )!;
   const route = shotRoute(guide);
-  const file = path.join(tmp, "shot.webp");
-  writeFileSync(file, "");
   const fresh = {
     src: "/help/shots/sales-quotation.webp",
     width: 1,
@@ -119,7 +121,7 @@ describe("The list of out-of-date pictures the build leaves for Bug Guard (v6.4 
 describe("Bug Guard reports out-of-date Help pictures (v6.4 L1)", () => {
   const ctx = {} as CheckContext;
   const report = (body: unknown) => {
-    const at = path.join(tmp, `report-${Math.random().toString(36).slice(2)}.json`);
+    const at = path.join(tmp(), `report-${Math.random().toString(36).slice(2)}.json`);
     writeFileSync(at, JSON.stringify(body));
     process.env.HELP_PICTURES_REPORT = at;
   };
@@ -156,7 +158,7 @@ describe("Bug Guard reports out-of-date Help pictures (v6.4 L1)", () => {
   it("says nothing when every picture is up to date, or the build left no list", async () => {
     report({ made: "2026-10-17T01:00:00.000Z", old: [] });
     expect(await oldHelpPictures.run(ctx)).toEqual([]);
-    process.env.HELP_PICTURES_REPORT = path.join(tmp, "missing.json");
+    process.env.HELP_PICTURES_REPORT = path.join(tmp(), "missing.json");
     expect(await oldHelpPictures.run(ctx)).toEqual([]);
     report({ broken: true });
     expect(await oldHelpPictures.run(ctx)).toEqual([]);

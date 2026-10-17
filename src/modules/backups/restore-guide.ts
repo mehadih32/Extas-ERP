@@ -112,6 +112,12 @@ export const GUIDE_NEEDS: Text[] = [
   },
 ];
 
+/** When nothing comes from GitHub (G17): the copies in the Drive backup folder. */
+const NO_GITHUB: Text = {
+  bn: "GitHub থেকে কিছুতেই না নামলে (GitHub বন্ধ, বা রিপোজিটরি আর খোলা নেই): Google Drive-এর “Extas ERP Backups” ফোল্ডারে restore.sh আর restore-tool.py আছে। দুটিই কম্পিউটারে নামান, WinSCP দিয়ে সার্ভারের হোম ফোল্ডারে রাখুন (B-এর ঠিকানা, নাম ও পাসওয়ার্ড দিয়ে), তারপর PuTTY-তে কমান্ডের শেষ দুই লাইন (echo দিয়ে শুরু) পেস্ট করে চালান।",
+  en: "If nothing comes from GitHub (GitHub is down, or the repository is no longer open): the “Extas ERP Backups” folder in Google Drive has restore.sh and restore-tool.py. Download both to your computer, put them in the server's home folder with WinSCP (with the address, user name and password from B), then paste the command's last two lines (from echo) in PuTTY and run them.",
+};
+
 export const GUIDE_RULES: Text[] = [
   {
     bn: "ধাপগুলো ক্রম অনুযায়ী করুন, কোনোটা বাদ দেবেন না।",
@@ -124,6 +130,10 @@ export const GUIDE_RULES: Text[] = [
   {
     bn: "কমান্ড আবার চালালে কোনো ক্ষতি হয় না: যেখানে থেমেছিল সেখান থেকে নিরাপদে আবার শুরু করে।",
     en: "Running the command again does no harm: it safely starts over from where it stopped.",
+  },
+  {
+    bn: "অনুশীলনের জন্য রিস্টোর (পুরনো ERP চালু রেখে) করা নিরাপদ: D8-এ শুধু Enter চাপুন; নতুন কপি standby-তে থাকে, কোনো ব্যাকআপ বা রিমাইন্ডার পাঠায় না। শেষে Azure-এ অনুশীলনের সার্ভারটি মুছে দিন।",
+    en: "A practice restore (with the old ERP still running) is safe: just press Enter at D8; the new copy waits on standby and sends no backups or reminders. Delete the practice server in Azure at the end.",
   },
 ];
 
@@ -562,13 +572,13 @@ export const GUIDE_PARTS: GuidePart[] = [
         id: "D8",
         title: { bn: "ওয়েব ঠিকানা এই সার্ভারে", en: "The web address to this server" },
         text: {
-          bn: "“Point ... to this server” প্রশ্ন এলে Enter চাপুন: ওয়েব ঠিকানা Cloudflare-এ নতুন সার্ভারের দিকে ঘুরে যাবে।",
-          en: "When it asks “Point ... to this server”, press Enter: the web address is pointed at the new server in Cloudflare.",
+          bn: "“To point ... to this server” প্রশ্ন এলে আপনার ওয়েব ঠিকানা (যেমন erp.extasbd.com) টাইপ করে Enter চাপুন: ওয়েব ঠিকানা Cloudflare-এ নতুন সার্ভারের দিকে ঘুরে যাবে। শুধু Enter চাপলে ঠিকানা যেমন ছিল তেমনই থাকে, আর নতুন ERP অপেক্ষায় (standby) থাকে: কোনো ব্যাকআপ নেয় না, কোনো রিমাইন্ডার পাঠায় না।",
+          en: "When it asks “To point ... to this server”, type your web address (for example erp.extasbd.com) and press Enter: the web address is pointed at the new server in Cloudflare. Just Enter leaves the address as it is, and the new ERP waits on standby: it makes no backups and sends no reminders.",
         },
         picture: "putty-dns",
         tip: {
-          bn: "Backups পাতায় Cloudflare টোকেন রাখা না থাকলে এই প্রশ্ন আসে না; তখন শেষে F6 ধাপটি করুন।",
-          en: "Without a Cloudflare token saved on the Backups screen this question does not come; then do step F6 at the end.",
+          bn: "পুরনো ERP এখনো চললে কমান্ড তা বলে দেয় (“still answers from another server”)। শুধু অনুশীলনের জন্য রিস্টোর করলে (পুরনো ERP-ই কাজে থাকবে) এখানে শুধু Enter চাপুন, আর শেষে Azure-এ অনুশীলনের সার্ভারটি মুছে দিন। Backups পাতায় Cloudflare টোকেন রাখা না থাকলে এই প্রশ্ন আসে না; তখন শেষে F6 ধাপটি করুন।",
+          en: "If the old ERP still runs, the command says so (“still answers from another server”). For a practice run only (the old ERP stays in use), just press Enter here, and delete the practice server in Azure at the end. Without a Cloudflare token saved on the Backups screen this question does not come; then do step F6 at the end.",
         },
       },
     ],
@@ -665,8 +675,8 @@ export const GUIDE_PARTS: GuidePart[] = [
           en: "Change the web address by hand (only if needed)",
         },
         text: {
-          bn: "ওয়েব ঠিকানা না খুললে (W01 বা W03): Cloudflare-এ আপনার ডোমেইন খুলে “DNS” > “Records”-এ erp (আর demo) লাইনের “Edit” চাপুন, “IPv4 address”-এ A13-এর IP দিন, “Save” চাপুন। কয়েক মিনিটে খুলবে।",
-          en: "If the web address does not open (W01 or W03): in Cloudflare open your domain, go to “DNS” > “Records”, click “Edit” on the erp (and demo) line, put the IP from A13 in “IPv4 address”, click “Save”. It opens within a few minutes.",
+          bn: "ওয়েব ঠিকানা না খুললে (W01 বা W03): Cloudflare-এ আপনার ডোমেইন খুলে “DNS” > “Records”-এ erp (আর demo) লাইনের “Edit” চাপুন, “IPv4 address”-এ A13-এর IP দিন, “Save” চাপুন। কয়েক মিনিটে খুলবে। নতুন ERP standby-তে থাকলে (W10) এরপর PuTTY-তে চালান: cd /opt/extras-erp && sudo ./deploy/go-live.sh, আর জিজ্ঞেস করলে আপনার ওয়েব ঠিকানা টাইপ করে Enter চাপুন। এটি শুধু তখনই করুন যখন পুরনো সার্ভার বন্ধ বা আর ব্যবহার হবে না।",
+          en: "If the web address does not open (W01 or W03): in Cloudflare open your domain, go to “DNS” > “Records”, click “Edit” on the erp (and demo) line, put the IP from A13 in “IPv4 address”, click “Save”. It opens within a few minutes. If the new ERP waits on standby (W10), then run in PuTTY: cd /opt/extras-erp && sudo ./deploy/go-live.sh, and type your web address when it asks. Do this only when the old server is off or will not be used again.",
         },
         picture: "cloudflare-dns",
       },
@@ -714,10 +724,10 @@ export const GUIDE_QUESTIONS: GuideQuestion[] = [
     },
   },
   {
-    prompt: "Point ... to this server (...)? Press Enter for yes, or type no: ",
+    prompt: "To point ... to this server (...), type ...; or press Enter to leave it as it is: ",
     answer: {
-      bn: "“Point erp... to this server?”: Enter চাপলে হ্যাঁ। no লিখলে ওয়েব ঠিকানা বদলায় না; তখন F6 করুন (D8)।",
-      en: "“Point erp... to this server?”: Enter means yes. Typing no leaves the web address as it is; then do F6 (D8).",
+      bn: "ওয়েব ঠিকানা এই সার্ভারে আনতে আপনার ওয়েব ঠিকানা টাইপ করে Enter। শুধু Enter চাপলে ঠিকানা বদলায় না আর নতুন ERP standby-তে থাকে; অনুশীলনের জন্য সেটাই ঠিক (D8)।",
+      en: "To bring the web address to this server, type your web address and press Enter. Just Enter leaves it as it is and the new ERP waits on standby; that is right for a practice run (D8).",
     },
   },
   {
@@ -807,8 +817,8 @@ export const GUIDE_ERRORS: GuideError[] = [
     shown: "the restore tool could not be downloaded from GitHub",
     meaning: fix("সার্ভার GitHub-এ পৌঁছাতে পারেনি।", "The server could not reach GitHub."),
     todo: fix(
-      "কয়েক মিনিট পরে কমান্ড আবার চালান। বারবার হলে Azure-এ সার্ভারের ইন্টারনেট (Networking) ঠিক আছে কি না দেখুন।",
-      "Run the command again in a few minutes. If it keeps happening, check the VM's internet (Networking) in Azure.",
+      `কয়েক মিনিট পরে কমান্ড আবার চালান। বারবার হলে Azure-এ সার্ভারের ইন্টারনেট (Networking) ঠিক আছে কি না দেখুন। ${NO_GITHUB.bn}`,
+      `Run the command again in a few minutes. If it keeps happening, check the VM's internet (Networking) in Azure. ${NO_GITHUB.en}`,
     ),
   },
   {
@@ -1055,8 +1065,8 @@ export const GUIDE_ERRORS: GuideError[] = [
     code: "W01",
     shown: "the web address was not changed",
     meaning: fix(
-      "ওয়েব ঠিকানা নিজে নিজে নতুন সার্ভারে ঘোরানো যায়নি (Cloudflare টোকেন রাখা ছিল না, বা আপনি no বলেছেন)।",
-      "The web address could not be pointed at the new server by itself (no Cloudflare token was saved, or you said no).",
+      "ওয়েব ঠিকানা নিজে নিজে নতুন সার্ভারে ঘোরানো হয়নি (Cloudflare টোকেন রাখা ছিল না, বা আপনি ঠিকানা টাইপ না করে শুধু Enter চাপলেন)।",
+      "The web address was not pointed at the new server by itself (no Cloudflare token was saved, or you pressed Enter without typing the address).",
     ),
     todo: fix("F6 ধাপটি করুন।", "Do step F6."),
   },
@@ -1097,12 +1107,12 @@ export const GUIDE_ERRORS: GuideError[] = [
     code: "W05",
     shown: "screen(s) or PDF(s) did not open / Bug Guard found problems",
     meaning: fix(
-      "ERP চলছে, কিন্তু পরীক্ষায় কয়েকটি স্ক্রিন বা PDF খোলেনি।",
-      "The ERP runs, but a few screens or PDFs did not open in the check.",
+      "ERP চলছে, কিন্তু পরীক্ষায় কয়েকটি স্ক্রিন বা PDF খোলেনি, অথবা রিস্টোরের পর Bug Guard জরুরি বা গুরুত্বপূর্ণ কিছু পেয়েছে (বা সব দেখে শেষ করতে পারেনি)।",
+      "The ERP runs, but a few screens or PDFs did not open in the check, or Bug Guard found something urgent or important after the restore (or could not check everything).",
     ),
     todo: fix(
-      "তালিকাটির ছবি তুলে ডেভেলপারকে পাঠান।",
-      "Take a picture of the list and send it to the developer.",
+      "তালিকাটির ছবি তুলে ডেভেলপারকে পাঠান। Bug Guard যা পেয়েছে তা ERP-এর ইনবক্সে আর Telegram-এ আছে; সব দেখা না হলে সে নিজের সময়সূচিতে আবার দেখবে।",
+      "Take a picture of the list and send it to the developer. What Bug Guard found is in the ERP's inbox and on Telegram; if it could not check everything, it checks again on its own schedule.",
     ),
   },
   {
@@ -1138,6 +1148,18 @@ export const GUIDE_ERRORS: GuideError[] = [
     ),
     todo: fix("কিছু করতে হবে না।", "Nothing to do."),
   },
+  {
+    code: "W10",
+    shown: "this ERP waits on standby",
+    meaning: fix(
+      "ওয়েব ঠিকানা এখনো অন্য (পুরনো) সার্ভারের দিকে, তাই নতুন ERP অপেক্ষায় আছে: খোলে, কিন্তু ব্যাকআপ নেয় না, রিমাইন্ডার বা অন্য কিছু নিজে থেকে পাঠায় না। এতে একসঙ্গে দুটি ERP চলে না।",
+      "The web address still points at the other (old) server, so the new ERP waits: it opens, but makes no backups and sends no reminders or anything else by itself. So two ERPs never run at once.",
+    ),
+    todo: fix(
+      "অনুশীলন হলে কিছু করতে হবে না; শেষে Azure-এ অনুশীলনের সার্ভারটি মুছে দিন। এই সার্ভারই কাজে লাগবে (পুরনোটি বন্ধ) হলে F6 ধাপটি করুন: ঠিকানা এখানে আনুন, তারপর sudo ./deploy/go-live.sh চালান।",
+      "For a practice run, nothing to do; delete the practice server in Azure at the end. If this server is the one to use (the old one is off), do step F6: bring the address here, then run sudo ./deploy/go-live.sh.",
+    ),
+  },
 ];
 
 /** Messages from PuTTY, curl, sudo, Google and the browser, and what to do. */
@@ -1170,16 +1192,16 @@ export const OTHER_MESSAGES: OtherMessage[] = [
     shown: "curl: (6) Could not resolve host",
     where: fix("PuTTY, কমান্ডের শুরুতে", "PuTTY, at the start of the command"),
     todo: fix(
-      "সার্ভারের ইন্টারনেট এখনো তৈরি নয়; 2 মিনিট পরে আবার চালান।",
-      "The VM's internet is not ready yet; run it again in 2 minutes.",
+      "সার্ভারের ইন্টারনেট এখনো তৈরি নয়; 2 মিনিট পরে আবার চালান। বারবার হলে ভুলের তালিকায় R06 দেখুন।",
+      "The VM's internet is not ready yet; run it again in 2 minutes. If it keeps happening, see R06 in the list of errors.",
     ),
   },
   {
     shown: "curl: (22) The requested URL returned error: 404",
     where: fix("PuTTY, কমান্ডের শুরুতে", "PuTTY, at the start of the command"),
     todo: fix(
-      "কমান্ডটি পুরো কপি হয়নি; C1 থেকে আবার কপি করুন। আবার হলে Google Drive-এর সবচেয়ে নতুন গাইড থেকে কমান্ড নিন।",
-      "The command was not copied whole; copy it again from C1. If it happens again, take the command from the newest guide in Google Drive.",
+      `কমান্ডটি পুরো কপি হয়নি; C1 থেকে আবার কপি করুন। আবার হলে Google Drive-এর সবচেয়ে নতুন গাইড থেকে কমান্ড নিন। ${NO_GITHUB.bn}`,
+      `The command was not copied whole; copy it again from C1. If it happens again, take the command from the newest guide in Google Drive. ${NO_GITHUB.en}`,
     ),
   },
   {

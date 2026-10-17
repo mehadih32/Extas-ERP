@@ -12,8 +12,10 @@ import { localDay } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
+import type { CompanyContext } from "@/modules/auth/context";
 import {
   type Actor,
+  alertOwner,
   audit,
   backupLock,
   type BackupLock,
@@ -31,6 +33,7 @@ import {
 import { contentsOf, dumpWithCounts, listFiles, packFiles } from "@/modules/backups/contents";
 import { parseCron } from "@/modules/backups/cron";
 import { lockedForPair, lockFile } from "@/modules/backups/crypt";
+import { needRoom, NoRoomError } from "@/modules/backups/disk";
 import * as drive from "@/modules/backups/google-drive";
 import {
   DEFAULT_SCHEDULE,
@@ -44,6 +47,7 @@ import {
 import {
   backupConfigSchema,
   type BackupFileKind,
+  disconnectDriveSchema,
   googleClientSchema,
   listBackupRunsSchema,
 } from "@/modules/backups/schemas";
@@ -296,9 +300,46 @@ export async function getBackupOverview() {
   };
 }
 
-export async function updateBackupConfig(actor: Actor, raw: unknown, meta?: RequestMeta) {
+/** The platform owner working in a company (who can give the PIN), or just the owner. */
+type Owner = Actor | CompanyContext;
+const actorOf = (who: Owner): Actor => ("company" in who ? { userId: who.user.id } : who);
+
+/**
+ * Changes that make the backups less safe (G12) need the owner's PIN, given in
+ * the company they work in, and tell the owner once (inbox and Telegram), so a
+ * stolen session cannot quietly stop them.
+ */
+async function lessSafe(who: Owner, pin: string | undefined, changes: string[]) {
+  if (changes.length === 0) return;
+  if (!("company" in who)) {
+    throw new AppError("FORBIDDEN", "Open Settings > Backups in a company to give your PIN.");
+  }
+  const { requirePin } = await import("@/modules/ai/settings.service");
+  await requirePin(who, pin || undefined, changes.join(" and "));
+}
+
+async function tellLessSafe(who: Owner, done: string[]) {
+  if (done.length === 0 || !("company" in who)) return;
+  const name = who.user.name || who.user.email;
+  await alertOwner(
+    "Backups made less safe",
+    `${name} ${done.join(" and ")} on the Backups screen, with the PIN. If that was not you, change your password and PIN at once and put it back in Settings > Backups.`,
+  );
+}
+
+export async function updateBackupConfig(who: Owner, raw: unknown, meta?: RequestMeta) {
   const input = backupConfigSchema.parse(raw);
   const config = await getBackupConfig();
+  const actor = actorOf(who);
+  const switchingOff = input.isEnabled === false && config.isEnabled;
+  const fewerDays =
+    input.driveKeepDays !== undefined &&
+    input.driveKeepDays !== null &&
+    (config.driveKeepDays === null || input.driveKeepDays < config.driveKeepDays);
+  await lessSafe(who, input.pin, [
+    ...(switchingOff ? ["switch backups off"] : []),
+    ...(fewerDays ? ["keep backups in Google Drive for fewer days"] : []),
+  ]);
   const data: Prisma.BackupConfigUpdateInput = {};
   const said: string[] = [];
   if (input.schedule) {
@@ -358,6 +399,14 @@ export async function updateBackupConfig(actor: Actor, raw: unknown, meta?: Requ
     entityId: config.id,
     summary: `Changed backup settings: ${said.join(", ") || "nothing"}`,
   });
+  await tellLessSafe(who, [
+    ...(switchingOff ? ["switched backups off"] : []),
+    ...(fewerDays
+      ? [
+          `kept backups in Google Drive for ${input.driveKeepDays} days instead of ${config.driveKeepDays === null ? "for ever" : `${config.driveKeepDays} days`}`,
+        ]
+      : []),
+  ]);
   return presentConfig(updated);
 }
 
@@ -485,7 +534,10 @@ export async function checkGoogleSignIn(actor: Actor, meta?: RequestMeta) {
   return { status: "connected", config: presentConfig(await getBackupConfig()) };
 }
 
-export async function disconnectGoogleDrive(actor: Actor, meta?: RequestMeta) {
+export async function disconnectGoogleDrive(who: Owner, raw: unknown, meta?: RequestMeta) {
+  const { pin } = disconnectDriveSchema.parse(raw ?? {});
+  await lessSafe(who, pin, ["disconnect Google Drive"]);
+  const actor = actorOf(who);
   const config = await getBackupConfig();
   if (config.credentialsRef) {
     try {
@@ -510,6 +562,11 @@ export async function disconnectGoogleDrive(actor: Actor, meta?: RequestMeta) {
     entityId: config.id,
     summary: `Disconnected Google Drive${config.googleDriveAccount ? ` (${config.googleDriveAccount})` : ""}; backups stay on the server only`,
   });
+  if (config.credentialsRef) {
+    await tellLessSafe(who, [
+      `disconnected Google Drive${config.googleDriveAccount ? ` (${config.googleDriveAccount})` : ""}, so new backups stay on the server only`,
+    ]);
+  }
   return presentConfig(updated);
 }
 
@@ -962,6 +1019,31 @@ async function executeRun(run: BackupRun): Promise<BackupRun> {
   if (taken || (await exists(path.join(root, stamp)))) stamp = `${stamp}_${run.id.slice(-6)}`;
   const dir = path.join(root, stamp);
   let lock: BackupLock | null = null;
+
+  // Room for it first (G7): twice the last backup's size and a margin, else skipped.
+  try {
+    const last = await prisma.backupRun.findFirst({
+      where: { kind: "BACKUP", status: "SUCCEEDED", sizeBytes: { not: null } },
+      orderBy: { startedAt: "desc" },
+      select: { sizeBytes: true },
+    });
+    await needRoom(root, Number(last?.sizeBytes ?? 0), "backup");
+  } catch (error) {
+    if (!(error instanceof NoRoomError)) throw error;
+    const skipped = await prisma.backupRun.update({
+      where: { id: run.id },
+      data: { status: "FAILED", finishedAt: new Date(), error: error.message },
+    });
+    // The same kind as a failed backup, so the status check does not tell it twice.
+    const { raiseProblem } = await import("@/modules/backups/status");
+    await raiseProblem(
+      "failed",
+      "Backup skipped: the server's disk is nearly full",
+      `The ${stamp} backup was not made. ${error.message}`,
+      run.id,
+    );
+    return skipped;
+  }
 
   try {
     lock = backupLock(config);

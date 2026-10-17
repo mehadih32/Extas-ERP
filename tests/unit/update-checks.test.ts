@@ -184,3 +184,28 @@ describe("auto-deploy.sh", () => {
     expect(auto).toMatch(/rev-parse HEAD\)" != "\$wanted"/);
   });
 });
+
+describe("Caddy with Cloudflare's DNS module (deploy/caddy)", () => {
+  const dockerfile = readFileSync(join(process.cwd(), "deploy", "caddy", "Dockerfile"), "utf8");
+  const lib = readFileSync(join(process.cwd(), "deploy", "lib.sh"), "utf8");
+
+  it("is built from exact versions only: the builder, the Caddy it builds and the module", () => {
+    const version = /^ARG CADDY_VERSION=(\d+\.\d+\.\d+)$/m.exec(dockerfile)?.[1];
+    const cloudflare = /^ARG CLOUDFLARE_MODULE=(v\d+\.\d+\.\d+)$/m.exec(dockerfile)?.[1];
+    expect(version).toBeTruthy();
+    expect(cloudflare).toBeTruthy();
+    const froms = [...dockerfile.matchAll(/^FROM (\S+)/gm)].map((m) => m[1]);
+    expect(froms).toEqual([
+      "caddy:${CADDY_VERSION}-builder-alpine",
+      "caddy:${CADDY_VERSION}-alpine",
+    ]);
+    expect(dockerfile).toMatch(
+      /xcaddy build "v\$\{CADDY_VERSION\}" --with "github\.com\/caddy-dns\/cloudflare@\$\{CLOUDFLARE_MODULE\}"/,
+    );
+  });
+
+  it("is built again at once when deploy/caddy changes, not only every 30 days", () => {
+    expect(lib).toMatch(/--label "extas\.caddy-build=\$build"/);
+    expect(lib).toMatch(/\[ "\$built" != "\$build" \]/);
+  });
+});

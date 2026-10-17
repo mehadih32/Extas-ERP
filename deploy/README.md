@@ -33,6 +33,7 @@ The scripts in this folder do all the work. Each one explains itself at the top.
 | `status.sh`            | Any time: is everything running, latest backups, free disk space       |
 | `logs.sh`              | When something looks wrong                                             |
 | `restore.sh`           | To put the ERP back to a backup                                        |
+| `go-live.sh`           | After a restore left this server on standby, once it is the one to use |
 
 Until the screens are built, the ERP answers its API only (for example `/api/health`); the
 home page shows "not found".
@@ -170,8 +171,11 @@ a restore needs nothing else (no old server, no GitHub sign-in):
 - `manifest.json`: the row count of every table and the size and checksum of every file
 - `backup-keys.json` and the restore guide PDFs (Bangla and English)
 
-`deploy.sh` leaves the code bundle, the version and `deploy/.env` (locked) in
-`/srv/extras-erp/backups/.host` at every update, for the backups to take. The plain
+`deploy.sh` leaves the code bundle, the version, `deploy/.env` (locked) and that version's
+`bootstrap.sh` and `restore-tool.py` in `/srv/extras-erp/backups/.host` at every update, for
+the backups to take. The ERP also keeps the last two, as `restore.sh` and `restore-tool.py`,
+beside the guide in the Drive backup folder: a restore then needs nothing from GitHub (the
+guide's R06 says how). The plain
 settings never leave the server: `scripts/lock-settings.ts` locks them in the tools image,
 with no network, for the owner's public key.
 
@@ -282,11 +286,17 @@ stay public for `raw.githubusercontent.com` to serve it. It:
 4. puts the code from the backup in `/opt/extras-erp` and writes `deploy/.env` from the
    backup's settings;
 5. points the web address (and the demo site's) at this server in Cloudflare with the saved
-   token (or says which A record to change);
+   token, only when the web address is typed (Enter leaves it), and says so first when the
+   ERP still answers from the old server; or says which A record to change. Until the web
+   address points here, the restored ERP waits **on standby** (`/srv/extras-erp/backups/.standby`):
+   it opens, but runs no clock (no backups, reminders, jobs or Bug Guard schedule), so two
+   ERPs never run at once. A practice restore is therefore safe. `sudo ./deploy/go-live.sh`
+   (the web address typed again) ends the standby once this server is the one to use;
 6. installs Docker and the rest (`setup-server.sh`), installs the ERP (`deploy.sh`; HTTPS by
    Cloudflare's DNS challenge when a token is saved, otherwise the usual HTTP challenge),
    restores the database and the files (`restore.sh --check`) and starts the demo site;
-7. runs the checks, compares every table and file with the backup's manifest and says "All N
+7. runs the checks (the full check, then Bug Guard on every company with
+   `bug-guard.sh`), compares every table and file with the backup's manifest and says "All N
    records and M files are back", or exactly what is missing.
 
 Secrets never go on a command line, on the screen or in the log
@@ -305,7 +315,8 @@ To see whether a server already has Extas ERP, without changing anything:
 With Cloudflare's proxy on (the orange cloud), Let's Encrypt cannot check the server over
 port 80. When `CLOUDFLARE_API_TOKEN` is in `deploy/.env` (the restore puts there the token
 saved on the Backups screen), `deploy.sh` builds Caddy with Cloudflare's DNS module
-(`deploy/caddy`, again every 30 days) and writes `tls/cloudflare.caddy` in the data folder,
+(`deploy/caddy`, from exact versions: Caddy 2.11.7 and the module v0.2.4; built again every
+30 days for base-image fixes, and at once when `deploy/caddy` changes) and writes `tls/cloudflare.caddy` in the data folder,
 so certificates come through Cloudflare's DNS check instead. It checks the result first
 (`caddy validate`); if the module cannot be built or the check fails, it says "Note W06" and
 plain Caddy runs as before. Without a token nothing changes: plain `caddy:2-alpine` and the

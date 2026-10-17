@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { mkdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -28,6 +28,8 @@ import {
   totalRecords,
   type UploadFile,
 } from "@/modules/backups/contents";
+import { checkCodeBundle } from "@/modules/backups/code-bundle";
+import { needRoom, NoRoomError } from "@/modules/backups/disk";
 import { fetchBackup, listDriveBackups } from "@/modules/backups/drive-copies";
 import { checkBackupFiles } from "@/modules/backups/drive-fetch";
 import { parseKeyFile } from "@/modules/backups/keys";
@@ -48,6 +50,18 @@ const exec = promisify(execFile);
 const LONG_JOB = { timeout: 2 * 60 * 60 * 1000, maxBuffer: 50 * 1024 * 1024 };
 /** Temporary databases are named so; nothing else is ever dropped. */
 export const TEST_DB_PREFIX = "extas_restore_test_";
+
+/**
+ * This ERP's own temporary databases: the prefix and a tag of its live
+ * database's name (extas_restore_test_<8 hex>_), so a drill never drops one of
+ * another ERP sharing the database server. The full name stays well under
+ * Postgres' 63 characters.
+ */
+export function drillDatabasePrefix(
+  live = pgEnvironment(process.env.DATABASE_URL ?? "").PGDATABASE ?? "",
+): string {
+  return `${TEST_DB_PREFIX}${createHash("sha256").update(live).digest("hex").slice(0, 8)}_`;
+}
 
 /** Tables counted in the backup and today, to show the backup holds the business. */
 const COUNTED = [
@@ -78,6 +92,8 @@ export type TestRestoreReport = {
   /** Every journal entry's debits equal its credits in the restored copy. */
   ledgerBalanced: boolean;
   mediaFiles: number | null;
+  /** The code at the backup's version (G15): "whole", what is wrong with it, or null when the backup has none. */
+  code: string | null;
   problems: string[];
   seconds: number;
 };
@@ -113,12 +129,12 @@ async function dropTestDatabase(name: string) {
   }
 }
 
-/** Drops temporary databases a stopped test left behind. */
-async function dropLeftovers() {
+/** Drops this ERP's temporary databases a stopped drill left behind (only its own prefix). */
+async function dropLeftovers(prefix: string) {
   const rows = await prisma.$queryRaw<Array<{ datname: string }>>`
-    SELECT datname FROM pg_database WHERE datname LIKE ${`${TEST_DB_PREFIX}%`}`;
+    SELECT datname FROM pg_database WHERE starts_with(datname, ${prefix})`;
   for (const { datname } of rows) {
-    if (!datname.startsWith(TEST_DB_PREFIX)) continue;
+    if (!datname.startsWith(prefix)) continue;
     await dropTestDatabase(datname);
   }
 }
@@ -186,16 +202,18 @@ const FULL_NEEDS_KEY =
 async function drill(runId: string, typedKey: string | null) {
   const started = Date.now();
   const work = path.join(backupRoot(), ".test-restore");
-  const database = `${TEST_DB_PREFIX}${Date.now().toString(36)}${randomBytes(3).toString("hex")}`;
   const liveUrl = process.env.DATABASE_URL ?? "";
+  let database = "";
   let backupName: string | null = null;
   let created = false;
   try {
     const live = pgEnvironment(liveUrl).PGDATABASE;
-    if (database === live || !database.startsWith(TEST_DB_PREFIX)) {
+    const prefix = drillDatabasePrefix(live);
+    database = `${prefix}${Date.now().toString(36)}${randomBytes(3).toString("hex")}`;
+    if (database === live || !database.startsWith(prefix) || database.length > 63) {
       throw new Error("refused: the temporary database must not be the live one");
     }
-    await dropLeftovers();
+    await dropLeftovers(prefix);
     const config = await getBackupConfig();
     const token = await driveToken(config);
     if (!token) throw new Error("Google Drive is not connected");
@@ -204,6 +222,8 @@ async function drill(runId: string, typedKey: string | null) {
     backupName = newest.name;
     await prisma.backupRun.update({ where: { id: runId }, data: { sourceName: newest.name } });
     const folder = { id: newest.folderId, name: newest.name };
+    // Room to download and open it (G7): twice its size and a margin, else skipped.
+    await needRoom(backupRoot(), newest.bytes ?? 0, "restore drill");
 
     // The keys: the one typed for this drill, else the one kept in Drive; v6.3's for its backups.
     const recoveryKey = typedKey ?? (await recoveryKeyFromDrive(config).catch(() => null)) ?? null;
@@ -291,6 +311,10 @@ async function drill(runId: string, typedKey: string | null) {
       restoredFiles = await listFiles(unpacked);
       mediaFiles = restoredFiles.length;
     }
+    // The code inside it: whole, and the backup's version (G15).
+    const codeProblem = fetched.code
+      ? await checkCodeBundle(fetched.code, fetched.manifest.commit ?? null)
+      : null;
     // A v6.4 backup lists every table and file: compare them all, exactly.
     const compared = fetched.manifest.tables
       ? compareContents(
@@ -311,6 +335,7 @@ async function drill(runId: string, typedKey: string | null) {
       files: compared ? { expected: compared.files, back: mediaFiles ?? 0 } : null,
       ledgerBalanced: unbalanced === 0,
       mediaFiles,
+      code: fetched.code ? (codeProblem ?? "whole") : null,
       problems: compared?.problems ?? [],
       seconds: Math.round((Date.now() - started) / 1000),
     };
@@ -318,6 +343,7 @@ async function drill(runId: string, typedKey: string | null) {
       ...(tables < 10 ? [`only ${tables} tables came back`] : []),
       ...((restoredTables.Company ?? 0) === 0 ? ["no company came back"] : []),
       ...(unbalanced > 0 ? [`${unbalanced} journal entries do not balance`] : []),
+      ...(codeProblem ? [codeProblem] : []),
       ...(compared?.problems.slice(0, 20) ?? []),
     ];
     await prisma.backupRun.update({
@@ -351,11 +377,19 @@ async function drill(runId: string, typedKey: string | null) {
         sourceName: backupName,
       },
     });
-    await alertOwner(
-      "Restore drill failed",
-      `${backupName ? `The ${backupName} backup` : "The newest backup"} could not be restored into a temporary database: ${reasonFor(error)}`,
-      runId,
-    );
+    if (error instanceof NoRoomError) {
+      await alertOwner(
+        "Restore drill skipped: the server's disk is nearly full",
+        `The restore drill did not run. ${error.message}`,
+        runId,
+      );
+    } else {
+      await alertOwner(
+        "Restore drill failed",
+        `${backupName ? `The ${backupName} backup` : "The newest backup"} could not be restored into a temporary database: ${reasonFor(error)}`,
+        runId,
+      );
+    }
   } finally {
     if (created) {
       await dropTestDatabase(database).catch((error: unknown) =>

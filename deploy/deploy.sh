@@ -167,6 +167,7 @@ install_host_status ||
 record_host_files ||
   say "The backups could not take this version's code or settings this time; the Backups screen says what is missing"
 forget_github_token || true
+forget_secrets_in_history || true
 
 # The demo site starts after the ERP itself, so the ERP never waits on it.
 if [ -n "$DEMO_DOMAIN" ]; then

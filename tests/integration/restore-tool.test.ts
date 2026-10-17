@@ -1,5 +1,7 @@
 import { execFile } from "node:child_process";
-import { randomBytes } from "node:crypto";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
+import { createHash, randomBytes } from "node:crypto";
 import { chmod, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -13,6 +15,7 @@ import { setPin } from "@/modules/ai/settings.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { backupLock, guideRoot, hostRoot } from "@/modules/backups/backup-core";
 import * as backups from "@/modules/backups/backup.service";
+import { disk } from "@/modules/backups/disk";
 import * as cloudflare from "@/modules/backups/cloudflare";
 import {
   backupKey,
@@ -77,6 +80,8 @@ run("the restore tool on a new server", { timeout: 120_000 }, () => {
   let google: FakeGoogle;
 
   beforeEach(async () => {
+    // The machine's own free disk never decides these tests (G7 has its own).
+    vi.spyOn(disk, "freeBytes").mockResolvedValue(null);
     await resetDb();
     resetGuideRetry();
     dir = await mkdtemp(path.join(os.tmpdir(), "extas-restore-tool-"));
@@ -548,8 +553,14 @@ sys.exit(os.waitstatus_to_exitcode(status))
       await writeFile(path.join(deploy, ".env"), "APP_DOMAIN=erp.extasbd.com\nDEMO_SITE=on\n");
       const env = { CLOUDFLARE_API_BASE: cf.url, PUBLIC_IP: "203.0.113.7" };
 
-      const pointed = await tool(["dns", "--work", work, "--deploy", deploy], { dns: "" }, { env });
+      // G2: moved only when the web address is typed (Enter leaves it as it is).
+      const pointed = await tool(
+        ["dns", "--work", work, "--deploy", deploy],
+        { dns: "Erp.Extasbd.com" },
+        { env },
+      );
       expect(pointed.code).toBe(0);
+      expect((await state()).dnsMoved).toBe(true);
       expect(pointed.stdout).toContain(
         "erp.extasbd.com now points to this server (it pointed to 20.1.2.3).",
       );
@@ -565,13 +576,79 @@ sys.exit(os.waitstatus_to_exitcode(status))
         ["demo.extasbd.com", "203.0.113.7", false],
       ]);
 
-      const again = await tool(["dns", "--work", work, "--deploy", deploy], { dns: "" }, { env });
+      // Already here: nothing to ask, nothing to change.
+      const again = await tool(["dns", "--work", work, "--deploy", deploy], {}, { env });
       expect(again.stdout).toContain("erp.extasbd.com already points to this server.");
+      expect((await state()).dnsMoved).toBe(true);
+      zone.records.find((r) => r.name === "erp.extasbd.com" && r.type === "A")!.content =
+        "20.1.2.3";
       // "no" changes nothing, and says what to do instead.
       const before = cf.requests.length;
-      const no = await tool(["dns", "--work", work, "--deploy", deploy], { dns: "no" }, { env });
-      expect(no.stdout).toContain("Note W01: the web address was not changed.");
-      expect(cf.requests.length).toBe(before);
+      for (const typed of ["no", "", "demo.extasbd.com"]) {
+        const no = await tool(["dns", "--work", work, "--deploy", deploy], { dns: typed }, { env });
+        expect(no.stdout).toContain("Note W01: the web address was not changed.");
+        expect((await state()).dnsMoved).toBe(false);
+      }
+      // Only looked: no record was changed.
+      expect(cf.requests.slice(before).every((r) => r.startsWith("GET "))).toBe(true);
+    });
+
+    it("says when the ERP still answers from the old server, and leaves the address unless it is typed (G2)", async () => {
+      const zone = cf.zones.get("extasbd.com")!;
+      zone.records.push({
+        id: "r1",
+        type: "A",
+        name: "erp.extasbd.com",
+        content: "20.1.2.3",
+        proxied: false,
+        ttl: 1,
+      });
+      // The old server, still running.
+      const old = createServer((req, res) => {
+        res.writeHead(req.url === "/api/health" ? 200 : 404, {
+          "content-type": "application/json",
+        });
+        res.end('{"ok":true}');
+      });
+      await new Promise<void>((resolve) => old.listen(0, "127.0.0.1", resolve));
+      const site = `http://127.0.0.1:${(old.address() as AddressInfo).port}`;
+      try {
+        await connectDrive();
+        await setKey();
+        await cloudflare.setCloudflare(ctx, { pin: PIN, zone: "extasbd.com", token: CF_TOKEN });
+        await prepareHost(SETTINGS);
+        await backUpNow();
+        expect((await fetch()).code).toBe(0);
+        const deploy = path.join(dir, "srv", "deploy");
+        await mkdir(deploy, { recursive: true });
+        await writeFile(path.join(deploy, ".env"), "APP_DOMAIN=erp.extasbd.com\n");
+        const env = {
+          CLOUDFLARE_API_BASE: cf.url,
+          PUBLIC_IP: "203.0.113.7",
+          EXTAS_SITE_BASE: site,
+        };
+
+        const kept = await tool(["dns", "--work", work, "--deploy", deploy], { dns: "" }, { env });
+        expect(kept.code).toBe(0);
+        expect(kept.stdout).toContain(
+          "The ERP at erp.extasbd.com still answers from another server (20.1.2.3)",
+        );
+        expect(kept.stdout).toContain("Note W01: the web address was not changed.");
+        expect(zone.records[0]!.content).toBe("20.1.2.3");
+        expect((await state()).dnsMoved).toBe(false);
+
+        const moved = await tool(
+          ["dns", "--work", work, "--deploy", deploy],
+          { dns: "erp.extasbd.com" },
+          { env },
+        );
+        expect(moved.stdout).toContain(
+          "erp.extasbd.com now points to this server (it pointed to 20.1.2.3).",
+        );
+        expect((await state()).dnsMoved).toBe(true);
+      } finally {
+        await new Promise((resolve) => old.close(resolve));
+      }
     });
 
     it("without a saved token, says which address to point where, and changes nothing", async () => {
@@ -590,6 +667,8 @@ sys.exit(os.waitstatus_to_exitcode(status))
         "Note W01: the Cloudflare token was not saved on the Backups screen, so the web address was not changed. In your domain's DNS, point erp.extasbd.com (A record) to this server: 203.0.113.7.",
       );
       expect(cf.requests).toEqual([]);
+      // Not moved: the restored copy waits on standby (bootstrap.sh reads this).
+      expect((await state()).dnsMoved).toBe(false);
     });
   });
 
@@ -674,6 +753,52 @@ sys.exit(os.waitstatus_to_exitcode(status))
       await keys.setKeepKeyInDrive(ctx, { pin: PIN, keep: false });
       expect(guideText("guide-en")).not.toContain(OWNER_KEY);
       expect(guideText("guide-en")).toContain(CLIENT_ID);
+    });
+
+    it("puts restore.sh and restore-tool.py beside it, so a restore needs nothing from GitHub (G17)", async () => {
+      await connectDrive();
+      await setKey({ keepInDrive: true });
+      await prepareHost(SETTINGS);
+      const host = hostRoot();
+      const version = async (script: string, commit: string) => {
+        await writeFile(path.join(host, "restore.sh"), script);
+        await writeFile(path.join(host, "restore-tool.py"), `print('${commit}')\n`);
+        await writeFile(
+          path.join(host, "version.json"),
+          JSON.stringify({
+            commit,
+            // The checksum the guide's command checks restore.sh against.
+            bootstrapSha256: createHash("sha256").update(script).digest("hex"),
+            deployedAt: new Date().toISOString(),
+            version: "6.4.0",
+          }),
+        );
+      };
+      const copies = () =>
+        ["restore-script", "restore-tool"].flatMap((label) =>
+          labelled(label).map((f) => [f.name, f.data!.toString()]),
+        );
+      await version("echo one\n", "1".repeat(40));
+      expect(await guideTick()).toBe("made");
+      expect(copies()).toEqual([
+        ["restore.sh", "echo one\n"],
+        ["restore-tool.py", `print('${"1".repeat(40)}')\n`],
+      ]);
+      expect(guideText("guide-en")).toContain("restore-tool.py");
+
+      // A new version: made again, one of each.
+      await version("echo two\n", "2".repeat(40));
+      expect(await guideTick()).toBe("made");
+      expect(copies()).toEqual([
+        ["restore.sh", "echo two\n"],
+        ["restore-tool.py", `print('${"2".repeat(40)}')\n`],
+      ]);
+
+      // A restore.sh that is not the one the guide's command checks is never put there.
+      await writeFile(path.join(host, "restore.sh"), "echo changed\n");
+      vi.stubEnv("APP_URL", "https://erp2.extasbd.com");
+      expect(await guideTick()).toBe("made");
+      expect(copies()[0]).toEqual(["restore.sh", "echo two\n"]);
     });
 
     it("is on the server and in every backup without details, and downloads without the key", async () => {

@@ -15,10 +15,11 @@ import {
   GUIDE_FILES,
   googleClient,
   guideRoot,
+  hostRoot,
   hostVersion,
 } from "@/modules/backups/backup-core";
 import { restoreCommandLines } from "@/modules/backups/backup.service";
-import { parseRestoreKeyFile, putRootFile, readRootFile } from "@/modules/backups/drive-root";
+import { putRootFile } from "@/modules/backups/drive-root";
 import { guideContentVersion, type GuideLang } from "@/modules/backups/restore-guide";
 import { type GuideDetails, restoreGuidePdf } from "@/modules/backups/restore-guide-pdf";
 
@@ -146,12 +147,14 @@ export async function ensureLocalGuides(now = new Date()): Promise<boolean> {
 
 // --- In the Drive backup folder: the copy with details -------------------------------
 
-/** The recovery key kept in Drive (restore-key.json), when the owner keeps it there. */
+/**
+ * The recovery key kept in Drive, when the owner keeps it there: only the
+ * current pair's, and only when it opens the current keys file, so the guide
+ * never prints an old key (G3).
+ */
 async function keptKey(config: BackupConfig, token: string, rootId: string) {
-  if (!config.keepKeyInDrive || !config.keyPairId) return null;
-  const found = await readRootFile(token, rootId, "restoreKey");
-  const file = found ? parseRestoreKeyFile(found.data) : null;
-  return file && file.pairId === config.keyPairId ? file.recoveryKey : null;
+  const { keptRecoveryKey } = await import("@/modules/backups/recovery-key.service");
+  return keptRecoveryKey(config, token, rootId);
 }
 
 /**
@@ -196,10 +199,30 @@ export async function publishGuide(
   const hash = driveFingerprint(config, details);
   await putRootFile(options.token, options.rootId, "guideBn", pdfs.bn, { guide: hash });
   await putRootFile(options.token, options.rootId, "guideEn", pdfs.en, { guide: hash });
+  await publishRestoreScripts(options.token, options.rootId, details.bootstrapSha256);
   await prisma.backupConfig.update({
     where: { id: config.id },
     data: { guideHash: hash, guideBuiltAt: now },
   });
+  return true;
+}
+
+/**
+ * restore.sh and restore-tool.py of the running version beside the guide (G17),
+ * from the server's own copies (deploy.sh: record_host_files), so a restore
+ * needs nothing from GitHub. Only the restore.sh whose SHA-256 the guide's
+ * command checks; the tool is checked by restore.sh itself.
+ */
+async function publishRestoreScripts(token: string, rootId: string, sha256: string | null) {
+  const [script, tool] = await Promise.all(
+    ["restore.sh", "restore-tool.py"].map((name) =>
+      readFile(path.join(hostRoot(), name)).catch(() => null),
+    ),
+  );
+  if (!script || !tool || !sha256 || createHash("sha256").update(script).digest("hex") !== sha256)
+    return false;
+  await putRootFile(token, rootId, "restoreScript", script, { sha256 });
+  await putRootFile(token, rootId, "restoreTool", tool);
   return true;
 }
 

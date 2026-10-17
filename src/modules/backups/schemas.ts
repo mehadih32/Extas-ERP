@@ -46,8 +46,13 @@ export const backupConfigSchema = z
     drillEnabled: z.boolean(),
     drillDay: z.number().int().min(1).max(28, "Pick a day from 1 to 28"),
     drillTime: time,
+    /** The owner's PIN: needed to switch backups off or keep them in Drive for fewer days (G12). */
+    pin: z.string().trim().max(20),
   })
   .partial();
+
+/** Disconnecting Google Drive needs the owner's PIN (G12). */
+export const disconnectDriveSchema = z.object({ pin: z.string().trim().max(20).optional() });
 
 export const listBackupRunsSchema = z.object({
   cursor: z.string().optional(),

@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { encryptSecret } from "@/lib/crypto";
 import { AppError } from "@/lib/errors";
@@ -15,7 +15,9 @@ import type { CompanyContext } from "@/modules/auth/context";
 import { backupLock, driveToken, hostRoot } from "@/modules/backups/backup-core";
 import * as backups from "@/modules/backups/backup.service";
 import * as cloudflare from "@/modules/backups/cloudflare";
+import { afterRestore, RESTORED_MARK } from "@/modules/backups/after-restore";
 import { countTables } from "@/modules/backups/contents";
+import { disk, DISK_MARGIN_BYTES } from "@/modules/backups/disk";
 import {
   backupKey,
   keyId,
@@ -26,15 +28,22 @@ import {
 } from "@/modules/backups/crypt";
 import { fetchBackup, listDriveBackups } from "@/modules/backups/drive-copies";
 import { readyForRestore } from "@/modules/backups/drive-fetch";
+import { guideTick } from "@/modules/backups/guide.service";
 import { parseKeyFile } from "@/modules/backups/keys";
 import * as keys from "@/modules/backups/recovery-key.service";
 import { requestRestore } from "@/modules/backups/restore.service";
-import { backupTick, testRestoreTick } from "@/modules/backups/scheduler";
+import { backupClock, backupTick, testRestoreTick } from "@/modules/backups/scheduler";
+import { onStandby, STANDBY_MARK } from "@/modules/backups/standby";
 import { backupHealth, watchBackups } from "@/modules/backups/status";
-import { runTestRestore, TEST_DB_PREFIX } from "@/modules/backups/test-restore";
+import { drillDatabasePrefix, runTestRestore } from "@/modules/backups/test-restore";
+import { housekeepingTick } from "@/modules/housekeeping/scheduler";
+import { jobTick } from "@/modules/jobs/worker";
+import { reminderTick } from "@/modules/reminders/scheduler";
 
 import { type FakeCloudflare, startFakeCloudflare } from "../../scripts/fake-cloudflare";
 import { type FakeGoogle, startFakeGoogle } from "../../scripts/fake-google";
+import { pdfLines } from "../fixtures/pdf";
+import { makeCodeBundle } from "./code-bundle-fixture";
 import { addToCompany, contextFor, makeCompany, makeUser, resetDb } from "./helpers";
 
 /*
@@ -50,7 +59,9 @@ const sha256 = (data: Buffer | string) => createHash("sha256").update(data).dige
 const hoursAgo = (h: number) => new Date(Date.now() - h * 3_600_000);
 const OWNER_KEY = "Padma river at dawn, 1971!";
 const PIN = "2468";
-const COMMIT = "c0ffee".padEnd(40, "0");
+/** The code at the running version: a real git bundle and its commit (G15). */
+let COMMIT: string;
+let CODE_BUNDLE: Buffer;
 const BOOTSTRAP_SHA = "ab".repeat(32);
 const CF_TOKEN = "cf_token_only_dns_for_extas_0123456789abcd";
 
@@ -78,6 +89,9 @@ type Manifest = {
 
 // Real backups, restores and PDFs: slow on a busy machine, so 2 minutes each.
 run("v6.4 backups", { timeout: 120_000 }, () => {
+  beforeAll(async () => {
+    ({ commit: COMMIT, bundle: CODE_BUNDLE } = await makeCodeBundle());
+  });
   let dir: string;
   let backupDir: string;
   let uploadDir: string;
@@ -86,6 +100,8 @@ run("v6.4 backups", { timeout: 120_000 }, () => {
   let google: FakeGoogle;
 
   beforeEach(async () => {
+    // The machine's own free disk never decides these tests (G7 has its own).
+    vi.spyOn(disk, "freeBytes").mockResolvedValue(null);
     await resetDb();
     dir = await mkdtemp(path.join(os.tmpdir(), "extas-v64-"));
     backupDir = path.join(dir, "backups");
@@ -149,6 +165,7 @@ run("v6.4 backups", { timeout: 120_000 }, () => {
   async function prepareHost(
     lock: PublicKey | null,
     env = "APP_DOMAIN=erp.extasbd.com\nPOSTGRES_PASSWORD=pg-secret-1\n",
+    code: Buffer = CODE_BUNDLE,
   ) {
     const host = hostRoot();
     await mkdir(host, { recursive: true });
@@ -161,7 +178,7 @@ run("v6.4 backups", { timeout: 120_000 }, () => {
         version: "6.4.0",
       }),
     );
-    await writeFile(path.join(host, "code.bundle"), "# v2 git bundle\nthe code at the commit\n");
+    await writeFile(path.join(host, "code.bundle"), code);
     if (lock) {
       const plain = path.join(dir, "settings.env");
       await writeFile(plain, env);
@@ -295,7 +312,7 @@ run("v6.4 backups", { timeout: 120_000 }, () => {
         keys.setRecoveryKey(ctx, { pin: PIN, key: "short", confirm: "short" }),
         "VALIDATION",
       );
-      expect(short.details).toEqual({ key: ["Use at least 8 characters"] });
+      expect(short.details).toEqual({ key: ["Use at least 6 characters"] });
       const differ = await expectAppError(
         keys.setRecoveryKey(ctx, { pin: PIN, key: OWNER_KEY, confirm: `${OWNER_KEY}x` }),
         "VALIDATION",
@@ -404,7 +421,7 @@ run("v6.4 backups", { timeout: 120_000 }, () => {
       );
       expect((await readFile(opened.database)).subarray(0, 5).toString()).toBe("PGDMP");
       expect(await readFile(opened.settings!, "utf8")).toContain("POSTGRES_PASSWORD=pg-secret-1");
-      expect(await readFile(opened.code!, "utf8")).toContain("the code at the commit");
+      expect(await readFile(opened.code!)).toEqual(CODE_BUNDLE);
       expect(opened.server).toMatchObject({
         encryptionKey: "test-encryption-key-0123456789",
         appDomain: "erp.extasbd.com",
@@ -499,6 +516,7 @@ run("v6.4 backups", { timeout: 120_000 }, () => {
     });
 
     it("makes a new pair when the key is forgotten, and says which backups need the old one", async () => {
+      await connectDrive();
       const first = await setKey();
       const forgot = await keys.setRecoveryKey(ctx, {
         pin: PIN,
@@ -516,6 +534,66 @@ run("v6.4 backups", { timeout: 120_000 }, () => {
           `Backups made before now \\(key ${oldPair}\\) open only with your old recovery key`,
         ),
       );
+
+      // G3: Drive keeps one restore-key.json per pair, so the old backups still open.
+      const newPair = forgot.config.recoveryKey.pairId!;
+      const copies = () =>
+        labelled("restore-key").map((f) => ({
+          pair: f.appProperties.pairId,
+          key: (JSON.parse(f.data!.toString()) as { recoveryKey: string }).recoveryKey,
+        }));
+      expect(copies()).toEqual([
+        { pair: oldPair, key: OWNER_KEY },
+        { pair: newPair, key: "my second key, written down" },
+      ]);
+      expect(await keys.recoveryKeyFromDrive(await backups.getBackupConfig())).toBe(
+        "my second key, written down",
+      );
+      const guide = pdfLines(labelled("guide-en")[0]!.data!).join("\n");
+      expect(guide).toContain("my second key, written down");
+      expect(guide).not.toContain(OWNER_KEY);
+
+      // Changed again (same pair): that pair's older copy goes; the old pair's stays.
+      await keys.setRecoveryKey(ctx, {
+        pin: PIN,
+        key: "my third key, also written",
+        confirm: "my third key, also written",
+        currentKey: "my second key, written down",
+      });
+      expect(copies()).toEqual([
+        { pair: oldPair, key: OWNER_KEY },
+        { pair: newPair, key: "my third key, also written" },
+      ]);
+
+      // A stale copy (an older key of this pair, made last) is never used or printed.
+      const root = rootFiles().find((f) => f.appProperties.extas === "restore-key")!;
+      google.files.set("stale", {
+        ...root,
+        id: "stale",
+        appProperties: { extas: "restore-key", pairId: newPair },
+        createdTime: new Date(Date.now() + 60_000).toISOString(),
+        data: Buffer.from(
+          JSON.stringify({
+            app: "Extas ERP",
+            kind: "restore-key",
+            pairId: newPair,
+            recoveryKey: "my second key, written down",
+            savedAt: new Date().toISOString(),
+          }),
+        ),
+      });
+      expect(await keys.recoveryKeyFromDrive(await backups.getBackupConfig())).toBe(
+        "my third key, also written",
+      );
+      expect(await guideTick(new Date(Date.now() + 40 * 86_400_000))).toBe("made");
+      const later = pdfLines(labelled("guide-en")[0]!.data!).join("\n");
+      expect(later).toContain("my third key, also written");
+      expect(later).not.toContain("my second key, written down");
+      expect(later).not.toContain(OWNER_KEY);
+
+      // Taken out of Drive: every copy goes.
+      await keys.setKeepKeyInDrive(ctx, { pin: PIN, keep: false });
+      expect(labelled("restore-key")).toEqual([]);
     });
 
     it("retires v6.3's generated key, whose backups still open with the old key card", async () => {
@@ -644,7 +722,7 @@ run("v6.4 backups", { timeout: 120_000 }, () => {
     it("keeps backups in Drive for the days chosen, never the newest, or for ever", async () => {
       await connectDrive();
       await setKey();
-      await backups.updateBackupConfig(owner, { driveKeepDays: 30 });
+      await backups.updateBackupConfig(ctx, { driveKeepDays: 30, pin: PIN });
       const a = await backUpNow();
       const b = await backUpNow();
       // a is 40 days old in Drive.
@@ -655,7 +733,7 @@ run("v6.4 backups", { timeout: 120_000 }, () => {
       await backups.updateBackupConfig(owner, { driveKeepDays: null });
       await backUpNow();
       expect((await listDriveBackups()).items.map((x) => x.name)).toContain(a.name);
-      await backups.updateBackupConfig(owner, { driveKeepDays: 30 });
+      await backups.updateBackupConfig(ctx, { driveKeepDays: 30, pin: PIN });
       const c = await backUpNow();
       const names = (await listDriveBackups()).items.map((x) => x.name);
       expect(names).not.toContain(a.name);
@@ -668,6 +746,81 @@ run("v6.4 backups", { timeout: 120_000 }, () => {
       const { pruneBackups } = await import("@/modules/backups/drive-copies");
       await pruneBackups(await backups.getBackupConfig());
       expect((await listDriveBackups()).items).toHaveLength(1);
+    });
+  });
+
+  describe("making the backups less safe needs the PIN and tells the owner (R-BAK G12)", () => {
+    const told = async () => (await inbox()).filter((s) => s === "Backups made less safe");
+
+    it("switching backups off, and keeping them in Drive for fewer days", async () => {
+      // No PIN yet: the screen shows "set your PIN first".
+      const noPin = await expectAppError(
+        backups.updateBackupConfig(ctx, { isEnabled: false }),
+        "VALIDATION",
+      );
+      expect(Object.keys(noPin.details ?? {})).toEqual(["pinNotSet"]);
+      await setPin(ctx, { pin: PIN });
+      const missing = await expectAppError(
+        backups.updateBackupConfig(ctx, { isEnabled: false }),
+        "VALIDATION",
+      );
+      expect(missing.message).toBe("Give your PIN to switch backups off.");
+      await expectAppError(
+        backups.updateBackupConfig(ctx, { isEnabled: false, pin: "1111" }),
+        "VALIDATION",
+      );
+      // Only the platform owner in a company can give the PIN.
+      await expectAppError(
+        backups.updateBackupConfig(owner, { isEnabled: false, pin: PIN }),
+        "FORBIDDEN",
+      );
+      expect((await backups.getBackupConfig()).isEnabled).toBe(true);
+      expect(await told()).toEqual([]);
+
+      await backups.updateBackupConfig(ctx, { isEnabled: false, pin: PIN });
+      expect((await backups.getBackupConfig()).isEnabled).toBe(false);
+      expect(await told()).toHaveLength(1);
+      const alert = await prisma.notificationLog.findFirstOrThrow({
+        where: { subject: "Backups made less safe" },
+      });
+      expect(alert.body).toMatch(/switched backups off/);
+      expect(alert.body).not.toContain(PIN);
+
+      // Safer changes, and other settings, need no PIN and tell no one.
+      await backups.updateBackupConfig(owner, { isEnabled: true, driveKeepDays: 365 });
+      await backups.updateBackupConfig(owner, { driveKeepDays: null });
+      await backups.updateBackupConfig(owner, {
+        schedule: { mode: "DAYS", every: 1, times: ["03:00"] },
+        serverKeep: 5,
+      });
+      expect(await told()).toHaveLength(1);
+
+      // For ever -> 30 days is fewer days.
+      const shorter = await expectAppError(
+        backups.updateBackupConfig(ctx, { driveKeepDays: 30 }),
+        "VALIDATION",
+      );
+      expect(shorter.message).toBe("Give your PIN to keep backups in Google Drive for fewer days.");
+      await backups.updateBackupConfig(ctx, { driveKeepDays: 30, pin: PIN });
+      await backups.updateBackupConfig(ctx, { driveKeepDays: 60 });
+      expect(await told()).toHaveLength(2);
+      const audit = await prisma.auditLog.findMany({ where: { entityType: "BackupConfig" } });
+      expect(JSON.stringify(audit)).not.toContain(PIN);
+    });
+
+    it("disconnecting Google Drive", async () => {
+      await connectDrive();
+      await setPin(ctx, { pin: PIN });
+      await expectAppError(backups.disconnectGoogleDrive(ctx, {}), "VALIDATION");
+      await expectAppError(backups.disconnectGoogleDrive(owner, { pin: PIN }), "FORBIDDEN");
+      expect((await backups.getBackupConfig()).credentialsRef).not.toBeNull();
+      const off = await backups.disconnectGoogleDrive(ctx, { pin: PIN });
+      expect(off.googleDrive.connected).toBe(false);
+      expect(await told()).toHaveLength(1);
+      const alert = await prisma.notificationLog.findFirstOrThrow({
+        where: { subject: "Backups made less safe" },
+      });
+      expect(alert.body).toMatch(/disconnected Google Drive/);
     });
   });
 
@@ -776,8 +929,53 @@ run("v6.4 backups", { timeout: 120_000 }, () => {
       await watchBackups();
       expect((await inbox()).filter((s) => s === "Backup is late")).toHaveLength(1);
       // Switched off: not late.
-      await backups.updateBackupConfig(owner, { isEnabled: false });
+      await setPin(ctx, { pin: PIN });
+      await backups.updateBackupConfig(ctx, { isEnabled: false, pin: PIN });
       expect((await backupHealth()).problem).toBeNull();
+    });
+  });
+
+  describe("free disk before a backup or a drill (R-BAK G7)", () => {
+    it("skips a backup without twice the last backup's size and a margin free, and tells the owner once", async () => {
+      const done = await backUpNow();
+      expect(done.status).toBe("SUCCEEDED");
+      const last = Number(
+        (await prisma.backupRun.findUniqueOrThrow({ where: { id: done.id } })).sizeBytes,
+      );
+      const free = vi.spyOn(disk, "freeBytes");
+      free.mockResolvedValue(2 * last + DISK_MARGIN_BYTES - 1);
+      const skipped = await backUpNow();
+      expect(skipped.status).toBe("FAILED");
+      expect(skipped.error).toMatch(
+        /^Skipped: the server has .* free, and a backup needs at least/,
+      );
+      expect(await readdir(backupDir)).not.toContain(skipped.name);
+      await backUpNow();
+      await watchBackups();
+      expect((await inbox()).filter((s) => s?.startsWith("Backup"))).toEqual([
+        "Backup skipped: the server's disk is nearly full",
+      ]);
+      // Enough room again (or a disk that cannot be measured): backups run.
+      free.mockResolvedValue(2 * last + DISK_MARGIN_BYTES + 1);
+      expect((await backUpNow()).status).toBe("SUCCEEDED");
+      free.mockResolvedValue(null);
+      expect((await backUpNow()).status).toBe("SUCCEEDED");
+    });
+
+    it("skips the drill without room for the backup it downloads", async () => {
+      await connectDrive();
+      await setKey();
+      await prepareHost(backupLock(await backups.getBackupConfig())!.key as PublicKey);
+      const backup = await backUpNow();
+      vi.spyOn(disk, "freeBytes").mockResolvedValue(DISK_MARGIN_BYTES);
+      const drilled = await runTestRestore({ trigger: "MANUAL", actor: owner, wait: true });
+      expect(drilled).toMatchObject({ status: "FAILED", sourceName: backup.name });
+      expect(drilled.error).toMatch(/^Skipped: the server has .* free, and a restore drill needs/);
+      const left = await prisma.$queryRaw<Array<{ datname: string }>>`
+        SELECT datname FROM pg_database WHERE starts_with(datname, ${drillDatabasePrefix()})`;
+      expect(left).toEqual([]);
+      expect(await inbox()).toContain("Restore drill skipped: the server's disk is nearly full");
+      expect(await inbox()).not.toContain("Restore drill failed");
     });
   });
 
@@ -881,6 +1079,35 @@ run("v6.4 backups", { timeout: 120_000 }, () => {
   });
 
   describe("the monthly drill (G11)", () => {
+    it("drops only this ERP's own temporary databases, never another ERP's on the same server", async () => {
+      const mine = drillDatabasePrefix();
+      expect(mine).toMatch(/^extas_restore_test_[0-9a-f]{8}_$/);
+      // Another ERP on the same database server (another live database name).
+      const theirs = drillDatabasePrefix("another_erp");
+      expect(theirs).not.toBe(mine);
+      const leftover = `${mine}leftover`;
+      const other = `${theirs}drilling`;
+      await prisma.$executeRawUnsafe(`DROP DATABASE IF EXISTS "${other}"`);
+      await prisma.$executeRawUnsafe(`CREATE DATABASE "${leftover}"`);
+      await prisma.$executeRawUnsafe(`CREATE DATABASE "${other}"`);
+      try {
+        await connectDrive();
+        await setKey();
+        await prepareHost(backupLock(await backups.getBackupConfig())!.key as PublicKey);
+        await backUpNow();
+        const drilled = await runTestRestore({ trigger: "MANUAL", actor: owner, wait: true });
+        expect(drilled.status).toBe("SUCCEEDED");
+        const names = (
+          await prisma.$queryRaw<Array<{ datname: string }>>`SELECT datname FROM pg_database`
+        ).map((d) => d.datname);
+        expect(names.filter((n) => n.startsWith(mine))).toEqual([]);
+        expect(names).toContain(other);
+      } finally {
+        await prisma.$executeRawUnsafe(`DROP DATABASE IF EXISTS "${other}"`);
+        await prisma.$executeRawUnsafe(`DROP DATABASE IF EXISTS "${leftover}"`);
+      }
+    });
+
     it("restores the newest backup into a temporary database only, and compares everything", async () => {
       await connectDrive();
       await setKey();
@@ -897,11 +1124,12 @@ run("v6.4 backups", { timeout: 120_000 }, () => {
         mode: "full",
         records: { expected: manifest.records, back: manifest.records },
         files: { expected: 2, back: 2 },
+        code: "whole",
         problems: [],
         ledgerBalanced: true,
       });
       const left = await prisma.$queryRaw<Array<{ datname: string }>>`
-        SELECT datname FROM pg_database WHERE datname LIKE ${`${TEST_DB_PREFIX}%`}`;
+        SELECT datname FROM pg_database WHERE starts_with(datname, ${drillDatabasePrefix()})`;
       expect(left).toEqual([]);
       expect(await inbox()).toContain("Restore drill worked");
       const note = await prisma.notificationLog.findFirst({
@@ -913,6 +1141,24 @@ run("v6.4 backups", { timeout: 120_000 }, () => {
       await prisma.backupRun.deleteMany({ where: { kind: "TEST_RESTORE" } });
       expect(await testRestoreTick()).toMatchObject({ kind: "TEST_RESTORE", trigger: "SCHEDULED" });
       expect(await testRestoreTick()).toBeNull();
+    });
+
+    it("finds a damaged code bundle in the backup (G15)", async () => {
+      await connectDrive();
+      await setKey();
+      const spoiled = Buffer.from(CODE_BUNDLE);
+      spoiled[spoiled.length - 30]! ^= 1;
+      await prepareHost(
+        backupLock(await backups.getBackupConfig())!.key as PublicKey,
+        undefined,
+        spoiled,
+      );
+      await backUpNow();
+      const drilled = await runTestRestore({ trigger: "MANUAL", actor: owner, wait: true });
+      expect(drilled.status).toBe("FAILED");
+      expect(drilled.report).toMatchObject({ code: "the code in the backup is damaged" });
+      expect(drilled.error).toContain("the code in the backup is damaged");
+      expect(await inbox()).toContain("Restore drill failed");
     });
 
     it("checks checksums only without the key, and uses a typed key once", async () => {
@@ -953,7 +1199,163 @@ run("v6.4 backups", { timeout: 120_000 }, () => {
     });
   });
 
+  describe("standby after a restore on a second server (G2)", () => {
+    it("runs no clock while on standby, except the Bug Guard check the restore asked for", async () => {
+      await mkdir(backupDir, { recursive: true });
+      await writeFile(path.join(backupDir, STANDBY_MARK), "");
+      expect(await onStandby()).toBe(true);
+      // A backup is due (none yet), but the copy on standby makes none.
+      await backupClock();
+      expect(await prisma.backupRun.count()).toBe(0);
+      expect((await backupHealth()).line).toMatch(/^On standby after a restore/);
+      expect(await housekeepingTick()).toBeNull();
+      expect(await jobTick()).toBeNull();
+      // The reminder clock only takes Bug Guard's request from the restore (G1).
+      await writeFile(
+        path.join(backupDir, "bug-guard-request.json"),
+        JSON.stringify({ requestedAt: "2026-10-17T00:00:00.000000000Z" }),
+      );
+      expect(await reminderTick()).toBeNull();
+      expect(
+        JSON.parse(await readFile(path.join(backupDir, "bug-guard-result.json"), "utf8")),
+      ).toMatchObject({ requestedAt: "2026-10-17T00:00:00.000000000Z" });
+
+      // go-live.sh takes the mark away: the clocks run again.
+      await rm(path.join(backupDir, STANDBY_MARK));
+      expect(await onStandby()).toBe(false);
+      await backupClock();
+      expect(await prisma.backupRun.count({ where: { kind: "BACKUP" } })).toBe(1);
+      expect((await backupHealth()).line).not.toMatch(/standby/);
+      expect(await jobTick()).not.toBeNull();
+    }, 120_000);
+  });
+
   describe("restore from the screen", () => {
+    it("keeps this server's recovery key, schedule and Drive, and closes the runs the backup left open (G4, G5)", async () => {
+      await connectDrive();
+      await setKey();
+      await backups.updateBackupConfig(owner, {
+        schedule: { mode: "HOURS", every: 4, times: ["01:00"] },
+        serverKeep: 6,
+      });
+      const backup = await backUpNow();
+      const live = await backups.getBackupConfig();
+      // What restore.sh saves just before the restore, with its own query.
+      const query = /^KEEP_SQL='([^']+)'$/m.exec(
+        await readFile(path.join(process.cwd(), "deploy", "restore.sh"), "utf8"),
+      )?.[1];
+      expect(query).toBeTruthy();
+      const [kept] = await prisma.$queryRawUnsafe<Array<{ row_to_json: unknown }>>(query!);
+
+      // The restored database: an older backup, before the key and Drive were set,
+      // holding its own run (and a safety copy's) as still running.
+      await prisma.backupConfig.update({
+        where: { id: live.id },
+        data: {
+          keyPairId: null,
+          publicKey: null,
+          lockedKeyFile: null,
+          keySetAt: null,
+          credentialsRef: null,
+          googleDriveAccount: null,
+          scheduleMode: "DAYS",
+          scheduleEvery: 1,
+          isEnabled: false,
+          serverKeep: 3,
+        },
+      });
+      await prisma.backupRun.update({
+        where: { id: backup.id },
+        data: {
+          status: "RUNNING",
+          finishedAt: null,
+          name: null,
+          checkedAt: null,
+          driveFileId: null,
+        },
+      });
+      const stuck = await prisma.backupRun.create({
+        data: {
+          trigger: "SCHEDULED",
+          kind: "SAFETY_COPY",
+          status: "RUNNING",
+          startedAt: hoursAgo(1),
+        },
+      });
+      await rm(path.join(backupDir, "backup-public-key.json"), { force: true });
+      await writeFile(
+        path.join(backupDir, RESTORED_MARK),
+        JSON.stringify({
+          name: backup.name,
+          fromDrive: true,
+          backupCreatedAt: backup.startedAt,
+          restoredAt: new Date().toISOString(),
+          keptSettings: kept!.row_to_json,
+        }),
+      );
+
+      expect(await afterRestore()).toEqual({ keptSettings: true, closedRuns: 2 });
+      const after = await backups.getBackupConfig();
+      for (const field of [
+        "keyPairId",
+        "publicKey",
+        "lockedKeyFile",
+        "credentialsRef",
+        "googleDriveAccount",
+        "googleDriveFolderId",
+        "scheduleMode",
+        "scheduleEvery",
+        "scheduleTimes",
+        "isEnabled",
+        "serverKeep",
+        "keepKeyInDrive",
+      ] as const) {
+        expect(after[field]).toEqual(live[field]);
+      }
+      expect(after.keySetAt?.getTime()).toBe(live.keySetAt?.getTime());
+      // The server's settings file is locked with the live key again.
+      expect(
+        JSON.parse(await readFile(path.join(backupDir, "backup-public-key.json"), "utf8")),
+      ).toMatchObject({ pairId: live.keyPairId });
+      // The backup's own run is done; the other one is closed; a backup can start at once.
+      // It came back from Google Drive, so it is there: not sent again, no warning.
+      expect(await prisma.backupRun.findUniqueOrThrow({ where: { id: backup.id } })).toMatchObject({
+        status: "SUCCEEDED",
+        name: backup.name,
+        driveError: null,
+        checkedAt: expect.any(Date),
+      });
+      expect((await backupHealth()).level).toBe("good");
+      expect(await prisma.backupRun.findUniqueOrThrow({ where: { id: stuck.id } })).toMatchObject({
+        status: "FAILED",
+        error: expect.stringMatching(/restored/),
+      });
+      expect((await readdir(backupDir)).filter((n) => n.startsWith(".restored"))).toEqual([]);
+      expect(await afterRestore()).toBeNull();
+      expect((await backUpNow()).status).toBe("SUCCEEDED");
+    });
+
+    it("after a restore on a new server, only closes the open runs", async () => {
+      const backup = await backUpNow();
+      // A new server: the backup's folder is not on it (it came from Drive).
+      await rm(await folderOf(backup.id), { recursive: true });
+      await prisma.backupRun.update({
+        where: { id: backup.id },
+        data: { status: "RUNNING", finishedAt: null, name: null },
+      });
+      const before = await backups.getBackupConfig();
+      await writeFile(
+        path.join(backupDir, RESTORED_MARK),
+        JSON.stringify({ name: backup.name, backupCreatedAt: null, keptSettings: null }),
+      );
+      expect(await afterRestore()).toEqual({ keptSettings: false, closedRuns: 1 });
+      expect((await backups.getBackupConfig()).updatedAt).toEqual(before.updatedAt);
+      const run = await prisma.backupRun.findUniqueOrThrow({ where: { id: backup.id } });
+      expect(run).toMatchObject({ status: "SUCCEEDED", name: backup.name, checkedAt: null });
+      // Its files are not here: it is never tried again from this server.
+      expect(run.filesDeletedAt).toBeInstanceOf(Date);
+    });
+
     it("opens a v6.4 backup with the key kept in Drive, or the key typed", async () => {
       await connectDrive();
       await setKey();

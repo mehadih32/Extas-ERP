@@ -27,11 +27,14 @@
 # Every question and every error code (R01, W01...) is in the restore guide.
 #   sudo bash restore.sh [commit]     the restore
 #   bash restore.sh --find            only says which Extas ERP this server has
+#   bash restore.sh --choose          only the A6 decision (drills and tests)
+# Without GitHub (G17): restore.sh and restore-tool.py from the Drive backup folder,
+# side by side in one folder; the tool beside the script is used when it is the right one.
 set -euo pipefail
 umask 022
 
 REPO=mehadih32/Extas-ERP
-RESTORE_TOOL_SHA256=59179fd8a2bfb543b7c502b7ec452c4802c83b8d5b8ffc60d1c98d4b863b19db
+RESTORE_TOOL_SHA256=a9f8d4849ef9fe610a126d1c938bcd482dba6b585b91c657dc3f44a1704a71a7
 # Drills only: a stand-in for raw.githubusercontent.com (the tool is still checked).
 RAW_BASE="${EXTAS_RAW_BASE:-https://raw.githubusercontent.com}"
 SEARCH_ROOTS="${EXTAS_SEARCH_ROOTS:-/opt /srv /home /root /var/lib /data /mnt}"
@@ -139,9 +142,90 @@ list_installs() {
   done
 }
 
+# The A6 decision: on a server that already has Extas ERP (running, or with data),
+# the restore goes on only over the one whose web address is typed, and only when
+# its program folder and settings are there (its own keys stay). Sets DIR and DATA.
+choose_install() {
+  local line typed chosen i_dir i_data i_domain i_running i_has_data unfinished=0
+  local installs=()
+  while IFS= read -r line; do
+    IFS='|' read -r i_dir i_data i_domain i_running i_has_data <<<"$line"
+    if [ -z "$i_running" ] && [ -z "$i_has_data" ]; then
+      unfinished=1
+      [ "$i_dir" != "$DIR" ] || note "A restore that stopped half-way is in $DIR (no data yet): it goes on from here."
+      continue
+    fi
+    installs+=("$line")
+  done < <(list_installs | LC_ALL=C sort)
+  if [ "${#installs[@]}" -eq 0 ]; then
+    [ "$unfinished" = 1 ] || note "None: this is a new server."
+  else
+    say "This server already has Extas ERP"
+    for line in "${installs[@]}"; do
+      IFS='|' read -r i_dir i_data i_domain i_running i_has_data <<<"$line"
+      note "Program folder: ${i_dir:-not found}"
+      note "Data folder:    ${i_data:-not found}"
+      note "Web address:    ${i_domain:-not known}"
+      note "Running now:    ${i_running:-no}"
+      echo
+    done
+    note "Restoring here REPLACES ALL its data with the backup (a safety copy of the data as"
+    note "it is now is saved first). Its own keys and passwords stay."
+    typed="$(plain_domain "$(answer replace 'Type the web address of the ERP on this server to replace its data, or press Enter to stop: ')")"
+    chosen=""
+    for line in "${installs[@]}"; do
+      IFS='|' read -r i_dir i_data i_domain i_running i_has_data <<<"$line"
+      if [ -n "$typed" ] && { [ "$typed" = "$(plain_domain "$i_domain")" ] ||
+        { [ -z "$i_domain" ] && [ "$typed" = "$i_data" ]; }; }; then
+        chosen="$line"
+      fi
+    done
+    [ -n "$chosen" ] ||
+      fail R04 "stopped: the web address typed is not the one of the ERP on this server, so nothing was changed."
+    IFS='|' read -r i_dir i_data i_domain i_running i_has_data <<<"$chosen"
+    { [ -n "$i_dir" ] && [ -f "$i_dir/deploy/.env" ]; } ||
+      fail R29 "this server has Extas ERP data in $i_data but not its program folder and settings, so it cannot be restored over safely. Move the data away (sudo mv $i_data $i_data.old), then paste the command again."
+    DIR="$i_dir"
+    DATA="$i_data"
+    note "Restoring over the ERP in $DIR (data in $DATA)."
+  fi
+}
+
+# The restore tool ($1): the copy beside this script when it is the right one (from
+# the Drive backup folder, when GitHub cannot be reached: G17), else from GitHub at
+# the same commit. Either way it must match RESTORE_TOOL_SHA256.
+get_restore_tool() {
+  local here
+  here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  if [ -f "$here/restore-tool.py" ] &&
+    echo "$RESTORE_TOOL_SHA256  $here/restore-tool.py" | sha256sum -c --quiet - >/dev/null 2>&1; then
+    cp "$here/restore-tool.py" "$1"
+    note "Using the restore tool beside this script (restore-tool.py, from the Drive backup folder)."
+    return 0
+  fi
+  curl -fsSL --retry 3 "$RAW_BASE/$REPO/$ref/deploy/restore-tool.py" -o "$1" 2>/dev/null ||
+    fail R06 "the restore tool could not be downloaded from GitHub. Check that the VM has internet access, then paste the command again."
+  echo "$RESTORE_TOOL_SHA256  $1" | sha256sum -c --quiet - >/dev/null 2>&1 ||
+    fail R07 "the restore tool downloaded is not the expected one (its checksum differs). Copy the command from the newest guide and paste it again."
+}
+
 if [ "${1:-}" = --find ]; then
   detect_installs
   list_installs | LC_ALL=C sort
+  exit 0
+fi
+# Tests only: gets and checks the restore tool into the folder $2; nothing else.
+if [ "${1:-}" = --tool ]; then
+  ref=main
+  get_restore_tool "${2:?}/restore-tool.py"
+  exit 0
+fi
+
+# Drills and tests only: the A6 decision alone; nothing is changed.
+if [ "${1:-}" = --choose ]; then
+  detect_installs
+  choose_install
+  echo "CHOSEN $DIR|$DATA"
   exit 0
 fi
 
@@ -193,49 +277,7 @@ note "Ubuntu ${VERSION_ID}, $((memory_kb / 1024)) MB memory, $((free_kb / 1024 /
 
 step "Looking for an Extas ERP already on this server"
 detect_installs
-installs=()
-unfinished=0
-while IFS= read -r line; do
-  IFS='|' read -r i_dir i_data i_domain i_running i_has_data <<<"$line"
-  if [ -z "$i_running" ] && [ -z "$i_has_data" ]; then
-    unfinished=1
-    [ "$i_dir" != "$DIR" ] || note "A restore that stopped half-way is in $DIR (no data yet): it goes on from here."
-    continue
-  fi
-  installs+=("$line")
-done < <(list_installs | LC_ALL=C sort)
-if [ "${#installs[@]}" -eq 0 ]; then
-  [ "$unfinished" = 1 ] || note "None: this is a new server."
-else
-  say "This server already has Extas ERP"
-  for line in "${installs[@]}"; do
-    IFS='|' read -r i_dir i_data i_domain i_running i_has_data <<<"$line"
-    note "Program folder: ${i_dir:-not found}"
-    note "Data folder:    ${i_data:-not found}"
-    note "Web address:    ${i_domain:-not known}"
-    note "Running now:    ${i_running:-no}"
-    echo
-  done
-  note "Restoring here REPLACES ALL its data with the backup (a safety copy of the data as"
-  note "it is now is saved first). Its own keys and passwords stay."
-  typed="$(plain_domain "$(answer replace 'Type the web address of the ERP on this server to replace its data, or press Enter to stop: ')")"
-  chosen=""
-  for line in "${installs[@]}"; do
-    IFS='|' read -r i_dir i_data i_domain i_running i_has_data <<<"$line"
-    if [ -n "$typed" ] && { [ "$typed" = "$(plain_domain "$i_domain")" ] ||
-      { [ -z "$i_domain" ] && [ "$typed" = "$i_data" ]; }; }; then
-      chosen="$line"
-    fi
-  done
-  [ -n "$chosen" ] ||
-    fail R04 "stopped: the web address typed is not the one of the ERP on this server, so nothing was changed."
-  IFS='|' read -r i_dir i_data i_domain i_running i_has_data <<<"$chosen"
-  { [ -n "$i_dir" ] && [ -f "$i_dir/deploy/.env" ]; } ||
-    fail R29 "this server has Extas ERP data in $i_data but not its program folder and settings, so it cannot be restored over safely. Move the data away (sudo mv $i_data $i_data.old), then paste the command again."
-  DIR="$i_dir"
-  DATA="$i_data"
-  note "Restoring over the ERP in $DIR (data in $DATA)."
-fi
+choose_install
 
 step "Installing the restore tools"
 export DEBIAN_FRONTEND=noninteractive
@@ -255,10 +297,7 @@ cleanup() {
   [ -z "$restore_dir" ] || rm -rf "$restore_dir"
 }
 trap cleanup EXIT
-curl -fsSL --retry 3 "$RAW_BASE/$REPO/$ref/deploy/restore-tool.py" -o "$WORK/restore-tool.py" ||
-  fail R06 "the restore tool could not be downloaded from GitHub. Check that the VM has internet access, then paste the command again."
-echo "$RESTORE_TOOL_SHA256  $WORK/restore-tool.py" | sha256sum -c --quiet - >/dev/null 2>&1 ||
-  fail R07 "the restore tool downloaded is not the expected one (its checksum differs). Copy the command from the newest guide and paste it again."
+get_restore_tool "$WORK/restore-tool.py"
 tool() { python3 -I "$WORK/restore-tool.py" "$@"; }
 note "Done."
 
@@ -333,6 +372,11 @@ note "Web address: $APP_DOMAIN; data folder: $DATA"
 step "Pointing the web address at this server"
 tool dns --work "$WORK" --deploy "$DIR/deploy" ||
   warn W02 "Cloudflare could not be reached, so the web address was not changed. Point it to this server's Public IP address (see W01)."
+# Until the web address points here, the restored ERP waits on standby (G2): no
+# backups, reminders or other clocks, so two ERPs never run at once (a practice
+# run, or the old server still in use). deploy/go-live.sh ends it.
+standby=1
+[ -z "$(tool fact --work "$WORK" dnsMoved)" ] || standby=0
 
 step "Preparing the server (system updates, Docker, firewall: about 5 minutes)"
 EXTAS_RESTORE=1 "$DIR/deploy/setup-server.sh" || fail R17 "the server could not be prepared; the lines above say why. Paste the command again."
@@ -342,6 +386,12 @@ step "Installing the ERP (building it takes about 10 to 20 minutes)"
 
 step "Restoring the database and the files"
 mkdir -p "$DATA/backups/restores"
+# Before the restored database first starts (src/modules/backups/standby.ts reads it).
+if [ "$standby" = 1 ]; then
+  install -m 644 /dev/null "$DATA/backups/.standby"
+else
+  rm -f "$DATA/backups/.standby"
+fi
 restore_dir="$DATA/backups/restores/$name"
 rm -rf "$restore_dir"
 mv "$WORK/restore" "$restore_dir"
@@ -378,9 +428,20 @@ esac
 step "Running the checks"
 screen_problems="$(python3 -c 'import json, sys; print(len(json.load(open(sys.argv[1])).get("checks", [])))' "$WORK/restore-result.json" 2>/dev/null || echo "?")"
 if [ -x "$DIR/deploy/bug-guard.sh" ]; then
-  "$DIR/deploy/bug-guard.sh" --after-restore ||
-    warn W05 "Bug Guard found problems after the restore; they are in the ERP's inbox and on Telegram."
-  checks_note="Bug Guard ran"
+  # Every company, only reading; its report goes to the inbox and Telegram (G1).
+  bug_guard=0
+  "$DIR/deploy/bug-guard.sh" --after-restore || bug_guard=$?
+  case "$bug_guard" in
+    0) checks_note="Bug Guard ran (nothing urgent or important)" ;;
+    1)
+      checks_note="Bug Guard ran (it found problems)"
+      warn W05 "Bug Guard found problems after the restore; they are in the ERP's inbox and on Telegram."
+      ;;
+    *)
+      checks_note="Bug Guard ran (not everything was checked)"
+      warn W05 "Bug Guard could not check everything after the restore; it checks again on its own schedule."
+      ;;
+  esac
 else
   note "Bug Guard is not part of this version; the full check (every screen and PDF opened as the owner) ran above."
   checks_note="full check"
@@ -407,7 +468,7 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
   sleep 10
 done
 ip="$(curl -s --max-time 10 https://1.1.1.1/cdn-cgi/trace 2>/dev/null | sed -n 's/^ip=//p')" || true
-[ "$https_ok" = 1 ] || warn W03 "https://$APP_DOMAIN has no HTTPS certificate yet. Check that $APP_DOMAIN points to this server (${ip:-its Public IP address}) and that ports 80 and 443 are open in Azure; the certificate then comes by itself within a few minutes."
+[ "$https_ok" = 1 ] || [ "$standby" = 1 ] || warn W03 "https://$APP_DOMAIN has no HTTPS certificate yet. Check that $APP_DOMAIN points to this server (${ip:-its Public IP address}) and that ports 80 and 443 are open in Azure; the certificate then comes by itself within a few minutes."
 
 took=$(($(date +%s) - started))
 say "Finished in $((took / 60)) min $((took % 60)) s"
@@ -425,7 +486,9 @@ elif r.get("ok"):
 else:
     print(f"    Not everything is back: {len(r['problems'])} problem(s), listed above (R20).")
 PY
-if [ "$https_ok" = 1 ]; then
+if [ "$standby" = 1 ]; then
+  warn W10 "this ERP waits on standby: $APP_DOMAIN still points to the other server, so it makes no backups and sends no reminders. When this server is the one to use (the old one is off), point the web address here (step F6) and run: cd $DIR && sudo ./deploy/go-live.sh"
+elif [ "$https_ok" = 1 ]; then
   note "The ERP is running at https://$APP_DOMAIN : sign in as before."
 else
   note "The ERP is running; https://$APP_DOMAIN opens once its address points here (W03)."

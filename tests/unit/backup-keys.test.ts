@@ -42,19 +42,34 @@ import {
 const OWNER_KEY = "Padma river at dawn, 1971!";
 
 describe("the owner's recovery key", () => {
-  it("is any word, sentence or pattern of at least 8 characters", () => {
-    expect(recoveryKeyProblem("short")).toBe("Use at least 8 characters");
-    expect(recoveryKeyProblem("  7 chars  ")).toBe("Use at least 8 characters");
-    expect(recoveryKeyProblem("eight ch")).toBeNull();
+  it("is any word, sentence or pattern of at least 6 characters", () => {
+    expect(recoveryKeyProblem("short")).toBe("Use at least 6 characters");
+    expect(recoveryKeyProblem("  5 ch  ")).toBe("Use at least 6 characters");
+    // Letters, digits, symbols or Bengali all count, each as one character.
+    expect(recoveryKeyProblem("six ch")).toBeNull();
+    expect(recoveryKeyProblem("123456")).toBeNull();
+    expect(recoveryKeyProblem("#$%&*!")).toBeNull();
+    expect(recoveryKeyProblem("আমার দেশ")).toBeNull();
+    expect(recoveryKeyProblem("🌾🌾🌾🌾🌾")).toBe("Use at least 6 characters");
     expect(recoveryKeyProblem("আমার সোনার বাংলা")).toBeNull();
     expect(recoveryKeyProblem("x".repeat(201))).toBe("Use at most 200 characters");
     // The same letters however they were typed; spaces at the ends do not count.
     expect(normalizeRecoveryKey("  Café key  ")).toBe("Café key");
   });
 
+  it("warns gently, without blocking, when the key is shorter than 10 characters", () => {
+    for (const key of ["abc123", "Dhaka-26!", "আমার দেশ"]) {
+      expect(recoveryKeyProblem(key)).toBeNull();
+      expect(keyStrength(key).level).toBe("weak");
+      expect(keyStrength(key).hint).toMatch(/^Short: it works, but 10 or more characters is safer/);
+    }
+    expect(keyStrength("abc").hint).toBe("Use at least 6 characters.");
+    expect(keyStrength("Dhaka-2026!").hint).not.toMatch(/^Short/);
+  });
+
   it("gets a plain strength hint, and a warning for letters PuTTY cannot type", () => {
-    expect(keyStrength("password").level).toBe("weak");
-    expect(keyStrength("password").hint).toMatch(/^Weak: easy to guess/);
+    expect(keyStrength("dhakacity1").level).toBe("weak");
+    expect(keyStrength("dhakacity1").hint).toMatch(/^Weak: easy to guess/);
     expect(keyStrength("Dhaka-2026!").level).toBe("fair");
     expect(keyStrength(OWNER_KEY).level).toBe("strong");
     expect(keyStrength("my four word key").level).toBe("strong");
@@ -119,7 +134,7 @@ describe("the key pair and its keys file", () => {
     await expect(relockKeyFile(file, "not the key at all", "x".repeat(12))).rejects.toThrow(
       BackupKeyError,
     );
-    await expect(relockKeyFile(file, OWNER_KEY, "short")).rejects.toThrow(/at least 8/);
+    await expect(relockKeyFile(file, OWNER_KEY, "short")).rejects.toThrow(/at least 6/);
   });
 });
 

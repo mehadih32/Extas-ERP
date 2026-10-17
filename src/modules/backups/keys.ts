@@ -23,8 +23,8 @@ export {
 
 /*
  * The owner's own recovery key (A9, G4). The owner sets it on the Backups
- * screen: any word, sentence or pattern of at least 8 characters, never made up
- * by the ERP. Setting it makes a key pair (X25519): the public key locks every
+ * screen: any word, sentence or pattern of at least 6 characters (a gentle
+ * warning under 10, never a block), never made up by the ERP. Setting it makes a key pair (X25519): the public key locks every
  * backup (crypt.ts), and the private key, which opens them, is kept only locked
  * with a key made from the recovery key by scrypt (N = 2^17, r = 8, p = 1: about
  * 128 MB and half a second for each try, so guessing is slow), in a small keys

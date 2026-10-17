@@ -15,6 +15,7 @@ import { setPin } from "@/modules/ai/settings.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { driveToken } from "@/modules/backups/backup-core";
 import * as backups from "@/modules/backups/backup.service";
+import { disk } from "@/modules/backups/disk";
 import {
   fetchBackup,
   listDriveBackups,
@@ -29,8 +30,8 @@ import {
 } from "@/modules/backups/restore.service";
 import { backupTick, testRestoreTick } from "@/modules/backups/scheduler";
 import {
+  drillDatabasePrefix,
   runTestRestore,
-  TEST_DB_PREFIX,
   type TestRestoreReport,
 } from "@/modules/backups/test-restore";
 
@@ -63,6 +64,8 @@ run("daily backups", () => {
   let owner: { userId: string };
 
   beforeEach(async () => {
+    // The machine's own free disk never decides these tests (G7 has its own).
+    vi.spyOn(disk, "freeBytes").mockResolvedValue(null);
     await resetDb();
     dir = await mkdtemp(path.join(os.tmpdir(), "extras-backups-"));
     backupDir = path.join(dir, "backups");
@@ -518,7 +521,12 @@ run("daily backups", () => {
         summary: "Changed backup settings: schedule: Every day at 03:30, keep 5 on the server",
       });
 
-      const off = await backups.updateBackupConfig(owner, { isEnabled: false });
+      // Switching off needs the owner's PIN, in a company (R-BAK G12).
+      const { company, roles } = await makeCompany("Extras");
+      await addToCompany(owner.userId, company.id, roles.SUPER_ADMIN);
+      const ctx = await contextFor(owner.userId, company.id);
+      await setPin(ctx, { pin: "2468" });
+      const off = await backups.updateBackupConfig(ctx, { isEnabled: false, pin: "2468" });
       expect(off.nextRunAt).toBeNull();
       expect(await backupTick()).toBeNull();
       expect(await prisma.backupRun.count()).toBe(0);
@@ -605,7 +613,8 @@ run("daily backups", () => {
       expect(google.refreshTokens.has(refresh)).toBe(true);
       expect(JSON.stringify(await backups.getBackupOverview())).not.toContain(refresh);
 
-      const off = await backups.disconnectGoogleDrive(owner);
+      await setPin(ctx, { pin: "2468" });
+      const off = await backups.disconnectGoogleDrive(ctx, { pin: "2468" });
       expect(off.googleDrive).toMatchObject({ connected: false, account: null, folderId: null });
       expect(google.refreshTokens.has(refresh)).toBe(false);
       google.options.pendingPolls = 0;
@@ -614,7 +623,7 @@ run("daily backups", () => {
       expect((await backups.getBackupConfig()).googleDriveFolderId).toBe(root!.id);
 
       // The owner says no on the phone: nothing changes.
-      await backups.disconnectGoogleDrive(owner);
+      await backups.disconnectGoogleDrive(ctx, { pin: "2468" });
       google.options.deny = true;
       await backups.startGoogleSignIn(owner);
       expect((await backups.checkGoogleSignIn(owner)).status).toBe("denied");
@@ -753,6 +762,7 @@ run("daily backups", () => {
     // v6.3's "keep N backups in Drive" became "keep them N days" (backups-v64.test.ts, "keeping").
 
     // v6.4 (G11): monthly, compared with the manifest (more in backups-v64.test.ts).
+    // Three real restores into temporary databases: given more time on a busy machine.
     it("restores the newest backup into a temporary database every month, checks it and drops it", async () => {
       await readyToSend();
       await makeCompany("Extras Kids");
@@ -775,7 +785,7 @@ run("daily backups", () => {
       expect(report.newestMigration).toMatch(/^\d{14}_/);
       // The temporary database is gone; the live one was never touched.
       const left = await prisma.$queryRaw<Array<{ datname: string }>>`
-        SELECT datname FROM pg_database WHERE datname LIKE ${`${TEST_DB_PREFIX}%`}`;
+        SELECT datname FROM pg_database WHERE starts_with(datname, ${drillDatabasePrefix()})`;
       expect(left).toEqual([]);
       expect(await prisma.company.count()).toBe(2);
       expect(await inbox()).toContain("Restore drill worked");
@@ -800,7 +810,7 @@ run("daily backups", () => {
       expect(failed.status).toBe("FAILED");
       expect(failed.error).toMatch(/not the one these backups were locked with/);
       expect(await inbox()).toContain("Restore drill failed");
-    });
+    }, 120_000);
 
     it("restores from the screen with the PIN and RESTORE, handing the opened backup to the server", async () => {
       await readyToSend();

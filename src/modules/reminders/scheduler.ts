@@ -17,6 +17,15 @@ export async function reminderTick(now: Date = new Date()) {
   if (running) return null;
   running = true;
   try {
+    // On standby after a restore (G2): only the Bug Guard check the restore asked for (G1).
+    const { onStandby } = await import("@/modules/backups/standby");
+    if (await onStandby()) {
+      const { bugGuardAfterRestore } = await import("@/modules/bug-guard/after-restore");
+      await bugGuardAfterRestore().catch((error) =>
+        console.error("[bug-guard] after the restore", error),
+      );
+      return null;
+    }
     const result = await runReminders(now);
     // Mehedi 2.0's follow-up dates and unsent buyer drafts (ai/ai-reminders.ts).
     const { runAiReminders } = await import("@/modules/ai/ai-reminders");

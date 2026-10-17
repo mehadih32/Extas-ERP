@@ -216,7 +216,7 @@ export async function recordRestoreResult(): Promise<boolean> {
   await alertOwner(
     result.ok ? "Restore finished" : "Restore did not finish",
     result.ok
-      ? `The ${result.name} backup is back and every screen was checked${result.checks?.length ? ` (${result.checks.length} problem(s) noted)` : ""}. To undo it, restore the safety copy ${result.safetyCopy ?? ""}.`
+      ? `The ${result.name} backup is back and every screen was checked${result.checks?.length ? ` (${result.checks.length} problem(s) noted)` : ""}. This server's recovery key, backup schedule and Google Drive stay as they were. To undo it, restore the safety copy ${result.safetyCopy ?? ""}: that puts back the database only; the uploaded files from before the restore stay on the server for 30 days.`
       : `${result.message ?? "The restore did not finish."}${result.wentBack ? " The ERP was put back as it was before (the safety copy)." : ""}`,
     run.id,
   );

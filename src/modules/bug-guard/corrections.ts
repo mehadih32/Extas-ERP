@@ -1,7 +1,14 @@
 import { Prisma } from "@prisma/client";
 
+import type { Db } from "@/lib/db-types";
 import { AppError } from "@/lib/errors";
+import { lockRow } from "@/lib/row-lock";
+import { ensureControlAccounts } from "@/modules/accounts/control-accounts";
 import { postJournalEntry, reverseJournalEntry } from "@/modules/accounts/journal.service";
+import {
+  lockSupplierAccount,
+  settleSuppliersOnLines,
+} from "@/modules/accounts/supplier-settlement";
 
 import { correctableField } from "./correctable";
 import type { CorrectionPlan, FieldChange, JournalLinePlan } from "./types";
@@ -13,7 +20,11 @@ import type { CorrectionPlan, FieldChange, JournalLinePlan } from "./types";
  *   SET      a stored total is set back to what its records add up to, only on
  *            the fields listed in correctable.ts, and only while it still shows
  *            the figure the owner saw. Undo puts the old figure back.
- *   JOURNAL  an adjusting journal entry (source CORRECTION). Undo reverses it.
+ *   JOURNAL  an adjusting journal entry (source CORRECTION), only while the
+ *            mistake it puts right is still as the check saw it (its
+ *            precondition, types.ts) and no other correction of it is applied.
+ *            Undo reverses it. On a supplier's Payable, their bills are settled
+ *            again either way, as after any voucher (supplier-settlement.ts).
  */
 
 const money = (v: string) => new Prisma.Decimal(v);
@@ -121,6 +132,139 @@ async function setFigure(
   }
 }
 
+/** How an out-of-date adjusting entry is refused (and kept, as the correction's error). */
+export const outOfDate = (why: string) => `Out of date, nothing was changed: ${why}`;
+
+const lineKey = (l: {
+  accountId: string;
+  partyId?: string | null;
+  employeeId?: string | null;
+  debit: Prisma.Decimal.Value;
+  credit: Prisma.Decimal.Value;
+}) =>
+  [
+    l.accountId,
+    l.partyId ?? "",
+    l.employeeId ?? "",
+    new Prisma.Decimal(l.debit).toFixed(2),
+    new Prisma.Decimal(l.credit).toFixed(2),
+  ].join("|");
+
+/**
+ * Why an adjusting entry may not be posted now, or null while the mistake it
+ * puts right is still exactly as the check saw it. applyCorrection asks before
+ * the backup; applyPlan asks again with the entry or payment locked, so two
+ * approvals of the same correction never both post.
+ */
+export async function journalOutOfDate(
+  db: Db,
+  companyId: string,
+  plan: CorrectionPlan,
+  correctionId: string,
+): Promise<string | null> {
+  if (plan.kind !== "JOURNAL") return null;
+  const pre = plan.precondition;
+  if (!pre) return "it was prepared before Bug Guard kept what to check first. Press Fix again.";
+  const [field, target] =
+    pre.kind === "ENTRY" ? ["entryId", pre.entryId] : ["paymentId", pre.paymentId];
+  const twin = await db.bugGuardCorrection.findFirst({
+    where: {
+      companyId,
+      id: { not: correctionId },
+      status: "APPLIED",
+      plan: { path: ["precondition", field], equals: target },
+    },
+    select: { id: true },
+  });
+  if (twin) return "the same correction was applied already.";
+
+  if (pre.kind === "ENTRY") {
+    const entry = await db.journalEntry.findFirst({
+      where: { id: pre.entryId, companyId },
+      select: {
+        number: true,
+        isReversed: true,
+        reversedBy: { select: { id: true } },
+        lines: {
+          select: { accountId: true, partyId: true, employeeId: true, debit: true, credit: true },
+        },
+      },
+    });
+    if (!entry) return "the entry it reverses is not there any more.";
+    if (entry.reversedBy || entry.isReversed !== pre.isReversed) {
+      return entry.isReversed
+        ? `${entry.number} was reversed meanwhile.`
+        : `${entry.number} is no longer marked reversed.`;
+    }
+    const mirrored = entry.lines
+      .filter((l) => !l.debit.isZero() || !l.credit.isZero())
+      .map((l) => lineKey({ ...l, debit: l.credit, credit: l.debit }))
+      .sort();
+    const planned = plan.lines.map(lineKey).sort();
+    if (mirrored.join("\n") !== planned.join("\n")) {
+      return `${entry.number} changed since this was prepared.`;
+    }
+    return null;
+  }
+
+  const payment = await db.payment.findFirst({
+    where: { id: pre.paymentId, companyId },
+    select: {
+      number: true,
+      amount: true,
+      accountId: true,
+      isAdvance: true,
+      partyId: true,
+      orderId: true,
+      journalEntryId: true,
+    },
+  });
+  if (!payment) return "the payment is not there any more.";
+  if (payment.journalEntryId) return `payment ${payment.number} has its entry now.`;
+  if (
+    !payment.amount.equals(pre.amount) ||
+    payment.accountId !== pre.accountId ||
+    payment.isAdvance !== pre.isAdvance ||
+    payment.partyId !== pre.partyId
+  ) {
+    return `payment ${payment.number} changed since this was prepared.`;
+  }
+  if (payment.orderId) {
+    // An invoice void moved the order's payments to advance (receiptPlan).
+    const moved = await db.journalEntry.count({
+      where: { companyId, sourceType: "PAYMENT", sourceId: payment.orderId },
+    });
+    if (moved > 0) return `the invoice of payment ${payment.number}'s order was voided since.`;
+  }
+  return null;
+}
+
+/**
+ * Locks the account of each supplier named on a Payable line, first (the ERP's
+ * lock order: supplier account before anything else).
+ */
+async function lockSuppliersOn(
+  tx: Prisma.TransactionClient,
+  companyId: string,
+  lines: JournalLinePlan[],
+) {
+  if (!lines.some((l) => l.partyId)) return;
+  const acc = await ensureControlAccounts(companyId, tx);
+  const suppliers = [
+    ...new Set(lines.flatMap((l) => (l.accountId === acc.PAYABLE && l.partyId ? [l.partyId] : []))),
+  ].sort();
+  for (const id of suppliers) await lockSupplierAccount(tx, companyId, id);
+}
+
+/** A supplier's bills follow their Payable ledger after the entry (as after a voucher). */
+async function settleSuppliers(
+  tx: Prisma.TransactionClient,
+  companyId: string,
+  lines: JournalLinePlan[],
+) {
+  if (lines.some((l) => l.partyId)) await settleSuppliersOnLines(tx, companyId, lines);
+}
+
 async function checkAccounts(
   tx: Prisma.TransactionClient,
   companyId: string,
@@ -150,6 +294,17 @@ export async function applyPlan(
     for (const c of plan.changes) await setFigure(tx, companyId, c, c.before, c.after);
     return { journalEntryId: null };
   }
+  await lockSuppliersOn(tx, companyId, plan.lines);
+  const pre = plan.precondition;
+  if (pre) {
+    await lockRow(
+      tx,
+      pre.kind === "ENTRY" ? "JournalEntry" : "Payment",
+      pre.kind === "ENTRY" ? pre.entryId : pre.paymentId,
+    );
+  }
+  const stale = await journalOutOfDate(tx, companyId, plan, by.correctionId);
+  if (stale) throw new AppError("CONFLICT", outOfDate(stale));
   await checkAccounts(tx, companyId, plan.lines);
   const entry = await postJournalEntry(tx, {
     companyId,
@@ -167,6 +322,7 @@ export async function applyPlan(
       memo: l.memo,
     })),
   });
+  await settleSuppliers(tx, companyId, plan.lines);
   return { journalEntryId: entry.id };
 }
 
@@ -186,6 +342,7 @@ export async function undoPlan(
     return { undoJournalEntryId: null };
   }
   if (!applied.journalEntryId) throw new AppError("CONFLICT", "This correction posted no entry.");
+  await lockSuppliersOn(tx, companyId, plan.lines);
   const own = await tx.journalEntry.findFirst({
     where: { id: applied.journalEntryId, companyId, sourceType: "CORRECTION" },
     select: { id: true },
@@ -195,5 +352,6 @@ export async function undoPlan(
     description: "Bug Guard correction undone by the owner",
     postedById: by.userId,
   });
+  await settleSuppliers(tx, companyId, plan.lines);
   return { undoJournalEntryId: undo.id };
 }

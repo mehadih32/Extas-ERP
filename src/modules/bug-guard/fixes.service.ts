@@ -4,12 +4,20 @@ import { z } from "zod";
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
+import { runTransaction } from "@/lib/transaction";
 import { pushToBot } from "@/modules/ai/bot/push";
 import { type PinProof, requirePin } from "@/modules/ai/settings.service";
 import { auditInCompany, recordAudit } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 
-import { applyPlan, describePlan, planProblem, undoPlan } from "./corrections";
+import {
+  applyPlan,
+  describePlan,
+  journalOutOfDate,
+  outOfDate,
+  planProblem,
+  undoPlan,
+} from "./corrections";
 import { ownerStandIn } from "./owner";
 import { blockSource, endSession, unblockSource } from "./security";
 import { assertPlatform } from "./settings.service";
@@ -435,6 +443,25 @@ export async function applyCorrection(
   const plan = c.plan as unknown as CorrectionPlan;
   const problem = planProblem(plan);
   if (problem) throw new AppError("VALIDATION", `It cannot be applied: ${problem}`);
+  // An adjusting entry whose mistake was put right meanwhile (or by another
+  // correction) is out of date at once, before any backup; applyPlan asks again.
+  const stale = await journalOutOfDate(prisma, ctx.company.id, plan, c.id);
+  if (stale) {
+    const why = outOfDate(stale);
+    const done = await prisma.bugGuardCorrection.updateMany({
+      where: { id: c.id, status: "PREPARED" },
+      data: { status: "STALE", error: why },
+    });
+    if (done.count > 0) {
+      await logEvent(ctx, ctx.company.id, {
+        kind: "FAILED",
+        findingId: c.findingId,
+        correctionId: c.id,
+        summary: why,
+      });
+    }
+    throw new AppError("CONFLICT", why);
+  }
   // Claim it first, so a second press cannot apply it twice.
   const claimed = await prisma.bugGuardCorrection.updateMany({
     where: { id: c.id, status: "PREPARED" },
@@ -511,7 +538,8 @@ export async function undoCorrection(
     throw new AppError("CONFLICT", "Only an applied correction can be undone.");
   await requirePin(ctx, checked ?? pin, "undo a data correction");
   const plan = c.plan as unknown as CorrectionPlan;
-  const undone = await prisma.$transaction(async (tx) => {
+  // Supplier accounts and entries are locked: run again if Postgres breaks a deadlock.
+  const undone = await runTransaction(async (tx) => {
     const claimed = await tx.bugGuardCorrection.updateMany({
       where: { id: c.id, status: "APPLIED" },
       data: { status: "UNDONE", undoneById: ctx.user.id, undoneAt: new Date() },
@@ -618,7 +646,8 @@ async function applyNow(
   if (!userId) return fail(id, companyId, finding, "No one approved it, so nothing was changed.");
   let summary = "";
   try {
-    await prisma.$transaction(async (tx) => {
+    // Supplier accounts and entries are locked: run again if Postgres breaks a deadlock.
+    await runTransaction(async (tx) => {
       const c = await tx.bugGuardCorrection.findUniqueOrThrow({ where: { id } });
       const claimed = await tx.bugGuardCorrection.updateMany({
         where: { id, status: "BACKING_UP" },

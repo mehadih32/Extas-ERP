@@ -243,6 +243,60 @@ PY
   chown "$APP_UID:$APP_UID" "$mark" 2>/dev/null || true
 }
 
+# Bug Guard on the ERP running here (bug-guard.sh, after a restore; G1): leaves a
+# request in the backups folder ($1), which the ERP's clock takes within a minute
+# (src/modules/bug-guard/after-restore.ts), and prints its answer, waiting up to
+# $2 seconds. 0: nothing urgent or important; 1: something urgent or important
+# (in the ERP's inbox and on Telegram); 2: not everything was checked, or no answer.
+run_bug_guard() {
+  local dir="$1" wait="${2:-1200}" at deadline status=0
+  local request="$1/bug-guard-request.json" result="$1/bug-guard-result.json"
+  at="$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)"
+  rm -f "$result"
+  printf '{"requestedAt": "%s"}\n' "$at" >"$request.new"
+  chown "$APP_UID:$APP_UID" "$request.new" 2>/dev/null || true
+  mv -f "$request.new" "$request"
+  deadline=$(($(date +%s) + wait))
+  until [ -f "$result" ] && grep -qF "\"requestedAt\": \"$at\"" <(tr -d '\n' <"$result" | sed 's/":  *"/": "/g'); do
+    if [ "$(date +%s)" -ge "$deadline" ]; then
+      rm -f "$request"
+      say "Bug Guard did not answer within $((wait / 60)) minute(s); it checks again on its own schedule"
+      return 2
+    fi
+    sleep "${BUG_GUARD_POLL:-5}"
+  done
+  python3 - "$result" <<'PY' || status=$?
+import json, sys
+r = json.load(open(sys.argv[1]))
+companies = r.get("companies", [])
+lines, serious, unchecked = [], 0, 0
+for c in companies:
+    if c.get("status") == "DONE":
+        serious += c.get("urgent", 0) + c.get("important", 0)
+        line = f"{c['name']}: {c.get('urgent', 0)} urgent, {c.get('important', 0)} important, {c.get('later', 0)} can wait"
+        if c.get("failedChecks"):
+            unchecked += 1
+            line += f" ({c['failedChecks']} check(s) could not finish)"
+    else:
+        unchecked += 1
+        line = f"{c['name']}: not checked ({c.get('note') or 'it stopped'})"
+    lines.append(line)
+n = len(companies)
+head = f"Bug Guard ran on {n} compan{'y' if n == 1 else 'ies'}"
+if serious:
+    print(f"\n==> {head}: it found urgent or important problems; they are in the ERP's inbox and on Telegram")
+elif unchecked or not r.get("ok", False):
+    print(f"\n==> {head}: not everything could be checked; it checks again on its own schedule")
+else:
+    print(f"\n==> {head}: nothing urgent or important")
+for line in lines:
+    print(f"    {line}")
+sys.exit(1 if serious else 2 if unchecked or not r.get("ok", False) else 0)
+PY
+  rm -f "$result"
+  return "$status"
+}
+
 # The weekly test restore puts the newest backup into a temporary database of its own,
 # so the app's database user may make (and drop) databases. It never touches another.
 allow_test_restores() {

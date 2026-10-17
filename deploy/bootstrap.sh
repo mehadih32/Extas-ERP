@@ -378,9 +378,20 @@ esac
 step "Running the checks"
 screen_problems="$(python3 -c 'import json, sys; print(len(json.load(open(sys.argv[1])).get("checks", [])))' "$WORK/restore-result.json" 2>/dev/null || echo "?")"
 if [ -x "$DIR/deploy/bug-guard.sh" ]; then
-  "$DIR/deploy/bug-guard.sh" --after-restore ||
-    warn W05 "Bug Guard found problems after the restore; they are in the ERP's inbox and on Telegram."
-  checks_note="Bug Guard ran"
+  # Every company, only reading; its report goes to the inbox and Telegram (G1).
+  bug_guard=0
+  "$DIR/deploy/bug-guard.sh" --after-restore || bug_guard=$?
+  case "$bug_guard" in
+    0) checks_note="Bug Guard ran (nothing urgent or important)" ;;
+    1)
+      checks_note="Bug Guard ran (it found problems)"
+      warn W05 "Bug Guard found problems after the restore; they are in the ERP's inbox and on Telegram."
+      ;;
+    *)
+      checks_note="Bug Guard ran (not everything was checked)"
+      warn W05 "Bug Guard could not check everything after the restore; it checks again on its own schedule."
+      ;;
+  esac
 else
   note "Bug Guard is not part of this version; the full check (every screen and PDF opened as the owner) ran above."
   checks_note="full check"

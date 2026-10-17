@@ -1097,12 +1097,12 @@ export const GUIDE_ERRORS: GuideError[] = [
     code: "W05",
     shown: "screen(s) or PDF(s) did not open / Bug Guard found problems",
     meaning: fix(
-      "ERP চলছে, কিন্তু পরীক্ষায় কয়েকটি স্ক্রিন বা PDF খোলেনি।",
-      "The ERP runs, but a few screens or PDFs did not open in the check.",
+      "ERP চলছে, কিন্তু পরীক্ষায় কয়েকটি স্ক্রিন বা PDF খোলেনি, অথবা রিস্টোরের পর Bug Guard জরুরি বা গুরুত্বপূর্ণ কিছু পেয়েছে (বা সব দেখে শেষ করতে পারেনি)।",
+      "The ERP runs, but a few screens or PDFs did not open in the check, or Bug Guard found something urgent or important after the restore (or could not check everything).",
     ),
     todo: fix(
-      "তালিকাটির ছবি তুলে ডেভেলপারকে পাঠান।",
-      "Take a picture of the list and send it to the developer.",
+      "তালিকাটির ছবি তুলে ডেভেলপারকে পাঠান। Bug Guard যা পেয়েছে তা ERP-এর ইনবক্সে আর Telegram-এ আছে; সব দেখা না হলে সে নিজের সময়সূচিতে আবার দেখবে।",
+      "Take a picture of the list and send it to the developer. What Bug Guard found is in the ERP's inbox and on Telegram; if it could not check everything, it checks again on its own schedule.",
     ),
   },
   {

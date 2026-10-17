@@ -3,12 +3,14 @@ import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import { nextRunAt } from "@/lib/schedule";
 
+import { bugGuardAfterRestore } from "./after-restore";
 import { processCorrections } from "./fixes.service";
 import { DEPLOY_MS, startBugGuard, STALE_RUN_MS, takeInFullChecks } from "./runner";
 import { ensureSettings, scheduleOf } from "./settings.service";
 
 /*
- * Bug Guard's clock (every minute, from the reminder clock): corrections whose
+ * Bug Guard's clock (every minute, from the reminder clock): a run asked for by
+ * the server after a restore is started (after-restore.ts); corrections whose
  * backup finished are applied; a Full check that reported back is taken in;
  * Claude Code's merged fixes are checked again once the safe update has run;
  * the owner's schedule starts runs (one at a time on the server); the weekly
@@ -19,6 +21,9 @@ import { ensureSettings, scheduleOf } from "./settings.service";
 const quiet = (error: unknown) => !(error instanceof AppError && error.code === "CONFLICT");
 
 export async function runBugGuardClock(now: Date = new Date()) {
+  // Asked for by the server after a restore (G1): taken once, not awaited, so
+  // the clock goes on while it checks (after-restore.ts).
+  void bugGuardAfterRestore().catch((e) => console.error("[bug-guard] after the restore", e));
   await processCorrections(now).catch((e) => console.error("[bug-guard] corrections", e));
   await takeInFullChecks(now).catch((e) => console.error("[bug-guard] Full check", e));
   await afterFixes(now).catch((e) => console.error("[bug-guard] after fixes", e));

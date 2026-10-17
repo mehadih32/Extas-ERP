@@ -14,6 +14,9 @@
 #   --status FILE  write each step as it starts, as JSON (the Backups screen shows it)
 #   --counts FILE  write every table's row count just after the restore, as JSON
 #                  (bootstrap.sh compares them with the backup's manifest)
+#   --keep-backup-settings
+#                  keep this server's own backup settings (the recovery key, the
+#                  schedule, Google Drive), not the backup's (restore-request.sh)
 # shellcheck source=deploy/lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
@@ -22,6 +25,7 @@ check=0
 result_file=""
 status_file=""
 counts_file=""
+keep_settings=0
 folder_arg=""
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -39,6 +43,7 @@ while [ $# -gt 0 ]; do
       counts_file="${2:-}"
       shift
       ;;
+    --keep-backup-settings) keep_settings=1 ;;
     -*) die "unknown option $1" ;;
     *) folder_arg="$1" ;;
   esac
@@ -88,6 +93,7 @@ fail() {
 need_root
 load_settings
 take_update_lock
+prune_old_uploads
 [ -n "$folder_arg" ] || fail "say which backup to restore, for example: sudo $0 $DATA_DIR/backups/2026-10-04_020000"
 folder="$(realpath -e "$folder_arg" 2>/dev/null)" || fail "$folder_arg does not exist."
 data="$(realpath -e "$DATA_DIR")"
@@ -143,14 +149,35 @@ echo "Saved in $safety"
 step "Stopping the app"
 compose stop app
 
+# This server's own backup settings, read just before the database is replaced,
+# for the ERP to put back when it starts (G4): only root can read the file.
+KEEP_SQL='SELECT row_to_json(c) FROM "BackupConfig" c LIMIT 1'
+kept_file=""
+restored_mark="$DATA_DIR/backups/.restored.json"
+if [ "$keep_settings" = 1 ]; then
+  kept_file="$DATA_DIR/backups/.restored.kept"
+  if ! (umask 077 && compose exec -T db psql -X -q -At -U postgres -d "$POSTGRES_DB" \
+    -c "$KEEP_SQL" >"$kept_file"); then
+    rm -f "$kept_file"
+    compose up -d
+    wait_healthy app || true
+    fail "this server's backup settings could not be read, so nothing was restored."
+  fi
+fi
+
 step "Restoring the database"
 # One transaction, committed only once the whole backup has gone in: the database
 # is either fully restored or left as it was.
 if ! restore_database "$inside/database.dump"; then
+  [ -z "$kept_file" ] || rm -f "$kept_file"
   compose up -d
   wait_healthy app || true
   fail "the database could not be restored, so it was left as it was."
 fi
+# For the ERP when it starts: which backup came back (its own run, left running in
+# it, is finished then; G5) and the settings to keep.
+write_restored_mark "$folder" "$kept_file" "$restored_mark" ||
+  say "Note: the ERP was not told which backup came back; a backup may wait up to 6 hours to start"
 
 if [ -n "$counts_file" ]; then
   # Counted before the app starts, so nothing has been added yet (the same count as
@@ -176,8 +203,9 @@ if [ -n "$media" ]; then
   tar -xzf "$media" -C "$incoming"
   chown -R "$APP_UID:$APP_UID" "$incoming"
   mv "$DATA_DIR/uploads" "$DATA_DIR/uploads.before-restore-$stamp"
+  touch "$DATA_DIR/uploads.before-restore-$stamp"
   mv "$incoming" "$DATA_DIR/uploads"
-  echo "The files that were there before are kept in $DATA_DIR/uploads.before-restore-$stamp"
+  echo "The files that were there before are kept for 30 days in $DATA_DIR/uploads.before-restore-$stamp"
 fi
 
 step "Starting the app (the database is brought up to this version of the code)"
@@ -186,6 +214,7 @@ if ! compose up -d || ! wait_healthy app; then
   # Never left down: back to the data as it was just before the restore.
   step "The ERP did not start on the restored data: going back to the safety copy"
   went_back=1
+  rm -f "$restored_mark"
   compose stop app >/dev/null 2>&1 || true
   restore_database "/safety-copies/before-restore-$stamp/database.dump" ||
     fail "the ERP did not start on the restored data, and the safety copy could not be put back either: restore it by hand: sudo $0 $safety"
@@ -217,5 +246,10 @@ if [ "$check" = 1 ]; then
 fi
 
 say "Restored from $folder"
-echo "To undo it, restore the safety copy: sudo $0 $safety"
+echo "To undo it, restore the safety copy: sudo $0 $safety. That puts back the database only;"
+if [ -n "$media" ]; then
+  echo "the uploaded files from before stay in $DATA_DIR/uploads.before-restore-$stamp for 30 days."
+else
+  echo "the uploaded files were not changed by this restore."
+fi
 outcome="${outcome:-Restored from $(basename "$folder"); every screen opened.}"

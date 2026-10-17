@@ -15,6 +15,7 @@ import type { CompanyContext } from "@/modules/auth/context";
 import { backupLock, driveToken, hostRoot } from "@/modules/backups/backup-core";
 import * as backups from "@/modules/backups/backup.service";
 import * as cloudflare from "@/modules/backups/cloudflare";
+import { afterRestore, RESTORED_MARK } from "@/modules/backups/after-restore";
 import { countTables } from "@/modules/backups/contents";
 import { disk, DISK_MARGIN_BYTES } from "@/modules/backups/disk";
 import {
@@ -1166,6 +1167,131 @@ run("v6.4 backups", { timeout: 120_000 }, () => {
   });
 
   describe("restore from the screen", () => {
+    it("keeps this server's recovery key, schedule and Drive, and closes the runs the backup left open (G4, G5)", async () => {
+      await connectDrive();
+      await setKey();
+      await backups.updateBackupConfig(owner, {
+        schedule: { mode: "HOURS", every: 4, times: ["01:00"] },
+        serverKeep: 6,
+      });
+      const backup = await backUpNow();
+      const live = await backups.getBackupConfig();
+      // What restore.sh saves just before the restore, with its own query.
+      const query = /^KEEP_SQL='([^']+)'$/m.exec(
+        await readFile(path.join(process.cwd(), "deploy", "restore.sh"), "utf8"),
+      )?.[1];
+      expect(query).toBeTruthy();
+      const [kept] = await prisma.$queryRawUnsafe<Array<{ row_to_json: unknown }>>(query!);
+
+      // The restored database: an older backup, before the key and Drive were set,
+      // holding its own run (and a safety copy's) as still running.
+      await prisma.backupConfig.update({
+        where: { id: live.id },
+        data: {
+          keyPairId: null,
+          publicKey: null,
+          lockedKeyFile: null,
+          keySetAt: null,
+          credentialsRef: null,
+          googleDriveAccount: null,
+          scheduleMode: "DAYS",
+          scheduleEvery: 1,
+          isEnabled: false,
+          serverKeep: 3,
+        },
+      });
+      await prisma.backupRun.update({
+        where: { id: backup.id },
+        data: {
+          status: "RUNNING",
+          finishedAt: null,
+          name: null,
+          checkedAt: null,
+          driveFileId: null,
+        },
+      });
+      const stuck = await prisma.backupRun.create({
+        data: {
+          trigger: "SCHEDULED",
+          kind: "SAFETY_COPY",
+          status: "RUNNING",
+          startedAt: hoursAgo(1),
+        },
+      });
+      await rm(path.join(backupDir, "backup-public-key.json"), { force: true });
+      await writeFile(
+        path.join(backupDir, RESTORED_MARK),
+        JSON.stringify({
+          name: backup.name,
+          fromDrive: true,
+          backupCreatedAt: backup.startedAt,
+          restoredAt: new Date().toISOString(),
+          keptSettings: kept!.row_to_json,
+        }),
+      );
+
+      expect(await afterRestore()).toEqual({ keptSettings: true, closedRuns: 2 });
+      const after = await backups.getBackupConfig();
+      for (const field of [
+        "keyPairId",
+        "publicKey",
+        "lockedKeyFile",
+        "credentialsRef",
+        "googleDriveAccount",
+        "googleDriveFolderId",
+        "scheduleMode",
+        "scheduleEvery",
+        "scheduleTimes",
+        "isEnabled",
+        "serverKeep",
+        "keepKeyInDrive",
+      ] as const) {
+        expect(after[field]).toEqual(live[field]);
+      }
+      expect(after.keySetAt?.getTime()).toBe(live.keySetAt?.getTime());
+      // The server's settings file is locked with the live key again.
+      expect(
+        JSON.parse(await readFile(path.join(backupDir, "backup-public-key.json"), "utf8")),
+      ).toMatchObject({ pairId: live.keyPairId });
+      // The backup's own run is done; the other one is closed; a backup can start at once.
+      // It came back from Google Drive, so it is there: not sent again, no warning.
+      expect(await prisma.backupRun.findUniqueOrThrow({ where: { id: backup.id } })).toMatchObject({
+        status: "SUCCEEDED",
+        name: backup.name,
+        driveError: null,
+        checkedAt: expect.any(Date),
+      });
+      expect((await backupHealth()).level).toBe("good");
+      expect(await prisma.backupRun.findUniqueOrThrow({ where: { id: stuck.id } })).toMatchObject({
+        status: "FAILED",
+        error: expect.stringMatching(/restored/),
+      });
+      expect((await readdir(backupDir)).filter((n) => n.startsWith(".restored"))).toEqual([]);
+      expect(await afterRestore()).toBeNull();
+      expect((await backUpNow()).status).toBe("SUCCEEDED");
+    });
+
+    it("after a restore on a new server, only closes the open runs", async () => {
+      const backup = await backUpNow();
+      // A new server: the backup's folder is not on it (it came from Drive).
+      await rm(await folderOf(backup.id), { recursive: true });
+      await prisma.backupRun.update({
+        where: { id: backup.id },
+        data: { status: "RUNNING", finishedAt: null, name: null },
+      });
+      const before = await backups.getBackupConfig();
+      await writeFile(
+        path.join(backupDir, RESTORED_MARK),
+        JSON.stringify({ name: backup.name, backupCreatedAt: null, keptSettings: null }),
+      );
+      expect(await afterRestore()).toEqual({ keptSettings: false, closedRuns: 1 });
+      expect((await backups.getBackupConfig()).updatedAt).toEqual(before.updatedAt);
+      const run = await prisma.backupRun.findUniqueOrThrow({ where: { id: backup.id } });
+      expect(run).toMatchObject({ status: "SUCCEEDED", name: backup.name, checkedAt: null });
+      // Its files are not here: it is never tried again from this server.
+      expect(run.filesDeletedAt).toBeInstanceOf(Date);
+    });
+
     it("opens a v6.4 backup with the key kept in Drive, or the key typed", async () => {
       await connectDrive();
       await setKey();

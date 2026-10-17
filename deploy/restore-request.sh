@@ -53,8 +53,9 @@ flock -w 3600 9 || refuse "an update was still running after an hour, so the res
 export EXTRAS_ERP_UPDATE_LOCK=1
 
 status=0
-"$DEPLOY_DIR/restore.sh" --yes --check --result "$result" --status "$backups/restore-status.json" \
-  "$backups/$folder" || status=$?
+# This server's own backup settings (recovery key, schedule, Google Drive) stay as they are.
+"$DEPLOY_DIR/restore.sh" --yes --check --keep-backup-settings --result "$result" \
+  --status "$backups/restore-status.json" "$backups/$folder" || status=$?
 # The opened backup is plain data: it does not stay on the disk.
 rm -rf "${backups:?}/$folder"
 exit "$status"

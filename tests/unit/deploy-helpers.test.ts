@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { mkdir, mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -122,5 +122,92 @@ record_host_files; echo "exit $?"`,
     expect(existsSync(path.join(host, "code.bundle"))).toBe(false);
     expect(existsSync(path.join(host, "code.bundle.new"))).toBe(false);
     expect(existsSync(path.join(host, "code.commit"))).toBe(false);
+  });
+});
+
+describe("what a restore leaves for the ERP, and for undoing it (G4, G5, G9)", () => {
+  const restore = readFileSync(path.join("deploy", "restore.sh"), "utf8");
+  const request = readFileSync(path.join("deploy", "restore-request.sh"), "utf8");
+  const lib = readFileSync(path.join("deploy", "lib.sh"), "utf8");
+
+  it("keeps this server's backup settings only for a restore asked for on the screen", () => {
+    expect(request).toMatch(/restore\.sh" --yes --check --keep-backup-settings /);
+    expect(restore).toMatch(/--keep-backup-settings\) keep_settings=1 ;;/);
+    // Read with the app stopped, just before the database is replaced, into a file only root reads.
+    expect(restore).toMatch(
+      /compose stop app[\s\S]*if \[ "\$keep_settings" = 1 \]; then[\s\S]*umask 077[\s\S]*"\$KEEP_SQL"[\s\S]*restore_database "\$inside\/database\.dump"/,
+    );
+    // The mark for the ERP is written once the database is in, before the app starts.
+    expect(restore).toMatch(
+      /restore_database "\$inside\/database\.dump"[\s\S]*write_restored_mark[\s\S]*Starting the app/,
+    );
+    // Going back to the safety copy takes the mark away again.
+    expect(restore).toMatch(/going back to the safety copy"[\s\S]*rm -f "\$restored_mark"/);
+  });
+
+  it("writes the mark only the app reads, with the backup's name and time", async () => {
+    const folder = path.join(dir, "2026-10-04_020000");
+    await mkdir(folder);
+    await writeFile(
+      path.join(folder, "manifest.json"),
+      JSON.stringify({ createdAt: "2026-10-04T20:00:00.000Z" }),
+    );
+    await writeFile(path.join(dir, "kept.json"), '{"id":"c1","isEnabled":true}\n');
+    const mark = path.join(dir, ".restored.json");
+    const done = await withLib(
+      `APP_UID=$(id -u)
+write_restored_mark "${folder}" "${dir}/kept.json" "${mark}"; echo "exit $?"`,
+    );
+    expect(done.stdout).toContain("exit 0");
+    expect(JSON.parse(readFileSync(mark, "utf8"))).toMatchObject({
+      name: "2026-10-04_020000",
+      backupCreatedAt: "2026-10-04T20:00:00.000Z",
+      fromDrive: false,
+      keptSettings: { id: "c1", isEnabled: true },
+    });
+    expect(statSync(mark).mode & 0o777).toBe(0o600);
+    expect(existsSync(path.join(dir, "kept.json"))).toBe(false);
+    // Without settings to keep (a new server): the name and time only.
+    await withLib(`APP_UID=$(id -u)\nwrite_restored_mark "${folder}" "" "${mark}"`);
+    expect(JSON.parse(readFileSync(mark, "utf8"))).toMatchObject({ keptSettings: null });
+    // Opened from Google Drive (BACKUP_DIR/restores/<name>): the ERP knows it is there.
+    const fromDrive = path.join(dir, "restores", "2026-10-05_020000");
+    await mkdir(fromDrive, { recursive: true });
+    await withLib(`APP_UID=$(id -u)\nwrite_restored_mark "${fromDrive}" "" "${mark}"`);
+    expect(JSON.parse(readFileSync(mark, "utf8"))).toMatchObject({
+      name: "2026-10-05_020000",
+      backupCreatedAt: null,
+      fromDrive: true,
+    });
+  });
+
+  it("keeps the uploaded files from before a restore for 30 days, and says undoing puts back the database only", async () => {
+    const data = path.join(dir, "data");
+    const old = path.join(data, "uploads.before-restore-2026-09-01_100000");
+    const young = path.join(data, "uploads.before-restore-2026-10-15_100000");
+    const failed = path.join(data, "uploads.failed-restore-2026-09-01_100000");
+    const live = path.join(data, "uploads");
+    for (const d of [old, young, failed, live]) await mkdir(d, { recursive: true });
+    const longAgo = new Date(Date.now() - 31 * 86_400_000);
+    for (const d of [old, failed, live]) await utimes(d, longAgo, longAgo);
+    const done = await withLib(`DATA_DIR="${data}"\nprune_old_uploads; echo "exit $?"`);
+    expect(done.stdout).toContain("exit 0");
+    expect([existsSync(old), existsSync(failed), existsSync(young), existsSync(live)]).toEqual([
+      false,
+      false,
+      true,
+      true,
+    ]);
+    // Counted from the restore (the folder is touched when it is set aside), every day by cron too.
+    expect(restore).toMatch(
+      /mv "\$DATA_DIR\/uploads" "\$DATA_DIR\/uploads\.before-restore-\$stamp"\n\s*touch "\$DATA_DIR\/uploads\.before-restore-\$stamp"/,
+    );
+    expect(restore).toMatch(/load_settings\ntake_update_lock\nprune_old_uploads/);
+    expect(lib).toMatch(
+      /^23 3 \* \* \* root find \$DATA_DIR .*\\\( -name 'uploads\.before-restore-\*'.*\\\) -mtime \+30 /m,
+    );
+    expect(restore).toMatch(
+      /To undo it, restore the safety copy: sudo \$0 \$safety\. That puts back the database only/,
+    );
   });
 });

@@ -1,5 +1,6 @@
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
+import { afterRestore } from "@/modules/backups/after-restore";
 import { getBackupConfig, runBackup, settleFinishedRuns } from "@/modules/backups/backup.service";
 import { sendSafetyCopies, sendUnsent } from "@/modules/backups/drive-copies";
 import { ensureLocalGuides, guideTick } from "@/modules/backups/guide.service";
@@ -94,15 +95,22 @@ export async function backupClock(now: Date = new Date()) {
 
 export function startBackupScheduler() {
   if (timer) return;
-  // A backup whose run was left open (the server stopped, or this database was
-  // restored from that very backup) is recorded as done when its files are all there.
-  void settleFinishedRuns().catch((error: unknown) =>
-    console.error("[backups] could not check unfinished backups", error),
-  );
-  // The public key for the server's own settings file (a restored or new data folder lacks it).
-  void getBackupConfig()
-    .then(writeHostKey)
-    .catch((error: unknown) => console.error("[backups] could not write the public key", error));
+  void (async () => {
+    // Just after a restore: this server's own backup settings back, the runs the
+    // backup left open finished (after-restore.ts). First, before anything else.
+    await afterRestore().catch((error: unknown) =>
+      console.error("[backups] could not finish after the restore", error),
+    );
+    // A backup whose run was left open (the server stopped, or this database was
+    // restored from that very backup) is recorded as done when its files are all there.
+    await settleFinishedRuns().catch((error: unknown) =>
+      console.error("[backups] could not check unfinished backups", error),
+    );
+    // The public key for the server's own settings file (a restored or new data folder lacks it).
+    await getBackupConfig()
+      .then(writeHostKey)
+      .catch((error: unknown) => console.error("[backups] could not write the public key", error));
+  })();
   // The guide for the backups (no details in it), before the first backup.
   void ensureLocalGuides().catch((error: unknown) =>
     console.error("[backups] the restore guide could not be made", error),

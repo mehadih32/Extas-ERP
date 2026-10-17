@@ -196,6 +196,53 @@ prune_safety_copies() {
     -exec rm -rf {} + 2>/dev/null || true
 }
 
+# The uploaded files a restore set aside (uploads.before-restore-*, and
+# uploads.failed-restore-* from one that went back) stay 30 days, then go (G9).
+prune_old_uploads() {
+  find "$DATA_DIR" -mindepth 1 -maxdepth 1 -type d \
+    \( -name 'uploads.before-restore-*' -o -name 'uploads.failed-restore-*' \) -mtime +30 \
+    -exec rm -rf {} + 2>/dev/null || true
+}
+
+# For the ERP when it starts after a restore (src/modules/backups/after-restore.ts),
+# in DATA_DIR/backups/.restored.json, which only the app reads: the backup's name and
+# time (its own run, left running in it, is then finished), and the server's backup
+# settings saved just before the restore ($2, a file; empty: none), which the ERP puts
+# back (a restore from the screen: the recovery key, schedule and Google Drive stay).
+write_restored_mark() {
+  local folder="$1" kept="$2" mark="$3" ok=0
+  NAME="$(basename "$folder")" python3 - "$folder/manifest.json" "$kept" "$mark" <<'PY' || ok=1
+import datetime, json, os, sys
+try:
+    created = json.load(open(sys.argv[1])).get("createdAt")
+except Exception:
+    created = None
+kept = None
+if sys.argv[2]:
+    text = open(sys.argv[2]).read().strip()
+    kept = json.loads(text) if text else None
+mark = {
+    "name": os.environ["NAME"],
+    # BACKUP_DIR/restores/<name>: opened from its checked copy in Google Drive.
+    "fromDrive": os.path.basename(os.path.dirname(os.path.dirname(os.path.abspath(sys.argv[1]))))
+    == "restores",
+    "backupCreatedAt": created if isinstance(created, str) else None,
+    "restoredAt": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    "keptSettings": kept,
+}
+new = sys.argv[3] + ".new"
+fd = os.open(new, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+with os.fdopen(fd, "w") as f:
+    json.dump(mark, f)
+os.chmod(new, 0o600)
+os.replace(new, sys.argv[3])
+PY
+  # The saved settings never stay in a file of their own.
+  [ -z "$kept" ] || rm -f "$kept"
+  [ "$ok" = 0 ] || return 1
+  chown "$APP_UID:$APP_UID" "$mark" 2>/dev/null || true
+}
+
 # The weekly test restore puts the newest backup into a temporary database of its own,
 # so the app's database user may make (and drop) databases. It never touches another.
 allow_test_restores() {
@@ -205,7 +252,8 @@ allow_test_restores() {
 
 # The server's helpers for backups (README.md, "Backups"): systemd starts
 # restore-request.sh when the ERP leaves a restore asked for on the Backups screen,
-# and cron clears safety copies older than 24 hours every hour. The mark file tells
+# and cron clears safety copies older than 24 hours every hour, and the uploaded
+# files a restore set aside after 30 days. The mark file tells
 # the ERP that Restore on the screen works here.
 install_backup_helpers() {
   command -v systemctl >/dev/null || return 1
@@ -250,6 +298,8 @@ EOF
   cat >/etc/cron.d/extras-erp-safety-copies <<EOF
 # Extas ERP (deploy.sh): safety copies stay on the server for 24 hours; Google Drive keeps them.
 17 * * * * root find $DATA_DIR/safety-copies -mindepth 1 -maxdepth 1 -type d -name 'before-*' -mmin +1440 -exec rm -rf {} + 2>/dev/null
+# The uploaded files a restore set aside stay 30 days.
+23 3 * * * root find $DATA_DIR -mindepth 1 -maxdepth 1 -type d \( -name 'uploads.before-restore-*' -o -name 'uploads.failed-restore-*' \) -mtime +30 -exec rm -rf {} + 2>/dev/null
 EOF
   systemctl daemon-reload || return 1
   systemctl enable --now extras-erp-restore.path >/dev/null 2>&1 || return 1

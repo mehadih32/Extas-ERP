@@ -93,7 +93,7 @@ async function judge(
       if (corrected.has(`${checkKey}:${d.id}`)) continue;
       const plan = await mirrorPlan(
         ctx,
-        { id: d.entryId, number: d.entryNumber ?? "" },
+        { id: d.entryId, number: d.entryNumber ?? "", isReversed: false },
         today,
         `Reversal of ${d.entryNumber}: ${d.number} is void but its entry was not reversed`,
       );
@@ -214,7 +214,8 @@ async function paymentRows(ctx: CheckContext) {
  * The entry receivePaymentTx posts for a buyer's payment (Dr the cash, bank or
  * wallet account, Cr Receivable, or Customer Advance for an advance, naming the
  * buyer or Walk-in customers), when that is certain: not after an invoice void
- * moved the order's payments to advance.
+ * moved the order's payments to advance. Posted only while the payment is still
+ * as now and without an entry (its precondition).
  */
 async function receiptPlan(
   ctx: CheckContext,
@@ -264,6 +265,14 @@ async function receiptPlan(
         memo: p.isAdvance ? "Advance" : undefined,
       },
     ],
+    precondition: {
+      kind: "PAYMENT",
+      paymentId: p.id,
+      amount: value,
+      accountId: p.accountId,
+      isAdvance: p.isAdvance,
+      partyId: p.partyId,
+    },
   };
   return planProblem(plan) ? null : plan;
 }

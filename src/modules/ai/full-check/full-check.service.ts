@@ -561,7 +561,12 @@ export const fixSchema = z.union([
 ]);
 
 /** "Fix with Claude Code" (some problems) or "Fix all" (every problem of a check not sent yet). */
-export async function sendFix(ctx: CompanyContext, input: unknown, meta?: RequestMeta) {
+export async function sendFix(
+  ctx: CompanyContext,
+  input: unknown,
+  meta?: RequestMeta,
+  byGuard = false,
+) {
   assertPlatform(ctx);
   checkRateLimit(`claude-code:${ctx.company.id}`, 10, 60 * 60_000);
   const gh = await needGitHub(ctx.company.id);
@@ -595,6 +600,7 @@ export async function sendFix(ctx: CompanyContext, input: unknown, meta?: Reques
       .slice(0, 4000),
     problemIds: problems.map((p) => p.id),
     meta,
+    byGuard,
   });
 }
 
@@ -627,9 +633,13 @@ export async function sendGuardFix(
   ctx: CompanyContext,
   input: { facts: GuardFacts; problemIds?: string[]; summary: string },
   meta?: RequestMeta,
+  /** Bug Guard sends it by itself (its "open fixes by itself" option): logged as Bug Guard's. */
+  byGuard = false,
 ) {
   assertPlatform(ctx);
-  if (input.problemIds?.length) return sendFix(ctx, { problemIds: input.problemIds }, meta);
+  if (input.problemIds?.length) {
+    return sendFix(ctx, { problemIds: input.problemIds }, meta, byGuard);
+  }
   checkRateLimit(`claude-code:${ctx.company.id}`, 10, 60 * 60_000);
   const gh = await needGitHub(ctx.company.id);
   const at = when(new Date());
@@ -641,6 +651,7 @@ export async function sendGuardFix(
     text: input.summary.slice(0, 4000),
     problemIds: [],
     meta,
+    byGuard,
   });
 }
 
@@ -654,6 +665,8 @@ async function openRequest(
     text: string;
     problemIds: string[];
     meta?: RequestMeta;
+    /** Sent by Bug Guard by itself: the log says so, never the owner it works for. */
+    byGuard?: boolean;
   },
 ) {
   // The issue first: if GitHub refuses, nothing is kept.
@@ -689,12 +702,24 @@ async function openRequest(
     }
     return made;
   });
-  await auditInCompany(ctx, r.meta, {
-    action: "CREATE",
-    entityType: "ClaudeCodeRequest",
-    entityId: request.id,
-    summary: `${r.kind === "FIX" ? "Sent to Claude Code" : "Asked Claude Code"}: ${first.title} (issue #${opened.number})`,
-  });
+  const summary = `${r.kind === "FIX" ? "Sent to Claude Code" : "Asked Claude Code"}: ${first.title} (issue #${opened.number})`;
+  if (r.byGuard) {
+    await recordAudit({
+      companyId: ctx.company.id,
+      userId: null,
+      action: "CREATE",
+      entityType: "ClaudeCodeRequest",
+      entityId: request.id,
+      summary: `Bug Guard (automatic): ${summary}`,
+    });
+  } else {
+    await auditInCompany(ctx, r.meta, {
+      action: "CREATE",
+      entityType: "ClaudeCodeRequest",
+      entityId: request.id,
+      summary,
+    });
+  }
   return { id: request.id, issueNumber: opened.number, issueUrl: opened.url };
 }
 

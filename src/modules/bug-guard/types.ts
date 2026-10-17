@@ -95,6 +95,33 @@ export type CorrectionPlan =
       date: string;
       description: string;
       lines: JournalLinePlan[];
+      /**
+       * What must still be so when it is posted. The checks always set it; a plan
+       * kept without one is out of date and never posted.
+       */
+      precondition?: JournalPrecondition;
+    };
+
+/**
+ * The mistake an adjusting entry puts right, as the check saw it. It is checked
+ * again at Apply, and in the transaction that posts the entry with the row
+ * locked (corrections.ts), so the entry is never posted twice, nor after the
+ * mistake was put right another way:
+ *   ENTRY    the entry it reverses: reversed or not as it was, with no reversal
+ *            of its own, and its lines still what the plan mirrors;
+ *   PAYMENT  the payment it posts: still without an entry, with the same amount,
+ *            account, buyer and advance.
+ * Either way no other correction of the same entry or payment is applied.
+ */
+export type JournalPrecondition =
+  | { kind: "ENTRY"; entryId: string; isReversed: boolean }
+  | {
+      kind: "PAYMENT";
+      paymentId: string;
+      amount: string;
+      accountId: string;
+      isAdvance: boolean;
+      partyId: string | null;
     };
 
 /** A safe security step (security.ts). */

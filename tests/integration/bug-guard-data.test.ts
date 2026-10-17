@@ -23,10 +23,20 @@ import { salesHref } from "@/components/sales/labels";
 import { localDay } from "@/lib/dates";
 import { prisma } from "@/lib/prisma";
 import { readOnly } from "@/lib/read-only";
+import { runTransaction } from "@/lib/transaction";
 import { ensureControlAccounts } from "@/modules/accounts/control-accounts";
+import { reverseJournalEntry } from "@/modules/accounts/journal.service";
 import * as supplierPayments from "@/modules/accounts/supplier-payment.service";
+import { settleSupplierBills } from "@/modules/accounts/supplier-settlement";
+import { setPin } from "@/modules/ai/settings.service";
+import type { CompanyContext } from "@/modules/auth/context";
 import { DATA_CHECKS } from "@/modules/bug-guard/checks/data";
 import { applyPlan, describePlan, undoPlan } from "@/modules/bug-guard/corrections";
+import {
+  applyCorrection,
+  processCorrections,
+  undoCorrection,
+} from "@/modules/bug-guard/fixes.service";
 import type { CheckContext, Found } from "@/modules/bug-guard/types";
 import * as expenses from "@/modules/expenses/expense.service";
 import * as advances from "@/modules/hr/advance.service";
@@ -386,6 +396,7 @@ async function world() {
 
   return {
     company,
+    roles,
     owner: owner.user,
     accounts,
     acc,
@@ -632,6 +643,8 @@ run("Bug Guard data and accounts checks", () => {
       await correctAndUndo(f);
     } finally {
       await prisma.journalEntry.update({ where: { id: entry.id }, data: { isReversed: false } });
+      // The correction settled the mill's bills on their Payable (S6): settled again the ERP's way.
+      await runTransaction((tx) => settleSupplierBills(tx, w.company.id, w.mill.id));
     }
   });
 
@@ -1405,6 +1418,192 @@ run("Bug Guard data and accounts checks", () => {
     } finally {
       await prisma.journalEntry.update({ where: { id: entry.id }, data: { date: entry.date } });
     }
+  });
+
+  // ---------------------------------------------------------------------------
+  // Applying an adjusting entry (v6.4 fresh review S5, S6)
+  // ---------------------------------------------------------------------------
+
+  const PIN = "4321";
+  let boss: CompanyContext | null = null;
+
+  /** The platform owner, with the PIN set, as on the Bug Guard screen. */
+  const guardOwner = async () => {
+    if (boss) return boss;
+    const user = await makeUser(`guard@${w.company.slug}.test`, { isSuperAdmin: true });
+    await addToCompany(user.id, w.company.id, w.roles.SUPER_ADMIN);
+    boss = await contextFor(user.id, w.company.id);
+    await setPin(boss, { pin: PIN });
+    return boss;
+  };
+  const backup = (status: "RUNNING" | "SUCCEEDED") => async () =>
+    (await prisma.backupRun.create({ data: { trigger: "MANUAL", status } })).id;
+  const statusOf = async (id: string) =>
+    (await prisma.bugGuardCorrection.findUniqueOrThrow({ where: { id } })).status;
+  const another = (c: { companyId: string; findingId: string }, plan: unknown) =>
+    prisma.bugGuardCorrection.create({
+      data: {
+        companyId: c.companyId,
+        findingId: c.findingId,
+        plan: plan as Prisma.InputJsonValue,
+        summary: "the same correction again",
+      },
+    });
+
+  it("checks an adjusting entry again at Apply and after the backup, under a lock: never posted twice (S5)", async () => {
+    const owner = await guardOwner();
+    const companyId = w.company.id;
+    const entry = await prisma.journalEntry.findFirstOrThrow({
+      where: { companyId, sourceType: "EXPENSE", sourceId: w.rent.id },
+    });
+    await prisma.expense.update({ where: { id: w.rent.id }, data: { voidedAt: new Date() } });
+    const entries = () => prisma.journalEntry.count({ where: { companyId } });
+    const before = await entries();
+    let reversalId: string | null = null;
+    try {
+      const f = await theFinding(`data.posting.purchases:${w.rent.id}`);
+      expect(f.correction).toMatchObject({
+        kind: "JOURNAL",
+        precondition: { kind: "ENTRY", entryId: entry.id, isReversed: false },
+      });
+
+      // The same reversal approved twice: it is posted once, the other is out of date.
+      const first = await prepare(f);
+      const second = await another(first, f.correction);
+      for (const c of [first, second]) {
+        await applyCorrection(owner, c.id, { pin: PIN }, undefined, undefined, backup("SUCCEEDED"));
+      }
+      await processCorrections(new Date());
+      expect([await statusOf(first.id), await statusOf(second.id)].sort()).toEqual([
+        "APPLIED",
+        "STALE",
+      ]);
+      expect(await entries()).toBe(before + 1);
+      const applied = (await statusOf(first.id)) === "APPLIED" ? first : second;
+      await undoCorrection(owner, applied.id, { pin: PIN });
+      expect(await entries()).toBe(before + 2);
+
+      // Reversed the ERP's way while the backup ran: nothing is posted after it.
+      const third = await another(first, f.correction);
+      await applyCorrection(owner, third.id, { pin: PIN }, undefined, undefined, backup("RUNNING"));
+      const run = (await prisma.bugGuardCorrection.findUniqueOrThrow({ where: { id: third.id } }))
+        .backupRunId!;
+      reversalId = (
+        await runTransaction((tx) =>
+          reverseJournalEntry(tx, entry.id, { description: `Reversal of ${entry.number}` }),
+        )
+      ).id;
+      await prisma.backupRun.update({ where: { id: run }, data: { status: "SUCCEEDED" } });
+      await processCorrections(new Date());
+      expect(
+        await prisma.bugGuardCorrection.findUniqueOrThrow({ where: { id: third.id } }),
+      ).toMatchObject({
+        status: "STALE",
+        error: expect.stringMatching(/reversed/),
+      });
+      expect(await entries()).toBe(before + 3);
+
+      // And at Apply: out of date at once, before any backup starts.
+      const fourth = await another(first, f.correction);
+      let started = false;
+      await expect(
+        applyCorrection(owner, fourth.id, { pin: PIN }, undefined, undefined, async () => {
+          started = true;
+          return "none";
+        }),
+      ).rejects.toMatchObject({ code: "CONFLICT", message: expect.stringMatching(/reversed/) });
+      expect(started).toBe(false);
+      expect(await statusOf(fourth.id)).toBe("STALE");
+      expect(await entries()).toBe(before + 3);
+    } finally {
+      if (reversalId) await prisma.journalEntry.delete({ where: { id: reversalId } });
+      await prisma.journalEntry.update({ where: { id: entry.id }, data: { isReversed: false } });
+      await prisma.expense.update({ where: { id: w.rent.id }, data: { voidedAt: null } });
+    }
+  });
+
+  it("never posts a payment's entry once the payment changed, nor a plan kept without its check (S5)", async () => {
+    const owner = await guardOwner();
+    const lost = await prisma.payment.create({
+      data: {
+        companyId: w.company.id,
+        number: "PAY-TEST-0002",
+        direction: "RECEIVED",
+        method: "CASH",
+        partyId: w.shop.id,
+        amount: 750,
+        accountId: w.acc.CASH,
+        isAdvance: true,
+      },
+    });
+    try {
+      const f = await theFinding(`data.posting.sales:${lost.id}`);
+      expect(f.correction).toMatchObject({
+        precondition: {
+          kind: "PAYMENT",
+          paymentId: lost.id,
+          amount: "750.00",
+          accountId: w.acc.CASH,
+          isAdvance: true,
+          partyId: w.shop.id,
+        },
+      });
+      const c = await prepare(f);
+      await prisma.payment.update({ where: { id: lost.id }, data: { amount: 700 } });
+      await expect(
+        applyCorrection(owner, c.id, { pin: PIN }, undefined, undefined, backup("SUCCEEDED")),
+      ).rejects.toMatchObject({ code: "CONFLICT" });
+      expect(await statusOf(c.id)).toBe("STALE");
+
+      // A plan kept before Bug Guard stored what to check: never posted.
+      const older = { ...(f.correction as object), precondition: undefined };
+      const old = await another(c, older);
+      await expect(
+        applyCorrection(owner, old.id, { pin: PIN }, undefined, undefined, backup("SUCCEEDED")),
+      ).rejects.toMatchObject({ code: "CONFLICT" });
+      expect(await statusOf(old.id)).toBe("STALE");
+      expect(
+        await prisma.journalEntry.count({
+          where: {
+            companyId: w.company.id,
+            sourceType: "CORRECTION",
+            sourceId: { in: [c.id, old.id] },
+          },
+        }),
+      ).toBe(0);
+    } finally {
+      await prisma.payment.delete({ where: { id: lost.id } });
+    }
+  });
+
+  it("settles a supplier's bills when a correction on their Payable is applied, and when it is undone (S6)", async () => {
+    const owner = await guardOwner();
+    const entry = await prisma.journalEntry.findFirstOrThrow({
+      where: { companyId: w.company.id, sourceType: "OPENING_BALANCE", sourceId: w.mill.id },
+    });
+    const bill = () => prisma.supplierBill.findUniqueOrThrow({ where: { id: w.bill.id } });
+    const was = await bill();
+    await prisma.journalEntry.update({ where: { id: entry.id }, data: { isReversed: true } });
+    try {
+      const f = await theFinding(`data.ledger.reversals:${entry.id}`);
+      const c = await prepare(f);
+      await applyCorrection(owner, c.id, { pin: PIN }, undefined, undefined, backup("SUCCEEDED"));
+      await processCorrections(new Date());
+      expect(await statusOf(c.id)).toBe("APPLIED");
+      // Less owed to the mill: their bill is paid more, exactly as their ledger says.
+      const applied = await bill();
+      expect(applied.paidAmount.gt(was.paidAmount)).toBe(true);
+      expect(await only("data.totals.bills")).toEqual([]);
+
+      await undoCorrection(owner, c.id, { pin: PIN });
+      expect((await bill()).paidAmount.lt(applied.paidAmount)).toBe(true);
+      expect(await only("data.totals.bills")).toEqual([]);
+    } finally {
+      // The opening balance live again, and the mill's bills settled the ERP's way.
+      await prisma.journalEntry.update({ where: { id: entry.id }, data: { isReversed: false } });
+      await runTransaction((tx) => settleSupplierBills(tx, w.company.id, w.mill.id));
+    }
+    expect((await bill()).paidAmount.toFixed(2)).toBe(was.paidAmount.toFixed(2));
   });
 
   // ---------------------------------------------------------------------------

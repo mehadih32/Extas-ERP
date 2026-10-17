@@ -1,7 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 
 import { env } from "@/lib/env";
-import { guardOperation } from "@/lib/read-only";
+import { guardOperation, insideReadOnlyWork } from "@/lib/read-only";
 import { noteQueryTime } from "@/lib/slow-queries";
 
 /**
@@ -12,7 +12,8 @@ import { noteQueryTime } from "@/lib/slow-queries";
  * Every write first asks lib/read-only.ts whether it may run: a Full check
  * session on the live site and Bug Guard's checks only read, whatever the
  * code they reach does (v6.4 A4). Calls over a second are noted for Bug Guard
- * (lib/slow-queries.ts: the table and the kind of call, never the values).
+ * (lib/slow-queries.ts: the table and the kind of call, never the values),
+ * except Bug Guard's own (its checks read whole tables on purpose).
  */
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
@@ -30,7 +31,7 @@ function makeClient(): PrismaClient {
         try {
           return await query(args);
         } finally {
-          noteQueryTime(model, operation, performance.now() - started);
+          if (!insideReadOnlyWork()) noteQueryTime(model, operation, performance.now() - started);
         }
       },
     },

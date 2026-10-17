@@ -96,12 +96,15 @@ const helpMisses: Check = {
       .sort((a, b) => b[1] - a[1])
       .slice(0, 12);
     if (misses.length === 0) return [];
+    const times = misses.reduce((sum, [, t]) => sum + t, 0);
     return [
       {
         key: `product.help-misses:${misses.map(([w]) => w).join("|")}`.slice(0, 300),
         area: "PRODUCT",
         severity: "LATER",
-        title: `মানুষ Help-এ এই কথাগুলো খুঁজে কিছু পায়নি: ${misses.map(([w]) => w).join(", ")}।`,
+        // The title goes to the bot too: only counts. The words people typed are in
+        // the evidence, which the owner sees in the ERP (AI Center > Bug Guard).
+        title: `মানুষ Help-এ ${n(misses.length)}টি কথা খুঁজে কিছু পায়নি (শেষ 30 দিনে মোট ${n(times)} বার)। কথাগুলো Bug Guard পাতায় প্রমাণে আছে।`,
         href: "/help",
         place: "Help",
         why: "যে শব্দ মানুষ খোঁজে কিন্তু পায় না, সেখানে হয় গাইড নেই নয়তো ERP-এর শব্দটা অচেনা।",

@@ -509,6 +509,22 @@ run("Bug Guard", () => {
 
     it("applies an exact correction only with the PIN and after a backup, logged and undoable", async () => {
       const { cash, bank } = await accounts();
+      // The mistake: an entry marked reversed that has no reversal; the plan mirrors it.
+      const wrong = await prisma.journalEntry.create({
+        data: {
+          companyId: env.company.id,
+          number: "JV-TEST-0001",
+          description: "Moved to the bank",
+          sourceType: "MANUAL",
+          isReversed: true,
+          lines: {
+            create: [
+              { accountId: bank.id, debit: 150, credit: 0 },
+              { accountId: cash.id, debit: 0, credit: 150 },
+            ],
+          },
+        },
+      });
       world.found = [
         thing("money", "IMPORTANT", {
           fixKind: "DATA",
@@ -520,6 +536,7 @@ run("Bug Guard", () => {
               { accountId: cash.id, account: cash.name, debit: "150.00", credit: "0" },
               { accountId: bank.id, account: bank.name, debit: "0", credit: "150.00" },
             ],
+            precondition: { kind: "ENTRY", entryId: wrong.id, isReversed: true },
           },
         }),
       ];
@@ -529,7 +546,7 @@ run("Bug Guard", () => {
       expect(prepared).toMatchObject({ kind: "DATA" });
       const id = (prepared as { correctionId: string }).correctionId;
       expect((prepared as { summary: string }).summary).toContain("Test cash: ডেবিট 150");
-      expect(await prisma.journalEntry.count()).toBe(0);
+      expect(await prisma.journalEntry.count()).toBe(1);
 
       await expectAppError(applyCorrection(env.owner, id, {}), "VALIDATION", /PIN first/);
       await setPin(env.owner, { pin: PIN });
@@ -564,7 +581,7 @@ run("Bug Guard", () => {
       );
       // Nothing changes until the backup is done.
       await processCorrections(new Date());
-      expect(await prisma.journalEntry.count()).toBe(0);
+      expect(await prisma.journalEntry.count()).toBe(1);
       await prisma.backupRun.update({
         where: { id: started.backupRunId },
         data: { status: "SUCCEEDED" },
@@ -602,7 +619,7 @@ run("Bug Guard", () => {
       await undoCorrection(env.owner, id, { pin: PIN });
       const undone = await prisma.bugGuardCorrection.findUniqueOrThrow({ where: { id } });
       expect(undone.status).toBe("UNDONE");
-      expect(await prisma.journalEntry.count()).toBe(2);
+      expect(await prisma.journalEntry.count()).toBe(3);
       expect(await prisma.journalEntry.findUnique({ where: { id: entry.id } })).not.toBeNull();
       expect((await findingOf("money")).status).toBe("OPEN");
       await expectAppError(undoCorrection(env.owner, id, { pin: PIN }), "CONFLICT");
@@ -617,7 +634,7 @@ run("Bug Guard", () => {
         status: "PREPARED",
         error: expect.stringMatching(/backup failed/),
       });
-      expect(await prisma.journalEntry.count()).toBe(2);
+      expect(await prisma.journalEntry.count()).toBe(3);
       await cancelCorrection(env.owner, id2);
       expect(
         (await prisma.bugGuardCorrection.findUniqueOrThrow({ where: { id: id2 } })).status,

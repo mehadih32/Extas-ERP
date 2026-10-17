@@ -8,6 +8,8 @@ import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
 import { pushToBot } from "@/modules/ai/bot/push";
 import { recordAudit } from "@/modules/audit/audit.service";
+import { ownersOf } from "@/modules/bug-guard/owner";
+import { platformCompanyId } from "@/modules/bug-guard/security";
 import {
   backupKey,
   keyId as nameKey,
@@ -217,29 +219,41 @@ export async function guideFiles(): Promise<string[]> {
 export const HOST_KEY_FILE = "backup-public-key.json";
 
 /**
- * Tells the platform owner at once: a message in the ERP's inbox, in every
- * company they belong to, and on the bot (an alarm: sent even while the AI is off).
+ * Tells the platform owner at once, about the server itself (backups, the
+ * restore drill): a message in the ERP's inbox of the platform's own store
+ * (the oldest company) and on that store's bot, only where a platform owner
+ * linked it (an alarm: sent even while the AI is off). Never another store's
+ * inbox or bot. Should the platform's store have no platform owner, every
+ * platform owner's inbox gets it instead, so an alarm is never lost.
  */
 export async function alertOwner(subject: string, text: string, runId?: string) {
   try {
-    const owners = await prisma.user.findMany({
-      where: { isSuperAdmin: true, status: "ACTIVE" },
-      select: { id: true, memberships: { select: { companyId: true } } },
-    });
-    const companies = new Set<string>();
-    for (const owner of owners) {
-      for (const { companyId } of owner.memberships) {
-        companies.add(companyId);
-        await sendInApp(prisma, companyId, [{ userId: owner.id }], {
-          subject,
-          body: text,
-          entityType: runId ? "BackupRun" : null,
-          entityId: runId ?? null,
-        });
-      }
+    const message = {
+      subject,
+      body: text,
+      entityType: runId ? "BackupRun" : null,
+      entityId: runId ?? null,
+    };
+    const platform = await platformCompanyId();
+    const owners = platform ? await ownersOf(platform) : [];
+    if (platform && owners.length) {
+      await sendInApp(
+        prisma,
+        platform,
+        owners.map((o) => ({ userId: o.id })),
+        message,
+      );
+      await pushToBot(platform, { kind: "text", text: `${subject}: ${text}` }, { alarm: true });
+      return;
     }
-    for (const companyId of companies) {
-      await pushToBot(companyId, { kind: "text", text: `${subject}: ${text}` }, { alarm: true });
+    const everyOwner = await prisma.user.findMany({
+      where: { isSuperAdmin: true, status: "ACTIVE" },
+      select: { id: true, memberships: { where: { isActive: true }, select: { companyId: true } } },
+    });
+    for (const owner of everyOwner) {
+      for (const { companyId } of owner.memberships) {
+        await sendInApp(prisma, companyId, [{ userId: owner.id }], message);
+      }
     }
   } catch (error) {
     console.error(

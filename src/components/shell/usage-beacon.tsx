@@ -6,9 +6,11 @@ import { useEffect, useRef } from "react";
 /*
  * Counts how the ERP is used, for Bug Guard's product checks
  * (modules/bug-guard/usage.ts): each screen opened, and a form someone typed
- * into (two fields or more) and left without saving. Only the screen's address
- * goes to the server, made a pattern there; never what was typed. Search boxes
- * and filters do not count as forms.
+ * into (two fields or more) and left without saving. For these only the
+ * screen's address goes to the server, made a pattern there; never what was
+ * typed in the form. Search boxes and filters do not count as forms. The one
+ * exception: words searched in Help that found nothing are sent as typed
+ * (components/help/help-search.tsx), for the owner to see in Bug Guard.
  */
 
 const MIN_FIELDS = 2;

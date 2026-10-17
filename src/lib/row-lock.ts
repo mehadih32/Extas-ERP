@@ -4,6 +4,8 @@ import { Prisma } from "@prisma/client";
 export type LockableTable =
   | "Company"
   | "Party"
+  | "JournalEntry"
+  | "Payment"
   | "SalesOrder"
   | "ProformaInvoice"
   | "Quotation"

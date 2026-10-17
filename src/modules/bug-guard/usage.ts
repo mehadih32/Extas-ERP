@@ -12,8 +12,11 @@ import { routeOf } from "./server-errors";
  * How the ERP is used, for Bug Guard's product checks (checks/product.ts):
  * counts per day and store of the screens opened, the forms people typed into
  * and left without saving, and the words searched in Help that found nothing.
- * The browser sends them (components/shell/usage-beacon.tsx); only a screen's
- * route pattern is kept, never what was typed in a form.
+ * The browser sends them (components/shell/usage-beacon.tsx). For screens and
+ * forms only the route pattern is kept, never what was typed in a form. A Help
+ * search that found nothing is kept as typed (lower case, at most 60
+ * characters), so the owner can see which guide is missing: they are shown in
+ * the ERP only (AI Center > Bug Guard); the bot says only how many.
  */
 
 export const usageSchema = z.object({

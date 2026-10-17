@@ -15,7 +15,14 @@ import {
   revokeSession,
   type SessionUser,
 } from "@/modules/auth/session.service";
-import { afterFailedLogin, afterLogin, refuseBlockedPlace } from "@/modules/bug-guard/security";
+import {
+  activeBlock,
+  afterFailedLogin,
+  afterLogin,
+  blockedError,
+  ownerPassedBlock,
+  passesBlock,
+} from "@/modules/bug-guard/security";
 import { pickDefaultCompanyId } from "@/modules/companies/access";
 
 export const MAX_FAILED_LOGINS = 5;
@@ -33,12 +40,20 @@ export type LoginResult = {
 /**
  * Email + password sign-in with lockout after repeated failures.
  * Error messages never reveal whether an email exists.
+ *
+ * A place Bug Guard blocked after many wrong passwords (modules/bug-guard/
+ * security.ts) refuses everyone, except an active platform owner with the right
+ * password, whose account lock still applies; the refusal reads the same for
+ * every account, so it never tells whether one is the owner's.
  */
 export async function login(rawInput: LoginInput, meta: RequestMeta = {}): Promise<LoginResult> {
   const { email, password } = loginSchema.parse(rawInput);
-  // A place Bug Guard blocked after many wrong passwords (modules/bug-guard/security.ts).
-  await refuseBlockedPlace(meta);
+  const blocked = await activeBlock(meta.ipAddress);
   const user = await prisma.user.findUnique({ where: { email } });
+  if (blocked && !(user?.passwordHash && passesBlock(user))) {
+    await burnPasswordCheck(password);
+    throw blockedError();
+  }
 
   if (!user || !user.passwordHash) {
     await burnPasswordCheck(password);
@@ -54,6 +69,10 @@ export async function login(rawInput: LoginInput, meta: RequestMeta = {}): Promi
   }
 
   if (user.lockedUntil && user.lockedUntil > new Date()) {
+    if (blocked) {
+      await burnPasswordCheck(password);
+      throw blockedError();
+    }
     throw new AppError(
       "ACCOUNT_LOCKED",
       "Too many failed attempts. Please wait 15 minutes and try again.",
@@ -82,6 +101,7 @@ export async function login(rawInput: LoginInput, meta: RequestMeta = {}): Promi
       meta,
     });
     await afterFailedLogin(meta);
+    if (blocked) throw blockedError();
     throw new AppError("INVALID_CREDENTIALS", INVALID_CREDENTIALS);
   }
 
@@ -113,6 +133,7 @@ export async function login(rawInput: LoginInput, meta: RequestMeta = {}): Promi
     companyId: activeCompanyId,
     meta,
   });
+  if (blocked) await ownerPassedBlock(updatedUser, blocked.source);
   // Right after wrong passwords for several accounts from the same place: ended at once.
   if (await afterLogin(updatedUser, session.id, meta)) {
     throw new AppError(

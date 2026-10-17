@@ -161,10 +161,12 @@ type EntryRow = {
 /**
  * The mirror image of an entry, as reverseJournalEntry posts it (every line's
  * debit and credit swapped), as an adjusting entry; null when it cannot be one.
+ * It is posted only while the entry is still reversed or not as now, with no
+ * reversal of its own (its precondition).
  */
 export async function mirrorPlan(
   ctx: CheckContext,
-  entry: { id: string; number: string },
+  entry: { id: string; number: string; isReversed: boolean },
   day: string,
   description = `Reversal of ${entry.number}, which shows as reversed but had no reversal`,
 ): Promise<CorrectionPlan | null> {
@@ -198,6 +200,7 @@ export async function mirrorPlan(
         credit: fixed(l.debit),
         memo: l.memo ?? `Reverses ${entry.number}`,
       })),
+    precondition: { kind: "ENTRY", entryId: entry.id, isReversed: entry.isReversed },
   };
   return planProblem(plan) ? null : plan;
 }
@@ -253,7 +256,7 @@ async function reversals(ctx: CheckContext) {
   const items: Item[] = [];
   for (const e of missing) {
     if (corrected.has(`${REVERSALS}:${e.id}`)) continue;
-    const plan = await mirrorPlan(ctx, e, today);
+    const plan = await mirrorPlan(ctx, { ...e, isReversed: true }, today);
     items.push({
       id: e.id,
       severity: "URGENT",

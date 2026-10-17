@@ -12,13 +12,14 @@
 //   HELP_PLAN      the plan (default .help-shots/plan.json)
 //   CHROMIUM_PATH  a Chromium to use instead of Playwright's own
 // Needs Playwright with Chromium (scripts/full-check: npm install, npx playwright
-// install chromium) and sharp (the ERP's own, for WebP).
+// install chromium), and sharp (for WebP) and Prettier from the ERP's own packages.
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { chromium } from "playwright";
+import { format, resolveConfig } from "prettier";
 import sharp from "sharp";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -359,7 +360,10 @@ const sorted = Object.fromEntries(
     .sort()
     .map((k) => [k, manifest[k]]),
 );
-writeFileSync(MANIFEST, `${JSON.stringify(sorted, null, 2)}\n`);
+// `npm run format:check` checks the manifest too, so it is written the way Prettier writes it
+// (without the project's Tailwind plugin, which only sorts class names and JSON has none).
+const style = { ...(await resolveConfig(MANIFEST)), plugins: [], filepath: MANIFEST };
+writeFileSync(MANIFEST, await format(JSON.stringify(sorted, null, 2), style));
 console.log(`${done} of ${plan.guides.length} pictures taken.`);
 if (failed.length) {
   console.log(`Not taken (${failed.length}):\n${failed.join("\n")}`);

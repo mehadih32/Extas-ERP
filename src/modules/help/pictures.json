@@ -3,9 +3,7 @@
     "src": "/help/shots/accounts-approve-claims.webp",
     "width": 1280,
     "height": 800,
-    "marks": [
-      1
-    ],
+    "marks": [1],
     "route": "/accounts/expenses",
     "screen": "7630424f7c68a8ec",
     "guide": "b335ec9142e35256",
@@ -15,10 +13,7 @@
     "src": "/help/shots/accounts-balance-sheet.webp",
     "width": 1280,
     "height": 1233,
-    "marks": [
-      1,
-      2
-    ],
+    "marks": [1, 2],
     "route": "/accounts/reports/balance-sheet",
     "screen": "e6084ef07ba3540c",
     "guide": "c276bd9de58d6187",
@@ -28,10 +23,7 @@
     "src": "/help/shots/accounts-bank-accounts.webp",
     "width": 1280,
     "height": 1240,
-    "marks": [
-      1,
-      2
-    ],
+    "marks": [1, 2],
     "route": "/accounts/cash-bank",
     "screen": "af46317492d1517a",
     "guide": "f566a4c5e6c412fb",
@@ -41,10 +33,7 @@
     "src": "/help/shots/accounts-bank-reconcile.webp",
     "width": 1280,
     "height": 1240,
-    "marks": [
-      1,
-      2
-    ],
+    "marks": [1, 2],
     "route": "/accounts/cash-bank",
     "screen": "af46317492d1517a",
     "guide": "855b9dfede5bc53e",
@@ -54,9 +43,7 @@
     "src": "/help/shots/accounts-books-check.webp",
     "width": 1280,
     "height": 1247,
-    "marks": [
-      1
-    ],
+    "marks": [1],
     "route": "/accounts/reports/books-check",
     "screen": "5b966c12b405e6f3",
     "guide": "f3662cb7dc9065d1",
@@ -66,10 +53,7 @@
     "src": "/help/shots/accounts-chart.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      1,
-      3
-    ],
+    "marks": [1, 3],
     "route": "/accounts/chart",
     "screen": "9a0e801a74d03070",
     "guide": "c8a68dc160101114",
@@ -79,13 +63,7 @@
     "src": "/help/shots/accounts-expense-breakdown.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      1,
-      2,
-      4,
-      5,
-      6
-    ],
+    "marks": [1, 2, 4, 5, 6],
     "route": "/accounts",
     "screen": "f486b05a398fef25",
     "guide": "256608fb12d88c18",
@@ -95,12 +73,7 @@
     "src": "/help/shots/accounts-expense-claim.webp",
     "width": 1280,
     "height": 1472,
-    "marks": [
-      1,
-      2,
-      3,
-      5
-    ],
+    "marks": [1, 2, 3, 5],
     "route": "/accounts/expenses/new",
     "screen": "52bcc893ae8ae5bf",
     "guide": "583c2ca2cc0ca31d",
@@ -110,11 +83,7 @@
     "src": "/help/shots/accounts-expense-heads.webp",
     "width": 1280,
     "height": 1405,
-    "marks": [
-      1,
-      2,
-      4
-    ],
+    "marks": [1, 2, 4],
     "route": "/accounts/expenses/heads",
     "screen": "51335a3563b9c5b6",
     "guide": "be60fd977c9b643d",
@@ -124,11 +93,7 @@
     "src": "/help/shots/accounts-fixed-assets.webp",
     "width": 1280,
     "height": 900,
-    "marks": [
-      1,
-      2,
-      6
-    ],
+    "marks": [1, 2, 6],
     "route": "/accounts/assets",
     "screen": "8824272bc001be47",
     "guide": "07afc038ad7e41ac",
@@ -138,9 +103,7 @@
     "src": "/help/shots/accounts-journal.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      1
-    ],
+    "marks": [1],
     "route": "/accounts/journal",
     "screen": "5ca3684b385ad3b4",
     "guide": "a3565e8c87a9fe82",
@@ -150,9 +113,7 @@
     "src": "/help/shots/accounts-money-in-out.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      1
-    ],
+    "marks": [1],
     "route": "/accounts",
     "screen": "f486b05a398fef25",
     "guide": "3200b1b58b32417b",
@@ -162,9 +123,7 @@
     "src": "/help/shots/accounts-move-money.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      1
-    ],
+    "marks": [1],
     "route": "/accounts",
     "screen": "f486b05a398fef25",
     "guide": "def6162d1d9d5212",
@@ -174,16 +133,7 @@
     "src": "/help/shots/accounts-overview.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      1,
-      2,
-      3,
-      4,
-      5,
-      6,
-      8,
-      9
-    ],
+    "marks": [1, 2, 3, 4, 5, 6, 8, 9],
     "route": "/accounts",
     "screen": "f486b05a398fef25",
     "guide": "54393717fac7061a",
@@ -193,12 +143,7 @@
     "src": "/help/shots/accounts-pay-supplier.webp",
     "width": 1280,
     "height": 1039,
-    "marks": [
-      1,
-      2,
-      4,
-      5
-    ],
+    "marks": [1, 2, 4, 5],
     "route": "/accounts/supplier-payments/new",
     "screen": "37dafb9ff55e2520",
     "guide": "697b0dfae46660d7",
@@ -208,10 +153,7 @@
     "src": "/help/shots/accounts-petty-cash.webp",
     "width": 1280,
     "height": 800,
-    "marks": [
-      1,
-      3
-    ],
+    "marks": [1, 3],
     "route": "/accounts/expenses",
     "screen": "7630424f7c68a8ec",
     "guide": "e2e9fb98f5b4dab0",
@@ -221,11 +163,7 @@
     "src": "/help/shots/accounts-profit-and-loss.webp",
     "width": 1280,
     "height": 1382,
-    "marks": [
-      1,
-      2,
-      3
-    ],
+    "marks": [1, 2, 3],
     "route": "/accounts/reports/profit-and-loss",
     "screen": "a6a88dbd244c878d",
     "guide": "4b4348e03d13dcb2",
@@ -235,12 +173,7 @@
     "src": "/help/shots/accounts-record-expense.webp",
     "width": 1280,
     "height": 1472,
-    "marks": [
-      1,
-      2,
-      3,
-      4
-    ],
+    "marks": [1, 2, 3, 4],
     "route": "/accounts/expenses/new",
     "screen": "52bcc893ae8ae5bf",
     "guide": "9f5d0508bbafc9c8",
@@ -250,16 +183,7 @@
     "src": "/help/shots/accounts-user-manual.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      2,
-      3,
-      4,
-      7,
-      8,
-      9,
-      10,
-      11
-    ],
+    "marks": [2, 3, 4, 7, 8, 9, 10, 11],
     "route": "/accounts",
     "screen": "f486b05a398fef25",
     "guide": "163b5f0a39ab67a0",
@@ -269,12 +193,7 @@
     "src": "/help/shots/accounts-voucher.webp",
     "width": 1280,
     "height": 1262,
-    "marks": [
-      1,
-      2,
-      3,
-      4
-    ],
+    "marks": [1, 2, 3, 4],
     "route": "/accounts/journal/new",
     "screen": "46161589a9f64023",
     "guide": "b17ea7f6be145e36",
@@ -284,13 +203,7 @@
     "src": "/help/shots/ai-agents.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      1,
-      2,
-      3,
-      4,
-      5
-    ],
+    "marks": [1, 2, 3, 4, 5],
     "route": "/ai/agents",
     "screen": "3af612b193d29908",
     "guide": "b8e88581a61ba143",
@@ -300,10 +213,7 @@
     "src": "/help/shots/ai-bot.webp",
     "width": 1280,
     "height": 974,
-    "marks": [
-      2,
-      5
-    ],
+    "marks": [2, 5],
     "route": "/ai/bot",
     "screen": "b976e7bb33e04316",
     "guide": "e7720a5839486b2d",
@@ -313,14 +223,7 @@
     "src": "/help/shots/ai-bug-guard.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      1,
-      2,
-      3,
-      4,
-      6,
-      8
-    ],
+    "marks": [1, 2, 3, 4, 6, 8],
     "route": "/ai/bug-guard",
     "screen": "0722b5a8d3d1fd9e",
     "guide": "4dce8903859a5c42",
@@ -330,11 +233,7 @@
     "src": "/help/shots/ai-chat.webp",
     "width": 1280,
     "height": 910,
-    "marks": [
-      1,
-      4,
-      7
-    ],
+    "marks": [1, 4, 7],
     "route": "/ai/chat",
     "screen": "e42bce7770f7f28a",
     "guide": "8677cb044e49b109",
@@ -344,14 +243,7 @@
     "src": "/help/shots/ai-control.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      1,
-      3,
-      4,
-      5,
-      6,
-      7
-    ],
+    "marks": [1, 3, 4, 5, 6, 7],
     "route": "/ai/control",
     "screen": "10bcd7256d9a3ae4",
     "guide": "09ba782996ecc273",
@@ -361,13 +253,7 @@
     "src": "/help/shots/ai-costs.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      1,
-      3,
-      4,
-      6,
-      8
-    ],
+    "marks": [1, 3, 4, 6, 8],
     "route": "/ai/costs",
     "screen": "65a9fd4a6d75e18b",
     "guide": "15050cedd6f9573a",
@@ -377,11 +263,7 @@
     "src": "/help/shots/ai-drafts.webp",
     "width": 1280,
     "height": 800,
-    "marks": [
-      1,
-      3,
-      4
-    ],
+    "marks": [1, 3, 4],
     "route": "/ai/drafts",
     "screen": "cc2d7a735353b2da",
     "guide": "7bfc416c747f1433",
@@ -391,12 +273,7 @@
     "src": "/help/shots/ai-full-check.webp",
     "width": 1280,
     "height": 1349,
-    "marks": [
-      5,
-      6,
-      8,
-      9
-    ],
+    "marks": [5, 6, 8, 9],
     "route": "/ai/full-check",
     "screen": "14440245bff9b142",
     "guide": "425be27c8cd059c5",
@@ -406,11 +283,7 @@
     "src": "/help/shots/ai-health.webp",
     "width": 1280,
     "height": 800,
-    "marks": [
-      1,
-      4,
-      6
-    ],
+    "marks": [1, 4, 6],
     "route": "/ai/health",
     "screen": "4feee0e4c351e310",
     "guide": "6be4b81e17e5d41b",
@@ -420,9 +293,7 @@
     "src": "/help/shots/ai-knowledge.webp",
     "width": 1280,
     "height": 1161,
-    "marks": [
-      1
-    ],
+    "marks": [1],
     "route": "/ai/knowledge",
     "screen": "545648f42ea9b1f4",
     "guide": "122dca79a411b7dd",
@@ -432,10 +303,7 @@
     "src": "/help/shots/ai-logs.webp",
     "width": 1280,
     "height": 800,
-    "marks": [
-      1,
-      3
-    ],
+    "marks": [1, 3],
     "route": "/ai/logs",
     "screen": "2d87433aae081b34",
     "guide": "66af5a083f4abdab",
@@ -445,13 +313,7 @@
     "src": "/help/shots/ai-mehedi.webp",
     "width": 1280,
     "height": 1458,
-    "marks": [
-      1,
-      2,
-      4,
-      6,
-      7
-    ],
+    "marks": [1, 2, 4, 6, 7],
     "route": "/ai/mehedi",
     "screen": "bb55e83d9c5a3f9f",
     "guide": "6273b8d9f999be1e",
@@ -461,11 +323,7 @@
     "src": "/help/shots/ai-models.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      1,
-      2,
-      9
-    ],
+    "marks": [1, 2, 9],
     "route": "/ai/models",
     "screen": "afb4ae6fcdddcd11",
     "guide": "05747246792a71df",
@@ -475,9 +333,7 @@
     "src": "/help/shots/ai-orders.webp",
     "width": 1280,
     "height": 800,
-    "marks": [
-      1
-    ],
+    "marks": [1],
     "route": "/ai/orders",
     "screen": "425e1e699ff31961",
     "guide": "f5c9c5aa177c500a",
@@ -487,10 +343,7 @@
     "src": "/help/shots/ai-requests.webp",
     "width": 1280,
     "height": 1213,
-    "marks": [
-      1,
-      3
-    ],
+    "marks": [1, 3],
     "route": "/ai",
     "screen": "172df6ff13487654",
     "guide": "e4653d602dc780df",
@@ -500,14 +353,7 @@
     "src": "/help/shots/ai-settings.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      2,
-      4,
-      5,
-      6,
-      8,
-      9
-    ],
+    "marks": [2, 4, 5, 6, 8, 9],
     "route": "/ai/settings",
     "screen": "3cd405f4c856f602",
     "guide": "a356ef8a995f6e46",
@@ -517,10 +363,7 @@
     "src": "/help/shots/ai-skills.webp",
     "width": 1280,
     "height": 800,
-    "marks": [
-      1,
-      2
-    ],
+    "marks": [1, 2],
     "route": "/ai/skills",
     "screen": "6d03fe7c36ce8298",
     "guide": "e7ef362f17caab9a",
@@ -530,12 +373,7 @@
     "src": "/help/shots/ai-switch.webp",
     "width": 1280,
     "height": 1213,
-    "marks": [
-      1,
-      2,
-      3,
-      7
-    ],
+    "marks": [1, 2, 3, 7],
     "route": "/ai",
     "screen": "172df6ff13487654",
     "guide": "6a5d67d31e67b129",
@@ -545,10 +383,7 @@
     "src": "/help/shots/appearance.webp",
     "width": 1280,
     "height": 800,
-    "marks": [
-      1,
-      4
-    ],
+    "marks": [1, 4],
     "route": "/settings/appearance",
     "screen": "497c4c640d266052",
     "guide": "dad429e1b43e1102",
@@ -558,9 +393,7 @@
     "src": "/help/shots/backups-cloudflare.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      5
-    ],
+    "marks": [5],
     "route": "/settings/backups",
     "screen": "7165ec8cc696046a",
     "guide": "f39a860976a785b8",
@@ -570,13 +403,7 @@
     "src": "/help/shots/backups-drive-key.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      1,
-      3,
-      6,
-      7,
-      8
-    ],
+    "marks": [1, 3, 6, 7, 8],
     "route": "/settings/backups",
     "screen": "7165ec8cc696046a",
     "guide": "ed5351013cd99191",
@@ -586,9 +413,7 @@
     "src": "/help/shots/backups-google-setup.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      6
-    ],
+    "marks": [6],
     "route": "/settings/backups",
     "screen": "7165ec8cc696046a",
     "guide": "58f193614bb68150",
@@ -598,12 +423,7 @@
     "src": "/help/shots/backups-new-server.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      1,
-      30,
-      36,
-      39
-    ],
+    "marks": [1, 30, 36, 39],
     "route": "/settings/backups",
     "screen": "7165ec8cc696046a",
     "guide": "24ac851972c04090",
@@ -613,12 +433,7 @@
     "src": "/help/shots/backups-restore.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      2,
-      4,
-      5,
-      6
-    ],
+    "marks": [2, 4, 5, 6],
     "route": "/settings/backups",
     "screen": "7165ec8cc696046a",
     "guide": "6489cd7cd17ed52e",
@@ -628,12 +443,7 @@
     "src": "/help/shots/change-password.webp",
     "width": 1280,
     "height": 800,
-    "marks": [
-      2,
-      3,
-      4,
-      5
-    ],
+    "marks": [2, 3, 4, 5],
     "route": "/change-password",
     "screen": "5a5595989259c760",
     "guide": "1dfdadc4e77974be",
@@ -643,9 +453,7 @@
     "src": "/help/shots/common-buttons.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      6
-    ],
+    "marks": [6],
     "route": "/",
     "screen": "a468159db32eef48",
     "guide": "62d1f96450e52659",
@@ -655,10 +463,7 @@
     "src": "/help/shots/compliance-add.webp",
     "width": 1280,
     "height": 1090,
-    "marks": [
-      1,
-      4
-    ],
+    "marks": [1, 4],
     "route": "/compliance",
     "screen": "f223bfd3c932d460",
     "guide": "da586108002d1676",
@@ -668,12 +473,7 @@
     "src": "/help/shots/compliance-overview.webp",
     "width": 1280,
     "height": 1090,
-    "marks": [
-      1,
-      2,
-      3,
-      4
-    ],
+    "marks": [1, 2, 3, 4],
     "route": "/compliance",
     "screen": "f223bfd3c932d460",
     "guide": "6325d7d47db2f87a",
@@ -693,13 +493,7 @@
     "src": "/help/shots/dashboard-action-zone.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      1,
-      2,
-      5,
-      7,
-      8
-    ],
+    "marks": [1, 2, 5, 7, 8],
     "route": "/",
     "screen": "a468159db32eef48",
     "guide": "57464c1b85ac0127",
@@ -709,9 +503,7 @@
     "src": "/help/shots/dashboard-arrange-sections.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      1
-    ],
+    "marks": [1],
     "route": "/",
     "screen": "a468159db32eef48",
     "guide": "8566a446a1ed643d",
@@ -721,9 +513,7 @@
     "src": "/help/shots/dashboard-empty.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      2
-    ],
+    "marks": [2],
     "route": "/",
     "screen": "a468159db32eef48",
     "guide": "b34b9b548f27d643",
@@ -733,11 +523,7 @@
     "src": "/help/shots/dashboard-home-top-bar.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      2,
-      3,
-      4
-    ],
+    "marks": [2, 3, 4],
     "route": "/",
     "screen": "a468159db32eef48",
     "guide": "edbfb8c56b03c954",
@@ -747,11 +533,7 @@
     "src": "/help/shots/dashboard-key-figures.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      1,
-      5,
-      6
-    ],
+    "marks": [1, 5, 6],
     "route": "/",
     "screen": "a468159db32eef48",
     "guide": "d85be15d2159b222",
@@ -761,12 +543,7 @@
     "src": "/help/shots/dashboard-pipeline-activity.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      1,
-      2,
-      5,
-      7
-    ],
+    "marks": [1, 2, 5, 7],
     "route": "/",
     "screen": "a468159db32eef48",
     "guide": "7cf3588c5e6ed551",
@@ -776,12 +553,7 @@
     "src": "/help/shots/dashboard-predictive.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      1,
-      2,
-      6,
-      7
-    ],
+    "marks": [1, 2, 6, 7],
     "route": "/",
     "screen": "a468159db32eef48",
     "guide": "de3748b71f59f524",
@@ -791,13 +563,7 @@
     "src": "/help/shots/dashboard-pulse.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      1,
-      2,
-      3,
-      4,
-      5
-    ],
+    "marks": [1, 2, 3, 4, 5],
     "route": "/",
     "screen": "a468159db32eef48",
     "guide": "b4677efd8c50d9b1",
@@ -807,9 +573,7 @@
     "src": "/help/shots/dashboard-sales-target.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      1
-    ],
+    "marks": [1],
     "route": "/",
     "screen": "a468159db32eef48",
     "guide": "583968930b5ef7a2",
@@ -819,9 +583,7 @@
     "src": "/help/shots/dashboard-stock-alerts.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      4
-    ],
+    "marks": [4],
     "route": "/",
     "screen": "a468159db32eef48",
     "guide": "0dd5a0427f4404ce",
@@ -831,9 +593,7 @@
     "src": "/help/shots/dashboard-top-sellers.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      2
-    ],
+    "marks": [2],
     "route": "/",
     "screen": "a468159db32eef48",
     "guide": "8ae24f50df002f6b",
@@ -863,10 +623,7 @@
     "src": "/help/shots/find-your-way.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      1,
-      3
-    ],
+    "marks": [1, 3],
     "route": "/",
     "screen": "a468159db32eef48",
     "guide": "bc44413e9f2fac3b",
@@ -876,10 +633,7 @@
     "src": "/help/shots/help-ai.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      1,
-      3
-    ],
+    "marks": [1, 3],
     "route": "/help",
     "screen": "26520c5d121f6da3",
     "guide": "3eac911e9d1699f5",
@@ -899,9 +653,7 @@
     "src": "/help/shots/help-read-guide.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      2
-    ],
+    "marks": [2],
     "route": "/help/getting-started/sign-in",
     "screen": "c3a1eb7e85e20941",
     "guide": "23ca7772f3710da8",
@@ -931,9 +683,7 @@
     "src": "/help/shots/hr-360-report.webp",
     "width": 1280,
     "height": 856,
-    "marks": [
-      2
-    ],
+    "marks": [2],
     "route": "/hr/employees",
     "screen": "8b44681c46d4cc00",
     "guide": "4116bf03ca05a767",
@@ -943,12 +693,7 @@
     "src": "/help/shots/hr-add-employee.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      1,
-      2,
-      3,
-      4
-    ],
+    "marks": [1, 2, 3, 4],
     "route": "/hr/employees/new",
     "screen": "87f893122e016357",
     "guide": "f41a80ab822468b8",
@@ -958,12 +703,7 @@
     "src": "/help/shots/hr-advances.webp",
     "width": 1280,
     "height": 1520,
-    "marks": [
-      1,
-      2,
-      3,
-      4
-    ],
+    "marks": [1, 2, 3, 4],
     "route": "/hr/advances/new",
     "screen": "9577ca81affd279f",
     "guide": "6d2f2584c03df7df",
@@ -973,10 +713,7 @@
     "src": "/help/shots/hr-attendance.webp",
     "width": 1280,
     "height": 800,
-    "marks": [
-      1,
-      6
-    ],
+    "marks": [1, 6],
     "route": "/hr/attendance",
     "screen": "81d19babf584897b",
     "guide": "6efd78282205302f",
@@ -986,9 +723,7 @@
     "src": "/help/shots/hr-claims.webp",
     "width": 1280,
     "height": 971,
-    "marks": [
-      1
-    ],
+    "marks": [1],
     "route": "/hr/claims",
     "screen": "a3445ed84481abe2",
     "guide": "aed5f4c0c5069923",
@@ -998,10 +733,7 @@
     "src": "/help/shots/hr-data-vault.webp",
     "width": 1280,
     "height": 856,
-    "marks": [
-      1,
-      2
-    ],
+    "marks": [1, 2],
     "route": "/hr/employees",
     "screen": "8b44681c46d4cc00",
     "guide": "8b306411e7dd226a",
@@ -1021,11 +753,7 @@
     "src": "/help/shots/hr-employee-directory.webp",
     "width": 1280,
     "height": 856,
-    "marks": [
-      1,
-      3,
-      5
-    ],
+    "marks": [1, 3, 5],
     "route": "/hr/employees",
     "screen": "8b44681c46d4cc00",
     "guide": "4ade781cff71456e",
@@ -1035,11 +763,7 @@
     "src": "/help/shots/hr-employee-profile.webp",
     "width": 1280,
     "height": 856,
-    "marks": [
-      1,
-      3,
-      7
-    ],
+    "marks": [1, 3, 7],
     "route": "/hr/employees",
     "screen": "8b44681c46d4cc00",
     "guide": "d8a41b7187cd2b50",
@@ -1059,11 +783,7 @@
     "src": "/help/shots/hr-gps-attendance.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      1,
-      2,
-      4
-    ],
+    "marks": [1, 2, 4],
     "route": "/hr/settings",
     "screen": "5f5bfb093153638d",
     "guide": "e62c257af99c8df9",
@@ -1073,12 +793,7 @@
     "src": "/help/shots/hr-holidays-rules.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      1,
-      2,
-      4,
-      5
-    ],
+    "marks": [1, 2, 4, 5],
     "route": "/hr/settings",
     "screen": "5f5bfb093153638d",
     "guide": "4ce5adf3a895beb4",
@@ -1088,9 +803,7 @@
     "src": "/help/shots/hr-items.webp",
     "width": 1280,
     "height": 800,
-    "marks": [
-      1
-    ],
+    "marks": [1],
     "route": "/hr/items",
     "screen": "8e809322b479a223",
     "guide": "b4d42f955137cd45",
@@ -1100,11 +813,7 @@
     "src": "/help/shots/hr-leave.webp",
     "width": 1280,
     "height": 1099,
-    "marks": [
-      1,
-      2,
-      3
-    ],
+    "marks": [1, 2, 3],
     "route": "/hr/leave/new",
     "screen": "213614718d703c80",
     "guide": "b155e1328a60fea0",
@@ -1114,10 +823,7 @@
     "src": "/help/shots/hr-money.webp",
     "width": 1280,
     "height": 800,
-    "marks": [
-      1,
-      2
-    ],
+    "marks": [1, 2],
     "route": "/hr/money",
     "screen": "e9feadbf199183eb",
     "guide": "29955eb2a6c65355",
@@ -1127,9 +833,7 @@
     "src": "/help/shots/hr-notices.webp",
     "width": 1280,
     "height": 800,
-    "marks": [
-      1
-    ],
+    "marks": [1],
     "route": "/hr/notices",
     "screen": "feb079cf0c44fb90",
     "guide": "7292bad6e58d8668",
@@ -1139,10 +843,7 @@
     "src": "/help/shots/hr-outside-services.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      1,
-      3
-    ],
+    "marks": [1, 3],
     "route": "/hr/settings",
     "screen": "5f5bfb093153638d",
     "guide": "22e4181dda9f5e70",
@@ -1152,9 +853,7 @@
     "src": "/help/shots/hr-overtime.webp",
     "width": 1280,
     "height": 858,
-    "marks": [
-      2
-    ],
+    "marks": [2],
     "route": "/hr/overtime",
     "screen": "0995d73c4facd51e",
     "guide": "deff8a3325854ba1",
@@ -1164,14 +863,7 @@
     "src": "/help/shots/hr-overview.webp",
     "width": 1280,
     "height": 1070,
-    "marks": [
-      1,
-      2,
-      3,
-      4,
-      5,
-      6
-    ],
+    "marks": [1, 2, 3, 4, 5, 6],
     "route": "/hr",
     "screen": "645e2a0e021bf059",
     "guide": "f15951aac92c2c62",
@@ -1181,9 +873,7 @@
     "src": "/help/shots/hr-payroll-approve-pay.webp",
     "width": 1280,
     "height": 800,
-    "marks": [
-      1
-    ],
+    "marks": [1],
     "route": "/hr/payroll",
     "screen": "2c51c189d3d2b30d",
     "guide": "fab8521c0384de93",
@@ -1193,9 +883,7 @@
     "src": "/help/shots/hr-payroll-prepare.webp",
     "width": 1280,
     "height": 800,
-    "marks": [
-      1
-    ],
+    "marks": [1],
     "route": "/hr/payroll",
     "screen": "2c51c189d3d2b30d",
     "guide": "eb1a6c3d15b7b7af",
@@ -1205,9 +893,7 @@
     "src": "/help/shots/hr-payslip.webp",
     "width": 1280,
     "height": 800,
-    "marks": [
-      1
-    ],
+    "marks": [1],
     "route": "/hr/payroll",
     "screen": "2c51c189d3d2b30d",
     "guide": "c13dca4f2220fdc3",
@@ -1217,9 +903,7 @@
     "src": "/help/shots/hr-staff-map.webp",
     "width": 1280,
     "height": 1093,
-    "marks": [
-      1
-    ],
+    "marks": [1],
     "route": "/hr/map",
     "screen": "b5aec0e59b49c3f4",
     "guide": "4314068ecafa959b",
@@ -1229,10 +913,7 @@
     "src": "/help/shots/hr-terms.webp",
     "width": 1280,
     "height": 800,
-    "marks": [
-      1,
-      5
-    ],
+    "marks": [1, 5],
     "route": "/hr/terms",
     "screen": "e6200e1e74675b54",
     "guide": "a8a75a7a9a771f20",
@@ -1242,13 +923,7 @@
     "src": "/help/shots/inbox.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      1,
-      2,
-      3,
-      4,
-      5
-    ],
+    "marks": [1, 2, 3, 4, 5],
     "route": "/inbox",
     "screen": "54f176d2e8e487ec",
     "guide": "c3293a0d0706d9d9",
@@ -1278,12 +953,7 @@
     "src": "/help/shots/materials-add-material.webp",
     "width": 1280,
     "height": 1283,
-    "marks": [
-      1,
-      2,
-      3,
-      4
-    ],
+    "marks": [1, 2, 3, 4],
     "route": "/materials/stock/new",
     "screen": "2180d001bbd5b7da",
     "guide": "19360a6a158f5f89",
@@ -1293,12 +963,7 @@
     "src": "/help/shots/materials-issue.webp",
     "width": 1280,
     "height": 920,
-    "marks": [
-      1,
-      2,
-      3,
-      4
-    ],
+    "marks": [1, 2, 3, 4],
     "route": "/materials/issues/new",
     "screen": "4e9ed05f190e3ee4",
     "guide": "ec51235822586c60",
@@ -1308,12 +973,7 @@
     "src": "/help/shots/materials-overview.webp",
     "width": 1280,
     "height": 1473,
-    "marks": [
-      1,
-      2,
-      3,
-      4
-    ],
+    "marks": [1, 2, 3, 4],
     "route": "/materials",
     "screen": "843018bbbac9dde5",
     "guide": "e568d666e9b4dbed",
@@ -1323,12 +983,7 @@
     "src": "/help/shots/materials-purchase-order.webp",
     "width": 1280,
     "height": 1161,
-    "marks": [
-      1,
-      2,
-      3,
-      4
-    ],
+    "marks": [1, 2, 3, 4],
     "route": "/materials/orders/new",
     "screen": "32b22010a5c19107",
     "guide": "ed887827ab83f2ac",
@@ -1338,13 +993,7 @@
     "src": "/help/shots/materials-receive-goods.webp",
     "width": 1280,
     "height": 1203,
-    "marks": [
-      1,
-      2,
-      3,
-      4,
-      5
-    ],
+    "marks": [1, 2, 3, 4, 5],
     "route": "/materials/purchases/new",
     "screen": "c958383ca7a1f5d5",
     "guide": "e14b473268e80637",
@@ -1364,10 +1013,7 @@
     "src": "/help/shots/materials-stock-card.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      1,
-      2
-    ],
+    "marks": [1, 2],
     "route": "/materials/stock",
     "screen": "b12d77ea7d5d00e8",
     "guide": "0cc8848afb300f82",
@@ -1377,10 +1023,7 @@
     "src": "/help/shots/materials-supplier-return.webp",
     "width": 1280,
     "height": 800,
-    "marks": [
-      1,
-      4
-    ],
+    "marks": [1, 4],
     "route": "/materials/returns",
     "screen": "6da09808625994cf",
     "guide": "291b62910ad7659d",
@@ -1390,9 +1033,7 @@
     "src": "/help/shots/my-hr-advances.webp",
     "width": 1280,
     "height": 800,
-    "marks": [
-      1
-    ],
+    "marks": [1],
     "route": "/me/advances",
     "screen": "814ae6f0fbadc985",
     "guide": "8fbbf9ca41cdc1bc",
@@ -1402,10 +1043,7 @@
     "src": "/help/shots/my-hr-check-in.webp",
     "width": 1280,
     "height": 800,
-    "marks": [
-      1,
-      6
-    ],
+    "marks": [1, 6],
     "route": "/me",
     "screen": "9edd196a27e9e5f8",
     "guide": "9ac55543b1b77cb3",
@@ -1415,9 +1053,7 @@
     "src": "/help/shots/my-hr-claims.webp",
     "width": 1280,
     "height": 800,
-    "marks": [
-      1
-    ],
+    "marks": [1],
     "route": "/me/claims",
     "screen": "d6004cd6f1aac048",
     "guide": "af8bbc27ce0ed7c9",
@@ -1427,10 +1063,7 @@
     "src": "/help/shots/my-hr-dashboard.webp",
     "width": 1280,
     "height": 800,
-    "marks": [
-      1,
-      3
-    ],
+    "marks": [1, 3],
     "route": "/me",
     "screen": "9edd196a27e9e5f8",
     "guide": "f1ec2ec8d501a0c1",
@@ -1440,9 +1073,7 @@
     "src": "/help/shots/my-hr-details.webp",
     "width": 1280,
     "height": 800,
-    "marks": [
-      1
-    ],
+    "marks": [1],
     "route": "/me",
     "screen": "9edd196a27e9e5f8",
     "guide": "d11e3ff59ef3f311",
@@ -1452,9 +1083,7 @@
     "src": "/help/shots/my-hr-leave.webp",
     "width": 1280,
     "height": 800,
-    "marks": [
-      1
-    ],
+    "marks": [1],
     "route": "/me/leave",
     "screen": "78ffe61f4c266f74",
     "guide": "00d3c776f7aa0969",
@@ -1464,9 +1093,7 @@
     "src": "/help/shots/my-hr-ledger.webp",
     "width": 1280,
     "height": 800,
-    "marks": [
-      1
-    ],
+    "marks": [1],
     "route": "/me/ledger",
     "screen": "7d98d8a6d4ce0ad6",
     "guide": "c310263a22c834c7",
@@ -1476,9 +1103,7 @@
     "src": "/help/shots/my-hr-my-details.webp",
     "width": 1280,
     "height": 800,
-    "marks": [
-      1
-    ],
+    "marks": [1],
     "route": "/me/profile",
     "screen": "8e05a95596904ede",
     "guide": "3afb2ffd11509c94",
@@ -1488,9 +1113,7 @@
     "src": "/help/shots/my-hr-notices.webp",
     "width": 1280,
     "height": 800,
-    "marks": [
-      1
-    ],
+    "marks": [1],
     "route": "/me/notices",
     "screen": "3954e21c7191a407",
     "guide": "746d8cabe6196bd4",
@@ -1500,9 +1123,7 @@
     "src": "/help/shots/my-hr-payslips.webp",
     "width": 1280,
     "height": 800,
-    "marks": [
-      1
-    ],
+    "marks": [1],
     "route": "/me/payslips",
     "screen": "0524cf35ef7291c7",
     "guide": "64de7f8f3808cb07",
@@ -1522,9 +1143,7 @@
     "src": "/help/shots/my-hr-tasks.webp",
     "width": 1280,
     "height": 800,
-    "marks": [
-      1
-    ],
+    "marks": [1],
     "route": "/me/tasks",
     "screen": "b59161b6af410b31",
     "guide": "d454b0b903372b9a",
@@ -1534,9 +1153,7 @@
     "src": "/help/shots/my-hr-tell-ai.webp",
     "width": 1280,
     "height": 800,
-    "marks": [
-      1
-    ],
+    "marks": [1],
     "route": "/me",
     "screen": "9edd196a27e9e5f8",
     "guide": "58eb0b499f93d133",
@@ -1546,9 +1163,7 @@
     "src": "/help/shots/my-hr-terms.webp",
     "width": 1280,
     "height": 800,
-    "marks": [
-      1
-    ],
+    "marks": [1],
     "route": "/terms",
     "screen": "211b44fb882b7e87",
     "guide": "d282a680d3f5a34c",
@@ -1558,10 +1173,7 @@
     "src": "/help/shots/parties-buyer-360.webp",
     "width": 1280,
     "height": 800,
-    "marks": [
-      1,
-      6
-    ],
+    "marks": [1, 6],
     "route": "/parties/buyers",
     "screen": "cd7ef3e8938f6165",
     "guide": "0ad300a565ce411e",
@@ -1581,10 +1193,7 @@
     "src": "/help/shots/parties-dues.webp",
     "width": 1280,
     "height": 1107,
-    "marks": [
-      1,
-      2
-    ],
+    "marks": [1, 2],
     "route": "/parties/dues",
     "screen": "670d855ca7a1c20b",
     "guide": "26125973d551d0c8",
@@ -1604,13 +1213,7 @@
     "src": "/help/shots/parties-find.webp",
     "width": 1280,
     "height": 800,
-    "marks": [
-      1,
-      2,
-      3,
-      4,
-      6
-    ],
+    "marks": [1, 2, 3, 4, 6],
     "route": "/parties/buyers",
     "screen": "cd7ef3e8938f6165",
     "guide": "39374891ad6d0318",
@@ -1620,14 +1223,7 @@
     "src": "/help/shots/parties-new.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      1,
-      2,
-      3,
-      6,
-      7,
-      8
-    ],
+    "marks": [1, 2, 3, 6, 7, 8],
     "route": "/parties/buyers/new",
     "screen": "b22b881262413488",
     "guide": "77e0153dcd0efc2a",
@@ -1637,9 +1233,7 @@
     "src": "/help/shots/parties-opening-balance.webp",
     "width": 1280,
     "height": 800,
-    "marks": [
-      1
-    ],
+    "marks": [1],
     "route": "/parties/buyers",
     "screen": "cd7ef3e8938f6165",
     "guide": "b11f735627f8500b",
@@ -1649,10 +1243,7 @@
     "src": "/help/shots/parties-statement.webp",
     "width": 1280,
     "height": 800,
-    "marks": [
-      1,
-      3
-    ],
+    "marks": [1, 3],
     "route": "/parties/buyers",
     "screen": "cd7ef3e8938f6165",
     "guide": "b4f4cd4688c91d9a",
@@ -1662,9 +1253,7 @@
     "src": "/help/shots/parties-supplier-360.webp",
     "width": 1280,
     "height": 1026,
-    "marks": [
-      1
-    ],
+    "marks": [1],
     "route": "/parties/suppliers",
     "screen": "cd7ef3e8938f6165",
     "guide": "7a44f7882115faba",
@@ -1694,10 +1283,7 @@
     "src": "/help/shots/planner-automatic.webp",
     "width": 1280,
     "height": 1247,
-    "marks": [
-      1,
-      2
-    ],
+    "marks": [1, 2],
     "route": "/planner/automatic",
     "screen": "8934ac1b29e254d2",
     "guide": "3046f32a8f2360c9",
@@ -1707,9 +1293,7 @@
     "src": "/help/shots/planner-coming-up.webp",
     "width": 1280,
     "height": 800,
-    "marks": [
-      1
-    ],
+    "marks": [1],
     "route": "/planner",
     "screen": "c38fd22e234a2009",
     "guide": "f1bec4927b5deef3",
@@ -1719,12 +1303,7 @@
     "src": "/help/shots/planner-notepad.webp",
     "width": 1280,
     "height": 800,
-    "marks": [
-      1,
-      2,
-      3,
-      4
-    ],
+    "marks": [1, 2, 3, 4],
     "route": "/planner/notepad",
     "screen": "c2a29b6e6d6cf6f7",
     "guide": "e05099893af9894a",
@@ -1734,9 +1313,7 @@
     "src": "/help/shots/planner-reminders.webp",
     "width": 1280,
     "height": 800,
-    "marks": [
-      1
-    ],
+    "marks": [1],
     "route": "/planner/reminders",
     "screen": "83fc97faba8497ef",
     "guide": "e0255b8b433f9b2a",
@@ -1746,10 +1323,7 @@
     "src": "/help/shots/planner-tasks.webp",
     "width": 1280,
     "height": 800,
-    "marks": [
-      1,
-      4
-    ],
+    "marks": [1, 4],
     "route": "/planner/tasks",
     "screen": "e7e677088ebaf209",
     "guide": "864351159d1e0cb1",
@@ -1759,10 +1333,7 @@
     "src": "/help/shots/production-action-log.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      1,
-      3
-    ],
+    "marks": [1, 3],
     "route": "/production/projects/[projectId]/log",
     "screen": "49fe40fe22d32ee7",
     "guide": "eb059bb15dbb5d06",
@@ -1772,11 +1343,7 @@
     "src": "/help/shots/production-batch-issue.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      1,
-      2,
-      3
-    ],
+    "marks": [1, 2, 3],
     "route": "/production/batches/[batchId]/issue",
     "screen": "04759698dc2fbecc",
     "guide": "5e5952e41ba444c4",
@@ -1796,10 +1363,7 @@
     "src": "/help/shots/production-batch-orders.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      2,
-      3
-    ],
+    "marks": [2, 3],
     "route": "/production/batches/[batchId]/orders/new",
     "screen": "f7c646662fd6526b",
     "guide": "167f3636e1150d29",
@@ -1809,12 +1373,7 @@
     "src": "/help/shots/production-batch-receive.webp",
     "width": 1280,
     "height": 1272,
-    "marks": [
-      2,
-      3,
-      4,
-      5
-    ],
+    "marks": [2, 3, 4, 5],
     "route": "/production/batches/[batchId]/receive",
     "screen": "4d48f5ddd01607b0",
     "guide": "dd8a98b3c55e40a0",
@@ -1824,14 +1383,7 @@
     "src": "/help/shots/production-batch-summary.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      1,
-      2,
-      3,
-      4,
-      5,
-      6
-    ],
+    "marks": [1, 2, 3, 4, 5, 6],
     "route": "/production/batches/[batchId]/summary",
     "screen": "bf21804838a2d3cf",
     "guide": "a6058e72b618c3a9",
@@ -1841,11 +1393,7 @@
     "src": "/help/shots/production-batches.webp",
     "width": 1280,
     "height": 860,
-    "marks": [
-      1,
-      2,
-      3
-    ],
+    "marks": [1, 2, 3],
     "route": "/production/batches",
     "screen": "f74e7a0f71725bc2",
     "guide": "5c8abc92ac1a45a5",
@@ -1855,13 +1403,7 @@
     "src": "/help/shots/production-bills.webp",
     "width": 1280,
     "height": 1449,
-    "marks": [
-      1,
-      2,
-      3,
-      4,
-      5
-    ],
+    "marks": [1, 2, 3, 4, 5],
     "route": "/production/bills/new",
     "screen": "3a499ac9a10624b5",
     "guide": "d107b7914dd5c46e",
@@ -1871,9 +1413,7 @@
     "src": "/help/shots/production-booking-approval.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      5
-    ],
+    "marks": [5],
     "route": "/production/bookings/[bookingId]",
     "screen": "933a3837827b6fac",
     "guide": "b05192fec9197006",
@@ -1883,10 +1423,7 @@
     "src": "/help/shots/production-booking-batch.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      1,
-      4
-    ],
+    "marks": [1, 4],
     "route": "/production/batches/[batchId]",
     "screen": "398c3e0251c14406",
     "guide": "a47801ca37fcf984",
@@ -1896,9 +1433,7 @@
     "src": "/help/shots/production-booking-book.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      1
-    ],
+    "marks": [1],
     "route": "/production/batches/[batchId]",
     "screen": "398c3e0251c14406",
     "guide": "0708315b7f059897",
@@ -1908,9 +1443,7 @@
     "src": "/help/shots/production-booking-change.webp",
     "width": 1280,
     "height": 1337,
-    "marks": [
-      1
-    ],
+    "marks": [1],
     "route": "/production/bookings/[bookingId]/edit",
     "screen": "d00e2a54ae25ba83",
     "guide": "633baf499114a194",
@@ -1930,11 +1463,7 @@
     "src": "/help/shots/production-booking-new.webp",
     "width": 1280,
     "height": 1353,
-    "marks": [
-      1,
-      2,
-      3
-    ],
+    "marks": [1, 2, 3],
     "route": "/production/bookings/new",
     "screen": "d2fca748ceaf9f7b",
     "guide": "289b2df15c60d858",
@@ -1944,9 +1473,7 @@
     "src": "/help/shots/production-booking-print.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      4
-    ],
+    "marks": [4],
     "route": "/production/bookings/[bookingId]",
     "screen": "933a3837827b6fac",
     "guide": "d9ad9d2f7b3990c3",
@@ -1956,12 +1483,7 @@
     "src": "/help/shots/production-bookings.webp",
     "width": 1280,
     "height": 1121,
-    "marks": [
-      1,
-      2,
-      3,
-      4
-    ],
+    "marks": [1, 2, 3, 4],
     "route": "/production/bookings",
     "screen": "9cf12805e847fc21",
     "guide": "9e562a15ade1bf81",
@@ -1971,10 +1493,7 @@
     "src": "/help/shots/production-cm-settlement.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      4,
-      5
-    ],
+    "marks": [4, 5],
     "route": "/production/batches/[batchId]/cm-settlement",
     "screen": "b5a05e49643c7204",
     "guide": "fb36290a1dfcc966",
@@ -1994,12 +1513,7 @@
     "src": "/help/shots/production-contracts.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      2,
-      3,
-      4,
-      5
-    ],
+    "marks": [2, 3, 4, 5],
     "route": "/production/batches/[batchId]/contracts/[contractId]",
     "screen": "da965c25725af0b2",
     "guide": "cbfc3796682123df",
@@ -2009,11 +1523,7 @@
     "src": "/help/shots/production-cost-guard.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      1,
-      2,
-      5
-    ],
+    "marks": [1, 2, 5],
     "route": "/production/projects/[projectId]",
     "screen": "485b4e0ec12ba16a",
     "guide": "725abdac3580ec17",
@@ -2023,12 +1533,7 @@
     "src": "/help/shots/production-cost-heads.webp",
     "width": 1280,
     "height": 1507,
-    "marks": [
-      1,
-      2,
-      3,
-      4
-    ],
+    "marks": [1, 2, 3, 4],
     "route": "/production/cost-heads",
     "screen": "f64cfec3cb05457a",
     "guide": "8eabb79cfeb5712c",
@@ -2038,10 +1543,7 @@
     "src": "/help/shots/production-costing.webp",
     "width": 1280,
     "height": 898,
-    "marks": [
-      1,
-      9
-    ],
+    "marks": [1, 9],
     "route": "/production/costing",
     "screen": "d73ebccee5a87164",
     "guide": "48fab4ce9212099d",
@@ -2051,9 +1553,7 @@
     "src": "/help/shots/production-costs.webp",
     "width": 1280,
     "height": 1055,
-    "marks": [
-      6
-    ],
+    "marks": [6],
     "route": "/production/projects",
     "screen": "fe456d5acc66babd",
     "guide": "37b6f01a1df018d4",
@@ -2063,14 +1563,7 @@
     "src": "/help/shots/production-cutting.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      1,
-      2,
-      4,
-      5,
-      8,
-      9
-    ],
+    "marks": [1, 2, 4, 5, 8, 9],
     "route": "/production/projects/[projectId]/cutting",
     "screen": "490d8cdab2ee5e84",
     "guide": "c89830b8abd48371",
@@ -2090,12 +1583,7 @@
     "src": "/help/shots/production-fault-log.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      1,
-      2,
-      3,
-      4
-    ],
+    "marks": [1, 2, 3, 4],
     "route": "/production/faults",
     "screen": "fa3003cf495da25f",
     "guide": "fc479db2c778d370",
@@ -2105,11 +1593,7 @@
     "src": "/help/shots/production-find-projects.webp",
     "width": 1280,
     "height": 1055,
-    "marks": [
-      1,
-      2,
-      3
-    ],
+    "marks": [1, 2, 3],
     "route": "/production/projects",
     "screen": "fe456d5acc66babd",
     "guide": "6d4df7df2e6555d1",
@@ -2119,11 +1603,7 @@
     "src": "/help/shots/production-finishing.webp",
     "width": 1280,
     "height": 1400,
-    "marks": [
-      1,
-      3,
-      6
-    ],
+    "marks": [1, 3, 6],
     "route": "/production/projects/[projectId]/finishing",
     "screen": "5000d8f8ce6ad91c",
     "guide": "a5d05d97495e63a0",
@@ -2133,9 +1613,7 @@
     "src": "/help/shots/production-fob.webp",
     "width": 1280,
     "height": 1055,
-    "marks": [
-      1
-    ],
+    "marks": [1],
     "route": "/production/projects",
     "screen": "fe456d5acc66babd",
     "guide": "ae1ddaec137610e4",
@@ -2145,12 +1623,7 @@
     "src": "/help/shots/production-materials-per-piece.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      1,
-      2,
-      3,
-      4
-    ],
+    "marks": [1, 2, 3, 4],
     "route": "/production/projects/[projectId]/materials",
     "screen": "0b9f1539ea4be254",
     "guide": "128da10c6fcd19f8",
@@ -2170,15 +1643,7 @@
     "src": "/help/shots/production-new-project.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      1,
-      2,
-      3,
-      5,
-      6,
-      7,
-      8
-    ],
+    "marks": [1, 2, 3, 5, 6, 7, 8],
     "route": "/production/projects/new",
     "screen": "435d56741fec6c9c",
     "guide": "88b0f3249522eb9c",
@@ -2188,10 +1653,7 @@
     "src": "/help/shots/production-order-check.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      1,
-      7
-    ],
+    "marks": [1, 7],
     "route": "/production/costing/[costingId]",
     "screen": "b9ed1098f08efbdd",
     "guide": "dca70b56337a7950",
@@ -2201,11 +1663,7 @@
     "src": "/help/shots/production-overview.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      1,
-      2,
-      3
-    ],
+    "marks": [1, 2, 3],
     "route": "/production",
     "screen": "8e9a8c12d79637b1",
     "guide": "43a20d9db75bd675",
@@ -2215,9 +1673,7 @@
     "src": "/help/shots/production-receive-goods.webp",
     "width": 1280,
     "height": 800,
-    "marks": [
-      1
-    ],
+    "marks": [1],
     "route": "/production/deliveries/new",
     "screen": "f884ed3f856e2611",
     "guide": "627c31330dfeda08",
@@ -2227,10 +1683,7 @@
     "src": "/help/shots/production-save-to-tech-pack.webp",
     "width": 1280,
     "height": 1295,
-    "marks": [
-      2,
-      3
-    ],
+    "marks": [2, 3],
     "route": "/production/save",
     "screen": "6fb5b01be02da6e2",
     "guide": "d87200466d25a943",
@@ -2240,10 +1693,7 @@
     "src": "/help/shots/production-stages.webp",
     "width": 1280,
     "height": 1055,
-    "marks": [
-      1,
-      4
-    ],
+    "marks": [1, 4],
     "route": "/production/projects",
     "screen": "fe456d5acc66babd",
     "guide": "8d26d13377cef874",
@@ -2253,13 +1703,7 @@
     "src": "/help/shots/production-start-from-sales.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      1,
-      2,
-      3,
-      4,
-      7
-    ],
+    "marks": [1, 2, 3, 4, 7],
     "route": "/production/projects/new",
     "screen": "435d56741fec6c9c",
     "guide": "549b0c29de9aa21c",
@@ -2279,14 +1723,7 @@
     "src": "/help/shots/production-tech-pack.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      1,
-      2,
-      3,
-      4,
-      9,
-      10
-    ],
+    "marks": [1, 2, 3, 4, 9, 10],
     "route": "/tech-packs/[techPackId]",
     "screen": "2047d50768674709",
     "guide": "4a6bcc57d24ecc65",
@@ -2316,9 +1753,7 @@
     "src": "/help/shots/production-undo-delivery.webp",
     "width": 1280,
     "height": 904,
-    "marks": [
-      1
-    ],
+    "marks": [1],
     "route": "/production/deliveries",
     "screen": "2c3d6bbce2cfff74",
     "guide": "bd125eb95b60babc",
@@ -2328,10 +1763,7 @@
     "src": "/help/shots/products-archived-styles.webp",
     "width": 1280,
     "height": 800,
-    "marks": [
-      1,
-      2
-    ],
+    "marks": [1, 2],
     "route": "/products/archived",
     "screen": "dad7b3c2a74d08e5",
     "guide": "ede00a2b96a49f7c",
@@ -2341,10 +1773,7 @@
     "src": "/help/shots/products-bad-stock.webp",
     "width": 1280,
     "height": 800,
-    "marks": [
-      1,
-      6
-    ],
+    "marks": [1, 6],
     "route": "/products/bad-stock",
     "screen": "a63851dbf90bd03a",
     "guide": "c43d08043dabeb65",
@@ -2374,10 +1803,7 @@
     "src": "/help/shots/products-find-style.webp",
     "width": 1280,
     "height": 1097,
-    "marks": [
-      1,
-      3
-    ],
+    "marks": [1, 3],
     "route": "/products",
     "screen": "c3d5f49bbc24173e",
     "guide": "40e2410382dde2a4",
@@ -2397,11 +1823,7 @@
     "src": "/help/shots/products-new-style.webp",
     "width": 1280,
     "height": 1038,
-    "marks": [
-      1,
-      2,
-      3
-    ],
+    "marks": [1, 2, 3],
     "route": "/products/new",
     "screen": "d0e5d45d185a6297",
     "guide": "dfbd8952569c3e11",
@@ -2411,10 +1833,7 @@
     "src": "/help/shots/products-opening-stock.webp",
     "width": 1280,
     "height": 800,
-    "marks": [
-      1,
-      2
-    ],
+    "marks": [1, 2],
     "route": "/products/stock-count",
     "screen": "73ce97e220554b08",
     "guide": "594dbb2210ea179b",
@@ -2424,13 +1843,7 @@
     "src": "/help/shots/products-setup.webp",
     "width": 1280,
     "height": 1572,
-    "marks": [
-      1,
-      2,
-      3,
-      4,
-      5
-    ],
+    "marks": [1, 2, 3, 4, 5],
     "route": "/products/setup",
     "screen": "049b0c6b73412b66",
     "guide": "3fe75e457567c042",
@@ -2440,10 +1853,7 @@
     "src": "/help/shots/products-stock-count.webp",
     "width": 1280,
     "height": 800,
-    "marks": [
-      1,
-      2
-    ],
+    "marks": [1, 2],
     "route": "/products/stock-count",
     "screen": "73ce97e220554b08",
     "guide": "ee6adcbc94602698",
@@ -2453,10 +1863,7 @@
     "src": "/help/shots/reports-letter.webp",
     "width": 1280,
     "height": 820,
-    "marks": [
-      1,
-      2
-    ],
+    "marks": [1, 2],
     "route": "/reports/documents",
     "screen": "c4a539e7794031db",
     "guide": "27db1e981acab20c",
@@ -2466,13 +1873,7 @@
     "src": "/help/shots/reports-make.webp",
     "width": 1280,
     "height": 1059,
-    "marks": [
-      1,
-      2,
-      3,
-      4,
-      5
-    ],
+    "marks": [1, 2, 3, 4, 5],
     "route": "/reports/new",
     "screen": "e53d21e502f25d9a",
     "guide": "65480913dea12fd2",
@@ -2482,10 +1883,7 @@
     "src": "/help/shots/reports-printed-documents.webp",
     "width": 1280,
     "height": 820,
-    "marks": [
-      1,
-      2
-    ],
+    "marks": [1, 2],
     "route": "/reports/documents",
     "screen": "c4a539e7794031db",
     "guide": "d4ab1c50b07625ca",
@@ -2495,10 +1893,7 @@
     "src": "/help/shots/reports-template-add.webp",
     "width": 1280,
     "height": 1074,
-    "marks": [
-      1,
-      5
-    ],
+    "marks": [1, 5],
     "route": "/reports/templates",
     "screen": "1ebdc6fba6c71406",
     "guide": "512837206a6c93e7",
@@ -2518,10 +1913,7 @@
     "src": "/help/shots/sales-cheques.webp",
     "width": 1280,
     "height": 851,
-    "marks": [
-      1,
-      2
-    ],
+    "marks": [1, 2],
     "route": "/sales/payments",
     "screen": "2c05db66a7774564",
     "guide": "8537a2a254fb02e2",
@@ -2531,9 +1923,7 @@
     "src": "/help/shots/sales-counter-sale.webp",
     "width": 1280,
     "height": 970,
-    "marks": [
-      1
-    ],
+    "marks": [1],
     "route": "/sales/orders/new",
     "screen": "f7d1c72953213cdd",
     "guide": "a1b5cbbffd464de8",
@@ -2563,11 +1953,7 @@
     "src": "/help/shots/sales-invoices.webp",
     "width": 1280,
     "height": 800,
-    "marks": [
-      1,
-      2,
-      11
-    ],
+    "marks": [1, 2, 11],
     "route": "/sales/invoices",
     "screen": "4255d0b41ba75e6f",
     "guide": "f00f8630684206ea",
@@ -2577,12 +1963,7 @@
     "src": "/help/shots/sales-new-order.webp",
     "width": 1280,
     "height": 970,
-    "marks": [
-      1,
-      2,
-      3,
-      4
-    ],
+    "marks": [1, 2, 3, 4],
     "route": "/sales/orders/new",
     "screen": "f7d1c72953213cdd",
     "guide": "aa9b7a6efcf9b163",
@@ -2592,9 +1973,7 @@
     "src": "/help/shots/sales-order-documents.webp",
     "width": 1280,
     "height": 800,
-    "marks": [
-      1
-    ],
+    "marks": [1],
     "route": "/sales/orders",
     "screen": "e0067c9ad425c0ba",
     "guide": "34006f1798032c0f",
@@ -2604,11 +1983,7 @@
     "src": "/help/shots/sales-overview.webp",
     "width": 1280,
     "height": 847,
-    "marks": [
-      1,
-      4,
-      6
-    ],
+    "marks": [1, 4, 6],
     "route": "/sales/overview",
     "screen": "99ad23cfdf7b7fa1",
     "guide": "7d77692fed13277c",
@@ -2618,9 +1993,7 @@
     "src": "/help/shots/sales-payment-proof.webp",
     "width": 1280,
     "height": 851,
-    "marks": [
-      1
-    ],
+    "marks": [1],
     "route": "/sales/payments",
     "screen": "2c05db66a7774564",
     "guide": "8e3fa51cc81e7e9f",
@@ -2630,12 +2003,7 @@
     "src": "/help/shots/sales-payments-list.webp",
     "width": 1280,
     "height": 851,
-    "marks": [
-      1,
-      2,
-      3,
-      5
-    ],
+    "marks": [1, 2, 3, 5],
     "route": "/sales/payments",
     "screen": "2c05db66a7774564",
     "guide": "194836f51492cc6b",
@@ -2655,9 +2023,7 @@
     "src": "/help/shots/sales-proforma.webp",
     "width": 1280,
     "height": 800,
-    "marks": [
-      3
-    ],
+    "marks": [3],
     "route": "/sales/proformas",
     "screen": "38218d18169d70bc",
     "guide": "3be53baa3da0f755",
@@ -2667,13 +2033,7 @@
     "src": "/help/shots/sales-quotation.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      1,
-      2,
-      3,
-      4,
-      6
-    ],
+    "marks": [1, 2, 3, 4, 6],
     "route": "/sales/quotations/new",
     "screen": "78529afc49a073bd",
     "guide": "54e5742f5a8b5292",
@@ -2683,9 +2043,7 @@
     "src": "/help/shots/sales-quotation-status.webp",
     "width": 1280,
     "height": 800,
-    "marks": [
-      1
-    ],
+    "marks": [1],
     "route": "/sales/quotations",
     "screen": "7e0576c08ce8dcb5",
     "guide": "ffcf925ecc5f690d",
@@ -2695,10 +2053,7 @@
     "src": "/help/shots/sales-receive-payment.webp",
     "width": 1280,
     "height": 851,
-    "marks": [
-      1,
-      8
-    ],
+    "marks": [1, 8],
     "route": "/sales/payments",
     "screen": "2c05db66a7774564",
     "guide": "736f1d3a889ca753",
@@ -2708,9 +2063,7 @@
     "src": "/help/shots/sales-refund.webp",
     "width": 1280,
     "height": 851,
-    "marks": [
-      5
-    ],
+    "marks": [5],
     "route": "/sales/payments",
     "screen": "2c05db66a7774564",
     "guide": "a914879b31a58ef8",
@@ -2720,10 +2073,7 @@
     "src": "/help/shots/sales-return.webp",
     "width": 1280,
     "height": 800,
-    "marks": [
-      1,
-      7
-    ],
+    "marks": [1, 7],
     "route": "/sales/returns",
     "screen": "0003c00e70891a6e",
     "guide": "32d33b406ef79b94",
@@ -2733,9 +2083,7 @@
     "src": "/help/shots/sales-use-credit.webp",
     "width": 1280,
     "height": 800,
-    "marks": [
-      3
-    ],
+    "marks": [3],
     "route": "/sales/orders",
     "screen": "e0067c9ad425c0ba",
     "guide": "51670b78107c3e59",
@@ -2745,11 +2093,7 @@
     "src": "/help/shots/settings-add-person.webp",
     "width": 1280,
     "height": 800,
-    "marks": [
-      1,
-      2,
-      3
-    ],
+    "marks": [1, 2, 3],
     "route": "/settings/team",
     "screen": "d9596a2417da8dbf",
     "guide": "605bc0c53733bb44",
@@ -2759,10 +2103,7 @@
     "src": "/help/shots/settings-business-rules.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      1,
-      4
-    ],
+    "marks": [1, 4],
     "route": "/settings/company",
     "screen": "04098010d1a92795",
     "guide": "8654ccb5674552f6",
@@ -2772,13 +2113,7 @@
     "src": "/help/shots/settings-company-details.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      1,
-      2,
-      3,
-      4,
-      5
-    ],
+    "marks": [1, 2, 3, 4, 5],
     "route": "/settings/company",
     "screen": "04098010d1a92795",
     "guide": "98183bbb57ac9cee",
@@ -2788,9 +2123,7 @@
     "src": "/help/shots/settings-edit-role.webp",
     "width": 1280,
     "height": 911,
-    "marks": [
-      1
-    ],
+    "marks": [1],
     "route": "/settings/roles",
     "screen": "c449074af53c4ea3",
     "guide": "def89f253dbd81d7",
@@ -2800,11 +2133,7 @@
     "src": "/help/shots/settings-manage-member.webp",
     "width": 1280,
     "height": 800,
-    "marks": [
-      1,
-      2,
-      3
-    ],
+    "marks": [1, 2, 3],
     "route": "/settings/team",
     "screen": "d9596a2417da8dbf",
     "guide": "9824e0a46a224dd2",
@@ -2814,10 +2143,7 @@
     "src": "/help/shots/settings-member-permissions.webp",
     "width": 1280,
     "height": 800,
-    "marks": [
-      1,
-      2
-    ],
+    "marks": [1, 2],
     "route": "/settings/team",
     "screen": "d9596a2417da8dbf",
     "guide": "f581c7a12394a874",
@@ -2827,12 +2153,7 @@
     "src": "/help/shots/settings-new-role.webp",
     "width": 1280,
     "height": 911,
-    "marks": [
-      1,
-      2,
-      5,
-      6
-    ],
+    "marks": [1, 2, 5, 6],
     "route": "/settings/roles",
     "screen": "c449074af53c4ea3",
     "guide": "e38208a7b07e054f",
@@ -2842,11 +2163,7 @@
     "src": "/help/shots/sign-in.webp",
     "width": 1280,
     "height": 800,
-    "marks": [
-      1,
-      2,
-      3
-    ],
+    "marks": [1, 2, 3],
     "route": "/sign-in",
     "screen": "c07245f4ddd9382e",
     "guide": "9106b1f7c1e03462",
@@ -2856,9 +2173,7 @@
     "src": "/help/shots/sign-out.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      1
-    ],
+    "marks": [1],
     "route": "/",
     "screen": "a468159db32eef48",
     "guide": "ad13b943b5efe22d",
@@ -2868,9 +2183,7 @@
     "src": "/help/shots/switch-company.webp",
     "width": 1280,
     "height": 800,
-    "marks": [
-      1
-    ],
+    "marks": [1],
     "route": "/select-company",
     "screen": "647a468a4b52d242",
     "guide": "29f4a2a4c1bbdc82",
@@ -2880,14 +2193,7 @@
     "src": "/help/shots/tech-pack-link.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      1,
-      2,
-      3,
-      4,
-      5,
-      7
-    ],
+    "marks": [1, 2, 3, 4, 5, 7],
     "route": "/tech-packs/[techPackId]",
     "screen": "2047d50768674709",
     "guide": "893dd76a53826bfa",
@@ -2897,12 +2203,7 @@
     "src": "/help/shots/tech-pack-list.webp",
     "width": 1280,
     "height": 800,
-    "marks": [
-      1,
-      2,
-      3,
-      6
-    ],
+    "marks": [1, 2, 3, 6],
     "route": "/tech-packs",
     "screen": "d3034fecc193c694",
     "guide": "11c2b00647b9d5f9",
@@ -2912,14 +2213,7 @@
     "src": "/help/shots/tech-pack-new.webp",
     "width": 1280,
     "height": 1320,
-    "marks": [
-      1,
-      2,
-      3,
-      4,
-      5,
-      6
-    ],
+    "marks": [1, 2, 3, 4, 5, 6],
     "route": "/tech-packs/new",
     "screen": "0201fa2d72318ff4",
     "guide": "eec3f46342e6234f",
@@ -2939,10 +2233,7 @@
     "src": "/help/shots/whats-new-v62.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      1,
-      2
-    ],
+    "marks": [1, 2],
     "route": "/",
     "screen": "a468159db32eef48",
     "guide": "d6eb8dcd00b4fa72",
@@ -2952,9 +2243,7 @@
     "src": "/help/shots/whats-new-v63.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [
-      6
-    ],
+    "marks": [6],
     "route": "/",
     "screen": "a468159db32eef48",
     "guide": "0e19ea2e6cb52562",

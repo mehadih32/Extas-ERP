@@ -96,13 +96,14 @@ describe("the code bundle the server makes for the backups (G15)", () => {
   /*
    * On the server record_host_files runs as root and gives its folder and files to root.
    * Only root may do that, so where the tests run as another user (GitHub's machines)
-   * install and chown keep the owner as it is, and everything else runs for real.
+   * install and chown keep the owner as it is (chown still stops on a missing file, as the
+   * real one does), and everything else runs for real.
    */
   const asAnotherUser =
     process.getuid?.() === 0
       ? ""
       : `install() { local args=(); while [ $# -gt 0 ]; do case "$1" in -o | -g) shift 2 ;; *) args+=("$1"); shift ;; esac; done; command install "\${args[@]}"; }
-chown() { :; }`;
+chown() { local f; shift; for f in "$@"; do [ -e "$f" ] || { echo "chown: cannot access $f" >&2; return 1; }; done; }`;
   /** record_host_files with stand-in folders; git may be wrapped to spoil the bundle. */
   const record = (repo: string, wrap = "") =>
     withLib(

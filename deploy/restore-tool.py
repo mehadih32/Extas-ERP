@@ -928,6 +928,24 @@ def cloudflare(token, method, path, body=None):
     return data.get("result")
 
 
+def set_state(work, **facts):
+    """Adds facts to state.json (bootstrap.sh reads them with `fact`)."""
+    path = os.path.join(work, "state.json")
+    state = read_json(path) or {}
+    state.update(facts)
+    write_private(path, json.dumps(state, indent=2))
+
+
+def site_answers(name):
+    """Whether the ERP at this web address answers now (from wherever it points)."""
+    base = os.environ.get("EXTAS_SITE_BASE") or f"https://{name}"  # drills and tests only
+    try:
+        with urllib.request.urlopen(f"{base}/api/health", timeout=10, context=_context) as response:
+            return 200 <= response.status < 300
+    except (urllib.error.URLError, socket.timeout, OSError, ValueError):
+        return False
+
+
 def cmd_dns(args):
     work = os.path.abspath(args.work)
     deploy = os.path.abspath(args.deploy)
@@ -935,8 +953,12 @@ def cmd_dns(args):
     server = read_json(os.path.join(work, "server.json")) or {}
     app = (env_value(env_lines, "APP_DOMAIN") or "").lower()
     names = [n for n in [app, demo_domain(env_lines, os.path.join(deploy, "demo.conf"), app)] if n]
+    # dnsMoved: the web address points here now. Until it does, the restored ERP
+    # waits on standby (G2): bootstrap.sh reads this fact.
     if not names or app == "localhost":
+        set_state(work, dnsMoved=True)
         return 0
+    set_state(work, dnsMoved=False)
     ip = public_ip()
     cf = server.get("cloudflare") or {}
     token = cf.get("token") or env_value(env_lines, "CLOUDFLARE_API_TOKEN")
@@ -947,13 +969,6 @@ def cmd_dns(args):
     if not ip:
         warn("W02", "this server's public IP address could not be found, so Cloudflare was not changed. Point the A records to the Public IP address shown in Azure.")
         return 0
-    say("Your web address in Cloudflare")
-    for name in names:
-        note(f"{name}  ->  {ip} (this server)")
-    answer = ask("dns", f"Point {' and '.join(names)} to this server ({ip})? Press Enter for yes, or type no: ").strip().lower()
-    if answer in ("n", "no"):
-        warn("W01", f"the web address was not changed. Point {' and '.join(names)} (A record) to {ip} yourself.")
-        return 0
     try:
         zone_id = cf.get("zoneId")
         if not zone_id:
@@ -961,6 +976,35 @@ def cmd_dns(args):
             zone_id = zones[0]["id"] if zones else None
         if not zone_id:
             raise RuntimeError(f"the token cannot reach the domain {zone}")
+        now = {}
+        for name in names:
+            query = urllib.parse.urlencode({"type": "A", "name": name})
+            records = cloudflare(token, "GET", f"/zones/{zone_id}/dns_records?{query}") or []
+            now[name] = records[0].get("content") if records else None
+    except RuntimeError as error:
+        warn("W02", f"Cloudflare did not take the change ({error}). Point {' and '.join(names)} (A record) to {ip} yourself.")
+        return 0
+    if all(now.get(name) == ip for name in names):
+        for name in names:
+            note(f"{name} already points to this server.")
+        set_state(work, dnsMoved=True)
+        return 0
+    say("Your web address in Cloudflare")
+    for name in names:
+        note(f"{name}  ->  {ip} (this server)")
+    old = now.get(app)
+    if old and old != ip and site_answers(app):
+        # Two ERPs at once would both send reminders and make backups (G2).
+        say(f"The ERP at {app} still answers from another server ({old})")
+        note("If the web address comes here while that one runs, two ERPs would send reminders")
+        note("and make backups at the same time. Move it only when the old server is off or")
+        note("will not be used again. For a practice run, press Enter: this copy then waits on standby.")
+    answer = plain_name(ask("dns", f"To point {' and '.join(names)} to this server ({ip}), type {app}; or press Enter to leave it as it is: "))
+    if answer != app:
+        warn("W01", f"the web address was not changed. Point {' and '.join(names)} (A record) to {ip} yourself when this server is the one to use.")
+        return 0
+    app_here = False
+    try:
         for name in names:
             if not (name == zone or name.endswith("." + zone)):
                 warn("W02", f"{name} is not inside {zone}, so it was not changed: point it to {ip} yourself.")
@@ -981,9 +1025,17 @@ def cmd_dns(args):
             others = cloudflare(token, "GET", f"/zones/{zone_id}/dns_records?{urllib.parse.urlencode({'type': 'AAAA', 'name': name})}") or []
             if others:
                 warn("W08", f"{name} also has an AAAA (IPv6) record that may point to the old server: delete it in Cloudflare (DNS, Records).")
+            app_here = app_here or name == app
     except RuntimeError as error:
         warn("W02", f"Cloudflare did not take the change ({error}). Point {' and '.join(names)} (A record) to {ip} yourself.")
+    set_state(work, dnsMoved=app_here)
     return 0
+
+
+def plain_name(text):
+    """A web address as typed in a browser: lower case, without https:// or a path."""
+    text = re.sub(r"^\s*https?://", "", (text or "").strip(), flags=re.I)
+    return text.split("/")[0].strip().lower()
 
 
 # --- compare -------------------------------------------------------------------------
@@ -1056,7 +1108,8 @@ def cmd_compare(args):
 
 #: Facts bootstrap.sh may read; none of them is a secret.
 FACTS = ("name", "createdAt", "format", "commit", "version", "records", "files", "hasCode",
-         "hasSettings", "appDomain", "ownerEmail", "cloudflareZone", "hasCloudflareToken")
+         "hasSettings", "appDomain", "ownerEmail", "cloudflareZone", "hasCloudflareToken",
+         "dnsMoved")
 
 
 def cmd_fact(args):

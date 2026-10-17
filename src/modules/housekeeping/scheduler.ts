@@ -88,6 +88,9 @@ export async function runHousekeeping(now: Date = new Date()) {
 export async function housekeepingTick(now: Date = new Date()) {
   const due = previousRun(SCHEDULE, TIMEZONE, now);
   if (!due || running || (lastDue !== null && due.getTime() <= lastDue)) return null;
+  // Not on a copy on standby after a restore (G2); it runs once the copy goes live.
+  const { onStandby } = await import("@/modules/backups/standby");
+  if (await onStandby()) return null;
   running = true;
   try {
     return await runHousekeeping(now);

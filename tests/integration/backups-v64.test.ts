@@ -32,9 +32,13 @@ import { guideTick } from "@/modules/backups/guide.service";
 import { parseKeyFile } from "@/modules/backups/keys";
 import * as keys from "@/modules/backups/recovery-key.service";
 import { requestRestore } from "@/modules/backups/restore.service";
-import { backupTick, testRestoreTick } from "@/modules/backups/scheduler";
+import { backupClock, backupTick, testRestoreTick } from "@/modules/backups/scheduler";
+import { onStandby, STANDBY_MARK } from "@/modules/backups/standby";
 import { backupHealth, watchBackups } from "@/modules/backups/status";
 import { drillDatabasePrefix, runTestRestore } from "@/modules/backups/test-restore";
+import { housekeepingTick } from "@/modules/housekeeping/scheduler";
+import { jobTick } from "@/modules/jobs/worker";
+import { reminderTick } from "@/modules/reminders/scheduler";
 
 import { type FakeCloudflare, startFakeCloudflare } from "../../scripts/fake-cloudflare";
 import { type FakeGoogle, startFakeGoogle } from "../../scripts/fake-google";
@@ -1193,6 +1197,37 @@ run("v6.4 backups", { timeout: 120_000 }, () => {
       ).not.toContain("Padma");
       expect(JSON.stringify(await prisma.auditLog.findMany())).not.toContain("Padma");
     });
+  });
+
+  describe("standby after a restore on a second server (G2)", () => {
+    it("runs no clock while on standby, except the Bug Guard check the restore asked for", async () => {
+      await mkdir(backupDir, { recursive: true });
+      await writeFile(path.join(backupDir, STANDBY_MARK), "");
+      expect(await onStandby()).toBe(true);
+      // A backup is due (none yet), but the copy on standby makes none.
+      await backupClock();
+      expect(await prisma.backupRun.count()).toBe(0);
+      expect((await backupHealth()).line).toMatch(/^On standby after a restore/);
+      expect(await housekeepingTick()).toBeNull();
+      expect(await jobTick()).toBeNull();
+      // The reminder clock only takes Bug Guard's request from the restore (G1).
+      await writeFile(
+        path.join(backupDir, "bug-guard-request.json"),
+        JSON.stringify({ requestedAt: "2026-10-17T00:00:00.000000000Z" }),
+      );
+      expect(await reminderTick()).toBeNull();
+      expect(
+        JSON.parse(await readFile(path.join(backupDir, "bug-guard-result.json"), "utf8")),
+      ).toMatchObject({ requestedAt: "2026-10-17T00:00:00.000000000Z" });
+
+      // go-live.sh takes the mark away: the clocks run again.
+      await rm(path.join(backupDir, STANDBY_MARK));
+      expect(await onStandby()).toBe(false);
+      await backupClock();
+      expect(await prisma.backupRun.count({ where: { kind: "BACKUP" } })).toBe(1);
+      expect((await backupHealth()).line).not.toMatch(/standby/);
+      expect(await jobTick()).not.toBeNull();
+    }, 120_000);
   });
 
   describe("restore from the screen", () => {

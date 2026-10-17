@@ -1032,7 +1032,7 @@ const DRAW: Record<GuidePicture, (s: Scene) => void> = {
         `    erp.extasbd.com  ->  ${EXAMPLE_IP} (this server)`,
         `    demo.extasbd.com  ->  ${EXAMPLE_IP} (this server)`,
         {
-          text: `Point erp.extasbd.com and demo.extasbd.com to this server (${EXAMPLE_IP})? Press Enter for yes, or type no:`,
+          text: `To point erp.extasbd.com and demo.extasbd.com to this server (${EXAMPLE_IP}), type erp.extasbd.com; or press Enter to leave it as it is: erp.extasbd.com`,
           hi: true,
         },
         "    erp.extasbd.com now points to this server (it pointed to 4.213.40.11).",

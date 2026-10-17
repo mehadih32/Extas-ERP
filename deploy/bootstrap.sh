@@ -32,7 +32,7 @@ set -euo pipefail
 umask 022
 
 REPO=mehadih32/Extas-ERP
-RESTORE_TOOL_SHA256=59179fd8a2bfb543b7c502b7ec452c4802c83b8d5b8ffc60d1c98d4b863b19db
+RESTORE_TOOL_SHA256=a9f8d4849ef9fe610a126d1c938bcd482dba6b585b91c657dc3f44a1704a71a7
 # Drills only: a stand-in for raw.githubusercontent.com (the tool is still checked).
 RAW_BASE="${EXTAS_RAW_BASE:-https://raw.githubusercontent.com}"
 SEARCH_ROOTS="${EXTAS_SEARCH_ROOTS:-/opt /srv /home /root /var/lib /data /mnt}"
@@ -348,6 +348,11 @@ note "Web address: $APP_DOMAIN; data folder: $DATA"
 step "Pointing the web address at this server"
 tool dns --work "$WORK" --deploy "$DIR/deploy" ||
   warn W02 "Cloudflare could not be reached, so the web address was not changed. Point it to this server's Public IP address (see W01)."
+# Until the web address points here, the restored ERP waits on standby (G2): no
+# backups, reminders or other clocks, so two ERPs never run at once (a practice
+# run, or the old server still in use). deploy/go-live.sh ends it.
+standby=1
+[ -z "$(tool fact --work "$WORK" dnsMoved)" ] || standby=0
 
 step "Preparing the server (system updates, Docker, firewall: about 5 minutes)"
 EXTAS_RESTORE=1 "$DIR/deploy/setup-server.sh" || fail R17 "the server could not be prepared; the lines above say why. Paste the command again."
@@ -357,6 +362,12 @@ step "Installing the ERP (building it takes about 10 to 20 minutes)"
 
 step "Restoring the database and the files"
 mkdir -p "$DATA/backups/restores"
+# Before the restored database first starts (src/modules/backups/standby.ts reads it).
+if [ "$standby" = 1 ]; then
+  install -m 644 /dev/null "$DATA/backups/.standby"
+else
+  rm -f "$DATA/backups/.standby"
+fi
 restore_dir="$DATA/backups/restores/$name"
 rm -rf "$restore_dir"
 mv "$WORK/restore" "$restore_dir"
@@ -433,7 +444,7 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
   sleep 10
 done
 ip="$(curl -s --max-time 10 https://1.1.1.1/cdn-cgi/trace 2>/dev/null | sed -n 's/^ip=//p')" || true
-[ "$https_ok" = 1 ] || warn W03 "https://$APP_DOMAIN has no HTTPS certificate yet. Check that $APP_DOMAIN points to this server (${ip:-its Public IP address}) and that ports 80 and 443 are open in Azure; the certificate then comes by itself within a few minutes."
+[ "$https_ok" = 1 ] || [ "$standby" = 1 ] || warn W03 "https://$APP_DOMAIN has no HTTPS certificate yet. Check that $APP_DOMAIN points to this server (${ip:-its Public IP address}) and that ports 80 and 443 are open in Azure; the certificate then comes by itself within a few minutes."
 
 took=$(($(date +%s) - started))
 say "Finished in $((took / 60)) min $((took % 60)) s"
@@ -451,7 +462,9 @@ elif r.get("ok"):
 else:
     print(f"    Not everything is back: {len(r['problems'])} problem(s), listed above (R20).")
 PY
-if [ "$https_ok" = 1 ]; then
+if [ "$standby" = 1 ]; then
+  warn W10 "this ERP waits on standby: $APP_DOMAIN still points to the other server, so it makes no backups and sends no reminders. When this server is the one to use (the old one is off), point the web address here (step F6) and run: cd $DIR && sudo ./deploy/go-live.sh"
+elif [ "$https_ok" = 1 ]; then
   note "The ERP is running at https://$APP_DOMAIN : sign in as before."
 else
   note "The ERP is running; https://$APP_DOMAIN opens once its address points here (W03)."

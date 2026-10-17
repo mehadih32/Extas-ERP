@@ -1,4 +1,6 @@
 import { execFile } from "node:child_process";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { randomBytes } from "node:crypto";
 import { chmod, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
@@ -551,8 +553,14 @@ sys.exit(os.waitstatus_to_exitcode(status))
       await writeFile(path.join(deploy, ".env"), "APP_DOMAIN=erp.extasbd.com\nDEMO_SITE=on\n");
       const env = { CLOUDFLARE_API_BASE: cf.url, PUBLIC_IP: "203.0.113.7" };
 
-      const pointed = await tool(["dns", "--work", work, "--deploy", deploy], { dns: "" }, { env });
+      // G2: moved only when the web address is typed (Enter leaves it as it is).
+      const pointed = await tool(
+        ["dns", "--work", work, "--deploy", deploy],
+        { dns: "Erp.Extasbd.com" },
+        { env },
+      );
       expect(pointed.code).toBe(0);
+      expect((await state()).dnsMoved).toBe(true);
       expect(pointed.stdout).toContain(
         "erp.extasbd.com now points to this server (it pointed to 20.1.2.3).",
       );
@@ -568,13 +576,79 @@ sys.exit(os.waitstatus_to_exitcode(status))
         ["demo.extasbd.com", "203.0.113.7", false],
       ]);
 
-      const again = await tool(["dns", "--work", work, "--deploy", deploy], { dns: "" }, { env });
+      // Already here: nothing to ask, nothing to change.
+      const again = await tool(["dns", "--work", work, "--deploy", deploy], {}, { env });
       expect(again.stdout).toContain("erp.extasbd.com already points to this server.");
+      expect((await state()).dnsMoved).toBe(true);
+      zone.records.find((r) => r.name === "erp.extasbd.com" && r.type === "A")!.content =
+        "20.1.2.3";
       // "no" changes nothing, and says what to do instead.
       const before = cf.requests.length;
-      const no = await tool(["dns", "--work", work, "--deploy", deploy], { dns: "no" }, { env });
-      expect(no.stdout).toContain("Note W01: the web address was not changed.");
-      expect(cf.requests.length).toBe(before);
+      for (const typed of ["no", "", "demo.extasbd.com"]) {
+        const no = await tool(["dns", "--work", work, "--deploy", deploy], { dns: typed }, { env });
+        expect(no.stdout).toContain("Note W01: the web address was not changed.");
+        expect((await state()).dnsMoved).toBe(false);
+      }
+      // Only looked: no record was changed.
+      expect(cf.requests.slice(before).every((r) => r.startsWith("GET "))).toBe(true);
+    });
+
+    it("says when the ERP still answers from the old server, and leaves the address unless it is typed (G2)", async () => {
+      const zone = cf.zones.get("extasbd.com")!;
+      zone.records.push({
+        id: "r1",
+        type: "A",
+        name: "erp.extasbd.com",
+        content: "20.1.2.3",
+        proxied: false,
+        ttl: 1,
+      });
+      // The old server, still running.
+      const old = createServer((req, res) => {
+        res.writeHead(req.url === "/api/health" ? 200 : 404, {
+          "content-type": "application/json",
+        });
+        res.end('{"ok":true}');
+      });
+      await new Promise<void>((resolve) => old.listen(0, "127.0.0.1", resolve));
+      const site = `http://127.0.0.1:${(old.address() as AddressInfo).port}`;
+      try {
+        await connectDrive();
+        await setKey();
+        await cloudflare.setCloudflare(ctx, { pin: PIN, zone: "extasbd.com", token: CF_TOKEN });
+        await prepareHost(SETTINGS);
+        await backUpNow();
+        expect((await fetch()).code).toBe(0);
+        const deploy = path.join(dir, "srv", "deploy");
+        await mkdir(deploy, { recursive: true });
+        await writeFile(path.join(deploy, ".env"), "APP_DOMAIN=erp.extasbd.com\n");
+        const env = {
+          CLOUDFLARE_API_BASE: cf.url,
+          PUBLIC_IP: "203.0.113.7",
+          EXTAS_SITE_BASE: site,
+        };
+
+        const kept = await tool(["dns", "--work", work, "--deploy", deploy], { dns: "" }, { env });
+        expect(kept.code).toBe(0);
+        expect(kept.stdout).toContain(
+          "The ERP at erp.extasbd.com still answers from another server (20.1.2.3)",
+        );
+        expect(kept.stdout).toContain("Note W01: the web address was not changed.");
+        expect(zone.records[0]!.content).toBe("20.1.2.3");
+        expect((await state()).dnsMoved).toBe(false);
+
+        const moved = await tool(
+          ["dns", "--work", work, "--deploy", deploy],
+          { dns: "erp.extasbd.com" },
+          { env },
+        );
+        expect(moved.stdout).toContain(
+          "erp.extasbd.com now points to this server (it pointed to 20.1.2.3).",
+        );
+        expect((await state()).dnsMoved).toBe(true);
+      } finally {
+        await new Promise((resolve) => old.close(resolve));
+      }
     });
 
     it("without a saved token, says which address to point where, and changes nothing", async () => {
@@ -593,6 +667,8 @@ sys.exit(os.waitstatus_to_exitcode(status))
         "Note W01: the Cloudflare token was not saved on the Backups screen, so the web address was not changed. In your domain's DNS, point erp.extasbd.com (A record) to this server: 203.0.113.7.",
       );
       expect(cf.requests).toEqual([]);
+      // Not moved: the restored copy waits on standby (bootstrap.sh reads this).
+      expect((await state()).dnsMoved).toBe(false);
     });
   });
 

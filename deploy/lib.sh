@@ -297,6 +297,25 @@ PY
   return "$status"
 }
 
+# Ends the standby a restore left on a second server (G2: DATA_DIR/backups/.standby,
+# which the app reads, src/modules/backups/standby.ts) once this ERP's web address is
+# typed ($1 the backups folder, $2 the web address). Its clocks then start within a minute.
+leave_standby() {
+  local dir="$1" domain="${2,,}" typed=""
+  if [ ! -f "$dir/.standby" ]; then
+    say "This ERP is not on standby: it is the one in use already"
+    return 0
+  fi
+  say "This makes this server the Extas ERP in use"
+  echo "Its backups, reminders and other clocks start within a minute. Do it only when the"
+  echo "old server is off or will not be used again, and $domain points to this server."
+  read -r -p "Type $domain to go on, or press Enter to stop: " typed || true
+  typed="$(printf '%s' "$typed" | tr '[:upper:]' '[:lower:]' | sed -e 's#^https\?://##' -e 's#/.*$##' -e 's/[[:space:]]//g')"
+  { [ -n "$typed" ] && [ "$typed" = "$domain" ]; } || die "stopped: nothing was changed."
+  rm -f "$dir/.standby"
+  say "Done: this ERP is the one in use; its clocks start within a minute"
+}
+
 # The weekly test restore puts the newest backup into a temporary database of its own,
 # so the app's database user may make (and drop) databases. It never touches another.
 allow_test_restores() {

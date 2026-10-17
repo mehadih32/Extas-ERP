@@ -3,6 +3,7 @@ import type { BackupConfig } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { alertOwner, getBackupConfig } from "@/modules/backups/backup-core";
 import { previousRunAt, scheduleOf } from "@/modules/backups/schedule";
+import { onStandby, STANDBY_LINE } from "@/modules/backups/standby";
 
 /*
  * How the backups are doing, in one plain line for the Backups screen (G10),
@@ -122,6 +123,10 @@ export async function backupHealth(
     lastInDriveAt: lastInDrive?.startedAt ?? null,
   };
 
+  // A copy on standby after a restore (G2): no backup runs until it goes live.
+  if (await onStandby()) {
+    return { ...base, level: "danger", line: STANDBY_LINE, problem: null };
+  }
   if (lastRun?.status === "FAILED") {
     const text = `The last backup failed ${ago(lastRun.startedAt, now)}: ${lastRun.error ?? "no reason was recorded"}`;
     return { ...base, level: "danger", line: text, problem: { kind: "failed", text } };

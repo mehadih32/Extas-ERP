@@ -164,7 +164,12 @@ jobs:
           curl -skf https://localhost/api/health
           echo
           grep -E "^    All [0-9,]+ records and [0-9,]+ files are back\.$" "$RUNNER_TEMP/bootstrap.log"
-          grep -qE "Checks: (full check|Bug Guard ran); 0 problem\(s\) found\." "$RUNNER_TEMP/bootstrap.log"
+          grep -qE "Checks: (full check|Bug Guard ran[^;]*); 0 problem\(s\) found\." "$RUNNER_TEMP/bootstrap.log"
+          # localhost has no web address to move: the restored ERP is not left on standby (G2).
+          if grep -q "Note W10" "$RUNNER_TEMP/bootstrap.log"; then
+            echo "::error::The restored ERP was left on standby"
+            exit 1
+          fi
           grep -q "Your recovery key is kept in Google Drive: it is filled in by itself" "$RUNNER_TEMP/bootstrap.log"
           docker --version
           # No secret in the log.

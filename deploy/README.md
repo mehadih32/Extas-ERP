@@ -33,6 +33,7 @@ The scripts in this folder do all the work. Each one explains itself at the top.
 | `status.sh`            | Any time: is everything running, latest backups, free disk space       |
 | `logs.sh`              | When something looks wrong                                             |
 | `restore.sh`           | To put the ERP back to a backup                                        |
+| `go-live.sh`           | After a restore left this server on standby, once it is the one to use |
 
 Until the screens are built, the ERP answers its API only (for example `/api/health`); the
 home page shows "not found".
@@ -282,11 +283,17 @@ stay public for `raw.githubusercontent.com` to serve it. It:
 4. puts the code from the backup in `/opt/extras-erp` and writes `deploy/.env` from the
    backup's settings;
 5. points the web address (and the demo site's) at this server in Cloudflare with the saved
-   token (or says which A record to change);
+   token, only when the web address is typed (Enter leaves it), and says so first when the
+   ERP still answers from the old server; or says which A record to change. Until the web
+   address points here, the restored ERP waits **on standby** (`/srv/extras-erp/backups/.standby`):
+   it opens, but runs no clock (no backups, reminders, jobs or Bug Guard schedule), so two
+   ERPs never run at once. A practice restore is therefore safe. `sudo ./deploy/go-live.sh`
+   (the web address typed again) ends the standby once this server is the one to use;
 6. installs Docker and the rest (`setup-server.sh`), installs the ERP (`deploy.sh`; HTTPS by
    Cloudflare's DNS challenge when a token is saved, otherwise the usual HTTP challenge),
    restores the database and the files (`restore.sh --check`) and starts the demo site;
-7. runs the checks, compares every table and file with the backup's manifest and says "All N
+7. runs the checks (the full check, then Bug Guard on every company with
+   `bug-guard.sh`), compares every table and file with the backup's manifest and says "All N
    records and M files are back", or exactly what is missing.
 
 Secrets never go on a command line, on the screen or in the log

@@ -55,6 +55,10 @@ export async function runDueJobs(limit = JOBS_PER_TICK, now?: () => Date): Promi
 }
 
 export async function jobTick(): Promise<number | null> {
+  // A copy on standby after a restore runs no job (the backup's own queue would
+  // send its messages a second time); they wait until it goes live (G2).
+  const { onStandby } = await import("@/modules/backups/standby");
+  if (await onStandby()) return null;
   if (running) {
     again = true;
     return null;

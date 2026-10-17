@@ -253,3 +253,44 @@ describe("the v6.3 restore command's secrets in shell history (G14)", () => {
     expect(lib).toMatch(/set -- \/root\/\.bash_history \/home\/\*\/\.bash_history/);
   });
 });
+
+describe("standby after a restore on a second server (G2)", () => {
+  it("goes live only when this ERP's web address is typed", async () => {
+    const backups = path.join(dir, "backups");
+    await mkdir(backups);
+    await writeFile(path.join(backups, ".standby"), "");
+    for (const typed of ["", "demo.example.com"]) {
+      const stopped = await withLib(`leave_standby "${backups}" erp.example.com`, {
+        input: `${typed}\n`,
+      });
+      expect(stopped.code).toBe(1);
+      expect(stopped.stderr).toContain("stopped: nothing was changed");
+      expect(existsSync(path.join(backups, ".standby"))).toBe(true);
+    }
+    const live = await withLib(`leave_standby "${backups}" erp.example.com`, {
+      input: "HTTPS://Erp.Example.com/\n",
+    });
+    expect(live.code).toBe(0);
+    expect(live.stdout).toContain("this ERP is the one in use");
+    expect(existsSync(path.join(backups, ".standby"))).toBe(false);
+    // Not on standby: nothing to do.
+    const again = await withLib(`leave_standby "${backups}" erp.example.com`);
+    expect(again.code).toBe(0);
+    expect(again.stdout).toContain("This ERP is not on standby");
+  });
+
+  it("is left by the restore command until the web address points here, and said at the end", () => {
+    const bootstrap = readFileSync(path.join("deploy", "bootstrap.sh"), "utf8");
+    // Standby unless the restore tool moved the web address here.
+    expect(bootstrap).toMatch(
+      /standby=1\n\[ -z "\$\(tool fact --work "\$WORK" dnsMoved\)" \] \|\| standby=0/,
+    );
+    // The mark is in place before the restored database first starts.
+    expect(bootstrap).toMatch(
+      /install -m 644 \/dev\/null "\$DATA\/backups\/\.standby"[\s\S]*"\$DIR\/deploy\/restore\.sh" --yes/,
+    );
+    expect(bootstrap).toMatch(/warn W10 "this ERP waits on standby/);
+    const goLive = readFileSync(path.join("deploy", "go-live.sh"), "utf8");
+    expect(goLive).toMatch(/leave_standby "\$DATA_DIR\/backups" "\$APP_DOMAIN"/);
+  });
+});

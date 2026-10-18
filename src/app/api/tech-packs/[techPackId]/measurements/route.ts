@@ -1,7 +1,8 @@
 import { apiErrorResponse } from "@/lib/api";
 import { fileResponse } from "@/lib/download";
 import { getRequestMeta } from "@/lib/request-meta";
-import { requirePermission } from "@/modules/auth/context";
+import { requireAnyPermission } from "@/modules/auth/context";
+import { TECH_PACK_READ } from "@/modules/production/tech-pack-access";
 import { measurementsFile } from "@/modules/production/tech-pack-export";
 
 type Params = { techPackId: string };
@@ -16,7 +17,7 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request, context: { params: Promise<Params> }) {
   try {
     const { techPackId } = await context.params;
-    const ctx = await requirePermission("production.view");
+    const ctx = await requireAnyPermission(...TECH_PACK_READ);
     const format = new URL(request.url).searchParams.get("format") === "xlsx" ? "xlsx" : "pdf";
     return fileResponse(await measurementsFile(ctx, techPackId, format, await getRequestMeta()));
   } catch (error) {

@@ -1307,6 +1307,23 @@ run("The bot", () => {
     expect(await prisma.aiBotMessage.count({ where: { direction: "IN", text: "[PIN]" } })).toBe(1);
   });
 
+  it("counts a wrong PIN once when Telegram delivers the same message twice at the same moment (v6.4.1 review 4)", async () => {
+    botApi();
+    await linkOwner(env);
+    await setPin(env.owner, { pin: "2468" });
+    await telegram(typed(OWNER_CHAT, "unlock"));
+    const wrong = typed(OWNER_CHAT, "1357");
+    expect(await Promise.all([delivered(wrong), delivered(wrong), delivered(wrong)])).toEqual([
+      200, 200, 200,
+    ]);
+    await runDueJobs();
+    expect(await prisma.aiPinTry.findFirstOrThrow({ where: { kind: "PIN" } })).toMatchObject({
+      count: 1,
+    });
+    expect(await prisma.aiBotMessage.count({ where: { direction: "IN", text: "[PIN]" } })).toBe(1);
+    expect(await prisma.aiBotMessage.count({ where: { direction: "IN", text: "" } })).toBe(0);
+  });
+
   it("the ERP's own chat keeps working after many numbers, counts apart from the bot and still hides the PIN (v6.4.1)", async () => {
     await prisma.user.update({ where: { id: env.owner.user.id }, data: { isSuperAdmin: true } });
     await setAiSwitch(env.owner, true);

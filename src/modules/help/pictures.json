@@ -4,480 +4,1014 @@
     "width": 1280,
     "height": 800,
     "marks": [1],
+    "labels": {
+      "1": "Status"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/accounts/expenses",
-    "screen": "7630424f7c68a8ec",
-    "guide": "b335ec9142e35256",
-    "taken": "2026-10-17"
+    "screen": "c1a58b5387831720",
+    "guide": "c8454cbefd4eb8ef",
+    "taken": "2026-10-18"
   },
   "accounts-balance-sheet": {
     "src": "/help/shots/accounts-balance-sheet.webp",
     "width": 1280,
-    "height": 1233,
+    "height": 800,
     "marks": [1, 2],
+    "labels": {
+      "1": "Today",
+      "2": "What the business owns"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/accounts/reports/balance-sheet",
-    "screen": "e6084ef07ba3540c",
-    "guide": "c276bd9de58d6187",
-    "taken": "2026-10-17"
+    "screen": "48d319ab9db6daa4",
+    "guide": "46229a0994736251",
+    "taken": "2026-10-18"
   },
   "accounts-bank-accounts": {
     "src": "/help/shots/accounts-bank-accounts.webp",
     "width": 1280,
-    "height": 1240,
+    "height": 800,
     "marks": [1, 2],
+    "labels": {
+      "1": "Cash & bank",
+      "2": "Add a bank account"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/accounts/cash-bank",
     "screen": "af46317492d1517a",
-    "guide": "f566a4c5e6c412fb",
-    "taken": "2026-10-17"
+    "guide": "f273bb4da6bcc33f",
+    "taken": "2026-10-18"
   },
   "accounts-bank-reconcile": {
     "src": "/help/shots/accounts-bank-reconcile.webp",
     "width": 1280,
-    "height": 1240,
+    "height": 800,
     "marks": [1, 2],
+    "labels": {
+      "1": "Cash & bank",
+      "2": "Show amounts"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/accounts/cash-bank",
     "screen": "af46317492d1517a",
-    "guide": "855b9dfede5bc53e",
-    "taken": "2026-10-17"
+    "guide": "c2d108ebdf745c83",
+    "taken": "2026-10-18"
   },
   "accounts-books-check": {
     "src": "/help/shots/accounts-books-check.webp",
     "width": 1280,
-    "height": 1247,
+    "height": 800,
     "marks": [1],
+    "labels": {
+      "1": "Books check"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/accounts/reports/books-check",
-    "screen": "5b966c12b405e6f3",
-    "guide": "f3662cb7dc9065d1",
-    "taken": "2026-10-17"
+    "screen": "10b3e20a848b96dc",
+    "guide": "31d5dcc54b94ff75",
+    "taken": "2026-10-18"
   },
   "accounts-chart": {
     "src": "/help/shots/accounts-chart.webp",
     "width": 1280,
-    "height": 1600,
+    "height": 800,
     "marks": [1, 3],
+    "labels": {
+      "1": "Show archived accounts",
+      "3": "Add an account"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/accounts/chart",
-    "screen": "9a0e801a74d03070",
-    "guide": "c8a68dc160101114",
-    "taken": "2026-10-17"
+    "screen": "928871885c98cfcc",
+    "guide": "d485636e097f497b",
+    "taken": "2026-10-18"
   },
   "accounts-expense-breakdown": {
     "src": "/help/shots/accounts-expense-breakdown.webp",
     "width": 1280,
-    "height": 1600,
+    "height": 1517,
     "marks": [1, 2, 4, 5, 6],
+    "labels": {
+      "1": "Show amounts",
+      "2": "Salary & payroll",
+      "4": "All expenses",
+      "5": "Record an asset purchase",
+      "6": "Supplier payments"
+    },
+    "clip": {
+      "y": 0,
+      "height": 1517,
+      "target": "marks"
+    },
     "route": "/accounts",
     "screen": "f486b05a398fef25",
-    "guide": "256608fb12d88c18",
-    "taken": "2026-10-17"
+    "guide": "a52417ae4594174d",
+    "taken": "2026-10-18"
   },
   "accounts-expense-claim": {
     "src": "/help/shots/accounts-expense-claim.webp",
     "width": 1280,
-    "height": 1472,
+    "height": 1196,
     "marks": [1, 2, 3, 5],
+    "labels": {
+      "1": "Record an expense",
+      "2": "What for",
+      "3": "How it was paid",
+      "5": "Details (optional)"
+    },
+    "clip": {
+      "y": 0,
+      "height": 1196,
+      "target": "marks"
+    },
     "route": "/accounts/expenses/new",
-    "screen": "52bcc893ae8ae5bf",
-    "guide": "583c2ca2cc0ca31d",
-    "taken": "2026-10-17"
+    "screen": "c51c74c6ff493743",
+    "guide": "1015a67b003e6af9",
+    "taken": "2026-10-18"
   },
   "accounts-expense-heads": {
     "src": "/help/shots/accounts-expense-heads.webp",
     "width": 1280,
-    "height": 1405,
+    "height": 800,
     "marks": [1, 2, 4],
+    "labels": {
+      "1": "Expense heads",
+      "2": "Add an expense head",
+      "4": "Change"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/accounts/expenses/heads",
-    "screen": "51335a3563b9c5b6",
-    "guide": "be60fd977c9b643d",
-    "taken": "2026-10-17"
+    "screen": "99410fc4fd360eec",
+    "guide": "28682984cc5846e0",
+    "taken": "2026-10-18"
   },
   "accounts-fixed-assets": {
     "src": "/help/shots/accounts-fixed-assets.webp",
     "width": 1280,
-    "height": 900,
+    "height": 800,
     "marks": [1, 2, 6],
+    "labels": {
+      "1": "Overview",
+      "2": "Record an asset purchase",
+      "6": "Under repair"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/accounts/assets",
     "screen": "8824272bc001be47",
-    "guide": "07afc038ad7e41ac",
-    "taken": "2026-10-17"
+    "guide": "3b534a1df7950950",
+    "taken": "2026-10-18"
   },
   "accounts-journal": {
     "src": "/help/shots/accounts-journal.webp",
     "width": 1280,
-    "height": 1600,
-    "marks": [1],
+    "height": 800,
+    "marks": [1, 2],
+    "labels": {
+      "1": "Journal",
+      "2": "Account"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/accounts/journal",
-    "screen": "5ca3684b385ad3b4",
-    "guide": "a3565e8c87a9fe82",
-    "taken": "2026-10-17"
+    "screen": "79b0cff12ddba34e",
+    "guide": "5c2ad734b0a3afae",
+    "taken": "2026-10-18"
   },
   "accounts-money-in-out": {
     "src": "/help/shots/accounts-money-in-out.webp",
     "width": 1280,
-    "height": 1600,
+    "height": 800,
     "marks": [1],
+    "labels": {
+      "1": "Money in/out"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/accounts",
     "screen": "f486b05a398fef25",
-    "guide": "3200b1b58b32417b",
-    "taken": "2026-10-17"
+    "guide": "d70e4b52e7f99fef",
+    "taken": "2026-10-18"
   },
   "accounts-move-money": {
     "src": "/help/shots/accounts-move-money.webp",
     "width": 1280,
-    "height": 1600,
+    "height": 800,
     "marks": [1],
+    "labels": {
+      "1": "Move money"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/accounts",
     "screen": "f486b05a398fef25",
-    "guide": "def6162d1d9d5212",
-    "taken": "2026-10-17"
+    "guide": "bdd3730aaa7114d7",
+    "taken": "2026-10-18"
   },
   "accounts-overview": {
     "src": "/help/shots/accounts-overview.webp",
     "width": 1280,
-    "height": 1600,
-    "marks": [1, 2, 3, 4, 5, 6, 8, 9],
+    "height": 1046,
+    "marks": [1, 2, 3, 4, 5, 6, 7, 8, 9],
+    "labels": {
+      "1": "Show amounts",
+      "2": "Cash & bank",
+      "3": "Market due",
+      "4": "Market payable",
+      "5": "Inventory & WIP",
+      "6": "Today",
+      "7": "Net profit",
+      "8": "Expense breakdown",
+      "9": "Move money"
+    },
+    "clip": {
+      "y": 0,
+      "height": 1046,
+      "target": "marks"
+    },
     "route": "/accounts",
     "screen": "f486b05a398fef25",
-    "guide": "54393717fac7061a",
-    "taken": "2026-10-17"
+    "guide": "42963b56dd335c21",
+    "taken": "2026-10-18"
   },
   "accounts-pay-supplier": {
     "src": "/help/shots/accounts-pay-supplier.webp",
     "width": 1280,
-    "height": 1039,
+    "height": 1043,
     "marks": [1, 2, 4, 5],
+    "labels": {
+      "1": "Supplier payments",
+      "2": "Supplier",
+      "4": "Paid from",
+      "5": "Record the payment"
+    },
+    "clip": {
+      "y": 0,
+      "height": 1043,
+      "target": "marks"
+    },
     "route": "/accounts/supplier-payments/new",
-    "screen": "37dafb9ff55e2520",
-    "guide": "697b0dfae46660d7",
-    "taken": "2026-10-17"
+    "screen": "70addbfed5865a85",
+    "guide": "b9b5c7a7b990dfd4",
+    "taken": "2026-10-18"
   },
   "accounts-petty-cash": {
     "src": "/help/shots/accounts-petty-cash.webp",
     "width": 1280,
     "height": 800,
     "marks": [1, 3],
+    "labels": {
+      "1": "Accounts",
+      "3": "Expenses"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/accounts/expenses",
-    "screen": "7630424f7c68a8ec",
-    "guide": "e2e9fb98f5b4dab0",
-    "taken": "2026-10-17"
+    "screen": "c1a58b5387831720",
+    "guide": "d3ffddc23429eaea",
+    "taken": "2026-10-18"
   },
   "accounts-profit-and-loss": {
     "src": "/help/shots/accounts-profit-and-loss.webp",
     "width": 1280,
-    "height": 1382,
+    "height": 841,
     "marks": [1, 2, 3],
+    "labels": {
+      "1": "Profit and loss",
+      "2": "This month",
+      "3": "Sales"
+    },
+    "clip": {
+      "y": 0,
+      "height": 841,
+      "target": "marks"
+    },
     "route": "/accounts/reports/profit-and-loss",
-    "screen": "a6a88dbd244c878d",
-    "guide": "4b4348e03d13dcb2",
-    "taken": "2026-10-17"
+    "screen": "f511c82e0f1c82cd",
+    "guide": "54a6447105265fa5",
+    "taken": "2026-10-18"
   },
   "accounts-record-expense": {
     "src": "/help/shots/accounts-record-expense.webp",
     "width": 1280,
-    "height": 1472,
+    "height": 1476,
     "marks": [1, 2, 3, 4],
+    "labels": {
+      "1": "Record an expense",
+      "2": "What for",
+      "3": "How it was paid",
+      "4": "Record the expense"
+    },
+    "clip": {
+      "y": 0,
+      "height": 1476,
+      "target": "marks"
+    },
     "route": "/accounts/expenses/new",
-    "screen": "52bcc893ae8ae5bf",
-    "guide": "9f5d0508bbafc9c8",
-    "taken": "2026-10-17"
+    "screen": "c51c74c6ff493743",
+    "guide": "369af0605fa2bcb7",
+    "taken": "2026-10-18"
   },
   "accounts-user-manual": {
     "src": "/help/shots/accounts-user-manual.webp",
     "width": 1280,
-    "height": 1600,
+    "height": 1579,
     "marks": [2, 3, 4, 7, 8, 9, 10, 11],
+    "labels": {
+      "2": "Supplier payments",
+      "3": "Overview",
+      "4": "Move money",
+      "7": "Supplier payments",
+      "8": "Expenses",
+      "9": "Fixed asset register",
+      "10": "Journal",
+      "11": "Balance sheet"
+    },
+    "clip": {
+      "y": 192,
+      "height": 1579,
+      "target": "marks"
+    },
     "route": "/accounts",
     "screen": "f486b05a398fef25",
-    "guide": "163b5f0a39ab67a0",
-    "taken": "2026-10-17"
+    "guide": "91e514d32c00dd19",
+    "taken": "2026-10-18"
   },
   "accounts-voucher": {
     "src": "/help/shots/accounts-voucher.webp",
     "width": 1280,
-    "height": 1262,
+    "height": 1266,
     "marks": [1, 2, 3, 4],
+    "labels": {
+      "1": "Journal",
+      "2": "What it is for",
+      "3": "Add a line",
+      "4": "Post the voucher"
+    },
+    "clip": {
+      "y": 0,
+      "height": 1266,
+      "target": "marks"
+    },
     "route": "/accounts/journal/new",
     "screen": "46161589a9f64023",
-    "guide": "b17ea7f6be145e36",
-    "taken": "2026-10-17"
+    "guide": "733e7c79225a46e6",
+    "taken": "2026-10-18"
   },
   "ai-agents": {
     "src": "/help/shots/ai-agents.webp",
     "width": 1280,
-    "height": 1600,
+    "height": 1086,
     "marks": [1, 2, 3, 4, 5],
+    "labels": {
+      "1": "Skills, books and last runs",
+      "2": "Control, skills and last runs",
+      "3": "Switch off",
+      "4": "Models",
+      "5": "Skills"
+    },
+    "clip": {
+      "y": 0,
+      "height": 1086,
+      "target": "marks"
+    },
     "route": "/ai/agents",
-    "screen": "3af612b193d29908",
-    "guide": "b8e88581a61ba143",
-    "taken": "2026-10-17"
+    "screen": "8d0c0f7fa7f6fbc1",
+    "guide": "65ff8e7186058b5f",
+    "taken": "2026-10-18"
   },
   "ai-bot": {
     "src": "/help/shots/ai-bot.webp",
     "width": 1280,
-    "height": 974,
+    "height": 925,
     "marks": [2, 5],
+    "labels": {
+      "2": "Connect a bot",
+      "5": "Last messages"
+    },
+    "clip": {
+      "y": 0,
+      "height": 925,
+      "target": "marks"
+    },
     "route": "/ai/bot",
-    "screen": "b976e7bb33e04316",
-    "guide": "e7720a5839486b2d",
-    "taken": "2026-10-17"
+    "screen": "2f985cb241111d97",
+    "guide": "6c8d890833686414",
+    "taken": "2026-10-18"
   },
   "ai-bug-guard": {
     "src": "/help/shots/ai-bug-guard.webp",
     "width": 1280,
-    "height": 1600,
-    "marks": [1, 2, 3, 4, 6, 8],
+    "height": 1420,
+    "marks": [1, 2, 3, 7, 9],
+    "labels": {
+      "1": "Run now",
+      "2": "Problems",
+      "3": "Full check",
+      "7": "Save",
+      "9": "What Bug Guard checks"
+    },
+    "clip": {
+      "y": 0,
+      "height": 1420,
+      "target": "marks"
+    },
     "route": "/ai/bug-guard",
-    "screen": "0722b5a8d3d1fd9e",
-    "guide": "4dce8903859a5c42",
-    "taken": "2026-10-17"
+    "screen": "d80142ec076307f2",
+    "guide": "51b3fda614cd44ac",
+    "taken": "2026-10-18"
   },
   "ai-chat": {
     "src": "/help/shots/ai-chat.webp",
     "width": 1280,
-    "height": 910,
-    "marks": [1, 4, 7],
+    "height": 914,
+    "marks": [1, 7],
+    "labels": {
+      "1": "Send",
+      "7": "AI Home"
+    },
+    "clip": {
+      "y": 0,
+      "height": 914,
+      "target": "marks"
+    },
     "route": "/ai/chat",
     "screen": "e42bce7770f7f28a",
-    "guide": "8677cb044e49b109",
-    "taken": "2026-10-17"
+    "guide": "3eff4cf4213a1cb3",
+    "taken": "2026-10-18"
   },
   "ai-control": {
     "src": "/help/shots/ai-control.webp",
     "width": 1280,
-    "height": 1600,
+    "height": 1575,
     "marks": [1, 3, 4, 5, 6, 7],
+    "labels": {
+      "1": "Do",
+      "3": "Do",
+      "4": "Do",
+      "5": "Only tech pack and booking",
+      "6": "Open a cell for a while",
+      "7": "Open for a while"
+    },
+    "clip": {
+      "y": 0,
+      "height": 1575,
+      "target": "marks"
+    },
     "route": "/ai/control",
-    "screen": "10bcd7256d9a3ae4",
-    "guide": "09ba782996ecc273",
-    "taken": "2026-10-17"
+    "screen": "45ceba3cc69a4aec",
+    "guide": "c5475956e6d74383",
+    "taken": "2026-10-18"
   },
   "ai-costs": {
     "src": "/help/shots/ai-costs.webp",
     "width": 1280,
-    "height": 1600,
-    "marks": [1, 3, 4, 6, 8],
+    "height": 1201,
+    "marks": [1, 2, 3, 4, 6, 8],
+    "labels": {
+      "1": "Money",
+      "2": "Month-end at this pace",
+      "3": "Cost per day",
+      "4": "By purpose",
+      "6": "Models",
+      "8": "PDF"
+    },
+    "clip": {
+      "y": 0,
+      "height": 1201,
+      "target": "marks"
+    },
     "route": "/ai/costs",
-    "screen": "65a9fd4a6d75e18b",
-    "guide": "15050cedd6f9573a",
-    "taken": "2026-10-17"
+    "screen": "31da5bf7ab613d52",
+    "guide": "b54f38415f9779e0",
+    "taken": "2026-10-18"
   },
   "ai-drafts": {
     "src": "/help/shots/ai-drafts.webp",
     "width": 1280,
     "height": 800,
     "marks": [1, 3, 4],
+    "labels": {
+      "1": "Drafts",
+      "3": "New draft",
+      "4": "Set a follow-up"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/ai/drafts",
-    "screen": "cc2d7a735353b2da",
-    "guide": "7bfc416c747f1433",
-    "taken": "2026-10-17"
+    "screen": "d2cd8f94369e080a",
+    "guide": "d72ac72009289167",
+    "taken": "2026-10-18"
   },
   "ai-full-check": {
     "src": "/help/shots/ai-full-check.webp",
     "width": 1280,
-    "height": 1349,
-    "marks": [5, 6, 8, 9],
+    "height": 1328,
+    "marks": [3, 5, 6, 8, 9],
+    "labels": {
+      "3": "Send to Claude Code",
+      "5": "Save",
+      "6": "Run the full check",
+      "8": "Claude Code",
+      "9": "Ask Claude Code"
+    },
+    "clip": {
+      "y": 0,
+      "height": 1328,
+      "target": "marks"
+    },
     "route": "/ai/full-check",
-    "screen": "14440245bff9b142",
-    "guide": "425be27c8cd059c5",
-    "taken": "2026-10-17"
+    "screen": "2fdd77971db50216",
+    "guide": "8a776cf2f737ac5f",
+    "taken": "2026-10-18"
   },
   "ai-health": {
     "src": "/help/shots/ai-health.webp",
     "width": 1280,
     "height": 800,
     "marks": [1, 4, 6],
+    "labels": {
+      "1": "Check now",
+      "4": "Turn on the weekly check",
+      "6": "Full check"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/ai/health",
-    "screen": "4feee0e4c351e310",
-    "guide": "6be4b81e17e5d41b",
-    "taken": "2026-10-17"
+    "screen": "5edfe754f2a381b9",
+    "guide": "dfd7968ebcdc4677",
+    "taken": "2026-10-18"
   },
   "ai-knowledge": {
     "src": "/help/shots/ai-knowledge.webp",
     "width": 1280,
-    "height": 1161,
-    "marks": [1],
+    "height": 800,
+    "marks": [1, 5],
+    "labels": {
+      "1": "Books & tests",
+      "5": "Run the tests (…)"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/ai/knowledge",
-    "screen": "545648f42ea9b1f4",
-    "guide": "122dca79a411b7dd",
-    "taken": "2026-10-17"
+    "screen": "040ccb6b2aac7458",
+    "guide": "f10a94021b7aa26c",
+    "taken": "2026-10-18"
   },
   "ai-logs": {
     "src": "/help/shots/ai-logs.webp",
     "width": 1280,
     "height": 800,
     "marks": [1, 3],
+    "labels": {
+      "1": "Logs",
+      "3": "Done by the AI"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/ai/logs",
-    "screen": "2d87433aae081b34",
-    "guide": "66af5a083f4abdab",
-    "taken": "2026-10-17"
+    "screen": "2d354a51b1646ed2",
+    "guide": "f584d1a1f1a1afe4",
+    "taken": "2026-10-18"
   },
   "ai-mehedi": {
     "src": "/help/shots/ai-mehedi.webp",
     "width": 1280,
-    "height": 1458,
+    "height": 1273,
     "marks": [1, 2, 4, 6, 7],
+    "labels": {
+      "1": "Mehedi & Agents",
+      "2": "What he never does",
+      "4": "Teach a rule",
+      "6": "House Rules in use",
+      "7": "Books & tests"
+    },
+    "clip": {
+      "y": 0,
+      "height": 1273,
+      "target": "marks"
+    },
     "route": "/ai/mehedi",
-    "screen": "bb55e83d9c5a3f9f",
-    "guide": "6273b8d9f999be1e",
-    "taken": "2026-10-17"
+    "screen": "676a1d5746a83846",
+    "guide": "36e9da63ab1b10f7",
+    "taken": "2026-10-18"
   },
   "ai-models": {
     "src": "/help/shots/ai-models.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [1, 2, 9],
+    "marks": [2, 3, 8],
+    "labels": {
+      "2": "Which model does which task",
+      "3": "Built in",
+      "8": "Built in"
+    },
+    "clip": {
+      "y": 625,
+      "height": 1600,
+      "target": "Which model does which task"
+    },
     "route": "/ai/models",
-    "screen": "afb4ae6fcdddcd11",
-    "guide": "05747246792a71df",
-    "taken": "2026-10-17"
+    "screen": "f885b15c71e023b6",
+    "guide": "51a437ddef37ead6",
+    "taken": "2026-10-18"
   },
   "ai-orders": {
     "src": "/help/shots/ai-orders.webp",
     "width": 1280,
     "height": 800,
     "marks": [1],
+    "labels": {
+      "1": "New order"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/ai/orders",
-    "screen": "425e1e699ff31961",
-    "guide": "f5c9c5aa177c500a",
-    "taken": "2026-10-17"
+    "screen": "1d56642a3f39ee60",
+    "guide": "4310edfc09b907ad",
+    "taken": "2026-10-18"
   },
   "ai-requests": {
     "src": "/help/shots/ai-requests.webp",
     "width": 1280,
-    "height": 1213,
+    "height": 1030,
     "marks": [1, 3],
+    "labels": {
+      "1": "Waiting for your answer",
+      "3": "System"
+    },
+    "clip": {
+      "y": 0,
+      "height": 1030,
+      "target": "marks"
+    },
     "route": "/ai",
-    "screen": "172df6ff13487654",
-    "guide": "e4653d602dc780df",
-    "taken": "2026-10-17"
+    "screen": "1d4cd13cf3d2e58a",
+    "guide": "c8dd3b85f0af9605",
+    "taken": "2026-10-18"
   },
   "ai-settings": {
     "src": "/help/shots/ai-settings.webp",
     "width": 1280,
     "height": 1600,
     "marks": [2, 4, 5, 6, 8, 9],
+    "labels": {
+      "2": "Add the key",
+      "4": "Set a PIN",
+      "5": "Rename",
+      "6": "Add the email",
+      "8": "Change",
+      "9": "Daily notes"
+    },
+    "clip": {
+      "y": 0,
+      "height": 1600,
+      "target": "marks"
+    },
     "route": "/ai/settings",
-    "screen": "3cd405f4c856f602",
-    "guide": "a356ef8a995f6e46",
-    "taken": "2026-10-17"
+    "screen": "565aebe363d4a363",
+    "guide": "d4b0171a53f4b8a4",
+    "taken": "2026-10-18"
   },
   "ai-skills": {
     "src": "/help/shots/ai-skills.webp",
     "width": 1280,
     "height": 800,
     "marks": [1, 2],
+    "labels": {
+      "1": "Show",
+      "2": "Teach a new skill"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/ai/skills",
-    "screen": "6d03fe7c36ce8298",
-    "guide": "e7ef362f17caab9a",
-    "taken": "2026-10-17"
+    "screen": "ec0843cb7ef776c2",
+    "guide": "f34d86c7651f691e",
+    "taken": "2026-10-18"
   },
   "ai-switch": {
     "src": "/help/shots/ai-switch.webp",
     "width": 1280,
-    "height": 1213,
+    "height": 1156,
     "marks": [1, 2, 3, 7],
+    "labels": {
+      "1": "AI is off",
+      "2": "Budget & Costs",
+      "3": "Turn AI on",
+      "7": "All logs"
+    },
+    "clip": {
+      "y": 0,
+      "height": 1156,
+      "target": "marks"
+    },
     "route": "/ai",
-    "screen": "172df6ff13487654",
-    "guide": "6a5d67d31e67b129",
-    "taken": "2026-10-17"
+    "screen": "1d4cd13cf3d2e58a",
+    "guide": "ac8c54cfae404612",
+    "taken": "2026-10-18"
   },
   "appearance": {
     "src": "/help/shots/appearance.webp",
     "width": 1280,
     "height": 800,
     "marks": [1, 4],
+    "labels": {
+      "1": "Appearance",
+      "4": "Use this look"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/settings/appearance",
     "screen": "497c4c640d266052",
-    "guide": "dad429e1b43e1102",
-    "taken": "2026-10-17"
+    "guide": "96e30fd82f5316d8",
+    "taken": "2026-10-18"
   },
   "backups-cloudflare": {
     "src": "/help/shots/backups-cloudflare.webp",
     "width": 1280,
-    "height": 1600,
+    "height": 800,
     "marks": [5],
+    "labels": {
+      "5": "Backups"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/settings/backups",
-    "screen": "7165ec8cc696046a",
-    "guide": "f39a860976a785b8",
-    "taken": "2026-10-17"
+    "screen": "a066dc2c147ea9cf",
+    "guide": "284e480596e7ffe7",
+    "taken": "2026-10-18"
   },
   "backups-drive-key": {
     "src": "/help/shots/backups-drive-key.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [1, 3, 6, 7, 8],
+    "marks": [1, 3, 5, 6, 7, 8, 11],
+    "labels": {
+      "1": "Backups",
+      "3": "Set your recovery key",
+      "5": "Google Drive",
+      "6": "Add a time",
+      "7": "Save",
+      "8": "Back up now",
+      "11": "Recovery key"
+    },
+    "clip": {
+      "y": 217,
+      "height": 1600,
+      "target": "marks"
+    },
     "route": "/settings/backups",
-    "screen": "7165ec8cc696046a",
-    "guide": "ed5351013cd99191",
-    "taken": "2026-10-17"
+    "screen": "a066dc2c147ea9cf",
+    "guide": "5083766d471de808",
+    "taken": "2026-10-18"
+  },
+  "backups-github-alert": {
+    "src": "/help/shots/backups-github-alert.webp",
+    "width": 1280,
+    "height": 800,
+    "marks": [5],
+    "labels": {
+      "5": "Backups"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
+    "route": "/settings/backups",
+    "screen": "a066dc2c147ea9cf",
+    "guide": "0167dbb5b93d51c8",
+    "taken": "2026-10-18"
   },
   "backups-google-setup": {
     "src": "/help/shots/backups-google-setup.webp",
     "width": 1280,
-    "height": 1600,
-    "marks": [6],
+    "height": 800,
+    "marks": [6, 8],
+    "labels": {
+      "6": "Save the Google client",
+      "8": "Client ID"
+    },
+    "clip": {
+      "y": 1635,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/settings/backups",
-    "screen": "7165ec8cc696046a",
-    "guide": "58f193614bb68150",
-    "taken": "2026-10-17"
+    "screen": "a066dc2c147ea9cf",
+    "guide": "83011e71f9468995",
+    "taken": "2026-10-18"
   },
   "backups-new-server": {
     "src": "/help/shots/backups-new-server.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [1, 30, 36, 39],
+    "marks": [1, 17, 31, 37, 39],
+    "labels": {
+      "1": "Download the restore guide",
+      "17": "Save",
+      "31": "Recovery key",
+      "37": "Back up now",
+      "39": "Settings"
+    },
+    "clip": {
+      "y": 38,
+      "height": 1600,
+      "target": "marks"
+    },
     "route": "/settings/backups",
-    "screen": "7165ec8cc696046a",
-    "guide": "24ac851972c04090",
-    "taken": "2026-10-17"
+    "screen": "a066dc2c147ea9cf",
+    "guide": "cd501e4eb9104249",
+    "taken": "2026-10-18"
   },
   "backups-restore": {
     "src": "/help/shots/backups-restore.webp",
     "width": 1280,
-    "height": 1600,
-    "marks": [2, 4, 5, 6],
+    "height": 1590,
+    "marks": [1, 2, 5, 6, 7],
+    "labels": {
+      "1": "Backups in Google Drive",
+      "2": "Recovery key",
+      "5": "Save",
+      "6": "Download the restore guide",
+      "7": "Restore on a new server"
+    },
+    "clip": {
+      "y": 1351,
+      "height": 1590,
+      "target": "marks"
+    },
     "route": "/settings/backups",
-    "screen": "7165ec8cc696046a",
-    "guide": "6489cd7cd17ed52e",
-    "taken": "2026-10-17"
+    "screen": "a066dc2c147ea9cf",
+    "guide": "d23f987fb10aefe1",
+    "taken": "2026-10-18"
+  },
+  "backups-server-drill": {
+    "src": "/help/shots/backups-server-drill.webp",
+    "width": 1280,
+    "height": 1551,
+    "marks": [6, 9, 11],
+    "labels": {
+      "6": "Save",
+      "9": "Record a drill",
+      "11": "Backups"
+    },
+    "clip": {
+      "y": 0,
+      "height": 1551,
+      "target": "marks"
+    },
+    "route": "/settings/backups",
+    "screen": "a066dc2c147ea9cf",
+    "guide": "77076a5dc5a13c45",
+    "taken": "2026-10-18"
   },
   "change-password": {
     "src": "/help/shots/change-password.webp",
     "width": 1280,
     "height": 800,
     "marks": [2, 3, 4, 5],
+    "labels": {
+      "2": "Change password",
+      "3": "Current password",
+      "4": "Sign me out on my other phones and computers",
+      "5": "Save new password"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/change-password",
     "screen": "5a5595989259c760",
-    "guide": "1dfdadc4e77974be",
-    "taken": "2026-10-17"
+    "guide": "af70209549cd5837",
+    "taken": "2026-10-18"
   },
   "common-buttons": {
     "src": "/help/shots/common-buttons.webp",
     "width": 1280,
-    "height": 1600,
+    "height": 800,
     "marks": [6],
+    "labels": {
+      "6": "Show amounts"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/",
-    "screen": "a468159db32eef48",
-    "guide": "62d1f96450e52659",
-    "taken": "2026-10-17"
+    "screen": "eeb8738f8626d396",
+    "guide": "928f53bf43beb34a",
+    "taken": "2026-10-18"
   },
   "compliance-add": {
     "src": "/help/shots/compliance-add.webp",
     "width": 1280,
-    "height": 1090,
+    "height": 800,
     "marks": [1, 4],
+    "labels": {
+      "1": "Add a licence",
+      "4": "Add"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/compliance",
-    "screen": "f223bfd3c932d460",
-    "guide": "da586108002d1676",
-    "taken": "2026-10-17"
+    "screen": "568878fb8593e78e",
+    "guide": "e8339daf7e2f2583",
+    "taken": "2026-10-18"
   },
   "compliance-overview": {
     "src": "/help/shots/compliance-overview.webp",
     "width": 1280,
-    "height": 1090,
+    "height": 850,
     "marks": [1, 2, 3, 4],
+    "labels": {
+      "1": "Compliance",
+      "2": "Not on file",
+      "3": "Numbers on documents",
+      "4": "Which records"
+    },
+    "clip": {
+      "y": 0,
+      "height": 850,
+      "target": "marks"
+    },
     "route": "/compliance",
-    "screen": "f223bfd3c932d460",
-    "guide": "6325d7d47db2f87a",
-    "taken": "2026-10-17"
+    "screen": "568878fb8593e78e",
+    "guide": "47fbc14309e3322f",
+    "taken": "2026-10-18"
   },
   "compliance-renew": {
     "src": "/help/shots/compliance-renew.webp",
@@ -492,242 +1026,478 @@
   "dashboard-action-zone": {
     "src": "/help/shots/dashboard-action-zone.webp",
     "width": 1280,
-    "height": 1600,
+    "height": 1109,
     "marks": [1, 2, 5, 7, 8],
+    "labels": {
+      "1": "The Pulse",
+      "2": "Show amounts",
+      "5": "Low stock",
+      "7": "Pending approvals",
+      "8": "Today"
+    },
+    "clip": {
+      "y": 0,
+      "height": 1109,
+      "target": "marks"
+    },
     "route": "/",
-    "screen": "a468159db32eef48",
-    "guide": "57464c1b85ac0127",
-    "taken": "2026-10-17"
+    "screen": "eeb8738f8626d396",
+    "guide": "37b8daa61e356245",
+    "taken": "2026-10-18"
   },
   "dashboard-arrange-sections": {
     "src": "/help/shots/dashboard-arrange-sections.webp",
     "width": 1280,
-    "height": 1600,
+    "height": 800,
     "marks": [1],
+    "labels": {
+      "1": "Arrange sections"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/",
-    "screen": "a468159db32eef48",
-    "guide": "8566a446a1ed643d",
-    "taken": "2026-10-17"
+    "screen": "eeb8738f8626d396",
+    "guide": "2c4a67642afac832",
+    "taken": "2026-10-18"
   },
   "dashboard-empty": {
     "src": "/help/shots/dashboard-empty.webp",
     "width": 1280,
-    "height": 1600,
+    "height": 1496,
     "marks": [2],
+    "labels": {
+      "2": "Live activity"
+    },
+    "clip": {
+      "y": 0,
+      "height": 1496,
+      "target": "marks"
+    },
     "route": "/",
-    "screen": "a468159db32eef48",
-    "guide": "b34b9b548f27d643",
-    "taken": "2026-10-17"
+    "screen": "eeb8738f8626d396",
+    "guide": "f22fafcb75578d98",
+    "taken": "2026-10-18"
   },
   "dashboard-home-top-bar": {
     "src": "/help/shots/dashboard-home-top-bar.webp",
     "width": 1280,
-    "height": 1600,
+    "height": 800,
     "marks": [2, 3, 4],
+    "labels": {
+      "2": "Today",
+      "3": "Show amounts",
+      "4": "New"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/",
-    "screen": "a468159db32eef48",
-    "guide": "edbfb8c56b03c954",
-    "taken": "2026-10-17"
+    "screen": "eeb8738f8626d396",
+    "guide": "0d0eaabea7c2a7f5",
+    "taken": "2026-10-18"
   },
   "dashboard-key-figures": {
     "src": "/help/shots/dashboard-key-figures.webp",
     "width": 1280,
-    "height": 1600,
-    "marks": [1, 5, 6],
+    "height": 800,
+    "marks": [1, 2, 3, 4, 5],
+    "labels": {
+      "1": "Key figures",
+      "2": "Total active stock value",
+      "3": "Fixed assets",
+      "4": "Today's sales",
+      "5": "Total bad stock value"
+    },
+    "clip": {
+      "y": 2439,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/",
-    "screen": "a468159db32eef48",
-    "guide": "d85be15d2159b222",
-    "taken": "2026-10-17"
+    "screen": "eeb8738f8626d396",
+    "guide": "b67011610e712907",
+    "taken": "2026-10-18"
   },
   "dashboard-pipeline-activity": {
     "src": "/help/shots/dashboard-pipeline-activity.webp",
     "width": 1280,
-    "height": 1600,
-    "marks": [1, 2, 5, 7],
+    "height": 1564,
+    "marks": [1, 2, 3, 4, 5, 6, 7],
+    "labels": {
+      "1": "Predictive insights",
+      "2": "Production pipeline",
+      "3": "… of … pcs received",
+      "4": "… late",
+      "5": "Today",
+      "6": "Updates every minute",
+      "7": "Show amounts"
+    },
+    "clip": {
+      "y": 177,
+      "height": 1564,
+      "target": "marks"
+    },
     "route": "/",
-    "screen": "a468159db32eef48",
-    "guide": "7cf3588c5e6ed551",
-    "taken": "2026-10-17"
+    "screen": "eeb8738f8626d396",
+    "guide": "3ceb217a108e22f1",
+    "taken": "2026-10-18"
   },
   "dashboard-predictive": {
     "src": "/help/shots/dashboard-predictive.webp",
     "width": 1280,
-    "height": 1600,
+    "height": 1343,
     "marks": [1, 2, 6, 7],
+    "labels": {
+      "1": "Action Zone",
+      "2": "Stock runway",
+      "6": "Today",
+      "7": "Show amounts"
+    },
+    "clip": {
+      "y": 0,
+      "height": 1343,
+      "target": "marks"
+    },
     "route": "/",
-    "screen": "a468159db32eef48",
-    "guide": "de3748b71f59f524",
-    "taken": "2026-10-17"
+    "screen": "eeb8738f8626d396",
+    "guide": "8c04dc28bf66afc1",
+    "taken": "2026-10-18"
   },
   "dashboard-pulse": {
     "src": "/help/shots/dashboard-pulse.webp",
     "width": 1280,
-    "height": 1600,
+    "height": 817,
     "marks": [1, 2, 3, 4, 5],
+    "labels": {
+      "1": "Today",
+      "2": "Sales & collection",
+      "3": "Deliveries",
+      "4": "Production",
+      "5": "Open the sales overview"
+    },
+    "clip": {
+      "y": 0,
+      "height": 817,
+      "target": "marks"
+    },
     "route": "/",
-    "screen": "a468159db32eef48",
-    "guide": "b4677efd8c50d9b1",
-    "taken": "2026-10-17"
+    "screen": "eeb8738f8626d396",
+    "guide": "6c9dd1dfd771f6c1",
+    "taken": "2026-10-18"
   },
   "dashboard-sales-target": {
     "src": "/help/shots/dashboard-sales-target.webp",
     "width": 1280,
-    "height": 1600,
+    "height": 800,
     "marks": [1],
+    "labels": {
+      "1": "Set target"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/",
-    "screen": "a468159db32eef48",
-    "guide": "583968930b5ef7a2",
-    "taken": "2026-10-17"
+    "screen": "eeb8738f8626d396",
+    "guide": "4bf1f97f750153f0",
+    "taken": "2026-10-18"
   },
   "dashboard-stock-alerts": {
     "src": "/help/shots/dashboard-stock-alerts.webp",
     "width": 1280,
-    "height": 1600,
-    "marks": [4],
+    "height": 800,
+    "marks": [1, 2, 4],
+    "labels": {
+      "1": "Insights",
+      "2": "Dead & slow",
+      "4": "Low stock"
+    },
+    "clip": {
+      "y": 2686,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/",
-    "screen": "a468159db32eef48",
-    "guide": "0dd5a0427f4404ce",
-    "taken": "2026-10-17"
+    "screen": "eeb8738f8626d396",
+    "guide": "166ff55b06c9748a",
+    "taken": "2026-10-18"
   },
   "dashboard-top-sellers": {
     "src": "/help/shots/dashboard-top-sellers.webp",
     "width": 1280,
-    "height": 1600,
-    "marks": [2],
+    "height": 675,
+    "marks": [1, 2, 3, 4, 5],
+    "labels": {
+      "1": "Insights",
+      "2": "Period",
+      "3": "Show",
+      "4": "Rank by",
+      "5": "Pieces"
+    },
+    "clip": {
+      "y": 3028,
+      "height": 675,
+      "target": "marks"
+    },
     "route": "/",
-    "screen": "a468159db32eef48",
-    "guide": "8ae24f50df002f6b",
-    "taken": "2026-10-17"
+    "screen": "eeb8738f8626d396",
+    "guide": "b43d057e7b9338ed",
+    "taken": "2026-10-18"
   },
   "demo-site": {
     "src": "/help/shots/demo-site.webp",
     "width": 1280,
-    "height": 1600,
-    "marks": [],
+    "height": 800,
+    "marks": [2],
+    "labels": {
+      "2": "Demo site"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/",
-    "screen": "a468159db32eef48",
-    "guide": "1ac695f0853d299e",
-    "taken": "2026-10-17"
+    "screen": "eeb8738f8626d396",
+    "guide": "f36d1f6605999582",
+    "taken": "2026-10-18"
   },
   "find-your-way": {
     "src": "/help/shots/find-your-way.webp",
     "width": 1280,
-    "height": 1600,
-    "marks": [1, 3],
+    "height": 675,
+    "marks": [4],
+    "labels": {
+      "4": "Invoices"
+    },
+    "clip": {
+      "y": 3028,
+      "height": 675,
+      "target": "marks"
+    },
     "route": "/",
-    "screen": "a468159db32eef48",
-    "guide": "bc44413e9f2fac3b",
-    "taken": "2026-10-17"
+    "screen": "eeb8738f8626d396",
+    "guide": "1a8e694ca6c23d50",
+    "taken": "2026-10-18"
   },
   "help-ai": {
     "src": "/help/shots/help-ai.webp",
     "width": 1280,
-    "height": 1600,
+    "height": 800,
     "marks": [1, 3],
+    "labels": {
+      "1": "Ask the Help AI",
+      "3": "Budget & Costs"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/help",
-    "screen": "26520c5d121f6da3",
-    "guide": "3eac911e9d1699f5",
-    "taken": "2026-10-17"
+    "screen": "a2ef33be56d77bb1",
+    "guide": "822c3e29925c52fd",
+    "taken": "2026-10-18"
   },
   "help-missing-feature": {
     "src": "/help/shots/help-missing-feature.webp",
     "width": 1280,
-    "height": 1600,
-    "marks": [],
+    "height": 1079,
+    "marks": [1, 3],
+    "labels": {
+      "1": "দুঃখিত, এই বিষয়ে কোনো নির্দেশিকা পাওয়া যায়নি",
+      "3": "Copy the prompt"
+    },
+    "clip": {
+      "y": 0,
+      "height": 1079,
+      "target": "marks"
+    },
     "route": "/help",
-    "screen": "26520c5d121f6da3",
-    "guide": "532c0254b7cce8c7",
-    "taken": "2026-10-17"
+    "screen": "a2ef33be56d77bb1",
+    "guide": "b7869a9ba945b716",
+    "taken": "2026-10-18"
   },
   "help-read-guide": {
     "src": "/help/shots/help-read-guide.webp",
     "width": 1280,
-    "height": 1600,
-    "marks": [2],
+    "height": 838,
+    "marks": [2, 4, 5],
+    "labels": {
+      "2": "কারা পারবেন",
+      "4": "এটা কী",
+      "5": "কীভাবে করবেন, ধাপে ধাপে"
+    },
+    "clip": {
+      "y": 0,
+      "height": 838,
+      "target": "marks"
+    },
     "route": "/help/getting-started/sign-in",
-    "screen": "c3a1eb7e85e20941",
-    "guide": "23ca7772f3710da8",
-    "taken": "2026-10-17"
+    "screen": "48a19405fd159348",
+    "guide": "0cb1efe2b20fd620",
+    "taken": "2026-10-18"
   },
   "help-screenshots": {
     "src": "/help/shots/help-screenshots.webp",
     "width": 1280,
-    "height": 1600,
-    "marks": [],
+    "height": 944,
+    "marks": [1],
+    "labels": {
+      "1": "কীভাবে করবেন, ধাপে ধাপে"
+    },
+    "clip": {
+      "y": 0,
+      "height": 944,
+      "target": "marks"
+    },
     "route": "/help/sales/sales-quotation",
-    "screen": "c3a1eb7e85e20941",
-    "guide": "f460ec3283dfc562",
-    "taken": "2026-10-17"
+    "screen": "48a19405fd159348",
+    "guide": "f90b3ddb0f8551f3",
+    "taken": "2026-10-18"
   },
   "help-search": {
     "src": "/help/shots/help-search.webp",
     "width": 1280,
-    "height": 1600,
-    "marks": [],
+    "height": 800,
+    "marks": [1, 5],
+    "labels": {
+      "1": "Help Center",
+      "5": "Clear the search"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/help",
-    "screen": "26520c5d121f6da3",
-    "guide": "94795edf19c21266",
-    "taken": "2026-10-17"
+    "screen": "a2ef33be56d77bb1",
+    "guide": "72633166bdc3d78e",
+    "taken": "2026-10-18"
   },
   "hr-360-report": {
     "src": "/help/shots/hr-360-report.webp",
     "width": 1280,
-    "height": 856,
+    "height": 800,
     "marks": [2],
+    "labels": {
+      "2": "Employees"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/hr/employees",
-    "screen": "8b44681c46d4cc00",
-    "guide": "4116bf03ca05a767",
-    "taken": "2026-10-17"
+    "screen": "e305a573f05454d3",
+    "guide": "c7d5449154a011ee",
+    "taken": "2026-10-18"
   },
   "hr-add-employee": {
     "src": "/help/shots/hr-add-employee.webp",
     "width": 1280,
-    "height": 1600,
+    "height": 1599,
     "marks": [1, 2, 3, 4],
+    "labels": {
+      "1": "Add an employee",
+      "2": "The person",
+      "3": "The job",
+      "4": "Pay"
+    },
+    "clip": {
+      "y": 0,
+      "height": 1599,
+      "target": "marks"
+    },
     "route": "/hr/employees/new",
     "screen": "87f893122e016357",
-    "guide": "f41a80ab822468b8",
-    "taken": "2026-10-17"
+    "guide": "e4e816324faff35b",
+    "taken": "2026-10-18"
   },
   "hr-advances": {
     "src": "/help/shots/hr-advances.webp",
     "width": 1280,
-    "height": 1520,
+    "height": 1524,
     "marks": [1, 2, 3, 4],
+    "labels": {
+      "1": "Give an advance",
+      "2": "Employee",
+      "3": "Starting with the payroll for",
+      "4": "Pay the advance"
+    },
+    "clip": {
+      "y": 0,
+      "height": 1524,
+      "target": "marks"
+    },
     "route": "/hr/advances/new",
     "screen": "9577ca81affd279f",
-    "guide": "6d2f2584c03df7df",
-    "taken": "2026-10-17"
+    "guide": "71c8081569abed2a",
+    "taken": "2026-10-18"
   },
   "hr-attendance": {
     "src": "/help/shots/hr-attendance.webp",
     "width": 1280,
     "height": 800,
-    "marks": [1, 6],
+    "marks": [1, 2, 6],
+    "labels": {
+      "1": "Attendance",
+      "2": "Late",
+      "6": "The month in figures"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/hr/attendance",
     "screen": "81d19babf584897b",
-    "guide": "6efd78282205302f",
-    "taken": "2026-10-17"
+    "guide": "6b7b23168923fcfc",
+    "taken": "2026-10-18"
   },
   "hr-claims": {
     "src": "/help/shots/hr-claims.webp",
     "width": 1280,
-    "height": 971,
-    "marks": [1],
+    "height": 800,
+    "marks": [1, 4],
+    "labels": {
+      "1": "Claims",
+      "4": "Approve …"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/hr/claims",
-    "screen": "a3445ed84481abe2",
-    "guide": "aed5f4c0c5069923",
-    "taken": "2026-10-17"
+    "screen": "79752bf1483d04b0",
+    "guide": "dc744b646a3a2b9f",
+    "taken": "2026-10-18"
   },
   "hr-data-vault": {
     "src": "/help/shots/hr-data-vault.webp",
     "width": 1280,
-    "height": 856,
+    "height": 800,
     "marks": [1, 2],
+    "labels": {
+      "1": "HR & payroll",
+      "2": "Missing info"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/hr/employees",
-    "screen": "8b44681c46d4cc00",
-    "guide": "8b306411e7dd226a",
-    "taken": "2026-10-17"
+    "screen": "e305a573f05454d3",
+    "guide": "11014bec9b2db32e",
+    "taken": "2026-10-18"
   },
   "hr-deactivate": {
     "src": "/help/shots/hr-deactivate.webp",
@@ -742,22 +1512,42 @@
   "hr-employee-directory": {
     "src": "/help/shots/hr-employee-directory.webp",
     "width": 1280,
-    "height": 856,
+    "height": 800,
     "marks": [1, 3, 5],
+    "labels": {
+      "1": "Employees",
+      "3": "Missing info",
+      "5": "Active only"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/hr/employees",
-    "screen": "8b44681c46d4cc00",
-    "guide": "4ade781cff71456e",
-    "taken": "2026-10-17"
+    "screen": "e305a573f05454d3",
+    "guide": "71fa7c700914865b",
+    "taken": "2026-10-18"
   },
   "hr-employee-profile": {
     "src": "/help/shots/hr-employee-profile.webp",
     "width": 1280,
-    "height": 856,
+    "height": 800,
     "marks": [1, 3, 7],
+    "labels": {
+      "1": "People who left too",
+      "3": "Overview",
+      "7": "Items"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/hr/employees",
-    "screen": "8b44681c46d4cc00",
-    "guide": "d8a41b7187cd2b50",
-    "taken": "2026-10-17"
+    "screen": "e305a573f05454d3",
+    "guide": "85a0fb2fc28c4b6a",
+    "taken": "2026-10-18"
   },
   "hr-give-login": {
     "src": "/help/shots/hr-give-login.webp",
@@ -772,1092 +1562,2154 @@
   "hr-gps-attendance": {
     "src": "/help/shots/hr-gps-attendance.webp",
     "width": 1280,
-    "height": 1600,
+    "height": 1433,
     "marks": [1, 2, 4],
+    "labels": {
+      "1": "Change the rules",
+      "2": "Add a work place",
+      "4": "Change"
+    },
+    "clip": {
+      "y": 0,
+      "height": 1433,
+      "target": "marks"
+    },
     "route": "/hr/settings",
-    "screen": "5f5bfb093153638d",
-    "guide": "e62c257af99c8df9",
-    "taken": "2026-10-17"
+    "screen": "353fa22cde728037",
+    "guide": "81d5c4275e87e8eb",
+    "taken": "2026-10-18"
   },
   "hr-holidays-rules": {
     "src": "/help/shots/hr-holidays-rules.webp",
     "width": 1280,
-    "height": 1600,
+    "height": 1175,
     "marks": [1, 2, 4, 5],
+    "labels": {
+      "1": "Holidays & rules",
+      "2": "Change the rules",
+      "4": "Add holidays",
+      "5": "Add a leave type"
+    },
+    "clip": {
+      "y": 0,
+      "height": 1175,
+      "target": "marks"
+    },
     "route": "/hr/settings",
-    "screen": "5f5bfb093153638d",
-    "guide": "4ce5adf3a895beb4",
-    "taken": "2026-10-17"
+    "screen": "353fa22cde728037",
+    "guide": "74d2f9d651d84982",
+    "taken": "2026-10-18"
   },
   "hr-items": {
     "src": "/help/shots/hr-items.webp",
     "width": 1280,
     "height": 800,
     "marks": [1],
+    "labels": {
+      "1": "Search"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/hr/items",
     "screen": "8e809322b479a223",
-    "guide": "b4d42f955137cd45",
-    "taken": "2026-10-17"
+    "guide": "8906b8898bc9f456",
+    "taken": "2026-10-18"
   },
   "hr-leave": {
     "src": "/help/shots/hr-leave.webp",
     "width": 1280,
-    "height": 1099,
+    "height": 1103,
     "marks": [1, 2, 3],
+    "labels": {
+      "1": "Record leave",
+      "2": "Employee",
+      "3": "Record the leave"
+    },
+    "clip": {
+      "y": 0,
+      "height": 1103,
+      "target": "marks"
+    },
     "route": "/hr/leave/new",
     "screen": "213614718d703c80",
-    "guide": "b155e1328a60fea0",
-    "taken": "2026-10-17"
+    "guide": "f108d6798d9085c1",
+    "taken": "2026-10-18"
   },
   "hr-money": {
     "src": "/help/shots/hr-money.webp",
     "width": 1280,
     "height": 800,
     "marks": [1, 2],
+    "labels": {
+      "1": "Show amounts",
+      "2": "Last week"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/hr/money",
     "screen": "e9feadbf199183eb",
-    "guide": "29955eb2a6c65355",
-    "taken": "2026-10-17"
+    "guide": "c08c745d2754f0a9",
+    "taken": "2026-10-18"
   },
   "hr-notices": {
     "src": "/help/shots/hr-notices.webp",
     "width": 1280,
     "height": 800,
     "marks": [1],
+    "labels": {
+      "1": "Post a notice"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/hr/notices",
     "screen": "feb079cf0c44fb90",
-    "guide": "7292bad6e58d8668",
-    "taken": "2026-10-17"
+    "guide": "f40d5a50a1d4177a",
+    "taken": "2026-10-18"
   },
   "hr-outside-services": {
     "src": "/help/shots/hr-outside-services.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [1, 3],
+    "marks": [1, 2, 3],
+    "labels": {
+      "1": "Holidays & rules",
+      "2": "Off",
+      "3": "Outside services"
+    },
+    "clip": {
+      "y": 0,
+      "height": 1600,
+      "target": "marks"
+    },
     "route": "/hr/settings",
-    "screen": "5f5bfb093153638d",
-    "guide": "22e4181dda9f5e70",
-    "taken": "2026-10-17"
+    "screen": "353fa22cde728037",
+    "guide": "71ba8b1cfe2e6ddc",
+    "taken": "2026-10-18"
   },
   "hr-overtime": {
     "src": "/help/shots/hr-overtime.webp",
     "width": 1280,
-    "height": 858,
-    "marks": [2],
+    "height": 800,
+    "marks": [2, 4],
+    "labels": {
+      "2": "Overtime",
+      "4": "Approve …"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/hr/overtime",
-    "screen": "0995d73c4facd51e",
-    "guide": "deff8a3325854ba1",
-    "taken": "2026-10-17"
+    "screen": "e835374b669b3bf1",
+    "guide": "235cc4683b05489a",
+    "taken": "2026-10-18"
   },
   "hr-overview": {
     "src": "/help/shots/hr-overview.webp",
     "width": 1280,
-    "height": 1070,
+    "height": 974,
     "marks": [1, 2, 3, 4, 5, 6],
+    "labels": {
+      "1": "Overview",
+      "2": "Leave to decide",
+      "3": "Staff records",
+      "4": "Payroll",
+      "5": "Mark today",
+      "6": "All holidays"
+    },
+    "clip": {
+      "y": 0,
+      "height": 974,
+      "target": "marks"
+    },
     "route": "/hr",
-    "screen": "645e2a0e021bf059",
-    "guide": "f15951aac92c2c62",
-    "taken": "2026-10-17"
+    "screen": "d24b985bde6d94f2",
+    "guide": "c34ab036faa2b5f8",
+    "taken": "2026-10-18"
   },
   "hr-payroll-approve-pay": {
     "src": "/help/shots/hr-payroll-approve-pay.webp",
     "width": 1280,
     "height": 800,
     "marks": [1],
+    "labels": {
+      "1": "Payroll"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/hr/payroll",
-    "screen": "2c51c189d3d2b30d",
-    "guide": "fab8521c0384de93",
-    "taken": "2026-10-17"
+    "screen": "d56fe6a45e603bbd",
+    "guide": "75c9997508d0d132",
+    "taken": "2026-10-18"
   },
   "hr-payroll-prepare": {
     "src": "/help/shots/hr-payroll-prepare.webp",
     "width": 1280,
     "height": 800,
     "marks": [1],
+    "labels": {
+      "1": "Prepare a payroll"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/hr/payroll",
-    "screen": "2c51c189d3d2b30d",
-    "guide": "eb1a6c3d15b7b7af",
-    "taken": "2026-10-17"
+    "screen": "d56fe6a45e603bbd",
+    "guide": "ab1920eed1b7a922",
+    "taken": "2026-10-18"
   },
   "hr-payslip": {
     "src": "/help/shots/hr-payslip.webp",
     "width": 1280,
     "height": 800,
     "marks": [1],
+    "labels": {
+      "1": "Payroll"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/hr/payroll",
-    "screen": "2c51c189d3d2b30d",
-    "guide": "c13dca4f2220fdc3",
-    "taken": "2026-10-17"
+    "screen": "d56fe6a45e603bbd",
+    "guide": "5fb5984e6bf4853c",
+    "taken": "2026-10-18"
   },
   "hr-staff-map": {
     "src": "/help/shots/hr-staff-map.webp",
     "width": 1280,
-    "height": 1093,
-    "marks": [1],
+    "height": 800,
+    "marks": [1, 2],
+    "labels": {
+      "1": "Staff map",
+      "2": "On duty"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/hr/map",
-    "screen": "b5aec0e59b49c3f4",
-    "guide": "4314068ecafa959b",
-    "taken": "2026-10-17"
+    "screen": "5c7646354101829c",
+    "guide": "b01f2a866fd6789d",
+    "taken": "2026-10-18"
   },
   "hr-terms": {
     "src": "/help/shots/hr-terms.webp",
     "width": 1280,
     "height": 800,
     "marks": [1, 5],
+    "labels": {
+      "1": "Start from the starter text",
+      "5": "Who has agreed"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/hr/terms",
-    "screen": "e6200e1e74675b54",
-    "guide": "a8a75a7a9a771f20",
-    "taken": "2026-10-17"
+    "screen": "ab560f62c15b1673",
+    "guide": "a711986c86f19090",
+    "taken": "2026-10-18"
   },
   "inbox": {
     "src": "/help/shots/inbox.webp",
     "width": 1280,
-    "height": 1600,
+    "height": 800,
     "marks": [1, 2, 3, 4, 5],
+    "labels": {
+      "1": "Inbox",
+      "2": "All",
+      "3": "Open the project",
+      "4": "Mark as read",
+      "5": "Mark all as read"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/inbox",
     "screen": "54f176d2e8e487ec",
-    "guide": "c3293a0d0706d9d9",
-    "taken": "2026-10-17"
+    "guide": "713df1162e5578a5",
+    "taken": "2026-10-18"
   },
   "materials-add-material": {
     "src": "/help/shots/materials-add-material.webp",
     "width": 1280,
-    "height": 1283,
+    "height": 1287,
     "marks": [1, 2, 3, 4],
+    "labels": {
+      "1": "Add a material",
+      "2": "Name",
+      "3": "Colour (optional)",
+      "4": "Add the material"
+    },
+    "clip": {
+      "y": 0,
+      "height": 1287,
+      "target": "marks"
+    },
     "route": "/materials/stock/new",
     "screen": "2180d001bbd5b7da",
-    "guide": "19360a6a158f5f89",
-    "taken": "2026-10-17"
+    "guide": "c77de209e2f404d1",
+    "taken": "2026-10-18"
   },
   "materials-issue": {
     "src": "/help/shots/materials-issue.webp",
     "width": 1280,
-    "height": 920,
+    "height": 800,
     "marks": [1, 2, 3, 4],
+    "labels": {
+      "1": "Issue to production",
+      "2": "Production project",
+      "3": "Handed over on",
+      "4": "Find a material to hand over"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/materials/issues/new",
     "screen": "4e9ed05f190e3ee4",
-    "guide": "ec51235822586c60",
-    "taken": "2026-10-17"
+    "guide": "70998df21e7987e2",
+    "taken": "2026-10-18"
   },
   "materials-overview": {
     "src": "/help/shots/materials-overview.webp",
     "width": 1280,
-    "height": 1473,
+    "height": 800,
     "marks": [1, 2, 3, 4],
+    "labels": {
+      "1": "Overview",
+      "2": "Running low",
+      "3": "By kind",
+      "4": "Receive goods"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/materials",
-    "screen": "843018bbbac9dde5",
-    "guide": "e568d666e9b4dbed",
-    "taken": "2026-10-17"
+    "screen": "001fcf7fc0e4c752",
+    "guide": "635d8e774bd56bf4",
+    "taken": "2026-10-18"
   },
   "materials-purchase-order": {
     "src": "/help/shots/materials-purchase-order.webp",
     "width": 1280,
-    "height": 1161,
+    "height": 1165,
     "marks": [1, 2, 3, 4],
+    "labels": {
+      "1": "Materials",
+      "2": "Supplier",
+      "3": "Find a material to order",
+      "4": "Raise the order"
+    },
+    "clip": {
+      "y": 0,
+      "height": 1165,
+      "target": "marks"
+    },
     "route": "/materials/orders/new",
     "screen": "32b22010a5c19107",
-    "guide": "ed887827ab83f2ac",
-    "taken": "2026-10-17"
+    "guide": "6d2b80913c20e4ce",
+    "taken": "2026-10-18"
   },
   "materials-receive-goods": {
     "src": "/help/shots/materials-receive-goods.webp",
     "width": 1280,
-    "height": 1203,
+    "height": 1207,
     "marks": [1, 2, 3, 4, 5],
+    "labels": {
+      "1": "Receive the goods",
+      "2": "Supplier",
+      "3": "What came in",
+      "4": "How it is paid",
+      "5": "Photo or PDF of the bill (optional)"
+    },
+    "clip": {
+      "y": 0,
+      "height": 1207,
+      "target": "marks"
+    },
     "route": "/materials/purchases/new",
     "screen": "c958383ca7a1f5d5",
-    "guide": "e14b473268e80637",
-    "taken": "2026-10-17"
+    "guide": "865d9e09cd1c43e9",
+    "taken": "2026-10-18"
   },
   "materials-stock-actions": {
     "src": "/help/shots/materials-stock-actions.webp",
     "width": 1280,
-    "height": 1600,
-    "marks": [],
-    "route": "/materials/stock",
-    "screen": "b12d77ea7d5d00e8",
-    "guide": "3cde1ef66d892012",
-    "taken": "2026-10-17"
+    "height": 1286,
+    "marks": [2, 3, 4, 5],
+    "labels": {
+      "2": "Count it",
+      "3": "From",
+      "4": "Write off wastage",
+      "5": "Opening stock"
+    },
+    "clip": {
+      "y": 0,
+      "height": 1286,
+      "target": "marks"
+    },
+    "route": "/materials/stock/[materialId]",
+    "screen": "674139fe1d824346",
+    "guide": "6ff5f11d5c4d97dc",
+    "taken": "2026-10-18"
   },
   "materials-stock-card": {
     "src": "/help/shots/materials-stock-card.webp",
     "width": 1280,
-    "height": 1600,
+    "height": 800,
     "marks": [1, 2],
+    "labels": {
+      "1": "Stock",
+      "2": "On hand"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/materials/stock",
-    "screen": "b12d77ea7d5d00e8",
-    "guide": "0cc8848afb300f82",
-    "taken": "2026-10-17"
+    "screen": "9164f337d72e9dc3",
+    "guide": "dff436382d2538ae",
+    "taken": "2026-10-18"
   },
   "materials-supplier-return": {
     "src": "/help/shots/materials-supplier-return.webp",
     "width": 1280,
     "height": 800,
     "marks": [1, 4],
+    "labels": {
+      "1": "Purchases",
+      "4": "Supplier returns"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/materials/returns",
-    "screen": "6da09808625994cf",
-    "guide": "291b62910ad7659d",
-    "taken": "2026-10-17"
+    "screen": "03158d5daceabc85",
+    "guide": "7cb871cae4c6ef66",
+    "taken": "2026-10-18"
   },
   "my-hr-advances": {
     "src": "/help/shots/my-hr-advances.webp",
     "width": 1280,
     "height": 800,
     "marks": [1],
+    "labels": {
+      "1": "Advances"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/me/advances",
     "screen": "814ae6f0fbadc985",
-    "guide": "8fbbf9ca41cdc1bc",
-    "taken": "2026-10-17"
+    "guide": "e4a6a71d34196514",
+    "taken": "2026-10-18"
   },
   "my-hr-check-in": {
     "src": "/help/shots/my-hr-check-in.webp",
     "width": 1280,
     "height": 800,
     "marks": [1, 6],
+    "labels": {
+      "1": "Today",
+      "6": "Attendance"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/me",
-    "screen": "9edd196a27e9e5f8",
-    "guide": "9ac55543b1b77cb3",
-    "taken": "2026-10-17"
+    "screen": "50d0286fbe5bfcf5",
+    "guide": "4fc6cab1f7d8a8b4",
+    "taken": "2026-10-18"
   },
   "my-hr-claims": {
     "src": "/help/shots/my-hr-claims.webp",
     "width": 1280,
     "height": 800,
     "marks": [1],
+    "labels": {
+      "1": "Claims"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/me/claims",
     "screen": "d6004cd6f1aac048",
-    "guide": "af8bbc27ce0ed7c9",
-    "taken": "2026-10-17"
+    "guide": "e9f352d1acacac2c",
+    "taken": "2026-10-18"
   },
   "my-hr-dashboard": {
     "src": "/help/shots/my-hr-dashboard.webp",
     "width": 1280,
     "height": 800,
     "marks": [1, 3],
+    "labels": {
+      "1": "Today",
+      "3": "Attendance"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/me",
-    "screen": "9edd196a27e9e5f8",
-    "guide": "f1ec2ec8d501a0c1",
-    "taken": "2026-10-17"
+    "screen": "50d0286fbe5bfcf5",
+    "guide": "b05542e673ed7324",
+    "taken": "2026-10-18"
   },
   "my-hr-details": {
     "src": "/help/shots/my-hr-details.webp",
     "width": 1280,
     "height": 800,
     "marks": [1],
+    "labels": {
+      "1": "Today"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/me",
-    "screen": "9edd196a27e9e5f8",
-    "guide": "d11e3ff59ef3f311",
-    "taken": "2026-10-17"
+    "screen": "50d0286fbe5bfcf5",
+    "guide": "572511d17b777fdc",
+    "taken": "2026-10-18"
   },
   "my-hr-leave": {
     "src": "/help/shots/my-hr-leave.webp",
     "width": 1280,
     "height": 800,
     "marks": [1],
+    "labels": {
+      "1": "Leave"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/me/leave",
-    "screen": "78ffe61f4c266f74",
-    "guide": "00d3c776f7aa0969",
-    "taken": "2026-10-17"
+    "screen": "a943ba15e77072ef",
+    "guide": "f2353f8c714f0fc0",
+    "taken": "2026-10-18"
   },
   "my-hr-ledger": {
     "src": "/help/shots/my-hr-ledger.webp",
     "width": 1280,
     "height": 800,
     "marks": [1],
+    "labels": {
+      "1": "Money"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/me/ledger",
     "screen": "7d98d8a6d4ce0ad6",
-    "guide": "c310263a22c834c7",
-    "taken": "2026-10-17"
+    "guide": "a51565bc228cbff1",
+    "taken": "2026-10-18"
   },
   "my-hr-my-details": {
     "src": "/help/shots/my-hr-my-details.webp",
     "width": 1280,
     "height": 800,
     "marks": [1],
+    "labels": {
+      "1": "My details"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/me/profile",
-    "screen": "8e05a95596904ede",
-    "guide": "3afb2ffd11509c94",
-    "taken": "2026-10-17"
+    "screen": "5bc314415d67c317",
+    "guide": "53a9626815146db7",
+    "taken": "2026-10-18"
   },
   "my-hr-notices": {
     "src": "/help/shots/my-hr-notices.webp",
     "width": 1280,
     "height": 800,
     "marks": [1],
+    "labels": {
+      "1": "Notices"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/me/notices",
     "screen": "3954e21c7191a407",
-    "guide": "746d8cabe6196bd4",
-    "taken": "2026-10-17"
+    "guide": "23c4c9d622fa6775",
+    "taken": "2026-10-18"
   },
   "my-hr-payslips": {
     "src": "/help/shots/my-hr-payslips.webp",
     "width": 1280,
     "height": 800,
     "marks": [1],
+    "labels": {
+      "1": "Payslips"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/me/payslips",
     "screen": "0524cf35ef7291c7",
-    "guide": "64de7f8f3808cb07",
-    "taken": "2026-10-17"
+    "guide": "ace02759d4e5c5b2",
+    "taken": "2026-10-18"
   },
   "my-hr-tasks": {
     "src": "/help/shots/my-hr-tasks.webp",
     "width": 1280,
     "height": 800,
     "marks": [1],
+    "labels": {
+      "1": "Tasks"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/me/tasks",
     "screen": "b59161b6af410b31",
-    "guide": "d454b0b903372b9a",
-    "taken": "2026-10-17"
+    "guide": "e8b59dd892530e4d",
+    "taken": "2026-10-18"
   },
   "my-hr-tell-ai": {
     "src": "/help/shots/my-hr-tell-ai.webp",
     "width": 1280,
     "height": 800,
     "marks": [1],
+    "labels": {
+      "1": "My HR"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/me",
-    "screen": "9edd196a27e9e5f8",
-    "guide": "58eb0b499f93d133",
-    "taken": "2026-10-17"
+    "screen": "50d0286fbe5bfcf5",
+    "guide": "f9d72e1916e7a26d",
+    "taken": "2026-10-18"
   },
   "my-hr-terms": {
     "src": "/help/shots/my-hr-terms.webp",
     "width": 1280,
     "height": 800,
     "marks": [1],
+    "labels": {
+      "1": "Terms of employment"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/terms",
     "screen": "211b44fb882b7e87",
-    "guide": "d282a680d3f5a34c",
-    "taken": "2026-10-17"
+    "guide": "7a7066eff444c482",
+    "taken": "2026-10-18"
   },
   "parties-buyer-360": {
     "src": "/help/shots/parties-buyer-360.webp",
     "width": 1280,
     "height": 800,
     "marks": [1, 6],
+    "labels": {
+      "1": "Buyers",
+      "6": "Production"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/parties/buyers",
-    "screen": "cd7ef3e8938f6165",
-    "guide": "0ad300a565ce411e",
-    "taken": "2026-10-17"
+    "screen": "e7789bb34c3706f0",
+    "guide": "dd06cf3dac22f3bb",
+    "taken": "2026-10-18"
   },
   "parties-buyer-360-pdf": {
     "src": "/help/shots/parties-buyer-360-pdf.webp",
     "width": 1280,
     "height": 800,
-    "marks": [],
-    "route": "/parties/buyers",
-    "screen": "cd7ef3e8938f6165",
-    "guide": "ee5567542a759aae",
-    "taken": "2026-10-17"
+    "marks": [1, 3],
+    "labels": {
+      "1": "360° PDF",
+      "3": "Email"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
+    "route": "/parties/[list]/[partyId]",
+    "screen": "52ebcd1599cd7215",
+    "guide": "eb24d3a569271630",
+    "taken": "2026-10-18"
   },
   "parties-dues": {
     "src": "/help/shots/parties-dues.webp",
     "width": 1280,
-    "height": 1107,
+    "height": 800,
     "marks": [1, 2],
+    "labels": {
+      "1": "Dues",
+      "2": "Owed to you"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/parties/dues",
-    "screen": "670d855ca7a1c20b",
-    "guide": "26125973d551d0c8",
-    "taken": "2026-10-17"
+    "screen": "3f5931ccf940a589",
+    "guide": "2d591ebc57253da8",
+    "taken": "2026-10-18"
   },
   "parties-edit-status": {
     "src": "/help/shots/parties-edit-status.webp",
     "width": 1280,
     "height": 800,
-    "marks": [],
-    "route": "/parties/buyers",
-    "screen": "cd7ef3e8938f6165",
-    "guide": "c3de16daa5a8ae6c",
-    "taken": "2026-10-17"
+    "marks": [1, 2],
+    "labels": {
+      "1": "Edit details",
+      "2": "No grade"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
+    "route": "/parties/[list]/[partyId]",
+    "screen": "52ebcd1599cd7215",
+    "guide": "ed1cfd9f8b2ead12",
+    "taken": "2026-10-18"
   },
   "parties-find": {
     "src": "/help/shots/parties-find.webp",
     "width": 1280,
     "height": 800,
-    "marks": [1, 2, 3, 4, 6],
+    "marks": [1, 2, 3, 4, 6, 7],
+    "labels": {
+      "1": "Buyers",
+      "2": "Blue Verified only",
+      "3": "All types",
+      "4": "Balance",
+      "6": "Contact",
+      "7": "All …"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/parties/buyers",
-    "screen": "cd7ef3e8938f6165",
-    "guide": "39374891ad6d0318",
-    "taken": "2026-10-17"
+    "screen": "e7789bb34c3706f0",
+    "guide": "002acc78c34238e6",
+    "taken": "2026-10-18"
   },
   "parties-new": {
     "src": "/help/shots/parties-new.webp",
     "width": 1280,
-    "height": 1600,
+    "height": 1595,
     "marks": [1, 2, 3, 6, 7, 8],
+    "labels": {
+      "1": "New buyer",
+      "2": "Who they are",
+      "3": "Name",
+      "6": "Contact",
+      "7": "Terms",
+      "8": "How they pay"
+    },
+    "clip": {
+      "y": 0,
+      "height": 1595,
+      "target": "marks"
+    },
     "route": "/parties/buyers/new",
     "screen": "b22b881262413488",
-    "guide": "77e0153dcd0efc2a",
-    "taken": "2026-10-17"
+    "guide": "597fb691053d436e",
+    "taken": "2026-10-18"
   },
   "parties-opening-balance": {
     "src": "/help/shots/parties-opening-balance.webp",
     "width": 1280,
     "height": 800,
     "marks": [1],
+    "labels": {
+      "1": "More"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/parties/buyers",
-    "screen": "cd7ef3e8938f6165",
-    "guide": "b11f735627f8500b",
-    "taken": "2026-10-17"
+    "screen": "e7789bb34c3706f0",
+    "guide": "744923c04904c649",
+    "taken": "2026-10-18"
   },
   "parties-statement": {
     "src": "/help/shots/parties-statement.webp",
     "width": 1280,
     "height": 800,
     "marks": [1, 3],
+    "labels": {
+      "1": "Dues",
+      "3": "Balance"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/parties/buyers",
-    "screen": "cd7ef3e8938f6165",
-    "guide": "b4f4cd4688c91d9a",
-    "taken": "2026-10-17"
+    "screen": "e7789bb34c3706f0",
+    "guide": "ccc548450251c99f",
+    "taken": "2026-10-18"
   },
   "parties-supplier-360": {
     "src": "/help/shots/parties-supplier-360.webp",
     "width": 1280,
-    "height": 1026,
-    "marks": [1],
+    "height": 937,
+    "marks": [1, 4],
+    "labels": {
+      "1": "Suppliers",
+      "4": "Settled"
+    },
+    "clip": {
+      "y": 0,
+      "height": 937,
+      "target": "marks"
+    },
     "route": "/parties/suppliers",
-    "screen": "cd7ef3e8938f6165",
-    "guide": "7a44f7882115faba",
-    "taken": "2026-10-17"
+    "screen": "e7789bb34c3706f0",
+    "guide": "41f6c9b752f446df",
+    "taken": "2026-10-18"
   },
   "parties-supplier-360-pdf": {
     "src": "/help/shots/parties-supplier-360-pdf.webp",
     "width": 1280,
-    "height": 1026,
-    "marks": [],
-    "route": "/parties/suppliers",
-    "screen": "cd7ef3e8938f6165",
-    "guide": "88e2dbf26d68d3a2",
-    "taken": "2026-10-17"
+    "height": 800,
+    "marks": [1, 3],
+    "labels": {
+      "1": "360° PDF",
+      "3": "Email"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
+    "route": "/parties/[list]/[partyId]",
+    "screen": "52ebcd1599cd7215",
+    "guide": "eb24d3a569271630",
+    "taken": "2026-10-18"
   },
   "pin": {
     "src": "/help/shots/pin.webp",
     "width": 1280,
-    "height": 1600,
-    "marks": [],
-    "route": "/",
-    "screen": "a468159db32eef48",
-    "guide": "61e8849a1dbedf0b",
-    "taken": "2026-10-17"
+    "height": 800,
+    "marks": [1, 2],
+    "labels": {
+      "1": "PIN",
+      "2": "Set a PIN"
+    },
+    "clip": {
+      "y": 855,
+      "height": 800,
+      "target": "PIN"
+    },
+    "route": "/ai/settings",
+    "screen": "565aebe363d4a363",
+    "guide": "92a5b38a819fe53a",
+    "taken": "2026-10-18"
   },
   "planner-automatic": {
     "src": "/help/shots/planner-automatic.webp",
     "width": 1280,
-    "height": 1247,
+    "height": 800,
     "marks": [1, 2],
+    "labels": {
+      "1": "Automatic reminders",
+      "2": "Change"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/planner/automatic",
     "screen": "8934ac1b29e254d2",
-    "guide": "3046f32a8f2360c9",
-    "taken": "2026-10-17"
+    "guide": "db005f32adada740",
+    "taken": "2026-10-18"
   },
   "planner-coming-up": {
     "src": "/help/shots/planner-coming-up.webp",
     "width": 1280,
     "height": 800,
     "marks": [1],
+    "labels": {
+      "1": "Coming up"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/planner",
-    "screen": "c38fd22e234a2009",
-    "guide": "f1bec4927b5deef3",
-    "taken": "2026-10-17"
+    "screen": "afe4cc8bd37e654b",
+    "guide": "5826d18eb1995e0a",
+    "taken": "2026-10-18"
   },
   "planner-notepad": {
     "src": "/help/shots/planner-notepad.webp",
     "width": 1280,
     "height": 800,
     "marks": [1, 2, 3, 4],
+    "labels": {
+      "1": "Notepad",
+      "2": "Daily routine",
+      "3": "Next 3 days",
+      "4": "General notes"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/planner/notepad",
     "screen": "c2a29b6e6d6cf6f7",
-    "guide": "e05099893af9894a",
-    "taken": "2026-10-17"
+    "guide": "677a14bfca1e704b",
+    "taken": "2026-10-18"
   },
   "planner-reminders": {
     "src": "/help/shots/planner-reminders.webp",
     "width": 1280,
     "height": 800,
-    "marks": [1],
+    "marks": [1, 5],
+    "labels": {
+      "1": "Add a reminder",
+      "5": "Dealt with"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/planner/reminders",
     "screen": "83fc97faba8497ef",
-    "guide": "e0255b8b433f9b2a",
-    "taken": "2026-10-17"
+    "guide": "d9dbf572b51e4837",
+    "taken": "2026-10-18"
   },
   "planner-tasks": {
     "src": "/help/shots/planner-tasks.webp",
     "width": 1280,
     "height": 800,
     "marks": [1, 4],
+    "labels": {
+      "1": "Give a task",
+      "4": "Only tasks I gave"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/planner/tasks",
     "screen": "e7e677088ebaf209",
-    "guide": "864351159d1e0cb1",
-    "taken": "2026-10-17"
+    "guide": "0a0bc46bba6ca242",
+    "taken": "2026-10-18"
   },
   "production-action-log": {
     "src": "/help/shots/production-action-log.webp",
     "width": 1280,
-    "height": 1600,
+    "height": 800,
     "marks": [1, 3],
+    "labels": {
+      "1": "Action log",
+      "3": "Show"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/production/projects/[projectId]/log",
-    "screen": "49fe40fe22d32ee7",
-    "guide": "eb059bb15dbb5d06",
-    "taken": "2026-10-17"
+    "screen": "dcca4c9544fc1615",
+    "guide": "b43414f38eaca8f3",
+    "taken": "2026-10-18"
   },
   "production-batch-issue": {
     "src": "/help/shots/production-batch-issue.webp",
     "width": 1280,
-    "height": 1600,
+    "height": 800,
     "marks": [1, 2, 3],
+    "labels": {
+      "1": "Issue to styles",
+      "2": "Fill what is still to issue",
+      "3": "Taken by (optional)"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/production/batches/[batchId]/issue",
     "screen": "04759698dc2fbecc",
-    "guide": "5e5952e41ba444c4",
-    "taken": "2026-10-17"
+    "guide": "832ef9a4ba7fbf48",
+    "taken": "2026-10-18"
   },
   "production-batch-money": {
     "src": "/help/shots/production-batch-money.webp",
     "width": 1280,
-    "height": 1600,
-    "marks": [],
+    "height": 800,
+    "marks": [1, 2, 3],
+    "labels": {
+      "1": "Add a cost (QC, travel…)",
+      "2": "Cost Setup",
+      "3": "Pay an advance"
+    },
+    "clip": {
+      "y": 1684,
+      "height": 800,
+      "target": "Factory money"
+    },
     "route": "/production/batches/[batchId]",
-    "screen": "398c3e0251c14406",
-    "guide": "38cb6828bf40a620",
-    "taken": "2026-10-17"
+    "screen": "602b68953d1566ed",
+    "guide": "6dfcd96eb41957c7",
+    "taken": "2026-10-18"
   },
   "production-batch-orders": {
     "src": "/help/shots/production-batch-orders.webp",
     "width": 1280,
-    "height": 1600,
+    "height": 800,
     "marks": [2, 3],
+    "labels": {
+      "2": "Make purchase orders",
+      "3": "Book fabric"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/production/batches/[batchId]/orders/new",
     "screen": "f7c646662fd6526b",
-    "guide": "167f3636e1150d29",
-    "taken": "2026-10-17"
+    "guide": "1ca8c37a9ed28319",
+    "taken": "2026-10-18"
   },
   "production-batch-receive": {
     "src": "/help/shots/production-batch-receive.webp",
     "width": 1280,
-    "height": 1272,
+    "height": 1276,
     "marks": [2, 3, 4, 5],
+    "labels": {
+      "2": "Challan no. (optional)",
+      "3": "Challan vs Actual",
+      "4": "Receive into the store",
+      "5": "Fault log"
+    },
+    "clip": {
+      "y": 0,
+      "height": 1276,
+      "target": "marks"
+    },
     "route": "/production/batches/[batchId]/receive",
     "screen": "4d48f5ddd01607b0",
-    "guide": "dd8a98b3c55e40a0",
-    "taken": "2026-10-17"
+    "guide": "ea364913c5232c24",
+    "taken": "2026-10-18"
   },
   "production-batch-summary": {
     "src": "/help/shots/production-batch-summary.webp",
     "width": 1280,
-    "height": 1600,
+    "height": 1263,
     "marks": [1, 2, 3, 4, 5, 6],
+    "labels": {
+      "1": "Batch summary",
+      "2": "At a glance",
+      "3": "Pieces and cost by style",
+      "4": "Where the money went",
+      "5": "Penalties and deductions",
+      "6": "Download the PDF"
+    },
+    "clip": {
+      "y": 0,
+      "height": 1263,
+      "target": "marks"
+    },
     "route": "/production/batches/[batchId]/summary",
-    "screen": "bf21804838a2d3cf",
-    "guide": "a6058e72b618c3a9",
-    "taken": "2026-10-17"
+    "screen": "4dfa41edb34d26b4",
+    "guide": "1655a1b6e24260f0",
+    "taken": "2026-10-18"
   },
   "production-batches": {
     "src": "/help/shots/production-batches.webp",
     "width": 1280,
-    "height": 860,
+    "height": 800,
     "marks": [1, 2, 3],
+    "labels": {
+      "1": "Production",
+      "2": "Find",
+      "3": "New batch"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/production/batches",
-    "screen": "f74e7a0f71725bc2",
-    "guide": "5c8abc92ac1a45a5",
-    "taken": "2026-10-17"
+    "screen": "da27f08307986b20",
+    "guide": "7144abe6bb80c38c",
+    "taken": "2026-10-18"
   },
   "production-bills": {
     "src": "/help/shots/production-bills.webp",
     "width": 1280,
-    "height": 1449,
+    "height": 1453,
     "marks": [1, 2, 3, 4, 5],
+    "labels": {
+      "1": "Enter a supplier bill",
+      "2": "Supplier",
+      "3": "How it is paid",
+      "4": "Split across another project",
+      "5": "Save the bill"
+    },
+    "clip": {
+      "y": 0,
+      "height": 1453,
+      "target": "marks"
+    },
     "route": "/production/bills/new",
     "screen": "3a499ac9a10624b5",
-    "guide": "d107b7914dd5c46e",
-    "taken": "2026-10-17"
+    "guide": "1df8fdbb76dae5ec",
+    "taken": "2026-10-18"
   },
   "production-booking-approval": {
     "src": "/help/shots/production-booking-approval.webp",
     "width": 1280,
-    "height": 1600,
-    "marks": [5],
+    "height": 800,
+    "marks": [1, 2, 5, 6],
+    "labels": {
+      "1": "Draft",
+      "2": "Approve booking",
+      "5": "Print booking (PDF)",
+      "6": "Change"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/production/bookings/[bookingId]",
-    "screen": "933a3837827b6fac",
-    "guide": "b05192fec9197006",
-    "taken": "2026-10-17"
+    "screen": "fee904104fc0328d",
+    "guide": "0812eb1e053d1e6d",
+    "taken": "2026-10-18"
   },
   "production-booking-batch": {
     "src": "/help/shots/production-booking-batch.webp",
     "width": 1280,
-    "height": 1600,
-    "marks": [1, 4],
+    "height": 1531,
+    "marks": [1, 2, 3, 4],
+    "labels": {
+      "1": "Book fabric",
+      "2": "Book fabric",
+      "3": "Materials",
+      "4": "Attach a booking"
+    },
+    "clip": {
+      "y": 625,
+      "height": 1531,
+      "target": "marks"
+    },
     "route": "/production/batches/[batchId]",
-    "screen": "398c3e0251c14406",
-    "guide": "a47801ca37fcf984",
-    "taken": "2026-10-17"
+    "screen": "602b68953d1566ed",
+    "guide": "181cfedd1b9f629d",
+    "taken": "2026-10-18"
   },
   "production-booking-book": {
     "src": "/help/shots/production-booking-book.webp",
     "width": 1280,
-    "height": 1600,
-    "marks": [1],
+    "height": 997,
+    "marks": [1, 3],
+    "labels": {
+      "1": "Booking book (PDF)",
+      "3": "Sent"
+    },
+    "clip": {
+      "y": 0,
+      "height": 997,
+      "target": "marks"
+    },
     "route": "/production/batches/[batchId]",
-    "screen": "398c3e0251c14406",
-    "guide": "0708315b7f059897",
-    "taken": "2026-10-17"
+    "screen": "602b68953d1566ed",
+    "guide": "0587c4a62be4a3d8",
+    "taken": "2026-10-18"
   },
   "production-booking-change": {
     "src": "/help/shots/production-booking-change.webp",
     "width": 1280,
-    "height": 1337,
+    "height": 974,
     "marks": [1],
+    "labels": {
+      "1": "Change"
+    },
+    "clip": {
+      "y": 0,
+      "height": 974,
+      "target": "marks"
+    },
     "route": "/production/bookings/[bookingId]/edit",
-    "screen": "d00e2a54ae25ba83",
-    "guide": "633baf499114a194",
-    "taken": "2026-10-17"
+    "screen": "3a969cbb5ff527e4",
+    "guide": "dcc1895216d04cd5",
+    "taken": "2026-10-18"
   },
   "production-booking-collar": {
     "src": "/help/shots/production-booking-collar.webp",
     "width": 1280,
-    "height": 1353,
-    "marks": [],
+    "height": 800,
+    "marks": [1],
+    "labels": {
+      "1": "Collar & cuff"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/production/bookings/new",
-    "screen": "d2fca748ceaf9f7b",
-    "guide": "1db328fdd56af6e6",
-    "taken": "2026-10-17"
+    "screen": "5f0f34d9adaa7594",
+    "guide": "2b823c6965299e12",
+    "taken": "2026-10-18"
   },
   "production-booking-new": {
     "src": "/help/shots/production-booking-new.webp",
     "width": 1280,
-    "height": 1353,
-    "marks": [1, 2, 3],
+    "height": 1357,
+    "marks": [1, 2, 3, 5, 8, 9, 10],
+    "labels": {
+      "1": "New booking",
+      "2": "Where the goods come from",
+      "3": "Supplier (mill or trims house)",
+      "5": "Next: …",
+      "8": "Trims & accessories",
+      "9": "Collar & cuff",
+      "10": "Terms & review"
+    },
+    "clip": {
+      "y": 0,
+      "height": 1357,
+      "target": "marks"
+    },
     "route": "/production/bookings/new",
-    "screen": "d2fca748ceaf9f7b",
-    "guide": "289b2df15c60d858",
-    "taken": "2026-10-17"
+    "screen": "5f0f34d9adaa7594",
+    "guide": "50c7ee6afab611f1",
+    "taken": "2026-10-18"
   },
   "production-booking-print": {
     "src": "/help/shots/production-booking-print.webp",
     "width": 1280,
-    "height": 1600,
+    "height": 800,
     "marks": [4],
+    "labels": {
+      "4": "Print booking (PDF)"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/production/bookings/[bookingId]",
-    "screen": "933a3837827b6fac",
-    "guide": "d9ad9d2f7b3990c3",
-    "taken": "2026-10-17"
+    "screen": "fee904104fc0328d",
+    "guide": "f413641d26a7fd5a",
+    "taken": "2026-10-18"
   },
   "production-bookings": {
     "src": "/help/shots/production-bookings.webp",
     "width": 1280,
-    "height": 1121,
+    "height": 800,
     "marks": [1, 2, 3, 4],
+    "labels": {
+      "1": "Bookings",
+      "2": "Find",
+      "3": "Supplier PO",
+      "4": "New booking"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/production/bookings",
-    "screen": "9cf12805e847fc21",
-    "guide": "9e562a15ade1bf81",
-    "taken": "2026-10-17"
+    "screen": "108dad6f77bf526e",
+    "guide": "8b8ceb5d8194c52a",
+    "taken": "2026-10-18"
   },
   "production-cm-settlement": {
     "src": "/help/shots/production-cm-settlement.webp",
     "width": 1280,
-    "height": 1600,
-    "marks": [4, 5],
+    "height": 1205,
+    "marks": [2, 4, 5],
+    "labels": {
+      "2": "Rejects over the allowance",
+      "4": "Download the PDF bill",
+      "5": "Final payable"
+    },
+    "clip": {
+      "y": 0,
+      "height": 1205,
+      "target": "marks"
+    },
     "route": "/production/batches/[batchId]/cm-settlement",
-    "screen": "b5a05e49643c7204",
-    "guide": "fb36290a1dfcc966",
-    "taken": "2026-10-17"
+    "screen": "574e69b73878a949",
+    "guide": "2a85b2004289b56e",
+    "taken": "2026-10-18"
   },
   "production-complete-cancel": {
     "src": "/help/shots/production-complete-cancel.webp",
     "width": 1280,
-    "height": 1055,
-    "marks": [],
-    "route": "/production/projects",
-    "screen": "fe456d5acc66babd",
-    "guide": "3baebe7e30822918",
-    "taken": "2026-10-17"
+    "height": 800,
+    "marks": [1, 5],
+    "labels": {
+      "1": "Complete the project",
+      "5": "Cancel the project"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "menu"
+    },
+    "route": "/production/projects/[projectId]",
+    "screen": "cbfe2a79e9df52a5",
+    "guide": "9fd6d75e0022c145",
+    "taken": "2026-10-18"
   },
   "production-contracts": {
     "src": "/help/shots/production-contracts.webp",
     "width": 1280,
-    "height": 1600,
+    "height": 1182,
     "marks": [2, 3, 4, 5],
+    "labels": {
+      "2": "What is made",
+      "3": "CM per piece",
+      "4": "Terms",
+      "5": "Print (PDF)"
+    },
+    "clip": {
+      "y": 0,
+      "height": 1182,
+      "target": "marks"
+    },
     "route": "/production/batches/[batchId]/contracts/[contractId]",
-    "screen": "da965c25725af0b2",
-    "guide": "cbfc3796682123df",
-    "taken": "2026-10-17"
+    "screen": "748b6f04b71e4749",
+    "guide": "6984e75bf553be5a",
+    "taken": "2026-10-18"
   },
   "production-cost-guard": {
     "src": "/help/shots/production-cost-guard.webp",
     "width": 1280,
-    "height": 1600,
-    "marks": [1, 2, 5],
+    "height": 827,
+    "marks": [1, 2, 3, 5],
+    "labels": {
+      "1": "Edit",
+      "2": "Cost guard",
+      "3": "Near the target price",
+      "5": "Projects"
+    },
+    "clip": {
+      "y": 0,
+      "height": 827,
+      "target": "marks"
+    },
     "route": "/production/projects/[projectId]",
-    "screen": "485b4e0ec12ba16a",
-    "guide": "725abdac3580ec17",
-    "taken": "2026-10-17"
+    "screen": "cbfe2a79e9df52a5",
+    "guide": "ab9e298dcfbbd046",
+    "taken": "2026-10-18"
   },
   "production-cost-heads": {
     "src": "/help/shots/production-cost-heads.webp",
     "width": 1280,
-    "height": 1507,
+    "height": 1355,
     "marks": [1, 2, 3, 4],
+    "labels": {
+      "1": "Cost heads",
+      "2": "Add a cost head",
+      "3": "Rename",
+      "4": "In the accounts"
+    },
+    "clip": {
+      "y": 0,
+      "height": 1355,
+      "target": "marks"
+    },
     "route": "/production/cost-heads",
-    "screen": "f64cfec3cb05457a",
-    "guide": "8eabb79cfeb5712c",
-    "taken": "2026-10-17"
+    "screen": "a578576339451527",
+    "guide": "b7f012c7e46d9540",
+    "taken": "2026-10-18"
   },
   "production-costing": {
     "src": "/help/shots/production-costing.webp",
     "width": 1280,
-    "height": 898,
+    "height": 800,
     "marks": [1, 9],
+    "labels": {
+      "1": "New costing",
+      "9": "Add a supplier quote"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/production/costing",
-    "screen": "d73ebccee5a87164",
-    "guide": "48fab4ce9212099d",
-    "taken": "2026-10-17"
+    "screen": "fb926914580df827",
+    "guide": "391b7e4402af5913",
+    "taken": "2026-10-18"
   },
   "production-costs": {
     "src": "/help/shots/production-costs.webp",
     "width": 1280,
-    "height": 1055,
+    "height": 800,
     "marks": [6],
+    "labels": {
+      "6": "Cost a piece"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/production/projects",
-    "screen": "fe456d5acc66babd",
-    "guide": "37b6f01a1df018d4",
-    "taken": "2026-10-17"
+    "screen": "56b878a873d3391a",
+    "guide": "9c0832277e1e9fab",
+    "taken": "2026-10-18"
   },
   "production-cutting": {
     "src": "/help/shots/production-cutting.webp",
     "width": 1280,
-    "height": 1600,
+    "height": 1030,
     "marks": [1, 2, 4, 5, 8, 9],
+    "labels": {
+      "1": "Cutting and embroidery",
+      "2": "New cutting report",
+      "4": "Cross-checks",
+      "5": "Send for embroidery or print",
+      "8": "Cutting and sewing dates",
+      "9": "Fabric Fault Note"
+    },
+    "clip": {
+      "y": 0,
+      "height": 1030,
+      "target": "marks"
+    },
     "route": "/production/projects/[projectId]/cutting",
-    "screen": "490d8cdab2ee5e84",
-    "guide": "c89830b8abd48371",
-    "taken": "2026-10-17"
+    "screen": "83f6d21195e56d5d",
+    "guide": "7e77b0628640cb87",
+    "taken": "2026-10-18"
   },
   "production-fabric-first": {
     "src": "/help/shots/production-fabric-first.webp",
     "width": 1280,
-    "height": 1600,
-    "marks": [],
+    "height": 800,
+    "marks": [1, 2, 3],
+    "labels": {
+      "1": "Tech pack approval",
+      "2": "Lock fabric part",
+      "3": "Approve tech pack"
+    },
+    "clip": {
+      "y": 3087,
+      "height": 800,
+      "target": "Tech pack approval"
+    },
     "route": "/production/projects/[projectId]",
-    "screen": "485b4e0ec12ba16a",
-    "guide": "5a2b6ee9e8772a19",
-    "taken": "2026-10-17"
+    "screen": "cbfe2a79e9df52a5",
+    "guide": "d842b767ddaec467",
+    "taken": "2026-10-18"
   },
   "production-fault-log": {
     "src": "/help/shots/production-fault-log.webp",
     "width": 1280,
-    "height": 1600,
+    "height": 1591,
     "marks": [1, 2, 3, 4],
+    "labels": {
+      "1": "Still to deduct",
+      "2": "Log a fault",
+      "3": "Put back to open",
+      "4": "Supplier report card"
+    },
+    "clip": {
+      "y": 114,
+      "height": 1591,
+      "target": "marks"
+    },
     "route": "/production/faults",
-    "screen": "fa3003cf495da25f",
-    "guide": "fc479db2c778d370",
-    "taken": "2026-10-17"
+    "screen": "e46174cc39c78edd",
+    "guide": "65c5d6932d115d8b",
+    "taken": "2026-10-18"
   },
   "production-find-projects": {
     "src": "/help/shots/production-find-projects.webp",
     "width": 1280,
-    "height": 1055,
+    "height": 800,
     "marks": [1, 2, 3],
+    "labels": {
+      "1": "Projects",
+      "2": "Status",
+      "3": "For"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/production/projects",
-    "screen": "fe456d5acc66babd",
-    "guide": "6d4df7df2e6555d1",
-    "taken": "2026-10-17"
+    "screen": "56b878a873d3391a",
+    "guide": "e8ecbce698a7dc29",
+    "taken": "2026-10-18"
   },
   "production-finishing": {
     "src": "/help/shots/production-finishing.webp",
     "width": 1280,
-    "height": 1400,
+    "height": 835,
     "marks": [1, 3, 6],
+    "labels": {
+      "1": "Finishing and QC",
+      "3": "Back from mending",
+      "6": "Final unit cost"
+    },
+    "clip": {
+      "y": 0,
+      "height": 835,
+      "target": "marks"
+    },
     "route": "/production/projects/[projectId]/finishing",
-    "screen": "5000d8f8ce6ad91c",
-    "guide": "a5d05d97495e63a0",
-    "taken": "2026-10-17"
+    "screen": "20c8d38e8e4452ed",
+    "guide": "cc5fccd8bdcfec5e",
+    "taken": "2026-10-18"
   },
   "production-fob": {
     "src": "/help/shots/production-fob.webp",
     "width": 1280,
-    "height": 1055,
+    "height": 800,
     "marks": [1],
+    "labels": {
+      "1": "Bills"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/production/projects",
-    "screen": "fe456d5acc66babd",
-    "guide": "ae1ddaec137610e4",
-    "taken": "2026-10-17"
+    "screen": "56b878a873d3391a",
+    "guide": "977bb7c922f6c01a",
+    "taken": "2026-10-18"
   },
   "production-materials-per-piece": {
     "src": "/help/shots/production-materials-per-piece.webp",
     "width": 1280,
-    "height": 1600,
-    "marks": [1, 2, 3, 4],
+    "height": 800,
+    "marks": [1, 2, 3, 4, 5, 6],
+    "labels": {
+      "1": "Materials per piece",
+      "2": "Wastage (%)",
+      "3": "How it is ordered",
+      "4": "Where it goes (optional)",
+      "5": "For all pieces",
+      "6": "By colour"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/production/projects/[projectId]/materials",
-    "screen": "0b9f1539ea4be254",
-    "guide": "128da10c6fcd19f8",
-    "taken": "2026-10-17"
+    "screen": "72c8db3b12cf24ee",
+    "guide": "ac685aa4aa4ffa20",
+    "taken": "2026-10-18"
   },
   "production-materials-sent": {
     "src": "/help/shots/production-materials-sent.webp",
     "width": 1280,
-    "height": 1055,
-    "marks": [],
-    "route": "/production/projects",
-    "screen": "fe456d5acc66babd",
-    "guide": "ee81077aa368b3b0",
-    "taken": "2026-10-17"
+    "height": 791,
+    "marks": [1],
+    "labels": {
+      "1": "Send material"
+    },
+    "clip": {
+      "y": 4395,
+      "height": 791,
+      "target": "Materials sent"
+    },
+    "route": "/production/projects/[projectId]",
+    "screen": "cbfe2a79e9df52a5",
+    "guide": "971b8b68035ab188",
+    "taken": "2026-10-18"
   },
   "production-new-project": {
     "src": "/help/shots/production-new-project.webp",
     "width": 1280,
-    "height": 1600,
+    "height": 1497,
     "marks": [1, 2, 3, 5, 6, 7, 8],
+    "labels": {
+      "1": "New project",
+      "2": "Project name",
+      "3": "Master batch (optional)",
+      "5": "A supplier",
+      "6": "A buyer",
+      "7": "Starts",
+      "8": "Pieces per colour and size"
+    },
+    "clip": {
+      "y": 0,
+      "height": 1497,
+      "target": "marks"
+    },
     "route": "/production/projects/new",
-    "screen": "435d56741fec6c9c",
-    "guide": "88b0f3249522eb9c",
-    "taken": "2026-10-17"
+    "screen": "0ea6bd745ae1c48b",
+    "guide": "122d38f0d28f4a29",
+    "taken": "2026-10-18"
   },
   "production-order-check": {
     "src": "/help/shots/production-order-check.webp",
     "width": 1280,
-    "height": 1600,
-    "marks": [1, 7],
+    "height": 1064,
+    "marks": [1, 2, 3, 4, 5, 6, 7],
+    "labels": {
+      "1": "Order check card",
+      "2": "Price vs cost",
+      "3": "Time to ship",
+      "4": "Factory",
+      "5": "Buyer payment",
+      "6": "Risks",
+      "7": "Take the order"
+    },
+    "clip": {
+      "y": 0,
+      "height": 1064,
+      "target": "marks"
+    },
     "route": "/production/costing/[costingId]",
-    "screen": "b9ed1098f08efbdd",
-    "guide": "dca70b56337a7950",
-    "taken": "2026-10-17"
+    "screen": "2540a6002d679ffa",
+    "guide": "01c5387fbd9939cd",
+    "taken": "2026-10-18"
   },
   "production-overview": {
     "src": "/help/shots/production-overview.webp",
     "width": 1280,
-    "height": 1600,
-    "marks": [1, 2, 3],
+    "height": 1216,
+    "marks": [1, 2, 3, 4, 6, 7],
+    "labels": {
+      "1": "Overview",
+      "2": "Money in open projects",
+      "3": "Production board",
+      "4": "Sewing",
+      "6": "… days late",
+      "7": "Move to …"
+    },
+    "clip": {
+      "y": 0,
+      "height": 1216,
+      "target": "marks"
+    },
     "route": "/production",
-    "screen": "8e9a8c12d79637b1",
-    "guide": "43a20d9db75bd675",
-    "taken": "2026-10-17"
+    "screen": "0c4cacc0c61cdf0a",
+    "guide": "60d34635cdedbdf0",
+    "taken": "2026-10-18"
   },
   "production-receive-goods": {
     "src": "/help/shots/production-receive-goods.webp",
     "width": 1280,
     "height": 800,
     "marks": [1],
+    "labels": {
+      "1": "Receive goods"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/production/deliveries/new",
-    "screen": "f884ed3f856e2611",
-    "guide": "627c31330dfeda08",
-    "taken": "2026-10-17"
+    "screen": "a386ad1271ebfb7d",
+    "guide": "e014c79076e1a5af",
+    "taken": "2026-10-18"
   },
   "production-save-to-tech-pack": {
     "src": "/help/shots/production-save-to-tech-pack.webp",
     "width": 1280,
-    "height": 1295,
+    "height": 1274,
     "marks": [2, 3],
+    "labels": {
+      "2": "Save to Tech Pack",
+      "3": "Tech pack no., style code or name"
+    },
+    "clip": {
+      "y": 0,
+      "height": 1274,
+      "target": "marks"
+    },
     "route": "/production/save",
     "screen": "6fb5b01be02da6e2",
-    "guide": "d87200466d25a943",
-    "taken": "2026-10-17"
+    "guide": "426494142be9a95f",
+    "taken": "2026-10-18"
   },
   "production-stages": {
     "src": "/help/shots/production-stages.webp",
     "width": 1280,
-    "height": 1055,
+    "height": 800,
     "marks": [1, 4],
+    "labels": {
+      "1": "Projects",
+      "4": "Production"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/production/projects",
-    "screen": "fe456d5acc66babd",
-    "guide": "8d26d13377cef874",
-    "taken": "2026-10-17"
+    "screen": "56b878a873d3391a",
+    "guide": "d841aca3d8459df9",
+    "taken": "2026-10-18"
   },
   "production-start-from-sales": {
     "src": "/help/shots/production-start-from-sales.webp",
     "width": 1280,
-    "height": 1600,
-    "marks": [1, 2, 3, 4, 7],
+    "height": 1586,
+    "marks": [1, 3, 4, 6, 7],
+    "labels": {
+      "1": "Find a sales order or proforma",
+      "3": "Project name",
+      "4": "Pieces per colour and size",
+      "6": "Create the project",
+      "7": "Pieces to make"
+    },
+    "clip": {
+      "y": 395,
+      "height": 1586,
+      "target": "marks"
+    },
     "route": "/production/projects/new",
-    "screen": "435d56741fec6c9c",
-    "guide": "549b0c29de9aa21c",
-    "taken": "2026-10-17"
+    "screen": "0ea6bd745ae1c48b",
+    "guide": "872eb3f1d8e02bb8",
+    "taken": "2026-10-18"
   },
   "production-supplier-settlement": {
     "src": "/help/shots/production-supplier-settlement.webp",
     "width": 1280,
-    "height": 1055,
-    "marks": [],
-    "route": "/production/projects",
-    "screen": "fe456d5acc66babd",
-    "guide": "16a652b24d87def0",
-    "taken": "2026-10-17"
+    "height": 800,
+    "marks": [1],
+    "labels": {
+      "1": "Suppliers"
+    },
+    "clip": {
+      "y": 2257,
+      "height": 800,
+      "target": "Suppliers"
+    },
+    "route": "/production/projects/[projectId]",
+    "screen": "cbfe2a79e9df52a5",
+    "guide": "f59baa1f45f86559",
+    "taken": "2026-10-18"
   },
   "production-tech-pack": {
     "src": "/help/shots/production-tech-pack.webp",
     "width": 1280,
-    "height": 1600,
-    "marks": [1, 2, 3, 4, 9, 10],
+    "height": 1321,
+    "marks": [1, 2, 3, 4, 6, 10],
+    "labels": {
+      "1": "Tech pack approval",
+      "2": "Measurements",
+      "3": "Confirm",
+      "4": "Measurement sheet",
+      "6": "Change",
+      "10": "Tech pack PDF"
+    },
+    "clip": {
+      "y": 0,
+      "height": 1321,
+      "target": "marks"
+    },
     "route": "/tech-packs/[techPackId]",
-    "screen": "2047d50768674709",
-    "guide": "4a6bcc57d24ecc65",
-    "taken": "2026-10-17"
+    "screen": "2f42e1c5e1a7161b",
+    "guide": "1efa79b0d4b522d8",
+    "taken": "2026-10-18"
   },
   "production-tech-pack-colours": {
     "src": "/help/shots/production-tech-pack-colours.webp",
     "width": 1280,
-    "height": 1600,
-    "marks": [],
+    "height": 400,
+    "marks": [1],
+    "labels": {
+      "1": "Add a colour"
+    },
+    "clip": {
+      "y": 2932,
+      "height": 400,
+      "target": "Colours and lab dips"
+    },
     "route": "/tech-packs/[techPackId]",
-    "screen": "2047d50768674709",
-    "guide": "66a344133244ee1c",
-    "taken": "2026-10-17"
+    "screen": "2f42e1c5e1a7161b",
+    "guide": "cc2370570215b9d7",
+    "taken": "2026-10-18"
   },
   "production-tech-pack-logos": {
     "src": "/help/shots/production-tech-pack-logos.webp",
     "width": 1280,
-    "height": 1600,
-    "marks": [],
+    "height": 400,
+    "marks": [1],
+    "labels": {
+      "1": "Add a logo"
+    },
+    "clip": {
+      "y": 2932,
+      "height": 400,
+      "target": "Logos and embroidery"
+    },
     "route": "/tech-packs/[techPackId]",
-    "screen": "2047d50768674709",
-    "guide": "ca852bc5f94321b5",
-    "taken": "2026-10-17"
+    "screen": "2f42e1c5e1a7161b",
+    "guide": "8ebbe827b283ac76",
+    "taken": "2026-10-18"
   },
   "production-undo-delivery": {
     "src": "/help/shots/production-undo-delivery.webp",
     "width": 1280,
-    "height": 904,
-    "marks": [1],
+    "height": 800,
+    "marks": [1, 4],
+    "labels": {
+      "1": "Deliveries",
+      "4": "Undone"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/production/deliveries",
-    "screen": "2c3d6bbce2cfff74",
-    "guide": "bd125eb95b60babc",
-    "taken": "2026-10-17"
+    "screen": "00c4eb82e61334c0",
+    "guide": "8968cb8f47072bcf",
+    "taken": "2026-10-18"
   },
   "products-archived-styles": {
     "src": "/help/shots/products-archived-styles.webp",
     "width": 1280,
     "height": 800,
     "marks": [1, 2],
+    "labels": {
+      "1": "Archived styles",
+      "2": "Styles"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/products/archived",
-    "screen": "dad7b3c2a74d08e5",
-    "guide": "ede00a2b96a49f7c",
-    "taken": "2026-10-17"
+    "screen": "abae1bb0ccebec65",
+    "guide": "dc240a7873c3b4d3",
+    "taken": "2026-10-18"
   },
   "products-bad-stock": {
     "src": "/help/shots/products-bad-stock.webp",
     "width": 1280,
     "height": 800,
-    "marks": [1, 6],
+    "marks": [1, 3, 6],
+    "labels": {
+      "1": "Record damage",
+      "3": "Pieces",
+      "6": "Period"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/products/bad-stock",
-    "screen": "a63851dbf90bd03a",
-    "guide": "c43d08043dabeb65",
-    "taken": "2026-10-17"
+    "screen": "fb8a96f667a5e52d",
+    "guide": "6822537d558ad16b",
+    "taken": "2026-10-18"
   },
   "products-bulk-update": {
     "src": "/help/shots/products-bulk-update.webp",
     "width": 1280,
-    "height": 1097,
-    "marks": [],
-    "route": "/products",
-    "screen": "c3d5f49bbc24173e",
-    "guide": "45cb8a7ed1562453",
-    "taken": "2026-10-17"
+    "height": 712,
+    "marks": [1, 2, 6],
+    "labels": {
+      "1": "Bulk update",
+      "2": "B-grade",
+      "6": "Upload packing list (AI scan)"
+    },
+    "clip": {
+      "y": 757,
+      "height": 712,
+      "target": "Stock matrix"
+    },
+    "route": "/products/[styleId]",
+    "screen": "f78c7d259d4998d8",
+    "guide": "5bd36e74ff6976dc",
+    "taken": "2026-10-18"
   },
   "products-edit-sku": {
     "src": "/help/shots/products-edit-sku.webp",
     "width": 1280,
-    "height": 1097,
-    "marks": [],
-    "route": "/products",
-    "screen": "c3d5f49bbc24173e",
-    "guide": "71fa6df9952587b6",
-    "taken": "2026-10-17"
+    "height": 800,
+    "marks": [1],
+    "labels": {
+      "1": "Edit details"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
+    "route": "/products/[styleId]",
+    "screen": "f78c7d259d4998d8",
+    "guide": "cd7838c6a6aec24c",
+    "taken": "2026-10-18"
   },
   "products-find-style": {
     "src": "/help/shots/products-find-style.webp",
     "width": 1280,
-    "height": 1097,
-    "marks": [1, 3],
+    "height": 800,
+    "marks": [1, 3, 7],
+    "labels": {
+      "1": "Styles",
+      "3": "All brands",
+      "7": "Available"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/products",
-    "screen": "c3d5f49bbc24173e",
-    "guide": "40e2410382dde2a4",
-    "taken": "2026-10-17"
+    "screen": "8920462250d991bc",
+    "guide": "6cf546f9152a12f4",
+    "taken": "2026-10-18"
   },
   "products-inward-batches": {
     "src": "/help/shots/products-inward-batches.webp",
     "width": 1280,
-    "height": 1097,
-    "marks": [],
-    "route": "/products",
-    "screen": "c3d5f49bbc24173e",
-    "guide": "00c9a1880ff17747",
-    "taken": "2026-10-17"
+    "height": 400,
+    "marks": [2, 3, 5],
+    "labels": {
+      "2": "Stock history",
+      "3": "Fresh",
+      "5": "All movements"
+    },
+    "clip": {
+      "y": 1069,
+      "height": 400,
+      "target": "Stock history"
+    },
+    "route": "/products/[styleId]",
+    "screen": "f78c7d259d4998d8",
+    "guide": "f4b1a28afbf644ff",
+    "taken": "2026-10-18"
   },
   "products-new-style": {
     "src": "/help/shots/products-new-style.webp",
     "width": 1280,
-    "height": 1038,
+    "height": 1042,
     "marks": [1, 2, 3],
+    "labels": {
+      "1": "New style",
+      "2": "Style code",
+      "3": "Add the style"
+    },
+    "clip": {
+      "y": 0,
+      "height": 1042,
+      "target": "marks"
+    },
     "route": "/products/new",
     "screen": "d0e5d45d185a6297",
-    "guide": "dfbd8952569c3e11",
-    "taken": "2026-10-17"
+    "guide": "109fbfc5bfbe2ede",
+    "taken": "2026-10-18"
   },
   "products-opening-stock": {
     "src": "/help/shots/products-opening-stock.webp",
     "width": 1280,
     "height": 800,
     "marks": [1, 2],
+    "labels": {
+      "1": "Opening stock",
+      "2": "Style"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/products/stock-count",
-    "screen": "73ce97e220554b08",
-    "guide": "594dbb2210ea179b",
-    "taken": "2026-10-17"
+    "screen": "02cca1db5c181f6f",
+    "guide": "c6fbdd4262a9edbd",
+    "taken": "2026-10-18"
   },
   "products-setup": {
     "src": "/help/shots/products-setup.webp",
     "width": 1280,
-    "height": 1572,
+    "height": 991,
     "marks": [1, 2, 3, 4, 5],
+    "labels": {
+      "1": "Setup",
+      "2": "Add",
+      "3": "Add",
+      "4": "Add",
+      "5": "Add"
+    },
+    "clip": {
+      "y": 0,
+      "height": 991,
+      "target": "marks"
+    },
     "route": "/products/setup",
-    "screen": "049b0c6b73412b66",
-    "guide": "3fe75e457567c042",
-    "taken": "2026-10-17"
+    "screen": "4193179cb6a9c113",
+    "guide": "122858a2cb786a84",
+    "taken": "2026-10-18"
   },
   "products-stock-count": {
     "src": "/help/shots/products-stock-count.webp",
     "width": 1280,
     "height": 800,
     "marks": [1, 2],
+    "labels": {
+      "1": "Count",
+      "2": "A-grade"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/products/stock-count",
-    "screen": "73ce97e220554b08",
-    "guide": "ee6adcbc94602698",
-    "taken": "2026-10-17"
+    "screen": "02cca1db5c181f6f",
+    "guide": "28d2a0820cf36962",
+    "taken": "2026-10-18"
   },
   "reports-letter": {
     "src": "/help/shots/reports-letter.webp",
     "width": 1280,
-    "height": 820,
+    "height": 800,
     "marks": [1, 2],
+    "labels": {
+      "1": "Printed documents",
+      "2": "Blank letterhead"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/reports/documents",
-    "screen": "c4a539e7794031db",
-    "guide": "27db1e981acab20c",
-    "taken": "2026-10-17"
+    "screen": "d5825dd85f15ad9b",
+    "guide": "24ebb06872045c0d",
+    "taken": "2026-10-18"
   },
   "reports-make": {
     "src": "/help/shots/reports-make.webp",
     "width": 1280,
-    "height": 1059,
+    "height": 1038,
     "marks": [1, 2, 3, 4, 5],
+    "labels": {
+      "1": "Make a report",
+      "2": "Title",
+      "3": "Figures",
+      "4": "How long the lists are",
+      "5": "Show on screen"
+    },
+    "clip": {
+      "y": 0,
+      "height": 1038,
+      "target": "marks"
+    },
     "route": "/reports/new",
-    "screen": "e53d21e502f25d9a",
-    "guide": "65480913dea12fd2",
-    "taken": "2026-10-17"
+    "screen": "61e69c490c99a937",
+    "guide": "c430729ef25b2671",
+    "taken": "2026-10-18"
   },
   "reports-printed-documents": {
     "src": "/help/shots/reports-printed-documents.webp",
     "width": 1280,
-    "height": 820,
+    "height": 800,
     "marks": [1, 2],
+    "labels": {
+      "1": "Printed documents",
+      "2": "Kind of document"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/reports/documents",
-    "screen": "c4a539e7794031db",
-    "guide": "d4ab1c50b07625ca",
-    "taken": "2026-10-17"
+    "screen": "d5825dd85f15ad9b",
+    "guide": "47e407f4b6e485a7",
+    "taken": "2026-10-18"
   },
   "reports-template-add": {
     "src": "/help/shots/reports-template-add.webp",
     "width": 1280,
-    "height": 1074,
+    "height": 800,
     "marks": [1, 5],
+    "labels": {
+      "1": "Add a template",
+      "5": "Write an HTML template"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/reports/templates",
     "screen": "1ebdc6fba6c71406",
-    "guide": "512837206a6c93e7",
-    "taken": "2026-10-17"
+    "guide": "85e10abdc54a1168",
+    "taken": "2026-10-18"
   },
   "reports-template-tags": {
     "src": "/help/shots/reports-template-tags.webp",
@@ -1872,22 +3724,39 @@
   "sales-cheques": {
     "src": "/help/shots/sales-cheques.webp",
     "width": 1280,
-    "height": 851,
+    "height": 800,
     "marks": [1, 2],
+    "labels": {
+      "1": "Receive a payment",
+      "2": "Cheques"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/sales/payments",
-    "screen": "2c05db66a7774564",
-    "guide": "8537a2a254fb02e2",
-    "taken": "2026-10-17"
+    "screen": "d2d8b4d1783affff",
+    "guide": "a855952b7e94ea38",
+    "taken": "2026-10-18"
   },
   "sales-counter-sale": {
     "src": "/help/shots/sales-counter-sale.webp",
     "width": 1280,
-    "height": 970,
+    "height": 800,
     "marks": [1],
+    "labels": {
+      "1": "New order"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/sales/orders/new",
-    "screen": "f7d1c72953213cdd",
-    "guide": "a1b5cbbffd464de8",
-    "taken": "2026-10-17"
+    "screen": "14da9a395211de21",
+    "guide": "ee4f694009a702e3",
+    "taken": "2026-10-18"
   },
   "sales-edit-cancel-order": {
     "src": "/help/shots/sales-edit-cancel-order.webp",
@@ -1902,72 +3771,140 @@
   "sales-force-override": {
     "src": "/help/shots/sales-force-override.webp",
     "width": 1280,
-    "height": 970,
-    "marks": [],
+    "height": 800,
+    "marks": [1],
+    "labels": {
+      "1": "Products"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/sales/orders/new",
-    "screen": "f7d1c72953213cdd",
-    "guide": "0279b0a21c1fb3cd",
-    "taken": "2026-10-17"
+    "screen": "14da9a395211de21",
+    "guide": "ec8c14986f030613",
+    "taken": "2026-10-18"
   },
   "sales-invoices": {
     "src": "/help/shots/sales-invoices.webp",
     "width": 1280,
     "height": 800,
-    "marks": [1, 2, 11],
+    "marks": [1, 2, 10, 11],
+    "labels": {
+      "1": "Invoices",
+      "2": "Status",
+      "10": "Void",
+      "11": "Returns"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/sales/invoices",
-    "screen": "4255d0b41ba75e6f",
-    "guide": "f00f8630684206ea",
-    "taken": "2026-10-17"
+    "screen": "c1c9125c13eaf211",
+    "guide": "01cd1d31f75ebe21",
+    "taken": "2026-10-18"
   },
   "sales-new-order": {
     "src": "/help/shots/sales-new-order.webp",
     "width": 1280,
-    "height": 970,
+    "height": 800,
     "marks": [1, 2, 3, 4],
+    "labels": {
+      "1": "New order",
+      "2": "Channel",
+      "3": "Find a buyer",
+      "4": "Products"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/sales/orders/new",
-    "screen": "f7d1c72953213cdd",
-    "guide": "aa9b7a6efcf9b163",
-    "taken": "2026-10-17"
+    "screen": "14da9a395211de21",
+    "guide": "4e5e3e909ab575fd",
+    "taken": "2026-10-18"
   },
   "sales-order-documents": {
     "src": "/help/shots/sales-order-documents.webp",
     "width": 1280,
     "height": 800,
     "marks": [1],
+    "labels": {
+      "1": "Orders"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/sales/orders",
-    "screen": "e0067c9ad425c0ba",
-    "guide": "34006f1798032c0f",
-    "taken": "2026-10-17"
+    "screen": "e2d812faf11b2e7b",
+    "guide": "de5a17cd8f6a756a",
+    "taken": "2026-10-18"
   },
   "sales-overview": {
     "src": "/help/shots/sales-overview.webp",
     "width": 1280,
-    "height": 847,
-    "marks": [1, 4, 6],
+    "height": 800,
+    "marks": [1, 2, 4, 6],
+    "labels": {
+      "1": "Today in sales",
+      "2": "Orders today",
+      "4": "Latest orders",
+      "6": "Orders"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/sales/overview",
-    "screen": "99ad23cfdf7b7fa1",
-    "guide": "7d77692fed13277c",
-    "taken": "2026-10-17"
+    "screen": "5f541643652e3969",
+    "guide": "63e1b3c3b43aca51",
+    "taken": "2026-10-18"
   },
   "sales-payment-proof": {
     "src": "/help/shots/sales-payment-proof.webp",
     "width": 1280,
-    "height": 851,
+    "height": 800,
     "marks": [1],
+    "labels": {
+      "1": "Receive a payment"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/sales/payments",
-    "screen": "2c05db66a7774564",
-    "guide": "8e3fa51cc81e7e9f",
-    "taken": "2026-10-17"
+    "screen": "d2d8b4d1783affff",
+    "guide": "2e364e2e4800ad31",
+    "taken": "2026-10-18"
   },
   "sales-payments-list": {
     "src": "/help/shots/sales-payments-list.webp",
     "width": 1280,
-    "height": 851,
+    "height": 800,
     "marks": [1, 2, 3, 5],
+    "labels": {
+      "1": "Payments",
+      "2": "Money received",
+      "3": "From",
+      "5": "Refunds"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/sales/payments",
-    "screen": "2c05db66a7774564",
-    "guide": "194836f51492cc6b",
-    "taken": "2026-10-17"
+    "screen": "d2d8b4d1783affff",
+    "guide": "ac8a4e0ac94ffbd9",
+    "taken": "2026-10-18"
   },
   "sales-previous-due": {
     "src": "/help/shots/sales-previous-due.webp",
@@ -1984,229 +3921,455 @@
     "width": 1280,
     "height": 800,
     "marks": [3],
+    "labels": {
+      "3": "Proformas"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/sales/proformas",
-    "screen": "38218d18169d70bc",
-    "guide": "3be53baa3da0f755",
-    "taken": "2026-10-17"
+    "screen": "f6829e721e926a4a",
+    "guide": "5ba76c459e9fe0c3",
+    "taken": "2026-10-18"
   },
   "sales-quotation": {
     "src": "/help/shots/sales-quotation.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [1, 2, 3, 4, 6],
+    "marks": [1, 2, 3, 4, 5, 6, 7, 8],
+    "labels": {
+      "1": "New quotation",
+      "2": "Buyer and dates",
+      "3": "From the catalogue",
+      "4": "Fabric",
+      "5": "Reference picture",
+      "6": "By size",
+      "7": "Add an item",
+      "8": "Styling rules"
+    },
+    "clip": {
+      "y": 236,
+      "height": 1600,
+      "target": "marks"
+    },
     "route": "/sales/quotations/new",
-    "screen": "78529afc49a073bd",
-    "guide": "54e5742f5a8b5292",
-    "taken": "2026-10-17"
+    "screen": "5c25a34ed3e0a40f",
+    "guide": "a2a0ea52daa808b4",
+    "taken": "2026-10-18"
   },
   "sales-quotation-status": {
     "src": "/help/shots/sales-quotation-status.webp",
     "width": 1280,
     "height": 800,
-    "marks": [1],
+    "marks": [1, 4],
+    "labels": {
+      "1": "Quotations",
+      "4": "Draft"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/sales/quotations",
-    "screen": "7e0576c08ce8dcb5",
-    "guide": "ffcf925ecc5f690d",
-    "taken": "2026-10-17"
+    "screen": "5f61dd62d43c113f",
+    "guide": "2deebe863b863fee",
+    "taken": "2026-10-18"
   },
   "sales-receive-payment": {
     "src": "/help/shots/sales-receive-payment.webp",
     "width": 1280,
-    "height": 851,
+    "height": 800,
     "marks": [1, 8],
+    "labels": {
+      "1": "Receive a payment",
+      "8": "Payments"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/sales/payments",
-    "screen": "2c05db66a7774564",
-    "guide": "736f1d3a889ca753",
-    "taken": "2026-10-17"
+    "screen": "d2d8b4d1783affff",
+    "guide": "2ddb178323cdfd98",
+    "taken": "2026-10-18"
   },
   "sales-refund": {
     "src": "/help/shots/sales-refund.webp",
     "width": 1280,
-    "height": 851,
+    "height": 800,
     "marks": [5],
+    "labels": {
+      "5": "Refunds"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/sales/payments",
-    "screen": "2c05db66a7774564",
-    "guide": "a914879b31a58ef8",
-    "taken": "2026-10-17"
+    "screen": "d2d8b4d1783affff",
+    "guide": "8f23306cf977bd2e",
+    "taken": "2026-10-18"
   },
   "sales-return": {
     "src": "/help/shots/sales-return.webp",
     "width": 1280,
     "height": 800,
     "marks": [1, 7],
+    "labels": {
+      "1": "New sales return",
+      "7": "From"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/sales/returns",
-    "screen": "0003c00e70891a6e",
-    "guide": "32d33b406ef79b94",
-    "taken": "2026-10-17"
+    "screen": "6eeee6cf9d12b0fb",
+    "guide": "076f1eb82497ed0a",
+    "taken": "2026-10-18"
   },
   "sales-use-credit": {
     "src": "/help/shots/sales-use-credit.webp",
     "width": 1280,
     "height": 800,
     "marks": [3],
+    "labels": {
+      "3": "Payments"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/sales/orders",
-    "screen": "e0067c9ad425c0ba",
-    "guide": "51670b78107c3e59",
-    "taken": "2026-10-17"
+    "screen": "e2d812faf11b2e7b",
+    "guide": "0ac08d8ff9228ffe",
+    "taken": "2026-10-18"
   },
   "settings-add-person": {
     "src": "/help/shots/settings-add-person.webp",
     "width": 1280,
     "height": 800,
     "marks": [1, 2, 3],
+    "labels": {
+      "1": "Team",
+      "2": "Add a person",
+      "3": "Role"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/settings/team",
-    "screen": "d9596a2417da8dbf",
-    "guide": "605bc0c53733bb44",
-    "taken": "2026-10-17"
+    "screen": "08681aaa68963292",
+    "guide": "f697090af32b591b",
+    "taken": "2026-10-18"
   },
   "settings-business-rules": {
     "src": "/help/shots/settings-business-rules.webp",
     "width": 1280,
-    "height": 1600,
-    "marks": [1, 4],
+    "height": 1411,
+    "marks": [1, 2, 3, 4],
+    "labels": {
+      "1": "Business rules",
+      "2": "Low stock alert at",
+      "3": "Money and time",
+      "4": "Save"
+    },
+    "clip": {
+      "y": 831,
+      "height": 1411,
+      "target": "marks"
+    },
     "route": "/settings/company",
     "screen": "04098010d1a92795",
-    "guide": "8654ccb5674552f6",
-    "taken": "2026-10-17"
+    "guide": "887e6840e1ebfa76",
+    "taken": "2026-10-18"
   },
   "settings-company-details": {
     "src": "/help/shots/settings-company-details.webp",
     "width": 1280,
-    "height": 1600,
+    "height": 1576,
     "marks": [1, 2, 3, 4, 5],
+    "labels": {
+      "1": "Company",
+      "2": "Save",
+      "3": "Upload logo",
+      "4": "Main colour",
+      "5": "Tagline"
+    },
+    "clip": {
+      "y": 0,
+      "height": 1576,
+      "target": "marks"
+    },
     "route": "/settings/company",
     "screen": "04098010d1a92795",
-    "guide": "98183bbb57ac9cee",
-    "taken": "2026-10-17"
+    "guide": "89a1a10e7f0f9ed9",
+    "taken": "2026-10-18"
   },
   "settings-edit-role": {
     "src": "/help/shots/settings-edit-role.webp",
     "width": 1280,
-    "height": 911,
+    "height": 800,
     "marks": [1],
+    "labels": {
+      "1": "Roles"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/settings/roles",
-    "screen": "c449074af53c4ea3",
-    "guide": "def89f253dbd81d7",
-    "taken": "2026-10-17"
+    "screen": "59d5facb373818b9",
+    "guide": "5b5c21a98eba9ee2",
+    "taken": "2026-10-18"
   },
   "settings-manage-member": {
     "src": "/help/shots/settings-manage-member.webp",
     "width": 1280,
     "height": 800,
     "marks": [1, 2, 3],
+    "labels": {
+      "1": "Team",
+      "2": "Edit permissions",
+      "3": "Role"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/settings/team",
-    "screen": "d9596a2417da8dbf",
-    "guide": "9824e0a46a224dd2",
-    "taken": "2026-10-17"
+    "screen": "08681aaa68963292",
+    "guide": "aa4782d9ccbaeb3b",
+    "taken": "2026-10-18"
   },
   "settings-member-permissions": {
     "src": "/help/shots/settings-member-permissions.webp",
     "width": 1280,
     "height": 800,
     "marks": [1, 2],
+    "labels": {
+      "1": "Edit permissions",
+      "2": "Production"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/settings/team",
-    "screen": "d9596a2417da8dbf",
-    "guide": "f581c7a12394a874",
-    "taken": "2026-10-17"
+    "screen": "08681aaa68963292",
+    "guide": "668b4b277772f07e",
+    "taken": "2026-10-18"
   },
   "settings-new-role": {
     "src": "/help/shots/settings-new-role.webp",
     "width": 1280,
-    "height": 911,
+    "height": 800,
     "marks": [1, 2, 5, 6],
+    "labels": {
+      "1": "Roles",
+      "2": "New role",
+      "5": "Accounts",
+      "6": "Team"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/settings/roles",
-    "screen": "c449074af53c4ea3",
-    "guide": "e38208a7b07e054f",
-    "taken": "2026-10-17"
+    "screen": "59d5facb373818b9",
+    "guide": "1e06cc2b53040be8",
+    "taken": "2026-10-18"
   },
   "sign-in": {
     "src": "/help/shots/sign-in.webp",
     "width": 1280,
     "height": 800,
     "marks": [1, 2, 3],
+    "labels": {
+      "1": "Sign in",
+      "2": "Email",
+      "3": "Sign in"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/sign-in",
-    "screen": "c07245f4ddd9382e",
-    "guide": "9106b1f7c1e03462",
-    "taken": "2026-10-17"
+    "screen": "f850a1222beb071b",
+    "guide": "cb1776645e1003ef",
+    "taken": "2026-10-18"
   },
   "sign-out": {
     "src": "/help/shots/sign-out.webp",
     "width": 1280,
-    "height": 1600,
+    "height": 800,
     "marks": [1],
+    "labels": {
+      "1": "More"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/",
-    "screen": "a468159db32eef48",
-    "guide": "ad13b943b5efe22d",
-    "taken": "2026-10-17"
+    "screen": "eeb8738f8626d396",
+    "guide": "fdcd59a78bfb7213",
+    "taken": "2026-10-18"
   },
   "switch-company": {
     "src": "/help/shots/switch-company.webp",
     "width": 1280,
     "height": 800,
     "marks": [1],
+    "labels": {
+      "1": "Choose a company"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/select-company",
-    "screen": "647a468a4b52d242",
-    "guide": "29f4a2a4c1bbdc82",
-    "taken": "2026-10-17"
+    "screen": "0518521952f4aa17",
+    "guide": "00b4fd5a04c7295a",
+    "taken": "2026-10-18"
   },
   "tech-pack-link": {
     "src": "/help/shots/tech-pack-link.webp",
     "width": 1280,
-    "height": 1600,
-    "marks": [1, 2, 3, 4, 5, 7],
+    "height": 800,
+    "marks": [1, 2, 3, 4, 7],
+    "labels": {
+      "1": "Details and links",
+      "2": "Edit details",
+      "3": "Link to a production project",
+      "4": "Link to …",
+      "7": "Tech pack PDF"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/tech-packs/[techPackId]",
-    "screen": "2047d50768674709",
-    "guide": "893dd76a53826bfa",
-    "taken": "2026-10-17"
+    "screen": "2f42e1c5e1a7161b",
+    "guide": "93a22baa46879ebd",
+    "taken": "2026-10-18"
   },
   "tech-pack-list": {
     "src": "/help/shots/tech-pack-list.webp",
     "width": 1280,
     "height": 800,
     "marks": [1, 2, 3, 6],
+    "labels": {
+      "1": "All tech packs",
+      "2": "All styles",
+      "3": "Find",
+      "6": "New tech pack"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/tech-packs",
     "screen": "d3034fecc193c694",
-    "guide": "11c2b00647b9d5f9",
-    "taken": "2026-10-17"
+    "guide": "248aabb6f5e2b710",
+    "taken": "2026-10-18"
   },
   "tech-pack-new": {
     "src": "/help/shots/tech-pack-new.webp",
     "width": 1280,
-    "height": 1320,
+    "height": 1299,
     "marks": [1, 2, 3, 4, 5, 6],
+    "labels": {
+      "1": "New tech pack",
+      "2": "Title",
+      "3": "Find a buyer",
+      "4": "Buyer's brief",
+      "5": "Reference photos or PDFs",
+      "6": "Start tech pack"
+    },
+    "clip": {
+      "y": 0,
+      "height": 1299,
+      "target": "marks"
+    },
     "route": "/tech-packs/new",
     "screen": "0201fa2d72318ff4",
-    "guide": "eec3f46342e6234f",
-    "taken": "2026-10-17"
+    "guide": "03fcffeb16ebf4de",
+    "taken": "2026-10-18"
   },
   "top-bar": {
     "src": "/help/shots/top-bar.webp",
     "width": 1280,
-    "height": 1600,
-    "marks": [],
+    "height": 800,
+    "marks": [1, 2, 3],
+    "labels": {
+      "1": "Extas ERP",
+      "2": "Switch company",
+      "3": "Inbox"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/",
-    "screen": "a468159db32eef48",
-    "guide": "380bce3bbb80418b",
-    "taken": "2026-10-17"
+    "screen": "eeb8738f8626d396",
+    "guide": "2c04e3f0f85dd47e",
+    "taken": "2026-10-18"
   },
   "whats-new-v62": {
     "src": "/help/shots/whats-new-v62.webp",
     "width": 1280,
-    "height": 1600,
+    "height": 800,
     "marks": [1, 2],
+    "labels": {
+      "1": "Production",
+      "2": "Production"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/",
-    "screen": "a468159db32eef48",
-    "guide": "d6eb8dcd00b4fa72",
-    "taken": "2026-10-17"
+    "screen": "eeb8738f8626d396",
+    "guide": "2b50c89e85a7ec12",
+    "taken": "2026-10-18"
   },
   "whats-new-v63": {
     "src": "/help/shots/whats-new-v63.webp",
     "width": 1280,
-    "height": 1600,
+    "height": 800,
     "marks": [6],
+    "labels": {
+      "6": "Today"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
     "route": "/",
-    "screen": "a468159db32eef48",
-    "guide": "0e19ea2e6cb52562",
-    "taken": "2026-10-17"
+    "screen": "eeb8738f8626d396",
+    "guide": "5e16c44fa8773b44",
+    "taken": "2026-10-18"
   }
 }

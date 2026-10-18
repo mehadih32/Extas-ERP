@@ -45,6 +45,7 @@ import { addDays, localDay } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import { resetRateLimits } from "@/lib/rate-limit";
+import { aiAccountOf } from "@/modules/ai/account";
 import { runAiReminders } from "@/modules/ai/ai-reminders";
 import {
   getBot,
@@ -57,12 +58,18 @@ import {
 } from "@/modules/ai/bot/bot.service";
 import { type BotCall, standInForBotApi } from "@/modules/ai/bot/channel";
 import { pinScrubReport } from "@/modules/ai/bot/pin-scrub";
-import { sendChat } from "@/modules/ai/chat/chat.service";
-import { checkPin, setAiSwitch, setPin } from "@/modules/ai/settings.service";
+import { PIN_HIDDEN_TEXT, sendChat } from "@/modules/ai/chat/chat.service";
+import {
+  checkPin,
+  PIN_TRIES,
+  PIN_TRIES_USED,
+  setAiSwitch,
+  setPin,
+} from "@/modules/ai/settings.service";
 import { login, MAX_FAILED_LOGINS } from "@/modules/auth/auth.service";
 import * as costing from "@/modules/costing/costing.service";
 import { pushToBot } from "@/modules/ai/bot/push";
-import { makeAiDraft, setFollowUp } from "@/modules/ai/drafts.service";
+import { makeAiDraft, setFollowUp, updateDraft } from "@/modules/ai/drafts.service";
 import { runDueJobs } from "@/modules/jobs/worker";
 import { saveMailSettings, standInForMail } from "@/modules/mail/mail.service";
 import * as parties from "@/modules/parties/party.service";
@@ -190,8 +197,8 @@ const press = (chat: number, data: string, messageId = 777) => ({
   },
 });
 
-/** Telegram calls the webhook; the worker then answers. */
-async function telegram(update: unknown, secret = telegramSecret(TOKEN)) {
+/** Telegram calls the webhook; the worker has not answered yet. */
+async function delivered(update: unknown, secret = telegramSecret(TOKEN)) {
   const response = await telegramWebhook(
     new Request("https://erp.test/api/bot/telegram/webhook", {
       method: "POST",
@@ -199,8 +206,14 @@ async function telegram(update: unknown, secret = telegramSecret(TOKEN)) {
       body: JSON.stringify(update),
     }),
   );
-  await runDueJobs();
   return response.status;
+}
+
+/** Telegram calls the webhook; the worker then answers. */
+async function telegram(update: unknown, secret = telegramSecret(TOKEN)) {
+  const status = await delivered(update, secret);
+  await runDueJobs();
+  return status;
 }
 
 async function setup() {
@@ -228,6 +241,12 @@ async function setup() {
 }
 
 type Env = Awaited<ReturnType<typeof setup>>;
+
+/** Fifteen minutes later: PIN tries and number checks count again (they are kept in the database). */
+async function fifteenMinutesLater() {
+  resetRateLimits();
+  await prisma.aiPinTry.updateMany({ data: { windowStart: new Date(Date.now() - 16 * 60_000) } });
+}
 
 /** The owner connects the bot and links their Telegram chat. */
 async function linkOwner(env: Env, chat = OWNER_CHAT) {
@@ -542,7 +561,10 @@ run("The bot", () => {
       `Send this one? To Nordic Wear AB (orders@nordicwear.test): "${quote.subject}". Press Send under it to send it (it has a price, so your PIN is asked).`,
     );
     const [send] = api.buttons(OWNER_CHAT);
-    expect(send).toMatchObject({ text: "Send", callback_data: `sd:${quote.id}` });
+    expect(send).toMatchObject({
+      text: "Send",
+      callback_data: expect.stringMatching(new RegExp(`^sd:${quote.id}:[a-f0-9]{12}$`)),
+    });
     await telegram(press(OWNER_CHAT, send!.callback_data));
     expect(api.said(OWNER_CHAT).at(-1)).toMatch(/^Set your PIN first/);
     await setPin(env.owner, { pin: "1357" });
@@ -703,7 +725,7 @@ run("The bot", () => {
       expect(api.said(OWNER_CHAT).at(-1)).toBe(HID_NUMBER);
     };
     await hides("2468");
-    resetRateLimits(); // 15 minutes later
+    await fifteenMinutesLater();
     for (const text of ["my pin is 2468, ok?", "PIN:2468", "২৪৬৮"]) await hides(text);
     expect(api.said(OWNER_CHAT).join("\n")).not.toMatch(/was your PIN/i);
     expect(await prisma.aiBotMessage.count({ where: { text: "[PIN]", direction: "IN" } })).toBe(4);
@@ -724,7 +746,7 @@ run("The bot", () => {
     // The bot's checks never use up the owner's PIN tries in the ERP.
     expect(await checkPin(env.company.id, "2468", env.owner.user.id)).toBe(true);
     // After the 15 minutes, new numbers are checked again.
-    resetRateLimits();
+    await fifteenMinutesLater();
     await telegram(typed(OWNER_CHAT, "PO 9902 is late"));
     expect(await prisma.aiBotMessage.count({ where: { text: "PO 9902 is late" } })).toBe(1);
 
@@ -1039,6 +1061,272 @@ run("The bot", () => {
       { id: `wamid.in${(n += 1)}`, from: "8801900000000", type: "text", text: { body: "help" } },
     ]);
     expect(api.calls.length).toBe(before);
+  });
+
+  it("moves the bot to another person only when their code comes from their chat, and tells the chat before (v6.4.1)", async () => {
+    const api = botApi();
+    await linkOwner(env);
+    const partnerRole = await createRole(env.owner, {
+      name: "Partner",
+      permissions: ["dashboard.view", "ai.manage"],
+    });
+    const partnerUser = await makeUser("partner@extas.test");
+    await addToCompany(partnerUser.id, env.company.id, partnerRole.id);
+    const partner = await contextFor(partnerUser.id, env.company.id);
+    const PARTNER_CHAT = 555777;
+
+    // The partner presses Link and never sends the code: nothing moves.
+    const { code } = await startLink(partner, "TELEGRAM");
+    expect(await prisma.aiBotLink.findFirstOrThrow()).toMatchObject({
+      ownerId: env.owner.user.id,
+      chatId: String(OWNER_CHAT),
+      linkCodeOwnerId: partnerUser.id,
+    });
+    await telegram(typed(OWNER_CHAT, "status"));
+    const asked = await prisma.aiChatMessage.findFirstOrThrow({
+      where: { role: "OWNER" },
+      orderBy: { createdAt: "desc" },
+    });
+    expect(asked.userId).toBe(env.owner.user.id);
+
+    // The code from the partner's own chat: the owner's chat is told first, then it moves.
+    const before = api.calls.length;
+    await telegram(typed(PARTNER_CHAT, `/start ${code}`));
+    const sent = api.calls
+      .slice(before)
+      .filter((c) => c.method === "sendMessage")
+      .map((c) => [String(c.json.chat_id), String(c.json.text)]);
+    expect(sent).toEqual([
+      [
+        String(OWNER_CHAT),
+        "Extas: the bot was linked to partner's account in another chat. This chat gets no more messages or answers for Extas.",
+      ],
+      [String(PARTNER_CHAT), expect.stringMatching(/^Linked: this chat now talks to Mehedi 2.0/)],
+    ]);
+    expect(await prisma.aiBotLink.findFirstOrThrow()).toMatchObject({
+      ownerId: partnerUser.id,
+      chatId: String(PARTNER_CHAT),
+      linkCodeOwnerId: null,
+      linkCodeHash: null,
+    });
+    // The owner's chat is no longer heard.
+    const heard = api.said(OWNER_CHAT).length;
+    await telegram(typed(OWNER_CHAT, "status"));
+    expect(api.said(OWNER_CHAT)).toHaveLength(heard);
+  });
+
+  it("pushes briefs and requests only to a person who may still run the AI; alarms still reach the owner (v6.4.1)", async () => {
+    const api = botApi();
+    const partnerRole = await createRole(env.owner, {
+      name: "Partner",
+      permissions: ["dashboard.view", "ai.manage"],
+    });
+    const partnerUser = await makeUser("partner@extas.test");
+    const membership = await addToCompany(partnerUser.id, env.company.id, partnerRole.id);
+    const partner = await contextFor(partnerUser.id, env.company.id);
+    await setAiSwitch(env.owner, true);
+    await saveTelegram(partner, { token: TOKEN });
+    const { code } = await startLink(partner, "TELEGRAM");
+    await telegram(typed(OWNER_CHAT, `/start ${code}`));
+    const pushes = () => prisma.backgroundJob.count({ where: { kind: "ai.bot.push" } });
+    const brief = async (text: string) => {
+      await pushToBot(env.company.id, { kind: "text", text });
+      await runDueJobs();
+      return api.said(OWNER_CHAT).includes(text);
+    };
+    expect(await brief("Morning brief 1")).toBe(true);
+
+    // Queued while allowed, sent after the person was suspended: not sent.
+    await pushToBot(env.company.id, { kind: "text", text: "Morning brief 2" });
+    await prisma.user.update({ where: { id: partnerUser.id }, data: { status: "SUSPENDED" } });
+    await runDueJobs();
+    expect(api.said(OWNER_CHAT)).not.toContain("Morning brief 2");
+    // Nothing more is even queued for them.
+    const queued = await pushes();
+    expect(await brief("Morning brief 3")).toBe(false);
+    expect(await pushes()).toBe(queued);
+
+    // Out of the team, or without ai.manage: nothing either.
+    await prisma.user.update({ where: { id: partnerUser.id }, data: { status: "ACTIVE" } });
+    expect(await brief("Morning brief 4")).toBe(true);
+    await prisma.companyMembership.update({
+      where: { id: membership.id },
+      data: { isActive: false },
+    });
+    expect(await brief("Morning brief 5")).toBe(false);
+    await prisma.companyMembership.update({
+      where: { id: membership.id },
+      data: { isActive: true },
+    });
+    await prisma.rolePermission.deleteMany({
+      where: { roleId: partnerRole.id, permission: { key: "ai.manage" } },
+    });
+    expect(await brief("Morning brief 6")).toBe(false);
+
+    // The platform owner's alarm (AI off too) still reaches the owner's linked chat.
+    await prisma.user.update({ where: { id: env.owner.user.id }, data: { isSuperAdmin: true } });
+    await setAiSwitch(env.owner, false);
+    const { code: ownerCode } = await startLink(env.owner, "TELEGRAM");
+    await telegram(typed(555002, `/start ${ownerCode}`));
+    await pushToBot(env.company.id, { kind: "text", text: "Backup failed" }, { alarm: true });
+    await runDueJobs();
+    expect(api.said(555002)).toContain("Backup failed");
+  });
+
+  it("hides a PIN sent twice, or read after its five minutes, and never passes it to the chat (v6.4.1)", async () => {
+    const api = botApi();
+    await linkOwner(env);
+    await setAiSwitch(env.owner, true);
+    await setPin(env.owner, { pin: "2468" });
+    const deleted = () =>
+      api.calls.filter((c) => c.method === "deleteMessage").map((c) => c.json.message_id);
+    const NOT_WAITED =
+      "Your PIN was hidden. Nothing was waiting for it any more (it was used already, or its 5 minutes ran out), so nothing was done. Press the button again if you still need it.";
+
+    // The same PIN twice, quickly: both arrive while the request waits.
+    await telegram(typed(OWNER_CHAT, "unlock"));
+    const first = typed(OWNER_CHAT, "2468");
+    const second = typed(OWNER_CHAT, "2468");
+    await delivered(first);
+    await delivered(second);
+    await runDueJobs();
+    expect(deleted()).toEqual([first.message.message_id, second.message.message_id]);
+    expect(api.said(OWNER_CHAT).at(-2)).toMatch(/^Unlocked: /);
+    expect(api.said(OWNER_CHAT).at(-1)).toBe(NOT_WAITED);
+
+    // A PIN that arrived in time but was read after the five minutes.
+    await telegram(typed(OWNER_CHAT, "unlock"));
+    const late = typed(OWNER_CHAT, "2468");
+    await delivered(late);
+    await prisma.aiBotLink.updateMany({ data: { pendingUntil: new Date(Date.now() - 1000) } });
+    await runDueJobs();
+    expect(deleted().at(-1)).toBe(late.message.message_id);
+    expect(api.said(OWNER_CHAT).at(-1)).toBe(NOT_WAITED);
+    expect((await prisma.aiBotLink.findFirstOrThrow()).pending).toBeNull();
+
+    // Neither ever reached the chat with Mehedi 2.0.
+    expect(await prisma.aiChatMessage.count({ where: { role: "OWNER", text: "[PIN]" } })).toBe(0);
+    expect(await prisma.aiChatMessage.count({ where: { text: { contains: "2468" } } })).toBe(0);
+  });
+
+  it("tells the owner when the PIN tries run out, keeps the count over a restart, and never counts a right PIN (v6.4.1)", async () => {
+    const api = botApi();
+    await prisma.user.update({ where: { id: env.owner.user.id }, data: { isSuperAdmin: true } });
+    await linkOwner(env);
+    await setPin(env.owner, { pin: "2468" });
+    const userId = env.owner.user.id;
+    const alarms = (subject: string) =>
+      prisma.notificationLog.count({ where: { userId, subject } });
+
+    // Right PINs never use up the tries.
+    for (let i = 0; i < PIN_TRIES + 3; i++) {
+      expect(await checkPin(env.company.id, "2468", userId)).toBe(true);
+    }
+    // Ten wrong ones: the tenth tells the owner (the inbox and the bot, AI off too).
+    for (let i = 0; i < PIN_TRIES; i++) {
+      expect(await checkPin(env.company.id, "1111", userId)).toBe(false);
+    }
+    expect(await alarms("Too many wrong PINs")).toBe(1);
+    await runDueJobs();
+    expect(api.said(OWNER_CHAT).at(-1)).toMatch(
+      /^Too many wrong PINs\. owner: a wrong PIN was given 10 times in 15 minutes/,
+    );
+    await expectAppError(checkPin(env.company.id, "2468", userId), "RATE_LIMITED", PIN_TRIES_USED);
+    // A restart (the memory cleared) does not give new tries; the owner is told once.
+    resetRateLimits();
+    await expectAppError(checkPin(env.company.id, "2468", userId), "RATE_LIMITED", PIN_TRIES_USED);
+    expect(await alarms("Too many wrong PINs")).toBe(1);
+    // Fifteen minutes later the PIN works again.
+    await fifteenMinutesLater();
+    expect(await checkPin(env.company.id, "2468", userId)).toBe(true);
+    const tries = await prisma.aiPinTry.findMany({ select: { kind: true, count: true } });
+    expect(JSON.stringify(tries)).not.toContain("2468");
+
+    // Numbers sent to the bot: past ten new ones the owner is told too.
+    for (let i = 0; i < 11; i++) await telegram(typed(OWNER_CHAT, `PO ${7100 + i} is late`));
+    expect(await alarms("Many numbers sent to the bot")).toBe(1);
+  });
+
+  it("does not take numbers inside codes like CS-2026-0001 for a PIN (v6.4.1)", async () => {
+    botApi();
+    await linkOwner(env);
+    await setAiSwitch(env.owner, true);
+    await setPin(env.owner, { pin: "2468" });
+    for (let i = 0; i < 15; i++) {
+      await telegram(typed(OWNER_CHAT, `CS-2026-${String(i + 1).padStart(4, "0")} status`));
+    }
+    expect(await prisma.aiPinTry.count({ where: { kind: "NUMBER" } })).toBe(0);
+    expect(await prisma.aiBotMessage.count({ where: { text: "[PIN]" } })).toBe(0);
+    // A number on its own is still checked.
+    await telegram(typed(OWNER_CHAT, "PO 4501 is late"));
+    expect(await prisma.aiPinTry.findFirstOrThrow({ where: { kind: "NUMBER" } })).toMatchObject({
+      count: 1,
+    });
+  });
+
+  it("hides the PIN typed into the ERP's own chat: never kept, never sent to the AI (v6.4.1)", async () => {
+    await setAiSwitch(env.owner, true);
+    await setPin(env.owner, { pin: "2468" });
+    const rows = await sendChat(env.owner, { text: "my pin is ২৪৬৮ please approve" });
+    expect(rows.map((r) => r.text)).toEqual([PIN_HIDDEN_TEXT]);
+    expect(await prisma.aiChatMessage.count({ where: { text: { contains: "2468" } } })).toBe(0);
+    expect(await prisma.aiChatMessage.count({ where: { text: { contains: "২৪৬৮" } } })).toBe(0);
+    expect(await prisma.aiChatMessage.findFirstOrThrow({ where: { role: "OWNER" } })).toMatchObject(
+      { text: "[PIN]", intent: "pin.hidden" },
+    );
+    // An ordinary number goes through as typed.
+    await sendChat(env.owner, { text: "status of PO 4501" });
+    expect(await prisma.aiChatMessage.count({ where: { text: "status of PO 4501" } })).toBe(1);
+  });
+
+  it("saves an AI draft under the AI's account, and sends from the bot only the draft as it was shown (v6.4.1)", async () => {
+    const api = botApi();
+    await linkOwner(env);
+    await setAiSwitch(env.owner, true);
+    const mail: string[] = [];
+    standInForMail(async (_config, m) => {
+      mail.push(m.subject);
+      return { messageId: "<m1@mail.test>" };
+    });
+    await saveMailSettings(env.owner, {
+      host: "smtp.gmail.com",
+      port: "587",
+      secure: false,
+      username: "owner@extas.test",
+      password: "app-pass-word-1234",
+      fromAddress: "owner@extas.test",
+    });
+    const draft = await makeAiDraft(env.company.id, {
+      kind: "BUYER_FOLLOW_UP",
+      partyId: env.buyer.id,
+      about: "pique polos",
+    });
+    expect(draft.createdById).toBe((await aiAccountOf(env.company.id)).id);
+
+    await pushToBot(env.company.id, { kind: "draft", draftId: draft.id, text: "A follow-up." });
+    await runDueJobs();
+    const [shown] = api.buttons(OWNER_CHAT);
+    expect(shown?.text).toBe("Send");
+    // Changed in the ERP after the bot showed it: that Send sends nothing.
+    await updateDraft(env.owner, draft.id, {
+      toAddress: "orders@nordicwear.test",
+      subject: draft.subject,
+      body: `${draft.body}\nP.S. We can ship a week earlier.`,
+    });
+    await telegram(press(OWNER_CHAT, shown!.callback_data));
+    expect(mail).toEqual([]);
+    expect(api.said(OWNER_CHAT).at(-1)).toBe(
+      'This draft was changed after that message showed it, so nothing was sent. Write "পাঠাও" to see it as it is now, then press Send under it.',
+    );
+    // A button from before v6.4.1 (no version) cannot tell, so it is refused too.
+    await telegram(press(OWNER_CHAT, `sd:${draft.id}`));
+    expect(mail).toEqual([]);
+    // Shown again as it is now: its Send sends it.
+    await telegram(typed(OWNER_CHAT, "পাঠাও"));
+    const [again] = api.buttons(OWNER_CHAT);
+    expect(again!.callback_data).not.toBe(shown!.callback_data);
+    await telegram(press(OWNER_CHAT, again!.callback_data));
+    expect(mail).toEqual([draft.subject]);
   });
 
   it("is set up only by the owner", async () => {

@@ -1055,6 +1055,9 @@ export async function getRun(ctx: CompanyContext, runId: string) {
     run.status === "APPROVED" || run.status === "DONE"
       ? await stepsOf(ctx.company.id, ctx.company.timezone, run)
       : null;
+  // The plan and the profit % hold the costing (cost per piece, margins, profit):
+  // only for a role that sees costing sheets (v6.4.1).
+  const seesCost = ctx.can("costing.view");
   return {
     id: run.id,
     number: run.number,
@@ -1072,12 +1075,15 @@ export async function getRun(ctx: CompanyContext, runId: string) {
       ? {
           id: run.costing.id,
           number: run.costing.number,
-          profitPercent: run.costing.profitPercent?.toString() ?? null,
+          profitPercent: seesCost ? (run.costing.profitPercent?.toString() ?? null) : null,
           href: `/production/costing/${run.costing.id}`,
         }
       : null,
     card,
-    plan: run.plan,
+    plan: seesCost ? run.plan : null,
+    /** A plan was made, but this role does not see costing (so not the plan either). */
+    planHidden: !seesCost && run.plan !== null,
+    costHidden: !seesCost,
     planByAi: run.planByAi,
     plannedAt: run.plannedAt,
     estimatedAiCost: run.estimatedAiCost?.toFixed(2) ?? null,

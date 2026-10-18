@@ -119,3 +119,48 @@ code=0; run_bug_guard "${dir}" 2 || code=$?; echo "exit $code"`,
     expect(clock).toMatch(/bugGuardAfterRestore\(\)/);
   });
 });
+
+describe("Bug Guard once after each update (D5)", () => {
+  const request = () => path.join(dir, "bug-guard-after-deploy.json");
+
+  it("leaves a request the ERP takes, and waits only until it is taken", async () => {
+    const taken = await withLib(`APP_UID=$(id -u)
+BUG_GUARD_POLL=0.1
+(
+  until [ -f "${dir}/bug-guard-after-deploy.json" ]; do sleep 0.05; done
+  cp "${dir}/bug-guard-after-deploy.json" "${dir}/seen.json"
+  rm -f "${dir}/bug-guard-after-deploy.json"
+) &
+code=0; ask_check_after_deploy "${dir}" 20 || code=$?; echo "exit $code"`);
+    expect(taken.stdout).toContain("exit 0");
+    expect(existsSync(request())).toBe(false);
+    const seen = JSON.parse(readFileSync(path.join(dir, "seen.json"), "utf8")) as {
+      requestedAt: string;
+    };
+    expect(Number.isNaN(Date.parse(seen.requestedAt))).toBe(false);
+  });
+
+  it("says when the ERP did not take it in time, and leaves it for the ERP's clock", async () => {
+    const late = await withLib(
+      `APP_UID=$(id -u)\nBUG_GUARD_POLL=0.2\ncode=0; ask_check_after_deploy "${dir}" 1 || code=$?; echo "exit $code"`,
+    );
+    expect(late.stdout).toContain("exit 1");
+    expect(existsSync(request())).toBe(true);
+  });
+
+  it("runs at the end of every update, and never fails it", () => {
+    const deploy = readFileSync(path.join("deploy", "deploy.sh"), "utf8");
+    // Only once the new version passed its own check (check_update) and is open again.
+    const asked = deploy.indexOf('ask_check_after_deploy "$DATA_DIR/backups"');
+    expect(asked).toBeGreaterThan(deploy.indexOf("check_update || go_back"));
+    expect(asked).toBeGreaterThan(deploy.indexOf("compose up -d caddy"));
+    // Inside an "if": whatever happens, deploy.sh goes on and the update counts as done.
+    expect(deploy).toMatch(/if ask_check_after_deploy "\$DATA_DIR\/backups" [^;\n]+; then/);
+    expect(deploy.slice(asked)).not.toMatch(/\bdie\b|go_back/);
+    // The ERP's clock takes the request (clock.ts), the same way as after a restore.
+    const clock = readFileSync(path.join("src", "modules", "bug-guard", "clock.ts"), "utf8");
+    expect(clock).toMatch(/bugGuardAfterDeploy\(\)/);
+    const erp = readFileSync(path.join("src", "modules", "bug-guard", "after-deploy.ts"), "utf8");
+    expect(erp).toMatch(/AFTER_DEPLOY_REQUEST = "bug-guard-after-deploy\.json"/);
+  });
+});

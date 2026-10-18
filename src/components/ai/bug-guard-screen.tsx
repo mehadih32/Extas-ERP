@@ -86,6 +86,7 @@ const RUN_TRIGGER: Record<string, string> = {
   NOW: "Run now",
   TELEGRAM: "from Telegram",
   AFTER_FIX: "after a fix",
+  AFTER_DEPLOY: "after an update",
 };
 
 function ago(at: Date | string | null | undefined, now: number) {

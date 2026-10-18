@@ -201,6 +201,16 @@ docker builder prune -f --filter until=720h >/dev/null || true
 free="$(free_kb)"
 [ -n "$free" ] && say "Free space on the server: $((free / 1024 / 1024)) GB"
 
+# Bug Guard checks the live ERP once, only reading, with a new Full check on GitHub;
+# the report goes to the ERP's inbox and to Telegram (D5). It never fails the update:
+# the new version is up already, and what the check could not do is in its report.
+say "Asking Bug Guard to check the live ERP once (it only reads)"
+if ask_check_after_deploy "$DATA_DIR/backups" "${AFTER_DEPLOY_WAIT:-180}"; then
+  say "Bug Guard is checking the live ERP: the result goes to the ERP's inbox, and to Telegram when the bot is linked"
+else
+  say "The ERP has not taken Bug Guard's check yet; it does when its clock next runs. Bug Guard also checks on its own schedule"
+fi
+
 say "Extas ERP is running at https://$APP_DOMAIN"
 echo "Check it: https://$APP_DOMAIN/api/health should show \"status\":\"ok\"."
 if [ -n "$DEMO_DOMAIN" ]; then

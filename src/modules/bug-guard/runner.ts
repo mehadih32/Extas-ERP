@@ -50,6 +50,18 @@ export type RunOptions = {
   fullCheck?: boolean;
   /** Send the report when done (on by default). */
   report?: boolean;
+  /**
+   * Prepare fixes and corrections by itself when the owner turned that on (on by
+   * default). The check after an update only reads and reports: never.
+   */
+  prepare?: boolean;
+  /** Ask for a new Full check even when one ran in the last hours (after an update). */
+  freshFullCheck?: boolean;
+  /**
+   * A run still "checking" that started before this was cut short (the server
+   * restarted since: after an update, the app started again).
+   */
+  staleBefore?: Date;
 };
 
 /** Starts a run (throws CONFLICT when one is going). */
@@ -60,7 +72,7 @@ export async function startBugGuard(
   options: RunOptions = {},
 ) {
   const now = options.now ?? new Date();
-  const run = await claim(companyId, trigger, startedById, now);
+  const run = await claim(companyId, trigger, startedById, now, options.staleBefore);
   // Never rejects: an unhandled rejection would stop the server.
   const work = execute(run.id, options).catch(async (error: unknown) => {
     console.error("[bug-guard] run failed", error);
@@ -90,14 +102,16 @@ async function claim(
   trigger: BugGuardTrigger,
   startedById: string | null,
   now: Date,
+  staleBefore?: Date,
 ) {
+  const stale = new Date(now.getTime() - STALE_RUN_MS);
   return prisma.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`extras-erp:bug-guard:${companyId}`}))`;
     await tx.bugGuardRun.updateMany({
       where: {
         companyId,
         status: "RUNNING",
-        startedAt: { lt: new Date(now.getTime() - STALE_RUN_MS) },
+        startedAt: { lt: staleBefore && staleBefore > stale ? staleBefore : stale },
       },
       data: {
         status: "FAILED",
@@ -206,7 +220,7 @@ async function execute(runId: string, options: RunOptions) {
 
   let fullCheckRunId: string | null = null;
   if (options.fullCheck !== false) {
-    const asked = await askFullCheck(companyId, run.startedById, now);
+    const asked = await askFullCheck(companyId, run.startedById, now, options.freshFullCheck);
     fullCheckRunId = asked.id;
     if (asked.note) notes.push(asked.note);
   }
@@ -255,18 +269,24 @@ async function execute(runId: string, options: RunOptions) {
       summary: `Checked ${results.length} things: ${counts.urgent} urgent, ${counts.important} important, ${counts.later} can wait open; ${stored.newIds.length + stored.reopenedIds.length} new, ${stored.fixedIds.length + stored.goneIds.length} put right.`,
     },
   });
-  await autoPrepare(companyId, [...stored.newIds, ...stored.reopenedIds]);
+  if (options.prepare !== false) {
+    await autoPrepare(companyId, [...stored.newIds, ...stored.reopenedIds]);
+  }
   if (options.report !== false) {
     const { reportRun } = await import("./report");
     await reportRun(runId, [...stored.newIds, ...stored.reopenedIds, ...stored.dueIds]);
   }
 }
 
-/** Asks GitHub for the Full check, when it is connected and none ran lately. */
+/**
+ * Asks GitHub for the Full check, when it is connected and none ran lately
+ * (`fresh`: a new one whatever ran before, after an update).
+ */
 async function askFullCheck(
   companyId: string,
   startedById: string | null,
   now: Date,
+  fresh = false,
 ): Promise<{ id: string | null; note: string | null }> {
   const settings = await prisma.aiSettings.findUnique({
     where: { companyId },
@@ -283,7 +303,7 @@ async function askFullCheck(
     orderBy: { startedAt: "desc" },
     select: { id: true, status: true },
   });
-  if (recent && recent.status !== "FAILED") return { id: recent.id, note: null };
+  if (recent && recent.status !== "FAILED" && !fresh) return { id: recent.id, note: null };
   try {
     const { startFullCheckFor } = await import("@/modules/ai/full-check/full-check.service");
     const started = await startFullCheckFor(companyId, startedById);
@@ -519,7 +539,7 @@ export async function takeInFullChecks(now: Date = new Date()) {
   for (const run of waiting) {
     const fc = await prisma.fullCheckRun.findUnique({
       where: { id: run.fullCheckRunId! },
-      select: { status: true, startedAt: true },
+      select: { status: true, startedAt: true, note: true },
     });
     const finished = fc && (fc.status === "DONE" || fc.status === "FAILED");
     const tooOld = now.getTime() - run.startedAt.getTime() > 6 * 60 * 60_000;
@@ -528,7 +548,19 @@ export async function takeInFullChecks(now: Date = new Date()) {
       where: { id: run.id, fullCheckSeenAt: null },
       data: { fullCheckSeenAt: now },
     });
-    if (claimed.count === 0 || fc?.status !== "DONE") continue;
+    if (claimed.count === 0) continue;
+    // The check after an update reports how its Full check ended, whatever it found.
+    const afterUpdate = run.trigger === "AFTER_DEPLOY";
+    if (fc?.status !== "DONE") {
+      if (afterUpdate) {
+        const { reportFullCheckFailed } = await import("./report");
+        await reportFullCheckFailed(
+          run.id,
+          fc?.note ?? (fc ? "it sent no report within six hours" : "it is not on record"),
+        ).catch((error: unknown) => console.error("[bug-guard] Full check not reported", error));
+      }
+      continue;
+    }
     const fullCheck = ALL_CHECKS.find((c) => c.key === "app.full-check");
     if (!fullCheck) continue;
     try {
@@ -562,9 +594,14 @@ export async function takeInFullChecks(now: Date = new Date()) {
         },
       });
       const fresh = [...stored.newIds, ...stored.reopenedIds];
-      await autoPrepare(run.companyId, fresh);
+      if (!afterUpdate) await autoPrepare(run.companyId, fresh);
       const { reportFullCheck } = await import("./report");
-      await reportFullCheck(run.id, fresh, stored.fixedIds.length + stored.goneIds.length);
+      await reportFullCheck(
+        run.id,
+        fresh,
+        stored.fixedIds.length + stored.goneIds.length,
+        afterUpdate,
+      );
     } catch (error) {
       console.error("[bug-guard] Full check not taken in", error);
     }

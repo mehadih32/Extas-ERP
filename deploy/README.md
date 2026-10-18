@@ -211,6 +211,31 @@ same steps in Bengali, under Settings):
 4. **Cloudflare (optional)**: a token that can only edit DNS for the domain, saved once on
    the Backups screen, so a restore points the web address at the new server by itself and
    gets HTTPS with Cloudflare's proxy on (the DNS challenge).
+5. **The late-backup alert on GitHub**: once Google Drive and the Telegram bot are
+   connected, press **Set up the alert on GitHub** on the Backups screen (below).
+
+**The late-backup alert on GitHub.** The ERP's own alerts need the server; when the server
+itself is down, nobody hears. `.github/workflows/backup-watch.yml` runs on GitHub every 6
+hours (and by hand, **Actions → Backup watch → Run workflow**, which always sends its
+result): `scripts/backup-watch.mjs` signs in to Drive with the ERP's own Google client and
+sign-in (scope `drive.file`, which sees only what the ERP made), finds the newest backup
+that reached Drive whole, and tells the owner on Telegram when it is late, when Drive
+cannot be read, or when there is none; on Saturday mornings it says all is well. Each
+backup's folder in Drive carries `nextAt`, when the owner's schedule makes the next one: it
+is late once that time has passed by as long again (2 hours to a day; with backups twice a
+day, 24 hours after the newest). A repository variable `BACKUP_ALERT_LATE_HOURS` sets a
+fixed number of hours instead.
+
+Its six repository secrets (`BACKUP_ALERT_GOOGLE_CLIENT_ID`, `_GOOGLE_CLIENT_SECRET`,
+`_GOOGLE_REFRESH_TOKEN`, `_DRIVE_FOLDER_ID`, `_TELEGRAM_BOT_TOKEN`, `_TELEGRAM_CHAT_ID`) are
+filled in by the ERP itself, never typed or shown: the owner makes a fine-grained GitHub
+token for the repository with **Secrets: Read and write** that expires in a day, and pastes
+it with the PIN under **Set up the alert on GitHub**. The ERP locks each value to the
+repository's public key (libsodium's sealed box, `src/lib/sealed-box.ts`), sends it to
+GitHub and forgets the token. Until then each run fails with one line naming the missing
+secrets. Press it again after connecting Google Drive or the bot again. GitHub stops
+scheduled workflows in a public repository after 60 days without commits; the Actions tab
+turns it back on.
 
 **Safety copies.** Before every update and every restore, the scripts save a copy of the
 database in `/srv/extras-erp/safety-copies/`, for the automatic rollback. It stays on the
@@ -361,6 +386,16 @@ the database, brings the database up to date, restarts the ERP and then opens ev
 pauses for less than a minute. When the update changes the database, the ERP closes to its
 users for a few minutes instead, from just before the safety copy until the check has
 passed, so nothing typed in that time can be lost.
+
+**Bug Guard once after each update.** When the new version is up and its screens opened,
+`deploy.sh` leaves `bug-guard-after-deploy.json` in `/srv/extras-erp/backups`; the ERP takes
+it within a minute (`deploy.sh` waits up to 3 minutes for that, never for the result) and
+runs Bug Guard on every company, only reading: the data and accounts checks and the rest,
+no AI, nothing prepared or corrected, and a new Full check on GitHub for the platform's own
+company (with its own read-only check accounts). The report goes to the ERP inbox and to
+Telegram, marked "after the update", then the Full check's result when GitHub sends it. If
+the check cannot run or finish, the inbox and Telegram say so; the update itself stays
+installed.
 
 **A failed update goes back by itself.** When the new version cannot be built, or the
 safety copy of the database cannot be saved (a full disk, for example), nothing changes:

@@ -38,9 +38,14 @@ export type AfterRestoreResult = {
   companies: AfterRestoreCompany[];
 };
 
-/** Takes the server's request, if there is one; null otherwise. */
-async function takeRequest(): Promise<{ requestedAt: string } | null> {
-  const file = path.join(backupRoot(), AFTER_RESTORE_REQUEST);
+/**
+ * Takes the server's request (a file in BACKUP_DIR, after a restore or an
+ * update), if there is one; null otherwise.
+ */
+export async function takeRequest(
+  name: string = AFTER_RESTORE_REQUEST,
+): Promise<{ requestedAt: string } | null> {
+  const file = path.join(backupRoot(), name);
   let text: string;
   try {
     text = await readFile(file, "utf8");

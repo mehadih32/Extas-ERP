@@ -51,6 +51,7 @@ import {
   googleClientSchema,
   listBackupRunsSchema,
 } from "@/modules/backups/schemas";
+import { platformCompanyId } from "@/modules/bug-guard/security";
 import { uploadRoot } from "@/modules/files/file.service";
 
 export {
@@ -178,6 +179,8 @@ export function presentConfig(config: BackupConfig, now = new Date()) {
       tokenHint: config.cloudflareTokenHint,
       checkedAt: config.cloudflareCheckedAt,
     },
+    /** The late-backup alert on GitHub (A13): where and when its secrets were sent. */
+    githubAlert: { repo: config.githubAlertRepo, setAt: config.githubAlertAt },
     updatedAt: config.updatedAt,
   };
 }
@@ -287,7 +290,16 @@ export async function getBackupOverview() {
     newServerFacts(),
   ]);
   const { backupHealth } = await import("@/modules/backups/status");
+  // The repository saved for the Full check (AI Center), offered for the backup alert.
+  const platform = await platformCompanyId();
+  const github = platform
+    ? await prisma.aiSettings.findUnique({
+        where: { companyId: platform },
+        select: { githubRepo: true },
+      })
+    : null;
   return {
+    githubRepo: github?.githubRepo ?? null,
     config: presentConfig(config),
     health: await backupHealth(config),
     lastRun: lastRun ? presentRun(lastRun) : null,

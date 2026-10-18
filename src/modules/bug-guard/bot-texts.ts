@@ -113,13 +113,18 @@ export type SummaryInput = {
   fixedCount: number;
   open: Array<{ severity: Severity; title: string; href: string | null }>;
   note?: string | null;
+  /** The check after an update of the live site (deploy.sh asks for it). */
+  afterUpdate?: boolean;
 };
 
 /** The report of a run: counts, then the open problems grouped Urgent / Important / Can wait. */
 export function summaryText(s: SummaryInput, appUrl: string): string {
   const count = (sev: Severity) => s.open.filter((o) => o.severity === sev).length;
   const head = [
-    `Bug Guard · ${s.company} · ${when(s.at)}`,
+    `Bug Guard${s.afterUpdate ? " · আপডেটের পরের চেক" : ""} · ${s.company} · ${when(s.at)}`,
+    s.afterUpdate
+      ? "নতুন ভার্শন চালু হওয়ার পর লাইভ ERP একবার চেক করা হলো (শুধু পড়ে দেখা, কোনো ডেটা বদলায়নি)।"
+      : "",
     s.open.length === 0
       ? `✅ সব ঠিক আছে: ${s.checked}টি জিনিস দেখা হয়েছে, খোলা কোনো সমস্যা নেই।`
       : `খোলা সমস্যা: ${SEVERITIES.map((sev) => `${SEVERITY_BN[sev]} ${count(sev)}`).join(" · ")}`,

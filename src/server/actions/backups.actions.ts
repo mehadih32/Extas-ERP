@@ -8,6 +8,7 @@ import { runAction } from "@/lib/result";
 import { requireCompany, requirePlatformSuperAdmin } from "@/modules/auth/context";
 import * as backups from "@/modules/backups/backup.service";
 import * as cloudflare from "@/modules/backups/cloudflare";
+import { setUpGitHubAlert } from "@/modules/backups/github-alert";
 import { listDriveBackups } from "@/modules/backups/drive-copies";
 import * as keys from "@/modules/backups/recovery-key.service";
 import * as restores from "@/modules/backups/restore.service";
@@ -109,6 +110,14 @@ export const setRecoveryKeyAction = async (input: unknown) =>
 /** "Keep my recovery key in Google Drive": on (the key typed once) or off. */
 export const setKeepKeyInDriveAction = async (input: unknown) =>
   change(async () => keys.setKeepKeyInDrive(await ownerInCompany(), input, await getRequestMeta()));
+
+// The late-backup alert on GitHub (A13)
+/**
+ * Sends the alert's settings to the repository's secrets (with the PIN and a
+ * GitHub token for this one step, never kept); the values are never shown.
+ */
+export const setUpGitHubAlertAction = async (input: unknown) =>
+  change(async () => setUpGitHubAlert(await ownerInCompany(), input, await getRequestMeta()));
 
 // Cloudflare (for a new server's DNS and HTTPS)
 export const setCloudflareAction = async (input: unknown) =>

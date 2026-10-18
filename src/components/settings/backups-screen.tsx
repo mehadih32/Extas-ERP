@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  BellIcon,
   CircleCheckIcon,
   CircleXIcon,
   CloudIcon,
@@ -44,6 +45,7 @@ import {
   setGoogleClientAction,
   setKeepKeyInDriveAction,
   setRecoveryKeyAction,
+  setUpGitHubAlertAction,
   startGoogleSignInAction,
   testCloudflareAction,
   testRestoreNowAction,
@@ -54,8 +56,8 @@ import {
  * Settings > Backups (the platform owner only), simple first (G10): one big
  * line says how the backups are, the next how much work could be lost now;
  * then Back up now, the schedule, the recovery key, and the restore guide.
- * Below: Google Drive, Cloudflare, the backups in Drive (restore one) and the
- * one command for a new server. Works at 390, 768, 1366 and 1920 px.
+ * Below: Google Drive, Cloudflare, the late-backup alert on GitHub, the backups
+ * in Drive (restore one) and the one command for a new server. Works at 390, 768, 1366 and 1920 px.
  */
 
 type Overview = Awaited<ReturnType<typeof getBackupOverview>>;
@@ -105,6 +107,7 @@ export function BackupsScreen({ overview }: { overview: Overview }) {
       <RecoveryKeyPanel config={config} setMessage={setMessage} />
       <DrivePanel config={config} setMessage={setMessage} />
       <CloudflarePanel config={config} setMessage={setMessage} />
+      <GitHubAlertPanel config={config} githubRepo={overview.githubRepo} setMessage={setMessage} />
       <DriveBackupsPanel
         ready={!notReady}
         keyInDrive={Boolean(config.recoveryKey.inDriveAt)}
@@ -1262,6 +1265,123 @@ function CloudflarePanel({ config, setMessage }: PanelProps) {
         >
           {(fieldError) => (
             <PinField id="cf-remove-pin" error={fieldError("pin") ?? fieldError("pinNotSet")} />
+          )}
+        </FormDialog>
+      )}
+    </Panel>
+  );
+}
+
+// =============================================================================
+// The late-backup alert on GitHub (A13)
+// =============================================================================
+
+export const GITHUB_ALERT_STEPS = [
+  "Sign in at github.com with the account that owns the ERP's repository.",
+  "Click your picture at the top right, then Settings, then Developer settings (at the bottom on the left).",
+  "Click Personal access tokens, then Fine-grained tokens, then Generate new token.",
+  "Name it Backup alert and set Expiration to 1 day: it is used once.",
+  "Under Repository access, choose Only select repositories and pick the ERP's repository.",
+  "Under Repository permissions, set Secrets to Read and write.",
+  "Click Generate token, copy it and paste it here with your PIN.",
+];
+
+function GitHubAlertPanel({
+  config,
+  githubRepo,
+  setMessage,
+}: PanelProps & { githubRepo: string | null }) {
+  const when = useWhen({ year: true });
+  const [asking, setAsking] = useState(false);
+  const alert = config.githubAlert;
+  return (
+    <Panel
+      title="Late-backup alert on GitHub"
+      id="backups-github-alert-heading"
+      action={
+        <Button
+          type="button"
+          size="sm"
+          variant={alert.setAt ? "outline" : "default"}
+          onClick={() => setAsking(true)}
+        >
+          <BellIcon aria-hidden />
+          {alert.setAt ? "Set it up again" : "Set up the alert on GitHub"}
+        </Button>
+      }
+    >
+      <div className="mt-3 grid gap-3 text-sm">
+        <p className="text-muted-foreground">
+          Every 6 hours GitHub looks at the newest backup in Google Drive and tells you on Telegram
+          when it is late, even when this server is down. Once a week it says all is well. The ERP
+          sends GitHub what it needs, locked so only GitHub can read it: nothing is shown here.
+        </p>
+        {alert.setAt ? (
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <StatusBadge tone="done">Set up</StatusBadge>
+            <span className="break-all">{alert.repo}</span>
+            <span className="text-muted-foreground">{when(alert.setAt)}</span>
+          </div>
+        ) : (
+          <p>Not set up. Connect Google Drive and the Telegram bot first.</p>
+        )}
+        <p className="text-muted-foreground">
+          Set it up again after you connect Google Drive or the Telegram bot again. To try it, open
+          the repository&apos;s Actions tab, choose Backup watch, then Run workflow: a message comes
+          on Telegram.
+        </p>
+        <details className="rounded-md border p-3">
+          <summary className="cursor-pointer font-medium">How to make the GitHub token</summary>
+          <ol className="mt-2 grid list-decimal gap-1 pl-5">
+            {GITHUB_ALERT_STEPS.map((step) => (
+              <li key={step}>{step}</li>
+            ))}
+          </ol>
+        </details>
+      </div>
+
+      {asking && (
+        <FormDialog
+          title="Set up the alert on GitHub"
+          description="The ERP locks its Google Drive sign-in and the Telegram bot to your repository's key and sends them to GitHub. The token is used once and not kept."
+          submitLabel="Send to GitHub"
+          pendingLabel="Sending to GitHub"
+          errorTitle="The alert was not set up"
+          onClose={() => setAsking(false)}
+          onSubmit={async (form) => {
+            const result = await setUpGitHubAlertAction({
+              pin: form.get("pin") || undefined,
+              repo: String(form.get("repo") ?? ""),
+              token: String(form.get("token") ?? ""),
+            });
+            if (!result.ok) return result.error;
+            setAsking(false);
+            setMessage({
+              tone: "success",
+              text: `The alert is set up on GitHub (${result.data.repo}). Try it: Actions, Backup watch, Run workflow.`,
+            });
+          }}
+        >
+          {(fieldError) => (
+            <>
+              <Field
+                id="gh-alert-repo"
+                label="Repository"
+                hint="For example mehadih32/Extas-ERP"
+                error={fieldError("repo")}
+              >
+                <Input
+                  id="gh-alert-repo"
+                  name="repo"
+                  autoComplete="off"
+                  defaultValue={alert.repo ?? githubRepo ?? ""}
+                />
+              </Field>
+              <Field id="gh-alert-token" label="GitHub token" error={fieldError("token")}>
+                <Input id="gh-alert-token" name="token" type="password" autoComplete="off" />
+              </Field>
+              <PinField id="gh-alert-pin" error={fieldError("pin") ?? fieldError("pinNotSet")} />
+            </>
           )}
         </FormDialog>
       )}

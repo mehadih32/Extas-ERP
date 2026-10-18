@@ -4539,6 +4539,10 @@ model BackupConfig {
   /// hash) and when, so it is rebuilt each month and whenever it changes.
   guideHash           String?
   guideBuiltAt        DateTime?
+  /// The late-backup alert on GitHub (.github/workflows/backup-watch.yml): the
+  /// repository whose secrets the ERP filled in, and when. The values are never kept.
+  githubAlertRepo     String?
+  githubAlertAt       DateTime?
 }
 
 enum BackupScheduleMode {
@@ -6768,6 +6772,8 @@ enum BugGuardTrigger {
   TELEGRAM
   /// Again after a fix was merged or a correction applied.
   AFTER_FIX
+  /// Once after each update of the live site (deploy.sh asks for it).
+  AFTER_DEPLOY
 }
 
 enum BugGuardRunStatus {

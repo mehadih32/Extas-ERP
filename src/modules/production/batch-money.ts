@@ -133,3 +133,54 @@ export function cmSettlementMath(args: {
     payable: totalCm.minus(deductions).minus(paid),
   };
 }
+
+/**
+ * Why a fault of the factory's is left off its CM settlement, or null when it
+ * belongs to the CM work (missing pieces, quality and sewing faults...). A fault
+ * about material the factory supplied is not the CM work: a short at receive is
+ * already left off that material bill (the bill is for what came), and a fabric
+ * fault, or any fault named on a material or a bill, is settled on the material's
+ * bill, never taken off the CM again.
+ */
+export function notCmWork(f: {
+  kind: string;
+  bill: { number: string } | null;
+  material: { code: string } | null;
+}): string | null {
+  if (f.kind === "SHORT_RECEIVE") {
+    return f.bill
+      ? `Short at receive: already left off its material bill ${f.bill.number}, so it is not charged again`
+      : "Short at receive on material it supplied: not the CM work";
+  }
+  const about = f.material
+    ? `the ${f.material.code} it supplied`
+    : f.kind === "FABRIC_FAULT"
+      ? "fabric it supplied"
+      : null;
+  if (about || f.bill) {
+    return `About ${about ?? `material on ${f.bill!.number}`}: not the CM work, so it is settled on that material bill`;
+  }
+  return null;
+}
+
+/**
+ * What of each payment counts as CM paid. `onBills` is what the factory's ledger
+ * used of the payments of each group (a style's id, or the batch) to pay its
+ * material bills (supplier-settlement.ts): that part stays against those bills,
+ * taken from the group's oldest payments first, and the rest is CM paid.
+ */
+export function cmPartOfPayments<P extends { group: string; amount: Num }>(
+  payments: readonly P[],
+  onBills: ReadonlyMap<string, Num>,
+): Array<P & { forBills: Prisma.Decimal; cm: Prisma.Decimal }> {
+  const left = new Map([...onBills].map(([group, v]) => [group, money(v)]));
+  return payments.map((p) => {
+    const amount = money(p.amount);
+    const forBills = Prisma.Decimal.max(
+      Prisma.Decimal.min(left.get(p.group) ?? ZERO, amount),
+      ZERO,
+    );
+    left.set(p.group, (left.get(p.group) ?? ZERO).minus(forBills));
+    return { ...p, forBills, cm: amount.minus(forBills) };
+  });
+}

@@ -3,8 +3,10 @@ import { describe, expect, it } from "vitest";
 
 import {
   cmFor,
+  cmPartOfPayments,
   cmPieces,
   cmSettlementMath,
+  notCmWork,
   rejectPenalty,
   splitEqually,
 } from "@/modules/production/batch-money";
@@ -121,6 +123,52 @@ describe("rejectPenalty", () => {
       "1440.00",
       "1540.00",
       "7460.00",
+    ]);
+  });
+});
+
+describe("notCmWork", () => {
+  const none = { bill: null, material: null };
+  it("keeps the faults of the CM work", () => {
+    for (const kind of ["MISSING_PIECES", "QUALITY", "OTHER", "SPOILED_PIECES"]) {
+      expect(notCmWork({ kind, ...none })).toBeNull();
+    }
+  });
+
+  it("leaves out a short at receive (already off its bill) and faults about material", () => {
+    expect(notCmWork({ kind: "SHORT_RECEIVE", bill: { number: "BILL-9" }, material: null })).toBe(
+      "Short at receive: already left off its material bill BILL-9, so it is not charged again",
+    );
+    expect(notCmWork({ kind: "SHORT_RECEIVE", ...none })).toContain("not the CM work");
+    expect(notCmWork({ kind: "FABRIC_FAULT", ...none })).toContain("fabric it supplied");
+    expect(notCmWork({ kind: "QUALITY", bill: null, material: { code: "RM-7" } })).toContain(
+      "the RM-7 it supplied",
+    );
+    expect(notCmWork({ kind: "OTHER", bill: { number: "BILL-2" }, material: null })).toContain(
+      "material on BILL-2",
+    );
+  });
+});
+
+describe("cmPartOfPayments", () => {
+  it("keeps what paid material bills off CM paid, oldest payments first, by group", () => {
+    const split = cmPartOfPayments(
+      [
+        { group: "style-a", amount: "2000.00" },
+        { group: "style-a", amount: "3000.00" },
+        { group: "batch", amount: "1000.00" },
+        { group: "style-b", amount: "500.00" },
+      ],
+      new Map<string, string | number>([
+        ["style-a", "2500.00"],
+        ["batch", 0],
+      ]),
+    );
+    expect(split.map((p) => [p.forBills.toFixed(2), p.cm.toFixed(2)])).toEqual([
+      ["2000.00", "0.00"],
+      ["500.00", "2500.00"],
+      ["0.00", "1000.00"],
+      ["0.00", "500.00"],
     ]);
   });
 });

@@ -214,8 +214,8 @@ const clause = z.object({
 
 /**
  * The reviewed clauses, the day it was signed, and each style's CM (factory):
- * `cmRate` is the amount as agreed, per piece or per dozen (`cmPer`, per piece
- * when left out).
+ * `cmRate` is the amount as agreed, per piece or per dozen (`cmPer`; left out,
+ * the way the style has it now).
  */
 export const updateContractSchema = z.object({
   clauses: z.array(clause).min(1, "Keep at least one clause").max(30),
@@ -225,7 +225,8 @@ export const updateContractSchema = z.object({
       z.object({
         projectId: id,
         cmRate: money.nullable(),
-        cmPer: z.enum(["PIECE", "DOZEN"]).default("PIECE"),
+        /** Left out: the style keeps the way its CM is agreed now (per piece for a new one). */
+        cmPer: z.enum(["PIECE", "DOZEN"]).optional(),
       }),
     )
     .max(200)

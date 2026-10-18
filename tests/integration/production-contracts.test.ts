@@ -470,11 +470,12 @@ run("Production renovation: batch contracts", () => {
       "CONFLICT",
     );
 
-    // Back to per piece: the dozen price is cleared and it works as before.
+    // Back to per piece (said so: a missing cmPer keeps the style's own): the
+    // dozen price is cleared and it works as before.
     await contracts.updateContract(env.pm, cm.id, {
       clauses,
       signedOn: null,
-      cmRates: [{ projectId: env.polo.id, cmRate: 11 }],
+      cmRates: [{ projectId: env.polo.id, cmRate: 11, cmPer: "PIECE" }],
     });
     const back = await prisma.productionProject.findUniqueOrThrow({ where: { id: env.polo.id } });
     expect([back.cmPer, back.cmPerDozen, back.cmRate?.toFixed(2)]).toEqual([
@@ -492,7 +493,7 @@ run("Production renovation: batch contracts", () => {
     expect(await madeText()).toContain("per piece or per dozen shown.");
     await contracts.updateContract(env.pm, cm.id, {
       clauses,
-      cmRates: [{ projectId: env.tee.id, cmRate: 9 }],
+      cmRates: [{ projectId: env.tee.id, cmRate: 9, cmPer: "PIECE" }],
     });
     expect(await madeText()).toContain("for the CM (making charge) per piece shown.");
   });

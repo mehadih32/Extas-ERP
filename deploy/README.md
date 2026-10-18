@@ -589,10 +589,19 @@ version. GitHub builds it; nothing is installed on the server.
    base64 -w0 extas-erp.jks > extas-erp.jks.txt
    ```
 
-   Then add these **repository secrets**: `ANDROID_KEYSTORE_BASE64` (the text in
-   `extas-erp.jks.txt`), `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` (`extas`) and
-   `ANDROID_KEY_PASSWORD`. From then on each build also makes `app-release.apk`; give staff
-   that one. Each build has a higher version number, so it installs over the previous one.
+   Keep the secrets where only the `main` branch can use them, never a pull request:
+   open the repository's **Settings → Environments → New environment**, name it
+   `android-signing` and press **Configure environment**. Under **Deployment branches and
+   tags** choose **Selected branches and tags**, press **Add deployment branch or tag rule**,
+   type `main` and press **Add rule**. Then, on the same page under **Environment secrets**,
+   press **Add environment secret** for each of these: `ANDROID_KEYSTORE_BASE64` (the text
+   in `extas-erp.jks.txt`), `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` (`extas`) and
+   `ANDROID_KEY_PASSWORD`. If you added them before as repository secrets (**Settings →
+   Secrets and variables → Actions**), delete the four repository secrets there: a pull
+   request could read those. From then on each build of `main` also makes
+   `app-release.apk`, under **Artifacts** as `extas-erp-android-…-release`; give staff that
+   one. Each build has a higher version number, so it installs over the previous one. Builds
+   for a pull request make only `app-debug.apk`.
 
 The workflow also runs on every change to `mobile/`, to check the app still builds. If the
 address changes, change `EXTAS_APP_URL`, build again and send the new APK.

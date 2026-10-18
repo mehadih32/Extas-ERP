@@ -1217,6 +1217,8 @@ export async function replaceFromCutting(
   const pieces = lines.reduce((t, l) => t + l.quantity, 0);
   const report = await prisma.$transaction(async (tx) => {
     await lockRow(tx, "ProductionProject", project.id);
+    // A saved CM settlement counts the pieces cut: it is undone first.
+    await lockAgainstCmSettlement(tx, ctx.company.id, project, "cutting");
     const made = await tx.cuttingReport.create({
       data: {
         companyId: ctx.company.id,

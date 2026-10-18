@@ -635,7 +635,7 @@ export function EmbroideryJobs({ screen, currency }: { screen: CuttingScreen; cu
                       Receive back
                     </Button>
                   )}
-                  {j.toReplace > 0 && (
+                  {j.toReplace > 0 && screen.can.cut && (
                     <Button
                       type="button"
                       size="sm"
@@ -660,8 +660,9 @@ export function EmbroideryJobs({ screen, currency }: { screen: CuttingScreen; cu
           onClose={() => setReceiving(null)}
           onDone={(back) => {
             setReceiving(null);
-            if (back.spoiled > 0) {
-              // "Replace from cutting immediately": straight on to cutting them again.
+            if (back.spoiled > 0 && screen.can.cut) {
+              // "Replace from cutting immediately": straight on to cutting them again
+              // (not while a saved CM settlement counts the pieces cut).
               setReplacing({
                 job: {
                   ...receiving,

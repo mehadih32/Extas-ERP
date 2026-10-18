@@ -42,8 +42,8 @@ const JOINED_AFTER = /^[-/]\d/;
 
 /**
  * The numbers in a message that could be a PIN: each run of 4 to 8 digits,
- * once (the bot hides a message with any of them unchecked; the ERP's chat
- * checks them). Only digits that are clearly part of a document number are
+ * once (the bot and the ERP's chat hide a message with any of them, unchecked).
+ * Only digits that are clearly part of a document number are
  * left out: capital letters right before them, as in "PO4501" or
  * "CS-2026-0001", or joined to more digits by - or /, as in "SO/2026/0112" or
  * a date. Anything else counts: "PIN-4321", "2468ok", and Bengali words stuck

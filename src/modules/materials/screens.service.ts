@@ -24,7 +24,11 @@ import {
   materialUses,
   openOrderLines,
 } from "@/modules/materials/material.service";
-import { getPurchaseOrder, listPurchaseOrders } from "@/modules/materials/purchase-order.service";
+import {
+  bookingOrderMessage,
+  getPurchaseOrder,
+  listPurchaseOrders,
+} from "@/modules/materials/purchase-order.service";
 import { getPurchase, listPurchases } from "@/modules/materials/purchase.service";
 import {
   canArchiveMaterial,
@@ -583,6 +587,8 @@ export async function getOrderScreen(ctx: CompanyContext, orderId: string) {
     received: o.lines.some((l) => l.receivedQty.gt(0)),
     awaitingApproval: o.awaitingApproval,
   };
+  // A booking's order is closed or cancelled by those who may close bookings.
+  const end = access.buy && (!o.bookingId || ctx.can("production.bookings.close"));
   return {
     order: {
       id: o.id,
@@ -657,8 +663,8 @@ export async function getOrderScreen(ctx: CompanyContext, orderId: string) {
     can: {
       edit: access.buy && canChangeOrder(state).ok,
       editLines: access.buy && canChangeOrderLines(state).ok,
-      cancel: access.buy && canCancelOrder(state).ok,
-      close: access.buy && canCloseOrder(state).ok,
+      cancel: end && canCancelOrder(state).ok,
+      close: end && canCloseOrder(state).ok,
       receive: access.receive && canReceiveOnOrder(state).ok,
       openParty: access.openParty,
     },
@@ -679,6 +685,7 @@ export async function getOrderForm(
   const base = { today: today(ctx) };
   if (options.orderId) {
     const o = await getPurchaseOrder(ctx, options.orderId);
+    if (o.bookingId) throw new AppError("CONFLICT", bookingOrderMessage(o.number));
     const state = {
       number: o.number,
       status: o.status,

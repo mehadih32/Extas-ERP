@@ -804,12 +804,13 @@ run("Mehedi 2.0", () => {
       title: "Check the bookings",
       assigneeId: null,
     });
-    const [follow] = await say("Follow up: Nordic Wear, in 3 days, PO 4501");
+    // Written with its letters: a bare number of 4 to 8 digits is hidden (v6.4.2).
+    const [follow] = await say("Follow up: Nordic Wear, in 3 days, PO4501");
     expect(await prisma.aiFollowUp.count()).toBe(0);
     await applyCard(env.owner, follow!.id);
     const today = localDay(new Date(), env.company.timezone);
     const row = await prisma.aiFollowUp.findFirstOrThrow();
-    expect(row).toMatchObject({ partyId: env.buyer.id, recordLabel: "PO 4501", status: "OPEN" });
+    expect(row).toMatchObject({ partyId: env.buyer.id, recordLabel: "PO4501", status: "OPEN" });
     expect(row.dueOn.toISOString().slice(0, 10)).toBe(addDays(today, 3));
 
     // A card that fails is offered again.
@@ -866,7 +867,7 @@ run("Mehedi 2.0", () => {
 
     const sent = mailbox();
     await saveMailSettings(env.owner, MAIL);
-    const [drafted] = await say("Draft follow-up to Nordic Wear, about PO 4501");
+    const [drafted] = await say("Draft follow-up to Nordic Wear, about PO4501");
     expect(cardOf(drafted!)).toMatchObject({
       type: "draft",
       party: "Nordic Wear AB",

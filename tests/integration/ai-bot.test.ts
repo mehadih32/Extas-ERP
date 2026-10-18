@@ -62,7 +62,6 @@ import { pinScrubReport } from "@/modules/ai/bot/pin-scrub";
 import { PIN_HIDDEN_TEXT, sendChat } from "@/modules/ai/chat/chat.service";
 import {
   BOT_PIN_LOCKED,
-  CHAT_PIN_CHECKS,
   checkPin,
   PIN_TRIES,
   PIN_TRIES_USED,
@@ -1518,38 +1517,40 @@ run("The bot", () => {
     expect(api.said(OWNER_CHAT).at(-1)).not.toBe(PIN_NOT_REMOVED_TEXT);
   }, 30_000);
 
-  it("the ERP's own chat keeps working after many numbers, counts apart from the bot and still hides the PIN (v6.4.1)", async () => {
+  it("the ERP's own chat hides every number of 4 to 8 digits unchecked, with the bot's words, so no answer tells the PIN (v6.4.2)", async () => {
     await prisma.user.update({ where: { id: env.owner.user.id }, data: { isSuperAdmin: true } });
     await setAiSwitch(env.owner, true);
     await setPin(env.owner, { pin: "2468" });
-    for (let i = 0; i < 15; i++) {
-      const rows = await sendChat(env.owner, { text: `status of order ${1200 + i} pcs` });
-      expect(rows[0]!.text).not.toBe(PIN_HIDDEN_TEXT);
+    const answer = async (text: string) => {
+      resetRateLimits();
+      const rows = await sendChat(env.owner, { text });
+      return rows.map((r) => [r.text, r.intent]);
+    };
+    // The PIN and any other number: the same answer, the bot's own words.
+    const pin = await answer("2468");
+    expect(pin).toEqual([[NUMBER_HIDDEN_TEXT, "pin.hidden"]]);
+    expect(PIN_HIDDEN_TEXT).toBe(NUMBER_HIDDEN_TEXT);
+    for (const text of ["1357", "pin 2468", "status of order 1200 pcs", "PO 4500 is late"]) {
+      expect(await answer(text), text).toEqual(pin);
     }
+    // However many: never checked against the PIN, never counted, no alarm.
+    for (let i = 0; i < 120; i++) expect(await answer(`order ${9000 + i}`)).toEqual(pin);
+    expect(await prisma.aiPinTry.count()).toBe(0);
+    expect(await prisma.notificationLog.count()).toBe(0);
+    expect(await checkPin(env.company.id, "2468", env.owner.user.id)).toBe(true);
     expect(
-      await prisma.aiChatMessage.count({
-        where: { role: "OWNER", text: { startsWith: "status" } },
-      }),
-    ).toBe(15);
-    expect(await prisma.aiPinTry.count({ where: { kind: { not: "CHAT" } } })).toBe(0);
-    const alarms = (subject: string) => prisma.notificationLog.count({ where: { subject } });
-    // The PIN itself is still hidden.
-    const rows = await sendChat(env.owner, { text: "pin 2468" });
-    expect(rows.map((r) => r.text)).toEqual([PIN_HIDDEN_TEXT]);
-    expect(await prisma.aiChatMessage.count({ where: { text: { contains: "2468" } } })).toBe(0);
-    // Far past normal use (a hundred new numbers in fifteen minutes) the chat stops
-    // checking and hides, so it can never be used to search for the PIN; the owner is told.
-    await prisma.aiPinTry.updateMany({ where: { kind: "CHAT" }, data: { count: CHAT_PIN_CHECKS } });
-    resetRateLimits();
-    expect((await sendChat(env.owner, { text: "status of order 9999" }))[0]!.text).toBe(
-      PIN_HIDDEN_TEXT,
-    );
-    expect(await alarms("Many numbers in the AI chat")).toBe(1);
-    expect(await alarms("Wrong PIN on the bot")).toBe(0);
-    await fifteenMinutesLater();
-    expect((await sendChat(env.owner, { text: "status of order 9999" }))[0]!.text).not.toBe(
-      PIN_HIDDEN_TEXT,
-    );
+      await prisma.aiChatMessage.count({ where: { role: "OWNER", text: { not: "[PIN]" } } }),
+    ).toBe(0);
+    // Document numbers with their letters, dates and words go to Mehedi 2.0 as typed.
+    for (const text of [
+      "status of PO4501",
+      "CS-2026-0001 costing",
+      "ship on 18/10/2026",
+      "status",
+    ]) {
+      expect((await answer(text))[0]![1]).not.toBe("pin.hidden");
+      expect(await prisma.aiChatMessage.count({ where: { role: "OWNER", text } })).toBe(1);
+    }
   });
 
   it("hides the PIN typed into the ERP's own chat: never kept, never sent to the AI (v6.4.1)", async () => {
@@ -1562,9 +1563,9 @@ run("The bot", () => {
     expect(await prisma.aiChatMessage.findFirstOrThrow({ where: { role: "OWNER" } })).toMatchObject(
       { text: "[PIN]", intent: "pin.hidden" },
     );
-    // An ordinary number goes through as typed.
-    await sendChat(env.owner, { text: "status of PO 4501" });
-    expect(await prisma.aiChatMessage.count({ where: { text: "status of PO 4501" } })).toBe(1);
+    // An order number with its letters goes through as typed.
+    await sendChat(env.owner, { text: "status of PO4501" });
+    expect(await prisma.aiChatMessage.count({ where: { text: "status of PO4501" } })).toBe(1);
   });
 
   it("saves an AI draft under the AI's account, and sends from the bot only the draft as it was shown (v6.4.1)", async () => {

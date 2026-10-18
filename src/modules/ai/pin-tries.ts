@@ -7,16 +7,22 @@ import { prisma } from "@/lib/prisma";
  * of the server does not start the count again (v6.4.1). The counts:
  *   - "PIN": wrong PINs, on every path (the ERP, the chat, the bot's question),
  *     over fifteen minutes; a right PIN does not count;
- *   - "CHAT": new numbers the ERP's own AI chat checked to hide a PIN typed by
- *     mistake, over fifteen minutes;
  *   - "BOT_PIN": wrong PINs the bot asked for, per store (subject "bot"), over a
  *     day (v6.4.2): from the 5th each one alarms the owner, the 20th stops PIN
  *     actions on the bot until the owner unlocks them (settings.service.ts).
- * ("NUMBER" rows, from before v6.4.2, counted numbers the bot checked; the bot
- * checks none now.) When "PIN" or "CHAT" reaches its limit the owner is told at
- * once (the inbox and the bot, as an alarm: AI on or off), once per fifteen
- * minutes. Only counts and times are kept, never a PIN or a number.
+ * ("NUMBER" and "CHAT" rows, from before v6.4.2, counted numbers the bot and the
+ * ERP's chat checked; neither checks a number it did not ask for now.) When
+ * "PIN" reaches its limit the owner is told at once (the inbox and the bot, as
+ * an alarm: AI on or off), once per fifteen minutes. Only counts and times are
+ * kept, never a PIN or a number.
  */
+
+/**
+ * What the bot and the ERP's AI chat say after hiding a number they did not ask
+ * for: the same words whatever the number, so they never tell whether it was the PIN.
+ */
+export const NUMBER_HIDDEN_TEXT =
+  "Your message had a number of 4 to 8 digits, so it was hidden and nothing was done. Every such number is hidden when your PIN was not asked for, so nobody can learn your PIN from the answers. Give your PIN only when it is asked for. Write an order or document number with its letters (like PO4501).";
 
 /** The most numbers of one message checked against the PIN (each check takes a moment). */
 const MAX_PIN_CANDIDATES = 12;
@@ -62,7 +68,7 @@ export function pinCandidates(text: string): string[] {
   return [...new Set(runs)].slice(0, MAX_PIN_CANDIDATES);
 }
 
-export type PinTryKind = "PIN" | "CHAT" | "BOT_PIN";
+export type PinTryKind = "PIN" | "BOT_PIN";
 
 export const PIN_TRY_MINUTES = 15;
 
@@ -109,10 +115,6 @@ const ALARM: Record<
   PIN: (who, limit) => ({
     subject: "Too many wrong PINs",
     body: `${who}: a wrong PIN was given ${limit} times in ${PIN_TRY_MINUTES} minutes (in the ERP or on the bot). PIN tries are stopped for ${PIN_TRY_MINUTES} minutes. If it was not you, change your password now, then wait ${PIN_TRY_MINUTES} minutes and change your PIN (AI Center > Settings).`,
-  }),
-  CHAT: (who, limit) => ({
-    subject: "Many numbers in the AI chat",
-    body: `${who}: ${limit} new numbers were written in the AI chat in the ERP in ${PIN_TRY_MINUTES} minutes. Someone may be looking for your PIN, so for ${PIN_TRY_MINUTES} minutes the chat hides every message with a new number. If it was not you, change your password and your PIN now (AI Center > Settings).`,
   }),
 };
 

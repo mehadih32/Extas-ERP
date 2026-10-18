@@ -2,6 +2,7 @@ import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 
 import { takeRequest } from "./after-restore";
+import { reportCmRulesReview } from "./cm-review";
 import { reportNotChecked } from "./report";
 import { startBugGuard } from "./runner";
 import { platformCompanyId } from "./security";
@@ -21,6 +22,10 @@ import type { Check } from "./types";
  * The report goes to the ERP inbox and on Telegram (the owner's own alarm, sent
  * whether the AI is on or off), marked "after the update". A company that could
  * not be checked is told too: the update itself stays installed.
+ * Then, once per company (v6.4.2), the read-only review of what is already
+ * saved under the new money rules goes to the owner's inbox (cm-review.ts):
+ * saved CM settlements that would come out different, and open bookings for one
+ * style that a fabric change will not mark red. It changes nothing.
  * A restore drill copy or a copy on standby takes the request too (deploy.sh does
  * not wait for it) but checks nothing: the Full check is of the live address, which
  * such a copy does not own; its own Bug Guard schedule goes on as before.
@@ -60,6 +65,7 @@ export async function bugGuardAfterDeploy(
   });
   const results: AfterDeployCompany[] = [];
   for (const company of companies) {
+    await afterUpdateReview(company.id);
     try {
       const started = await startBugGuard(company.id, "AFTER_DEPLOY", null, {
         wait: true,
@@ -87,4 +93,13 @@ export async function bugGuardAfterDeploy(
     }
   }
   return results;
+}
+
+/** The review after the v6.4.2 update (never stops the check after the update). */
+async function afterUpdateReview(companyId: string) {
+  try {
+    await reportCmRulesReview(companyId);
+  } catch (error) {
+    console.error("[bug-guard] after the update: the review of saved settlements failed", error);
+  }
 }

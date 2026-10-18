@@ -171,6 +171,14 @@ run("Bug Guard once after each update (D5)", () => {
     expect(inbox[0]!.body).toContain("আপডেটের পরের চেক");
     expect(inbox[0]!.body).toContain("কোনো ডেটা বদলায়নি");
     expect(inbox[0]!.body).toContain("Full check GitHub-এ চলছে");
+    // v6.4.2: the read-only review of saved CM settlements and bookings, once, in plain words.
+    const review = await told("Bug Guard: nothing to review after the update");
+    expect(review).toHaveLength(1);
+    expect(review[0]!.body).toContain("Nothing was changed.");
+    expect(review[0]!.body).toContain("No saved CM settlement would come out different");
+    await ask();
+    await bugGuardAfterDeploy({ checks: CHECKS });
+    expect(await told("Bug Guard: nothing to review after the update")).toHaveLength(1);
 
     // A run on the owner's schedule does prepare (so the test above means something).
     world.write = false;

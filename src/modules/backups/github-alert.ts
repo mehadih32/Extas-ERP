@@ -21,8 +21,9 @@ import { platformCompanyId } from "@/modules/bug-guard/security";
  * (libsodium's sealed box, src/lib/sealed-box.ts: only GitHub Actions can open
  * it) and sends it to GitHub itself. The token is used for this and forgotten;
  * nothing of the values is kept or logged here, only the repository and when.
- * A restore drill copy (test mode) never does it: it holds the real ERP's sign-ins
- * and would overwrite the repository's secrets (like github/github.ts, it refuses).
+ * A restore drill copy (test mode) or a copy on standby never does it: it holds the
+ * real ERP's sign-ins and would overwrite the repository's secrets (like
+ * github/github.ts, it refuses).
  * GITHUB_API_URL points the calls elsewhere in tests.
  */
 
@@ -46,7 +47,7 @@ async function github(
   path: string,
   body?: unknown,
 ) {
-  // A restore drill copy (test mode) only reads: it never sets a secret.
+  // A restore drill copy (test mode) or a copy on standby only reads: it never sets a secret.
   if (method !== "GET") await refuseOnDrill();
   let response: Response;
   try {
@@ -86,8 +87,10 @@ async function github(
 }
 
 async function refuseOnDrill() {
-  const { DRILL_NOT_SENT, onDrill } = await import("@/modules/backups/standby");
+  const { DRILL_NOT_SENT, onDrill, onStandby, STANDBY_NOT_DONE } =
+    await import("@/modules/backups/standby");
   if (await onDrill()) throw new AppError("UNAVAILABLE", DRILL_NOT_SENT);
+  if (await onStandby()) throw new AppError("UNAVAILABLE", STANDBY_NOT_DONE);
 }
 
 /** Everything the alert needs from this ERP, or a plain reason what to set up first. */

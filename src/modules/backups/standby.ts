@@ -13,8 +13,10 @@ import { backupRoot } from "@/modules/backups/backup-core";
  * that is used after all is never left without them; its backups are marked as
  * made on standby (Enter never picks one in a restore). Its reminders, messages,
  * Mehedi 2.0's clocks and the housekeeping wait, so two ERPs never send them at
- * once. deploy/go-live.sh takes the mark away once the web address reaches this
- * server; they then run within a minute.
+ * once. Nor does it change anything on GitHub (github/github.ts, github-alert.ts:
+ * STANDBY_NOT_DONE), and its Bug Guard asks for no Full check and prepares no fix
+ * (notTheErpInUse): those are the ERP in use's. deploy/go-live.sh takes the mark
+ * away once the web address reaches this server; they then run within a minute.
  *
  * A restore drill copy (bootstrap.sh --drill, the guide's "Practice: a restore
  * drill") has BACKUP_DIR/.drill, written before the ERP first starts, and stays
@@ -42,6 +44,13 @@ export const DRILL_LINE =
 /** Why something was not sent from a drill copy (a refused email, bot message or Drive call). */
 export const DRILL_NOT_SENT =
   "Not sent: this is a restore drill copy (test mode), which sends nothing and does not use Google Drive.";
+
+/**
+ * Why a copy on standby makes no change on GitHub (an issue for Claude Code, a merge,
+ * the Full check, the alert's secrets): those are for the ERP in use only.
+ */
+export const STANDBY_NOT_DONE =
+  "Not done: this ERP is on standby after a restore (its web address does not point here), and only the ERP in use makes changes on GitHub. When this server is the one to use, run sudo ./deploy/go-live.sh on it first.";
 
 /** Why the AI does nothing on a drill copy (AI Center, every AI button and the key test). */
 export const DRILL_NO_AI =
@@ -123,6 +132,17 @@ export async function drillInfo(): Promise<DrillResult | null> {
 /** On standby after a restore (the web address does not point here yet). */
 export async function onStandby(): Promise<boolean> {
   return exists(STANDBY_MARK);
+}
+
+/**
+ * Why this copy is not the ERP in use (a restore drill copy, or one on standby
+ * after a restore), or null when it is. Such a copy never asks GitHub for the
+ * Full check (it checks the live web address) nor prepares Claude Code fixes.
+ */
+export async function notTheErpInUse(): Promise<string | null> {
+  if (await onDrill()) return "this is a restore drill copy (test mode)";
+  if (await onStandby()) return "this copy is on standby (the web address does not point here)";
+  return null;
 }
 
 /**

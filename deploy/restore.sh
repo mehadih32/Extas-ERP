@@ -18,11 +18,19 @@
 #                  keep this server's own backup settings (the recovery key, the
 #                  schedule, Google Drive), not the backup's (restore-request.sh)
 #   --after-restart
-#                  only put back a restore cut off half-way (the server restarted, or
-#                  it was stopped) and start the ERP; systemd runs it when the server
-#                  starts (lib.sh install_backup_helpers). Every restore does it first.
+#                  only settle a restore cut off half-way (the server restarted, or it
+#                  was stopped): start the ERP as it is and tell the owner how to undo
+#                  it, never putting anything back by itself (lib.sh settle_cut_restore);
+#                  delete opened backups left from before the server started; end a
+#                  standby the restore command left over the ERP in use once its web
+#                  address points here. systemd runs it when the server starts (lib.sh
+#                  install_backup_helpers). Every restore and update settles first too.
+# A dropped PuTTY connection does not stop a restore: it goes on, and what it says
+# goes on into the log too (/var/log/extas-erp-restore.log). Ctrl+C, or a stop at
+# shutdown, ends it as NOT done.
 # shellcheck source=deploy/lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+trap '' HUP
 
 confirmed=0
 check=0
@@ -62,6 +70,10 @@ outcome=""
 safety=""
 went_back=0
 problems=""
+# 1 once the restore got to its end (the last line); with exit code 0 and no running
+# mark left, only then is it written as done.
+finished=0
+running_mark=""
 step() {
   say "$1"
   [ -n "$status_file" ] || return 0
@@ -69,9 +81,12 @@ step() {
     "$status_file" 2>/dev/null || true
 }
 write_result() {
-  local code=$?
+  local code=$? ok=0
   [ -n "$result_file" ] || return 0
-  OK="$([ "$code" = 0 ] && echo 1 || echo 0)" MESSAGE="${outcome:-the restore stopped (exit code $code)}" \
+  if [ "$code" = 0 ] && [ "$finished" = 1 ] && { [ -z "$running_mark" ] || [ ! -f "$running_mark" ]; }; then
+    ok=1
+  fi
+  OK="$ok" MESSAGE="${outcome:-the restore stopped (exit code $code)}" \
     NAME="$(basename "${folder_arg:-}")" STARTED="$started_at" SAFETY="$safety" WENT_BACK="$went_back" \
     PROBLEMS="$problems" python3 - "$result_file" <<'PY' || true
 import json, os, sys, datetime
@@ -95,76 +110,66 @@ fail() {
   outcome="$1"
   die "$1"
 }
+# Ctrl+C, or a stop (systemd at shutdown): never written as done (I1). Nothing is put
+# back here: the database may be going in still; the next start of the server, the
+# next restore or update settles it (lib.sh settle_cut_restore).
+restored=0
+on_stop() {
+  trap '' INT TERM
+  if [ -n "$running_mark" ] && [ -f "$running_mark" ]; then
+    fail "the restore was stopped before it finished ($1). Nothing was put back automatically, and the ERP stays stopped until the server starts again or until you run: sudo $DEPLOY_DIR/restore.sh --after-restart (it then starts the ERP and says how to undo the restore)."
+  elif [ "$restored" = 1 ]; then
+    fail "the restore was stopped ($1) after the backup was back and the ERP was running, before its check finished: the screens were NOT all checked. To undo it, restore the safety copy: sudo $DEPLOY_DIR/restore.sh $safety"
+  fi
+  fail "the restore was stopped before it finished ($1); the ERP's data was not changed."
+}
+trap 'on_stop "Ctrl+C"' INT
+trap 'on_stop "it was told to stop"' TERM
 
 need_root
 load_settings
-take_update_lock
+# Run in a terminal (PuTTY): also into the log, so a dropped connection loses nothing.
+if [ -t 1 ] || [ -t 2 ]; then
+  exec > >(
+    trap '' INT TERM
+    exec tee --output-error=warn -a "$RESTORE_LOG"
+  ) 2>&1
+fi
 
 # While a restore runs, from stopping the app until it runs again (on the restored
 # data, or on the data from before): line 1 the restore's time, line 2 "safety copy"
-# once that is saved. Left behind only when the restore was cut off half-way (the
-# server restarted, or it was stopped): the app then stays stopped, so the next
-# start of the server (systemd, --after-restart) or the next restore puts the ERP
-# back as it was before that restore and starts it. Never left down, never half
-# restored.
+# once that is saved, line 3 the backup's name. Left behind only when the restore was
+# cut off half-way (the server restarted, or it was stopped): the app then stays
+# stopped until the next start of the server (systemd, --after-restart), the next
+# restore or the next update settles it (lib.sh settle_cut_restore).
 running_mark="$DATA_DIR/backups/.restore-running"
-put_back=0
-undo_cut_restore() {
-  [ -f "$running_mark" ] || return 0
-  local cut cut_safety database=1
-  cut="$(sed -n 1p "$running_mark")"
-  cut_safety="$(sed -n 2p "$running_mark")"
-  [[ "$cut" =~ ^[0-9_-]+$ ]] || cut=""
-  step "A restore was cut off before it finished (the server restarted, or it was stopped): putting the ERP back as it was before that restore"
-  compose up -d db || true
-  wait_healthy db || fail "the database did not start; see sudo ./deploy/logs.sh db. The ERP stays stopped until this runs again: sudo $0 --after-restart"
-  compose stop app >/dev/null 2>&1 || true
-  if [ -n "$cut" ] && [ "$cut_safety" = "safety copy" ]; then
-    # The database may have been replaced already: back to its safety copy (the
-    # app was stopped before it was saved, so nothing is lost).
-    if [ -f "$DATA_DIR/safety-copies/before-restore-$cut/database.dump" ] &&
-      restore_database "/safety-copies/before-restore-$cut/database.dump"; then
-      rm -f "$DATA_DIR/backups/.restored.json" "$DATA_DIR/backups/.restored.kept"
-    else
-      database=0
-    fi
-  fi
-  if [ -n "$cut" ] && [ -d "$DATA_DIR/uploads.before-restore-$cut" ]; then
-    rm -rf "$DATA_DIR/uploads.failed-restore-$cut"
-    [ ! -e "$DATA_DIR/uploads" ] || mv "$DATA_DIR/uploads" "$DATA_DIR/uploads.failed-restore-$cut"
-    mv "$DATA_DIR/uploads.before-restore-$cut" "$DATA_DIR/uploads"
-  fi
-  rm -rf "$DATA_DIR/uploads.restoring"
-  if [ "$database" = 0 ]; then
-    # Never started on a database that may be half way: the owner restores by hand,
-    # or the restore asked for now replaces it.
-    [ "$after_restart" = 0 ] || fail "the database could not be put back as it was before the restore that was cut off, so the ERP stays stopped. Restore its safety copy: sudo $0 $DATA_DIR/safety-copies/before-restore-$cut (or a backup)."
-    rm -f "$running_mark"
-    say "Note: the database could not be put back as it was before the restore that was cut off; this restore replaces it"
-    return 0
-  fi
-  # The data is as it was before that restore: nothing is left to put back.
-  rm -f "$running_mark"
-  put_back=1
-  compose up -d || true
-  if wait_healthy app; then
-    say "The ERP runs again as it was before the restore that was cut off"
-  elif [ "$after_restart" = 1 ]; then
-    fail "the data is back as it was before the restore that was cut off, but the ERP did not start on it; see sudo ./deploy/logs.sh app"
-  else
-    say "The data is back as it was before the restore that was cut off, but the ERP did not start on it; this restore goes on"
-  fi
-}
-undo_cut_restore
 if [ "$after_restart" = 1 ]; then
-  # At the server's start: an ERP that was in use, put on standby by the restore
-  # command (bootstrap.sh) for a restore that never finished, is in use again.
-  if [ "$put_back" = 1 ] && [ -f "$DATA_DIR/backups/.standby.was-in-use" ]; then
-    rm -f "$DATA_DIR/backups/.standby" "$DATA_DIR/backups/.standby.was-in-use"
-    say "The ERP that was in use here is not on standby: it runs as before the restore that was cut off"
+  # At the server's start: an update or restore running now settles it itself; it is
+  # waited for (up to an hour), never skipped.
+  wait_update_lock 3600 ||
+    die "another update or restore was still running after an hour; it settles the restore that was cut off itself."
+  CUT_RESTORE=0
+  settle_cut_restore || app_down=1
+  # Opened backups (plain data) left by a restore cut off before the server started.
+  boot="$(awk '/^btime/ {print $2}' /proc/stat)"
+  if [ -n "$boot" ] && [ -d "$DATA_DIR/backups/restores" ]; then
+    find "$DATA_DIR/backups/restores" -mindepth 1 -maxdepth 1 ! -newermt "@$boot" \
+      -exec rm -rf {} + 2>/dev/null || true
   fi
-  exit 0
+  # The restore command (bootstrap.sh) put the ERP in use here on standby and was cut
+  # off before it finished, with no restore cut off half-way: in use again once its web
+  # address points here, as the command does itself (standby_after_failure).
+  backups="$DATA_DIR/backups"
+  if [ "$CUT_RESTORE" = 0 ] && [ -f "$backups/.standby.was-in-use" ] && [ ! -f "$backups/.drill" ] &&
+    [ -n "$APP_DOMAIN" ] && [ "$APP_DOMAIN" != localhost ] &&
+    web_address_here "$APP_DOMAIN" "$backups/.standby" >/dev/null 2>&1; then
+    rm -f "$backups/.standby" "$backups/.standby.was-in-use"
+    say "The ERP that was in use here is not on standby: its web address points to this server"
+  fi
+  exit "${app_down:-0}"
 fi
+take_update_lock
+settle_cut_restore || say "Note: the ERP did not start after the restore that was cut off; this restore goes on"
 
 prune_old_uploads
 forget_secrets_in_history || true
@@ -220,7 +225,7 @@ wait_healthy db || fail "the database did not start; see sudo ./deploy/logs.sh d
 # is lost when the restore goes back to it or is undone. The site is down from here
 # until the restored ERP starts (or the one from before, when anything fails).
 step "Stopping the app"
-printf '%s\n' "$stamp" >"$running_mark"
+printf '%s\n\n%s\n' "$stamp" "$(basename "$folder")" >"$running_mark"
 compose stop app
 
 # Starts the app again on the database as it was (nothing replaced yet), whatever the
@@ -236,7 +241,7 @@ if ! safety="$(safety_copy "before-restore-$stamp")"; then
   start_again
   fail "the safety copy of the database could not be saved (is the disk full? sudo df -h), so nothing was restored."
 fi
-printf '%s\nsafety copy\n' "$stamp" >"$running_mark"
+printf '%s\nsafety copy\n%s\n' "$stamp" "$(basename "$folder")" >"$running_mark"
 echo "Saved in $safety"
 
 # Puts the ERP back as it was just before the restore (the safety copy of the
@@ -341,8 +346,9 @@ if ! compose up -d || ! wait_healthy app; then
   # Never left down: back to the data as it was just before the restore.
   go_back "the ERP did not start on the restored data"
 fi
-# The restored ERP runs: from here on, a restart never takes it back.
+# The restored ERP runs: from here on, nothing is left to settle after a restart.
 rm -f "$running_mark"
+restored=1
 
 if [ "$check" = 1 ]; then
   step "Opening every screen to check the restored ERP"
@@ -376,3 +382,4 @@ else
   echo "the uploaded files were not changed by this restore."
 fi
 outcome="${outcome:-Restored from $(basename "$folder"); every screen opened.}"
+finished=1

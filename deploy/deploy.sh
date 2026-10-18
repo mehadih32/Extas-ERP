@@ -24,6 +24,9 @@ done
 need_root
 load_settings
 take_update_lock
+# A restore cut off half-way left the app stopped: it is started as it is and the owner
+# told, never put back by itself (lib.sh settle_cut_restore), before anything else.
+settle_cut_restore || say "Note: the ERP did not start after the restore that was cut off; the update goes on"
 [ -n "$APP_DOMAIN" ] || die "APP_DOMAIN is empty in deploy/.env."
 
 say "Preparing the data folders in $DATA_DIR"

@@ -513,6 +513,8 @@ describe("the guide and the restore command's own words (v6.4.1 restore)", () =>
       "Finished in ..., but NOT everything is right",
       "THIS ERP IS ON STANDBY",
       "stopped: ... does not point to this server yet",
+      // An earlier restore cut off half-way, settled at the start of this one (v6.4.1 review 3).
+      "A restore was cut off before it finished",
     ]) {
       const message = OTHER_MESSAGES.find((m) => m.shown === shown);
       expect(message, shown).toBeDefined();

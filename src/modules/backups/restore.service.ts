@@ -1,5 +1,5 @@
 import { createHmac } from "node:crypto";
-import { readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import type { Prisma } from "@prisma/client";
@@ -43,6 +43,12 @@ import { restoreRequestSchema } from "@/modules/backups/schemas";
 const WATCHER_MARK = ".restore-helper";
 const REQUEST = "restore-request.json";
 const RESULT = "restore-result.json";
+/**
+ * A restore cut off half-way, settled later by the server (deploy/lib.sh
+ * settle_cut_restore): always NOT done, in a file of its own, so the restore that
+ * may run next never writes over it.
+ */
+const CUT_RESULT = /^restore-cut-[\w-]+\.json$/;
 const STATUS = "restore-status.json";
 
 /** Whether this server can restore from the screen (deploy.sh installed its helper). */
@@ -184,11 +190,23 @@ type RestoreResult = {
 
 /**
  * Step 4: records the server's result once the ERP is back (the database now
- * is the backup's, so the restore's own record is made here, afterwards).
+ * is the backup's, so the restore's own record is made here, afterwards), and
+ * the note of any restore cut off half-way before it. True when one was recorded.
  */
 export async function recordRestoreResult(): Promise<boolean> {
   const root = backupRoot();
-  const file = path.join(root, RESULT);
+  const cut = (await readdir(root).catch(() => [] as string[]))
+    .filter((name) => CUT_RESULT.test(name))
+    .sort();
+  let recorded = false;
+  for (const name of [...cut, RESULT]) {
+    if (await recordResultFile(root, name)) recorded = true;
+  }
+  return recorded;
+}
+
+async function recordResultFile(root: string, name: string): Promise<boolean> {
+  const file = path.join(root, name);
   let result: RestoreResult;
   try {
     result = JSON.parse(await readFile(file, "utf8")) as RestoreResult;
@@ -196,9 +214,10 @@ export async function recordRestoreResult(): Promise<boolean> {
     return false;
   }
   // Taken once, even if recording fails below.
-  await rename(file, path.join(root, `restore-result-${Date.now()}.done.json`)).catch(
-    () => undefined,
-  );
+  await rename(
+    file,
+    path.join(root, `${name.replace(/\.json$/, "")}-${Date.now()}.done.json`),
+  ).catch(() => undefined);
   await rm(path.join(root, STATUS), { force: true });
   const run = await prisma.backupRun.create({
     data: {

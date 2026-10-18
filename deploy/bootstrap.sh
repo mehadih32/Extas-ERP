@@ -3,11 +3,13 @@
 # whole ERP back on a new Ubuntu server from a backup in Google Drive: it
 # installs what is needed, signs in to Google with a code on the phone, lists
 # the backups newest first, downloads and checks the one picked (Enter: the
-# newest), opens it with the recovery key (read from Drive when the owner keeps
-# it there), restores the database, the files, the settings and the code,
-# points the web address at this server in Cloudflare, gets HTTPS, starts the
-# ERP and the demo site, runs the checks and compares every table and file with
-# the backup's list.
+# newest that passed its check), opens it with the recovery key (read from Drive
+# when the owner keeps it there), restores the database, the files, the settings
+# and the code, and only then points the web address at this server in
+# Cloudflare, gets HTTPS, starts the demo site, runs the checks and compares
+# every table and file with the backup's list. A second try after a stop goes on
+# with the sign-in and the download of the first (kept locked); nothing opened
+# stays on the disk.
 #
 # It is public and holds no secret, and it needs no GitHub sign-in: the code
 # comes from the backup itself. The command in the restore guide downloads it
@@ -34,7 +36,7 @@ set -euo pipefail
 umask 022
 
 REPO=mehadih32/Extas-ERP
-RESTORE_TOOL_SHA256=a9f8d4849ef9fe610a126d1c938bcd482dba6b585b91c657dc3f44a1704a71a7
+RESTORE_TOOL_SHA256=b3d92d68d798984279f63b8e567d3deb59347ed34d3d17aaad96118f50f2ce1f
 # Drills only: a stand-in for raw.githubusercontent.com (the tool is still checked).
 RAW_BASE="${EXTAS_RAW_BASE:-https://raw.githubusercontent.com}"
 SEARCH_ROOTS="${EXTAS_SEARCH_ROOTS:-/opt /srv /home /root /var/lib /data /mnt}"
@@ -81,8 +83,45 @@ answer() {
   fi
   { : </dev/tty; } 2>/dev/null ||
     fail R25 "there is no keyboard to answer \"$prompt\". Run the command in PuTTY as the guide shows."
+  flush_keys
   read -r -p "$prompt" value </dev/tty
   printf '%s' "$value"
+}
+
+# Drops whatever was typed before a question: an Enter pressed earlier (while the
+# restore worked, or a second one after a paste) must never answer it.
+flush_keys() {
+  python3 -I -c 'import os, termios
+fd = os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY)
+termios.tcflush(fd, termios.TCIFLUSH)' 2>/dev/null || true
+}
+
+# A new Azure VM installs its own updates in its first minutes (cloud-init, then
+# the automatic updates): apt waits until they are done instead of failing.
+apt_busy() {
+  local lock
+  if command -v fuser >/dev/null 2>&1; then
+    for lock in ${APT_LOCKS:-/var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/lib/apt/lists/lock /var/cache/apt/archives/lock}; do
+      [ -e "$lock" ] && fuser "$lock" >/dev/null 2>&1 && return 0
+    done
+    return 1
+  fi
+  pgrep -x 'apt|apt-get|dpkg|unattended-upgr|aptd' >/dev/null 2>&1
+}
+wait_for_apt() {
+  local waited=0 limit="${APT_WAIT_SECONDS:-1800}" said=0
+  if command -v cloud-init >/dev/null 2>&1; then
+    timeout "$limit" cloud-init status --wait >/dev/null 2>&1 || true
+  fi
+  while apt_busy; do
+    if [ "$said" = 0 ]; then
+      note "The server is installing its own updates first; waiting for them to finish (up to $((limit / 60)) minutes)..."
+      said=1
+    fi
+    [ "$waited" -lt "$limit" ] || return 1
+    sleep 5
+    waited=$((waited + 5))
+  done
 }
 
 plain_domain() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -e 's#^https\?://##' -e 's#/.*$##' -e 's/[[:space:]]//g'; }
@@ -221,6 +260,12 @@ if [ "${1:-}" = --tool ]; then
   exit 0
 fi
 
+# Tests only: waits for apt as the restore does; nothing else.
+if [ "${1:-}" = --wait-apt ]; then
+  wait_for_apt && echo "APT FREE" || echo "APT STILL BUSY"
+  exit 0
+fi
+
 # Drills and tests only: the A6 decision alone; nothing is changed.
 if [ "${1:-}" = --choose ]; then
   detect_installs
@@ -266,6 +311,32 @@ exec > >(tee --output-error=warn -a "$LOG") 2>&1
 
 say "Extas ERP: bringing the ERP back from a Google Drive backup ($(date '+%d %B %Y %H:%M'))"
 
+# The opened backup is plain data and secrets: it never stays on the disk, not even
+# after a restore cut off half-way (the VM restarted, or the restore was stopped):
+# what such a restore left is deleted now, first. The download (still locked, as in
+# Drive) and the Google sign-in stay, so this try goes on without them; both go when
+# the restore ends well.
+forget_opened() {
+  local copy
+  if [ -f "$WORK/opened-copy" ]; then
+    copy="$(cat "$WORK/opened-copy")"
+    case "$copy" in */backups/restores/?*) rm -rf "$copy" ;; esac
+    rm -f "$WORK/opened-copy"
+  fi
+  [ -d "$WORK" ] || return 0
+  find "$WORK" -mindepth 1 -maxdepth 1 ! -name download ! -name google.json -exec rm -rf {} +
+}
+restored=0
+cleanup() {
+  forget_opened
+  if [ "$restored" = 1 ]; then
+    rm -rf "$WORK"
+  elif [ -d "$WORK/download" ]; then
+    note "The backup downloaded from Drive (still locked) and the Google sign-in are kept for the next try in $WORK (only root can read them); nothing opened stays on the disk."
+  fi
+}
+forget_opened
+
 step "Checking this server"
 memory_kb="$(awk '/^MemTotal:/ {print $2}' /proc/meminfo)"
 free_kb="$(df --output=avail -k / | tail -n 1 | tr -d ' ')"
@@ -284,18 +355,14 @@ export DEBIAN_FRONTEND=noninteractive
 apt_get() { apt-get -o DPkg::Lock::Timeout=900 -q "$@"; }
 # An install cut off earlier (the VM restarted) is finished first, or nothing installs.
 dpkg --configure -a >/dev/null 2>&1 || true
+wait_for_apt ||
+  fail R05 "the restore tools could not be installed: the server's own updates did not finish in 30 minutes. Restart the VM in Azure, then paste the command again."
 if ! { apt_get update >/dev/null && apt_get install -y --no-install-recommends \
   ca-certificates curl git python3 python3-cryptography >/dev/null; }; then
   fail R05 "the restore tools could not be installed. Wait 5 minutes (a new server installs its own updates first), then paste the command again."
 fi
-rm -rf "$WORK"
 install -d -m 700 "$WORK"
-restore_dir=""
-cleanup() {
-  # The opened backup is plain data and secrets: it never stays on the disk.
-  rm -rf "$WORK"
-  [ -z "$restore_dir" ] || rm -rf "$restore_dir"
-}
+chmod 700 "$WORK"
 trap cleanup EXIT
 get_restore_tool "$WORK/restore-tool.py"
 tool() { python3 -I "$WORK/restore-tool.py" "$@"; }
@@ -369,15 +436,6 @@ DATA="${DATA:-/srv/extras-erp}"
 APP_DOMAIN="$(env_get "$env_file" APP_DOMAIN)"
 note "Web address: $APP_DOMAIN; data folder: $DATA"
 
-step "Pointing the web address at this server"
-tool dns --work "$WORK" --deploy "$DIR/deploy" ||
-  warn W02 "Cloudflare could not be reached, so the web address was not changed. Point it to this server's Public IP address (see W01)."
-# Until the web address points here, the restored ERP waits on standby (G2): no
-# backups, reminders or other clocks, so two ERPs never run at once (a practice
-# run, or the old server still in use). deploy/go-live.sh ends it.
-standby=1
-[ -z "$(tool fact --work "$WORK" dnsMoved)" ] || standby=0
-
 step "Preparing the server (system updates, Docker, firewall: about 5 minutes)"
 EXTAS_RESTORE=1 "$DIR/deploy/setup-server.sh" || fail R17 "the server could not be prepared; the lines above say why. Paste the command again."
 
@@ -386,21 +444,50 @@ step "Installing the ERP (building it takes about 10 to 20 minutes)"
 
 step "Restoring the database and the files"
 mkdir -p "$DATA/backups/restores"
-# Before the restored database first starts (src/modules/backups/standby.ts reads it).
-if [ "$standby" = 1 ]; then
-  install -m 644 /dev/null "$DATA/backups/.standby"
-else
-  rm -f "$DATA/backups/.standby"
-fi
+# The restored ERP waits on standby (G2) until its web address points here: the
+# mark is in place before the restored database first starts, and goes only once
+# the web address is moved here (below) or with deploy/go-live.sh. On standby its
+# backups and alarms run; its reminders and messages wait, so two ERPs never send
+# them at once (a practice run, or the old server still in use).
+# src/modules/backups/standby.ts reads the mark; its random words tell this server
+# from another one (go-live.sh checks the web address reaches this server).
+head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n' >"$DATA/backups/.standby"
+chmod 644 "$DATA/backups/.standby"
+standby=1
 restore_dir="$DATA/backups/restores/$name"
 rm -rf "$restore_dir"
+# Written first, so a restore cut off from here on has its opened copy deleted at the next start.
+printf '%s' "$restore_dir" >"$WORK/opened-copy"
 mv "$WORK/restore" "$restore_dir"
 counts=()
 grep -q -- '--counts' "$DIR/deploy/restore.sh" && counts=(--counts "$WORK/counts.json")
-"$DIR/deploy/restore.sh" --yes --check --result "$WORK/restore-result.json" "${counts[@]}" "$restore_dir" ||
-  fail R19 "the backup could not be restored; the lines above say why. The ERP runs without the backup's data. Paste the command again."
+if ! "$DIR/deploy/restore.sh" --yes --check --result "$WORK/restore-result.json" "${counts[@]}" "$restore_dir"; then
+  # What restore.sh did: put back as it was (its safety copy), or left as it was.
+  why="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1])).get("message") or "")' "$WORK/restore-result.json" 2>/dev/null || true)"
+  fail R19 "the backup could not be restored: ${why:-the lines above say why}. Paste the command again: it goes on with the backup already downloaded."
+fi
 rm -rf "$restore_dir"
-restore_dir=""
+rm -f "$WORK/opened-copy"
+# The backup is in: what is left in $WORK is deleted when the restore ends, the download too.
+restored=1
+
+step "Pointing the web address at this server"
+# Only now that the restore went well: the web address never comes to a server that
+# could not restore the backup.
+tool dns --work "$WORK" --deploy "$DIR/deploy" ||
+  warn W02 "the web address was not changed (the lines above say why). Point it to this server's Public IP address yourself (see W01)."
+if [ -n "$(tool fact --work "$WORK" dnsMoved)" ]; then
+  rm -f "$DATA/backups/.standby"
+  standby=0
+  # HTTPS: Caddy asks for the certificate again at once, now that the address points here.
+  (
+    cd "$DIR"
+    # shellcheck source=/dev/null
+    source deploy/lib.sh
+    load_settings
+    compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile --force
+  ) >/dev/null 2>&1 || true
+fi
 
 step "Starting the demo site"
 demo_note="off"
@@ -471,23 +558,31 @@ ip="$(curl -s --max-time 10 https://1.1.1.1/cdn-cgi/trace 2>/dev/null | sed -n '
 [ "$https_ok" = 1 ] || [ "$standby" = 1 ] || warn W03 "https://$APP_DOMAIN has no HTTPS certificate yet. Check that $APP_DOMAIN points to this server (${ip:-its Public IP address}) and that ports 80 and 443 are open in Azure; the certificate then comes by itself within a few minutes."
 
 took=$(($(date +%s) - started))
-say "Finished in $((took / 60)) min $((took % 60)) s"
+# Never a plain "Finished" when a step went wrong.
+if [ "$compare" = 0 ] && [ "$screen_problems" = 0 ]; then
+  say "Finished in $((took / 60)) min $((took % 60)) s"
+else
+  say "Finished in $((took / 60)) min $((took % 60)) s, but NOT everything is right: read the notes above and below"
+fi
 note "Backup: $name"
 python3 - "$WORK/compare.json" <<'PY' || true
 import json, sys
 try:
     r = json.load(open(sys.argv[1]))
 except (OSError, ValueError):
+    print("    The records and files were NOT compared with the backup (the comparison did not finish).")
     sys.exit(0)
 if r.get("ok") and r["compared"]["records"] and r["compared"]["files"]:
     print(f"    All {r['records']:,} records and {r['files']:,} files are back.")
+elif r.get("recordsNotChecked"):
+    print(f"    The records were NOT checked against the backup (W11 above); {len(r['problems'])} other problem(s).")
 elif r.get("ok"):
     print("    The backup is back (it had no list of its tables and files to compare with).")
 else:
     print(f"    Not everything is back: {len(r['problems'])} problem(s), listed above (R20).")
 PY
 if [ "$standby" = 1 ]; then
-  warn W10 "this ERP waits on standby: $APP_DOMAIN still points to the other server, so it makes no backups and sends no reminders. When this server is the one to use (the old one is off), point the web address here (step F6) and run: cd $DIR && sudo ./deploy/go-live.sh"
+  warn W10 "this ERP waits on standby: $APP_DOMAIN does not point to this server yet. Its backups and alarms run; its reminders and messages wait until it goes live. When this server is the one to use (the old one is off), point the web address here (step F6) and run: cd $DIR && sudo ./deploy/go-live.sh"
 elif [ "$https_ok" = 1 ]; then
   note "The ERP is running at https://$APP_DOMAIN : sign in as before."
 else
@@ -497,4 +592,16 @@ if [ "$demo_note" = running ]; then note "The demo site is running too."; fi
 note "Checks: $checks_note; ${screen_problems} problem(s) found."
 note "The full log of this restore: sudo less $LOG"
 note "Next (part F of the guide): let GitHub update this server again: cd $DIR && sudo ./deploy/setup-auto-deploy.sh"
+if [ "$standby" = 1 ]; then
+  # Never on standby without a word: the last thing on the screen.
+  printf '\n%s\n' "################################################################"
+  printf '##  %s\n' "THIS ERP IS ON STANDBY" "" \
+    "$APP_DOMAIN does NOT point to this server yet." \
+    "Its backups and alarms run; its reminders and messages wait." \
+    "Every page of the ERP says so until it goes live." "" \
+    "When this server is the one to use (the old one is off):" \
+    "  1. point $APP_DOMAIN to this server (step F6)" \
+    "  2. run: cd $DIR && sudo ./deploy/go-live.sh"
+  printf '%s\n' "################################################################"
+fi
 [ "$compare" = 0 ] || exit 4

@@ -7,6 +7,8 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { inTerminal } from "../fixtures/terminal";
+
 /*
  * Small pieces of deploy/lib.sh, run for real in bash with stand-in folders
  * (never the server's own paths): what a restore or an update decides.
@@ -15,7 +17,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 type Run = { code: number; stdout: string; stderr: string };
 
 /** Runs a few lines of bash after loading deploy/lib.sh. */
-function withLib(script: string, options: { env?: NodeJS.ProcessEnv; input?: string } = {}) {
+function withLib(script: string, options: { env?: Record<string, string>; input?: string } = {}) {
   return new Promise<Run>((resolve) => {
     const child = execFile(
       "bash",
@@ -179,7 +181,7 @@ describe("what a restore leaves for the ERP, and for undoing it (G4, G5, G9)", (
       /restore_database "\$inside\/database\.dump"[\s\S]*write_restored_mark[\s\S]*Starting the app/,
     );
     // Going back to the safety copy takes the mark away again.
-    expect(restore).toMatch(/going back to the safety copy"[\s\S]*rm -f "\$restored_mark"/);
+    expect(restore).toMatch(/Going back to the safety copy: \$1"\n\s*rm -f "\$restored_mark"/);
   });
 
   it("writes the mark only the app reads, with the backup's name and time", async () => {
@@ -237,7 +239,7 @@ write_restored_mark "${folder}" "${dir}/kept.json" "${mark}"; echo "exit $?"`,
     ]);
     // Counted from the restore (the folder is touched when it is set aside), every day by cron too.
     expect(restore).toMatch(
-      /mv "\$DATA_DIR\/uploads" "\$DATA_DIR\/uploads\.before-restore-\$stamp"\n\s*touch "\$DATA_DIR\/uploads\.before-restore-\$stamp"/,
+      /mv "\$DATA_DIR\/uploads" "\$DATA_DIR\/uploads\.before-restore-\$stamp" \|\| return 1\n\s*touch "\$DATA_DIR\/uploads\.before-restore-\$stamp"/,
     );
     expect(restore).toMatch(/load_settings\ntake_update_lock\nprune_old_uploads/);
     expect(lib).toMatch(
@@ -292,12 +294,41 @@ describe("the v6.3 restore command's secrets in shell history (G14)", () => {
 });
 
 describe("standby after a restore on a second server (G2)", () => {
-  it("goes live only when this ERP's web address is typed", async () => {
+  /** Stand-ins for DNS (getent) and the web (curl): where the web address points, what answers there. */
+  async function network(points: string, answers = "") {
+    const bin = path.join(dir, "bin");
+    await mkdir(bin, { recursive: true });
+    await writeFile(
+      path.join(bin, "getent"),
+      `#!/bin/sh\n[ -n "${points}" ] && echo "${points}    STREAM $3"\n[ -n "${points}" ]\n`,
+      { mode: 0o755 },
+    );
+    await writeFile(path.join(bin, "curl"), `#!/bin/sh\nprintf '%s' '${answers}'\n`, {
+      mode: 0o755,
+    });
+    return { PATH: `${bin}:${process.env.PATH}`, PUBLIC_IP: "203.0.113.7" };
+  }
+
+  it("goes live only when the web address points here and is typed", async () => {
     const backups = path.join(dir, "backups");
     await mkdir(backups);
-    await writeFile(path.join(backups, ".standby"), "");
+    await writeFile(path.join(backups, ".standby"), "3f9a0c1d2e4b5a6978");
+    // Still pointing at the old server: stopped before any question, nothing changed.
+    const elsewhere = await withLib(`leave_standby "${backups}" erp.example.com`, {
+      env: await network("198.51.100.20"),
+      input: "erp.example.com\n",
+    });
+    expect(elsewhere.code).toBe(1);
+    expect(elsewhere.stderr).toContain(
+      "stopped: erp.example.com does not point to this server yet (it points to 198.51.100.20; this server is 203.0.113.7). Point erp.example.com here first (step F6 in the restore guide)",
+    );
+    expect(elsewhere.stdout).not.toContain("Type erp.example.com");
+    expect(existsSync(path.join(backups, ".standby"))).toBe(true);
+
+    const here = await network("203.0.113.7");
     for (const typed of ["", "demo.example.com"]) {
       const stopped = await withLib(`leave_standby "${backups}" erp.example.com`, {
+        env: here,
         input: `${typed}\n`,
       });
       expect(stopped.code).toBe(1);
@@ -305,6 +336,7 @@ describe("standby after a restore on a second server (G2)", () => {
       expect(existsSync(path.join(backups, ".standby"))).toBe(true);
     }
     const live = await withLib(`leave_standby "${backups}" erp.example.com`, {
+      env: here,
       input: "HTTPS://Erp.Example.com/\n",
     });
     expect(live.code).toBe(0);
@@ -316,18 +348,286 @@ describe("standby after a restore on a second server (G2)", () => {
     expect(again.stdout).toContain("This ERP is not on standby");
   });
 
-  it("is left by the restore command until the web address points here, and said at the end", () => {
+  it("knows the web address reaches this server through Cloudflare's proxy by the ERP answering there", async () => {
+    const backups = path.join(dir, "backups");
+    await mkdir(backups);
+    const words = "a1b2c3d4e5f60718293a4b5c6d7e8f90";
+    await writeFile(path.join(backups, ".standby"), words);
+    const id = createHash("sha256").update(words).digest("hex").slice(0, 16);
+    // Cloudflare's address in DNS; another ERP (another standby id) answers: stopped.
+    const other = await withLib(`leave_standby "${backups}" erp.example.com`, {
+      env: await network("104.16.1.1", '{"status":"ok","standby":"0000000000000000"}'),
+      input: "erp.example.com\n",
+    });
+    expect(other.code).toBe(1);
+    expect(existsSync(path.join(backups, ".standby"))).toBe(true);
+    // This ERP answers there (src/app/api/health/route.ts gives its standby id).
+    const proxied = await withLib(`leave_standby "${backups}" erp.example.com`, {
+      env: await network("104.16.1.1", `{"status":"ok","database":"connected","standby":"${id}"}`),
+      input: "erp.example.com\n",
+    });
+    expect(proxied.code).toBe(0);
+    expect(existsSync(path.join(backups, ".standby"))).toBe(false);
+    const health = readFileSync(path.join("src", "app", "api", "health", "route.ts"), "utf8");
+    expect(health).toMatch(/standby: standby\.id/);
+    const standby = readFileSync(path.join("src", "modules", "backups", "standby.ts"), "utf8");
+    expect(standby).toMatch(
+      /createHash\("sha256"\)\.update\(words\)\.digest\("hex"\)\.slice\(0, 16\)/,
+    );
+  });
+
+  it("never takes a key pressed earlier as the answer to go live", async () => {
+    const backups = path.join(dir, "backups");
+    await mkdir(backups);
+    await writeFile(path.join(backups, ".standby"), "words");
+    const env = await network("203.0.113.7");
+    const run = await inTerminal(
+      [
+        "bash",
+        "-c",
+        `source "${path.join(process.cwd(), "deploy", "lib.sh")}"\nleave_standby "${backups}" erp.example.com`,
+      ],
+      {
+        env,
+        // An Enter pressed before the question: without it being dropped, it would stop here.
+        early: "\r",
+        replies: [["Type erp.example.com to go on", "erp.example.com"]],
+      },
+    );
+    expect(run.screen).not.toContain("stopped: nothing was changed");
+    expect(run.screen).toContain("this ERP is the one in use");
+    expect(run.code).toBe(0);
+  });
+
+  it("is left by the restore command until the restore went well and the web address points here", () => {
     const bootstrap = readFileSync(path.join("deploy", "bootstrap.sh"), "utf8");
-    // Standby unless the restore tool moved the web address here.
-    expect(bootstrap).toMatch(
-      /standby=1\n\[ -z "\$\(tool fact --work "\$WORK" dnsMoved\)" \] \|\| standby=0/,
+    const code = bootstrap
+      .split("\n")
+      .filter((line) => !line.trimStart().startsWith("#"))
+      .join("\n");
+    // The mark (random words) is in place before the restored database first starts.
+    expect(code).toMatch(
+      /head -c 16 \/dev\/urandom [^\n]*>"\$DATA\/backups\/\.standby"\nchmod 644 "\$DATA\/backups\/\.standby"\nstandby=1[\s\S]*"\$DIR\/deploy\/restore\.sh" --yes/,
     );
-    // The mark is in place before the restored database first starts.
-    expect(bootstrap).toMatch(
-      /install -m 644 \/dev\/null "\$DATA\/backups\/\.standby"[\s\S]*"\$DIR\/deploy\/restore\.sh" --yes/,
+    // The web address is moved only after the restore went well; then the mark goes.
+    const restored = code.indexOf("restored=1\n");
+    const dns = code.indexOf('tool dns --work "$WORK"');
+    expect(restored).toBeGreaterThan(code.indexOf('"$DIR/deploy/restore.sh" --yes'));
+    expect(dns).toBeGreaterThan(restored);
+    expect(code.match(/tool dns /g)).toHaveLength(1);
+    expect(code.slice(dns)).toMatch(
+      /^tool dns [^\n]*\n[^\n]*\nif \[ -n "\$\(tool fact --work "\$WORK" dnsMoved\)" \]; then\n\s*rm -f "\$DATA\/backups\/\.standby"\n\s*standby=0/,
     );
-    expect(bootstrap).toMatch(/warn W10 "this ERP waits on standby/);
+    // Said at the end, in big words, as the last thing on the screen.
+    expect(code).toMatch(
+      /warn W10 "this ERP waits on standby: \$APP_DOMAIN does not point to this server yet/,
+    );
+    const banner = code.lastIndexOf('"THIS ERP IS ON STANDBY"');
+    expect(banner).toBeGreaterThan(code.lastIndexOf("Next (part F of the guide)"));
     const goLive = readFileSync(path.join("deploy", "go-live.sh"), "utf8");
     expect(goLive).toMatch(/leave_standby "\$DATA_DIR\/backups" "\$APP_DOMAIN"/);
+  });
+});
+
+describe("a restore that fails half-way goes back, and says so (restore.sh)", () => {
+  /*
+   * restore.sh run for real, with deploy/lib.sh's Docker and database parts played by
+   * stand-ins: a copy of restore.sh beside a lib.sh that loads the real one and then
+   * replaces only those parts. Everything else (the folders, tar, the result file)
+   * is real, in a folder of the test's own.
+   */
+  async function harness() {
+    const deploy = path.join(dir, "deploy");
+    const data = path.join(dir, "data");
+    const log = path.join(dir, "calls.log");
+    await mkdir(deploy, { recursive: true });
+    await writeFile(
+      path.join(deploy, "restore.sh"),
+      readFileSync(path.join("deploy", "restore.sh"), "utf8"),
+    );
+    await writeFile(
+      path.join(deploy, "lib.sh"),
+      `source "${path.join(process.cwd(), "deploy", "lib.sh")}"
+APP_UID=$(id -u)
+need_root() { :; }
+load_settings() { DATA_DIR="${data}"; POSTGRES_DB=erp; APP_DB_USER=erp; }
+take_update_lock() { :; }
+forget_secrets_in_history() { :; }
+flush_keys() { :; }
+prepare_folders() { mkdir -p "$DATA_DIR"/uploads "$DATA_DIR"/backups "$DATA_DIR"/safety-copies; }
+compose() {
+  echo "compose $*" >>"${log}"
+  case "$*" in *psql*) [ -z "\${COUNTS_FAIL:-}" ] || return 1; cat >/dev/null; echo '{"User": 3}' ;; esac
+}
+wait_healthy() { echo "healthy? $1" >>"${log}"; [ "$1" != app ] || [ -z "\${APP_NEVER_STARTS:-}" ]; }
+safety_copy() { mkdir -p "$DATA_DIR/safety-copies/$1" && printf '%s' "$DATA_DIR/safety-copies/$1"; }
+restore_database() { echo "restore_database $1" >>"${log}"; }
+write_restored_mark() { echo '{}' >"$3"; }
+`,
+    );
+    // The ERP's files as they are now, and a backup to restore.
+    await mkdir(path.join(data, "uploads", "c1"), { recursive: true });
+    await writeFile(path.join(data, "uploads", "c1", "now.pdf"), "the file there now");
+    const backup = path.join(data, "backups", "2026-10-04_020000");
+    await mkdir(path.join(backup, "files", "c1"), { recursive: true });
+    await writeFile(path.join(backup, "database.dump"), "dump");
+    await writeFile(path.join(backup, "files", "c1", "old.pdf"), "the file in the backup");
+    await new Promise((resolve) =>
+      execFile(
+        "tar",
+        ["-czf", path.join(backup, "media.tar.gz"), "-C", path.join(backup, "files"), "."],
+        resolve,
+      ),
+    );
+    await rm(path.join(backup, "files"), { recursive: true });
+    const run = (env: Record<string, string> = {}) =>
+      new Promise<Run>((resolve) =>
+        execFile(
+          "bash",
+          [
+            path.join(deploy, "restore.sh"),
+            "--yes",
+            "--result",
+            path.join(dir, "result.json"),
+            "--counts",
+            path.join(dir, "counts.json"),
+            backup,
+          ],
+          { env: { ...process.env, ...env }, timeout: 60_000 },
+          (error, stdout, stderr) =>
+            resolve({ code: error ? Number(error.code ?? 1) : 0, stdout, stderr }),
+        ),
+      );
+    const result = () =>
+      JSON.parse(readFileSync(path.join(dir, "result.json"), "utf8")) as {
+        ok: boolean;
+        wentBack: boolean;
+        message: string;
+      };
+    return { data, backup, log, run, result };
+  }
+
+  it("puts the database and the files back as they were when the files cannot be restored", async () => {
+    const h = await harness();
+    // A damaged files archive: the database is already replaced when it fails.
+    await writeFile(path.join(h.backup, "media.tar.gz"), "not a tar file at all");
+    const done = await h.run();
+    expect(done.code).not.toBe(0);
+    const calls = readFileSync(h.log, "utf8");
+    expect(calls).toMatch(
+      /restore_database \/backups\/2026-10-04_020000\/database\.dump[\s\S]*restore_database \/safety-copies\/before-restore-[\d_-]+\/database\.dump[\s\S]*compose up -d[\s\S]*healthy\? app/,
+    );
+    // The files there before are back in place, and nothing half-unpacked is left.
+    expect(readFileSync(path.join(h.data, "uploads", "c1", "now.pdf"), "utf8")).toBe(
+      "the file there now",
+    );
+    expect(existsSync(path.join(h.data, "uploads.restoring"))).toBe(false);
+    expect(existsSync(path.join(h.data, "backups", ".restored.json"))).toBe(false);
+    expect(h.result()).toMatchObject({
+      ok: false,
+      wentBack: true,
+      message:
+        "the uploaded files could not be restored, so it was put back as it was before the restore (the safety copy). The lines above say why.",
+    });
+    // No success line once a step failed.
+    expect(done.stdout).not.toContain("Restored from");
+    expect(done.stdout).not.toContain("kept for 30 days");
+  });
+
+  it("says the records were NOT counted when the count fails, and leaves no count to compare", async () => {
+    const h = await harness();
+    const done = await h.run({ COUNTS_FAIL: "1" });
+    expect(done.code).toBe(0);
+    expect(done.stdout).toContain(
+      "The records could NOT be counted, so they cannot be checked against the backup; the restore goes on",
+    );
+    expect(existsSync(path.join(dir, "counts.json"))).toBe(false);
+    // Counted: the count is there for the comparison.
+    const counted = await h.run();
+    expect(counted.code).toBe(0);
+    expect(JSON.parse(readFileSync(path.join(dir, "counts.json"), "utf8"))).toEqual({ User: 3 });
+    expect(readFileSync(path.join(h.data, "uploads", "c1", "old.pdf"), "utf8")).toBe(
+      "the file in the backup",
+    );
+    expect(h.result()).toMatchObject({ ok: true, wentBack: false });
+  });
+
+  it("goes back the same way when the ERP does not start on the restored data", async () => {
+    const h = await harness();
+    const done = await h.run({ APP_NEVER_STARTS: "1" });
+    expect(done.code).not.toBe(0);
+    expect(h.result()).toMatchObject({ ok: false, wentBack: true });
+    expect(h.result().message).toContain("the ERP did not start on the restored data");
+    // The files from before are back; the backup's are kept aside.
+    expect(readFileSync(path.join(h.data, "uploads", "c1", "now.pdf"), "utf8")).toBe(
+      "the file there now",
+    );
+  });
+});
+
+describe("waiting for a new VM's own updates before installing (setup-server.sh, bootstrap.sh)", () => {
+  /** A stand-in for fuser: apt's lock is held for the first `busy` asks. */
+  async function stubs(busy: number) {
+    const bin = path.join(dir, "bin");
+    await mkdir(bin, { recursive: true });
+    await writeFile(path.join(dir, "asks"), "");
+    await writeFile(
+      path.join(bin, "fuser"),
+      `#!/bin/sh\necho x >>"${dir}/asks"\n[ "$(wc -l <"${dir}/asks")" -le ${busy} ] || exit 1\nexit 0\n`,
+      { mode: 0o755 },
+    );
+    await writeFile(path.join(bin, "sleep"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+    const lock = path.join(dir, "lock-frontend");
+    await writeFile(lock, "");
+    return {
+      PATH: `${bin}:${process.env.PATH}`,
+      APT_LOCKS: lock,
+      APT_WAIT_SECONDS: "60",
+    };
+  }
+
+  it("waits while the automatic updates hold apt's lock, then goes on", async () => {
+    // Busy for 3 checks (one lock file: fuser is asked once a check).
+    const env = await stubs(3);
+    const lib = await withLib(`if wait_for_apt; then echo "exit 0"; else echo "exit 1"; fi`, {
+      env,
+    });
+    expect(lib.stdout).toContain("The server is installing its own updates first");
+    expect(lib.stdout).toContain("exit 0");
+    expect(readFileSync(path.join(dir, "asks"), "utf8").split("\n").filter(Boolean)).toHaveLength(
+      4,
+    );
+    // The restore command does the same before it installs its tools.
+    await writeFile(path.join(dir, "asks"), "");
+    const boot = await new Promise<Run>((resolve) =>
+      execFile(
+        "bash",
+        [path.join("deploy", "bootstrap.sh"), "--wait-apt"],
+        { env: { ...process.env, ...env } },
+        (error, stdout, stderr) =>
+          resolve({ code: error ? Number(error.code ?? 1) : 0, stdout, stderr }),
+      ),
+    );
+    expect(boot.stdout).toContain("The server is installing its own updates first");
+    expect(boot.stdout).toContain("APT FREE");
+  });
+
+  it("gives up after its time limit instead of waiting for ever", async () => {
+    const env = await stubs(1000);
+    const lib = await withLib(`if wait_for_apt; then echo "exit 0"; else echo "exit 1"; fi`, {
+      env: { ...env, APT_WAIT_SECONDS: "10" },
+    });
+    expect(lib.stdout).toContain("exit 1");
+  });
+
+  it("is used before every apt command of setup-server.sh, and a run cut off is finished first", () => {
+    const setup = readFileSync(path.join("deploy", "setup-server.sh"), "utf8");
+    expect(setup).toMatch(/wait_for_apt \|\|\n\s*die /);
+    expect(setup).toMatch(/dpkg --configure -a/);
+    expect(setup.indexOf("wait_for_apt ||")).toBeLessThan(setup.indexOf("apt_get update"));
+    // Every apt command waits for the lock too.
+    expect(setup).not.toMatch(/^\s*apt-get /m);
+    const bootstrap = readFileSync(path.join("deploy", "bootstrap.sh"), "utf8");
+    expect(bootstrap.indexOf("wait_for_apt ||")).toBeLessThan(bootstrap.indexOf("apt_get update"));
   });
 });

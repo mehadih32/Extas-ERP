@@ -6,6 +6,8 @@ import { promisify } from "node:util";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { inTerminal } from "../fixtures/terminal";
+
 /*
  * A6: before anything changes, the one restore command looks for an Extas ERP
  * already on the server: a running one (Docker's extras-erp project), its
@@ -173,6 +175,29 @@ describe("finding an Extas ERP already on the server (A6)", () => {
     expect(orphan.code).toBe(2);
     expect(orphan.stderr).toContain("Error R29");
     expect(orphan.stdout).not.toContain("CHOSEN");
+  });
+
+  it("never takes a key pressed earlier as the answer: an Enter typed before the question is dropped", async () => {
+    await docker(["opt/extras-erp/deploy"]);
+    await put("opt/extras-erp/deploy/compose.yml", "name: extras-erp\nservices: {}\n");
+    await put(
+      "opt/extras-erp/deploy/.env",
+      `APP_DOMAIN=erp.example.com\nDATA_DIR=${path.join(root, "data/erp")}\n`,
+    );
+    await put("data/erp/postgres/PG_VERSION", "16\n");
+    const run = await inTerminal(["bash", BOOTSTRAP, "--choose"], {
+      env: {
+        PATH: `${bin}:${process.env.PATH}`,
+        EXTAS_SEARCH_ROOTS: ["opt", "data"].map((r) => path.join(root, r)).join(" "),
+        RESTORE_ANSWERS: "",
+      },
+      // Pressed while the restore was working: it must not answer "press Enter to stop".
+      early: "\r",
+      replies: [["Type the web address of the ERP on this server", "erp.example.com"]],
+    });
+    expect(run.screen).not.toContain("Error R04");
+    expect(run.screen).toContain(`CHOSEN ${path.join(root, "opt/extras-erp")}`);
+    expect(run.code).toBe(0);
   });
 
   it("goes on by itself on a new server, or over a restore that stopped half-way", async () => {

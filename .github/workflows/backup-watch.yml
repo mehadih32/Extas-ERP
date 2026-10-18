@@ -1,0 +1,57 @@
+# The late-backup alert that does not depend on the ERP's server (v6.4.1, A13).
+# Every 6 hours GitHub looks in the owner's Google Drive for the newest backup the
+# ERP made and checked, and tells the owner on Telegram when it is late by the
+# owner's backup schedule, when Drive cannot be read, and on Saturday mornings that
+# all is well. "Run workflow" (Actions tab) runs it now and always sends the result.
+# The code is scripts/backup-watch.mjs (Node only: nothing is installed).
+#
+# Its values are repository secrets that the ERP fills in itself, locked so only
+# GitHub Actions can read them (Settings > Backups, "Set up the alert on GitHub"):
+# the ERP's Google client and Drive sign-in (scope drive.file: it sees only the
+# files the ERP made), the backup folder, and the Telegram bot and the owner's chat.
+# Nobody types or sees them. Until they are there, each run fails with one line
+# naming the missing ones. BACKUP_ALERT_LATE_HOURS (a repository variable, optional)
+# sets a fixed "late after so many hours" instead of the schedule's.
+#
+# GitHub stops scheduled workflows in a public repository after 60 days with no
+# commits; the Actions tab then offers to turn it on again.
+name: Backup watch
+
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backup-watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    name: Newest backup in Google Drive
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Check the newest backup
+        env:
+          BACKUP_ALERT_GOOGLE_CLIENT_ID: ${{ secrets.BACKUP_ALERT_GOOGLE_CLIENT_ID }}
+          BACKUP_ALERT_GOOGLE_CLIENT_SECRET: ${{ secrets.BACKUP_ALERT_GOOGLE_CLIENT_SECRET }}
+          BACKUP_ALERT_GOOGLE_REFRESH_TOKEN: ${{ secrets.BACKUP_ALERT_GOOGLE_REFRESH_TOKEN }}
+          BACKUP_ALERT_DRIVE_FOLDER_ID: ${{ secrets.BACKUP_ALERT_DRIVE_FOLDER_ID }}
+          BACKUP_ALERT_TELEGRAM_BOT_TOKEN: ${{ secrets.BACKUP_ALERT_TELEGRAM_BOT_TOKEN }}
+          BACKUP_ALERT_TELEGRAM_CHAT_ID: ${{ secrets.BACKUP_ALERT_TELEGRAM_CHAT_ID }}
+          BACKUP_ALERT_LATE_HOURS: ${{ vars.BACKUP_ALERT_LATE_HOURS }}
+          EVENT: ${{ github.event_name }}
+        run: node scripts/backup-watch.mjs

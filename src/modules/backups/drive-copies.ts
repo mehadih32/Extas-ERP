@@ -25,6 +25,7 @@ import {
 import { type DriveBackup, listBackupFolders } from "@/modules/backups/drive-fetch";
 import { findRootFiles, putRootFile } from "@/modules/backups/drive-root";
 import * as drive from "@/modules/backups/google-drive";
+import { nextRunAt, scheduleOf } from "@/modules/backups/schedule";
 
 export { type DriveBackup, type FetchedBackup, fetchBackup } from "@/modules/backups/drive-fetch";
 
@@ -79,6 +80,7 @@ export async function sendToDrive(runId: string): Promise<BackupRun> {
         extas: "backup",
         kind: run.kind,
         createdAt: manifest.createdAt,
+        ...nextLabel(config, run.kind, manifest.createdAt),
       })
     ).id;
     for (const file of manifest.files) {
@@ -124,6 +126,28 @@ export async function sendToDrive(runId: string): Promise<BackupRun> {
           : `Saved on the server, but not in Google Drive: ${reasonFor(error)}`,
       },
     });
+  }
+}
+
+/**
+ * When the owner's schedule makes the next backup after this one, as a label on
+ * its folder in Drive: the late-backup alert on GitHub (scripts/backup-watch.mjs)
+ * reads it there, so it knows the schedule without asking this server. None for
+ * a safety copy, or while backups are off.
+ */
+export function nextLabel(
+  config: BackupConfig,
+  kind: BackupRun["kind"],
+  createdAt: string,
+): { nextAt?: string } {
+  const made = new Date(createdAt);
+  if (kind !== "BACKUP" || !config.isEnabled || Number.isNaN(made.getTime())) return {};
+  try {
+    const next = nextRunAt(scheduleOf(config), config.timezone, made);
+    return next ? { nextAt: next.toISOString() } : {};
+  } catch {
+    // A schedule that cannot be read never stops the backup reaching Drive.
+    return {};
   }
 }
 

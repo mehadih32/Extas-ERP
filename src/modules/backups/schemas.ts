@@ -109,6 +109,29 @@ export const cloudflareSchema = z.object({
     .regex(/^[\w-]{30,200}$/, "Paste the whole token (letters, digits, - and _)"),
 });
 
+/**
+ * "Set up the alert on GitHub" (A13): the repository, and a GitHub token used
+ * for this one step and never kept (it must be allowed to set the repository's
+ * secrets), with the PIN.
+ */
+export const githubAlertSchema = z.object({
+  pin,
+  repo: z
+    .string()
+    .trim()
+    .regex(
+      /^[A-Za-z0-9-]{1,39}\/[A-Za-z0-9._-]{1,100}$/,
+      "Write it as owner/name, e.g. mehadih32/Extas-ERP",
+    ),
+  token: z
+    .string()
+    .trim()
+    .regex(
+      /^(github_pat_|ghp_)[A-Za-z0-9_]{20,}$/,
+      "Paste a GitHub token (it starts with github_pat_)",
+    ),
+});
+
 /** "Run drill now": the recovery key may be typed for this one drill (never kept). */
 export const drillNowSchema = z.object({ key: recoveryKey.optional() });
 

@@ -45,6 +45,9 @@ vi.mock("@/modules/auth/context", async (original) => {
   };
 });
 
+import { GET as projectApprovalRoute } from "@/app/api/production/projects/[projectId]/tech-pack/approval/route";
+import { GET as projectLogoBriefRoute } from "@/app/api/production/projects/[projectId]/tech-pack/logos/[logoId]/brief/route";
+import { GET as projectLogoFileRoute } from "@/app/api/production/projects/[projectId]/tech-pack/logos/[logoId]/file/route";
 import { GET as projectPdfRoute } from "@/app/api/production/projects/[projectId]/tech-pack/route";
 import { GET as projectMeasurementsRoute } from "@/app/api/production/projects/[projectId]/tech-pack/measurements/route";
 import { GET as techPackPdfRoute } from "@/app/api/tech-packs/[techPackId]/pdf/route";
@@ -67,7 +70,7 @@ import * as needs from "@/modules/production/material-need.service";
 import * as projects from "@/modules/production/project.service";
 import * as ai from "@/modules/production/tech-pack-ai.service";
 import * as approval from "@/modules/production/tech-pack-approval.service";
-import { measurementsFile } from "@/modules/production/tech-pack-export";
+import { digitizingBrief, measurementsFile } from "@/modules/production/tech-pack-export";
 import * as files from "@/modules/production/tech-pack-files.service";
 import * as register from "@/modules/production/tech-pack-register.service";
 import { getTechPackScreen } from "@/modules/production/tech-pack-screen.service";
@@ -1023,6 +1026,37 @@ run("Tech Pack as its own module", () => {
     expect(approved.ok).toBe(true);
     expect((await prisma.techPack.findUniqueOrThrow({ where: { id } })).status).toBe("APPROVED");
 
+    // The addresses from before v6.4 open for both too: the PDF, the approval, the
+    // measurement sheet and a logo's brief and machine file.
+    const { id: logoId } = await files.saveLogo(env.pm, id, null, {
+      name: "Chest logo",
+      widthMm: "27",
+    });
+    const old = (path: string) => new Request(`https://erp.example.test/api/production/${path}`);
+    const projectId = env.polo.id;
+    for (const ctx of [approver, ticker]) {
+      signedIn.ctx = ctx;
+      expect((await projectPdfRoute(old("tech-pack"), params({ projectId }))).status).toBe(200);
+      expect((await projectApprovalRoute(old("approval"), params({ projectId }))).status).toBe(200);
+      // No chart and no machine file yet: nothing to give, but the reader is not refused.
+      expect(
+        (await projectMeasurementsRoute(old("measurements"), params({ projectId }))).status,
+      ).toBe(404);
+      expect(
+        (await projectLogoBriefRoute(old("brief"), params({ projectId, logoId }))).status,
+      ).toBe(200);
+      expect((await projectLogoFileRoute(old("file"), params({ projectId, logoId }))).status).toBe(
+        404,
+      );
+    }
+    // The style's materials list and making notes still change with production.manage only,
+    // in the service as well as the action.
+    await expectAppError(needs.setMaterialNeeds(approver, env.polo.id, { needs: [] }), "FORBIDDEN");
+    await expectAppError(
+      needs.setTechPackNotes(approver, env.polo.id, { notes: "Mine" }),
+      "FORBIDDEN",
+    );
+
     // The logo approver reads it and ticks logos, but cannot approve or change it.
     signedIn.ctx = ticker;
     const theirs = await getTechPackScreenAction(id);
@@ -1046,6 +1080,23 @@ run("Tech Pack as its own module", () => {
       params({ techPackId: id }),
     );
     expect(salesSheet.status).toBe(403);
+    for (const [route, path, at] of [
+      [projectPdfRoute, "tech-pack", { projectId }],
+      [projectApprovalRoute, "approval", { projectId }],
+      [projectMeasurementsRoute, "measurements", { projectId }],
+      [projectLogoBriefRoute, "brief", { projectId, logoId }],
+      [projectLogoFileRoute, "file", { projectId, logoId }],
+    ] as const) {
+      const response = await (
+        route as (r: Request, c: { params: Promise<object> }) => Promise<Response>
+      )(old(path), params(at));
+      expect(response.status, path).toBe(403);
+    }
+    // The services check who reads too, not only the addresses.
+    await expectAppError(techPackPdf(env.sales, env.polo.id), "FORBIDDEN");
+    await expectAppError(measurementsFile(env.sales, id, "pdf"), "FORBIDDEN");
+    await expectAppError(digitizingBrief(env.sales, id, logoId), "FORBIDDEN");
+    await expectAppError(files.logoMachineFile(env.sales, id, logoId, null), "FORBIDDEN");
   });
 
   it("changes a tech pack's details and logs them", async () => {

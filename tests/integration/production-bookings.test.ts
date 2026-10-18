@@ -33,6 +33,7 @@ import * as styles from "@/modules/inventory/style.service";
 import * as materials from "@/modules/materials/material.service";
 import * as orders from "@/modules/materials/purchase-order.service";
 import * as purchases from "@/modules/materials/purchase.service";
+import * as materialsScreens from "@/modules/materials/screens.service";
 import * as parties from "@/modules/parties/party.service";
 import * as batches from "@/modules/production/batch.service";
 import { bookingDocument, bookingPdf } from "@/modules/production/booking-pdf.service";
@@ -403,6 +404,26 @@ run("Bookings", () => {
       bookings.createBooking(env.pm, { ...base, expectedDate: "2020-01-01" }),
       "VALIDATION",
     );
+    // A trim booked as fabric would skip the tech pack wait of collar, cuff and trims;
+    // fabric counts as fabric only (as the form offers).
+    for (const line of [
+      { materialId: env.buttons.id, quantity: 10, specs: { role: "FABRIC" } },
+      {
+        name: "Flat knit collar",
+        kind: "TRIM",
+        unit: "PCS",
+        quantity: 10,
+        specs: { role: "FABRIC" },
+      },
+      { name: "Rib", kind: "FABRIC", unit: "KG", quantity: 10, specs: { role: "COLLAR" } },
+      { name: "Rib", kind: "FABRIC", unit: "KG", quantity: 10, specs: { role: "TRIM" } },
+    ]) {
+      const refused = await expectAppError(
+        bookings.createBooking(env.pm, { ...base, collar: null, lines: [line] }),
+        "VALIDATION",
+      );
+      expect(refused.message).toMatch(/fabric/i);
+    }
     expect(await prisma.booking.count()).toBe(0);
     expect(await prisma.purchaseOrder.count()).toBe(0);
   });
@@ -721,6 +742,31 @@ run("Bookings", () => {
     expect(changed.collar?.totalSets).toBe(1115);
 
     await bookings.approveBooking(env.owner, b.id);
+    // An approved booking's in-house date, references and notes change on the booking
+    // (a new revision, approved again), never from Materials as a plain order.
+    const approvedOn = await prisma.purchaseOrder.findUniqueOrThrow({
+      where: { id: changed.orderId },
+    });
+    for (const change of [
+      { expectedDate: "2031-01-30" },
+      { supplierRef: "Mine" },
+      { notes: "Changed quietly" },
+      { projectId: null },
+    ]) {
+      const refused = await expectAppError(
+        orders.updatePurchaseOrder(env.pm, changed.orderId, change),
+        "CONFLICT",
+      );
+      expect(refused.message).toContain("change it on the booking");
+    }
+    await expectAppError(
+      materialsScreens.getOrderForm(env.pm, { orderId: changed.orderId }),
+      "CONFLICT",
+    );
+    expect(
+      await prisma.purchaseOrder.findUniqueOrThrow({ where: { id: changed.orderId } }),
+    ).toEqual(approvedOn);
+    expect((await bookings.getBooking(env.pm, b.id)).stage).toBe("APPROVED");
     const fabricLine = changed.lines[0]!;
     await purchases.createPurchase(env.pm, {
       purchaseOrderId: changed.orderId,
@@ -842,5 +888,32 @@ run("Bookings", () => {
     const buyer = await person("buyer@extas.test", "Buyer", ["materials.purchase"]);
     await expectAppError(bookings.listBookings(buyer), "FORBIDDEN");
     await expectAppError(bookings.createBooking(buyer, market), "FORBIDDEN");
+    // Nor does it cancel or close a booking from Materials: that needs the booking permission.
+    const store = await person("storebuyer@extas.test", "Store buyer", [
+      "materials.view",
+      "materials.purchase",
+    ]);
+    await expectAppError(
+      orders.cancelPurchaseOrder(store, mill.orderId, { reason: "Not needed" }),
+      "FORBIDDEN",
+    );
+    await expectAppError(
+      orders.closePurchaseOrder(store, mill.orderId, { reason: "Not needed" }),
+      "FORBIDDEN",
+    );
+    expect((await materialsScreens.getOrderScreen(store, mill.orderId)).can).toMatchObject({
+      cancel: false,
+      close: false,
+    });
+    expect((await bookings.getBooking(env.pm, mill.id)).status).toBe("OPEN");
+    // Someone who may close bookings may do it from the order too.
+    const both = await person("both@extas.test", "Buyer and closer", [
+      "materials.view",
+      "materials.purchase",
+      "production.bookings.close",
+    ]);
+    expect((await materialsScreens.getOrderScreen(both, mill.orderId)).can.cancel).toBe(true);
+    const ended = await orders.cancelPurchaseOrder(both, mill.orderId, { reason: "Booked twice" });
+    expect(ended.status).toBe("CANCELLED");
   });
 });

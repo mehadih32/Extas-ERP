@@ -232,6 +232,16 @@ const styleSelect = {
   batch: { select: { id: true, code: true, name: true, kind: true } },
 } satisfies Prisma.ProductionProjectSelect;
 
+/** Changing a style's materials list and making notes is production.manage's. */
+function assertCanManage(ctx: CompanyContext) {
+  if (!ctx.can("production.manage")) {
+    throw new AppError(
+      "FORBIDDEN",
+      "You do not have permission to change a style's materials (production.manage).",
+    );
+  }
+}
+
 async function loadStyle(ctx: CompanyContext, projectId: string) {
   const project = await ctx.db.productionProject.findUnique({
     where: { id: projectId },
@@ -279,6 +289,7 @@ export async function setMaterialNeeds(
   raw: unknown,
   meta?: RequestMeta,
 ) {
+  assertCanManage(ctx);
   const { needs } = setMaterialNeedsSchema.parse(raw);
   const project = await loadStyle(ctx, projectId);
   assertOpen(project);
@@ -345,6 +356,7 @@ export async function setTechPackNotes(
   raw: unknown,
   meta?: RequestMeta,
 ) {
+  assertCanManage(ctx);
   const { notes } = techPackNotesSchema.parse(raw);
   const project = await loadStyle(ctx, projectId);
   assertOpen(project);

@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 
 /**
  * POST /api/materials/purchase-orders/:orderId/cancel — { reason }. Only while nothing has
- * arrived on it. Needs materials.purchase.
+ * arrived on it. Needs materials.purchase; a booking's order also production.bookings.close.
  */
 export const POST = apiRoute<Params>(async (request, { orderId }) =>
   orders.cancelPurchaseOrder(

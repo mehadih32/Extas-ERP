@@ -4,16 +4,18 @@ import { prisma } from "@/lib/prisma";
 
 /*
  * PIN tries per person and store, kept in the database (AiPinTry) so a restart
- * of the server does not start the count again (v6.4.1). Two counts, each over
- * fifteen minutes:
- *   - "PIN": wrong PINs, on every path (the ERP, the chat, the bot's question);
- *     a right PIN does not count;
- *   - "NUMBER": new numbers the bot checked to hide a PIN typed by mistake
- *   - "CHAT": the same for the ERP's own AI chat, kept apart from the bot's
- *     (a signed-in person, so a far higher limit).
- * When a count reaches its limit the owner is told at once (the inbox and the
- * bot, as an alarm: AI on or off), once per fifteen minutes. Only counts and
- * times are kept, never a PIN or a number.
+ * of the server does not start the count again (v6.4.1). The counts:
+ *   - "PIN": wrong PINs, on every path (the ERP, the chat, the bot's question),
+ *     over fifteen minutes; a right PIN does not count;
+ *   - "CHAT": new numbers the ERP's own AI chat checked to hide a PIN typed by
+ *     mistake, over fifteen minutes;
+ *   - "BOT_PIN": wrong PINs the bot asked for, per store (subject "bot"), over a
+ *     day (v6.4.2): from the 5th each one alarms the owner, the 20th stops PIN
+ *     actions on the bot until the owner unlocks them (settings.service.ts).
+ * ("NUMBER" rows, from before v6.4.2, counted numbers the bot checked; the bot
+ * checks none now.) When "PIN" or "CHAT" reaches its limit the owner is told at
+ * once (the inbox and the bot, as an alarm: AI on or off), once per fifteen
+ * minutes. Only counts and times are kept, never a PIN or a number.
  */
 
 /** The most numbers of one message checked against the PIN (each check takes a moment). */
@@ -34,13 +36,13 @@ const JOINED_AFTER = /^[-/]\d/;
 
 /**
  * The numbers in a message that could be a PIN: each run of 4 to 8 digits,
- * once. Only digits that are clearly part of a document number are left out
- * (they use up none of the PIN checks): capital letters right before them, as
- * in "PO4501" or "CS-2026-0001", or joined to more digits by - or /, as in
- * "SO/2026/0112" or a date. Anything else is checked: "PIN-4321", "2468ok",
- * and Bengali words stuck to a number ("৪৩২১ই", "৪৩২১টা"). When the message
- * has a PIN word ("pin", "pincode", "pass", "OTP", "code", "পিন") every number
- * is checked (v6.4.1).
+ * once (the bot hides a message with any of them unchecked; the ERP's chat
+ * checks them). Only digits that are clearly part of a document number are
+ * left out: capital letters right before them, as in "PO4501" or
+ * "CS-2026-0001", or joined to more digits by - or /, as in "SO/2026/0112" or
+ * a date. Anything else counts: "PIN-4321", "2468ok", and Bengali words stuck
+ * to a number ("৪৩২১ই", "৪৩২১টা"). When the message has a PIN word ("pin",
+ * "pincode", "pass", "OTP", "code", "পিন") every number counts (v6.4.1).
  */
 export function pinCandidates(text: string): string[] {
   const everyNumber = PIN_WORD.test(text);
@@ -60,18 +62,19 @@ export function pinCandidates(text: string): string[] {
   return [...new Set(runs)].slice(0, MAX_PIN_CANDIDATES);
 }
 
-export type PinTryKind = "PIN" | "NUMBER" | "CHAT";
+export type PinTryKind = "PIN" | "CHAT" | "BOT_PIN";
 
 export const PIN_TRY_MINUTES = 15;
 
-/** Counts one try and returns how many there are now in the fifteen minutes. */
+/** Counts one try and returns how many there are now in the window (fifteen minutes unless given). */
 export async function countPinTry(
   companyId: string,
   subjectKey: string,
   kind: PinTryKind,
   now = new Date(),
+  windowMinutes = PIN_TRY_MINUTES,
 ): Promise<number> {
-  const before = new Date(now.getTime() - PIN_TRY_MINUTES * 60_000);
+  const before = new Date(now.getTime() - windowMinutes * 60_000);
   // One statement, so two tries at the same moment are both counted.
   const [row] = await prisma.$queryRawUnsafe<Array<{ count: number }>>(
     `INSERT INTO "AiPinTry" ("id", "companyId", "subjectKey", "kind", "windowStart", "count")
@@ -99,21 +102,19 @@ export async function uncountPinTry(companyId: string, subjectKey: string, kind:
   });
 }
 
-const ALARM: Record<PinTryKind, (who: string, limit: number) => { subject: string; body: string }> =
-  {
-    PIN: (who, limit) => ({
-      subject: "Too many wrong PINs",
-      body: `${who}: a wrong PIN was given ${limit} times in ${PIN_TRY_MINUTES} minutes (in the ERP or on the bot). PIN tries are stopped for ${PIN_TRY_MINUTES} minutes. If it was not you, change your password now, then wait ${PIN_TRY_MINUTES} minutes and change your PIN (AI Center > Settings).`,
-    }),
-    NUMBER: (who, limit) => ({
-      subject: "Many numbers sent to the bot",
-      body: `${who}: ${limit} new numbers came to the bot in ${PIN_TRY_MINUTES} minutes. Any of them could be your PIN, so for ${PIN_TRY_MINUTES} minutes the bot hides every message with a new number. If it was not you, unlink the bot in AI Center > Bot and change your PIN.`,
-    }),
-    CHAT: (who, limit) => ({
-      subject: "Many numbers in the AI chat",
-      body: `${who}: ${limit} new numbers were written in the AI chat in the ERP in ${PIN_TRY_MINUTES} minutes. Someone may be looking for your PIN, so for ${PIN_TRY_MINUTES} minutes the chat hides every message with a new number. If it was not you, change your password and your PIN now (AI Center > Settings).`,
-    }),
-  };
+const ALARM: Record<
+  Exclude<PinTryKind, "BOT_PIN">,
+  (who: string, limit: number) => { subject: string; body: string }
+> = {
+  PIN: (who, limit) => ({
+    subject: "Too many wrong PINs",
+    body: `${who}: a wrong PIN was given ${limit} times in ${PIN_TRY_MINUTES} minutes (in the ERP or on the bot). PIN tries are stopped for ${PIN_TRY_MINUTES} minutes. If it was not you, change your password now, then wait ${PIN_TRY_MINUTES} minutes and change your PIN (AI Center > Settings).`,
+  }),
+  CHAT: (who, limit) => ({
+    subject: "Many numbers in the AI chat",
+    body: `${who}: ${limit} new numbers were written in the AI chat in the ERP in ${PIN_TRY_MINUTES} minutes. Someone may be looking for your PIN, so for ${PIN_TRY_MINUTES} minutes the chat hides every message with a new number. If it was not you, change your password and your PIN now (AI Center > Settings).`,
+  }),
+};
 
 /**
  * Tells the owner the limit was hit: the platform owners' inbox and the bot
@@ -123,7 +124,7 @@ const ALARM: Record<PinTryKind, (who: string, limit: number) => { subject: strin
 export async function pinLimitAlarm(
   companyId: string,
   subjectKey: string,
-  kind: PinTryKind,
+  kind: Exclude<PinTryKind, "BOT_PIN">,
   limit: number,
 ) {
   try {
@@ -137,34 +138,70 @@ export async function pinLimitAlarm(
       select: { id: true, name: true },
     });
     const { subject, body } = ALARM[kind](person?.name ?? "The bot's chat", limit);
-    await prisma.auditLog.create({
-      data: {
-        companyId,
-        userId: person?.id ?? null,
-        action: "STATUS_CHANGE",
-        entityType: "AiSettings",
-        entityId: companyId,
-        summary: `${subject}: tries stopped for ${PIN_TRY_MINUTES} minutes`,
-      },
+    await alarmOwner(companyId, person?.id ?? null, subject, body, {
+      summary: `${subject}: tries stopped for ${PIN_TRY_MINUTES} minutes`,
     });
-    const owners = await prisma.user.findMany({
-      where: {
-        isSuperAdmin: true,
-        status: "ACTIVE",
-        memberships: { some: { companyId, isActive: true } },
-      },
-      select: { id: true },
-    });
-    const { sendInApp } = await import("@/modules/reminders/notification.service");
-    await sendInApp(
-      prisma,
-      companyId,
-      owners.map((o) => ({ userId: o.id })),
-      { subject, body },
-    );
-    const { pushToBot } = await import("./bot/push");
-    await pushToBot(companyId, { kind: "text", text: `${subject}. ${body}` }, { alarm: true });
   } catch (error) {
     console.error("[ai] PIN alarm not sent", error instanceof Error ? error.message : error);
   }
+}
+
+/**
+ * Wrong PINs the bot asked for (v6.4.2): from the 5th in a day, each one tells
+ * the owner; `stopped` when the 20th stopped PIN actions on the bot.
+ */
+export async function botPinAlarm(companyId: string, wrong: number, stopped: boolean) {
+  try {
+    const subject = stopped ? "PIN actions on the bot are stopped" : "Wrong PIN on the bot";
+    const body = stopped
+      ? `${wrong} wrong PINs were sent to the bot in a day, so the bot now does no money, price, Deletion or other PIN action and takes no PIN until you unlock it in the ERP: AI Center > Bot, “Unlock PIN actions” (it asks for your PIN). If it was not you, someone may have your Telegram: unlink the bot there and change your PIN first.`
+      : `${wrong} wrong PINs were sent to the bot in a day, each in answer to the bot asking for the PIN. If it was not you, someone may have your Telegram: unlink the bot in AI Center > Bot and change your PIN. After 20 wrong PINs in a day, PIN actions on the bot stop until you unlock them in the ERP.`;
+    await alarmOwner(companyId, null, subject, body, {
+      summary: stopped
+        ? `PIN actions on the bot stopped after ${wrong} wrong PINs in a day`
+        : `Wrong PIN on the bot (${wrong} in a day)`,
+    });
+  } catch (error) {
+    console.error("[ai] bot PIN alarm not sent", error instanceof Error ? error.message : error);
+  }
+}
+
+/**
+ * Tells the owner: the platform owners' inbox and the bot (an alarm, which goes
+ * even with the AI off), and the AI Center's log.
+ */
+async function alarmOwner(
+  companyId: string,
+  userId: string | null,
+  subject: string,
+  body: string,
+  log: { summary: string },
+) {
+  await prisma.auditLog.create({
+    data: {
+      companyId,
+      userId,
+      action: "STATUS_CHANGE",
+      entityType: "AiSettings",
+      entityId: companyId,
+      summary: log.summary,
+    },
+  });
+  const owners = await prisma.user.findMany({
+    where: {
+      isSuperAdmin: true,
+      status: "ACTIVE",
+      memberships: { some: { companyId, isActive: true } },
+    },
+    select: { id: true },
+  });
+  const { sendInApp } = await import("@/modules/reminders/notification.service");
+  await sendInApp(
+    prisma,
+    companyId,
+    owners.map((o) => ({ userId: o.id })),
+    { subject, body },
+  );
+  const { pushToBot } = await import("./bot/push");
+  await pushToBot(companyId, { kind: "text", text: `${subject}. ${body}` }, { alarm: true });
 }

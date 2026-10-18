@@ -23,6 +23,7 @@ import {
   priceFor,
 } from "./prices.service";
 import {
+  botPinAlarm,
   countPinTry,
   pinCandidates,
   pinLimitAlarm,
@@ -83,6 +84,7 @@ export async function aiSettingsOf(companyId: string, db: Db = prisma): Promise<
       allowFable: false,
       pinHash: null,
       pinSetAt: null,
+      botPinLockedAt: null,
       assistantName: "Mehedi 2.0",
       aiUserId: null,
       replyRemindHours: 24,
@@ -868,9 +870,6 @@ export async function checkPin(companyId: string, pin: string, userId: string): 
   return right;
 }
 
-/** New numbers the bot may check against the PIN per person and store, in fifteen minutes. */
-export const STRAY_PIN_CHECKS = 10;
-
 /** New numbers the ERP's own AI chat may check per person and store, in fifteen minutes. */
 export const CHAT_PIN_CHECKS = 100;
 
@@ -878,21 +877,18 @@ export const CHAT_PIN_CHECKS = 100;
 const notThePin = new Map<string, { pinHash: string; numbers: Set<string> }>();
 
 /**
- * Whether digits are the PIN, only to hide a PIN typed when nothing asked for
- * one. For the bot (bot/incoming.ts): ten new numbers in fifteen minutes per
- * person, like checkPin's tries but kept apart, so the bot never uses up the
- * owner's PIN tries in the ERP; a number already found not to be the PIN is
- * free. "unchecked" once they are used up: the bot then hides the message the
- * same way as the PIN, so sending numbers cannot find the PIN. The ERP's own
- * chat counts apart ("CHAT"): the person there is signed in, so it allows far
- * more (a hundred) and never touches the bot's count or alarm, but still stops
- * an unlimited search for the PIN through the chat (v6.4.1).
+ * Whether digits are the PIN, only to hide a PIN typed into the ERP's own AI
+ * chat (mayHoldPin). The person there is signed in, so it allows a hundred new
+ * numbers in fifteen minutes per person and store (a number already found not
+ * to be the PIN is free), counted apart from the PIN tries ("CHAT"); past that
+ * it says "unchecked" and the chat hides the message the same way as the PIN,
+ * so the chat cannot be used for an unlimited search for the PIN (v6.4.1). The
+ * bot never checks a number it did not ask for (v6.4.2): it hides every one.
  */
 export async function pinMatches(
   companyId: string,
   pin: string,
   userId: string,
-  kind: "NUMBER" | "CHAT" = "NUMBER",
 ): Promise<boolean | "unchecked"> {
   const settings = await aiSettingsOf(companyId);
   if (!settings.pinHash || !/^\d{4,8}$/.test(pin)) return false;
@@ -903,9 +899,8 @@ export async function pinMatches(
   }
   if (known.numbers.has(pin)) return false;
   // Counted in the database (pin-tries.ts): a restart does not give new checks.
-  const limit = kind === "CHAT" ? CHAT_PIN_CHECKS : STRAY_PIN_CHECKS;
-  if ((await countPinTry(companyId, userId, kind)) > limit) {
-    await pinLimitAlarm(companyId, userId, kind, limit);
+  if ((await countPinTry(companyId, userId, "CHAT")) > CHAT_PIN_CHECKS) {
+    await pinLimitAlarm(companyId, userId, "CHAT", CHAT_PIN_CHECKS);
     return "unchecked";
   }
   if (await verifyPassword(pin, settings.pinHash)) return true;
@@ -914,15 +909,131 @@ export async function pinMatches(
   return false;
 }
 
+/** From this wrong PIN in a day (one the bot asked for), each one alarms the owner. */
+export const BOT_PIN_ALARM_FROM = 5;
+/** After this many wrong PINs in a day, PIN actions on the bot stop until unlocked in the ERP. */
+export const BOT_PIN_LOCK_AFTER = 20;
+/** The day the bot's wrong PINs are counted over (from the first of them). */
+export const BOT_PIN_DAY_MINUTES = 24 * 60;
+/** The bot's wrong PINs are counted per store, whoever is linked (pin-tries.ts). */
+export const BOT_PIN_SUBJECT = "bot";
+
+export const BOT_PIN_LOCKED = `PIN actions on the bot are stopped: there were ${BOT_PIN_LOCK_AFTER} wrong PINs in a day. Nothing was done. Unlock them in the ERP: AI Center > Bot, “Unlock PIN actions” (it asks for your PIN). Until then, do it in the ERP.`;
+
+/**
+ * A PIN the bot asked for (bot/incoming.ts), checked as it arrives: checkPin's
+ * tries (ten in fifteen minutes, with the ERP's), and the bot's own count of
+ * wrong PINs over a day for the store (v6.4.2). From the 5th the owner is
+ * alarmed at each one; the 20th stops PIN actions on the bot (botPinLockedAt)
+ * until the owner unlocks them in the ERP (unlockBotPin, with the web PIN).
+ * While stopped no PIN is checked at all. A right PIN does not count, nor one
+ * refused unchecked (too many tries now). Only counts and times are kept.
+ */
+export async function checkBotPin(
+  companyId: string,
+  pin: string,
+  userId: string,
+): Promise<{ right: boolean; problem?: string; wrongToday?: number }> {
+  const settings = await aiSettingsOf(companyId);
+  if (settings.botPinLockedAt) return { right: false, problem: BOT_PIN_LOCKED };
+  // Counted first, in one statement: two PINs at the same moment are both counted.
+  const tries = await countPinTry(
+    companyId,
+    BOT_PIN_SUBJECT,
+    "BOT_PIN",
+    new Date(),
+    BOT_PIN_DAY_MINUTES,
+  );
+  if (tries > BOT_PIN_LOCK_AFTER) {
+    await uncountPinTry(companyId, BOT_PIN_SUBJECT, "BOT_PIN");
+    await lockBotPin(companyId, tries - 1);
+    return { right: false, problem: BOT_PIN_LOCKED };
+  }
+  let right: boolean;
+  try {
+    right = await checkPin(companyId, pin, userId);
+  } catch (error) {
+    // Not checked (too many tries now): not a wrong PIN.
+    await uncountPinTry(companyId, BOT_PIN_SUBJECT, "BOT_PIN");
+    throw error;
+  }
+  if (right) {
+    await uncountPinTry(companyId, BOT_PIN_SUBJECT, "BOT_PIN");
+    return { right: true };
+  }
+  if (tries >= BOT_PIN_LOCK_AFTER) {
+    await lockBotPin(companyId, tries);
+    return {
+      right: false,
+      problem: `The PIN is not right. That was the ${BOT_PIN_LOCK_AFTER}th wrong PIN in a day, so PIN actions on the bot are stopped now. Unlock them in the ERP: AI Center > Bot, “Unlock PIN actions” (it asks for your PIN).`,
+    };
+  }
+  if (tries >= BOT_PIN_ALARM_FROM) await botPinAlarm(companyId, tries, false);
+  return { right: false, wrongToday: tries };
+}
+
+/** Stops PIN actions on the bot (once) and alarms the owner. */
+async function lockBotPin(companyId: string, tries: number) {
+  const locked = await prisma.aiSettings.updateMany({
+    where: { companyId, botPinLockedAt: null },
+    data: { botPinLockedAt: new Date() },
+  });
+  if (locked.count === 1) await botPinAlarm(companyId, tries, true);
+}
+
+/**
+ * The owner unlocks PIN actions on the bot (AI Center > Bot), with the web
+ * PIN; the day's count of wrong PINs starts again. Logged.
+ */
+export async function unlockBotPin(
+  ctx: CompanyContext,
+  input: unknown,
+  meta?: RequestMeta,
+): Promise<void> {
+  assertManage(ctx);
+  const { pin } = z.object({ pin: z.string().trim().max(8).optional() }).parse(input ?? {});
+  const settings = await aiSettingsOf(ctx.company.id);
+  if (!settings.botPinLockedAt) {
+    throw new AppError("CONFLICT", "PIN actions on the bot are not stopped.");
+  }
+  await requirePin(ctx, pin || undefined, "unlock PIN actions on the bot");
+  const tries = await prisma.aiPinTry.findUnique({
+    where: {
+      companyId_subjectKey_kind: {
+        companyId: ctx.company.id,
+        subjectKey: BOT_PIN_SUBJECT,
+        kind: "BOT_PIN",
+      },
+    },
+    select: { count: true },
+  });
+  await prisma.$transaction([
+    prisma.aiSettings.update({
+      where: { companyId: ctx.company.id },
+      data: { botPinLockedAt: null },
+    }),
+    prisma.aiPinTry.updateMany({
+      where: { companyId: ctx.company.id, subjectKey: BOT_PIN_SUBJECT, kind: "BOT_PIN" },
+      data: { count: 0, windowStart: new Date(), alarmedAt: null },
+    }),
+  ]);
+  await auditInCompany(ctx, meta, {
+    action: "STATUS_CHANGE",
+    entityType: "AiSettings",
+    entityId: ctx.company.id,
+    summary: `Unlocked PIN actions on the bot (stopped since ${settings.botPinLockedAt.toISOString().slice(0, 16).replace("T", " ")} UTC after ${tries?.count ?? BOT_PIN_LOCK_AFTER} wrong PINs)`,
+  });
+}
+
 /**
  * Whether a message in the ERP's own AI chat holds the PIN: it is then never
- * kept nor sent to the AI, the same way the bot hides it (v6.4.1). Its numbers
- * are counted apart from the bot's (pinMatches), so the chat goes on working
- * normally after numbers sent to the bot. Digits already in Western form.
+ * kept nor sent to the AI (v6.4.1). Its numbers are checked (pinMatches,
+ * counted as "CHAT"), unlike the bot's, which are all hidden unchecked
+ * (v6.4.2). Digits already in Western form.
  */
 export async function mayHoldPin(companyId: string, text: string, userId: string) {
   for (const number of pinCandidates(text)) {
-    if ((await pinMatches(companyId, number, userId, "CHAT")) !== false) return true;
+    if ((await pinMatches(companyId, number, userId)) !== false) return true;
   }
   return false;
 }

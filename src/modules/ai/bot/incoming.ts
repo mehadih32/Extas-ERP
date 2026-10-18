@@ -20,7 +20,14 @@ import { discardDraft, PRICE_DRAFTS, sendDraft } from "../drafts.service";
 import { decideHouseRule } from "../house-rules.service";
 import { cardPinReason } from "../chat/chat.service";
 import { answerDeletion, answerPermission, needsPin } from "../requests.service";
-import { aiSettingsOf, checkPin, PIN_CHECKED, pinMatches } from "../settings.service";
+import {
+  aiSettingsOf,
+  BOT_PIN_ALARM_FROM,
+  BOT_PIN_LOCK_AFTER,
+  BOT_PIN_LOCKED,
+  checkBotPin,
+  PIN_CHECKED,
+} from "../settings.service";
 import { logBot, senderFor } from "./bot.service";
 import { botOwner } from "./owner";
 import type { Incoming } from "./channel";
@@ -44,9 +51,14 @@ import { pinCandidates } from "../pin-tries";
  *   - passes the words to Mehedi 2.0's chat (the same commands, Control and
  *     log as in the ERP) and sends the answers back with their buttons;
  *   - for money, prices, locked cells and Deletion requests asks for the PIN,
- *     takes it from the next message and removes that message from the chat.
- *     The PIN is checked the moment it arrives and never kept: the log, the
- *     background job and AI Center > Bot only ever see "[PIN]".
+ *     takes it from the next message and removes that message from the chat
+ *     (tried again a few times; when it cannot be removed the owner is told to
+ *     delete it). The PIN is checked the moment it arrives and never kept: the
+ *     log, the background job and AI Center > Bot only ever see "[PIN]". From
+ *     the 5th wrong PIN in a day the owner is alarmed; after 20, PIN actions on
+ *     the bot stop until the owner unlocks them in the ERP (v6.4.2);
+ *   - hides every other message with a number that could be a PIN, unchecked,
+ *     always the same way, so its answer never tells whether it was the PIN.
  */
 
 const PIN_MINUTES = 5;
@@ -71,7 +83,7 @@ export { PIN_TEXT };
 const STOP_WORDS = /^(cancel|stop|বাতিল|না)$/i;
 
 /** A PIN check made as the message arrived: per waiting store, right, wrong, or why not. */
-type PinChecks = Record<string, { right: boolean; problem?: string }>;
+type PinChecks = Record<string, { right: boolean; problem?: string; wrongToday?: number }>;
 
 /**
  * The PIN a waiting store asked for, checked now (so it is never written
@@ -86,9 +98,11 @@ async function checkPinNow(mine: AiBotLink[], m: Incoming, now: Date): Promise<P
   const checks: PinChecks = {};
   for (const link of waiting) {
     try {
-      checks[link.id] = {
-        right: await checkPin(link.companyId, westernDigits(text), link.ownerId ?? link.id),
-      };
+      checks[link.id] = await checkBotPin(
+        link.companyId,
+        westernDigits(text),
+        link.ownerId ?? link.id,
+      );
     } catch (error) {
       if (!(error instanceof AppError)) throw error;
       checks[link.id] = { right: false, problem: error.message };
@@ -106,19 +120,15 @@ const LATE_PIN_MINUTES = 60;
 /**
  * Digits that may be a PIN although no store waits for one now (v6.4 A5), so
  * they are hidden everywhere too: "late" when a store asked for the PIN and
- * the five minutes ran out (in the last hour), "stray" when a number in the
- * message, alone or among words (Bengali digits too), is the PIN of a store of
- * this chat. Every message of the linked owner's own chat with digits is
- * checked (v6.4.1 B6), but only ten new numbers in fifteen minutes
- * (pinMatches): past that, a message with a number is hidden unchecked, the
- * same way and with the same words, so someone holding the owner's chat cannot
- * find the PIN by sending numbers, and a PIN typed by mistake is still hidden.
+ * the five minutes ran out (in the last hour), "stray" for any other message
+ * of the linked owner's own chat with a number that could be a PIN (pinCandidates:
+ * 4 to 8 digits, alone or among words, Bengali digits too; not a document
+ * number like PO4501 or CS-2026-0001). A stray number is never checked against
+ * the PIN (v6.4.2): every one is hidden the same way and with the same words,
+ * so the bot's answer never tells whether it was the PIN, however many numbers
+ * are sent.
  */
-async function hiddenPin(
-  mine: AiBotLink[],
-  m: Incoming,
-  now: Date,
-): Promise<"late" | "stray" | null> {
+function hiddenPin(mine: AiBotLink[], m: Incoming, now: Date): "late" | "stray" | null {
   const text = westernDigits(m.text ?? "");
   if (m.callback) return null;
   const since = now.getTime() - LATE_PIN_MINUTES * 60_000;
@@ -128,16 +138,7 @@ async function hiddenPin(
   ) {
     return "late";
   }
-  const numbers = pinCandidates(text);
-  if (numbers.length === 0) return null;
-  for (const link of mine) {
-    for (const number of numbers) {
-      // The PIN, or not checked (too many new numbers): hidden all the same.
-      const match = await pinMatches(link.companyId, number, link.ownerId ?? link.id);
-      if (match !== false) return "stray";
-    }
-  }
-  return null;
+  return pinCandidates(text).length > 0 ? "stray" : null;
 }
 
 /** The store a message is for, when it can be told now; null when the worker must ask. */
@@ -195,7 +196,7 @@ async function keep(links: AiBotLink[], channel: AiBotChannel, botKey: string, m
   try {
     const pin = known ? await checkPinNow(mine, m, now) : null;
     // A link code is a command, never a PIN.
-    const hidden = known && !pin && !linking ? await hiddenPin(mine, m, now) : null;
+    const hidden = known && !pin && !linking ? hiddenPin(mine, m, now) : null;
     // Kept in the store it is for (the worker moves it if it can only tell later).
     const store = hidden
       ? (mine.find((l) => l.pending) ?? mine[0]!)
@@ -530,6 +531,34 @@ async function tellPreviousChat(
   );
 }
 
+/** What the bot says after hiding a number it did not ask for: the same whatever the number. */
+export const NUMBER_HIDDEN_TEXT =
+  "Your message had a number of 4 to 8 digits, so it was hidden and nothing was done. The bot hides every such number when it did not ask for your PIN, so nobody can learn your PIN from its answers. Send your PIN only when the bot asks for it. Write an order or document number with its letters (like PO4501), or use the ERP.";
+
+/** Said when a message with the PIN (or what may be it) could not be taken out of the chat. */
+export const PIN_NOT_REMOVED_TEXT =
+  "I could not delete your message from this chat, and it may hold your PIN. Delete it yourself now: press and hold it, then Delete.";
+
+/** Waits between the tries to delete a message with the PIN (three tries in all). */
+const REMOVE_WAITS_MS = [1_000, 2_000];
+
+/**
+ * Takes a message that may hold the PIN out of the chat: tried again after a
+ * short wait when the provider refuses or cannot be reached; when it still
+ * cannot be removed (or never can be, as on WhatsApp), the owner is told to
+ * delete it.
+ */
+async function removePin(link: AiBotLink, chatId: string, messageId: string | null) {
+  const sender = senderFor(link);
+  for (let i = 0; i <= REMOVE_WAITS_MS.length; i++) {
+    if (await sender.remove(chatId, messageId)) return;
+    const wait = REMOVE_WAITS_MS[i];
+    if (wait === undefined || !sender.canRemove) break;
+    await new Promise((resolve) => setTimeout(resolve, wait));
+  }
+  await say(link, chatId, words(PIN_NOT_REMOVED_TEXT));
+}
+
 /**
  * A PIN that came too late, or a number that may be the PIN when nothing
  * asked for one: taken out of the chat, a request that ran out is ended, and
@@ -537,7 +566,7 @@ async function tellPreviousChat(
  */
 async function hidePin(mine: AiBotLink[], m: Incoming, hidden: "late" | "stray") {
   const link = mine.find((l) => l.pending) ?? mine[0]!;
-  await senderFor(link).remove(m.chatId, m.messageId);
+  await removePin(link, m.chatId, m.messageId);
   if (hidden === "late") {
     await prisma.aiBotLink.updateMany({
       where: { id: { in: mine.map((l) => l.id) }, pendingUntil: { lte: new Date() } },
@@ -551,14 +580,8 @@ async function hidePin(mine: AiBotLink[], m: Incoming, hidden: "late" | "stray")
       ),
     );
   }
-  // Never says whether it was the PIN: a number past the checks is hidden with the same words.
-  return say(
-    link,
-    m.chatId,
-    words(
-      "A number in your message could be your PIN, so the message was hidden and nothing was done. Send your PIN only when the bot asks for it. If it was not your PIN, write it again in 15 minutes, or use the ERP.",
-    ),
-  );
+  // Never checked, so never says whether it was the PIN: every such number gets these words.
+  return say(link, m.chatId, words(NUMBER_HIDDEN_TEXT));
 }
 
 /**
@@ -568,7 +591,7 @@ async function hidePin(mine: AiBotLink[], m: Incoming, hidden: "late" | "stray")
  */
 async function pinNotWaited(mine: AiBotLink[], m: Incoming, now: Date) {
   const link = mine.find((l) => l.pending) ?? mine[0]!;
-  await senderFor(link).remove(m.chatId, m.messageId);
+  await removePin(link, m.chatId, m.messageId);
   await prisma.aiBotLink.updateMany({
     where: { id: { in: mine.map((l) => l.id) }, pendingUntil: { lte: now } },
     data: { pending: Prisma.DbNull, pendingUntil: null },
@@ -641,21 +664,30 @@ async function wrote(mine: AiBotLink[], m: Incoming, messageId: string, pin: Pin
   // A PIN asked for a moment ago (checked when it arrived): take it out of the
   // chat, and do what waited for it.
   if (link.pendingUntil && link.pendingUntil > new Date() && link.pending && text) {
-    await sender.remove(m.chatId, m.messageId);
     await prisma.aiBotLink.update({
       where: { id: link.id },
       data: { pending: Prisma.DbNull, pendingUntil: null },
     });
-    if (STOP_WORDS.test(text)) return say(link, m.chatId, words("Stopped: nothing changed."));
+    if (STOP_WORDS.test(text)) {
+      await sender.remove(m.chatId, m.messageId);
+      return say(link, m.chatId, words("Stopped: nothing changed."));
+    }
+    await removePin(link, m.chatId, m.messageId);
     const waiting = link.pending as { press: ButtonPress; sourceId: string | null };
     const check = pin?.[link.id];
     if (check?.problem) return say(link, m.chatId, words(check.problem));
-    if (!check?.right)
+    if (!check?.right) {
+      const wrong = check?.wrongToday ?? 0;
       return say(
         link,
         m.chatId,
-        words("The PIN is not right. Press the button again to try again."),
+        words(
+          wrong >= BOT_PIN_ALARM_FROM
+            ? `The PIN is not right (${wrong} wrong PINs today; after ${BOT_PIN_LOCK_AFTER}, PIN actions on the bot stop until you unlock them in the ERP). Press the button again to try again.`
+            : "The PIN is not right. Press the button again to try again.",
+        ),
       );
+    }
     return act(link, ctx, m.chatId, waiting.press, waiting.sourceId, PIN_CHECKED);
   }
 
@@ -890,6 +922,8 @@ async function act(
           ),
         );
       }
+      // After too many wrong PINs the bot asks for none until the owner unlocks it in the ERP.
+      if (settings.botPinLockedAt) return say(link, chatId, words(BOT_PIN_LOCKED));
       await prisma.aiBotLink.update({
         where: { id: link.id },
         data: {

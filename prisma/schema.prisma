@@ -4686,6 +4686,9 @@ model AiSettings {
   /// The PIN's hash (lib/auth/password.ts), asked for money, prices and deletions.
   pinHash           String?
   pinSetAt          DateTime?
+  /// When PIN actions on the bot stopped after too many wrong PINs in a day
+  /// (v6.4.2): none until the owner unlocks them in AI Center > Bot.
+  botPinLockedAt    DateTime?
   /// The AI's name in this company, on everything it writes ("Mehedi 2.0").
   assistantName     String    @default("Mehedi 2.0")
   /// The AI's own account (it cannot sign in): what it does is written to the

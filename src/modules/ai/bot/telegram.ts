@@ -101,11 +101,15 @@ export function telegramSender(token: string): BotSender {
         },
       }).catch(() => undefined);
     },
+    canRemove: true,
     async remove(chatId, messageId) {
-      if (!messageId) return;
-      await tg(token, "deleteMessage", {
+      if (!messageId) return false;
+      return tg(token, "deleteMessage", {
         json: { chat_id: chatId, message_id: Number(messageId) },
-      }).catch(() => undefined);
+      }).then(
+        () => true,
+        () => false,
+      );
     },
     async typing(chatId) {
       await tg(token, "sendChatAction", { json: { chat_id: chatId, action: "typing" } }).catch(

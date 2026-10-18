@@ -35,6 +35,41 @@ export type HelpField = {
 };
 
 /**
+ * How a guide's automatic picture is taken (scripts/full-check/help-shots.mjs).
+ * Every picture shows the part of the page its steps are about, with a red
+ * numbered mark on each button or field a step quotes (“Issue the invoice”):
+ * mark 2 is on what step 2 quotes. Without `target` the picture starts where
+ * the most steps' buttons are; a long page's picture never just shows its top.
+ */
+export type HelpShot = {
+  /**
+   * The page it is taken on, when not the first of `routes`. A record's page
+   * ("/production/projects/[projectId]") opens one of the demo records, the one
+   * that shows the most of the steps' buttons.
+   */
+  route?: string;
+  /** Added to the address, for a page that shows the steps' part only then ("q=stock count"). */
+  query?: string;
+  /**
+   * The button pressed first to open the dialog or menu the steps are about
+   * ("More for …": … stands for a name the page fills in). Only one that opens
+   * something, never one that saves.
+   */
+  open?: string;
+  /**
+   * The part of the page the steps are about: the English words of its heading
+   * (a panel's title such as “Logos and embroidery”) or of a button in it. The
+   * picture starts at that part instead of at the top of the page.
+   */
+  target?: string;
+  /**
+   * No picture, and why (English): the guide is about something the demo data
+   * cannot show on a computer's screen, such as the phone's install prompt.
+   */
+  none?: string;
+};
+
+/**
  * One task explained: What the screen is, Why it matters (with a real example),
  * and How, step by step ("How to make a quotation"). tests/unit/help-guides.test.ts
  * checks that every guide has What, Why and How and that every button and tab
@@ -81,12 +116,8 @@ export type HelpArticle = {
   mistakes?: string[];
   /** Bengali: good to know, limits. */
   tips?: string[];
-  /**
-   * The guide's automatic picture (scripts/help/shots.ts): the page it is taken
-   * on, when not the first of `routes`, and a button pressed first to open the
-   * dialog the steps are about (only one that opens something, never one that saves).
-   */
-  shot?: { route?: string; open?: string };
+  /** The guide's automatic picture (`npm run help:shots`): see HelpShot. */
+  shot?: HelpShot;
 };
 
 /** One section of the app (Sales, Production...) and its guides. */

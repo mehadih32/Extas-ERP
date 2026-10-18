@@ -2245,6 +2245,7 @@ export const aiHelp: HelpSection = {
         "খরচ",
       ],
       routes: ["/ai/models"],
+      shot: { target: "Which model does which task" },
       who: "দেখেন যাঁদের এআই সেন্টার খোলা; বদলান শুধু মালিক (“Turn AI on or off and set what it may do” অনুমতি)।",
       what: [
         "“Models” পাতায় ঠিক করা হয় এআই-এর কোন কাজ আর কোন এজেন্ট কোন মডেলে চলবে, আর প্রতিটি মডেলের দাম কত।",

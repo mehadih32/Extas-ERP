@@ -373,6 +373,9 @@ export const myHrHelp: HelpSection = {
         "লোকেশন শেয়ার",
       ],
       routes: ["/me"],
+      shot: {
+        none: "This guide is about the Android app and the phone's own permission boxes, which a computer's browser cannot show.",
+      },
       who: "যাঁদের My HR login আছে। মাঠকর্মীদের জন্য Android অ্যাপ দরকার, যদি HR লোকেশনসহ হাজিরা চালু করে থাকেন।",
       anyOf: ["portal.self"],
       what: [

@@ -383,6 +383,7 @@ export const partiesHelp: HelpSection = {
         "ডাউনলোড",
       ],
       routes: ["/parties/buyers", "/parties/[list]/[partyId]"],
+      shot: { route: "/parties/[list]/[partyId]" },
       who: "যাঁরা ক্রেতা দেখতে পারেন। PDF-এ শুধু সেই হিসাব থাকে যা আপনার ভূমিকা দেখতে পারে।",
       anyOf: ["parties.view"],
       what: [
@@ -629,6 +630,7 @@ export const partiesHelp: HelpSection = {
         "ডাউনলোড",
       ],
       routes: ["/parties/suppliers", "/parties/[list]/[partyId]"],
+      shot: { route: "/parties/[list]/[partyId]" },
       who: "যাঁরা সরবরাহকারী দেখতে পারেন। PDF-এ শুধু সেই হিসাব থাকে যা আপনার ভূমিকা দেখতে পারে।",
       anyOf: ["parties.view"],
       what: [
@@ -897,6 +899,7 @@ export const partiesHelp: HelpSection = {
         "নিষ্ক্রিয়",
       ],
       routes: ["/parties/buyers", "/parties/suppliers", "/parties/[list]/[partyId]"],
+      shot: { route: "/parties/[list]/[partyId]" },
       who: "যাঁদের অ্যাকাউন্ট বদলানোর অনুমতি আছে: Super Admin ও Sales Executive।",
       anyOf: ["parties.manage"],
       what: [

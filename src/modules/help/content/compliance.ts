@@ -283,6 +283,7 @@ export const complianceHelp: HelpSection = {
         "আর্কাইভ",
       ],
       routes: ["/compliance"],
+      shot: { route: "/compliance/[recordId]" },
       who: "যাঁদের লাইসেন্স বদলানোর অনুমতি আছে: Super Admin।",
       anyOf: ["compliance.manage"],
       what: [

@@ -609,16 +609,6 @@
     "guide": "1ac695f0853d299e",
     "taken": "2026-10-17"
   },
-  "errors": {
-    "src": "/help/shots/errors.webp",
-    "width": 1280,
-    "height": 1600,
-    "marks": [],
-    "route": "/",
-    "screen": "a468159db32eef48",
-    "guide": "5af9cb46dc8f627e",
-    "taken": "2026-10-17"
-  },
   "find-your-way": {
     "src": "/help/shots/find-your-way.webp",
     "width": 1280,
@@ -929,26 +919,6 @@
     "guide": "c3293a0d0706d9d9",
     "taken": "2026-10-17"
   },
-  "install-app": {
-    "src": "/help/shots/install-app.webp",
-    "width": 1280,
-    "height": 1600,
-    "marks": [],
-    "route": "/",
-    "screen": "a468159db32eef48",
-    "guide": "88646d98ac56f25d",
-    "taken": "2026-10-17"
-  },
-  "location-lock": {
-    "src": "/help/shots/location-lock.webp",
-    "width": 1280,
-    "height": 1600,
-    "marks": [],
-    "route": "/",
-    "screen": "a468159db32eef48",
-    "guide": "5fe24c6a0a9e0a2c",
-    "taken": "2026-10-17"
-  },
   "materials-add-material": {
     "src": "/help/shots/materials-add-material.webp",
     "width": 1280,
@@ -1127,16 +1097,6 @@
     "route": "/me/payslips",
     "screen": "0524cf35ef7291c7",
     "guide": "64de7f8f3808cb07",
-    "taken": "2026-10-17"
-  },
-  "my-hr-phone-app": {
-    "src": "/help/shots/my-hr-phone-app.webp",
-    "width": 1280,
-    "height": 800,
-    "marks": [],
-    "route": "/me",
-    "screen": "9edd196a27e9e5f8",
-    "guide": "0f41a6e549256465",
     "taken": "2026-10-17"
   },
   "my-hr-tasks": {

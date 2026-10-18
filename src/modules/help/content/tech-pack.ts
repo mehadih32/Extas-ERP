@@ -831,6 +831,7 @@ export const techPackHelp: HelpSection = {
         "সেলাইয়ের নমুনা",
       ],
       routes: ["/tech-packs/[techPackId]"],
+      shot: { target: "Logos and embroidery" },
       who: "লোগো যোগ, বদল, সরানো, ফাইল আপলোড ও ভেক্টর থেকে খসড়া: যাঁদের “Run batches and projects, stages and bills on credit” অনুমতি আছে (শুরুতে Production Manager ও Super Admin)। বাল্কের জন্য টিক দেন ও টিক তুলে নেন যাঁদের “Tick logos for bulk after the sew-out” অনুমতি আছে; শুরুতে শুধু মালিক (Super Admin)। AI কখনো টিক দেয় না।",
       anyOf: ["production.view"],
       what: [
@@ -1021,6 +1022,7 @@ export const techPackHelp: HelpSection = {
         "প্যানটোন",
       ],
       routes: ["/tech-packs/[techPackId]"],
+      shot: { target: "Colours and lab dips" },
       who: "রং, ল্যাব ডিপ আর বায়ারের উত্তর রাখেন যাঁদের “Run batches and projects, stages and bills on credit” অনুমতি আছে (শুরুতে Production Manager ও Super Admin)। “Read the mill's report” আর “Colour from a photo” আসে শুধু মালিক AI চালু করলে।",
       anyOf: ["production.view"],
       what: [

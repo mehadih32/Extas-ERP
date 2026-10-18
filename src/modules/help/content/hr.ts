@@ -922,6 +922,7 @@ export const hrHelp: HelpSection = {
         "ক্লিয়ারেন্স",
       ],
       routes: ["/hr/employees"],
+      shot: { route: "/hr/employees/[employeeId]" },
       who: "HR সামলানোর অনুমতি যাঁদের আছে (শুরুতে Super Admin)। নিজেকে নিজে deactivate করা যায় না।",
       anyOf: ["hr.manage"],
       what: [
@@ -1189,6 +1190,7 @@ export const hrHelp: HelpSection = {
         "পোর্টাল",
       ],
       routes: ["/hr/employees"],
+      shot: { route: "/hr/employees/[employeeId]", target: "System access" },
       who: "লগইন দিতে ও সরাতে HR সামলানোর অনুমতি লাগে। রোল বেছে দিতে, রোল বদলাতে আর লগইন বন্ধ বা চালু করতে ইউজার সামলানোর অনুমতি লাগে (শুরুতে Super Admin)।",
       anyOf: ["hr.manage", "company.members.manage"],
       what: [

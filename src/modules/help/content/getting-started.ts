@@ -756,6 +756,7 @@ export const gettingStartedHelp: HelpSection = {
         "অনুমোদন",
       ],
       routes: [],
+      shot: { route: "/ai/settings", target: "PIN" },
       who: "PIN ঠিক করেন বা বদলান শুধু মালিক (যাঁর “Turn AI on or off and set what it may do” অনুমতি আছে)। প্রতিটি কোম্পানির একটিই PIN। PIN চাওয়া হয় তাঁকেই যিনি এমন কাজ করছেন।",
       what: [
         "PIN হলো 4 থেকে 8 অঙ্কের একটি গোপন সংখ্যা, প্রতিটি কোম্পানির একটি, যা মালিক নিজে ঠিক করেন।",
@@ -852,6 +853,9 @@ export const gettingStartedHelp: HelpSection = {
         "শর্টকাট",
       ],
       routes: [],
+      shot: {
+        none: "The install box shows only on a phone's browser, when the phone offers it; a computer's picture cannot show it.",
+      },
       who: "সবাই, ফোন বা ট্যাবলেটে। কম্পিউটারে এই প্রস্তাব আসে না, Extas ERP-এর Android অ্যাপের ভেতরেও না।",
       what: [
         "ফোনে Extas ERP খুললে কিছুক্ষণ পর পর্দার নিচে একটি ছোট বাক্স আসতে পারে।",
@@ -924,6 +928,9 @@ export const gettingStartedHelp: HelpSection = {
         "হাজিরা",
       ],
       routes: [],
+      shot: {
+        none: "The location screen shows only on a phone that is checked in with its location off; the demo data on a computer cannot show it.",
+      },
       who: "যাঁরা “My HR” থেকে নিজে চেক-ইন করেন আর যাঁদের HR GPS হাজিরা চালু রেখেছে। অন্যদের এই পর্দা আসে না।",
       what: [
         "HR যদি GPS হাজিরা চালু রাখে, তাহলে চেক-ইন করার পর থেকে চেক-আউট পর্যন্ত Extas ERP আপনার ফোনের অবস্থান পাঠায়: ব্রাউজারে অ্যাপ খোলা থাকলে প্রতি 30 সেকেন্ডে একটি অবস্থান নেয় আর প্রতি মিনিটে পাঠায়, আর Extas ERP-এর Android অ্যাপে পর্দা বন্ধ থাকলেও।",
@@ -1198,6 +1205,9 @@ export const gettingStartedHelp: HelpSection = {
         "কাজ করছে না",
       ],
       routes: [],
+      shot: {
+        none: "Error messages show only when something goes wrong; a picture taken on the demo data never has one to show.",
+      },
       who: "সবাই।",
       what: [
         "অ্যাপ কখনো ফাঁকা পর্দা বা কোডের লম্বা লেখা দেখায় না।",

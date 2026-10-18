@@ -2085,6 +2085,7 @@ export const productionHelp: HelpSection = {
         "ফেব্রিক ফার্স্ট",
       ],
       routes: ["/production/projects/[projectId]"],
+      shot: { target: "Tech pack approval" },
       who: "“Send fabric first” চালু বা বন্ধ করেন যাঁদের “Approve bookings before they go to the supplier” অনুমতি আছে। কাপড়ের অংশ লক ও টেক প্যাক অনুমোদন করেন যাঁদের “Lock a style's fabric part and approve its tech pack for production” অনুমতি আছে। শুরুতে দুটোই শুধু Super Admin-এর।",
       anyOf: ["production.view"],
       what: [
@@ -3553,6 +3554,7 @@ export const productionHelp: HelpSection = {
         "ফ্যাক্টরি পেমেন্ট",
       ],
       routes: ["/production/batches/[batchId]"],
+      shot: { target: "Factory money" },
       who: "খরচ বসান Production Manager ও Accounts; টাকা দেন শুধু Accounts।",
       anyOf: ["production.manage", "accounts.view"],
       what: [
@@ -4469,6 +4471,7 @@ export const productionHelp: HelpSection = {
         "ম্যাটেরিয়াল চালান",
       ],
       routes: ["/production/projects"],
+      shot: { route: "/production/projects/[projectId]", target: "Materials sent" },
       who: "পাঠানো লিখতে ও চালান বাতিল করতে পারেন Production Manager ও Super Admin। প্রজেক্ট যাঁরা দেখেন (Accounts, Warehouse Team) তাঁরা তালিকা দেখেন ও PDF ছাপতে পারেন।",
       what: [
         "প্রজেক্টের পাতার “Materials sent” অংশে ফ্যাক্টরিতে পাঠানো জিনিসের চালানের তালিকা: নম্বর, দিন, কোথায়, কী দিয়ে, কে পাঠালেন আর কী কী।",
@@ -4879,6 +4882,7 @@ export const productionHelp: HelpSection = {
         "পিসপ্রতি খরচ",
       ],
       routes: ["/production/projects"],
+      shot: { route: "/production/projects/[projectId]", open: "More for …" },
       who: "Production Manager ও Super Admin। যে প্রজেক্টের কিছু খরচ এখনো স্টকে যায়নি, তা শেষ বা বাতিল করতে হিসাবের অনুমতি (Accounts বা Super Admin) লাগে, কারণ বাকি খরচ বাদ (write off) দিতে হয়।",
       anyOf: ["production.manage", "accounts.manage"],
       what: [
@@ -4975,6 +4979,7 @@ export const productionHelp: HelpSection = {
         "সরবরাহকারীর বাকি",
       ],
       routes: ["/production/projects"],
+      shot: { route: "/production/projects/[projectId]", target: "Suppliers" },
       who: "যাঁরা প্রোডাকশনের খরচ দেখতে পারেন: Production Manager, Accounts ও Super Admin।",
       anyOf: ["production.manage", "accounts.view"],
       what: [

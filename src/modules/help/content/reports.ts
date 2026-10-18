@@ -526,6 +526,7 @@ export const reportsHelp: HelpSection = {
         "টেমপ্লেট বন্ধ",
       ],
       routes: ["/reports/templates"],
+      shot: { route: "/reports/templates/[templateId]" },
       who: "যাঁদের টেমপ্লেট সামলানোর অনুমতি আছে: শুরুতে শুধু Super Admin।",
       anyOf: ["templates.manage"],
       what: [

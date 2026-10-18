@@ -454,6 +454,7 @@ export const materialsHelp: HelpSection = {
         "শুরুর স্টক",
       ],
       routes: ["/materials/stock"],
+      shot: { route: "/materials/stock/[materialId]" },
       who: "গণনা, সরানো ও নষ্ট বাদ: Super Admin, Production Manager ও Warehouse Team। শুরুর স্টক: Super Admin, Production Manager ও Accounts।",
       anyOf: ["materials.manage", "materials.purchase", "accounts.manage"],
       what: [

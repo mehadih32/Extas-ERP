@@ -407,6 +407,7 @@ export const productsHelp: HelpSection = {
         "মুছুন",
       ],
       routes: ["/products"],
+      shot: { route: "/products/[styleId]" },
       who: "যাঁদের স্টক সামলানোর অনুমতি আছে: Super Admin, Production Manager ও Warehouse Team।",
       anyOf: ["inventory.manage"],
       what: [
@@ -754,6 +755,7 @@ export const productsHelp: HelpSection = {
         "প্যাকিং লিস্ট",
       ],
       routes: ["/products"],
+      shot: { route: "/products/[styleId]", target: "Stock matrix" },
       who: "যাঁদের স্টক সামলানোর অনুমতি আছে: Super Admin, Production Manager ও Warehouse Team।",
       anyOf: ["inventory.manage"],
       what: [
@@ -865,6 +867,7 @@ export const productsHelp: HelpSection = {
         "কোথা থেকে এলো",
       ],
       routes: ["/products"],
+      shot: { route: "/products/[styleId]", target: "Stock history" },
       who: "যাঁরা স্টক দেখতে পারেন। পিসপ্রতি খরচ দেখেন শুধু যাঁদের খরচ দেখার অনুমতি আছে।",
       what: [
         "স্টাইলের পাতার নিচে “Stock history” অংশে দুটি ট্যাব।",

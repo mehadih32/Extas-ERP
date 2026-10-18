@@ -11,7 +11,7 @@ describe("migrations", () => {
     const dir = path.join(process.cwd(), "prisma/migrations");
     const times = readdirSync(dir, { withFileTypes: true })
       .filter((d) => d.isDirectory())
-      .map((d) => d.name.split("_")[0]);
+      .map((d) => d.name.split("_")[0] ?? d.name);
     const twice = times.filter((t, i) => times.indexOf(t) !== i && !ALREADY_SHIPPED.has(t));
     expect(twice).toEqual([]);
   });

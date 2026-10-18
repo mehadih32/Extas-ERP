@@ -131,6 +131,7 @@ echo "This replaces ALL of the ERP's current data with the backup in:"
 echo "  $folder"
 [ -n "$media" ] && echo "including the uploaded files."
 if [ "$confirmed" != 1 ]; then
+  flush_keys
   read -rp "Type RESTORE to go ahead: " answer
   [ "$answer" = RESTORE ] || fail "nothing was changed."
 fi
@@ -146,6 +147,46 @@ step "Saving a safety copy of the database as it is now"
 safety="$(safety_copy "before-restore-$stamp")" ||
   fail "the safety copy of the database could not be saved (is the disk full? sudo df -h), so nothing was restored."
 echo "Saved in $safety"
+
+# Puts the ERP back as it was just before the restore (the safety copy of the
+# database, and the uploaded files from before) and starts it: never left half
+# restored or down. $1: what went wrong, for the message.
+go_back() {
+  went_back=1
+  step "Going back to the safety copy: $1"
+  rm -f "$restored_mark"
+  compose stop app >/dev/null 2>&1 || true
+  restore_database "/safety-copies/before-restore-$stamp/database.dump" ||
+    fail "$1, and the safety copy could not be put back either: restore it by hand: sudo $0 $safety"
+  if [ -d "$DATA_DIR/uploads.before-restore-$stamp" ]; then
+    rm -rf "$DATA_DIR/uploads.failed-restore-$stamp"
+    [ ! -e "$DATA_DIR/uploads" ] || mv "$DATA_DIR/uploads" "$DATA_DIR/uploads.failed-restore-$stamp"
+    mv "$DATA_DIR/uploads.before-restore-$stamp" "$DATA_DIR/uploads"
+  fi
+  rm -rf "$DATA_DIR/uploads.restoring"
+  compose up -d || true
+  wait_healthy app ||
+    fail "$1, nor after going back to the safety copy; see sudo ./deploy/logs.sh app"
+  fail "$1, so it was put back as it was before the restore (the safety copy). The lines above say why."
+}
+
+# The uploaded files from the backup, in place of the ones there now (kept for 30
+# days). False, with the reason said, when any part fails: nothing is left half done.
+restore_uploads() {
+  local incoming="$DATA_DIR/uploads.restoring"
+  rm -rf "$incoming"
+  mkdir -p "$incoming" || return 1
+  if ! tar -xzf "$media" -C "$incoming"; then
+    say "The uploaded files could not be unpacked from the backup (is the disk full? sudo df -h)"
+    return 1
+  fi
+  chown -R "$APP_UID:$APP_UID" "$incoming" || return 1
+  if [ -e "$DATA_DIR/uploads" ]; then
+    mv "$DATA_DIR/uploads" "$DATA_DIR/uploads.before-restore-$stamp" || return 1
+    touch "$DATA_DIR/uploads.before-restore-$stamp"
+  fi
+  mv "$incoming" "$DATA_DIR/uploads" || return 1
+}
 
 step "Stopping the app"
 compose stop app
@@ -184,7 +225,7 @@ if [ -n "$counts_file" ]; then
   # Counted before the app starts, so nothing has been added yet (the same count as
   # src/modules/backups/contents.ts makes for the manifest).
   step "Counting the records in every table"
-  compose exec -T db psql -X -q -At -U postgres -d "$POSTGRES_DB" >"$counts_file" <<'SQL' ||
+  if ! compose exec -T db psql -X -q -At -U postgres -d "$POSTGRES_DB" >"$counts_file" <<'SQL'; then
 SELECT coalesce(json_object_agg(table_name, n ORDER BY table_name), '{}')
   FROM (SELECT table_name::text AS table_name,
                (xpath('/row/n/text()',
@@ -193,19 +234,16 @@ SELECT coalesce(json_object_agg(table_name, n ORDER BY table_name), '{}')
           FROM information_schema.tables
          WHERE table_schema = 'public' AND table_type = 'BASE TABLE') AS t;
 SQL
-    say "The records could not be counted; the restore goes on without the count"
+    # No half count is left to be taken for a whole one.
+    rm -f "$counts_file"
+    say "The records could NOT be counted, so they cannot be checked against the backup; the restore goes on"
+  fi
 fi
 
 if [ -n "$media" ]; then
   step "Restoring the uploaded files"
-  incoming="$DATA_DIR/uploads.restoring"
-  rm -rf "$incoming"
-  mkdir -p "$incoming"
-  tar -xzf "$media" -C "$incoming"
-  chown -R "$APP_UID:$APP_UID" "$incoming"
-  mv "$DATA_DIR/uploads" "$DATA_DIR/uploads.before-restore-$stamp"
-  touch "$DATA_DIR/uploads.before-restore-$stamp"
-  mv "$incoming" "$DATA_DIR/uploads"
+  # The database is already replaced: a failure here goes back to the safety copy.
+  restore_uploads || go_back "the uploaded files could not be restored"
   echo "The files that were there before are kept for 30 days in $DATA_DIR/uploads.before-restore-$stamp"
 fi
 
@@ -213,21 +251,7 @@ step "Starting the app (the database is brought up to this version of the code)"
 if ! compose up -d || ! wait_healthy app; then
   compose logs --tail 80 migrate app || true
   # Never left down: back to the data as it was just before the restore.
-  step "The ERP did not start on the restored data: going back to the safety copy"
-  went_back=1
-  rm -f "$restored_mark"
-  compose stop app >/dev/null 2>&1 || true
-  restore_database "/safety-copies/before-restore-$stamp/database.dump" ||
-    fail "the ERP did not start on the restored data, and the safety copy could not be put back either: restore it by hand: sudo $0 $safety"
-  if [ -n "$media" ] && [ -d "$DATA_DIR/uploads.before-restore-$stamp" ]; then
-    rm -rf "$DATA_DIR/uploads.failed-restore-$stamp"
-    mv "$DATA_DIR/uploads" "$DATA_DIR/uploads.failed-restore-$stamp"
-    mv "$DATA_DIR/uploads.before-restore-$stamp" "$DATA_DIR/uploads"
-  fi
-  compose up -d || true
-  wait_healthy app ||
-    fail "the ERP did not start on the restored data, nor after going back to the safety copy; see sudo ./deploy/logs.sh app"
-  fail "the ERP did not start on the restored data, so it was put back as it was before the restore (the safety copy). The logs above say why."
+  go_back "the ERP did not start on the restored data"
 fi
 
 if [ "$check" = 1 ]; then

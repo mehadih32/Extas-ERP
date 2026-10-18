@@ -67,19 +67,30 @@ export function retryDelayMs(attempt: number): number {
  * Takes the next job that is due, marking it RUNNING for this worker, or null
  * when none is. Jobs another worker holds are skipped, not waited for.
  */
+/**
+ * Which jobs may be claimed. alarmsSince: only the owner's alarms to the bot queued
+ * since then (a copy on standby after a restore, src/modules/jobs/worker.ts).
+ */
+export type ClaimOnly = { alarmsSince: Date };
+
 export async function claimNextJob(
   now: Date = new Date(),
   workerId: string = WORKER_ID,
+  only?: ClaimOnly,
 ): Promise<BackgroundJob | null> {
   // Timestamps are stored as UTC wall-clock time, whatever the database's own zone.
-  const at = Prisma.sql`(${now.toISOString()}::timestamptz AT TIME ZONE 'UTC')`;
+  const utc = (date: Date) => Prisma.sql`(${date.toISOString()}::timestamptz AT TIME ZONE 'UTC')`;
+  const at = utc(now);
+  const which = only
+    ? Prisma.sql`AND "kind" = 'ai.bot.push' AND "payload"->>'alarm' = 'true' AND "createdAt" >= ${utc(only.alarmsSince)}`
+    : Prisma.empty;
   const rows = await prisma.$queryRaw<BackgroundJob[]>`
     UPDATE "BackgroundJob"
     SET "status" = 'RUNNING', "lockedAt" = ${at}, "lockedBy" = ${workerId},
         "attempts" = "attempts" + 1, "updatedAt" = ${at}
     WHERE "id" = (
       SELECT "id" FROM "BackgroundJob"
-      WHERE "status" = 'QUEUED' AND "runAfter" <= ${at}
+      WHERE "status" = 'QUEUED' AND "runAfter" <= ${at} ${which}
       ORDER BY "runAfter", "createdAt"
       LIMIT 1
       FOR UPDATE SKIP LOCKED

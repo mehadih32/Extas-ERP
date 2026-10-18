@@ -427,3 +427,79 @@ describe("the owner's items for the guide (v6.4.1)", () => {
     }
   });
 });
+
+describe("the guide and the restore command's own words (v6.4.1 restore)", () => {
+  const step = (id: string) => GUIDE_PARTS.flatMap((p) => p.steps).find((s) => s.id === id)!;
+  const error = (code: string) => GUIDE_ERRORS.find((e) => e.code === code)!;
+  const quoted = (text: string) => [...text.matchAll(/“([^”]+)”/g)].map((m) => m[1]!);
+
+  it("explains the backup list as the command marks it (D6)", () => {
+    const d6 = [step("D6").text, step("D6").tip!];
+    for (const label of [
+      "(newest checked: Enter picks it)",
+      "(NOT checked in Drive: it may be incomplete)",
+      "(made by a copy on standby)",
+      "None of these backups passed its check in Google Drive",
+    ]) {
+      expect(TOOL, label).toContain(label);
+      for (const lang of ["en", "bn"] as const) {
+        expect(d6.map((t) => t[lang]).join(" "), `${lang}: ${label}`).toContain(`“${label}`);
+      }
+    }
+  });
+
+  it("asks for the web address only after the backup is back, and says so (D8, E1)", () => {
+    const code = CODE_ONLY(BOOTSTRAP);
+    expect(code.indexOf('step "Restoring the database and the files"')).toBeGreaterThan(0);
+    expect(code.indexOf('step "Pointing the web address at this server"')).toBeGreaterThan(
+      code.indexOf('step "Restoring the database and the files"'),
+    );
+    expect(step("D8").text.en).toMatch(/after the backup is back/);
+    expect(step("E1").text.en).toMatch(/“To point \.\.\. to this server”/);
+    // On standby its backups and alarms run; the old wording is gone everywhere.
+    const all = [...allText("en")].join("\n");
+    expect(all).not.toMatch(/makes no backups and sends no reminders|it makes no backups/);
+    expect(error("W10").meaning.en).toMatch(/backups and alarms run/);
+  });
+
+  it("says that pasting the same command again goes on where it stopped (E1)", () => {
+    const tip = step("E1").tip!;
+    for (const words of [
+      "Signed in to Google with the sign-in from the earlier try (no new code needed)",
+      "already downloaded in the earlier try",
+    ]) {
+      expect(TOOL).toContain(words);
+      expect(tip.en).toContain(words);
+      expect(tip.bn).toContain(words);
+    }
+    expect(tip.en).toMatch(/paste the same command again/);
+  });
+
+  it("explains every new message with what to do (R05, R19, R22, W02, W10, W11)", () => {
+    expect(SCRIPTS).toContain("did not finish in 30 minutes. Restart the VM in Azure");
+    expect(error("R05").todo.en).toMatch(/30 minutes.*Restart/);
+    expect(SCRIPTS).toContain("it goes on with the backup already downloaded");
+    expect(error("R19").todo.en).toMatch(/goes on with the backup already downloaded/);
+    expect(error("R19").meaning.en).toMatch(/as it was before the restore/);
+    expect(error("R22").todo.en).toMatch(/64 GB/);
+    expect(error("W02").meaning.en).toMatch(/the lines above say why/);
+    expect(error("W10").todo.en).toMatch(/does not point to this server yet/);
+    expect(error("W11").shown).toBe("the records were NOT checked");
+    expect(error("W11").todo.en).toMatch(/main screens/);
+    // Each message the command prints at the end is in the guide, as printed.
+    for (const shown of [
+      "Finished in ..., but NOT everything is right",
+      "THIS ERP IS ON STANDBY",
+      "stopped: ... does not point to this server yet",
+    ]) {
+      const message = OTHER_MESSAGES.find((m) => m.shown === shown);
+      expect(message, shown).toBeDefined();
+      for (const part of shown.split("...")) expect(SCRIPTS, shown).toContain(part.trim());
+    }
+    // Words in curly quotes there are the command's own.
+    for (const text of [error("W11").todo.en, step("D6").tip!.en]) {
+      for (const words of quoted(text))
+        expect(SCRIPTS + GUIDE_STEP_IDS.join(" "), words).toContain(words.split("...")[0]!.trim());
+    }
+  });
+});

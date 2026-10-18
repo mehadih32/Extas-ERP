@@ -199,8 +199,8 @@ export const DRILL_PART = {
       en: "Copy the drill command in the box below (it ends with --drill) as in C1 and C2, paste it in PuTTY and press Enter.",
     },
     {
-      bn: "“Test web address for this drill” প্রশ্নে ধাপ 1-এর ঠিকানাটি লিখে Enter চাপুন। বাকি প্রশ্নগুলোর উত্তর পার্ট D-র মতো। “To point ... to this server” প্রশ্নে শুধু মহড়ার ঠিকানাটিই আসে: সেটিই লিখে Enter চাপুন। এই প্রশ্ন না এলে (W01) Cloudflare-এ “DNS” > “Records”-এ “Add record” চেপে Type A, Name drill, “IPv4 address”-এ মহড়ার সার্ভারের IP দিয়ে “Save” চাপুন।",
-      en: "At “Test web address for this drill”, type the address from step 1 and press Enter. Answer the other questions as in part D. “To point ... to this server” offers only the drill address: type it and press Enter. If that question does not come (W01), in Cloudflare go to “DNS” > “Records”, click “Add record”, choose Type A, Name drill, put the drill server's IP in “IPv4 address” and click “Save”.",
+      bn: "“Test web address for this drill” প্রশ্নে ধাপ 1-এর ঠিকানাটি লিখে Enter চাপুন। বাকি প্রশ্নগুলোর উত্তর পার্ট D-র মতো। ব্যাকআপ ফেরত আসার পর “To point ... to this server” প্রশ্নে শুধু মহড়ার ঠিকানাটিই আসে: সেটিই লিখে Enter চাপুন। এই প্রশ্ন না এলে (W01) Cloudflare-এ “DNS” > “Records”-এ “Add record” চেপে Type A, Name drill, “IPv4 address”-এ মহড়ার সার্ভারের IP দিয়ে “Save” চাপুন।",
+      en: "At “Test web address for this drill”, type the address from step 1 and press Enter. Answer the other questions as in part D. After the backup is back, “To point ... to this server” offers only the drill address: type it and press Enter. If that question does not come (W01), in Cloudflare go to “DNS” > “Records”, click “Add record”, choose Type A, Name drill, put the drill server's IP in “IPv4 address” and click “Save”.",
     },
     {
       bn: "অপেক্ষা করুন। শেষে লেখা আসে “Restore drill finished in ...”, সঙ্গে ফল। এটাই মহড়ার সময়।",
@@ -713,13 +713,13 @@ export const GUIDE_PARTS: GuidePart[] = [
         id: "D6",
         title: { bn: "কোন ব্যাকআপ", en: "Which backup" },
         text: {
-          bn: "PuTTY-তে ব্যাকআপের তালিকা আসবে, সবচেয়ে নতুনটি উপরে, তারিখ ও আকারসহ। সবচেয়ে নতুনটির জন্য শুধু Enter চাপুন।",
-          en: "PuTTY lists the backups, newest first, with their date and size. For the newest, just press Enter.",
+          bn: "PuTTY-তে ব্যাকআপের তালিকা আসবে, সবচেয়ে নতুনটি উপরে, তারিখ ও আকারসহ। যেটির পাশে “(newest checked: Enter picks it)” লেখা, সেটিই Drive-এ যাচাই হওয়া সবচেয়ে নতুন ব্যাকআপ: শুধু Enter চাপুন।",
+          en: "PuTTY lists the backups, newest first, with their date and size. The one marked “(newest checked: Enter picks it)” is the newest backup that passed its check in Drive: just press Enter.",
         },
         picture: "putty-pick",
         tip: {
-          bn: "পুরনো একটি চাইলে তার নম্বর লিখে Enter চাপুন।",
-          en: "For an older one, type its number and press Enter.",
+          bn: "অন্য একটি চাইলে তার নম্বর লিখে Enter চাপুন। “(NOT checked in Drive: it may be incomplete)” লেখা ব্যাকআপ অসম্পূর্ণ হতে পারে, আর “(made by a copy on standby)” লেখাটি অপেক্ষায় থাকা কোনো কপির (যেমন একটি মহড়ার): এগুলো Enter নেয় না, নম্বর টাইপ করলে তবেই। সবচেয়ে উপরেরটি যাচাই না হলে লেখা আসে “(newest checked: Enter picks it; the ones above are not checked)”। “None of these backups passed its check in Google Drive” এলে Enter কিছু নেয় না: সবচেয়ে উপরের নম্বরটি (1) টাইপ করুন, আর শেষে মিলিয়ে দেখার ফল (R20) ভালো করে দেখুন।",
+          en: "For another one, type its number and press Enter. A backup marked “(NOT checked in Drive: it may be incomplete)” may be incomplete, and one marked “(made by a copy on standby)” was made by a copy waiting on standby (like a drill's): Enter never takes these, only their number does. When the top one is not checked, the newest checked one says “(newest checked: Enter picks it; the ones above are not checked)”. If it says “None of these backups passed its check in Google Drive”, Enter takes none: type the top number (1), and read the comparison at the end (R20) carefully.",
         },
       },
       {
@@ -735,8 +735,8 @@ export const GUIDE_PARTS: GuidePart[] = [
         id: "D8",
         title: { bn: "ওয়েব ঠিকানা এই সার্ভারে", en: "The web address to this server" },
         text: {
-          bn: "“To point ... to this server” প্রশ্ন এলে আপনার ওয়েব ঠিকানা (যেমন erp.extasbd.com) টাইপ করে Enter চাপুন: ওয়েব ঠিকানা Cloudflare-এ নতুন সার্ভারের দিকে ঘুরে যাবে। শুধু Enter চাপলে ঠিকানা যেমন ছিল তেমনই থাকে, আর নতুন ERP অপেক্ষায় (standby) থাকে: কোনো ব্যাকআপ নেয় না, কোনো রিমাইন্ডার পাঠায় না।",
-          en: "When it asks “To point ... to this server”, type your web address (for example erp.extasbd.com) and press Enter: the web address is pointed at the new server in Cloudflare. Just Enter leaves the address as it is, and the new ERP waits on standby: it makes no backups and sends no reminders.",
+          bn: "এই প্রশ্ন আসে পরে, ব্যাকআপ ফেরত আসার পরে (E1-এর মাঝে, প্রায় 20 থেকে 40 মিনিট পর): তাই PuTTY-র কাছেই থাকুন। “To point ... to this server” প্রশ্ন এলে আপনার ওয়েব ঠিকানা (যেমন erp.extasbd.com) টাইপ করে Enter চাপুন: ওয়েব ঠিকানা Cloudflare-এ নতুন সার্ভারের দিকে ঘুরে যাবে। রিস্টোর ঠিকঠাক না হলে প্রশ্নটি আসেই না, তাই ঠিকানা কখনো ভাঙা সার্ভারে যায় না। শুধু Enter চাপলে ঠিকানা যেমন ছিল তেমনই থাকে, আর নতুন ERP অপেক্ষায় (standby) থাকে: তার ব্যাকআপ আর জরুরি সতর্কবার্তা চলে, কিন্তু রিমাইন্ডার আর বার্তা অপেক্ষা করে, আর প্রতিটি পাতার উপরে তা লেখা থাকে।",
+          en: "This question comes later, after the backup is back (during E1, about 20 to 40 minutes in), so stay near PuTTY. When it asks “To point ... to this server”, type your web address (for example erp.extasbd.com) and press Enter: the web address is pointed at the new server in Cloudflare. If the restore did not go well the question never comes, so the address never moves to a broken server. Just Enter leaves the address as it is, and the new ERP waits on standby: its backups and alarms run, but its reminders and messages wait, and every page says so.",
         },
         picture: "putty-dns",
         tip: {
@@ -750,29 +750,29 @@ export const GUIDE_PARTS: GuidePart[] = [
     id: "E",
     title: { bn: "E. অপেক্ষা", en: "E. Wait" },
     intro: {
-      bn: "বাকি সব কাজ কমান্ড নিজেই করে: দরকারি প্রোগ্রাম বসানো, ব্যাকআপ ফেরত আনা, ERP চালু করা, HTTPS, পরীক্ষা।",
-      en: "The command does all the rest by itself: installing what is needed, bringing the backup back, starting the ERP, HTTPS, the checks.",
+      bn: "বাকি সব কাজ কমান্ড নিজেই করে: দরকারি প্রোগ্রাম বসানো, ব্যাকআপ ফেরত আনা, তারপর ওয়েব ঠিকানা এই সার্ভারে আনা (D8-এর প্রশ্ন), HTTPS, পরীক্ষা।",
+      en: "The command does all the rest by itself: installing what is needed, bringing the backup back, then pointing the web address here (the question in D8), HTTPS, the checks.",
     },
     steps: [
       {
         id: "E1",
         title: { bn: "চলতে দিন", en: "Let it run" },
         text: {
-          bn: "20 থেকে 40 মিনিট অপেক্ষা করুন। “==> Step 9: ...” এমন লাইন একটার পর একটা আসবে। PuTTY বন্ধ করবেন না, কম্পিউটার ঘুমাতে দেবেন না।",
-          en: "Wait 20 to 40 minutes. Lines like “==> Step 9: ...” come one after another. Do not close PuTTY and do not let the computer sleep.",
+          bn: "20 থেকে 40 মিনিট অপেক্ষা করুন। “==> Step 9: ...” এমন লাইন একটার পর একটা আসবে। নতুন সার্ভার প্রথমে নিজের আপডেট বসালে লেখা আসে “The server is installing its own updates first”: অপেক্ষা করুন, এতে 30 মিনিট পর্যন্ত লাগতে পারে। ব্যাকআপ ফেরত আসার পর “To point ... to this server” প্রশ্ন আসে: D8-এর মতো উত্তর দিন। PuTTY বন্ধ করবেন না, কম্পিউটার ঘুমাতে দেবেন না।",
+          en: "Wait 20 to 40 minutes. Lines like “==> Step 9: ...” come one after another. If the new server installs its own updates first, it says “The server is installing its own updates first”: wait, it can take up to 30 minutes. After the backup is back it asks “To point ... to this server”: answer as in D8. Do not close PuTTY and do not let the computer sleep.",
         },
         picture: "putty-wait",
         tip: {
-          bn: `সংযোগ কেটে গেলেও রিস্টোর নিজে নিজে চলতে থাকে। B5-এর “Saved Sessions” দিয়ে আবার ঢুকে কমান্ডটি আবার পেস্ট করুন: লেখা আসবে “A restore is already running on this server”, আর শেষ না হওয়া পর্যন্ত সেটি দেখাবে। রিস্টোর থেমে গিয়ে থাকলে আবার শুরু হয়, আর জিজ্ঞেস করতে পারে “Type the web address of the ERP on this server”। ${REPLACE_RULE.bn}`,
-          en: `If the connection drops, the restore goes on by itself. Sign in again with “Saved Sessions” as in B5 and paste the command again: it says “A restore is already running on this server” and shows it until it ends. If the restore had stopped, it starts again and may ask “Type the web address of the ERP on this server”. ${REPLACE_RULE.en}`,
+          bn: `সংযোগ কেটে গেলেও রিস্টোর নিজে নিজে চলতে থাকে। B5-এর “Saved Sessions” দিয়ে আবার ঢুকে কমান্ডটি আবার পেস্ট করুন: লেখা আসবে “A restore is already running on this server”, আর শেষ না হওয়া পর্যন্ত সেটি দেখাবে। রিস্টোর থেমে গেলে একই কমান্ড আবার পেস্ট করুন: যেখানে থেমেছিল সেখান থেকে চলে। লেখা আসে “Signed in to Google with the sign-in from the earlier try (no new code needed)” আর “... already downloaded in the earlier try”, তাই নতুন কোড বা নতুন করে নামানো লাগে না। জিজ্ঞেস করতে পারে “Type the web address of the ERP on this server”। ${REPLACE_RULE.bn}`,
+          en: `If the connection drops, the restore goes on by itself. Sign in again with “Saved Sessions” as in B5 and paste the command again: it says “A restore is already running on this server” and shows it until it ends. If the restore stops, paste the same command again: it goes on from where it stopped. It says “Signed in to Google with the sign-in from the earlier try (no new code needed)” and “... already downloaded in the earlier try”, so no new code and no new download are needed. It may ask “Type the web address of the ERP on this server”. ${REPLACE_RULE.en}`,
         },
       },
       {
         id: "E2",
         title: { bn: "শেষ হওয়া", en: "The end" },
         text: {
-          bn: "শেষে লেখা আসবে “All ... records and ... files are back.” আর “The ERP is running at https://...”। কত সময় লেগেছে তাও লেখা থাকে।",
-          en: "At the end it says “All ... records and ... files are back.” and “The ERP is running at https://...”, and how long it took.",
+          bn: "শেষে লেখা আসবে “All ... records and ... files are back.” আর “The ERP is running at https://...”। কত সময় লেগেছে তাও লেখা থাকে। কিছু ঠিক না থাকলে লেখা আসে “Finished in ..., but NOT everything is right”: উপরের ও নিচের লাইনগুলোর কোড (যেমন R20 বা W11) এই গাইডের শেষে খুঁজুন। ওয়েব ঠিকানা এই সার্ভারে না এলে শেষে বড় করে লেখা থাকে “THIS ERP IS ON STANDBY” (W10)।",
+          en: "At the end it says “All ... records and ... files are back.” and “The ERP is running at https://...”, and how long it took. If something is not right it says “Finished in ..., but NOT everything is right”: look up the codes in the lines above and below (like R20 or W11) at the end of this guide. If the web address did not come to this server, it ends with a big “THIS ERP IS ON STANDBY” (W10).",
         },
         picture: "putty-done",
       },
@@ -842,8 +842,8 @@ export const GUIDE_PARTS: GuidePart[] = [
           en: "Change the web address by hand (only if needed)",
         },
         text: {
-          bn: "ওয়েব ঠিকানা না খুললে (W01 বা W03): Cloudflare-এ আপনার ডোমেইন খুলে “DNS” > “Records”-এ erp (আর demo) লাইনের “Edit” চাপুন, “IPv4 address”-এ A13-এর IP দিন, “Save” চাপুন। কয়েক মিনিটে খুলবে। নতুন ERP standby-তে থাকলে (W10) এরপর PuTTY-তে চালান: cd /opt/extras-erp && sudo ./deploy/go-live.sh, আর জিজ্ঞেস করলে আপনার ওয়েব ঠিকানা টাইপ করে Enter চাপুন। এটি শুধু তখনই করুন যখন পুরনো সার্ভার বন্ধ বা আর ব্যবহার হবে না।",
-          en: "If the web address does not open (W01 or W03): in Cloudflare open your domain, go to “DNS” > “Records”, click “Edit” on the erp (and demo) line, put the IP from A13 in “IPv4 address”, click “Save”. It opens within a few minutes. If the new ERP waits on standby (W10), then run in PuTTY: cd /opt/extras-erp && sudo ./deploy/go-live.sh, and type your web address when it asks. Do this only when the old server is off or will not be used again.",
+          bn: "ওয়েব ঠিকানা না খুললে (W01 বা W03): Cloudflare-এ আপনার ডোমেইন খুলে “DNS” > “Records”-এ erp (আর demo) লাইনের “Edit” চাপুন, “IPv4 address”-এ A13-এর IP দিন, “Save” চাপুন। কয়েক মিনিটে খুলবে। নতুন ERP standby-তে থাকলে (W10) এরপর PuTTY-তে চালান: cd /opt/extras-erp && sudo ./deploy/go-live.sh, আর জিজ্ঞেস করলে আপনার ওয়েব ঠিকানা টাইপ করে Enter চাপুন। এটি আগে দেখে নেয় ঠিকানা সত্যিই এই সার্ভারে আসে কি না; না এলে “stopped: ... does not point to this server yet” লিখে থামে, কিছু বদলায় না: কয়েক মিনিট অপেক্ষা করে আবার চালান। এটি শুধু তখনই করুন যখন পুরনো সার্ভার বন্ধ বা আর ব্যবহার হবে না।",
+          en: "If the web address does not open (W01 or W03): in Cloudflare open your domain, go to “DNS” > “Records”, click “Edit” on the erp (and demo) line, put the IP from A13 in “IPv4 address”, click “Save”. It opens within a few minutes. If the new ERP waits on standby (W10), then run in PuTTY: cd /opt/extras-erp && sudo ./deploy/go-live.sh, and type your web address when it asks. It first checks that the address really reaches this server; if not, it says “stopped: ... does not point to this server yet” and changes nothing: wait a few minutes and run it again. Do this only when the old server is off or will not be used again.",
         },
         picture: "cloudflare-dns",
       },
@@ -893,8 +893,8 @@ export const GUIDE_QUESTIONS: GuideQuestion[] = [
   {
     prompt: "To point ... to this server (...), type ...; or press Enter to leave it as it is: ",
     answer: {
-      bn: "ওয়েব ঠিকানা এই সার্ভারে আনতে আপনার ওয়েব ঠিকানা টাইপ করে Enter। শুধু Enter চাপলে ঠিকানা বদলায় না আর নতুন ERP standby-তে থাকে; অনুশীলনের জন্য সেটাই ঠিক (D8)।",
-      en: "To bring the web address to this server, type your web address and press Enter. Just Enter leaves it as it is and the new ERP waits on standby; that is right for a practice run (D8).",
+      bn: "ব্যাকআপ ফেরত আসার পর আসে। ওয়েব ঠিকানা এই সার্ভারে আনতে আপনার ওয়েব ঠিকানা টাইপ করে Enter। শুধু Enter চাপলে ঠিকানা বদলায় না আর নতুন ERP standby-তে থাকে (D8)।",
+      en: "Comes after the backup is back. To bring the web address to this server, type your web address and press Enter. Just Enter leaves it as it is and the new ERP waits on standby (D8).",
     },
   },
   {
@@ -978,12 +978,12 @@ export const GUIDE_ERRORS: GuideError[] = [
     code: "R05",
     shown: "the restore tools could not be installed",
     meaning: fix(
-      "নতুন সার্ভার প্রথম কয়েক মিনিট নিজের আপডেট বসায়, তখন অন্য কিছু বসানো যায় না।",
-      "A new server installs its own updates for its first minutes; nothing else can be installed meanwhile.",
+      "নতুন সার্ভার প্রথম কয়েক মিনিট নিজের আপডেট বসায়, তখন অন্য কিছু বসানো যায় না। কমান্ড সেগুলো শেষ হওয়ার জন্য 30 মিনিট পর্যন্ত অপেক্ষা করে।",
+      "A new server installs its own updates for its first minutes; nothing else can be installed meanwhile. The command waits up to 30 minutes for them to finish.",
     ),
     todo: fix(
-      "5 মিনিট অপেক্ষা করে কমান্ড আবার চালান।",
-      "Wait 5 minutes and run the command again.",
+      "লেখা থাকলে যে নিজের আপডেট 30 মিনিটেও শেষ হয়নি: Azure-এ VM-এর পাতায় Restart চাপুন, 2 মিনিট পর B5-এর মতো আবার ঢুকে কমান্ড আবার পেস্ট করুন। অন্যথায় 5 মিনিট অপেক্ষা করে কমান্ড আবার চালান।",
+      "If it says the server's own updates did not finish in 30 minutes: click Restart on the VM's page in Azure, sign in again after 2 minutes as in B5 and paste the command again. Otherwise wait 5 minutes and run the command again.",
     ),
   },
   {
@@ -1128,12 +1128,12 @@ export const GUIDE_ERRORS: GuideError[] = [
     code: "R19",
     shown: "the backup could not be restored",
     meaning: fix(
-      "ডাটাবেস বা ফাইল ফেরত আনা যায়নি। ERP চলছে, কিন্তু ব্যাকআপের তথ্য ছাড়া।",
-      "The database or files could not be restored. The ERP runs, but without the backup's data.",
+      "ডাটাবেস বা ফাইল ফেরত আনা যায়নি। কেন, তা একই লাইনে আর উপরে লেখা; সাধারণত সার্ভার রিস্টোরের আগের অবস্থায় (নিরাপত্তা কপি থেকে) ফিরে গেছে। ওয়েব ঠিকানা বদলায়নি।",
+      "The database or files could not be restored. Why is on the same line and above; usually the server was put back as it was before the restore (the safety copy). The web address was not changed.",
     ),
     todo: fix(
-      `কমান্ড আবার চালান; এবার সে জিজ্ঞেস করবে “Type the web address of the ERP on this server”। ${REPLACE_RULE.bn} একই ভুল আবার হলে আরেকটি ব্যাকআপ বেছে নিন।`,
-      `Run the command again; it then asks “Type the web address of the ERP on this server”. ${REPLACE_RULE.en} If the same error comes again, pick another backup.`,
+      `একই কমান্ড আবার পেস্ট করুন: আগে নামানো ব্যাকআপ দিয়েই চলে। জিজ্ঞেস করতে পারে “Type the web address of the ERP on this server”। ${REPLACE_RULE.bn} একই ভুল আবার হলে D6-এ আরেকটি ব্যাকআপ বাছুন।`,
+      `Paste the command again: it goes on with the backup already downloaded. It may ask “Type the web address of the ERP on this server”. ${REPLACE_RULE.en} If the same error comes again, pick another backup at D6.`,
     ),
   },
   {
@@ -1152,12 +1152,12 @@ export const GUIDE_ERRORS: GuideError[] = [
     code: "R22",
     shown: "the disk is full / too little free space",
     meaning: fix(
-      "ব্যাকআপের জন্য ডিস্কে জায়গা নেই।",
-      "There is no room on the disk for the backup.",
+      "ব্যাকআপের জন্য ডিস্কে জায়গা নেই। লাইনে লেখা থাকে কত লাগবে (নামানো, খোলা ব্যাকআপ, ফাইল, ডাটাবেস, ERP-র প্রোগ্রাম) আর কত খালি আছে।",
+      "There is no room on the disk for the backup. The line says how much it needs (the download, the opened backup, the files, the database, the ERP's programs) and how much is free.",
     ),
     todo: fix(
-      "সার্ভারটি বড় ডিস্ক দিয়ে আবার বানান (A10: 64 GiB বা বেশি)।",
-      "Make the VM again with a bigger disk (A10: 64 GiB or more).",
+      "সার্ভারটি বড় ডিস্ক দিয়ে আবার বানান (A10: 64 GB বা বেশি)।",
+      "Make the VM again with a bigger disk (A10: 64 GB or more).",
     ),
   },
   {
@@ -1258,11 +1258,14 @@ export const GUIDE_ERRORS: GuideError[] = [
   },
   {
     code: "W02",
-    shown: "Cloudflare did not take the change",
-    meaning: fix("Cloudflare টোকেন কাজ করেনি।", "The Cloudflare token did not work."),
+    shown: "the web address was not changed / Cloudflare did not take the change",
+    meaning: fix(
+      "Cloudflare-এ ওয়েব ঠিকানা বদলানো যায়নি; কেন, তা উপরে লেখা (যেমন টোকেন কাজ করেনি)।",
+      "The web address was not changed in Cloudflare; the lines above say why (for example the token did not work).",
+    ),
     todo: fix(
-      "F6 ধাপটি করুন। পরে Backups পাতায় নতুন Cloudflare টোকেন রাখুন।",
-      "Do step F6. Later, save a new Cloudflare token on the Backups screen.",
+      "F6 ধাপটি নিজে করুন: ঠিকানাটি এই সার্ভারের Public IP-তে আনুন। পরে Backups পাতায় নতুন Cloudflare টোকেন রাখুন।",
+      "Do step F6 yourself: point the address to this server's Public IP address. Later, save a new Cloudflare token on the Backups screen.",
     ),
   },
   {
@@ -1338,18 +1341,54 @@ export const GUIDE_ERRORS: GuideError[] = [
     code: "W10",
     shown: "this ERP waits on standby",
     meaning: fix(
-      "ওয়েব ঠিকানা এখনো অন্য (পুরনো) সার্ভারের দিকে, তাই নতুন ERP অপেক্ষায় আছে: খোলে, কিন্তু ব্যাকআপ নেয় না, রিমাইন্ডার বা অন্য কিছু নিজে থেকে পাঠায় না। এতে একসঙ্গে দুটি ERP চলে না।",
-      "The web address still points at the other (old) server, so the new ERP waits: it opens, but makes no backups and sends no reminders or anything else by itself. So two ERPs never run at once.",
+      "ওয়েব ঠিকানা এখনো এই সার্ভারে আসেনি, তাই নতুন ERP অপেক্ষায় আছে: খোলে, তার ব্যাকআপ আর জরুরি সতর্কবার্তা চলে, কিন্তু রিমাইন্ডার আর বার্তা অপেক্ষা করে, যাতে দুটি ERP একসঙ্গে না পাঠায়। প্রতিটি পাতার উপরে লাল ফিতায় তা লেখা থাকে।",
+      "The web address does not point to this server yet, so the new ERP waits: it opens, its backups and alarms run, but its reminders and messages wait, so two ERPs never send them at once. A red bar on every page says so.",
     ),
     todo: fix(
-      "অনুশীলন হলে কিছু করতে হবে না; শেষে Azure-এ অনুশীলনের সার্ভারটি মুছে দিন। এই সার্ভারই কাজে লাগবে (পুরনোটি বন্ধ) হলে F6 ধাপটি করুন: ঠিকানা এখানে আনুন, তারপর sudo ./deploy/go-live.sh চালান।",
-      "For a practice run, nothing to do; delete the practice server in Azure at the end. If this server is the one to use (the old one is off), do step F6: bring the address here, then run sudo ./deploy/go-live.sh.",
+      "অনুশীলন হলে কিছু করতে হবে না; শেষে Azure-এ অনুশীলনের সার্ভারটি মুছে দিন। এই সার্ভারই কাজে লাগবে (পুরনোটি বন্ধ) হলে F6 করুন: ঠিকানা এখানে আনুন, কয়েক মিনিট পর sudo ./deploy/go-live.sh চালান। ঠিকানা তখনো না এলে এটি “stopped: ... does not point to this server yet” বলে থামে, কিছু বদলায় না।",
+      "For a practice run, nothing to do; delete the practice server in Azure at the end. If this server is the one to use (the old one is off), do step F6: bring the address here, then after a few minutes run sudo ./deploy/go-live.sh. If the address does not point to this server yet, it says so (“stopped: ... does not point to this server yet”) and changes nothing.",
+    ),
+  },
+  {
+    code: "W11",
+    shown: "the records were NOT checked",
+    meaning: fix(
+      "রিস্টোরের পর রেকর্ড গোনা যায়নি, তাই সব রেকর্ড ফিরেছে কি না জানা নেই। ERP চলছে।",
+      "The records could not be counted after the restore, so it is not known whether all of them are back. The ERP runs.",
+    ),
+    todo: fix(
+      "F1 আর F2-এর মতো ERP খুলে প্রধান পাতাগুলো দেখুন (বায়ার, অর্ডার, বুকিং, হিসাব): আপনার তথ্য আছে কি না। PuTTY-র শেষ লাইনগুলোর ছবি তুলে ডেভেলপারকে পাঠান।",
+      "Open the ERP as in F1 and F2 and look at its main screens (buyers, orders, bookings, accounts) to see that your data is there. Take a picture of PuTTY's last lines and send it to the developer.",
     ),
   },
 ];
 
 /** Messages from PuTTY, curl, sudo, Google and the browser, and what to do. */
 export const OTHER_MESSAGES: OtherMessage[] = [
+  {
+    shown: "Finished in ..., but NOT everything is right",
+    where: fix("PuTTY, রিস্টোরের শেষে", "PuTTY, at the end of the restore"),
+    todo: fix(
+      "উপরের ও নিচের লাইনগুলোতে Error বা Note-এর কোড খুঁজে এই তালিকায় দেখুন (যেমন R20, W05, W11)। রেকর্ড আর ফাইল নিয়ে লাইনটি ভালো করে পড়ুন।",
+      "Find the Error or Note codes in the lines above and below and look them up in this list (like R20, W05, W11). Read the line about the records and files carefully.",
+    ),
+  },
+  {
+    shown: "THIS ERP IS ON STANDBY",
+    where: fix("PuTTY, রিস্টোরের একেবারে শেষে", "PuTTY, at the very end of the restore"),
+    todo: fix(
+      "ওয়েব ঠিকানা এই সার্ভারে আসেনি: W10 দেখুন।",
+      "The web address did not come to this server: see W10.",
+    ),
+  },
+  {
+    shown: "stopped: ... does not point to this server yet",
+    where: fix("PuTTY, go-live.sh চালালে", "PuTTY, when running go-live.sh"),
+    todo: fix(
+      "ঠিকানা এখনো এই সার্ভারে আসেনি; কিছু বদলায়নি। F6 করুন, কয়েক মিনিট অপেক্ষা করে আবার চালান।",
+      "The address does not reach this server yet; nothing was changed. Do step F6, wait a few minutes, then run it again.",
+    ),
+  },
   {
     shown: "Network error: Connection timed out",
     where: fix("PuTTY", "PuTTY"),

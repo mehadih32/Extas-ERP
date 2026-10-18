@@ -278,26 +278,40 @@ stay public for `raw.githubusercontent.com` to serve it. It:
 1. checks the server (Ubuntu 22.04 or newer, 4 GB memory, 20 GB free disk) and looks for an
    Extas ERP already on it: a restore over a running ERP goes on only when its web address
    is typed, and its own `ENCRYPTION_KEY` is never replaced (the backup's goes in
-   `ENCRYPTION_OLD_KEYS`);
+   `ENCRYPTION_OLD_KEYS`). On a new VM it first waits for the server's own updates (they
+   hold apt's lock for the first minutes);
 2. downloads `deploy/restore-tool.py` from the same commit and checks its SHA-256;
 3. asks for the Google client (hidden input), shows a Google sign-in code to enter on a
-   phone, lists the backups newest first (Enter: the newest), downloads the one picked and
-   checks every file; reads the recovery key from Drive, or asks for it (hidden);
+   phone, lists the backups newest first (Enter: the newest that passed its check in Drive;
+   unchecked ones and ones made on standby are shown but never picked by Enter), checks
+   there is room on the disk for the download, the opened files, the files unpacked, the
+   database and the ERP's programs, downloads the one picked and checks every file; reads
+   the recovery key from Drive, or asks for it (hidden). Keys pressed before a question
+   are dropped, so an extra Enter never answers one;
 4. puts the code from the backup in `/opt/extras-erp` and writes `deploy/.env` from the
    backup's settings;
-5. points the web address (and the demo site's) at this server in Cloudflare with the saved
-   token, only when the web address is typed (Enter leaves it), and says so first when the
-   ERP still answers from the old server; or says which A record to change. Until the web
-   address points here, the restored ERP waits **on standby** (`/srv/extras-erp/backups/.standby`):
-   it opens, but runs no clock (no backups, reminders, jobs or Bug Guard schedule), so two
-   ERPs never run at once. A practice restore is therefore safe. `sudo ./deploy/go-live.sh`
-   (the web address typed again) ends the standby once this server is the one to use;
-6. installs Docker and the rest (`setup-server.sh`), installs the ERP (`deploy.sh`; HTTPS by
-   Cloudflare's DNS challenge when a token is saved, otherwise the usual HTTP challenge),
-   restores the database and the files (`restore.sh --check`) and starts the demo site;
-7. runs the checks (the full check, then Bug Guard on every company with
-   `bug-guard.sh`), compares every table and file with the backup's manifest and says "All N
-   records and M files are back", or exactly what is missing.
+5. installs Docker and the rest (`setup-server.sh`), installs the ERP (`deploy.sh`; HTTPS by
+   Cloudflare's DNS challenge when a token is saved, otherwise the usual HTTP challenge) and
+   restores the database and the files (`restore.sh --check`; when the files cannot be
+   restored or the ERP does not start, it goes back to its safety copy);
+6. only then points the web address (and the demo site's) at this server in Cloudflare with
+   the saved token, when the web address is typed (Enter leaves it), and says so first when
+   the ERP still answers from the old server; or says which A record to change. Until the
+   web address points here, the restored ERP waits **on standby**
+   (`/srv/extras-erp/backups/.standby`): a red bar on every page says so, its backups (named
+   `..._standby`) and alarms run, and its reminders, messages and housekeeping wait, so two
+   ERPs never send them at once. A practice restore is therefore safe. `sudo ./deploy/go-live.sh`
+   ends the standby once this server is the one to use: it first checks that the web
+   address reaches this server, then asks for it to be typed;
+7. starts the demo site, runs the checks (the full check, then Bug Guard on every company
+   with `bug-guard.sh`), compares every table and file with the backup's manifest and says
+   "All N records and M files are back", or exactly what is missing, or that the records
+   were NOT checked (W11) when they could not be counted.
+
+A second try after a stop (paste the command again) goes on with the first try's Google
+sign-in and download, which stay locked in `/var/lib/extas-erp-restore` (root only) until
+the restore ends well; anything opened, there or in `/srv/extras-erp/backups/restores`, is
+deleted when the command ends and at the start of the next one.
 
 Secrets never go on a command line, on the screen or in the log
 (`/var/log/extas-erp-restore.log`), and the opened backup is deleted when the command ends.

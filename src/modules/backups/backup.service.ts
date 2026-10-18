@@ -51,6 +51,7 @@ import {
   googleClientSchema,
   listBackupRunsSchema,
 } from "@/modules/backups/schemas";
+import { onStandby } from "@/modules/backups/standby";
 import { uploadRoot } from "@/modules/files/file.service";
 
 export {
@@ -940,6 +941,16 @@ export async function restoreFacts(config: BackupConfig, createdAt: Date): Promi
   };
 }
 
+/** A line for the backup's "not in it" list when the uploaded files hold links (never followed). */
+function linksLine(links: string[]): string[] {
+  if (links.length === 0) return [];
+  const shown = links.sort().slice(0, 5).join(", ");
+  const more = links.length > 5 ? ` and ${links.length - 5} more` : "";
+  return [
+    `${links.length} link(s) among the uploaded files (a link points to a file kept somewhere else, so it is not in the backup): ${shown}${more}.`,
+  ];
+}
+
 /** Why a part is not in a backup, in plain words (for the report and the screen). */
 export const MISSING = {
   code: "The code at the running version: the server makes it at each update, and has not yet.",
@@ -1018,7 +1029,10 @@ export type BackupReport = {
 async function executeRun(run: BackupRun): Promise<BackupRun> {
   const config = await getBackupConfig();
   const root = backupRoot();
-  let stamp = stampFor(run.startedAt, config.timezone);
+  // A copy on standby after a restore (G2) backs up too, under a name of its own: it
+  // never mixes with the backups of the ERP in use, in the same Drive folder.
+  const standby = await onStandby();
+  let stamp = stampFor(run.startedAt, config.timezone) + (standby ? "_standby" : "");
   // Each backup's name is its own (it names its folder here and in Drive).
   const taken = await prisma.backupRun.findFirst({
     where: { name: stamp, id: { not: run.id } },
@@ -1067,7 +1081,8 @@ async function executeRun(run: BackupRun): Promise<BackupRun> {
     const uploads = uploadRoot();
     const inside = path.relative(uploads, root);
     const skip = inside && !inside.startsWith("..") && !path.isAbsolute(inside) ? root : undefined;
-    const uploaded = await listFiles(uploads, skip);
+    const links: string[] = [];
+    const uploaded = await listFiles(uploads, skip, links);
     const media = path.join(dir, "media.tar.gz");
     await packFiles(uploads, uploaded, media);
     const contents = contentsOf(tables, uploaded);
@@ -1099,7 +1114,7 @@ async function executeRun(run: BackupRun): Promise<BackupRun> {
       fileBytes: contents.fileBytes,
       commit: host.commit,
       version: host.version,
-      missing: parts.missing,
+      missing: [...parts.missing, ...linksLine(links)],
     };
     const sealed = await sealFolder(
       dir,
@@ -1117,7 +1132,9 @@ async function executeRun(run: BackupRun): Promise<BackupRun> {
         tables: contents.tables,
         uploads: contents.files,
         uploadBytes: contents.fileBytes,
-        missing: parts.missing,
+        missing: [...parts.missing, ...linksLine(links)],
+        // Made while this copy waited on standby: Enter never picks it in a restore.
+        ...(standby ? { standby: true } : {}),
       },
       { prelocked: parts.settings ? [parts.settings] : [], readable },
     );

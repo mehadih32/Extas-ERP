@@ -38,7 +38,7 @@ export const ROOT_FILES = {
 export type RootFile = keyof typeof ROOT_FILES;
 
 /**
- * The ERP's own labelled files of one kind in the backups folder, oldest first
+ * The ERP's own labelled files of one kind in the backups folder, newest first
  * (a backup's folder is labelled "backup", so it is never one of them).
  */
 export async function findRootFiles(token: string, rootId: string, which: RootFile) {
@@ -92,11 +92,11 @@ export async function readRootFile(
   return { file: newest, data: await drive.downloadBytes(token, newest.id) };
 }
 
-/** Files newest first, by the time Drive made them (as listed when they tie). */
+/** Files newest first, by the time Drive made them (as Drive listed them, newest first, when they tie). */
 export function newestFirst(files: drive.DriveFile[]): drive.DriveFile[] {
   return files
     .map((file, at) => ({ file, at, time: Date.parse(file.createdTime ?? "") || 0 }))
-    .sort((a, b) => b.time - a.time || b.at - a.at)
+    .sort((a, b) => b.time - a.time || a.at - b.at)
     .map((f) => f.file);
 }
 

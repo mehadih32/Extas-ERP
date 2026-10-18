@@ -127,10 +127,6 @@ export async function backupHealth(
   if (await onDrill()) {
     return { ...base, level: "danger", line: DRILL_LINE, problem: null };
   }
-  // A copy on standby after a restore (G2): no backup runs until it goes live.
-  if (await onStandby()) {
-    return { ...base, level: "danger", line: STANDBY_LINE, problem: null };
-  }
   if (lastRun?.status === "FAILED") {
     const text = `The last backup failed ${ago(lastRun.startedAt, now)}: ${lastRun.error ?? "no reason was recorded"}`;
     return { ...base, level: "danger", line: text, problem: { kind: "failed", text } };
@@ -139,6 +135,11 @@ export async function backupHealth(
   if (late) {
     const text = `The backup due at ${timeIn(late, config.timezone)} has not started: is the server running?`;
     return { ...base, level: "danger", line: text, problem: { kind: "late", text } };
+  }
+  // A copy on standby after a restore (G2): its backups run, but it is not the ERP
+  // in use until it goes live; said here after any backup problem, and on every page.
+  if (await onStandby()) {
+    return { ...base, level: "danger", line: STANDBY_LINE, problem: null };
   }
   if (!lastSuccess) {
     return {

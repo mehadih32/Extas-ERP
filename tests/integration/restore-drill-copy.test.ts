@@ -111,12 +111,20 @@ run("a restore drill copy and the drill's record", () => {
     });
     await markDrill();
     expect(await onDrill()).toBe(true);
-    // No clock: no backup, no background job.
-    expect(await onStandby()).toBe(true);
+    // No clock: no backup, no background job (checked on its own, not through standby,
+    // whose backups and alarms run).
+    expect(await onStandby()).toBe(false);
     await backupClock();
     expect(await prisma.backupRun.count()).toBe(0);
     expect(await jobTick()).toBeNull();
     expect((await backupHealth()).line).toBe(DRILL_LINE);
+    // A drill copy that also waits on standby: still no backup, alarm or job.
+    await writeFile(path.join(backupDir, ".standby"), "words");
+    await backupClock();
+    expect(await prisma.backupRun.count()).toBe(0);
+    expect(await jobTick()).toBeNull();
+    expect((await backupHealth()).line).toBe(DRILL_LINE);
+    await rm(path.join(backupDir, ".standby"));
 
     // No email: refused, and the log says why.
     const mail = await appError(

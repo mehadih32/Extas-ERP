@@ -297,9 +297,66 @@ PY
   return "$status"
 }
 
+# Drops whatever was typed before a question: an Enter pressed earlier (while a
+# script worked, or a second one after a paste) must never answer it.
+flush_keys() {
+  python3 -I -c 'import os, termios
+fd = os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY)
+termios.tcflush(fd, termios.TCIFLUSH)' 2>/dev/null || true
+}
+
+# A new Azure VM installs its own updates in its first minutes (cloud-init, then the
+# automatic updates): apt waits until they are done instead of failing on their lock.
+# (deploy/bootstrap.sh has the same, as it runs before this folder is on the server.)
+apt_busy() {
+  local lock
+  if command -v fuser >/dev/null 2>&1; then
+    for lock in ${APT_LOCKS:-/var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/lib/apt/lists/lock /var/cache/apt/archives/lock}; do
+      [ -e "$lock" ] && fuser "$lock" >/dev/null 2>&1 && return 0
+    done
+    return 1
+  fi
+  pgrep -x 'apt|apt-get|dpkg|unattended-upgr|aptd' >/dev/null 2>&1
+}
+wait_for_apt() {
+  local waited=0 limit="${APT_WAIT_SECONDS:-1800}" said=0
+  if command -v cloud-init >/dev/null 2>&1; then
+    timeout "$limit" cloud-init status --wait >/dev/null 2>&1 || true
+  fi
+  while apt_busy; do
+    if [ "$said" = 0 ]; then
+      say "The server is installing its own updates first; waiting for them to finish (up to $((limit / 60)) minutes)"
+      said=1
+    fi
+    [ "$waited" -lt "$limit" ] || return 1
+    sleep 5
+    waited=$((waited + 5))
+  done
+}
+
+# Whether the web address $1 reaches this server: its address in DNS is this server's
+# public IP address, or the ERP answering there shows this server's standby id ($2 the
+# standby mark; src/modules/backups/standby.ts), as through Cloudflare's proxy.
+web_address_here() {
+  local domain="$1" mark="$2" ip addresses id
+  ip="${PUBLIC_IP:-$(curl -s --max-time 10 https://1.1.1.1/cdn-cgi/trace 2>/dev/null | sed -n 's/^ip=//p' || true)}"
+  addresses="$(getent ahostsv4 "$domain" 2>/dev/null | awk '{print $1}' | sort -u | tr '\n' ' ' || true)"
+  if [ -n "$ip" ] && [[ " $addresses " == *" $ip "* ]]; then
+    return 0
+  fi
+  id="$(sha256sum "$mark" | cut -c1-16)"
+  if curl -sk --max-time 15 "https://$domain/api/health" 2>/dev/null | grep -q "\"standby\":\"$id\""; then
+    return 0
+  fi
+  WHERE_IT_POINTS="${addresses% }"
+  THIS_SERVER="$ip"
+  return 1
+}
+
 # Ends the standby a restore left on a second server (G2: DATA_DIR/backups/.standby,
-# which the app reads, src/modules/backups/standby.ts) once this ERP's web address is
-# typed ($1 the backups folder, $2 the web address). Its clocks then start within a minute.
+# which the app reads, src/modules/backups/standby.ts) once this ERP's web address
+# points here and is typed ($1 the backups folder, $2 the web address). Its reminders
+# and messages then start within a minute.
 leave_standby() {
   local dir="$1" domain="${2,,}" typed=""
   # A restore drill copy (bootstrap.sh --drill) never becomes the ERP in use.
@@ -309,14 +366,18 @@ leave_standby() {
     say "This ERP is not on standby: it is the one in use already"
     return 0
   fi
+  if ! web_address_here "$domain" "$dir/.standby"; then
+    die "stopped: $domain does not point to this server yet (it points to ${WHERE_IT_POINTS:-nothing}; this server is ${THIS_SERVER:-its Public IP address in Azure}). Point $domain here first (step F6 in the restore guide), wait a few minutes, then run this again. Nothing was changed."
+  fi
   say "This makes this server the Extas ERP in use"
-  echo "Its backups, reminders and other clocks start within a minute. Do it only when the"
-  echo "old server is off or will not be used again, and $domain points to this server."
+  echo "$domain points to this server. Its reminders and messages start within a minute."
+  echo "Do it only when the old server is off or will not be used again."
+  flush_keys
   read -r -p "Type $domain to go on, or press Enter to stop: " typed || true
   typed="$(printf '%s' "$typed" | tr '[:upper:]' '[:lower:]' | sed -e 's#^https\?://##' -e 's#/.*$##' -e 's/[[:space:]]//g')"
   { [ -n "$typed" ] && [ "$typed" = "$domain" ]; } || die "stopped: nothing was changed."
   rm -f "$dir/.standby"
-  say "Done: this ERP is the one in use; its clocks start within a minute"
+  say "Done: this ERP is the one in use; its reminders and messages start within a minute"
 }
 
 # The weekly test restore puts the newest backup into a temporary database of its own,

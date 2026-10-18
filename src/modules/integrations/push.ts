@@ -54,6 +54,9 @@ export async function pushToUsers(
   sender: PushSender | null = pushSender(),
 ): Promise<{ sent: number }> {
   if (!sender || userIds.length === 0) return { sent: 0 };
+  // A restore drill copy (test mode) pushes nothing to phones (the inbox has the message).
+  const { onDrill } = await import("@/modules/backups/standby");
+  if (await onDrill()) return { sent: 0 };
   try {
     return await sender.send(userIds, message);
   } catch (error) {

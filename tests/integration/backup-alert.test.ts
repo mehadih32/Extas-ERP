@@ -1,4 +1,5 @@
 import { generateKeyPairSync } from "node:crypto";
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -26,7 +27,7 @@ import { setPin } from "@/modules/ai/settings.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import * as backups from "@/modules/backups/backup.service";
 import { disk } from "@/modules/backups/disk";
-import { nextLabel } from "@/modules/backups/drive-copies";
+import { nextLabel, retryWatchLabel, WATCH_LABEL_PENDING } from "@/modules/backups/drive-copies";
 import { DRILL_MARK, STANDBY_MARK } from "@/modules/backups/standby";
 import { ALERT_SECRETS, setUpGitHubAlert } from "@/modules/backups/github-alert";
 import * as keys from "@/modules/backups/recovery-key.service";
@@ -360,6 +361,38 @@ run("the late-backup alert on GitHub (A13)", { timeout: 120_000 }, () => {
     expect(await labels()).toEqual(kept);
   });
 
+  it("labels the newest backup again later when Drive could not be reached as backups went back on (v6.4.1 review 2)", async () => {
+    await keys.setRecoveryKey(ctx, { pin: PIN, key: OWNER_KEY, confirm: OWNER_KEY });
+    await connectDrive();
+    const made = await backups.runBackup({ trigger: "MANUAL", actor: owner, wait: true });
+    const labels = async () =>
+      google.files.get(
+        (await prisma.backupRun.findUniqueOrThrow({ where: { id: made.id } })).driveFileId!,
+      )!.appProperties;
+    const pending = path.join(dir, "backups", WATCH_LABEL_PENDING);
+    await backups.updateBackupConfig(ctx, { isEnabled: false, pin: PIN });
+    expect((await labels()).backupsOffAt).toBeTruthy();
+    // Back on, but Drive takes no label just then: the folder still says "off", which
+    // would keep the alert quiet for good if nothing tried again.
+    const realFetch = globalThis.fetch;
+    vi.stubGlobal("fetch", (url: string, init?: RequestInit) =>
+      init?.method === "PATCH"
+        ? Promise.reject(new TypeError("fetch failed"))
+        : realFetch(url, init),
+    );
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    await backups.updateBackupConfig(owner, { isEnabled: true });
+    vi.unstubAllGlobals();
+    expect((await labels()).backupsOffAt).toBeTruthy();
+    expect(existsSync(pending)).toBe(true);
+    // The backup clock tries again: the label is right, and nothing is left to do.
+    expect(await retryWatchLabel(Date.now())).toBe(true);
+    expect((await labels()).backupsOffAt).toBeUndefined();
+    expect((await labels()).nextAt).toBeTruthy();
+    expect(existsSync(pending)).toBe(false);
+    expect(await retryWatchLabel(Date.now() + 2 * H)).toBe(false);
+  });
+
   it("is never set up from a restore drill copy, which never changes GitHub (v6.4.1 review)", async () => {
     await connectDrive();
     await linkBot();
@@ -368,5 +401,10 @@ run("the late-backup alert on GitHub (A13)", { timeout: 120_000 }, () => {
     await expectAppError(setUp(), "UNAVAILABLE", /restore drill copy/);
     expect(github.secrets.size).toBe(0);
     expect((await prisma.backupConfig.findFirstOrThrow()).githubAlertAt).toBeNull();
+    // Nor from a copy on standby, which is not the ERP in use (v6.4.1 review 2).
+    await rm(path.join(dir, "backups", DRILL_MARK));
+    await writeFile(path.join(dir, "backups", STANDBY_MARK), "3f9a0c1d2e4b5a69");
+    await expectAppError(setUp(), "UNAVAILABLE", /on standby after a restore/);
+    expect(github.secrets.size).toBe(0);
   });
 });

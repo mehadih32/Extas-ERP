@@ -47,12 +47,8 @@ export async function bugGuardAfterDeploy(
   if (process.env.DEMO_SITE === "on") return null;
   const asked = await takeRequest(AFTER_DEPLOY_REQUEST);
   if (!asked) return null;
-  const { onDrill, onStandby } = await import("@/modules/backups/standby");
-  const notOurs = (await onDrill())
-    ? "this is a restore drill copy (test mode)"
-    : (await onStandby())
-      ? "this copy is on standby (the web address does not point here)"
-      : null;
+  const { notTheErpInUse } = await import("@/modules/backups/standby");
+  const notOurs = await notTheErpInUse();
   if (notOurs) {
     console.log(`[bug-guard] after the update: not checked here, ${notOurs}`);
     return null;

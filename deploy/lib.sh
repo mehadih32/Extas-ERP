@@ -403,7 +403,7 @@ leave_standby() {
   read -r -p "Type $domain to go on, or press Enter to stop: " typed || true
   typed="$(printf '%s' "$typed" | tr '[:upper:]' '[:lower:]' | sed -e 's#^https\?://##' -e 's#/.*$##' -e 's/[[:space:]]//g')"
   { [ -n "$typed" ] && [ "$typed" = "$domain" ]; } || die "stopped: nothing was changed."
-  rm -f "$dir/.standby"
+  rm -f "$dir/.standby" "$dir/.standby.was-in-use"
   say "Done: this ERP is the one in use; its reminders and messages start within a minute"
 }
 
@@ -467,7 +467,24 @@ EOF
 # The uploaded files a restore set aside stay 30 days.
 23 3 * * * root find $DATA_DIR -mindepth 1 -maxdepth 1 -type d \( -name 'uploads.before-restore-*' -o -name 'uploads.failed-restore-*' \) -mtime +30 -exec rm -rf {} + 2>/dev/null
 EOF
+  # A restore cut off half-way by a restart left the app stopped: at the server's
+  # next start, the ERP is put back as it was before that restore and started.
+  cat >/etc/systemd/system/extras-erp-restore-cut.service <<EOF
+[Unit]
+Description=Extas ERP: start the ERP again after a restore cut off by a restart
+Wants=docker.service
+After=docker.service network-online.target
+ConditionPathExists=$DATA_DIR/backups/.restore-running
+
+[Service]
+Type=oneshot
+ExecStart=$DEPLOY_DIR/restore.sh --after-restart
+
+[Install]
+WantedBy=multi-user.target
+EOF
   systemctl daemon-reload || return 1
+  systemctl enable extras-erp-restore-cut.service >/dev/null 2>&1 || return 1
   systemctl enable --now extras-erp-restore.path >/dev/null 2>&1 || return 1
   systemctl enable --now extras-erp-settings-lock.path >/dev/null 2>&1 || return 1
   install -o "$APP_UID" -g "$APP_UID" -m 644 /dev/null "$DATA_DIR/backups/.restore-helper"

@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { createHash, createHmac } from "node:crypto";
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { mkdir, mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -241,7 +241,9 @@ write_restored_mark "${folder}" "${dir}/kept.json" "${mark}"; echo "exit $?"`,
     expect(restore).toMatch(
       /mv "\$DATA_DIR\/uploads" "\$DATA_DIR\/uploads\.before-restore-\$stamp" \|\| return 1\n\s*touch "\$DATA_DIR\/uploads\.before-restore-\$stamp"/,
     );
-    expect(restore).toMatch(/load_settings\ntake_update_lock\nprune_old_uploads/);
+    expect(restore).toMatch(
+      /load_settings\ntake_update_lock\n[\s\S]*\nprune_old_uploads\nforget_secrets/,
+    );
     expect(lib).toMatch(
       /^23 3 \* \* \* root find \$DATA_DIR .*\\\( -name 'uploads\.before-restore-\*'.*\\\) -mtime \+30 /m,
     );
@@ -483,7 +485,10 @@ describe("standby after a restore on a second server (G2)", () => {
       .join("\n");
     // The mark (random words) is in place before the restored database first starts.
     expect(code).toMatch(
-      /head -c 16 \/dev\/urandom [^\n]*>"\$DATA\/backups\/\.standby"\nchmod 644 "\$DATA\/backups\/\.standby"\nstandby=1[\s\S]*"\$DIR\/deploy\/restore\.sh" --yes/,
+      /head -c 16 \/dev\/urandom [^\n]*>"\$backups\/\.standby"\n\s*chmod 644 "\$backups\/\.standby"/,
+    );
+    expect(code).toMatch(
+      /\nmark_standby "\$DATA" "\$\{replacing:-0\}"\nstandby=1\n[\s\S]*"\$DIR\/deploy\/restore\.sh" --yes/,
     );
     // The web address is moved only after the restore went well; then the mark goes.
     const restored = code.indexOf("restored=1\n");
@@ -492,11 +497,13 @@ describe("standby after a restore on a second server (G2)", () => {
     expect(dns).toBeGreaterThan(restored);
     expect(code.match(/tool dns /g)).toHaveLength(1);
     expect(code.slice(dns)).toMatch(
-      /^tool dns [^\n]*\n[^\n]*\nelse\n[^\n]*\nfi\nmoved="\$\(tool fact --work "\$WORK" dnsMoved\)"\n[\s\S]{0,200}web_address_here "\$APP_DOMAIN" "\$DATA\/backups\/\.standby"[^\n]*\n\s*note [^\n]*\n\s*moved=yes\nfi\nif \[ -n "\$moved" \]; then\n\s*rm -f "\$DATA\/backups\/\.standby"\n\s*standby=0/,
+      /^tool dns [^\n]*\n[^\n]*\nelse\n[^\n]*\nfi\nmoved="\$\(tool fact --work "\$WORK" dnsMoved\)"\nif \[ -z "\$moved" \] && address_here; then\n\s*note [^\n]*\n\s*moved=yes\nfi\nrm -f "\$DATA\/backups\/\.standby\.was-in-use"\nif \[ -n "\$moved" \]; then\n\s*rm -f "\$DATA\/backups\/\.standby"\n\s*standby=0/,
     );
     // Restored over the ERP in use (its address reaches this server already, even with
     // no Cloudflare token: W01), it never waits on standby (v6.4.1 review).
-    expect(code).toMatch(/if \[ -z "\$moved" \] && \[ "\$APP_DOMAIN" != localhost \] &&/);
+    expect(code).toMatch(
+      /address_here\(\) \{\n\s*\[ "\$APP_DOMAIN" != localhost \] &&\n\s*\(cd "\$DIR" && source deploy\/lib\.sh && web_address_here "\$APP_DOMAIN" "\$DATA\/backups\/\.standby"\)/,
+    );
     // Said at the end, in big words, as the last thing on the screen.
     expect(code).toMatch(
       /warn W10 "this ERP waits on standby: \$APP_DOMAIN does not point to this server yet/,
@@ -505,6 +512,67 @@ describe("standby after a restore on a second server (G2)", () => {
     expect(banner).toBeGreaterThan(code.lastIndexOf("Next (part F of the guide)"));
     const goLive = readFileSync(path.join("deploy", "go-live.sh"), "utf8");
     expect(goLive).toMatch(/leave_standby "\$DATA_DIR\/backups" "\$APP_DOMAIN"/);
+  });
+});
+
+describe("a restore over the ERP in use that fails leaves it in use, not on standby (v6.4.1 review 2)", () => {
+  const BOOTSTRAP = path.join(process.cwd(), "deploy", "bootstrap.sh");
+  const boot = (...args: string[]) =>
+    new Promise<Run>((resolve) =>
+      execFile("bash", [BOOTSTRAP, ...args], { timeout: 60_000 }, (error, stdout, stderr) =>
+        resolve({ code: error ? Number(error.code ?? 1) : 0, stdout, stderr }),
+      ),
+    );
+
+  it("takes away only the mark it put on an ERP that was in use, even after a restore cut off half-way", async () => {
+    const data = path.join(dir, "data");
+    const mark = path.join(data, "backups", ".standby");
+    // Over the ERP in use (no mark of its own): the restore fails, the mark goes again.
+    expect((await boot("--standby-mark", data, "1")).code).toBe(0);
+    expect(readFileSync(mark, "utf8")).toMatch(/^[0-9a-f]{32}$/);
+    expect((await boot("--standby-failed", data, "0")).stdout).toContain("IN USE AGAIN");
+    expect(existsSync(mark)).toBe(false);
+    expect(existsSync(`${mark}.was-in-use`)).toBe(false);
+    // Cut off half-way (the VM restarted) and pasted again: the second run finds the
+    // mark already there, and still knows the ERP was in use before the first.
+    await boot("--standby-mark", data, "1");
+    await boot("--standby-mark", data, "1");
+    expect((await boot("--standby-failed", data, "0")).stdout).toContain("IN USE AGAIN");
+    expect(existsSync(mark)).toBe(false);
+    // With the backup's data in already, only when its web address reaches this server.
+    await boot("--standby-mark", data, "1");
+    expect((await boot("--standby-failed", data, "1")).stdout).toContain("STANDBY KEPT");
+    expect(existsSync(mark)).toBe(true);
+    await rm(data, { recursive: true });
+    // A new server: the copy stays on standby.
+    await boot("--standby-mark", data, "0");
+    expect((await boot("--standby-failed", data, "0")).stdout).toContain("STANDBY KEPT");
+    expect(existsSync(mark)).toBe(true);
+    // Over a copy on standby already: it stays on standby.
+    await rm(data, { recursive: true });
+    await mkdir(path.join(data, "backups"), { recursive: true });
+    await writeFile(mark, "words of the earlier restore");
+    await boot("--standby-mark", data, "1");
+    expect((await boot("--standby-failed", data, "0")).stdout).toContain("STANDBY KEPT");
+    expect(existsSync(mark)).toBe(true);
+  });
+
+  it("does so on every failure after the mark, and says so in R19", () => {
+    const code = readFileSync(BOOTSTRAP, "utf8")
+      .split("\n")
+      .filter((line) => !line.trimStart().startsWith("#"))
+      .join("\n");
+    // Every exit that is not a success, once the mark is written.
+    expect(code).toMatch(
+      /cleanup\(\) \{\n\s*local code=\$\?\n\s*if \[ "\$code" != 0 \] && \[ "\$standby" = 1 \] && standby_after_failure "\$restored"; then/,
+    );
+    expect(code.indexOf("trap cleanup EXIT")).toBeLessThan(code.indexOf('mark_standby "$DATA"'));
+    // The A6 choice says whether an ERP was here.
+    expect(code).toMatch(/DATA="\$i_data"\n\s*replacing=1\n/);
+    // R19 says what the ERP here is now, after taking the mark away.
+    expect(code).toMatch(
+      /if standby_after_failure 0; then\n\s*left="The ERP that was in use here runs as before \(not on standby\); its web address was not changed\."\n\s*else\n\s*left="The web address was not changed\."\n\s*fi\n\s*fail R19 "the backup could not be restored: \$\{why:-the lines above say why\}\. \$left To try again, paste the command again/,
+    );
   });
 });
 
@@ -537,6 +605,12 @@ prepare_folders() { mkdir -p "$DATA_DIR"/uploads "$DATA_DIR"/backups "$DATA_DIR"
 compose() {
   echo "compose $*" >>"${log}"
   case "$*" in *psql*) [ -z "\${COUNTS_FAIL:-}" ] || return 1; cat >/dev/null; echo '{"User": 3}' ;; esac
+  [ "$*" != "up -d" ] || [ -z "\${COMPOSE_UP_FAILS:-}" ]
+}
+check_update() {
+  echo "check_update" >>"${log}"
+  [ -z "\${CHECK_SAYS:-}" ] || printf '%s\n' "\$CHECK_SAYS"
+  [ -z "\${CHECK_FAILS:-}" ]
 }
 wait_healthy() { echo "healthy? $1" >>"${log}"; [ "$1" != app ] || [ -z "\${APP_NEVER_STARTS:-}" ]; }
 safety_copy() {
@@ -563,18 +637,20 @@ write_restored_mark() { echo '{}' >"$3"; }
       ),
     );
     await rm(path.join(backup, "files"), { recursive: true });
-    const run = (env: Record<string, string> = {}) =>
+    const run = (env: Record<string, string> = {}, args?: string[]) =>
       new Promise<Run>((resolve) =>
         execFile(
           "bash",
           [
             path.join(deploy, "restore.sh"),
-            "--yes",
-            "--result",
-            path.join(dir, "result.json"),
-            "--counts",
-            path.join(dir, "counts.json"),
-            backup,
+            ...(args ?? [
+              "--yes",
+              "--result",
+              path.join(dir, "result.json"),
+              "--counts",
+              path.join(dir, "counts.json"),
+              backup,
+            ]),
           ],
           { env: { ...process.env, ...env }, timeout: 60_000 },
           (error, stdout, stderr) =>
@@ -586,6 +662,7 @@ write_restored_mark() { echo '{}' >"$3"; }
         ok: boolean;
         wentBack: boolean;
         message: string;
+        checks: string[];
       };
     return { data, backup, log, run, result };
   }
@@ -652,6 +729,159 @@ write_restored_mark() { echo '{}' >"$3"; }
     expect(after).not.toContain("restore_database");
     expect(h.result()).toMatchObject({ ok: false, wentBack: false });
     expect(h.result().message).toContain("the safety copy of the database could not be saved");
+  });
+
+  it("counts a check that was skipped or did not run as NOT checked (v6.4.1 review 2)", async () => {
+    const h = await harness();
+    const args = (backup: string) => [
+      "--yes",
+      "--check",
+      "--result",
+      path.join(dir, "result.json"),
+      backup,
+    ];
+    // Runs within one second share a time: the files set aside by the one before go first.
+    const run = async (env: Record<string, string>) => {
+      for (const name of readdirSync(h.data)) {
+        if (name.startsWith("uploads.")) await rm(path.join(h.data, name), { recursive: true });
+      }
+      return h.run(env, args(h.backup));
+    };
+    // No owner to open the screens as: the check says so as a problem, and passes.
+    const skipped = await run({
+      CHECK_SAYS:
+        "==> Problem: Screens not checked: there is no owner account yet (deploy/create-owner.sh)",
+    });
+    expect(skipped.code).toBe(0);
+    expect(h.result().checks).toEqual([
+      "Screens not checked: there is no owner account yet (deploy/create-owner.sh)",
+    ]);
+    expect(h.result().message).toContain("its screens were NOT checked");
+    // The check could not run at all (no line of its own): one is written for it.
+    const failed = await run({ CHECK_FAILS: "1" });
+    expect(failed.code).toBe(0);
+    expect(h.result().checks).toEqual([
+      "The check after the restore did not run or did not finish (the restore log says why)",
+    ]);
+    expect(h.result().message).toContain("did not finish");
+    // Screens that did not open: counted as before.
+    await run({
+      CHECK_FAILS: "1",
+      CHECK_SAYS: "==> Problem: Screen /a answered 500\n==> Problem: Screen /b answered 500",
+    });
+    expect(h.result().checks).toHaveLength(2);
+    expect(h.result().message).toContain("2 screen(s) or PDF(s) did not open");
+    // Every screen opened: no problem.
+    await run({ CHECK_SAYS: "==> Opened 5 of 5 screens without an error" });
+    expect(h.result().checks).toEqual([]);
+    expect(h.result().message).toContain("every screen opened");
+    const check = readFileSync(path.join("scripts", "check-update.ts"), "utf8");
+    expect(check.match(/problem\("Screens not checked: /g)).toHaveLength(2);
+    expect(check).not.toMatch(/say\("Screens not checked/);
+  });
+
+  it("says why when the app does not start again after a failed safety copy (v6.4.1 review 2)", async () => {
+    const h = await harness();
+    const done = await h.run({ SAFETY_FAILS: "1", COMPOSE_UP_FAILS: "1" });
+    expect(done.code).not.toBe(0);
+    expect(h.result().message).toContain("the safety copy of the database could not be saved");
+    expect(done.stderr).toContain("the safety copy of the database could not be saved");
+  });
+
+  it("puts back a restore cut off half-way and starts the ERP, at the server's start or the next restore (v6.4.1 review 2)", async () => {
+    const h = await harness();
+    const backups = path.join(h.data, "backups");
+    const mark = path.join(backups, ".restore-running");
+    // A restore cut off after its safety copy, with the files set aside already.
+    const stamp = "2026-10-18_101500";
+    await mkdir(path.join(h.data, "safety-copies", `before-restore-${stamp}`), { recursive: true });
+    await writeFile(
+      path.join(h.data, "safety-copies", `before-restore-${stamp}`, "database.dump"),
+      "dump",
+    );
+    await rm(path.join(h.data, "uploads"), { recursive: true });
+    await mkdir(path.join(h.data, `uploads.before-restore-${stamp}`, "c1"), { recursive: true });
+    await writeFile(
+      path.join(h.data, `uploads.before-restore-${stamp}`, "c1", "now.pdf"),
+      "the file there now",
+    );
+    await mkdir(path.join(h.data, "uploads.restoring"));
+    await writeFile(mark, `${stamp}\nsafety copy\n`);
+    // The restore command had put the ERP in use on standby for it (bootstrap.sh).
+    await writeFile(path.join(backups, ".standby"), "words");
+    await writeFile(path.join(backups, ".standby.was-in-use"), "");
+    const started = await h.run({}, ["--after-restart"]);
+    expect(started.code, started.stderr).toBe(0);
+    const calls = readFileSync(h.log, "utf8");
+    expect(calls).toMatch(
+      new RegExp(
+        `compose stop app\\n[\\s\\S]*restore_database /safety-copies/before-restore-${stamp}/database\\.dump\\n[\\s\\S]*compose up -d\\nhealthy\\? app`,
+      ),
+    );
+    expect(readFileSync(path.join(h.data, "uploads", "c1", "now.pdf"), "utf8")).toBe(
+      "the file there now",
+    );
+    expect(existsSync(path.join(h.data, "uploads.restoring"))).toBe(false);
+    expect(existsSync(mark)).toBe(false);
+    expect(existsSync(path.join(backups, ".standby"))).toBe(false);
+    expect(started.stdout).toContain(
+      "The ERP runs again as it was before the restore that was cut off",
+    );
+    // Nothing cut off: nothing done.
+    await writeFile(h.log, "");
+    expect((await h.run({}, ["--after-restart"])).code).toBe(0);
+    expect(readFileSync(h.log, "utf8")).toBe("");
+
+    // Cut off before its safety copy: only started again, and the next restore goes on.
+    await writeFile(mark, `${stamp}\n`);
+    const next = await h.run();
+    expect(next.code, next.stderr).toBe(0);
+    const after = readFileSync(h.log, "utf8");
+    expect(after.indexOf("compose up -d\n")).toBeLessThan(after.indexOf("safety_copy"));
+    expect(after.match(/restore_database/g)).toHaveLength(1);
+    expect(existsSync(mark)).toBe(false);
+    expect(next.stdout).toContain("A restore was cut off before it finished");
+  });
+
+  it("never starts the ERP on a database it could not put back, and never blocks the next restore (v6.4.1 review 2)", async () => {
+    const h = await harness();
+    const mark = path.join(h.data, "backups", ".restore-running");
+    // Its safety copy is gone (more than a day later): the ERP stays stopped, the owner is told.
+    await writeFile(mark, "2026-10-18_101500\nsafety copy\n");
+    const started = await h.run({}, ["--after-restart"]);
+    expect(started.code).not.toBe(0);
+    expect(started.stderr).toContain(
+      "the database could not be put back as it was before the restore that was cut off, so the ERP stays stopped",
+    );
+    expect(readFileSync(h.log, "utf8")).not.toContain("compose up -d\n");
+    expect(existsSync(mark)).toBe(true);
+    // The restore the owner then runs goes on, and replaces it.
+    const next = await h.run();
+    expect(next.code, next.stderr).toBe(0);
+    expect(next.stdout).toContain("this restore replaces it");
+    expect(existsSync(mark)).toBe(false);
+    expect(h.result()).toMatchObject({ ok: true });
+  });
+
+  it("leaves the mark only while the app is stopped, and at the server's start runs the put-back (v6.4.1 review 2)", async () => {
+    const h = await harness();
+    const mark = path.join(h.data, "backups", ".restore-running");
+    expect((await h.run()).code).toBe(0);
+    expect(existsSync(mark)).toBe(false);
+    await h.run({ APP_NEVER_STARTS: "1" });
+    expect(existsSync(mark)).toBe(false);
+    await h.run({ SAFETY_FAILS: "1" });
+    expect(existsSync(mark)).toBe(false);
+    const restore = readFileSync(path.join("deploy", "restore.sh"), "utf8");
+    // Gone once the restored ERP runs, before the long check, so a restart never takes it back.
+    expect(restore).toMatch(
+      /go_back "the ERP did not start on the restored data"\nfi\n#[^\n]*\nrm -f "\$running_mark"\n/,
+    );
+    const lib = readFileSync(path.join("deploy", "lib.sh"), "utf8");
+    expect(lib).toMatch(
+      /ConditionPathExists=\$DATA_DIR\/backups\/\.restore-running\n\n\[Service\]\nType=oneshot\nExecStart=\$DEPLOY_DIR\/restore\.sh --after-restart\n\n\[Install\]\nWantedBy=multi-user\.target/,
+    );
+    expect(lib).toContain("systemctl enable extras-erp-restore-cut.service");
   });
 
   it("goes back the same way when the ERP does not start on the restored data", async () => {

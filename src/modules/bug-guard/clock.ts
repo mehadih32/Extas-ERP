@@ -22,6 +22,16 @@ import { ensureSettings, scheduleOf } from "./settings.service";
 
 const quiet = (error: unknown) => !(error instanceof AppError && error.code === "CONFLICT");
 
+/**
+ * On a copy that is not the ERP in use (on standby after a restore, or a drill
+ * copy): no Full check on GitHub (it opens the live web address) and no fixes
+ * prepared; those are the ERP in use's. Its own checks still run and report.
+ */
+async function inUseOnly(): Promise<{ fullCheck?: false; prepare?: false }> {
+  const { notTheErpInUse } = await import("@/modules/backups/standby");
+  return (await notTheErpInUse()) ? { fullCheck: false, prepare: false } : {};
+}
+
 export async function runBugGuardClock(now: Date = new Date()) {
   // Asked for by the server after a restore (G1): taken once, not awaited, so
   // the clock goes on while it checks (after-restore.ts).
@@ -57,7 +67,7 @@ export async function scheduled(now: Date) {
   });
   if (moved.count === 0) return null;
   try {
-    return await startBugGuard(due.companyId, "SCHEDULE", null, { now });
+    return await startBugGuard(due.companyId, "SCHEDULE", null, { now, ...(await inUseOnly()) });
   } catch (error) {
     if (quiet(error)) console.error("[bug-guard] scheduled run not started", error);
     return null;
@@ -143,10 +153,11 @@ export async function afterFixes(now: Date) {
     if (!was || c.appliedAt! < was.since)
       recheck.set(c.companyId, { since: c.appliedAt!, byId: c.appliedById });
   }
+  const options = { now, ...(await inUseOnly()) };
   for (const [companyId, { since, byId }] of recheck) {
     const ran = await prisma.bugGuardRun.count({ where: { companyId, startedAt: { gte: since } } });
     if (ran) continue;
-    await startBugGuard(companyId, "AFTER_FIX", byId, { now }).catch((error: unknown) => {
+    await startBugGuard(companyId, "AFTER_FIX", byId, options).catch((error: unknown) => {
       if (quiet(error)) console.error("[bug-guard] check after a fix not started", error);
     });
   }

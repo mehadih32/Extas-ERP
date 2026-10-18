@@ -193,6 +193,7 @@ list_installs() {
 choose_install() {
   local line typed chosen i_dir i_data i_domain i_running i_has_data unfinished=0
   local installs=()
+  replacing=0
   while IFS= read -r line; do
     IFS='|' read -r i_dir i_data i_domain i_running i_has_data <<<"$line"
     if [ -z "$i_running" ] && [ -z "$i_has_data" ]; then
@@ -241,8 +242,53 @@ choose_install() {
       fail R29 "this server has Extas ERP data in $i_data but not its program folder and settings, so it cannot be restored over safely. Move the data away (sudo mv $i_data $i_data.old), then paste the command again."
     DIR="$i_dir"
     DATA="$i_data"
+    replacing=1
     note "Restoring over the ERP in $DIR (data in $DATA)."
   fi
+}
+
+# --- Standby while the backup comes back (G2) --------------------------------------
+
+# The restored ERP waits on standby until its web address points here: the mark
+# (DATA/backups/.standby, read by src/modules/backups/standby.ts) is in place before
+# the restored database first starts, and goes only once the web address reaches this
+# server (below) or with deploy/go-live.sh. Its random words tell this server from
+# another one (go-live.sh checks the web address reaches this server by them). $1:
+# the data folder; $2: 1 when the restore goes over an ERP already here (A6). Over one
+# that was in use (it had no mark of its own), .standby.was-in-use says so, kept
+# across a restore cut off half-way: a restore that fails leaves it in use, as it was
+# (standby_after_failure), never on standby.
+mark_standby() {
+  local backups="$1/backups"
+  mkdir -p "$backups"
+  if [ "$2" = 1 ] && [ ! -f "$backups/.standby" ]; then
+    : >"$backups/.standby.was-in-use"
+  fi
+  head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n' >"$backups/.standby"
+  chmod 644 "$backups/.standby"
+}
+
+# Whether $APP_DOMAIN reaches this server already (its DNS, or the ERP answering
+# there shows this server's standby mark: deploy/lib.sh web_address_here).
+# shellcheck source=/dev/null
+address_here() {
+  [ "$APP_DOMAIN" != localhost ] &&
+    (cd "$DIR" && source deploy/lib.sh && web_address_here "$APP_DOMAIN" "$DATA/backups/.standby") >/dev/null 2>&1
+}
+
+# After a restore that did not finish ($1: 1 when the backup's data is in already):
+# an ERP that was in use here before this command is not left on standby by it. With
+# the data from before (put back, or never replaced) it is in use again at once; with
+# the backup's data, only when its web address reaches this server. True when it
+# was taken off standby.
+standby_after_failure() {
+  local backups="$DATA/backups"
+  [ -f "$backups/.standby.was-in-use" ] || return 1
+  if [ "$1" = 1 ] && ! address_here; then
+    return 1
+  fi
+  rm -f "$backups/.standby" "$backups/.standby.was-in-use"
+  return 0
 }
 
 # --- A practice drill (the guide's "Practice: a restore drill") --------------------
@@ -257,13 +303,21 @@ choose_install() {
 # still knows it; such a run keeps the drill address in its mark, without asking.
 drill_settings() {
   local env_file="$1" data="$2" live live_demo example test_domain earlier
+  earlier="$(python3 -I -c 'import json, sys; print(json.load(open(sys.argv[1])).get("address") or "")' \
+    "$data/backups/.drill" 2>/dev/null || true)"
   live="$(plain_domain "$(env_get "$env_file" DRILL_OF)")"
   [ -n "$live" ] || live="$(plain_domain "${3:-}")"
   [ -n "$live" ] || live="$(plain_domain "$APP_DOMAIN")"
+  if [ -z "$live" ] || [ "$live" = "$(plain_domain "$earlier")" ]; then
+    # A drill copy made before v6.4.1 (no DRILL_OF), run again with a backup from
+    # before v6.4 (no web address in it): the real address is asked, once (kept as
+    # DRILL_OF), never guessed.
+    live="$(plain_domain "$(answer live_domain 'Web address of the real ERP this drill copies (for example erp.extasbd.com): ')")"
+    { [[ "$live" =~ ^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$ ]] && [ "$live" != "$(plain_domain "$earlier")" ]; } ||
+      fail R30 "\"$live\" is not the real ERP's web address. Paste the command again and type the address of your real ERP (like erp.extasbd.com), never the drill's ($(plain_domain "$earlier"))."
+  fi
   case "$live" in *.*.*) live_demo="demo.${live#*.}" ;; *) live_demo="demo.$live" ;; esac
   example="drill.${live#*.}"
-  earlier="$(python3 -I -c 'import json, sys; print(json.load(open(sys.argv[1])).get("address") or "")' \
-    "$data/backups/.drill" 2>/dev/null || true)"
   if [ -n "$earlier" ]; then
     test_domain="$(plain_domain "$earlier")"
     note "This server holds a drill copy for $test_domain: the drill runs again at that address."
@@ -362,6 +416,19 @@ if [ "${1:-}" = --drill-result ]; then
   drill_result "$@"
   exit 0
 fi
+# Tests only: the standby mark as the restore writes it (mark_standby) on the data
+# folder $2 ($3: 1 over an ERP already here), and what a restore that failed does
+# with it ($3: 1 when the backup's data was in); nothing else.
+if [ "${1:-}" = --standby-mark ]; then
+  mark_standby "${2:?}" "${3:?}"
+  exit 0
+fi
+if [ "${1:-}" = --standby-failed ]; then
+  DATA="${2:?}"
+  APP_DOMAIN=localhost
+  standby_after_failure "${3:?}" && echo "IN USE AGAIN" || echo "STANDBY KEPT"
+  exit 0
+fi
 # Tests only: waits for apt as the restore does; nothing else.
 if [ "${1:-}" = --wait-apt ]; then
   wait_for_apt && echo "APT FREE" || echo "APT STILL BUSY"
@@ -437,7 +504,14 @@ forget_opened() {
   find "$WORK" -mindepth 1 -maxdepth 1 ! -name download ! -name google.json -exec rm -rf {} +
 }
 restored=0
+standby=0
 cleanup() {
+  local code=$?
+  # Stopped after the standby mark was written (an error, or a step that failed): an
+  # ERP that was in use here is not left on standby.
+  if [ "$code" != 0 ] && [ "$standby" = 1 ] && standby_after_failure "$restored"; then
+    note "The ERP that was in use on this server is not on standby: it runs as before this restore."
+  fi
   forget_opened
   if [ "$restored" = 1 ]; then
     rm -rf "$WORK"
@@ -562,15 +636,11 @@ step "Installing the ERP (building it takes about 10 to 20 minutes)"
 
 step "Restoring the database and the files"
 mkdir -p "$DATA/backups/restores"
-# The restored ERP waits on standby (G2) until its web address points here: the
-# mark is in place before the restored database first starts, and goes only once
-# the web address is moved here (below) or with deploy/go-live.sh. On standby its
-# backups and alarms run; its reminders and messages wait, so two ERPs never send
-# them at once (a practice run, or the old server still in use).
-# src/modules/backups/standby.ts reads the mark; its random words tell this server
-# from another one (go-live.sh checks the web address reaches this server).
-head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n' >"$DATA/backups/.standby"
-chmod 644 "$DATA/backups/.standby"
+# The restored ERP waits on standby (G2) until its web address points here
+# (mark_standby). On standby its backups and alarms run; its reminders and messages
+# wait, so two ERPs never send them at once (a practice run, or the old server
+# still in use).
+mark_standby "$DATA" "${replacing:-0}"
 standby=1
 restore_dir="$DATA/backups/restores/$name"
 rm -rf "$restore_dir"
@@ -582,7 +652,12 @@ grep -q -- '--counts' "$DIR/deploy/restore.sh" && counts=(--counts "$WORK/counts
 if ! "$DIR/deploy/restore.sh" --yes --check --result "$WORK/restore-result.json" "${counts[@]}" "$restore_dir"; then
   # What restore.sh did: put back as it was (its safety copy), or left as it was.
   why="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1])).get("message") or "")' "$WORK/restore-result.json" 2>/dev/null || true)"
-  fail R19 "the backup could not be restored: ${why:-the lines above say why}. Paste the command again: it goes on with the backup already downloaded."
+  if standby_after_failure 0; then
+    left="The ERP that was in use here runs as before (not on standby); its web address was not changed."
+  else
+    left="The web address was not changed."
+  fi
+  fail R19 "the backup could not be restored: ${why:-the lines above say why}. $left To try again, paste the command again: it goes on with the backup already downloaded."
 fi
 rm -rf "$restore_dir"
 rm -f "$WORK/opened-copy"
@@ -593,6 +668,10 @@ restored=1
 # compared with the backup: both before the web address question, which never comes
 # when either found a problem.
 screen_problems="$(python3 -c 'import json, sys; print(len(json.load(open(sys.argv[1])).get("checks", [])))' "$WORK/restore-result.json" 2>/dev/null || echo "?")"
+# Said here, before W13 (which points to it), with the check's lines just above.
+if [ "$screen_problems" != 0 ]; then
+  warn W05 "the check after the restore found $screen_problems problem(s) (listed above: a screen or PDF that did not open, or the screens not checked at all). The ERP runs; tell the developer."
+fi
 
 step "Comparing every table and file with the backup"
 compare=0
@@ -611,12 +690,12 @@ fi
 moved="$(tool fact --work "$WORK" dnsMoved)"
 # Restored over the ERP in use, or pointed here by hand already: the web address
 # reaches this server, so this ERP is the one in use and never waits on standby.
-# shellcheck source=/dev/null
-if [ -z "$moved" ] && [ "$APP_DOMAIN" != localhost ] &&
-  (cd "$DIR" && source deploy/lib.sh && web_address_here "$APP_DOMAIN" "$DATA/backups/.standby") >/dev/null 2>&1; then
+if [ -z "$moved" ] && address_here; then
   note "$APP_DOMAIN already points to this server."
   moved=yes
 fi
+# Decided: whether this ERP was in use before no longer matters.
+rm -f "$DATA/backups/.standby.was-in-use"
 if [ -n "$moved" ]; then
   rm -f "$DATA/backups/.standby"
   standby=0
@@ -672,9 +751,6 @@ if [ -x "$DIR/deploy/bug-guard.sh" ]; then
 else
   note "Bug Guard is not part of this version; the full check (every screen and PDF opened as the owner) ran above."
   checks_note="full check"
-fi
-if [ "$screen_problems" != 0 ]; then
-  warn W05 "$screen_problems screen(s) or PDF(s) did not open in the check (listed above). The ERP runs; tell the developer."
 fi
 
 step "Checking HTTPS"
@@ -733,8 +809,12 @@ fi
 if [ "$demo_note" = running ]; then note "The demo site is running too."; fi
 note "Checks: $checks_note; ${screen_problems} problem(s) found."
 note "The full log of this restore: sudo less $LOG"
-[ -n "$drill" ] ||
+# GitHub's updates go to the ERP in use only: on standby, after go-live.sh (F6), never before.
+if [ -z "$drill" ] && [ "$standby" = 1 ]; then
+  note "Next (part F of the guide): once this ERP is live (go-live.sh, step F6), let GitHub update it: cd $DIR && sudo ./deploy/setup-auto-deploy.sh"
+elif [ -z "$drill" ]; then
   note "Next (part F of the guide): let GitHub update this server again: cd $DIR && sudo ./deploy/setup-auto-deploy.sh"
+fi
 if [ -z "$drill" ] && [ "$standby" = 1 ]; then
   # Never on standby without a word: the last thing on the screen.
   printf '\n%s\n' "################################################################"

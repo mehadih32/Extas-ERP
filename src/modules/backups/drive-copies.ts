@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { copyFile, mkdir, readdir, readFile, rm, stat } from "node:fs/promises";
+import { access, copyFile, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import type { BackupConfig, BackupRun } from "@prisma/client";
@@ -184,6 +184,42 @@ export async function labelNewestForWatch(config: BackupConfig, now = new Date()
       ? { backupsOffAt: null, nextAt: next ? next.toISOString() : null }
       : { nextAt: null, backupsOffAt: now.toISOString() },
   );
+  return true;
+}
+
+/**
+ * Left in the backups folder when that label could not be written (Drive could not
+ * be reached as backups were switched on or off): the backup clock tries again each
+ * hour (retryWatchLabel), so a folder never keeps saying "off" after backups went
+ * back on, which would keep the alert quiet when they are late.
+ */
+export const WATCH_LABEL_PENDING = ".watch-label-pending";
+
+/** labelNewestForWatch, tried again by the backup clock until it works. */
+export async function relabelForWatch(config: BackupConfig, now = new Date()) {
+  const pending = path.join(backupRoot(), WATCH_LABEL_PENDING);
+  try {
+    const labelled = await labelNewestForWatch(config, now);
+    await rm(pending, { force: true });
+    return labelled;
+  } catch (error) {
+    await writeFile(pending, now.toISOString()).catch(() => undefined);
+    throw error;
+  }
+}
+
+let lastLabelTry = 0;
+
+/** The label that could not be written, once an hour, with the settings as they are now. */
+export async function retryWatchLabel(now = Date.now()): Promise<boolean> {
+  try {
+    await access(path.join(backupRoot(), WATCH_LABEL_PENDING));
+  } catch {
+    return false;
+  }
+  if (now - lastLabelTry < RETRY_MS) return false;
+  lastLabelTry = now;
+  await relabelForWatch(await getBackupConfig(), new Date(now));
   return true;
 }
 

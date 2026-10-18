@@ -15,7 +15,9 @@ import type { Check, CheckResult, Found, Severity } from "./types";
  * (new, back again, gone, put right), and reported (report.ts). On the
  * platform's own company it also asks GitHub for the Full check (every screen,
  * PDF and the layout checks at four widths), whose findings are taken in when
- * it reports back (takeInFullChecks). One run at a time per company.
+ * it reports back (takeInFullChecks); never on a copy that is not the ERP in use
+ * (on standby after a restore, or a drill copy), which prepares no fixes either.
+ * One run at a time per company.
  */
 
 export const READ_ONLY_WHY = "Bug Guard only reads while it checks";
@@ -288,6 +290,10 @@ async function askFullCheck(
   now: Date,
   fresh = false,
 ): Promise<{ id: string | null; note: string | null }> {
+  // Only the ERP in use: the Full check opens the live web address, not this copy.
+  const { notTheErpInUse } = await import("@/modules/backups/standby");
+  const notInUse = await notTheErpInUse();
+  if (notInUse) return { id: null, note: `The Full check was not asked for: ${notInUse}.` };
   const settings = await prisma.aiSettings.findUnique({
     where: { companyId },
     select: { githubRepo: true, githubTokenSealed: true },
@@ -509,6 +515,9 @@ export async function storeFindings(input: {
 /** The option "open fixes and prepare corrections by itself" (off by default). */
 async function autoPrepare(companyId: string, ids: string[]) {
   if (ids.length === 0) return;
+  // Never on a copy that is not the ERP in use (on standby, or a drill copy).
+  const { notTheErpInUse } = await import("@/modules/backups/standby");
+  if (await notTheErpInUse()) return;
   const settings = await prisma.bugGuardSettings.findUnique({
     where: { companyId },
     select: { autoPrepare: true },

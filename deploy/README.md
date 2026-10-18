@@ -269,7 +269,15 @@ It checks the backup's files against their checksums, asks you to type `RESTORE`
 safety copy of the database as it is now, then puts back the database and the uploaded
 files and starts the ERP again. The database is restored in one step: if anything goes
 wrong, it is left exactly as it was. The files that were there before are kept next to the
-new ones (`uploads.before-restore-…`). Add `--check` to open every screen afterwards.
+new ones (`uploads.before-restore-…`). Add `--check` to open every screen afterwards; a
+check that could not open the screens (no owner account to open them as) or did not finish
+counts as a problem, never as "every screen opened".
+
+A restore cut off half-way (the server restarted, or it was stopped) leaves
+`backups/.restore-running` and the app stopped. When the server starts again, systemd
+(`extras-erp-restore-cut.service`) runs `restore.sh --after-restart`: the database goes back
+to that restore's safety copy, the files from before go back in place, and the ERP starts.
+Every restore does the same first, so the next restore never starts from a half-done one.
 
 To undo a restore, restore the safety copy it names at the end:
 
@@ -341,7 +349,9 @@ deleted when the command ends and at the start of the next one.
 Secrets never go on a command line, on the screen or in the log
 (`/var/log/extas-erp-restore.log`), and the opened backup is deleted when the command ends.
 After it, run `sudo ./deploy/setup-auto-deploy.sh` on the new server for updates after each
-merge. The restore drill on GitHub (`.github/workflows/restore-drill.yml`) runs this command,
+merge (on standby, only after `go-live.sh`: it refuses a copy on standby, so GitHub never
+updates a copy that is not in use). A restore that fails over the ERP in use leaves it in
+use, not on standby. The restore drill on GitHub (`.github/workflows/restore-drill.yml`) runs this command,
 as the guide prints it, on a fresh virtual machine for every change to the backups or the
 deploy scripts, and reports how long it took. A smaller Azure server takes longer to build,
 so allow 20 to 30 minutes there.

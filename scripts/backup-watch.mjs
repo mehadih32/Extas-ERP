@@ -7,7 +7,9 @@
 // it is late by the owner's schedule, when Drive cannot be read, and once a week
 // that all is well. A run started by hand ("Run workflow") always says how it went.
 // Backups switched off on purpose (the newest backup's folder says so) are told
-// once, at the first run after the switch, then only in the weekly message.
+// once, at the first run that sees it (however late GitHub starts it), then only in
+// the weekly message: the folder is labelled "told" (backupsOffToldAt) with the
+// ERP's own sign-in, the one change it ever makes in Drive.
 //
 // The values come from GitHub's repository secrets, which the ERP fills in itself
 // (Settings > Backups, "Set up the alert on GitHub"): nothing is typed or shown.
@@ -37,8 +39,6 @@ const FOLDER = "application/vnd.google-apps.folder";
 const HOUR = 3_600_000;
 /** Late after this when the newest backup does not say when the next one is due. */
 export const DEFAULT_LATE_HOURS = 26;
-/** How often GitHub runs it on its clock (.github/workflows/backup-watch.yml). */
-const RUN_EVERY_MS = 6 * HOUR;
 /** Pages of 100 backup folders read at most (5,000 backups). */
 const MAX_PAGES = 50;
 const TIMEOUT_MS = 30_000;
@@ -143,7 +143,8 @@ const timeOf = (text) => {
  * copy (kind SAFETY_COPY) is not a backup, nor is one made by a restored copy
  * waiting on standby (labelled "standby"), which says nothing about the ERP in
  * use. Null when there is none. offAt: when the owner switched backups off (the
- * ERP labels the newest backup so), else null.
+ * ERP labels the newest backup so), else null; offToldAt: when this alert told the
+ * owner so (its own label on that folder), else null.
  */
 export function newestBackup(folders) {
   let newest = null;
@@ -155,7 +156,13 @@ export function newestBackup(folders) {
     const madeAt = timeOf(labels.createdAt) ?? timeOf(folder.createdTime);
     if (madeAt === null) continue;
     if (!newest || madeAt > newest.madeAt) {
-      newest = { madeAt, nextAt: timeOf(labels.nextAt), offAt: timeOf(labels.backupsOffAt) };
+      newest = {
+        id: folder.id,
+        madeAt,
+        nextAt: timeOf(labels.nextAt),
+        offAt: timeOf(labels.backupsOffAt),
+        offToldAt: timeOf(labels.backupsOffToldAt),
+      };
     }
   }
   return newest;
@@ -167,8 +174,9 @@ export function newestBackup(folders) {
  * passed by as long again as the gap between the two (at least 2 hours, at most
  * a day): with backups twice a day, a day after the newest one. A fixed number
  * of hours (the repository variable) wins when set; without either, 26 hours.
- * Backups switched off on purpose are never late ("off", with when).
- * @param {{ madeAt: number, nextAt: number | null, offAt?: number | null } | null} newest
+ * Backups switched off on purpose are never late ("off", with when, and whether
+ * the owner was told since).
+ * @param {{ id?: string, madeAt: number, nextAt: number | null, offAt?: number | null, offToldAt?: number | null } | null} newest
  * @param {number} now
  * @param {number | null} [fixedLateHours]
  */
@@ -176,7 +184,14 @@ export function judge(newest, now, fixedLateHours = null) {
   if (!newest) return { state: "none" };
   const ageHours = Math.max(0, Math.floor((now - newest.madeAt) / HOUR));
   if (newest.offAt) {
-    return { state: "off", madeAt: newest.madeAt, ageHours, offAt: newest.offAt };
+    return {
+      state: "off",
+      madeAt: newest.madeAt,
+      ageHours,
+      offAt: newest.offAt,
+      told: Boolean(newest.offToldAt && newest.offToldAt >= newest.offAt),
+      folderId: newest.id ?? null,
+    };
   }
   let lateAt;
   if (fixedLateHours) {
@@ -272,6 +287,27 @@ export async function sendTelegram(env, text, fetchImpl = fetch) {
   }
 }
 
+/**
+ * Labels the newest backup's folder: the owner was told that backups are off (so
+ * the next runs stay quiet until the weekly message). Only this label changes.
+ */
+export async function labelTold(token, folderId, now, fetchImpl = fetch) {
+  // The id comes from Drive's own list (listBackupFolders).
+  if (!folderId) throw new WatchError("the newest backup's folder has no id");
+  const response = await call(
+    fetchImpl,
+    `${DRIVE}/files/${encodeURIComponent(folderId)}?fields=id`,
+    {
+      method: "PATCH",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ appProperties: { backupsOffToldAt: new Date(now).toISOString() } }),
+    },
+    "Google Drive",
+  );
+  if (!response.ok)
+    throw new WatchError(`Google Drive did not take the label (HTTP ${response.status})`);
+}
+
 const lateHoursOf = (env) => {
   const n = Number(String(env[LATE_HOURS_VARIABLE] ?? "").trim());
   return Number.isFinite(n) && n >= 1 && n <= 24 * 60 ? n : null;
@@ -304,8 +340,9 @@ export async function watch({
     return 1;
   }
   let result;
+  let token = "";
   try {
-    const token = await googleAccessToken(env, fetchImpl);
+    token = await googleAccessToken(env, fetchImpl);
     const folders = await listBackupFolders(
       token,
       String(env[FOLDER_SECRET] ?? "").trim(),
@@ -329,10 +366,8 @@ export async function watch({
   } else {
     log(`Google Drive could not be read: ${result.reason}.`);
   }
-  // Switched off on purpose: said at the first run after the switch, then weekly.
-  const quiet =
-    result.state === "ok" ||
-    (result.state === "off" && !(now >= result.offAt && now < result.offAt + RUN_EVERY_MS));
+  // Switched off on purpose: said at the first run that sees it, then weekly.
+  const quiet = result.state === "ok" || (result.state === "off" && result.told);
   const tell = !quiet || event !== "schedule" || weeklyNoteDue(now, event);
   if (tell) {
     try {
@@ -341,6 +376,16 @@ export async function watch({
     } catch (error) {
       log(error instanceof WatchError ? `${error.message}.` : "Telegram could not be told.");
       return 1;
+    }
+    if (result.state === "off" && !result.told) {
+      try {
+        await labelTold(token, result.folderId, now, fetchImpl);
+        log("Drive was marked: the owner knows backups are off (said again weekly).");
+      } catch (error) {
+        log(
+          `${error instanceof WatchError ? error.message : "Drive could not be marked"}, so the next run says it again.`,
+        );
+      }
     }
   }
   return result.state === "ok" || result.state === "off" ? 0 : 1;

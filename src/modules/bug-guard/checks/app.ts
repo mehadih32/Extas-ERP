@@ -293,6 +293,48 @@ const KIND_BN: Record<string, string> = {
   SLOW: "স্ক্রিন ধীরে খুলছে",
 };
 
+/**
+ * The newest Full check left part of the ERP unchecked: screens or files not
+ * reached in its time, or a role that stopped. Its "no problems" covers only what
+ * it reached. (Older checks did not count this: nothing is found for them.)
+ */
+function partialCheck(summary: unknown): Found | null {
+  const roles =
+    summary && typeof summary === "object" && Array.isArray((summary as { roles?: unknown }).roles)
+      ? ((summary as { roles: unknown[] }).roles as Array<Record<string, unknown>>)
+      : [];
+  const count = (key: string) =>
+    roles.reduce((t, r) => t + (typeof r[key] === "number" ? (r[key] as number) : 0), 0);
+  const screens = count("notReached");
+  const files = count("filesLeft");
+  const stopped = roles.filter((r) => r.stopped === true).length;
+  if (screens + files + stopped === 0) return null;
+  const missed = [
+    screens > 0 && `${n(screens)}টি স্ক্রিন`,
+    files > 0 && `${n(files)}টি PDF ও ফাইল`,
+  ].filter(Boolean);
+  const parts = [
+    missed.length > 0 && `${missed.join(" আর ")} সময়ে দেখা হয়নি`,
+    stopped > 0 && `${n(stopped)}টি রোল মাঝপথে থেমেছে`,
+  ].filter(Boolean);
+  return {
+    key: "app.full-check:partial",
+    area: "APP",
+    severity: "LATER",
+    title: `শেষ Full check সব দেখতে পারেনি: ${parts.join(", ")}।`,
+    href: "/ai/full-check",
+    place: "AI Center > Full check",
+    why: "যা দেখা হয়নি তার ভুল ধরা পড়েনি; “কোনো সমস্যা নেই” শুধু দেখা অংশের জন্য সত্যি।",
+    fix: "“AI Center > Full check” এ “Run the full check” আবার চাপুন; থেমে যাওয়া রোলের কারণ সেখানে রোলের পাশে লেখা থাকে।",
+    fixKind: "MANUAL",
+    evidence: [
+      { label: "দেখা হয়নি (স্ক্রিন)", value: n(screens) },
+      { label: "দেখা হয়নি (PDF ও ফাইল)", value: n(files) },
+      { label: "থেমে যাওয়া রোল", value: n(stopped) },
+    ],
+  };
+}
+
 /** What the newest Full check found that is not with Claude Code yet. */
 const fullCheck: Check = {
   key: "app.full-check",
@@ -302,7 +344,7 @@ const fullCheck: Check = {
     const run = await ctx.db.fullCheckRun.findFirst({
       where: { companyId: ctx.companyId, status: "DONE" },
       orderBy: { startedAt: "desc" },
-      select: { id: true, startedAt: true },
+      select: { id: true, startedAt: true, summary: true },
     });
     const out: Found[] = [];
     ctx.observed?.(run?.startedAt ?? new Date(0));
@@ -330,6 +372,8 @@ const fullCheck: Check = {
       });
     }
     if (!run) return out;
+    const partial = partialCheck(run.summary);
+    if (partial) out.push(partial);
     const problems = await ctx.db.fullCheckProblem.findMany({
       where: { runId: run.id, requestId: null },
       orderBy: { createdAt: "asc" },

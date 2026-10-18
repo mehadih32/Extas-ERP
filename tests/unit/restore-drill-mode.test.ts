@@ -272,9 +272,9 @@ describe("the restore command in a drill", () => {
     expect(settings).toBeGreaterThan(SCRIPT.indexOf('tool env --work "$WORK" --env "$env_file"'));
     for (const later of [
       'step "Pointing the web address at this server"',
-      '"$DIR/deploy/setup-server.sh"',
-      '"$DIR/deploy/deploy.sh"',
-      '"$DIR/deploy/restore.sh" --yes',
+      '"$STEPS/setup-server.sh"',
+      '"$DIR/deploy/deploy.sh" || fail R18',
+      '"$STEPS/restore.sh" --yes',
     ]) {
       expect(SCRIPT.indexOf(later), later).toBeGreaterThan(settings);
     }

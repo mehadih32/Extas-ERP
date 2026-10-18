@@ -334,9 +334,11 @@ stay public for `raw.githubusercontent.com` to serve it. It:
 
 1. checks the server (Ubuntu 22.04 or newer, 4 GB memory, 20 GB free disk) and looks for an
    Extas ERP already on it: a restore over a running ERP goes on only when its web address
-   is typed, and its own `ENCRYPTION_KEY` is never replaced (the backup's goes in
-   `ENCRYPTION_OLD_KEYS`). On a new VM it first waits for the server's own updates (they
-   hold apt's lock for the first minutes);
+   is typed (the guide never says to type it: on the ERP in use, Enter stops), and its own
+   `ENCRYPTION_KEY` is never replaced (the backup's goes in `ENCRYPTION_OLD_KEYS`). Its own
+   restore that stopped on a new server (`backups/.restore-unfinished`, from its settings
+   until the backup is in) goes on by itself, without the question. On a new VM it first
+   waits for the server's own updates (they hold apt's lock for the first minutes);
 2. downloads `deploy/restore-tool.py` from the same commit and checks its SHA-256;
 3. asks for the Google client (hidden input), shows a Google sign-in code to enter on a
    phone, lists the backups newest first (Enter: the newest that passed its check in Drive;
@@ -346,7 +348,11 @@ stay public for `raw.githubusercontent.com` to serve it. It:
    the recovery key from Drive, or asks for it (hidden). Keys pressed before a question
    are dropped, so an extra Enter never answers one;
 4. puts the code from the backup in `/opt/extras-erp` and writes `deploy/.env` from the
-   backup's settings;
+   backup's settings. The restore steps (`restore.sh`, `setup-server.sh` and their `lib.sh`)
+   are the command's own version, not the backup's, so older backups get every fix of the
+   restore: from the backup's code when it has that commit, else fetched from GitHub at it
+   (`git` checks every file against the commit); they run on `/opt/extras-erp/deploy`
+   (`EXTRAS_DEPLOY_DIR`). Without them it says W14 and uses the backup's own;
 5. installs Docker and the rest (`setup-server.sh`), installs the ERP (`deploy.sh`; HTTPS by
    Cloudflare's DNS challenge when a token is saved, otherwise the usual HTTP challenge) and
    restores the database and the files (`restore.sh --check`; when the files cannot be
@@ -365,17 +371,22 @@ stay public for `raw.githubusercontent.com` to serve it. It:
    "All N records and M files are back", or exactly what is missing, or that the records
    were NOT checked (W11) when they could not be counted.
 
-A second try after a stop (paste the command again) goes on with the first try's Google
-sign-in and download, which stay locked in `/var/lib/extas-erp-restore` (root only) until
-the restore ends well; anything opened, there or in `/srv/extras-erp/backups/restores`, is
-deleted when the command ends and at the start of the next one.
+A second try after a stop (paste the command again) goes on with the first try's download,
+which stays in `/var/lib/extas-erp-restore` (root only) only while every file in it is still
+locked (a backup of v6.3 or newer) until the restore ends well; it asks for a new Google
+code, since the Google sign-in never stays. Anything opened (the database, the settings
+file, `server.json`), there or in `/srv/extras-erp/backups/restores`, is deleted when the
+command ends, at the start of the next one, and when the server starts: the command
+installs `extras-erp-restore-clean.service` first, so a VM turned off during a restore keeps
+nothing opened even if the command never runs again.
 
 Secrets never go on a command line, on the screen or in the log
 (`/var/log/extas-erp-restore.log`), and the opened backup is deleted when the command ends.
 After it, run `sudo ./deploy/setup-auto-deploy.sh` on the new server for updates after each
 merge (on standby, only after `go-live.sh`: it refuses a copy on standby, so GitHub never
 updates a copy that is not in use). A restore that fails over the ERP in use leaves it in
-use, not on standby. The restore drill on GitHub (`.github/workflows/restore-drill.yml`) runs this command,
+use, not on standby, and on its own code: the command puts that version back (and installs
+it again when the backup's was installed already). The restore drill on GitHub (`.github/workflows/restore-drill.yml`) runs this command,
 as the guide prints it, on a fresh virtual machine for every change to the backups or the
 deploy scripts, and reports how long it took. A smaller Azure server takes longer to build,
 so allow 20 to 30 minutes there.

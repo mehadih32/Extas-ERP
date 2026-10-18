@@ -3,7 +3,10 @@
 
 set -euo pipefail
 
-DEPLOY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# The ERP's deploy folder: this file's own, or EXTRAS_DEPLOY_DIR when the restore
+# command (bootstrap.sh) runs its own version's restore.sh and setup-server.sh from
+# another folder over the ERP in /opt/extras-erp (v6.4.2).
+DEPLOY_DIR="${EXTRAS_DEPLOY_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
 ENV_FILE="$DEPLOY_DIR/.env"
 # The app's user inside its container (see the Dockerfile).
 APP_UID=1001

@@ -205,6 +205,12 @@ overwrites a stored total or figure.
   "Restrict updates" in a ruleset of its own whose Bypass list holds only Repository admin (the owner). The ERP's
   Merge (the owner's token, with the PIN) and the owner on GitHub can merge; Claude Code's GitHub App and every
   other token cannot. Test the connection checks exactly this, and Claude Code stays off until both are right.
+- 2026-10-18 (v6.4.2): the bot never checks a 4-8 digit number it did not ask for: every one is hidden the same
+  way. Wrong PINs the bot asked for alarm the owner from the 5th in a day; after 20, PIN actions on the bot stop
+  until the owner unlocks them in the ERP with the PIN. The restore command keeps nothing opened on a VM (cleaned
+  at every start and at boot; only a still-locked download stays), runs its own version's restore steps, puts an
+  ERP in use back on its own code when a restore over it fails, and the guide never says to type the address at
+  the overwrite question.
 - 2026-10-18 (v6.4.1): every release ends with the readiness report (section 1, item 8) after up to 3 rounds
   of fresh whole-ERP reviews; "is anything left?" is answered from a fresh check of the code and the live site.
   After each deploy Bug Guard checks the live ERP once, read-only (no AI unless the owner turned it on), into the

@@ -375,6 +375,20 @@ run("v6.4.2: the CM settlement's money rules", () => {
   });
 
   it("keeps the cutting, finishing and CM a saved settlement stands on until it is undone", async () => {
+    // Two S out for embroidery: one back good, one spoiled and still to cut again.
+    const { party: house } = await parties.createParty(env.owner, {
+      kind: "SUPPLIER",
+      name: "Mirpur Embroidery",
+    });
+    const job = await cutting.sendToEmbroidery(env.pm, env.polo.id, {
+      kind: "EMBROIDERY",
+      partyId: house.id,
+      lines: [{ colorName: "Navy", sizeName: "S", quantity: 2 }],
+    });
+    await cutting.receiveFromEmbroidery(env.pm, job.id, {
+      lines: [{ colorName: "Navy", sizeName: "S", received: 1, spoiled: 1 }],
+    });
+    const cutAgain = { lines: [{ colorName: "Navy", sizeName: "S", quantity: 1 }] };
     // 48 of the 50 S counted: two are left to count.
     await finishing.createFinishingCount(env.store, env.polo.id, {
       lines: [
@@ -398,6 +412,7 @@ run("v6.4.2: the CM settlement's money rules", () => {
     expect(fin.cmSettlement?.number).toBe(made.number);
     // The screens offer nothing to add while it stands.
     expect([cut.can.record, cut.can.cut]).toEqual([true, false]);
+    expect(cut.jobs[0]!.toReplace).toBe(1);
     expect([fin.can.count, fin.can.mend, fin.can.receive]).toEqual([false, false, false]);
     const first = `Undo the CM settlement first: ${made.number} for ${env.batch.code}`;
     const noCut = await expectAppError(
@@ -420,6 +435,8 @@ run("v6.4.2: the CM settlement's money rules", () => {
     const oneMoreMended = { lines: [{ colorName: "Navy", sizeName: "S", a: 1, b: 0, reject: 0 }] };
     for (const adding of [
       () => cutting.createCuttingReport(env.pm, env.polo.id, oneMoreCut),
+      // Cutting the spoiled piece again would raise the pieces cut it allowed rejects on.
+      () => cutting.replaceFromCutting(env.pm, job.id, cutAgain),
       () => finishing.createFinishingCount(env.store, env.polo.id, oneMoreCount),
       () => finishing.backFromMending(env.store, env.polo.id, oneMoreMended),
       () => finishing.receivePackingList(env.pm, env.polo.id, {}),
@@ -455,6 +472,7 @@ run("v6.4.2: the CM settlement's money rules", () => {
     await finishing.createFinishingCount(env.store, env.polo.id, oneMoreCount);
     await finishing.backFromMending(env.store, env.polo.id, oneMoreMended);
     await cutting.createCuttingReport(env.pm, env.polo.id, oneMoreCut);
+    await cutting.replaceFromCutting(env.pm, job.id, cutAgain);
     await contracts.updateContract(env.pm, agreement.id, {
       clauses,
       cmRates: [{ projectId: env.polo.id, cmRate: 95 }],

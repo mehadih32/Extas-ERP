@@ -20,10 +20,12 @@ import { prisma } from "@/lib/prisma";
 const MAX_PIN_CANDIDATES = 12;
 
 /**
- * The word PIN (any case, also stuck to digits: "PIN4321") or পিন: then every
- * number in the message is checked. Not inside a word like "shipping".
+ * A word for a PIN or password, any case, also stuck to digits: one starting
+ * with pin or pass ("PIN4321", "PINCODE", "pass", "password", "PASSCODE"),
+ * "OTP" or "code", or পিন, পাস, কোড, ওটিপি. Then every number in the message is
+ * checked, codes too. Not inside another word ("shipping", "bypass", "barcode").
  */
-const PIN_WORD = /(?<![a-z])pin(?![a-z])|পিন/i;
+const PIN_WORD = /(?<![a-z])(?:pin|pass|otp(?![a-z])|code(?![a-z]))|পিন|পাস|কোড|ওটিপি/i;
 /** Two or more capital letters, maybe with -, / or _, right before the digits: "PO4501", "CS-2026", "SO/2026", "LOT_4455". */
 const CODE_LETTERS = /[A-Z]{2,}[-/_]?$/;
 /** Digits joined to more digits by - or /: "2026-0001", "18/10/2026". */
@@ -37,7 +39,8 @@ const JOINED_AFTER = /^[-/]\d/;
  * in "PO4501" or "CS-2026-0001", or joined to more digits by - or /, as in
  * "SO/2026/0112" or a date. Anything else is checked: "PIN-4321", "2468ok",
  * and Bengali words stuck to a number ("৪৩২১ই", "৪৩২১টা"). When the message
- * says "pin" or "পিন" every number is checked (v6.4.1).
+ * has a PIN word ("pin", "pincode", "pass", "OTP", "code", "পিন") every number
+ * is checked (v6.4.1).
  */
 export function pinCandidates(text: string): string[] {
   const everyNumber = PIN_WORD.test(text);

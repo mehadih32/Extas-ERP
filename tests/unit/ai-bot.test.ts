@@ -186,6 +186,27 @@ describe("Chat answers as bot messages", () => {
     expect(pinCandidates("shipping CS-2026-0001, spinning PO4501")).toEqual([]);
   });
 
+  it("checks every number after a word starting with pin or pass, OTP or code (v6.4.1 review 4)", () => {
+    expect(pinCandidates("PINCODE4321")).toEqual(["4321"]);
+    expect(pinCandidates("pincode: AB-4321")).toEqual(["4321"]);
+    expect(pinCandidates("PASS4321")).toEqual(["4321"]);
+    expect(pinCandidates("pass 4321")).toEqual(["4321"]);
+    expect(pinCandidates("PASSCODE-4321")).toEqual(["4321"]);
+    expect(pinCandidates("password LOT_4455")).toEqual(["4455"]);
+    expect(pinCandidates("OTP4321")).toEqual(["4321"]);
+    expect(pinCandidates("my otp is SO/2026")).toEqual(["2026"]);
+    expect(pinCandidates("Code: AB-4321")).toEqual(["4321"]);
+    expect(pinCandidates("CODE2026-0001")).toEqual(["2026", "0001"]);
+    expect(pinCandidates("পাসওয়ার্ড AB-4321")).toEqual(["4321"]);
+    expect(pinCandidates("কোড AB-4321")).toEqual(["4321"]);
+    // Real document codes stay out when no such word is there.
+    expect(pinCandidates("PO4501, CS-2026, SO/2026, LOT_4455, 2026-0001")).toEqual([]);
+    // Not inside another word.
+    expect(
+      pinCandidates("barcode PO4501, bypass CS-2026, compass LOT_4455, topper SO/2026"),
+    ).toEqual([]);
+  });
+
   it("reads every button code back and nothing else", () => {
     expect(readButton(`sd:${ID}`)).toEqual({ kind: "send", draftId: ID });
     expect(readButton(`dd:${ID}`)).toEqual({ kind: "discard", draftId: ID });

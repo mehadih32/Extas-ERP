@@ -5,6 +5,7 @@ import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import { lockRow } from "@/lib/row-lock";
 import * as chart from "@/modules/accounts/chart.service";
+import * as reports from "@/modules/accounts/reports.service";
 import { ensureControlAccounts } from "@/modules/accounts/control-accounts";
 import { boxBalance } from "@/modules/accounts/petty-cash-balance";
 import * as petty from "@/modules/accounts/petty-cash.service";
@@ -291,6 +292,106 @@ run("money and stock guards (v6.4.1 review)", () => {
     expect((await ledger.getPartyBalance(env.ctx, env.buyer.id)).toFixed(2)).toBe("-2000.00");
     const old = await prisma.journalEntry.findFirstOrThrow({ where: { number: "JV-OLD-1" } });
     expect(old.isReversed).toBe(true);
+  });
+
+  it("corrects an opening balance on its go-live day, so past reports show only the new amount", async () => {
+    const env = await setup();
+    // A buyer's opening, corrected later for the same go-live day.
+    await ledger.setOpeningBalance(env.accountsCtx, env.buyer.id, {
+      amount: 1000,
+      asOf: "2026-01-01",
+    });
+    await ledger.setOpeningBalance(env.accountsCtx, env.buyer.id, {
+      amount: 1200,
+      asOf: "2026-01-01",
+    });
+    const march = await ledger.getStatement(env.ctx, env.buyer.id, {
+      from: "2026-03-01",
+      to: "2026-03-31",
+    });
+    expect(march.summary.openingBalance).toBe("1200.00");
+    expect(march.summary.closingBalance).toBe("1200.00");
+    // The reversal sits on the old entry's own day.
+    const [first, reversal] = await prisma.journalEntry.findMany({
+      where: { sourceType: "OPENING_BALANCE", sourceId: env.buyer.id },
+      orderBy: { createdAt: "asc" },
+    });
+    expect(reversal!.reversalOfId).toBe(first!.id);
+    expect(reversal!.date.getTime()).toBe(first!.date.getTime());
+
+    // A cash account's opening, corrected the same way.
+    const acc = await ensureControlAccounts(env.company.id);
+    await chart.setAccountOpeningBalance(env.accountsCtx, acc.CASH, {
+      amount: 100000,
+      asOf: "2026-01-01",
+    });
+    await chart.setAccountOpeningBalance(env.accountsCtx, acc.CASH, {
+      amount: 120000,
+      asOf: "2026-01-01",
+    });
+    const cashOn = async (asOf: string) =>
+      (await reports.getTrialBalance(env.ctx, { asOf })).lines.find(
+        (l) => l.accountId === acc.CASH,
+      );
+    expect((await cashOn("2026-06-30"))!.debit).toBe("120000.00");
+    const cashLedger = await chart.getAccountLedger(env.ctx, acc.CASH, {
+      from: "2026-03-01",
+      to: "2026-03-31",
+    });
+    expect(cashLedger.summary.openingBalance).toBe("120000.00");
+
+    // Moving the go-live day later: nothing before it, the new amount from it.
+    await chart.setAccountOpeningBalance(env.accountsCtx, acc.CASH, {
+      amount: 120000,
+      asOf: "2026-04-01",
+    });
+    expect(await cashOn("2026-03-31")).toBeUndefined();
+    expect((await cashOn("2026-06-30"))!.debit).toBe("120000.00");
+  });
+
+  it("refuses to lower a buyer's opening advance below what is still unused", async () => {
+    const env = await setup();
+    await ledger.setOpeningBalance(env.accountsCtx, env.buyer.id, { amount: -1800 });
+    const order = await orders.createOrder(env.ctx, {
+      channel: "WHOLESALE",
+      partyId: env.buyer.id,
+      lines: [{ variantId: env.sku("M"), quantity: 2 }],
+    });
+    await applyCredit(env.accountsCtx, order.id, { amount: 1500 });
+    // 300 is still unused: the advance can come down by that much, no more.
+    const refused = await expectAppError(
+      ledger.setOpeningBalance(env.accountsCtx, env.buyer.id, { amount: 0 }),
+      "CONFLICT",
+    );
+    expect(refused.message).toContain("has used");
+    expect((await ledger.getPartyBalance(env.ctx, env.buyer.id)).toFixed(2)).toBe("0.00");
+    await ledger.setOpeningBalance(env.accountsCtx, env.buyer.id, { amount: -1500 });
+    expect((await creditPosition(prisma, env.company.id, env.buyer.id)).credit.toFixed(2)).toBe(
+      "0.00",
+    );
+    // The invoice keeps what the credit paid on it; the ledger agrees.
+    const paid = await orders.getOrder(env.ctx, order.id);
+    expect(paid.invoice!.dueAmount.toFixed(2)).toBe("300.00");
+    expect((await ledger.getPartyBalance(env.ctx, env.buyer.id)).toFixed(2)).toBe("300.00");
+    // A bigger advance is always fine.
+    await ledger.setOpeningBalance(env.accountsCtx, env.buyer.id, { amount: -2500 });
+    expect((await creditPosition(prisma, env.company.id, env.buyer.id)).credit.toFixed(2)).toBe(
+      "1000.00",
+    );
+
+    // Paid back in cash: that part of the advance is gone too.
+    await refunds.refundBuyer(env.accountsCtx, {
+      partyId: env.buyer.id,
+      amount: 700,
+      kind: "CASH",
+      method: "CASH",
+      reason: "Advance given back",
+    });
+    await expectAppError(
+      ledger.setOpeningBalance(env.accountsCtx, env.buyer.id, { amount: -2000 }),
+      "CONFLICT",
+    );
+    expect((await ledger.getPartyBalance(env.ctx, env.buyer.id)).toFixed(2)).toBe("0.00");
   });
 
   it("re-checks an order edit under the lock: two edits at once keep the reservation right", async () => {

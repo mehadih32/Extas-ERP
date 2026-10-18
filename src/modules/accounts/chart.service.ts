@@ -339,8 +339,9 @@ export async function updateAccount(
 /**
  * Posts (or replaces) an account's balance brought forward against Opening
  * Balance Equity. `amount` is in the account's normal direction. Replacing
- * reverses the earlier opening entry with a mirror entry (both stay in the
- * books, never deleted); the same amount on the same day changes nothing.
+ * reverses the earlier opening entry with a mirror entry dated on the earlier
+ * entry's own day (both stay in the books, never deleted, and cancel out in
+ * every report from that day on); the same amount on the same day changes nothing.
  */
 export async function postAccountOpeningTx(
   tx: Tx,
@@ -377,6 +378,7 @@ export async function postAccountOpeningTx(
       await reverseJournalEntry(tx, entry.id, {
         description: `Opening balance of ${account.code} ${account.name} replaced`,
         postedById: ctx.user.id,
+        date: entry.date,
       });
     }
     if (!amount.isZero()) {

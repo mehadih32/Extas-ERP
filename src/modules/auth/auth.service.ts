@@ -42,17 +42,20 @@ export const SLOWED_TEXT =
 
 const INVALID_CREDENTIALS = "Incorrect email or password.";
 
+/** Sign-in tries a minute with no visitor address, all of them together (checkLoginRate). */
+export const LOGIN_UNKNOWN_PER_MINUTE = 30;
+
 /**
- * Sign-in tries a minute from one visitor. A Cloudflare address (or none) is no
- * one visitor (v6.4.1 B2): those tries are counted per account instead.
+ * Sign-in tries a minute: 10 from one visitor. A Cloudflare address (or none)
+ * is no one visitor (v6.4.1 B2), and counting such tries per account would let
+ * anyone make the owner's account wait by trying it (v6.4.2): they share one
+ * limit instead, whatever the account, so guessing a password from there stays
+ * slow and no account is ever slowed on its own.
  */
-export function checkLoginRate(meta: RequestMeta, email: unknown) {
+export function checkLoginRate(meta: RequestMeta) {
   const visitor = visitorAddress(meta.ipAddress);
-  const account = String(email ?? "")
-    .trim()
-    .toLowerCase()
-    .slice(0, 320);
-  checkRateLimit(visitor ? `login:${visitor}` : `login-unknown:${account}`, 10, 60_000);
+  if (visitor) checkRateLimit(`login:${visitor}`, 10, 60_000);
+  else checkRateLimit("login-unknown", LOGIN_UNKNOWN_PER_MINUTE, 60_000);
 }
 
 export type LoginResult = {
@@ -67,7 +70,7 @@ export type LoginResult = {
  * since its last unlock and since the last sign-in from there (v6.4.1 B5):
  * someone else's wrong passwords from another place never count, so they can
  * never lock the owner out. A Cloudflare address (or none) is no one place, so
- * it never waits: the account's tries a minute (checkLoginRate) hold there.
+ * it never waits: the one limit a minute for all such tries (checkLoginRate) holds there.
  */
 async function slowedHere(userId: string, address: string | undefined, now: Date) {
   const place = visitorAddress(address);

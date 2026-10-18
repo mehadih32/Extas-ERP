@@ -350,6 +350,7 @@ describe("who each guide is for", () => {
     "backups-restore",
     "backups-new-server",
     "backups-github-alert",
+    "backups-server-drill",
   ];
 
   it("shows the Bug Guard guide only to whoever opens Bug Guard: the platform owner (v6.4.1 C6)", () => {

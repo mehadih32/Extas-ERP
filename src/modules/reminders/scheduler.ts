@@ -17,12 +17,13 @@ export async function reminderTick(now: Date = new Date()) {
   if (running) return null;
   running = true;
   try {
-    // On standby after a restore (G2): only the Bug Guard check the restore asked for (G1).
+    // On standby after a restore (G2): only Bug Guard (the check the restore asked
+    // for, G1, its schedule and its alarms); the reminders and messages wait.
     const { onStandby } = await import("@/modules/backups/standby");
     if (await onStandby()) {
-      const { bugGuardAfterRestore } = await import("@/modules/bug-guard/after-restore");
-      await bugGuardAfterRestore().catch((error) =>
-        console.error("[bug-guard] after the restore", error),
+      const { runBugGuardClock } = await import("@/modules/bug-guard/clock");
+      await runBugGuardClock(now).catch((error) =>
+        console.error("[bug-guard] clock failed", error),
       );
       return null;
     }

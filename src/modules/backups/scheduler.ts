@@ -7,8 +7,8 @@ import { ensureLocalGuides, guideTick } from "@/modules/backups/guide.service";
 import { writeHostKey } from "@/modules/backups/recovery-key.service";
 import { recordRestoreResult } from "@/modules/backups/restore.service";
 import { drillDueAt, previousRunAt, scheduleOf } from "@/modules/backups/schedule";
-import { watchBackups } from "@/modules/backups/status";
 import { onStandby } from "@/modules/backups/standby";
+import { watchBackups } from "@/modules/backups/status";
 import { runTestRestore } from "@/modules/backups/test-restore";
 
 /*
@@ -77,8 +77,10 @@ export async function testRestoreTick(now: Date = new Date()) {
 
 /** Everything the clock does each minute; each part on its own, so one failing stops nothing. */
 export async function backupClock(now: Date = new Date()) {
-  // A copy on standby after a restore makes no backups and touches Google Drive not at all (G2).
-  if (await onStandby()) return;
+  // A copy on standby after a restore backs up too (G2): one that is used after all
+  // is never left without backups. Its backups are marked as made on standby. It never
+  // replaces the restore guide, restore.sh or restore-tool.py beside the backups in
+  // Drive: those belong to the ERP in use, which may be newer than this copy.
   await recordRestoreResult().catch((e: unknown) => console.error("[backups] restore result", e));
   await backupTick(now);
   await testRestoreTick(now);
@@ -91,6 +93,13 @@ export async function backupClock(now: Date = new Date()) {
   await watchBackups(now).catch((e: unknown) =>
     console.error("[backups] could not check the backups' health", e),
   );
+  if (await onStandby()) {
+    // The guide on this server's disk (put in each backup) is still made.
+    await ensureLocalGuides(now).catch((e: unknown) =>
+      console.error("[backups] the restore guide could not be made", e),
+    );
+    return;
+  }
   await guideTick(now).catch((e: unknown) =>
     console.error("[backups] the restore guide could not be made", e),
   );

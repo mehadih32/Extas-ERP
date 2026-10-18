@@ -102,9 +102,14 @@ async function sha256Of(file: string): Promise<string> {
 /**
  * Every file under `root` (links are not followed), with its size and SHA-256,
  * sorted by path. `skip` is a folder inside it left out (the backups, when
- * BACKUP_DIR sits inside UPLOAD_DIR).
+ * BACKUP_DIR sits inside UPLOAD_DIR). The links found are added to `links`, when
+ * given, so that a backup says which ones it does not hold.
  */
-export async function listFiles(root: string, skip?: string): Promise<UploadFile[]> {
+export async function listFiles(
+  root: string,
+  skip?: string,
+  links?: string[],
+): Promise<UploadFile[]> {
   const out: UploadFile[] = [];
   async function walk(dir: string) {
     let entries: import("node:fs").Dirent[];
@@ -117,7 +122,8 @@ export async function listFiles(root: string, skip?: string): Promise<UploadFile
     for (const entry of entries) {
       const full = path.join(dir, entry.name);
       if (skip && (full === skip || full.startsWith(skip + path.sep))) continue;
-      if (entry.isDirectory()) await walk(full);
+      if (entry.isSymbolicLink()) links?.push(path.relative(root, full).split(path.sep).join("/"));
+      else if (entry.isDirectory()) await walk(full);
       else if (entry.isFile()) {
         const info = await lstat(full);
         out.push({

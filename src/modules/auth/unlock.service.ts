@@ -51,7 +51,9 @@ async function mailboxOf(user: { id: string; lastCompanyId: string | null }) {
 /** Emails an unlock link to the account's own address; the same answer for any email. */
 export async function askUnlockLink(input: unknown, meta: RequestMeta = {}) {
   const { email } = unlockAskSchema.parse(input);
-  checkRateLimit(`unlock-ask:${visitorAddress(meta.ipAddress) ?? "unknown"}`, 5, 60 * 60_000);
+  // A Cloudflare address (or none) is no one visitor: counted for each email there instead.
+  const visitor = visitorAddress(meta.ipAddress);
+  checkRateLimit(visitor ? `unlock-ask:${visitor}` : `unlock-ask-unknown:${email}`, 5, 60 * 60_000);
   const user = await prisma.user.findUnique({
     where: { email },
     select: {
@@ -124,12 +126,17 @@ export async function unlockWithLink(input: unknown, meta: RequestMeta = {}) {
     "This unlock link has run out or was used already. Ask for a new one below.",
   );
   if (!parsed.success) throw gone;
-  checkRateLimit(`unlock-use:${visitorAddress(meta.ipAddress) ?? "unknown"}`, 10, 60 * 60_000);
+  // A Cloudflare address (or none) is no one visitor: there, wrong links share one count and
+  // each account's link has its own, so nobody can use up the owner's.
+  const visitor = visitorAddress(meta.ipAddress);
+  if (visitor) checkRateLimit(`unlock-use:${visitor}`, 10, 60 * 60_000);
   const hash = hashSessionToken(parsed.data.token);
   const user = await prisma.user.findUnique({
     where: { unlockTokenHash: hash },
     select: { id: true },
   });
+  if (!visitor)
+    checkRateLimit(user ? `unlock-use-account:${user.id}` : "unlock-use-unknown", 10, 60 * 60_000);
   if (!user) throw gone;
   // Used once: only the press that clears it unlocks.
   const used = await prisma.user.updateMany({

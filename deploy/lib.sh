@@ -403,7 +403,7 @@ leave_standby() {
   read -r -p "Type $domain to go on, or press Enter to stop: " typed || true
   typed="$(printf '%s' "$typed" | tr '[:upper:]' '[:lower:]' | sed -e 's#^https\?://##' -e 's#/.*$##' -e 's/[[:space:]]//g')"
   { [ -n "$typed" ] && [ "$typed" = "$domain" ]; } || die "stopped: nothing was changed."
-  rm -f "$dir/.standby"
+  rm -f "$dir/.standby" "$dir/.standby.was-in-use"
   say "Done: this ERP is the one in use; its reminders and messages start within a minute"
 }
 

@@ -483,7 +483,10 @@ describe("standby after a restore on a second server (G2)", () => {
       .join("\n");
     // The mark (random words) is in place before the restored database first starts.
     expect(code).toMatch(
-      /head -c 16 \/dev\/urandom [^\n]*>"\$DATA\/backups\/\.standby"\nchmod 644 "\$DATA\/backups\/\.standby"\nstandby=1[\s\S]*"\$DIR\/deploy\/restore\.sh" --yes/,
+      /head -c 16 \/dev\/urandom [^\n]*>"\$backups\/\.standby"\n\s*chmod 644 "\$backups\/\.standby"/,
+    );
+    expect(code).toMatch(
+      /\nmark_standby "\$DATA" "\$\{replacing:-0\}"\nstandby=1\n[\s\S]*"\$DIR\/deploy\/restore\.sh" --yes/,
     );
     // The web address is moved only after the restore went well; then the mark goes.
     const restored = code.indexOf("restored=1\n");
@@ -492,11 +495,13 @@ describe("standby after a restore on a second server (G2)", () => {
     expect(dns).toBeGreaterThan(restored);
     expect(code.match(/tool dns /g)).toHaveLength(1);
     expect(code.slice(dns)).toMatch(
-      /^tool dns [^\n]*\n[^\n]*\nelse\n[^\n]*\nfi\nmoved="\$\(tool fact --work "\$WORK" dnsMoved\)"\n[\s\S]{0,200}web_address_here "\$APP_DOMAIN" "\$DATA\/backups\/\.standby"[^\n]*\n\s*note [^\n]*\n\s*moved=yes\nfi\nif \[ -n "\$moved" \]; then\n\s*rm -f "\$DATA\/backups\/\.standby"\n\s*standby=0/,
+      /^tool dns [^\n]*\n[^\n]*\nelse\n[^\n]*\nfi\nmoved="\$\(tool fact --work "\$WORK" dnsMoved\)"\nif \[ -z "\$moved" \] && address_here; then\n\s*note [^\n]*\n\s*moved=yes\nfi\nrm -f "\$DATA\/backups\/\.standby\.was-in-use"\nif \[ -n "\$moved" \]; then\n\s*rm -f "\$DATA\/backups\/\.standby"\n\s*standby=0/,
     );
     // Restored over the ERP in use (its address reaches this server already, even with
     // no Cloudflare token: W01), it never waits on standby (v6.4.1 review).
-    expect(code).toMatch(/if \[ -z "\$moved" \] && \[ "\$APP_DOMAIN" != localhost \] &&/);
+    expect(code).toMatch(
+      /address_here\(\) \{\n\s*\[ "\$APP_DOMAIN" != localhost \] &&\n\s*\(cd "\$DIR" && source deploy\/lib\.sh && web_address_here "\$APP_DOMAIN" "\$DATA\/backups\/\.standby"\)/,
+    );
     // Said at the end, in big words, as the last thing on the screen.
     expect(code).toMatch(
       /warn W10 "this ERP waits on standby: \$APP_DOMAIN does not point to this server yet/,
@@ -505,6 +510,67 @@ describe("standby after a restore on a second server (G2)", () => {
     expect(banner).toBeGreaterThan(code.lastIndexOf("Next (part F of the guide)"));
     const goLive = readFileSync(path.join("deploy", "go-live.sh"), "utf8");
     expect(goLive).toMatch(/leave_standby "\$DATA_DIR\/backups" "\$APP_DOMAIN"/);
+  });
+});
+
+describe("a restore over the ERP in use that fails leaves it in use, not on standby (v6.4.1 review 2)", () => {
+  const BOOTSTRAP = path.join(process.cwd(), "deploy", "bootstrap.sh");
+  const boot = (...args: string[]) =>
+    new Promise<Run>((resolve) =>
+      execFile("bash", [BOOTSTRAP, ...args], { timeout: 60_000 }, (error, stdout, stderr) =>
+        resolve({ code: error ? Number(error.code ?? 1) : 0, stdout, stderr }),
+      ),
+    );
+
+  it("takes away only the mark it put on an ERP that was in use, even after a restore cut off half-way", async () => {
+    const data = path.join(dir, "data");
+    const mark = path.join(data, "backups", ".standby");
+    // Over the ERP in use (no mark of its own): the restore fails, the mark goes again.
+    expect((await boot("--standby-mark", data, "1")).code).toBe(0);
+    expect(readFileSync(mark, "utf8")).toMatch(/^[0-9a-f]{32}$/);
+    expect((await boot("--standby-failed", data, "0")).stdout).toContain("IN USE AGAIN");
+    expect(existsSync(mark)).toBe(false);
+    expect(existsSync(`${mark}.was-in-use`)).toBe(false);
+    // Cut off half-way (the VM restarted) and pasted again: the second run finds the
+    // mark already there, and still knows the ERP was in use before the first.
+    await boot("--standby-mark", data, "1");
+    await boot("--standby-mark", data, "1");
+    expect((await boot("--standby-failed", data, "0")).stdout).toContain("IN USE AGAIN");
+    expect(existsSync(mark)).toBe(false);
+    // With the backup's data in already, only when its web address reaches this server.
+    await boot("--standby-mark", data, "1");
+    expect((await boot("--standby-failed", data, "1")).stdout).toContain("STANDBY KEPT");
+    expect(existsSync(mark)).toBe(true);
+    await rm(data, { recursive: true });
+    // A new server: the copy stays on standby.
+    await boot("--standby-mark", data, "0");
+    expect((await boot("--standby-failed", data, "0")).stdout).toContain("STANDBY KEPT");
+    expect(existsSync(mark)).toBe(true);
+    // Over a copy on standby already: it stays on standby.
+    await rm(data, { recursive: true });
+    await mkdir(path.join(data, "backups"), { recursive: true });
+    await writeFile(mark, "words of the earlier restore");
+    await boot("--standby-mark", data, "1");
+    expect((await boot("--standby-failed", data, "0")).stdout).toContain("STANDBY KEPT");
+    expect(existsSync(mark)).toBe(true);
+  });
+
+  it("does so on every failure after the mark, and says so in R19", () => {
+    const code = readFileSync(BOOTSTRAP, "utf8")
+      .split("\n")
+      .filter((line) => !line.trimStart().startsWith("#"))
+      .join("\n");
+    // Every exit that is not a success, once the mark is written.
+    expect(code).toMatch(
+      /cleanup\(\) \{\n\s*local code=\$\?\n\s*if \[ "\$code" != 0 \] && \[ "\$standby" = 1 \] && standby_after_failure "\$restored"; then/,
+    );
+    expect(code.indexOf("trap cleanup EXIT")).toBeLessThan(code.indexOf('mark_standby "$DATA"'));
+    // The A6 choice says whether an ERP was here.
+    expect(code).toMatch(/DATA="\$i_data"\n\s*replacing=1\n/);
+    // R19 says what the ERP here is now, after taking the mark away.
+    expect(code).toMatch(
+      /if standby_after_failure 0; then\n\s*left="The ERP that was in use here runs as before \(not on standby\); its web address was not changed\."\n\s*else\n\s*left="The web address was not changed\."\n\s*fi\n\s*fail R19 "the backup could not be restored: \$\{why:-the lines above say why\}\. \$left To try again, paste the command again/,
+    );
   });
 });
 

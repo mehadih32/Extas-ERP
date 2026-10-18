@@ -1128,8 +1128,8 @@ export const GUIDE_ERRORS: GuideError[] = [
     code: "R19",
     shown: "the backup could not be restored",
     meaning: fix(
-      "ডাটাবেস বা ফাইল ফেরত আনা যায়নি। কেন, তা একই লাইনে আর উপরে লেখা; সাধারণত সার্ভার রিস্টোরের আগের অবস্থায় (নিরাপত্তা কপি থেকে) ফিরে গেছে। ওয়েব ঠিকানা বদলায়নি।",
-      "The database or files could not be restored. Why is on the same line and above; usually the server was put back as it was before the restore (the safety copy). The web address was not changed.",
+      "ডাটাবেস বা ফাইল ফেরত আনা যায়নি। কেন, তা একই লাইনে আর উপরে লেখা; সাধারণত সার্ভার রিস্টোরের আগের অবস্থায় (নিরাপত্তা কপি থেকে) ফিরে গেছে। ওয়েব ঠিকানা বদলায়নি। এই সার্ভারের ERP রিস্টোরের আগে চালু (ব্যবহারে) থাকলে সেটি আগের মতোই চলে, অপেক্ষায় (standby) থাকে না।",
+      "The database or files could not be restored. Why is on the same line and above; usually the server was put back as it was before the restore (the safety copy). The web address was not changed. If the ERP on this server was the one in use before the restore, it runs as before, not on standby.",
     ),
     todo: fix(
       `একই কমান্ড আবার পেস্ট করুন: আগে নামানো ব্যাকআপ দিয়েই চলে। জিজ্ঞেস করতে পারে “Type the web address of the ERP on this server”। ${REPLACE_RULE.bn} একই ভুল আবার হলে D6-এ আরেকটি ব্যাকআপ বাছুন।`,

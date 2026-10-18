@@ -63,8 +63,12 @@ export type HelpArticle = {
    * Without it, the menu entry that holds the first matching route decides.
    */
   anyOf?: readonly PermissionKey[];
-  /** Bengali (What): what this screen or feature is, and what each part of it shows. */
-  what?: string;
+  /**
+   * Bengali (What): what this screen or feature is, and what each part of it
+   * shows, as short points (one or two sentences each), shown as a list. A
+   * single text is only for a short What (tests/unit/help-guides.test.ts).
+   */
+  what?: string | readonly string[];
   /** Bengali (Why): why it matters and when to use it, with a real buying-house example. */
   why?: string;
   /** How: everything you can do there, step by step. */

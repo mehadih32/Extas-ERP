@@ -666,16 +666,21 @@ async function pastCm(ctx: CompanyContext, styleIds: string[], factoryId: string
       code: true,
       styleId: true,
       cmRate: true,
+      cmPer: true,
+      cmPerDozen: true,
       factory: { select: { name: true } },
       style: { select: { code: true } },
     },
   });
+  // `cm` is the piece price; a dozen agreement also carries its dozen price.
   return rows.map((r) => ({
     project: r.code,
     styleId: r.styleId,
     style: r.style?.code ?? null,
     factory: r.factory?.name ?? null,
     cm: Number(r.cmRate),
+    cmPer: r.cmPer,
+    cmPerDozen: r.cmPer === "DOZEN" && r.cmPerDozen !== null ? Number(r.cmPerDozen) : null,
   }));
 }
 

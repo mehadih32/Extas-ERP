@@ -378,7 +378,7 @@ run("Full check and Claude Code", () => {
     // None of that used the pass up.
     const begun = await beginCheck({ run: id, pass: inputs.pass, proof: proof() });
     expect(begun.writes).toBe(false);
-    expect(begun.minutes).toBe(10);
+    expect(begun.minutes).toBe(25);
     expect(begun.roles[0]).toMatchObject({ role: "Owner", member: "Full check (Owner)" });
     // Every role is checked, with or without members; the Owner's role is the owner's view.
     const roles = await prisma.role.findMany({ where: { companyId: env.company.id } });
@@ -473,7 +473,20 @@ run("Full check and Claude Code", () => {
     });
     const report = {
       summary: {
-        roles: [{ role: "Owner", member: "owner", screens: 140, pdfs: 12, skipped: 3, note: null }],
+        roles: [
+          { role: "Owner", member: "owner", screens: 140, pdfs: 12, skipped: 3, note: null },
+          {
+            role: "Accounts",
+            member: "accounts",
+            screens: 60,
+            pdfs: 4,
+            skipped: 0,
+            notReached: 5,
+            filesLeft: 0,
+            stopped: false,
+            note: "5 screens were not reached in the time.",
+          },
+        ],
         screens: 140,
         pdfs: 12,
         links: 900,
@@ -510,6 +523,8 @@ run("Full check and Claude Code", () => {
       where: { userId: env.owner.user.id, entityType: "FullCheckRun" },
     });
     expect(told.subject).toBe("Full check: 2 problems found");
+    // It says what it did not reach in the time.
+    expect(told.body).toContain("5 screens were not reached in the time.");
     await expectAppError(receiveReport(begun.reportKey, report), "FORBIDDEN");
 
     const problemId = got.problems[0]!.id;

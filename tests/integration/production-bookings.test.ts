@@ -38,6 +38,8 @@ import * as materialsScreens from "@/modules/materials/screens.service";
 import * as parties from "@/modules/parties/party.service";
 import * as batches from "@/modules/production/batch.service";
 import { bookingDocument, bookingPdf } from "@/modules/production/booking-pdf.service";
+import { readOnly } from "@/lib/read-only";
+import { renderDocumentPdf } from "@/modules/documents/render";
 import * as bookings from "@/modules/production/booking.service";
 import { standardTermsText } from "@/modules/production/booking-terms";
 import * as materialScreens from "@/modules/production/material-screens.service";
@@ -53,6 +55,7 @@ import {
 } from "@/server/actions/booking.actions";
 import { setMaterialNeedsAction } from "@/server/actions/production.actions";
 
+import { pdfLines } from "../fixtures/pdf";
 import { addToCompany, contextFor, makeCompany, makeUser, resetDb } from "./helpers";
 
 const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
@@ -364,6 +367,23 @@ run("Bookings", () => {
     expect(list.items[1]!.fabric).toEqual([{ unit: "KG", quantity: "302.5" }]);
     const found = data(await listBookingsAction({ search: "summer" }), "search");
     expect(found.items.map((i) => i.id)).toEqual([b.id]);
+
+    // Fabric in two units (kg and yards): every headline figure prints, none is dropped.
+    const yards = { ...b.lines[0]!, material: { ...b.lines[0]!.material, unit: "YARD" as const } };
+    const mixed = bookingDocument(env.pm, {
+      ...b,
+      lines: [b.lines[0]!, yards, ...b.lines.slice(1)],
+    });
+    const figures = mixed.blocks.find((x) => x.kind === "figures");
+    expect(figures?.kind === "figures" && figures.figures.map((f) => f.label)).toEqual([
+      "Fabric",
+      "Fabric",
+      "Items",
+      "Collar sets",
+      "Deliver by",
+    ]);
+    const printed = pdfLines(await renderDocumentPdf(mixed, { compress: false }));
+    for (const label of ["COLLAR SETS", "DELIVER BY", "1,133"]) expect(printed).toContain(label);
   });
 
   it("refuses what cannot be booked", async () => {
@@ -593,6 +613,13 @@ run("Bookings", () => {
     expect((await bookingPdf(env.pm, market.id, undefined, "sideways")).orientation).toBe(
       "portrait",
     );
+    // Where nothing may be written (a Full check on the live site), the PDF still comes
+    // the way asked; the pick is just not kept.
+    const readOnlyPdf = await readOnly("Only reading", () =>
+      bookingPdf(env.pm, market.id, undefined, "landscape"),
+    );
+    expect(readOnlyPdf.orientation).toBe("landscape");
+    expect((await bookingPdf(env.pm, market.id)).orientation).toBe("portrait");
 
     // A long booking runs on over pages, its table header repeated.
     const long = await bookings.createBooking(env.pm, {

@@ -6,7 +6,11 @@ import { openingDay } from "@/modules/accounts/opening-entry";
 import type { CompanyContext } from "@/modules/auth/context";
 import { PRINT_INFO } from "@/modules/documents/print.service";
 import { whatsappDigits } from "@/modules/parties/contact";
-import { getReceivablesPayables, getStatement } from "@/modules/parties/ledger.service";
+import {
+  getReceivablesPayables,
+  getStatement,
+  STATEMENT_LIMIT,
+} from "@/modules/parties/ledger.service";
 import {
   findPossibleDuplicates,
   getPartyProfile,
@@ -219,10 +223,13 @@ export async function getStatementScreen(
   partyId: string,
   range: { from?: string; to?: string } = {},
 ) {
-  const statement = await getStatement(ctx, partyId, range);
+  const statement = await getStatement(ctx, partyId, range, {
+    limit: STATEMENT_SCREEN_LINES,
+    newest: true,
+  });
   const tz = ctx.company.timezone;
-  const hiddenCount = Math.max(0, statement.lines.length - STATEMENT_SCREEN_LINES);
-  const shown = statement.lines.slice(hiddenCount);
+  const hiddenCount = statement.summary.notListed.count;
+  const shown = statement.lines;
   return {
     party: statement.party,
     from: range.from ?? null,
@@ -240,8 +247,9 @@ export async function getStatementScreen(
       credit: line.credit,
       balance: line.balance,
     })),
-    /** Earlier transactions in the period left off the screen (the PDF has them). */
+    /** Earlier transactions in the period left off the screen (the PDF lists up to `pdfLimit`). */
     hiddenCount,
+    pdfLimit: STATEMENT_LIMIT,
     can: { print: ctx.can(PRINT_INFO.LEDGER_STATEMENT.permission) },
   };
 }

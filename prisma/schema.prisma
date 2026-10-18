@@ -2143,8 +2143,13 @@ model ProductionProject {
   /// cost per piece (cost so far ÷ pieces to make) with it. Null: no target set.
   targetUnitCost Decimal?         @db.Decimal(14, 2)
   /// The making charge (CM) per piece agreed with the factory; printed on the factory
-  /// contract and the CM settlement. Null: not agreed yet.
+  /// contract and the CM settlement. Null: not agreed yet. When agreed per dozen, the
+  /// dozen price ÷ 12 to the paisa (the CM of the pieces is worked from the dozen price).
   cmRate         Decimal?         @db.Decimal(14, 2)
+  /// How the CM was agreed with the factory: per piece, or per dozen (`cmPerDozen`).
+  cmPer          CmPer            @default(PIECE)
+  /// The CM per dozen as agreed, when it was agreed per dozen. Null: agreed per piece.
+  cmPerDozen     Decimal?         @db.Decimal(14, 2)
   /// Milestones: cutting and sewing to be done by these days (warnings when they come
   /// near or pass). Null: not set.
   cutBy          DateTime?        @db.Date

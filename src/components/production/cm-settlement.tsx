@@ -45,6 +45,14 @@ function CmByStyle({ view, totals, currency }: { view: View; totals: Totals; cur
   const count = (n: number) => formatCount(n, currency);
   const sum = (pick: (s: View["styles"][number]) => number) =>
     view.styles.reduce((t, s) => t + pick(s), 0);
+  // A CM agreed per dozen shows as agreed ("120.00 a dozen"); all per piece shows as before.
+  const anyDozen = view.styles.some((s) => s.cmPerDozen !== null);
+  const agreed = (s: View["styles"][number]) =>
+    s.cmPerDozen !== null
+      ? `${money(s.cmPerDozen, currency)} a dozen`
+      : s.cmRate
+        ? `${money(s.cmRate, currency)}${anyDozen ? " a piece" : ""}`
+        : "Not agreed";
   return (
     <Panel title="CM by style" id="cm-styles-heading">
       <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
@@ -61,7 +69,15 @@ function CmByStyle({ view, totals, currency }: { view: View; totals: Totals; cur
               <th scope="col" className={head}>
                 Style
               </th>
-              {["CM a piece", "A", "B", "C", "Rejects", "Pieces", "CM"].map((label) => (
+              {[
+                anyDozen ? "CM agreed" : "CM a piece",
+                "A",
+                "B",
+                "C",
+                "Rejects",
+                "Pieces",
+                "CM",
+              ].map((label) => (
                 <th key={label} scope="col" className={cn(head, "text-right")}>
                   {label}
                 </th>
@@ -84,7 +100,7 @@ function CmByStyle({ view, totals, currency }: { view: View; totals: Totals; cur
                   </span>
                 </th>
                 <td className={cn(num, !s.cmRate && "font-medium text-destructive")}>
-                  {s.cmRate ? money(s.cmRate, currency) : "Not agreed"}
+                  {agreed(s)}
                 </td>
                 <td className={num}>{count(s.a)}</td>
                 <td className={num}>{count(s.b)}</td>

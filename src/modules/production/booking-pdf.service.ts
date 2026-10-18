@@ -424,7 +424,7 @@ export function bookingDocument(
           label: "Deliver by",
           value: b.expectedDate ? formatDay(b.expectedDate) : "As agreed",
         },
-      ].slice(0, 4),
+      ],
     },
     ...(fabric.length > 0 ? [fabricTable(b, fabric, show, currency)] : []),
     ...(trims.length > 0 ? [trimsTable(trims, fabric.length, show, currency)] : []),

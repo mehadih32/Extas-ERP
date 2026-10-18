@@ -212,12 +212,22 @@ const clause = z.object({
   text: z.string().trim().min(1, "Write what the clause says").max(2000),
 });
 
-/** The reviewed clauses, the day it was signed, and each style's CM per piece (factory). */
+/**
+ * The reviewed clauses, the day it was signed, and each style's CM (factory):
+ * `cmRate` is the amount as agreed, per piece or per dozen (`cmPer`, per piece
+ * when left out).
+ */
 export const updateContractSchema = z.object({
   clauses: z.array(clause).min(1, "Keep at least one clause").max(30),
   signedOn: z.iso.date().nullish(),
   cmRates: z
-    .array(z.object({ projectId: id, cmRate: money.nullable() }))
+    .array(
+      z.object({
+        projectId: id,
+        cmRate: money.nullable(),
+        cmPer: z.enum(["PIECE", "DOZEN"]).default("PIECE"),
+      }),
+    )
     .max(200)
     .refine(
       (rates) => new Set(rates.map((r) => r.projectId)).size === rates.length,

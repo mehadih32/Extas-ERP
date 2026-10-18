@@ -36,6 +36,7 @@ import * as receive from "@/modules/production/receive.service";
 import * as techPacks from "@/modules/production/tech-pack-approval.service";
 import { createRole } from "@/modules/rbac/role.service";
 
+import { pdfProblems } from "../../scripts/full-check/pdf-text.mjs";
 import { pdfLines } from "../fixtures/pdf";
 import { addToCompany, contextFor, makeCompany, makeUser, resetDb } from "./helpers";
 
@@ -895,6 +896,9 @@ run("The booking book", () => {
     ]) {
       expect(lines).toContain(text);
     }
+    // The Full check's look finds nothing to flag: no figure cut short, every page numbered.
+    expect(pdfProblems(pdf.bytes)).toEqual([]);
+    expect(lines.join("\n")).toContain("(A-01, A-02 and so on)");
     // Anyone who sees bookings may print it; a Sales Executive may not.
     await expectAppError(bookingBookPdf(env.sales, env.batch.id), "FORBIDDEN");
   });

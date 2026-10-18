@@ -1,5 +1,6 @@
 import { addDays, localDay } from "@/lib/dates";
 import { HELP_SECTIONS } from "@/modules/help";
+import { guideCovers } from "@/modules/help/covers";
 
 import type { Check, CheckContext, Found } from "../types";
 
@@ -154,10 +155,14 @@ const missingHelp: Check = {
   label: "Screens without a guide",
   async run(ctx) {
     const views = await countsOf(ctx, "VIEW", 30);
-    const guided = new Set(features().flatMap((f) => f.routes));
+    // The Help Center's own rule: a guide covers its route and the pages under it.
+    const guided = features().flatMap((f) => f.routes);
     const bare = [...views.keys()]
       .map(sameRoute)
-      .filter((r) => r !== "/" && !r.startsWith("/help") && !guided.has(r));
+      .filter(
+        (r) =>
+          r !== "/" && !r.startsWith("/help") && !guided.some((route) => guideCovers(route, r)),
+      );
     const unique = [...new Set(bare)].slice(0, 15);
     if (unique.length === 0) return [];
     return [

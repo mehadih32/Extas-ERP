@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import { describe, expect, it } from "vitest";
 
 import {
+  cmFor,
   cmPieces,
   cmSettlementMath,
   rejectPenalty,
@@ -62,6 +63,29 @@ describe("cmSettlementMath", () => {
   it("goes below zero when the factory took more than it earned", () => {
     const over = cmSettlementMath({ styles, faults: [], deductCGrade: false, paid: 2000 });
     expect(over.payable.toFixed(2)).toBe("-380.00");
+  });
+
+  it("pays a CM agreed per dozen as its twelfth a piece, worked from the dozen price", () => {
+    // 120 a dozen is 10 a piece: 18 pieces earn 180, the 1 C-grade piece 10.
+    const dozen = { cmRate: new Prisma.Decimal(10), cmPerDozen: new Prisma.Decimal(120) };
+    const m = cmSettlementMath({
+      styles: [{ ...dozen, a: 13, b: 3, c: 1, reject: 1 }],
+      faults: [],
+      deductCGrade: true,
+      paid: 0,
+    });
+    expect([m.totalCm, m.cGradeCm, m.payable].map((v) => v.toFixed(2))).toEqual([
+      "180.00",
+      "10.00",
+      "170.00",
+    ]);
+    // 100 a dozen is 8.333... a piece: 1,200 pieces earn exactly 10,000, not 1,200 × 8.33.
+    const odd = { cmRate: new Prisma.Decimal("8.33"), cmPerDozen: new Prisma.Decimal(100) };
+    expect(cmFor(odd, 1200)!.toFixed(2)).toBe("10000.00");
+    expect(cmFor(odd, 7)!.toFixed(2)).toBe("58.33");
+    // A CM agreed per piece is worked as before; none agreed is none.
+    expect(cmFor({ cmRate: new Prisma.Decimal("45.50") }, 300)!.toFixed(2)).toBe("13650.00");
+    expect(cmFor({ cmRate: null }, 300)).toBeNull();
   });
 });
 

@@ -8,6 +8,7 @@ import { FormFooter, usePageForm } from "@/components/accounts/form-bits";
 import { Field, FormAlert } from "@/components/forms/field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import { formatDay } from "@/lib/display";
 import type { ContractScreen } from "@/modules/production/contract.service";
@@ -22,20 +23,24 @@ const newKey = () => `clause-${++counter}`;
 const rowsOf = (clauses: Array<{ title: string; text: string }>): Row[] =>
   clauses.map((c) => ({ key: newKey(), title: c.title, text: c.text }));
 
-/** "450" or "450.50": a CM per piece, or a message. */
-function readCm(text: string): number | null | string {
+type CmPer = "PIECE" | "DOZEN";
+
+/** "450" or "450.50": a CM per piece or per dozen, or a message. */
+function readCm(text: string, per: CmPer): number | null | string {
   const value = text.trim().replace(/,/g, "");
   if (!value) return null;
   if (!/^\d+(\.\d{1,2})?$/.test(value)) return "Enter an amount like 45 or 45.50.";
   const n = Number(value);
-  if (n > 1_000_000) return "That is too much for a piece.";
+  if (n > (per === "DOZEN" ? 12_000_000 : 1_000_000)) {
+    return per === "DOZEN" ? "That is too much for a dozen." : "That is too much for a piece.";
+  }
   return n;
 }
 
 /**
  * Reviewing a batch contract (Production Managers): each clause's title and
- * words, moved, removed or added; a fresh draft from the batch; the CM per
- * piece of the factory's styles; and the day both sides signed. A signed
+ * words, moved, removed or added; a fresh draft from the batch; the CM of the
+ * factory's styles, per piece or per dozen as agreed; and the day both sides signed. A signed
  * contract keeps its terms until the signed day is cleared.
  */
 export function ContractForm({ data, currency }: { data: ContractScreen; currency: string }) {
@@ -46,7 +51,10 @@ export function ContractForm({ data, currency }: { data: ContractScreen; currenc
   const [rows, setRows] = useState<Row[]>(() => rowsOf(c.clauses));
   const [signedOn, setSignedOn] = useState(c.signedOn ?? "");
   const [rates, setRates] = useState<Record<string, string>>(() =>
-    Object.fromEntries((data.styles ?? []).map((s) => [s.id, s.cmRate ?? ""])),
+    Object.fromEntries((data.styles ?? []).map((s) => [s.id, s.cmAmount ?? ""])),
+  );
+  const [pers, setPers] = useState<Record<string, CmPer>>(() =>
+    Object.fromEntries((data.styles ?? []).map((s) => [s.id, s.cmPer])),
   );
   const [drafting, startDrafting] = useTransition();
   const [notice, setNotice] = useState<string>();
@@ -88,9 +96,10 @@ export function ContractForm({ data, currency }: { data: ContractScreen; currenc
     if (rows.length === 0) found.clauses = "Keep at least one clause.";
     if (signedOn && signedOn > data.today) found.signedOn = "Choose today or an earlier day.";
     const cmRates = (data.styles ?? []).map((s, i) => {
-      const value = readCm(rates[s.id] ?? "");
+      const cmPer = pers[s.id] ?? "PIECE";
+      const value = readCm(rates[s.id] ?? "", cmPer);
       if (typeof value === "string") found[`cmRates.${i}.cmRate`] = value;
-      return { projectId: s.id, cmRate: typeof value === "number" ? value : null };
+      return { projectId: s.id, cmRate: typeof value === "number" ? value : null, cmPer };
     });
     form.setProblems(found);
     form.setError(undefined);
@@ -110,12 +119,12 @@ export function ContractForm({ data, currency }: { data: ContractScreen; currenc
     <form onSubmit={submit} className="grid max-w-3xl gap-6" noValidate>
       {data.styles && data.styles.length > 0 && (
         <fieldset className="grid min-w-0 gap-4 rounded-lg border bg-card p-4 sm:p-5">
-          <legend className="sr-only">CM per piece</legend>
+          <legend className="sr-only">CM per style</legend>
           <div>
-            <h3 className="font-serif text-lg text-primary">CM per piece</h3>
+            <h3 className="font-serif text-lg text-primary">CM per style</h3>
             <p className="mt-1 text-[0.8125rem] text-muted-foreground">
-              The making charge agreed with {c.party.name} for each style. It prints on this
-              contract and is used for the final CM settlement.
+              The making charge agreed with {c.party.name} for each style, per piece or per dozen.
+              It prints on this contract as agreed and is used for the final CM settlement.
             </p>
           </div>
           <ul className="grid divide-y rounded-md border" aria-label="CM per style">
@@ -125,7 +134,7 @@ export function ContractForm({ data, currency }: { data: ContractScreen; currenc
               return (
                 <li
                   key={s.id}
-                  className="grid min-w-0 gap-2 p-3 sm:grid-cols-[minmax(0,1fr)_12rem] sm:items-center"
+                  className="grid min-w-0 gap-2 p-3 sm:grid-cols-[minmax(0,1fr)_9rem_8.5rem] sm:items-center"
                 >
                   <div className="min-w-0">
                     <p className="text-sm font-medium break-words">
@@ -136,7 +145,7 @@ export function ContractForm({ data, currency }: { data: ContractScreen; currenc
                       {s.closed ? " · closed" : ""}
                     </p>
                   </div>
-                  <Field id={id} label={`CM per piece (${currency})`} error={err}>
+                  <Field id={id} label={`CM (${currency})`} error={err}>
                     <Input
                       id={id}
                       inputMode="decimal"
@@ -147,6 +156,19 @@ export function ContractForm({ data, currency }: { data: ContractScreen; currenc
                       placeholder="To agree"
                       aria-invalid={Boolean(err)}
                     />
+                  </Field>
+                  <Field id={`${id}-per`} label="CM is">
+                    <NativeSelect
+                      id={`${id}-per`}
+                      value={pers[s.id] ?? "PIECE"}
+                      onChange={(e) =>
+                        setPers((all) => ({ ...all, [s.id]: e.target.value as CmPer }))
+                      }
+                      disabled={locked || s.closed}
+                    >
+                      <option value="PIECE">per piece</option>
+                      <option value="DOZEN">per dozen</option>
+                    </NativeSelect>
                   </Field>
                 </li>
               );

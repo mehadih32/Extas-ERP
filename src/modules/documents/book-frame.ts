@@ -1,6 +1,7 @@
 import type { Company, PageOrientation } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
+import { readOnlyReason } from "@/lib/read-only";
 import type { CompanyContext } from "@/modules/auth/context";
 import type { BookFrame, Orientation } from "@/modules/documents/model";
 import { DEFAULT_TAGLINE } from "@/modules/documents/tagline";
@@ -35,8 +36,13 @@ export async function pdfOrientationFor(ctx: CompanyContext): Promise<Orientatio
   return fromColumn(pref?.pdfOrientation ?? ctx.company.bookOrientation);
 }
 
-/** Keeps this person's pick for the next download (no change when it is the same). */
+/**
+ * Keeps this person's pick for the next download (no change when it is the same).
+ * Where nothing may be written (a Full check on the live site) it is not kept: the
+ * download still comes the way asked.
+ */
 export async function rememberOrientation(ctx: CompanyContext, orientation: Orientation) {
+  if (await readOnlyReason()) return;
   const value = toColumn(orientation);
   await prisma.userPreference.upsert({
     where: { userId: ctx.user.id },

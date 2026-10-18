@@ -325,6 +325,12 @@ run("Production renovation: batch contracts", () => {
     expect(after.cm).toEqual({ total: "20050.00", toAgree: 0 });
     const polo = await prisma.productionProject.findUniqueOrThrow({ where: { id: env.polo.id } });
     expect(polo.cmRate?.toFixed(2)).toBe("45.50");
+    // Agreed per piece, as every agreement before the per-dozen choice: kept as it was.
+    expect([polo.cmPer, polo.cmPerDozen]).toEqual(["PIECE", null]);
+    expect(after.styles?.map((s) => [s.cmPer, s.cmAmount])).toEqual([
+      ["PIECE", "45.50"],
+      ["PIECE", "32.00"],
+    ]);
 
     // A rate for a style the agreement does not cover, and a signed day after today.
     await expectAppError(
@@ -372,6 +378,14 @@ run("Production renovation: batch contracts", () => {
     expect(doc.meta).toContainEqual({ label: "Signed on", value: "1 Oct 2026" });
     expect(doc.parties[1]!.lines).toEqual(["Gazipur Knit Factory", "01700000000"]);
     const table = doc.blocks[0]!;
+    expect(table.kind === "table" && table.columns.map((c) => c.label)).toEqual([
+      "#",
+      "Style",
+      "Pieces",
+      "CM a piece",
+      "Total CM",
+      "Deliver by",
+    ]);
     expect(table.kind === "table" && table.rows.map((r) => r.cells.slice(1, 5))).toEqual([
       [`${env.polo.code} · Brand A polo`, "300", "45.50", "13,650.00"],
       [`${env.tee.code} · Brand B tee`, "200", "32.00", "6,400.00"],
@@ -389,6 +403,98 @@ run("Production renovation: batch contracts", () => {
     await contracts.updateContract(env.pm, cm.id, { clauses: clauses.slice(0, 2), signedOn: null });
     await contracts.deleteContract(env.pm, cm.id);
     expect(await prisma.productionContract.count()).toBe(0);
+  });
+
+  it("takes the CM per piece or per dozen, keeps it as agreed and works the money per piece", async () => {
+    const cm = await contracts.createContract(env.pm, env.batch.id, {
+      kind: "FACTORY_CM",
+      partyId: env.knit.id,
+    });
+    const { clauses } = (await contracts.getContractScreen(env.pm, cm.id)).contract;
+    // No CM yet: the words leave room for either.
+    expect(clauses[0]!.text).toContain("for the CM (making charge) per piece or per dozen shown.");
+    // Polo 120 a dozen (10 a piece); tee 100 a dozen (8.333... a piece).
+    await contracts.updateContract(env.pm, cm.id, {
+      clauses,
+      cmRates: [
+        { projectId: env.polo.id, cmRate: 120, cmPer: "DOZEN" },
+        { projectId: env.tee.id, cmRate: 100, cmPer: "DOZEN" },
+      ],
+    });
+    const polo = await prisma.productionProject.findUniqueOrThrow({ where: { id: env.polo.id } });
+    expect([polo.cmPer, polo.cmPerDozen?.toFixed(2), polo.cmRate?.toFixed(2)]).toEqual([
+      "DOZEN",
+      "120.00",
+      "10.00",
+    ]);
+    let screen = await contracts.getContractScreen(env.pm, cm.id);
+    // 300 × 120 ÷ 12 = 3,000; 200 × 100 ÷ 12 = 1,666.67 (not 200 × 8.33 = 1,666.00).
+    expect(screen.styles?.map((s) => [s.cmPer, s.cmAmount, s.cmRate, s.totalCm])).toEqual([
+      ["DOZEN", "120.00", "10.00", "3000.00"],
+      ["DOZEN", "100.00", "8.33", "1666.67"],
+    ]);
+    expect(screen.cm).toEqual({ total: "4666.67", toAgree: 0 });
+    // A fresh draft says per dozen, as every style is; the saved words stay as they were.
+    expect((await contracts.redraftContract(env.pm, cm.id)).clauses[0]!.text).toContain(
+      "for the CM (making charge) per dozen shown.",
+    );
+    expect(screen.contract.clauses[0]!.text).toContain("per piece or per dozen shown.");
+
+    // Printed the way it was agreed.
+    const doc = contracts.contractDocument(env.pm, await contracts.getContract(env.pm, cm.id));
+    const table = doc.blocks[0]!;
+    expect(table.kind === "table" && table.columns[3]!.label).toBe("CM");
+    expect(table.kind === "table" && table.rows.map((r) => r.cells.slice(1, 5))).toEqual([
+      [`${env.polo.code} · Brand A polo`, "300", "120.00 a dozen", "3,000.00"],
+      [`${env.tee.code} · Brand B tee`, "200", "100.00 a dozen", "1,666.67"],
+      ["Total", "500", "", "4,666.67"],
+    ]);
+    const audit = await prisma.auditLog.findFirstOrThrow({
+      where: { entityType: "ProductionContract", action: "UPDATE" },
+    });
+    expect(audit.summary).toContain(`${env.polo.code} 120.00 a dozen`);
+
+    // Signed: the same CM saved again is no change; the same figure per piece is one.
+    await contracts.updateContract(env.pm, cm.id, { clauses, signedOn: "2026-10-01" });
+    await contracts.updateContract(env.pm, cm.id, {
+      clauses,
+      signedOn: "2026-10-01",
+      cmRates: [{ projectId: env.polo.id, cmRate: 120, cmPer: "DOZEN" }],
+    });
+    await expectAppError(
+      contracts.updateContract(env.pm, cm.id, {
+        clauses,
+        signedOn: "2026-10-01",
+        cmRates: [{ projectId: env.polo.id, cmRate: 120, cmPer: "PIECE" }],
+      }),
+      "CONFLICT",
+    );
+
+    // Back to per piece: the dozen price is cleared and it works as before.
+    await contracts.updateContract(env.pm, cm.id, {
+      clauses,
+      signedOn: null,
+      cmRates: [{ projectId: env.polo.id, cmRate: 11 }],
+    });
+    const back = await prisma.productionProject.findUniqueOrThrow({ where: { id: env.polo.id } });
+    expect([back.cmPer, back.cmPerDozen, back.cmRate?.toFixed(2)]).toEqual([
+      "PIECE",
+      null,
+      "11.00",
+    ]);
+    screen = await contracts.getContractScreen(env.pm, cm.id);
+    expect(screen.styles?.map((s) => [s.cmPer, s.cmAmount, s.totalCm])).toEqual([
+      ["PIECE", "11.00", "3300.00"],
+      ["DOZEN", "100.00", "1666.67"],
+    ]);
+    // One per piece, one per dozen: both; all per piece: per piece only.
+    const madeText = async () => (await contracts.redraftContract(env.pm, cm.id)).clauses[0]!.text;
+    expect(await madeText()).toContain("per piece or per dozen shown.");
+    await contracts.updateContract(env.pm, cm.id, {
+      clauses,
+      cmRates: [{ projectId: env.tee.id, cmRate: 9 }],
+    });
+    expect(await madeText()).toContain("for the CM (making charge) per piece shown.");
   });
 
   it("lets Accounts read contracts, only Production Managers change them, and no one else see them", async () => {

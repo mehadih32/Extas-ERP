@@ -92,6 +92,8 @@ const DEFAULT_PRIMARY = "#0B3D2E";
 const DEFAULT_ACCENT = "#BE1434";
 
 const LOGO_BOX = { width: 150, height: 52 };
+/** The logo in the book header, beside the company name (the header is 36pt tall). */
+const BOOK_LOGO_BOX = { width: 72, height: 30 };
 
 /**
  * PDF security for a signed record: AES-256, opened and printed by anyone, but
@@ -147,6 +149,14 @@ type PdfImages = {
   image(src: OpenedImage, x: number, y: number, options: { width: number; height: number }): void;
 };
 
+/** An image's width and height as it shows (a JPEG turned by its EXIF orientation swaps them). */
+function uprightSize(image: OpenedImage) {
+  const rotated = (image.orientation ?? 1) > 4;
+  return rotated
+    ? { width: image.height, height: image.width }
+    : { width: image.width, height: image.height };
+}
+
 class Writer {
   private y: number;
   private readonly primary: string;
@@ -170,6 +180,8 @@ class Writer {
   private qrDone = false;
   /** Row pictures opened by pdfkit, by file id (null: it could not be read). */
   private readonly opened = new Map<string, OpenedImage | null>();
+  /** The company logo opened by pdfkit (null: none, or it could not be read); opened once. */
+  private openedLogo: OpenedImage | null | undefined;
   /** The text size of the table being drawn (smaller when its figures need the room). */
   private tableSize = TABLE_SIZE;
 
@@ -309,6 +321,24 @@ class Writer {
 
   // --- Letterhead -------------------------------------------------------------
 
+  /**
+   * The logo, opened once for every page. One pdfkit cannot read leaves the
+   * document without a logo: it still prints.
+   */
+  private logoImage(): OpenedImage | null {
+    if (this.openedLogo === undefined) {
+      try {
+        // Always a Buffer: given a string, pdfkit would read it as a file path.
+        this.openedLogo = this.logo
+          ? (this.doc as unknown as PdfImages).openImage(this.logo)
+          : null;
+      } catch {
+        this.openedLogo = null;
+      }
+    }
+    return this.openedLogo;
+  }
+
   /** Logo, name, contact details and registration numbers across the top of the first page. */
   letterhead() {
     const { letterhead } = this.model;
@@ -317,12 +347,9 @@ class Writer {
     let nameX = this.left;
     let logoHeight = 0;
 
-    if (this.logo) {
-      // Always a Buffer: given a string, pdfkit would read it as a file path.
-      const image = (this.doc as unknown as PdfImages).openImage(this.logo);
-      const rotated = (image.orientation ?? 1) > 4;
-      const width = rotated ? image.height : image.width;
-      const height = rotated ? image.width : image.height;
+    const image = this.logoImage();
+    if (image) {
+      const { width, height } = uprightSize(image);
       const scale = Math.min(LOGO_BOX.width / width, LOGO_BOX.height / height);
       const drawnWidth = width * scale;
       logoHeight = height * scale;
@@ -533,31 +560,85 @@ class Writer {
     // A long name gets smaller, then takes a second line (the tagline moves down), and a
     // third in portrait if it must (the tagline then has no room), always above the
     // rule: never cut.
-    const name = this.fitLines(
-      this.model.letterhead.name,
-      side - 8,
-      { font: SANS_BOLD, size: 13 },
-      9,
-      3,
-      (lines, size) => 2 + (lines - 1) * (size + 1.5) + size * 1.16 <= BOOK_HEADER - 1.5,
-    );
-    name.lines.forEach((text, i) => {
-      this.line(text, this.left, top + 2 + i * (name.size + 1.5), side - 8, {
+    const TAGLINE: TextStyle = { font: SANS, size: 7, spacing: 0.3 };
+    /** The name and tagline in `width`: the name never cut, the tagline when it has room. */
+    const layout = (width: number) => {
+      const name = this.fitLines(
+        this.model.letterhead.name,
+        width,
+        { font: SANS_BOLD, size: 13 },
+        9,
+        3,
+        (lines, size) => 2 + (lines - 1) * (size + 1.5) + size * 1.16 <= BOOK_HEADER - 1.5,
+      );
+      const nameWhole =
+        !name.lines.some((l) => l.endsWith("…")) &&
+        2 + (name.lines.length - 1) * (name.size + 1.5) + name.size * 1.16 <= BOOK_HEADER - 1.5;
+      const taglineY =
+        name.lines.length > 1 ? top + 2 + name.lines.length * (name.size + 1.5) + 1 : top + 19;
+      const room = top + BOOK_HEADER - 1 - taglineY;
+      // Smaller, then on two lines beside a logo; left out (never cut) when it has no room.
+      const tagline =
+        frame.tagline && room >= 7
+          ? this.fitLines(
+              frame.tagline,
+              width,
+              TAGLINE,
+              5.5,
+              room >= 13 ? 2 : 1,
+              (lines, size) => lines * (size + 1) <= room,
+            )
+          : null;
+      const taglineWhole =
+        tagline !== null &&
+        !tagline.lines.some((l) => l.endsWith("…")) &&
+        tagline.lines.length * (tagline.size + 1) <= room;
+      return { name, nameWhole, taglineY, tagline: taglineWhole ? tagline : null };
+    };
+    // The company's logo on the left, under the binding strip and above the rule, the
+    // name and tagline beside it. The logo gets smaller rather than cut the name or push
+    // out a tagline that fits without it, and is left out only when even a small one would.
+    let text = layout(side - 8);
+    let logo: { width: number; height: number } | null = null;
+    const image = this.logoImage();
+    if (image) {
+      const upright = uprightSize(image);
+      for (const box of [BOOK_LOGO_BOX, { width: 40, height: 20 }]) {
+        const scale = Math.min(box.width / upright.width, box.height / upright.height);
+        const drawn = { width: upright.width * scale, height: upright.height * scale };
+        const beside = layout(side - 8 - drawn.width - 8);
+        if (beside.nameWhole && (beside.tagline !== null || text.tagline === null)) {
+          logo = drawn;
+          text = beside;
+          break;
+        }
+      }
+    }
+    const nameX = logo ? this.left + logo.width + 8 : this.left;
+    const nameWidth = this.left + side - 8 - nameX;
+    if (image && logo) {
+      (this.doc as unknown as PdfImages).image(
+        image,
+        this.left,
+        top + (BOOK_HEADER - 2 - logo.height) / 2,
+        logo,
+      );
+    }
+    const { name, tagline, taglineY } = text;
+    name.lines.forEach((line, i) => {
+      this.line(line, nameX, top + 2 + i * (name.size + 1.5), nameWidth, {
         font: SANS_BOLD,
         size: name.size,
         color: NAVY,
       });
     });
-    const taglineY =
-      name.lines.length > 1 ? top + 2 + name.lines.length * (name.size + 1.5) + 1 : top + 19;
-    if (frame.tagline && taglineY + 7 <= top + BOOK_HEADER - 1) {
-      this.line(frame.tagline, this.left, taglineY, side - 8, {
-        font: SANS,
-        size: 7,
+    tagline?.lines.forEach((line, i) => {
+      this.line(line, nameX, taglineY + i * (tagline.size + 1), nameWidth, {
+        ...TAGLINE,
+        size: tagline.size,
         color: MUTED,
-        spacing: 0.3,
       });
-    }
+    });
     const mx = this.left + side + 6;
     const mw = middle - 12;
     const titles = this.wrap(this.model.title, mw, SANS_BOLD, 10).slice(0, 2);

@@ -338,6 +338,82 @@ run("Bug Guard, after the review", () => {
     });
   });
 
+  describe("A Full check that ran out of time", () => {
+    it("is a finding that says how many screens and files it did not check", async () => {
+      const { company } = await makeCompany("Extas");
+      const role = (o: Record<string, unknown>) => ({
+        role: "Owner",
+        member: "m",
+        screens: 100,
+        pdfs: 2,
+        skipped: 0,
+        ...o,
+      });
+      await prisma.fullCheckRun.create({
+        data: {
+          companyId: company.id,
+          site: "demo",
+          status: "DONE",
+          finishedAt: new Date(),
+          summary: {
+            roles: [
+              role({ notReached: 300, filesLeft: 4, stopped: false }),
+              role({ role: "Accounts", notReached: 17, filesLeft: 0, stopped: true }),
+            ],
+            screens: 584,
+            pdfs: 2,
+            links: 4000,
+            seconds: 600,
+          },
+        },
+      });
+      const found = await check("app.full-check", company.id);
+      const partial = found.find((f) => f.key === "app.full-check:partial");
+      expect(partial).toMatchObject({ severity: "LATER", href: "/ai/full-check" });
+      expect(partial!.title).toBe(
+        "শেষ Full check সব দেখতে পারেনি: 317টি স্ক্রিন আর 4টি PDF ও ফাইল সময়ে দেখা হয়নি, 1টি রোল মাঝপথে থেমেছে।",
+      );
+
+      // A check that reached everything (or an older one that did not count) is not one.
+      await prisma.fullCheckRun.create({
+        data: {
+          companyId: company.id,
+          site: "demo",
+          status: "DONE",
+          finishedAt: new Date(),
+          summary: { roles: [role({})], screens: 584, pdfs: 20, links: 4000, seconds: 900 },
+        },
+      });
+      const after = await check("app.full-check", company.id);
+      expect(after.some((f) => f.key === "app.full-check:partial")).toBe(false);
+    });
+  });
+
+  describe("Screens without a guide", () => {
+    it("counts a screen as guided when a guide covers it or a page above it, like the Help Center", async () => {
+      const { company } = await makeCompany("Extas");
+      const { localDay } = await import("@/lib/dates");
+      const day = localDay(new Date(), "Asia/Dhaka");
+      // Found on a copy of the demo data: each has a guide for its list ("/sales/orders").
+      const covered = [
+        "/compliance/[id]",
+        "/materials/stock/[id]",
+        "/parties/buyers/[id]",
+        "/parties/suppliers/[id]",
+        "/production/batches/new",
+        "/reports/templates/[id]",
+        "/sales/orders/[id]",
+      ];
+      for (const subject of [...covered, "/no-such-area/[id]"]) {
+        await prisma.usageCount.create({
+          data: { companyId: company.id, day, kind: "VIEW", subject, count: 2 },
+        });
+      }
+      const [finding] = await check("product.missing-help", company.id);
+      expect(finding!.evidence).toEqual([{ label: "/no-such-area/[id]", value: "2 বার খোলা" }]);
+    });
+  });
+
   describe("alarms on the bot (S1)", () => {
     afterEach(() => standInForBotApi(null));
 

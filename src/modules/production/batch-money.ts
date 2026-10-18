@@ -24,9 +24,18 @@ export function splitEqually(amount: Num, count: number): Prisma.Decimal[] {
   );
 }
 
-/** One style's pieces and CM on the settlement. */
-export type CmStyleLine = {
+/**
+ * A style's CM as agreed with the factory: per piece (`cmRate`), or per dozen
+ * (`cmPerDozen`, with `cmRate` its twelfth to the paisa for showing).
+ */
+export type CmAgreed = {
   cmRate: Prisma.Decimal | null;
+  /** Set when the CM was agreed per dozen; null or left out: per piece. */
+  cmPerDozen?: Prisma.Decimal | null;
+};
+
+/** One style's pieces and CM on the settlement. */
+export type CmStyleLine = CmAgreed & {
   a: number;
   b: number;
   c: number;
@@ -35,6 +44,34 @@ export type CmStyleLine = {
 
 /** The pieces the factory is paid CM for: every piece it made and handed over (A, B, C, rejects). */
 export const cmPieces = (s: CmStyleLine) => s.a + s.b + s.c + s.reject;
+
+/**
+ * The CM of `pieces` pieces, to the paisa (null: no CM agreed). A CM agreed per
+ * dozen is worked from the dozen price (120 a dozen is 10 a piece; 100 a dozen
+ * makes 1,200 pieces exactly 10,000), so a piece's rounding is never multiplied.
+ */
+export function cmFor(s: CmAgreed, pieces: number): Prisma.Decimal | null {
+  if (s.cmPerDozen) return money(s.cmPerDozen.times(pieces).dividedBy(12));
+  return s.cmRate ? money(s.cmRate.times(pieces)) : null;
+}
+
+/**
+ * A style's CM the way it was agreed, for screens and PDFs: "120.00 a dozen",
+ * else the amount a piece ("45.50", or "45.50 a piece" when `mixed`: beside a
+ * CM agreed per dozen). Null: none agreed.
+ */
+export function cmAgreedText<T extends Num>(
+  s: { cmRate: T | null; cmPerDozen?: T | null },
+  show: (v: T) => string,
+  mixed: boolean,
+): string | null {
+  if (s.cmPerDozen !== null && s.cmPerDozen !== undefined) return `${show(s.cmPerDozen)} a dozen`;
+  if (s.cmRate === null) return null;
+  return mixed ? `${show(s.cmRate)} a piece` : show(s.cmRate);
+}
+
+/** A CM per dozen as its twelfth a piece, to the paisa (shown, and kept as `cmRate`). */
+export const perPieceOfDozen = (perDozen: Num) => money(new Prisma.Decimal(perDozen).dividedBy(12));
 
 /**
  * The reject rule of a style: rejects (sewing faults, bodies ruined attaching
@@ -77,14 +114,8 @@ export function cmSettlementMath(args: {
   deductCGrade: boolean;
   paid: Num;
 }) {
-  const totalCm = args.styles.reduce(
-    (t, s) => (s.cmRate ? t.plus(money(s.cmRate.times(cmPieces(s)))) : t),
-    ZERO,
-  );
-  const cGradeCm = args.styles.reduce(
-    (t, s) => (s.cmRate ? t.plus(money(s.cmRate.times(s.c))) : t),
-    ZERO,
-  );
+  const totalCm = args.styles.reduce((t, s) => t.plus(cmFor(s, cmPieces(s)) ?? ZERO), ZERO);
+  const cGradeCm = args.styles.reduce((t, s) => t.plus(cmFor(s, s.c) ?? ZERO), ZERO);
   const faults = args.faults.reduce<Prisma.Decimal>((t, f) => t.plus(money(f)), ZERO);
   const rejects = (args.rejectPenalties ?? []).reduce<Prisma.Decimal>(
     (t, p) => t.plus(money(p)),

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { pastCmTerms } from "@/modules/costing/costing-labels";
 import {
   type CostLineInput,
   costLine,
@@ -210,5 +211,24 @@ describe("the Order check card", () => {
     expect(judgeRisks({ risks: ["New buyer"], eidClose: false }).signal).toBe("yellow");
     expect(judgeRisks({ risks: ["a", "b", "c"], eidClose: false }).signal).toBe("red");
     expect(judgeRisks({ risks: ["Eid ul-Fitr on 2027-03-20"], eidClose: true }).signal).toBe("red");
+  });
+});
+
+describe("The CM agreed before, beside a style", () => {
+  it("shows and fills a dozen agreement as the dozen price, not the piece share", () => {
+    // 125 a dozen is stored as 10.42 a piece for the money maths; the hint shows 125 a dozen.
+    expect(pastCmTerms({ cm: 10.42, cmPer: "DOZEN", cmPerDozen: 125 })).toEqual({
+      amount: 125,
+      per: "DOZEN",
+    });
+    expect(pastCmTerms({ cm: 45.5, cmPer: "PIECE", cmPerDozen: null })).toEqual({
+      amount: 45.5,
+      per: "PIECE",
+    });
+    // An odd row marked per dozen without a dozen price falls back to the piece price.
+    expect(pastCmTerms({ cm: 12, cmPer: "DOZEN", cmPerDozen: null })).toEqual({
+      amount: 12,
+      per: "PIECE",
+    });
   });
 });

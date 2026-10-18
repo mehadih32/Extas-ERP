@@ -82,8 +82,8 @@ function Covers({ data, currency }: { data: ContractScreen; currency: string }) 
             </Link>
             <p className="text-[0.8125rem] text-muted-foreground tabular-nums">
               {s.pieces.toLocaleString("en-US")} pcs ·{" "}
-              {s.cmRate
-                ? `CM ${money(s.cmRate, currency)} a piece, ${money(s.totalCm!, currency)}`
+              {s.cmAmount
+                ? `CM ${money(s.cmAmount, currency)} a ${s.cmPer === "DOZEN" ? "dozen" : "piece"}, ${money(s.totalCm!, currency)}`
                 : "CM to agree"}{" "}
               · by {formatDay(s.dueOn)}
             </p>

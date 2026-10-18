@@ -23,6 +23,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { reach } from "@/lib/reach";
 import type { FullCheckScreen as Check } from "@/modules/ai/full-check/full-check.service";
+import { noProblemsText } from "@/modules/ai/full-check/texts";
 import {
   askClaudeCodeAction,
   lookAgainAction,
@@ -111,7 +112,7 @@ export function FullCheckScreen({ check: c }: { check: Check }) {
             onClick={() =>
               run(
                 startFullCheckAction,
-                "GitHub is starting the Full check. It takes about 10 minutes; this page shows the report when it is done.",
+                "GitHub is starting the Full check. It takes up to about 25 minutes; this page shows the report when it is done.",
               )
             }
           >
@@ -124,7 +125,7 @@ export function FullCheckScreen({ check: c }: { check: Check }) {
           <p className="text-muted-foreground">
             GitHub&apos;s computer opens every screen as you and as each role, every PDF, every link
             and every button that changes nothing, and lists each problem with a screenshot. It
-            takes about 10 minutes.{" "}
+            takes up to about 25 minutes.{" "}
             {c.site === "live"
               ? "This is the live site, so the check only reads: it never changes data here. Anything that writes is checked on the demo site."
               : "This is the demo site, so the check may also press buttons that write."}
@@ -182,7 +183,7 @@ export function FullCheckScreen({ check: c }: { check: Check }) {
           <RunSummary run={shown} when={when} />
           {c.problems.length === 0 ? (
             shown.status === "DONE" ? (
-              <p className="mt-4 text-sm">No problems: every screen opened as each role.</p>
+              <p className="mt-4 text-sm">{noProblemsText(shown.summary)}</p>
             ) : null
           ) : (
             <ul className="mt-4 grid gap-3">

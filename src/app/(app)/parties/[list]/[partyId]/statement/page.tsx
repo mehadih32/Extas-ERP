@@ -118,9 +118,10 @@ function Lines({ screen, currency }: { screen: StatementScreen; currency: string
       </h3>
       {screen.hiddenCount > 0 && (
         <FormAlert tone="note">
-          The latest {formatCount(screen.lines.length, currency)} transactions are shown. The{" "}
-          {formatCount(screen.hiddenCount, currency)} before them are in the PDF, or choose fewer
-          days.
+          The latest {formatCount(screen.lines.length, currency)} transactions are shown.{" "}
+          {screen.summary.transactionCount > screen.pdfLimit
+            ? `The PDF lists the first ${formatCount(screen.pdfLimit, currency)} of the ${formatCount(screen.summary.transactionCount, currency)}; choose fewer days to see the rest. The totals and the closing balance count all of them.`
+            : `The ${formatCount(screen.hiddenCount, currency)} before them are in the PDF, or choose fewer days.`}
         </FormAlert>
       )}
       <ol className="grid grid-cols-1 gap-3 md:hidden" aria-label="Transactions">

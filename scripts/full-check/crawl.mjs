@@ -192,6 +192,8 @@ async function checkRole(browser, session, writes, deadline, first) {
   const queued = new Set(queue);
   const perPattern = new Map();
   const downloads = new Set();
+  /** Downloads found and not fetched yet: the tabs fetch them between screens. */
+  const pendingDownloads = [];
   const limit = role === "Owner" ? 2 : 1;
   let screens = 0;
   let pdfs = 0;
@@ -273,7 +275,8 @@ async function checkRole(browser, session, writes, deadline, first) {
         const n = perPattern.get(`dl:${pattern}`) ?? 0;
         if (n < limit && !downloads.has(path)) {
           perPattern.set(`dl:${pattern}`, n + 1);
-          downloads.add(`${path}\n${from}`);
+          downloads.add(path);
+          pendingDownloads.push(`${path}\n${from}`);
         }
       }
       return;
@@ -435,6 +438,12 @@ async function checkRole(browser, session, writes, deadline, first) {
         as.map((a) => a.getAttribute("href") ?? ""),
       );
       for (const href of hrefs) add(href, path);
+      // A download that asks first which way round (a booking's PDF): its links are
+      // named on the button, as the window's link exists only while it is open.
+      const offered = await page.$$eval("[data-download-hrefs]", (els) =>
+        els.flatMap((el) => (el.getAttribute("data-download-hrefs") ?? "").split(" ")),
+      );
+      for (const href of offered.filter(Boolean)) add(href, path);
       const layout = await checkScreenLayout(page, path, ms);
       await pressAndLook(page, path, layout, ms);
     } catch (error) {
@@ -567,6 +576,13 @@ async function checkRole(browser, session, writes, deadline, first) {
   await Promise.all(
     pages.map(async (page) => {
       while (!gate && Date.now() < deadline) {
+        // A PDF or file found on a screen is fetched as it is found, so a check that
+        // runs out of time has still opened the downloads of the screens it saw.
+        const download = pendingDownloads.shift();
+        if (download) {
+          await fetchDownload(download);
+          continue;
+        }
         const path = queue[next++];
         if (!path) {
           // Another tab may still add links: wait a moment, then stop.
@@ -579,15 +595,20 @@ async function checkRole(browser, session, writes, deadline, first) {
       }
     }),
   );
-  for (const entry of downloads) {
-    if (gate || Date.now() > deadline + 60_000) break;
-    await fetchDownload(entry);
+  // The last screens' downloads, with a minute's grace.
+  while (!gate && pendingDownloads.length > 0 && Date.now() < deadline + 60_000) {
+    await fetchDownload(pendingDownloads.shift());
   }
   await context.close();
-  const left = queue.length - next;
+  const left = Math.max(0, queue.length - next);
+  const filesLeft = pendingDownloads.length;
   say(
-    `${role} (${session.member}): ${screens} screens, ${pdfs} downloads${skipped ? `, ${skipped} ${skipped === 1 ? "write" : "writes"} stopped` : ""}${left > 0 ? `, ${left} not reached in time` : ""}`,
+    `${role} (${session.member}): ${screens} screens, ${pdfs} downloads${skipped ? `, ${skipped} ${skipped === 1 ? "write" : "writes"} stopped` : ""}${left > 0 ? `, ${left} not reached in time` : ""}${filesLeft > 0 ? `, ${filesLeft} downloads not fetched in time` : ""}`,
   );
+  const missed = [
+    left > 0 && `${left} ${left === 1 ? "screen" : "screens"}`,
+    filesLeft > 0 && `${filesLeft} ${filesLeft === 1 ? "PDF or file" : "PDFs and files"}`,
+  ].filter(Boolean);
   return {
     role,
     member: session.member,
@@ -595,7 +616,14 @@ async function checkRole(browser, session, writes, deadline, first) {
     pdfs,
     skipped,
     links,
-    note: gate ?? (left > 0 ? `${left} screens were not reached in the time.` : null),
+    notReached: left,
+    filesLeft,
+    stopped: Boolean(gate),
+    note:
+      gate ??
+      (missed.length > 0
+        ? `${missed.join(" and ")} ${left + filesLeft === 1 ? "was" : "were"} not reached in the time.`
+        : null),
   };
 }
 
@@ -612,7 +640,7 @@ async function main() {
     `Checking the ${begun.site} site as ${begun.roles.length} roles (${ROUTES.length} screens in the code).`,
   );
   const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined });
-  const total = (Number(process.env.MINUTES) || begun.minutes || 10) * 60_000;
+  const total = (Number(process.env.MINUTES) || begun.minutes || 25) * 60_000;
   const end = Date.now() + total;
   const summary = { roles: [], screens: 0, pdfs: 0, links: 0, seconds: 0 };
   for (const [i, session] of begun.roles.entries()) {
@@ -630,6 +658,9 @@ async function main() {
         pdfs: 0,
         skipped: 0,
         links: 0,
+        notReached: 0,
+        filesLeft: 0,
+        stopped: true,
         note: `The check stopped: ${String(error?.message ?? error).split("\n")[0]}`,
       }),
     );
@@ -639,6 +670,9 @@ async function main() {
       screens: done.screens,
       pdfs: done.pdfs,
       skipped: done.skipped,
+      notReached: done.notReached,
+      filesLeft: done.filesLeft,
+      stopped: done.stopped,
       note: done.note,
     });
     summary.screens += done.screens;

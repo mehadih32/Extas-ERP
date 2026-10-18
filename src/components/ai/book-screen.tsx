@@ -85,7 +85,7 @@ export function BookScreen({ book: b }: { book: Book }) {
               : " · the text shipped with the app"}
           </span>
         </div>
-        <pre className="mt-4 max-h-[28rem] overflow-auto rounded-md bg-muted/40 p-4 font-sans text-[0.8125rem] leading-relaxed whitespace-pre-wrap">
+        <pre className="mt-4 max-h-[28rem] overflow-auto rounded-md bg-muted/40 p-4 font-sans text-[0.8125rem] leading-relaxed wrap-anywhere whitespace-pre-wrap">
           {b.text}
         </pre>
       </Panel>
@@ -97,8 +97,8 @@ export function BookScreen({ book: b }: { book: Book }) {
         <ol className="mt-3 grid list-decimal gap-3 pl-5 text-sm">
           {b.questions.map((q) => (
             <li key={q.n}>
-              <p className="font-medium">{q.q}</p>
-              <p className="text-muted-foreground">Expected: {q.v62 ?? q.expected}</p>
+              <p className="font-medium wrap-anywhere">{q.q}</p>
+              <p className="wrap-anywhere text-muted-foreground">Expected: {q.v62 ?? q.expected}</p>
             </li>
           ))}
         </ol>
@@ -145,8 +145,8 @@ export function BookScreen({ book: b }: { book: Book }) {
                             </span>{" "}
                             {a.n}. {a.q}
                           </p>
-                          <p className="whitespace-pre-wrap">{a.answer}</p>
-                          <p className="text-muted-foreground">{a.why}</p>
+                          <p className="wrap-anywhere whitespace-pre-wrap">{a.answer}</p>
+                          <p className="wrap-anywhere text-muted-foreground">{a.why}</p>
                         </li>
                       ))}
                     </ol>

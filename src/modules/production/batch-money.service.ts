@@ -23,6 +23,8 @@ import { letterheadOf } from "@/modules/documents/builders";
 import { documentFileName, type PrintDocument } from "@/modules/documents/model";
 import { ON_DEMAND_PER_MINUTE, renderOnDemand } from "@/modules/documents/on-demand";
 import {
+  cmAgreedText,
+  cmFor,
   cmPieces,
   cmSettlementMath,
   type CmStyleLine,
@@ -266,6 +268,8 @@ type SettlementStyle = {
   name: string;
   status: ProductionStatus;
   cmRate: string | null;
+  /** The CM per dozen, when it was agreed per dozen (null: per piece, and on older settlements). */
+  cmPerDozen: string | null;
   a: number;
   b: number;
   c: number;
@@ -294,7 +298,13 @@ async function draftOf(db: Db, ctx: CompanyContext, batchId: string) {
   const factory = batch.factory;
   const projects = await db.productionProject.findMany({
     where: { batchId: batch.id, companyId: ctx.company.id, status: { not: "CANCELLED" } },
-    select: { ...finishingProjectSelect, cmRate: true, targetUnitCost: true },
+    select: {
+      ...finishingProjectSelect,
+      cmRate: true,
+      cmPer: true,
+      cmPerDozen: true,
+      targetUnitCost: true,
+    },
     orderBy: { code: "asc" },
   });
   const percent = batch.rejectTolerancePercent;
@@ -304,7 +314,17 @@ async function draftOf(db: Db, ctx: CompanyContext, batchId: string) {
   for (const p of projects) {
     const state = await stateOf(db, ctx, p);
     const t = state.totals;
-    const line: CmStyleLine = { cmRate: p.cmRate, a: t.a, b: t.b, c: t.c, reject: t.reject };
+    const perDozen = p.cmPer === "DOZEN" ? p.cmPerDozen : null;
+    const line: CmStyleLine = {
+      cmRate: p.cmRate,
+      cmPerDozen: perDozen,
+      a: t.a,
+      b: t.b,
+      c: t.c,
+      reject: t.reject,
+    };
+    const cm = cmFor(line, cmPieces(line));
+    const cGradeCm = cmFor(line, t.c);
     // The pieces the factory was handed: cut and good, or what it accounted for when no cut is kept.
     const cut = t.cut ?? t.a + t.b + t.c + t.reject + t.missing;
     const rule = rejectPenalty({ cut, rejects: t.reject, percent, rate: p.targetUnitCost });
@@ -315,14 +335,15 @@ async function draftOf(db: Db, ctx: CompanyContext, batchId: string) {
       name: p.name,
       status: p.status,
       cmRate: p.cmRate ? fixed(p.cmRate) : null,
+      cmPerDozen: perDozen ? fixed(perDozen) : null,
       a: t.a,
       b: t.b,
       c: t.c,
       reject: t.reject,
       missing: t.missing,
       pieces: cmPieces(line),
-      cm: p.cmRate ? fixed(p.cmRate.times(cmPieces(line))) : null,
-      cGradeCm: p.cmRate ? fixed(p.cmRate.times(t.c)) : null,
+      cm: cm ? fixed(cm) : null,
+      cGradeCm: cGradeCm ? fixed(cGradeCm) : null,
       packed: state.packed ? state.packed.number : null,
       cut,
       allowance: rule.allowance,
@@ -442,6 +463,7 @@ function readSnapshot(value: Prisma.JsonValue): Snapshot {
       overAllowance: st.overAllowance ?? 0,
       targetPrice: st.targetPrice ?? null,
       rejectPenalty: st.rejectPenalty ?? "0.00",
+      cmPerDozen: st.cmPerDozen ?? null,
     })),
     warnings: { ...raw.warnings, noTarget: raw.warnings?.noTarget ?? [] },
     totals: { ...raw.totals, rejects: raw.totals.rejects ?? "0.00" },
@@ -837,6 +859,8 @@ export function cmSettlementDocument(
   const { snapshot: d } = s;
   const t = d.totals;
   const count = (n: number) => n.toLocaleString("en-US");
+  // A CM agreed per dozen prints as agreed ("120.00 a dozen"); all per piece prints as before.
+  const anyDozen = d.styles.some((st) => st.cmPerDozen !== null);
   const styleTotal = d.styles.reduce(
     (acc, st) => ({
       a: acc.a + st.a,
@@ -913,7 +937,7 @@ export function cmSettlementDocument(
         title: "CM by style",
         columns: [
           { label: "Style", weight: 2.2 },
-          { label: "CM a piece", align: "right", weight: 1.2 },
+          { label: anyDozen ? "CM agreed" : "CM a piece", align: "right", weight: 1.2 },
           { label: "A", align: "right", weight: 0.8 },
           { label: "B", align: "right", weight: 0.8 },
           { label: "C", align: "right", weight: 0.8 },
@@ -925,7 +949,7 @@ export function cmSettlementDocument(
           ...d.styles.map((st) => ({
             cells: [
               st.code,
-              st.cmRate ? amount(st.cmRate) : "–",
+              cmAgreedText(st, amount, anyDozen) ?? "–",
               count(st.a),
               count(st.b),
               count(st.c),

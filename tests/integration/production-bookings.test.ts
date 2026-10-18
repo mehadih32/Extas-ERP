@@ -38,6 +38,7 @@ import * as materialsScreens from "@/modules/materials/screens.service";
 import * as parties from "@/modules/parties/party.service";
 import * as batches from "@/modules/production/batch.service";
 import { bookingDocument, bookingPdf } from "@/modules/production/booking-pdf.service";
+import { readOnly } from "@/lib/read-only";
 import { renderDocumentPdf } from "@/modules/documents/render";
 import * as bookings from "@/modules/production/booking.service";
 import { standardTermsText } from "@/modules/production/booking-terms";
@@ -612,6 +613,13 @@ run("Bookings", () => {
     expect((await bookingPdf(env.pm, market.id, undefined, "sideways")).orientation).toBe(
       "portrait",
     );
+    // Where nothing may be written (a Full check on the live site), the PDF still comes
+    // the way asked; the pick is just not kept.
+    const readOnlyPdf = await readOnly("Only reading", () =>
+      bookingPdf(env.pm, market.id, undefined, "landscape"),
+    );
+    expect(readOnlyPdf.orientation).toBe("landscape");
+    expect((await bookingPdf(env.pm, market.id)).orientation).toBe("portrait");
 
     // A long booking runs on over pages, its table header repeated.
     const long = await bookings.createBooking(env.pm, {

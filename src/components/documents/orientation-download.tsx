@@ -70,6 +70,9 @@ export function OrientationDownload({
         size={size}
         className={className}
         onClick={() => setOpen(true)}
+        // Both PDF links, for the Full check (its crawler reads them here: the window's
+        // link exists only while the window is open).
+        data-download-hrefs={`${orientedHref(href, "landscape")} ${orientedHref(href, "portrait")}`}
       >
         <FileDownIcon aria-hidden />
         {label}

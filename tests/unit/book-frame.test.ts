@@ -1,5 +1,10 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
+import { OrientationDownload } from "@/components/documents/orientation-download";
 import { bookFrame, contactLine, parseOrientation } from "@/modules/documents/book-frame";
 import type { PrintDocument } from "@/modules/documents/model";
 import { renderDocumentPdf } from "@/modules/documents/render";
@@ -482,5 +487,27 @@ describe("the company logo in the book header (CLAUDE.md section 2)", () => {
       },
     );
     expect(pdfLines(letter)).toContain("Extas");
+  });
+});
+
+describe("the Landscape/Portrait download button", () => {
+  it("names both PDF links on the button itself, so the Full check can fetch them", () => {
+    const html = renderToStaticMarkup(
+      createElement(OrientationDownload, {
+        href: "/api/production/bookings/abc/pdf",
+        label: "Print booking (PDF)",
+        title: "Print the booking",
+        description: "Which way round?",
+        orientation: "landscape",
+      }),
+    );
+    expect(html).toContain(
+      'data-download-hrefs="/api/production/bookings/abc/pdf?orientation=landscape /api/production/bookings/abc/pdf?orientation=portrait"',
+    );
+    const crawler = readFileSync(
+      path.join(__dirname, "../../scripts/full-check/crawl.mjs"),
+      "utf8",
+    );
+    expect(crawler).toContain("[data-download-hrefs]");
   });
 });

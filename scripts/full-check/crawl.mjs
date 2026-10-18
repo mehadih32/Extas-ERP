@@ -438,6 +438,12 @@ async function checkRole(browser, session, writes, deadline, first) {
         as.map((a) => a.getAttribute("href") ?? ""),
       );
       for (const href of hrefs) add(href, path);
+      // A download that asks first which way round (a booking's PDF): its links are
+      // named on the button, as the window's link exists only while it is open.
+      const offered = await page.$$eval("[data-download-hrefs]", (els) =>
+        els.flatMap((el) => (el.getAttribute("data-download-hrefs") ?? "").split(" ")),
+      );
+      for (const href of offered.filter(Boolean)) add(href, path);
       const layout = await checkScreenLayout(page, path, ms);
       await pressAndLook(page, path, layout, ms);
     } catch (error) {

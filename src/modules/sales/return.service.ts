@@ -13,6 +13,7 @@ import { postJournalEntry, reverseJournalEntry } from "@/modules/accounts/journa
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { letterhead } from "@/modules/companies/letterhead";
+import { canSeeFinancials } from "@/modules/dashboard/access";
 import { recordPartyActivity } from "@/modules/parties/party.service";
 import { creditPosition, lockBuyerCredit } from "@/modules/sales/credit.service";
 import { deliveredByVariant } from "@/modules/sales/documents.service";
@@ -452,7 +453,8 @@ export async function returnCredit(
 /**
  * Voids a return recorded by mistake, while the buyer has not spent its
  * credit: its entry is reversed, its pieces leave Damage & QC Rejects (they
- * are back with the buyer) and the order's status follows.
+ * are back with the buyer: opposite stock movements, its rejects lines kept
+ * and marked void, nothing deleted) and the order's status follows.
  */
 export async function voidSalesReturn(
   ctx: CompanyContext,
@@ -497,23 +499,47 @@ export async function voidSalesReturn(
         postedById: ctx.user.id,
       });
     }
-    // The pieces never came back: their way in and out of the rejects goes (they net to nothing).
+    // The pieces never came back: each of their movements in and out of the rejects gets
+    // its opposite (they net to nothing either way), and their rejects lines are marked void.
+    const now = new Date();
     const entries = await tx.badStockEntry.findMany({
-      where: { salesReturnItemId: { in: ret.items.map((i) => i.id) } },
+      where: { salesReturnItemId: { in: ret.items.map((i) => i.id) }, voidedAt: null },
       select: { id: true },
     });
-    await tx.stockMovement.deleteMany({
+    const moves = await tx.stockMovement.findMany({
       where: {
         OR: [
           { referenceType: "SalesReturn", referenceId: ret.id },
           { referenceType: "BadStockEntry", referenceId: { in: entries.map((e) => e.id) } },
         ],
       },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     });
-    await tx.badStockEntry.deleteMany({ where: { id: { in: entries.map((e) => e.id) } } });
+    for (const m of moves) {
+      await tx.stockMovement.create({
+        data: {
+          companyId,
+          variantId: m.variantId,
+          warehouseId: m.warehouseId,
+          grade: m.grade,
+          type: m.type,
+          quantity: -m.quantity,
+          unitCost: m.unitCost,
+          referenceType: m.referenceType,
+          referenceId: m.referenceId,
+          lotId: m.lotId,
+          note: `Void of ${ret.number}: ${reason}`,
+          createdById: ctx.user.id,
+        },
+      });
+    }
+    await tx.badStockEntry.updateMany({
+      where: { id: { in: entries.map((e) => e.id) } },
+      data: { voidedAt: now, voidReason: `Sales return ${ret.number} voided: ${reason}` },
+    });
     await tx.salesReturn.update({
       where: { id: ret.id },
-      data: { voidedAt: new Date(), voidReason: reason },
+      data: { voidedAt: now, voidReason: reason },
     });
     const position = await returnPosition(tx, ret.orderId);
     const order = await tx.salesOrder.findUniqueOrThrow({
@@ -533,7 +559,7 @@ export async function voidSalesReturn(
         action: "STATUS_CHANGE",
         entityType: "SalesReturn",
         entityId: ret.id,
-        summary: `Voided sales return ${ret.number} (${ret.amount.toFixed(2)} credit, ${entries.length} rejects line(s) removed): ${reason}`,
+        summary: `Voided sales return ${ret.number} (${ret.amount.toFixed(2)} credit, ${entries.length} rejects line(s) marked void): ${reason}`,
       },
       tx,
     );
@@ -585,7 +611,12 @@ export async function listSalesReturns(ctx: CompanyContext, raw: unknown = {}) {
   return { items, nextCursor: hasMore ? items[items.length - 1]?.id : undefined };
 }
 
-/** One credit note: the buyer, the invoice, its lines and amounts, and the letterhead. */
+/**
+ * One credit note: the buyer, the invoice, its lines and amounts, and the
+ * letterhead. What the pieces cost (costValue, each line's unitCost and its
+ * rejects line's lossValue) comes back as null for people who do not see the
+ * financials, as on the screen: the API gives it to anyone with sales.view.
+ */
 export async function getSalesReturn(ctx: CompanyContext, returnId: string) {
   const ret = await ctx.db.salesReturn.findUnique({
     where: { id: returnId },
@@ -629,7 +660,20 @@ export async function getSalesReturn(ctx: CompanyContext, returnId: string) {
     },
   });
   if (!ret || !ret.invoiceId) throw new AppError("NOT_FOUND", "Sales return not found.");
-  return { ...ret, letterhead: await letterhead(ctx) };
+  const seeCosts = canSeeFinancials(ctx);
+  return {
+    ...ret,
+    costValue: seeCosts ? ret.costValue : null,
+    items: ret.items.map((item) => ({
+      ...item,
+      unitCost: seeCosts ? item.unitCost : null,
+      badStockEntry: item.badStockEntry && {
+        ...item.badStockEntry,
+        lossValue: seeCosts ? item.badStockEntry.lossValue : null,
+      },
+    })),
+    letterhead: await letterhead(ctx),
+  };
 }
 
 /** The returns made on an invoice or an order (void ones too), oldest first, for their screens. */

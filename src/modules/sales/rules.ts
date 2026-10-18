@@ -358,6 +358,23 @@ export function canRefundAs(ctx: Pick<CompanyContext, "can">, kind: RefundKind):
 }
 
 /**
+ * Voiding a refund needs the Accounts key for its kind, and for money paid
+ * back also the right to record money received: the void puts it back into
+ * the cash, bank or wallet account (as voiding a supplier payment does).
+ */
+export function canVoidRefundAs(ctx: Pick<CompanyContext, "can">, kind: RefundKind): Verdict {
+  const own = canRefundAs(ctx, kind);
+  if (!own.ok) return own;
+  if (kind === "CASH" && !ctx.can("accounts.receipts.record")) {
+    return refuse(
+      "FORBIDDEN",
+      "Only Accounts can record money received: voiding this refund puts the money back into the account.",
+    );
+  }
+  return ALLOWED;
+}
+
+/**
  * The ways this person may settle money held for a buyer: paid back, kept as
  * credit on their account (only for a buyer with an account, not a walk-in
  * customer) or kept as a cancellation charge.

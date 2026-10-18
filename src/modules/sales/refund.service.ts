@@ -28,6 +28,7 @@ import {
   canRefundOrder,
   canRefundProforma,
   canVoidRefund,
+  canVoidRefundAs,
 } from "@/modules/sales/rules";
 import { listRefundsSchema, refundSchema, voidRefundSchema } from "@/modules/sales/schemas";
 import { money, ZERO } from "@/modules/sales/totals";
@@ -272,7 +273,8 @@ export async function voidRefund(
   const { reason } = voidRefundSchema.parse(raw);
   const found = await ctx.db.refund.findUnique({ where: { id: refundId } });
   if (!found) throw new AppError("NOT_FOUND", "Refund not found.");
-  assertCanRefund(ctx, found.kind);
+  // Money paid back comes back into the account: that needs the right to take money in too.
+  assertAllowed(canVoidRefundAs(ctx, found.kind));
   const companyId = ctx.company.id;
   await prisma.$transaction(
     async (tx) => {

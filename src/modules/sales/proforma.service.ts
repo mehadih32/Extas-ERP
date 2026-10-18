@@ -406,8 +406,15 @@ export async function convertProformaToOrder(
     async (tx) => {
       await lockRow(tx, "ProformaInvoice", proforma.id);
       const current = await tx.proformaInvoice.findUniqueOrThrow({ where: { id: proforma.id } });
-      // Checked again under the lock: a refund may have taken part of the advance back.
+      // Checked again under the lock: a refund may have taken part of the advance back,
+      // or more may have been paid than the order now comes to.
       assertAllowed(canConvertProforma(current));
+      if (total.lt(current.advancePaid)) {
+        throw new AppError(
+          "VALIDATION",
+          `The order total ${total.toFixed(2)} is less than the advance already paid (${current.advancePaid.toFixed(2)}).`,
+        );
+      }
       await tx.proformaInvoice.update({
         where: { id: proforma.id },
         data: { status: "CONVERTED" },

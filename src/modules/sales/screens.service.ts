@@ -53,7 +53,6 @@ import {
   canIssueInvoice,
   canReceiveOnOrder,
   canReceiveOnProforma,
-  canRefundAs,
   canSetLogistics,
   canRefundOrder,
   canRefundProforma,
@@ -61,6 +60,7 @@ import {
   canSetShipmentDate,
   canVoidInvoice,
   canVoidRefund,
+  canVoidRefundAs,
   isProformaExpired,
   liveInvoice,
   quotationMarks,
@@ -631,8 +631,11 @@ function presentRefunds(
     reason: r.reason,
     voided: r.voidedAt !== null,
     can: {
-      /** Undo a refund recorded by mistake: the Accounts key for its kind, while it stays open. */
-      void: canRefundAs(ctx, r.kind).ok && canVoidRefund(r, from).ok,
+      /**
+       * Undo a refund recorded by mistake: the Accounts key for its kind (and for money
+       * paid back, the right to take money in), while it stays open.
+       */
+      void: canVoidRefundAs(ctx, r.kind).ok && canVoidRefund(r, from).ok,
     },
   }));
 }

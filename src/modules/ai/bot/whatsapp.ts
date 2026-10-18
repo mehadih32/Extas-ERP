@@ -128,7 +128,10 @@ export function whatsappSender(phoneNumberId: string, token: string): BotSender 
     // WhatsApp has no spinner to stop, no buttons to take off and no deleting of the owner's message.
     async ack() {},
     async clearButtons() {},
-    async remove() {},
+    canRemove: false,
+    async remove() {
+      return false;
+    },
     async typing() {},
   };
 }

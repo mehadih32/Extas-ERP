@@ -3,7 +3,10 @@
 
 set -euo pipefail
 
-DEPLOY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# The ERP's deploy folder: this file's own, or EXTRAS_DEPLOY_DIR when the restore
+# command (bootstrap.sh) runs its own version's restore.sh and setup-server.sh from
+# another folder over the ERP in /opt/extras-erp (v6.4.2).
+DEPLOY_DIR="${EXTRAS_DEPLOY_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
 ENV_FILE="$DEPLOY_DIR/.env"
 # The app's user inside its container (see the Dockerfile).
 APP_UID=1001
@@ -13,7 +16,10 @@ UPDATE_LOCK=/run/extras-erp-update.lock
 # shellcheck disable=SC2034 # used by restore.sh
 RESTORE_LOG=/var/log/extas-erp-restore.log
 # Names restore_database's psql inside the database container (stop_restore_in_db).
-RESTORE_TAG=extas_erp_restore
+# A machine name, so "extras" (CLAUDE.md, Names); the name before v6.4.2 is still
+# found and ended, for a restore an older copy of this file started.
+RESTORE_TAG=extras_erp_restore
+OLD_RESTORE_TAG=extas_erp_restore
 
 say() { printf '\n==> %s\n' "$*"; }
 die() {
@@ -245,11 +251,11 @@ database_id() {
 # makes it restart as after a crash. False when that cannot be made sure, such as
 # when the database does not answer five times in a row.
 stop_restore_in_db() {
-  # [e]xtas... never finds the command that looks for it.
-  local left fails=0 find="[${RESTORE_TAG:0:1}]${RESTORE_TAG:1}"
+  # [e]xtr?as... finds both names and never the command that looks for them.
+  local left fails=0 find="[e]xtr?as_erp_restore"
   for _ in $(seq 1 30); do
     if left="$(compose exec -T db psql -X -q -At -U postgres -d postgres -c \
-      "SELECT count(pg_terminate_backend(pid)) FROM pg_stat_activity WHERE application_name = '$RESTORE_TAG'" \
+      "SELECT count(pg_terminate_backend(pid)) FROM pg_stat_activity WHERE application_name IN ('$RESTORE_TAG', '$OLD_RESTORE_TAG')" \
       2>/dev/null)"; then
       fails=0
       if [ "$left" = 0 ] && ! compose exec -T db pgrep -f "$find" >/dev/null 2>&1; then

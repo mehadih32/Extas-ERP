@@ -515,6 +515,7 @@ export async function resetMemberPassword(
       systemRole: membership.role.systemRole,
       isPlatformOwner: membership.user.isSuperAdmin,
       worksElsewhere: await worksElsewhere(ctx, membership.userId),
+      heldKeys: await heldKeysOf(membership),
     }),
   );
 
@@ -650,6 +651,11 @@ export async function listTeam(ctx: CompanyContext): Promise<Team> {
       isPlatformOwner: m.user.isSuperAdmin,
       worksElsewhere: sharedUsers.has(m.userId),
     };
+    // What they hold: their role's permissions with their own changes.
+    const held = heldKeys(
+      roles.find((r) => r.id === m.role.id)?.permissions ?? ALL_PERMISSION_KEYS,
+      m.permissionChanges,
+    );
     const roleChoices = roles
       .filter((r) => r.id !== m.roleId && canChangeRole(actor, target, r, others).ok)
       .map((r) => r.id);
@@ -671,15 +677,8 @@ export async function listTeam(ctx: CompanyContext): Promise<Team> {
         editPermissions: canEditPermissions && canEditMemberPermissions(actor, target).ok,
         deactivate: m.isActive && canDeactivate(actor, target, others).ok,
         reactivate:
-          !m.isActive &&
-          canReactivate(actor, {
-            systemRole: m.role.systemRole,
-            heldKeys: heldKeys(
-              roles.find((r) => r.id === m.role.id)?.permissions ?? ALL_PERMISSION_KEYS,
-              m.permissionChanges,
-            ),
-          }).ok,
-        resetPassword: canResetPassword(actor, target).ok,
+          !m.isActive && canReactivate(actor, { systemRole: m.role.systemRole, heldKeys: held }).ok,
+        resetPassword: canResetPassword(actor, { ...target, heldKeys: held }).ok,
       },
       roleChoices,
     };

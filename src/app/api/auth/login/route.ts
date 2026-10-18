@@ -8,7 +8,7 @@ import { loginSchema } from "@/modules/auth/schemas";
 export const POST = apiRoute(async (request) => {
   const meta = await getRequestMeta();
   const input = loginSchema.parse(await readJson(request));
-  checkLoginRate(meta, input.email);
+  checkLoginRate(meta);
   const result = await login(input, meta);
   await setSessionCookie(result.token, result.expiresAt);
   return {

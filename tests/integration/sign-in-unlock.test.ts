@@ -16,6 +16,7 @@ import { resetRateLimits } from "@/lib/rate-limit";
 import {
   checkLoginRate,
   login,
+  LOGIN_UNKNOWN_PER_MINUTE,
   MAX_FAILED_LOGINS,
   unlockSignIn,
 } from "@/modules/auth/auth.service";
@@ -106,10 +107,26 @@ run("Sign-in that waits, and unlocking it (v6.4.1 B5)", () => {
     resetRateLimits();
     expect((await signIn(CLOUDFLARE)).token).toBeTruthy();
     expect((await login({ email: owner.email, password: PASSWORD })).token).toBeTruthy();
-    // The sign-in route's tries a minute for the account still hold there.
-    const tries = () => checkLoginRate({ ipAddress: CLOUDFLARE }, owner.email);
-    for (let i = 0; i < 10; i += 1) tries();
-    expect(tries).toThrow(/Too many attempts/);
+  });
+
+  it("never slows the owner's account for tries with no visitor address: they share one limit, never one per account (v6.4.2)", () => {
+    resetRateLimits();
+    // Someone else's tries for the owner's account through Cloudflare (no visitor address),
+    // or with no address at all: the owner's own try there is not refused for them.
+    for (let i = 0; i < 12; i += 1) checkLoginRate({ ipAddress: CLOUDFLARE });
+    for (let i = 0; i < 12; i += 1) checkLoginRate({});
+    expect(() => checkLoginRate({ ipAddress: CLOUDFLARE })).not.toThrow();
+    // All tries with no visitor address together have one limit a minute, whatever the account.
+    resetRateLimits();
+    for (let i = 0; i < LOGIN_UNKNOWN_PER_MINUTE; i += 1) {
+      checkLoginRate(i % 2 ? {} : { ipAddress: CLOUDFLARE });
+    }
+    expect(() => checkLoginRate({ ipAddress: CLOUDFLARE })).toThrow(/Too many attempts/);
+    // A visitor whose address is known keeps their own limit.
+    expect(() => checkLoginRate({ ipAddress: HOME })).not.toThrow();
+    for (let i = 0; i < 10; i += 1) checkLoginRate({ ipAddress: ATTACKER });
+    expect(() => checkLoginRate({ ipAddress: ATTACKER })).toThrow(/Too many attempts/);
+    expect(() => checkLoginRate({ ipAddress: HOME })).not.toThrow();
   });
 
   it("keeps link requests from a Cloudflare address or none apart for each account", async () => {

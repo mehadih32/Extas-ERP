@@ -38,8 +38,10 @@ export interface BotSender {
   ack(callbackId: string | null, text?: string): Promise<void>;
   /** Takes the buttons off a message once it is answered (Telegram). */
   clearButtons(chatId: string, messageId: string | null): Promise<void>;
-  /** Removes a message (the PIN the owner typed), where the provider allows it. */
-  remove(chatId: string, messageId: string | null): Promise<void>;
+  /** Whether the provider lets the bot remove the owner's messages (Telegram does, WhatsApp not). */
+  readonly canRemove: boolean;
+  /** Removes a message (the PIN the owner typed): true once it is gone, false when it is not. */
+  remove(chatId: string, messageId: string | null): Promise<boolean>;
   typing(chatId: string): Promise<void>;
 }
 

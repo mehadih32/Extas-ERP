@@ -1,8 +1,16 @@
 "use client";
 
-import { LinkIcon, MessageCircleIcon, SendIcon, Trash2Icon, UnlinkIcon } from "lucide-react";
+import {
+  LinkIcon,
+  LockOpenIcon,
+  MessageCircleIcon,
+  SendIcon,
+  Trash2Icon,
+  UnlinkIcon,
+} from "lucide-react";
 import { useState, useTransition } from "react";
 
+import { usePinPrompt } from "@/components/ai/pin-prompt";
 import { useWhen } from "@/components/ai/when";
 import { Field, FormAlert } from "@/components/forms/field";
 import { StatusBadge } from "@/components/sales/badges";
@@ -18,6 +26,7 @@ import {
   startLinkAction,
   testBotAction,
   unlinkBotAction,
+  unlockBotPinAction,
 } from "@/server/actions/bot.actions";
 
 /*
@@ -45,6 +54,7 @@ export function BotScreen({ bot: b }: { bot: Bot }) {
     null,
   );
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string }>();
+  const { withPin, dialog: pinDialog } = usePinPrompt();
 
   const run = (work: () => Promise<Result>, done: string) =>
     startTransition(async () => {
@@ -156,6 +166,40 @@ export function BotScreen({ bot: b }: { bot: Bot }) {
           Set your PIN in AI Center &gt; Settings: the bot asks for it for money, prices and
           Deletion requests.
         </FormAlert>
+      )}
+      {b.pinLock.lockedAt ? (
+        <FormAlert tone="error">
+          <span className="grid gap-2">
+            <span>
+              PIN actions on the bot are stopped since {when(b.pinLock.lockedAt)}: there were 20
+              wrong PINs in a day. The bot does no money, price, Deletion or other PIN action until
+              you unlock them. If it was not you, unlink the bot and change your PIN first.
+            </span>
+            <span>
+              <Button
+                type="button"
+                size="sm"
+                disabled={pending}
+                onClick={() =>
+                  run(
+                    () => withPin((pin) => unlockBotPinAction({ pin })),
+                    "PIN actions on the bot work again.",
+                  )
+                }
+              >
+                <LockOpenIcon aria-hidden />
+                Unlock PIN actions
+              </Button>
+            </span>
+          </span>
+        </FormAlert>
+      ) : (
+        b.pinLock.wrongToday > 0 && (
+          <FormAlert tone="note">
+            {b.pinLock.wrongToday} wrong {b.pinLock.wrongToday === 1 ? "PIN" : "PINs"} on the bot
+            today. After 20 in a day, PIN actions on the bot stop until you unlock them here.
+          </FormAlert>
+        )
       )}
 
       <Panel
@@ -338,6 +382,7 @@ export function BotScreen({ bot: b }: { bot: Bot }) {
           )}
         </FormDialog>
       )}
+      {pinDialog}
     </div>
   );
 }

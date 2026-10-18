@@ -181,6 +181,9 @@ describe("Chat answers as bot messages", () => {
     expect(pinCandidates("my PIN-4321")).toEqual(["4321"]);
     expect(pinCandidates("পিন 4321ই")).toEqual(["4321"]);
     expect(pinCandidates("Pin for CS-2026-0001")).toEqual(["2026", "0001"]);
+    expect(pinCandidates("PIN4321")).toEqual(["4321"]);
+    // Not the word PIN inside another word.
+    expect(pinCandidates("shipping CS-2026-0001, spinning PO4501")).toEqual([]);
   });
 
   it("reads every button code back and nothing else", () => {

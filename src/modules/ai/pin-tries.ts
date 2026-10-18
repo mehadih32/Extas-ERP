@@ -19,8 +19,11 @@ import { prisma } from "@/lib/prisma";
 /** The most numbers of one message checked against the PIN (each check takes a moment). */
 const MAX_PIN_CANDIDATES = 12;
 
-/** The word PIN (any case) or পিন: then every number in the message is checked. */
-const PIN_WORD = /pin|পিন/i;
+/**
+ * The word PIN (any case, also stuck to digits: "PIN4321") or পিন: then every
+ * number in the message is checked. Not inside a word like "shipping".
+ */
+const PIN_WORD = /(?<![a-z])pin(?![a-z])|পিন/i;
 /** Two or more capital letters, maybe with -, / or _, right before the digits: "PO4501", "CS-2026", "SO/2026", "LOT_4455". */
 const CODE_LETTERS = /[A-Z]{2,}[-/_]?$/;
 /** Digits joined to more digits by - or /: "2026-0001", "18/10/2026". */

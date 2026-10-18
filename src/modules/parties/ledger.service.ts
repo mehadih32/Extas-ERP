@@ -1,6 +1,6 @@
 import { Prisma } from "@prisma/client";
 
-import { dayRange } from "@/lib/dates";
+import { dayRange, toInstant } from "@/lib/dates";
 import type { Db } from "@/lib/db-types";
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
@@ -11,6 +11,7 @@ import { assertAllowed } from "@/lib/verdict";
 import { ensureControlAccounts, PARTY_BALANCE_SUBTYPES } from "@/modules/accounts/control-accounts";
 import { postJournalEntry, reverseJournalEntry } from "@/modules/accounts/journal.service";
 import { assertCanManageAccounts } from "@/modules/accounts/money-guards";
+import { liveOpeningEntries, openingDate } from "@/modules/accounts/opening-entry";
 import { lockSupplierAccount, settleSupplierBills } from "@/modules/accounts/supplier-settlement";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
@@ -185,8 +186,10 @@ export async function getStatement(ctx: CompanyContext, partyId: string, raw: un
  * (Accounts: accounts.manage, checked here as well as in the route). Re-setting
  * reverses the earlier opening entry with a mirror entry dated on the earlier
  * entry's own day, so both stay in the books (never deleted) and cancel out in
- * every report from that day on, and posts the new one; saving the same amount
- * on the same day changes nothing.
+ * every report from that day on, and posts the new one. Without a day ("As of"
+ * left empty) the new one goes on the earlier entry's day, so no report between
+ * go-live and today loses the opening; saving the same amount on the same day
+ * changes nothing.
  *
  * What a buyer owed goes on their Receivable. What the company owed a buyer
  * (an advance they had paid) is a credit on their Receivable too, like money
@@ -209,7 +212,7 @@ export async function setOpeningBalance(
   const amount = new Prisma.Decimal(input.amount.toFixed(2));
   assertAllowed(canSetOpeningBalance(party, amount.toNumber()));
   const companyId = ctx.company.id;
-  const date = input.asOf ?? new Date();
+  const asOf = input.asOf ? toInstant(input.asOf, ctx.company.timezone) : undefined;
 
   await runTransaction(async (tx) => {
     // The supplier's account (or the buyer's credit) first, the ERP's lock order,
@@ -221,22 +224,14 @@ export async function setOpeningBalance(
     // A buyer's advance is credit on their Receivable, like money paid on account.
     const partyAccount =
       amount.gt(0) || party.kind === "BUYER" ? accounts.RECEIVABLE : accounts.PAYABLE;
-    const live = await tx.journalEntry.findMany({
-      where: {
-        companyId,
-        sourceType: "OPENING_BALANCE",
-        sourceId: party.id,
-        isReversed: false,
-        reversalOfId: null,
-      },
-      include: { lines: true },
-      orderBy: { createdAt: "asc" },
-    });
+    const live = await liveOpeningEntries(tx, companyId, party.id);
+    // The day chosen, else the go-live day the opening sits on now.
+    const date = openingDate(asOf, live, ctx.company.timezone);
     const unchanged =
       live.length === (amount.isZero() ? 0 : 1) &&
       live.every(
         (entry) =>
-          (!input.asOf || entry.date.getTime() === input.asOf.getTime()) &&
+          entry.date.getTime() === date.getTime() &&
           entry.lines.some(
             (l) =>
               l.accountId === partyAccount &&

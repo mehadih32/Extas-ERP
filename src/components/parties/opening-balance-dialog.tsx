@@ -25,16 +25,23 @@ import { ChoiceList } from "./choice-list";
 
 type Direction = "OWED" | "OWING";
 
+/** What "As of" says under it: the go-live day it is on now stays unless changed. */
+export const openingDayHint = (currentDay: string | null) =>
+  currentDay ? "The day it is on now. Keep it unless that day was wrong." : "Today if left empty.";
+
 /**
  * The balance brought forward from before the ERP: what the account owed the
  * company (or had paid in advance, or was owed) on the day it starts here. It
  * posts an entry against opening equity; setting it again replaces the earlier
- * one. For accounts.manage, the permission setOpeningBalanceAction checks. A
- * supplier's is always what the company owed it (parties/rules.ts).
+ * one. "As of" shows the go-live day it is on now, so saving again keeps that
+ * day (a later day would leave the reports in between without it). For
+ * accounts.manage, the permission setOpeningBalanceAction checks. A supplier's
+ * is always what the company owed it (parties/rules.ts).
  */
 export function OpeningBalanceDialog({
   party,
   current,
+  asOf: currentDay,
   currency,
   onSaved,
   onClose,
@@ -42,6 +49,8 @@ export function OpeningBalanceDialog({
   party: { id: string; name: string; kind: PartyKind };
   /** The opening balance now ("-3000.00" when the company owed them). */
   current: string;
+  /** The day ("YYYY-MM-DD") the opening balance is on now; null when there is none. */
+  asOf: string | null;
   currency: string;
   onSaved: (balance: string) => void;
   onClose: () => void;
@@ -134,11 +143,12 @@ export function OpeningBalanceDialog({
                 autoFocus
               />
             </Field>
-            <Field id="opening-day" label="As of" hint="Today if left empty.">
+            <Field id="opening-day" label="As of" hint={openingDayHint(currentDay)}>
               <Input
                 id="opening-day"
                 name="opening-day"
                 type="date"
+                defaultValue={currentDay ?? ""}
                 aria-describedby="opening-day-hint"
               />
             </Field>

@@ -37,6 +37,7 @@ import * as screens from "@/modules/hr/screens.service";
 import * as vault from "@/modules/hr/vault.service";
 import { setMemberAccess } from "@/modules/rbac/member.service";
 import { createRole } from "@/modules/rbac/role.service";
+import { SUPER_ADMIN_GRANTS_ROLE } from "@/modules/rbac/rules";
 
 import { png } from "../fixtures/images";
 import { addToCompany, contextFor, makeCompany, makeUser, resetDb } from "./helpers";
@@ -238,11 +239,18 @@ run("the 360° profile and system access", () => {
   });
 
   it("changes the role and switches the login off and on, keeping a record", async () => {
+    // A role that records money is given only by a Super Admin (v6.4.1).
+    expect((await accessOf(env.admin, env.sumon.id))?.roles.map((r) => r.systemRole)).not.toContain(
+      "ACCOUNTS",
+    );
+    await expect(
+      logins.changeEmployeeLogin(env.admin, env.sumon.id, { roleId: env.roles.ACCOUNTS }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN", message: SUPER_ADMIN_GRANTS_ROLE });
     const moved = await logins.changeEmployeeLogin(env.admin, env.sumon.id, {
-      roleId: env.roles.ACCOUNTS,
+      roleId: env.roles.WAREHOUSE_TEAM,
     });
     expect(moved).toMatchObject({ email: "sumon@extras.test", active: true });
-    expect(moved.role.systemRole).toBe("ACCOUNTS");
+    expect(moved.role.systemRole).toBe("WAREHOUSE_TEAM");
 
     const off = await logins.changeEmployeeLogin(env.admin, env.sumon.id, { active: false });
     expect(off.active).toBe(false);
@@ -264,14 +272,14 @@ run("the 360° profile and system access", () => {
     ).rejects.toMatchObject({ code: "CONFLICT" });
 
     const on = await logins.changeEmployeeLogin(env.admin, env.sumon.id, { active: true });
-    expect(on).toMatchObject({ active: true, role: { systemRole: "ACCOUNTS" } });
+    expect(on).toMatchObject({ active: true, role: { systemRole: "WAREHOUSE_TEAM" } });
 
     const audit = await prisma.auditLog.findMany({
       where: { companyId: env.company.id, entityType: "CompanyMembership" },
       select: { summary: true },
     });
     expect(audit.map((a) => a.summary)).toEqual(
-      expect.arrayContaining([expect.stringContaining("from Employee to Accounts")]),
+      expect.arrayContaining([expect.stringContaining("from Employee to Warehouse Team")]),
     );
   });
 

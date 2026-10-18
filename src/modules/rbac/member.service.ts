@@ -18,15 +18,19 @@ import { ALL_PERMISSION_KEYS, type PermissionKey } from "@/modules/rbac/permissi
 import { permissionChanges } from "@/modules/rbac/resolve";
 import { permissionKeysSchema } from "@/modules/rbac/role.service";
 import {
-  type Actor,
+  actorOf,
   assertAllowed,
   canChangeRole,
   canDeactivate,
   canEditMemberPermissions,
+  canGivePermissions,
   canGrantRole,
   canReactivate,
   canResetPassword,
+  lockedPermissionsFor,
 } from "@/modules/rbac/rules";
+
+export { actorOf, lockedPermissionsFor };
 
 export const addMemberSchema = z.object({
   email: emailSchema
@@ -166,19 +170,33 @@ export async function listMembers(ctx: CompanyContext) {
   });
 }
 
-/** The person acting, as the member rules (rbac/rules.ts) see them. */
-export function actorOf(ctx: CompanyContext): Actor {
+/** A role of the active company with the permissions it gives (every one for Super Admin). */
+export async function getRoleInCompany(ctx: CompanyContext, roleId: string) {
+  const role = await ctx.db.role.findUnique({
+    where: { id: roleId },
+    include: { permissions: { select: { permission: { select: { key: true } } } } },
+  });
+  if (!role) throw new AppError("NOT_FOUND", "Role not found.");
   return {
-    userId: ctx.user.id,
-    systemRole: ctx.role?.systemRole ?? null,
-    isPlatformOwner: ctx.user.isSuperAdmin,
+    ...role,
+    permissions:
+      role.systemRole === "SUPER_ADMIN"
+        ? [...ALL_PERMISSION_KEYS]
+        : role.permissions.map((p) => p.permission.key as PermissionKey),
   };
 }
 
-async function getRoleInCompany(ctx: CompanyContext, roleId: string) {
-  const role = await ctx.db.role.findUnique({ where: { id: roleId } });
-  if (!role) throw new AppError("NOT_FOUND", "Role not found.");
-  return role;
+/** What a member may see and do now: their role's permissions with their own changes. */
+async function heldKeysOf(member: {
+  role: { id: string; systemRole: SystemRole | null };
+  permissionChanges: Array<{ granted: boolean; permission: { key: string } }>;
+}): Promise<Set<string>> {
+  const held = new Set<string>(await roleKeysOf(member.role));
+  for (const c of member.permissionChanges) {
+    if (c.granted) held.add(c.permission.key);
+    else held.delete(c.permission.key);
+  }
+  return held;
 }
 
 async function getMembership(ctx: CompanyContext, membershipId: string) {
@@ -218,7 +236,7 @@ export async function addMember(ctx: CompanyContext, rawInput: unknown, meta: Re
   // Permissions ticked in the matrix: kept as changes to the role's, checked
   // before anyone's account is made.
   const changes = input.permissions
-    ? permissionChanges(await roleKeysOf(role), input.permissions)
+    ? permissionChanges(role.permissions, input.permissions)
     : NO_CHANGES;
   const changed = changesText(changes);
   let user = await prisma.user.findUnique({ where: { email: input.email } });
@@ -232,6 +250,7 @@ export async function addMember(ctx: CompanyContext, rawInput: unknown, meta: Re
       systemRole: role.systemRole,
       isPlatformOwner: user?.isSuperAdmin ?? false,
     });
+    assertAllowed(canGivePermissions(actorOf(ctx), changes.added));
   }
 
   let temporaryPassword: string | undefined;
@@ -305,7 +324,14 @@ export async function changeMemberRole(
     membership.role.systemRole === "SUPER_ADMIN"
       ? await otherActiveSuperAdmins(ctx, membership.id)
       : 0;
-  assertAllowed(canChangeRole(actorOf(ctx), membership.role, role, others));
+  assertAllowed(
+    canChangeRole(
+      actorOf(ctx),
+      { userId: membership.userId, systemRole: membership.role.systemRole },
+      role,
+      others,
+    ),
+  );
 
   // Their own changes were to the old role's permissions: the new role starts clean.
   const before = changesOf(membership);
@@ -348,19 +374,26 @@ export async function setMemberAccess(
 ) {
   const input = memberAccessSchema.parse(rawInput);
   const membership = await getMembership(ctx, membershipId);
-  const role = input.roleId ? await getRoleInCompany(ctx, input.roleId) : membership.role;
+  const role = await getRoleInCompany(ctx, input.roleId ?? membership.roleId);
   const moving = role.id !== membership.roleId;
   if (moving) {
     const others =
       membership.role.systemRole === "SUPER_ADMIN"
         ? await otherActiveSuperAdmins(ctx, membership.id)
         : 0;
-    assertAllowed(canChangeRole(actorOf(ctx), membership.role, role, others));
+    assertAllowed(
+      canChangeRole(
+        actorOf(ctx),
+        { userId: membership.userId, systemRole: membership.role.systemRole },
+        role,
+        others,
+      ),
+    );
   }
 
   const before = changesOf(membership);
   const after = input.permissions
-    ? permissionChanges(await roleKeysOf(role), input.permissions)
+    ? permissionChanges(role.permissions, input.permissions)
     : NO_CHANGES;
   const changed = !sameChanges(before, after);
   if (!moving && !changed) return membership;
@@ -371,6 +404,14 @@ export async function setMemberAccess(
       systemRole: role.systemRole,
       isPlatformOwner: membership.user.isSuperAdmin,
     });
+    // Only what they do not hold already counts as given.
+    const held = await heldKeysOf(membership);
+    assertAllowed(
+      canGivePermissions(
+        actorOf(ctx),
+        after.added.filter((key) => !held.has(key)),
+      ),
+    );
   }
 
   const email = membership.user.email;
@@ -554,6 +595,8 @@ export type Team = {
   grantableRoleIds: string[];
   /** Whether they may tick permissions for one person (company.roles.manage). */
   canEditPermissions: boolean;
+  /** Permissions they may not tick for someone who does not hold them yet (only a Super Admin may). */
+  lockedPermissions: PermissionKey[];
 };
 
 /**
@@ -607,7 +650,7 @@ export async function listTeam(ctx: CompanyContext): Promise<Team> {
       worksElsewhere: sharedUsers.has(m.userId),
     };
     const roleChoices = roles
-      .filter((r) => r.id !== m.roleId && canChangeRole(actor, m.role, r, others).ok)
+      .filter((r) => r.id !== m.roleId && canChangeRole(actor, target, r, others).ok)
       .map((r) => r.id);
     return {
       id: m.id,
@@ -643,5 +686,6 @@ export async function listTeam(ctx: CompanyContext): Promise<Team> {
     roles,
     grantableRoleIds: roles.filter((r) => canGrantRole(actor, r).ok).map((r) => r.id),
     canEditPermissions,
+    lockedPermissions: lockedPermissionsFor(ctx),
   };
 }

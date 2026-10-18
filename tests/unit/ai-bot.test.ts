@@ -164,14 +164,26 @@ describe("Chat answers as bot messages", () => {
     expect(readButton(`sd:${ID}:XYZ`)).toBeNull();
   });
 
-  it("takes only numbers that stand alone for a possible PIN, never those inside codes (v6.4.1)", () => {
+  it("leaves out only numbers inside document codes; a PIN with a hyphen or a Bengali ending is checked (v6.4.1)", () => {
+    // Clearly part of a document number: capital letters before, or joined to more digits.
     expect(pinCandidates("CS-2026-0001 status")).toEqual([]);
     expect(pinCandidates("PO4501 and INV2026 and SO/2026/0112 and LOT_4455")).toEqual([]);
-    expect(pinCandidates("অর্ডার4501")).toEqual([]);
+    expect(pinCandidates("ship on 18/10/2026 or 2026-10-18")).toEqual([]);
+    // Anything else could be the PIN.
     expect(pinCandidates("my pin is 2468, ok?")).toEqual(["2468"]);
     expect(pinCandidates("PIN:2468")).toEqual(["2468"]);
     expect(pinCandidates("PO 4501 is late, ship 2468.")).toEqual(["4501", "2468"]);
     expect(pinCandidates("123 and 123456789")).toEqual([]);
+    expect(pinCandidates("send 4321ই")).toEqual(["4321"]);
+    expect(pinCandidates("অর্ডার4501 আর 4321টা")).toEqual(["4501", "4321"]);
+    expect(pinCandidates("it is 2468ok")).toEqual(["2468"]);
+    // The word PIN (any case) or পিন: every number is checked, codes too.
+    expect(pinCandidates("my PIN-4321")).toEqual(["4321"]);
+    expect(pinCandidates("পিন 4321ই")).toEqual(["4321"]);
+    expect(pinCandidates("Pin for CS-2026-0001")).toEqual(["2026", "0001"]);
+    expect(pinCandidates("PIN4321")).toEqual(["4321"]);
+    // Not the word PIN inside another word.
+    expect(pinCandidates("shipping CS-2026-0001, spinning PO4501")).toEqual([]);
   });
 
   it("reads every button code back and nothing else", () => {

@@ -39,7 +39,8 @@ import {
   setMemberAccess,
 } from "@/modules/rbac/member.service";
 import { DEFAULT_ROLE_PERMISSIONS, type PermissionKey } from "@/modules/rbac/permissions";
-import { createRole } from "@/modules/rbac/role.service";
+import { createRole, updateRole } from "@/modules/rbac/role.service";
+import { OWN_ROLE, SUPER_ADMIN_GRANTS_KEYS, SUPER_ADMIN_GRANTS_ROLE } from "@/modules/rbac/rules";
 import { activeMembers, membersWith } from "@/modules/reminders/audience";
 
 import { addToCompany, contextFor, makeCompany, makeUser, resetDb } from "./helpers";
@@ -377,5 +378,134 @@ run("the permission matrix", () => {
     // A person outside both: the route refuses before anything is read.
     signedIn.ctx = await ctxOf(env.sales.user.id);
     expect((await patch([...SALES])).status).toBe(403);
+  });
+
+  it("never lets anyone change their own role, and leaves money and team rights to a Super Admin (v6.4.1)", async () => {
+    const keeperMembership = await prisma.companyMembership.findFirstOrThrow({
+      where: { userId: env.keeperCtx.user.id },
+    });
+    const own = { code: "CONFLICT", message: OWN_ROLE };
+    const roleRefused = { code: "FORBIDDEN", message: SUPER_ADMIN_GRANTS_ROLE };
+    const keysRefused = { code: "FORBIDDEN", message: SUPER_ADMIN_GRANTS_KEYS };
+
+    // Someone who manages the team cannot move themselves, to Accounts or anywhere.
+    for (const roleId of [env.roles.ACCOUNTS, env.roles.SALES_EXECUTIVE]) {
+      expect(await refusal(changeMemberRole(env.keeperCtx, keeperMembership.id, roleId))).toEqual(
+        own,
+      );
+      expect(
+        await refusal(setMemberAccess(env.keeperCtx, keeperMembership.id, { roleId })),
+      ).toEqual(own);
+    }
+    // Through the API too.
+    signedIn.ctx = env.keeperCtx;
+    const moved = await memberRoute(
+      new Request(`http://localhost/api/members/${keeperMembership.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ roleId: env.roles.ACCOUNTS }),
+      }),
+      { params: Promise.resolve({ membershipId: keeperMembership.id }) },
+    );
+    expect(moved.status).toBe(409);
+    const keeperNow = await ctxOf(env.keeperCtx.user.id);
+    expect(keeperNow.can("accounts.receipts.record")).toBe(false);
+    // The Super Admin cannot change their own role either.
+    expect(
+      await refusal(
+        changeMemberRole(env.ownerCtx, env.owner.membership.id, env.roles.SALES_EXECUTIVE),
+      ),
+    ).toEqual(own);
+
+    // Giving someone else a role that records money or manages the team or roles.
+    const teamKeeper = await prisma.role.findFirstOrThrow({ where: { name: "Team Keeper" } });
+    for (const roleId of [env.roles.ACCOUNTS, teamKeeper.id]) {
+      expect(
+        await refusal(changeMemberRole(env.keeperCtx, env.sales.membership.id, roleId)),
+      ).toEqual(roleRefused);
+      expect(
+        await refusal(
+          addMember(env.keeperCtx, { email: "new@extras.test", name: "New Person", roleId }),
+        ),
+      ).toEqual(roleRefused);
+    }
+    expect(await prisma.user.count({ where: { email: "new@extras.test" } })).toBe(0);
+    // Other roles are still theirs to give.
+    await changeMemberRole(env.keeperCtx, env.sales.membership.id, env.roles.WAREHOUSE_TEAM);
+    // A Super Admin gives Accounts as before.
+    await changeMemberRole(env.ownerCtx, env.sales.membership.id, env.roles.ACCOUNTS);
+    await changeMemberRole(env.ownerCtx, env.sales.membership.id, env.roles.SALES_EXECUTIVE);
+
+    // Ticked for one person by someone who manages roles but is not a Super Admin.
+    expect(
+      await refusal(
+        setMemberAccess(env.adminCtx, env.sales.membership.id, {
+          permissions: [...SALES, "accounts.receipts.record"],
+        }),
+      ),
+    ).toEqual(keysRefused);
+    expect(
+      await refusal(
+        addMember(env.adminCtx, {
+          email: "new@extras.test",
+          name: "New Person",
+          roleId: env.roles.SALES_EXECUTIVE,
+          permissions: [...SALES, "company.members.manage"],
+        }),
+      ),
+    ).toEqual(keysRefused);
+    // Given by the Super Admin, it may stay while the admin changes other boxes.
+    await setMemberAccess(env.ownerCtx, env.sales.membership.id, {
+      permissions: [...SALES, "accounts.receipts.record"],
+    });
+    await setMemberAccess(env.adminCtx, env.sales.membership.id, {
+      permissions: [...SALES_TWEAKED, "accounts.receipts.record"],
+    });
+    expect(await changesOf(env.sales.membership.id)).toEqual([
+      "+accounts.receipts.record",
+      "+compliance.view",
+      "-sales.order.create",
+    ]);
+
+    // Added to a role (everyone in it would get it): a Super Admin's too.
+    const peopleAdmin = await prisma.role.findFirstOrThrow({ where: { name: "People Admin" } });
+    expect(
+      await refusal(
+        updateRole(env.adminCtx, peopleAdmin.id, {
+          permissions: [
+            "dashboard.view",
+            "company.members.manage",
+            "company.roles.manage",
+            "accounts.payments.record",
+          ],
+        }),
+      ),
+    ).toEqual(keysRefused);
+    expect(
+      await refusal(
+        createRole(env.adminCtx, { name: "Cashier", permissions: ["accounts.receipts.record"] }),
+      ),
+    ).toEqual(keysRefused);
+    // Keys the role holds already may stay, and others may be added.
+    await updateRole(env.adminCtx, peopleAdmin.id, {
+      permissions: [
+        "dashboard.view",
+        "company.members.manage",
+        "company.roles.manage",
+        "notepad.use",
+      ],
+    });
+    await updateRole(env.ownerCtx, peopleAdmin.id, {
+      permissions: ["dashboard.view", "company.members.manage", "accounts.payments.record"],
+    });
+
+    // The screen locks exactly these boxes for people who are not Super Admins.
+    expect((await listTeam(env.adminCtx)).lockedPermissions).toEqual([
+      "accounts.receipts.record",
+      "accounts.payments.record",
+      "company.members.manage",
+      "company.roles.manage",
+    ]);
+    expect((await listTeam(env.ownerCtx)).lockedPermissions).toEqual([]);
   });
 });

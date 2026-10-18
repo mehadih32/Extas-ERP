@@ -52,6 +52,7 @@ import {
   actorOf,
   addMember,
   changeMemberRole,
+  getRoleInCompany,
   setMemberActive,
 } from "@/modules/rbac/member.service";
 import { canGrantRole } from "@/modules/rbac/rules";
@@ -771,8 +772,7 @@ async function grantableRole(ctx: CompanyContext, roleId: string) {
   if (!ctx.can("company.members.manage")) {
     throw new AppError("FORBIDDEN", "Only people who manage users can choose a login's role.");
   }
-  const role = await ctx.db.role.findUnique({ where: { id: roleId } });
-  if (!role) throw new AppError("NOT_FOUND", "Role not found.");
+  const role = await getRoleInCompany(ctx, roleId);
   assertAllowed(canGrantRole(actorOf(ctx), role));
   return role;
 }

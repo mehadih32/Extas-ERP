@@ -18,16 +18,20 @@ export function PermissionMatrix({
   roleKeys,
   selected,
   onChange,
+  locked,
 }: {
   roleName: string;
   roleKeys: ReadonlySet<PermissionKey>;
   selected: ReadonlySet<PermissionKey>;
   onChange?: (next: Set<PermissionKey>) => void;
+  /** Permissions the person looking may not tick (only a Super Admin may). */
+  locked?: ReadonlySet<PermissionKey>;
 }) {
   return (
     <AccessTree
       selected={selected}
       onChange={onChange}
+      locked={locked}
       baseline={roleKeys}
       label={`Permissions (${roleName})`}
       scroll

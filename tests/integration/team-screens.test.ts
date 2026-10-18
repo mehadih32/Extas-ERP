@@ -326,13 +326,14 @@ run("team and roles screens offer exactly what the server allows", () => {
     const asOwner = await checkTeamScreen(people.owner.user.id, company.id, "platform owner");
     // The platform owner may reset someone who also works in another company.
     expect(memberCalled(asOwner, "shared@extras.test").can.resetPassword).toBe(true);
-    // Their own row: another Super Admin remains, so they may change their own role,
-    // but never deactivate themselves or reset their own password.
+    // Their own row: nobody changes their own role (v6.4.1), deactivates
+    // themselves or resets their own password.
     expect(memberCalled(asOwner, "owner@extras.test")).toMatchObject({
       isYou: true,
       isPlatformOwner: true,
+      roleChoices: [],
       can: {
-        changeRole: true,
+        changeRole: false,
         editPermissions: false,
         deactivate: false,
         reactivate: false,
@@ -377,8 +378,20 @@ run("team and roles screens offer exactly what the server allows", () => {
     });
     expect(memberCalled(asHr, "hr@extras.test")).toMatchObject({
       isYou: true,
-      can: { deactivate: false, resetPassword: false },
+      roleChoices: [],
+      can: { changeRole: false, deactivate: false, resetPassword: false },
     });
+    // Roles that record money or manage the team are a Super Admin's to give (v6.4.1).
+    expect(asHr.grantableRoleIds).not.toContain(roles.ACCOUNTS);
+    for (const m of asHr.members) expect(m.roleChoices, m.email).not.toContain(roles.ACCOUNTS);
+    expect(asHr.lockedPermissions).toEqual([
+      "accounts.receipts.record",
+      "accounts.payments.record",
+      "company.members.manage",
+      "company.roles.manage",
+    ]);
+    expect(asAdmin.lockedPermissions).toEqual([]);
+    expect(asAdmin.grantableRoleIds).toContain(roles.ACCOUNTS);
   }, 120_000);
 
   it("keeps a company's only Super Admin, even from the platform owner", async () => {

@@ -87,7 +87,12 @@ export default async function RolePage({
           {canManage && !role.isSystem && role.membershipCount > 0 && (
             <FormAlert tone="note">{deleteHint(role.membershipCount, role.memberCount)}</FormAlert>
           )}
-          <RoleEditor key={role.id} mode="edit" role={role} />
+          <RoleEditor
+            key={role.id}
+            mode="edit"
+            role={role}
+            lockedPermissions={result.data.lockedPermissions}
+          />
         </>
       ) : (
         <>

@@ -14,7 +14,15 @@ import {
   SYSTEM_ROLE_NAMES,
   isPermissionKey,
 } from "@/modules/rbac/permissions";
-import { assertAllowed, canDeleteRole, canEditRole, canRenameRole } from "@/modules/rbac/rules";
+import {
+  actorOf,
+  assertAllowed,
+  canDeleteRole,
+  canEditRole,
+  canGivePermissions,
+  canRenameRole,
+  lockedPermissionsFor,
+} from "@/modules/rbac/rules";
 
 export const permissionKeysSchema = z
   .array(z.string())
@@ -138,9 +146,12 @@ export type RoleSummary = Awaited<ReturnType<typeof listRoles>>[number] & {
  * company.roles.manage (`canManage`); people who only manage members see the
  * roles to know what each one gives.
  */
-export async function getRolesScreen(
-  ctx: CompanyContext,
-): Promise<{ roles: RoleSummary[]; canManage: boolean }> {
+export async function getRolesScreen(ctx: CompanyContext): Promise<{
+  roles: RoleSummary[];
+  canManage: boolean;
+  /** Permissions they may not add to a role (only a Super Admin may: rbac/rules.ts). */
+  lockedPermissions: PermissionKey[];
+}> {
   const canManage = ctx.can("company.roles.manage");
   const roles = (await listRoles(ctx)).map((role) => {
     const edit = canManage && canEditRole(role).ok;
@@ -153,7 +164,7 @@ export async function getRolesScreen(
       },
     };
   });
-  return { roles, canManage };
+  return { roles, canManage, lockedPermissions: lockedPermissionsFor(ctx) };
 }
 
 /** The permission catalogue grouped for a role editor. */
@@ -171,6 +182,8 @@ async function permissionIdsFor(keys: string[], db: Db) {
 
 export async function createRole(ctx: CompanyContext, rawInput: unknown, meta: RequestMeta = {}) {
   const input = createRoleSchema.parse(rawInput);
+  // Recording money and managing users or roles: only a Super Admin adds these to a role.
+  assertAllowed(canGivePermissions(actorOf(ctx), input.permissions));
   const duplicate = await ctx.db.role.findFirst({ where: { name: input.name } });
   if (duplicate) throw new AppError("CONFLICT", "A role with this name already exists.");
 
@@ -218,6 +231,13 @@ export async function updateRole(
   }
 
   const beforeKeys = role.permissions.map((rp) => rp.permission.key).sort();
+  // Adding money recording or user / role management gives it to everyone in the role.
+  assertAllowed(
+    canGivePermissions(
+      actorOf(ctx),
+      (input.permissions ?? []).filter((key) => !beforeKeys.includes(key)),
+    ),
+  );
   await prisma.$transaction(async (tx) => {
     await tx.role.update({
       where: { id: role.id },

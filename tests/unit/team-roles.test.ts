@@ -12,9 +12,14 @@ import {
   canReactivate,
   canRenameRole,
   canResetPassword,
+  canGivePermissions,
   isPrivileged,
   LAST_SUPER_ADMIN,
+  OWN_ROLE,
+  SUPER_ADMIN_GRANTS_KEYS,
+  SUPER_ADMIN_GRANTS_ROLE,
 } from "@/modules/rbac/rules";
+import { ALL_PERMISSION_KEYS, DEFAULT_ROLE_PERMISSIONS } from "@/modules/rbac/permissions";
 
 /*
  * The member and role rules the services enforce and the Team and Roles
@@ -27,9 +32,19 @@ const superAdmin: Actor = { userId: "u-admin", systemRole: "SUPER_ADMIN", isPlat
 // A custom "HR Manager" role holding company.members.manage.
 const hrManager: Actor = { userId: "u-hr", systemRole: null, isPlatformOwner: false };
 
-const SUPER_ADMIN = { systemRole: "SUPER_ADMIN" as const };
-const SALES = { systemRole: "SALES_EXECUTIVE" as const };
-const CUSTOM = { systemRole: null };
+const SUPER_ADMIN = { systemRole: "SUPER_ADMIN" as const, permissions: ALL_PERMISSION_KEYS };
+const SALES = {
+  systemRole: "SALES_EXECUTIVE" as const,
+  permissions: DEFAULT_ROLE_PERMISSIONS.SALES_EXECUTIVE,
+};
+const CUSTOM = { systemRole: null, permissions: ["dashboard.view"] };
+const ACCOUNTS = {
+  systemRole: "ACCOUNTS" as const,
+  permissions: DEFAULT_ROLE_PERMISSIONS.ACCOUNTS,
+};
+// A custom role that may manage the team (or roles) but holds no money keys.
+const TEAM_LEAD = { systemRole: null, permissions: ["company.members.manage"] };
+const ROLE_EDITOR = { systemRole: null, permissions: ["company.roles.manage"] };
 
 const member = (
   userId: string,
@@ -69,22 +84,50 @@ describe("changing someone's role", () => {
     "Only a Super Admin can grant or remove the Super Admin role.",
   );
 
+  const sales = { userId: "u-sales", ...SALES };
+  const admin2 = { userId: "u-admin2", ...SUPER_ADMIN };
+
   it("lets a team manager move people between the other roles only", () => {
-    expect(canChangeRole(hrManager, SALES, CUSTOM, 1)).toEqual(allowed);
-    expect(canChangeRole(hrManager, SALES, SUPER_ADMIN, 1)).toEqual(forbidden);
-    expect(canChangeRole(hrManager, SUPER_ADMIN, SALES, 1)).toEqual(forbidden);
+    expect(canChangeRole(hrManager, sales, CUSTOM, 1)).toEqual(allowed);
+    expect(canChangeRole(hrManager, sales, SUPER_ADMIN, 1)).toEqual(forbidden);
+    expect(canChangeRole(hrManager, admin2, SALES, 1)).toEqual(forbidden);
   });
 
   it("never leaves the company without an active Super Admin", () => {
-    expect(canChangeRole(superAdmin, SUPER_ADMIN, SALES, 0)).toEqual(
+    expect(canChangeRole(superAdmin, admin2, SALES, 0)).toEqual(
       refused("CONFLICT", LAST_SUPER_ADMIN),
     );
-    expect(canChangeRole(platformOwner, SUPER_ADMIN, SALES, 0)).toEqual(
+    expect(canChangeRole(platformOwner, admin2, SALES, 0)).toEqual(
       refused("CONFLICT", LAST_SUPER_ADMIN),
     );
-    expect(canChangeRole(superAdmin, SUPER_ADMIN, SALES, 1)).toEqual(allowed);
+    expect(canChangeRole(superAdmin, admin2, SALES, 1)).toEqual(allowed);
     // The count only matters when the member is a Super Admin.
-    expect(canChangeRole(superAdmin, SALES, SUPER_ADMIN, 0)).toEqual(allowed);
+    expect(canChangeRole(superAdmin, sales, SUPER_ADMIN, 0)).toEqual(allowed);
+  });
+
+  it("never lets anyone change their own role, Super Admins included (v6.4.1)", () => {
+    const own = refused("CONFLICT", OWN_ROLE);
+    expect(OWN_ROLE).toBe("You cannot change your own role. Ask another admin.");
+    expect(canChangeRole(hrManager, { userId: "u-hr", ...CUSTOM }, ACCOUNTS, 1)).toEqual(own);
+    expect(canChangeRole(hrManager, { userId: "u-hr", ...CUSTOM }, SALES, 1)).toEqual(own);
+    expect(canChangeRole(superAdmin, { userId: "u-admin", ...SUPER_ADMIN }, SALES, 1)).toEqual(own);
+  });
+
+  it("leaves roles that record money or manage users or roles to a Super Admin (v6.4.1)", () => {
+    const money = refused("FORBIDDEN", SUPER_ADMIN_GRANTS_ROLE);
+    for (const role of [ACCOUNTS, TEAM_LEAD, ROLE_EDITOR]) {
+      expect(canChangeRole(hrManager, sales, role, 1)).toEqual(money);
+      expect(canGrantRole(hrManager, role)).toEqual(money);
+      expect(canChangeRole(superAdmin, sales, role, 1)).toEqual(allowed);
+      expect(canChangeRole(platformOwner, sales, role, 1)).toEqual(allowed);
+      expect(canGrantRole(superAdmin, role)).toEqual(allowed);
+    }
+    // Ticked for one person, or added to a role.
+    expect(canGivePermissions(hrManager, ["accounts.payments.record"])).toEqual(
+      refused("FORBIDDEN", SUPER_ADMIN_GRANTS_KEYS),
+    );
+    expect(canGivePermissions(hrManager, ["sales.view", "parties.view"])).toEqual(allowed);
+    expect(canGivePermissions(superAdmin, ["accounts.receipts.record"])).toEqual(allowed);
   });
 });
 

@@ -26,7 +26,7 @@ import { PERMISSION_COUNT, warnsAboutMoney } from "./role-labels";
 
 const ROLES_PATH = "/settings/roles";
 
-type Props =
+type Props = (
   | {
       mode: "create";
       /** Existing roles whose permissions a new role can start from. */
@@ -36,7 +36,11 @@ type Props =
       mode: "edit";
       /** A role this person may edit (role.can.edit); renaming and deleting follow role.can. */
       role: RoleSummary;
-    };
+    }
+) & {
+  /** Permissions only a Super Admin may add to a role: locked unless the role holds them now. */
+  lockedPermissions?: readonly PermissionKey[];
+};
 
 function sameKeys(a: ReadonlySet<string>, b: readonly string[]): boolean {
   return a.size === b.length && b.every((key) => a.has(key));
@@ -54,6 +58,9 @@ export function RoleEditor(props: Props) {
   const [description, setDescription] = useState(role?.description ?? "");
   const [selected, setSelected] = useState<Set<PermissionKey>>(
     () => new Set(role?.permissions ?? []),
+  );
+  const locked = new Set(
+    (props.lockedPermissions ?? []).filter((key) => !role?.permissions.includes(key)),
   );
   const [startFrom, setStartFrom] = useState("");
   const [error, setError] = useState<ActionError>();
@@ -170,7 +177,10 @@ export function RoleEditor(props: Props) {
               onChange={(event) => {
                 const from = props.templates.find((t) => t.id === event.target.value);
                 setStartFrom(event.target.value);
-                edit(setSelected)(new Set(from?.permissions ?? []));
+                // A permission only a Super Admin may give is not copied.
+                edit(setSelected)(
+                  new Set((from?.permissions ?? []).filter((key) => !locked.has(key))),
+                );
               }}
               containerClassName="sm:w-full"
               className="md:h-10"
@@ -201,6 +211,7 @@ export function RoleEditor(props: Props) {
         <AccessTree
           label="Permissions"
           selected={selected}
+          locked={locked}
           onChange={(next) => edit(setSelected)(next)}
         />
       </section>

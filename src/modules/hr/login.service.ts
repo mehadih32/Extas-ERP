@@ -9,6 +9,7 @@ import { loginChangeSchema } from "@/modules/hr/schemas";
 import {
   actorOf,
   changeMemberRole,
+  lockedPermissionsFor,
   otherActiveSuperAdmins,
   setMemberActive,
 } from "@/modules/rbac/member.service";
@@ -122,10 +123,12 @@ export async function getSystemAccess(ctx: CompanyContext, employee: Subject) {
             : null,
         }
       : null,
+    /** Permissions they may not tick for someone who does not hold them yet (Super Admin only). */
+    lockedPermissions: lockedPermissionsFor(ctx),
     /** Roles this person may give: for a new login, or to move the login to. */
     roles: membership
       ? grantable.filter(
-          (r) => r.id === membership.roleId || canChangeRole(actor, membership.role, r, others).ok,
+          (r) => r.id === membership.roleId || canChangeRole(actor, target!, r, others).ok,
         )
       : grantable,
     can: {
@@ -138,7 +141,7 @@ export async function getSystemAccess(ctx: CompanyContext, employee: Subject) {
         membership !== null &&
         membership.isActive &&
         grantable.some(
-          (r) => r.id !== membership.roleId && canChangeRole(actor, membership.role, r, others).ok,
+          (r) => r.id !== membership.roleId && canChangeRole(actor, target!, r, others).ok,
         ),
       switchOff:
         manageUsers && membership?.isActive === true && canDeactivate(actor, target!, others).ok,

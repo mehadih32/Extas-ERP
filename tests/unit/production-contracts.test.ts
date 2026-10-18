@@ -17,6 +17,7 @@ const facts = (over: Partial<ContractFacts> = {}): ContractFacts => ({
   materials: ["Single Jersey (kg)"],
   styles: [],
   cmAgreed: true,
+  cmPer: "PIECE",
   ...over,
 });
 
@@ -65,9 +66,22 @@ describe("contract clauses drafted by rule", () => {
       "Disagreements",
     ]);
     expect(cm[0]!.text).toMatch(/agreed in writing before cutting/);
+    expect(cm[0]!.text).toContain("for the CM (making charge) per piece shown.");
+    expect(cm[0]!.text).not.toMatch(/dozen/);
     expect(cm.find((c) => c.title === "Payment")!.text).toMatch(
       /Total CM less deductions less advance is the final payable/,
     );
+  });
+});
+
+describe("the CM wording follows how the styles' CM was agreed", () => {
+  const made = (cmPer: ContractFacts["cmPer"]) =>
+    ruleClauses(facts({ kind: "FACTORY_CM", party: "Gazipur Knit", cmPer }))[0]!.text;
+
+  it("says per piece, per dozen, or both when the styles mix them or have no CM yet", () => {
+    expect(made("PIECE")).toContain("for the CM (making charge) per piece shown.");
+    expect(made("DOZEN")).toContain("for the CM (making charge) per dozen shown.");
+    expect(made("MIXED")).toContain("for the CM (making charge) per piece or per dozen shown.");
   });
 });
 

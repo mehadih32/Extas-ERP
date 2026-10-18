@@ -247,6 +247,12 @@ async function contractScope(
 
 const unitText = (unit: MeasurementUnit) => UNIT_LABELS[unit];
 
+/** How the agreed CMs are given (styles without a CM do not count; none agreed is MIXED). */
+function cmPerOf(styles: Array<{ cmRate: unknown; cmPer: CmPer }>): ContractFacts["cmPer"] {
+  const pers = new Set(styles.filter((s) => s.cmRate !== null).map((s) => s.cmPer));
+  return pers.size === 1 ? [...pers][0]! : "MIXED";
+}
+
 function contractFacts(
   ctx: CompanyContext,
   batch: Batch,
@@ -281,6 +287,7 @@ function contractFacts(
         ? scope.styles.map((s) => `${s.code} ${s.name} (${s.pieces} pcs)`)
         : [],
     cmAgreed: scope.kind === "FACTORY" && scope.styles.every((s) => s.cmRate !== null),
+    cmPer: cmPerOf(scope.kind === "FACTORY" ? scope.styles : []),
   };
 }
 

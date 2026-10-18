@@ -411,6 +411,8 @@ run("Production renovation: batch contracts", () => {
       partyId: env.knit.id,
     });
     const { clauses } = (await contracts.getContractScreen(env.pm, cm.id)).contract;
+    // No CM yet: the words leave room for either.
+    expect(clauses[0]!.text).toContain("for the CM (making charge) per piece or per dozen shown.");
     // Polo 120 a dozen (10 a piece); tee 100 a dozen (8.333... a piece).
     await contracts.updateContract(env.pm, cm.id, {
       clauses,
@@ -432,6 +434,11 @@ run("Production renovation: batch contracts", () => {
       ["DOZEN", "100.00", "8.33", "1666.67"],
     ]);
     expect(screen.cm).toEqual({ total: "4666.67", toAgree: 0 });
+    // A fresh draft says per dozen, as every style is; the saved words stay as they were.
+    expect((await contracts.redraftContract(env.pm, cm.id)).clauses[0]!.text).toContain(
+      "for the CM (making charge) per dozen shown.",
+    );
+    expect(screen.contract.clauses[0]!.text).toContain("per piece or per dozen shown.");
 
     // Printed the way it was agreed.
     const doc = contracts.contractDocument(env.pm, await contracts.getContract(env.pm, cm.id));
@@ -480,6 +487,14 @@ run("Production renovation: batch contracts", () => {
       ["PIECE", "11.00", "3300.00"],
       ["DOZEN", "100.00", "1666.67"],
     ]);
+    // One per piece, one per dozen: both; all per piece: per piece only.
+    const madeText = async () => (await contracts.redraftContract(env.pm, cm.id)).clauses[0]!.text;
+    expect(await madeText()).toContain("per piece or per dozen shown.");
+    await contracts.updateContract(env.pm, cm.id, {
+      clauses,
+      cmRates: [{ projectId: env.tee.id, cmRate: 9 }],
+    });
+    expect(await madeText()).toContain("for the CM (making charge) per piece shown.");
   });
 
   it("lets Accounts read contracts, only Production Managers change them, and no one else see them", async () => {

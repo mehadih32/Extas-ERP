@@ -20,6 +20,7 @@ import { ON_DEMAND_PER_MINUTE, renderOnDemand } from "@/modules/documents/on-dem
 import { assertPartyCanTransact } from "@/modules/parties/party.service";
 import { cmAgreedText, cmFor, perPieceOfDozen } from "@/modules/production/batch-money";
 import { batchMaterialPlan } from "@/modules/production/batch-orders.service";
+import { cmHeldMessage, cmSettlementsHolding } from "@/modules/production/cm-lock";
 import {
   type Clause,
   CONTRACT_TITLES,
@@ -554,7 +555,8 @@ export async function updateContract(
       });
     }
     const amount = r.cmRate === null ? null : new Prisma.Decimal(r.cmRate);
-    const per: CmPer = amount !== null && r.cmPer === "DOZEN" ? "DOZEN" : "PIECE";
+    // Left out, the CM keeps the way the style has it (per piece or per dozen).
+    const per: CmPer = amount === null ? "PIECE" : (r.cmPer ?? style.cmPer);
     const before = enteredCm(style);
     const same =
       amount === null
@@ -568,6 +570,7 @@ export async function updateContract(
     }
     return [
       {
+        index: i,
         style,
         cmPer: per,
         cmPerDozen: per === "DOZEN" ? amount : null,
@@ -585,6 +588,20 @@ export async function updateContract(
   }
   await runTransaction(async (tx) => {
     await lockRow(tx, "ProductionBatch", batch.id);
+    // A saved CM settlement is worked from these CMs: it is undone first.
+    const held = await cmSettlementsHolding(
+      tx,
+      ctx.company.id,
+      rates.map((r) => r.style.id),
+    );
+    for (const r of rates) {
+      const hold = held.get(r.style.id);
+      if (hold) {
+        throw new AppError("CONFLICT", cmHeldMessage(hold, `${r.style.code}'s CM`), {
+          [`cmRates.${r.index}.cmRate`]: ["Undo the CM settlement first"],
+        });
+      }
+    }
     await tx.productionContract.update({
       where: { id: contract.id },
       data: {
@@ -836,6 +853,11 @@ export async function getContractScreen(ctx: CompanyContext, contractId: string)
   const { contract: c, batch, scope } = data;
   const tz = ctx.company.timezone;
   const fixed = (v: Prisma.Decimal) => v.toFixed(2);
+  const held = await cmSettlementsHolding(
+    prisma,
+    ctx.company.id,
+    scope.kind === "FACTORY" ? scope.styles.map((s) => s.id) : [],
+  );
   return {
     contract: {
       id: c.id,
@@ -880,6 +902,8 @@ export async function getContractScreen(ctx: CompanyContext, contractId: string)
             totalCm: s.cmRate ? fixed(cmFor(s, s.pieces)!) : null,
             dueOn: s.dueOn,
             closed: s.closed,
+            /** The saved CM settlement worked from this CM: it changes once that is undone. */
+            cmSettlement: held.get(s.id) ?? null,
           }))
         : null,
     /** A making agreement: the CM of the styles with one agreed, and how many are still to agree. */

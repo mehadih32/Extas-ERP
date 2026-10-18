@@ -10,6 +10,7 @@ import { FormDialog, readReason, ReasonField } from "@/components/sales/dialogs"
 import { Panel } from "@/components/sales/detail-bits";
 import { money } from "@/components/sales/labels";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import type { ActionError } from "@/lib/result";
 import { formatCount, formatDay } from "@/lib/display";
@@ -23,7 +24,11 @@ import { productionHref } from "./labels";
  * The final CM settlement of a master batch with its factory:
  *   Total CM - Deductions - Advance taken = Final payable.
  * Rejects up to the batch's allowance (2% of the pieces cut unless changed) are
- * free; each one over it is taken off at the style's target price.
+ * free; each one over it is taken off at the style's target price, or, for a
+ * style with none, at the price per reject asked for here (it cannot be saved
+ * without it). Only the factory's faults of the CM work come off; one about
+ * material it supplied is shown left out, with why. Payments for the batch and
+ * its styles count as CM paid except what of them paid its material bills.
  * Before it is saved, the person settling is asked whether the CM of the
  * C-grade pieces is taken off, and sees the payable change as they choose.
  * Saved, it shows as it stood, with its PDF bill and a way to undo it.
@@ -31,10 +36,32 @@ import { productionHref } from "./labels";
 
 type Draft = NonNullable<CmSettlementScreen["draft"]>;
 type Totals = Draft["keepC"];
-type View = Pick<Draft, "styles" | "faults" | "payments" | "cGradePieces" | "batch"> & {
+type View = Pick<Draft, "styles" | "faults" | "leftOut" | "payments" | "cGradePieces" | "batch"> & {
   /** null on settlements saved before the reject allowance. */
   rejectAllowancePercent: string | null;
 };
+
+/** "450" or "450.50" as paisa (a price per reject), or null when it is not a price above 0. */
+function priceCents(text: string | undefined): number | null {
+  const value = (text ?? "").trim().replace(/,/g, "");
+  if (!/^\d+(\.\d{1,2})?$/.test(value)) return null;
+  const cents = Math.round(Number(value) * 100);
+  return cents > 0 && cents <= 100_000_000 ? cents : null;
+}
+
+const cents = (amount: string) => Math.round(Number(amount) * 100);
+const fromCents = (n: number) => (n / 100).toFixed(2);
+
+/** The sums with the rejects of styles without a target price charged at the price entered. */
+function withRejectPrices(totals: Totals, extra: number): Totals {
+  if (extra === 0) return totals;
+  return {
+    ...totals,
+    rejects: fromCents(cents(totals.rejects) + extra),
+    deductions: fromCents(cents(totals.deductions) + extra),
+    payable: fromCents(cents(totals.payable) - extra),
+  };
+}
 
 const head =
   "px-2 py-2 text-left text-[0.75rem] font-medium tracking-wide whitespace-nowrap text-muted-foreground";
@@ -144,6 +171,7 @@ function Deductions({
   totals,
   currency,
   ask,
+  prices,
   deductedC = false,
 }: {
   view: View;
@@ -151,46 +179,92 @@ function Deductions({
   currency: string;
   /** Before saving: the C-grade tick. */
   ask?: { checked: boolean; onChange: (checked: boolean) => void };
+  /** Before saving: the price per reject of each style with rejects over the allowance and no target price. */
+  prices?: {
+    values: Record<string, string>;
+    onChange: (styleId: string, value: string) => void;
+    error: (styleId: string) => string | undefined;
+  };
   /** Once saved: whether the C-grade CM was taken off. */
   deductedC?: boolean;
 }) {
   return (
     <Panel title="Deductions" id="cm-deductions-heading">
       <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-        The factory&apos;s open faults on this batch are taken off: missing pieces at the final unit
-        cost, fabric faults and any other fault with a value.
+        The factory&apos;s open faults on this batch from the CM work are taken off: missing pieces
+        at the final unit cost, quality faults and any other fault with a value.
         {view.rejectAllowancePercent !== null &&
-          ` So are the rejects over the ${view.rejectAllowancePercent}% allowance (sewing faults, bodies ruined attaching accessories), each at the style's target price.`}
+          ` So are the rejects over the ${view.rejectAllowancePercent}% allowance (sewing faults, bodies ruined attaching accessories), each at the style's target price, or the price per reject when it has none.`}
       </p>
       {view.styles.some((s) => s.overAllowance > 0) && (
         <ul className="mt-4 divide-y rounded-md border" aria-label="Rejects over the allowance">
           {view.styles
             .filter((s) => s.overAllowance > 0)
-            .map((s) => (
-              <li
-                key={s.id}
-                className="flex flex-wrap items-baseline justify-between gap-2 px-3 py-2.5"
-              >
-                <span className="min-w-0 text-sm">
-                  <span className="font-medium">Rejects over the allowance</span>
-                  <span className="text-muted-foreground"> · {s.code}</span>
-                  <span className="block text-[0.75rem] break-words text-muted-foreground">
-                    {formatCount(s.overAllowance, currency)} of {formatCount(s.reject, currency)}{" "}
-                    rejects; allowance {formatCount(s.allowance ?? 0, currency)} (
-                    {view.rejectAllowancePercent}% of {formatCount(s.cut ?? 0, currency)} cut)
-                    {s.targetPrice && ` at ${money(s.targetPrice, currency)} a piece`}
-                  </span>
-                </span>
-                <span
-                  className={cn(
-                    "text-sm tabular-nums",
-                    s.targetPrice ? "font-medium" : "text-muted-foreground",
-                  )}
+            .map((s) => {
+              const asked = prices && s.targetPrice === null;
+              const entered = asked ? priceCents(prices.values[s.id]) : null;
+              const charge = asked
+                ? entered === null
+                  ? null
+                  : fromCents(entered * s.overAllowance)
+                : s.rejectPrice
+                  ? s.rejectPenalty
+                  : null;
+              const id = `reject-price-${s.id}`;
+              return (
+                <li
+                  key={s.id}
+                  className="flex flex-wrap items-baseline justify-between gap-2 px-3 py-2.5"
                 >
-                  {s.targetPrice ? money(s.rejectPenalty, currency) : "No target price"}
-                </span>
-              </li>
-            ))}
+                  <span className="min-w-0 text-sm">
+                    <span className="font-medium">Rejects over the allowance</span>
+                    <span className="text-muted-foreground"> · {s.code}</span>
+                    <span className="block text-[0.75rem] break-words text-muted-foreground">
+                      {formatCount(s.overAllowance, currency)} of {formatCount(s.reject, currency)}{" "}
+                      rejects; allowance {formatCount(s.allowance ?? 0, currency)} (
+                      {view.rejectAllowancePercent}% of {formatCount(s.cut ?? 0, currency)} cut)
+                      {!asked &&
+                        s.rejectPrice &&
+                        ` at ${money(s.rejectPrice, currency)} a piece${
+                          s.rejectPriceEntered ? " (price per reject)" : ""
+                        }`}
+                    </span>
+                  </span>
+                  <span
+                    className={cn(
+                      "text-sm tabular-nums",
+                      charge ? "font-medium" : "text-muted-foreground",
+                    )}
+                  >
+                    {charge
+                      ? money(charge, currency)
+                      : asked
+                        ? "Enter the price"
+                        : "No target price"}
+                  </span>
+                  {asked && (
+                    <div className="w-full">
+                      <Field
+                        id={id}
+                        label={`Price per reject (${currency})`}
+                        hint="No target price: what each reject over the allowance costs the factory."
+                        error={prices.error(s.id)}
+                      >
+                        <Input
+                          id={id}
+                          inputMode="decimal"
+                          autoComplete="off"
+                          className="max-w-[12rem]"
+                          value={prices.values[s.id] ?? ""}
+                          onChange={(e) => prices.onChange(s.id, e.target.value)}
+                          aria-invalid={Boolean(prices.error(s.id))}
+                        />
+                      </Field>
+                    </div>
+                  )}
+                </li>
+              );
+            })}
         </ul>
       )}
       {view.faults.length === 0 ? (
@@ -225,6 +299,34 @@ function Deductions({
             </li>
           ))}
         </ul>
+      )}
+      {view.leftOut.length > 0 && (
+        <div className="mt-4">
+          <h3 className="text-sm font-medium">Left out: not the CM work</h3>
+          <p className="mt-1 text-[0.8125rem] leading-relaxed text-muted-foreground">
+            These faults are about material the factory supplied, so they are not taken off the CM.
+            They stay open in the fault log.
+          </p>
+          <ul className="mt-2 divide-y rounded-md border" aria-label="Faults left out">
+            {view.leftOut.map((f) => (
+              <li
+                key={f.id}
+                className="flex flex-wrap items-baseline justify-between gap-2 px-3 py-2.5"
+              >
+                <span className="min-w-0 text-sm">
+                  <span className="font-medium">{f.number}</span> · {f.what}
+                  {f.style && <span className="text-muted-foreground"> · {f.style}</span>}
+                  <span className="block text-[0.75rem] break-words text-muted-foreground">
+                    {f.why}
+                  </span>
+                </span>
+                <span className="text-sm text-muted-foreground tabular-nums">
+                  {f.amount ? money(f.amount, currency) : "–"}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
       <div className="mt-4">
         {ask ? (
@@ -287,18 +389,30 @@ function Paid({ view, totals, currency }: { view: View; totals: Totals; currency
               key={p.id}
               className="flex flex-wrap items-baseline justify-between gap-2 px-3 py-2.5"
             >
-              <span className="text-sm">
+              <span className="min-w-0 text-sm">
                 <span className="font-medium">{p.number}</span>
                 <span className="text-muted-foreground">
                   {" "}
                   · {formatDay(p.on)} ·{" "}
                   {p.style ? `for ${p.style.code}` : `advance (${view.batch.code})`}
                 </span>
+                {Number(p.forBills) > 0 && (
+                  <span className="block text-[0.75rem] break-words text-muted-foreground">
+                    Paid {money(p.amount, currency)}; {money(p.forBills, currency)} of it paid the
+                    factory&apos;s material bills, so it is not counted as CM paid.
+                  </span>
+                )}
               </span>
-              <span className="text-sm tabular-nums">{money(p.amount, currency)}</span>
+              <span className="text-sm tabular-nums">{money(p.cm, currency)}</span>
             </li>
           ))}
         </ul>
+      )}
+      {Number(totals.paidOnBills) > 0 && (
+        <p className="mt-3 flex justify-between gap-2 text-sm text-muted-foreground tabular-nums">
+          <span>On the factory&apos;s material bills (not CM)</span>
+          <span>{money(totals.paidOnBills, currency)}</span>
+        </p>
       )}
       <p className="mt-4 flex justify-between gap-2 border-t pt-3 text-sm font-medium tabular-nums">
         <span>Total paid</span>
@@ -350,27 +464,46 @@ export function CmSettlementView({
   const router = useRouter();
   const [deductC, setDeductC] = useState(false);
   const [note, setNote] = useState("");
+  const [prices, setPrices] = useState<Record<string, string>>({});
+  const [priceErrors, setPriceErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<ActionError>();
   const [pending, startTransition] = useTransition();
   const [undoing, setUndoing] = useState(false);
   const { draft, standing, can } = screen;
 
   const view: View | null = standing ? standing.snapshot : draft;
+  // Styles with rejects over the allowance and no target price: their price per reject is asked.
+  const unpriced = draft ? draft.styles.filter((s) => s.overAllowance > 0 && !s.targetPrice) : [];
+  const extra = unpriced.reduce((t, s) => t + (priceCents(prices[s.id]) ?? 0) * s.overAllowance, 0);
   const totals: Totals | null = standing
     ? standing.snapshot.totals
     : draft
-      ? deductC
-        ? draft.deductC
-        : draft.keepC
+      ? withRejectPrices(deductC ? draft.deductC : draft.keepC, extra)
       : null;
   if (!view || !totals) return null;
+  const missingPrice = unpriced.some((s) => priceCents(prices[s.id]) === null);
 
   function save() {
     setError(undefined);
+    const problems = Object.fromEntries(
+      unpriced
+        .filter((s) => priceCents(prices[s.id]) === null)
+        .map((s) => [s.id, "Enter the price per reject, like 250 or 250.50."]),
+    );
+    setPriceErrors(problems);
+    if (Object.keys(problems).length > 0) return;
     startTransition(async () => {
       const result = await settleCmAction(screen.batch.id, {
         deductCGrade: deductC,
         note: note.trim() || null,
+        ...(unpriced.length > 0
+          ? {
+              rejectPrices: unpriced.map((s) => ({
+                projectId: s.id,
+                price: priceCents(prices[s.id])! / 100,
+              })),
+            }
+          : {}),
       });
       if (!result.ok) return setError(result.error);
       router.push(
@@ -385,15 +518,16 @@ export function CmSettlementView({
         {notice && <FormAlert tone="success">{notice}</FormAlert>}
         {draft && draft.warnings.noRate.length > 0 && (
           <FormAlert>
-            Agree the CM a piece of {draft.warnings.noRate.join(", ")} on the factory agreement
-            first; the settlement cannot be saved without it.
+            Agree the CM of {draft.warnings.noRate.join(", ")} (a piece or a dozen) on the factory
+            agreement first; the settlement cannot be saved without it.
           </FormAlert>
         )}
         {draft && draft.warnings.noTarget.length > 0 && (
           <FormAlert tone="note">
             {draft.warnings.noTarget.join(", ")}{" "}
             {draft.warnings.noTarget.length === 1 ? "has" : "have"} rejects over the allowance but
-            no target price, so they are not charged. Set the target price on the style first.
+            no target price. Enter the price per reject under Deductions; the settlement cannot be
+            saved until it is filled in.
           </FormAlert>
         )}
         {draft && draft.warnings.notPacked.length > 0 && (
@@ -409,6 +543,22 @@ export function CmSettlementView({
           totals={totals}
           currency={currency}
           ask={draft && can.settle ? { checked: deductC, onChange: setDeductC } : undefined}
+          prices={
+            draft && can.settle
+              ? {
+                  values: prices,
+                  onChange: (id, value) => {
+                    setPrices((all) => ({ ...all, [id]: value }));
+                    setPriceErrors((all) => {
+                      const rest = { ...all };
+                      delete rest[id];
+                      return rest;
+                    });
+                  },
+                  error: (id) => priceErrors[id] ?? error?.fieldErrors?.[`rejectPrices.${id}`]?.[0],
+                }
+              : undefined
+          }
           deductedC={standing ? standing.deductCGrade : deductC}
         />
         <Paid view={view} totals={totals} currency={currency} />
@@ -478,7 +628,17 @@ export function CmSettlementView({
                 />
               </Field>
               {error && <FormAlert>{error.message}</FormAlert>}
-              <Button type="button" onClick={save} disabled={pending} className="w-full sm:w-auto">
+              {missingPrice && (
+                <p className="text-[0.8125rem] text-muted-foreground">
+                  Enter the price per reject under Deductions to save.
+                </p>
+              )}
+              <Button
+                type="button"
+                onClick={save}
+                disabled={pending || missingPrice}
+                className="w-full sm:w-auto"
+              >
                 <ReceiptTextIcon aria-hidden />
                 {pending ? "Saving" : "Save and make the PDF bill"}
               </Button>

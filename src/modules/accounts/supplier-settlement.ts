@@ -119,6 +119,7 @@ async function planSettlement(db: Db, companyId: string, supplierId: string) {
       dueAmount: true,
       status: true,
       purchaseOrderId: true,
+      warehouseId: true,
     },
   });
   const billIds = new Set(bills.map((b) => b.id));
@@ -245,10 +246,16 @@ async function planSettlement(db: Db, companyId: string, supplierId: string) {
   // settlement took off the factory's ledger for the batch.
   const forProject = new Map<string, Prisma.Decimal>();
   let paidForProjects = ZERO;
+  // What each project's and each batch's payments paid on material bills (raw material purchases).
+  const onMaterialBills = {
+    byProject: new Map<string, Prisma.Decimal>(),
+    byBatch: new Map<string, Prisma.Decimal>(),
+  };
   if (forProjects.length > 0 || batchIds.length > 0) {
     const shares = await billProjectShares(db, bills);
     const settleFirst = (amount: Prisma.Decimal, projectIds: string[]) => {
       let left = amount;
+      let onMaterial = ZERO;
       for (const due of dues) {
         if (left.lte(0)) break;
         const bill = due.bill;
@@ -265,11 +272,21 @@ async function planSettlement(db: Db, companyId: string, supplierId: string) {
         forProject.set(bill.id, taken.plus(applied));
         paidForProjects = paidForProjects.plus(applied);
         left = left.minus(applied);
+        if (isMaterialBill(bill)) onMaterial = onMaterial.plus(applied);
       }
+      return onMaterial;
     };
-    for (const row of forProjects) settleFirst(row._sum.amount ?? ZERO, [row.projectId!]);
+    for (const row of forProjects) {
+      onMaterialBills.byProject.set(
+        row.projectId!,
+        settleFirst(row._sum.amount ?? ZERO, [row.projectId!]),
+      );
+    }
     for (const row of forBatches) {
-      settleFirst(row._sum.amount ?? ZERO, batchStyles.get(row.batchId!) ?? []);
+      onMaterialBills.byBatch.set(
+        row.batchId!,
+        settleFirst(row._sum.amount ?? ZERO, batchStyles.get(row.batchId!) ?? []),
+      );
     }
     for (const [batchId, amount] of deductedForBatch) {
       settleFirst(amount, batchStyles.get(batchId) ?? []);
@@ -295,7 +312,22 @@ async function planSettlement(db: Db, companyId: string, supplierId: string) {
       status: owed.lte(0) ? "PAID" : paid.gt(0) ? "PARTIALLY_PAID" : "UNPAID",
     });
   }
-  return { bills: planned, advanceLeft: pool };
+  return { bills: planned, advanceLeft: pool, onMaterialBills };
+}
+
+/** A raw material purchase (goods into a store, or on a purchase order), not a production bill. */
+const isMaterialBill = (bill: { purchaseOrderId: string | null; warehouseId: string | null }) =>
+  bill.purchaseOrderId !== null || bill.warehouseId !== null;
+
+/**
+ * What a supplier's payments made for a production project, and for a master
+ * batch, paid on their material bills (raw material purchases) as their ledger
+ * settles them (planSettlement): by project id and by batch id. The final CM
+ * settlement counts only the rest as CM paid. Only reads while the company's
+ * control accounts are all there.
+ */
+export async function paidOnMaterialBills(db: Db, companyId: string, supplierId: string) {
+  return (await planSettlement(db, companyId, supplierId)).onMaterialBills;
 }
 
 const isCurrent = (b: PlannedBill) =>

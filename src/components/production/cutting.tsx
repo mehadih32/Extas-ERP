@@ -40,6 +40,7 @@ import {
   uploadFaultPhotoAction,
 } from "@/server/actions/production.actions";
 
+import { CmSettledNotice } from "./cm-settled-notice";
 import { cellName } from "./cutting-summary";
 import { pieces, productionHref } from "./labels";
 
@@ -465,8 +466,15 @@ function linesText(lines: Array<Line & { quantity: number }>) {
 export function CuttingReports({ screen, currency }: { screen: CuttingScreen; currency: string }) {
   const router = useRouter();
   const [deleting, setDeleting] = useState<Report | null>(null);
+  // A saved CM settlement counts these pieces: the reports stay until it is undone.
+  const canDelete = screen.can.record && !screen.cmSettlement;
   return (
     <Panel title="Cutting reports" id="cut-reports-heading">
+      {screen.cmSettlement && screen.reports.length > 0 && screen.can.record && (
+        <div className="mt-3">
+          <CmSettledNotice settlement={screen.cmSettlement} what="These reports stay" />
+        </div>
+      )}
       {screen.reports.length === 0 ? (
         <p className="mt-3 text-sm text-muted-foreground">No cutting report yet.</p>
       ) : (
@@ -498,7 +506,7 @@ export function CuttingReports({ screen, currency }: { screen: CuttingScreen; cu
               {r.note && r.kind === "CUT" && (
                 <p className="text-[0.8125rem] break-words whitespace-pre-line">{r.note}</p>
               )}
-              {(r.photoId || screen.can.record) && (
+              {(r.photoId || canDelete) && (
                 <div className="flex flex-wrap items-center gap-3">
                   {r.photoId && (
                     <a
@@ -511,7 +519,7 @@ export function CuttingReports({ screen, currency }: { screen: CuttingScreen; cu
                       Photo of the sheet
                     </a>
                   )}
-                  {screen.can.record && (
+                  {canDelete && (
                     <Button
                       type="button"
                       size="sm"

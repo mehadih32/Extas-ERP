@@ -329,6 +329,8 @@ run("Production renovation: batch costs, advance CM and the final CM settlement"
 
   it("settles the CM: total CM - deductions - advance taken = final payable", async () => {
     await prisma.productionProject.update({ where: { id: env.polo.id }, data: { cmRate: 90 } });
+    // A 10% allowance: the one reject of 20 cut is free (the reject rule has its own tests).
+    await batches.updateBatch(env.pm, env.batch.id, { rejectTolerancePercent: 10 });
     // S: 6 A, 2 B, 1 C; M: 7 A, 1 B, 1 reject; 2 missing at the packing list (112.50 each).
     await finishing.createFinishingCount(env.store, env.polo.id, {
       lines: [
@@ -344,10 +346,10 @@ run("Production renovation: batch costs, advance CM and the final CM settlement"
     });
     await faults.createFault(env.pm, {
       supplierId: env.factory.id,
-      kind: "FABRIC_FAULT",
+      kind: "QUALITY",
       projectId: env.polo.id,
       amount: 100,
-      note: "Holes in two panels",
+      note: "Open seams on two pieces",
     });
     const toAgree = await faults.createFault(env.pm, {
       supplierId: env.factory.id,
@@ -396,7 +398,7 @@ run("Production renovation: batch costs, advance CM and the final CM settlement"
     ]);
     expect(draft.faults.map((f) => [f.kind, f.amount])).toEqual([
       ["MISSING_PIECES", "225.00"],
-      ["FABRIC_FAULT", "100.00"],
+      ["QUALITY", "100.00"],
       ["QUALITY", null],
     ]);
     expect(draft.keepC).toMatchObject({

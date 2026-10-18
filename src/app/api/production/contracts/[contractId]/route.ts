@@ -22,8 +22,9 @@ export const GET = apiRoute<Params>(async (_request, { contractId }) =>
 /**
  * PATCH /api/production/contracts/:contractId — { clauses: [{ title, text }], signedOn?,
  * cmRates?: [{ projectId, cmRate, cmPer?: "PIECE" | "DOZEN" }] } (cmRate is the CM as agreed,
- * per piece unless cmPer says per dozen). A signed agreement keeps its terms until its signed
- * day is cleared.
+ * per piece or per dozen as cmPer says; left out, the way the style has it now). A signed
+ * agreement keeps its terms until its signed day is cleared; a style's CM stays while a saved
+ * CM settlement is worked from it (undo that first).
  */
 export const PATCH = apiRoute<Params>(async (request, { contractId }) =>
   contracts.updateContract(

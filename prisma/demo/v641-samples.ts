@@ -1,6 +1,6 @@
 import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 
-import { addDays, localDay } from "@/lib/dates";
+import { addDays, dateOnly, localDay } from "@/lib/dates";
 import { prisma } from "@/lib/prisma";
 import type { CompanyContext } from "@/modules/auth/context";
 import * as compliance from "@/modules/compliance/compliance.service";
@@ -30,7 +30,8 @@ import * as templates from "@/modules/templates/template.service";
  *   - a PDF invoice pad template with its tags placed;
  *   - a fire licence renewed once, its current term due for renewal.
  * Each part is made once: what is there already is left as it is, so the
- * loader can run again after a part failed.
+ * loader can run again after a part failed. Only the licence's dates move up
+ * to today each time it runs (every deploy), so it stays due for renewal.
  */
 
 /** Notes on the sample orders: how each one is found again. */
@@ -335,8 +336,39 @@ async function sampleTemplate(ctx: CompanyContext) {
   return V641_SAMPLE_TEMPLATE;
 }
 
-/** Last year's fire licence, renewed once; the current term runs out in 40 days. */
+const LICENCE_NUMBERS = { first: "FL-DHK-04417", current: "FL-DHK-05231" } as const;
+/** The two terms' dates, counted from today: the current one runs out in 40 days. */
+const licenceTerms = (today: string) => ({
+  first: { issueDate: addDays(today, -690), expiryDate: addDays(today, -326) },
+  current: { issueDate: addDays(today, -325), expiryDate: addDays(today, 40) },
+});
+
+/**
+ * Last year's fire licence, renewed once; the current term runs out in 40 days.
+ * The demo site keeps running between deploys, so each time the loader runs
+ * again the sample's dates move up to today, and it never shows as expired. A
+ * term the owner changed or renewed on the demo (another number) is theirs and
+ * stays as it is.
+ */
 async function sampleLicence(ctx: CompanyContext, today: string) {
+  const terms = licenceTerms(today);
+  const current = await prisma.complianceDocument.findFirst({
+    where: { companyId: ctx.company.id, title: V641_SAMPLE_LICENCE, supersededAt: null },
+    select: { id: true, number: true, expiryDate: true, archivedAt: true, previousId: true },
+  });
+  if (current) {
+    if (
+      current.number === LICENCE_NUMBERS.current &&
+      !current.archivedAt &&
+      current.previousId &&
+      dateOnly(current.expiryDate) !== terms.current.expiryDate
+    ) {
+      // Both terms move together, so the history still reads in order.
+      await compliance.updateCompliance(ctx, current.previousId, terms.first);
+      await compliance.updateCompliance(ctx, current.id, terms.current);
+    }
+    return null;
+  }
   if (
     await prisma.complianceDocument.findFirst({
       where: { companyId: ctx.company.id, title: V641_SAMPLE_LICENCE },
@@ -348,20 +380,18 @@ async function sampleLicence(ctx: CompanyContext, today: string) {
   const first = await compliance.createCompliance(ctx, {
     type: "FIRE_LICENSE",
     title: V641_SAMPLE_LICENCE,
-    number: "FL-DHK-04417",
+    number: LICENCE_NUMBERS.first,
     issuingAuthority: "Fire Service and Civil Defence, Dhaka",
-    issueDate: addDays(today, -690),
-    expiryDate: addDays(today, -326),
+    ...terms.first,
     alertDaysBefore: 60,
     notes: "Sample licence on the demo site.",
   });
-  const current = await compliance.renewCompliance(ctx, first.id, {
-    issueDate: addDays(today, -325),
-    expiryDate: addDays(today, 40),
-    number: "FL-DHK-05231",
+  const renewed = await compliance.renewCompliance(ctx, first.id, {
+    ...terms.current,
+    number: LICENCE_NUMBERS.current,
     notes: "Sample licence on the demo site: due for renewal.",
   });
-  return current.id;
+  return renewed.id;
 }
 
 export async function loadV641Samples(ctx: CompanyContext) {

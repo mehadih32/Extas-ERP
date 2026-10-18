@@ -15,6 +15,7 @@ import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 
  */
 vi.mock("next/cache", () => ({ revalidatePath: () => undefined, revalidateTag: () => undefined }));
 
+import { addDays } from "@/lib/dates";
 import { prisma } from "@/lib/prisma";
 import { getPartyBalance } from "@/modules/parties/ledger.service";
 import { getBatchSummary } from "@/modules/production/batch-summary.service";
@@ -288,5 +289,35 @@ run("The demo site's sample data", () => {
     expect(await prisma.documentTemplate.count({ where: { companyId: company.id } })).toBe(1);
     expect(await prisma.complianceDocument.count({ where: { companyId: company.id } })).toBe(2);
     expect(await prisma.stockMovement.count({ where: { companyId: company.id } })).toBe(6);
+
+    // v6.4.1 review 3: the demo site runs for months; each time the loader runs
+    // (every deploy) the sample licence is due for renewal again, never expired.
+    const shift = (d: Date | null, days: number) => new Date(d!.getTime() - days * 86_400_000);
+    for (const doc of await prisma.complianceDocument.findMany({
+      where: { companyId: company.id },
+    })) {
+      await prisma.complianceDocument.update({
+        where: { id: doc.id },
+        data: { issueDate: shift(doc.issueDate, 60), expiryDate: shift(doc.expiryDate, 60) },
+      });
+    }
+    expect(await getCompliance(ctx, licence.id)).toMatchObject({ status: "EXPIRED" });
+    expect((await loadV641SamplesDemo(owner.id, company.id)).licence).toBeNull();
+    const refreshed = await getCompliance(ctx, licence.id);
+    expect(refreshed).toMatchObject({ status: "EXPIRING", daysLeft: 40 });
+    expect(refreshed.history).toHaveLength(1);
+    const old = await prisma.complianceDocument.findFirstOrThrow({
+      where: { companyId: company.id, renewal: { id: licence.id } },
+    });
+    // The earlier term still ends the day before the current one starts.
+    expect(old.expiryDate!.toISOString().slice(0, 10)).toBe(addDays(refreshed.issueDate!, -1));
+    expect(await prisma.complianceDocument.count({ where: { companyId: company.id } })).toBe(2);
+    // A licence the owner renewed on the demo is theirs: it is left alone.
+    await prisma.complianceDocument.update({
+      where: { id: licence.id },
+      data: { number: "FL-DHK-99999", expiryDate: shift(licence.expiryDate, 60) },
+    });
+    await loadV641SamplesDemo(owner.id, company.id);
+    expect(await getCompliance(ctx, licence.id)).toMatchObject({ status: "EXPIRED" });
   }, 120_000);
 });

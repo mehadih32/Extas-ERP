@@ -486,3 +486,15 @@ export function reportMessage(summary: CheckSummary, problems: number) {
 }
 
 const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+/**
+ * The Full check screen's line for a finished check with no problems: the same
+ * as the inbox message, so "every screen opened" shows only when nothing was missed.
+ */
+export function noProblemsText(summary: CheckSummary | null | undefined): string {
+  if (!summary) return "No problems found.";
+  const message = reportMessage(summary, 0);
+  return message.subject === "Full check: no problems found"
+    ? "No problems: every screen opened as each role."
+    : `No problems in what it reached. ${message.body}`;
+}

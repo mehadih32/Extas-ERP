@@ -2876,7 +2876,11 @@ export const aiHelp: HelpSection = {
         },
         {
           label: "No problems: every screen opened as each role.",
-          text: "চেক শেষ, কোনো সমস্যা পাওয়া যায়নি।",
+          text: "চেক শেষ, কোনো সমস্যা পাওয়া যায়নি, আর সময়ের মধ্যে প্রতিটি স্ক্রিন, PDF ও ফাইল দেখা হয়েছে।",
+        },
+        {
+          label: "No problems in what it reached.",
+          text: "চেক শেষ, যা দেখা হয়েছে তাতে সমস্যা নেই, কিন্তু সময়ের মধ্যে কিছু স্ক্রিন বা PDF ও ফাইল দেখা হয়নি, বা কোনো রোল মাঝপথে থেমেছে; পাশে লেখা থাকে কয়টি। বাকিগুলো দেখতে “Run the full check” আবার চাপুন।",
         },
         {
           label: "Error",

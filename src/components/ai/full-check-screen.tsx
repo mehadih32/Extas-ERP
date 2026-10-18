@@ -23,6 +23,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { reach } from "@/lib/reach";
 import type { FullCheckScreen as Check } from "@/modules/ai/full-check/full-check.service";
+import { noProblemsText } from "@/modules/ai/full-check/texts";
 import {
   askClaudeCodeAction,
   lookAgainAction,
@@ -182,7 +183,7 @@ export function FullCheckScreen({ check: c }: { check: Check }) {
           <RunSummary run={shown} when={when} />
           {c.problems.length === 0 ? (
             shown.status === "DONE" ? (
-              <p className="mt-4 text-sm">No problems: every screen opened as each role.</p>
+              <p className="mt-4 text-sm">{noProblemsText(shown.summary)}</p>
             ) : null
           ) : (
             <ul className="mt-4 grid gap-3">

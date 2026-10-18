@@ -22,6 +22,7 @@ import {
   CHECK_MINUTES,
   PROBLEM_KINDS,
   pullBody,
+  noProblemsText,
   reportMessage,
   requestText,
   safeRoute,
@@ -383,6 +384,19 @@ describe("The Full check's message to the owner", () => {
     expect(found.body).toBe(
       "Read them, with screenshots, in AI Center > Full check; send them to Claude Code from there. 1 screen was not reached in the time.",
     );
+  });
+
+  it("says the same on the Full check screen as in the inbox", () => {
+    expect(noProblemsText(summary([role(), role()]))).toBe(
+      "No problems: every screen opened as each role.",
+    );
+    expect(noProblemsText(summary([role({ notReached: 317 })]))).toBe(
+      "No problems in what it reached. It checked 584 screens and 2 PDFs and files as the owner and each role, but 317 screens were not reached in the time. Start it again to check the rest.",
+    );
+    expect(noProblemsText(null)).toBe("No problems found.");
+    const screen = read("src/components/ai/full-check-screen.tsx");
+    expect(screen).toContain("noProblemsText(shown.summary)");
+    expect(screen).not.toContain("No problems: every screen opened as each role.");
   });
 
   it("reads a report from an older crawler, which did not count what it missed", () => {

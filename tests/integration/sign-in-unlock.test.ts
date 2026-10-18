@@ -13,7 +13,12 @@ import { hashSessionToken } from "@/lib/auth/token";
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import { resetRateLimits } from "@/lib/rate-limit";
-import { login, MAX_FAILED_LOGINS, unlockSignIn } from "@/modules/auth/auth.service";
+import {
+  checkLoginRate,
+  login,
+  MAX_FAILED_LOGINS,
+  unlockSignIn,
+} from "@/modules/auth/auth.service";
 import { askUnlockLink, UNLOCK_ASKED_TEXT, unlockWithLink } from "@/modules/auth/unlock.service";
 import { type MailConfig, type OutgoingMail, standInForMail } from "@/modules/mail/mail.service";
 
@@ -23,6 +28,8 @@ const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
 
 const ATTACKER = "203.0.113.66";
 const HOME = "198.51.100.10";
+/** A Cloudflare address: many visitors at once when CF-Connecting-IP is missing. */
+const CLOUDFLARE = "173.245.48.10";
 
 async function expectAppError(promise: Promise<unknown>, code: string, message?: string | RegExp) {
   const error = await promise.then(
@@ -87,12 +94,44 @@ run("Sign-in that waits, and unlocking it (v6.4.1 B5)", () => {
       data: { createdAt: new Date(Date.now() - 16 * 60_000) },
     });
     expect((await signIn(ATTACKER)).token).toBeTruthy();
-    // A sign-in that came with no address waits only for others with none.
+    expect((await signIn(HOME)).token).toBeTruthy();
+  });
+
+  it("never makes the owner wait for wrong passwords from a Cloudflare address or none: that is no one place", async () => {
+    // Someone else's wrong passwords through Cloudflare (no visitor address), or with no address.
+    await wrong(CLOUDFLARE, MAX_FAILED_LOGINS * 2);
     for (let i = 0; i < MAX_FAILED_LOGINS; i += 1) {
       await login({ email: owner.email, password: "nope-nope-1" }).catch(() => undefined);
     }
-    await expectAppError(login({ email: owner.email, password: PASSWORD }), "ACCOUNT_LOCKED");
-    expect((await signIn(HOME)).token).toBeTruthy();
+    resetRateLimits();
+    expect((await signIn(CLOUDFLARE)).token).toBeTruthy();
+    expect((await login({ email: owner.email, password: PASSWORD })).token).toBeTruthy();
+    // The sign-in route's tries a minute for the account still hold there.
+    const tries = () => checkLoginRate({ ipAddress: CLOUDFLARE }, owner.email);
+    for (let i = 0; i < 10; i += 1) tries();
+    expect(tries).toThrow(/Too many attempts/);
+  });
+
+  it("keeps link requests from a Cloudflare address or none apart for each account", async () => {
+    // Someone asks for links for many other emails through Cloudflare, or with no address.
+    for (let i = 0; i < 12; i += 1) {
+      await askUnlockLink({ email: `someone${i}@extas.test` }, { ipAddress: CLOUDFLARE });
+      await askUnlockLink({ email: `other${i}@extas.test` });
+    }
+    // The owner's own request still goes out, from there too.
+    expect(await askUnlockLink({ email: owner.email }, { ipAddress: CLOUDFLARE })).toBe(
+      UNLOCK_ASKED_TEXT,
+    );
+    expect(sent).toHaveLength(1);
+    // Many wrong links from there do not use up the owner's own link.
+    for (let i = 0; i < 12; i += 1) {
+      await unlockWithLink({ token: `${"y".repeat(40)}${i}` }, { ipAddress: CLOUDFLARE }).catch(
+        () => 0,
+      );
+      await unlockWithLink({ token: `${"z".repeat(40)}${i}` }).catch(() => 0);
+    }
+    const token = /unlock=([\w-]+)/.exec(sent[0]!.text)![1]!;
+    expect(await unlockWithLink({ token }, { ipAddress: CLOUDFLARE })).toMatch(/Unlocked/);
   });
 
   it("ends the wait from the person's own mailbox, with a link that works once for 30 minutes", async () => {

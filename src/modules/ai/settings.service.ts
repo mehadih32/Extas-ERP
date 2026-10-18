@@ -849,13 +849,43 @@ export async function checkPin(companyId: string, pin: string, userId: string): 
   return /^\d{4,8}$/.test(pin) && verifyPassword(pin, settings.pinHash);
 }
 
+/** New numbers the bot may check against the PIN per person and store, in fifteen minutes. */
+export const STRAY_PIN_CHECKS = 10;
+
+/** Numbers found not to be the store's PIN (until it changes): checking one again tells nothing new. */
+const notThePin = new Map<string, { pinHash: string; numbers: Set<string> }>();
+
 /**
- * Whether digits are the PIN, without counting a try: only for the bot to
- * hide a PIN sent when nothing asked for one (bot/incoming.ts limits how often).
+ * Whether digits are the PIN, only for the bot to hide a PIN sent when nothing
+ * asked for one (bot/incoming.ts). Ten new numbers in fifteen minutes per
+ * person, like checkPin's tries but kept apart, so the bot never uses up the
+ * owner's PIN tries in the ERP; a number already found not to be the PIN is
+ * free. "unchecked" once they are used up: the bot then hides the message the
+ * same way as the PIN, so sending numbers cannot find the PIN.
  */
-export async function pinMatches(companyId: string, pin: string): Promise<boolean> {
+export async function pinMatches(
+  companyId: string,
+  pin: string,
+  userId: string,
+): Promise<boolean | "unchecked"> {
   const settings = await aiSettingsOf(companyId);
-  return !!settings.pinHash && /^\d{4,8}$/.test(pin) && verifyPassword(pin, settings.pinHash);
+  if (!settings.pinHash || !/^\d{4,8}$/.test(pin)) return false;
+  let known = notThePin.get(companyId);
+  if (known?.pinHash !== settings.pinHash) {
+    known = { pinHash: settings.pinHash, numbers: new Set() };
+    notThePin.set(companyId, known);
+  }
+  if (known.numbers.has(pin)) return false;
+  try {
+    checkRateLimit(`ai-pin-stray:${companyId}:${userId}`, STRAY_PIN_CHECKS, 15 * 60_000);
+  } catch (error) {
+    if (error instanceof AppError && error.code === "RATE_LIMITED") return "unchecked";
+    throw error;
+  }
+  if (await verifyPassword(pin, settings.pinHash)) return true;
+  if (known.numbers.size >= 500) known.numbers.clear();
+  known.numbers.add(pin);
+  return false;
 }
 
 /**

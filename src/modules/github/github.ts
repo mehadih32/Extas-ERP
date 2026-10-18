@@ -100,7 +100,13 @@ const LOCK_RULES = [
 export const LOCK_MAIN_FIRST = "Lock main first";
 
 type BranchRule = { type: string; ruleset_id?: number };
-type Ruleset = { enforcement?: string; bypass_actors?: unknown[] };
+type Ruleset = {
+  enforcement?: string;
+  /** Only for a token that may change rulesets (GitHub hides it from the Help's token). */
+  bypass_actors?: unknown[];
+  /** Whether the token's own account may skip the ruleset: "always", "pull_requests_only", "never". */
+  current_user_can_bypass?: string;
+};
 type Protection = {
   required_pull_request_reviews?: unknown;
   allow_force_pushes?: { enabled?: boolean };
@@ -111,12 +117,20 @@ type Protection = {
 /**
  * Whether the main branch is locked on GitHub, so nothing (Claude Code
  * included) reaches it but a pull request: an active ruleset on main that
- * requires a pull request, blocks force pushes and restricts deletions, with
- * nobody on its Bypass list (when the token may read it); or the older branch
- * protection set the same way, for admins too. `missing` says what is not set,
- * in the words of GitHub's ruleset screen.
+ * requires a pull request, blocks force pushes and restricts deletions, that
+ * the token's own account may not skip and with nobody on its Bypass list; or
+ * the older branch protection set the same way, for admins too. `missing`
+ * says what is not set, in the words of GitHub's ruleset screen.
+ *
+ * GitHub shows the Bypass list only to a token that may change rulesets, and
+ * the Help's token may not (that permission could also take the lock off).
+ * When the list is hidden but GitHub says the token's account cannot skip the
+ * ruleset, main counts as locked and `bypassUnseen` says the list itself was
+ * not seen; when GitHub says neither, it is not confirmed, so not locked.
  */
-export async function mainLock(gh: GitHub): Promise<{ locked: boolean; missing: string[] }> {
+export async function mainLock(
+  gh: GitHub,
+): Promise<{ locked: boolean; missing: string[]; bypassUnseen?: boolean }> {
   const { data: rules } = await call<BranchRule[]>(
     gh,
     "GET",
@@ -127,6 +141,7 @@ export async function mainLock(gh: GitHub): Promise<{ locked: boolean; missing: 
   if (missing.length === 0) {
     // The rulesets that lock it: nobody may skip them.
     const ids = [...new Set((rules ?? []).flatMap((r) => (r.ruleset_id ? [r.ruleset_id] : [])))];
+    let bypassUnseen = false;
     for (const id of ids) {
       const { status, data } = await call<Ruleset>(
         gh,
@@ -135,11 +150,26 @@ export async function mainLock(gh: GitHub): Promise<{ locked: boolean; missing: 
         undefined,
         [403, 404],
       );
-      if (status === 200 && Array.isArray(data?.bypass_actors) && data.bypass_actors.length > 0) {
+      const list = status === 200 ? data?.bypass_actors : undefined;
+      const can = status === 200 ? data?.current_user_can_bypass : undefined;
+      if (Array.isArray(list) && list.length > 0) {
         return { locked: false, missing: ["an empty Bypass list"] };
       }
+      if (can && can !== "never") {
+        return {
+          locked: false,
+          missing: ["an empty Bypass list (your token's GitHub account can skip the ruleset)"],
+        };
+      }
+      if (!Array.isArray(list) && !can) {
+        return {
+          locked: false,
+          missing: ["an empty Bypass list (the ERP could not check who may skip the ruleset)"],
+        };
+      }
+      if (!Array.isArray(list)) bypassUnseen = true;
     }
-    return { locked: true, missing: [] };
+    return { locked: true, missing: [], ...(bypassUnseen ? { bypassUnseen } : {}) };
   }
   // The older branch protection, when the token may read it.
   const { status, data: p } = await call<Protection>(
@@ -198,6 +228,11 @@ export async function testGitHub(
   const lock = await mainLock(gh);
   if (lock.locked) {
     notes.push("The main branch is locked: changes reach it only through a pull request.");
+    if (lock.bypassUnseen) {
+      notes.push(
+        "The ERP cannot see the ruleset's Bypass list (GitHub shows it only to a token that may change rulesets). Your token's GitHub account cannot skip it; on GitHub, make sure the Bypass list is empty (Help: Full check, step 4).",
+      );
+    }
   } else {
     ok = false;
     notes.push(lockMainText(lock.missing));

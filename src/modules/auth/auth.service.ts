@@ -66,9 +66,12 @@ export type LoginResult = {
  * Wrong passwords for this account from this place in the last 15 minutes,
  * since its last unlock and since the last sign-in from there (v6.4.1 B5):
  * someone else's wrong passwords from another place never count, so they can
- * never lock the owner out.
+ * never lock the owner out. A Cloudflare address (or none) is no one place, so
+ * it never waits: the account's tries a minute (checkLoginRate) hold there.
  */
-async function slowedHere(userId: string, place: string | undefined, now: Date) {
+async function slowedHere(userId: string, address: string | undefined, now: Date) {
+  const place = visitorAddress(address);
+  if (!place) return false;
   const window = new Date(now.getTime() - LOCKOUT_MS);
   const latest = (where: Prisma.AuditLogWhereInput) =>
     prisma.auditLog.findFirst({
@@ -78,7 +81,7 @@ async function slowedHere(userId: string, place: string | undefined, now: Date) 
     });
   const [unlocked, signedIn] = await Promise.all([
     latest({ entityType: UNLOCK_ENTITY, entityId: userId }),
-    latest({ action: "LOGIN", userId, ipAddress: place ?? null }),
+    latest({ action: "LOGIN", userId, ipAddress: place }),
   ]);
   const since = new Date(
     Math.max(
@@ -91,7 +94,7 @@ async function slowedHere(userId: string, place: string | undefined, now: Date) 
     where: {
       action: "LOGIN_FAILED",
       userId,
-      ipAddress: place ?? null,
+      ipAddress: place,
       createdAt: { gt: since },
     },
   });

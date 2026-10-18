@@ -17,6 +17,8 @@
  * Pure: the service gathers the facts.
  */
 
+import { profitBothWays } from "@/modules/costing/costing-labels";
+
 export type CheckSignal = "green" | "yellow" | "red";
 export type CheckKey = "price" | "time" | "factory" | "payment" | "risks";
 export type CheckRow = { key: CheckKey; label: string; signal: CheckSignal; reason: string };
@@ -50,7 +52,6 @@ const row = (key: CheckKey, signal: CheckSignal, reason: string): CheckRow => ({
 const money = (n: number) =>
   n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const count = (n: number) => n.toLocaleString("en-US");
-const pct = (n: number) => `${Number(n.toFixed(2))}%`;
 
 export type PriceStyle = {
   ref: string;
@@ -93,14 +94,14 @@ export function judgePrice(styles: PriceStyle[], profit: number | null): CheckRo
     return row(
       "price",
       "yellow",
-      `Profit % not set for this order. The buyer's price leaves ${pct(worst.buyerProfit!)}${priced.length > 1 ? ` on ${worst.ref}` : ""}.`,
+      `Profit % not set for this order. The buyer's price leaves ${profitBothWays(worst.buyerProfit!)}${priced.length > 1 ? ` on ${worst.ref}` : ""}.`,
     );
   }
   if (worst.buyerProfit! < profit) {
     return row(
       "price",
       "yellow",
-      `${worst.ref}: the buyer's price leaves ${pct(worst.buyerProfit!)}, below your ${pct(profit)}.`,
+      `${worst.ref}: the buyer's price leaves ${profitBothWays(worst.buyerProfit!)}, below your ${profitBothWays(profit)}.`,
     );
   }
   const unpriced = styles.find((s) => s.buyerPrice === null);
@@ -108,7 +109,7 @@ export function judgePrice(styles: PriceStyle[], profit: number | null): CheckRo
   return row(
     "price",
     "green",
-    `The buyer's price leaves ${pct(worst.buyerProfit!)}${priced.length > 1 ? " or more" : ""} (your ${pct(profit)}).`,
+    `The buyer's price leaves ${profitBothWays(worst.buyerProfit!)}${priced.length > 1 ? " or more" : ""} (your ${profitBothWays(profit)}).`,
   );
 }
 

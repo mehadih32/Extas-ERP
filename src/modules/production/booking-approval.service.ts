@@ -348,8 +348,9 @@ const checkSelect = {
  * The checks a booking passes before it is approved: it books something, each
  * item's shares add up to it, the collar and cuff items match the matrix, the
  * in-house date is set, and the styles it is for are ready:
- *  - collar, cuff and trims wait for each style's tech pack to be approved (the
- *    owner may approve past this, giving a reason);
+ *  - collar, cuff and trims wait for each style's tech pack to be approved, and
+ *    again while its trims part changed since (v6.4.2), until it is approved
+ *    again (the owner may approve past either, giving a reason);
  *  - fabric, with Fabric first on its batch, waits for each style's fabric part
  *    to be locked; without it, a tech pack not yet approved is only a warning.
  * On a batch, an item in no style's materials list counts for every open style
@@ -475,10 +476,21 @@ export async function approvalChecks(db: Db, bookingId: string): Promise<Approva
       );
     }
     const restWaiting = notApproved(restFor);
+    // Approved, but its trims, collar or cuff changed since: they wait to be approved again.
+    const trimsChanged = [...restFor].filter(
+      (id) => states.get(id)!.status === "APPROVED" && states.get(id)!.trimsChanges.length > 0,
+    );
     const fabricWaiting = fabricFirst ? [] : notApproved(fabricFor);
     if (restWaiting.length > 0) {
       checks.push({
         text: `Collar, cuff and trims wait for the tech pack of ${restWaiting.map(code).join(", ")} to be approved`,
+        state: "block",
+        override: true,
+      });
+    }
+    if (trimsChanged.length > 0) {
+      checks.push({
+        text: `The trims of ${trimsChanged.map(code).join(", ")} changed since the tech pack was approved: collar, cuff and trims wait for them to be approved again`,
         state: "block",
         override: true,
       });
@@ -490,7 +502,12 @@ export async function approvalChecks(db: Db, bookingId: string): Promise<Approva
       });
     }
     const gated = restFor.size > 0 || (!fabricFirst && fabricFor.size > 0);
-    if (gated && restWaiting.length === 0 && fabricWaiting.length === 0) {
+    if (
+      gated &&
+      restWaiting.length === 0 &&
+      trimsChanged.length === 0 &&
+      fabricWaiting.length === 0
+    ) {
       checks.push({ text: "The tech packs of its styles are approved", state: "ok" });
     }
   }

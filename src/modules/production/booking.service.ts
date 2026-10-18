@@ -1660,6 +1660,8 @@ export async function getBatchBookings(ctx: CompanyContext, batchId: string) {
         status: state.status,
         fabricLocked: state.fabricLocked,
         changed: state.changes.length,
+        /** Its trims, collar or cuff changed since approval: trims bookings wait (v6.4.2). */
+        trimsChanged: state.trimsChanges.length,
         hasFabric: state.hasFabric,
       };
     }),

@@ -9,7 +9,15 @@ import type { RequestMeta } from "@/lib/request-meta";
 import { runTransaction } from "@/lib/transaction";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
-import { TRADE_PAYMENTS } from "@/modules/costing/costing-labels";
+import {
+  PROFIT_MAX_MESSAGE,
+  PROFIT_MAX_STORED,
+  PROFIT_MIN_MESSAGE,
+  PROFIT_MIN_PERCENT,
+  profitUnderMinimum,
+  profitUnderMinimumNote,
+  TRADE_PAYMENTS,
+} from "@/modules/costing/costing-labels";
 import { type CostLineInput, costSheet, type PercentLines } from "@/modules/costing/costing-math";
 import {
   CHECK_RULES,
@@ -26,7 +34,8 @@ import {
  * Order costing (v6.2 rules): a costing sheet per order before it is taken,
  * its styles costed per dozen, supplier fabric quotes per kg (per yard for
  * wovens) beside past booking prices, the CM fixed per style with the factory,
- * the owner's profit % for this order (no default, no minimum), no office
+ * the owner's profit % for this order (no default, at least 10%, no upper
+ * limit; a sheet saved below 10% before that rule reaches it when edited), no office
  * overhead, the buyer's way of paying (TT, bank transfer or LC), the Order
  * check card, and the owner's decision. Who may:
  *   costing.view     see sheets, costs, profit, quotes and the card
@@ -90,6 +99,11 @@ const percent = z
   ])
   .optional()
   .transform((v) => v ?? 0);
+/** The owner's profit %: at least 10%, no limit above (999.99% is the most a sheet holds). */
+const profitNumber = z.coerce
+  .number()
+  .min(PROFIT_MIN_PERCENT, PROFIT_MIN_MESSAGE)
+  .max(PROFIT_MAX_STORED, PROFIT_MAX_MESSAGE);
 const optionalDays = z
   .union([blank, z.null(), z.coerce.number().int("Give whole days.").min(1).max(365)])
   .optional()
@@ -111,9 +125,9 @@ export const costingSchema = z.object({
     .toUpperCase()
     .regex(/^[A-Z]{3}$/, "Pick the currency."),
   exchangeRate: optionalAmount(100_000),
-  /** The owner's profit % for this order: no default and no minimum. */
+  /** The owner's profit % for this order: no default, at least 10%, no upper limit. */
   profitPercent: z
-    .union([blank, z.null(), z.coerce.number().min(-50, "At least −50%.").max(80, "At most 80%.")])
+    .union([blank, z.null(), profitNumber])
     .optional()
     .transform((v) => v ?? null),
   sourceTaxPercent: percent,
@@ -217,6 +231,20 @@ async function loadCosting(ctx: CompanyContext, costingId: string) {
   const costing = await ctx.db.orderCosting.findFirst({ where: { id: costingId } });
   if (!costing) throw new AppError("NOT_FOUND", "That costing sheet was not found.");
   return costing;
+}
+
+/**
+ * A sheet saved below the 10% minimum (before the rule) keeps its figure until
+ * it is edited; then its profit % reaches 10% first ("Change the details").
+ */
+function assertProfitReachesMinimum(costing: {
+  number: string;
+  profitPercent: Prisma.Decimal | null;
+}) {
+  const profit = num(costing.profitPercent);
+  if (profit === null || !profitUnderMinimum(profit)) return;
+  const message = `${costing.number}: ${profitUnderMinimumNote(profit)}`;
+  throw new AppError("VALIDATION", message, { profitPercent: [PROFIT_MIN_MESSAGE] });
 }
 
 const dayOf = (day: string | null) => (day ? new Date(`${day}T00:00:00.000Z`) : null);
@@ -384,6 +412,7 @@ export async function saveCostingStyle(
 ) {
   assertManage(ctx);
   const costing = await loadCosting(ctx, costingId);
+  assertProfitReachesMinimum(costing);
   const input = styleSchema.parse(raw);
   await checkStyleLinks(ctx, input);
   let id: string;
@@ -427,6 +456,7 @@ export async function removeCostingStyle(
 ) {
   assertManage(ctx);
   const costing = await loadCosting(ctx, costingId);
+  assertProfitReachesMinimum(costing);
   const line = await ctx.db.orderCostingStyle.findFirst({
     where: { id: styleLineId, costingId: costing.id },
     select: { id: true, styleRef: true },
@@ -442,9 +472,7 @@ export async function removeCostingStyle(
   return { id: line.id };
 }
 
-export const profitPercentSchema = z.object({
-  percent: z.coerce.number().min(-50, "At least −50%.").max(80, "At most 80%."),
-});
+export const profitPercentSchema = z.object({ percent: profitNumber });
 
 /** The owner's profit % for this order alone (from the sheet, or Apply on a chat card). */
 export async function setProfitPercent(
@@ -823,6 +851,11 @@ export async function getCosting(ctx: CompanyContext, costingId: string) {
     companyCurrency: ctx.company.currency,
     exchangeRate: num(c.exchangeRate),
     profitPercent: percents.profit,
+    /** A sheet saved under the 10% minimum (before the rule) says so; null otherwise. */
+    profitNote:
+      percents.profit !== null && profitUnderMinimum(percents.profit)
+        ? profitUnderMinimumNote(percents.profit)
+        : null,
     sourceTaxPercent: percents.sourceTax,
     bankChargePercent: percents.bankCharge,
     commissionPercent: percents.commission,

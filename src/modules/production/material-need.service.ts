@@ -18,6 +18,7 @@ import {
 import { type GridCell, type NeedPart, planNeed } from "@/modules/production/material-plan";
 import { isProjectClosed } from "@/modules/production/project-costs";
 import { setMaterialNeedsSchema, techPackNotesSchema } from "@/modules/production/schemas";
+import { noteTrimsChange, trimsPartsOf } from "@/modules/production/tech-pack-trims.service";
 
 /*
  * A style's "Materials per piece" (its bill of materials): what one piece takes
@@ -310,6 +311,9 @@ export async function setMaterialNeeds(
       where: { projectId: project.id },
       select: { imageId: true },
     });
+    // The trims part before the change: once the tech pack is approved, a change waits
+    // to be approved again (tech-pack-trims.service.ts).
+    const trimsBefore = (await trimsPartsOf(tx, [project.id])).get(project.id)!;
     await tx.productionMaterialNeed.deleteMany({ where: { projectId: project.id } });
     if (needs.length > 0) {
       await tx.productionMaterialNeed.createMany({
@@ -343,6 +347,28 @@ export async function setMaterialNeeds(
       },
       tx,
     );
+    const trimsChanged = await noteTrimsChange(tx, {
+      companyId: ctx.company.id,
+      projectId: project.id,
+      userId: ctx.user.id,
+      before: trimsBefore,
+    });
+    if (trimsChanged) {
+      await auditInCompany(
+        ctx,
+        meta,
+        {
+          action: "UPDATE",
+          entityType: "ProductionProject",
+          entityId: project.id,
+          summary:
+            `The trims of ${project.code} changed after its tech pack was approved (${trimsChanged
+              .map((c) => c.item)
+              .join(", ")}): they wait to be approved again`.slice(0, 500),
+        },
+        tx,
+      );
+    }
     return old.map((o) => o.imageId);
   });
   await dropUnusedMaterialImages(prisma, before);

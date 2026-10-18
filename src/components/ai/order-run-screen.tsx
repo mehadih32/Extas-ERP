@@ -31,6 +31,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { type OrderLine, RUN_STATUS_TEXT, type StepState } from "@/modules/ai/orders/order-run";
 import type { OrderRunScreen as Run } from "@/modules/ai/orders/order-run.service";
+import { profitBothWays } from "@/modules/costing/costing-labels";
 import {
   attachOrderFileAction,
   closeOrderRunAction,
@@ -690,7 +691,7 @@ export function OrderRunScreen({ run: r }: { run: Run }) {
                   {r.costHidden
                     ? "Hidden for your role"
                     : r.costing.profitPercent
-                      ? `${r.costing.profitPercent}%`
+                      ? profitBothWays(Number(r.costing.profitPercent))
                       : "Not set yet (yours to set)"}
                 </Fact>
               </dl>

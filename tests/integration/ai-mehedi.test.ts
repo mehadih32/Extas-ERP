@@ -202,7 +202,7 @@ const sheet = (env: Env) =>
     factoryId: env.mill.id,
     currency: "USD",
     exchangeRate: "120",
-    profitPercent: "8",
+    profitPercent: "10",
     sourceTaxPercent: "1",
     bankChargePercent: "0.15",
     commissionPercent: "",
@@ -768,12 +768,19 @@ run("Mehedi 2.0", () => {
     const [profit] = await say(`${number} profit 12.5%`);
     expect(cardOf(profit!)).toMatchObject({
       action: "profit.set",
-      lines: [{ label: "Profit %", before: "8%", after: "12.5%" }],
+      // Each profit % with its markup on the cost beside it (v6.4.2).
+      lines: [
+        {
+          label: "Profit %",
+          before: "10% of price = 11.11% on cost",
+          after: "12.5% of price = 14.29% on cost",
+        },
+      ],
       params: { costingId: id, percent: 12.5 },
     });
     expect(
       (await prisma.orderCosting.findUniqueOrThrow({ where: { id } })).profitPercent?.toString(),
-    ).toBe("8");
+    ).toBe("10");
     // A price: the PIN must be set first, and given (v6.3).
     await expectAppError(applyCard(env.owner, profit!.id), "VALIDATION", /^Set your PIN first/);
     await setPin(env.owner, { pin: "1357" });
@@ -790,6 +797,33 @@ run("Mehedi 2.0", () => {
     expect(
       (await prisma.orderCosting.findUniqueOrThrow({ where: { id } })).profitPercent?.toString(),
     ).toBe("12.5");
+
+    // At least 10%, no upper limit (v6.4.2): 5% is refused, 200% is offered.
+    const [low] = await say(`${number} profit 5%`);
+    expect(low!.text).toBe("Give a profit % of at least 10%.");
+    expect(cardOf(low!)).toBeNull();
+    const [high] = await say(`${number} 200% profit`);
+    expect(high!.text).toBe(
+      `Press Apply to set the profit of ${number} to 200% of price: no price can leave that. If you meant 200% on cost, say "${number} 200% on cost" (66.67% of price).`,
+    );
+    expect(cardOf(high!)).toMatchObject({
+      action: "profit.set",
+      params: { costingId: id, percent: 200 },
+    });
+    await cancelCard(env.owner, high!.id);
+    // A markup on the cost is taken as its share of the price: 200% on cost is 66.67%.
+    const [markup] = await say(`${number} profit 200% on cost`);
+    expect(markup!.text).toBe(
+      `200% on cost is 66.67% of price. Press Apply to set the profit of ${number} to 66.67% of price = 200.03% on cost.`,
+    );
+    expect(cardOf(markup!)).toMatchObject({
+      action: "profit.set",
+      params: { costingId: id, percent: 66.67 },
+    });
+    await cancelCard(env.owner, markup!.id);
+    const [lowMarkup] = await say(`${number} 10% on cost`);
+    expect(lowMarkup!.text).toBe("10% on cost is 9.09% of price. Give a profit % of at least 10%.");
+    expect(cardOf(lowMarkup!)).toBeNull();
 
     // The Order check card for the sheet: he shows it, the owner decides.
     const [check] = await say(`${number} কস্টিং`);

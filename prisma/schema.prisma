@@ -117,6 +117,7 @@ model Company {
   labDipOptions         LabDipOption[]
   techPackAiDrafts      TechPackAiDraft[]
   techPackExpertAnswers TechPackExpertAnswer[]
+  techPackChanges       TechPackChange[]
   orderCostings         OrderCosting[]
   orderCostingStyles    OrderCostingStyle[]
   fabricQuotes          FabricQuote[]
@@ -302,6 +303,8 @@ model User {
   techPacksCreated    TechPack[]             @relation("TechPackCreatedBy")
   techPacksLocked     TechPack[]             @relation("TechPackFabricLockedBy")
   techPacksApproved   TechPack[]             @relation("TechPackApprovedBy")
+  trimsApproved       TechPack[]             @relation("TechPackTrimsApprover")
+  techPackChanges     TechPackChange[]       @relation("TechPackChangeBy")
   techPackReferences  TechPackReference[]    @relation("TechPackReferenceSavedBy")
   logosTicked         TechPackLogo[]         @relation("TechPackLogoTickedBy")
   techPackAiDrafts    TechPackAiDraft[]      @relation("TechPackAiDraftBy")
@@ -2335,6 +2338,12 @@ model TechPack {
   approvedPart     Json?
   approvedAt       DateTime?
   approvedById     String?
+  /// The trims part (trims, collar, cuff: the materials per piece that are not fabric)
+  /// as last approved, with the whole tech pack or again on its own after a change
+  /// (v6.4.2). Until it is approved again its trims bookings wait; fabric does not.
+  trimsPart        Json?
+  trimsApprovedAt  DateTime?
+  trimsApproverId  String?
   /// The garment, for the measurement chart's points of measure.
   garmentKind      GarmentKind?
   /// The chart's unit (inch or cm); the other is shown beside it.
@@ -2358,6 +2367,8 @@ model TechPack {
   createdBy      User?                  @relation("TechPackCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   fabricLockedBy User?                  @relation("TechPackFabricLockedBy", fields: [fabricLockedById], references: [id], onDelete: SetNull)
   approvedBy     User?                  @relation("TechPackApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+  trimsApprover  User?                  @relation("TechPackTrimsApprover", fields: [trimsApproverId], references: [id], onDelete: SetNull)
+  partChanges    TechPackChange[]
   measurements   TechPackMeasurement[]
   references     TechPackReference[]
   logos          TechPackLogo[]
@@ -2371,6 +2382,28 @@ model TechPack {
   @@index([companyId, buyerId])
   @@index([companyId, styleId])
   @@index([companyId, season])
+}
+
+/// A change to an approved tech pack's trims part (trims, collar, cuff), kept as it was
+/// saved: what each item was and is, who changed it and when (v6.4.2). Shown on the tech
+/// pack until the part is approved again.
+model TechPackChange {
+  id          String   @id @default(cuid())
+  companyId   String
+  techPackId  String
+  /// The part that changed; "TRIMS" (trims, collar and cuff).
+  part        String   @default("TRIMS")
+  /// What changed: [{ item, was, now }].
+  changes     Json
+  changedById String?
+  createdAt   DateTime @default(now())
+
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  techPack  TechPack @relation(fields: [techPackId], references: [id], onDelete: Cascade)
+  changedBy User?    @relation("TechPackChangeBy", fields: [changedById], references: [id], onDelete: SetNull)
+
+  @@index([techPackId, createdAt])
+  @@index([companyId, createdAt])
 }
 
 /// One point of measure of a style's chart: its value per size in the tech

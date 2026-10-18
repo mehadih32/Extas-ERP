@@ -97,6 +97,9 @@ function FabricFirst({
                     · {s.changed} fabric change{s.changed === 1 ? "" : "s"} since
                   </span>
                 )}
+                {s.trimsChanged > 0 && (
+                  <span className="text-destructive"> · Trims changed: approve them again</span>
+                )}
               </span>
             </li>
           ))}

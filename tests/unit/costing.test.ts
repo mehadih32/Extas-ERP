@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { pastCmTerms } from "@/modules/costing/costing-labels";
+import {
+  pastCmTerms,
+  PROFIT_MIN_PERCENT,
+  onCostOf,
+  profitBothWays,
+  profitUnderMinimum,
+  profitUnderMinimumNote,
+  shareOfPrice,
+} from "@/modules/costing/costing-labels";
 import {
   type CostLineInput,
   costLine,
@@ -124,7 +132,12 @@ describe("the Order check card", () => {
     expect(judgePrice([priced({ buyerPrice: 2, buyerProfit: -16 })], 7).reason).toContain(
       "below the cost",
     );
-    expect(judgePrice([priced()], 20).signal).toBe("yellow");
+    expect(judgePrice([priced()], 20)).toMatchObject({
+      signal: "yellow",
+      // Each profit % with its markup on the cost beside it (v6.4.2).
+      reason:
+        "PL-01: the buyer's price leaves 16.71% of price = 20.06% on cost, below your 20% of price = 25% on cost.",
+    });
     expect(judgePrice([priced()], null)).toMatchObject({
       signal: "yellow",
       reason: expect.stringContaining("Profit % not set"),
@@ -230,5 +243,39 @@ describe("The CM agreed before, beside a style", () => {
       amount: 12,
       per: "PIECE",
     });
+  });
+});
+
+describe("the owner's profit % (v6.4.2): at least 10%, no upper limit", () => {
+  it("marks only a saved figure under 10% (never an empty one) and says what to do", () => {
+    expect(PROFIT_MIN_PERCENT).toBe(10);
+    expect(profitUnderMinimum(null)).toBe(false);
+    expect(profitUnderMinimum(10)).toBe(false);
+    expect(profitUnderMinimum(200)).toBe(false);
+    expect(profitUnderMinimum(9.99)).toBe(true);
+    expect(profitUnderMinimumNote(7.5)).toBe(
+      "Saved at 7.5% profit, under the 10% minimum. Raise it to at least 10% when you edit it.",
+    );
+  });
+
+  it("works a profit on the cost out as its share of the price: 200% on the cost is 66.67%", () => {
+    expect(Number(shareOfPrice(200).toFixed(2))).toBe(66.67);
+    expect(shareOfPrice(100)).toBe(50);
+    // 200% of the price leaves no price; the same 66.67% does: three times the cost.
+    expect(grossUp(30, percents({ profit: 200 }))).toBeNull();
+    expect(grossUp(30, percents({ profit: shareOfPrice(200) }))).toBeCloseTo(90, 6);
+  });
+
+  it("shows every share of the price with the markup on the cost it gives", () => {
+    expect(onCostOf(15)).toBeCloseTo(17.647, 3);
+    expect(onCostOf(50)).toBe(100);
+    expect(onCostOf(100)).toBeNull();
+    expect(onCostOf(200)).toBeNull();
+    expect(onCostOf(shareOfPrice(200))).toBeCloseTo(200, 6);
+    expect(profitBothWays(15)).toBe("15% of price = 17.65% on cost");
+    expect(profitBothWays(10)).toBe("10% of price = 11.11% on cost");
+    expect(profitBothWays(66.67)).toBe("66.67% of price = 200.03% on cost");
+    expect(profitBothWays(-5)).toBe("-5% of price = -4.76% on cost");
+    expect(profitBothWays(200)).toBe("200% of price: no price can leave that");
   });
 });

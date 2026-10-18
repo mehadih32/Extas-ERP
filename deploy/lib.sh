@@ -12,6 +12,8 @@ APP_UID=1001
 UPDATE_LOCK=/run/extras-erp-update.lock
 # shellcheck disable=SC2034 # used by restore.sh
 RESTORE_LOG=/var/log/extas-erp-restore.log
+# Names restore_database's psql inside the database container (stop_restore_in_db).
+RESTORE_TAG=extas_erp_restore
 
 say() { printf '\n==> %s\n' "$*"; }
 die() {
@@ -207,7 +209,8 @@ safety_copy() {
 }
 
 # Safety copies stay on the server for 24 hours; Google Drive keeps them after that.
-# The one of a restore that was cut off (settle_cut_restore: <copy>.keep) stays 7 days.
+# The one of a restore that runs, or was cut off (restore.sh, settle_cut_restore:
+# <copy>.keep), stays 7 days.
 # The server's hourly clean-up does the same (install_backup_helpers).
 prune_safety_copies() {
   local copies="$DATA_DIR/safety-copies"
@@ -216,75 +219,247 @@ prune_safety_copies() {
     -exec rm -rf {} + 2>/dev/null || true
 }
 
+# The mark of a restore that runs, DATA_DIR/backups/.restore-running (restore.sh):
+# line 1 the restore's time, line 2 how far it got ("", "safety copy" once that is
+# saved, "went back" once the safety copy is back in the database), line 3 the
+# backup's name, line 4 the database's id when the safety copy was saved
+# (database_id). Written whole, never half.
+write_restore_mark() {
+  local mark="$DATA_DIR/backups/.restore-running"
+  printf '%s\n%s\n%s\n%s\n' "$1" "$2" "$3" "${4:-}" >"$mark.new" && mv -f "$mark.new" "$mark"
+}
+
+# The live database's id, or nothing when it cannot be read: the id of its schema,
+# which restore_database makes anew in its one transaction. The same id later means
+# no restore went in since (one stopped half-way was rolled back).
+database_id() {
+  compose exec -T db psql -X -q -At -U postgres -d "$POSTGRES_DB" \
+    -c "SELECT oid FROM pg_namespace WHERE nspname = 'public'" 2>/dev/null | grep -E '^[0-9]+$' || true
+}
+
+# restore_database's psql goes on inside the database container when the command
+# that started it is stopped (Ctrl+C, systemd): it is ended there (the database then
+# rolls back whatever was not committed), and waited for, up to a minute. False when
+# that cannot be made sure, such as when the database does not answer.
+stop_restore_in_db() {
+  # [e]xtas... never finds the command that looks for it.
+  local left find="[${RESTORE_TAG:0:1}]${RESTORE_TAG:1}"
+  for _ in $(seq 1 30); do
+    compose exec -T db pkill -f "$find" >/dev/null 2>&1 || true
+    left="$(compose exec -T db psql -X -q -At -U postgres -d postgres -c \
+      "SELECT count(pg_terminate_backend(pid)) FROM pg_stat_activity WHERE application_name = '$RESTORE_TAG'" \
+      2>/dev/null)" || return 1
+    if [ "$left" = 0 ] && ! compose exec -T db pgrep -f "$find" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 2
+  done
+  return 1
+}
+
+# Whether the app has surely not run since the file $1 was written (the restore's
+# mark): it is not running, and its container last started before then. With $2
+# "same", its container was also made before then, so it is the one that was there
+# then (one made since may have run and gone). Any doubt counts as "it ran".
+app_not_run_since() {
+  local since id state running created started
+  since="$(stat -c %Y "$1" 2>/dev/null)" || return 1
+  id="$(compose ps -a -q app 2>/dev/null | head -n 1)"
+  [ -n "$id" ] || return 1
+  state="$(docker inspect -f '{{.State.Running}} {{.Created}} {{.State.StartedAt}}' "$id" 2>/dev/null)" || return 1
+  read -r running created started <<<"$state"
+  [ "$running" = false ] || return 1
+  started="$(date -d "$started" +%s 2>/dev/null)" || return 1
+  [ "$started" -lt "$since" ] || return 1
+  [ "${2:-}" = same ] || return 0
+  created="$(date -d "$created" +%s 2>/dev/null)" || return 1
+  [ "$created" -lt "$since" ]
+}
+
 # A restore cut off before it finished (the server restarted, or it was stopped)
-# leaves DATA_DIR/backups/.restore-running (restore.sh: line 1 the restore's time,
-# line 2 "safety copy" once that is saved, line 3 the backup's name) and the app
-# stopped. Found later (at the server's start, by the next restore, by the next
-# update), it NEVER puts the database back by itself: the database is restored in one
-# transaction, so it holds either the data from before that restore or the backup's,
-# whole, and only the owner can say which is right. Putting a safety copy back by
-# itself would wipe everything entered since, when the mark is a stale one. So it
-# only puts the uploads folder back when the restore was cut while swapping it (the
-# live one missing; never over a folder that is there), starts the ERP if it is
-# stopped and tells the owner, in the ERP's inbox and on Telegram (the ERP records
+# leaves its mark (write_restore_mark) and the app stopped. Found later (at the
+# server's start, by the next restore, by the next update), the restore is first
+# ended inside the database if it still runs there (stop_restore_in_db). It NEVER
+# puts a database back over data that may have been entered since: the database is
+# restored in one transaction, so it holds either the data from before that restore
+# or the backup's, whole, and only the owner can say which is right; its id
+# (database_id) says when it is surely the one from before. It puts the uploads
+# folder back only when the restore was cut while swapping it (the live one missing;
+# never over a folder that is there), starts the ERP if it is stopped and tells the
+# owner, in the ERP's inbox and on Telegram (the ERP records
 # BACKUP_DIR/restore-cut-<time>.json like a restore's result:
 # src/modules/backups/restore.service.ts), how to undo it with the safety copy, which
-# stays on the server 7 days. False when the ERP did not start.
+# stays on the server 7 days. Only when the ERP does not start and the app has surely
+# not run since the mark (app_not_run_since), so nobody can have entered anything
+# since the safety copy, is that copy put back by itself, as the restore would have
+# done. When the ERP still does not start, the mark stays (the next start of the
+# server, restore or update tries again), and it says so loudly: the ERP that sends
+# the owner's messages is down then. False when the ERP did not start.
 settle_cut_restore() {
-  local mark="$DATA_DIR/backups/.restore-running" cut copied name when copy aside note message
+  local mark="$DATA_DIR/backups/.restore-running" cut copied name db_id data current
+  local when copy aside note message folder started=0 went_back=0 idle=0 keep_note=""
+  local kept="$DATA_DIR/backups/.restored.kept" restored_mark="$DATA_DIR/backups/.restored.json"
   [ -f "$mark" ] || return 0
   # shellcheck disable=SC2034 # read by restore.sh --after-restart
   CUT_RESTORE=1
   cut="$(sed -n 1p "$mark")"
   copied="$(sed -n 2p "$mark")"
   name="$(sed -n 3p "$mark")"
+  db_id="$(sed -n 4p "$mark")"
   [[ "$cut" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{6}$ ]] || cut=""
   [[ "$name" =~ ^[A-Za-z0-9._-]+$ ]] || name=""
-  say "A restore was cut off before it finished (the server restarted, or it was stopped): nothing is put back automatically, the ERP is started as it is"
+  [[ "$db_id" =~ ^[0-9]+$ ]] || db_id=""
+  say "A restore was cut off before it finished (the server restarted, or it was stopped): the ERP is started as it is, never with a database put back over data that may have been entered since"
   # 2026-10-16_101500 -> 2026-10-16 10:15 (the server's time).
   when="${cut:+${cut:0:10} ${cut:11:2}:${cut:13:2}}"
   copy="$DATA_DIR/safety-copies/before-restore-$cut"
   aside="$DATA_DIR/uploads.before-restore-$cut"
+  # What the database holds: "untouched" (cut before its safety copy: never changed),
+  # "before" (as before that restore: the same id, or it went back), "changed" (that
+  # restore's database went in) or "unknown".
+  case "$copied" in
+    "safety copy")
+      data=unknown
+      app_running || { compose up -d db >/dev/null 2>&1 && wait_healthy db; } || true
+      if stop_restore_in_db; then
+        current="$(database_id)"
+        if [ -n "$db_id" ] && [ "$current" = "$db_id" ]; then
+          data=before
+        elif [ -n "$db_id" ] && [ -n "$current" ]; then
+          data=changed
+        fi
+      fi
+      ;;
+    "went back")
+      data=before
+      # Cut while the files from before were being put back too: that is finished
+      # (the app has not started since: it clears the mark as soon as it runs).
+      if [ -n "$cut" ] && [ -d "$aside" ] && [ -e "$DATA_DIR/uploads" ]; then
+        rm -rf "$DATA_DIR/uploads.failed-restore-$cut"
+        mv "$DATA_DIR/uploads" "$DATA_DIR/uploads.failed-restore-$cut"
+        mv "$aside" "$DATA_DIR/uploads"
+      fi
+      ;;
+    *) data=untouched ;;
+  esac
   if [ -n "$cut" ] && [ ! -e "$DATA_DIR/uploads" ] && [ -d "$aside" ]; then
     # Cut between moving the files in use aside and putting the backup's in place.
     mv "$aside" "$DATA_DIR/uploads"
   fi
   rm -rf "$DATA_DIR/uploads.restoring"
-  # This server's backup settings, read just before the database was replaced, never
-  # stay in a file of their own (write_restored_mark takes them in when it runs).
-  rm -f "$DATA_DIR/backups/.restored.kept"
   if [ ! -e "$DATA_DIR/uploads" ]; then
     mkdir -p "$DATA_DIR/uploads" && chown "$APP_UID:$APP_UID" "$DATA_DIR/uploads"
   fi
-  message="The restore${name:+ of $name}${when:+ started at $when (server time)}"
-  if [ "$copied" = "safety copy" ] && [ -n "$cut" ] && [ -f "$copy/database.dump" ]; then
-    touch "$copy.keep"
-    message+=" was cut off before it finished (the server restarted, or it was stopped). Nothing was put back automatically: the ERP holds either its data from before that restore or the backup's data, and was started again as it is. If the ERP shows the wrong data, undo it with: sudo $DEPLOY_DIR/restore.sh $copy (kept on the server for 7 days). That puts back the database only;"
-    if [ -d "$aside" ]; then
-      message+=" the uploaded files from before stay in $aside for 30 days."
-    else
-      message+=" the uploaded files are as they were before that restore."
+  # This server's backup settings, read just before the database was replaced
+  # (--keep-backup-settings), never stay in a file of their own when the database is
+  # as it was. When that restore's database went in (cut before write_restored_mark
+  # took them in), the ERP puts them back when it starts, as after the restore
+  # itself. When that cannot be told, they are kept, and the owner is told.
+  if [ -f "$kept" ]; then
+    if [ "$data" = before ] || [ "$data" = untouched ]; then
+      rm -f "$kept"
+    elif [ "$data" = changed ] && ! app_running; then
+      folder="$DATA_DIR/backups/$name"
+      [ -z "$name" ] || [ ! -d "$DATA_DIR/backups/restores/$name" ] || folder="$DATA_DIR/backups/restores/$name"
+      write_restored_mark "$folder" "$kept" "$restored_mark" || true
     fi
-  elif [ "$copied" = "safety copy" ]; then
-    message+=" was cut off before it finished (the server restarted, or it was stopped). Nothing was put back automatically: the ERP holds either its data from before that restore or the backup's data, and was started again as it is. Its safety copy${cut:+ (before-restore-$cut)} is no longer on this server: if the ERP shows the wrong data, restore that safety copy from Google Drive on the Backups screen."
+    [ ! -f "$kept" ] ||
+      keep_note=" This server's own backup settings from just before that restore (the recovery key, the schedule, Google Drive) were not put back: if the Backups screen shows older ones, set them again there."
+  fi
+  # Whether anyone can have used the ERP since the mark: read before it is started.
+  if [ "$data" = changed ] || [ "$data" = unknown ]; then
+    if ! app_running && app_not_run_since "$mark" same; then idle=1; fi
+  fi
+  if app_running; then
+    started=1
   else
-    # Cut before its safety copy was saved: the database was never touched. A copy
-    # half written then is no copy: it goes, so it is never sent to Drive or restored.
-    [ -z "$cut" ] || rm -rf "$copy"
-    message+=" was cut off before it changed anything (the server restarted, or it was stopped): the ERP was started again with its data as it was. Run the restore again if it is still wanted."
+    compose up -d || true
+    wait_healthy app && started=1
+  fi
+  if [ "$started" = 0 ] && [ "$idle" = 1 ] && [ -n "$cut" ] && [ -f "$copy/database.dump" ] &&
+    app_not_run_since "$mark"; then
+    # It did not start this time either: nothing can have been entered since the copy.
+    say "The ERP did not start, and nobody can have used it since that restore: putting back its safety copy"
+    compose stop app >/dev/null 2>&1 || true
+    if restore_database "/safety-copies/before-restore-$cut/database.dump"; then
+      went_back=1
+      data=before
+      rm -f "$restored_mark"
+      write_restore_mark "$cut" "went back" "$name"
+      if [ -d "$aside" ]; then
+        rm -rf "$DATA_DIR/uploads.failed-restore-$cut"
+        [ ! -e "$DATA_DIR/uploads" ] || mv "$DATA_DIR/uploads" "$DATA_DIR/uploads.failed-restore-$cut"
+        mv "$aside" "$DATA_DIR/uploads"
+      fi
+      compose up -d || true
+      wait_healthy app && started=1
+    fi
+  fi
+  message="The restore${name:+ of $name}${when:+ started at $when (server time)}"
+  case "$data" in
+    untouched)
+      # Cut before its safety copy was saved: the database was never touched. A copy
+      # half written then is no copy: it goes, so it is never sent to Drive or restored.
+      [ -z "$cut" ] || rm -rf "$copy" "$copy.keep"
+      message+=" was cut off before it changed anything (the server restarted, or it was stopped): the ERP's data are as they were."
+      ;;
+    before)
+      if [ "$went_back" = 1 ]; then
+        message+=" was cut off before it finished (the server restarted, or it was stopped), and the ERP did not start again after it. Nobody can have used the ERP since (it was not started), so its safety copy was put back: the ERP's data and uploaded files are as they were just before that restore."
+      else
+        message+=" was cut off before it finished (the server restarted, or it was stopped), but its database was not changed (or was already put back): the ERP's data are as they were before that restore."
+      fi
+      ;;
+    *)
+      message+=" was cut off before it finished (the server restarted, or it was stopped). Nothing was put back automatically: the ERP holds either its data from before that restore or the backup's data."
+      ;;
+  esac
+  if [ "$started" = 1 ]; then
+    if [ "$data" = before ] || [ "$data" = untouched ]; then
+      message+=" The ERP was started again. Run the restore again if it is still wanted."
+    elif [ -n "$cut" ] && [ -f "$copy/database.dump" ]; then
+      message+=" It was started again as it is. If the ERP shows the wrong data, undo it with: sudo $DEPLOY_DIR/restore.sh $copy (kept on the server for 7 days). That puts back the database only;"
+      if [ -d "$aside" ]; then
+        message+=" the uploaded files from before stay in $aside for 30 days."
+      else
+        message+=" the uploaded files are as they were before that restore."
+      fi
+    else
+      message+=" It was started again as it is. Its safety copy${cut:+ (before-restore-$cut)} is no longer on this server: if the ERP shows the wrong data, restore that safety copy from Google Drive on the Backups screen."
+    fi
+  else
+    if [ "$went_back" = 1 ]; then
+      message+=" But the ERP did NOT start again even on it: see why with: sudo $DEPLOY_DIR/logs.sh app."
+    else
+      message+=" The ERP did NOT start again: see why with: sudo $DEPLOY_DIR/logs.sh app."
+    fi
+    message+=" The server tries again when it starts, or run: sudo $DEPLOY_DIR/restore.sh --after-restart."
+    if [ "$data" != before ] && [ "$data" != untouched ] && [ -n "$cut" ] && [ -f "$copy/database.dump" ]; then
+      message+=" To put it back as it was before that restore, run: sudo $DEPLOY_DIR/restore.sh $copy (kept on the server for 7 days); anything entered in the ERP since that restore is then lost."
+    fi
+  fi
+  message+="$keep_note"
+  # Its safety copy stays 7 days while it is the way to undo that restore, or while
+  # the mark still names it; else the usual 24 hours.
+  if [ -n "$cut" ] && [ -d "$copy" ]; then
+    if [ "$started" = 0 ] || [ "$data" = changed ] || [ "$data" = unknown ]; then
+      touch "$copy.keep"
+    else
+      rm -f "$copy.keep"
+    fi
   fi
   # For the ERP's inbox and Telegram, in a file of its own: the restore that may run
-  # next writes restore-result.json.
+  # next writes restore-result.json. With the ERP down, it waits there until it runs.
   note="$DATA_DIR/backups/restore-cut-${cut:-$(date +%Y-%m-%d_%H%M%S)}.json"
   if NAME="$name" SAFETY="$([ ! -d "$copy" ] || [ -z "$cut" ] || printf '%s' "$copy")" \
-    MESSAGE="$message" python3 - "$note.new" <<'PY'; then
+    WENT_BACK="$went_back" MESSAGE="$message" python3 - "$note.new" <<'PY'; then
 import datetime, json, os, sys
 json.dump({
     "ok": False,
     "name": os.environ["NAME"],
     "finishedAt": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     "safetyCopy": os.environ["SAFETY"],
-    "wentBack": False,
+    "wentBack": os.environ["WENT_BACK"] == "1",
     "message": os.environ["MESSAGE"],
     "checks": [],
 }, open(sys.argv[1], "w"), indent=2)
@@ -295,11 +470,15 @@ PY
     rm -f "$note.new"
   fi
   echo "$message"
-  rm -f "$mark"
-  app_running && return 0
-  compose up -d || true
-  wait_healthy app && return 0
-  say "The ERP did not start again after the restore that was cut off; see why with: sudo ./deploy/logs.sh app"
+  if [ "$started" = 1 ]; then
+    rm -f "$mark"
+    return 0
+  fi
+  # No message reaches the owner while the ERP is down (the ERP sends them): said
+  # here as loudly as can be, and the note waits for the ERP to run.
+  printf '\n%s' '!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'
+  say "PROBLEM: the ERP is NOT running. It did not start again after the restore that was cut off, and the owner cannot be told in the ERP or on Telegram until it runs. See why with: sudo $DEPLOY_DIR/logs.sh app"
+  printf '%s\n' '!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'
   return 1
 }
 
@@ -561,7 +740,7 @@ ExecStart=$DEPLOY_DIR/lock-settings.sh
 EOF
   cat >/etc/cron.d/extras-erp-safety-copies <<EOF
 # Extas ERP (deploy.sh): safety copies stay on the server for 24 hours; Google Drive keeps them.
-# The one of a restore that was cut off (with <copy>.keep) stays 7 days (lib.sh prune_safety_copies).
+# The one of a restore that runs or was cut off (with <copy>.keep) stays 7 days (lib.sh prune_safety_copies).
 17 * * * * root find $DATA_DIR/safety-copies -mindepth 1 -maxdepth 1 -type f -name 'before-*.keep' -mmin +10080 -delete 2>/dev/null; find $DATA_DIR/safety-copies -mindepth 1 -maxdepth 1 -type d -name 'before-*' -mmin +1440 ! -exec test -e '{}.keep' \\; -exec rm -rf {} + 2>/dev/null
 # An opened backup (plain data) left by a restore cut off by a restart goes after a day.
 29 * * * * root find $DATA_DIR/backups/restores -mindepth 1 -maxdepth 1 -mmin +1440 -exec rm -rf {} + 2>/dev/null
@@ -741,7 +920,9 @@ pending_migrations() {
 # committed only once all of it has gone in: the database is either fully put back
 # or left as it was. Stop the app first.
 restore_database() {
-  # $1 to $3 are filled in inside the database container.
+  # $0 to $3 are filled in inside the database container. $0, the tag, names its
+  # psql there (its connection and its command line), so a restore that was stopped
+  # can be found and ended there (stop_restore_in_db).
   # shellcheck disable=SC2016
   compose exec -T db sh -c '
       set -o pipefail
@@ -749,8 +930,8 @@ restore_database() {
         echo "SET client_min_messages = warning; BEGIN; DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
         pg_restore --no-owner --no-privileges --file=- "$1" || exit 1
         echo "COMMIT;"
-      } | psql -q -v ON_ERROR_STOP=1 -U "$2" -d "$3" >/dev/null
-    ' restore "$1" "$APP_DB_USER" "$POSTGRES_DB"
+      } | PGAPPNAME="$0" psql -q -v ON_ERROR_STOP=1 -v "$0=1" -U "$2" -d "$3" >/dev/null
+    ' "$RESTORE_TAG" "$1" "$APP_DB_USER" "$POSTGRES_DB"
 }
 
 # Opens every screen of the version that just started, the way the owner would

@@ -197,10 +197,20 @@ run("Full check and Claude Code", () => {
       return testGitHubConnection(env.owner);
     };
     const notes = async () => (await tested()).notes.join("\n");
-    // Locked as the Help says: deletions and force pushes blocked, pull requests only.
+    // Locked as the Help says: deletions and force pushes blocked, pull requests only. The
+    // Help's token may not see the Bypass list (GitHub shows it only to a token that may change
+    // rulesets), but GitHub says the token's account cannot skip it: the screen says what it
+    // could not see.
     expect(await tested()).toMatchObject({ ok: true });
     expect(await notes()).toMatch(/The main branch is locked/);
+    expect(await notes()).toMatch(
+      /cannot see the ruleset's Bypass list.*make sure the Bypass list is empty/,
+    );
     expect((await getFullCheck(env.owner)).github.mainLocked).toBe(true);
+    // A Bypass list the token may read, and empty: nothing more to say.
+    gh.state.rulesetBypass = [];
+    expect(await notes()).not.toMatch(/Bypass list/);
+    gh.state.rulesetBypass = null;
 
     // No ruleset on main: not ready, and nothing goes to Claude Code.
     gh.state.mainRules = [];
@@ -226,14 +236,36 @@ run("Full check and Claude Code", () => {
     // Someone on its Bypass list could still push to main.
     gh.state.mainRules = ["deletion", "non_fast_forward", "pull_request"];
     gh.state.rulesetBypass = [{ actor_type: "RepositoryRole" }];
-    expect(await notes()).toMatch(/Bypass list/);
+    expect(await notes()).toMatch(/Lock main first.*an empty Bypass list/);
     await expectAppError(
       askClaudeCode(env.owner, { text: "Add a button to print the packing list twice." }),
       "VALIDATION",
       /Lock main first/,
     );
-    // A Bypass list the token may not read does not count against it.
+    // The token's own account may skip it, though the list itself is hidden: not a lock.
     gh.state.rulesetBypass = null;
+    for (const can of ["always", "pull_requests_only"] as const) {
+      gh.state.currentUserCanBypass = can;
+      const skip = await tested();
+      expect(skip.ok).toBe(false);
+      expect(skip.notes.join("\n")).toMatch(
+        /Lock main first.*your token's GitHub account can skip/,
+      );
+      expect((await getFullCheck(env.owner)).github.mainLocked).toBe(false);
+    }
+    // GitHub says nothing about who may skip it, or the ruleset cannot be read: not confirmed,
+    // so not a lock, and the screen says so.
+    gh.state.currentUserCanBypass = null;
+    expect(await notes()).toMatch(/Lock main first.*could not check who may skip/);
+    await expectAppError(
+      askClaudeCode(env.owner, { text: "Add a button to print the packing list twice." }),
+      "VALIDATION",
+      /Lock main first/,
+    );
+    gh.state.currentUserCanBypass = "never";
+    gh.state.rulesetHidden = true;
+    expect(await notes()).toMatch(/Lock main first.*could not check who may skip/);
+    gh.state.rulesetHidden = false;
     expect(await tested()).toMatchObject({ ok: true });
 
     // The older branch protection, set the same way, locks it too.

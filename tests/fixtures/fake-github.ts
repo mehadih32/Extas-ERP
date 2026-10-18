@@ -80,8 +80,15 @@ export type FakeGitHub = {
     pullFiles: Record<number, FakeFile[]>;
     /** The rules of the active rulesets on main (the Help's "Protect main" by default). */
     mainRules: string[];
-    /** Who may skip that ruleset (its Bypass list); null when the token may not see it. */
+    /**
+     * Who may skip that ruleset (its Bypass list); null when the token may not see it, as
+     * GitHub does for a token that may not change rulesets (the Help's token: the default).
+     */
     rulesetBypass: Array<{ actor_type: string }> | null;
+    /** Whether the token's own account may skip that ruleset (null: GitHub does not say). */
+    currentUserCanBypass: "always" | "pull_requests_only" | "never" | null;
+    /** The ruleset cannot be read at all (GitHub answers 404). */
+    rulesetHidden?: boolean;
     /** The old kind of branch protection on main, when set. */
     classicProtection: Record<string, unknown> | null;
   };
@@ -139,7 +146,8 @@ export async function startFakeGitHub(
     pullCommits: {},
     pullFiles: {},
     mainRules: ["deletion", "non_fast_forward", "pull_request", "required_status_checks"],
-    rulesetBypass: [],
+    rulesetBypass: null,
+    currentUserCanBypass: "never",
     classicProtection: null,
   };
   const server = createServer(async (req, res) => {
@@ -178,11 +186,15 @@ export async function startFakeGitHub(
       );
     }
     if (rest === "/rulesets/7") {
+      if (state.rulesetHidden) return send(404, { message: "Not Found" });
       return send(200, {
         id: 7,
         name: "Protect main",
         enforcement: "active",
         ...(state.rulesetBypass ? { bypass_actors: state.rulesetBypass } : {}),
+        ...(state.currentUserCanBypass
+          ? { current_user_can_bypass: state.currentUserCanBypass }
+          : {}),
       });
     }
     if (rest === "/branches/main/protection") {

@@ -464,7 +464,7 @@ export function OrderRunScreen({ run: r }: { run: Run }) {
 
           {r.card && <OrderCheckCard rows={r.card} />}
 
-          {(r.plan || (editable && r.missing.length === 0)) && (
+          {(r.plan || r.planHidden || (editable && r.missing.length === 0)) && (
             <Panel
               title="The plan"
               id="run-plan-heading"
@@ -542,6 +542,10 @@ export function OrderRunScreen({ run: r }: { run: Run }) {
                     </p>
                   )}
                 </div>
+              ) : r.planHidden ? (
+                <p className="mt-2 text-sm text-muted-foreground">
+                  The plan is hidden for your role: it holds the costing and the profit.
+                </p>
               ) : (
                 <p className="mt-2 text-sm text-muted-foreground">
                   The form is complete. Make the plan: Mehedi 2.0 writes what he will do, the
@@ -683,9 +687,11 @@ export function OrderRunScreen({ run: r }: { run: Run }) {
                   </Link>
                 </Fact>
                 <Fact label="Profit">
-                  {r.costing.profitPercent
-                    ? `${r.costing.profitPercent}%`
-                    : "Not set yet (yours to set)"}
+                  {r.costHidden
+                    ? "Hidden for your role"
+                    : r.costing.profitPercent
+                      ? `${r.costing.profitPercent}%`
+                      : "Not set yet (yours to set)"}
                 </Fact>
               </dl>
             ) : (

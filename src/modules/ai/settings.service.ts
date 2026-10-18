@@ -6,7 +6,6 @@ import { decryptSecret, encryptSecret } from "@/lib/crypto";
 import type { Db } from "@/lib/db-types";
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
-import { checkRateLimit } from "@/lib/rate-limit";
 import type { RequestMeta } from "@/lib/request-meta";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
@@ -23,6 +22,13 @@ import {
   priceBook,
   priceFor,
 } from "./prices.service";
+import {
+  countPinTry,
+  pinCandidates,
+  pinLimitAlarm,
+  PIN_TRY_MINUTES,
+  uncountPinTry,
+} from "./pin-tries";
 import { listModels, ProviderError } from "./provider-calls";
 import {
   BUILT_IN_MODELS,
@@ -838,15 +844,28 @@ export async function setPin(ctx: CompanyContext, input: unknown, meta?: Request
   });
 }
 
+/** Wrong PINs per person and store in fifteen minutes; then tries stop and the owner is told. */
+export const PIN_TRIES = 10;
+
+export const PIN_TRIES_USED = `Too many wrong PINs. Wait ${PIN_TRY_MINUTES} minutes and try again.`;
+
 /**
- * Whether the PIN is right (never while none is set). At most ten tries in
- * fifteen minutes per person, so it cannot be guessed.
+ * Whether the PIN is right (never while none is set). At most ten wrong tries
+ * in fifteen minutes per person, counted in the database so a restart does not
+ * reset them (pin-tries.ts); the tenth tells the owner at once.
  */
 export async function checkPin(companyId: string, pin: string, userId: string): Promise<boolean> {
   const settings = await aiSettingsOf(companyId);
   if (!settings.pinHash) return false;
-  checkRateLimit(`ai-pin:${companyId}:${userId}`, 10, 15 * 60_000);
-  return /^\d{4,8}$/.test(pin) && verifyPassword(pin, settings.pinHash);
+  const tries = await countPinTry(companyId, userId, "PIN");
+  if (tries > PIN_TRIES) {
+    await pinLimitAlarm(companyId, userId, "PIN", PIN_TRIES);
+    throw new AppError("RATE_LIMITED", PIN_TRIES_USED);
+  }
+  const right = /^\d{4,8}$/.test(pin) && (await verifyPassword(pin, settings.pinHash));
+  if (right) await uncountPinTry(companyId, userId, "PIN");
+  else if (tries >= PIN_TRIES) await pinLimitAlarm(companyId, userId, "PIN", PIN_TRIES);
+  return right;
 }
 
 /** New numbers the bot may check against the PIN per person and store, in fifteen minutes. */
@@ -876,15 +895,26 @@ export async function pinMatches(
     notThePin.set(companyId, known);
   }
   if (known.numbers.has(pin)) return false;
-  try {
-    checkRateLimit(`ai-pin-stray:${companyId}:${userId}`, STRAY_PIN_CHECKS, 15 * 60_000);
-  } catch (error) {
-    if (error instanceof AppError && error.code === "RATE_LIMITED") return "unchecked";
-    throw error;
+  // Counted in the database (pin-tries.ts): a restart does not give new checks.
+  if ((await countPinTry(companyId, userId, "NUMBER")) > STRAY_PIN_CHECKS) {
+    await pinLimitAlarm(companyId, userId, "NUMBER", STRAY_PIN_CHECKS);
+    return "unchecked";
   }
   if (await verifyPassword(pin, settings.pinHash)) return true;
   if (known.numbers.size >= 500) known.numbers.clear();
   known.numbers.add(pin);
+  return false;
+}
+
+/**
+ * Whether a message holds the PIN, or a number that could not be checked
+ * (pinMatches): the ERP's own AI chat then never keeps it nor sends it to the
+ * AI, the same way the bot hides it (v6.4.1). Digits already in Western form.
+ */
+export async function mayHoldPin(companyId: string, text: string, userId: string) {
+  for (const number of pinCandidates(text)) {
+    if ((await pinMatches(companyId, number, userId)) !== false) return true;
+  }
   return false;
 }
 

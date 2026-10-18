@@ -297,6 +297,22 @@ run("Order automation and Server Health", () => {
       "risks",
     ]);
     expect(Number(screen.estimatedAiCost)).toBeGreaterThan(0);
+    // The plan holds the costing and the profit %: never for a role without costing (v6.4.1).
+    await prisma.orderCosting.update({ where: { id: costing.id }, data: { profitPercent: 8 } });
+    await makePlan(env.owner, order.id, {});
+    expect((await getRun(env.owner, order.id)).plan).toContain(
+      `Costing: ${costing.number}, profit 8%`,
+    );
+    const watched = await getRun(env.watcher, order.id);
+    expect(watched).toMatchObject({
+      plan: null,
+      planHidden: true,
+      costHidden: true,
+      card: null,
+      costing: { number: costing.number, profitPercent: null },
+    });
+    expect(JSON.stringify(watched)).not.toContain("profit 8%");
+    expect((await getRun(env.owner, order.id)).costing?.profitPercent).toBe("8");
 
     // With the AI on he writes it on the big model, asking first about the cost.
     await setAiSwitch(env.owner, true);

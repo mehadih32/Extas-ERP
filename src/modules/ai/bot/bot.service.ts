@@ -233,7 +233,11 @@ const CODE_MINUTES = 10;
 
 export const channelSchema = z.enum(["TELEGRAM", "WHATSAPP"]);
 
-/** A one-time code the owner sends to the bot from their own account (10 minutes). */
+/**
+ * A one-time code the owner sends to the bot from their own account (10
+ * minutes). Asking for it moves nothing: the bot stays with the chat and the
+ * person linked now until the code is sent from the asker's chat (v6.4.1).
+ */
 export async function startLink(ctx: CompanyContext, rawChannel: unknown, meta?: RequestMeta) {
   assertManage(ctx);
   const channel = channelSchema.parse(rawChannel);
@@ -246,7 +250,7 @@ export async function startLink(ctx: CompanyContext, rawChannel: unknown, meta?:
   const until = new Date(Date.now() + CODE_MINUTES * 60_000);
   await prisma.aiBotLink.update({
     where: { id: link.id },
-    data: { linkCodeHash: hashText(code), linkCodeUntil: until, ownerId: ctx.user.id },
+    data: { linkCodeHash: hashText(code), linkCodeUntil: until, linkCodeOwnerId: ctx.user.id },
   });
   await auditInCompany(ctx, meta, {
     action: "UPDATE",
@@ -283,6 +287,7 @@ export async function unlinkBot(ctx: CompanyContext, rawChannel: unknown, meta?:
       linkedAt: null,
       linkCodeHash: null,
       linkCodeUntil: null,
+      linkCodeOwnerId: null,
       pending: Prisma.DbNull,
       pendingUntil: null,
     },

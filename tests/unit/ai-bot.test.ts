@@ -3,14 +3,17 @@ import { describe, expect, it } from "vitest";
 
 import {
   clip,
+  draftVersion,
   MAX_TEXT,
   readButton,
   renderAnswer,
   renderDeletion,
+  renderDraft,
   renderPermission,
 } from "@/modules/ai/bot/render";
 import { readTelegramUpdate, TELEGRAM_TOKEN } from "@/modules/ai/bot/telegram";
 import { readWhatsAppPayload, whatsappSignatureOk } from "@/modules/ai/bot/whatsapp";
+import { pinCandidates } from "@/modules/ai/pin-tries";
 
 const ID = "cmabc123def456ghi";
 const APP = "https://erp.test";
@@ -132,6 +135,43 @@ describe("Chat answers as bot messages", () => {
       { kind: "deletion", requestId: ID, approve: true },
       { kind: "deletion", requestId: ID, approve: false },
     ]);
+  });
+
+  it("puts the draft's version on its Send button, and it changes when the draft does (v6.4.1)", () => {
+    const draft = {
+      draftId: ID,
+      subject: "PO 4501",
+      to: "orders@nordicwear.test",
+      party: "Nordic Wear AB",
+      forBuyer: true,
+      body: "Hello",
+    };
+    const version = draftVersion(draft);
+    expect(version).toMatch(/^[a-f0-9]{12}$/);
+    const [send, discard] = renderDraft(draft).buttons.flat();
+    expect(send!.data).toBe(`sd:${ID}:${version}`);
+    expect(Buffer.byteLength(send!.data)).toBeLessThanOrEqual(64);
+    expect(readButton(send!.data)).toEqual({ kind: "send", draftId: ID, version });
+    expect(readButton(discard!.data)).toEqual({ kind: "discard", draftId: ID });
+    for (const changed of [
+      { ...draft, body: "Hello again" },
+      { ...draft, subject: "PO 4502" },
+      { ...draft, to: "other@nordicwear.test" },
+    ]) {
+      expect(draftVersion(changed)).not.toBe(version);
+    }
+    expect(readButton(`dd:${ID}:${version}`)).toBeNull();
+    expect(readButton(`sd:${ID}:XYZ`)).toBeNull();
+  });
+
+  it("takes only numbers that stand alone for a possible PIN, never those inside codes (v6.4.1)", () => {
+    expect(pinCandidates("CS-2026-0001 status")).toEqual([]);
+    expect(pinCandidates("PO4501 and INV2026 and SO/2026/0112 and LOT_4455")).toEqual([]);
+    expect(pinCandidates("অর্ডার4501")).toEqual([]);
+    expect(pinCandidates("my pin is 2468, ok?")).toEqual(["2468"]);
+    expect(pinCandidates("PIN:2468")).toEqual(["2468"]);
+    expect(pinCandidates("PO 4501 is late, ship 2468.")).toEqual(["4501", "2468"]);
+    expect(pinCandidates("123 and 123456789")).toEqual([]);
   });
 
   it("reads every button code back and nothing else", () => {

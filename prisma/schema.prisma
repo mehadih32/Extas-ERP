@@ -217,6 +217,7 @@ model Company {
   houseRules            HouseRule[]
   mailSettings          CompanyMailSettings?
   aiBotLinks            AiBotLink[]
+  aiPinTries            AiPinTry[]
   aiBotMessages         AiBotMessage[]
   aiOrderRuns           AiOrderRun[]
   aiStaffUpdates        AiStaffUpdate[]
@@ -358,6 +359,7 @@ model User {
   houseRulesDecided   HouseRule[]            @relation("HouseRuleDecidedBy")
   mailSettingsSet     CompanyMailSettings[]  @relation("MailSettingsUpdatedBy")
   aiBotLinksOwned     AiBotLink[]            @relation("AiBotLinkOwner")
+  aiBotLinkCodes      AiBotLink[]            @relation("AiBotLinkCodeOwner")
   aiBotLinksSet       AiBotLink[]            @relation("AiBotLinkUpdatedBy")
   aiOrderRunsMade     AiOrderRun[]           @relation("AiOrderRunCreatedBy")
   aiOrderRunsDecided  AiOrderRun[]           @relation("AiOrderRunDecidedBy")
@@ -6365,6 +6367,9 @@ model AiBotLink {
   linkedAt          DateTime?
   linkCodeHash      String?
   linkCodeUntil     DateTime?
+  /// Who asked for the waiting link code: they become the owner only when the
+  /// code is sent from their chat (v6.4.1), so asking alone moves nothing.
+  linkCodeOwnerId   String?
   /// A button pressed that waits for the PIN in the next message.
   pending           Json?
   pendingUntil      DateTime?
@@ -6375,12 +6380,33 @@ model AiBotLink {
 
   company   Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
   owner     User?          @relation("AiBotLinkOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  codeOwner User?          @relation("AiBotLinkCodeOwner", fields: [linkCodeOwnerId], references: [id], onDelete: SetNull)
   updatedBy User?          @relation("AiBotLinkUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
   messages  AiBotMessage[]
 
   @@unique([companyId, channel])
   @@index([webhookKey])
   @@index([channel, botKey])
+}
+
+/// PIN tries counted per person and store (v6.4.1), kept here so a restart
+/// does not start the count again: "PIN" counts wrong PINs (the ERP, the chat
+/// and the bot), "NUMBER" the new numbers the bot checked to hide a PIN typed
+/// by mistake. Only counts and times, never a PIN.
+model AiPinTry {
+  id          String    @id @default(cuid())
+  companyId   String
+  /// The person (the bot's connection while no one is linked).
+  subjectKey  String
+  kind        String
+  windowStart DateTime  @default(now())
+  count       Int       @default(0)
+  /// When the owner was told the limit was hit in this window.
+  alarmedAt   DateTime?
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, subjectKey, kind])
 }
 
 /// Every message in and out of a bot (the bot's log in AI Center > Bot).

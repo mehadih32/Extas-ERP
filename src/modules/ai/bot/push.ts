@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { enqueueJob } from "@/modules/jobs/queue";
 import { kickJobWorker } from "@/modules/jobs/worker";
 
+import { workingLinks } from "./owner";
+
 /*
  * What Mehedi 2.0 tells the owner on the bot without being asked: a permission
  * or Deletion request (with its buttons), a draft waiting to be sent (with
@@ -13,7 +15,9 @@ import { kickJobWorker } from "@/modules/jobs/worker";
  * is switched off or paused. An alert about the server itself (a failed backup,
  * Server Health, Bug Guard) is the exception: it is the owner's own alarm, AI or
  * not, and it goes only to a bot linked by an active platform owner of the
- * company (a partner or manager who linked the bot never gets it).
+ * company (a partner or manager who linked the bot never gets it). Anything
+ * else goes only to a person the bot may still work for (owner.ts): someone
+ * suspended, gone from the team or without ai.manage gets nothing (v6.4.1).
  */
 
 export type BotPush =
@@ -50,14 +54,18 @@ export async function pushToBot(
 ) {
   try {
     const queued: QueuedPush = options.alarm ? { ...push, alarm: true } : push;
-    const linked = await prisma.aiBotLink.count({
+    const links = await prisma.aiBotLink.findMany({
       where: {
         companyId,
         linkedAt: { not: null },
+        chatId: { not: null },
         ...(isAlarm(queued) ? ownersLinks(companyId) : {}),
       },
+      select: { ownerId: true, companyId: true },
     });
-    if (linked === 0) return;
+    // An ordinary push only to a person who may still run the AI here (as sendPush).
+    const linked = isAlarm(queued) ? links : await workingLinks(links);
+    if (linked.length === 0) return;
     if (!options.alarm) {
       const settings = await prisma.aiSettings.findUnique({
         where: { companyId },

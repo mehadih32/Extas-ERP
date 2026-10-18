@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import type { CardStatus, ChatCard } from "../chat/cards";
 import { countOf } from "@/lib/display";
 
@@ -5,14 +7,16 @@ import { countOf } from "@/lib/display";
  * Chat cards as bot messages: plain text (no markup to escape) and rows of
  * buttons. A button carries a short code (at most 64 bytes on Telegram):
  *   ap:<message>  Apply a change card      cx:<message>  Cancel it
- *   sd:<draft>    Send a draft             dd:<draft>    Discard it
+ *   sd:<draft>:<version>  Send a draft as shown   dd:<draft>    Discard it
  *   hr:<rule>:y|n Approve or reject a House Rule
  *   pr:<request>:ONCE|TODAY|ALWAYS|REFUSED  answer a permission request
  *   dr:<request>:y|n                        answer a Deletion request
  *   bg:<finding>:f|i|l   Bug Guard: Fix, Ignore, Remind me later
  *   bg:run:<company>     Bug Guard: Run now
  *   bc:<correction>:a|x|u  Bug Guard: Apply, Cancel or Undo a correction
- * Pure: no database and no network.
+ * Pure: no database and no network. A Send button carries the draft's
+ * version (draftVersion), so a draft changed after the message showed it is
+ * never sent from that message (v6.4.1).
  */
 
 export type BotButton = { label: string; data: string };
@@ -132,6 +136,14 @@ export function renderCard(
   }
 }
 
+/** A short mark of what a draft says and where it goes: it changes when any of them changes. */
+export function draftVersion(draft: { subject: string; to: string | null; body: string }) {
+  return createHash("sha256")
+    .update(JSON.stringify([draft.subject, draft.to ?? "", draft.body]))
+    .digest("hex")
+    .slice(0, 12);
+}
+
 /** A draft with its Send and Discard buttons (Send only with an address to send to). */
 export function renderDraft(draft: {
   draftId: string;
@@ -150,7 +162,9 @@ export function renderDraft(draft: {
     text: clip(`${head}\n\n${draft.body}`),
     buttons: [
       [
-        ...(draft.to ? [{ label: "Send", data: `sd:${draft.draftId}` }] : []),
+        ...(draft.to
+          ? [{ label: "Send", data: `sd:${draft.draftId}:${draftVersion(draft)}` }]
+          : []),
         { label: "Discard", data: `dd:${draft.draftId}` },
       ],
     ],
@@ -159,7 +173,9 @@ export function renderDraft(draft: {
 
 export type ButtonPress =
   | { kind: "apply" | "cancel"; messageId: string }
-  | { kind: "send" | "discard"; draftId: string }
+  /** version: the draft as the message showed it (draftVersion); none on a button made before v6.4.1. */
+  | { kind: "send"; draftId: string; version?: string }
+  | { kind: "discard"; draftId: string }
   | { kind: "rule"; ruleId: string; approve: boolean }
   | { kind: "permission"; requestId: string; answer: "ONCE" | "TODAY" | "ALWAYS" | "REFUSED" }
   | { kind: "deletion"; requestId: string; approve: boolean }
@@ -178,8 +194,10 @@ const ID = "[a-z0-9]{10,40}";
 export function readButton(data: string): ButtonPress | null {
   let m = new RegExp(`^(ap|cx):(${ID})$`).exec(data);
   if (m) return { kind: m[1] === "ap" ? "apply" : "cancel", messageId: m[2]! };
-  m = new RegExp(`^(sd|dd):(${ID})$`).exec(data);
-  if (m) return { kind: m[1] === "sd" ? "send" : "discard", draftId: m[2]! };
+  m = new RegExp(`^sd:(${ID})(?::([a-f0-9]{12}))?$`).exec(data);
+  if (m) return { kind: "send", draftId: m[1]!, ...(m[2] ? { version: m[2] } : {}) };
+  m = new RegExp(`^dd:(${ID})$`).exec(data);
+  if (m) return { kind: "discard", draftId: m[1]! };
   m = new RegExp(`^hr:(${ID}):(y|n)$`).exec(data);
   if (m) return { kind: "rule", ruleId: m[1]!, approve: m[2] === "y" };
   m = new RegExp(`^pr:(${ID}):(ONCE|TODAY|ALWAYS|REFUSED)$`).exec(data);

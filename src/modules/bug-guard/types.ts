@@ -47,7 +47,8 @@ export const SEVERITY_BN: Record<Severity, string> = {
 /**
  * What "Fix" does for a finding:
  *   CODE      Claude Code makes a pull request with a test; the owner merges it with the PIN.
- *   DATA      the exact correction (before → after), applied with the PIN after a backup, undoable.
+ *   DATA      the exact correction (a new record, never an overwritten figure), applied with
+ *             the PIN after a backup, undoable.
  *   SECURITY  a safe step (end a session, block or unblock a login source), with the PIN.
  *   MANUAL    only the owner can do it; Bug Guard says how, step by step.
  *   NONE      nothing to do (a note).
@@ -55,13 +56,18 @@ export const SEVERITY_BN: Record<Severity, string> = {
 export const FIX_KINDS = ["CODE", "DATA", "SECURITY", "MANUAL", "NONE"] as const;
 export type FixKind = (typeof FIX_KINDS)[number];
 
-/** One stored figure Bug Guard may put right: a total kept beside the records it adds up. */
+/**
+ * A stored figure and what its records add up to (the checks compare them).
+ * Before v6.4.1 a SET correction set one to the other; Bug Guard never
+ * overwrites a stored figure now, and never applies or undoes a SET
+ * (corrections.ts): those old corrections only still read as they were.
+ */
 export type FieldChange = {
-  /** A model in CORRECTABLE (correctable.ts); nothing else is ever changed. */
+  /** The model's name ("PurchaseOrder"). */
   model: string;
   id: string;
   field: string;
-  /** As text, exactly as read ("1250.00"); the change applies only while it is still so. */
+  /** As text, exactly as read ("1250.00"). */
   before: string;
   after: string;
   /** What it is, in Bengali ("PO-2026-00012 এর মোট"). */
@@ -83,12 +89,28 @@ export type JournalLinePlan = {
 /**
  * The exact correction for a data or accounting mistake, shown before → after.
  * Applied only with the owner's PIN, after a backup, as a logged and reversible
- * change: a SET puts back a stored total (undo puts the old figure back); a
- * JOURNAL posts an adjusting entry (undo reverses it). History is never edited
- * or deleted.
+ * new record; a stored figure is never overwritten (v6.4.1 B4):
+ *   STOCK    a stock movement that records the difference between a stock
+ *            balance and its movements (undo adds the opposite movement);
+ *   JOURNAL  an adjusting journal entry (undo reverses it).
+ * SET is an old correction that overwrote a stored total: it only still reads
+ * as it was, and is never applied or undone. History is never edited or deleted.
  */
 export type CorrectionPlan =
+  /** Before v6.4.1 only: never applied or undone now. */
   | { kind: "SET"; changes: FieldChange[] }
+  | {
+      kind: "STOCK";
+      balanceId: string;
+      variantId: string;
+      warehouseId: string;
+      grade: "A_GRADE" | "B_GRADE";
+      /** The stock kept, and what its movements add up to, as the check saw them. */
+      stored: number;
+      moved: number;
+      /** The SKU, warehouse and grade, in Bengali, for the owner. */
+      label: string;
+    }
   | {
       kind: "JOURNAL";
       /** "YYYY-MM-DD". */

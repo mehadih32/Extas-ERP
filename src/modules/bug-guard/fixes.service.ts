@@ -30,9 +30,10 @@ import type { CodeFacts, CorrectionPlan, SecurityAction } from "./types";
  *     CODE      Claude Code gets an issue with only safe facts and makes a pull
  *               request with a test; the owner merges it with the PIN (AI Center >
  *               Full check), the safe update runs, Bug Guard checks again.
- *     DATA      the exact correction is prepared (before → after); "Apply" with
- *               the PIN makes a full backup first, then applies it as a logged,
- *               reversible correction ("Undo", with the PIN, puts it back).
+ *     DATA      the exact correction is prepared (before → after): always a new
+ *               record (a stock movement or an adjusting entry), never a changed
+ *               figure; "Apply" with the PIN makes a full backup first, then
+ *               applies it, logged ("Undo", with the PIN, adds the opposite record).
  *     SECURITY  with the PIN: end a session (never the owner's), block or unblock
  *               a login source.
  *     MANUAL    only the owner can do it: the steps are shown.
@@ -550,7 +551,7 @@ export async function undoCorrection(
       ctx.company.id,
       plan,
       { journalEntryId: c.journalEntryId },
-      { userId: ctx.user.id },
+      { userId: ctx.user.id, correctionId: c.id },
     );
     await tx.bugGuardCorrection.update({
       where: { id: c.id },

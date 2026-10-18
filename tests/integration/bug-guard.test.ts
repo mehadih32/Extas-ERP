@@ -641,7 +641,7 @@ run("Bug Guard", () => {
       ).toBe("CANCELLED");
     });
 
-    it("refuses a correction of anything but the listed totals", async () => {
+    it("never sets a stored figure: a SET correction is neither made nor undone (v6.4.1 B4)", async () => {
       world.found = [
         thing("bad", "URGENT", {
           fixKind: "DATA",
@@ -664,9 +664,45 @@ run("Bug Guard", () => {
       await expectAppError(
         fixFinding(env.owner, (await findingOf("bad")).id),
         "VALIDATION",
-        /may not change User/,
+        /no longer changes stored figures/,
       );
       expect(await prisma.bugGuardCorrection.count()).toBe(0);
+
+      // One applied before v6.4.1 stays as it is: Undo would set the figure back, so it is refused.
+      await setPin(env.owner, { pin: PIN });
+      const old = await prisma.bugGuardCorrection.create({
+        data: {
+          companyId: env.company.id,
+          findingId: (await findingOf("bad")).id,
+          plan: {
+            kind: "SET",
+            changes: [
+              {
+                model: "User",
+                id: env.partner.user.id,
+                field: "isSuperAdmin",
+                before: "0",
+                after: "1",
+                label: "x",
+              },
+            ],
+          },
+          summary: "x: 0 → 1",
+          status: "APPLIED",
+          appliedAt: new Date(),
+        },
+      });
+      await expectAppError(
+        undoCorrection(env.owner, old.id, { pin: PIN }),
+        "VALIDATION",
+        /no longer does/,
+      );
+      expect(
+        (await prisma.bugGuardCorrection.findUniqueOrThrow({ where: { id: old.id } })).status,
+      ).toBe("APPLIED");
+      expect(
+        (await prisma.user.findUniqueOrThrow({ where: { id: env.partner.user.id } })).isSuperAdmin,
+      ).toBe(false);
     });
   });
 

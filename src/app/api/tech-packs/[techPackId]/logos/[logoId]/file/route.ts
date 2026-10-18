@@ -1,6 +1,7 @@
 import { apiErrorResponse } from "@/lib/api";
 import { fileResponse } from "@/lib/download";
-import { requirePermission } from "@/modules/auth/context";
+import { requireAnyPermission } from "@/modules/auth/context";
+import { TECH_PACK_READ } from "@/modules/production/tech-pack-access";
 import { logoMachineFile } from "@/modules/production/tech-pack-files.service";
 
 type Params = { techPackId: string; logoId: string };
@@ -15,7 +16,7 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request, context: { params: Promise<Params> }) {
   try {
     const { techPackId, logoId } = await context.params;
-    const ctx = await requirePermission("production.view");
+    const ctx = await requireAnyPermission(...TECH_PACK_READ);
     const asked = new URL(request.url).searchParams.get("format")?.toUpperCase();
     const format = asked === "DST" || asked === "EXP" ? asked : null;
     return fileResponse(await logoMachineFile(ctx, techPackId, logoId, format));

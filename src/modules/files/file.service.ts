@@ -8,6 +8,7 @@ import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { claimAccess } from "@/modules/hr/claims";
 import { canSeeMaterialCosts } from "@/modules/materials/access";
+import { readsTechPacks } from "@/modules/production/tech-pack-access";
 
 /*
  * Uploaded files (packing-list photos, bill scans). Bytes live on disk under
@@ -292,14 +293,14 @@ export async function getFileForDownload(ctx: CompanyContext, fileId: string) {
     (asset.finishingFiles.length > 0 &&
       (ctx.can("production.view") || ctx.can("production.stock_intake"))) ||
     // A tech pack's references, logo files, sew-out photos and lab dip reports:
-    // everyone who sees production.
+    // everyone who reads tech packs (production.view, or approving them or their logos).
     (asset.techPackReferences.length +
       asset.logoArtworks.length +
       asset.logoMachineFiles.length +
       asset.logoSewOuts.length +
       asset.labDipReports.length >
       0 &&
-      ctx.can("production.view"));
+      readsTechPacks(ctx.can));
   // A raw material purchase's bill also opens to the people who see material purchases.
   const materialBill =
     !allowed &&

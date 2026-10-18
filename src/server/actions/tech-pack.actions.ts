@@ -5,9 +5,10 @@ import { revalidatePath } from "next/cache";
 import { AppError } from "@/lib/errors";
 import { getRequestMeta } from "@/lib/request-meta";
 import { runAction } from "@/lib/result";
-import { requirePermission } from "@/modules/auth/context";
+import { requireAnyPermission, requirePermission } from "@/modules/auth/context";
 import { formFields, MAX_UPLOAD_BYTES } from "@/modules/files/file.service";
 import * as ai from "@/modules/production/tech-pack-ai.service";
+import { TECH_PACK_READ } from "@/modules/production/tech-pack-access";
 import * as approval from "@/modules/production/tech-pack-approval.service";
 import * as files from "@/modules/production/tech-pack-files.service";
 import * as register from "@/modules/production/tech-pack-register.service";
@@ -18,6 +19,9 @@ import * as spec from "@/modules/production/tech-pack-spec.service";
  * Tech packs (/tech-packs, and a style's own from /production/projects/:id).
  * Each returns { ok: true, data } or { ok: false, error }.
  *   production.view            the list, a tech pack's screen, a project's tech pack
+ *                              (also production.techpack.approve and
+ *                              production.logo.approve, who need the page to
+ *                              approve it or tick its logos: TECH_PACK_READ)
  *   production.manage          a new tech pack, its details and links, the chart,
  *                              instructions, AI draft, experts and review board,
  *                              references, logos and colours
@@ -27,7 +31,7 @@ import * as spec from "@/modules/production/tech-pack-spec.service";
  * error.fieldErrors.aiAskFirst; sending it again with costOk goes on.
  */
 
-const view = () => requirePermission("production.view");
+const view = () => requireAnyPermission(...TECH_PACK_READ);
 const manage = () => requirePermission("production.manage");
 const tick = () => requirePermission("production.logo.approve");
 const approve = () => requirePermission("production.techpack.approve");

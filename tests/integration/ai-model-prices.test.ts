@@ -156,7 +156,7 @@ run("Model prices for Claude, OpenAI and Gemini (v6.4 F, A7)", () => {
     ]);
     const claude = m.priceSections[0]!;
     expect(claude.sourceUrl).toBe("https://platform.claude.com/docs/en/about-claude/pricing");
-    expect(claude.checkedOn).toBe("2026-10-16");
+    expect(claude.checkedOn).toBe("2026-10-18");
     expect(claude.rows.find((r) => r.model === "claude-opus-5-5")).toMatchObject({
       label: "Opus 5.5",
       state: "erp",
@@ -168,7 +168,7 @@ run("Model prices for Claude, OpenAI and Gemini (v6.4 F, A7)", () => {
       batchInput: "2",
       batchOutput: "10",
       sourceUrl: "https://platform.claude.com/docs/en/about-claude/pricing",
-      checkedOn: "2026-10-16",
+      checkedOn: "2026-10-18",
       setBy: null,
     });
     expect(claude.rows.find((r) => r.model === "claude-haiku-5-5")!.notes).toEqual([
@@ -238,10 +238,142 @@ run("Model prices for Claude, OpenAI and Gemini (v6.4 F, A7)", () => {
     });
     expect(audit.map((a) => a.summary)).toEqual(
       expect.arrayContaining([
-        "Opus 5.5: price set to $3 input, $15 output, $3.75 cache write per million tokens",
+        expect.stringMatching(
+          /^Opus 5\.5: price set to \$3 input, \$15 output, \$3\.75 cache write per million tokens \(from: Typed by owner on .+\)$/,
+        ),
         "Opus 5.5: price set back to the built-in price list",
       ]),
     );
+  });
+
+  it("keeps where a typed price came from: the owner's words, else who typed it and when (v6.4.1 C4)", async () => {
+    const today = new Date().toLocaleDateString("en-GB", {
+      timeZone: env.company.timezone,
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    });
+    await setModelPrice(env.owner, {
+      model: "claude-opus-5-5",
+      input: "3",
+      output: "15",
+      pin: PIN,
+    });
+    const rowOf = async (ref: string) =>
+      (await getModels(env.owner)).priceSections
+        .flatMap((x) => [...x.rows, ...x.older])
+        .find((r) => r.model === ref)!;
+    expect(await rowOf("claude-opus-5-5")).toMatchObject({
+      state: "owner",
+      source: `Typed by owner on ${today}`,
+    });
+    await setModelPrice(env.owner, {
+      model: "claude-opus-5-5",
+      input: "3",
+      output: "15",
+      source: " https://platform.claude.com/docs/en/about-claude/pricing ",
+      pin: PIN,
+    });
+    expect((await rowOf("claude-opus-5-5")).source).toBe(
+      "https://platform.claude.com/docs/en/about-claude/pricing",
+    );
+    // The page's price has no source of the owner's.
+    expect((await rowOf("claude-sonnet-5-5")).source).toBeNull();
+    const audit = await prisma.auditLog.findMany({
+      where: {
+        companyId: env.company.id,
+        entityType: "AiSettings",
+        summary: { startsWith: "Opus" },
+      },
+      select: { summary: true },
+      orderBy: { createdAt: "asc" },
+    });
+    expect(audit.map((a) => a.summary)).toEqual([
+      `Opus 5.5: price set to $3 input, $15 output per million tokens (from: Typed by owner on ${today})`,
+      "Opus 5.5: price set to $3 input, $15 output per million tokens (from: https://platform.claude.com/docs/en/about-claude/pricing)",
+    ]);
+  });
+
+  it("keeps the long-prompt prices when only the normal ones are changed (v6.4.1 C4)", async () => {
+    const book = () => priceBook(env.company.id);
+    // 200,000 prompt tokens on Haiku 5.5 are over its 100,000 line: 5 times the price.
+    const longCall = { input: 200_000, output: 10_000 };
+    const pageCost = (200_000 * 0.5 + 10_000 * 2.5) / 1e6;
+    expect(costIn(await book(), "claude-haiku-5-5", longCall).usd).toBeCloseTo(pageCost, 9);
+
+    // The owner changes only the normal prices: the page's long-prompt prices still hold.
+    await setModelPrice(env.owner, {
+      model: "claude-haiku-5-5",
+      input: "0.12",
+      output: "0.6",
+      pin: PIN,
+    });
+    expect(costIn(await book(), "claude-haiku-5-5", { input: 50_000, output: 0 }).usd).toBeCloseTo(
+      0.006,
+      9,
+    );
+    expect(costIn(await book(), "claude-haiku-5-5", longCall).usd).toBeCloseTo(pageCost, 9);
+    let row = (await getModels(env.owner)).priceSections[0]!.rows.find(
+      (r) => r.model === "claude-haiku-5-5",
+    )!;
+    expect(row).toMatchObject({
+      state: "owner",
+      input: "0.12",
+      long: { above: "100000", input: "0.5", output: "2.5" },
+      notes: [expect.stringContaining("Prompts over 100,000 tokens: $0.50 input, $2.50 output")],
+    });
+
+    // The owner's own long-prompt prices...
+    await setModelPrice(env.owner, {
+      model: "claude-haiku-5-5",
+      input: "0.12",
+      output: "0.6",
+      longAbove: "100000",
+      longInput: "0.6",
+      longOutput: "3",
+      pin: PIN,
+    });
+    const own = (200_000 * 0.6 + 10_000 * 3) / 1e6;
+    expect(costIn(await book(), "claude-haiku-5-5", longCall).usd).toBeCloseTo(own, 9);
+    // ...stay when a later change sends only the normal prices.
+    await setModelPrice(env.owner, {
+      model: "claude-haiku-5-5",
+      input: "0.11",
+      output: "0.55",
+      pin: PIN,
+    });
+    expect(costIn(await book(), "claude-haiku-5-5", longCall).usd).toBeCloseTo(own, 9);
+    row = (await getModels(env.owner)).priceSections[0]!.rows.find(
+      (r) => r.model === "claude-haiku-5-5",
+    )!;
+    expect(row.long).toMatchObject({ above: "100000", input: "0.6", output: "3" });
+    // Sent empty, they go back to the page's.
+    await setModelPrice(env.owner, {
+      model: "claude-haiku-5-5",
+      input: "0.11",
+      output: "0.55",
+      longAbove: "",
+      longInput: "",
+      longOutput: "",
+      pin: PIN,
+    });
+    expect(costIn(await book(), "claude-haiku-5-5", longCall).usd).toBeCloseTo(pageCost, 9);
+
+    const audit = await prisma.auditLog.findMany({
+      where: {
+        companyId: env.company.id,
+        entityType: "AiSettings",
+        summary: { startsWith: "Haiku" },
+      },
+      select: { summary: true },
+      orderBy: { createdAt: "asc" },
+    });
+    expect(audit.map((a) => (a.summary ?? "").replace(/ \(from: .*\)$/, ""))).toEqual([
+      "Haiku 5.5: price set to $0.12 input, $0.6 output per million tokens",
+      "Haiku 5.5: price set to $0.12 input, $0.6 output per million tokens; prompts over 100,000 tokens: $0.6 input, $3 output",
+      "Haiku 5.5: price set to $0.11 input, $0.55 output per million tokens",
+      "Haiku 5.5: price set to $0.11 input, $0.55 output per million tokens; long prompts back to the built-in price list",
+    ]);
   });
 
   it("asks for the owner's PIN to set or clear a price, and never takes a price of 0", async () => {
@@ -323,7 +455,9 @@ run("Model prices for Claude, OpenAI and Gemini (v6.4 F, A7)", () => {
       orderBy: { createdAt: "asc" },
     });
     expect(audit.map((a) => a.summary)).toEqual([
-      "gpt-test (OpenAI): price set to $1.25 input, $10 output per million tokens",
+      expect.stringMatching(
+        /^gpt-test \(OpenAI\): price set to \$1\.25 input, \$10 output per million tokens \(from: Typed by owner on .+\)$/,
+      ),
       "gpt-test (OpenAI): price set back to none (blocked until it has one)",
     ]);
   });

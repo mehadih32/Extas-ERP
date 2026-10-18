@@ -5,19 +5,32 @@ import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
 import { HELP_ICONS } from "@/components/help/labels";
-import { NAV_ITEMS } from "@/components/shell/nav-items";
+import { holdsAny as holds, NAV_ITEMS } from "@/components/shell/nav-items";
+import { ACCOUNTS_TABS } from "@/components/accounts/tabs";
+import { AI_TABS } from "@/components/ai/tabs";
+import { HR_TABS } from "@/components/hr/tabs";
+import { MATERIALS_TABS } from "@/components/materials/tabs";
+import { PARTIES_TABS } from "@/components/parties/tabs";
+import { PLANNER_TABS } from "@/components/planner/tabs";
+import { PRODUCTION_TABS } from "@/components/production/tabs";
+import { PRODUCTS_TABS } from "@/components/products/tabs";
+import { REPORTS_TABS } from "@/components/reports/tabs";
+import { SALES_TABS } from "@/components/sales/tabs";
+import { SETTINGS_TABS } from "@/components/settings/tabs";
 import {
   articleLink,
   articleOpen,
+  articleShown,
   findHelpArticle,
   HELP_SECTIONS,
   helpSearchEntries,
   listPageOf,
   sectionOpen,
+  shownArticles,
 } from "@/modules/help";
 import { missingFeaturePrompt, PROMPT_HEADING, quotedSearch } from "@/modules/help/prompt";
 import { normalizeHelpText, searchHelp, searchWords } from "@/modules/help/search";
-import { DEFAULT_ROLE_PERMISSIONS, isPermissionKey } from "@/modules/rbac/permissions";
+import { DEFAULT_ROLE_PERMISSIONS, isPermissionKey, PERMISSIONS } from "@/modules/rbac/permissions";
 
 /*
  * The Help Center's manual and search. The manual must keep up with the app:
@@ -316,11 +329,146 @@ describe("who each guide is for", () => {
 
   it("lists every guide in the search for everyone, marking the ones their role does not open", () => {
     const employee = helpSearchEntries(permissionsOf("EMPLOYEE"));
-    const owner = helpSearchEntries(permissionsOf("SUPER_ADMIN"));
-    expect(employee).toHaveLength(articles.length);
+    // The platform owner sees every guide; others all but the platform owner's own pages'.
+    const owner = helpSearchEntries(permissionsOf("SUPER_ADMIN"), true);
+    const admin = helpSearchEntries(permissionsOf("SUPER_ADMIN"));
     expect(owner).toHaveLength(articles.length);
+    expect(employee).toHaveLength(articles.length - OWNER_ONLY.length);
+    expect(admin).toHaveLength(articles.length - OWNER_ONLY.length);
     expect(employee.some((e) => !e.open)).toBe(true);
     expect(employee.find((e) => e.slug === "my-hr-payslips")!.open).toBe(true);
+  });
+
+  // The guides of the pages only the platform owner opens (v6.4.1 C6).
+  const OWNER_ONLY = [
+    "ai-health",
+    "ai-full-check",
+    "ai-bug-guard",
+    "backups-google-setup",
+    "backups-drive-key",
+    "backups-cloudflare",
+    "backups-restore",
+    "backups-new-server",
+  ];
+
+  it("shows the Bug Guard guide only to whoever opens Bug Guard: the platform owner (v6.4.1 C6)", () => {
+    const bugGuard = find("ai", "ai-bug-guard");
+    const admin = permissionsOf("SUPER_ADMIN");
+    // A company's Super Admin holds ai.manage, yet Bug Guard is the platform owner's alone.
+    expect(admin).toContain("ai.manage");
+    expect(articleShown(bugGuard, admin)).toBe(false);
+    expect(articleOpen(bugGuard, admin)).toBe(false);
+    expect(articleLink(bugGuard, admin)).toBeNull();
+    expect(helpSearchEntries(admin).some((e) => e.slug === "ai-bug-guard")).toBe(false);
+    const ai = HELP_SECTIONS.find((s) => s.id === "ai")!;
+    expect(shownArticles(ai, admin).map((a) => a.slug)).not.toContain("ai-bug-guard");
+    // The platform owner sees it, opens it and finds it.
+    expect(articleShown(bugGuard, admin, true)).toBe(true);
+    expect(articleOpen(bugGuard, admin, true)).toBe(true);
+    expect(articleLink(bugGuard, admin, true)).toEqual({ href: "/ai/bug-guard", pick: false });
+    expect(shownArticles(ai, admin, true).map((a) => a.slug)).toContain("ai-bug-guard");
+    expect(searchHelp(helpSearchEntries(admin, true), "bug guard")[0]?.slug).toBe("ai-bug-guard");
+    expect(searchHelp(helpSearchEntries(admin), "bug guard").map((e) => e.slug)).not.toContain(
+      "ai-bug-guard",
+    );
+    // Every role, without being the platform owner: never shown.
+    for (const role of Object.keys(DEFAULT_ROLE_PERMISSIONS) as Array<
+      keyof typeof DEFAULT_ROLE_PERMISSIONS
+    >) {
+      expect(articleShown(bugGuard, permissionsOf(role)), role).toBe(false);
+    }
+  });
+
+  it("hides the guides of every other page only the platform owner opens, the same way", () => {
+    const hidden = articles
+      .filter(({ article }) => !articleShown(article, permissionsOf("SUPER_ADMIN")))
+      .map(({ article }) => article.slug);
+    expect(hidden.sort()).toEqual([...OWNER_ONLY].sort());
+    for (const slug of OWNER_ONLY) {
+      const { article } = articles.find((a) => a.article.slug === slug)!;
+      expect(articleShown(article, permissionsOf("SUPER_ADMIN"), true), slug).toBe(true);
+    }
+  });
+
+  it("never marks a guide open for a page the role cannot open (its tab, not only the menu)", () => {
+    // Found in v6.4.1: the menu entry let these through while the page's own tab did not.
+    expect(
+      articleOpen(find("sales", "sales-previous-due"), permissionsOf("PRODUCTION_MANAGER")),
+    ).toBe(false);
+    expect(
+      articleOpen(find("production", "production-overview"), ["production.techpack.approve"]),
+    ).toBe(false);
+    // ...while the Production part, which its menu shows them, stays open.
+    const production = HELP_SECTIONS.find((x) => x.id === "production")!;
+    expect(sectionOpen(production, ["production.techpack.approve"])).toBe(true);
+    expect(articleOpen(find("production", "production-bookings"), ["production.view"])).toBe(false);
+    expect(articleOpen(find("hr", "hr-overview"), ["accounts.view"])).toBe(false);
+    expect(articleOpen(find("settings", "settings-add-person"), ["company.settings"])).toBe(false);
+    expect(articleOpen(find("reports", "reports-printed-documents"), ["reports.export"])).toBe(
+      false,
+    );
+    expect(articleOpen(find("accounts", "accounts-voucher"), ["accounts.manage"])).toBe(false);
+    // ...and still open where the page opens.
+    expect(
+      articleOpen(find("production", "production-bookings"), ["production.bookings.view"]),
+    ).toBe(true);
+    expect(
+      articleOpen(find("tech-pack", "production-tech-pack"), ["production.techpack.approve"]),
+    ).toBe(true);
+    expect(articleOpen(find("sales", "sales-previous-due"), permissionsOf("ACCOUNTS"))).toBe(true);
+
+    // For every role and every single permission: a guide marked open has a page that opens,
+    // by the page's own tab (its menu entry when it has none).
+    const tabs = [
+      ACCOUNTS_TABS,
+      AI_TABS,
+      HR_TABS,
+      MATERIALS_TABS,
+      PARTIES_TABS,
+      PLANNER_TABS,
+      PRODUCTION_TABS,
+      PRODUCTS_TABS,
+      REPORTS_TABS,
+      SALES_TABS,
+      SETTINGS_TABS,
+    ].flat() as Array<{
+      href: string;
+      anyOf: readonly string[];
+      andAnyOf?: readonly string[];
+      platformOwner?: boolean;
+    }>;
+    const roots = new Set(NAV_ITEMS.map((i) => i.href));
+    const pageOpens = (route: string, held: readonly string[]) => {
+      const tab = tabs
+        .filter((t) => route === t.href || (!roots.has(t.href) && route.startsWith(`${t.href}/`)))
+        .sort((a, b) => b.href.length - a.href.length)[0];
+      if (tab) {
+        return (
+          holds(held, tab.anyOf) &&
+          (!tab.andAnyOf || holds(held, tab.andAnyOf)) &&
+          !tab.platformOwner
+        );
+      }
+      const entry = NAV_ITEMS.filter(
+        (i) => route === i.href || (i.href !== "/" && route.startsWith(`${i.href}/`)),
+      ).sort((a, b) => b.href.length - a.href.length)[0];
+      return !entry || holds(held, entry.anyOf);
+    };
+    const sets = [
+      ...(
+        Object.keys(DEFAULT_ROLE_PERMISSIONS) as Array<keyof typeof DEFAULT_ROLE_PERMISSIONS>
+      ).map((role) => [role, permissionsOf(role)] as const),
+      ...PERMISSIONS.map((p) => [p.key, [p.key as string]] as const),
+    ];
+    const wrong: string[] = [];
+    for (const { article } of articles) {
+      for (const [name, held] of sets) {
+        if (!articleOpen(article, held)) continue;
+        if (article.routes.length === 0 || article.routes.some((r) => pageOpens(r, held))) continue;
+        wrong.push(`${article.slug} (${name})`);
+      }
+    }
+    expect(wrong).toEqual([]);
   });
 });
 

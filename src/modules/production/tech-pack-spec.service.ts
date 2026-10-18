@@ -12,6 +12,7 @@ import { auditAsAi } from "@/modules/ai/account";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { isProjectClosed } from "@/modules/production/project-costs";
+import { readsTechPacks } from "@/modules/production/tech-pack-access";
 import {
   INSTRUCTION_SECTIONS,
   type InstructionSection,
@@ -159,11 +160,12 @@ export function assertCanChange(tp: {
   }
 }
 
+/** Reading a tech pack: production.view, or approving tech packs or their logos (v6.4.1 C5). */
 export function assertView(ctx: CompanyContext) {
-  if (!ctx.can("production.view")) {
+  if (!readsTechPacks(ctx.can)) {
     throw new AppError(
       "FORBIDDEN",
-      "You do not have permission to see tech packs (production.view).",
+      "You do not have permission to see tech packs (production.view, or approving tech packs or logos).",
     );
   }
 }

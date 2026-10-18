@@ -73,5 +73,7 @@ describe("Names and codes are never cut with ... (v6.4.1 C1)", () => {
     const at = src.indexOf('"absolute truncate');
     expect(at).toBeGreaterThan(0);
     expect(src.slice(Math.max(0, at - 1200), at)).toContain("data-layout-cut-ok");
+    // It is drawn at its printed size, so the readable-size check skips it too.
+    expect(src.slice(Math.max(0, at - 1200), at)).toContain("data-layout-ignore");
   });
 });

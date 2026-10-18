@@ -293,8 +293,10 @@ export function TagPlacement({ template, catalog }: { template: Template; catalo
             <button
               key={d.key}
               type="button"
-              // As small as its place on the page: the whole tag is in the list beside it.
+              // Drawn at its printed size on the scaled page, so it can be smaller than
+              // screen text: the whole tag, readable, is in the list beside it.
               data-layout-cut-ok
+              data-layout-ignore
               onClick={(e) => {
                 e.stopPropagation();
                 setAdding(null);

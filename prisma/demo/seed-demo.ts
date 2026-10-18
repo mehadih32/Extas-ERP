@@ -13,7 +13,10 @@
  *   5. and the v6.3 sample skill for the fabric expert X05 (./v63-samples.ts),
  *      once, waiting for its test;
  *   6. and the v6.4 sample tech pack from a buyer's brief (./v64-tech-pack.ts),
- *      once, not linked to a production project.
+ *      once, not linked to a production project;
+ *   7. and the v6.4.1 samples (./v641-samples.ts), each once: three wholesale
+ *      orders for two buyers, two employees, an invoice pad template and a
+ *      fire licence due for renewal, so every Help picture has its record.
  * It stops, loading nothing, unless DEMO_SITE=on and the database is the demo's own.
  *   SEED_ADMIN_EMAIL          the owner's email
  *   DEMO_OWNER_PASSWORD_HASH  the owner's password hash on the live ERP
@@ -30,6 +33,7 @@ import {
   loadV62SamplesDemo,
   loadV63SamplesDemo,
   loadV64TechPackDemo,
+  loadV641SamplesDemo,
 } from "./load-demo";
 
 async function main() {
@@ -98,6 +102,23 @@ async function main() {
     );
   } catch (error) {
     console.error("! v6.4 sample tech pack: it could not be made", error);
+  }
+
+  try {
+    const added = await loadV641SamplesDemo(owner.id, company.id);
+    const made = [
+      ...added.orders.map((number) => `sales order ${number}`),
+      ...added.employees.map((name) => `employee ${name}`),
+      ...(added.template ? [`template "${added.template}"`] : []),
+      ...(added.licence ? [`licence "${added.licence}"`] : []),
+    ];
+    console.log(
+      made.length
+        ? `✓ v6.4.1 samples for the Help pictures: ${made.join(", ")}`
+        : "✓ The v6.4.1 samples are there already",
+    );
+  } catch (error) {
+    console.error("! v6.4.1 samples: they could not all be made", error);
   }
 }
 

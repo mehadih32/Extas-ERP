@@ -277,14 +277,32 @@ export async function label(token: string, fileId: string, appProperties: Record
   );
 }
 
+/**
+ * Every file that matches, newest first. Google sends a list in pages (at most
+ * 1000 files each, often fewer), so every page is read: with only the first, the
+ * newest backups, the restore guide or restore-key.json could be left out.
+ */
 async function search(token: string, q: string, what: string): Promise<DriveFile[]> {
-  const result = await call<{ files?: DriveFile[] }>(
-    token,
-    `${api()}/files?${new URLSearchParams({ q, fields: `files(${FILE_FIELDS})`, pageSize: "1000", orderBy: "createdTime" })}`,
-    { method: "GET" },
-    what,
-  );
-  return result.files ?? [];
+  const out: DriveFile[] = [];
+  let pageToken: string | undefined;
+  do {
+    const params = new URLSearchParams({
+      q,
+      fields: `nextPageToken,files(${FILE_FIELDS})`,
+      pageSize: "1000",
+      orderBy: "createdTime desc",
+    });
+    if (pageToken) params.set("pageToken", pageToken);
+    const result = await call<{ files?: DriveFile[]; nextPageToken?: string }>(
+      token,
+      `${api()}/files?${params}`,
+      { method: "GET" },
+      what,
+    );
+    out.push(...(result.files ?? []));
+    pageToken = result.nextPageToken || undefined;
+  } while (pageToken);
+  return out;
 }
 
 const quoted = (id: string) => `'${id.replace(/['\\]/g, "")}'`;
@@ -302,7 +320,7 @@ export async function findFolders(token: string, key: string, value: string) {
   );
 }
 
-/** The folders inside a folder, oldest first. */
+/** The folders inside a folder, newest first. */
 export async function listFolders(token: string, parentId: string) {
   return search(
     token,
@@ -311,7 +329,7 @@ export async function listFolders(token: string, parentId: string) {
   );
 }
 
-/** The files inside a folder. */
+/** The files inside a folder, newest first. */
 export async function listFiles(token: string, folderId: string) {
   return search(
     token,

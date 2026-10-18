@@ -51,7 +51,7 @@ const orderInclude = {
   supplier: { select: { id: true, code: true, name: true, phone: true } },
   project: { select: { id: true, code: true, name: true, status: true } },
   batch: { select: { id: true, code: true, name: true } },
-  booking: { select: { id: true, stage: true } },
+  booking: { select: { id: true, stage: true, source: true } },
   createdBy: { select: { id: true, name: true } },
   lines: {
     orderBy: { id: "asc" },
@@ -81,6 +81,8 @@ function presentOrder(ctx: CompanyContext, order: OrderRow) {
     batch: order.batch,
     /** Written as a booking: its lines and specification change on the booking. */
     bookingId: order.booking?.id ?? null,
+    /** Which kind of booking (its own permission changes it), or null. */
+    bookingSource: order.booking?.source ?? null,
     /** A booking still waiting for approval: nothing arrives on it until it is approved. */
     awaitingApproval: order.booking?.stage === "DRAFT",
     orderDate: dateOnly(order.orderDate),

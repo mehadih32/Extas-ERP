@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 
+import { AppError } from "@/lib/errors";
 import { formatAmount, formatDay } from "@/lib/format";
 import { checkRateLimit } from "@/lib/rate-limit";
 import type { RequestMeta } from "@/lib/request-meta";
@@ -235,10 +236,20 @@ export function purchaseOrderDocument(
   };
 }
 
-/** The order's PDF for download (logged; nothing is kept). */
+/**
+ * The order's PDF for download (logged; nothing is kept). A booking's order is
+ * printed from the booking only, with its revision and its Draft stamp until it
+ * is approved: never as a clean purchase order.
+ */
 export async function purchaseOrderPdf(ctx: CompanyContext, orderId: string, meta?: RequestMeta) {
   checkRateLimit(`on-demand-print:${ctx.user.id}`, ON_DEMAND_PER_MINUTE, 60_000);
   const [o, sizeOrder] = await Promise.all([getPurchaseOrder(ctx, orderId), sizeOrderOf(ctx)]);
+  if (o.bookingId) {
+    throw new AppError(
+      "CONFLICT",
+      `${o.number} is a booking: print it from the booking (Production > Bookings), so the supplier sees its revision and whether it is approved.`,
+    );
+  }
   const rank = (size: string) => sizeOrder.get(size.toUpperCase()) ?? Number.MAX_SAFE_INTEGER;
   const model = purchaseOrderDocument(ctx, o, rank);
   const images = await loadMaterialImages(

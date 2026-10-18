@@ -31,6 +31,7 @@ import * as catalog from "@/modules/inventory/catalog.service";
 import * as matrix from "@/modules/inventory/matrix.service";
 import * as styles from "@/modules/inventory/style.service";
 import * as materials from "@/modules/materials/material.service";
+import { purchaseOrderPdf } from "@/modules/materials/order-pdf.service";
 import * as orders from "@/modules/materials/purchase-order.service";
 import * as purchases from "@/modules/materials/purchase.service";
 import * as materialsScreens from "@/modules/materials/screens.service";
@@ -915,5 +916,51 @@ run("Bookings", () => {
     expect((await materialsScreens.getOrderScreen(both, mill.orderId)).can.cancel).toBe(true);
     const ended = await orders.cancelPurchaseOrder(both, mill.orderId, { reason: "Booked twice" });
     expect(ended.status).toBe("CANCELLED");
+  });
+
+  it("prints a booking's order only as the booking, and offers changing it only to those who may", async () => {
+    const env = await setup();
+    const person = async (email: string, name: string, permissions: string[]) => {
+      const role = await roles.createRole(env.owner, { name, permissions });
+      const user = await makeUser(email);
+      await addToCompany(user.id, env.company.id, role.id);
+      return contextFor(user.id, env.company.id);
+    };
+    const draft = await bookings.createBooking(env.pm, knitwear(env));
+    expect(draft.stage).toBe("DRAFT");
+
+    // Never a clean "Purchase Order" without the booking's Draft stamp and revision.
+    const refused = await expectAppError(purchaseOrderPdf(env.pm, draft.orderId), "CONFLICT");
+    expect(refused.message).toContain("print it from the booking");
+    // Its order's page prints the booking instead, for those who see bookings.
+    const pm = await materialsScreens.getOrderScreen(env.pm, draft.orderId);
+    expect(pm.print).toBe("booking");
+    expect(pm.can.edit).toBe(true);
+
+    // Buying raw materials alone: no booking to print, and no "Change the booking".
+    const store = await person("storebuyer@extas.test", "Store buyer", [
+      "materials.view",
+      "materials.purchase",
+    ]);
+    const seen = await materialsScreens.getOrderScreen(store, draft.orderId);
+    expect(seen.print).toBeNull();
+    expect(seen.can.edit).toBe(false);
+    // Market purchases only: a supplier PO booking is not theirs to change.
+    const shop = await person("shop@extas.test", "Market buyer", [
+      "materials.view",
+      "materials.purchase",
+      "production.bookings.market",
+    ]);
+    const shopScreen = await materialsScreens.getOrderScreen(shop, draft.orderId);
+    expect(shopScreen.print).toBe("booking");
+    expect(shopScreen.can.edit).toBe(false);
+
+    // A plain purchase order still prints as one.
+    const plain = await orders.createPurchaseOrder(env.pm, {
+      supplierId: env.trims.id,
+      lines: [{ materialId: env.buttons.id, quantity: 100, unitPrice: 1.5 }],
+    });
+    expect((await materialsScreens.getOrderScreen(store, plain.id)).print).toBe("order");
+    expect((await purchaseOrderPdf(env.pm, plain.id)).bytes.length).toBeGreaterThan(1000);
   });
 });

@@ -23,6 +23,10 @@
 //   CHROMIUM_PATH  a Chromium to use instead of Playwright's own
 // Needs Playwright with Chromium (scripts/full-check: npm install, npx playwright
 // install chromium).
+// With long names (v6.4.1 C1): on a copy of the demo data in a database named
+// extras_layout_<something>, run `npx tsx scripts/layout-long-names.ts` first (with
+// DATABASE_URL pointing at that copy); every company, buyer, supplier, style, colour,
+// material, store, person, project and booking then has a long, real-looking name.
 
 import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";

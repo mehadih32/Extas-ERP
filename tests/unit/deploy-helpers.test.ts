@@ -611,7 +611,8 @@ compose() {
   echo "compose $*" >>"${log}"
   case "$*" in *psql*) [ -z "\${COUNTS_FAIL:-}" ] || return 1; cat >/dev/null; echo '{"User": 3}' ;; esac
   [ "$*" != "ps -q app" ] || { [ -z "\${APP_RUNNING:-}" ] || echo app-container; return 0; }
-  # SLOW_UP: the ERP takes its time to start once a safety copy was put back.
+  # SLOW_START: the ERP takes its time to start (SLOW_UP: once a safety copy was put back).
+  [ "$*" != "up -d" ] || [ -z "\${SLOW_START:-}" ] || sleep "\$SLOW_START"
   [ "$*" != "up -d" ] || [ -z "\${SLOW_UP:-}" ] || ! grep -q '^restore_database /safety-copies/' "${log}" ||
     sleep "\$SLOW_UP"
   [ "$*" != "up -d" ] || [ -z "\${COMPOSE_UP_FAILS:-}" ]
@@ -644,7 +645,11 @@ restore_database() {
   [ -n "\${COMMIT_FIRST:-}" ] || echo $(($(cat "${dbId}") + 1)) >"${dbId}"
 }
 database_id() { cat "${dbId}" 2>/dev/null || true; }
-stop_restore_in_db() { echo "stop_restore_in_db" >>"${log}"; [ -z "\${STOP_FAILS:-}" ]; }
+stop_restore_in_db() {
+  echo "stop_restore_in_db" >>"${log}"
+  [ -z "\${SLOW_STOP:-}" ] || sleep "\$SLOW_STOP"
+  [ -z "\${STOP_FAILS:-}" ]
+}
 # APP_IDLE: the app has surely not run since the restore's mark.
 app_not_run_since() { echo "app_not_run_since \${2:-}" >>"${log}"; [ -n "\${APP_IDLE:-}" ]; }
 write_restored_mark() { echo '{}' >"$3"; [ -z "$2" ] || rm -f "$2"; }
@@ -1289,20 +1294,26 @@ print(os.waitstatus_to_exitcode(status))
     expect(readFileSync(mark, "utf8").split("\n")[1]).toBe("went back");
     expect(cutNote(h.data)).toMatchObject({ wentBack: true });
     expect(cutNote(h.data).message).toContain("But the ERP did NOT start again even on it");
-    // The next try: the data is already as it was before; only started. Cut while
-    // the files from before were being put back too: that is finished.
+    // The next try: the data is already as it was before; only started. The files
+    // are never swapped then: "went back" is written only once they are back, and the
+    // ERP may have run since (v6.4.1 review 4b).
     const aside = path.join(h.data, `uploads.before-restore-${STAMP}`);
     await mkdir(aside, { recursive: true });
-    await writeFile(path.join(aside, "a.pdf"), "the file from before");
+    await writeFile(path.join(aside, "a.pdf"), "an older file set aside");
     await writeFile(h.log, "");
     const next = await h.run({ APP_IDLE: "1" }, ["--after-restart"]);
     expect(next.code, next.stderr).toBe(0);
     expect(readFileSync(h.log, "utf8")).not.toContain("restore_database");
-    expect(readFileSync(path.join(h.data, "uploads", "a.pdf"), "utf8")).toBe(
-      "the file from before",
+    expect(readFileSync(path.join(h.data, "uploads", "c1", "now.pdf"), "utf8")).toBe(
+      "the file there now",
     );
-    expect(existsSync(path.join(h.data, `uploads.failed-restore-${STAMP}`, "c1", "now.pdf"))).toBe(
-      true,
+    expect(existsSync(path.join(aside, "a.pdf"))).toBe(true);
+    // Both ways back write "went back" only once the files are back.
+    expect(readFileSync(path.join("deploy", "restore.sh"), "utf8")).toMatch(
+      /mv "\$DATA_DIR\/uploads\.before-restore-\$stamp" "\$DATA_DIR\/uploads"\n\s*fi\n(?:\s*#[^\n]*\n)*\s*write_restore_mark "\$stamp" "went back"/,
+    );
+    expect(readFileSync(path.join("deploy", "lib.sh"), "utf8")).toMatch(
+      /mv "\$aside" "\$DATA_DIR\/uploads"\n\s*fi\n(?:\s*#[^\n]*\n)*\s*write_restore_mark "\$cut" "went back"/,
     );
     expect(existsSync(mark)).toBe(false);
     expect(cutNote(h.data).message).toContain("as they were before that restore");
@@ -1477,6 +1488,42 @@ print(os.waitstatus_to_exitcode(status))
     );
   });
 
+  it("never takes a mark left by an earlier restore for its own when stopped (v6.4.1 review 4b)", async () => {
+    const h = await harness();
+    const mark = path.join(h.data, "backups", ".restore-running");
+    const left = `${STAMP}\nsafety copy\n2026-10-04_020000\n16000\n`;
+    await writeFile(mark, left);
+    // Ctrl+C while that earlier restore is settled, before this one did anything.
+    const stopped = await h.stopAt("stop_restore_in_db", "SIGINT", { SLOW_STOP: "3" });
+    expect(stopped.code).not.toBe(0);
+    expect(stopped.out).not.toContain("unbound variable");
+    expect(readFileSync(mark, "utf8")).toBe(left);
+    expect(readFileSync(h.log, "utf8")).not.toMatch(/compose up -d\n/);
+    const notes = readdirSync(path.join(h.data, "backups")).filter((n) =>
+      n.startsWith("restore-cut-"),
+    );
+    expect(notes).toEqual([]);
+    expect(h.result()).toMatchObject({ ok: false, wentBack: false });
+    expect(h.result().message).toContain("This restore changed nothing");
+    expect(h.result().message).toContain("--after-restart");
+  });
+
+  it("says the ERP may be running when it was stopped while the ERP was being started (v6.4.1 review 4b)", async () => {
+    const h = await harness();
+    const stopped = await h.stopAt(
+      /restore_database \/backups\/[^\n]*\ncompose up -d\n/,
+      "SIGTERM",
+      {
+        SLOW_START: "3",
+        APP_RUNNING: "1",
+      },
+    );
+    expect(stopped.code).not.toBe(0);
+    expect(h.result().message).toContain("the restore was stopped before it finished");
+    expect(h.result().message).toContain("the ERP may be running on it now");
+    expect(h.result().message).not.toContain("stays stopped");
+  });
+
   it("writes the restore log for root only (v6.4.1 review 4)", () => {
     const restore = readFileSync(path.join("deploy", "restore.sh"), "utf8");
     expect(restore).toMatch(
@@ -1501,45 +1548,72 @@ app_not_run_since "${mark}" "\${SAME:-}"`;
       (await withLib(docker(mark), { env })).code === 0;
     const before = "2026-10-16T09:00:00.123456789Z";
     const after = "2026-10-16T11:00:00.5Z";
-    // Stopped, started last before the mark: not run since.
-    expect(await answer({ STATE: `false ${before} ${before}` })).toBe(true);
-    expect(await answer({ STATE: `false ${before} ${before}`, SAME: "same" })).toBe(true);
+    const never = "0001-01-01T00:00:00Z";
+    // Stopped, started and stopped last before the mark: not run since.
+    expect(await answer({ STATE: `false ${before} ${before} ${before}` })).toBe(true);
+    expect(await answer({ STATE: `false ${before} ${before} ${before}`, SAME: "same" })).toBe(true);
     // Started since, or running now.
-    expect(await answer({ STATE: `false ${before} ${after}` })).toBe(false);
-    expect(await answer({ STATE: `true ${before} ${before}` })).toBe(false);
+    expect(await answer({ STATE: `false ${before} ${after} ${after}` })).toBe(false);
+    expect(await answer({ STATE: `true ${before} ${before} ${never}` })).toBe(false);
+    // Within the same second as the mark: told apart (the app stops just before it).
+    const justBefore = "2026-10-16T10:14:59.9Z";
+    const justAfter = "2026-10-16T10:15:00.5Z";
+    expect(await answer({ STATE: `false ${before} ${before} ${justBefore}` })).toBe(true);
+    expect(await answer({ STATE: `false ${before} ${before} ${justAfter}` })).toBe(false);
+    // Stopped since: it was running after the mark (v6.4.1 review 4b).
+    expect(await answer({ STATE: `false ${before} ${before} ${after}` })).toBe(false);
     // Made since and never started: not run, but not the container that was there then.
-    expect(await answer({ STATE: `false ${after} 0001-01-01T00:00:00Z` })).toBe(true);
-    expect(await answer({ STATE: `false ${after} 0001-01-01T00:00:00Z`, SAME: "same" })).toBe(
-      false,
-    );
+    expect(await answer({ STATE: `false ${after} ${never} ${never}` })).toBe(true);
+    expect(await answer({ STATE: `false ${after} ${never} ${never}`, SAME: "same" })).toBe(false);
     // No container, or Docker does not answer: it may have run.
-    expect(await answer({ STATE: `false ${before} ${before}`, NO_APP: "1" })).toBe(false);
+    expect(await answer({ STATE: `false ${before} ${before} ${before}`, NO_APP: "1" })).toBe(false);
     expect(await answer({ STATE: "" })).toBe(false);
-    expect(await answer({ STATE: `false ${before} not-a-time` })).toBe(false);
+    expect(await answer({ STATE: `false ${before} not-a-time ${before}` })).toBe(false);
+    expect(await answer({ STATE: `false ${before} ${before} not-a-time` })).toBe(false);
   });
 
   it("ends the restore inside the database container, and waits until it is gone", async () => {
-    // The restore's connection is there for the first two looks.
+    /*
+     * As in the db container, where PostgreSQL is PID 1: a process killed there (or
+     * left to it) makes it restart as after a crash (v6.4.1 review 4b), and it answers
+     * no query for a while. The restore's connection is there for two looks.
+     */
     const stub = `
 compose() {
   echo "compose $*" >>"${dir}/calls"
   case "$*" in
-    *pg_terminate_backend*) [ -z "\${DB_DOWN:-}" ] || return 1
+    "exec -T db "*kill*) echo 3 >"${dir}/recovering" ;;
+    *pg_terminate_backend*)
+      [ -z "\${DB_DOWN:-}" ] || return 1
+      r=$(cat "${dir}/recovering")
+      [ "$r" = 0 ] || { echo $((r - 1)) >"${dir}/recovering"; return 2; }
       n=$(cat "${dir}/n"); echo $((n + 1)) >"${dir}/n"; [ "$n" -ge 2 ] && echo 0 || echo 1 ;;
     *pgrep*) return 1 ;;
   esac
 }
-sleep() { :; }
+sleep() { echo "sleep $*" >>"${dir}/calls"; }
 echo 0 >"${dir}/n"
+echo "\${RECOVERING:-0}" >"${dir}/recovering"
 stop_restore_in_db`;
     const ended = await withLib(stub);
     expect(ended.code).toBe(0);
     const calls = readFileSync(path.join(dir, "calls"), "utf8");
-    expect(calls.match(/compose exec -T db pkill -f \[e\]xtas_erp_restore\n/g)).toHaveLength(3);
-    expect(calls).toContain("WHERE application_name = 'extas_erp_restore'");
+    // Only its connection is ended: nothing is killed inside the container.
+    expect(calls).not.toMatch(/exec -T db [^\n]*kill/);
+    expect(calls.match(/WHERE application_name = 'extas_erp_restore'/g)).toHaveLength(3);
     expect(calls).toMatch(/compose exec -T db pgrep -f \[e\]xtas_erp_restore\n$/);
-    // The database does not answer: it cannot be made sure.
+    // A database that does not answer for a moment (restarting): asked again.
+    await writeFile(path.join(dir, "calls"), "");
+    expect((await withLib(stub, { env: { RECOVERING: "3" } })).code).toBe(0);
+    expect(
+      readFileSync(path.join(dir, "calls"), "utf8").match(/pg_terminate_backend/g),
+    ).toHaveLength(6);
+    // The database does not answer at all: it cannot be made sure, after a few tries.
+    await writeFile(path.join(dir, "calls"), "");
     expect((await withLib(stub, { env: { DB_DOWN: "1" } })).code).toBe(1);
+    expect(
+      readFileSync(path.join(dir, "calls"), "utf8").match(/pg_terminate_backend/g),
+    ).toHaveLength(5);
   });
 
   it("reads the database's id, and nothing when it cannot be read", async () => {

@@ -221,8 +221,8 @@ prune_safety_copies() {
 
 # The mark of a restore that runs, DATA_DIR/backups/.restore-running (restore.sh):
 # line 1 the restore's time, line 2 how far it got ("", "safety copy" once that is
-# saved, "went back" once the safety copy is back in the database), line 3 the
-# backup's name, line 4 the database's id when the safety copy was saved
+# saved, "went back" once the safety copy and the files from before are back), line 3
+# the backup's name, line 4 the database's id when the safety copy was saved
 # (database_id). Written whole, never half.
 write_restore_mark() {
   local mark="$DATA_DIR/backups/.restore-running"
@@ -238,19 +238,26 @@ database_id() {
 }
 
 # restore_database's psql goes on inside the database container when the command
-# that started it is stopped (Ctrl+C, systemd): it is ended there (the database then
-# rolls back whatever was not committed), and waited for, up to a minute. False when
-# that cannot be made sure, such as when the database does not answer.
+# that started it is stopped (Ctrl+C, systemd): its connection is ended (the database
+# then rolls back whatever was not committed; psql and pg_restore then end by
+# themselves), and it is waited for, up to a minute. Nothing is ever killed inside the
+# container: PostgreSQL is its PID 1, and a process killed there, or left to it,
+# makes it restart as after a crash. False when that cannot be made sure, such as
+# when the database does not answer five times in a row.
 stop_restore_in_db() {
   # [e]xtas... never finds the command that looks for it.
-  local left find="[${RESTORE_TAG:0:1}]${RESTORE_TAG:1}"
+  local left fails=0 find="[${RESTORE_TAG:0:1}]${RESTORE_TAG:1}"
   for _ in $(seq 1 30); do
-    compose exec -T db pkill -f "$find" >/dev/null 2>&1 || true
-    left="$(compose exec -T db psql -X -q -At -U postgres -d postgres -c \
+    if left="$(compose exec -T db psql -X -q -At -U postgres -d postgres -c \
       "SELECT count(pg_terminate_backend(pid)) FROM pg_stat_activity WHERE application_name = '$RESTORE_TAG'" \
-      2>/dev/null)" || return 1
-    if [ "$left" = 0 ] && ! compose exec -T db pgrep -f "$find" >/dev/null 2>&1; then
-      return 0
+      2>/dev/null)"; then
+      fails=0
+      if [ "$left" = 0 ] && ! compose exec -T db pgrep -f "$find" >/dev/null 2>&1; then
+        return 0
+      fi
+    else
+      fails=$((fails + 1))
+      [ "$fails" -lt 5 ] || return 1
     fi
     sleep 2
   done
@@ -258,22 +265,35 @@ stop_restore_in_db() {
 }
 
 # Whether the app has surely not run since the file $1 was written (the restore's
-# mark): it is not running, and its container last started before then. With $2
-# "same", its container was also made before then, so it is the one that was there
-# then (one made since may have run and gone). Any doubt counts as "it ran".
+# mark): it is not running, and its container last started, and last stopped, before
+# then (Docker's zero time when never). With $2 "same", its container was also made
+# before then, so it is the one that was there then (one made since may have run and
+# gone). Any doubt counts as "it ran".
 app_not_run_since() {
-  local since id state running created started
-  since="$(stat -c %Y "$1" 2>/dev/null)" || return 1
+  local since id state running created started finished
+  # In nanoseconds: the app is stopped only a moment before the mark is written.
+  since="$(stat -c %.9Y "$1" 2>/dev/null)" || return 1
+  since="${since/./}"
+  [[ "$since" =~ ^[0-9]+$ ]] || return 1
   id="$(compose ps -a -q app 2>/dev/null | head -n 1)"
   [ -n "$id" ] || return 1
-  state="$(docker inspect -f '{{.State.Running}} {{.Created}} {{.State.StartedAt}}' "$id" 2>/dev/null)" || return 1
-  read -r running created started <<<"$state"
+  state="$(docker inspect -f '{{.State.Running}} {{.Created}} {{.State.StartedAt}} {{.State.FinishedAt}}' "$id" 2>/dev/null)" ||
+    return 1
+  read -r running created started finished <<<"$state"
   [ "$running" = false ] || return 1
-  started="$(date -d "$started" +%s 2>/dev/null)" || return 1
-  [ "$started" -lt "$since" ] || return 1
+  started="$(docker_time "$started")" && [ "$started" -lt "$since" ] || return 1
+  finished="$(docker_time "$finished")" && [ "$finished" -lt "$since" ] || return 1
   [ "${2:-}" = same ] || return 0
-  created="$(date -d "$created" +%s 2>/dev/null)" || return 1
-  [ "$created" -lt "$since" ]
+  created="$(docker_time "$created")" && [ "$created" -lt "$since" ]
+}
+
+# A time as Docker writes it, in nanoseconds since 1970; 0 for its "never"
+# (0001-01-01T00:00:00Z). False when it is not a time.
+docker_time() {
+  case "$1" in
+    0001-01-01T*) echo 0 ;;
+    *) date -d "$1" +%s%N 2>/dev/null | grep -E '^[0-9]+$' ;;
+  esac
 }
 
 # A restore cut off before it finished (the server restarted, or it was stopped)
@@ -330,16 +350,8 @@ settle_cut_restore() {
         fi
       fi
       ;;
-    "went back")
-      data=before
-      # Cut while the files from before were being put back too: that is finished
-      # (the app has not started since: it clears the mark as soon as it runs).
-      if [ -n "$cut" ] && [ -d "$aside" ] && [ -e "$DATA_DIR/uploads" ]; then
-        rm -rf "$DATA_DIR/uploads.failed-restore-$cut"
-        mv "$DATA_DIR/uploads" "$DATA_DIR/uploads.failed-restore-$cut"
-        mv "$aside" "$DATA_DIR/uploads"
-      fi
-      ;;
+    # Written only once the database and the files from before are both back.
+    "went back") data=before ;;
     *) data=untouched ;;
   esac
   if [ -n "$cut" ] && [ ! -e "$DATA_DIR/uploads" ] && [ -d "$aside" ]; then
@@ -385,12 +397,12 @@ settle_cut_restore() {
       went_back=1
       data=before
       rm -f "$restored_mark"
-      write_restore_mark "$cut" "went back" "$name"
       if [ -d "$aside" ]; then
         rm -rf "$DATA_DIR/uploads.failed-restore-$cut"
         [ ! -e "$DATA_DIR/uploads" ] || mv "$DATA_DIR/uploads" "$DATA_DIR/uploads.failed-restore-$cut"
         mv "$aside" "$DATA_DIR/uploads"
       fi
+      write_restore_mark "$cut" "went back" "$name"
       compose up -d || true
       wait_healthy app && started=1
     fi

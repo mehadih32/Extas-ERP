@@ -284,14 +284,14 @@ before), and the ERP may have been used since. It only puts the uploads folder b
 restore was cut while swapping it (the live one missing), starts the ERP as it is, and tells
 the owner ("Restore did not finish", in the inbox and on Telegram) what happened and how to
 undo it with that restore's safety copy, which stays on the server for 7 days instead of 24
-hours from the moment it is saved. Only when the ERP does not start and the app has not been
-started since the mark (Docker's start time of its container), so nobody can have entered
+hours from the moment it is saved. Only when the ERP does not start and the app has not run
+since the mark (Docker's start and stop times of its container), so nobody can have entered
 anything since the safety copy, is that copy put back by itself, as the restore would have
 done. When the ERP still does not start, the mark stays, so the next start of the server, the
 next restore or update tries again, and it prints `PROBLEM: the ERP is NOT running`: no
 message can reach the owner while the ERP is down (the note waits for it; the GitHub backup
-watch tells the owner when backups stop). Every restore and every update (`deploy.sh`)
-settles first too; an update that then starts the ERP settles again. The same unit deletes
+watch, if it is set up, tells the owner when backups stop). Every restore and every update
+(`deploy.sh`) settles first too; an update that then starts the ERP settles again. The same unit deletes
 opened backups (`backups/restores/`) left from before the server started, and ends a standby
 the restore command left over the ERP in use (`.standby.was-in-use`) once its web address
 points here.

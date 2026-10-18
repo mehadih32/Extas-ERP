@@ -105,7 +105,7 @@ export async function createBankAccount(ctx: CompanyContext, raw: unknown, meta?
         ctx,
         ledger,
         money(input.openingBalance),
-        input.openingDate ? toInstant(input.openingDate, ctx.company.timezone) : new Date(),
+        input.openingDate ? toInstant(input.openingDate, ctx.company.timezone) : undefined,
       );
     }
     await auditInCompany(

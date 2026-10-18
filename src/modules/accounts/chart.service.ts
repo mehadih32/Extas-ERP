@@ -5,6 +5,7 @@ import type { Db } from "@/lib/db-types";
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
+import { runTransaction } from "@/lib/transaction";
 import { assertAllowed } from "@/lib/verdict";
 import {
   accountTotals,
@@ -26,6 +27,7 @@ import {
 import { CONTROL_ACCOUNTS, ensureControlAccounts } from "@/modules/accounts/control-accounts";
 import { postJournalEntry, reverseJournalEntry } from "@/modules/accounts/journal.service";
 import { assertCanManageAccounts } from "@/modules/accounts/money-guards";
+import { liveOpeningEntries, openingDate } from "@/modules/accounts/opening-entry";
 import { canArchiveAccount } from "@/modules/accounts/rules";
 import {
   accountOpeningSchema,
@@ -342,34 +344,28 @@ export async function updateAccount(
  * Balance Equity. `amount` is in the account's normal direction. Replacing
  * reverses the earlier opening entry with a mirror entry dated on the earlier
  * entry's own day (both stay in the books, never deleted, and cancel out in
- * every report from that day on); the same amount on the same day changes nothing.
+ * every report from that day on). Without `asOf` the new one goes on the earlier
+ * entry's day (today when there is none), so no report between go-live and today
+ * loses the opening; the same amount on the same day changes nothing.
  */
 export async function postAccountOpeningTx(
   tx: Tx,
   ctx: CompanyContext,
   account: { id: string; code: string; name: string; type: AccountType },
   amount: Prisma.Decimal,
-  asOf: Date,
+  asOf?: Date,
 ) {
   const companyId = ctx.company.id;
   const acc = await ensureControlAccounts(companyId, tx);
   // A positive amount sits on the account's normal side.
   const signed = isDebitNature(account.type) ? amount : amount.neg();
-  const live = await tx.journalEntry.findMany({
-    where: {
-      companyId,
-      sourceType: "OPENING_BALANCE",
-      sourceId: account.id,
-      isReversed: false,
-      reversalOfId: null,
-    },
-    include: { lines: true },
-  });
+  const live = await liveOpeningEntries(tx, companyId, account.id);
+  const date = openingDate(asOf, live, ctx.company.timezone);
   const unchanged =
     live.length === (amount.isZero() ? 0 : 1) &&
     live.every(
       (entry) =>
-        entry.date.getTime() === asOf.getTime() &&
+        entry.date.getTime() === date.getTime() &&
         entry.lines.some(
           (l) => l.accountId === account.id && l.debit.minus(l.credit).equals(signed),
         ),
@@ -386,7 +382,7 @@ export async function postAccountOpeningTx(
       const abs = amount.abs();
       await postJournalEntry(tx, {
         companyId,
-        date: asOf,
+        date,
         description: `Opening balance — ${account.code} ${account.name}`,
         sourceType: "OPENING_BALANCE",
         sourceId: account.id,
@@ -418,8 +414,8 @@ export async function setAccountOpeningBalance(
   const block = openingBalanceBlock(account);
   if (block) throw new AppError("VALIDATION", block);
   const amount = money(input.amount);
-  const asOf = input.asOf ? toInstant(input.asOf, ctx.company.timezone) : new Date();
-  await prisma.$transaction(async (tx) => {
+  const asOf = input.asOf ? toInstant(input.asOf, ctx.company.timezone) : undefined;
+  await runTransaction(async (tx) => {
     await postAccountOpeningTx(tx, ctx, account, amount, asOf);
     await auditInCompany(
       ctx,

@@ -28,6 +28,7 @@ import {
   type ProfitPeriod,
 } from "@/modules/accounts/executive.service";
 import { getMoneyInOutOptions } from "@/modules/accounts/money-in-out.service";
+import { openingDay } from "@/modules/accounts/opening-entry";
 import { listPettyCashBoxes } from "@/modules/accounts/petty-cash.service";
 import { getAccountsOverview } from "@/modules/accounts/reports.service";
 import {
@@ -1031,6 +1032,8 @@ export async function getAccountScreen(ctx: CompanyContext, accountId: string, r
       isActive: a.isActive,
       balance: a.balance,
       openingBalance: a.openingBalance,
+      /** The go-live day the balance brought forward is on now (company time), for its "As of". */
+      openingAsOf: await openingDay(prisma, ctx.company.id, a.id, tz),
       linkedTo: a.linkedTo,
       manualPostingNote: a.manualPostingNote,
     },

@@ -12,6 +12,7 @@ import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
 import { lockRow } from "@/lib/row-lock";
+import { runTransaction } from "@/lib/transaction";
 import { money, rawBalance, ZERO } from "@/modules/accounts/balances";
 import { cashAccountFor } from "@/modules/accounts/cash-accounts";
 import { createNumberedAccount, isCashSubType } from "@/modules/accounts/chart";
@@ -477,6 +478,23 @@ export async function listInstallments(ctx: CompanyContext, raw: unknown = {}) {
 // =============================================================================
 
 export async function createCapitalSource(ctx: CompanyContext, raw: unknown, meta?: RequestMeta) {
+  const source = await runTransaction(
+    (tx) => createCapitalSourceTx(tx, ctx, raw, meta),
+    TX_OPTIONS,
+  );
+  return getCapitalSource(ctx, source.id);
+}
+
+/**
+ * Adds a capital source (with its money received or its opening balance) inside
+ * the caller's transaction, so a step after it that fails leaves nothing behind.
+ */
+export async function createCapitalSourceTx(
+  tx: Tx,
+  ctx: CompanyContext,
+  raw: unknown,
+  meta?: RequestMeta,
+) {
   assertCanManageAccounts(ctx, "Only Accounts can add capital, investors and loans.");
   const input = createCapitalSchema.parse(raw);
   if (input.received) assertCanReceiveMoney(ctx);
@@ -496,73 +514,70 @@ export async function createCapitalSource(ctx: CompanyContext, raw: unknown, met
     });
   }
 
-  const source = await prisma.$transaction(async (tx) => {
-    const { subType } = KIND_ACCOUNT[input.kind];
-    const account = await createNumberedAccount(tx, companyId, {
-      name: await uniqueAccountName(tx, companyId, accountName(input.kind, input.name)),
-      subType,
+  const { subType } = KIND_ACCOUNT[input.kind];
+  const account = await createNumberedAccount(tx, companyId, {
+    name: await uniqueAccountName(tx, companyId, accountName(input.kind, input.name)),
+    subType,
+  });
+  const created = (await tx.capitalSource.create({
+    data: {
+      companyId,
+      ledgerAccountId: account.id,
+      kind: input.kind,
+      name: input.name,
+      contact: input.contact ?? null,
+      principal: 0,
+      outstanding: 0,
+      interestRate: input.interestRate ?? null,
+      profitSharePct: input.profitSharePct ?? null,
+      startDate,
+      maturityDate,
+      notes: input.notes ?? null,
+    },
+  })) as LinkedSource;
+  if (input.received) {
+    await postReceiptTx(tx, ctx, created, {
+      amount: money(input.received.amount),
+      date: startDate,
+      method: input.received.method,
+      accountId: input.received.accountId,
+      reference: input.received.reference,
     });
-    const created = (await tx.capitalSource.create({
-      data: {
-        companyId,
-        ledgerAccountId: account.id,
-        kind: input.kind,
-        name: input.name,
-        contact: input.contact ?? null,
-        principal: 0,
-        outstanding: 0,
-        interestRate: input.interestRate ?? null,
-        profitSharePct: input.profitSharePct ?? null,
-        startDate,
-        maturityDate,
-        notes: input.notes ?? null,
-      },
-    })) as LinkedSource;
-    if (input.received) {
-      await postReceiptTx(tx, ctx, created, {
-        amount: money(input.received.amount),
-        date: startDate,
-        method: input.received.method,
-        accountId: input.received.accountId,
-        reference: input.received.reference,
-      });
-    } else if (input.opening) {
-      const acc = await ensureControlAccounts(companyId, tx);
-      const amount = money(input.opening.amount);
-      await postJournalEntry(tx, {
-        companyId,
-        date: openingDate!,
-        description: `Opening balance — ${account.name} (before go-live)`,
-        sourceType: "CAPITAL",
-        sourceId: created.id,
-        postedById: ctx.user.id,
-        lines: [
-          { accountId: acc.OPENING_EQUITY, debit: amount },
-          { accountId: account.id, credit: amount, memo: created.name },
-        ],
-      });
-    }
-    const synced = await syncSourceTx(tx, companyId, created.id);
-    await auditInCompany(
-      ctx,
-      meta,
-      {
-        action: "CREATE",
-        entityType: "CapitalSource",
-        entityId: created.id,
-        summary: `Added ${KIND_ACCOUNT[input.kind].label.toLowerCase()} ${created.name} (${account.code})${
-          input.received
-            ? `: received ${money(input.received.amount).toFixed(2)} (${input.received.method})`
-            : input.opening
-              ? `: opening balance ${money(input.opening.amount).toFixed(2)}`
-              : ""
-        }`,
-      },
-      tx,
-    );
-    return synced;
-  }, TX_OPTIONS);
-  return getCapitalSource(ctx, source.id);
+  } else if (input.opening) {
+    const acc = await ensureControlAccounts(companyId, tx);
+    const amount = money(input.opening.amount);
+    await postJournalEntry(tx, {
+      companyId,
+      date: openingDate!,
+      description: `Opening balance — ${account.name} (before go-live)`,
+      sourceType: "CAPITAL",
+      sourceId: created.id,
+      postedById: ctx.user.id,
+      lines: [
+        { accountId: acc.OPENING_EQUITY, debit: amount },
+        { accountId: account.id, credit: amount, memo: created.name },
+      ],
+    });
+  }
+  const synced = await syncSourceTx(tx, companyId, created.id);
+  await auditInCompany(
+    ctx,
+    meta,
+    {
+      action: "CREATE",
+      entityType: "CapitalSource",
+      entityId: created.id,
+      summary: `Added ${KIND_ACCOUNT[input.kind].label.toLowerCase()} ${created.name} (${account.code})${
+        input.received
+          ? `: received ${money(input.received.amount).toFixed(2)} (${input.received.method})`
+          : input.opening
+            ? `: opening balance ${money(input.opening.amount).toFixed(2)}`
+            : ""
+      }`,
+    },
+    tx,
+  );
+  return synced;
 }
 
 export async function updateCapitalSource(
@@ -574,7 +589,7 @@ export async function updateCapitalSource(
   assertCanManageAccounts(ctx, "Only Accounts can change capital, investors and loans.");
   const input = updateCapitalSchema.parse(raw);
   const tz = ctx.company.timezone;
-  await prisma.$transaction(async (tx) => {
+  await runTransaction(async (tx) => {
     const source = await lockSource(tx, ctx, sourceId);
     if (input.status && source.status === "SETTLED") {
       throw new AppError("CONFLICT", `${source.name} is repaid in full.`);
@@ -649,7 +664,7 @@ export async function receiveCapital(
   const input = capitalReceiptSchema.parse(raw);
   const amount = money(input.amount);
   const date = input.date ? toInstant(input.date, ctx.company.timezone) : new Date();
-  await prisma.$transaction(async (tx) => {
+  await runTransaction(async (tx) => {
     const source = await lockSource(tx, ctx, sourceId);
     if (source.status === "DEFAULTED") {
       throw new AppError("CONFLICT", `${source.name} is marked defaulted.`);
@@ -681,44 +696,53 @@ export async function repayCapital(
   raw: unknown,
   meta?: RequestMeta,
 ) {
+  await runTransaction((tx) => repayCapitalTx(tx, ctx, sourceId, raw, meta), TX_OPTIONS);
+  return getCapitalSource(ctx, sourceId);
+}
+
+/** Records a repayment (or interest, profit or drawings) inside the caller's transaction. */
+export async function repayCapitalTx(
+  tx: Tx,
+  ctx: CompanyContext,
+  sourceId: string,
+  raw: unknown,
+  meta?: RequestMeta,
+) {
   assertCanManageAccounts(ctx, "Only Accounts can record repayments.");
   assertCanPayMoney(ctx);
   const input = repaySchema.parse(raw);
   const principal = money(input.principal);
   const interest = money(input.interest);
   const date = input.date ? toInstant(input.date, ctx.company.timezone) : new Date();
-  await prisma.$transaction(async (tx) => {
-    const source = await lockSource(tx, ctx, sourceId);
-    assertPrincipalFits(source, principal, await outstandingTx(tx, ctx.company.id, source));
-    const owner = isOwner(source.kind);
-    const what = owner
-      ? principal.gt(0)
-        ? `Capital withdrawn by ${source.name}`
-        : `Drawings — ${source.name}`
-      : principal.gt(0)
-        ? `Repayment to ${source.name}`
-        : `${source.kind === "INVESTOR" ? "Profit" : "Interest"} paid to ${source.name}`;
-    const entry = await postPayoutTx(tx, ctx, source, {
-      ...input,
-      principal,
-      interest,
-      date,
-      description: input.notes ? `${what} — ${input.notes}` : what,
-    });
-    await syncSourceTx(tx, ctx.company.id, source.id);
-    await auditInCompany(
-      ctx,
-      meta,
-      {
-        action: "CREATE",
-        entityType: "CapitalSource",
-        entityId: source.id,
-        summary: `${what}: principal ${principal.toFixed(2)}, ${owner ? "drawings" : "interest"} ${interest.toFixed(2)} (${input.method}) ${entry.number}`,
-      },
-      tx,
-    );
-  }, TX_OPTIONS);
-  return getCapitalSource(ctx, sourceId);
+  const source = await lockSource(tx, ctx, sourceId);
+  assertPrincipalFits(source, principal, await outstandingTx(tx, ctx.company.id, source));
+  const owner = isOwner(source.kind);
+  const what = owner
+    ? principal.gt(0)
+      ? `Capital withdrawn by ${source.name}`
+      : `Drawings — ${source.name}`
+    : principal.gt(0)
+      ? `Repayment to ${source.name}`
+      : `${source.kind === "INVESTOR" ? "Profit" : "Interest"} paid to ${source.name}`;
+  const entry = await postPayoutTx(tx, ctx, source, {
+    ...input,
+    principal,
+    interest,
+    date,
+    description: input.notes ? `${what} — ${input.notes}` : what,
+  });
+  await syncSourceTx(tx, ctx.company.id, source.id);
+  await auditInCompany(
+    ctx,
+    meta,
+    {
+      action: "CREATE",
+      entityType: "CapitalSource",
+      entityId: source.id,
+      summary: `${what}: principal ${principal.toFixed(2)}, ${owner ? "drawings" : "interest"} ${interest.toFixed(2)} (${input.method}) ${entry.number}`,
+    },
+    tx,
+  );
 }
 
 /**
@@ -752,7 +776,7 @@ export async function reverseCapitalEntry(
   if (cash.some((l) => l.credit.gt(0))) assertCanReceiveMoney(ctx);
   if (cash.some((l) => l.debit.gt(0))) assertCanPayMoney(ctx);
 
-  await prisma.$transaction(async (tx) => {
+  await runTransaction(async (tx) => {
     const source = await lockSource(tx, ctx, sourceId);
     const reversal = await reverseJournalEntry(tx, entry.id, {
       description: `Reversal of ${entry.number} (${source.name}): ${input.reason}`,
@@ -801,7 +825,7 @@ export async function voidCapitalSource(
 ) {
   assertCanManageAccounts(ctx, "Only Accounts can remove capital, investors and loans.");
   const { reason } = voidSchema.parse(raw);
-  return prisma.$transaction(async (tx) => {
+  return runTransaction(async (tx) => {
     const source = await lockSource(tx, ctx, sourceId);
     const entries = await tx.journalEntry.findMany({
       where: {
@@ -948,7 +972,7 @@ export async function scheduleInstallments(
   assertCanManageAccounts(ctx, "Only Accounts can schedule installments.");
   const input = scheduleSchema.parse(raw);
   const tz = ctx.company.timezone;
-  await prisma.$transaction(async (tx) => {
+  await runTransaction(async (tx) => {
     const source = await lockSource(tx, ctx, sourceId);
     const unpaid = await tx.capitalInstallment.count({
       where: { capitalSourceId: source.id, status: { in: [...UNPAID] } },
@@ -1007,7 +1031,7 @@ export async function addInstallment(
 ) {
   assertCanManageAccounts(ctx, "Only Accounts can schedule installments.");
   const input = addInstallmentSchema.parse(raw);
-  await prisma.$transaction(async (tx) => {
+  await runTransaction(async (tx) => {
     const source = await lockSource(tx, ctx, sourceId);
     if (isOwner(source.kind)) {
       throw new AppError("VALIDATION", "Owner's capital has no repayment schedule.");
@@ -1077,7 +1101,7 @@ export async function payInstallment(
   const input = payInstallmentSchema.parse(raw);
   const tz = ctx.company.timezone;
   const date = input.date ? toInstant(input.date, tz) : new Date();
-  const sourceId = await prisma.$transaction(async (tx) => {
+  const sourceId = await runTransaction(async (tx) => {
     const { source, installment } = await lockInstallment(tx, ctx, installmentId);
     const scheduledInterest = installment.interestPart ?? ZERO;
     const scheduledPrincipal =
@@ -1137,7 +1161,7 @@ export async function skipInstallment(
 ) {
   assertCanManageAccounts(ctx, "Only Accounts can change installments.");
   const { reason } = skipInstallmentSchema.parse(raw);
-  const sourceId = await prisma.$transaction(async (tx) => {
+  const sourceId = await runTransaction(async (tx) => {
     const { source, installment } = await lockInstallment(tx, ctx, installmentId);
     await tx.capitalInstallment.update({
       where: { id: installment.id },

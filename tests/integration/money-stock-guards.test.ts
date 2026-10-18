@@ -7,6 +7,7 @@ import { lockRow } from "@/lib/row-lock";
 import * as assets from "@/modules/accounts/asset.service";
 import * as chart from "@/modules/accounts/chart.service";
 import * as reports from "@/modules/accounts/reports.service";
+import { getAccountScreen } from "@/modules/accounts/screens.service";
 import { ensureControlAccounts } from "@/modules/accounts/control-accounts";
 import { boxBalance } from "@/modules/accounts/petty-cash-balance";
 import * as petty from "@/modules/accounts/petty-cash.service";
@@ -21,6 +22,7 @@ import * as stock from "@/modules/inventory/stock.service";
 import * as styles from "@/modules/inventory/style.service";
 import * as ledger from "@/modules/parties/ledger.service";
 import * as parties from "@/modules/parties/party.service";
+import { getPartyScreen } from "@/modules/parties/screens.service";
 import { applyCredit, creditPosition } from "@/modules/sales/credit.service";
 import * as documents from "@/modules/sales/documents.service";
 import * as orders from "@/modules/sales/order.service";
@@ -348,6 +350,119 @@ run("money and stock guards (v6.4.1 review)", () => {
     });
     expect(await cashOn("2026-03-31")).toBeUndefined();
     expect((await cashOn("2026-06-30"))!.debit).toBe("120000.00");
+  });
+
+  it("keeps the go-live day when an opening balance is saved again with 'As of' empty or as shown", async () => {
+    const env = await setup();
+    const acc = await ensureControlAccounts(env.company.id);
+    await ledger.setOpeningBalance(env.accountsCtx, env.buyer.id, {
+      amount: 5000,
+      asOf: "2026-01-01",
+    });
+    await chart.setAccountOpeningBalance(env.accountsCtx, acc.CASH, {
+      amount: 100000,
+      asOf: "2026-01-01",
+    });
+    const march = { from: "2026-03-01", to: "2026-03-31" };
+    const snapshot = async () => ({
+      statement: (await ledger.getStatement(env.ctx, env.buyer.id, march)).summary,
+      cash: (await chart.getAccountLedger(env.ctx, acc.CASH, march)).summary,
+      trial: (await reports.getTrialBalance(env.ctx, { asOf: "2026-03-31" })).lines,
+      sheet: await reports.getBalanceSheet(env.ctx, { asOf: "2026-03-31" }),
+    });
+    const before = await snapshot();
+    expect(before.statement.openingBalance).toBe("5000.00");
+    expect(before.cash.openingBalance).toBe("100000.00");
+    expect(before.sheet.balanced).toBe(true);
+    const entries = () => prisma.journalEntry.count({ where: { sourceType: "OPENING_BALANCE" } });
+    const posted = await entries();
+
+    // The dialogs show the go-live day the opening sits on now.
+    const partyScreen = await getPartyScreen(env.accountsCtx, env.buyer.id);
+    expect(partyScreen.money.openingAsOf).toBe("2026-01-01");
+    const cashScreen = await getAccountScreen(env.accountsCtx, acc.CASH);
+    expect(cashScreen.account.openingAsOf).toBe("2026-01-01");
+
+    // Saved again unchanged, with "As of" empty or as shown: nothing new, every report the same.
+    await ledger.setOpeningBalance(env.accountsCtx, env.buyer.id, { amount: 5000 });
+    await ledger.setOpeningBalance(env.accountsCtx, env.buyer.id, {
+      amount: 5000,
+      asOf: partyScreen.money.openingAsOf!,
+    });
+    await chart.setAccountOpeningBalance(env.accountsCtx, acc.CASH, { amount: 100000 });
+    await chart.setAccountOpeningBalance(env.accountsCtx, acc.CASH, {
+      amount: 100000,
+      asOf: cashScreen.account.openingAsOf!,
+    });
+    expect(await entries()).toBe(posted);
+    expect(await snapshot()).toEqual(before);
+
+    // A corrected amount with "As of" empty stays on the go-live day.
+    await ledger.setOpeningBalance(env.accountsCtx, env.buyer.id, { amount: 4000 });
+    await chart.setAccountOpeningBalance(env.accountsCtx, acc.CASH, { amount: 120000 });
+    const corrected = await snapshot();
+    expect(corrected.statement.openingBalance).toBe("4000.00");
+    expect(corrected.statement.closingBalance).toBe("4000.00");
+    expect(corrected.cash.openingBalance).toBe("120000.00");
+    expect(corrected.trial.find((l) => l.accountId === acc.CASH)!.debit).toBe("120000.00");
+    expect(corrected.sheet.balanced).toBe(true);
+    expect((await getPartyScreen(env.accountsCtx, env.buyer.id)).money.openingAsOf).toBe(
+      "2026-01-01",
+    );
+
+    // A day chosen on purpose still moves it: nothing before it, the amount from it.
+    await ledger.setOpeningBalance(env.accountsCtx, env.buyer.id, {
+      amount: 4000,
+      asOf: "2026-04-01",
+    });
+    await chart.setAccountOpeningBalance(env.accountsCtx, acc.CASH, {
+      amount: 120000,
+      asOf: "2026-04-01",
+    });
+    const moved = await snapshot();
+    expect(moved.statement.openingBalance).toBe("0.00");
+    expect(moved.cash.openingBalance).toBe("0.00");
+    expect(moved.trial.find((l) => l.accountId === acc.CASH)).toBeUndefined();
+    const may = await ledger.getStatement(env.ctx, env.buyer.id, {
+      from: "2026-05-01",
+      to: "2026-05-31",
+    });
+    expect(may.summary.openingBalance).toBe("4000.00");
+    expect((await getAccountScreen(env.accountsCtx, acc.CASH)).account.openingAsOf).toBe(
+      "2026-04-01",
+    );
+  });
+
+  it("keeps the go-live day when an old buyer advance is moved by saving it again", async () => {
+    const env = await setup();
+    const acc = await ensureControlAccounts(env.company.id);
+    // As opening advances were posted before v6.4.1: on Customer Advance, on go-live day.
+    await prisma.journalEntry.create({
+      data: {
+        companyId: env.company.id,
+        number: "JV-OLD-2",
+        date: new Date("2026-01-01T00:00:00Z"),
+        description: `Opening balance — ${env.buyer.name}`,
+        sourceType: "OPENING_BALANCE",
+        sourceId: env.buyer.id,
+        lines: {
+          create: [
+            { accountId: acc.OPENING_EQUITY, debit: 3000 },
+            { accountId: acc.CUSTOMER_ADVANCE, partyId: env.buyer.id, credit: 3000 },
+          ],
+        },
+      },
+    });
+    await prisma.party.update({ where: { id: env.buyer.id }, data: { openingBalance: -3000 } });
+    const march = { from: "2026-03-01", to: "2026-03-31" };
+    const before = await ledger.getStatement(env.ctx, env.buyer.id, march);
+    expect(before.summary.openingBalance).toBe("-3000.00");
+    await ledger.setOpeningBalance(env.accountsCtx, env.buyer.id, { amount: -3000 });
+    const after = await ledger.getStatement(env.ctx, env.buyer.id, march);
+    expect(after.summary.openingBalance).toBe("-3000.00");
+    expect((await creditPosition(prisma, env.company.id, env.buyer.id)).credit.toFixed(2)).toBe(
+      "3000.00",
+    );
   });
 
   it("refuses to lower a buyer's opening advance below what is still unused", async () => {

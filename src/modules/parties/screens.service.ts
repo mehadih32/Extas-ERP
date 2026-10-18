@@ -1,6 +1,8 @@
 import type { PartyGrade, PartyKind, PartyStatus } from "@prisma/client";
 
 import { localDay } from "@/lib/dates";
+import { prisma } from "@/lib/prisma";
+import { openingDay } from "@/modules/accounts/opening-entry";
 import type { CompanyContext } from "@/modules/auth/context";
 import { PRINT_INFO } from "@/modules/documents/print.service";
 import { whatsappDigits } from "@/modules/parties/contact";
@@ -130,6 +132,10 @@ export async function getPartyScreen(ctx: CompanyContext, partyId: string) {
       tradePayment: profile.tradePayment,
       monthlyCapacity: profile.monthlyCapacity,
       openingBalance: profile.openingBalance.toFixed(2),
+      /** The go-live day the opening balance is on now (company time), for its "As of". */
+      openingAsOf: ctx.can("accounts.manage")
+        ? await openingDay(prisma, ctx.company.id, profile.id, tz)
+        : null,
       lastPayment: profile.lastPayment
         ? {
             on: localDay(profile.lastPayment.paymentDate, tz),

@@ -173,7 +173,11 @@ export function ContractForm({ data, currency }: { data: ContractScreen; currenc
                   </Field>
                   {s.cmSettlement && (
                     <div className="sm:col-span-3">
-                      <CmSettledNotice settlement={s.cmSettlement} what="Its CM stays" />
+                      <CmSettledNotice
+                        settlement={s.cmSettlement}
+                        from="this style's CM"
+                        what="the CM cannot change"
+                      />
                     </div>
                   )}
                 </li>

@@ -21,8 +21,9 @@ import { READ_ONLY_WHY } from "./runner";
  *   (a) Saved CM settlements whose final payable would differ under the new
  *       rules (faults about material the factory supplied left out, payments
  *       that paid its material bills not counted as CM paid, rejects over the
- *       allowance never at 0): factory, batch, the amount saved and the amount
- *       under the new rules.
+ *       allowance never at 0): factory, batch, the amount saved and about the
+ *       amount under the new rules (worked from the factory's account as it is
+ *       today, so later payments can move it; the message says so).
  *   (b) Open bookings made for one style whose approval kept no fabric record of
  *       that style, so a change to the style's fabric will not mark them red.
  * Both lists are worked out inside readOnly() (a write would be refused) and with
@@ -108,7 +109,7 @@ function settlementLine(s: SettlementUnderNewRules, show: (v: string) => string)
     s.needPrice.length > 0 &&
       `rejects over the allowance were charged at 0 for ${s.needPrice.map((n) => `${n.code} (${n.over})`).join(", ")}: a price per reject is needed`,
   ].filter(Boolean);
-  return `- ${s.factory}, batch ${s.batch.code} (${s.number}): saved ${show(s.oldPayable)}, under the new rules ${show(s.newPayable)}${
+  return `- ${s.factory}, batch ${s.batch.code} (${s.number}): saved ${show(s.oldPayable)}, under the new rules about ${show(s.newPayable)}${
     s.needPrice.length > 0 ? " before the rejects are priced" : ""
   }. ${why.join("; ")}.`;
 }
@@ -137,7 +138,7 @@ export function reviewText(
     "",
     settlements.length === 0
       ? "CM settlements: none would come out different under the new rules."
-      : `CM settlements that would come out different under the new rules (${settlements.length}). To use the new amount, undo the settlement on the batch's CM settlement screen and save it again:`,
+      : `CM settlements that would come out different under the new rules (${settlements.length}). To use the new amount, undo the settlement on the batch's CM settlement screen and save it again. The new amounts are close, not exact: they use the factory's account as it is today, so payments made after a settlement was saved can change how much of them went to its material bills. Saving it again shows the exact amount:`,
     ...settlements.slice(0, LISTED).map((s) => settlementLine(s, show)),
     ...more(settlements.length),
     "",

@@ -1,10 +1,11 @@
 import type { Db } from "@/lib/db-types";
 import { AppError } from "@/lib/errors";
+import { lockRow } from "@/lib/row-lock";
 
 /*
  * A saved final CM settlement stands on its styles' cutting reports, finishing
  * counts, mending returns and CM: while it stands (not undone), deleting those
- * reports or changing those styles' CM would leave the settlement, its PDF bill
+ * reports, adding to them or changing those styles' CM would leave the settlement, its PDF bill
  * and the deductions on the factory's Supplier Due on figures that are no longer
  * there. So they are refused, with the settlement to undo first: undoing it puts
  * its faults back and reverses its entry, and the batch can be settled again.
@@ -63,4 +64,19 @@ export async function assertNoCmSettlement(
 ) {
   const hold = await cmSettlementHolding(db, companyId, projectId);
   if (hold) throw new AppError("CONFLICT", cmHeldMessage(hold, what));
+}
+
+/**
+ * Inside the transaction that adds to or takes from a style's cutting or
+ * finishing (after its own lock): takes the batch's lock, as a settlement does,
+ * and refuses while a CM settlement stands on the style.
+ */
+export async function lockAgainstCmSettlement(
+  tx: Db,
+  companyId: string,
+  project: { id: string; code: string; batch: { id: string } | null },
+  what: "cutting" | "finishing",
+) {
+  if (project.batch) await lockRow(tx, "ProductionBatch", project.batch.id);
+  await assertNoCmSettlement(tx, companyId, project.id, `${project.code}'s ${what}`);
 }

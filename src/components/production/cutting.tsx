@@ -167,12 +167,14 @@ export function CuttingActions({ screen, currency }: { screen: CuttingScreen; cu
     <div className="flex flex-wrap gap-2">
       {can.record && (
         <>
-          <Button asChild size="sm">
-            <Link href={productionHref.newCutting(p.id)}>
-              <ScissorsIcon aria-hidden />
-              New cutting report
-            </Link>
-          </Button>
+          {can.cut && (
+            <Button asChild size="sm">
+              <Link href={productionHref.newCutting(p.id)}>
+                <ScissorsIcon aria-hidden />
+                New cutting report
+              </Link>
+            </Button>
+          )}
           {free.length > 0 && (
             <Button type="button" size="sm" variant="outline" onClick={() => setOpen("send")}>
               <SendIcon aria-hidden />
@@ -470,9 +472,13 @@ export function CuttingReports({ screen, currency }: { screen: CuttingScreen; cu
   const canDelete = screen.can.record && !screen.cmSettlement;
   return (
     <Panel title="Cutting reports" id="cut-reports-heading">
-      {screen.cmSettlement && screen.reports.length > 0 && screen.can.record && (
+      {screen.cmSettlement && screen.can.record && (
         <div className="mt-3">
-          <CmSettledNotice settlement={screen.cmSettlement} what="These reports stay" />
+          <CmSettledNotice
+            settlement={screen.cmSettlement}
+            from="this style's cutting"
+            what="no cutting report can be added or deleted"
+          />
         </div>
       )}
       {screen.reports.length === 0 ? (

@@ -355,9 +355,67 @@ const faultSelect = {
   note: true,
   occurredOn: true,
   project: { select: { code: true } },
-  bill: { select: { number: true } },
-  rawMaterial: { select: { code: true } },
+  bill: { select: { number: true, supplierId: true } },
+  rawMaterial: { select: { id: true, name: true } },
 } satisfies Prisma.SupplierFaultSelect;
+
+/**
+ * The materials the factory itself supplied for this batch or its styles: on
+ * its purchase orders (not cancelled) or its bills (not void) for them. A fault
+ * about one of these is settled on that material bill, not the CM (notCmWork).
+ */
+async function materialsFromFactory(
+  db: DbClient,
+  companyId: string,
+  factoryId: string,
+  batchId: string,
+  styleIds: readonly string[],
+): Promise<Set<string>> {
+  const forStyles = { in: [...styleIds] };
+  const forBatch = { OR: [{ batchId }, { projectId: forStyles }] };
+  const [ordered, billed] = await Promise.all([
+    db.purchaseOrderLine.findMany({
+      where: {
+        order: { companyId, supplierId: factoryId, status: { not: "CANCELLED" } },
+        OR: [{ order: forBatch }, { shares: { some: { projectId: forStyles } } }],
+      },
+      select: { rawMaterialId: true },
+      distinct: ["rawMaterialId"],
+    }),
+    db.supplierBillItem.findMany({
+      where: {
+        bill: { companyId, supplierId: factoryId, status: { not: "VOID" } },
+        OR: [
+          { bill: { purchaseOrder: forBatch } },
+          { bill: { allocations: { some: { projectId: forStyles } } } },
+          { purchaseOrderLine: { shares: { some: { projectId: forStyles } } } },
+        ],
+      },
+      select: { rawMaterialId: true },
+      distinct: ["rawMaterialId"],
+    }),
+  ]);
+  return new Set([...ordered, ...billed].map((l) => l.rawMaterialId));
+}
+
+/** notCmWork for a fault of this factory, from what it supplied. */
+function whyLeftOut(
+  f: {
+    kind: string;
+    bill: { number: string; supplierId: string } | null;
+    rawMaterial: { id: string; name: string } | null;
+  },
+  factoryId: string,
+  supplied: ReadonlySet<string>,
+) {
+  return notCmWork({
+    kind: f.kind,
+    bill: f.bill ? { number: f.bill.number, ofFactory: f.bill.supplierId === factoryId } : null,
+    material: f.rawMaterial
+      ? { name: f.rawMaterial.name, fromFactory: supplied.has(f.rawMaterial.id) }
+      : null,
+  });
+}
 
 /**
  * The factory's payments for the batch and its styles, each with what of it
@@ -489,9 +547,13 @@ async function draftOf(
       })
     : [];
   // Only faults of the CM work come off; one about material it supplied is shown, left out.
+  const supplied =
+    factory && faultRows.length > 0
+      ? await materialsFromFactory(db, ctx.company.id, factory.id, batch.id, styleIds)
+      : new Set<string>();
   const leftOut: LeftOutFault[] = [];
   const faults = faultRows.flatMap((f) => {
-    const why = notCmWork({ kind: f.kind, bill: f.bill, material: f.rawMaterial });
+    const why = factory ? whyLeftOut(f, factory.id, supplied) : null;
     if (why) {
       leftOut.push({
         id: f.id,
@@ -1364,19 +1426,33 @@ export async function settlementsUnderNewRules(
           select: {
             id: true,
             kind: true,
-            bill: { select: { number: true } },
-            rawMaterial: { select: { code: true } },
+            bill: faultSelect.bill,
+            rawMaterial: faultSelect.rawMaterial,
           },
         })
       ).map((f) => [f.id, f]),
     );
+    const supplied =
+      taken.length > 0
+        ? await materialsFromFactory(
+            db,
+            companyId,
+            row.factoryId,
+            row.batchId,
+            snap.styles.map((st) => st.id),
+          )
+        : new Set<string>();
     const leftOut = taken.flatMap((f) => {
       const fact = facts.get(f.id);
-      const why = notCmWork({
-        kind: fact?.kind ?? f.kind,
-        bill: fact?.bill ?? null,
-        material: fact?.rawMaterial ?? null,
-      });
+      const why = whyLeftOut(
+        {
+          kind: fact?.kind ?? f.kind,
+          bill: fact?.bill ?? null,
+          rawMaterial: fact?.rawMaterial ?? null,
+        },
+        row.factoryId,
+        supplied,
+      );
       return why ? [{ number: f.number, what: f.what, amount: f.amount!, why }] : [];
     });
     const onBills =

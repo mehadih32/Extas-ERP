@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 
 import { SectionError } from "@/components/dashboard/section-error";
 import { EmptyState } from "@/components/products/bits";
+import { CmSettledNotice } from "@/components/production/cm-settled-notice";
 import { CuttingReportForm } from "@/components/production/cutting-report-form";
 import { productionHref } from "@/components/production/labels";
 import { ProductionNoAccess } from "@/components/production/no-access";
@@ -50,8 +51,14 @@ export default async function NewCuttingReportPage({
           if anything runs short.
         </p>
       </div>
-      {screen.can.record ? (
+      {screen.can.cut ? (
         <CuttingReportForm screen={screen} currency={ctx.company.currency} />
+      ) : screen.cmSettlement ? (
+        <CmSettledNotice
+          settlement={screen.cmSettlement}
+          from="this style's cutting"
+          what="no cutting report can be added"
+        />
       ) : (
         <EmptyState title="Cutting is closed">
           {p.code} is {p.status.toLowerCase()}; no more cutting is recorded for it.

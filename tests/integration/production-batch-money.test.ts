@@ -346,10 +346,10 @@ run("Production renovation: batch costs, advance CM and the final CM settlement"
     });
     await faults.createFault(env.pm, {
       supplierId: env.factory.id,
-      kind: "QUALITY",
+      kind: "FABRIC_FAULT",
       projectId: env.polo.id,
       amount: 100,
-      note: "Open seams on two pieces",
+      note: "Holes in two panels",
     });
     const toAgree = await faults.createFault(env.pm, {
       supplierId: env.factory.id,
@@ -398,7 +398,7 @@ run("Production renovation: batch costs, advance CM and the final CM settlement"
     ]);
     expect(draft.faults.map((f) => [f.kind, f.amount])).toEqual([
       ["MISSING_PIECES", "225.00"],
-      ["QUALITY", "100.00"],
+      ["FABRIC_FAULT", "100.00"],
       ["QUALITY", null],
     ]);
     expect(draft.keepC).toMatchObject({

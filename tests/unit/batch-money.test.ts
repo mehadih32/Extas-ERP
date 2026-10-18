@@ -129,24 +129,47 @@ describe("rejectPenalty", () => {
 
 describe("notCmWork", () => {
   const none = { bill: null, material: null };
+  const ours = { name: "Rib 1x1", fromFactory: false };
+  const theirs = { name: "Rib 1x1", fromFactory: true };
   it("keeps the faults of the CM work", () => {
-    for (const kind of ["MISSING_PIECES", "QUALITY", "OTHER", "SPOILED_PIECES"]) {
+    for (const kind of ["MISSING_PIECES", "QUALITY", "OTHER", "SPOILED_PIECES", "FABRIC_FAULT"]) {
       expect(notCmWork({ kind, ...none })).toBeNull();
     }
   });
 
-  it("leaves out a short at receive (already off its bill) and faults about material", () => {
-    expect(notCmWork({ kind: "SHORT_RECEIVE", bill: { number: "BILL-9" }, material: null })).toBe(
+  it("keeps a fault about material the factory did not supply (our own fabric)", () => {
+    // Holes in our fabric, found at cutting and logged on the factory: taken off.
+    expect(notCmWork({ kind: "FABRIC_FAULT", bill: null, material: ours })).toBeNull();
+    // Found on another supplier's receive: not the factory's material bill.
+    expect(
+      notCmWork({
+        kind: "SHORT_RECEIVE",
+        bill: { number: "BILL-3", ofFactory: false },
+        material: ours,
+      }),
+    ).toBeNull();
+    expect(notCmWork({ kind: "QUALITY", bill: null, material: ours })).toBeNull();
+  });
+
+  it("leaves out a fault on material the factory supplied, with why", () => {
+    expect(
+      notCmWork({
+        kind: "SHORT_RECEIVE",
+        bill: { number: "BILL-9", ofFactory: true },
+        material: null,
+      }),
+    ).toBe(
       "Short at receive: already left off its material bill BILL-9, so it is not charged again",
     );
-    expect(notCmWork({ kind: "SHORT_RECEIVE", ...none })).toContain("not the CM work");
-    expect(notCmWork({ kind: "FABRIC_FAULT", ...none })).toContain("fabric it supplied");
-    expect(notCmWork({ kind: "QUALITY", bill: null, material: { code: "RM-7" } })).toContain(
-      "the RM-7 it supplied",
+    expect(notCmWork({ kind: "SHORT_RECEIVE", bill: null, material: theirs })).toContain(
+      "the Rib 1x1 it supplied",
     );
-    expect(notCmWork({ kind: "OTHER", bill: { number: "BILL-2" }, material: null })).toContain(
-      "material on BILL-2",
+    expect(notCmWork({ kind: "FABRIC_FAULT", bill: null, material: theirs })).toContain(
+      "the Rib 1x1 it supplied",
     );
+    expect(
+      notCmWork({ kind: "OTHER", bill: { number: "BILL-2", ofFactory: true }, material: ours }),
+    ).toContain("material on BILL-2");
   });
 });
 

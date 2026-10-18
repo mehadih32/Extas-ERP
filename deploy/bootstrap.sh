@@ -660,6 +660,10 @@ restored=1
 # compared with the backup: both before the web address question, which never comes
 # when either found a problem.
 screen_problems="$(python3 -c 'import json, sys; print(len(json.load(open(sys.argv[1])).get("checks", [])))' "$WORK/restore-result.json" 2>/dev/null || echo "?")"
+# Said here, before W13 (which points to it), with the check's lines just above.
+if [ "$screen_problems" != 0 ]; then
+  warn W05 "the check after the restore found $screen_problems problem(s) (listed above: a screen or PDF that did not open, or the screens not checked at all). The ERP runs; tell the developer."
+fi
 
 step "Comparing every table and file with the backup"
 compare=0
@@ -740,9 +744,6 @@ else
   note "Bug Guard is not part of this version; the full check (every screen and PDF opened as the owner) ran above."
   checks_note="full check"
 fi
-if [ "$screen_problems" != 0 ]; then
-  warn W05 "$screen_problems screen(s) or PDF(s) did not open in the check (listed above). The ERP runs; tell the developer."
-fi
 
 step "Checking HTTPS"
 https_ok=0
@@ -800,8 +801,12 @@ fi
 if [ "$demo_note" = running ]; then note "The demo site is running too."; fi
 note "Checks: $checks_note; ${screen_problems} problem(s) found."
 note "The full log of this restore: sudo less $LOG"
-[ -n "$drill" ] ||
+# GitHub's updates go to the ERP in use only: on standby, after go-live.sh (F6), never before.
+if [ -z "$drill" ] && [ "$standby" = 1 ]; then
+  note "Next (part F of the guide): once this ERP is live (go-live.sh, step F6), let GitHub update it: cd $DIR && sudo ./deploy/setup-auto-deploy.sh"
+elif [ -z "$drill" ]; then
   note "Next (part F of the guide): let GitHub update this server again: cd $DIR && sudo ./deploy/setup-auto-deploy.sh"
+fi
 if [ -z "$drill" ] && [ "$standby" = 1 ]; then
   # Never on standby without a word: the last thing on the screen.
   printf '\n%s\n' "################################################################"

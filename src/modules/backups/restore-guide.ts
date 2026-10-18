@@ -763,8 +763,8 @@ export const GUIDE_PARTS: GuidePart[] = [
         },
         picture: "putty-wait",
         tip: {
-          bn: `সংযোগ কেটে গেলেও রিস্টোর নিজে নিজে চলতে থাকে। B5-এর “Saved Sessions” দিয়ে আবার ঢুকে কমান্ডটি আবার পেস্ট করুন: লেখা আসবে “A restore is already running on this server”, আর শেষ না হওয়া পর্যন্ত সেটি দেখাবে। রিস্টোর থেমে গেলে একই কমান্ড আবার পেস্ট করুন: যেখানে থেমেছিল সেখান থেকে চলে। লেখা আসে “Signed in to Google with the sign-in from the earlier try (no new code needed)” আর “... already downloaded in the earlier try”, তাই নতুন কোড বা নতুন করে নামানো লাগে না। জিজ্ঞেস করতে পারে “Type the web address of the ERP on this server”। ${REPLACE_RULE.bn}`,
-          en: `If the connection drops, the restore goes on by itself. Sign in again with “Saved Sessions” as in B5 and paste the command again: it says “A restore is already running on this server” and shows it until it ends. If the restore stops, paste the same command again: it goes on from where it stopped. It says “Signed in to Google with the sign-in from the earlier try (no new code needed)” and “... already downloaded in the earlier try”, so no new code and no new download are needed. It may ask “Type the web address of the ERP on this server”. ${REPLACE_RULE.en}`,
+          bn: `সংযোগ কেটে গেলেও রিস্টোর নিজে নিজে চলতে থাকে। B5-এর “Saved Sessions” দিয়ে আবার ঢুকে কমান্ডটি আবার পেস্ট করুন: লেখা আসবে “A restore is already running on this server”, আর শেষ না হওয়া পর্যন্ত সেটি দেখাবে। রিস্টোর থেমে গেলে একই কমান্ড আবার পেস্ট করুন: যেখানে থেমেছিল সেখান থেকে চলে। লেখা আসে “Signed in to Google with the sign-in from the earlier try (no new code needed)” আর “... already downloaded in the earlier try”, তাই নতুন কোড বা নতুন করে নামানো লাগে না। জিজ্ঞেস করতে পারে “Type the web address of the ERP on this server”। ${REPLACE_RULE.bn} রিস্টোরের মাঝে VM নিজে আবার চালু (restart) হলে, চালু হতেই সার্ভার ERP-কে রিস্টোরের আগের অবস্থায় ফিরিয়ে নিজে চালু করে; তারপর একই কমান্ড আবার পেস্ট করুন।`,
+          en: `If the connection drops, the restore goes on by itself. Sign in again with “Saved Sessions” as in B5 and paste the command again: it says “A restore is already running on this server” and shows it until it ends. If the restore stops, paste the same command again: it goes on from where it stopped. It says “Signed in to Google with the sign-in from the earlier try (no new code needed)” and “... already downloaded in the earlier try”, so no new code and no new download are needed. It may ask “Type the web address of the ERP on this server”. ${REPLACE_RULE.en} If the VM restarts during the restore, the server puts the ERP back as it was before the restore and starts it by itself as soon as it is up again; then paste the same command again.`,
         },
       },
       {
@@ -831,8 +831,8 @@ export const GUIDE_PARTS: GuidePart[] = [
           en: "In PuTTY, type cd /opt/extras-erp && sudo ./deploy/setup-auto-deploy.sh and press Enter. It shows four things: USERNAME, SSH_HOST_KEY, SSH_PRIVATE_KEY and SERVER_IP. In the browser, open the Extas-ERP repository on github.com, then “Settings” > “Secrets and variables” > “Actions”. Click the pencil sign next to each one, put in its new value from PuTTY (for SERVER_IP, the IP from A13), then click “Update secret”.",
         },
         tip: {
-          bn: "PuTTY-তে মাউস দিয়ে লেখা টেনে বাছলেই কপি হয়ে যায়; SSH_PRIVATE_KEY-এর BEGIN লাইন থেকে END লাইন পর্যন্ত পুরোটা নিন। এটা না করা পর্যন্ত ERP চলে, শুধু নতুন আপডেট আসে না; পরেও করা যায়। শুধু সেই সার্ভারে করুন যা আপনি রোজ ব্যবহার করবেন, মহড়ার সার্ভারে কখনো নয়।",
-          en: "In PuTTY, selecting text with the mouse copies it; for SSH_PRIVATE_KEY take everything from the BEGIN line to the END line. Until you do this the ERP runs; only new updates do not arrive, and you can do it later. Do it only on the server you will use every day, never on a drill server.",
+          bn: "PuTTY-তে মাউস দিয়ে লেখা টেনে বাছলেই কপি হয়ে যায়; SSH_PRIVATE_KEY-এর BEGIN লাইন থেকে END লাইন পর্যন্ত পুরোটা নিন। এটা না করা পর্যন্ত ERP চলে, শুধু নতুন আপডেট আসে না; পরেও করা যায়। শুধু সেই সার্ভারে করুন যা আপনি রোজ ব্যবহার করবেন, মহড়ার সার্ভারে কখনো নয়। নতুন ERP অপেক্ষায় (standby, W10) থাকলে আগে F6 করুন (go-live.sh); তার আগে এই কমান্ড চলে না, যাতে GitHub কখনো অব্যবহৃত কপি আপডেট না করে।",
+          en: "In PuTTY, selecting text with the mouse copies it; for SSH_PRIVATE_KEY take everything from the BEGIN line to the END line. Until you do this the ERP runs; only new updates do not arrive, and you can do it later. Do it only on the server you will use every day, never on a drill server. If the new ERP waits on standby (W10), do F6 first (go-live.sh); until then this command does not run, so GitHub never updates a copy that is not in use.",
         },
       },
       {
@@ -1306,10 +1306,10 @@ export const GUIDE_ERRORS: GuideError[] = [
   },
   {
     code: "W05",
-    shown: "screen(s) or PDF(s) did not open / Bug Guard found problems",
+    shown: "the check after the restore found ... problem(s) / Bug Guard found problems",
     meaning: fix(
-      "ERP চলছে, কিন্তু পরীক্ষায় কয়েকটি স্ক্রিন বা PDF খোলেনি, অথবা রিস্টোরের পর Bug Guard জরুরি বা গুরুত্বপূর্ণ কিছু পেয়েছে (বা সব দেখে শেষ করতে পারেনি)।",
-      "The ERP runs, but a few screens or PDFs did not open in the check, or Bug Guard found something urgent or important after the restore (or could not check everything).",
+      "ERP চলছে, কিন্তু পরীক্ষায় কয়েকটি স্ক্রিন বা PDF খোলেনি বা স্ক্রিনগুলো একেবারেই পরীক্ষা করা যায়নি (তখন ওয়েব ঠিকানা এই সার্ভারে আনা হয় না, W13), অথবা রিস্টোরের পর Bug Guard জরুরি বা গুরুত্বপূর্ণ কিছু পেয়েছে (বা সব দেখে শেষ করতে পারেনি)।",
+      "The ERP runs, but a few screens or PDFs did not open in the check, or the screens could not be checked at all (then the web address is not brought to this server, W13), or Bug Guard found something urgent or important after the restore (or could not check everything).",
     ),
     todo: fix(
       "তালিকাটির ছবি তুলে ডেভেলপারকে পাঠান। Bug Guard যা পেয়েছে তা ERP-এর ইনবক্সে আর Telegram-এ আছে; সব দেখা না হলে সে নিজের সময়সূচিতে আবার দেখবে।",
@@ -1393,8 +1393,8 @@ export const GUIDE_ERRORS: GuideError[] = [
       "The backup is back, but the checks found problems (a screen did not open, or a record or file does not match), so the question to bring the web address here did not come. The new ERP waits on standby.",
     ),
     todo: fix(
-      "উপরের লাইনগুলোর কোড (যেমন R20 বা W05) এই তালিকায় দেখুন। ERP ঠিক থাকলে আর পুরনো সার্ভার বন্ধ হলে F6 করুন। মহড়ায়: মহড়ার ধাপ 5-এর মতো Cloudflare-এ মহড়ার লাইনটি নিজে যোগ করুন, আর উপরের লাইনগুলোর ছবি তুলে ডেভেলপারকে পাঠান।",
-      "Look up the codes in the lines above (like R20 or W05) in this list. When the ERP is right and the old server is off, do step F6. In a drill: add the drill's line in Cloudflare yourself as in the drill's step 5, and send a picture of the lines above to the developer.",
+      "ঠিক উপরের লাইনগুলোর কোড (যেমন R20 বা W05) এই তালিকায় দেখুন। স্ক্রিন পরীক্ষা করা না গেলে (W05-এ Screens not checked) ERP খুলে F1 আর F2-এর মতো নিজে দেখুন। ERP ঠিক থাকলে আর পুরনো সার্ভার বন্ধ হলে F6 করুন। মহড়ায়: মহড়ার ধাপ 5-এর মতো Cloudflare-এ মহড়ার লাইনটি নিজে যোগ করুন, আর উপরের লাইনগুলোর ছবি তুলে ডেভেলপারকে পাঠান।",
+      "Look up the codes in the lines just above (like R20 or W05) in this list. If the screens could not be checked (Screens not checked, under W05), open the ERP and look yourself as in F1 and F2. When the ERP is right and the old server is off, do step F6. In a drill: add the drill's line in Cloudflare yourself as in the drill's step 5, and send a picture of the lines above to the developer.",
     ),
   },
 ];

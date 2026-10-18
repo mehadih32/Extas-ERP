@@ -94,12 +94,14 @@ async function main() {
         },
       })
     : null;
+  // Not checked is never taken for checked: a problem line (restore.sh counts it, so
+  // a restore never moves the web address on it), though the update goes on (exit 0).
   if (!owner || owner.status !== "ACTIVE") {
-    say("Screens not checked: there is no owner account yet (deploy/create-owner.sh)");
+    problem("Screens not checked: there is no owner account yet (deploy/create-owner.sh)");
     return;
   }
   if (owner.mustChangePassword) {
-    say("Screens not checked: the owner has not chosen a password yet (first sign-in)");
+    problem("Screens not checked: the owner has not chosen a password yet (first sign-in)");
     return;
   }
   const companyId = owner.memberships[0]?.companyId ?? null;

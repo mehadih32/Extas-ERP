@@ -475,6 +475,28 @@ describe("the guide and the restore command's own words (v6.4.1 restore)", () =>
     expect(tip.en).toMatch(/paste the same command again/);
   });
 
+  it("says W05 for the screens before W13 points to it, and setup-auto-deploy only once live (v6.4.1 review 2)", () => {
+    const code = CODE_ONLY(BOOTSTRAP);
+    const screens = code.indexOf(
+      'warn W05 "the check after the restore found $screen_problems problem(s)',
+    );
+    expect(screens).toBeGreaterThan(0);
+    expect(screens).toBeLessThan(code.indexOf("warn W13 "));
+    expect(error("W13").todo.en).toMatch(/lines just above \(like R20 or W05\)/);
+    // On standby, GitHub's updates come after go-live.sh; the script refuses before.
+    expect(code).toMatch(
+      /if \[ -z "\$drill" \] && \[ "\$standby" = 1 \]; then\n\s*note "Next \(part F of the guide\): once this ERP is live \(go-live\.sh, step F6\), let GitHub update it/,
+    );
+    expect(code).toMatch(
+      /elif \[ -z "\$drill" \]; then\n\s*note "Next \(part F of the guide\): let GitHub update this server again/,
+    );
+    const autoDeploy = read("deploy/setup-auto-deploy.sh");
+    expect(autoDeploy).toMatch(
+      /\[ ! -f "\$DATA_DIR\/backups\/\.standby" \] \|\|\n\s*die "this ERP is on standby after a restore/,
+    );
+    expect(step("F5").tip!.en).toMatch(/do F6 first \(go-live\.sh\)/);
+  });
+
   it("explains every new message with what to do (R05, R19, R22, W02, W10, W11)", () => {
     expect(SCRIPTS).toContain("did not finish in 30 minutes. Restart the VM in Azure");
     expect(error("R05").todo.en).toMatch(/30 minutes.*Restart/);

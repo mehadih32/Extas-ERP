@@ -18,6 +18,9 @@ main() {
   # GitHub never updates a restore drill copy (bootstrap.sh --drill): it is deleted after the drill.
   [ ! -f "$DATA_DIR/backups/.drill" ] ||
     die "this server holds a restore drill copy (test mode): GitHub must never update it. Run this only on the server you use every day."
+  # Nor a copy on standby after a restore: GitHub would update a copy that is not in use.
+  [ ! -f "$DATA_DIR/backups/.standby" ] ||
+    die "this ERP is on standby after a restore (its web address does not point here yet), so GitHub must not update it yet. When this server is the one to use, point the web address here and run sudo ./deploy/go-live.sh (step F6 in the restore guide), then run this again."
 
   local user="${SUDO_USER:-}"
   if [ -z "$user" ] || [ "$user" = root ]; then

@@ -246,6 +246,9 @@ describe("the restore command in a drill", () => {
     );
     // The end says the drill's time and never sends the owner to set up GitHub's updates.
     expect(SCRIPT).toContain('say "Restore drill finished in $((took / 60)) min $((took % 60)) s');
-    expect(SCRIPT).toMatch(/\[ -n "\$drill" \] \|\|\n\s+note "Next \(part F of the guide\)/);
+    for (const next of SCRIPT.match(/^.*\n\s+note "Next \(part F of the guide\)/gm) ?? []) {
+      expect(next).toMatch(/^(?:if|elif) \[ -z "\$drill" \]/);
+    }
+    expect(SCRIPT.match(/note "Next \(part F of the guide\)/g)).toHaveLength(2);
   });
 });

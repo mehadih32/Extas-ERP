@@ -85,8 +85,81 @@ type Repo = {
   permissions?: { admin?: boolean; push?: boolean; pull?: boolean };
 };
 
-/** What the token can do on the repository, in plain notes. */
-export async function testGitHub(gh: GitHub): Promise<{ ok: boolean; notes: string[] }> {
+/** The settings of the "Protect main" ruleset (Help: Full check, step 4), by GitHub's rule name. */
+const LOCK_RULES = [
+  ["pull_request", "Require a pull request before merging"],
+  ["non_fast_forward", "Block force pushes"],
+  ["deletion", "Restrict deletions"],
+] as const;
+
+export const LOCK_MAIN_FIRST = "Lock main first";
+
+type BranchRule = { type: string; ruleset_id?: number };
+type Ruleset = { enforcement?: string; bypass_actors?: unknown[] };
+type Protection = {
+  required_pull_request_reviews?: unknown;
+  allow_force_pushes?: { enabled?: boolean };
+  allow_deletions?: { enabled?: boolean };
+  enforce_admins?: { enabled?: boolean };
+};
+
+/**
+ * Whether the main branch is locked on GitHub, so nothing (Claude Code
+ * included) reaches it but a pull request: an active ruleset on main that
+ * requires a pull request, blocks force pushes and restricts deletions, with
+ * nobody on its Bypass list (when the token may read it); or the older branch
+ * protection set the same way, for admins too. `missing` says what is not set,
+ * in the words of GitHub's ruleset screen.
+ */
+export async function mainLock(gh: GitHub): Promise<{ locked: boolean; missing: string[] }> {
+  const { data: rules } = await call<BranchRule[]>(
+    gh,
+    "GET",
+    `${repoPath(gh)}/rules/branches/${MAIN}?per_page=100`,
+  );
+  const have = new Set((rules ?? []).map((r) => r.type));
+  const missing: string[] = LOCK_RULES.filter(([type]) => !have.has(type)).map(([, n]) => n);
+  if (missing.length === 0) {
+    // The rulesets that lock it: nobody may skip them.
+    const ids = [...new Set((rules ?? []).flatMap((r) => (r.ruleset_id ? [r.ruleset_id] : [])))];
+    for (const id of ids) {
+      const { status, data } = await call<Ruleset>(
+        gh,
+        "GET",
+        `${repoPath(gh)}/rulesets/${id}`,
+        undefined,
+        [403, 404],
+      );
+      if (status === 200 && Array.isArray(data?.bypass_actors) && data.bypass_actors.length > 0) {
+        return { locked: false, missing: ["an empty Bypass list"] };
+      }
+    }
+    return { locked: true, missing: [] };
+  }
+  // The older branch protection, when the token may read it.
+  const { status, data: p } = await call<Protection>(
+    gh,
+    "GET",
+    `${repoPath(gh)}/branches/${MAIN}/protection`,
+    undefined,
+    [403, 404],
+  );
+  if (
+    status === 200 &&
+    p?.required_pull_request_reviews &&
+    p.allow_force_pushes?.enabled !== true &&
+    p.allow_deletions?.enabled !== true &&
+    p.enforce_admins?.enabled === true
+  ) {
+    return { locked: true, missing: [] };
+  }
+  return { locked: false, missing };
+}
+
+/** What the token can do on the repository, in plain notes; whether main is locked. */
+export async function testGitHub(
+  gh: GitHub,
+): Promise<{ ok: boolean; notes: string[]; mainLocked: boolean }> {
   const { data: repo } = await call<Repo>(gh, "GET", repoPath(gh));
   const notes: string[] = [];
   let ok = true;
@@ -117,8 +190,19 @@ export async function testGitHub(gh: GitHub): Promise<{ ok: boolean; notes: stri
       notes.push(`The ${name} workflow is turned off on GitHub (Actions tab): turn it on.`);
     }
   }
-  return { ok, notes };
+  const lock = await mainLock(gh);
+  if (lock.locked) {
+    notes.push("The main branch is locked: changes reach it only through a pull request.");
+  } else {
+    ok = false;
+    notes.push(lockMainText(lock.missing));
+  }
+  return { ok, notes, mainLocked: lock.locked };
 }
+
+/** Why nothing goes to Claude Code yet, in plain words. */
+export const lockMainText = (missing: string[]) =>
+  `${LOCK_MAIN_FIRST}: nothing goes to Claude Code until the main branch on GitHub has its ruleset (Help: Full check, step 4)${missing.length ? `. Still to set: ${missing.join(", ")}` : ""}. Then press Test the connection.`;
 
 async function defaultBranch(gh: GitHub): Promise<string> {
   return (await call<Repo>(gh, "GET", repoPath(gh))).data.default_branch;

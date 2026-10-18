@@ -197,11 +197,40 @@ export async function testGitHubConnection(ctx: CompanyContext) {
   const result = await github.testGitHub(gh).catch((error: unknown) => ({
     ok: false,
     notes: [error instanceof AppError ? error.message : "GitHub could not be reached."],
+    mainLocked: false,
   }));
   await saveGitHubFields(ctx.company.id, {
-    githubTest: { ok: result.ok, at: new Date().toISOString(), notes: result.notes },
+    githubTest: {
+      ok: result.ok,
+      at: new Date().toISOString(),
+      notes: result.notes,
+      mainLocked: result.mainLocked,
+    },
   });
   return result;
+}
+
+type GitHubTest = { ok: boolean; at: string; notes: string[]; mainLocked?: boolean };
+
+/**
+ * Claude Code works only while the main branch is locked on GitHub (v6.4.1
+ * B1): asked of GitHub each time, never taken from the last test; the screen
+ * keeps what GitHub said. Throws "Lock main first" until it is.
+ */
+async function assertMainLocked(companyId: string, gh: github.GitHub) {
+  const lock = await github.mainLock(gh);
+  const s = await settingsOf(companyId);
+  const test = (s?.githubTest as GitHubTest | null) ?? null;
+  if (test && test.mainLocked !== lock.locked) {
+    await saveGitHubFields(companyId, {
+      githubTest: {
+        ...test,
+        mainLocked: lock.locked,
+        ok: lock.locked ? test.ok : false,
+      } as Prisma.InputJsonObject,
+    });
+  }
+  if (!lock.locked) throw new AppError("VALIDATION", github.lockMainText(lock.missing));
 }
 
 // ---------------------------------------------------------------- running a check
@@ -669,6 +698,7 @@ async function openRequest(
     byGuard?: boolean;
   },
 ) {
+  await assertMainLocked(ctx.company.id, gh);
   // The issue first: if GitHub refuses, nothing is kept.
   const first = r.issue(0);
   const opened = await github.openIssue(gh, first);
@@ -822,7 +852,11 @@ export async function followRequest(gh: github.GitHub, r: Request, now: Date = n
       }
       // Claude Code is asked to fix failed checks only on its own work.
       if (vet.ok && checks === "failed" && r.askedSha !== pull.head.sha) {
-        if (r.retries < MAX_RETRIES) {
+        const lock = r.retries < MAX_RETRIES ? await github.mainLock(gh) : null;
+        if (lock && !lock.locked) {
+          // Not asked again until main is locked; the next look tries again.
+          data.note = github.lockMainText(lock.missing);
+        } else if (r.retries < MAX_RETRIES) {
           await github.comment(gh, prNumber, FIX_CHECKS_COMMENT);
           data.askedSha = pull.head.sha;
           data.retries = r.retries + 1;
@@ -1028,7 +1062,9 @@ export async function getFullCheck(ctx: CompanyContext, runId?: string) {
       connected,
       repo: s?.githubRepo ?? null,
       hint: s?.githubTokenHint ?? null,
-      test: (s?.githubTest as { ok: boolean; at: string; notes: string[] } | null) ?? null,
+      test: (s?.githubTest as GitHubTest | null) ?? null,
+      /** Whether GitHub said main is locked (null: not tested yet); Claude Code waits for it. */
+      mainLocked: ((s?.githubTest as GitHubTest | null)?.mainLocked ?? null) as boolean | null,
     },
     going: going
       ? {

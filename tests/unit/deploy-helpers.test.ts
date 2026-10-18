@@ -317,7 +317,8 @@ describe("the old GitHub token file on the server (v6.4.1 B3)", () => {
     await git("-C", repo, "config", "credential.helper", `store --file=${file}`);
     await writeFile(file, "https://x-access-token:ghp_secret123@github.com\n", { mode: 0o600 });
     await mkdir(path.join(repo, "deploy"));
-    const helper = () => git("-C", repo, "config", "--get-all", "credential.helper").catch(() => "");
+    const helper = () =>
+      git("-C", repo, "config", "--get-all", "credential.helper").catch(() => "");
     return { repo, file, helper };
   }
 

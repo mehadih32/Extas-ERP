@@ -2673,7 +2673,7 @@ export const aiHelp: HelpSection = {
           text: "(3) GitHub-এর Settings > Developer settings > Personal access tokens > Fine-grained tokens থেকে নতুন টোকেন বানান: শুধু ERP-র রিপোজিটরি; Actions, Contents, Issues আর Pull requests: Read and write; Checks: Read only। মেয়াদ শেষের তারিখ মনে রাখুন।",
         },
         {
-          text: "(4) main শাখায় তালা দিন, যাতে কেউ (Claude Code-ও) সরাসরি main-এ কিছু ঢোকাতে না পারে: রিপোজিটরির Settings > Rules > Rulesets > New ruleset > New branch ruleset। Ruleset name-এ Protect main লিখুন, Enforcement status: Active। Target branches-এ Add target > Include default branch। নিচে টিক দিন: Restrict deletions, Require a pull request before merging (Required approvals 0 রাখুন), Require status checks to pass (Add checks চেপে Tests and build বাছুন), Block force pushes। Bypass list খালি রাখুন, তারপর Create।",
+          text: "(4) main শাখায় তালা দিন, যাতে কেউ (Claude Code-ও) সরাসরি main-এ কিছু ঢোকাতে না পারে: রিপোজিটরির Settings > Rules > Rulesets > New ruleset > New branch ruleset। Ruleset name-এ Protect main লিখুন, Enforcement status: Active। Target branches-এ Add target > Include default branch। নিচে টিক দিন: Restrict deletions, Require a pull request before merging (Required approvals 0 রাখুন), Require status checks to pass (Add checks চেপে Tests and build বাছুন), Block force pushes। Bypass list খালি রাখুন, তারপর Create। এটি না করা পর্যন্ত Claude Code কোনো কাজ পায় না: “Test the connection” চাপলে “Not ready yet” আর কী বাকি তা দেখায়, পাতার উপরে “Lock main first” লেখা থাকে, আর “Fix with Claude Code”, “Fix all” ও “Send to Claude Code” চাপা যায় না। ERP প্রতিবার পাঠানোর আগে GitHub-এ নিজে দেখে নেয়; তালা খুলে ফেললে কাজ পাঠানো আবার থেমে যায়।",
         },
         {
           text: "এতে ERP-র “Merge” আর Deploy আগের মতোই চলে: দুটোই Pull Request দিয়ে যায়, আর Tests and build পাস না করলে GitHub নিজেই merge আটকায়। পরে কখনো GitHub-এ main-এ সরাসরি কিছু বদলাতে চাইলে Pull Request খুলে করুন।",
@@ -2717,6 +2717,10 @@ export const aiHelp: HelpSection = {
         {
           label: "Connect GitHub below first.",
           text: "GitHub এখনো যুক্ত নয়: নিচের “GitHub” অংশে রিপোজিটরি আর টোকেন দিন।",
+        },
+        {
+          label: "Lock main first",
+          text: "GitHub-এ main শাখায় এখনো তালা নেই (উপরের ধাপ 4-এর ruleset), তাই ERP Claude Code-কে কিছুই পাঠায় না, আর ব্যর্থ চেক ঠিক করতেও আবার বলে না। ruleset বানিয়ে নিচে “Test the connection” চাপুন; “The main branch is locked” দেখালে লেখাটি সরে যায়। “Bypass list”-এ কেউ থাকলেও তালা ধরা হয় না।",
         },
         {
           label: "Starting on GitHub",

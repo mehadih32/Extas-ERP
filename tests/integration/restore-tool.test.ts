@@ -769,6 +769,58 @@ sys.exit(tool.main(sys.argv[2:]))
       }
     });
 
+    it("in a drill, only adds a new record: never moves one that points elsewhere (v6.4.1 review)", async () => {
+      const zone = cf.zones.get("extasbd.com")!;
+      // The company's website, typed by mistake as the drill's address.
+      zone.records.push({
+        id: "w1",
+        type: "A",
+        name: "www.extasbd.com",
+        content: "198.51.100.20",
+        proxied: true,
+        ttl: 1,
+      });
+      await mkdir(work, { recursive: true });
+      await writeFile(
+        path.join(work, "server.json"),
+        JSON.stringify({ cloudflare: { zone: "extasbd.com", token: CF_TOKEN } }),
+      );
+      const deploy = path.join(dir, "srv", "deploy");
+      await mkdir(deploy, { recursive: true });
+      const env = { CLOUDFLARE_API_BASE: cf.url, PUBLIC_IP: "203.0.113.7" };
+      const drillDns = async (address: string) => {
+        await writeFile(path.join(deploy, ".env"), `APP_DOMAIN=${address}\nDEMO_SITE=off\n`);
+        return tool(
+          ["dns", "--work", work, "--deploy", deploy, "--drill"],
+          { dns: address },
+          {
+            env,
+          },
+        );
+      };
+
+      const before = cf.requests.length;
+      const refused = await drillDns("www.extasbd.com");
+      expect(refused.code).toBe(0);
+      expect(refused.stdout).toContain(
+        "Note W12: www.extasbd.com already points to another server (198.51.100.20)",
+      );
+      expect(zone.records.find((r) => r.id === "w1")!.content).toBe("198.51.100.20");
+      expect(cf.requests.slice(before).every((r) => r.startsWith("GET "))).toBe(true);
+      expect((await state()).dnsMoved).toBe(false);
+
+      // A new address: a new record, as the guide says.
+      const added = await drillDns("drill.extasbd.com");
+      expect(added.stdout).toContain(
+        "drill.extasbd.com now points to this server (a new A record).",
+      );
+      expect((await state()).dnsMoved).toBe(true);
+      // The drill run again on the same server: already here.
+      const again = await drillDns("drill.extasbd.com");
+      expect(again.stdout).toContain("drill.extasbd.com already points to this server.");
+      expect(zone.records.filter((r) => r.type === "A")).toHaveLength(2);
+    });
+
     it("without a saved token, says which address to point where, and changes nothing", async () => {
       await mkdir(work, { recursive: true });
       await writeFile(path.join(work, "server.json"), "{}");

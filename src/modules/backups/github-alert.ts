@@ -21,6 +21,8 @@ import { platformCompanyId } from "@/modules/bug-guard/security";
  * (libsodium's sealed box, src/lib/sealed-box.ts: only GitHub Actions can open
  * it) and sends it to GitHub itself. The token is used for this and forgotten;
  * nothing of the values is kept or logged here, only the repository and when.
+ * A restore drill copy (test mode) never does it: it holds the real ERP's sign-ins
+ * and would overwrite the repository's secrets (like github/github.ts, it refuses).
  * GITHUB_API_URL points the calls elsewhere in tests.
  */
 
@@ -44,6 +46,8 @@ async function github(
   path: string,
   body?: unknown,
 ) {
+  // A restore drill copy (test mode) only reads: it never sets a secret.
+  if (method !== "GET") await refuseOnDrill();
   let response: Response;
   try {
     response = await fetch(`${API()}/repos/${repo}${path}`, {
@@ -79,6 +83,11 @@ async function github(
     );
   }
   throw new AppError("UNAVAILABLE", `GitHub answered ${response.status}. Try again in a minute.`);
+}
+
+async function refuseOnDrill() {
+  const { DRILL_NOT_SENT, onDrill } = await import("@/modules/backups/standby");
+  if (await onDrill()) throw new AppError("UNAVAILABLE", DRILL_NOT_SENT);
 }
 
 /** Everything the alert needs from this ERP, or a plain reason what to set up first. */
@@ -130,6 +139,7 @@ export async function setUpGitHubAlert(ctx: CompanyContext, raw: unknown, meta?:
     throw new AppError("FORBIDDEN", "Only the platform owner sets up the backup alert.");
   }
   const input = githubAlertSchema.parse(raw);
+  await refuseOnDrill();
   const { requirePin } = await import("@/modules/ai/settings.service");
   await requirePin(ctx, input.pin, "send the backup alert's settings to GitHub");
   const values = await alertValues();

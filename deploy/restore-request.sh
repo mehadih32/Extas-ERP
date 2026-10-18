@@ -7,6 +7,9 @@
 # signature, made with the server's ENCRYPTION_KEY) and runs restore.sh: a safety
 # copy first, then the restore, then the full check. The result goes to
 # BACKUP_DIR/restore-result.json, which the ERP records and sends to the owner.
+# The opened backup is plain data and never stays: it is deleted when the restore
+# ends or is refused, and one left by a restore cut off earlier (the server restarted)
+# at the next start (and by the hourly clean-up deploy.sh installs, lib.sh).
 # shellcheck source=deploy/lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
@@ -19,8 +22,14 @@ result="$backups/restore-result.json"
 # Taken at once, so systemd does not start it twice.
 taken="$backups/restore-request.taken"
 mv -f "$request" "$taken"
+# The opened backup this request names (restores/<name>), even before its signature is
+# checked: only to delete it when the request is refused.
+named="$(python3 -c 'import json, re, sys
+f = str(json.load(open(sys.argv[1])).get("folder", ""))
+print(f if re.fullmatch(r"restores/[\w.-]+", f) else "")' "$taken" 2>/dev/null || true)"
 
 refuse() {
+  [ -z "$named" ] || rm -rf "${backups:?}/$named"
   MESSAGE="$1" python3 - "$result" <<'PY'
 import json, os, sys, datetime
 now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -48,9 +57,12 @@ PY
 rm -f "$taken"
 
 # One update or restore at a time: a running update is waited for (up to an hour).
-exec 9>/run/extras-erp-update.lock
-flock -w 3600 9 || refuse "an update was still running after an hour, so the restore did not start. Ask for it again."
-export EXTRAS_ERP_UPDATE_LOCK=1
+wait_update_lock 3600 || refuse "an update was still running after an hour, so the restore did not start. Ask for it again."
+
+# Opened backups left by a restore cut off earlier (more than 2 hours old: never one
+# the ERP is opening now) go first.
+find "$backups/restores" -mindepth 1 -maxdepth 1 ! -name "$(basename "$folder")" -mmin +120 \
+  -exec rm -rf {} + 2>/dev/null || true
 
 status=0
 # This server's own backup settings (recovery key, schedule, Google Drive) stay as they are.

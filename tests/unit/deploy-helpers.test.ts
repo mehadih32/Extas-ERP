@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { mkdir, mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
 import os from "node:os";
@@ -492,8 +492,11 @@ describe("standby after a restore on a second server (G2)", () => {
     expect(dns).toBeGreaterThan(restored);
     expect(code.match(/tool dns /g)).toHaveLength(1);
     expect(code.slice(dns)).toMatch(
-      /^tool dns [^\n]*\n[^\n]*\nif \[ -n "\$\(tool fact --work "\$WORK" dnsMoved\)" \]; then\n\s*rm -f "\$DATA\/backups\/\.standby"\n\s*standby=0/,
+      /^tool dns [^\n]*\n[^\n]*\nelse\n[^\n]*\nfi\nmoved="\$\(tool fact --work "\$WORK" dnsMoved\)"\n[\s\S]{0,200}web_address_here "\$APP_DOMAIN" "\$DATA\/backups\/\.standby"[^\n]*\n\s*note [^\n]*\n\s*moved=yes\nfi\nif \[ -n "\$moved" \]; then\n\s*rm -f "\$DATA\/backups\/\.standby"\n\s*standby=0/,
     );
+    // Restored over the ERP in use (its address reaches this server already, even with
+    // no Cloudflare token: W01), it never waits on standby (v6.4.1 review).
+    expect(code).toMatch(/if \[ -z "\$moved" \] && \[ "\$APP_DOMAIN" != localhost \] &&/);
     // Said at the end, in big words, as the last thing on the screen.
     expect(code).toMatch(
       /warn W10 "this ERP waits on standby: \$APP_DOMAIN does not point to this server yet/,
@@ -536,7 +539,11 @@ compose() {
   case "$*" in *psql*) [ -z "\${COUNTS_FAIL:-}" ] || return 1; cat >/dev/null; echo '{"User": 3}' ;; esac
 }
 wait_healthy() { echo "healthy? $1" >>"${log}"; [ "$1" != app ] || [ -z "\${APP_NEVER_STARTS:-}" ]; }
-safety_copy() { mkdir -p "$DATA_DIR/safety-copies/$1" && printf '%s' "$DATA_DIR/safety-copies/$1"; }
+safety_copy() {
+  echo "safety_copy $1" >>"${log}"
+  [ -z "\${SAFETY_FAILS:-}" ] || return 1
+  mkdir -p "$DATA_DIR/safety-copies/$1" && printf '%s' "$DATA_DIR/safety-copies/$1"
+}
 restore_database() { echo "restore_database $1" >>"${log}"; }
 write_restored_mark() { echo '{}' >"$3"; }
 `,
@@ -628,6 +635,25 @@ write_restored_mark() { echo '{}' >"$3"; }
     expect(h.result()).toMatchObject({ ok: true, wentBack: false });
   });
 
+  it("stops the app before the safety copy, so nothing written in between is lost (v6.4.1 review)", async () => {
+    const h = await harness();
+    const done = await h.run();
+    expect(done.code).toBe(0);
+    const calls = readFileSync(h.log, "utf8");
+    expect(calls).toMatch(
+      /compose stop app\n(?:[^\n]*\n)*?safety_copy before-restore-[\d_-]+\n[\s\S]*restore_database \/backups\//,
+    );
+    // No safety copy: the app is started again at once, and nothing was restored.
+    await writeFile(h.log, "");
+    const failed = await h.run({ SAFETY_FAILS: "1" });
+    expect(failed.code).not.toBe(0);
+    const after = readFileSync(h.log, "utf8");
+    expect(after).toMatch(/compose stop app\n[\s\S]*safety_copy [^\n]*\n[\s\S]*compose up -d/);
+    expect(after).not.toContain("restore_database");
+    expect(h.result()).toMatchObject({ ok: false, wentBack: false });
+    expect(h.result().message).toContain("the safety copy of the database could not be saved");
+  });
+
   it("goes back the same way when the ERP does not start on the restored data", async () => {
     const h = await harness();
     const done = await h.run({ APP_NEVER_STARTS: "1" });
@@ -637,6 +663,118 @@ write_restored_mark() { echo '{}' >"$3"; }
     // The files from before are back; the backup's are kept aside.
     expect(readFileSync(path.join(h.data, "uploads", "c1", "now.pdf"), "utf8")).toBe(
       "the file there now",
+    );
+  });
+});
+
+describe("a restore asked for on the Backups screen leaves no opened backup behind (restore-request.sh)", () => {
+  /*
+   * restore-request.sh run for real beside a stand-in restore.sh, with lib.sh's root,
+   * settings and lock parts played by stand-ins, in a folder of the test's own.
+   */
+  const KEY = "test-encryption-key-0123456789";
+  async function harness() {
+    const deploy = path.join(dir, "deploy");
+    const data = path.join(dir, "data");
+    const backups = path.join(data, "backups");
+    const log = path.join(dir, "calls.log");
+    await mkdir(deploy, { recursive: true });
+    await mkdir(path.join(backups, "restores"), { recursive: true });
+    await writeFile(
+      path.join(deploy, "restore-request.sh"),
+      readFileSync(path.join("deploy", "restore-request.sh"), "utf8"),
+    );
+    await writeFile(
+      path.join(deploy, "lib.sh"),
+      `source "${path.join(process.cwd(), "deploy", "lib.sh")}"
+APP_UID=$(id -u)
+DEPLOY_DIR="${deploy}"
+need_root() { :; }
+load_settings() { DATA_DIR="${data}"; }
+setting() { [ "$1" != ENCRYPTION_KEY ] || printf '%s' "${KEY}"; }
+wait_update_lock() { echo "lock $1" >>"${log}"; [ -z "\${LOCK_BUSY:-}" ]; }
+`,
+    );
+    await writeFile(
+      path.join(deploy, "restore.sh"),
+      `#!/usr/bin/env bash\necho "restore.sh $*" >>"${log}"\n`,
+      { mode: 0o755 },
+    );
+    /** An opened backup in restores/, as the ERP leaves it, made `hoursAgo` hours ago. */
+    const opened = async (name: string, hoursAgo = 0) => {
+      const folder = path.join(backups, "restores", name);
+      await mkdir(folder, { recursive: true });
+      await writeFile(path.join(folder, "database.dump"), "plain data");
+      const at = new Date(Date.now() - hoursAgo * 3_600_000);
+      await utimes(folder, at, at);
+      return folder;
+    };
+    const ask = async (name: string, sign = true) => {
+      const folder = `restores/${name}`;
+      const requestedAt = new Date().toISOString();
+      const signature = sign
+        ? createHmac("sha256", KEY).update(`${folder}|${requestedAt}`).digest("hex")
+        : "0".repeat(64);
+      await writeFile(
+        path.join(backups, "restore-request.json"),
+        JSON.stringify({ folder, name, requestedAt, signature }),
+      );
+    };
+    const run = (env: Record<string, string> = {}) =>
+      new Promise<Run>((resolve) =>
+        execFile(
+          "bash",
+          [path.join(deploy, "restore-request.sh")],
+          { env: { ...process.env, ...env }, timeout: 60_000 },
+          (error, stdout, stderr) =>
+            resolve({ code: error ? Number(error.code ?? 1) : 0, stdout, stderr }),
+        ),
+      );
+    const result = () =>
+      JSON.parse(readFileSync(path.join(backups, "restore-result.json"), "utf8")) as {
+        ok: boolean;
+        message: string;
+      };
+    return { backups, log, opened, ask, run, result };
+  }
+
+  it("deletes the opened backup when the request is refused (v6.4.1 review)", async () => {
+    const h = await harness();
+    const folder = await h.opened("2026-10-17_1400");
+    await h.ask("2026-10-17_1400", false);
+    const refused = await h.run();
+    expect(refused.code).not.toBe(0);
+    expect(h.result()).toMatchObject({ ok: false });
+    expect(h.result().message).toContain("signature did not match");
+    expect(existsSync(folder)).toBe(false);
+    expect(existsSync(path.join(h.backups, "restore-request.taken"))).toBe(false);
+
+    // Refused after waiting for an update: its opened backup goes too.
+    const again = await h.opened("2026-10-17_1400");
+    await h.ask("2026-10-17_1400");
+    const busy = await h.run({ LOCK_BUSY: "1" });
+    expect(busy.code).not.toBe(0);
+    expect(h.result().message).toContain("an update was still running");
+    expect(existsSync(again)).toBe(false);
+  });
+
+  it("deletes what a restore cut off earlier left, at the next start and every hour (v6.4.1 review)", async () => {
+    const h = await harness();
+    // Left by a restore cut off by a restart 5 hours ago; and one just being opened.
+    const left = await h.opened("2026-10-16_0200", 5);
+    const fresh = await h.opened("2026-10-17_0900");
+    const asked = await h.opened("2026-10-17_1400");
+    await h.ask("2026-10-17_1400");
+    const done = await h.run();
+    expect(done.code, done.stderr).toBe(0);
+    expect(readFileSync(h.log, "utf8")).toContain(`restore.sh --yes --check`);
+    expect(existsSync(left)).toBe(false);
+    expect(existsSync(asked)).toBe(false);
+    expect(existsSync(fresh)).toBe(true);
+    // The server's hourly clean-up: opened backups older than a day go.
+    const lib = readFileSync(path.join("deploy", "lib.sh"), "utf8");
+    expect(lib).toMatch(
+      /root find \$DATA_DIR\/backups\/restores -mindepth 1 -maxdepth 1 -mmin \+1440 -exec rm -rf \{\} \+/,
     );
   });
 });
@@ -696,6 +834,36 @@ describe("waiting for a new VM's own updates before installing (setup-server.sh,
     expect(lib.stdout).toContain("exit 1");
   });
 
+  it("counts cloud-init's wait in the same time limit, so the guide's 30 minutes are true (v6.4.1 review)", async () => {
+    const env = await stubs(1000);
+    // cloud-init takes the whole limit (2 seconds here): apt's lock is not waited for again.
+    await writeFile(path.join(dir, "bin", "cloud-init"), "#!/bin/sh\n/bin/sleep 2\nexit 0\n", {
+      mode: 0o755,
+    });
+    const limited = { ...env, APT_WAIT_SECONDS: "2" };
+    const lib = await withLib(`if wait_for_apt; then echo "exit 0"; else echo "exit 1"; fi`, {
+      env: limited,
+    });
+    expect(lib.stdout).toContain("exit 1");
+    expect(readFileSync(path.join(dir, "asks"), "utf8").split("\n").filter(Boolean)).toHaveLength(
+      1,
+    );
+    await writeFile(path.join(dir, "asks"), "");
+    const boot = await new Promise<Run>((resolve) =>
+      execFile(
+        "bash",
+        [path.join("deploy", "bootstrap.sh"), "--wait-apt"],
+        { env: { ...process.env, ...limited } },
+        (error, stdout, stderr) =>
+          resolve({ code: error ? Number(error.code ?? 1) : 0, stdout, stderr }),
+      ),
+    );
+    expect(boot.stdout).toContain("APT STILL BUSY");
+    expect(readFileSync(path.join(dir, "asks"), "utf8").split("\n").filter(Boolean)).toHaveLength(
+      1,
+    );
+  });
+
   it("is used before every apt command of setup-server.sh, and a run cut off is finished first", () => {
     const setup = readFileSync(path.join("deploy", "setup-server.sh"), "utf8");
     expect(setup).toMatch(/wait_for_apt \|\|\n\s*die /);
@@ -705,5 +873,10 @@ describe("waiting for a new VM's own updates before installing (setup-server.sh,
     expect(setup).not.toMatch(/^\s*apt-get /m);
     const bootstrap = readFileSync(path.join("deploy", "bootstrap.sh"), "utf8");
     expect(bootstrap.indexOf("wait_for_apt ||")).toBeLessThan(bootstrap.indexOf("apt_get update"));
+    // dpkg finishes a cut-off install only once the server's own updates are done.
+    expect(bootstrap.indexOf("wait_for_apt ||")).toBeLessThan(
+      bootstrap.indexOf("dpkg --configure -a"),
+    );
+    expect(setup.indexOf("wait_for_apt ||")).toBeLessThan(setup.indexOf("dpkg --configure -a"));
   });
 });

@@ -178,8 +178,8 @@ export const NO_GITHUB_PART = {
 export const DRILL_PART = {
   title: { bn: "অনুশীলন: রিস্টোরের মহড়া", en: "Practice: a restore drill" } satisfies Text,
   intro: {
-    bn: "বছরে অন্তত একবার, আর গাইড বদলালে, একটি ছোট পরীক্ষার সার্ভারে পুরো রিস্টোর একবার করে দেখুন। আসল ERP চলতেই থাকে। মহড়ার কপি টেস্ট মোডে চলে: কোনো ইমেইল বা বটের বার্তা পাঠায় না, Google Drive-এ ব্যাকআপ রাখে না, নিজে থেকে কোনো কাজ চালায় না। আসল ওয়েব ঠিকানার (যেমন erp.extasbd.com) DNS কখনো ছোঁয় না। প্রায় 1 ঘণ্টা লাগে; Azure-এর খরচ সামান্য।",
-    en: "At least once a year, and when the guide changes, do the whole restore once on a small test server. The real ERP keeps running. The drill copy runs in test mode: it sends no emails or bot messages, makes no Google Drive backups and runs no jobs by itself. It never touches the DNS of your real web address (like erp.extasbd.com). It takes about 1 hour and costs a little in Azure.",
+    bn: "বছরে অন্তত একবার, আর গাইড বদলালে, একটি ছোট পরীক্ষার সার্ভারে পুরো রিস্টোর একবার করে দেখুন। আসল ERP চলতেই থাকে। মহড়ার কপি টেস্ট মোডে চলে: কোনো ইমেইল বা বটের বার্তা পাঠায় না, Google Drive-এ ব্যাকআপ রাখে না, নিজে থেকে কোনো কাজ চালায় না। AI-ও কখনো ডাকে না। আসল ওয়েব ঠিকানার (যেমন erp.extasbd.com) DNS কখনো ছোঁয় না। সবসময় নতুন একটি সার্ভারে করুন: চালু ERP-র সার্ভারে কমান্ড মহড়া চালায় না (R31)। একই মহড়ার সার্ভারে আবার চালালে আগের মহড়ার ঠিকানাই থাকে। প্রায় 1 ঘণ্টা লাগে; Azure-এর খরচ সামান্য।",
+    en: "At least once a year, and when the guide changes, do the whole restore once on a small test server. The real ERP keeps running. The drill copy runs in test mode: it sends no emails or bot messages, makes no Google Drive backups and runs no jobs by itself. It never calls the AI either. It never touches the DNS of your real web address (like erp.extasbd.com). Always use a new server: on the server of the ERP in use the command does not run a drill (R31). Run again on the same drill server, it keeps the earlier drill's address. It takes about 1 hour and costs a little in Azure.",
   } satisfies Text,
   steps: [
     {
@@ -199,8 +199,8 @@ export const DRILL_PART = {
       en: "Copy the drill command in the box below (it ends with --drill) as in C1 and C2, paste it in PuTTY and press Enter.",
     },
     {
-      bn: "“Test web address for this drill” প্রশ্নে ধাপ 1-এর ঠিকানাটি লিখে Enter চাপুন। বাকি প্রশ্নগুলোর উত্তর পার্ট D-র মতো। ব্যাকআপ ফেরত আসার পর “To point ... to this server” প্রশ্নে শুধু মহড়ার ঠিকানাটিই আসে: সেটিই লিখে Enter চাপুন। এই প্রশ্ন না এলে (W01) Cloudflare-এ “DNS” > “Records”-এ “Add record” চেপে Type A, Name drill, “IPv4 address”-এ মহড়ার সার্ভারের IP দিয়ে “Save” চাপুন।",
-      en: "At “Test web address for this drill”, type the address from step 1 and press Enter. Answer the other questions as in part D. After the backup is back, “To point ... to this server” offers only the drill address: type it and press Enter. If that question does not come (W01), in Cloudflare go to “DNS” > “Records”, click “Add record”, choose Type A, Name drill, put the drill server's IP in “IPv4 address” and click “Save”.",
+      bn: "“Test web address for this drill” প্রশ্নে ধাপ 1-এর ঠিকানাটি লিখে Enter চাপুন। বাকি প্রশ্নগুলোর উত্তর পার্ট D-র মতো। ব্যাকআপ ফেরত আসার পর “To point ... to this server” প্রশ্নে শুধু মহড়ার ঠিকানাটিই আসে: সেটিই লিখে Enter চাপুন। Cloudflare-এ মহড়ার ঠিকানার নামে অন্য সার্ভারে যাওয়া কোনো লাইন থাকলে কমান্ড তা বদলায় না (W12)। এই প্রশ্ন না এলে (W01 বা W13) Cloudflare-এ “DNS” > “Records”-এ “Add record” চেপে Type A, Name drill, “IPv4 address”-এ মহড়ার সার্ভারের IP দিয়ে “Save” চাপুন।",
+      en: "At “Test web address for this drill”, type the address from step 1 and press Enter. Answer the other questions as in part D. After the backup is back, “To point ... to this server” offers only the drill address: type it and press Enter. It never moves a line of Cloudflare's that already points to another server (W12). If that question does not come (W01 or W13), in Cloudflare go to “DNS” > “Records”, click “Add record”, choose Type A, Name drill, put the drill server's IP in “IPv4 address” and click “Save”.",
     },
     {
       bn: "অপেক্ষা করুন। শেষে লেখা আসে “Restore drill finished in ...”, সঙ্গে ফল। এটাই মহড়ার সময়।",
@@ -718,8 +718,8 @@ export const GUIDE_PARTS: GuidePart[] = [
         },
         picture: "putty-pick",
         tip: {
-          bn: "অন্য একটি চাইলে তার নম্বর লিখে Enter চাপুন। “(NOT checked in Drive: it may be incomplete)” লেখা ব্যাকআপ অসম্পূর্ণ হতে পারে, আর “(made by a copy on standby)” লেখাটি অপেক্ষায় থাকা কোনো কপির (যেমন একটি মহড়ার): এগুলো Enter নেয় না, নম্বর টাইপ করলে তবেই। সবচেয়ে উপরেরটি যাচাই না হলে লেখা আসে “(newest checked: Enter picks it; the ones above are not checked)”। “None of these backups passed its check in Google Drive” এলে Enter কিছু নেয় না: সবচেয়ে উপরের নম্বরটি (1) টাইপ করুন, আর শেষে মিলিয়ে দেখার ফল (R20) ভালো করে দেখুন।",
-          en: "For another one, type its number and press Enter. A backup marked “(NOT checked in Drive: it may be incomplete)” may be incomplete, and one marked “(made by a copy on standby)” was made by a copy waiting on standby (like a drill's): Enter never takes these, only their number does. When the top one is not checked, the newest checked one says “(newest checked: Enter picks it; the ones above are not checked)”. If it says “None of these backups passed its check in Google Drive”, Enter takes none: type the top number (1), and read the comparison at the end (R20) carefully.",
+          bn: "অন্য একটি চাইলে তার নম্বর লিখে Enter চাপুন। “(NOT checked in Drive: it may be incomplete)” লেখা ব্যাকআপ অসম্পূর্ণ হতে পারে, আর “(made by a copy on standby)” লেখাটি অপেক্ষায় (standby) থাকা কোনো রিস্টোর করা কপির (যেমন পুরনো ERP চালু রেখে অনুশীলনের জন্য করা একটি রিস্টোর): এগুলো Enter নেয় না, নম্বর টাইপ করলে তবেই। সবচেয়ে উপরেরটি যাচাই না হলে লেখা আসে “(newest checked: Enter picks it; the ones above are not checked)”। “None of these backups passed its check in Google Drive” এলে Enter কিছু নেয় না: সবচেয়ে উপরের নম্বরটি (1) টাইপ করুন, আর শেষে মিলিয়ে দেখার ফল (R20) ভালো করে দেখুন।",
+          en: "For another one, type its number and press Enter. A backup marked “(NOT checked in Drive: it may be incomplete)” may be incomplete, and one marked “(made by a copy on standby)” was made by a restored copy waiting on standby (like a practice restore while the old ERP still ran): Enter never takes these, only their number does. When the top one is not checked, the newest checked one says “(newest checked: Enter picks it; the ones above are not checked)”. If it says “None of these backups passed its check in Google Drive”, Enter takes none: type the top number (1), and read the comparison at the end (R20) carefully.",
         },
       },
       {
@@ -735,8 +735,8 @@ export const GUIDE_PARTS: GuidePart[] = [
         id: "D8",
         title: { bn: "ওয়েব ঠিকানা এই সার্ভারে", en: "The web address to this server" },
         text: {
-          bn: "এই প্রশ্ন আসে পরে, ব্যাকআপ ফেরত আসার পরে (E1-এর মাঝে, প্রায় 20 থেকে 40 মিনিট পর): তাই PuTTY-র কাছেই থাকুন। “To point ... to this server” প্রশ্ন এলে আপনার ওয়েব ঠিকানা (যেমন erp.extasbd.com) টাইপ করে Enter চাপুন: ওয়েব ঠিকানা Cloudflare-এ নতুন সার্ভারের দিকে ঘুরে যাবে। রিস্টোর ঠিকঠাক না হলে প্রশ্নটি আসেই না, তাই ঠিকানা কখনো ভাঙা সার্ভারে যায় না। শুধু Enter চাপলে ঠিকানা যেমন ছিল তেমনই থাকে, আর নতুন ERP অপেক্ষায় (standby) থাকে: তার ব্যাকআপ আর জরুরি সতর্কবার্তা চলে, কিন্তু রিমাইন্ডার আর বার্তা অপেক্ষা করে, আর প্রতিটি পাতার উপরে তা লেখা থাকে।",
-          en: "This question comes later, after the backup is back (during E1, about 20 to 40 minutes in), so stay near PuTTY. When it asks “To point ... to this server”, type your web address (for example erp.extasbd.com) and press Enter: the web address is pointed at the new server in Cloudflare. If the restore did not go well the question never comes, so the address never moves to a broken server. Just Enter leaves the address as it is, and the new ERP waits on standby: its backups and alarms run, but its reminders and messages wait, and every page says so.",
+          bn: "এই প্রশ্ন আসে পরে, ব্যাকআপ ফেরত আসার পরে (E1-এর মাঝে, প্রায় 20 থেকে 40 মিনিট পর): তাই PuTTY-র কাছেই থাকুন। “To point ... to this server” প্রশ্ন এলে আপনার ওয়েব ঠিকানা (যেমন erp.extasbd.com) টাইপ করে Enter চাপুন: ওয়েব ঠিকানা Cloudflare-এ নতুন সার্ভারের দিকে ঘুরে যাবে। রিস্টোর ঠিকঠাক না হলে, বা তার পরের পরীক্ষায় কোনো স্ক্রিন না খুললে বা কোনো রেকর্ড বা ফাইল না মিললে (W13), প্রশ্নটি আসেই না, তাই ঠিকানা কখনো ভাঙা সার্ভারে যায় না। শুধু Enter চাপলে ঠিকানা যেমন ছিল তেমনই থাকে, আর নতুন ERP অপেক্ষায় (standby) থাকে: তার ব্যাকআপ আর জরুরি সতর্কবার্তা চলে, কিন্তু রিমাইন্ডার আর বার্তা অপেক্ষা করে, আর প্রতিটি পাতার উপরে তা লেখা থাকে।",
+          en: "This question comes later, after the backup is back (during E1, about 20 to 40 minutes in), so stay near PuTTY. When it asks “To point ... to this server”, type your web address (for example erp.extasbd.com) and press Enter: the web address is pointed at the new server in Cloudflare. If the restore did not go well, or the checks after it found a screen that did not open or a record or file that does not match (W13), the question never comes, so the address never moves to a broken server. Just Enter leaves the address as it is, and the new ERP waits on standby: its backups and alarms run, but its reminders and messages wait, and every page says so.",
         },
         picture: "putty-dns",
         tip: {
@@ -1248,6 +1248,18 @@ export const GUIDE_ERRORS: GuideError[] = [
     ),
   },
   {
+    code: "R31",
+    shown: "a drill does not run here",
+    meaning: fix(
+      "এই সার্ভারে আগে থেকেই একটি Extas ERP আছে যা মহড়ার কপি নয় (হয়তো আপনার চালু ERP)। মহড়া কখনো তার উপরে চলে না। কিছুই বদলানো হয়নি।",
+      "This server already has an Extas ERP that is not a drill copy (perhaps the ERP in use). A drill never runs over it. Nothing was changed.",
+    ),
+    todo: fix(
+      "মহড়ার জন্য নতুন একটি পরীক্ষার সার্ভার বানান (এই গাইডের শেষে মহড়ার ধাপ 2), তারপর সেখানে মহড়ার কমান্ড চালান।",
+      "Make a new test server for the drill (step 2 of the drill at the end of this guide) and run the drill command there.",
+    ),
+  },
+  {
     code: "W01",
     shown: "the web address was not changed",
     meaning: fix(
@@ -1359,6 +1371,30 @@ export const GUIDE_ERRORS: GuideError[] = [
     todo: fix(
       "F1 আর F2-এর মতো ERP খুলে প্রধান পাতাগুলো দেখুন (বায়ার, অর্ডার, বুকিং, হিসাব): আপনার তথ্য আছে কি না। PuTTY-র শেষ লাইনগুলোর ছবি তুলে ডেভেলপারকে পাঠান।",
       "Open the ERP as in F1 and F2 and look at its main screens (buyers, orders, bookings, accounts) to see that your data is there. Take a picture of PuTTY's last lines and send it to the developer.",
+    ),
+  },
+  {
+    code: "W12",
+    shown: "already points to another server ..., so a drill does not change it",
+    meaning: fix(
+      "মহড়ার ঠিকানার নামে Cloudflare-এ আগে থেকেই একটি লাইন আছে যা অন্য সার্ভারে যায় (যেমন আপনার ওয়েবসাইট, বা আগের কোনো মহড়ার পুরনো লাইন)। মহড়া কখনো অন্য কিছুর ঠিকানা বদলায় না, তাই কিছু বদলানো হয়নি।",
+      "Cloudflare already has a line for the drill's address that points to another server (like your website, or an old line from an earlier drill). A drill never moves anything else's address, so nothing was changed.",
+    ),
+    todo: fix(
+      "আগের মহড়ার পুরনো লাইন হলে Cloudflare-এ “DNS” > “Records”-এ সেটি মুছে কমান্ড আবার চালান। অন্য কিছুর লাইন হলে তাতে হাত দেবেন না: নতুন একটি সার্ভারে নতুন একটি মহড়ার ঠিকানা দিয়ে মহড়া আবার করুন।",
+      "If it is an old line from an earlier drill, delete it in Cloudflare under “DNS” > “Records” and run the command again. If it is anything else, leave it alone: do the drill again on a new server with a new drill address.",
+    ),
+  },
+  {
+    code: "W13",
+    shown: "the web address was not moved to this server, because the checks found problems",
+    meaning: fix(
+      "ব্যাকআপ ফেরত এসেছে, কিন্তু পরীক্ষায় সমস্যা পাওয়া গেছে (কোনো স্ক্রিন খোলেনি, বা কোনো রেকর্ড বা ফাইল মেলেনি), তাই ওয়েব ঠিকানা এই সার্ভারে আনার প্রশ্ন আসেনি। নতুন ERP অপেক্ষায় (standby) থাকে।",
+      "The backup is back, but the checks found problems (a screen did not open, or a record or file does not match), so the question to bring the web address here did not come. The new ERP waits on standby.",
+    ),
+    todo: fix(
+      "উপরের লাইনগুলোর কোড (যেমন R20 বা W05) এই তালিকায় দেখুন। ERP ঠিক থাকলে আর পুরনো সার্ভার বন্ধ হলে F6 করুন। মহড়ায়: মহড়ার ধাপ 5-এর মতো Cloudflare-এ মহড়ার লাইনটি নিজে যোগ করুন, আর উপরের লাইনগুলোর ছবি তুলে ডেভেলপারকে পাঠান।",
+      "Look up the codes in the lines above (like R20 or W05) in this list. When the ERP is right and the old server is off, do step F6. In a drill: add the drill's line in Cloudflare yourself as in the drill's step 5, and send a picture of the lines above to the developer.",
     ),
   },
 ];

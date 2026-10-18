@@ -1,3 +1,7 @@
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+
 import type Anthropic from "@anthropic-ai/sdk";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { ZodError } from "zod";
@@ -15,7 +19,7 @@ import { ZodError } from "zod";
 
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
-import { askClaude, standInForClaude, toolInputOf } from "@/modules/ai/claude";
+import { aiReady, askClaude, standInForClaude, toolInputOf } from "@/modules/ai/claude";
 import { aiMay, setControlCell } from "@/modules/ai/control.service";
 import { getCosts, setBudget } from "@/modules/ai/costs.service";
 import { runModelTest } from "@/modules/ai/model-tests.service";
@@ -489,6 +493,35 @@ run("AI with Claude, OpenAI and Gemini", () => {
       /switched off/,
     );
     expect(await prisma.aiModelTest.count()).toBe(before);
+  });
+
+  it("never calls a provider from a restore drill copy, and says why in plain words (v6.4.1 review)", async () => {
+    await connect("openai");
+    await setTaskModel(env.owner, { task: "text.write", model: "openai:gpt-test" });
+    const backups = await mkdtemp(path.join(os.tmpdir(), "extas-ai-drill-"));
+    vi.stubEnv("BACKUP_DIR", backups);
+    try {
+      await writeFile(path.join(backups, ".drill"), '{"address":"drill.extasbd.com"}');
+      fake.calls.length = 0;
+      const ready = await aiReady(env.company.id);
+      expect(ready).toMatchObject({ on: false, text: expect.stringMatching(/restore drill copy/) });
+      await expectAppError(ask(env), "UNAVAILABLE", /restore drill copy/);
+      // Even a stand-in that would answer is never reached, nor the key test.
+      let reached = 0;
+      standInForClaude(async () => {
+        reached += 1;
+        return claudeMessage("never");
+      });
+      await expectAppError(ask(env), "UNAVAILABLE", /restore drill copy/);
+      expect(reached).toBe(0);
+      standInForClaude(null);
+      const tested = await testProviderKey(env.owner, "openai");
+      expect(tested.ok).toBe(false);
+      expect(tested.note).toMatch(/restore drill copy/);
+      expect(fake.calls).toEqual([]);
+    } finally {
+      await rm(backups, { recursive: true, force: true });
+    }
   });
 
   it("holds each provider to its own monthly limit", async () => {

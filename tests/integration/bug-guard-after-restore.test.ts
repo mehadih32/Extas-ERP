@@ -14,12 +14,21 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("next/cache", () => ({ revalidatePath: () => undefined, revalidateTag: () => undefined }));
 
+const prepared = vi.hoisted(() => ({ calls: 0 }));
+vi.mock("@/modules/bug-guard/fixes.service", async (original) => ({
+  ...(await original<typeof import("@/modules/bug-guard/fixes.service")>()),
+  prepareByItself: async () => {
+    prepared.calls += 1;
+  },
+}));
+
 import { prisma } from "@/lib/prisma";
 import {
   AFTER_RESTORE_REQUEST,
   AFTER_RESTORE_RESULT,
   bugGuardAfterRestore,
 } from "@/modules/bug-guard/after-restore";
+import { ensureSettings } from "@/modules/bug-guard/settings.service";
 import type { Check, Found } from "@/modules/bug-guard/types";
 
 import { addToCompany, makeCompany, makeUser, resetDb } from "./helpers";
@@ -51,6 +60,7 @@ run("Bug Guard after a restore (G1)", () => {
     backupDir = await mkdtemp(path.join(os.tmpdir(), "extras-bug-guard-restore-"));
     vi.stubEnv("BACKUP_DIR", backupDir);
     found.length = 0;
+    prepared.calls = 0;
     await resetDb();
     const { company, roles } = await makeCompany("Extas");
     companyId = company.id;
@@ -107,6 +117,19 @@ run("Bug Guard after a restore (G1)", () => {
     expect(await prisma.company.findUniqueOrThrow({ where: { id: companyId } })).toMatchObject({
       name: "Extas",
     });
+  });
+
+  it("prepares no fix by itself, even when the owner lets Bug Guard do so (v6.4.1 review)", async () => {
+    // A restored copy may not be the ERP in use: no Claude Code fix issue from it.
+    await ensureSettings(companyId, new Date());
+    await prisma.bugGuardSettings.update({ where: { companyId }, data: { autoPrepare: true } });
+    found.push(thing("a", "URGENT"));
+    await writeFile(
+      path.join(backupDir, AFTER_RESTORE_REQUEST),
+      JSON.stringify({ requestedAt: new Date().toISOString() }),
+    );
+    expect(await bugGuardAfterRestore({ checks: CHECKS })).toMatchObject({ ok: true });
+    expect(prepared.calls).toBe(0);
   });
 
   it("says when a company could not be checked", async () => {

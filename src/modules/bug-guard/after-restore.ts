@@ -82,6 +82,8 @@ export async function bugGuardAfterRestore(
         wait: true,
         // GitHub's Full check is for the live site; this one may not be it yet.
         fullCheck: false,
+        // Nor a Claude Code fix from a copy that may not be the ERP in use (as after an update).
+        prepare: false,
         checks: options.checks,
       });
       const run = await prisma.bugGuardRun.findUniqueOrThrow({ where: { id: started.id } });

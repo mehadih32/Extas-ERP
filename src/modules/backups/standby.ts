@@ -21,8 +21,10 @@ import { backupRoot } from "@/modules/backups/backup-core";
  * in test mode for good: no clock runs at all (backups/scheduler.ts,
  * jobs/worker.ts and reminders/scheduler.ts check onDrill first), and nothing
  * leaves it: no emails (mail.service.ts), no bot messages (ai/bot/channel.ts),
- * no Google Drive at all (backup-core.ts driveToken) and no GitHub changes
- * (github/github.ts). go-live.sh and setup-auto-deploy.sh refuse it. The mark
+ * no Google Drive at all (backup-core.ts driveToken), no GitHub changes
+ * (github/github.ts, github-alert.ts) and no AI call (ai/claude.ts aiReady, and
+ * every provider call in ai/provider-calls.ts). go-live.sh and
+ * setup-auto-deploy.sh refuse it. The mark
  * also holds the drill's time and result, for the Backups screens.
  */
 
@@ -40,6 +42,10 @@ export const DRILL_LINE =
 /** Why something was not sent from a drill copy (a refused email, bot message or Drive call). */
 export const DRILL_NOT_SENT =
   "Not sent: this is a restore drill copy (test mode), which sends nothing and does not use Google Drive.";
+
+/** Why the AI does nothing on a drill copy (AI Center, every AI button and the key test). */
+export const DRILL_NO_AI =
+  "AI is off: this is a restore drill copy (test mode), which never calls the AI.";
 
 /** A drill as its mark records it: the start until it ends, then its time and result. */
 export type DrillResult = {

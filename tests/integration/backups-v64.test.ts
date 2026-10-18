@@ -765,6 +765,64 @@ run("v6.4 backups", { timeout: 120_000 }, () => {
     });
   });
 
+  describe("the backups folder in Drive (v6.4.1 review)", () => {
+    it("finds the first one made again when two carry the label, never a newer stray one", async () => {
+      await connectDrive();
+      const config = await backups.getBackupConfig();
+      const token = (await driveToken(config))!;
+      const folder = (id: string, createdTime: string) =>
+        google.files.set(id, {
+          id,
+          name: "Extas ERP Backups",
+          mimeType: "application/vnd.google-apps.folder",
+          parents: ["root"],
+          appProperties: { extas: "backups" },
+          createdTime,
+          trashed: false,
+          data: null,
+        });
+      folder("root-first", "2026-01-01T00:00:00.000Z");
+      folder("root-later", "2026-09-01T00:00:00.000Z");
+      await prisma.backupConfig.update({
+        where: { id: config.id },
+        data: { googleDriveFolderId: null },
+      });
+      const { driveRoot } = await import("@/modules/backups/backup-core");
+      expect(await driveRoot(await backups.getBackupConfig(), token)).toBe("root-first");
+      expect((await backups.getBackupConfig()).googleDriveFolderId).toBe("root-first");
+    });
+  });
+
+  describe("keeping on a copy on standby (v6.4.1 review)", () => {
+    it("removes only its own standby backups from Drive, never the ERP in use's", async () => {
+      await connectDrive();
+      await setKey();
+      await backups.updateBackupConfig(ctx, { driveKeepDays: 30, pin: PIN });
+      const age = (name: string, days: number) => {
+        for (const f of google.files.values()) {
+          if (f.name === name)
+            f.appProperties.createdAt = new Date(Date.now() - days * 86_400_000).toISOString();
+        }
+      };
+      // The ERP in use: an old backup (kept by its own rules until it makes a newer one) and a new one.
+      const a = await backUpNow();
+      const b = await backUpNow();
+      age(a.name!, 20);
+      // A restored copy on standby backs up into the same Drive folder.
+      await writeFile(path.join(backupDir, STANDBY_MARK), "3f9a0c1d2e4b5a69");
+      const s1 = await backUpNow();
+      expect(s1.name).toMatch(/_standby$/);
+      age(a.name!, 40);
+      age(b.name!, 40);
+      age(s1.name!, 40);
+      const s2 = await backUpNow();
+      const names = (await listDriveBackups()).items.map((x) => x.name);
+      // Its own old one goes by its keep rules; the ERP in use's stay, however old.
+      expect(names).toEqual(expect.arrayContaining([a.name, b.name, s2.name]));
+      expect(names).not.toContain(s1.name);
+    });
+  });
+
   describe("making the backups less safe needs the PIN and tells the owner (R-BAK G12)", () => {
     const told = async () => (await inbox()).filter((s) => s === "Backups made less safe");
 

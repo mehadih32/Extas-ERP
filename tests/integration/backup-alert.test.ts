@@ -27,11 +27,12 @@ import type { CompanyContext } from "@/modules/auth/context";
 import * as backups from "@/modules/backups/backup.service";
 import { disk } from "@/modules/backups/disk";
 import { nextLabel } from "@/modules/backups/drive-copies";
+import { DRILL_MARK, STANDBY_MARK } from "@/modules/backups/standby";
 import { ALERT_SECRETS, setUpGitHubAlert } from "@/modules/backups/github-alert";
 import * as keys from "@/modules/backups/recovery-key.service";
 import { nextRunAt, scheduleOf } from "@/modules/backups/schedule";
 
-import { watch } from "../../scripts/backup-watch.mjs";
+import { judge, newestBackup, watch } from "../../scripts/backup-watch.mjs";
 import { type FakeGoogle, startFakeGoogle } from "../../scripts/fake-google";
 import { addToCompany, contextFor, makeCompany, makeUser, resetDb } from "./helpers";
 
@@ -260,11 +261,11 @@ run("the late-backup alert on GitHub (A13)", { timeout: 120_000 }, () => {
       nextRunAt(scheduleOf(config), config.timezone, createdAt)!.toISOString(),
     );
 
-    // A safety copy, or backups switched off: no next one to wait for.
+    // A safety copy, or backups switched off: no next one to wait for (switched off says so).
     expect(nextLabel(config, "SAFETY_COPY", createdAt.toISOString())).toEqual({});
-    expect(nextLabel({ ...config, isEnabled: false }, "BACKUP", createdAt.toISOString())).toEqual(
-      {},
-    );
+    expect(nextLabel({ ...config, isEnabled: false }, "BACKUP", createdAt.toISOString())).toEqual({
+      backupsOffAt: createdAt.toISOString(),
+    });
 
     await setUp();
     const env = github.opened() as Record<string, string>;
@@ -310,5 +311,62 @@ run("the late-backup alert on GitHub (A13)", { timeout: 120_000 }, () => {
     for (const value of Object.values(env)) {
       if (value.length > 12) expect(lines.join("\n")).not.toContain(value);
     }
+  });
+
+  it("labels the newest backup in Drive when backups are switched off or on, so the alert knows (v6.4.1 review)", async () => {
+    await keys.setRecoveryKey(ctx, { pin: PIN, key: OWNER_KEY, confirm: OWNER_KEY });
+    await connectDrive();
+    const older = await backups.runBackup({ trigger: "MANUAL", actor: owner, wait: true });
+    const made = await backups.runBackup({ trigger: "MANUAL", actor: owner, wait: true });
+    const folderOf = async (id: string) =>
+      google.files.get((await prisma.backupRun.findUniqueOrThrow({ where: { id } })).driveFileId!)!;
+    const labels = async () => (await folderOf(made.id)).appProperties;
+    const olderLabels = { ...(await folderOf(older.id)).appProperties };
+    expect((await labels()).nextAt).toBeTruthy();
+    const alertSees = (now: number) =>
+      judge(newestBackup([...google.files.values()].map((f) => ({ ...f }))), now) as {
+        state: string;
+      };
+
+    // Switched off: the newest backup says since when; the alert calls it "off", never late.
+    const before = Date.now();
+    await backups.updateBackupConfig(ctx, { isEnabled: false, pin: PIN });
+    const off = await labels();
+    expect(off.nextAt).toBeUndefined();
+    expect(Date.parse(off.backupsOffAt!)).toBeGreaterThanOrEqual(before - 1000);
+    expect(alertSees(Date.now() + 10 * 24 * H).state).toBe("off");
+    // Only the newest backup's folder is labelled.
+    expect((await folderOf(older.id)).appProperties).toEqual(olderLabels);
+
+    // On again: the next time by the schedule from now, and late counts again.
+    await backups.updateBackupConfig(owner, { isEnabled: true });
+    const on = await labels();
+    expect(on.backupsOffAt).toBeUndefined();
+    const config = await prisma.backupConfig.findFirstOrThrow();
+    expect(Date.parse(on.nextAt!)).toBeGreaterThan(Date.now() - 60_000);
+    expect(on.nextAt).toBe(
+      nextRunAt(
+        scheduleOf(config),
+        config.timezone,
+        new Date(Date.parse(on.nextAt!) - 1),
+      )!.toISOString(),
+    );
+    expect(alertSees(Date.now() + 10 * 24 * H).state).toBe("late");
+
+    // A restored copy on standby never labels the ERP in use's backups.
+    await writeFile(path.join(dir, "backups", STANDBY_MARK), "3f9a0c1d2e4b5a69");
+    const kept = { ...(await labels()) };
+    await backups.updateBackupConfig(ctx, { isEnabled: false, pin: PIN });
+    expect(await labels()).toEqual(kept);
+  });
+
+  it("is never set up from a restore drill copy, which never changes GitHub (v6.4.1 review)", async () => {
+    await connectDrive();
+    await linkBot();
+    await mkdir(path.join(dir, "backups"), { recursive: true });
+    await writeFile(path.join(dir, "backups", DRILL_MARK), '{"address":"drill.extasbd.com"}');
+    await expectAppError(setUp(), "UNAVAILABLE", /restore drill copy/);
+    expect(github.secrets.size).toBe(0);
+    expect((await prisma.backupConfig.findFirstOrThrow()).githubAlertAt).toBeNull();
   });
 });

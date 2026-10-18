@@ -412,6 +412,17 @@ export async function updateBackupConfig(who: Owner, raw: unknown, meta?: Reques
     said.push(`drill at ${input.drillTime}`);
   }
   const updated = await prisma.backupConfig.update({ where: { id: config.id }, data });
+  if (
+    updated.isEnabled !== config.isEnabled ||
+    data.scheduleMode !== undefined ||
+    data.timezone !== undefined
+  ) {
+    // The late-backup alert on GitHub reads the schedule from the newest backup in Drive.
+    const { labelNewestForWatch } = await import("@/modules/backups/drive-copies");
+    await labelNewestForWatch(updated).catch((error: unknown) =>
+      console.error("[backups] the newest backup in Drive was not labelled", reasonFor(error)),
+    );
+  }
   await audit(actor, meta, {
     action: "UPDATE",
     entityType: "BackupConfig",

@@ -18,12 +18,17 @@ export async function reminderTick(now: Date = new Date()) {
   running = true;
   try {
     // A restore drill copy (test mode): only the Bug Guard check the restore asked
-    // for (G1); no reminder, message or schedule.
+    // for (G1), and an update's request taken (and skipped) so deploy.sh does not
+    // wait for it; no reminder, message or schedule.
     const { onDrill, onStandby } = await import("@/modules/backups/standby");
     if (await onDrill()) {
       const { bugGuardAfterRestore } = await import("@/modules/bug-guard/after-restore");
       await bugGuardAfterRestore().catch((error) =>
         console.error("[bug-guard] after the restore", error),
+      );
+      const { bugGuardAfterDeploy } = await import("@/modules/bug-guard/after-deploy");
+      await bugGuardAfterDeploy().catch((error) =>
+        console.error("[bug-guard] after the update", error),
       );
       return null;
     }

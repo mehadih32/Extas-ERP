@@ -170,6 +170,26 @@ except tool.Stop as stop:
   });
 });
 
+describe("a backup's files in Drive by name (v6.4.1 review)", () => {
+  it("takes the newest of two files with the same name (Drive lists newest first)", async () => {
+    const ran = await python(`
+files = tool.by_name([
+    {"name": "manifest.json", "id": "new"},
+    {"name": "database.dump.locked", "id": "db"},
+    {"name": "manifest.json", "id": "old"},
+])
+print(json.dumps({k: v["id"] for k, v in files.items()}))`);
+    expect(ran.stderr).toBe("");
+    expect(JSON.parse(ran.stdout)).toEqual({
+      "manifest.json": "new",
+      "database.dump.locked": "db",
+    });
+    const source = await readFile(TOOL, "utf8");
+    expect(source).toContain("files = by_name(google.search(");
+    expect(source).not.toMatch(/\{f\["name"\]: f for f in /);
+  });
+});
+
 describe("the disk space a restore needs", () => {
   it("counts the download, the opened files, the files unpacked, the database and the programs", async () => {
     const MB = 1024 * 1024;

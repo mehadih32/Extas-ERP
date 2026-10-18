@@ -27,6 +27,13 @@ take_update_lock() {
   export EXTRAS_ERP_UPDATE_LOCK=1
 }
 
+# The same lock, waited for up to $1 seconds (restore-request.sh); false if still held.
+wait_update_lock() {
+  exec 9>/run/extras-erp-update.lock
+  flock -w "$1" 9 || return 1
+  export EXTRAS_ERP_UPDATE_LOCK=1
+}
+
 # A setting from deploy/.env (the last line wins), or the default given.
 setting() {
   local value
@@ -318,17 +325,19 @@ apt_busy() {
   fi
   pgrep -x 'apt|apt-get|dpkg|unattended-upgr|aptd' >/dev/null 2>&1
 }
+# One time limit for both waits (cloud-init, then apt's lock): 30 minutes in all.
 wait_for_apt() {
-  local waited=0 limit="${APT_WAIT_SECONDS:-1800}" said=0
+  local waited=0 limit="${APT_WAIT_SECONDS:-1800}" said=0 start="$SECONDS"
   if command -v cloud-init >/dev/null 2>&1; then
     timeout "$limit" cloud-init status --wait >/dev/null 2>&1 || true
+    waited=$((SECONDS - start))
   fi
   while apt_busy; do
+    [ "$waited" -lt "$limit" ] || return 1
     if [ "$said" = 0 ]; then
-      say "The server is installing its own updates first; waiting for them to finish (up to $((limit / 60)) minutes)"
+      say "The server is installing its own updates first; waiting for them to finish (up to $(((limit - waited + 59) / 60)) minutes)"
       said=1
     fi
-    [ "$waited" -lt "$limit" ] || return 1
     sleep 5
     waited=$((waited + 5))
   done
@@ -453,6 +462,8 @@ EOF
   cat >/etc/cron.d/extras-erp-safety-copies <<EOF
 # Extas ERP (deploy.sh): safety copies stay on the server for 24 hours; Google Drive keeps them.
 17 * * * * root find $DATA_DIR/safety-copies -mindepth 1 -maxdepth 1 -type d -name 'before-*' -mmin +1440 -exec rm -rf {} + 2>/dev/null
+# An opened backup (plain data) left by a restore cut off by a restart goes after a day.
+29 * * * * root find $DATA_DIR/backups/restores -mindepth 1 -maxdepth 1 -mmin +1440 -exec rm -rf {} + 2>/dev/null
 # The uploaded files a restore set aside stay 30 days.
 23 3 * * * root find $DATA_DIR -mindepth 1 -maxdepth 1 -type d \( -name 'uploads.before-restore-*' -o -name 'uploads.failed-restore-*' \) -mtime +30 -exec rm -rf {} + 2>/dev/null
 EOF

@@ -17,6 +17,7 @@ import {
   CM_PER_LABELS,
   FABRIC_UNIT_LABELS,
   pastCmTerms,
+  profitBothWays,
   shareOfPrice,
 } from "@/modules/costing/costing-labels";
 import type { CostingScreen, FabricPrices } from "@/modules/costing/costing.service";
@@ -151,7 +152,7 @@ export function StylesPanel({ screen }: { screen: CostingScreen }) {
                   {s.buyerPrice === null ? "Not given" : fmt(s.buyerPrice)}
                 </Part>
                 <Part label="Profit at the buyer's price">
-                  {s.cost.buyerProfit === null ? "–" : pct(s.cost.buyerProfit)}
+                  {s.cost.buyerProfit === null ? "–" : profitBothWays(s.cost.buyerProfit)}
                 </Part>
               </dl>
               {s.cost.missing.length > 0 && (
@@ -188,8 +189,9 @@ export function StylesPanel({ screen }: { screen: CostingScreen }) {
       {taken !== null && taken >= 100 && screen.profitPercent !== null && (
         <p className="mt-3 text-[0.8125rem] text-amber-700 dark:text-amber-400">
           No price can leave {pct(screen.profitPercent)} profit: the profit % and the percent lines
-          come off the selling price, so together they stay under 100%. {pct(screen.profitPercent)}{" "}
-          on the cost is {pct(shareOfPrice(screen.profitPercent))} of the price.
+          come off the selling price, so together they stay under 100%. If you meant{" "}
+          {pct(screen.profitPercent)} on the cost, type {pct(shareOfPrice(screen.profitPercent))}{" "}
+          (of the price) instead.
         </p>
       )}
 

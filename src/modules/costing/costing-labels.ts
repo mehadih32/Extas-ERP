@@ -56,3 +56,20 @@ export const profitUnderMinimumNote = (profit: number) =>
  * cost" (200% on the cost is three times the cost) is this share of the price.
  */
 export const shareOfPrice = (onCost: number) => (onCost / (100 + onCost)) * 100;
+
+/**
+ * The markup on the cost a share of the price gives (15% of price is 17.65% on
+ * cost); none at 100% or more, where no price leaves the profit.
+ */
+export const onCostOf = (ofPrice: number) =>
+  ofPrice < 100 ? (ofPrice / (100 - ofPrice)) * 100 : null;
+
+const two = (n: number) => String(Number(n.toFixed(2)));
+
+/** A profit % as the sheet keeps it, with its markup on the cost beside it. */
+export function profitBothWays(ofPrice: number) {
+  const onCost = onCostOf(ofPrice);
+  return onCost === null
+    ? `${two(ofPrice)}% of price: no price can leave that`
+    : `${two(ofPrice)}% of price = ${two(onCost)}% on cost`;
+}

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 
 import type { CardStatus, ChatCard } from "../chat/cards";
 import { countOf } from "@/lib/display";
+import { profitBothWays } from "@/modules/costing/costing-labels";
 
 /*
  * Chat cards as bot messages: plain text (no markup to escape) and rows of
@@ -95,7 +96,7 @@ export function renderCard(
         text: [
           `Order check: ${card.number} ${card.title}`,
           ...card.rows.map((r) => `${DOTS[r.signal]} ${r.label}: ${r.reason}`),
-          `Profit: ${card.profitPercent ? `${card.profitPercent}%` : "not set yet (yours to set)"}`,
+          `Profit: ${card.profitPercent ? profitBothWays(Number(card.profitPercent)) : "not set yet (yours to set)"}`,
           link(at.appUrl, card.href) ?? "",
         ]
           .filter(Boolean)

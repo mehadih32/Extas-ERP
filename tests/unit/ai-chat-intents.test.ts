@@ -53,6 +53,33 @@ describe("reading the owner's chat commands", () => {
       percent: 200,
     });
     expect(readIntent("CS-2026-0003 লাভ 150%")).toMatchObject({ kind: "profit.set", percent: 150 });
+    // A markup on the cost becomes its share of the price: 200% on cost is 66.67% of price.
+    expect(readIntent("CS-2026-0003 profit 200% on cost")).toEqual({
+      kind: "profit.set",
+      ref: "CS-2026-0003",
+      percent: 66.67,
+      onCost: 200,
+    });
+    expect(readIntent("CS-2026-0003 200% on the cost")).toMatchObject({
+      kind: "profit.set",
+      percent: 66.67,
+      onCost: 200,
+    });
+    expect(readIntent("CS-2026-0003 markup 25%")).toMatchObject({
+      kind: "profit.set",
+      percent: 20,
+      onCost: 25,
+    });
+    expect(readIntent("CS-2026-0003 খরচের ওপর 200% লাভ")).toMatchObject({
+      kind: "profit.set",
+      percent: 66.67,
+      onCost: 200,
+    });
+    expect(readIntent("CS-2026-0003 1000% markup")).toMatchObject({
+      kind: "profit.set",
+      percent: 90.91,
+      onCost: 1000,
+    });
     expect(readIntent("পুরোনো ড্রাফট বুকিংগুলো মুছে দাও")).toMatchObject({
       kind: "delete",
       oldDraftBookings: true,

@@ -6,6 +6,8 @@
  * database, no server code; tested on its own.
  */
 
+import { shareOfPrice } from "@/modules/costing/costing-labels";
+
 export type ReportPeriod = "today" | "yesterday" | "7d" | "month";
 export type ReportKind = "SALES" | "PROFIT_AND_LOSS" | "STOCK_ALERTS" | "SUMMARY";
 
@@ -20,7 +22,14 @@ export type Intent =
   | { kind: "cost.summary"; days: number }
   | { kind: "control.accounts_today" }
   | { kind: "costing"; ref: string | null }
-  | { kind: "profit.set"; ref: string | null; percent: number }
+  | {
+      kind: "profit.set";
+      ref: string | null;
+      /** The share of the price the sheet keeps. */
+      percent: number;
+      /** When it was said as a markup on the cost (200% on cost is 66.67% of price). */
+      onCost?: number;
+    }
   | { kind: "delete"; what: string; ref: string | null; oldDraftBookings: boolean }
   | { kind: "messaging.mode"; supplier: "send" | "draft" }
   | { kind: "draft.send" }
@@ -208,6 +217,20 @@ export function readIntent(raw: string): Intent {
     };
   }
 
+  // A markup on the cost ("200% on cost", "markup 25%", "খরচের ওপর 200%") becomes the
+  // share of the price the sheet keeps, to 2 decimals: 200% on cost is 66.67% of price.
+  const markup = N(
+    /(?:markup|মার্কআপ|খরচের\s*(?:ওপর|উপর))\D{0,20}?(\d{1,4}(?:\.\d{1,2})?)\s*%|(?<![\d.])(\d{1,4}(?:\.\d{1,2})?)\s*%\s*(?:(?:profit|প্রফিট|লাভ)\s*)?(?:on\s+(?:the\s+)?cost|markup|মার্কআপ|খরচের\s*(?:ওপর|উপর))/i,
+  ).exec(text);
+  if (markup) {
+    const onCost = Number(markup[1] ?? markup[2]);
+    return {
+      kind: "profit.set",
+      ref: refIn(text),
+      percent: Number(shareOfPrice(onCost).toFixed(2)),
+      onCost,
+    };
+  }
   const profit = N(
     /(?:profit|প্রফিট|লাভ)\D{0,20}?(\d{1,3}(?:\.\d{1,2})?)\s*%|(?<![\d.])(\d{1,3}(?:\.\d{1,2})?)\s*%\s*(?:profit|প্রফিট|লাভ)/i,
   ).exec(text);
@@ -265,6 +288,10 @@ export const COMMAND_HELP: ReadonlyArray<{ say: string; does: string }> = [
   { say: "আজকের জন্য Accounts খুলে দাও", does: "A change card: Accounts open for the AI today." },
   { say: "CS-2026-0001 কস্টিং", does: "The costing sheet and its Order check card." },
   { say: "CS-2026-0001 profit 12%", does: "A change card: the profit % of that order." },
+  {
+    say: "CS-2026-0001 200% on cost",
+    does: "A change card: a profit on the cost, kept as its share of the price (66.67%).",
+  },
   {
     say: "সাপ্লায়ারকে নিজে পাঠাও",
     does: "A change card: supplier messages go without asking (buyers stay drafts).",

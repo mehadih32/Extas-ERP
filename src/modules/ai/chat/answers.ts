@@ -6,10 +6,12 @@ import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
 import type { CompanyContext } from "@/modules/auth/context";
 import {
+  profitBothWays,
   PROFIT_MAX_MESSAGE,
   PROFIT_MAX_STORED,
   PROFIT_MIN_MESSAGE,
   PROFIT_MIN_PERCENT,
+  shareOfPrice,
 } from "@/modules/costing/costing-labels";
 import { orderCheck } from "@/modules/costing/costing.service";
 import { readStoredFile } from "@/modules/files/file.service";
@@ -260,7 +262,9 @@ async function orderStatus(turn: Turn, ref: string): Promise<Reply> {
       { label: "Styles", value: String(c._count.styles) },
       {
         label: "Profit %",
-        value: c.profitPercent ? `${c.profitPercent.toString()}%` : "not set yet (yours to set)",
+        value: c.profitPercent
+          ? profitBothWays(Number(c.profitPercent))
+          : "not set yet (yours to set)",
       },
       { label: "Ships", value: c.shipDate ? localDay(c.shipDate, "UTC") : "not set" },
       {
@@ -465,7 +469,7 @@ async function costing(turn: Turn, ref: string | null): Promise<Reply> {
   return reply(
     `${sheet.number}: ${reds > 0 ? `${reds} red` : "no red"}, ${yellows} yellow. ${
       sheet.profitPercent
-        ? `Profit ${sheet.profitPercent.toString()}%.`
+        ? `Profit ${profitBothWays(Number(sheet.profitPercent))}.`
         : "The profit % is yours to set."
     } You decide; I only show the card.`,
     {
@@ -480,7 +484,17 @@ async function costing(turn: Turn, ref: string | null): Promise<Reply> {
   );
 }
 
-async function profitSet(turn: Turn, ref: string | null, percent: number): Promise<Reply> {
+/**
+ * A change card for a sheet's profit %: the share of the price it keeps, shown
+ * with its markup on the cost; one said on the cost ("200% on cost") arrives
+ * here already as its share (66.67%).
+ */
+async function profitSet(
+  turn: Turn,
+  ref: string | null,
+  percent: number,
+  onCost?: number,
+): Promise<Reply> {
   const { ctx } = turn;
   if (!ref)
     return reply(
@@ -492,25 +506,36 @@ async function profitSet(turn: Turn, ref: string | null, percent: number): Promi
     select: { id: true, number: true, title: true, profitPercent: true },
   });
   if (!sheet) return reply(`I found no costing sheet numbered "${ref}".`);
-  // At least 10%, no upper limit (the sheet holds up to 999.99%); the server checks it again.
+  const said = onCost === undefined ? "" : `${onCost}% on cost is ${percent}% of price. `;
+  // At least 10% of the price, no upper limit (the sheet holds up to 999.99%); the server checks it again.
   if (!(percent >= PROFIT_MIN_PERCENT && percent <= PROFIT_MAX_STORED)) {
-    return reply(percent < PROFIT_MIN_PERCENT ? PROFIT_MIN_MESSAGE : PROFIT_MAX_MESSAGE);
+    return reply(
+      `${said}${percent < PROFIT_MIN_PERCENT ? PROFIT_MIN_MESSAGE : PROFIT_MAX_MESSAGE}`,
+    );
   }
-  return reply(`Press Apply to set the profit of ${sheet.number} to ${percent}%.`, {
-    type: "change",
-    action: "profit.set",
-    title: `Profit % of ${sheet.number}`,
-    page: "Production > Costing",
-    href: `/production/costing/${sheet.id}`,
-    lines: [
-      {
-        label: "Profit %",
-        before: sheet.profitPercent ? `${sheet.profitPercent.toString()}%` : "not set",
-        after: `${percent}%`,
-      },
-    ],
-    params: { costingId: sheet.id, percent },
-  });
+  // 100% of the price or more leaves no price: he likely meant it on the cost.
+  const meant =
+    percent >= 100
+      ? ` If you meant ${percent}% on cost, say "${sheet.number} ${percent}% on cost" (${Number(shareOfPrice(percent).toFixed(2))}% of price).`
+      : "";
+  return reply(
+    `${said}Press Apply to set the profit of ${sheet.number} to ${profitBothWays(percent)}.${meant}`,
+    {
+      type: "change",
+      action: "profit.set",
+      title: `Profit % of ${sheet.number}`,
+      page: "Production > Costing",
+      href: `/production/costing/${sheet.id}`,
+      lines: [
+        {
+          label: "Profit %",
+          before: sheet.profitPercent ? profitBothWays(Number(sheet.profitPercent)) : "not set",
+          after: profitBothWays(percent),
+        },
+      ],
+      params: { costingId: sheet.id, percent },
+    },
+  );
 }
 
 async function deletion(
@@ -847,7 +872,7 @@ export async function answerIntent(
     case "costing":
       return costing(turn, intent.ref);
     case "profit.set":
-      return profitSet(turn, intent.ref, intent.percent);
+      return profitSet(turn, intent.ref, intent.percent, intent.onCost);
     case "delete":
       return deletion(turn, intent);
     case "messaging.mode":

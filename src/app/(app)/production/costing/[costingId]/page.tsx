@@ -16,7 +16,7 @@ import { Fact, Panel, RecordHeader } from "@/components/sales/detail-bits";
 import { salesHref } from "@/components/sales/labels";
 import { BackLink } from "@/components/settings/back-link";
 import { formatDay } from "@/lib/display";
-import { TRADE_PAYMENT_LABELS } from "@/modules/costing/costing-labels";
+import { profitBothWays, TRADE_PAYMENT_LABELS } from "@/modules/costing/costing-labels";
 import { getCostingAction } from "@/server/actions/costing.actions";
 
 export const metadata: Metadata = { title: "Costing sheet" };
@@ -100,7 +100,7 @@ export default async function CostingSheetPage({
                 )}
               </Fact>
               <Fact label="Profit % for this order">
-                {c.profitPercent === null ? "Not set" : pct(c.profitPercent)}
+                {c.profitPercent === null ? "Not set" : profitBothWays(c.profitPercent)}
               </Fact>
               <Fact label="How the buyer pays">
                 {c.tradePayment ? TRADE_PAYMENT_LABELS[c.tradePayment] : "Not set"}
@@ -144,7 +144,7 @@ export default async function CostingSheetPage({
                 {c.hints.profit
                   .map(
                     (h) =>
-                      `${h.number} ${pct(h.profit)}${h.decision === "DECLINE" ? " (declined)" : ""}`,
+                      `${h.number} ${profitBothWays(h.profit)}${h.decision === "DECLINE" ? " (declined)" : ""}`,
                   )
                   .join(", ")}
                 . Only a hint: set this order&apos;s own.

@@ -13,7 +13,9 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import type { ActionError } from "@/lib/result";
 import {
+  profitBothWays,
   PROFIT_MIN_PERCENT,
+  shareOfPrice,
   TRADE_PAYMENT_LABELS,
   TRADE_PAYMENTS,
 } from "@/modules/costing/costing-labels";
@@ -45,6 +47,16 @@ function inputOf(form: FormData) {
   return fields;
 }
 
+/**
+ * Under the profit %: the share of the price as typed, with the markup on the
+ * cost it gives (the owner thinks in both: 200% on cost is 66.67% of price).
+ */
+function profitHint(typed: number | null, note: string | null) {
+  const rule = `A share of the price: at least ${PROFIT_MIN_PERCENT}%, no upper limit. For 200% on cost type ${Number(shareOfPrice(200).toFixed(2))}. Your call for this order. Leave empty until you decide.`;
+  const now = typed !== null && Number.isFinite(typed) ? `${profitBothWays(typed)}. ` : "";
+  return `${now}${note ?? rule}`;
+}
+
 /** A problem with one risk line ("risks.2") shows under the Risks box. */
 function foldRiskErrors(error: ActionError): ActionError {
   if (!error.fieldErrors) return error;
@@ -70,6 +82,8 @@ export function CostingDialog({
   const [buyer, setBuyer] = useState<Party | null>(costing?.buyer ?? null);
   const [factory, setFactory] = useState<Party | null>(costing?.factory ?? null);
   const [currency, setCurrency] = useState(costing?.currency ?? companyCurrency);
+  const [profit, setProfit] = useState(costing?.profitPercent?.toString() ?? "");
+  const typed = profit.trim() === "" ? null : Number(profit);
   const currencies = CURRENCIES.some(([c]) => c === currency)
     ? CURRENCIES
     : ([...CURRENCIES, [currency, currency]] as const);
@@ -159,17 +173,15 @@ export function CostingDialog({
           <Field
             id="costing-profit"
             label="Profit % for this order"
-            hint={
-              costing?.profitNote ??
-              `At least ${PROFIT_MIN_PERCENT}%, no upper limit. Your call for this order. Leave empty until you decide.`
-            }
+            hint={profitHint(typed, costing?.profitNote ?? null)}
             error={fieldError("profitPercent")}
           >
             <Input
               id="costing-profit"
               name="profitPercent"
               inputMode="decimal"
-              defaultValue={costing?.profitPercent ?? ""}
+              value={profit}
+              onChange={(e) => setProfit(e.target.value)}
             />
           </Field>
           <Field

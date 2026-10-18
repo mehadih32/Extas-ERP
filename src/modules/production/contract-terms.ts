@@ -34,7 +34,7 @@ export type ContractFacts = {
   materials: string[];
   /** Factory: the styles made, "EX-PL-001 Classic Polo (720 pcs)". */
   styles: string[];
-  /** Factory: whether every style has its CM per piece. */
+  /** Factory: whether every style has its CM (per piece or per dozen). */
   cmAgreed: boolean;
 };
 
@@ -149,9 +149,9 @@ function factoryClauses(f: ContractFacts): Clause[] {
       title: "What is made",
       text:
         `${f.party} cuts, sews, finishes and packs the styles in the table above for ${f.company}'s ` +
-        `master batch ${f.batch.code} "${f.batch.name}", for the CM (making charge) per piece shown. ` +
+        `master batch ${f.batch.code} "${f.batch.name}", for the CM (making charge) per piece or per dozen shown. ` +
         `${f.company} supplies the fabric and accessories.` +
-        (f.cmAgreed ? "" : " A style without a CM per piece is agreed in writing before cutting."),
+        (f.cmAgreed ? "" : " A style without a CM is agreed in writing before cutting."),
     },
     {
       title: "Materials",

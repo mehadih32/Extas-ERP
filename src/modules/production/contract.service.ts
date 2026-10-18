@@ -1,4 +1,4 @@
-import { type ContractKind, type MeasurementUnit, Prisma } from "@prisma/client";
+import { type CmPer, type ContractKind, type MeasurementUnit, Prisma } from "@prisma/client";
 
 import { quantity as materialQuantity, UNIT_LABELS } from "@/components/materials/labels";
 import { dateColumn, dateOnly, localDay } from "@/lib/dates";
@@ -18,6 +18,7 @@ import { letterheadOf } from "@/modules/documents/builders";
 import { documentFileName, type PrintDocument, type Row } from "@/modules/documents/model";
 import { ON_DEMAND_PER_MINUTE, renderOnDemand } from "@/modules/documents/on-demand";
 import { assertPartyCanTransact } from "@/modules/parties/party.service";
+import { cmAgreedText, cmFor, perPieceOfDozen } from "@/modules/production/batch-money";
 import { batchMaterialPlan } from "@/modules/production/batch-orders.service";
 import {
   type Clause,
@@ -102,7 +103,11 @@ export type StyleRow = {
   code: string;
   name: string;
   pieces: number;
+  /** The CM a piece (agreed per dozen: the dozen price ÷ 12, to the paisa). */
   cmRate: Prisma.Decimal | null;
+  /** How the CM was agreed, and the dozen price when it was agreed per dozen. */
+  cmPer: CmPer;
+  cmPerDozen: Prisma.Decimal | null;
   dueOn: string;
   closed: boolean;
 };
@@ -200,6 +205,8 @@ async function factoryStyles(
       name: true,
       targetQuantity: true,
       cmRate: true,
+      cmPer: true,
+      cmPerDozen: true,
       targetDate: true,
       status: true,
     },
@@ -211,6 +218,8 @@ async function factoryStyles(
     name: s.name,
     pieces: s.targetQuantity,
     cmRate: s.cmRate,
+    cmPer: s.cmPer,
+    cmPerDozen: s.cmPer === "DOZEN" ? s.cmPerDozen : null,
     dueOn: localDay(s.targetDate, tz),
     closed: !(OPEN_STATUSES as readonly string[]).includes(s.status),
   }));
@@ -503,10 +512,16 @@ export async function redraftContract(ctx: CompanyContext, contractId: string) {
 const sameClauses = (a: Clause[], b: Clause[]) =>
   a.length === b.length && a.every((c, i) => c.title === b[i]!.title && c.text === b[i]!.text);
 
+/** The CM as it was entered: the amount per piece, or per dozen (null: none agreed). */
+const enteredCm = (s: Pick<StyleRow, "cmRate" | "cmPer" | "cmPerDozen">) =>
+  s.cmPer === "DOZEN" && s.cmPerDozen ? s.cmPerDozen : s.cmRate;
+
 /**
  * Saves the reviewed clauses, the signed day and (a making agreement) each
- * style's CM per piece. A signed contract keeps its terms and CM until its
- * signed day is cleared; a closed style keeps its CM.
+ * style's CM, per piece or per dozen as agreed (per dozen, the CM a piece is
+ * kept as its twelfth for showing; the money is worked from the dozen price).
+ * A signed contract keeps its terms and CM until its signed day is cleared; a
+ * closed style keeps its CM.
  */
 export async function updateContract(
   ctx: CompanyContext,
@@ -531,15 +546,27 @@ export async function updateContract(
         [`cmRates.${i}.projectId`]: ["Not one of this agreement's styles"],
       });
     }
-    const next = r.cmRate === null ? null : new Prisma.Decimal(r.cmRate);
-    const same = next === null ? style.cmRate === null : style.cmRate?.equals(next) === true;
+    const amount = r.cmRate === null ? null : new Prisma.Decimal(r.cmRate);
+    const per: CmPer = amount !== null && r.cmPer === "DOZEN" ? "DOZEN" : "PIECE";
+    const before = enteredCm(style);
+    const same =
+      amount === null
+        ? style.cmRate === null
+        : before !== null && before.equals(amount) && style.cmPer === per;
     if (same) return [];
     if (style.closed) {
-      throw new AppError("CONFLICT", `${style.code} is closed; its CM per piece stays as it is.`, {
+      throw new AppError("CONFLICT", `${style.code} is closed; its CM stays as it is.`, {
         [`cmRates.${i}.cmRate`]: ["The style is closed"],
       });
     }
-    return [{ style, cmRate: next }];
+    return [
+      {
+        style,
+        cmPer: per,
+        cmPerDozen: per === "DOZEN" ? amount : null,
+        cmRate: per === "DOZEN" && amount ? perPieceOfDozen(amount) : amount,
+      },
+    ];
   });
   const signed = contract.signedOn ? dateOnly(contract.signedOn) : null;
   const stillSigned = signed !== null && Boolean(input.signedOn);
@@ -562,17 +589,16 @@ export async function updateContract(
     for (const r of rates) {
       await tx.productionProject.update({
         where: { id: r.style.id },
-        data: { cmRate: r.cmRate },
+        data: { cmRate: r.cmRate, cmPer: r.cmPer, cmPerDozen: r.cmPerDozen },
       });
     }
+    const show = (v: Prisma.Decimal) => formatAmount(v, 2, ctx.company.currency);
+    const anyDozen = rates.some((r) => r.cmPerDozen !== null);
     const what = [
       !sameClauses(contract.clauses, input.clauses) && "its terms",
       rates.length > 0 &&
-        `CM per piece of ${rates
-          .map(
-            (r) =>
-              `${r.style.code} ${r.cmRate ? formatAmount(r.cmRate, 2, ctx.company.currency) : "(cleared)"}`,
-          )
+        `${anyDozen ? "CM" : "CM per piece"} of ${rates
+          .map((r) => `${r.style.code} ${cmAgreedText(r, show, anyDozen) ?? "(cleared)"}`)
           .join(", ")}`,
       (input.signedOn ?? null) !== signed &&
         (input.signedOn ? `signed on ${formatDay(input.signedOn)}` : "the signed day cleared"),
@@ -679,8 +705,10 @@ export function contractDocument(ctx: CompanyContext, data: ContractData): Print
     }
   } else {
     const agreed = scope.styles.filter((s) => s.cmRate !== null);
-    const totalCm = agreed.reduce((t, s) => t.plus(s.cmRate!.times(s.pieces)), ZERO);
+    const totalCm = agreed.reduce((t, s) => t.plus(cmFor(s, s.pieces)!), ZERO);
     const totalPieces = scope.styles.reduce((t, s) => t + s.pieces, 0);
+    // A CM agreed per dozen prints as agreed ("120.00 a dozen"); all per piece prints as before.
+    const anyDozen = scope.styles.some((s) => s.cmPerDozen !== null);
     blocks.push({
       kind: "table",
       title: "What is made",
@@ -688,7 +716,7 @@ export function contractDocument(ctx: CompanyContext, data: ContractData): Print
         { label: "#", align: "right", weight: 0.45 },
         { label: "Style", weight: 3.6 },
         { label: "Pieces", align: "right", weight: 1.2 },
-        { label: "CM a piece", align: "right", weight: 1.3 },
+        { label: anyDozen ? "CM" : "CM a piece", align: "right", weight: 1.3 },
         { label: "Total CM", align: "right", weight: 1.5 },
         { label: "Deliver by", weight: 1.4 },
       ],
@@ -698,8 +726,8 @@ export function contractDocument(ctx: CompanyContext, data: ContractData): Print
             String(i + 1),
             `${s.code} · ${s.name}`,
             s.pieces.toLocaleString("en-US"),
-            s.cmRate ? amount(s.cmRate) : "To agree",
-            s.cmRate ? amount(s.cmRate.times(s.pieces)) : "–",
+            cmAgreedText(s, amount, anyDozen) ?? "To agree",
+            s.cmRate ? amount(cmFor(s, s.pieces)!) : "–",
             formatDay(s.dueOn),
           ],
         })),
@@ -837,8 +865,12 @@ export async function getContractScreen(ctx: CompanyContext, contractId: string)
             code: s.code,
             name: s.name,
             pieces: s.pieces,
+            /** The CM as agreed: the amount per piece or per dozen (`cmPer`). */
+            cmPer: s.cmPer,
+            cmAmount: enteredCm(s) ? fixed(enteredCm(s)!) : null,
+            /** The CM a piece (per dozen: its twelfth, to the paisa). */
             cmRate: s.cmRate ? fixed(s.cmRate) : null,
-            totalCm: s.cmRate ? fixed(s.cmRate.times(s.pieces)) : null,
+            totalCm: s.cmRate ? fixed(cmFor(s, s.pieces)!) : null,
             dueOn: s.dueOn,
             closed: s.closed,
           }))
@@ -847,12 +879,7 @@ export async function getContractScreen(ctx: CompanyContext, contractId: string)
     cm:
       scope.kind === "FACTORY"
         ? {
-            total: fixed(
-              scope.styles.reduce(
-                (t, s) => (s.cmRate ? t.plus(s.cmRate.times(s.pieces)) : t),
-                ZERO,
-              ),
-            ),
+            total: fixed(scope.styles.reduce((t, s) => t.plus(cmFor(s, s.pieces) ?? ZERO), ZERO)),
             toAgree: scope.styles.filter((s) => s.cmRate === null).length,
           }
         : null,

@@ -19,6 +19,7 @@ import * as parties from "@/modules/parties/party.service";
 import * as actionLog from "@/modules/production/action-log.service";
 import * as batchMoney from "@/modules/production/batch-money.service";
 import * as batches from "@/modules/production/batch.service";
+import * as contracts from "@/modules/production/contract.service";
 import * as costs from "@/modules/production/cost.service";
 import * as cutting from "@/modules/production/cutting.service";
 import * as faults from "@/modules/production/fault.service";
@@ -282,6 +283,48 @@ run("Production renovation: batch costs, advance CM and the final CM settlement"
       batchMoney.payForBatch(env.accounts, env.batch.id, { supplierId: trims.id, amount: 100 }),
       "VALIDATION",
     );
+  });
+
+  it("settles a CM agreed per dozen at its twelfth a piece, and its deductions on the Supplier Due", async () => {
+    const agreement = await contracts.createContract(env.pm, env.batch.id, {
+      kind: "FACTORY_CM",
+      partyId: env.factory.id,
+    });
+    const { clauses } = (await contracts.getContractScreen(env.pm, agreement.id)).contract;
+    await contracts.updateContract(env.pm, agreement.id, {
+      clauses,
+      cmRates: [{ projectId: env.polo.id, cmRate: 120, cmPer: "DOZEN" }],
+    });
+    await finishing.createFinishingCount(env.store, env.polo.id, {
+      lines: [
+        { colorName: "Navy", sizeName: "S", a: 8, b: 1, c: 1, reject: 0 },
+        { colorName: "Navy", sizeName: "M", a: 10, b: 0, c: 0, reject: 0 },
+      ],
+    });
+    const draft = (await batchMoney.getCmSettlementScreen(env.pm, env.batch.id)).draft!;
+    // 120 a dozen = 10 a piece: 20 pieces earn 200, the C-grade piece 10.
+    expect(draft.styles[0]).toMatchObject({
+      pieces: 20,
+      cmRate: "10.00",
+      cmPerDozen: "120.00",
+      cm: "200.00",
+      cGradeCm: "10.00",
+    });
+    expect(draft.keepC).toMatchObject({ totalCm: "200.00", payable: "200.00" });
+    expect(draft.deductC).toMatchObject({ deductions: "10.00", payable: "190.00" });
+
+    const made = await batchMoney.settleCm(env.pm, env.batch.id, { deductCGrade: true });
+    expect([made.payable, made.deducted]).toEqual(["190.00", "10.00"]);
+    // The 1,800 bill less the C-grade CM taken off.
+    expect((await getPartyBalance(env.accounts, env.factory.id)).neg().toFixed(2)).toBe("1790.00");
+    const settled = await batchMoney.getCmSettlementScreen(env.accounts, env.batch.id);
+    const pdf = batchMoney.cmSettlementDocument(env.accounts, settled.standing!);
+    const table = pdf.blocks[0]!;
+    expect(table.kind === "table" && table.columns[1]!.label).toBe("CM agreed");
+    expect(table.kind === "table" && table.rows[0]!.cells.slice(0, 2)).toEqual([
+      env.polo.code,
+      "120.00 a dozen",
+    ]);
   });
 
   it("settles the CM: total CM - deductions - advance taken = final payable", async () => {

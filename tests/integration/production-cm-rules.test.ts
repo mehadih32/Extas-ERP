@@ -380,7 +380,14 @@ run("The real CM rules: embroidery houses' spoilage and the reject allowance", (
     delete old.totals.rejects;
     delete old.warnings.noTarget;
     for (const st of old.styles) {
-      for (const key of ["cut", "allowance", "overAllowance", "targetPrice", "rejectPenalty"]) {
+      for (const key of [
+        "cut",
+        "allowance",
+        "overAllowance",
+        "targetPrice",
+        "rejectPenalty",
+        "cmPerDozen",
+      ]) {
         delete st[key];
       }
     }
@@ -397,8 +404,14 @@ run("The real CM rules: embroidery houses' spoilage and the reject allowance", (
       allowance: null,
       overAllowance: 0,
       rejectPenalty: "0.00",
+      // Saved before the CM could be agreed per dozen: per piece, printed as before.
+      cmPerDozen: null,
+      cmRate: "90.00",
     });
-    expect(() => batchMoney.cmSettlementDocument(env.accounts, screen.standing!)).not.toThrow();
+    const doc = batchMoney.cmSettlementDocument(env.accounts, screen.standing!);
+    const table = doc.blocks[0]!;
+    expect(table.kind === "table" && table.columns[1]!.label).toBe("CM a piece");
+    expect(table.kind === "table" && table.rows[0]!.cells[1]).toBe("90.00");
   });
 
   it("keeps a fault the CM settlement took off until that settlement is undone", async () => {

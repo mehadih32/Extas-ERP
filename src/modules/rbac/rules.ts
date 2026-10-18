@@ -1,6 +1,8 @@
 import type { SystemRole } from "@prisma/client";
 
 import { ALLOWED, refuse, type Verdict } from "@/lib/verdict";
+import type { CompanyContext } from "@/modules/auth/context";
+import type { PermissionKey } from "@/modules/rbac/permissions";
 
 export { assertAllowed, type Verdict } from "@/lib/verdict";
 
@@ -19,6 +21,15 @@ export type Actor = {
   isPlatformOwner: boolean;
 };
 
+/** The person acting, as these rules see them. */
+export function actorOf(ctx: CompanyContext): Actor {
+  return {
+    userId: ctx.user.id,
+    systemRole: ctx.role?.systemRole ?? null,
+    isPlatformOwner: ctx.user.isSuperAdmin,
+  };
+}
+
 type HasSystemRole = { systemRole: SystemRole | null };
 
 const isSuperAdmin = (role: HasSystemRole) => role.systemRole === "SUPER_ADMIN";
@@ -30,34 +41,90 @@ export function isPrivileged(actor: Pick<Actor, "systemRole" | "isPlatformOwner"
 
 export const LAST_SUPER_ADMIN = "The company must keep at least one active Super Admin.";
 
+/**
+ * What only a Super Admin may give, in a role or to one person: recording money
+ * received or paid (CLAUDE.md: only Accounts and Super Admin), and managing
+ * users or roles (which could give the rest).
+ */
+export const SUPER_ADMIN_GRANTS: readonly PermissionKey[] = [
+  "accounts.receipts.record",
+  "accounts.payments.record",
+  "company.members.manage",
+  "company.roles.manage",
+];
+
+export const SUPER_ADMIN_GRANTS_ROLE =
+  "Only a Super Admin can give a role that records money or manages users or roles. Ask a Super Admin.";
+export const SUPER_ADMIN_GRANTS_KEYS =
+  "Only a Super Admin can give the right to record money or to manage users or roles. Ask a Super Admin.";
+export const OWN_ROLE = "You cannot change your own role. Ask another admin.";
+
+/** Among these permissions, the ones only a Super Admin may give. */
+export function superAdminGrantsIn(keys: Iterable<string>): string[] {
+  return [...keys].filter((key) => (SUPER_ADMIN_GRANTS as readonly string[]).includes(key));
+}
+
+/**
+ * The permissions the person acting may not give someone who does not hold
+ * them yet, nor add to a role: SUPER_ADMIN_GRANTS, or none for a Super Admin.
+ * The screens lock these boxes.
+ */
+export function lockedPermissionsFor(ctx: CompanyContext): PermissionKey[] {
+  return isPrivileged(actorOf(ctx)) ? [] : [...SUPER_ADMIN_GRANTS];
+}
+
+/** A role being given: its built-in kind and the permissions it holds. */
+type GivenRole = HasSystemRole & { permissions: readonly string[] };
+
 // --- Members -------------------------------------------------------------------
 
 /** Giving a role to someone being added to the company. */
-export function canGrantRole(actor: Actor, role: HasSystemRole): Verdict {
+export function canGrantRole(actor: Actor, role: GivenRole): Verdict {
   if (isSuperAdmin(role) && !isPrivileged(actor)) {
     return refuse("FORBIDDEN", "Only a Super Admin can grant the Super Admin role.");
+  }
+  return canGiveRoleKeys(actor, role);
+}
+
+/** A role holding money recording or user / role management: only a Super Admin gives it. */
+function canGiveRoleKeys(actor: Actor, role: GivenRole): Verdict {
+  if (!isPrivileged(actor) && superAdminGrantsIn(role.permissions).length > 0) {
+    return refuse("FORBIDDEN", SUPER_ADMIN_GRANTS_ROLE);
   }
   return ALLOWED;
 }
 
 /**
- * Moving a member (`target` is their current role) to `role`.
- * `otherActiveSuperAdmins` counts the company's active Super Admins besides the
- * member, and only matters when the member is a Super Admin.
+ * Giving these permissions on their own: ticked for one person, or added to a
+ * role (which gives them to everyone in it).
+ */
+export function canGivePermissions(actor: Actor, keys: Iterable<string>): Verdict {
+  if (!isPrivileged(actor) && superAdminGrantsIn(keys).length > 0) {
+    return refuse("FORBIDDEN", SUPER_ADMIN_GRANTS_KEYS);
+  }
+  return ALLOWED;
+}
+
+/**
+ * Moving a member (`target`: who they are and their current role) to `role`.
+ * Never one's own role. `otherActiveSuperAdmins` counts the company's active
+ * Super Admins besides the member, and only matters when the member is a
+ * Super Admin.
  */
 export function canChangeRole(
   actor: Actor,
-  target: HasSystemRole,
-  role: HasSystemRole,
+  target: HasSystemRole & { userId: string },
+  role: GivenRole,
   otherActiveSuperAdmins: number,
 ): Verdict {
+  if (target.userId === actor.userId) return refuse("CONFLICT", OWN_ROLE);
   if ((isSuperAdmin(role) || isSuperAdmin(target)) && !isPrivileged(actor)) {
     return refuse("FORBIDDEN", "Only a Super Admin can grant or remove the Super Admin role.");
   }
   if (isSuperAdmin(target) && otherActiveSuperAdmins === 0) {
     return refuse("CONFLICT", LAST_SUPER_ADMIN);
   }
-  return ALLOWED;
+  return canGiveRoleKeys(actor, role);
 }
 
 /** Taking away a member's access to the company. */

@@ -312,6 +312,7 @@ export function SystemAccessCard({
           }
           canChangeRole={can.changeRole}
           canEditPermissions={can.editPermissions}
+          lockedPermissions={access.lockedPermissions}
           onClose={close}
           onSaved={done}
         />

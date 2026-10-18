@@ -33,7 +33,11 @@ export default async function NewRolePage() {
           Name the role and tick what it allows. You can give it to people from the Team tab.
         </p>
       </div>
-      <RoleEditor mode="create" templates={result.data.roles} />
+      <RoleEditor
+        mode="create"
+        templates={result.data.roles}
+        lockedPermissions={result.data.lockedPermissions}
+      />
     </div>
   );
 }

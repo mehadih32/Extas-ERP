@@ -37,6 +37,11 @@ type Props = {
   /** Names the tree for screen readers ("Permissions for Rahim Uddin"). */
   label: string;
   /**
+   * Permissions the person looking may not tick (only a Super Admin gives them:
+   * rbac/rules.ts). Their boxes stay empty and say "Super Admin only".
+   */
+  locked?: ReadonlySet<PermissionKey>;
+  /**
    * From tablet width up, scrolls inside its own box (in a dialog) so the dialog's
    * buttons stay in view. On phones the whole dialog scrolls instead: one scroll,
    * and the tree is never squeezed into a few lines.
@@ -47,6 +52,7 @@ type Props = {
 type Shared = {
   selected: ReadonlySet<PermissionKey>;
   onChange?: (next: Set<PermissionKey>) => void;
+  locked?: ReadonlySet<PermissionKey>;
   baseline?: ReadonlySet<PermissionKey>;
   isOpen: (id: string) => boolean;
   toggleOpen: (id: string) => void;
@@ -75,7 +81,7 @@ function differences(leaves: AccessLeaf[], shared: Shared) {
  * all of it is allowed, shows a dash when some of it is, and is empty when none
  * is. Used for roles (Settings > Roles) and for one person's access (Team, HR).
  */
-export function AccessTree({ selected, onChange, baseline, label, scroll = false }: Props) {
+export function AccessTree({ selected, onChange, baseline, label, locked, scroll = false }: Props) {
   const prefix = useId();
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set());
@@ -88,7 +94,12 @@ export function AccessTree({ selected, onChange, baseline, label, scroll = false
 
   const shared: Shared = {
     selected,
-    onChange,
+    // Ticking an area never ticks a locked permission in it.
+    onChange:
+      onChange && locked?.size
+        ? (next) => onChange(new Set([...next].filter((key) => !locked.has(key))))
+        : onChange,
+    locked,
     baseline,
     prefix,
     // While searching, every area with a match stays open.
@@ -143,7 +154,7 @@ export function AccessTree({ selected, onChange, baseline, label, scroll = false
               type="button"
               variant="ghost"
               size="sm"
-              onClick={() => onChange(new Set(baseline))}
+              onClick={() => shared.onChange?.(new Set(baseline))}
               disabled={asRole}
             >
               As the role gives
@@ -295,8 +306,10 @@ function BranchRow({ node, depth, shared }: { node: AccessBranch; depth: number;
 }
 
 function LeafRow({ leaf, shared }: { leaf: AccessLeaf; shared: Shared }) {
-  const { selected, onChange, baseline, prefix } = shared;
+  const { selected, baseline, prefix } = shared;
   const on = selected.has(leaf.key);
+  const isLocked = !on && shared.locked?.has(leaf.key) === true;
+  const onChange = isLocked ? undefined : shared.onChange;
   const fromRole = baseline?.has(leaf.key);
   const id = `${prefix}-${leaf.key}`;
   return (
@@ -325,6 +338,11 @@ function LeafRow({ leaf, shared }: { leaf: AccessLeaf; shared: Shared }) {
             <Badge variant="outline" className="ml-2 align-middle">
               <BanknoteIcon aria-hidden />
               Money
+            </Badge>
+          )}
+          {isLocked && (
+            <Badge variant="outline" className="ml-2 align-middle">
+              Super Admin only
             </Badge>
           )}
           {baseline && on && !fromRole && <Badge className="ml-2 align-middle">Added</Badge>}

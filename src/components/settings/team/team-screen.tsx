@@ -314,6 +314,7 @@ export function TeamScreen({ team, companyName }: { team: Team; companyName: str
         <AddMemberDialog
           roles={grantable}
           canEditPermissions={team.canEditPermissions}
+          lockedPermissions={team.lockedPermissions}
           companyName={companyName}
           onClose={close}
           onAdded={(added) =>
@@ -349,6 +350,7 @@ export function TeamScreen({ team, companyName }: { team: Team; companyName: str
           initialRoleId={open.kind === "role" ? open.member.roleChoices[0] : undefined}
           canChangeRole={open.member.can.changeRole}
           canEditPermissions={open.member.can.editPermissions}
+          lockedPermissions={team.lockedPermissions}
           onClose={close}
           onSaved={(message) => {
             setNotice(message);

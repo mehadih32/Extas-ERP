@@ -6051,25 +6051,37 @@ model AiTestRun {
 /// no list and without a price here is blocked (v6.4 A7). A row without prices
 /// only remembers the day the owner was told such a model is blocked.
 model AiModelPrice {
-  id              String   @id @default(cuid())
-  companyId       String
+  id                  String   @id @default(cuid())
+  companyId           String
   /// The model ("claude-…", "openai:…" or "google:…").
-  model           String
-  provider        String
+  model               String
+  provider            String
   /// Null: not known.
-  inputPerM       Decimal? @db.Decimal(12, 4)
-  outputPerM      Decimal? @db.Decimal(12, 4)
-  cacheReadPerM   Decimal? @db.Decimal(12, 4)
+  inputPerM           Decimal? @db.Decimal(12, 4)
+  outputPerM          Decimal? @db.Decimal(12, 4)
+  cacheReadPerM       Decimal? @db.Decimal(12, 4)
   /// Writing to the provider's prompt cache (v6.4); null: as input (Claude: a quarter more).
-  cacheWritePerM  Decimal? @db.Decimal(12, 4)
+  cacheWritePerM      Decimal? @db.Decimal(12, 4)
   /// Work through the provider's batch service (v6.4); null: as plain work.
-  batchInputPerM  Decimal? @db.Decimal(12, 4)
-  batchOutputPerM Decimal? @db.Decimal(12, 4)
+  batchInputPerM      Decimal? @db.Decimal(12, 4)
+  batchOutputPerM     Decimal? @db.Decimal(12, 4)
+  /// Higher prices for a prompt over `longAbove` tokens (v6.4.1), as on the
+  /// price page; null: the built-in list's long-prompt prices, if it has any.
+  longAbove           Int?
+  longInputPerM       Decimal? @db.Decimal(12, 4)
+  longOutputPerM      Decimal? @db.Decimal(12, 4)
+  longCacheReadPerM   Decimal? @db.Decimal(12, 4)
+  longCacheWritePerM  Decimal? @db.Decimal(12, 4)
+  longBatchInputPerM  Decimal? @db.Decimal(12, 4)
+  longBatchOutputPerM Decimal? @db.Decimal(12, 4)
+  /// Where the owner's price came from (v6.4.1): a link to the price page, or
+  /// "Typed by <name> on <day>" when the owner gave none.
+  source              String?
   /// The company day (YYYY-MM-DD) the owner was last told this model is blocked
   /// for having no price: once a day per model (v6.4).
-  blockedNoticeOn String?
-  updatedById     String?
-  updatedAt       DateTime @updatedAt
+  blockedNoticeOn     String?
+  updatedById         String?
+  updatedAt           DateTime @updatedAt
 
   company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
   updatedBy User?   @relation("AiModelPriceUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)

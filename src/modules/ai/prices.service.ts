@@ -12,7 +12,16 @@ import { activeMembers, membersWith } from "@/modules/reminders/audience";
 import { sendInApp } from "@/modules/reminders/notification.service";
 
 import type { TokenUse } from "./models";
-import { costOf, listedModel, PRICE_FIELDS, PRICE_WORDS, type PriceRule } from "./price-list";
+import {
+  costOf,
+  dayText,
+  listedModel,
+  LONG_FIELDS,
+  PRICE_FIELDS,
+  PRICE_WORDS,
+  type PriceFields,
+  type PriceRule,
+} from "./price-list";
 import { modelLabel, modelRef, parseModel, providerOf } from "./providers";
 
 /*
@@ -23,6 +32,11 @@ import { modelLabel, modelRef, parseModel, providerOf } from "./providers";
  * A7), because its cost could not be counted. It is never called, it cannot be
  * given work, and the owner is told (once a day per model) when something
  * tries to use it. Its cost is never written as a known 0.
+ *
+ * The owner's price keeps where it came from (a link, or "Typed by <name> on
+ * <day>"), and its own long-prompt prices; without them the list's long-prompt
+ * prices still hold over the owner's normal ones (v6.4.1 C4), so a new normal
+ * price never makes a long prompt on Haiku 5.5 look 5 times cheaper.
  */
 
 export type Price = PriceRule & {
@@ -32,6 +46,8 @@ export type Price = PriceRule & {
   checkedOn?: string;
   setById?: string | null;
   setAt?: Date;
+  /** Where the owner's price came from. */
+  source?: string | null;
 };
 
 /** The owner's prices in the company, by model. */
@@ -49,6 +65,8 @@ export async function priceBook(companyId: string, db: Db = prisma): Promise<Pri
     const input = num(r.inputPerM);
     const output = num(r.outputPerM);
     if (input === null || output === null) continue;
+    const longInput = num(r.longInputPerM);
+    const longOutput = num(r.longOutputPerM);
     book.set(r.model, {
       input,
       output,
@@ -56,9 +74,23 @@ export async function priceBook(companyId: string, db: Db = prisma): Promise<Pri
       cacheWrite: num(r.cacheWritePerM),
       batchInput: num(r.batchInputPerM),
       batchOutput: num(r.batchOutputPerM),
+      ...(r.longAbove && longInput !== null && longOutput !== null
+        ? {
+            long: {
+              above: r.longAbove,
+              input: longInput,
+              output: longOutput,
+              cacheRead: num(r.longCacheReadPerM),
+              cacheWrite: num(r.longCacheWritePerM),
+              batchInput: num(r.longBatchInputPerM),
+              batchOutput: num(r.longBatchOutputPerM),
+            },
+          }
+        : {}),
       from: "owner",
       setById: r.updatedById,
       setAt: r.updatedAt,
+      source: r.source,
     });
   }
   return book;
@@ -73,14 +105,14 @@ export const normalModel = (model: string) => {
 /**
  * A model's price: the owner's, else the built-in list's (a Claude snapshot
  * takes its model's, the owner's first), else null: the model is blocked.
+ * The owner's price without long-prompt prices of its own keeps the list's.
  */
 export function priceFor(book: PriceBook, model: string): Price | null {
   const ref = normalModel(model);
-  const own = book.get(ref);
-  if (own) return own;
   const listed = listedModel(ref);
-  if (!listed) return null;
-  return book.get(listed.ref) ?? { ...listed, from: "erp" };
+  const own = book.get(ref) ?? (listed ? book.get(listed.ref) : undefined);
+  if (own) return own.long || !listed?.long ? own : { ...own, long: listed.long };
+  return listed ? { ...listed, from: "erp" } : null;
 }
 
 /**
@@ -190,6 +222,18 @@ const mainPrice = perMillion("More than 0 dollars, like 2.50");
 /** Cache and batch prices: empty (charged as plain work) or more than 0. */
 const otherPrice = perMillion("Empty, or more than 0 dollars, like 2.50");
 
+/** The prompt length (tokens) the long prices start above, or empty. */
+const tokens = z
+  .union([z.string(), z.number()])
+  .transform((v) => String(v).trim().replace(/[,\s]/g, ""))
+  .refine(
+    (v) => v === "" || (/^\d{1,9}$/.test(v) && Number(v) > 0),
+    "Tokens, a whole number like 200000",
+  )
+  .transform((v) => (v === "" ? null : Number(v)));
+
+type PriceText = Record<keyof PriceFields, string | null>;
+
 export const priceSchema = z
   .object({
     model: z
@@ -204,19 +248,72 @@ export const priceSchema = z
     cacheWrite: otherPrice.nullish(),
     batchInput: otherPrice.nullish(),
     batchOutput: otherPrice.nullish(),
+    longAbove: tokens.nullish(),
+    longInput: mainPrice.nullish(),
+    longOutput: mainPrice.nullish(),
+    longCacheRead: otherPrice.nullish(),
+    longCacheWrite: otherPrice.nullish(),
+    longBatchInput: otherPrice.nullish(),
+    longBatchOutput: otherPrice.nullish(),
+    /** Where the price came from: a link or a few words; empty: "Typed by <name> on <day>". */
+    source: z
+      .string()
+      .trim()
+      .max(300, "Up to 300 characters")
+      .nullish()
+      .transform((v) => v || null),
   })
-  .transform((p) => ({
-    model: p.model,
-    input: p.input ?? null,
-    output: p.output ?? null,
-    cacheRead: p.cacheRead ?? null,
-    cacheWrite: p.cacheWrite ?? null,
-    batchInput: p.batchInput ?? null,
-    batchOutput: p.batchOutput ?? null,
-  }))
-  .refine((p) => (p.input === null) === (p.output === null), {
-    message: "Give both prices (input and output), or neither",
-    path: ["output"],
+  .superRefine((p, issue) => {
+    if ((p.input == null) !== (p.output == null)) {
+      issue.addIssue({
+        code: "custom",
+        message: "Give both prices (input and output), or neither",
+        path: ["output"],
+      });
+    }
+    if ((p.longInput == null) !== (p.longOutput == null)) {
+      issue.addIssue({
+        code: "custom",
+        message: "Give both long-prompt prices (input and output), or neither",
+        path: [p.longInput == null ? "longInput" : "longOutput"],
+      });
+    }
+    // The line long prices start above: given, or the price page's for the model.
+    if (p.longInput != null && p.longAbove == null && !listedModel(normalModel(p.model))?.long) {
+      issue.addIssue({
+        code: "custom",
+        message: "Give the prompt length the long prices start above, like 200000",
+        path: ["longAbove"],
+      });
+    }
+  })
+  .transform((p) => {
+    // Long prices not sent at all: undefined (the saved ones stay); sent empty:
+    // null (back to the price page's); else the owner's own.
+    const sent =
+      p.longAbove !== undefined || Object.values(LONG_FIELDS).some((f) => p[f] !== undefined);
+    const long =
+      !sent || p.longInput == null || p.longOutput == null
+        ? sent
+          ? null
+          : undefined
+        : {
+            above: p.longAbove ?? listedModel(normalModel(p.model))!.long!.above,
+            ...(Object.fromEntries(
+              PRICE_FIELDS.map((f) => [f, p[LONG_FIELDS[f]] ?? null]),
+            ) as PriceText),
+          };
+    return {
+      model: p.model,
+      input: p.input ?? null,
+      output: p.output ?? null,
+      cacheRead: p.cacheRead ?? null,
+      cacheWrite: p.cacheWrite ?? null,
+      batchInput: p.batchInput ?? null,
+      batchOutput: p.batchOutput ?? null,
+      ...(long === undefined ? {} : { long }),
+      source: p.source,
+    };
   });
 
 const decimal = (v: string | null) => (v === null ? null : new Prisma.Decimal(v));
@@ -250,6 +347,23 @@ export async function setModelPrice(ctx: CompanyContext, input: unknown, meta?: 
     });
     return;
   }
+  // Where it came from: the owner's words, else who typed it and when.
+  const source =
+    p.source ??
+    `Typed by ${ctx.user.name} on ${dayText(localDay(new Date(), ctx.company.timezone))}`;
+  // Long-prompt prices not sent stay as saved; sent empty, the list's hold again.
+  const long =
+    p.long === undefined
+      ? {}
+      : {
+          longAbove: p.long?.above ?? null,
+          longInputPerM: decimal(p.long?.input ?? null),
+          longOutputPerM: decimal(p.long?.output ?? null),
+          longCacheReadPerM: decimal(p.long?.cacheRead ?? null),
+          longCacheWritePerM: decimal(p.long?.cacheWrite ?? null),
+          longBatchInputPerM: decimal(p.long?.batchInput ?? null),
+          longBatchOutputPerM: decimal(p.long?.batchOutput ?? null),
+        };
   const data = {
     provider,
     inputPerM: decimal(p.input),
@@ -258,6 +372,8 @@ export async function setModelPrice(ctx: CompanyContext, input: unknown, meta?: 
     cacheWritePerM: decimal(p.cacheWrite),
     batchInputPerM: decimal(p.batchInput),
     batchOutputPerM: decimal(p.batchOutput),
+    ...long,
+    source,
     blockedNoticeOn: null,
     updatedById: ctx.user.id,
   };
@@ -266,13 +382,22 @@ export async function setModelPrice(ctx: CompanyContext, input: unknown, meta?: 
     create: { ...data, companyId: ctx.company.id, model },
     update: data,
   });
-  const given = PRICE_FIELDS.filter((f) => p[f] !== null)
-    .map((f) => `$${p[f]} ${PRICE_WORDS[f]}`)
-    .join(", ");
+  const given = (t: Record<keyof PriceFields, string | null>) =>
+    PRICE_FIELDS.filter((f) => t[f] !== null)
+      .map((f) => `$${t[f]} ${PRICE_WORDS[f]}`)
+      .join(", ");
+  const longText =
+    p.long === undefined
+      ? ""
+      : p.long === null
+        ? listedModel(model)?.long
+          ? "; long prompts back to the built-in price list"
+          : ""
+        : `; prompts over ${p.long.above.toLocaleString("en-US")} tokens: ${given(p.long)}`;
   await auditInCompany(ctx, meta, {
     action: "UPDATE",
     entityType: "AiSettings",
     entityId: ctx.company.id,
-    summary: `${label}: price set to ${given} per million tokens`,
+    summary: `${label}: price set to ${given(p)} per million tokens${longText} (from: ${source})`,
   });
 }

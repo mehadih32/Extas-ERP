@@ -614,13 +614,16 @@ export type PriceRow = PriceStrings & {
   state: "erp" | "owner" | "blocked";
   /** The price page's price, when the model is on the list (kept in view under the owner's). */
   list: PriceStrings | null;
-  /** The page's other prices: long prompts, an announced change. */
+  /** The prices for a long prompt (the owner's, else the page's), when there are any. */
+  long: (PriceStrings & { above: string }) | null;
+  /** The other prices that hold: long prompts, an announced change of the page's. */
   notes: string[];
   sourceUrl: string | null;
   checkedOn: string | null;
-  /** Who set the owner's price, and when. */
+  /** Who set the owner's price, and when, and where the price came from. */
   setBy: string | null;
   setAt: Date | null;
+  source: string | null;
 };
 
 /**
@@ -654,11 +657,13 @@ async function priceSections(settings: AiSettings, book: PriceBook, inUse: Reado
       state: price ? price.from : "blocked",
       ...(price ? priceStrings(price) : NO_PRICE),
       list: listed ? priceStrings(listed) : null,
-      notes: price?.from === "erp" && listed ? priceNotes(listed) : [],
+      long: price?.long ? { above: String(price.long.above), ...priceStrings(price.long) } : null,
+      notes: price ? priceNotes(price) : [],
       sourceUrl: price?.from === "erp" ? (listed?.sourceUrl ?? null) : null,
       checkedOn: price?.from === "erp" ? (listed?.checkedOn ?? null) : null,
       setBy: price?.from === "owner" ? (names.get(price.setById ?? "") ?? null) : null,
       setAt: price?.from === "owner" ? (price.setAt ?? null) : null,
+      source: price?.from === "owner" ? (price.source ?? null) : null,
     };
   };
   return PRICE_LISTS.map((l) => {

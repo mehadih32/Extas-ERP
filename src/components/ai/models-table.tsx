@@ -16,7 +16,7 @@ import { NativeSelect } from "@/components/ui/native-select";
 import type { ModelTestState } from "@/modules/ai/model-test-standing";
 import type { ModelTestResult } from "@/modules/ai/model-tests.service";
 import { AI_MODELS } from "@/modules/ai/models";
-import { dayText, PRICE_FIELDS, usdText } from "@/modules/ai/price-list";
+import { dayText, LONG_FIELDS, PRICE_FIELDS, usdText } from "@/modules/ai/price-list";
 import type { AiModelsScreen, PriceRow } from "@/modules/ai/settings.service";
 import {
   readProviderModelsAction,
@@ -35,9 +35,11 @@ import {
  * of the ERP's own Claude models does a task on Do only after it passes that
  * task's test ("Run the test"); until then the AI asks first. Prices: a
  * section each for Claude, OpenAI and Gemini, from the providers' price pages
- * (where from, and when checked), which the owner can change with the PIN. A
- * model with no price is blocked (v6.4 A7): it cannot be picked, and the AI
- * never uses it.
+ * (where from, and when checked), which the owner can change with the PIN,
+ * saying where the new price came from; the form starts from the prices that
+ * hold now, long-prompt ones included, so changing one price keeps the rest
+ * (v6.4.1 C4). A model with no price is blocked (v6.4 A7): it cannot be
+ * picked, and the AI never uses it.
  */
 
 type Message = { tone: "success" | "error"; text: string };
@@ -436,7 +438,7 @@ export function ModelsTable({ models: m }: { models: AiModelsScreen }) {
           onSubmit={async (form) => {
             const result = await setModelPriceAction({
               model: pricing.model ?? String(form.get("model") ?? ""),
-              ...Object.fromEntries(PRICE_FIELDS.map((f) => [f, String(form.get(f) ?? "")])),
+              ...Object.fromEntries(FORM_FIELDS.map((f) => [f, String(form.get(f) ?? "")])),
               pin: String(form.get("pin") ?? ""),
             });
             if (!result.ok) return result.error;
@@ -444,59 +446,137 @@ export function ModelsTable({ models: m }: { models: AiModelsScreen }) {
             setPricing(null);
           }}
         >
-          {(fieldError) => {
-            const now = pricing.model ? priceRows.find((x) => x.model === pricing.model) : null;
-            return (
-              <div className="grid gap-4">
-                {!pricing.model && (
-                  <Field id="price-model" label="Model" error={fieldError("model")}>
-                    <NativeSelect
-                      id="price-model"
-                      name="model"
-                      containerClassName="w-full"
-                      required
-                    >
-                      <PricedOptions m={m} />
-                    </NativeSelect>
-                  </Field>
-                )}
-                {now?.state === "owner" && now.setBy && (
-                  <p className="text-[0.8125rem] text-muted-foreground">
-                    Your price, set by {now.setBy}
-                    {now.setAt ? ` on ${day(now.setAt)}` : ""}.
-                  </p>
-                )}
-                <div className="grid gap-4 sm:grid-cols-2">
-                  {PRICE_COLUMNS.map(([f, title]) => (
-                    <Field
-                      key={f}
-                      id={`price-${f}`}
-                      label={`${title}, $ per million`}
-                      hint={PRICE_HINTS[f]}
-                      error={fieldError(f)}
-                    >
-                      <Input
-                        id={`price-${f}`}
-                        name={f}
-                        inputMode="decimal"
-                        defaultValue={now?.state === "owner" ? (now[f] ?? "") : ""}
-                        placeholder={
-                          now?.list?.[f] ?? (f === "input" || f === "output" ? "No price" : "")
-                        }
-                      />
-                    </Field>
-                  ))}
-                </div>
-                <PinField
-                  id="price-pin"
-                  error={fieldError("pin") ?? fieldError("pinNotSet")}
-                  hint="Setting or clearing a price asks for your PIN."
-                />
-              </div>
-            );
-          }}
+          {(fieldError) => (
+            <PriceFormFields
+              m={m}
+              now={pricing.model ? priceRows.find((x) => x.model === pricing.model) : undefined}
+              pickModel={!pricing.model}
+              day={day}
+              fieldError={fieldError}
+            />
+          )}
         </FormDialog>
       )}
+    </div>
+  );
+}
+
+/** Every field the price form sends, besides the model and the PIN. */
+const FORM_FIELDS = [
+  ...PRICE_FIELDS,
+  "longAbove",
+  ...PRICE_FIELDS.map((f) => LONG_FIELDS[f]),
+  "source",
+] as const;
+
+/**
+ * The price form's fields. They start from the prices that hold now (the
+ * owner's, else the price page's), long-prompt ones included, so changing one
+ * price keeps the others; "Where from" starts empty: the new price's source.
+ */
+export function PriceFormFields({
+  m,
+  now,
+  pickModel,
+  day,
+  fieldError,
+}: {
+  m: AiModelsScreen;
+  now: PriceRow | undefined;
+  pickModel: boolean;
+  day: (at: Date | string | null) => string;
+  fieldError: (name: string) => string | undefined;
+}) {
+  return (
+    <div className="grid gap-4">
+      {pickModel && (
+        <Field id="price-model" label="Model" error={fieldError("model")}>
+          <NativeSelect id="price-model" name="model" containerClassName="w-full" required>
+            <PricedOptions m={m} />
+          </NativeSelect>
+        </Field>
+      )}
+      {now?.state === "owner" && now.setBy && (
+        <p className="text-[0.8125rem] break-words text-muted-foreground">
+          Your price, set by {now.setBy}
+          {now.setAt ? ` on ${day(now.setAt)}` : ""}
+          {now.source ? ` (from: ${now.source})` : ""}.
+        </p>
+      )}
+      <div className="grid gap-4 sm:grid-cols-2">
+        {PRICE_COLUMNS.map(([f, title]) => (
+          <Field
+            key={f}
+            id={`price-${f}`}
+            label={`${title}, $ per million`}
+            hint={PRICE_HINTS[f]}
+            error={fieldError(f)}
+          >
+            <Input
+              id={`price-${f}`}
+              name={f}
+              inputMode="decimal"
+              defaultValue={now?.[f] ?? ""}
+              placeholder={now?.list?.[f] ?? (f === "input" || f === "output" ? "No price" : "")}
+            />
+          </Field>
+        ))}
+      </div>
+      <fieldset className="grid min-w-0 gap-4 rounded-md border p-3">
+        <legend className="px-1 text-sm font-medium">Long prompts</legend>
+        <p className="text-[0.8125rem] text-muted-foreground">
+          Some models cost more when a prompt is long (all its input, cache included), like Haiku
+          5.5 over 100,000 tokens. Empty: the price page&apos;s long-prompt prices, if it has any.
+        </p>
+        <Field
+          id="price-longAbove"
+          label="Long prompts over, tokens"
+          hint="Like 100000. Empty: the price page's."
+          error={fieldError("longAbove")}
+        >
+          <Input
+            id="price-longAbove"
+            name="longAbove"
+            inputMode="numeric"
+            defaultValue={now?.long?.above ?? ""}
+          />
+        </Field>
+        <div className="grid gap-4 sm:grid-cols-2">
+          {PRICE_COLUMNS.map(([f, title]) => (
+            <Field
+              key={f}
+              id={`price-${LONG_FIELDS[f]}`}
+              label={`Long ${title.toLowerCase()}, $ per million`}
+              error={fieldError(LONG_FIELDS[f])}
+            >
+              <Input
+                id={`price-${LONG_FIELDS[f]}`}
+                name={LONG_FIELDS[f]}
+                inputMode="decimal"
+                defaultValue={now?.long?.[f] ?? ""}
+              />
+            </Field>
+          ))}
+        </div>
+      </fieldset>
+      <Field
+        id="price-source"
+        label="Where from"
+        hint="A link to the price page, or who gave you the price. Empty: typed by you, with today's date."
+        error={fieldError("source")}
+      >
+        <Input
+          id="price-source"
+          name="source"
+          maxLength={300}
+          placeholder={now?.source ?? "https://…"}
+        />
+      </Field>
+      <PinField
+        id="price-pin"
+        error={fieldError("pin") ?? fieldError("pinNotSet")}
+        hint="Setting or clearing a price asks for your PIN."
+      />
     </div>
   );
 }
@@ -535,6 +615,22 @@ function PricedOptions({ m }: { m: AiModelsScreen }) {
           </optgroup>
         ))}
     </>
+  );
+}
+
+/** Where the owner's price came from: a link opens in a new tab. */
+function SourceText({ source }: { source: string }) {
+  return /^https?:\/\/\S+$/.test(source) ? (
+    <a
+      href={source}
+      target="_blank"
+      rel="noreferrer"
+      className="text-[0.75rem] break-all underline underline-offset-4"
+    >
+      {source}
+    </a>
+  ) : (
+    <span className="text-[0.75rem] break-words text-muted-foreground">{source}</span>
   );
 }
 
@@ -600,9 +696,12 @@ function PriceTable({
                     Price page
                   </a>
                 ) : x.state === "owner" ? (
-                  <StatusBadge tone="plain">
-                    {x.setBy ? `Your price (${x.setBy})` : "Your price"}
-                  </StatusBadge>
+                  <span className="grid max-w-[14rem] justify-items-start gap-1">
+                    <StatusBadge tone="plain">
+                      {x.setBy ? `Your price (${x.setBy})` : "Your price"}
+                    </StatusBadge>
+                    {x.source && <SourceText source={x.source} />}
+                  </span>
                 ) : (
                   <StatusBadge tone="warn">{BLOCKED}</StatusBadge>
                 )}

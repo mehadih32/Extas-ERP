@@ -65,8 +65,11 @@ describe("the built-in price list", () => {
     );
     expect(priceListOf("openai").sourceUrl).toBe("https://developers.openai.com/api/docs/pricing");
     expect(priceListOf("google").sourceUrl).toBe("https://ai.google.dev/gemini-api/docs/pricing");
+    // Claude's page was read again on 18 October 2026 (v6.4.1 C4); no newer
+    // OpenAI or Gemini page was read, so theirs keep their day.
+    const checked = { anthropic: "2026-10-18", openai: "2026-10-16", google: "2026-10-16" };
     for (const l of PRICE_LISTS) {
-      expect(l.checkedOn, l.provider).toBe("2026-10-16");
+      expect(l.checkedOn, l.provider).toBe(checked[l.provider]);
       expect(l.models.length, l.provider).toBeGreaterThanOrEqual(5);
       expect(
         l.models.some((m) => !m.older),
@@ -149,6 +152,83 @@ describe("the built-in price list", () => {
       expect(listedModel(m.id), m.id).not.toBeNull();
       expect(listed(m.id).label).toBe(m.label);
     }
+  });
+
+  it("pins every Claude price to Claude's official price page of 18 October 2026 (v6.4.1 C4)", () => {
+    // platform.claude.com/docs/en/about-claude/pricing, read on 18 October 2026:
+    // input, output, cache hit, 5-minute cache write, batch input, batch output.
+    const page: Record<string, [string, number, number, number, number, number, number]> = {
+      "claude-fable-5-1": ["Fable 5.1", 10, 50, 0.25, 12.5, 5, 25],
+      "claude-opus-5-5": ["Opus 5.5", 4, 20, 0.2, 5, 2, 10],
+      "claude-sonnet-5-5": ["Sonnet 5.5", 2, 10, 0.1, 2.5, 1, 5],
+      "claude-haiku-5-5": ["Haiku 5.5", 0.1, 0.5, 0.01, 0.125, 0.05, 0.25],
+      "claude-fable-5": ["Fable 5", 10, 50, 1, 12.5, 5, 25],
+      "claude-opus-5": ["Opus 5", 5, 25, 0.5, 6.25, 2.5, 12.5],
+      "claude-opus-4-8": ["Opus 4.8", 5, 25, 0.5, 6.25, 2.5, 12.5],
+      "claude-opus-4-7": ["Opus 4.7", 5, 25, 0.5, 6.25, 2.5, 12.5],
+      "claude-opus-4-6": ["Opus 4.6", 5, 25, 0.5, 6.25, 2.5, 12.5],
+      "claude-opus-4-5": ["Opus 4.5", 5, 25, 0.5, 6.25, 2.5, 12.5],
+      "claude-sonnet-5": ["Sonnet 5", 2, 10, 0.2, 2.5, 1, 5],
+      "claude-sonnet-4-6": ["Sonnet 4.6", 3, 15, 0.3, 3.75, 1.5, 7.5],
+      "claude-sonnet-4-5": ["Sonnet 4.5", 3, 15, 0.3, 3.75, 1.5, 7.5],
+      "claude-haiku-4-5": ["Haiku 4.5", 1, 5, 0.1, 1.25, 0.5, 2.5],
+    };
+    const claude = priceListOf("anthropic");
+    expect(claude.sourceUrl).toBe("https://platform.claude.com/docs/en/about-claude/pricing");
+    expect(claude.checkedOn).toBe("2026-10-18");
+    expect(claude.models.map((m) => m.ref).sort()).toEqual(Object.keys(page).sort());
+    for (const m of claude.models) {
+      const [label, input, output, cacheRead, cacheWrite, batchInput, batchOutput] = page[m.ref]!;
+      expect(
+        {
+          label: m.label,
+          input: m.input,
+          output: m.output,
+          cacheRead: m.cacheRead,
+          cacheWrite: m.cacheWrite,
+          batchInput: m.batchInput,
+          batchOutput: m.batchOutput,
+        },
+        m.ref,
+      ).toEqual({ label, input, output, cacheRead, cacheWrite, batchInput, batchOutput });
+      expect(m.sourceUrl, m.ref).toBe(claude.sourceUrl);
+      expect(m.checkedOn, m.ref).toBe("2026-10-18");
+      // Writing to the 5-minute cache is 1.25 times input; batch work half price.
+      expect(m.cacheWrite, m.ref).toBeCloseTo(m.input * 1.25, 9);
+      expect(m.batchInput, m.ref).toBeCloseTo(m.input / 2, 9);
+      expect(m.batchOutput, m.ref).toBeCloseTo(m.output / 2, 9);
+      // No announced change; only Haiku 5.5 is dearer for a long prompt (every
+      // other Claude model takes its whole 1M context at the same price).
+      expect(m.next, m.ref).toBeUndefined();
+      expect(Boolean(m.long), m.ref).toBe(m.ref === "claude-haiku-5-5");
+    }
+    // A cache hit is a tenth of input, except on the newest models: a twentieth
+    // on Opus 5.5 and Sonnet 5.5, a fortieth on Fable 5.1 (the page's 0.05x and
+    // 0.025x), so $0.20 for Opus 5.5 is right, not a mistake.
+    const ratio = (ref: string) => listed(ref).cacheRead! / listed(ref).input;
+    expect(ratio("claude-opus-5-5")).toBeCloseTo(0.05, 9);
+    expect(ratio("claude-sonnet-5-5")).toBeCloseTo(0.05, 9);
+    expect(ratio("claude-fable-5-1")).toBeCloseTo(0.025, 9);
+    for (const ref of [
+      "claude-haiku-5-5",
+      "claude-opus-5",
+      "claude-sonnet-5",
+      "claude-haiku-4-5",
+    ]) {
+      expect(ratio(ref), ref).toBeCloseTo(0.1, 9);
+    }
+    // Haiku 5.5: a prompt over 100,000 tokens (not 200,000) pays 5 times every price.
+    const haiku = listed("claude-haiku-5-5");
+    expect(haiku.long).toEqual({
+      above: 100_000,
+      input: 0.5,
+      output: 2.5,
+      cacheRead: 0.05,
+      cacheWrite: 0.625,
+      batchInput: 0.25,
+      batchOutput: 1.25,
+    });
+    for (const f of PRICE_FIELDS) expect(haiku.long![f], f).toBeCloseTo(haiku[f]! * 5, 9);
   });
 
   it("records the prices exactly as the pages gave them on 16 October 2026", () => {
@@ -296,10 +376,44 @@ describe("a model with no price (A7)", () => {
     expect(priceFor(new Map(), "claude-opus-5-5")).toMatchObject({ input: 4, from: "erp" });
     expect(priceFor(new Map(), "claude-opus-4-5-20251101")).toMatchObject({ input: 5 });
     expect(priceFor(new Map(), "anthropic:claude-opus-5")).toMatchObject({ input: 5 });
-    // The owner's price is used as given: no long-prompt or dated prices.
+    // The owner's price is used as given, with no announced change of the page's.
     expect(
       costIn(owner, "claude-opus-5-5", { input: 1_000_000, output: 0, cacheWrite: 1_000_000 }).usd,
     ).toBeCloseTo(3 + 3.75, 9);
+  });
+
+  it("keeps the page's long-prompt prices under the owner's normal ones (v6.4.1 C4)", () => {
+    const plain = bookOf(["claude-haiku-5-5", { input: 0.2, output: 1 }]);
+    const own = priceFor(plain, "claude-haiku-5-5")!;
+    expect(own).toMatchObject({ input: 0.2, output: 1, from: "owner" });
+    expect(own.long).toEqual(listed("claude-haiku-5-5").long);
+    // Up to 100,000 prompt tokens the owner's price; over it the page's long one.
+    expect(costIn(plain, "claude-haiku-5-5", { input: 100_000, output: 0 }).usd).toBeCloseTo(
+      0.02,
+      9,
+    );
+    expect(costIn(plain, "claude-haiku-5-5", { input: 200_000, output: 0 }).usd).toBeCloseTo(
+      0.1,
+      9,
+    );
+    // A snapshot takes its model's owner price, long prices included.
+    expect(priceFor(plain, "claude-haiku-5-5-20261001")?.long?.above).toBe(100_000);
+    // The owner's own long-prompt prices win over the page's.
+    const long = {
+      above: 50_000,
+      input: 1,
+      output: 4,
+      cacheRead: null,
+      cacheWrite: null,
+      batchInput: null,
+      batchOutput: null,
+    };
+    const mine = bookOf(["claude-haiku-5-5", { input: 0.2, output: 1, long }]);
+    expect(priceFor(mine, "claude-haiku-5-5")?.long).toEqual(long);
+    expect(costIn(mine, "claude-haiku-5-5", { input: 60_000, output: 0 }).usd).toBeCloseTo(0.06, 9);
+    // A model with no long prices anywhere stays at one price.
+    const opus = bookOf(["claude-opus-5-5", { input: 3, output: 15 }]);
+    expect(priceFor(opus, "claude-opus-5-5")?.long).toBeUndefined();
   });
 
   it("is named plainly when blocked", () => {
@@ -329,6 +443,7 @@ describe("the price the owner sets", () => {
       cacheWrite: null,
       batchInput: "0.625",
       batchOutput: "5",
+      source: null,
     });
     expect(priceSchema.safeParse({ model: "openai:gpt-test", input: "1" }).success).toBe(false);
     expect(
@@ -371,6 +486,73 @@ describe("the price the owner sets", () => {
         cacheWrite: "",
       }),
     ).toMatchObject({ input: "0.0001", output: "0.005", cacheRead: "0.0001", cacheWrite: null });
+  });
+
+  it("keeps where a typed price came from (v6.4.1 C4)", () => {
+    const base = { model: "openai:gpt-test", input: "1", output: "2" };
+    expect(priceSchema.parse({ ...base, source: "  https://openai.com/api/pricing " }).source).toBe(
+      "https://openai.com/api/pricing",
+    );
+    // Empty: the service writes "Typed by <name> on <day>".
+    expect(priceSchema.parse({ ...base, source: "" }).source).toBeNull();
+    expect(priceSchema.safeParse({ ...base, source: "x".repeat(301) }).success).toBe(false);
+  });
+
+  it("takes long-prompt prices, and leaves them alone when none are sent (v6.4.1 C4)", () => {
+    const base = { model: "claude-haiku-5-5", input: "0.1", output: "0.5" };
+    // Not sent at all: whatever is saved stays.
+    expect(priceSchema.parse(base).long).toBeUndefined();
+    // Sent empty: back to the page's long-prompt prices.
+    const empty = {
+      longAbove: "",
+      longInput: "",
+      longOutput: "",
+      longCacheRead: "",
+      longCacheWrite: "",
+      longBatchInput: "",
+      longBatchOutput: "",
+    };
+    expect(priceSchema.parse({ ...base, ...empty }).long).toBeNull();
+    expect(
+      priceSchema.parse({
+        ...base,
+        ...empty,
+        longAbove: "100,000",
+        longInput: "0.5",
+        longOutput: "2.50",
+        longCacheRead: "0.05",
+      }).long,
+    ).toEqual({
+      above: 100_000,
+      input: "0.5",
+      output: "2.50",
+      cacheRead: "0.05",
+      cacheWrite: null,
+      batchInput: null,
+      batchOutput: null,
+    });
+    // Without a line, a model on the list takes the page's (Haiku 5.5: 100,000 tokens).
+    expect(
+      priceSchema.parse({ ...base, ...empty, longInput: "0.5", longOutput: "2.5" }).long?.above,
+    ).toBe(100_000);
+    const issues = (more: Record<string, string>, model = "claude-haiku-5-5") => {
+      const parsed = priceSchema.safeParse({ ...base, model, ...empty, ...more });
+      expect(parsed.success, JSON.stringify(more)).toBe(false);
+      return parsed.error!.issues.map((i) => [i.path.join("."), i.message]);
+    };
+    expect(issues({ longInput: "0.5" })).toEqual([
+      ["longOutput", "Give both long-prompt prices (input and output), or neither"],
+    ]);
+    expect(issues({ longInput: "0", longOutput: "2" })).toEqual([
+      ["longInput", "More than 0 dollars, like 2.50"],
+    ]);
+    // A model with no long prompts on its page needs the line given.
+    expect(issues({ longInput: "4", longOutput: "16" }, "claude-opus-5-5")).toEqual([
+      ["longAbove", "Give the prompt length the long prices start above, like 200000"],
+    ]);
+    expect(issues({ longAbove: "abc", longInput: "4", longOutput: "16" })).toEqual([
+      ["longAbove", "Tokens, a whole number like 200000"],
+    ]);
   });
 
   it("leaves a model on no price list blocked when its price is cleared, never at cost 0", () => {

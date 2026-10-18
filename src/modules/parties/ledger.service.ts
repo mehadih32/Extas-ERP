@@ -80,6 +80,65 @@ export type StatementLine = {
   balance: string;
 };
 
+type StatementRow = {
+  entryId: string;
+  date: Date;
+  number: string;
+  description: string | null;
+  sourceType: string;
+  account: string;
+  memo: string | null;
+  debit: Prisma.Decimal;
+  credit: Prisma.Decimal;
+};
+
+/** A statement's three reads, run inside getStatement's one transaction. */
+async function readStatement(
+  tx: Prisma.TransactionClient,
+  companyId: string,
+  partyId: string,
+  from: Date | undefined,
+  end: Date | undefined,
+  limit: number,
+  newest: boolean,
+) {
+  const [opening] = from
+    ? await tx.$queryRaw<Array<{ balance: Prisma.Decimal | null }>>`
+        SELECT SUM(jl.debit - jl.credit) AS balance
+        FROM "JournalLine" jl
+        JOIN "JournalEntry" je ON je.id = jl."entryId"
+        JOIN "LedgerAccount" la ON la.id = jl."accountId"
+        WHERE je."companyId" = ${companyId} AND jl."partyId" = ${partyId} AND ${subtypeFilter}
+          AND je.date < ${from}`
+    : [{ balance: ZERO }];
+
+  const where = Prisma.sql`je."companyId" = ${companyId} AND jl."partyId" = ${partyId} AND ${subtypeFilter}
+      ${from ? Prisma.sql`AND je.date >= ${from}` : Prisma.empty}
+      ${end ? Prisma.sql`AND je.date < ${end}` : Prisma.empty}`;
+  const [sums] = await tx.$queryRaw<
+    Array<{ count: bigint; debit: Prisma.Decimal | null; credit: Prisma.Decimal | null }>
+  >`
+    SELECT COUNT(*) AS count, SUM(jl.debit) AS debit, SUM(jl.credit) AS credit
+    FROM "JournalLine" jl
+    JOIN "JournalEntry" je ON je.id = jl."entryId"
+    JOIN "LedgerAccount" la ON la.id = jl."accountId"
+    WHERE ${where}`;
+  const order = newest
+    ? Prisma.sql`ORDER BY je.date DESC, je."createdAt" DESC, jl.id DESC`
+    : Prisma.sql`ORDER BY je.date ASC, je."createdAt" ASC, jl.id ASC`;
+
+  const rows = await tx.$queryRaw<StatementRow[]>`
+    SELECT je.id AS "entryId", je.date, je.number, je.description, je."sourceType"::text AS "sourceType",
+           la.name AS account, jl.memo, jl.debit, jl.credit
+    FROM "JournalLine" jl
+    JOIN "JournalEntry" je ON je.id = jl."entryId"
+    JOIN "LedgerAccount" la ON la.id = jl."accountId"
+    WHERE ${where}
+    ${order}
+    LIMIT ${limit}`;
+  return { opening, sums, rows };
+}
+
 /** The most lines a statement lists (the PDF); its totals and closing balance count every line. */
 export const STATEMENT_LIMIT = 10_000;
 
@@ -106,52 +165,12 @@ export async function getStatement(
   const party = await getPartyOrThrow(ctx, partyId);
   const companyId = ctx.company.id;
 
-  const [opening] = from
-    ? await prisma.$queryRaw<Array<{ balance: Prisma.Decimal | null }>>`
-        SELECT SUM(jl.debit - jl.credit) AS balance
-        FROM "JournalLine" jl
-        JOIN "JournalEntry" je ON je.id = jl."entryId"
-        JOIN "LedgerAccount" la ON la.id = jl."accountId"
-        WHERE je."companyId" = ${companyId} AND jl."partyId" = ${party.id} AND ${subtypeFilter}
-          AND je.date < ${from}`
-    : [{ balance: ZERO }];
-
-  const where = Prisma.sql`je."companyId" = ${companyId} AND jl."partyId" = ${party.id} AND ${subtypeFilter}
-      ${from ? Prisma.sql`AND je.date >= ${from}` : Prisma.empty}
-      ${end ? Prisma.sql`AND je.date < ${end}` : Prisma.empty}`;
-  const [sums] = await prisma.$queryRaw<
-    Array<{ count: bigint; debit: Prisma.Decimal | null; credit: Prisma.Decimal | null }>
-  >`
-    SELECT COUNT(*) AS count, SUM(jl.debit) AS debit, SUM(jl.credit) AS credit
-    FROM "JournalLine" jl
-    JOIN "JournalEntry" je ON je.id = jl."entryId"
-    JOIN "LedgerAccount" la ON la.id = jl."accountId"
-    WHERE ${where}`;
-  const order = options.newest
-    ? Prisma.sql`ORDER BY je.date DESC, je."createdAt" DESC, jl.id DESC`
-    : Prisma.sql`ORDER BY je.date ASC, je."createdAt" ASC, jl.id ASC`;
-
-  const rows = await prisma.$queryRaw<
-    Array<{
-      entryId: string;
-      date: Date;
-      number: string;
-      description: string | null;
-      sourceType: string;
-      account: string;
-      memo: string | null;
-      debit: Prisma.Decimal;
-      credit: Prisma.Decimal;
-    }>
-  >`
-    SELECT je.id AS "entryId", je.date, je.number, je.description, je."sourceType"::text AS "sourceType",
-           la.name AS account, jl.memo, jl.debit, jl.credit
-    FROM "JournalLine" jl
-    JOIN "JournalEntry" je ON je.id = jl."entryId"
-    JOIN "LedgerAccount" la ON la.id = jl."accountId"
-    WHERE ${where}
-    ${order}
-    LIMIT ${limit}`;
+  // The opening, the totals and the lines come from one snapshot of the books
+  // (repeatable read), so a posting that lands meanwhile shows in all of them or none.
+  const { opening, sums, rows } = await prisma.$transaction(
+    (tx) => readStatement(tx, companyId, party.id, from, end, limit, options.newest === true),
+    { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead, timeout: 30_000 },
+  );
   if (options.newest) rows.reverse();
 
   const openingBalance = new Prisma.Decimal(opening?.balance ?? 0);
@@ -212,11 +231,14 @@ export async function getStatement(
       /** The lines in `lines` (fewer than `transactionCount` on a very long statement). */
       listedCount: lines.length,
       /** The lines left out of `lines` (later ones, or earlier with `newest`) and their sums. */
-      notListed: {
-        count: transactionCount - lines.length,
-        debit: totalDebit.minus(listedDebit).toFixed(2),
-        credit: totalCredit.minus(listedCredit).toFixed(2),
-      },
+      notListed:
+        transactionCount > lines.length
+          ? {
+              count: transactionCount - lines.length,
+              debit: totalDebit.minus(listedDebit).toFixed(2),
+              credit: totalCredit.minus(listedCredit).toFixed(2),
+            }
+          : { count: 0, debit: "0.00", credit: "0.00" }, // never below nothing (a backstop)
     },
     lines,
     generatedAt: new Date(),

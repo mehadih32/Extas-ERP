@@ -1,5 +1,5 @@
 import type { JournalSource } from "@prisma/client";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AppError } from "@/lib/errors";
 import { nextDocumentNumber } from "@/lib/numbering";
@@ -353,6 +353,65 @@ run("ledger, statements and opening balances", () => {
     expect(note?.kind === "note" && note.text).toBe(
       "This period has 10,002 transactions. The first 10,000 are listed; the totals and the closing balance count all of them. Choose a shorter period to list the rest.",
     );
+  });
+
+  it("reads a statement's totals and lines from one moment, even while a sale posts", async () => {
+    const env = await setup();
+    const p = await buyer(env.ctx, "Moving Buyer");
+    await invoice(env, p.id, 100, "2026-02-01");
+    await invoice(env, p.id, 200, "2026-02-02");
+
+    // A sale posts (on another connection) right after the totals are read and
+    // before the lines are: both must still describe the same books.
+    let posted = false;
+    const afterTotals = async (strings: unknown) => {
+      if (posted || !Array.isArray(strings) || !strings.join(" ").includes("COUNT(*)")) return;
+      posted = true;
+      await invoice(env, p.id, 50, "2026-02-03");
+    };
+    const watch = <T extends { $queryRaw: (...a: never[]) => unknown }>(client: T) =>
+      new Proxy(client, {
+        get(target, key, receiver) {
+          const value = Reflect.get(target, key, receiver) as unknown;
+          if (key !== "$queryRaw" || typeof value !== "function") return value;
+          return async (...args: unknown[]) => {
+            const result = await (value as (...a: unknown[]) => Promise<unknown>).apply(
+              target,
+              args,
+            );
+            await afterTotals(args[0]);
+            return result;
+          };
+        },
+      });
+    // (Only the transaction is watched: a spy on the client's own raw query would
+    // also catch the transaction's queries and run them outside it.)
+    const transaction = prisma.$transaction.bind(prisma) as (...a: unknown[]) => Promise<unknown>;
+    const spies = [
+      vi
+        .spyOn(prisma, "$transaction")
+        .mockImplementation(((fn: unknown, ...rest: unknown[]) =>
+          typeof fn === "function"
+            ? transaction((tx: { $queryRaw: (...a: never[]) => unknown }) => fn(watch(tx)), ...rest)
+            : transaction(fn, ...rest)) as never),
+    ];
+    try {
+      for (const options of [{}, { newest: true }]) {
+        posted = false;
+        const st = await ledger.getStatement(env.ctx, p.id, {}, options);
+        expect(posted).toBe(true);
+        const listed = st.lines.reduce((t, l) => t + Number(l.debit), 0);
+        expect(st.summary.notListed).toEqual({ count: 0, debit: "0.00", credit: "0.00" });
+        expect(st.summary.listedCount).toBe(st.summary.transactionCount);
+        expect(Number(st.summary.totalDebit)).toBe(listed);
+        expect(st.lines.at(-1)!.balance).toBe(st.summary.closingBalance);
+      }
+    } finally {
+      for (const spy of spies) spy.mockRestore();
+    }
+    // Both sales that posted mid-read are on the next statement.
+    const after = await ledger.getStatement(env.ctx, p.id);
+    expect(after.summary).toMatchObject({ transactionCount: 4, totalDebit: "400.00" });
   });
 
   it("cuts statement periods at midnight company time (Dhaka)", async () => {

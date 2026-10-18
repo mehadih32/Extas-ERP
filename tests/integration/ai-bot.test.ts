@@ -44,6 +44,7 @@ import {
 import { addDays, localDay } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
+import { resetRateLimits } from "@/lib/rate-limit";
 import { runAiReminders } from "@/modules/ai/ai-reminders";
 import {
   getBot,
@@ -58,6 +59,7 @@ import { type BotCall, standInForBotApi } from "@/modules/ai/bot/channel";
 import { pinScrubReport } from "@/modules/ai/bot/pin-scrub";
 import { sendChat } from "@/modules/ai/chat/chat.service";
 import { setAiSwitch, setPin } from "@/modules/ai/settings.service";
+import { login, MAX_FAILED_LOGINS } from "@/modules/auth/auth.service";
 import * as costing from "@/modules/costing/costing.service";
 import { pushToBot } from "@/modules/ai/bot/push";
 import { makeAiDraft, setFollowUp } from "@/modules/ai/drafts.service";
@@ -68,7 +70,7 @@ import { createProject } from "@/modules/production/project.service";
 import { createRole } from "@/modules/rbac/role.service";
 import { getBotAction, saveTelegramAction } from "@/server/actions/bot.actions";
 
-import { addToCompany, contextFor, makeCompany, makeUser, resetDb } from "./helpers";
+import { addToCompany, contextFor, makeCompany, makeUser, PASSWORD, resetDb } from "./helpers";
 
 const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
 
@@ -675,6 +677,73 @@ run("The bot", () => {
     expect(await prisma.aiBotMessage.count({ where: { text: "[PIN]", direction: "IN" } })).toBe(2);
     // The report after an update counts only what the v6.3 wipe hid, never these PINs.
     expect(await pinScrubReport()).toMatchObject({ hidden: 0, notAfterRequest: 0 });
+  });
+
+  it("checks every unasked message with digits against the PIN, with no hourly limit, and hides the PIN even inside words (v6.4.1 B6)", async () => {
+    const api = botApi();
+    await linkOwner(env);
+    await setAiSwitch(env.owner, true);
+    await setPin(env.owner, { pin: "2468" });
+    // Many messages with digits in an hour: each is still checked.
+    for (let i = 0; i < 8; i++) await telegram(typed(OWNER_CHAT, `PO ${4500 + i} is late`));
+    expect(await prisma.aiBotMessage.count({ where: { text: "PO 4507 is late" } })).toBe(1);
+    const deletes = () => api.calls.filter((c) => c.method === "deleteMessage");
+    expect(deletes()).toHaveLength(0);
+    // The PIN on its own, and inside words: hidden each time, and never sent to the AI.
+    for (const text of ["2468", "my pin is 2468, ok?", "PIN:2468"]) {
+      const message = typed(OWNER_CHAT, text);
+      await telegram(message);
+      expect(deletes().at(-1)?.json).toMatchObject({ message_id: message.message.message_id });
+      expect(api.said(OWNER_CHAT).at(-1)).toBe(
+        "That was your PIN, so it was hidden and nothing was done. Send it only when the bot asks for it.",
+      );
+    }
+    // Digits that only hold the PIN inside a longer number are not it.
+    await telegram(typed(OWNER_CHAT, "order 124689 shipped"));
+    expect(await prisma.aiBotMessage.count({ where: { text: "order 124689 shipped" } })).toBe(1);
+    expect(await prisma.aiBotMessage.count({ where: { text: "[PIN]", direction: "IN" } })).toBe(3);
+    const pinAlone = { contains: "2468", not: { contains: "124689" } };
+    for (const where of [
+      prisma.aiChatMessage.count({ where: { text: pinAlone } }),
+      prisma.aiBotMessage.count({ where: { text: pinAlone } }),
+    ]) {
+      expect(await where).toBe(0);
+    }
+    const jobs = await prisma.backgroundJob.findMany({ where: { kind: "ai.bot.incoming" } });
+    expect(JSON.stringify(jobs.map((j) => j.payload)).replaceAll("124689", "")).not.toContain(
+      "2468",
+    );
+  });
+
+  it("unlocks the owner's sign-in when the owner writes unlock and sends the PIN, with AI off too (v6.4.1 B5)", async () => {
+    const api = botApi();
+    await linkOwner(env);
+    await setPin(env.owner, { pin: "2468" });
+    const here = { ipAddress: "198.51.100.20" };
+    const signIn = (password = PASSWORD) => login({ email: env.owner.user.email, password }, here);
+    for (let i = 0; i < MAX_FAILED_LOGINS; i++) await signIn("not-the-password").catch(() => 0);
+    resetRateLimits();
+    await expect(signIn()).rejects.toMatchObject({ code: "ACCOUNT_LOCKED" });
+
+    await telegram(typed(OWNER_CHAT, "unlock"));
+    expect(api.said(OWNER_CHAT).at(-1)).toMatch(/^Send your PIN to unlock your sign-in/);
+    await telegram(typed(OWNER_CHAT, "1357"));
+    expect(api.said(OWNER_CHAT).at(-1)).toMatch(/PIN is not right/);
+    await expect(signIn()).rejects.toMatchObject({ code: "ACCOUNT_LOCKED" });
+
+    await telegram(typed(OWNER_CHAT, "/unlock"));
+    const pin = typed(OWNER_CHAT, "2468");
+    await telegram(pin);
+    expect(api.calls.filter((c) => c.method === "deleteMessage").map((c) => c.json)).toContainEqual(
+      expect.objectContaining({ message_id: pin.message.message_id }),
+    );
+    expect(api.said(OWNER_CHAT).at(-1)).toMatch(/^Unlocked: /);
+    expect((await signIn()).token).toBeTruthy();
+    expect(
+      await prisma.auditLog.count({
+        where: { entityType: "SignInUnlock", summary: { contains: "bot" } },
+      }),
+    ).toBe(1);
   });
 
   it("hid every 4 to 8 digit bot message at the v6.3 update, and reports only those that did not follow a PIN request", async () => {

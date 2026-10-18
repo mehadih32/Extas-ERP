@@ -293,6 +293,65 @@ describe("the v6.3 restore command's secrets in shell history (G14)", () => {
   });
 });
 
+describe("the old GitHub token file on the server (v6.4.1 B3)", () => {
+  /** A copy of the code whose origin GitHub cannot be reached at (no network in the test). */
+  async function install(reachable: boolean) {
+    const repo = path.join(dir, "install");
+    const origin = path.join(dir, "origin.git");
+    const git = (...args: string[]) =>
+      new Promise<string>((resolve, reject) =>
+        execFile("git", args, (error, stdout) => (error ? reject(error) : resolve(stdout.trim()))),
+      );
+    await git("init", "-q", "-b", "main", repo);
+    await git("-C", repo, "config", "user.email", "test@example.invalid");
+    await git("-C", repo, "config", "user.name", "Test");
+    await git("-C", repo, "commit", "-q", "--allow-empty", "-m", "one");
+    if (reachable) await git("clone", "-q", "--bare", repo, origin);
+    await git(
+      "-C",
+      repo,
+      "remote",
+      "add",
+      "origin",
+      reachable ? origin : path.join(dir, "nowhere.git"),
+    );
+    const file = path.join(dir, "git-credentials");
+    await git("-C", repo, "config", "credential.helper", `store --file=${file}`);
+    await writeFile(file, "https://x-access-token:ghp_secret123@github.com\n", { mode: 0o600 });
+    await mkdir(path.join(repo, "deploy"));
+    const helper = () =>
+      git("-C", repo, "config", "--get-all", "credential.helper").catch(() => "");
+    return { repo, file, helper };
+  }
+
+  for (const reachable of [true, false]) {
+    it(`is always deleted and git stops using it (GitHub ${reachable ? "reachable" : "not reachable"} without it)`, async () => {
+      const { repo, file, helper } = await install(reachable);
+      const done = await withLib(
+        `DEPLOY_DIR="${repo}/deploy"; forget_github_token "${file}"; echo "exit $?"`,
+      );
+      expect(done.stdout).toContain("exit 0");
+      expect(existsSync(file)).toBe(false);
+      expect(await helper()).toBe("");
+      const shown = done.stdout + done.stderr;
+      expect(shown).not.toContain("ghp_secret123");
+      expect(shown).toContain("The GitHub token kept on this server is deleted");
+      if (reachable) expect(shown).not.toMatch(/could not reach GitHub/);
+      else expect(shown).toMatch(/could not reach GitHub without it/);
+      // Nothing left: nothing said.
+      const again = await withLib(`DEPLOY_DIR="${repo}/deploy"; forget_github_token "${file}"`);
+      expect(again.stdout + again.stderr).toBe("");
+    });
+  }
+
+  it("runs at every update, on the server's own file", () => {
+    const deploy = readFileSync(path.join("deploy", "deploy.sh"), "utf8");
+    expect(deploy).toMatch(/forget_github_token \|\| true/);
+    const lib = readFileSync(path.join("deploy", "lib.sh"), "utf8");
+    expect(lib).toMatch(/local file="\$\{1:-\/root\/\.extras-erp-git-credentials\}"/);
+  });
+});
+
 describe("standby after a restore on a second server (G2)", () => {
   /** Stand-ins for DNS (getent) and the web (curl): where the web address points, what answers there. */
   async function network(points: string, answers = "") {

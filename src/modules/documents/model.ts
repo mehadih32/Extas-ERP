@@ -189,7 +189,7 @@ export type PrintDocument = {
   type: PrintType | RecordPrintType;
   /** "Commercial Invoice"; empty for the blank letterhead. */
   title: string;
-  /** A line under the title ("Rahim Traders", "Brand: Extras Men"). */
+  /** A line under the title ("Rahim Traders", "Brand: Extas Men"). */
   subtitle?: string;
   /** The document number or short reference, shown in footers ("INV-2026-00042"). */
   reference?: string;
@@ -240,7 +240,7 @@ export function contentHash(
     .digest("hex");
 }
 
-/** "Extras - Invoice INV-2026-00042.pdf", without characters file systems refuse. */
+/** "Extas - Invoice INV-2026-00042.pdf", without characters file systems refuse. */
 export function documentFileName(companyName: string, label: string, ext = ".pdf"): string {
   const clean = (s: string) =>
     s

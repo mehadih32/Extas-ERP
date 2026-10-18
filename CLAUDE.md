@@ -103,8 +103,22 @@ places disagree, the newer instruction wins.
   everyone who held the old one. Re-run the seed after adding keys.
 - Secrets never go in the repo, in logs, in command lines or shell history, or in a GitHub issue. `deploy/.env` is
   never committed.
-- Infrastructure names stay "extras" (`extras_erp*` databases, `/opt/extras-erp`, `/srv/extras-erp`, the
-  `extras_session` cookie, the npm package name); everything the owner sees says "Extas ERP".
+- **Names (settled v6.4.1).** Everything the owner, staff or a buyer sees says "Extas ERP" (or the company's own
+  name). Every machine name says "extras": databases and their users (`extras_erp`, `extras_demo`,
+  `extras_erp_test*`; `extras_app`, `extras_demo_app`), folders (`/opt/extras-erp`, `/srv/extras-erp`), Docker
+  project, container, image and volume names, systemd units, cron files (`/etc/cron.d/extras-erp-*`), lock files, the
+  `extras_session` cookie and the npm package names (`extras-erp`, `extras-erp-full-check`, `extras-erp-android`). A
+  new machine name uses "extras" too. Nothing that already exists on a server, in a backup, in Google Drive, in
+  GitHub settings, on a phone or in a browser is ever renamed, so these existing "extas" names stay exactly as they
+  are: the `.extas-erp-data` marker in the data folder; the restore's `/var/log/extas-erp-restore.log`,
+  `/var/lib/extas-erp-restore` and `/run/extas-erp-restore.lock`/`.pid`; the drill's `extas_restore_test_*`
+  databases; the backup file markers `EXTASBK1`/`EXTASPK1` and the `extas-erp ...` key labels (older backups open
+  only with them); the Drive label `extas` on backup files and folders; the Docker label `extas.caddy-build`; the
+  browser keys `extas_sidebar`, `extas.hr.employees.layout`, `extas:install-dismissed` and `extas:duty-changed`; the
+  restore settings `EXTAS_RESTORE`, `EXTAS_RAW_BASE`, `EXTAS_SEARCH_ROOTS`, `EXTAS_MIN_FREE_GB` and
+  `EXTAS_SITE_BASE`; the GitHub variable `EXTAS_APP_URL`; the Android app (`com.extas.erp`, the `extas` key alias,
+  `extas-erp.jks`, the `extas-erp-android-*` downloads and its `EXTAS_*` build settings); and the `extas-erp` Azure
+  names in the restore guide.
 - Third-party integrations (couriers, website sync, WhatsApp sending, marketing sync) come last, behind settings
   that can be filled in later.
 - Tests: `TEST_DATABASE_URL=postgresql://…/extras_erp_test npx vitest run`. Without `TEST_DATABASE_URL` the
@@ -163,6 +177,8 @@ a login source after repeated failed logins, telling the owner at once. Applying
 the owner's PIN; a data correction runs after a backup, is logged and can be undone (in accounts, an adjusting entry). It
 can NEVER delete data, change roles or permissions, merge or deploy, send anything to buyers or suppliers, move
 money, or turn off backups or its own checks. Every check, finding, fix, approval and result is in its own log.
+A data correction only adds a record (a stock movement, an adjusting entry, a payment allocation); it never
+overwrites a stored total or figure.
 
 ## 8. Backups and restore (v6.4)
 
@@ -193,6 +209,15 @@ money, or turn off backups or its own checks. Every check, finding, fix, approva
   has numbered marks. The picture tests run on `main` too; the "Help pictures" workflow runs on every PR into
   `main` and every push to `main`; only the Deploy's own Checks let pictures wait. Every guide has tips and
   common mistakes; What is short points; "ফিল্টার" not "ছাঁকনি"; "সেভ" is the one word for save.
+- 2026-10-18 (v6.4.1): names settled (section 4): machine names say "extras", what people see says "Extas ERP",
+  and nothing that already exists is renamed, so the listed "extas" names stay as they are.
+- 2026-10-18 (v6.4.1): a Bug Guard correction only adds a record (a stock movement or an adjusting entry) and
+  never overwrites a stored figure; a stale stored total is a manual finding. Wrong passwords never lock an
+  account: only that address waits; the owner can unlock by an emailed link or the Telegram bot with the PIN.
+  Claude Code (Fix with Claude Code, Fix all, Ask) stays off until `main` is locked by a ruleset with no bypass.
+  Cloudflare's address list updates itself daily and a Cloudflare address is never blocked as one visitor. A
+  restore drill copy (`restore.sh --drill`) runs in test mode: no emails, bot messages, Drive backups, GitHub
+  writes or clocks.
 - 2026-10-17 (v6.4 review): Help pictures may be out of date only on Claude Code fix branches (`claude/issue-*`)
   and on `main`; Bug Guard lists those guides and every release retakes all pictures. A screen's word counts as
   explained only in a guide's `fields` list.

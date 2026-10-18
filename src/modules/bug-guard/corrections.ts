@@ -10,49 +10,52 @@ import {
   settleSuppliersOnLines,
 } from "@/modules/accounts/supplier-settlement";
 
-import { correctableField } from "./correctable";
-import type { CorrectionPlan, FieldChange, JournalLinePlan } from "./types";
+import type { CorrectionPlan, JournalLinePlan } from "./types";
 
 /*
  * A data or accounting correction, done and undone (fixes.service.ts asks for
- * the owner's PIN and a backup first). Two kinds only, and history is never
- * edited or deleted:
- *   SET      a stored total is set back to what its records add up to, only on
- *            the fields listed in correctable.ts, and only while it still shows
- *            the figure the owner saw. Undo puts the old figure back.
+ * the owner's PIN and a backup first). A correction only ever adds a proper
+ * record, the way the ERP itself corrects things; it never overwrites a stored
+ * figure and never edits or deletes history (v6.4.1 B4):
+ *   STOCK    a stock balance whose movements do not add up to it gets one
+ *            movement of the difference (type ADJUSTMENT, marked as Bug
+ *            Guard's), only while the balance and its movements are still as the
+ *            check saw them. The stock kept, and so what it is worth in the
+ *            books, does not change. Undo adds the opposite movement.
  *   JOURNAL  an adjusting journal entry (source CORRECTION), only while the
  *            mistake it puts right is still as the check saw it (its
  *            precondition, types.ts) and no other correction of it is applied.
  *            Undo reverses it. On a supplier's Payable, their bills are settled
  *            again either way, as after any voucher (supplier-settlement.ts).
+ * A stored total that is only a copy of its records (an order's total or what
+ * is paid on it, a payroll's totals, a project's cost) is never set by Bug
+ * Guard: those findings are the owner's to put right (MANUAL). An old SET
+ * correction from before v6.4.1 is neither applied nor undone.
  */
 
-const money = (v: string) => new Prisma.Decimal(v);
+/** Why an old SET correction is refused. */
+export const SET_REFUSED =
+  "Bug Guard no longer changes stored figures (v6.4.1): it corrects only with a new record, such as a stock movement or an adjusting entry. See the problem's steps.";
 
-function sameFigure(value: unknown, text: string) {
-  if (value === null || value === undefined) return false;
-  try {
-    return new Prisma.Decimal(String(value)).equals(new Prisma.Decimal(text));
-  } catch {
-    return false;
-  }
-}
+/** How Bug Guard's stock movements are marked (referenceId: the correction). */
+export const STOCK_CORRECTION_REFERENCE = "BugGuardCorrection";
+
+const money = (v: string) => new Prisma.Decimal(v);
 
 const isFigure = (text: string, kind: "int" | "decimal") =>
   kind === "int" ? /^-?\d{1,12}$/.test(text) : /^-?\d{1,12}(\.\d{1,2})?$/.test(text);
 
 /** Why a plan may not be carried out, or null when it may. */
 export function planProblem(plan: CorrectionPlan): string | null {
-  if (plan.kind === "SET") {
-    if (plan.changes.length === 0 || plan.changes.length > 50) return "It changes nothing.";
-    for (const c of plan.changes) {
-      const entry = correctableField(c.model, c.field);
-      if (!entry) return `Bug Guard may not change ${c.model}.${c.field}.`;
-      if (!isFigure(c.before, entry.kind) || !isFigure(c.after, entry.kind)) {
-        return `${c.label}: the figures are not numbers.`;
-      }
-      if (sameFigure(c.before, c.after)) return `${c.label}: nothing to change.`;
-    }
+  if (plan.kind === "SET") return SET_REFUSED;
+  if (plan.kind === "STOCK") {
+    const whole = (n: unknown) => Number.isSafeInteger(n);
+    if (!plan.balanceId || !plan.variantId || !plan.warehouseId) return "It names no stock.";
+    if (plan.grade !== "A_GRADE" && plan.grade !== "B_GRADE") return "It names no grade.";
+    if (!whole(plan.stored) || !whole(plan.moved))
+      return `${plan.label}: the pieces are not numbers.`;
+    if (plan.stored < 0) return `${plan.label}: the stock is below zero; count it first.`;
+    if (plan.stored === plan.moved) return `${plan.label}: nothing to change.`;
     return null;
   }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(plan.date)) return "The entry has no date.";
@@ -78,10 +81,20 @@ export function planProblem(plan: CorrectionPlan): string | null {
 const fmt = (v: string) =>
   new Prisma.Decimal(v).toNumber().toLocaleString("en-US", { maximumFractionDigits: 2 });
 
+const pieces = (n: number) => n.toLocaleString("en-US");
+
 /** Before → after, in Bengali, as the owner sees it. */
 export function describePlan(plan: CorrectionPlan): string {
   if (plan.kind === "SET") {
     return plan.changes.map((c) => `${c.label}: ${fmt(c.before)} → ${fmt(c.after)}`).join("\n");
+  }
+  if (plan.kind === "STOCK") {
+    const diff = plan.stored - plan.moved;
+    return [
+      `${plan.label}: আসা-যাওয়ার খাতায় ${diff > 0 ? "+" : ""}${pieces(diff)} পিসের একটি Bug Guard correction লাইন যোগ হবে`,
+      `• আসা-যাওয়ার যোগফল: ${pieces(plan.moved)} → ${pieces(plan.stored)}`,
+      `• স্টকে লেখা ${pieces(plan.stored)} পিস আর স্টকের দাম একই থাকবে`,
+    ].join("\n");
   }
   const line = (l: JournalLinePlan) =>
     `${l.account}: ${money(l.debit).isZero() ? `ক্রেডিট ${fmt(l.credit)}` : `ডেবিট ${fmt(l.debit)}`}`;
@@ -91,45 +104,45 @@ export function describePlan(plan: CorrectionPlan): string {
   ].join("\n");
 }
 
-type Delegate = {
-  findFirst: (args: unknown) => Promise<Record<string, unknown> | null>;
-  updateMany: (args: unknown) => Promise<{ count: number }>;
-};
+type StockPlan = Extract<CorrectionPlan, { kind: "STOCK" }>;
 
-function delegateOf(tx: Prisma.TransactionClient, change: FieldChange) {
-  const entry = correctableField(change.model, change.field);
-  if (!entry) throw new AppError("FORBIDDEN", `Bug Guard may not change ${change.model}.`);
-  const delegate = (tx as unknown as Record<string, Delegate>)[entry.client];
-  if (!delegate) throw new AppError("INTERNAL", `No table ${entry.client}.`);
-  return { entry, delegate };
+/** The stock kept and what its movements add up to now (in the company), or null when gone. */
+async function stockNow(db: Db, companyId: string, plan: StockPlan) {
+  const balance = await db.stockBalance.findFirst({
+    where: {
+      id: plan.balanceId,
+      companyId,
+      variantId: plan.variantId,
+      warehouseId: plan.warehouseId,
+      grade: plan.grade,
+    },
+    select: { quantity: true },
+  });
+  if (!balance) return null;
+  const moved = await db.stockMovement.aggregate({
+    where: {
+      companyId,
+      variantId: plan.variantId,
+      warehouseId: plan.warehouseId,
+      grade: plan.grade,
+    },
+    _sum: { quantity: true },
+  });
+  return { stored: balance.quantity, moved: moved._sum.quantity ?? 0 };
 }
 
-/** Sets one stored total from `from` to `to`, only while it still shows `from`. */
-async function setFigure(
-  tx: Prisma.TransactionClient,
-  companyId: string,
-  change: FieldChange,
-  from: string,
-  to: string,
-) {
-  const { entry, delegate } = delegateOf(tx, change);
-  const where = { id: change.id, ...entry.inCompany(companyId) };
-  const row = await delegate.findFirst({ where, select: { [change.field]: true } });
-  if (!row) throw new AppError("NOT_FOUND", `${change.label}: the record is not there any more.`);
-  if (!sameFigure(row[change.field], from)) {
-    throw new AppError(
-      "CONFLICT",
-      `${change.label} changed since this was prepared (now ${String(row[change.field])}): nothing was changed.`,
-    );
+/**
+ * Why a stock correction may not be made now, or null while the balance and
+ * its movements are still exactly as the check saw them (so it is never made
+ * twice, nor after the stock was put right another way).
+ */
+async function stockOutOfDate(db: Db, companyId: string, plan: StockPlan) {
+  const now = await stockNow(db, companyId, plan);
+  if (!now) return `${plan.label}: the stock line is not there any more.`;
+  if (now.stored !== plan.stored || now.moved !== plan.moved) {
+    return `${plan.label} changed since this was prepared (stock ${now.stored}, movements ${now.moved}).`;
   }
-  const value = entry.kind === "int" ? Number(to) : new Prisma.Decimal(to);
-  const done = await delegate.updateMany({
-    where: { ...where, [change.field]: row[change.field] },
-    data: { [change.field]: value },
-  });
-  if (done.count !== 1) {
-    throw new AppError("CONFLICT", `${change.label} changed just now: nothing was changed.`);
-  }
+  return null;
 }
 
 /** How an out-of-date adjusting entry is refused (and kept, as the correction's error). */
@@ -162,6 +175,7 @@ export async function journalOutOfDate(
   plan: CorrectionPlan,
   correctionId: string,
 ): Promise<string | null> {
+  if (plan.kind === "STOCK") return stockOutOfDate(db, companyId, plan);
   if (plan.kind !== "JOURNAL") return null;
   const pre = plan.precondition;
   if (!pre) return "it was prepared before Bug Guard kept what to check first. Press Fix again.";
@@ -290,8 +304,26 @@ export async function applyPlan(
 ): Promise<{ journalEntryId: string | null }> {
   const problem = planProblem(plan);
   if (problem) throw new AppError("VALIDATION", problem);
-  if (plan.kind === "SET") {
-    for (const c of plan.changes) await setFigure(tx, companyId, c, c.before, c.after);
+  if (plan.kind === "SET") throw new AppError("VALIDATION", SET_REFUSED);
+  if (plan.kind === "STOCK") {
+    // The SKU first, as every stock change locks it (the ERP's lock order).
+    await lockRow(tx, "ProductVariant", plan.variantId);
+    const stale = await stockOutOfDate(tx, companyId, plan);
+    if (stale) throw new AppError("CONFLICT", outOfDate(stale));
+    await tx.stockMovement.create({
+      data: {
+        companyId,
+        variantId: plan.variantId,
+        warehouseId: plan.warehouseId,
+        grade: plan.grade,
+        type: "ADJUSTMENT",
+        quantity: plan.stored - plan.moved,
+        referenceType: STOCK_CORRECTION_REFERENCE,
+        referenceId: by.correctionId,
+        note: `Bug Guard correction: the movements added up to ${plan.moved} pieces, not the ${plan.stored} in stock. This records the difference; the stock and its value did not change.`,
+        createdById: by.userId,
+      },
+    });
     return { journalEntryId: null };
   }
   await lockSuppliersOn(tx, companyId, plan.lines);
@@ -332,13 +364,46 @@ export async function undoPlan(
   companyId: string,
   plan: CorrectionPlan,
   applied: { journalEntryId: string | null },
-  by: { userId: string },
+  by: { userId: string; correctionId: string },
 ): Promise<{ undoJournalEntryId: string | null }> {
   if (plan.kind === "SET") {
-    // In the opposite order, so a figure changed twice ends where it began.
-    for (const c of [...plan.changes].reverse()) {
-      await setFigure(tx, companyId, c, c.after, c.before);
+    throw new AppError(
+      "VALIDATION",
+      "This old correction changed a stored figure, which Bug Guard no longer does (v6.4.1), so it is not undone from here: nothing was changed. Show it to the accountant.",
+    );
+  }
+  if (plan.kind === "STOCK") {
+    await lockRow(tx, "ProductVariant", plan.variantId);
+    const own = await tx.stockMovement.findMany({
+      where: {
+        companyId,
+        referenceType: STOCK_CORRECTION_REFERENCE,
+        referenceId: by.correctionId,
+      },
+      select: { quantity: true },
+    });
+    if (own.length !== 1) {
+      throw new AppError(
+        "CONFLICT",
+        own.length === 0
+          ? "The correction's stock movement is not there any more."
+          : "It was undone already.",
+      );
     }
+    await tx.stockMovement.create({
+      data: {
+        companyId,
+        variantId: plan.variantId,
+        warehouseId: plan.warehouseId,
+        grade: plan.grade,
+        type: "ADJUSTMENT",
+        quantity: -own[0]!.quantity,
+        referenceType: STOCK_CORRECTION_REFERENCE,
+        referenceId: by.correctionId,
+        note: "Bug Guard correction undone by the owner: the opposite movement. The stock and its value did not change.",
+        createdById: by.userId,
+      },
+    });
     return { undoJournalEntryId: null };
   }
   if (!applied.journalEntryId) throw new AppError("CONFLICT", "This correction posted no entry.");

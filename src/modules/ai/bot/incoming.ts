@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { checkRateLimit } from "@/lib/rate-limit";
 import type { RequestMeta } from "@/lib/request-meta";
 import { tenantDb } from "@/lib/tenant-db";
+import { unlockSignIn } from "@/modules/auth/auth.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { resolveCompanyAccess } from "@/modules/companies/access";
 import { readStoredFile } from "@/modules/files/file.service";
@@ -51,6 +52,8 @@ const PIN_MINUTES = 5;
 /** "bug guard", "bug guard now", "বাগ গার্ড": Bug Guard runs now. */
 const GUARD_WORDS = /^\s*(bug ?guard|বাগ ?গার্ড)(\s+(now|run|চালাও|এখন))?\s*[.!]?\s*$/i;
 const CODE = /^(?:\/start\s+)?([A-Z2-9]{8})$/;
+/** "unlock", "/unlock", "unlock sign-in", "আনলক": the owner's sign-in, with the PIN (v6.4.1 B5). */
+const UNLOCK_WORDS = /^\s*\/?(unlock( my)?( sign[- ]?in)?|আনলক)\s*[.!]?\s*$/i;
 
 const appUrl = () => (process.env.APP_URL || "http://localhost:3000").replace(/\/$/, "");
 
@@ -97,15 +100,26 @@ const LOOKS_LIKE_PIN = /^\s*\d{4,8}\s*$/;
 /** A PIN request that ran out this long ago still makes digits a (late) PIN. */
 const LATE_PIN_MINUTES = 60;
 
-/** Digits checked against the PIN when nothing asked for one, per owner and hour. */
-const STRAY_CHECKS_PER_HOUR = 5;
+/** The most numbers of one message checked against the PIN (each check takes a moment). */
+const MAX_PIN_CANDIDATES = 12;
+
+/** The numbers in a message that could be a PIN: each run of 4 to 8 digits, once. */
+export function pinCandidates(text: string): string[] {
+  const runs = text.match(/\d+/g) ?? [];
+  return [...new Set(runs.filter((r) => r.length >= 4 && r.length <= 8))].slice(
+    0,
+    MAX_PIN_CANDIDATES,
+  );
+}
 
 /**
  * Digits that are a PIN although no store waits for one now (v6.4 A5), so
  * they are hidden everywhere too: "late" when a store asked for the PIN and
- * the five minutes ran out (in the last hour), "stray" when they are the PIN
- * of a store of this chat. A few checks an hour at most, so the bot never
- * becomes a way to guess the PIN; past that, digits are words as usual.
+ * the five minutes ran out (in the last hour), "stray" when a number in the
+ * message, alone or among words, is the PIN of a store of this chat. Every
+ * message of the linked owner's own chat with digits is checked, with no
+ * hourly limit (v6.4.1 B6): only the owner's own chat gets here, and a match
+ * only hides the message.
  */
 async function hiddenPin(
   mine: AiBotLink[],
@@ -113,19 +127,20 @@ async function hiddenPin(
   now: Date,
 ): Promise<"late" | "stray" | null> {
   const text = m.text ?? "";
-  if (m.callback || !LOOKS_LIKE_PIN.test(text)) return null;
+  if (m.callback) return null;
   const since = now.getTime() - LATE_PIN_MINUTES * 60_000;
-  if (mine.some((l) => l.pending && l.pendingUntil && l.pendingUntil.getTime() > since)) {
+  if (
+    LOOKS_LIKE_PIN.test(text) &&
+    mine.some((l) => l.pending && l.pendingUntil && l.pendingUntil.getTime() > since)
+  ) {
     return "late";
   }
-  for (const link of mine) {
-    const owner = link.ownerId ?? link.id;
-    try {
-      checkRateLimit(`ai-pin-stray:${link.companyId}:${owner}`, STRAY_CHECKS_PER_HOUR, 3_600_000);
-    } catch {
-      continue;
+  const numbers = pinCandidates(text);
+  if (numbers.length === 0) return null;
+  for (const companyId of new Set(mine.map((l) => l.companyId))) {
+    for (const number of numbers) {
+      if (await pinMatches(companyId, number)) return "stray";
     }
-    if (await pinMatches(link.companyId, text.trim())) return "stray";
   }
   return null;
 }
@@ -578,6 +593,9 @@ async function wrote(mine: AiBotLink[], m: Incoming, messageId: string, pin: Pin
     );
   }
   if (!text) return;
+  if (UNLOCK_WORDS.test(storePrefix(text).rest)) {
+    return act(link, ctx, m.chatId, { kind: "unlock", companyId: link.companyId }, null, null);
+  }
   if (GUARD_WORDS.test(storePrefix(text).rest)) {
     const { guardPress } = await import("@/modules/bug-guard/bot-actions");
     return say(
@@ -662,6 +680,7 @@ async function storeOfPress(mine: AiBotLink[], press: ButtonPress) {
       });
       break;
     case "guard-run":
+    case "unlock":
       row = mine.some((l) => l.companyId === press.companyId)
         ? { companyId: press.companyId }
         : null;
@@ -727,6 +746,8 @@ async function pinNeeded(ctx: CompanyContext, press: ButtonPress): Promise<strin
       });
       return finding?.fixKind === "SECURITY" ? "take this security step" : null;
     }
+    case "unlock":
+      return "unlock your sign-in";
     case "guard-correction":
       return press.choice === "apply"
         ? "apply a data correction"
@@ -811,6 +832,13 @@ async function act(
         result = press.approve
           ? "Approved: it is deleted (cancelled) in your name."
           : "Refused: it stays.";
+        break;
+      case "unlock":
+        // Only ever with the PIN (pinNeeded), and only the bot's own owner.
+        if (pin !== PIN_CHECKED) return;
+        await unlockSignIn(ctx.user.id, "through the bot, with the PIN", m);
+        result =
+          "Unlocked: wrong passwords before now no longer slow down your sign-in. Sign in with your password.";
         break;
       case "guard":
       case "guard-run":

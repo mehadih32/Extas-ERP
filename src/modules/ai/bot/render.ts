@@ -165,7 +165,9 @@ export type ButtonPress =
   | { kind: "deletion"; requestId: string; approve: boolean }
   | { kind: "guard"; findingId: string; choice: "fix" | "ignore" | "later" }
   | { kind: "guard-run"; companyId: string }
-  | { kind: "guard-correction"; correctionId: string; choice: "apply" | "cancel" | "undo" };
+  | { kind: "guard-correction"; correctionId: string; choice: "apply" | "cancel" | "undo" }
+  /** The owner wrote "unlock" (v6.4.1 B5): never a button, so readButton never makes it. */
+  | { kind: "unlock"; companyId: string };
 
 const GUARD_CHOICE = { f: "fix", i: "ignore", l: "later" } as const;
 const CORRECTION_CHOICE = { a: "apply", x: "cancel", u: "undo" } as const;

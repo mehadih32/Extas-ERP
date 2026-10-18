@@ -111,7 +111,7 @@ export function formatRange(from: string, to: string): string {
   return from === to ? formatDay(from) : `${formatDay(from)} – ${formatDay(to)}`;
 }
 
-/** The file name a report downloads as: "Extras - Business report - 2026-09-01 to 2026-09-30.pdf". */
+/** The file name a report downloads as: "Extas - Business report - 2026-09-01 to 2026-09-30.pdf". */
 export function reportFileName(
   doc: Pick<ReportDocument, "title" | "company" | "period">,
   ext: string,

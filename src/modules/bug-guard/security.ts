@@ -1,5 +1,6 @@
 import type { PrismaClient } from "@prisma/client";
 
+import { isCloudflareAddress, visitorAddress } from "@/lib/cloudflare-ips";
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
@@ -14,11 +15,15 @@ import type { RequestMeta } from "@/lib/request-meta";
  *     after wrong passwords for several accounts from there), by itself,
  *     telling the owner at once; never the owner's own;
  *   - a blocked place still lets an active platform owner in with the right
- *     password (their account lock still applies), so the owner can never be
- *     locked out by it; the owner is told each time, and nobody else passes;
+ *     password (the wait after wrong passwords from there still applies), so
+ *     the owner can never be locked out by it; the owner is told each time,
+ *     and nobody else passes;
  *   - with the owner's PIN (fixes.service.ts): block or unblock a source, end a
  *     session (never the owner's).
  * It never changes a password, a role or a permission, and never deletes anyone.
+ * A Cloudflare address is never a place (v6.4.1 B2): behind Cloudflare's proxy
+ * many visitors share each one, so it is never blocked, by Bug Guard or with
+ * the PIN, and wrong passwords from it are never counted as one place's.
  */
 
 /** Wrong passwords from one place within the hour that get it blocked. */
@@ -108,7 +113,8 @@ export async function isKnownPlace(
 
 /** The block on a place now, if any. */
 export async function activeBlock(source: string | undefined, now: Date = new Date()) {
-  if (!source) return null;
+  // A block on a Cloudflare address (from before) would keep everyone out.
+  if (!visitorAddress(source)) return null;
   return prisma.loginBlock.findFirst({
     where: { source, liftedAt: null, blockedUntil: { gt: now } },
     orderBy: { blockedAt: "desc" },
@@ -204,6 +210,12 @@ export async function blockSource(input: {
   now?: Date;
 }) {
   const now = input.now ?? new Date();
+  if (isCloudflareAddress(input.source)) {
+    throw new AppError(
+      "VALIDATION",
+      `${input.source} is one of Cloudflare's addresses, shared by many visitors: it is never blocked.`,
+    );
+  }
   if (await activeBlock(input.source, now)) return null;
   const block = await prisma.loginBlock.create({
     data: {
@@ -287,7 +299,7 @@ export async function endSession(input: {
  * in from it (then the owner is told, and may block it with the PIN).
  */
 export async function afterFailedLogin(meta: RequestMeta, now: Date = new Date()) {
-  const source = meta.ipAddress;
+  const source = visitorAddress(meta.ipAddress);
   if (!source) return;
   try {
     const failures = await prisma.auditLog.count({
@@ -354,7 +366,7 @@ export async function afterLogin(
   meta: RequestMeta,
   now: Date = new Date(),
 ): Promise<boolean> {
-  const source = meta.ipAddress;
+  const source = visitorAddress(meta.ipAddress);
   if (!source || user.isSuperAdmin) return false;
   try {
     const tried = await prisma.auditLog.groupBy({

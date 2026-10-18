@@ -516,7 +516,7 @@ export function bookingBookDocument(
       title: "Order summary",
       label: "Order summary",
       subtitle:
-        "Each style has a code (A, B...) and each of its colours one too (A-01, A-02...): the fabric and trims parts use them.",
+        "Each style has a code (A, B and so on) and each of its colours one too (A-01, A-02 and so on): the fabric and trims parts use them.",
     },
     ...orderBlocks(data),
     ...parts.flatMap((p) => p.blocks),

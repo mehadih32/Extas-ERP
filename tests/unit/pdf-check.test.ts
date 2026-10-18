@@ -1,5 +1,5 @@
 import PDFDocument from "pdfkit";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -173,5 +173,32 @@ describe("The Full check's look at the ERP's PDFs", () => {
     );
     expect(body).not.toContain("Rahim");
     expect(body).not.toContain("25,27");
+  });
+});
+
+describe("Printed words never look like a cut figure", () => {
+  it('has no digit followed by "..." or "…" in the text the ERP prints', () => {
+    // The Full check flags a digit then "…" or "..." as a figure cut short, so prose
+    // writes "A-01, A-02 and so on" instead. Only code that cuts text on purpose may.
+    const root = path.resolve(__dirname, "../..");
+    const files = (dir: string): string[] =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+        e.isDirectory()
+          ? files(path.join(dir, e.name))
+          : /\.(ts|tsx)$/.test(e.name)
+            ? [path.join(dir, e.name)]
+            : [],
+      );
+    const found = files(path.join(root, "src/modules"))
+      .filter((f) => !f.includes(`${path.sep}help${path.sep}`))
+      .flatMap((file) =>
+        readFileSync(file, "utf8")
+          .split("\n")
+          .map((line, i) => ({ line, at: `${path.relative(root, file)}:${i + 1}` }))
+          // Words in quotes: a letter or space before the digit, so ids and code are left out.
+          .filter(({ line }) => /["`][^"`]*[A-Za-z ][^"`]*\d(?:\.\.\.|…)[^"`]*["`]/.test(line))
+          .map(({ at }) => at),
+      );
+    expect(found).toEqual([]);
   });
 });

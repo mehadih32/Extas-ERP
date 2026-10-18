@@ -880,7 +880,7 @@ const DRAW: Record<GuidePicture, (s: Scene) => void> = {
     s.text("!", 123, 71, { size: 9, bold: true });
     para(
       s,
-      `The host key is not cached for this server: ${EXAMPLE_IP} (port 22). You have no guarantee that the server is the computer you think it is. The server's ssh-ed25519 key fingerprint is: ssh-ed25519 255 SHA256:Xq3...`,
+      `The host key is not cached for this server: ${EXAMPLE_IP} (port 22). You have no guarantee that the server is the computer you think it is. The server's ssh-ed25519 key fingerprint is: ssh-ed25519 255 SHA256:Xq3Fh8kT2pWm9vLrB4nYcJ6dQe1sZaUo7HgK0iMtVxE`,
       148,
       62,
       345,

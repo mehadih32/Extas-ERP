@@ -515,6 +515,8 @@ describe("the guide and the restore command's own words (v6.4.1 restore)", () =>
       "stopped: ... does not point to this server yet",
       // An earlier restore cut off half-way, settled at the start of this one (v6.4.1 review 3).
       "A restore was cut off before it finished",
+      // Its ERP did not start, said loudly (v6.4.1 review 4).
+      "PROBLEM: the ERP is NOT running",
     ]) {
       const message = OTHER_MESSAGES.find((m) => m.shown === shown);
       expect(message, shown).toBeDefined();

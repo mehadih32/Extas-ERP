@@ -159,6 +159,9 @@ if [ -n "$pending" ]; then
   say "The new version passed its check: opening the ERP to its users again"
   compose up -d caddy
 fi
+# A restore cut off earlier whose ERP did not start then (its mark stayed, above): the
+# ERP runs now, and the owner is told so.
+[ ! -f "$DATA_DIR/backups/.restore-running" ] || settle_cut_restore || true
 
 # Backups: the monthly restore drill's temporary database, Restore from the Backups
 # screen, locking the settings when the backup key changes, clearing safety copies

@@ -508,16 +508,15 @@ export function FinishingReports({
   const canDelete = can.deleteReports && !screen.cmSettlement;
   return (
     <Panel title="Finishing reports" id="finishing-reports-heading">
-      {screen.cmSettlement &&
-        can.deleteReports &&
-        reports.some((r) => r.kind !== "PACKING_LIST") && (
-          <div className="mt-3">
-            <CmSettledNotice
-              settlement={screen.cmSettlement}
-              what="Counts and mending returns stay"
-            />
-          </div>
-        )}
+      {screen.cmSettlement && can.deleteReports && (
+        <div className="mt-3">
+          <CmSettledNotice
+            settlement={screen.cmSettlement}
+            from="this style's finishing"
+            what="no finishing count, mending return or packing list can be added, and no count or mending return deleted,"
+          />
+        </div>
+      )}
       {reports.length === 0 ? (
         <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
           No finishing counts yet. Each count grades pieces A, B or C (mending), with rejects apart.

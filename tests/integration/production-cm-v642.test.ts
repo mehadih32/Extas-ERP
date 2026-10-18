@@ -375,9 +375,10 @@ run("v6.4.2: the CM settlement's money rules", () => {
   });
 
   it("keeps the cutting, finishing and CM a saved settlement stands on until it is undone", async () => {
+    // 48 of the 50 S counted: two are left to count.
     await finishing.createFinishingCount(env.store, env.polo.id, {
       lines: [
-        { colorName: "Navy", sizeName: "S", a: 48, b: 0, c: 2, reject: 0 },
+        { colorName: "Navy", sizeName: "S", a: 46, b: 0, c: 2, reject: 0 },
         { colorName: "Navy", sizeName: "M", a: 50, b: 0, c: 0, reject: 0 },
       ],
     });
@@ -395,6 +396,9 @@ run("v6.4.2: the CM settlement's money rules", () => {
     expect(cut.cmSettlement).toMatchObject({ number: made.number, batchId: env.batch.id });
     const fin = await finishing.getFinishingScreen(env.pm, env.polo.id);
     expect(fin.cmSettlement?.number).toBe(made.number);
+    // The screens offer nothing to add while it stands.
+    expect([cut.can.record, cut.can.cut]).toEqual([true, false]);
+    expect([fin.can.count, fin.can.mend, fin.can.receive]).toEqual([false, false, false]);
     const first = `Undo the CM settlement first: ${made.number} for ${env.batch.code}`;
     const noCut = await expectAppError(
       cutting.deleteCuttingReport(env.pm, cut.reports[0]!.id),
@@ -408,6 +412,22 @@ run("v6.4.2: the CM settlement's money rules", () => {
     expect(noMend.message).toContain(first);
     const count = fin.reports.find((r) => r.kind === "COUNT")!;
     await expectAppError(finishing.deleteFinishingReport(env.store, count.id), "CONFLICT");
+    // Nothing is added under it either: no new cutting, count, mending return or packing list.
+    const oneMoreCut = { lines: [{ colorName: "Navy", sizeName: "S", quantity: 1 }] };
+    const oneMoreCount = {
+      lines: [{ colorName: "Navy", sizeName: "S", a: 1, b: 0, c: 0, reject: 0 }],
+    };
+    const oneMoreMended = { lines: [{ colorName: "Navy", sizeName: "S", a: 1, b: 0, reject: 0 }] };
+    for (const adding of [
+      () => cutting.createCuttingReport(env.pm, env.polo.id, oneMoreCut),
+      () => finishing.createFinishingCount(env.store, env.polo.id, oneMoreCount),
+      () => finishing.backFromMending(env.store, env.polo.id, oneMoreMended),
+      () => finishing.receivePackingList(env.pm, env.polo.id, {}),
+    ]) {
+      expect((await expectAppError(adding(), "CONFLICT")).message).toContain(first);
+    }
+    expect(await prisma.cuttingReport.count({ where: { projectId: env.polo.id } })).toBe(1);
+    expect(await prisma.finishingReport.count({ where: { projectId: env.polo.id } })).toBe(2);
     const noCm = await expectAppError(
       contracts.updateContract(env.pm, agreement.id, {
         clauses,
@@ -428,8 +448,13 @@ run("v6.4.2: the CM settlement's money rules", () => {
 
     // Undone, they can change again.
     await batchMoney.undoCmSettlement(env.pm, made.id, { reason: "Mending entered twice" });
-    expect((await cutting.getCuttingScreen(env.pm, env.polo.id)).cmSettlement).toBeNull();
+    const reopened = await cutting.getCuttingScreen(env.pm, env.polo.id);
+    expect([reopened.cmSettlement, reopened.can.cut]).toEqual([null, true]);
+    expect((await finishing.getFinishingScreen(env.pm, env.polo.id)).can.count).toBe(true);
     await finishing.deleteFinishingReport(env.store, mended.id);
+    await finishing.createFinishingCount(env.store, env.polo.id, oneMoreCount);
+    await finishing.backFromMending(env.store, env.polo.id, oneMoreMended);
+    await cutting.createCuttingReport(env.pm, env.polo.id, oneMoreCut);
     await contracts.updateContract(env.pm, agreement.id, {
       clauses,
       cmRates: [{ projectId: env.polo.id, cmRate: 95 }],

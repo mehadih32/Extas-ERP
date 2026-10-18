@@ -23,10 +23,11 @@ import {
 } from "@/modules/reports/document";
 
 /*
- * The PDF version of a report: A4 portrait, the company's name and details on
- * top, each section with its headline figures as cards and its tables (numbers
- * right-aligned, header repeated on every page, totals in bold), and a footer
- * with the page number on every page.
+ * The PDF version of a report: A4 portrait, the company's logo, name, details
+ * and registration numbers (BIN, trade licence) on top, each section with its
+ * headline figures as cards and its tables (numbers right-aligned, header
+ * repeated on every page, totals in bold), and a footer with the page number
+ * on every page.
  *
  * Text is placed line by line at exact positions (never through pdfkit's own
  * wrapping), so a long name is cut with "…" instead of spilling over, and no
@@ -50,6 +51,16 @@ const INK = "#1F2933";
 const MUTED = "#6B7280";
 const RULE = "#9AA5A0";
 const ZEBRA = "#F4F6F5";
+
+/** The most room the company's logo takes, beside its name. */
+const LOGO_BOX = { width: 110, height: 44 };
+
+/** pdfkit's opened image (its type definitions leave openImage out). */
+type OpenedImage = { width: number; height: number; orientation?: number };
+type PdfImages = {
+  openImage(src: Buffer): OpenedImage;
+  image(src: OpenedImage, x: number, y: number, options: { width: number; height: number }): void;
+};
 
 const ROW = 14;
 const HEADER_ROW = 16;
@@ -79,6 +90,7 @@ class Writer {
   constructor(
     private readonly doc: PDFKit.PDFDocument,
     private readonly report: ReportDocument,
+    private readonly logo: Buffer | null = null,
   ) {
     this.primary = safeHex(report.company.primaryColor, "#0B3D2E");
     this.currency = report.company.currency;
@@ -140,24 +152,44 @@ class Writer {
 
   // --- Page parts -----------------------------------------------------------
 
-  /** Company details on the left, the report's title and period on the right. */
+  /**
+   * The company's logo, then its name and details, on the left; the report's
+   * title and period on the right.
+   */
   header() {
     const { company } = this.report;
     const left = WIDTH * 0.55;
     const right = WIDTH - left - 10;
     const rx = MARGIN.left + left + 10;
+    const logo = this.drawLogo();
+    const nameX = MARGIN.left + (logo ? logo.width + 10 : 0);
+    const nameWidth = left - (nameX - MARGIN.left);
     let ly = MARGIN.top;
-    this.line(company.name, MARGIN.left, ly, left, { font: BOLD, size: 16, color: this.primary });
+    // A long name gets smaller (down to 11 pt) before it is cut.
+    let nameSize = 16;
+    while (
+      nameSize > 11 &&
+      textWidth(this.doc, company.name, { font: BOLD, size: nameSize }) > nameWidth
+    ) {
+      nameSize -= 0.5;
+    }
+    this.line(company.name, nameX, ly, nameWidth, {
+      font: BOLD,
+      size: nameSize,
+      color: this.primary,
+    });
     ly += 21;
     const details = [
       company.legalName && company.legalName !== company.name ? company.legalName : null,
       company.address,
       [company.phone, company.email, company.website].filter(Boolean).join("  ·  ") || null,
+      ...(company.registrations ?? []),
     ].filter((d): d is string => Boolean(d));
     for (const d of details) {
-      this.line(d, MARGIN.left, ly, left, { size: 8, color: MUTED });
+      this.line(d, nameX, ly, nameWidth, { size: 8, color: MUTED });
       ly += 11;
     }
+    if (logo) ly = Math.max(ly, MARGIN.top + logo.height);
 
     let ry = MARGIN.top + 2;
     this.line(this.report.title, rx, ry, right, { font: BOLD, size: 13, align: "right" });
@@ -180,6 +212,28 @@ class Writer {
     this.y = Math.max(ly, ry) + 6;
     this.rule(this.y, this.primary, 1.6);
     this.y += 14;
+  }
+
+  /**
+   * The logo at the top left, scaled into its box; its size, or null when there
+   * is none or the image cannot be read (the report then prints without it).
+   */
+  private drawLogo(): { width: number; height: number } | null {
+    if (!this.logo) return null;
+    try {
+      // Always a Buffer: given a string, pdfkit would read it as a file path.
+      const images = this.doc as unknown as PdfImages;
+      const image = images.openImage(this.logo);
+      const rotated = (image.orientation ?? 1) > 4;
+      const width = rotated ? image.height : image.width;
+      const height = rotated ? image.width : image.height;
+      const scale = Math.min(LOGO_BOX.width / width, LOGO_BOX.height / height);
+      const size = { width: width * scale, height: height * scale };
+      images.image(image, MARGIN.left, MARGIN.top, size);
+      return size;
+    } catch {
+      return null;
+    }
   }
 
   /** Company, report and period on the left; "Page 2 of 5" on the right, on every page. */
@@ -388,10 +442,13 @@ class Writer {
   }
 }
 
-/** The report as a PDF file. `compress: false` keeps the page text readable (tests). */
+/**
+ * The report as a PDF file, with the company's logo when given. `compress: false`
+ * keeps the page text readable (tests).
+ */
 export async function renderPdf(
   report: ReportDocument,
-  options: { compress?: boolean } = {},
+  options: { compress?: boolean; logo?: Buffer | null } = {},
 ): Promise<Buffer> {
   const doc = await createPdf({
     size: "A4",
@@ -408,7 +465,7 @@ export async function renderPdf(
     },
   });
   const done = collectPdf(doc);
-  const writer = new Writer(doc, report);
+  const writer = new Writer(doc, report, options.logo ?? null);
   writer.header();
   for (const section of report.sections) writer.section(section);
   writer.footers();

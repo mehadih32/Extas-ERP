@@ -11,6 +11,7 @@ import { assertAllowed } from "@/lib/verdict";
 import { PERIOD_PRESETS, resolvePeriod } from "@/modules/accounts/periods";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
+import { loadPrintLogo } from "@/modules/companies/logo.service";
 import { deleteStoredFile, readStoredFile, writeGeneratedFile } from "@/modules/files/file.service";
 import {
   buildReport,
@@ -247,9 +248,13 @@ async function loadVisibleExport(ctx: CompanyContext, exportId: string): Promise
   return row;
 }
 
-async function renderFile(doc: ReportDocument, format: ReportFormat) {
+async function renderFile(companyId: string, doc: ReportDocument, format: ReportFormat) {
   const { mimeType, ext } = FORMATS[format];
-  const bytes = format === "PDF" ? await renderPdf(doc) : renderExcel(doc);
+  // The PDF carries the company's logo (when one is set and its file checks out).
+  const bytes =
+    format === "PDF"
+      ? await renderPdf(doc, { logo: (await loadPrintLogo(companyId))?.bytes ?? null })
+      : renderExcel(doc);
   return { bytes, mimeType, ext, fileName: reportFileName(doc, ext) };
 }
 
@@ -293,7 +298,7 @@ export async function generateReport(
   let stored: { storagePath: string } | null = null;
   try {
     const doc = await buildReport(ctx, request, now);
-    const file = await renderFile(doc, input.format);
+    const file = await renderFile(ctx.company.id, doc, input.format);
     const saved = await writeGeneratedFile(ctx.company.id, "reports", `.${file.ext}`, file.bytes);
     stored = saved;
     const row = await prisma.$transaction(async (tx) => {

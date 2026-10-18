@@ -24,6 +24,7 @@ import { renderExcel } from "@/modules/reports/render/excel";
 import { pdfText, renderPdf } from "@/modules/reports/render/pdf";
 import { generateReportSchema, reportQuerySchema } from "@/modules/reports/schemas";
 
+import { png } from "../fixtures/images";
 import { pdfLines } from "../fixtures/pdf";
 
 /** The `can` of a person holding a built-in role's default permissions. */
@@ -312,6 +313,26 @@ describe("PDF writer", () => {
     const small = await renderPdf(sampleReport());
     expect(small.length).toBeLessThan(pdf.length);
     expect(small.subarray(0, 5).toString("latin1")).toBe("%PDF-");
+  });
+});
+
+describe("report PDF letterhead (v6.4.1 review 3)", () => {
+  it("draws the logo and the registration numbers, and prints without a logo it cannot read", async () => {
+    const report = sampleReport();
+    report.company.registrations = ["BIN: 000123456-0101", "Trade licence: TRAD/DNCC/123"];
+    const withLogo = await renderPdf(report, {
+      compress: false,
+      logo: png({ width: 300, height: 100, colorType: 2 }),
+    });
+    expect(withLogo.toString("latin1")).toContain("/Subtype /Image");
+    const lines = pdfLines(withLogo);
+    expect(lines).toContain("BIN: 000123456-0101");
+    expect(lines).toContain("Trade licence: TRAD/DNCC/123");
+    expect(lines).toContain("Extras");
+    // A broken image file is left out; the report still prints.
+    const broken = await renderPdf(report, { compress: false, logo: Buffer.from("not a png") });
+    expect(broken.toString("latin1")).not.toContain("/Subtype /Image");
+    expect(pdfLines(broken)).toContain("Business report");
   });
 });
 

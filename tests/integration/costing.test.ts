@@ -336,11 +336,55 @@ run("Order costing", () => {
       });
     }
 
-    // No upper limit: 200% is kept (the most a sheet holds is 999.99%).
-    const { id } = await costing.createCosting(env.merch, SHEET(env, { profitPercent: "200" }));
-    expect((await costing.getCosting(env.merch, id)).profitPercent).toBe(200);
-    await costing.setProfitPercent(env.merch, id, { percent: "350" });
-    expect((await costing.getCosting(env.merch, id)).profitPercent).toBe(350);
+    // No fixed upper limit, but the profit and the percent lines come off the price, so
+    // together they stay under 100%: a sheet that leaves no price is never saved.
+    const noPrice =
+      "200% profit plus 1.15% off the price (source tax, bank charges and commission) is 201.15% of the price, which leaves no price. Did you mean 200% on cost? That is 66.67% of the price.";
+    await expect(
+      costing.createCosting(env.merch, SHEET(env, { profitPercent: "200" })),
+    ).rejects.toThrow(noPrice);
+    const viaScreenHigh = await createCostingAction(SHEET(env, { profitPercent: "200" }));
+    expect(viaScreenHigh).toMatchObject({
+      ok: false,
+      error: { code: "VALIDATION", message: noPrice, fieldErrors: { profitPercent: [noPrice] } },
+    });
+    await expect(
+      costing.createCosting(
+        env.merch,
+        SHEET(env, { profitPercent: "200", sourceTaxPercent: "", bankChargePercent: "" }),
+      ),
+    ).rejects.toThrow(
+      "200% of the price leaves no price. Did you mean 200% on cost? That is 66.67% of the price.",
+    );
+    // 98.85% and the 1.15% of lines make exactly 100%: no price either.
+    await expect(
+      costing.createCosting(env.merch, SHEET(env, { profitPercent: "98.85" })),
+    ).rejects.toThrow(/is 100% of the price, which leaves no price/);
+    const { id } = await costing.createCosting(env.merch, SHEET(env, { profitPercent: "66.67" }));
+    expect((await costing.getCosting(env.merch, id)).profitPercent).toBe(66.67);
+    await costing.setProfitPercent(env.merch, id, { percent: "90" });
+    expect((await costing.getCosting(env.merch, id)).profitPercent).toBe(90);
+    // The profit alone (the sheet, or Apply on a chat card), and the percent lines changed.
+    await expect(costing.setProfitPercent(env.merch, id, { percent: "350" })).rejects.toThrow(
+      "350% profit plus 1.15% off the price (source tax, bank charges and commission) is 351.15% of the price, which leaves no price. Did you mean 350% on cost? That is 77.78% of the price.",
+    );
+    await expect(
+      costing.updateCosting(
+        env.merch,
+        id,
+        SHEET(env, { profitPercent: "90", commissionPercent: "10" }),
+      ),
+    ).rejects.toThrow(/is 101.15% of the price, which leaves no price/);
+    await expect(
+      costing.updateCosting(
+        env.merch,
+        id,
+        SHEET(env, { profitPercent: "", sourceTaxPercent: "50", bankChargePercent: "50" }),
+      ),
+    ).rejects.toThrow(
+      "Source tax, bank charges and commission come to 100% of the price, which leaves no price. Lower them.",
+    );
+    expect((await costing.getCosting(env.merch, id)).profitPercent).toBe(90);
     await expect(costing.setProfitPercent(env.merch, id, { percent: "9.5" })).rejects.toThrow(
       /at least 10%/,
     );
@@ -349,6 +393,10 @@ run("Order costing", () => {
     );
     await costing.setProfitPercent(env.merch, id, { percent: "10" });
     expect((await costing.getCosting(env.merch, id)).profitNote).toBeNull();
+    // A sheet saved with no price before this rule stays as it is.
+    await prisma.orderCosting.update({ where: { id }, data: { profitPercent: 200 } });
+    expect((await costing.getCosting(env.merch, id)).profitPercent).toBe(200);
+    await costing.setProfitPercent(env.merch, id, { percent: "10" });
 
     // A sheet saved at 8% before the rule keeps its 8% and shows a note.
     const stored = async () =>

@@ -14,6 +14,7 @@ import {
   PROFIT_MAX_STORED,
   PROFIT_MIN_MESSAGE,
   PROFIT_MIN_PERCENT,
+  noPriceLeft,
   profitUnderMinimum,
   profitUnderMinimumNote,
   TRADE_PAYMENTS,
@@ -247,6 +248,22 @@ function assertProfitReachesMinimum(costing: {
   throw new AppError("VALIDATION", message, { profitPercent: [PROFIT_MIN_MESSAGE] });
 }
 
+/**
+ * A save never leaves a sheet with no price: the profit % and the percent
+ * lines together stay under 100% of the price. A sheet saved so before this
+ * rule stays as it is until it is next edited.
+ */
+function assertLeavesAPrice(profit: number | null, lines: number[]) {
+  const message = noPriceLeft(
+    profit,
+    lines.reduce((a, b) => a + b, 0),
+  );
+  if (!message) return;
+  throw new AppError("VALIDATION", message, {
+    [profit === null ? "sourceTaxPercent" : "profitPercent"]: [message],
+  });
+}
+
 const dayOf = (day: string | null) => (day ? new Date(`${day}T00:00:00.000Z`) : null);
 
 // ---------------------------------------------------------------- the sheet
@@ -254,6 +271,11 @@ const dayOf = (day: string | null) => (day ? new Date(`${day}T00:00:00.000Z`) : 
 export async function createCosting(ctx: CompanyContext, raw: unknown, meta?: RequestMeta) {
   assertManage(ctx);
   const input = costingSchema.parse(raw);
+  assertLeavesAPrice(input.profitPercent, [
+    input.sourceTaxPercent,
+    input.bankChargePercent,
+    input.commissionPercent,
+  ]);
   const { buyer } = await checkLinks(ctx, input);
   if (input.currency !== ctx.company.currency && input.exchangeRate === null) {
     throw new AppError(
@@ -318,6 +340,11 @@ export async function updateCosting(
   assertManage(ctx);
   const costing = await loadCosting(ctx, costingId);
   const input = costingSchema.parse(raw);
+  assertLeavesAPrice(input.profitPercent, [
+    input.sourceTaxPercent,
+    input.bankChargePercent,
+    input.commissionPercent,
+  ]);
   await checkLinks(ctx, input);
   if (input.currency !== ctx.company.currency && input.exchangeRate === null) {
     throw new AppError(
@@ -484,6 +511,11 @@ export async function setProfitPercent(
   assertManage(ctx);
   const costing = await loadCosting(ctx, costingId);
   const { percent } = profitPercentSchema.parse(raw);
+  assertLeavesAPrice(percent, [
+    Number(costing.sourceTaxPercent),
+    Number(costing.bankChargePercent),
+    Number(costing.commissionPercent),
+  ]);
   await ctx.db.orderCosting.update({
     where: { id: costing.id },
     data: { profitPercent: new Prisma.Decimal(percent.toFixed(2)) },

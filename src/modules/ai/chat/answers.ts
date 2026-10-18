@@ -6,12 +6,12 @@ import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
 import type { CompanyContext } from "@/modules/auth/context";
 import {
+  noPriceLeft,
   profitBothWays,
   PROFIT_MAX_MESSAGE,
   PROFIT_MAX_STORED,
   PROFIT_MIN_MESSAGE,
   PROFIT_MIN_PERCENT,
-  shareOfPrice,
 } from "@/modules/costing/costing-labels";
 import { orderCheck } from "@/modules/costing/costing.service";
 import { readStoredFile } from "@/modules/files/file.service";
@@ -503,7 +503,15 @@ async function profitSet(
   if (!ctx.can("costing.manage")) return reply("Changing costing sheets is not part of your role.");
   const sheet = await ctx.db.orderCosting.findFirst({
     where: { number: contains(ref) },
-    select: { id: true, number: true, title: true, profitPercent: true },
+    select: {
+      id: true,
+      number: true,
+      title: true,
+      profitPercent: true,
+      sourceTaxPercent: true,
+      bankChargePercent: true,
+      commissionPercent: true,
+    },
   });
   if (!sheet) return reply(`I found no costing sheet numbered "${ref}".`);
   const said = onCost === undefined ? "" : `${onCost}% on cost is ${percent}% of price. `;
@@ -513,13 +521,20 @@ async function profitSet(
       `${said}${percent < PROFIT_MIN_PERCENT ? PROFIT_MIN_MESSAGE : PROFIT_MAX_MESSAGE}`,
     );
   }
-  // 100% of the price or more leaves no price: he likely meant it on the cost.
-  const meant =
-    percent >= 100
-      ? ` If you meant ${percent}% on cost, say "${sheet.number} ${percent}% on cost" (${Number(shareOfPrice(percent).toFixed(2))}% of price).`
-      : "";
+  // A profit that leaves the sheet no price is never offered (the server refuses it too).
+  const noPrice = noPriceLeft(
+    percent,
+    Number(sheet.sourceTaxPercent) +
+      Number(sheet.bankChargePercent) +
+      Number(sheet.commissionPercent),
+  );
+  if (noPrice) {
+    return reply(
+      `${said}${noPrice}${onCost === undefined ? ` Say "${sheet.number} ${percent}% on cost" for that.` : ""}`,
+    );
+  }
   return reply(
-    `${said}Press Apply to set the profit of ${sheet.number} to ${profitBothWays(percent)}.${meant}`,
+    `${said}Press Apply to set the profit of ${sheet.number} to ${profitBothWays(percent)}.`,
     {
       type: "change",
       action: "profit.set",

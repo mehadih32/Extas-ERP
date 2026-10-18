@@ -297,6 +297,24 @@ PY
   return "$status"
 }
 
+# Bug Guard once on the live ERP after an update (deploy.sh, D5): leaves a request
+# in the backups folder ($1), which the ERP's clock takes within a minute
+# (src/modules/bug-guard/after-deploy.ts). It checks every company, only reading,
+# and asks GitHub for a new Full check; its report goes to the ERP's inbox and to
+# Telegram. This waits up to $2 seconds for the ERP to take the request, never for
+# the result, so the update is not held up. 0: taken; 1: not taken (yet).
+ask_check_after_deploy() {
+  local wait="${2:-180}" request="$1/bug-guard-after-deploy.json" deadline
+  printf '{"requestedAt": "%s"}\n' "$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)" >"$request.new" || return 1
+  chown "$APP_UID:$APP_UID" "$request.new" 2>/dev/null || true
+  mv -f "$request.new" "$request" || return 1
+  deadline=$(($(date +%s) + wait))
+  while [ -e "$request" ]; do
+    [ "$(date +%s)" -lt "$deadline" ] || return 1
+    sleep "${BUG_GUARD_POLL:-5}"
+  done
+}
+
 # Ends the standby a restore left on a second server (G2: DATA_DIR/backups/.standby,
 # which the app reads, src/modules/backups/standby.ts) once this ERP's web address is
 # typed ($1 the backups folder, $2 the web address). Its clocks then start within a minute.

@@ -73,7 +73,9 @@ export async function reportRun(runId: string, freshIds: string[]) {
   });
   open.sort((a, b) => ORDER[a.severity] - ORDER[b.severity]);
   const checks = (run.checks as unknown as CheckResult[]) ?? [];
+  const afterUpdate = run.trigger === "AFTER_DEPLOY";
   const input: SummaryInput = {
+    afterUpdate,
     company: run.company.name,
     at: run.finishedAt ?? run.startedAt,
     checked: checks.length,
@@ -82,14 +84,19 @@ export async function reportRun(runId: string, freshIds: string[]) {
     fixedCount: run.fixedCount,
     open,
     note: run.fullCheckRunId
-      ? "সব স্ক্রিন, পিডিএফ ও লেআউটের Full check GitHub-এ চলছে; শেষ হলে নতুন কিছু পেলে আলাদা করে জানাব।"
-      : null,
+      ? afterUpdate
+        ? "সব স্ক্রিন, পিডিএফ ও লেআউটের Full check GitHub-এ চলছে; শেষ হলে ফল আলাদা করে জানাব।"
+        : "সব স্ক্রিন, পিডিএফ ও লেআউটের Full check GitHub-এ চলছে; শেষ হলে নতুন কিছু পেলে আলাদা করে জানাব।"
+      : afterUpdate && run.note
+        ? `Full check এবার চলেনি: ${run.note}`
+        : null,
   };
   const body = summaryText(input, appUrl());
   const subject =
-    run.urgent + run.important === 0
-      ? "Bug Guard: সব ঠিক আছে"
-      : `Bug Guard: জরুরি ${run.urgent}, গুরুত্বপূর্ণ ${run.important}`;
+    (afterUpdate ? "Bug Guard after the update: " : "Bug Guard: ") +
+    (run.urgent + run.important === 0
+      ? "সব ঠিক আছে"
+      : `জরুরি ${run.urgent}, গুরুত্বপূর্ণ ${run.important}`);
   await tell(run.companyId, subject, body, run.id);
   await sendItems(run.companyId, freshIds);
   await prisma.bugGuardRun.update({ where: { id: run.id }, data: { reportSentAt: new Date() } });
@@ -98,9 +105,17 @@ export async function reportRun(runId: string, freshIds: string[]) {
   });
 }
 
-/** When the Full check a run asked for reports back: only if it found or cleared something. */
-export async function reportFullCheck(runId: string, freshIds: string[], cleared: number) {
-  if (freshIds.length === 0 && cleared === 0) return;
+/**
+ * When the Full check a run asked for reports back: only if it found or cleared
+ * something, or `always` (the check after an update says how it ended).
+ */
+export async function reportFullCheck(
+  runId: string,
+  freshIds: string[],
+  cleared: number,
+  always = false,
+) {
+  if (freshIds.length === 0 && cleared === 0 && !always) return;
   const run = await prisma.bugGuardRun.findUniqueOrThrow({
     where: { id: runId },
     select: { id: true, companyId: true },
@@ -111,13 +126,49 @@ export async function reportFullCheck(runId: string, freshIds: string[], cleared
   });
   fresh.sort((a, b) => ORDER[a.severity] - ORDER[b.severity]);
   const body = [
-    "Bug Guard · Full check শেষ (সব স্ক্রিন, পিডিএফ ও লেআউট)",
+    always
+      ? "Bug Guard · আপডেটের পরের Full check শেষ (সব স্ক্রিন, পিডিএফ ও লেআউট)"
+      : "Bug Guard · Full check শেষ (সব স্ক্রিন, পিডিএফ ও লেআউট)",
     `নতুন সমস্যা ${fresh.length}টি, ঠিক হয়ে গেছে ${cleared}টি।`,
     ...fresh.slice(0, 10).map((f) => `• ${f.title}`),
     `${appUrl()}/ai/bug-guard`,
   ].join("\n");
   await tell(run.companyId, `Bug Guard: Full check, ${fresh.length} new`, body, run.id);
   await sendItems(run.companyId, freshIds);
+}
+
+/** After an update: the Full check the run asked for did not finish (`why`, in English). */
+export async function reportFullCheckFailed(runId: string, why: string) {
+  const run = await prisma.bugGuardRun.findUniqueOrThrow({
+    where: { id: runId },
+    select: { id: true, companyId: true },
+  });
+  const body = [
+    "Bug Guard · আপডেটের পরের Full check শেষ হয়নি",
+    `কারণ: ${why}`,
+    "সাইট চালু আছে; Bug Guard-এর বাকি চেক আগের রিপোর্টে আছে। “Full check” স্ক্রিন থেকে আবার চালাতে পারেন।",
+    `${appUrl()}/ai/full-check`,
+  ].join("\n");
+  await tell(
+    run.companyId,
+    "Bug Guard: the Full check after the update did not finish",
+    body,
+    run.id,
+  );
+}
+
+/**
+ * After an update: a company Bug Guard could not check (`why`, in English). The
+ * update itself is installed and the site is up; the owner hears what failed.
+ */
+export async function reportNotChecked(companyId: string, why: string, entityId: string) {
+  const body = [
+    "Bug Guard · আপডেটের পরের চেক শেষ হয়নি",
+    `কারণ: ${why}`,
+    "নতুন ভার্শন চালু আছে; Bug Guard তার নিজের সময়সূচিতে আবার চেক করবে। এখনই চাইলে “Run now” চাপুন।",
+    `${appUrl()}/ai/bug-guard`,
+  ].join("\n");
+  await tell(companyId, "Bug Guard: the check after the update did not finish", body, entityId);
 }
 
 /** The weekly summary, even when all is well. */

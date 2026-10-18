@@ -1,4 +1,4 @@
-import { type MeasurementUnit, Prisma } from "@prisma/client";
+import { type MeasurementUnit, Prisma, type RawMaterialKind } from "@prisma/client";
 
 import { dateOnly } from "@/lib/dates";
 import type { Db } from "@/lib/db-types";
@@ -311,6 +311,10 @@ export type ApprovalCheck = {
   override?: true;
 };
 
+/** A fabric line: booked as fabric and its material is a fabric. */
+const isFabricLine = (specs: { role?: string }, kind: RawMaterialKind) =>
+  specs.role === "FABRIC" && kind === "FABRIC";
+
 const checkSelect = {
   stage: true,
   collarStyle: true,
@@ -399,14 +403,17 @@ export async function approvalChecks(db: Db, bookingId: string): Promise<Approva
       ? { text: "In-house date set", state: "ok" }
       : { text: "Set the in-house date (Deliver by) in the paperwork", state: "block" },
   );
-  // The styles it is for, and whether each line is fabric.
+  // The styles it is for, and whether each line is fabric: its material too, not only
+  // the role kept on the line (an older line may say fabric for buttons).
   const projects = new Map<string, { id: string; code: string; targetQuantity: number }>();
   const fabricFor = new Set<string>();
   const restFor = new Set<string>();
+  const setFor = (l: (typeof lines)[number]) =>
+    isFabricLine(l.specs, l.rawMaterial.kind) ? fabricFor : restFor;
   for (const l of lines) {
     for (const s of l.shares) {
       projects.set(s.project.id, s.project);
-      (l.specs.role === "FABRIC" ? fabricFor : restFor).add(s.project.id);
+      setFor(l).add(s.project.id);
     }
   }
   const batch = b.order.batch;
@@ -415,7 +422,7 @@ export async function approvalChecks(db: Db, bookingId: string): Promise<Approva
   if (own) {
     for (const l of lines.filter((l) => l.shares.length === 0)) {
       projects.set(own.id, own);
-      (l.specs.role === "FABRIC" ? fabricFor : restFor).add(own.id);
+      setFor(l).add(own.id);
     }
   }
   const unlisted = batch ? lines.filter((l) => l.shares.length === 0) : [];
@@ -428,7 +435,7 @@ export async function approvalChecks(db: Db, bookingId: string): Promise<Approva
     for (const l of unlisted) {
       for (const st of styles) {
         projects.set(st.id, st);
-        (l.specs.role === "FABRIC" ? fabricFor : restFor).add(st.id);
+        setFor(l).add(st.id);
       }
     }
     if (styles.length > 0) {
@@ -515,7 +522,9 @@ export async function fabricBasisOf(db: Db, bookingId: string) {
   });
   const projects = new Map<string, { id: string; targetQuantity: number }>();
   for (const s of shares) {
-    if (readSpecs(s.line.specs, s.line.rawMaterial.kind).role !== "FABRIC") continue;
+    if (!isFabricLine(readSpecs(s.line.specs, s.line.rawMaterial.kind), s.line.rawMaterial.kind)) {
+      continue;
+    }
     projects.set(s.project.id, s.project);
   }
   if (projects.size === 0) return null;
@@ -558,7 +567,9 @@ async function fabricShares(db: Db, bookingIds: string[], projectIds: string[]) 
   });
   const byBooking = new Map<string, Map<string, Map<MeasurementUnit, Prisma.Decimal>>>();
   for (const s of shares) {
-    if (readSpecs(s.line.specs, s.line.rawMaterial.kind).role !== "FABRIC") continue;
+    if (!isFabricLine(readSpecs(s.line.specs, s.line.rawMaterial.kind), s.line.rawMaterial.kind)) {
+      continue;
+    }
     const bookingId = s.line.order.booking?.id;
     if (!bookingId) continue;
     const styles = byBooking.get(bookingId) ?? new Map();

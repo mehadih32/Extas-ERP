@@ -530,6 +530,37 @@ run("What the supplier is told needs approval again (v6.3)", () => {
     await bookings.approveBooking(env.owner, made.id);
   });
 
+  it("counts only a fabric material as fabric, whatever role an older line says", async () => {
+    const env = await setup();
+    const made = await bookings.createBooking(env.pm, {
+      source: "SUPPLIER_PO",
+      category: "KNITWEAR",
+      supplierId: env.trims.id,
+      expectedDate: "2030-11-20",
+      lines: [{ materialId: env.buttons.id, quantity: 720, unitPrice: 2 }],
+    });
+    await prisma.purchaseOrder.update({
+      where: { id: made.orderId },
+      data: { projectId: env.polo.id },
+    });
+    // A line saved before roles were checked: buttons marked as fabric.
+    await prisma.purchaseOrderLine.updateMany({
+      where: { orderId: made.orderId },
+      data: { specs: { role: "FABRIC" } },
+    });
+    const seen = await bookings.getBooking(env.owner, made.id);
+    expect(seen.checks).toContainEqual({
+      text: `Collar, cuff and trims wait for the tech pack of ${env.polo.code} to be approved`,
+      state: "block",
+      override: true,
+    });
+    await expectAppError(
+      bookings.approveBooking(env.owner, made.id),
+      "CONFLICT",
+      /Collar, cuff and trims wait for the tech pack/,
+    );
+  });
+
   it("counts an item in no style's materials list for every style of the batch", async () => {
     const env = await setup();
     await bookings.setFabricFirst(env.owner, env.batch.id, true);

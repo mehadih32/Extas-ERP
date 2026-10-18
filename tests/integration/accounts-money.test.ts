@@ -136,6 +136,31 @@ run("Money in/out: add fund, withdraw, bank charge", () => {
     ).resolves.toMatchObject({ kind: "OWNER_CAPITAL" });
   });
 
+  it("opens a new partner only together with their withdrawal", async () => {
+    // An empty petty cash box cannot pay it: nothing is posted, and no partner is left behind.
+    const box = await pettyCash.createPettyCashBox(env.accounts.ctx, {
+      name: "Factory",
+      holderId: env.production.user.id,
+    });
+    const boxAccount = (await prisma.pettyCashBox.findUniqueOrThrow({ where: { id: box.id } }))
+      .ledgerAccountId;
+    const accountsBefore = await prisma.ledgerAccount.count({
+      where: { companyId: env.company.id },
+    });
+    await expect(
+      moneyInOut.withdrawFund(env.accounts.ctx, {
+        ownerName: "New Partner",
+        accountId: boxAccount,
+        amount: 2000,
+      }),
+    ).rejects.toThrow();
+    expect(await prisma.capitalSource.count({ where: { name: "New Partner" } })).toBe(0);
+    expect(await prisma.ledgerAccount.count({ where: { companyId: env.company.id } })).toBe(
+      accountsBefore,
+    );
+    expect(await env.balance(env.acc.DRAWINGS)).toBe("0.00");
+  });
+
   it("records a bank charge as a Bank Charges expense on Finance Costs, from a bank or wallet only", async () => {
     const charge = await moneyInOut.recordBankCharge(env.accounts.ctx, {
       accountId: env.city.ledgerAccount.id,

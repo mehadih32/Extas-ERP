@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+
 import { Prisma } from "@prisma/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -54,5 +57,39 @@ describe("runTransaction", () => {
     transaction.mockRejectedValue(known("P2002"));
     await expect(runTransaction(async () => null)).rejects.toMatchObject({ code: "P2002" });
     expect(transaction).toHaveBeenCalledTimes(1);
+  });
+});
+
+// v6.4.1 review 3: these money writes run again when Postgres cancels them to break a deadlock.
+describe("money writes that retry after a deadlock", () => {
+  const source = (file: string) => readFileSync(path.join(process.cwd(), "src", file), "utf8");
+  /** The text of one exported function, up to the next top-level declaration. */
+  const body = (file: string, name: string) => {
+    const text = source(file);
+    const start = text.indexOf(`export async function ${name}(`);
+    expect(start, name).toBeGreaterThanOrEqual(0);
+    const end = text.slice(start + 1).search(/\n(export |async function |function |const )/);
+    return end < 0 ? text.slice(start) : text.slice(start, start + 1 + end);
+  };
+
+  it("capital, investors, loans and owner withdrawals use runTransaction", () => {
+    for (const file of [
+      "modules/accounts/capital.service.ts",
+      "modules/accounts/money-in-out.service.ts",
+    ]) {
+      expect(source(file), file).not.toContain("prisma.$transaction(");
+    }
+    expect(body("modules/accounts/capital.service.ts", "voidCapitalSource")).toContain(
+      "runTransaction(",
+    );
+    expect(body("modules/accounts/money-in-out.service.ts", "withdrawFund")).toContain(
+      "runTransaction(",
+    );
+  });
+
+  it("an account's balance brought forward uses runTransaction", () => {
+    const save = body("modules/accounts/chart.service.ts", "setAccountOpeningBalance");
+    expect(save).toContain("runTransaction(");
+    expect(save).not.toContain("$transaction(");
   });
 });

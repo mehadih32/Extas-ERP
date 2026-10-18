@@ -1,11 +1,13 @@
 import type { AccountSubType, PaymentMethod } from "@prisma/client";
 
 import { AppError } from "@/lib/errors";
+import { runTransaction } from "@/lib/transaction";
 import { isCashSubType } from "@/modules/accounts/chart";
 import {
   createCapitalSource,
+  createCapitalSourceTx,
   receiveCapital,
-  repayCapital,
+  repayCapitalTx,
 } from "@/modules/accounts/capital.service";
 import { ensureControlAccounts } from "@/modules/accounts/control-accounts";
 import {
@@ -36,6 +38,7 @@ const METHOD_OF: Partial<Record<AccountSubType, PaymentMethod>> = {
 };
 
 const BANK_CHARGES = "Bank Charges";
+const TX_OPTIONS = { timeout: 30_000 };
 
 async function moneyAccount(
   ctx: CompanyContext,
@@ -133,24 +136,36 @@ export async function withdrawFund(ctx: CompanyContext, raw: unknown, meta?: Req
   assertCanPayMoney(ctx);
   const input = ownerMoneySchema.parse(raw);
   const account = await moneyAccount(ctx, input.accountId);
-  const owner =
-    (await findOwner(ctx, input)) ??
-    (await createCapitalSource(ctx, { kind: "OWNER_CAPITAL", name: input.ownerName }, meta));
-  // Drawings, not a return of capital: what they put in stays as it is.
-  await repayCapital(
-    ctx,
-    owner.id,
-    {
-      principal: 0,
-      interest: input.amount,
-      date: input.date,
-      method: account.method,
-      accountId: account.id,
-      reference: input.reference,
-      notes: input.notes,
-    },
-    meta,
-  );
+  const known = await findOwner(ctx, input);
+  // A partner new to the books is opened in the same transaction as the withdrawal,
+  // so one that cannot be paid leaves no empty capital account behind.
+  const owner = await runTransaction(async (tx) => {
+    const owner =
+      known ??
+      (await createCapitalSourceTx(
+        tx,
+        ctx,
+        { kind: "OWNER_CAPITAL", name: input.ownerName },
+        meta,
+      ));
+    // Drawings, not a return of capital: what they put in stays as it is.
+    await repayCapitalTx(
+      tx,
+      ctx,
+      owner.id,
+      {
+        principal: 0,
+        interest: input.amount,
+        date: input.date,
+        method: account.method,
+        accountId: account.id,
+        reference: input.reference,
+        notes: input.notes,
+      },
+      meta,
+    );
+    return owner;
+  }, TX_OPTIONS);
   return { owner: owner.name, account: account.name };
 }
 

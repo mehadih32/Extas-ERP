@@ -28,6 +28,7 @@ import {
   sectionOpen,
   shownArticles,
 } from "@/modules/help";
+import { guideCovers } from "@/modules/help/covers";
 import { missingFeaturePrompt, PROMPT_HEADING, quotedSearch } from "@/modules/help/prompt";
 import { normalizeHelpText, searchHelp, searchWords } from "@/modules/help/search";
 import { DEFAULT_ROLE_PERMISSIONS, isPermissionKey, PERMISSIONS } from "@/modules/rbac/permissions";
@@ -94,15 +95,8 @@ const pages = ["(app)", "(auth)", "(gate)"]
     ),
   );
 const segments = (route: string) => route.split("/").filter(Boolean);
-/** A guide's route covers a page when it is the page or a page above it ([id] matches anything). */
-const covers = (route: string, page: string[]) => {
-  const parts = segments(route);
-  if (parts.length === 0) return page.length === 0;
-  return (
-    parts.length <= page.length &&
-    parts.every((part, i) => page[i]!.startsWith("[") || page[i] === part)
-  );
-};
+/** A guide's route covers a page when it is the page or a page above it (shared with Bug Guard). */
+const covers = guideCovers;
 const show = (page: string[]) => `/${page.join("/")}`;
 
 describe("the manual's content", () => {

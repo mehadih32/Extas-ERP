@@ -338,6 +338,31 @@ run("Bug Guard, after the review", () => {
     });
   });
 
+  describe("Screens without a guide", () => {
+    it("counts a screen as guided when a guide covers it or a page above it, like the Help Center", async () => {
+      const { company } = await makeCompany("Extas");
+      const { localDay } = await import("@/lib/dates");
+      const day = localDay(new Date(), "Asia/Dhaka");
+      // Found on a copy of the demo data: each has a guide for its list ("/sales/orders").
+      const covered = [
+        "/compliance/[id]",
+        "/materials/stock/[id]",
+        "/parties/buyers/[id]",
+        "/parties/suppliers/[id]",
+        "/production/batches/new",
+        "/reports/templates/[id]",
+        "/sales/orders/[id]",
+      ];
+      for (const subject of [...covered, "/no-such-area/[id]"]) {
+        await prisma.usageCount.create({
+          data: { companyId: company.id, day, kind: "VIEW", subject, count: 2 },
+        });
+      }
+      const [finding] = await check("product.missing-help", company.id);
+      expect(finding!.evidence).toEqual([{ label: "/no-such-area/[id]", value: "2 বার খোলা" }]);
+    });
+  });
+
   describe("alarms on the bot (S1)", () => {
     afterEach(() => standInForBotApi(null));
 

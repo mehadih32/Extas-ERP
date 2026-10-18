@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Prepares a fresh Ubuntu 24.04 server for Extas ERP: system updates, Docker,
-# automatic security updates, the firewall and a swap file. Safe to run again.
+# automatic security updates, the firewall and a swap file. Safe to run again: a
+# run cut off half-way is finished first. On a new VM it first waits for the
+# server's own updates (cloud-init, automatic updates), which hold apt's lock.
 #   sudo ./deploy/setup-server.sh
 # shellcheck source=deploy/lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
@@ -10,11 +12,18 @@ need_root
 . /etc/os-release
 [ "${ID:-}" = ubuntu ] || die "this script is for Ubuntu (24.04 LTS); this server runs ${PRETTY_NAME:-something else}."
 export DEBIAN_FRONTEND=noninteractive
+# Waits for apt's lock as well, should the automatic updates start again meanwhile.
+apt_get() { apt-get -o DPkg::Lock::Timeout=900 "$@"; }
+
+wait_for_apt ||
+  die "the server's own updates did not finish in 30 minutes. Restart the VM in Azure, then run this again."
+# An install cut off earlier (the VM restarted) is finished first, or nothing installs.
+dpkg --configure -a || true
 
 say "Updating the system"
-apt-get update
-apt-get -y upgrade
-apt-get install -y ca-certificates curl git openssl python3 ufw unattended-upgrades
+apt_get update
+apt_get -y upgrade
+apt_get install -y ca-certificates curl git openssl python3 ufw unattended-upgrades
 
 say "Installing Docker"
 if ! command -v docker >/dev/null; then
@@ -23,8 +32,8 @@ if ! command -v docker >/dev/null; then
   chmod a+r /etc/apt/keyrings/docker.asc
   echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu ${UBUNTU_CODENAME:-$VERSION_CODENAME} stable" \
     >/etc/apt/sources.list.d/docker.list
-  apt-get update
-  apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+  apt_get update
+  apt_get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 fi
 systemctl enable --now docker
 docker --version

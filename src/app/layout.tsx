@@ -4,8 +4,10 @@ import "@/styles/globals.css";
 
 import { Toaster } from "@/components/feedback/toaster";
 import { DemoSiteBar } from "@/components/shell/demo-site-bar";
+import { StandbyBar } from "@/components/shell/standby-bar";
 import { env } from "@/lib/env";
 import { currentInterfaceStyle } from "@/modules/appearance/appearance.service";
+import { onStandby } from "@/modules/backups/standby";
 
 import { fontVariables } from "./fonts";
 
@@ -41,9 +43,12 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   // The person's chosen look (Settings → Appearance): the modern styles in
   // globals.css apply under data-ui="modern"; the original look needs nothing.
   const style = await currentInterfaceStyle();
+  // A copy on standby after a restore says so on every page until it goes live (G2).
+  const standby = await onStandby();
   return (
     <html lang="en" className={fontVariables} data-ui={style === "MODERN" ? "modern" : undefined}>
       <body>
+        {standby ? <StandbyBar /> : null}
         {env.DEMO_SITE === "on" ? <DemoSiteBar /> : null}
         {children}
         <Toaster />

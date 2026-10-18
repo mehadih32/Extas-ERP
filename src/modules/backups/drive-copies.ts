@@ -66,6 +66,8 @@ export async function sendToDrive(runId: string): Promise<BackupRun> {
       createdAt: string;
       format?: number;
       files: ManifestFile[];
+      /** Made by a copy on standby after a restore (backup.service.ts). */
+      standby?: boolean;
     };
     const rootId = await driveRoot(config, token);
     // A half-sent copy from an earlier try goes first.
@@ -79,6 +81,8 @@ export async function sendToDrive(runId: string): Promise<BackupRun> {
         extas: "backup",
         kind: run.kind,
         createdAt: manifest.createdAt,
+        // The restore command never picks one by itself (deploy/restore-tool.py).
+        ...(manifest.standby ? { standby: "yes" } : {}),
       })
     ).id;
     for (const file of manifest.files) {
@@ -103,9 +107,13 @@ export async function sendToDrive(runId: string): Promise<BackupRun> {
       data: { driveFileId: made, checkedAt: new Date(), driveError: null },
     });
     lastTry.delete(run.id);
-    await ensureKeysFile(config, token, rootId).catch((error: unknown) =>
-      console.error("[backups] the keys file is not in Drive", reasonFor(error)),
-    );
+    // A copy on standby never replaces the keys file of the ERP in use (its recovery
+    // key may have changed since); each backup holds its own keys anyway.
+    if (!manifest.standby) {
+      await ensureKeysFile(config, token, rootId).catch((error: unknown) =>
+        console.error("[backups] the keys file is not in Drive", reasonFor(error)),
+      );
+    }
     if (run.kind !== "SAFETY_COPY") return checked;
     // A safety copy's locked copy goes once Google's is checked (deploy.sh deletes its original).
     await rm(folder, { recursive: true, force: true });

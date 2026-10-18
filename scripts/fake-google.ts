@@ -28,6 +28,11 @@ export type FakeGoogleOptions = {
   quotaFull?: boolean;
   /** One byte of every upload is changed on the way (the check must catch it). */
   damageUploads?: boolean;
+  /**
+   * The most files one page of a list holds (Google's own limit is 1000, and it may
+   * send fewer); the rest come with nextPageToken, as from Google.
+   */
+  pageSize?: number;
   email?: string;
 };
 
@@ -253,8 +258,21 @@ export async function startFakeGoogle(
       const found = [...files.values()]
         .filter((f) => matches(f, q))
         .sort((a, b) => a.createdTime.localeCompare(b.createdTime) || a.id.localeCompare(b.id));
+      // orderBy "createdTime desc": newest first, as Google lists them.
+      if (/^createdTime desc$/.test(url.searchParams.get("orderBy") ?? "")) found.reverse();
       const fields = url.searchParams.get("fields");
-      return json(res, 200, { files: found.map((f) => present(f, fields)) });
+      // One page at a time; the page token is where the next page starts.
+      const size = Math.min(
+        Number(url.searchParams.get("pageSize") ?? 100) || 100,
+        options.pageSize ?? 1000,
+      );
+      const start = Number(url.searchParams.get("pageToken") ?? 0) || 0;
+      const page = found.slice(start, start + size);
+      const more = start + size < found.length;
+      return json(res, 200, {
+        files: page.map((f) => present(f, fields)),
+        ...(more ? { nextPageToken: String(start + size) } : {}),
+      });
     }
     const id = decodeURIComponent(url.pathname.match(/^\/drive\/v3\/files\/([^/]+)$/)?.[1] ?? "");
     const file = id ? files.get(id) : undefined;

@@ -190,6 +190,50 @@ describe("Google Drive client", () => {
     expect(error).toMatchObject({ status: 400, reconnect: true });
   });
 
+  it("reads every page of a Drive list, newest first, so no backup or keys file is left out", async () => {
+    // Google sends a long list in pages (here 2 files a page, as it may with fewer than asked).
+    const google = await startFakeGoogle({ pageSize: 2 }, 0);
+    vi.stubEnv("GOOGLE_OAUTH_BASE", google.url);
+    vi.stubEnv("GOOGLE_DRIVE_BASE", google.url);
+    try {
+      const start = await drive.startDeviceSignIn(client);
+      const signedIn = await drive.pollDeviceSignIn(client, start.deviceCode);
+      if (signedIn.status !== "connected") throw new Error("not signed in");
+      const token = signedIn.accessToken;
+      const root = await drive.createFolder(token, "Extas ERP backups", undefined, {
+        extas: "backups",
+      });
+      const made: string[] = [];
+      for (let i = 1; i <= 5; i++) {
+        const folder = await drive.createFolder(token, `2026-10-0${i}_020000`, root.id, {
+          extas: "backup",
+        });
+        // Drive's own times, one minute apart, so the order is certain.
+        google.files.get(folder.id)!.createdTime = `2026-10-0${i}T02:00:00.000Z`;
+        made.push(folder.name);
+      }
+      const keyFile = await drive.uploadBytes(
+        token,
+        Buffer.from("{}"),
+        root.id,
+        "restore-key.json",
+        "application/json",
+        { extas: "restore-key" },
+      );
+      google.files.get(keyFile.id)!.createdTime = "2026-10-06T02:00:00.000Z";
+      google.requests.length = 0;
+
+      const folders = await drive.listFolders(token, root.id);
+      expect(folders.map((f) => f.name)).toEqual([...made].reverse());
+      const files = await drive.listFiles(token, root.id);
+      expect(files.map((f) => f.name)).toEqual(["restore-key.json", ...[...made].reverse()]);
+      // Several pages were read for each list.
+      expect(google.requests.filter((r) => r === "GET /drive/v3/files").length).toBe(3 + 3);
+    } finally {
+      await google.close();
+    }
+  });
+
   it("uploads in resumable chunks and carries on from what Google kept", async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), "extras-drive-"));
     try {

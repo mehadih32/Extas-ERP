@@ -162,7 +162,11 @@ export async function sendSms(
   if (!gateway) {
     throw new AppError("UNAVAILABLE", "SMS is not connected yet.");
   }
-  const result = await gateway.send({ to: message.to, text: message.text });
+  // A restore drill copy (test mode) sends no SMS; the log says so.
+  const { DRILL_NOT_SENT, onDrill } = await import("@/modules/backups/standby");
+  const result: SmsResult = (await onDrill())
+    ? { ok: false, error: DRILL_NOT_SENT }
+    : await gateway.send({ to: message.to, text: message.text });
   await db.notificationLog.create({
     data: {
       companyId,

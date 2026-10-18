@@ -22,7 +22,8 @@ import { backupRoot } from "@/modules/backups/backup-core";
  * drill") has BACKUP_DIR/.drill, written before the ERP first starts, and stays
  * in test mode for good: no clock runs at all (backups/scheduler.ts,
  * jobs/worker.ts and reminders/scheduler.ts check onDrill first), and nothing
- * leaves it: no emails (mail.service.ts), no bot messages (ai/bot/channel.ts),
+ * leaves it: no emails (mail.service.ts), no SMS or phone push (integrations/sms.ts,
+ * push.ts), no bot messages (ai/bot/channel.ts),
  * no Google Drive at all (backup-core.ts driveToken), no GitHub changes
  * (github/github.ts, github-alert.ts) and no AI call (ai/claude.ts aiReady, and
  * every provider call in ai/provider-calls.ts). go-live.sh and

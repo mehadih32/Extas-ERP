@@ -22,6 +22,8 @@ import {
 } from "@/modules/backups/standby";
 import { backupHealth } from "@/modules/backups/status";
 import { getPull, openIssue } from "@/modules/github/github";
+import { pushToUsers, type PushSender } from "@/modules/integrations/push";
+import { sendSms, type SmsGateway } from "@/modules/integrations/sms";
 import { jobTick } from "@/modules/jobs/worker";
 import { sendMail, standInForMail } from "@/modules/mail/mail.service";
 
@@ -156,6 +158,53 @@ run("a restore drill copy and the drill's record", () => {
     await rm(path.join(backupDir, DRILL_MARK));
     await sendMail(company.id, { to: "buyer@example.com", subject: "Invoice", text: "..." });
     expect(mails).toEqual(["buyer@example.com"]);
+  });
+
+  it("sends no SMS and no phone push either (v6.4.1 review 2)", async () => {
+    const { company } = await makeCompany("Drill Co");
+    const texts: string[] = [];
+    const gateway: SmsGateway = {
+      provider: "http",
+      send: async (message) => {
+        texts.push(message.to);
+        return { ok: true, providerMessageId: "gw-1" };
+      },
+    };
+    const pushed: string[][] = [];
+    const pusher: PushSender = {
+      provider: "log",
+      send: async (userIds) => {
+        pushed.push([...userIds]);
+        return { sent: userIds.length };
+      },
+    };
+    const sms = () =>
+      sendSms(
+        prisma,
+        company.id,
+        { to: "01711000000", text: "Code 123456", keep: "Code ••••••" },
+        gateway,
+      );
+    await markDrill();
+    expect(await sms()).toEqual({ ok: false, error: DRILL_NOT_SENT });
+    expect(texts).toEqual([]);
+    expect(await prisma.notificationLog.findFirst({ where: { channel: "SMS" } })).toMatchObject({
+      status: "FAILED",
+      error: DRILL_NOT_SENT,
+      body: "Code ••••••",
+    });
+    expect(await pushToUsers(["u1"], { title: "Task", body: "Read it" }, pusher)).toEqual({
+      sent: 0,
+    });
+    expect(pushed).toEqual([]);
+
+    // Any other ERP: both go out.
+    await rm(path.join(backupDir, DRILL_MARK));
+    expect((await sms()).ok).toBe(true);
+    expect(texts).toEqual(["01711000000"]);
+    expect(await pushToUsers(["u1"], { title: "Task", body: "Read it" }, pusher)).toEqual({
+      sent: 1,
+    });
   });
 
   it("shows its own drill on its Backups screen and answers it at /api/backups/drill", async () => {

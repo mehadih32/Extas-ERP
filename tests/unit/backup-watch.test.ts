@@ -113,12 +113,43 @@ describe("the late-backup alert on GitHub (A13): what it decides", () => {
       "BACKUP_ALERT_TELEGRAM_CHAT_ID",
     ]);
     const lines: string[] = [];
-    const code = await watch({ env: {}, log: (l: string) => lines.push(l) });
+    // Half set up: fails on its clock too, naming what is missing.
+    const code = await watch({
+      env: {},
+      event: "workflow_dispatch",
+      log: (l: string) => lines.push(l),
+    });
+    expect(
+      await watch({
+        env: { BACKUP_ALERT_TELEGRAM_CHAT_ID: "1" },
+        event: "schedule",
+        log: () => {},
+      }),
+    ).toBe(1);
     expect(code).toBe(1);
     expect(lines).toHaveLength(1);
     for (const name of SECRETS) expect(lines[0]).toContain(name);
     expect(lines[0]).toMatch(/^The backup alert is not set up: add the GitHub secrets /);
     expect(lines[0]).toContain("Set up the alert on GitHub");
+  });
+
+  it("waits quietly on its clock until the owner sets it up, but a hand-run says what is missing", async () => {
+    // GitHub emails the owner about every failed run: a clock run before the set-up
+    // (no secret at all) passes with a notice instead of failing every 6 hours.
+    const lines: string[] = [];
+    const quiet = await watch({ env: {}, event: "schedule", log: (l: string) => lines.push(l) });
+    expect(quiet).toBe(0);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatch(/^::notice::The backup alert is not set up yet/);
+    expect(lines[0]).toContain("Set up the alert on GitHub");
+    const byHand: string[] = [];
+    const code = await watch({
+      env: {},
+      event: "workflow_dispatch",
+      log: (l: string) => byHand.push(l),
+    });
+    expect(code).toBe(1);
+    expect(byHand[0]).toMatch(/^The backup alert is not set up: add the GitHub secrets /);
   });
 
   it("takes the newest backup that reached Drive whole, never a safety copy or a half-sent one", () => {

@@ -273,6 +273,13 @@ export async function watch({
   log = console.log,
 }) {
   const missing = missingSecrets(env);
+  if (missing.length === SECRETS.length && event === "schedule") {
+    // Not set up yet: a failed run would make GitHub email the owner every 6 hours.
+    log(
+      `::notice::The backup alert is not set up yet, so there is nothing to check (Settings > Backups, "Set up the alert on GitHub").`,
+    );
+    return 0;
+  }
   if (missing.length) {
     log(
       `The backup alert is not set up: add the GitHub secrets ${missing.join(", ")} (the ERP adds them all: Settings > Backups, "Set up the alert on GitHub").`,

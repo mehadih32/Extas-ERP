@@ -9,8 +9,9 @@
 # GitHub Actions can read them (Settings > Backups, "Set up the alert on GitHub"):
 # the ERP's Google client and Drive sign-in (scope drive.file: it sees only the
 # files the ERP made), the backup folder, and the Telegram bot and the owner's chat.
-# Nobody types or sees them. Until they are there, each run fails with one line
-# naming the missing ones. BACKUP_ALERT_LATE_HOURS (a repository variable, optional)
+# Nobody types or sees them. Until they are there, a run on the clock passes with a
+# notice (so GitHub does not email a failure every 6 hours) and "Run workflow" fails
+# with one line naming the missing ones; a half set-up always fails. BACKUP_ALERT_LATE_HOURS (a repository variable, optional)
 # sets a fixed "late after so many hours" instead of the schedule's.
 #
 # GitHub stops scheduled workflows in a public repository after 60 days with no

@@ -235,6 +235,7 @@ type GroupRow = {
   sizeName: string | null;
   groupCount: number;
   totalPieces: Prisma.Decimal | null;
+  totalSold: Prisma.Decimal | null;
   totalNet: Prisma.Decimal | null;
   totalCost: Prisma.Decimal | null;
 };
@@ -262,9 +263,35 @@ export type TopSellers = {
   /**
    * Over everything sold in the range, not only the rows returned, less the
    * pieces that came back in it; groups counts those that still sold pieces.
+   * soldPieces: the pieces invoiced in the range, before any return (what a
+   * row's share is taken of: returns of older invoices can bring the net
+   * pieces below a row's, even below zero).
    */
-  totals: { groups: number; pieces: number; net: Prisma.Decimal; cost: Prisma.Decimal };
+  totals: {
+    groups: number;
+    pieces: number;
+    soldPieces: number;
+    net: Prisma.Decimal;
+    cost: Prisma.Decimal;
+  };
 };
+
+/**
+ * A part of a whole in percent, to one place, or null when it is no share: the
+ * whole is not above zero, or the part is below zero or above the whole (as
+ * when goods of older invoices come back in the period).
+ */
+export function sharePct(part: Prisma.Decimal.Value, whole: Prisma.Decimal.Value): string | null {
+  const p = new Prisma.Decimal(part);
+  const w = new Prisma.Decimal(whole);
+  if (!w.gt(0) || p.lt(0) || p.gt(w)) return null;
+  return p.dividedBy(w).times(100).toFixed(1);
+}
+
+/** The gross margin on net sales in percent, or null when net sales are not above zero. */
+export function marginPct(net: Prisma.Decimal, cost: Prisma.Decimal): string | null {
+  return net.gt(0) ? net.minus(cost).dividedBy(net).times(100).toFixed(1) : null;
+}
 
 /**
  * Best sellers in the range by pieces or by sales value, per SKU or per style,
@@ -308,6 +335,7 @@ export async function topSellers(
   const rows = await prisma.$queryRaw<GroupRow[]>`
     WITH groups AS (
       SELECT ${key} AS key, SUM(s.quantity)::bigint AS pieces,
+             COALESCE(SUM(s.quantity) FILTER (WHERE s.sold), 0)::bigint AS sold,
              (COUNT(DISTINCT s."orderId") FILTER (WHERE s.sold))::int AS orders,
              (COUNT(DISTINCT s."variantId") FILTER (WHERE s.sold))::int AS skus,
              SUM(s.net) AS net, SUM(s.cost) AS cost
@@ -316,10 +344,11 @@ export async function topSellers(
     ),
     totals AS (
       SELECT (COUNT(*) FILTER (WHERE pieces > 0))::int AS "groupCount",
-             SUM(pieces) AS "totalPieces", SUM(net) AS "totalNet", SUM(cost) AS "totalCost"
+             SUM(pieces) AS "totalPieces", SUM(sold) AS "totalSold",
+             SUM(net) AS "totalNet", SUM(cost) AS "totalCost"
       FROM groups
     )
-    SELECT t."groupCount", t."totalPieces", t."totalNet", t."totalCost", g.*
+    SELECT t."groupCount", t."totalPieces", t."totalSold", t."totalNet", t."totalCost", g.*
     FROM totals t
     LEFT JOIN LATERAL (
       SELECT x.key, x.pieces, x.orders, x.skus, x.net, x.cost,
@@ -353,6 +382,7 @@ export async function topSellers(
     totals: {
       groups: totals?.groupCount ?? 0,
       pieces: new Prisma.Decimal(totals?.totalPieces ?? 0).toNumber(),
+      soldPieces: new Prisma.Decimal(totals?.totalSold ?? 0).toNumber(),
       net: new Prisma.Decimal(totals?.totalNet ?? 0),
       cost: new Prisma.Decimal(totals?.totalCost ?? 0),
     },

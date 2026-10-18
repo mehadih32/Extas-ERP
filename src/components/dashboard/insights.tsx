@@ -104,8 +104,10 @@ function TopSellersPanel({
   if (columns.salesAmounts && top.totals.net !== null) {
     summary.push([`Net sales (${currency})`, money(top.totals.net)]);
   }
-  if (columns.financials && top.totals.marginPct !== null) {
-    summary.push(["Margin", hide(`${top.totals.marginPct}%`)]);
+  if (columns.financials) {
+    // "–" when net sales are not above zero (goods of older invoices came back).
+    const margin = top.totals.marginPct;
+    summary.push(["Margin", margin === null ? DASH : hide(`${margin}%`)]);
   }
 
   return (

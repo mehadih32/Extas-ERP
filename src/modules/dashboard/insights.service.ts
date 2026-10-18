@@ -6,7 +6,7 @@ import { AppError } from "@/lib/errors";
 import { addDays, resolvePeriod } from "@/modules/accounts/periods";
 import type { CompanyContext } from "@/modules/auth/context";
 import { canSeeFinancials, canSeeSalesAmounts, canSeeStock } from "@/modules/dashboard/access";
-import { type TopSeller, topSellers } from "@/modules/dashboard/sales-figures";
+import { marginPct, sharePct, type TopSeller, topSellers } from "@/modules/dashboard/sales-figures";
 import { insightsQuerySchema } from "@/modules/dashboard/schemas";
 import {
   deadAndSlowStock,
@@ -45,18 +45,13 @@ export function stockWindow(
   };
 }
 
-const share = (part: number, whole: number) =>
-  whole === 0 ? null : ((part / whole) * 100).toFixed(1);
-
-const marginPct = (net: Prisma.Decimal, cost: Prisma.Decimal) =>
-  net.isZero() ? null : net.minus(cost).dividedBy(net).times(100).toFixed(1);
-
 /** A top seller as the API shows it, with amounts the reader may not see set to null. */
 export function topSellerView(
   ctx: Pick<CompanyContext, "can">,
   row: TopSeller,
   rank: number,
-  totalPieces: number,
+  /** Every piece invoiced in the period, before returns. */
+  soldPieces: number,
 ) {
   const sales = canSeeSalesAmounts(ctx);
   const costs = canSeeFinancials(ctx);
@@ -71,8 +66,11 @@ export function topSellerView(
     pieces: row.pieces,
     orders: row.orders,
     skus: row.skus,
-    /** Share of all pieces sold in the period, in percent. */
-    sharePct: share(row.pieces, totalPieces),
+    /**
+     * Its pieces (after returns) out of all pieces invoiced in the period, in
+     * percent: always 0 to 100, even when older goods came back in it.
+     */
+    sharePct: sharePct(row.pieces, soldPieces),
     net: sales ? row.net.toFixed(2) : null,
     avgPrice: sales && row.pieces > 0 ? row.net.dividedBy(row.pieces).toFixed(2) : null,
     cost: costs ? row.cost.toFixed(2) : null,
@@ -164,7 +162,7 @@ export async function getDashboardInsights(
         net: canSeeSalesAmounts(ctx) ? top.totals.net.toFixed(2) : null,
         marginPct: costs ? marginPct(top.totals.net, top.totals.cost) : null,
       },
-      items: top.items.map((r, i) => topSellerView(ctx, r, i + 1, top.totals.pieces)),
+      items: top.items.map((r, i) => topSellerView(ctx, r, i + 1, top.totals.soldPieces)),
     },
     highestStock: highest.map((r) => skuStockView(ctx, r, tz)),
     deadAndSlow: {

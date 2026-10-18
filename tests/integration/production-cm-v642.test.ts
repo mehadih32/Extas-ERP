@@ -611,7 +611,11 @@ run("v6.4.2: the CM settlement's money rules", () => {
     expect(inbox[0]!.body).toContain(
       `Gazipur Knit Factory, batch ${env.batch.code} (${made.number})`,
     );
-    expect(inbox[0]!.body).toContain("under the new rules");
+    expect(inbox[0]!.body).toContain("under the new rules about");
+    // The new amount is worked from the factory's account as it is today.
+    expect(inbox[0]!.body).toContain(
+      "payments made after a settlement was saved can change how much of them went to its material bills",
+    );
     expect(inbox[0]!.body).toContain("a price per reject is needed");
     expect(inbox[0]!.body).toContain(`for ${env.polo.code} Ralph Lauren polo`);
     expect(JSON.stringify(await prisma.cmSettlement.findMany({ orderBy: { id: "asc" } }))).toBe(

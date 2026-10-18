@@ -8,7 +8,8 @@ import {
 import type { ReactNode } from "react";
 
 import type { HelpPicture } from "@/modules/help/pictures";
-import type { HelpField } from "@/modules/help/types";
+import { whatPoints } from "@/modules/help/guide-text";
+import type { HelpArticle, HelpField } from "@/modules/help/types";
 
 /*
  * The parts of a guide around its steps: What it is, Why it matters, its
@@ -41,8 +42,9 @@ function Part({
 const PARAGRAPH = "max-w-3xl text-[0.9375rem] leading-[1.8] break-words";
 
 /** "এটা কী" (What) and "কেন দরকার" (Why). */
-export function GuideWhatWhy({ what, why }: { what?: string; why?: string }) {
+export function GuideWhatWhy({ what, why }: { what?: HelpArticle["what"]; why?: string }) {
   if (!what && !why) return null;
+  const points = whatPoints(what);
   return (
     <div className="grid gap-6">
       {what && (
@@ -51,9 +53,18 @@ export function GuideWhatWhy({ what, why }: { what?: string; why?: string }) {
           icon={<InfoIcon className="size-4 text-primary" aria-hidden />}
           title="এটা কী"
         >
-          <p lang="bn" className={PARAGRAPH}>
-            {what}
-          </p>
+          {/* Short points, so the reader takes in one part of the screen at a time. */}
+          {points.length > 1 ? (
+            <ul lang="bn" className={`${PARAGRAPH} grid list-disc gap-1.5 pl-5`}>
+              {points.map((point) => (
+                <li key={point}>{point}</li>
+              ))}
+            </ul>
+          ) : (
+            <p lang="bn" className={PARAGRAPH}>
+              {points[0]}
+            </p>
+          )}
         </Part>
       )}
       {why && (

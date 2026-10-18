@@ -119,12 +119,20 @@ places disagree, the newer instruction wins.
 - Every page has a guide route, every menu item a help section, every section an icon. Picture ids are
   `<slug>-<n>`, unique, with Bengali captions. Pictures are taken automatically from demo data.
 - New Bengali text uses Western digits (0-9).
-- Pictures: one per guide, of its own page, with a red numbered mark on what each step is about, taken on the
-  demo site's sample data (`npm run help:shots`, or the "Help pictures" workflow on GitHub). A changed screen
-  brings its new picture in the same PR (the picture test fails on a stale one). Only Claude Code fix branches
-  (`claude/issue-*`) and `main` may keep old pictures, because Claude Code on GitHub cannot take them: Bug Guard
-  lists them under Can wait. Before every Release PR every picture is taken again (`ALL=1 npm run help:shots` on
-  a copy of the demo data, or the workflow with "all").
+- Pictures: one per guide, of the part of its page the steps are about (the guide's `shot.target`, else where
+  the most steps' buttons are; never just the top of a long page), with a red numbered mark on what each step
+  quotes: every picture has marks, and mark n is on a label step n quotes. A record's page uses `shot.route`
+  ("/products/[styleId]"); a guide about something a computer cannot show on the demo data says why in
+  `shot.none` and has no picture. Taken on the demo site's sample data (`npm run help:shots`, or the "Help
+  pictures" workflow on GitHub). A changed screen brings its new picture in the same PR (the picture tests fail
+  on a stale picture or one without marks). Only Claude Code fix branches (`claude/issue-*`) may keep old
+  pictures, because Claude Code on GitHub cannot take them: Bug Guard lists them under Can wait. `main` is
+  checked too: the "Help pictures" workflow runs on every PR into `main` (every Release PR) and every push to
+  `main`, and takes the old pictures again as a download; the Deploy's own Checks let pictures wait, so an
+  urgent fix is never kept off the live site. Before every Release PR every picture is taken again
+  (`ALL=1 npm run help:shots` on a copy of the demo data, or the workflow with "all").
+- Help words: every guide has tips and common mistakes; What is short points (one or two sentences each);
+  "ফিল্টার" (never "ছাঁকনি") and one word for save, "সেভ" (never "সংরক্ষণ"). The tests check all of these.
 
 ## 6. Safety on the live site
 
@@ -167,6 +175,10 @@ money, or turn off backups or its own checks. Every check, finding, fix, approva
 
 ## 9. Decisions log (newest first)
 
+- 2026-10-18 (v6.4.1): Help pictures show the part of the page each guide's steps are about and every picture
+  has numbered marks. The picture tests run on `main` too; the "Help pictures" workflow runs on every PR into
+  `main` and every push to `main`; only the Deploy's own Checks let pictures wait. Every guide has tips and
+  common mistakes; What is short points; "ফিল্টার" not "ছাঁকনি"; "সেভ" is the one word for save.
 - 2026-10-17 (v6.4 review): Help pictures may be out of date only on Claude Code fix branches (`claude/issue-*`)
   and on `main`; Bug Guard lists those guides and every release retakes all pictures. A screen's word counts as
   explained only in a guide's `fields` list.

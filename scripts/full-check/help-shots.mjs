@@ -1,11 +1,17 @@
 // The Help Center's automatic pictures, step 2 of 2 (`npm run help:shots`; step 1,
 // scripts/help/plan.ts, lists the guides that need one). For each guide it opens
-// its page on the demo site's sample data, finds the button or field each step
-// quotes (“Issue the invoice”), puts a numbered red mark with an arrow on it, and
-// saves the picture as public/help/shots/<slug>.webp, then records it in
-// src/modules/help/pictures.json. It only opens pages and, where a guide says so
-// (shot.open), presses one button that opens a dialog: it never saves anything.
-// Run it only on a copy made for checks (the demo site's data), never the live ERP.
+// its page on the demo site's sample data (for a record's page, the demo record
+// that shows the most of the steps), finds the button or field each step quotes
+// (“Issue the invoice”), and cuts the picture from the part of the page the steps
+// are about: the part the guide's shot.target names, or else where the most
+// steps' buttons are, never just the top of a long page (scripts/full-check/
+// help-marks.mjs). It puts a numbered red mark with an arrow on each, saves the
+// picture as public/help/shots/<slug>.webp, and records it in
+// src/modules/help/pictures.json with its marks and its part of the page. A
+// picture that marks nothing is listed as not done (exit code 1). It only opens
+// pages and, where a guide says so (shot.open), presses one button that opens a
+// dialog or menu: it never saves anything. Run it only on a copy made for checks
+// (the demo site's data), never the live ERP.
 //
 //   SITE           the ERP's address (default http://localhost:3000)
 //   COOKIE         a session for the owner (scripts/layout-session.ts makes one)
@@ -14,13 +20,15 @@
 // Needs Playwright with Chromium (scripts/full-check: npm install, npx playwright
 // install chromium), and sharp (for WebP) and Prettier from the ERP's own packages.
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { chromium } from "playwright";
 import { format, resolveConfig } from "prettier";
 import sharp from "sharp";
+
+import { markPage } from "./help-marks.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, "../..");
@@ -55,22 +63,29 @@ const NEVER = [
 ];
 
 /**
- * A real address for a page pattern: a link to it found on the pages above it
- * ("/sales/orders" lists the orders "/sales/orders/[orderId]" opens).
+ * Real addresses for a page pattern, up to `max`: links to it found on the
+ * guide's own pages and the pages above it ("/sales/orders" lists the orders
+ * "/sales/orders/[orderId]" opens).
  */
-async function addressOf(page, pattern) {
-  if (!pattern.includes("[")) return pattern;
+async function addressesOf(page, pattern, from = [], max = 5) {
+  if (!pattern.includes("[")) return [pattern];
   const re = patternRe(pattern);
+  // Pages that fit the same addresses with fewer records in them: their addresses are theirs.
+  const narrower = plan.patterns.filter(
+    (q) => q !== pattern && q.split("[").length < pattern.split("[").length,
+  );
   const parts = pattern.split("/").filter(Boolean);
   const tried = new Set();
-  // The pages above it, nearest first, then the pages those link to.
-  const starts = [];
+  const hits = [];
+  // The guide's own pages ("/parties/buyers"), then the pages above, nearest first,
+  // then the pages those link to.
+  const starts = [...from];
   for (let n = parts.length - 1; n >= 0; n -= 1) {
     const above = `/${parts.slice(0, n).join("/")}`;
     if (!above.includes("[") && fixed.has(above)) starts.push(above);
   }
   const queue = [...starts];
-  while (queue.length && tried.size < 12) {
+  while (queue.length && tried.size < 12 && hits.length < max) {
     const at = queue.shift();
     if (tried.has(at)) continue;
     tried.add(at);
@@ -92,9 +107,13 @@ async function addressOf(page, pattern) {
         }
       })
       .filter((p) => p && !NEVER.some((n) => n.test(p)));
-    // A record's own address, not a page of its own that fits too ("/production/projects/new").
-    const hit = paths.find((p) => re.test(p) && !fixed.has(p));
-    if (hit) return hit;
+    // A record's own address, not a page of its own that fits too ("/production/projects/new",
+    // "/parties/buyers/new" of "/parties/[list]/new").
+    for (const p of paths) {
+      if (!re.test(p) || fixed.has(p) || hits.includes(p) || hits.length >= max) continue;
+      if (narrower.some((q) => patternRe(q).test(p))) continue;
+      hits.push(p);
+    }
     // One step further: record pages under a record (a project's tech pack).
     for (const p of paths) {
       if (!tried.has(p) && pattern.startsWith(p.split("/").slice(0, 2).join("/"))) {
@@ -103,200 +122,89 @@ async function addressOf(page, pattern) {
       }
     }
   }
-  return null;
+  return hits;
 }
 
-/** Finds, for each step, the first quoted label shown on the page, and marks it. */
-async function mark(page, steps, inDialog) {
-  return page.evaluate(
-    ({ steps, inDialog, maxHeight }) => {
-      const norm = (s) => (s ?? "").replace(/\s+/g, " ").trim();
-      const scope = (inDialog && document.querySelector("[role=dialog]")) || document.body;
-      const candidates = [
-        ...scope.querySelectorAll(
-          "button, a, [role=tab], [role=button], [role=menuitem], label, th, h1, h2, h3, h4, legend, summary, input, textarea, select, [role=combobox]",
-        ),
-      ].filter((el) => {
-        const r = el.getBoundingClientRect();
-        const st = getComputedStyle(el);
-        return r.width > 0 && r.height > 0 && st.visibility !== "hidden" && st.display !== "none";
-      });
-      const name = (el) =>
-        [
-          norm(el.textContent),
-          norm(el.getAttribute("aria-label")),
-          norm(el.getAttribute("placeholder")),
-          norm(el.getAttribute("title")),
-        ].filter(Boolean);
-      const W = document.documentElement.clientWidth;
-      // Only what the picture shows: the page down to its cut, or the screen with a dialog open.
-      const limit = inDialog ? innerHeight : maxHeight;
-      // A menu or tab link to another page ("AI" > "System" > "Settings" in a step
-      // that ends on this page) is marked only when the step names nothing else here.
-      const away = (el) => {
-        const link = el.closest("a[href]");
-        if (!link || link.getAttribute("aria-current")) return false;
-        if (!link.closest("nav, header, [role=tablist], [data-layout-nav]")) return false;
-        const to = new URL(link.href, location.href);
-        return to.origin === location.origin && to.pathname !== location.pathname;
-      };
-      const used = new Set();
-      const marks = [];
-      steps.forEach((labels, i) => {
-        for (const pass of [false, true]) {
-          for (const label of labels) {
-            const want = norm(label);
-            const el = candidates.find(
-              (c) => !used.has(c) && (pass || !away(c)) && name(c).some((n) => n === want),
-            );
-            if (!el) continue;
-            const r = el.getBoundingClientRect();
-            if (r.top + scrollY + r.height > limit - 8 || r.left + r.width < 0 || r.left > W)
-              continue;
-            used.add(el);
-            marks.push({
-              n: i + 1,
-              x: r.left + scrollX,
-              y: r.top + scrollY,
-              w: r.width,
-              h: r.height,
-            });
-            return;
-          }
-        }
-      });
-      // Where the words are, so a number never sits on top of them.
-      const words = [];
-      const walker = document.createTreeWalker(scope, NodeFilter.SHOW_TEXT);
-      while (walker.nextNode()) {
-        const text = walker.currentNode;
-        if (!text.textContent?.trim()) continue;
-        const range = document.createRange();
-        range.selectNodeContents(text);
-        for (const r of range.getClientRects()) {
-          if (r.width > 0 && r.height > 0) {
-            words.push({ x: r.left + scrollX, y: r.top + scrollY, w: r.width, h: r.height });
-          }
-        }
-      }
-      const placed = [];
-      const meets = (a, b) =>
-        a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
-      const layer = document.createElement("div");
-      layer.setAttribute("data-help-marks", "");
-      layer.style.cssText =
-        "position:absolute;left:0;top:0;width:0;height:0;z-index:2147483647;pointer-events:none";
-      const RED = "#dc2626";
-      for (const m of marks) {
-        const ring = document.createElement("div");
-        ring.style.cssText = `position:absolute;left:${m.x - 4}px;top:${m.y - 4}px;width:${m.w + 8}px;height:${m.h + 8}px;border:3px solid ${RED};border-radius:8px;box-shadow:0 0 0 2px #fff`;
-        // The number sits up and to the left of the thing, else up and to the right,
-        // above or below it, wherever it stays inside the picture; the arrow points at it.
-        const mid = Math.min(12, m.h / 2);
-        const spots = [
-          [m.x - 44, m.y - 30, m.x - 4, m.y - 4 + mid],
-          [m.x + m.w + 16, m.y - 30, m.x + m.w + 4, m.y - 4 + mid],
-          [m.x - 42, m.y + m.h / 2 - 14, m.x - 4, m.y + m.h / 2],
-          [m.x + m.w + 14, m.y + m.h / 2 - 14, m.x + m.w + 4, m.y + m.h / 2],
-          [m.x + 8, m.y - 46, m.x + 22, m.y - 4],
-          [m.x + 8, m.y + m.h + 18, m.x + 22, m.y + m.h + 4],
-        ];
-        const fits = ([x, y]) => x >= 4 && x <= W - 34 && y >= 4 && y <= limit - 34;
-        // The spot that covers the fewest words and other marks (none, where it can).
-        const covered = ([x, y]) => {
-          const box = { x: x - 2, y: y - 2, w: 32, h: 32 };
-          let area = 0;
-          for (const r of [...words, ...placed, ...marks]) {
-            if (!meets(box, r)) continue;
-            area +=
-              (Math.min(box.x + box.w, r.x + r.w) - Math.max(box.x, r.x)) *
-              (Math.min(box.y + box.h, r.y + r.h) - Math.max(box.y, r.y));
-          }
-          return area;
-        };
-        const best = spots
-          .filter(fits)
-          .map((spot, order) => ({ spot, order, area: covered(spot) }))
-          .sort((a, b) => a.area - b.area || a.order - b.order)[0]?.spot;
-        const [bx, by, x2, y2] = best ?? [
-          Math.min(Math.max(m.x + 4, 4), W - 34),
-          Math.min(Math.max(m.y + 2, 4), limit - 34),
-          null,
-          null,
-        ];
-        placed.push({ x: bx, y: by, w: 28, h: 28 });
-        const badge = document.createElement("div");
-        badge.textContent = String(m.n);
-        badge.style.cssText = `position:absolute;left:${bx}px;top:${by}px;width:28px;height:28px;border-radius:50%;background:${RED};color:#fff;font:700 15px/28px system-ui,sans-serif;text-align:center;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4)`;
-        layer.append(ring, badge);
-        if (x2 === null) continue;
-        const x1 = bx + 15;
-        const y1 = by + 15;
-        const svgNs = "http://www.w3.org/2000/svg";
-        const svg = document.createElementNS(svgNs, "svg");
-        const minX = Math.min(x1, x2) - 6;
-        const minY = Math.min(y1, y2) - 6;
-        svg.setAttribute("width", String(Math.abs(x2 - x1) + 12));
-        svg.setAttribute("height", String(Math.abs(y2 - y1) + 12));
-        svg.style.cssText = `position:absolute;left:${minX}px;top:${minY}px;overflow:visible`;
-        const line = document.createElementNS(svgNs, "line");
-        line.setAttribute("x1", String(x1 - minX));
-        line.setAttribute("y1", String(y1 - minY));
-        line.setAttribute("x2", String(x2 - minX));
-        line.setAttribute("y2", String(y2 - minY));
-        line.setAttribute("stroke", RED);
-        line.setAttribute("stroke-width", "3");
-        line.setAttribute("stroke-linecap", "round");
-        svg.appendChild(line);
-        layer.prepend(svg);
-      }
-      document.body.appendChild(layer);
-      return marks.map((m) => m.n);
-    },
-    { steps, inDialog, maxHeight: MAX_HEIGHT },
+/** A button's words as a test: "…" stands for words the page fills in ("More for …"). */
+const nameRe = (name) =>
+  new RegExp(
+    `^${name
+      .split("…")
+      .map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+      .join(".{1,80}?")}$`,
   );
+
+/**
+ * Opens a guide's page at one address, and the dialog or menu its shot opens.
+ * Says which was opened, or what went wrong.
+ */
+async function openAt(page, guide, address) {
+  const url = new URL(address, SITE);
+  if (guide.query) url.search = guide.query;
+  await page.goto(url.href, { waitUntil: "domcontentloaded", timeout: 45_000 });
+  await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {});
+  const landed = new URL(page.url()).pathname;
+  if (!patternRe(guide.route).test(landed)) {
+    return { error: `${guide.route} sent the browser to ${landed}` };
+  }
+  if (!guide.open) return { opened: null };
+  const button = page.getByRole("button", { name: nameRe(guide.open) }).first();
+  await button.click({ timeout: 5_000 });
+  await page.locator("[role=dialog], [role=menu]").first().waitFor({ timeout: 5_000 });
+  await page.waitForTimeout(400);
+  return { opened: (await page.locator("[role=dialog]").count()) ? "dialog" : "menu" };
 }
+
+/** Moving pictures and blinking cursors still. */
+const STILL =
+  "*,*::before,*::after{animation:none!important;transition:none!important;caret-color:transparent!important}nextjs-portal{display:none!important}";
 
 async function shoot(context, guide) {
   const page = await context.newPage();
   try {
-    const address = await addressOf(page, guide.route);
-    if (!address) return { error: `no record found to open ${guide.route}` };
-    await page.goto(new URL(address, SITE).href, {
-      waitUntil: "domcontentloaded",
-      timeout: 45_000,
-    });
-    await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {});
-    const landed = new URL(page.url()).pathname;
-    if (!patternRe(guide.route).test(landed)) {
-      return { error: `${guide.route} sent the browser to ${landed}` };
+    const addresses = await addressesOf(page, guide.route, guide.from);
+    if (!addresses.length) return { error: `no record found to open ${guide.route}` };
+    const ask = { steps: guide.steps, target: guide.target, maxHeight: MAX_HEIGHT };
+    // A record's page: the record that shows the most of the steps' buttons.
+    let best = null;
+    for (const address of addresses) {
+      const at = await openAt(page, guide, address).catch((error) => ({
+        error: error instanceof Error ? error.message.split("\n")[0] : String(error),
+      }));
+      if (at.error) {
+        best ??= { error: at.error };
+        continue;
+      }
+      if (addresses.length === 1) {
+        best = { address, opened: at.opened, here: true };
+        break;
+      }
+      const seen = await markPage(page, { ...ask, opened: at.opened });
+      const score = seen.error ? -1 : seen.own * 1000 + seen.marks.length;
+      if (!best || best.error || score > best.score) best = { address, opened: at.opened, score };
+      best.here = best.address === address;
     }
-    let inDialog = false;
-    if (guide.open) {
-      const button = page.getByRole("button", { name: guide.open, exact: true }).first();
-      await button.click({ timeout: 5_000 });
-      await page.locator("[role=dialog]").first().waitFor({ timeout: 5_000 });
-      await page.waitForTimeout(400);
-      inDialog = true;
+    if (!best || best.error) return { error: best?.error ?? `could not open ${guide.route}` };
+    if (!best.here) {
+      const at = await openAt(page, guide, best.address);
+      if (at.error) return at;
     }
-    // Moving pictures and blinking cursors still.
-    await page.addStyleTag({
-      content:
-        "*,*::before,*::after{animation:none!important;transition:none!important;caret-color:transparent!important}nextjs-portal{display:none!important}",
-    });
-    const marks = await mark(page, guide.steps, inDialog);
-    const full = !inDialog;
-    const height = full
-      ? Math.min(MAX_HEIGHT, await page.evaluate(() => document.documentElement.scrollHeight))
-      : HEIGHT;
-    const png = await page.screenshot({
-      type: "png",
-      fullPage: full,
-      clip: full ? { x: 0, y: 0, width: WIDTH, height } : undefined,
-    });
+    await page.addStyleTag({ content: STILL });
+    const result = await markPage(page, { ...ask, opened: best.opened, draw: true });
+    if (result.error) return result;
+    const { clip } = result;
+    const png = await page.screenshot(
+      best.opened
+        ? { type: "png" }
+        : {
+            type: "png",
+            fullPage: true,
+            clip: { x: 0, y: clip.y, width: WIDTH, height: clip.height },
+          },
+    );
     const webp = await sharp(png).webp({ quality: 72 }).toBuffer();
     writeFileSync(join(OUT, `${guide.slug}.webp`), webp);
-    return { marks, height };
+    return result;
   } catch (error) {
     return { error: error instanceof Error ? error.message.split("\n")[0] : String(error) };
   } finally {
@@ -343,15 +251,28 @@ for (const guide of plan.guides) {
   manifest[guide.slug] = {
     src: `/help/shots/${guide.slug}.webp`,
     width: WIDTH,
-    height: result.height,
+    height: result.clip.height,
     marks: result.marks,
+    labels: result.labels,
+    clip: result.clip,
     route: guide.route,
     screen: guide.screen,
     guide: guide.guide,
     taken: today,
   };
+  // Taken, but a picture must point at something: the guide's steps or shot need a look.
+  if (result.marks.length === 0) {
+    failed.push(
+      `${guide.section}/${guide.slug}: marks nothing (no step's button or field is in the picture)`,
+    );
+  }
   done += 1;
   if (done % 10 === 0) console.log(`${done} pictures taken`);
+}
+// Guides with no picture (shot.none) keep none.
+for (const slug of plan.none ?? []) {
+  delete manifest[slug];
+  rmSync(join(OUT, `${slug}.webp`), { force: true });
 }
 await browser.close();
 

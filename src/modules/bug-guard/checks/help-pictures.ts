@@ -25,6 +25,7 @@ const WHY_BN: Record<string, string> = {
   file: "ছবির ফাইল নেই",
   screen: "স্ক্রিন বদলেছে",
   steps: "ধাপ বদলেছে",
+  marks: "ছবিতে নম্বর নেই",
 };
 
 export const oldHelpPictures: Check = {

@@ -13,10 +13,13 @@ import { guideHash, screenFingerprint, shellFiles, shotRoute } from "../../scrip
 
 /*
  * v6.4 L1: Claude Code on GitHub cannot take the Help pictures, so a screen fix
- * it makes must not wait for them. On its fix branches (claude/issue-…) and on
- * main itself, a picture may be out of date: Bug Guard lists those guides, and
- * every release takes all pictures again. Every other branch (a part or a
- * Release PR) still needs every picture up to date.
+ * it makes must not wait for them. On its fix branches (claude/issue-…) a
+ * picture may be out of date: Bug Guard lists those guides, and every release
+ * takes all pictures again. v6.4.1 C2: main is checked too (the "Help pictures"
+ * workflow runs the tests on every push to main and takes the old pictures
+ * again), except in the Checks the Deploy runs, so an urgent fix still goes
+ * live. Every other branch (a part or a Release PR) needs every picture up to
+ * date, and every picture needs its numbered marks.
  */
 
 const ROOT = path.resolve(__dirname, "../..");
@@ -27,17 +30,55 @@ afterAll(() => {
   if (made) rmSync(made, { recursive: true, force: true });
 });
 
-describe("Which branch may leave Help pictures out of date (v6.4 L1)", () => {
-  it("only a Claude Code fix branch, and main once a pull request is in", () => {
-    expect(picturesMayWait("claude/issue-42-20261017-0930")).toBe(true);
-    expect(picturesMayWait("claude/issue-7")).toBe(true);
-    expect(picturesMayWait("main")).toBe(true);
-    expect(picturesMayWait("claude/v64-fx-help")).toBe(false);
-    expect(picturesMayWait("claude/issues-list")).toBe(false);
-    expect(picturesMayWait("claude/issue-")).toBe(false);
-    expect(picturesMayWait("feature/claude/issue-4")).toBe(false);
-    expect(picturesMayWait("release/v6.4")).toBe(false);
-    expect(picturesMayWait(null)).toBe(false);
+describe("Which branch may leave Help pictures out of date (v6.4 L1, v6.4.1 C2)", () => {
+  it("only a Claude Code fix branch; main only in the Deploy's own Checks", () => {
+    const none = {};
+    const deploy = { HELP_PICTURES_MAY_WAIT: "deploy" };
+    expect(picturesMayWait("claude/issue-42-20261017-0930", none)).toBe(true);
+    expect(picturesMayWait("claude/issue-7", none)).toBe(true);
+    // v6.4.1 C2: main is checked too, by the tests and the "Help pictures" workflow.
+    expect(picturesMayWait("main", none)).toBe(false);
+    expect(picturesMayWait("main", { HELP_PICTURES_MAY_WAIT: "yes" })).toBe(false);
+    // The Deploy's Checks: an urgent fix is never kept off the live site by a picture.
+    expect(picturesMayWait("main", deploy)).toBe(true);
+    expect(picturesMayWait("release/v6.4", deploy)).toBe(false);
+    expect(picturesMayWait(null, deploy)).toBe(false);
+    expect(picturesMayWait("claude/v64-fx-help", none)).toBe(false);
+    expect(picturesMayWait("claude/issues-list", none)).toBe(false);
+    expect(picturesMayWait("claude/issue-", none)).toBe(false);
+    expect(picturesMayWait("feature/claude/issue-4", none)).toBe(false);
+    expect(picturesMayWait("release/v6.4", none)).toBe(false);
+    expect(picturesMayWait(null, none)).toBe(false);
+  });
+
+  it("is told by the Deploy alone, which the Checks pass on to the tests", () => {
+    const read = (f: string) => readFileSync(path.join(ROOT, ".github", "workflows", f), "utf8");
+    // The Deploy asks for it ...
+    expect(read("deploy.yml")).toMatch(
+      /uses: \.\/\.github\/workflows\/checks\.yml\n\s+with:\n\s+pictures-may-wait: true/,
+    );
+    // ... and the Checks pass it to the tests only when asked (a pull request never is).
+    const checks = read("checks.yml");
+    expect(checks).toMatch(/pictures-may-wait:\n\s+type: boolean\n\s+default: false/);
+    expect(checks).toContain(
+      "HELP_PICTURES_MAY_WAIT: ${{ inputs.pictures-may-wait && 'deploy' || '' }}",
+    );
+  });
+
+  it("runs the pictures workflow on every pull request into main and push to main", () => {
+    const yml = readFileSync(path.join(ROOT, ".github/workflows/help-pictures.yml"), "utf8");
+    const on = yml.slice(yml.indexOf("\non:"), yml.indexOf("\npermissions:"));
+    expect(on).toMatch(/\n {2}pull_request:\n {4}branches: \[main\]/);
+    expect(on).toMatch(/\n {2}push:\n {4}branches: \[main\]/);
+    expect(on).toContain('- "src/**"');
+    // It checks first, without the pictures' own exemption on main, then takes the old ones.
+    expect(yml).toMatch(/npx vitest run tests\/unit\/help-guides\.test\.ts/);
+    expect(yml).not.toContain("HELP_PICTURES_MAY_WAIT");
+    expect(yml).toContain("needs.check.outputs.old != '0'");
+    expect(yml).toContain("node scripts/full-check/help-shots-selftest.mjs");
+    // A workflow of its own: the Deploy never waits for it.
+    const deploy = readFileSync(path.join(ROOT, ".github/workflows/deploy.yml"), "utf8");
+    expect(deploy).not.toMatch(/help-pictures/);
   });
 
   it("reads the branch from the pull request, then GitHub's run, then git", () => {
@@ -72,6 +113,8 @@ describe("The list of out-of-date pictures the build leaves for Bug Guard (v6.4 
     width: 1,
     height: 1,
     marks: [1],
+    labels: { "1": "New quotation" },
+    clip: { y: 0, height: 1, target: "marks" },
     route,
     screen: screenFingerprint(ROOT, route, shell),
     guide: guideHash(guide),
@@ -104,6 +147,19 @@ describe("The list of out-of-date pictures the build leaves for Bug Guard (v6.4 
     expect(oldPictures(ROOT, only, { [guide.slug]: marked }, exists)).toEqual([
       { slug: guide.slug, section: "sales", why: "steps" },
     ]);
+  });
+
+  it("names a picture that marks nothing or does not say which part it shows (v6.4.1 C2)", () => {
+    expect(oldPictures(ROOT, only, { [guide.slug]: { ...fresh, marks: [] } }, exists)).toEqual([
+      { slug: guide.slug, section: "sales", why: "marks" },
+    ]);
+    const noClip = { ...fresh, clip: undefined };
+    expect(oldPictures(ROOT, only, { [guide.slug]: noClip }, exists)).toEqual([
+      { slug: guide.slug, section: "sales", why: "marks" },
+    ]);
+    // A guide with no picture on purpose is never listed.
+    const none = [{ section: { id: "sales" }, article: { ...guide, shot: { none: "why" } } }];
+    expect(oldPictures(ROOT, none, {}, exists)).toEqual([]);
   });
 
   it("is made in the Docker build and goes into the app's image beside the server", () => {

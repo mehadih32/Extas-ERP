@@ -151,8 +151,9 @@ export default async function HelpArticlePage({ params }: { params: Params }) {
                   {step.text}
                 </p>
               </div>
-              {/* A step's own picture; the guide's picture above stands in until it is added. */}
-              {step.image && (step.image.src || !picture) && (
+              {/* A step's own picture; the guide's picture above stands in until it is
+                  added. A guide with no picture on purpose (shot.none) shows no empty frame. */}
+              {step.image && (step.image.src || (!picture && !article.shot?.none)) && (
                 <div className="sm:pl-11">
                   <HelpImageSlot image={step.image} />
                 </div>

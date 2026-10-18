@@ -7,6 +7,14 @@ name: Checks
 on:
   pull_request:
   workflow_call:
+    inputs:
+      # Only the Deploy sets it (v6.4.1 C2): an old Help picture never keeps an
+      # urgent fix off the live site. The "Help pictures" workflow still checks
+      # main and takes the old pictures again (help-pictures.yml).
+      pictures-may-wait:
+        type: boolean
+        default: false
+        description: "Help pictures may be out of date (the Deploy's own run)"
   workflow_dispatch:
 
 permissions:
@@ -58,6 +66,8 @@ jobs:
 
       - name: Every test
         run: npm test
+        env:
+          HELP_PICTURES_MAY_WAIT: ${{ inputs.pictures-may-wait && 'deploy' || '' }}
 
       - name: Production build
         run: npm run build

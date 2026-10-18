@@ -16,6 +16,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ACCESS_TREE, leavesOf } from "@/components/settings/roles/access-tree";
 import { PHONE_TABS, TOP_BAR_TABS } from "@/components/shell/nav-items";
 import { HELP_SECTIONS } from "@/modules/help";
+import { whatPoints } from "@/modules/help/guide-text";
 import { HELP_PICTURES } from "@/modules/help/pictures";
 import type { HelpArticle } from "@/modules/help/types";
 import { PERMISSIONS } from "@/modules/rbac/permissions";
@@ -24,6 +25,8 @@ import {
   guideHash,
   isPassingState,
   layouts,
+  markLabels,
+  pageFileOf,
   pages,
   patternOf,
   pressables,
@@ -52,6 +55,16 @@ import { UNREAD_LABELS } from "./help-unread";
 const ROOT = process.cwd();
 const BENGALI = /[ঀ-৿]/;
 const BENGALI_DIGIT = /[০-৯]/;
+/**
+ * The guides with no picture (shot.none), each saying why: what they are about
+ * cannot be shown on a computer with the demo data. Adding one is a decision.
+ */
+const NO_PICTURE = ["errors", "install-app", "location-lock", "my-hr-phone-app"];
+
+/** The longest What given as one text; a longer one is written as points. */
+const WHAT_ONE_TEXT = 200;
+/** The longest point of a What. */
+const WHAT_POINT = 300;
 
 const articles = HELP_SECTIONS.flatMap((section) =>
   section.articles.map((article) => ({ section, article })),
@@ -73,7 +86,7 @@ const textsOf = (article: HelpArticle) => [
   article.summary,
   ...article.keywords,
   article.who ?? "",
-  article.what ?? "",
+  ...whatPoints(article.what),
   article.why ?? "",
   article.next ?? "",
   ...article.steps.flatMap((s) => [s.text, s.image?.caption ?? ""]),
@@ -97,6 +110,24 @@ const COMMON = HELP_SECTIONS.find((s) => s.id === "getting-started")!.articles.f
 /** The files of the frame around every page (menu, top bar): their buttons are the "Getting started" guides'. */
 const SHELL = shellFiles(ROOT);
 
+/** The Help Center's files (the guides, its own screens and messages) whose text matches. */
+const helpFilesUsing = (word: RegExp): string[] => {
+  const files = (dir: string): string[] =>
+    readdirSync(dir).flatMap((name) => {
+      const full = path.join(dir, name);
+      if (statSync(full).isDirectory()) return files(full);
+      return /\.(tsx?|json)$/.test(name) ? [full] : [];
+    });
+  return [
+    path.join(ROOT, "src", "components", "help"),
+    path.join(ROOT, "src", "app", "(app)", "help"),
+    path.join(ROOT, "src", "modules", "help"),
+  ]
+    .flatMap(files)
+    .filter((file) => word.test(readFileSync(file, "utf8")))
+    .map((file) => path.relative(ROOT, file));
+};
+
 /** Whether the app shows a label; "…" stands for a name the screen fills in ("Load the … items"). */
 const shows = (app: string, label: string) =>
   app.includes(label) ||
@@ -110,15 +141,17 @@ const shows = (app: string, label: string) =>
 describe("What, Why and How in every guide", () => {
   it("every guide says what it is and why it matters, in Bengali", () => {
     const missing = articles
-      .filter(
-        ({ article }) =>
-          !article.what ||
+      .filter(({ article }) => {
+        const what = whatPoints(article.what).join(" ");
+        return (
+          !what ||
           !article.why ||
-          !BENGALI.test(article.what) ||
+          !BENGALI.test(what) ||
           !BENGALI.test(article.why) ||
-          article.what.length < 80 ||
-          article.why.length < 80,
-      )
+          what.length < 80 ||
+          article.why.length < 80
+        );
+      })
       .map(({ section, article }) => `${section.id}/${article.slug}`);
     expect(missing).toEqual([]);
   });
@@ -128,6 +161,50 @@ describe("What, Why and How in every guide", () => {
       .filter(({ article }) => article.steps.length === 0)
       .map(({ section, article }) => `${section.id}/${article.slug}`);
     expect(missing).toEqual([]);
+  });
+
+  // v6.4.1 C3: How is the steps, the tips and the common mistakes, in every guide.
+  it("every guide has tips and common mistakes, in Bengali", () => {
+    const missing = articles.flatMap(({ section, article }) => [
+      ...(article.tips?.some((t) => BENGALI.test(t))
+        ? []
+        : [`${section.id}/${article.slug}: tips`]),
+      ...(article.mistakes?.some((m) => BENGALI.test(m))
+        ? []
+        : [`${section.id}/${article.slug}: mistakes`]),
+    ]);
+    expect(missing).toEqual([]);
+  });
+
+  // v6.4.1 C3: What is short points, so a reader takes in one part of the screen at a time.
+  it("writes What as short points: a long What is a list, each point at most 300 characters", () => {
+    const bad = articles.flatMap(({ section, article }) => {
+      const where = `${section.id}/${article.slug}`;
+      if (typeof article.what === "string")
+        return article.what.length > WHAT_ONE_TEXT ? [`${where}: one long text, not points`] : [];
+      return whatPoints(article.what).flatMap((point, i) =>
+        point.length > WHAT_POINT ? [`${where}: point ${i + 1} is ${point.length} characters`] : [],
+      );
+    });
+    expect(bad).toEqual([]);
+    // Shown as a list on the guide's page.
+    const parts = readFileSync(path.join(ROOT, "src/components/help/guide-parts.tsx"), "utf8");
+    expect(parts).toMatch(/points\.map\(\(point\) => \(\s*<li/);
+  });
+
+  // v6.4.1 C3: everyday words, the same word for the same thing everywhere.
+  it("says ফিল্টার for a filter, never ছাঁকনি (or ছাঁকা, ছাঁকুন)", () => {
+    expect(helpFilesUsing(/ছাঁক|ছেঁক/)).toEqual([]);
+    expect(
+      articles.some(({ article }) => textsOf(article).some((t) => t.includes("ফিল্টার"))),
+    ).toBe(true);
+  });
+
+  it("has one word for save: সেভ (সেভ করুন, সেভ হয়), never সংরক্ষণ", () => {
+    expect(helpFilesUsing(/সংরক্ষ/)).toEqual([]);
+    expect(
+      articles.some(({ article }) => textsOf(article).some((t) => t.includes("সেভ করুন"))),
+    ).toBe(true);
   });
 
   it("explains each button and field in Bengali, by its exact English words, once per guide", () => {
@@ -183,21 +260,7 @@ describe("What, Why and How in every guide", () => {
   });
 
   it("writes numbers with Western digits on the Help Center's own screens too", () => {
-    const help = [
-      path.join(ROOT, "src", "components", "help"),
-      path.join(ROOT, "src", "app", "(app)", "help"),
-      path.join(ROOT, "src", "modules", "help"),
-    ];
-    const files = (dir: string): string[] =>
-      readdirSync(dir).flatMap((name) => {
-        const full = path.join(dir, name);
-        if (statSync(full).isDirectory()) return files(full);
-        return /\.(tsx?|json)$/.test(name) ? [full] : [];
-      });
-    const bad = help
-      .flatMap(files)
-      .filter((file) => BENGALI_DIGIT.test(readFileSync(file, "utf8")))
-      .map((file) => path.relative(ROOT, file));
+    const bad = helpFilesUsing(BENGALI_DIGIT);
     expect(bad).toEqual([]);
   });
 
@@ -217,11 +280,12 @@ describe("What, Why and How in every guide", () => {
     // Tailwind's widths: md from 768 px (tablets), lg from 1024 px, xl from 1280 px,
     // so a 1366 px laptop and a 1920 px screen show TOP_BAR_TABS.xl sections.
     const menu = articles.find(({ article }) => article.slug === "find-your-way")!.article;
-    expect(menu.what).toContain(
+    const what = whatPoints(menu.what).join(" ");
+    expect(what).toContain(
       `ট্যাবলেটে ${TOP_BAR_TABS.md}টি, 1024 থেকে 1279 px চওড়া ছোট ল্যাপটপে ${TOP_BAR_TABS.lg}টি, ` +
         `সাধারণ ল্যাপটপ (1366 px) ও বড় পর্দায় ${TOP_BAR_TABS.xl}টি`,
     );
-    expect(menu.what).toContain(`প্রথম ${PHONE_TABS}টি অংশ`);
+    expect(what).toContain(`প্রথম ${PHONE_TABS}টি অংশ`);
   });
 });
 
@@ -440,10 +504,13 @@ describe("Every button and tab on every screen has its guide", () => {
 
 describe("Every guide has its automatic picture, and it is not old", () => {
   const HOW = "Take it with: npm run help:shots (scripts/help/plan.ts says how)";
-  // v6.4 L1: Claude Code's fix branches (claude/issue-…) cannot take pictures, and
-  // main is where those fixes land; there the pictures may wait for the next
-  // release (it takes all of them again) and Bug Guard lists the old ones.
+  // v6.4 L1: Claude Code's fix branches (claude/issue-…) cannot take pictures, so
+  // there the pictures may wait for the next release (it takes all of them again)
+  // and Bug Guard lists the old ones. v6.4.1 C2: on main they are checked too,
+  // except in the Checks the Deploy runs (scripts/help/old-pictures.ts).
   const MAY_WAIT = picturesMayWait(branchUnderTest());
+  /** The guides with a picture: all but the few whose shot says why they have none. */
+  const pictured = articles.filter(({ article }) => !article.shot?.none);
 
   it("knows a guide's page and what its picture marks", () => {
     expect(patternOf(ROOT, "/parties/buyers")).toBe("/parties/[list]");
@@ -458,10 +525,53 @@ describe("Every guide has its automatic picture, and it is not old", () => {
     );
     expect(guideHash({ ...guide, steps: [{ text: "“Void”" }] })).not.toBe(guideHash(guide));
     expect(guideHash({ ...guide, shot: { open: "New order" } })).not.toBe(guideHash(guide));
+    // v6.4.1 C2: another part of the page, or the Help Center's own Bengali labels, too.
+    expect(guideHash({ ...guide, shot: { target: "Payments" } })).not.toBe(guideHash(guide));
+    expect(guideHash({ ...guide, shot: { query: "q=x" } })).not.toBe(guideHash(guide));
+    expect(guideHash({ ...guide, steps: [{ text: "“বড় করে দেখুন”" }] })).not.toBe(
+      guideHash({ ...guide, steps: [{ text: "“ছবি”" }] }),
+    );
+    expect(markLabels("“Save” আর “বড় করে দেখুন”, যেমন “3”")).toEqual(["Save", "বড় করে দেখুন"]);
+  });
+
+  // v6.4.1 C2: the definitions themselves, checked on every branch without the pictures.
+  it("points every guide's picture at something its screen shows (a target, or a step's label)", () => {
+    const cache = new Map<string, string>();
+    const screenText = (route: string) => {
+      if (!cache.has(route)) {
+        const file = pageFileOf(ROOT, route);
+        const text = file
+          ? screenFiles(ROOT, file)
+              .map((f) => readFileSync(path.join(ROOT, f), "utf8"))
+              .join("\n")
+          : "";
+        cache.set(route, text);
+      }
+      return cache.get(route)!;
+    };
+    const bad = pictured.flatMap(({ section, article }) => {
+      const where = `${section.id}/${article.slug}`;
+      const app = screenText(shotRoute(article));
+      if (!app) return [`${where}: no page draws ${shotRoute(article)}`];
+      const target = article.shot?.target;
+      if (target && !shows(app, target)) return [`${where}: its target “${target}” is not on it`];
+      const labels = article.steps.flatMap((s) => markLabels(s.text));
+      return labels.some((l) => shows(app, l)) ? [] : [`${where}: no step quotes a label it shows`];
+    });
+    expect(bad).toEqual([]);
+  });
+
+  it("gives a reason for each guide that has no picture, and only for these", () => {
+    const none = articles.filter(({ article }) => article.shot?.none);
+    expect(none.map(({ article }) => article.slug).sort()).toEqual(NO_PICTURE);
+    for (const { article } of none) {
+      expect(article.shot!.none!.length, article.slug).toBeGreaterThan(30);
+      expect(HELP_PICTURES[article.slug], article.slug).toBeUndefined();
+    }
   });
 
   it.skipIf(MAY_WAIT)("every guide has a picture of its own page, and the file is there", () => {
-    const missing = articles
+    const missing = pictured
       .filter(({ article }) => {
         const picture = HELP_PICTURES[article.slug];
         return (
@@ -475,7 +585,7 @@ describe("Every guide has its automatic picture, and it is not old", () => {
   });
 
   it.skipIf(MAY_WAIT)("a guide whose screen or steps changed has a new picture", () => {
-    const old = articles
+    const old = pictured
       .filter(({ article }) => HELP_PICTURES[article.slug])
       .filter(({ article }) => {
         const picture = HELP_PICTURES[article.slug]!;
@@ -495,5 +605,40 @@ describe("Every guide has its automatic picture, and it is not old", () => {
       )
       .map(({ section, article }) => `${section.id}/${article.slug}`);
     expect(bad).toEqual([]);
+  });
+
+  // v6.4.1 C2: a picture shows the part of the page the steps are about, with numbers on it.
+  it.skipIf(MAY_WAIT)(
+    "every picture has numbered marks and says which part of the page it shows",
+    () => {
+      const bad = pictured
+        .filter(({ article }) => HELP_PICTURES[article.slug])
+        .flatMap(({ section, article }) => {
+          const picture = HELP_PICTURES[article.slug]!;
+          const where = `${section.id}/${article.slug}`;
+          return [
+            ...(picture.marks.length ? [] : [`${where}: no marks`]),
+            ...(picture.clip?.target ? [] : [`${where}: no part of the page (clip)`]),
+            ...(picture.clip && picture.clip.height === picture.height ? [] : [`${where}: size`]),
+          ];
+        });
+      expect(bad, HOW).toEqual([]);
+    },
+  );
+
+  it.skipIf(MAY_WAIT)("puts each step's number on a label that step's words quote", () => {
+    const bad = pictured
+      .filter(({ article }) => HELP_PICTURES[article.slug])
+      .flatMap(({ section, article }) => {
+        const picture = HELP_PICTURES[article.slug]!;
+        return picture.marks.flatMap((n) => {
+          const label = picture.labels?.[String(n)];
+          const step = article.steps[n - 1];
+          return label && step && markLabels(step.text).includes(label)
+            ? []
+            : [`${section.id}/${article.slug}: mark ${n} (${label ?? "no label"})`];
+        });
+      });
+    expect(bad, HOW).toEqual([]);
   });
 });

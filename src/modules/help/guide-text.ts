@@ -7,6 +7,12 @@ import type { HelpArticle, HelpSection } from "./types";
  * read them to the end to answer about the last button.
  */
 
+/** A guide's What as its points: one text is one point. */
+export function whatPoints(what: HelpArticle["what"]): string[] {
+  if (what === undefined) return [];
+  return typeof what === "string" ? [what] : [...what];
+}
+
 /**
  * The most of one guide the AI reads: about twice the longest guide today
  * (16,000 characters in October 2026). tests/unit/help-ai-guides.test.ts fails
@@ -23,7 +29,7 @@ export function guideText(
   const main = [
     `## ${article.title} (${section.title})${open ? "" : " [not open to this person's role]"}`,
     article.summary,
-    ...(article.what ? [`What: ${article.what}`] : []),
+    ...(article.what ? ["What:", ...whatPoints(article.what).map((p) => `- ${p}`)] : []),
     ...(article.why ? [`Why: ${article.why}`] : []),
     "How:",
     ...article.steps.map((s, i) => `${i + 1}. ${s.text}`),

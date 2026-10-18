@@ -496,11 +496,11 @@ async function registers(ctx: CheckContext) {
       ctx.db.rawMaterial.aggregate({ where: { companyId }, _sum: { stockValue: true } }),
       ctx.db.productionProject.findMany({ where: { companyId }, select: { id: true } }),
       ctx.db.fixedAsset.findMany({
-        where: { companyId, status: { not: "DISPOSED" } },
+        where: { companyId, status: { not: "DISPOSED" }, voidedAt: null },
         select: { purchaseCost: true, currentValue: true },
       }),
       ctx.db.capitalSource.findMany({
-        where: { companyId },
+        where: { companyId, voidedAt: null },
         select: {
           id: true,
           name: true,

@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import { lockRow } from "@/lib/row-lock";
+import * as assets from "@/modules/accounts/asset.service";
 import * as chart from "@/modules/accounts/chart.service";
 import * as reports from "@/modules/accounts/reports.service";
 import { ensureControlAccounts } from "@/modules/accounts/control-accounts";
@@ -717,6 +718,21 @@ run("money and stock guards (v6.4.1 review)", () => {
     );
     await lockedFirst(() =>
       ledger.setOpeningBalance(env.accountsCtx, env.supplier.id, { amount: -5000 }),
+    );
+    expect((await ledger.getPartyBalance(env.ctx, env.supplier.id)).toFixed(2)).toBe("-5200.00");
+    // A fixed asset bought on credit from the supplier, and voided.
+    await lockedFirst(() =>
+      assets.createFixedAsset(env.accountsCtx, {
+        name: "Cutting table",
+        purchaseDate: "2026-02-01",
+        purchaseCost: 800,
+        acquisition: { kind: "CREDIT", supplierId: env.supplier.id },
+      }),
+    );
+    expect((await ledger.getPartyBalance(env.ctx, env.supplier.id)).toFixed(2)).toBe("-6000.00");
+    const table = await prisma.fixedAsset.findFirstOrThrow({ where: { name: "Cutting table" } });
+    await lockedFirst(() =>
+      assets.voidFixedAsset(env.accountsCtx, table.id, { reason: "Bought by the factory" }),
     );
     expect((await ledger.getPartyBalance(env.ctx, env.supplier.id)).toFixed(2)).toBe("-5200.00");
   });

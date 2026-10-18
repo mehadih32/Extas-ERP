@@ -3138,6 +3138,10 @@ model FixedAsset {
   disposalAmount     Decimal?           @db.Decimal(14, 2) // sale proceeds (0 when scrapped)
   notes              String?
   createdAt          DateTime           @default(now())
+  /// Set when it was entered by mistake and voided: its entries are reversed and
+  /// it leaves the register, but the row stays.
+  voidedAt           DateTime?
+  voidReason         String?
 
   company       Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
   ledgerAccount LedgerAccount? @relation(fields: [ledgerAccountId], references: [id], onDelete: SetNull)
@@ -3162,6 +3166,10 @@ model CapitalSource {
   status          CapitalStatus     @default(ACTIVE)
   notes           String?
   createdAt       DateTime          @default(now())
+  /// Set when it was added by mistake and voided: its entries are reversed and it
+  /// leaves the lists, but the row and its installments stay.
+  voidedAt        DateTime?
+  voidReason      String?
 
   company       Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
   ledgerAccount LedgerAccount?       @relation(fields: [ledgerAccountId], references: [id], onDelete: SetNull)

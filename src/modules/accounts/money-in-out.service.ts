@@ -63,6 +63,7 @@ async function findOwner(ctx: CompanyContext, input: { ownerId?: string; ownerNa
   const owner = await ctx.db.capitalSource.findFirst({
     where: {
       kind: "OWNER_CAPITAL",
+      voidedAt: null,
       ...(input.ownerId
         ? { id: input.ownerId }
         : { name: { equals: input.ownerName!, mode: "insensitive" } }),
@@ -83,7 +84,7 @@ export async function getMoneyInOutOptions(ctx: CompanyContext) {
   };
   if (!can.addFund && !can.withdraw && !can.bankCharge) return null;
   const owners = await ctx.db.capitalSource.findMany({
-    where: { kind: "OWNER_CAPITAL" },
+    where: { kind: "OWNER_CAPITAL", voidedAt: null },
     select: { id: true, name: true, outstanding: true },
     orderBy: { name: "asc" },
   });

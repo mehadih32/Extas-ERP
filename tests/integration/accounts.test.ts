@@ -707,6 +707,32 @@ run("fixed assets and depreciation", () => {
     ).toEqual({ id: ac.id, removed: true, reversedEntries: 2 });
     await expectAppError(assets.getFixedAsset(env.accounts, ac.id), "NOT_FOUND");
     expect((await ledger.getPartyBalance(env.accounts, dealer.id)).toFixed(2)).toBe("0.00");
+    // The row stays, marked void (never deleted); it cannot be changed, depreciated or voided again.
+    const kept = await prisma.fixedAsset.findUniqueOrThrow({ where: { id: ac.id } });
+    expect(kept.voidedAt).not.toBeNull();
+    expect(kept.voidReason).toBe("Entered twice by mistake");
+    await expectAppError(
+      assets.voidFixedAsset(env.accounts, ac.id, { reason: "Entered twice by mistake" }),
+      "NOT_FOUND",
+    );
+    await expectAppError(
+      assets.updateFixedAsset(env.accounts, ac.id, { location: "Store" }),
+      "NOT_FOUND",
+    );
+    await expectAppError(
+      assets.disposeFixedAsset(env.accounts, ac.id, { reason: "Scrap it now" }),
+      "NOT_FOUND",
+    );
+    expect(
+      (await assets.previewDepreciation(env.accounts)).items.map((i) => i.assetId),
+    ).not.toContain(ac.id);
+    const purchase = await prisma.journalEntry.findFirstOrThrow({
+      where: { sourceType: "FIXED_ASSET", sourceId: ac.id, reversalOfId: null },
+    });
+    expect((await getJournalEntryScreen(env.accounts, purchase.id)).source).toEqual({
+      title: "Office AC (removed)",
+      href: null,
+    });
 
     const list = await assets.listFixedAssets(env.accounts);
     expect(list.items.map((a) => [a.name, a.status])).toEqual([
@@ -892,6 +918,45 @@ run("capital, investors and loans", () => {
     const archived = await chart.getAccount(env.accounts, karim.ledgerAccountId!);
     expect(archived).toMatchObject({ isActive: false, balance: "0.00" });
     expect(archived.name).toContain("(void)");
+    // The source stays, marked void, and leaves the lists; its installments stay too.
+    const keptSource = await prisma.capitalSource.findUniqueOrThrow({ where: { id: karim.id } });
+    expect(keptSource.voidReason).toBe("Wrong lender entirely");
+    expect(keptSource.outstanding.toFixed(2)).toBe("0.00");
+    expect(keptSource.voidedAt).not.toBeNull();
+    await expectAppError(capital.getCapitalSource(env.accounts, karim.id), "NOT_FOUND");
+    await expectAppError(
+      capital.voidCapitalSource(env.accounts, karim.id, { reason: "Wrong lender entirely" }),
+      "NOT_FOUND",
+    );
+    await expectAppError(
+      capital.repayCapital(env.accounts, karim.id, { principal: 1, method: "CASH" }),
+      "NOT_FOUND",
+    );
+    const rahim = await capital.createCapitalSource(env.accounts, {
+      kind: "PRIVATE_LOAN",
+      name: "Rahim Chacha",
+      received: { amount: 30000, method: "CASH" },
+    });
+    const planned = await capital.scheduleInstallments(env.accounts, rahim.id, {
+      plan: "FLAT",
+      count: 3,
+      firstDueDate: dayFromToday(10),
+    });
+    await capital.payInstallment(env.accounts, planned.installments[0]!.id, { method: "CASH" });
+    await capital.voidCapitalSource(env.accounts, rahim.id, {
+      reason: "Entered for the wrong firm",
+    });
+    const left = await prisma.capitalInstallment.findMany({
+      where: { capitalSourceId: rahim.id },
+      orderBy: { dueDate: "asc" },
+    });
+    expect(left.map((i) => i.status)).toEqual(["PAID", "SKIPPED", "SKIPPED"]);
+    expect(
+      (await capital.listInstallments(env.accounts)).items.some((i) => i.source.id === rahim.id),
+    ).toBe(false);
+    expect((await capital.listCapitalSources(env.accounts)).items.map((i) => i.name)).not.toContain(
+      "Rahim Chacha",
+    );
 
     expect((await capital.listCapitalSources(env.accounts)).summary).toEqual({
       ownerCapital: "450000.00",

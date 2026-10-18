@@ -34,7 +34,7 @@ const SUGGESTED_CATEGORIES = [
 
 async function categoriesInUse(ctx: CompanyContext) {
   const used = await ctx.db.fixedAsset.findMany({
-    where: { category: { not: null } },
+    where: { category: { not: null }, voidedAt: null },
     select: { category: true },
     distinct: ["category"],
   });
@@ -84,7 +84,7 @@ export async function getAssetForm(ctx: CompanyContext, assetId?: string) {
   const [categories, accounts, asset] = await Promise.all([
     categoriesInUse(ctx),
     keys.pay && !assetId ? listMoneyAccounts(ctx) : [],
-    assetId ? ctx.db.fixedAsset.findUnique({ where: { id: assetId } }) : null,
+    assetId ? ctx.db.fixedAsset.findFirst({ where: { id: assetId, voidedAt: null } }) : null,
   ]);
   if (assetId && !asset) throw new AppError("NOT_FOUND", "Fixed asset not found.");
   return {

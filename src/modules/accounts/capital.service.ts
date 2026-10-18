@@ -97,11 +97,11 @@ async function uniqueAccountName(tx: Tx, companyId: string, base: string, except
 const accountName = (kind: CapitalSourceKind, name: string) =>
   `${KIND_ACCOUNT[kind].label} — ${name}`;
 
-/** Locks the source; gives it a ledger account if it has none yet. */
+/** Locks the source (never a voided one); gives it a ledger account if it has none yet. */
 async function lockSource(tx: Tx, ctx: CompanyContext, sourceId: string): Promise<LinkedSource> {
   await lockRow(tx, "CapitalSource", sourceId);
   const source = await tx.capitalSource.findFirst({
-    where: { id: sourceId, companyId: ctx.company.id },
+    where: { id: sourceId, companyId: ctx.company.id, voidedAt: null },
   });
   if (!source) throw new AppError("NOT_FOUND", "Capital source not found.");
   if (source.ledgerAccountId) return source as LinkedSource;
@@ -328,7 +328,11 @@ export async function listCapitalSources(ctx: CompanyContext, raw: unknown = {})
   const q = listCapitalSchema.parse(raw);
   const tz = ctx.company.timezone;
   const sources = await ctx.db.capitalSource.findMany({
-    where: { ...(q.kind ? { kind: q.kind } : {}), ...(q.status ? { status: q.status } : {}) },
+    where: {
+      voidedAt: null,
+      ...(q.kind ? { kind: q.kind } : {}),
+      ...(q.status ? { status: q.status } : {}),
+    },
     orderBy: [{ kind: "asc" }, { startDate: "asc" }],
   });
   const unpaid = await prisma.capitalInstallment.findMany({
@@ -371,8 +375,8 @@ export async function listCapitalSources(ctx: CompanyContext, raw: unknown = {})
 
 export async function getCapitalSource(ctx: CompanyContext, sourceId: string) {
   const tz = ctx.company.timezone;
-  const source = await ctx.db.capitalSource.findUnique({
-    where: { id: sourceId },
+  const source = await ctx.db.capitalSource.findFirst({
+    where: { id: sourceId, voidedAt: null },
     include: { installments: { orderBy: [{ dueDate: "asc" }, { id: "asc" }] } },
   });
   if (!source) throw new AppError("NOT_FOUND", "Capital source not found.");
@@ -450,7 +454,7 @@ export async function listInstallments(ctx: CompanyContext, raw: unknown = {}) {
   const rows = await prisma.capitalInstallment.findMany({
     where: {
       AND: [
-        { capitalSource: { companyId: ctx.company.id } },
+        { capitalSource: { companyId: ctx.company.id, voidedAt: null } },
         q.sourceId ? { capitalSourceId: q.sourceId } : {},
         statusWhere,
         dueWindow ? { dueDate: dueWindow } : {},
@@ -786,7 +790,8 @@ export async function reverseCapitalEntry(
 
 /**
  * Removes a source added by mistake: every entry on it is reversed (they stay in
- * the books), its installments go, and its ledger account is archived.
+ * the books), its unpaid installments are skipped, and its ledger account is
+ * archived. The source and its installments stay, marked void with the reason.
  */
 export async function voidCapitalSource(
   ctx: CompanyContext,
@@ -818,7 +823,16 @@ export async function voidCapitalSource(
         postedById: ctx.user.id,
       });
     }
-    await tx.capitalSource.delete({ where: { id: source.id } });
+    await tx.capitalInstallment.updateMany({
+      where: { capitalSourceId: source.id, status: { in: [...UNPAID] } },
+      data: { status: "SKIPPED", note: `Removed: ${reason}`.slice(0, 500) },
+    });
+    // Its figures follow its ledger (now nothing), then it is marked void.
+    await syncSourceTx(tx, ctx.company.id, source.id);
+    await tx.capitalSource.update({
+      where: { id: source.id },
+      data: { voidedAt: new Date(), voidReason: reason },
+    });
     await tx.ledgerAccount.update({
       where: { id: source.ledgerAccountId },
       data: {
@@ -835,12 +849,12 @@ export async function voidCapitalSource(
       ctx,
       meta,
       {
-        action: "DELETE",
+        action: "STATUS_CHANGE",
         entityType: "CapitalSource",
         entityId: source.id,
         summary: `Removed ${source.name}, ${entries.length} entr${
           entries.length === 1 ? "y" : "ies"
-        } reversed: ${reason}`,
+        } reversed; kept as void: ${reason}`,
       },
       tx,
     );
@@ -916,7 +930,7 @@ function presentPlan(built: Awaited<ReturnType<typeof buildSchedule>>) {
 /** The installments a plan would create, without saving them. */
 export async function previewSchedule(ctx: CompanyContext, sourceId: string, raw: unknown) {
   const input = scheduleSchema.parse(raw);
-  const source = await ctx.db.capitalSource.findUnique({ where: { id: sourceId } });
+  const source = await ctx.db.capitalSource.findFirst({ where: { id: sourceId, voidedAt: null } });
   if (!source) throw new AppError("NOT_FOUND", "Capital source not found.");
   if (!source.ledgerAccountId) {
     throw new AppError("CONFLICT", `Record money received from ${source.name} first.`);
@@ -1030,7 +1044,7 @@ export async function addInstallment(
 
 async function findInstallment(ctx: CompanyContext, installmentId: string) {
   const installment = await prisma.capitalInstallment.findFirst({
-    where: { id: installmentId, capitalSource: { companyId: ctx.company.id } },
+    where: { id: installmentId, capitalSource: { companyId: ctx.company.id, voidedAt: null } },
   });
   if (!installment) throw new AppError("NOT_FOUND", "Installment not found.");
   return installment;

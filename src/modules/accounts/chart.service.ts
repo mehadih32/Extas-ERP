@@ -48,8 +48,8 @@ type Tx = Prisma.TransactionClient;
 
 const accountInclude = {
   bankAccount: { select: { id: true, bankName: true, accountNumber: true, isActive: true } },
-  capitalSource: { select: { id: true, name: true, kind: true } },
-  fixedAsset: { select: { id: true, name: true } },
+  capitalSource: { select: { id: true, name: true, kind: true, voidedAt: true } },
+  fixedAsset: { select: { id: true, name: true, voidedAt: true } },
   pettyCashBox: { select: { id: true, name: true } },
 } satisfies Prisma.LedgerAccountInclude;
 
@@ -149,13 +149,14 @@ function presentAccount(
         id: account.bankAccount.id,
         name: `${account.bankAccount.bankName} ${account.bankAccount.accountNumber}`,
       }
-    : account.capitalSource
+    : // A voided source or asset has no page to open any more.
+      account.capitalSource && !account.capitalSource.voidedAt
       ? {
           kind: "CAPITAL_SOURCE" as const,
           id: account.capitalSource.id,
           name: account.capitalSource.name,
         }
-      : account.fixedAsset
+      : account.fixedAsset && !account.fixedAsset.voidedAt
         ? { kind: "FIXED_ASSET" as const, id: account.fixedAsset.id, name: account.fixedAsset.name }
         : account.pettyCashBox
           ? {

@@ -866,12 +866,15 @@ async function sourceLink(
     }
     case "FIXED_ASSET":
     case "DEPRECIATION": {
-      // A removed asset leaves the register; its reversed entries stay.
+      // A removed (voided) asset leaves the register; it and its reversed entries stay.
       const asset = await ctx.db.fixedAsset.findUnique({
         where: { id: sourceId },
-        select: { name: true },
+        select: { name: true, voidedAt: true },
       });
-      return asset ? { title: asset.name, href: `/accounts/assets/${sourceId}` } : null;
+      if (!asset) return null;
+      return asset.voidedAt
+        ? { title: `${asset.name} (removed)`, href: null }
+        : { title: asset.name, href: `/accounts/assets/${sourceId}` };
     }
     case "CORRECTION":
       // An adjusting entry Bug Guard posted with the owner's PIN; undone there.

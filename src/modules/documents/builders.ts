@@ -20,7 +20,7 @@ import type { PrintRequest } from "@/modules/documents/schemas";
 import { getPayslipByItem } from "@/modules/hr/payroll.service";
 import { getBuyer360, PROFILE_ALL_ROWS } from "@/modules/parties/buyer-360.service";
 import { getSupplier360, SUPPLIER_PROFILE_ALL_ROWS } from "@/modules/parties/supplier-360.service";
-import { getStatement } from "@/modules/parties/ledger.service";
+import { getStatement, STATEMENT_LIMIT } from "@/modules/parties/ledger.service";
 import { getMaterialChallan } from "@/modules/production/challan.service";
 import {
   getChallanDocument,
@@ -1459,8 +1459,6 @@ export async function salesReturnDocument(
 // Buyer / supplier statement
 // =============================================================================
 
-const STATEMENT_LIMIT = 10_000; // getStatement's row cap
-
 export async function statementDocument(
   ctx: CompanyContext,
   input: Extract<PrintRequest, { type: "LEDGER_STATEMENT" }>,
@@ -1518,6 +1516,21 @@ export async function statementDocument(
       details: l.memo?.trim() && l.description?.trim() ? [l.memo.trim()] : [],
     })),
   ];
+  const notListed = summary.notListed;
+  if (notListed.count > 0) {
+    // The later lines the statement cannot list, summed, so the table still adds up.
+    rows.push({
+      cells: [
+        "",
+        "",
+        `${count(notListed.count, currency)} later transaction${notListed.count === 1 ? "" : "s"} not listed (choose a shorter period to list them)`,
+        isPositive(notListed.debit) ? money(notListed.debit, currency) : "",
+        isPositive(notListed.credit) ? money(notListed.credit, currency) : "",
+        "",
+      ],
+      style: "subtotal",
+    });
+  }
   if (st.lines.length > 0) {
     rows.push({
       cells: [
@@ -1532,7 +1545,7 @@ export async function statementDocument(
     });
   }
 
-  const transactions = `${count(st.lines.length, currency)} transaction${st.lines.length === 1 ? "" : "s"}`;
+  const transactions = `${count(summary.transactionCount, currency)} transaction${summary.transactionCount === 1 ? "" : "s"}`;
   const model = base(ctx, "LEDGER_STATEMENT", {
     title: "Statement of Account",
     subtitle: `${party.name} (${party.code})`,
@@ -1575,11 +1588,11 @@ export async function statementDocument(
             : "There are no transactions in this period.",
         ],
       },
-      ...(st.lines.length >= STATEMENT_LIMIT
+      ...(notListed.count > 0
         ? [
             {
               kind: "note" as const,
-              text: `Only the first ${count(STATEMENT_LIMIT, currency)} transactions fit in one statement; choose a shorter period for the rest.`,
+              text: `This period has ${transactions}. The first ${count(STATEMENT_LIMIT, currency)} are listed; the totals and the closing balance count all of them. Choose a shorter period to list the rest.`,
             },
           ]
         : []),

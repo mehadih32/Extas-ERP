@@ -6,10 +6,12 @@ import { nextDocumentNumber } from "@/lib/numbering";
 import { prisma } from "@/lib/prisma";
 import { ensureControlAccounts } from "@/modules/accounts/control-accounts";
 import type { CompanyContext } from "@/modules/auth/context";
+import { statementDocument } from "@/modules/documents/builders";
 import * as campaigns from "@/modules/parties/campaign.service";
 import * as dormant from "@/modules/parties/dormant.service";
 import * as ledger from "@/modules/parties/ledger.service";
 import * as parties from "@/modules/parties/party.service";
+import { getStatementScreen } from "@/modules/parties/screens.service";
 
 import { addToCompany, contextFor, makeCompany, makeUser, resetDb } from "./helpers";
 
@@ -267,6 +269,8 @@ run("ledger, statements and opening balances", () => {
       closingBalance: "10000.00",
       position: "RECEIVABLE",
       transactionCount: 3,
+      listedCount: 3,
+      notListed: { count: 0, debit: "0.00", credit: "0.00" },
     });
     expect(lifetime.company.name).toBe("Extras");
     expect(lifetime.lines[0]!.number).toMatch(/^JV-\d{4}-\d{5}$/);
@@ -281,6 +285,73 @@ run("ledger, statements and opening balances", () => {
     await expectAppError(
       ledger.getStatement(ctx, p.id, { from: "2026-03-01", to: "2026-02-01" }),
       "VALIDATION",
+    );
+  });
+
+  it("keeps the totals and closing balance right on a statement too long to list", async () => {
+    const env = await setup();
+    const p = await buyer(env.ctx, "Busy Buyer");
+    await ledger.setOpeningBalance(env.ctx, p.id, { amount: 5000, asOf: "2026-01-01" });
+    // 10,000 small sales of 1.00 in February (one entry, written straight in), then a payment.
+    const feb = await invoice(env, p.id, 1, "2026-02-01");
+    await prisma.$executeRaw`
+      INSERT INTO "JournalLine" (id, "entryId", "accountId", "partyId", debit, credit)
+      SELECT 'many-' || n, ${feb.id}, ${env.accounts.RECEIVABLE}, ${p.id}, 1, 0
+      FROM generate_series(2, 10000) AS n`;
+    await receipt(env, p.id, 7000, "2026-03-05");
+
+    // 10,002 lines: the first 10,000 listed; the totals and closing count every one.
+    const st = await ledger.getStatement(env.ctx, p.id);
+    expect(st.lines).toHaveLength(10_000);
+    expect(st.summary).toEqual({
+      openingBalance: "0.00",
+      totalDebit: "15000.00",
+      totalCredit: "7000.00",
+      closingBalance: "8000.00",
+      position: "RECEIVABLE",
+      transactionCount: 10_002,
+      listedCount: 10_000,
+      notListed: { count: 2, debit: "1.00", credit: "7000.00" },
+    });
+    expect(st.lines.at(-1)!.balance).toBe("14999.00");
+
+    // The latest lines, their running balance worked back from the closing balance.
+    const latest = await ledger.getStatement(env.ctx, p.id, {}, { limit: 3, newest: true });
+    expect(latest.lines.map((l) => [l.debit, l.credit, l.balance])).toEqual([
+      ["1.00", "0.00", "14999.00"],
+      ["1.00", "0.00", "15000.00"],
+      ["0.00", "7000.00", "8000.00"],
+    ]);
+    expect(latest.summary).toMatchObject({
+      closingBalance: "8000.00",
+      listedCount: 3,
+      notListed: { count: 9_999, debit: "14998.00", credit: "0.00" },
+    });
+
+    // The screen: the latest 500, ending on the closing balance, and it says the PDF stops at 10,000.
+    const screen = await getStatementScreen(env.ctx, p.id);
+    expect(screen.lines).toHaveLength(500);
+    expect(screen.lines.at(-1)!.balance).toBe("8000.00");
+    expect([screen.hiddenCount, screen.pdfLimit]).toEqual([9_502, 10_000]);
+
+    // The PDF: the first 10,000, a row for the 2 not listed, the true totals and a plain note.
+    const { model } = await statementDocument(
+      env.ctx,
+      { type: "LEDGER_STATEMENT", partyId: p.id },
+      new Date("2026-03-10T12:00:00Z"),
+    );
+    const table = model.blocks.find((b) => b.kind === "table");
+    const rows = table?.kind === "table" ? table.rows : [];
+    expect(rows).toHaveLength(10_002);
+    expect(rows.at(-2)!.cells.slice(2, 5)).toEqual([
+      "2 later transactions not listed (choose a shorter period to list them)",
+      "1.00",
+      "7,000.00",
+    ]);
+    expect(rows.at(-1)!.cells.slice(2, 5)).toEqual(["Closing balance", "15,000.00", "7,000.00"]);
+    const note = model.blocks.find((b) => b.kind === "note");
+    expect(note?.kind === "note" && note.text).toBe(
+      "This period has 10,002 transactions. The first 10,000 are listed; the totals and the closing balance count all of them. Choose a shorter period to list the rest.",
     );
   });
 

@@ -5,6 +5,7 @@ import { AppError } from "@/lib/errors";
 import { nextDocumentNumber } from "@/lib/numbering";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
+import { runTransaction } from "@/lib/transaction";
 import { assertAllowed } from "@/lib/verdict";
 import { money } from "@/modules/accounts/balances";
 import { cashAccountFor } from "@/modules/accounts/cash-accounts";
@@ -18,7 +19,7 @@ import {
   voidSchema,
 } from "@/modules/accounts/schemas";
 import { supplierProjectBalances } from "@/modules/accounts/supplier-projects";
-import { settleSupplierBills } from "@/modules/accounts/supplier-settlement";
+import { lockSupplierAccount, settleSupplierBills } from "@/modules/accounts/supplier-settlement";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { getPartyBalance } from "@/modules/parties/ledger.service";
@@ -184,7 +185,9 @@ export async function paySupplier(ctx: CompanyContext, raw: unknown, meta?: Requ
       ? `for ${batch.code} (advance)`
       : "on account";
 
-  const result = await prisma.$transaction(async (tx) => {
+  const result = await runTransaction(async (tx) => {
+    // The supplier's account first (the ERP's lock order), before any number is taken.
+    await lockSupplierAccount(tx, companyId, supplier.id);
     const paidFrom = await cashAccountFor(tx, companyId, input.method, input.accountId);
     const acc = await ensureControlAccounts(companyId, tx);
     const payment = await tx.payment.create({
@@ -294,7 +297,9 @@ export async function voidSupplierPayment(
   const supplier = payment.party;
   const entryId = payment.journalEntry!.id;
 
-  await prisma.$transaction(async (tx) => {
+  await runTransaction(async (tx) => {
+    // The supplier's account first (the ERP's lock order), before the reversal's number.
+    await lockSupplierAccount(tx, ctx.company.id, supplier.id);
     const reversal = await reverseJournalEntry(tx, entryId, {
       description: `Void ${payment.number} (${supplier.name}): ${reason}`,
       postedById: ctx.user.id,

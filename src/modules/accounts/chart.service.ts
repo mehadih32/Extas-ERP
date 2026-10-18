@@ -3,7 +3,6 @@ import { type AccountType, Prisma } from "@prisma/client";
 import { dayRange, startOfDayInZone, nextDay, toInstant } from "@/lib/dates";
 import type { Db } from "@/lib/db-types";
 import { AppError } from "@/lib/errors";
-import { nextDocumentNumber } from "@/lib/numbering";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
 import { assertAllowed } from "@/lib/verdict";
@@ -25,6 +24,7 @@ import {
   SUBTYPE_TYPE,
 } from "@/modules/accounts/chart";
 import { CONTROL_ACCOUNTS, ensureControlAccounts } from "@/modules/accounts/control-accounts";
+import { postJournalEntry, reverseJournalEntry } from "@/modules/accounts/journal.service";
 import { assertCanManageAccounts } from "@/modules/accounts/money-guards";
 import { canArchiveAccount } from "@/modules/accounts/rules";
 import {
@@ -338,7 +338,9 @@ export async function updateAccount(
 
 /**
  * Posts (or replaces) an account's balance brought forward against Opening
- * Balance Equity. `amount` is in the account's normal direction.
+ * Balance Equity. `amount` is in the account's normal direction. Replacing
+ * reverses the earlier opening entry with a mirror entry (both stay in the
+ * books, never deleted); the same amount on the same day changes nothing.
  */
 export async function postAccountOpeningTx(
   tx: Tx,
@@ -349,35 +351,54 @@ export async function postAccountOpeningTx(
 ) {
   const companyId = ctx.company.id;
   const acc = await ensureControlAccounts(companyId, tx);
-  await tx.journalEntry.deleteMany({
-    where: { companyId, sourceType: "OPENING_BALANCE", sourceId: account.id },
+  // A positive amount sits on the account's normal side.
+  const signed = isDebitNature(account.type) ? amount : amount.neg();
+  const live = await tx.journalEntry.findMany({
+    where: {
+      companyId,
+      sourceType: "OPENING_BALANCE",
+      sourceId: account.id,
+      isReversed: false,
+      reversalOfId: null,
+    },
+    include: { lines: true },
   });
-  if (!amount.isZero()) {
-    const abs = amount.abs();
-    // A positive amount sits on the account's normal side.
-    const accountOnDebit = isDebitNature(account.type) === amount.gt(0);
-    await tx.journalEntry.create({
-      data: {
+  const unchanged =
+    live.length === (amount.isZero() ? 0 : 1) &&
+    live.every(
+      (entry) =>
+        entry.date.getTime() === asOf.getTime() &&
+        entry.lines.some(
+          (l) => l.accountId === account.id && l.debit.minus(l.credit).equals(signed),
+        ),
+    );
+  if (!unchanged) {
+    for (const entry of live) {
+      await reverseJournalEntry(tx, entry.id, {
+        description: `Opening balance of ${account.code} ${account.name} replaced`,
+        postedById: ctx.user.id,
+      });
+    }
+    if (!amount.isZero()) {
+      const abs = amount.abs();
+      await postJournalEntry(tx, {
         companyId,
-        number: await nextDocumentNumber(tx, companyId, "JOURNAL_VOUCHER"),
         date: asOf,
         description: `Opening balance — ${account.code} ${account.name}`,
         sourceType: "OPENING_BALANCE",
         sourceId: account.id,
         postedById: ctx.user.id,
-        lines: {
-          create: accountOnDebit
-            ? [
-                { accountId: account.id, debit: abs },
-                { accountId: acc.OPENING_EQUITY, credit: abs },
-              ]
-            : [
-                { accountId: acc.OPENING_EQUITY, debit: abs },
-                { accountId: account.id, credit: abs },
-              ],
-        },
-      },
-    });
+        lines: signed.gt(0)
+          ? [
+              { accountId: account.id, debit: abs },
+              { accountId: acc.OPENING_EQUITY, credit: abs },
+            ]
+          : [
+              { accountId: acc.OPENING_EQUITY, debit: abs },
+              { accountId: account.id, credit: abs },
+            ],
+      });
+    }
   }
   await tx.ledgerAccount.update({ where: { id: account.id }, data: { openingBalance: amount } });
 }

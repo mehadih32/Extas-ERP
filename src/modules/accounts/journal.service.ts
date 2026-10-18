@@ -3,6 +3,7 @@ import { type JournalSource, Prisma } from "@prisma/client";
 import type { Db } from "@/lib/db-types";
 import { AppError } from "@/lib/errors";
 import { nextDocumentNumber } from "@/lib/numbering";
+import { assertBoxCovers } from "@/modules/accounts/petty-cash-balance";
 
 /*
  * Double-entry posting used by every module that moves money or value.
@@ -33,6 +34,36 @@ export type JournalEntryInput = {
 const dec = (v: Prisma.Decimal | number | undefined) =>
   new Prisma.Decimal(v ?? 0).toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
 
+/**
+ * A petty cash box never goes below zero, whichever step takes money out of
+ * it (a cost, a transfer, a reversed top-up, a payment or a salary paid from
+ * it): before an entry takes more out of a box than it puts in, the box is
+ * locked and must hold that much.
+ */
+async function assertBoxesCover(
+  db: Db,
+  companyId: string,
+  lines: Array<{ accountId: string; debit: Prisma.Decimal; credit: Prisma.Decimal }>,
+) {
+  const out = new Map<string, Prisma.Decimal>();
+  for (const l of lines) {
+    out.set(
+      l.accountId,
+      (out.get(l.accountId) ?? new Prisma.Decimal(0)).plus(l.credit).minus(l.debit),
+    );
+  }
+  const taken = [...out].filter(([, amount]) => amount.gt(0));
+  if (taken.length === 0) return;
+  const boxes = await db.pettyCashBox.findMany({
+    where: { companyId, ledgerAccountId: { in: taken.map(([id]) => id) } },
+    select: { id: true, name: true, ledgerAccountId: true },
+    orderBy: { id: "asc" },
+  });
+  for (const box of boxes) {
+    await assertBoxCovers(db, companyId, box, out.get(box.ledgerAccountId)!);
+  }
+}
+
 /** Posts a balanced journal entry. Zero-amount lines are dropped. */
 export async function postJournalEntry(db: Db, input: JournalEntryInput) {
   const lines = input.lines
@@ -55,6 +86,7 @@ export async function postJournalEntry(db: Db, input: JournalEntryInput) {
       `Unbalanced journal entry (debit ${debit.toFixed(2)}, credit ${credit.toFixed(2)}).`,
     );
   }
+  await assertBoxesCover(db, input.companyId, lines);
   return db.journalEntry.create({
     data: {
       companyId: input.companyId,
@@ -94,6 +126,12 @@ export async function reverseJournalEntry(
     data: { isReversed: true },
   });
   if (count === 0) throw new AppError("CONFLICT", "This entry was already reversed.");
+  // The mirror image takes back out whatever the entry put into a petty cash box.
+  await assertBoxesCover(
+    db,
+    original.companyId,
+    original.lines.map((l) => ({ accountId: l.accountId, debit: l.credit, credit: l.debit })),
+  );
   return db.journalEntry.create({
     data: {
       companyId: original.companyId,

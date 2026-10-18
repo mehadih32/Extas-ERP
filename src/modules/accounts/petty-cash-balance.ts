@@ -8,8 +8,9 @@ import { rawBalance } from "@/modules/accounts/balances";
 
 /*
  * What is in a petty cash box, and the check that keeps it from going below
- * zero: a cost recorded from it (the expense service) or money taken back out
- * of it (a transfer) is never more than the box holds.
+ * zero: a cost recorded from it (the expense service), money taken back out
+ * of it (a transfer) or any other entry crediting it (journal.service.ts) is
+ * never more than the box holds.
  */
 
 /** What is in the box now. */
@@ -23,7 +24,7 @@ export function boxBalance(
 
 /** Locks the box and refuses taking out more than is in it. */
 export async function assertBoxCovers(
-  tx: Prisma.TransactionClient,
+  tx: Db,
   companyId: string,
   box: Pick<PettyCashBox, "id" | "name" | "ledgerAccountId">,
   amount: Prisma.Decimal,

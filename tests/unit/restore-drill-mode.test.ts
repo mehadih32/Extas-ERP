@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { readFileSync, statSync } from "node:fs";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -141,6 +141,44 @@ describe("a restore drill run again on the same test server (v6.4.1 review)", ()
     expect(run.code, run.stderr).toBe(0);
     expect(run.stdout).toContain("DRILL drill.example.com");
     expect(await readFile(envFile, "utf8")).toContain("DRILL_OF=erp.example.com\n");
+  });
+});
+
+describe("a drill copy made before v6.4.1, run again with a backup from before v6.4 (v6.4.1 review 2)", () => {
+  async function oldDrillCopy() {
+    // APP_DOMAIN is the drill's, no DRILL_OF line, and the backup has no address in it.
+    await writeFile(envFile, SETTINGS.replace("erp.example.com", "drill.example.com"));
+    await mkdir(path.join(data, "backups"), { recursive: true });
+    await writeFile(path.join(data, "backups", ".drill"), '{"address":"drill.example.com"}');
+  }
+  const run = async (answers: string) => {
+    const file = path.join(dir, "answers");
+    await writeFile(file, answers, { mode: 0o600 });
+    return bootstrap(["--drill-settings", envFile, data], { RESTORE_ANSWERS: file });
+  };
+
+  it("asks once for the real ERP's web address, then knows it", async () => {
+    await oldDrillCopy();
+    const first = await run("live_domain=https://ERP.example.com/\n");
+    expect(first.code, first.stderr).toBe(0);
+    expect(first.stdout).toContain("DRILL drill.example.com");
+    expect(first.stdout).toContain("erp.example.com is not touched");
+    expect(await readFile(envFile, "utf8")).toContain("DRILL_OF=erp.example.com\n");
+    // Run again: known, never asked (no answer given).
+    const again = await run("");
+    expect(again.code, again.stderr).toBe(0);
+    expect(again.stdout).toContain("DRILL drill.example.com");
+  });
+
+  it("never takes the drill's own address, or no address, as the real ERP's", async () => {
+    for (const typed of ["drill.example.com", "", "not an address"]) {
+      await oldDrillCopy();
+      const refused = await run(`live_domain=${typed}\n`);
+      expect(refused.code, typed).toBe(2);
+      expect(refused.stderr, typed).toContain("Error R30:");
+      expect(refused.stderr, typed).toContain("is not the real ERP's web address");
+      expect(await readFile(envFile, "utf8")).not.toContain("DRILL_OF=");
+    }
   });
 });
 

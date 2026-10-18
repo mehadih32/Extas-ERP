@@ -303,13 +303,21 @@ standby_after_failure() {
 # still knows it; such a run keeps the drill address in its mark, without asking.
 drill_settings() {
   local env_file="$1" data="$2" live live_demo example test_domain earlier
+  earlier="$(python3 -I -c 'import json, sys; print(json.load(open(sys.argv[1])).get("address") or "")' \
+    "$data/backups/.drill" 2>/dev/null || true)"
   live="$(plain_domain "$(env_get "$env_file" DRILL_OF)")"
   [ -n "$live" ] || live="$(plain_domain "${3:-}")"
   [ -n "$live" ] || live="$(plain_domain "$APP_DOMAIN")"
+  if [ -z "$live" ] || [ "$live" = "$(plain_domain "$earlier")" ]; then
+    # A drill copy made before v6.4.1 (no DRILL_OF), run again with a backup from
+    # before v6.4 (no web address in it): the real address is asked, once (kept as
+    # DRILL_OF), never guessed.
+    live="$(plain_domain "$(answer live_domain 'Web address of the real ERP this drill copies (for example erp.extasbd.com): ')")"
+    { [[ "$live" =~ ^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$ ]] && [ "$live" != "$(plain_domain "$earlier")" ]; } ||
+      fail R30 "\"$live\" is not the real ERP's web address. Paste the command again and type the address of your real ERP (like erp.extasbd.com), never the drill's ($(plain_domain "$earlier"))."
+  fi
   case "$live" in *.*.*) live_demo="demo.${live#*.}" ;; *) live_demo="demo.$live" ;; esac
   example="drill.${live#*.}"
-  earlier="$(python3 -I -c 'import json, sys; print(json.load(open(sys.argv[1])).get("address") or "")' \
-    "$data/backups/.drill" 2>/dev/null || true)"
   if [ -n "$earlier" ]; then
     test_domain="$(plain_domain "$earlier")"
     note "This server holds a drill copy for $test_domain: the drill runs again at that address."

@@ -913,6 +913,13 @@ export const GUIDE_QUESTIONS: GuideQuestion[] = [
     },
   },
   {
+    prompt: "Web address of the real ERP this drill copies (for example erp.extasbd.com): ",
+    answer: {
+      bn: "শুধু পুরনো মহড়ার সার্ভারে খুব পুরনো ব্যাকআপ দিয়ে মহড়া আবার করলে, একবার আসে: আপনার আসল ERP-র ঠিকানা লিখে Enter (যেমন erp.extasbd.com), মহড়ার ঠিকানা কখনো নয়। কমান্ড তা মনে রাখে, আর জিজ্ঞেস করে না।",
+      en: "Only once, when a drill is run again on an old drill server with a very old backup: type your real ERP's address and press Enter (like erp.extasbd.com), never the drill's. The command keeps it and does not ask again.",
+    },
+  },
+  {
     prompt: "Web address for the ERP (for example erp.extasbd.com): ",
     answer: {
       bn: "শুধু খুব পুরনো ব্যাকআপে আসে: ERP-এর ওয়েব ঠিকানা লিখে Enter।",
@@ -1237,14 +1244,14 @@ export const GUIDE_ERRORS: GuideError[] = [
   },
   {
     code: "R30",
-    shown: "cannot be the drill's web address",
+    shown: "cannot be the drill's web address / is not the real ERP's web address",
     meaning: fix(
-      "মহড়ার জন্য টাইপ করা ঠিকানাটি ঠিক নয়, বা সেটি আসল ERP বা ডেমো সাইটের ঠিকানা। কিছুই বদলানো হয়নি।",
-      "The address typed for the drill is not a web address, or it is the real ERP's or the demo site's. Nothing was changed.",
+      "মহড়ার জন্য টাইপ করা ঠিকানাটি ঠিক নয়, বা সেটি আসল ERP বা ডেমো সাইটের ঠিকানা; অথবা আসল ERP-র ঠিকানা জিজ্ঞেস করলে মহড়ার ঠিকানা বা ভুল কিছু লেখা হয়েছে। কিছুই বদলানো হয়নি।",
+      "The address typed for the drill is not a web address, or it is the real ERP's or the demo site's; or, asked for the real ERP's address, the drill's own or something else was typed. Nothing was changed.",
     ),
     todo: fix(
-      "কমান্ড আবার চালিয়ে মহড়ার জন্য নতুন একটি ঠিকানা লিখুন, যেমন drill.extasbd.com।",
-      "Run the command again and type a new address for the drill, like drill.extasbd.com.",
+      "কমান্ড আবার চালিয়ে মহড়ার জন্য নতুন একটি ঠিকানা লিখুন, যেমন drill.extasbd.com। আসল ERP-র ঠিকানা জিজ্ঞেস করলে আপনার আসল ঠিকানাটি লিখুন, যেমন erp.extasbd.com।",
+      "Run the command again and type a new address for the drill, like drill.extasbd.com. When it asks for the real ERP's address, type your real one, like erp.extasbd.com.",
     ),
   },
   {

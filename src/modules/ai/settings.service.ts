@@ -871,21 +871,28 @@ export async function checkPin(companyId: string, pin: string, userId: string): 
 /** New numbers the bot may check against the PIN per person and store, in fifteen minutes. */
 export const STRAY_PIN_CHECKS = 10;
 
+/** New numbers the ERP's own AI chat may check per person and store, in fifteen minutes. */
+export const CHAT_PIN_CHECKS = 100;
+
 /** Numbers found not to be the store's PIN (until it changes): checking one again tells nothing new. */
 const notThePin = new Map<string, { pinHash: string; numbers: Set<string> }>();
 
 /**
- * Whether digits are the PIN, only for the bot to hide a PIN sent when nothing
- * asked for one (bot/incoming.ts). Ten new numbers in fifteen minutes per
+ * Whether digits are the PIN, only to hide a PIN typed when nothing asked for
+ * one. For the bot (bot/incoming.ts): ten new numbers in fifteen minutes per
  * person, like checkPin's tries but kept apart, so the bot never uses up the
  * owner's PIN tries in the ERP; a number already found not to be the PIN is
  * free. "unchecked" once they are used up: the bot then hides the message the
- * same way as the PIN, so sending numbers cannot find the PIN.
+ * same way as the PIN, so sending numbers cannot find the PIN. The ERP's own
+ * chat counts apart ("CHAT"): the person there is signed in, so it allows far
+ * more (a hundred) and never touches the bot's count or alarm, but still stops
+ * an unlimited search for the PIN through the chat (v6.4.1).
  */
 export async function pinMatches(
   companyId: string,
   pin: string,
   userId: string,
+  kind: "NUMBER" | "CHAT" = "NUMBER",
 ): Promise<boolean | "unchecked"> {
   const settings = await aiSettingsOf(companyId);
   if (!settings.pinHash || !/^\d{4,8}$/.test(pin)) return false;
@@ -896,8 +903,9 @@ export async function pinMatches(
   }
   if (known.numbers.has(pin)) return false;
   // Counted in the database (pin-tries.ts): a restart does not give new checks.
-  if ((await countPinTry(companyId, userId, "NUMBER")) > STRAY_PIN_CHECKS) {
-    await pinLimitAlarm(companyId, userId, "NUMBER", STRAY_PIN_CHECKS);
+  const limit = kind === "CHAT" ? CHAT_PIN_CHECKS : STRAY_PIN_CHECKS;
+  if ((await countPinTry(companyId, userId, kind)) > limit) {
+    await pinLimitAlarm(companyId, userId, kind, limit);
     return "unchecked";
   }
   if (await verifyPassword(pin, settings.pinHash)) return true;
@@ -907,13 +915,14 @@ export async function pinMatches(
 }
 
 /**
- * Whether a message holds the PIN, or a number that could not be checked
- * (pinMatches): the ERP's own AI chat then never keeps it nor sends it to the
- * AI, the same way the bot hides it (v6.4.1). Digits already in Western form.
+ * Whether a message in the ERP's own AI chat holds the PIN: it is then never
+ * kept nor sent to the AI, the same way the bot hides it (v6.4.1). Its numbers
+ * are counted apart from the bot's (pinMatches), so the chat goes on working
+ * normally after numbers sent to the bot. Digits already in Western form.
  */
 export async function mayHoldPin(companyId: string, text: string, userId: string) {
   for (const number of pinCandidates(text)) {
-    if ((await pinMatches(companyId, number, userId)) !== false) return true;
+    if ((await pinMatches(companyId, number, userId, "CHAT")) !== false) return true;
   }
   return false;
 }

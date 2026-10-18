@@ -60,6 +60,7 @@ import { type BotCall, standInForBotApi } from "@/modules/ai/bot/channel";
 import { pinScrubReport } from "@/modules/ai/bot/pin-scrub";
 import { PIN_HIDDEN_TEXT, sendChat } from "@/modules/ai/chat/chat.service";
 import {
+  CHAT_PIN_CHECKS,
   checkPin,
   PIN_TRIES,
   PIN_TRIES_USED,
@@ -1231,6 +1232,10 @@ run("The bot", () => {
     expect(api.said(OWNER_CHAT).at(-1)).toMatch(
       /^Too many wrong PINs\. owner: a wrong PIN was given 10 times in 15 minutes/,
     );
+    // Changing the PIN needs the PIN, which is refused for now: the alarm says to wait first.
+    expect(api.said(OWNER_CHAT).at(-1)).toContain(
+      "change your password now, then wait 15 minutes and change your PIN",
+    );
     await expectAppError(checkPin(env.company.id, "2468", userId), "RATE_LIMITED", PIN_TRIES_USED);
     // A restart (the memory cleared) does not give new tries; the owner is told once.
     resetRateLimits();
@@ -1262,6 +1267,79 @@ run("The bot", () => {
     expect(await prisma.aiPinTry.findFirstOrThrow({ where: { kind: "NUMBER" } })).toMatchObject({
       count: 1,
     });
+  });
+
+  it("hides a PIN written as PIN-4321 or with a Bengali ending like ৪৩২১ই (v6.4.1)", async () => {
+    const api = botApi();
+    await linkOwner(env);
+    await setAiSwitch(env.owner, true);
+    await setPin(env.owner, { pin: "4321" });
+    const hyphen = typed(OWNER_CHAT, "my PIN-4321");
+    const bengali = typed(OWNER_CHAT, "পিন ৪৩২১ই");
+    const ending = typed(OWNER_CHAT, "এটা ৪৩২১টা");
+    for (const update of [hyphen, bengali, ending]) await telegram(update);
+    const deleted = api.calls.filter((c) => c.method === "deleteMessage");
+    expect(deleted.map((c) => c.json.message_id)).toEqual([
+      hyphen.message.message_id,
+      bengali.message.message_id,
+      ending.message.message_id,
+    ]);
+    expect(api.said(OWNER_CHAT).at(-1)).toBe(HID_NUMBER);
+    const kept = [
+      ...(await prisma.aiBotMessage.findMany({ select: { text: true } })),
+      ...(await prisma.aiChatMessage.findMany({ select: { text: true } })),
+    ].map((r) => r.text);
+    expect(kept.join(" ")).not.toMatch(/4321|৪৩২১/);
+  });
+
+  it("counts a wrong PIN once when Telegram delivers the same message again (v6.4.1)", async () => {
+    botApi();
+    await linkOwner(env);
+    await setPin(env.owner, { pin: "2468" });
+    await telegram(typed(OWNER_CHAT, "unlock"));
+    const wrong = typed(OWNER_CHAT, "1357");
+    await delivered(wrong);
+    await delivered(wrong);
+    await runDueJobs();
+    expect(await prisma.aiPinTry.findFirstOrThrow({ where: { kind: "PIN" } })).toMatchObject({
+      count: 1,
+    });
+    expect(await prisma.aiBotMessage.count({ where: { direction: "IN", text: "[PIN]" } })).toBe(1);
+  });
+
+  it("the ERP's own chat keeps working after many numbers, counts apart from the bot and still hides the PIN (v6.4.1)", async () => {
+    await prisma.user.update({ where: { id: env.owner.user.id }, data: { isSuperAdmin: true } });
+    await setAiSwitch(env.owner, true);
+    await setPin(env.owner, { pin: "2468" });
+    for (let i = 0; i < 15; i++) {
+      const rows = await sendChat(env.owner, { text: `status of order ${1200 + i} pcs` });
+      expect(rows[0]!.text).not.toBe(PIN_HIDDEN_TEXT);
+    }
+    expect(
+      await prisma.aiChatMessage.count({
+        where: { role: "OWNER", text: { startsWith: "status" } },
+      }),
+    ).toBe(15);
+    expect(await prisma.aiPinTry.count({ where: { kind: "NUMBER" } })).toBe(0);
+    const alarms = (subject: string) => prisma.notificationLog.count({ where: { subject } });
+    expect(await alarms("Many numbers sent to the bot")).toBe(0);
+    // The PIN itself is still hidden.
+    const rows = await sendChat(env.owner, { text: "pin 2468" });
+    expect(rows.map((r) => r.text)).toEqual([PIN_HIDDEN_TEXT]);
+    expect(await prisma.aiChatMessage.count({ where: { text: { contains: "2468" } } })).toBe(0);
+    // Far past normal use (a hundred new numbers in fifteen minutes) the chat stops
+    // checking and hides, so it can never be used to search for the PIN; the owner is told.
+    await prisma.aiPinTry.updateMany({ where: { kind: "CHAT" }, data: { count: CHAT_PIN_CHECKS } });
+    resetRateLimits();
+    expect((await sendChat(env.owner, { text: "status of order 9999" }))[0]!.text).toBe(
+      PIN_HIDDEN_TEXT,
+    );
+    expect(await alarms("Many numbers in the AI chat")).toBe(1);
+    expect(await alarms("Many numbers sent to the bot")).toBe(0);
+    await fifteenMinutesLater();
+    expect((await sendChat(env.owner, { text: "status of order 9999" }))[0]!.text).not.toBe(
+      PIN_HIDDEN_TEXT,
+    );
   });
 
   it("hides the PIN typed into the ERP's own chat: never kept, never sent to the AI (v6.4.1)", async () => {

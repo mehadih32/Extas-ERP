@@ -168,6 +168,14 @@ async function keep(links: AiBotLink[], channel: AiBotChannel, botKey: string, m
     (code !== undefined && links.some((l) => l.linkCodeUntil && l.linkCodeUntil > now));
   // A stranger is never answered; past a few messages an hour they are not even logged.
   if (!known && !strangerAllowed(first.id, m.chatId)) return;
+  // A repeated delivery (Telegram sends an update again when its answer was
+  // late) is dropped before any PIN check, so one wrong PIN counts once.
+  const providerId = `${botKey}:${m.updateId}`;
+  const seen = await prisma.aiBotMessage.findUnique({
+    where: { channel_providerId: { channel, providerId } },
+    select: { id: true },
+  });
+  if (seen) return;
   const pin = known ? await checkPinNow(mine, m, now) : null;
   // A link code is a command, never a PIN.
   const hidden = known && !pin && !linking ? await hiddenPin(mine, m, now) : null;
@@ -184,7 +192,7 @@ async function keep(links: AiBotLink[], channel: AiBotChannel, botKey: string, m
           linkId: store.id,
           channel,
           direction: "IN",
-          providerId: `${botKey}:${m.updateId}`,
+          providerId,
           chatId: m.chatId,
           text: described(incoming).slice(0, known ? 2000 : 200),
           status: known ? "RECEIVED" : "IGNORED",

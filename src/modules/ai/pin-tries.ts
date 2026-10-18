@@ -8,7 +8,9 @@ import { prisma } from "@/lib/prisma";
  * fifteen minutes:
  *   - "PIN": wrong PINs, on every path (the ERP, the chat, the bot's question);
  *     a right PIN does not count;
- *   - "NUMBER": new numbers the bot checked to hide a PIN typed by mistake.
+ *   - "NUMBER": new numbers the bot checked to hide a PIN typed by mistake
+ *   - "CHAT": the same for the ERP's own AI chat, kept apart from the bot's
+ *     (a signed-in person, so a far higher limit).
  * When a count reaches its limit the owner is told at once (the inbox and the
  * bot, as an alarm: AI on or off), once per fifteen minutes. Only counts and
  * times are kept, never a PIN or a number.
@@ -17,28 +19,42 @@ import { prisma } from "@/lib/prisma";
 /** The most numbers of one message checked against the PIN (each check takes a moment). */
 const MAX_PIN_CANDIDATES = 12;
 
-/** A letter, a hyphen, a slash or an underscore next to digits: they are part of a code. */
-const CODE_NEIGHBOUR = /[\p{L}\p{M}\-_/]/u;
+/** The word PIN (any case) or পিন: then every number in the message is checked. */
+const PIN_WORD = /pin|পিন/i;
+/** Two or more capital letters, maybe with -, / or _, right before the digits: "PO4501", "CS-2026", "SO/2026", "LOT_4455". */
+const CODE_LETTERS = /[A-Z]{2,}[-/_]?$/;
+/** Digits joined to more digits by - or /: "2026-0001", "18/10/2026". */
+const JOINED_BEFORE = /\d[-/]$/;
+const JOINED_AFTER = /^[-/]\d/;
 
 /**
  * The numbers in a message that could be a PIN: each run of 4 to 8 digits,
- * once. Digits that are part of a code, like "CS-2026-0001", "PO4501" or
- * "SO/2026/0112" (a letter, hyphen, slash or underscore right next to them),
- * are not a PIN and use up none of the PIN checks (v6.4.1).
+ * once. Only digits that are clearly part of a document number are left out
+ * (they use up none of the PIN checks): capital letters right before them, as
+ * in "PO4501" or "CS-2026-0001", or joined to more digits by - or /, as in
+ * "SO/2026/0112" or a date. Anything else is checked: "PIN-4321", "2468ok",
+ * and Bengali words stuck to a number ("৪৩২১ই", "৪৩২১টা"). When the message
+ * says "pin" or "পিন" every number is checked (v6.4.1).
  */
 export function pinCandidates(text: string): string[] {
+  const everyNumber = PIN_WORD.test(text);
   const runs: string[] = [];
   for (const match of text.matchAll(/\d+/g)) {
     const run = match[0];
-    const before = text[match.index - 1] ?? "";
-    const after = text[match.index + run.length] ?? "";
-    if (CODE_NEIGHBOUR.test(before) || CODE_NEIGHBOUR.test(after)) continue;
-    if (run.length >= 4 && run.length <= 8) runs.push(run);
+    if (run.length < 4 || run.length > 8) continue;
+    if (!everyNumber) {
+      const before = text.slice(Math.max(0, match.index - 12), match.index);
+      const after = text.slice(match.index + run.length, match.index + run.length + 2);
+      if (CODE_LETTERS.test(before) || JOINED_BEFORE.test(before) || JOINED_AFTER.test(after)) {
+        continue;
+      }
+    }
+    runs.push(run);
   }
   return [...new Set(runs)].slice(0, MAX_PIN_CANDIDATES);
 }
 
-export type PinTryKind = "PIN" | "NUMBER";
+export type PinTryKind = "PIN" | "NUMBER" | "CHAT";
 
 export const PIN_TRY_MINUTES = 15;
 
@@ -81,11 +97,15 @@ const ALARM: Record<PinTryKind, (who: string, limit: number) => { subject: strin
   {
     PIN: (who, limit) => ({
       subject: "Too many wrong PINs",
-      body: `${who}: a wrong PIN was given ${limit} times in ${PIN_TRY_MINUTES} minutes (in the ERP or on the bot). PIN tries are stopped for ${PIN_TRY_MINUTES} minutes. If it was not you, change your password and your PIN now (AI Center > Settings).`,
+      body: `${who}: a wrong PIN was given ${limit} times in ${PIN_TRY_MINUTES} minutes (in the ERP or on the bot). PIN tries are stopped for ${PIN_TRY_MINUTES} minutes. If it was not you, change your password now, then wait ${PIN_TRY_MINUTES} minutes and change your PIN (AI Center > Settings).`,
     }),
     NUMBER: (who, limit) => ({
       subject: "Many numbers sent to the bot",
       body: `${who}: ${limit} new numbers came to the bot in ${PIN_TRY_MINUTES} minutes. Any of them could be your PIN, so for ${PIN_TRY_MINUTES} minutes the bot hides every message with a new number. If it was not you, unlink the bot in AI Center > Bot and change your PIN.`,
+    }),
+    CHAT: (who, limit) => ({
+      subject: "Many numbers in the AI chat",
+      body: `${who}: ${limit} new numbers were written in the AI chat in the ERP in ${PIN_TRY_MINUTES} minutes. Someone may be looking for your PIN, so for ${PIN_TRY_MINUTES} minutes the chat hides every message with a new number. If it was not you, change your password and your PIN now (AI Center > Settings).`,
     }),
   };
 

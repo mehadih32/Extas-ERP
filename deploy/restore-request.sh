@@ -9,7 +9,8 @@
 # BACKUP_DIR/restore-result.json, which the ERP records and sends to the owner.
 # The opened backup is plain data and never stays: it is deleted when the restore
 # ends or is refused, and one left by a restore cut off earlier (the server restarted)
-# at the next start (and by the hourly clean-up deploy.sh installs, lib.sh).
+# when the server starts again (restore.sh --after-restart), by the next request
+# below, and by the hourly clean-up deploy.sh installs (lib.sh).
 # shellcheck source=deploy/lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 

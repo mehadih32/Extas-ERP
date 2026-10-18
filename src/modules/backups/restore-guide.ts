@@ -763,8 +763,8 @@ export const GUIDE_PARTS: GuidePart[] = [
         },
         picture: "putty-wait",
         tip: {
-          bn: `সংযোগ কেটে গেলেও রিস্টোর নিজে নিজে চলতে থাকে। B5-এর “Saved Sessions” দিয়ে আবার ঢুকে কমান্ডটি আবার পেস্ট করুন: লেখা আসবে “A restore is already running on this server”, আর শেষ না হওয়া পর্যন্ত সেটি দেখাবে। রিস্টোর থেমে গেলে একই কমান্ড আবার পেস্ট করুন: যেখানে থেমেছিল সেখান থেকে চলে। লেখা আসে “Signed in to Google with the sign-in from the earlier try (no new code needed)” আর “... already downloaded in the earlier try”, তাই নতুন কোড বা নতুন করে নামানো লাগে না। জিজ্ঞেস করতে পারে “Type the web address of the ERP on this server”। ${REPLACE_RULE.bn} রিস্টোরের মাঝে VM নিজে আবার চালু (restart) হলে, চালু হতেই সার্ভার ERP-কে রিস্টোরের আগের অবস্থায় ফিরিয়ে নিজে চালু করে; তারপর একই কমান্ড আবার পেস্ট করুন।`,
-          en: `If the connection drops, the restore goes on by itself. Sign in again with “Saved Sessions” as in B5 and paste the command again: it says “A restore is already running on this server” and shows it until it ends. If the restore stops, paste the same command again: it goes on from where it stopped. It says “Signed in to Google with the sign-in from the earlier try (no new code needed)” and “... already downloaded in the earlier try”, so no new code and no new download are needed. It may ask “Type the web address of the ERP on this server”. ${REPLACE_RULE.en} If the VM restarts during the restore, the server puts the ERP back as it was before the restore and starts it by itself as soon as it is up again; then paste the same command again.`,
+          bn: `সংযোগ কেটে গেলেও রিস্টোর নিজে নিজে চলতে থাকে। B5-এর “Saved Sessions” দিয়ে আবার ঢুকে কমান্ডটি আবার পেস্ট করুন: লেখা আসবে “A restore is already running on this server”, আর শেষ না হওয়া পর্যন্ত সেটি দেখাবে। রিস্টোর থেমে গেলে একই কমান্ড আবার পেস্ট করুন: যেখানে থেমেছিল সেখান থেকে চলে। লেখা আসে “Signed in to Google with the sign-in from the earlier try (no new code needed)” আর “... already downloaded in the earlier try”, তাই নতুন কোড বা নতুন করে নামানো লাগে না। জিজ্ঞেস করতে পারে “Type the web address of the ERP on this server”। ${REPLACE_RULE.bn} রিস্টোরের মাঝে VM নিজে আবার চালু (restart) হলে, চালু হতেই সার্ভার ERP যেমন আছে তেমনই চালু করে, নিজে থেকে কিছুই ফিরিয়ে আনে না, আর ERP-র ইনবক্সে ও Telegram-এ “Restore did not finish” জানায়; তারপর একই কমান্ড আবার পেস্ট করুন।`,
+          en: `If the connection drops, the restore goes on by itself. Sign in again with “Saved Sessions” as in B5 and paste the command again: it says “A restore is already running on this server” and shows it until it ends. If the restore stops, paste the same command again: it goes on from where it stopped. It says “Signed in to Google with the sign-in from the earlier try (no new code needed)” and “... already downloaded in the earlier try”, so no new code and no new download are needed. It may ask “Type the web address of the ERP on this server”. ${REPLACE_RULE.en} If the VM restarts during the restore, the server starts the ERP again as it is as soon as it is up, puts nothing back by itself, and says “Restore did not finish” in the ERP's inbox and on Telegram; then paste the same command again.`,
         },
       },
       {
@@ -1430,6 +1430,14 @@ export const OTHER_MESSAGES: OtherMessage[] = [
     todo: fix(
       "ঠিকানা এখনো এই সার্ভারে আসেনি; কিছু বদলায়নি। F6 করুন, কয়েক মিনিট অপেক্ষা করে আবার চালান।",
       "The address does not reach this server yet; nothing was changed. Do step F6, wait a few minutes, then run it again.",
+    ),
+  },
+  {
+    shown: "A restore was cut off before it finished",
+    where: fix("PuTTY, রিস্টোর চলার সময়", "PuTTY, during the restore"),
+    todo: fix(
+      "এই সার্ভারে আগের একটি রিস্টোর মাঝপথে থেমে গিয়েছিল (VM আবার চালু হয়েছিল, বা থামানো হয়েছিল)। নিজে থেকে কিছুই ফিরিয়ে আনা হয়নি: ERP যেমন ছিল তেমনই চালু হয়েছে, আর এই রিস্টোর চলতে থাকে। কিছু করতে হবে না; পরের লাইনে লেখা থাকে দরকার হলে আগের রিস্টোরটি কীভাবে ফেরানো যায়, ERP-র ইনবক্সে ও Telegram-এ Restore did not finish হিসেবেও আসে।",
+      "An earlier restore on this server stopped half way (the VM restarted, or it was stopped). Nothing was put back by itself: the ERP was started as it was, and this restore goes on. Nothing to do; the next line says how to undo that earlier restore if ever needed, and the ERP's inbox and Telegram say the same as Restore did not finish.",
     ),
   },
   {

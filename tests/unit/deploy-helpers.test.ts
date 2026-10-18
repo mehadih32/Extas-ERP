@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { createHash, createHmac } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { mkdir, mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
@@ -242,7 +242,7 @@ write_restored_mark "${folder}" "${dir}/kept.json" "${mark}"; echo "exit $?"`,
       /mv "\$DATA_DIR\/uploads" "\$DATA_DIR\/uploads\.before-restore-\$stamp" \|\| return 1\n\s*touch "\$DATA_DIR\/uploads\.before-restore-\$stamp"/,
     );
     expect(restore).toMatch(
-      /load_settings\ntake_update_lock\n[\s\S]*\nprune_old_uploads\nforget_secrets/,
+      /load_settings\n[\s\S]*\ntake_update_lock\n[\s\S]*\nprune_old_uploads\nforget_secrets/,
     );
     expect(lib).toMatch(
       /^23 3 \* \* \* root find \$DATA_DIR .*\\\( -name 'uploads\.before-restore-\*'.*\\\) -mtime \+30 /m,
@@ -597,7 +597,10 @@ describe("a restore that fails half-way goes back, and says so (restore.sh)", ()
       `source "${path.join(process.cwd(), "deploy", "lib.sh")}"
 APP_UID=$(id -u)
 need_root() { :; }
-load_settings() { DATA_DIR="${data}"; POSTGRES_DB=erp; APP_DB_USER=erp; }
+load_settings() { DATA_DIR="${data}"; POSTGRES_DB=erp; APP_DB_USER=erp; APP_DOMAIN=erp.example.com; }
+DEPLOY_DIR="${deploy}"
+UPDATE_LOCK="${path.join(dir, "update.lock")}"
+RESTORE_LOG="${path.join(dir, "restore.log")}"
 take_update_lock() { :; }
 forget_secrets_in_history() { :; }
 flush_keys() { :; }
@@ -605,8 +608,10 @@ prepare_folders() { mkdir -p "$DATA_DIR"/uploads "$DATA_DIR"/backups "$DATA_DIR"
 compose() {
   echo "compose $*" >>"${log}"
   case "$*" in *psql*) [ -z "\${COUNTS_FAIL:-}" ] || return 1; cat >/dev/null; echo '{"User": 3}' ;; esac
+  [ "$*" != "ps -q app" ] || { [ -z "\${APP_RUNNING:-}" ] || echo app-container; return 0; }
   [ "$*" != "up -d" ] || [ -z "\${COMPOSE_UP_FAILS:-}" ]
 }
+web_address_here() { echo "web_address_here $1" >>"${log}"; [ -n "\${WEB_HERE:-}" ]; }
 check_update() {
   echo "check_update" >>"${log}"
   [ -z "\${CHECK_SAYS:-}" ] || printf '%s\n' "\$CHECK_SAYS"
@@ -618,7 +623,7 @@ safety_copy() {
   [ -z "\${SAFETY_FAILS:-}" ] || return 1
   mkdir -p "$DATA_DIR/safety-copies/$1" && printf '%s' "$DATA_DIR/safety-copies/$1"
 }
-restore_database() { echo "restore_database $1" >>"${log}"; }
+restore_database() { echo "restore_database $1" >>"${log}"; [ -z "\${SLOW:-}" ] || sleep "\$SLOW"; }
 write_restored_mark() { echo '{}' >"$3"; }
 `,
     );
@@ -664,7 +669,7 @@ write_restored_mark() { echo '{}' >"$3"; }
         message: string;
         checks: string[];
       };
-    return { data, backup, log, run, result };
+    return { data, backup, deploy, log, run, result };
   }
 
   it("puts the database and the files back as they were when the files cannot be restored", async () => {
@@ -788,82 +793,131 @@ write_restored_mark() { echo '{}' >"$3"; }
     expect(done.stderr).toContain("the safety copy of the database could not be saved");
   });
 
-  it("puts back a restore cut off half-way and starts the ERP, at the server's start or the next restore (v6.4.1 review 2)", async () => {
+  /** A mark as a restore cut off half-way leaves it, and the note it gets at the next start. */
+  const STAMP = "2026-10-16_101500";
+  const cutNote = (data: string, stamp = STAMP) =>
+    JSON.parse(readFileSync(path.join(data, "backups", `restore-cut-${stamp}.json`), "utf8")) as {
+      ok: boolean;
+      name: string;
+      wentBack: boolean;
+      safetyCopy: string;
+      message: string;
+    };
+
+  it("never puts the database back by itself after a restore cut off half-way, and tells the owner (v6.4.1 review 3, U1)", async () => {
     const h = await harness();
     const backups = path.join(h.data, "backups");
     const mark = path.join(backups, ".restore-running");
-    // A restore cut off after its safety copy, with the files set aside already.
-    const stamp = "2026-10-18_101500";
-    await mkdir(path.join(h.data, "safety-copies", `before-restore-${stamp}`), { recursive: true });
-    await writeFile(
-      path.join(h.data, "safety-copies", `before-restore-${stamp}`, "database.dump"),
-      "dump",
-    );
-    await rm(path.join(h.data, "uploads"), { recursive: true });
-    await mkdir(path.join(h.data, `uploads.before-restore-${stamp}`, "c1"), { recursive: true });
-    await writeFile(
-      path.join(h.data, `uploads.before-restore-${stamp}`, "c1", "now.pdf"),
-      "the file there now",
-    );
-    await mkdir(path.join(h.data, "uploads.restoring"));
-    await writeFile(mark, `${stamp}\nsafety copy\n`);
-    // The restore command had put the ERP in use on standby for it (bootstrap.sh).
-    await writeFile(path.join(backups, ".standby"), "words");
-    await writeFile(path.join(backups, ".standby.was-in-use"), "");
-    const started = await h.run({}, ["--after-restart"]);
-    expect(started.code, started.stderr).toBe(0);
+    const copy = path.join(h.data, "safety-copies", `before-restore-${STAMP}`);
+    // The reviewer's case: the mark of a restore cut off two days ago, its safety copy
+    // gone after 24 hours, and the ERP used since (a new file in the uploads).
+    await writeFile(mark, `${STAMP}\nsafety copy\n2026-10-04_020000\n`);
+    await mkdir(path.join(h.data, `uploads.before-restore-${STAMP}`), { recursive: true });
+    await writeFile(path.join(h.data, `uploads.before-restore-${STAMP}`, "a.pdf"), "old file");
+    await writeFile(path.join(h.data, "uploads", "new-invoice.pdf"), "attached yesterday");
+    await writeFile(path.join(backups, ".restored.kept"), "this server's backup settings");
+    const boot = await h.run({}, ["--after-restart"]);
+    expect(boot.code, boot.stderr).toBe(0);
     const calls = readFileSync(h.log, "utf8");
-    expect(calls).toMatch(
-      new RegExp(
-        `compose stop app\\n[\\s\\S]*restore_database /safety-copies/before-restore-${stamp}/database\\.dump\\n[\\s\\S]*compose up -d\\nhealthy\\? app`,
-      ),
+    expect(calls).not.toContain("restore_database");
+    expect(calls).not.toContain("compose stop");
+    expect(calls).toMatch(/compose up -d\nhealthy\? app/);
+    // Nothing moved: the files in use stay, the ones from before stay aside.
+    expect(readFileSync(path.join(h.data, "uploads", "new-invoice.pdf"), "utf8")).toBe(
+      "attached yesterday",
     );
+    expect(existsSync(path.join(h.data, `uploads.before-restore-${STAMP}`, "a.pdf"))).toBe(true);
+    expect(readdirSync(h.data).filter((n) => n.startsWith("uploads.failed"))).toEqual([]);
+    expect(existsSync(mark)).toBe(false);
+    expect(existsSync(path.join(backups, ".restored.kept"))).toBe(false);
+    // The owner is told (the ERP's inbox and Telegram): NOT done, and how to undo it.
+    const note = cutNote(h.data);
+    expect(note).toMatchObject({ ok: false, wentBack: false, name: "2026-10-04_020000" });
+    expect(note.message).toContain("was cut off before it finished");
+    expect(note.message).toContain("Nothing was put back automatically");
+    expect(note.message).toContain("no longer on this server");
+    expect(boot.stdout).toContain("Nothing was put back automatically");
+    // At the next start: nothing left to do, nothing done.
+    await writeFile(h.log, "");
+    expect((await h.run({}, ["--after-restart"])).code).toBe(0);
+    expect(readFileSync(h.log, "utf8")).not.toContain("compose up");
+
+    // Its safety copy still there: kept for the owner (7 days), and named in the undo.
+    await mkdir(copy, { recursive: true });
+    await writeFile(path.join(copy, "database.dump"), "dump");
+    await writeFile(mark, `${STAMP}\nsafety copy\n2026-10-04_020000\n`);
+    // Already running (deploy.sh started it): left as it is.
+    await writeFile(h.log, "");
+    expect((await h.run({ APP_RUNNING: "1" }, ["--after-restart"])).code).toBe(0);
+    expect(readFileSync(h.log, "utf8")).not.toMatch(/compose up|restore_database|compose stop/);
+    const undo = cutNote(h.data).message;
+    expect(undo).toContain(
+      `If the ERP shows the wrong data, undo it with: sudo ${h.deploy}/restore.sh ${copy}`,
+    );
+    expect(undo).toContain(
+      `the uploaded files from before stay in ${h.data}/uploads.before-restore-${STAMP} for 30 days`,
+    );
+    expect(existsSync(`${copy}.keep`)).toBe(true);
+  });
+
+  it("puts the files folder back only when the restore was cut while swapping it (v6.4.1 review 3, U1)", async () => {
+    const h = await harness();
+    const mark = path.join(h.data, "backups", ".restore-running");
+    const aside = path.join(h.data, `uploads.before-restore-${STAMP}`);
+    await rm(path.join(h.data, "uploads"), { recursive: true });
+    await mkdir(path.join(aside, "c1"), { recursive: true });
+    await writeFile(path.join(aside, "c1", "now.pdf"), "the file there now");
+    await mkdir(path.join(h.data, "uploads.restoring"));
+    const copy = path.join(h.data, "safety-copies", `before-restore-${STAMP}`);
+    await mkdir(copy, { recursive: true });
+    await writeFile(path.join(copy, "database.dump"), "dump");
+    await writeFile(mark, `${STAMP}\nsafety copy\n`);
+    const boot = await h.run({}, ["--after-restart"]);
+    expect(boot.code, boot.stderr).toBe(0);
     expect(readFileSync(path.join(h.data, "uploads", "c1", "now.pdf"), "utf8")).toBe(
       "the file there now",
     );
+    expect(existsSync(aside)).toBe(false);
     expect(existsSync(path.join(h.data, "uploads.restoring"))).toBe(false);
-    expect(existsSync(mark)).toBe(false);
-    expect(existsSync(path.join(backups, ".standby"))).toBe(false);
-    expect(started.stdout).toContain(
-      "The ERP runs again as it was before the restore that was cut off",
+    expect(readFileSync(h.log, "utf8")).not.toContain("restore_database");
+    expect(cutNote(h.data).message).toContain(
+      "the uploaded files are as they were before that restore",
     );
-    // Nothing cut off: nothing done.
-    await writeFile(h.log, "");
-    expect((await h.run({}, ["--after-restart"])).code).toBe(0);
-    expect(readFileSync(h.log, "utf8")).toBe("");
-
-    // Cut off before its safety copy: only started again, and the next restore goes on.
-    await writeFile(mark, `${stamp}\n`);
-    const next = await h.run();
-    expect(next.code, next.stderr).toBe(0);
-    const after = readFileSync(h.log, "utf8");
-    expect(after.indexOf("compose up -d\n")).toBeLessThan(after.indexOf("safety_copy"));
-    expect(after.match(/restore_database/g)).toHaveLength(1);
-    expect(existsSync(mark)).toBe(false);
-    expect(next.stdout).toContain("A restore was cut off before it finished");
   });
 
-  it("never starts the ERP on a database it could not put back, and never blocks the next restore (v6.4.1 review 2)", async () => {
+  it("says a restore cut off before its safety copy changed nothing, and drops the half copy (v6.4.1 review 3)", async () => {
     const h = await harness();
     const mark = path.join(h.data, "backups", ".restore-running");
-    // Its safety copy is gone (more than a day later): the ERP stays stopped, the owner is told.
-    await writeFile(mark, "2026-10-18_101500\nsafety copy\n");
-    const started = await h.run({}, ["--after-restart"]);
-    expect(started.code).not.toBe(0);
-    expect(started.stderr).toContain(
-      "the database could not be put back as it was before the restore that was cut off, so the ERP stays stopped",
-    );
-    expect(readFileSync(h.log, "utf8")).not.toContain("compose up -d\n");
-    expect(existsSync(mark)).toBe(true);
-    // The restore the owner then runs goes on, and replaces it.
+    const half = path.join(h.data, "safety-copies", `before-restore-${STAMP}`);
+    await mkdir(half, { recursive: true });
+    await writeFile(path.join(half, "database.dump"), "half a du");
+    await writeFile(mark, `${STAMP}\n\n2026-10-04_020000\n`);
+    const boot = await h.run({}, ["--after-restart"]);
+    expect(boot.code, boot.stderr).toBe(0);
+    expect(existsSync(half)).toBe(false);
+    expect(cutNote(h.data)).toMatchObject({ ok: false });
+    expect(cutNote(h.data).message).toContain("was cut off before it changed anything");
+  });
+
+  it("settles a restore cut off earlier at the start of the next restore, which goes on (v6.4.1 review 3, U1)", async () => {
+    const h = await harness();
+    const mark = path.join(h.data, "backups", ".restore-running");
+    await writeFile(mark, `${STAMP}\nsafety copy\n2026-10-04_020000\n`);
     const next = await h.run();
     expect(next.code, next.stderr).toBe(0);
-    expect(next.stdout).toContain("this restore replaces it");
+    const calls = readFileSync(h.log, "utf8");
+    // Only this restore's database goes in; the ERP was started first, as it was.
+    expect(calls.match(/restore_database/g)).toHaveLength(1);
+    expect(calls).toContain("restore_database /backups/2026-10-04_020000/database.dump");
+    expect(calls.indexOf("compose up -d\n")).toBeLessThan(calls.indexOf("safety_copy"));
     expect(existsSync(mark)).toBe(false);
+    expect(next.stdout).toContain("A restore was cut off before it finished");
+    // Two results for the ERP: the cut one (its own file, never overwritten), and this one.
+    expect(cutNote(h.data)).toMatchObject({ ok: false });
     expect(h.result()).toMatchObject({ ok: true });
   });
 
-  it("leaves the mark only while the app is stopped, and at the server's start runs the put-back (v6.4.1 review 2)", async () => {
+  it("leaves the mark only while the app is stopped (v6.4.1 review 2)", async () => {
     const h = await harness();
     const mark = path.join(h.data, "backups", ".restore-running");
     expect((await h.run()).code).toBe(0);
@@ -873,15 +927,202 @@ write_restored_mark() { echo '{}' >"$3"; }
     await h.run({ SAFETY_FAILS: "1" });
     expect(existsSync(mark)).toBe(false);
     const restore = readFileSync(path.join("deploy", "restore.sh"), "utf8");
-    // Gone once the restored ERP runs, before the long check, so a restart never takes it back.
+    // Gone once the restored ERP runs, before the long check.
     expect(restore).toMatch(
       /go_back "the ERP did not start on the restored data"\nfi\n#[^\n]*\nrm -f "\$running_mark"\n/,
     );
+  });
+
+  it("is settled the same way by an update, at once after it takes the lock (v6.4.1 review 3, U1)", () => {
+    const code = readFileSync(path.join("deploy", "deploy.sh"), "utf8");
+    expect(code).toMatch(/\ntake_update_lock\n(?:#[^\n]*\n)*settle_cut_restore \|\|/);
+    const restore = readFileSync(path.join("deploy", "restore.sh"), "utf8");
+    expect(restore).not.toMatch(/restore_database "\/safety-copies\/before-restore-\$cut/);
+    const lib = readFileSync(path.join("deploy", "lib.sh"), "utf8");
+    const settle = lib.slice(lib.indexOf("settle_cut_restore() {"));
+    expect(settle.slice(0, settle.indexOf("\n}\n"))).not.toMatch(/restore_database|compose stop/);
+  });
+
+  it("keeps the safety copy of a restore cut off for 7 days, not 24 hours (v6.4.1 review 3, U1)", async () => {
+    const copies = path.join(dir, "safety-copies");
+    const old = (days: number) => new Date(Date.now() - days * 86_400_000);
+    for (const name of ["before-restore-cut", "before-restore-other", "before-update-x"]) {
+      await mkdir(path.join(copies, name), { recursive: true });
+      await utimes(path.join(copies, name), old(2), old(2));
+    }
+    await writeFile(path.join(copies, "before-restore-cut.keep"), "");
+    await utimes(path.join(copies, "before-restore-cut.keep"), old(2), old(2));
+    const prune = `DATA_DIR="${dir}"\nprune_safety_copies`;
+    expect((await withLib(prune)).code).toBe(0);
+    expect(readdirSync(copies).sort()).toEqual(["before-restore-cut", "before-restore-cut.keep"]);
+    // After 7 days it goes like any other.
+    await utimes(path.join(copies, "before-restore-cut.keep"), old(8), old(8));
+    expect((await withLib(prune)).code).toBe(0);
+    expect((await withLib(prune)).code).toBe(0);
+    expect(readdirSync(copies)).toEqual([]);
+    // The server's hourly clean-up does the same.
+    const lib = readFileSync(path.join("deploy", "lib.sh"), "utf8");
+    const cron = lib.slice(lib.indexOf("/etc/cron.d/extras-erp-safety-copies"));
+    expect(cron).toContain(
+      "-type f -name 'before-*.keep' -mmin +10080 -delete 2>/dev/null; find $DATA_DIR/safety-copies -mindepth 1 -maxdepth 1 -type d -name 'before-*' -mmin +1440 ! -exec test -e '{}.keep' \\\\; -exec rm -rf {} + 2>/dev/null",
+    );
+  });
+
+  it("at the server's start waits for an update that holds the lock, then settles (v6.4.1 review 3, U1)", async () => {
+    const h = await harness();
+    const mark = path.join(h.data, "backups", ".restore-running");
+    await writeFile(mark, `${STAMP}\nsafety copy\n`);
+    const lock = path.join(dir, "update.lock");
+    // An update holds the lock for 3 seconds.
+    const holder = execFile("flock", [lock, "sleep", "3"]);
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    const started = Date.now();
+    const boot = await h.run({}, ["--after-restart"]);
+    holder.kill();
+    expect(boot.code, boot.stderr).toBe(0);
+    expect(Date.now() - started).toBeGreaterThan(2000);
+    expect(existsSync(mark)).toBe(false);
     const lib = readFileSync(path.join("deploy", "lib.sh"), "utf8");
     expect(lib).toMatch(
-      /ConditionPathExists=\$DATA_DIR\/backups\/\.restore-running\n\n\[Service\]\nType=oneshot\nExecStart=\$DEPLOY_DIR\/restore\.sh --after-restart\n\n\[Install\]\nWantedBy=multi-user\.target/,
+      /ConditionPathExists=\|\$DATA_DIR\/backups\/\.restore-running\nConditionPathExists=\|\$DATA_DIR\/backups\/\.standby\.was-in-use\nConditionDirectoryNotEmpty=\|\$DATA_DIR\/backups\/restores\n\n\[Service\]\nType=oneshot\nTimeoutStartSec=75min\nExecStart=\$DEPLOY_DIR\/restore\.sh --after-restart\n/,
     );
     expect(lib).toContain("systemctl enable extras-erp-restore-cut.service");
+    const restore = readFileSync(path.join("deploy", "restore.sh"), "utf8");
+    expect(restore).toMatch(/wait_update_lock 3600 \|\|/);
+  });
+
+  it("at the server's start deletes opened backups left from before it, and ends a standby the restore command left (v6.4.1 review 3)", async () => {
+    const h = await harness();
+    const backups = path.join(h.data, "backups");
+    const left = path.join(backups, "restores", "2026-10-16_0200");
+    const fresh = path.join(backups, "restores", "2026-10-18_0900");
+    for (const folder of [left, fresh]) {
+      await mkdir(folder, { recursive: true });
+      await writeFile(path.join(folder, "database.dump"), "plain data");
+    }
+    const before = new Date("2001-01-01T00:00:00Z");
+    await utimes(left, before, before);
+    // The restore command (bootstrap.sh) was cut off over the ERP in use here.
+    await writeFile(path.join(backups, ".standby"), "words");
+    await writeFile(path.join(backups, ".standby.was-in-use"), "");
+    // Its web address does not point here: it stays on standby.
+    const away = await h.run({}, ["--after-restart"]);
+    expect(away.code, away.stderr).toBe(0);
+    expect(existsSync(left)).toBe(false);
+    expect(existsSync(fresh)).toBe(true);
+    expect(readFileSync(h.log, "utf8")).toContain("web_address_here erp.example.com");
+    expect(existsSync(path.join(backups, ".standby"))).toBe(true);
+    // It points here: in use again.
+    const here = await h.run({ WEB_HERE: "1" }, ["--after-restart"]);
+    expect(here.code, here.stderr).toBe(0);
+    expect(existsSync(path.join(backups, ".standby"))).toBe(false);
+    expect(existsSync(path.join(backups, ".standby.was-in-use"))).toBe(false);
+    expect(here.stdout).toContain("The ERP that was in use here is not on standby");
+    // Never after a restore cut off half-way (the data may be the backup's).
+    await writeFile(path.join(backups, ".standby"), "words");
+    await writeFile(path.join(backups, ".standby.was-in-use"), "");
+    await writeFile(path.join(backups, ".restore-running"), `${STAMP}\nsafety copy\n`);
+    expect((await h.run({ WEB_HERE: "1" }, ["--after-restart"])).code).toBe(0);
+    expect(existsSync(path.join(backups, ".standby"))).toBe(true);
+    // Nor on a restore drill copy.
+    await rm(path.join(backups, ".restore-running"), { force: true });
+    await writeFile(path.join(backups, ".drill"), "{}");
+    expect((await h.run({ WEB_HERE: "1" }, ["--after-restart"])).code).toBe(0);
+    expect(existsSync(path.join(backups, ".standby"))).toBe(true);
+  });
+
+  it("counts a restore stopped by a signal as NOT done, and goes on when PuTTY's connection drops (v6.4.1 review 3, I1)", async () => {
+    const h = await harness();
+    const mark = path.join(h.data, "backups", ".restore-running");
+    // As systemd stops it at shutdown, or Ctrl+C: the whole group gets the signal
+    // while the database goes in.
+    const stopped = async (signal: NodeJS.Signals) => {
+      await rm(path.join(dir, "result.json"), { force: true });
+      await rm(mark, { force: true });
+      for (const name of readdirSync(h.data)) {
+        if (name.startsWith("uploads.")) await rm(path.join(h.data, name), { recursive: true });
+      }
+      const child = spawn(
+        "bash",
+        [
+          path.join(h.deploy, "restore.sh"),
+          "--yes",
+          "--result",
+          path.join(dir, "result.json"),
+          h.backup,
+        ],
+        { env: { ...process.env, SLOW: "3" }, detached: true, stdio: "ignore" },
+      );
+      const ended = new Promise<number | null>((resolve) =>
+        child.on("exit", (code) => resolve(code)),
+      );
+      for (let i = 0; i < 100 && !readFileSync(h.log, "utf8").includes("restore_database"); i++) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      process.kill(-child.pid!, signal);
+      return ended;
+    };
+    for (const signal of ["SIGTERM", "SIGINT"] as const) {
+      await writeFile(h.log, "");
+      const code = await stopped(signal);
+      expect(code, signal).not.toBe(0);
+      expect(h.result(), signal).toMatchObject({ ok: false });
+      expect(h.result().message, signal).toContain("the restore was stopped before it finished");
+      expect(h.result().message, signal).toContain(
+        "Nothing was put back automatically, and the ERP stays stopped until the server starts again",
+      );
+      // Never a success line, nor the ERP started on a half-done restore.
+      expect(readFileSync(h.log, "utf8"), signal).not.toMatch(/compose up -d\n/);
+    }
+    // A dropped connection (SIGHUP, with no terminal): it goes on to the end.
+    await writeFile(h.log, "");
+    expect(await stopped("SIGHUP")).toBe(0);
+    expect(h.result()).toMatchObject({ ok: true });
+    expect(existsSync(mark)).toBe(false);
+  });
+
+  it("goes on to the end, into its log, when PuTTY's window is closed during a restore (v6.4.1 review 3, U1)", async () => {
+    const h = await harness();
+    // restore.sh in a terminal of its own; the terminal goes away while the database goes in.
+    const driver = `
+import os, pty, sys, time
+pid, fd = pty.fork()
+if pid == 0:
+    os.execvp("bash", ["bash"] + sys.argv[1:])
+seen, deadline = b"", time.time() + 30
+while b"Restoring the database" not in seen and time.time() < deadline:
+    try:
+        seen += os.read(fd, 4096)
+    except OSError:
+        break
+os.close(fd)
+_, status = os.waitpid(pid, 0)
+print(os.waitstatus_to_exitcode(status))
+`;
+    const run = await new Promise<Run>((resolve) =>
+      execFile(
+        "python3",
+        [
+          "-I",
+          "-c",
+          driver,
+          path.join(h.deploy, "restore.sh"),
+          "--yes",
+          "--result",
+          path.join(dir, "result.json"),
+          h.backup,
+        ],
+        { env: { ...process.env, SLOW: "2" }, timeout: 60_000 },
+        (error, stdout, stderr) =>
+          resolve({ code: error ? Number(error.code ?? 1) : 0, stdout, stderr }),
+      ),
+    );
+    expect(run.stdout.trim(), run.stderr).toBe("0");
+    expect(h.result()).toMatchObject({ ok: true });
+    expect(existsSync(path.join(h.data, "backups", ".restore-running"))).toBe(false);
+    const log = readFileSync(path.join(dir, "restore.log"), "utf8");
+    expect(log).toContain("Restoring the database");
+    expect(log).toContain("Restored from");
   });
 
   it("goes back the same way when the ERP does not start on the restored data", async () => {

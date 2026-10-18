@@ -275,9 +275,21 @@ counts as a problem, never as "every screen opened".
 
 A restore cut off half-way (the server restarted, or it was stopped) leaves
 `backups/.restore-running` and the app stopped. When the server starts again, systemd
-(`extras-erp-restore-cut.service`) runs `restore.sh --after-restart`: the database goes back
-to that restore's safety copy, the files from before go back in place, and the ERP starts.
-Every restore does the same first, so the next restore never starts from a half-done one.
+(`extras-erp-restore-cut.service`) runs `restore.sh --after-restart`, after waiting for any
+update or restore that holds the lock. It never puts anything back by itself: the database
+is restored in one transaction, so it holds either the data from before or the backup's,
+whole, and the ERP may have been used since. It only puts the uploads folder back when the
+restore was cut while swapping it (the live one missing), starts the ERP as it is, and tells
+the owner ("Restore did not finish", in the inbox and on Telegram) how to undo it with that
+restore's safety copy, which then stays on the server for 7 days instead of 24 hours.
+Every restore and every update (`deploy.sh`) does the same first. The same unit deletes
+opened backups (`backups/restores/`) left from before the server started, and ends a standby
+the restore command left over the ERP in use (`.standby.was-in-use`) once its web address
+points here.
+
+A restore run in PuTTY goes on when the connection drops, and also writes what it says to
+`/var/log/extas-erp-restore.log`. Ctrl+C, or a stop at shutdown, ends it as not done (the
+Backups screen and the owner are told it did NOT finish).
 
 To undo a restore, restore the safety copy it names at the end:
 

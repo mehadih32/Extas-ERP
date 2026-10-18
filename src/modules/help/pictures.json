@@ -3079,7 +3079,7 @@
       "target": "marks"
     },
     "route": "/production/projects/[projectId]/cutting",
-    "screen": "4b0524188d9d5ff6",
+    "screen": "d9795cba5f594b5c",
     "guide": "7e77b0628640cb87",
     "taken": "2026-10-18"
   },
@@ -3159,7 +3159,7 @@
       "target": "marks"
     },
     "route": "/production/projects/[projectId]/finishing",
-    "screen": "facb0e060a015ec4",
+    "screen": "b93a701b86b2bf27",
     "guide": "cc5fccd8bdcfec5e",
     "taken": "2026-10-18"
   },

@@ -160,6 +160,42 @@ run("cartons and packer on an order", () => {
     }
   });
 
+  it("prints the order's cartons only on a challan that carries the whole order (v6.4.1 review 3)", async () => {
+    const env = await setup();
+    // 12 pieces in 4 cartons, handed over in two parts.
+    const order = await wholesaleOrder(env, { totalCartons: 4 });
+    const first = await documents.createDeliveryChallan(env.ctx, order.id, {
+      items: [{ variantId: env.sku("Navy", "M"), quantity: 4 }],
+    });
+    const rest = await documents.createDeliveryChallan(env.ctx, order.id);
+    for (const challan of [first, rest]) {
+      const meta = await metaOf(env.ctx, { type: "DELIVERY_CHALLAN", id: challan.id });
+      // Not this challan's count: the order's total is shown as such, never as this load's.
+      expect(meta).toMatchObject({ "Total cartons": "– (order total 4)" });
+    }
+
+    // One challan with every piece: the order's cartons are its cartons.
+    const white = (quantities: Record<string, number>) => ({
+      matrix: [{ styleId: env.style.id, quantities }],
+    });
+    const whole = await wholesaleOrder(env, {
+      totalCartons: 3,
+      ...white({ [env.sku("White", "M")]: 6 }),
+    });
+    const all = await documents.createDeliveryChallan(env.ctx, whole.id);
+    expect(await metaOf(env.ctx, { type: "DELIVERY_CHALLAN", id: all.id })).toMatchObject({
+      "Total cartons": "3",
+    });
+    // A part challan of an order with no cartons recorded: a dash.
+    const none = await wholesaleOrder(env, white({ [env.sku("White", "L")]: 6 }));
+    const part = await documents.createDeliveryChallan(env.ctx, none.id, {
+      items: [{ variantId: env.sku("White", "L"), quantity: 1 }],
+    });
+    expect(await metaOf(env.ctx, { type: "DELIVERY_CHALLAN", id: part.id })).toMatchObject({
+      "Total cartons": "–",
+    });
+  });
+
   it("takes only staff of this company who are still working", async () => {
     const env = await setup();
     const other = await setup("Other Co");

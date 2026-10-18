@@ -1019,10 +1019,17 @@ export async function challanDocument(
       { label: "Challan no.", value: ch.number },
       { label: "Date", value: formatInstantDay(ch.deliveryDate, tz) },
       { label: "Order no.", value: order.number },
-      // Always printed, a dash when not recorded yet.
+      // Always printed, a dash when not recorded yet. The order's cartons are this
+      // challan's only when it carries the whole order; a part delivery shows the
+      // order's total as such.
       {
         label: "Total cartons",
-        value: order.totalCartons !== null ? count(order.totalCartons, currency) : "–",
+        value:
+          order.totalCartons === null
+            ? "–"
+            : ch.wholeOrder
+              ? count(order.totalCartons, currency)
+              : `– (order total ${count(order.totalCartons, currency)})`,
       },
       { label: "Packed by", value: order.packedBy?.name ?? "–" },
       ...(ch.vehicleNo ? [{ label: "Vehicle no.", value: ch.vehicleNo }] : []),

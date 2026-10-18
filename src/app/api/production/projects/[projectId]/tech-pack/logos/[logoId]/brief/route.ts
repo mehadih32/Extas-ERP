@@ -2,7 +2,8 @@ import { apiErrorResponse } from "@/lib/api";
 import { fileResponse } from "@/lib/download";
 import { PDF_MIME } from "@/lib/pdf";
 import { getRequestMeta } from "@/lib/request-meta";
-import { requirePermission } from "@/modules/auth/context";
+import { requireAnyPermission } from "@/modules/auth/context";
+import { TECH_PACK_READ } from "@/modules/production/tech-pack-access";
 import { requireProjectTechPack } from "@/modules/production/tech-pack-spec.service";
 import { digitizingBrief } from "@/modules/production/tech-pack-export";
 
@@ -20,7 +21,7 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request, context: { params: Promise<Params> }) {
   try {
     const { projectId, logoId } = await context.params;
-    const ctx = await requirePermission("production.view");
+    const ctx = await requireAnyPermission(...TECH_PACK_READ);
     const pdf = await digitizingBrief(
       ctx,
       await requireProjectTechPack(ctx, projectId),

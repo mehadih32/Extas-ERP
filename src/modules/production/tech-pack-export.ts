@@ -19,6 +19,7 @@ import {
 } from "@/modules/production/measurements";
 import { LOGO_FABRICS, LOGO_SOURCE_LABELS } from "@/modules/production/tech-pack-labels";
 import {
+  assertView,
   type Chart,
   getChart,
   loadTechPack,
@@ -175,6 +176,7 @@ export async function measurementsFile(
   format: "pdf" | "xlsx",
   meta?: RequestMeta,
 ) {
+  assertView(ctx);
   checkRateLimit(`on-demand-print:${ctx.user.id}`, ON_DEMAND_PER_MINUTE, 60_000);
   const tp = await loadTechPack(ctx, techPackId);
   const chart = await getChart(ctx, tp.id);
@@ -300,6 +302,7 @@ export async function digitizingBrief(
   logoId: string,
   meta?: RequestMeta,
 ) {
+  assertView(ctx);
   checkRateLimit(`on-demand-print:${ctx.user.id}`, ON_DEMAND_PER_MINUTE, 60_000);
   const tp = await loadTechPack(ctx, techPackId);
   const logo = await ctx.db.techPackLogo.findFirst({

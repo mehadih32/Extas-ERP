@@ -10,7 +10,11 @@ import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { styleGrids } from "@/modules/production/material-need.service";
 import { techPackGaps } from "@/modules/production/tech-pack-gaps";
-import { ensureProjectTechPack, loadTechPack } from "@/modules/production/tech-pack-spec.service";
+import {
+  assertView,
+  ensureProjectTechPack,
+  loadTechPack,
+} from "@/modules/production/tech-pack-spec.service";
 import {
   diffFabricParts,
   type FabricChange,
@@ -155,6 +159,7 @@ async function loadProject(ctx: CompanyContext, projectId: string) {
 
 /** A style's tech pack: its state and what this person may do with it. */
 export async function getTechPack(ctx: CompanyContext, projectId: string) {
+  assertView(ctx);
   const project = await loadProject(ctx, projectId);
   const linked = await ctx.db.techPack.findUnique({
     where: { projectId: project.id },

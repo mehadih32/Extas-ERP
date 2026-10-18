@@ -203,6 +203,7 @@ const briefBlock = (brief: string | null): Block[] =>
 
 /** The tech pack's PDF for download (logged; nothing is kept). */
 export async function techPackPdf(ctx: CompanyContext, projectId: string, meta?: RequestMeta) {
+  assertView(ctx);
   checkRateLimit(`on-demand-print:${ctx.user.id}`, ON_DEMAND_PER_MINUTE, 60_000);
   const data = await getMaterialNeeds(ctx, projectId);
   const p = data.project;

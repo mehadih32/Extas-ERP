@@ -2,7 +2,8 @@ import { z } from "zod";
 
 import { apiRoute, readJson } from "@/lib/api";
 import { getRequestMeta } from "@/lib/request-meta";
-import { requirePermission } from "@/modules/auth/context";
+import { requireAnyPermission, requirePermission } from "@/modules/auth/context";
+import { TECH_PACK_READ } from "@/modules/production/tech-pack-access";
 import * as techPacks from "@/modules/production/tech-pack-approval.service";
 
 type Params = { projectId: string };
@@ -12,10 +13,10 @@ export const dynamic = "force-dynamic";
 /**
  * GET /api/production/projects/:projectId/tech-pack/approval — where the style's tech pack
  * stands: draft or approved, its fabric part locked or not, and what changed since.
- * Needs production.view.
+ * Needs production.view, or approving tech packs or their logos (TECH_PACK_READ).
  */
 export const GET = apiRoute<Params>(async (_request, { projectId }) =>
-  techPacks.getTechPack(await requirePermission("production.view"), projectId),
+  techPacks.getTechPack(await requireAnyPermission(...TECH_PACK_READ), projectId),
 );
 
 const bodySchema = z.object({ action: z.enum(["lock-fabric", "approve"]) });

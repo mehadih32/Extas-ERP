@@ -128,7 +128,7 @@ function Lines({ screen, currency }: { screen: StatementScreen; currency: string
           <li key={line.id} className="rounded-lg border bg-card p-4">
             <div className="flex items-baseline justify-between gap-3 text-[0.8125rem] text-muted-foreground">
               <span>{formatDay(line.day)}</span>
-              <span className="truncate">{line.number}</span>
+              <span className="min-w-0 text-right wrap-anywhere">{line.number}</span>
             </div>
             <p className="mt-1 text-sm">{line.details}</p>
             {line.memo && <p className="text-[0.8125rem] text-muted-foreground">{line.memo}</p>}

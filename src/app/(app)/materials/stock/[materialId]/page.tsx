@@ -132,7 +132,7 @@ export default async function MaterialPage({
                   key={s.id}
                   className="flex items-baseline justify-between gap-3 py-3 first:pt-0 last:pb-0"
                 >
-                  <span className="min-w-0 truncate text-sm">{s.name}</span>
+                  <span className="min-w-0 text-sm break-words">{s.name}</span>
                   <span className="text-sm font-medium whitespace-nowrap tabular-nums">
                     {q(s.quantity)}
                   </span>

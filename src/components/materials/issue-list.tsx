@@ -83,12 +83,14 @@ export function IssueList({
                 </TableCell>
                 <TableCell>
                   <div className="font-medium">{n.project.code}</div>
-                  <div className="max-w-64 truncate text-[0.8125rem] text-muted-foreground">
+                  <div className="max-w-64 min-w-40 text-[0.8125rem] break-words whitespace-normal text-muted-foreground">
                     {n.project.name}
                   </div>
                 </TableCell>
                 <TableCell>
-                  <div className="max-w-72 truncate text-muted-foreground">{where(n)}</div>
+                  <div className="max-w-72 min-w-40 break-words whitespace-normal text-muted-foreground">
+                    {where(n)}
+                  </div>
                 </TableCell>
                 {seeCosts && (
                   <TableCell className="text-right font-medium whitespace-nowrap tabular-nums">

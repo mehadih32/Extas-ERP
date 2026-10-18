@@ -67,7 +67,7 @@ function Dues({
                   key={b.id}
                   className="flex items-baseline justify-between gap-3 py-2 first:pt-0 last:pb-0"
                 >
-                  <span className="min-w-0 truncate">
+                  <span className="min-w-0 wrap-anywhere">
                     {b.number} · {formatDay(b.billOn)}
                   </span>
                   <span className="whitespace-nowrap tabular-nums">

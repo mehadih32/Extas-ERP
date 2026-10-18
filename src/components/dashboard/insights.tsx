@@ -46,8 +46,8 @@ function ProductCell({ product, skus }: { product: Product; skus?: number }) {
     : `${product.styleCode} · ${skus ?? 0} ${skus === 1 ? "SKU" : "SKUs"}`;
   return (
     <TableCell className="max-w-[16rem] min-w-[11rem] whitespace-normal">
-      <div className="truncate font-medium">{product.styleName}</div>
-      <div className="truncate text-xs text-muted-foreground">{detail}</div>
+      <div className="font-medium break-words">{product.styleName}</div>
+      <div className="text-xs wrap-anywhere text-muted-foreground">{detail}</div>
     </TableCell>
   );
 }

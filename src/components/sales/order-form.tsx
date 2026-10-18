@@ -198,7 +198,7 @@ function Steps({ step, onGo }: { step: number; onGo: (step: number) => void }) {
                 />
                 <span
                   className={cn(
-                    "hidden truncate text-[0.8125rem] sm:block",
+                    "hidden text-[0.8125rem] break-words sm:block",
                     index === step ? "font-medium text-primary" : "text-muted-foreground",
                   )}
                 >

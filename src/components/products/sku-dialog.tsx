@@ -108,7 +108,7 @@ function StockTable({ details, currency }: { details: VariantDetails; currency: 
             <TableCell
               className={cn("max-w-[12rem] whitespace-normal", row.total && "font-medium")}
             >
-              <span className="block truncate">{row.name}</span>
+              <span className="block break-words">{row.name}</span>
               <span className="block text-xs font-normal text-muted-foreground sm:hidden">
                 {count(row.reserved)} set aside · {count(row.bGrade)} B-grade
               </span>

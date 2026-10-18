@@ -368,9 +368,11 @@ export function EmployeeList({
                       </div>
                     </TableCell>
                     <TableCell>
-                      <div className="max-w-56 truncate">{e.designation ?? "–"}</div>
+                      <div className="max-w-56 min-w-40 break-words whitespace-normal">
+                        {e.designation ?? "–"}
+                      </div>
                       {e.department && (
-                        <div className="max-w-56 truncate text-[0.8125rem] text-muted-foreground">
+                        <div className="max-w-56 min-w-40 text-[0.8125rem] break-words whitespace-normal text-muted-foreground">
                           {e.department}
                         </div>
                       )}

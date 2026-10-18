@@ -63,7 +63,7 @@ function DuesList({
                       {row.grade && <GradeBadge grade={row.grade} />}
                     </div>
                   </div>
-                  <p className="mt-2 truncate font-serif text-lg text-primary">{row.name}</p>
+                  <p className="mt-2 font-serif text-lg break-words text-primary">{row.name}</p>
                   <div className="mt-3 flex items-baseline justify-between gap-3 border-t pt-3 text-sm">
                     <span className="text-muted-foreground">
                       {row.lastTransactionOn

@@ -85,7 +85,7 @@ export function TemporaryPasswordDialog({
             <span className="flex min-w-0 items-center gap-2">
               <KeyRoundIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
               <span
-                className="truncate font-mono text-base tracking-wider select-all"
+                className="min-w-0 font-mono text-base tracking-wider break-all select-all"
                 data-testid="temporary-password"
               >
                 {issued.temporaryPassword}

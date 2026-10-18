@@ -496,11 +496,11 @@ function QuickAdd({
             type="button"
             size="sm"
             variant="outline"
-            className="max-w-full"
+            className="h-auto min-h-8 max-w-full py-1.5 text-left whitespace-normal"
             onClick={item.onAdd}
           >
             <PlusIcon aria-hidden />
-            <span className="truncate">{item.text}</span>
+            <span className="min-w-0 break-words">{item.text}</span>
           </Button>
         ))}
       </div>

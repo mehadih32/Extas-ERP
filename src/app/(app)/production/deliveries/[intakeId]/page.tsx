@@ -163,7 +163,7 @@ export default async function DeliveryPage({
                     className="inline-flex max-w-full items-center gap-1.5 text-primary underline-offset-4 hover:underline"
                   >
                     <PaperclipIcon className="size-4 shrink-0" aria-hidden />
-                    <span className="truncate">{d.sourceFile.fileName}</span>
+                    <span className="min-w-0 wrap-anywhere">{d.sourceFile.fileName}</span>
                   </a>
                 ) : (
                   "None attached"

@@ -164,7 +164,7 @@ export function MaterialNeedsPanel({ panel, currency }: { panel: NeedsPanel; cur
       {panel.techPackNotes && (
         <>
           <h4 className="eyebrow mt-6">Making notes</h4>
-          <p className="mt-2 line-clamp-4 text-sm leading-relaxed whitespace-pre-line">
+          <p className="mt-2 text-sm leading-relaxed break-words whitespace-pre-line">
             {panel.techPackNotes}
           </p>
         </>

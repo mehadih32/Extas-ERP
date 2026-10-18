@@ -128,7 +128,7 @@ export function VaultPapers({
                     href={hrHref.file(p.fileId)}
                     target="_blank"
                     rel="noreferrer"
-                    className="block truncate text-sm font-medium text-primary underline-offset-4 hover:underline"
+                    className="block text-sm font-medium wrap-anywhere text-primary underline-offset-4 hover:underline"
                   >
                     {p.title || DOCUMENT_KIND_LABELS[p.kind]}
                   </a>

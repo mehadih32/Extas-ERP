@@ -155,12 +155,12 @@ export function PartyList({
           <TableBody>
             {items.map((party) => (
               <TableRow key={party.id}>
-                <TableCell className="py-3">
+                <TableCell className="max-w-72 min-w-48 py-3 whitespace-normal">
                   <Link
                     href={partyHref(party)}
                     className="group inline-flex max-w-full items-center gap-1.5 rounded-sm font-medium text-primary outline-none hover:underline hover:underline-offset-4 focus-visible:ring-[3px] focus-visible:ring-ring/25"
                   >
-                    <span className="truncate">{party.name}</span>
+                    <span className="min-w-0 break-words">{party.name}</span>
                     {party.isVerified && <VerifiedBadge />}
                   </Link>
                   <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[0.8125rem] text-muted-foreground">
@@ -186,7 +186,9 @@ export function PartyList({
                   </TableCell>
                 )}
                 <TableCell>
-                  <div className="max-w-56 truncate">{party.contactPerson ?? ""}</div>
+                  <div className="max-w-56 min-w-40 break-words whitespace-normal">
+                    {party.contactPerson ?? ""}
+                  </div>
                   {party.phone && (
                     <div className="text-[0.8125rem] text-muted-foreground">{party.phone}</div>
                   )}

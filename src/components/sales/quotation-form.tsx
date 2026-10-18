@@ -377,7 +377,7 @@ export function QuotationForm({ form: data }: { form: QuotationFormData }) {
                     <Field id={id("style")} label="Style" error={fieldError(at("style"))}>
                       {item.style ? (
                         <div className="flex min-w-0 items-center justify-between gap-3 rounded-md border px-3 py-2">
-                          <span className="truncate text-sm">
+                          <span className="min-w-0 text-sm break-words">
                             {item.style.code} · {item.style.name}
                           </span>
                           <Button

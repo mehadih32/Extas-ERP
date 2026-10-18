@@ -98,15 +98,17 @@ export function OrderList({
                   </div>
                 </TableCell>
                 <TableCell>
-                  <div className="max-w-56 truncate">{o.supplier?.name}</div>
+                  <div className="max-w-56 min-w-40 break-words whitespace-normal">
+                    {o.supplier?.name}
+                  </div>
                   {o.supplierRef && (
-                    <div className="max-w-56 truncate text-[0.8125rem] text-muted-foreground">
+                    <div className="max-w-56 min-w-40 text-[0.8125rem] break-words whitespace-normal text-muted-foreground">
                       Their no. {o.supplierRef}
                     </div>
                   )}
                 </TableCell>
                 <TableCell>
-                  <div className="max-w-64 truncate text-muted-foreground">
+                  <div className="max-w-64 min-w-40 break-words whitespace-normal text-muted-foreground">
                     {codesText(o.materials)}
                   </div>
                   {o.project && (

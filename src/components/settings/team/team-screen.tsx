@@ -256,7 +256,7 @@ export function TeamScreen({ team, companyName }: { team: Team; companyName: str
                         <span className="font-medium">{member.name}</span>
                         <WhoBadges member={member} />
                       </div>
-                      <div className="truncate text-xs text-muted-foreground">
+                      <div className="text-xs wrap-anywhere text-muted-foreground">
                         {member.email}
                         {member.phone && ` · ${member.phone}`}
                       </div>
@@ -286,10 +286,10 @@ export function TeamScreen({ team, companyName }: { team: Team; companyName: str
               <li key={member.id} className="rounded-lg border bg-card p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <p className="truncate font-medium">{member.name}</p>
-                    <p className="truncate text-sm text-muted-foreground">{member.email}</p>
+                    <p className="font-medium break-words">{member.name}</p>
+                    <p className="text-sm wrap-anywhere text-muted-foreground">{member.email}</p>
                     {member.phone && (
-                      <p className="truncate text-sm text-muted-foreground">{member.phone}</p>
+                      <p className="text-sm wrap-anywhere text-muted-foreground">{member.phone}</p>
                     )}
                   </div>
                   <div className="-mt-2 -mr-2">

@@ -122,7 +122,9 @@ export function InvoiceList({
                   </div>
                 </TableCell>
                 <TableCell>
-                  <div className="max-w-64 truncate">{buyerName(inv.buyer, inv.customerName)}</div>
+                  <div className="max-w-64 min-w-40 break-words whitespace-normal">
+                    {buyerName(inv.buyer, inv.customerName)}
+                  </div>
                   {inv.buyer && (
                     <div className="text-[0.8125rem] text-muted-foreground">{inv.buyer.code}</div>
                   )}

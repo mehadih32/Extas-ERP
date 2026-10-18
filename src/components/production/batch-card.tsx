@@ -73,7 +73,7 @@ export function BatchCard({ batch: b, currency }: { batch: BatchCardData; curren
             <span className={cn(b.lateStyles > 0 && "font-medium text-destructive")}>
               {stylesText(b)}
             </span>
-            {b.factory && <span className="min-w-0 truncate">{b.factory.name}</span>}
+            {b.factory && <span className="min-w-0 break-words">{b.factory.name}</span>}
           </p>
         </div>
         {b.styleCount > 0 && (

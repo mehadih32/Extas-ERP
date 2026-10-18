@@ -94,15 +94,19 @@ export function PurchaseList({
                   </div>
                 </TableCell>
                 <TableCell>
-                  <div className="max-w-56 truncate">{b.supplier?.name}</div>
+                  <div className="max-w-56 min-w-40 break-words whitespace-normal">
+                    {b.supplier?.name}
+                  </div>
                   {b.supplierRef && (
-                    <div className="max-w-56 truncate text-[0.8125rem] text-muted-foreground">
+                    <div className="max-w-56 min-w-40 text-[0.8125rem] break-words whitespace-normal text-muted-foreground">
                       Their no. {b.supplierRef}
                     </div>
                   )}
                 </TableCell>
                 <TableCell>
-                  <div className="max-w-72 truncate text-muted-foreground">{what(b)}</div>
+                  <div className="max-w-72 min-w-40 break-words whitespace-normal text-muted-foreground">
+                    {what(b)}
+                  </div>
                 </TableCell>
                 <TableCell className="text-right whitespace-nowrap text-destructive tabular-nums">
                   {owed(b) ? money(b.due, currency) : "–"}

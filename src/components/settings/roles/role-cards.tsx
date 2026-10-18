@@ -34,7 +34,7 @@ export function RoleCards({ roles }: { roles: RoleSummary[] }) {
                 {role.name}
               </span>
               {summary && (
-                <span className="mt-1.5 line-clamp-2 text-sm leading-relaxed text-muted-foreground">
+                <span className="mt-1.5 text-sm leading-relaxed break-words text-muted-foreground">
                   {summary}
                 </span>
               )}

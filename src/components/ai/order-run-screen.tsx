@@ -639,7 +639,7 @@ export function OrderRunScreen({ run: r }: { run: Run }) {
                       href={file.href}
                       target="_blank"
                       rel="noreferrer"
-                      className="min-w-0 flex-1 truncate underline-offset-4 hover:underline"
+                      className="min-w-0 flex-1 wrap-anywhere underline-offset-4 hover:underline"
                     >
                       {file.fileName}
                     </a>

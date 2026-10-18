@@ -76,8 +76,8 @@ export function SalesFlow({
                 >
                   {record ? <CheckIcon className="size-3" /> : index + 1}
                 </span>
-                <span className="truncate sm:hidden">{step.short}</span>
-                <span className="hidden truncate sm:inline">{step.label}</span>
+                <span className="min-w-0 break-words sm:hidden">{step.short}</span>
+                <span className="hidden min-w-0 break-words sm:inline">{step.label}</span>
               </span>
               {!record ? (
                 <span className="text-muted-foreground">Not made yet</span>

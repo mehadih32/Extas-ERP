@@ -63,17 +63,21 @@ export function ProjectList({
               <TableRow key={p.id}>
                 <TableCell className="py-3">
                   <RowLink href={productionHref.project(p.id)}>{p.code}</RowLink>
-                  <div className="mt-1 max-w-72 truncate text-[0.8125rem]">{p.name}</div>
+                  <div className="mt-1 max-w-72 min-w-40 text-[0.8125rem] break-words whitespace-normal">
+                    {p.name}
+                  </div>
                   {p.batch && (
-                    <div className="max-w-72 truncate text-[0.8125rem] text-muted-foreground">
+                    <div className="max-w-72 min-w-40 text-[0.8125rem] break-words whitespace-normal text-muted-foreground">
                       {p.batch.code} · {p.batch.name}
                     </div>
                   )}
                 </TableCell>
                 <TableCell>
-                  <div className="max-w-56 truncate">{forWhom(p)}</div>
+                  <div className="max-w-56 min-w-40 break-words whitespace-normal">
+                    {forWhom(p)}
+                  </div>
                   {p.factoryLabel && (
-                    <div className="max-w-56 truncate text-[0.8125rem] text-muted-foreground">
+                    <div className="max-w-56 min-w-40 text-[0.8125rem] break-words whitespace-normal text-muted-foreground">
                       {p.factoryLabel}
                     </div>
                   )}

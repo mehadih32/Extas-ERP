@@ -88,8 +88,10 @@ export function JournalList({
                   </div>
                 </TableCell>
                 <TableCell>
-                  <div className="max-w-md truncate">{e.description}</div>
-                  <div className="max-w-md truncate text-[0.8125rem] text-muted-foreground">
+                  <div className="max-w-md min-w-40 break-words whitespace-normal">
+                    {e.description}
+                  </div>
+                  <div className="max-w-md min-w-40 text-[0.8125rem] break-words whitespace-normal text-muted-foreground">
                     {accountsText(e)}
                   </div>
                 </TableCell>

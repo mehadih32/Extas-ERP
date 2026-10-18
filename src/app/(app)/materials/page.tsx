@@ -169,7 +169,7 @@ export default async function MaterialsOverviewPage() {
                     <Link href={materialsHref.material(m.id)} className={rowLink}>
                       <span className="min-w-0">
                         <span className="block text-sm font-medium text-primary">{m.code}</span>
-                        <span className="block truncate text-[0.8125rem] text-muted-foreground">
+                        <span className="block text-[0.8125rem] break-words text-muted-foreground">
                           {m.name}
                         </span>
                       </span>
@@ -219,7 +219,7 @@ export default async function MaterialsOverviewPage() {
                           {o.number}
                           {o.project ? ` · ${o.project.code}` : ""}
                         </span>
-                        <span className="block truncate text-[0.8125rem] text-muted-foreground">
+                        <span className="block text-[0.8125rem] break-words text-muted-foreground">
                           {o.supplier?.name}
                         </span>
                       </span>
@@ -284,7 +284,7 @@ export default async function MaterialsOverviewPage() {
                       href={`${materialsHref.stock}?store=${s.warehouse.id}`}
                       className={rowLink}
                     >
-                      <span className="min-w-0 truncate text-sm font-medium">
+                      <span className="min-w-0 text-sm font-medium break-words">
                         {s.warehouse.name}
                       </span>
                       <span className="text-sm whitespace-nowrap text-muted-foreground">
@@ -321,7 +321,7 @@ export default async function MaterialsOverviewPage() {
                         <span className="block text-sm font-medium text-primary">
                           {n.number} · {n.project.code}
                         </span>
-                        <span className="block truncate text-[0.8125rem] text-muted-foreground">
+                        <span className="block text-[0.8125rem] break-words text-muted-foreground">
                           {formatDay(n.day)} · {n.lineCount}{" "}
                           {n.lineCount === 1 ? "material" : "materials"}
                         </span>

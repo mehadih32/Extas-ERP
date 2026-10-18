@@ -26,6 +26,11 @@ async function call<T>(
   body?: unknown,
   okStatuses: number[] = [],
 ): Promise<Answer<T>> {
+  // A restore drill copy (test mode) only reads: no issue, branch, merge or workflow.
+  if (method !== "GET") {
+    const { DRILL_NOT_SENT, onDrill } = await import("@/modules/backups/standby");
+    if (await onDrill()) throw new AppError("UNAVAILABLE", DRILL_NOT_SENT);
+  }
   let response: Response;
   try {
     response = await fetch(`${API()}${path}`, {

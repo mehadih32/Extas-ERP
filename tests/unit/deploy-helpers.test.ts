@@ -316,6 +316,23 @@ describe("standby after a restore on a second server (G2)", () => {
     expect(again.stdout).toContain("This ERP is not on standby");
   });
 
+  it("never makes a restore drill copy the ERP in use, nor lets GitHub update it", async () => {
+    const backups = path.join(dir, "backups");
+    await mkdir(backups);
+    await writeFile(path.join(backups, ".standby"), "");
+    await writeFile(path.join(backups, ".drill"), '{"address":"drill.example.com"}');
+    const refused = await withLib(`leave_standby "${backups}" drill.example.com`, {
+      input: "drill.example.com\n",
+    });
+    expect(refused.code).toBe(1);
+    expect(refused.stderr).toContain("restore drill copy (test mode)");
+    expect(existsSync(path.join(backups, ".standby"))).toBe(true);
+    const autoDeploy = readFileSync(path.join("deploy", "setup-auto-deploy.sh"), "utf8");
+    expect(autoDeploy).toMatch(
+      /load_settings\n[^\n]*\n\s+\[ ! -f "\$DATA_DIR\/backups\/\.drill" \] \|\|\n\s+die "this server holds a restore drill copy/,
+    );
+  });
+
   it("is left by the restore command until the web address points here, and said at the end", () => {
     const bootstrap = readFileSync(path.join("deploy", "bootstrap.sh"), "utf8");
     // Standby unless the restore tool moved the web address here.

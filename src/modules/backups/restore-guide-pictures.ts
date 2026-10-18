@@ -1,14 +1,20 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+
 import { drawText, fitText, pdfText, type TextStyle, textWidth } from "@/lib/pdf";
 import { GUIDE_QUESTIONS, type GuidePicture } from "@/modules/backups/restore-guide";
 
 /*
- * The restore guide's pictures (G6): drawings of what the screen shows at each
- * step (Azure, PuTTY, the phone, the ERP), with what to click ringed in red.
- * They are drawings, not screenshots (the guide says so under each one): a
- * screenshot of Azure or Google would be out of date within months, and a
- * drawing shows only what matters. Every picture is drawn on a 600 x 250
- * canvas and scaled to the page. Text the restore command prints is taken
- * from the same words the scripts use (GUIDE_QUESTIONS), so it matches.
+ * The restore guide's pictures (G6), one for most steps: what the screen shows
+ * (Azure, PuTTY, Google on the phone, the ERP), with what to click ringed in red.
+ *
+ * Real screenshots come first: a PNG named <picture>.png in public/restore-guide
+ * (for example public/restore-guide/azure-admin.png) is printed instead of the
+ * drawing, under the words "Screenshot". SCREENSHOT_SLOTS says what each one
+ * must show, with the screen's exact words. Without the file, the drawing is
+ * printed, labelled as a drawing. Every drawing is on a 600 x 250 canvas scaled
+ * to the page. Text the restore command prints is taken from the same words
+ * the scripts use (GUIDE_QUESTIONS), so it matches.
  */
 
 export const PICTURE = { width: 600, height: 250 };
@@ -25,7 +31,7 @@ const TERM_HI = "#FFE066";
 /** Text Courier draws as it is: printable ASCII. */
 const PLAIN = /^[\x20-\x7e]*$/;
 
-type Shape = { fill?: string; stroke?: string; r?: number; lw?: number };
+type Shape = { fill?: string; stroke?: string; r?: number; lw?: number; opacity?: number };
 type Words = {
   size?: number;
   bold?: boolean;
@@ -57,6 +63,7 @@ class Scene {
     d.save();
     path();
     d.lineWidth(this.S(o.lw ?? 0.8));
+    if (o.opacity !== undefined) d.fillOpacity(o.opacity);
     if (o.fill && o.stroke) d.fillAndStroke(o.fill, o.stroke);
     else if (o.fill) d.fill(o.fill);
     else d.stroke(o.stroke ?? LINE);
@@ -415,6 +422,94 @@ const COMMAND = [
 ];
 const PASTED: Line[] = [PROMPT + COMMAND[0], ...COMMAND.slice(1).map((l) => `> ${l}`)];
 
+const PUTTY_TREE_SESSION = [
+  "Session",
+  "  Logging",
+  "Terminal",
+  "  Keyboard",
+  "  Bell",
+  "Window",
+  "  Appearance",
+  "  Selection",
+  "Connection",
+  "  Data",
+  "  Proxy",
+  "  SSH",
+  "  Serial",
+];
+
+const PUTTY_TREE_AUTH = [
+  "Session",
+  "Terminal",
+  "Window",
+  "Connection",
+  "  Data",
+  "  Proxy",
+  "  SSH",
+  "    Kex",
+  "    Host keys",
+  "    Auth",
+  "      Credentials",
+  "      GSSAPI",
+  "    TTY",
+  "    X11",
+];
+
+/** PuTTY's settings window with its "Category" list, one entry chosen. */
+function puttyFrame(s: Scene, tree: string[], chosen: number) {
+  s.rect(70, 0, 460, 250, { fill: "#F0F0F0", stroke: "#888888" });
+  s.rect(70, 0, 460, 16, { fill: "#FFFFFF" });
+  s.rect(76, 4, 8, 8, { fill: "#2D7D46", r: 1 });
+  s.text("PuTTY Configuration", 90, 4.5, { size: 7.5 });
+  s.text("Category:", 80, 22, { size: 7 });
+  s.rect(80, 32, 140, 186, { fill: "#FFFFFF", stroke: "#AAAAAA" });
+  const gap = tree.length > 13 ? 12.5 : 13;
+  tree.forEach((name, i) => {
+    const indent = name.length - name.trimStart().length;
+    const x = 88 + indent * 3;
+    if (i === chosen) {
+      s.rect(x - 4, 35 + i * gap, s.width(name.trim(), { size: 7 }) + 8, 11, { fill: "#CCE4F7" });
+      if (i > 0) s.mark(x - 4, 35 + i * gap, s.width(name.trim(), { size: 7 }) + 8, 11, 1);
+    }
+    s.text(name.trim(), x, 37 + i * gap, { size: 7 });
+  });
+  if (chosen > 0) {
+    button(s, 80, 226, "About", { h: 15 });
+    button(s, 404, 226, "Open", { h: 15, w: 52 });
+    button(s, 464, 226, "Cancel", { h: 15, w: 56 });
+  }
+}
+
+/** PuTTYgen ("PuTTY Key Generator"), before or after the key is loaded. */
+function puttygen(s: Scene, o: { load?: boolean; loaded?: boolean }) {
+  s.rect(0, 0, 600, 250, { fill: "#C9DDF2" });
+  s.rect(6, 6, 310, 238, { fill: "#F0F0F0", stroke: "#888888" });
+  s.rect(6, 6, 310, 15, { fill: "#FFFFFF" });
+  s.text("PuTTY Key Generator", 14, 10, { size: 7.5 });
+  s.text("File    Key    Conversions    Help", 14, 25, { size: 7 });
+  s.rect(14, 38, 294, 100, { stroke: "#BBBBBB" });
+  s.text("Key", 20, 34, { size: 7 });
+  if (o.loaded) {
+    s.text("Public key for pasting into OpenSSH authorized_keys file:", 20, 44, { size: 6.6 });
+    s.rect(20, 54, 282, 34, { fill: "#FFFFFF", stroke: "#AAAAAA" });
+    s.text("ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDb...", 24, 58, { size: 6.3, mono: true });
+    s.text("Key fingerprint:  ssh-rsa 3072 SHA256:k2V...", 20, 96, { size: 6.6 });
+    s.text("Key comment:", 20, 112, { size: 6.6 });
+    input(s, 90, 108, 210, "imported-openssh-key");
+  } else {
+    s.text("No key.", 20, 50, { size: 7 });
+  }
+  s.rect(14, 150, 294, 86, { stroke: "#BBBBBB" });
+  s.text("Actions", 20, 146, { size: 7 });
+  s.text("Generate a public/private key pair", 20, 162, { size: 6.8 });
+  button(s, 236, 158, "Generate", { w: 64, h: 14 });
+  s.text("Load an existing private key file", 20, 184, { size: 6.8 });
+  button(s, 236, 180, "Load", { w: 64, h: 14, mark: o.load });
+  s.text("Save the generated key", 20, 210, { size: 6.8 });
+  button(s, 150, 206, "Save public key", { w: 78, h: 14 });
+  button(s, 236, 206, "Save private key", { w: 64, h: 14, size: 6, mark: o.loaded });
+}
+
 // --- The pictures ---------------------------------------------------------------------
 
 const DRAW: Record<GuidePicture, (s: Scene) => void> = {
@@ -551,12 +646,15 @@ const DRAW: Record<GuidePicture, (s: Scene) => void> = {
     createVm(s, "Basics");
     section(s, 76, "Administrator account");
     s.text("Authentication type", 28, 94, { size: 7.5 });
-    const w = radio(s, 200, 93, "SSH public key", false);
-    const p = radio(s, 212 + w, 93, "Password", true);
-    s.mark(212 + w, 92, p, 11);
+    const w = radio(s, 200, 93, "SSH public key", true);
+    radio(s, 212 + w, 93, "Password", false);
+    s.mark(200, 92, w, 11);
     row(s, 112, "Username *", "erpadmin", { mark: true });
-    row(s, 136, "Password *", "••••••••••••");
-    row(s, 160, "Confirm password *", "••••••••••••");
+    row(s, 136, "SSH public key source", "Generate new key pair", { dropdown: true });
+    s.text("SSH Key Type", 28, 164, { size: 7.5 });
+    const r = radio(s, 200, 163, "RSA SSH Format", true);
+    radio(s, 212 + r, 163, "Ed25519 SSH Format", false);
+    row(s, 182, "Key pair name *", "extas-erp-key", { mark: true });
     azureFooter(s, "Next : Disks >");
   },
   "azure-ports": (s) => {
@@ -593,18 +691,21 @@ const DRAW: Record<GuidePicture, (s: Scene) => void> = {
     s.text("Validation passed", 42, 79, { size: 8, bold: true });
     section(s, 102, "Price");
     s.text("1 X Standard B2s by Microsoft", 28, 118, { size: 7.5 });
-    section(s, 138, "Basics");
-    [
-      ["Virtual machine name", "extas-erp"],
-      ["Region", "Central India"],
-      ["Image", "Ubuntu Server 24.04 LTS - Gen2"],
-      ["Size", "Standard B2s (2 vcpus, 4 GiB memory)"],
-      ["Public inbound ports", "SSH, HTTP, HTTPS"],
-    ].forEach(([k, v], i) => {
-      s.text(k!, 28, 154 + i * 13, { size: 7, color: MUTED });
-      s.text(v!, 200, 154 + i * 13, { size: 7 });
-    });
     azureFooter(s, "Next >", { create: true });
+    // The window Azure opens after "Create": the key, once.
+    s.rect(0, 20, 600, 230, { fill: "#000000", opacity: 0.35 });
+    s.rect(130, 60, 340, 150, { fill: "#FFFFFF", stroke: "#8A96A3" });
+    s.text("Generate new key pair", 144, 72, { size: 10, bold: true });
+    para(
+      s,
+      "An SSH key pair contains both a public key and a private key. Azure doesn't store the private key. After the SSH key resource is created, you won't be able to download the private key again.",
+      144,
+      94,
+      312,
+      { size: 7.2 },
+    );
+    button(s, 144, 160, "Download private key and create resource", { primary: true, mark: true });
+    button(s, 144, 184, "Return to create virtual machine");
   },
   "azure-done": (s) => {
     azure(s, "CreateVm-canonical.ubuntu-24_04-lts | Overview", "Home >");
@@ -678,54 +779,62 @@ const DRAW: Record<GuidePicture, (s: Scene) => void> = {
       if (i === 0) s.mark(44, 122, 76 + w, 11);
     });
   },
-  "putty-open": (s) => {
-    s.rect(0, 0, 600, 250, { fill: "#C9DDF2" });
-    s.rect(0, 230, 600, 20, { fill: "#202020" });
-    [0, 1, 2, 3].forEach((i) =>
-      s.rect(12 + (i % 2) * 6, 234 + Math.floor(i / 2) * 6, 5, 5, { fill: "#4CC2FF" }),
+  "puttygen-load": (s) => {
+    puttygen(s, { load: true });
+    // The file window "Load" opens.
+    s.rect(318, 20, 276, 210, { fill: "#FFFFFF", stroke: "#888888" });
+    s.text("Load private key:", 326, 25, { size: 7.5 });
+    s.text("Downloads", 326, 42, { size: 8, bold: true });
+    s.line(326, 54, 586, 54, "#E1E5EA");
+    s.text("Name", 330, 60, { size: 7, color: MUTED });
+    s.rect(328, 72, 256, 13, { fill: "#CCE4F7" });
+    s.text("extas-erp-key.pem", 334, 75, { size: 7.5 });
+    s.mark(328, 72, 256, 13);
+    s.text("File name:", 326, 178, { size: 7 });
+    input(s, 372, 174, 110, "extas-erp-key.pem");
+    input(s, 488, 174, 98, "All Files (*.*)", { dropdown: true, mark: true });
+    button(s, 452, 202, "Open", { w: 60, h: 15, mark: true });
+    button(s, 520, 202, "Cancel", { w: 60, h: 15 });
+  },
+  "puttygen-save": (s) => {
+    puttygen(s, { loaded: true });
+    s.rect(330, 120, 260, 92, { fill: "#FFFFFF", stroke: "#777777" });
+    s.text("PuTTYgen Warning", 338, 126, { size: 7.5 });
+    para(
+      s,
+      "Are you sure you want to save this key without a passphrase to protect it?",
+      372,
+      146,
+      206,
+      { size: 7.5 },
     );
-    s.rect(30, 233, 150, 14, { fill: "#3A3A3A", r: 7 });
-    s.text("putty", 44, 236.5, { size: 7, color: "#FFFFFF" });
-    s.rect(120, 14, 360, 210, { fill: "#F3F3F3", stroke: "#BBBBBB", r: 6 });
-    s.rect(132, 24, 336, 16, { fill: "#FFFFFF", stroke: BLUE, r: 8 });
-    s.text("putty", 146, 28, { size: 8 });
-    s.text("Best match", 134, 52, { size: 8, bold: true });
-    s.rect(134, 64, 170, 30, { fill: "#E5E5E5", r: 3 });
-    s.rect(140, 70, 18, 18, { fill: "#2D7D46", r: 2 });
-    s.text("PuTTY", 166, 70, { size: 8.5, bold: true });
-    s.text("App", 166, 82, { size: 7, color: MUTED });
-    s.mark(134, 64, 170, 30);
-    s.line(316, 50, 316, 210, "#DDDDDD");
-    s.rect(370, 66, 40, 40, { fill: "#2D7D46", r: 4 });
-    s.text("PuTTY", 316, 114, { size: 11, bold: true, w: 152, align: "center" });
-    s.text("App", 316, 130, { size: 7.5, color: MUTED, w: 152, align: "center" });
-    s.text("Open", 340, 156, { size: 8, color: BLUE });
+    s.poly(
+      [
+        [342, 164],
+        [360, 164],
+        [351, 148],
+      ],
+      { fill: "#FFC83D" },
+    );
+    button(s, 450, 188, "Yes", { w: 60, h: 15, mark: true });
+    button(s, 518, 188, "No", { w: 60, h: 15 });
+  },
+  "putty-key-file": (s) => {
+    puttyFrame(s, PUTTY_TREE_AUTH, 9);
+    s.text("Options controlling SSH authentication", 232, 22, { size: 7.5, bold: true });
+    s.rect(232, 34, 288, 68, { stroke: "#BBBBBB" });
+    s.text("Credentials to authenticate with", 240, 40, { size: 7 });
+    s.text("Public-key authentication", 240, 54, { size: 7 });
+    s.text("Private key file for authentication:", 240, 68, { size: 7 });
+    input(s, 240, 80, 196, "C:\\Users\\you\\Downloads\\extas-erp-key.ppk", { mark: true });
+    button(s, 448, 80, "Browse...", { w: 64, h: 15, mark: true });
+    s.rect(232, 110, 288, 40, { stroke: "#BBBBBB" });
+    s.text("Certificate to use with the private key (optional):", 240, 116, { size: 7 });
+    input(s, 240, 128, 196, "");
+    button(s, 448, 128, "Browse...", { w: 64, h: 15 });
   },
   "putty-config": (s) => {
-    s.rect(70, 0, 460, 250, { fill: "#F0F0F0", stroke: "#888888" });
-    s.rect(70, 0, 460, 16, { fill: "#FFFFFF" });
-    s.rect(76, 4, 8, 8, { fill: "#2D7D46", r: 1 });
-    s.text("PuTTY Configuration", 90, 4.5, { size: 7.5 });
-    s.text("Category:", 80, 22, { size: 7 });
-    s.rect(80, 32, 140, 186, { fill: "#FFFFFF", stroke: "#AAAAAA" });
-    [
-      "Session",
-      "  Logging",
-      "Terminal",
-      "  Keyboard",
-      "  Bell",
-      "Window",
-      "  Appearance",
-      "  Selection",
-      "Connection",
-      "  Data",
-      "  Proxy",
-      "  SSH",
-      "  Serial",
-    ].forEach((name, i) => {
-      if (i === 0) s.rect(84, 35, 50, 11, { fill: "#CCE4F7" });
-      s.text(name, 88, 37 + i * 13, { size: 7 });
-    });
+    puttyFrame(s, PUTTY_TREE_SESSION, 0);
     s.text("Basic options for your PuTTY session", 232, 22, { size: 7.5, bold: true });
     s.rect(232, 34, 288, 76, { stroke: "#BBBBBB" });
     s.text("Specify the destination you want to connect to", 240, 40, { size: 7 });
@@ -741,17 +850,16 @@ const DRAW: Record<GuidePicture, (s: Scene) => void> = {
       ["Other:", false],
     ] as const) {
       const w = radio(s, x, 89, name, on, 7);
-      if (on) s.mark(x, 88, w, 11);
       x += w + 10;
     }
     s.rect(232, 118, 288, 92, { stroke: "#BBBBBB" });
     s.text("Load, save or delete a stored session", 240, 124, { size: 7 });
     s.text("Saved Sessions", 240, 138, { size: 7 });
-    input(s, 240, 148, 196, "");
+    input(s, 240, 148, 196, "extas-erp", { mark: true });
     s.rect(240, 166, 196, 36, { fill: "#FFFFFF", stroke: "#8A96A3" });
     s.text("Default Settings", 244, 170, { size: 7 });
     button(s, 448, 148, "Load", { w: 60, h: 14 });
-    button(s, 448, 166, "Save", { w: 60, h: 14 });
+    button(s, 448, 166, "Save", { w: 60, h: 14, mark: true });
     button(s, 448, 184, "Delete", { w: 60, h: 14 });
     button(s, 80, 226, "About", { h: 15 });
     button(s, 404, 226, "Open", { h: 15, w: 52, mark: true });
@@ -792,14 +900,11 @@ const DRAW: Record<GuidePicture, (s: Scene) => void> = {
     button(s, 448, 196, "Help", { w: 46 });
   },
   "putty-login": (s) => {
-    terminal(s, [{ text: "login as: erpadmin", hi: true }], { size: 9 });
-  },
-  "putty-password": (s) => {
     terminal(
       s,
       [
-        "login as: erpadmin",
-        { text: `erpadmin@${EXAMPLE_IP}'s password:`, hi: true },
+        { text: "login as: erpadmin", hi: true },
+        'Authenticating with public key "imported-openssh-key"',
         "Welcome to Ubuntu 24.04 LTS (GNU/Linux 6.8.0-1015-azure x86_64)",
         "",
         " * Documentation:  https://help.ubuntu.com",
@@ -880,13 +985,25 @@ const DRAW: Record<GuidePicture, (s: Scene) => void> = {
     s.text("Enter", 506, 206, { size: 9, bold: true, w: 58, align: "center" });
     s.rect(506, 198, 58, 24, { stroke: "#4B5563", r: 4, lw: 1.2 });
   },
-  "putty-sudo": (s) => {
+  "putty-start": (s) => {
     terminal(
       s,
-      [...PASTED, "restore.sh: OK", { text: "[sudo] password for erpadmin:", hi: true }],
-      {
-        size: 6.4,
-      },
+      [
+        ...PASTED,
+        { text: "restore.sh: OK", hi: true },
+        "",
+        {
+          text: "==> Extas ERP: bringing the ERP back from a Google Drive backup (16 October 2026 10:05)",
+          hi: true,
+        },
+        "",
+        { text: "==> Step 1: Checking this server", hi: true },
+        "    Ubuntu 24.04, 3916 MB memory, 58 GB free disk: fine.",
+        "",
+        "==> Step 2: Looking for an Extas ERP already on this server",
+        "    None: this is a new server.",
+      ],
+      { size: 6.4 },
     );
   },
   "putty-client": (s) => {
@@ -962,9 +1079,45 @@ const DRAW: Record<GuidePicture, (s: Scene) => void> = {
     s.text("Use another account", p.left + 26, p.top + 100, { size: 7.2 });
   },
   "phone-allow": (s) => {
-    const p = phone(s, "accounts.google.com", 225);
+    // First: Google's warning for an app it has not checked (your own app).
+    const a = phone(s, "accounts.google.com", 110);
+    googleWord(s, a.left + 40, a.top + 4);
+    let y = para(s, "Google hasn't verified this app", a.left, a.top + 22, a.width, {
+      size: 8.2,
+      bold: true,
+    });
+    y = para(
+      s,
+      "The app is requesting access to sensitive info in your Google Account. Until the developer verifies this app with Google, you shouldn't use it.",
+      a.left,
+      y + 4,
+      a.width,
+      { size: 6.3 },
+    );
+    const adv = s.text("Advanced", a.left, y + 6, { size: 7, color: BLUE });
+    s.mark(a.left, y + 5, adv, 9);
+    button(s, a.left + a.width - 74, y + 2, "BACK TO SAFETY", {
+      primary: true,
+      h: 14,
+      w: 74,
+      size: 6,
+    });
+    y = para(
+      s,
+      "Continue only if you understand the risks and trust the developer.",
+      a.left,
+      y + 26,
+      a.width,
+      {
+        size: 6.3,
+      },
+    );
+    const go = s.text("Go to Extas ERP (unsafe)", a.left, y + 4, { size: 7, color: BLUE });
+    s.mark(a.left, y + 3, go, 9);
+    // Then: what the app may do, and Allow.
+    const p = phone(s, "accounts.google.com", 340);
     googleWord(s, p.left + 40, p.top + 4);
-    let y = para(s, "Extas ERP wants to access your Google Account", p.left, p.top + 22, p.width, {
+    y = para(s, "Extas ERP wants access to your Google Account", p.left, p.top + 22, p.width, {
       size: 8.2,
       bold: true,
     });
@@ -1163,6 +1316,134 @@ const DRAW: Record<GuidePicture, (s: Scene) => void> = {
     button(s, 204, 192, "Cancel", { w: 50 });
   },
 };
+
+/**
+ * What each real screenshot (public/restore-guide/<picture>.png) shows, with
+ * the screen's own words. Take it on a real screen at that step; ring what to
+ * click in red if you can. Examples on it (the IP address, names) may differ.
+ */
+export const SCREENSHOT_SLOTS: Record<GuidePicture, string> = {
+  "azure-signin": "Microsoft's “Sign in” page from portal.azure.com: the email box and “Next”.",
+  "azure-create": "The Azure portal's home page with “Create a resource” near the top.",
+  "azure-vm-tile": "“Create a resource” with the “Virtual machine” tile and its “Create” link.",
+  "azure-group":
+    "“Create a virtual machine”, tab “Basics”: “Resource group” with “Create new” and the name extas-erp typed.",
+  "azure-name-region":
+    "Tab “Basics”: “Virtual machine name” extas-erp and “Region” “(Asia Pacific) Central India”.",
+  "azure-image": "Tab “Basics”: “Image” set to “Ubuntu Server 24.04 LTS - x64 Gen2”.",
+  "azure-size":
+    "Tab “Basics”: “Size” showing “Standard_B2s - 2 vcpus, 4 GiB memory”, with “See all sizes” under it.",
+  "azure-admin":
+    "Tab “Basics”, “Administrator account”: “SSH public key”, “Username” erpadmin, “SSH public key source” “Generate new key pair”, “Key pair name” extas-erp-key.",
+  "azure-ports":
+    "Tab “Basics”, “Inbound port rules”: “Allow selected ports”, with “HTTP (80)”, “HTTPS (443)” and “SSH (22)” ticked.",
+  "azure-disk": "Tab “Disks”: “OS disk size” “64 GiB” and “OS disk type” “Standard SSD”.",
+  "azure-review":
+    "The “Generate new key pair” window (after “Create” on “Review + create”) with “Download private key and create resource”.",
+  "azure-done": "“Your deployment is complete” with the “Go to resource” button.",
+  "azure-ip": "The VM's “Overview” with the copy sign next to “Public IP address”.",
+  "putty-download": "PuTTY's download page with the .msi file on the “64-bit x86” line.",
+  "puttygen-load":
+    "PuTTYgen's “Load private key:” window: “All Files (*.*)” chosen, extas-erp-key.pem picked, “Open”.",
+  "puttygen-save":
+    "PuTTYgen with the key loaded and its question “Are you sure you want to save this key without a passphrase to protect it?” (“Yes”).",
+  "putty-key-file":
+    "“PuTTY Configuration” at “Connection” > “SSH” > “Auth” > “Credentials”, extas-erp-key.ppk in “Private key file for authentication” and “Browse...”.",
+  "putty-config":
+    "“PuTTY Configuration” at “Session”: the IP in “Host Name (or IP address)”, “Port” 22, extas-erp in “Saved Sessions”, “Save” and “Open”.",
+  "putty-alert": "“PuTTY Security Alert” with the “Accept” button.",
+  "putty-login":
+    "PuTTY after “login as:” erpadmin: “Authenticating with public key” and then the erpadmin@extas-erp:~$ prompt.",
+  "pdf-copy": "This guide's box “The one command” selected with the mouse in a PDF reader.",
+  "putty-paste":
+    "PuTTY with the four lines of the command pasted (the last one “sudo bash restore.sh $c”).",
+  "putty-start": "PuTTY showing “restore.sh: OK”, then “==> Step 1: Checking this server”.",
+  "putty-client": "PuTTY asking “Google client ID” and then “Google client secret”.",
+  "phone-code":
+    "PuTTY showing the code, and the phone at google.com/device: “Enter the code displayed on your device” and “Next”.",
+  "phone-account": "The phone's “Choose an account” page.",
+  "phone-allow":
+    "Two phone screenshots side by side: “Google hasn't verified this app” after tapping “Advanced”, with “Go to Extas ERP (unsafe)”; then the page with “Allow”.",
+  "putty-pick": "PuTTY listing the backups, newest first, and asking “Which backup?”.",
+  "putty-key":
+    "PuTTY saying “Your recovery key is kept in Google Drive” (or asking “Recovery key”).",
+  "putty-dns": "PuTTY asking “To point ... to this server”.",
+  "putty-wait": "PuTTY during the restore, with “==> Step ...” lines.",
+  "putty-done":
+    "PuTTY at the end: “Finished in ...” and “All ... records and ... files are back.”.",
+  "browser-erp": "The ERP's sign-in page at your web address, with “Sign in”.",
+  "erp-backups":
+    "Settings > Backups with “Back up now” and the big line saying “safe in Google Drive”.",
+  "cloudflare-dns":
+    "Cloudflare, “DNS” > “Records”: the erp line's “Edit”, “IPv4 address” and “Save”.",
+};
+
+/** The tallest a screenshot is printed (a phone's is tall and narrow). */
+const SCREENSHOT_MAX_HEIGHT = 330;
+
+/** Where the real screenshots are: public/restore-guide (RESTORE_GUIDE_SCREENSHOTS in tests). */
+export function screenshotDir(): string {
+  return (
+    process.env.RESTORE_GUIDE_SCREENSHOTS || path.join(process.cwd(), "public", "restore-guide")
+  );
+}
+
+/** A PNG's width and height (its IHDR), or null when it is not a PNG. */
+export function pngSize(bytes: Buffer): { width: number; height: number } | null {
+  const signature = "89504e470d0a1a0a";
+  if (bytes.length < 24 || bytes.subarray(0, 8).toString("hex") !== signature) return null;
+  if (bytes.subarray(12, 16).toString("latin1") !== "IHDR") return null;
+  const width = bytes.readUInt32BE(16);
+  const height = bytes.readUInt32BE(20);
+  return width > 0 && height > 0 ? { width, height } : null;
+}
+
+type Screenshot = { bytes: Buffer; width: number; height: number };
+
+/** The real screenshot for a picture, when public/restore-guide has one. */
+export function screenshotOf(picture: GuidePicture): Screenshot | null {
+  let bytes: Buffer;
+  try {
+    bytes = readFileSync(path.join(screenshotDir(), `${picture}.png`));
+  } catch {
+    return null;
+  }
+  const size = pngSize(bytes);
+  if (!size) {
+    console.error(`[restore guide] ${picture}.png is not a PNG; the drawing is printed instead`);
+    return null;
+  }
+  return { bytes, ...size };
+}
+
+/** The size a picture takes `width` wide: the screenshot's own shape, or the drawing's. */
+export function pictureBox(picture: GuidePicture, width: number) {
+  const shot = screenshotOf(picture);
+  if (!shot) return { width, height: (PICTURE.height * width) / PICTURE.width, shot: null };
+  const scale = Math.min(width / shot.width, SCREENSHOT_MAX_HEIGHT / shot.height);
+  return { width: shot.width * scale, height: shot.height * scale, shot };
+}
+
+/**
+ * Prints one step's picture `width` wide at (x, y): the real screenshot when
+ * there is one (centred), else the drawing. Returns its height and which it was.
+ */
+export function placePicture(
+  doc: PDFKit.PDFDocument,
+  picture: GuidePicture,
+  x: number,
+  y: number,
+  width: number,
+): { height: number; screenshot: boolean } {
+  const box = pictureBox(picture, width);
+  if (!box.shot) return { height: drawPicture(doc, picture, x, y, width), screenshot: false };
+  const left = x + (width - box.width) / 2;
+  doc.image(box.shot.bytes, left, y, { width: box.width, height: box.height });
+  doc.save();
+  doc.rect(left, y, box.width, box.height).lineWidth(0.6).stroke("#9AA5B1");
+  doc.restore();
+  return { height: box.height, screenshot: true };
+}
 
 /** Draws one picture `width` wide at (x, y); returns its height. */
 export function drawPicture(

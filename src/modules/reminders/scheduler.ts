@@ -17,9 +17,10 @@ export async function reminderTick(now: Date = new Date()) {
   if (running) return null;
   running = true;
   try {
-    // On standby after a restore (G2): only the Bug Guard check the restore asked for (G1).
-    const { onStandby } = await import("@/modules/backups/standby");
-    if (await onStandby()) {
+    // On standby after a restore (G2), and always on a restore drill copy (test mode):
+    // only the Bug Guard check the restore asked for (G1); no reminder or schedule.
+    const { onDrill, onStandby } = await import("@/modules/backups/standby");
+    if ((await onDrill()) || (await onStandby())) {
       const { bugGuardAfterRestore } = await import("@/modules/bug-guard/after-restore");
       await bugGuardAfterRestore().catch((error) =>
         console.error("[bug-guard] after the restore", error),

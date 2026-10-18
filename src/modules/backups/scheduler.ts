@@ -8,7 +8,7 @@ import { writeHostKey } from "@/modules/backups/recovery-key.service";
 import { recordRestoreResult } from "@/modules/backups/restore.service";
 import { drillDueAt, previousRunAt, scheduleOf } from "@/modules/backups/schedule";
 import { watchBackups } from "@/modules/backups/status";
-import { onStandby } from "@/modules/backups/standby";
+import { onDrill, onStandby } from "@/modules/backups/standby";
 import { runTestRestore } from "@/modules/backups/test-restore";
 
 /*
@@ -77,6 +77,8 @@ export async function testRestoreTick(now: Date = new Date()) {
 
 /** Everything the clock does each minute; each part on its own, so one failing stops nothing. */
 export async function backupClock(now: Date = new Date()) {
+  // A restore drill copy (test mode) runs no backup clock at all, whatever standby does.
+  if (await onDrill()) return;
   // A copy on standby after a restore makes no backups and touches Google Drive not at all (G2).
   if (await onStandby()) return;
   await recordRestoreResult().catch((e: unknown) => console.error("[backups] restore result", e));

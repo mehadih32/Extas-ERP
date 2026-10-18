@@ -4535,6 +4535,11 @@ model BackupConfig {
   /// The monthly drill: day of the month (1 to 28) and time.
   drillDay            Int                 @default(1)
   drillTime           String              @default("04:00")
+  /// The last restore drill on a new server (the restore guide's "Practice: a
+  /// restore drill"), as its drill copy reported it when the owner recorded it:
+  /// { address, startedAt, finishedAt, seconds, backup, records, files, problems,
+  /// screenProblems, https, result, recordedAt }.
+  lastServerDrill     Json?
   /// The restore guide in the Drive backup folder: what it was built from (a
   /// hash) and when, so it is rebuilt each month and whenever it changes.
   guideHash           String?

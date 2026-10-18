@@ -16,7 +16,11 @@
 export type GuideLang = "bn" | "en";
 export type Text = Record<GuideLang, string>;
 
-/** The pictures restore-guide-pdf.ts draws (illustrations, labelled as such). */
+/**
+ * The pictures of the steps: a real screenshot when one is in
+ * public/restore-guide/<picture>.png, else a drawing (restore-guide-pictures.ts,
+ * labelled as one). SCREENSHOT_SLOTS there says what each screenshot shows.
+ */
 export type GuidePicture =
   | "azure-signin"
   | "azure-create"
@@ -32,14 +36,15 @@ export type GuidePicture =
   | "azure-done"
   | "azure-ip"
   | "putty-download"
-  | "putty-open"
+  | "puttygen-load"
+  | "puttygen-save"
+  | "putty-key-file"
   | "putty-config"
   | "putty-alert"
   | "putty-login"
-  | "putty-password"
   | "pdf-copy"
   | "putty-paste"
-  | "putty-sudo"
+  | "putty-start"
   | "putty-client"
   | "phone-code"
   | "phone-account"
@@ -112,10 +117,133 @@ export const GUIDE_NEEDS: Text[] = [
   },
 ];
 
-/** When nothing comes from GitHub (G17): the copies in the Drive backup folder. */
+/** When nothing comes from GitHub (G17): the steps at the end of the guide. */
 const NO_GITHUB: Text = {
-  bn: "GitHub থেকে কিছুতেই না নামলে (GitHub বন্ধ, বা রিপোজিটরি আর খোলা নেই): Google Drive-এর “Extas ERP Backups” ফোল্ডারে restore.sh আর restore-tool.py আছে। দুটিই কম্পিউটারে নামান, WinSCP দিয়ে সার্ভারের হোম ফোল্ডারে রাখুন (B-এর ঠিকানা, নাম ও পাসওয়ার্ড দিয়ে), তারপর PuTTY-তে কমান্ডের শেষ দুই লাইন (echo দিয়ে শুরু) পেস্ট করে চালান।",
-  en: "If nothing comes from GitHub (GitHub is down, or the repository is no longer open): the “Extas ERP Backups” folder in Google Drive has restore.sh and restore-tool.py. Download both to your computer, put them in the server's home folder with WinSCP (with the address, user name and password from B), then paste the command's last two lines (from echo) in PuTTY and run them.",
+  bn: "GitHub থেকে কিছুতেই না নামলে (GitHub বন্ধ, বা রিপোজিটরি আর খোলা নেই): গাইডের শেষে “GitHub না খুললে” অংশের ধাপগুলো করুন।",
+  en: "If nothing comes from GitHub (GitHub is down, or the repository is no longer open): do the steps in “If GitHub cannot be reached” near the end of this guide.",
+};
+
+/**
+ * When GitHub cannot be reached (G17): restore.sh and restore-tool.py from the
+ * Drive backup folder, copied to the server with WinSCP (a free program that
+ * copies files to a server, like dragging files between two folders), then the
+ * command without its download line. The PDF prints that command below these.
+ */
+export const NO_GITHUB_PART = {
+  title: { bn: "GitHub না খুললে", en: "If GitHub cannot be reached" } satisfies Text,
+  intro: {
+    bn: "শুধু তখনই করুন যখন কমান্ড GitHub থেকে কিছু নামাতে পারে না (R06, বা curl: (6) বা (22) বারবার আসে)। রিস্টোরের দুটি ফাইল Google Drive-এর “Extas ERP Backups” ফোল্ডারেও থাকে; WinSCP নামের একটি বিনা পয়সার প্রোগ্রাম দিয়ে সেগুলো সার্ভারে রাখবেন। WinSCP দেখতে দুই ভাগের জানালা: বাঁ দিকে আপনার কম্পিউটার, ডান দিকে সার্ভার; ফাইল টেনে এক দিক থেকে অন্য দিকে রাখা যায়।",
+    en: "Do this only when the command cannot download anything from GitHub (R06, or curl: (6) or (22) again and again). The restore's two files are also in the “Extas ERP Backups” folder in Google Drive; you put them on the server with WinSCP, a free program. WinSCP is a window in two halves: your computer on the left, the server on the right; you drag files from one side to the other.",
+  } satisfies Text,
+  steps: [
+    {
+      bn: "কম্পিউটারের ব্রাউজারে drive.google.com খুলুন, “Extas ERP Backups” ফোল্ডারে restore.sh-এ ডান বোতাম চেপে “Download” চাপুন। restore-tool.py-এর জন্যও একই কাজ করুন। দুটি ফাইলই Downloads ফোল্ডারে আসবে।",
+      en: "On your computer, open drive.google.com, right-click restore.sh in the “Extas ERP Backups” folder and click “Download”. Do the same for restore-tool.py. Both files go to your Downloads folder.",
+    },
+    {
+      bn: "ব্রাউজারে winscp.net খুলুন, “Download WinSCP” চাপুন, নামানো ফাইলটি খুলুন এবং প্রতিটি পাতায় “Accept”, “Next” আর শেষে “Install” ও “Finish” চাপুন।",
+      en: "Open winscp.net in the browser, click “Download WinSCP”, open the downloaded file and click “Accept”, “Next” on each page, then “Install” and “Finish”.",
+    },
+    {
+      bn: "WinSCP খুলুন। “Login” জানালায় “File protocol”-এ SFTP থাকবে; “Host name”-এ A13-এর IP ঠিকানা, “User name”-এ erpadmin লিখুন। “Advanced...” চেপে বাঁ দিকে “SSH” > “Authentication” খুলুন, “Private key file”-এর পাশের “...” চেপে B3-এর extas-erp-key.ppk বেছে নিন, “OK” চাপুন।",
+      en: "Open WinSCP. In the “Login” window, “File protocol” stays SFTP; type the IP address from A13 in “Host name” and erpadmin in “User name”. Click “Advanced...”, open “SSH” > “Authentication” on the left, click “...” next to “Private key file”, pick extas-erp-key.ppk from B3 and click “OK”.",
+    },
+    {
+      bn: "“Login” চাপুন। প্রথমবার “Continue connecting to an unknown server...” এলে “Accept” চাপুন।",
+      en: "Click “Login”. The first time, when “Continue connecting to an unknown server...” shows, click “Accept”.",
+    },
+    {
+      bn: "বাঁ দিকে আপনার Downloads ফোল্ডার খুলুন। restore.sh আর restore-tool.py টেনে ডান দিকে (সার্ভারের /home/erpadmin) ছেড়ে দিন, “Upload” জানালায় “OK” চাপুন। তারপর WinSCP বন্ধ করুন।",
+      en: "On the left, open your Downloads folder. Drag restore.sh and restore-tool.py to the right side (the server's /home/erpadmin) and click “OK” in the “Upload” window. Then close WinSCP.",
+    },
+    {
+      bn: "নিচের ঘরের কমান্ডটি (এতে GitHub থেকে নামানোর লাইন নেই) C1 ও C2-এর মতো কপি করে PuTTY-তে পেস্ট করুন এবং Enter চাপুন। তারপর C3 থেকে গাইড ধরে এগোন।",
+      en: "Copy the command in the box below (it has no line that downloads from GitHub) as in C1 and C2, paste it in PuTTY and press Enter. Then go on with the guide from C3.",
+    },
+  ] satisfies Text[],
+  commandMissing: {
+    bn: "কমান্ডটি এখানে আসে সার্ভার একবার আপডেট হলে। তার আগে Google Drive-এর গাইডের কপিটি দেখুন।",
+    en: "The command appears here once the server has been updated. Until then, see the copy of this guide in Google Drive.",
+  } satisfies Text,
+};
+
+/**
+ * Practice: a restore drill on a small test server (v6.4.1), never touching the
+ * real web address. The command ends with --drill: it asks for a test address,
+ * points only that one at the test server, and the copy runs in test mode (no
+ * emails, bot messages, Google Drive backups or scheduled jobs; the restored
+ * copy reads BACKUP_DIR/.drill, src/modules/backups/standby.ts). The PDF prints
+ * the drill command below these steps; the Help Center shows them in Bengali.
+ */
+export const DRILL_PART = {
+  title: { bn: "অনুশীলন: রিস্টোরের মহড়া", en: "Practice: a restore drill" } satisfies Text,
+  intro: {
+    bn: "বছরে অন্তত একবার, আর গাইড বদলালে, একটি ছোট পরীক্ষার সার্ভারে পুরো রিস্টোর একবার করে দেখুন। আসল ERP চলতেই থাকে। মহড়ার কপি টেস্ট মোডে চলে: কোনো ইমেইল বা বটের বার্তা পাঠায় না, Google Drive-এ ব্যাকআপ রাখে না, নিজে থেকে কোনো কাজ চালায় না। আসল ওয়েব ঠিকানার (যেমন erp.extasbd.com) DNS কখনো ছোঁয় না। প্রায় 1 ঘণ্টা লাগে; Azure-এর খরচ সামান্য।",
+    en: "At least once a year, and when the guide changes, do the whole restore once on a small test server. The real ERP keeps running. The drill copy runs in test mode: it sends no emails or bot messages, makes no Google Drive backups and runs no jobs by itself. It never touches the DNS of your real web address (like erp.extasbd.com). It takes about 1 hour and costs a little in Azure.",
+  } satisfies Text,
+  steps: [
+    {
+      bn: "মহড়ার জন্য আপনার ডোমেইনের ভিতরে একটি নতুন ঠিকানা ঠিক করুন যা কেউ ব্যবহার করে না: যেমন drill.extasbd.com। আসল ERP বা ডেমো সাইটের ঠিকানা কখনো নয়।",
+      en: "Pick a new address for the drill inside your domain that nobody uses: like drill.extasbd.com. Never the real ERP's or the demo site's address.",
+    },
+    {
+      bn: "পার্ট A করুন, শুধু এই বদলগুলো: A4-এ Resource group-এর নাম extas-drill, A5-এ সার্ভারের নাম extas-drill, A8-এ “Key pair name” extas-drill-key। আকার “Standard_B2s” আর ডিস্ক “64 GiB”-ই রাখুন, গাইডের সার্ভারের মতো।",
+      en: "Do part A with only these changes: at A4 name the resource group extas-drill, at A5 name the VM extas-drill, at A8 make the “Key pair name” extas-drill-key. Keep the size “Standard_B2s” and the disk “64 GiB”, as for the guide's server.",
+    },
+    {
+      bn: "পার্ট B করুন extas-drill-key ফাইল দিয়ে; B5-এ “Saved Sessions”-এ নাম দিন extas-drill।",
+      en: "Do part B with the extas-drill-key file; at B5, under “Saved Sessions”, save it as extas-drill.",
+    },
+    {
+      bn: "নিচের ঘরের মহড়ার কমান্ডটি (শেষে --drill আছে) C1 ও C2-এর মতো কপি করে PuTTY-তে পেস্ট করুন এবং Enter চাপুন।",
+      en: "Copy the drill command in the box below (it ends with --drill) as in C1 and C2, paste it in PuTTY and press Enter.",
+    },
+    {
+      bn: "“Test web address for this drill” প্রশ্নে ধাপ 1-এর ঠিকানাটি লিখে Enter চাপুন। বাকি প্রশ্নগুলোর উত্তর পার্ট D-র মতো। “To point ... to this server” প্রশ্নে শুধু মহড়ার ঠিকানাটিই আসে: সেটিই লিখে Enter চাপুন। এই প্রশ্ন না এলে (W01) Cloudflare-এ “DNS” > “Records”-এ “Add record” চেপে Type A, Name drill, “IPv4 address”-এ মহড়ার সার্ভারের IP দিয়ে “Save” চাপুন।",
+      en: "At “Test web address for this drill”, type the address from step 1 and press Enter. Answer the other questions as in part D. “To point ... to this server” offers only the drill address: type it and press Enter. If that question does not come (W01), in Cloudflare go to “DNS” > “Records”, click “Add record”, choose Type A, Name drill, put the drill server's IP in “IPv4 address” and click “Save”.",
+    },
+    {
+      bn: "অপেক্ষা করুন। শেষে লেখা আসে “Restore drill finished in ...”, সঙ্গে ফল। এটাই মহড়ার সময়।",
+      en: "Wait. At the end it says “Restore drill finished in ...” with the result. That is the drill's time.",
+    },
+    {
+      bn: "ব্রাউজারে https://drill.extasbd.com (আপনার মহড়ার ঠিকানা) খুলে আগের ইমেইল ও পাসওয়ার্ড দিয়ে সাইন ইন করুন, আর F2-এর মতো কয়েকটি জিনিস মিলিয়ে দেখুন। Backups পাতার উপরের বড় লাইনে লেখা থাকে “Restore drill copy (test mode)”।",
+      en: "Open https://drill.extasbd.com (your drill address) in the browser, sign in with the same email and password, and check a few things as in F2. The big line at the top of the Backups screen says “Restore drill copy (test mode)”.",
+    },
+    {
+      bn: "আসল ERP-তে Settings > Backups খুলে “Record a drill” চাপুন, মহড়ার ঠিকানাটি লিখে “Record” চাপুন। “Last new-server drill” ঘরে তারিখ, কত সময় লেগেছে আর ফল দেখাবে।",
+      en: "On your real ERP, open Settings > Backups, click “Record a drill”, type the drill address and click “Record”. “Last new-server drill” shows the date, the time it took and the result.",
+    },
+    {
+      bn: "মহড়া মুছে ফেলুন: Azure-এ শুধু extas-drill Resource group খুলে “Delete resource group” চাপুন (নাম লিখে নিশ্চিত করুন), আর Cloudflare-এ drill লাইনটি মুছুন। আসল সার্ভারের group-এ কখনো হাত দেবেন না। মহড়ায় F5 করবেন না।",
+      en: "Remove the drill: in Azure open only the extas-drill resource group and click “Delete resource group” (type its name to confirm), and in Cloudflare delete the drill line. Never touch the real server's group. Do not do F5 in a drill.",
+    },
+  ] satisfies Text[],
+  commandMissing: {
+    bn: "মহড়ার কমান্ড এখানে আসে সার্ভার একবার আপডেট হলে।",
+    en: "The drill command appears here once the server has been updated.",
+  } satisfies Text,
+};
+
+/** The one command for a drill: the restore command with --drill at its end. */
+export function drillCommandLines(lines: string[] | null): string[] | null {
+  if (!lines?.length) return null;
+  return [...lines.slice(0, -1), `${lines[lines.length - 1]} --drill`];
+}
+
+/** The one command without its line that downloads from GitHub (the copy beside it is used). */
+export function noGithubCommandLines(lines: string[] | null): string[] | null {
+  return lines ? lines.filter((line) => !line.startsWith("curl ")) : null;
+}
+
+/**
+ * The overwrite question (bootstrap.sh's A6 decision): when, and only when, to
+ * type the web address there. Everywhere the guide speaks of that question it
+ * says this, never "type your web address" by itself.
+ */
+export const REPLACE_RULE: Text = {
+  bn: "এখানে ওয়েব ঠিকানা টাইপ করবেন শুধু তখনই যখন তিনটি কথাই সত্যি: এটি সেই নতুন সার্ভার যা আপনি এই রিস্টোরের জন্য পার্ট A-তে বানিয়েছেন (PuTTY খুলেছেন A13-এর IP দিয়ে); এই সার্ভারেই কমান্ড আগে চলেছিল আর মাঝপথে থেমেছে; আর এই সার্ভারের ERP-তে এখনো কেউ কাজ করেনি। তখন “Web address” লাইনে যে ঠিকানা দেখায় ঠিক সেটি লিখে Enter চাপুন। অন্য সব ক্ষেত্রে, বিশেষ করে যে সার্ভারে আপনার ERP রোজ চলে সেখানে, শুধু Enter চাপুন: কিছুই বদলাবে না।",
+  en: "Type the web address here only when all three are true: this is the new server you made in part A for this restore (you opened PuTTY with the IP address from A13); the command ran on this same server before and stopped part way; and nobody has worked in the ERP on this server yet. Then type exactly the address on the “Web address” line and press Enter. In every other case, above all on the server your ERP runs on every day, just press Enter: nothing changes.",
 };
 
 export const GUIDE_RULES: Text[] = [
@@ -132,8 +260,8 @@ export const GUIDE_RULES: Text[] = [
     en: "Running the command again does no harm: it safely starts over from where it stopped.",
   },
   {
-    bn: "অনুশীলনের জন্য রিস্টোর (পুরনো ERP চালু রেখে) করা নিরাপদ: D8-এ শুধু Enter চাপুন; নতুন কপি standby-তে থাকে, কোনো ব্যাকআপ বা রিমাইন্ডার পাঠায় না। শেষে Azure-এ অনুশীলনের সার্ভারটি মুছে দিন।",
-    en: "A practice restore (with the old ERP still running) is safe: just press Enter at D8; the new copy waits on standby and sends no backups or reminders. Delete the practice server in Azure at the end.",
+    bn: "অনুশীলনের জন্য (পুরনো ERP চালু রেখে) এই গাইডের শেষের “অনুশীলন: রিস্টোরের মহড়া” অংশটি করুন: তাতে কমান্ড টেস্ট মোডে চলে, আসল ওয়েব ঠিকানায় হাত দেয় না।",
+    en: "To practise (with the old ERP still running), follow “Practice: a restore drill” at the end of this guide: the command then runs in test mode and never touches your real web address.",
   },
 ];
 
@@ -185,6 +313,12 @@ export const GUIDE_WORDS = {
     bn: "ছবি (আঁকা নমুনা): আপনার স্ক্রিন সামান্য অন্যরকম দেখাতে পারে।",
     en: "Picture (a drawing): your screen may look a little different.",
   },
+  screenshot: {
+    bn: "ছবি (আসল স্ক্রিনের): আপনার স্ক্রিন সামান্য অন্যরকম দেখাতে পারে।",
+    en: "Picture (a real screenshot): your screen may look a little different.",
+  },
+  noGithubCommand: { bn: "GitHub ছাড়া কমান্ড", en: "The command without GitHub" },
+  drillCommand: { bn: "মহড়ার কমান্ড", en: "The drill command" },
   questions: { bn: "কমান্ড যে প্রশ্নগুলো করে", en: "The questions the command asks" },
   questionsIntro: {
     bn: "স্ক্রিনে যেভাবে লেখা আসে, আর তখন কী করবেন।",
@@ -293,8 +427,8 @@ export const GUIDE_PARTS: GuidePart[] = [
         },
         picture: "azure-image",
         tip: {
-          bn: "অন্য কোনো Image বেছে নিলে রিস্টোর শুরুতেই থেমে যাবে (R02)।",
-          en: "With any other image the restore stops at once (R02).",
+          bn: "“Ubuntu Server 22.04 LTS - x64 Gen2”-ও চলবে। এর চেয়ে পুরনো Ubuntu বা অন্য কোনো Image বেছে নিলে রিস্টোর শুরুতেই থেমে যাবে (R02)।",
+          en: "“Ubuntu Server 22.04 LTS - x64 Gen2” works too. With an older Ubuntu, or any image that is not Ubuntu, the restore stops at once (R02).",
         },
       },
       {
@@ -308,12 +442,16 @@ export const GUIDE_PARTS: GuidePart[] = [
       },
       {
         id: "A8",
-        title: { bn: "সার্ভারে ঢোকার নাম ও পাসওয়ার্ড", en: "The server's user name and password" },
+        title: { bn: "সার্ভারে ঢোকার নাম ও চাবি", en: "The server's user name and key" },
         text: {
-          bn: "“Authentication type”-এ বেছে নিন “Password”। “Username”-এ লিখুন erpadmin। “Password” ও “Confirm password”-এ একটি শক্ত পাসওয়ার্ড দিন এবং কাগজে লিখে রাখুন: PuTTY-তে এটি লাগবে।",
-          en: "In “Authentication type”, choose “Password”. In “Username”, type erpadmin. Give a strong password in “Password” and “Confirm password”, and write it on paper: PuTTY asks for it.",
+          bn: "“Authentication type”-এ “SSH public key” বাছা থাকবে। “Username”-এ লিখুন erpadmin। “SSH public key source”-এ “Generate new key pair” থাকবে; “Key pair name”-এ লিখুন extas-erp-key।",
+          en: "“Authentication type” stays “SSH public key”. In “Username”, type erpadmin. “SSH public key source” stays “Generate new key pair”; in “Key pair name”, type extas-erp-key.",
         },
         picture: "azure-admin",
+        tip: {
+          bn: "চাবি (key) একটি ছোট ফাইল, যা পাসওয়ার্ডের কাজ করে আর পাসওয়ার্ডের চেয়ে নিরাপদ। Azure এটি A11-এ একবারই দেয়। এই চাবি থাকলে পরে F5-এ GitHub থেকে আপডেট আবার আপনি নিজেই চালু করতে পারবেন।",
+          en: "The key is a small file that works like a password and is safer than one. Azure gives it to you once, at A11. With it you can also let GitHub update the server again yourself at F5.",
+        },
       },
       {
         id: "A9",
@@ -341,10 +479,14 @@ export const GUIDE_PARTS: GuidePart[] = [
         id: "A11",
         title: { bn: "সার্ভার বানানো", en: "Make the server" },
         text: {
-          bn: "নিচে “Review + create” চাপুন। উপরে “Validation passed” এলে “Create” চাপুন।",
-          en: "At the bottom, click “Review + create”. When “Validation passed” shows at the top, click “Create”.",
+          bn: "নিচে “Review + create” চাপুন। উপরে “Validation passed” এলে “Create” চাপুন। “Generate new key pair” জানালা এলে “Download private key and create resource” চাপুন: extas-erp-key.pem ফাইলটি কম্পিউটারের Downloads ফোল্ডারে আসবে।",
+          en: "At the bottom, click “Review + create”. When “Validation passed” shows at the top, click “Create”. When the “Generate new key pair” window shows, click “Download private key and create resource”: the file extas-erp-key.pem comes to your computer's Downloads folder.",
         },
         picture: "azure-review",
+        tip: {
+          bn: "এই ফাইলটি সার্ভারের চাবি, Azure এটি আর কখনো দেয় না: মুছবেন না, কাউকে পাঠাবেন না। হারালে Azure-এ সার্ভারের “Reset password” পাতায় “Reset SSH public key” দিয়ে নতুন চাবি বানানো যায়।",
+          en: "This file is the key to the server and Azure never gives it again: do not delete it and send it to no one. If it is lost, “Reset SSH public key” on the VM's “Reset password” page in Azure makes a new one.",
+        },
       },
       {
         id: "A12",
@@ -370,8 +512,8 @@ export const GUIDE_PARTS: GuidePart[] = [
     id: "B",
     title: { bn: "B. PuTTY দিয়ে সার্ভারে ঢোকা", en: "B. Sign in to the server with PuTTY" },
     intro: {
-      bn: "PuTTY হলো একটি ছোট প্রোগ্রাম, যা দিয়ে কম্পিউটার থেকে সার্ভারে কমান্ড দেওয়া যায়।",
-      en: "PuTTY is a small program for giving the server commands from your computer.",
+      bn: "PuTTY হলো একটি ছোট প্রোগ্রাম, যা দিয়ে কম্পিউটার থেকে সার্ভারে কমান্ড দেওয়া যায়। সঙ্গে আসে PuTTYgen, যা A11-এর চাবির ফাইলটিকে PuTTY-র উপযোগী করে।",
+      en: "PuTTY is a small program for giving the server commands from your computer. It comes with PuTTYgen, which turns the key file from A11 into the kind PuTTY uses.",
     },
     steps: [
       {
@@ -389,24 +531,50 @@ export const GUIDE_PARTS: GuidePart[] = [
       },
       {
         id: "B2",
-        title: { bn: "PuTTY খোলা", en: "Open PuTTY" },
+        title: { bn: "চাবির ফাইল PuTTYgen-এ খোলা", en: "Open the key file in PuTTYgen" },
         text: {
-          bn: "Windows-এর Start মেনুতে PuTTY লিখে “PuTTY” খুলুন।",
-          en: "In the Windows Start menu, type PuTTY and open “PuTTY”.",
+          bn: "Windows-এর Start মেনুতে PuTTYgen লিখে “PuTTYgen” খুলুন। “Load” চাপুন। ফাইল বাছার জানালার নিচে ডান দিকে “All Files (*.*)” বেছে নিন, Downloads ফোল্ডারের extas-erp-key.pem বেছে “Open” চাপুন, তারপর “OK”।",
+          en: "In the Windows Start menu, type PuTTYgen and open “PuTTYgen”. Click “Load”. At the bottom right of the file window choose “All Files (*.*)”, pick extas-erp-key.pem in your Downloads folder and click “Open”, then “OK”.",
         },
-        picture: "putty-open",
+        picture: "puttygen-load",
       },
       {
         id: "B3",
-        title: { bn: "সার্ভারের ঠিকানা দেওয়া", en: "Give the server's address" },
+        title: { bn: "PuTTY-র চাবি রাখা", en: "Save PuTTY's key file" },
         text: {
-          bn: "“Host Name (or IP address)” ঘরে A13-এর IP ঠিকানা পেস্ট করুন। “Port” থাকবে 22, “SSH” বাছা থাকবে। তারপর “Open” চাপুন।",
-          en: "Paste the IP address from A13 in “Host Name (or IP address)”. “Port” stays 22 and “SSH” stays chosen. Then click “Open”.",
+          bn: "“Save private key” চাপুন, প্রশ্ন এলে “Yes”। নাম লিখুন extas-erp-key, “Save” চাপুন। তারপর PuTTYgen বন্ধ করুন।",
+          en: "Click “Save private key”, and “Yes” when it asks. Type the name extas-erp-key and click “Save”. Then close PuTTYgen.",
         },
-        picture: "putty-config",
+        picture: "puttygen-save",
+        tip: {
+          bn: "এখন দুটি চাবির ফাইল আছে: extas-erp-key.pem আর extas-erp-key.ppk। দুটিই কম্পিউটারে রাখুন, কাউকে পাঠাবেন না।",
+          en: "You now have two key files: extas-erp-key.pem and extas-erp-key.ppk. Keep both on your computer and send them to no one.",
+        },
       },
       {
         id: "B4",
+        title: { bn: "PuTTY খুলে চাবি দেখানো", en: "Open PuTTY and give it the key" },
+        text: {
+          bn: "Start মেনুতে PuTTY লিখে “PuTTY” খুলুন। বাঁ দিকে “Connection” > “SSH” > “Auth” > “Credentials” খুলুন, “Private key file for authentication”-এর পাশে “Browse...” চেপে extas-erp-key.ppk বেছে নিন।",
+          en: "In the Start menu, type PuTTY and open “PuTTY”. On the left, open “Connection” > “SSH” > “Auth” > “Credentials”, click “Browse...” next to “Private key file for authentication” and pick extas-erp-key.ppk.",
+        },
+        picture: "putty-key-file",
+      },
+      {
+        id: "B5",
+        title: { bn: "সার্ভারের ঠিকানা দেওয়া", en: "Give the server's address" },
+        text: {
+          bn: "বাঁ দিকে একদম উপরের “Session” চাপুন। “Host Name (or IP address)” ঘরে A13-এর IP ঠিকানা পেস্ট করুন; “Port” থাকবে 22। “Saved Sessions”-এ লিখুন extas-erp, “Save” চাপুন, তারপর “Open”।",
+          en: "On the left, click “Session” at the very top. Paste the IP address from A13 in “Host Name (or IP address)”; “Port” stays 22. Under “Saved Sessions” type extas-erp, click “Save”, then click “Open”.",
+        },
+        picture: "putty-config",
+        tip: {
+          bn: "পরে আবার ঢুকতে: PuTTY খুলে “Saved Sessions”-এ extas-erp-এ দুবার ক্লিক করুন, তারপর B7-এর মতো নাম দিন।",
+          en: "To sign in again later: open PuTTY, double-click extas-erp under “Saved Sessions”, then type the user name as in B7.",
+        },
+      },
+      {
+        id: "B6",
         title: { bn: "প্রথমবারের সতর্কতা", en: "The first-time alert" },
         text: {
           bn: "“PuTTY Security Alert” এলে “Accept” চাপুন। নতুন সার্ভারে প্রথমবার এটি আসাই স্বাভাবিক।",
@@ -415,22 +583,13 @@ export const GUIDE_PARTS: GuidePart[] = [
         picture: "putty-alert",
       },
       {
-        id: "B5",
+        id: "B7",
         title: { bn: "নাম দেওয়া", en: "Type the user name" },
         text: {
-          bn: "কালো জানালায় “login as:” এলে erpadmin লিখে Enter চাপুন।",
-          en: "When the black window shows “login as:”, type erpadmin and press Enter.",
+          bn: "কালো জানালায় “login as:” এলে erpadmin লিখে Enter চাপুন। PuTTY চাবি দিয়ে নিজেই ঢুকে যায়, পাসওয়ার্ড লাগে না। erpadmin@extas-erp:~$ দেখা গেলে আপনি সার্ভারে ঢুকে গেছেন।",
+          en: "When the black window shows “login as:”, type erpadmin and press Enter. PuTTY signs in with the key by itself; no password is needed. When you see erpadmin@extas-erp:~$ you are in the server.",
         },
         picture: "putty-login",
-      },
-      {
-        id: "B6",
-        title: { bn: "পাসওয়ার্ড দেওয়া", en: "Type the password" },
-        text: {
-          bn: "“password:” এলে A8-এর পাসওয়ার্ড লিখে Enter চাপুন। লেখার সময় কিছুই দেখা যায় না: এটাই স্বাভাবিক। শেষে erpadmin@extas-erp:~$ দেখা গেলে আপনি সার্ভারে ঢুকে গেছেন।",
-          en: "When “password:” shows, type the password from A8 and press Enter. Nothing shows while you type: that is normal. When you see erpadmin@extas-erp:~$ you are in the server.",
-        },
-        picture: "putty-password",
       },
     ],
   },
@@ -471,15 +630,15 @@ export const GUIDE_PARTS: GuidePart[] = [
       },
       {
         id: "C3",
-        title: { bn: "আবার পাসওয়ার্ড", en: "The password again" },
+        title: { bn: "শুরুটা দেখে নেওয়া", en: "Check that it started" },
         text: {
-          bn: "“[sudo] password for erpadmin:” এলে আবার A8-এর পাসওয়ার্ড লিখে Enter চাপুন (কিছু দেখা যাবে না)। এটি না এলে কিছু করতে হবে না।",
-          en: "If “[sudo] password for erpadmin:” shows, type the password from A8 again and press Enter (nothing shows). If it does not show, there is nothing to do.",
+          bn: "প্রথমে “restore.sh: OK” আসে: স্ক্রিপ্টটি ঠিকঠাক এসেছে। তারপর “==> Extas ERP: bringing the ERP back from a Google Drive backup” আর “==> Step 1: Checking this server”। এখন কিছু টাইপ করতে হবে না।",
+          en: "First “restore.sh: OK” shows: the script arrived unchanged. Then “==> Extas ERP: bringing the ERP back from a Google Drive backup” and “==> Step 1: Checking this server”. There is nothing to type yet.",
         },
-        picture: "putty-sudo",
+        picture: "putty-start",
         tip: {
-          bn: "এর আগে “restore.sh: OK” দেখা যায়: মানে স্ক্রিপ্টটি ঠিকঠাক এসেছে। “FAILED” দেখলে ভুলের তালিকায় restore.sh: FAILED দেখুন।",
-          en: "Before it, “restore.sh: OK” shows: the script arrived unchanged. If you see “FAILED”, see restore.sh: FAILED in the list of errors.",
+          bn: "“FAILED” দেখলে ভুলের তালিকায় restore.sh: FAILED দেখুন। পাসওয়ার্ড চাইলে (“[sudo] password for erpadmin:”) গাইডের শেষে অন্য জায়গার বার্তার তালিকায় সেটি দেখুন।",
+          en: "If you see “FAILED”, see restore.sh: FAILED in the list of errors. If it asks for a password (“[sudo] password for erpadmin:”), see it in the messages from elsewhere at the end of this guide.",
         },
       },
     ],
@@ -541,10 +700,14 @@ export const GUIDE_PARTS: GuidePart[] = [
         id: "D5",
         title: { bn: "অনুমতি দেওয়া", en: "Allow it" },
         text: {
-          bn: "“Continue” চাপুন, তারপর “Allow” চাপুন। “Google hasn't verified this app” এলে “Continue” চাপুন: অ্যাপটি আপনার নিজের।",
-          en: "Tap “Continue”, then “Allow”. If “Google hasn't verified this app” shows, tap “Continue”: the app is your own.",
+          bn: "“Google hasn't verified this app” এলে নিচে ছোট করে লেখা “Advanced” চাপুন, তারপর “Go to Extas ERP (unsafe)” চাপুন: অ্যাপটি আপনার নিজের, আপনিই Google Cloud-এ বানিয়েছিলেন। তারপর “Continue” আর “Allow” চাপুন।",
+          en: "If “Google hasn't verified this app” shows, tap “Advanced” (small, near the bottom), then “Go to Extas ERP (unsafe)”: the app is your own; you made it in Google Cloud. Then tap “Continue” and “Allow”.",
         },
         picture: "phone-allow",
+        tip: {
+          bn: "“Go to ... (unsafe)”-এ Google আপনার অ্যাপের নামটি দেখায়, যা আপনি Google Cloud-এ দিয়েছিলেন (সাধারণত Extas ERP)। “BACK TO SAFETY” চাপবেন না: তাহলে সাইন-ইন বাতিল হয় (R09)। শেষে ফোনে লেখা আসে যে এবার জানালাটি বন্ধ করতে পারেন।",
+          en: "In “Go to ... (unsafe)” Google shows your app's name, the one you gave it in Google Cloud (usually Extas ERP). Do not tap “BACK TO SAFETY”: that stops the sign-in (R09). At the end the phone says you can close the window.",
+        },
       },
       {
         id: "D6",
@@ -577,8 +740,8 @@ export const GUIDE_PARTS: GuidePart[] = [
         },
         picture: "putty-dns",
         tip: {
-          bn: "পুরনো ERP এখনো চললে কমান্ড তা বলে দেয় (“still answers from another server”)। শুধু অনুশীলনের জন্য রিস্টোর করলে (পুরনো ERP-ই কাজে থাকবে) এখানে শুধু Enter চাপুন, আর শেষে Azure-এ অনুশীলনের সার্ভারটি মুছে দিন। Backups পাতায় Cloudflare টোকেন রাখা না থাকলে এই প্রশ্ন আসে না; তখন শেষে F6 ধাপটি করুন।",
-          en: "If the old ERP still runs, the command says so (“still answers from another server”). For a practice run only (the old ERP stays in use), just press Enter here, and delete the practice server in Azure at the end. Without a Cloudflare token saved on the Backups screen this question does not come; then do step F6 at the end.",
+          bn: "পুরনো ERP এখনো চললে কমান্ড তা বলে দেয় (“still answers from another server”): তখন শুধু Enter চাপুন, যদি না পুরনো সার্ভার বন্ধ বা আর ব্যবহার হবে না। অনুশীলনের জন্য এই গাইডের শেষের মহড়ার অংশটি করুন। Backups পাতায় Cloudflare টোকেন রাখা না থাকলে এই প্রশ্ন আসে না; তখন শেষে F6 ধাপটি করুন।",
+          en: "If the old ERP still runs, the command says so (“still answers from another server”): then just press Enter, unless the old server is off or will not be used again. To practise, follow the drill at the end of this guide instead. Without a Cloudflare token saved on the Backups screen this question does not come; then do step F6 at the end.",
         },
       },
     ],
@@ -600,8 +763,8 @@ export const GUIDE_PARTS: GuidePart[] = [
         },
         picture: "putty-wait",
         tip: {
-          bn: "সংযোগ কেটে গেলেও রিস্টোর নিজে নিজে চলতে থাকে। B2 থেকে আবার ঢুকে কমান্ডটি আবার পেস্ট করুন: লেখা আসবে “A restore is already running on this server”, আর শেষ না হওয়া পর্যন্ত সেটি দেখাবে। রিস্টোর থেমে গিয়ে থাকলে আবার শুরু হবে; তখন জিজ্ঞেস করতে পারে “Type the web address of the ERP on this server”: আপনার ওয়েব ঠিকানা লিখে Enter চাপুন।",
-          en: "If the connection drops, the restore goes on by itself. Sign in again from B2 and paste the command again: it says “A restore is already running on this server” and shows it until it ends. If the restore had stopped, it starts again; it may then ask “Type the web address of the ERP on this server”: type your web address and press Enter.",
+          bn: `সংযোগ কেটে গেলেও রিস্টোর নিজে নিজে চলতে থাকে। B5-এর “Saved Sessions” দিয়ে আবার ঢুকে কমান্ডটি আবার পেস্ট করুন: লেখা আসবে “A restore is already running on this server”, আর শেষ না হওয়া পর্যন্ত সেটি দেখাবে। রিস্টোর থেমে গিয়ে থাকলে আবার শুরু হয়, আর জিজ্ঞেস করতে পারে “Type the web address of the ERP on this server”। ${REPLACE_RULE.bn}`,
+          en: `If the connection drops, the restore goes on by itself. Sign in again with “Saved Sessions” as in B5 and paste the command again: it says “A restore is already running on this server” and shows it until it ends. If the restore had stopped, it starts again and may ask “Type the web address of the ERP on this server”. ${REPLACE_RULE.en}`,
         },
       },
       {
@@ -664,8 +827,12 @@ export const GUIDE_PARTS: GuidePart[] = [
         id: "F5",
         title: { bn: "GitHub থেকে আপডেট আবার চালু", en: "Let GitHub update the server again" },
         text: {
-          bn: "যিনি ERP-এর আপডেট দেখাশোনা করেন তাঁকে বলুন নতুন সার্ভারে sudo ./deploy/setup-auto-deploy.sh চালিয়ে GitHub-এর secrets-এ নতুন IP ও কী বসাতে। এটা না করা পর্যন্ত ERP চলবে, শুধু নতুন আপডেট আসবে না।",
-          en: "Ask whoever looks after the ERP's updates to run sudo ./deploy/setup-auto-deploy.sh on the new server and put the new IP and key in GitHub's secrets. Until then the ERP runs; only new updates do not arrive.",
+          bn: "PuTTY-তে লিখুন cd /opt/extras-erp && sudo ./deploy/setup-auto-deploy.sh আর Enter চাপুন। এটি চারটি জিনিস দেখায়: USERNAME, SSH_HOST_KEY, SSH_PRIVATE_KEY আর SERVER_IP। ব্রাউজারে github.com-এ Extas-ERP রিপোজিটরি খুলে “Settings” > “Secrets and variables” > “Actions” খুলুন। প্রতিটির পাশের পেনসিল চিহ্ন চেপে PuTTY থেকে তার নতুন মান বসান (SERVER_IP-এ A13-এর IP), তারপর “Update secret” চাপুন।",
+          en: "In PuTTY, type cd /opt/extras-erp && sudo ./deploy/setup-auto-deploy.sh and press Enter. It shows four things: USERNAME, SSH_HOST_KEY, SSH_PRIVATE_KEY and SERVER_IP. In the browser, open the Extas-ERP repository on github.com, then “Settings” > “Secrets and variables” > “Actions”. Click the pencil sign next to each one, put in its new value from PuTTY (for SERVER_IP, the IP from A13), then click “Update secret”.",
+        },
+        tip: {
+          bn: "PuTTY-তে মাউস দিয়ে লেখা টেনে বাছলেই কপি হয়ে যায়; SSH_PRIVATE_KEY-এর BEGIN লাইন থেকে END লাইন পর্যন্ত পুরোটা নিন। এটা না করা পর্যন্ত ERP চলে, শুধু নতুন আপডেট আসে না; পরেও করা যায়। শুধু সেই সার্ভারে করুন যা আপনি রোজ ব্যবহার করবেন, মহড়ার সার্ভারে কখনো নয়।",
+          en: "In PuTTY, selecting text with the mouse copies it; for SSH_PRIVATE_KEY take everything from the BEGIN line to the END line. Until you do this the ERP runs; only new updates do not arrive, and you can do it later. Do it only on the server you will use every day, never on a drill server.",
         },
       },
       {
@@ -734,8 +901,15 @@ export const GUIDE_QUESTIONS: GuideQuestion[] = [
     prompt:
       "Type the web address of the ERP on this server to replace its data, or press Enter to stop: ",
     answer: {
-      bn: "এই সার্ভারে আগে থেকেই Extas ERP আছে (যেমন আগের চেষ্টা মাঝপথে থেমেছিল)। নিশ্চিত হলে আপনার ওয়েব ঠিকানা (যেমন erp.extasbd.com) লিখে Enter; না হলে শুধু Enter: কিছুই বদলাবে না।",
-      en: "This server already has Extas ERP (for example, an earlier try stopped half way). If you are sure, type your web address (like erp.extasbd.com) and press Enter; otherwise just Enter: nothing changes.",
+      bn: `এই সার্ভারে আগে থেকেই Extas ERP আছে; উপরে তার “Program folder”, “Data folder”, “Web address” আর “Running now” লেখা থাকে। ${REPLACE_RULE.bn}`,
+      en: `This server already has Extas ERP; its “Program folder”, “Data folder”, “Web address” and “Running now” are shown above. ${REPLACE_RULE.en}`,
+    },
+  },
+  {
+    prompt: "Test web address for this drill (for example ...): ",
+    answer: {
+      bn: "শুধু মহড়ায় আসে (কমান্ডের শেষে --drill থাকলে): মহড়ার জন্য বাছা নতুন ঠিকানাটি লিখে Enter, যেমন drill.extasbd.com। আসল ERP বা ডেমো সাইটের ঠিকানা কখনো নয়।",
+      en: "Only in a drill (the command ends with --drill): type the new address you picked for the drill, like drill.extasbd.com, and press Enter. Never the real ERP's or the demo site's address.",
     },
   },
   {
@@ -771,12 +945,12 @@ export const GUIDE_ERRORS: GuideError[] = [
     code: "R02",
     shown: "this server runs ...",
     meaning: fix(
-      "সার্ভারটি Ubuntu নয়, বা খুব পুরনো Ubuntu।",
-      "The server is not Ubuntu, or a very old one.",
+      "সার্ভারটি Ubuntu নয়, বা 22.04-এর চেয়ে পুরনো Ubuntu।",
+      "The server is not Ubuntu, or an Ubuntu older than 22.04.",
     ),
     todo: fix(
-      "Azure-এ সার্ভারটি মুছে আবার বানান এবং A6 ধাপে “Ubuntu Server 24.04 LTS - x64 Gen2” বেছে নিন।",
-      "Delete the VM in Azure and make it again, choosing “Ubuntu Server 24.04 LTS - x64 Gen2” at step A6.",
+      "Azure-এ সার্ভারটি মুছে আবার বানান এবং A6 ধাপে “Ubuntu Server 24.04 LTS - x64 Gen2” বেছে নিন (22.04 LTS-ও চলে, তার চেয়ে পুরনো নয়)।",
+      "Delete the VM in Azure and make it again, choosing “Ubuntu Server 24.04 LTS - x64 Gen2” at step A6 (22.04 LTS works too; nothing older).",
     ),
   },
   {
@@ -796,8 +970,8 @@ export const GUIDE_ERRORS: GuideError[] = [
       "This server already has Extas ERP and the web address typed did not match. For safety nothing was changed.",
     ),
     todo: fix(
-      "সত্যিই এই সার্ভারের সব তথ্য ব্যাকআপ দিয়ে বদলাতে চাইলে কমান্ড আবার চালিয়ে ঠিক ওয়েব ঠিকানা লিখুন (স্ক্রিনে “Web address” লাইনে যা দেখায়)।",
-      "If you really want this server's data replaced by the backup, run the command again and type the exact web address (the one on the “Web address” line).",
+      `যে সার্ভারে আপনার ERP রোজ চলে সেখানে হলে কিছুই করবেন না: সেটাই ঠিক ছিল। তা না হলে কমান্ড আবার চালান। ${REPLACE_RULE.bn}`,
+      `On the server your ERP runs on every day, do nothing: stopping was right. Otherwise run the command again. ${REPLACE_RULE.en}`,
     ),
   },
   {
@@ -958,8 +1132,8 @@ export const GUIDE_ERRORS: GuideError[] = [
       "The database or files could not be restored. The ERP runs, but without the backup's data.",
     ),
     todo: fix(
-      "কমান্ড আবার চালান (ওয়েব ঠিকানা টাইপ করে নিশ্চিত করতে হবে)। আবার হলে আরেকটি ব্যাকআপ বেছে নিন।",
-      "Run the command again (you confirm by typing the web address). If it happens again, pick another backup.",
+      `কমান্ড আবার চালান; এবার সে জিজ্ঞেস করবে “Type the web address of the ERP on this server”। ${REPLACE_RULE.bn} একই ভুল আবার হলে আরেকটি ব্যাকআপ বেছে নিন।`,
+      `Run the command again; it then asks “Type the web address of the ERP on this server”. ${REPLACE_RULE.en} If the same error comes again, pick another backup.`,
     ),
   },
   {
@@ -1059,6 +1233,18 @@ export const GUIDE_ERRORS: GuideError[] = [
     todo: fix(
       "নতুন একটি সার্ভার বানিয়ে সেখানে রিস্টোর করুন (সবচেয়ে সহজ)।",
       "Make a fresh VM and restore there (the easiest).",
+    ),
+  },
+  {
+    code: "R30",
+    shown: "cannot be the drill's web address",
+    meaning: fix(
+      "মহড়ার জন্য টাইপ করা ঠিকানাটি ঠিক নয়, বা সেটি আসল ERP বা ডেমো সাইটের ঠিকানা। কিছুই বদলানো হয়নি।",
+      "The address typed for the drill is not a web address, or it is the real ERP's or the demo site's. Nothing was changed.",
+    ),
+    todo: fix(
+      "কমান্ড আবার চালিয়ে মহড়ার জন্য নতুন একটি ঠিকানা লিখুন, যেমন drill.extasbd.com।",
+      "Run the command again and type a new address for the drill, like drill.extasbd.com.",
     ),
   },
   {
@@ -1173,19 +1359,27 @@ export const OTHER_MESSAGES: OtherMessage[] = [
     ),
   },
   {
-    shown: "Access denied",
+    shown: "No supported authentication methods available (server sent: publickey)",
     where: fix("PuTTY", "PuTTY"),
     todo: fix(
-      "নাম erpadmin আর পাসওয়ার্ড A8-এর মতো হতে হবে। ভুলে গেলে Azure-এ সার্ভারের “Reset password” দিয়ে নতুন দিন।",
-      "The name is erpadmin and the password the one from A8. If forgotten, use “Reset password” on the VM in Azure.",
+      "PuTTY চাবি পায়নি: B4 আবার করুন (extas-erp-key.ppk), তারপর B5-এ “Save”। নাম হতে হবে erpadmin।",
+      "PuTTY did not have the key: do B4 again (extas-erp-key.ppk), then “Save” at B5. The user name must be erpadmin.",
     ),
   },
   {
-    shown: "Sorry, try again.",
-    where: fix("sudo (PuTTY)", "sudo (PuTTY)"),
+    shown: "Server refused our key",
+    where: fix("PuTTY", "PuTTY"),
     todo: fix(
-      "পাসওয়ার্ড ভুল হয়েছে; আবার A8-এর পাসওয়ার্ড টাইপ করুন।",
-      "The password was wrong; type the password from A8 again.",
+      "ভুল চাবি বা ভুল নাম: নাম erpadmin আর চাবি এই সার্ভারের extas-erp-key.ppk কি না দেখুন (B2 থেকে B4)। চাবি হারালে Azure-এ সার্ভারের “Reset password” পাতায় “Reset SSH public key” দিন।",
+      "The wrong key or user name: check the name is erpadmin and the key is this server's extas-erp-key.ppk (B2 to B4). If the key is lost, use “Reset SSH public key” on the VM's “Reset password” page in Azure.",
+    ),
+  },
+  {
+    shown: "[sudo] password for erpadmin:",
+    where: fix("PuTTY", "PuTTY"),
+    todo: fix(
+      "চাবি দিয়ে বানানো Azure সার্ভারে সাধারণত এটি আসে না। এলে Ctrl+C চাপুন, Azure-এ সার্ভারের “Reset password” পাতায় “Reset password” বেছে erpadmin নামের জন্য নতুন পাসওয়ার্ড দিন, তারপর কমান্ড আবার পেস্ট করে সেই পাসওয়ার্ড টাইপ করুন (কিছু দেখা যাবে না)।",
+      "An Azure server made with a key does not usually ask this. If it does, press Ctrl+C, choose “Reset password” on the VM's “Reset password” page in Azure and give user erpadmin a new password, then paste the command again and type that password (nothing shows).",
     ),
   },
   {
@@ -1213,6 +1407,14 @@ export const OTHER_MESSAGES: OtherMessage[] = [
     todo: fix(
       "নামানো স্ক্রিপ্টের চেকসাম মেলেনি, তাই কিছুই চালানো হয়নি। কমান্ডটি আবার পুরো কপি করে চালান; আবার হলে থামুন এবং ডেভেলপারকে জানান।",
       "The downloaded script's checksum did not match, so nothing ran. Copy the whole command again and run it; if it happens again, stop and tell the developer.",
+    ),
+  },
+  {
+    shown: "Google hasn't verified this app",
+    where: fix("ফোনে, Google", "On the phone, Google"),
+    todo: fix(
+      "নিচে ছোট করে লেখা “Advanced” চাপুন, তারপর “Go to Extas ERP (unsafe)” (আপনার অ্যাপের নাম)। অ্যাপটি আপনার নিজের (D5)।",
+      "Tap “Advanced” (small, near the bottom), then “Go to Extas ERP (unsafe)” (your app's name). The app is your own (D5).",
     ),
   },
   {
@@ -1262,6 +1464,8 @@ export function guideContentVersion(): string {
     GUIDE_QUESTIONS,
     GUIDE_ERRORS,
     OTHER_MESSAGES,
+    NO_GITHUB_PART,
+    DRILL_PART,
   ]);
   // FNV-1a, 32 bits: enough to notice a change, and works in the browser too.
   let hash = 0x811c9dc5;

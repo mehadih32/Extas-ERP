@@ -302,6 +302,9 @@ PY
 # typed ($1 the backups folder, $2 the web address). Its clocks then start within a minute.
 leave_standby() {
   local dir="$1" domain="${2,,}" typed=""
+  # A restore drill copy (bootstrap.sh --drill) never becomes the ERP in use.
+  [ ! -f "$dir/.drill" ] ||
+    die "this server holds a restore drill copy (test mode): it never becomes the ERP in use. Delete it in Azure when the drill is done; for a real restore, make a new server (part A of the restore guide)."
   if [ ! -f "$dir/.standby" ]; then
     say "This ERP is not on standby: it is the one in use already"
     return 0

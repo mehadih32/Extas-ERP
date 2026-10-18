@@ -15,6 +15,9 @@ KEY_NAME=extras-erp-auto-deploy
 main() {
   need_root
   load_settings
+  # GitHub never updates a restore drill copy (bootstrap.sh --drill): it is deleted after the drill.
+  [ ! -f "$DATA_DIR/backups/.drill" ] ||
+    die "this server holds a restore drill copy (test mode): GitHub must never update it. Run this only on the server you use every day."
 
   local user="${SUDO_USER:-}"
   if [ -z "$user" ] || [ "$user" = root ]; then

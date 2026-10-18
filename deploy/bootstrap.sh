@@ -26,6 +26,10 @@
 # address is typed to confirm; its own ENCRYPTION_KEY is never replaced.
 # Every question and every error code (R01, W01...) is in the restore guide.
 #   sudo bash restore.sh [commit]     the restore
+#   sudo bash restore.sh <commit> --drill
+#                                     a practice drill: a test web address, and the
+#                                     copy in test mode (the guide's "Practice: a
+#                                     restore drill"; BACKUP_DIR/.drill)
 #   bash restore.sh --find            only says which Extas ERP this server has
 #   bash restore.sh --choose          only the A6 decision (drills and tests)
 # Without GitHub (G17): restore.sh and restore-tool.py from the Drive backup folder,
@@ -191,6 +195,68 @@ choose_install() {
   fi
 }
 
+# --- A practice drill (the guide's "Practice: a restore drill") --------------------
+
+# The drill's own web address and test mode, on the settings file $1 with the data
+# folder $2: a test address is asked (never the ERP's own or its demo site's), set
+# as APP_DOMAIN with the demo site off, so the real address's DNS is never touched;
+# and DATA/backups/.drill marks the copy as a drill before the ERP first starts:
+# no emails, bot messages, Drive backups or scheduled jobs (standby.ts reads it).
+drill_settings() {
+  local env_file="$1" data="$2" live live_demo example test_domain
+  live="$(plain_domain "$APP_DOMAIN")"
+  case "$live" in *.*.*) live_demo="demo.${live#*.}" ;; *) live_demo="demo.$live" ;; esac
+  example="drill.${live#*.}"
+  test_domain="$(plain_domain "$(answer drill_domain "Test web address for this drill (for example $example): ")")"
+  { [[ "$test_domain" =~ ^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$ ]] && [ "$test_domain" != "$live" ] &&
+    [ "$test_domain" != "$live_demo" ] &&
+    [ "$test_domain" != "$(plain_domain "$(env_get "$env_file" DEMO_DOMAIN)")" ]; } ||
+    fail R30 "\"$test_domain\" cannot be the drill's web address. Type a new test address like $example, never the ERP's own ($live) or its demo site's."
+  sed -i -e '/^APP_DOMAIN=/d' -e '/^DEMO_SITE=/d' "$env_file"
+  printf 'APP_DOMAIN=%s\nDEMO_SITE=off\n' "$test_domain" >>"$env_file"
+  APP_DOMAIN="$test_domain"
+  mkdir -p "$data/backups"
+  printf '{"address":"%s","startedAt":"%s"}\n' "$test_domain" "$(date -u -d "@$started" +%Y-%m-%dT%H:%M:%SZ)" \
+    >"$data/backups/.drill"
+  chmod 644 "$data/backups/.drill"
+  note "Restore drill (test mode): this copy's web address is $APP_DOMAIN; $live is not touched."
+}
+
+# The drill's result into its mark $1 (for its Backups screen and the real ERP's
+# "Record a drill"), from the comparison $2, the seconds $3, the backup's name $4,
+# HTTPS (1: working) $5 and the screens that did not open $6; prints the outcome.
+drill_result() {
+  python3 - "$@" <<'PY' || echo "with problems"
+import datetime, json, os, sys
+path, compare, took, name, https, screens = sys.argv[1:7]
+try:
+    drill = json.load(open(path))
+except (OSError, ValueError):
+    drill = {}
+try:
+    r = json.load(open(compare))
+except (OSError, ValueError):
+    r = {}
+worked = bool(r.get("ok")) and https == "1" and screens == "0"
+drill.update({
+    "finishedAt": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    "seconds": int(took),
+    "backup": name,
+    "records": r.get("records"),
+    "files": r.get("files"),
+    "problems": len(r.get("problems") or []) if r else None,
+    "screenProblems": int(screens) if screens.isdigit() else None,
+    "https": https == "1",
+    "result": "worked" if worked else "problems",
+})
+with open(path + ".new", "w") as out:
+    json.dump(drill, out)
+os.chmod(path + ".new", 0o644)
+os.replace(path + ".new", path)
+print("it worked" if worked else "with problems (see the lines above)")
+PY
+}
+
 # The restore tool ($1): the copy beside this script when it is the right one (from
 # the Drive backup folder, when GitHub cannot be reached: G17), else from GitHub at
 # the same commit. Either way it must match RESTORE_TOOL_SHA256.
@@ -221,6 +287,20 @@ if [ "${1:-}" = --tool ]; then
   exit 0
 fi
 
+# Tests only: the drill's settings (drill_settings) on the settings file $2 with the
+# data folder $3, and the drill's result (drill_result) into the mark $2.
+if [ "${1:-}" = --drill-settings ]; then
+  APP_DOMAIN="$(env_get "${2:?}" APP_DOMAIN)"
+  drill_settings "$2" "${3:?}"
+  echo "DRILL $APP_DOMAIN"
+  exit 0
+fi
+if [ "${1:-}" = --drill-result ]; then
+  shift
+  drill_result "$@"
+  exit 0
+fi
+
 # Drills and tests only: the A6 decision alone; nothing is changed.
 if [ "${1:-}" = --choose ]; then
   detect_installs
@@ -237,6 +317,12 @@ commit="${1:-}"
 [ -z "$commit" ] || [[ "$commit" =~ ^[0-9a-f]{40}$ ]] ||
   fail R24 "\"$commit\" after restore.sh is not a version (40 letters and digits). Copy the whole command from the guide again."
 ref="${commit:-main}"
+drill=""
+case "${2:-}" in
+  "") ;;
+  --drill) drill=1 ;;
+  *) fail R24 "\"$2\" after the version is not --drill. Copy the whole command from the guide again." ;;
+esac
 
 # shellcheck source=/dev/null
 . /etc/os-release
@@ -367,6 +453,13 @@ chmod 600 "$env_file"
 DATA="$(env_get "$env_file" DATA_DIR)"
 DATA="${DATA:-/srv/extras-erp}"
 APP_DOMAIN="$(env_get "$env_file" APP_DOMAIN)"
+if [ -z "$drill" ] && [ -f "$DATA/backups/.drill" ]; then
+  # A drill copy stays one: it never takes the real web address (make a new VM for
+  # a real restore).
+  drill=1
+  note "This server holds a restore drill copy, so this run is a drill too (test mode)."
+fi
+[ -z "$drill" ] || drill_settings "$env_file" "$DATA"
 note "Web address: $APP_DOMAIN; data folder: $DATA"
 
 step "Pointing the web address at this server"
@@ -486,7 +579,14 @@ elif r.get("ok"):
 else:
     print(f"    Not everything is back: {len(r['problems'])} problem(s), listed above (R20).")
 PY
-if [ "$standby" = 1 ]; then
+if [ -n "$drill" ]; then
+  drill_word="$(drill_result "$DATA/backups/.drill" "$WORK/compare.json" "$took" "$name" "$https_ok" "$screen_problems")"
+  say "Restore drill finished in $((took / 60)) min $((took % 60)) s: $drill_word"
+  note "This copy runs in test mode at https://$APP_DOMAIN: it sends no emails or bot messages,"
+  note "makes no Google Drive backups and runs no scheduled jobs."
+  note "On your real ERP: Settings > Backups > Record a drill, and type $APP_DOMAIN."
+  note "Then delete this drill server's resource group in Azure, and the drill's line in Cloudflare."
+elif [ "$standby" = 1 ]; then
   warn W10 "this ERP waits on standby: $APP_DOMAIN still points to the other server, so it makes no backups and sends no reminders. When this server is the one to use (the old one is off), point the web address here (step F6) and run: cd $DIR && sudo ./deploy/go-live.sh"
 elif [ "$https_ok" = 1 ]; then
   note "The ERP is running at https://$APP_DOMAIN : sign in as before."
@@ -496,5 +596,6 @@ fi
 if [ "$demo_note" = running ]; then note "The demo site is running too."; fi
 note "Checks: $checks_note; ${screen_problems} problem(s) found."
 note "The full log of this restore: sudo less $LOG"
-note "Next (part F of the guide): let GitHub update this server again: cd $DIR && sudo ./deploy/setup-auto-deploy.sh"
+[ -n "$drill" ] ||
+  note "Next (part F of the guide): let GitHub update this server again: cd $DIR && sudo ./deploy/setup-auto-deploy.sh"
 [ "$compare" = 0 ] || exit 4

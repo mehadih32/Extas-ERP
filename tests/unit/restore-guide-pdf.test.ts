@@ -1,8 +1,19 @@
-import { inflateSync } from "node:zlib";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { deflateSync, inflateSync } from "node:zlib";
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { DETAILS_TEXT, GUIDE_ERRORS, GUIDE_STEP_IDS } from "@/modules/backups/restore-guide";
+import {
+  DETAILS_TEXT,
+  DRILL_PART,
+  GUIDE_ERRORS,
+  GUIDE_STEP_IDS,
+  GUIDE_WORDS,
+  NO_GITHUB_PART,
+} from "@/modules/backups/restore-guide";
+import { pngSize } from "@/modules/backups/restore-guide-pictures";
 import {
   type GuideDetails,
   printsExactly,
@@ -189,5 +200,106 @@ describe("the restore guide PDF", () => {
     expect(squash(text)).toContain(
       squash("The command appears here once the server has been updated."),
     );
+  });
+});
+
+/** A small real PNG (one colour), as a screenshot stand-in. */
+function png(width: number, height: number): Buffer {
+  const crcTable = Array.from({ length: 256 }, (_, n) => {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    return c >>> 0;
+  });
+  const crc = (bytes: Buffer) => {
+    let c = 0xffffffff;
+    for (const b of bytes) c = crcTable[(c ^ b) & 0xff]! ^ (c >>> 8);
+    return (c ^ 0xffffffff) >>> 0;
+  };
+  const chunk = (type: string, data: Buffer) => {
+    const body = Buffer.concat([Buffer.from(type, "latin1"), data]);
+    const out = Buffer.alloc(body.length + 8);
+    out.writeUInt32BE(data.length, 0);
+    body.copy(out, 4);
+    out.writeUInt32BE(crc(body), body.length + 4);
+    return out;
+  };
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(width, 0);
+  header.writeUInt32BE(height, 4);
+  header[8] = 8; // 8 bits
+  header[9] = 2; // RGB
+  const rows = Buffer.alloc((width * 3 + 1) * height, 0x80);
+  for (let y = 0; y < height; y++) rows[y * (width * 3 + 1)] = 0;
+  return Buffer.concat([
+    Buffer.from("89504e470d0a1a0a", "hex"),
+    chunk("IHDR", header),
+    chunk("IDAT", deflateSync(rows)),
+    chunk("IEND", Buffer.alloc(0)),
+  ]);
+}
+
+const images = (pdf: Buffer) => pdf.toString("latin1").match(/\/Subtype \/Image/g)?.length ?? 0;
+
+describe("the restore guide PDF (v6.4.1)", () => {
+  let folder: string | null = null;
+  afterEach(async () => {
+    vi.unstubAllEnvs();
+    if (folder) await rm(folder, { recursive: true, force: true });
+    folder = null;
+  });
+
+  it("prints a real screenshot where public/restore-guide has one, else the drawing", async () => {
+    folder = await mkdtemp(path.join(os.tmpdir(), "extas-guide-shots-"));
+    vi.stubEnv("RESTORE_GUIDE_SCREENSHOTS", folder);
+    const drawn = await restoreGuidePdf("en", base(null));
+    expect(images(drawn)).toBe(0);
+
+    // A landscape screenshot (Azure) and a tall one (the phone), and a file that is no PNG.
+    await writeFile(path.join(folder, "azure-admin.png"), png(160, 90));
+    await writeFile(path.join(folder, "phone-account.png"), png(54, 120));
+    await writeFile(path.join(folder, "putty-login.png"), "not a picture");
+    expect(pngSize(png(160, 90))).toEqual({ width: 160, height: 90 });
+    expect(pngSize(Buffer.from("not a picture"))).toBeNull();
+    const pdf = await restoreGuidePdf("en", base(null));
+    expect(images(pdf)).toBe(2);
+    const text = squash(pdfStrings(pdf));
+    const shot = squash(GUIDE_WORDS.screenshot.en);
+    const drawing = squash(GUIDE_WORDS.picture.en);
+    expect(text.split(shot).length - 1).toBe(2);
+    expect(text.split(drawing).length - 1).toBe(
+      squash(pdfStrings(drawn)).split(drawing).length - 3,
+    );
+    // Every step is still there.
+    const all = pdfStrings(pdf);
+    for (const id of GUIDE_STEP_IDS) expect(all, id).toMatch(new RegExp(`^${id}$`, "m"));
+  });
+
+  it("prints the drill and the no-GitHub parts, each with its own command", async () => {
+    for (const lang of ["en", "bn"] as const) {
+      const text = pdfStrings(await restoreGuidePdf(lang, base(null)));
+      for (const words of [DRILL_PART.title, NO_GITHUB_PART.title, GUIDE_WORDS.drillCommand]) {
+        expect(squash(text), words.en).toContain(squash(words[lang]));
+      }
+      expect(text).toContain("sudo bash restore.sh $c --drill");
+      // Curly quotes come out of the PDF as WinAnsi bytes; compare without them.
+      const noQuotes = (t: string) => squash(t).replace(/[“”\x93\x94]/g, "");
+      for (const step of [...DRILL_PART.steps, ...NO_GITHUB_PART.steps]) {
+        expect(noQuotes(text)).toContain(noQuotes(step[lang]).slice(0, 40));
+      }
+    }
+    // The command without GitHub: the same lines without the download; the
+    // drill's: the same lines, ending with --drill.
+    const text = pdfStrings(await restoreGuidePdf("en", base(null)));
+    const box = (title: string) => {
+      const start = text.indexOf(`\n${title}\n`);
+      expect(start, title).toBeGreaterThan(0);
+      return text.slice(start, start + 600);
+    };
+    const noGithub = box(GUIDE_WORDS.noGithubCommand.en);
+    for (const line of [LINES[0]!, LINES[2]!]) expect(noGithub).toContain(line);
+    expect(noGithub).not.toContain("curl ");
+    const drill = box(GUIDE_WORDS.drillCommand.en);
+    for (const line of LINES.slice(0, 3)) expect(drill).toContain(line);
+    expect(drill).toContain(`${LINES[3]} --drill`);
   });
 });

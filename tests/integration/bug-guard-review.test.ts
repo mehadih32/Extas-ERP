@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  *   S1   alarms (Bug Guard, backups, Server Health) reach only the bot links of
  *        active platform owners; platform-wide alarms only the platform company.
  *   S3   a blocked place lets the platform owner in with the right password
- *        (the account lock still applies); nobody else.
+ *        (the place's wait after wrong passwords still applies); nobody else.
  *   S4   a sign-in Bug Guard stopped never makes its place "known".
  *   S5/6 an adjusting entry is checked again when it is applied, under a lock,
  *        in the ERP's lock order, and the supplier's bills follow it.
@@ -410,7 +410,7 @@ run("Bug Guard, after the review", () => {
   });
 
   describe("a blocked place (S3)", () => {
-    it("lets in only the platform owner with the right password, the account lock still applying", async () => {
+    it("lets in only the platform owner with the right password, the place's wait still applying", async () => {
       const { company, owner, partner } = await setup();
       const ip = "203.0.113.40";
       for (let i = 0; i < 10; i += 1) await wrong(`nobody${i}@x.test`, ip);
@@ -426,10 +426,12 @@ run("Bug Guard, after the review", () => {
         (await prisma.user.findUniqueOrThrow({ where: { id: partner.user.id } })).failedLoginCount,
       ).toBe(0);
 
-      // The owner's wrong password: the same words as for anyone, and it counts toward the lock.
+      // The owner's wrong password: the same words as for anyone, and it counts toward the wait.
       await expectAppError(signIn("owner@extas.test", "wrong-one"), "ACCOUNT_LOCKED", BLOCKED_TEXT);
       expect(
-        (await prisma.user.findUniqueOrThrow({ where: { id: owner.user.id } })).failedLoginCount,
+        await prisma.auditLog.count({
+          where: { action: "LOGIN_FAILED", userId: owner.user.id, ipAddress: ip },
+        }),
       ).toBe(1);
 
       // The right password: in, logged as a Bug Guard event, and the owner is told.
@@ -448,11 +450,12 @@ run("Bug Guard, after the review", () => {
       // The block stays for everyone else.
       await expectAppError(signIn("staff@extas.test"), "ACCOUNT_LOCKED", BLOCKED_TEXT);
 
-      // A locked account stays locked, right password or not.
+      // Five wrong passwords from there make that place wait, right password or not
+      // (v6.4.1 B5): the account itself is never locked.
       for (let i = 0; i < 5; i += 1) await signIn("owner@extas.test", "wrong-again").catch(() => 0);
       expect(
         (await prisma.user.findUniqueOrThrow({ where: { id: owner.user.id } })).lockedUntil,
-      ).not.toBeNull();
+      ).toBeNull();
       await expectAppError(signIn("owner@extas.test"), "ACCOUNT_LOCKED");
       expect(await prisma.bugGuardEvent.count({ where: { kind: "OWNER_PASSED_BLOCK" } })).toBe(1);
 

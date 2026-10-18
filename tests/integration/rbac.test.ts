@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { prisma } from "@/lib/prisma";
 import { tenantDb } from "@/lib/tenant-db";
-import { login } from "@/modules/auth/auth.service";
+import { login, MAX_FAILED_LOGINS } from "@/modules/auth/auth.service";
 import {
   addMember,
   changeMemberRole,
@@ -205,6 +205,28 @@ run("members", () => {
       password: (await resetMemberPassword(ctx, membership.id)).temporaryPassword,
     });
     expect(activeCompanyId).toBeNull();
+  });
+
+  it("a password reset ends the wait after wrong passwords, logged in the admin's name (v6.4.1 B5)", async () => {
+    const { ctx, extras } = await setup();
+    const { membership } = await addMember(ctx, {
+      email: "waits@extras.test",
+      name: "Waits",
+      roleId: extras.roles.EMPLOYEE,
+    });
+    const here = { ipAddress: "198.51.100.30" };
+    for (let i = 0; i < MAX_FAILED_LOGINS; i++) {
+      await login({ email: "waits@extras.test", password: "wrong-pass1" }, here).catch(() => 0);
+    }
+    const { temporaryPassword } = await resetMemberPassword(ctx, membership.id);
+    const done = await login({ email: "waits@extras.test", password: temporaryPassword }, here);
+    expect(done.token).toBeTruthy();
+    expect(
+      await prisma.auditLog.findFirst({
+        where: { entityType: "SignInUnlock", entityId: membership.userId },
+        select: { userId: true, companyId: true },
+      }),
+    ).toEqual({ userId: ctx.user.id, companyId: extras.company.id });
   });
 
   it("company admins cannot reset users who also work in another company", async () => {

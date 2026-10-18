@@ -15,8 +15,9 @@ import type { RequestMeta } from "@/lib/request-meta";
  *     after wrong passwords for several accounts from there), by itself,
  *     telling the owner at once; never the owner's own;
  *   - a blocked place still lets an active platform owner in with the right
- *     password (their account lock still applies), so the owner can never be
- *     locked out by it; the owner is told each time, and nobody else passes;
+ *     password (the wait after wrong passwords from there still applies), so
+ *     the owner can never be locked out by it; the owner is told each time,
+ *     and nobody else passes;
  *   - with the owner's PIN (fixes.service.ts): block or unblock a source, end a
  *     session (never the owner's).
  * It never changes a password, a role or a permission, and never deletes anyone.

@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { checkRateLimit } from "@/lib/rate-limit";
 import type { RequestMeta } from "@/lib/request-meta";
 import { tenantDb } from "@/lib/tenant-db";
+import { unlockSignIn } from "@/modules/auth/auth.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { resolveCompanyAccess } from "@/modules/companies/access";
 import { readStoredFile } from "@/modules/files/file.service";
@@ -51,6 +52,8 @@ const PIN_MINUTES = 5;
 /** "bug guard", "bug guard now", "বাগ গার্ড": Bug Guard runs now. */
 const GUARD_WORDS = /^\s*(bug ?guard|বাগ ?গার্ড)(\s+(now|run|চালাও|এখন))?\s*[.!]?\s*$/i;
 const CODE = /^(?:\/start\s+)?([A-Z2-9]{8})$/;
+/** "unlock", "/unlock", "unlock sign-in", "আনলক": the owner's sign-in, with the PIN (v6.4.1 B5). */
+const UNLOCK_WORDS = /^\s*\/?(unlock( my)?( sign[- ]?in)?|আনলক)\s*[.!]?\s*$/i;
 
 const appUrl = () => (process.env.APP_URL || "http://localhost:3000").replace(/\/$/, "");
 
@@ -590,6 +593,9 @@ async function wrote(mine: AiBotLink[], m: Incoming, messageId: string, pin: Pin
     );
   }
   if (!text) return;
+  if (UNLOCK_WORDS.test(storePrefix(text).rest)) {
+    return act(link, ctx, m.chatId, { kind: "unlock", companyId: link.companyId }, null, null);
+  }
   if (GUARD_WORDS.test(storePrefix(text).rest)) {
     const { guardPress } = await import("@/modules/bug-guard/bot-actions");
     return say(
@@ -674,6 +680,7 @@ async function storeOfPress(mine: AiBotLink[], press: ButtonPress) {
       });
       break;
     case "guard-run":
+    case "unlock":
       row = mine.some((l) => l.companyId === press.companyId)
         ? { companyId: press.companyId }
         : null;
@@ -739,6 +746,8 @@ async function pinNeeded(ctx: CompanyContext, press: ButtonPress): Promise<strin
       });
       return finding?.fixKind === "SECURITY" ? "take this security step" : null;
     }
+    case "unlock":
+      return "unlock your sign-in";
     case "guard-correction":
       return press.choice === "apply"
         ? "apply a data correction"
@@ -823,6 +832,13 @@ async function act(
         result = press.approve
           ? "Approved: it is deleted (cancelled) in your name."
           : "Refused: it stays.";
+        break;
+      case "unlock":
+        // Only ever with the PIN (pinNeeded), and only the bot's own owner.
+        if (pin !== PIN_CHECKED) return;
+        await unlockSignIn(ctx.user.id, "through the bot, with the PIN", m);
+        result =
+          "Unlocked: wrong passwords before now no longer slow down your sign-in. Sign in with your password.";
         break;
       case "guard":
       case "guard-run":

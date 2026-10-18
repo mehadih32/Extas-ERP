@@ -11,6 +11,7 @@ import { recordAudit } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { AI_ADDRESS_TEXT, isAiAddress } from "@/modules/ai/ai-address";
 import { CHECK_ADDRESS_TEXT, isCheckAddress } from "@/modules/ai/full-check/check-account";
+import { unlockSignIn } from "@/modules/auth/auth.service";
 import { emailSchema } from "@/modules/auth/schemas";
 import { revokeAllUserSessions } from "@/modules/auth/session.service";
 import { ALL_PERMISSION_KEYS, type PermissionKey } from "@/modules/rbac/permissions";
@@ -494,6 +495,11 @@ export async function resetMemberPassword(
     entityId: membership.userId,
     summary: `Reset password for ${membership.user.email}`,
     meta,
+  });
+  // The new password starts clean: earlier wrong passwords no longer make any place wait.
+  await unlockSignIn(membership.userId, "with a password reset", meta, {
+    userId: ctx.user.id,
+    companyId: ctx.company.id,
   });
   return { temporaryPassword };
 }

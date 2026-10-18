@@ -44,6 +44,7 @@ import {
 import { addDays, localDay } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
+import { resetRateLimits } from "@/lib/rate-limit";
 import { runAiReminders } from "@/modules/ai/ai-reminders";
 import {
   getBot,
@@ -58,6 +59,7 @@ import { type BotCall, standInForBotApi } from "@/modules/ai/bot/channel";
 import { pinScrubReport } from "@/modules/ai/bot/pin-scrub";
 import { sendChat } from "@/modules/ai/chat/chat.service";
 import { setAiSwitch, setPin } from "@/modules/ai/settings.service";
+import { login, MAX_FAILED_LOGINS } from "@/modules/auth/auth.service";
 import * as costing from "@/modules/costing/costing.service";
 import { pushToBot } from "@/modules/ai/bot/push";
 import { makeAiDraft, setFollowUp } from "@/modules/ai/drafts.service";
@@ -68,7 +70,7 @@ import { createProject } from "@/modules/production/project.service";
 import { createRole } from "@/modules/rbac/role.service";
 import { getBotAction, saveTelegramAction } from "@/server/actions/bot.actions";
 
-import { addToCompany, contextFor, makeCompany, makeUser, resetDb } from "./helpers";
+import { addToCompany, contextFor, makeCompany, makeUser, PASSWORD, resetDb } from "./helpers";
 
 const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
 
@@ -711,6 +713,37 @@ run("The bot", () => {
     expect(JSON.stringify(jobs.map((j) => j.payload)).replaceAll("124689", "")).not.toContain(
       "2468",
     );
+  });
+
+  it("unlocks the owner's sign-in when the owner writes unlock and sends the PIN, with AI off too (v6.4.1 B5)", async () => {
+    const api = botApi();
+    await linkOwner(env);
+    await setPin(env.owner, { pin: "2468" });
+    const here = { ipAddress: "198.51.100.20" };
+    const signIn = (password = PASSWORD) => login({ email: env.owner.user.email, password }, here);
+    for (let i = 0; i < MAX_FAILED_LOGINS; i++) await signIn("not-the-password").catch(() => 0);
+    resetRateLimits();
+    await expect(signIn()).rejects.toMatchObject({ code: "ACCOUNT_LOCKED" });
+
+    await telegram(typed(OWNER_CHAT, "unlock"));
+    expect(api.said(OWNER_CHAT).at(-1)).toMatch(/^Send your PIN to unlock your sign-in/);
+    await telegram(typed(OWNER_CHAT, "1357"));
+    expect(api.said(OWNER_CHAT).at(-1)).toMatch(/PIN is not right/);
+    await expect(signIn()).rejects.toMatchObject({ code: "ACCOUNT_LOCKED" });
+
+    await telegram(typed(OWNER_CHAT, "/unlock"));
+    const pin = typed(OWNER_CHAT, "2468");
+    await telegram(pin);
+    expect(api.calls.filter((c) => c.method === "deleteMessage").map((c) => c.json)).toContainEqual(
+      expect.objectContaining({ message_id: pin.message.message_id }),
+    );
+    expect(api.said(OWNER_CHAT).at(-1)).toMatch(/^Unlocked: /);
+    expect((await signIn()).token).toBeTruthy();
+    expect(
+      await prisma.auditLog.count({
+        where: { entityType: "SignInUnlock", summary: { contains: "bot" } },
+      }),
+    ).toBe(1);
   });
 
   it("hid every 4 to 8 digit bot message at the v6.3 update, and reports only those that did not follow a PIN request", async () => {

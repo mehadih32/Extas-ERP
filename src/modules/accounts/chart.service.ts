@@ -5,6 +5,7 @@ import type { Db } from "@/lib/db-types";
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
+import { lockRow } from "@/lib/row-lock";
 import { runTransaction } from "@/lib/transaction";
 import { assertAllowed } from "@/lib/verdict";
 import {
@@ -356,6 +357,9 @@ export async function postAccountOpeningTx(
   asOf?: Date,
 ) {
   const companyId = ctx.company.id;
+  // One save at a time per account: a second save waits and then sees the first
+  // one's entry, so two first saves at the same moment never post two openings.
+  await lockRow(tx, "LedgerAccount", account.id);
   const acc = await ensureControlAccounts(companyId, tx);
   // A positive amount sits on the account's normal side.
   const signed = isDebitNature(account.type) ? amount : amount.neg();

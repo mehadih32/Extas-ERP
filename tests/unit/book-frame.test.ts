@@ -6,6 +6,7 @@ import { renderDocumentPdf } from "@/modules/documents/render";
 import { DEFAULT_TAGLINE } from "@/modules/documents/tagline";
 import { SWATCH_ROW_HEIGHT, swatchListBlocks } from "@/modules/production/swatch-list";
 
+import { jpeg, png } from "../fixtures/images";
 import { pageCount, pdfLines, pdfTextBlocks } from "../fixtures/pdf";
 
 const COMPANY = {
@@ -403,5 +404,83 @@ describe("PREPARED BY names the person who made the booking (v6.3)", () => {
     });
     expect(pdfLines(pdf)).toContain("PREPARED BY");
     expect(pdfLines(pdf)).not.toContain("Rahima Akter");
+  });
+});
+
+describe("the company logo in the book header (CLAUDE.md section 2)", () => {
+  /** Each image drawn: where it sits from the page's top left (pdfkit's own drawing). */
+  const logos = (pdf: Buffer) =>
+    [
+      ...pdf.toString("latin1").matchAll(/([\d.]+) 0 0 (-[\d.]+) ([\d.]+) ([\d.]+) cm\n\/I\d+ Do/g),
+    ].map((m) => {
+      const [w, h, x, bottom] = [Number(m[1]), -Number(m[2]), Number(m[3]), Number(m[4])];
+      return { w, h, x, top: bottom - h, bottom };
+    });
+
+  for (const orientation of ["landscape", "portrait"] as const) {
+    it(`draws the logo on every page under the binding strip, beside the name (${orientation})`, async () => {
+      for (const logo of [png({ width: 60, height: 20 }), jpeg({ width: 120, height: 300 })]) {
+        const pdf = await renderDocumentPdf(sampleBook(orientation), { logo, compress: false });
+        const pages = pageCount(pdf);
+        const drawn = logos(pdf);
+        expect(drawn).toHaveLength(pages);
+        for (const d of drawn) {
+          // Under the 15 mm binding strip and above the header's rule.
+          expect(d.top).toBeGreaterThanOrEqual(15 * MM - 0.01);
+          expect(d.bottom).toBeLessThanOrEqual(15 * MM + 36);
+          expect(d.x).toBeCloseTo(11 * MM, 1);
+        }
+        // The name starts right of the logo, and the page numbers are whole.
+        const name = pdfTextBlocks(pdf).filter((b) => b.text === "Extas");
+        expect(name).toHaveLength(pages);
+        for (const b of name) expect(b.x).toBeGreaterThan(11 * MM + drawn[0]!.w);
+        const lines = pdfLines(pdf);
+        expect(lines).toContain(`${contactLine(COMPANY)} • PAGE ${pages} OF ${pages}`);
+        // The tagline beside the logo: smaller or on two lines, every word kept.
+        const all = lines.join("\n");
+        expect(all).not.toContain("…");
+        for (const word of DEFAULT_TAGLINE.split(" ")) expect(all).toContain(word);
+      }
+    });
+  }
+
+  it("never cuts a very long company name for the logo", async () => {
+    const name = "Extas Apparel Sourcing and Garment Manufacturing International Limited";
+    for (const orientation of ["landscape", "portrait"] as const) {
+      const doc = framed(
+        [{ kind: "text", title: "Note", paragraphs: ["One page."] }],
+        { name },
+        "Rahima Akter",
+        orientation,
+      );
+      const pdf = await renderDocumentPdf(doc, {
+        logo: png({ width: 60, height: 20 }),
+        compress: false,
+      });
+      const all = pdfLines(pdf).join("\n");
+      expect(all).not.toContain("…");
+      for (const word of name.split(" ")) expect(all).toContain(word);
+      const rule = (orientation === "portrait" ? 841.89 : 595.28) - 15 * MM - 36;
+      const last = pdfTextBlocks(pdf).filter((b) => b.text.includes("Limited") && b.y > rule);
+      for (const block of last) expect(block.y).toBeGreaterThan(rule + 2);
+      expect(logos(pdf).length).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it("still prints, without a logo, when the logo cannot be read", async () => {
+    const pdf = await renderDocumentPdf(sampleBook("landscape"), {
+      logo: Buffer.from("not an image"),
+      compress: false,
+    });
+    expect(logos(pdf)).toHaveLength(0);
+    expect(pdfLines(pdf)).toContain("Extas");
+    const letter = await renderDocumentPdf(
+      { ...sampleBook("portrait"), frame: undefined },
+      {
+        logo: Buffer.from("not an image"),
+        compress: false,
+      },
+    );
+    expect(pdfLines(letter)).toContain("Extas");
   });
 });

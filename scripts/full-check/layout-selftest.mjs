@@ -54,7 +54,7 @@ const CASES = [
       <nav data-layout-expect="/a /b" data-layout-nav><a href="/a">First</a> <a href="/b">Second</a></nav>
       <div style="overflow-x:auto"><table style="width:900px"><thead><tr><th>Name</th></tr></thead>
         <tbody><tr><td>A row that is wider than the phone, in a box that scrolls</td></tr></tbody></table></div>
-      <table><tbody><tr><td><div style="width:120px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis" title="A long name in full">A long name in full that is cut</div></td></tr></tbody></table>
+      <table><tbody><tr><td style="white-space:nowrap"><div style="min-width:10rem;max-width:14rem;white-space:normal;overflow-wrap:break-word">Bangladesh Apparel Sourcing &amp; Merchandising International Ltd.</div></td></tr></tbody></table>
       <div role="tablist" style="display:flex;flex-wrap:wrap;gap:4px 24px"><button role="tab">Overview</button>
         <button role="tab">Leave</button><button role="tab">Pay</button><button role="tab">Papers</button>
         <button role="tab">Items</button><button role="tab">Details</button><button role="tab">History</button></div>
@@ -111,6 +111,47 @@ const CASES = [
     expect: ["CUT_TEXT"],
   },
   {
+    name: "a long buyer's name cut with ... in a table cell, on a phone (even with a tooltip)",
+    width: 390,
+    html: screen(`<table><thead><tr><th>Buyer</th></tr></thead><tbody><tr><td>
+      <div style="max-width:14rem;overflow:hidden;white-space:nowrap;text-overflow:ellipsis" title="Bangladesh Apparel Sourcing &amp; Merchandising International Ltd.">Bangladesh Apparel Sourcing &amp; Merchandising International Ltd.</div>
+      </td></tr></tbody></table>`),
+    expect: ["CUT_TEXT"],
+  },
+  {
+    name: "a supplier's name cut with ... by the table cell itself (fixed column), on a tablet",
+    width: 768,
+    html: screen(`<table style="table-layout:fixed;width:300px"><tbody><tr>
+      <td style="width:150px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis" title="Narayanganj Knit Composite Dyeing &amp; Finishing Mills Ltd.">Narayanganj Knit Composite Dyeing &amp; Finishing Mills Ltd.</td>
+      <td>12,500</td></tr></tbody></table>`),
+    expect: ["CUT_TEXT"],
+  },
+  {
+    name: "a name cut with ... inside a link in a table cell, on a phone",
+    width: 390,
+    html: screen(`<table><tbody><tr><td><a href="/p" style="display:inline-flex;max-width:9rem">
+      <span style="overflow:hidden;white-space:nowrap;text-overflow:ellipsis">Extas Apparel Sourcing &amp; Buying House Limited</span></a>
+      </td></tr></tbody></table>`),
+    expect: ["CUT_TEXT"],
+  },
+  {
+    name: "a name cut with ... in a table cell with a tooltip, on a laptop (the pointer shows it)",
+    width: 1366,
+    html: screen(`<table><tbody><tr><td>
+      <div style="max-width:14rem;overflow:hidden;white-space:nowrap;text-overflow:ellipsis" title="Bangladesh Apparel Sourcing &amp; Merchandising International Ltd.">Bangladesh Apparel Sourcing &amp; Merchandising International Ltd.</div>
+      </td></tr></tbody></table>`),
+    expect: [],
+  },
+  {
+    name: "long names that wrap in a table cell, on a phone",
+    width: 390,
+    html: screen(`<div style="overflow-x:auto"><table><thead><tr><th>Order</th><th>Buyer</th><th>Total</th></tr></thead>
+      <tbody><tr><td style="white-space:nowrap">SO-2026-000123</td>
+      <td style="white-space:nowrap"><div style="min-width:10rem;max-width:16rem;white-space:normal;overflow-wrap:break-word">Bangladesh Apparel Sourcing &amp; Merchandising International Ltd.</div></td>
+      <td style="white-space:nowrap">1,25,000.00</td></tr></tbody></table></div>`),
+    expect: [],
+  },
+  {
     name: "lines cut off with a line clamp and a tooltip, on a phone",
     width: 390,
     html: screen(
@@ -135,12 +176,13 @@ const CASES = [
     expect: ["CUT_TEXT"],
   },
   {
+    // v6.4.1 C1: no "..." on a phone, tables included (a tooltip needs a pointer).
     name: "a link in a table cell shown with ... and a tooltip, on a phone",
     width: 390,
     html: screen(
       `<table><thead><tr><th>Buyer</th></tr></thead><tbody><tr><td><a href="/b/1" style="display:block;width:90px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis" title="Northwind Apparel Trading">Northwind Apparel Trading</a></td></tr></tbody></table>`,
     ),
-    expect: [],
+    expect: ["CUT_TEXT"],
   },
   {
     name: "a value marked as cut on purpose (its whole value one tap away), on a phone",

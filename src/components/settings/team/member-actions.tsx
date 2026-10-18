@@ -58,7 +58,7 @@ export function MemberActions({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-60">
-        <DropdownMenuLabel className="truncate text-xs font-normal text-muted-foreground">
+        <DropdownMenuLabel className="text-xs font-normal break-words text-muted-foreground">
           {member.name}
         </DropdownMenuLabel>
         {can.changeRole && (

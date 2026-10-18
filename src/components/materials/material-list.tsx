@@ -94,7 +94,7 @@ export function MaterialList({
               <TableRow key={m.id}>
                 <TableCell className="py-3">
                   <RowLink href={materialsHref.material(m.id)}>{m.code}</RowLink>
-                  <div className="max-w-72 truncate">{m.name}</div>
+                  <div className="max-w-72 min-w-40 break-words whitespace-normal">{m.name}</div>
                   <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[0.8125rem] text-muted-foreground">
                     {m.color && <span>{m.color}</span>}
                     <Flags m={m} />
@@ -103,7 +103,9 @@ export function MaterialList({
                 <TableCell className="text-muted-foreground">
                   {KIND_LABELS[m.kind]}
                   {m.supplier && (
-                    <div className="max-w-48 truncate text-[0.8125rem]">{m.supplier.name}</div>
+                    <div className="max-w-48 min-w-40 text-[0.8125rem] break-words whitespace-normal">
+                      {m.supplier.name}
+                    </div>
                   )}
                 </TableCell>
                 <TableCell

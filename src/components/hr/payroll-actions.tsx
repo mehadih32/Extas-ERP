@@ -474,7 +474,7 @@ function PayDialog({
                           className="size-4 shrink-0 cursor-pointer accent-primary"
                         />
                         <span className="min-w-0">
-                          <span className="block truncate">
+                          <span className="block break-words">
                             {i.employee.name}
                             <span className="text-muted-foreground">
                               {" "}

@@ -200,7 +200,7 @@ export function StockCard({
                         <Where line={line} nameStore={nameStore} />
                       </span>
                       {line.note && (
-                        <span className="block max-w-80 truncate text-[0.8125rem] text-muted-foreground">
+                        <span className="block max-w-80 min-w-40 text-[0.8125rem] break-words whitespace-normal text-muted-foreground">
                           {line.note}
                         </span>
                       )}

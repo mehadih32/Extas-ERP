@@ -324,7 +324,7 @@ export function IntakeForm({ form: data, currency }: { form: IntakeFormData; cur
                   className="inline-flex min-w-0 items-center gap-1.5 text-sm text-primary underline-offset-4 hover:underline"
                 >
                   <PaperclipIcon className="size-4 shrink-0" aria-hidden />
-                  <span className="truncate">{intake.sourceFile.fileName}</span>
+                  <span className="min-w-0 wrap-anywhere">{intake.sourceFile.fileName}</span>
                 </a>
               ) : (
                 <p id="packing-list" className="text-sm text-muted-foreground">

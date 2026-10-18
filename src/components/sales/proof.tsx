@@ -106,7 +106,7 @@ export function ProofDrop({
             />
           )}
           <div className="min-w-0 flex-1 text-sm">
-            <p className="truncate font-medium">{value.file.name}</p>
+            <p className="font-medium wrap-anywhere">{value.file.name}</p>
             <p className="text-[0.8125rem] text-muted-foreground">
               Made smaller: {fileSize(value.originalBytes)} → {fileSize(value.file.size)}
             </p>

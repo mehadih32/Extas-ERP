@@ -440,7 +440,7 @@ export function TermsStaffList({
             <span className="min-w-0 flex-1">
               <Link
                 href={hrHref.employee(r.id)}
-                className="block truncate text-sm font-medium text-primary underline-offset-4 hover:underline"
+                className="block text-sm font-medium break-words text-primary underline-offset-4 hover:underline"
               >
                 {r.name}
               </Link>

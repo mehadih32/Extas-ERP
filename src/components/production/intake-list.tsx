@@ -93,7 +93,9 @@ export function IntakeList({
                   </div>
                 </TableCell>
                 <TableCell>
-                  <div className="max-w-72 truncate">{projectName(d)}</div>
+                  <div className="max-w-72 min-w-40 break-words whitespace-normal">
+                    {projectName(d)}
+                  </div>
                 </TableCell>
                 <TableCell className="text-muted-foreground">
                   {d.warehouse ?? "Not chosen"}

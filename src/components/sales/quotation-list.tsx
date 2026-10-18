@@ -80,7 +80,9 @@ export function QuotationList({
                   </div>
                 </TableCell>
                 <TableCell>
-                  <div className="max-w-64 truncate">{q.buyer.name}</div>
+                  <div className="max-w-64 min-w-40 break-words whitespace-normal">
+                    {q.buyer.name}
+                  </div>
                   <div className="text-[0.8125rem] text-muted-foreground">{q.buyer.code}</div>
                 </TableCell>
                 <TableCell className="hidden text-muted-foreground lg:table-cell">
@@ -175,7 +177,9 @@ export function ProformaList({
                   </div>
                 </TableCell>
                 <TableCell>
-                  <div className="max-w-64 truncate">{p.buyer.name}</div>
+                  <div className="max-w-64 min-w-40 break-words whitespace-normal">
+                    {p.buyer.name}
+                  </div>
                   <div className="text-[0.8125rem] text-muted-foreground">{p.buyer.code}</div>
                 </TableCell>
                 <TableCell>

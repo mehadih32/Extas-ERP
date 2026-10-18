@@ -127,6 +127,7 @@ export function Sidebar({
         <CompanySwitcher
           companies={companies}
           activeCompany={activeCompany}
+          wide
           className="w-full max-w-none justify-start sm:max-w-none md:max-w-none lg:max-w-none [&>span]:flex-1 [&>span]:text-left"
         />
       </div>

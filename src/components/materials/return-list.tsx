@@ -76,11 +76,15 @@ export function ReturnList({
                   </div>
                 </TableCell>
                 <TableCell>
-                  <div className="max-w-56 truncate">{r.supplier?.name}</div>
+                  <div className="max-w-56 min-w-40 break-words whitespace-normal">
+                    {r.supplier?.name}
+                  </div>
                   <div className="text-[0.8125rem] text-muted-foreground">From {r.bill.number}</div>
                 </TableCell>
                 <TableCell>
-                  <div className="max-w-80 truncate text-muted-foreground">{r.reason}</div>
+                  <div className="max-w-80 min-w-40 break-words whitespace-normal text-muted-foreground">
+                    {r.reason}
+                  </div>
                 </TableCell>
                 <TableCell
                   className={cn(

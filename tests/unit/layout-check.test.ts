@@ -117,11 +117,17 @@ describe("The layout checks' rules", () => {
     // A page title, a button or a tab cut with "...": a tooltip does not help on a phone.
     expect(clipsOwnText(dots)).toBe("x");
     expect(clipsOwnText({ ...dots, scrollWidth: 80, scrollHeight: 60, lineClamp: true })).toBe("y");
-    // In a table cell, a long name may end in "..." (its tooltip and its record hold it whole).
-    expect(clipsOwnText({ ...dots, inCell: true })).toBeNull();
-    expect(clipsOwnText({ ...dots, inCell: true, titled: false })).toBe("x");
-    // Marked on purpose (data-layout-cut-ok): the whole value is one tap away.
+    // v6.4.1 C1: on a phone or a tablet a table cell is no exception: a long buyer's,
+    // supplier's or company's name ending in "..." is cut, tooltip or not (no pointer).
+    expect(clipsOwnText({ ...dots, narrow: true, inCell: true })).toBe("x");
+    expect(clipsOwnText({ ...dots, narrow: true, strict: false, inCell: true })).toBe("x");
+    expect(clipsOwnText({ ...dots, narrow: true, strict: false })).toBe("x");
+    // On a laptop, a link in a table cell may end in "..." when its tooltip holds it whole.
+    expect(clipsOwnText({ ...dots, narrow: false, inCell: true })).toBeNull();
+    expect(clipsOwnText({ ...dots, narrow: false, inCell: true, titled: false })).toBe("x");
+    // Marked on purpose (data-layout-cut-ok): the whole value is one tap away, at any width.
     expect(clipsOwnText({ ...dots, cutOk: true, titled: false })).toBeNull();
+    expect(clipsOwnText({ ...dots, narrow: true, cutOk: true, titled: false })).toBeNull();
     // Cut with no "..." at all is cut, even in a table cell or marked.
     expect(clipsOwnText({ ...dots, textOverflow: "clip", inCell: true, cutOk: true })).toBe("x");
   });
@@ -316,6 +322,13 @@ describe("Where the layout checks run", () => {
     expect(yml).toContain("node scripts/full-check/layout-run.mjs");
     expect(yml).toContain("LAYOUT_LOOK=LEGACY");
     expect(yml).toContain("LAYOUT_LOOK=MODERN");
+    // v6.4.1 C1: with long, real-looking names, loaded after the demo data and before the run.
+    const longNames = yml.indexOf("npx tsx scripts/layout-long-names.ts");
+    expect(longNames).toBeGreaterThan(yml.indexOf("npx tsx prisma/demo/seed-demo.ts"));
+    expect(longNames).toBeLessThan(yml.indexOf("node scripts/full-check/layout-run.mjs"));
+    expect(yml).toContain('"scripts/layout-long-names.ts"');
+    // Never the help pictures: those show the owner the demo data as it is.
+    expect(read(".github/workflows/help-pictures.yml")).not.toContain("layout-long-names");
     const pkg = JSON.parse(read("package.json")) as { scripts: Record<string, string> };
     expect(pkg.scripts["layout:check"]).toBe("node scripts/full-check/layout-run.mjs");
   });

@@ -152,9 +152,9 @@ export function ProjectCard({ project, currency }: { project: ProjectCardData; c
           <p className="mt-2 font-serif text-lg leading-snug break-words text-primary">{p.name}</p>
           <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm text-muted-foreground">
             <StageBadge stage={p.stage} />
-            {p.factoryLabel && <span className="min-w-0 truncate">{p.factoryLabel}</span>}
+            {p.factoryLabel && <span className="min-w-0 break-words">{p.factoryLabel}</span>}
             {p.batch && (
-              <span className="min-w-0 truncate" title={p.batch.name}>
+              <span className="min-w-0 break-words" title={p.batch.name}>
                 {p.batch.code}
               </span>
             )}

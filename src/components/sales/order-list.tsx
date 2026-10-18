@@ -97,7 +97,7 @@ export function OrderList({
                   </div>
                 </TableCell>
                 <TableCell>
-                  <div className="max-w-64 truncate">
+                  <div className="max-w-64 min-w-40 break-words whitespace-normal">
                     {buyerName(order.buyer, order.customerName)}
                   </div>
                   {order.shipmentOn && (

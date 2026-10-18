@@ -677,7 +677,7 @@ function ChallanDialog({
                   return (
                     <li key={line.variantId} className="flex items-center justify-between gap-3">
                       <label htmlFor={name} className="min-w-0 text-sm">
-                        <span className="block truncate">
+                        <span className="block break-words">
                           {line.style} · {line.color.name} · {line.size}
                         </span>
                         <span className="text-[0.8125rem] text-muted-foreground">

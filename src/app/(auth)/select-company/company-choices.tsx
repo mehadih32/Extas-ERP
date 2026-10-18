@@ -43,7 +43,7 @@ export function CompanyChoices({
               )}
             >
               <span className="min-w-0">
-                <span className="block truncate font-medium">{company.name}</span>
+                <span className="block font-medium break-words">{company.name}</span>
                 {company.roleName && (
                   <span className="mt-0.5 block text-[0.8125rem] text-muted-foreground">
                     {company.roleName}

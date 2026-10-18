@@ -140,7 +140,7 @@ export default async function ExpensePage({
                       className={`inline-flex max-w-full items-center gap-1.5 ${linkClass}`}
                     >
                       <PaperclipIcon className="size-4 shrink-0" aria-hidden />
-                      <span className="truncate">{e.receipt.fileName}</span>
+                      <span className="min-w-0 wrap-anywhere">{e.receipt.fileName}</span>
                     </a>
                   ) : (
                     "None attached"

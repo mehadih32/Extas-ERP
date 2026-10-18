@@ -338,7 +338,7 @@ export function CollarStep({
                           <div key={s.key} className="grid min-w-0 gap-1">
                             <label
                               htmlFor={id(`p${j}`)}
-                              className="truncate text-[0.8125rem] font-medium"
+                              className="text-[0.8125rem] font-medium break-words"
                             >
                               {s.label || `Group ${j + 1}`}
                             </label>

@@ -35,7 +35,7 @@ export function TopBar({
     <header
       className={cn("sticky top-0 z-40 bg-primary text-primary-foreground print:hidden", className)}
     >
-      <div className="mx-auto flex h-14 w-full max-w-7xl items-center gap-5 px-4 sm:px-6 md:h-16 lg:gap-6 lg:px-8">
+      <div className="mx-auto flex min-h-14 w-full max-w-7xl items-center gap-5 px-4 py-1 sm:px-6 md:min-h-16 lg:gap-6 lg:px-8">
         <Link
           href={ROUTES.home}
           aria-label="Extas ERP, dashboard"

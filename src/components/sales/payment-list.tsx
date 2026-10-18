@@ -80,7 +80,7 @@ export function PaymentList({
                   </div>
                 </TableCell>
                 <TableCell>
-                  <div className="max-w-64 truncate">{who(p)}</div>
+                  <div className="max-w-64 min-w-40 break-words whitespace-normal">{who(p)}</div>
                 </TableCell>
                 <TableCell className="min-w-32 whitespace-normal text-muted-foreground">
                   {againstText(p)}
@@ -88,7 +88,7 @@ export function PaymentList({
                 <TableCell className="hidden lg:table-cell">
                   <div>{METHOD_LABELS[p.method]}</div>
                   {p.reference && (
-                    <div className="max-w-48 truncate text-[0.8125rem] text-muted-foreground">
+                    <div className="max-w-48 min-w-40 text-[0.8125rem] break-words whitespace-normal text-muted-foreground">
                       {p.reference}
                     </div>
                   )}
@@ -197,8 +197,8 @@ export function RefundList({
                     </div>
                   </TableCell>
                   <TableCell>
-                    <div className="max-w-56 truncate">{who(r)}</div>
-                    <div className="max-w-56 truncate text-[0.8125rem] text-muted-foreground">
+                    <div className="max-w-56 min-w-40 break-words whitespace-normal">{who(r)}</div>
+                    <div className="max-w-56 min-w-40 text-[0.8125rem] break-words whitespace-normal text-muted-foreground">
                       {r.reason}
                     </div>
                   </TableCell>

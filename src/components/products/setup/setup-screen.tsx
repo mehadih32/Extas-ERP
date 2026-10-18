@@ -173,7 +173,7 @@ function RowMenu({ label, children }: { label: string; children: React.ReactNode
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
-        <DropdownMenuLabel className="truncate text-xs font-normal text-muted-foreground">
+        <DropdownMenuLabel className="text-xs font-normal break-words text-muted-foreground">
           {label}
         </DropdownMenuLabel>
         {children}

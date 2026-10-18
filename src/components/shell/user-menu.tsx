@@ -91,8 +91,8 @@ export function UserMenu({
               {user.initials}
             </span>
             <span className={cn("min-w-0 flex-1 flex-col", labelClassName)}>
-              <span className="block truncate text-sm font-medium">{user.name}</span>
-              <span className="block truncate text-xs text-primary-foreground/65">
+              <span className="block text-sm font-medium break-words">{user.name}</span>
+              <span className="block text-xs break-words text-primary-foreground/65">
                 {user.roleName}
               </span>
             </span>
@@ -148,9 +148,13 @@ export function UserMenu({
             </>
           )}
           <DropdownMenuLabel className="grid gap-1 py-2.5">
-            <span className="truncate font-serif text-base leading-tight">{user.name}</span>
-            <span className="truncate text-xs font-normal text-muted-foreground">{user.email}</span>
-            <span className="mt-1 truncate text-xs font-normal text-primary">
+            <span className="min-w-0 font-serif text-base leading-tight break-words">
+              {user.name}
+            </span>
+            <span className="min-w-0 text-xs font-normal wrap-anywhere text-muted-foreground">
+              {user.email}
+            </span>
+            <span className="mt-1 min-w-0 text-xs font-normal break-words text-primary">
               {user.roleName} · {companyName}
             </span>
           </DropdownMenuLabel>

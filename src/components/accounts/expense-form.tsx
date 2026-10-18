@@ -381,7 +381,7 @@ export function ExpenseForm({ form: data, currency }: { form: ExpenseFormData; c
         {expense?.receipt && (
           <p className="flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground">
             <PaperclipIcon className="size-4 shrink-0" aria-hidden />
-            <span className="truncate">{expense.receipt.fileName}</span>
+            <span className="min-w-0 wrap-anywhere">{expense.receipt.fileName}</span>
           </p>
         )}
         <Input

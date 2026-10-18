@@ -6,6 +6,11 @@
 # Bengali letters, or a table is empty with no word on what to do next. So the
 # same kind of bug fails here before it can go live.
 #
+# The sample data gets long, real-looking names first (scripts/layout-long-names.ts:
+# "Extas Apparel Sourcing & Buying House Limited", "Bangladesh Apparel Sourcing &
+# Merchandising International Ltd." and so on), so a screen that cuts a name with
+# "..." on a phone or a tablet, in a table or anywhere else, fails here (v6.4.1 C1).
+#
 # It runs on every pull request that changes the screens, on a throwaway database
 # made for the run (nothing here reaches the live site), and by hand from the
 # Actions tab ("Run workflow"). The code is in scripts/full-check/layout.mjs (the
@@ -23,6 +28,7 @@ on:
       - "prisma/**"
       - "scripts/full-check/**"
       - "scripts/layout-session.ts"
+      - "scripts/layout-long-names.ts"
       - ".github/workflows/layout-checks.yml"
   workflow_dispatch:
 
@@ -98,6 +104,9 @@ jobs:
           npx prisma migrate deploy
           npx prisma db seed
           npx tsx prisma/demo/seed-demo.ts
+
+      - name: Long, real-looking names in the sample data
+        run: npx tsx scripts/layout-long-names.ts
 
       - name: Build
         run: npm run build

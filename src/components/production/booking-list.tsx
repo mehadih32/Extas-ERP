@@ -121,9 +121,11 @@ export function BookingList({
                   </div>
                 </TableCell>
                 <TableCell>
-                  <div className="max-w-56 truncate">{b.supplier.name}</div>
+                  <div className="max-w-56 min-w-40 break-words whitespace-normal">
+                    {b.supplier.name}
+                  </div>
                   {(b.title || b.styleRef) && (
-                    <div className="max-w-56 truncate text-[0.8125rem] text-muted-foreground">
+                    <div className="max-w-56 min-w-40 text-[0.8125rem] break-words whitespace-normal text-muted-foreground">
                       {[b.title, b.styleRef].filter(Boolean).join(" · ")}
                     </div>
                   )}

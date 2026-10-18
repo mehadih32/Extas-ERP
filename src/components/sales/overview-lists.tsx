@@ -60,7 +60,7 @@ export function OrderPeekList({
                       <span className="text-sm font-medium">{o.number}</span>
                       <OrderBadge status={o.status} />
                     </span>
-                    <span className="truncate text-[0.8125rem] text-muted-foreground">
+                    <span className="text-[0.8125rem] break-words text-muted-foreground">
                       {o.buyer}
                     </span>
                   </span>

@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /*
  * Order costing (part 7, the v6.2 costing rules): the profit % set per order
- * with no default, the CM fixed per style with the factory, fabric at the
+ * with no default (v6.4.2: at least 10%, no upper limit; a sheet saved under
+ * 10% keeps its figure and reaches 10% when edited), the CM fixed per style with the factory, fabric at the
  * supplier's quoted price per kg beside past booking prices, the buyer's way
  * of paying (TT, bank transfer or LC), and the Order check card, which never
  * declines: only the owner takes or declines the order.
@@ -118,14 +119,14 @@ async function setup() {
 
 type Env = Awaited<ReturnType<typeof setup>>;
 
-/** A sheet in USD at 120 BDT, the owner's 8% profit, 1% source tax and 0.15% bank charges. */
+/** A sheet in USD at 120 BDT, the owner's 10% profit, 1% source tax and 0.15% bank charges. */
 const SHEET = (env: Env, over: Record<string, unknown> = {}) => ({
   title: "Pique polos, spring 2027",
   buyerId: env.buyer.id,
   factoryId: env.roomy.id,
   currency: "USD",
   exchangeRate: "120",
-  profitPercent: "8",
+  profitPercent: "10",
   sourceTaxPercent: "1",
   bankChargePercent: "0.15",
   commissionPercent: "",
@@ -295,18 +296,18 @@ run("Order costing", () => {
     await costing.updateCosting(
       env.merch,
       id,
-      SHEET(env, { profitPercent: "7.5", tradePayment: "TT" }),
+      SHEET(env, { profitPercent: "12.5", tradePayment: "TT" }),
     );
     sheet = await costing.getCosting(env.merch, id);
-    expect(sheet).toMatchObject({ profitPercent: 7.5, tradePayment: "TT" });
+    expect(sheet).toMatchObject({ profitPercent: 12.5, tradePayment: "TT" });
     expect(
       await prisma.auditLog.findFirst({
         where: { entityId: id, action: "UPDATE" },
         orderBy: { createdAt: "asc" },
       }),
-    ).toMatchObject({ summary: expect.stringContaining("profit 7.5%") });
+    ).toMatchObject({ summary: expect.stringContaining("profit 12.5%") });
     // Left out, the order keeps its own way of paying.
-    await costing.updateCosting(env.merch, id, SHEET(env, { profitPercent: "7.5" }));
+    await costing.updateCosting(env.merch, id, SHEET(env, { profitPercent: "12.5" }));
     expect((await costing.getCosting(env.merch, id)).tradePayment).toBe("TT");
 
     // The profit hint shows the buyer's earlier sheets; a new sheet still starts empty.
@@ -314,8 +315,75 @@ run("Order costing", () => {
     const next = await costing.getCosting(env.merch, second.id);
     expect(next.profitPercent).toBeNull();
     expect(next.hints.profit).toEqual([
-      expect.objectContaining({ number, profit: 7.5, decision: null }),
+      expect.objectContaining({ number, profit: 12.5, decision: null }),
     ]);
+  });
+
+  it("takes a profit % of at least 10% with no upper limit, and lifts an old sheet to 10% when edited", async () => {
+    // Below 10% is refused wherever it is set: making, changing, or the profit alone.
+    for (const low of ["9.99", "8", "0", "-5"]) {
+      await expect(
+        costing.createCosting(env.merch, SHEET(env, { profitPercent: low })),
+      ).rejects.toThrow(/Give a profit % of at least 10%\./);
+    }
+    signedIn.ctx = env.merch;
+    const viaScreen = await createCostingAction(SHEET(env, { profitPercent: "9" }));
+    expect(viaScreen.ok).toBe(false);
+    if (!viaScreen.ok) {
+      expect(viaScreen.error.code).toBe("VALIDATION");
+      expect(viaScreen.error.fieldErrors).toMatchObject({
+        profitPercent: ["Give a profit % of at least 10%."],
+      });
+    }
+
+    // No upper limit: 200% is kept (the most a sheet holds is 999.99%).
+    const { id } = await costing.createCosting(env.merch, SHEET(env, { profitPercent: "200" }));
+    expect((await costing.getCosting(env.merch, id)).profitPercent).toBe(200);
+    await costing.setProfitPercent(env.merch, id, { percent: "350" });
+    expect((await costing.getCosting(env.merch, id)).profitPercent).toBe(350);
+    await expect(costing.setProfitPercent(env.merch, id, { percent: "9.5" })).rejects.toThrow(
+      /at least 10%/,
+    );
+    await expect(costing.setProfitPercent(env.merch, id, { percent: "1000" })).rejects.toThrow(
+      /999.99%/,
+    );
+    await costing.setProfitPercent(env.merch, id, { percent: "10" });
+    expect((await costing.getCosting(env.merch, id)).profitNote).toBeNull();
+
+    // A sheet saved at 8% before the rule keeps its 8% and shows a note.
+    const stored = async () =>
+      Number((await prisma.orderCosting.findUniqueOrThrow({ where: { id } })).profitPercent);
+    await prisma.orderCosting.update({ where: { id }, data: { profitPercent: 8 } });
+    const old = await costing.getCosting(env.merch, id);
+    expect(old.profitPercent).toBe(8);
+    expect(old.profitNote).toBe(
+      "Saved at 8% profit, under the 10% minimum. Raise it to at least 10% when you edit it.",
+    );
+    // Reading it, or the owner's decision, does not change it.
+    await costing.decideCosting(env.owner, id, { decision: "TAKE" });
+    expect(await stored()).toBe(8);
+
+    // Any edit must reach 10%: the details as they are, or a style added (or changed, taken off).
+    await expect(
+      costing.updateCosting(
+        env.merch,
+        id,
+        SHEET(env, { profitPercent: "8", title: "Polos, re-costed" }),
+      ),
+    ).rejects.toThrow(/at least 10%/);
+    await expectAppError(
+      costing.saveCostingStyle(env.merch, id, null, POLO),
+      "VALIDATION",
+      /Saved at 8% profit, under the 10% minimum/,
+    );
+    expect(await stored()).toBe(8);
+    await costing.updateCosting(env.merch, id, SHEET(env, { profitPercent: "10" }));
+    expect(await costing.getCosting(env.merch, id)).toMatchObject({
+      profitPercent: 10,
+      profitNote: null,
+    });
+    await costing.saveCostingStyle(env.merch, id, null, POLO);
+    expect((await costing.getCosting(env.merch, id)).styles).toHaveLength(1);
   });
 
   it("costs styles per dozen with the CM fixed per style and no overhead", async () => {
@@ -342,8 +410,8 @@ run("Order costing", () => {
       cm: 14.4, // 1.20 a piece × 12
       direct: 27.6,
       costPerPiece: 2.3,
-      // 27.6 ÷ (1 − 0.0915) ÷ 12
-      priceAtProfit: Number((27.6 / 0.9085 / 12).toFixed(4)),
+      // 27.6 ÷ (1 − 0.1115) ÷ 12
+      priceAtProfit: Number((27.6 / 0.8885 / 12).toFixed(4)),
       buyerProfit: 16.71,
       missing: [],
     });

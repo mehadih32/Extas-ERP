@@ -5,6 +5,12 @@ import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
 import type { CompanyContext } from "@/modules/auth/context";
+import {
+  PROFIT_MAX_MESSAGE,
+  PROFIT_MAX_STORED,
+  PROFIT_MIN_MESSAGE,
+  PROFIT_MIN_PERCENT,
+} from "@/modules/costing/costing-labels";
 import { orderCheck } from "@/modules/costing/costing.service";
 import { readStoredFile } from "@/modules/files/file.service";
 import { sendMail } from "@/modules/mail/mail.service";
@@ -486,7 +492,10 @@ async function profitSet(turn: Turn, ref: string | null, percent: number): Promi
     select: { id: true, number: true, title: true, profitPercent: true },
   });
   if (!sheet) return reply(`I found no costing sheet numbered "${ref}".`);
-  if (!(percent >= 0 && percent <= 80)) return reply("Give a profit % from 0 to 80.");
+  // At least 10%, no upper limit (the sheet holds up to 999.99%); the server checks it again.
+  if (!(percent >= PROFIT_MIN_PERCENT && percent <= PROFIT_MAX_STORED)) {
+    return reply(percent < PROFIT_MIN_PERCENT ? PROFIT_MIN_MESSAGE : PROFIT_MAX_MESSAGE);
+  }
   return reply(`Press Apply to set the profit of ${sheet.number} to ${percent}%.`, {
     type: "change",
     action: "profit.set",

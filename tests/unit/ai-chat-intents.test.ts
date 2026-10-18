@@ -46,6 +46,13 @@ describe("reading the owner's chat commands", () => {
       ref: "CS-2026-0003",
       percent: 12.5,
     });
+    // No upper limit (v6.4.2): three figures are read whole, never "00" out of "200".
+    expect(readIntent("CS-2026-0003 200% profit")).toEqual({
+      kind: "profit.set",
+      ref: "CS-2026-0003",
+      percent: 200,
+    });
+    expect(readIntent("CS-2026-0003 লাভ 150%")).toMatchObject({ kind: "profit.set", percent: 150 });
     expect(readIntent("পুরোনো ড্রাফট বুকিংগুলো মুছে দাও")).toMatchObject({
       kind: "delete",
       oldDraftBookings: true,

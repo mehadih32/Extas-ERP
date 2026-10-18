@@ -434,7 +434,7 @@ run("The bot", () => {
       factoryId: env.mill.id,
       currency: "USD",
       exchangeRate: "120",
-      profitPercent: "8",
+      profitPercent: "10",
       sourceTaxPercent: "",
       bankChargePercent: "",
       commissionPercent: "",
@@ -464,7 +464,7 @@ run("The bot", () => {
     );
     expect(
       (await prisma.orderCosting.findUniqueOrThrow({ where: { id } })).profitPercent?.toString(),
-    ).toBe("8");
+    ).toBe("10");
 
     await telegram(press(OWNER_CHAT, profit!.callback_data));
     await telegram(typed(OWNER_CHAT, "2468"));
@@ -647,7 +647,7 @@ run("The bot", () => {
       factoryId: env.mill.id,
       currency: "USD",
       exchangeRate: "120",
-      profitPercent: "8",
+      profitPercent: "10",
       sourceTaxPercent: "",
       bankChargePercent: "",
       commissionPercent: "",
@@ -675,7 +675,7 @@ run("The bot", () => {
     );
     expect(
       (await prisma.orderCosting.findUniqueOrThrow({ where: { id } })).profitPercent?.toString(),
-    ).toBe("8");
+    ).toBe("10");
     expect((await prisma.aiBotLink.findFirstOrThrow()).pending).toBeNull();
 
     // The PIN typed when nothing asked for it: hidden too, and never sent to the AI.

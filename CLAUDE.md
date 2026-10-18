@@ -67,8 +67,11 @@ places disagree, the newer instruction wins.
 
 ## 3. Business rules (blueprint section 4, v6.2)
 
-- **Profit:** no fixed %. The owner enters profit % per order (costing, quotation, PO or invoice). No default, no
-  floor. Past profit % may be shown as a hint.
+- **Profit:** no fixed %. The owner enters profit % per order (costing, quotation, PO or invoice). No default; at
+  least 10%, no upper limit (a sheet holds up to 999.99%), checked by the server, not only the screen. A sheet saved
+  under 10% before this rule keeps its figure and shows a note; any edit to it (its details or its styles) first
+  raises it to at least 10%. Past profit % may be shown as a hint. The profit % comes off the selling price with the
+  percent lines, so together they stay under 100% for a price to exist.
 - **Office overhead:** not part of costing.
 - **CM:** a fixed price per style per order agreed with the factory (per piece or per dozen). No SMV or
   per-minute maths. Use the CM contract data.
@@ -200,6 +203,8 @@ overwrites a stored total or figure.
 
 ## 9. Decisions log (newest first)
 
+- 2026-10-18 (v6.4.2): profit % per order is at least 10% with no upper limit and still no default; a sheet saved
+  under 10% keeps its figure, shows a note and reaches 10% when it is next edited (section 3).
 - 2026-10-18 (v6.4.1): every release ends with the readiness report (section 1, item 8) after up to 3 rounds
   of fresh whole-ERP reviews; "is anything left?" is answered from a fresh check of the code and the live site.
   After each deploy Bug Guard checks the live ERP once, read-only (no AI unless the owner turned it on), into the

@@ -30,3 +30,29 @@ export function pastCmTerms(h: {
 }
 export const FABRIC_UNIT_LABELS = { KG: "kg", YARD: "yard" } as const;
 export const DECISION_LABELS = { TAKE: "Taken", DECLINE: "Declined" } as const;
+
+/**
+ * The owner's profit % for an order (v6.4.2): at least 10%, no upper limit
+ * (an item can make 200%), and still no default. The sheet stores up to
+ * 999.99%. A sheet saved below 10% before the rule keeps its figure, shows
+ * a note, and reaches 10% when it is next edited.
+ */
+export const PROFIT_MIN_PERCENT = 10;
+export const PROFIT_MAX_STORED = 999.99;
+export const PROFIT_MIN_MESSAGE = `Give a profit % of at least ${PROFIT_MIN_PERCENT}%.`;
+export const PROFIT_MAX_MESSAGE = `At most ${PROFIT_MAX_STORED}%, the most a sheet holds.`;
+
+/** Whether a saved profit % is under the minimum (a sheet saved before the rule). */
+export const profitUnderMinimum = (profit: number | null) =>
+  profit !== null && profit < PROFIT_MIN_PERCENT;
+
+/** The note on a sheet saved under the minimum. */
+export const profitUnderMinimumNote = (profit: number) =>
+  `Saved at ${Number(profit.toFixed(2))}% profit, under the ${PROFIT_MIN_PERCENT}% minimum. Raise it to at least ${PROFIT_MIN_PERCENT}% when you edit it.`;
+
+/**
+ * The profit % and the percent lines come off the selling price, so together
+ * they must stay under 100% for a price to leave them. A profit given "on the
+ * cost" (200% on the cost is three times the cost) is this share of the price.
+ */
+export const shareOfPrice = (onCost: number) => (onCost / (100 + onCost)) * 100;

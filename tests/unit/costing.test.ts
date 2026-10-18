@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { pastCmTerms } from "@/modules/costing/costing-labels";
+import {
+  pastCmTerms,
+  PROFIT_MIN_PERCENT,
+  profitUnderMinimum,
+  profitUnderMinimumNote,
+  shareOfPrice,
+} from "@/modules/costing/costing-labels";
 import {
   type CostLineInput,
   costLine,
@@ -230,5 +236,26 @@ describe("The CM agreed before, beside a style", () => {
       amount: 12,
       per: "PIECE",
     });
+  });
+});
+
+describe("the owner's profit % (v6.4.2): at least 10%, no upper limit", () => {
+  it("marks only a saved figure under 10% (never an empty one) and says what to do", () => {
+    expect(PROFIT_MIN_PERCENT).toBe(10);
+    expect(profitUnderMinimum(null)).toBe(false);
+    expect(profitUnderMinimum(10)).toBe(false);
+    expect(profitUnderMinimum(200)).toBe(false);
+    expect(profitUnderMinimum(9.99)).toBe(true);
+    expect(profitUnderMinimumNote(7.5)).toBe(
+      "Saved at 7.5% profit, under the 10% minimum. Raise it to at least 10% when you edit it.",
+    );
+  });
+
+  it("works a profit on the cost out as its share of the price: 200% on the cost is 66.67%", () => {
+    expect(Number(shareOfPrice(200).toFixed(2))).toBe(66.67);
+    expect(shareOfPrice(100)).toBe(50);
+    // 200% of the price leaves no price; the same 66.67% does: three times the cost.
+    expect(grossUp(30, percents({ profit: 200 }))).toBeNull();
+    expect(grossUp(30, percents({ profit: shareOfPrice(200) }))).toBeCloseTo(90, 6);
   });
 });

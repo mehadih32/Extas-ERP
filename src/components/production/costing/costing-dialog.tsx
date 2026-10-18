@@ -12,13 +12,17 @@ import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import type { ActionError } from "@/lib/result";
-import { TRADE_PAYMENT_LABELS, TRADE_PAYMENTS } from "@/modules/costing/costing-labels";
+import {
+  PROFIT_MIN_PERCENT,
+  TRADE_PAYMENT_LABELS,
+  TRADE_PAYMENTS,
+} from "@/modules/costing/costing-labels";
 import type { CostingScreen } from "@/modules/costing/costing.service";
 import { createCostingAction, updateCostingAction } from "@/server/actions/costing.actions";
 
 /*
  * "New costing" and "Change the details": the order's buyer, factory,
- * currency, the owner's profit % for this order (no default), the percent
+ * currency, the owner's profit % for this order (no default, at least 10%), the percent
  * lines that come off the price, how the buyer pays, and the times the Order
  * check card measures the ship date against.
  */
@@ -155,7 +159,10 @@ export function CostingDialog({
           <Field
             id="costing-profit"
             label="Profit % for this order"
-            hint="Your call for this order. Leave empty until you decide."
+            hint={
+              costing?.profitNote ??
+              `At least ${PROFIT_MIN_PERCENT}%, no upper limit. Your call for this order. Leave empty until you decide.`
+            }
             error={fieldError("profitPercent")}
           >
             <Input

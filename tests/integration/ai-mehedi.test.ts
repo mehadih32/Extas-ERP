@@ -202,7 +202,7 @@ const sheet = (env: Env) =>
     factoryId: env.mill.id,
     currency: "USD",
     exchangeRate: "120",
-    profitPercent: "8",
+    profitPercent: "10",
     sourceTaxPercent: "1",
     bankChargePercent: "0.15",
     commissionPercent: "",
@@ -768,12 +768,12 @@ run("Mehedi 2.0", () => {
     const [profit] = await say(`${number} profit 12.5%`);
     expect(cardOf(profit!)).toMatchObject({
       action: "profit.set",
-      lines: [{ label: "Profit %", before: "8%", after: "12.5%" }],
+      lines: [{ label: "Profit %", before: "10%", after: "12.5%" }],
       params: { costingId: id, percent: 12.5 },
     });
     expect(
       (await prisma.orderCosting.findUniqueOrThrow({ where: { id } })).profitPercent?.toString(),
-    ).toBe("8");
+    ).toBe("10");
     // A price: the PIN must be set first, and given (v6.3).
     await expectAppError(applyCard(env.owner, profit!.id), "VALIDATION", /^Set your PIN first/);
     await setPin(env.owner, { pin: "1357" });
@@ -790,6 +790,17 @@ run("Mehedi 2.0", () => {
     expect(
       (await prisma.orderCosting.findUniqueOrThrow({ where: { id } })).profitPercent?.toString(),
     ).toBe("12.5");
+
+    // At least 10%, no upper limit (v6.4.2): 5% is refused, 200% is offered.
+    const [low] = await say(`${number} profit 5%`);
+    expect(low!.text).toBe("Give a profit % of at least 10%.");
+    expect(cardOf(low!)).toBeNull();
+    const [high] = await say(`${number} 200% profit`);
+    expect(cardOf(high!)).toMatchObject({
+      action: "profit.set",
+      params: { costingId: id, percent: 200 },
+    });
+    await cancelCard(env.owner, high!.id);
 
     // The Order check card for the sheet: he shows it, the owner decides.
     const [check] = await say(`${number} কস্টিং`);

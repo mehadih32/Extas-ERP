@@ -133,6 +133,11 @@ export default async function CostingSheetPage({
                 </Fact>
               )}
             </dl>
+            {c.profitNote && (
+              <p className="mt-4 text-[0.8125rem] text-amber-700 dark:text-amber-400">
+                {c.profitNote}
+              </p>
+            )}
             {c.hints.profit.length > 0 && (
               <p className="mt-4 text-[0.8125rem] text-muted-foreground">
                 Your profit % on this buyer&apos;s last sheets:{" "}

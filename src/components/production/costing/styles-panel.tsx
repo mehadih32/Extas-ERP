@@ -13,7 +13,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { formatDay } from "@/lib/display";
-import { CM_PER_LABELS, FABRIC_UNIT_LABELS, pastCmTerms } from "@/modules/costing/costing-labels";
+import {
+  CM_PER_LABELS,
+  FABRIC_UNIT_LABELS,
+  pastCmTerms,
+  shareOfPrice,
+} from "@/modules/costing/costing-labels";
 import type { CostingScreen, FabricPrices } from "@/modules/costing/costing.service";
 import {
   fabricPricesAction,
@@ -41,6 +46,14 @@ export function StylesPanel({ screen }: { screen: CostingScreen }) {
   const [editing, setEditing] = useState<Style | "new" | null>(null);
   const [removing, setRemoving] = useState<Style | null>(null);
   const { styles, sheet, currency, can } = screen;
+  // The profit % and the percent lines come off the price: 100% or more leaves no price.
+  const taken =
+    screen.profitPercent === null
+      ? null
+      : screen.profitPercent +
+        screen.sourceTaxPercent +
+        screen.bankChargePercent +
+        screen.commissionPercent;
 
   return (
     <Panel
@@ -172,6 +185,13 @@ export function StylesPanel({ screen }: { screen: CostingScreen }) {
             : amountOf(sheet.valueAtProfit, currency)}
         </Part>
       </dl>
+      {taken !== null && taken >= 100 && screen.profitPercent !== null && (
+        <p className="mt-3 text-[0.8125rem] text-amber-700 dark:text-amber-400">
+          No price can leave {pct(screen.profitPercent)} profit: the profit % and the percent lines
+          come off the selling price, so together they stay under 100%. {pct(screen.profitPercent)}{" "}
+          on the cost is {pct(shareOfPrice(screen.profitPercent))} of the price.
+        </p>
+      )}
 
       {editing && (
         <StyleDialog

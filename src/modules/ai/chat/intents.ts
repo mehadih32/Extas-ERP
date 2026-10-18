@@ -209,7 +209,7 @@ export function readIntent(raw: string): Intent {
   }
 
   const profit = N(
-    /(?:profit|প্রফিট|লাভ)\D{0,20}?(\d{1,2}(?:\.\d{1,2})?)\s*%|(\d{1,2}(?:\.\d{1,2})?)\s*%\s*(?:profit|প্রফিট|লাভ)/i,
+    /(?:profit|প্রফিট|লাভ)\D{0,20}?(\d{1,3}(?:\.\d{1,2})?)\s*%|(?<![\d.])(\d{1,3}(?:\.\d{1,2})?)\s*%\s*(?:profit|প্রফিট|লাভ)/i,
   ).exec(text);
   if (profit) {
     return { kind: "profit.set", ref: refIn(text), percent: Number(profit[1] ?? profit[2]) };

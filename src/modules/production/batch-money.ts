@@ -136,29 +136,30 @@ export function cmSettlementMath(args: {
 
 /**
  * Why a fault of the factory's is left off its CM settlement, or null when it
- * belongs to the CM work (missing pieces, quality and sewing faults...). A fault
- * about material the factory supplied is not the CM work: a short at receive is
- * already left off that material bill (the bill is for what came), and a fabric
- * fault, or any fault named on a material or a bill, is settled on the material's
- * bill, never taken off the CM again.
+ * belongs to the CM work (missing pieces, quality and sewing faults, holes in
+ * our own fabric...). Only a fault on material the factory itself supplied is
+ * left out: one found on its own material bill (a short at receive is already
+ * off that bill, which is for what came), or about a material it sold for this
+ * batch or its styles. That is settled on the material's bill, never taken off
+ * the CM again. Every other fault, a fabric fault on fabric we bought from
+ * someone else included, stays the CM work.
  */
 export function notCmWork(f: {
   kind: string;
-  bill: { number: string } | null;
-  material: { code: string } | null;
+  /** The bill it was found on, and whether that bill is the factory's own. */
+  bill: { number: string; ofFactory: boolean } | null;
+  /** The material it is about, and whether the factory supplied it for the batch or its styles. */
+  material: { name: string; fromFactory: boolean } | null;
 }): string | null {
-  if (f.kind === "SHORT_RECEIVE") {
-    return f.bill
+  if (f.bill?.ofFactory) {
+    return f.kind === "SHORT_RECEIVE"
       ? `Short at receive: already left off its material bill ${f.bill.number}, so it is not charged again`
-      : "Short at receive on material it supplied: not the CM work";
+      : `About material on ${f.bill.number} it supplied: not the CM work, so it is settled on that material bill`;
   }
-  const about = f.material
-    ? `the ${f.material.code} it supplied`
-    : f.kind === "FABRIC_FAULT"
-      ? "fabric it supplied"
-      : null;
-  if (about || f.bill) {
-    return `About ${about ?? `material on ${f.bill!.number}`}: not the CM work, so it is settled on that material bill`;
+  if (f.material?.fromFactory) {
+    return f.kind === "SHORT_RECEIVE"
+      ? `Short at receive on the ${f.material.name} it supplied: not the CM work, so it is settled on that material bill`
+      : `About the ${f.material.name} it supplied: not the CM work, so it is settled on that material bill`;
   }
   return null;
 }

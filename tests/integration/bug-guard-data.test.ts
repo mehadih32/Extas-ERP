@@ -344,10 +344,10 @@ async function world() {
   });
   await faults.createFault(pm, {
     supplierId: factory.id,
-    kind: "QUALITY",
+    kind: "FABRIC_FAULT",
     projectId: polo.id,
     amount: 100,
-    note: "Open seams on two pieces",
+    note: "Holes in two panels",
   });
   // The one reject is inside the allowance: a style with no target price asks
   // for a price per reject only for rejects over it.

@@ -420,10 +420,10 @@ run("The real CM rules: embroidery houses' spoilage and the reject allowance", (
     });
     const fault = await faults.createFault(env.pm, {
       supplierId: env.factory.id,
-      kind: "QUALITY",
+      kind: "FABRIC_FAULT",
       projectId: env.polo.id,
       amount: 100,
-      note: "Open seams on two pieces",
+      note: "Holes in two panels",
     });
     const made = await batchMoney.settleCm(env.pm, env.batch.id, { deductCGrade: false });
     const settled = await due(env.factory.id);

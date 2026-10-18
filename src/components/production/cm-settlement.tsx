@@ -192,7 +192,8 @@ function Deductions({
     <Panel title="Deductions" id="cm-deductions-heading">
       <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
         The factory&apos;s open faults on this batch from the CM work are taken off: missing pieces
-        at the final unit cost, quality faults and any other fault with a value.
+        at the final unit cost, quality faults, faults in fabric we bought elsewhere and any other
+        fault with a value.
         {view.rejectAllowancePercent !== null &&
           ` So are the rejects over the ${view.rejectAllowancePercent}% allowance (sewing faults, bodies ruined attaching accessories), each at the style's target price, or the price per reject when it has none.`}
       </p>
@@ -304,8 +305,8 @@ function Deductions({
         <div className="mt-4">
           <h3 className="text-sm font-medium">Left out: not the CM work</h3>
           <p className="mt-1 text-[0.8125rem] leading-relaxed text-muted-foreground">
-            These faults are about material the factory supplied, so they are not taken off the CM.
-            They stay open in the fault log.
+            These faults are about material the factory itself supplied for this batch, so they are
+            not taken off the CM. They stay open in the fault log.
           </p>
           <ul className="mt-2 divide-y rounded-md border" aria-label="Faults left out">
             {view.leftOut.map((f) => (

@@ -201,10 +201,36 @@ run("v6.4.2: the CM settlement's money rules", () => {
       amount: 100,
       note: "Open seams on two pieces",
     });
+    // Our own body fabric (the factory never sold it): holes found at cutting
+    // are the factory's to answer for, so they still come off the CM.
+    const jersey = await materials.createMaterial(env.pm, {
+      name: "Single Jersey",
+      kind: "FABRIC",
+      unit: "KG",
+    });
+    const ourFabric = await faults.createFault(env.pm, {
+      supplierId: env.factory.id,
+      kind: "FABRIC_FAULT",
+      projectId: env.polo.id,
+      materialId: jersey.id,
+      amount: 150,
+      note: "Holes in two panels",
+    });
+    const noMaterial = await faults.createFault(env.pm, {
+      supplierId: env.factory.id,
+      kind: "FABRIC_FAULT",
+      projectId: env.polo.id,
+      amount: 100,
+      note: "Holes in two panels",
+    });
     await allGood(env);
 
     const draft = (await batchMoney.getCmSettlementScreen(env.pm, env.batch.id)).draft!;
-    expect(draft.faults.map((f) => [f.number, f.amount])).toEqual([[quality.number, "100.00"]]);
+    expect(draft.faults.map((f) => [f.number, f.amount])).toEqual([
+      [quality.number, "100.00"],
+      [ourFabric.number, "150.00"],
+      [noMaterial.number, "100.00"],
+    ]);
     expect(draft.leftOut.map((f) => [f.kind, f.amount])).toEqual([
       ["SHORT_RECEIVE", "500.00"],
       ["FABRIC_FAULT", "200.00"],
@@ -212,11 +238,12 @@ run("v6.4.2: the CM settlement's money rules", () => {
     expect(draft.leftOut[0]!.why).toBe(
       `Short at receive: already left off its material bill ${short.bill!.number}, so it is not charged again`,
     );
+    expect(draft.leftOut[1]!.why).toContain("the Rib 1x1");
     expect(draft.leftOut[1]!.why).toContain("not the CM work");
-    expect(draft.keepC).toMatchObject({ totalCm: "9000.00", deductions: "100.00" });
+    expect(draft.keepC).toMatchObject({ totalCm: "9000.00", deductions: "350.00" });
 
     const made = await batchMoney.settleCm(env.pm, env.batch.id, { deductCGrade: false });
-    expect([made.deducted, made.faults, made.payable]).toEqual(["100.00", 1, "8900.00"]);
+    expect([made.deducted, made.faults, made.payable]).toEqual(["350.00", 3, "8650.00"]);
     // The short stays open in the fault log: it was never the CM's.
     expect((await prisma.supplierFault.findUniqueOrThrow({ where: { id: short.id } })).status).toBe(
       "OPEN",

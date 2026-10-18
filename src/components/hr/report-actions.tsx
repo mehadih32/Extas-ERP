@@ -22,7 +22,7 @@ import {
 import { whatsappHref } from "./contact-links";
 import { hrHref } from "./labels";
 
-/** "Extras - 360 report EMP-0103 Rahim Uddin.pdf" from the download's header. */
+/** "Extas - 360 report EMP-0103 Rahim Uddin.pdf" from the download's header. */
 function fileNameOf(response: Response, fallback: string) {
   const header = response.headers.get("content-disposition") ?? "";
   const encoded = /filename\*=UTF-8''([^;]+)/i.exec(header)?.[1];

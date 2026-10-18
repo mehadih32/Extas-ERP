@@ -94,8 +94,22 @@ places disagree, the newer instruction wins.
   everyone who held the old one. Re-run the seed after adding keys.
 - Secrets never go in the repo, in logs, in command lines or shell history, or in a GitHub issue. `deploy/.env` is
   never committed.
-- Infrastructure names stay "extras" (`extras_erp*` databases, `/opt/extras-erp`, `/srv/extras-erp`, the
-  `extras_session` cookie, the npm package name); everything the owner sees says "Extas ERP".
+- **Names (settled v6.4.1).** Everything the owner, staff or a buyer sees says "Extas ERP" (or the company's own
+  name). Every machine name says "extras": databases and their users (`extras_erp`, `extras_demo`,
+  `extras_erp_test*`; `extras_app`, `extras_demo_app`), folders (`/opt/extras-erp`, `/srv/extras-erp`), Docker
+  project, container, image and volume names, systemd units, cron files (`/etc/cron.d/extras-erp-*`), lock files, the
+  `extras_session` cookie and the npm package names (`extras-erp`, `extras-erp-full-check`, `extras-erp-android`). A
+  new machine name uses "extras" too. Nothing that already exists on a server, in a backup, in Google Drive, in
+  GitHub settings, on a phone or in a browser is ever renamed, so these existing "extas" names stay exactly as they
+  are: the `.extas-erp-data` marker in the data folder; the restore's `/var/log/extas-erp-restore.log`,
+  `/var/lib/extas-erp-restore` and `/run/extas-erp-restore.lock`/`.pid`; the drill's `extas_restore_test_*`
+  databases; the backup file markers `EXTASBK1`/`EXTASPK1` and the `extas-erp ...` key labels (older backups open
+  only with them); the Drive label `extas` on backup files and folders; the Docker label `extas.caddy-build`; the
+  browser keys `extas_sidebar`, `extas.hr.employees.layout`, `extas:install-dismissed` and `extas:duty-changed`; the
+  restore settings `EXTAS_RESTORE`, `EXTAS_RAW_BASE`, `EXTAS_SEARCH_ROOTS`, `EXTAS_MIN_FREE_GB` and
+  `EXTAS_SITE_BASE`; the GitHub variable `EXTAS_APP_URL`; the Android app (`com.extas.erp`, the `extas` key alias,
+  `extas-erp.jks`, the `extas-erp-android-*` downloads and its `EXTAS_*` build settings); and the `extas-erp` Azure
+  names in the restore guide.
 - Third-party integrations (couriers, website sync, WhatsApp sending, marketing sync) come last, behind settings
   that can be filled in later.
 - Tests: `TEST_DATABASE_URL=postgresql://…/extras_erp_test npx vitest run`. Without `TEST_DATABASE_URL` the
@@ -167,6 +181,8 @@ money, or turn off backups or its own checks. Every check, finding, fix, approva
 
 ## 9. Decisions log (newest first)
 
+- 2026-10-18 (v6.4.1): names settled (section 4): machine names say "extras", what people see says "Extas ERP",
+  and nothing that already exists is renamed, so the listed "extas" names stay as they are.
 - 2026-10-17 (v6.4 review): Help pictures may be out of date only on Claude Code fix branches (`claude/issue-*`)
   and on `main`; Bug Guard lists those guides and every release retakes all pictures. A screen's word counts as
   explained only in a guide's `fields` list.

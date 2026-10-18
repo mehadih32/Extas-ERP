@@ -1,19 +1,47 @@
-# The Help Center's automatic pictures (v6.4): one picture of each guide's page, taken
-# on the demo site's sample data, with a red numbered mark on the button or field
-# each step is about. tests/unit/help-guides.test.ts fails when a screen changed
-# and its picture is old, so a pull request that changes a screen also brings its
-# new picture; before every Release PR all of them are taken again. Only Claude
-# Code's fix branches (claude/issue-...) and main may keep old pictures: Bug Guard
-# lists them (scripts/help/list-old-pictures.ts, v6.4 L1).
+# The Help Center's automatic pictures (v6.4, v6.4.1 C2): one picture of each guide,
+# taken on the demo site's sample data, of the part of the page its steps are about,
+# with a red numbered mark on the button or field each step is about.
+# tests/unit/help-guides.test.ts fails when a screen changed and its picture is old,
+# or a picture marks nothing, so a pull request that changes a screen also brings
+# its new picture. Only Claude Code's fix branches (claude/issue-...) may keep old
+# pictures: Bug Guard lists them (scripts/help/list-old-pictures.ts, v6.4 L1).
 #
-# Run it by hand from the Actions tab ("Run workflow") on a branch: it builds the
-# app on a throwaway database with the demo data (nothing here reaches the live or
-# demo site), takes the pictures (every one, or only the old ones) and hands them
-# back as the "help-pictures" download, to commit to that branch. On a computer
-# with the demo data, `ALL=1 npm run help:shots` does the same (scripts/help/plan.ts).
+# It runs by itself on every pull request into main (so on every Release PR) and on
+# every push to main, when the app, its Help or its pictures change. First it checks
+# the pictures (a few minutes, no build). When some are old, or mark nothing, it
+# fails, and a second job builds the app on a throwaway database with the demo data
+# (nothing here reaches the live or demo site), takes those pictures again and hands
+# them back as the "help-pictures" download, to commit to the branch. It never
+# blocks a deploy: the Deploy is a workflow of its own, and its Checks let pictures
+# wait (checks.yml, pictures-may-wait), so an urgent fix still goes live and this
+# workflow shows on main what to take again.
+#
+# By hand from the Actions tab ("Run workflow") on a branch it takes the pictures
+# (every one, or only the old ones). On a computer with the demo data,
+# `ALL=1 npm run help:shots` does the same (scripts/help/plan.ts).
 name: Help pictures
 
 on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "public/help/**"
+      - "scripts/help/**"
+      - "scripts/full-check/help-*.mjs"
+      - "prisma/demo/**"
+      - "tests/unit/help-*.ts"
+      - ".github/workflows/help-pictures.yml"
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "public/help/**"
+      - "scripts/help/**"
+      - "scripts/full-check/help-*.mjs"
+      - "prisma/demo/**"
+      - "tests/unit/help-*.ts"
+      - ".github/workflows/help-pictures.yml"
   workflow_dispatch:
     inputs:
       all:
@@ -29,8 +57,42 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  check:
+    name: Are the Help pictures up to date?
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      old: ${{ steps.old.outputs.old }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Which pictures are old
+        id: old
+        run: |
+          npx tsx scripts/help/list-old-pictures.ts "$RUNNER_TEMP/old.json"
+          echo "old=$(node -e 'console.log(require(process.argv[1]).old.length)' "$RUNNER_TEMP/old.json")" >> "$GITHUB_OUTPUT"
+
+      # The same tests as the Checks: the pictures are up to date and every one has
+      # its numbered marks (a Claude Code fix branch may still wait).
+      - name: The pictures' tests
+        run: npx vitest run tests/unit/help-guides.test.ts tests/unit/help-pictures-old.test.ts tests/unit/help-marks.test.ts
+
   pictures:
     name: Take the Help Center's pictures
+    needs: check
+    if: >-
+      always() && (github.event_name == 'workflow_dispatch' ||
+      (needs.check.outputs.old != '' && needs.check.outputs.old != '0'))
     runs-on: ubuntu-latest
     timeout-minutes: 75
     services:
@@ -116,6 +178,9 @@ jobs:
           npm install --no-package-lock --no-audit --no-fund
           npx playwright install --with-deps chromium
 
+      - name: The pictures tool's own test
+        run: node scripts/full-check/help-shots-selftest.mjs
+
       - name: Take the pictures
         run: |
           LAYOUT_SESSION_FILE="$RUNNER_TEMP/session" npx tsx scripts/layout-session.ts
@@ -123,7 +188,8 @@ jobs:
           npm run help:shots
         env:
           SITE: http://localhost:3000
-          ALL: ${{ inputs.all && '1' || '' }}
+          # By hand: every picture, or the old ones; by itself: the old ones.
+          ALL: ${{ github.event_name == 'workflow_dispatch' && inputs.all && '1' || '' }}
 
       - uses: actions/upload-artifact@v4
         if: always()

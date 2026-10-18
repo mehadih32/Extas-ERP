@@ -1,5 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 
+import { AppError } from "@/lib/errors";
+
 import type { ProviderId, ReadModel } from "./providers";
 
 /*
@@ -12,7 +14,14 @@ import type { ProviderId, ReadModel } from "./providers";
  * reads each provider's list of models, for AI Center > Models.
  *   OPENAI_BASE_URL (https://api.openai.com/v1) and GEMINI_BASE_URL
  *   (https://generativelanguage.googleapis.com/v1beta) point elsewhere only in tests.
+ * A restore drill copy (test mode) never calls a provider (refuseOnDrill).
  */
+
+/** No provider call from a restore drill copy (backups/standby.ts): a plain reason instead. */
+export async function refuseOnDrill() {
+  const { DRILL_NO_AI, onDrill } = await import("@/modules/backups/standby");
+  if (await onDrill()) throw new AppError("UNAVAILABLE", DRILL_NO_AI);
+}
 
 /** A provider's own refusal or failure, with its HTTP status (0: not reached). */
 export class ProviderError extends Error {
@@ -438,6 +447,7 @@ async function send(
 export type ProviderCall = { apiKey: string; body: Body; timeoutMs: number };
 
 export async function callOpenAI({ apiKey, body, timeoutMs }: ProviderCall) {
+  await refuseOnDrill();
   const json = await send("openai", `${openaiBase()}/chat/completions`, {
     headers: { authorization: `Bearer ${apiKey}` },
     body: toOpenAI(body),
@@ -447,6 +457,7 @@ export async function callOpenAI({ apiKey, body, timeoutMs }: ProviderCall) {
 }
 
 export async function callGemini({ apiKey, body, timeoutMs }: ProviderCall) {
+  await refuseOnDrill();
   const json = await send(
     "google",
     `${geminiBase()}/models/${encodeURIComponent(body.model)}:generateContent`,
@@ -469,6 +480,7 @@ export async function listModels(
   apiKey: string,
   timeoutMs = 20_000,
 ): Promise<ReadModel[]> {
+  await refuseOnDrill();
   if (provider === "anthropic") {
     const client = new Anthropic({ apiKey, maxRetries: 1, timeout: timeoutMs });
     const out: ReadModel[] = [];

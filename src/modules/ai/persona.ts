@@ -10,8 +10,9 @@ import { aiSettingsOf } from "./settings.service";
  * Who Mehedi 2.0 is, for every call that speaks as him: the rules that never
  * change (v6.2), the books the work needs (K1 and X26 always), and the House
  * Rules the owner approved. The books come first and are marked for the
- * prompt cache, so asking again soon costs a tenth; the House Rules and today's
- * date come after them.
+ * prompt cache, so asking again soon costs a tenth of input or less (a
+ * twentieth on Opus 5.5 and Sonnet 5.5); the House Rules and today's date come
+ * after them.
  */
 
 const HOUSE_RULE_SCOPES = { ALL: "everything", BUYER: "buyer", BRAND: "brand", ITEM: "item" };

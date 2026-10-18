@@ -26,6 +26,14 @@ async function call<T>(
   body?: unknown,
   okStatuses: number[] = [],
 ): Promise<Answer<T>> {
+  // A restore drill copy (test mode) and a copy on standby after a restore only
+  // read: no issue, branch, merge or workflow. Those are for the ERP in use.
+  if (method !== "GET") {
+    const { DRILL_NOT_SENT, onDrill, onStandby, STANDBY_NOT_DONE } =
+      await import("@/modules/backups/standby");
+    if (await onDrill()) throw new AppError("UNAVAILABLE", DRILL_NOT_SENT);
+    if (await onStandby()) throw new AppError("UNAVAILABLE", STANDBY_NOT_DONE);
+  }
   let response: Response;
   try {
     response = await fetch(`${API()}${path}`, {
@@ -85,8 +93,111 @@ type Repo = {
   permissions?: { admin?: boolean; push?: boolean; pull?: boolean };
 };
 
-/** What the token can do on the repository, in plain notes. */
-export async function testGitHub(gh: GitHub): Promise<{ ok: boolean; notes: string[] }> {
+/** The settings of the "Protect main" ruleset (Help: Full check, step 4), by GitHub's rule name. */
+const LOCK_RULES = [
+  ["pull_request", "Require a pull request before merging"],
+  ["non_fast_forward", "Block force pushes"],
+  ["deletion", "Restrict deletions"],
+] as const;
+
+export const LOCK_MAIN_FIRST = "Lock main first";
+
+type BranchRule = { type: string; ruleset_id?: number };
+type Ruleset = {
+  enforcement?: string;
+  /** Only for a token that may change rulesets (GitHub hides it from the Help's token). */
+  bypass_actors?: unknown[];
+  /** Whether the token's own account may skip the ruleset: "always", "pull_requests_only", "never". */
+  current_user_can_bypass?: string;
+};
+type Protection = {
+  required_pull_request_reviews?: unknown;
+  allow_force_pushes?: { enabled?: boolean };
+  allow_deletions?: { enabled?: boolean };
+  enforce_admins?: { enabled?: boolean };
+};
+
+/**
+ * Whether the main branch is locked on GitHub, so nothing (Claude Code
+ * included) reaches it but a pull request: an active ruleset on main that
+ * requires a pull request, blocks force pushes and restricts deletions, that
+ * the token's own account may not skip and with nobody on its Bypass list; or
+ * the older branch protection set the same way, for admins too. `missing`
+ * says what is not set, in the words of GitHub's ruleset screen.
+ *
+ * GitHub shows the Bypass list only to a token that may change rulesets, and
+ * the Help's token may not (that permission could also take the lock off).
+ * When the list is hidden but GitHub says the token's account cannot skip the
+ * ruleset, main counts as locked and `bypassUnseen` says the list itself was
+ * not seen; when GitHub says neither, it is not confirmed, so not locked.
+ */
+export async function mainLock(
+  gh: GitHub,
+): Promise<{ locked: boolean; missing: string[]; bypassUnseen?: boolean }> {
+  const { data: rules } = await call<BranchRule[]>(
+    gh,
+    "GET",
+    `${repoPath(gh)}/rules/branches/${MAIN}?per_page=100`,
+  );
+  const have = new Set((rules ?? []).map((r) => r.type));
+  const missing: string[] = LOCK_RULES.filter(([type]) => !have.has(type)).map(([, n]) => n);
+  if (missing.length === 0) {
+    // The rulesets that lock it: nobody may skip them.
+    const ids = [...new Set((rules ?? []).flatMap((r) => (r.ruleset_id ? [r.ruleset_id] : [])))];
+    let bypassUnseen = false;
+    for (const id of ids) {
+      const { status, data } = await call<Ruleset>(
+        gh,
+        "GET",
+        `${repoPath(gh)}/rulesets/${id}`,
+        undefined,
+        [403, 404],
+      );
+      const list = status === 200 ? data?.bypass_actors : undefined;
+      const can = status === 200 ? data?.current_user_can_bypass : undefined;
+      if (Array.isArray(list) && list.length > 0) {
+        return { locked: false, missing: ["an empty Bypass list"] };
+      }
+      if (can && can !== "never") {
+        return {
+          locked: false,
+          missing: ["an empty Bypass list (your token's GitHub account can skip the ruleset)"],
+        };
+      }
+      if (!Array.isArray(list) && !can) {
+        return {
+          locked: false,
+          missing: ["an empty Bypass list (the ERP could not check who may skip the ruleset)"],
+        };
+      }
+      if (!Array.isArray(list)) bypassUnseen = true;
+    }
+    return { locked: true, missing: [], ...(bypassUnseen ? { bypassUnseen } : {}) };
+  }
+  // The older branch protection, when the token may read it.
+  const { status, data: p } = await call<Protection>(
+    gh,
+    "GET",
+    `${repoPath(gh)}/branches/${MAIN}/protection`,
+    undefined,
+    [403, 404],
+  );
+  if (
+    status === 200 &&
+    p?.required_pull_request_reviews &&
+    p.allow_force_pushes?.enabled !== true &&
+    p.allow_deletions?.enabled !== true &&
+    p.enforce_admins?.enabled === true
+  ) {
+    return { locked: true, missing: [] };
+  }
+  return { locked: false, missing };
+}
+
+/** What the token can do on the repository, in plain notes; whether main is locked. */
+export async function testGitHub(
+  gh: GitHub,
+): Promise<{ ok: boolean; notes: string[]; mainLocked: boolean }> {
   const { data: repo } = await call<Repo>(gh, "GET", repoPath(gh));
   const notes: string[] = [];
   let ok = true;
@@ -117,8 +228,24 @@ export async function testGitHub(gh: GitHub): Promise<{ ok: boolean; notes: stri
       notes.push(`The ${name} workflow is turned off on GitHub (Actions tab): turn it on.`);
     }
   }
-  return { ok, notes };
+  const lock = await mainLock(gh);
+  if (lock.locked) {
+    notes.push("The main branch is locked: changes reach it only through a pull request.");
+    if (lock.bypassUnseen) {
+      notes.push(
+        "The ERP cannot see the ruleset's Bypass list (GitHub shows it only to a token that may change rulesets). Your token's GitHub account cannot skip it; on GitHub, make sure the Bypass list is empty (Help: Full check, step 4).",
+      );
+    }
+  } else {
+    ok = false;
+    notes.push(lockMainText(lock.missing));
+  }
+  return { ok, notes, mainLocked: lock.locked };
 }
+
+/** Why nothing goes to Claude Code yet, in plain words. */
+export const lockMainText = (missing: string[]) =>
+  `${LOCK_MAIN_FIRST}: nothing goes to Claude Code until the main branch on GitHub has its ruleset (Help: Full check, step 4)${missing.length ? `. Still to set: ${missing.join(", ")}` : ""}. Then press Test the connection.`;
 
 async function defaultBranch(gh: GitHub): Promise<string> {
   return (await call<Repo>(gh, "GET", repoPath(gh))).data.default_branch;

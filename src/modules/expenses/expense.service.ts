@@ -7,6 +7,7 @@ import { nextDocumentNumber } from "@/lib/numbering";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
 import { lockRow } from "@/lib/row-lock";
+import { runTransaction } from "@/lib/transaction";
 import { assertAllowed } from "@/lib/verdict";
 import { money, ZERO } from "@/modules/accounts/balances";
 import { cashAccountFor } from "@/modules/accounts/cash-accounts";
@@ -18,9 +19,9 @@ import {
 import { ensureControlAccounts } from "@/modules/accounts/control-accounts";
 import { postJournalEntry, reverseJournalEntry } from "@/modules/accounts/journal.service";
 import { assertCanPayMoney } from "@/modules/accounts/money-guards";
-import { assertBoxCovers } from "@/modules/accounts/petty-cash-balance";
+import { assertBoxCovers, topUpAdvice } from "@/modules/accounts/petty-cash-balance";
 import { pettyCashBoxForCost } from "@/modules/accounts/petty-cash.service";
-import { settleSupplierBills } from "@/modules/accounts/supplier-settlement";
+import { lockSupplierAccount, settleSupplierBills } from "@/modules/accounts/supplier-settlement";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import {
@@ -506,6 +507,9 @@ async function postDueTx(
   reference?: string | null,
 ) {
   const companyId = ctx.company.id;
+  // The supplier's account before the entry's number (the ERP's lock order; callers that
+  // take a number of their own lock it first too).
+  await lockSupplierAccount(tx, companyId, supplier.id);
   const acc = await ensureControlAccounts(companyId, tx);
   const entry = await postJournalEntry(tx, {
     companyId,
@@ -568,8 +572,10 @@ export async function createExpense(ctx: CompanyContext, raw: unknown, meta?: Re
   const date = input.date ? toInstant(input.date, ctx.company.timezone) : new Date();
   const inBooks = box !== null || postsNow(ctx, input.paymentType);
 
-  const expenseId = await prisma.$transaction(async (tx) => {
-    if (box) await assertBoxCovers(tx, companyId, box, amount);
+  const expenseId = await runTransaction(async (tx) => {
+    // Owed to a supplier: their account first, before the expense's number.
+    if (supplier && inBooks) await lockSupplierAccount(tx, companyId, supplier.id);
+    if (box) await assertBoxCovers(tx, companyId, box, amount, topUpAdvice(ctx));
     const paidFrom = box
       ? box.ledgerAccountId
       : inBooks && input.paymentType === "CASH_BANK"
@@ -632,8 +638,17 @@ export async function createExpense(ctx: CompanyContext, raw: unknown, meta?: Re
   return getExpense(ctx, expenseId);
 }
 
-/** Locks a general expense and re-reads it inside the transaction. */
+/**
+ * Locks a general expense and re-reads it inside the transaction. A Due one's
+ * supplier account is locked first (the ERP's lock order: supplier account
+ * before anything else); an expense's supplier never changes.
+ */
 async function lockExpense(tx: Tx, ctx: CompanyContext, expenseId: string) {
+  const due = await tx.expense.findFirst({
+    where: { id: expenseId, companyId: ctx.company.id, paymentType: "DUE" },
+    select: { supplierId: true },
+  });
+  if (due?.supplierId) await lockSupplierAccount(tx, ctx.company.id, due.supplierId);
   await lockRow(tx, "Expense", expenseId);
   const expense = await tx.expense.findFirst({
     where: { id: expenseId, companyId: ctx.company.id, projectId: null },
@@ -721,7 +736,7 @@ export async function approveExpense(
   assertCanPayMoney(ctx, "Only Accounts can approve expense claims.");
   const input = approveExpenseSchema.parse(raw);
   const date = input.date ? toInstant(input.date, ctx.company.timezone) : new Date();
-  await prisma.$transaction(async (tx) => {
+  await runTransaction(async (tx) => {
     const expense = await lockExpense(tx, ctx, expenseId);
     assertAllowed(canApproveExpense(ctx, expenseState(ctx, expense)));
     const claimant = expense.createdBy?.name;
@@ -802,7 +817,7 @@ export async function voidExpense(
     throw new AppError("FORBIDDEN", "Only Accounts can void expenses.");
   }
   const { reason } = voidExpenseSchema.parse(raw);
-  await prisma.$transaction(async (tx) => {
+  await runTransaction(async (tx) => {
     const expense = await lockExpense(tx, ctx, expenseId);
     // Undoing a cash payment is Accounts' call: the money goes back into the account.
     assertAllowed(canVoidExpense(ctx, expenseState(ctx, expense)));

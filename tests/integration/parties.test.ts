@@ -299,24 +299,30 @@ run("ledger, statements and opening balances", () => {
     });
   });
 
-  it("replaces the opening balance when it is set again", async () => {
+  it("replaces the opening balance when it is set again, reversing the earlier entry", async () => {
     const env = await setup();
     const p = await buyer(env.ctx, "Reset Buyer");
     await ledger.setOpeningBalance(env.ctx, p.id, { amount: 5000 });
     const again = await ledger.setOpeningBalance(env.ctx, p.id, { amount: 6000.5 });
     expect(again.balance).toBe("6000.50");
+    // Nothing is deleted: the first entry stays, reversed, next to its mirror and the new one.
     expect(
       await prisma.journalEntry.count({ where: { sourceType: "OPENING_BALANCE", sourceId: p.id } }),
-    ).toBe(1);
+    ).toBe(3);
     expect(
       (await prisma.party.findUnique({ where: { id: p.id } }))!.openingBalance.toFixed(2),
     ).toBe("6000.50");
     const cleared = await ledger.setOpeningBalance(env.ctx, p.id, { amount: 0 });
     expect(cleared.balance).toBe("0.00");
-    expect(await prisma.journalEntry.count({ where: { sourceId: p.id } })).toBe(0);
+    expect(await prisma.journalEntry.count({ where: { sourceId: p.id } })).toBe(4);
+    expect(
+      await prisma.journalEntry.count({
+        where: { sourceId: p.id, isReversed: false, reversalOfId: null },
+      }),
+    ).toBe(0);
   });
 
-  it("books negative openings to Payables for suppliers and Advances for buyers", async () => {
+  it("books negative openings to Payables for suppliers and as credit on Receivable for buyers", async () => {
     const env = await setup();
     const s = await supplier(env.ctx, "Thread Supplier");
     const b = await buyer(env.ctx, "Advance Buyer");
@@ -326,7 +332,8 @@ run("ledger, statements and opening balances", () => {
     const partyLine = (partyId: string) =>
       prisma.journalLine.findFirstOrThrow({ where: { partyId }, include: { account: true } });
     expect((await partyLine(s.id)).account.subType).toBe("ACCOUNTS_PAYABLE");
-    expect((await partyLine(b.id)).account.subType).toBe("CUSTOMER_ADVANCE");
+    // A buyer's advance is their credit on account, like money paid on account.
+    expect((await partyLine(b.id)).account.subType).toBe("ACCOUNTS_RECEIVABLE");
 
     // Every opening voucher balances.
     const lines = await prisma.journalLine.findMany({

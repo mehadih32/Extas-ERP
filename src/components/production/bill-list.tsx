@@ -90,7 +90,9 @@ export function BillList({
                   </div>
                 </TableCell>
                 <TableCell>
-                  <div className="max-w-56 truncate">{bill.supplier?.name}</div>
+                  <div className="max-w-56 min-w-40 break-words whitespace-normal">
+                    {bill.supplier?.name}
+                  </div>
                   {bill.supplierRef && (
                     <div className="text-[0.8125rem] text-muted-foreground">
                       Their no. {bill.supplierRef}
@@ -98,7 +100,9 @@ export function BillList({
                   )}
                 </TableCell>
                 <TableCell>
-                  <div className="max-w-56 truncate text-muted-foreground">{forWhat(bill)}</div>
+                  <div className="max-w-56 min-w-40 break-words whitespace-normal text-muted-foreground">
+                    {forWhat(bill)}
+                  </div>
                 </TableCell>
                 <TableCell className="text-right font-medium whitespace-nowrap tabular-nums">
                   {money(bill.total, currency)}

@@ -3,9 +3,10 @@ import { type AccountType, Prisma } from "@prisma/client";
 import { dayRange, startOfDayInZone, nextDay, toInstant } from "@/lib/dates";
 import type { Db } from "@/lib/db-types";
 import { AppError } from "@/lib/errors";
-import { nextDocumentNumber } from "@/lib/numbering";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
+import { lockRow } from "@/lib/row-lock";
+import { runTransaction } from "@/lib/transaction";
 import { assertAllowed } from "@/lib/verdict";
 import {
   accountTotals,
@@ -25,7 +26,9 @@ import {
   SUBTYPE_TYPE,
 } from "@/modules/accounts/chart";
 import { CONTROL_ACCOUNTS, ensureControlAccounts } from "@/modules/accounts/control-accounts";
+import { postJournalEntry, reverseJournalEntry } from "@/modules/accounts/journal.service";
 import { assertCanManageAccounts } from "@/modules/accounts/money-guards";
+import { liveOpeningEntries, openingDate } from "@/modules/accounts/opening-entry";
 import { canArchiveAccount } from "@/modules/accounts/rules";
 import {
   accountOpeningSchema,
@@ -48,8 +51,8 @@ type Tx = Prisma.TransactionClient;
 
 const accountInclude = {
   bankAccount: { select: { id: true, bankName: true, accountNumber: true, isActive: true } },
-  capitalSource: { select: { id: true, name: true, kind: true } },
-  fixedAsset: { select: { id: true, name: true } },
+  capitalSource: { select: { id: true, name: true, kind: true, voidedAt: true } },
+  fixedAsset: { select: { id: true, name: true, voidedAt: true } },
   pettyCashBox: { select: { id: true, name: true } },
 } satisfies Prisma.LedgerAccountInclude;
 
@@ -149,13 +152,14 @@ function presentAccount(
         id: account.bankAccount.id,
         name: `${account.bankAccount.bankName} ${account.bankAccount.accountNumber}`,
       }
-    : account.capitalSource
+    : // A voided source or asset has no page to open any more.
+      account.capitalSource && !account.capitalSource.voidedAt
       ? {
           kind: "CAPITAL_SOURCE" as const,
           id: account.capitalSource.id,
           name: account.capitalSource.name,
         }
-      : account.fixedAsset
+      : account.fixedAsset && !account.fixedAsset.voidedAt
         ? { kind: "FIXED_ASSET" as const, id: account.fixedAsset.id, name: account.fixedAsset.name }
         : account.pettyCashBox
           ? {
@@ -338,46 +342,66 @@ export async function updateAccount(
 
 /**
  * Posts (or replaces) an account's balance brought forward against Opening
- * Balance Equity. `amount` is in the account's normal direction.
+ * Balance Equity. `amount` is in the account's normal direction. Replacing
+ * reverses the earlier opening entry with a mirror entry dated on the earlier
+ * entry's own day (both stay in the books, never deleted, and cancel out in
+ * every report from that day on). Without `asOf` the new one goes on the earlier
+ * entry's day (today when there is none), so no report between go-live and today
+ * loses the opening; the same amount on the same day changes nothing.
  */
 export async function postAccountOpeningTx(
   tx: Tx,
   ctx: CompanyContext,
   account: { id: string; code: string; name: string; type: AccountType },
   amount: Prisma.Decimal,
-  asOf: Date,
+  asOf?: Date,
 ) {
   const companyId = ctx.company.id;
+  // One save at a time per account: a second save waits and then sees the first
+  // one's entry, so two first saves at the same moment never post two openings.
+  await lockRow(tx, "LedgerAccount", account.id);
   const acc = await ensureControlAccounts(companyId, tx);
-  await tx.journalEntry.deleteMany({
-    where: { companyId, sourceType: "OPENING_BALANCE", sourceId: account.id },
-  });
-  if (!amount.isZero()) {
-    const abs = amount.abs();
-    // A positive amount sits on the account's normal side.
-    const accountOnDebit = isDebitNature(account.type) === amount.gt(0);
-    await tx.journalEntry.create({
-      data: {
+  // A positive amount sits on the account's normal side.
+  const signed = isDebitNature(account.type) ? amount : amount.neg();
+  const live = await liveOpeningEntries(tx, companyId, account.id);
+  const date = openingDate(asOf, live, ctx.company.timezone);
+  const unchanged =
+    live.length === (amount.isZero() ? 0 : 1) &&
+    live.every(
+      (entry) =>
+        entry.date.getTime() === date.getTime() &&
+        entry.lines.some(
+          (l) => l.accountId === account.id && l.debit.minus(l.credit).equals(signed),
+        ),
+    );
+  if (!unchanged) {
+    for (const entry of live) {
+      await reverseJournalEntry(tx, entry.id, {
+        description: `Opening balance of ${account.code} ${account.name} replaced`,
+        postedById: ctx.user.id,
+        date: entry.date,
+      });
+    }
+    if (!amount.isZero()) {
+      const abs = amount.abs();
+      await postJournalEntry(tx, {
         companyId,
-        number: await nextDocumentNumber(tx, companyId, "JOURNAL_VOUCHER"),
-        date: asOf,
+        date,
         description: `Opening balance — ${account.code} ${account.name}`,
         sourceType: "OPENING_BALANCE",
         sourceId: account.id,
         postedById: ctx.user.id,
-        lines: {
-          create: accountOnDebit
-            ? [
-                { accountId: account.id, debit: abs },
-                { accountId: acc.OPENING_EQUITY, credit: abs },
-              ]
-            : [
-                { accountId: acc.OPENING_EQUITY, debit: abs },
-                { accountId: account.id, credit: abs },
-              ],
-        },
-      },
-    });
+        lines: signed.gt(0)
+          ? [
+              { accountId: account.id, debit: abs },
+              { accountId: acc.OPENING_EQUITY, credit: abs },
+            ]
+          : [
+              { accountId: acc.OPENING_EQUITY, debit: abs },
+              { accountId: account.id, credit: abs },
+            ],
+      });
+    }
   }
   await tx.ledgerAccount.update({ where: { id: account.id }, data: { openingBalance: amount } });
 }
@@ -394,8 +418,8 @@ export async function setAccountOpeningBalance(
   const block = openingBalanceBlock(account);
   if (block) throw new AppError("VALIDATION", block);
   const amount = money(input.amount);
-  const asOf = input.asOf ? toInstant(input.asOf, ctx.company.timezone) : new Date();
-  await prisma.$transaction(async (tx) => {
+  const asOf = input.asOf ? toInstant(input.asOf, ctx.company.timezone) : undefined;
+  await runTransaction(async (tx) => {
     await postAccountOpeningTx(tx, ctx, account, amount, asOf);
     await auditInCompany(
       ctx,

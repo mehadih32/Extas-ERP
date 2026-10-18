@@ -28,10 +28,11 @@
 //   TINY         readable text smaller than 12 px;
 //   EMPTY_TABLE  a table with no rows that does not say what to do next.
 // Text cut short with "..." (or a line clamp) is cut text on a phone and a tablet (390
-// and 768 px: no pointer shows a tooltip there), and at every width on a button, a
-// link, a tab, a menu item or a heading. It is allowed only in a table cell (with a
-// tooltip that holds the whole text), on an element marked data-layout-cut-ok, and in
-// plain text on a laptop or a large desktop with such a tooltip.
+// and 768 px: no pointer shows a tooltip there), table cells included (v6.4.1: a long
+// buyer's, supplier's or company's name must show whole on a phone), and at every
+// width on a button, a link, a tab, a menu item or a heading. It is allowed only on an
+// element marked data-layout-cut-ok, and on a laptop or a large desktop with a tooltip
+// that holds the whole text: in plain text, or in a table cell.
 // It skips what is hidden on purpose (display:none, visibility:hidden, the sr-only
 // text for screen readers, aria-hidden and inert parts, data-layout-ignore), rows
 // that scroll on purpose with a visible scroll bar (a wide table in its scrolling
@@ -136,15 +137,17 @@ export function isTiny(fontSizePx) {
  * Whether a box cuts its own text: "x" (sideways) or "y" (lines cut off), or null.
  * Text cut short with "..." (text-overflow: ellipsis) or a line clamp is fine only:
  *   - on an element marked data-layout-cut-ok (`cutOk`: the whole value is one tap away);
- *   - in a table cell (`inCell`) with a tooltip that holds the whole text (`titled`);
- *   - with such a tooltip when not `strict`: `strict` is a phone or a tablet, or a
- *     button, link, tab, menu item or heading, where the text must show whole.
+ *   - never otherwise on a phone or a tablet (`narrow`: no pointer shows a tooltip),
+ *     table cells included;
+ *   - on a laptop or a large desktop, with a tooltip that holds the whole text
+ *     (`titled`), in a table cell (`inCell`) or when not `strict` (`strict`: a phone or
+ *     a tablet, or a button, link, tab, menu item or heading, where it must show whole).
  */
 export function clipsOwnText(box) {
   const hides = (o) => o === "hidden" || o === "clip";
   const wide = box.scrollWidth > box.clientWidth + 1;
   const tall = box.scrollHeight > box.clientHeight + 1;
-  const allowed = box.cutOk || (box.titled && (box.inCell || !box.strict));
+  const allowed = box.cutOk || (!box.narrow && box.titled && (box.inCell || !box.strict));
   if (hides(box.overflowX) && wide) {
     return allowed && box.textOverflow === "ellipsis" ? null : "x";
   }
@@ -573,6 +576,7 @@ async function inPage(lib) {
       titled: hasTitle,
       lineClamp,
       strict,
+      narrow: W <= lib.STRICT_UP_TO,
       inCell: Boolean(el.closest(CELL)),
       cutOk: Boolean(el.closest("[data-layout-cut-ok]")),
     });

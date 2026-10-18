@@ -853,13 +853,20 @@ export async function getChallanDocument(ctx: CompanyContext, challanId: string)
           totalCartons: true,
           packedBy: { select: { name: true } },
           party: partyDetails,
+          items: { select: { quantity: true } },
         },
       },
     },
   });
   if (!challan) throw new AppError("NOT_FOUND", "Delivery challan not found.");
+  const totalPieces = challan.items.reduce((s, i) => s + i.quantity, 0);
+  const { items: orderItems, ...order } = challan.order;
+  const orderPieces = orderItems.reduce((s, i) => s + i.quantity, 0);
   return {
     ...challan,
+    order,
+    /** The order's cartons are this challan's only when it carries every piece of the order. */
+    wholeOrder: totalPieces >= orderPieces,
     items: challan.items.map((i) => ({
       sku: i.variant.sku,
       style: i.variant.style.name,
@@ -867,7 +874,7 @@ export async function getChallanDocument(ctx: CompanyContext, challanId: string)
       size: i.variant.size.name,
       quantity: i.quantity,
     })),
-    totalPieces: challan.items.reduce((s, i) => s + i.quantity, 0),
+    totalPieces,
     letterhead: await letterhead(ctx),
   };
 }

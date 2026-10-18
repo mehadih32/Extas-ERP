@@ -402,7 +402,7 @@ function ReviewDialog({
                   key={line.variantId}
                   className="flex items-center justify-between gap-3 rounded-sm px-2 py-1.5 odd:bg-muted/50"
                 >
-                  <span className="min-w-0 truncate">
+                  <span className="min-w-0 wrap-anywhere">
                     {line.sku}
                     {"counted" in line && (
                       <span className="text-muted-foreground">

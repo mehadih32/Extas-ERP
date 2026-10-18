@@ -45,6 +45,9 @@ vi.mock("@/modules/auth/context", async (original) => {
   };
 });
 
+import { GET as projectApprovalRoute } from "@/app/api/production/projects/[projectId]/tech-pack/approval/route";
+import { GET as projectLogoBriefRoute } from "@/app/api/production/projects/[projectId]/tech-pack/logos/[logoId]/brief/route";
+import { GET as projectLogoFileRoute } from "@/app/api/production/projects/[projectId]/tech-pack/logos/[logoId]/file/route";
 import { GET as projectPdfRoute } from "@/app/api/production/projects/[projectId]/tech-pack/route";
 import { GET as projectMeasurementsRoute } from "@/app/api/production/projects/[projectId]/tech-pack/measurements/route";
 import { GET as techPackPdfRoute } from "@/app/api/tech-packs/[techPackId]/pdf/route";
@@ -67,7 +70,7 @@ import * as needs from "@/modules/production/material-need.service";
 import * as projects from "@/modules/production/project.service";
 import * as ai from "@/modules/production/tech-pack-ai.service";
 import * as approval from "@/modules/production/tech-pack-approval.service";
-import { measurementsFile } from "@/modules/production/tech-pack-export";
+import { digitizingBrief, measurementsFile } from "@/modules/production/tech-pack-export";
 import * as files from "@/modules/production/tech-pack-files.service";
 import * as register from "@/modules/production/tech-pack-register.service";
 import { getTechPackScreen } from "@/modules/production/tech-pack-screen.service";
@@ -75,12 +78,16 @@ import * as spec from "@/modules/production/tech-pack-spec.service";
 import { techPackPdf, techPackPdfOf } from "@/modules/production/tech-pack.service";
 import { recordHref } from "@/modules/reminders/links";
 import { DEFAULT_ROLE_PERMISSIONS } from "@/modules/rbac/permissions";
+import { createRole } from "@/modules/rbac/role.service";
 import {
+  approveTechPackOfAction,
   createTechPackAction,
   getProjectTechPackAction,
   getTechPackScreenAction,
   listTechPacksAction,
+  makeChartAction,
   saveToTechPackAction,
+  updateTechPackDetailsAction,
 } from "@/server/actions/tech-pack.actions";
 
 import { claudeMessage } from "../fixtures/claude";
@@ -942,6 +949,154 @@ run("Tech Pack as its own module", () => {
     signedIn.ctx = env.outsider;
     const notTheirs = await saveToTechPackAction({ kind: "TECH_PACK", id }, form);
     expect(!notTheirs.ok && notTheirs.error.code).toBe("NOT_FOUND");
+  });
+
+  it("opens the tech pack to whoever approves it, to read and approve but not change (v6.4.1 C5)", async () => {
+    // A role with only "approve tech packs", and one with only the logo tick.
+    const roleWith = async (
+      name: string,
+      key: "production.techpack.approve" | "production.logo.approve",
+    ) => {
+      const role = await createRole(env.owner, { name, permissions: ["dashboard.view", key] });
+      const user = await makeUser(`${name.toLowerCase().replace(/\W+/g, "-")}@extas.test`);
+      await addToCompany(user.id, env.company.id, role.id);
+      return contextFor(user.id, env.company.id);
+    };
+    const approver = await roleWith("Tech pack approver", "production.techpack.approve");
+    const ticker = await roleWith("Logo approver", "production.logo.approve");
+    const { id } = await fromBrief(env);
+    await register.linkTechPackToProject(env.pm, id, { projectId: env.polo.id });
+
+    // The Tech Pack menu, the list, the page and the old project address open for both.
+    for (const ctx of [approver, ticker]) {
+      expect(visibleNavItems([...ctx.permissions]).map((i) => i.href)).toContain("/tech-packs");
+      signedIn.ctx = ctx;
+      const list = await listTechPacksAction({});
+      expect(list.ok && list.data.rows.map((r) => r.id)).toEqual([id]);
+      expect(list.ok && list.data.can.create).toBe(false);
+      const old = await getProjectTechPackAction(env.polo.id);
+      expect(old.ok && old.data.techPackId).toBe(id);
+    }
+    signedIn.ctx = approver;
+    const opened = await getTechPackScreenAction(id);
+    expect(opened.ok).toBe(true);
+    const screen = opened.ok ? opened.data : null;
+    // Read only: no editing, linking or AI; the approval is theirs.
+    expect(screen!.can).toEqual({ edit: false, ai: false, tick: false, link: false });
+    expect(screen!.approval.can.approve).toBe(true);
+    expect((await getTechPackScreen(approver, id)).techPack.id).toBe(id);
+    // Its PDF, measurement sheet and reference photo open too.
+    const pdf = await techPackPdfRoute(
+      new Request("https://erp.example.test/api/tech-packs/x/pdf"),
+      params({ techPackId: id }),
+    );
+    expect(pdf.status).toBe(200);
+    const sheet = await techPackMeasurementsRoute(
+      new Request("https://erp.example.test/api/tech-packs/x/measurements?format=pdf"),
+      params({ techPackId: id }),
+    );
+    // No chart yet, so there is no sheet to give, but the reader is not refused.
+    expect(sheet.status).toBe(404);
+    const photoId = screen!.references.find((r) => r.file)!.file!.id;
+    await expect(getFileForDownload(approver, photoId)).resolves.toBeTruthy();
+    await expect(getFileForDownload(ticker, photoId)).resolves.toBeTruthy();
+
+    // Changing anything is refused, in the action and in the service.
+    const details = await updateTechPackDetailsAction(id, { title: "Changed" });
+    expect(!details.ok && details.error.code).toBe("FORBIDDEN");
+    const chart = await makeChartAction(id, CHART);
+    expect(!chart.ok && chart.error.code).toBe("FORBIDDEN");
+    await expectAppError(spec.makeChart(approver, id, CHART), "FORBIDDEN");
+    await expectAppError(
+      register.updateTechPackDetails(approver, id, { title: "Changed" }),
+      "FORBIDDEN",
+    );
+    await expectAppError(
+      files.addReference(approver, id, { link: "https://example.com" }),
+      "FORBIDDEN",
+    );
+    const started = await createTechPackAction(new FormData());
+    expect(!started.ok && started.error.code).toBe("FORBIDDEN");
+    expect((await prisma.techPack.findUniqueOrThrow({ where: { id } })).title).toBe(
+      "Nordic polo SS27",
+    );
+
+    // Approving works from the page.
+    const approved = await approveTechPackOfAction(id);
+    expect(approved.ok).toBe(true);
+    expect((await prisma.techPack.findUniqueOrThrow({ where: { id } })).status).toBe("APPROVED");
+
+    // The addresses from before v6.4 open for both too: the PDF, the approval, the
+    // measurement sheet and a logo's brief and machine file.
+    const { id: logoId } = await files.saveLogo(env.pm, id, null, {
+      name: "Chest logo",
+      widthMm: "27",
+    });
+    const old = (path: string) => new Request(`https://erp.example.test/api/production/${path}`);
+    const projectId = env.polo.id;
+    for (const ctx of [approver, ticker]) {
+      signedIn.ctx = ctx;
+      expect((await projectPdfRoute(old("tech-pack"), params({ projectId }))).status).toBe(200);
+      expect((await projectApprovalRoute(old("approval"), params({ projectId }))).status).toBe(200);
+      // No chart and no machine file yet: nothing to give, but the reader is not refused.
+      expect(
+        (await projectMeasurementsRoute(old("measurements"), params({ projectId }))).status,
+      ).toBe(404);
+      expect(
+        (await projectLogoBriefRoute(old("brief"), params({ projectId, logoId }))).status,
+      ).toBe(200);
+      expect((await projectLogoFileRoute(old("file"), params({ projectId, logoId }))).status).toBe(
+        404,
+      );
+    }
+    // The style's materials list and making notes still change with production.manage only,
+    // in the service as well as the action.
+    await expectAppError(needs.setMaterialNeeds(approver, env.polo.id, { needs: [] }), "FORBIDDEN");
+    await expectAppError(
+      needs.setTechPackNotes(approver, env.polo.id, { notes: "Mine" }),
+      "FORBIDDEN",
+    );
+
+    // The logo approver reads it and ticks logos, but cannot approve or change it.
+    signedIn.ctx = ticker;
+    const theirs = await getTechPackScreenAction(id);
+    expect(theirs.ok && theirs.data.can).toEqual({
+      edit: false,
+      ai: false,
+      tick: true,
+      link: false,
+    });
+    expect(theirs.ok && theirs.data.approval.can).toEqual({ lock: false, approve: false });
+    await expectAppError(approval.approveTechPackOf(ticker, id), "FORBIDDEN");
+
+    // Someone with neither (sales) still cannot open it.
+    signedIn.ctx = env.sales;
+    const refused = await getTechPackScreenAction(id);
+    expect(!refused.ok && refused.error.code).toBe("FORBIDDEN");
+    await expectAppError(register.listTechPacks(env.sales, {}), "FORBIDDEN");
+    await expectAppError(getFileForDownload(env.sales, photoId), "FORBIDDEN");
+    const salesSheet = await techPackMeasurementsRoute(
+      new Request("https://erp.example.test/api/tech-packs/x/measurements?format=pdf"),
+      params({ techPackId: id }),
+    );
+    expect(salesSheet.status).toBe(403);
+    for (const [route, path, at] of [
+      [projectPdfRoute, "tech-pack", { projectId }],
+      [projectApprovalRoute, "approval", { projectId }],
+      [projectMeasurementsRoute, "measurements", { projectId }],
+      [projectLogoBriefRoute, "brief", { projectId, logoId }],
+      [projectLogoFileRoute, "file", { projectId, logoId }],
+    ] as const) {
+      const response = await (
+        route as (r: Request, c: { params: Promise<object> }) => Promise<Response>
+      )(old(path), params(at));
+      expect(response.status, path).toBe(403);
+    }
+    // The services check who reads too, not only the addresses.
+    await expectAppError(techPackPdf(env.sales, env.polo.id), "FORBIDDEN");
+    await expectAppError(measurementsFile(env.sales, id, "pdf"), "FORBIDDEN");
+    await expectAppError(digitizingBrief(env.sales, id, logoId), "FORBIDDEN");
+    await expectAppError(files.logoMachineFile(env.sales, id, logoId, null), "FORBIDDEN");
   });
 
   it("changes a tech pack's details and logs them", async () => {

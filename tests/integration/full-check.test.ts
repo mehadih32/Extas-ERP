@@ -27,6 +27,7 @@ import { ZodError } from "zod";
 
 import { hashSessionToken } from "@/lib/auth/token";
 import { AppError } from "@/lib/errors";
+import { resetRateLimits } from "@/lib/rate-limit";
 import { prisma } from "@/lib/prisma";
 import {
   askClaudeCode,
@@ -186,6 +187,120 @@ run("Full check and Claude Code", () => {
     await expectAppError(startFullCheck(env.owner), "VALIDATION", /Connect GitHub first/);
     const audits = await prisma.auditLog.findMany({ where: { entityType: "AiSettings" } });
     expect(audits.map((a) => a.summary).join("\n")).not.toContain(gh.token);
+  });
+
+  it("shows Lock main first, and starts no Claude Code work, until main on GitHub is locked (v6.4.1 B1)", async () => {
+    await connect();
+    // The test button allows a few presses a minute; this test presses it often.
+    const tested = () => {
+      resetRateLimits();
+      return testGitHubConnection(env.owner);
+    };
+    const notes = async () => (await tested()).notes.join("\n");
+    // Locked as the Help says: deletions and force pushes blocked, pull requests only. The
+    // Help's token may not see the Bypass list (GitHub shows it only to a token that may change
+    // rulesets), but GitHub says the token's account cannot skip it: the screen says what it
+    // could not see.
+    expect(await tested()).toMatchObject({ ok: true });
+    expect(await notes()).toMatch(/The main branch is locked/);
+    expect(await notes()).toMatch(
+      /cannot see the ruleset's Bypass list.*make sure the Bypass list is empty/,
+    );
+    expect((await getFullCheck(env.owner)).github.mainLocked).toBe(true);
+    // A Bypass list the token may read, and empty: nothing more to say.
+    gh.state.rulesetBypass = [];
+    expect(await notes()).not.toMatch(/Bypass list/);
+    gh.state.rulesetBypass = null;
+
+    // No ruleset on main: not ready, and nothing goes to Claude Code.
+    gh.state.mainRules = [];
+    const not = await tested();
+    expect(not.ok).toBe(false);
+    expect(not.notes.join("\n")).toMatch(/Lock main first/);
+    expect((await getFullCheck(env.owner)).github.mainLocked).toBe(false);
+    await expectAppError(
+      askClaudeCode(env.owner, { text: "Add a button to print the packing list twice." }),
+      "VALIDATION",
+      /Lock main first/,
+    );
+    expect(gh.state.issues).toHaveLength(0);
+
+    // A ruleset that still lets a push or a deletion through is not a lock.
+    gh.state.mainRules = ["pull_request"];
+    const half = await notes();
+    expect(half).toMatch(/Lock main first/);
+    expect(half).toMatch(/Block force pushes/);
+    expect(half).toMatch(/Restrict deletions/);
+    gh.state.mainRules = ["deletion", "non_fast_forward"];
+    expect(await notes()).toMatch(/Require a pull request before merging/);
+    // Someone on its Bypass list could still push to main.
+    gh.state.mainRules = ["deletion", "non_fast_forward", "pull_request"];
+    gh.state.rulesetBypass = [{ actor_type: "RepositoryRole" }];
+    expect(await notes()).toMatch(/Lock main first.*an empty Bypass list/);
+    await expectAppError(
+      askClaudeCode(env.owner, { text: "Add a button to print the packing list twice." }),
+      "VALIDATION",
+      /Lock main first/,
+    );
+    // The token's own account may skip it, though the list itself is hidden: not a lock.
+    gh.state.rulesetBypass = null;
+    for (const can of ["always", "pull_requests_only"] as const) {
+      gh.state.currentUserCanBypass = can;
+      const skip = await tested();
+      expect(skip.ok).toBe(false);
+      expect(skip.notes.join("\n")).toMatch(
+        /Lock main first.*your token's GitHub account can skip/,
+      );
+      expect((await getFullCheck(env.owner)).github.mainLocked).toBe(false);
+    }
+    // GitHub says nothing about who may skip it, or the ruleset cannot be read: not confirmed,
+    // so not a lock, and the screen says so.
+    gh.state.currentUserCanBypass = null;
+    expect(await notes()).toMatch(/Lock main first.*could not check who may skip/);
+    await expectAppError(
+      askClaudeCode(env.owner, { text: "Add a button to print the packing list twice." }),
+      "VALIDATION",
+      /Lock main first/,
+    );
+    gh.state.currentUserCanBypass = "never";
+    gh.state.rulesetHidden = true;
+    expect(await notes()).toMatch(/Lock main first.*could not check who may skip/);
+    gh.state.rulesetHidden = false;
+    expect(await tested()).toMatchObject({ ok: true });
+
+    // The older branch protection, set the same way, locks it too.
+    gh.state.mainRules = [];
+    gh.state.classicProtection = {
+      required_pull_request_reviews: { required_approving_review_count: 0 },
+      allow_force_pushes: { enabled: false },
+      allow_deletions: { enabled: false },
+      enforce_admins: { enabled: true },
+    };
+    expect(await tested()).toMatchObject({ ok: true });
+    gh.state.classicProtection = {
+      ...gh.state.classicProtection,
+      allow_force_pushes: { enabled: true },
+    };
+    expect(await notes()).toMatch(/Lock main first/);
+
+    // The server asks GitHub itself each time, whatever the last test said.
+    gh.state.classicProtection = null;
+    gh.state.mainRules = ["deletion", "non_fast_forward", "pull_request"];
+    expect((await tested()).ok).toBe(true);
+    gh.state.mainRules = [];
+    await expectAppError(
+      askClaudeCode(env.owner, { text: "Add a button to print the packing list twice." }),
+      "VALIDATION",
+      /Lock main first/,
+    );
+    expect((await getFullCheck(env.owner)).github.mainLocked).toBe(false);
+    expect(gh.state.issues).toHaveLength(0);
+    gh.state.mainRules = ["deletion", "non_fast_forward", "pull_request"];
+    const asked = await askClaudeCode(env.owner, {
+      text: "Add a button to print the packing list twice.",
+    });
+    expect(gh.state.issues.map((i) => i.number)).toEqual([asked.issueNumber]);
+    expect((await getFullCheck(env.owner)).github.mainLocked).toBe(true);
   });
 
   it("opens a check once, only with the pass and GitHub's proof from main, with its own check account per role", async () => {
@@ -581,7 +696,14 @@ run("Full check and Claude Code", () => {
     gh.state.checks[pull.head.sha] = [
       { name: "Tests and build", status: "completed", conclusion: "failure" },
     ];
-    expect(await look()).toMatchObject({ checks: "failed", retries: 1 });
+    // Main is not locked any more: Claude Code is not asked again until it is (v6.4.1 B1).
+    gh.state.mainRules = [];
+    const unlocked = await look();
+    expect(unlocked).toMatchObject({ checks: "failed", retries: 0 });
+    expect(unlocked.note).toMatch(/Lock main first/);
+    expect(gh.state.comments).toHaveLength(0);
+    gh.state.mainRules = ["deletion", "non_fast_forward", "pull_request"];
+    expect(await look()).toMatchObject({ checks: "failed", retries: 1, note: null });
     expect(gh.state.comments).toEqual([{ number: pull.number, body: FIX_CHECKS_COMMENT }]);
     await look();
     expect(gh.state.comments).toHaveLength(1);

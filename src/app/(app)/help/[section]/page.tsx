@@ -4,7 +4,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { guideCount, HELP_ICONS, helpHref, NOT_IN_ROLE } from "@/components/help/labels";
-import { articleOpen, findHelpSection, sectionOpen } from "@/modules/help";
+import { articleOpen, findHelpSection, sectionOpen, shownArticles } from "@/modules/help";
 import { requireCompanyPage } from "@/server/pages/guards";
 
 type Params = Promise<{ section: string }>;
@@ -22,6 +22,9 @@ export default async function HelpSectionPage({ params }: { params: Params }) {
   if (!section) notFound();
   const Icon = HELP_ICONS[section.id] ?? ChevronRightIcon;
   const open = sectionOpen(section, permissions);
+  // A guide of a page only the platform owner opens is not listed for anyone else.
+  const owner = ctx.user.isSuperAdmin;
+  const guides = shownArticles(section, permissions, owner);
 
   return (
     <div className="grid grid-cols-1 gap-8">
@@ -48,7 +51,7 @@ export default async function HelpSectionPage({ params }: { params: Params }) {
               {section.description}
             </p>
             <p lang="bn" className="flex flex-wrap gap-x-3 text-sm text-muted-foreground">
-              {guideCount(section.articles.length)}
+              {guideCount(guides.length)}
               {!open && (
                 <span className="inline-flex items-center gap-1">
                   <LockIcon className="size-3.5" aria-hidden />
@@ -60,7 +63,7 @@ export default async function HelpSectionPage({ params }: { params: Params }) {
         </div>
       </header>
       <ol aria-label="Guides" className="grid grid-cols-1 gap-2">
-        {section.articles.map((article) => (
+        {guides.map((article) => (
           <li key={article.slug}>
             <Link
               href={helpHref.article(section.id, article.slug)}
@@ -71,7 +74,7 @@ export default async function HelpSectionPage({ params }: { params: Params }) {
                 <span className="text-sm leading-relaxed text-muted-foreground">
                   {article.summary}
                 </span>
-                {open && !articleOpen(article, permissions) && (
+                {open && !articleOpen(article, permissions, owner) && (
                   <span className="mt-1 inline-flex items-center gap-1.5 text-xs text-muted-foreground">
                     <LockIcon className="size-3.5" aria-hidden />
                     {NOT_IN_ROLE}

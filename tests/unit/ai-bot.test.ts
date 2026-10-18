@@ -3,14 +3,17 @@ import { describe, expect, it } from "vitest";
 
 import {
   clip,
+  draftVersion,
   MAX_TEXT,
   readButton,
   renderAnswer,
   renderDeletion,
+  renderDraft,
   renderPermission,
 } from "@/modules/ai/bot/render";
 import { readTelegramUpdate, TELEGRAM_TOKEN } from "@/modules/ai/bot/telegram";
 import { readWhatsAppPayload, whatsappSignatureOk } from "@/modules/ai/bot/whatsapp";
+import { pinCandidates } from "@/modules/ai/pin-tries";
 
 const ID = "cmabc123def456ghi";
 const APP = "https://erp.test";
@@ -132,6 +135,76 @@ describe("Chat answers as bot messages", () => {
       { kind: "deletion", requestId: ID, approve: true },
       { kind: "deletion", requestId: ID, approve: false },
     ]);
+  });
+
+  it("puts the draft's version on its Send button, and it changes when the draft does (v6.4.1)", () => {
+    const draft = {
+      draftId: ID,
+      subject: "PO 4501",
+      to: "orders@nordicwear.test",
+      party: "Nordic Wear AB",
+      forBuyer: true,
+      body: "Hello",
+    };
+    const version = draftVersion(draft);
+    expect(version).toMatch(/^[a-f0-9]{12}$/);
+    const [send, discard] = renderDraft(draft).buttons.flat();
+    expect(send!.data).toBe(`sd:${ID}:${version}`);
+    expect(Buffer.byteLength(send!.data)).toBeLessThanOrEqual(64);
+    expect(readButton(send!.data)).toEqual({ kind: "send", draftId: ID, version });
+    expect(readButton(discard!.data)).toEqual({ kind: "discard", draftId: ID });
+    for (const changed of [
+      { ...draft, body: "Hello again" },
+      { ...draft, subject: "PO 4502" },
+      { ...draft, to: "other@nordicwear.test" },
+    ]) {
+      expect(draftVersion(changed)).not.toBe(version);
+    }
+    expect(readButton(`dd:${ID}:${version}`)).toBeNull();
+    expect(readButton(`sd:${ID}:XYZ`)).toBeNull();
+  });
+
+  it("leaves out only numbers inside document codes; a PIN with a hyphen or a Bengali ending is checked (v6.4.1)", () => {
+    // Clearly part of a document number: capital letters before, or joined to more digits.
+    expect(pinCandidates("CS-2026-0001 status")).toEqual([]);
+    expect(pinCandidates("PO4501 and INV2026 and SO/2026/0112 and LOT_4455")).toEqual([]);
+    expect(pinCandidates("ship on 18/10/2026 or 2026-10-18")).toEqual([]);
+    // Anything else could be the PIN.
+    expect(pinCandidates("my pin is 2468, ok?")).toEqual(["2468"]);
+    expect(pinCandidates("PIN:2468")).toEqual(["2468"]);
+    expect(pinCandidates("PO 4501 is late, ship 2468.")).toEqual(["4501", "2468"]);
+    expect(pinCandidates("123 and 123456789")).toEqual([]);
+    expect(pinCandidates("send 4321ই")).toEqual(["4321"]);
+    expect(pinCandidates("অর্ডার4501 আর 4321টা")).toEqual(["4501", "4321"]);
+    expect(pinCandidates("it is 2468ok")).toEqual(["2468"]);
+    // The word PIN (any case) or পিন: every number is checked, codes too.
+    expect(pinCandidates("my PIN-4321")).toEqual(["4321"]);
+    expect(pinCandidates("পিন 4321ই")).toEqual(["4321"]);
+    expect(pinCandidates("Pin for CS-2026-0001")).toEqual(["2026", "0001"]);
+    expect(pinCandidates("PIN4321")).toEqual(["4321"]);
+    // Not the word PIN inside another word.
+    expect(pinCandidates("shipping CS-2026-0001, spinning PO4501")).toEqual([]);
+  });
+
+  it("checks every number after a word starting with pin or pass, OTP or code (v6.4.1 review 4)", () => {
+    expect(pinCandidates("PINCODE4321")).toEqual(["4321"]);
+    expect(pinCandidates("pincode: AB-4321")).toEqual(["4321"]);
+    expect(pinCandidates("PASS4321")).toEqual(["4321"]);
+    expect(pinCandidates("pass 4321")).toEqual(["4321"]);
+    expect(pinCandidates("PASSCODE-4321")).toEqual(["4321"]);
+    expect(pinCandidates("password LOT_4455")).toEqual(["4455"]);
+    expect(pinCandidates("OTP4321")).toEqual(["4321"]);
+    expect(pinCandidates("my otp is SO/2026")).toEqual(["2026"]);
+    expect(pinCandidates("Code: AB-4321")).toEqual(["4321"]);
+    expect(pinCandidates("CODE2026-0001")).toEqual(["2026", "0001"]);
+    expect(pinCandidates("পাসওয়ার্ড AB-4321")).toEqual(["4321"]);
+    expect(pinCandidates("কোড AB-4321")).toEqual(["4321"]);
+    // Real document codes stay out when no such word is there.
+    expect(pinCandidates("PO4501, CS-2026, SO/2026, LOT_4455, 2026-0001")).toEqual([]);
+    // Not inside another word.
+    expect(
+      pinCandidates("barcode PO4501, bypass CS-2026, compass LOT_4455, topper SO/2026"),
+    ).toEqual([]);
   });
 
   it("reads every button code back and nothing else", () => {

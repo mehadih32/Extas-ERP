@@ -154,6 +154,14 @@ export async function sendMail(
     entityType: options.entityType ?? null,
     entityId: options.entityId ?? null,
   };
+  // A restore drill copy (test mode) sends no email; the log says so.
+  const { DRILL_NOT_SENT, onDrill } = await import("@/modules/backups/standby");
+  if (await onDrill()) {
+    await prisma.notificationLog
+      .create({ data: { ...log, status: "FAILED", error: DRILL_NOT_SENT } })
+      .catch(() => undefined);
+    throw new AppError("UNAVAILABLE", DRILL_NOT_SENT);
+  }
   try {
     const sent = await sender(config, mail);
     await prisma.notificationLog.create({

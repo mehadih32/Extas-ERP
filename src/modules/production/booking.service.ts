@@ -626,6 +626,17 @@ async function prepareLines(ctx: CompanyContext, input: Input) {
     const unit = material?.unit ?? l.unit!;
     const label = material ? material.code : l.name!;
     const role: LineRole = l.specs.role ?? (kind === "FABRIC" ? "FABRIC" : "TRIM");
+    // Fabric counts as fabric and nothing else does (as the form offers): a trim
+    // booked as fabric would skip the wait of collar, cuff and trims for the tech pack.
+    if ((role === "FABRIC") !== (kind === "FABRIC")) {
+      throw new AppError(
+        "VALIDATION",
+        kind === "FABRIC"
+          ? `${label}: a fabric item counts as fabric, not as a ${role.toLowerCase()}.`
+          : `${label}: only a fabric item counts as fabric; book it as a collar, cuff or trim.`,
+        { [`lines.${i}.role`]: ["Fabric counts as fabric only"] },
+      );
+    }
     const specs = compactSpecs({ ...l.specs, role });
     if ((role === "COLLAR" || role === "CUFF") && collar && unit !== "PCS" && unit !== "SET") {
       throw new AppError(

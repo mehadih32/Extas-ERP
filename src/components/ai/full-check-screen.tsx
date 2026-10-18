@@ -92,6 +92,8 @@ export function FullCheckScreen({ check: c }: { check: Check }) {
     });
 
   const unsent = c.problems.filter((p) => !p.request).length;
+  // Claude Code works only once main is locked on GitHub (the server checks it again each time).
+  const canSend = c.github.connected && c.github.mainLocked === true;
 
   return (
     <div className="grid gap-6">
@@ -130,6 +132,7 @@ export function FullCheckScreen({ check: c }: { check: Check }) {
           {!c.github.connected && (
             <p className="text-muted-foreground">Connect GitHub below first.</p>
           )}
+          {c.github.connected && c.github.mainLocked !== true && <LockMainFirst />}
           {c.going && (
             <div className="flex flex-wrap items-center gap-2">
               <StatusBadge tone="open">
@@ -162,7 +165,7 @@ export function FullCheckScreen({ check: c }: { check: Check }) {
                 type="button"
                 size="sm"
                 variant="outline"
-                disabled={pending || !c.github.connected}
+                disabled={pending || !canSend}
                 onClick={() =>
                   run(
                     () => sendFixAction({ runId: shown.id }),
@@ -188,7 +191,7 @@ export function FullCheckScreen({ check: c }: { check: Check }) {
                   key={p.id}
                   problem={p}
                   pending={pending}
-                  connected={c.github.connected}
+                  connected={canSend}
                   onFix={() =>
                     run(
                       () => sendFixAction({ problemIds: [p.id] }),
@@ -251,7 +254,8 @@ export function FullCheckScreen({ check: c }: { check: Check }) {
 
       <AskPanel
         pending={pending}
-        connected={c.github.connected}
+        connected={canSend}
+        locked={!c.github.connected || c.github.mainLocked === true}
         onAsk={(text, clear) =>
           startTransition(async () => {
             const result = await askClaudeCodeAction({ text });
@@ -533,13 +537,30 @@ function ProblemRow({
   );
 }
 
+/** Shown until GitHub says main is locked: Claude Code waits for it. */
+function LockMainFirst() {
+  return (
+    <div className="grid gap-1 rounded-md border border-amber-300 bg-amber-50 p-3 text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
+      <p className="font-medium">Lock main first</p>
+      <p>
+        Nothing goes to Claude Code until the main branch on GitHub has its ruleset, so changes
+        reach it only through a pull request (Help: Full check, step 4). Then press Test the
+        connection below.
+      </p>
+    </div>
+  );
+}
+
 function AskPanel({
   pending,
   connected,
+  locked,
   onAsk,
 }: {
   pending: boolean;
   connected: boolean;
+  /** False while main on GitHub is not locked yet. */
+  locked: boolean;
   onAsk: (text: string, clear: () => void) => void;
 }) {
   const [text, setText] = useState("");
@@ -554,6 +575,7 @@ function AskPanel({
           What you write becomes a GitHub issue that anyone who can see the repository reads. Leave
           out buyer names, prices, phone numbers and other business data.
         </p>
+        {!locked && <LockMainFirst />}
         <Field id="ask-claude-code" label="What should Claude Code build or change?">
           <Textarea
             id="ask-claude-code"

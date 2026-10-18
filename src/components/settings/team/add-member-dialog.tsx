@@ -52,6 +52,7 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export function AddMemberDialog({
   roles,
   canEditPermissions,
+  lockedPermissions = [],
   companyName,
   onClose,
   onAdded,
@@ -60,6 +61,8 @@ export function AddMemberDialog({
   roles: TeamRole[];
   /** Whether the matrix step comes after the details (company.roles.manage). */
   canEditPermissions: boolean;
+  /** Permissions only a Super Admin may give: their boxes stay locked. */
+  lockedPermissions?: readonly PermissionKey[];
   companyName: string;
   onClose: () => void;
   onAdded: (added: AddedMember) => void;
@@ -159,6 +162,7 @@ export function AddMemberDialog({
               roleName={role.name}
               roleKeys={roleKeys}
               selected={selected}
+              locked={new Set(lockedPermissions)}
               onChange={(next) => {
                 setError(undefined);
                 setSelected(next);

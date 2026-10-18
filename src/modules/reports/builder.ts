@@ -18,12 +18,16 @@ import {
   profitFigures,
 } from "@/modules/accounts/reports.service";
 import type { CompanyContext } from "@/modules/auth/context";
+import { registrationNumbers } from "@/modules/companies/letterhead";
 import { canSeeFinancials, canSeeSalesAmounts, canSeeStock } from "@/modules/dashboard/access";
 import { RECENT_DAYS, stockWindow } from "@/modules/dashboard/insights.service";
 import {
+  marginPct,
   salesByBucket,
   salesByChannel,
+  salesReturnTotals,
   salesTotals,
+  sharePct,
   type TopSeller,
   topSellers,
 } from "@/modules/dashboard/sales-figures";
@@ -33,6 +37,7 @@ import {
   lowStock,
   type SkuStock,
 } from "@/modules/dashboard/stock-figures";
+import { registrationLines } from "@/modules/documents/builders";
 import { METRIC_INFO, type ReportMetricKey } from "@/modules/reports/catalog";
 import {
   formatAmount,
@@ -92,8 +97,6 @@ const DAILY_UP_TO = 62;
 const amount = (d: Prisma.Decimal) => d.toFixed(2);
 const percentOf = (part: Prisma.Decimal, whole: Prisma.Decimal) =>
   whole.isZero() ? null : part.dividedBy(whole).times(100).toFixed(1);
-const ratio = (part: number, whole: number) =>
-  whole === 0 ? null : ((part / whole) * 100).toFixed(1);
 
 type Ledger = {
   accounts: AccountInfo[];
@@ -135,10 +138,13 @@ function cur(b: Build, label: string) {
 // =============================================================================
 
 async function summarySection(b: Build): Promise<ReportSection> {
-  const [{ accounts, period, position }, sales] = await Promise.all([
+  const [{ accounts, period, position }, sales, returned] = await Promise.all([
     b.ledger(),
     salesTotals(b.companyId, b.range),
+    salesReturnTotals(b.companyId, b.range),
   ]);
+  // The invoices' own value, before the goods that came back.
+  const invoiced = sales.net.plus(returned.net);
   const f = profitFigures(accounts, period);
   const at = (pick: (a: AccountInfo) => boolean) => sumOf(accounts, position, pick);
   const finishedGoods = at((a) => a.subType === "INVENTORY");
@@ -223,13 +229,16 @@ async function summarySection(b: Build): Promise<ReportSection> {
     sheet: "Invoices",
     columns: countColumns,
     rows: [
-      { cells: ["Invoices issued", sales.orders, amount(sales.net)] },
+      { cells: ["Invoices issued", sales.orders, amount(invoiced)] },
+      ...(returned.returns > 0
+        ? [{ cells: ["Sales returns", returned.returns, amount(returned.net.negated())] }]
+        : []),
       { cells: ["Pieces sold", sales.pieces, null] },
       {
         cells: [
           "Average invoice (goods value)",
           null,
-          sales.orders === 0 ? null : amount(sales.net.dividedBy(sales.orders)),
+          sales.orders === 0 ? null : amount(invoiced.dividedBy(sales.orders)),
         ],
       },
     ],
@@ -262,7 +271,7 @@ async function summarySection(b: Build): Promise<ReportSection> {
     figures,
     tables: [periodTable, activityTable, positionTable],
     notes: [
-      "Money figures come from the books. Sales are after discounts, without delivery charges or VAT.",
+      "Money figures come from the books. Sales are after discounts and sales returns, without delivery charges or VAT.",
     ],
   };
 }
@@ -282,13 +291,15 @@ function buckets(b: Build, unit: "day" | "month"): string[] {
 
 async function salesSection(b: Build): Promise<ReportSection> {
   const unit = daysBetweenInclusive(b.period.from, b.period.to) <= DAILY_UP_TO ? "day" : "month";
-  const [totals, byBucket, byChannel] = await Promise.all([
+  const [totals, byBucket, byChannel, returned] = await Promise.all([
     salesTotals(b.companyId, b.range),
     salesByBucket(b.companyId, b.range, b.tz, unit),
     salesByChannel(b.companyId, b.range),
+    salesReturnTotals(b.companyId, b.range),
   ]);
   const found = new Map(byBucket.map((r) => [r.bucket, r]));
   // Every day (or month) so far, plus any later one with sales (an invoice dated ahead).
+  // A day's figures are its invoices less the goods that came back that day.
   const keys = [...new Set([...buckets(b, unit), ...found.keys()])].sort();
   const trendRows: ReportRow[] = keys.map((key) => {
     const r = found.get(key);
@@ -305,7 +316,7 @@ async function salesSection(b: Build): Promise<ReportSection> {
       c.orders,
       c.pieces,
       amount(c.net),
-      percentOf(c.net, totals.net),
+      sharePct(c.net, totals.net),
     ],
   }));
   if (channelRows.length > 0) {
@@ -315,21 +326,26 @@ async function salesSection(b: Build): Promise<ReportSection> {
         totals.orders,
         totals.pieces,
         amount(totals.net),
-        totals.net.isZero() ? null : "100.0",
+        sharePct(totals.net, totals.net),
       ],
       style: "total",
     });
   }
 
   const notes = [
-    "Invoiced sales on their invoice date, after discounts, without delivery charges or VAT. Void invoices and cancelled orders are left out.",
+    "Invoiced sales on their invoice date, less sales returns on the day the goods came back, after discounts, without delivery charges or VAT. Void invoices, void returns and cancelled orders are left out.",
   ];
+  if (returned.returns > 0) {
+    notes.push(
+      `Sales returns in this period: ${returned.returns} credit ${returned.returns === 1 ? "note" : "notes"}, ${formatAmount(returned.pieces, 0, b.currency)} pieces, ${formatAmount(returned.net, 2, b.currency)} taken off.`,
+    );
+  }
   if (canSeeFinancials(b.ctx)) {
     const { accounts, period } = await b.ledger();
     const books = sumOf(accounts, period, (a) => a.subType === "SALES");
     if (!books.equals(totals.net)) {
       notes.push(
-        `The books show ${formatAmount(books, 2, b.currency)} in sales for this period. The difference comes from invoices voided after the period, or earlier invoices voided during it.`,
+        `The books show ${formatAmount(books, 2, b.currency)} in sales for this period. The difference comes from invoices or sales returns voided after the period, earlier ones voided during it, or entries made straight to the Sales account.`,
       );
     }
   }
@@ -344,7 +360,10 @@ async function salesSection(b: Build): Promise<ReportSection> {
       { label: "Pieces sold", value: totals.pieces, kind: "int" },
       {
         label: "Average invoice",
-        value: totals.orders === 0 ? null : amount(totals.net.dividedBy(totals.orders)),
+        value:
+          totals.orders === 0
+            ? null
+            : amount(totals.net.plus(returned.net).dividedBy(totals.orders)),
         kind: "money",
       },
     ],
@@ -495,7 +514,7 @@ async function topSellersSection(b: Build): Promise<ReportSection> {
 
   const moneyColumns = (r: TopSeller): Array<string | null> => [
     ...(sales ? [amount(r.net), r.pieces > 0 ? amount(r.net.dividedBy(r.pieces)) : null] : []),
-    ...(costs ? [percentOf(r.net.minus(r.cost), r.net)] : []),
+    ...(costs ? [marginPct(r.net, r.cost)] : []),
   ];
   const moneyHeads: ReportColumn[] = [
     ...(sales
@@ -531,7 +550,7 @@ async function topSellersSection(b: Build): Promise<ReportSection> {
         r.colorName,
         r.sizeName,
         r.pieces,
-        ratio(r.pieces, totals.pieces),
+        sharePct(r.pieces, totals.soldPieces),
         ...moneyColumns(r),
         ...stockCell(r),
       ],
@@ -558,7 +577,7 @@ async function topSellersSection(b: Build): Promise<ReportSection> {
         r.styleName,
         r.skus,
         r.pieces,
-        ratio(r.pieces, totals.pieces),
+        sharePct(r.pieces, totals.soldPieces),
         ...moneyColumns(r),
         ...stockCell(r),
       ],
@@ -574,7 +593,7 @@ async function topSellersSection(b: Build): Promise<ReportSection> {
       ? [
           {
             label: "Gross margin",
-            value: percentOf(totals.net.minus(totals.cost), totals.net),
+            value: marginPct(totals.net, totals.cost),
             kind: "percent" as const,
             hint: "Estimated from the goods' costs",
           },
@@ -582,7 +601,7 @@ async function topSellersSection(b: Build): Promise<ReportSection> {
       : []),
   ];
   const notes = [
-    `Pieces on invoices dated in the period (void invoices left out). Order discounts are shared across each order's lines by value.${stock ? ' "In stock" is sellable stock now.' : ""}`,
+    `Pieces on invoices dated in the period (void invoices left out), less the pieces that came back in it (sales returns). Share is each one's pieces out of all pieces invoiced in the period, before returns. Order discounts are shared across each order's lines by value.${stock ? ' "In stock" is sellable stock now.' : ""}`,
   ];
   if (costs) {
     notes.push(
@@ -771,6 +790,7 @@ export async function buildReport(
 
   const sections: ReportSection[] = [];
   for (const key of request.metrics) sections.push(await SECTIONS[key](b));
+  const registrations = registrationLines(await registrationNumbers(company.id));
 
   return {
     title: request.title,
@@ -784,6 +804,7 @@ export async function buildReport(
       primaryColor: company.primaryColor,
       accentColor: company.accentColor,
       currency: company.currency,
+      registrations,
     },
     period: {
       period: period.period,

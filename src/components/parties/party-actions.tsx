@@ -255,6 +255,7 @@ export function PartyActions({
         <OpeningBalanceDialog
           party={party}
           current={screen.money.openingBalance}
+          asOf={screen.money.openingAsOf}
           currency={currency}
           onClose={close}
           onSaved={(balance) => {

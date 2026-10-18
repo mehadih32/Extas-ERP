@@ -217,6 +217,7 @@ model Company {
   houseRules            HouseRule[]
   mailSettings          CompanyMailSettings?
   aiBotLinks            AiBotLink[]
+  aiPinTries            AiPinTry[]
   aiBotMessages         AiBotMessage[]
   aiOrderRuns           AiOrderRun[]
   aiStaffUpdates        AiStaffUpdate[]
@@ -244,7 +245,10 @@ model User {
   lastLoginAt        DateTime?
   lastCompanyId      String? // remembers the company switcher selection
   failedLoginCount   Int        @default(0)
-  lockedUntil        DateTime? // temporary lockout after repeated failed logins
+  lockedUntil        DateTime? // no longer set (v6.4.1): wrong passwords slow down one place, never the account
+  /// The emailed unlock link (sign-in screen): its token's hash, and until when it works (once).
+  unlockTokenHash    String?    @unique
+  unlockTokenUntil   DateTime?
   passwordChangedAt  DateTime?
   mustChangePassword Boolean    @default(false) // set for invited users with a temporary password
   createdAt          DateTime   @default(now())
@@ -355,6 +359,7 @@ model User {
   houseRulesDecided   HouseRule[]            @relation("HouseRuleDecidedBy")
   mailSettingsSet     CompanyMailSettings[]  @relation("MailSettingsUpdatedBy")
   aiBotLinksOwned     AiBotLink[]            @relation("AiBotLinkOwner")
+  aiBotLinkCodes      AiBotLink[]            @relation("AiBotLinkCodeOwner")
   aiBotLinksSet       AiBotLink[]            @relation("AiBotLinkUpdatedBy")
   aiOrderRunsMade     AiOrderRun[]           @relation("AiOrderRunCreatedBy")
   aiOrderRunsDecided  AiOrderRun[]           @relation("AiOrderRunDecidedBy")
@@ -885,6 +890,10 @@ model BadStockEntry {
   salesReturnItemId String?        @unique
   journalEntryId    String?        @unique
   createdAt         DateTime       @default(now())
+  /// Set when the sales return it came from was voided: the line stays (with
+  /// opposite stock movements) but no longer counts as rejects.
+  voidedAt          DateTime?
+  voidReason        String?
 
   company         Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
   variant         ProductVariant   @relation(fields: [variantId], references: [id])
@@ -3131,6 +3140,10 @@ model FixedAsset {
   disposalAmount     Decimal?           @db.Decimal(14, 2) // sale proceeds (0 when scrapped)
   notes              String?
   createdAt          DateTime           @default(now())
+  /// Set when it was entered by mistake and voided: its entries are reversed and
+  /// it leaves the register, but the row stays.
+  voidedAt           DateTime?
+  voidReason         String?
 
   company       Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
   ledgerAccount LedgerAccount? @relation(fields: [ledgerAccountId], references: [id], onDelete: SetNull)
@@ -3155,6 +3168,10 @@ model CapitalSource {
   status          CapitalStatus     @default(ACTIVE)
   notes           String?
   createdAt       DateTime          @default(now())
+  /// Set when it was added by mistake and voided: its entries are reversed and it
+  /// leaves the lists, but the row and its installments stay.
+  voidedAt        DateTime?
+  voidReason      String?
 
   company       Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
   ledgerAccount LedgerAccount?       @relation(fields: [ledgerAccountId], references: [id], onDelete: SetNull)
@@ -4535,6 +4552,11 @@ model BackupConfig {
   /// The monthly drill: day of the month (1 to 28) and time.
   drillDay            Int                 @default(1)
   drillTime           String              @default("04:00")
+  /// The last restore drill on a new server (the restore guide's "Practice: a
+  /// restore drill"), as its drill copy reported it when the owner recorded it:
+  /// { address, startedAt, finishedAt, seconds, backup, records, files, problems,
+  /// screenProblems, https, result, recordedAt }.
+  lastServerDrill     Json?
   /// The restore guide in the Drive backup folder: what it was built from (a
   /// hash) and when, so it is rebuilt each month and whenever it changes.
   guideHash           String?
@@ -6055,25 +6077,37 @@ model AiTestRun {
 /// no list and without a price here is blocked (v6.4 A7). A row without prices
 /// only remembers the day the owner was told such a model is blocked.
 model AiModelPrice {
-  id              String   @id @default(cuid())
-  companyId       String
+  id                  String   @id @default(cuid())
+  companyId           String
   /// The model ("claude-…", "openai:…" or "google:…").
-  model           String
-  provider        String
+  model               String
+  provider            String
   /// Null: not known.
-  inputPerM       Decimal? @db.Decimal(12, 4)
-  outputPerM      Decimal? @db.Decimal(12, 4)
-  cacheReadPerM   Decimal? @db.Decimal(12, 4)
+  inputPerM           Decimal? @db.Decimal(12, 4)
+  outputPerM          Decimal? @db.Decimal(12, 4)
+  cacheReadPerM       Decimal? @db.Decimal(12, 4)
   /// Writing to the provider's prompt cache (v6.4); null: as input (Claude: a quarter more).
-  cacheWritePerM  Decimal? @db.Decimal(12, 4)
+  cacheWritePerM      Decimal? @db.Decimal(12, 4)
   /// Work through the provider's batch service (v6.4); null: as plain work.
-  batchInputPerM  Decimal? @db.Decimal(12, 4)
-  batchOutputPerM Decimal? @db.Decimal(12, 4)
+  batchInputPerM      Decimal? @db.Decimal(12, 4)
+  batchOutputPerM     Decimal? @db.Decimal(12, 4)
+  /// Higher prices for a prompt over `longAbove` tokens (v6.4.1), as on the
+  /// price page; null: the built-in list's long-prompt prices, if it has any.
+  longAbove           Int?
+  longInputPerM       Decimal? @db.Decimal(12, 4)
+  longOutputPerM      Decimal? @db.Decimal(12, 4)
+  longCacheReadPerM   Decimal? @db.Decimal(12, 4)
+  longCacheWritePerM  Decimal? @db.Decimal(12, 4)
+  longBatchInputPerM  Decimal? @db.Decimal(12, 4)
+  longBatchOutputPerM Decimal? @db.Decimal(12, 4)
+  /// Where the owner's price came from (v6.4.1): a link to the price page, or
+  /// "Typed by <name> on <day>" when the owner gave none.
+  source              String?
   /// The company day (YYYY-MM-DD) the owner was last told this model is blocked
   /// for having no price: once a day per model (v6.4).
-  blockedNoticeOn String?
-  updatedById     String?
-  updatedAt       DateTime @updatedAt
+  blockedNoticeOn     String?
+  updatedById         String?
+  updatedAt           DateTime @updatedAt
 
   company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
   updatedBy User?   @relation("AiModelPriceUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
@@ -6341,6 +6375,9 @@ model AiBotLink {
   linkedAt          DateTime?
   linkCodeHash      String?
   linkCodeUntil     DateTime?
+  /// Who asked for the waiting link code: they become the owner only when the
+  /// code is sent from their chat (v6.4.1), so asking alone moves nothing.
+  linkCodeOwnerId   String?
   /// A button pressed that waits for the PIN in the next message.
   pending           Json?
   pendingUntil      DateTime?
@@ -6351,12 +6388,33 @@ model AiBotLink {
 
   company   Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
   owner     User?          @relation("AiBotLinkOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  codeOwner User?          @relation("AiBotLinkCodeOwner", fields: [linkCodeOwnerId], references: [id], onDelete: SetNull)
   updatedBy User?          @relation("AiBotLinkUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
   messages  AiBotMessage[]
 
   @@unique([companyId, channel])
   @@index([webhookKey])
   @@index([channel, botKey])
+}
+
+/// PIN tries counted per person and store (v6.4.1), kept here so a restart
+/// does not start the count again: "PIN" counts wrong PINs (the ERP, the chat
+/// and the bot), "NUMBER" the new numbers the bot checked to hide a PIN typed
+/// by mistake. Only counts and times, never a PIN.
+model AiPinTry {
+  id          String    @id @default(cuid())
+  companyId   String
+  /// The person (the bot's connection while no one is linked).
+  subjectKey  String
+  kind        String
+  windowStart DateTime  @default(now())
+  count       Int       @default(0)
+  /// When the owner was told the limit was hit in this window.
+  alarmedAt   DateTime?
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, subjectKey, kind])
 }
 
 /// Every message in and out of a bot (the bot's log in AI Center > Bot).

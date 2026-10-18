@@ -27,6 +27,15 @@ places disagree, the newer instruction wins.
    report in plain words.
 7. Write to the owner in short, plain sentences. No code words, no ids. Lead with what the owner needs to do, if
    anything.
+8. Every release ends with a readiness report in plain English: a table of every area (Orders and bookings,
+   Costing, Accounts, Stock, Production and CM, Tech Pack, PDFs, Help Center, AI Center and Bug Guard, Bots,
+   Backups and restore, Security, Screens) marked Ready / Ready with small known issues / Not ready with a
+   one-line reason; every known open problem, none hidden, marked Urgent / Important / Can wait; what could not
+   be tested and how the owner can test it; and one line "Ready for daily real use: Yes" or "No, because ...".
+   Before it, fresh reviewers check the whole ERP (not only the diff) for Urgent and Important problems, round
+   after round (at most 3), until a round finds none; each round's findings and fixes are reported.
+9. Whenever the owner asks "is anything left?" (or the like), answer from a fresh check of the code and the live
+   site, never from memory or old notes.
 
 ## 2. Rules that hold everywhere (blueprint section 3)
 
@@ -94,8 +103,22 @@ places disagree, the newer instruction wins.
   everyone who held the old one. Re-run the seed after adding keys.
 - Secrets never go in the repo, in logs, in command lines or shell history, or in a GitHub issue. `deploy/.env` is
   never committed.
-- Infrastructure names stay "extras" (`extras_erp*` databases, `/opt/extras-erp`, `/srv/extras-erp`, the
-  `extras_session` cookie, the npm package name); everything the owner sees says "Extas ERP".
+- **Names (settled v6.4.1).** Everything the owner, staff or a buyer sees says "Extas ERP" (or the company's own
+  name). Every machine name says "extras": databases and their users (`extras_erp`, `extras_demo`,
+  `extras_erp_test*`; `extras_app`, `extras_demo_app`), folders (`/opt/extras-erp`, `/srv/extras-erp`), Docker
+  project, container, image and volume names, systemd units, cron files (`/etc/cron.d/extras-erp-*`), lock files, the
+  `extras_session` cookie and the npm package names (`extras-erp`, `extras-erp-full-check`, `extras-erp-android`). A
+  new machine name uses "extras" too. Nothing that already exists on a server, in a backup, in Google Drive, in
+  GitHub settings, on a phone or in a browser is ever renamed, so these existing "extas" names stay exactly as they
+  are: the `.extas-erp-data` marker in the data folder; the restore's `/var/log/extas-erp-restore.log`,
+  `/var/lib/extas-erp-restore` and `/run/extas-erp-restore.lock`/`.pid`; the drill's `extas_restore_test_*`
+  databases; the backup file markers `EXTASBK1`/`EXTASPK1` and the `extas-erp ...` key labels (older backups open
+  only with them); the Drive label `extas` on backup files and folders; the Docker label `extas.caddy-build`; the
+  browser keys `extas_sidebar`, `extas.hr.employees.layout`, `extas:install-dismissed` and `extas:duty-changed`; the
+  restore settings `EXTAS_RESTORE`, `EXTAS_RAW_BASE`, `EXTAS_SEARCH_ROOTS`, `EXTAS_MIN_FREE_GB` and
+  `EXTAS_SITE_BASE`; the GitHub variable `EXTAS_APP_URL`; the Android app (`com.extas.erp`, the `extas` key alias,
+  `extas-erp.jks`, the `extas-erp-android-*` downloads and its `EXTAS_*` build settings); and the `extas-erp` Azure
+  names in the restore guide.
 - Third-party integrations (couriers, website sync, WhatsApp sending, marketing sync) come last, behind settings
   that can be filled in later.
 - Tests: `TEST_DATABASE_URL=postgresql://…/extras_erp_test npx vitest run`. Without `TEST_DATABASE_URL` the
@@ -119,12 +142,20 @@ places disagree, the newer instruction wins.
 - Every page has a guide route, every menu item a help section, every section an icon. Picture ids are
   `<slug>-<n>`, unique, with Bengali captions. Pictures are taken automatically from demo data.
 - New Bengali text uses Western digits (0-9).
-- Pictures: one per guide, of its own page, with a red numbered mark on what each step is about, taken on the
-  demo site's sample data (`npm run help:shots`, or the "Help pictures" workflow on GitHub). A changed screen
-  brings its new picture in the same PR (the picture test fails on a stale one). Only Claude Code fix branches
-  (`claude/issue-*`) and `main` may keep old pictures, because Claude Code on GitHub cannot take them: Bug Guard
-  lists them under Can wait. Before every Release PR every picture is taken again (`ALL=1 npm run help:shots` on
-  a copy of the demo data, or the workflow with "all").
+- Pictures: one per guide, of the part of its page the steps are about (the guide's `shot.target`, else where
+  the most steps' buttons are; never just the top of a long page), with a red numbered mark on what each step
+  quotes: every picture has marks, and mark n is on a label step n quotes. A record's page uses `shot.route`
+  ("/products/[styleId]"); a guide about something a computer cannot show on the demo data says why in
+  `shot.none` and has no picture. Taken on the demo site's sample data (`npm run help:shots`, or the "Help
+  pictures" workflow on GitHub). A changed screen brings its new picture in the same PR (the picture tests fail
+  on a stale picture or one without marks). Only Claude Code fix branches (`claude/issue-*`) may keep old
+  pictures, because Claude Code on GitHub cannot take them: Bug Guard lists them under Can wait. `main` is
+  checked too: the "Help pictures" workflow runs on every PR into `main` (every Release PR) and every push to
+  `main`, and takes the old pictures again as a download; the Deploy's own Checks let pictures wait, so an
+  urgent fix is never kept off the live site. Before every Release PR every picture is taken again
+  (`ALL=1 npm run help:shots` on a copy of the demo data, or the workflow with "all").
+- Help words: every guide has tips and common mistakes; What is short points (one or two sentences each);
+  "ফিল্টার" (never "ছাঁকনি") and one word for save, "সেভ" (never "সংরক্ষণ"). The tests check all of these.
 
 ## 6. Safety on the live site
 
@@ -146,6 +177,8 @@ a login source after repeated failed logins, telling the owner at once. Applying
 the owner's PIN; a data correction runs after a backup, is logged and can be undone (in accounts, an adjusting entry). It
 can NEVER delete data, change roles or permissions, merge or deploy, send anything to buyers or suppliers, move
 money, or turn off backups or its own checks. Every check, finding, fix, approval and result is in its own log.
+A data correction only adds a record (a stock movement, an adjusting entry, a payment allocation); it never
+overwrites a stored total or figure.
 
 ## 8. Backups and restore (v6.4)
 
@@ -167,6 +200,24 @@ money, or turn off backups or its own checks. Every check, finding, fix, approva
 
 ## 9. Decisions log (newest first)
 
+- 2026-10-18 (v6.4.1): every release ends with the readiness report (section 1, item 8) after up to 3 rounds
+  of fresh whole-ERP reviews; "is anything left?" is answered from a fresh check of the code and the live site.
+  After each deploy Bug Guard checks the live ERP once, read-only (no AI unless the owner turned it on), into the
+  ERP inbox and Telegram. A late-backup alert runs on GitHub, outside the server. A restored ERP that waits on
+  standby says so at the end and on every page, and keeps its backups and alarms running.
+- 2026-10-18 (v6.4.1): Help pictures show the part of the page each guide's steps are about and every picture
+  has numbered marks. The picture tests run on `main` too; the "Help pictures" workflow runs on every PR into
+  `main` and every push to `main`; only the Deploy's own Checks let pictures wait. Every guide has tips and
+  common mistakes; What is short points; "ফিল্টার" not "ছাঁকনি"; "সেভ" is the one word for save.
+- 2026-10-18 (v6.4.1): names settled (section 4): machine names say "extras", what people see says "Extas ERP",
+  and nothing that already exists is renamed, so the listed "extas" names stay as they are.
+- 2026-10-18 (v6.4.1): a Bug Guard correction only adds a record (a stock movement or an adjusting entry) and
+  never overwrites a stored figure; a stale stored total is a manual finding. Wrong passwords never lock an
+  account: only that address waits; the owner can unlock by an emailed link or the Telegram bot with the PIN.
+  Claude Code (Fix with Claude Code, Fix all, Ask) stays off until `main` is locked by a ruleset with no bypass.
+  Cloudflare's address list updates itself daily and a Cloudflare address is never blocked as one visitor. A
+  restore drill copy (`restore.sh --drill`) runs in test mode: no emails, bot messages, Drive backups, GitHub
+  writes or clocks.
 - 2026-10-17 (v6.4 review): Help pictures may be out of date only on Claude Code fix branches (`claude/issue-*`)
   and on `main`; Bug Guard lists those guides and every release retakes all pictures. A screen's word counts as
   explained only in a guide's `fields` list.

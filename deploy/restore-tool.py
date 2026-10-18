@@ -114,15 +114,29 @@ def _clean(text):
     return text.replace("\x1b[200~", "").replace("\x1b[201~", "").replace("﻿", "")
 
 
+def flush_keys(fd):
+    """Drops whatever was typed before the question: an Enter pressed earlier (while
+    the restore worked, or a second one after a paste) must never answer it."""
+    try:
+        import termios
+        termios.tcflush(fd, termios.TCIFLUSH)
+    except (ImportError, OSError):
+        pass
+
+
 def ask(name, prompt, hidden=False):
     """One answer: from the answers file when it has it, else typed (hidden for secrets)."""
     given = answers().get(name)
     if given is not None:
         return _clean(given)
     try:
-        os.close(os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY))
+        tty = os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY)
     except OSError:
         fail("R25", f"there is no keyboard to answer \"{prompt.strip()}\". Run the command in PuTTY as the guide shows.")
+    try:
+        flush_keys(tty)
+    finally:
+        os.close(tty)
     try:
         if hidden:
             # getpass asks on the terminal itself, with the typing hidden.
@@ -231,6 +245,11 @@ class Google:
             fail("R09", f"Google sign-in failed ({error or status}). Paste the command again.")
         fail("R09", "the code was not entered on the phone in time. Paste the command again; you get a new code.")
 
+    def resume(self, refresh):
+        """Signs in again with the sign-in an earlier try kept (no new code on the phone)."""
+        self.refresh = refresh
+        return self._refresh()
+
     def _refresh(self):
         if not self.refresh:
             return False
@@ -259,6 +278,7 @@ class Google:
         fail("R09", "Google ended the sign-in. Paste the command again.")
 
     def search(self, q):
+        """Every file that matches, newest first: Google sends long lists in pages, and every page is read."""
         out = []
         token = None
         while True:
@@ -266,7 +286,7 @@ class Google:
                 "q": q,
                 "fields": "nextPageToken,files(id,name,mimeType,parents,appProperties,createdTime,size)",
                 "pageSize": "1000",
-                "orderBy": "createdTime",
+                "orderBy": "createdTime desc",
             }
             if token:
                 params["pageToken"] = token
@@ -530,26 +550,48 @@ def client_from_answers():
     return client_id, secret
 
 
+def usable(item):
+    """Whether Enter may pick this backup by itself: it passed its check in Drive (all of
+    it arrived), and it was not made by a copy on standby (a practice restore's copy
+    of older data)."""
+    return item["checked"] and not item.get("standby")
+
+
 def pick_backup(found):
     say("Backups in Google Drive, newest first")
+    # Enter: the newest backup that passed its check, never an unchecked or incomplete one.
+    default = next((b for b in found if usable(b)), None)
     shown = found[:20]
+    if default is not None and default not in shown:
+        shown.append(default)
     for i, item in enumerate(shown, 1):
-        extra = "   (newest)" if i == 1 else ""
+        extra = ""
+        if item is default:
+            extra = "   (newest checked: Enter picks it)" if i == 1 else "   (newest checked: Enter picks it; the ones above are not checked)"
         if not item["checked"]:
-            extra += "   (not checked in Drive)"
+            extra += "   (NOT checked in Drive: it may be incomplete)"
+        if item.get("standby"):
+            extra += "   (made by a copy on standby)"
         note(f"{i:>2}) {when_text(item['createdAt'])}   {size_text(item['bytes'])}{extra}")
     if len(found) > len(shown):
         note(f"... and {len(found) - len(shown)} older ones.")
+    if default is None:
+        note("None of these backups passed its check in Google Drive, so none is picked by itself.")
+    elif default is not shown[0]:
+        note(f"Enter picks number {shown.index(default) + 1}: the newest backup that passed its check.")
     for _ in range(5):
         answer = ask("pick", "Which backup? Press Enter for the newest, or type its number: ").strip().lower()
-        if answer in ("", "newest", "1"):
-            return shown[0]
-        if answer.isdigit() and 1 <= int(answer) <= len(shown):
+        if answer in ("", "newest"):
+            if default is not None:
+                return default
+            note(f"Type the number of the backup to restore (1 to {len(shown)}).")
+        elif answer.isdigit() and 1 <= int(answer) <= len(shown):
             return shown[int(answer) - 1]
-        matches = [b for b in found if b["name"] == answer]
-        if matches:
-            return matches[0]
-        note(f"Type a number from 1 to {len(shown)}, or press Enter.")
+        else:
+            matches = [b for b in found if b["name"] == answer]
+            if matches:
+                return matches[0]
+            note(f"Type a number from 1 to {len(shown)}" + (", or press Enter." if default is not None else "."))
         if "pick" in answers():
             break
     fail("R10", "no backup was picked.")
@@ -560,14 +602,66 @@ def free_bytes(path):
     return usage.free
 
 
+GB = 1024 ** 3
+#: What the ERP's programs take on a new server: Docker, the ERP's images and their
+#: build (about 6 GB), with a margin.
+PROGRAMS_BYTES = 8 * GB
+#: A database takes up to about this many times its dump's size once restored (its
+#: tables and their indexes; the dump is compressed).
+DATABASE_GROWTH = 5
+
+
+def room_needed(entries, manifest, have):
+    """The disk space this restore still needs, and what it is for (plain words).
+
+    The download (less what an earlier try already downloaded), the opened copy of
+    every locked file, the uploaded files unpacked, the database once restored, and
+    the ERP's programs."""
+    download = sum(int(e.get("bytes", 0)) for e in entries) - sum(have.values())
+    opened = sum(int(e["plain"].get("bytes", 0)) for e in entries if e.get("plain"))
+    plain = {(e.get("plain") or e).get("name"): int((e.get("plain") or e).get("bytes", 0)) for e in entries}
+    uploads = manifest.get("uploadBytes")
+    uploads = int(uploads) if isinstance(uploads, (int, float)) else plain.get("media.tar.gz", 0)
+    database = DATABASE_GROWTH * plain.get("database.dump", 0)
+    parts = [("the download", download), ("the opened backup", opened), ("the uploaded files unpacked", uploads),
+             ("the database", database), ("the ERP's programs", PROGRAMS_BYTES)]
+    return sum(n for _, n in parts), ", ".join(f"{what} {size_text(n)}" for what, n in parts if n)
+
+
+def sha256_of(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(PIECE_BYTES), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def signed_in(work):
+    """Google, signed in: with the sign-in an earlier try kept (google.json, which only
+    root can read), else with the client and a code on the phone. The sign-in is kept
+    so that a second try after a stop goes on without a new code; bootstrap.sh deletes
+    it when the restore ends well."""
+    path = os.path.join(work, "google.json")
+    kept = read_json(path) or {}
+    if kept.get("clientId") and kept.get("clientSecret") and kept.get("refreshToken"):
+        google = Google(kept["clientId"], kept["clientSecret"])
+        if google.resume(kept["refreshToken"]):
+            say("Signed in to Google with the sign-in from the earlier try (no new code needed)")
+            return google
+        os.remove(path)
+    client_id, secret = client_from_answers()
+    google = Google(client_id, secret)
+    google.sign_in()
+    write_private(path, json.dumps({"clientId": client_id, "clientSecret": secret, "refreshToken": google.refresh}))
+    say("Signed in to Google. Looking for the backups")
+    return google
+
+
 def cmd_fetch(args):
     work = os.path.abspath(args.work)
     os.makedirs(work, mode=0o700, exist_ok=True)
     os.chmod(work, 0o700)
-    client_id, secret = client_from_answers()
-    google = Google(client_id, secret)
-    google.sign_in()
-    say("Signed in to Google. Looking for the backups")
+    google = signed_in(work)
 
     roots = google.search("appProperties has { key='extas' and value='backups' } and trashed = false"
                           f" and mimeType = '{FOLDER}'")
@@ -583,9 +677,13 @@ def cmd_fetch(args):
                 "createdAt": label(folder, "createdAt") or folder.get("createdTime", ""),
                 "bytes": int(label(folder, "bytes")) if (label(folder, "bytes") or "").isdigit() else None,
                 "checked": label(folder, "checked") == "yes",
+                # Made by a restored copy while it waited on standby (backup.service.ts).
+                "standby": label(folder, "standby") == "yes",
                 "format": int(label(folder, "format") or 2),
             })
     if not found:
+        # Perhaps the wrong Google account: the next try signs in again.
+        os.remove(os.path.join(work, "google.json"))
         fail("R10", "there are no Extas ERP backups in this Google account's Drive. Sign in with the Google account the ERP backed up to, with the same Google client.")
     found.sort(key=lambda b: (b["createdAt"], b["name"]), reverse=True)
     picked = pick_backup(found)
@@ -594,24 +692,44 @@ def cmd_fetch(args):
         warn("W09", "this backup was not checked in Google Drive after it was saved; every file is checked again now.")
     say(f"Downloading the backup of {when_text(picked['createdAt'])}")
 
-    files = {f["name"]: f for f in google.search(f"'{picked['id']}' in parents and trashed = false")}
+    files = by_name(google.search(f"'{picked['id']}' in parents and trashed = false"))
     if "manifest.json" not in files:
         fail("R11", "this backup has no manifest.json in Drive; pick another backup.")
+    # download/ keeps the backup as it is in Drive (locked) until the restore ends well,
+    # so a second try after a stop does not download it again. What is opened goes
+    # into opened/ and never stays: bootstrap.sh deletes it at the end and at the next start.
     folder = os.path.join(work, "download")
-    shutil.rmtree(folder, ignore_errors=True)
-    os.makedirs(folder, mode=0o700)
+    mark = os.path.join(folder, ".backup")
+    try:
+        with open(mark, encoding="utf-8") as f:
+            earlier = f.read().strip()
+    except OSError:
+        earlier = None
+    if earlier != picked["id"]:
+        shutil.rmtree(folder, ignore_errors=True)
+    os.makedirs(folder, mode=0o700, exist_ok=True)
+    write_private(mark, picked["id"])
     google.download(files["manifest.json"]["id"], os.path.join(folder, "manifest.json"), limit=50 * 1024 * 1024)
     with open(os.path.join(folder, "manifest.json"), encoding="utf-8") as f:
         manifest = json.load(f)
     entries = manifest.get("files", [])
-    need = sum(int(e.get("bytes", 0)) for e in entries)
-    plain = sum(int((e.get("plain") or e).get("bytes", 0)) for e in entries)
-    if free_bytes(work) < need + plain + 2 * 1024 ** 3:
-        fail("R22", f"the disk has too little free space for this backup ({size_text(need + plain)} needed, and room for the ERP). Make the VM again with a bigger disk (64 GB or more).")
+    have = {}
+    for entry in entries:
+        path = os.path.join(folder, safe_name(entry["name"]))
+        if (os.path.isfile(path) and os.path.getsize(path) == entry.get("bytes")
+                and sha256_of(path) == entry.get("sha256")):
+            have[entry["name"]] = entry["bytes"]
+    need, parts = room_needed(entries, manifest, have)
+    free = free_bytes(work)
+    if free < need:
+        fail("R22", f"the disk has too little free space for this backup: it needs about {size_text(need)} ({parts}) and has {size_text(free)} free. Make the VM again with a bigger disk (64 GB or more).")
     for entry in entries:
         entry_name = safe_name(entry["name"])
         if entry_name not in files:
             fail("R11", f"{entry_name} is missing from this backup in Drive; pick another backup.")
+        if entry_name in have:
+            note(f"{entry_name} ({size_text(entry.get('bytes'))}): already downloaded in the earlier try")
+            continue
         note(f"{entry_name} ({size_text(entry.get('bytes'))})")
         digest, size = google.download(files[entry_name]["id"], os.path.join(folder, entry_name), entry.get("bytes"))
         if size != entry.get("bytes") or digest != entry.get("sha256"):
@@ -622,11 +740,14 @@ def cmd_fetch(args):
     locked = [e for e in entries if e.get("plain")]
     opener = {}
     if locked and fmt == 3:
-        opener["private"] = open_with_recovery_key(google, picked, manifest, folder)
+        opener["private"] = open_with_recovery_key(google, picked, manifest, folder, work)
     elif locked:
         opener["legacy"] = open_with_key_card(manifest)
 
     say("Opening the backup")
+    unlocked = os.path.join(work, "opened")
+    shutil.rmtree(unlocked, ignore_errors=True)
+    os.makedirs(unlocked, mode=0o700)
     opened = {}
     for entry in entries:
         source = os.path.join(folder, entry["name"])
@@ -634,12 +755,11 @@ def cmd_fetch(args):
             opened[entry["name"]] = source
             continue
         target_name = safe_name(entry["plain"]["name"])
-        target = os.path.join(folder, target_name)
+        target = os.path.join(unlocked, target_name)
         try:
             digest = unlock_file(source, target, **opener)
         except KeyError_ as error:
             fail("R12" if fmt == 3 else "R13", f"{target_name} did not open ({error}).")
-        os.remove(source)
         if digest != entry["plain"]["sha256"]:
             fail("R11", f"{target_name} does not match its checksum after opening; pick another backup.")
         opened[target_name] = target
@@ -665,7 +785,6 @@ def cmd_fetch(args):
         if name_ in opened:
             os.replace(opened[name_], os.path.join(work, name_))
     server = read_json(os.path.join(work, "server.json")) or {}
-    write_private(os.path.join(work, "google.json"), json.dumps({"clientId": client_id, "clientSecret": secret}))
     cloudflare = server.get("cloudflare") or {}
     state = {
         "name": name,
@@ -686,7 +805,7 @@ def cmd_fetch(args):
         "hasCloudflareToken": bool(cloudflare.get("token")),
     }
     write_private(os.path.join(work, "state.json"), json.dumps(state, indent=2))
-    shutil.rmtree(folder, ignore_errors=True)
+    shutil.rmtree(unlocked, ignore_errors=True)
     if state["records"] is not None:
         say(f"The backup is open: {state['records']:,} records and {state['files']:,} files in it")
     else:
@@ -694,6 +813,14 @@ def cmd_fetch(args):
     for line in state["missing"]:
         note(f"Not in this backup: {line}")
     return 0
+
+
+def by_name(files):
+    """A backup folder's files by name: the newest of two with the same name (a list newest first)."""
+    out = {}
+    for file in files:
+        out.setdefault(file["name"], file)
+    return out
 
 
 def read_json(path):
@@ -720,8 +847,9 @@ def host_of(url):
         return None
 
 
-def key_files(google, picked, folder):
-    """Every keys file that could open the backup: its own, then the one beside the backups."""
+def key_files(google, picked, folder, scratch):
+    """Every keys file that could open the backup: its own (in folder), then the one
+    beside the backups (read through scratch, a folder that never stays)."""
     out = []
     own = os.path.join(folder, "backup-keys.json")
     if os.path.exists(own):
@@ -729,7 +857,7 @@ def key_files(google, picked, folder):
             out.append(f.read())
     for file in google.search(f"'{picked['root']}' in parents and trashed = false"):
         if label(file, "extas") == "keys":
-            path = os.path.join(folder, ".root-keys.json")
+            path = os.path.join(scratch, ".root-keys.json")
             google.download(file["id"], path, limit=1024 * 1024)
             with open(path, encoding="utf-8") as f:
                 out.append(f.read())
@@ -743,12 +871,13 @@ def key_files(google, picked, folder):
     return files
 
 
-def kept_recovery_key(google, picked, pair_id, folder):
-    """The recovery key from restore-key.json in Drive, when the owner keeps it there (G5)."""
-    for file in reversed(google.search(f"'{picked['root']}' in parents and trashed = false")):
+def kept_recovery_key(google, picked, pair_id, scratch):
+    """The recovery key from restore-key.json in Drive, when the owner keeps it there (G5).
+    Read through scratch: never the kept download, as the key is plain in it."""
+    for file in google.search(f"'{picked['root']}' in parents and trashed = false"):
         if label(file, "extas") != "restore-key":
             continue
-        path = os.path.join(folder, ".restore-key.json")
+        path = os.path.join(scratch, ".restore-key.json")
         google.download(file["id"], path, limit=64 * 1024)
         data = read_json(path)
         os.remove(path)
@@ -757,12 +886,12 @@ def kept_recovery_key(google, picked, pair_id, folder):
     return None
 
 
-def open_with_recovery_key(google, picked, manifest, folder):
+def open_with_recovery_key(google, picked, manifest, folder, scratch):
     pair_id = manifest.get("keyId")
-    candidates = [f for f in key_files(google, picked, folder) if f["pairId"] == pair_id]
+    candidates = [f for f in key_files(google, picked, folder, scratch) if f["pairId"] == pair_id]
     if not candidates:
         fail("R14", f"the keys file for this backup (key {pair_id}) is missing; pick a newer backup.")
-    kept = kept_recovery_key(google, picked, pair_id, folder)
+    kept = kept_recovery_key(google, picked, pair_id, scratch)
     if kept:
         say("Your recovery key is kept in Google Drive: it is filled in by itself")
         for file in candidates:
@@ -947,6 +1076,10 @@ def site_answers(name):
 
 
 def cmd_dns(args):
+    """Points the web address here in Cloudflare, when typed. In a drill (--drill) it only
+    adds a new A record: one that points elsewhere (perhaps the company's website) is
+    never moved."""
+    drill = bool(getattr(args, "drill", False))
     work = os.path.abspath(args.work)
     deploy = os.path.abspath(args.deploy)
     env_lines = read_env(os.path.join(deploy, ".env"))
@@ -989,15 +1122,21 @@ def cmd_dns(args):
             note(f"{name} already points to this server.")
         set_state(work, dnsMoved=True)
         return 0
+    if drill:
+        taken = [name for name in names if now.get(name) and now[name] != ip]
+        for name in taken:
+            warn("W12", f"{name} already points to another server ({now[name]}), so a drill does not change it. Use a new test address that nobody uses (like drill.{zone}), or delete the old drill line in Cloudflare first.")
+        if taken:
+            return 0
     say("Your web address in Cloudflare")
     for name in names:
         note(f"{name}  ->  {ip} (this server)")
     old = now.get(app)
     if old and old != ip and site_answers(app):
-        # Two ERPs at once would both send reminders and make backups (G2).
+        # Two ERPs at once would both send reminders and messages (G2).
         say(f"The ERP at {app} still answers from another server ({old})")
         note("If the web address comes here while that one runs, two ERPs would send reminders")
-        note("and make backups at the same time. Move it only when the old server is off or")
+        note("and messages at the same time. Move it only when the old server is off or")
         note("will not be used again. For a practice run, press Enter: this copy then waits on standby.")
     answer = plain_name(ask("dns", f"To point {' and '.join(names)} to this server ({ip}), type {app}; or press Enter to leave it as it is: "))
     if answer != app:
@@ -1015,6 +1154,9 @@ def cmd_dns(args):
                 record = records[0]
                 if record.get("content") == ip:
                     note(f"{name} already points to this server.")
+                elif drill:
+                    warn("W12", f"{name} already points to another server ({record.get('content')}), so a drill does not change it.")
+                    continue
                 else:
                     cloudflare(token, "PATCH", f"/zones/{zone_id}/dns_records/{record['id']}", {"content": ip})
                     note(f"{name} now points to this server (it pointed to {record.get('content')}).")
@@ -1042,21 +1184,24 @@ def plain_name(text):
 
 
 def walk_files(root):
+    """Every file under root with its SHA-256, and the links found there (never
+    followed: a link is not the file the backup holds)."""
     out = {}
+    links = []
     if not os.path.isdir(root):
-        return out
+        return out, sorted(links)
     for folder, dirs, files in os.walk(root, followlinks=False):
         dirs.sort()
-        for name in files:
+        for name in sorted(files) + [d for d in dirs if os.path.islink(os.path.join(folder, d))]:
             full = os.path.join(folder, name)
-            if not os.path.isfile(full) or os.path.islink(full):
+            relative = os.path.relpath(full, root).replace(os.sep, "/")
+            if os.path.islink(full):
+                links.append(relative)
                 continue
-            digest = hashlib.sha256()
-            with open(full, "rb") as f:
-                for chunk in iter(lambda: f.read(PIECE_BYTES), b""):
-                    digest.update(chunk)
-            out[os.path.relpath(full, root).replace(os.sep, "/")] = digest.hexdigest()
-    return out
+            if not os.path.isfile(full):
+                continue
+            out[relative] = sha256_of(full)
+    return out, sorted(links)
 
 
 def cmd_compare(args):
@@ -1066,36 +1211,51 @@ def cmd_compare(args):
     uploads = manifest.get("uploads")
     counts = read_json(args.counts) if args.counts else None
     problems = []
-    if tables is not None and counts is not None:
+    if tables is not None and isinstance(counts, dict):
         for table, n in sorted(tables.items()):
             back = counts.get(table)
             if back is None:
                 problems.append(f"Table {table} is missing ({n} records).")
             elif int(back) != int(n):
                 problems.append(f"Table {table} has {back} of {n} records.")
+    links = []
     if uploads is not None:
-        restored = walk_files(args.uploads)
+        restored, links = walk_files(args.uploads)
+        linked = set(links)
         for item in uploads:
             got = restored.get(item["path"])
-            if got is None:
+            if got is None and item["path"] in linked:
+                problems.append(f"File {item['path']} came back as a link, not the file itself.")
+            elif got is None:
                 problems.append(f"File {item['path']} is missing.")
             elif got != item["sha256"]:
                 problems.append(f"File {item['path']} is not the same.")
     records = sum(int(n) for n in (tables or {}).values())
     files = len(uploads or [])
-    result = {"ok": not problems, "records": records, "files": files, "problems": problems,
-              "compared": {"records": tables is not None and counts is not None, "files": uploads is not None}}
+    # The backup has its list of tables, but the restore could not count them: the
+    # records are NOT checked, which is never reported as all back.
+    unchecked = tables is not None and not isinstance(counts, dict)
+    result = {"ok": not problems and not unchecked, "records": records, "files": files, "problems": problems,
+              "compared": {"records": tables is not None and not unchecked, "files": uploads is not None},
+              "recordsNotChecked": unchecked, "links": links}
     if args.result:
         write_private(args.result, json.dumps(result, indent=2))
     say("Comparing with the backup's list of every table and file")
     if tables is None or uploads is None:
         note("This backup has no list of its tables and files (it is from before v6.4): the counts could not be compared.")
-    if counts is None and tables is not None:
-        note("The records were not counted after the restore, so they could not be compared.")
+    if links:
+        # Never skipped without a word: a link points somewhere else, so it was not checked.
+        note(f"{len(links)} link(s) among the uploaded files were not checked (a link is not a file the backup holds):")
+        for line in links[:20]:
+            note(f"  {line}")
+        if len(links) > 20:
+            note(f"  ... and {len(links) - 20} more.")
+    if unchecked:
+        warn("W11", f"the records were NOT checked: they could not be counted after the restore, so it is not known whether all {records:,} records are back. The ERP runs; open its main screens to see that your data is there, and tell the developer.")
     if not problems:
-        if tables is not None and counts is not None and uploads is not None:
+        if tables is not None and not unchecked and uploads is not None:
             print(f"\nAll {records:,} records and {files:,} files are back.", flush=True)
-        return 0
+        return 6 if unchecked else 0
     print(f"\nNot everything is back ({len(problems)} problem{'s' if len(problems) != 1 else ''}):", flush=True)
     for line in problems[:50]:
         note(line)
@@ -1134,6 +1294,8 @@ def main(argv=None):
     p = sub.add_parser("dns")
     p.add_argument("--work", required=True)
     p.add_argument("--deploy", required=True)
+    # bootstrap.sh passes "--drill 1" in a drill, "--drill ''" otherwise.
+    p.add_argument("--drill", nargs="?", const="1", default="")
     p = sub.add_parser("compare")
     p.add_argument("--work", required=True)
     p.add_argument("--counts")

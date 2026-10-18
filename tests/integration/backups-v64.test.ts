@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -33,10 +33,11 @@ import { parseKeyFile } from "@/modules/backups/keys";
 import * as keys from "@/modules/backups/recovery-key.service";
 import { requestRestore } from "@/modules/backups/restore.service";
 import { backupClock, backupTick, testRestoreTick } from "@/modules/backups/scheduler";
-import { onStandby, STANDBY_MARK } from "@/modules/backups/standby";
+import { onStandby, STANDBY_MARK, standbyMark } from "@/modules/backups/standby";
 import { backupHealth, watchBackups } from "@/modules/backups/status";
 import { drillDatabasePrefix, runTestRestore } from "@/modules/backups/test-restore";
 import { housekeepingTick } from "@/modules/housekeeping/scheduler";
+import { claimNextJob } from "@/modules/jobs/queue";
 import { jobTick } from "@/modules/jobs/worker";
 import { reminderTick } from "@/modules/reminders/scheduler";
 
@@ -277,6 +278,21 @@ run("v6.4 backups", { timeout: 120_000 }, () => {
         records: manifest.records,
         tables: Object.keys(manifest.tables).length,
       });
+    });
+
+    it("says which uploaded files are links it does not hold, instead of leaving them out without a word", async () => {
+      await writeFile(path.join(dir, "kept-elsewhere.pdf"), "a file outside the uploads");
+      await symlink(
+        path.join(dir, "kept-elsewhere.pdf"),
+        path.join(uploadDir, "c1", "2026", "10", "linked.pdf"),
+      );
+      const done = await backUpNow();
+      const manifest = await manifestOf(done.id);
+      expect(manifest.uploads.map((u) => u.path)).not.toContain("c1/2026/10/linked.pdf");
+      expect(manifest.missing).toContain(
+        "1 link(s) among the uploaded files (a link points to a file kept somewhere else, so it is not in the backup): c1/2026/10/linked.pdf.",
+      );
+      expect(done.report).toMatchObject({ missing: manifest.missing });
     });
 
     it("says plainly when the server has not made the code bundle yet, and backs up empty uploads", async () => {
@@ -749,6 +765,64 @@ run("v6.4 backups", { timeout: 120_000 }, () => {
     });
   });
 
+  describe("the backups folder in Drive (v6.4.1 review)", () => {
+    it("finds the first one made again when two carry the label, never a newer stray one", async () => {
+      await connectDrive();
+      const config = await backups.getBackupConfig();
+      const token = (await driveToken(config))!;
+      const folder = (id: string, createdTime: string) =>
+        google.files.set(id, {
+          id,
+          name: "Extas ERP Backups",
+          mimeType: "application/vnd.google-apps.folder",
+          parents: ["root"],
+          appProperties: { extas: "backups" },
+          createdTime,
+          trashed: false,
+          data: null,
+        });
+      folder("root-first", "2026-01-01T00:00:00.000Z");
+      folder("root-later", "2026-09-01T00:00:00.000Z");
+      await prisma.backupConfig.update({
+        where: { id: config.id },
+        data: { googleDriveFolderId: null },
+      });
+      const { driveRoot } = await import("@/modules/backups/backup-core");
+      expect(await driveRoot(await backups.getBackupConfig(), token)).toBe("root-first");
+      expect((await backups.getBackupConfig()).googleDriveFolderId).toBe("root-first");
+    });
+  });
+
+  describe("keeping on a copy on standby (v6.4.1 review)", () => {
+    it("removes only its own standby backups from Drive, never the ERP in use's", async () => {
+      await connectDrive();
+      await setKey();
+      await backups.updateBackupConfig(ctx, { driveKeepDays: 30, pin: PIN });
+      const age = (name: string, days: number) => {
+        for (const f of google.files.values()) {
+          if (f.name === name)
+            f.appProperties.createdAt = new Date(Date.now() - days * 86_400_000).toISOString();
+        }
+      };
+      // The ERP in use: an old backup (kept by its own rules until it makes a newer one) and a new one.
+      const a = await backUpNow();
+      const b = await backUpNow();
+      age(a.name!, 20);
+      // A restored copy on standby backs up into the same Drive folder.
+      await writeFile(path.join(backupDir, STANDBY_MARK), "3f9a0c1d2e4b5a69");
+      const s1 = await backUpNow();
+      expect(s1.name).toMatch(/_standby$/);
+      age(a.name!, 40);
+      age(b.name!, 40);
+      age(s1.name!, 40);
+      const s2 = await backUpNow();
+      const names = (await listDriveBackups()).items.map((x) => x.name);
+      // Its own old one goes by its keep rules; the ERP in use's stay, however old.
+      expect(names).toEqual(expect.arrayContaining([a.name, b.name, s2.name]));
+      expect(names).not.toContain(s1.name);
+    });
+  });
+
   describe("making the backups less safe needs the PIN and tells the owner (R-BAK G12)", () => {
     const told = async () => (await inbox()).filter((s) => s === "Backups made less safe");
 
@@ -1200,34 +1274,105 @@ run("v6.4 backups", { timeout: 120_000 }, () => {
   });
 
   describe("standby after a restore on a second server (G2)", () => {
-    it("runs no clock while on standby, except the Bug Guard check the restore asked for", async () => {
+    it("keeps backing up and sending alarms on standby; its reminders and messages wait", async () => {
+      await connectDrive();
+      await setKey();
       await mkdir(backupDir, { recursive: true });
-      await writeFile(path.join(backupDir, STANDBY_MARK), "");
+      await writeFile(path.join(backupDir, STANDBY_MARK), "3f9a0c1d2e4b5a69");
       expect(await onStandby()).toBe(true);
-      // A backup is due (none yet), but the copy on standby makes none.
+      const mark = await standbyMark();
+      expect(mark?.id).toBe(sha256("3f9a0c1d2e4b5a69").slice(0, 16));
+
+      // The files beside the backups in Drive (keys, restore guide, restore.sh, restore-tool.py)
+      // belong to the ERP in use: the copy on standby never puts or replaces them.
+      const rootLabels = ["keys", "guide-bn", "guide-en", "restore-script", "restore-tool"];
+      const rootFiles = () =>
+        [...google.files.values()]
+          .filter((f) => !f.trashed && rootLabels.includes(String(f.appProperties?.extas)))
+          .map((f) => f.id)
+          .sort();
+      for (const f of google.files.values()) {
+        if (f.appProperties?.extas === "keys") google.files.delete(f.id);
+      }
+      const before = rootFiles();
+
+      // A backup is due (none yet): the copy on standby makes it, under a name of its own,
+      // marked as made on standby here and in Drive (Enter never picks it in a restore).
       await backupClock();
-      expect(await prisma.backupRun.count()).toBe(0);
+      const run = await prisma.backupRun.findFirst({ where: { kind: "BACKUP" } });
+      expect(run).not.toBeNull();
+      const made = await backUpNow();
+      expect(made.status).toBe("SUCCEEDED");
+      expect(made.name).toMatch(/_standby$/);
+      expect((await manifestOf(made.id)) as Manifest & { standby?: boolean }).toMatchObject({
+        standby: true,
+      });
+      const inDrive = [...google.files.values()].find((f) => f.name === made.name)!;
+      expect(inDrive.appProperties).toMatchObject({
+        extas: "backup",
+        standby: "yes",
+        checked: "yes",
+      });
+      await backupClock();
+      expect(rootFiles()).toEqual(before);
+      // Said on the Backups screen (after any backup problem) and on every page.
       expect((await backupHealth()).line).toMatch(/^On standby after a restore/);
+      const layout = await readFile(path.join(process.cwd(), "src", "app", "layout.tsx"), "utf8");
+      expect(layout).toMatch(/\{standby \? <StandbyBar \/> : null\}/);
+
+      // The job queue sends only the alarms raised since the copy went on standby: not the
+      // backup's own queue (messages it sent already), nor anything else.
       expect(await housekeepingTick()).toBeNull();
-      expect(await jobTick()).toBeNull();
-      // The reminder clock only takes Bug Guard's request from the restore (G1).
+      const waiting = [
+        await prisma.backgroundJob.create({
+          data: {
+            kind: "ai.bot.push",
+            payload: { kind: "text", text: "from the backup", alarm: true },
+            createdAt: hoursAgo(3),
+          },
+        }),
+        await prisma.backgroundJob.create({
+          data: { kind: "ai.bot.push", payload: { kind: "text", text: "a reminder" } },
+        }),
+        await prisma.backgroundJob.create({ data: { kind: "terms.pdf", payload: {} } }),
+      ];
+      const alarm = await prisma.backgroundJob.create({
+        data: {
+          kind: "ai.bot.push",
+          payload: { kind: "text", text: "Backup failed", alarm: true },
+        },
+      });
+      const only = { alarmsSince: mark!.since };
+      expect((await claimNextJob(new Date(), "test", only))?.id).toBe(alarm.id);
+      expect(await claimNextJob(new Date(), "test", only)).toBeNull();
+      expect(await jobTick()).not.toBeNull();
+      expect(
+        await prisma.backgroundJob.count({
+          where: { id: { in: waiting.map((j) => j.id) }, status: "QUEUED" },
+        }),
+      ).toBe(3);
+
+      // The reminder clock runs Bug Guard (the check the restore asked for, G1), nothing else.
       await writeFile(
         path.join(backupDir, "bug-guard-request.json"),
         JSON.stringify({ requestedAt: "2026-10-17T00:00:00.000000000Z" }),
       );
       expect(await reminderTick()).toBeNull();
-      expect(
-        JSON.parse(await readFile(path.join(backupDir, "bug-guard-result.json"), "utf8")),
-      ).toMatchObject({ requestedAt: "2026-10-17T00:00:00.000000000Z" });
+      await vi.waitFor(async () =>
+        expect(
+          JSON.parse(await readFile(path.join(backupDir, "bug-guard-result.json"), "utf8")),
+        ).toMatchObject({ requestedAt: "2026-10-17T00:00:00.000000000Z" }),
+      );
 
-      // go-live.sh takes the mark away: the clocks run again.
+      // go-live.sh takes the mark away: everything runs, backups under their usual names.
       await rm(path.join(backupDir, STANDBY_MARK));
       expect(await onStandby()).toBe(false);
-      await backupClock();
-      expect(await prisma.backupRun.count({ where: { kind: "BACKUP" } })).toBe(1);
+      expect(await standbyMark()).toBeNull();
+      const live = await backUpNow();
+      expect(live.name).not.toMatch(/standby/);
       expect((await backupHealth()).line).not.toMatch(/standby/);
       expect(await jobTick()).not.toBeNull();
-    }, 120_000);
+    }, 180_000);
   });
 
   describe("restore from the screen", () => {

@@ -5,6 +5,7 @@ import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
 import { lockRow } from "@/lib/row-lock";
+import { runTransaction } from "@/lib/transaction";
 import { money, ZERO } from "@/modules/accounts/balances";
 import { cashAccountFor } from "@/modules/accounts/cash-accounts";
 import { isCashSubType } from "@/modules/accounts/chart";
@@ -30,6 +31,7 @@ import {
   voidSchema,
 } from "@/modules/accounts/schemas";
 import {
+  lockSupplierAccount,
   settleSupplierBills,
   settleSuppliersOnLines,
 } from "@/modules/accounts/supplier-settlement";
@@ -47,6 +49,8 @@ import { assertPartyCanTransact, recordPartyActivity } from "@/modules/parties/p
  *   Sold or scrapped      Dr Cash (proceeds) + Accumulated Depreciation, Cr Fixed Assets
  *                         (cost); a gain goes to Other Income, a loss to Loss on Disposal
  * Every entry names the asset in `sourceId`, so its history is its entries.
+ * An asset entered by mistake is voided: its entries are reversed and the row
+ * stays, marked void (voidedAt), out of the register, its totals and every step.
  */
 
 type Tx = Prisma.TransactionClient;
@@ -90,6 +94,7 @@ export async function listFixedAssets(ctx: CompanyContext, raw: unknown = {}) {
   const q = listAssetsSchema.parse(raw);
   const assets = await ctx.db.fixedAsset.findMany({
     where: {
+      voidedAt: null,
       ...(q.status ? { status: q.status } : {}),
       ...(q.category ? { category: { equals: q.category, mode: "insensitive" } } : {}),
       ...(q.search
@@ -137,7 +142,7 @@ export async function listFixedAssets(ctx: CompanyContext, raw: unknown = {}) {
 }
 
 export async function getFixedAsset(ctx: CompanyContext, assetId: string) {
-  const asset = await ctx.db.fixedAsset.findUnique({ where: { id: assetId } });
+  const asset = await ctx.db.fixedAsset.findFirst({ where: { id: assetId, voidedAt: null } });
   if (!asset) throw new AppError("NOT_FOUND", "Fixed asset not found.");
   const entries = await ctx.db.journalEntry.findMany({
     where: { sourceId: asset.id, sourceType: { in: ["FIXED_ASSET", "DEPRECIATION"] } },
@@ -197,7 +202,9 @@ export async function createFixedAsset(ctx: CompanyContext, raw: unknown, meta?:
     throw new AppError("VALIDATION", "The go-live day is before the purchase date.");
   }
 
-  const asset = await prisma.$transaction(async (tx) => {
+  const asset = await runTransaction(async (tx) => {
+    // Bought on credit: the supplier's account first (the ERP's lock order), before any number.
+    if (supplier) await lockSupplierAccount(tx, companyId, supplier.id);
     const acc = await ensureControlAccounts(companyId, tx);
     const created = await tx.fixedAsset.create({
       data: {
@@ -286,7 +293,7 @@ export async function updateFixedAsset(
 ) {
   assertCanManageAccounts(ctx, "Only Accounts can change fixed assets.");
   const input = updateAssetSchema.parse(raw);
-  const asset = await ctx.db.fixedAsset.findUnique({ where: { id: assetId } });
+  const asset = await ctx.db.fixedAsset.findFirst({ where: { id: assetId, voidedAt: null } });
   if (!asset) throw new AppError("NOT_FOUND", "Fixed asset not found.");
   const changesValue =
     input.status !== undefined ||
@@ -345,7 +352,10 @@ async function depreciateTx(
     where: { id: assetId, companyId: ctx.company.id },
   });
   const from = nextDepreciationDay(asset, tz);
-  if (asset.status === "DISPOSED" || from > through) return { asset, total: ZERO, months: 0 };
+  // Disposed of, or voided since the run started: nothing more to post.
+  if (asset.status === "DISPOSED" || asset.voidedAt || from > through) {
+    return { asset, total: ZERO, months: 0 };
+  }
   const { charges, total, bookValueAfter } = depreciationCharges(depreciable(asset), from, through);
   if (total.gt(0)) {
     const acc = await ensureControlAccounts(ctx.company.id, tx);
@@ -379,7 +389,7 @@ export async function previewDepreciation(ctx: CompanyContext, raw: unknown = {}
   const through = q.through ?? defaultThrough(ctx);
   assertNotFuture(ctx, through);
   const assets = await ctx.db.fixedAsset.findMany({
-    where: { status: { not: "DISPOSED" } },
+    where: { status: { not: "DISPOSED" }, voidedAt: null },
     orderBy: { purchaseDate: "asc" },
   });
   const items = assets.flatMap((asset) => {
@@ -419,7 +429,7 @@ export async function runDepreciation(ctx: CompanyContext, raw: unknown = {}, me
   assertNotFuture(ctx, through);
   const ids = (
     await ctx.db.fixedAsset.findMany({
-      where: { status: { not: "DISPOSED" } },
+      where: { status: { not: "DISPOSED" }, voidedAt: null },
       select: { id: true },
       orderBy: { purchaseDate: "asc" },
     })
@@ -471,7 +481,7 @@ export async function disposeFixedAsset(
   const date = input.date ? toInstant(input.date, tz) : new Date();
   const disposalDay = localDay(date, tz);
   const companyId = ctx.company.id;
-  const existing = await ctx.db.fixedAsset.findUnique({ where: { id: assetId } });
+  const existing = await ctx.db.fixedAsset.findFirst({ where: { id: assetId, voidedAt: null } });
   if (!existing) throw new AppError("NOT_FOUND", "Fixed asset not found.");
   if (date < existing.purchaseDate) {
     throw new AppError("VALIDATION", "The disposal date is before the purchase date.");
@@ -479,6 +489,7 @@ export async function disposeFixedAsset(
 
   await prisma.$transaction(async (tx) => {
     const { asset } = await depreciateTx(tx, ctx, assetId, addDays(disposalDay, -1));
+    if (asset.voidedAt) throw new AppError("NOT_FOUND", "Fixed asset not found.");
     if (asset.status === "DISPOSED") {
       throw new AppError("CONFLICT", `${asset.name} was already disposed of.`);
     }
@@ -530,7 +541,8 @@ export async function disposeFixedAsset(
 
 /**
  * Removes an asset entered by mistake: its purchase and depreciation entries are
- * reversed (both stay in the books) and it leaves the register.
+ * reversed (both stay in the books) and it leaves the register. The row stays,
+ * marked void with the reason; nothing is deleted.
  */
 export async function voidFixedAsset(
   ctx: CompanyContext,
@@ -540,13 +552,31 @@ export async function voidFixedAsset(
 ) {
   assertCanManageAccounts(ctx, "Only Accounts can remove fixed assets.");
   const { reason } = voidSchema.parse(raw);
-  const found = await ctx.db.fixedAsset.findUnique({ where: { id: assetId } });
+  const found = await ctx.db.fixedAsset.findFirst({ where: { id: assetId, voidedAt: null } });
   if (!found) throw new AppError("NOT_FOUND", "Fixed asset not found.");
+  // A purchase on credit: its supplier, whose account is locked before anything else.
+  const acc = await ensureControlAccounts(ctx.company.id);
+  const suppliers = await prisma.journalLine.findMany({
+    where: {
+      accountId: acc.PAYABLE,
+      partyId: { not: null },
+      entry: {
+        companyId: ctx.company.id,
+        sourceId: found.id,
+        sourceType: "FIXED_ASSET",
+        reversalOfId: null,
+      },
+    },
+    select: { partyId: true },
+    distinct: ["partyId"],
+  });
+  const supplierIds = [...new Set(suppliers.flatMap((l) => (l.partyId ? [l.partyId] : [])))].sort();
 
-  return prisma.$transaction(async (tx) => {
+  return runTransaction(async (tx) => {
+    for (const id of supplierIds) await lockSupplierAccount(tx, ctx.company.id, id);
     await lockRow(tx, "FixedAsset", found.id);
     const asset = await tx.fixedAsset.findFirst({
-      where: { id: found.id, companyId: ctx.company.id },
+      where: { id: found.id, companyId: ctx.company.id, voidedAt: null },
     });
     if (!asset) throw new AppError("NOT_FOUND", "Fixed asset not found.");
     if (asset.status === "DISPOSED") {
@@ -582,17 +612,20 @@ export async function voidFixedAsset(
       ctx.company.id,
       entries.flatMap((e) => e.lines),
     );
-    await tx.fixedAsset.delete({ where: { id: asset.id } });
+    await tx.fixedAsset.update({
+      where: { id: asset.id },
+      data: { voidedAt: new Date(), voidReason: reason },
+    });
     await auditInCompany(
       ctx,
       meta,
       {
-        action: "DELETE",
+        action: "STATUS_CHANGE",
         entityType: "FixedAsset",
         entityId: asset.id,
         summary: `Removed fixed asset ${asset.name} (cost ${asset.purchaseCost.toFixed(2)}), ${entries.length} entr${
           entries.length === 1 ? "y" : "ies"
-        } reversed: ${reason}`,
+        } reversed; kept as void: ${reason}`,
       },
       tx,
     );

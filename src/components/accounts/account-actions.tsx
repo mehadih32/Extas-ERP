@@ -5,8 +5,8 @@ import { useState, useTransition } from "react";
 
 import { ActionErrorDialog } from "@/components/feedback/action-error-dialog";
 import { Field, FormAlert } from "@/components/forms/field";
-import { dayOrNow } from "@/components/production/cost-dialogs";
 import { AMOUNT_HINT, readAmount, textOf } from "@/components/products/form-values";
+import { openingDayHint } from "@/components/parties/opening-balance-dialog";
 import { FormDialog, problem } from "@/components/sales/dialogs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -160,7 +160,8 @@ export function AccountActions({
             const below = form.get("below") === "on";
             const result = await setAccountOpeningBalanceAction(a.id, {
               amount: below ? -(amount ?? 0) : (amount ?? 0),
-              asOf: dayOrNow(form, "asOf", today),
+              // The day shown (the go-live day it is on now) or typed; empty keeps that day.
+              asOf: textOf(form, "asOf") || undefined,
             });
             if (!result.ok) return result.error;
             setNotice(`The balance brought forward for ${a.name} was saved.`);
@@ -187,13 +188,21 @@ export function AccountActions({
                     autoFocus
                   />
                 </Field>
-                <Field id="opening-date" label="As of" error={fieldError("asOf")}>
+                <Field
+                  id="opening-date"
+                  label="As of"
+                  hint={openingDayHint(a.openingAsOf)}
+                  error={fieldError("asOf")}
+                >
                   <Input
                     id="opening-date"
                     name="asOf"
                     type="date"
-                    defaultValue={today}
+                    defaultValue={a.openingAsOf ?? ""}
                     max={today}
+                    aria-describedby={
+                      fieldError("asOf") ? "opening-date-error" : "opening-date-hint"
+                    }
                   />
                 </Field>
               </div>

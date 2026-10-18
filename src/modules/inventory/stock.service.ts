@@ -892,6 +892,8 @@ export async function listBadStock(ctx: CompanyContext, raw: unknown = {}) {
   const take = query.take ?? 30;
   const { start, end } = dayRange(query.from, query.to, ctx.company.timezone);
   const where: Prisma.BadStockEntryWhereInput = {
+    // A voided sales return's lines stay in the books but are no longer rejects.
+    voidedAt: null,
     ...(start || end
       ? { createdAt: { ...(start ? { gte: start } : {}), ...(end ? { lt: end } : {}) } }
       : {}),

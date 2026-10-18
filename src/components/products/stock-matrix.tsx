@@ -241,11 +241,11 @@ export function StockMatrix({
                 <tr key={row.color.id} className="group">
                   <th
                     scope="row"
-                    className="sticky left-0 z-10 border-r border-b bg-card px-4 text-left font-normal group-last:border-b-0"
+                    className="sticky left-0 z-10 min-w-36 border-r border-b bg-card px-4 text-left font-normal group-last:border-b-0"
                   >
-                    <span className="flex items-center gap-2">
+                    <span className="flex max-w-48 items-center gap-2">
                       <Swatch hex={row.color.hexCode} />
-                      <span className="truncate">{row.color.name}</span>
+                      <span className="min-w-0 break-words">{row.color.name}</span>
                     </span>
                   </th>
                   {row.cells.map((cell, i) => (

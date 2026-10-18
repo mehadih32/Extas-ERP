@@ -880,6 +880,60 @@ run("daily backups", () => {
       expect(await inbox()).toContain("Restore finished");
     });
 
+    it("records a restore cut off half-way as NOT done, in the inbox and on Telegram (v6.4.1 review 3)", async () => {
+      await mkdir(backupDir, { recursive: true });
+      await prisma.aiBotLink.create({
+        data: {
+          companyId: ctx.company.id,
+          channel: "TELEGRAM",
+          botKey: "123456",
+          tokenSealed: encryptSecret("123456:bot-token"),
+          webhookKey: "hash",
+          ownerId: owner.userId,
+          chatId: "555000111",
+          linkedAt: new Date(),
+        },
+      });
+      // Left by deploy/lib.sh settle_cut_restore at the server's start; and the result of
+      // the restore that ran after it (restore-result.json), each recorded once.
+      const message =
+        "The restore of 2026-10-04_020000 started at 2026-10-16 10:15 (server time) was cut off before it finished (the server restarted, or it was stopped). Nothing was put back automatically.";
+      await writeFile(
+        path.join(backupDir, "restore-cut-2026-10-16_101500.json"),
+        JSON.stringify({
+          ok: false,
+          name: "2026-10-04_020000",
+          wentBack: false,
+          message,
+          checks: [],
+        }),
+      );
+      await writeFile(
+        path.join(backupDir, "restore-result.json"),
+        JSON.stringify({ ok: true, name: "2026-10-05_020000", safetyCopy: "x", checks: [] }),
+      );
+      expect(await recordRestoreResult()).toBe(true);
+      expect(await recordRestoreResult()).toBe(false);
+      const runs = await prisma.backupRun.findMany({
+        where: { kind: "RESTORE" },
+        orderBy: { name: "asc" },
+      });
+      expect(runs.map((r) => [r.name, r.status])).toEqual([
+        ["2026-10-04_020000", "FAILED"],
+        ["2026-10-05_020000", "SUCCEEDED"],
+      ]);
+      expect(runs[0]!.error).toBe(message);
+      expect(await inbox()).toEqual(["Restore did not finish", "Restore finished"]);
+      const alarms = await prisma.backgroundJob.findMany({ where: { kind: "ai.bot.push" } });
+      expect(alarms.map((j) => j.payload)).toContainEqual(
+        expect.objectContaining({ alarm: true, text: `Restore did not finish: ${message}` }),
+      );
+      // Taken once: kept as done, never recorded again.
+      expect((await readdir(backupDir)).filter((n) => n.startsWith("restore-cut-"))).toEqual([
+        expect.stringMatching(/^restore-cut-2026-10-16_101500-\d+\.done\.json$/),
+      ]);
+    });
+
     it("sends deploy.sh's safety copies to Drive, locked, and leaves the server's copy alone", async () => {
       await readyToSend();
       const copies = path.join(dir, "safety-copies");

@@ -13,6 +13,7 @@ import { listDriveBackups } from "@/modules/backups/drive-copies";
 import * as keys from "@/modules/backups/recovery-key.service";
 import * as restores from "@/modules/backups/restore.service";
 import { drillNowSchema } from "@/modules/backups/schemas";
+import { recordServerDrill } from "@/modules/backups/server-drill";
 import { runTestRestore } from "@/modules/backups/test-restore";
 
 /*
@@ -81,6 +82,12 @@ export const testRestoreNowAction = async (input: unknown = {}) =>
       await getRequestMeta(),
     );
   });
+/**
+ * "Record a drill": reads the time and result of a restore drill on a new server
+ * from the drill copy's web address, and keeps it as the last new-server drill.
+ */
+export const recordServerDrillAction = async (input: unknown) =>
+  change(async () => recordServerDrill(await owner(), input, await getRequestMeta()));
 /** The backups in Google Drive, newest first. */
 export const listDriveBackupsAction = async () =>
   runAction(async () => {

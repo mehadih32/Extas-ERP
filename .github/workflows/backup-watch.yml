@@ -3,14 +3,18 @@
 # ERP made and checked, and tells the owner on Telegram when it is late by the
 # owner's backup schedule, when Drive cannot be read, and on Saturday mornings that
 # all is well. "Run workflow" (Actions tab) runs it now and always sends the result.
+# Backups switched off on purpose are said once, at the first run that sees it: the
+# newest backup's folder then gets one label of the alert's own ("told"), the only
+# change it makes in Drive, so the next runs stay quiet until the weekly message.
 # The code is scripts/backup-watch.mjs (Node only: nothing is installed).
 #
 # Its values are repository secrets that the ERP fills in itself, locked so only
 # GitHub Actions can read them (Settings > Backups, "Set up the alert on GitHub"):
 # the ERP's Google client and Drive sign-in (scope drive.file: it sees only the
 # files the ERP made), the backup folder, and the Telegram bot and the owner's chat.
-# Nobody types or sees them. Until they are there, each run fails with one line
-# naming the missing ones. BACKUP_ALERT_LATE_HOURS (a repository variable, optional)
+# Nobody types or sees them. Until they are there, a run on the clock passes with a
+# notice (so GitHub does not email a failure every 6 hours) and "Run workflow" fails
+# with one line naming the missing ones; a half set-up always fails. BACKUP_ALERT_LATE_HOURS (a repository variable, optional)
 # sets a fixed "late after so many hours" instead of the schedule's.
 #
 # GitHub stops scheduled workflows in a public repository after 60 days with no

@@ -526,7 +526,7 @@ run("Bug Guard data and accounts checks", () => {
   const correctAndUndo = async (f: Found) => {
     expect(f.fixKind).toBe("DATA");
     const plan = f.correction!;
-    const correctionId = plan.kind === "JOURNAL" ? (await prepare(f)).id : "not-kept";
+    const correctionId = (await prepare(f)).id;
     const applied = await prisma.$transaction((tx) =>
       applyPlan(tx, w.company.id, plan, { userId: w.owner.id, correctionId }),
     );
@@ -537,10 +537,17 @@ run("Bug Guard data and accounts checks", () => {
       expect(await only("data.ledger.trial")).toEqual([]);
     }
     await prisma.$transaction((tx) =>
-      undoPlan(tx, w.company.id, plan, applied, { userId: w.owner.id }),
+      undoPlan(tx, w.company.id, plan, applied, { userId: w.owner.id, correctionId }),
     );
     expect((await only(checkOf(f.key))).map((x) => x.key)).toContain(f.key);
     if (plan.kind === "JOURNAL") expect(await only("data.ledger.trial")).toEqual([]);
+    return correctionId;
+  };
+
+  /** A stored total Bug Guard never sets (v6.4.1 B4): the owner's, with the steps. */
+  const leftToOwner = (f: Found) => {
+    expect(f).toMatchObject({ fixKind: "MANUAL", correction: null });
+    expect(f.fix).toContain("Bug Guard কোনো লেখা অঙ্ক বদলায় না");
   };
 
   const evidence = (f: Found) =>
@@ -792,7 +799,7 @@ run("Bug Guard data and accounts checks", () => {
   // Stock
   // ---------------------------------------------------------------------------
 
-  it("puts a stock balance back to the sum of its movements", async () => {
+  it("records a stock balance's difference from its movements as a movement, never changing the stock (v6.4.1 B4)", async () => {
     const balance = await prisma.stockBalance.findFirstOrThrow({
       where: { companyId: w.company.id, variantId: w.sku("M"), grade: "A_GRADE" },
       include: { variant: true, warehouse: true },
@@ -801,6 +808,12 @@ run("Bug Guard data and accounts checks", () => {
       where: { id: balance.id },
       data: { quantity: balance.quantity + 3 },
     });
+    const ours = (correctionId: string) =>
+      prisma.stockMovement.findMany({
+        where: { referenceType: "BugGuardCorrection", referenceId: correctionId },
+        orderBy: { createdAt: "asc" },
+        select: { type: true, quantity: true, unitCost: true, createdById: true, note: true },
+      });
     try {
       const f = await theFinding(`data.stock.balance:${balance.id}`);
       expect(f).toMatchObject({
@@ -815,19 +828,74 @@ run("Bug Guard data and accounts checks", () => {
         "আসা-যাওয়ার যোগফল": String(balance.quantity),
       });
       expect(f.correction).toEqual({
-        kind: "SET",
-        changes: [
-          {
-            model: "StockBalance",
-            id: balance.id,
-            field: "quantity",
-            before: String(balance.quantity + 3),
-            after: String(balance.quantity),
-            label: expect.stringContaining(balance.variant.sku),
-          },
-        ],
+        kind: "STOCK",
+        balanceId: balance.id,
+        variantId: balance.variantId,
+        warehouseId: balance.warehouseId,
+        grade: "A_GRADE",
+        stored: balance.quantity + 3,
+        moved: balance.quantity,
+        label: expect.stringContaining(balance.variant.sku),
       });
-      await correctAndUndo(f);
+      expect(describePlan(f.correction!)).toContain("+3 পিস");
+      const correctionId = await correctAndUndo(f);
+      // A movement of the difference, then its opposite: the stock itself never changed.
+      expect(await ours(correctionId)).toEqual([
+        {
+          type: "ADJUSTMENT",
+          quantity: 3,
+          unitCost: null,
+          createdById: w.owner.id,
+          note: expect.stringContaining("Bug Guard correction"),
+        },
+        {
+          type: "ADJUSTMENT",
+          quantity: -3,
+          unitCost: null,
+          createdById: w.owner.id,
+          note: expect.stringContaining("undone"),
+        },
+      ]);
+      expect(
+        (await prisma.stockBalance.findUniqueOrThrow({ where: { id: balance.id } })).quantity,
+      ).toBe(balance.quantity + 3);
+      await expect(
+        prisma.$transaction((tx) =>
+          undoPlan(
+            tx,
+            w.company.id,
+            f.correction!,
+            { journalEntryId: null },
+            {
+              userId: w.owner.id,
+              correctionId,
+            },
+          ),
+        ),
+      ).rejects.toMatchObject({
+        code: "CONFLICT",
+        message: expect.stringMatching(/undone already/),
+      });
+
+      // Made only while the stock and its movements are as the check saw them.
+      const again = (await prepare(f)).id;
+      await prisma.stockBalance.update({
+        where: { id: balance.id },
+        data: { quantity: balance.quantity + 4 },
+      });
+      await expect(
+        prisma.$transaction((tx) =>
+          applyPlan(tx, w.company.id, f.correction!, { userId: w.owner.id, correctionId: again }),
+        ),
+      ).rejects.toMatchObject({
+        code: "CONFLICT",
+        message: expect.stringMatching(/Out of date.*changed since this was prepared/),
+      });
+      expect(await ours(again)).toEqual([]);
+      // Below zero, nothing is offered: the owner counts it first.
+      await prisma.stockBalance.update({ where: { id: balance.id }, data: { quantity: -2 } });
+      const negative = await theFinding(`data.stock.balance:${balance.id}`);
+      expect(negative).toMatchObject({ fixKind: "MANUAL", correction: null });
     } finally {
       await prisma.stockBalance.update({
         where: { id: balance.id },
@@ -905,7 +973,7 @@ run("Bug Guard data and accounts checks", () => {
   // Stored totals
   // ---------------------------------------------------------------------------
 
-  it("puts a purchase order's total back to the sum of its lines", async () => {
+  it("leaves a purchase order's total off its lines to the owner, never setting it (v6.4.1 B4)", async () => {
     const before = await prisma.purchaseOrder.findUniqueOrThrow({ where: { id: w.po.id } });
     await prisma.purchaseOrder.update({
       where: { id: w.po.id },
@@ -917,21 +985,13 @@ run("Bug Guard data and accounts checks", () => {
         severity: "IMPORTANT",
         href: materialsHref.order(w.po.id),
         place: before.number,
-        fixKind: "DATA",
-        correction: {
-          kind: "SET",
-          changes: [
-            {
-              model: "PurchaseOrder",
-              id: w.po.id,
-              field: "totalAmount",
-              before: "35200.00",
-              after: "35100.00",
-            },
-          ],
-        },
       });
-      await correctAndUndo(f);
+      expect(evidence(f)).toMatchObject({
+        "লেখা মোট": "35,200.00",
+        "লাইনগুলোর যোগফল": "35,100.00",
+      });
+      leftToOwner(f);
+      expect(f.fix).toContain("“Save the changes”");
     } finally {
       await prisma.purchaseOrder.update({
         where: { id: w.po.id },
@@ -940,7 +1000,7 @@ run("Bug Guard data and accounts checks", () => {
     }
   });
 
-  it("puts what is paid and due on an order and its invoice back to its payments", async () => {
+  it("leaves what is paid and due on an order and its invoice to the owner (v6.4.1 B4)", async () => {
     const order = await prisma.salesOrder.findUniqueOrThrow({ where: { id: w.order.id } });
     const invoice = await prisma.invoice.findUniqueOrThrow({ where: { id: w.invoice.id } });
     expect(invoice.status).toBe("PARTIALLY_PAID");
@@ -962,32 +1022,12 @@ run("Bug Guard data and accounts checks", () => {
         severity: "IMPORTANT",
         href: salesHref.order(order.id),
         place: order.number,
-        fixKind: "DATA",
       });
       expect(evidence(f)).toMatchObject({
         "পেমেন্ট থেকে পাওয়া": "5,000.00",
         "অর্ডারে লেখা পাওয়া": "4,000.00",
       });
-      expect(
-        f.correction?.kind === "SET" &&
-          f.correction.changes.map((c) => [c.model, c.field, c.before, c.after]),
-      ).toEqual([
-        ["SalesOrder", "paidAmount", "4000.00", "5000.00"],
-        [
-          "SalesOrder",
-          "dueAmount",
-          order.dueAmount.plus(1000).toFixed(2),
-          order.dueAmount.toFixed(2),
-        ],
-        ["Invoice", "paidAmount", "4000.00", "5000.00"],
-        [
-          "Invoice",
-          "dueAmount",
-          invoice.dueAmount.plus(1000).toFixed(2),
-          invoice.dueAmount.toFixed(2),
-        ],
-      ]);
-      await correctAndUndo(f);
+      leftToOwner(f);
     } finally {
       await prisma.salesOrder.update({
         where: { id: order.id },
@@ -1006,12 +1046,13 @@ run("Bug Guard data and accounts checks", () => {
     try {
       const f = await theFinding(`data.totals.sales:${w.order.id}`);
       expect(f).toMatchObject({ severity: "IMPORTANT", fixKind: "MANUAL", correction: null });
+      expect(f.fix).toContain("Paid, Partly paid");
     } finally {
       await prisma.invoice.update({ where: { id: invoice.id }, data: { status: invoice.status } });
     }
   });
 
-  it("puts a proforma's advance back to its payments", async () => {
+  it("leaves a proforma's advance off its payments to the owner (v6.4.1 B4)", async () => {
     const before = await prisma.proformaInvoice.findUniqueOrThrow({ where: { id: w.proforma.id } });
     expect(before.advancePaid.toFixed(2)).toBe("3600.00");
     await prisma.proformaInvoice.update({
@@ -1023,15 +1064,12 @@ run("Bug Guard data and accounts checks", () => {
       expect(f).toMatchObject({
         severity: "IMPORTANT",
         href: salesHref.proforma(w.proforma.id),
-        fixKind: "DATA",
-        correction: {
-          kind: "SET",
-          changes: [
-            { model: "ProformaInvoice", field: "advancePaid", before: "3000.00", after: "3600.00" },
-          ],
-        },
       });
-      await correctAndUndo(f);
+      expect(evidence(f)).toMatchObject({
+        "লেখা অগ্রিম": "3,000.00",
+        "পেমেন্ট থেকে রিফান্ড বাদে": "3,600.00",
+      });
+      leftToOwner(f);
     } finally {
       await prisma.proformaInvoice.update({
         where: { id: w.proforma.id },
@@ -1040,7 +1078,7 @@ run("Bug Guard data and accounts checks", () => {
     }
   });
 
-  it("puts a supplier bill's paid and due back to the supplier's ledger", async () => {
+  it("leaves a supplier bill's paid and due off the supplier's ledger to the owner (v6.4.1 B4)", async () => {
     const before = await prisma.supplierBill.findUniqueOrThrow({ where: { id: w.bill.id } });
     expect(before.status).toBe("PARTIALLY_PAID");
     await prisma.supplierBill.update({
@@ -1053,26 +1091,10 @@ run("Bug Guard data and accounts checks", () => {
         severity: "IMPORTANT",
         href: materialsHref.purchase(w.bill.id),
         place: before.number,
-        fixKind: "DATA",
       });
-      expect(
-        f.correction?.kind === "SET" &&
-          f.correction.changes.map((c) => [c.model, c.field, c.before, c.after]),
-      ).toEqual([
-        [
-          "SupplierBill",
-          "paidAmount",
-          before.paidAmount.plus(100).toFixed(2),
-          before.paidAmount.toFixed(2),
-        ],
-        [
-          "SupplierBill",
-          "dueAmount",
-          before.dueAmount.minus(100).toFixed(2),
-          before.dueAmount.toFixed(2),
-        ],
-      ]);
-      await correctAndUndo(f);
+      leftToOwner(f);
+      // The supplier's next payment or voucher settles the bills from the ledger again.
+      expect(f.fix).toContain("ভাউচার");
     } finally {
       await prisma.supplierBill.update({
         where: { id: w.bill.id },
@@ -1081,7 +1103,7 @@ run("Bug Guard data and accounts checks", () => {
     }
   });
 
-  it("puts salary totals, what is paid on a salary and an advance's balance back", async () => {
+  it("leaves salary totals, what is paid on a salary and an advance's balance to the owner (v6.4.1 B4)", async () => {
     const run = await prisma.payrollRun.findUniqueOrThrow({ where: { id: w.salaries.id } });
     const item = await prisma.payrollItem.findFirstOrThrow({
       where: { runId: w.salaries.id, employeeId: w.karim.id },
@@ -1096,67 +1118,13 @@ run("Bug Guard data and accounts checks", () => {
     await prisma.salaryAdvance.update({ where: { id: advance.id }, data: { outstanding: 2500 } });
     try {
       const totals = await theFinding(`data.totals.payroll:${run.id}`);
-      expect(totals).toMatchObject({
-        severity: "IMPORTANT",
-        href: hrHref.payrollRun(run.id),
-        fixKind: "DATA",
-        correction: {
-          kind: "SET",
-          changes: [
-            {
-              model: "PayrollRun",
-              field: "totalNet",
-              before: run.totalNet.plus(1).toFixed(2),
-              after: run.totalNet.toFixed(2),
-            },
-          ],
-        },
-      });
+      expect(totals).toMatchObject({ severity: "IMPORTANT", href: hrHref.payrollRun(run.id) });
       const paid = await theFinding(`data.totals.payroll:${item.id}`);
-      expect(paid).toMatchObject({
-        severity: "IMPORTANT",
-        href: hrHref.payrollRun(run.id),
-        fixKind: "DATA",
-        correction: {
-          kind: "SET",
-          changes: [
-            { model: "PayrollItem", field: "paidAmount", before: "4000.00", after: "5000.00" },
-          ],
-        },
-      });
+      expect(paid).toMatchObject({ severity: "IMPORTANT", href: hrHref.payrollRun(run.id) });
+      expect(evidence(paid)).toMatchObject({ "লেখা দেওয়া": "4,000.00", পরিশোধগুলোতে: "5,000.00" });
       const owed = await theFinding(`data.totals.payroll:${advance.id}`);
-      expect(owed).toMatchObject({
-        severity: "IMPORTANT",
-        href: hrHref.advance(advance.id),
-        fixKind: "DATA",
-        correction: {
-          kind: "SET",
-          changes: [
-            { model: "SalaryAdvance", field: "outstanding", before: "2500.00", after: "3000.00" },
-          ],
-        },
-      });
-      // One at a time: each correction clears its own finding.
-      for (const f of [totals, paid, owed]) {
-        const applied = await prisma.$transaction((tx) =>
-          applyPlan(tx, w.company.id, f.correction!, {
-            userId: w.owner.id,
-            correctionId: "not-kept",
-          }),
-        );
-        expect((await only("data.totals.payroll")).map((x) => x.key)).not.toContain(f.key);
-        await prisma.$transaction((tx) =>
-          undoPlan(tx, w.company.id, f.correction!, applied, { userId: w.owner.id }),
-        );
-        expect((await only("data.totals.payroll")).map((x) => x.key)).toContain(f.key);
-        await prisma.$transaction((tx) =>
-          applyPlan(tx, w.company.id, f.correction!, {
-            userId: w.owner.id,
-            correctionId: "not-kept",
-          }),
-        );
-      }
-      expect(await only("data.totals.payroll")).toEqual([]);
+      expect(owed).toMatchObject({ severity: "IMPORTANT", href: hrHref.advance(advance.id) });
+      for (const f of [totals, paid, owed]) leftToOwner(f);
     } finally {
       await prisma.payrollRun.update({ where: { id: run.id }, data: { totalNet: run.totalNet } });
       await prisma.payrollItem.update({
@@ -1214,7 +1182,7 @@ run("Bug Guard data and accounts checks", () => {
     }
   });
 
-  it("puts a style's cost back to its bills, costs and materials", async () => {
+  it("leaves a style's cost off its bills, costs and materials to the owner (v6.4.1 B4)", async () => {
     const before = await prisma.productionProject.findUniqueOrThrow({ where: { id: w.polo.id } });
     expect(before.totalCost.toFixed(2)).toBe("1800.00");
     await prisma.productionProject.update({ where: { id: w.polo.id }, data: { totalCost: 1850 } });
@@ -1223,15 +1191,9 @@ run("Bug Guard data and accounts checks", () => {
       expect(f).toMatchObject({
         severity: "IMPORTANT",
         href: productionHref.project(w.polo.id),
-        fixKind: "DATA",
-        correction: {
-          kind: "SET",
-          changes: [
-            { model: "ProductionProject", field: "totalCost", before: "1850.00", after: "1800.00" },
-          ],
-        },
       });
-      await correctAndUndo(f);
+      expect(evidence(f)).toMatchObject({ "লেখা মোট খরচ": "1,850.00" });
+      leftToOwner(f);
     } finally {
       await prisma.productionProject.update({
         where: { id: w.polo.id },

@@ -87,15 +87,19 @@ export function AdvanceList({
                   </div>
                 </TableCell>
                 <TableCell>
-                  <div className="max-w-56 truncate">{a.employee.name}</div>
+                  <div className="max-w-56 min-w-40 break-words whitespace-normal">
+                    {a.employee.name}
+                  </div>
                   <div className="text-[0.8125rem] text-muted-foreground">{a.employee.code}</div>
                 </TableCell>
                 <TableCell className="text-muted-foreground">
-                  <div className="max-w-64 truncate">
+                  <div className="max-w-64 min-w-40 break-words whitespace-normal">
                     {a.status === "OPEN" ? recoveryText(a, currency) : "–"}
                   </div>
                   {a.purpose && (
-                    <div className="max-w-64 truncate text-[0.8125rem]">{a.purpose}</div>
+                    <div className="max-w-64 min-w-40 text-[0.8125rem] break-words whitespace-normal">
+                      {a.purpose}
+                    </div>
                   )}
                 </TableCell>
                 <TableCell className="text-right whitespace-nowrap tabular-nums">

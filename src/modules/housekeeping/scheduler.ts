@@ -89,8 +89,9 @@ export async function housekeepingTick(now: Date = new Date()) {
   const due = previousRun(SCHEDULE, TIMEZONE, now);
   if (!due || running || (lastDue !== null && due.getTime() <= lastDue)) return null;
   // Not on a copy on standby after a restore (G2); it runs once the copy goes live.
-  const { onStandby } = await import("@/modules/backups/standby");
-  if (await onStandby()) return null;
+  // Never on a restore drill copy (test mode).
+  const { onDrill, onStandby } = await import("@/modules/backups/standby");
+  if ((await onDrill()) || (await onStandby())) return null;
   running = true;
   try {
     return await runHousekeeping(now);

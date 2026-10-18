@@ -15,6 +15,7 @@ export const GET = apiRoute<Params>(async (_request, { orderId }) =>
 /**
  * PATCH /api/materials/purchase-orders/:orderId — { projectId?, expectedDate?, supplierRef?,
  * notes?, lines? }. Lines can only be replaced while nothing has arrived. Needs materials.purchase.
+ * A booking's order is refused: it changes on the booking (a new revision after approval).
  */
 export const PATCH = apiRoute<Params>(async (request, { orderId }) =>
   orders.updatePurchaseOrder(

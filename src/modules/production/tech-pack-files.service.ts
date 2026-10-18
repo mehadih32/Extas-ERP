@@ -38,6 +38,7 @@ import {
 import {
   assertCanChange,
   assertManage,
+  assertView,
   loadTechPack,
   logTechPack,
 } from "@/modules/production/tech-pack-spec.service";
@@ -576,6 +577,7 @@ export async function logoMachineFile(
   logoId: string,
   format: "DST" | "EXP" | null,
 ) {
+  assertView(ctx);
   const { logo } = await loadLogo(ctx, techPackId, logoId);
   const file = logo.machineFileId
     ? await ctx.db.fileAsset.findUnique({ where: { id: logo.machineFileId } })

@@ -108,6 +108,7 @@ const faultSelect = {
   bill: { select: { id: true, number: true } },
   createdBy: { select: { name: true } },
   settledBy: { select: { name: true } },
+  cmSettlement: { select: { number: true, undoneAt: true } },
   photoId: true,
 } satisfies Prisma.SupplierFaultSelect;
 
@@ -135,8 +136,15 @@ function present(ctx: CompanyContext, f: FaultRow) {
     project: f.project,
     material: f.rawMaterial,
     bill: f.bill,
+    /** The standing CM settlement that took it off (it changes only by undoing that). */
+    cmSettlement: heldByCm(f.cmSettlement),
     photoId: f.photoId,
   };
+}
+
+/** The number of the CM settlement holding a fault, while that settlement stands. */
+function heldByCm(settlement: { number: string; undoneAt: Date | null } | null) {
+  return settlement && !settlement.undoneAt ? settlement.number : null;
 }
 
 export type FaultItem = ReturnType<typeof present>;
@@ -406,9 +414,19 @@ export async function settleFault(
         amount: true,
         note: true,
         journalEntryId: true,
+        cmSettlement: { select: { number: true, undoneAt: true } },
         supplier: { select: { id: true, name: true, supplierCategories: true } },
       },
     });
+    // A fault the CM settlement took off is in that settlement's entry, not its own:
+    // changing it alone would leave the money off the factory's Supplier Due.
+    const cm = heldByCm(fault.cmSettlement);
+    if (cm) {
+      throw new AppError(
+        "CONFLICT",
+        `Taken off the CM on ${cm}; undo that settlement to change it.`,
+      );
+    }
     if (fault.status === input.status) {
       throw new AppError("CONFLICT", `${fault.number} is already ${input.status.toLowerCase()}.`);
     }

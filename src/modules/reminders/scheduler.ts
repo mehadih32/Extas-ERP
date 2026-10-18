@@ -17,12 +17,27 @@ export async function reminderTick(now: Date = new Date()) {
   if (running) return null;
   running = true;
   try {
-    // On standby after a restore (G2): only the Bug Guard check the restore asked for (G1).
-    const { onStandby } = await import("@/modules/backups/standby");
-    if (await onStandby()) {
+    // A restore drill copy (test mode): only the Bug Guard check the restore asked
+    // for (G1), and an update's request taken (and skipped) so deploy.sh does not
+    // wait for it; no reminder, message or schedule.
+    const { onDrill, onStandby } = await import("@/modules/backups/standby");
+    if (await onDrill()) {
       const { bugGuardAfterRestore } = await import("@/modules/bug-guard/after-restore");
       await bugGuardAfterRestore().catch((error) =>
         console.error("[bug-guard] after the restore", error),
+      );
+      const { bugGuardAfterDeploy } = await import("@/modules/bug-guard/after-deploy");
+      await bugGuardAfterDeploy().catch((error) =>
+        console.error("[bug-guard] after the update", error),
+      );
+      return null;
+    }
+    // On standby after a restore (G2): only Bug Guard (the check the restore asked
+    // for, G1, its schedule and its alarms); the reminders and messages wait.
+    if (await onStandby()) {
+      const { runBugGuardClock } = await import("@/modules/bug-guard/clock");
+      await runBugGuardClock(now).catch((error) =>
+        console.error("[bug-guard] clock failed", error),
       );
       return null;
     }

@@ -293,6 +293,10 @@ export function TagPlacement({ template, catalog }: { template: Template; catalo
             <button
               key={d.key}
               type="button"
+              // Drawn at its printed size on the scaled page, so it can be smaller than
+              // screen text: the whole tag, readable, is in the list beside it.
+              data-layout-cut-ok
+              data-layout-ignore
               onClick={(e) => {
                 e.stopPropagation();
                 setAdding(null);
@@ -527,7 +531,7 @@ export function TagPlacement({ template, catalog }: { template: Template; catalo
                     )}
                   >
                     <span className="flex min-w-0 items-baseline justify-between gap-2">
-                      <code className="truncate text-sm font-medium">{d.tag}</code>
+                      <code className="min-w-0 text-sm font-medium wrap-anywhere">{d.tag}</code>
                       <span
                         className={cn(
                           "shrink-0 text-[0.8125rem]",
@@ -537,7 +541,7 @@ export function TagPlacement({ template, catalog }: { template: Template; catalo
                         {label(d)}
                       </span>
                     </span>
-                    <span className="truncate text-[0.75rem] text-muted-foreground">
+                    <span className="text-[0.75rem] break-words text-muted-foreground">
                       {where(d)}
                     </span>
                   </button>

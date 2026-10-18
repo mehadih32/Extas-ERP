@@ -5,6 +5,7 @@ import { homePeriod, homeRangeSchema, type HomePeriod } from "@/modules/dashboar
 import {
   buyerTopStyles,
   salesTotals,
+  sharePct,
   type TopBuyer,
   topBuyers,
   topSellers,
@@ -134,7 +135,7 @@ async function topBuyerOf(ctx: CompanyContext, period: HomePeriod) {
       ? {
           ...buyerView(top),
           /** Share of the period's sales, in percent to one place. */
-          sharePct: total.net.isZero() ? null : top.net.dividedBy(total.net).times(100).toFixed(1),
+          sharePct: sharePct(top.net, total.net),
           styles: styles.map((s) => ({ id: s.id, code: s.code, name: s.name, pieces: s.pieces })),
         }
       : null,

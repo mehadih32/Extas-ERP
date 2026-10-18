@@ -40,6 +40,8 @@ export type DriveBackup = {
   keyId: string | null;
   /** 3: locked with the owner's key pair (v6.4); 2: v6.3's key; 1: not locked. */
   format: number;
+  /** Made by a restored copy while it waited on standby (backup.service.ts). */
+  standby: boolean;
 };
 
 export function presentBackup(folder: drive.DriveFile): DriveBackup {
@@ -54,6 +56,7 @@ export function presentBackup(folder: drive.DriveFile): DriveBackup {
     keyId: labels.keyId ?? null,
     // v6.3 labelled no format: its backups were locked with its own key.
     format: labels.format ? Number(labels.format) : 2,
+    standby: labels.standby === "yes",
   };
 }
 

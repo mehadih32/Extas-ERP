@@ -82,7 +82,12 @@ export function standInForBotApi(stand: Transport | null) {
   transport = stand ?? fetchTransport;
 }
 
-export const botCall = (call: BotCall) => transport(call);
+/** Every call to a bot provider; a restore drill copy (test mode) makes none. */
+export async function botCall(call: BotCall): Promise<BotReply> {
+  const { DRILL_NOT_SENT, onDrill } = await import("@/modules/backups/standby");
+  if (await onDrill()) throw new BotApiError(503, DRILL_NOT_SENT);
+  return transport(call);
+}
 
 /** A provider's refusal, with its own words for the log (never the token). */
 export class BotApiError extends Error {

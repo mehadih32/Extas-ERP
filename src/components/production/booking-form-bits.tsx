@@ -150,7 +150,7 @@ export function Figure({
       <dt className="text-[0.75rem] text-muted-foreground">{label}</dt>
       <dd
         className={cn(
-          "mt-0.5 truncate tabular-nums",
+          "mt-0.5 wrap-anywhere tabular-nums",
           strong ? "font-serif text-lg text-primary" : "text-sm font-medium",
         )}
       >

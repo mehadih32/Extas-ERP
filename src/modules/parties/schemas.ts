@@ -103,14 +103,15 @@ export const statusSchema = z.object({
   reason: z.string().trim().max(500).optional(),
 });
 
+/** A calendar day ("2026-02-28", whole day in company time) or an exact timestamp. */
+const dayOrInstant = z.union([z.date(), z.iso.date(), z.iso.datetime({ offset: true })]);
+
 export const openingBalanceSchema = z.object({
   /** Positive: they owe us (receivable). Negative: we owe them (payable). */
   amount: z.number().min(-10_000_000_000).max(10_000_000_000),
-  asOf: z.coerce.date().optional(),
+  /** The go-live day (company time); left out, the day the opening is on now (today if none). */
+  asOf: dayOrInstant.optional(),
 });
-
-/** A calendar day ("2026-02-28", whole day in company time) or an exact timestamp. */
-const dayOrInstant = z.union([z.date(), z.iso.date(), z.iso.datetime({ offset: true })]);
 
 export const statementSchema = z.object({
   from: dayOrInstant.optional(),

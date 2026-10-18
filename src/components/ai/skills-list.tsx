@@ -88,7 +88,7 @@ export function SkillsList({ list: l }: { list: SkillList }) {
                     {s.agentName} · version {s.version} · {s.examples} examples · {s.files} files ·
                     changed {day(s.updatedAt)}
                   </span>
-                  <span className="line-clamp-2 text-sm">{s.whenToUse}</span>
+                  <span className="text-sm break-words">{s.whenToUse}</span>
                 </div>
                 <div className="flex shrink-0 flex-wrap gap-2">
                   <StatusBadge tone={SKILL_TONES[s.test.standing]}>{s.test.text}</StatusBadge>

@@ -34,7 +34,7 @@ function AgendaItem({ item, today }: { item: AgendaRow; today: string }) {
         </span>
         <span className="mt-1 block text-sm font-medium break-words">{item.title}</span>
         {item.detail && (
-          <span className="mt-0.5 line-clamp-2 block text-[0.8125rem] break-words text-muted-foreground">
+          <span className="mt-0.5 block text-[0.8125rem] break-words text-muted-foreground">
             {item.detail}
           </span>
         )}

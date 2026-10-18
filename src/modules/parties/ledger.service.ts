@@ -1,18 +1,23 @@
 import { Prisma } from "@prisma/client";
 
-import { dayRange } from "@/lib/dates";
+import { dayRange, toInstant } from "@/lib/dates";
 import type { Db } from "@/lib/db-types";
 import { AppError } from "@/lib/errors";
-import { nextDocumentNumber } from "@/lib/numbering";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
+import { lockRow } from "@/lib/row-lock";
+import { runTransaction } from "@/lib/transaction";
 import { assertAllowed } from "@/lib/verdict";
 import { ensureControlAccounts, PARTY_BALANCE_SUBTYPES } from "@/modules/accounts/control-accounts";
-import { settleSupplierBills } from "@/modules/accounts/supplier-settlement";
+import { postJournalEntry, reverseJournalEntry } from "@/modules/accounts/journal.service";
+import { assertCanManageAccounts } from "@/modules/accounts/money-guards";
+import { liveOpeningEntries, openingDate } from "@/modules/accounts/opening-entry";
+import { lockSupplierAccount, settleSupplierBills } from "@/modules/accounts/supplier-settlement";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { canSetOpeningBalance } from "@/modules/parties/rules";
 import { openingBalanceSchema, statementSchema } from "@/modules/parties/schemas";
+import { creditPosition, lockBuyerCredit } from "@/modules/sales/credit.service";
 
 /*
  * Buyer / supplier ledgers
@@ -30,6 +35,7 @@ const subtypeFilter = Prisma.sql`la."subType" IN (${Prisma.join(
 )})`;
 
 const ZERO = new Prisma.Decimal(0);
+const TX_OPTIONS = { timeout: 30_000 };
 
 /** Current balance for each party id (0 when it has no entries). */
 export async function balancesFor(
@@ -176,8 +182,23 @@ export async function getStatement(ctx: CompanyContext, partyId: string, raw: un
 }
 
 /**
- * Sets the balance brought forward when the party is migrated into the ERP.
- * Re-setting replaces the previous opening entry (recorded in the audit log).
+ * Sets the balance brought forward when the party is migrated into the ERP
+ * (Accounts: accounts.manage, checked here as well as in the route). Re-setting
+ * reverses the earlier opening entry with a mirror entry dated on the earlier
+ * entry's own day, so both stay in the books (never deleted) and cancel out in
+ * every report from that day on, and posts the new one. Without a day ("As of"
+ * left empty) the new one goes on the earlier entry's day, so no report between
+ * go-live and today loses the opening; saving the same amount on the same day
+ * changes nothing.
+ *
+ * What a buyer owed goes on their Receivable. What the company owed a buyer
+ * (an advance they had paid) is a credit on their Receivable too, like money
+ * received on their account: it is their credit, used on invoices or paid back
+ * (sales/credit.service.ts). Lowering it is refused once the part taken away
+ * has been used: their credit is held first, like every step that uses it. A
+ * supplier's goes on Payable, and their bills are settled again. A buyer's
+ * opening advance posted on Customer Advance before v6.4.1 moves to Receivable
+ * when its opening balance is saved again.
  */
 export async function setOpeningBalance(
   ctx: CompanyContext,
@@ -185,53 +206,98 @@ export async function setOpeningBalance(
   raw: unknown,
   meta?: RequestMeta,
 ) {
+  assertCanManageAccounts(ctx, "Only Accounts can set an opening balance: it goes into the books.");
   const input = openingBalanceSchema.parse(raw);
   const party = await getPartyOrThrow(ctx, partyId);
   const amount = new Prisma.Decimal(input.amount.toFixed(2));
   assertAllowed(canSetOpeningBalance(party, amount.toNumber()));
+  const companyId = ctx.company.id;
+  const asOf = input.asOf ? toInstant(input.asOf, ctx.company.timezone) : undefined;
 
-  await prisma.$transaction(async (tx) => {
-    const accounts = await ensureControlAccounts(ctx.company.id, tx);
-    const previous = await tx.journalEntry.findMany({
-      where: { companyId: ctx.company.id, sourceType: "OPENING_BALANCE", sourceId: party.id },
-      select: { id: true },
-    });
-    await tx.journalEntry.deleteMany({ where: { id: { in: previous.map((p) => p.id) } } });
+  await runTransaction(async (tx) => {
+    // The supplier's account (or the buyer's credit) first, the ERP's lock order,
+    // before any journal number.
+    if (party.kind !== "BUYER") await lockSupplierAccount(tx, companyId, party.id);
+    else await lockBuyerCredit(tx, party.id);
+    await lockRow(tx, "Party", party.id);
+    const accounts = await ensureControlAccounts(companyId, tx);
+    // A buyer's advance is credit on their Receivable, like money paid on account.
+    const partyAccount =
+      amount.gt(0) || party.kind === "BUYER" ? accounts.RECEIVABLE : accounts.PAYABLE;
+    const live = await liveOpeningEntries(tx, companyId, party.id);
+    // The day chosen, else the go-live day the opening sits on now.
+    const date = openingDate(asOf, live, ctx.company.timezone);
+    const unchanged =
+      live.length === (amount.isZero() ? 0 : 1) &&
+      live.every(
+        (entry) =>
+          entry.date.getTime() === date.getTime() &&
+          entry.lines.some(
+            (l) =>
+              l.accountId === partyAccount &&
+              l.partyId === party.id &&
+              l.debit.minus(l.credit).equals(amount),
+          ),
+      );
+    if (unchanged && party.openingBalance.equals(amount)) return;
 
-    if (!amount.isZero()) {
-      // A negative buyer balance is an advance they paid us.
-      const partyAccount = amount.gt(0)
-        ? accounts.RECEIVABLE
-        : party.kind === "BUYER"
-          ? accounts.CUSTOMER_ADVANCE
-          : accounts.PAYABLE;
+    if (!unchanged && party.kind === "BUYER") {
+      // The advance (credit on their Receivable) this change takes away must still be unused.
+      const before = live
+        .flatMap((e) => e.lines)
+        .filter((l) => l.accountId === accounts.RECEIVABLE && l.partyId === party.id)
+        .reduce((t, l) => t.plus(l.debit).minus(l.credit), ZERO);
+      const taken = Prisma.Decimal.max(before.neg(), ZERO).minus(
+        Prisma.Decimal.max(amount.neg(), ZERO),
+      );
+      if (taken.gt(0)) {
+        const { credit } = await creditPosition(tx, companyId, party.id);
+        if (taken.gt(credit)) {
+          throw new AppError(
+            "CONFLICT",
+            `${party.name} has used this advance: only ${credit.toFixed(2)} of it is still unused on their account, so it can come down by that much at most. Undo its use first (void the invoice it paid, which gives the credit back, or the refund), then change it.`,
+          );
+        }
+      }
+    }
+
+    // Each mirror entry is dated on the entry it reverses, so they cancel out in every
+    // report from that day on (no report between go-live and today counts both).
+    for (const entry of unchanged ? [] : live) {
+      await reverseJournalEntry(tx, entry.id, {
+        description: `Opening balance of ${party.name} replaced`,
+        postedById: ctx.user.id,
+        date: entry.date,
+      });
+    }
+    if (!unchanged && !amount.isZero()) {
       const abs = amount.abs();
-      await tx.journalEntry.create({
-        data: {
-          companyId: ctx.company.id,
-          number: await nextDocumentNumber(tx, ctx.company.id, "JOURNAL_VOUCHER"),
-          date: input.asOf ?? new Date(),
-          description: `Opening balance — ${party.name}`,
-          sourceType: "OPENING_BALANCE",
-          sourceId: party.id,
-          postedById: ctx.user.id,
-          lines: {
-            create: amount.gt(0)
-              ? [
-                  { accountId: partyAccount, partyId: party.id, debit: abs },
-                  { accountId: accounts.OPENING_EQUITY, credit: abs },
-                ]
-              : [
-                  { accountId: accounts.OPENING_EQUITY, debit: abs },
-                  { accountId: partyAccount, partyId: party.id, credit: abs },
-                ],
-          },
-        },
+      await postJournalEntry(tx, {
+        companyId,
+        date,
+        description: `Opening balance — ${party.name}`,
+        sourceType: "OPENING_BALANCE",
+        sourceId: party.id,
+        postedById: ctx.user.id,
+        lines: amount.gt(0)
+          ? [
+              { accountId: partyAccount, partyId: party.id, debit: abs },
+              { accountId: accounts.OPENING_EQUITY, credit: abs },
+            ]
+          : [
+              { accountId: accounts.OPENING_EQUITY, debit: abs },
+              {
+                accountId: partyAccount,
+                partyId: party.id,
+                credit: abs,
+                memo: party.kind === "BUYER" ? "Advance brought forward" : undefined,
+              },
+            ],
       });
     }
     await tx.party.update({ where: { id: party.id }, data: { openingBalance: amount } });
     // What we owed before go-live is the oldest due: payments on account settle it first.
-    if (party.kind !== "BUYER") await settleSupplierBills(tx, ctx.company.id, party.id);
+    if (party.kind !== "BUYER") await settleSupplierBills(tx, companyId, party.id);
     await auditInCompany(
       ctx,
       meta,
@@ -239,13 +305,15 @@ export async function setOpeningBalance(
         action: "UPDATE",
         entityType: "Party",
         entityId: party.id,
-        summary: `Set opening balance of ${party.code} to ${amount.toFixed(2)}`,
+        summary: `Set opening balance of ${party.code} to ${amount.toFixed(2)}${
+          !unchanged && live.length > 0 ? " (the earlier entry reversed)" : ""
+        }`,
         before: { openingBalance: party.openingBalance.toFixed(2) },
         after: { openingBalance: amount.toFixed(2) },
       },
       tx,
     );
-  });
+  }, TX_OPTIONS);
   return { partyId: party.id, balance: (await getPartyBalance(ctx, party.id)).toFixed(2) };
 }
 

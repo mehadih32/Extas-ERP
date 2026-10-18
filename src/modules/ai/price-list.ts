@@ -14,6 +14,12 @@ import type { ProviderId } from "./providers";
  * work sent through the provider's batch service. Null: the page gives no such
  * price. Plain data and functions, used by the screens too.
  *
+ * Claude (read again on 18 October 2026, v6.4.1): a cache hit is a tenth of
+ * input, but a twentieth on Opus 5.5 and Sonnet 5.5 and a fortieth on Fable
+ * 5.1, as the page says (0.05x, 0.025x). Only Haiku 5.5 is dearer for a long
+ * prompt: over 100,000 tokens every price is 5 times; every other Claude model
+ * takes its whole context at one price.
+ *
  * OpenAI's price page lists only its newest models; every other OpenAI model
  * cites its own model page (developers.openai.com/api/docs/models/<id>), where
  * its price is, and is listed under "Older models". Its batch prices are half
@@ -37,6 +43,16 @@ export const PRICE_FIELDS = [
   "batchInput",
   "batchOutput",
 ] as const satisfies ReadonlyArray<keyof PriceFields>;
+
+/** The owner's long-prompt prices on the price form ("longInput"...), field by field. */
+export const LONG_FIELDS = {
+  input: "longInput",
+  output: "longOutput",
+  cacheRead: "longCacheRead",
+  cacheWrite: "longCacheWrite",
+  batchInput: "longBatchInput",
+  batchOutput: "longBatchOutput",
+} as const satisfies Record<keyof PriceFields, string>;
 
 /** Each price in words, as the screens and the audit log say them. */
 export const PRICE_WORDS: Record<keyof PriceFields, string> = {
@@ -115,7 +131,7 @@ export const PRICE_LISTS: readonly PriceList[] = [
     "anthropic",
     "Claude",
     "https://platform.claude.com/docs/en/about-claude/pricing",
-    "2026-10-16",
+    "2026-10-18",
     [
       { ref: "claude-fable-5-1", label: "Fable 5.1", ...p(10, 50, 0.25, 12.5, 5, 25) },
       { ref: "claude-opus-5-5", label: "Opus 5.5", ...p(4, 20, 0.2, 5, 2, 10) },
@@ -136,6 +152,12 @@ export const PRICE_LISTS: readonly PriceList[] = [
       {
         ref: "claude-sonnet-4-6",
         label: "Sonnet 4.6",
+        older: true,
+        ...p(3, 15, 0.3, 3.75, 1.5, 7.5),
+      },
+      {
+        ref: "claude-sonnet-4-5",
+        label: "Sonnet 4.5",
         older: true,
         ...p(3, 15, 0.3, 3.75, 1.5, 7.5),
       },

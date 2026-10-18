@@ -92,11 +92,11 @@ function BadStockList({
                 <TableCell className="max-w-[18rem] min-w-[12rem] whitespace-normal">
                   <div className="flex items-center gap-2 font-medium">
                     <Swatch hex={e.color.hexCode} />
-                    <span className="truncate">
+                    <span className="min-w-0 break-words">
                       {e.style.name} · {e.color.name} / {e.size.name}
                     </span>
                   </div>
-                  <div className="truncate text-xs text-muted-foreground">{e.sku}</div>
+                  <div className="text-xs wrap-anywhere text-muted-foreground">{e.sku}</div>
                 </TableCell>
                 <TableCell className="text-right font-medium">
                   {formatCount(e.quantity, currency)}
@@ -125,11 +125,11 @@ function BadStockList({
               <div className="min-w-0">
                 <p className="flex items-center gap-2 font-medium">
                   <Swatch hex={e.color.hexCode} />
-                  <span className="truncate">
+                  <span className="min-w-0 break-words">
                     {e.color.name} / {e.size.name}
                   </span>
                 </p>
-                <p className="truncate text-sm text-muted-foreground">
+                <p className="text-sm wrap-anywhere text-muted-foreground">
                   {e.style.name} · {e.sku}
                 </p>
               </div>

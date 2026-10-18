@@ -203,7 +203,8 @@ describe("Bug Guard's report", () => {
 });
 
 describe("Bug Guard's corrections", () => {
-  it("changes only listed totals, balanced entries, and shows before → after", () => {
+  it("only adds records (stock movements, balanced entries), never sets a figure, and shows before → after", () => {
+    // v6.4.1 B4: a stored figure is never set, not even a total.
     expect(
       planProblem({
         kind: "SET",
@@ -211,22 +212,38 @@ describe("Bug Guard's corrections", () => {
           { model: "User", id: "u", field: "isSuperAdmin", before: "0", after: "1", label: "x" },
         ],
       }),
-    ).toMatch(/may not change User/);
+    ).toMatch(/no longer changes stored figures/);
     expect(
       planProblem({
         kind: "SET",
         changes: [
           {
-            model: "CompanyMembership",
-            id: "m",
-            field: "roleId",
-            before: "1",
-            after: "2",
+            model: "PurchaseOrder",
+            id: "po",
+            field: "totalAmount",
+            before: "1300.00",
+            after: "1250.00",
             label: "x",
           },
         ],
       }),
-    ).toMatch(/may not change/);
+    ).toMatch(/no longer changes stored figures/);
+    const stock = {
+      kind: "STOCK" as const,
+      balanceId: "sb",
+      variantId: "v",
+      warehouseId: "w",
+      grade: "A_GRADE" as const,
+      stored: 100,
+      moved: 95,
+      label: "POLO-NVY-M (Main, A-grade)",
+    };
+    expect(planProblem(stock)).toBeNull();
+    expect(describePlan(stock)).toContain("+5 পিস");
+    expect(describePlan(stock)).toContain("95 → 100");
+    expect(planProblem({ ...stock, moved: 100 })).toMatch(/nothing to change/);
+    expect(planProblem({ ...stock, stored: -1 })).toMatch(/below zero/);
+    expect(planProblem({ ...stock, stored: 1.5 })).toMatch(/not numbers/);
     expect(
       planProblem({
         kind: "JOURNAL",

@@ -117,7 +117,7 @@ export function TagMapping({
             >
               <code
                 className={cn(
-                  "min-w-0 truncate text-sm font-medium",
+                  "min-w-0 text-sm font-medium wrap-anywhere",
                   !r.sourcePath && "text-destructive",
                 )}
               >

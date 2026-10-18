@@ -1,3 +1,4 @@
+import { whatPoints } from "./guide-text";
 import type { HelpArticle, HelpSection } from "./types";
 
 /*
@@ -48,7 +49,7 @@ export function helpSearchEntry(
 ): HelpSearchEntry {
   const body = [
     article.summary,
-    article.what ?? "",
+    ...whatPoints(article.what),
     article.why ?? "",
     article.who ?? "",
     ...article.steps.map((step) => step.text),

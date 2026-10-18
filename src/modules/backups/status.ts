@@ -3,7 +3,7 @@ import type { BackupConfig } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { alertOwner, getBackupConfig } from "@/modules/backups/backup-core";
 import { previousRunAt, scheduleOf } from "@/modules/backups/schedule";
-import { onStandby, STANDBY_LINE } from "@/modules/backups/standby";
+import { DRILL_LINE, onDrill, onStandby, STANDBY_LINE } from "@/modules/backups/standby";
 
 /*
  * How the backups are doing, in one plain line for the Backups screen (G10),
@@ -123,9 +123,9 @@ export async function backupHealth(
     lastInDriveAt: lastInDrive?.startedAt ?? null,
   };
 
-  // A copy on standby after a restore (G2): no backup runs until it goes live.
-  if (await onStandby()) {
-    return { ...base, level: "danger", line: STANDBY_LINE, problem: null };
+  // A restore drill copy (test mode, for good): no backup runs, nothing is sent.
+  if (await onDrill()) {
+    return { ...base, level: "danger", line: DRILL_LINE, problem: null };
   }
   if (lastRun?.status === "FAILED") {
     const text = `The last backup failed ${ago(lastRun.startedAt, now)}: ${lastRun.error ?? "no reason was recorded"}`;
@@ -135,6 +135,11 @@ export async function backupHealth(
   if (late) {
     const text = `The backup due at ${timeIn(late, config.timezone)} has not started: is the server running?`;
     return { ...base, level: "danger", line: text, problem: { kind: "late", text } };
+  }
+  // A copy on standby after a restore (G2): its backups run, but it is not the ERP
+  // in use until it goes live; said here after any backup problem, and on every page.
+  if (await onStandby()) {
+    return { ...base, level: "danger", line: STANDBY_LINE, problem: null };
   }
   if (!lastSuccess) {
     return {

@@ -82,7 +82,7 @@ export function LeaveList({
                     )}
                   </div>
                   {l.reason && (
-                    <div className="max-w-64 truncate text-[0.8125rem] text-muted-foreground">
+                    <div className="max-w-64 min-w-40 text-[0.8125rem] break-words whitespace-normal text-muted-foreground">
                       {l.reason}
                     </div>
                   )}

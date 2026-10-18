@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 
 /**
  * POST /api/materials/purchase-orders/:orderId/close — { reason }. A partly received order whose
- * rest will not come. Needs materials.purchase.
+ * rest will not come. Needs materials.purchase; a booking's order also production.bookings.close.
  */
 export const POST = apiRoute<Params>(async (request, { orderId }) =>
   orders.closePurchaseOrder(

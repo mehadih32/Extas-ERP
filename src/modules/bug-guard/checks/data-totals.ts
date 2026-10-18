@@ -6,10 +6,9 @@ import { productionHref } from "@/components/production/labels";
 import { salesHref } from "@/components/sales/labels";
 import { CONTROL_ACCOUNTS } from "@/modules/accounts/control-accounts";
 import { billsOutOfStepIn } from "@/modules/accounts/supplier-settlement";
-import { planProblem } from "@/modules/bug-guard/corrections";
 import { projectCostSummaries } from "@/modules/production/project-costs";
 
-import type { Check, CheckContext, CorrectionPlan, FieldChange } from "../types";
+import type { Check, CheckContext, FieldChange } from "../types";
 import {
   accountsByCode,
   amount,
@@ -27,21 +26,23 @@ import {
  * Stored totals against the records they add up: purchase orders and their
  * lines, sales orders, invoices, proformas and quotations and theirs, what is
  * paid and due on orders, invoices and supplier bills, salaries, advances, CM
- * settlements and returns. A total that is only a copy of its records' sum is
- * put back with the owner's OK (a SET correction, correctable.ts); anything
- * else is the owner's to decide.
+ * settlements and returns. Bug Guard never overwrites a stored total (v6.4.1
+ * B4), and a total that is only a copy of its records' sum cannot be put right
+ * with a new record (a stock movement or an adjusting entry): the records are
+ * right, only the copy is old. So every finding here is the owner's to put
+ * right (MANUAL), and says how.
  */
 
-/** A SET plan of the changes that really change something, or null when none is valid. */
-function setPlan(changes: FieldChange[]): CorrectionPlan | null {
-  const real = changes.filter((c) => !dec(c.before).equals(dec(c.after)));
-  if (real.length === 0) return null;
-  const plan: CorrectionPlan = { kind: "SET", changes: real };
-  return planProblem(plan) ? null : plan;
-}
+/**
+ * The steps for a stored total that is only a copy of its records: Bug Guard
+ * changes nothing; `then` says how the ERP itself works it out again.
+ */
+const copyFix = (then: string) =>
+  `Bug Guard কোনো লেখা অঙ্ক বদলায় না। এখানে আসল রেকর্ডগুলো ঠিক আছে, শুধু পাশে রাখা যোগফলটা পুরনো, তাই নতুন কোনো রেকর্ড (স্টকের লাইন বা সমন্বয় এন্ট্রি) দিয়ে ঠিক করার কিছু নেই। ${then}`;
 
-const SET_FIX =
-  "এই অঙ্কটা শুধু রেকর্ডগুলোর যোগফলের একটা কপি, তাই ঠিক উত্তর একটাই। আপনার PIN দিয়ে অনুমতি দিলে Bug Guard আগে ব্যাকআপ নিয়ে অঙ্কটা যোগফলে ফিরিয়ে আনবে (আগে → পরে উপরে দেখানো), আর পরে চাইলে Bug Guard থেকেই তা ফিরিয়ে নেওয়া যাবে।";
+/** How a supplier's bills catch up with their Payable ledger by themselves. */
+const SUPPLIER_AGAIN =
+  "সরবরাহকারীর খাতা ঠিক আছে; তার পরের পেমেন্ট, ভাউচার বা বিল লেখার সময় ERP নিজেই তার সব বিল খাতা থেকে আবার মেলায়। তার আগে এই বিলে টাকা দিতে হলে সরবরাহকারীর স্টেটমেন্ট দেখে দিন, আর হিসাবরক্ষককে দেখান।";
 
 /** Status of an invoice from what is paid on it (sales/totals.ts invoiceStatusFor). */
 const invoiceStatusFor = (total: Prisma.Decimal, paid: Prisma.Decimal) =>
@@ -114,16 +115,6 @@ async function purchaseTotals(ctx: CheckContext) {
       : materialsHref.order(o.id);
   const items: Item[] = [];
   for (const o of orders) {
-    const plan = setPlan([
-      {
-        model: "PurchaseOrder",
-        id: o.id,
-        field: "totalAmount",
-        before: fixed(o.total),
-        after: fixed(o.lines),
-        label: `${o.number}-এর মোট`,
-      },
-    ]);
     items.push({
       id: o.id,
       severity: "IMPORTANT",
@@ -131,11 +122,10 @@ async function purchaseTotals(ctx: CheckContext) {
       href: hrefOf(o),
       place: o.number,
       why: "অর্ডারের মোট হলো তার লাইনগুলোর যোগফল। ভুল মোট সরবরাহকারীকে পাঠানো কাগজে, বাজেটে আর কত কেনা বাকি তার হিসাবে চলে যায়।",
-      fix: plan
-        ? SET_FIX
-        : "যোগফলটা টাকার ঘরে বসে না, তাই Bug Guard নিজে কিছু বদলায় না। অর্ডারটি খুলে “Save the changes” দিয়ে আবার সেভ করুন।",
-      fixKind: plan ? "DATA" : "MANUAL",
-      correction: plan,
+      fix: copyFix(
+        "অর্ডারটি খুলে “Save the changes” দিয়ে আবার সেভ করুন: ERP নিজেই লাইনগুলো থেকে মোট আবার হিসাব করে। না মিটলে হিসাবরক্ষক বা ডেভেলপারকে দেখান।",
+      ),
+      fixKind: "MANUAL",
       evidence: [
         { label: "অর্ডার", value: o.number },
         { label: "লেখা মোট", value: amount(o.total) },
@@ -407,9 +397,6 @@ async function salesTotals(ctx: CheckContext) {
     }
     const real = changes.filter((c) => !dec(c.before).equals(dec(c.after)));
     if (real.length === 0 && !statusOff) continue;
-    // The invoice's status follows what is paid; it is not a figure Bug Guard may set, so a
-    // change that would move it is left to the owner.
-    const plan = statusOff ? null : setPlan(real);
     items.push({
       id: o.id,
       severity: "IMPORTANT",
@@ -420,11 +407,10 @@ async function salesTotals(ctx: CheckContext) {
       href,
       place: o.number,
       why: "অর্ডার আর ইনভয়েসে কত পাওয়া গেছে তা হলো তার পেমেন্ট আর ব্যবহার করা ক্রেডিট থেকে রিফান্ড বাদ দিয়ে, আর বাকি হলো মোট থেকে সেটা বাদ দিয়ে। ভুল হলে ক্রেতার বকেয়া, রিমাইন্ডার আর “Dues” তালিকা ভুল দেখায়।",
-      fix: plan
-        ? SET_FIX
-        : "এটা ঠিক করলে ইনভয়েসের অবস্থাও (Paid, Partly paid) বদলাতে হয়, যা Bug Guard নিজে বদলায় না। হিসাবরক্ষক বা ডেভেলপারকে দেখান।",
-      fixKind: plan ? "DATA" : "MANUAL",
-      correction: plan,
+      fix: copyFix(
+        `পেমেন্টগুলো ঠিক আছে, শুধু অর্ডারে${o.invoiceId ? " আর ইনভয়েসে" : ""} লেখা অঙ্ক${statusOff ? " আর ইনভয়েসের অবস্থা (Paid, Partly paid)" : ""} পুরনো। এই অর্ডারে পরের পেমেন্ট, রিফান্ড বা ক্রেডিট লিখলে ERP নিজেই তা আবার হিসাব করে। তার আগে ক্রেতাকে বকেয়ার কাগজ পাঠাতে হলে পেমেন্টগুলো দেখে নিন, আর হিসাবরক্ষক বা ডেভেলপারকে দেখান।`,
+      ),
+      fixKind: "MANUAL",
       evidence: [
         { label: "অর্ডার", value: o.number },
         { label: "মোট", value: amount(total) },
@@ -444,18 +430,6 @@ async function salesTotals(ctx: CheckContext) {
   for (const p of proformas) {
     const held = dec(p.held);
     if (dec(p.advancePaid).equals(held)) continue;
-    const plan = held.isNegative()
-      ? null
-      : setPlan([
-          {
-            model: "ProformaInvoice",
-            id: p.id,
-            field: "advancePaid",
-            before: fixed(p.advancePaid),
-            after: fixed(held),
-            label: `${p.number}-এ পাওয়া অগ্রিম`,
-          },
-        ]);
     items.push({
       id: p.id,
       severity: "IMPORTANT",
@@ -463,11 +437,12 @@ async function salesTotals(ctx: CheckContext) {
       href: salesHref.proforma(p.id),
       place: p.number,
       why: "প্রোফর্মায় কত অগ্রিম পাওয়া গেছে তা হলো তার পেমেন্ট থেকে রিফান্ড বাদ দিয়ে। এর উপর নির্ভর করে প্রোডাকশন শুরু হবে কি না আর ক্রেতাকে কত চাইতে হবে।",
-      fix: plan
-        ? SET_FIX
-        : "রিফান্ড পেমেন্টের চেয়ে বেশি, তাই Bug Guard নিজে কিছু বদলায় না। হিসাবরক্ষককে দেখান।",
-      fixKind: plan ? "DATA" : "MANUAL",
-      correction: plan,
+      fix: held.isNegative()
+        ? "রিফান্ড পেমেন্টের চেয়ে বেশি, তাই Bug Guard নিজে কিছু বদলায় না। হিসাবরক্ষককে দেখান।"
+        : copyFix(
+            "প্রোফর্মায় পরের পেমেন্ট বা রিফান্ড লিখলে ERP নিজেই অগ্রিমের অঙ্ক আবার হিসাব করে। তার আগে প্রোডাকশন শুরুর সিদ্ধান্ত নিতে হলে পেমেন্টগুলো দেখে নিন, আর হিসাবরক্ষককে দেখান।",
+          ),
+      fixKind: "MANUAL",
       evidence: [
         { label: "প্রোফর্মা", value: p.number },
         { label: "মোট", value: amount(p.total) },
@@ -577,24 +552,6 @@ async function billTotals(ctx: CheckContext) {
     }
     // A void bill owes nothing and has nothing paid on it.
     if (b.status === "VOID" && (!dec(b.paid).isZero() || !dec(b.due).isZero())) {
-      const plan = setPlan([
-        {
-          model: "SupplierBill",
-          id: b.id,
-          field: "paidAmount",
-          before: fixed(b.paid),
-          after: "0.00",
-          label: `বাতিল বিল ${b.number}-এ পরিশোধ`,
-        },
-        {
-          model: "SupplierBill",
-          id: b.id,
-          field: "dueAmount",
-          before: fixed(b.due),
-          after: "0.00",
-          label: `বাতিল বিল ${b.number}-এ বাকি`,
-        },
-      ]);
       items.push({
         id: b.id,
         severity: "IMPORTANT",
@@ -602,9 +559,8 @@ async function billTotals(ctx: CheckContext) {
         href: hrefOf(b),
         place: b.number,
         why: "বাতিল বিলে কিছু দেওয়া বা বাকি থাকে না; তার টাকা সরবরাহকারীর বাকি বিলগুলোতে চলে যায়। না হলে “Dues” তালিকায় বাতিল বিলের টাকা দেখায়।",
-        fix: plan ? SET_FIX : DEFAULT_MANUAL,
-        fixKind: plan ? "DATA" : "MANUAL",
-        correction: plan,
+        fix: copyFix(SUPPLIER_AGAIN),
+        fixKind: "MANUAL",
         evidence: [
           { label: "বিল", value: b.number },
           { label: "অবস্থা", value: "VOID" },
@@ -619,27 +575,6 @@ async function billTotals(ctx: CheckContext) {
     if (!b) continue;
     const overpaid = p.paid.gt(dec(b.total));
     const statusOff = p.status !== p.recorded.status;
-    const plan =
-      overpaid || statusOff
-        ? null
-        : setPlan([
-            {
-              model: "SupplierBill",
-              id: b.id,
-              field: "paidAmount",
-              before: fixed(p.recorded.paid),
-              after: fixed(p.paid),
-              label: `${b.number}-এ পরিশোধ`,
-            },
-            {
-              model: "SupplierBill",
-              id: b.id,
-              field: "dueAmount",
-              before: fixed(p.recorded.due),
-              after: fixed(p.due),
-              label: `${b.number}-এ বাকি`,
-            },
-          ]);
     items.push({
       id: b.id,
       severity: "IMPORTANT",
@@ -649,13 +584,14 @@ async function billTotals(ctx: CheckContext) {
       href: hrefOf(b),
       place: b.number,
       why: "সরবরাহকারীর বিলে কত দেওয়া হয়েছে আর কত বাকি, তা তার দেনার খাতা থেকে আসে (পুরনো বাকি আগে মেটে)। না মিললে “Dues” তালিকা, বিলের পাতা আর সরবরাহকারীর স্টেটমেন্ট আলাদা অঙ্ক দেখায়, আর ভুল বিলে টাকা দেওয়া হতে পারে।",
-      fix: plan
-        ? SET_FIX
-        : overpaid
-          ? "বিলের চেয়ে বেশি টাকা দেওয়া হয়েছে। টাকা নড়াচড়া করা Bug Guard-এর কাজ নয়: সরবরাহকারীর স্টেটমেন্ট দেখে বাড়তি পেমেন্টটি “Void the payment” দিয়ে বাতিল করে সঠিক অঙ্কে আবার দিন, বা হিসাবরক্ষককে দেখান।"
-          : "এটা ঠিক করলে বিলের অবস্থাও (Paid, Partly paid) বদলাতে হয়, যা Bug Guard নিজে বদলায় না। হিসাবরক্ষক বা ডেভেলপারকে দেখান।",
-      fixKind: plan ? "DATA" : "MANUAL",
-      correction: plan,
+      fix: overpaid
+        ? "বিলের চেয়ে বেশি টাকা দেওয়া হয়েছে। টাকা নড়াচড়া করা Bug Guard-এর কাজ নয়: সরবরাহকারীর স্টেটমেন্ট দেখে বাড়তি পেমেন্টটি “Void the payment” দিয়ে বাতিল করে সঠিক অঙ্কে আবার দিন, বা হিসাবরক্ষককে দেখান।"
+        : copyFix(
+            statusOff
+              ? `${SUPPLIER_AGAIN} বিলের অবস্থাও (Paid, Partly paid) তখন মিলে যায়।`
+              : SUPPLIER_AGAIN,
+          ),
+      fixKind: "MANUAL",
       evidence: [
         { label: "বিল", value: b.number },
         { label: "মোট", value: amount(b.total) },
@@ -669,8 +605,6 @@ async function billTotals(ctx: CheckContext) {
   }
   return findings(BILLS, items, "সরবরাহকারীর বিলের অমিল");
 }
-
-const DEFAULT_MANUAL = "হিসাবরক্ষককে দেখান। Bug Guard নিজে কিছু বদলায় না।";
 
 // -----------------------------------------------------------------------------
 // Payroll and advances
@@ -782,24 +716,6 @@ async function payrollTotals(ctx: CheckContext) {
   const items: Item[] = [];
   for (const r of runs) {
     const month = monthName(r.year, r.month);
-    const plan = setPlan([
-      {
-        model: "PayrollRun",
-        id: r.id,
-        field: "totalGross",
-        before: fixed(r.totalGross),
-        after: fixed(r.gross),
-        label: `${month}-এর মোট বেতন (Gross)`,
-      },
-      {
-        model: "PayrollRun",
-        id: r.id,
-        field: "totalNet",
-        before: fixed(r.totalNet),
-        after: fixed(r.net),
-        label: `${month}-এর মোট হাতে পাওয়া বেতন (Net)`,
-      },
-    ]);
     items.push({
       id: r.id,
       severity: "IMPORTANT",
@@ -807,9 +723,10 @@ async function payrollTotals(ctx: CheckContext) {
       href: hrHref.payrollRun(r.id),
       place: `Payroll ${month}`,
       why: "মাসের মোট বেতন হলো প্রত্যেক কর্মীর লাইনের যোগফল। ভুল মোট বেতনের তালিকা, রিপোর্ট আর অনুমোদনের সময় যে অঙ্ক দেখা হয় তাতে চলে যায়।",
-      fix: plan ? SET_FIX : DEFAULT_MANUAL,
-      fixKind: plan ? "DATA" : "MANUAL",
-      correction: plan,
+      fix: copyFix(
+        "প্রত্যেক কর্মীর লাইন আর পেস্লিপই আসল হিসাব; মাসের মোট দরকার হলে লাইনগুলো যোগ করে দেখুন। হিসাবরক্ষক বা ডেভেলপারকে দেখান।",
+      ),
+      fixKind: "MANUAL",
       evidence: [
         { label: "মাস", value: month },
         { label: "লেখা Gross", value: amount(r.totalGross) },
@@ -865,23 +782,9 @@ async function payrollTotals(ctx: CheckContext) {
       });
       continue;
     }
-    // Paid in full or not decides the run's status and the line's payment link: a change that
-    // would move it is left to the owner.
+    // Paid in full or not decides the run's status and the line's payment link.
     const fullBefore = dec(l.paidAmount).gte(netPay);
     const fullAfter = paid.gte(netPay);
-    const plan =
-      fullBefore === fullAfter
-        ? setPlan([
-            {
-              model: "PayrollItem",
-              id: l.id,
-              field: "paidAmount",
-              before: fixed(l.paidAmount),
-              after: fixed(paid),
-              label: `${month}: ${l.employee}-কে দেওয়া`,
-            },
-          ])
-        : null;
     items.push({
       id: l.id,
       severity: "IMPORTANT",
@@ -889,11 +792,10 @@ async function payrollTotals(ctx: CheckContext) {
       href,
       place: `Payroll ${month}`,
       why: "কর্মীকে কত দেওয়া হয়েছে তা হলো তার বেতন পরিশোধগুলোর (বাতিল বাদে) যোগফল। ভুল হলে কাকে কত দেওয়া বাকি তা ভুল দেখায়, আর আবার বা কম দেওয়া হতে পারে।",
-      fix: plan
-        ? SET_FIX
-        : "এটা ঠিক করলে বেতন পুরো দেওয়া হয়েছে কি না তাও বদলায়, যা Bug Guard নিজে বদলায় না। হিসাবরক্ষক বা ডেভেলপারকে দেখান।",
-      fixKind: plan ? "DATA" : "MANUAL",
-      correction: plan,
+      fix: copyFix(
+        `বেতন পরিশোধগুলোই আসল হিসাব; কাউকে আবার বা কম টাকা দেওয়ার আগে সেগুলো দেখে নিন।${fullBefore === fullAfter ? "" : " এটা ঠিক হলে বেতন পুরো দেওয়া হয়েছে কি না তাও বদলায়।"} হিসাবরক্ষক বা ডেভেলপারকে দেখান।`,
+      ),
+      fixKind: "MANUAL",
       evidence: [
         { label: "মাস", value: month },
         { label: "কর্মী", value: l.employee },
@@ -926,21 +828,9 @@ async function payrollTotals(ctx: CheckContext) {
     const isVoid = a.status === "VOID";
     const left = isVoid ? ZERO : dec(a.amount).minus(dec(a.settled));
     if (dec(a.outstanding).equals(left)) continue;
-    // Open or settled follows what is left: a change that would move it is left to the owner.
+    // Open or settled follows what is left.
     const statusAfter = left.isZero() ? "SETTLED" : "OPEN";
-    const plan =
-      !left.isNegative() && (isVoid || statusAfter === a.status)
-        ? setPlan([
-            {
-              model: "SalaryAdvance",
-              id: a.id,
-              field: "outstanding",
-              before: fixed(a.outstanding),
-              after: fixed(left),
-              label: `অগ্রিম ${a.number}-এ বাকি`,
-            },
-          ])
-        : null;
+    const statusOff = !isVoid && statusAfter !== a.status;
     items.push({
       id: a.id,
       severity: "IMPORTANT",
@@ -948,11 +838,12 @@ async function payrollTotals(ctx: CheckContext) {
       href: hrHref.advance(a.id),
       place: a.number,
       why: "অগ্রিমের বাকি = অগ্রিম - যা বেতন থেকে কাটা বা ফেরত দেওয়া হয়েছে (বাতিল করা বাদে)। ভুল হলে বেতন থেকে ভুল অঙ্ক কাটা হতে পারে।",
-      fix: plan
-        ? SET_FIX
-        : "এটা ঠিক করলে অগ্রিমের অবস্থাও (চালু, শোধ) বদলায়, যা Bug Guard নিজে বদলায় না। হিসাবরক্ষক বা ডেভেলপারকে দেখান।",
-      fixKind: plan ? "DATA" : "MANUAL",
-      correction: plan,
+      fix: left.isNegative()
+        ? "যা ফেরত এসেছে তা অগ্রিমের চেয়ে বেশি, তাই Bug Guard নিজে কিছু বদলায় না। হিসাবরক্ষককে দেখান।"
+        : copyFix(
+            `অগ্রিম আর তার ফেরতগুলোই আসল হিসাব; বেতন থেকে কাটার আগে সেগুলো দেখে নিন।${statusOff ? " এটা ঠিক হলে অগ্রিমের অবস্থাও (চালু, শোধ) বদলায়।" : ""} হিসাবরক্ষক বা ডেভেলপারকে দেখান।`,
+          ),
+      fixKind: "MANUAL",
       evidence: [
         { label: "অগ্রিম", value: a.number },
         { label: "কর্মী", value: a.employee },
@@ -1188,16 +1079,6 @@ async function projectTotals(ctx: CheckContext) {
   for (const p of projects) {
     const c = costs.get(p.id);
     if (!c || c.totalCost.equals(p.totalCost)) continue;
-    const plan = setPlan([
-      {
-        model: "ProductionProject",
-        id: p.id,
-        field: "totalCost",
-        before: fixed(p.totalCost),
-        after: fixed(c.totalCost),
-        label: `${p.code}-এর মোট খরচ`,
-      },
-    ]);
     items.push({
       id: p.id,
       severity: "IMPORTANT",
@@ -1205,9 +1086,10 @@ async function projectTotals(ctx: CheckContext) {
       href: productionHref.project(p.id),
       place: `${p.code} ${p.name}`,
       why: "প্রজেক্টের মোট খরচ = তার ভাগের সরবরাহকারীর বিল + সরাসরি খরচ + স্টোর থেকে দেওয়া ম্যাটেরিয়াল (ফেরত বাদে)। এই অঙ্ক থেকেই প্রতি পিসের খরচ আর খরচের সতর্কতা (টার্গেট দামের কাছে বা উপরে) দেখানো হয়, তাই ভুল হলে ভুল সতর্কতা আসে বা আসল সতর্কতা আসে না।",
-      fix: plan ? SET_FIX : DEFAULT_MANUAL,
-      fixKind: plan ? "DATA" : "MANUAL",
-      correction: plan,
+      fix: copyFix(
+        "প্রজেক্টে পরের বিল, খরচ বা ম্যাটেরিয়াল দেওয়া-ফেরত লিখলে ERP নিজেই মোট খরচ আবার হিসাব করে। তার আগে প্রতি পিসের খরচ দেখতে হলে নিচের বিল, খরচ আর ম্যাটেরিয়ালের অঙ্ক যোগ করে দেখুন।",
+      ),
+      fixKind: "MANUAL",
       evidence: [
         { label: "প্রজেক্ট", value: `${p.code} ${p.name}` },
         { label: "লেখা মোট খরচ", value: amount(p.totalCost) },

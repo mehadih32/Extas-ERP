@@ -4,6 +4,7 @@ import path from "node:path";
 import type { BackupConfig } from "@prisma/client";
 
 import { decryptSecret } from "@/lib/crypto";
+import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
 import { pushToBot } from "@/modules/ai/bot/push";
@@ -107,17 +108,23 @@ export function googleClient(config: BackupConfig): drive.GoogleClient | null {
 
 /** A Drive access token for the connected account, or null when Drive is not connected. */
 export async function driveToken(config: BackupConfig): Promise<string | null> {
+  // A restore drill copy (test mode) never uses Google Drive: no backups, guides or keys.
+  const { DRILL_NOT_SENT, onDrill } = await import("@/modules/backups/standby");
+  if (await onDrill()) throw new AppError("UNAVAILABLE", DRILL_NOT_SENT);
   const client = googleClient(config);
   if (!client || !config.credentialsRef) return null;
   return drive.accessToken(client, decryptSecret(config.credentialsRef));
 }
 
-/** The backup folder in Drive: the one on record, else the labelled one, else a new one. */
+/**
+ * The backup folder in Drive: the one on record, else the labelled one (the first
+ * one made, should there be two: Drive lists newest first), else a new one.
+ */
 export async function driveRoot(config: BackupConfig, token: string): Promise<string> {
   if (config.googleDriveFolderId && (await drive.folderExists(token, config.googleDriveFolderId))) {
     return config.googleDriveFolderId;
   }
-  const found = (await drive.findFolders(token, ROOT_LABEL.key, ROOT_LABEL.value))[0];
+  const found = (await drive.findFolders(token, ROOT_LABEL.key, ROOT_LABEL.value)).at(-1);
   const id =
     found?.id ??
     (

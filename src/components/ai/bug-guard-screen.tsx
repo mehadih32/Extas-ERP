@@ -58,7 +58,7 @@ const SEVERITY_TONE: Record<Severity, Tone> = { URGENT: "warn", IMPORTANT: "open
 
 const FIX_HINT: Record<string, string> = {
   CODE: "Fix sends it to Claude Code, who makes a pull request with a test. You merge it with your PIN.",
-  DATA: "Fix prepares the exact correction. Apply (with your PIN) backs up first; Undo puts it back.",
+  DATA: "Fix prepares the exact correction, a new record. Apply (with your PIN) backs up first; Undo adds the opposite record.",
   SECURITY: "Fix takes this safe step with your PIN.",
   MANUAL: "Only you can do this: Fix shows the steps.",
   NONE: "A note: nothing to fix.",
@@ -611,9 +611,11 @@ function Corrections({
   return (
     <Panel title="Corrections" id="guard-corrections-heading">
       <p className="mt-2 text-sm text-muted-foreground">
-        A correction changes only the figure shown, only while it still reads as shown. Apply asks
-        for your PIN and makes a full backup first. In the accounts it posts an adjusting entry and
-        never edits or deletes history. Undo (with your PIN) puts it back.
+        A correction never changes a stored figure: it adds a new record, only while things still
+        read as shown. For stock it adds a movement of the difference (the stock and its value stay
+        the same); in the accounts it posts an adjusting entry. Apply asks for your PIN and makes a
+        full backup first. History is never edited or deleted. Undo (with your PIN) adds the
+        opposite record.
       </p>
       <ul className="mt-3 grid gap-3">
         {g.corrections.map((c) => {
@@ -682,7 +684,7 @@ function Corrections({
                     onClick={() =>
                       pinned(
                         (pin) => undoCorrectionAction(c.id, { pin }),
-                        "Undone: it is back as it was.",
+                        "Undone: the opposite record is in, so it is back as it was.",
                       )
                     }
                   >

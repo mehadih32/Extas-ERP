@@ -166,7 +166,7 @@ async function adminCosts(ctx: CompanyContext, range: ReturnType<typeof dayRange
 
 async function assetPurchases(ctx: CompanyContext, range: ReturnType<typeof dayRange>) {
   const assets = await ctx.db.fixedAsset.findMany({
-    where: { purchaseDate: { gte: range.start, lt: range.end } },
+    where: { purchaseDate: { gte: range.start, lt: range.end }, voidedAt: null },
     select: {
       id: true,
       name: true,

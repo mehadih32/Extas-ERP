@@ -113,21 +113,20 @@ async function stockBalances(ctx: CheckContext) {
     }
     const stored = r.stored ?? 0;
     if (stored !== r.moved) {
-      // The movements are the record of what came and went; the balance is only their sum.
+      // Sales, deliveries and the books have gone by the stock kept; Bug Guard never
+      // overwrites it (v6.4.1 B4). It records the difference as one movement instead,
+      // so the movements add up to the stock again, and the stock's value is unchanged.
       const plan: CorrectionPlan | null =
-        r.moved >= 0
+        stored >= 0
           ? {
-              kind: "SET",
-              changes: [
-                {
-                  model: "StockBalance",
-                  id: r.id,
-                  field: "quantity",
-                  before: String(stored),
-                  after: String(r.moved),
-                  label: `${place}-এর স্টক`,
-                },
-              ],
+              kind: "STOCK",
+              balanceId: r.id,
+              variantId: r.variantId,
+              warehouseId: r.warehouseId,
+              grade: r.grade === "B_GRADE" ? "B_GRADE" : "A_GRADE",
+              stored,
+              moved: r.moved,
+              label: place,
             }
           : null;
       items.push({
@@ -136,10 +135,10 @@ async function stockBalances(ctx: CheckContext) {
         title: `${place}: স্টকে ${quantity(stored)} পিস লেখা, কিন্তু আসা-যাওয়া মিলে ${quantity(r.moved)} পিস`,
         href,
         place,
-        why: "স্টকের সংখ্যা হলো সব আসা-যাওয়ার (কেনা, তৈরি, বিক্রি, ফেরত, গণনা) যোগফল। না মিললে স্ক্রিনে ভুল স্টক দেখায়: যা নেই তা বিক্রি হতে পারে, বা যা আছে তা পড়ে থাকে, আর স্টকের দামও ভুল আসে।",
+        why: "স্টকের সংখ্যা হলো সব আসা-যাওয়ার (কেনা, তৈরি, বিক্রি, ফেরত, গণনা) যোগফল। না মিললে কোনটা ঠিক বোঝা যায় না: আসা-যাওয়ার তালিকা আর আগের দিনের স্টকের রিপোর্ট এক অঙ্ক দেখায়, স্টকের পাতা আরেক অঙ্ক।",
         fix: plan
-          ? `আসা-যাওয়ার খাতাই আসল হিসাব, তাই Bug Guard স্টকের সংখ্যাটা ${quantity(stored)} থেকে ${quantity(r.moved)} করবে। আপনার PIN দিয়ে অনুমতি দিলে আগে ব্যাকআপ নিয়ে করবে, পরে চাইলে ফিরিয়ে নেওয়া যাবে। তারপর গুদামে গুনে মিলিয়ে নিন।`
-          : "আসা-যাওয়া মিলে মাইনাস হয়, তাই কোনটা ঠিক Bug Guard নিশ্চিত নয় আর নিজে কিছু বদলায় না। গুদামে গুনে “Stock count” পাতায় আসল সংখ্যাটা দিন, আর ডেভেলপারকে দেখান।",
+          ? `Bug Guard কোনো লেখা অঙ্ক বদলায় না। স্টকে লেখা ${quantity(stored)} পিস দিয়েই এতদিন বিক্রি আর হিসাব চলেছে, তাই আপনার PIN দিয়ে অনুমতি দিলে Bug Guard আগে ব্যাকআপ নিয়ে আসা-যাওয়ার খাতায় পার্থক্যের (${quantity(stored - r.moved)} পিস) একটি নতুন লাইন যোগ করবে; স্টক আর স্টকের দাম একই থাকবে। পরে চাইলে উল্টো লাইন দিয়ে ফিরিয়ে নেওয়া যাবে। তারপর গুদামে গুনে দেখুন; আসল সংখ্যা আলাদা হলে “Stock count” পাতায় দিন।`
+          : "স্টক মাইনাস, তাই কোনটা ঠিক Bug Guard নিশ্চিত নয় আর নিজে কিছু বদলায় না। গুদামে গুনে “Stock count” পাতায় আসল সংখ্যাটা দিন, আর ডেভেলপারকে দেখান।",
         fixKind: plan ? "DATA" : "MANUAL",
         correction: plan,
         evidence: [...evidence, { label: "পার্থক্য", value: quantity(stored - r.moved) }],
@@ -497,11 +496,11 @@ async function registers(ctx: CheckContext) {
       ctx.db.rawMaterial.aggregate({ where: { companyId }, _sum: { stockValue: true } }),
       ctx.db.productionProject.findMany({ where: { companyId }, select: { id: true } }),
       ctx.db.fixedAsset.findMany({
-        where: { companyId, status: { not: "DISPOSED" } },
+        where: { companyId, status: { not: "DISPOSED" }, voidedAt: null },
         select: { purchaseCost: true, currentValue: true },
       }),
       ctx.db.capitalSource.findMany({
-        where: { companyId },
+        where: { companyId, voidedAt: null },
         select: {
           id: true,
           name: true,

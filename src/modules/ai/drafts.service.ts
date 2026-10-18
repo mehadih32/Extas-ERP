@@ -10,7 +10,7 @@ import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { sendMail } from "@/modules/mail/mail.service";
 
-import { auditAsAi } from "./account";
+import { aiAccountOf, auditAsAi } from "./account";
 import { type Ask, askerFor, toolInputOf } from "./claude";
 import type { AiRecord } from "./control.service";
 import { BUYER_KINDS, DRAFT_KIND_LABELS, DRAFT_KINDS, templateDraft } from "./draft-templates";
@@ -156,9 +156,12 @@ export async function makeAiDraft(
   });
   const fallback = words ?? (await draftWords(companyId, request, { ask: null }));
   const party = await partyOf(companyId, request.partyId);
+  // Saved under the AI's own account (2026-10-16), never a person's.
+  const ai = await aiAccountOf(companyId);
   const draft = await prisma.aiDraft.create({
     data: {
       companyId,
+      createdById: ai.id,
       kind: request.kind,
       partyId: party?.id ?? null,
       toAddress: party?.email ?? null,

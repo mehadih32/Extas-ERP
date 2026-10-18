@@ -132,7 +132,7 @@ export function LedgerLines({
           <li key={line.key} className="min-w-0 rounded-lg border bg-card p-4">
             <div className="flex items-baseline justify-between gap-3 text-[0.8125rem] text-muted-foreground">
               <span>{formatDay(line.day)}</span>
-              <span className="flex min-w-0 items-center gap-1.5 truncate">
+              <span className="flex min-w-0 flex-wrap items-center justify-end gap-1.5 text-right wrap-anywhere">
                 {line.flag && <OffBadge>{line.flag}</OffBadge>}
                 {voucher(line)}
               </span>

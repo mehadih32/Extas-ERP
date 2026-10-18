@@ -38,6 +38,7 @@ import {
   clearCloudflareAction,
   disconnectGoogleDriveAction,
   listDriveBackupsAction,
+  recordServerDrillAction,
   requestRestoreAction,
   restoreStatusAction,
   runBackupNowAction,
@@ -130,6 +131,7 @@ function StatusPanel({
   const when = useWhen({ year: true });
   const [pending, startTransition] = useTransition();
   const [drilling, setDrilling] = useState(false);
+  const [recording, setRecording] = useState(false);
   const { config, health } = overview;
   const good = health.level === "good";
   const Icon = good
@@ -227,6 +229,30 @@ function StatusPanel({
               </Button>
             </span>
           </Fact>
+          {overview.thisDrill ? (
+            <Fact label="This restore drill">
+              <ServerDrillLine drill={overview.thisDrill} when={when} />
+            </Fact>
+          ) : (
+            <Fact label="Last new-server drill">
+              {overview.lastServerDrill ? (
+                <ServerDrillLine drill={overview.lastServerDrill} when={when} />
+              ) : (
+                "None yet"
+              )}
+              <span className="mt-2 block">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setRecording(true)}
+                >
+                  <ServerIcon aria-hidden />
+                  Record a drill
+                </Button>
+              </span>
+            </Fact>
+          )}
         </dl>
         {overview.notSent > 0 && (
           <p className="text-sm text-muted-foreground">
@@ -235,6 +261,42 @@ function StatusPanel({
           </p>
         )}
       </div>
+
+      {recording && (
+        <FormDialog
+          title="Record a drill on a new server"
+          description="After a restore drill on a test server (the restore guide's “Practice: a restore drill”), type the drill copy's web address. This ERP reads the drill's time and result from it, while it still runs, and shows them here. Nothing on the drill copy changes."
+          submitLabel="Record"
+          pendingLabel="Reading the drill"
+          errorTitle="The drill could not be recorded"
+          onClose={() => setRecording(false)}
+          onSubmit={async (form) => {
+            const result = await recordServerDrillAction({
+              address: String(form.get("address") ?? ""),
+            });
+            if (!result.ok) return result.error;
+            setRecording(false);
+            setMessage({ tone: "success", text: "The drill is recorded." });
+          }}
+        >
+          {(fieldError) => (
+            <Field
+              id="drill-address"
+              label="The drill copy's web address"
+              hint="For example drill.extasbd.com: the address you typed at “Test web address for this drill”."
+              error={fieldError("address")}
+            >
+              <Input
+                id="drill-address"
+                name="address"
+                autoComplete="off"
+                inputMode="url"
+                placeholder="drill.extasbd.com"
+              />
+            </Field>
+          )}
+        </FormDialog>
+      )}
 
       {drilling && (
         <FormDialog
@@ -320,6 +382,55 @@ function RunLine({ run, when }: { run: Run; when: (d: Date | string) => string }
       </span>
       {(run.error || run.driveError) && (
         <span className="text-xs break-words text-destructive">{run.error ?? run.driveError}</span>
+      )}
+    </span>
+  );
+}
+
+type ServerDrill = NonNullable<Overview["thisDrill"]>;
+
+/** A restore drill on a new server: when, how long it took, and how it went. */
+function ServerDrillLine({
+  drill,
+  when,
+}: {
+  drill: ServerDrill;
+  when: (d: Date | string) => string;
+}) {
+  const at = drill.finishedAt ?? drill.startedAt;
+  const took =
+    drill.seconds === null
+      ? null
+      : `Took ${Math.floor(drill.seconds / 60)} min ${drill.seconds % 60} s`;
+  const status =
+    drill.result === "worked"
+      ? { text: "Worked", tone: "done" as Tone }
+      : drill.result === "problems"
+        ? { text: "Had problems", tone: "warn" as Tone }
+        : { text: "Running", tone: "open" as Tone };
+  return (
+    <span className="grid gap-1">
+      <span className="flex flex-wrap items-center gap-2">
+        {at && <span>{when(at)}</span>}
+        <StatusBadge tone={status.tone}>{status.text}</StatusBadge>
+        {took && <span className="text-muted-foreground">{took}</span>}
+      </span>
+      {drill.address && (
+        <span className="text-xs break-all text-muted-foreground">
+          <GlobeIcon aria-hidden className="mr-1 inline size-3" />
+          {drill.address}
+        </span>
+      )}
+      {drill.result === "problems" && (
+        <span className="text-xs break-words text-destructive">
+          {[
+            drill.problems ? `${drill.problems} table(s) or file(s) did not match` : null,
+            drill.screenProblems ? `${drill.screenProblems} screen(s) did not open` : null,
+            drill.https === false ? "HTTPS did not work" : null,
+          ]
+            .filter(Boolean)
+            .join("; ") || "See the end of the restore in PuTTY."}
+        </span>
       )}
     </span>
   );

@@ -68,6 +68,8 @@ export type ReportDocument = {
     primaryColor: string;
     accentColor: string;
     currency: string;
+    /** "BIN: …" and "Trade licence: …" when on file, printed under the details. */
+    registrations?: string[];
   };
   period: { period: PeriodPreset | "CUSTOM"; from: string; to: string; label: string };
   /** The instant it was made (ISO) and the same in company time ("2 Oct 2026, 15:04"). */
@@ -111,7 +113,7 @@ export function formatRange(from: string, to: string): string {
   return from === to ? formatDay(from) : `${formatDay(from)} – ${formatDay(to)}`;
 }
 
-/** The file name a report downloads as: "Extras - Business report - 2026-09-01 to 2026-09-30.pdf". */
+/** The file name a report downloads as: "Extas - Business report - 2026-09-01 to 2026-09-30.pdf". */
 export function reportFileName(
   doc: Pick<ReportDocument, "title" | "company" | "period">,
   ext: string,

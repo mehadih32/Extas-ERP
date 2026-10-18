@@ -6,6 +6,7 @@ import type { ChatCard } from "../chat/cards";
 import { isNode, type NodeRef, pathText } from "../control-tree";
 import { BUYER_KINDS } from "../draft-templates";
 import { logBot, senderFor } from "./bot.service";
+import { workingLinks } from "./owner";
 import { type BotPush, isAlarm, ownersLinks, type QueuedPush } from "./push";
 import { type BotOut, renderDeletion, renderDraft, renderPermission } from "./render";
 import { type FindingText, renderCorrection, renderFinding } from "@/modules/bug-guard/bot-texts";
@@ -16,14 +17,15 @@ const appUrl = () => (process.env.APP_URL || "http://localhost:3000").replace(/\
 /*
  * Sends a push (push.ts) to each linked bot of a company; an alarm (Bug
  * Guard, backups, Server Health) only to those an active platform owner of the
- * company linked. A draft is also kept
+ * company linked; anything else only to a person the bot may still work for
+ * (owner.ts: active, in the team, with ai.manage). A draft is also kept
  * in the owner's chat, so "পাঠাও" shows exactly it again and its Send button
  * sends exactly it. A
  * request already answered is not pushed. A push that fails is logged and not
  * tried again: everything it says is waiting in the ERP too.
  */
 export async function sendPush(companyId: string, push: QueuedPush) {
-  const links = await prisma.aiBotLink.findMany({
+  const found = await prisma.aiBotLink.findMany({
     where: {
       companyId,
       linkedAt: { not: null },
@@ -31,6 +33,7 @@ export async function sendPush(companyId: string, push: QueuedPush) {
       ...(isAlarm(push) ? ownersLinks(companyId) : {}),
     },
   });
+  const links = isAlarm(push) ? found : await workingLinks(found);
   for (const link of links) {
     const out = await render(link.ownerId, companyId, push);
     if (!out) continue;

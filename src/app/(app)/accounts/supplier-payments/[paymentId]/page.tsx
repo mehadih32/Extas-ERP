@@ -170,7 +170,7 @@ export default async function SupplierPaymentPage({
                     key={b.id}
                     className="flex items-baseline justify-between gap-3 py-3 text-sm first:pt-0 last:pb-0"
                   >
-                    <span className="min-w-0 truncate">
+                    <span className="min-w-0 wrap-anywhere">
                       {can.openBill ? (
                         <Link href={productionHref.bill(b.id)} className={linkClass}>
                           {b.number}

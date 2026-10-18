@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { HELP_SECTIONS } from "@/modules/help";
-import { GUIDE_CHARS, guideText } from "@/modules/help/guide-text";
+import { GUIDE_CHARS, guideText, whatPoints } from "@/modules/help/guide-text";
 import type { HelpArticle } from "@/modules/help/types";
 
 /*
@@ -17,7 +17,7 @@ const all = HELP_SECTIONS.flatMap((section) =>
 /** Every word of a guide the AI must have read. */
 const partsOf = (article: HelpArticle) => [
   article.summary,
-  article.what ?? "",
+  ...whatPoints(article.what),
   article.why ?? "",
   article.next ?? "",
   ...article.steps.map((s) => s.text),

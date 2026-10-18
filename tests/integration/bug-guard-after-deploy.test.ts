@@ -262,4 +262,36 @@ run("Bug Guard once after each update (D5)", () => {
     expect(await bugGuardAfterDeploy({ checks: CHECKS })).toBeNull();
     expect(await prisma.bugGuardRun.count()).toBe(0);
   });
+
+  it("is taken at once on a restore drill copy or a copy on standby, and checks nothing there (v6.4.1 review)", async () => {
+    const logged = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    for (const mark of [".drill", ".standby"]) {
+      await writeFile(path.join(backupDir, mark), mark === ".drill" ? "{}" : "3f9a0c1d2e4b5a69");
+      await ask();
+      // Taken (deploy.sh does not wait), but no Bug Guard run and no Full check of the
+      // live address, which this copy does not own.
+      expect(await bugGuardAfterDeploy({ checks: CHECKS })).toBeNull();
+      expect(existsSync(path.join(backupDir, AFTER_DEPLOY_REQUEST))).toBe(false);
+      expect(await prisma.bugGuardRun.count()).toBe(0);
+      expect(fullChecks.asked).toEqual([]);
+      await rm(path.join(backupDir, mark));
+    }
+    expect(logged.mock.calls.map((c) => String(c[0])).join("\n")).toMatch(
+      /after the update: not checked here, this is a restore drill copy[\s\S]*after the update: not checked here, this copy is on standby/,
+    );
+    logged.mockRestore();
+  });
+
+  it("is taken by the clock of a restore drill copy too, so the update does not wait for it", async () => {
+    await writeFile(path.join(backupDir, ".drill"), "{}");
+    await ask();
+    const { reminderTick } = await import("@/modules/reminders/scheduler");
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    expect(await reminderTick()).toBeNull();
+    await vi.waitFor(() =>
+      expect(existsSync(path.join(backupDir, AFTER_DEPLOY_REQUEST))).toBe(false),
+    );
+    expect(await prisma.bugGuardRun.count()).toBe(0);
+    vi.restoreAllMocks();
+  });
 });

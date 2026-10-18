@@ -37,14 +37,23 @@ run("login and sessions", () => {
     });
   });
 
-  it("locks the account after repeated failures, even for the right password", async () => {
+  it("makes only the place with repeated failures wait, even for the right password (v6.4.1 B5)", async () => {
     await makeUser("b@extras.test");
+    const there = { ipAddress: "203.0.113.5" };
     for (let i = 0; i < MAX_FAILED_LOGINS; i++) {
-      await login({ email: "b@extras.test", password: "wrong-pass1" }).catch(() => undefined);
+      await login({ email: "b@extras.test", password: "wrong-pass1" }, there).catch(
+        () => undefined,
+      );
     }
-    await expect(login({ email: "b@extras.test", password: PASSWORD })).rejects.toMatchObject({
-      code: "ACCOUNT_LOCKED",
-    });
+    await expect(
+      login({ email: "b@extras.test", password: PASSWORD }, there),
+    ).rejects.toMatchObject({ code: "ACCOUNT_LOCKED" });
+    // Another place signs in as always: the account itself is never locked.
+    const elsewhere = await login(
+      { email: "b@extras.test", password: PASSWORD },
+      { ipAddress: "198.51.100.5" },
+    );
+    expect(elsewhere.token).toBeTruthy();
   });
 
   it("blocks suspended users", async () => {

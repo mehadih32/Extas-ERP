@@ -8,9 +8,11 @@ import {
   textWidth,
   wrapText,
 } from "@/lib/pdf";
-import { drawPicture, PICTURE } from "@/modules/backups/restore-guide-pictures";
+import { pictureBox, placePicture } from "@/modules/backups/restore-guide-pictures";
 import {
   DETAILS_TEXT,
+  DRILL_PART,
+  drillCommandLines,
   GUIDE_ERRORS,
   GUIDE_INTRO,
   GUIDE_NEEDS,
@@ -21,6 +23,8 @@ import {
   GUIDE_WORDS,
   type GuideLang,
   type GuideStep,
+  NO_GITHUB_PART,
+  noGithubCommandLines,
   OTHER_MESSAGES,
   type Text,
 } from "@/modules/backups/restore-guide";
@@ -28,9 +32,11 @@ import {
 /*
  * The restore guide as a PDF (G6): A4 portrait, in Bengali or English, for
  * someone who has never used a server. Big type, one action per step, a big
- * picture for most steps (a drawing, labelled as one) with what to click
- * ringed in red, the one command in a box to copy, "Your restore details",
- * every question the command asks and every error it can print.
+ * picture for most steps (a real screenshot when public/restore-guide has one,
+ * else a drawing, each labelled as what it is) with what to click ringed in
+ * red, the one command in a box to copy, "Your restore details", what to do
+ * when GitHub cannot be reached, a practice drill with its own command, every
+ * question the command asks and every error it can print.
  *
  * Words in “curly quotes” are what the screen shows and are printed in bold.
  * The command, codes, IDs and keys are printed in Courier and never cut: they
@@ -285,16 +291,23 @@ class GuideWriter {
 
   // --- Boxes ------------------------------------------------------------------------
 
-  /** The command, in a box to copy from (C1). */
-  commandBox() {
-    const lines = this.details.commandLines;
+  /**
+   * A command in a box to copy from: the one command (C1), or the drill's or the
+   * one without GitHub (with their own title and no checksum lines).
+   */
+  commandBox(
+    lines = this.details.commandLines,
+    title: Text = DETAILS_TEXT.commandTitle,
+    missing: Text = DETAILS_TEXT.commandMissing,
+    withFacts = true,
+  ) {
     const inner = WIDTH - 24;
     const block = lines ? this.monoBlock(lines, inner, 10) : null;
     const lineGap = block ? block.size * 1.75 : 0;
     const noteH = this.richHeight(this.t(DETAILS_TEXT.commandNote), inner, SMALL, SMALL_LINE);
-    const facts = this.commandFacts();
+    const facts = withFacts ? this.commandFacts() : [];
     const factsH = facts.reduce((sum, f) => sum + f.lines.length * (f.size * 1.4) + 14, 0);
-    const missingH = lines ? 0 : this.richHeight(this.t(DETAILS_TEXT.commandMissing), inner);
+    const missingH = lines ? 0 : this.richHeight(this.t(missing), inner);
     const height = 34 + (block ? block.lines.length * lineGap + 16 : missingH) + noteH + factsH + 8;
     this.need(height);
     const top = this.y;
@@ -303,7 +316,7 @@ class GuideWriter {
     this.doc.restore();
     this.y = top + 10;
     this.doc.fillColor(NAVY);
-    drawText(this.doc, this.t(DETAILS_TEXT.commandTitle), SIDE + 12, this.y, this.style(13, true));
+    drawText(this.doc, this.t(title), SIDE + 12, this.y, this.style(13, true));
     this.y += 24;
     if (block) {
       this.doc.save();
@@ -317,7 +330,7 @@ class GuideWriter {
       }
       this.y += 10;
     } else {
-      this.rich(this.t(DETAILS_TEXT.commandMissing), { x: SIDE + 12, width: inner });
+      this.rich(this.t(missing), { x: SIDE + 12, width: inner });
     }
     this.rich(this.t(DETAILS_TEXT.commandNote), {
       x: SIDE + 12,
@@ -533,8 +546,9 @@ class GuideWriter {
     this.y += 8;
   }
 
-  pictureHeight() {
-    return (PICTURE.height * WIDTH) / PICTURE.width + 20;
+  /** A step's picture with its caption: the real screenshot's own shape, or the drawing's. */
+  pictureHeight(step: GuideStep) {
+    return step.picture ? pictureBox(step.picture, WIDTH).height + 20 : 0;
   }
 
   step(step: GuideStep) {
@@ -553,7 +567,7 @@ class GuideWriter {
             `${this.t(GUIDE_WORDS.tip)}:`,
           ) + 24
         : 0) +
-      (step.picture ? this.pictureHeight() : 0) +
+      this.pictureHeight(step) +
       16;
     this.need(height);
     const top = this.y;
@@ -578,14 +592,35 @@ class GuideWriter {
     if (step.command) this.commandBox();
     if (step.details) this.detailsBox();
     if (step.picture) {
-      this.need(this.pictureHeight());
-      const h = drawPicture(this.doc, step.picture, SIDE, this.y, WIDTH);
-      this.y += h + 4;
+      this.need(this.pictureHeight(step));
+      const shown = placePicture(this.doc, step.picture, SIDE, this.y, WIDTH);
+      this.y += shown.height + 4;
       this.doc.fillColor(MUTED);
-      drawText(this.doc, this.t(GUIDE_WORDS.picture), SIDE, this.y, this.style(8.5, false, true));
+      const caption = shown.screenshot ? GUIDE_WORDS.screenshot : GUIDE_WORDS.picture;
+      drawText(this.doc, this.t(caption), SIDE, this.y, this.style(8.5, false, true));
       this.y += 16;
     }
     this.y += 10;
+  }
+
+  /** A part of numbered steps with its command box: without GitHub, or the drill. */
+  numbered(
+    part: { title: Text; intro: Text; steps: Text[]; commandMissing: Text },
+    lines: string[] | null,
+    commandTitle: Text,
+  ) {
+    this.partHeader(this.t(part.title), this.t(part.intro));
+    part.steps.forEach((step, i) => {
+      const h = this.richHeight(this.t(step), WIDTH - 26) + 8;
+      this.need(h);
+      const top = this.y;
+      this.doc.fillColor(NAVY);
+      drawText(this.doc, `${i + 1}.`, SIDE, top, this.style(BODY, true));
+      this.rich(this.t(step), { x: SIDE + 26, width: WIDTH - 26 });
+      this.y += 8;
+    });
+    this.y += 4;
+    this.commandBox(lines, commandTitle, part.commandMissing, false);
   }
 
   questions() {
@@ -731,6 +766,12 @@ export async function restoreGuidePdf(lang: GuideLang, details: GuideDetails): P
     writer.partHeader(writer.t(part.title), writer.t(part.intro));
     for (const step of part.steps) writer.step(step);
   }
+  writer.numbered(
+    NO_GITHUB_PART,
+    noGithubCommandLines(details.commandLines),
+    GUIDE_WORDS.noGithubCommand,
+  );
+  writer.numbered(DRILL_PART, drillCommandLines(details.commandLines), GUIDE_WORDS.drillCommand);
   writer.questions();
   writer.errors();
   writer.others();

@@ -5,15 +5,16 @@ import { ROUTES, safeNextPath } from "@/lib/routes";
 import { getCurrentSession } from "@/modules/auth/context";
 
 import { SignInForm } from "./sign-in-form";
+import { UnlockWithLink } from "./unlock";
 
 export const metadata: Metadata = { title: "Sign in" };
 
 export default async function SignInPage({
   searchParams,
 }: {
-  searchParams: Promise<{ next?: string | string[] }>;
+  searchParams: Promise<{ next?: string | string[]; unlock?: string | string[] }>;
 }) {
-  const [current, { next }] = await Promise.all([getCurrentSession(), searchParams]);
+  const [current, { next, unlock }] = await Promise.all([getCurrentSession(), searchParams]);
   const destination = safeNextPath(next);
   if (current) {
     redirect(
@@ -28,6 +29,7 @@ export default async function SignInPage({
       <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
         Use the email address your administrator registered for you.
       </p>
+      {typeof unlock === "string" && unlock && <UnlockWithLink token={unlock.slice(0, 200)} />}
       <SignInForm next={destination ?? undefined} />
     </>
   );

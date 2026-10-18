@@ -46,8 +46,8 @@ function ProductCell({ product, skus }: { product: Product; skus?: number }) {
     : `${product.styleCode} · ${skus ?? 0} ${skus === 1 ? "SKU" : "SKUs"}`;
   return (
     <TableCell className="max-w-[16rem] min-w-[11rem] whitespace-normal">
-      <div className="truncate font-medium">{product.styleName}</div>
-      <div className="truncate text-xs text-muted-foreground">{detail}</div>
+      <div className="font-medium break-words">{product.styleName}</div>
+      <div className="text-xs wrap-anywhere text-muted-foreground">{detail}</div>
     </TableCell>
   );
 }
@@ -104,8 +104,10 @@ function TopSellersPanel({
   if (columns.salesAmounts && top.totals.net !== null) {
     summary.push([`Net sales (${currency})`, money(top.totals.net)]);
   }
-  if (columns.financials && top.totals.marginPct !== null) {
-    summary.push(["Margin", hide(`${top.totals.marginPct}%`)]);
+  if (columns.financials) {
+    // "–" when net sales are not above zero (goods of older invoices came back).
+    const margin = top.totals.marginPct;
+    summary.push(["Margin", margin === null ? DASH : hide(`${margin}%`)]);
   }
 
   return (

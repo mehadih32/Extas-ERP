@@ -7,26 +7,28 @@ import { prisma } from "@/lib/prisma";
 import { checkRateLimit } from "@/lib/rate-limit";
 import type { RequestMeta } from "@/lib/request-meta";
 import { tenantDb } from "@/lib/tenant-db";
+import { unlockSignIn } from "@/modules/auth/auth.service";
 import type { CompanyContext } from "@/modules/auth/context";
-import { resolveCompanyAccess } from "@/modules/companies/access";
 import { readStoredFile } from "@/modules/files/file.service";
 import { enqueueJob } from "@/modules/jobs/queue";
 import { kickJobWorker } from "@/modules/jobs/worker";
 
 import type { CardStatus, ChatCard } from "../chat/cards";
 import { applyCard, cancelCard, sendChat } from "../chat/chat.service";
-import { storePrefix } from "../chat/intents";
+import { storePrefix, westernDigits } from "../chat/intents";
 import { discardDraft, PRICE_DRAFTS, sendDraft } from "../drafts.service";
 import { decideHouseRule } from "../house-rules.service";
 import { cardPinReason } from "../chat/chat.service";
 import { answerDeletion, answerPermission, needsPin } from "../requests.service";
 import { aiSettingsOf, checkPin, PIN_CHECKED, pinMatches } from "../settings.service";
 import { logBot, senderFor } from "./bot.service";
+import { botOwner } from "./owner";
 import type { Incoming } from "./channel";
-import { type BotOut, type ButtonPress, readButton, renderAnswer } from "./render";
+import { type BotOut, type ButtonPress, draftVersion, readButton, renderAnswer } from "./render";
 import { readTelegramUpdate } from "./telegram";
 import { PIN_TEXT } from "./pin-scrub";
 import { readWhatsAppPayload, whatsappSignatureOk } from "./whatsapp";
+import { pinCandidates } from "../pin-tries";
 
 /*
  * What reaches the bot. The webhook only checks who is calling (Telegram's
@@ -51,6 +53,8 @@ const PIN_MINUTES = 5;
 /** "bug guard", "bug guard now", "বাগ গার্ড": Bug Guard runs now. */
 const GUARD_WORDS = /^\s*(bug ?guard|বাগ ?গার্ড)(\s+(now|run|চালাও|এখন))?\s*[.!]?\s*$/i;
 const CODE = /^(?:\/start\s+)?([A-Z2-9]{8})$/;
+/** "unlock", "/unlock", "unlock sign-in", "আনলক": the owner's sign-in, with the PIN (v6.4.1 B5). */
+const UNLOCK_WORDS = /^\s*\/?(unlock( my)?( sign[- ]?in)?|আনলক)\s*[.!]?\s*$/i;
 
 const appUrl = () => (process.env.APP_URL || "http://localhost:3000").replace(/\/$/, "");
 
@@ -82,7 +86,9 @@ async function checkPinNow(mine: AiBotLink[], m: Incoming, now: Date): Promise<P
   const checks: PinChecks = {};
   for (const link of waiting) {
     try {
-      checks[link.id] = { right: await checkPin(link.companyId, text, link.ownerId ?? link.id) };
+      checks[link.id] = {
+        right: await checkPin(link.companyId, westernDigits(text), link.ownerId ?? link.id),
+      };
     } catch (error) {
       if (!(error instanceof AppError)) throw error;
       checks[link.id] = { right: false, problem: error.message };
@@ -97,35 +103,39 @@ const LOOKS_LIKE_PIN = /^\s*\d{4,8}\s*$/;
 /** A PIN request that ran out this long ago still makes digits a (late) PIN. */
 const LATE_PIN_MINUTES = 60;
 
-/** Digits checked against the PIN when nothing asked for one, per owner and hour. */
-const STRAY_CHECKS_PER_HOUR = 5;
-
 /**
- * Digits that are a PIN although no store waits for one now (v6.4 A5), so
+ * Digits that may be a PIN although no store waits for one now (v6.4 A5), so
  * they are hidden everywhere too: "late" when a store asked for the PIN and
- * the five minutes ran out (in the last hour), "stray" when they are the PIN
- * of a store of this chat. A few checks an hour at most, so the bot never
- * becomes a way to guess the PIN; past that, digits are words as usual.
+ * the five minutes ran out (in the last hour), "stray" when a number in the
+ * message, alone or among words (Bengali digits too), is the PIN of a store of
+ * this chat. Every message of the linked owner's own chat with digits is
+ * checked (v6.4.1 B6), but only ten new numbers in fifteen minutes
+ * (pinMatches): past that, a message with a number is hidden unchecked, the
+ * same way and with the same words, so someone holding the owner's chat cannot
+ * find the PIN by sending numbers, and a PIN typed by mistake is still hidden.
  */
 async function hiddenPin(
   mine: AiBotLink[],
   m: Incoming,
   now: Date,
 ): Promise<"late" | "stray" | null> {
-  const text = m.text ?? "";
-  if (m.callback || !LOOKS_LIKE_PIN.test(text)) return null;
+  const text = westernDigits(m.text ?? "");
+  if (m.callback) return null;
   const since = now.getTime() - LATE_PIN_MINUTES * 60_000;
-  if (mine.some((l) => l.pending && l.pendingUntil && l.pendingUntil.getTime() > since)) {
+  if (
+    LOOKS_LIKE_PIN.test(text) &&
+    mine.some((l) => l.pending && l.pendingUntil && l.pendingUntil.getTime() > since)
+  ) {
     return "late";
   }
+  const numbers = pinCandidates(text);
+  if (numbers.length === 0) return null;
   for (const link of mine) {
-    const owner = link.ownerId ?? link.id;
-    try {
-      checkRateLimit(`ai-pin-stray:${link.companyId}:${owner}`, STRAY_CHECKS_PER_HOUR, 3_600_000);
-    } catch {
-      continue;
+    for (const number of numbers) {
+      // The PIN, or not checked (too many new numbers): hidden all the same.
+      const match = await pinMatches(link.companyId, number, link.ownerId ?? link.id);
+      if (match !== false) return "stray";
     }
-    if (await pinMatches(link.companyId, text.trim())) return "stray";
   }
   return null;
 }
@@ -158,23 +168,45 @@ async function keep(links: AiBotLink[], channel: AiBotChannel, botKey: string, m
     (code !== undefined && links.some((l) => l.linkCodeUntil && l.linkCodeUntil > now));
   // A stranger is never answered; past a few messages an hour they are not even logged.
   if (!known && !strangerAllowed(first.id, m.chatId)) return;
-  const pin = known ? await checkPinNow(mine, m, now) : null;
-  const hidden = known && !pin ? await hiddenPin(mine, m, now) : null;
-  // Kept in the store it is for (the worker moves it if it can only tell later).
-  const store = hidden
-    ? (mine.find((l) => l.pending) ?? mine[0]!)
-    : (linking ?? (known ? await storeOfMessage(mine, m) : null) ?? mine[0] ?? first);
-  const incoming: Incoming = pin || hidden ? { ...m, text: PIN_TEXT } : m;
+  // A repeated delivery (Telegram sends an update again when its answer was
+  // late, at times at the same moment) is dropped before any PIN check, so one
+  // wrong PIN counts once: the delivery is claimed first, on the unique key of
+  // the channel and the delivery id, with no text yet (nothing of a PIN).
+  const providerId = `${botKey}:${m.updateId}`;
+  let claim: { id: string };
   try {
+    claim = await prisma.aiBotMessage.create({
+      data: {
+        companyId: first.companyId,
+        linkId: first.id,
+        channel,
+        direction: "IN",
+        providerId,
+        chatId: m.chatId,
+        text: "",
+        status: "IGNORED",
+      },
+      select: { id: true },
+    });
+  } catch (error) {
+    if (isRepeat(error)) return;
+    throw error;
+  }
+  try {
+    const pin = known ? await checkPinNow(mine, m, now) : null;
+    // A link code is a command, never a PIN.
+    const hidden = known && !pin && !linking ? await hiddenPin(mine, m, now) : null;
+    // Kept in the store it is for (the worker moves it if it can only tell later).
+    const store = hidden
+      ? (mine.find((l) => l.pending) ?? mine[0]!)
+      : (linking ?? (known ? await storeOfMessage(mine, m) : null) ?? mine[0] ?? first);
+    const incoming: Incoming = pin || hidden ? { ...m, text: PIN_TEXT } : m;
     await prisma.$transaction(async (tx) => {
-      const row = await tx.aiBotMessage.create({
+      const row = await tx.aiBotMessage.update({
+        where: { id: claim.id },
         data: {
           companyId: store.companyId,
           linkId: store.id,
-          channel,
-          direction: "IN",
-          providerId: `${botKey}:${m.updateId}`,
-          chatId: m.chatId,
           text: described(incoming).slice(0, known ? 2000 : 200),
           status: known ? "RECEIVED" : "IGNORED",
         },
@@ -196,7 +228,8 @@ async function keep(links: AiBotLink[], channel: AiBotChannel, botKey: string, m
       }
     });
   } catch (error) {
-    if (isRepeat(error)) return;
+    // Not kept: the claim goes (it never held the message), so Telegram's next try is handled.
+    await prisma.aiBotMessage.deleteMany({ where: { id: claim.id, text: "" } });
     throw error;
   }
   if (known) kickJobWorker();
@@ -275,7 +308,7 @@ type IncomingJob = {
   incoming: Incoming;
   /** The PIN's check, made when it arrived (the PIN itself is not here). */
   pin?: PinChecks;
-  /** A PIN typed after its five minutes, or when nothing asked for it (hiddenPin). */
+  /** A PIN typed after its five minutes, or a number that may be one when nothing asked (hiddenPin). */
   hidden?: "late" | "stray";
 };
 
@@ -289,23 +322,9 @@ async function keepUnder(messageId: string, link: AiBotLink) {
 
 /** The owner, as the bot works for them: their own permissions in the store, never more. */
 async function ownerContext(link: AiBotLink): Promise<CompanyContext | null> {
-  if (!link.ownerId) return null;
-  const user = await prisma.user.findUnique({
-    where: { id: link.ownerId },
-    select: {
-      id: true,
-      email: true,
-      name: true,
-      phone: true,
-      avatarUrl: true,
-      status: true,
-      isSuperAdmin: true,
-      mustChangePassword: true,
-    },
-  });
-  if (!user || user.status !== "ACTIVE" || user.mustChangePassword) return null;
-  const access = await resolveCompanyAccess(user, link.companyId);
-  if (!access?.permissions.has("ai.manage")) return null;
+  const owner = await botOwner(link);
+  if (!owner) return null;
+  const { user, access } = owner;
   const now = new Date();
   return {
     // Not a sign-in: a stand-in for this one message, never saved.
@@ -410,26 +429,38 @@ export async function runBotIncomingJob(job: BackgroundJob) {
       (l) => l.linkCodeHash === hashText(code) && l.linkCodeUntil && l.linkCodeUntil > now,
     );
     if (link) {
+      // The code is used once: claimed first, so two copies of it never both link.
       const claimed = await prisma.aiBotLink.updateMany({
         where: { id: link.id, linkCodeHash: link.linkCodeHash },
-        data: {
-          chatId: m.chatId,
-          chatName: m.fromName?.slice(0, 120) ?? null,
-          linkedAt: now,
-          linkCodeHash: null,
-          linkCodeUntil: null,
-          lastInboundAt: now,
-        },
+        data: { linkCodeHash: null, linkCodeUntil: null },
       });
       if (claimed.count === 1) {
         const company = await prisma.company.findUniqueOrThrow({
           where: { id: link.companyId },
           select: { name: true },
         });
+        // Whoever asked for the code becomes the owner only now (a code made
+        // before v6.4.1 has no asker kept: the owner it set then).
+        const ownerId = link.linkCodeOwnerId ?? link.ownerId;
+        await tellPreviousChat(link, m.chatId, ownerId, company.name);
+        await prisma.aiBotLink.update({
+          where: { id: link.id },
+          data: {
+            ownerId,
+            linkCodeOwnerId: null,
+            chatId: m.chatId,
+            chatName: m.fromName?.slice(0, 120) ?? null,
+            linkedAt: now,
+            lastInboundAt: now,
+            // A PIN request of the person before never carries over.
+            pending: Prisma.DbNull,
+            pendingUntil: null,
+          },
+        });
         await prisma.auditLog.create({
           data: {
             companyId: link.companyId,
-            userId: link.ownerId,
+            userId: ownerId,
             action: "UPDATE",
             entityType: "AiBotLink",
             entityId: link.companyId,
@@ -472,8 +503,37 @@ export async function runBotIncomingJob(job: BackgroundJob) {
 }
 
 /**
- * A PIN that came too late, or when nothing asked for it: taken out of the
- * chat, a request that ran out is ended, and nothing else is done with it.
+ * Before a link moves to another chat or another person, the chat linked until
+ * now is told in one plain line (it then gets nothing more from this store).
+ */
+async function tellPreviousChat(
+  link: AiBotLink,
+  newChatId: string,
+  newOwnerId: string | null,
+  store: string,
+) {
+  if (!link.linkedAt || !link.chatId) return;
+  const sameChat = link.chatId === newChatId;
+  if (sameChat && link.ownerId === newOwnerId) return;
+  const person = newOwnerId
+    ? await prisma.user.findUnique({ where: { id: newOwnerId }, select: { name: true } })
+    : null;
+  const who = person?.name ?? "another person";
+  await say(
+    link,
+    link.chatId,
+    words(
+      sameChat
+        ? `${store}: this chat is now linked to ${who}'s account, and works with their permissions from now on.`
+        : `${store}: the bot was linked to ${who}'s account in another chat. This chat gets no more messages or answers for ${store}.`,
+    ),
+  );
+}
+
+/**
+ * A PIN that came too late, or a number that may be the PIN when nothing
+ * asked for one: taken out of the chat, a request that ran out is ended, and
+ * nothing else is done with it.
  */
 async function hidePin(mine: AiBotLink[], m: Incoming, hidden: "late" | "stray") {
   const link = mine.find((l) => l.pending) ?? mine[0]!;
@@ -491,11 +551,33 @@ async function hidePin(mine: AiBotLink[], m: Incoming, hidden: "late" | "stray")
       ),
     );
   }
+  // Never says whether it was the PIN: a number past the checks is hidden with the same words.
   return say(
     link,
     m.chatId,
     words(
-      "That was your PIN, so it was hidden and nothing was done. Send it only when the bot asks for it.",
+      "A number in your message could be your PIN, so the message was hidden and nothing was done. Send your PIN only when the bot asks for it. If it was not your PIN, write it again in 15 minutes, or use the ERP.",
+    ),
+  );
+}
+
+/**
+ * A PIN that came when no request waited for it any more (the same PIN sent
+ * twice, or read after its five minutes): taken out of the chat, a request
+ * that ran out is ended, and nothing is done with it.
+ */
+async function pinNotWaited(mine: AiBotLink[], m: Incoming, now: Date) {
+  const link = mine.find((l) => l.pending) ?? mine[0]!;
+  await senderFor(link).remove(m.chatId, m.messageId);
+  await prisma.aiBotLink.updateMany({
+    where: { id: { in: mine.map((l) => l.id) }, pendingUntil: { lte: now } },
+    data: { pending: Prisma.DbNull, pendingUntil: null },
+  });
+  return say(
+    link,
+    m.chatId,
+    words(
+      "Your PIN was hidden. Nothing was waiting for it any more (it was used already, or its 5 minutes ran out), so nothing was done. Press the button again if you still need it.",
     ),
   );
 }
@@ -525,6 +607,15 @@ const meta = (link: AiBotLink): RequestMeta => ({
 /** The owner wrote something: the PIN asked for, or words for Mehedi 2.0. */
 async function wrote(mine: AiBotLink[], m: Incoming, messageId: string, pin: PinChecks | null) {
   const text = m.text?.trim() ?? "";
+  // A PIN (found when it arrived) that nothing waits for any more: sent twice,
+  // or its five minutes ran out before it was read. Hidden, and never the chat's.
+  const now = new Date();
+  if (
+    (pin !== null || text === PIN_TEXT) &&
+    !mine.some((l) => l.pending && l.pendingUntil && l.pendingUntil > now)
+  ) {
+    return pinNotWaited(mine, m, now);
+  }
   const picked = await storeFor(mine, text);
   if ("ask" in picked) {
     return say(
@@ -578,6 +669,9 @@ async function wrote(mine: AiBotLink[], m: Incoming, messageId: string, pin: Pin
     );
   }
   if (!text) return;
+  if (UNLOCK_WORDS.test(storePrefix(text).rest)) {
+    return act(link, ctx, m.chatId, { kind: "unlock", companyId: link.companyId }, null, null);
+  }
   if (GUARD_WORDS.test(storePrefix(text).rest)) {
     const { guardPress } = await import("@/modules/bug-guard/bot-actions");
     return say(
@@ -662,6 +756,7 @@ async function storeOfPress(mine: AiBotLink[], press: ButtonPress) {
       });
       break;
     case "guard-run":
+    case "unlock":
       row = mine.some((l) => l.companyId === press.companyId)
         ? { companyId: press.companyId }
         : null;
@@ -727,6 +822,8 @@ async function pinNeeded(ctx: CompanyContext, press: ButtonPress): Promise<strin
       });
       return finding?.fixKind === "SECURITY" ? "take this security step" : null;
     }
+    case "unlock":
+      return "unlock your sign-in";
     case "guard-correction":
       return press.choice === "apply"
         ? "apply a data correction"
@@ -736,6 +833,27 @@ async function pinNeeded(ctx: CompanyContext, press: ButtonPress): Promise<strin
     default:
       return null;
   }
+}
+
+/**
+ * Whether the draft still says what the pressed message showed (its version
+ * on the Send button). A button without one (made before v6.4.1) cannot tell,
+ * so it is refused the same way. A draft not found is left to sendDraft.
+ */
+async function draftAsShown(
+  ctx: CompanyContext,
+  press: Extract<ButtonPress, { kind: "send" }>,
+): Promise<boolean> {
+  const draft = await ctx.db.aiDraft.findFirst({
+    where: { id: press.draftId },
+    select: { subject: true, toAddress: true, body: true },
+  });
+  if (!draft) return true;
+  return (
+    press.version !== undefined &&
+    press.version ===
+      draftVersion({ subject: draft.subject, to: draft.toAddress, body: draft.body })
+  );
 }
 
 /** Does what a button asks, in the owner's name; the PIN first where it is needed. */
@@ -748,6 +866,17 @@ async function act(
   pin: typeof PIN_CHECKED | null,
 ) {
   const sender = senderFor(link);
+  // Send sends only the draft as its message showed it: checked before the PIN
+  // is asked and again after it (the draft may change in between).
+  if (press.kind === "send" && !(await draftAsShown(ctx, press))) {
+    return say(
+      link,
+      chatId,
+      words(
+        'This draft was changed after that message showed it, so nothing was sent. Write "পাঠাও" to see it as it is now, then press Send under it.',
+      ),
+    );
+  }
   if (pin === null) {
     const why = await pinNeeded(ctx, press);
     if (why) {
@@ -811,6 +940,13 @@ async function act(
         result = press.approve
           ? "Approved: it is deleted (cancelled) in your name."
           : "Refused: it stays.";
+        break;
+      case "unlock":
+        // Only ever with the PIN (pinNeeded), and only the bot's own owner.
+        if (pin !== PIN_CHECKED) return;
+        await unlockSignIn(ctx.user.id, "through the bot, with the PIN", m);
+        result =
+          "Unlocked: wrong passwords before now no longer slow down your sign-in. Sign in with your password.";
         break;
       case "guard":
       case "guard-run":

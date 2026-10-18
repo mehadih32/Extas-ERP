@@ -13,7 +13,9 @@ export const dynamic = "force-dynamic";
  * GET /api/materials/purchase-orders/:orderId/pdf — the order for the supplier as a PDF:
  * its lines with pictures and prices ("At receive" when agreed on arrival), and for a
  * master batch the style-wise breakdown and the collar and cuff matrices. Prices only
- * for people who see material prices. Made for each request, never kept.
+ * for people who see material prices. A booking's order is refused (409): it prints
+ * from the booking (GET /api/production/bookings/:id/pdf). Made for each request,
+ * never kept.
  */
 export async function GET(request: Request, context: { params: Promise<Params> }) {
   try {

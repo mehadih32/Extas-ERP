@@ -5,7 +5,7 @@ import { HelpSearch } from "@/components/help/help-search";
 import { SectionCards } from "@/components/help/section-cards";
 import { roleLabel } from "@/components/shell/labels";
 import { localDay } from "@/lib/dates";
-import { HELP_SECTIONS, helpSearchEntries, sectionOpen } from "@/modules/help";
+import { HELP_SECTIONS, helpSearchEntries, sectionOpen, shownArticles } from "@/modules/help";
 import { getHelpAiAction } from "@/server/actions/ai.actions";
 import { requireCompanyPage } from "@/server/pages/guards";
 
@@ -15,7 +15,9 @@ export const metadata: Metadata = { title: "Help Center" };
  * The Help Center: the manual in Bengali, part by part, with a search box that
  * answers as people type, and the Help AI (while AI is on) that answers a
  * question from the guides. Everyone may read every guide; guides about pages
- * a person's role does not open say so.
+ * a person's role does not open say so. The guides of the pages only the
+ * platform owner opens (Bug Guard, Full check, Server Health, Backups) are
+ * shown only to the platform owner (v6.4.1 C6).
  */
 export default async function HelpPage({
   searchParams,
@@ -24,10 +26,11 @@ export default async function HelpPage({
 }) {
   const ctx = await requireCompanyPage();
   const permissions = [...ctx.permissions];
+  const owner = ctx.user.isSuperAdmin;
   const [q, helpAi] = await Promise.all([searchParams.then((p) => p.q), getHelpAiAction()]);
   const initialQuery = typeof q === "string" ? q.slice(0, 200) : "";
   const parts = HELP_SECTIONS.map((section) => ({
-    section,
+    section: { ...section, articles: shownArticles(section, permissions, owner) },
     open: sectionOpen(section, permissions),
   }));
   const mine = parts.filter((p) => p.open);
@@ -50,7 +53,7 @@ export default async function HelpPage({
       </header>
       {helpAi.ok && <HelpAsk helpAi={helpAi.data} />}
       <HelpSearch
-        entries={helpSearchEntries(permissions)}
+        entries={helpSearchEntries(permissions, owner)}
         initialQuery={initialQuery}
         roleName={roleLabel(ctx.role, ctx.user.isSuperAdmin)}
         companyName={ctx.company.name}

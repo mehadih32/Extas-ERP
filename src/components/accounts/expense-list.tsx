@@ -102,8 +102,8 @@ export function ExpenseList({
                   </div>
                 </TableCell>
                 <TableCell>
-                  <div className="flex max-w-64 items-center gap-1.5">
-                    <span className="truncate">{e.head}</span>
+                  <div className="flex max-w-64 min-w-40 items-center gap-1.5 whitespace-normal">
+                    <span className="min-w-0 break-words">{e.head}</span>
                     {e.hasReceipt && (
                       <PaperclipIcon
                         className="size-3.5 shrink-0 text-muted-foreground"
@@ -112,13 +112,13 @@ export function ExpenseList({
                     )}
                   </div>
                   {e.details && (
-                    <div className="max-w-64 truncate text-[0.8125rem] text-muted-foreground">
+                    <div className="max-w-64 min-w-40 text-[0.8125rem] break-words whitespace-normal text-muted-foreground">
                       {e.details}
                     </div>
                   )}
                 </TableCell>
                 <TableCell>
-                  <div className="max-w-64 truncate text-muted-foreground">
+                  <div className="max-w-64 min-w-40 break-words whitespace-normal text-muted-foreground">
                     {howText(e, seesAll)}
                   </div>
                 </TableCell>

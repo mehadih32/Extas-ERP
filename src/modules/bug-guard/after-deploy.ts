@@ -21,6 +21,9 @@ import type { Check } from "./types";
  * The report goes to the ERP inbox and on Telegram (the owner's own alarm, sent
  * whether the AI is on or off), marked "after the update". A company that could
  * not be checked is told too: the update itself stays installed.
+ * A restore drill copy or a copy on standby takes the request too (deploy.sh does
+ * not wait for it) but checks nothing: the Full check is of the live address, which
+ * such a copy does not own; its own Bug Guard schedule goes on as before.
  */
 
 export const AFTER_DEPLOY_REQUEST = "bug-guard-after-deploy.json";
@@ -44,6 +47,12 @@ export async function bugGuardAfterDeploy(
   if (process.env.DEMO_SITE === "on") return null;
   const asked = await takeRequest(AFTER_DEPLOY_REQUEST);
   if (!asked) return null;
+  const { notTheErpInUse } = await import("@/modules/backups/standby");
+  const notOurs = await notTheErpInUse();
+  if (notOurs) {
+    console.log(`[bug-guard] after the update: not checked here, ${notOurs}`);
+    return null;
+  }
   const platform = await platformCompanyId();
   const companies = await prisma.company.findMany({
     orderBy: { createdAt: "asc" },

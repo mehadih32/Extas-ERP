@@ -1,5 +1,11 @@
 import { JOB_HANDLERS, isJobKind } from "@/modules/jobs/handlers";
-import { claimNextJob, completeJob, failJob, requeueStaleJobs } from "@/modules/jobs/queue";
+import {
+  type ClaimOnly,
+  claimNextJob,
+  completeJob,
+  failJob,
+  requeueStaleJobs,
+} from "@/modules/jobs/queue";
 
 /*
  * The background worker. Started once per server process (instrumentation.ts):
@@ -17,8 +23,8 @@ let running = false;
 let again = false;
 
 /** Runs one claimed-or-none job. Returns false when nothing was due. */
-async function runOne(now: Date): Promise<boolean> {
-  const job = await claimNextJob(now);
+async function runOne(now: Date, only?: ClaimOnly): Promise<boolean> {
+  const job = await claimNextJob(now, undefined, only);
   if (!job) return false;
   try {
     if (!isJobKind(job.kind)) throw new Error(`No handler for jobs of kind "${job.kind}".`);
@@ -46,19 +52,27 @@ async function runOne(now: Date): Promise<boolean> {
  * Runs the jobs that are due now (at most `limit`), and returns how many ran.
  * Also used by tests and scripts to run the queue without the clock.
  */
-export async function runDueJobs(limit = JOBS_PER_TICK, now?: () => Date): Promise<number> {
+export async function runDueJobs(
+  limit = JOBS_PER_TICK,
+  now?: () => Date,
+  only?: ClaimOnly,
+): Promise<number> {
   const clock = now ?? (() => new Date());
   await requeueStaleJobs(clock());
   let ran = 0;
-  while (ran < limit && (await runOne(clock()))) ran++;
+  while (ran < limit && (await runOne(clock(), only))) ran++;
   return ran;
 }
 
 export async function jobTick(): Promise<number | null> {
-  // A copy on standby after a restore runs no job (the backup's own queue would
-  // send its messages a second time); they wait until it goes live (G2).
-  const { onStandby } = await import("@/modules/backups/standby");
-  if (await onStandby()) return null;
+  // A restore drill copy (test mode) runs no job at all.
+  const { onDrill, standbyMark } = await import("@/modules/backups/standby");
+  if (await onDrill()) return null;
+  // A copy on standby after a restore runs only the alarms raised since it went on
+  // standby (a failed backup, Bug Guard's urgent items): the backup's own queue would
+  // send its messages a second time, so they wait until it goes live (G2).
+  const standby = await standbyMark();
+  const only: ClaimOnly | undefined = standby ? { alarmsSince: standby.since } : undefined;
   if (running) {
     again = true;
     return null;
@@ -68,7 +82,7 @@ export async function jobTick(): Promise<number | null> {
     let total = 0;
     do {
       again = false;
-      total += await runDueJobs();
+      total += await runDueJobs(JOBS_PER_TICK, undefined, only);
     } while (again);
     return total;
   } catch (error) {

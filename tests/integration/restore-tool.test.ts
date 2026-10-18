@@ -340,7 +340,7 @@ sys.exit(os.waitstatus_to_exitcode(status))
       expect(got.stderr).toBe("");
       expect(got.code).toBe(0);
       expect(got.stdout).toContain("2. Type this code:  ABCD-EFGH");
-      expect(got.stdout).toMatch(/ 1\) .+\(newest\)\n/);
+      expect(got.stdout).toMatch(/ 1\) .+\(newest checked: Enter picks it\)\n/);
       expect(got.stdout).toMatch(/ 2\) /);
       expect(got.stdout).toContain(
         "Your recovery key is kept in Google Drive: it is filled in by itself",
@@ -370,12 +370,17 @@ sys.exit(os.waitstatus_to_exitcode(status))
       expect(await readFile(path.join(work, "code.bundle"), "utf8")).toBe(
         "# v2 git bundle\nthe code at the commit\n",
       );
-      // Only root can read what the backup holds; the locked download is gone.
+      // Only root can read what the backup holds. The download stays as it is in Drive
+      // (locked) for a second try; nothing opened is left beside it.
       expect((await stat(work)).mode & 0o777).toBe(0o700);
       for (const file of ["google.json", "settings.env", "state.json", "server.json"]) {
         expect((await stat(path.join(work, file))).mode & 0o777).toBe(0o600);
       }
-      expect(await readdir(work)).not.toContain("download");
+      expect(await readdir(work)).not.toContain("opened");
+      const kept = (await readdir(path.join(work, "download"))).sort();
+      expect(kept).toEqual(expect.arrayContaining(["database.dump.locked", "manifest.json"]));
+      expect(kept).not.toContain("database.dump");
+      expect(kept).not.toContain("settings.env");
       const { companies } = await countsOf(path.join(work, "restore", "database.dump"));
       expect(companies).toEqual(["Extas"]);
 
@@ -414,7 +419,8 @@ sys.exit(os.waitstatus_to_exitcode(status))
       );
       expect(shared.code).toBe(3);
       expect(shared.stderr).toContain("Error R25:");
-      // A wrong Google client ID.
+      // A wrong Google client ID (asked again once the kept sign-in is gone).
+      await rm(path.join(work, "google.json"));
       const badClient = await fetch({ google_client_id: "my-client-id" });
       expect(badClient.stderr).toContain(
         "Error R08: that is not a Google client ID: it ends in .apps.googleusercontent.com.",
@@ -425,6 +431,118 @@ sys.exit(os.waitstatus_to_exitcode(status))
       expect(none.stderr).toContain(
         "Error R10: there are no Extas ERP backups in this Google account's Drive.",
       );
+    });
+
+    it("goes on after a stop with the sign-in and the download of the first try", async () => {
+      await connectDrive();
+      await setKey({ keepInDrive: false });
+      await prepareHost(SETTINGS);
+      const backup = await backUpNow();
+      const big = labelled("backup")
+        .flatMap((folder) =>
+          [...google.files.values()].filter((f) => f.parents.includes(folder.id)),
+        )
+        .find((f) => f.name === "database.dump.locked")!;
+
+      // The first try stops (a wrong key): the download stays locked, nothing opened stays.
+      const stopped = await fetch({ recovery_key: "Padma river at dusk" });
+      expect(stopped.code).toBe(3);
+      expect(await readdir(work)).toEqual(expect.arrayContaining(["download", "google.json"]));
+      expect(await readdir(work)).not.toContain("opened");
+      expect(await readdir(path.join(work, "download"))).not.toContain("database.dump");
+
+      // The second try: no new code on the phone, and the database is not downloaded again.
+      google.requests.length = 0;
+      const again = await fetch({ recovery_key: OWNER_KEY });
+      expect(again.stderr).toBe("");
+      expect(again.code).toBe(0);
+      expect(again.stdout).toContain(
+        "Signed in to Google with the sign-in from the earlier try (no new code needed)",
+      );
+      expect(again.stdout).not.toContain("Type this code");
+      expect(again.stdout).toMatch(
+        /database\.dump\.locked \(.+\): already downloaded in the earlier try/,
+      );
+      expect(google.requests).not.toContain("POST /device/code");
+      expect(google.requests).not.toContain(`GET /drive/v3/files/${big.id}`);
+      expect((await state()).name).toBe(backup.name);
+
+      // A sign-in Google no longer honours is asked again, with a new code.
+      google.refreshTokens.clear();
+      const signIn = await fetch({ recovery_key: OWNER_KEY });
+      expect(signIn.code).toBe(0);
+      expect(signIn.stdout).toContain("2. Type this code:  ABCD-EFGH");
+    });
+
+    it("never picks by itself a backup not checked in Drive or made by a copy on standby", async () => {
+      await connectDrive();
+      await setKey({ keepInDrive: true });
+      await prepareHost(SETTINGS);
+      const checked = await backUpNow();
+      const onStandby = await backUpNow();
+      const unchecked = await backUpNow();
+      const folder = (name: string | null) => labelled("backup").find((f) => f.name === name)!;
+      folder(onStandby.name).appProperties.standby = "yes";
+      delete folder(unchecked.name).appProperties.checked;
+
+      const enter = await fetch();
+      expect(enter.code).toBe(0);
+      expect(enter.stdout).toMatch(/ 1\) .+\(NOT checked in Drive: it may be incomplete\)\n/);
+      expect(enter.stdout).toMatch(/ 2\) .+\(made by a copy on standby\)\n/);
+      expect(enter.stdout).toContain(
+        "Enter picks number 3: the newest backup that passed its check.",
+      );
+      expect((await state()).name).toBe(checked.name);
+      // Typed, the unchecked one is restored (every file is checked again).
+      const typed = await fetch({ pick: "1" });
+      expect(typed.code).toBe(0);
+      expect(typed.stdout).toContain("Note W09: this backup was not checked in Google Drive");
+      expect((await state()).name).toBe(unchecked.name);
+    });
+
+    it("stops before downloading when the disk has no room for the whole restore", async () => {
+      await connectDrive();
+      await setKey({ keepInDrive: true });
+      await prepareHost(SETTINGS);
+      await backUpNow();
+      // The tool with the disk's free space set (5 GB: less than the ERP's programs alone).
+      const wrapper = path.join(dir, "small-disk.py");
+      await writeFile(
+        wrapper,
+        `import importlib.util, sys
+sys.dont_write_bytecode = True
+spec = importlib.util.spec_from_file_location("restore_tool", sys.argv[1])
+tool = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(tool)
+tool.free_bytes = lambda path: 5 * 1024 ** 3
+sys.exit(tool.main(sys.argv[2:]))
+`,
+      );
+      const answers = path.join(dir, "answers");
+      await writeFile(
+        answers,
+        `google_client_id=${CLIENT_ID}\ngoogle_client_secret=${CLIENT_SECRET}\npick=\n`,
+      );
+      await chmod(answers, 0o600);
+      const small = await exec("python3", ["-I", wrapper, TOOL, "fetch", "--work", work], {
+        env: {
+          ...process.env,
+          RESTORE_ANSWERS: answers,
+          GOOGLE_OAUTH_BASE: google.url,
+          GOOGLE_DRIVE_BASE: google.url,
+        },
+      }).then(
+        () => ({ code: 0, stderr: "" }),
+        (error: { code?: number; stderr?: string }) => ({
+          code: Number(error.code),
+          stderr: error.stderr ?? "",
+        }),
+      );
+      expect(small.code).toBe(3);
+      expect(small.stderr).toMatch(
+        /Error R22: the disk has too little free space for this backup: it needs about [\d.]+ GB \(the download [^)]*the database [^)]*the ERP's programs 8\.0 GB\) and has 5\.0 GB free\./,
+      );
+      expect(await readdir(path.join(work, "download"))).toEqual([".backup", "manifest.json"]);
     });
 
     it("opens a v6.3 backup with the old key card", async () => {
@@ -649,6 +767,58 @@ sys.exit(os.waitstatus_to_exitcode(status))
       } finally {
         await new Promise((resolve) => old.close(resolve));
       }
+    });
+
+    it("in a drill, only adds a new record: never moves one that points elsewhere (v6.4.1 review)", async () => {
+      const zone = cf.zones.get("extasbd.com")!;
+      // The company's website, typed by mistake as the drill's address.
+      zone.records.push({
+        id: "w1",
+        type: "A",
+        name: "www.extasbd.com",
+        content: "198.51.100.20",
+        proxied: true,
+        ttl: 1,
+      });
+      await mkdir(work, { recursive: true });
+      await writeFile(
+        path.join(work, "server.json"),
+        JSON.stringify({ cloudflare: { zone: "extasbd.com", token: CF_TOKEN } }),
+      );
+      const deploy = path.join(dir, "srv", "deploy");
+      await mkdir(deploy, { recursive: true });
+      const env = { CLOUDFLARE_API_BASE: cf.url, PUBLIC_IP: "203.0.113.7" };
+      const drillDns = async (address: string) => {
+        await writeFile(path.join(deploy, ".env"), `APP_DOMAIN=${address}\nDEMO_SITE=off\n`);
+        return tool(
+          ["dns", "--work", work, "--deploy", deploy, "--drill"],
+          { dns: address },
+          {
+            env,
+          },
+        );
+      };
+
+      const before = cf.requests.length;
+      const refused = await drillDns("www.extasbd.com");
+      expect(refused.code).toBe(0);
+      expect(refused.stdout).toContain(
+        "Note W12: www.extasbd.com already points to another server (198.51.100.20)",
+      );
+      expect(zone.records.find((r) => r.id === "w1")!.content).toBe("198.51.100.20");
+      expect(cf.requests.slice(before).every((r) => r.startsWith("GET "))).toBe(true);
+      expect((await state()).dnsMoved).toBe(false);
+
+      // A new address: a new record, as the guide says.
+      const added = await drillDns("drill.extasbd.com");
+      expect(added.stdout).toContain(
+        "drill.extasbd.com now points to this server (a new A record).",
+      );
+      expect((await state()).dnsMoved).toBe(true);
+      // The drill run again on the same server: already here.
+      const again = await drillDns("drill.extasbd.com");
+      expect(again.stdout).toContain("drill.extasbd.com already points to this server.");
+      expect(zone.records.filter((r) => r.type === "A")).toHaveLength(2);
     });
 
     it("without a saved token, says which address to point where, and changes nothing", async () => {

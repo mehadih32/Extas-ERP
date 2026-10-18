@@ -10,6 +10,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { signInFormAction } from "@/server/actions/auth-forms.actions";
 
+import { AskUnlockLink } from "./unlock";
+
 export function SignInForm({ next }: { next?: string }) {
   const [state, formAction, pending] = useActionState(signInFormAction, null);
   const [dismissedErrorId, setDismissedErrorId] = useState<string>();
@@ -50,6 +52,7 @@ export function SignInForm({ next }: { next?: string }) {
       {error && error.code !== "INTERNAL" && !hasFieldErrors && (
         <FormAlert>{error.message}</FormAlert>
       )}
+      {error?.code === "ACCOUNT_LOCKED" && <AskUnlockLink email={state?.email} />}
 
       <Button
         type="submit"

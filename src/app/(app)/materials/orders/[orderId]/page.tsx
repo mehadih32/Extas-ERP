@@ -4,6 +4,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { SectionError } from "@/components/dashboard/section-error";
+import { OrientationDownload } from "@/components/documents/orientation-download";
 import { FormAlert } from "@/components/forms/field";
 import { FlagBadge, OrderBadge } from "@/components/materials/badges";
 import { materialsHref, perUnit, quantity } from "@/components/materials/labels";
@@ -17,6 +18,7 @@ import { money } from "@/components/sales/labels";
 import { BackLink } from "@/components/settings/back-link";
 import { Button } from "@/components/ui/button";
 import { formatDay } from "@/lib/display";
+import { pdfOrientationFor } from "@/modules/documents/book-frame";
 import type { OrderScreen } from "@/modules/materials/screens.service";
 import { getOrderScreenAction } from "@/server/actions/materials.actions";
 import { requireCompanyPage } from "@/server/pages/guards";
@@ -62,7 +64,8 @@ const one = (value: string | string[] | undefined) =>
  * One purchase order (materials.view, like GET /api/materials/purchase-orders/:id):
  * each material with what has arrived and what is still to come, the bills
  * the goods came on, and receiving, changing, closing or cancelling it as this
- * person may. Prices show to people who see material prices.
+ * person may. Prices show to people who see material prices. A booking's order
+ * prints as the booking (for people who see bookings), never as a plain order.
  */
 export default async function OrderPage({
   params,
@@ -89,6 +92,8 @@ export default async function OrderPage({
         ? `${o.number} was saved.`
         : undefined;
   const ended = o.status === "CLOSED" || o.status === "CANCELLED";
+  // This person's last pick for printing a booking (only asked for a booking's order).
+  const orientation = screen.print === "booking" ? await pdfOrientationFor(ctx) : null;
 
   return (
     <div className="grid grid-cols-1 gap-8 md:gap-10">
@@ -134,12 +139,29 @@ export default async function OrderPage({
             title="Materials"
             id="lines-heading"
             action={
-              <Button asChild variant="outline" size="sm">
-                <a href={`/api/materials/purchase-orders/${encodeURIComponent(o.id)}/pdf`} download>
-                  <FileDownIcon aria-hidden />
-                  Print order (PDF)
-                </a>
-              </Button>
+              orientation && o.bookingId ? (
+                // A booking prints as the booking: its revision, and Draft until approved.
+                <OrientationDownload
+                  href={productionHref.bookingPdf(o.bookingId)}
+                  label="Print booking (PDF)"
+                  title={`Print booking for ${o.number}`}
+                  description="The PDF for the supplier, with a blank strip at the top for binding."
+                  orientation={orientation}
+                  variant="outline"
+                  size="sm"
+                  className=""
+                />
+              ) : screen.print === "order" ? (
+                <Button asChild variant="outline" size="sm">
+                  <a
+                    href={`/api/materials/purchase-orders/${encodeURIComponent(o.id)}/pdf`}
+                    download
+                  >
+                    <FileDownIcon aria-hidden />
+                    Print order (PDF)
+                  </a>
+                </Button>
+              ) : undefined
             }
           >
             <ul className="mt-4 grid divide-y">

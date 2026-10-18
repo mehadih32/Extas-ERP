@@ -400,4 +400,47 @@ run("The real CM rules: embroidery houses' spoilage and the reject allowance", (
     });
     expect(() => batchMoney.cmSettlementDocument(env.accounts, screen.standing!)).not.toThrow();
   });
+
+  it("keeps a fault the CM settlement took off until that settlement is undone", async () => {
+    await finishing.createFinishingCount(env.store, env.polo.id, {
+      lines: [{ colorName: "Navy", sizeName: "S", a: 50, b: 0, c: 0, reject: 0 }],
+    });
+    const fault = await faults.createFault(env.pm, {
+      supplierId: env.factory.id,
+      kind: "FABRIC_FAULT",
+      projectId: env.polo.id,
+      amount: 100,
+      note: "Holes in two panels",
+    });
+    const made = await batchMoney.settleCm(env.pm, env.batch.id, { deductCGrade: false });
+    const settled = await due(env.factory.id);
+    // The 100 is in the settlement's entry: waiving or reopening the fault on its
+    // own would leave it off the factory's Supplier Due for good.
+    for (const change of [
+      { status: "WAIVED", note: "Agreed to let go" },
+      { status: "OPEN" },
+    ] as const) {
+      await expect(faults.settleFault(env.accounts, fault.id, change)).rejects.toThrow(
+        `Taken off the CM on ${made.number}; undo that settlement to change it.`,
+      );
+    }
+    const kept = await prisma.supplierFault.findUniqueOrThrow({ where: { id: fault.id } });
+    expect([kept.status, kept.cmSettlementId]).toEqual(["DEDUCTED", made.id]);
+    expect(await due(env.factory.id)).toBe(settled);
+    // The log says which settlement holds it, so the screen offers no buttons.
+    const log = await faults.listFaults(env.accounts, {});
+    expect(log.items.find((f) => f.id === fault.id)?.cmSettlement).toBe(made.number);
+
+    // Undone, the fault is open and changeable again.
+    await batchMoney.undoCmSettlement(env.accounts, made.id, { reason: "Wrong count" });
+    const reopened = await faults.listFaults(env.accounts, {});
+    expect(reopened.items.find((f) => f.id === fault.id)).toMatchObject({
+      status: "OPEN",
+      cmSettlement: null,
+    });
+    await faults.settleFault(env.accounts, fault.id, { status: "WAIVED", note: "Agreed" });
+    expect((await prisma.supplierFault.findUniqueOrThrow({ where: { id: fault.id } })).status).toBe(
+      "WAIVED",
+    );
+  });
 });

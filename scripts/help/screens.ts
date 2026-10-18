@@ -1393,23 +1393,35 @@ export const shellFiles = (root: string) =>
 export const quotedLabels = (text: string) =>
   [...text.matchAll(/“([^”]+)”/g)].map((m) => m[1]!).filter((l) => /[A-Za-z]/.test(l));
 
+/**
+ * What a step's picture mark may point at: every label it quotes, the app's
+ * English ones and the Help Center's own Bengali ones (“বড় করে দেখুন”).
+ */
+export const markLabels = (text: string) =>
+  [...text.matchAll(/“([^”]+)”/g)].map((m) => m[1]!.trim()).filter((l) => /[A-Za-zঀ-৿]/.test(l));
+
 type Guide = {
   routes: string[];
   steps: Array<{ text: string }>;
-  shot?: { route?: string; open?: string };
+  shot?: { route?: string; query?: string; open?: string; target?: string; none?: string };
 };
 
 /** The page a guide's picture is taken on ("/" for a guide about the whole app). */
 export const shotRoute = (guide: Guide) => guide.shot?.route ?? guide.routes[0] ?? "/";
 
-/** Changes when what the picture marks changes: the page, the button pressed first, the steps' labels. */
+/**
+ * Changes when what the picture shows or marks changes: the page, the part of
+ * it, the button pressed first, the steps' labels.
+ */
 export function guideHash(guide: Guide): string {
   return createHash("sha256")
     .update(
       JSON.stringify({
         route: shotRoute(guide),
+        query: guide.shot?.query ?? null,
         open: guide.shot?.open ?? null,
-        marks: guide.steps.map((step) => quotedLabels(step.text)),
+        target: guide.shot?.target ?? null,
+        marks: guide.steps.map((step) => markLabels(step.text)),
       }),
     )
     .digest("hex")

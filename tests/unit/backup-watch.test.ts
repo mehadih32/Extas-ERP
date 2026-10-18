@@ -50,9 +50,12 @@ function stand(options: {
   token?: { status: number; body: unknown };
   drive?: number;
   telegram?: number;
+  /** Drive's answer when the watch labels a folder. */
+  label?: number;
 }) {
   const calls: Array<{ url: string; body: string; auth: string | null }> = [];
   const sent: string[] = [];
+  const labelled: Array<{ url: string; body: unknown }> = [];
   const fetchImpl = async (url: string, init: RequestInit = {}) => {
     const headers = new Headers(init.headers);
     calls.push({ url, body: String(init.body ?? ""), auth: headers.get("authorization") });
@@ -64,6 +67,10 @@ function stand(options: {
     if (url.startsWith("https://oauth2.googleapis.com/token")) {
       const t = options.token ?? { status: 200, body: { access_token: "access-SHOULD-NOT-LEAK" } };
       return json(t.status, t.body);
+    }
+    if (url.startsWith("https://www.googleapis.com/drive/v3/files/") && init.method === "PATCH") {
+      labelled.push({ url, body: JSON.parse(String(init.body)) as unknown });
+      return json(options.label ?? 200, { id: "x" });
     }
     if (url.startsWith("https://www.googleapis.com/drive/v3/files?")) {
       if (options.drive && options.drive !== 200) return json(options.drive, { error: "no" });
@@ -81,7 +88,7 @@ function stand(options: {
     }
     throw new Error(`unexpected call ${url}`);
   };
-  return { fetchImpl: fetchImpl as unknown as typeof fetch, calls, sent };
+  return { fetchImpl: fetchImpl as unknown as typeof fetch, calls, sent, labelled };
 }
 
 async function run(
@@ -113,12 +120,43 @@ describe("the late-backup alert on GitHub (A13): what it decides", () => {
       "BACKUP_ALERT_TELEGRAM_CHAT_ID",
     ]);
     const lines: string[] = [];
-    const code = await watch({ env: {}, log: (l: string) => lines.push(l) });
+    // Half set up: fails on its clock too, naming what is missing.
+    const code = await watch({
+      env: {},
+      event: "workflow_dispatch",
+      log: (l: string) => lines.push(l),
+    });
+    expect(
+      await watch({
+        env: { BACKUP_ALERT_TELEGRAM_CHAT_ID: "1" },
+        event: "schedule",
+        log: () => {},
+      }),
+    ).toBe(1);
     expect(code).toBe(1);
     expect(lines).toHaveLength(1);
     for (const name of SECRETS) expect(lines[0]).toContain(name);
     expect(lines[0]).toMatch(/^The backup alert is not set up: add the GitHub secrets /);
     expect(lines[0]).toContain("Set up the alert on GitHub");
+  });
+
+  it("waits quietly on its clock until the owner sets it up, but a hand-run says what is missing", async () => {
+    // GitHub emails the owner about every failed run: a clock run before the set-up
+    // (no secret at all) passes with a notice instead of failing every 6 hours.
+    const lines: string[] = [];
+    const quiet = await watch({ env: {}, event: "schedule", log: (l: string) => lines.push(l) });
+    expect(quiet).toBe(0);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatch(/^::notice::The backup alert is not set up yet/);
+    expect(lines[0]).toContain("Set up the alert on GitHub");
+    const byHand: string[] = [];
+    const code = await watch({
+      env: {},
+      event: "workflow_dispatch",
+      log: (l: string) => byHand.push(l),
+    });
+    expect(code).toBe(1);
+    expect(byHand[0]).toMatch(/^The backup alert is not set up: add the GitHub secrets /);
   });
 
   it("takes the newest backup that reached Drive whole, never a safety copy or a half-sent one", () => {
@@ -130,7 +168,23 @@ describe("the late-backup alert on GitHub (A13): what it decides", () => {
       backup(5, { nextAt: new Date(NOW + 7 * H).toISOString() }),
       { id: "x", appProperties: { extas: "backup", checked: "yes" } },
     ]);
-    expect(newest).toEqual({ madeAt: NOW - 5 * H, nextAt: NOW + 7 * H });
+    expect(newest).toEqual({
+      id: "f5",
+      madeAt: NOW - 5 * H,
+      nextAt: NOW + 7 * H,
+      offAt: null,
+      offToldAt: null,
+    });
+  });
+
+  it("never takes a backup made by a copy on standby as the ERP's own (v6.4.1 review)", () => {
+    // A restored copy waiting on standby backs up into the same Drive folder.
+    const newest = newestBackup([
+      backup(1, { standby: "yes", nextAt: new Date(NOW + 11 * H).toISOString() }),
+      backup(30),
+    ]);
+    expect(newest).toMatchObject({ madeAt: NOW - 30 * H, nextAt: null });
+    expect(newestBackup([backup(1, { standby: "yes" })])).toBeNull();
   });
 
   it("is late once the next backup's time has passed by as long again (2 hours to a day)", () => {
@@ -172,6 +226,10 @@ describe("the late-backup alert on GitHub (A13): what it decides", () => {
       "Google answered 500",
     );
     expect(telegramText({ state: "none" })).toContain("কোনো পুরো ব্যাকআপ নেই");
+    const off = telegramText({ state: "off", ageHours: 30, madeAt: NOW - 30 * H });
+    expect(off).toContain("ব্যাকআপ বন্ধ আছে");
+    expect(off).toContain("“Settings” > “Backups”");
+    expect(off).not.toMatch(/[০-৯]/);
     expect(telegramText({ state: "ok", ageHours: 0, madeAt: NOW })).toContain("1 ঘণ্টার কম");
   });
 });
@@ -275,6 +333,83 @@ describe("the late-backup alert on GitHub (A13): one run", () => {
     const byHand = await run({ pages: [[backup(2)]] }, { event: "workflow_dispatch" });
     expect(byHand.code).toBe(0);
     expect(byHand.sent).toHaveLength(1);
+  });
+
+  it("says once that backups are switched off, then only weekly, and never fails for it (v6.4.1 review)", async () => {
+    // Switched off on the Backups screen 20 hours ago; the newest backup is 30 hours old.
+    const offAt = new Date(NOW - 20 * H).toISOString();
+    const off = (now: number, event = "schedule") =>
+      run({ pages: [[backup(30, { backupsOffAt: offAt })]] }, { now, event });
+    // The first run on the clock after the switch tells the owner.
+    const first = await off(NOW - 20 * H + 3 * H);
+    expect(first.code).toBe(0);
+    expect(first.log).toContain("Backups are switched off");
+    expect(first.sent).toHaveLength(1);
+    expect(first.sent[0]).toContain("ব্যাকআপ বন্ধ আছে");
+    expect(first.sent[0]).not.toContain("দেরি হচ্ছে");
+    // Every 6 hours after that (the folder says the owner was told): quiet, and the run passes.
+    const told = { backupsOffAt: offAt, backupsOffToldAt: new Date(NOW - 17 * H).toISOString() };
+    for (const later of [NOW, NOW + 6 * H, NOW + 30 * H]) {
+      const quiet = await run({ pages: [[backup(30, told)]] }, { now: later });
+      expect(quiet.code).toBe(0);
+      expect(quiet.sent).toEqual([]);
+    }
+    // Saturday morning: said again, once a week.
+    const saturday = await off(Date.parse("2026-10-24T03:17:00Z"));
+    expect(saturday.sent).toHaveLength(1);
+    expect(saturday.sent[0]).toContain("ব্যাকআপ বন্ধ আছে");
+    // Run by hand: always says it.
+    expect((await off(NOW, "workflow_dispatch")).sent).toHaveLength(1);
+    // Switched on again: the newest backup's label is "next at" again, and late counts.
+    const on = await run({
+      pages: [[backup(30, { nextAt: new Date(NOW - 18 * H).toISOString() })]],
+    });
+    expect(on.code).toBe(1);
+    expect(on.sent[0]).toContain("ব্যাকআপ দেরি হচ্ছে");
+  });
+
+  it("says that backups are off at the first run that sees it, however late GitHub starts it (v6.4.1 review 2)", async () => {
+    // Switched off 20 hours ago; GitHub's scheduled runs since then started late or not at all.
+    const offAt = new Date(NOW - 20 * H).toISOString();
+    const first = await run({ pages: [[backup(30, { backupsOffAt: offAt })]] });
+    expect(first.code).toBe(0);
+    expect(first.sent).toHaveLength(1);
+    expect(first.sent[0]).toContain("ব্যাকআপ বন্ধ আছে");
+    // The folder is marked as told (a label of the ERP's own app, nothing else changed).
+    expect(first.labelled).toEqual([
+      {
+        url: "https://www.googleapis.com/drive/v3/files/f30?fields=id",
+        body: { appProperties: { backupsOffToldAt: new Date(NOW).toISOString() } },
+      },
+    ]);
+    expect(first.log).toContain("Drive was marked");
+    // Told: quiet at the next runs, until the weekly message.
+    const told = { backupsOffAt: offAt, backupsOffToldAt: new Date(NOW).toISOString() };
+    const quiet = await run({ pages: [[backup(36, told)]] }, { now: NOW + 6 * H });
+    expect(quiet.sent).toEqual([]);
+    expect(quiet.labelled).toEqual([]);
+    const saturday = await run(
+      { pages: [[backup(30, told)]] },
+      { now: Date.parse("2026-10-24T03:17:00Z") },
+    );
+    expect(saturday.sent).toHaveLength(1);
+    // Switched off again later: told again.
+    const again = await run({
+      pages: [
+        [
+          backup(30, {
+            backupsOffAt: new Date(NOW - 2 * H).toISOString(),
+            backupsOffToldAt: new Date(NOW - 10 * H).toISOString(),
+          }),
+        ],
+      ],
+    });
+    expect(again.sent).toHaveLength(1);
+    // Drive does not take the label: said, and told again next time rather than never.
+    const unlabelled = await run({ pages: [[backup(30, { backupsOffAt: offAt })]], label: 403 });
+    expect(unlabelled.code).toBe(0);
+    expect(unlabelled.sent).toHaveLength(1);
+    expect(unlabelled.log).toContain("the next run says it again");
   });
 
   it("fails the run when Telegram does not take the message", async () => {

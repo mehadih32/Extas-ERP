@@ -68,6 +68,7 @@ export function MemberAccessDialog({
   initialRoleId,
   canChangeRole,
   canEditPermissions,
+  lockedPermissions = [],
   onClose,
   onSaved,
 }: {
@@ -79,6 +80,8 @@ export function MemberAccessDialog({
   canChangeRole: boolean;
   /** Whether the person looking may tick permissions for this member (the server's rule). */
   canEditPermissions: boolean;
+  /** Permissions only a Super Admin may give: they stay locked unless the member holds them now. */
+  lockedPermissions?: readonly PermissionKey[];
   onClose: () => void;
   onSaved: (message: string) => void;
 }) {
@@ -103,6 +106,7 @@ export function MemberAccessDialog({
   const roleKeys = new Set(role.permissions);
   const shownKeys = superAdmin ? roleKeys : selected;
   const saved = current ? effective(current, member) : new Set<PermissionKey>();
+  const locked = new Set(lockedPermissions.filter((key) => !saved.has(key)));
   const changed = moving || (editable && !sameSet(selected, saved));
   const added = [...shownKeys].filter((key) => !roleKeys.has(key)).length;
   const removed = [...roleKeys].filter((key) => !shownKeys.has(key)).length;
@@ -182,9 +186,7 @@ export function MemberAccessDialog({
             <FormAlert tone="note">A Super Admin always has every permission.</FormAlert>
           ) : member.isYou ? (
             <FormAlert tone="note">
-              You cannot change your own permissions. Another admin can.
-              {moving &&
-                " If the new role cannot manage the team, you lose this screen when you save."}
+              You cannot change your own role or permissions. Another admin can.
             </FormAlert>
           ) : (
             !canEditPermissions && (
@@ -200,6 +202,7 @@ export function MemberAccessDialog({
             roleName={role.name}
             roleKeys={roleKeys}
             selected={shownKeys}
+            locked={locked}
             onChange={
               editable
                 ? (next) => {

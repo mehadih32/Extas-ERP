@@ -1,7 +1,8 @@
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 /*
  * v6.4 fresh review S2: behind Cloudflare's proxy every visitor reached the
@@ -12,6 +13,13 @@ import { describe, expect, it } from "vitest";
  * direct visitor's own X-Forwarded-For is never believed.
  */
 
+import {
+  CLOUDFLARE_RANGES,
+  forgetCloudflareList,
+  isCloudflareAddress,
+  parseRanges,
+  visitorAddress,
+} from "@/lib/cloudflare-ips";
 import { clientAddress } from "@/lib/request-meta";
 
 // Cloudflare's published ranges (https://www.cloudflare.com/ips-v4 and /ips-v6, read 2026-10-16).
@@ -63,18 +71,33 @@ describe("Caddy in front of the ERP (S2)", () => {
   const caddyfile = deploy("Caddyfile");
   const global = block(caddyfile, caddyfile.indexOf("{"));
 
-  it("trusts only Cloudflare's published ranges, and reads their visitor header strictly", () => {
+  it("trusts only Cloudflare's published ranges, fetched every day, and reads their visitor header strictly", () => {
     const servers = block(global, global.indexOf("servers {"));
     expect(servers.length, "a global servers { } block").toBeGreaterThan(2);
-    const trusted = servers.filter((l) => l.startsWith("trusted_proxies "));
-    expect(trusted).toHaveLength(1);
-    const words = trusted[0]!.split(/\s+/);
-    expect(words.slice(0, 2)).toEqual(["trusted_proxies", "static"]);
-    expect([...words.slice(2)].sort()).toEqual([...CLOUDFLARE].sort());
-    // Never private ranges or "everyone": a visitor at the door could then name any address.
-    expect(trusted[0]).not.toMatch(/private_ranges|0\.0\.0\.0\/0|::\/0/);
+    // The list itself comes from the file deploy/cloudflare-ips.sh keeps up to date (v6.4.1 B2).
+    expect(servers.filter((l) => l.startsWith("trusted_proxies "))).toEqual([]);
+    expect(servers).toContain("import cloudflare/*.caddy");
     expect(servers).toContain("trusted_proxies_strict");
     expect(servers).toContain("client_ip_headers CF-Connecting-IP X-Forwarded-For");
+    // The copy that stands in before the first fetch, and the app's own, are Cloudflare's list.
+    expect([...deploy("cloudflare-ips.txt")].sort()).toEqual([...CLOUDFLARE].sort());
+    expect([...CLOUDFLARE_RANGES].sort()).toEqual([...CLOUDFLARE].sort());
+  });
+
+  it("gives Caddy and the app the same fetched list, the app read-only", () => {
+    const compose = readFileSync(join(__dirname, "..", "..", "deploy", "compose.yml"), "utf8");
+    expect(compose).toContain(
+      "${DATA_DIR:-/srv/extras-erp}/caddy/cloudflare:/etc/caddy/cloudflare:ro",
+    );
+    // The live app and the demo app.
+    expect(
+      compose.match(/\$\{DATA_DIR:-\/srv\/extras-erp\}\/caddy\/cloudflare:\/data\/cloudflare:ro/g),
+    ).toHaveLength(2);
+    expect(compose.match(/CLOUDFLARE_IPS_FILE: \/data\/cloudflare\/ips\.txt/g)).toHaveLength(2);
+    const update = readFileSync(join(__dirname, "..", "..", "deploy", "deploy.sh"), "utf8");
+    expect(update).toMatch(/"\$DEPLOY_DIR\/cloudflare-ips\.sh" --setup \|\|/);
+    // Before Caddy starts.
+    expect(update.indexOf('cloudflare-ips.sh" --setup')).toBeLessThan(update.indexOf("compose up"));
   });
 
   it("hands the app only the address it settled on, on the ERP and on the demo site", () => {
@@ -108,5 +131,84 @@ describe("The visitor's address the ERP keeps (S2)", () => {
       "198.51.100.9",
     );
     expect(from({})).toBeUndefined();
+  });
+});
+
+describe("Cloudflare's own addresses are never a visitor (v6.4.1 B2)", () => {
+  const from = (values: Record<string, string>) => clientAddress(new Headers(values));
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    forgetCloudflareList();
+  });
+
+  it("takes CF-Connecting-IP only from a request that came from a Cloudflare address", () => {
+    // Caddy's list was older than Cloudflare's: it handed on Cloudflare's address.
+    expect(from({ "x-forwarded-for": "162.158.10.20", "cf-connecting-ip": "203.0.113.9" })).toBe(
+      "203.0.113.9",
+    );
+    expect(
+      from({ "x-forwarded-for": "2606:4700:10::ac43:1", "cf-connecting-ip": "2001:db8::9" }),
+    ).toBe("2001:db8::9");
+    // From anywhere else the header is the visitor's own words: never believed.
+    expect(from({ "x-forwarded-for": "203.0.113.7", "cf-connecting-ip": "198.51.100.1" })).toBe(
+      "203.0.113.7",
+    );
+    // Nothing usable in it: the Cloudflare address is kept for the logs only.
+    for (const named of ["", "nonsense", "104.16.0.1"]) {
+      expect(from({ "x-forwarded-for": "162.158.10.20", "cf-connecting-ip": named })).toBe(
+        "162.158.10.20",
+      );
+    }
+  });
+
+  it("never blocks or counts a Cloudflare address as one visitor", () => {
+    for (const address of ["162.158.10.20", "104.16.0.1", "2a06:98c0::1", "::ffff:172.64.1.1"]) {
+      expect(isCloudflareAddress(address), address).toBe(true);
+      expect(visitorAddress(address), address).toBeUndefined();
+    }
+    for (const address of ["203.0.113.7", "2001:db8::42", "::ffff:203.0.113.7"]) {
+      expect(isCloudflareAddress(address), address).toBe(false);
+      expect(visitorAddress(address), address).toBe(address);
+    }
+    expect(visitorAddress(undefined)).toBeUndefined();
+    expect(isCloudflareAddress("not an address")).toBe(false);
+  });
+
+  it("follows the list the server fetched, and keeps the copy when that file is not a sound list", () => {
+    const dir = mkdtempSync(join(tmpdir(), "extras-cloudflare-"));
+    try {
+      const file = join(dir, "ips.txt");
+      // Cloudflare added a range (a documentation range here) and dropped one.
+      const fetched = [...CLOUDFLARE.filter((r) => r !== "131.0.72.0/22"), "198.18.0.0/15"];
+      writeFileSync(file, `${fetched.join("\n")}\n`);
+      vi.stubEnv("CLOUDFLARE_IPS_FILE", file);
+      forgetCloudflareList();
+      expect(isCloudflareAddress("198.18.4.4")).toBe(true);
+      expect(isCloudflareAddress("131.0.72.1")).toBe(false);
+      expect(from({ "x-forwarded-for": "198.18.4.4", "cf-connecting-ip": "203.0.113.50" })).toBe(
+        "203.0.113.50",
+      );
+
+      // A broken file (an error page, say): the copy that came with the ERP stands in.
+      writeFileSync(file, "<html>error</html>\n");
+      forgetCloudflareList();
+      expect(isCloudflareAddress("198.18.4.4")).toBe(false);
+      expect(isCloudflareAddress("131.0.72.1")).toBe(true);
+      vi.stubEnv("CLOUDFLARE_IPS_FILE", join(dir, "missing.txt"));
+      forgetCloudflareList();
+      expect(isCloudflareAddress("162.158.10.20")).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("takes only a sound list of ranges", () => {
+    expect(parseRanges(CLOUDFLARE.join("\n"))).toEqual(CLOUDFLARE);
+    expect(parseRanges(`# Cloudflare\n${CLOUDFLARE.join("\r\n")}\n\n`)).toHaveLength(22);
+    expect(parseRanges("")).toBeNull();
+    expect(parseRanges([...CLOUDFLARE, "0.0.0.0/0"].join("\n"))).toBeNull();
+    expect(parseRanges([...CLOUDFLARE, "::/0"].join("\n"))).toBeNull();
+    expect(parseRanges([...CLOUDFLARE, "10.0.0.0"].join("\n"))).toBeNull();
+    expect(parseRanges(CLOUDFLARE.slice(0, 4).join("\n"))).toBeNull();
   });
 });

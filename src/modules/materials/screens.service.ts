@@ -24,7 +24,11 @@ import {
   materialUses,
   openOrderLines,
 } from "@/modules/materials/material.service";
-import { getPurchaseOrder, listPurchaseOrders } from "@/modules/materials/purchase-order.service";
+import {
+  bookingOrderMessage,
+  getPurchaseOrder,
+  listPurchaseOrders,
+} from "@/modules/materials/purchase-order.service";
 import { getPurchase, listPurchases } from "@/modules/materials/purchase.service";
 import {
   canArchiveMaterial,
@@ -47,6 +51,7 @@ import {
 } from "@/modules/materials/supplier-return.service";
 import { formatQuantity, UNIT_LABELS, ZERO } from "@/modules/materials/valuation";
 import { isWalkIn } from "@/modules/parties/walk-in";
+import { MAKE_BOOKING, SEE_BOOKINGS } from "@/modules/production/booking.service";
 import { canPayBill } from "@/modules/production/rules";
 import { isProjectClosed } from "@/modules/production/project-costs";
 
@@ -583,6 +588,16 @@ export async function getOrderScreen(ctx: CompanyContext, orderId: string) {
     received: o.lines.some((l) => l.receivedQty.gt(0)),
     awaitingApproval: o.awaitingApproval,
   };
+  // A booking's order is closed or cancelled by those who may close bookings,
+  // changed (on the booking) by those who may make that kind of booking, and
+  // printed as the booking by those who see bookings.
+  const end = access.buy && (!o.bookingId || ctx.can("production.bookings.close"));
+  const change = !o.bookingSource || ctx.can(MAKE_BOOKING[o.bookingSource]);
+  const print: "order" | "booking" | null = !o.bookingId
+    ? "order"
+    : SEE_BOOKINGS.some((key) => ctx.can(key))
+      ? "booking"
+      : null;
   return {
     order: {
       id: o.id,
@@ -654,11 +669,13 @@ export async function getOrderScreen(ctx: CompanyContext, orderId: string) {
       })),
     },
     seeCosts: access.seeCosts,
+    /** How the order prints: as a purchase order, as its booking, or not at all from here. */
+    print,
     can: {
-      edit: access.buy && canChangeOrder(state).ok,
+      edit: access.buy && change && canChangeOrder(state).ok,
       editLines: access.buy && canChangeOrderLines(state).ok,
-      cancel: access.buy && canCancelOrder(state).ok,
-      close: access.buy && canCloseOrder(state).ok,
+      cancel: end && canCancelOrder(state).ok,
+      close: end && canCloseOrder(state).ok,
       receive: access.receive && canReceiveOnOrder(state).ok,
       openParty: access.openParty,
     },
@@ -679,6 +696,7 @@ export async function getOrderForm(
   const base = { today: today(ctx) };
   if (options.orderId) {
     const o = await getPurchaseOrder(ctx, options.orderId);
+    if (o.bookingId) throw new AppError("CONFLICT", bookingOrderMessage(o.number));
     const state = {
       number: o.number,
       status: o.status,

@@ -269,7 +269,39 @@ It checks the backup's files against their checksums, asks you to type `RESTORE`
 safety copy of the database as it is now, then puts back the database and the uploaded
 files and starts the ERP again. The database is restored in one step: if anything goes
 wrong, it is left exactly as it was. The files that were there before are kept next to the
-new ones (`uploads.before-restore-…`). Add `--check` to open every screen afterwards.
+new ones (`uploads.before-restore-…`). Add `--check` to open every screen afterwards; a
+check that could not open the screens (no owner account to open them as) or did not finish
+counts as a problem, never as "every screen opened".
+
+A restore cut off half-way (the server restarted, or it was stopped) leaves
+`backups/.restore-running` and the app stopped. When the server starts again, systemd
+(`extras-erp-restore-cut.service`) runs `restore.sh --after-restart`, after waiting for any
+update or restore that holds the lock. It first ends the restore inside the database if it
+still runs there. It never puts a database back over data that may have been entered since:
+the database is restored in one transaction, so it holds either the data from before or the
+backup's, whole (the mark keeps the database's id, which says when it is surely the one from
+before), and the ERP may have been used since. It only puts the uploads folder back when the
+restore was cut while swapping it (the live one missing), starts the ERP as it is, and tells
+the owner ("Restore did not finish", in the inbox and on Telegram) what happened and how to
+undo it with that restore's safety copy, which stays on the server for 7 days instead of 24
+hours from the moment it is saved. Only when the ERP does not start and the app has not run
+since the mark (Docker's start and stop times of its container), so nobody can have entered
+anything since the safety copy, is that copy put back by itself, as the restore would have
+done. When the ERP still does not start, the mark stays, so the next start of the server, the
+next restore or update tries again, and it prints `PROBLEM: the ERP is NOT running`: no
+message can reach the owner while the ERP is down (the note waits for it; the GitHub backup
+watch, if it is set up, tells the owner when backups stop). Every restore and every update
+(`deploy.sh`) settles first too; an update that then starts the ERP settles again. The same unit deletes
+opened backups (`backups/restores/`) left from before the server started, and ends a standby
+the restore command left over the ERP in use (`.standby.was-in-use`) once its web address
+points here.
+
+A restore run in PuTTY goes on when the connection drops, and also writes what it says to
+`/var/log/extas-erp-restore.log` (only root can read it). Ctrl+C, or a stop at shutdown, ends
+it as not done (the Backups screen and the owner are told it did NOT finish), and ends the
+restore inside the database too. When the database was not changed yet (or that restore was
+rolled back), the ERP is started again at once, except at shutdown; otherwise it stays stopped
+until it is settled as above.
 
 To undo a restore, restore the safety copy it names at the end:
 
@@ -303,31 +335,47 @@ stay public for `raw.githubusercontent.com` to serve it. It:
 1. checks the server (Ubuntu 22.04 or newer, 4 GB memory, 20 GB free disk) and looks for an
    Extas ERP already on it: a restore over a running ERP goes on only when its web address
    is typed, and its own `ENCRYPTION_KEY` is never replaced (the backup's goes in
-   `ENCRYPTION_OLD_KEYS`);
+   `ENCRYPTION_OLD_KEYS`). On a new VM it first waits for the server's own updates (they
+   hold apt's lock for the first minutes);
 2. downloads `deploy/restore-tool.py` from the same commit and checks its SHA-256;
 3. asks for the Google client (hidden input), shows a Google sign-in code to enter on a
-   phone, lists the backups newest first (Enter: the newest), downloads the one picked and
-   checks every file; reads the recovery key from Drive, or asks for it (hidden);
+   phone, lists the backups newest first (Enter: the newest that passed its check in Drive;
+   unchecked ones and ones made on standby are shown but never picked by Enter), checks
+   there is room on the disk for the download, the opened files, the files unpacked, the
+   database and the ERP's programs, downloads the one picked and checks every file; reads
+   the recovery key from Drive, or asks for it (hidden). Keys pressed before a question
+   are dropped, so an extra Enter never answers one;
 4. puts the code from the backup in `/opt/extras-erp` and writes `deploy/.env` from the
    backup's settings;
-5. points the web address (and the demo site's) at this server in Cloudflare with the saved
-   token, only when the web address is typed (Enter leaves it), and says so first when the
-   ERP still answers from the old server; or says which A record to change. Until the web
-   address points here, the restored ERP waits **on standby** (`/srv/extras-erp/backups/.standby`):
-   it opens, but runs no clock (no backups, reminders, jobs or Bug Guard schedule), so two
-   ERPs never run at once. A practice restore is therefore safe. `sudo ./deploy/go-live.sh`
-   (the web address typed again) ends the standby once this server is the one to use;
-6. installs Docker and the rest (`setup-server.sh`), installs the ERP (`deploy.sh`; HTTPS by
-   Cloudflare's DNS challenge when a token is saved, otherwise the usual HTTP challenge),
-   restores the database and the files (`restore.sh --check`) and starts the demo site;
-7. runs the checks (the full check, then Bug Guard on every company with
-   `bug-guard.sh`), compares every table and file with the backup's manifest and says "All N
-   records and M files are back", or exactly what is missing.
+5. installs Docker and the rest (`setup-server.sh`), installs the ERP (`deploy.sh`; HTTPS by
+   Cloudflare's DNS challenge when a token is saved, otherwise the usual HTTP challenge) and
+   restores the database and the files (`restore.sh --check`; when the files cannot be
+   restored or the ERP does not start, it goes back to its safety copy);
+6. only then points the web address (and the demo site's) at this server in Cloudflare with
+   the saved token, when the web address is typed (Enter leaves it), and says so first when
+   the ERP still answers from the old server; or says which A record to change. Until the
+   web address points here, the restored ERP waits **on standby**
+   (`/srv/extras-erp/backups/.standby`): a red bar on every page says so, its backups (named
+   `..._standby`) and alarms run, and its reminders, messages and housekeeping wait, so two
+   ERPs never send them at once. A practice restore is therefore safe. `sudo ./deploy/go-live.sh`
+   ends the standby once this server is the one to use: it first checks that the web
+   address reaches this server, then asks for it to be typed;
+7. starts the demo site, runs the checks (the full check, then Bug Guard on every company
+   with `bug-guard.sh`), compares every table and file with the backup's manifest and says
+   "All N records and M files are back", or exactly what is missing, or that the records
+   were NOT checked (W11) when they could not be counted.
+
+A second try after a stop (paste the command again) goes on with the first try's Google
+sign-in and download, which stay locked in `/var/lib/extas-erp-restore` (root only) until
+the restore ends well; anything opened, there or in `/srv/extras-erp/backups/restores`, is
+deleted when the command ends and at the start of the next one.
 
 Secrets never go on a command line, on the screen or in the log
 (`/var/log/extas-erp-restore.log`), and the opened backup is deleted when the command ends.
 After it, run `sudo ./deploy/setup-auto-deploy.sh` on the new server for updates after each
-merge. The restore drill on GitHub (`.github/workflows/restore-drill.yml`) runs this command,
+merge (on standby, only after `go-live.sh`: it refuses a copy on standby, so GitHub never
+updates a copy that is not in use). A restore that fails over the ERP in use leaves it in
+use, not on standby. The restore drill on GitHub (`.github/workflows/restore-drill.yml`) runs this command,
 as the guide prints it, on a fresh virtual machine for every change to the backups or the
 deploy scripts, and reports how long it took. A smaller Azure server takes longer to build,
 so allow 20 to 30 minutes there.
@@ -355,8 +403,14 @@ Behind the proxy every visitor reaches the server from a Cloudflare address. The
 (`servers` block) trusts only Cloudflare's published ranges (https://www.cloudflare.com/ips)
 to name the visitor (`CF-Connecting-IP`), and hands the app that one address, so sign-ins,
 the audit log and Bug Guard's blocks see the real visitor. Anyone not coming through
-Cloudflare is known by their own address, whatever headers they send. If Cloudflare ever
-changes its list, update the `trusted_proxies` line.
+Cloudflare is known by their own address, whatever headers they send. Cloudflare changes
+its list now and then, so `deploy/cloudflare-ips.sh` fetches it every day at 05:29 (cron, set
+up by `deploy.sh`, which also runs it at every update) into `DATA_DIR/caddy/cloudflare/`,
+which Caddy and the app read. Only a sound list is written: when a fetch fails, the last
+good list stays, and before the first one the copy in `deploy/cloudflare-ips.txt` stands in.
+To fetch it now: `sudo ./deploy/cloudflare-ips.sh`. The app itself never blocks or slows
+down a Cloudflare address as if it were one visitor: if one ever reaches it (Caddy's list
+older than Cloudflare's), it takes the visitor from `CF-Connecting-IP` instead.
 
 ## Updating to a new version
 

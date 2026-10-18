@@ -6,7 +6,6 @@ import { decryptSecret, encryptSecret } from "@/lib/crypto";
 import type { Db } from "@/lib/db-types";
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
-import { checkRateLimit } from "@/lib/rate-limit";
 import type { RequestMeta } from "@/lib/request-meta";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
@@ -23,6 +22,13 @@ import {
   priceBook,
   priceFor,
 } from "./prices.service";
+import {
+  countPinTry,
+  pinCandidates,
+  pinLimitAlarm,
+  PIN_TRY_MINUTES,
+  uncountPinTry,
+} from "./pin-tries";
 import { listModels, ProviderError } from "./provider-calls";
 import {
   BUILT_IN_MODELS,
@@ -614,13 +620,16 @@ export type PriceRow = PriceStrings & {
   state: "erp" | "owner" | "blocked";
   /** The price page's price, when the model is on the list (kept in view under the owner's). */
   list: PriceStrings | null;
-  /** The page's other prices: long prompts, an announced change. */
+  /** The prices for a long prompt (the owner's, else the page's), when there are any. */
+  long: (PriceStrings & { above: string }) | null;
+  /** The other prices that hold: long prompts, an announced change of the page's. */
   notes: string[];
   sourceUrl: string | null;
   checkedOn: string | null;
-  /** Who set the owner's price, and when. */
+  /** Who set the owner's price, and when, and where the price came from. */
   setBy: string | null;
   setAt: Date | null;
+  source: string | null;
 };
 
 /**
@@ -654,11 +663,13 @@ async function priceSections(settings: AiSettings, book: PriceBook, inUse: Reado
       state: price ? price.from : "blocked",
       ...(price ? priceStrings(price) : NO_PRICE),
       list: listed ? priceStrings(listed) : null,
-      notes: price?.from === "erp" && listed ? priceNotes(listed) : [],
+      long: price?.long ? { above: String(price.long.above), ...priceStrings(price.long) } : null,
+      notes: price ? priceNotes(price) : [],
       sourceUrl: price?.from === "erp" ? (listed?.sourceUrl ?? null) : null,
       checkedOn: price?.from === "erp" ? (listed?.checkedOn ?? null) : null,
       setBy: price?.from === "owner" ? (names.get(price.setById ?? "") ?? null) : null,
       setAt: price?.from === "owner" ? (price.setAt ?? null) : null,
+      source: price?.from === "owner" ? (price.source ?? null) : null,
     };
   };
   return PRICE_LISTS.map((l) => {
@@ -833,24 +844,87 @@ export async function setPin(ctx: CompanyContext, input: unknown, meta?: Request
   });
 }
 
+/** Wrong PINs per person and store in fifteen minutes; then tries stop and the owner is told. */
+export const PIN_TRIES = 10;
+
+export const PIN_TRIES_USED = `Too many wrong PINs. Wait ${PIN_TRY_MINUTES} minutes and try again.`;
+
 /**
- * Whether the PIN is right (never while none is set). At most ten tries in
- * fifteen minutes per person, so it cannot be guessed.
+ * Whether the PIN is right (never while none is set). At most ten wrong tries
+ * in fifteen minutes per person, counted in the database so a restart does not
+ * reset them (pin-tries.ts); the tenth tells the owner at once.
  */
 export async function checkPin(companyId: string, pin: string, userId: string): Promise<boolean> {
   const settings = await aiSettingsOf(companyId);
   if (!settings.pinHash) return false;
-  checkRateLimit(`ai-pin:${companyId}:${userId}`, 10, 15 * 60_000);
-  return /^\d{4,8}$/.test(pin) && verifyPassword(pin, settings.pinHash);
+  const tries = await countPinTry(companyId, userId, "PIN");
+  if (tries > PIN_TRIES) {
+    await pinLimitAlarm(companyId, userId, "PIN", PIN_TRIES);
+    throw new AppError("RATE_LIMITED", PIN_TRIES_USED);
+  }
+  const right = /^\d{4,8}$/.test(pin) && (await verifyPassword(pin, settings.pinHash));
+  if (right) await uncountPinTry(companyId, userId, "PIN");
+  else if (tries >= PIN_TRIES) await pinLimitAlarm(companyId, userId, "PIN", PIN_TRIES);
+  return right;
+}
+
+/** New numbers the bot may check against the PIN per person and store, in fifteen minutes. */
+export const STRAY_PIN_CHECKS = 10;
+
+/** New numbers the ERP's own AI chat may check per person and store, in fifteen minutes. */
+export const CHAT_PIN_CHECKS = 100;
+
+/** Numbers found not to be the store's PIN (until it changes): checking one again tells nothing new. */
+const notThePin = new Map<string, { pinHash: string; numbers: Set<string> }>();
+
+/**
+ * Whether digits are the PIN, only to hide a PIN typed when nothing asked for
+ * one. For the bot (bot/incoming.ts): ten new numbers in fifteen minutes per
+ * person, like checkPin's tries but kept apart, so the bot never uses up the
+ * owner's PIN tries in the ERP; a number already found not to be the PIN is
+ * free. "unchecked" once they are used up: the bot then hides the message the
+ * same way as the PIN, so sending numbers cannot find the PIN. The ERP's own
+ * chat counts apart ("CHAT"): the person there is signed in, so it allows far
+ * more (a hundred) and never touches the bot's count or alarm, but still stops
+ * an unlimited search for the PIN through the chat (v6.4.1).
+ */
+export async function pinMatches(
+  companyId: string,
+  pin: string,
+  userId: string,
+  kind: "NUMBER" | "CHAT" = "NUMBER",
+): Promise<boolean | "unchecked"> {
+  const settings = await aiSettingsOf(companyId);
+  if (!settings.pinHash || !/^\d{4,8}$/.test(pin)) return false;
+  let known = notThePin.get(companyId);
+  if (known?.pinHash !== settings.pinHash) {
+    known = { pinHash: settings.pinHash, numbers: new Set() };
+    notThePin.set(companyId, known);
+  }
+  if (known.numbers.has(pin)) return false;
+  // Counted in the database (pin-tries.ts): a restart does not give new checks.
+  const limit = kind === "CHAT" ? CHAT_PIN_CHECKS : STRAY_PIN_CHECKS;
+  if ((await countPinTry(companyId, userId, kind)) > limit) {
+    await pinLimitAlarm(companyId, userId, kind, limit);
+    return "unchecked";
+  }
+  if (await verifyPassword(pin, settings.pinHash)) return true;
+  if (known.numbers.size >= 500) known.numbers.clear();
+  known.numbers.add(pin);
+  return false;
 }
 
 /**
- * Whether digits are the PIN, without counting a try: only for the bot to
- * hide a PIN sent when nothing asked for one (bot/incoming.ts limits how often).
+ * Whether a message in the ERP's own AI chat holds the PIN: it is then never
+ * kept nor sent to the AI, the same way the bot hides it (v6.4.1). Its numbers
+ * are counted apart from the bot's (pinMatches), so the chat goes on working
+ * normally after numbers sent to the bot. Digits already in Western form.
  */
-export async function pinMatches(companyId: string, pin: string): Promise<boolean> {
-  const settings = await aiSettingsOf(companyId);
-  return !!settings.pinHash && /^\d{4,8}$/.test(pin) && verifyPassword(pin, settings.pinHash);
+export async function mayHoldPin(companyId: string, text: string, userId: string) {
+  for (const number of pinCandidates(text)) {
+    if ((await pinMatches(companyId, number, userId, "CHAT")) !== false) return true;
+  }
+  return false;
 }
 
 /**

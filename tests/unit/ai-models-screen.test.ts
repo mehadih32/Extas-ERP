@@ -12,7 +12,7 @@ vi.mock("@/server/actions/ai.actions", () => ({
 }));
 
 import { BlockedModels } from "@/components/ai/blocked-models";
-import { ModelsTable } from "@/components/ai/models-table";
+import { ModelsTable, PriceFormFields } from "@/components/ai/models-table";
 import { PRICE_FIELDS, PRICE_LISTS, priceNotes } from "@/modules/ai/price-list";
 import type { AiModelsScreen, PriceRow } from "@/modules/ai/settings.service";
 
@@ -47,11 +47,13 @@ function screen(): AiModelsScreen {
         state: "erp",
         ...strings(m),
         list: strings(m),
+        long: m.long ? { above: String(m.long.above), ...strings(m.long) } : null,
         notes: priceNotes(m),
         sourceUrl: m.sourceUrl,
         checkedOn: m.checkedOn,
         setBy: null,
         setAt: null,
+        source: null,
       })),
     older: [],
   }));
@@ -70,11 +72,13 @@ function screen(): AiModelsScreen {
     batchInput: null,
     batchOutput: null,
     list: null,
+    long: null,
     notes: [],
     sourceUrl: null,
     checkedOn: null,
     setBy: null,
     setAt: null,
+    source: null,
   });
   priceSections[0]!.rows[1] = {
     ...priceSections[0]!.rows[1]!,
@@ -82,6 +86,7 @@ function screen(): AiModelsScreen {
     input: "3",
     setBy: "Mehadi Hasan",
     setAt: new Date("2026-10-16T05:00:00Z"),
+    source: "https://platform.claude.com/docs/en/about-claude/pricing#opus",
   };
   return {
     allowFable: false,
@@ -143,12 +148,16 @@ describe("AI Center > Models", () => {
     expect(html).toContain('href="https://developers.openai.com/api/docs/pricing"');
     expect(html).toContain('href="https://ai.google.dev/gemini-api/docs/pricing"');
     expect(text).toContain("Anthropic's price page");
+    expect(text).toContain("checked on 18 Oct 2026");
     expect(text).toContain("checked on 16 Oct 2026");
     // The second Claude row with the owner's input price; "—" where a provider has no such price.
     expect(text).toMatch(/Opus 5\.5.*\$3.*\$20.*\$0\.20.*\$5.*\$2.*\$10/);
     expect(text).toContain("—");
-    // The owner's own price says so, and who set it.
+    // The owner's own price says so, who set it, and where it came from (a link).
     expect(text).toContain("Your price (Mehadi Hasan)");
+    expect(html).toContain('href="https://platform.claude.com/docs/en/about-claude/pricing#opus"');
+    // Haiku 5.5's long-prompt prices are in its row.
+    expect(text).toContain("Prompts over 100,000 tokens: $0.50 input, $2.50 output");
     expect(html.match(/>Edit</g)?.length).toBeGreaterThan(10);
   });
 
@@ -171,5 +180,55 @@ describe("AI Center > Models", () => {
     expect(home).toContain("Questions and answers");
     expect(home).toContain('href="/ai/models#ai-prices-heading"');
     expect(renderToStaticMarkup(createElement(BlockedModels, { blocked: [] }))).toBe("");
+  });
+});
+
+describe("the price form (v6.4.1 C4)", () => {
+  const m = screen();
+  const rowOf = (ref: string) =>
+    m.priceSections.flatMap((x) => x.rows).find((r) => r.model === ref)!;
+  const form = (now: PriceRow | undefined, pickModel = false) =>
+    renderToStaticMarkup(
+      createElement(PriceFormFields, {
+        m,
+        now,
+        pickModel,
+        day: () => "16 Oct 2026",
+        fieldError: () => undefined,
+      }),
+    );
+  const valueOf = (html: string, name: string) =>
+    new RegExp(`name="${name}"[^>]*value="([^"]*)"`).exec(html)?.[1] ?? "";
+
+  it("starts from the prices that hold now, long-prompt ones included, so one change keeps the rest", () => {
+    const html = form(rowOf("claude-haiku-5-5"));
+    expect(valueOf(html, "input")).toBe("0.1");
+    expect(valueOf(html, "cacheRead")).toBe("0.01");
+    expect(valueOf(html, "batchOutput")).toBe("0.25");
+    expect(valueOf(html, "longAbove")).toBe("100000");
+    expect(valueOf(html, "longInput")).toBe("0.5");
+    expect(valueOf(html, "longOutput")).toBe("2.5");
+    expect(valueOf(html, "longCacheWrite")).toBe("0.625");
+    expect(html).toContain("Long prompts over, tokens");
+    expect(html).toContain("Long input, $ per million");
+  });
+
+  it("asks where the price came from, empty for a new one", () => {
+    const html = form(rowOf("claude-opus-5-5"));
+    expect(html).toContain('name="source"');
+    expect(valueOf(html, "source")).toBe("");
+    expect(html).toContain("Where from");
+    expect(html).toContain("Empty: typed by you, with today&#x27;s date.");
+    // The owner's price says who set it, when, and where from.
+    expect(html).toContain(
+      "Your price, set by Mehadi Hasan on 16 Oct 2026 (from: https://platform.claude.com/docs/en/about-claude/pricing#opus).",
+    );
+  });
+
+  it("starts empty for a model with no price, and lets the model be picked", () => {
+    const html = form(undefined, true);
+    expect(html).toContain('name="model"');
+    expect(valueOf(html, "input")).toBe("");
+    expect(valueOf(html, "longAbove")).toBe("");
   });
 });

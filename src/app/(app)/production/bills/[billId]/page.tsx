@@ -223,7 +223,7 @@ export default async function BillPage({
                     className={`inline-flex max-w-full items-center gap-1.5 ${linkClass}`}
                   >
                     <PaperclipIcon className="size-4 shrink-0" aria-hidden />
-                    <span className="truncate">{b.attachment.fileName}</span>
+                    <span className="min-w-0 wrap-anywhere">{b.attachment.fileName}</span>
                   </a>
                 ) : (
                   "None attached"

@@ -1,6 +1,10 @@
+import type { Prisma } from "@prisma/client";
+
 import { AppError } from "@/lib/errors";
 import { burnPasswordCheck, hashPassword, verifyPassword } from "@/lib/auth/password";
+import { visitorAddress } from "@/lib/cloudflare-ips";
 import { prisma } from "@/lib/prisma";
+import { checkRateLimit } from "@/lib/rate-limit";
 import type { RequestMeta } from "@/lib/request-meta";
 import { recordAudit } from "@/modules/audit/audit.service";
 import {
@@ -25,10 +29,31 @@ import {
 } from "@/modules/bug-guard/security";
 import { pickDefaultCompanyId } from "@/modules/companies/access";
 
+/** Wrong passwords for one account from one place that make that place wait. */
 export const MAX_FAILED_LOGINS = 5;
+/** How long they count. */
 export const LOCKOUT_MS = 15 * 60 * 1000;
 
+/** How an unlock is kept in the audit log; wrong passwords before it no longer count. */
+export const UNLOCK_ENTITY = "SignInUnlock";
+
+export const SLOWED_TEXT =
+  "Too many wrong passwords for this account from this place. Wait 15 minutes and try again, or unlock it: write “unlock” to the bot on Telegram, or press “Email me an unlock link”.";
+
 const INVALID_CREDENTIALS = "Incorrect email or password.";
+
+/**
+ * Sign-in tries a minute from one visitor. A Cloudflare address (or none) is no
+ * one visitor (v6.4.1 B2): those tries are counted per account instead.
+ */
+export function checkLoginRate(meta: RequestMeta, email: unknown) {
+  const visitor = visitorAddress(meta.ipAddress);
+  const account = String(email ?? "")
+    .trim()
+    .toLowerCase()
+    .slice(0, 320);
+  checkRateLimit(visitor ? `login:${visitor}` : `login-unknown:${account}`, 10, 60_000);
+}
 
 export type LoginResult = {
   token: string;
@@ -38,12 +63,81 @@ export type LoginResult = {
 };
 
 /**
- * Email + password sign-in with lockout after repeated failures.
+ * Wrong passwords for this account from this place in the last 15 minutes,
+ * since its last unlock and since the last sign-in from there (v6.4.1 B5):
+ * someone else's wrong passwords from another place never count, so they can
+ * never lock the owner out. A Cloudflare address (or none) is no one place, so
+ * it never waits: the account's tries a minute (checkLoginRate) hold there.
+ */
+async function slowedHere(userId: string, address: string | undefined, now: Date) {
+  const place = visitorAddress(address);
+  if (!place) return false;
+  const window = new Date(now.getTime() - LOCKOUT_MS);
+  const latest = (where: Prisma.AuditLogWhereInput) =>
+    prisma.auditLog.findFirst({
+      where: { ...where, createdAt: { gt: window } },
+      orderBy: { createdAt: "desc" },
+      select: { createdAt: true },
+    });
+  const [unlocked, signedIn] = await Promise.all([
+    latest({ entityType: UNLOCK_ENTITY, entityId: userId }),
+    latest({ action: "LOGIN", userId, ipAddress: place }),
+  ]);
+  const since = new Date(
+    Math.max(
+      window.getTime(),
+      unlocked?.createdAt.getTime() ?? 0,
+      signedIn?.createdAt.getTime() ?? 0,
+    ),
+  );
+  const failures = await prisma.auditLog.count({
+    where: {
+      action: "LOGIN_FAILED",
+      userId,
+      ipAddress: place,
+      createdAt: { gt: since },
+    },
+  });
+  return failures >= MAX_FAILED_LOGINS;
+}
+
+/**
+ * Unlocks a person's sign-in (v6.4.1 B5): the wrong passwords before now no
+ * longer slow it down anywhere. Through the bot with the PIN, the link
+ * emailed to them (unlock.service.ts), or a password reset on the Team screen
+ * (`by` is who reset it); logged.
+ */
+export async function unlockSignIn(
+  userId: string,
+  how: string,
+  meta: RequestMeta = {},
+  by?: { userId: string; companyId: string },
+) {
+  await prisma.user.update({
+    where: { id: userId },
+    data: { failedLoginCount: 0, lockedUntil: null },
+  });
+  await recordAudit({
+    action: "UPDATE",
+    entityType: UNLOCK_ENTITY,
+    entityId: userId,
+    userId: by?.userId ?? userId,
+    companyId: by?.companyId,
+    summary: `Sign-in unlocked ${how}: earlier wrong passwords no longer slow it down`,
+    meta,
+  });
+}
+
+/**
+ * Email + password sign-in. Wrong passwords never lock the account: five for
+ * one account from one place make only that place wait 15 minutes (v6.4.1
+ * B5); many from one place get the place blocked (Bug Guard), and sign-in
+ * tries are limited per place a minute (checkLoginRate).
  * Error messages never reveal whether an email exists.
  *
  * A place Bug Guard blocked after many wrong passwords (modules/bug-guard/
  * security.ts) refuses everyone, except an active platform owner with the right
- * password, whose account lock still applies; the refusal reads the same for
+ * password, whose wait at that place still applies; the refusal reads the same for
  * every account, so it never tells whether one is the owner's.
  */
 export async function login(rawInput: LoginInput, meta: RequestMeta = {}): Promise<LoginResult> {
@@ -68,36 +162,19 @@ export async function login(rawInput: LoginInput, meta: RequestMeta = {}): Promi
     throw new AppError("INVALID_CREDENTIALS", INVALID_CREDENTIALS);
   }
 
-  if (user.lockedUntil && user.lockedUntil > new Date()) {
-    if (blocked) {
-      await burnPasswordCheck(password);
-      throw blockedError();
-    }
-    throw new AppError(
-      "ACCOUNT_LOCKED",
-      "Too many failed attempts. Please wait 15 minutes and try again.",
-    );
+  if (await slowedHere(user.id, meta.ipAddress, new Date())) {
+    await burnPasswordCheck(password);
+    if (blocked) throw blockedError();
+    throw new AppError("ACCOUNT_LOCKED", SLOWED_TEXT);
   }
 
   if (!(await verifyPassword(password, user.passwordHash))) {
-    const updated = await prisma.user.update({
-      where: { id: user.id },
-      data: { failedLoginCount: { increment: 1 } },
-      select: { failedLoginCount: true },
-    });
-    const locked = updated.failedLoginCount >= MAX_FAILED_LOGINS;
-    if (locked) {
-      await prisma.user.update({
-        where: { id: user.id },
-        data: { failedLoginCount: 0, lockedUntil: new Date(Date.now() + LOCKOUT_MS) },
-      });
-    }
     await recordAudit({
       action: "LOGIN_FAILED",
       entityType: "User",
       entityId: user.id,
       userId: user.id,
-      summary: locked ? "Wrong password; account locked for 15 minutes" : "Wrong password",
+      summary: "Wrong password",
       meta,
     });
     await afterFailedLogin(meta);

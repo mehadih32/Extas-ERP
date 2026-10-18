@@ -9,6 +9,7 @@ import { RolePermissionList } from "@/components/settings/roles/role-details";
 import { RoleEditor } from "@/components/settings/roles/role-editor";
 import { roleSummary } from "@/components/settings/roles/role-labels";
 import { Badge } from "@/components/ui/badge";
+import { HELD_ROLE } from "@/modules/rbac/rules";
 import { getRolesAction } from "@/server/actions/rbac.actions";
 import { requireCompanyPage } from "@/server/pages/guards";
 
@@ -87,7 +88,12 @@ export default async function RolePage({
           {canManage && !role.isSystem && role.membershipCount > 0 && (
             <FormAlert tone="note">{deleteHint(role.membershipCount, role.memberCount)}</FormAlert>
           )}
-          <RoleEditor key={role.id} mode="edit" role={role} />
+          <RoleEditor
+            key={role.id}
+            mode="edit"
+            role={role}
+            lockedPermissions={result.data.lockedPermissions}
+          />
         </>
       ) : (
         <>
@@ -95,6 +101,9 @@ export default async function RolePage({
             <FormAlert tone="note">
               The Super Admin role always has every permission, so it cannot be changed or deleted.
             </FormAlert>
+          ) : canManage && role.heldByYou ? (
+            // Someone who manages roles could otherwise give themselves anything through it.
+            <FormAlert tone="note">{HELD_ROLE}</FormAlert>
           ) : (
             <FormAlert tone="note">
               You can see what this role allows. Changing it needs the permission to manage roles.

@@ -18,6 +18,7 @@ import {
   WalletIcon,
 } from "lucide-react";
 
+import { TECH_PACK_READ } from "@/modules/production/tech-pack-access";
 import type { PermissionKey } from "@/modules/rbac/permissions";
 
 /*
@@ -141,7 +142,8 @@ export const NAV_ITEMS: readonly NavItem[] = [
     href: "/tech-packs",
     label: "Tech Pack",
     icon: ClipboardListIcon,
-    anyOf: ["production.view"],
+    // Also those who approve tech packs or tick their logos (v6.4.1 C5).
+    anyOf: TECH_PACK_READ,
     phoneMore: true,
   },
   {

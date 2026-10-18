@@ -78,6 +78,19 @@ export type FakeGitHub = {
     /** The commits and changed files of each pull request. */
     pullCommits: Record<number, FakeCommit[]>;
     pullFiles: Record<number, FakeFile[]>;
+    /** The rules of the active rulesets on main (the Help's "Protect main" by default). */
+    mainRules: string[];
+    /**
+     * Who may skip that ruleset (its Bypass list); null when the token may not see it, as
+     * GitHub does for a token that may not change rulesets (the Help's token: the default).
+     */
+    rulesetBypass: Array<{ actor_type: string }> | null;
+    /** Whether the token's own account may skip that ruleset (null: GitHub does not say). */
+    currentUserCanBypass: "always" | "pull_requests_only" | "never" | null;
+    /** The ruleset cannot be read at all (GitHub answers 404). */
+    rulesetHidden?: boolean;
+    /** The old kind of branch protection on main, when set. */
+    classicProtection: Record<string, unknown> | null;
   };
   /** A GitHub Actions token (OpenID Connect), signed with the fake issuer's key or another. */
   actionsToken: (claims: Record<string, unknown>, opts?: { otherKey?: boolean }) => string;
@@ -132,6 +145,10 @@ export async function startFakeGitHub(
     branchCommits: {},
     pullCommits: {},
     pullFiles: {},
+    mainRules: ["deletion", "non_fast_forward", "pull_request", "required_status_checks"],
+    rulesetBypass: null,
+    currentUserCanBypass: "never",
+    classicProtection: null,
   };
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
@@ -156,6 +173,34 @@ export async function startFakeGitHub(
         private: true,
         permissions: { ...state.permissions, pull: true },
       });
+    }
+    if (rest === "/rules/branches/main") {
+      return send(
+        200,
+        state.mainRules.map((type) => ({
+          type,
+          ruleset_source_type: "Repository",
+          ruleset_source: state.repo,
+          ruleset_id: 7,
+        })),
+      );
+    }
+    if (rest === "/rulesets/7") {
+      if (state.rulesetHidden) return send(404, { message: "Not Found" });
+      return send(200, {
+        id: 7,
+        name: "Protect main",
+        enforcement: "active",
+        ...(state.rulesetBypass ? { bypass_actors: state.rulesetBypass } : {}),
+        ...(state.currentUserCanBypass
+          ? { current_user_can_bypass: state.currentUserCanBypass }
+          : {}),
+      });
+    }
+    if (rest === "/branches/main/protection") {
+      return state.classicProtection
+        ? send(200, state.classicProtection)
+        : send(404, { message: "Branch not protected" });
     }
     if ((m = rest.match(/^\/actions\/workflows\/([^/]+)$/))) {
       const found = state.workflows[m[1]!];

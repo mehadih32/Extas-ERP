@@ -24,12 +24,18 @@ done
 need_root
 load_settings
 take_update_lock
+# A restore cut off half-way left the app stopped: it is started as it is and the owner
+# told, never put back by itself (lib.sh settle_cut_restore), before anything else.
+settle_cut_restore || say "Note: the ERP did not start after the restore that was cut off; the update goes on"
 [ -n "$APP_DOMAIN" ] || die "APP_DOMAIN is empty in deploy/.env."
 
 say "Preparing the data folders in $DATA_DIR"
 prepare_folders
 mark_data_folder || true
 prepare_https || { rm -f "$DATA_DIR/caddy/tls/cloudflare.caddy" && choose_caddy; }
+# Cloudflare's proxy addresses for Caddy and the app, and their daily fetch (never fails the update).
+"$DEPLOY_DIR/cloudflare-ips.sh" --setup ||
+  say "Cloudflare's address list could not be set up; Caddy and the ERP use the copy that came with the ERP"
 prepare_demo_site
 
 # The version running now is kept, so a failed update can go back to it.
@@ -153,6 +159,9 @@ if [ -n "$pending" ]; then
   say "The new version passed its check: opening the ERP to its users again"
   compose up -d caddy
 fi
+# A restore cut off earlier whose ERP did not start then (its mark stayed, above): the
+# ERP runs now, and the owner is told so.
+[ ! -f "$DATA_DIR/backups/.restore-running" ] || settle_cut_restore || true
 
 # Backups: the monthly restore drill's temporary database, Restore from the Backups
 # screen, locking the settings when the backup key changes, clearing safety copies
@@ -205,7 +214,11 @@ free="$(free_kb)"
 # the report goes to the ERP's inbox and to Telegram (D5). It never fails the update:
 # the new version is up already, and what the check could not do is in its report.
 say "Asking Bug Guard to check the live ERP once (it only reads)"
-if ask_check_after_deploy "$DATA_DIR/backups" "${AFTER_DEPLOY_WAIT:-180}"; then
+if [ -f "$DATA_DIR/backups/.drill" ] || [ -f "$DATA_DIR/backups/.standby" ]; then
+  # A practice or standby copy takes the request and skips the check (bug-guard/after-deploy.ts).
+  ask_check_after_deploy "$DATA_DIR/backups" "${AFTER_DEPLOY_WAIT:-180}" || true
+  say "This is a practice or standby copy, so Bug Guard's check after the update is skipped here"
+elif ask_check_after_deploy "$DATA_DIR/backups" "${AFTER_DEPLOY_WAIT:-180}"; then
   say "Bug Guard is checking the live ERP: the result goes to the ERP's inbox, and to Telegram when the bot is linked"
 else
   say "The ERP has not taken Bug Guard's check yet; it does when its clock next runs. Bug Guard also checks on its own schedule"

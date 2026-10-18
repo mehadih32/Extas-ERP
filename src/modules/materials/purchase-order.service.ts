@@ -51,7 +51,7 @@ const orderInclude = {
   supplier: { select: { id: true, code: true, name: true, phone: true } },
   project: { select: { id: true, code: true, name: true, status: true } },
   batch: { select: { id: true, code: true, name: true } },
-  booking: { select: { id: true, stage: true } },
+  booking: { select: { id: true, stage: true, source: true } },
   createdBy: { select: { id: true, name: true } },
   lines: {
     orderBy: { id: "asc" },
@@ -81,6 +81,8 @@ function presentOrder(ctx: CompanyContext, order: OrderRow) {
     batch: order.batch,
     /** Written as a booking: its lines and specification change on the booking. */
     bookingId: order.booking?.id ?? null,
+    /** Which kind of booking (its own permission changes it), or null. */
+    bookingSource: order.booking?.source ?? null,
     /** A booking still waiting for approval: nothing arrives on it until it is approved. */
     awaitingApproval: order.booking?.stage === "DRAFT",
     orderDate: dateOnly(order.orderDate),
@@ -299,8 +301,15 @@ export const orderState = (order: {
 });
 
 /**
+ * Why a booking's order does not change here: on the booking, a change after
+ * approval makes a new revision that is approved again.
+ */
+export const bookingOrderMessage = (number: string) =>
+  `${number} is a booking; change it on the booking (Production > Bookings), where a change after approval is approved again.`;
+
+/**
  * Changes an open order: dates, references, the project, and (while nothing
- * has arrived) its lines.
+ * has arrived) its lines. A booking's order changes on the booking only.
  */
 export async function updatePurchaseOrder(
   ctx: CompanyContext,
@@ -316,14 +325,10 @@ export async function updatePurchaseOrder(
   await runTransaction(async (tx) => {
     const order = await lockOrder(tx, companyId, orderId);
     assertAllowed(canChangeOrder(orderState(order)));
+    // A booking's in-house date, items and terms are part of its approval.
+    if (order.booking) throw new AppError("CONFLICT", bookingOrderMessage(order.number));
     if (prepared) {
       assertAllowed(canChangeOrderLines(orderState(order)));
-      if (order.booking) {
-        throw new AppError(
-          "CONFLICT",
-          `${order.number} is a booking; change its items on the booking (Production > Bookings), so their specification stays with them.`,
-        );
-      }
       const kept = await keptLineParts(tx, order.id);
       await tx.purchaseOrderLine.deleteMany({ where: { orderId: order.id } });
       for (const line of prepared.lines) {
@@ -450,6 +455,18 @@ export async function settleLaterPrices(
   });
 }
 
+/** Who may cancel or close an order: buyers, or for a booking's the booking permission. */
+async function assertCanEndOrder(ctx: CompanyContext, orderId: string) {
+  const booking = await ctx.db.booking.findFirst({ where: { orderId }, select: { id: true } });
+  if (!booking) return assertCanBuyMaterials(ctx);
+  if (!ctx.can("production.bookings.close")) {
+    throw new AppError(
+      "FORBIDDEN",
+      "This order is a booking: closing or cancelling it needs permission to close bookings (production.bookings.close).",
+    );
+  }
+}
+
 /** Cancels an order nothing has arrived on (the supplier will not deliver). */
 export async function cancelPurchaseOrder(
   ctx: CompanyContext,
@@ -457,7 +474,7 @@ export async function cancelPurchaseOrder(
   raw: unknown,
   meta?: RequestMeta,
 ) {
-  assertCanBuyMaterials(ctx);
+  await assertCanEndOrder(ctx, orderId);
   await endOrder(ctx, orderId, raw, meta, "CANCELLED");
   return getPurchaseOrder(ctx, orderId);
 }
@@ -469,7 +486,7 @@ export async function closePurchaseOrder(
   raw: unknown,
   meta?: RequestMeta,
 ) {
-  assertCanBuyMaterials(ctx);
+  await assertCanEndOrder(ctx, orderId);
   await endOrder(ctx, orderId, raw, meta, "CLOSED");
   return getPurchaseOrder(ctx, orderId);
 }

@@ -401,5 +401,10 @@ run("the late-backup alert on GitHub (A13)", { timeout: 120_000 }, () => {
     await expectAppError(setUp(), "UNAVAILABLE", /restore drill copy/);
     expect(github.secrets.size).toBe(0);
     expect((await prisma.backupConfig.findFirstOrThrow()).githubAlertAt).toBeNull();
+    // Nor from a copy on standby, which is not the ERP in use (v6.4.1 review 2).
+    await rm(path.join(dir, "backups", DRILL_MARK));
+    await writeFile(path.join(dir, "backups", STANDBY_MARK), "3f9a0c1d2e4b5a69");
+    await expectAppError(setUp(), "UNAVAILABLE", /on standby after a restore/);
+    expect(github.secrets.size).toBe(0);
   });
 });

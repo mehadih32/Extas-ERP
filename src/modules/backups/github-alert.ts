@@ -48,7 +48,7 @@ async function github(
   body?: unknown,
 ) {
   // A restore drill copy (test mode) or a copy on standby only reads: it never sets a secret.
-  if (method !== "GET") await refuseOnDrill();
+  if (method !== "GET") await refuseOnCopy();
   let response: Response;
   try {
     response = await fetch(`${API()}/repos/${repo}${path}`, {
@@ -86,7 +86,7 @@ async function github(
   throw new AppError("UNAVAILABLE", `GitHub answered ${response.status}. Try again in a minute.`);
 }
 
-async function refuseOnDrill() {
+async function refuseOnCopy() {
   const { DRILL_NOT_SENT, onDrill, onStandby, STANDBY_NOT_DONE } =
     await import("@/modules/backups/standby");
   if (await onDrill()) throw new AppError("UNAVAILABLE", DRILL_NOT_SENT);
@@ -142,7 +142,7 @@ export async function setUpGitHubAlert(ctx: CompanyContext, raw: unknown, meta?:
     throw new AppError("FORBIDDEN", "Only the platform owner sets up the backup alert.");
   }
   const input = githubAlertSchema.parse(raw);
-  await refuseOnDrill();
+  await refuseOnCopy();
   const { requirePin } = await import("@/modules/ai/settings.service");
   await requirePin(ctx, input.pin, "send the backup alert's settings to GitHub");
   const values = await alertValues();

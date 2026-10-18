@@ -68,7 +68,7 @@ export async function askHelp(ctx: CompanyContext, input: unknown) {
     throw new AppError("UNAVAILABLE", `${ready.text} The guides below still answer your search.`);
   }
   const permissions = [...ctx.permissions];
-  const found = rankHelp(helpSearchEntries(permissions), question, GUIDES);
+  const found = rankHelp(helpSearchEntries(permissions, ctx.user.isSuperAdmin), question, GUIDES);
   const guides = found.flatMap((r) => {
     const hit = findHelpArticle(r.sectionId, r.slug);
     return hit ? [{ ...hit, open: r.open }] : [];

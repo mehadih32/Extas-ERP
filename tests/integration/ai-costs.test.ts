@@ -92,6 +92,7 @@ async function setup() {
   });
   return {
     company,
+    roles,
     other: other.company,
     otherRoles: other.roles,
     owner,
@@ -741,6 +742,18 @@ run("AI cost tracking", () => {
     ]);
     expect(costs.by.task.map((t) => t.label)).toEqual(["Help questions"]);
     expect(costs.by.agent.map((t) => t.label)).toEqual(["Help AI"]);
+
+    // v6.4.1 C6: the Bug Guard guide reaches the Help AI only for the platform owner.
+    const bugGuard = "How does Bug Guard block a login source?";
+    const admin = await askHelp(env.owner, { question: bugGuard });
+    expect(env.owner.user.isSuperAdmin).toBe(false);
+    expect(admin.guides.map((g) => g.slug)).not.toContain("ai-bug-guard");
+    const platform = await makeUser("platform@extas.test", { isSuperAdmin: true });
+    await addToCompany(platform.id, env.company.id, env.roles.SUPER_ADMIN);
+    const mine = await askHelp(await contextFor(platform.id, env.company.id), {
+      question: bugGuard,
+    });
+    expect(mine.guides.map((g) => g.slug)).toContain("ai-bug-guard");
   });
 
   it("makes the costs as a PDF or an Excel file", async () => {

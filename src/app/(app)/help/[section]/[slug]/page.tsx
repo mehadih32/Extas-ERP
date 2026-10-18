@@ -15,7 +15,7 @@ import { GuideAfter, GuideFields, GuidePicture, GuideWhatWhy } from "@/component
 import { HelpImageSlot } from "@/components/help/help-image";
 import { helpHref, NOT_IN_ROLE } from "@/components/help/labels";
 import { Button } from "@/components/ui/button";
-import { articleLink, findHelpArticle } from "@/modules/help";
+import { articleLink, articleShown, findHelpArticle, shownArticles } from "@/modules/help";
 import { HELP_PICTURES } from "@/modules/help/pictures";
 import { requireCompanyPage } from "@/server/pages/guards";
 
@@ -39,10 +39,14 @@ export default async function HelpArticlePage({ params }: { params: Params }) {
   const found = findHelpArticle(sectionId, slug);
   if (!found) notFound();
   const { section, article } = found;
-  const link = articleLink(article, permissions);
-  const index = section.articles.indexOf(article);
-  const previous = section.articles[index - 1];
-  const next = section.articles[index + 1];
+  // A guide of a page only the platform owner opens: not found for anyone else (v6.4.1 C6).
+  const owner = ctx.user.isSuperAdmin;
+  if (!articleShown(article, permissions, owner)) notFound();
+  const link = articleLink(article, permissions, owner);
+  const guides = shownArticles(section, permissions, owner);
+  const index = guides.indexOf(article);
+  const previous = guides[index - 1];
+  const next = guides[index + 1];
   const picture = HELP_PICTURES[article.slug];
   const marked = new Set(picture?.marks ?? []);
 

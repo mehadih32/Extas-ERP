@@ -99,6 +99,7 @@ services:
       GOOGLE_DRIVE_CLIENT_ID: ${GOOGLE_DRIVE_CLIENT_ID:-}
       GOOGLE_DRIVE_CLIENT_SECRET: ${GOOGLE_DRIVE_CLIENT_SECRET:-}
       SAFETY_COPY_DIR: /data/safety-copies
+      CLOUDFLARE_IPS_FILE: /data/cloudflare/ips.txt
       AI_API_KEY: ${AI_API_KEY:-}
       # The company's mailbox for sending; the owner usually sets it in AI Center > Settings instead.
       SMTP_HOST: ${SMTP_HOST:-}
@@ -122,6 +123,8 @@ services:
       # The update and restore safety copies, read-only: the app locks each and
       # sends it to Google Drive too (the server keeps them for 24 hours).
       - ${DATA_DIR:-/srv/extras-erp}/safety-copies:/data/safety-copies:ro
+      # Cloudflare's proxy addresses (cloudflare-ips.sh), never blocked as one visitor.
+      - ${DATA_DIR:-/srv/extras-erp}/caddy/cloudflare:/data/cloudflare:ro
     depends_on:
       db:
         condition: service_healthy
@@ -163,6 +166,8 @@ services:
       - ${DATA_DIR:-/srv/extras-erp}/caddy/tls:/etc/caddy/tls:ro
       # The demo site's part, while it is on (deploy.sh copies demo.caddy here).
       - ${DATA_DIR:-/srv/extras-erp}/caddy/sites:/etc/caddy/sites:ro
+      # Cloudflare's proxy addresses, fetched every day (cloudflare-ips.sh).
+      - ${DATA_DIR:-/srv/extras-erp}/caddy/cloudflare:/etc/caddy/cloudflare:ro
       - ${DATA_DIR:-/srv/extras-erp}/caddy/data:/data
       - ${DATA_DIR:-/srv/extras-erp}/caddy/config:/config
     depends_on:
@@ -255,9 +260,11 @@ services:
       DEMO_SITE: "on"
       # Practice data needs no backups.
       BACKUP_SCHEDULER: "off"
+      CLOUDFLARE_IPS_FILE: /data/cloudflare/ips.txt
     volumes:
       - ${DATA_DIR:-/srv/extras-erp}/demo/uploads:/data/uploads
       - ${DATA_DIR:-/srv/extras-erp}/demo/backups:/data/backups
+      - ${DATA_DIR:-/srv/extras-erp}/caddy/cloudflare:/data/cloudflare:ro
     depends_on:
       demo-db:
         condition: service_healthy

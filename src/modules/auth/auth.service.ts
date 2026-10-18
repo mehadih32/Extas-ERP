@@ -1,6 +1,8 @@
 import { AppError } from "@/lib/errors";
 import { burnPasswordCheck, hashPassword, verifyPassword } from "@/lib/auth/password";
+import { visitorAddress } from "@/lib/cloudflare-ips";
 import { prisma } from "@/lib/prisma";
+import { checkRateLimit } from "@/lib/rate-limit";
 import type { RequestMeta } from "@/lib/request-meta";
 import { recordAudit } from "@/modules/audit/audit.service";
 import {
@@ -29,6 +31,19 @@ export const MAX_FAILED_LOGINS = 5;
 export const LOCKOUT_MS = 15 * 60 * 1000;
 
 const INVALID_CREDENTIALS = "Incorrect email or password.";
+
+/**
+ * Sign-in tries a minute from one visitor. A Cloudflare address (or none) is no
+ * one visitor (v6.4.1 B2): those tries are counted per account instead.
+ */
+export function checkLoginRate(meta: RequestMeta, email: unknown) {
+  const visitor = visitorAddress(meta.ipAddress);
+  const account = String(email ?? "")
+    .trim()
+    .toLowerCase()
+    .slice(0, 320);
+  checkRateLimit(visitor ? `login:${visitor}` : `login-unknown:${account}`, 10, 60_000);
+}
 
 export type LoginResult = {
   token: string;

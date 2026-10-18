@@ -3,6 +3,7 @@ import path from "node:path";
 
 import { createHash } from "node:crypto";
 
+import { isCloudflareAddress } from "@/lib/cloudflare-ips";
 import { resolvePermissions } from "@/modules/rbac/resolve";
 
 import { BLOCK_AFTER_FAILURES, BLOCK_WINDOW_MS, isKnownPlace, isOwnersPlace } from "../security";
@@ -198,6 +199,22 @@ const failedLogins: Check = {
           createdAt: { gte: new Date(ctx.now.getTime() - BLOCK_WINDOW_MS) },
         },
       });
+      // Cloudflare's own address: many visitors share it, so it is never blocked (v6.4.1 B2).
+      if (isCloudflareAddress(source)) {
+        out.push({
+          key: `security.failed-place:${source}`,
+          area: "SECURITY",
+          severity: "IMPORTANT",
+          title: `${source} (Cloudflare-এর ঠিকানা) থেকে ${n(times)} বার ভুল পাসওয়ার্ড দিয়ে ঢোকার চেষ্টা হয়েছে।`,
+          href: "/ai/bug-guard",
+          place: source,
+          why: "এটা Cloudflare-এর ঠিকানা: অনেক মানুষ এই একই ঠিকানা দিয়ে আসে, তাই কে চেষ্টা করছে তা এখান থেকে বোঝা যায় না।",
+          fix: "Cloudflare-এর ঠিকানা কখনো আটকানো হয় না: আটকালে সবাই আটকে যেত। প্রতিটি অ্যাকাউন্টে চেষ্টা নিজে থেকেই ধীর হয়। চেষ্টা চলতে থাকলে পাসওয়ার্ডগুলো বদলান, আর ডেভেলপারকে দেখান কেন আসল ঠিকানা আসছে না।",
+          fixKind: "MANUAL",
+          evidence: [{ label: "শেষ চেকের পর", value: `${n(times)} বার` }],
+        });
+        continue;
+      }
       const owners = await isOwnersPlace(ctx.db, source, ctx.now);
       const team = !owners && (await isKnownPlace(ctx.db, source, ctx.now));
       const severity: Severity = times >= BLOCK_AFTER_FAILURES ? "URGENT" : "IMPORTANT";

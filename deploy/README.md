@@ -330,8 +330,14 @@ Behind the proxy every visitor reaches the server from a Cloudflare address. The
 (`servers` block) trusts only Cloudflare's published ranges (https://www.cloudflare.com/ips)
 to name the visitor (`CF-Connecting-IP`), and hands the app that one address, so sign-ins,
 the audit log and Bug Guard's blocks see the real visitor. Anyone not coming through
-Cloudflare is known by their own address, whatever headers they send. If Cloudflare ever
-changes its list, update the `trusted_proxies` line.
+Cloudflare is known by their own address, whatever headers they send. Cloudflare changes
+its list now and then, so `deploy/cloudflare-ips.sh` fetches it every day at 05:29 (cron, set
+up by `deploy.sh`, which also runs it at every update) into `DATA_DIR/caddy/cloudflare/`,
+which Caddy and the app read. Only a sound list is written: when a fetch fails, the last
+good list stays, and before the first one the copy in `deploy/cloudflare-ips.txt` stands in.
+To fetch it now: `sudo ./deploy/cloudflare-ips.sh`. The app itself never blocks or slows
+down a Cloudflare address as if it were one visitor: if one ever reaches it (Caddy's list
+older than Cloudflare's), it takes the visitor from `CF-Connecting-IP` instead.
 
 ## Updating to a new version
 

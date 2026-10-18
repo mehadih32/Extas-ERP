@@ -3,10 +3,9 @@
 import { revalidatePath } from "next/cache";
 
 import { clearSessionCookie, setSessionCookie } from "@/lib/auth/cookies";
-import { checkRateLimit } from "@/lib/rate-limit";
 import { getRequestMeta } from "@/lib/request-meta";
 import { runAction } from "@/lib/result";
-import { changePassword, login, logout } from "@/modules/auth/auth.service";
+import { changePassword, checkLoginRate, login, logout } from "@/modules/auth/auth.service";
 import { getCurrentSession, requireSession } from "@/modules/auth/context";
 import type { ChangePasswordInput, LoginInput } from "@/modules/auth/schemas";
 import { switchCompany } from "@/modules/companies/company.service";
@@ -14,7 +13,7 @@ import { switchCompany } from "@/modules/companies/company.service";
 export async function loginAction(input: LoginInput) {
   return runAction(async () => {
     const meta = await getRequestMeta();
-    checkRateLimit(`login:${meta.ipAddress ?? "unknown"}`, 10, 60_000);
+    checkLoginRate(meta, input?.email);
     const result = await login(input, meta);
     await setSessionCookie(result.token, result.expiresAt);
     return {

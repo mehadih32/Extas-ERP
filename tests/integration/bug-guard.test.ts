@@ -39,7 +39,7 @@ import {
   undoCorrection,
 } from "@/modules/bug-guard/fixes.service";
 import { getBugGuard, runNow } from "@/modules/bug-guard/screen.service";
-import { BLOCKED_TEXT, endSession } from "@/modules/bug-guard/security";
+import { BLOCKED_TEXT, blockSource, endSession } from "@/modules/bug-guard/security";
 import { DEPLOY_MS, startBugGuard, STALE_RUN_MS } from "@/modules/bug-guard/runner";
 import { SECURITY_CHECKS } from "@/modules/bug-guard/checks/security";
 import { saveSettings } from "@/modules/bug-guard/settings.service";
@@ -875,6 +875,50 @@ run("Bug Guard", () => {
       expect(await fixFinding(env.owner, f.id, { pin: PIN })).toMatchObject({ kind: "SECURITY" });
       expect(await prisma.loginBlock.count({ where: { source: ip, liftedAt: null } })).toBe(1);
       expect((await findingOf(`security.failed-place:${ip}`)).status).toBe("FIXED");
+    });
+
+    it("never blocks a Cloudflare address, by itself or with the PIN: many visitors share it (v6.4.1 B2)", async () => {
+      const cf = "162.158.10.20";
+      for (let i = 0; i < 12; i += 1) await wrong(`y${i}@x.test`, cf);
+      expect(await prisma.loginBlock.count({ where: { source: cf } })).toBe(0);
+      expect(await prisma.bugGuardEvent.count({ where: { kind: "SOURCE_BLOCKED" } })).toBe(0);
+      // A block on it from before: it keeps nobody out, and nobody's sign-in is ended for it.
+      await prisma.loginBlock.create({
+        data: {
+          companyId: env.company.id,
+          source: cf,
+          failures: 10,
+          reason: "10 wrong passwords",
+          blockedAt: new Date(),
+          blockedUntil: new Date(Date.now() + 60 * 60_000),
+        },
+      });
+      const signedIn = await login(
+        { email: "staff@extas.test", password: PASSWORD },
+        { ipAddress: cf },
+      );
+      expect(signedIn.token).toBeTruthy();
+      expect(await prisma.bugGuardEvent.count({ where: { kind: "SESSION_ENDED" } })).toBe(0);
+      // The finding names it, and offers no block.
+      const r = await startBugGuard(env.company.id, "NOW", env.owner.user.id, {
+        checks: SECURITY_CHECKS.filter((c) => c.key === "security.failed-logins"),
+        wait: true,
+        fullCheck: false,
+      });
+      expect((await runOf(r.id)).status).toBe("DONE");
+      const f = await findingOf(`security.failed-place:${cf}`);
+      expect(f).toMatchObject({ fixKind: "MANUAL", action: null });
+      expect(f.fix).toContain("Cloudflare");
+      await expectAppError(
+        blockSource({
+          source: cf,
+          failures: 12,
+          companyId: env.company.id,
+          byId: env.owner.user.id,
+        }),
+        "VALIDATION",
+        /Cloudflare/,
+      );
     });
   });
 

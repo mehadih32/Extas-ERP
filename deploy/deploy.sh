@@ -30,6 +30,9 @@ say "Preparing the data folders in $DATA_DIR"
 prepare_folders
 mark_data_folder || true
 prepare_https || { rm -f "$DATA_DIR/caddy/tls/cloudflare.caddy" && choose_caddy; }
+# Cloudflare's proxy addresses for Caddy and the app, and their daily fetch (never fails the update).
+"$DEPLOY_DIR/cloudflare-ips.sh" --setup ||
+  say "Cloudflare's address list could not be set up; Caddy and the ERP use the copy that came with the ERP"
 prepare_demo_site
 
 # The version running now is kept, so a failed update can go back to it.

@@ -870,45 +870,6 @@ export async function checkPin(companyId: string, pin: string, userId: string): 
   return right;
 }
 
-/** New numbers the ERP's own AI chat may check per person and store, in fifteen minutes. */
-export const CHAT_PIN_CHECKS = 100;
-
-/** Numbers found not to be the store's PIN (until it changes): checking one again tells nothing new. */
-const notThePin = new Map<string, { pinHash: string; numbers: Set<string> }>();
-
-/**
- * Whether digits are the PIN, only to hide a PIN typed into the ERP's own AI
- * chat (mayHoldPin). The person there is signed in, so it allows a hundred new
- * numbers in fifteen minutes per person and store (a number already found not
- * to be the PIN is free), counted apart from the PIN tries ("CHAT"); past that
- * it says "unchecked" and the chat hides the message the same way as the PIN,
- * so the chat cannot be used for an unlimited search for the PIN (v6.4.1). The
- * bot never checks a number it did not ask for (v6.4.2): it hides every one.
- */
-export async function pinMatches(
-  companyId: string,
-  pin: string,
-  userId: string,
-): Promise<boolean | "unchecked"> {
-  const settings = await aiSettingsOf(companyId);
-  if (!settings.pinHash || !/^\d{4,8}$/.test(pin)) return false;
-  let known = notThePin.get(companyId);
-  if (known?.pinHash !== settings.pinHash) {
-    known = { pinHash: settings.pinHash, numbers: new Set() };
-    notThePin.set(companyId, known);
-  }
-  if (known.numbers.has(pin)) return false;
-  // Counted in the database (pin-tries.ts): a restart does not give new checks.
-  if ((await countPinTry(companyId, userId, "CHAT")) > CHAT_PIN_CHECKS) {
-    await pinLimitAlarm(companyId, userId, "CHAT", CHAT_PIN_CHECKS);
-    return "unchecked";
-  }
-  if (await verifyPassword(pin, settings.pinHash)) return true;
-  if (known.numbers.size >= 500) known.numbers.clear();
-  known.numbers.add(pin);
-  return false;
-}
-
 /** From this wrong PIN in a day (one the bot asked for), each one alarms the owner. */
 export const BOT_PIN_ALARM_FROM = 5;
 /** After this many wrong PINs in a day, PIN actions on the bot stop until unlocked in the ERP. */
@@ -1026,16 +987,14 @@ export async function unlockBotPin(
 }
 
 /**
- * Whether a message in the ERP's own AI chat holds the PIN: it is then never
- * kept nor sent to the AI (v6.4.1). Its numbers are checked (pinMatches,
- * counted as "CHAT"), unlike the bot's, which are all hidden unchecked
- * (v6.4.2). Digits already in Western form.
+ * Whether a message in the ERP's own AI chat may hold the PIN: any number of 4
+ * to 8 digits it did not ask for (pinCandidates). The message is then never
+ * kept nor sent to the AI (v6.4.1). Like the bot's (v6.4.2), no number is ever
+ * checked against the PIN, so the chat's answer never tells whether it was the
+ * PIN. Digits already in Western form.
  */
-export async function mayHoldPin(companyId: string, text: string, userId: string) {
-  for (const number of pinCandidates(text)) {
-    if ((await pinMatches(companyId, number, userId)) !== false) return true;
-  }
-  return false;
+export function mayHoldPin(text: string) {
+  return pinCandidates(text).length > 0;
 }
 
 /**

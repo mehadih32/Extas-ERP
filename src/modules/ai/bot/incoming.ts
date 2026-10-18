@@ -35,7 +35,7 @@ import { type BotOut, type ButtonPress, draftVersion, readButton, renderAnswer }
 import { readTelegramUpdate } from "./telegram";
 import { PIN_TEXT } from "./pin-scrub";
 import { readWhatsAppPayload, whatsappSignatureOk } from "./whatsapp";
-import { pinCandidates } from "../pin-tries";
+import { NUMBER_HIDDEN_TEXT, pinCandidates } from "../pin-tries";
 
 /*
  * What reaches the bot. The webhook only checks who is calling (Telegram's
@@ -532,8 +532,7 @@ async function tellPreviousChat(
 }
 
 /** What the bot says after hiding a number it did not ask for: the same whatever the number. */
-export const NUMBER_HIDDEN_TEXT =
-  "Your message had a number of 4 to 8 digits, so it was hidden and nothing was done. The bot hides every such number when it did not ask for your PIN, so nobody can learn your PIN from its answers. Send your PIN only when the bot asks for it. Write an order or document number with its letters (like PO4501), or use the ERP.";
+export { NUMBER_HIDDEN_TEXT };
 
 /** Said when a message with the PIN (or what may be it) could not be taken out of the chat. */
 export const PIN_NOT_REMOVED_TEXT =

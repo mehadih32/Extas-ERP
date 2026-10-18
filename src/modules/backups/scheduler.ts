@@ -2,7 +2,7 @@ import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import { afterRestore } from "@/modules/backups/after-restore";
 import { getBackupConfig, runBackup, settleFinishedRuns } from "@/modules/backups/backup.service";
-import { sendSafetyCopies, sendUnsent } from "@/modules/backups/drive-copies";
+import { retryWatchLabel, sendSafetyCopies, sendUnsent } from "@/modules/backups/drive-copies";
 import { ensureLocalGuides, guideTick } from "@/modules/backups/guide.service";
 import { writeHostKey } from "@/modules/backups/recovery-key.service";
 import { recordRestoreResult } from "@/modules/backups/restore.service";
@@ -94,6 +94,10 @@ export async function backupClock(now: Date = new Date()) {
   );
   await watchBackups(now).catch((e: unknown) =>
     console.error("[backups] could not check the backups' health", e),
+  );
+  // The late-backup alert's label on the newest backup, when it could not be written.
+  await retryWatchLabel(now.getTime()).catch((e: unknown) =>
+    console.error("[backups] the newest backup in Drive was not labelled", e),
   );
   if (await onStandby()) {
     // The guide on this server's disk (put in each backup) is still made.

@@ -65,10 +65,12 @@ export async function runDueJobs(
 }
 
 export async function jobTick(): Promise<number | null> {
+  // A restore drill copy (test mode) runs no job at all.
+  const { onDrill, standbyMark } = await import("@/modules/backups/standby");
+  if (await onDrill()) return null;
   // A copy on standby after a restore runs only the alarms raised since it went on
   // standby (a failed backup, Bug Guard's urgent items): the backup's own queue would
   // send its messages a second time, so they wait until it goes live (G2).
-  const { standbyMark } = await import("@/modules/backups/standby");
   const standby = await standbyMark();
   const only: ClaimOnly | undefined = standby ? { alarmsSince: standby.since } : undefined;
   if (running) {

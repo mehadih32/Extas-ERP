@@ -4,10 +4,10 @@ import "@/styles/globals.css";
 
 import { Toaster } from "@/components/feedback/toaster";
 import { DemoSiteBar } from "@/components/shell/demo-site-bar";
-import { StandbyBar } from "@/components/shell/standby-bar";
+import { DrillBar, StandbyBar } from "@/components/shell/standby-bar";
 import { env } from "@/lib/env";
 import { currentInterfaceStyle } from "@/modules/appearance/appearance.service";
-import { onStandby } from "@/modules/backups/standby";
+import { onDrill, onStandby } from "@/modules/backups/standby";
 
 import { fontVariables } from "./fonts";
 
@@ -44,10 +44,13 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   // globals.css apply under data-ui="modern"; the original look needs nothing.
   const style = await currentInterfaceStyle();
   // A copy on standby after a restore says so on every page until it goes live (G2).
-  const standby = await onStandby();
+  // A restore drill copy (test mode) says so instead, for good.
+  const drill = await onDrill();
+  const standby = !drill && (await onStandby());
   return (
     <html lang="en" className={fontVariables} data-ui={style === "MODERN" ? "modern" : undefined}>
       <body>
+        {drill ? <DrillBar /> : null}
         {standby ? <StandbyBar /> : null}
         {env.DEMO_SITE === "on" ? <DemoSiteBar /> : null}
         {children}

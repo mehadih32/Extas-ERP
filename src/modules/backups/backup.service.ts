@@ -299,6 +299,8 @@ export async function getBackupOverview() {
         select: { githubRepo: true },
       })
     : null;
+  const { drillInfo } = await import("@/modules/backups/standby");
+  const { presentServerDrill } = await import("@/modules/backups/server-drill");
   return {
     githubRepo: github?.githubRepo ?? null,
     config: presentConfig(config),
@@ -306,6 +308,10 @@ export async function getBackupOverview() {
     lastRun: lastRun ? presentRun(lastRun) : null,
     lastSuccess: lastSuccess ? presentRun(lastSuccess) : null,
     lastTestRestore: lastTest ? presentRun(lastTest) : null,
+    /** The last restore drill on a new server ("Record a drill"). */
+    lastServerDrill: presentServerDrill(config.lastServerDrill),
+    /** On a restore drill copy: its own drill (test mode); null on any other ERP. */
+    thisDrill: await drillInfo(),
     /** Backups on the server not yet checked in Google Drive. */
     notSent: unsent,
     newServer,
@@ -552,7 +558,9 @@ export async function disconnectGoogleDrive(who: Owner, raw: unknown, meta?: Req
   await lessSafe(who, pin, ["disconnect Google Drive"]);
   const actor = actorOf(who);
   const config = await getBackupConfig();
-  if (config.credentialsRef) {
+  // A restore drill copy holds the real ERP's Google sign-in: it is only forgotten here.
+  const { onDrill } = await import("@/modules/backups/standby");
+  if (config.credentialsRef && !(await onDrill())) {
     try {
       await drive.revoke(decryptSecret(config.credentialsRef));
     } catch {

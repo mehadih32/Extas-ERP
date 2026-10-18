@@ -68,6 +68,7 @@ export const CHECK_READ_ROUTES: readonly string[] = [
   "/api/audit-logs",
   "/api/auth/appearance",
   "/api/auth/me",
+  "/api/backups/drill",
   "/api/backups/runs",
   "/api/backups/runs/[runId]",
   "/api/backups/settings",

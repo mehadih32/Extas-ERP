@@ -3,7 +3,7 @@ import type { BackupConfig } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { alertOwner, getBackupConfig } from "@/modules/backups/backup-core";
 import { previousRunAt, scheduleOf } from "@/modules/backups/schedule";
-import { onStandby, STANDBY_LINE } from "@/modules/backups/standby";
+import { DRILL_LINE, onDrill, onStandby, STANDBY_LINE } from "@/modules/backups/standby";
 
 /*
  * How the backups are doing, in one plain line for the Backups screen (G10),
@@ -123,6 +123,10 @@ export async function backupHealth(
     lastInDriveAt: lastInDrive?.startedAt ?? null,
   };
 
+  // A restore drill copy (test mode, for good): no backup runs, nothing is sent.
+  if (await onDrill()) {
+    return { ...base, level: "danger", line: DRILL_LINE, problem: null };
+  }
   if (lastRun?.status === "FAILED") {
     const text = `The last backup failed ${ago(lastRun.startedAt, now)}: ${lastRun.error ?? "no reason was recorded"}`;
     return { ...base, level: "danger", line: text, problem: { kind: "failed", text } };

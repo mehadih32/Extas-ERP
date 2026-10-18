@@ -14,3 +14,19 @@ export function StandbyBar() {
     </div>
   );
 }
+
+/**
+ * The bar across the top of every page of a restore drill copy (test mode, the
+ * restore guide's "Practice: a restore drill"), so nobody takes it for the real ERP.
+ */
+export function DrillBar() {
+  return (
+    <div
+      role="alert"
+      className="bg-amber-500 px-4 py-2 text-center text-sm font-semibold break-words text-black print:hidden"
+    >
+      This is a restore drill copy (test mode), not your real ERP. It sends no emails or bot
+      messages. Delete this server when the drill is done.
+    </div>
+  );
+}

@@ -1,6 +1,6 @@
 "use client";
 
-import { ClipboardListIcon, LockIcon, ShieldCheckIcon } from "lucide-react";
+import { ClipboardListIcon, LockIcon, ScissorsIcon, ShieldCheckIcon } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 
@@ -9,10 +9,16 @@ import { productionHref } from "@/components/production/labels";
 import { Panel } from "@/components/sales/detail-bits";
 import { FormDialog } from "@/components/sales/dialogs";
 import { Button } from "@/components/ui/button";
+import { formatDay } from "@/lib/display";
 import type { TechPack } from "@/modules/production/tech-pack-approval.service";
-import { approveTechPackAction, lockFabricPartAction } from "@/server/actions/production.actions";
+import {
+  approveTechPackAction,
+  approveTrimsPartAction,
+  lockFabricPartAction,
+} from "@/server/actions/production.actions";
 import {
   approveTechPackOfAction,
+  approveTrimsPartOfAction,
   lockFabricPartOfAction,
 } from "@/server/actions/tech-pack.actions";
 
@@ -20,8 +26,11 @@ import {
  * A style's tech pack approval on its page: draft, its fabric part locked
  * (Fabric first) or approved for production, and what changed in its fabric
  * since, in red, until it is locked or approved again, and the red cells of
- * the tech pack that keep it from approval. Locking and approving are the
- * owner's (production.techpack.approve). A tech pack not linked to a style in
+ * the tech pack that keep it from approval. Once approved, a change to its
+ * trims, collar or cuff shows what changed, who changed it and when, and waits
+ * for "Approve the trims again" (v6.4.2): until then the style's trims bookings
+ * wait; its fabric bookings do not. Locking and approving are the owner's
+ * (production.techpack.approve). A tech pack not linked to a style in
  * production yet waits for one: its fabric part comes from there.
  */
 
@@ -38,7 +47,7 @@ export function TechPackApprovalPanel({
   /** On the tech pack page itself: no "Open the tech pack" button. */
   onTechPack?: boolean;
 }) {
-  const [asking, setAsking] = useState<"lock" | "approve" | null>(null);
+  const [asking, setAsking] = useState<"lock" | "approve" | "trims" | null>(null);
   const [notice, setNotice] = useState<string>();
   const approved = t.status === "APPROVED";
   // On the tech pack's page it is approved by the tech pack, else by the style.
@@ -47,10 +56,15 @@ export function TechPackApprovalPanel({
     byTechPack ? lockFabricPartOfAction(byTechPack) : lockFabricPartAction(projectId ?? "");
   const approve = () =>
     byTechPack ? approveTechPackOfAction(byTechPack) : approveTechPackAction(projectId ?? "");
+  const approveTrims = () =>
+    byTechPack ? approveTrimsPartOfAction(byTechPack) : approveTrimsPartAction(projectId ?? "");
+  const trimsWait = approved && t.trimsChanges.length > 0;
   const state = t.needsProject
     ? "Draft. Link it to a production project to lock its fabric part or approve it: its fabric and pieces come from the project."
     : approved
-      ? `Approved for production${t.approvedBy ? ` by ${t.approvedBy}` : ""}.`
+      ? `Approved for production${t.approvedBy ? ` by ${t.approvedBy}` : ""}.${
+          trimsWait ? " Its trims changed since: they wait to be approved again." : ""
+        }`
       : t.fabricLocked
         ? `Fabric part locked${t.fabricLockedBy ? ` by ${t.fabricLockedBy}` : ""}: its fabric can be booked first. The rest of the tech pack is still a draft.`
         : t.hasFabric
@@ -108,17 +122,57 @@ export function TechPackApprovalPanel({
           </p>
         </div>
       )}
+      {trimsWait && (
+        <div className="mt-4 rounded-md border border-destructive/30 bg-destructive/5 p-3">
+          <p className="text-sm font-medium text-destructive">
+            The trims changed since they were approved
+          </p>
+          <ul className="mt-2 grid gap-1 text-[0.8125rem]" aria-label="What changed in the trims">
+            {t.trimsChanges.map((c) => (
+              <li key={`${c.item}|${c.was}|${c.now}`} className="break-words">
+                {c.item}: <span className="text-muted-foreground line-through">{c.was}</span>{" "}
+                <span aria-hidden>→</span>
+                <span className="sr-only">now</span>{" "}
+                <span className="text-destructive">{c.now}</span>
+              </li>
+            ))}
+          </ul>
+          {t.trimsLog.length > 0 && (
+            <ul
+              className="mt-3 grid gap-1 text-[0.75rem] text-muted-foreground"
+              aria-label="Who changed them"
+            >
+              {t.trimsLog.map((entry) => (
+                <li key={`${String(entry.at)}|${entry.by ?? ""}`} className="break-words">
+                  Changed by {entry.by ?? "someone no longer here"} on {formatDay(entry.day)}:{" "}
+                  {entry.changes.map((c) => c.item).join(", ")}
+                </li>
+              ))}
+            </ul>
+          )}
+          <p className="mt-2 text-[0.8125rem] text-muted-foreground">
+            Trims, collar and cuff bookings for {code} wait until someone who approves tech packs
+            approves the trims again. Fabric bookings go on as before.
+          </p>
+        </div>
+      )}
       {notice && (
         <div className="mt-4">
           <FormAlert tone="success">{notice}</FormAlert>
         </div>
       )}
-      {(t.can.lock || t.can.approve) && (
+      {(t.can.lock || t.can.approve || t.can.approveTrims) && (
         <div className="mt-5 flex flex-wrap gap-2">
           {t.can.lock && !approved && (
             <Button type="button" size="sm" variant="outline" onClick={() => setAsking("lock")}>
               <LockIcon aria-hidden />
               {t.fabricLocked ? "Lock the fabric part again" : "Lock fabric part"}
+            </Button>
+          )}
+          {t.can.approveTrims && (
+            <Button type="button" size="sm" onClick={() => setAsking("trims")}>
+              <ScissorsIcon aria-hidden />
+              Approve the trims again
             </Button>
           )}
           {t.can.approve && (
@@ -141,6 +195,24 @@ export function TechPackApprovalPanel({
             const result = await lock();
             if (!result.ok) return result.error;
             setNotice(`The fabric part of ${code} is locked.`);
+            setAsking(null);
+          }}
+        >
+          {() => null}
+        </FormDialog>
+      )}
+      {asking === "trims" && (
+        <FormDialog
+          title={`Approve the trims of ${code} again?`}
+          description="Its trims, collar and cuff are approved as they are now, so their bookings can be approved. The fabric part is not touched."
+          submitLabel="Approve the trims again"
+          pendingLabel="Approving"
+          errorTitle="We could not approve the trims"
+          onClose={() => setAsking(null)}
+          onSubmit={async () => {
+            const result = await approveTrims();
+            if (!result.ok) return result.error;
+            setNotice(`The trims of ${code} are approved again.`);
             setAsking(null);
           }}
         >

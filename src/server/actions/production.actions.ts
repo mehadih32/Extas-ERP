@@ -189,6 +189,12 @@ export const approveTechPackAction = async (projectId: string) =>
     await techPacks.approveTechPack(await approveTechPacks(), projectId, await getRequestMeta());
     return { id: projectId };
   });
+/** Approves the style's trims (trims, collar, cuff) again after they changed since approval. */
+export const approveTrimsPartAction = async (projectId: string) =>
+  change(async () => {
+    await techPacks.approveTrimsPart(await approveTechPacks(), projectId, await getRequestMeta());
+    return { id: projectId };
+  });
 /** A first draft of the making notes (AI when it is set up, otherwise from rules); not saved. */
 export const draftTechPackNotesAction = async (projectId: string) =>
   runAction(async () => needs.draftTechPackNotes(await manage(), projectId));

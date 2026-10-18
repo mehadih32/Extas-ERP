@@ -676,19 +676,20 @@ forget_secrets_in_history() {
     say "$total line$([ "$total" -eq 1 ] || echo s) with a GitHub token or the Google client were taken out of shell history"
 }
 
-# No GitHub token stays on the server in plain text (A8): the old restore kept one
-# for a private repository. While the code can be read without it (the repository
-# is public), it is deleted and git stops using it.
+# No GitHub token stays on the server in plain text (A8, v6.4.1 B3): the old
+# restore kept one for a private repository. It is always deleted and git stops
+# using it, whether or not GitHub can be reached without it; if it cannot, the
+# owner is told what updates need. Nothing of the token is printed. The file may
+# be given (tests).
 forget_github_token() {
-  local file=/root/.extras-erp-git-credentials repo url
-  [ -f "$file" ] || return 0
+  local file="${1:-/root/.extras-erp-git-credentials}" repo url
+  [ -e "$file" ] || [ -L "$file" ] || return 0
   repo="$(dirname "$DEPLOY_DIR")"
+  git -C "$repo" config --unset-all credential.helper 2>/dev/null || true
+  shred -u "$file" 2>/dev/null || rm -f "$file"
+  say "The GitHub token kept on this server is deleted"
   url="$(git -C "$repo" remote get-url origin 2>/dev/null)" || return 0
-  if GIT_TERMINAL_PROMPT=0 git -c credential.helper= ls-remote --heads "$url" main >/dev/null 2>&1; then
-    git -C "$repo" config --unset-all credential.helper 2>/dev/null || true
-    shred -u "$file" 2>/dev/null || rm -f "$file"
-    say "The GitHub token kept on this server is deleted: the code needs none to update"
-  else
-    say "This server still keeps a GitHub token (GitHub could not be reached without it); it is tried again at the next update"
+  if ! GIT_TERMINAL_PROMPT=0 git -c credential.helper= ls-remote --heads "$url" main >/dev/null 2>&1; then
+    say "This server could not reach GitHub without it: updates need the repository to be public (GitHub > the repository > Settings > General > Change visibility), or GitHub to be reachable again"
   fi
 }

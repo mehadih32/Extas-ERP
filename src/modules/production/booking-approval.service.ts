@@ -321,6 +321,7 @@ const checkSelect = {
       status: true,
       expectedDate: true,
       batch: { select: { id: true, code: true, fabricFirstAt: true } },
+      project: { select: { id: true, code: true, targetQuantity: true } },
       lines: {
         orderBy: { id: "asc" },
         select: {
@@ -349,6 +350,9 @@ const checkSelect = {
  *    to be locked; without it, a tech pack not yet approved is only a warning.
  * On a batch, an item in no style's materials list counts for every open style
  * of the batch, so the gate cannot be skipped by booking something unlisted.
+ * Off any batch, a booking is for no style (a booking that goes on a batch
+ * later is approved again), unless its order is kept for one style: then that
+ * style's tech pack counts.
  */
 export async function approvalChecks(db: Db, bookingId: string): Promise<ApprovalCheck[]> {
   const b = await db.booking.findUniqueOrThrow({ where: { id: bookingId }, select: checkSelect });
@@ -406,6 +410,14 @@ export async function approvalChecks(db: Db, bookingId: string): Promise<Approva
     }
   }
   const batch = b.order.batch;
+  // Off any batch, an order kept for one style waits for that style's tech pack.
+  const own = !batch ? b.order.project : null;
+  if (own) {
+    for (const l of lines.filter((l) => l.shares.length === 0)) {
+      projects.set(own.id, own);
+      (l.specs.role === "FABRIC" ? fabricFor : restFor).add(own.id);
+    }
+  }
   const unlisted = batch ? lines.filter((l) => l.shares.length === 0) : [];
   if (batch && unlisted.length > 0) {
     const styles = await db.productionProject.findMany({

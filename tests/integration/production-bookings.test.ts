@@ -404,6 +404,26 @@ run("Bookings", () => {
       bookings.createBooking(env.pm, { ...base, expectedDate: "2020-01-01" }),
       "VALIDATION",
     );
+    // A trim booked as fabric would skip the tech pack wait of collar, cuff and trims;
+    // fabric counts as fabric only (as the form offers).
+    for (const line of [
+      { materialId: env.buttons.id, quantity: 10, specs: { role: "FABRIC" } },
+      {
+        name: "Flat knit collar",
+        kind: "TRIM",
+        unit: "PCS",
+        quantity: 10,
+        specs: { role: "FABRIC" },
+      },
+      { name: "Rib", kind: "FABRIC", unit: "KG", quantity: 10, specs: { role: "COLLAR" } },
+      { name: "Rib", kind: "FABRIC", unit: "KG", quantity: 10, specs: { role: "TRIM" } },
+    ]) {
+      const refused = await expectAppError(
+        bookings.createBooking(env.pm, { ...base, collar: null, lines: [line] }),
+        "VALIDATION",
+      );
+      expect(refused.message).toMatch(/fabric/i);
+    }
     expect(await prisma.booking.count()).toBe(0);
     expect(await prisma.purchaseOrder.count()).toBe(0);
   });

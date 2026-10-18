@@ -55,7 +55,7 @@ const ROLE_EDITOR = { systemRole: null, permissions: ["company.roles.manage"] };
 const member = (
   userId: string,
   role: {
-    systemRole: typeof SUPER_ADMIN.systemRole | typeof SALES.systemRole | null;
+    systemRole: SystemRole | null;
     permissions?: readonly string[];
   },
   extra: { isPlatformOwner?: boolean; worksElsewhere?: boolean } = {},

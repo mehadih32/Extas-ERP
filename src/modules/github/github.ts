@@ -93,106 +93,172 @@ type Repo = {
   permissions?: { admin?: boolean; push?: boolean; pull?: boolean };
 };
 
-/** The settings of the "Protect main" ruleset (Help: Full check, step 4), by GitHub's rule name. */
+/** The two rulesets on main the Help sets up (Full check, step 4), by the names it gives them. */
+export const LOCK_RULESET = "Protect main";
+export const UPDATE_RULESET = "Restrict updates";
+
+/** The check "Require status checks to pass" must ask for: the Checks workflow's job. */
+export const REQUIRED_CHECK = "Tests and build";
+
+/** The rules of "Protect main", by GitHub's rule name, in the words of its ruleset screen. */
 const LOCK_RULES = [
   ["pull_request", "Require a pull request before merging"],
+  ["required_status_checks", `Require status checks to pass (with ${REQUIRED_CHECK})`],
   ["non_fast_forward", "Block force pushes"],
   ["deletion", "Restrict deletions"],
 ] as const;
 
+/** GitHub's rule "Restrict updates": only who is on the ruleset's Bypass list may update main. */
+const UPDATE_RULE = "update";
+
+/** The repository admin role on a Bypass list, as GitHub names it (role 5 is "admin"). */
+const ADMIN_ROLE = { actor_type: "RepositoryRole", actor_id: 5 } as const;
+
 export const LOCK_MAIN_FIRST = "Lock main first";
 
-type BranchRule = { type: string; ruleset_id?: number };
+type BranchRule = {
+  type: string;
+  ruleset_id?: number;
+  parameters?: {
+    required_status_checks?: Array<{ context?: string }>;
+    required_approving_review_count?: number;
+  };
+};
+type BypassActor = { actor_type?: string; actor_id?: number | null; bypass_mode?: string };
 type Ruleset = {
+  name?: string;
   enforcement?: string;
   /** Only for a token that may change rulesets (GitHub hides it from the Help's token). */
-  bypass_actors?: unknown[];
-  /** Whether the token's own account may skip the ruleset: "always", "pull_requests_only", "never". */
+  bypass_actors?: BypassActor[];
+  /** Whether the token's own account may skip the ruleset: "always", "pull_requests_only", "exempt", "never". */
   current_user_can_bypass?: string;
-};
-type Protection = {
-  required_pull_request_reviews?: unknown;
-  allow_force_pushes?: { enabled?: boolean };
-  allow_deletions?: { enabled?: boolean };
-  enforce_admins?: { enabled?: boolean };
 };
 
 /**
- * Whether the main branch is locked on GitHub, so nothing (Claude Code
- * included) reaches it but a pull request: an active ruleset on main that
- * requires a pull request, blocks force pushes and restricts deletions, that
- * the token's own account may not skip and with nobody on its Bypass list; or
- * the older branch protection set the same way, for admins too. `missing`
- * says what is not set, in the words of GitHub's ruleset screen.
+ * Whether the main branch is locked on GitHub so that only the owner can merge
+ * into it (v6.4.2), as two rulesets on main, both active:
+ *   - "Protect main", with nobody on its Bypass list: a pull request first, the
+ *     "Tests and build" check passed, no force pushes, no deletion. Nobody
+ *     skips it, the owner neither.
+ *   - "Restrict updates" (GitHub's rule "Restrict updates"), in a ruleset of its
+ *     own, with only the repository admin role (the owner) on its Bypass list:
+ *     so only the owner merges, through the ERP's Merge (with the owner's token)
+ *     or on GitHub. Claude Code's GitHub App, the workflows' own tokens and any
+ *     other token cannot update main, so they cannot merge, even a pull request
+ *     whose checks passed.
+ * `missing` says what is not set, in the words of GitHub's ruleset screen.
  *
- * GitHub shows the Bypass list only to a token that may change rulesets, and
- * the Help's token may not (that permission could also take the lock off).
- * When the list is hidden but GitHub says the token's account cannot skip the
- * ruleset, main counts as locked and `bypassUnseen` says the list itself was
- * not seen; when GitHub says neither, it is not confirmed, so not locked.
+ * GitHub shows a Bypass list only to a token that may change rulesets, and the
+ * Help's token may not (that permission could also take the lock off). When a
+ * list is hidden, GitHub still says whether the token's own account (the
+ * owner's) may skip the ruleset: it must not skip "Protect main" and must skip
+ * "Restrict updates". Main then counts as locked and `bypassUnseen` says the
+ * lists themselves were not seen; when GitHub says neither, it is not
+ * confirmed, so not locked.
  */
 export async function mainLock(
   gh: GitHub,
 ): Promise<{ locked: boolean; missing: string[]; bypassUnseen?: boolean }> {
-  const { data: rules } = await call<BranchRule[]>(
+  const { data } = await call<BranchRule[]>(
     gh,
     "GET",
     `${repoPath(gh)}/rules/branches/${MAIN}?per_page=100`,
   );
-  const have = new Set((rules ?? []).map((r) => r.type));
-  const missing: string[] = LOCK_RULES.filter(([type]) => !have.has(type)).map(([, n]) => n);
-  if (missing.length === 0) {
-    // The rulesets that lock it: nobody may skip them.
-    const ids = [...new Set((rules ?? []).flatMap((r) => (r.ruleset_id ? [r.ruleset_id] : [])))];
-    let bypassUnseen = false;
-    for (const id of ids) {
-      const { status, data } = await call<Ruleset>(
-        gh,
-        "GET",
-        `${repoPath(gh)}/rulesets/${id}`,
-        undefined,
-        [403, 404],
-      );
-      const list = status === 200 ? data?.bypass_actors : undefined;
-      const can = status === 200 ? data?.current_user_can_bypass : undefined;
+  const rules = data ?? [];
+  const missing: string[] = [];
+  for (const [type, name] of LOCK_RULES) {
+    const found = rules.filter((r) => r.type === type);
+    if (type === "required_status_checks") {
+      const asked = found.flatMap((r) => r.parameters?.required_status_checks ?? []);
+      if (!asked.some((c) => c.context === REQUIRED_CHECK)) missing.push(name);
+    } else if (found.length === 0) {
+      missing.push(name);
+    }
+  }
+  // Approvals asked: nobody reviews Claude Code's fixes, so none could be merged.
+  if (
+    rules.some(
+      (r) => r.type === "pull_request" && (r.parameters?.required_approving_review_count ?? 0) > 0,
+    )
+  ) {
+    missing.push("Required approvals: 0 (in Require a pull request before merging)");
+  }
+  const updateIds = new Set(rules.filter((r) => r.type === UPDATE_RULE).flatMap(idOf));
+  if (updateIds.size === 0) {
+    missing.push(
+      `a second ruleset, ${UPDATE_RULESET}, with only Repository admin on its Bypass list`,
+    );
+  }
+  if (missing.length > 0) return { locked: false, missing };
+
+  // Who may skip each ruleset: nobody "Protect main", only the owner "Restrict updates".
+  const lockIds = new Set(rules.filter((r) => r.type !== UPDATE_RULE).flatMap(idOf));
+  let bypassUnseen = false;
+  for (const id of new Set([...lockIds, ...updateIds])) {
+    if (lockIds.has(id) && updateIds.has(id)) {
+      return {
+        locked: false,
+        missing: [`${UPDATE_RULESET} in a ruleset of its own (not in ${LOCK_RULESET})`],
+      };
+    }
+    const lock = lockIds.has(id);
+    const name = lock ? LOCK_RULESET : UPDATE_RULESET;
+    const { status, data: ruleset } = await call<Ruleset>(
+      gh,
+      "GET",
+      `${repoPath(gh)}/rulesets/${id}`,
+      undefined,
+      [403, 404],
+    );
+    const list = status === 200 ? ruleset?.bypass_actors : undefined;
+    const can = status === 200 ? ruleset?.current_user_can_bypass : undefined;
+    const unchecked = `${name} (the ERP could not check who may skip it)`;
+    if (lock) {
       if (Array.isArray(list) && list.length > 0) {
-        return { locked: false, missing: ["an empty Bypass list"] };
+        return { locked: false, missing: [`an empty Bypass list on ${LOCK_RULESET}`] };
       }
       if (can && can !== "never") {
         return {
           locked: false,
-          missing: ["an empty Bypass list (your token's GitHub account can skip the ruleset)"],
+          missing: [
+            `an empty Bypass list on ${LOCK_RULESET} (your token's GitHub account can skip it)`,
+          ],
         };
       }
       if (!Array.isArray(list) && !can) {
+        return { locked: false, missing: [`an empty Bypass list on ${unchecked}`] };
+      }
+    } else {
+      if (Array.isArray(list) && !(list.length === 1 && isAdminRole(list[0]!))) {
         return {
           locked: false,
-          missing: ["an empty Bypass list (the ERP could not check who may skip the ruleset)"],
+          missing: [`only Repository admin on the Bypass list of ${UPDATE_RULESET}`],
         };
       }
-      if (!Array.isArray(list)) bypassUnseen = true;
+      if (can === "never") {
+        return {
+          locked: false,
+          missing: [
+            `Repository admin on the Bypass list of ${UPDATE_RULESET} (your token's GitHub account cannot merge now, so the ERP's Merge would not work)`,
+          ],
+        };
+      }
+      if (!can) {
+        return {
+          locked: false,
+          missing: [`only Repository admin on the Bypass list of ${unchecked}`],
+        };
+      }
     }
-    return { locked: true, missing: [], ...(bypassUnseen ? { bypassUnseen } : {}) };
+    if (!Array.isArray(list)) bypassUnseen = true;
   }
-  // The older branch protection, when the token may read it.
-  const { status, data: p } = await call<Protection>(
-    gh,
-    "GET",
-    `${repoPath(gh)}/branches/${MAIN}/protection`,
-    undefined,
-    [403, 404],
-  );
-  if (
-    status === 200 &&
-    p?.required_pull_request_reviews &&
-    p.allow_force_pushes?.enabled !== true &&
-    p.allow_deletions?.enabled !== true &&
-    p.enforce_admins?.enabled === true
-  ) {
-    return { locked: true, missing: [] };
-  }
-  return { locked: false, missing };
+  return { locked: true, missing: [], ...(bypassUnseen ? { bypassUnseen } : {}) };
 }
+
+const idOf = (rule: BranchRule) => (rule.ruleset_id ? [rule.ruleset_id] : []);
+
+const isAdminRole = (actor: BypassActor) =>
+  actor.actor_type === ADMIN_ROLE.actor_type && actor.actor_id === ADMIN_ROLE.actor_id;
 
 /** What the token can do on the repository, in plain notes; whether main is locked. */
 export async function testGitHub(
@@ -230,10 +296,12 @@ export async function testGitHub(
   }
   const lock = await mainLock(gh);
   if (lock.locked) {
-    notes.push("The main branch is locked: changes reach it only through a pull request.");
+    notes.push(
+      `The main branch is locked: changes reach it only through a pull request that passed ${REQUIRED_CHECK}, and only you can merge it (with Merge here, or on GitHub).`,
+    );
     if (lock.bypassUnseen) {
       notes.push(
-        "The ERP cannot see the ruleset's Bypass list (GitHub shows it only to a token that may change rulesets). Your token's GitHub account cannot skip it; on GitHub, make sure the Bypass list is empty (Help: Full check, step 4).",
+        `The ERP cannot see the rulesets' Bypass lists (GitHub shows them only to a token that may change rulesets). GitHub says your token's GitHub account cannot skip ${LOCK_RULESET} and can skip ${UPDATE_RULESET}; on GitHub, make sure ${LOCK_RULESET}'s Bypass list is empty and ${UPDATE_RULESET}' holds only Repository admin (Help: Full check, step 4).`,
       );
     }
   } else {
@@ -245,7 +313,7 @@ export async function testGitHub(
 
 /** Why nothing goes to Claude Code yet, in plain words. */
 export const lockMainText = (missing: string[]) =>
-  `${LOCK_MAIN_FIRST}: nothing goes to Claude Code until the main branch on GitHub has its ruleset (Help: Full check, step 4)${missing.length ? `. Still to set: ${missing.join(", ")}` : ""}. Then press Test the connection.`;
+  `${LOCK_MAIN_FIRST}: nothing goes to Claude Code until the main branch on GitHub has its two rulesets, ${LOCK_RULESET} and ${UPDATE_RULESET} (Help: Full check, step 4)${missing.length ? `. Still to set: ${missing.join("; ")}` : ""}. Then press Test the connection.`;
 
 async function defaultBranch(gh: GitHub): Promise<string> {
   return (await call<Repo>(gh, "GET", repoPath(gh))).data.default_branch;

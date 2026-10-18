@@ -200,6 +200,11 @@ overwrites a stored total or figure.
 
 ## 9. Decisions log (newest first)
 
+- 2026-10-18 (v6.4.2): only the owner merges into `main`. Two rulesets on `main`, both active: "Protect main"
+  with an empty Bypass list (pull request, the "Tests and build" check, no force pushes, no deletion) and
+  "Restrict updates" in a ruleset of its own whose Bypass list holds only Repository admin (the owner). The ERP's
+  Merge (the owner's token, with the PIN) and the owner on GitHub can merge; Claude Code's GitHub App and every
+  other token cannot. Test the connection checks exactly this, and Claude Code stays off until both are right.
 - 2026-10-18 (v6.4.1): every release ends with the readiness report (section 1, item 8) after up to 3 rounds
   of fresh whole-ERP reviews; "is anything left?" is answered from a fresh check of the code and the live site.
   After each deploy Bug Guard checks the live ERP once, read-only (no AI unless the owner turned it on), into the

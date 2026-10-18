@@ -506,6 +506,27 @@ Set it up once:
    workflow**. It takes as long as `deploy.sh` by hand. A green tick means the server runs
    the newest version.
 
+5. **Lock `main` so that only you can merge into it.** Every merge into `main` goes live,
+   so `main` takes changes only through a pull request that passed its checks, and only you
+   merge (with **Merge** in the ERP, AI Center > Full check, or on GitHub as yourself);
+   Claude Code's GitHub App and every other token cannot. Make two rulesets in the
+   repository's **Settings → Rules → Rulesets** (the Help Center's Full check guide, step
+   4, has the same steps in Bengali):
+   - **New ruleset → New branch ruleset**, name `Protect main`, **Enforcement status**
+     Active, **Target branches → Add target → Include default branch**. Tick **Restrict
+     deletions**, **Require a pull request before merging** (Required approvals 0),
+     **Require status checks to pass** (**Add checks** → `Tests and build`) and **Block
+     force pushes**. Leave its **Bypass list** empty, then **Create**.
+   - **New ruleset → New branch ruleset** again, name `Restrict updates`, **Enforcement
+     status** Active, **Include default branch**. Tick only **Restrict updates**. In its
+     **Bypass list** press **Add bypass** and choose **Repository admin**, nobody else (no
+     app, no Maintain or Write role, no deploy key), then **Create**.
+
+   Keep the two apart: in one ruleset, its Bypass list would let you skip the pull request
+   and the checks too. Then press **Test the connection** in AI Center > Full check: it says
+   "The main branch is locked" once both are right (until then it says "Lock main first"
+   and what is still to set, and nothing goes to Claude Code).
+
 From then on:
 
 - Each merge into `main` is installed by itself. A merge made during an update is installed

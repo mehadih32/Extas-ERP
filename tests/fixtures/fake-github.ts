@@ -52,6 +52,54 @@ export type FakeRun = {
   created_at: string;
 };
 
+/** One of the repository's rulesets, as GitHub keeps it. */
+export type FakeRuleset = {
+  name: string;
+  enforcement: "active" | "evaluate" | "disabled";
+  /** The kinds of rule it holds, by GitHub's name ("pull_request", "update"...). */
+  rules: string[];
+  /** The checks "Require status checks to pass" asks for. */
+  statusChecks?: string[];
+  /** "Required approvals" of "Require a pull request before merging". */
+  approvals?: number;
+  /**
+   * Who may skip it (its Bypass list); null when the token may not see it, as GitHub
+   * does for a token that may not change rulesets (the Help's token: the default).
+   */
+  bypass: Array<{ actor_type: string; actor_id: number | null; bypass_mode: string }> | null;
+  /** Whether the token's own account may skip it (null: GitHub does not say). */
+  canBypass: "always" | "pull_requests_only" | "never" | "exempt" | null;
+  /** It cannot be read at all (GitHub answers 404). */
+  hidden?: boolean;
+};
+
+/** The repository admin role on a Bypass list, as GitHub writes it. */
+export const REPOSITORY_ADMIN = {
+  actor_type: "RepositoryRole",
+  actor_id: 5,
+  bypass_mode: "always",
+};
+
+/** The two rulesets on main the Help sets up (Full check, step 4): 7 and 8. */
+export const helpRulesets = (): Record<number, FakeRuleset> => ({
+  7: {
+    name: "Protect main",
+    enforcement: "active",
+    rules: ["deletion", "non_fast_forward", "pull_request", "required_status_checks"],
+    statusChecks: ["Tests and build"],
+    approvals: 0,
+    bypass: null,
+    canBypass: "never",
+  },
+  8: {
+    name: "Restrict updates",
+    enforcement: "active",
+    rules: ["update"],
+    bypass: null,
+    canBypass: "always",
+  },
+});
+
 export type FakeGitHub = {
   url: string;
   issuer: string;
@@ -78,19 +126,8 @@ export type FakeGitHub = {
     /** The commits and changed files of each pull request. */
     pullCommits: Record<number, FakeCommit[]>;
     pullFiles: Record<number, FakeFile[]>;
-    /** The rules of the active rulesets on main (the Help's "Protect main" by default). */
-    mainRules: string[];
-    /**
-     * Who may skip that ruleset (its Bypass list); null when the token may not see it, as
-     * GitHub does for a token that may not change rulesets (the Help's token: the default).
-     */
-    rulesetBypass: Array<{ actor_type: string }> | null;
-    /** Whether the token's own account may skip that ruleset (null: GitHub does not say). */
-    currentUserCanBypass: "always" | "pull_requests_only" | "never" | null;
-    /** The ruleset cannot be read at all (GitHub answers 404). */
-    rulesetHidden?: boolean;
-    /** The old kind of branch protection on main, when set. */
-    classicProtection: Record<string, unknown> | null;
+    /** The repository's rulesets on main, by id (the Help's two by default). */
+    rulesets: Record<number, FakeRuleset>;
   };
   /** A GitHub Actions token (OpenID Connect), signed with the fake issuer's key or another. */
   actionsToken: (claims: Record<string, unknown>, opts?: { otherKey?: boolean }) => string;
@@ -145,10 +182,7 @@ export async function startFakeGitHub(
     branchCommits: {},
     pullCommits: {},
     pullFiles: {},
-    mainRules: ["deletion", "non_fast_forward", "pull_request", "required_status_checks"],
-    rulesetBypass: null,
-    currentUserCanBypass: "never",
-    classicProtection: null,
+    rulesets: helpRulesets(),
   };
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
@@ -175,32 +209,44 @@ export async function startFakeGitHub(
       });
     }
     if (rest === "/rules/branches/main") {
+      // Only the rules of active rulesets apply.
       return send(
         200,
-        state.mainRules.map((type) => ({
-          type,
-          ruleset_source_type: "Repository",
-          ruleset_source: state.repo,
-          ruleset_id: 7,
-        })),
+        Object.entries(state.rulesets)
+          .filter(([, r]) => r.enforcement === "active")
+          .flatMap(([id, r]) =>
+            r.rules.map((type) => ({
+              type,
+              ruleset_source_type: "Repository",
+              ruleset_source: state.repo,
+              ruleset_id: Number(id),
+              ...(type === "required_status_checks"
+                ? {
+                    parameters: {
+                      strict_required_status_checks_policy: false,
+                      required_status_checks: (r.statusChecks ?? []).map((context) => ({
+                        context,
+                      })),
+                    },
+                  }
+                : type === "pull_request"
+                  ? { parameters: { required_approving_review_count: r.approvals ?? 0 } }
+                  : {}),
+            })),
+          ),
       );
     }
-    if (rest === "/rulesets/7") {
-      if (state.rulesetHidden) return send(404, { message: "Not Found" });
+    if ((m = rest.match(/^\/rulesets\/(\d+)$/))) {
+      const r = state.rulesets[Number(m[1])];
+      if (!r || r.hidden) return send(404, { message: "Not Found" });
       return send(200, {
-        id: 7,
-        name: "Protect main",
-        enforcement: "active",
-        ...(state.rulesetBypass ? { bypass_actors: state.rulesetBypass } : {}),
-        ...(state.currentUserCanBypass
-          ? { current_user_can_bypass: state.currentUserCanBypass }
-          : {}),
+        id: Number(m[1]),
+        name: r.name,
+        target: "branch",
+        enforcement: r.enforcement,
+        ...(r.bypass ? { bypass_actors: r.bypass } : {}),
+        ...(r.canBypass ? { current_user_can_bypass: r.canBypass } : {}),
       });
-    }
-    if (rest === "/branches/main/protection") {
-      return state.classicProtection
-        ? send(200, state.classicProtection)
-        : send(404, { message: "Branch not protected" });
     }
     if ((m = rest.match(/^\/actions\/workflows\/([^/]+)$/))) {
       const found = state.workflows[m[1]!];
@@ -313,6 +359,11 @@ export async function startFakeGitHub(
       const pull = state.pulls.find((p) => p.number === Number(m![1]));
       if (!pull || pull.head.sha !== body?.sha)
         return send(409, { message: "Head branch was modified" });
+      // "Restrict updates": only someone who may skip it can merge into main.
+      const blocked = Object.values(state.rulesets).some(
+        (r) => r.enforcement === "active" && r.rules.includes("update") && r.canBypass === "never",
+      );
+      if (blocked) return send(405, { message: "Repository rule violations found" });
       pull.state = "closed";
       pull.merged_at = new Date().toISOString();
       state.merged.push({ number: pull.number, sha: pull.head.sha });

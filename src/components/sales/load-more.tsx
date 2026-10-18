@@ -122,10 +122,11 @@ export function RowCard({
         onClick={onOpen ? openInstead(onOpen) : undefined}
         className="group block rounded-lg border bg-card p-4 transition-colors outline-none hover:border-primary/40 focus-visible:ring-[3px] focus-visible:ring-ring/25"
       >
-        <div className="flex items-start justify-between gap-3">
+        {/* Many badges (a booking's status, revision, lateness and fabric at risk) go under the eyebrow on a phone. */}
+        <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
           <p className="eyebrow min-w-0 break-words">{eyebrow}</p>
           {badges && (
-            <div className="-my-1 flex shrink-0 flex-wrap justify-end gap-1.5">{badges}</div>
+            <div className="-my-1 flex min-w-0 flex-wrap justify-end gap-1.5">{badges}</div>
           )}
         </div>
         <p className="mt-2 font-serif text-lg leading-snug break-words text-primary">{title}</p>

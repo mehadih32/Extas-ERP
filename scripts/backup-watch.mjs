@@ -6,6 +6,8 @@
 // "checked" once every file was compared), and tells the owner on Telegram when
 // it is late by the owner's schedule, when Drive cannot be read, and once a week
 // that all is well. A run started by hand ("Run workflow") always says how it went.
+// Backups switched off on purpose (the newest backup's folder says so) are told
+// once, at the first run after the switch, then only in the weekly message.
 //
 // The values come from GitHub's repository secrets, which the ERP fills in itself
 // (Settings > Backups, "Set up the alert on GitHub"): nothing is typed or shown.
@@ -35,6 +37,8 @@ const FOLDER = "application/vnd.google-apps.folder";
 const HOUR = 3_600_000;
 /** Late after this when the newest backup does not say when the next one is due. */
 export const DEFAULT_LATE_HOURS = 26;
+/** How often GitHub runs it on its clock (.github/workflows/backup-watch.yml). */
+const RUN_EVERY_MS = 6 * HOUR;
 /** Pages of 100 backup folders read at most (5,000 backups). */
 const MAX_PAGES = 50;
 const TIMEOUT_MS = 30_000;
@@ -136,17 +140,22 @@ const timeOf = (text) => {
 /**
  * The newest backup that reached Drive whole: the ERP labels a backup's folder
  * "checked" once every file in it matched the server's, and an update's safety
- * copy (kind SAFETY_COPY) is not a backup. Null when there is none.
+ * copy (kind SAFETY_COPY) is not a backup, nor is one made by a restored copy
+ * waiting on standby (labelled "standby"), which says nothing about the ERP in
+ * use. Null when there is none. offAt: when the owner switched backups off (the
+ * ERP labels the newest backup so), else null.
  */
 export function newestBackup(folders) {
   let newest = null;
   for (const folder of folders) {
     const labels = folder.appProperties ?? {};
-    if (labels.checked !== "yes" || labels.kind === "SAFETY_COPY") continue;
+    if (labels.checked !== "yes" || labels.kind === "SAFETY_COPY" || labels.standby === "yes") {
+      continue;
+    }
     const madeAt = timeOf(labels.createdAt) ?? timeOf(folder.createdTime);
     if (madeAt === null) continue;
     if (!newest || madeAt > newest.madeAt) {
-      newest = { madeAt, nextAt: timeOf(labels.nextAt) };
+      newest = { madeAt, nextAt: timeOf(labels.nextAt), offAt: timeOf(labels.backupsOffAt) };
     }
   }
   return newest;
@@ -158,12 +167,17 @@ export function newestBackup(folders) {
  * passed by as long again as the gap between the two (at least 2 hours, at most
  * a day): with backups twice a day, a day after the newest one. A fixed number
  * of hours (the repository variable) wins when set; without either, 26 hours.
- * @param {{ madeAt: number, nextAt: number | null } | null} newest
+ * Backups switched off on purpose are never late ("off", with when).
+ * @param {{ madeAt: number, nextAt: number | null, offAt?: number | null } | null} newest
  * @param {number} now
  * @param {number | null} [fixedLateHours]
  */
 export function judge(newest, now, fixedLateHours = null) {
   if (!newest) return { state: "none" };
+  const ageHours = Math.max(0, Math.floor((now - newest.madeAt) / HOUR));
+  if (newest.offAt) {
+    return { state: "off", madeAt: newest.madeAt, ageHours, offAt: newest.offAt };
+  }
   let lateAt;
   if (fixedLateHours) {
     lateAt = newest.madeAt + fixedLateHours * HOUR;
@@ -173,12 +187,7 @@ export function judge(newest, now, fixedLateHours = null) {
   } else {
     lateAt = newest.madeAt + DEFAULT_LATE_HOURS * HOUR;
   }
-  return {
-    state: now > lateAt ? "late" : "ok",
-    madeAt: newest.madeAt,
-    ageHours: Math.max(0, Math.floor((now - newest.madeAt) / HOUR)),
-    lateAt,
-  };
+  return { state: now > lateAt ? "late" : "ok", madeAt: newest.madeAt, ageHours, lateAt };
 }
 
 const hours = (n) => (n < 1 ? "1 ঘণ্টার কম" : `${n} ঘণ্টা`);
@@ -208,6 +217,14 @@ export function telegramText(result) {
       "⚠️ Extas ERP: Google Drive-এ কোনো পুরো ব্যাকআপ নেই",
       "ERP-র তৈরি এমন কোনো ব্যাকআপ পাওয়া গেল না যার সব ফাইল Drive-এ মিলিয়ে দেখা হয়েছে।",
       "ERP-তে “Settings” > “Backups” খুলে দেখুন; ERP না খুললে সার্ভার বন্ধ থাকতে পারে।",
+      FROM_GITHUB,
+    ].join("\n");
+  }
+  if (result.state === "off") {
+    return [
+      "ℹ️ Extas ERP: ব্যাকআপ বন্ধ আছে",
+      `ERP-তে সময়সূচির ব্যাকআপ বন্ধ করা আছে। Google Drive-এ সবচেয়ে নতুন পুরো ব্যাকআপ ${hours(result.ageHours)} আগের (${dhaka(result.madeAt)})।`,
+      "এটা আপনি নিজে বন্ধ না করে থাকলে, বা আবার চালু করতে চাইলে, ERP-তে “Settings” > “Backups” খুলুন। বন্ধ থাকলে এই খবর সপ্তাহে একবার আসে।",
       FROM_GITHUB,
     ].join("\n");
   }
@@ -301,6 +318,10 @@ export async function watch({
   }
   if (result.state === "ok") {
     log(`OK: the newest backup in Google Drive is ${result.ageHours} hour(s) old.`);
+  } else if (result.state === "off") {
+    log(
+      `Backups are switched off on the Backups screen; the newest backup in Google Drive is ${result.ageHours} hour(s) old.`,
+    );
   } else if (result.state === "late") {
     log(`Late: the newest backup in Google Drive is ${result.ageHours} hour(s) old.`);
   } else if (result.state === "none") {
@@ -308,7 +329,11 @@ export async function watch({
   } else {
     log(`Google Drive could not be read: ${result.reason}.`);
   }
-  const tell = result.state !== "ok" || event !== "schedule" || weeklyNoteDue(now, event);
+  // Switched off on purpose: said at the first run after the switch, then weekly.
+  const quiet =
+    result.state === "ok" ||
+    (result.state === "off" && !(now >= result.offAt && now < result.offAt + RUN_EVERY_MS));
+  const tell = !quiet || event !== "schedule" || weeklyNoteDue(now, event);
   if (tell) {
     try {
       await sendTelegram(env, telegramText(result), fetchImpl);
@@ -318,7 +343,7 @@ export async function watch({
       return 1;
     }
   }
-  return result.state === "ok" ? 0 : 1;
+  return result.state === "ok" || result.state === "off" ? 0 : 1;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {

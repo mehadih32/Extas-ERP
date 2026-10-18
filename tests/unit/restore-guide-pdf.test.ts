@@ -50,10 +50,15 @@ function literalBytes(body: string): Buffer {
 function pdfStrings(pdf: Buffer): string {
   const out: string[] = [];
   const raw = pdf.toString("latin1");
-  for (const m of raw.matchAll(/stream\r?\n([\s\S]*?)\r?\nendstream/g)) {
+  // Each stream by its /Length: its last byte may be a \r, which a search for
+  // "\r\nendstream" would take away.
+  for (const m of raw.matchAll(/\/Length (\d+)[^>]*>>\s*stream\r?\n/g)) {
+    const start = m.index! + m[0].length;
     let content: string;
     try {
-      content = inflateSync(Buffer.from(m[1]!, "latin1")).toString("latin1");
+      content = inflateSync(Buffer.from(raw.slice(start, start + Number(m[1])), "latin1")).toString(
+        "latin1",
+      );
     } catch {
       continue;
     }

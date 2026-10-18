@@ -40,7 +40,7 @@ set -euo pipefail
 umask 022
 
 REPO=mehadih32/Extas-ERP
-RESTORE_TOOL_SHA256=b3d92d68d798984279f63b8e567d3deb59347ed34d3d17aaad96118f50f2ce1f
+RESTORE_TOOL_SHA256=60880331308c65328fd87a4361ba33ef8cd463dff57adcf95ac11c65a1ee3320
 # Drills only: a stand-in for raw.githubusercontent.com (the tool is still checked).
 RAW_BASE="${EXTAS_RAW_BASE:-https://raw.githubusercontent.com}"
 SEARCH_ROOTS="${EXTAS_SEARCH_ROOTS:-/opt /srv /home /root /var/lib /data /mnt}"
@@ -112,17 +112,19 @@ apt_busy() {
   fi
   pgrep -x 'apt|apt-get|dpkg|unattended-upgr|aptd' >/dev/null 2>&1
 }
+# One time limit for both waits (cloud-init, then apt's lock): 30 minutes in all.
 wait_for_apt() {
-  local waited=0 limit="${APT_WAIT_SECONDS:-1800}" said=0
+  local waited=0 limit="${APT_WAIT_SECONDS:-1800}" said=0 start="$SECONDS"
   if command -v cloud-init >/dev/null 2>&1; then
     timeout "$limit" cloud-init status --wait >/dev/null 2>&1 || true
+    waited=$((SECONDS - start))
   fi
   while apt_busy; do
+    [ "$waited" -lt "$limit" ] || return 1
     if [ "$said" = 0 ]; then
-      note "The server is installing its own updates first; waiting for them to finish (up to $((limit / 60)) minutes)..."
+      note "The server is installing its own updates first; waiting for them to finish (up to $(((limit - waited + 59) / 60)) minutes)..."
       said=1
     fi
-    [ "$waited" -lt "$limit" ] || return 1
     sleep 5
     waited=$((waited + 5))
   done
@@ -203,6 +205,15 @@ choose_install() {
   if [ "${#installs[@]}" -eq 0 ]; then
     [ "$unfinished" = 1 ] || note "None: this is a new server."
   else
+    # A drill never runs over an ERP in use: only on a new server, or again over a
+    # drill copy (its data folder holds the drill's mark).
+    if [ -n "${drill:-}" ]; then
+      for line in "${installs[@]}"; do
+        IFS='|' read -r i_dir i_data i_domain i_running i_has_data <<<"$line"
+        [ -f "$i_data/backups/.drill" ] ||
+          fail R31 "this server already has an Extas ERP that is not a drill copy (${i_domain:-in $i_data}), so a drill does not run here. A drill needs a new test server: make one as the guide's drill part says. Nothing was changed."
+      done
+    fi
     say "This server already has Extas ERP"
     for line in "${installs[@]}"; do
       IFS='|' read -r i_dir i_data i_domain i_running i_has_data <<<"$line"
@@ -237,22 +248,34 @@ choose_install() {
 # --- A practice drill (the guide's "Practice: a restore drill") --------------------
 
 # The drill's own web address and test mode, on the settings file $1 with the data
-# folder $2: a test address is asked (never the ERP's own or its demo site's), set
-# as APP_DOMAIN with the demo site off, so the real address's DNS is never touched;
-# and DATA/backups/.drill marks the copy as a drill before the ERP first starts:
-# no emails, bot messages, Drive backups or scheduled jobs (standby.ts reads it).
+# folder $2 ($3: the web address in the backup, when known): a test address is asked
+# (never the ERP's own or its demo site's), set as APP_DOMAIN with the demo site off,
+# so the real address's DNS is never touched; and DATA/backups/.drill marks the copy
+# as a drill before the ERP first starts: no emails, bot messages, Drive backups or
+# scheduled jobs (standby.ts reads it). The real address is kept as DRILL_OF, so a
+# drill run again on the same test server (its APP_DOMAIN is the drill's by then)
+# still knows it; such a run keeps the drill address in its mark, without asking.
 drill_settings() {
-  local env_file="$1" data="$2" live live_demo example test_domain
-  live="$(plain_domain "$APP_DOMAIN")"
+  local env_file="$1" data="$2" live live_demo example test_domain earlier
+  live="$(plain_domain "$(env_get "$env_file" DRILL_OF)")"
+  [ -n "$live" ] || live="$(plain_domain "${3:-}")"
+  [ -n "$live" ] || live="$(plain_domain "$APP_DOMAIN")"
   case "$live" in *.*.*) live_demo="demo.${live#*.}" ;; *) live_demo="demo.$live" ;; esac
   example="drill.${live#*.}"
-  test_domain="$(plain_domain "$(answer drill_domain "Test web address for this drill (for example $example): ")")"
+  earlier="$(python3 -I -c 'import json, sys; print(json.load(open(sys.argv[1])).get("address") or "")' \
+    "$data/backups/.drill" 2>/dev/null || true)"
+  if [ -n "$earlier" ]; then
+    test_domain="$(plain_domain "$earlier")"
+    note "This server holds a drill copy for $test_domain: the drill runs again at that address."
+  else
+    test_domain="$(plain_domain "$(answer drill_domain "Test web address for this drill (for example $example): ")")"
+  fi
   { [[ "$test_domain" =~ ^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$ ]] && [ "$test_domain" != "$live" ] &&
     [ "$test_domain" != "$live_demo" ] &&
     [ "$test_domain" != "$(plain_domain "$(env_get "$env_file" DEMO_DOMAIN)")" ]; } ||
     fail R30 "\"$test_domain\" cannot be the drill's web address. Type a new test address like $example, never the ERP's own ($live) or its demo site's."
-  sed -i -e '/^APP_DOMAIN=/d' -e '/^DEMO_SITE=/d' "$env_file"
-  printf 'APP_DOMAIN=%s\nDEMO_SITE=off\n' "$test_domain" >>"$env_file"
+  sed -i -e '/^APP_DOMAIN=/d' -e '/^DEMO_SITE=/d' -e '/^DRILL_OF=/d' "$env_file"
+  printf 'APP_DOMAIN=%s\nDEMO_SITE=off\nDRILL_OF=%s\n' "$test_domain" "$live" >>"$env_file"
   APP_DOMAIN="$test_domain"
   mkdir -p "$data/backups"
   printf '{"address":"%s","startedAt":"%s"}\n' "$test_domain" "$(date -u -d "@$started" +%Y-%m-%dT%H:%M:%SZ)" \
@@ -330,7 +353,7 @@ fi
 # data folder $3, and the drill's result (drill_result) into the mark $2.
 if [ "${1:-}" = --drill-settings ]; then
   APP_DOMAIN="$(env_get "${2:?}" APP_DOMAIN)"
-  drill_settings "$2" "${3:?}"
+  drill_settings "$2" "${3:?}" "${4:-}"
   echo "DRILL $APP_DOMAIN"
   exit 0
 fi
@@ -347,6 +370,8 @@ fi
 
 # Drills and tests only: the A6 decision alone; nothing is changed.
 if [ "${1:-}" = --choose ]; then
+  drill=""
+  [ "${2:-}" != --drill ] || drill=1
   detect_installs
   choose_install
   echo "CHOSEN $DIR|$DATA"
@@ -438,10 +463,11 @@ choose_install
 step "Installing the restore tools"
 export DEBIAN_FRONTEND=noninteractive
 apt_get() { apt-get -o DPkg::Lock::Timeout=900 -q "$@"; }
-# An install cut off earlier (the VM restarted) is finished first, or nothing installs.
-dpkg --configure -a >/dev/null 2>&1 || true
 wait_for_apt ||
   fail R05 "the restore tools could not be installed: the server's own updates did not finish in 30 minutes. Restart the VM in Azure, then paste the command again."
+# An install cut off earlier (the VM restarted) is finished first, or nothing installs;
+# only once the server's own updates are done, so the two never run at once.
+dpkg --configure -a >/dev/null 2>&1 || true
 if ! { apt_get update >/dev/null && apt_get install -y --no-install-recommends \
   ca-certificates curl git python3 python3-cryptography >/dev/null; }; then
   fail R05 "the restore tools could not be installed. Wait 5 minutes (a new server installs its own updates first), then paste the command again."
@@ -525,7 +551,7 @@ if [ -z "$drill" ] && [ -f "$DATA/backups/.drill" ]; then
   drill=1
   note "This server holds a restore drill copy, so this run is a drill too (test mode)."
 fi
-[ -z "$drill" ] || drill_settings "$env_file" "$DATA"
+[ -z "$drill" ] || drill_settings "$env_file" "$DATA" "$(tool fact --work "$WORK" appDomain)"
 note "Web address: $APP_DOMAIN; data folder: $DATA"
 
 step "Preparing the server (system updates, Docker, firewall: about 5 minutes)"
@@ -563,12 +589,35 @@ rm -f "$WORK/opened-copy"
 # The backup is in: what is left in $WORK is deleted when the restore ends, the download too.
 restored=1
 
+# The screens that did not open in restore.sh's check, and every table and file
+# compared with the backup: both before the web address question, which never comes
+# when either found a problem.
+screen_problems="$(python3 -c 'import json, sys; print(len(json.load(open(sys.argv[1])).get("checks", [])))' "$WORK/restore-result.json" 2>/dev/null || echo "?")"
+
+step "Comparing every table and file with the backup"
+compare=0
+tool compare --work "$WORK" --manifest "$WORK/manifest.json" --counts "$WORK/counts.json" \
+  --uploads "$DATA/uploads" --result "$WORK/compare.json" || compare=$?
+
 step "Pointing the web address at this server"
-# Only now that the restore went well: the web address never comes to a server that
-# could not restore the backup.
-tool dns --work "$WORK" --deploy "$DIR/deploy" ||
-  warn W02 "the web address was not changed (the lines above say why). Point it to this server's Public IP address yourself (see W01)."
-if [ -n "$(tool fact --work "$WORK" dnsMoved)" ]; then
+# Only now that the restore went well, and every screen opened and everything came
+# back: the web address never comes to a server that could not restore the backup.
+if [ "$compare" = 0 ] && [ "$screen_problems" = 0 ]; then
+  tool dns --work "$WORK" --deploy "$DIR/deploy" --drill "$drill" ||
+    warn W02 "the web address was not changed (the lines above say why). Point it to this server's Public IP address yourself (see W01)."
+else
+  warn W13 "the web address was not moved to this server, because the checks found problems (above): read them first. When this ERP is right, point the web address here yourself (step F6)."
+fi
+moved="$(tool fact --work "$WORK" dnsMoved)"
+# Restored over the ERP in use, or pointed here by hand already: the web address
+# reaches this server, so this ERP is the one in use and never waits on standby.
+# shellcheck source=/dev/null
+if [ -z "$moved" ] && [ "$APP_DOMAIN" != localhost ] &&
+  (cd "$DIR" && source deploy/lib.sh && web_address_here "$APP_DOMAIN" "$DATA/backups/.standby") >/dev/null 2>&1; then
+  note "$APP_DOMAIN already points to this server."
+  moved=yes
+fi
+if [ -n "$moved" ]; then
   rm -f "$DATA/backups/.standby"
   standby=0
   # HTTPS: Caddy asks for the certificate again at once, now that the address points here.
@@ -605,7 +654,6 @@ case "$demo" in
 esac
 
 step "Running the checks"
-screen_problems="$(python3 -c 'import json, sys; print(len(json.load(open(sys.argv[1])).get("checks", [])))' "$WORK/restore-result.json" 2>/dev/null || echo "?")"
 if [ -x "$DIR/deploy/bug-guard.sh" ]; then
   # Every company, only reading; its report goes to the inbox and Telegram (G1).
   bug_guard=0
@@ -628,11 +676,6 @@ fi
 if [ "$screen_problems" != 0 ]; then
   warn W05 "$screen_problems screen(s) or PDF(s) did not open in the check (listed above). The ERP runs; tell the developer."
 fi
-
-step "Comparing every table and file with the backup"
-compare=0
-tool compare --work "$WORK" --manifest "$WORK/manifest.json" --counts "$WORK/counts.json" \
-  --uploads "$DATA/uploads" --result "$WORK/compare.json" || compare=$?
 
 step "Checking HTTPS"
 https_ok=0

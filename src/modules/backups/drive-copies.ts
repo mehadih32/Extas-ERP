@@ -141,15 +141,17 @@ export async function sendToDrive(runId: string): Promise<BackupRun> {
  * When the owner's schedule makes the next backup after this one, as a label on
  * its folder in Drive: the late-backup alert on GitHub (scripts/backup-watch.mjs)
  * reads it there, so it knows the schedule without asking this server. None for
- * a safety copy, or while backups are off.
+ * a safety copy; while backups are off, that they are off (the alert then says
+ * so once and weekly, instead of "late" every 6 hours).
  */
 export function nextLabel(
   config: BackupConfig,
   kind: BackupRun["kind"],
   createdAt: string,
-): { nextAt?: string } {
+): { nextAt?: string; backupsOffAt?: string } {
   const made = new Date(createdAt);
-  if (kind !== "BACKUP" || !config.isEnabled || Number.isNaN(made.getTime())) return {};
+  if (kind !== "BACKUP" || Number.isNaN(made.getTime())) return {};
+  if (!config.isEnabled) return { backupsOffAt: made.toISOString() };
   try {
     const next = nextRunAt(scheduleOf(config), config.timezone, made);
     return next ? { nextAt: next.toISOString() } : {};
@@ -157,6 +159,32 @@ export function nextLabel(
     // A schedule that cannot be read never stops the backup reaching Drive.
     return {};
   }
+}
+
+/**
+ * Backups switched off or on, or a new schedule (the Backups screen): the newest
+ * backup's folder in Drive is labelled again for the late-backup alert on GitHub,
+ * with since when they are off, or when the next one is due from now. A copy on
+ * standby never labels the ERP in use's backups. False when nothing was labelled.
+ */
+export async function labelNewestForWatch(config: BackupConfig, now = new Date()) {
+  const { onStandby } = await import("@/modules/backups/standby");
+  if (await onStandby()) return false;
+  const token = await driveToken(config);
+  if (!token) return false;
+  const newest = (await listBackupFolders(token, await driveRoot(config, token))).find(
+    (f) => f.kind === "BACKUP" && f.checked && !f.standby,
+  );
+  if (!newest) return false;
+  const next = config.isEnabled ? nextRunAt(scheduleOf(config), config.timezone, now) : null;
+  await drive.label(
+    token,
+    newest.folderId,
+    config.isEnabled
+      ? { backupsOffAt: null, nextAt: next ? next.toISOString() : null }
+      : { nextAt: null, backupsOffAt: now.toISOString() },
+  );
+  return true;
 }
 
 /** Sends again, once an hour, the backups that did not reach Drive. */
@@ -291,16 +319,19 @@ export async function ensureKeysFile(config: BackupConfig, token: string, rootId
  * Drive yet); a safety copy's locked copy is kept for the retention period
  * while it waits for Drive. In Drive: each checked backup for `driveKeepDays`
  * days (null: for ever), never the newest; the newest 10 safety copies; a copy
- * never checked goes after a day.
+ * never checked goes after a day. A copy on standby after a restore shares the
+ * Drive folder with the ERP in use: it removes only its own standby backups
+ * there, by the same rules, never the ERP in use's backups or safety copies.
  */
 export async function pruneBackups(config: BackupConfig, now = new Date()) {
   let removed = 0;
   const token = await driveToken(config).catch(() => null);
   if (token) {
-    const folders = (await listBackupFolders(token, await driveRoot(config, token))).map((f) => ({
-      id: f.folderId,
-      ...f,
-    }));
+    const { onStandby } = await import("@/modules/backups/standby");
+    const standby = await onStandby();
+    const folders = (await listBackupFolders(token, await driveRoot(config, token)))
+      .filter((f) => !standby || f.standby)
+      .map((f) => ({ id: f.folderId, ...f }));
     const dayAgo = new Date(now.getTime() - 86_400_000).toISOString();
     const checked = folders.filter((f) => f.checked);
     const backups = checked.filter((f) => f.kind === "BACKUP");

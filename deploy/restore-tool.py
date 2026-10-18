@@ -692,7 +692,7 @@ def cmd_fetch(args):
         warn("W09", "this backup was not checked in Google Drive after it was saved; every file is checked again now.")
     say(f"Downloading the backup of {when_text(picked['createdAt'])}")
 
-    files = {f["name"]: f for f in google.search(f"'{picked['id']}' in parents and trashed = false")}
+    files = by_name(google.search(f"'{picked['id']}' in parents and trashed = false"))
     if "manifest.json" not in files:
         fail("R11", "this backup has no manifest.json in Drive; pick another backup.")
     # download/ keeps the backup as it is in Drive (locked) until the restore ends well,
@@ -813,6 +813,14 @@ def cmd_fetch(args):
     for line in state["missing"]:
         note(f"Not in this backup: {line}")
     return 0
+
+
+def by_name(files):
+    """A backup folder's files by name: the newest of two with the same name (a list newest first)."""
+    out = {}
+    for file in files:
+        out.setdefault(file["name"], file)
+    return out
 
 
 def read_json(path):
@@ -1068,6 +1076,10 @@ def site_answers(name):
 
 
 def cmd_dns(args):
+    """Points the web address here in Cloudflare, when typed. In a drill (--drill) it only
+    adds a new A record: one that points elsewhere (perhaps the company's website) is
+    never moved."""
+    drill = bool(getattr(args, "drill", False))
     work = os.path.abspath(args.work)
     deploy = os.path.abspath(args.deploy)
     env_lines = read_env(os.path.join(deploy, ".env"))
@@ -1110,15 +1122,21 @@ def cmd_dns(args):
             note(f"{name} already points to this server.")
         set_state(work, dnsMoved=True)
         return 0
+    if drill:
+        taken = [name for name in names if now.get(name) and now[name] != ip]
+        for name in taken:
+            warn("W12", f"{name} already points to another server ({now[name]}), so a drill does not change it. Use a new test address that nobody uses (like drill.{zone}), or delete the old drill line in Cloudflare first.")
+        if taken:
+            return 0
     say("Your web address in Cloudflare")
     for name in names:
         note(f"{name}  ->  {ip} (this server)")
     old = now.get(app)
     if old and old != ip and site_answers(app):
-        # Two ERPs at once would both send reminders and make backups (G2).
+        # Two ERPs at once would both send reminders and messages (G2).
         say(f"The ERP at {app} still answers from another server ({old})")
         note("If the web address comes here while that one runs, two ERPs would send reminders")
-        note("and make backups at the same time. Move it only when the old server is off or")
+        note("and messages at the same time. Move it only when the old server is off or")
         note("will not be used again. For a practice run, press Enter: this copy then waits on standby.")
     answer = plain_name(ask("dns", f"To point {' and '.join(names)} to this server ({ip}), type {app}; or press Enter to leave it as it is: "))
     if answer != app:
@@ -1136,6 +1154,9 @@ def cmd_dns(args):
                 record = records[0]
                 if record.get("content") == ip:
                     note(f"{name} already points to this server.")
+                elif drill:
+                    warn("W12", f"{name} already points to another server ({record.get('content')}), so a drill does not change it.")
+                    continue
                 else:
                     cloudflare(token, "PATCH", f"/zones/{zone_id}/dns_records/{record['id']}", {"content": ip})
                     note(f"{name} now points to this server (it pointed to {record.get('content')}).")
@@ -1273,6 +1294,8 @@ def main(argv=None):
     p = sub.add_parser("dns")
     p.add_argument("--work", required=True)
     p.add_argument("--deploy", required=True)
+    # bootstrap.sh passes "--drill 1" in a drill, "--drill ''" otherwise.
+    p.add_argument("--drill", nargs="?", const="1", default="")
     p = sub.add_parser("compare")
     p.add_argument("--work", required=True)
     p.add_argument("--counts")

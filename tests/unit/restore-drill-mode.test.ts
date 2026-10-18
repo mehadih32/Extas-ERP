@@ -54,11 +54,16 @@ afterEach(async () => {
   await rm(dir, { recursive: true, force: true });
 });
 
-/** The drill's settings with `typed` as the answer to the test address question. */
-async function drillSettings(typed: string) {
+/**
+ * The drill's settings with `typed` as the answer to the test address question;
+ * `live`: the web address in the backup (bootstrap.sh reads it from the backup).
+ */
+async function drillSettings(typed: string, live?: string) {
   const answers = path.join(dir, "answers");
   await writeFile(answers, `drill_domain=${typed}\n`, { mode: 0o600 });
-  return bootstrap(["--drill-settings", envFile, data], { RESTORE_ANSWERS: answers });
+  return bootstrap(["--drill-settings", envFile, data, ...(live ? [live] : [])], {
+    RESTORE_ANSWERS: answers,
+  });
 }
 
 describe("a restore drill's own web address", () => {
@@ -95,6 +100,47 @@ describe("a restore drill's own web address", () => {
     expect(Number.isNaN(Date.parse(drill.startedAt!))).toBe(false);
     // The app (another user in its container) reads it.
     expect(statSync(mark).mode & 0o777).toBe(0o644);
+  });
+});
+
+describe("a restore drill run again on the same test server (v6.4.1 review)", () => {
+  it("keeps the real address it was made from, and its own drill address", async () => {
+    const first = await drillSettings("drill.example.com");
+    expect(first.code, first.stderr).toBe(0);
+    let settings = await readFile(envFile, "utf8");
+    expect(settings.match(/^DRILL_OF=.*$/gm)).toEqual(["DRILL_OF=erp.example.com"]);
+
+    // Run again: APP_DOMAIN is the drill's now. The real address is never taken, and the
+    // drill's own address is used again without asking (whatever the answers file says).
+    const again = await drillSettings("erp.example.com");
+    expect(again.code, again.stderr).toBe(0);
+    expect(again.stdout).toContain("DRILL drill.example.com");
+    expect(again.stdout).toContain("erp.example.com is not touched");
+    settings = await readFile(envFile, "utf8");
+    expect(settings.match(/^APP_DOMAIN=.*$/gm)).toEqual(["APP_DOMAIN=drill.example.com"]);
+    expect(settings.match(/^DRILL_OF=.*$/gm)).toEqual(["DRILL_OF=erp.example.com"]);
+
+    // Without its mark (deleted by hand), the question comes again: the real address is
+    // still refused, and the same drill address is fine.
+    await rm(path.join(data, "backups", ".drill"));
+    const real = await drillSettings("erp.example.com");
+    expect(real.code).toBe(2);
+    expect(real.stderr).toContain("Error R30:");
+    expect(real.stderr).toContain("never the ERP's own (erp.example.com)");
+    const same = await drillSettings("drill.example.com");
+    expect(same.code, same.stderr).toBe(0);
+  });
+
+  it("knows the real address from the backup when an earlier drill did not save it", async () => {
+    // A drill copy from before: APP_DOMAIN is the drill's, and no DRILL_OF line.
+    await writeFile(envFile, SETTINGS.replace("erp.example.com", "drill.example.com"));
+    const { mkdir } = await import("node:fs/promises");
+    await mkdir(path.join(data, "backups"), { recursive: true });
+    await writeFile(path.join(data, "backups", ".drill"), '{"address":"drill.example.com"}');
+    const run = await drillSettings("", "erp.example.com");
+    expect(run.code, run.stderr).toBe(0);
+    expect(run.stdout).toContain("DRILL drill.example.com");
+    expect(await readFile(envFile, "utf8")).toContain("DRILL_OF=erp.example.com\n");
   });
 });
 
@@ -160,9 +206,31 @@ describe("a restore drill's result", () => {
 });
 
 describe("the restore command in a drill", () => {
+  it("compares the records and files before the web address question, and never offers it after problems (v6.4.1 review)", () => {
+    const code = SCRIPT.split("\n")
+      .filter((line) => !line.trimStart().startsWith("#"))
+      .join("\n");
+    const compare = code.indexOf('step "Comparing every table and file with the backup"');
+    const dns = code.indexOf('step "Pointing the web address at this server"');
+    expect(compare).toBeGreaterThan(code.indexOf("restored=1\n"));
+    expect(dns).toBeGreaterThan(compare);
+    // The screens that did not open (restore.sh's check) are counted before it too.
+    expect(code.indexOf("screen_problems=")).toBeLessThan(dns);
+    expect(code.slice(dns)).toMatch(
+      /^step "Pointing the web address at this server"\nif \[ "\$compare" = 0 \] && \[ "\$screen_problems" = 0 \]; then\n\s+tool dns [^\n]*\n[^\n]*\nelse\n\s+warn W13 /,
+    );
+    // A drill asks the tool to add a new record only.
+    expect(code).toMatch(
+      /tool dns --work "\$WORK" --deploy "\$DIR\/deploy" --drill "\$drill" \|\|/,
+    );
+  });
+
   it("takes --drill only after the version, and sets the drill up before DNS, Docker and the ERP", () => {
     expect(SCRIPT).toMatch(/case "\$\{2:-\}" in\n\s+""\) ;;\n\s+--drill\) drill=1 ;;/);
-    const settings = SCRIPT.indexOf('[ -z "$drill" ] || drill_settings "$env_file" "$DATA"');
+    const settings = SCRIPT.indexOf(
+      '[ -z "$drill" ] || drill_settings "$env_file" "$DATA" "$(tool fact --work "$WORK" appDomain)"',
+    );
+    expect(settings).toBeGreaterThan(0);
     expect(settings).toBeGreaterThan(SCRIPT.indexOf('tool env --work "$WORK" --env "$env_file"'));
     for (const later of [
       'step "Pointing the web address at this server"',

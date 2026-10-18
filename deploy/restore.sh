@@ -143,9 +143,18 @@ step "Starting the database"
 compose up -d db
 wait_healthy db || fail "the database did not start; see sudo ./deploy/logs.sh db"
 
+# The app stops before the safety copy, so nothing saved in the ERP after the copy
+# is lost when the restore goes back to it or is undone. The site is down from here
+# until the restored ERP starts (or the one from before, when anything fails).
+step "Stopping the app"
+compose stop app
+
 step "Saving a safety copy of the database as it is now"
-safety="$(safety_copy "before-restore-$stamp")" ||
+if ! safety="$(safety_copy "before-restore-$stamp")"; then
+  compose up -d
+  wait_healthy app || true
   fail "the safety copy of the database could not be saved (is the disk full? sudo df -h), so nothing was restored."
+fi
 echo "Saved in $safety"
 
 # Puts the ERP back as it was just before the restore (the safety copy of the
@@ -187,9 +196,6 @@ restore_uploads() {
   fi
   mv "$incoming" "$DATA_DIR/uploads" || return 1
 }
-
-step "Stopping the app"
-compose stop app
 
 # This server's own backup settings, read just before the database is replaced,
 # for the ERP to put back when it starts (G4): only root can read the file.

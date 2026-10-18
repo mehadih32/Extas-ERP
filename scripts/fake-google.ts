@@ -285,8 +285,15 @@ export async function startFakeGoogle(
       return json(res, 200, present(file, url.searchParams.get("fields")));
     }
     if (file && method === "PATCH") {
-      const change = JSON.parse(body.toString() || "{}") as Partial<FakeFile>;
-      if (change.appProperties) Object.assign(file.appProperties, change.appProperties);
+      const change = JSON.parse(body.toString() || "{}") as {
+        name?: string;
+        appProperties?: Record<string, string | null>;
+      };
+      // As Google does: a property set to null is taken away.
+      for (const [key, value] of Object.entries(change.appProperties ?? {})) {
+        if (value === null) delete file.appProperties[key];
+        else file.appProperties[key] = value;
+      }
       if (change.name) file.name = change.name;
       return json(res, 200, present(file, url.searchParams.get("fields")));
     }

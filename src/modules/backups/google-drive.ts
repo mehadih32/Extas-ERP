@@ -263,8 +263,12 @@ export async function fileInfo(token: string, fileId: string): Promise<DriveFile
   );
 }
 
-/** Adds labels to a file or folder (the ERP's own, invisible in Drive). */
-export async function label(token: string, fileId: string, appProperties: Record<string, string>) {
+/** Adds labels to a file or folder (the ERP's own, invisible in Drive); null takes one away. */
+export async function label(
+  token: string,
+  fileId: string,
+  appProperties: Record<string, string | null>,
+) {
   await call<DriveFile>(
     token,
     `${api()}/files/${encodeURIComponent(fileId)}?fields=id`,

@@ -7,7 +7,7 @@ import { agentKeyOf, aiAgents } from "./agents";
 import type { AiRecord } from "./control.service";
 import { type AiTaskKey, taskInfo } from "./models";
 import { blockedText, priceBook, priceFor, warnBlocked } from "./prices.service";
-import { callGemini, callOpenAI, ProviderError } from "./provider-calls";
+import { callGemini, callOpenAI, ProviderError, refuseOnDrill } from "./provider-calls";
 import { modelLabel, parseModel, type ProviderId, providerInfo, providerOf } from "./providers";
 import {
   aiSettingsOf,
@@ -83,9 +83,10 @@ type Transport = (call: {
   timeoutMs: number;
 }) => Promise<Anthropic.Message>;
 
-const realTransport: Transport = ({ provider, apiKey, body, timeoutMs }) => {
+const realTransport: Transport = async ({ provider, apiKey, body, timeoutMs }) => {
   if (provider === "openai") return callOpenAI({ apiKey, body, timeoutMs });
   if (provider === "google") return callGemini({ apiKey, body, timeoutMs });
+  await refuseOnDrill();
   return new Anthropic({ apiKey, maxRetries: 1, timeout: timeoutMs }).messages.create(body);
 };
 
@@ -99,9 +100,14 @@ export function standInForClaude(stand: Transport | null) {
 export type AiReady =
   { on: true; settings: AiSettings } | { on: false; settings: AiSettings; text: string };
 
-/** Whether the company's AI may be called now: switched on, not paused, with a key. */
+/**
+ * Whether the company's AI may be called now: switched on, not paused, with a
+ * key, and not on a restore drill copy (test mode), which never calls the AI.
+ */
 export async function aiReady(companyId: string): Promise<AiReady> {
   const settings = await aiSettingsOf(companyId);
+  const { DRILL_NO_AI, onDrill } = await import("@/modules/backups/standby");
+  if (await onDrill()) return { on: false, settings, text: DRILL_NO_AI };
   const off = offReason(settings);
   if (off) return { on: false, settings, text: OFF_TEXT[off] };
   return { on: true, settings };

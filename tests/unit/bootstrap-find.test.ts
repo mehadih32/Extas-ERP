@@ -106,10 +106,10 @@ describe("finding an Extas ERP already on the server (A6)", () => {
     ]);
   });
   /** `bootstrap.sh --choose`: the A6 decision, with the address typed from an answers file. */
-  async function choose(roots: string[], typed: string) {
+  async function choose(roots: string[], typed: string, more: string[] = []) {
     const answers = path.join(root, "answers.env");
     await writeFile(answers, `replace=${typed}\n`);
-    return exec("bash", [BOOTSTRAP, "--choose"], {
+    return exec("bash", [BOOTSTRAP, "--choose", ...more], {
       env: {
         ...process.env,
         PATH: `${bin}:${process.env.PATH}`,
@@ -198,6 +198,31 @@ describe("finding an Extas ERP already on the server (A6)", () => {
     expect(run.screen).not.toContain("Error R04");
     expect(run.screen).toContain(`CHOSEN ${path.join(root, "opt/extras-erp")}`);
     expect(run.code).toBe(0);
+  });
+
+  it("runs a drill only on a new server or over a drill copy, never over an ERP in use (v6.4.1 review)", async () => {
+    await docker(["opt/extras-erp/deploy"]);
+    await put("opt/extras-erp/deploy/compose.yml", "name: extras-erp\nservices: {}\n");
+    await put(
+      "opt/extras-erp/deploy/.env",
+      `APP_DOMAIN=erp.example.com\nDATA_DIR=${path.join(root, "data/erp")}\n`,
+    );
+    await put("data/erp/postgres/PG_VERSION", "16\n");
+    // The ERP in use: refused before any question, even with its address typed.
+    const inUse = await choose(["opt", "data"], "erp.example.com", ["--drill"]);
+    expect(inUse.code).toBe(2);
+    expect(inUse.stderr).toContain("Error R31");
+    expect(inUse.stdout).not.toContain("CHOSEN");
+    expect(inUse.stdout).not.toContain("Restoring here REPLACES ALL its data");
+    // A drill copy made earlier on this test server: the drill runs again over it.
+    await put("data/erp/backups/.drill", '{"address":"drill.example.com"}');
+    const again = await choose(["opt", "data"], "erp.example.com", ["--drill"]);
+    expect(again.code).toBe(0);
+    expect(again.stdout).toContain(`CHOSEN ${path.join(root, "opt/extras-erp")}`);
+    // A new server: no question.
+    await docker([]);
+    const fresh = await choose(["srv"], "", ["--drill"]);
+    expect(fresh).toMatchObject({ code: 0 });
   });
 
   it("goes on by itself on a new server, or over a restore that stopped half-way", async () => {

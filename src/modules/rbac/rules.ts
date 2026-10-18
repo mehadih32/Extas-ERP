@@ -61,6 +61,24 @@ export const SUPER_ADMIN_GRANTS_ROLE =
 export const SUPER_ADMIN_GRANTS_KEYS =
   "Only a Super Admin can give the right to record money or to manage users or roles. Ask a Super Admin.";
 export const OWN_ROLE = "You cannot change your own role. Ask another admin.";
+export const SUPER_ADMIN_REACTIVATES =
+  "Only a Super Admin can switch this person back on, because they can record money or manage users or roles. Ask a Super Admin.";
+
+/**
+ * What a member may see and do: their role's permissions with their own
+ * changes (a tick adds a permission, an untick takes it away).
+ */
+export function heldKeys(
+  roleKeys: Iterable<string>,
+  changes: ReadonlyArray<{ granted: boolean; permission: { key: string } }>,
+): Set<string> {
+  const held = new Set<string>(roleKeys);
+  for (const c of changes) {
+    if (c.granted) held.add(c.permission.key);
+    else held.delete(c.permission.key);
+  }
+  return held;
+}
 
 /** Among these permissions, the ones only a Super Admin may give. */
 export function superAdminGrantsIn(keys: Iterable<string>): string[] {
@@ -148,10 +166,22 @@ export function canDeactivate(
   return ALLOWED;
 }
 
-/** Giving a deactivated member their access back, in the role they had. */
-export function canReactivate(actor: Actor, target: HasSystemRole): Verdict {
+/**
+ * Giving a deactivated member their access back, in the role and with the
+ * permissions they had (`heldKeys`: the role's with their own changes). That
+ * gives those rights back, so someone who records money or manages users or
+ * roles is switched on only by a Super Admin, as only a Super Admin gives
+ * those rights.
+ */
+export function canReactivate(
+  actor: Actor,
+  target: HasSystemRole & { heldKeys: Iterable<string> },
+): Verdict {
   if (isSuperAdmin(target) && !isPrivileged(actor)) {
     return refuse("FORBIDDEN", "Only a Super Admin can reactivate a Super Admin.");
+  }
+  if (!isPrivileged(actor) && superAdminGrantsIn(target.heldKeys).length > 0) {
+    return refuse("FORBIDDEN", SUPER_ADMIN_REACTIVATES);
   }
   return ALLOWED;
 }

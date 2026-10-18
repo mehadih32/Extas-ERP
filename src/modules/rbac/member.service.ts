@@ -27,6 +27,7 @@ import {
   canGrantRole,
   canReactivate,
   canResetPassword,
+  heldKeys,
   lockedPermissionsFor,
 } from "@/modules/rbac/rules";
 
@@ -191,12 +192,7 @@ async function heldKeysOf(member: {
   role: { id: string; systemRole: SystemRole | null };
   permissionChanges: Array<{ granted: boolean; permission: { key: string } }>;
 }): Promise<Set<string>> {
-  const held = new Set<string>(await roleKeysOf(member.role));
-  for (const c of member.permissionChanges) {
-    if (c.granted) held.add(c.permission.key);
-    else held.delete(c.permission.key);
-  }
-  return held;
+  return heldKeys(await roleKeysOf(member.role), member.permissionChanges);
 }
 
 async function getMembership(ctx: CompanyContext, membershipId: string) {
@@ -464,7 +460,12 @@ export async function setMemberActive(
   if (membership.isActive === isActive) return membership;
   const actor = actorOf(ctx);
   if (isActive) {
-    assertAllowed(canReactivate(actor, membership.role));
+    assertAllowed(
+      canReactivate(actor, {
+        systemRole: membership.role.systemRole,
+        heldKeys: await heldKeysOf(membership),
+      }),
+    );
   } else {
     const others =
       membership.role.systemRole === "SUPER_ADMIN"
@@ -669,7 +670,15 @@ export async function listTeam(ctx: CompanyContext): Promise<Team> {
         changeRole: roleChoices.length > 0,
         editPermissions: canEditPermissions && canEditMemberPermissions(actor, target).ok,
         deactivate: m.isActive && canDeactivate(actor, target, others).ok,
-        reactivate: !m.isActive && canReactivate(actor, target).ok,
+        reactivate:
+          !m.isActive &&
+          canReactivate(actor, {
+            systemRole: m.role.systemRole,
+            heldKeys: heldKeys(
+              roles.find((r) => r.id === m.role.id)?.permissions ?? ALL_PERMISSION_KEYS,
+              m.permissionChanges,
+            ),
+          }).ok,
         resetPassword: canResetPassword(actor, target).ok,
       },
       roleChoices,

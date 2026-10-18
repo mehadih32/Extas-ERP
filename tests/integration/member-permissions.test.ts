@@ -37,6 +37,7 @@ import {
   changeMemberRole,
   listTeam,
   setMemberAccess,
+  setMemberActive,
 } from "@/modules/rbac/member.service";
 import { DEFAULT_ROLE_PERMISSIONS, type PermissionKey } from "@/modules/rbac/permissions";
 import { createRole, deleteRole, getRolesScreen, updateRole } from "@/modules/rbac/role.service";
@@ -45,6 +46,7 @@ import {
   OWN_ROLE,
   SUPER_ADMIN_GRANTS_KEYS,
   SUPER_ADMIN_GRANTS_ROLE,
+  SUPER_ADMIN_REACTIVATES,
 } from "@/modules/rbac/rules";
 import { activeMembers, membersWith } from "@/modules/reminders/audience";
 
@@ -596,5 +598,55 @@ run("the permission matrix", () => {
       heldByYou: true,
       can: { edit: false, delete: false },
     });
+  });
+
+  it("leaves switching someone back on who records money or manages the team to a Super Admin (v6.4.1 review 4)", async () => {
+    const refused = { code: "FORBIDDEN", message: SUPER_ADMIN_REACTIVATES };
+    const join = async (roleId: string, who: string) =>
+      addToCompany((await makeUser(`${who}@extras.test`)).id, env.company.id, roleId);
+    const accountant = await join(env.roles.ACCOUNTS, "acct");
+    const keeper2 = await join(
+      (await prisma.role.findFirstOrThrow({ where: { name: "Team Keeper" } })).id,
+      "keeper2",
+    );
+    // A Sales Executive given the right to record receipts on their own.
+    await setMemberAccess(env.ownerCtx, env.sales.membership.id, {
+      permissions: [...SALES, "accounts.receipts.record"],
+    });
+    // An accountant whose money rights were taken away is an ordinary member again.
+    const trimmed = await join(env.roles.ACCOUNTS, "trimmed");
+    await setMemberAccess(env.ownerCtx, trimmed.id, {
+      permissions: DEFAULT_ROLE_PERMISSIONS.ACCOUNTS.filter(
+        (k) => k !== "accounts.receipts.record" && k !== "accounts.payments.record",
+      ),
+    });
+    const people = [accountant, keeper2, env.sales.membership, trimmed];
+    for (const m of people) await setMemberActive(env.ownerCtx, m.id, false);
+
+    // Adding the accountant again is refused for the team keeper; so is switching them back on.
+    expect(
+      await refusal(
+        addMember(env.keeperCtx, {
+          email: "acct@extras.test",
+          name: "Acct",
+          roleId: env.roles.ACCOUNTS,
+        }),
+      ),
+    ).toEqual({ code: "FORBIDDEN", message: SUPER_ADMIN_GRANTS_ROLE });
+    for (const m of [accountant, keeper2, env.sales.membership]) {
+      expect(await refusal(setMemberActive(env.keeperCtx, m.id, true))).toEqual(refused);
+      expect(
+        (await prisma.companyMembership.findUniqueOrThrow({ where: { id: m.id } })).isActive,
+      ).toBe(false);
+    }
+    // The Team screen does not offer it either; the trimmed accountant it does.
+    const team = await listTeam(env.keeperCtx);
+    const offered = (id: string) => team.members.find((m) => m.id === id)!.can.reactivate;
+    expect(people.map((m) => offered(m.id))).toEqual([false, false, false, true]);
+    await setMemberActive(env.keeperCtx, trimmed.id, true);
+    // A Super Admin may switch them all back on.
+    for (const m of [accountant, keeper2, env.sales.membership]) {
+      expect((await setMemberActive(env.ownerCtx, m.id, true)).isActive).toBe(true);
+    }
   });
 });

@@ -10,8 +10,9 @@ export const PIN_TEXT = "[PIN]";
  * PIN request, and when they came: those may have been order numbers or other
  * words, and only the backup made before that update still has them. Only
  * messages that came before that wipe ran are counted: every later "[PIN]" was
- * hidden as it came (a PIN the bot asked for, or since v6.4 one typed late or
- * unasked), so it was a PIN. scripts/check-update.ts prints it after each
+ * hidden as it came (a PIN the bot asked for, since v6.4 one typed late or
+ * unasked, and since v6.4.1 a number the bot hid unchecked after too many
+ * new numbers), never by a wipe. scripts/check-update.ts prints it after each
  * update (no text, only counts and dates).
  */
 

@@ -16,7 +16,7 @@ import { kickJobWorker } from "@/modules/jobs/worker";
 
 import type { CardStatus, ChatCard } from "../chat/cards";
 import { applyCard, cancelCard, sendChat } from "../chat/chat.service";
-import { storePrefix } from "../chat/intents";
+import { storePrefix, westernDigits } from "../chat/intents";
 import { discardDraft, PRICE_DRAFTS, sendDraft } from "../drafts.service";
 import { decideHouseRule } from "../house-rules.service";
 import { cardPinReason } from "../chat/chat.service";
@@ -85,7 +85,9 @@ async function checkPinNow(mine: AiBotLink[], m: Incoming, now: Date): Promise<P
   const checks: PinChecks = {};
   for (const link of waiting) {
     try {
-      checks[link.id] = { right: await checkPin(link.companyId, text, link.ownerId ?? link.id) };
+      checks[link.id] = {
+        right: await checkPin(link.companyId, westernDigits(text), link.ownerId ?? link.id),
+      };
     } catch (error) {
       if (!(error instanceof AppError)) throw error;
       checks[link.id] = { right: false, problem: error.message };
@@ -113,20 +115,22 @@ export function pinCandidates(text: string): string[] {
 }
 
 /**
- * Digits that are a PIN although no store waits for one now (v6.4 A5), so
+ * Digits that may be a PIN although no store waits for one now (v6.4 A5), so
  * they are hidden everywhere too: "late" when a store asked for the PIN and
  * the five minutes ran out (in the last hour), "stray" when a number in the
- * message, alone or among words, is the PIN of a store of this chat. Every
- * message of the linked owner's own chat with digits is checked, with no
- * hourly limit (v6.4.1 B6): only the owner's own chat gets here, and a match
- * only hides the message.
+ * message, alone or among words (Bengali digits too), is the PIN of a store of
+ * this chat. Every message of the linked owner's own chat with digits is
+ * checked (v6.4.1 B6), but only ten new numbers in fifteen minutes
+ * (pinMatches): past that, a message with a number is hidden unchecked, the
+ * same way and with the same words, so someone holding the owner's chat cannot
+ * find the PIN by sending numbers, and a PIN typed by mistake is still hidden.
  */
 async function hiddenPin(
   mine: AiBotLink[],
   m: Incoming,
   now: Date,
 ): Promise<"late" | "stray" | null> {
-  const text = m.text ?? "";
+  const text = westernDigits(m.text ?? "");
   if (m.callback) return null;
   const since = now.getTime() - LATE_PIN_MINUTES * 60_000;
   if (
@@ -137,9 +141,11 @@ async function hiddenPin(
   }
   const numbers = pinCandidates(text);
   if (numbers.length === 0) return null;
-  for (const companyId of new Set(mine.map((l) => l.companyId))) {
+  for (const link of mine) {
     for (const number of numbers) {
-      if (await pinMatches(companyId, number)) return "stray";
+      // The PIN, or not checked (too many new numbers): hidden all the same.
+      const match = await pinMatches(link.companyId, number, link.ownerId ?? link.id);
+      if (match !== false) return "stray";
     }
   }
   return null;
@@ -174,7 +180,8 @@ async function keep(links: AiBotLink[], channel: AiBotChannel, botKey: string, m
   // A stranger is never answered; past a few messages an hour they are not even logged.
   if (!known && !strangerAllowed(first.id, m.chatId)) return;
   const pin = known ? await checkPinNow(mine, m, now) : null;
-  const hidden = known && !pin ? await hiddenPin(mine, m, now) : null;
+  // A link code is a command, never a PIN.
+  const hidden = known && !pin && !linking ? await hiddenPin(mine, m, now) : null;
   // Kept in the store it is for (the worker moves it if it can only tell later).
   const store = hidden
     ? (mine.find((l) => l.pending) ?? mine[0]!)
@@ -290,7 +297,7 @@ type IncomingJob = {
   incoming: Incoming;
   /** The PIN's check, made when it arrived (the PIN itself is not here). */
   pin?: PinChecks;
-  /** A PIN typed after its five minutes, or when nothing asked for it (hiddenPin). */
+  /** A PIN typed after its five minutes, or a number that may be one when nothing asked (hiddenPin). */
   hidden?: "late" | "stray";
 };
 
@@ -487,8 +494,9 @@ export async function runBotIncomingJob(job: BackgroundJob) {
 }
 
 /**
- * A PIN that came too late, or when nothing asked for it: taken out of the
- * chat, a request that ran out is ended, and nothing else is done with it.
+ * A PIN that came too late, or a number that may be the PIN when nothing
+ * asked for one: taken out of the chat, a request that ran out is ended, and
+ * nothing else is done with it.
  */
 async function hidePin(mine: AiBotLink[], m: Incoming, hidden: "late" | "stray") {
   const link = mine.find((l) => l.pending) ?? mine[0]!;
@@ -506,11 +514,12 @@ async function hidePin(mine: AiBotLink[], m: Incoming, hidden: "late" | "stray")
       ),
     );
   }
+  // Never says whether it was the PIN: a number past the checks is hidden with the same words.
   return say(
     link,
     m.chatId,
     words(
-      "That was your PIN, so it was hidden and nothing was done. Send it only when the bot asks for it.",
+      "A number in your message could be your PIN, so the message was hidden and nothing was done. Send your PIN only when the bot asks for it. If it was not your PIN, write it again in 15 minutes, or use the ERP.",
     ),
   );
 }

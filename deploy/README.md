@@ -337,7 +337,8 @@ stay public for `raw.githubusercontent.com` to serve it. It:
    is typed (the guide never says to type it: on the ERP in use, Enter stops), and its own
    `ENCRYPTION_KEY` is never replaced (the backup's goes in `ENCRYPTION_OLD_KEYS`). Its own
    restore that stopped on a new server (`backups/.restore-unfinished`, from its settings
-   until the backup is in) goes on by itself, without the question. On a new VM it first
+   until it has done every step or its web address points here) goes on by itself,
+   without the question. On a new VM it first
    waits for the server's own updates (they hold apt's lock for the first minutes);
 2. downloads `deploy/restore-tool.py` from the same commit and checks its SHA-256;
 3. asks for the Google client (hidden input), shows a Google sign-in code to enter on a

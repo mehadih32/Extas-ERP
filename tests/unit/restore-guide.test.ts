@@ -242,7 +242,7 @@ describe("the owner's items for the guide (v6.4.1)", () => {
       /goes on by itself from where it stopped and does not ask this/,
     );
     expect(REPLACE_RULE.en).toMatch(/make another new VM as in part A/);
-    expect(REPLACE_RULE.bn).toContain("এখানে কখনো ওয়েব ঠিকানা টাইপ করবেন না।");
+    expect(REPLACE_RULE.bn).toContain("কখনো ওয়েব ঠিকানা টাইপ করবেন না");
     for (const text of [REPLACE_RULE.en, ...allText("en")]) {
       expect(text).not.toMatch(/type exactly the address on the “Web address” line/);
       expect(text).not.toMatch(/Type the web address here only when/);

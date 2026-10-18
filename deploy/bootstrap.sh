@@ -63,8 +63,10 @@ LOG=/var/log/extas-erp-restore.log
 # The boot unit that deletes what a restore cut off half-way opened (forget_opened).
 CLEAN_SCRIPT=/usr/local/sbin/extras-erp-restore-clean
 CLEAN_UNIT=extras-erp-restore-clean.service
-# In DATA/backups of a new server from its settings until the backup is in: the
-# command run again there goes on by itself (choose_install).
+# In DATA/backups of a new server from its settings until the command has done every
+# step, or its web address points here (it may be in use from then on): the command
+# run again there goes on by itself (choose_install), even when the backup was in and a
+# later step (Cloudflare, HTTPS, the checks) stopped it.
 UNFINISHED=.restore-unfinished
 
 started="$(date +%s)"
@@ -212,14 +214,15 @@ choose_install() {
   replacing=0
   while IFS= read -r line; do
     IFS='|' read -r i_dir i_data i_domain i_running i_has_data <<<"$line"
-    # This command's own restore on a new server, stopped before the backup was in
-    # (its mark): nothing of anyone's is there but what the command put, so it goes on.
+    # This command's own restore on a new server, stopped before it finished and
+    # before its web address pointed here (its mark): nothing of anyone's is there but
+    # what the command put, so it goes on.
     if [ -n "$i_data" ] && [ -f "$i_data/backups/$UNFINISHED" ] && [ -n "$i_dir" ] &&
       [ -f "$i_dir/deploy/.env" ]; then
       unfinished=1
       DIR="$i_dir"
       DATA="$i_data"
-      note "A restore that stopped half-way on this new server is in $DIR (the backup is not in yet): it goes on from here."
+      note "A restore that stopped half-way on this new server is in $DIR (it is not in use yet): it goes on from here."
       continue
     fi
     if [ -z "$i_running" ] && [ -z "$i_has_data" ]; then
@@ -851,7 +854,6 @@ rm -rf "$restore_dir"
 rm -f "$WORK/opened-copy"
 # The backup is in: what is left in $WORK is deleted when the restore ends, the download too.
 restored=1
-rm -f "$DATA/backups/$UNFINISHED"
 
 # The screens that did not open in restore.sh's check, and every table and file
 # compared with the backup: both before the web address question, which never comes
@@ -888,6 +890,8 @@ rm -f "$DATA/backups/.standby.was-in-use"
 if [ -n "$moved" ]; then
   rm -f "$DATA/backups/.standby"
   standby=0
+  # Live here now (it may be in use from now on): a run again asks first (A6).
+  rm -f "$DATA/backups/$UNFINISHED"
   # HTTPS: Caddy asks for the certificate again at once, now that the address points here.
   (
     cd "$DIR"
@@ -1016,4 +1020,6 @@ if [ -z "$drill" ] && [ "$standby" = 1 ]; then
     "  2. run: cd $DIR && sudo ./deploy/go-live.sh"
   printf '%s\n' "################################################################"
 fi
+# Every step done: a run again on this server asks first (A6).
+rm -f "$DATA/backups/$UNFINISHED"
 [ "$compare" = 0 ] || exit 4

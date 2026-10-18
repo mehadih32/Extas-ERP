@@ -278,14 +278,25 @@ describe("a restore over an ERP in use that does not finish (v6.4.2)", () => {
     expect(code.indexOf("restored=1")).toBeGreaterThan(code.indexOf("$STEPS/restore.sh"));
   });
 
-  it("marks a new server's restore until the backup is in, so a second run there goes on", () => {
+  it("marks a new server's restore until the command finished or the ERP is live there, so a second run goes on (v6.4.2 review)", () => {
     const code = SCRIPT.slice(SCRIPT.indexOf('step "Writing this server\'s settings"'));
     const mark = code.indexOf(': >"$DATA/backups/$UNFINISHED"');
     expect(mark).toBeGreaterThan(-1);
     expect(code.slice(mark - 120, mark)).toContain('if [ "${replacing:-0}" = 0 ]; then');
     expect(mark).toBeLessThan(code.indexOf('"$DIR/deploy/deploy.sh"'));
-    const unmark = code.indexOf('rm -f "$DATA/backups/$UNFINISHED"');
-    expect(unmark).toBeGreaterThan(code.indexOf("restored=1"));
-    expect(unmark).toBeLessThan(code.indexOf('step "Pointing the web address at this server"'));
+    // Not when the backup is in: Cloudflare, HTTPS or the checks may still stop it.
+    const unmarks = [...code.matchAll(/rm -f "\$DATA\/backups\/\$UNFINISHED"/g)].map(
+      (m) => m.index!,
+    );
+    expect(unmarks).toHaveLength(2);
+    // Once the web address points here (the ERP may be in use from then on) ...
+    const live = code.indexOf('if [ -n "$moved" ]; then');
+    expect(unmarks[0]).toBeGreaterThan(live);
+    expect(unmarks[0]).toBeLessThan(code.indexOf('step "Starting the demo site"'));
+    // ... or when the command has done every step (its last lines).
+    expect(unmarks[1]).toBeGreaterThan(code.indexOf('note "The full log of this restore'));
+    expect(code.slice(unmarks[1])).toMatch(
+      /^rm -f "\$DATA\/backups\/\$UNFINISHED"\n\[ "\$compare" = 0 \] \|\| exit 4\n$/,
+    );
   });
 });

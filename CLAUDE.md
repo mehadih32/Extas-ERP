@@ -27,6 +27,15 @@ places disagree, the newer instruction wins.
    report in plain words.
 7. Write to the owner in short, plain sentences. No code words, no ids. Lead with what the owner needs to do, if
    anything.
+8. Every release ends with a readiness report in plain English: a table of every area (Orders and bookings,
+   Costing, Accounts, Stock, Production and CM, Tech Pack, PDFs, Help Center, AI Center and Bug Guard, Bots,
+   Backups and restore, Security, Screens) marked Ready / Ready with small known issues / Not ready with a
+   one-line reason; every known open problem, none hidden, marked Urgent / Important / Can wait; what could not
+   be tested and how the owner can test it; and one line "Ready for daily real use: Yes" or "No, because ...".
+   Before it, fresh reviewers check the whole ERP (not only the diff) for Urgent and Important problems, round
+   after round (at most 3), until a round finds none; each round's findings and fixes are reported.
+9. Whenever the owner asks "is anything left?" (or the like), answer from a fresh check of the code and the live
+   site, never from memory or old notes.
 
 ## 2. Rules that hold everywhere (blueprint section 3)
 
@@ -175,6 +184,11 @@ money, or turn off backups or its own checks. Every check, finding, fix, approva
 
 ## 9. Decisions log (newest first)
 
+- 2026-10-18 (v6.4.1): every release ends with the readiness report (section 1, item 8) after up to 3 rounds
+  of fresh whole-ERP reviews; "is anything left?" is answered from a fresh check of the code and the live site.
+  After each deploy Bug Guard checks the live ERP once, read-only (no AI unless the owner turned it on), into the
+  ERP inbox and Telegram. A late-backup alert runs on GitHub, outside the server. A restored ERP that waits on
+  standby says so at the end and on every page, and keeps its backups and alarms running.
 - 2026-10-18 (v6.4.1): Help pictures show the part of the page each guide's steps are about and every picture
   has numbered marks. The picture tests run on `main` too; the "Help pictures" workflow runs on every PR into
   `main` and every push to `main`; only the Deploy's own Checks let pictures wait. Every guide has tips and

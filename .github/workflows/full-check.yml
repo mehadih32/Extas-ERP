@@ -2,7 +2,7 @@
 # starts it with the GitHub token the owner saved there: GitHub's computer opens
 # every screen of the site as the owner and as each role, every PDF, every link
 # and every button that changes nothing, and sends the problems with screenshots
-# back to the ERP. About 10 minutes.
+# back to the ERP. Up to about 25 minutes.
 #
 # How it is kept safe:
 #   - the ERP sends a one-time pass with the run, and the check also shows the
@@ -46,7 +46,9 @@ jobs:
   check:
     name: Check every screen
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # The crawl takes up to 25 minutes (CHECK_MINUTES), the browser install and the
+    # report a few more.
+    timeout-minutes: 40
     env:
       SITE: ${{ inputs.site }}
       RUN: ${{ inputs.run }}

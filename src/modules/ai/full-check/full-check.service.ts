@@ -23,6 +23,7 @@ import { checkAccountFor } from "./check-account";
 import {
   askIssue,
   carefulFiles,
+  CHECK_MINUTES,
   FIX_CHECKS_COMMENT,
   fixIssue,
   type GuardFacts,
@@ -32,6 +33,7 @@ import {
   PROBLEM_KINDS,
   type ProblemKind,
   pullBody,
+  reportMessage,
   requestText,
 } from "./texts";
 
@@ -415,7 +417,7 @@ export async function beginCheck(input: unknown, now: Date = new Date()) {
     roles: sessions,
     notChecked,
     reportKey,
-    minutes: 10,
+    minutes: CHECK_MINUTES,
   };
 }
 
@@ -444,6 +446,10 @@ export const reportSchema = z.object({
           screens: z.number().int().min(0),
           pdfs: z.number().int().min(0),
           skipped: z.number().int().min(0),
+          /** Screens and downloads found but not reached in the time; whether the role stopped. */
+          notReached: z.number().int().min(0).default(0),
+          filesLeft: z.number().int().min(0).default(0),
+          stopped: z.boolean().default(false),
           note: z.string().max(300).nullish(),
         }),
       )
@@ -516,14 +522,7 @@ export async function receiveReport(key: string, input: unknown, now: Date = new
   });
   if (run.startedById) {
     const message = {
-      subject:
-        count === 0
-          ? "Full check: no problems found"
-          : `Full check: ${count} problem${count === 1 ? "" : "s"} found`,
-      body:
-        count === 0
-          ? `Every screen opened as the owner and as each role (${report.summary.screens} screens).`
-          : "Read them, with screenshots, in AI Center > Full check; send them to Claude Code from there.",
+      ...reportMessage(report.summary, count),
       entityType: "FullCheckRun",
       entityId: run.id,
     };

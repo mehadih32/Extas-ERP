@@ -427,3 +427,62 @@ export const pullBody = (issue: number) =>
     "",
     "Claude Code's fix for the issue above, opened by the ERP (AI Center > Full check). The owner merges it from the ERP; the Deploy workflow then installs it safely.",
   ].join("\n");
+
+/**
+ * The minutes a Full check crawls for: a full pass of the demo copy took about
+ * 15, so this leaves room (the workflow's own limit is above it).
+ */
+export const CHECK_MINUTES = 25;
+
+/** What a check reported about itself: what it checked, and what it did not reach. */
+type CheckSummary = {
+  roles: Array<{ notReached?: number | null; filesLeft?: number | null; stopped?: boolean | null }>;
+  screens: number;
+  pdfs: number;
+};
+
+const counted = (n: number, one: string, many = `${one}s`) =>
+  `${n.toLocaleString("en-US")} ${n === 1 ? one : many}`;
+
+/**
+ * The owner's message when a check reports: "every screen opened" only when it
+ * reached every screen and file as every role; else how much it did not reach.
+ */
+export function reportMessage(summary: CheckSummary, problems: number) {
+  const sum = (pick: (r: CheckSummary["roles"][number]) => number | null | undefined) =>
+    summary.roles.reduce((t, r) => t + (pick(r) ?? 0), 0);
+  const notReached = sum((r) => r.notReached);
+  const filesLeft = sum((r) => r.filesLeft);
+  const stopped = summary.roles.filter((r) => r.stopped).length;
+  const missed = [
+    notReached > 0 && counted(notReached, "screen"),
+    filesLeft > 0 && counted(filesLeft, "PDF and file", "PDFs and files"),
+  ].filter((s): s is string => Boolean(s));
+  const gaps = [
+    missed.length > 0 &&
+      `${missed.join(" and ")} ${notReached + filesLeft === 1 ? "was" : "were"} not reached in the time`,
+    stopped > 0 &&
+      `${counted(stopped, "role")} stopped before the end (see AI Center > Full check)`,
+  ].filter((s): s is string => Boolean(s));
+  const checked = `${counted(summary.screens, "screen")} and ${counted(summary.pdfs, "PDF and file", "PDFs and files")}`;
+  if (problems > 0) {
+    return {
+      subject: `Full check: ${counted(problems, "problem")} found`,
+      body:
+        "Read them, with screenshots, in AI Center > Full check; send them to Claude Code from there." +
+        (gaps.length > 0 ? ` ${capital(gaps.join("; "))}.` : ""),
+    };
+  }
+  if (gaps.length === 0) {
+    return {
+      subject: "Full check: no problems found",
+      body: `Every screen opened as the owner and as each role (${counted(summary.screens, "screen")}, ${counted(summary.pdfs, "PDF and file", "PDFs and files")} checked).`,
+    };
+  }
+  return {
+    subject: "Full check: no problems found in what it reached",
+    body: `It checked ${checked} as the owner and each role, but ${gaps.join("; ")}. Start it again to check the rest.`,
+  };
+}
+
+const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);

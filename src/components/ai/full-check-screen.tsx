@@ -111,7 +111,7 @@ export function FullCheckScreen({ check: c }: { check: Check }) {
             onClick={() =>
               run(
                 startFullCheckAction,
-                "GitHub is starting the Full check. It takes about 10 minutes; this page shows the report when it is done.",
+                "GitHub is starting the Full check. It takes up to about 25 minutes; this page shows the report when it is done.",
               )
             }
           >
@@ -124,7 +124,7 @@ export function FullCheckScreen({ check: c }: { check: Check }) {
           <p className="text-muted-foreground">
             GitHub&apos;s computer opens every screen as you and as each role, every PDF, every link
             and every button that changes nothing, and lists each problem with a screenshot. It
-            takes about 10 minutes.{" "}
+            takes up to about 25 minutes.{" "}
             {c.site === "live"
               ? "This is the live site, so the check only reads: it never changes data here. Anything that writes is checked on the demo site."
               : "This is the demo site, so the check may also press buttons that write."}

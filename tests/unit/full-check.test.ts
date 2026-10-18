@@ -19,8 +19,10 @@ import {
   fixIssue,
   KIND_TEXT,
   ourStackLines,
+  CHECK_MINUTES,
   PROBLEM_KINDS,
   pullBody,
+  reportMessage,
   requestText,
   safeRoute,
 } from "@/modules/ai/full-check/texts";
@@ -332,5 +334,71 @@ describe("The workflows", () => {
     );
     // The guide on errors quotes them, which the first run took for an error.
     expect(read("src/modules/help/content/getting-started.ts")).toContain("“Something went wrong”");
+  });
+});
+
+describe("The Full check's message to the owner", () => {
+  const role = (o: Partial<{ notReached: number; filesLeft: number; stopped: boolean }> = {}) => ({
+    role: "Owner",
+    member: "Full check (Owner)",
+    screens: 100,
+    pdfs: 10,
+    skipped: 0,
+    notReached: 0,
+    filesLeft: 0,
+    stopped: false,
+    ...o,
+  });
+  const summary = (roles: ReturnType<typeof role>[]) => ({
+    roles,
+    screens: 584,
+    pdfs: 2,
+    links: 4000,
+    seconds: 600,
+  });
+
+  it("says every screen opened only when every screen and file was reached", () => {
+    expect(reportMessage(summary([role(), role()]), 0)).toEqual({
+      subject: "Full check: no problems found",
+      body: "Every screen opened as the owner and as each role (584 screens, 2 PDFs and files checked).",
+    });
+  });
+
+  it("says how much it did not reach in the time, and never says every screen then", () => {
+    const short = reportMessage(
+      summary([role({ notReached: 300, filesLeft: 4 }), role({ notReached: 17 })]),
+      0,
+    );
+    expect(short.subject).toBe("Full check: no problems found in what it reached");
+    expect(short.body).toBe(
+      "It checked 584 screens and 2 PDFs and files as the owner and each role, but 317 screens and 4 PDFs and files were not reached in the time. Start it again to check the rest.",
+    );
+    expect(short.body).not.toMatch(/every screen/i);
+    const stopped = reportMessage(summary([role(), role({ stopped: true })]), 0);
+    expect(stopped.body).toBe(
+      "It checked 584 screens and 2 PDFs and files as the owner and each role, but 1 role stopped before the end (see AI Center > Full check). Start it again to check the rest.",
+    );
+    const found = reportMessage(summary([role({ notReached: 1 })]), 3);
+    expect(found.subject).toBe("Full check: 3 problems found");
+    expect(found.body).toBe(
+      "Read them, with screenshots, in AI Center > Full check; send them to Claude Code from there. 1 screen was not reached in the time.",
+    );
+  });
+
+  it("reads a report from an older crawler, which did not count what it missed", () => {
+    const old = { ...summary([]), roles: [{ ...role(), notReached: undefined }] };
+    expect(reportMessage(old, 0).subject).toBe("Full check: no problems found");
+  });
+
+  it("gives a full pass its time, and the workflow more than that", () => {
+    // A full pass took about 15 minutes on a copy of the demo data.
+    expect(CHECK_MINUTES).toBeGreaterThanOrEqual(20);
+    const yml = read(".github/workflows/full-check.yml");
+    const timeout = Number(/timeout-minutes: (\d+)/.exec(yml)![1]);
+    // Installing the browser and sending the report take a few minutes more.
+    expect(timeout).toBeGreaterThanOrEqual(CHECK_MINUTES + 10);
+    const crawler = read("scripts/full-check/crawl.mjs");
+    // Downloads are fetched while the screens are crawled, not left for the end.
+    expect(crawler).toMatch(/pendingDownloads\.shift\(\)/);
   });
 });

@@ -14,6 +14,7 @@ export type LockableTable =
   | "ProductionBatch"
   | "StockIntake"
   | "ProductVariant"
+  | "StockBalance"
   | "FixedAsset"
   | "PettyCashBox"
   | "CapitalSource"

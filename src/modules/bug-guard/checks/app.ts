@@ -324,7 +324,7 @@ function partialCheck(summary: unknown): Found | null {
     title: `শেষ Full check সব দেখতে পারেনি: ${parts.join(", ")}।`,
     href: "/ai/full-check",
     place: "AI Center > Full check",
-    why: "যা দেখা হয়নি তার ভুল ধরা পড়েনি; “কোনো সমস্যা নেই” শুধু দেখা অংশের জন্য সত্যি।",
+    why: "যা দেখা হয়নি তার ভুল ধরা পড়েনি; সমস্যা না পাওয়ার খবর শুধু দেখা অংশের জন্য সত্যি।",
     fix: "“AI Center > Full check” এ “Run the full check” আবার চাপুন; থেমে যাওয়া রোলের কারণ সেখানে রোলের পাশে লেখা থাকে।",
     fixKind: "MANUAL",
     evidence: [

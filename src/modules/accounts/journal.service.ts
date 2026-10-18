@@ -44,6 +44,7 @@ async function assertBoxesCover(
   db: Db,
   companyId: string,
   lines: Array<{ accountId: string; debit: Prisma.Decimal; credit: Prisma.Decimal }>,
+  advice?: string,
 ) {
   const out = new Map<string, Prisma.Decimal>();
   for (const l of lines) {
@@ -60,7 +61,7 @@ async function assertBoxesCover(
     orderBy: { id: "asc" },
   });
   for (const box of boxes) {
-    await assertBoxCovers(db, companyId, box, out.get(box.ledgerAccountId)!);
+    await assertBoxCovers(db, companyId, box, out.get(box.ledgerAccountId)!, advice);
   }
 }
 
@@ -131,6 +132,8 @@ export async function reverseJournalEntry(
     db,
     original.companyId,
     original.lines.map((l) => ({ accountId: l.accountId, debit: l.credit, credit: l.debit })),
+    // Reversing is Accounts' work: what the entry put in has been spent from the box since.
+    "Money has been spent from it since: top it up first, or reverse what was paid from it.",
   );
   return db.journalEntry.create({
     data: {

@@ -69,7 +69,7 @@ export async function getMetricCards(ctx: CompanyContext, now: Date = new Date()
     netProfitFor(companyId, { start: at(monthFrom), end: dayEnd }),
     netProfitFor(companyId, { start: at(lastMonthFrom), end: at(monthFrom) }),
     netProfitFor(companyId, { start: at(fyFrom), end: dayEnd }),
-    prisma.fixedAsset.count({ where: { companyId, status: { not: "DISPOSED" } } }),
+    prisma.fixedAsset.count({ where: { companyId, status: { not: "DISPOSED" }, voidedAt: null } }),
     hiddenMetricsFor(ctx.user.id),
     prisma.badStockEntry.aggregate({
       where: { companyId, voidedAt: null },

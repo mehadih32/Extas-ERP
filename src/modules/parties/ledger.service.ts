@@ -16,6 +16,7 @@ import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { canSetOpeningBalance } from "@/modules/parties/rules";
 import { openingBalanceSchema, statementSchema } from "@/modules/parties/schemas";
+import { creditPosition, lockBuyerCredit } from "@/modules/sales/credit.service";
 
 /*
  * Buyer / supplier ledgers
@@ -182,16 +183,19 @@ export async function getStatement(ctx: CompanyContext, partyId: string, raw: un
 /**
  * Sets the balance brought forward when the party is migrated into the ERP
  * (Accounts: accounts.manage, checked here as well as in the route). Re-setting
- * reverses the earlier opening entry with a mirror entry, so both stay in the
- * books (never deleted), and posts the new one; saving the same amount on the
- * same day changes nothing.
+ * reverses the earlier opening entry with a mirror entry dated on the earlier
+ * entry's own day, so both stay in the books (never deleted) and cancel out in
+ * every report from that day on, and posts the new one; saving the same amount
+ * on the same day changes nothing.
  *
  * What a buyer owed goes on their Receivable. What the company owed a buyer
  * (an advance they had paid) is a credit on their Receivable too, like money
  * received on their account: it is their credit, used on invoices or paid back
- * (sales/credit.service.ts). A supplier's goes on Payable, and their bills are
- * settled again. A buyer's opening advance posted on Customer Advance before
- * v6.4.1 moves to Receivable when its opening balance is saved again.
+ * (sales/credit.service.ts). Lowering it is refused once the part taken away
+ * has been used: their credit is held first, like every step that uses it. A
+ * supplier's goes on Payable, and their bills are settled again. A buyer's
+ * opening advance posted on Customer Advance before v6.4.1 moves to Receivable
+ * when its opening balance is saved again.
  */
 export async function setOpeningBalance(
   ctx: CompanyContext,
@@ -208,8 +212,10 @@ export async function setOpeningBalance(
   const date = input.asOf ?? new Date();
 
   await runTransaction(async (tx) => {
-    // The supplier's account first (the ERP's lock order), before any journal number.
+    // The supplier's account (or the buyer's credit) first, the ERP's lock order,
+    // before any journal number.
     if (party.kind !== "BUYER") await lockSupplierAccount(tx, companyId, party.id);
+    else await lockBuyerCredit(tx, party.id);
     await lockRow(tx, "Party", party.id);
     const accounts = await ensureControlAccounts(companyId, tx);
     // A buyer's advance is credit on their Receivable, like money paid on account.
@@ -240,10 +246,33 @@ export async function setOpeningBalance(
       );
     if (unchanged && party.openingBalance.equals(amount)) return;
 
+    if (!unchanged && party.kind === "BUYER") {
+      // The advance (credit on their Receivable) this change takes away must still be unused.
+      const before = live
+        .flatMap((e) => e.lines)
+        .filter((l) => l.accountId === accounts.RECEIVABLE && l.partyId === party.id)
+        .reduce((t, l) => t.plus(l.debit).minus(l.credit), ZERO);
+      const taken = Prisma.Decimal.max(before.neg(), ZERO).minus(
+        Prisma.Decimal.max(amount.neg(), ZERO),
+      );
+      if (taken.gt(0)) {
+        const { credit } = await creditPosition(tx, companyId, party.id);
+        if (taken.gt(credit)) {
+          throw new AppError(
+            "CONFLICT",
+            `${party.name} has used this advance: only ${credit.toFixed(2)} of it is still unused on their account, so it can come down by that much at most. Undo its use first (void the invoice it paid, which gives the credit back, or the refund), then change it.`,
+          );
+        }
+      }
+    }
+
+    // Each mirror entry is dated on the entry it reverses, so they cancel out in every
+    // report from that day on (no report between go-live and today counts both).
     for (const entry of unchanged ? [] : live) {
       await reverseJournalEntry(tx, entry.id, {
         description: `Opening balance of ${party.name} replaced`,
         postedById: ctx.user.id,
+        date: entry.date,
       });
     }
     if (!unchanged && !amount.isZero()) {

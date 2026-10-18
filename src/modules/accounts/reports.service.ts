@@ -435,7 +435,7 @@ export async function getAccountsOverview(ctx: CompanyContext) {
   const weekAhead = startOfDayInZone(addDays(day, 8), tz);
   const unpaid = await prisma.capitalInstallment.findMany({
     where: {
-      capitalSource: { companyId },
+      capitalSource: { companyId, voidedAt: null },
       status: { in: ["SCHEDULED", "OVERDUE"] },
       dueDate: { lt: weekAhead },
     },
@@ -765,7 +765,7 @@ export async function getBooksCheck(ctx: CompanyContext) {
 
   // 4. Fixed assets: cost and depreciation vs the register.
   const assets = await prisma.fixedAsset.findMany({
-    where: { companyId, status: { not: "DISPOSED" } },
+    where: { companyId, status: { not: "DISPOSED" }, voidedAt: null },
     select: { purchaseCost: true, currentValue: true },
   });
   const cost = assets.reduce((t, a) => t.plus(a.purchaseCost), ZERO);
@@ -789,7 +789,7 @@ export async function getBooksCheck(ctx: CompanyContext) {
 
   // 5. Each loan, investor and owner's capital vs its own ledger account.
   const sources = await prisma.capitalSource.findMany({
-    where: { companyId },
+    where: { companyId, voidedAt: null },
     select: { name: true, outstanding: true, ledgerAccountId: true },
   });
   const sourceBooks = sources.reduce((t, s) => {

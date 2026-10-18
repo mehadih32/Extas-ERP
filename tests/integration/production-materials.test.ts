@@ -484,7 +484,9 @@ run("Purchase orders for a master batch", () => {
       "Material",
       "Quantity",
     ]);
-    const pdf = await purchaseOrderPdf(env.pm, fabric.id);
+    // A booking's order prints from the booking only (its revision, Draft until approved).
+    await expectAppError(purchaseOrderPdf(env.pm, fabric.id), "CONFLICT");
+    const pdf = await purchaseOrderPdf(env.pm, trimOrder.id);
     expect(pdf.bytes.subarray(0, 5).toString()).toBe("%PDF-");
   });
 

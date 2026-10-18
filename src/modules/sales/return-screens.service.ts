@@ -107,7 +107,7 @@ export async function getSalesReturnScreen(ctx: CompanyContext, returnId: string
       tax: fixed(r.tax),
       total: fixed(r.amount),
       /** What the pieces cost (moved to Damage & QC Rejects): only for people who see costs. */
-      cost: access.seeCosts ? fixed(r.costValue) : null,
+      cost: access.seeCosts && r.costValue !== null ? fixed(r.costValue) : null,
     },
     /** The buyer's unused credit now (null: not for this person). */
     buyerCredit: position ? fixed(position.credit) : null,

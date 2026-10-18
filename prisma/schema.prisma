@@ -888,6 +888,10 @@ model BadStockEntry {
   salesReturnItemId String?        @unique
   journalEntryId    String?        @unique
   createdAt         DateTime       @default(now())
+  /// Set when the sales return it came from was voided: the line stays (with
+  /// opposite stock movements) but no longer counts as rejects.
+  voidedAt          DateTime?
+  voidReason        String?
 
   company         Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
   variant         ProductVariant   @relation(fields: [variantId], references: [id])

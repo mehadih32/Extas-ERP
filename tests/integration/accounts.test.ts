@@ -181,7 +181,8 @@ run("chart of accounts, journal vouchers and transfers", () => {
       "FORBIDDEN",
     );
 
-    // Cash in hand on the go-live day; setting it again replaces the entry.
+    // Cash in hand on the go-live day; setting it again reverses the earlier entry (both
+    // stay in the books) and posts the new one; the same amount again posts nothing.
     await chart.setAccountOpeningBalance(env.accounts, env.acc.CASH, {
       amount: 50000,
       asOf: "2026-06-30",
@@ -191,11 +192,19 @@ run("chart of accounts, journal vouchers and transfers", () => {
       asOf: "2026-06-30",
     });
     expect(cash).toMatchObject({ balance: "60000.00", openingBalance: "60000.00" });
-    expect(
-      await prisma.journalEntry.count({
-        where: { companyId: env.company.id, sourceType: "OPENING_BALANCE", sourceId: env.acc.CASH },
-      }),
-    ).toBe(1);
+    await chart.setAccountOpeningBalance(env.accounts, env.acc.CASH, {
+      amount: 60000,
+      asOf: "2026-06-30",
+    });
+    const openings = await prisma.journalEntry.findMany({
+      where: { companyId: env.company.id, sourceType: "OPENING_BALANCE", sourceId: env.acc.CASH },
+      orderBy: { createdAt: "asc" },
+    });
+    expect(openings.map((e) => [e.isReversed, e.reversalOfId === openings[0]!.id])).toEqual([
+      [true, false],
+      [false, true],
+      [false, false],
+    ]);
     expect(await balance(env.accounts, env.acc.OPENING_EQUITY)).toBe("60000.00");
     await expectAppError(
       chart.setAccountOpeningBalance(env.accounts, env.acc.RECEIVABLE, { amount: 100 }),

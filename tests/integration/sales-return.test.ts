@@ -216,7 +216,7 @@ run("sales returns (credit notes)", () => {
       discount: ret.discount.toFixed(2),
       tax: ret.tax.toFixed(2),
       amount: ret.amount.toFixed(2),
-      cost: ret.costValue.toFixed(2),
+      cost: ret.costValue?.toFixed(2),
       status: ret.status,
       partyId: ret.partyId,
       invoice: ret.invoice?.number,
@@ -236,8 +236,8 @@ run("sales returns (credit notes)", () => {
         quantity: i.quantity,
         unitPrice: i.unitPrice.toFixed(2),
         amount: i.amount.toFixed(2),
-        unitCost: i.unitCost.toFixed(2),
-        rejects: i.badStockEntry?.lossValue.toFixed(2),
+        unitCost: i.unitCost?.toFixed(2),
+        rejects: i.badStockEntry?.lossValue?.toFixed(2),
       })),
     ).toEqual([
       {
@@ -464,11 +464,18 @@ run("sales returns (credit notes)", () => {
     expect(voided.voidedAt).not.toBeNull();
     expect(voided.voidReason).toBe("Recorded on the wrong invoice");
     expect((await stock.listBadStock(env.ctx)).items).toHaveLength(2);
+    // Nothing is deleted: its movements stay next to their opposites, netting to nothing,
+    // and its rejects lines stay marked void.
+    const secondMoves = await prisma.stockMovement.findMany({
+      where: { referenceType: "SalesReturn", referenceId: second.id },
+    });
+    expect(secondMoves).toHaveLength(8);
+    expect(secondMoves.reduce((sum, m) => sum + m.quantity, 0)).toBe(0);
     expect(
-      await prisma.stockMovement.count({
-        where: { referenceType: "SalesReturn", referenceId: second.id },
+      await prisma.badStockEntry.count({
+        where: { salesReturnItem: { returnId: second.id }, voidedAt: { not: null } },
       }),
-    ).toBe(0);
+    ).toBe(4);
     expect(await creditOf(env)).toBe("3377.78");
     expect((await orders.getOrder(env.ctx, order.id)).status).toBe("PARTIALLY_RETURNED");
     for (const size of ["S", "M", "L", "XL"]) {
@@ -487,7 +494,7 @@ run("sales returns (credit notes)", () => {
       where: { entityType: "SalesReturn", entityId: second.id, action: "STATUS_CHANGE" },
     });
     expect(audit.summary).toBe(
-      `Voided sales return ${second.number} (6755.55 credit, 4 rejects line(s) removed): Recorded on the wrong invoice`,
+      `Voided sales return ${second.number} (6755.55 credit, 4 rejects line(s) marked void): Recorded on the wrong invoice`,
     );
 
     // The voided pieces can come back again, priced from what is left.

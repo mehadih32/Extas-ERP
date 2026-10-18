@@ -382,6 +382,36 @@ export async function createOrder(ctx: CompanyContext, raw: unknown, meta?: Requ
   return getOrder(ctx, orderId);
 }
 
+type EditedOrder = {
+  warehouseId: string | null;
+  discount: Prisma.Decimal;
+  shippingCharge: Prisma.Decimal;
+  tax: Prisma.Decimal;
+  items: Array<{
+    variantId: string;
+    quantity: number;
+    unitPrice: Prisma.Decimal;
+    discount: Prisma.Decimal;
+  }>;
+  invoice: { id: string; status: string; total: Prisma.Decimal } | null;
+  packingList: { id: string } | null;
+};
+
+/** What an edit is worked out from: lines, charges, invoice and packing list. */
+function editBasis(o: EditedOrder) {
+  return JSON.stringify({
+    warehouseId: o.warehouseId,
+    charges: [o.discount, o.shippingCharge, o.tax].map((v) => v.toFixed(2)),
+    items: o.items
+      .map((i) =>
+        [i.variantId, i.quantity, i.unitPrice.toFixed(2), i.discount.toFixed(2)].join(":"),
+      )
+      .sort(),
+    invoice: o.invoice ? [o.invoice.id, o.invoice.status, o.invoice.total.toFixed(2)] : null,
+    packingList: o.packingList?.id ?? null,
+  });
+}
+
 /**
  * Edits an order before anything has left the warehouse. Reservations are
  * redone. An order with a live invoice is edited only with `reviseInvoice`
@@ -460,8 +490,30 @@ export async function updateOrder(
 
   await prisma.$transaction(async (tx) => {
     await lockRow(tx, "SalesOrder", order.id);
+    // Read again under the lock: another edit, a payment or a delivery may have come first.
+    const current = await tx.salesOrder.findFirstOrThrow({
+      where: { id: order.id, companyId: ctx.company.id },
+      include: { items: true, invoice: true, packingList: true },
+    });
+    if (editBasis(current) !== editBasis(order)) {
+      throw new AppError(
+        "CONFLICT",
+        `Order ${order.number} was changed by someone else just now. Open it again and make your change once more.`,
+      );
+    }
+    assertAllowed(
+      canEditOrder(current, piecesOf(await deliveredByVariant(tx, order.id)), {
+        revise: reviseInvoice,
+      }),
+    );
+    if (totals.total.lt(current.paidAmount)) {
+      throw new AppError(
+        "VALIDATION",
+        `The new total is less than the ${current.paidAmount.toFixed(2)} already paid.`,
+      );
+    }
     if (linesChanged) {
-      for (const item of order.items) {
+      for (const item of current.items) {
         await releaseStock(
           tx,
           { companyId: ctx.company.id, warehouseId: order.warehouseId!, variantId: item.variantId },
@@ -500,9 +552,9 @@ export async function updateOrder(
         shippingCharge: totals.shippingCharge,
         tax: totals.tax,
         total: totals.total,
-        dueAmount: Prisma.Decimal.max(totals.total.minus(order.paidAmount), 0),
+        dueAmount: Prisma.Decimal.max(totals.total.minus(current.paidAmount), 0),
         hasForceOverride: lines.some((l) => l.short),
-        ...(linesChanged && order.status === "PACKED" && !(revising && order.packingList)
+        ...(linesChanged && current.status === "PACKED" && !(revising && order.packingList)
           ? { status: "CONFIRMED" }
           : {}),
         ...(input.notes !== undefined ? { notes: input.notes } : {}),
@@ -580,9 +632,10 @@ export async function cancelOrder(
 
   await prisma.$transaction(async (tx) => {
     await lockRow(tx, "SalesOrder", order.id);
+    // Read again under the lock: an edit may have changed its lines since.
     const current = await tx.salesOrder.findUniqueOrThrow({
       where: { id: order.id },
-      include: { invoice: true },
+      include: { items: true, invoice: true },
     });
     const delivered = await deliveredByVariant(tx, order.id);
     assertAllowed(canCancelOrder(current, piecesOf(delivered), { returnDelivered }));
@@ -623,15 +676,19 @@ export async function cancelOrder(
       where: { id: order.id },
       data: { status: "CANCELLED", dueAmount: 0 },
     });
-    if (order.warehouseId) {
+    if (current.warehouseId) {
       // Delivery already took its pieces off the reservation; only the rest is freed.
       const left = new Map(delivered);
-      for (const item of order.items) {
+      for (const item of current.items) {
         const out = Math.min(left.get(item.variantId) ?? 0, item.quantity);
         left.set(item.variantId, (left.get(item.variantId) ?? 0) - out);
         await releaseStock(
           tx,
-          { companyId: ctx.company.id, warehouseId: order.warehouseId, variantId: item.variantId },
+          {
+            companyId: ctx.company.id,
+            warehouseId: current.warehouseId,
+            variantId: item.variantId,
+          },
           item.quantity - out,
         );
       }

@@ -19,9 +19,10 @@ import type { CorrectionPlan, JournalLinePlan } from "./types";
  * figure and never edits or deletes history (v6.4.1 B4):
  *   STOCK    a stock balance whose movements do not add up to it gets one
  *            movement of the difference (type ADJUSTMENT, marked as Bug
- *            Guard's), only while the balance and its movements are still as the
- *            check saw them. The stock kept, and so what it is worth in the
- *            books, does not change. Undo adds the opposite movement.
+ *            Guard's), only while that difference is still what the check saw
+ *            (a sale or delivery since moves both alike and leaves it). The
+ *            stock kept, and so what it is worth in the books, does not change.
+ *            Undo adds the opposite movement.
  *   JOURNAL  an adjusting journal entry (source CORRECTION), only while the
  *            mistake it puts right is still as the check saw it (its
  *            precondition, types.ts) and no other correction of it is applied.
@@ -132,14 +133,16 @@ async function stockNow(db: Db, companyId: string, plan: StockPlan) {
 }
 
 /**
- * Why a stock correction may not be made now, or null while the balance and
- * its movements are still exactly as the check saw them (so it is never made
- * twice, nor after the stock was put right another way).
+ * Why a stock correction may not be made now, or null while the stock line is
+ * still off its movements by exactly what the check saw. Every stock change
+ * moves the balance and its movements alike, so a sale since does not matter;
+ * once the difference is put right (by this correction or another way) it no
+ * longer matches, so it is never made twice.
  */
 async function stockOutOfDate(db: Db, companyId: string, plan: StockPlan) {
   const now = await stockNow(db, companyId, plan);
   if (!now) return `${plan.label}: the stock line is not there any more.`;
-  if (now.stored !== plan.stored || now.moved !== plan.moved) {
+  if (now.stored - now.moved !== plan.stored - plan.moved) {
     return `${plan.label} changed since this was prepared (stock ${now.stored}, movements ${now.moved}).`;
   }
   return null;
@@ -306,10 +309,14 @@ export async function applyPlan(
   if (problem) throw new AppError("VALIDATION", problem);
   if (plan.kind === "SET") throw new AppError("VALIDATION", SET_REFUSED);
   if (plan.kind === "STOCK") {
-    // The SKU first, as every stock change locks it (the ERP's lock order).
+    // The SKU first, as stock changes lock it (the ERP's lock order), then the stock line
+    // itself: a sale that does not lock the SKU still waits for it, and one already under
+    // way has finished, so its movement and its stock change are both seen or neither.
     await lockRow(tx, "ProductVariant", plan.variantId);
+    await lockRow(tx, "StockBalance", plan.balanceId);
     const stale = await stockOutOfDate(tx, companyId, plan);
     if (stale) throw new AppError("CONFLICT", outOfDate(stale));
+    const diff = plan.stored - plan.moved;
     await tx.stockMovement.create({
       data: {
         companyId,
@@ -317,10 +324,10 @@ export async function applyPlan(
         warehouseId: plan.warehouseId,
         grade: plan.grade,
         type: "ADJUSTMENT",
-        quantity: plan.stored - plan.moved,
+        quantity: diff,
         referenceType: STOCK_CORRECTION_REFERENCE,
         referenceId: by.correctionId,
-        note: `Bug Guard correction: the movements added up to ${plan.moved} pieces, not the ${plan.stored} in stock. This records the difference; the stock and its value did not change.`,
+        note: `Bug Guard correction: the movements added up to ${Math.abs(diff)} pieces ${diff > 0 ? "less" : "more"} than the stock. This records the difference; the stock and its value did not change.`,
         createdById: by.userId,
       },
     });

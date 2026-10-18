@@ -97,15 +97,26 @@ const LOOKS_LIKE_PIN = /^\s*\d{4,8}\s*$/;
 /** A PIN request that ran out this long ago still makes digits a (late) PIN. */
 const LATE_PIN_MINUTES = 60;
 
-/** Digits checked against the PIN when nothing asked for one, per owner and hour. */
-const STRAY_CHECKS_PER_HOUR = 5;
+/** The most numbers of one message checked against the PIN (each check takes a moment). */
+const MAX_PIN_CANDIDATES = 12;
+
+/** The numbers in a message that could be a PIN: each run of 4 to 8 digits, once. */
+export function pinCandidates(text: string): string[] {
+  const runs = text.match(/\d+/g) ?? [];
+  return [...new Set(runs.filter((r) => r.length >= 4 && r.length <= 8))].slice(
+    0,
+    MAX_PIN_CANDIDATES,
+  );
+}
 
 /**
  * Digits that are a PIN although no store waits for one now (v6.4 A5), so
  * they are hidden everywhere too: "late" when a store asked for the PIN and
- * the five minutes ran out (in the last hour), "stray" when they are the PIN
- * of a store of this chat. A few checks an hour at most, so the bot never
- * becomes a way to guess the PIN; past that, digits are words as usual.
+ * the five minutes ran out (in the last hour), "stray" when a number in the
+ * message, alone or among words, is the PIN of a store of this chat. Every
+ * message of the linked owner's own chat with digits is checked, with no
+ * hourly limit (v6.4.1 B6): only the owner's own chat gets here, and a match
+ * only hides the message.
  */
 async function hiddenPin(
   mine: AiBotLink[],
@@ -113,19 +124,20 @@ async function hiddenPin(
   now: Date,
 ): Promise<"late" | "stray" | null> {
   const text = m.text ?? "";
-  if (m.callback || !LOOKS_LIKE_PIN.test(text)) return null;
+  if (m.callback) return null;
   const since = now.getTime() - LATE_PIN_MINUTES * 60_000;
-  if (mine.some((l) => l.pending && l.pendingUntil && l.pendingUntil.getTime() > since)) {
+  if (
+    LOOKS_LIKE_PIN.test(text) &&
+    mine.some((l) => l.pending && l.pendingUntil && l.pendingUntil.getTime() > since)
+  ) {
     return "late";
   }
-  for (const link of mine) {
-    const owner = link.ownerId ?? link.id;
-    try {
-      checkRateLimit(`ai-pin-stray:${link.companyId}:${owner}`, STRAY_CHECKS_PER_HOUR, 3_600_000);
-    } catch {
-      continue;
+  const numbers = pinCandidates(text);
+  if (numbers.length === 0) return null;
+  for (const companyId of new Set(mine.map((l) => l.companyId))) {
+    for (const number of numbers) {
+      if (await pinMatches(companyId, number)) return "stray";
     }
-    if (await pinMatches(link.companyId, text.trim())) return "stray";
   }
   return null;
 }

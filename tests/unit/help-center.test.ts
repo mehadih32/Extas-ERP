@@ -398,6 +398,9 @@ describe("who each guide is for", () => {
     expect(
       articleOpen(find("production", "production-overview"), ["production.techpack.approve"]),
     ).toBe(false);
+    // ...while the Production part, which its menu shows them, stays open.
+    const production = HELP_SECTIONS.find((x) => x.id === "production")!;
+    expect(sectionOpen(production, ["production.techpack.approve"])).toBe(true);
     expect(articleOpen(find("production", "production-bookings"), ["production.view"])).toBe(false);
     expect(articleOpen(find("hr", "hr-overview"), ["accounts.view"])).toBe(false);
     expect(articleOpen(find("settings", "settings-add-person"), ["company.settings"])).toBe(false);

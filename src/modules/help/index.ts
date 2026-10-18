@@ -132,9 +132,11 @@ function routeOpen(route: string, permissions: readonly string[], platformOwner 
 /** Whether only the platform owner opens a page. */
 const ownerOnly = (route: string) => tabFor(route)?.platformOwner === true;
 
-/** Whether the person's role opens the section's part of the app. */
+/** Whether the person's role opens the section's part of the app (its menu entry). */
 export function sectionOpen(section: HelpSection, permissions: readonly string[]): boolean {
-  return section.href === null || routeOpen(section.href, permissions);
+  if (section.href === null) return true;
+  const entry = menuEntryFor(section.href);
+  return !entry || holdsAny(permissions, entry.anyOf);
 }
 
 /**

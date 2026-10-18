@@ -68,6 +68,8 @@ export type ReportDocument = {
     primaryColor: string;
     accentColor: string;
     currency: string;
+    /** "BIN: …" and "Trade licence: …" when on file, printed under the details. */
+    registrations?: string[];
   };
   period: { period: PeriodPreset | "CUSTOM"; from: string; to: string; label: string };
   /** The instant it was made (ISO) and the same in company time ("2 Oct 2026, 15:04"). */

@@ -21,7 +21,11 @@ concurrency:
 jobs:
   checks:
     name: Checks
+    # An old Help picture never keeps a fix off the live site; the "Help
+    # pictures" workflow checks main and takes them again (v6.4.1 C2).
     uses: ./.github/workflows/checks.yml
+    with:
+      pictures-may-wait: true
 
   deploy:
     name: Update the server

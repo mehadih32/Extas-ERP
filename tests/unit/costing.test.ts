@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   pastCmTerms,
   PROFIT_MIN_PERCENT,
+  noPriceLeft,
   onCostOf,
   profitBothWays,
   profitUnderMinimum,
@@ -277,5 +278,17 @@ describe("the owner's profit % (v6.4.2): at least 10%, no upper limit", () => {
     expect(profitBothWays(66.67)).toBe("66.67% of price = 200.03% on cost");
     expect(profitBothWays(-5)).toBe("-5% of price = -4.76% on cost");
     expect(profitBothWays(200)).toBe("200% of price: no price can leave that");
+  });
+
+  it("says why a sheet would leave no price, and what was likely meant", () => {
+    expect(noPriceLeft(66.67, 1.15)).toBeNull();
+    expect(noPriceLeft(null, 99.99)).toBeNull();
+    expect(noPriceLeft(98.85, 1.15)).toMatch(/is 100% of the price, which leaves no price/);
+    expect(noPriceLeft(200, 0)).toBe(
+      "200% of the price leaves no price. Did you mean 200% on cost? That is 66.67% of the price.",
+    );
+    expect(noPriceLeft(null, 100)).toBe(
+      "Source tax, bank charges and commission come to 100% of the price, which leaves no price. Lower them.",
+    );
   });
 });

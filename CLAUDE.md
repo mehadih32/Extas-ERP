@@ -71,7 +71,8 @@ places disagree, the newer instruction wins.
   least 10%, no upper limit (a sheet holds up to 999.99%), checked by the server, not only the screen. A sheet saved
   under 10% before this rule keeps its figure and shows a note; any edit to it (its details or its styles) first
   raises it to at least 10%. Past profit % may be shown as a hint. The profit % comes off the selling price with the
-  percent lines, so together they stay under 100% for a price to exist.
+  percent lines, so together they stay under 100% for a price to exist; the server refuses a save that leaves no
+  price. Every profit % is shown with its markup on cost (15% of price = 17.65% on cost; 200% on cost is 66.67%).
 - **Office overhead:** not part of costing.
 - **CM:** a fixed price per style per order agreed with the factory (per piece or per dozen). No SMV or
   per-minute maths. Use the CM contract data.

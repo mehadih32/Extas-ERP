@@ -802,15 +802,12 @@ run("Mehedi 2.0", () => {
     const [low] = await say(`${number} profit 5%`);
     expect(low!.text).toBe("Give a profit % of at least 10%.");
     expect(cardOf(low!)).toBeNull();
+    // A profit that leaves no price is never offered: the sheet would have no price.
     const [high] = await say(`${number} 200% profit`);
     expect(high!.text).toBe(
-      `Press Apply to set the profit of ${number} to 200% of price: no price can leave that. If you meant 200% on cost, say "${number} 200% on cost" (66.67% of price).`,
+      `200% profit plus 1.15% off the price (source tax, bank charges and commission) is 201.15% of the price, which leaves no price. Did you mean 200% on cost? That is 66.67% of the price. Say "${number} 200% on cost" for that.`,
     );
-    expect(cardOf(high!)).toMatchObject({
-      action: "profit.set",
-      params: { costingId: id, percent: 200 },
-    });
-    await cancelCard(env.owner, high!.id);
+    expect(cardOf(high!)).toBeNull();
     // A markup on the cost is taken as its share of the price: 200% on cost is 66.67%.
     const [markup] = await say(`${number} profit 200% on cost`);
     expect(markup!.text).toBe(

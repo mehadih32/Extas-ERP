@@ -66,6 +66,24 @@ export const onCostOf = (ofPrice: number) =>
 
 const two = (n: number) => String(Number(n.toFixed(2)));
 
+/**
+ * Why a sheet would leave no price, or null when it leaves one: the profit %
+ * and the percent lines (source tax, bank charges, commission) come off the
+ * price, so together they stay under 100%. A big profit was likely meant on
+ * the cost: 200% on cost is 66.67% of the price.
+ */
+export function noPriceLeft(profit: number | null, lines: number) {
+  const total = Math.round(((profit ?? 0) + lines) * 100) / 100;
+  if (total < 100) return null;
+  if (profit === null) {
+    return `Source tax, bank charges and commission come to ${two(total)}% of the price, which leaves no price. Lower them.`;
+  }
+  const meant = `Did you mean ${two(profit)}% on cost? That is ${two(shareOfPrice(profit))}% of the price.`;
+  return lines > 0
+    ? `${two(profit)}% profit plus ${two(lines)}% off the price (source tax, bank charges and commission) is ${two(total)}% of the price, which leaves no price. ${meant}`
+    : `${two(profit)}% of the price leaves no price. ${meant}`;
+}
+
 /** A profit % as the sheet keeps it, with its markup on the cost beside it. */
 export function profitBothWays(ofPrice: number) {
   const onCost = onCostOf(ofPrice);

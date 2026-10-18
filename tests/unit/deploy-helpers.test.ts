@@ -1600,8 +1600,11 @@ stop_restore_in_db`;
     const calls = readFileSync(path.join(dir, "calls"), "utf8");
     // Only its connection is ended: nothing is killed inside the container.
     expect(calls).not.toMatch(/exec -T db [^\n]*kill/);
-    expect(calls.match(/WHERE application_name = 'extas_erp_restore'/g)).toHaveLength(3);
-    expect(calls).toMatch(/compose exec -T db pgrep -f \[e\]xtas_erp_restore\n$/);
+    // Its name says "extras" (a machine name); the name before v6.4.2 is ended too.
+    expect(
+      calls.match(/WHERE application_name IN \('extras_erp_restore', 'extas_erp_restore'\)/g),
+    ).toHaveLength(3);
+    expect(calls).toMatch(/compose exec -T db pgrep -f \[e\]xtr\?as_erp_restore\n$/);
     // A database that does not answer for a moment (restarting): asked again.
     await writeFile(path.join(dir, "calls"), "");
     expect((await withLib(stub, { env: { RECOVERING: "3" } })).code).toBe(0);

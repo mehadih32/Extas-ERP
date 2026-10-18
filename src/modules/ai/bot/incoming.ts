@@ -169,31 +169,44 @@ async function keep(links: AiBotLink[], channel: AiBotChannel, botKey: string, m
   // A stranger is never answered; past a few messages an hour they are not even logged.
   if (!known && !strangerAllowed(first.id, m.chatId)) return;
   // A repeated delivery (Telegram sends an update again when its answer was
-  // late) is dropped before any PIN check, so one wrong PIN counts once.
+  // late, at times at the same moment) is dropped before any PIN check, so one
+  // wrong PIN counts once: the delivery is claimed first, on the unique key of
+  // the channel and the delivery id, with no text yet (nothing of a PIN).
   const providerId = `${botKey}:${m.updateId}`;
-  const seen = await prisma.aiBotMessage.findUnique({
-    where: { channel_providerId: { channel, providerId } },
-    select: { id: true },
-  });
-  if (seen) return;
-  const pin = known ? await checkPinNow(mine, m, now) : null;
-  // A link code is a command, never a PIN.
-  const hidden = known && !pin && !linking ? await hiddenPin(mine, m, now) : null;
-  // Kept in the store it is for (the worker moves it if it can only tell later).
-  const store = hidden
-    ? (mine.find((l) => l.pending) ?? mine[0]!)
-    : (linking ?? (known ? await storeOfMessage(mine, m) : null) ?? mine[0] ?? first);
-  const incoming: Incoming = pin || hidden ? { ...m, text: PIN_TEXT } : m;
+  let claim: { id: string };
   try {
+    claim = await prisma.aiBotMessage.create({
+      data: {
+        companyId: first.companyId,
+        linkId: first.id,
+        channel,
+        direction: "IN",
+        providerId,
+        chatId: m.chatId,
+        text: "",
+        status: "IGNORED",
+      },
+      select: { id: true },
+    });
+  } catch (error) {
+    if (isRepeat(error)) return;
+    throw error;
+  }
+  try {
+    const pin = known ? await checkPinNow(mine, m, now) : null;
+    // A link code is a command, never a PIN.
+    const hidden = known && !pin && !linking ? await hiddenPin(mine, m, now) : null;
+    // Kept in the store it is for (the worker moves it if it can only tell later).
+    const store = hidden
+      ? (mine.find((l) => l.pending) ?? mine[0]!)
+      : (linking ?? (known ? await storeOfMessage(mine, m) : null) ?? mine[0] ?? first);
+    const incoming: Incoming = pin || hidden ? { ...m, text: PIN_TEXT } : m;
     await prisma.$transaction(async (tx) => {
-      const row = await tx.aiBotMessage.create({
+      const row = await tx.aiBotMessage.update({
+        where: { id: claim.id },
         data: {
           companyId: store.companyId,
           linkId: store.id,
-          channel,
-          direction: "IN",
-          providerId,
-          chatId: m.chatId,
           text: described(incoming).slice(0, known ? 2000 : 200),
           status: known ? "RECEIVED" : "IGNORED",
         },
@@ -215,7 +228,8 @@ async function keep(links: AiBotLink[], channel: AiBotChannel, botKey: string, m
       }
     });
   } catch (error) {
-    if (isRepeat(error)) return;
+    // Not kept: the claim goes (it never held the message), so Telegram's next try is handled.
+    await prisma.aiBotMessage.deleteMany({ where: { id: claim.id, text: "" } });
     throw error;
   }
   if (known) kickJobWorker();

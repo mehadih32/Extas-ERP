@@ -1,3 +1,4 @@
+import type { SystemRole } from "@prisma/client";
 import { describe, expect, it } from "vitest";
 
 import { companyProfileSchema, isKnownTimeZone } from "@/modules/companies/company.service";
@@ -15,11 +16,13 @@ import {
   canResetPassword,
   canGivePermissions,
   HELD_ROLE,
+  heldKeys,
   isPrivileged,
   LAST_SUPER_ADMIN,
   OWN_ROLE,
   SUPER_ADMIN_GRANTS_KEYS,
   SUPER_ADMIN_GRANTS_ROLE,
+  SUPER_ADMIN_REACTIVATES,
 } from "@/modules/rbac/rules";
 import { ALL_PERMISSION_KEYS, DEFAULT_ROLE_PERMISSIONS } from "@/modules/rbac/permissions";
 
@@ -153,11 +156,45 @@ describe("deactivating and reactivating", () => {
   });
 
   it("does not let a team manager bring a Super Admin back", () => {
-    expect(canReactivate(hrManager, SUPER_ADMIN)).toEqual(
+    const back = (role: { systemRole: SystemRole | null; permissions: readonly string[] }) => ({
+      systemRole: role.systemRole,
+      heldKeys: role.permissions,
+    });
+    expect(canReactivate(hrManager, back(SUPER_ADMIN))).toEqual(
       refused("FORBIDDEN", "Only a Super Admin can reactivate a Super Admin."),
     );
-    expect(canReactivate(superAdmin, SUPER_ADMIN)).toEqual(allowed);
-    expect(canReactivate(hrManager, SALES)).toEqual(allowed);
+    expect(canReactivate(superAdmin, back(SUPER_ADMIN))).toEqual(allowed);
+    expect(canReactivate(hrManager, back(SALES))).toEqual(allowed);
+  });
+
+  it("leaves switching back on someone who records money or manages the team to a Super Admin (v6.4.1 review 4)", () => {
+    const refusedBack = refused("FORBIDDEN", SUPER_ADMIN_REACTIVATES);
+    expect(SUPER_ADMIN_REACTIVATES).toBe(
+      "Only a Super Admin can switch this person back on, because they can record money or manage users or roles. Ask a Super Admin.",
+    );
+    const accountant = { systemRole: ACCOUNTS.systemRole, heldKeys: ACCOUNTS.permissions };
+    expect(canReactivate(hrManager, accountant)).toEqual(refusedBack);
+    for (const role of [TEAM_LEAD, ROLE_EDITOR]) {
+      expect(canReactivate(hrManager, { systemRole: null, heldKeys: role.permissions })).toEqual(
+        refusedBack,
+      );
+    }
+    // Their own permissions count: a ticked money key, or Accounts with both unticked.
+    const tick = (key: string, granted: boolean) => ({ granted, permission: { key } });
+    const salesWithReceipts = heldKeys(SALES.permissions, [tick("accounts.receipts.record", true)]);
+    expect(
+      canReactivate(hrManager, { systemRole: "SALES_EXECUTIVE", heldKeys: salesWithReceipts }),
+    ).toEqual(refusedBack);
+    const trimmed = heldKeys(ACCOUNTS.permissions, [
+      tick("accounts.receipts.record", false),
+      tick("accounts.payments.record", false),
+    ]);
+    expect(canReactivate(hrManager, { systemRole: "ACCOUNTS", heldKeys: trimmed })).toEqual(
+      allowed,
+    );
+    // A Super Admin and the platform owner may.
+    expect(canReactivate(superAdmin, accountant)).toEqual(allowed);
+    expect(canReactivate(platformOwner, accountant)).toEqual(allowed);
   });
 });
 

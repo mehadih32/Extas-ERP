@@ -232,6 +232,29 @@ run("chart of accounts, journal vouchers and transfers", () => {
     });
   });
 
+  it("keeps one opening entry when two first saves of an account's opening balance come at once (v6.4.1 review 4)", async () => {
+    const env = await setup();
+    const save = () =>
+      chart.setAccountOpeningBalance(env.accounts, env.acc.CASH, {
+        amount: 50000,
+        asOf: "2026-01-01",
+      });
+    const results = await Promise.allSettled([save(), save(), save()]);
+    expect(results.map((r) => r.status)).toEqual(["fulfilled", "fulfilled", "fulfilled"]);
+    const live = await prisma.journalEntry.count({
+      where: {
+        companyId: env.company.id,
+        sourceType: "OPENING_BALANCE",
+        sourceId: env.acc.CASH,
+        isReversed: false,
+        reversalOfId: null,
+      },
+    });
+    expect(live).toBe(1);
+    expect(await balance(env.accounts, env.acc.CASH)).toBe("50000.00");
+    expect(await balance(env.accounts, env.acc.OPENING_EQUITY)).toBe("50000.00");
+  });
+
   it("posts journal vouchers and transfers, and reverses them", async () => {
     const env = await setup();
     await chart.setAccountOpeningBalance(env.accounts, env.acc.CASH, {

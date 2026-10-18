@@ -5,6 +5,7 @@ export type LockableTable =
   | "Company"
   | "Party"
   | "JournalEntry"
+  | "LedgerAccount"
   | "Payment"
   | "SalesOrder"
   | "ProformaInvoice"

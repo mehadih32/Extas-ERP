@@ -22,10 +22,12 @@ import { registrationNumbers } from "@/modules/companies/letterhead";
 import { canSeeFinancials, canSeeSalesAmounts, canSeeStock } from "@/modules/dashboard/access";
 import { RECENT_DAYS, stockWindow } from "@/modules/dashboard/insights.service";
 import {
+  marginPct,
   salesByBucket,
   salesByChannel,
   salesReturnTotals,
   salesTotals,
+  sharePct,
   type TopSeller,
   topSellers,
 } from "@/modules/dashboard/sales-figures";
@@ -95,8 +97,6 @@ const DAILY_UP_TO = 62;
 const amount = (d: Prisma.Decimal) => d.toFixed(2);
 const percentOf = (part: Prisma.Decimal, whole: Prisma.Decimal) =>
   whole.isZero() ? null : part.dividedBy(whole).times(100).toFixed(1);
-const ratio = (part: number, whole: number) =>
-  whole === 0 ? null : ((part / whole) * 100).toFixed(1);
 
 type Ledger = {
   accounts: AccountInfo[];
@@ -316,7 +316,7 @@ async function salesSection(b: Build): Promise<ReportSection> {
       c.orders,
       c.pieces,
       amount(c.net),
-      percentOf(c.net, totals.net),
+      sharePct(c.net, totals.net),
     ],
   }));
   if (channelRows.length > 0) {
@@ -326,7 +326,7 @@ async function salesSection(b: Build): Promise<ReportSection> {
         totals.orders,
         totals.pieces,
         amount(totals.net),
-        totals.net.isZero() ? null : "100.0",
+        sharePct(totals.net, totals.net),
       ],
       style: "total",
     });
@@ -514,7 +514,7 @@ async function topSellersSection(b: Build): Promise<ReportSection> {
 
   const moneyColumns = (r: TopSeller): Array<string | null> => [
     ...(sales ? [amount(r.net), r.pieces > 0 ? amount(r.net.dividedBy(r.pieces)) : null] : []),
-    ...(costs ? [percentOf(r.net.minus(r.cost), r.net)] : []),
+    ...(costs ? [marginPct(r.net, r.cost)] : []),
   ];
   const moneyHeads: ReportColumn[] = [
     ...(sales
@@ -550,7 +550,7 @@ async function topSellersSection(b: Build): Promise<ReportSection> {
         r.colorName,
         r.sizeName,
         r.pieces,
-        ratio(r.pieces, totals.pieces),
+        sharePct(r.pieces, totals.soldPieces),
         ...moneyColumns(r),
         ...stockCell(r),
       ],
@@ -577,7 +577,7 @@ async function topSellersSection(b: Build): Promise<ReportSection> {
         r.styleName,
         r.skus,
         r.pieces,
-        ratio(r.pieces, totals.pieces),
+        sharePct(r.pieces, totals.soldPieces),
         ...moneyColumns(r),
         ...stockCell(r),
       ],
@@ -593,7 +593,7 @@ async function topSellersSection(b: Build): Promise<ReportSection> {
       ? [
           {
             label: "Gross margin",
-            value: percentOf(totals.net.minus(totals.cost), totals.net),
+            value: marginPct(totals.net, totals.cost),
             kind: "percent" as const,
             hint: "Estimated from the goods' costs",
           },
@@ -601,7 +601,7 @@ async function topSellersSection(b: Build): Promise<ReportSection> {
       : []),
   ];
   const notes = [
-    `Pieces on invoices dated in the period (void invoices left out), less the pieces that came back in it (sales returns). Order discounts are shared across each order's lines by value.${stock ? ' "In stock" is sellable stock now.' : ""}`,
+    `Pieces on invoices dated in the period (void invoices left out), less the pieces that came back in it (sales returns). Share is each one's pieces out of all pieces invoiced in the period, before returns. Order discounts are shared across each order's lines by value.${stock ? ' "In stock" is sellable stock now.' : ""}`,
   ];
   if (costs) {
     notes.push(

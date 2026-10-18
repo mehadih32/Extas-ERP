@@ -37,7 +37,7 @@ import * as screens from "@/modules/hr/screens.service";
 import * as vault from "@/modules/hr/vault.service";
 import { setMemberAccess } from "@/modules/rbac/member.service";
 import { createRole } from "@/modules/rbac/role.service";
-import { SUPER_ADMIN_GRANTS_ROLE } from "@/modules/rbac/rules";
+import { SUPER_ADMIN_GRANTS_ROLE, SUPER_ADMIN_REACTIVATES } from "@/modules/rbac/rules";
 
 import { png } from "../fixtures/images";
 import { addToCompany, contextFor, makeCompany, makeUser, resetDb } from "./helpers";
@@ -281,6 +281,36 @@ run("the 360° profile and system access", () => {
     expect(audit.map((a) => a.summary)).toEqual(
       expect.arrayContaining([expect.stringContaining("from Employee to Warehouse Team")]),
     );
+  });
+
+  it("leaves switching a login with money rights back on to a Super Admin (v6.4.1 review 4)", async () => {
+    // The owner gives Sumon the right to record payments; the office admin switches him off.
+    const membership = await prisma.companyMembership.findUniqueOrThrow({
+      where: { companyId_userId: { companyId: env.company.id, userId: env.sumonCtx.user.id } },
+    });
+    const employeeKeys = (
+      await prisma.rolePermission.findMany({
+        where: { roleId: env.roles.EMPLOYEE },
+        select: { permission: { select: { key: true } } },
+      })
+    ).map((r) => r.permission.key);
+    await setMemberAccess(env.owner, membership.id, {
+      permissions: [...employeeKeys, "accounts.payments.record"],
+    });
+    await logins.changeEmployeeLogin(env.admin, env.sumon.id, { active: false });
+
+    // The office admin is not offered the switch-on, and the server refuses it.
+    expect((await accessOf(env.admin, env.sumon.id))?.can.switchOn).toBe(false);
+    await expect(
+      logins.changeEmployeeLogin(env.admin, env.sumon.id, { active: true }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN", message: SUPER_ADMIN_REACTIVATES });
+    expect(
+      (await prisma.companyMembership.findUniqueOrThrow({ where: { id: membership.id } })).isActive,
+    ).toBe(false);
+    // The owner may.
+    expect((await accessOf(env.owner, env.sumon.id))?.can.switchOn).toBe(true);
+    const on = await logins.changeEmployeeLogin(env.owner, env.sumon.id, { active: true });
+    expect(on.active).toBe(true);
   });
 
   it("keeps the Settings > Team rules", async () => {

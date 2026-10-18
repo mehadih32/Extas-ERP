@@ -10,6 +10,7 @@ import { prisma } from "@/lib/prisma";
 import { addDays } from "@/modules/accounts/periods";
 import * as logos from "@/modules/companies/logo.service";
 import * as compliance from "@/modules/compliance/compliance.service";
+import { getDashboardInsights } from "@/modules/dashboard/insights.service";
 import {
   ALL_TIME,
   buyerSales,
@@ -285,6 +286,72 @@ run("Sales figures less sales returns (v6.4.1 review 3)", () => {
       net: "0.00",
     });
     expect(fmt(await salesTotals(env.company.id, ALL_TIME)).net).toBe("10000.00");
+  });
+
+  it("keeps shares between 0 and 100 and shows no margin on negative sales when older goods come back (v6.4.1 review 4)", async () => {
+    const env = await setup();
+    // 8 L invoiced 40 days ago; today 3 M and 2 L are sold, and 6 L of the old invoice come back.
+    const old = await deliveredOrder(env, { [env.sku("L")]: 8 });
+    await prisma.invoice.update({
+      where: { id: old.invoice.id },
+      data: { issueDate: day(addDays(today(), -40)).start },
+    });
+    await deliveredOrder(env, { [env.sku("M")]: 3, [env.sku("L")]: 2 });
+    await returns.createSalesReturn(env.ctx, {
+      invoiceId: old.invoice.id,
+      items: [{ orderItemId: await old.line(env.sku("L")), quantity: 6 }],
+      reason: "Late",
+    });
+
+    // The totals stay net of the returns (they match the books): 5 sold less 6 back.
+    const top = await topSellers(env.company.id, day(today()), {
+      groupBy: "SKU",
+      sortBy: "QUANTITY",
+      limit: 10,
+    });
+    expect(top.items.map((i) => [i.sizeName, i.pieces])).toEqual([["M", 3]]);
+    expect(top.totals).toMatchObject({ groups: 1, pieces: -1, soldPieces: 5 });
+    expect(top.totals.net.toFixed(2)).toBe("-900.00");
+
+    // The dashboard: M kept 3 of the 5 pieces sold today (not 3 of -1), and no margin on negative sales.
+    const insights = await getDashboardInsights(env.ctx, { period: "TODAY" });
+    expect(insights.topSellers.items.map((i) => [i.sizeName, i.sharePct, i.marginPct])).toEqual([
+      ["M", "60.0", "44.4"],
+    ]);
+    expect(insights.topSellers.totals).toMatchObject({
+      pieces: -1,
+      net: "-900.00",
+      marginPct: null,
+    });
+
+    // The Report Builder (screen and PDF) says the same.
+    const doc = await reports.previewReport(env.ctx, {
+      period: "TODAY",
+      metrics: "SALES,TOP_SELLERS",
+    });
+    const section = figure(doc, "TOP_SELLERS");
+    const [skus, stylesTable] = section.tables;
+    // #, SKU, Product, Color, Size, Pieces, Share, Net sales, Avg price, Margin, In stock.
+    expect(skus!.rows.map((r) => [r.cells[4], r.cells[5], r.cells[6], r.cells[9]])).toEqual([
+      ["M", 3, "60.0", "44.4"],
+    ]);
+    // The style kept 3 + 2 - 6 = -1 pieces: not listed.
+    expect(stylesTable!.rows).toEqual([]);
+    expect(section.figures).toEqual([
+      { label: "SKUs sold", value: 1, kind: "int" },
+      { label: "Pieces sold", value: -1, kind: "int" },
+      { label: "Net sales", value: "-900.00", kind: "money" },
+      {
+        label: "Gross margin",
+        value: null,
+        kind: "percent",
+        hint: "Estimated from the goods' costs",
+      },
+    ]);
+    expect(section.notes[0]).toContain("Share is each one's pieces out of all pieces invoiced");
+    // A channel's share of negative sales is no share either.
+    const byChannel = figure(doc, "SALES").tables.find((t) => t.title === "Sales by channel")!;
+    expect(byChannel.rows.map((r) => r.cells[4])).toEqual([null, null]);
   });
 });
 

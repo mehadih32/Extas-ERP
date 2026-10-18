@@ -120,7 +120,7 @@ async function member(
 /**
  * Extras with two Super Admins (one of them the platform owner), people in
  * custom roles that hold one settings permission each, someone who also works
- * in Fabric Apparel, a new person who has not signed in yet and two deactivated
+ * in Fabric Apparel, a new person who has not signed in yet and five deactivated
  * members.
  */
 async function extrasTeam() {
@@ -149,6 +149,32 @@ async function extrasTeam() {
   await member("invited@extras.test", company.id, roles.EMPLOYEE, { invited: true });
   await member("old-admin@extras.test", company.id, roles.SUPER_ADMIN, { isActive: false });
   await member("left@extras.test", company.id, seasonal.id, { isActive: false });
+  // Switched off while holding money rights: through the role, through a
+  // permission of their own, and Accounts with both money keys taken away.
+  await member("old-accounts@extras.test", company.id, roles.ACCOUNTS, { isActive: false });
+  const payer = await member("old-payer@extras.test", company.id, roles.EMPLOYEE, {
+    isActive: false,
+  });
+  const trimmed = await member("old-trimmed@extras.test", company.id, roles.ACCOUNTS, {
+    isActive: false,
+  });
+  const keys = await prisma.permission.findMany({
+    where: { key: { in: ["accounts.receipts.record", "accounts.payments.record"] } },
+  });
+  await prisma.memberPermission.createMany({
+    data: [
+      {
+        membershipId: payer.membership.id,
+        permissionId: keys.find((k) => k.key === "accounts.payments.record")!.id,
+        granted: true,
+      },
+      ...keys.map((k) => ({
+        membershipId: trimmed.membership.id,
+        permissionId: k.id,
+        granted: false,
+      })),
+    ],
+  });
 
   return {
     company,
@@ -169,14 +195,18 @@ async function checkTeamScreen(userId: string, companyId: string, who: string): 
   const result = await getTeamAction();
   if (!result.ok) throw new Error(`${who} could not open the team: ${result.error.message}`);
   const team = result.data;
-  const putBack = (m: TeamMember) =>
-    prisma.companyMembership.update({
-      where: { id: m.id },
-      data: { roleId: m.role.id, isActive: m.isActive },
-    });
-
   for (const m of team.members) {
     const label = `${who} -> ${m.email}`;
+    // Their role, whether they are on and their own permissions, as they were.
+    const ownKeys = await prisma.memberPermission.findMany({ where: { membershipId: m.id } });
+    const putBack = async (m: TeamMember) => {
+      await prisma.companyMembership.update({
+        where: { id: m.id },
+        data: { roleId: m.role.id, isActive: m.isActive },
+      });
+      await prisma.memberPermission.deleteMany({ where: { membershipId: m.id } });
+      await prisma.memberPermission.createMany({ data: ownKeys });
+    };
 
     for (const role of team.roles.filter((r) => r.id !== m.role.id)) {
       const moved = await changeMemberRoleAction(m.id, role.id);
@@ -198,7 +228,7 @@ async function checkTeamScreen(userId: string, companyId: string, who: string): 
     });
     expect(ticked.ok, `${label}: edit permissions`).toBe(m.can.editPermissions);
     expectRuleRefusal(ticked, label);
-    if (ticked.ok) await prisma.memberPermission.deleteMany({ where: { membershipId: m.id } });
+    if (ticked.ok) await putBack(m);
 
     if (m.isActive) {
       expect(m.can.reactivate, `${label}: reactivate`).toBe(false);
@@ -376,6 +406,14 @@ run("team and roles screens offer exactly what the server allows", () => {
       reactivate: true,
       resetPassword: true,
     });
+    // Switching someone back on who records money (through the role or a permission
+    // of their own) is a Super Admin's to do, as giving them that right is (v6.4.1 review 4).
+    expect(memberCalled(asHr, "old-accounts@extras.test").can.reactivate).toBe(false);
+    expect(memberCalled(asHr, "old-payer@extras.test").can.reactivate).toBe(false);
+    expect(memberCalled(asHr, "old-trimmed@extras.test").can.reactivate).toBe(true);
+    for (const email of ["old-accounts@extras.test", "old-payer@extras.test"]) {
+      expect(memberCalled(asAdmin, email).can.reactivate, email).toBe(true);
+    }
     expect(memberCalled(asHr, "hr@extras.test")).toMatchObject({
       isYou: true,
       roleChoices: [],

@@ -20,6 +20,7 @@ import {
   canEditMemberPermissions,
   canGrantRole,
   canReactivate,
+  heldKeys,
 } from "@/modules/rbac/rules";
 
 /*
@@ -148,7 +149,13 @@ export async function getSystemAccess(ctx: CompanyContext, employee: Subject) {
       switchOn:
         manageUsers &&
         membership?.isActive === false &&
-        canReactivate(actor, { systemRole: membership.role.systemRole }).ok,
+        canReactivate(actor, {
+          systemRole: membership.role.systemRole,
+          heldKeys: heldKeys(
+            roles.find((r) => r.id === membership.roleId)?.permissions ?? ALL_PERMISSION_KEYS,
+            membership.permissionChanges,
+          ),
+        }).ok,
       remove: manageHr && canRemovePortalLogin(subject).ok,
       /** Tick or untick permissions for this login alone (people who manage roles too). */
       editPermissions:

@@ -19,7 +19,7 @@ import {
 import { ensureControlAccounts } from "@/modules/accounts/control-accounts";
 import { postJournalEntry, reverseJournalEntry } from "@/modules/accounts/journal.service";
 import { assertCanPayMoney } from "@/modules/accounts/money-guards";
-import { assertBoxCovers } from "@/modules/accounts/petty-cash-balance";
+import { assertBoxCovers, topUpAdvice } from "@/modules/accounts/petty-cash-balance";
 import { pettyCashBoxForCost } from "@/modules/accounts/petty-cash.service";
 import { lockSupplierAccount, settleSupplierBills } from "@/modules/accounts/supplier-settlement";
 import { auditInCompany } from "@/modules/audit/audit.service";
@@ -575,7 +575,7 @@ export async function createExpense(ctx: CompanyContext, raw: unknown, meta?: Re
   const expenseId = await runTransaction(async (tx) => {
     // Owed to a supplier: their account first, before the expense's number.
     if (supplier && inBooks) await lockSupplierAccount(tx, companyId, supplier.id);
-    if (box) await assertBoxCovers(tx, companyId, box, amount);
+    if (box) await assertBoxCovers(tx, companyId, box, amount, topUpAdvice(ctx));
     const paidFrom = box
       ? box.ledgerAccountId
       : inBooks && input.paymentType === "CASH_BANK"

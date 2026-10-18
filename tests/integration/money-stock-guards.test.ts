@@ -524,7 +524,25 @@ run("money and stock guards (v6.4.1 review)", () => {
       voucher.reverseJournalVoucher(env.accountsCtx, top.id, { reason: "Wrong box" }),
       "VALIDATION",
     );
-    expect(reversal.message).toBe("Factory has 1000.00 in it. Ask Accounts to top it up first.");
+    expect(reversal.message).toBe(
+      "Factory has 1000.00 in it. Money has been spent from it since: top it up first, or reverse what was paid from it.",
+    );
+    // A cost above what is left: the holder asks Accounts; Accounts top it up themselves.
+    const cost = (ctx: typeof env.ctx) =>
+      expenses.createExpense(ctx, {
+        headId: head.id,
+        amount: 2000,
+        paymentType: "CASH_BANK",
+        method: "CASH",
+        pettyCashBoxId: box.id,
+        description: "Sewing machine oil",
+      });
+    expect((await expectAppError(cost(env.staff.ctx), "VALIDATION")).message).toBe(
+      "Factory has 1000.00 in it. Ask Accounts to top it up first.",
+    );
+    expect((await expectAppError(cost(env.accountsCtx), "VALIDATION")).message).toBe(
+      "Factory has 1000.00 in it. Top it up first (“Top up” on the box), or pay from another account.",
+    );
     // Paying a supplier from the box: only what it holds.
     await expectAppError(
       supplierPayments.paySupplier(env.accountsCtx, {

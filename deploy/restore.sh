@@ -117,8 +117,10 @@ fail() {
 # nothing is put back here: the next start of the server, the next restore or update
 # settles it (lib.sh settle_cut_restore).
 restored=0
-# 1 from the first restore_database on the live database; the database's id once the
-# safety copy is saved (lib.sh database_id).
+# 1 once this restore wrote its own mark (a mark there before is an earlier restore's,
+# settled by settle_cut_restore); 1 from the first restore_database on the live
+# database; the database's id once the safety copy is saved (lib.sh database_id).
+own_mark=0
 db_touched=0
 db_id=""
 # Said when the ERP did not start again after a restore that changed nothing.
@@ -126,27 +128,41 @@ down_note=""
 shutting_down() {
   [ "$(systemctl is-system-running 2>/dev/null || true)" = stopping ]
 }
+# What the ERP does after such a stop, for its message: stopped while it was being
+# started (on the restored data, or on the safety copy), it may be running now.
+erp_after_stop() {
+  if [ "$db_touched" = 1 ] && app_running; then
+    echo "the ERP may be running on it now (it was being started); the server settles it when it starts again, or run: sudo $DEPLOY_DIR/restore.sh --after-restart"
+  else
+    echo "the ERP stays stopped until the server starts again or until you run: sudo $DEPLOY_DIR/restore.sh --after-restart"
+  fi
+}
 on_stop() {
   trap '' INT TERM
-  local ended=1 unsure=""
-  if [ -n "$running_mark" ] && [ -f "$running_mark" ]; then
+  local ended=1 unsure="" erp
+  if [ "$own_mark" = 0 ] && [ -n "$running_mark" ] && [ -f "$running_mark" ]; then
+    fail "the restore was stopped ($1) while the restore cut off earlier was being settled. This restore changed nothing. That earlier one is settled when the server starts again, or run: sudo $DEPLOY_DIR/restore.sh --after-restart"
+  fi
+  if [ "$own_mark" = 1 ] && [ -f "$running_mark" ]; then
     [ "$db_touched" = 0 ] || stop_restore_in_db || ended=0
     if [ "$went_back" = 1 ]; then
-      fail "the restore was stopped ($1) while going back to the safety copy, after its database was back as it was before the restore. The ERP stays stopped until the server starts again or until you run: sudo $DEPLOY_DIR/restore.sh --after-restart (it then starts the ERP)."
+      erp="$(erp_after_stop)"
+      fail "the restore was stopped ($1) while going back to the safety copy, after its database was back as it was before the restore. ${erp^} (it then starts the ERP)."
     fi
     if [ "$ended" = 1 ] && ! shutting_down &&
       { [ "$db_touched" = 0 ] || { [ -n "$db_id" ] && [ "$(database_id)" = "$db_id" ]; }; }; then
       # Nothing changed: no saved settings and no half safety copy stay; the ERP runs again.
       [ -z "${kept_file:-}" ] || rm -f "$kept_file"
-      [ -n "$safety" ] || rm -rf "$DATA_DIR/safety-copies/before-restore-$stamp"
+      [ -n "$safety" ] || rm -rf "$DATA_DIR/safety-copies/before-restore-${stamp:-}"
       start_again
       [ -n "$down_note" ] ||
         fail "the restore was stopped before it changed anything ($1); the ERP's data were not changed, and it was started again."
       fail "the restore was stopped before it changed anything ($1); the ERP's data were not changed.$down_note"
     fi
+    erp="$(erp_after_stop)"
     [ "$ended" = 1 ] ||
       unsure=" The backup may still be going in for a few minutes: wait 10 minutes before you run that."
-    fail "the restore was stopped before it finished ($1). Nothing was put back automatically, and the ERP stays stopped until the server starts again or until you run: sudo $DEPLOY_DIR/restore.sh --after-restart (it then starts the ERP and says how to undo the restore).$unsure"
+    fail "the restore was stopped before it finished ($1). Nothing was put back automatically, and $erp (it then starts the ERP and says how to undo the restore).$unsure"
   elif [ "$restored" = 1 ]; then
     fail "the restore was stopped ($1) after the backup was back and the ERP was running, before its check finished: the screens were NOT all checked. To undo it, restore the safety copy: sudo $DEPLOY_DIR/restore.sh $safety"
   fi
@@ -257,6 +273,7 @@ wait_healthy db || fail "the database did not start; see sudo ./deploy/logs.sh d
 # until the restored ERP starts (or the one from before, when anything fails).
 step "Stopping the app"
 write_restore_mark "$stamp" "" "$(basename "$folder")"
+own_mark=1
 compose stop app
 
 # The restore is over (the ERP runs): its mark goes, and its safety copy is kept the
@@ -301,12 +318,13 @@ go_back() {
     fail "$1, and the safety copy could not be put back either: restore it by hand: sudo $0 $safety"
   # Only now is the database back as it was before (never said before it is).
   went_back=1
-  write_restore_mark "$stamp" "went back" "$(basename "$folder")"
   if [ -d "$DATA_DIR/uploads.before-restore-$stamp" ]; then
     rm -rf "$DATA_DIR/uploads.failed-restore-$stamp"
     [ ! -e "$DATA_DIR/uploads" ] || mv "$DATA_DIR/uploads" "$DATA_DIR/uploads.failed-restore-$stamp"
     mv "$DATA_DIR/uploads.before-restore-$stamp" "$DATA_DIR/uploads"
   fi
+  # The files from before are back too: nothing is left to swap after a restart.
+  write_restore_mark "$stamp" "went back" "$(basename "$folder")"
   rm -rf "$DATA_DIR/uploads.restoring"
   compose up -d || true
   # Still not running: the mark ("went back") stays, so the next start of the server

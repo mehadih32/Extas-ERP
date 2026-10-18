@@ -498,7 +498,22 @@ run("Order costing", () => {
     await prisma.productionProject.update({ where: { id: project.id }, data: { cmRate: 138 } });
     await costing.saveCostingStyle(env.merch, id, kept.id, { ...POLO, styleId: polo.id });
     expect((await costing.getCosting(env.merch, id)).hints.cm).toEqual([
-      expect.objectContaining({ style: "NW-PL-01", factory: "Ashulia Apparels", cm: 138 }),
+      expect.objectContaining({
+        style: "NW-PL-01",
+        factory: "Ashulia Apparels",
+        cm: 138,
+        cmPer: "PIECE",
+        cmPerDozen: null,
+      }),
+    ]);
+
+    // A CM agreed at 125 a dozen comes back as 125 a dozen, not as 10.42 a piece.
+    await prisma.productionProject.update({
+      where: { id: project.id },
+      data: { cmRate: "10.42", cmPer: "DOZEN", cmPerDozen: 125 },
+    });
+    expect((await costing.getCosting(env.merch, id)).hints.cm).toEqual([
+      expect.objectContaining({ cm: 10.42, cmPer: "DOZEN", cmPerDozen: 125 }),
     ]);
   });
 

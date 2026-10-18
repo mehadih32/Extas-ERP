@@ -2450,7 +2450,7 @@ export const productionHelp: HelpSection = {
           text: "“Supplier's price per …” ঘরে সাপ্লায়ারের দেওয়া কেজি (বা গজ) প্রতি দাম দিন। “Fabric prices” চাপলে “Supplier quotes” আর “Paid on past bookings” পাশাপাশি দেখায়; যেটা চান তার নিচে “Use” চাপুন।",
         },
         {
-          text: "“Trims a dozen”, “Print, embroidery, wash a dozen” ও “Other a dozen” দিন। “CM (…)”-এ ফ্যাক্টরির সাথে এই স্টাইলের জন্য ঠিক করা CM দিন, আর “CM is”-এ “per piece” বা “per dozen”। আগে ঠিক করা CM তুলনার জন্য “CM agreed before, to compare:”-এ দেখায়।",
+          text: "“Trims a dozen”, “Print, embroidery, wash a dozen” ও “Other a dozen” দিন। “CM (…)”-এ ফ্যাক্টরির সাথে এই স্টাইলের জন্য ঠিক করা CM দিন, আর “CM is”-এ “per piece” বা “per dozen”। আগে ঠিক করা CM তুলনার জন্য “CM agreed before, to compare:”-এ দেখায়, যেভাবে ঠিক হয়েছিল সেভাবেই (ডজনে 125 ঠিক হলে “per dozen”-এ 125, পিসের হিসাব নয়)। “Use” চাপলে সেই দাম আর “per piece” বা “per dozen” দুটোই বসে যায়।",
         },
         {
           text: "বায়ার যে দাম বলেছেন বা আপনি যা কোট করবেন তা “Buyer's price a piece (…)”-এ দিয়ে “Save” চাপুন। প্রতিটি স্টাইলে দেখায় “Cost a dozen”, “Cost a piece”, “Price at your profit” ও “Profit at the buyer's price”।",

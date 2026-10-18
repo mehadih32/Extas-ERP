@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { formatDay } from "@/lib/display";
-import { CM_PER_LABELS, FABRIC_UNIT_LABELS } from "@/modules/costing/costing-labels";
+import { CM_PER_LABELS, FABRIC_UNIT_LABELS, pastCmTerms } from "@/modules/costing/costing-labels";
 import type { CostingScreen, FabricPrices } from "@/modules/costing/costing.service";
 import {
   fabricPricesAction,
@@ -443,14 +443,15 @@ function StyleDialog({
                 <p className="text-muted-foreground">CM agreed before, to compare:</p>
                 <ul className="mt-1 grid gap-1">
                   {cmHints.slice(0, 5).map((h) => {
-                    const value = inSheet(h.cm, companyCurrency);
+                    const terms = pastCmTerms(h);
+                    const value = inSheet(terms.amount, companyCurrency);
                     return (
                       <li key={h.project} className="flex flex-wrap items-center gap-x-2">
                         <span>
                           {h.project}
                           {h.style ? ` · ${h.style}` : ""}
-                          {h.factory ? ` · ${h.factory}` : ""}: {companyCurrency} {fmt(h.cm)} per
-                          piece
+                          {h.factory ? ` · ${h.factory}` : ""}: {companyCurrency}{" "}
+                          {fmt(terms.amount)} {CM_PER_LABELS[terms.per]}
                         </span>
                         {value !== null && (
                           <Button
@@ -460,7 +461,7 @@ function StyleDialog({
                             className="h-auto p-0"
                             onClick={() => {
                               setCmAmount(String(value));
-                              setCmPer("PIECE");
+                              setCmPer(terms.per);
                             }}
                           >
                             Use

@@ -121,7 +121,14 @@ function FaultCard({ fault: f, can, currency }: { fault: FaultItem; can: Can; cu
           {f.settledNote ? `: ${f.settledNote}` : ""}
         </p>
       )}
-      {can.settle && <SettleActions fault={f} />}
+      {can.settle &&
+        (f.cmSettlement ? (
+          <p className="text-[0.8125rem] text-muted-foreground">
+            Undo {f.cmSettlement} on the batch&apos;s CM settlement to change it.
+          </p>
+        ) : (
+          <SettleActions fault={f} />
+        ))}
     </li>
   );
 }

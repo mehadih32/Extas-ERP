@@ -17,6 +17,7 @@ import {
 import {
   actorOf,
   assertAllowed,
+  canChangeHeldRole,
   canDeleteRole,
   canEditRole,
   canGivePermissions,
@@ -136,6 +137,8 @@ export async function listRoles(ctx: CompanyContext) {
 }
 
 export type RoleSummary = Awaited<ReturnType<typeof listRoles>>[number] & {
+  /** The person looking holds this role (only a Super Admin may then change it). */
+  heldByYou: boolean;
   /** What the person looking may do to the role (nothing without company.roles.manage). */
   can: { edit: boolean; rename: boolean; delete: boolean };
 };
@@ -153,14 +156,17 @@ export async function getRolesScreen(ctx: CompanyContext): Promise<{
   lockedPermissions: PermissionKey[];
 }> {
   const canManage = ctx.can("company.roles.manage");
+  const actor = actorOf(ctx);
   const roles = (await listRoles(ctx)).map((role) => {
-    const edit = canManage && canEditRole(role).ok;
+    const mayChange = canManage && canChangeHeldRole(actor, role).ok;
+    const edit = mayChange && canEditRole(role).ok;
     return {
       ...role,
+      heldByYou: actor.roleId === role.id,
       can: {
         edit,
         rename: edit && canRenameRole(role).ok,
-        delete: canManage && canDeleteRole(role, role.membershipCount).ok,
+        delete: mayChange && canDeleteRole(role, role.membershipCount).ok,
       },
     };
   });
@@ -221,6 +227,7 @@ export async function updateRole(
     include: { permissions: { select: { permission: { select: { key: true } } } } },
   });
   if (!role) throw new AppError("NOT_FOUND", "Role not found.");
+  assertAllowed(canChangeHeldRole(actorOf(ctx), role));
   assertAllowed(canEditRole(role));
   if (input.name && input.name !== role.name) {
     assertAllowed(canRenameRole(role));
@@ -276,6 +283,7 @@ export async function deleteRole(ctx: CompanyContext, roleId: string, meta: Requ
     include: { _count: { select: { memberships: true } } },
   });
   if (!role) throw new AppError("NOT_FOUND", "Role not found.");
+  assertAllowed(canChangeHeldRole(actorOf(ctx), role));
   assertAllowed(canDeleteRole(role, role._count.memberships));
   await ctx.db.role.delete({ where: { id: role.id } });
   await recordAudit({

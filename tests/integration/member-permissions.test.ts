@@ -39,8 +39,13 @@ import {
   setMemberAccess,
 } from "@/modules/rbac/member.service";
 import { DEFAULT_ROLE_PERMISSIONS, type PermissionKey } from "@/modules/rbac/permissions";
-import { createRole, updateRole } from "@/modules/rbac/role.service";
-import { OWN_ROLE, SUPER_ADMIN_GRANTS_KEYS, SUPER_ADMIN_GRANTS_ROLE } from "@/modules/rbac/rules";
+import { createRole, deleteRole, getRolesScreen, updateRole } from "@/modules/rbac/role.service";
+import {
+  HELD_ROLE,
+  OWN_ROLE,
+  SUPER_ADMIN_GRANTS_KEYS,
+  SUPER_ADMIN_GRANTS_ROLE,
+} from "@/modules/rbac/rules";
 import { activeMembers, membersWith } from "@/modules/reminders/audience";
 
 import { addToCompany, contextFor, makeCompany, makeUser, resetDb } from "./helpers";
@@ -468,16 +473,10 @@ run("the permission matrix", () => {
     ]);
 
     // Added to a role (everyone in it would get it): a Super Admin's too.
-    const peopleAdmin = await prisma.role.findFirstOrThrow({ where: { name: "People Admin" } });
     expect(
       await refusal(
-        updateRole(env.adminCtx, peopleAdmin.id, {
-          permissions: [
-            "dashboard.view",
-            "company.members.manage",
-            "company.roles.manage",
-            "accounts.payments.record",
-          ],
+        updateRole(env.adminCtx, teamKeeper.id, {
+          permissions: ["company.members.manage", "accounts.payments.record"],
         }),
       ),
     ).toEqual(keysRefused);
@@ -487,16 +486,11 @@ run("the permission matrix", () => {
       ),
     ).toEqual(keysRefused);
     // Keys the role holds already may stay, and others may be added.
-    await updateRole(env.adminCtx, peopleAdmin.id, {
-      permissions: [
-        "dashboard.view",
-        "company.members.manage",
-        "company.roles.manage",
-        "notepad.use",
-      ],
+    await updateRole(env.adminCtx, teamKeeper.id, {
+      permissions: ["company.members.manage", "notepad.use"],
     });
-    await updateRole(env.ownerCtx, peopleAdmin.id, {
-      permissions: ["dashboard.view", "company.members.manage", "accounts.payments.record"],
+    await updateRole(env.ownerCtx, teamKeeper.id, {
+      permissions: ["company.members.manage", "accounts.payments.record"],
     });
 
     // The screen locks exactly these boxes for people who are not Super Admins.
@@ -507,5 +501,100 @@ run("the permission matrix", () => {
       "company.roles.manage",
     ]);
     expect((await listTeam(env.ownerCtx)).lockedPermissions).toEqual([]);
+  });
+
+  it("does not let anyone but a Super Admin change or delete a role they hold (v6.4.1)", async () => {
+    const held = { code: "FORBIDDEN", message: HELD_ROLE };
+    expect(HELD_ROLE).toBe("You cannot change a role you hold. Ask another admin.");
+    const peopleAdmin = await prisma.role.findFirstOrThrow({ where: { name: "People Admin" } });
+    const teamKeeper = await prisma.role.findFirstOrThrow({ where: { name: "Team Keeper" } });
+
+    // The People Admin holds "People Admin": no new key (of any kind), name or description.
+    for (const input of [
+      {
+        permissions: [
+          "dashboard.view",
+          "company.members.manage",
+          "company.roles.manage",
+          "sales.view",
+        ],
+      },
+      { permissions: ["dashboard.view"] },
+      { name: "People Boss" },
+      { description: "Runs everything" },
+    ]) {
+      expect(await refusal(updateRole(env.adminCtx, peopleAdmin.id, input))).toEqual(held);
+    }
+    expect(await refusal(deleteRole(env.adminCtx, peopleAdmin.id))).toEqual(held);
+    const unchanged = await prisma.role.findUniqueOrThrow({
+      where: { id: peopleAdmin.id },
+      include: { permissions: { select: { permission: { select: { key: true } } } } },
+    });
+    expect(unchanged.name).toBe("People Admin");
+    expect(unchanged.permissions.map((p) => p.permission.key).sort()).toEqual([
+      "company.members.manage",
+      "company.roles.manage",
+      "dashboard.view",
+    ]);
+    // Through the API too.
+    signedIn.ctx = env.adminCtx;
+    const { PATCH: rolePatch } = await import("@/app/api/roles/[roleId]/route");
+    const patched = await rolePatch(
+      new Request(`http://localhost/api/roles/${peopleAdmin.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ permissions: ["dashboard.view", "sales.view"] }),
+      }),
+      { params: Promise.resolve({ roleId: peopleAdmin.id }) },
+    );
+    expect(patched.status).toBe(403);
+
+    // Other roles stay theirs to change.
+    await updateRole(env.adminCtx, teamKeeper.id, {
+      permissions: ["company.members.manage", "sales.view"],
+    });
+    // A new role cannot then be given to themselves (the own-role rule).
+    const made = await createRole(env.adminCtx, { name: "Self Made", permissions: ["sales.view"] });
+    const adminMembership = await prisma.companyMembership.findFirstOrThrow({
+      where: { userId: env.admin.user.id },
+    });
+    expect(await refusal(changeMemberRole(env.adminCtx, adminMembership.id, made.id))).toEqual({
+      code: "CONFLICT",
+      message: OWN_ROLE,
+    });
+    expect(
+      await refusal(setMemberAccess(env.adminCtx, adminMembership.id, { roleId: made.id })),
+    ).toEqual({ code: "CONFLICT", message: OWN_ROLE });
+
+    // The Roles screen offers nothing on their own role, and says why.
+    const screen = await getRolesScreen(env.adminCtx);
+    const own = screen.roles.find((r) => r.id === peopleAdmin.id)!;
+    expect(own).toMatchObject({
+      heldByYou: true,
+      can: { edit: false, rename: false, delete: false },
+    });
+    expect(screen.roles.find((r) => r.id === teamKeeper.id)).toMatchObject({
+      heldByYou: false,
+      can: { edit: true, rename: true },
+    });
+
+    // A Super Admin keeps full rights over other roles, and the Super Admin role
+    // is refused as before.
+    await updateRole(env.ownerCtx, peopleAdmin.id, {
+      name: "People Lead",
+      permissions: ["dashboard.view", "company.members.manage", "sales.view"],
+    });
+    expect(
+      await refusal(updateRole(env.ownerCtx, env.roles.SUPER_ADMIN, { permissions: [] })),
+    ).toEqual({ code: "FORBIDDEN", message: "The Super Admin role always has every permission." });
+    const ownerScreen = await getRolesScreen(env.ownerCtx);
+    expect(ownerScreen.roles.find((r) => r.id === peopleAdmin.id)).toMatchObject({
+      heldByYou: false,
+      can: { edit: true },
+    });
+    expect(ownerScreen.roles.find((r) => r.id === env.roles.SUPER_ADMIN)).toMatchObject({
+      heldByYou: true,
+      can: { edit: false, delete: false },
+    });
   });
 });

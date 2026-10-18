@@ -5,6 +5,7 @@ import {
   type Actor,
   canChangeRole,
   canDeactivate,
+  canChangeHeldRole,
   canDeleteRole,
   canEditMemberPermissions,
   canEditRole,
@@ -13,6 +14,7 @@ import {
   canRenameRole,
   canResetPassword,
   canGivePermissions,
+  HELD_ROLE,
   isPrivileged,
   LAST_SUPER_ADMIN,
   OWN_ROLE,
@@ -265,5 +267,17 @@ describe("company settings checks", () => {
       defaultAdvancePercent: "Use a percentage from 0 to 100",
       dormantAfterMonths: "Enter a number",
     });
+  });
+});
+
+describe("a role one holds (v6.4.1)", () => {
+  it("is never changed or deleted by its holder unless they are a Super Admin", () => {
+    const hrInRole = { ...hrManager, roleId: "r-hr" };
+    expect(canChangeHeldRole(hrInRole, { id: "r-hr" })).toEqual(refused("FORBIDDEN", HELD_ROLE));
+    expect(canChangeHeldRole(hrInRole, { id: "r-sales" })).toEqual(allowed);
+    expect(canChangeHeldRole({ ...superAdmin, roleId: "r-admin" }, { id: "r-admin" })).toEqual(
+      allowed,
+    );
+    expect(canChangeHeldRole(platformOwner, { id: "r-hr" })).toEqual(allowed);
   });
 });

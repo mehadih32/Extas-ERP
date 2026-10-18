@@ -19,6 +19,8 @@ export type Actor = {
   userId: string;
   systemRole: SystemRole | null;
   isPlatformOwner: boolean;
+  /** The role they hold in the open company (none for the platform owner visiting it). */
+  roleId?: string | null;
 };
 
 /** The person acting, as these rules see them. */
@@ -27,6 +29,7 @@ export function actorOf(ctx: CompanyContext): Actor {
     userId: ctx.user.id,
     systemRole: ctx.role?.systemRole ?? null,
     isPlatformOwner: ctx.user.isSuperAdmin,
+    roleId: ctx.role?.id ?? null,
   };
 }
 
@@ -202,6 +205,18 @@ export function canEditMemberPermissions(
 // --- Roles ---------------------------------------------------------------------
 
 type RoleFacts = HasSystemRole & { isSystem: boolean };
+
+export const HELD_ROLE = "You cannot change a role you hold. Ask another admin.";
+
+/**
+ * Changing, renaming or deleting a role at all: never the role one holds,
+ * unless one is a Super Admin (else someone who manages roles could give
+ * themselves anything through it). Checked before the rules below.
+ */
+export function canChangeHeldRole(actor: Actor, role: { id: string }): Verdict {
+  if (!isPrivileged(actor) && actor.roleId === role.id) return refuse("FORBIDDEN", HELD_ROLE);
+  return ALLOWED;
+}
 
 /** Changing a role's permissions or description. */
 export function canEditRole(role: HasSystemRole): Verdict {

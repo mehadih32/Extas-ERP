@@ -417,7 +417,7 @@ run("Tech Pack as its own module", () => {
       project: null,
     });
     expect(screen.approval).toMatchObject({ needsProject: true, status: "DRAFT" });
-    expect(screen.approval.can).toEqual({ lock: false, approve: false });
+    expect(screen.approval.can).toEqual({ lock: false, approve: false, approveTrims: false });
     expect(screen.can).toMatchObject({ edit: false, link: false });
     expect(screen.references).toHaveLength(1);
 
@@ -1066,7 +1066,11 @@ run("Tech Pack as its own module", () => {
       tick: true,
       link: false,
     });
-    expect(theirs.ok && theirs.data.approval.can).toEqual({ lock: false, approve: false });
+    expect(theirs.ok && theirs.data.approval.can).toEqual({
+      lock: false,
+      approve: false,
+      approveTrims: false,
+    });
     await expectAppError(approval.approveTechPackOf(ticker, id), "FORBIDDEN");
 
     // Someone with neither (sales) still cannot open it.

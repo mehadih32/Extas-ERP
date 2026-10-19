@@ -1,4 +1,9 @@
-import { PaymentMethod, Prisma, type ProductionStatus } from "@prisma/client";
+import {
+  PaymentMethod,
+  Prisma,
+  type ProductionStatus,
+  type SupplierFaultKind,
+} from "@prisma/client";
 import { z } from "zod";
 
 import { FAULT_KIND_LABELS } from "@/components/production/labels";
@@ -16,7 +21,11 @@ import { ZERO } from "@/modules/accounts/balances";
 import { ensureControlAccounts } from "@/modules/accounts/control-accounts";
 import { postJournalEntry, reverseJournalEntry } from "@/modules/accounts/journal.service";
 import { paySupplier } from "@/modules/accounts/supplier-payment.service";
-import { lockSupplierAccount, settleSupplierBills } from "@/modules/accounts/supplier-settlement";
+import {
+  lockSupplierAccount,
+  paidOnMaterialBills,
+  settleSupplierBills,
+} from "@/modules/accounts/supplier-settlement";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { letterheadOf } from "@/modules/documents/builders";
@@ -25,9 +34,11 @@ import { ON_DEMAND_PER_MINUTE, renderOnDemand } from "@/modules/documents/on-dem
 import {
   cmAgreedText,
   cmFor,
+  cmPartOfPayments,
   cmPieces,
   cmSettlementMath,
   type CmStyleLine,
+  notCmWork,
   rejectPenalty,
 } from "@/modules/production/batch-money";
 import { canSettleFaults } from "@/modules/production/fault.service";
@@ -46,11 +57,15 @@ import { sendInApp } from "@/modules/reminders/notification.service";
  *     suppliers run on one continuous ledger and are never paid by batch.
  *   - The final CM settlement: each style's CM (its CM a piece × the A, B, C and
  *     rejected pieces the factory handed over), less the factory's open faults on
- *     the batch with a value (missing pieces at the final unit cost, fabric
- *     faults...), the rejects over the batch's allowance (2% of the pieces cut
- *     unless changed) at the style's target price and, when the person settling
+ *     the batch with a value that belong to the CM work (missing pieces at the
+ *     final unit cost, quality faults...; a fault about material the factory
+ *     supplied is left out and shown with why: a short at receive is already off
+ *     that material bill), the rejects over the batch's allowance (2% of the
+ *     pieces cut unless changed) at the style's target price (or, with none, the
+ *     price per reject the person settling enters) and, when the person settling
  *     chooses, the CM of the C-grade pieces, less the advance taken and what was
- *     paid for the styles:
+ *     paid for the styles for the CM (what of those payments paid the factory's
+ *     material bills stays against those bills):
  *       Total CM - Deductions - Advance taken = Final payable.
  *     Saving it marks those faults deducted, keeps a statement (CMS-), printed
  *     as the factory's final bill, and takes the deductions off the factory's
@@ -63,6 +78,7 @@ import { sendInApp } from "@/modules/reminders/notification.service";
  */
 
 type Db = Prisma.TransactionClient;
+type DbClient = Db | typeof prisma;
 
 const fixed = (value: Prisma.Decimal) => value.toFixed(2);
 
@@ -85,6 +101,23 @@ export const settleCmSchema = z.object({
   /** Take the CM of the C-grade pieces off too (asked each time). */
   deductCGrade: z.boolean(),
   note: z.string().trim().max(1000).nullish(),
+  /**
+   * The price each reject over the allowance is charged at, for a style with no
+   * target price (asked on the screen; a style with a target price uses it).
+   */
+  rejectPrices: z
+    .array(
+      z.object({
+        projectId: z.string().min(1),
+        price: z
+          .number()
+          .positive("Enter the price per reject")
+          .max(1_000_000)
+          .multipleOf(0.01, "Up to 2 decimal places"),
+      }),
+    )
+    .max(200)
+    .optional(),
 });
 
 export const undoCmSettlementSchema = z.object({
@@ -125,6 +158,8 @@ async function paymentsFor(
       companyId: ctx.company.id,
       direction: "PAID",
       ...(supplierId ? { partyId: supplierId } : { partyId: { not: null } }),
+      // Paid for the batch or a style, not against one bill.
+      supplierBillId: null,
       OR: [{ batchId }, { projectId: { in: styleIds } }],
       ...livePayment,
     },
@@ -289,11 +324,150 @@ type SettlementStyle = {
   overAllowance: number;
   /** The style's target price a piece, which each reject over the allowance is charged at. */
   targetPrice: string | null;
+  /**
+   * What each reject over the allowance is charged at: the target price, or (no
+   * target price) the price per reject entered when it was settled. Null: none yet.
+   */
+  rejectPrice: string | null;
+  /** The price per reject was entered at the settlement (the style has no target price). */
+  rejectPriceEntered: boolean;
   rejectPenalty: string;
 };
 
-/** The settlement as it would be saved now, from the styles' finishing, the faults and the payments. */
-async function draftOf(db: Db, ctx: CompanyContext, batchId: string) {
+/** A fault of the factory's left off the settlement: about material it supplied, not the CM work. */
+type LeftOutFault = {
+  id: string;
+  number: string;
+  kind: SupplierFaultKind;
+  what: string;
+  style: string | null;
+  amount: string | null;
+  /** Why it is left out, in plain words. */
+  why: string;
+};
+
+const faultSelect = {
+  id: true,
+  number: true,
+  kind: true,
+  quantity: true,
+  amount: true,
+  note: true,
+  occurredOn: true,
+  project: { select: { code: true } },
+  bill: { select: { number: true, supplierId: true } },
+  rawMaterial: { select: { id: true, name: true } },
+} satisfies Prisma.SupplierFaultSelect;
+
+/**
+ * The materials the factory itself supplied for this batch or its styles: on
+ * its purchase orders (not cancelled) or its bills (not void) for them. A fault
+ * about one of these is settled on that material bill, not the CM (notCmWork).
+ */
+async function materialsFromFactory(
+  db: DbClient,
+  companyId: string,
+  factoryId: string,
+  batchId: string,
+  styleIds: readonly string[],
+): Promise<Set<string>> {
+  const forStyles = { in: [...styleIds] };
+  const forBatch = { OR: [{ batchId }, { projectId: forStyles }] };
+  const [ordered, billed] = await Promise.all([
+    db.purchaseOrderLine.findMany({
+      where: {
+        order: { companyId, supplierId: factoryId, status: { not: "CANCELLED" } },
+        OR: [{ order: forBatch }, { shares: { some: { projectId: forStyles } } }],
+      },
+      select: { rawMaterialId: true },
+      distinct: ["rawMaterialId"],
+    }),
+    db.supplierBillItem.findMany({
+      where: {
+        bill: { companyId, supplierId: factoryId, status: { not: "VOID" } },
+        OR: [
+          { bill: { purchaseOrder: forBatch } },
+          { bill: { allocations: { some: { projectId: forStyles } } } },
+          { purchaseOrderLine: { shares: { some: { projectId: forStyles } } } },
+        ],
+      },
+      select: { rawMaterialId: true },
+      distinct: ["rawMaterialId"],
+    }),
+  ]);
+  return new Set([...ordered, ...billed].map((l) => l.rawMaterialId));
+}
+
+/** notCmWork for a fault of this factory, from what it supplied. */
+function whyLeftOut(
+  f: {
+    kind: string;
+    bill: { number: string; supplierId: string } | null;
+    rawMaterial: { id: string; name: string } | null;
+  },
+  factoryId: string,
+  supplied: ReadonlySet<string>,
+) {
+  return notCmWork({
+    kind: f.kind,
+    bill: f.bill ? { number: f.bill.number, ofFactory: f.bill.supplierId === factoryId } : null,
+    material: f.rawMaterial
+      ? { name: f.rawMaterial.name, fromFactory: supplied.has(f.rawMaterial.id) }
+      : null,
+  });
+}
+
+/**
+ * The factory's payments for the batch and its styles, each with what of it
+ * paid the factory's material bills for them (it stays against those bills)
+ * and what counts as CM paid.
+ */
+async function cmPayments(
+  db: Db,
+  ctx: CompanyContext,
+  batchId: string,
+  factoryId: string,
+  payments: Awaited<ReturnType<typeof paymentsFor>>,
+) {
+  const onBills = payments.length
+    ? await paidOnMaterialBills(db, ctx.company.id, factoryId)
+    : { byProject: new Map(), byBatch: new Map() };
+  const groups = new Map<string, Prisma.Decimal>(onBills.byProject);
+  const forBatch = onBills.byBatch.get(batchId);
+  if (forBatch) groups.set(BATCH_GROUP, forBatch);
+  return cmPartOfPayments(
+    payments.map((p) => ({ ...p, group: p.style ? p.style.id : BATCH_GROUP })),
+    groups,
+  ).map(({ forBills, cm, ...p }) => ({
+    id: p.id,
+    number: p.number,
+    on: p.on,
+    amount: p.amount,
+    method: p.method,
+    reference: p.reference,
+    notes: p.notes,
+    supplier: p.supplier,
+    style: p.style,
+    /** What of it paid the factory's material bills (not CM paid). */
+    forBills: fixed(forBills),
+    /** What of it counts as CM paid. */
+    cm: fixed(cm),
+  }));
+}
+
+const BATCH_GROUP = "batch";
+
+/**
+ * The settlement as it would be saved now, from the styles' finishing, the
+ * faults and the payments. `rejectPrices`: the price per reject entered for
+ * styles with no target price.
+ */
+async function draftOf(
+  db: Db,
+  ctx: CompanyContext,
+  batchId: string,
+  rejectPrices: ReadonlyMap<string, Prisma.Decimal> = new Map(),
+) {
   const batch = await loadBatch(db, ctx, batchId);
   const factory = batch.factory;
   const projects = await db.productionProject.findMany({
@@ -327,7 +501,11 @@ async function draftOf(db: Db, ctx: CompanyContext, batchId: string) {
     const cGradeCm = cmFor(line, t.c);
     // The pieces the factory was handed: cut and good, or what it accounted for when no cut is kept.
     const cut = t.cut ?? t.a + t.b + t.c + t.reject + t.missing;
-    const rule = rejectPenalty({ cut, rejects: t.reject, percent, rate: p.targetUnitCost });
+    // The target price, else the price per reject entered for a style without one (or at 0).
+    const target = p.targetUnitCost?.gt(0) ? p.targetUnitCost : null;
+    const entered = target ? null : (rejectPrices.get(p.id) ?? null);
+    const rate = target ?? entered;
+    const rule = rejectPenalty({ cut, rejects: t.reject, percent, rate });
     penalties.push(rule.penalty);
     styles.push({
       id: p.id,
@@ -348,7 +526,9 @@ async function draftOf(db: Db, ctx: CompanyContext, batchId: string) {
       cut,
       allowance: rule.allowance,
       overAllowance: rule.over,
-      targetPrice: p.targetUnitCost ? fixed(p.targetUnitCost) : null,
+      targetPrice: target ? fixed(target) : null,
+      rejectPrice: rate && rule.over > 0 ? fixed(rate) : null,
+      rejectPriceEntered: entered !== null && rule.over > 0,
       rejectPenalty: fixed(rule.penalty),
     });
     lines.push(line);
@@ -362,38 +542,65 @@ async function draftOf(db: Db, ctx: CompanyContext, batchId: string) {
           status: "OPEN",
           OR: [{ batchId: batch.id }, { projectId: { in: styleIds } }],
         },
-        select: {
-          id: true,
-          number: true,
-          kind: true,
-          quantity: true,
-          amount: true,
-          note: true,
-          occurredOn: true,
-          project: { select: { code: true } },
-        },
+        select: faultSelect,
         orderBy: [{ occurredOn: "asc" }, { number: "asc" }],
       })
     : [];
-  const faults = faultRows.map((f) => ({
-    id: f.id,
-    number: f.number,
-    kind: f.kind,
-    what: FAULT_KIND_LABELS[f.kind],
-    style: f.project?.code ?? null,
-    quantity: f.quantity ? f.quantity.toFixed(3).replace(/\.?0+$/, "") : null,
-    /** null: the value is still to agree, so it is not taken off. */
-    amount: f.amount ? fixed(f.amount) : null,
-    note: f.note,
-    on: dateOnly(f.occurredOn),
-  }));
-  const payments = factory ? await paymentsFor(db, ctx, batch.id, styleIds, factory.id) : [];
-  const advance = payments
-    .filter((p) => p.style === null)
-    .reduce((t, p) => t.plus(p.amount), new Prisma.Decimal(0));
-  const forStyles = payments
-    .filter((p) => p.style !== null)
-    .reduce((t, p) => t.plus(p.amount), new Prisma.Decimal(0));
+  // Only faults of the CM work come off; one about material it supplied is shown, left out.
+  const supplied =
+    factory && faultRows.length > 0
+      ? await materialsFromFactory(db, ctx.company.id, factory.id, batch.id, styleIds)
+      : new Set<string>();
+  const leftOut: LeftOutFault[] = [];
+  const faults = faultRows.flatMap((f) => {
+    const why = factory ? whyLeftOut(f, factory.id, supplied) : null;
+    if (why) {
+      leftOut.push({
+        id: f.id,
+        number: f.number,
+        kind: f.kind,
+        what: FAULT_KIND_LABELS[f.kind],
+        style: f.project?.code ?? null,
+        amount: f.amount ? fixed(f.amount) : null,
+        why,
+      });
+      return [];
+    }
+    return [
+      {
+        id: f.id,
+        number: f.number,
+        kind: f.kind,
+        what: FAULT_KIND_LABELS[f.kind],
+        style: f.project?.code ?? null,
+        quantity: f.quantity ? f.quantity.toFixed(3).replace(/\.?0+$/, "") : null,
+        /** null: the value is still to agree, so it is not taken off. */
+        amount: f.amount ? fixed(f.amount) : null,
+        note: f.note,
+        on: dateOnly(f.occurredOn),
+      },
+    ];
+  });
+  const payments = factory
+    ? await cmPayments(
+        db,
+        ctx,
+        batch.id,
+        factory.id,
+        await paymentsFor(db, ctx, batch.id, styleIds, factory.id),
+      )
+    : [];
+  const sumOf = (rows: typeof payments, pick: (p: (typeof payments)[number]) => string) =>
+    rows.reduce((t, p) => t.plus(pick(p)), new Prisma.Decimal(0));
+  const advance = sumOf(
+    payments.filter((p) => p.style === null),
+    (p) => p.cm,
+  );
+  const forStyles = sumOf(
+    payments.filter((p) => p.style !== null),
+    (p) => p.cm,
+  );
+  const onBills = sumOf(payments, (p) => p.forBills);
   const valued = faults.flatMap((f) => (f.amount ? [f.amount] : []));
   const math = (deductCGrade: boolean) => {
     const m = cmSettlementMath({
@@ -406,19 +613,21 @@ async function draftOf(db: Db, ctx: CompanyContext, batchId: string) {
     return {
       totalCm: fixed(m.totalCm),
       faults: fixed(m.faults),
-      /** Rejects over the allowance, at the styles' target price. */
+      /** Rejects over the allowance, at the styles' target price (or the price per reject). */
       rejects: fixed(m.rejects),
       cGradeCm: fixed(m.cGradeCm),
       deductions: fixed(m.deductions),
       advance: fixed(advance),
       paidForStyles: fixed(forStyles),
+      /** Paid for the batch or its styles but used on the factory's material bills: not CM paid. */
+      paidOnBills: fixed(onBills),
       paid: fixed(m.paid),
       payable: fixed(m.payable),
     };
   };
   const noRate = styles.filter((s) => s.cmRate === null && s.pieces > 0).map((s) => s.code);
   const notPacked = styles.filter((s) => !s.packed && s.status !== "COMPLETED").map((s) => s.code);
-  // Rejects over the allowance with no target price to charge them at.
+  // Rejects over the allowance with no target price: the price per reject is asked for.
   const noTarget = styles
     .filter((s) => s.overAllowance > 0 && s.targetPrice === null)
     .map((s) => s.code);
@@ -431,6 +640,8 @@ async function draftOf(db: Db, ctx: CompanyContext, batchId: string) {
       : null,
     styles,
     faults,
+    /** The factory's open faults on the batch left off: about material it supplied. */
+    leftOut,
     payments,
     cGradePieces: styles.reduce((t, s) => t + s.c, 0),
     /** The sums without and with the C-grade CM taken off. */
@@ -462,11 +673,27 @@ function readSnapshot(value: Prisma.JsonValue): Snapshot {
       allowance: st.allowance ?? null,
       overAllowance: st.overAllowance ?? 0,
       targetPrice: st.targetPrice ?? null,
+      // Saved before v6.4.2: the target price, never one of 0 (that charged them at 0).
+      rejectPrice:
+        st.rejectPrice ??
+        ((st.overAllowance ?? 0) > 0 && Number(st.targetPrice ?? 0) > 0 ? st.targetPrice! : null),
+      rejectPriceEntered: st.rejectPriceEntered ?? false,
       rejectPenalty: st.rejectPenalty ?? "0.00",
       cmPerDozen: st.cmPerDozen ?? null,
     })),
+    // Saved before v6.4.2: every open fault was taken off, every payment counted as CM paid.
+    leftOut: raw.leftOut ?? [],
+    payments: raw.payments.map((p) => ({
+      ...p,
+      forBills: p.forBills ?? "0.00",
+      cm: p.cm ?? p.amount,
+    })),
     warnings: { ...raw.warnings, noTarget: raw.warnings?.noTarget ?? [] },
-    totals: { ...raw.totals, rejects: raw.totals.rejects ?? "0.00" },
+    totals: {
+      ...raw.totals,
+      rejects: raw.totals.rejects ?? "0.00",
+      paidOnBills: raw.totals.paidOnBills ?? "0.00",
+    },
   };
 }
 
@@ -585,6 +812,9 @@ export async function settleCm(
     );
   }
   const input = settleCmSchema.parse(raw);
+  const prices = new Map(
+    (input.rejectPrices ?? []).map((r) => [r.projectId, new Prisma.Decimal(r.price)]),
+  );
   const companyId = ctx.company.id;
   const head = await prisma.productionBatch.findFirst({
     where: { id: batchId, companyId },
@@ -596,7 +826,7 @@ export async function settleCm(
       // The factory's account before anything else (lock order), then the batch.
       if (head.factoryId) await lockSupplierAccount(tx, companyId, head.factoryId);
       await lockRow(tx, "ProductionBatch", batchId);
-      const draft = await draftOf(tx, ctx, batchId);
+      const draft = await draftOf(tx, ctx, batchId, prices);
       const { batch, factory } = draft;
       if (!factory) {
         throw new AppError(
@@ -620,7 +850,20 @@ export async function settleCm(
       if (draft.warnings.noRate.length > 0) {
         throw new AppError(
           "VALIDATION",
-          `Agree the CM a piece of ${draft.warnings.noRate.join(", ")} first, on the factory agreement.`,
+          `Agree the CM of ${draft.warnings.noRate.join(", ")} first (a piece or a dozen), on the factory agreement.`,
+        );
+      }
+      // Rejects over the allowance are never charged at 0: a style with no target price needs its price per reject.
+      const unpriced = draft.styles.filter((s) => s.overAllowance > 0 && s.rejectPrice === null);
+      if (unpriced.length > 0) {
+        throw new AppError(
+          "VALIDATION",
+          `Enter the price per reject for ${unpriced.map((s) => s.code).join(", ")}: ${
+            unpriced.length === 1 ? "it has" : "they have"
+          } rejects over the allowance and no target price.`,
+          Object.fromEntries(
+            unpriced.map((s) => [`rejectPrices.${s.id}`, ["Enter the price per reject"]]),
+          ),
         );
       }
       if (!draft.styles.some((s) => s.pieces > 0)) {
@@ -637,6 +880,7 @@ export async function settleCm(
         factory,
         styles: draft.styles,
         faults: draft.faults,
+        leftOut: draft.leftOut,
         payments: draft.payments,
         cGradePieces: draft.cGradePieces,
         warnings: draft.warnings,
@@ -705,7 +949,9 @@ export async function settleCm(
             {
               accountId: acc.SUPPLIER_DEDUCTIONS,
               credit: rejectsOff,
-              memo: `Rejects over the ${draft.rejectAllowancePercent}% allowance taken off on ${number}, at the target price`,
+              memo: `Rejects over the ${draft.rejectAllowancePercent}% allowance taken off on ${number}, at the target price${
+                draft.styles.some((st) => st.rejectPriceEntered) ? " or the price per reject" : ""
+              }`,
             },
             {
               accountId: acc.SUPPLIER_DEDUCTIONS,
@@ -738,6 +984,17 @@ export async function settleCm(
           } - advance and payments ${amount(totals.paid)} = final payable ${amount(totals.payable)}${
             taken.length > 0
               ? `; ${taken.length} fault${taken.length === 1 ? "" : "s"} marked deducted`
+              : ""
+          }${
+            draft.leftOut.length > 0
+              ? `; ${draft.leftOut.map((f) => f.number).join(", ")} left out (material it supplied, not the CM work)`
+              : ""
+          }${
+            prices.size > 0 && draft.styles.some((st) => st.rejectPriceEntered)
+              ? `; price per reject entered for ${draft.styles
+                  .filter((st) => st.rejectPriceEntered)
+                  .map((st) => `${st.code} ${amount(st.rejectPrice!)}`)
+                  .join(", ")}`
               : ""
           }${
             entry
@@ -881,7 +1138,9 @@ export function cmSettlementDocument(
       ],
       details: [
         `Allowance ${count(st.allowance ?? 0)} of ${count(st.cut ?? 0)} pieces cut${
-          st.targetPrice ? `; ${amount(st.targetPrice)} a piece (target price)` : ""
+          st.rejectPrice
+            ? `; ${amount(st.rejectPrice)} a piece (${st.rejectPriceEntered ? "price per reject" : "target price"})`
+            : ""
         }`,
       ],
     }));
@@ -995,6 +1254,26 @@ export function cmSettlementDocument(
         rows: deductionRows,
         empty: "Nothing to deduct.",
       },
+      ...(d.leftOut.length > 0
+        ? [
+            {
+              kind: "table" as const,
+              title: "Left out: not the CM work",
+              columns: [
+                { label: "Fault", weight: 2.2 },
+                { label: "Why", weight: 3 },
+                { label: "Value", align: "right" as const, weight: 1.2 },
+              ],
+              rows: d.leftOut.map((f) => ({
+                cells: [
+                  [`${f.number} · ${f.what}`, f.style].filter(Boolean).join(", "),
+                  f.why,
+                  f.amount ? amount(f.amount) : "–",
+                ],
+              })),
+            },
+          ]
+        : []),
       {
         kind: "table",
         title: "Advance taken and paid",
@@ -1009,8 +1288,15 @@ export function cmSettlementDocument(
             p.number,
             formatDay(p.on),
             p.style ? p.style.code : `Advance (${d.batch.code})`,
-            amount(p.amount),
+            amount(p.cm),
           ],
+          ...(Number(p.forBills) > 0
+            ? {
+                details: [
+                  `Paid ${amount(p.amount)}; ${amount(p.forBills)} of it paid the factory's material bills, so it is not counted as CM paid`,
+                ],
+              }
+            : {}),
         })),
         empty: "No advance taken.",
       },
@@ -1075,4 +1361,130 @@ export async function cmSettlementPdf(
     fileName: documentFileName(ctx.company.name, `CM settlement ${row.number}`),
     bytes,
   };
+}
+
+// =============================================================================
+// Saved settlements under the v6.4.2 rules (Bug Guard's review after the update)
+// =============================================================================
+
+/** A saved settlement whose final payable would differ under the v6.4.2 rules. */
+export type SettlementUnderNewRules = {
+  id: string;
+  number: string;
+  batch: { id: string; code: string };
+  factory: string;
+  oldPayable: string;
+  /** What the payable would be (rejects still to price not counted). */
+  newPayable: string;
+  oldDeductions: string;
+  newDeductions: string;
+  /** The faults it took off that are about material the factory supplied. */
+  leftOut: Array<{ number: string; what: string; amount: string; why: string }>;
+  /** What of the payments it counted paid the factory's material bills. */
+  paidOnBills: string;
+  /** Styles with rejects over the allowance charged at 0 (no target price): a price per reject is needed. */
+  needPrice: Array<{ code: string; over: number }>;
+};
+
+/**
+ * The standing settlements saved before the v6.4.2 rules whose final payable
+ * would differ under them: faults about material the factory supplied left
+ * out, only what of the payments did not pay its material bills counted as CM
+ * paid, and rejects over the allowance never at 0. Worked from each saved
+ * statement and the faults and ledger as they are now; only reads, saves nothing.
+ */
+export async function settlementsUnderNewRules(
+  db: DbClient,
+  companyId: string,
+): Promise<SettlementUnderNewRules[]> {
+  const rows = await db.cmSettlement.findMany({
+    where: { companyId, undoneAt: null },
+    select: {
+      id: true,
+      number: true,
+      factoryId: true,
+      batchId: true,
+      payable: true,
+      deductions: true,
+      snapshot: true,
+      factory: { select: { name: true } },
+      batch: { select: { code: true } },
+    },
+    orderBy: { createdAt: "asc" },
+  });
+  const found: SettlementUnderNewRules[] = [];
+  for (const row of rows) {
+    // Saved under these rules already: it keeps the faults it left out.
+    const raw = row.snapshot as { leftOut?: unknown } | null;
+    if (raw && Array.isArray(raw.leftOut)) continue;
+    const snap = readSnapshot(row.snapshot);
+    const taken = snap.faults.filter((f) => f.amount !== null);
+    const facts = new Map(
+      (
+        await db.supplierFault.findMany({
+          where: { companyId, id: { in: taken.map((f) => f.id) } },
+          select: {
+            id: true,
+            kind: true,
+            bill: faultSelect.bill,
+            rawMaterial: faultSelect.rawMaterial,
+          },
+        })
+      ).map((f) => [f.id, f]),
+    );
+    const supplied =
+      taken.length > 0
+        ? await materialsFromFactory(
+            db,
+            companyId,
+            row.factoryId,
+            row.batchId,
+            snap.styles.map((st) => st.id),
+          )
+        : new Set<string>();
+    const leftOut = taken.flatMap((f) => {
+      const fact = facts.get(f.id);
+      const why = whyLeftOut(
+        {
+          kind: fact?.kind ?? f.kind,
+          bill: fact?.bill ?? null,
+          rawMaterial: fact?.rawMaterial ?? null,
+        },
+        row.factoryId,
+        supplied,
+      );
+      return why ? [{ number: f.number, what: f.what, amount: f.amount!, why }] : [];
+    });
+    const onBills =
+      snap.payments.length > 0
+        ? await paidOnMaterialBills(db, companyId, row.factoryId)
+        : { byProject: new Map(), byBatch: new Map() };
+    const groups = new Map<string, Prisma.Decimal>(onBills.byProject);
+    const forBatch = onBills.byBatch.get(row.batchId);
+    if (forBatch) groups.set(BATCH_GROUP, forBatch);
+    const split = cmPartOfPayments(
+      snap.payments.map((p) => ({ amount: p.amount, group: p.style ? p.style.id : BATCH_GROUP })),
+      groups,
+    );
+    const paidOnBills = split.reduce((t, p) => t.plus(p.forBills), new Prisma.Decimal(0));
+    const faultsOut = leftOut.reduce((t, f) => t.plus(f.amount), new Prisma.Decimal(0));
+    const needPrice = snap.styles
+      .filter((st) => st.overAllowance > 0 && st.rejectPrice === null)
+      .map((st) => ({ code: st.code, over: st.overAllowance }));
+    if (faultsOut.lte(0) && paidOnBills.lte(0) && needPrice.length === 0) continue;
+    found.push({
+      id: row.id,
+      number: row.number,
+      batch: { id: row.batchId, code: row.batch.code },
+      factory: row.factory.name,
+      oldPayable: fixed(row.payable),
+      newPayable: fixed(row.payable.plus(faultsOut).plus(paidOnBills)),
+      oldDeductions: fixed(row.deductions),
+      newDeductions: fixed(row.deductions.minus(faultsOut)),
+      leftOut,
+      paidOnBills: fixed(paidOnBills),
+      needPrice,
+    });
+  }
+  return found;
 }

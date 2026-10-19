@@ -11,7 +11,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  */
 vi.mock("next/cache", () => ({ revalidatePath: () => undefined, revalidateTag: () => undefined }));
 
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
@@ -806,6 +806,187 @@ run("Fabric first and tech pack approval", () => {
     // Off again, an unapproved tech pack is only a warning.
     await bookings.setFabricFirst(env.owner, env.batch.id, false);
     expect((await bookings.getBatchBookings(env.pm, env.batch.id)).fabricFirst).toBeNull();
+  });
+});
+
+run("Trims approved again after a change (v6.4.2)", () => {
+  beforeEach(resetDb);
+
+  const trimsBooking = (env: Env) =>
+    bookings.createBooking(env.pm, {
+      source: "SUPPLIER_PO",
+      category: "KNITWEAR",
+      supplierId: env.trims.id,
+      batchId: env.batch.id,
+      expectedDate: "2030-11-20",
+      lines: [{ materialId: env.buttons.id, quantity: 720, unitPrice: 2 }],
+    });
+
+  it("holds the style's trims bookings until its changed trims are approved again, never its fabric", async () => {
+    const env = await setup();
+    await techPacks.approveTechPack(env.owner, env.polo.id);
+    await techPacks.approveTechPack(env.owner, env.tee.id);
+    const approved = await techPacks.getTechPack(env.owner, env.polo.id);
+    expect(approved).toMatchObject({
+      status: "APPROVED",
+      trimsChanges: [],
+      trimsLog: [],
+      trimsApprovedBy: "owner",
+      can: { approveTrims: false },
+    });
+    const first = await trimsBooking(env);
+    expect(await bookings.approveBooking(env.owner, first.id)).toMatchObject({
+      stage: "APPROVED",
+    });
+
+    // After approval the polo's buttons change (3 → 4 a piece, now at the placket).
+    await needs.setMaterialNeeds(env.pm, env.polo.id, {
+      needs: [
+        { materialId: env.jersey.id, perPiece: 0.285, wastagePercent: 5, split: "COLOUR" },
+        { materialId: env.buttons.id, perPiece: 4, placement: "Placket" },
+      ],
+    });
+    const code = env.buttons.code;
+    const changed = await techPacks.getTechPack(env.owner, env.polo.id);
+    expect(changed.status).toBe("APPROVED");
+    expect(changed.changes).toEqual([]); // the fabric did not change
+    const whatChanged = [
+      { item: `${code} Polo Button 18L: placement`, was: "Button", now: "Placket" },
+      {
+        item: `${code} Polo Button 18L: use`,
+        was: "3 pcs a piece + 0% wastage",
+        now: "4 pcs a piece + 0% wastage",
+      },
+    ];
+    expect(changed.trimsChanges).toEqual(whatChanged);
+    expect(changed.trimsLog).toEqual([
+      { at: expect.any(Date), day: expect.any(String), by: "production", changes: whatChanged },
+    ]);
+    expect(changed.can).toMatchObject({ approveTrims: true, approve: false });
+    // The Production Manager sees it but does not approve it.
+    expect((await techPacks.getTechPack(env.pm, env.polo.id)).can.approveTrims).toBe(false);
+    await expectAppError(techPacks.approveTrimsPart(env.pm, env.polo.id), "FORBIDDEN");
+    expect(
+      await prisma.auditLog.findFirst({
+        where: { entityId: env.polo.id, summary: { startsWith: "The trims of" } },
+        select: { summary: true },
+      }),
+    ).toEqual({
+      summary: `The trims of ${env.polo.code} changed after its tech pack was approved (${whatChanged[0]!.item}, ${whatChanged[1]!.item}): they wait to be approved again`,
+    });
+
+    // A trims booking for the polo waits; the tee's tech pack is as approved.
+    const second = await trimsBooking(env);
+    const checks = (await bookings.getBooking(env.owner, second.id)).checks;
+    const waits = `The trims of ${env.polo.code} changed since the tech pack was approved: collar, cuff and trims wait for them to be approved again`;
+    expect(checks).toContainEqual({ text: waits, state: "block", override: true });
+    expect(checks).not.toContainEqual(
+      expect.objectContaining({ text: "The tech packs of its styles are approved" }),
+    );
+    await expectAppError(
+      bookings.approveBooking(env.owner, second.id),
+      "CONFLICT",
+      /changed since the tech pack was approved/,
+    );
+    // Fabric bookings are not held by it.
+    const fabric = await bookings.createBooking(
+      env.pm,
+      fabricBooking(env, 56.895, { batchId: env.batch.id, expectedDate: "2030-11-15" }),
+    );
+    expect((await bookings.getBooking(env.owner, fabric.id)).checks).not.toContainEqual(
+      expect.objectContaining({ text: waits }),
+    );
+    expect(await bookings.approveBooking(env.owner, fabric.id)).toMatchObject({
+      stage: "APPROVED",
+    });
+    // The owner's override with a reason still works, and is kept in the log.
+    expect(
+      await bookings.approveBooking(env.owner, second.id, undefined, {
+        overrideReason: "Buyer approved the new buttons by email",
+      }),
+    ).toMatchObject({ stage: "APPROVED" });
+    expect(
+      (
+        await prisma.auditLog.findFirstOrThrow({
+          where: {
+            entityType: "Booking",
+            entityId: second.id,
+            summary: { startsWith: "Approved" },
+          },
+        })
+      ).summary,
+    ).toContain(`past a check (${waits}). Reason: Buyer approved the new buttons by email`);
+
+    // The batch page says so too.
+    const panel = await bookings.getBatchBookings(env.pm, env.batch.id);
+    expect(panel.styles.map((st) => [st.code, st.trimsChanged])).toEqual([
+      [env.polo.code, 2],
+      [env.tee.code, 0],
+    ]);
+
+    // Someone the owner gave "production.techpack.approve" approves the trims again.
+    const company = await prisma.company.findFirstOrThrow();
+    const role = await createRole(env.owner, {
+      name: "Tech pack approver",
+      permissions: ["production.view", "production.techpack.approve"],
+    });
+    const qa = await makeUser("qa@extas.test");
+    await addToCompany(qa.id, company.id, role.id);
+    const qaCtx = await contextFor(qa.id, company.id);
+    const again = await techPacks.approveTrimsPart(qaCtx, env.polo.id);
+    expect(again).toMatchObject({
+      trimsChanges: [],
+      trimsLog: [],
+      trimsApprovedBy: "qa",
+      approvedBy: "owner", // the whole tech pack's approval stays as it was
+      can: { approveTrims: false },
+    });
+    await expectAppError(techPacks.approveTrimsPart(qaCtx, env.polo.id), "CONFLICT", /not changed/);
+    const third = await trimsBooking(env);
+    expect(await bookings.approveBooking(env.owner, third.id)).toMatchObject({
+      stage: "APPROVED",
+    });
+    expect(
+      await prisma.auditLog.findFirst({
+        where: { entityId: env.polo.id, summary: { startsWith: "Approved the trims of" } },
+        select: { summary: true },
+      }),
+    ).toEqual({
+      summary: `Approved the trims of ${env.polo.code} again (${whatChanged[0]!.item}, ${whatChanged[1]!.item})`,
+    });
+  });
+
+  it("counts a change to a tech pack approved before v6.4.2 from the trims as they were", async () => {
+    const env = await setup();
+    await techPacks.approveTechPack(env.owner, env.polo.id);
+    // Approved before the rule: no trims part was kept.
+    await prisma.techPack.updateMany({
+      where: { projectId: env.polo.id },
+      data: { trimsPart: Prisma.DbNull, trimsApprovedAt: null, trimsApproverId: null },
+    });
+    expect((await techPacks.getTechPack(env.owner, env.polo.id)).trimsChanges).toEqual([]);
+    // A draft tech pack keeps nothing: a change is not counted.
+    await needs.setMaterialNeeds(env.pm, env.tee.id, {
+      needs: [
+        { materialId: env.jersey.id, perPiece: 0.3, split: "COLOUR" },
+        { materialId: env.buttons.id, perPiece: 2 },
+      ],
+    });
+    expect(await prisma.techPackChange.count()).toBe(0);
+
+    await needs.setMaterialNeeds(env.pm, env.polo.id, {
+      needs: [{ materialId: env.jersey.id, perPiece: 0.285, wastagePercent: 5, split: "COLOUR" }],
+    });
+    const changed = await techPacks.getTechPack(env.owner, env.polo.id);
+    expect(changed.trimsChanges).toEqual([
+      {
+        item: `${env.buttons.code} Polo Button 18L`,
+        was: "3 pcs a piece + 0% wastage",
+        now: "Taken off",
+      },
+    ]);
+    expect(changed.trimsApprovedBy).toBe("owner");
+    expect(changed.trimsLog).toHaveLength(1);
   });
 });
 

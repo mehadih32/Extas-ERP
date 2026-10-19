@@ -229,6 +229,50 @@ run("members", () => {
     ).toEqual({ userId: ctx.user.id, companyId: extras.company.id });
   });
 
+  it("only a Super Admin resets the password of someone who records money or manages the team (v6.4.2)", async () => {
+    const { ctx, extras } = await setup();
+    const manager = await makeUser("hr@extras.test");
+    const managerRole = await prisma.role.create({
+      data: {
+        companyId: extras.company.id,
+        name: "HR Manager",
+        permissions: {
+          create: [{ permission: { connect: { key: "company.members.manage" } } }],
+        },
+      },
+    });
+    await addToCompany(manager.id, extras.company.id, managerRole.id);
+    const hrCtx = await contextFor(manager.id, extras.company.id);
+    const accountant = await addMember(ctx, {
+      email: "accounts@extras.test",
+      name: "Accounts",
+      roleId: extras.roles.ACCOUNTS,
+    });
+    const storeman = await addMember(ctx, {
+      email: "store@extras.test",
+      name: "Store",
+      roleId: extras.roles.WAREHOUSE_TEAM,
+    });
+    const before = (
+      await prisma.user.findUniqueOrThrow({ where: { email: "accounts@extras.test" } })
+    ).passwordHash;
+    // The HR manager could otherwise take over the accountant's sign-in.
+    await expect(resetMemberPassword(hrCtx, accountant.membership.id)).rejects.toMatchObject({
+      code: "FORBIDDEN",
+      message: expect.stringContaining("Only a Super Admin can reset the password"),
+    });
+    expect(
+      (await prisma.user.findUniqueOrThrow({ where: { email: "accounts@extras.test" } }))
+        .passwordHash,
+    ).toBe(before);
+    expect(
+      (await resetMemberPassword(hrCtx, storeman.membership.id)).temporaryPassword,
+    ).toBeTruthy();
+    expect(
+      (await resetMemberPassword(ctx, accountant.membership.id)).temporaryPassword,
+    ).toBeTruthy();
+  });
+
   it("company admins cannot reset users who also work in another company", async () => {
     const { ctx, extras, fabric } = await setup();
     const shared = await makeUser("shared@extras.test");

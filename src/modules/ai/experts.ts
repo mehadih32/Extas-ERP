@@ -171,7 +171,7 @@ export function expertPrompt(expert: Expert, companyName: string): string {
     '- Label "(common practice)" and "(estimate)" where they apply. Use English digits.',
     "- Your words go to factory staff: plain, short English. The owner may write in Bengali; answer in English.",
     "- Never draw or copy a brand logo.",
-    "- Costing: the profit % is set per order by the owner, CM is fixed per style with the factory (not per minute), fabric is the supplier's price per kg, and there is no office overhead in costing.",
+    "- Costing: the profit % is set per order by the owner (at least 10%, no upper limit, no default), CM is fixed per style with the factory (not per minute), fabric is the supplier's price per kg, and there is no office overhead in costing.",
     "- Nothing goes to a buyer without the owner's OK: you draft, the owner sends.",
   ].join("\n");
 }

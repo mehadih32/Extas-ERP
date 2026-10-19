@@ -231,16 +231,24 @@ describe("the guide and the restore command", () => {
 describe("the owner's items for the guide (v6.4.1)", () => {
   const OVERWRITE = "Type the web address of the ERP on this server";
 
-  it("says when, and only when, to type the web address at the overwrite question (item 8)", () => {
-    // The rule: only on the new server made for this restore, after a try that stopped,
-    // before anyone worked in it; everywhere else just Enter.
-    expect(REPLACE_RULE.en).toMatch(/only when all three are true/);
-    expect(REPLACE_RULE.en).toContain("A13");
-    expect(REPLACE_RULE.en).toMatch(/stopped part way/);
-    expect(REPLACE_RULE.en).toMatch(/nobody has worked in the ERP on this server yet/);
+  it("never tells the owner to type the web address at the overwrite question (item 8, v6.4.2 item 5)", () => {
+    // The rule: always just Enter. A try that stopped on the new server made for this
+    // restore goes on by itself when pasted again there (bootstrap.sh's mark), without
+    // the question; if it asks there anyway, a new VM is the way to start again.
+    expect(REPLACE_RULE.en).toMatch(/^At this question always just press Enter: nothing changes\./);
+    expect(REPLACE_RULE.en).toContain("Never type the web address here.");
+    expect(REPLACE_RULE.en).toMatch(/stopped part way on the new server you made in part A/);
     expect(REPLACE_RULE.en).toMatch(
-      /above all on the server your ERP runs on every day, just press Enter/,
+      /goes on by itself from where it stopped and does not ask this/,
     );
+    expect(REPLACE_RULE.en).toMatch(/make another new VM as in part A/);
+    expect(REPLACE_RULE.bn).toContain("কখনো ওয়েব ঠিকানা টাইপ করবেন না");
+    for (const text of [REPLACE_RULE.en, ...allText("en")]) {
+      expect(text).not.toMatch(/type exactly the address on the “Web address” line/);
+      expect(text).not.toMatch(/Type the web address here only when/);
+    }
+    // The command does as the rule says: its own restore that stopped on a new server goes on.
+    expect(BOOTSTRAP).toContain('[ -f "$i_data/backups/$UNFINISHED" ]');
     // Wherever the guide speaks of that question, it gives the rule, in both languages.
     const texts: Text[] = [
       ...STEPS.flatMap((st) => [st.text, ...(st.tip ? [st.tip] : [])]),
@@ -464,15 +472,14 @@ describe("the guide and the restore command's own words (v6.4.1 restore)", () =>
 
   it("says that pasting the same command again goes on where it stopped (E1)", () => {
     const tip = step("E1").tip!;
-    for (const words of [
-      "Signed in to Google with the sign-in from the earlier try (no new code needed)",
-      "already downloaded in the earlier try",
-    ]) {
-      expect(TOOL).toContain(words);
-      expect(tip.en).toContain(words);
-      expect(tip.bn).toContain(words);
-    }
+    expect(TOOL).toContain("already downloaded in the earlier try");
+    expect(tip.en).toContain("already downloaded in the earlier try");
+    expect(tip.bn).toContain("already downloaded in the earlier try");
     expect(tip.en).toMatch(/paste the same command again/);
+    // v6.4.2: the Google sign-in never stays on the server, so a new code is asked.
+    expect(tip.en).not.toContain("no new code needed");
+    expect(tip.en).toMatch(/Google asks for a new code/);
+    expect(tip.en).toMatch(/as soon as the VM starts again/);
   });
 
   it("says W05 for the screens before W13 points to it, and setup-auto-deploy only once live (v6.4.1 review 2)", () => {

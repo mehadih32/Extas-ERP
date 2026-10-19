@@ -237,13 +237,14 @@ export function noGithubCommandLines(lines: string[] | null): string[] | null {
 }
 
 /**
- * The overwrite question (bootstrap.sh's A6 decision): when, and only when, to
- * type the web address there. Everywhere the guide speaks of that question it
- * says this, never "type your web address" by itself.
+ * The overwrite question (bootstrap.sh's A6 decision): the guide never says to
+ * type the web address there (v6.4.2). The command run again on the new server
+ * of a restore that stopped there goes on by itself, without the question.
+ * Everywhere the guide speaks of that question it says this.
  */
 export const REPLACE_RULE: Text = {
-  bn: "এখানে ওয়েব ঠিকানা টাইপ করবেন শুধু তখনই যখন তিনটি কথাই সত্যি: এটি সেই নতুন সার্ভার যা আপনি এই রিস্টোরের জন্য পার্ট A-তে বানিয়েছেন (PuTTY খুলেছেন A13-এর IP দিয়ে); এই সার্ভারেই কমান্ড আগে চলেছিল আর মাঝপথে থেমেছে; আর এই সার্ভারের ERP-তে এখনো কেউ কাজ করেনি। তখন “Web address” লাইনে যে ঠিকানা দেখায় ঠিক সেটি লিখে Enter চাপুন। অন্য সব ক্ষেত্রে, বিশেষ করে যে সার্ভারে আপনার ERP রোজ চলে সেখানে, শুধু Enter চাপুন: কিছুই বদলাবে না।",
-  en: "Type the web address here only when all three are true: this is the new server you made in part A for this restore (you opened PuTTY with the IP address from A13); the command ran on this same server before and stopped part way; and nobody has worked in the ERP on this server yet. Then type exactly the address on the “Web address” line and press Enter. In every other case, above all on the server your ERP runs on every day, just press Enter: nothing changes.",
+  bn: "এই প্রশ্নে সবসময় শুধু Enter চাপুন, কখনো ওয়েব ঠিকানা টাইপ করবেন না: কিছুই বদলাবে না। পার্ট A-তে বানানো নতুন সার্ভারে কমান্ড মাঝপথে থামলে (ব্যাকআপ ফেরার পর Cloudflare, HTTPS বা পরীক্ষার ধাপে থামলেও), সেখানে আবার পেস্ট করলে নিজেই চলে, এই প্রশ্ন আসে না। তবু এলে: আগের বার সব ধাপ শেষ হয়েছিল, বা ওয়েব ঠিকানা আগেই সেখানে এসেছে আর ERP-তে কাজ হয়ে থাকতে পারে। তখনও Enter চাপুন; শুরু থেকে আবার করতে পার্ট A-র মতো আরেকটি নতুন VM বানিয়ে তাতে কমান্ড চালান।",
+  en: "At this question always just press Enter: nothing changes. Never type the web address here. If the command stopped part way on the new server you made in part A for this restore, pasting it again there goes on by itself from where it stopped and does not ask this. The same when it stopped after the backup was back, at Cloudflare, HTTPS or the checks. If it asks there anyway, the earlier run had done every step, or the web address already points to that server and the ERP there may be in use: press Enter all the same; to restore again from the start, make another new VM as in part A and run the command on it.",
 };
 
 export const GUIDE_RULES: Text[] = [
@@ -763,8 +764,8 @@ export const GUIDE_PARTS: GuidePart[] = [
         },
         picture: "putty-wait",
         tip: {
-          bn: `সংযোগ কেটে গেলেও রিস্টোর নিজে নিজে চলতে থাকে। B5-এর “Saved Sessions” দিয়ে আবার ঢুকে কমান্ডটি আবার পেস্ট করুন: লেখা আসবে “A restore is already running on this server”, আর শেষ না হওয়া পর্যন্ত সেটি দেখাবে। রিস্টোর থেমে গেলে একই কমান্ড আবার পেস্ট করুন: যেখানে থেমেছিল সেখান থেকে চলে। লেখা আসে “Signed in to Google with the sign-in from the earlier try (no new code needed)” আর “... already downloaded in the earlier try”, তাই নতুন কোড বা নতুন করে নামানো লাগে না। জিজ্ঞেস করতে পারে “Type the web address of the ERP on this server”। ${REPLACE_RULE.bn} রিস্টোরের মাঝে VM নিজে আবার চালু (restart) হলে, চালু হতেই সার্ভার ERP যেমন আছে তেমনই চালু করে, এর মধ্যে ERP-তে কাজ হয়ে থাকতে পারে এমন কোনো তথ্যের ওপর নিজে থেকে কিছু ফিরিয়ে বসায় না, আর ERP-র ইনবক্সে ও Telegram-এ “Restore did not finish” জানায়; তারপর একই কমান্ড আবার পেস্ট করুন। ERP চালু না হলে PuTTY-তে লেখা আসে “PROBLEM: the ERP is NOT running”: নিচের তালিকায় দেখুন।`,
-          en: `If the connection drops, the restore goes on by itself. Sign in again with “Saved Sessions” as in B5 and paste the command again: it says “A restore is already running on this server” and shows it until it ends. If the restore stops, paste the same command again: it goes on from where it stopped. It says “Signed in to Google with the sign-in from the earlier try (no new code needed)” and “... already downloaded in the earlier try”, so no new code and no new download are needed. It may ask “Type the web address of the ERP on this server”. ${REPLACE_RULE.en} If the VM restarts during the restore, the server starts the ERP again as it is as soon as it is up, never puts anything back by itself over data that may have been entered since, and says “Restore did not finish” in the ERP's inbox and on Telegram; then paste the same command again. If the ERP does not start, PuTTY says “PROBLEM: the ERP is NOT running”: see the list below.`,
+          bn: `সংযোগ কেটে গেলেও রিস্টোর নিজে নিজে চলতে থাকে। B5-এর “Saved Sessions” দিয়ে আবার ঢুকে কমান্ডটি আবার পেস্ট করুন: লেখা আসবে “A restore is already running on this server”, আর শেষ না হওয়া পর্যন্ত সেটি দেখাবে। রিস্টোর থেমে গেলে একই কমান্ড আবার পেস্ট করুন: যেখানে থেমেছিল সেখান থেকে চলে। লেখা আসে “... already downloaded in the earlier try”, তাই ব্যাকআপ নতুন করে নামানো লাগে না; তবে Google-এ ঢোকার নতুন কোড লাগে (D-এর মতো), কারণ Google-এর সাইন-ইন সার্ভারে রাখা হয় না। খোলা ব্যাকআপ, সেটিংস ফাইল বা চাবি কিছুই সার্ভারে থেকে যায় না: কমান্ড প্রতিবার শুরুতে, শেষে, আর VM আবার চালু হলেই সেগুলো মুছে দেয়; শুধু এখনো তালা দেওয়া নামানো ব্যাকআপটি থাকে। জিজ্ঞেস করতে পারে “Type the web address of the ERP on this server”। ${REPLACE_RULE.bn} রিস্টোরের মাঝে VM নিজে আবার চালু (restart) হলে, চালু হতেই সার্ভার ERP যেমন আছে তেমনই চালু করে, এর মধ্যে ERP-তে কাজ হয়ে থাকতে পারে এমন কোনো তথ্যের ওপর নিজে থেকে কিছু ফিরিয়ে বসায় না, আর ERP-র ইনবক্সে ও Telegram-এ “Restore did not finish” জানায়; তারপর একই কমান্ড আবার পেস্ট করুন। ERP চালু না হলে PuTTY-তে লেখা আসে “PROBLEM: the ERP is NOT running”: নিচের তালিকায় দেখুন।`,
+          en: `If the connection drops, the restore goes on by itself. Sign in again with “Saved Sessions” as in B5 and paste the command again: it says “A restore is already running on this server” and shows it until it ends. If the restore stops, paste the same command again: it goes on from where it stopped. It says “... already downloaded in the earlier try”, so the backup is not downloaded again; Google asks for a new code (as in D), because the Google sign-in is never kept on the server. Nothing opened, no settings file and no key stays on the server: the command deletes them at every start, at the end, and as soon as the VM starts again; only the download, still locked, stays. It may ask “Type the web address of the ERP on this server”. ${REPLACE_RULE.en} If the VM restarts during the restore, the server starts the ERP again as it is as soon as it is up, never puts anything back by itself over data that may have been entered since, and says “Restore did not finish” in the ERP's inbox and on Telegram; then paste the same command again. If the ERP does not start, PuTTY says “PROBLEM: the ERP is NOT running”: see the list below.`,
         },
       },
       {
@@ -977,8 +978,8 @@ export const GUIDE_ERRORS: GuideError[] = [
       "This server already has Extas ERP and the web address typed did not match. For safety nothing was changed.",
     ),
     todo: fix(
-      `যে সার্ভারে আপনার ERP রোজ চলে সেখানে হলে কিছুই করবেন না: সেটাই ঠিক ছিল। তা না হলে কমান্ড আবার চালান। ${REPLACE_RULE.bn}`,
-      `On the server your ERP runs on every day, do nothing: stopping was right. Otherwise run the command again. ${REPLACE_RULE.en}`,
+      `থামাটাই ঠিক ছিল: কিছুই বদলায়নি। যে সার্ভারে আপনার ERP রোজ চলে সেখানে হলে কিছুই করবেন না। ${REPLACE_RULE.bn}`,
+      `Stopping was right: nothing was changed. On the server your ERP runs on every day, do nothing. ${REPLACE_RULE.en}`,
     ),
   },
   {
@@ -1135,12 +1136,12 @@ export const GUIDE_ERRORS: GuideError[] = [
     code: "R19",
     shown: "the backup could not be restored",
     meaning: fix(
-      "ডাটাবেস বা ফাইল ফেরত আনা যায়নি। কেন, তা একই লাইনে আর উপরে লেখা; সাধারণত সার্ভার রিস্টোরের আগের অবস্থায় (নিরাপত্তা কপি থেকে) ফিরে গেছে। ওয়েব ঠিকানা বদলায়নি। এই সার্ভারের ERP রিস্টোরের আগে চালু (ব্যবহারে) থাকলে সেটি আগের মতোই চলে, অপেক্ষায় (standby) থাকে না।",
-      "The database or files could not be restored. Why is on the same line and above; usually the server was put back as it was before the restore (the safety copy). The web address was not changed. If the ERP on this server was the one in use before the restore, it runs as before, not on standby.",
+      "ডাটাবেস বা ফাইল ফেরত আনা যায়নি। কেন, তা একই লাইনে আর উপরে লেখা; সাধারণত সার্ভার রিস্টোরের আগের অবস্থায় (নিরাপত্তা কপি থেকে) ফিরে গেছে। ওয়েব ঠিকানা বদলায়নি। এই সার্ভারের ERP রিস্টোরের আগে চালু (ব্যবহারে) থাকলে সেটি আগের মতোই চলে, নিজের আগের কোডে (কমান্ড সেটি আবার বসিয়ে দেয়), অপেক্ষায় (standby) থাকে না।",
+      "The database or files could not be restored. Why is on the same line and above; usually the server was put back as it was before the restore (the safety copy). The web address was not changed. If the ERP on this server was the one in use before the restore, it runs as before, on its own code from before (the command puts it back), not on standby.",
     ),
     todo: fix(
-      `একই কমান্ড আবার পেস্ট করুন: আগে নামানো ব্যাকআপ দিয়েই চলে। জিজ্ঞেস করতে পারে “Type the web address of the ERP on this server”। ${REPLACE_RULE.bn} একই ভুল আবার হলে D6-এ আরেকটি ব্যাকআপ বাছুন।`,
-      `Paste the command again: it goes on with the backup already downloaded. It may ask “Type the web address of the ERP on this server”. ${REPLACE_RULE.en} If the same error comes again, pick another backup at D6.`,
+      `একই কমান্ড আবার পেস্ট করুন: আগে নামানো ব্যাকআপ দিয়েই চলে (Google-এর নতুন কোড লাগে)। জিজ্ঞেস করতে পারে “Type the web address of the ERP on this server”। ${REPLACE_RULE.bn} একই ভুল আবার হলে D6-এ আরেকটি ব্যাকআপ বাছুন।`,
+      `Paste the command again: it goes on with the backup already downloaded (Google asks for a new code). It may ask “Type the web address of the ERP on this server”. ${REPLACE_RULE.en} If the same error comes again, pick another backup at D6.`,
     ),
   },
   {
@@ -1402,6 +1403,18 @@ export const GUIDE_ERRORS: GuideError[] = [
     todo: fix(
       "ঠিক উপরের লাইনগুলোর কোড (যেমন R20 বা W05) এই তালিকায় দেখুন। স্ক্রিন পরীক্ষা করা না গেলে (W05-এ Screens not checked) ERP খুলে F1 আর F2-এর মতো নিজে দেখুন। ERP ঠিক থাকলে আর পুরনো সার্ভার বন্ধ হলে F6 করুন। মহড়ায়: মহড়ার ধাপ 5-এর মতো Cloudflare-এ মহড়ার লাইনটি নিজে যোগ করুন, আর উপরের লাইনগুলোর ছবি তুলে ডেভেলপারকে পাঠান।",
       "Look up the codes in the lines just above (like R20 or W05) in this list. If the screens could not be checked (Screens not checked, under W05), open the ERP and look yourself as in F1 and F2. When the ERP is right and the old server is off, do step F6. In a drill: add the drill's line in Cloudflare yourself as in the drill's step 5, and send a picture of the lines above to the developer.",
+    ),
+  },
+  {
+    code: "W14",
+    shown: "the restore steps of this command's version could not be downloaded from GitHub",
+    meaning: fix(
+      "রিস্টোরের ধাপগুলো (restore.sh আর setup-server.sh) সাধারণত কমান্ডের নিজের সংস্করণ থেকে নেওয়া হয়, যাতে পুরনো ব্যাকআপেও রিস্টোরের সব নতুন ঠিক করা কাজ লাগে। এবার GitHub থেকে সেগুলো নামানো যায়নি, আর ব্যাকআপের কোডেও সেই সংস্করণ নেই, তাই ব্যাকআপের নিজের ধাপগুলো দিয়ে রিস্টোর চলছে।",
+      "The restore steps (restore.sh and setup-server.sh) normally come from the command's own version, so that an older backup also gets every later fix of the restore. This time they could not be downloaded from GitHub, and the backup's code does not have that version, so the restore goes on with the backup's own steps.",
+    ),
+    todo: fix(
+      "কিছু করতে হবে না: রিস্টোর চলতে থাকে। শেষে কোনো Error এলে, VM-এর ইন্টারনেট ঠিক আছে কিনা দেখে (GitHub খোলা যায় কিনা) একই কমান্ড আবার পেস্ট করুন।",
+      "Nothing to do: the restore goes on. If an Error comes at the end, check the VM's internet (that GitHub can be reached) and paste the same command again.",
     ),
   },
 ];

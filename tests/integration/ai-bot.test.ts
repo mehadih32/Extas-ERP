@@ -57,15 +57,17 @@ import {
   unlinkBot,
 } from "@/modules/ai/bot/bot.service";
 import { type BotCall, standInForBotApi } from "@/modules/ai/bot/channel";
+import { NUMBER_HIDDEN_TEXT, PIN_NOT_REMOVED_TEXT } from "@/modules/ai/bot/incoming";
 import { pinScrubReport } from "@/modules/ai/bot/pin-scrub";
 import { PIN_HIDDEN_TEXT, sendChat } from "@/modules/ai/chat/chat.service";
 import {
-  CHAT_PIN_CHECKS,
+  BOT_PIN_LOCKED,
   checkPin,
   PIN_TRIES,
   PIN_TRIES_USED,
   setAiSwitch,
   setPin,
+  unlockBotPin,
 } from "@/modules/ai/settings.service";
 import { login, MAX_FAILED_LOGINS } from "@/modules/auth/auth.service";
 import * as costing from "@/modules/costing/costing.service";
@@ -84,9 +86,8 @@ const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
 
 const TOKEN = "123456789:AAH_test-token-abcdefghijklmnopqrstuv";
 const OWNER_CHAT = 555001;
-/** What the bot says after hiding a number that could be the PIN: never whether it was. */
-const HID_NUMBER =
-  "A number in your message could be your PIN, so the message was hidden and nothing was done. Send your PIN only when the bot asks for it. If it was not your PIN, write it again in 15 minutes, or use the ERP.";
+/** What the bot says after hiding any number it did not ask for: never whether it was the PIN. */
+const HID_NUMBER = NUMBER_HIDDEN_TEXT;
 const STRANGER = 999002;
 const WA_NUMBER_ID = "109876543210";
 const WA_TOKEN = "EAAG-test-access-token-0123456789";
@@ -112,9 +113,11 @@ type Sent = {
 };
 
 /** Telegram and Meta, as stand-ins that record every call. */
-function botApi(options: { refuseToken?: boolean } = {}) {
+function botApi(options: { refuseToken?: boolean; deleteFails?: number } = {}) {
   const calls: Sent[] = [];
   let next = 100;
+  /** How many deleteMessage calls still fail (Telegram refuses or does not answer). */
+  let deleteFails = options.deleteFails ?? 0;
   standInForBotApi(async (call: BotCall) => {
     const tg = /^https:\/\/api\.telegram\.org\/bot([^/]+)\/(\w+)$/.exec(call.url);
     if (tg) {
@@ -137,6 +140,10 @@ function botApi(options: { refuseToken?: boolean } = {}) {
       }
       if (tg[2] === "sendMessage" || tg[2] === "sendDocument") {
         return { status: 200, body: { ok: true, result: { message_id: (next += 1) } } };
+      }
+      if (tg[2] === "deleteMessage" && deleteFails > 0) {
+        deleteFails -= 1;
+        return { status: 500, body: { ok: false, description: "Internal Server Error" } };
       }
       return { status: 200, body: { ok: true, result: true } };
     }
@@ -434,7 +441,7 @@ run("The bot", () => {
       factoryId: env.mill.id,
       currency: "USD",
       exchangeRate: "120",
-      profitPercent: "8",
+      profitPercent: "10",
       sourceTaxPercent: "",
       bankChargePercent: "",
       commissionPercent: "",
@@ -464,7 +471,7 @@ run("The bot", () => {
     );
     expect(
       (await prisma.orderCosting.findUniqueOrThrow({ where: { id } })).profitPercent?.toString(),
-    ).toBe("8");
+    ).toBe("10");
 
     await telegram(press(OWNER_CHAT, profit!.callback_data));
     await telegram(typed(OWNER_CHAT, "2468"));
@@ -647,7 +654,7 @@ run("The bot", () => {
       factoryId: env.mill.id,
       currency: "USD",
       exchangeRate: "120",
-      profitPercent: "8",
+      profitPercent: "10",
       sourceTaxPercent: "",
       bankChargePercent: "",
       commissionPercent: "",
@@ -675,7 +682,7 @@ run("The bot", () => {
     );
     expect(
       (await prisma.orderCosting.findUniqueOrThrow({ where: { id } })).profitPercent?.toString(),
-    ).toBe("8");
+    ).toBe("10");
     expect((await prisma.aiBotLink.findFirstOrThrow()).pending).toBeNull();
 
     // The PIN typed when nothing asked for it: hidden too, and never sent to the AI.
@@ -685,9 +692,15 @@ run("The bot", () => {
       message_id: stray.message.message_id,
     });
     expect(api.said(OWNER_CHAT).at(-1)).toBe(HID_NUMBER);
-    // An order number is not a PIN: it goes to Mehedi 2.0 as typed.
+    // A bare number that is not the PIN is hidden the same way (v6.4.2); with its letters it goes
+    // to Mehedi 2.0 as typed.
     await telegram(typed(OWNER_CHAT, "4501"));
-    expect(await prisma.aiBotMessage.count({ where: { text: "4501", direction: "IN" } })).toBe(1);
+    expect(api.said(OWNER_CHAT).at(-1)).toBe(HID_NUMBER);
+    expect(
+      await prisma.aiBotMessage.count({ where: { text: { contains: "4501" }, direction: "IN" } }),
+    ).toBe(0);
+    await telegram(typed(OWNER_CHAT, "PO4501"));
+    expect(await prisma.aiBotMessage.count({ where: { text: "PO4501", direction: "IN" } })).toBe(1);
 
     for (const where of [
       prisma.aiChatMessage.count({ where: { text: { contains: "2468" } } }),
@@ -698,70 +711,69 @@ run("The bot", () => {
     const jobs = await prisma.backgroundJob.findMany({ where: { kind: "ai.bot.incoming" } });
     expect(JSON.stringify(jobs.map((j) => j.payload))).not.toContain("2468");
     expect(JSON.stringify(await getBot(env.owner))).not.toContain("2468");
-    expect(await prisma.aiBotMessage.count({ where: { text: "[PIN]", direction: "IN" } })).toBe(2);
+    expect(await prisma.aiBotMessage.count({ where: { text: "[PIN]", direction: "IN" } })).toBe(3);
     // The report after an update counts only what the v6.3 wipe hid, never these PINs.
     expect(await pinScrubReport()).toMatchObject({ hidden: 0, notAfterRequest: 0 });
   });
 
-  it("hides a PIN typed by mistake, even inside words or in Bengali digits, and never says a number was the PIN (v6.4.1 B6)", async () => {
+  it("hides every number of 4 to 8 digits it did not ask for the same way, without checking it, so no answer tells the PIN (v6.4.2)", async () => {
     const api = botApi();
     await linkOwner(env);
     await setAiSwitch(env.owner, true);
     await setPin(env.owner, { pin: "2468" });
     const deletes = () => api.calls.filter((c) => c.method === "deleteMessage");
-    // Order numbers are checked and go to Mehedi 2.0 as typed; one checked already costs no try.
-    for (let i = 0; i < 8; i++) await telegram(typed(OWNER_CHAT, `PO ${4500 + i} is late`));
-    for (let i = 0; i < 12; i++) await telegram(typed(OWNER_CHAT, "PO 4500 is late"));
-    expect(await prisma.aiBotMessage.count({ where: { text: "PO 4500 is late" } })).toBe(13);
-    expect(await prisma.aiBotMessage.count({ where: { text: "PO 4507 is late" } })).toBe(1);
-    // Digits that only hold the PIN inside a longer number are not it.
-    await telegram(typed(OWNER_CHAT, "order 124689 shipped"));
-    expect(await prisma.aiBotMessage.count({ where: { text: "order 124689 shipped" } })).toBe(1);
-    expect(deletes()).toHaveLength(0);
-    // The PIN on its own, inside words, or in Bengali digits: hidden, and never sent to the AI.
-    const hides = async (text: string) => {
+    /** What the bot did with one message: the calls it made after it, minus the ids. */
+    const answer = async (text: string) => {
+      const before = api.calls.length;
       const message = typed(OWNER_CHAT, text);
       await telegram(message);
       expect(deletes().at(-1)?.json).toMatchObject({ message_id: message.message.message_id });
       expect(api.said(OWNER_CHAT).at(-1)).toBe(HID_NUMBER);
+      return JSON.stringify(
+        api.calls.slice(before).map((c) => ({ method: c.method, text: c.json.text ?? null })),
+      );
     };
-    await hides("2468");
-    await fifteenMinutesLater();
-    for (const text of ["my pin is 2468, ok?", "PIN:2468", "২৪৬৮"]) await hides(text);
-    expect(api.said(OWNER_CHAT).join("\n")).not.toMatch(/was your PIN/i);
-    expect(await prisma.aiBotMessage.count({ where: { text: "[PIN]", direction: "IN" } })).toBe(4);
-
-    // Ten new numbers in 15 minutes used up the checks: a new number is now hidden unchecked,
-    // the same way and with the same words as the PIN, so sending numbers can never tell
-    // which one is the PIN.
-    for (let i = 0; i < 7; i++) await telegram(typed(OWNER_CHAT, `PO ${9800 + i} is late`));
-    expect(await prisma.aiBotMessage.count({ where: { text: "PO 9806 is late" } })).toBe(1);
-    await hides("PO 9901 is late");
-    expect(await prisma.aiBotMessage.count({ where: { text: { contains: "9901" } } })).toBe(0);
-    expect(await prisma.aiBotMessage.count({ where: { text: "[PIN]", direction: "IN" } })).toBe(5);
-    // A number already found not to be the PIN still goes through, and words without numbers too.
-    await telegram(typed(OWNER_CHAT, "PO 4503 is late"));
-    expect(await prisma.aiBotMessage.count({ where: { text: "PO 4503 is late" } })).toBe(2);
-    await telegram(typed(OWNER_CHAT, "status"));
-    expect(await prisma.aiBotMessage.count({ where: { text: "status" } })).toBe(1);
-    // The bot's checks never use up the owner's PIN tries in the ERP.
+    // The PIN and a number that is not the PIN get exactly the same answer.
+    const pin = await answer("2468");
+    expect(await answer("1357")).toBe(pin);
+    // Inside words, in Bengali digits, beside a PIN word, in an order or a quantity: all hidden.
+    for (const text of [
+      "my pin is 2468, ok?",
+      "PIN:2468",
+      "২৪৬৮",
+      "PO 4500 is late",
+      "order 124689 shipped",
+      "ship 1200 pcs",
+    ]) {
+      expect(await answer(text)).toBe(pin);
+    }
+    // However many: still the same answer, and no number is ever checked against the PIN.
+    for (let i = 0; i < 25; i++) expect(await answer(`PO ${9800 + i} is late`)).toBe(pin);
+    expect(await prisma.aiPinTry.count()).toBe(0);
     expect(await checkPin(env.company.id, "2468", env.owner.user.id)).toBe(true);
-    // After the 15 minutes, new numbers are checked again.
-    await fifteenMinutesLater();
-    await telegram(typed(OWNER_CHAT, "PO 9902 is late"));
-    expect(await prisma.aiBotMessage.count({ where: { text: "PO 9902 is late" } })).toBe(1);
+    expect(api.said(OWNER_CHAT).join("\n")).not.toMatch(/was your PIN|is your PIN/i);
+    expect(await prisma.aiBotMessage.count({ where: { text: "[PIN]", direction: "IN" } })).toBe(
+      2 + 6 + 25,
+    );
+    expect(await prisma.notificationLog.count()).toBe(0);
+    // Document numbers with their letters, dates and words without numbers go to Mehedi 2.0.
+    const before = deletes().length;
+    for (const text of ["PO4501 is late", "CS-2026-0001", "ship on 18/10/2026", "status"]) {
+      await telegram(typed(OWNER_CHAT, text));
+      expect(await prisma.aiBotMessage.count({ where: { text, direction: "IN" } })).toBe(1);
+    }
+    expect(deletes()).toHaveLength(before);
 
-    const pinAlone = { contains: "2468", not: { contains: "124689" } };
     for (const where of [
-      prisma.aiChatMessage.count({ where: { text: pinAlone } }),
-      prisma.aiBotMessage.count({ where: { text: pinAlone } }),
+      prisma.aiChatMessage.count({ where: { text: { contains: "2468" } } }),
+      prisma.aiBotMessage.count({ where: { text: { contains: "2468" } } }),
       prisma.aiChatMessage.count({ where: { text: { contains: "২৪৬৮" } } }),
       prisma.aiBotMessage.count({ where: { text: { contains: "২৪৬৮" } } }),
     ]) {
       expect(await where).toBe(0);
     }
     const jobs = await prisma.backgroundJob.findMany({ where: { kind: "ai.bot.incoming" } });
-    const payloads = JSON.stringify(jobs.map((j) => j.payload)).replaceAll("124689", "");
+    const payloads = JSON.stringify(jobs.map((j) => j.payload));
     expect(payloads).not.toContain("2468");
     expect(payloads).not.toContain("২৪৬৮");
   });
@@ -1056,6 +1068,15 @@ run("The bot", () => {
     ]);
     expect(await prisma.aiGrant.count()).toBe(1);
 
+    // WhatsApp cannot take a message out of the chat: a number is hidden from the ERP and the
+    // AI, and the owner is told to delete it himself (v6.4.2).
+    await meta([text("2468")]);
+    const said = api.calls
+      .filter((c) => c.method === `wa:${WA_NUMBER_ID}/messages` && c.json.type === "text")
+      .map((c) => (c.json.text as { body: string }).body);
+    expect(said.slice(-2)).toEqual([PIN_NOT_REMOVED_TEXT, HID_NUMBER]);
+    expect(await prisma.aiBotMessage.count({ where: { text: "[PIN]", direction: "IN" } })).toBe(1);
+
     // Another number writing to the business number: nothing.
     const before = api.calls.length;
     await meta([
@@ -1246,10 +1267,6 @@ run("The bot", () => {
     expect(await checkPin(env.company.id, "2468", userId)).toBe(true);
     const tries = await prisma.aiPinTry.findMany({ select: { kind: true, count: true } });
     expect(JSON.stringify(tries)).not.toContain("2468");
-
-    // Numbers sent to the bot: past ten new ones the owner is told too.
-    for (let i = 0; i < 11; i++) await telegram(typed(OWNER_CHAT, `PO ${7100 + i} is late`));
-    expect(await alarms("Many numbers sent to the bot")).toBe(1);
   });
 
   it("does not take numbers inside codes like CS-2026-0001 for a PIN (v6.4.1)", async () => {
@@ -1260,13 +1277,11 @@ run("The bot", () => {
     for (let i = 0; i < 15; i++) {
       await telegram(typed(OWNER_CHAT, `CS-2026-${String(i + 1).padStart(4, "0")} status`));
     }
-    expect(await prisma.aiPinTry.count({ where: { kind: "NUMBER" } })).toBe(0);
     expect(await prisma.aiBotMessage.count({ where: { text: "[PIN]" } })).toBe(0);
-    // A number on its own is still checked.
+    // A number on its own is hidden, and never checked against the PIN (v6.4.2).
     await telegram(typed(OWNER_CHAT, "PO 4501 is late"));
-    expect(await prisma.aiPinTry.findFirstOrThrow({ where: { kind: "NUMBER" } })).toMatchObject({
-      count: 1,
-    });
+    expect(await prisma.aiBotMessage.count({ where: { text: "[PIN]" } })).toBe(1);
+    expect(await prisma.aiPinTry.count()).toBe(0);
   });
 
   it("hides a PIN written as PIN-4321 or with a Bengali ending like ৪৩২১ই (v6.4.1)", async () => {
@@ -1324,39 +1339,218 @@ run("The bot", () => {
     expect(await prisma.aiBotMessage.count({ where: { direction: "IN", text: "" } })).toBe(0);
   });
 
-  it("the ERP's own chat keeps working after many numbers, counts apart from the bot and still hides the PIN (v6.4.1)", async () => {
+  it("alarms the owner from the 5th wrong PIN in a day and stops PIN actions after 20 until the owner unlocks them in the ERP with the PIN (v6.4.2)", async () => {
+    const api = botApi();
+    await prisma.user.update({ where: { id: env.owner.user.id }, data: { isSuperAdmin: true } });
+    await linkOwner(env);
+    await setPin(env.owner, { pin: "2468" });
+    const alarms = (subject: string) => prisma.notificationLog.count({ where: { subject } });
+    const settings = () =>
+      prisma.aiSettings.findUniqueOrThrow({ where: { companyId: env.company.id } });
+    /** The bot asks for the PIN (to unlock the sign-in) and gets a wrong one; what it answers. */
+    const wrongTry = async () => {
+      await telegram(typed(OWNER_CHAT, "unlock"));
+      expect(api.said(OWNER_CHAT).at(-1)).toMatch(/^Send your PIN to unlock your sign-in/);
+      const before = api.said(OWNER_CHAT).length;
+      await telegram(typed(OWNER_CHAT, "1357"));
+      return api.said(OWNER_CHAT).slice(before);
+    };
+    for (let i = 1; i <= 4; i++) {
+      expect(await wrongTry()).toEqual([
+        "The PIN is not right. Press the button again to try again.",
+      ]);
+    }
+    expect(await alarms("Wrong PIN on the bot")).toBe(0);
+    // The 5th: the owner is alarmed (the inbox and the bot), and the answer says how many.
+    const fifth = await wrongTry();
+    expect(fifth).toContain(
+      "The PIN is not right (5 wrong PINs today; after 20, PIN actions on the bot stop until you unlock them in the ERP). Press the button again to try again.",
+    );
+    expect(
+      fifth.some((t) =>
+        t.startsWith("Wrong PIN on the bot. 5 wrong PINs were sent to the bot in a day"),
+      ),
+    ).toBe(true);
+    expect(await alarms("Wrong PIN on the bot")).toBe(1);
+    for (let i = 6; i <= 19; i++) {
+      // The ERP's own limit (ten in fifteen minutes) is not what is tested here.
+      if (i % 8 === 0) await fifteenMinutesLater();
+      await wrongTry();
+    }
+    expect(await alarms("Wrong PIN on the bot")).toBe(15);
+    expect((await settings()).botPinLockedAt).toBeNull();
+    await fifteenMinutesLater();
+    // The 20th stops PIN actions on the bot.
+    const twentieth = await wrongTry();
+    expect(twentieth).toContain(
+      "The PIN is not right. That was the 20th wrong PIN in a day, so PIN actions on the bot are stopped now. Unlock them in the ERP: AI Center > Bot, “Unlock PIN actions” (it asks for your PIN).",
+    );
+    expect(
+      twentieth.some((t) => t.startsWith("PIN actions on the bot are stopped. 20 wrong PINs")),
+    ).toBe(true);
+    expect(await alarms("PIN actions on the bot are stopped")).toBe(1);
+    expect((await settings()).botPinLockedAt).not.toBeNull();
+    expect((await getBot(env.owner)).pinLock).toMatchObject({ wrongToday: 20 });
+
+    // Now the bot asks for no PIN, and takes none, not even the right one.
+    await telegram(typed(OWNER_CHAT, "unlock"));
+    expect(api.said(OWNER_CHAT).at(-1)).toBe(BOT_PIN_LOCKED);
+    expect((await prisma.aiBotLink.findFirstOrThrow()).pending).toBeNull();
+    await prisma.aiBotLink.updateMany({
+      data: {
+        pending: { press: { kind: "unlock", companyId: env.company.id }, sourceId: null },
+        pendingUntil: new Date(Date.now() + 60_000),
+      },
+    });
+    const right = typed(OWNER_CHAT, "2468");
+    await telegram(right);
+    expect(api.said(OWNER_CHAT).at(-1)).toBe(BOT_PIN_LOCKED);
+    expect(api.calls.filter((c) => c.method === "deleteMessage").at(-1)?.json).toMatchObject({
+      message_id: right.message.message_id,
+    });
+    expect(await alarms("PIN actions on the bot are stopped")).toBe(1);
+    expect(
+      await prisma.auditLog.count({ where: { summary: { contains: "Unlocked the sign-in" } } }),
+    ).toBe(0);
+
+    // Only the owner unlocks it, in the ERP, with the web PIN; it is logged.
+    await expectAppError(unlockBotPin(env.watcher, {}), "FORBIDDEN");
+    await fifteenMinutesLater();
+    const asked = await expectAppError(unlockBotPin(env.owner, {}), "VALIDATION");
+    expect(asked.details?.pin).toBeTruthy();
+    await expectAppError(
+      unlockBotPin(env.owner, { pin: "1111" }),
+      "VALIDATION",
+      "The PIN is not right.",
+    );
+    expect((await settings()).botPinLockedAt).not.toBeNull();
+    await unlockBotPin(env.owner, { pin: "2468" });
+    expect((await settings()).botPinLockedAt).toBeNull();
+    expect((await getBot(env.owner)).pinLock).toEqual({ lockedAt: null, wrongToday: 0 });
+    const log = await prisma.auditLog.findFirstOrThrow({
+      where: { summary: { startsWith: "Unlocked PIN actions on the bot" } },
+    });
+    expect(log).toMatchObject({ userId: env.owner.user.id });
+    expect(log.summary).toMatch(/after 20 wrong PINs\)$/);
+    expect(JSON.stringify(await prisma.auditLog.findMany())).not.toContain("2468");
+    await expectAppError(unlockBotPin(env.owner, { pin: "2468" }), "CONFLICT");
+    // The day's count starts again.
+    expect(await wrongTry()).toEqual([
+      "The PIN is not right. Press the button again to try again.",
+    ]);
+  });
+
+  it("counts the bot's wrong PINs over a day: an old count does not stop PIN actions (v6.4.2)", async () => {
+    const api = botApi();
+    await linkOwner(env);
+    await setPin(env.owner, { pin: "2468" });
+    const dayOld = async (hours: number) =>
+      prisma.aiPinTry.upsert({
+        where: {
+          companyId_subjectKey_kind: {
+            companyId: env.company.id,
+            subjectKey: "bot",
+            kind: "BOT_PIN",
+          },
+        },
+        create: {
+          companyId: env.company.id,
+          subjectKey: "bot",
+          kind: "BOT_PIN",
+          count: 19,
+          windowStart: new Date(Date.now() - hours * 3_600_000),
+        },
+        update: { count: 19, windowStart: new Date(Date.now() - hours * 3_600_000) },
+      });
+    const wrongTry = async () => {
+      await telegram(typed(OWNER_CHAT, "unlock"));
+      await telegram(typed(OWNER_CHAT, "1357"));
+      return api.said(OWNER_CHAT).at(-1);
+    };
+    // 19 wrong PINs more than a day ago: this one is the first of a new day.
+    await dayOld(25);
+    expect(await wrongTry()).toBe("The PIN is not right. Press the button again to try again.");
+    expect(await prisma.aiPinTry.findFirstOrThrow({ where: { kind: "BOT_PIN" } })).toMatchObject({
+      count: 1,
+    });
+    expect((await prisma.aiSettings.findFirstOrThrow()).botPinLockedAt).toBeNull();
+    // 19 in the last day: this one stops PIN actions. A right PIN never counts.
+    await dayOld(23);
+    await telegram(typed(OWNER_CHAT, "unlock"));
+    await telegram(typed(OWNER_CHAT, "2468"));
+    expect(await prisma.aiPinTry.findFirstOrThrow({ where: { kind: "BOT_PIN" } })).toMatchObject({
+      count: 19,
+    });
+    expect(await wrongTry()).toMatch(
+      /^The PIN is not right\. That was the 20th wrong PIN in a day/,
+    );
+    expect((await prisma.aiSettings.findFirstOrThrow()).botPinLockedAt).not.toBeNull();
+  });
+
+  it("tries again to delete a message with the PIN, and tells the owner when it could not (v6.4.2)", async () => {
+    // Telegram refuses twice, then deletes it: nothing more to say.
+    let api = botApi({ deleteFails: 2 });
+    await linkOwner(env);
+    await setPin(env.owner, { pin: "2468" });
+    const stray = typed(OWNER_CHAT, "2468");
+    await telegram(stray);
+    const deletes = () =>
+      api.calls.filter(
+        (c) => c.method === "deleteMessage" && c.json.message_id === stray.message.message_id,
+      );
+    expect(deletes()).toHaveLength(3);
+    expect(api.said(OWNER_CHAT)).not.toContain(PIN_NOT_REMOVED_TEXT);
+    expect(api.said(OWNER_CHAT).at(-1)).toBe(HID_NUMBER);
+    // Telegram refuses three times: the owner is told to delete it himself.
+    api = botApi({ deleteFails: 3 });
+    const asked = typed(OWNER_CHAT, "unlock");
+    await telegram(asked);
+    const pin = typed(OWNER_CHAT, "2468");
+    await telegram(pin);
+    expect(
+      api.calls.filter(
+        (c) => c.method === "deleteMessage" && c.json.message_id === pin.message.message_id,
+      ),
+    ).toHaveLength(3);
+    expect(api.said(OWNER_CHAT)).toContain(PIN_NOT_REMOVED_TEXT);
+    // What waited for the PIN is still done.
+    expect(api.said(OWNER_CHAT).at(-1)).not.toBe(PIN_NOT_REMOVED_TEXT);
+  }, 30_000);
+
+  it("the ERP's own chat hides every number of 4 to 8 digits unchecked, with the bot's words, so no answer tells the PIN (v6.4.2)", async () => {
     await prisma.user.update({ where: { id: env.owner.user.id }, data: { isSuperAdmin: true } });
     await setAiSwitch(env.owner, true);
     await setPin(env.owner, { pin: "2468" });
-    for (let i = 0; i < 15; i++) {
-      const rows = await sendChat(env.owner, { text: `status of order ${1200 + i} pcs` });
-      expect(rows[0]!.text).not.toBe(PIN_HIDDEN_TEXT);
+    const answer = async (text: string) => {
+      resetRateLimits();
+      const rows = await sendChat(env.owner, { text });
+      return rows.map((r) => [r.text, r.intent]);
+    };
+    // The PIN and any other number: the same answer, the bot's own words.
+    const pin = await answer("2468");
+    expect(pin).toEqual([[NUMBER_HIDDEN_TEXT, "pin.hidden"]]);
+    expect(PIN_HIDDEN_TEXT).toBe(NUMBER_HIDDEN_TEXT);
+    for (const text of ["1357", "pin 2468", "status of order 1200 pcs", "PO 4500 is late"]) {
+      expect(await answer(text), text).toEqual(pin);
     }
+    // However many: never checked against the PIN, never counted, no alarm.
+    for (let i = 0; i < 120; i++) expect(await answer(`order ${9000 + i}`)).toEqual(pin);
+    expect(await prisma.aiPinTry.count()).toBe(0);
+    expect(await prisma.notificationLog.count()).toBe(0);
+    expect(await checkPin(env.company.id, "2468", env.owner.user.id)).toBe(true);
     expect(
-      await prisma.aiChatMessage.count({
-        where: { role: "OWNER", text: { startsWith: "status" } },
-      }),
-    ).toBe(15);
-    expect(await prisma.aiPinTry.count({ where: { kind: "NUMBER" } })).toBe(0);
-    const alarms = (subject: string) => prisma.notificationLog.count({ where: { subject } });
-    expect(await alarms("Many numbers sent to the bot")).toBe(0);
-    // The PIN itself is still hidden.
-    const rows = await sendChat(env.owner, { text: "pin 2468" });
-    expect(rows.map((r) => r.text)).toEqual([PIN_HIDDEN_TEXT]);
-    expect(await prisma.aiChatMessage.count({ where: { text: { contains: "2468" } } })).toBe(0);
-    // Far past normal use (a hundred new numbers in fifteen minutes) the chat stops
-    // checking and hides, so it can never be used to search for the PIN; the owner is told.
-    await prisma.aiPinTry.updateMany({ where: { kind: "CHAT" }, data: { count: CHAT_PIN_CHECKS } });
-    resetRateLimits();
-    expect((await sendChat(env.owner, { text: "status of order 9999" }))[0]!.text).toBe(
-      PIN_HIDDEN_TEXT,
-    );
-    expect(await alarms("Many numbers in the AI chat")).toBe(1);
-    expect(await alarms("Many numbers sent to the bot")).toBe(0);
-    await fifteenMinutesLater();
-    expect((await sendChat(env.owner, { text: "status of order 9999" }))[0]!.text).not.toBe(
-      PIN_HIDDEN_TEXT,
-    );
+      await prisma.aiChatMessage.count({ where: { role: "OWNER", text: { not: "[PIN]" } } }),
+    ).toBe(0);
+    // Document numbers with their letters, dates and words go to Mehedi 2.0 as typed.
+    for (const text of [
+      "status of PO4501",
+      "CS-2026-0001 costing",
+      "ship on 18/10/2026",
+      "status",
+    ]) {
+      expect((await answer(text))[0]![1]).not.toBe("pin.hidden");
+      expect(await prisma.aiChatMessage.count({ where: { role: "OWNER", text } })).toBe(1);
+    }
   });
 
   it("hides the PIN typed into the ERP's own chat: never kept, never sent to the AI (v6.4.1)", async () => {
@@ -1369,9 +1563,9 @@ run("The bot", () => {
     expect(await prisma.aiChatMessage.findFirstOrThrow({ where: { role: "OWNER" } })).toMatchObject(
       { text: "[PIN]", intent: "pin.hidden" },
     );
-    // An ordinary number goes through as typed.
-    await sendChat(env.owner, { text: "status of PO 4501" });
-    expect(await prisma.aiChatMessage.count({ where: { text: "status of PO 4501" } })).toBe(1);
+    // An order number with its letters goes through as typed.
+    await sendChat(env.owner, { text: "status of PO4501" });
+    expect(await prisma.aiChatMessage.count({ where: { text: "status of PO4501" } })).toBe(1);
   });
 
   it("saves an AI draft under the AI's account, and sends from the bot only the draft as it was shown (v6.4.1)", async () => {

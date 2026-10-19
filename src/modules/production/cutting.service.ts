@@ -47,6 +47,7 @@ import {
   deductFaultTx,
   logFaultTx,
 } from "@/modules/production/fault.service";
+import { cmSettlementHolding, lockAgainstCmSettlement } from "@/modules/production/cm-lock";
 import { addUpGrades, linePieces, readGradeLines } from "@/modules/production/finishing";
 import { planStyles, styleGrids } from "@/modules/production/material-need.service";
 import { isProjectClosed } from "@/modules/production/project-costs";
@@ -442,6 +443,8 @@ export async function getCuttingScreen(ctx: CompanyContext, projectId: string) {
     ),
     milestoneWarning("Sewing", dates.sewing),
   ].filter((w): w is NonNullable<typeof w> => w !== null);
+  // The saved CM settlement counting this style's pieces: no cutting is added or deleted under it.
+  const held = await cmSettlementHolding(prisma, ctx.company.id, project.id);
   return {
     today,
     project: {
@@ -533,8 +536,12 @@ export async function getCuttingScreen(ctx: CompanyContext, projectId: string) {
       unit: f.unit,
       supplier: f.supplier,
     })),
+    /** The saved CM settlement counting this style's pieces: its reports stay until it is undone. */
+    cmSettlement: held,
     can: {
       record: ctx.can("production.manage") && open,
+      /** A new cutting report (not while a CM settlement stands on the style). */
+      cut: ctx.can("production.manage") && open && !held,
       faultNote: canLogFaults(ctx) && open,
       seeValues: canSeeMaterialCosts(ctx),
       readAi: await aiOn(ctx.company.id),
@@ -601,6 +608,8 @@ export async function createCuttingReport(
   const pieces = lines.reduce((t, l) => t + l.quantity, 0);
   const made = await prisma.$transaction(async (tx) => {
     await lockRow(tx, "ProductionProject", project.id);
+    // A saved CM settlement counts the pieces cut: it is undone first.
+    await lockAgainstCmSettlement(tx, ctx.company.id, project, "cutting");
     const report = await tx.cuttingReport.create({
       data: {
         companyId: ctx.company.id,
@@ -684,7 +693,10 @@ async function reportsOf(ctx: CompanyContext, projectId: string) {
   }));
 }
 
-/** Deletes a cutting report entered by mistake (not one whose pieces went out for embroidery). */
+/**
+ * Deletes a cutting report entered by mistake (not one whose pieces went out for
+ * embroidery, nor one a saved CM settlement counts: that is undone first).
+ */
 export async function deleteCuttingReport(
   ctx: CompanyContext,
   reportId: string,
@@ -700,6 +712,8 @@ export async function deleteCuttingReport(
   const project = report.project;
   await prisma.$transaction(async (tx) => {
     await lockRow(tx, "ProductionProject", project.id);
+    // A saved CM settlement counts these pieces: it is undone first.
+    await lockAgainstCmSettlement(tx, ctx.company.id, project, "cutting");
     // What is left cut must still cover what went out for embroidery or print.
     const others = await tx.cuttingReport.findMany({
       where: { projectId: project.id, id: { not: report.id } },
@@ -1203,6 +1217,8 @@ export async function replaceFromCutting(
   const pieces = lines.reduce((t, l) => t + l.quantity, 0);
   const report = await prisma.$transaction(async (tx) => {
     await lockRow(tx, "ProductionProject", project.id);
+    // A saved CM settlement counts the pieces cut: it is undone first.
+    await lockAgainstCmSettlement(tx, ctx.company.id, project, "cutting");
     const made = await tx.cuttingReport.create({
       data: {
         companyId: ctx.company.id,

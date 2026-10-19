@@ -248,7 +248,7 @@ write_restored_mark "${folder}" "${dir}/kept.json" "${mark}"; echo "exit $?"`,
       /^23 3 \* \* \* root find \$DATA_DIR .*\\\( -name 'uploads\.before-restore-\*'.*\\\) -mtime \+30 /m,
     );
     expect(restore).toMatch(
-      /To undo it, restore the safety copy: sudo \$0 \$safety\. That puts back the database only/,
+      /To undo it, restore the safety copy: sudo \$DEPLOY_DIR\/restore\.sh \$safety\. That puts back the database only/,
     );
   });
 });
@@ -488,12 +488,12 @@ describe("standby after a restore on a second server (G2)", () => {
       /head -c 16 \/dev\/urandom [^\n]*>"\$backups\/\.standby"\n\s*chmod 644 "\$backups\/\.standby"/,
     );
     expect(code).toMatch(
-      /\nmark_standby "\$DATA" "\$\{replacing:-0\}"\nstandby=1\n[\s\S]*"\$DIR\/deploy\/restore\.sh" --yes/,
+      /\nmark_standby "\$DATA" "\$\{replacing:-0\}"\nstandby=1\n[\s\S]*"\$STEPS\/restore\.sh" --yes/,
     );
     // The web address is moved only after the restore went well; then the mark goes.
     const restored = code.indexOf("restored=1\n");
     const dns = code.indexOf('tool dns --work "$WORK"');
-    expect(restored).toBeGreaterThan(code.indexOf('"$DIR/deploy/restore.sh" --yes'));
+    expect(restored).toBeGreaterThan(code.indexOf('"$STEPS/restore.sh" --yes'));
     expect(dns).toBeGreaterThan(restored);
     expect(code.match(/tool dns /g)).toHaveLength(1);
     expect(code.slice(dns)).toMatch(
@@ -1600,8 +1600,11 @@ stop_restore_in_db`;
     const calls = readFileSync(path.join(dir, "calls"), "utf8");
     // Only its connection is ended: nothing is killed inside the container.
     expect(calls).not.toMatch(/exec -T db [^\n]*kill/);
-    expect(calls.match(/WHERE application_name = 'extas_erp_restore'/g)).toHaveLength(3);
-    expect(calls).toMatch(/compose exec -T db pgrep -f \[e\]xtas_erp_restore\n$/);
+    // Its name says "extras" (a machine name); the name before v6.4.2 is ended too.
+    expect(
+      calls.match(/WHERE application_name IN \('extras_erp_restore', 'extas_erp_restore'\)/g),
+    ).toHaveLength(3);
+    expect(calls).toMatch(/compose exec -T db pgrep -f \[e\]xtr\?as_erp_restore\n$/);
     // A database that does not answer for a moment (restarting): asked again.
     await writeFile(path.join(dir, "calls"), "");
     expect((await withLib(stub, { env: { RECOVERING: "3" } })).code).toBe(0);

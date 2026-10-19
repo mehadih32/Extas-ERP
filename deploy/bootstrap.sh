@@ -8,11 +8,16 @@
 # and the code, and only then points the web address at this server in
 # Cloudflare, gets HTTPS, starts the demo site, runs the checks and compares
 # every table and file with the backup's list. A second try after a stop goes on
-# with the sign-in and the download of the first (kept locked); nothing opened
-# stays on the disk.
+# with the download of the first (kept only while still locked); nothing opened,
+# and no Google sign-in, stays on the disk: what a restore cut off half-way left
+# is deleted at every start, at the end, and when the server starts (a boot unit
+# this command installs), even if the command is never run again.
 #
-# It is public and holds no secret, and it needs no GitHub sign-in: the code
-# comes from the backup itself. The command in the restore guide downloads it
+# It is public and holds no secret, and it needs no GitHub sign-in: the ERP's
+# code comes from the backup itself. The restore steps (restore.sh,
+# setup-server.sh and their lib.sh) are this command's own version (from the
+# backup's code when it has that version, else from GitHub at it), so older
+# backups get every fix of the restore too. The command in the restore guide downloads it
 # at a fixed version (a commit), checks its SHA-256 and runs it:
 #   c=<commit> &&
 #   curl -fsSL https://raw.githubusercontent.com/mehadih32/Extas-ERP/$c/deploy/bootstrap.sh -o restore.sh &&
@@ -25,7 +30,10 @@
 # into the log (/var/log/extas-erp-restore.log).
 #
 # On a server that already has Extas ERP, nothing is replaced unless its web
-# address is typed to confirm; its own ENCRYPTION_KEY is never replaced.
+# address is typed to confirm; its own ENCRYPTION_KEY is never replaced, and a
+# restore over it that does not finish puts its own code back. The command run
+# again on the new server of a restore that stopped there goes on by itself
+# (the mark DATA/backups/.restore-unfinished), without that question.
 # Every question and every error code (R01, W01...) is in the restore guide.
 #   sudo bash restore.sh [commit]     the restore
 #   sudo bash restore.sh <commit> --drill
@@ -43,6 +51,8 @@ REPO=mehadih32/Extas-ERP
 RESTORE_TOOL_SHA256=60880331308c65328fd87a4361ba33ef8cd463dff57adcf95ac11c65a1ee3320
 # Drills only: a stand-in for raw.githubusercontent.com (the tool is still checked).
 RAW_BASE="${EXTAS_RAW_BASE:-https://raw.githubusercontent.com}"
+# Tests only: a stand-in for github.com (the restore steps of this command's version).
+GIT_BASE="${EXTAS_GIT_BASE:-https://github.com}"
 SEARCH_ROOTS="${EXTAS_SEARCH_ROOTS:-/opt /srv /home /root /var/lib /data /mnt}"
 # Drills only: a smaller disk than a real server needs (a test machine's own disk).
 MIN_FREE_GB="${EXTAS_MIN_FREE_GB:-20}"
@@ -50,6 +60,14 @@ DIR=/opt/extras-erp
 DATA=/srv/extras-erp
 WORK=/var/lib/extas-erp-restore
 LOG=/var/log/extas-erp-restore.log
+# The boot unit that deletes what a restore cut off half-way opened (forget_opened).
+CLEAN_SCRIPT=/usr/local/sbin/extras-erp-restore-clean
+CLEAN_UNIT=extras-erp-restore-clean.service
+# In DATA/backups of a new server from its settings until the command has done every
+# step, or its web address points here (it may be in use from then on): the command
+# run again there goes on by itself (choose_install), even when the backup was in and a
+# later step (Cloudflare, HTTPS, the checks) stopped it.
+UNFINISHED=.restore-unfinished
 
 started="$(date +%s)"
 step_no=0
@@ -196,6 +214,17 @@ choose_install() {
   replacing=0
   while IFS= read -r line; do
     IFS='|' read -r i_dir i_data i_domain i_running i_has_data <<<"$line"
+    # This command's own restore on a new server, stopped before it finished and
+    # before its web address pointed here (its mark): nothing of anyone's is there but
+    # what the command put, so it goes on.
+    if [ -n "$i_data" ] && [ -f "$i_data/backups/$UNFINISHED" ] && [ -n "$i_dir" ] &&
+      [ -f "$i_dir/deploy/.env" ]; then
+      unfinished=1
+      DIR="$i_dir"
+      DATA="$i_data"
+      note "A restore that stopped half-way on this new server is in $DIR (it is not in use yet): it goes on from here."
+      continue
+    fi
     if [ -z "$i_running" ] && [ -z "$i_has_data" ]; then
       unfinished=1
       [ "$i_dir" != "$DIR" ] || note "A restore that stopped half-way is in $DIR (no data yet): it goes on from here."
@@ -391,6 +420,127 @@ get_restore_tool() {
     fail R07 "the restore tool downloaded is not the expected one (its checksum differs). Copy the command from the newest guide and paste it again."
 }
 
+# --- Nothing opened stays on the disk (v6.4.2) ---------------------------------------
+
+# The opened backup is plain data and secrets (the database, the settings file,
+# server.json with the server's keys): it never stays on the disk, not even after a
+# restore cut off half-way (the VM restarted or was turned off, or the restore was
+# stopped). What such a restore left is deleted at every start of this command, when
+# it ends, and when the server starts (the boot unit, install_boot_clean), even if the
+# command is never run again. Only the download from Drive stays, and only while every
+# file in it is still locked as in Drive (a backup of v6.3 or newer: its manifest's
+# format 2 or 3), so the next try does not download it again. The Google sign-in
+# (google.json) never stays: with it, the download could be opened when the recovery
+# key is kept in Drive; the next try asks for a new code. The download goes too when
+# the restore ends well.
+still_locked() {
+  python3 -I -c 'import json, sys
+sys.exit(0 if int(json.load(open(sys.argv[1])).get("format") or 1) >= 2 else 1)' "$1/manifest.json" 2>/dev/null
+}
+forget_opened() {
+  local copy
+  if [ -f "$WORK/opened-copy" ]; then
+    copy="$(cat "$WORK/opened-copy")"
+    case "$copy" in */backups/restores/?*) rm -rf "$copy" ;; esac
+    rm -f "$WORK/opened-copy"
+  fi
+  [ -d "$WORK" ] || return 0
+  [ ! -d "$WORK/download" ] || still_locked "$WORK/download" || rm -rf "$WORK/download"
+  find "$WORK" -mindepth 1 -maxdepth 1 ! -name download -exec rm -rf {} +
+}
+
+# The boot unit's script and unit, into the folder $1: forget_opened when the server
+# starts, before Docker (the ERP) starts; never while a restore runs.
+write_boot_clean() {
+  {
+    printf '#!/usr/bin/env bash\n'
+    printf '# Extas ERP: written by the restore command (deploy/bootstrap.sh). When the server\n'
+    printf '# starts, deletes what a restore cut off half-way opened; the download from Drive\n'
+    printf '# stays only while it is still locked.\n'
+    printf 'set -euo pipefail\nWORK=%q\n' "$WORK"
+    declare -f still_locked forget_opened
+    printf 'exec 8>/run/extas-erp-restore.lock\nflock -n 8 || exit 0\nforget_opened\n'
+  } >"$1/extras-erp-restore-clean"
+  chmod 700 "$1/extras-erp-restore-clean"
+  printf '%s\n' \
+    "[Unit]" \
+    "Description=Extas ERP restore: delete what a restore cut off half-way opened" \
+    "After=local-fs.target" \
+    "Before=docker.service" \
+    "" \
+    "[Service]" \
+    "Type=oneshot" \
+    "ExecStart=$CLEAN_SCRIPT" \
+    "" \
+    "[Install]" \
+    "WantedBy=multi-user.target" >"$1/$CLEAN_UNIT"
+}
+
+# Installs the boot unit, before anything is downloaded or opened. It stays after the
+# restore (it then finds nothing to delete), for a later restore on this server.
+install_boot_clean() {
+  local at
+  at="$(mktemp -d)"
+  write_boot_clean "$at"
+  if install -m 700 "$at/extras-erp-restore-clean" "$CLEAN_SCRIPT" &&
+    install -m 644 "$at/$CLEAN_UNIT" "/etc/systemd/system/$CLEAN_UNIT" &&
+    systemctl daemon-reload && systemctl enable -q "$CLEAN_UNIT"; then
+    note "If the VM stops during the restore, what was opened is deleted when it starts again."
+  else
+    note "Could not set up the clean-up at start: if the VM stops during the restore, paste the command again (it deletes what was opened first), or delete the VM."
+  fi
+  rm -rf "$at"
+}
+
+# --- The restore steps of this command's own version (v6.4.2) -----------------------
+
+# restore.sh, setup-server.sh and their lib.sh as in this command's version, never the
+# backup's, so a backup made by an older version still gets every fix of the restore.
+# From the code already in $DIR when it has that version (a backup newer than the
+# command), else from GitHub at that version: git checks every file against it, as the
+# guide's command checks this script. They work on the ERP in $DIR (lib.sh's
+# EXTRAS_DEPLOY_DIR); only a version that can (v6.4.2 or newer). Sets STEPS.
+own_steps() {
+  local at="$WORK/steps" repo="$DIR" want="${commit:-main}"
+  rm -rf "$at" "$WORK/steps.git"
+  if [ -z "$commit" ] || ! git -C "$DIR" cat-file -e "$commit^{commit}" 2>/dev/null; then
+    repo="$WORK/steps.git"
+    git init -q --bare "$repo" >/dev/null 2>&1 || return 1
+    GIT_TERMINAL_PROMPT=0 git -C "$repo" fetch -q --depth 1 "$GIT_BASE/$REPO.git" "$want" >/dev/null 2>&1 ||
+      return 1
+    want=FETCH_HEAD
+  fi
+  mkdir -p "$at"
+  git -c tar.umask=0022 -C "$repo" archive "$want" deploy/lib.sh deploy/restore.sh deploy/setup-server.sh 2>/dev/null |
+    tar -x -C "$at" 2>/dev/null || return 1
+  grep -q 'EXTRAS_DEPLOY_DIR' "$at/deploy/lib.sh" || return 1
+  STEPS="$at/deploy"
+}
+
+# --- A restore over an ERP in use that does not finish (v6.4.2) ---------------------
+
+# Over an ERP in use here (A6), its own code is replaced by the backup's for the
+# restore. A restore that does not finish (the backup is not in) puts its own code back,
+# the version it ran before, and installs it again when the backup's code was installed
+# already, so it never stays on the backup's code with its own data.
+own_head=""
+code_moved=0
+deployed=0
+own_code_back() {
+  { [ "${replacing:-0}" = 1 ] && [ -n "$own_head" ] && [ "$code_moved" = 1 ]; } || return 0
+  [ "$(git -C "$DIR" rev-parse -q --verify HEAD 2>/dev/null)" != "$own_head" ] || return 0
+  say "Putting back the code of the ERP that was in use here (version ${own_head:0:7})"
+  if ! git -C "$DIR" checkout -q -B main "$own_head"; then
+    note "Its code could not be put back. Run: cd $DIR && sudo git checkout -B main $own_head && sudo ./deploy/deploy.sh"
+    return 0
+  fi
+  if [ "$deployed" = 1 ] && ! "$DIR/deploy/deploy.sh"; then
+    note "Its own code is back, but it did not install again. Run: cd $DIR && sudo ./deploy/deploy.sh"
+    return 0
+  fi
+  note "The ERP that was in use here runs on its own code again."
+}
+
 if [ "${1:-}" = --find ]; then
   detect_installs
   list_installs | LC_ALL=C sort
@@ -444,6 +594,37 @@ if [ "${1:-}" = --choose ]; then
   echo "CHOSEN $DIR|$DATA"
   exit 0
 fi
+# Tests only: what every start does with the work folder $2 (forget_opened); the boot
+# unit's files for the work folder $3, written into $2; the restore steps of the
+# version $4 for the program folder $2 (work folder $3); and a restore over the ERP in
+# the program folder $2 that did not finish, back to its version $3 ($4: 1 when the
+# backup's code was installed).
+if [ "${1:-}" = --forget-opened ]; then
+  WORK="${2:?}"
+  forget_opened
+  exit 0
+fi
+if [ "${1:-}" = --boot-clean-files ]; then
+  WORK="${3:?}"
+  write_boot_clean "${2:?}"
+  exit 0
+fi
+if [ "${1:-}" = --own-steps ]; then
+  DIR="${2:?}"
+  WORK="${3:?}"
+  commit="${4:-}"
+  if own_steps; then echo "STEPS $STEPS"; else echo "NO STEPS"; fi
+  exit 0
+fi
+if [ "${1:-}" = --own-code-back ]; then
+  DIR="${2:?}"
+  replacing=1
+  own_head="${3:?}"
+  code_moved=1
+  deployed="${4:?}"
+  own_code_back
+  exit 0
+fi
 
 # --- Checks before anything changes ------------------------------------------------
 
@@ -488,21 +669,7 @@ exec > >(tee --output-error=warn -a "$LOG") 2>&1
 
 say "Extas ERP: bringing the ERP back from a Google Drive backup ($(date '+%d %B %Y %H:%M'))"
 
-# The opened backup is plain data and secrets: it never stays on the disk, not even
-# after a restore cut off half-way (the VM restarted, or the restore was stopped):
-# what such a restore left is deleted now, first. The download (still locked, as in
-# Drive) and the Google sign-in stay, so this try goes on without them; both go when
-# the restore ends well.
-forget_opened() {
-  local copy
-  if [ -f "$WORK/opened-copy" ]; then
-    copy="$(cat "$WORK/opened-copy")"
-    case "$copy" in */backups/restores/?*) rm -rf "$copy" ;; esac
-    rm -f "$WORK/opened-copy"
-  fi
-  [ -d "$WORK" ] || return 0
-  find "$WORK" -mindepth 1 -maxdepth 1 ! -name download ! -name google.json -exec rm -rf {} +
-}
+# What a restore cut off half-way left is deleted now, first (forget_opened).
 restored=0
 standby=0
 cleanup() {
@@ -512,11 +679,16 @@ cleanup() {
   if [ "$code" != 0 ] && [ "$standby" = 1 ] && standby_after_failure "$restored"; then
     note "The ERP that was in use on this server is not on standby: it runs as before this restore."
   fi
+  # Nor on the backup's code: its own goes back (the backup is not in).
+  if [ "$code" != 0 ] && [ "$restored" = 0 ] && [ "${replacing:-0}" = 1 ] && [ "$code_moved" = 1 ]; then
+    own_code_back
+    note "The restore did NOT finish: the error is above."
+  fi
   forget_opened
   if [ "$restored" = 1 ]; then
     rm -rf "$WORK"
   elif [ -d "$WORK/download" ]; then
-    note "The backup downloaded from Drive (still locked) and the Google sign-in are kept for the next try in $WORK (only root can read them); nothing opened stays on the disk."
+    note "The backup downloaded from Drive (still locked) is kept for the next try in $WORK (only root can read it). Nothing opened and no Google sign-in stays on the disk: the next try asks for a new Google code."
   fi
 }
 forget_opened
@@ -548,6 +720,7 @@ if ! { apt_get update >/dev/null && apt_get install -y --no-install-recommends \
 fi
 install -d -m 700 "$WORK"
 chmod 700 "$WORK"
+install_boot_clean
 trap cleanup EXIT
 get_restore_tool "$WORK/restore-tool.py"
 tool() { python3 -I "$WORK/restore-tool.py" "$@"; }
@@ -560,6 +733,8 @@ backup_commit="$(tool fact --work "$WORK" commit)"
 cp "$WORK/restore/manifest.json" "$WORK/manifest.json"
 
 step "Putting the ERP's code in place"
+# Over an ERP in use: its own version, put back if the restore does not finish.
+[ "${replacing:-0}" != 1 ] || own_head="$(git -C "$DIR" rev-parse -q --verify HEAD 2>/dev/null || true)"
 if [ -n "$(tool fact --work "$WORK" hasCode)" ]; then
   # git checks a bundle only inside a repository: an empty one of its own.
   rm -rf "$WORK/code-check"
@@ -576,6 +751,7 @@ if [ -n "$(tool fact --work "$WORK" hasCode)" ]; then
     fi
     git clone -q --no-checkout "$WORK/code.bundle" "$DIR" || fail R15 "the code inside the backup could not be read."
   fi
+  code_moved=1
   git -C "$DIR" checkout -q -B main "${backup_commit:-FETCH_HEAD}" 2>/dev/null ||
     git -C "$DIR" checkout -q -B main FETCH_HEAD 2>/dev/null ||
     git -C "$DIR" checkout -q -B main HEAD ||
@@ -591,11 +767,19 @@ else
   GIT_TERMINAL_PROMPT=0 git -C "$DIR" fetch -q origin "$want" 2>/dev/null ||
     GIT_TERMINAL_PROMPT=0 git -C "$DIR" fetch -q origin main ||
     fail R15 "the code could not be downloaded from GitHub."
+  code_moved=1
   git -C "$DIR" checkout -q -B main FETCH_HEAD || fail R15 "the code could not be put in place."
 fi
 git -C "$DIR" remote set-url origin "https://github.com/$REPO.git" 2>/dev/null ||
   git -C "$DIR" remote add origin "https://github.com/$REPO.git"
 note "Code: $(git -C "$DIR" log -1 --format='%h, %cd' --date=format:'%d %B %Y')"
+# The restore steps: this command's own version (own_steps), else the backup's.
+if own_steps; then
+  note "Restore steps: this command's own version."
+else
+  STEPS="$DIR/deploy"
+  warn W14 "the restore steps of this command's version could not be downloaded from GitHub, so the backup's own are used: a backup made by an older version may miss later fixes of the restore."
+fi
 
 step "Writing this server's settings"
 env_file="$DIR/deploy/.env"
@@ -627,11 +811,17 @@ if [ -z "$drill" ] && [ -f "$DATA/backups/.drill" ]; then
 fi
 [ -z "$drill" ] || drill_settings "$env_file" "$DATA" "$(tool fact --work "$WORK" appDomain)"
 note "Web address: $APP_DOMAIN; data folder: $DATA"
+# A new server: marked until the backup is in, so the command run again here goes on.
+if [ "${replacing:-0}" = 0 ]; then
+  mkdir -p "$DATA/backups"
+  : >"$DATA/backups/$UNFINISHED"
+fi
 
 step "Preparing the server (system updates, Docker, firewall: about 5 minutes)"
-EXTAS_RESTORE=1 "$DIR/deploy/setup-server.sh" || fail R17 "the server could not be prepared; the lines above say why. Paste the command again."
+EXTAS_RESTORE=1 EXTRAS_DEPLOY_DIR="$DIR/deploy" "$STEPS/setup-server.sh" || fail R17 "the server could not be prepared; the lines above say why. Paste the command again."
 
 step "Installing the ERP (building it takes about 10 to 20 minutes)"
+deployed=1
 "$DIR/deploy/deploy.sh" || fail R18 "the ERP could not be installed; the lines above say why. Paste the command again: it picks up where it stopped."
 
 step "Restoring the database and the files"
@@ -648,8 +838,9 @@ rm -rf "$restore_dir"
 printf '%s' "$restore_dir" >"$WORK/opened-copy"
 mv "$WORK/restore" "$restore_dir"
 counts=()
-grep -q -- '--counts' "$DIR/deploy/restore.sh" && counts=(--counts "$WORK/counts.json")
-if ! "$DIR/deploy/restore.sh" --yes --check --result "$WORK/restore-result.json" "${counts[@]}" "$restore_dir"; then
+grep -q -- '--counts' "$STEPS/restore.sh" && counts=(--counts "$WORK/counts.json")
+if ! EXTRAS_DEPLOY_DIR="$DIR/deploy" "$STEPS/restore.sh" --yes --check --result "$WORK/restore-result.json" \
+  "${counts[@]}" "$restore_dir"; then
   # What restore.sh did: put back as it was (its safety copy), or left as it was.
   why="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1])).get("message") or "")' "$WORK/restore-result.json" 2>/dev/null || true)"
   if standby_after_failure 0; then
@@ -699,6 +890,8 @@ rm -f "$DATA/backups/.standby.was-in-use"
 if [ -n "$moved" ]; then
   rm -f "$DATA/backups/.standby"
   standby=0
+  # Live here now (it may be in use from now on): a run again asks first (A6).
+  rm -f "$DATA/backups/$UNFINISHED"
   # HTTPS: Caddy asks for the certificate again at once, now that the address points here.
   (
     cd "$DIR"
@@ -827,4 +1020,6 @@ if [ -z "$drill" ] && [ "$standby" = 1 ]; then
     "  2. run: cd $DIR && sudo ./deploy/go-live.sh"
   printf '%s\n' "################################################################"
 fi
+# Every step done: a run again on this server asks first (A6).
+rm -f "$DATA/backups/$UNFINISHED"
 [ "$compare" = 0 ] || exit 4

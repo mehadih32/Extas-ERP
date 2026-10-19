@@ -133,3 +133,55 @@ export function cmSettlementMath(args: {
     payable: totalCm.minus(deductions).minus(paid),
   };
 }
+
+/**
+ * Why a fault of the factory's is left off its CM settlement, or null when it
+ * belongs to the CM work (missing pieces, quality and sewing faults, holes in
+ * our own fabric...). Only a fault on material the factory itself supplied is
+ * left out: one found on its own material bill (a short at receive is already
+ * off that bill, which is for what came), or about a material it sold for this
+ * batch or its styles. That is settled on the material's bill, never taken off
+ * the CM again. Every other fault, a fabric fault on fabric we bought from
+ * someone else included, stays the CM work.
+ */
+export function notCmWork(f: {
+  kind: string;
+  /** The bill it was found on, and whether that bill is the factory's own. */
+  bill: { number: string; ofFactory: boolean } | null;
+  /** The material it is about, and whether the factory supplied it for the batch or its styles. */
+  material: { name: string; fromFactory: boolean } | null;
+}): string | null {
+  if (f.bill?.ofFactory) {
+    return f.kind === "SHORT_RECEIVE"
+      ? `Short at receive: already left off its material bill ${f.bill.number}, so it is not charged again`
+      : `About material on ${f.bill.number} it supplied: not the CM work, so it is settled on that material bill`;
+  }
+  if (f.material?.fromFactory) {
+    return f.kind === "SHORT_RECEIVE"
+      ? `Short at receive on the ${f.material.name} it supplied: not the CM work, so it is settled on that material bill`
+      : `About the ${f.material.name} it supplied: not the CM work, so it is settled on that material bill`;
+  }
+  return null;
+}
+
+/**
+ * What of each payment counts as CM paid. `onBills` is what the factory's ledger
+ * used of the payments of each group (a style's id, or the batch) to pay its
+ * material bills (supplier-settlement.ts): that part stays against those bills,
+ * taken from the group's oldest payments first, and the rest is CM paid.
+ */
+export function cmPartOfPayments<P extends { group: string; amount: Num }>(
+  payments: readonly P[],
+  onBills: ReadonlyMap<string, Num>,
+): Array<P & { forBills: Prisma.Decimal; cm: Prisma.Decimal }> {
+  const left = new Map([...onBills].map(([group, v]) => [group, money(v)]));
+  return payments.map((p) => {
+    const amount = money(p.amount);
+    const forBills = Prisma.Decimal.max(
+      Prisma.Decimal.min(left.get(p.group) ?? ZERO, amount),
+      ZERO,
+    );
+    left.set(p.group, (left.get(p.group) ?? ZERO).minus(forBills));
+    return { ...p, forBills, cm: amount.minus(forBills) };
+  });
+}

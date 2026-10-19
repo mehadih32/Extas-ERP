@@ -202,7 +202,7 @@ const sheet = (env: Env) =>
     factoryId: env.mill.id,
     currency: "USD",
     exchangeRate: "120",
-    profitPercent: "8",
+    profitPercent: "10",
     sourceTaxPercent: "1",
     bankChargePercent: "0.15",
     commissionPercent: "",
@@ -768,12 +768,19 @@ run("Mehedi 2.0", () => {
     const [profit] = await say(`${number} profit 12.5%`);
     expect(cardOf(profit!)).toMatchObject({
       action: "profit.set",
-      lines: [{ label: "Profit %", before: "8%", after: "12.5%" }],
+      // Each profit % with its markup on the cost beside it (v6.4.2).
+      lines: [
+        {
+          label: "Profit %",
+          before: "10% of price = 11.11% on cost",
+          after: "12.5% of price = 14.29% on cost",
+        },
+      ],
       params: { costingId: id, percent: 12.5 },
     });
     expect(
       (await prisma.orderCosting.findUniqueOrThrow({ where: { id } })).profitPercent?.toString(),
-    ).toBe("8");
+    ).toBe("10");
     // A price: the PIN must be set first, and given (v6.3).
     await expectAppError(applyCard(env.owner, profit!.id), "VALIDATION", /^Set your PIN first/);
     await setPin(env.owner, { pin: "1357" });
@@ -791,6 +798,30 @@ run("Mehedi 2.0", () => {
       (await prisma.orderCosting.findUniqueOrThrow({ where: { id } })).profitPercent?.toString(),
     ).toBe("12.5");
 
+    // At least 10%, no upper limit (v6.4.2): 5% is refused, 200% is offered.
+    const [low] = await say(`${number} profit 5%`);
+    expect(low!.text).toBe("Give a profit % of at least 10%.");
+    expect(cardOf(low!)).toBeNull();
+    // A profit that leaves no price is never offered: the sheet would have no price.
+    const [high] = await say(`${number} 200% profit`);
+    expect(high!.text).toBe(
+      `200% profit plus 1.15% off the price (source tax, bank charges and commission) is 201.15% of the price, which leaves no price. Did you mean 200% on cost? That is 66.67% of the price. Say "${number} 200% on cost" for that.`,
+    );
+    expect(cardOf(high!)).toBeNull();
+    // A markup on the cost is taken as its share of the price: 200% on cost is 66.67%.
+    const [markup] = await say(`${number} profit 200% on cost`);
+    expect(markup!.text).toBe(
+      `200% on cost is 66.67% of price. Press Apply to set the profit of ${number} to 66.67% of price = 200.03% on cost.`,
+    );
+    expect(cardOf(markup!)).toMatchObject({
+      action: "profit.set",
+      params: { costingId: id, percent: 66.67 },
+    });
+    await cancelCard(env.owner, markup!.id);
+    const [lowMarkup] = await say(`${number} 10% on cost`);
+    expect(lowMarkup!.text).toBe("10% on cost is 9.09% of price. Give a profit % of at least 10%.");
+    expect(cardOf(lowMarkup!)).toBeNull();
+
     // The Order check card for the sheet: he shows it, the owner decides.
     const [check] = await say(`${number} কস্টিং`);
     expect(check!.text).toMatch(/You decide; I only show the card\.$/);
@@ -804,12 +835,13 @@ run("Mehedi 2.0", () => {
       title: "Check the bookings",
       assigneeId: null,
     });
-    const [follow] = await say("Follow up: Nordic Wear, in 3 days, PO 4501");
+    // Written with its letters: a bare number of 4 to 8 digits is hidden (v6.4.2).
+    const [follow] = await say("Follow up: Nordic Wear, in 3 days, PO4501");
     expect(await prisma.aiFollowUp.count()).toBe(0);
     await applyCard(env.owner, follow!.id);
     const today = localDay(new Date(), env.company.timezone);
     const row = await prisma.aiFollowUp.findFirstOrThrow();
-    expect(row).toMatchObject({ partyId: env.buyer.id, recordLabel: "PO 4501", status: "OPEN" });
+    expect(row).toMatchObject({ partyId: env.buyer.id, recordLabel: "PO4501", status: "OPEN" });
     expect(row.dueOn.toISOString().slice(0, 10)).toBe(addDays(today, 3));
 
     // A card that fails is offered again.
@@ -866,7 +898,7 @@ run("Mehedi 2.0", () => {
 
     const sent = mailbox();
     await saveMailSettings(env.owner, MAIL);
-    const [drafted] = await say("Draft follow-up to Nordic Wear, about PO 4501");
+    const [drafted] = await say("Draft follow-up to Nordic Wear, about PO4501");
     expect(cardOf(drafted!)).toMatchObject({
       type: "draft",
       party: "Nordic Wear AB",

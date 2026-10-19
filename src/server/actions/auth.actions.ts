@@ -14,7 +14,7 @@ import { switchCompany } from "@/modules/companies/company.service";
 export async function loginAction(input: LoginInput) {
   return runAction(async () => {
     const meta = await getRequestMeta();
-    checkLoginRate(meta, input?.email);
+    checkLoginRate(meta);
     const result = await login(input, meta);
     await setSessionCookie(result.token, result.expiresAt);
     return {

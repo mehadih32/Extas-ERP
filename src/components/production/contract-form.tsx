@@ -14,6 +14,7 @@ import { formatDay } from "@/lib/display";
 import type { ContractScreen } from "@/modules/production/contract.service";
 import { redraftContractAction, updateContractAction } from "@/server/actions/production.actions";
 
+import { CmSettledNotice } from "./cm-settled-notice";
 import { productionHref } from "./labels";
 
 type Row = { key: string; title: string; text: string };
@@ -151,7 +152,7 @@ export function ContractForm({ data, currency }: { data: ContractScreen; currenc
                       inputMode="decimal"
                       value={rates[s.id] ?? ""}
                       onChange={(e) => setRates((all) => ({ ...all, [s.id]: e.target.value }))}
-                      disabled={locked || s.closed}
+                      disabled={locked || s.closed || s.cmSettlement !== null}
                       autoComplete="off"
                       placeholder="To agree"
                       aria-invalid={Boolean(err)}
@@ -164,12 +165,21 @@ export function ContractForm({ data, currency }: { data: ContractScreen; currenc
                       onChange={(e) =>
                         setPers((all) => ({ ...all, [s.id]: e.target.value as CmPer }))
                       }
-                      disabled={locked || s.closed}
+                      disabled={locked || s.closed || s.cmSettlement !== null}
                     >
                       <option value="PIECE">per piece</option>
                       <option value="DOZEN">per dozen</option>
                     </NativeSelect>
                   </Field>
+                  {s.cmSettlement && (
+                    <div className="sm:col-span-3">
+                      <CmSettledNotice
+                        settlement={s.cmSettlement}
+                        from="this style's CM"
+                        what="the CM cannot change"
+                      />
+                    </div>
+                  )}
                 </li>
               );
             })}

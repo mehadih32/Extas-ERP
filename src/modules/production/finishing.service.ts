@@ -12,6 +12,7 @@ import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { getDefaultWarehouse, listWarehouses } from "@/modules/inventory/stock.service";
 import { cellKey } from "@/modules/production/cutting";
+import { cmSettlementHolding, lockAgainstCmSettlement } from "@/modules/production/cm-lock";
 import { cutByCell } from "@/modules/production/cutting.service";
 import { logFaultTx } from "@/modules/production/fault.service";
 import {
@@ -340,6 +341,8 @@ export async function getFinishingScreen(ctx: CompanyContext, projectId: string)
   const [warehouses, defaultWarehouse] = canReceive
     ? await Promise.all([listWarehouses(ctx), getDefaultWarehouse(ctx)])
     : [[], null];
+  // The saved CM settlement counting this style's pieces: nothing is added or deleted under it.
+  const held = await cmSettlementHolding(prisma, ctx.company.id, project.id);
   return {
     today,
     project: {
@@ -413,11 +416,13 @@ export async function getFinishingScreen(ctx: CompanyContext, projectId: string)
     cost,
     warehouses: warehouses.map((w) => ({ id: w.id, name: w.name })),
     defaultWarehouseId: defaultWarehouse?.id ?? null,
+    /** The saved CM settlement counting this style's pieces: its reports stay until it is undone. */
+    cmSettlement: held,
     can: {
-      count: canCount && !state.packed,
-      mend: canCount && totals.c > 0,
+      count: canCount && !state.packed && !held,
+      mend: canCount && totals.c > 0 && !held,
       deleteReports: canCount,
-      receive: canReceive && (toStock > 0 || (!state.packed && good + totals.reject > 0)),
+      receive: canReceive && !held && (toStock > 0 || (!state.packed && good + totals.reject > 0)),
       close: ctx.can("production.manage"),
       seeCosts,
     },
@@ -446,6 +451,8 @@ export async function createFinishingCount(
   const fileId = await assertFile(ctx, input.fileId);
   return prisma.$transaction(async (tx) => {
     await lockRow(tx, "ProductionProject", project.id);
+    // A saved CM settlement counts these pieces: it is undone first.
+    await lockAgainstCmSettlement(tx, ctx.company.id, project, "finishing");
     const state = await stateOf(tx, ctx, project);
     if (state.packed) {
       throw new AppError(
@@ -530,6 +537,8 @@ export async function backFromMending(
   assertPastDay(input.countedOn, today, "countedOn");
   return prisma.$transaction(async (tx) => {
     await lockRow(tx, "ProductionProject", project.id);
+    // A saved CM settlement counts these pieces: it is undone first.
+    await lockAgainstCmSettlement(tx, ctx.company.id, project, "finishing");
     const state = await stateOf(tx, ctx, project);
     const matched = matchCells(input.lines, state.cells, (l) => l.a + l.b + l.reject);
     if (matched.length === 0) {
@@ -580,7 +589,10 @@ export async function backFromMending(
   });
 }
 
-/** Deletes a count or mending return entered by mistake (never a packing list). */
+/**
+ * Deletes a count or mending return entered by mistake (never a packing list, nor
+ * one a saved CM settlement counts: that is undone first).
+ */
 export async function deleteFinishingReport(
   ctx: CompanyContext,
   reportId: string,
@@ -602,6 +614,8 @@ export async function deleteFinishingReport(
   }
   await prisma.$transaction(async (tx) => {
     await lockRow(tx, "ProductionProject", project.id);
+    // A saved CM settlement counts these pieces: it is undone first.
+    await lockAgainstCmSettlement(tx, ctx.company.id, project, "finishing");
     const state = await stateOf(tx, ctx, project);
     if (report.kind === "COUNT" && state.packed) {
       throw new AppError(
@@ -672,6 +686,8 @@ export async function receivePackingList(
   const done = await prisma.$transaction(
     async (tx) => {
       await lockRow(tx, "ProductionProject", project.id);
+      // A saved CM settlement counts these pieces: it is undone first.
+      await lockAgainstCmSettlement(tx, ctx.company.id, project, "finishing");
       const state = await stateOf(tx, ctx, project);
       const first = !state.packed;
 

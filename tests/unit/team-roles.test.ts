@@ -23,6 +23,7 @@ import {
   SUPER_ADMIN_GRANTS_KEYS,
   SUPER_ADMIN_GRANTS_ROLE,
   SUPER_ADMIN_REACTIVATES,
+  SUPER_ADMIN_RESETS,
 } from "@/modules/rbac/rules";
 import { ALL_PERMISSION_KEYS, DEFAULT_ROLE_PERMISSIONS } from "@/modules/rbac/permissions";
 
@@ -53,13 +54,17 @@ const ROLE_EDITOR = { systemRole: null, permissions: ["company.roles.manage"] };
 
 const member = (
   userId: string,
-  role: { systemRole: typeof SUPER_ADMIN.systemRole | typeof SALES.systemRole | null },
+  role: {
+    systemRole: SystemRole | null;
+    permissions?: readonly string[];
+  },
   extra: { isPlatformOwner?: boolean; worksElsewhere?: boolean } = {},
 ) => ({
   userId,
   systemRole: role.systemRole,
   isPlatformOwner: extra.isPlatformOwner ?? false,
   worksElsewhere: extra.worksElsewhere ?? false,
+  heldKeys: role.permissions ?? [],
 });
 
 const allowed = { ok: true };
@@ -225,6 +230,23 @@ describe("resetting a password", () => {
       canResetPassword(platformOwner, member("u-shared", SALES, { worksElsewhere: true })),
     ).toEqual(allowed);
     expect(canResetPassword(platformOwner, member("u-admin", SUPER_ADMIN))).toEqual(allowed);
+  });
+
+  it("leaves resetting someone who records money or manages the team to a Super Admin, like switching them back on (v6.4.2)", () => {
+    const refusedReset = refused("FORBIDDEN", SUPER_ADMIN_RESETS);
+    expect(SUPER_ADMIN_RESETS).toBe(
+      "Only a Super Admin can reset the password of someone who can record money or manage users or roles. Ask a Super Admin.",
+    );
+    // A team manager could otherwise reset the accountant's password and sign in as them.
+    for (const role of [ACCOUNTS, TEAM_LEAD, ROLE_EDITOR]) {
+      expect(canResetPassword(hrManager, member("u-target", role))).toEqual(refusedReset);
+      expect(canResetPassword(superAdmin, member("u-target", role))).toEqual(allowed);
+      expect(canResetPassword(platformOwner, member("u-target", role))).toEqual(allowed);
+    }
+    // A key ticked for that one person counts the same as one in their role.
+    const ticked = { ...member("u-target", CUSTOM), heldKeys: ["accounts.payments.record"] };
+    expect(canResetPassword(hrManager, ticked)).toEqual(refusedReset);
+    expect(canResetPassword(hrManager, member("u-target", CUSTOM))).toEqual(allowed);
   });
 });
 

@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { localDay } from "@/lib/dates";
 import { formatDay } from "@/lib/display";
+import { profitBothWays } from "@/modules/costing/costing-labels";
 import { fabricPricesAction, listCostingsAction } from "@/server/actions/costing.actions";
 import { requireCompanyPage } from "@/server/pages/guards";
 
@@ -121,7 +122,7 @@ export default async function CostingPage({
                   Cost {c.currency} {fmt(c.cost)}
                   {c.value !== null ? ` · Buyer ${c.currency} ${fmt(c.value)}` : ""}
                   {c.profitPercent !== null
-                    ? ` · Profit ${c.profitPercent}%`
+                    ? ` · Profit ${profitBothWays(c.profitPercent)}`
                     : " · Profit % not set"}
                 </span>
               }

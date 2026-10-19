@@ -32,6 +32,7 @@ import {
   uploadProductionFileAction,
 } from "@/server/actions/production.actions";
 
+import { CmSettledNotice } from "./cm-settled-notice";
 import { PieceBoxes, readPieces } from "./cutting";
 import { cellName } from "./cutting-summary";
 import { pieces, productionHref } from "./labels";
@@ -503,8 +504,19 @@ export function FinishingReports({
   const router = useRouter();
   const [deleting, setDeleting] = useState<Report | null>(null);
   const { reports, can } = screen;
+  // A saved CM settlement counts these pieces: counts and mending returns stay until it is undone.
+  const canDelete = can.deleteReports && !screen.cmSettlement;
   return (
     <Panel title="Finishing reports" id="finishing-reports-heading">
+      {screen.cmSettlement && can.deleteReports && (
+        <div className="mt-3">
+          <CmSettledNotice
+            settlement={screen.cmSettlement}
+            from="this style's finishing"
+            what="no finishing count, mending return or packing list can be added, and no count or mending return deleted,"
+          />
+        </div>
+      )}
       {reports.length === 0 ? (
         <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
           No finishing counts yet. Each count grades pieces A, B or C (mending), with rejects apart.
@@ -578,7 +590,7 @@ export function FinishingReports({
                       {r.kind === "PACKING_LIST" ? "The packing list" : "Photo of the QC sheet"}
                     </a>
                   )}
-                  {can.deleteReports && r.kind !== "PACKING_LIST" && (
+                  {canDelete && r.kind !== "PACKING_LIST" && (
                     <Button
                       type="button"
                       size="sm"

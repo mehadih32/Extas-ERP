@@ -544,9 +544,9 @@ function LockMainFirst() {
     <div className="grid gap-1 rounded-md border border-amber-300 bg-amber-50 p-3 text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
       <p className="font-medium">Lock main first</p>
       <p>
-        Nothing goes to Claude Code until the main branch on GitHub has its ruleset, so changes
-        reach it only through a pull request (Help: Full check, step 4). Then press Test the
-        connection below.
+        Nothing goes to Claude Code until the main branch on GitHub has its two rulesets, Protect
+        main and Restrict updates, so changes reach it only through a pull request and only you can
+        merge it (Help: Full check, step 4). Then press Test the connection below.
       </p>
     </div>
   );

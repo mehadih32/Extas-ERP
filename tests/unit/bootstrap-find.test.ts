@@ -233,6 +233,31 @@ describe("finding an Extas ERP already on the server (A6)", () => {
     await put("srv/apps/erp/deploy/compose.yml", "name: extras-erp\n");
     expect((await choose(["srv"], "")).code).toBe(0);
   });
+
+  it("goes on by itself, without the question, over its own restore that stopped on a new server (v6.4.2)", async () => {
+    // The command ran on this new server, installed the ERP and stopped before the
+    // backup was in: the ERP runs and has its (empty) database, and the mark is there.
+    await docker(["srv/apps/erp/deploy"]);
+    await put("srv/apps/erp/deploy/compose.yml", "name: extras-erp\n");
+    await put(
+      "srv/apps/erp/deploy/.env",
+      `APP_DOMAIN=erp.example.com\nDATA_DIR=${path.join(root, "srv/erp-data")}\n`,
+    );
+    await put("srv/erp-data/postgres/PG_VERSION", "16\n");
+    await put("srv/erp-data/backups/.restore-unfinished");
+    // No answer at all (pressing Enter would stop): it does not ask.
+    const again = await choose(["srv"], "");
+    expect(again.code).toBe(0);
+    expect(again.stdout).not.toContain("Restoring here REPLACES ALL its data");
+    expect(again.stdout).toContain(
+      `CHOSEN ${path.join(root, "srv/apps/erp")}|${path.join(root, "srv/erp-data")}`,
+    );
+    // Once the backup is in (no mark), or for any ERP without the mark: the question again.
+    await rm(path.join(root, "srv/erp-data/backups/.restore-unfinished"));
+    const asked = await choose(["srv"], "");
+    expect(asked.code).toBe(2);
+    expect(asked.stderr).toContain("Error R04");
+  });
 });
 
 describe("the restore tool without GitHub (G17)", () => {

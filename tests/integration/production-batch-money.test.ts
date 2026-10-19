@@ -329,6 +329,8 @@ run("Production renovation: batch costs, advance CM and the final CM settlement"
 
   it("settles the CM: total CM - deductions - advance taken = final payable", async () => {
     await prisma.productionProject.update({ where: { id: env.polo.id }, data: { cmRate: 90 } });
+    // A 10% allowance: the one reject of 20 cut is free (the reject rule has its own tests).
+    await batches.updateBatch(env.pm, env.batch.id, { rejectTolerancePercent: 10 });
     // S: 6 A, 2 B, 1 C; M: 7 A, 1 B, 1 reject; 2 missing at the packing list (112.50 each).
     await finishing.createFinishingCount(env.store, env.polo.id, {
       lines: [

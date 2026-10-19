@@ -349,6 +349,9 @@ async function world() {
     amount: 100,
     note: "Holes in two panels",
   });
+  // The one reject is inside the allowance: a style with no target price asks
+  // for a price per reject only for rejects over it.
+  await batches.updateBatch(pm, batch.id, { rejectTolerancePercent: 10 });
   const settlement = await batchMoney.settleCm(pm, batch.id, { deductCGrade: false });
 
   // HR: last month's salaries approved, one paid in full and one in part; an advance.

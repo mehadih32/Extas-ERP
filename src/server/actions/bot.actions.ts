@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { getRequestMeta } from "@/lib/request-meta";
 import { runAction } from "@/lib/result";
 import * as bot from "@/modules/ai/bot/bot.service";
+import { unlockBotPin } from "@/modules/ai/settings.service";
 import { requirePermission } from "@/modules/auth/context";
 
 /*
@@ -41,3 +42,7 @@ export const removeBotAction = async (channel: string) =>
 
 export const testBotAction = async (channel: string) =>
   change(async () => bot.testBot(await manage(), channel));
+
+/** Unlocks PIN actions on the bot after 20 wrong PINs in a day (asks for the web PIN). */
+export const unlockBotPinAction = async (input: { pin?: string }) =>
+  change(async () => unlockBotPin(await manage(), input, await getRequestMeta()));

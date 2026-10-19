@@ -15,9 +15,11 @@
 # the checkout keeps no credentials, git can only look (status, diff, log,
 # show), and Claude Code's commits go through GitHub's API onto its own branch
 # (use_commit_signing), signed as Claude Code's GitHub App, which is what lets
-# the ERP tell its work from anyone else's. Branch protection on main (Help >
-# Full check) is the lock on the door: no direct pushes, a pull request and
-# the "Tests and build" check first.
+# the ERP tell its work from anyone else's. Two rulesets on main (Help > Full
+# check, step 4) are the lock on the door: "Protect main" (no direct pushes, a
+# pull request and the "Tests and build" check first, nobody may skip it) and
+# "Restrict updates" (only the repository admin, the owner, may update main),
+# so Claude Code's GitHub App cannot merge its own pull request (v6.4.2).
 #
 # Needs, once (the owner's steps in Help > Full check):
 #   - the Claude GitHub App installed on this repository (https://github.com/apps/claude);

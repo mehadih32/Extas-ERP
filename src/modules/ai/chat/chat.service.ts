@@ -12,6 +12,7 @@ import { setProfitPercent } from "@/modules/costing/costing.service";
 import { createTask } from "@/modules/reminders/task.service";
 
 import { PIN_TEXT } from "../bot/pin-scrub";
+import { NUMBER_HIDDEN_TEXT } from "../pin-tries";
 import { askerFor, type Ask, textOf } from "../claude";
 import { isNode, type NodeRef } from "../control-tree";
 import { applyPreset, opensLocked, setControlCell } from "../control.service";
@@ -62,9 +63,11 @@ const MAX_TEXT = 2000;
 const HISTORY = 12;
 const TOOL_ROUNDS = 5;
 
-/** The answer to a chat message that may hold the PIN (it is kept as "[PIN]", as on the bot). */
-export const PIN_HIDDEN_TEXT =
-  "A number in your message could be your PIN, so your message was not kept and nothing was done. Give your PIN only where the ERP asks for it. If it was not your PIN, write it again in 15 minutes.";
+/**
+ * The answer to a chat message with a number that could be the PIN (it is kept
+ * as "[PIN]"): the bot's words, the same whatever the number (v6.4.2).
+ */
+export const PIN_HIDDEN_TEXT = NUMBER_HIDDEN_TEXT;
 
 export const chatSchema = z.object({
   text: z
@@ -138,9 +141,9 @@ export async function sendChat(
   assertOwner(ctx);
   checkRateLimit(`ai-chat:${ctx.user.id}`, 30, 60_000);
   const { text } = chatSchema.parse(input);
-  // The PIN typed into the chat (or a number that could be it): never kept and
-  // never sent to the AI. The bot checked its own messages as they came.
-  if (channel !== "BOT" && (await mayHoldPin(ctx.company.id, westernDigits(text), ctx.user.id))) {
+  // Any number that could be the PIN (never checked against it): never kept and
+  // never sent to the AI. The bot hid its own messages as they came.
+  if (channel !== "BOT" && mayHoldPin(westernDigits(text))) {
     await prisma.aiChatMessage.create({
       data: {
         companyId: ctx.company.id,

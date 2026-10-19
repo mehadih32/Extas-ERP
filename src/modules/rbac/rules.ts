@@ -63,6 +63,8 @@ export const SUPER_ADMIN_GRANTS_KEYS =
 export const OWN_ROLE = "You cannot change your own role. Ask another admin.";
 export const SUPER_ADMIN_REACTIVATES =
   "Only a Super Admin can switch this person back on, because they can record money or manage users or roles. Ask a Super Admin.";
+export const SUPER_ADMIN_RESETS =
+  "Only a Super Admin can reset the password of someone who can record money or manage users or roles. Ask a Super Admin.";
 
 /**
  * What a member may see and do: their role's permissions with their own
@@ -187,18 +189,30 @@ export function canReactivate(
 }
 
 /**
- * Issuing a new temporary password. A company admin may only reset people who
- * work in no other company; the platform owner may reset anyone else.
+ * Issuing a new temporary password (which also ends any wait on their
+ * sign-in). A company admin may only reset people who work in no other
+ * company; the platform owner may reset anyone else. Whoever resets a password
+ * can sign in as that person, so someone who records money or manages users or
+ * roles (`heldKeys`: their role's permissions with their own changes) is reset
+ * only by a Super Admin, as for switching them back on (canReactivate).
  */
 export function canResetPassword(
   actor: Actor,
-  target: HasSystemRole & { userId: string; isPlatformOwner: boolean; worksElsewhere: boolean },
+  target: HasSystemRole & {
+    userId: string;
+    isPlatformOwner: boolean;
+    worksElsewhere: boolean;
+    heldKeys: Iterable<string>;
+  },
 ): Verdict {
   if (target.userId === actor.userId) {
     return refuse("CONFLICT", "Use Change Password for your own account.");
   }
   if (isSuperAdmin(target) && !isPrivileged(actor)) {
     return refuse("FORBIDDEN", "Only a Super Admin can reset a Super Admin's password.");
+  }
+  if (!isPrivileged(actor) && superAdminGrantsIn(target.heldKeys).length > 0) {
+    return refuse("FORBIDDEN", SUPER_ADMIN_RESETS);
   }
   if (!actor.isPlatformOwner) {
     if (target.isPlatformOwner) {

@@ -165,6 +165,8 @@ jobs:
           echo
           grep -E "^    All [0-9,]+ records and [0-9,]+ files are back\.$" "$RUNNER_TEMP/bootstrap.log"
           grep -qE "Checks: (full check|Bug Guard ran[^;]*); 0 problem\(s\) found\." "$RUNNER_TEMP/bootstrap.log"
+          # The restore steps are the command's own version, never the backup's (v6.4.2).
+          grep -q "Restore steps: this command's own version." "$RUNNER_TEMP/bootstrap.log"
           # localhost has no web address to move: the restored ERP is not left on standby (G2).
           if grep -q "Note W10" "$RUNNER_TEMP/bootstrap.log"; then
             echo "::error::The restored ERP was left on standby"

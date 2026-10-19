@@ -10,7 +10,13 @@ import type { RequestMeta } from "@/lib/request-meta";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 
-import { aiSettingsOf, offReason, OFF_TEXT } from "../settings.service";
+import {
+  aiSettingsOf,
+  BOT_PIN_DAY_MINUTES,
+  BOT_PIN_SUBJECT,
+  offReason,
+  OFF_TEXT,
+} from "../settings.service";
 import { BotApiError, type BotSender } from "./channel";
 import {
   TELEGRAM_TOKEN,
@@ -377,7 +383,7 @@ export async function testBot(ctx: CompanyContext, rawChannel: unknown) {
 /** AI Center > Bot (the owner's): both plugs, the PIN, the AI's state and the last messages. */
 export async function getBot(ctx: CompanyContext) {
   assertManage(ctx);
-  const [links, settings, messages] = await Promise.all([
+  const [links, settings, messages, pinTries] = await Promise.all([
     prisma.aiBotLink.findMany({ where: { companyId: ctx.company.id } }),
     aiSettingsOf(ctx.company.id),
     prisma.aiBotMessage.findMany({
@@ -385,8 +391,19 @@ export async function getBot(ctx: CompanyContext) {
       orderBy: { createdAt: "desc" },
       take: 40,
     }),
+    prisma.aiPinTry.findUnique({
+      where: {
+        companyId_subjectKey_kind: {
+          companyId: ctx.company.id,
+          subjectKey: BOT_PIN_SUBJECT,
+          kind: "BOT_PIN",
+        },
+      },
+      select: { count: true, windowStart: true },
+    }),
   ]);
   const now = new Date();
+  const dayStart = now.getTime() - BOT_PIN_DAY_MINUTES * 60_000;
   const shown = (channel: AiBotChannel) => {
     const link = links.find((l) => l.channel === channel);
     if (!link) return null;
@@ -409,6 +426,11 @@ export async function getBot(ctx: CompanyContext) {
     whatsapp: shown("WHATSAPP"),
     webhooks: { telegram: webhookUrl("TELEGRAM"), whatsapp: webhookUrl("WHATSAPP") },
     pinSet: settings.pinHash !== null,
+    // Wrong PINs the bot asked for, in the day; PIN actions stop after 20 (v6.4.2).
+    pinLock: {
+      lockedAt: settings.botPinLockedAt,
+      wrongToday: pinTries && pinTries.windowStart.getTime() > dayStart ? pinTries.count : 0,
+    },
     ai: { state: off ?? ("on" as const), text: off ? OFF_TEXT[off] : null },
     messages: messages.map((m) => ({
       id: m.id,

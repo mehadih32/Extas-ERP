@@ -440,8 +440,8 @@
       "target": "marks"
     },
     "route": "/ai/bot",
-    "screen": "2f985cb241111d97",
-    "guide": "36f0a9d5ec3552cc",
+    "screen": "796289c9869c3ded",
+    "guide": "cab60dd96b1ceeea",
     "taken": "2026-10-18"
   },
   "ai-bug-guard": {
@@ -482,7 +482,7 @@
     },
     "route": "/ai/chat",
     "screen": "e42bce7770f7f28a",
-    "guide": "3eff4cf4213a1cb3",
+    "guide": "ac408fff6d4c2b55",
     "taken": "2026-10-18"
   },
   "ai-control": {
@@ -569,8 +569,8 @@
       "target": "marks"
     },
     "route": "/ai/full-check",
-    "screen": "7517ad8eb52a17ed",
-    "guide": "23163bf41a6c40b6",
+    "screen": "8df16d88305cd843",
+    "guide": "c1b318229ab746fd",
     "taken": "2026-10-18"
   },
   "ai-health": {
@@ -890,7 +890,7 @@
     },
     "route": "/settings/backups",
     "screen": "a066dc2c147ea9cf",
-    "guide": "7ce43757b743055d",
+    "guide": "2abc5dddeca1e918",
     "taken": "2026-10-18"
   },
   "backups-restore": {
@@ -2653,7 +2653,7 @@
       "target": "Factory money"
     },
     "route": "/production/batches/[batchId]",
-    "screen": "f7e0e5ff05d9f8e3",
+    "screen": "29225adbc5b42b79",
     "guide": "6dfcd96eb41957c7",
     "taken": "2026-10-18"
   },
@@ -2800,7 +2800,7 @@
       "target": "marks"
     },
     "route": "/production/batches/[batchId]",
-    "screen": "f7e0e5ff05d9f8e3",
+    "screen": "29225adbc5b42b79",
     "guide": "181cfedd1b9f629d",
     "taken": "2026-10-18"
   },
@@ -2819,7 +2819,7 @@
       "target": "marks"
     },
     "route": "/production/batches/[batchId]",
-    "screen": "f7e0e5ff05d9f8e3",
+    "screen": "29225adbc5b42b79",
     "guide": "0587c4a62be4a3d8",
     "taken": "2026-10-18"
   },
@@ -2925,7 +2925,7 @@
   "production-cm-settlement": {
     "src": "/help/shots/production-cm-settlement.webp",
     "width": 1280,
-    "height": 1205,
+    "height": 1228,
     "marks": [2, 4, 5],
     "labels": {
       "2": "Rejects over the allowance",
@@ -2934,12 +2934,12 @@
     },
     "clip": {
       "y": 0,
-      "height": 1205,
+      "height": 1228,
       "target": "marks"
     },
     "route": "/production/batches/[batchId]/cm-settlement",
-    "screen": "ce51741373968580",
-    "guide": "2a85b2004289b56e",
+    "screen": "5476bced73f6aa8f",
+    "guide": "197413a1deab3897",
     "taken": "2026-10-18"
   },
   "production-complete-cancel": {
@@ -2957,14 +2957,14 @@
       "target": "menu"
     },
     "route": "/production/projects/[projectId]",
-    "screen": "cbfe2a79e9df52a5",
+    "screen": "bcbeab26962fc66c",
     "guide": "9fd6d75e0022c145",
     "taken": "2026-10-18"
   },
   "production-contracts": {
     "src": "/help/shots/production-contracts.webp",
     "width": 1280,
-    "height": 1182,
+    "height": 1532,
     "marks": [2, 3, 4, 5],
     "labels": {
       "2": "What is made",
@@ -2974,11 +2974,11 @@
     },
     "clip": {
       "y": 0,
-      "height": 1182,
+      "height": 1532,
       "target": "marks"
     },
     "route": "/production/batches/[batchId]/contracts/[contractId]",
-    "screen": "f796a80440bf233f",
+    "screen": "41520d6246b7d5d8",
     "guide": "9cc751dc9bf43110",
     "taken": "2026-10-18"
   },
@@ -2999,7 +2999,7 @@
       "target": "marks"
     },
     "route": "/production/projects/[projectId]",
-    "screen": "cbfe2a79e9df52a5",
+    "screen": "bcbeab26962fc66c",
     "guide": "ab9e298dcfbbd046",
     "taken": "2026-10-18"
   },
@@ -3039,7 +3039,7 @@
       "target": "marks"
     },
     "route": "/production/costing",
-    "screen": "fb926914580df827",
+    "screen": "fc960c11bf0e2187",
     "guide": "9540397b739448fc",
     "taken": "2026-10-18"
   },
@@ -3065,10 +3065,9 @@
     "src": "/help/shots/production-cutting.webp",
     "width": 1280,
     "height": 1030,
-    "marks": [1, 2, 4, 5, 8, 9],
+    "marks": [1, 4, 5, 8, 9],
     "labels": {
       "1": "Cutting and embroidery",
-      "2": "New cutting report",
       "4": "Cross-checks",
       "5": "Send for embroidery or print",
       "8": "Cutting and sewing dates",
@@ -3080,7 +3079,7 @@
       "target": "marks"
     },
     "route": "/production/projects/[projectId]/cutting",
-    "screen": "83f6d21195e56d5d",
+    "screen": "d9795cba5f594b5c",
     "guide": "7e77b0628640cb87",
     "taken": "2026-10-18"
   },
@@ -3100,8 +3099,8 @@
       "target": "Tech pack approval"
     },
     "route": "/production/projects/[projectId]",
-    "screen": "cbfe2a79e9df52a5",
-    "guide": "d842b767ddaec467",
+    "screen": "bcbeab26962fc66c",
+    "guide": "c967526909b1c13c",
     "taken": "2026-10-18"
   },
   "production-fault-log": {
@@ -3148,20 +3147,19 @@
   "production-finishing": {
     "src": "/help/shots/production-finishing.webp",
     "width": 1280,
-    "height": 835,
-    "marks": [1, 3, 6],
+    "height": 800,
+    "marks": [1, 6],
     "labels": {
       "1": "Finishing and QC",
-      "3": "Back from mending",
       "6": "Final unit cost"
     },
     "clip": {
       "y": 0,
-      "height": 835,
+      "height": 800,
       "target": "marks"
     },
     "route": "/production/projects/[projectId]/finishing",
-    "screen": "20c8d38e8e4452ed",
+    "screen": "b93a701b86b2bf27",
     "guide": "cc5fccd8bdcfec5e",
     "taken": "2026-10-18"
   },
@@ -3220,7 +3218,7 @@
       "target": "Materials sent"
     },
     "route": "/production/projects/[projectId]",
-    "screen": "cbfe2a79e9df52a5",
+    "screen": "bcbeab26962fc66c",
     "guide": "971b8b68035ab188",
     "taken": "2026-10-18"
   },
@@ -3251,7 +3249,7 @@
   "production-order-check": {
     "src": "/help/shots/production-order-check.webp",
     "width": 1280,
-    "height": 1064,
+    "height": 1084,
     "marks": [1, 2, 3, 4, 5, 6, 7],
     "labels": {
       "1": "Order check card",
@@ -3264,11 +3262,11 @@
     },
     "clip": {
       "y": 0,
-      "height": 1064,
+      "height": 1084,
       "target": "marks"
     },
     "route": "/production/costing/[costingId]",
-    "screen": "78ef2856d4d9ac59",
+    "screen": "9ce25c10915e6ab6",
     "guide": "01c5387fbd9939cd",
     "taken": "2026-10-18"
   },
@@ -3387,7 +3385,7 @@
       "target": "Suppliers"
     },
     "route": "/production/projects/[projectId]",
-    "screen": "cbfe2a79e9df52a5",
+    "screen": "bcbeab26962fc66c",
     "guide": "f59baa1f45f86559",
     "taken": "2026-10-18"
   },
@@ -3410,8 +3408,8 @@
       "target": "marks"
     },
     "route": "/tech-packs/[techPackId]",
-    "screen": "2f42e1c5e1a7161b",
-    "guide": "1efa79b0d4b522d8",
+    "screen": "271ba3c527538db7",
+    "guide": "d76537a72ad94757",
     "taken": "2026-10-18"
   },
   "production-tech-pack-colours": {
@@ -3428,7 +3426,7 @@
       "target": "Colours and lab dips"
     },
     "route": "/tech-packs/[techPackId]",
-    "screen": "2f42e1c5e1a7161b",
+    "screen": "271ba3c527538db7",
     "guide": "cc2370570215b9d7",
     "taken": "2026-10-18"
   },
@@ -3446,7 +3444,7 @@
       "target": "Logos and embroidery"
     },
     "route": "/tech-packs/[techPackId]",
-    "screen": "2f42e1c5e1a7161b",
+    "screen": "271ba3c527538db7",
     "guide": "8ebbe827b283ac76",
     "taken": "2026-10-18"
   },
@@ -4332,7 +4330,7 @@
       "target": "marks"
     },
     "route": "/tech-packs/[techPackId]",
-    "screen": "2f42e1c5e1a7161b",
+    "screen": "271ba3c527538db7",
     "guide": "93a22baa46879ebd",
     "taken": "2026-10-18"
   },

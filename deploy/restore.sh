@@ -220,7 +220,7 @@ settle_cut_restore || say "Note: the ERP did not start after the restore that wa
 
 prune_old_uploads
 forget_secrets_in_history || true
-[ -n "$folder_arg" ] || fail "say which backup to restore, for example: sudo $0 $DATA_DIR/backups/2026-10-04_020000"
+[ -n "$folder_arg" ] || fail "say which backup to restore, for example: sudo $DEPLOY_DIR/restore.sh $DATA_DIR/backups/2026-10-04_020000"
 folder="$(realpath -e "$folder_arg" 2>/dev/null)" || fail "$folder_arg does not exist."
 data="$(realpath -e "$DATA_DIR")"
 case "$folder/" in
@@ -315,7 +315,7 @@ go_back() {
   rm -f "$restored_mark"
   compose stop app >/dev/null 2>&1 || true
   restore_database "/safety-copies/before-restore-$stamp/database.dump" ||
-    fail "$1, and the safety copy could not be put back either: restore it by hand: sudo $0 $safety"
+    fail "$1, and the safety copy could not be put back either: restore it by hand: sudo $DEPLOY_DIR/restore.sh $safety"
   # Only now is the database back as it was before (never said before it is).
   went_back=1
   if [ -d "$DATA_DIR/uploads.before-restore-$stamp" ]; then
@@ -444,7 +444,7 @@ if [ "$check" = 1 ]; then
 fi
 
 say "Restored from $folder"
-echo "To undo it, restore the safety copy: sudo $0 $safety. That puts back the database only;"
+echo "To undo it, restore the safety copy: sudo $DEPLOY_DIR/restore.sh $safety. That puts back the database only;"
 if [ -n "$media" ]; then
   echo "the uploaded files from before stay in $DATA_DIR/uploads.before-restore-$stamp for 30 days."
 else

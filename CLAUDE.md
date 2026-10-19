@@ -67,8 +67,12 @@ places disagree, the newer instruction wins.
 
 ## 3. Business rules (blueprint section 4, v6.2)
 
-- **Profit:** no fixed %. The owner enters profit % per order (costing, quotation, PO or invoice). No default, no
-  floor. Past profit % may be shown as a hint.
+- **Profit:** no fixed %. The owner enters profit % per order (costing, quotation, PO or invoice). No default; at
+  least 10%, no upper limit (a sheet holds up to 999.99%), checked by the server, not only the screen. A sheet saved
+  under 10% before this rule keeps its figure and shows a note; any edit to it (its details or its styles) first
+  raises it to at least 10%. Past profit % may be shown as a hint. The profit % comes off the selling price with the
+  percent lines, so together they stay under 100% for a price to exist; the server refuses a save that leaves no
+  price. Every profit % is shown with its markup on cost (15% of price = 17.65% on cost; 200% on cost is 66.67%).
 - **Office overhead:** not part of costing.
 - **CM:** a fixed price per style per order agreed with the factory (per piece or per dozen). No SMV or
   per-minute maths. Use the CM contract data.
@@ -82,7 +86,10 @@ places disagree, the newer instruction wins.
   terms, T&C, items or batch makes a new revision (R1, R2…) that needs approval again. Fabric first is per order;
   collar, cuff and trims wait for the full tech pack approval, unless the owner (or a permission the owner gives)
   overrides with a reason, which is logged. A fabric change after booking marks the booking red with the kg at
-  risk.
+  risk. After the tech pack is approved, any change to its trims, collar or cuff marks that part as needing
+  approval again by someone who approves tech packs; until then that style's trims, collar and cuff bookings are
+  blocked (the same owner override with a reason still works and is logged). Fabric bookings are not affected. The
+  tech pack shows what changed (was and now), who changed it and when.
 - **Production:** a production project's default target date is 45 days. Embroidery/print spoilage is charged to
   that house, never the factory. Reject tolerance per batch (default 2%). The CM settlement auto-posts its
   deductions to the factory's Supplier Due.
@@ -200,6 +207,27 @@ overwrites a stored total or figure.
 
 ## 9. Decisions log (newest first)
 
+- 2026-10-18 (v6.4.2): the CM settlement charges only the CM work: faults on material the factory supplied or on
+  material bills are left out (and shown, with why), CM paid counts only payments not used on material bills,
+  excess rejects need a price per reject before saving, and while a settlement stands its cutting reports,
+  mending returns and the style's CM cannot change ("Undo the CM settlement first"). After the v6.4.2 deploy Bug
+  Guard listed, read-only, old settlements the new rules would change; the owner decides on each.
+- 2026-10-18 (v6.4.2): profit % per order is at least 10% with no upper limit and still no default; a sheet saved
+  under 10% keeps its figure, shows a note and reaches 10% when it is next edited (section 3).
+- 2026-10-18 (v6.4.2): a change to trims, collar or cuff after the tech pack is approved needs that part approved
+  again by someone who approves tech packs; trims, collar and cuff bookings for that style wait for it, fabric
+  bookings do not (section 3).
+- 2026-10-18 (v6.4.2): only the owner merges into `main`. Two rulesets on `main`, both active: "Protect main"
+  with an empty Bypass list (pull request, the "Tests and build" check, no force pushes, no deletion) and
+  "Restrict updates" in a ruleset of its own whose Bypass list holds only Repository admin (the owner). The ERP's
+  Merge (the owner's token, with the PIN) and the owner on GitHub can merge; Claude Code's GitHub App and every
+  other token cannot. Test the connection checks exactly this, and Claude Code stays off until both are right.
+- 2026-10-18 (v6.4.2): the bot never checks a 4-8 digit number it did not ask for: every one is hidden the same
+  way. Wrong PINs the bot asked for alarm the owner from the 5th in a day; after 20, PIN actions on the bot stop
+  until the owner unlocks them in the ERP with the PIN. The restore command keeps nothing opened on a VM (cleaned
+  at every start and at boot; only a still-locked download stays), runs its own version's restore steps, puts an
+  ERP in use back on its own code when a restore over it fails, and the guide never says to type the address at
+  the overwrite question.
 - 2026-10-18 (v6.4.1): every release ends with the readiness report (section 1, item 8) after up to 3 rounds
   of fresh whole-ERP reviews; "is anything left?" is answered from a fresh check of the code and the live site.
   After each deploy Bug Guard checks the live ERP once, read-only (no AI unless the owner turned it on), into the

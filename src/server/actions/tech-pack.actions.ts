@@ -158,6 +158,12 @@ export const approveTechPackOfAction = async (techPackId: string) =>
     await approval.approveTechPackOf(await approve(), techPackId, await getRequestMeta());
     return { id: techPackId };
   });
+/** Approves the trims of the tech pack's style again after they changed (from its page). */
+export const approveTrimsPartOfAction = async (techPackId: string) =>
+  change(techPackId, async () => {
+    await approval.approveTrimsPartOf(await approve(), techPackId, await getRequestMeta());
+    return { id: techPackId };
+  });
 
 // ---------------------------------------------------------------- chart and instructions
 

@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 
 import { SectionError } from "@/components/dashboard/section-error";
 import { EmptyState } from "@/components/products/bits";
+import { CmSettledNotice } from "@/components/production/cm-settled-notice";
 import { FinishingCountForm } from "@/components/production/finishing-count-form";
 import { productionHref } from "@/components/production/labels";
 import { ProductionNoAccess } from "@/components/production/no-access";
@@ -53,6 +54,12 @@ export default async function NewFinishingCountPage({
       </div>
       {screen.can.count ? (
         <FinishingCountForm screen={screen} currency={ctx.company.currency} />
+      ) : screen.cmSettlement && !screen.packed ? (
+        <CmSettledNotice
+          settlement={screen.cmSettlement}
+          from="this style's finishing"
+          what="no finishing count can be added"
+        />
       ) : (
         <EmptyState title="Counting is closed">
           {screen.packed

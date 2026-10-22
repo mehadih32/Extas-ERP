@@ -23,6 +23,7 @@ import { POST as ordersRoute } from "@/app/api/v1/ecommerce/orders/route";
 import { GET as stockOneRoute } from "@/app/api/v1/ecommerce/stock/[sku]/route";
 import { prisma } from "@/lib/prisma";
 import { createIntegration } from "@/modules/ecommerce/integration.service";
+import { cancelOrder } from "@/modules/sales/order.service";
 import { receivePayment } from "@/modules/sales/payment.service";
 
 import { callShop, giveKey, type Shop, setupShop, shopUserOf } from "./ecommerce-helpers";
@@ -463,6 +464,23 @@ run("E-commerce API: orders (CN-005)", () => {
     ).toBe("ORDER_LOCKED");
   });
 
+  it("refuses to deliver pieces the warehouse no longer holds, with the short SKUs", async () => {
+    const placed = await placeOrder("WEB-8101");
+    await prisma.stockBalance.updateMany({
+      where: { companyId: shop.company.id, variant: { sku: navyS }, grade: "A_GRADE" },
+      data: { quantity: 1 },
+    });
+    const res = await patch(shop, "WEB-8101", { status: "DELIVERED" });
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatchObject({
+      code: "INSUFFICIENT_STOCK",
+      details: { shortSkus: [{ sku: navyS, requested: 2, available: 1 }] },
+    });
+    // Nothing of the step stays: no invoice, no challan.
+    expect(await prisma.invoice.count({ where: { orderId: placed.erpOrderId } })).toBe(0);
+    expect(await prisma.deliveryChallan.count()).toBe(0);
+  });
+
   it("cancels before delivery, freeing the reservation and keeping the reason", async () => {
     const placed = await placeOrder("WEB-9001");
     const res = await patch(shop, "WEB-9001", {
@@ -500,6 +518,10 @@ run("E-commerce API: orders (CN-005)", () => {
     expect(await stockOf(shop, navyS)).toMatchObject({ reserved: 2 });
     const cancel = await patch(shop, "WEB-9101", { status: "CANCELLED" });
     expect(cancel.status).toBe(409);
+    // Nor from the ERP's own order screen.
+    await expect(
+      cancelOrder(shop.owner, placed.erpOrderId, { reason: "Cancel it too" }),
+    ).rejects.toThrow("came back undelivered");
     expect(await stockOf(shop, navyS)).toMatchObject({ reserved: 2 });
   });
 

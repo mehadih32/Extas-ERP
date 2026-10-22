@@ -9,7 +9,7 @@ import type { CompanyContext } from "@/modules/auth/context";
 import { deliveredByVariant } from "@/modules/sales/documents.service";
 
 import { EcommerceApiError, toApiError } from "./errors";
-import { deliverShopOrderTx, returnUndeliveredTx, shopOrderOrNotFound } from "./orders.service";
+import { deliverShopOrder, returnUndeliveredTx, shopOrderOrNotFound } from "./orders.service";
 import type { ShopCall } from "./route";
 import {
   shipmentEventSchema,
@@ -232,7 +232,7 @@ export async function addShipmentEvent(
   let orderError: ShopShipmentEvent["orderError"];
   try {
     if (input.status === "DELIVERED") {
-      await runTransaction((tx) => deliverShopOrderTx(tx, ctx, shipment.orderId, meta), TX_OPTIONS);
+      await deliverShopOrder(ctx, shipment.orderId, meta);
     } else if (input.status === "RETURNED") {
       // A cancelled order's parcel coming back changes nothing: its stock is free already.
       const before = await ctx.db.salesOrder.findUniqueOrThrow({

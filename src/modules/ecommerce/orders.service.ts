@@ -484,7 +484,7 @@ async function markPacked(call: Call, orderId: string) {
  * goods posted). Inside the caller's transaction; false when it was delivered
  * already.
  */
-export async function deliverShopOrderTx(
+async function deliverShopOrderTx(
   tx: Tx,
   ctx: CompanyContext,
   orderId: string,
@@ -515,6 +515,40 @@ export async function deliverShopOrderTx(
     await tx.salesOrder.update({ where: { id: order.id }, data: { status: "DELIVERED" } });
   }
   return true;
+}
+
+/**
+ * The DELIVERED step in its own transaction. Pieces the warehouse no longer
+ * holds (stock taken down since the order) answer the same 409 as POST /orders.
+ */
+export async function deliverShopOrder(ctx: CompanyContext, orderId: string, meta?: RequestMeta) {
+  try {
+    return await runTransaction((tx) => deliverShopOrderTx(tx, ctx, orderId, meta), TX_OPTIONS);
+  } catch (error) {
+    if (!isAppError(error, "INSUFFICIENT_STOCK")) throw error;
+    const order = await ctx.db.salesOrder.findUniqueOrThrow({
+      where: { id: orderId },
+      include: { items: { include: { variant: { select: { sku: true } } } } },
+    });
+    const delivered = await deliveredByVariant(prisma, order.id);
+    const onHand = await ctx.db.stockBalance.findMany({
+      where: {
+        warehouseId: order.warehouseId ?? "",
+        grade: "A_GRADE",
+        variantId: { in: order.items.map((i) => i.variantId) },
+      },
+      select: { variantId: true, quantity: true },
+    });
+    const inHand = new Map(onHand.map((b) => [b.variantId, b.quantity]));
+    const short = order.items
+      .map((i) => ({
+        sku: i.variant.sku,
+        requested: i.quantity - (delivered.get(i.variantId) ?? 0),
+        available: Math.max(inHand.get(i.variantId) ?? 0, 0),
+      }))
+      .filter((l) => l.requested > l.available);
+    throw short.length > 0 ? insufficientStock(short) : error;
+  }
 }
 
 const sendReturnsInstead = () =>
@@ -553,7 +587,7 @@ async function cancelShopOrder(call: Call, orderId: string, reason: string | und
   if (invoice) {
     throw new AppError(
       "CONFLICT",
-      `Invoice ${invoice.number} is issued for this order: it is cancelled in the ERP.`,
+      `Invoice ${invoice.number} is issued for this order: cancel it in the ERP.`,
     );
   }
   const why = `Cancelled by the shop: ${reason ?? "no reason given"}`;
@@ -599,7 +633,7 @@ export async function returnUndeliveredTx(
   if (invoice) {
     throw new AppError(
       "CONFLICT",
-      `Invoice ${invoice.number} is issued for this order: it is voided in the ERP first.`,
+      `Invoice ${invoice.number} is issued for this order: void it in the ERP first.`,
     );
   }
   if (order.warehouseId) {
@@ -658,10 +692,7 @@ export async function updateShopOrder(
       await markPacked(call, order.id);
       break;
     case "DELIVERED":
-      await runTransaction(
-        (tx) => deliverShopOrderTx(tx, call.ctx, order.id, call.meta),
-        TX_OPTIONS,
-      );
+      await deliverShopOrder(call.ctx, order.id, call.meta);
       break;
     case "CANCELLED":
       if (order.status !== "CANCELLED") await cancelShopOrder(call, order.id, input.reason);

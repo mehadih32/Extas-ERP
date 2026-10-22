@@ -32,6 +32,7 @@ export const POWERFUL = [
   "company.members.manage",
   "company.roles.manage",
   "backups.manage",
+  "integrations.ecommerce.manage",
   "ai.manage",
   "production.bookings.override",
 ] as const;

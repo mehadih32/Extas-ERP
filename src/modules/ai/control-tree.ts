@@ -51,6 +51,7 @@ export const NEVER_FOR_AI: ReadonlySet<string> = new Set([
   "company.members.manage",
   "company.roles.manage",
   "backups.manage",
+  "integrations.ecommerce.manage",
   "ai.view",
   "ai.manage",
 ]);

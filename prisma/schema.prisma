@@ -83,154 +83,156 @@ model Company {
   createdAt             DateTime        @default(now())
   updatedAt             DateTime        @updatedAt
 
-  memberships           CompanyMembership[]
-  sessions              Session[]
-  roles                 Role[]
-  auditLogs             AuditLog[]
-  files                 FileAsset[]               @relation("CompanyFiles")
-  logoFile              FileAsset?                @relation("CompanyLogo", fields: [logoFileId], references: [id], onDelete: SetNull)
-  sequences             DocumentSequence[]
-  customFields          CustomFieldDefinition[]
-  categories            Category[]
-  brands                Brand[]
-  styles                Style[]
-  colors                Color[]
-  sizes                 Size[]
-  variants              ProductVariant[]
-  ratioPresets          SizeRatioPreset[]
-  warehouses            Warehouse[]
-  stockBalances         StockBalance[]
-  stockMovements        StockMovement[]
-  stockLots             StockLot[]
-  rawMaterials          RawMaterial[]
-  rawMaterialMovements  RawMaterialMovement[]
-  badStockEntries       BadStockEntry[]
-  rawMaterialStocks     RawMaterialStock[]
-  purchaseOrders        PurchaseOrder[]
-  bookings              Booking[]
-  bookingRevisions      BookingRevision[]
-  techPacks             TechPack[]
-  techPackMeasurements  TechPackMeasurement[]
-  techPackReferences    TechPackReference[]
-  techPackLogos         TechPackLogo[]
-  techPackColours       TechPackColour[]
-  labDipOptions         LabDipOption[]
-  techPackAiDrafts      TechPackAiDraft[]
-  techPackExpertAnswers TechPackExpertAnswer[]
-  techPackChanges       TechPackChange[]
-  orderCostings         OrderCosting[]
-  orderCostingStyles    OrderCostingStyle[]
-  fabricQuotes          FabricQuote[]
-  materialIssues        MaterialIssue[]
-  materialChallans      MaterialChallan[]
-  purchaseReturns       PurchaseReturn[]
-  parties               Party[]
-  campaigns             ReEngagementCampaign[]
-  quotations            Quotation[]
-  proformaInvoices      ProformaInvoice[]
-  salesOrders           SalesOrder[]
-  invoices              Invoice[]
-  packingLists          PackingList[]
-  deliveryChallans      DeliveryChallan[]
-  payments              Payment[]
-  refunds               Refund[]
-  creditAllocations     CreditAllocation[]
-  cheques               Cheque[]
-  integrations          SalesChannelIntegration[]
-  webhookEvents         WebhookEvent[]
-  courierAccounts       CourierAccount[]
-  shipments             Shipment[]
-  salesReturns          SalesReturn[]
-  productionProjects    ProductionProject[]
-  productionBatches     ProductionBatch[]
-  productionContracts   ProductionContract[]
-  supplierFaults        SupplierFault[]
-  cuttingReports        CuttingReport[]
-  embroideryJobs        EmbroideryJob[]
-  finishingReports      FinishingReport[]
-  cmSettlements         CmSettlement[]
-  materialNeeds         ProductionMaterialNeed[]
-  supplierBills         SupplierBill[]
-  stockIntakes          StockIntake[]
-  ledgerAccounts        LedgerAccount[]
-  journalEntries        JournalEntry[]
-  bankAccounts          BankAccount[]
-  pettyCashBoxes        PettyCashBox[]
-  fixedAssets           FixedAsset[]
-  capitalSources        CapitalSource[]
-  expenseHeads          ExpenseHead[]
-  expenses              Expense[]
-  adSpends              AdSpend[]
-  employees             Employee[]
-  hrSettings            HrSettings?
-  holidays              Holiday[]
-  attendance            Attendance[]
-  leaveTypes            LeaveType[]
-  leaveRequests         LeaveRequest[]
-  payrollRuns           PayrollRun[]
-  payrollPayments       PayrollPayment[]
-  salaryAdvances        SalaryAdvance[]
-  complianceDocuments   ComplianceDocument[]
-  templates             DocumentTemplate[]
-  generatedDocuments    GeneratedDocument[]
-  reportExports         ReportExport[]
-  notes                 Note[]
-  tasks                 Task[]
-  reminders             Reminder[]
-  reminderRules         ReminderRule[]
-  notifications         NotificationLog[]
-  projectSettlements    ProjectSettlement[]
-  salesTargets          SalesTarget[]
-  payDetailsRequests    PayDetailsRequest[]
-  employeeDocuments     EmployeeDocument[]
-  termsVersions         TermsVersion[]
-  termsAcceptances      TermsAcceptance[]
-  oneTimeCodes          OneTimeCode[]
-  backgroundJobs        BackgroundJob[]
-  workLocations         WorkLocation[]
-  locationPings         LocationPing[]
-  staffPositions        StaffPosition[]
-  overtimeEntries       OvertimeEntry[]
-  staffClaims           StaffClaim[]
-  notices               Notice[]
-  noticeReads           NoticeRead[]
-  payrollPaymentLines   PayrollPaymentLine[]
-  employeeAssets        EmployeeAsset[]
-  aiSettings            AiSettings?
-  aiControlCells        AiControlCell[]
-  aiGrants              AiGrant[]
-  aiPermissionRequests  AiPermissionRequest[]
-  aiDeletionRequests    AiDeletionRequest[]
-  aiUsage               AiUsage[]
-  aiBudget              AiBudget?
-  aiKnowledgeBooks      AiKnowledgeBook[]
-  aiTestRuns            AiTestRun[]
-  aiModelPrices         AiModelPrice[]
-  aiModelTests          AiModelTest[]
-  aiSkills              AiSkill[]
-  aiSkillVersions       AiSkillVersion[]
-  fullCheckRuns         FullCheckRun[]
-  fullCheckProblems     FullCheckProblem[]
-  claudeCodeRequests    ClaudeCodeRequest[]
-  aiChatMessages        AiChatMessage[]
-  aiDrafts              AiDraft[]
-  aiFollowUps           AiFollowUp[]
-  houseRules            HouseRule[]
-  mailSettings          CompanyMailSettings?
-  aiBotLinks            AiBotLink[]
-  aiPinTries            AiPinTry[]
-  aiBotMessages         AiBotMessage[]
-  aiOrderRuns           AiOrderRun[]
-  aiStaffUpdates        AiStaffUpdate[]
-  serverHealthRuns      ServerHealthRun[]
-  bugGuardSettings      BugGuardSettings?
-  bugGuardRuns          BugGuardRun[]
-  bugGuardFindings      BugGuardFinding[]
-  bugGuardCorrections   BugGuardCorrection[]
-  bugGuardEvents        BugGuardEvent[]
-  loginBlocks           LoginBlock[]
-  serverErrors          ServerError[]
-  usageCounts           UsageCount[]
+  memberships            CompanyMembership[]
+  sessions               Session[]
+  roles                  Role[]
+  auditLogs              AuditLog[]
+  files                  FileAsset[]               @relation("CompanyFiles")
+  logoFile               FileAsset?                @relation("CompanyLogo", fields: [logoFileId], references: [id], onDelete: SetNull)
+  sequences              DocumentSequence[]
+  customFields           CustomFieldDefinition[]
+  categories             Category[]
+  brands                 Brand[]
+  styles                 Style[]
+  colors                 Color[]
+  sizes                  Size[]
+  variants               ProductVariant[]
+  ratioPresets           SizeRatioPreset[]
+  warehouses             Warehouse[]
+  stockBalances          StockBalance[]
+  stockMovements         StockMovement[]
+  stockLots              StockLot[]
+  rawMaterials           RawMaterial[]
+  rawMaterialMovements   RawMaterialMovement[]
+  badStockEntries        BadStockEntry[]
+  rawMaterialStocks      RawMaterialStock[]
+  purchaseOrders         PurchaseOrder[]
+  bookings               Booking[]
+  bookingRevisions       BookingRevision[]
+  techPacks              TechPack[]
+  techPackMeasurements   TechPackMeasurement[]
+  techPackReferences     TechPackReference[]
+  techPackLogos          TechPackLogo[]
+  techPackColours        TechPackColour[]
+  labDipOptions          LabDipOption[]
+  techPackAiDrafts       TechPackAiDraft[]
+  techPackExpertAnswers  TechPackExpertAnswer[]
+  techPackChanges        TechPackChange[]
+  orderCostings          OrderCosting[]
+  orderCostingStyles     OrderCostingStyle[]
+  fabricQuotes           FabricQuote[]
+  materialIssues         MaterialIssue[]
+  materialChallans       MaterialChallan[]
+  purchaseReturns        PurchaseReturn[]
+  parties                Party[]
+  campaigns              ReEngagementCampaign[]
+  quotations             Quotation[]
+  proformaInvoices       ProformaInvoice[]
+  salesOrders            SalesOrder[]
+  invoices               Invoice[]
+  packingLists           PackingList[]
+  deliveryChallans       DeliveryChallan[]
+  payments               Payment[]
+  refunds                Refund[]
+  creditAllocations      CreditAllocation[]
+  cheques                Cheque[]
+  integrations           SalesChannelIntegration[]
+  webhookEvents          WebhookEvent[]
+  integrationApiCalls    IntegrationApiCall[]
+  integrationIdempotency IntegrationIdempotency[]
+  courierAccounts        CourierAccount[]
+  shipments              Shipment[]
+  salesReturns           SalesReturn[]
+  productionProjects     ProductionProject[]
+  productionBatches      ProductionBatch[]
+  productionContracts    ProductionContract[]
+  supplierFaults         SupplierFault[]
+  cuttingReports         CuttingReport[]
+  embroideryJobs         EmbroideryJob[]
+  finishingReports       FinishingReport[]
+  cmSettlements          CmSettlement[]
+  materialNeeds          ProductionMaterialNeed[]
+  supplierBills          SupplierBill[]
+  stockIntakes           StockIntake[]
+  ledgerAccounts         LedgerAccount[]
+  journalEntries         JournalEntry[]
+  bankAccounts           BankAccount[]
+  pettyCashBoxes         PettyCashBox[]
+  fixedAssets            FixedAsset[]
+  capitalSources         CapitalSource[]
+  expenseHeads           ExpenseHead[]
+  expenses               Expense[]
+  adSpends               AdSpend[]
+  employees              Employee[]
+  hrSettings             HrSettings?
+  holidays               Holiday[]
+  attendance             Attendance[]
+  leaveTypes             LeaveType[]
+  leaveRequests          LeaveRequest[]
+  payrollRuns            PayrollRun[]
+  payrollPayments        PayrollPayment[]
+  salaryAdvances         SalaryAdvance[]
+  complianceDocuments    ComplianceDocument[]
+  templates              DocumentTemplate[]
+  generatedDocuments     GeneratedDocument[]
+  reportExports          ReportExport[]
+  notes                  Note[]
+  tasks                  Task[]
+  reminders              Reminder[]
+  reminderRules          ReminderRule[]
+  notifications          NotificationLog[]
+  projectSettlements     ProjectSettlement[]
+  salesTargets           SalesTarget[]
+  payDetailsRequests     PayDetailsRequest[]
+  employeeDocuments      EmployeeDocument[]
+  termsVersions          TermsVersion[]
+  termsAcceptances       TermsAcceptance[]
+  oneTimeCodes           OneTimeCode[]
+  backgroundJobs         BackgroundJob[]
+  workLocations          WorkLocation[]
+  locationPings          LocationPing[]
+  staffPositions         StaffPosition[]
+  overtimeEntries        OvertimeEntry[]
+  staffClaims            StaffClaim[]
+  notices                Notice[]
+  noticeReads            NoticeRead[]
+  payrollPaymentLines    PayrollPaymentLine[]
+  employeeAssets         EmployeeAsset[]
+  aiSettings             AiSettings?
+  aiControlCells         AiControlCell[]
+  aiGrants               AiGrant[]
+  aiPermissionRequests   AiPermissionRequest[]
+  aiDeletionRequests     AiDeletionRequest[]
+  aiUsage                AiUsage[]
+  aiBudget               AiBudget?
+  aiKnowledgeBooks       AiKnowledgeBook[]
+  aiTestRuns             AiTestRun[]
+  aiModelPrices          AiModelPrice[]
+  aiModelTests           AiModelTest[]
+  aiSkills               AiSkill[]
+  aiSkillVersions        AiSkillVersion[]
+  fullCheckRuns          FullCheckRun[]
+  fullCheckProblems      FullCheckProblem[]
+  claudeCodeRequests     ClaudeCodeRequest[]
+  aiChatMessages         AiChatMessage[]
+  aiDrafts               AiDraft[]
+  aiFollowUps            AiFollowUp[]
+  houseRules             HouseRule[]
+  mailSettings           CompanyMailSettings?
+  aiBotLinks             AiBotLink[]
+  aiPinTries             AiPinTry[]
+  aiBotMessages          AiBotMessage[]
+  aiOrderRuns            AiOrderRun[]
+  aiStaffUpdates         AiStaffUpdate[]
+  serverHealthRuns       ServerHealthRun[]
+  bugGuardSettings       BugGuardSettings?
+  bugGuardRuns           BugGuardRun[]
+  bugGuardFindings       BugGuardFinding[]
+  bugGuardCorrections    BugGuardCorrection[]
+  bugGuardEvents         BugGuardEvent[]
+  loginBlocks            LoginBlock[]
+  serverErrors           ServerError[]
+  usageCounts            UsageCount[]
 }
 
 /// A person who can log in. Global across companies.
@@ -789,7 +791,7 @@ model Warehouse {
   /// picker, while its past movements keep their warehouse in the history.
   deletedAt DateTime?
 
-  company              Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  company              Company                   @relation(fields: [companyId], references: [id], onDelete: Cascade)
   stockBalances        StockBalance[]
   stockMovements       StockMovement[]
   rawMaterialMovements RawMaterialMovement[]
@@ -801,6 +803,7 @@ model Warehouse {
   materialIssues       MaterialIssue[]
   purchaseReturns      PurchaseReturn[]
   salesReturns         SalesReturn[]
+  integrations         SalesChannelIntegration[]
 
   @@unique([companyId, name])
 }
@@ -1581,6 +1584,9 @@ model SalesOrder {
   customerName     String?
   customerPhone    String?
   shippingAddress  String?
+  /// Website orders: what the courier collects on delivery, and how the shop's buyer pays.
+  codAmount        Decimal?         @db.Decimal(14, 2)
+  paymentMethod    PaymentMethod?
   // Totals
   subtotal         Decimal          @default(0) @db.Decimal(14, 2)
   discount         Decimal          @default(0) @db.Decimal(14, 2)
@@ -1930,42 +1936,122 @@ model Refund {
 // =============================================================================
 
 /// A connected website / e-commerce platform that pushes orders via API/Webhook.
+/// A website or shop connected to the ERP (CN-005: the e-commerce API under
+/// /api/v1/ecommerce). One integration is one shop in one company: its API key
+/// names the company, so the shop never sends a company id.
 model SalesChannelIntegration {
-  id               String            @id @default(cuid())
-  companyId        String
-  name             String
-  platform         EcommercePlatform
-  baseUrl          String?
-  apiKeyRef        String? // reference to an encrypted secret, never the raw key
-  webhookSecretRef String?
-  isActive         Boolean           @default(true)
-  lastSyncedAt     DateTime?
-  createdAt        DateTime          @default(now())
+  id                 String            @id @default(cuid())
+  companyId          String
+  name               String
+  platform           EcommercePlatform
+  baseUrl            String?
+  /// The API key's SHA-256 ("sha256:<hex>"), never the key: the key is shown once.
+  apiKeyRef          String?           @unique
+  /// The webhook secret, sealed with ENCRYPTION_KEY (lib/crypto.ts): both sides sign with it.
+  webhookSecretRef   String?
+  isActive           Boolean           @default(true)
+  /// The last time the shop called the API or took a webhook.
+  lastSyncedAt       DateTime?
+  createdAt          DateTime          @default(now())
+  /// The start and end of the key, so people can tell keys apart (never enough to use it).
+  apiKeyHint         String?
+  apiKeyCreatedAt    DateTime?
+  apiKeyRevokedAt    DateTime?
+  /// Where the ERP sends variant.changed and stock.changed (https). Empty: nothing is sent.
+  webhookUrl         String?
+  /// The warehouse the shop sells from: its orders reserve stock here.
+  warehouseId        String?
+  /// Only these addresses may call the API; empty lets any address call.
+  ipAllowList        String[]          @default([])
+  rateLimitPerMinute Int               @default(120)
+  /// The newest stock and variant changes already sent to the shop (the webhook sender's place).
+  stockSentTo        DateTime?
+  variantsSentTo     DateTime?
+  /// The integration's own account: what the shop does is saved in its name.
+  serviceUserId      String?
+  createdById        String?
+  updatedAt          DateTime          @default(now()) @updatedAt
 
-  company       Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  orders        SalesOrder[]
-  webhookEvents WebhookEvent[]
+  company         Company                  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  warehouse       Warehouse?               @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
+  orders          SalesOrder[]
+  webhookEvents   WebhookEvent[]
+  apiCalls        IntegrationApiCall[]
+  idempotencyKeys IntegrationIdempotency[]
+
+  @@index([companyId])
 }
 
-/// Raw inbound webhook log (orders from websites, courier status updates).
+/// Webhook log: what came in (orders from websites, courier status updates) and
+/// what the ERP sends to a shop (variant.changed, stock.changed), each try counted.
 model WebhookEvent {
-  id            String        @id @default(cuid())
-  companyId     String
-  source        WebhookSource
-  integrationId String?
-  eventType     String
-  externalId    String?
-  payload       Json
-  status        WebhookStatus @default(RECEIVED)
-  error         String?
-  receivedAt    DateTime      @default(now())
-  processedAt   DateTime?
+  id             String           @id @default(cuid())
+  companyId      String
+  source         WebhookSource
+  integrationId  String?
+  eventType      String
+  externalId     String?
+  payload        Json
+  status         WebhookStatus    @default(RECEIVED)
+  error          String?
+  receivedAt     DateTime         @default(now())
+  processedAt    DateTime?
+  direction      WebhookDirection @default(INCOMING)
+  /// Tries so far to send it (outgoing), the last one's time and the shop's answer.
+  attempts       Int              @default(0)
+  lastAttemptAt  DateTime?
+  responseStatus Int?
 
   company     Company                  @relation(fields: [companyId], references: [id], onDelete: Cascade)
   integration SalesChannelIntegration? @relation(fields: [integrationId], references: [id], onDelete: SetNull)
 
   @@index([companyId, status])
   @@index([source, externalId])
+  @@index([integrationId, receivedAt])
+}
+
+/// Every call a shop makes to the e-commerce API: the integration's call log.
+model IntegrationApiCall {
+  id             String   @id @default(cuid())
+  companyId      String
+  integrationId  String
+  method         String
+  path           String
+  status         Int
+  errorCode      String?
+  idempotencyKey String?
+  ipAddress      String?
+  durationMs     Int?
+  createdAt      DateTime @default(now())
+
+  company     Company                 @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  integration SalesChannelIntegration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+
+  @@index([integrationId, createdAt])
+  @@index([companyId, createdAt])
+}
+
+/// The first answer to each Idempotency-Key a shop sent: a repeat gets the same answer.
+model IntegrationIdempotency {
+  id            String    @id @default(cuid())
+  companyId     String
+  integrationId String
+  key           String
+  method        String
+  path          String
+  /// SHA-256 of the method, path and body: the same key with another request is refused.
+  requestHash   String
+  /// Null while the first request is still running.
+  status        Int?
+  response      Json?
+  createdAt     DateTime  @default(now())
+  completedAt   DateTime?
+
+  company     Company                 @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  integration SalesChannelIntegration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+
+  @@unique([integrationId, key])
+  @@index([companyId, createdAt])
 }
 
 /// Courier API credentials per company (Pathao / Steadfast).
@@ -5334,6 +5420,11 @@ enum WebhookSource {
   STEADFAST
   WHATSAPP
   OTHER
+}
+
+enum WebhookDirection {
+  INCOMING
+  OUTGOING
 }
 
 enum WebhookStatus {

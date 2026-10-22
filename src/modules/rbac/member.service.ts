@@ -11,6 +11,7 @@ import { recordAudit } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { AI_ADDRESS_TEXT, isAiAddress } from "@/modules/ai/ai-address";
 import { CHECK_ADDRESS_TEXT, isCheckAddress } from "@/modules/ai/full-check/check-account";
+import { isShopAddress, SHOP_ADDRESS_TEXT } from "@/modules/ecommerce/shop-address";
 import { unlockSignIn } from "@/modules/auth/auth.service";
 import { emailSchema } from "@/modules/auth/schemas";
 import { revokeAllUserSessions } from "@/modules/auth/session.service";
@@ -36,7 +37,8 @@ export { actorOf, lockedPermissionsFor };
 export const addMemberSchema = z.object({
   email: emailSchema
     .refine((email) => !isAiAddress(email), AI_ADDRESS_TEXT)
-    .refine((email) => !isCheckAddress(email), CHECK_ADDRESS_TEXT),
+    .refine((email) => !isCheckAddress(email), CHECK_ADDRESS_TEXT)
+    .refine((email) => !isShopAddress(email), SHOP_ADDRESS_TEXT),
   name: z
     .string()
     .trim()

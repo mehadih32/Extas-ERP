@@ -239,15 +239,20 @@ export function canCreateChallan(
  * Lines and charges change before anything has left the warehouse. With a live
  * invoice the edit revises that invoice under the same number (Smart Edit,
  * `revise`), which a fully paid invoice no longer allows; without `revise` the
- * invoice has to be voided first.
+ * invoice has to be voided first. A processing order is edited while nothing
+ * of it was delivered (a website order the shop is working on, CN-005).
+ * `beforePacking` (the online shops' API) also refuses a packed order.
  */
 export function canEditOrder(
-  o: OrderState & { warehouseId: string | null },
+  o: OrderState & { warehouseId: string | null; packingList?: { number: string } | null },
   deliveredPieces: number,
-  options: { revise?: boolean } = {},
+  options: { revise?: boolean; beforePacking?: boolean } = {},
 ): Verdict {
-  if (o.status !== "CONFIRMED" && o.status !== "PACKED") {
+  if (o.status !== "CONFIRMED" && o.status !== "PROCESSING" && o.status !== "PACKED") {
     return refuse("CONFLICT", `A ${lower(o.status)} order cannot be edited.`);
+  }
+  if (options.beforePacking && (o.status === "PACKED" || o.packingList)) {
+    return refuse("CONFLICT", "This order is packed already, so it can no longer be edited.");
   }
   const invoice = liveInvoice(o.invoice);
   if (invoice && !options.revise) {
@@ -277,6 +282,10 @@ export function canCancelOrder(
   options: { returnDelivered?: boolean } = {},
 ): Verdict {
   if (o.status === "CANCELLED") return refuse("CONFLICT", "This order is already cancelled.");
+  if (o.status === "RETURNED" && deliveredPieces <= 0) {
+    // A website parcel that came back undelivered (CN-005): its stock was freed then.
+    return refuse("CONFLICT", "This order came back undelivered; its stock is free already.");
+  }
   if (deliveredPieces > 0) {
     if (!options.returnDelivered) {
       return refuse("CONFLICT", "Goods on this order were delivered; record a return instead.");

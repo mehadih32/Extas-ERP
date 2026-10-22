@@ -96,7 +96,8 @@ export const createOrderSchema = z.object({
     name: text(120),
     phone: text(30),
   }),
-  shippingAddress: text(1000),
+  /** At most 500 characters, as on the ERP's own order screens. */
+  shippingAddress: text(500),
   items: z.array(orderItemSchema).min(1).max(200),
   shippingFee: money.default(0),
   /** What the courier collects on delivery (0 when paid online). */
@@ -124,7 +125,7 @@ export const updateOrderSchema = z
     shippingFee: money.optional(),
     codAmount: money.optional(),
     customer: z.object({ name: text(120), phone: text(30) }).optional(),
-    shippingAddress: text(1000).optional(),
+    shippingAddress: text(500).optional(),
     note: optionalText(1000),
   })
   .refine((v) => Object.values(v).some((x) => x !== undefined), "Send a status or a change");
@@ -206,6 +207,32 @@ export const shipmentEventSchema = z.object({
   courierStatus: optionalText(100),
   note: optionalText(500),
 });
+
+/** The answer to POST /shipments. */
+export type ShopShipment = {
+  erpShipmentId: string;
+  externalOrderId: string;
+  courier: string;
+  consignmentId: string;
+  /** The shipment's status (CREATED when it is new). */
+  status: string;
+  /** The order's status after it (SHIPPED once a shipment is booked). */
+  orderStatus: string;
+};
+
+/** The answer to POST /shipments/{consignmentId}/events. */
+export type ShopShipmentEvent = {
+  erpShipmentId: string;
+  consignmentId: string;
+  /** The shipment's status: that of its latest event (by occurredAt). */
+  status: string;
+  orderStatus: string;
+  /**
+   * Set when the event was saved but the order could not follow it (for
+   * example money held on a parcel that came back): the step's error.
+   */
+  orderError?: { code: string; message: string };
+};
 
 export const RETURN_QC_RESULTS = ["GOOD", "B_GRADE", "DAMAGED"] as const;
 

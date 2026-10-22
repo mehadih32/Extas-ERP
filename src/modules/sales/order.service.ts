@@ -1,4 +1,4 @@
-import { Prisma, type SalesChannel } from "@prisma/client";
+import { type PaymentMethod, Prisma, type SalesChannel } from "@prisma/client";
 
 import { dateColumn, dateOnly, dayRange, localDay } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
@@ -195,6 +195,11 @@ type OrderDraft = {
   totalCartons?: number | null;
   /** Checked by the caller (resolvePacker). */
   packedById?: string | null;
+  /** An online shop's order (CN-005): its integration, its own id there, COD and how its buyer pays. */
+  integrationId?: string | null;
+  externalOrderId?: string | null;
+  codAmount?: number | null;
+  paymentMethod?: PaymentMethod | null;
 };
 
 /** A shipment cannot be due before the order was taken. */
@@ -244,6 +249,10 @@ export async function createOrderTx(
       totalCartons: draft.totalCartons ?? null,
       packedById: draft.packedById ?? null,
       notes: draft.notes ?? null,
+      integrationId: draft.integrationId ?? null,
+      externalOrderId: draft.externalOrderId ?? null,
+      codAmount: draft.codAmount ?? null,
+      paymentMethod: draft.paymentMethod ?? null,
       items: { create: itemRows(ctx, draft.lines, totals.lineTotals, draft.overrideReason) },
     },
   });
@@ -418,12 +427,15 @@ function editBasis(o: EditedOrder) {
  * (Smart Edit): the invoice keeps its number and takes the new total, its sale
  * is posted again and its packing list follows the new lines. A fully paid
  * invoice is locked; without the flag the invoice has to be voided first.
+ * The online shops' API (CN-005) also sets the COD amount and edits only
+ * before packing (`beforePacking`).
  */
 export async function updateOrder(
   ctx: CompanyContext,
   orderId: string,
   raw: unknown,
   meta?: RequestMeta,
+  options: { codAmount?: number; beforePacking?: boolean } = {},
 ) {
   const { reviseInvoice, ...input } = updateOrderSchema.parse(raw);
   const order = await ctx.db.salesOrder.findUnique({
@@ -438,6 +450,7 @@ export async function updateOrder(
   assertAllowed(
     canEditOrder(order, piecesOf(await deliveredByVariant(prisma, order.id)), {
       revise: reviseInvoice,
+      beforePacking: options.beforePacking,
     }),
   );
   const revising = live(order.invoice);
@@ -504,6 +517,7 @@ export async function updateOrder(
     assertAllowed(
       canEditOrder(current, piecesOf(await deliveredByVariant(tx, order.id)), {
         revise: reviseInvoice,
+        beforePacking: options.beforePacking,
       }),
     );
     if (totals.total.lt(current.paidAmount)) {
@@ -561,6 +575,7 @@ export async function updateOrder(
         ...(input.customerName !== undefined ? { customerName: input.customerName } : {}),
         ...(input.customerPhone !== undefined ? { customerPhone: input.customerPhone } : {}),
         ...(input.shippingAddress !== undefined ? { shippingAddress: input.shippingAddress } : {}),
+        ...(options.codAmount !== undefined ? { codAmount: options.codAmount } : {}),
         ...logisticsOf(input),
       },
     });
@@ -571,7 +586,10 @@ export async function updateOrder(
         action: "UPDATE",
         entityType: "SalesOrder",
         entityId: order.id,
-        summary: `Edited order ${order.number}: ${Object.keys(input).join(", ")}`,
+        summary: `Edited order ${order.number}: ${[
+          ...Object.keys(input),
+          ...(options.codAmount !== undefined ? ["codAmount"] : []),
+        ].join(", ")}`,
         before: { total: order.total.toFixed(2) },
         after: { total: totals.total.toFixed(2) },
       },

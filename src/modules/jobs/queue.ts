@@ -28,7 +28,8 @@ export type JobKind =
   | "ai.knowledge.test"
   | "ai.skill.test"
   | "ai.bot.incoming"
-  | "ai.bot.push";
+  | "ai.bot.push"
+  | "ecommerce.webhook.send";
 
 export const STALE_AFTER_MS = 10 * 60_000;
 const FIRST_RETRY_MS = 30_000;
@@ -56,6 +57,22 @@ export async function enqueueJob(db: Db, job: NewJob): Promise<BackgroundJob> {
       maxAttempts: job.maxAttempts ?? 5,
     },
   });
+}
+
+/** Adds many jobs in one insert (the same defaults as enqueueJob). */
+export async function enqueueJobs(db: Db, jobs: readonly NewJob[]): Promise<number> {
+  if (jobs.length === 0) return 0;
+  const now = new Date();
+  const { count } = await db.backgroundJob.createMany({
+    data: jobs.map((job) => ({
+      kind: job.kind,
+      companyId: job.companyId ?? null,
+      payload: job.payload,
+      runAfter: job.runAfter ?? now,
+      maxAttempts: job.maxAttempts ?? 5,
+    })),
+  });
+  return count;
 }
 
 /** The wait before try number `attempt + 1`: 30 s, then doubling, at most an hour. */

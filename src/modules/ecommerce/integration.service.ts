@@ -106,6 +106,16 @@ export const integrationSchema = z.object({
 
 export const pinSchema = z.object({ pin: z.string().max(20).optional() });
 
+/**
+ * The webhooks' place set to now (webhooks.ts): a shop that is new, gets a new
+ * webhook address, is switched on again or gets its first key hears about the
+ * changes from now on, not about all history (it reads that from the API).
+ */
+const webhooksFromNow = () => {
+  const now = new Date();
+  return { stockSentTo: now, variantsSentTo: now, webhooksStartedAt: now };
+};
+
 async function checkWarehouse(ctx: CompanyContext, warehouseId: string) {
   const warehouse = await ctx.db.warehouse.findFirst({
     where: { id: warehouseId, deletedAt: null },
@@ -139,6 +149,7 @@ export async function createIntegration(ctx: CompanyContext, raw: unknown, meta?
       ipAllowList: input.ipAllowList,
       rateLimitPerMinute: input.rateLimitPerMinute,
       createdById: ctx.user.id,
+      ...webhooksFromNow(),
     },
   });
   await shopAccountOf(integration);
@@ -171,6 +182,7 @@ export async function updateIntegration(
       webhookUrl: input.webhookUrl ?? null,
       ipAllowList: input.ipAllowList,
       rateLimitPerMinute: input.rateLimitPerMinute,
+      ...(input.webhookUrl && input.webhookUrl !== before.webhookUrl ? webhooksFromNow() : {}),
     },
   });
   if (integration.name !== before.name) await shopAccountOf(integration);
@@ -208,7 +220,7 @@ export async function setIntegrationActive(
   const integration = await findIntegration(ctx, id);
   await ctx.db.salesChannelIntegration.update({
     where: { id: integration.id },
-    data: { isActive },
+    data: { isActive, ...(isActive && !integration.isActive ? webhooksFromNow() : {}) },
   });
   await auditInCompany(ctx, meta, {
     action: "STATUS_CHANGE",
@@ -246,6 +258,7 @@ export async function generateKey(
         apiKeyCreatedAt: now,
         apiKeyRevokedAt: null,
         webhookSecretRef: encryptSecret(webhookSecret),
+        ...(rotating ? {} : webhooksFromNow()),
       },
     });
     await auditInCompany(

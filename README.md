@@ -48,9 +48,11 @@ it up takes one script on the server and four repository secrets:
 In production the app runs three clocks of its own: the daily backup (02:00), reminders, and
 the nightly housekeeping (03:30, Asia/Dhaka), which marks idle buyers dormant, closes settled
 accounts, removes expired sign-ins, deletes unused proof photos and quotation pictures, and
-deletes kept sales PDFs older than a day (`src/modules/housekeeping/scheduler.ts`). Each is off
-in development; set `BACKUP_SCHEDULER`, `REMINDER_SCHEDULER` or `HOUSEKEEPING_SCHEDULER` to
-`on` or `off` to choose. A background job worker also runs inside the app (signed PDFs and
+deletes kept sales PDFs older than a day (`src/modules/housekeeping/scheduler.ts`). A fourth
+clock tells each connected online shop every minute which stock and products changed (the
+e-commerce webhooks, `src/modules/ecommerce/webhook-clock.ts`; off on the demo site). Each is off
+in development; set `BACKUP_SCHEDULER`, `REMINDER_SCHEDULER`, `HOUSEKEEPING_SCHEDULER` or
+`ECOMMERCE_WEBHOOKS` to `on` or `off` to choose. A background job worker also runs inside the app (signed PDFs and
 other slow work, see "Background jobs" under HR & Payroll); `JOB_WORKER` switches it the same
 way.
 

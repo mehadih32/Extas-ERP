@@ -260,6 +260,8 @@ services:
       DEMO_SITE: "on"
       # Practice data needs no backups.
       BACKUP_SCHEDULER: "off"
+      # Its sample online shop is made up: nothing is sent to a shop from practice data.
+      ECOMMERCE_WEBHOOKS: "off"
       CLOUDFLARE_IPS_FILE: /data/cloudflare/ips.txt
     volumes:
       - ${DATA_DIR:-/srv/extras-erp}/demo/uploads:/data/uploads

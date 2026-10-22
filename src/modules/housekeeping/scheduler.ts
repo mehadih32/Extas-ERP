@@ -3,6 +3,7 @@ import { recordAudit } from "@/modules/audit/audit.service";
 import { purgeExpiredSessions } from "@/modules/auth/session.service";
 import { parseCron, previousRun } from "@/modules/backups/cron";
 import { purgeKeptSalesPdfs } from "@/modules/documents/print.service";
+import { purgeShopLogs } from "@/modules/ecommerce/housekeeping";
 import { purgeOldPings } from "@/modules/hr/location.service";
 import { purgeOldJobs } from "@/modules/jobs/queue";
 import { refreshStatusesForCompany } from "@/modules/parties/dormant.service";
@@ -26,7 +27,10 @@ import { purgeUnusedReferenceImages } from "@/modules/sales/reference-image.serv
  *   - background jobs finished more than 30 days ago (failed: 90) are cleared
  *     (jobs/queue.ts);
  *   - on-duty location pings older than 90 days are deleted
- *     (hr/location.service.ts).
+ *     (hr/location.service.ts);
+ *   - the online shops' call log (90 days), their kept Idempotency-Key answers
+ *     (30 days) and the webhooks sent to them that were delivered or skipped
+ *     (90 days) are cleared; failed webhooks stay (ecommerce/housekeeping.ts).
  * Every step is safe to repeat, so a run after a restart changes nothing new.
  */
 
@@ -71,6 +75,7 @@ export async function runHousekeeping(now: Date = new Date()) {
   const salesPdfsRemoved = await purgeKeptSalesPdfs(now);
   const jobsCleared = await purgeOldJobs(now);
   const pingsRemoved = await purgeOldPings(now);
+  const shopLogsCleared = await purgeShopLogs(now);
   return {
     companies: companies.length,
     markedDormant,
@@ -81,6 +86,7 @@ export async function runHousekeeping(now: Date = new Date()) {
     salesPdfsRemoved,
     jobsCleared,
     pingsRemoved,
+    shopLogsCleared,
   };
 }
 

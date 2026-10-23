@@ -23,6 +23,7 @@ import * as stock from "@/modules/inventory/stock.service";
 import { ensureWalkInParty } from "@/modules/parties/walk-in";
 import * as documents from "@/modules/sales/documents.service";
 import * as orders from "@/modules/sales/order.service";
+import * as receipts from "@/modules/sales/payment.service";
 import * as refunds from "@/modules/sales/refund.service";
 import * as returnScreens from "@/modules/sales/return-screens.service";
 import * as returns from "@/modules/sales/return.service";
@@ -449,6 +450,26 @@ run("E-commerce API: payments sent again (CN-005 review)", () => {
     });
     expect(await prisma.payment.count()).toBe(3);
     await expectBooksOk(shop);
+  });
+
+  it("matches a COD without a reference only with earlier ones without a reference", async () => {
+    await websiteOrder(shop, "WEB-1104", [[navyS, 2]], { deliver: true });
+    const withRef = await callShop(shop, postPayment, {
+      path: "/payments",
+      body: { externalOrderId: "WEB-1104", amount: 1000, method: "COD", reference: "SF-1" },
+    });
+    expect(withRef.status).toBe(201);
+    const without = await callShop(shop, postPayment, {
+      path: "/payments",
+      body: { externalOrderId: "WEB-1104", amount: 1000, method: "COD" },
+    });
+    expect(without.status).toBe(201);
+    const again = await callShop(shop, postPayment, {
+      path: "/payments",
+      body: { externalOrderId: "WEB-1104", amount: 1000, method: "COD" },
+    });
+    expect(again.status).toBe(409);
+    expect(again.body.error.details).toEqual({ erpPaymentId: without.body.erpPaymentId });
   });
 
   it("takes no money on an order whose parcel came back undelivered (409 ORDER_LOCKED)", async () => {
@@ -966,10 +987,10 @@ run("E-commerce API: a website return's credit (CN-005 review)", () => {
     expect(screen.salesReturn.invoice.due).toBe("1450.00");
     await expectBooksOk(shop);
 
-    // The courier collects the rest: more than that is refused.
+    // The courier collects the rest. More than due plus the return's credit is refused.
     const tooMuch = await callShop(shop, postPayment, {
       path: "/payments",
-      body: { externalOrderId: "WEB-3001", amount: 2900, method: "COD" },
+      body: { externalOrderId: "WEB-3001", amount: 2900.01, method: "COD" },
     });
     expect(tooMuch.status).toBe(422);
     const cod = await callShop(shop, postPayment, {
@@ -1182,6 +1203,138 @@ run("E-commerce API: a website return's credit (CN-005 review)", () => {
       }),
       "CONFLICT",
     );
+    await expectBooksOk(shop);
+  });
+
+  it("takes the full COD collected before a return: the credit becomes the customer's to pay back", async () => {
+    const order = await websiteOrder(shop, "WEB-3005", [[navyM, 2]], { deliver: true });
+    const ret = await returnOne("WEB-3005");
+    expect(ret.body).toMatchObject({ usedOnOrder: 1450, orderDue: 1450 });
+    // The courier had collected 2900 at the door; its remittance comes after the return.
+    const cod = await callShop(shop, postPayment, {
+      path: "/payments",
+      body: { externalOrderId: "WEB-3005", amount: 2900, method: "COD", reference: "SF-77" },
+    });
+    expect(cod.status).toBe(201);
+    expect(cod.body).toMatchObject({ amount: 2900, orderPaid: 2900, orderDue: 0 });
+    const rows = await prisma.creditAllocation.findMany();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.releasedAt).not.toBeNull();
+    expect(rows[0]!.releaseReason).toContain("left to pay back");
+    expect(await orderMoney(order.id)).toEqual({
+      paid: "2900.00",
+      due: "0.00",
+      invoiceDue: "0.00",
+      invoiceStatus: "PAID",
+    });
+    const screen = await returnScreens.getSalesReturnScreen(shop.accounts, ret.body.erpReturnId);
+    expect(screen.walkInCredit).toEqual({
+      usedOnInvoice: "0.00",
+      paidBack: "0.00",
+      left: "1450.00",
+    });
+    expect(screen.can.payBackKinds).toContain("CASH");
+    expect(await walkInBalance(shop)).toBe("-1450.00");
+    await expectBooksOk(shop);
+
+    // Accounts pays the customer back from the credit note.
+    await refunds.refundBuyer(shop.accounts, {
+      salesReturnId: ret.body.erpReturnId,
+      kind: "CASH",
+      method: "BKASH",
+      reference: "TRX-BACK-77",
+      amount: 1450,
+      reason: "Customer returned one shirt",
+    });
+    expect(await walkInBalance(shop)).toBe("0.00");
+    expect(await orderMoney(order.id)).toMatchObject({ paid: "2900.00", due: "0.00" });
+    await expectBooksOk(shop);
+  });
+
+  it("takes a prepaid bKash synced after every piece came back", async () => {
+    const order = await websiteOrder(shop, "WEB-3006", [[navyM, 2]], { deliver: true });
+    const ret = await callShop(shop, postReturn, {
+      path: "/returns",
+      body: {
+        externalOrderId: "WEB-3006",
+        reason: "Size problem",
+        items: [{ sku: navyM, quantity: 2, qc: "GOOD" }],
+      },
+    });
+    expect(ret.body).toMatchObject({ usedOnOrder: 2900, orderDue: 0, orderStatus: "RETURNED" });
+    // The credit paid it in full, yet the bKash paid at checkout is still to be recorded.
+    const bkash = await callShop(shop, postPayment, {
+      path: "/payments",
+      body: { externalOrderId: "WEB-3006", amount: 2900, method: "BKASH", reference: "TRX-LATE" },
+    });
+    expect(bkash.status).toBe(201);
+    expect(bkash.body).toMatchObject({ orderPaid: 2900, orderDue: 0 });
+    expect(await prisma.creditAllocation.count({ where: { releasedAt: null } })).toBe(0);
+    const screen = await returnScreens.getSalesReturnScreen(shop.accounts, ret.body.erpReturnId);
+    expect(screen.walkInCredit!.left).toBe("2900.00");
+    expect(await walkInBalance(shop)).toBe("-2900.00");
+    expect((await orderMoney(order.id)).paid).toBe("2900.00");
+    await expectBooksOk(shop);
+  });
+
+  it("takes part of the credit's place, in the ERP too, and never more than due plus the credit", async () => {
+    const order = await websiteOrder(shop, "WEB-3007", [[navyM, 2]], { deliver: true });
+    const ret = await returnOne("WEB-3007");
+    const tooMuch = await callShop(shop, postPayment, {
+      path: "/payments",
+      body: { externalOrderId: "WEB-3007", amount: 2900.01, method: "COD", reference: "SF-1" },
+    });
+    expect(tooMuch.status).toBe(422);
+    expect(tooMuch.body.error.message).toContain("2900.00");
+    await expectAppError(
+      receipts.receivePayment(shop.accounts, {
+        orderId: order.id,
+        amount: 2900.01,
+        method: "CASH",
+      }),
+      "VALIDATION",
+    );
+
+    // 2000 comes in: 1450 was due, so 550 of the credit steps aside (the allocation is
+    // released and a smaller one takes its place).
+    const part = await callShop(shop, postPayment, {
+      path: "/payments",
+      body: { externalOrderId: "WEB-3007", amount: 2000, method: "COD", reference: "SF-2" },
+    });
+    expect(part.status).toBe(201);
+    const rows = await prisma.creditAllocation.findMany({ orderBy: { createdAt: "asc" } });
+    expect(rows.map((r) => [r.amount.toFixed(2), r.releasedAt === null])).toEqual([
+      ["1450.00", false],
+      ["900.00", true],
+    ]);
+    expect(rows[1]!.salesReturnId).toBe(ret.body.erpReturnId);
+    let screen = await returnScreens.getSalesReturnScreen(shop.accounts, ret.body.erpReturnId);
+    expect(screen.walkInCredit).toMatchObject({ usedOnInvoice: "900.00", left: "550.00" });
+    await expectBooksOk(shop);
+
+    // In the ERP: the order offers to receive up to what the credit still pays.
+    const { getOrderScreen } = await import("@/modules/sales/screens.service");
+    const view = await getOrderScreen(shop.accounts, order.id);
+    expect(view.can.receive).toBe(true);
+    expect(view.can.receiveUpTo).toBe("900.00");
+    await receipts.receivePayment(shop.accounts, {
+      orderId: order.id,
+      amount: 900,
+      method: "CASH",
+    });
+    screen = await returnScreens.getSalesReturnScreen(shop.accounts, ret.body.erpReturnId);
+    expect(screen.walkInCredit).toMatchObject({ usedOnInvoice: "0.00", left: "1450.00" });
+    expect(await orderMoney(order.id)).toMatchObject({ paid: "2900.00", due: "0.00" });
+    const after = await getOrderScreen(shop.accounts, order.id);
+    expect(after.can.receive).toBe(false);
+    expect(after.can.receiveUpTo).toBeNull();
+    await expectBooksOk(shop);
+
+    // Voiding the return now leaves the cash as paid: nothing was allocated any more.
+    await returns.voidSalesReturn(shop.accounts, ret.body.erpReturnId, {
+      reason: "Recorded by mistake",
+    });
+    expect(await orderMoney(order.id)).toMatchObject({ paid: "2900.00", due: "0.00" });
     await expectBooksOk(shop);
   });
 

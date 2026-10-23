@@ -931,6 +931,7 @@ export async function getOrderScreen(ctx: CompanyContext, orderId: string) {
         id: true,
         amount: true,
         createdAt: true,
+        salesReturnId: true,
         payment: { select: { id: true, number: true } },
       },
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
@@ -967,6 +968,10 @@ export async function getOrderScreen(ctx: CompanyContext, orderId: string) {
     }),
   ]);
   const due = order.total.minus(order.paidAmount);
+  // A website order's return credit steps aside for money paid for the same pieces.
+  const returnCredit = order.partyId
+    ? money(0)
+    : credits.filter((c) => c.salesReturnId !== null).reduce((s, c) => s.plus(c.amount), money(0));
   const returns = presentReturns(returnRows, tz);
   const standing = returns.filter((r) => !r.voided).length;
 
@@ -1085,7 +1090,16 @@ export async function getOrderScreen(ctx: CompanyContext, orderId: string) {
         )
       : null,
     can: {
-      receive: access.receive && canReceiveOnOrder(order).ok,
+      receive:
+        access.receive &&
+        canReceiveOnOrder({ ...order, paidAmount: order.paidAmount.minus(returnCredit) }).ok,
+      /**
+       * A website order whose return credit pays part of the due: money received may be up
+       * to this (the credit then becomes the customer's to pay back); null otherwise.
+       */
+      receiveUpTo: returnCredit.gt(0)
+        ? fixed((due.gt(0) ? due : money(0)).plus(returnCredit))
+        : null,
       /** Money above the due may be kept as the buyer's advance balance (invoiced, named buyer). */
       receiveExtra: access.receive && invoice !== null && order.partyId !== null,
       useCredit:

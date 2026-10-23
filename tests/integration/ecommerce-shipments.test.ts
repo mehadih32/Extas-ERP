@@ -292,4 +292,56 @@ run("E-commerce API: shipments and courier events (CN-005)", () => {
     expect(badSignature.status).toBe(401);
     expect(badSignature.body.error.code).toBe("BAD_SIGNATURE");
   });
+
+  it("a repeat with the same Idempotency-Key gets the first answer and does nothing twice", async () => {
+    // PATCH /orders/{id}: the key is honoured when sent.
+    const change = (key: string, status: string) =>
+      callShop<{ externalOrderId: string }>(shop, patchRoute, {
+        method: "PATCH",
+        path: "/orders/WEB-1",
+        body: { status },
+        params: { externalOrderId: "WEB-1" },
+        idempotencyKey: key,
+      });
+    const processing = await change("patch-1", "PROCESSING");
+    expect(processing.status, JSON.stringify(processing.body)).toBe(200);
+    const auditsAfterFirst = await prisma.auditLog.count({ where: { companyId: shop.company.id } });
+    const patchAgain = await change("patch-1", "PROCESSING");
+    expect(patchAgain.status).toBe(200);
+    expect(patchAgain.headers.get("Idempotent-Replayed")).toBe("true");
+    expect(patchAgain.body).toEqual(processing.body);
+    expect(await prisma.auditLog.count({ where: { companyId: shop.company.id } })).toBe(
+      auditsAfterFirst,
+    );
+    expect((await change("patch-1", "PACKED")).body.error.code).toBe("IDEMPOTENCY_KEY_REUSED");
+
+    // POST /shipments.
+    const booking = { externalOrderId: "WEB-1", courier: "Pathao", consignmentId: "PTH-42" };
+    const booked = await ship(shop, booking, "ship-1");
+    expect(booked.status, JSON.stringify(booked.body)).toBe(201);
+    const bookedAgain = await ship(shop, booking, "ship-1");
+    expect(bookedAgain.status).toBe(201);
+    expect(bookedAgain.headers.get("Idempotent-Replayed")).toBe("true");
+    expect(bookedAgain.body).toEqual(booked.body);
+    expect(await prisma.shipment.count({ where: { orderId } })).toBe(1);
+
+    // POST /shipments/{consignmentId}/events.
+    const delivered = () =>
+      callShop<{ consignmentId: string }>(shop, eventsRoute, {
+        path: "/shipments/PTH-42/events",
+        body: { status: "DELIVERED", occurredAt: "2026-10-21T15:30:00+06:00" },
+        params: { consignmentId: "PTH-42" },
+        idempotencyKey: "event-1",
+      });
+    const first = await delivered();
+    expect(first.status, JSON.stringify(first.body)).toBe(201);
+    const events = await prisma.shipmentEvent.count({ where: { shipment: { orderId } } });
+    const again = await delivered();
+    expect(again.status).toBe(201);
+    expect(again.headers.get("Idempotent-Replayed")).toBe("true");
+    expect(again.body).toEqual(first.body);
+    expect(await prisma.shipmentEvent.count({ where: { shipment: { orderId } } })).toBe(events);
+    expect(await prisma.invoice.count({ where: { orderId } })).toBe(1);
+    expect((await stockRow()).quantity).toBe(8);
+  });
 });

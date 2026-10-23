@@ -89,6 +89,7 @@ run("E-commerce API: keys, signatures and idempotency (CN-005)", () => {
     const res = await callShop(shop, health, { path: "/health", key: "nope", headers: from });
     expect(res.status).toBe(429);
     expect(res.body.error.code).toBe("RATE_LIMITED");
+    expect(res.headers.get("retry-after")).toBe("60");
   });
 
   it("takes the company from the key, never from the body", async () => {

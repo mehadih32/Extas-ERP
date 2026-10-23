@@ -76,7 +76,14 @@ const json = (status: number, body: unknown, headers?: Record<string, string>) =
 const fail = (status: number, code: string, message: string, details?: unknown) =>
   new EcommerceApiError(status, code, message, details);
 
-/** The integration a key belongs to, or a 401. */
+/** A 429: the wrapper adds Retry-After to it. */
+class TooMany extends EcommerceApiError {
+  constructor(message: string) {
+    super(429, "RATE_LIMITED", message);
+  }
+}
+
+/** The integration a key belongs to, or a 401 (a 429 after too many wrong keys). */
 async function authenticate(request: Request, address: string | undefined) {
   const match = /^Bearer\s+(\S+)\s*$/i.exec(request.headers.get("authorization") ?? "");
   const integration = match
@@ -91,7 +98,14 @@ async function authenticate(request: Request, address: string | undefined) {
     integration.apiKeyRevokedAt ||
     !integration.company.isActive
   ) {
-    checkRateLimit(`ecommerce-bad-key:${address ?? "unknown"}`, BAD_KEYS_PER_MINUTE, 60_000);
+    try {
+      checkRateLimit(`ecommerce-bad-key:${address ?? "unknown"}`, BAD_KEYS_PER_MINUTE, 60_000);
+    } catch (error) {
+      if (error instanceof AppError && error.code === "RATE_LIMITED") {
+        throw new TooMany("Too many wrong keys from this address: wait a minute and try again.");
+      }
+      throw error;
+    }
     throw fail(
       401,
       "UNAUTHENTICATED",
@@ -284,10 +298,7 @@ export function ecommerceRoute<P = Record<string, never>>(
         checkRateLimit(`ecommerce:${integration.id}`, integration.rateLimitPerMinute, 60_000);
       } catch (error) {
         if (error instanceof AppError && error.code === "RATE_LIMITED") {
-          headers = { "Retry-After": "60" };
-          throw fail(
-            429,
-            "RATE_LIMITED",
+          throw new TooMany(
             `At most ${integration.rateLimitPerMinute} requests a minute: wait and try again.`,
           );
         }
@@ -360,7 +371,10 @@ export function ecommerceRoute<P = Record<string, never>>(
       status = answer.status;
       body = answer.body;
       errorCode = answer.body.error.code;
-      if (status >= 500 && !(error instanceof EcommerceApiError)) noteUnexpected(error, request);
+      if (error instanceof TooMany) headers = { "Retry-After": "60" };
+      if (status >= 500 && !(error instanceof EcommerceApiError)) {
+        noteUnexpected(error, request, integration?.companyId);
+      }
     }
     if (claimed) {
       try {
@@ -377,7 +391,7 @@ export function ecommerceRoute<P = Record<string, never>>(
 }
 
 /** Keeps an unexpected error for Bug Guard: the route and the error, never the request's data. */
-function noteUnexpected(error: unknown, request: Request) {
+function noteUnexpected(error: unknown, request: Request, companyId: string | undefined) {
   void import("@/modules/bug-guard/server-errors")
     .then(({ recordServerError }) =>
       recordServerError({
@@ -386,6 +400,7 @@ function noteUnexpected(error: unknown, request: Request) {
         method: request.method,
         path: new URL(request.url).pathname,
         cookie: null,
+        companyId,
       }),
     )
     .catch(() => undefined);

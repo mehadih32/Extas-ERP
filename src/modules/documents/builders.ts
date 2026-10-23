@@ -1265,18 +1265,22 @@ export async function refundDocument(
   const r = await getRefund(ctx, refundId);
   const tz = ctx.company.timezone;
   const currency = ctx.company.currency;
-  const { order, proforma } = r;
+  const { order, proforma, salesReturn } = r;
   const titles = REFUND_TITLES[r.kind];
+  // A website return's credit (CN-005) names the customer on the return's order.
+  const customer = order ?? salesReturn?.order;
   const buyer: PartyLike = r.party ?? {
-    name: order?.customerName ?? "Walk-in customer",
-    phone: order?.customerPhone,
-    address: order?.shippingAddress,
+    name: customer?.customerName ?? "Walk-in customer",
+    phone: customer?.customerPhone,
+    address: customer?.shippingAddress,
   };
   const from = proforma
     ? `the advance paid on proforma invoice ${proforma.number}`
     : order
       ? `the money paid on order ${order.number}`
-      : "credit on the buyer's account";
+      : salesReturn
+        ? `the credit from sales return ${salesReturn.number}`
+        : "credit on the buyer's account";
   const particulars =
     r.kind === "CASH"
       ? `Refund of ${from}`
@@ -1321,6 +1325,12 @@ export async function refundDocument(
           : []),
       ...(proforma ? [{ label: "Proforma no.", value: proforma.number }] : []),
       ...(order ? [{ label: "Order no.", value: order.number }] : []),
+      ...(salesReturn
+        ? [
+            { label: "Credit note no.", value: salesReturn.number },
+            { label: "Order no.", value: salesReturn.order.number },
+          ]
+        : []),
     ],
     parties: [{ heading: titles.heading, lines: partyLines(buyer) }],
     blocks: [

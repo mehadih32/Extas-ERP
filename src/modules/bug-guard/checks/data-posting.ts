@@ -308,10 +308,17 @@ async function salesPosting(ctx: CheckContext) {
       WHERE i."companyId" = ${companyId}
       GROUP BY i.id`,
     ctx.db.$queryRaw<
-      Array<Doc & { orderId: string | null; proformaId: string | null; partyId: string | null }>
+      Array<
+        Doc & {
+          orderId: string | null;
+          proformaId: string | null;
+          partyId: string | null;
+          salesReturnId: string | null;
+        }
+      >
     >`
       SELECT r.id, r.number, r.amount, (r."voidedAt" IS NOT NULL) AS voided, true AS "needsEntry",
-             r."orderId", r."proformaId", r."partyId",
+             r."orderId", r."proformaId", r."partyId", r."salesReturnId",
              je.id AS "entryId", je.number AS "entryNumber", je."isReversed" AS "entryReversed",
              ${entryDebit(Prisma.sql`je.id`)} AS debit, r."refundDate" AS at
       FROM "Refund" r
@@ -456,11 +463,12 @@ async function salesPosting(ctx: CheckContext) {
       SALES,
       {
         name: "রিফান্ড",
-        // A refund has no page of its own: it shows on its order, proforma or buyer.
+        // A refund has no page of its own: it shows on its order, proforma, sales return or buyer.
         href: (id) => {
           const r = refunds.find((x) => x.id === id);
           if (r?.orderId) return salesHref.order(r.orderId);
           if (r?.proformaId) return salesHref.proforma(r.proformaId);
+          if (r?.salesReturnId) return salesHref.salesReturn(r.salesReturnId);
           return r?.partyId ? salesHref.buyer(r.partyId) : "/sales/payments";
         },
         redo: "রিফান্ডটি “Void the refund” দিয়ে বাতিল করে আবার দিন।",

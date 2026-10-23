@@ -1,3 +1,5 @@
+import { Prisma } from "@prisma/client";
+
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import { assertAllowed } from "@/lib/verdict";
@@ -19,13 +21,39 @@ import { returnSchema } from "./schemas";
  *   GOOD      back into sellable stock at the cost it left at
  *   B_GRADE   into B-grade stock at that cost
  *   DAMAGED   to Damage & QC Rejects, as the ERP's own return screen does
- * The money credited stays on the Walk-in customers account (a website order
- * has no buyer profile): the API never pays money out.
+ * A website order has no buyer profile, so the credit at once pays what the
+ * order's invoice still has due (an unpaid COD order then owes only for the
+ * pieces kept); what is left over stays on the Walk-in customers account for
+ * Accounts to pay back in the ERP. The API never pays money out.
+ *
+ * `externalReturnId`, the shop's own id for the return, is taken once per shop
+ * (409 RETURN_EXISTS), so a return sent again under a new Idempotency-Key is
+ * not recorded twice.
  */
+
+/** 409 RETURN_EXISTS: this shop's return with that id is recorded already. */
+async function returnExists(call: ShopCall, externalReturnId: string) {
+  const same = await call.ctx.db.salesReturn.findFirst({
+    where: { integrationId: call.integration.id, externalReturnId },
+    select: { id: true, number: true, voidedAt: true },
+  });
+  if (!same) return null;
+  return new EcommerceApiError(
+    409,
+    "RETURN_EXISTS",
+    `Return ${externalReturnId} is already recorded as ${same.number}${same.voidedAt ? " (since voided)" : ""}.`,
+    { erpReturnId: same.id, erpReturnNumber: same.number },
+  );
+}
 
 export async function recordShopReturn(call: ShopCall) {
   const input = returnSchema.parse(call.body);
   const { ctx } = call;
+  const externalReturnId = input.externalReturnId || undefined;
+  if (externalReturnId) {
+    const exists = await returnExists(call, externalReturnId);
+    if (exists) throw exists;
+  }
   const found = await shopOrderOf(call, input.externalOrderId);
   const order = await ctx.db.salesOrder.findUniqueOrThrow({
     where: { id: found.id },
@@ -85,22 +113,50 @@ export async function recordShopReturn(call: ShopCall) {
     return parts;
   });
 
-  const credit = await createSalesReturn(
-    ctx,
-    {
-      invoiceId: order.invoice.id,
-      items,
-      reason: input.reason,
-      returnDate: input.returnDate,
-    },
-    call.meta,
-    { walkInCredit: true },
-  );
+  let credit;
+  try {
+    credit = await createSalesReturn(
+      ctx,
+      {
+        invoiceId: order.invoice.id,
+        items,
+        reason: input.reason,
+        returnDate: input.returnDate,
+      },
+      call.meta,
+      { walkInCredit: true, integrationId: call.integration.id, externalReturnId },
+    );
+  } catch (error) {
+    // The same return sent twice at once: the second waits on the order, then hits the unique id.
+    if (
+      externalReturnId &&
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    ) {
+      throw (await returnExists(call, externalReturnId)) ?? error;
+    }
+    throw error;
+  }
+  const after = await ctx.db.salesOrder.findUniqueOrThrow({
+    where: { id: order.id },
+    select: { total: true, paidAmount: true },
+  });
+  const usedOnInvoice = await ctx.db.creditAllocation.aggregate({
+    where: { salesReturnId: credit.id, releasedAt: null },
+    _sum: { amount: true },
+  });
+  const used = Number((usedOnInvoice._sum.amount ?? new Prisma.Decimal(0)).toFixed(2));
+  const credited = Number(credit.amount.toFixed(2));
   return {
     erpReturnId: credit.id,
     erpReturnNumber: credit.number,
     externalOrderId: input.externalOrderId,
-    credited: Number(credit.amount.toFixed(2)),
+    externalReturnId: externalReturnId ?? null,
+    credited,
+    /** Of the credit: what paid the order's due, and what is left for Accounts to pay back. */
+    usedOnOrder: used,
+    toPayBack: Math.max(Number((credited - used).toFixed(2)), 0),
+    orderDue: Math.max(Number(after.total.minus(after.paidAmount).toFixed(2)), 0),
     orderStatus: credit.order.status,
     items: input.items.map(({ sku, quantity, qc }) => ({ sku, quantity, qc })),
   };

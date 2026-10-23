@@ -250,6 +250,8 @@ const dayOrNow = (form: FormData, name: string, today: string) => {
 /**
  * Takes money back off an order or a proforma (Accounts): paid back, kept as
  * the buyer's credit or kept as a cancellation charge, each needing its own key.
+ * On a website return (`salesReturnId`) it pays back the credit its invoice
+ * did not use.
  */
 export function RefundDialog({
   target,
@@ -260,19 +262,31 @@ export function RefundDialog({
   onDone,
   onClose,
 }: {
-  target: { orderId: string; label: string } | { proformaId: string; label: string };
+  target:
+    | { orderId: string; label: string }
+    | { proformaId: string; label: string }
+    | { salesReturnId: string; label: string };
   kinds: RefundKind[];
-  /** Money held on it now: the most that can be refunded. */
+  /** Money held on it now (a return's credit left): the most that can be refunded. */
   held: string;
   currency: string;
   today: string;
   onDone: (message: string) => void;
   onClose: () => void;
 }) {
+  const fromReturn = "salesReturnId" in target;
   return (
     <FormDialog
-      title={`Refund money paid on ${target.label}`}
-      description={`${money(held, currency)} paid on it can be refunded. A refund voucher is made for it.`}
+      title={
+        fromReturn
+          ? `Pay back the credit from ${target.label}`
+          : `Refund money paid on ${target.label}`
+      }
+      description={
+        fromReturn
+          ? `${money(held, currency)} of its credit was not needed on its invoice and can be paid back. A refund voucher is made for it.`
+          : `${money(held, currency)} paid on it can be refunded. A refund voucher is made for it.`
+      }
       submitLabel="Record the refund"
       pendingLabel="Recording"
       errorTitle="We could not record the refund"
@@ -285,7 +299,9 @@ export function RefundDialog({
         const result = await refundBuyerAction({
           ...("orderId" in target
             ? { orderId: target.orderId }
-            : { proformaId: target.proformaId }),
+            : "proformaId" in target
+              ? { proformaId: target.proformaId }
+              : { salesReturnId: target.salesReturnId }),
           ...readSettle(form),
           amount,
           reason,

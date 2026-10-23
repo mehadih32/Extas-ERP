@@ -11,8 +11,11 @@ import { adSpendSchema } from "./schemas";
  * (and campaign), kept as AdSpend. The shop sends running daily totals, so a
  * day's figure for the same platform and campaign is replaced by the newer
  * one (200, replaced: true); a new one is added (201). No campaign is a
- * figure of its own. Two at once for the same figure wait for each other (a
- * lock on the day, platform and campaign), so there is always one row.
+ * figure of its own. Each shop keeps its own figures (AdSpend.integrationId):
+ * two shops of one company spending on the same day and platform are two
+ * rows, and ad spend entered in the ERP (no shop) is never replaced. Two at
+ * once for the same figure wait for each other (a lock on the shop, day,
+ * platform and campaign), so there is always one row.
  *
  * Ad spend is a report figure, not money moving: nothing is posted to the
  * books (the bills are paid and booked as expenses in Accounts).
@@ -22,6 +25,7 @@ export async function recordAdSpend(call: ShopCall) {
   const input = adSpendSchema.parse(call.body);
   const { ctx } = call;
   const companyId = ctx.company.id;
+  const integrationId = call.integration.id;
   const campaign = input.campaign ? input.campaign : null;
   // An ad account a little ahead of the company's clock may already be on tomorrow.
   const tomorrow = localDay(new Date(Date.now() + 86_400_000), ctx.company.timezone);
@@ -33,9 +37,9 @@ export async function recordAdSpend(call: ShopCall) {
 
   const { row, replaced } = await prisma.$transaction(
     async (tx) => {
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`ad-spend:${companyId}:${input.date}:${input.platform}:${campaign ?? ""}`}))`;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`ad-spend:${companyId}:${integrationId}:${input.date}:${input.platform}:${campaign ?? ""}`}))`;
       const existing = await tx.adSpend.findFirst({
-        where: { companyId, date, platform: input.platform, campaign },
+        where: { companyId, integrationId, date, platform: input.platform, campaign },
         orderBy: { createdAt: "asc" },
       });
       const what = `${input.platform}${campaign ? ` (${campaign})` : ""} on ${input.date}`;
@@ -60,7 +64,14 @@ export async function recordAdSpend(call: ShopCall) {
         return { row, replaced: true };
       }
       const row = await tx.adSpend.create({
-        data: { companyId, date, platform: input.platform, campaign, amount: input.amount },
+        data: {
+          companyId,
+          integrationId,
+          date,
+          platform: input.platform,
+          campaign,
+          amount: input.amount,
+        },
       });
       await auditInCompany(
         ctx,

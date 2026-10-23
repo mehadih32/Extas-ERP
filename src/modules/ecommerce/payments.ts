@@ -3,6 +3,7 @@ import type { PaymentMethod, Prisma } from "@prisma/client";
 import { localDay, startOfDayInZone } from "@/lib/dates";
 import { prisma } from "@/lib/prisma";
 import { lockRow } from "@/lib/row-lock";
+import { deliveredByVariant } from "@/modules/sales/documents.service";
 import { receivePaymentTx } from "@/modules/sales/payment.service";
 import { receivePaymentSchema } from "@/modules/sales/schemas";
 import { money } from "@/modules/sales/totals";
@@ -23,7 +24,12 @@ import { paymentSchema, type ShopPaymentMethod } from "./schemas";
  *
  * Besides the Idempotency-Key, the same order, method and reference is taken
  * only once (409 PAYMENT_EXISTS): a shop that lost its key and sends the
- * payment again under a new one does not record the money twice.
+ * payment again under a new one does not record the money twice. So bKash,
+ * Nagad and card money needs its transaction id (reference); a cash on
+ * delivery sent without one is taken once per amount on an order (a second
+ * COD of the same amount needs its own reference, such as the courier's
+ * invoice). An order whose parcel came back undelivered takes no money (409
+ * ORDER_LOCKED): nothing is owed on it.
  */
 
 /** The ERP's payment method for the shop's (each goes to its method's default account). */
@@ -88,30 +94,41 @@ export async function recordShopPayment(call: ShopCall) {
     async (tx) => {
       // The order first, as the receipt locks it: the checks below then hold until it is recorded.
       await lockRow(tx, "SalesOrder", order.id);
-      if (reference) {
-        const same = await tx.payment.findFirst({
-          where: {
-            companyId: ctx.company.id,
-            orderId: order.id,
-            direction: "RECEIVED",
-            method,
-            reference,
-          },
-          select: { id: true, number: true },
-        });
-        if (same) {
-          throw new EcommerceApiError(
-            409,
-            "PAYMENT_EXISTS",
-            `This payment (${input.method} ${reference}) is already recorded on the order as ${same.number}.`,
-            { erpPaymentId: same.id },
-          );
-        }
+      // The same transaction id, or (COD without one) the same amount, is the same payment.
+      const same = await tx.payment.findFirst({
+        where: {
+          companyId: ctx.company.id,
+          orderId: order.id,
+          direction: "RECEIVED",
+          method,
+          ...(reference ? { reference } : { amount: money(input.amount) }),
+        },
+        select: { id: true, number: true },
+      });
+      if (same) {
+        throw new EcommerceApiError(
+          409,
+          "PAYMENT_EXISTS",
+          reference
+            ? `This payment (${input.method} ${reference}) is already recorded on the order as ${same.number}.`
+            : `A ${input.method} payment of ${money(input.amount).toFixed(2)} is already recorded on the order as ${same.number}. Send another one with its own reference.`,
+          { erpPaymentId: same.id },
+        );
       }
       const current = await tx.salesOrder.findUniqueOrThrow({
         where: { id: order.id },
         select: { number: true, status: true, total: true, paidAmount: true },
       });
+      if (current.status === "RETURNED") {
+        const delivered = [...(await deliveredByVariant(tx, order.id)).values()];
+        if (!delivered.some((pieces) => pieces > 0)) {
+          throw new EcommerceApiError(
+            409,
+            "ORDER_LOCKED",
+            `${current.number} came back undelivered, so nothing is owed on it.`,
+          );
+        }
+      }
       // A cancelled order is refused by the receipt itself (409).
       if (current.status !== "CANCELLED") {
         const due = current.total.minus(current.paidAmount);

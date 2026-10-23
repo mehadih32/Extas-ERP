@@ -570,6 +570,9 @@ const paymentHeld = (held: Prisma.Decimal, number: string) =>
 const withReason = (notes: string | null, line: string) =>
   [notes, line].filter(Boolean).join("\n").slice(0, 4000);
 
+/** The longest reason the ERP's cancel takes (cancelOrderSchema). */
+const CANCEL_REASON_MAX = 500;
+
 /** CANCELLED: the ERP's own cancel, which frees the reservation. */
 async function cancelShopOrder(call: Call, orderId: string, reason: string | undefined) {
   const { ctx, meta } = call;
@@ -590,7 +593,11 @@ async function cancelShopOrder(call: Call, orderId: string, reason: string | und
       `Invoice ${invoice.number} is issued for this order: cancel it in the ERP.`,
     );
   }
-  const why = `Cancelled by the shop: ${reason ?? "no reason given"}`;
+  // Kept within the cancel's own reason limit (cancelOrderSchema: 500), without cutting a
+  // character in half.
+  const why = `Cancelled by the shop: ${reason ?? "no reason given"}`
+    .slice(0, CANCEL_REASON_MAX)
+    .replace(/[\uD800-\uDBFF]$/, "");
   try {
     await cancelOrder(ctx, order.id, { reason: why }, meta);
   } catch (error) {

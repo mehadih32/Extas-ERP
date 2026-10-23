@@ -18,6 +18,7 @@ import { assertNotWalkIn } from "@/modules/parties/walk-in";
 import { startProductionIfAdvancePaid } from "@/modules/sales/payment.service";
 import { walkInReturnCredit } from "@/modules/sales/return.service";
 import {
+  deliveredPieces,
   heldOnOrder,
   heldOnProforma,
   ledgerPartyId,
@@ -354,7 +355,8 @@ export async function voidRefund(
         !order && refund.proformaId
           ? await tx.proformaInvoice.findUniqueOrThrow({ where: { id: refund.proformaId } })
           : null;
-      assertAllowed(canVoidRefund(refund, { order, proforma }));
+      const piecesOut = order ? await deliveredPieces(tx, order.id) : 0;
+      assertAllowed(canVoidRefund(refund, { order, deliveredPieces: piecesOut, proforma }));
 
       if (order) {
         const held = await heldOnOrder(tx, order.id);

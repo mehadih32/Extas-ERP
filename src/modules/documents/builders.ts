@@ -337,9 +337,17 @@ function paymentsTable(
   ];
 }
 
-/** The buyer's credit (advance balance) put against an invoice. */
+/**
+ * Credit put against an invoice: the buyer's advance balance (or the payment it
+ * came from), or a website return's credit paying its own invoice (its credit note).
+ */
 function creditsTable(
-  credits: Array<{ amount: Prisma.Decimal; date: Date; paymentNumber: string | null }>,
+  credits: Array<{
+    amount: Prisma.Decimal;
+    date: Date;
+    paymentNumber: string | null;
+    creditNote?: { number: string } | null;
+  }>,
   currency: string,
   timeZone: string,
 ): Block[] {
@@ -356,7 +364,11 @@ function creditsTable(
       rows: credits.map((c) => ({
         cells: [
           formatInstantDay(c.date, timeZone),
-          c.paymentNumber ? `Payment ${c.paymentNumber}` : "Advance balance",
+          c.creditNote
+            ? `Credit note ${c.creditNote.number}`
+            : c.paymentNumber
+              ? `Payment ${c.paymentNumber}`
+              : "Advance balance",
           money(c.amount, currency),
         ],
       })),

@@ -326,6 +326,8 @@ run("money on a buyer's account", () => {
 
     const screen = await screens.getOrderScreen(env.accountsCtx, order.id);
     expect(screen.order.credits.map((c) => c.amount)).toEqual(["300.00"]);
+    // The buyer's own credit is no credit note: the page says "from the advance balance".
+    expect(screen.order.credits.map((c) => c.creditNote)).toEqual([null]);
     expect(screen.buyerMoney).toEqual({ previousDue: "400.00", credit: "200.00" });
 
     const invoice = await invoiceOf(order.id);
@@ -402,6 +404,7 @@ run("checkout with the previous due and credit", () => {
     expect(p.paidTowardPrevious.toFixed(2)).toBe("1700.00");
     expect(p.balanceDue.toFixed(2)).toBe("100.00");
     expect(doc.credits.map((c) => c.amount.toFixed(2))).toEqual(["500.00", "1300.00"]);
+    expect(doc.credits.map((c) => c.creditNote)).toEqual([null, null]);
   });
 
   it("issues the invoice later with the previous due, for people who see balances", async () => {

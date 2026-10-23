@@ -933,6 +933,7 @@ export async function getOrderScreen(ctx: CompanyContext, orderId: string) {
         createdAt: true,
         salesReturnId: true,
         payment: { select: { id: true, number: true } },
+        salesReturn: { select: { id: true, number: true } },
       },
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     }),
@@ -1052,17 +1053,21 @@ export async function getOrderScreen(ctx: CompanyContext, orderId: string) {
         paidOn: localDay(p.paymentDate, tz),
         isAdvance: p.isAdvance,
       })),
-      refunds: presentRefunds(ctx, order.refunds, { order }),
+      refunds: presentRefunds(ctx, order.refunds, { order, deliveredPieces: delivered }),
       /** Sales returns (credit notes) on its invoice, void ones too. */
       returns,
       /** Production projects started from it or from its proforma. */
       production: presentProduction(production, tz),
-      /** The buyer's credit (advance balance) put against this order's invoice. */
+      /**
+       * Credit put against this order's invoice: the buyer's advance balance, or
+       * (creditNote set) a website return's credit paying its own invoice.
+       */
       credits: credits.map((c) => ({
         id: c.id,
         amount: fixed(c.amount),
         usedOn: localDay(c.createdAt, tz),
         payment: c.payment,
+        creditNote: c.salesReturn,
       })),
       cheques: cheques.map((c) => ({
         id: c.id,
@@ -1441,6 +1446,7 @@ export async function getInvoiceScreen(ctx: CompanyContext, invoiceId: string) {
         usedOn: localDay(c.date, tz),
         amount: fixed(c.amount),
         paymentNumber: c.paymentNumber,
+        creditNote: c.creditNote,
       })),
       previous: doc.previous
         ? {

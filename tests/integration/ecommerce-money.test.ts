@@ -521,6 +521,42 @@ run("E-commerce API: payments sent again (CN-005 review)", () => {
     ).toBe("0.00");
     await expectBooksOk(shop);
   });
+
+  it("keeps a refund on an order back undelivered: it can no longer be voided, like a cancelled one", async () => {
+    const order = await websiteOrder(shop, "WEB-1104", [[navyS, 1]]);
+    const paid = await callShop(shop, postPayment, {
+      path: "/payments",
+      body: { externalOrderId: "WEB-1104", amount: 1450, method: "BKASH", reference: "TRX-1104" },
+    });
+    expect(paid.status).toBe(201);
+    // Accounts pays the money back first (the shop cannot send an order back holding money).
+    const refund = await refunds.refundBuyer(shop.accounts, {
+      orderId: order.id,
+      kind: "CASH",
+      method: "BKASH",
+      reference: "TRX-BACK-1104",
+      amount: 1450,
+      reason: "Parcel not delivered",
+    });
+    const { getOrderScreen } = await import("@/modules/sales/screens.service");
+    expect((await getOrderScreen(shop.accounts, order.id)).order.refunds[0]!.can.void).toBe(true);
+    const back = await callShop<{ externalOrderId: string }>(shop, patchOrder, {
+      method: "PATCH",
+      path: "/orders/WEB-1104",
+      body: { status: "RETURNED", reason: "Customer not at home" },
+      params: { externalOrderId: "WEB-1104" },
+    });
+    expect(back.status, JSON.stringify(back.body)).toBe(200);
+    expect((await getOrderScreen(shop.accounts, order.id)).order.refunds[0]!.can.void).toBe(false);
+    const refused = await expectAppError(
+      refunds.voidRefund(shop.accounts, refund.id, { reason: "Recorded by mistake" }),
+      "CONFLICT",
+    );
+    expect(refused.message).toContain("came back undelivered");
+    const saved = await prisma.salesOrder.findUniqueOrThrow({ where: { id: order.id } });
+    expect([saved.paidAmount.toFixed(2), saved.dueAmount.toFixed(2)]).toEqual(["0.00", "0.00"]);
+    await expectBooksOk(shop);
+  });
 });
 
 run("E-commerce API: returns with QC per item (CN-005)", () => {
@@ -1016,6 +1052,32 @@ run("E-commerce API: a website return's credit (CN-005 review)", () => {
     expect(screen.can.payBackKinds).toEqual([]);
     expect(screen.salesReturn.invoice.due).toBe("1450.00");
     await expectBooksOk(shop);
+
+    // The order page, the invoice page and the printed invoice name the credit note, not
+    // an advance balance (a walk-in customer has none).
+    const creditNote = { id: res.body.erpReturnId, number: res.body.erpReturnNumber };
+    const { getInvoiceScreen, getOrderScreen } = await import("@/modules/sales/screens.service");
+    const orderPage = await getOrderScreen(shop.accounts, order.id);
+    expect(orderPage.order.credits).toEqual([
+      expect.objectContaining({ amount: "1450.00", payment: null, creditNote }),
+    ]);
+    const invoice = await prisma.invoice.findFirstOrThrow({ where: { orderId: order.id } });
+    const invoicePage = await getInvoiceScreen(shop.accounts, invoice.id);
+    expect(invoicePage.invoice.credits).toEqual([
+      expect.objectContaining({ amount: "1450.00", paymentNumber: null, creditNote }),
+    ]);
+    const printed = await buildDocument(
+      shop.accounts,
+      printRequestSchema.parse({ type: "COMMERCIAL_INVOICE", id: invoice.id }),
+      new Date(),
+    );
+    const used = printed.model.blocks.find(
+      (b): b is Extract<Block, { kind: "table" }> =>
+        b.kind === "table" && b.title === "Credit used",
+    );
+    expect(used!.rows.map((r) => r.cells.slice(1))).toEqual([
+      [`Credit note ${res.body.erpReturnNumber}`, "1,450.00"],
+    ]);
 
     // The courier collects the rest. More than due plus the return's credit is refused.
     const tooMuch = await callShop(shop, postPayment, {

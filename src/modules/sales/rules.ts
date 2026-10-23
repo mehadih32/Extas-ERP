@@ -422,12 +422,18 @@ export function settleKinds(
 
 /**
  * A refund recorded by mistake is voided while what it came off is still open:
- * not once that order or proforma is cancelled (or converted), nor while the
- * order is invoiced again. The service also checks the money still adds up.
+ * not once that order or proforma is cancelled (or converted), nor once the
+ * order came back undelivered (closed with no sale, like cancelled; pass the
+ * pieces delivered on it), nor while the order is invoiced again. The service
+ * also checks the money still adds up.
  */
 export function canVoidRefund(
   refund: { voidedAt: Date | null },
-  from: { order?: OrderState | null; proforma?: Pick<ProformaState, "number" | "status"> | null },
+  from: {
+    order?: OrderState | null;
+    deliveredPieces?: number;
+    proforma?: Pick<ProformaState, "number" | "status"> | null;
+  },
 ): Verdict {
   if (refund.voidedAt) return refuse("CONFLICT", "This refund is already void.");
   if (from.order) {
@@ -436,6 +442,12 @@ export function canVoidRefund(
       return refuse(
         "CONFLICT",
         `${order.number} is cancelled, so its refunds can no longer be voided.`,
+      );
+    }
+    if (closedWithNoSale(order.status, from.deliveredPieces ?? 0)) {
+      return refuse(
+        "CONFLICT",
+        `${order.number} came back undelivered, so its refunds can no longer be voided.`,
       );
     }
     const invoice = liveInvoice(order.invoice);

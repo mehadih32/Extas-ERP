@@ -43,6 +43,8 @@ type CreditLine = {
   amount: string;
   usedOn: string;
   payment: { id: string; number: string } | null;
+  /** A website return's credit paying its own invoice. */
+  creditNote: { id: string; number: string } | null;
 };
 
 type ChequeLine = {
@@ -133,7 +135,14 @@ export function MoneyRecords({
                 <p className="text-sm font-medium">Credit used</p>
                 <p className="text-[0.8125rem] text-muted-foreground">
                   {formatDay(c.usedOn)} ·{" "}
-                  {c.payment ? (
+                  {c.creditNote ? (
+                    <Link
+                      href={salesHref.salesReturn(c.creditNote.id)}
+                      className="text-primary underline-offset-4 hover:underline"
+                    >
+                      from credit note {c.creditNote.number}
+                    </Link>
+                  ) : c.payment ? (
                     <Link
                       href={salesHref.payment(c.payment.id)}
                       className="text-primary underline-offset-4 hover:underline"

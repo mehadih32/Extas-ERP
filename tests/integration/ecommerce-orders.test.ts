@@ -525,6 +525,23 @@ run("E-commerce API: orders (CN-005)", () => {
     expect(await stockOf(shop, navyS)).toMatchObject({ reserved: 2 });
   });
 
+  it("cancels with the longest reason the API takes: the ERP's own reason stays within its limit", async () => {
+    const placed = await placeOrder("WEB-9002");
+    const reason = `Buyer changed mind ${"x".repeat(481)}`;
+    expect(reason).toHaveLength(500);
+    const res = await patch(shop, "WEB-9002", { status: "CANCELLED", reason });
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(res.body).toMatchObject({ status: "CANCELLED" });
+    expect(await stockOf(shop, navyS)).toMatchObject({ reserved: 0, available: 10 });
+    const audit = await prisma.auditLog.findFirstOrThrow({
+      where: { entityId: placed.erpOrderId, action: "STATUS_CHANGE" },
+      orderBy: { createdAt: "desc" },
+    });
+    const why = `Cancelled by the shop: ${reason}`.slice(0, 500);
+    expect(audit.summary).toContain(`: ${why}`);
+    expect(audit.summary).not.toContain(`Cancelled by the shop: ${reason}`);
+  });
+
   it("never pays money back: cancel or return with money paid answers PAYMENT_HELD", async () => {
     const placed = await placeOrder("WEB-9201");
     await receivePayment(shop.accounts, {

@@ -3,9 +3,91 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
 // No real name is ever looked up: each test says what the shop's name resolves to.
 const dns = vi.hoisted(() => ({ addresses: ["93.184.216.34"] as string[] }));
-vi.mock("node:dns/promises", () => ({
-  lookup: vi.fn(async () => dns.addresses.map((address) => ({ address, family: 4 }))),
+vi.mock("node:dns", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:dns")>();
+  const lookup = vi.fn(
+    (_host: string, _options: unknown, callback: (e: null, found: unknown[]) => void) =>
+      callback(
+        null,
+        dns.addresses.map((address) => ({ address, family: address.includes(":") ? 6 : 4 })),
+      ),
+  );
+  return { ...actual, default: { ...actual, lookup }, lookup };
+});
+
+type Sent = {
+  url: string;
+  body: string;
+  headers: Record<string, string>;
+  /** How it connected: through the ERP's own checking lookup, on a connection of its own. */
+  lookup: boolean;
+  /** The address the connection was made to: the one the lookup checked. */
+  connectedTo: string;
+  agent: unknown;
+};
+
+/*
+ * The shop's side, mocked at node:https: the request connects the way node:https
+ * does (a name goes through the request's own lookup first; a refusal there is
+ * the request's error and nothing is sent), then the shop's answer is given.
+ */
+const shopSide = vi.hoisted(() => ({
+  answer: null as null | ((sent: Sent) => Response | Promise<Response>),
 }));
+vi.mock("node:https", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:https")>();
+  const { EventEmitter } = await import("node:events");
+  const { isIP } = await import("node:net");
+  type Options = { headers: Record<string, string>; lookup?: typeof import("node:dns").lookup };
+  const request = (url: string, options: Options, onResponse: (response: unknown) => void) => {
+    const sending = Object.assign(new EventEmitter(), {
+      end(body: string) {
+        void (async () => {
+          const host = new URL(url).hostname.replace(/^\[|\]$/g, "");
+          let connectedTo = host;
+          if (isIP(host) === 0) {
+            if (!options.lookup)
+              return sending.emit("error", new Error("Looked up without a check."));
+            const found = await new Promise<{ error: Error | null; address?: string }>((resolve) =>
+              options.lookup!(host, { all: true }, (error, addresses) =>
+                resolve({
+                  error,
+                  address: (addresses as unknown as Array<{ address: string }>)[0]?.address,
+                }),
+              ),
+            );
+            if (found.error) return sending.emit("error", found.error);
+            connectedTo = found.address!;
+          }
+          if (!shopSide.answer) return sending.emit("error", new Error("No shop is listening."));
+          try {
+            const response = await shopSide.answer({
+              url,
+              body,
+              headers: Object.fromEntries(new Headers(options.headers).entries()),
+              lookup: typeof options.lookup === "function",
+              connectedTo,
+              agent: (options as { agent?: unknown }).agent,
+            });
+            onResponse(
+              Object.assign(new EventEmitter(), {
+                statusCode: response.status,
+                destroy: () => undefined,
+              }),
+            );
+          } catch (error) {
+            sending.emit("error", error);
+          }
+        })();
+        return sending;
+      },
+    });
+    return sending;
+  };
+  return { ...actual, default: { ...actual, request }, request };
+});
+
+import { lookup as dnsLookup } from "node:dns";
 
 import { prisma } from "@/lib/prisma";
 import { setPin } from "@/modules/ai/settings.service";
@@ -15,6 +97,7 @@ import { getShop, listShops } from "@/modules/ecommerce/screens.service";
 import { signatureMatches, signedHeaders, timestampFresh } from "@/modules/ecommerce/signature";
 import { ecommerceWebhookTick } from "@/modules/ecommerce/webhook-clock";
 import {
+  deliver,
   GIVE_UP_AFTER_MS,
   mockShopReceive,
   scanShopChanges,
@@ -32,24 +115,16 @@ import { type Shop, setupShop } from "./ecommerce-helpers";
 import { resetDb } from "./helpers";
 
 const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
+const PIN = "4826";
 
-type Sent = { url: string; body: string; headers: Record<string, string>; redirect?: string };
-
-/** The shop's side, mocked: every request the ERP makes, and the answer to give. */
+/** The shop's side: every request the ERP makes, and the answer to give. */
 function mockShop(answer: (sent: Sent) => Response | Promise<Response> = () => ok()) {
   const sent: Sent[] = [];
-  const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
-    const one: Sent = {
-      url: String(url),
-      body: String(init?.body ?? ""),
-      headers: Object.fromEntries(new Headers(init?.headers).entries()),
-      redirect: init?.redirect,
-    };
+  shopSide.answer = (one) => {
     sent.push(one);
     return answer(one);
-  });
-  vi.stubGlobal("fetch", fetchMock);
-  return { sent, fetchMock };
+  };
+  return { sent };
 }
 const ok = () => new Response("{}", { status: 200 });
 
@@ -87,7 +162,7 @@ run("E-commerce webhooks: ERP to shop (CN-005)", () => {
     await later();
   });
   afterEach(() => {
-    vi.unstubAllGlobals();
+    shopSide.answer = null;
   });
 
   // ---------------------------------------------------------------------------
@@ -250,10 +325,12 @@ run("E-commerce webhooks: ERP to shop (CN-005)", () => {
     await later();
     expect((await scanShopChanges()).events).toBe(0);
 
+    await setPin(shop.owner, { pin: PIN });
     await integrations.updateIntegration(shop.owner, shop.integration.id, {
       name: "Extas web shop",
       warehouseId: shop.warehouse.id,
       webhookUrl: "",
+      pin: PIN,
     });
     await reserve(shop, navyS, 1);
     expect(await scanShopChanges()).toEqual({ shops: 0, events: 0 });
@@ -263,6 +340,7 @@ run("E-commerce webhooks: ERP to shop (CN-005)", () => {
       name: "Extas web shop",
       warehouseId: shop.warehouse.id,
       webhookUrl: "https://shop.example.com/new/webhooks",
+      pin: PIN,
     });
     await later();
     expect((await scanShopChanges()).events).toBe(0);
@@ -324,7 +402,8 @@ run("E-commerce webhooks: ERP to shop (CN-005)", () => {
     const [one] = sent;
     const [event] = await outgoing(shop);
     expect(one!.url).toBe("https://shop.example.com/erp/webhooks");
-    expect(one!.redirect).toBe("manual");
+    // Connected through the ERP's checking lookup, on a fresh connection.
+    expect(one).toMatchObject({ lookup: true, agent: false, connectedTo: "93.184.216.34" });
     expect(JSON.parse(one!.body)).toEqual(event!.payload);
     // What the shop checks: the HMAC of the raw body with the webhook secret, and the time.
     expect(
@@ -456,12 +535,60 @@ run("E-commerce webhooks: ERP to shop (CN-005)", () => {
     await prisma.backgroundJob.updateMany({ data: { runAfter: new Date(0) } });
     await runDueJobs();
     expect(sent).toHaveLength(1);
-    expect(sent[0]!.redirect).toBe("manual");
     expect((await outgoing(shop))[0]).toMatchObject({
       status: "RECEIVED",
       responseStatus: 302,
       error: "The shop answered with a redirect (302): enter its final address.",
     });
+  });
+
+  it("looks the name up once per try and connects to the very address it checked (DNS rebinding)", async () => {
+    const { sent } = mockShop();
+    const looked = vi.mocked(dnsLookup);
+    const usual = looked.getMockImplementation();
+    looked.mockClear();
+    const event = { id: "rebind-1", type: "ping", raw: "{}" };
+    // A name that answers a public address to the first look and the server's own one later.
+    let answers = 0;
+    dns.addresses = ["93.184.216.34"];
+    looked.mockImplementation(((
+      _host: string,
+      _options: unknown,
+      callback: (e: null, found: unknown[]) => void,
+    ) => {
+      answers += 1;
+      const address = answers === 1 ? "93.184.216.34" : "10.0.0.7";
+      callback(null, [{ address, family: 4 }]);
+    }) as unknown as typeof dnsLookup);
+    try {
+      const first = await deliver("https://rebind.example.com/hook", "secret", event);
+      expect(first).toMatchObject({ ok: true, status: 200 });
+      // One look, at the connection, and the connection went to that address.
+      expect(looked).toHaveBeenCalledTimes(1);
+      expect(sent).toEqual([expect.objectContaining({ connectedTo: "93.184.216.34" })]);
+
+      const second = await deliver("https://rebind.example.com/hook", "secret", event);
+      expect(second).toMatchObject({
+        ok: false,
+        status: null,
+        error: "The shop's webhook address points to a private network.",
+      });
+      expect(sent).toHaveLength(1);
+    } finally {
+      looked.mockImplementation(usual!);
+    }
+
+    // A name that cannot be found is not sent to either.
+    looked.mockImplementationOnce(((
+      _host: string,
+      _options: unknown,
+      callback: (e: Error, found: unknown[]) => void,
+    ) => callback(new Error("ENOTFOUND"), [])) as unknown as typeof dnsLookup);
+    expect(await deliver("https://gone.example.com/hook", "secret", event)).toMatchObject({
+      ok: false,
+      error: "The shop's webhook address could not be found (DNS).",
+    });
+    expect(sent).toHaveLength(1);
   });
 
   it("skips an event when the shop was switched off, or a newer change of the SKU replaces it", async () => {
@@ -530,10 +657,12 @@ run("E-commerce webhooks: ERP to shop (CN-005)", () => {
 
   it("checks the test with the built-in mock shop until the shop's address is entered", async () => {
     const { sent } = mockShop();
+    await setPin(shop.owner, { pin: PIN });
     await integrations.updateIntegration(shop.owner, shop.integration.id, {
       name: "Extas web shop",
       warehouseId: shop.warehouse.id,
       webhookUrl: "",
+      pin: PIN,
     });
     const result = await sendTestEvent(shop.owner, shop.integration.id);
     expect(result).toMatchObject({ ok: true, status: 200, error: null, mock: true });
@@ -725,7 +854,7 @@ run("E-commerce webhooks: ERP to shop (CN-005)", () => {
   });
 
   it("makes a key only with the PIN, shows it once, and a rotated key replaces the old one", async () => {
-    await setPin(shop.owner, { pin: "4826" });
+    await setPin(shop.owner, { pin: PIN });
     await expect(
       integrations.generateKey(shop.owner, shop.integration.id, {}),
     ).rejects.toMatchObject({ code: "VALIDATION", details: { pin: expect.any(Array) } });
@@ -751,5 +880,65 @@ run("E-commerce webhooks: ERP to shop (CN-005)", () => {
     expect(
       signatureMatches(shop.webhookSecret, sent[0]!.body, sent[0]!.headers["x-extas-signature"]!),
     ).toBe(false);
+  });
+
+  it("asks for the PIN for a new webhook URL or an address taken off the IP allow-list", async () => {
+    await setPin(shop.owner, { pin: PIN });
+    const base = {
+      name: "Extas web shop",
+      warehouseId: shop.warehouse.id,
+      webhookUrl: "https://shop.example.com/erp/webhooks",
+    };
+    const edit = (changes: Record<string, unknown>) =>
+      integrations.updateIntegration(shop.owner, shop.integration.id, { ...base, ...changes });
+    const saved = () =>
+      prisma.salesChannelIntegration.findUniqueOrThrow({ where: { id: shop.integration.id } });
+
+    // Nothing that needs it: name and rate limit change without a PIN.
+    await edit({ name: "Extas online", rateLimitPerMinute: 60 });
+    expect(await saved()).toMatchObject({ name: "Extas online", rateLimitPerMinute: 60 });
+
+    // A new webhook URL: refused without the PIN or with a wrong one, nothing changed.
+    const moved = { webhookUrl: "https://shop.example.com/v2/webhooks" };
+    await expect(edit(moved)).rejects.toMatchObject({
+      code: "VALIDATION",
+      message: "Give your PIN to change the shop's webhook URL.",
+      details: { pin: expect.any(Array) },
+    });
+    await expect(edit({ ...moved, pin: "0000" })).rejects.toMatchObject({
+      code: "VALIDATION",
+      details: { pin: ["The PIN is not right"] },
+    });
+    expect((await saved()).webhookUrl).toBe(base.webhookUrl);
+    await edit({ ...moved, pin: PIN });
+    expect((await saved()).webhookUrl).toBe(moved.webhookUrl);
+    // Clearing it is a change too.
+    await expect(edit({ webhookUrl: "" })).rejects.toMatchObject({
+      details: { pin: expect.any(Array) },
+    });
+
+    // Adding addresses narrows who may call: no PIN.
+    await edit({ ...moved, ipAllowList: ["203.0.113.7"] });
+    await edit({ ...moved, ipAllowList: ["203.0.113.7", "2001:DB8::1"] });
+    expect((await saved()).ipAllowList).toEqual(["203.0.113.7", "2001:DB8::1"]);
+    // The same address written another way is not a removal.
+    await edit({ ...moved, ipAllowList: ["203.0.113.7", "2001:db8:0::1", "198.51.100.4"] });
+
+    // Taking one off (or emptying the list, which lets any address call) needs it.
+    for (const ipAllowList of [["203.0.113.7", "198.51.100.4"], [], ["198.51.100.9"]]) {
+      await expect(edit({ ...moved, ipAllowList })).rejects.toMatchObject({
+        code: "VALIDATION",
+        message: "Give your PIN to take an address off the shop's IP allow-list.",
+      });
+    }
+    expect((await saved()).ipAllowList).toHaveLength(3);
+    await edit({ ...moved, ipAllowList: ["203.0.113.7"], pin: PIN });
+    expect((await saved()).ipAllowList).toEqual(["203.0.113.7"]);
+
+    // With no PIN set yet, the answer says to set one first.
+    await prisma.aiSettings.updateMany({ data: { pinHash: null } });
+    await expect(
+      edit({ webhookUrl: "https://shop.example.com/v3/webhooks" }),
+    ).rejects.toMatchObject({ code: "VALIDATION", details: { pinNotSet: expect.any(Array) } });
   });
 });

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { lookup } from "node:dns/promises";
-import { isIP } from "node:net";
+import { lookup as dnsLookup } from "node:dns";
+import { request as httpsRequest } from "node:https";
+import type { LookupFunction } from "node:net";
 
 import type { BackgroundJob, Prisma, SalesChannelIntegration } from "@prisma/client";
 
@@ -314,13 +315,15 @@ export type Delivery = {
   error: string | null;
 };
 
+const PRIVATE_NETWORK = "The shop's webhook address points to a private network.";
+const NOT_FOUND_DNS = "The shop's webhook address could not be found (DNS).";
+
 /**
- * Why an address may not be sent to, or null when it may: https only, and its
- * host must resolve to public addresses only, so a webhook can never reach the
- * server's own network. Checked again before every try (the name's addresses
- * can change after it was saved).
+ * Why an address may not be sent to, or null when it may: https only, no
+ * password, and not a private address or name. The addresses a name resolves
+ * to are checked when the connection is made (shopLookup), on every try.
  */
-export async function refuseAddress(address: string): Promise<string | null> {
+export function refuseAddress(address: string): string | null {
   let url: URL;
   try {
     url = new URL(address);
@@ -329,20 +332,63 @@ export async function refuseAddress(address: string): Promise<string | null> {
   }
   if (url.protocol !== "https:") return "The shop's webhook address must start with https://.";
   if (url.username || url.password) return "The shop's webhook address may not hold a password.";
-  const host = url.hostname.replace(/^\[|\]$/g, "");
-  if (privateAddress(host)) return "The shop's webhook address points to a private network.";
-  if (isIP(host) !== 0) return null;
-  let found: Array<{ address: string }>;
-  try {
-    found = await lookup(host, { all: true, verbatim: true });
-  } catch {
-    return "The shop's webhook address could not be found (DNS).";
-  }
-  if (found.length === 0) return "The shop's webhook address could not be found (DNS).";
-  if (found.some((f) => privateAddress(f.address))) {
-    return "The shop's webhook address points to a private network.";
-  }
-  return null;
+  return privateAddress(url.hostname) ? PRIVATE_NETWORK : null;
+}
+
+/** A webhook address refused while connecting: its message is the plain reason. */
+class AddressRefused extends Error {
+  readonly code = "EXTAS_ADDRESS_REFUSED";
+}
+
+/**
+ * The name lookup a webhook connects with: it resolves the shop's name and
+ * refuses it, before anything is connected, when any of its addresses is
+ * private. The address checked is the address connected to, so a name that
+ * answers a public address to a first look and a private one later (DNS
+ * rebinding) never reaches the server's own network.
+ */
+export const shopLookup: LookupFunction = (hostname, options, callback) => {
+  dnsLookup(
+    hostname,
+    { family: options.family, hints: options.hints, all: true },
+    (error, found) => {
+      if (error || !found || found.length === 0) {
+        return callback(new AddressRefused(NOT_FOUND_DNS), "", 0);
+      }
+      if (found.some((f) => privateAddress(f.address))) {
+        return callback(new AddressRefused(PRIVATE_NETWORK), "", 0);
+      }
+      if (options.all) return callback(null, found);
+      return callback(null, found[0]!.address, found[0]!.family);
+    },
+  );
+};
+
+/**
+ * One POST over https with shopLookup and a connection of its own (never one
+ * kept from before): no redirects followed, 10 seconds at most. The answer is
+ * the shop's status; its words are not read.
+ */
+function postToShop(address: string, headers: Record<string, string>, body: string) {
+  return new Promise<number>((resolve, reject) => {
+    const sending = httpsRequest(
+      address,
+      {
+        method: "POST",
+        headers: { ...headers, "Content-Length": String(Buffer.byteLength(body)) },
+        lookup: shopLookup,
+        agent: false,
+        signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
+      },
+      (response) => {
+        response.on("error", () => undefined);
+        resolve(response.statusCode ?? 0);
+        response.destroy();
+      },
+    );
+    sending.on("error", reject);
+    sending.end(body);
+  });
 }
 
 /** The headers of one try: the signature and time (signed now), the event and its id. */
@@ -364,19 +410,14 @@ export async function deliver(
 ): Promise<Delivery> {
   const started = Date.now();
   const elapsed = () => Date.now() - started;
-  const refused = await refuseAddress(address);
+  const refused = refuseAddress(address);
   if (refused) return { ok: false, status: null, ms: elapsed(), error: refused };
   try {
-    const response = await fetch(address, {
-      method: "POST",
-      headers: headersFor(secret, event.raw, event.type, event.id),
-      body: event.raw,
-      redirect: "manual",
-      signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
-    });
-    // Only the status matters; the shop's words are not kept.
-    await response.body?.cancel().catch(() => undefined);
-    const status = response.status;
+    const status = await postToShop(
+      address,
+      headersFor(secret, event.raw, event.type, event.id),
+      event.raw,
+    );
     if (status >= 200 && status < 300) return { ok: true, status, ms: elapsed(), error: null };
     const error =
       status >= 300 && status < 400
@@ -384,15 +425,17 @@ export async function deliver(
         : `The shop answered ${status}.`;
     return { ok: false, status, ms: elapsed(), error };
   } catch (error) {
-    const name = (error as { name?: string } | null)?.name;
+    const failed = error as { name?: string; code?: string; message?: string } | null;
     return {
       ok: false,
       status: null,
       ms: elapsed(),
       error:
-        name === "TimeoutError" || name === "AbortError"
-          ? `The shop did not answer within ${SEND_TIMEOUT_MS / 1000} seconds.`
-          : "The shop's webhook address could not be reached.",
+        failed?.code === "EXTAS_ADDRESS_REFUSED"
+          ? (failed.message ?? PRIVATE_NETWORK)
+          : failed?.name === "TimeoutError" || failed?.name === "AbortError"
+            ? `The shop did not answer within ${SEND_TIMEOUT_MS / 1000} seconds.`
+            : "The shop's webhook address could not be reached.",
     };
   }
 }

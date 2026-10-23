@@ -12,6 +12,9 @@ import type { CompanyContext } from "@/modules/auth/context";
 
 import { apiKeyHint, apiKeyRef, newApiKey, newWebhookSecret } from "./keys";
 import { shopAccountOf } from "./shop-account";
+import { pinNeededFor } from "./shop-pin";
+
+export { pinNeededFor };
 
 /*
  * Settings > Integrations > E-commerce (CN-005): the shops connected to this
@@ -29,9 +32,16 @@ export function assertCanManageShops(ctx: CompanyContext) {
   }
 }
 
-/** A private, local or link-local address: never a shop's webhook address. */
+/**
+ * A private, local, link-local or otherwise special address: never a shop's
+ * webhook address. Names are checked by their ending here; the addresses a name
+ * resolves to are checked again when a webhook connects (webhooks.ts).
+ */
 export function privateAddress(host: string): boolean {
-  const h = host.replace(/^\[|\]$/g, "").toLowerCase();
+  const h = host
+    .replace(/^\[|\]$/g, "")
+    .replace(/%.*$/, "")
+    .toLowerCase();
   if (isIP(h) !== 0) return isPrivateIp(h);
   return (
     !h.includes(".") ||
@@ -39,28 +49,62 @@ export function privateAddress(host: string): boolean {
   );
 }
 
-function isPrivateIp(ip: string): boolean {
-  if (isIP(ip) === 4) {
-    const [a, b] = ip.split(".").map(Number) as [number, number];
-    return (
-      a === 0 ||
-      a === 10 ||
-      a === 127 ||
-      (a === 100 && b >= 64 && b <= 127) ||
-      (a === 169 && b === 254) ||
-      (a === 172 && b >= 16 && b <= 31) ||
-      (a === 192 && b === 168) ||
-      a >= 224
-    );
-  }
-  const v6 = ip.toLowerCase();
+function isPrivateV4([a, b, c, d]: number[]): boolean {
   return (
-    v6 === "::" ||
-    v6 === "::1" ||
-    v6.startsWith("fc") ||
-    v6.startsWith("fd") ||
-    v6.startsWith("fe80") ||
-    v6.startsWith("::ffff:")
+    a === 0 ||
+    a === 10 ||
+    a === 127 ||
+    (a === 100 && b! >= 64 && b! <= 127) ||
+    (a === 169 && b === 254) ||
+    (a === 172 && b! >= 16 && b! <= 31) ||
+    (a === 192 && b === 0 && c === 0) ||
+    (a === 192 && b === 168) ||
+    (a === 198 && (b === 18 || b === 19)) ||
+    // Azure's own host address (DNS, health and the machine's metadata).
+    (a === 168 && b === 63 && c === 129 && d === 16) ||
+    a! >= 224
+  );
+}
+
+/** An IPv6 address as its 8 groups (numbers), "::" and an IPv4 tail written out. */
+function v6Groups(ip: string): number[] | null {
+  let text = ip;
+  const tail = /(\d+\.\d+\.\d+\.\d+)$/.exec(text);
+  if (tail) {
+    const [a, b, c, d] = tail[1]!.split(".").map(Number) as [number, number, number, number];
+    text = `${text.slice(0, -tail[1]!.length)}${((a << 8) | b).toString(16)}:${((c << 8) | d).toString(16)}`;
+  }
+  const [head = "", rest] = text.split("::");
+  const left = head ? head.split(":") : [];
+  const right = rest ? rest.split(":") : [];
+  const missing = 8 - left.length - right.length;
+  if (rest === undefined ? left.length !== 8 : missing < 1) return null;
+  const groups = [...left, ...Array<string>(rest === undefined ? 0 : missing).fill("0"), ...right];
+  const numbers = groups.map((g) => parseInt(g, 16));
+  return numbers.some((n) => Number.isNaN(n)) ? null : numbers;
+}
+
+function isPrivateIp(ip: string): boolean {
+  if (isIP(ip) === 4) return isPrivateV4(ip.split(".").map(Number));
+  const g = v6Groups(ip);
+  if (!g) return true;
+  const [g0, g1, g2, g3, g4, g5] = g as [number, number, number, number, number, number];
+  const zeros = (n: number) => g.slice(0, n).every((x) => x === 0);
+  return (
+    // ::/96 (unspecified, loopback, IPv4-compatible) and ::ffff:0:0/96 (IPv4-mapped)
+    (zeros(5) && (g5 === 0 || g5 === 0xffff)) ||
+    // 64:ff9b::/96 and 64:ff9b:1::/48 (NAT64: they reach IPv4 addresses)
+    (g0 === 0x64 &&
+      g1 === 0xff9b &&
+      (g2 === 1 || (g2 === 0 && g3 === 0 && g4 === 0 && g5 === 0))) ||
+    // 2001::/32 (Teredo) and 2002::/16 (6to4): they carry an IPv4 address
+    (g0 === 0x2001 && g1 === 0) ||
+    g0 === 0x2002 ||
+    // fc00::/7 (unique local), fe80::/10 (link-local), fec0::/10 (site-local), ff00::/8 (multicast)
+    (g0 & 0xfe00) === 0xfc00 ||
+    (g0 & 0xffc0) === 0xfe80 ||
+    (g0 & 0xffc0) === 0xfec0 ||
+    (g0 & 0xff00) === 0xff00
   );
 }
 
@@ -162,7 +206,10 @@ export async function createIntegration(ctx: CompanyContext, raw: unknown, meta?
   return integration;
 }
 
-/** Changes a shop's name, warehouse, webhook address, allow-list or rate limit. */
+/**
+ * Changes a shop's name, warehouse, webhook address, allow-list or rate limit.
+ * A new webhook URL or an address taken off the IP allow-list needs the PIN.
+ */
 export async function updateIntegration(
   ctx: CompanyContext,
   id: string,
@@ -171,8 +218,11 @@ export async function updateIntegration(
 ) {
   assertCanManageShops(ctx);
   const input = integrationSchema.parse(raw);
+  const { pin } = pinSchema.parse(raw);
   const before = await findIntegration(ctx, id);
   await checkWarehouse(ctx, input.warehouseId);
+  const pinFor = pinNeededFor(before, input);
+  if (pinFor) await requirePin(ctx, pin, pinFor);
   const integration = await ctx.db.salesChannelIntegration.update({
     where: { id: before.id },
     data: {

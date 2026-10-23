@@ -103,6 +103,9 @@ export type AllocationRequest = { orderId: string; amount: Prisma.Decimal.Value 
  * after lockBuyerCredit). Each order must be theirs, have a live invoice and
  * still owe the amount; together they may take at most `limit` (the payment
  * just received, or the credit on the account). Returns what was allocated.
+ * `salesReturnId` puts a website return's credit against its own invoice
+ * (return.service.ts): that order has no buyer, and `partyId` is then the
+ * Walk-in customers account its credit sits on.
  */
 export async function allocateTx(
   tx: Tx,
@@ -110,6 +113,7 @@ export async function allocateTx(
   args: {
     partyId: string;
     paymentId?: string | null;
+    salesReturnId?: string | null;
     items: AllocationRequest[];
     limit: Prisma.Decimal;
   },
@@ -148,7 +152,9 @@ export async function allocateTx(
   for (const item of items) {
     const order = byId.get(item.orderId);
     const key = `allocations.${item.orderId}`;
-    if (!order || order.partyId !== args.partyId) {
+    // A website return's order has no buyer: its credit is on the Walk-in customers account.
+    const owner = order?.partyId ?? (args.salesReturnId ? args.partyId : null);
+    if (!order || owner !== args.partyId) {
       errors[key] = ["Not an order of this buyer"];
       continue;
     }
@@ -175,6 +181,7 @@ export async function allocateTx(
       orderId: line.orderId,
       invoiceId: line.invoiceId,
       paymentId: args.paymentId ?? null,
+      salesReturnId: args.salesReturnId ?? null,
       amount: line.amount,
       createdById: ctx.user.id,
     })),

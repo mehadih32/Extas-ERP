@@ -21,9 +21,11 @@ import { RowCard, RowLink, ShowMore, useLoadMore } from "./load-more";
 function againstText(row: {
   order: { number: string } | null;
   proforma: { number: string } | null;
+  salesReturn?: { number: string } | null;
 }): string {
   if (row.proforma) return `Advance on ${row.proforma.number}`;
   if (row.order) return `Order ${row.order.number}`;
+  if (row.salesReturn) return `Credit from ${row.salesReturn.number}`;
   return "On account";
 }
 
@@ -106,10 +108,11 @@ export function PaymentList({
   );
 }
 
-/** Where a refund was recorded: its order or proforma, else the buyer's profile. */
+/** Where a refund was recorded: its order, proforma or sales return, else the buyer's profile. */
 function refundHref(r: RefundRow): string | null {
   if (r.order) return salesHref.order(r.order.id);
   if (r.proforma) return salesHref.proforma(r.proforma.id);
+  if (r.salesReturn) return salesHref.salesReturn(r.salesReturn.id);
   return null;
 }
 

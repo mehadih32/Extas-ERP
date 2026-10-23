@@ -1519,6 +1519,8 @@ function presentRefundRow(r: ListedRefund, tz: string) {
     buyer: partyOf(r.party),
     order: r.order,
     proforma: r.proforma,
+    /** A website return's credit paid back (CN-005). */
+    salesReturn: r.salesReturn,
   };
 }
 

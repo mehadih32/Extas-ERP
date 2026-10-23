@@ -10,6 +10,7 @@ import { Fact, Panel, RecordHeader, Totals } from "@/components/sales/detail-bit
 import { money, salesHref } from "@/components/sales/labels";
 import { SalesNoAccess } from "@/components/sales/no-access";
 import { SalesReturnActions } from "@/components/sales/sales-return-actions";
+import { localDay } from "@/lib/dates";
 import { formatCount, formatDay } from "@/lib/display";
 import { getSalesReturnScreenAction } from "@/server/actions/sales.actions";
 import { requireCompanyPage } from "@/server/pages/guards";
@@ -107,7 +108,12 @@ export default async function SalesReturnPage({
             It is kept as a record.
           </FormAlert>
         )}
-        <SalesReturnActions key={r.id} screen={screen} currency={currency} />
+        <SalesReturnActions
+          key={r.id}
+          screen={screen}
+          currency={currency}
+          today={localDay(new Date(), ctx.company.timezone)}
+        />
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,8fr)_minmax(0,4fr)]">
@@ -204,7 +210,25 @@ export default async function SalesReturnPage({
               {screen.earlierBalance !== null && (
                 <Fact label="Still owed from before">{money(screen.earlierBalance, currency)}</Fact>
               )}
+              {screen.walkInCredit && !r.voided && (
+                <>
+                  <Fact label="Used on its invoice">
+                    {money(screen.walkInCredit.usedOnInvoice, currency)}
+                  </Fact>
+                  {screen.walkInCredit.paidBack !== "0.00" && (
+                    <Fact label="Paid back">{money(screen.walkInCredit.paidBack, currency)}</Fact>
+                  )}
+                  <Fact label="Left to pay back">{money(screen.walkInCredit.left, currency)}</Fact>
+                </>
+              )}
             </dl>
+            {screen.walkInCredit && !r.voided && (
+              <p className="mt-4 text-[0.8125rem] leading-relaxed text-muted-foreground">
+                A sale without a buyer profile has no account to keep credit on, so the credit first
+                pays what {r.invoice.number} still had due. What the shop had already collected is
+                left to pay back to the customer.
+              </p>
+            )}
             {screen.notes.credit && (
               <p className="mt-4 text-[0.8125rem] leading-relaxed text-muted-foreground">
                 {screen.notes.credit}

@@ -13,8 +13,9 @@ import {
   restockShortfallMessage,
   returnCredit,
   returnPosition,
+  walkInReturnCredit,
 } from "@/modules/sales/return.service";
-import { canReturnOnInvoice, canVoidSalesReturn } from "@/modules/sales/rules";
+import { canReturnOnInvoice, canVoidSalesReturn, settleKinds } from "@/modules/sales/rules";
 import { salesAccess } from "@/modules/sales/screens.service";
 import { money } from "@/modules/sales/totals";
 
@@ -74,7 +75,11 @@ export async function getSalesReturnScreen(ctx: CompanyContext, returnId: string
       ? await returnCredit(prisma, ctx.company.id, { ...r, partyId: r.partyId })
       : null;
   const position = credit?.position ?? null;
-  const creditUsed = live && credit !== null && credit.spent;
+  // A website return (no buyer): what its credit paid on its invoice, was paid back, is left.
+  const walkIn =
+    !r.partyId && (access.receive || access.openBuyer) ? await walkInReturnCredit(prisma, r) : null;
+  const paidBack = live && walkIn !== null && walkIn.paidBack.gt(0);
+  const creditUsed = (live && credit !== null && credit.spent) || paidBack;
   const voidable = access.receive && canVoidSalesReturn(r).ok;
   // Pieces it put back into stock must still be there to be taken out again.
   const short =
@@ -154,6 +159,14 @@ export async function getSalesReturnScreen(ctx: CompanyContext, returnId: string
       position && position.balance.gt(position.openDues)
         ? fixed(position.balance.minus(position.openDues))
         : null,
+    /** A website return's credit: used on its own invoice, paid back, and left to pay back. */
+    walkInCredit: walkIn
+      ? {
+          usedOnInvoice: fixed(walkIn.usedOnInvoice),
+          paidBack: fixed(walkIn.paidBack),
+          left: fixed(walkIn.left),
+        }
+      : null,
     can: {
       void: voidable && !creditUsed && short.length === 0,
       openBuyer: access.openBuyer && r.party !== null,
@@ -165,15 +178,20 @@ export async function getSalesReturnScreen(ctx: CompanyContext, returnId: string
         invoice.dueAmount.gt(0) &&
         position !== null &&
         position.credit.gt(0),
+      /** How a website return's credit left over may be paid back ("Pay back the credit"). */
+      payBackKinds:
+        live && walkIn !== null && walkIn.left.gt(0) ? settleKinds(ctx, { onAccount: false }) : [],
     },
     notes: {
       /** Why voiding, which this person could otherwise do, is not offered. */
       void:
-        voidable && creditUsed
-          ? `The buyer has used this credit (${fixed(position!.credit)} of ${fixed(r.amount)} is unused), so it can no longer be voided.`
-          : short.length > 0
-            ? restockShortfallMessage(r.number, short)
-            : null,
+        voidable && paidBack
+          ? `${fixed(walkIn!.paidBack)} of this credit was paid back. Void that refund first to void the return.`
+          : voidable && creditUsed
+            ? `The buyer has used this credit (${fixed(position!.credit)} of ${fixed(r.amount)} is unused), so it can no longer be voided.`
+            : short.length > 0
+              ? restockShortfallMessage(r.number, short)
+              : null,
       /** Why less credit is unused than the return gave, though none was spent. */
       credit:
         live && credit !== null && !credit.spent && credit.position.credit.lt(r.amount)

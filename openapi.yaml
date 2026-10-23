@@ -280,7 +280,10 @@ paths:
       description: |
         The ERP posts the journal itself: before the invoice the money is an advance, after it it pays
         the receivable (walk-in customers). COD is courier cash, bKash and Nagad mobile wallets, card the
-        bank. The same order, method and reference twice is refused (409 PAYMENT_EXISTS).
+        bank. BKASH, NAGAD and CARD need their transaction id (reference). The same order, method and
+        reference twice is refused (409 PAYMENT_EXISTS), and so is a second COD of the same amount sent
+        without a reference (send its own reference, such as the courier's invoice, if it is new money).
+        An order whose parcel came back undelivered takes no money (409 ORDER_LOCKED).
       operationId: createPayment
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
@@ -298,7 +301,11 @@ paths:
                 amount: { $ref: "#/components/schemas/PositiveMoney" }
                 method: { $ref: "#/components/schemas/PaymentMethod" }
                 reference:
-                  { type: string, maxLength: 120, description: "TrxID, card or courier reference." }
+                  {
+                    type: string,
+                    maxLength: 120,
+                    description: "TrxID, card or courier reference. Required for BKASH, NAGAD and CARD.",
+                  }
                 date:
                   description: When it was received (now when left out); a day or a time, never in the future.
                   oneOf:
@@ -334,12 +341,16 @@ paths:
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409":
-          description: PAYMENT_EXISTS (details.erpPaymentId), or CONFLICT (a cancelled order).
+          description: |
+            PAYMENT_EXISTS (details.erpPaymentId), ORDER_LOCKED (it came back undelivered), or CONFLICT
+            (a cancelled order).
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
         "422":
-          description: VALIDATION (more than is due, a future date...), or IDEMPOTENCY_KEY_REUSED.
+          description: |
+            VALIDATION (more than is due, a future date, no reference for BKASH, NAGAD or CARD...), or
+            IDEMPOTENCY_KEY_REUSED.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -473,8 +484,11 @@ paths:
       description: |
         Only delivered pieces can come back. GOOD pieces go back into sellable stock and B_GRADE pieces
         into B-grade stock (both at the cost they left at), DAMAGED ones to Damage & QC Rejects. The ERP
-        posts the credit note and its cost. The value is credited to the walk-in customers' account; the
-        API never pays money out (a refund is done by Accounts in the ERP).
+        posts the credit note and its cost. The value first pays what the order's invoice still has due
+        (usedOnOrder: an unpaid COD order then owes only for what was kept, see orderDue); the rest
+        (toPayBack, money the shop had collected) stays on the walk-in customers' account for Accounts to
+        pay back in the ERP. The API never pays money out. externalReturnId, the shop's own id for the
+        return, is taken once per shop (409 RETURN_EXISTS).
       operationId: createReturn
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
@@ -489,6 +503,12 @@ paths:
               required: [externalOrderId, reason, items]
               properties:
                 externalOrderId: { type: string, maxLength: 100 }
+                externalReturnId:
+                  {
+                    type: string,
+                    maxLength: 100,
+                    description: "The shop's own id for the return; one already used answers 409 RETURN_EXISTS.",
+                  }
                 reason: { type: string, minLength: 3, maxLength: 500 }
                 returnDate: { type: string, format: date, description: "Today when left out." }
                 items:
@@ -516,12 +536,33 @@ paths:
               schema:
                 type: object
                 required:
-                  [erpReturnId, erpReturnNumber, externalOrderId, credited, orderStatus, items]
+                  [
+                    erpReturnId,
+                    erpReturnNumber,
+                    externalOrderId,
+                    externalReturnId,
+                    credited,
+                    usedOnOrder,
+                    toPayBack,
+                    orderDue,
+                    orderStatus,
+                    items,
+                  ]
                 properties:
                   erpReturnId: { type: string }
                   erpReturnNumber: { type: string, examples: [CN-2026-00001] }
                   externalOrderId: { type: string }
+                  externalReturnId: { type: [string, "null"] }
                   credited: { type: number }
+                  usedOnOrder:
+                    { type: number, description: "Of the credit, what paid the order's due." }
+                  toPayBack:
+                    {
+                      type: number,
+                      description: "Of the credit, what Accounts pays back in the ERP.",
+                    }
+                  orderDue:
+                    { type: number, description: "What is still due on the order after it." }
                   orderStatus: { type: string, examples: [PARTIALLY_RETURNED, RETURNED] }
                   items:
                     type: array
@@ -535,7 +576,9 @@ paths:
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409":
-          description: CONFLICT (no invoice yet, nothing delivered, a cancelled order), with the reason.
+          description: |
+            RETURN_EXISTS (details.erpReturnId, erpReturnNumber), or CONFLICT (no invoice yet, nothing
+            delivered, a cancelled order), with the reason.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -547,7 +590,8 @@ paths:
       summary: One day's ad spend for one platform (and campaign)
       description: |
         A running daily total: sending the same day, platform and campaign again replaces that day's
-        figure (200, replaced true); a new one answers 201.
+        figure (200, replaced true); a new one answers 201. Each shop (API key) keeps its own figures,
+        and ad spend entered in the ERP is never replaced.
       operationId: recordAdSpend
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"

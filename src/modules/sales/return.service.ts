@@ -23,9 +23,9 @@ import {
 } from "@/modules/inventory/costs";
 import { receiveAtCostTx } from "@/modules/inventory/stock.service";
 import { recordPartyActivity } from "@/modules/parties/party.service";
-import { creditPosition, lockBuyerCredit } from "@/modules/sales/credit.service";
+import { allocateTx, creditPosition, lockBuyerCredit } from "@/modules/sales/credit.service";
 import { deliveredByVariant } from "@/modules/sales/documents.service";
-import { ledgerPartyId } from "@/modules/sales/posting";
+import { ledgerPartyId, refreshOrderPayments } from "@/modules/sales/posting";
 import { canReturnOnInvoice, canVoidSalesReturn, statusAfterReturns } from "@/modules/sales/rules";
 import {
   listSalesReturnsSchema,
@@ -66,6 +66,15 @@ import { money, returnTotals, ZERO } from "@/modules/sales/totals";
  * Voiding such a return takes those pieces back out while they are still
  * there (not sold or promised to an order), and refuses with the reason
  * otherwise. Without `qc` every piece is DAMAGED, as above.
+ *
+ * A website return (`walkInCredit`, a sale without a buyer) has no buyer
+ * account to use its credit on later, so the credit at once pays what its
+ * own invoice still has due (a CreditAllocation from the return): an unpaid
+ * COD order then owes only for the pieces kept. What is left over (the shop
+ * had taken the money already) stays on the Walk-in customers account until
+ * Accounts pays it back from the credit note's page ("Pay back the credit",
+ * refund.service.ts). Voiding the return releases that allocation, and waits
+ * until any refund of its credit is voided first.
  */
 
 type Tx = Prisma.TransactionClient;
@@ -205,15 +214,41 @@ function returnInstant(ctx: CompanyContext, day: string | undefined, today: stri
 }
 
 /**
+ * A website return's credit (a sale without a buyer): what of it paid its own
+ * invoice, what Accounts paid back, and what is left to pay back.
+ */
+export async function walkInReturnCredit(db: Db | Tx, ret: { id: string; amount: Prisma.Decimal }) {
+  const [allocated, refunded] = await Promise.all([
+    db.creditAllocation.aggregate({
+      where: { salesReturnId: ret.id, releasedAt: null },
+      _sum: { amount: true },
+    }),
+    db.refund.aggregate({
+      where: { salesReturnId: ret.id, voidedAt: null },
+      _sum: { amount: true },
+    }),
+  ]);
+  const usedOnInvoice = money(allocated._sum.amount ?? 0);
+  const paidBack = money(refunded._sum.amount ?? 0);
+  return {
+    usedOnInvoice,
+    paidBack,
+    left: Prisma.Decimal.max(money(ret.amount).minus(usedOnInvoice).minus(paidBack), ZERO),
+  };
+}
+
+/**
  * Records a sales return against an invoice (Accounts). Returns the credit note.
  * `walkInCredit` (the e-commerce API only) takes a return on a sale without a
- * buyer: its credit stays on the Walk-in customers account.
+ * buyer: its credit pays its own invoice's due first, the rest stays on the
+ * Walk-in customers account. `integrationId` and `externalReturnId` keep the
+ * shop's own id for it (one return per id and shop).
  */
 export async function createSalesReturn(
   ctx: CompanyContext,
   raw: unknown,
   meta?: RequestMeta,
-  options: { walkInCredit?: boolean } = {},
+  options: { walkInCredit?: boolean; integrationId?: string; externalReturnId?: string } = {},
 ) {
   const input = salesReturnSchema.parse(raw);
   assertCanRecordReturns(ctx);
@@ -362,6 +397,8 @@ export async function createSalesReturn(
         amount: totals.total,
         costValue,
         createdById: ctx.user.id,
+        integrationId: options.integrationId ?? null,
+        externalReturnId: options.externalReturnId ?? null,
         items: {
           create: rows.map(({ line, take, qc, note, amount }) => ({
             variantId: line.variantId,
@@ -526,6 +563,25 @@ export async function createSalesReturn(
         data: { journalEntryId: journal.id },
       });
     }
+    // A website sale's credit pays what its own invoice still has due (the order is
+    // locked above; no buyer's credit is involved, so no buyer lock is needed).
+    let usedOnInvoice = ZERO;
+    if (options.walkInCredit && !invoice.partyId && totals.total.gt(0)) {
+      const paid = await tx.salesOrder.findUniqueOrThrow({
+        where: { id: order.id },
+        select: { total: true, paidAmount: true },
+      });
+      const due = Prisma.Decimal.max(paid.total.minus(paid.paidAmount), ZERO);
+      usedOnInvoice = Prisma.Decimal.min(totals.total, due);
+      if (usedOnInvoice.gt(0)) {
+        await allocateTx(tx, ctx, {
+          partyId: await ledgerPartyId(tx, companyId, null),
+          salesReturnId: created.id,
+          items: [{ orderId: order.id, amount: usedOnInvoice }],
+          limit: usedOnInvoice,
+        });
+      }
+    }
     await tx.salesOrder.update({
       where: { id: order.id },
       data: {
@@ -555,6 +611,8 @@ export async function createSalesReturn(
           discount: totals.discount.toFixed(2),
           tax: totals.tax.toFixed(2),
           credited: totals.total.toFixed(2),
+          ...(usedOnInvoice.gt(0) ? { usedOnInvoice: usedOnInvoice.toFixed(2) } : {}),
+          ...(options.externalReturnId ? { externalReturnId: options.externalReturnId } : {}),
         },
       },
       tx,
@@ -715,6 +773,18 @@ export async function voidSalesReturn(
       include: { items: { select: { id: true } } },
     });
     assertAllowed(canVoidSalesReturn(ret));
+    // A website return's credit paid back by Accounts comes back to it only by voiding that refund.
+    const paidBack = await tx.refund.findMany({
+      where: { salesReturnId: ret.id, voidedAt: null },
+      select: { number: true },
+      orderBy: { number: "asc" },
+    });
+    if (paidBack.length > 0) {
+      throw new AppError(
+        "CONFLICT",
+        `Credit from ${ret.number} was paid back on ${paidBack.map((r) => r.number).join(", ")}. Void that refund first, then the return.`,
+      );
+    }
     const itemIds = ret.items.map((i) => i.id);
     const restocked = await restockMovesOf(tx, itemIds);
     if (restocked.length > 0) {
@@ -865,6 +935,15 @@ export async function voidSalesReturn(
       where: { id: ret.id },
       data: { voidedAt: now, voidReason: reason },
     });
+    // The credit it put against its own invoice comes off again: that much is due once more.
+    const released = await tx.creditAllocation.updateMany({
+      where: { salesReturnId: ret.id, releasedAt: null },
+      data: {
+        releasedAt: now,
+        releaseReason: `Sales return ${ret.number} voided: ${reason}`.slice(0, 500),
+      },
+    });
+    if (released.count > 0) await refreshOrderPayments(tx, ret.orderId);
     const position = await returnPosition(tx, ret.orderId);
     const order = await tx.salesOrder.findUniqueOrThrow({
       where: { id: ret.orderId },

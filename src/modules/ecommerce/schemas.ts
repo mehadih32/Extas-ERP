@@ -158,16 +158,29 @@ export type ShortStock = {
 // Payments, shipments, returns, ad spend
 // ---------------------------------------------------------------------------
 
-export const paymentSchema = z.object({
-  externalOrderId: externalOrderIdSchema,
-  amount: positiveMoney,
-  method: upperEnum(SHOP_PAYMENT_METHODS),
-  /** The transaction id (bKash TrxID, card reference, courier invoice...). */
-  reference: optionalText(120),
-  /** When the money was received (now when left out). */
-  date: z.union([day, instant]).optional(),
-  note: optionalText(500),
-});
+export const paymentSchema = z
+  .object({
+    externalOrderId: externalOrderIdSchema,
+    amount: positiveMoney,
+    method: upperEnum(SHOP_PAYMENT_METHODS),
+    /**
+     * The transaction id (bKash TrxID, card reference, courier invoice...):
+     * required for BKASH, NAGAD and CARD, so a payment sent again is known.
+     */
+    reference: optionalText(120),
+    /** When the money was received (now when left out). */
+    date: z.union([day, instant]).optional(),
+    note: optionalText(500),
+  })
+  .superRefine((v, ctx) => {
+    if (v.method !== "COD" && !v.reference) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["reference"],
+        message: `Send the ${v.method} transaction id`,
+      });
+    }
+  });
 
 export const shipmentSchema = z.object({
   externalOrderId: externalOrderIdSchema,
@@ -244,6 +257,8 @@ export const RETURN_QC_RESULTS = ["GOOD", "B_GRADE", "DAMAGED"] as const;
 
 export const returnSchema = z.object({
   externalOrderId: externalOrderIdSchema,
+  /** The shop's own id for this return: one already used is answered 409 RETURN_EXISTS. */
+  externalReturnId: optionalText(100),
   reason: text(500),
   /** The day the goods came back (today when left out). */
   returnDate: day.optional(),

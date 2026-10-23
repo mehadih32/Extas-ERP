@@ -1828,22 +1828,26 @@ model CreditAllocation {
   invoiceId     String
   /// The payment on account this money came in with; null: the buyer's earlier credit.
   paymentId     String?
+  /// A website return's credit put against its own invoice (CN-005); released when the return is voided.
+  salesReturnId String?
   amount        Decimal   @db.Decimal(14, 2)
   createdById   String?
   createdAt     DateTime  @default(now())
   releasedAt    DateTime?
   releaseReason String?
 
-  company   Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  party     Party      @relation(fields: [partyId], references: [id], onDelete: Cascade)
-  order     SalesOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  invoice   Invoice    @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-  payment   Payment?   @relation(fields: [paymentId], references: [id], onDelete: SetNull)
-  createdBy User?      @relation("CreditAllocatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  company     Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  party       Party        @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  order       SalesOrder   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  invoice     Invoice      @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  payment     Payment?     @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  salesReturn SalesReturn? @relation(fields: [salesReturnId], references: [id], onDelete: SetNull)
+  createdBy   User?        @relation("CreditAllocatedBy", fields: [createdById], references: [id], onDelete: SetNull)
 
   @@index([companyId, partyId])
   @@index([orderId])
   @@index([paymentId])
+  @@index([salesReturnId])
 }
 
 /// A cheque received from a buyer. Nothing reaches the books while it is
@@ -1903,6 +1907,8 @@ model Refund {
   partyId        String? // null: a walk-in customer's order
   orderId        String?
   proformaId     String? // a proforma's refunds move onto its order when it converts
+  /// A website return's credit paid back (a sale without a buyer, CN-005): not money held on the order.
+  salesReturnId  String?
   amount         Decimal        @db.Decimal(14, 2)
   refundDate     DateTime       @default(now())
   method         PaymentMethod? // CASH: how the money went back
@@ -1920,6 +1926,7 @@ model Refund {
   party        Party?           @relation(fields: [partyId], references: [id], onDelete: SetNull)
   order        SalesOrder?      @relation(fields: [orderId], references: [id], onDelete: SetNull)
   proforma     ProformaInvoice? @relation(fields: [proformaId], references: [id], onDelete: SetNull)
+  salesReturn  SalesReturn?     @relation(fields: [salesReturnId], references: [id], onDelete: SetNull)
   account      LedgerAccount?   @relation(fields: [accountId], references: [id])
   journalEntry JournalEntry?    @relation(fields: [journalEntryId], references: [id], onDelete: SetNull)
   createdBy    User?            @relation("RefundCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
@@ -1929,6 +1936,7 @@ model Refund {
   @@index([orderId])
   @@index([proformaId])
   @@index([partyId])
+  @@index([salesReturnId])
 }
 
 // =============================================================================
@@ -1980,6 +1988,8 @@ model SalesChannelIntegration {
   webhookEvents   WebhookEvent[]
   apiCalls        IntegrationApiCall[]
   idempotencyKeys IntegrationIdempotency[]
+  salesReturns    SalesReturn[]
+  adSpend         AdSpend[]
 
   @@index([companyId])
 }
@@ -2122,46 +2132,53 @@ model ShipmentEvent {
 /// QC Rejects at once. A courier's returned parcel (shipmentId) waits in the
 /// "Pending Returns to Check" pool until QC.
 model SalesReturn {
-  id             String       @id @default(cuid())
-  companyId      String
-  number         String
-  orderId        String
+  id               String       @id @default(cuid())
+  companyId        String
+  number           String
+  orderId          String
   /// The invoice the goods were billed on: its prices are what is credited.
-  invoiceId      String?
-  partyId        String?
+  invoiceId        String?
+  partyId          String?
   /// Where the pieces are logged as Damage & QC Rejects (the order's warehouse).
-  warehouseId    String?
-  shipmentId     String?
-  reason         String?
-  notes          String?
-  status         ReturnStatus @default(PENDING_QC)
-  receivedAt     DateTime     @default(now())
-  completedAt    DateTime?
+  warehouseId      String?
+  shipmentId       String?
+  reason           String?
+  notes            String?
+  status           ReturnStatus @default(PENDING_QC)
+  receivedAt       DateTime     @default(now())
+  completedAt      DateTime?
   /// The goods at the prices billed, their share of the invoice's discount and VAT,
   /// and what the buyer is credited (goodsValue - discount + tax).
-  goodsValue     Decimal      @default(0) @db.Decimal(14, 2)
-  discount       Decimal      @default(0) @db.Decimal(14, 2)
-  tax            Decimal      @default(0) @db.Decimal(14, 2)
-  amount         Decimal      @default(0) @db.Decimal(14, 2)
+  goodsValue       Decimal      @default(0) @db.Decimal(14, 2)
+  discount         Decimal      @default(0) @db.Decimal(14, 2)
+  tax              Decimal      @default(0) @db.Decimal(14, 2)
+  amount           Decimal      @default(0) @db.Decimal(14, 2)
   /// What the pieces cost when they left: booked to Inventory Loss.
-  costValue      Decimal      @default(0) @db.Decimal(14, 2)
-  journalEntryId String?      @unique
-  createdById    String?
-  voidedAt       DateTime?
-  voidReason     String?
-  createdAt      DateTime     @default(now())
+  costValue        Decimal      @default(0) @db.Decimal(14, 2)
+  journalEntryId   String?      @unique
+  createdById      String?
+  voidedAt         DateTime?
+  voidReason       String?
+  createdAt        DateTime     @default(now())
+  /// The online shop that sent it (CN-005), and the shop's own id for it: one return per id.
+  integrationId    String?
+  externalReturnId String?
 
-  company      Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  order        SalesOrder        @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  invoice      Invoice?          @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
-  party        Party?            @relation(fields: [partyId], references: [id], onDelete: SetNull)
-  warehouse    Warehouse?        @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
-  shipment     Shipment?         @relation(fields: [shipmentId], references: [id], onDelete: SetNull)
-  journalEntry JournalEntry?     @relation(fields: [journalEntryId], references: [id], onDelete: SetNull)
-  createdBy    User?             @relation("SalesReturnCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  company      Company                  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  order        SalesOrder               @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  invoice      Invoice?                 @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  party        Party?                   @relation(fields: [partyId], references: [id], onDelete: SetNull)
+  warehouse    Warehouse?               @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
+  shipment     Shipment?                @relation(fields: [shipmentId], references: [id], onDelete: SetNull)
+  journalEntry JournalEntry?            @relation(fields: [journalEntryId], references: [id], onDelete: SetNull)
+  createdBy    User?                    @relation("SalesReturnCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  integration  SalesChannelIntegration? @relation(fields: [integrationId], references: [id], onDelete: SetNull)
   items        SalesReturnItem[]
+  allocations  CreditAllocation[]
+  refunds      Refund[]
 
   @@unique([companyId, number])
+  @@unique([companyId, integrationId, externalReturnId])
   @@index([companyId, status])
   @@index([companyId, receivedAt])
   @@index([invoiceId])
@@ -3395,17 +3412,21 @@ model Expense {
 
 /// Daily ad spend for the ROAS widget (Ad Spend vs Retail Sales).
 model AdSpend {
-  id        String     @id @default(cuid())
-  companyId String
-  date      DateTime   @db.Date
-  platform  AdPlatform
-  campaign  String?
-  amount    Decimal    @db.Decimal(14, 2)
-  createdAt DateTime   @default(now())
+  id            String     @id @default(cuid())
+  companyId     String
+  date          DateTime   @db.Date
+  platform      AdPlatform
+  campaign      String?
+  amount        Decimal    @db.Decimal(14, 2)
+  createdAt     DateTime   @default(now())
+  /// The online shop that sent it (CN-005): each shop keeps its own figures. Null: entered in the ERP.
+  integrationId String?
 
-  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  company     Company                  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  integration SalesChannelIntegration? @relation(fields: [integrationId], references: [id], onDelete: SetNull)
 
   @@index([companyId, date])
+  @@index([integrationId])
 }
 
 // =============================================================================

@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
 
 import { POST as postAdSpend } from "@/app/api/v1/ecommerce/ad-spend/route";
+import { PATCH as patchOrder } from "@/app/api/v1/ecommerce/orders/[externalOrderId]/route";
 import { POST as postPayment } from "@/app/api/v1/ecommerce/payments/route";
 import { POST as postReturn } from "@/app/api/v1/ecommerce/returns/route";
 import { localDay, startOfDayInZone } from "@/lib/dates";
@@ -17,10 +18,12 @@ import { buildDocument } from "@/modules/documents/builders";
 import type { Block } from "@/modules/documents/model";
 import { printRequestSchema } from "@/modules/documents/schemas";
 import { createIntegration } from "@/modules/ecommerce/integration.service";
+import { SHOP_PERMISSIONS } from "@/modules/ecommerce/shop-account";
 import * as stock from "@/modules/inventory/stock.service";
 import { ensureWalkInParty } from "@/modules/parties/walk-in";
 import * as documents from "@/modules/sales/documents.service";
 import * as orders from "@/modules/sales/order.service";
+import * as refunds from "@/modules/sales/refund.service";
 import * as returnScreens from "@/modules/sales/return-screens.service";
 import * as returns from "@/modules/sales/return.service";
 
@@ -245,7 +248,7 @@ run("E-commerce API: payments (CN-005)", () => {
     expect(card.status).toBe(201);
     const nagad = await callShop(shop, postPayment, {
       path: "/payments",
-      body: { externalOrderId: "WEB-1002", amount: 1900, method: "NAGAD" },
+      body: { externalOrderId: "WEB-1002", amount: 1900, method: "NAGAD", reference: "NG-1" },
     });
     expect(nagad.status).toBe(201);
     expect(nagad.body).toMatchObject({ orderPaid: 2900, orderDue: 0 });
@@ -363,6 +366,112 @@ run("E-commerce API: payments (CN-005)", () => {
   });
 });
 
+run("E-commerce API: payments sent again (CN-005 review)", () => {
+  let shop: Shop;
+  let navyS: string;
+  beforeEach(async () => {
+    await resetDb();
+    shop = await setupShop();
+    navyS = shop.sku("EX-PL-001", "Navy", "S");
+  });
+
+  it("needs the transaction id for bKash, Nagad and card money", async () => {
+    await websiteOrder(shop, "WEB-1101", [[navyS, 1]]);
+    for (const method of ["BKASH", "nagad", "Card"]) {
+      for (const reference of [undefined, "", "   "]) {
+        const res = await callShop(shop, postPayment, {
+          path: "/payments",
+          body: { externalOrderId: "WEB-1101", amount: 100, method, reference },
+        });
+        expect(res.status, `${method} ${JSON.stringify(reference)}`).toBe(422);
+        expect(res.body.error).toMatchObject({
+          code: "VALIDATION",
+          details: { reference: [expect.stringContaining("transaction id")] },
+        });
+      }
+    }
+    expect(await prisma.payment.count()).toBe(0);
+    const ok = await callShop(shop, postPayment, {
+      path: "/payments",
+      body: { externalOrderId: "WEB-1101", amount: 100, method: "BKASH", reference: "TRX-1" },
+    });
+    expect(ok.status).toBe(201);
+  });
+
+  it("takes a COD of one amount once without a reference; another reference is other money", async () => {
+    await websiteOrder(shop, "WEB-1102", [[navyS, 2]], { deliver: true });
+    const first = await callShop(shop, postPayment, {
+      path: "/payments",
+      body: { externalOrderId: "WEB-1102", amount: 1000, method: "COD" },
+    });
+    expect(first.status).toBe(201);
+    // The same COD sent again under a new Idempotency-Key is the same money.
+    const again = await callShop(shop, postPayment, {
+      path: "/payments",
+      body: { externalOrderId: "WEB-1102", amount: 1000, method: "COD" },
+    });
+    expect(again.status).toBe(409);
+    expect(again.body.error).toMatchObject({
+      code: "PAYMENT_EXISTS",
+      details: { erpPaymentId: first.body.erpPaymentId },
+    });
+    // A COD of another amount, or of the same amount with its own reference, is new money.
+    const other = await callShop(shop, postPayment, {
+      path: "/payments",
+      body: { externalOrderId: "WEB-1102", amount: 900, method: "COD" },
+    });
+    expect(other.status).toBe(201);
+    const second = await callShop(shop, postPayment, {
+      path: "/payments",
+      body: {
+        externalOrderId: "WEB-1102",
+        amount: 1000,
+        method: "COD",
+        reference: "STEADFAST-INV-2",
+      },
+    });
+    expect(second.status).toBe(201);
+    expect(second.body).toMatchObject({ orderPaid: 2900, orderDue: 0 });
+    // The same reference again is the same money, whatever the amount (checked before the due).
+    const sameRef = await callShop(shop, postPayment, {
+      path: "/payments",
+      body: {
+        externalOrderId: "WEB-1102",
+        amount: 400,
+        method: "COD",
+        reference: "STEADFAST-INV-2",
+      },
+    });
+    expect(sameRef.status).toBe(409);
+    expect(sameRef.body.error).toMatchObject({
+      code: "PAYMENT_EXISTS",
+      details: { erpPaymentId: second.body.erpPaymentId },
+    });
+    expect(await prisma.payment.count()).toBe(3);
+    await expectBooksOk(shop);
+  });
+
+  it("takes no money on an order whose parcel came back undelivered (409 ORDER_LOCKED)", async () => {
+    await websiteOrder(shop, "WEB-1103", [[navyS, 1]]);
+    const back = await callShop<{ externalOrderId: string }>(shop, patchOrder, {
+      method: "PATCH",
+      path: "/orders/WEB-1103",
+      body: { status: "RETURNED", reason: "Customer not at home" },
+      params: { externalOrderId: "WEB-1103" },
+    });
+    expect(back.status).toBe(200);
+    expect(back.body.status).toBe("RETURNED");
+    const res = await callShop(shop, postPayment, {
+      path: "/payments",
+      body: { externalOrderId: "WEB-1103", amount: 100, method: "COD" },
+    });
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe("ORDER_LOCKED");
+    expect(res.body.error.message).toContain("undelivered");
+    expect(await prisma.payment.count()).toBe(0);
+  });
+});
+
 run("E-commerce API: returns with QC per item (CN-005)", () => {
   let shop: Shop;
   let navyM: string;
@@ -417,7 +526,12 @@ run("E-commerce API: returns with QC per item (CN-005)", () => {
       erpReturnId: expect.any(String),
       erpReturnNumber: expect.stringMatching(/^CN/),
       externalOrderId: "WEB-2001",
+      externalReturnId: null,
       credited: 5800,
+      // Nothing was paid yet: the credit pays the invoice's due, which drops to the piece kept.
+      usedOnOrder: 5800,
+      toPayBack: 0,
+      orderDue: 1450,
       orderStatus: "PARTIALLY_RETURNED",
       items: [
         { sku: navyM, quantity: 1, qc: "GOOD" },
@@ -769,6 +883,368 @@ run("E-commerce API: returns with QC per item (CN-005)", () => {
   });
 });
 
+/** What the Walk-in customers account owes on the books (Receivable debits less credits). */
+async function walkInBalance(shop: Shop) {
+  const acc = await ensureControlAccounts(shop.company.id);
+  const agg = await prisma.journalLine.aggregate({
+    where: { accountId: acc.RECEIVABLE, partyId: await ensureWalkInParty(shop.company.id) },
+    _sum: { debit: true, credit: true },
+  });
+  return new Prisma.Decimal(agg._sum.debit ?? 0).minus(agg._sum.credit ?? 0).toFixed(2);
+}
+
+const orderMoney = async (orderId: string) => {
+  const o = await prisma.salesOrder.findUniqueOrThrow({
+    where: { id: orderId },
+    include: { invoice: true },
+  });
+  return {
+    paid: o.paidAmount.toFixed(2),
+    due: o.dueAmount.toFixed(2),
+    invoiceDue: o.invoice!.dueAmount.toFixed(2),
+    invoiceStatus: o.invoice!.status,
+  };
+};
+
+run("E-commerce API: a website return's credit (CN-005 review)", () => {
+  let shop: Shop;
+  let navyM: string;
+  beforeEach(async () => {
+    await resetDb();
+    shop = await setupShop();
+    navyM = shop.sku("EX-PL-001", "Navy", "M");
+  });
+
+  const returnOne = (externalOrderId: string, extra: Record<string, unknown> = {}) =>
+    callShop(shop, postReturn, {
+      path: "/returns",
+      body: {
+        externalOrderId,
+        reason: "Size problem",
+        items: [{ sku: navyM, quantity: 1, qc: "GOOD" }],
+        ...extra,
+      },
+    });
+
+  it("pays an unpaid COD order's due with the credit: the courier collects only for what was kept", async () => {
+    const order = await websiteOrder(shop, "WEB-3001", [[navyM, 2]], { deliver: true });
+    const walkIn = await ensureWalkInParty(shop.company.id);
+    expect(await orderMoney(order.id)).toMatchObject({ due: "2900.00", invoiceStatus: "UNPAID" });
+
+    const res = await returnOne("WEB-3001");
+    expect(res.status).toBe(201);
+    expect(res.body).toMatchObject({
+      credited: 1450,
+      usedOnOrder: 1450,
+      toPayBack: 0,
+      orderDue: 1450,
+    });
+    expect(await orderMoney(order.id)).toEqual({
+      paid: "1450.00",
+      due: "1450.00",
+      invoiceDue: "1450.00",
+      invoiceStatus: "PARTIALLY_PAID",
+    });
+    const allocations = await prisma.creditAllocation.findMany();
+    expect(allocations).toHaveLength(1);
+    expect(allocations[0]).toMatchObject({
+      salesReturnId: res.body.erpReturnId,
+      orderId: order.id,
+      partyId: walkIn,
+      paymentId: null,
+      releasedAt: null,
+    });
+    expect(allocations[0]!.amount.toFixed(2)).toBe("1450.00");
+    expect(await walkInBalance(shop)).toBe("1450.00");
+    const screen = await returnScreens.getSalesReturnScreen(shop.accounts, res.body.erpReturnId);
+    expect(screen.walkInCredit).toEqual({
+      usedOnInvoice: "1450.00",
+      paidBack: "0.00",
+      left: "0.00",
+    });
+    expect(screen.can.payBackKinds).toEqual([]);
+    expect(screen.salesReturn.invoice.due).toBe("1450.00");
+    await expectBooksOk(shop);
+
+    // The courier collects the rest: more than that is refused.
+    const tooMuch = await callShop(shop, postPayment, {
+      path: "/payments",
+      body: { externalOrderId: "WEB-3001", amount: 2900, method: "COD" },
+    });
+    expect(tooMuch.status).toBe(422);
+    const cod = await callShop(shop, postPayment, {
+      path: "/payments",
+      body: { externalOrderId: "WEB-3001", amount: 1450, method: "COD" },
+    });
+    expect(cod.status).toBe(201);
+    expect(cod.body).toMatchObject({ orderPaid: 2900, orderDue: 0 });
+    expect((await orderMoney(order.id)).invoiceStatus).toBe("PAID");
+    expect(await walkInBalance(shop)).toBe("0.00");
+    await expectBooksOk(shop);
+
+    // Voiding the return releases the allocation: the piece is owed for again.
+    await returns.voidSalesReturn(shop.accounts, res.body.erpReturnId, {
+      reason: "Recorded by mistake",
+    });
+    const released = await prisma.creditAllocation.findFirstOrThrow();
+    expect(released.releasedAt).not.toBeNull();
+    expect(released.releaseReason).toContain("voided");
+    expect(await orderMoney(order.id)).toEqual({
+      paid: "1450.00",
+      due: "1450.00",
+      invoiceDue: "1450.00",
+      invoiceStatus: "PARTIALLY_PAID",
+    });
+    expect(await walkInBalance(shop)).toBe("1450.00");
+    await expectBooksOk(shop);
+  });
+
+  it("uses part of the credit on a part-paid order and leaves the rest to pay back", async () => {
+    const order = await websiteOrder(shop, "WEB-3002", [[navyM, 2]]);
+    const paid = await callShop(shop, postPayment, {
+      path: "/payments",
+      body: { externalOrderId: "WEB-3002", amount: 2000, method: "BKASH", reference: "TRX-P1" },
+    });
+    expect(paid.status).toBe(201);
+    await documents.issueInvoice(shop.owner, order.id);
+    await documents.createDeliveryChallan(shop.owner, order.id);
+    const res = await returnOne("WEB-3002");
+    expect(res.status).toBe(201);
+    expect(res.body).toMatchObject({
+      credited: 1450,
+      usedOnOrder: 900,
+      toPayBack: 550,
+      orderDue: 0,
+    });
+    expect(await orderMoney(order.id)).toMatchObject({ due: "0.00", invoiceStatus: "PAID" });
+    const screen = await returnScreens.getSalesReturnScreen(shop.accounts, res.body.erpReturnId);
+    expect(screen.walkInCredit).toEqual({
+      usedOnInvoice: "900.00",
+      paidBack: "0.00",
+      left: "550.00",
+    });
+    expect(screen.can.payBackKinds).toContain("CASH");
+    expect(screen.can.payBackKinds).not.toContain("CREDIT");
+    // What the company owes the customer sits on the Walk-in customers account.
+    expect(await walkInBalance(shop)).toBe("-550.00");
+    await expectBooksOk(shop);
+  });
+
+  it("leaves a prepaid order's credit for Accounts to pay back; voiding waits for that refund", async () => {
+    const order = await websiteOrder(shop, "WEB-3003", [[navyM, 2]]);
+    const walkIn = await ensureWalkInParty(shop.company.id);
+    await callShop(shop, postPayment, {
+      path: "/payments",
+      body: { externalOrderId: "WEB-3003", amount: 2900, method: "BKASH", reference: "TRX-P2" },
+    });
+    await documents.issueInvoice(shop.owner, order.id);
+    await documents.createDeliveryChallan(shop.owner, order.id);
+    const res = await returnOne("WEB-3003");
+    expect(res.status).toBe(201);
+    expect(res.body).toMatchObject({
+      credited: 1450,
+      usedOnOrder: 0,
+      toPayBack: 1450,
+      orderDue: 0,
+    });
+    expect(await prisma.creditAllocation.count()).toBe(0);
+    expect(await walkInBalance(shop)).toBe("-1450.00");
+    const returnId = res.body.erpReturnId as string;
+
+    // The shop's account can never pay money out: the API only reports what is left.
+    expect(SHOP_PERMISSIONS).not.toContain("accounts.payments.record");
+    expect(SHOP_PERMISSIONS).not.toContain("accounts.manage");
+
+    // Accounts pays it back from the credit note: no more than is left, never as credit.
+    const more = await expectAppError(
+      refunds.refundBuyer(shop.accounts, {
+        salesReturnId: returnId,
+        kind: "CASH",
+        method: "BKASH",
+        amount: 1450.01,
+        reason: "Customer returned one shirt",
+      }),
+      "VALIDATION",
+    );
+    expect(more.message).toContain("1450.00");
+    await expectAppError(
+      refunds.refundBuyer(shop.accounts, {
+        salesReturnId: returnId,
+        kind: "CREDIT",
+        amount: 100,
+        reason: "Customer returned one shirt",
+      }),
+      "VALIDATION",
+    );
+    // Only Accounts' money key pays money back.
+    const sales = await expectAppError(
+      refunds.refundBuyer(
+        { ...shop.accounts, can: (key: string) => key !== "accounts.payments.record" },
+        {
+          salesReturnId: returnId,
+          kind: "CASH",
+          method: "BKASH",
+          amount: 100,
+          reason: "Customer returned one shirt",
+        },
+      ),
+      "FORBIDDEN",
+    );
+    expect(sales.message).toContain("Accounts");
+
+    const first = await refunds.refundBuyer(shop.accounts, {
+      salesReturnId: returnId,
+      kind: "CASH",
+      method: "BKASH",
+      reference: "TRX-BACK-1",
+      amount: 1000,
+      reason: "Customer returned one shirt",
+    });
+    expect(first).toMatchObject({ salesReturnId: returnId, partyId: null, orderId: null });
+    const acc = await ensureControlAccounts(shop.company.id);
+    const lines = await entryLines(shop.company.id, first.journalEntryId!);
+    expect(lines.net).toEqual({ RECEIVABLE: "1000.00", MOBILE_WALLET: "-1000.00" });
+    expect(lines.parties.RECEIVABLE).toBe(walkIn);
+    expect(acc.MOBILE_WALLET).toBeDefined();
+    // The order keeps what it was paid: this is the return's credit, not its money.
+    expect(await orderMoney(order.id)).toMatchObject({ paid: "2900.00", due: "0.00" });
+    expect(await walkInBalance(shop)).toBe("-450.00");
+
+    let screen = await returnScreens.getSalesReturnScreen(shop.accounts, returnId);
+    expect(screen.walkInCredit).toEqual({
+      usedOnInvoice: "0.00",
+      paidBack: "1000.00",
+      left: "450.00",
+    });
+    expect(screen.can.void).toBe(false);
+    expect(screen.notes.void).toContain("paid back");
+    const blocked = await expectAppError(
+      returns.voidSalesReturn(shop.accounts, returnId, { reason: "Recorded by mistake" }),
+      "CONFLICT",
+    );
+    expect(blocked.message).toContain(first.number);
+
+    // The voucher names the customer, the credit note and the order.
+    const { model } = await buildDocument(
+      shop.accounts,
+      printRequestSchema.parse({ type: "REFUND_VOUCHER", id: first.id }),
+      new Date(),
+    );
+    expect(model.parties[0]!.lines[0]).toBe("Nusrat Jahan");
+    expect(model.meta).toEqual(
+      expect.arrayContaining([
+        { label: "Credit note no.", value: res.body.erpReturnNumber },
+        { label: "Order no.", value: order.number },
+      ]),
+    );
+    // The refunds list links it to the credit note.
+    const { listRefundRows } = await import("@/modules/sales/screens.service");
+    const rows = await listRefundRows(shop.accounts);
+    expect(rows.items[0]!.salesReturn).toEqual({ id: returnId, number: res.body.erpReturnNumber });
+
+    const rest = await refunds.refundBuyer(shop.accounts, {
+      salesReturnId: returnId,
+      kind: "CASH",
+      method: "CASH",
+      amount: 450,
+      reason: "Customer returned one shirt",
+    });
+    await expectAppError(
+      refunds.refundBuyer(shop.accounts, {
+        salesReturnId: returnId,
+        kind: "CASH",
+        method: "CASH",
+        amount: 1,
+        reason: "Customer returned one shirt",
+      }),
+      "CONFLICT",
+    );
+    screen = await returnScreens.getSalesReturnScreen(shop.accounts, returnId);
+    expect(screen.walkInCredit!.left).toBe("0.00");
+    expect(screen.can.payBackKinds).toEqual([]);
+    expect(await walkInBalance(shop)).toBe("0.00");
+    await expectBooksOk(shop);
+
+    // Voiding both refunds puts the credit back; then the return can be voided.
+    await refunds.voidRefund(shop.accounts, rest.id, { reason: "Recorded by mistake" });
+    await refunds.voidRefund(shop.accounts, first.id, { reason: "Recorded by mistake" });
+    expect((await returnScreens.getSalesReturnScreen(shop.accounts, returnId)).can.void).toBe(true);
+    await returns.voidSalesReturn(shop.accounts, returnId, { reason: "Recorded by mistake" });
+    expect(await orderMoney(order.id)).toMatchObject({ paid: "2900.00", due: "0.00" });
+    expect(await walkInBalance(shop)).toBe("0.00");
+    await expectAppError(
+      refunds.refundBuyer(shop.accounts, {
+        salesReturnId: returnId,
+        kind: "CASH",
+        method: "CASH",
+        amount: 1,
+        reason: "Customer returned one shirt",
+      }),
+      "CONFLICT",
+    );
+    await expectBooksOk(shop);
+  });
+
+  it("takes the shop's own return id once: 409 RETURN_EXISTS, also when two come at once", async () => {
+    await websiteOrder(shop, "WEB-3004", [[navyM, 4]], { deliver: true });
+    const first = await returnOne("WEB-3004", { externalReturnId: "RMA-1" });
+    expect(first.status).toBe(201);
+    expect(first.body.externalReturnId).toBe("RMA-1");
+    const stored = await prisma.salesReturn.findUniqueOrThrow({
+      where: { id: first.body.erpReturnId },
+    });
+    expect(stored).toMatchObject({
+      integrationId: shop.integration.id,
+      externalReturnId: "RMA-1",
+    });
+
+    // Sent again under a new Idempotency-Key: the same return, not recorded twice.
+    const again = await returnOne("WEB-3004", { externalReturnId: " RMA-1 " });
+    expect(again.status).toBe(409);
+    expect(again.body.error).toMatchObject({
+      code: "RETURN_EXISTS",
+      details: { erpReturnId: first.body.erpReturnId },
+    });
+    expect(await prisma.salesReturn.count()).toBe(1);
+
+    // Another id is another return; two at once with one id make one return.
+    expect((await returnOne("WEB-3004", { externalReturnId: "RMA-2" })).status).toBe(201);
+    const both = await Promise.all([
+      returnOne("WEB-3004", { externalReturnId: "RMA-3" }),
+      returnOne("WEB-3004", { externalReturnId: "RMA-3" }),
+    ]);
+    expect(both.map((r) => r.status).sort()).toEqual([201, 409]);
+    expect(both.find((r) => r.status === 409)!.body.error.code).toBe("RETURN_EXISTS");
+    expect(await prisma.salesReturn.count()).toBe(3);
+
+    // Another shop of the company may use the same id for its own return.
+    const second = await createIntegration(shop.owner, {
+      name: "Second shop",
+      warehouseId: shop.warehouse.id,
+    });
+    const keys = await giveKey(second.id);
+    await websiteOrder(shop, "WEB-2ND-1", [[navyM, 1]], {
+      deliver: true,
+      integrationId: second.id,
+    });
+    const theirs = await callShop(keys, postReturn, {
+      path: "/returns",
+      body: {
+        externalOrderId: "WEB-2ND-1",
+        externalReturnId: "RMA-1",
+        reason: "Size problem",
+        items: [{ sku: navyM, quantity: 1, qc: "GOOD" }],
+      },
+    });
+    expect(theirs.status).toBe(201);
+
+    const long = await returnOne("WEB-3004", { externalReturnId: "R".repeat(101) });
+    expect(long.status).toBe(422);
+    expect(long.body.error.details).toHaveProperty("externalReturnId");
+    await expectBooksOk(shop);
+  });
+});
+
 run("E-commerce API: ad spend (CN-005)", () => {
   let shop: Shop;
   beforeEach(async () => {
@@ -879,6 +1355,44 @@ run("E-commerce API: ad spend (CN-005)", () => {
     expect(both.map((r) => r.status).sort()).toEqual([200, 201]);
     expect(await prisma.adSpend.count({ where: { platform: "INSTAGRAM" } })).toBe(1);
     expect(await prisma.adSpend.count()).toBe(2);
+  });
+
+  it("keeps each shop's figures apart, and never replaces ad spend entered in the ERP", async () => {
+    const day = daysAgo(2);
+    const erpRow = await prisma.adSpend.create({
+      data: {
+        companyId: shop.company.id,
+        date: new Date(`${day}T00:00:00Z`),
+        platform: "FACEBOOK",
+        amount: 300,
+      },
+    });
+    const second = await createIntegration(shop.owner, {
+      name: "Second shop",
+      warehouseId: shop.warehouse.id,
+    });
+    const keys = await giveKey(second.id);
+    const body = { date: day, platform: "FACEBOOK", amount: 1000 };
+    const ours = await callShop(shop, postAdSpend, { path: "/ad-spend", body });
+    const theirs = await callShop(keys, postAdSpend, {
+      path: "/ad-spend",
+      body: { ...body, amount: 2000 },
+    });
+    expect([ours.status, theirs.status]).toEqual([201, 201]);
+    // Each shop's repeat replaces only its own figure.
+    const oursAgain = await callShop(shop, postAdSpend, {
+      path: "/ad-spend",
+      body: { ...body, amount: 1100 },
+    });
+    expect(oursAgain.status).toBe(200);
+    expect(oursAgain.body).toMatchObject({ erpAdSpendId: ours.body.erpAdSpendId, replaced: true });
+    const rows = await prisma.adSpend.findMany({ orderBy: { amount: "asc" } });
+    expect(rows.map((r) => [r.integrationId, r.amount.toFixed(2)])).toEqual([
+      [null, "300.00"],
+      [shop.integration.id, "1100.00"],
+      [second.id, "2000.00"],
+    ]);
+    expect(rows[0]!.id).toBe(erpRow.id);
   });
 
   it("refuses a bad key, a bad day, platform or amount, and a day still to come", async () => {

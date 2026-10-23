@@ -138,6 +138,14 @@ describe("changing someone's role", () => {
     );
     expect(canGivePermissions(hrManager, ["sales.view", "parties.view"])).toEqual(allowed);
     expect(canGivePermissions(superAdmin, ["accounts.receipts.record"])).toEqual(allowed);
+    // Connecting online shops too: a shop's key takes orders and records money (CN-005).
+    expect(canGivePermissions(hrManager, ["integrations.ecommerce.manage"])).toEqual(
+      refused("FORBIDDEN", SUPER_ADMIN_GRANTS_KEYS),
+    );
+    expect(canGivePermissions(superAdmin, ["integrations.ecommerce.manage"])).toEqual(allowed);
+    expect(
+      canGrantRole(hrManager, { systemRole: null, permissions: ["integrations.ecommerce.manage"] }),
+    ).toEqual(money);
   });
 });
 
@@ -175,7 +183,7 @@ describe("deactivating and reactivating", () => {
   it("leaves switching back on someone who records money or manages the team to a Super Admin (v6.4.1 review 4)", () => {
     const refusedBack = refused("FORBIDDEN", SUPER_ADMIN_REACTIVATES);
     expect(SUPER_ADMIN_REACTIVATES).toBe(
-      "Only a Super Admin can switch this person back on, because they can record money or manage users or roles. Ask a Super Admin.",
+      "Only a Super Admin can switch this person back on, because they can record money, manage users or roles, or connect online shops. Ask a Super Admin.",
     );
     const accountant = { systemRole: ACCOUNTS.systemRole, heldKeys: ACCOUNTS.permissions };
     expect(canReactivate(hrManager, accountant)).toEqual(refusedBack);
@@ -235,7 +243,7 @@ describe("resetting a password", () => {
   it("leaves resetting someone who records money or manages the team to a Super Admin, like switching them back on (v6.4.2)", () => {
     const refusedReset = refused("FORBIDDEN", SUPER_ADMIN_RESETS);
     expect(SUPER_ADMIN_RESETS).toBe(
-      "Only a Super Admin can reset the password of someone who can record money or manage users or roles. Ask a Super Admin.",
+      "Only a Super Admin can reset the password of someone who can record money, manage users or roles, or connect online shops. Ask a Super Admin.",
     );
     // A team manager could otherwise reset the accountant's password and sign in as them.
     for (const role of [ACCOUNTS, TEAM_LEAD, ROLE_EDITOR]) {

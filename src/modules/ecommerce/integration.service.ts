@@ -6,15 +6,15 @@ import { encryptSecret } from "@/lib/crypto";
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
-import { requirePin } from "@/modules/ai/settings.service";
+import { PIN_CHECKED, requirePin } from "@/modules/ai/settings.service";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 
 import { apiKeyHint, apiKeyRef, newApiKey, newWebhookSecret } from "./keys";
 import { shopAccountOf } from "./shop-account";
-import { pinNeededFor } from "./shop-pin";
+import { normalizeIp, pinNeededFor } from "./shop-pin";
 
-export { pinNeededFor };
+export { normalizeIp, pinNeededFor };
 
 /*
  * Settings > Integrations > E-commerce (CN-005): the shops connected to this
@@ -38,9 +38,11 @@ export function assertCanManageShops(ctx: CompanyContext) {
  * resolves to are checked again when a webhook connects (webhooks.ts).
  */
 export function privateAddress(host: string): boolean {
+  // "localhost." and "metadata.google.internal." are the same names as without the dot.
   const h = host
     .replace(/^\[|\]$/g, "")
     .replace(/%.*$/, "")
+    .replace(/\.+$/, "")
     .toLowerCase();
   if (isIP(h) !== 0) return isPrivateIp(h);
   return (
@@ -132,7 +134,9 @@ export const webhookUrlSchema = z
 const ipEntry = z
   .string()
   .trim()
-  .refine((value) => isIP(value) !== 0, "Enter one IP address per line, like 203.0.113.7");
+  .refine((value) => isIP(value) !== 0, "Enter one IP address per line, like 203.0.113.7")
+  // Saved written one way, as the API compares a caller's address (route.ts).
+  .transform(normalizeIp);
 
 export const integrationSchema = z.object({
   name: z.string().trim().min(2, "Give it a name").max(80, "Use at most 80 characters"),
@@ -157,7 +161,12 @@ export const pinSchema = z.object({ pin: z.string().max(20).optional() });
  */
 const webhooksFromNow = () => {
   const now = new Date();
-  return { stockSentTo: now, variantsSentTo: now, webhooksStartedAt: now };
+  return {
+    stockSentTo: now,
+    variantsSentTo: now,
+    webhooksStartedAt: now,
+    webhooksPausedUntil: null,
+  };
 };
 
 async function checkWarehouse(ctx: CompanyContext, warehouseId: string) {
@@ -178,11 +187,23 @@ async function findIntegration(ctx: CompanyContext, id: string) {
   return integration;
 }
 
-/** Adds a shop to this company (no key yet: "Generate key" makes one). */
-export async function createIntegration(ctx: CompanyContext, raw: unknown, meta?: RequestMeta) {
+/**
+ * Adds a shop to this company (no key yet: "Generate key" makes one). With a
+ * webhook URL it needs the PIN: the shop's product changes, costs included,
+ * go there. `proof` is for server code that already checked it (sample data).
+ */
+export async function createIntegration(
+  ctx: CompanyContext,
+  raw: unknown,
+  meta?: RequestMeta,
+  proof?: typeof PIN_CHECKED,
+) {
   assertCanManageShops(ctx);
   const input = integrationSchema.parse(raw);
+  const { pin } = pinSchema.parse(raw);
   await checkWarehouse(ctx, input.warehouseId);
+  // An allow-list on a new shop only narrows who may call (from any address): no PIN.
+  if (input.webhookUrl) await requirePin(ctx, proof ?? pin, "add a shop with a webhook URL");
   const integration = await ctx.db.salesChannelIntegration.create({
     data: {
       companyId: ctx.company.id,
@@ -208,7 +229,8 @@ export async function createIntegration(ctx: CompanyContext, raw: unknown, meta?
 
 /**
  * Changes a shop's name, warehouse, webhook address, allow-list or rate limit.
- * A new webhook URL or an address taken off the IP allow-list needs the PIN.
+ * A new webhook URL, or an IP allow-list that lets more addresses call (an
+ * address added to a list, or the list emptied), needs the PIN (shop-pin.ts).
  */
 export async function updateIntegration(
   ctx: CompanyContext,

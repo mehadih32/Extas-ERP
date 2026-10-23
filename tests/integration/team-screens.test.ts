@@ -428,6 +428,7 @@ run("team and roles screens offer exactly what the server allows", () => {
       "accounts.payments.record",
       "company.members.manage",
       "company.roles.manage",
+      "integrations.ecommerce.manage",
     ]);
     expect(asAdmin.lockedPermissions).toEqual([]);
     expect(asAdmin.grantableRoleIds).toContain(roles.ACCOUNTS);

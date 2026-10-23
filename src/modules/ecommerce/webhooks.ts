@@ -3,14 +3,14 @@ import { lookup as dnsLookup } from "node:dns";
 import { request as httpsRequest } from "node:https";
 import type { LookupFunction } from "node:net";
 
-import type { BackgroundJob, Prisma, SalesChannelIntegration } from "@prisma/client";
+import { type BackgroundJob, Prisma, type SalesChannelIntegration } from "@prisma/client";
 
 import { decryptSecret } from "@/lib/crypto";
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import { assertMayWrite } from "@/lib/read-only";
 import type { CompanyContext } from "@/modules/auth/context";
-import { enqueueJobs } from "@/modules/jobs/queue";
+import { DeferJob, enqueueJobs, retryDelayMs } from "@/modules/jobs/queue";
 
 import { catalogVariantOf, stockRowOf } from "./catalog.service";
 import { assertCanManageShops, privateAddress } from "./integration.service";
@@ -50,8 +50,12 @@ import {
 export const WEBHOOK_JOB = "ecommerce.webhook.send" as const;
 /** An event not delivered within this time is given up (the shop polls instead). */
 export const GIVE_UP_AFTER_MS = 24 * 60 * 60_000;
-/** How long the shop has to answer one try. */
-export const SEND_TIMEOUT_MS = 10_000;
+/**
+ * How long the shop has to answer one try. Short, because the background
+ * queue runs one job at a time; a shop that does not answer is also paused
+ * (webhooksPausedUntil) so only one of its webhooks waits for it per retry.
+ */
+export const SEND_TIMEOUT_MS = 5_000;
 /**
  * Tries for each event: the queue's waits (30 s doubling, then an hour each,
  * jobs/queue.ts) add up to just over 24 hours by the 31st try.
@@ -215,6 +219,8 @@ export async function scanShop(shop: Shop, now: Date = new Date()): Promise<numb
   const variantsFrom = usable(shop.variantsSentTo, now) ? shop.variantsSentTo! : null;
   const started = shop.webhooksStartedAt?.getTime() ?? 0;
   const back = (from: Date) => new Date(Math.max(from.getTime() - OVERLAP_MS, started));
+  const paused =
+    shop.webhooksPausedUntil && shop.webhooksPausedUntil > now ? shop.webhooksPausedUntil : null;
   const planned = [
     ...(stockFrom ? await stockChanges(shop, back(stockFrom), now) : []),
     ...(variantsFrom ? await variantChanges(shop, back(variantsFrom), now) : []),
@@ -261,6 +267,8 @@ export async function scanShop(shop: Shop, now: Date = new Date()): Promise<numb
               companyId: shop.companyId,
               payload: { eventId: event.id },
               maxAttempts: WEBHOOK_MAX_ATTEMPTS,
+              // A paused shop's new webhooks wait for the pause too.
+              ...(paused ? { runAfter: paused } : {}),
             })),
           );
         }
@@ -366,7 +374,7 @@ export const shopLookup: LookupFunction = (hostname, options, callback) => {
 
 /**
  * One POST over https with shopLookup and a connection of its own (never one
- * kept from before): no redirects followed, 10 seconds at most. The answer is
+ * kept from before): no redirects followed, 5 seconds at most. The answer is
  * the shop's status; its words are not read.
  */
 function postToShop(address: string, headers: Record<string, string>, body: string) {
@@ -402,7 +410,7 @@ function headersFor(secret: string, raw: string, type: string, id: string) {
   };
 }
 
-/** Posts one body to the shop: no redirects followed, 10 seconds at most. */
+/** Posts one body to the shop: no redirects followed, 5 seconds at most. */
 export async function deliver(
   address: string,
   secret: string,
@@ -438,6 +446,49 @@ export async function deliver(
             : "The shop's webhook address could not be reached.",
     };
   }
+}
+
+/** A time as the queue stores it: UTC wall-clock time (jobs/queue.ts). */
+const utc = (date: Date) => Prisma.sql`(${date.toISOString()}::timestamptz AT TIME ZONE 'UTC')`;
+
+/**
+ * After a failed try: the shop's other webhooks waiting in the queue move to
+ * `until` (this event's own next try) without a try of their own, so a shop
+ * that does not answer costs one timeout per retry, not one per SKU. The first
+ * webhook due then is the one try; a delivered one ends the pause.
+ */
+async function pauseShop(shopId: string, until: Date, eventId: string) {
+  await prisma.salesChannelIntegration.update({
+    where: { id: shopId },
+    data: { webhooksPausedUntil: until },
+  });
+  await prisma.$executeRaw`
+    UPDATE "BackgroundJob" AS j
+    SET "runAfter" = ${utc(until)}, "updatedAt" = ${utc(new Date())}
+    FROM "WebhookEvent" AS e
+    WHERE j."kind" = ${WEBHOOK_JOB}
+      AND j."status" = 'QUEUED'
+      AND j."runAfter" < ${utc(until)}
+      AND j."payload"->>'eventId' = e."id"
+      AND e."integrationId" = ${shopId}
+      AND e."id" <> ${eventId}`;
+}
+
+/** Ends a shop's pause: its webhooks waiting in the queue are due now. */
+async function resumeShop(shopId: string, now: Date) {
+  await prisma.salesChannelIntegration.update({
+    where: { id: shopId },
+    data: { webhooksPausedUntil: null },
+  });
+  await prisma.$executeRaw`
+    UPDATE "BackgroundJob" AS j
+    SET "runAfter" = ${utc(now)}, "updatedAt" = ${utc(now)}
+    FROM "WebhookEvent" AS e
+    WHERE j."kind" = ${WEBHOOK_JOB}
+      AND j."status" = 'QUEUED'
+      AND j."runAfter" > ${utc(now)}
+      AND j."payload"->>'eventId' = e."id"
+      AND e."integrationId" = ${shopId}`;
 }
 
 /** Ends an event without a try (processedAt: when it ended, for the housekeeping). */
@@ -487,6 +538,12 @@ export async function runWebhookSendJob(job: BackgroundJob) {
       now,
     );
   }
+  // Paused after a failed try: this one waits for the next try too, not counted.
+  // Compared with when the queue took the job (its clock), so it is never taken again at once.
+  const taken = job.lockedAt ?? now;
+  if (shop.webhooksPausedUntil && shop.webhooksPausedUntil > taken) {
+    throw new DeferJob(shop.webhooksPausedUntil);
+  }
   if (event.externalId) {
     const newer = await prisma.webhookEvent.count({
       where: {
@@ -515,10 +572,11 @@ export async function runWebhookSendJob(job: BackgroundJob) {
     });
     await prisma.salesChannelIntegration.update({
       where: { id: shop.id },
-      data: { lastSyncedAt: now },
+      data: { lastSyncedAt: now, webhooksPausedUntil: null },
     });
     return;
   }
+  await pauseShop(shop.id, new Date(now.getTime() + retryDelayMs(job.attempts)), event.id);
   const lastTry = job.attempts >= job.maxAttempts;
   await prisma.webhookEvent.update({
     where: { id: event.id },
@@ -570,6 +628,14 @@ export async function sendTestEvent(ctx: CompanyContext, id: string): Promise<Te
   assertCanManageShops(ctx);
   // A Full check session on the live site only reads: it sends nothing to a shop either.
   await assertMayWrite();
+  // Nor does a restore drill copy or a copy on standby (like the webhook clock).
+  const { onDrill, onStandby } = await import("@/modules/backups/standby");
+  if ((await onDrill()) || (await onStandby())) {
+    throw new AppError(
+      "CONFLICT",
+      "This is a restore drill or standby copy of the ERP: it sends nothing to the shop.",
+    );
+  }
   const shop = await ctx.db.salesChannelIntegration.findUnique({ where: { id } });
   if (!shop) throw new AppError("NOT_FOUND", "Online shop not found.");
   if (!shop.apiKeyRef) {
@@ -638,6 +704,8 @@ export async function sendTestEvent(ctx: CompanyContext, id: string): Promise<Te
       where: { id: shop.id },
       data: { lastSyncedAt: now },
     });
+    // The shop answers again: its paused webhooks go at once.
+    if (shop.webhooksPausedUntil && shop.webhooksPausedUntil > now) await resumeShop(shop.id, now);
   }
   return result;
 }

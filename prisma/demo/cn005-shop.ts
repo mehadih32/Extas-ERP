@@ -5,6 +5,7 @@ import type { Prisma } from "@prisma/client";
 import { encryptSecret } from "@/lib/crypto";
 import { prisma } from "@/lib/prisma";
 import type { CompanyContext } from "@/modules/auth/context";
+import { PIN_CHECKED } from "@/modules/ai/settings.service";
 import { createIntegration } from "@/modules/ecommerce/integration.service";
 import { apiKeyHint, apiKeyRef, newApiKey, newWebhookSecret } from "@/modules/ecommerce/keys";
 import { getDefaultWarehouse } from "@/modules/inventory/stock.service";
@@ -31,12 +32,18 @@ export async function loadSampleShop(ctx: CompanyContext) {
   });
   if (there) return null;
   const warehouse = await getDefaultWarehouse(ctx);
-  const shop = await createIntegration(ctx, {
-    name: SAMPLE_SHOP,
-    platform: "CUSTOM_WEBSITE",
-    warehouseId: warehouse.id,
-    webhookUrl: "https://shop.extas.example/erp/webhooks",
-  });
+  const shop = await createIntegration(
+    ctx,
+    {
+      name: SAMPLE_SHOP,
+      platform: "CUSTOM_WEBSITE",
+      warehouseId: warehouse.id,
+      webhookUrl: "https://shop.extas.example/erp/webhooks",
+      // Sample data loaded on the demo site: no person adds this address.
+    },
+    undefined,
+    PIN_CHECKED,
+  );
   const key = newApiKey();
   const now = Date.now();
   const at = (minutesAgo: number) => new Date(now - minutesAgo * MINUTE);

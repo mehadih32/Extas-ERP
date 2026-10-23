@@ -33,7 +33,7 @@ info:
 
     **Webhooks to the shop** (`variant.changed`, `stock.changed`, and `ping` from "Send test") are POSTed
     to the shop webhook URL saved in the integration, signed as above, with `X-Extas-Event` (the type) and
-    `X-Extas-Delivery` (the event id, the same on every retry). A 2xx answer within 10 seconds counts as
+    `X-Extas-Delivery` (the event id, the same on every retry). A 2xx answer within 5 seconds counts as
     delivered; anything else is retried with growing waits for up to 24 hours. Every event is in the
     integration's webhook log. The shop should also poll `updatedSince` every few minutes so a missed
     webhook never leaves stock wrong.
@@ -657,7 +657,7 @@ webhooks:
                   $ref: "#/components/schemas/StockRow"
       responses:
         "2XX":
-          description: Received (answer within 10 seconds). Anything else is retried for up to 24 hours.
+          description: Received (answer within 5 seconds). Anything else is retried for up to 24 hours.
   variant.changed:
     post:
       summary: A variant's price or active flag changed, or a new variant was made
@@ -694,7 +694,7 @@ webhooks:
                         isNew: { type: boolean }
       responses:
         "2XX":
-          description: Received (answer within 10 seconds). Anything else is retried for up to 24 hours.
+          description: Received (answer within 5 seconds). Anything else is retried for up to 24 hours.
   ping:
     post:
       summary: The "Send test" button in the ERP
@@ -730,7 +730,7 @@ webhooks:
                     company: { type: string }
       responses:
         "2XX":
-          description: Received (answer within 10 seconds). Anything else is retried for up to 24 hours.
+          description: Received (answer within 5 seconds). Anything else is retried for up to 24 hours.
 components:
   securitySchemes:
     apiKey:

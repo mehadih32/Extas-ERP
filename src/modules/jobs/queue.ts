@@ -82,7 +82,9 @@ export function retryDelayMs(attempt: number): number {
 
 /**
  * Takes the next job that is due, marking it RUNNING for this worker, or null
- * when none is. Jobs another worker holds are skipped, not waited for.
+ * when none is. Jobs another worker holds are skipped, not waited for. Any
+ * other kind due goes ahead of the online shops' webhooks: a slow shop never
+ * holds up an alarm to the owner or a bot reply (they wait their turn after).
  */
 /**
  * Which jobs may be claimed. alarmsSince: only the owner's alarms to the bot queued
@@ -108,7 +110,7 @@ export async function claimNextJob(
     WHERE "id" = (
       SELECT "id" FROM "BackgroundJob"
       WHERE "status" = 'QUEUED' AND "runAfter" <= ${at} ${which}
-      ORDER BY "runAfter", "createdAt"
+      ORDER BY ("kind" = 'ecommerce.webhook.send'), "runAfter", "createdAt"
       LIMIT 1
       FOR UPDATE SKIP LOCKED
     )
@@ -121,6 +123,32 @@ export async function completeJob(job: Pick<BackgroundJob, "id">, now: Date = ne
   await prisma.backgroundJob.update({
     where: { id: job.id },
     data: { status: "SUCCEEDED", finishedAt: now, lockedAt: null, lockedBy: null, lastError: null },
+  });
+}
+
+/**
+ * Thrown by a handler that should not run yet (an online shop's webhooks while
+ * the shop is paused): the job goes back to the queue until `until`, and the
+ * try is not counted.
+ */
+export class DeferJob extends Error {
+  constructor(readonly until: Date) {
+    super("Not yet: waiting until " + until.toISOString());
+    this.name = "DeferJob";
+  }
+}
+
+/** Puts a claimed job back until `until`, without counting the try. */
+export async function deferJob(job: Pick<BackgroundJob, "id">, until: Date) {
+  await prisma.backgroundJob.update({
+    where: { id: job.id },
+    data: {
+      status: "QUEUED",
+      runAfter: until,
+      attempts: { decrement: 1 },
+      lockedAt: null,
+      lockedBy: null,
+    },
   });
 }
 

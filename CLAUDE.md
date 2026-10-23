@@ -215,7 +215,9 @@ overwrites a stored total or figure.
   account may record money received for its own website orders and take back checked returns: the one exception to
   the money rule in section 2, because the contract asks for it; the API never refunds money (Accounts does that in
   the ERP). The shop's prices are taken as sent. Website returns are credited to the Walk-in customer and set
-  against that order's invoice; checked pieces go back as GOOD (stock), B_GRADE (B-grade stock) or DAMAGED.
+  against that order's invoice (money that arrives after the return is still taken in full and moves the rest of the
+  credit to "Left to pay back"); checked pieces go back as GOOD (stock), B_GRADE (B-grade stock) or DAMAGED. An order
+  that came back undelivered owes nothing and takes no money anywhere in the ERP.
   Stock and product webhooks to the shop are on by default (switch: `ECOMMERCE_WEBHOOKS`).
 - 2026-10-18 (v6.4.2): the CM settlement charges only the CM work: faults on material the factory supplied or on
   material bills are left out (and shown, with why), CM paid counts only payments not used on material bills,

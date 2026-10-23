@@ -11,6 +11,7 @@ import { assertMayWrite } from "@/lib/read-only";
 import type { CompanyContext } from "@/modules/auth/context";
 import { enqueueJobs } from "@/modules/jobs/queue";
 
+import { catalogVariantOf, stockRowOf } from "./catalog.service";
 import { assertCanManageShops, privateAddress } from "./integration.service";
 import type { CatalogVariant, StockRow } from "./schemas";
 import {
@@ -72,47 +73,6 @@ export type VariantChanged = CatalogVariant & { isNew: boolean };
 // ---------------------------------------------------------------------------
 // What is sent
 // ---------------------------------------------------------------------------
-
-const money = (value: Prisma.Decimal | number) => Math.round(Number(value) * 100) / 100;
-
-type VariantRow = Prisma.ProductVariantGetPayload<{
-  include: { style: true; color: true; size: true };
-}>;
-
-/** A variant as GET /catalog/variants and variant.changed show it. */
-export function catalogVariantOf(variant: VariantRow): CatalogVariant {
-  const updatedAt =
-    variant.updatedAt > variant.style.updatedAt ? variant.updatedAt : variant.style.updatedAt;
-  return {
-    sku: variant.sku,
-    barcode: variant.barcode,
-    styleCode: variant.style.code,
-    styleName: variant.style.name,
-    color: variant.color.name,
-    size: variant.size.name,
-    retailPrice: money(variant.retailPrice ?? variant.style.retailPrice),
-    avgCost: money(variant.avgCost),
-    active: variant.isActive && variant.style.isActive && !variant.removedAt,
-    updatedAt: updatedAt.toISOString(),
-  };
-}
-
-type BalanceRow = Prisma.StockBalanceGetPayload<{
-  include: { variant: { select: { sku: true } }; warehouse: { select: { id: true; name: true } } };
-}>;
-
-/** An A-grade stock row as GET /stock and stock.changed show it. */
-export function stockRowOf(balance: BalanceRow): StockRow {
-  return {
-    sku: balance.variant.sku,
-    warehouseId: balance.warehouse.id,
-    warehouseName: balance.warehouse.name,
-    onHand: balance.quantity,
-    reserved: balance.reserved,
-    available: Math.max(balance.quantity - balance.reserved, 0),
-    updatedAt: balance.updatedAt.toISOString(),
-  };
-}
 
 /** The same JSON whatever the order of its keys (the database keeps them in its own order). */
 function canonical(value: unknown): string {

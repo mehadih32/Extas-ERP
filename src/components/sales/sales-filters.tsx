@@ -51,7 +51,13 @@ const SELECTS: Record<SalesListView["list"], Select[]> = {
       key: "status",
       label: "Status",
       all: "All statuses",
-      options: ORDER_STATUSES.map((s) => [s, ORDER_STATUS_LABELS[s]] as const),
+      options: ORDER_STATUSES.map(
+        (s) =>
+          [
+            s,
+            s === "PROCESSING" ? "Part delivered or processing" : ORDER_STATUS_LABELS[s],
+          ] as const,
+      ),
     },
     {
       key: "channel",

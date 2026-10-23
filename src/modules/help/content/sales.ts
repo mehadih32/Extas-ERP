@@ -131,11 +131,11 @@ export const salesHelp: HelpSection = {
         },
         {
           label: "All statuses",
-          text: "অর্ডারের অবস্থা দিয়ে ফিল্টার: “Confirmed”, “Packed”, “Part delivered”, “Delivered”, “Part returned”, “Returned” বা “Cancelled”।",
+          text: "অর্ডারের অবস্থা দিয়ে ফিল্টার: “Confirmed”, “Packed”, “Part delivered or processing”, “Shipped”, “Delivered”, “Part returned”, “Returned” বা “Cancelled”। ওয়েবসাইটের অর্ডার দোকান প্যাক করা শুরু করলে তালিকায় “Processing” দেখায়; অন্য অর্ডারে একই অবস্থা মানে কিছু মাল দেওয়া হয়ে গেছে (“Part delivered”)। কুরিয়ারে পাঠানো ওয়েবসাইটের অর্ডার “Shipped” দেখায়।",
         },
         {
           label: "All channels",
-          text: "বিক্রির ধরন দিয়ে ফিল্টার: “Wholesale”, “B2B pre-order” (প্রোফর্মা থেকে হওয়া অর্ডার), “Counter sale” বা “Social commerce”।",
+          text: "বিক্রির ধরন দিয়ে ফিল্টার: “Wholesale”, “B2B pre-order” (প্রোফর্মা থেকে হওয়া অর্ডার), “Counter sale”, “Social commerce” বা “Website” (অনলাইন দোকান থেকে আসা অর্ডার)।",
         },
         {
           label: "Clear filters",

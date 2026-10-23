@@ -286,7 +286,7 @@ export default async function OrderPage({
           }
           badges={
             <>
-              <OrderBadge status={o.status} />
+              <OrderBadge status={o.status} channel={o.channel} />
               {o.hasForceOverride && <OverrideBadge />}
               {o.shipmentOn && (
                 <span className="text-sm text-muted-foreground">

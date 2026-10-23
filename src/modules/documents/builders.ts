@@ -46,7 +46,7 @@ import {
 import {
   CHANNEL_LABELS,
   INVOICE_STATUS_LABELS,
-  ORDER_STATUS_LABELS,
+  orderStatusLabel,
   QUOTATION_STATUS_LABELS,
   REFUND_KIND_LABELS,
 } from "@/components/sales/labels";
@@ -2225,7 +2225,7 @@ export async function buyerProfileDocument(
           cells: [
             o.number,
             formatDay(o.orderedOn),
-            ORDER_STATUS_LABELS[o.status],
+            orderStatusLabel(o.status, o.channel),
             o.invoice
               ? `${o.invoice.number} (${o.invoice.isOverdue ? "Overdue" : INVOICE_STATUS_LABELS[o.invoice.status]})`
               : "Not invoiced",

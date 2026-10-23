@@ -58,7 +58,7 @@ export function OrderPeekList({
                   <span className="grid min-w-0 flex-1 gap-0.5">
                     <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
                       <span className="text-sm font-medium">{o.number}</span>
-                      <OrderBadge status={o.status} />
+                      <OrderBadge status={o.status} channel={o.channel} />
                     </span>
                     <span className="text-[0.8125rem] break-words text-muted-foreground">
                       {o.buyer}

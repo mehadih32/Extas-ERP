@@ -15,7 +15,7 @@
     "route": "/accounts/expenses",
     "screen": "c1a58b5387831720",
     "guide": "c8454cbefd4eb8ef",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "accounts-balance-sheet": {
     "src": "/help/shots/accounts-balance-sheet.webp",
@@ -34,7 +34,7 @@
     "route": "/accounts/reports/balance-sheet",
     "screen": "48d319ab9db6daa4",
     "guide": "46229a0994736251",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "accounts-bank-accounts": {
     "src": "/help/shots/accounts-bank-accounts.webp",
@@ -51,9 +51,9 @@
       "target": "marks"
     },
     "route": "/accounts/cash-bank",
-    "screen": "af46317492d1517a",
+    "screen": "d530843422641cbc",
     "guide": "f273bb4da6bcc33f",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "accounts-bank-reconcile": {
     "src": "/help/shots/accounts-bank-reconcile.webp",
@@ -70,9 +70,9 @@
       "target": "marks"
     },
     "route": "/accounts/cash-bank",
-    "screen": "af46317492d1517a",
+    "screen": "d530843422641cbc",
     "guide": "c2d108ebdf745c83",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "accounts-books-check": {
     "src": "/help/shots/accounts-books-check.webp",
@@ -90,7 +90,7 @@
     "route": "/accounts/reports/books-check",
     "screen": "10b3e20a848b96dc",
     "guide": "31d5dcc54b94ff75",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "accounts-chart": {
     "src": "/help/shots/accounts-chart.webp",
@@ -107,9 +107,9 @@
       "target": "marks"
     },
     "route": "/accounts/chart",
-    "screen": "928871885c98cfcc",
+    "screen": "bb9af46078d07068",
     "guide": "d485636e097f497b",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "accounts-expense-breakdown": {
     "src": "/help/shots/accounts-expense-breakdown.webp",
@@ -129,9 +129,9 @@
       "target": "marks"
     },
     "route": "/accounts",
-    "screen": "f486b05a398fef25",
+    "screen": "97db802980d13114",
     "guide": "a52417ae4594174d",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "accounts-expense-claim": {
     "src": "/help/shots/accounts-expense-claim.webp",
@@ -150,9 +150,9 @@
       "target": "marks"
     },
     "route": "/accounts/expenses/new",
-    "screen": "c51c74c6ff493743",
+    "screen": "74ccba7900332cf0",
     "guide": "1015a67b003e6af9",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "accounts-expense-heads": {
     "src": "/help/shots/accounts-expense-heads.webp",
@@ -170,9 +170,9 @@
       "target": "marks"
     },
     "route": "/accounts/expenses/heads",
-    "screen": "99410fc4fd360eec",
+    "screen": "186c26c93cff97f9",
     "guide": "28682984cc5846e0",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "accounts-fixed-assets": {
     "src": "/help/shots/accounts-fixed-assets.webp",
@@ -191,9 +191,9 @@
       "target": "marks"
     },
     "route": "/accounts/assets",
-    "screen": "8824272bc001be47",
+    "screen": "a4894de805ca8c1e",
     "guide": "ccacf003262c2050",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "accounts-journal": {
     "src": "/help/shots/accounts-journal.webp",
@@ -212,7 +212,7 @@
     "route": "/accounts/journal",
     "screen": "79b0cff12ddba34e",
     "guide": "5c2ad734b0a3afae",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "accounts-money-in-out": {
     "src": "/help/shots/accounts-money-in-out.webp",
@@ -228,9 +228,9 @@
       "target": "marks"
     },
     "route": "/accounts",
-    "screen": "f486b05a398fef25",
+    "screen": "97db802980d13114",
     "guide": "d70e4b52e7f99fef",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "accounts-move-money": {
     "src": "/help/shots/accounts-move-money.webp",
@@ -246,9 +246,9 @@
       "target": "marks"
     },
     "route": "/accounts",
-    "screen": "f486b05a398fef25",
+    "screen": "97db802980d13114",
     "guide": "bdd3730aaa7114d7",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "accounts-overview": {
     "src": "/help/shots/accounts-overview.webp",
@@ -272,9 +272,9 @@
       "target": "marks"
     },
     "route": "/accounts",
-    "screen": "f486b05a398fef25",
+    "screen": "97db802980d13114",
     "guide": "42963b56dd335c21",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "accounts-pay-supplier": {
     "src": "/help/shots/accounts-pay-supplier.webp",
@@ -293,9 +293,9 @@
       "target": "marks"
     },
     "route": "/accounts/supplier-payments/new",
-    "screen": "70addbfed5865a85",
+    "screen": "a40ee18d7c3d0c98",
     "guide": "b9b5c7a7b990dfd4",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "accounts-petty-cash": {
     "src": "/help/shots/accounts-petty-cash.webp",
@@ -314,7 +314,7 @@
     "route": "/accounts/expenses",
     "screen": "c1a58b5387831720",
     "guide": "d3ffddc23429eaea",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "accounts-profit-and-loss": {
     "src": "/help/shots/accounts-profit-and-loss.webp",
@@ -334,7 +334,7 @@
     "route": "/accounts/reports/profit-and-loss",
     "screen": "f511c82e0f1c82cd",
     "guide": "54a6447105265fa5",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "accounts-record-expense": {
     "src": "/help/shots/accounts-record-expense.webp",
@@ -353,9 +353,9 @@
       "target": "marks"
     },
     "route": "/accounts/expenses/new",
-    "screen": "c51c74c6ff493743",
+    "screen": "74ccba7900332cf0",
     "guide": "369af0605fa2bcb7",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "accounts-user-manual": {
     "src": "/help/shots/accounts-user-manual.webp",
@@ -378,9 +378,9 @@
       "target": "marks"
     },
     "route": "/accounts",
-    "screen": "f486b05a398fef25",
+    "screen": "97db802980d13114",
     "guide": "91e514d32c00dd19",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "accounts-voucher": {
     "src": "/help/shots/accounts-voucher.webp",
@@ -401,7 +401,7 @@
     "route": "/accounts/journal/new",
     "screen": "46161589a9f64023",
     "guide": "733e7c79225a46e6",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "ai-agents": {
     "src": "/help/shots/ai-agents.webp",
@@ -423,7 +423,7 @@
     "route": "/ai/agents",
     "screen": "8d0c0f7fa7f6fbc1",
     "guide": "65ff8e7186058b5f",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "ai-bot": {
     "src": "/help/shots/ai-bot.webp",
@@ -440,9 +440,9 @@
       "target": "marks"
     },
     "route": "/ai/bot",
-    "screen": "796289c9869c3ded",
+    "screen": "b1c96390632cf824",
     "guide": "cab60dd96b1ceeea",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "ai-bug-guard": {
     "src": "/help/shots/ai-bug-guard.webp",
@@ -462,9 +462,9 @@
       "target": "marks"
     },
     "route": "/ai/bug-guard",
-    "screen": "d80142ec076307f2",
+    "screen": "89125550ea5866a1",
     "guide": "51b3fda614cd44ac",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "ai-chat": {
     "src": "/help/shots/ai-chat.webp",
@@ -481,9 +481,9 @@
       "target": "marks"
     },
     "route": "/ai/chat",
-    "screen": "e42bce7770f7f28a",
+    "screen": "9d002042cf681771",
     "guide": "ac408fff6d4c2b55",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "ai-control": {
     "src": "/help/shots/ai-control.webp",
@@ -504,9 +504,9 @@
       "target": "marks"
     },
     "route": "/ai/control",
-    "screen": "45ceba3cc69a4aec",
+    "screen": "f4d089ac9571c463",
     "guide": "c5475956e6d74383",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "ai-costs": {
     "src": "/help/shots/ai-costs.webp",
@@ -529,7 +529,7 @@
     "route": "/ai/costs",
     "screen": "31da5bf7ab613d52",
     "guide": "b54f38415f9779e0",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "ai-drafts": {
     "src": "/help/shots/ai-drafts.webp",
@@ -547,9 +547,9 @@
       "target": "marks"
     },
     "route": "/ai/drafts",
-    "screen": "d2cd8f94369e080a",
+    "screen": "2621e149c597cb42",
     "guide": "d72ac72009289167",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "ai-full-check": {
     "src": "/help/shots/ai-full-check.webp",
@@ -569,9 +569,9 @@
       "target": "marks"
     },
     "route": "/ai/full-check",
-    "screen": "8df16d88305cd843",
+    "screen": "818e4f6f46ce6859",
     "guide": "c1b318229ab746fd",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "ai-health": {
     "src": "/help/shots/ai-health.webp",
@@ -591,7 +591,7 @@
     "route": "/ai/health",
     "screen": "5edfe754f2a381b9",
     "guide": "dfd7968ebcdc4677",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "ai-knowledge": {
     "src": "/help/shots/ai-knowledge.webp",
@@ -610,7 +610,7 @@
     "route": "/ai/knowledge",
     "screen": "040ccb6b2aac7458",
     "guide": "f10a94021b7aa26c",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "ai-logs": {
     "src": "/help/shots/ai-logs.webp",
@@ -629,7 +629,7 @@
     "route": "/ai/logs",
     "screen": "2d354a51b1646ed2",
     "guide": "f584d1a1f1a1afe4",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "ai-mehedi": {
     "src": "/help/shots/ai-mehedi.webp",
@@ -649,9 +649,9 @@
       "target": "marks"
     },
     "route": "/ai/mehedi",
-    "screen": "676a1d5746a83846",
+    "screen": "9dec33d6768891d3",
     "guide": "36e9da63ab1b10f7",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "ai-models": {
     "src": "/help/shots/ai-models.webp",
@@ -669,9 +669,9 @@
       "target": "Which model does which task"
     },
     "route": "/ai/models",
-    "screen": "f885b15c71e023b6",
+    "screen": "96bb58d5d0354363",
     "guide": "51a437ddef37ead6",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "ai-orders": {
     "src": "/help/shots/ai-orders.webp",
@@ -687,9 +687,9 @@
       "target": "marks"
     },
     "route": "/ai/orders",
-    "screen": "1d56642a3f39ee60",
+    "screen": "2572f1633d6518e6",
     "guide": "4310edfc09b907ad",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "ai-requests": {
     "src": "/help/shots/ai-requests.webp",
@@ -706,9 +706,9 @@
       "target": "marks"
     },
     "route": "/ai",
-    "screen": "1d4cd13cf3d2e58a",
+    "screen": "124b31b696d14d1e",
     "guide": "c8dd3b85f0af9605",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "ai-settings": {
     "src": "/help/shots/ai-settings.webp",
@@ -729,9 +729,9 @@
       "target": "marks"
     },
     "route": "/ai/settings",
-    "screen": "565aebe363d4a363",
+    "screen": "c35a5a33b71bc994",
     "guide": "d4b0171a53f4b8a4",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "ai-skills": {
     "src": "/help/shots/ai-skills.webp",
@@ -750,7 +750,7 @@
     "route": "/ai/skills",
     "screen": "ec0843cb7ef776c2",
     "guide": "f34d86c7651f691e",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "ai-switch": {
     "src": "/help/shots/ai-switch.webp",
@@ -769,9 +769,9 @@
       "target": "marks"
     },
     "route": "/ai",
-    "screen": "1d4cd13cf3d2e58a",
+    "screen": "124b31b696d14d1e",
     "guide": "ac8c54cfae404612",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "appearance": {
     "src": "/help/shots/appearance.webp",
@@ -788,9 +788,9 @@
       "target": "marks"
     },
     "route": "/settings/appearance",
-    "screen": "497c4c640d266052",
+    "screen": "521751eca4360586",
     "guide": "96e30fd82f5316d8",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "backups-cloudflare": {
     "src": "/help/shots/backups-cloudflare.webp",
@@ -806,9 +806,9 @@
       "target": "marks"
     },
     "route": "/settings/backups",
-    "screen": "a066dc2c147ea9cf",
+    "screen": "acf20c03873c0e4b",
     "guide": "284e480596e7ffe7",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "backups-drive-key": {
     "src": "/help/shots/backups-drive-key.webp",
@@ -830,9 +830,9 @@
       "target": "marks"
     },
     "route": "/settings/backups",
-    "screen": "a066dc2c147ea9cf",
+    "screen": "acf20c03873c0e4b",
     "guide": "5083766d471de808",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "backups-github-alert": {
     "src": "/help/shots/backups-github-alert.webp",
@@ -848,9 +848,9 @@
       "target": "marks"
     },
     "route": "/settings/backups",
-    "screen": "a066dc2c147ea9cf",
+    "screen": "acf20c03873c0e4b",
     "guide": "0167dbb5b93d51c8",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "backups-google-setup": {
     "src": "/help/shots/backups-google-setup.webp",
@@ -867,9 +867,9 @@
       "target": "marks"
     },
     "route": "/settings/backups",
-    "screen": "a066dc2c147ea9cf",
+    "screen": "acf20c03873c0e4b",
     "guide": "83011e71f9468995",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "backups-new-server": {
     "src": "/help/shots/backups-new-server.webp",
@@ -889,9 +889,9 @@
       "target": "marks"
     },
     "route": "/settings/backups",
-    "screen": "a066dc2c147ea9cf",
+    "screen": "acf20c03873c0e4b",
     "guide": "2abc5dddeca1e918",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "backups-restore": {
     "src": "/help/shots/backups-restore.webp",
@@ -911,9 +911,9 @@
       "target": "marks"
     },
     "route": "/settings/backups",
-    "screen": "a066dc2c147ea9cf",
+    "screen": "acf20c03873c0e4b",
     "guide": "d23f987fb10aefe1",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "backups-server-drill": {
     "src": "/help/shots/backups-server-drill.webp",
@@ -931,9 +931,9 @@
       "target": "marks"
     },
     "route": "/settings/backups",
-    "screen": "a066dc2c147ea9cf",
+    "screen": "acf20c03873c0e4b",
     "guide": "77076a5dc5a13c45",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "change-password": {
     "src": "/help/shots/change-password.webp",
@@ -954,7 +954,7 @@
     "route": "/change-password",
     "screen": "5a5595989259c760",
     "guide": "af70209549cd5837",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "common-buttons": {
     "src": "/help/shots/common-buttons.webp",
@@ -970,9 +970,9 @@
       "target": "marks"
     },
     "route": "/",
-    "screen": "5c79106230adb891",
+    "screen": "982b000e443a73d1",
     "guide": "928f53bf43beb34a",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "compliance-add": {
     "src": "/help/shots/compliance-add.webp",
@@ -989,9 +989,9 @@
       "target": "marks"
     },
     "route": "/compliance",
-    "screen": "568878fb8593e78e",
+    "screen": "ac7122084f20cf8f",
     "guide": "e8339daf7e2f2583",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "compliance-overview": {
     "src": "/help/shots/compliance-overview.webp",
@@ -1010,9 +1010,9 @@
       "target": "marks"
     },
     "route": "/compliance",
-    "screen": "568878fb8593e78e",
+    "screen": "ac7122084f20cf8f",
     "guide": "47fbc14309e3322f",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "compliance-renew": {
     "src": "/help/shots/compliance-renew.webp",
@@ -1030,14 +1030,14 @@
       "target": "marks"
     },
     "route": "/compliance/[recordId]",
-    "screen": "0e1d643f41145050",
+    "screen": "5380281d70ada9ac",
     "guide": "5ca08fec3d12e7fb",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "dashboard-action-zone": {
     "src": "/help/shots/dashboard-action-zone.webp",
     "width": 1280,
-    "height": 1461,
+    "height": 1495,
     "marks": [1, 2, 5, 6, 7, 8],
     "labels": {
       "1": "The Pulse",
@@ -1049,13 +1049,13 @@
     },
     "clip": {
       "y": 0,
-      "height": 1461,
+      "height": 1495,
       "target": "marks"
     },
     "route": "/",
-    "screen": "5c79106230adb891",
+    "screen": "982b000e443a73d1",
     "guide": "37b8daa61e356245",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "dashboard-arrange-sections": {
     "src": "/help/shots/dashboard-arrange-sections.webp",
@@ -1071,9 +1071,9 @@
       "target": "marks"
     },
     "route": "/",
-    "screen": "5c79106230adb891",
+    "screen": "982b000e443a73d1",
     "guide": "2c4a67642afac832",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "dashboard-empty": {
     "src": "/help/shots/dashboard-empty.webp",
@@ -1084,14 +1084,14 @@
       "2": "Live activity"
     },
     "clip": {
-      "y": 1479,
+      "y": 1531,
       "height": 800,
       "target": "marks"
     },
     "route": "/",
-    "screen": "5c79106230adb891",
+    "screen": "982b000e443a73d1",
     "guide": "f22fafcb75578d98",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "dashboard-home-top-bar": {
     "src": "/help/shots/dashboard-home-top-bar.webp",
@@ -1109,9 +1109,9 @@
       "target": "marks"
     },
     "route": "/",
-    "screen": "5c79106230adb891",
+    "screen": "982b000e443a73d1",
     "guide": "0d0eaabea7c2a7f5",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "dashboard-key-figures": {
     "src": "/help/shots/dashboard-key-figures.webp",
@@ -1126,19 +1126,19 @@
       "5": "Total bad stock value"
     },
     "clip": {
-      "y": 2557,
+      "y": 2609,
       "height": 800,
       "target": "marks"
     },
     "route": "/",
-    "screen": "5c79106230adb891",
+    "screen": "982b000e443a73d1",
     "guide": "b67011610e712907",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "dashboard-pipeline-activity": {
     "src": "/help/shots/dashboard-pipeline-activity.webp",
     "width": 1280,
-    "height": 1494,
+    "height": 1546,
     "marks": [1, 2, 4, 5, 6, 7],
     "labels": {
       "1": "Predictive insights",
@@ -1150,18 +1150,18 @@
     },
     "clip": {
       "y": 177,
-      "height": 1494,
+      "height": 1546,
       "target": "marks"
     },
     "route": "/",
-    "screen": "5c79106230adb891",
+    "screen": "982b000e443a73d1",
     "guide": "3ceb217a108e22f1",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "dashboard-predictive": {
     "src": "/help/shots/dashboard-predictive.webp",
     "width": 1280,
-    "height": 1461,
+    "height": 1495,
     "marks": [1, 2, 5, 6, 7],
     "labels": {
       "1": "Action Zone",
@@ -1172,13 +1172,13 @@
     },
     "clip": {
       "y": 0,
-      "height": 1461,
+      "height": 1495,
       "target": "marks"
     },
     "route": "/",
-    "screen": "5c79106230adb891",
+    "screen": "982b000e443a73d1",
     "guide": "8c04dc28bf66afc1",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "dashboard-pulse": {
     "src": "/help/shots/dashboard-pulse.webp",
@@ -1198,9 +1198,9 @@
       "target": "marks"
     },
     "route": "/",
-    "screen": "5c79106230adb891",
+    "screen": "982b000e443a73d1",
     "guide": "6c9dd1dfd771f6c1",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "dashboard-sales-target": {
     "src": "/help/shots/dashboard-sales-target.webp",
@@ -1216,9 +1216,9 @@
       "target": "marks"
     },
     "route": "/",
-    "screen": "5c79106230adb891",
+    "screen": "982b000e443a73d1",
     "guide": "4bf1f97f750153f0",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "dashboard-stock-alerts": {
     "src": "/help/shots/dashboard-stock-alerts.webp",
@@ -1231,14 +1231,14 @@
       "4": "Low stock"
     },
     "clip": {
-      "y": 2804,
+      "y": 2856,
       "height": 800,
       "target": "marks"
     },
     "route": "/",
-    "screen": "5c79106230adb891",
+    "screen": "982b000e443a73d1",
     "guide": "166ff55b06c9748a",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "dashboard-top-sellers": {
     "src": "/help/shots/dashboard-top-sellers.webp",
@@ -1253,14 +1253,14 @@
       "5": "Pieces"
     },
     "clip": {
-      "y": 3146,
+      "y": 3198,
       "height": 800,
       "target": "marks"
     },
     "route": "/",
-    "screen": "5c79106230adb891",
+    "screen": "982b000e443a73d1",
     "guide": "b43d057e7b9338ed",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "demo-site": {
     "src": "/help/shots/demo-site.webp",
@@ -1277,9 +1277,9 @@
       "target": "marks"
     },
     "route": "/",
-    "screen": "5c79106230adb891",
+    "screen": "982b000e443a73d1",
     "guide": "3aa31fc8317a3bd5",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "find-your-way": {
     "src": "/help/shots/find-your-way.webp",
@@ -1290,14 +1290,14 @@
       "4": "Invoices"
     },
     "clip": {
-      "y": 3146,
+      "y": 3198,
       "height": 800,
       "target": "marks"
     },
     "route": "/",
-    "screen": "5c79106230adb891",
+    "screen": "982b000e443a73d1",
     "guide": "1a8e694ca6c23d50",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "help-ai": {
     "src": "/help/shots/help-ai.webp",
@@ -1316,7 +1316,7 @@
     "route": "/help",
     "screen": "a2ef33be56d77bb1",
     "guide": "822c3e29925c52fd",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "help-missing-feature": {
     "src": "/help/shots/help-missing-feature.webp",
@@ -1335,7 +1335,7 @@
     "route": "/help",
     "screen": "a2ef33be56d77bb1",
     "guide": "b7869a9ba945b716",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "help-read-guide": {
     "src": "/help/shots/help-read-guide.webp",
@@ -1355,7 +1355,7 @@
     "route": "/help/getting-started/sign-in",
     "screen": "48a19405fd159348",
     "guide": "0cb1efe2b20fd620",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "help-screenshots": {
     "src": "/help/shots/help-screenshots.webp",
@@ -1373,7 +1373,7 @@
     "route": "/help/sales/sales-quotation",
     "screen": "48a19405fd159348",
     "guide": "f90b3ddb0f8551f3",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "help-search": {
     "src": "/help/shots/help-search.webp",
@@ -1392,7 +1392,7 @@
     "route": "/help",
     "screen": "a2ef33be56d77bb1",
     "guide": "72633166bdc3d78e",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "hr-360-report": {
     "src": "/help/shots/hr-360-report.webp",
@@ -1408,9 +1408,9 @@
       "target": "marks"
     },
     "route": "/hr/employees",
-    "screen": "e305a573f05454d3",
+    "screen": "566f32debbaf9186",
     "guide": "c7d5449154a011ee",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "hr-add-employee": {
     "src": "/help/shots/hr-add-employee.webp",
@@ -1431,7 +1431,7 @@
     "route": "/hr/employees/new",
     "screen": "87f893122e016357",
     "guide": "e4e816324faff35b",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "hr-advances": {
     "src": "/help/shots/hr-advances.webp",
@@ -1452,12 +1452,12 @@
     "route": "/hr/advances/new",
     "screen": "9577ca81affd279f",
     "guide": "71c8081569abed2a",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "hr-attendance": {
     "src": "/help/shots/hr-attendance.webp",
     "width": 1280,
-    "height": 811,
+    "height": 801,
     "marks": [1, 2, 5, 6],
     "labels": {
       "1": "Attendance",
@@ -1467,13 +1467,13 @@
     },
     "clip": {
       "y": 0,
-      "height": 811,
+      "height": 801,
       "target": "marks"
     },
     "route": "/hr/attendance",
     "screen": "81d19babf584897b",
     "guide": "6b7b23168923fcfc",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "hr-claims": {
     "src": "/help/shots/hr-claims.webp",
@@ -1490,9 +1490,9 @@
       "target": "marks"
     },
     "route": "/hr/claims",
-    "screen": "79752bf1483d04b0",
+    "screen": "d40d74c994b8cd08",
     "guide": "dc744b646a3a2b9f",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "hr-data-vault": {
     "src": "/help/shots/hr-data-vault.webp",
@@ -1509,9 +1509,9 @@
       "target": "marks"
     },
     "route": "/hr/employees",
-    "screen": "e305a573f05454d3",
+    "screen": "566f32debbaf9186",
     "guide": "11014bec9b2db32e",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "hr-deactivate": {
     "src": "/help/shots/hr-deactivate.webp",
@@ -1527,9 +1527,9 @@
       "target": "marks"
     },
     "route": "/hr/employees/[employeeId]",
-    "screen": "976a906c9df5768c",
+    "screen": "a0a69040a4960a16",
     "guide": "e90f312430a64ede",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "hr-employee-directory": {
     "src": "/help/shots/hr-employee-directory.webp",
@@ -1548,9 +1548,9 @@
       "target": "marks"
     },
     "route": "/hr/employees",
-    "screen": "e305a573f05454d3",
+    "screen": "566f32debbaf9186",
     "guide": "71fa7c700914865b",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "hr-employee-profile": {
     "src": "/help/shots/hr-employee-profile.webp",
@@ -1568,19 +1568,17 @@
       "target": "marks"
     },
     "route": "/hr/employees",
-    "screen": "e305a573f05454d3",
+    "screen": "566f32debbaf9186",
     "guide": "85a0fb2fc28c4b6a",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "hr-give-login": {
     "src": "/help/shots/hr-give-login.webp",
     "width": 1280,
     "height": 400,
-    "marks": [1, 2, 5],
+    "marks": [1],
     "labels": {
-      "1": "System access",
-      "2": "Role",
-      "5": "Edit permissions"
+      "1": "System access"
     },
     "clip": {
       "y": 855,
@@ -1588,9 +1586,9 @@
       "target": "System access"
     },
     "route": "/hr/employees/[employeeId]",
-    "screen": "976a906c9df5768c",
+    "screen": "a0a69040a4960a16",
     "guide": "4b9567f3c7a86011",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "hr-gps-attendance": {
     "src": "/help/shots/hr-gps-attendance.webp",
@@ -1608,9 +1606,9 @@
       "target": "marks"
     },
     "route": "/hr/settings",
-    "screen": "353fa22cde728037",
+    "screen": "715aee7ea1e234f3",
     "guide": "81d5c4275e87e8eb",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "hr-holidays-rules": {
     "src": "/help/shots/hr-holidays-rules.webp",
@@ -1629,9 +1627,9 @@
       "target": "marks"
     },
     "route": "/hr/settings",
-    "screen": "353fa22cde728037",
+    "screen": "715aee7ea1e234f3",
     "guide": "74d2f9d651d84982",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "hr-items": {
     "src": "/help/shots/hr-items.webp",
@@ -1648,9 +1646,9 @@
       "target": "marks"
     },
     "route": "/hr/items",
-    "screen": "8e809322b479a223",
+    "screen": "47eee85efc976f5d",
     "guide": "8906b8898bc9f456",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "hr-leave": {
     "src": "/help/shots/hr-leave.webp",
@@ -1670,7 +1668,7 @@
     "route": "/hr/leave/new",
     "screen": "213614718d703c80",
     "guide": "f108d6798d9085c1",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "hr-money": {
     "src": "/help/shots/hr-money.webp",
@@ -1689,7 +1687,7 @@
     "route": "/hr/money",
     "screen": "e9feadbf199183eb",
     "guide": "c08c745d2754f0a9",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "hr-notices": {
     "src": "/help/shots/hr-notices.webp",
@@ -1705,9 +1703,9 @@
       "target": "marks"
     },
     "route": "/hr/notices",
-    "screen": "feb079cf0c44fb90",
+    "screen": "9422db626785538f",
     "guide": "f40d5a50a1d4177a",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "hr-outside-services": {
     "src": "/help/shots/hr-outside-services.webp",
@@ -1725,9 +1723,9 @@
       "target": "marks"
     },
     "route": "/hr/settings",
-    "screen": "353fa22cde728037",
+    "screen": "715aee7ea1e234f3",
     "guide": "71ba8b1cfe2e6ddc",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "hr-overtime": {
     "src": "/help/shots/hr-overtime.webp",
@@ -1744,14 +1742,14 @@
       "target": "marks"
     },
     "route": "/hr/overtime",
-    "screen": "e835374b669b3bf1",
+    "screen": "bab80686762ede32",
     "guide": "235cc4683b05489a",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "hr-overview": {
     "src": "/help/shots/hr-overview.webp",
     "width": 1280,
-    "height": 1019,
+    "height": 974,
     "marks": [1, 2, 3, 4, 5, 6],
     "labels": {
       "1": "Overview",
@@ -1763,13 +1761,13 @@
     },
     "clip": {
       "y": 0,
-      "height": 1019,
+      "height": 974,
       "target": "marks"
     },
     "route": "/hr",
     "screen": "d24b985bde6d94f2",
     "guide": "c34ab036faa2b5f8",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "hr-payroll-approve-pay": {
     "src": "/help/shots/hr-payroll-approve-pay.webp",
@@ -1785,9 +1783,9 @@
       "target": "marks"
     },
     "route": "/hr/payroll",
-    "screen": "d56fe6a45e603bbd",
+    "screen": "1cca7d2c1d287825",
     "guide": "75c9997508d0d132",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "hr-payroll-prepare": {
     "src": "/help/shots/hr-payroll-prepare.webp",
@@ -1803,9 +1801,9 @@
       "target": "marks"
     },
     "route": "/hr/payroll",
-    "screen": "d56fe6a45e603bbd",
+    "screen": "1cca7d2c1d287825",
     "guide": "ab1920eed1b7a922",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "hr-payslip": {
     "src": "/help/shots/hr-payslip.webp",
@@ -1821,9 +1819,9 @@
       "target": "marks"
     },
     "route": "/hr/payroll",
-    "screen": "d56fe6a45e603bbd",
+    "screen": "1cca7d2c1d287825",
     "guide": "5fb5984e6bf4853c",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "hr-staff-map": {
     "src": "/help/shots/hr-staff-map.webp",
@@ -1842,7 +1840,7 @@
     "route": "/hr/map",
     "screen": "5c7646354101829c",
     "guide": "b01f2a866fd6789d",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "hr-terms": {
     "src": "/help/shots/hr-terms.webp",
@@ -1859,9 +1857,9 @@
       "target": "marks"
     },
     "route": "/hr/terms",
-    "screen": "ab560f62c15b1673",
+    "screen": "21b9f478462e1138",
     "guide": "a711986c86f19090",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "inbox": {
     "src": "/help/shots/inbox.webp",
@@ -1883,7 +1881,69 @@
     "route": "/inbox",
     "screen": "54f176d2e8e487ec",
     "guide": "713df1162e5578a5",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
+  },
+  "integrations-add-shop": {
+    "src": "/help/shots/integrations-add-shop.webp",
+    "width": 1280,
+    "height": 800,
+    "marks": [2, 3, 4, 5, 6],
+    "labels": {
+      "2": "Add online shop",
+      "3": "Platform",
+      "4": "Company",
+      "5": "Shop webhook URL",
+      "6": "IP allow-list"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "dialog"
+    },
+    "route": "/settings/integrations",
+    "screen": "8a95415f3a6e3293",
+    "guide": "d42bd48fc102673f",
+    "taken": "2026-10-23"
+  },
+  "integrations-shop-key": {
+    "src": "/help/shots/integrations-shop-key.webp",
+    "width": 1280,
+    "height": 800,
+    "marks": [2, 4, 5, 6],
+    "labels": {
+      "2": "API key",
+      "4": "ERP API address",
+      "5": "Rotate key",
+      "6": "Revoke key"
+    },
+    "clip": {
+      "y": 757,
+      "height": 800,
+      "target": "API key"
+    },
+    "route": "/settings/integrations/ecommerce/[integrationId]",
+    "screen": "62f46950422476e1",
+    "guide": "ae51a675ac6d917f",
+    "taken": "2026-10-23"
+  },
+  "integrations-webhooks": {
+    "src": "/help/shots/integrations-webhooks.webp",
+    "width": 1280,
+    "height": 1600,
+    "marks": [3, 5],
+    "labels": {
+      "3": "Webhook log",
+      "5": "Status"
+    },
+    "clip": {
+      "y": 1243,
+      "height": 1600,
+      "target": "Webhook log"
+    },
+    "route": "/settings/integrations/ecommerce/[integrationId]",
+    "screen": "62f46950422476e1",
+    "guide": "f2f93934f1832e7d",
+    "taken": "2026-10-23"
   },
   "materials-add-material": {
     "src": "/help/shots/materials-add-material.webp",
@@ -1904,7 +1964,7 @@
     "route": "/materials/stock/new",
     "screen": "2180d001bbd5b7da",
     "guide": "c77de209e2f404d1",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "materials-issue": {
     "src": "/help/shots/materials-issue.webp",
@@ -1925,7 +1985,7 @@
     "route": "/materials/issues/new",
     "screen": "4e9ed05f190e3ee4",
     "guide": "70998df21e7987e2",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "materials-overview": {
     "src": "/help/shots/materials-overview.webp",
@@ -1946,7 +2006,7 @@
     "route": "/materials",
     "screen": "001fcf7fc0e4c752",
     "guide": "635d8e774bd56bf4",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "materials-purchase-order": {
     "src": "/help/shots/materials-purchase-order.webp",
@@ -1967,7 +2027,7 @@
     "route": "/materials/orders/new",
     "screen": "32b22010a5c19107",
     "guide": "6d2b80913c20e4ce",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "materials-receive-goods": {
     "src": "/help/shots/materials-receive-goods.webp",
@@ -1989,12 +2049,12 @@
     "route": "/materials/purchases/new",
     "screen": "c958383ca7a1f5d5",
     "guide": "865d9e09cd1c43e9",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "materials-stock-actions": {
     "src": "/help/shots/materials-stock-actions.webp",
     "width": 1280,
-    "height": 1286,
+    "height": 1326,
     "marks": [2, 3, 4, 5],
     "labels": {
       "2": "Count it",
@@ -2004,13 +2064,13 @@
     },
     "clip": {
       "y": 0,
-      "height": 1286,
+      "height": 1326,
       "target": "marks"
     },
     "route": "/materials/stock/[materialId]",
-    "screen": "674139fe1d824346",
+    "screen": "da564e7e0643bb50",
     "guide": "6ff5f11d5c4d97dc",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "materials-stock-card": {
     "src": "/help/shots/materials-stock-card.webp",
@@ -2029,7 +2089,7 @@
     "route": "/materials/stock",
     "screen": "9164f337d72e9dc3",
     "guide": "dff436382d2538ae",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "materials-supplier-return": {
     "src": "/help/shots/materials-supplier-return.webp",
@@ -2048,7 +2108,7 @@
     "route": "/materials/returns",
     "screen": "03158d5daceabc85",
     "guide": "7cb871cae4c6ef66",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "my-hr-advances": {
     "src": "/help/shots/my-hr-advances.webp",
@@ -2066,7 +2126,7 @@
     "route": "/me/advances",
     "screen": "814ae6f0fbadc985",
     "guide": "e4a6a71d34196514",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "my-hr-check-in": {
     "src": "/help/shots/my-hr-check-in.webp",
@@ -2083,9 +2143,9 @@
       "target": "marks"
     },
     "route": "/me",
-    "screen": "50d0286fbe5bfcf5",
+    "screen": "4c167176c839e02c",
     "guide": "4fc6cab1f7d8a8b4",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "my-hr-claims": {
     "src": "/help/shots/my-hr-claims.webp",
@@ -2101,9 +2161,9 @@
       "target": "marks"
     },
     "route": "/me/claims",
-    "screen": "d6004cd6f1aac048",
+    "screen": "eaaed2be874eba4d",
     "guide": "e9f352d1acacac2c",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "my-hr-dashboard": {
     "src": "/help/shots/my-hr-dashboard.webp",
@@ -2120,9 +2180,9 @@
       "target": "marks"
     },
     "route": "/me",
-    "screen": "50d0286fbe5bfcf5",
+    "screen": "4c167176c839e02c",
     "guide": "b05542e673ed7324",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "my-hr-details": {
     "src": "/help/shots/my-hr-details.webp",
@@ -2138,9 +2198,9 @@
       "target": "marks"
     },
     "route": "/me",
-    "screen": "50d0286fbe5bfcf5",
+    "screen": "4c167176c839e02c",
     "guide": "572511d17b777fdc",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "my-hr-leave": {
     "src": "/help/shots/my-hr-leave.webp",
@@ -2156,9 +2216,9 @@
       "target": "marks"
     },
     "route": "/me/leave",
-    "screen": "a943ba15e77072ef",
+    "screen": "53cf1535aa0d5a67",
     "guide": "f2353f8c714f0fc0",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "my-hr-ledger": {
     "src": "/help/shots/my-hr-ledger.webp",
@@ -2176,7 +2236,7 @@
     "route": "/me/ledger",
     "screen": "7d98d8a6d4ce0ad6",
     "guide": "a51565bc228cbff1",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "my-hr-my-details": {
     "src": "/help/shots/my-hr-my-details.webp",
@@ -2192,9 +2252,9 @@
       "target": "marks"
     },
     "route": "/me/profile",
-    "screen": "5bc314415d67c317",
+    "screen": "c6143ac3dfe6d69f",
     "guide": "53a9626815146db7",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "my-hr-notices": {
     "src": "/help/shots/my-hr-notices.webp",
@@ -2212,7 +2272,7 @@
     "route": "/me/notices",
     "screen": "3954e21c7191a407",
     "guide": "23c4c9d622fa6775",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "my-hr-payslips": {
     "src": "/help/shots/my-hr-payslips.webp",
@@ -2230,7 +2290,7 @@
     "route": "/me/payslips",
     "screen": "0524cf35ef7291c7",
     "guide": "ace02759d4e5c5b2",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "my-hr-tasks": {
     "src": "/help/shots/my-hr-tasks.webp",
@@ -2248,7 +2308,7 @@
     "route": "/me/tasks",
     "screen": "b59161b6af410b31",
     "guide": "e8b59dd892530e4d",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "my-hr-tell-ai": {
     "src": "/help/shots/my-hr-tell-ai.webp",
@@ -2264,9 +2324,9 @@
       "target": "marks"
     },
     "route": "/me",
-    "screen": "50d0286fbe5bfcf5",
+    "screen": "4c167176c839e02c",
     "guide": "f9d72e1916e7a26d",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "my-hr-terms": {
     "src": "/help/shots/my-hr-terms.webp",
@@ -2284,7 +2344,7 @@
     "route": "/terms",
     "screen": "211b44fb882b7e87",
     "guide": "7a7066eff444c482",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "parties-buyer-360": {
     "src": "/help/shots/parties-buyer-360.webp",
@@ -2303,7 +2363,7 @@
     "route": "/parties/buyers",
     "screen": "e7789bb34c3706f0",
     "guide": "dd06cf3dac22f3bb",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "parties-buyer-360-pdf": {
     "src": "/help/shots/parties-buyer-360-pdf.webp",
@@ -2322,7 +2382,7 @@
     "route": "/parties/[list]/[partyId]",
     "screen": "790356e7945ebd2f",
     "guide": "eb24d3a569271630",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "parties-dues": {
     "src": "/help/shots/parties-dues.webp",
@@ -2341,7 +2401,7 @@
     "route": "/parties/dues",
     "screen": "3f5931ccf940a589",
     "guide": "2d591ebc57253da8",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "parties-edit-status": {
     "src": "/help/shots/parties-edit-status.webp",
@@ -2360,7 +2420,7 @@
     "route": "/parties/[list]/[partyId]",
     "screen": "790356e7945ebd2f",
     "guide": "ed1cfd9f8b2ead12",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "parties-find": {
     "src": "/help/shots/parties-find.webp",
@@ -2383,7 +2443,7 @@
     "route": "/parties/buyers",
     "screen": "e7789bb34c3706f0",
     "guide": "002acc78c34238e6",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "parties-new": {
     "src": "/help/shots/parties-new.webp",
@@ -2406,7 +2466,7 @@
     "route": "/parties/buyers/new",
     "screen": "b22b881262413488",
     "guide": "597fb691053d436e",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "parties-opening-balance": {
     "src": "/help/shots/parties-opening-balance.webp",
@@ -2424,7 +2484,7 @@
     "route": "/parties/buyers",
     "screen": "e7789bb34c3706f0",
     "guide": "89ea8f0f68450405",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "parties-statement": {
     "src": "/help/shots/parties-statement.webp",
@@ -2443,12 +2503,12 @@
     "route": "/parties/buyers",
     "screen": "e7789bb34c3706f0",
     "guide": "ccc548450251c99f",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "parties-supplier-360": {
     "src": "/help/shots/parties-supplier-360.webp",
     "width": 1280,
-    "height": 937,
+    "height": 800,
     "marks": [1, 4],
     "labels": {
       "1": "Suppliers",
@@ -2456,13 +2516,13 @@
     },
     "clip": {
       "y": 0,
-      "height": 937,
+      "height": 800,
       "target": "marks"
     },
     "route": "/parties/suppliers",
     "screen": "e7789bb34c3706f0",
     "guide": "41f6c9b752f446df",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "parties-supplier-360-pdf": {
     "src": "/help/shots/parties-supplier-360-pdf.webp",
@@ -2481,7 +2541,7 @@
     "route": "/parties/[list]/[partyId]",
     "screen": "790356e7945ebd2f",
     "guide": "eb24d3a569271630",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "pin": {
     "src": "/help/shots/pin.webp",
@@ -2498,9 +2558,9 @@
       "target": "PIN"
     },
     "route": "/ai/settings",
-    "screen": "565aebe363d4a363",
+    "screen": "c35a5a33b71bc994",
     "guide": "92a5b38a819fe53a",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "planner-automatic": {
     "src": "/help/shots/planner-automatic.webp",
@@ -2517,9 +2577,9 @@
       "target": "marks"
     },
     "route": "/planner/automatic",
-    "screen": "8934ac1b29e254d2",
+    "screen": "4258fc2dbf6cdb57",
     "guide": "db005f32adada740",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "planner-coming-up": {
     "src": "/help/shots/planner-coming-up.webp",
@@ -2535,9 +2595,9 @@
       "target": "marks"
     },
     "route": "/planner",
-    "screen": "afe4cc8bd37e654b",
+    "screen": "dbfe4b2c8b7fccf9",
     "guide": "5826d18eb1995e0a",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "planner-notepad": {
     "src": "/help/shots/planner-notepad.webp",
@@ -2556,9 +2616,9 @@
       "target": "marks"
     },
     "route": "/planner/notepad",
-    "screen": "c2a29b6e6d6cf6f7",
+    "screen": "1281ca195e0ce74f",
     "guide": "677a14bfca1e704b",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "planner-reminders": {
     "src": "/help/shots/planner-reminders.webp",
@@ -2575,9 +2635,9 @@
       "target": "marks"
     },
     "route": "/planner/reminders",
-    "screen": "83fc97faba8497ef",
+    "screen": "4c457e3c03d913b4",
     "guide": "d9dbf572b51e4837",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "planner-tasks": {
     "src": "/help/shots/planner-tasks.webp",
@@ -2594,9 +2654,9 @@
       "target": "marks"
     },
     "route": "/planner/tasks",
-    "screen": "e7e677088ebaf209",
+    "screen": "c93fc42b345d4e37",
     "guide": "0a0bc46bba6ca242",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "production-action-log": {
     "src": "/help/shots/production-action-log.webp",
@@ -2615,7 +2675,7 @@
     "route": "/production/projects/[projectId]/log",
     "screen": "dcca4c9544fc1615",
     "guide": "b43414f38eaca8f3",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "production-batch-issue": {
     "src": "/help/shots/production-batch-issue.webp",
@@ -2635,7 +2695,7 @@
     "route": "/production/batches/[batchId]/issue",
     "screen": "04759698dc2fbecc",
     "guide": "832ef9a4ba7fbf48",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "production-batch-money": {
     "src": "/help/shots/production-batch-money.webp",
@@ -2648,14 +2708,14 @@
       "3": "Pay an advance"
     },
     "clip": {
-      "y": 1684,
+      "y": 1930,
       "height": 800,
       "target": "Factory money"
     },
     "route": "/production/batches/[batchId]",
-    "screen": "29225adbc5b42b79",
+    "screen": "c2b44517c5268f6d",
     "guide": "6dfcd96eb41957c7",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "production-batch-orders": {
     "src": "/help/shots/production-batch-orders.webp",
@@ -2674,12 +2734,12 @@
     "route": "/production/batches/[batchId]/orders/new",
     "screen": "f7c646662fd6526b",
     "guide": "1ca8c37a9ed28319",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "production-batch-receive": {
     "src": "/help/shots/production-batch-receive.webp",
     "width": 1280,
-    "height": 1276,
+    "height": 1296,
     "marks": [2, 3, 4, 5],
     "labels": {
       "2": "Challan no. (optional)",
@@ -2689,18 +2749,18 @@
     },
     "clip": {
       "y": 0,
-      "height": 1276,
+      "height": 1296,
       "target": "marks"
     },
     "route": "/production/batches/[batchId]/receive",
     "screen": "4d48f5ddd01607b0",
     "guide": "ea364913c5232c24",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "production-batch-summary": {
     "src": "/help/shots/production-batch-summary.webp",
     "width": 1280,
-    "height": 1263,
+    "height": 1392,
     "marks": [1, 2, 3, 4, 5, 6],
     "labels": {
       "1": "Batch summary",
@@ -2712,13 +2772,13 @@
     },
     "clip": {
       "y": 0,
-      "height": 1263,
+      "height": 1392,
       "target": "marks"
     },
     "route": "/production/batches/[batchId]/summary",
     "screen": "4dfa41edb34d26b4",
     "guide": "1655a1b6e24260f0",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "production-batches": {
     "src": "/help/shots/production-batches.webp",
@@ -2738,7 +2798,7 @@
     "route": "/production/batches",
     "screen": "da27f08307986b20",
     "guide": "7144abe6bb80c38c",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "production-bills": {
     "src": "/help/shots/production-bills.webp",
@@ -2758,9 +2818,9 @@
       "target": "marks"
     },
     "route": "/production/bills/new",
-    "screen": "3a499ac9a10624b5",
+    "screen": "be614bd6afdb6766",
     "guide": "1df8fdbb76dae5ec",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "production-booking-approval": {
     "src": "/help/shots/production-booking-approval.webp",
@@ -2779,14 +2839,14 @@
       "target": "marks"
     },
     "route": "/production/bookings/[bookingId]",
-    "screen": "82fd506cb4e6451a",
+    "screen": "64dd1470cdc48eaf",
     "guide": "0812eb1e053d1e6d",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "production-booking-batch": {
     "src": "/help/shots/production-booking-batch.webp",
     "width": 1280,
-    "height": 1531,
+    "height": 1600,
     "marks": [1, 2, 3, 4],
     "labels": {
       "1": "Book fabric",
@@ -2795,19 +2855,19 @@
       "4": "Attach a booking"
     },
     "clip": {
-      "y": 625,
-      "height": 1531,
+      "y": 916,
+      "height": 1600,
       "target": "marks"
     },
     "route": "/production/batches/[batchId]",
-    "screen": "29225adbc5b42b79",
+    "screen": "c2b44517c5268f6d",
     "guide": "181cfedd1b9f629d",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "production-booking-book": {
     "src": "/help/shots/production-booking-book.webp",
     "width": 1280,
-    "height": 997,
+    "height": 1068,
     "marks": [1, 3],
     "labels": {
       "1": "Booking book (PDF)",
@@ -2815,13 +2875,13 @@
     },
     "clip": {
       "y": 0,
-      "height": 997,
+      "height": 1068,
       "target": "marks"
     },
     "route": "/production/batches/[batchId]",
-    "screen": "29225adbc5b42b79",
+    "screen": "c2b44517c5268f6d",
     "guide": "0587c4a62be4a3d8",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "production-booking-change": {
     "src": "/help/shots/production-booking-change.webp",
@@ -2839,7 +2899,7 @@
     "route": "/production/bookings/[bookingId]/edit",
     "screen": "3a969cbb5ff527e4",
     "guide": "dcc1895216d04cd5",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "production-booking-collar": {
     "src": "/help/shots/production-booking-collar.webp",
@@ -2857,7 +2917,7 @@
     "route": "/production/bookings/new",
     "screen": "5f0f34d9adaa7594",
     "guide": "2b823c6965299e12",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "production-booking-new": {
     "src": "/help/shots/production-booking-new.webp",
@@ -2881,7 +2941,7 @@
     "route": "/production/bookings/new",
     "screen": "5f0f34d9adaa7594",
     "guide": "50c7ee6afab611f1",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "production-booking-print": {
     "src": "/help/shots/production-booking-print.webp",
@@ -2897,9 +2957,9 @@
       "target": "marks"
     },
     "route": "/production/bookings/[bookingId]",
-    "screen": "82fd506cb4e6451a",
+    "screen": "64dd1470cdc48eaf",
     "guide": "f413641d26a7fd5a",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "production-bookings": {
     "src": "/help/shots/production-bookings.webp",
@@ -2920,12 +2980,12 @@
     "route": "/production/bookings",
     "screen": "108dad6f77bf526e",
     "guide": "8b8ceb5d8194c52a",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "production-cm-settlement": {
     "src": "/help/shots/production-cm-settlement.webp",
     "width": 1280,
-    "height": 1228,
+    "height": 1251,
     "marks": [2, 4, 5],
     "labels": {
       "2": "Rejects over the allowance",
@@ -2934,13 +2994,13 @@
     },
     "clip": {
       "y": 0,
-      "height": 1228,
+      "height": 1251,
       "target": "marks"
     },
     "route": "/production/batches/[batchId]/cm-settlement",
-    "screen": "5476bced73f6aa8f",
+    "screen": "277dbec7c017ad85",
     "guide": "197413a1deab3897",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "production-complete-cancel": {
     "src": "/help/shots/production-complete-cancel.webp",
@@ -2957,14 +3017,14 @@
       "target": "menu"
     },
     "route": "/production/projects/[projectId]",
-    "screen": "bcbeab26962fc66c",
+    "screen": "7ca6038eb4eb7ac7",
     "guide": "9fd6d75e0022c145",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "production-contracts": {
     "src": "/help/shots/production-contracts.webp",
     "width": 1280,
-    "height": 1532,
+    "height": 1550,
     "marks": [2, 3, 4, 5],
     "labels": {
       "2": "What is made",
@@ -2974,13 +3034,13 @@
     },
     "clip": {
       "y": 0,
-      "height": 1532,
+      "height": 1550,
       "target": "marks"
     },
     "route": "/production/batches/[batchId]/contracts/[contractId]",
-    "screen": "41520d6246b7d5d8",
+    "screen": "56d6385fca87075e",
     "guide": "9cc751dc9bf43110",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "production-cost-guard": {
     "src": "/help/shots/production-cost-guard.webp",
@@ -2999,9 +3059,9 @@
       "target": "marks"
     },
     "route": "/production/projects/[projectId]",
-    "screen": "bcbeab26962fc66c",
+    "screen": "7ca6038eb4eb7ac7",
     "guide": "ab9e298dcfbbd046",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "production-cost-heads": {
     "src": "/help/shots/production-cost-heads.webp",
@@ -3020,9 +3080,9 @@
       "target": "marks"
     },
     "route": "/production/cost-heads",
-    "screen": "a578576339451527",
+    "screen": "f1ce5158b3e99671",
     "guide": "b7f012c7e46d9540",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "production-costing": {
     "src": "/help/shots/production-costing.webp",
@@ -3039,9 +3099,9 @@
       "target": "marks"
     },
     "route": "/production/costing",
-    "screen": "fc960c11bf0e2187",
+    "screen": "a0900ff8ff723748",
     "guide": "9540397b739448fc",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "production-costs": {
     "src": "/help/shots/production-costs.webp",
@@ -3059,29 +3119,28 @@
     "route": "/production/projects",
     "screen": "56b878a873d3391a",
     "guide": "9c0832277e1e9fab",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "production-cutting": {
     "src": "/help/shots/production-cutting.webp",
     "width": 1280,
-    "height": 1030,
-    "marks": [1, 4, 5, 8, 9],
+    "height": 1013,
+    "marks": [1, 4, 8, 9],
     "labels": {
       "1": "Cutting and embroidery",
       "4": "Cross-checks",
-      "5": "Send for embroidery or print",
       "8": "Cutting and sewing dates",
       "9": "Fabric Fault Note"
     },
     "clip": {
       "y": 0,
-      "height": 1030,
+      "height": 1013,
       "target": "marks"
     },
     "route": "/production/projects/[projectId]/cutting",
-    "screen": "d9795cba5f594b5c",
+    "screen": "1fe5d2e0f464b17b",
     "guide": "7e77b0628640cb87",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "production-fabric-first": {
     "src": "/help/shots/production-fabric-first.webp",
@@ -3094,19 +3153,19 @@
       "3": "Approve tech pack"
     },
     "clip": {
-      "y": 3087,
+      "y": 3362,
       "height": 800,
       "target": "Tech pack approval"
     },
     "route": "/production/projects/[projectId]",
-    "screen": "bcbeab26962fc66c",
+    "screen": "7ca6038eb4eb7ac7",
     "guide": "c967526909b1c13c",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "production-fault-log": {
     "src": "/help/shots/production-fault-log.webp",
     "width": 1280,
-    "height": 1591,
+    "height": 1600,
     "marks": [1, 2, 3, 4],
     "labels": {
       "1": "Still to deduct",
@@ -3116,13 +3175,13 @@
     },
     "clip": {
       "y": 114,
-      "height": 1591,
+      "height": 1600,
       "target": "marks"
     },
     "route": "/production/faults",
-    "screen": "e46174cc39c78edd",
+    "screen": "627f09684402a6e5",
     "guide": "65c5d6932d115d8b",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "production-find-projects": {
     "src": "/help/shots/production-find-projects.webp",
@@ -3142,7 +3201,7 @@
     "route": "/production/projects",
     "screen": "56b878a873d3391a",
     "guide": "e8ecbce698a7dc29",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "production-finishing": {
     "src": "/help/shots/production-finishing.webp",
@@ -3159,9 +3218,9 @@
       "target": "marks"
     },
     "route": "/production/projects/[projectId]/finishing",
-    "screen": "b93a701b86b2bf27",
+    "screen": "f40963aeac608213",
     "guide": "cc5fccd8bdcfec5e",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "production-fob": {
     "src": "/help/shots/production-fob.webp",
@@ -3179,12 +3238,12 @@
     "route": "/production/projects",
     "screen": "56b878a873d3391a",
     "guide": "977bb7c922f6c01a",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "production-materials-per-piece": {
     "src": "/help/shots/production-materials-per-piece.webp",
     "width": 1280,
-    "height": 800,
+    "height": 812,
     "marks": [1, 2, 3, 4, 5, 6],
     "labels": {
       "1": "Materials per piece",
@@ -3196,13 +3255,13 @@
     },
     "clip": {
       "y": 0,
-      "height": 800,
+      "height": 812,
       "target": "marks"
     },
     "route": "/production/projects/[projectId]/materials",
     "screen": "72c8db3b12cf24ee",
     "guide": "ac685aa4aa4ffa20",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "production-materials-sent": {
     "src": "/help/shots/production-materials-sent.webp",
@@ -3213,14 +3272,14 @@
       "1": "Send material"
     },
     "clip": {
-      "y": 4395,
+      "y": 4869,
       "height": 791,
       "target": "Materials sent"
     },
     "route": "/production/projects/[projectId]",
-    "screen": "bcbeab26962fc66c",
+    "screen": "7ca6038eb4eb7ac7",
     "guide": "971b8b68035ab188",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "production-new-project": {
     "src": "/help/shots/production-new-project.webp",
@@ -3244,12 +3303,12 @@
     "route": "/production/projects/new",
     "screen": "0ea6bd745ae1c48b",
     "guide": "122d38f0d28f4a29",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "production-order-check": {
     "src": "/help/shots/production-order-check.webp",
     "width": 1280,
-    "height": 1084,
+    "height": 1144,
     "marks": [1, 2, 3, 4, 5, 6, 7],
     "labels": {
       "1": "Order check card",
@@ -3262,18 +3321,18 @@
     },
     "clip": {
       "y": 0,
-      "height": 1084,
+      "height": 1144,
       "target": "marks"
     },
     "route": "/production/costing/[costingId]",
-    "screen": "9ce25c10915e6ab6",
+    "screen": "bc9440f6399101e2",
     "guide": "01c5387fbd9939cd",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "production-overview": {
     "src": "/help/shots/production-overview.webp",
     "width": 1280,
-    "height": 1216,
+    "height": 1302,
     "marks": [1, 2, 3, 4, 6, 7],
     "labels": {
       "1": "Overview",
@@ -3285,13 +3344,13 @@
     },
     "clip": {
       "y": 0,
-      "height": 1216,
+      "height": 1302,
       "target": "marks"
     },
     "route": "/production",
-    "screen": "0c4cacc0c61cdf0a",
+    "screen": "bf1b786ec83d707f",
     "guide": "60d34635cdedbdf0",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "production-receive-goods": {
     "src": "/help/shots/production-receive-goods.webp",
@@ -3309,7 +3368,7 @@
     "route": "/production/deliveries/new",
     "screen": "a386ad1271ebfb7d",
     "guide": "e014c79076e1a5af",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "production-save-to-tech-pack": {
     "src": "/help/shots/production-save-to-tech-pack.webp",
@@ -3328,7 +3387,7 @@
     "route": "/production/save",
     "screen": "6fb5b01be02da6e2",
     "guide": "426494142be9a95f",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "production-stages": {
     "src": "/help/shots/production-stages.webp",
@@ -3347,7 +3406,7 @@
     "route": "/production/projects",
     "screen": "56b878a873d3391a",
     "guide": "d841aca3d8459df9",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "production-start-from-sales": {
     "src": "/help/shots/production-start-from-sales.webp",
@@ -3369,7 +3428,7 @@
     "route": "/production/projects/new",
     "screen": "0ea6bd745ae1c48b",
     "guide": "872eb3f1d8e02bb8",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "production-supplier-settlement": {
     "src": "/help/shots/production-supplier-settlement.webp",
@@ -3380,19 +3439,19 @@
       "1": "Suppliers"
     },
     "clip": {
-      "y": 2257,
+      "y": 2457,
       "height": 800,
       "target": "Suppliers"
     },
     "route": "/production/projects/[projectId]",
-    "screen": "bcbeab26962fc66c",
+    "screen": "7ca6038eb4eb7ac7",
     "guide": "f59baa1f45f86559",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "production-tech-pack": {
     "src": "/help/shots/production-tech-pack.webp",
     "width": 1280,
-    "height": 1321,
+    "height": 1361,
     "marks": [1, 2, 3, 4, 6, 10],
     "labels": {
       "1": "Tech pack approval",
@@ -3404,13 +3463,13 @@
     },
     "clip": {
       "y": 0,
-      "height": 1321,
+      "height": 1361,
       "target": "marks"
     },
     "route": "/tech-packs/[techPackId]",
-    "screen": "271ba3c527538db7",
+    "screen": "8b1d6ec78df2fca6",
     "guide": "d76537a72ad94757",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "production-tech-pack-colours": {
     "src": "/help/shots/production-tech-pack-colours.webp",
@@ -3421,14 +3480,14 @@
       "1": "Add a colour"
     },
     "clip": {
-      "y": 2932,
+      "y": 2972,
       "height": 400,
       "target": "Colours and lab dips"
     },
     "route": "/tech-packs/[techPackId]",
-    "screen": "271ba3c527538db7",
+    "screen": "8b1d6ec78df2fca6",
     "guide": "cc2370570215b9d7",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "production-tech-pack-logos": {
     "src": "/help/shots/production-tech-pack-logos.webp",
@@ -3439,14 +3498,14 @@
       "1": "Add a logo"
     },
     "clip": {
-      "y": 2932,
+      "y": 2972,
       "height": 400,
       "target": "Logos and embroidery"
     },
     "route": "/tech-packs/[techPackId]",
-    "screen": "271ba3c527538db7",
+    "screen": "8b1d6ec78df2fca6",
     "guide": "8ebbe827b283ac76",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "production-undo-delivery": {
     "src": "/help/shots/production-undo-delivery.webp",
@@ -3465,7 +3524,7 @@
     "route": "/production/deliveries",
     "screen": "00c4eb82e61334c0",
     "guide": "8968cb8f47072bcf",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "products-archived-styles": {
     "src": "/help/shots/products-archived-styles.webp",
@@ -3484,7 +3543,7 @@
     "route": "/products/archived",
     "screen": "abae1bb0ccebec65",
     "guide": "dc240a7873c3b4d3",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "products-bad-stock": {
     "src": "/help/shots/products-bad-stock.webp",
@@ -3504,7 +3563,7 @@
     "route": "/products/bad-stock",
     "screen": "fb8a96f667a5e52d",
     "guide": "6822537d558ad16b",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "products-bulk-update": {
     "src": "/help/shots/products-bulk-update.webp",
@@ -3524,7 +3583,7 @@
     "route": "/products/[styleId]",
     "screen": "f78c7d259d4998d8",
     "guide": "5bd36e74ff6976dc",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "products-edit-sku": {
     "src": "/help/shots/products-edit-sku.webp",
@@ -3542,7 +3601,7 @@
     "route": "/products/[styleId]",
     "screen": "f78c7d259d4998d8",
     "guide": "cd7838c6a6aec24c",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "products-find-style": {
     "src": "/help/shots/products-find-style.webp",
@@ -3562,7 +3621,7 @@
     "route": "/products",
     "screen": "8920462250d991bc",
     "guide": "6cf546f9152a12f4",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "products-inward-batches": {
     "src": "/help/shots/products-inward-batches.webp",
@@ -3582,7 +3641,7 @@
     "route": "/products/[styleId]",
     "screen": "f78c7d259d4998d8",
     "guide": "f4b1a28afbf644ff",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "products-new-style": {
     "src": "/help/shots/products-new-style.webp",
@@ -3602,7 +3661,7 @@
     "route": "/products/new",
     "screen": "d0e5d45d185a6297",
     "guide": "109fbfc5bfbe2ede",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "products-opening-stock": {
     "src": "/help/shots/products-opening-stock.webp",
@@ -3621,7 +3680,7 @@
     "route": "/products/stock-count",
     "screen": "02cca1db5c181f6f",
     "guide": "c6fbdd4262a9edbd",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "products-setup": {
     "src": "/help/shots/products-setup.webp",
@@ -3643,7 +3702,7 @@
     "route": "/products/setup",
     "screen": "4193179cb6a9c113",
     "guide": "122858a2cb786a84",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "products-stock-count": {
     "src": "/help/shots/products-stock-count.webp",
@@ -3662,7 +3721,7 @@
     "route": "/products/stock-count",
     "screen": "02cca1db5c181f6f",
     "guide": "28d2a0820cf36962",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "reports-letter": {
     "src": "/help/shots/reports-letter.webp",
@@ -3679,9 +3738,9 @@
       "target": "marks"
     },
     "route": "/reports/documents",
-    "screen": "d5825dd85f15ad9b",
+    "screen": "0df6fa8b9a9e32ec",
     "guide": "24ebb06872045c0d",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "reports-make": {
     "src": "/help/shots/reports-make.webp",
@@ -3703,7 +3762,7 @@
     "route": "/reports/new",
     "screen": "61e69c490c99a937",
     "guide": "c430729ef25b2671",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "reports-printed-documents": {
     "src": "/help/shots/reports-printed-documents.webp",
@@ -3720,9 +3779,9 @@
       "target": "marks"
     },
     "route": "/reports/documents",
-    "screen": "d5825dd85f15ad9b",
+    "screen": "0df6fa8b9a9e32ec",
     "guide": "47e407f4b6e485a7",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "reports-template-add": {
     "src": "/help/shots/reports-template-add.webp",
@@ -3739,9 +3798,9 @@
       "target": "marks"
     },
     "route": "/reports/templates",
-    "screen": "1ebdc6fba6c71406",
+    "screen": "f8a6871cfb4f65c1",
     "guide": "85e10abdc54a1168",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "reports-template-tags": {
     "src": "/help/shots/reports-template-tags.webp",
@@ -3759,9 +3818,9 @@
       "target": "marks"
     },
     "route": "/reports/templates/[templateId]",
-    "screen": "1a715ea3f12e415e",
+    "screen": "fb21d693ccf0c6cd",
     "guide": "771b401b4e45bfe1",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "sales-cheques": {
     "src": "/help/shots/sales-cheques.webp",
@@ -3778,9 +3837,9 @@
       "target": "marks"
     },
     "route": "/sales/payments",
-    "screen": "d2d8b4d1783affff",
+    "screen": "9a143bbbcfa0d2a9",
     "guide": "a855952b7e94ea38",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "sales-counter-sale": {
     "src": "/help/shots/sales-counter-sale.webp",
@@ -3796,14 +3855,14 @@
       "target": "marks"
     },
     "route": "/sales/orders/new",
-    "screen": "14da9a395211de21",
+    "screen": "552c5d8d8b32f0c9",
     "guide": "ee4f694009a702e3",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "sales-edit-cancel-order": {
     "src": "/help/shots/sales-edit-cancel-order.webp",
     "width": 1280,
-    "height": 1118,
+    "height": 1138,
     "marks": [1, 2],
     "labels": {
       "1": "Edit",
@@ -3811,13 +3870,13 @@
     },
     "clip": {
       "y": 0,
-      "height": 1118,
+      "height": 1138,
       "target": "marks"
     },
     "route": "/sales/orders/[orderId]",
-    "screen": "96776aa354e509a5",
+    "screen": "dc6f6130be577fe8",
     "guide": "9f5fcc0f3f087755",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "sales-force-override": {
     "src": "/help/shots/sales-force-override.webp",
@@ -3833,9 +3892,9 @@
       "target": "marks"
     },
     "route": "/sales/orders/new",
-    "screen": "14da9a395211de21",
+    "screen": "552c5d8d8b32f0c9",
     "guide": "ec8c14986f030613",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "sales-invoices": {
     "src": "/help/shots/sales-invoices.webp",
@@ -3855,9 +3914,9 @@
       "target": "marks"
     },
     "route": "/sales/invoices",
-    "screen": "c1c9125c13eaf211",
+    "screen": "8d81b30126dae006",
     "guide": "01cd1d31f75ebe21",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "sales-new-order": {
     "src": "/help/shots/sales-new-order.webp",
@@ -3876,9 +3935,9 @@
       "target": "marks"
     },
     "route": "/sales/orders/new",
-    "screen": "14da9a395211de21",
+    "screen": "552c5d8d8b32f0c9",
     "guide": "4e5e3e909ab575fd",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "sales-order-documents": {
     "src": "/help/shots/sales-order-documents.webp",
@@ -3896,7 +3955,7 @@
     "route": "/sales/orders",
     "screen": "e2d812faf11b2e7b",
     "guide": "de5a17cd8f6a756a",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "sales-overview": {
     "src": "/help/shots/sales-overview.webp",
@@ -3917,7 +3976,7 @@
     "route": "/sales/overview",
     "screen": "5f541643652e3969",
     "guide": "63e1b3c3b43aca51",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "sales-payment-proof": {
     "src": "/help/shots/sales-payment-proof.webp",
@@ -3933,9 +3992,9 @@
       "target": "marks"
     },
     "route": "/sales/payments",
-    "screen": "d2d8b4d1783affff",
+    "screen": "9a143bbbcfa0d2a9",
     "guide": "2e364e2e4800ad31",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "sales-payments-list": {
     "src": "/help/shots/sales-payments-list.webp",
@@ -3955,14 +4014,14 @@
       "target": "marks"
     },
     "route": "/sales/payments",
-    "screen": "d2d8b4d1783affff",
+    "screen": "9a143bbbcfa0d2a9",
     "guide": "ac8a4e0ac94ffbd9",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "sales-previous-due": {
     "src": "/help/shots/sales-previous-due.webp",
     "width": 1280,
-    "height": 1248,
+    "height": 1291,
     "marks": [1, 3],
     "labels": {
       "1": "Issue the invoice",
@@ -3970,13 +4029,13 @@
     },
     "clip": {
       "y": 0,
-      "height": 1248,
+      "height": 1291,
       "target": "marks"
     },
     "route": "/sales/orders/[orderId]",
-    "screen": "96776aa354e509a5",
+    "screen": "dc6f6130be577fe8",
     "guide": "f4a0644a4da2a4a9",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "sales-proforma": {
     "src": "/help/shots/sales-proforma.webp",
@@ -3994,7 +4053,7 @@
     "route": "/sales/proformas",
     "screen": "f6829e721e926a4a",
     "guide": "5ba76c459e9fe0c3",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "sales-quotation": {
     "src": "/help/shots/sales-quotation.webp",
@@ -4019,7 +4078,7 @@
     "route": "/sales/quotations/new",
     "screen": "5c25a34ed3e0a40f",
     "guide": "a2a0ea52daa808b4",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "sales-quotation-status": {
     "src": "/help/shots/sales-quotation-status.webp",
@@ -4038,7 +4097,7 @@
     "route": "/sales/quotations",
     "screen": "5f61dd62d43c113f",
     "guide": "2deebe863b863fee",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "sales-receive-payment": {
     "src": "/help/shots/sales-receive-payment.webp",
@@ -4056,9 +4115,9 @@
       "target": "marks"
     },
     "route": "/sales/payments",
-    "screen": "d2d8b4d1783affff",
+    "screen": "9a143bbbcfa0d2a9",
     "guide": "2ddb178323cdfd98",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "sales-refund": {
     "src": "/help/shots/sales-refund.webp",
@@ -4074,9 +4133,9 @@
       "target": "marks"
     },
     "route": "/sales/payments",
-    "screen": "d2d8b4d1783affff",
+    "screen": "9a143bbbcfa0d2a9",
     "guide": "8f23306cf977bd2e",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "sales-return": {
     "src": "/help/shots/sales-return.webp",
@@ -4093,9 +4152,9 @@
       "target": "marks"
     },
     "route": "/sales/returns",
-    "screen": "6eeee6cf9d12b0fb",
-    "guide": "076f1eb82497ed0a",
-    "taken": "2026-10-18"
+    "screen": "8c3a91118d4174da",
+    "guide": "697d0c30fcbdab1e",
+    "taken": "2026-10-23"
   },
   "sales-use-credit": {
     "src": "/help/shots/sales-use-credit.webp",
@@ -4113,7 +4172,7 @@
     "route": "/sales/orders",
     "screen": "e2d812faf11b2e7b",
     "guide": "0ac08d8ff9228ffe",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "settings-add-person": {
     "src": "/help/shots/settings-add-person.webp",
@@ -4131,9 +4190,9 @@
       "target": "marks"
     },
     "route": "/settings/team",
-    "screen": "4eeb3c88b70155a5",
+    "screen": "b7f7972f8a66096b",
     "guide": "f697090af32b591b",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "settings-business-rules": {
     "src": "/help/shots/settings-business-rules.webp",
@@ -4152,9 +4211,9 @@
       "target": "marks"
     },
     "route": "/settings/company",
-    "screen": "04098010d1a92795",
+    "screen": "e036d7ff99a72ca4",
     "guide": "887e6840e1ebfa76",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "settings-company-details": {
     "src": "/help/shots/settings-company-details.webp",
@@ -4174,9 +4233,9 @@
       "target": "marks"
     },
     "route": "/settings/company",
-    "screen": "04098010d1a92795",
+    "screen": "e036d7ff99a72ca4",
     "guide": "89a1a10e7f0f9ed9",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "settings-edit-role": {
     "src": "/help/shots/settings-edit-role.webp",
@@ -4192,9 +4251,9 @@
       "target": "marks"
     },
     "route": "/settings/roles",
-    "screen": "59d5facb373818b9",
+    "screen": "1ddaba968d473140",
     "guide": "5b5c21a98eba9ee2",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "settings-manage-member": {
     "src": "/help/shots/settings-manage-member.webp",
@@ -4212,9 +4271,9 @@
       "target": "marks"
     },
     "route": "/settings/team",
-    "screen": "4eeb3c88b70155a5",
+    "screen": "b7f7972f8a66096b",
     "guide": "aa4782d9ccbaeb3b",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "settings-member-permissions": {
     "src": "/help/shots/settings-member-permissions.webp",
@@ -4231,9 +4290,9 @@
       "target": "marks"
     },
     "route": "/settings/team",
-    "screen": "4eeb3c88b70155a5",
+    "screen": "b7f7972f8a66096b",
     "guide": "668b4b277772f07e",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "settings-new-role": {
     "src": "/help/shots/settings-new-role.webp",
@@ -4252,9 +4311,9 @@
       "target": "marks"
     },
     "route": "/settings/roles",
-    "screen": "59d5facb373818b9",
+    "screen": "1ddaba968d473140",
     "guide": "1e06cc2b53040be8",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "sign-in": {
     "src": "/help/shots/sign-in.webp",
@@ -4274,7 +4333,7 @@
     "route": "/sign-in",
     "screen": "f850a1222beb071b",
     "guide": "cb1776645e1003ef",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "sign-out": {
     "src": "/help/shots/sign-out.webp",
@@ -4290,9 +4349,9 @@
       "target": "marks"
     },
     "route": "/",
-    "screen": "5c79106230adb891",
+    "screen": "982b000e443a73d1",
     "guide": "fdcd59a78bfb7213",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "switch-company": {
     "src": "/help/shots/switch-company.webp",
@@ -4310,12 +4369,12 @@
     "route": "/select-company",
     "screen": "0518521952f4aa17",
     "guide": "00b4fd5a04c7295a",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "tech-pack-link": {
     "src": "/help/shots/tech-pack-link.webp",
     "width": 1280,
-    "height": 800,
+    "height": 806,
     "marks": [1, 2, 3, 4, 7],
     "labels": {
       "1": "Details and links",
@@ -4326,13 +4385,13 @@
     },
     "clip": {
       "y": 0,
-      "height": 800,
+      "height": 806,
       "target": "marks"
     },
     "route": "/tech-packs/[techPackId]",
-    "screen": "271ba3c527538db7",
+    "screen": "8b1d6ec78df2fca6",
     "guide": "93a22baa46879ebd",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "tech-pack-list": {
     "src": "/help/shots/tech-pack-list.webp",
@@ -4353,7 +4412,7 @@
     "route": "/tech-packs",
     "screen": "d3034fecc193c694",
     "guide": "248aabb6f5e2b710",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "tech-pack-new": {
     "src": "/help/shots/tech-pack-new.webp",
@@ -4376,7 +4435,7 @@
     "route": "/tech-packs/new",
     "screen": "0201fa2d72318ff4",
     "guide": "03fcffeb16ebf4de",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "top-bar": {
     "src": "/help/shots/top-bar.webp",
@@ -4394,9 +4453,9 @@
       "target": "marks"
     },
     "route": "/",
-    "screen": "5c79106230adb891",
+    "screen": "982b000e443a73d1",
     "guide": "2c04e3f0f85dd47e",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "whats-new-v62": {
     "src": "/help/shots/whats-new-v62.webp",
@@ -4413,9 +4472,9 @@
       "target": "marks"
     },
     "route": "/",
-    "screen": "5c79106230adb891",
+    "screen": "982b000e443a73d1",
     "guide": "2b50c89e85a7ec12",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   },
   "whats-new-v63": {
     "src": "/help/shots/whats-new-v63.webp",
@@ -4431,8 +4490,8 @@
       "target": "marks"
     },
     "route": "/",
-    "screen": "5c79106230adb891",
+    "screen": "982b000e443a73d1",
     "guide": "5e16c44fa8773b44",
-    "taken": "2026-10-18"
+    "taken": "2026-10-23"
   }
 }

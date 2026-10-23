@@ -76,6 +76,7 @@ export const ORDER_STATUSES: readonly SalesOrderStatus[] = [
   "CONFIRMED",
   "PACKED",
   "PROCESSING",
+  "SHIPPED",
   "DELIVERED",
   "PARTIALLY_RETURNED",
   "RETURNED",
@@ -86,6 +87,7 @@ export const ORDER_CHANNEL_FILTERS: readonly SalesChannel[] = [
   "B2B_PREORDER",
   "POS",
   "SOCIAL_COMMERCE",
+  "WEBSITE",
 ];
 export const QUOTATION_STATUSES: readonly QuotationStatus[] = [
   "DRAFT",

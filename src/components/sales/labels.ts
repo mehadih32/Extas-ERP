@@ -45,6 +45,17 @@ export const ORDER_STATUS_LABELS: Record<SalesOrderStatus, string> = {
   CANCELLED: "Cancelled",
 };
 
+/**
+ * An order's status as people read it. The ERP marks an order PROCESSING when
+ * part of it is delivered; an online shop marks its own orders PROCESSING while
+ * it packs them (CN-005), so a website order says "Processing".
+ */
+export function orderStatusLabel(status: SalesOrderStatus, channel?: SalesChannel) {
+  return status === "PROCESSING" && channel === "WEBSITE"
+    ? "Processing"
+    : ORDER_STATUS_LABELS[status];
+}
+
 export const INVOICE_STATUS_LABELS: Record<InvoiceStatus, string> = {
   UNPAID: "Unpaid",
   PARTIALLY_PAID: "Part paid",

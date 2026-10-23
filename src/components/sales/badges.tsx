@@ -4,6 +4,7 @@ import type {
   ProformaStatus,
   QuotationStatus,
   RefundKind,
+  SalesChannel,
   SalesOrderStatus,
 } from "@prisma/client";
 
@@ -13,7 +14,7 @@ import { cn } from "@/lib/utils";
 import {
   CHEQUE_STATUS_LABELS,
   INVOICE_STATUS_LABELS,
-  ORDER_STATUS_LABELS,
+  orderStatusLabel,
   PROFORMA_STATUS_LABELS,
   QUOTATION_STATUS_LABELS,
   REFUND_KIND_LABELS,
@@ -104,8 +105,14 @@ const ORDER_TONES: Record<SalesOrderStatus, Tone> = {
   CANCELLED: "closed",
 };
 
-export function OrderBadge({ status }: { status: SalesOrderStatus }) {
-  return <StatusBadge tone={ORDER_TONES[status]}>{ORDER_STATUS_LABELS[status]}</StatusBadge>;
+export function OrderBadge({
+  status,
+  channel,
+}: {
+  status: SalesOrderStatus;
+  channel?: SalesChannel;
+}) {
+  return <StatusBadge tone={ORDER_TONES[status]}>{orderStatusLabel(status, channel)}</StatusBadge>;
 }
 
 const INVOICE_TONES: Record<InvoiceStatus, Tone> = {

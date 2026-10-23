@@ -1386,7 +1386,20 @@ export async function salesReturnDocument(
   const tz = ctx.company.timezone;
   const currency = ctx.company.currency;
   const invoice = r.invoice!;
-  const buyer: PartyLike = r.party ?? { name: "Buyer" };
+  // A sale without a buyer profile (a website order) is credited to the customer it names.
+  const buyer: PartyLike = r.party ?? {
+    name: r.order.customerName ?? "Buyer",
+    phone: r.order.customerPhone,
+    address: r.order.shippingAddress,
+  };
+  // A website shop's checked return says where each piece went.
+  const restocked = r.items.some((item) => item.qcStatus !== "MOVED_TO_BAD_STOCK");
+  const place = (status: string) =>
+    status === "MOVED_TO_MAIN_STOCK"
+      ? "Back in stock"
+      : status === "MOVED_TO_B_GRADE"
+        ? "B-grade stock"
+        : "Damage & QC Rejects";
   const model = base(ctx, "SALES_RETURN", {
     title: "Credit Note",
     reference: r.number,
@@ -1417,7 +1430,7 @@ export async function salesReturnDocument(
             money(item.unitPrice, currency),
             money(item.amount, currency),
           ],
-          details: [item.variant.sku],
+          details: [restocked ? `${item.variant.sku} · ${place(item.qcStatus)}` : item.variant.sku],
         })),
       },
       {
@@ -1436,7 +1449,9 @@ export async function salesReturnDocument(
       ...textBlock("Notes", r.notes),
       {
         kind: "note",
-        text: `Credited at the prices billed on invoice ${invoice.number}. This credit stays on the buyer's account and counts against what they owe on later invoices.`,
+        text: r.partyId
+          ? `Credited at the prices billed on invoice ${invoice.number}. This credit stays on the buyer's account and counts against what they owe on later invoices.`
+          : `Credited at the prices billed on invoice ${invoice.number}. A sale without a buyer profile: the credit is kept on the Walk-in customers account.`,
       },
       ...(r.voidedAt
         ? [{ kind: "note" as const, text: `Voided: ${r.voidReason ?? "no reason given"}` }]

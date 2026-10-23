@@ -5464,6 +5464,7 @@ enum ReturnItemQcStatus {
   MOVED_TO_MAIN_STOCK
   MOVED_TO_BAD_STOCK
   SPLIT // part restocked, part bad
+  MOVED_TO_B_GRADE // back into B-grade stock (a shop's return checked as B-grade, CN-005)
 }
 
 enum ProductionStage {

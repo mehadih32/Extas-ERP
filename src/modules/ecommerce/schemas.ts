@@ -20,7 +20,13 @@ const money = z
   .max(1_000_000_000)
   .refine((v) => Math.abs(Math.round(v * 100) - v * 100) < 1e-6, "At most 2 decimals");
 const positiveMoney = money.refine((v) => v > 0, "Must be more than 0");
-const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "A day as YYYY-MM-DD");
+const day = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "A day as YYYY-MM-DD")
+  .refine((v) => {
+    const at = new Date(`${v}T00:00:00Z`);
+    return !Number.isNaN(at.getTime()) && at.toISOString().startsWith(v);
+  }, "Not a real day");
 const instant = z.string().datetime({ offset: true });
 
 export const externalOrderIdSchema = text(100);

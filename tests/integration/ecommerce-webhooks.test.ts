@@ -917,23 +917,28 @@ run("E-commerce webhooks: ERP to shop (CN-005)", () => {
       details: { pin: expect.any(Array) },
     });
 
-    // Adding addresses narrows who may call: no PIN.
+    // Starting a list narrows who may call: no PIN.
     await edit({ ...moved, ipAllowList: ["203.0.113.7"] });
-    await edit({ ...moved, ipAllowList: ["203.0.113.7", "2001:DB8::1"] });
-    expect((await saved()).ipAllowList).toEqual(["203.0.113.7", "2001:DB8::1"]);
-    // The same address written another way is not a removal.
-    await edit({ ...moved, ipAllowList: ["203.0.113.7", "2001:db8:0::1", "198.51.100.4"] });
+    expect((await saved()).ipAllowList).toEqual(["203.0.113.7"]);
 
-    // Taking one off (or emptying the list, which lets any address call) needs it.
+    // Adding an address to a list, emptying it or swapping one lets more call: PIN.
+    const widen = "Give your PIN to let more addresses call the shop's API.";
     for (const ipAllowList of [["203.0.113.7", "198.51.100.4"], [], ["198.51.100.9"]]) {
       await expect(edit({ ...moved, ipAllowList })).rejects.toMatchObject({
         code: "VALIDATION",
-        message: "Give your PIN to take an address off the shop's IP allow-list.",
+        message: widen,
       });
     }
-    expect((await saved()).ipAllowList).toHaveLength(3);
-    await edit({ ...moved, ipAllowList: ["203.0.113.7"], pin: PIN });
     expect((await saved()).ipAllowList).toEqual(["203.0.113.7"]);
+    await edit({ ...moved, ipAllowList: ["203.0.113.7", "2001:DB8::1", "198.51.100.4"], pin: PIN });
+    // Saved written one way.
+    expect((await saved()).ipAllowList).toEqual(["203.0.113.7", "2001:db8::1", "198.51.100.4"]);
+    // The same address written another way is not a new one.
+    await edit({ ...moved, ipAllowList: ["::ffff:203.0.113.7", "2001:db8:0::1", "198.51.100.4"] });
+
+    // Taking addresses off while one stays narrows it: no PIN.
+    await edit({ ...moved, ipAllowList: ["198.51.100.4"] });
+    expect((await saved()).ipAllowList).toEqual(["198.51.100.4"]);
 
     // With no PIN set yet, the answer says to set one first.
     await prisma.aiSettings.updateMany({ data: { pinHash: null } });

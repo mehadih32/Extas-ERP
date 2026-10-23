@@ -22,7 +22,12 @@ vi.mock("node:dns", async (importOriginal) => {
   return { ...actual, default: { ...actual, lookup }, lookup };
 });
 
-import { pinNeededFor, privateAddress } from "@/modules/ecommerce/integration.service";
+import {
+  integrationSchema,
+  normalizeIp,
+  pinNeededFor,
+  privateAddress,
+} from "@/modules/ecommerce/integration.service";
 import { deliver, refuseAddress, shopLookup } from "@/modules/ecommerce/webhooks";
 
 /** shopLookup's answer, as node:net would get it. */
@@ -79,6 +84,10 @@ describe("privateAddress: never a shop's webhook address (CN-005)", () => {
     "erp.local",
     "db.internal",
     "a.localhost",
+    // the same names with the final dot of a fully written name
+    "localhost.",
+    "metadata.google.internal.",
+    "erp.local..",
   ])("refuses %s", (host) => {
     expect(privateAddress(host)).toBe(true);
   });
@@ -111,14 +120,47 @@ describe("pinNeededFor: the shop changes that need the owner's PIN", () => {
     expect(pinNeededFor({ ...before, webhookUrl: null }, before)).not.toBeNull();
     expect(pinNeededFor(before, { ...before })).toBeNull();
   });
-  it("asks when an address goes, not when one is added", () => {
-    expect(pinNeededFor(before, { ...before, ipAllowList: ["203.0.113.7", "::1"] })).toBeNull();
-    expect(pinNeededFor(before, { ...before, ipAllowList: [] })).toBe(
-      "take an address off the shop's IP allow-list",
-    );
-    expect(pinNeededFor(before, { ...before, ipAllowList: ["203.0.113.8"] })).not.toBeNull();
-    const v6 = { ...before, ipAllowList: ["2001:DB8:0::1"] };
-    expect(pinNeededFor(v6, { ...v6, ipAllowList: ["2001:db8::1"] })).toBeNull();
+  it("asks when the allow-list lets more addresses call, not when it narrows", () => {
+    const widen = "let more addresses call the shop's API";
+    // An address added to a list, or the list emptied (any address may then call).
+    expect(pinNeededFor(before, { ...before, ipAllowList: ["203.0.113.7", "::1"] })).toBe(widen);
+    expect(pinNeededFor(before, { ...before, ipAllowList: [] })).toBe(widen);
+    expect(pinNeededFor(before, { ...before, ipAllowList: ["203.0.113.8"] })).toBe(widen);
+    // Taking one off while one stays, or starting a list: narrower, no PIN.
+    const two = { ...before, ipAllowList: ["203.0.113.7", "198.51.100.4"] };
+    expect(pinNeededFor(two, { ...two, ipAllowList: ["198.51.100.4"] })).toBeNull();
+    const open = { ...before, ipAllowList: [] };
+    expect(pinNeededFor(open, { ...open, ipAllowList: ["203.0.113.7"] })).toBeNull();
+    expect(pinNeededFor(open, open)).toBeNull();
+    // The same address written another way is not a new one.
+    const v6 = { ...before, ipAllowList: ["2001:DB8:0::1", "203.0.113.7"] };
+    expect(
+      pinNeededFor(v6, { ...v6, ipAllowList: ["2001:db8::1", "::ffff:203.0.113.7"] }),
+    ).toBeNull();
+  });
+});
+
+describe("normalizeIp: each address written one way", () => {
+  it.each([
+    ["203.0.113.7", "203.0.113.7"],
+    [" 203.0.113.7 ", "203.0.113.7"],
+    ["2001:DB8::1", "2001:db8::1"],
+    ["2001:0db8:0000:0000:0000:0000:0000:0001", "2001:db8::1"],
+    ["::ffff:1.2.3.4", "1.2.3.4"],
+    ["::FFFF:0102:0304", "1.2.3.4"],
+    ["::1", "::1"],
+    ["64:ff9b::1.2.3.4", "64:ff9b::102:304"],
+  ])("%s is %s", (raw, written) => {
+    expect(normalizeIp(raw)).toBe(written);
+  });
+
+  it("saves the allow-list written that way", () => {
+    const saved = integrationSchema.parse({
+      name: "Extas web shop",
+      warehouseId: "w",
+      ipAllowList: ["2001:DB8::1", "::ffff:1.2.3.4", "203.0.113.7"],
+    });
+    expect(saved.ipAllowList).toEqual(["2001:db8::1", "1.2.3.4", "203.0.113.7"]);
   });
 });
 

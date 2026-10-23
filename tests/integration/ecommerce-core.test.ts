@@ -6,6 +6,7 @@ import { GET as health } from "@/app/api/v1/ecommerce/health/route";
 import { decryptSecret } from "@/lib/crypto";
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
+import { resetRateLimits } from "@/lib/rate-limit";
 import { setPin } from "@/modules/ai/settings.service";
 import * as integrations from "@/modules/ecommerce/integration.service";
 import { apiKeyRef } from "@/modules/ecommerce/keys";
@@ -122,6 +123,23 @@ run("E-commerce API: keys, signatures and idempotency (CN-005)", () => {
     });
     expect(off.status).toBe(403);
     expect(off.body.error.code).toBe("IP_NOT_ALLOWED");
+    // The caller's address and the list are compared written one way.
+    const mapped = await callShop(shop, health, {
+      path: "/health",
+      headers: { "x-forwarded-for": "::ffff:203.0.113.7" },
+    });
+    expect(mapped.status).toBe(200);
+    await prisma.salesChannelIntegration.update({
+      where: { id: shop.integration.id },
+      data: { ipAllowList: ["203.0.113.7", "2001:DB8::1"], rateLimitPerMinute: 10 },
+    });
+    const v6 = await callShop(shop, health, {
+      path: "/health",
+      headers: { "x-forwarded-for": "2001:db8:0:0::1" },
+    });
+    expect(v6.status).toBe(200);
+    // A new minute for the rate limit below.
+    resetRateLimits();
     const on = { "x-forwarded-for": "203.0.113.7" };
     // A refused address is not counted: 10 calls fit in the minute.
     for (let i = 0; i < 10; i++) {

@@ -54,8 +54,9 @@ function withListErrors(error: ActionError | undefined): ActionError | undefined
  * "Add online shop" and "Edit": the platform, the shop's name, the company (the
  * one you are working in, not changeable), the warehouse it sells from, its
  * webhook address, an optional IP allow-list and its requests a minute. In
- * "Edit", a new webhook URL or an address taken off the allow-list asks for the
- * owner's PIN (the field shows as soon as the change is made).
+ * "Edit", a new webhook URL, or an allow-list that lets more addresses call (a
+ * new address added, or the list emptied), asks for the owner's PIN (the field
+ * shows as soon as the change is made).
  */
 export function ShopFormDialog({
   shop,
@@ -219,7 +220,7 @@ export function ShopFormDialog({
             <PinField
               id="shop-pin"
               error={fieldError("pin") ?? fieldError("pinNotSet")}
-              hint="A new webhook URL, or an address taken off the IP allow-list, needs your PIN."
+              hint="A new webhook URL, a new address on the IP allow-list or an emptied list needs your PIN."
             />
           )}
         </>

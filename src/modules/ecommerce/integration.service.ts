@@ -12,9 +12,9 @@ import type { CompanyContext } from "@/modules/auth/context";
 
 import { apiKeyHint, apiKeyRef, newApiKey, newWebhookSecret } from "./keys";
 import { shopAccountOf } from "./shop-account";
-import { pinNeededFor } from "./shop-pin";
+import { normalizeIp, pinNeededFor } from "./shop-pin";
 
-export { pinNeededFor };
+export { normalizeIp, pinNeededFor };
 
 /*
  * Settings > Integrations > E-commerce (CN-005): the shops connected to this
@@ -38,9 +38,11 @@ export function assertCanManageShops(ctx: CompanyContext) {
  * resolves to are checked again when a webhook connects (webhooks.ts).
  */
 export function privateAddress(host: string): boolean {
+  // "localhost." and "metadata.google.internal." are the same names as without the dot.
   const h = host
     .replace(/^\[|\]$/g, "")
     .replace(/%.*$/, "")
+    .replace(/\.+$/, "")
     .toLowerCase();
   if (isIP(h) !== 0) return isPrivateIp(h);
   return (
@@ -132,7 +134,9 @@ export const webhookUrlSchema = z
 const ipEntry = z
   .string()
   .trim()
-  .refine((value) => isIP(value) !== 0, "Enter one IP address per line, like 203.0.113.7");
+  .refine((value) => isIP(value) !== 0, "Enter one IP address per line, like 203.0.113.7")
+  // Saved written one way, as the API compares a caller's address (route.ts).
+  .transform(normalizeIp);
 
 export const integrationSchema = z.object({
   name: z.string().trim().min(2, "Give it a name").max(80, "Use at most 80 characters"),
@@ -208,7 +212,8 @@ export async function createIntegration(ctx: CompanyContext, raw: unknown, meta?
 
 /**
  * Changes a shop's name, warehouse, webhook address, allow-list or rate limit.
- * A new webhook URL or an address taken off the IP allow-list needs the PIN.
+ * A new webhook URL, or an IP allow-list that lets more addresses call (an
+ * address added to a list, or the list emptied), needs the PIN (shop-pin.ts).
  */
 export async function updateIntegration(
   ctx: CompanyContext,

@@ -13,6 +13,7 @@ import type { CompanyContext } from "@/modules/auth/context";
 import { EcommerceApiError, toApiError } from "./errors";
 import { apiKeyRef } from "./keys";
 import { shopContext } from "./shop-account";
+import { normalizeIp } from "./shop-pin";
 import { SIGNATURE_HEADER, signatureMatches, TIMESTAMP_HEADER, timestampFresh } from "./signature";
 
 /*
@@ -288,9 +289,10 @@ export function ecommerceRoute<P = Record<string, never>>(
         throw fail(413, "TOO_LARGE", "The body is larger than 512 KB.");
       }
       integration = await authenticate(request, address);
+      // Both written one way (shop-pin.ts), so "::ffff:203.0.113.7" is 203.0.113.7.
       if (
         integration.ipAllowList.length > 0 &&
-        !(address && integration.ipAllowList.includes(address))
+        !(address && integration.ipAllowList.map(normalizeIp).includes(normalizeIp(address)))
       ) {
         throw fail(403, "IP_NOT_ALLOWED", "This address is not on the integration's allow-list.");
       }

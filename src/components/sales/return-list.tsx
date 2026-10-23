@@ -17,7 +17,7 @@ import { money, salesHref } from "./labels";
 import { returnListQuery, type ReturnListView } from "./list-view";
 import { RowCard, RowLink, ShowMore, useLoadMore } from "./load-more";
 
-const who = (row: SalesReturnRow) => row.buyer?.name ?? "Buyer removed";
+const who = (row: SalesReturnRow) => row.buyer?.name ?? row.customerName ?? "Buyer removed";
 
 /** Sales returns (credit notes): cards on phones, a table on computers, each opening its note. */
 export function ReturnList({

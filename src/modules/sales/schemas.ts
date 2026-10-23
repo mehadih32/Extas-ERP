@@ -579,10 +579,26 @@ export const salesSummarySchema = z.object({
 // --- Sales returns (credit notes) ----------------------------------------------------
 
 /** Pieces coming back on one invoice: its lines (order items) and how many of each. */
+/**
+ * What a returned piece's check found: GOOD goes back into sellable stock,
+ * B_GRADE into B-grade stock, DAMAGED to Damage & QC Rejects (the return
+ * screen's way, and the default).
+ */
+export const RETURN_QC = ["GOOD", "B_GRADE", "DAMAGED"] as const;
+export type ReturnQc = (typeof RETURN_QC)[number];
+
 export const salesReturnSchema = z.object({
   invoiceId: id,
   items: z
-    .array(z.object({ orderItemId: id, quantity: qty }))
+    .array(
+      z.object({
+        orderItemId: id,
+        quantity: qty,
+        /** Anything but DAMAGED needs sales.returns.qc (the e-commerce API sends it). */
+        qc: z.enum(RETURN_QC).optional(),
+        qcNote: optionalText(300),
+      }),
+    )
     .min(1, "Enter the pieces coming back")
     .max(500),
   reason: z.string().trim().min(3).max(500),

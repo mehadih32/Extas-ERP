@@ -49,7 +49,7 @@ export function ReturnRecords({ returns, currency }: { returns: ReturnLine[]; cu
         ))}
       </ul>
       <p className="mt-3 text-[0.8125rem] leading-relaxed text-muted-foreground">
-        Credited to the buyer&apos;s account; the pieces are in Damage &amp; QC Rejects.
+        Credited to the buyer&apos;s account. Each credit note shows where its pieces went.
       </p>
     </Panel>
   );

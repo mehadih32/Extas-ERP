@@ -433,10 +433,15 @@ export function canReturnOnInvoice(
   invoice: InvoiceState & { partyId: string | null },
   order: Pick<OrderState, "status">,
   pieces: { delivered: number; returned: number },
+  /**
+   * A website shop's return (e-commerce API): its credit stays on the Walk-in
+   * customers account, which the shop settles with its customer itself.
+   */
+  options: { walkInCredit?: boolean } = {},
 ): Verdict {
   if (invoice.status === "VOID") return refuse("CONFLICT", `Invoice ${invoice.number} is void.`);
   if (order.status === "CANCELLED") return refuse("CONFLICT", "Its order is cancelled.");
-  if (!invoice.partyId) {
+  if (!invoice.partyId && !options.walkInCredit) {
     return refuse(
       "CONFLICT",
       "A walk-in sale has no buyer account to keep the credit on, so it takes no sales return.",

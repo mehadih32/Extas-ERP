@@ -29,7 +29,8 @@ export function SalesReturnActions({
   const [voiding, setVoiding] = useState(false);
   const [notice, setNotice] = useState<string>();
   const { salesReturn: r, can, notes } = screen;
-  const buyer = r.buyer?.name ?? "the buyer";
+  const buyer = r.buyer?.name ?? r.customerName ?? "the buyer";
+  const restocked = r.wentTo.stock + r.wentTo.bGrade > 0;
 
   return (
     <div className="grid gap-4">
@@ -65,7 +66,7 @@ export function SalesReturnActions({
       {voiding && (
         <FormDialog
           title={`Void sales return ${r.number}?`}
-          description={`Use this when it was recorded by mistake. The ${money(r.total, currency)} credit comes off ${buyer}'s account, the ${r.pieces} pcs leave Damage & QC Rejects, and the credit note stays on record marked void.`}
+          description={`Use this when it was recorded by mistake. The ${money(r.total, currency)} credit comes off ${buyer}'s account, ${restocked ? "the pieces put back into stock are taken out again (and any in Damage & QC Rejects leave it)" : `the ${r.pieces} pcs leave Damage & QC Rejects`}, and the credit note stays on record marked void.`}
           submitLabel="Void the return"
           pendingLabel="Voiding"
           destructive

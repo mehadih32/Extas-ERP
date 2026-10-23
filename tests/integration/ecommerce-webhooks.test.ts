@@ -555,13 +555,18 @@ run("E-commerce webhooks: ERP to shop (CN-005)", () => {
   });
 
   it("asks for a key before a test, and lets only shop managers send one", async () => {
-    await integrations.revokeKey(shop.owner, shop.integration.id);
     await prisma.salesChannelIntegration.update({
       where: { id: shop.integration.id },
       data: { webhookSecretRef: null },
     });
     await expect(sendTestEvent(shop.owner, shop.integration.id)).rejects.toMatchObject({
       code: "CONFLICT",
+      message: expect.stringContaining("rotate its key"),
+    });
+    await integrations.revokeKey(shop.owner, shop.integration.id);
+    await expect(sendTestEvent(shop.owner, shop.integration.id)).rejects.toMatchObject({
+      code: "CONFLICT",
+      message: expect.stringContaining("Generate the shop's key first"),
     });
     await expect(sendTestEvent(shop.accounts, shop.integration.id)).rejects.toMatchObject({
       code: "FORBIDDEN",

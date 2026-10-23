@@ -232,6 +232,8 @@ services:
     environment:
       DATABASE_URL: postgresql://extras_demo_app:${DEMO_APP_DB_PASSWORD:-}@demo-db:5432/extras_demo?schema=public
       DEMO_SITE: "on"
+      # The demo's own key, so the sample online shop's webhook secret is sealed with it.
+      ENCRYPTION_KEY: ${DEMO_ENCRYPTION_KEY:-}
       UPLOAD_DIR: /data/uploads
       SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-}
       SEED_ADMIN_NAME: ${SEED_ADMIN_NAME:-Owner}

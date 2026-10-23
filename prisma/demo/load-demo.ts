@@ -9,6 +9,7 @@ import * as parties from "@/modules/parties/party.service";
 import * as costs from "@/modules/production/cost.service";
 import * as projects from "@/modules/production/project.service";
 
+import { loadSampleShop } from "./cn005-shop";
 import { POLO_BATCH, runFiveStylePolo, type SimulationManifest } from "./five-style-polo";
 import { loadTestBookings } from "./test-bookings";
 import { loadV62Samples } from "./v62-samples";
@@ -168,6 +169,16 @@ export async function loadV641SamplesDemo(userId: string, companyId: string) {
   const { ctx, done } = await signIn(userId, companyId);
   try {
     return await loadV641Samples(ctx);
+  } finally {
+    await done();
+  }
+}
+
+/** The CN-005 sample online shop (./cn005-shop.ts), with its logs, made once as the owner. */
+export async function loadSampleShopDemo(userId: string, companyId: string) {
+  const { ctx, done } = await signIn(userId, companyId);
+  try {
+    return await loadSampleShop(ctx);
   } finally {
     await done();
   }

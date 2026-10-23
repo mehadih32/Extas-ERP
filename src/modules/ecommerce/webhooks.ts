@@ -7,6 +7,7 @@ import type { BackgroundJob, Prisma, SalesChannelIntegration } from "@prisma/cli
 import { decryptSecret } from "@/lib/crypto";
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
+import { assertMayWrite } from "@/lib/read-only";
 import type { CompanyContext } from "@/modules/auth/context";
 import { enqueueJobs } from "@/modules/jobs/queue";
 
@@ -565,12 +566,20 @@ export type TestResult = Delivery & {
  */
 export async function sendTestEvent(ctx: CompanyContext, id: string): Promise<TestResult> {
   assertCanManageShops(ctx);
+  // A Full check session on the live site only reads: it sends nothing to a shop either.
+  await assertMayWrite();
   const shop = await ctx.db.salesChannelIntegration.findUnique({ where: { id } });
   if (!shop) throw new AppError("NOT_FOUND", "Online shop not found.");
-  if (!shop.apiKeyRef || !shop.webhookSecretRef) {
+  if (!shop.apiKeyRef) {
     throw new AppError(
       "CONFLICT",
       "Generate the shop's key first: the test is signed with its webhook secret.",
+    );
+  }
+  if (!shop.webhookSecretRef) {
+    throw new AppError(
+      "CONFLICT",
+      "This shop has no webhook secret yet: rotate its key to make one.",
     );
   }
   const secret = decryptSecret(shop.webhookSecretRef);

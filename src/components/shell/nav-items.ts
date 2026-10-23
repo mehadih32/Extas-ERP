@@ -238,11 +238,16 @@ export const NAV_ITEMS: readonly NavItem[] = [
     anyOf: ["ai.view", "ai.manage"],
   },
   {
-    // Team, roles and company details (components/settings/tabs.ts).
+    // Team, roles, company details and online shops (components/settings/tabs.ts).
     href: "/settings",
     label: "Settings",
     icon: SettingsIcon,
-    anyOf: ["company.members.manage", "company.roles.manage", "company.settings"],
+    anyOf: [
+      "company.members.manage",
+      "company.roles.manage",
+      "company.settings",
+      "integrations.ecommerce.manage",
+    ],
   },
 ];
 

@@ -1,8 +1,9 @@
-import type { PaymentMethod, Prisma } from "@prisma/client";
+import { type PaymentMethod, Prisma } from "@prisma/client";
 
 import { localDay, startOfDayInZone } from "@/lib/dates";
 import { prisma } from "@/lib/prisma";
 import { lockRow } from "@/lib/row-lock";
+import { returnCreditOnOrder } from "@/modules/sales/credit.service";
 import { deliveredByVariant } from "@/modules/sales/documents.service";
 import { receivePaymentTx } from "@/modules/sales/payment.service";
 import { receivePaymentSchema } from "@/modules/sales/schemas";
@@ -101,7 +102,7 @@ export async function recordShopPayment(call: ShopCall) {
           orderId: order.id,
           direction: "RECEIVED",
           method,
-          ...(reference ? { reference } : { amount: money(input.amount) }),
+          ...(reference ? { reference } : { amount: money(input.amount), reference: null }),
         },
         select: { id: true, number: true },
       });
@@ -129,9 +130,12 @@ export async function recordShopPayment(call: ShopCall) {
           );
         }
       }
-      // A cancelled order is refused by the receipt itself (409).
+      // A cancelled order is refused by the receipt itself (409). A return's credit on the
+      // order steps aside for money paid for the same pieces (payment.service.ts).
       if (current.status !== "CANCELLED") {
-        const due = current.total.minus(current.paidAmount);
+        const due = Prisma.Decimal.max(current.total.minus(current.paidAmount), 0).plus(
+          await returnCreditOnOrder(tx, order.id),
+        );
         if (money(input.amount).gt(due)) {
           const most = due.isNegative() ? "0.00" : due.toFixed(2);
           throw new EcommerceApiError(

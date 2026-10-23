@@ -17,6 +17,7 @@ import { recordPartyActivity } from "@/modules/parties/party.service";
 import { assertNotWalkIn } from "@/modules/parties/walk-in";
 import { createProjectFromProformaTx } from "@/modules/production/project.service";
 import {
+  deliveredPieces,
   ledgerPartyId,
   refreshOrderPayments,
   refreshProformaPayments,
@@ -28,6 +29,8 @@ import {
   creditPosition,
   lockBuyerCredit,
   openDuesOf,
+  releaseReturnCreditTx,
+  returnCreditOnOrder,
 } from "@/modules/sales/credit.service";
 import { assertProofFile } from "@/modules/sales/proof.service";
 import { canReceiveOnOrder, canReceiveOnProforma } from "@/modules/sales/rules";
@@ -60,6 +63,12 @@ export function assertCanRecordReceipts(ctx: CompanyContext) {
  * Money above an invoiced order's due (`extra`) is taken on the buyer's
  * account the same way: the order is paid in full first, then their older
  * dues when asked, and the rest is kept as advance balance.
+ *
+ * On a website order (no buyer) a return's credit may already pay part of
+ * the due. Money received for those pieces too (the courier collected the
+ * full COD before the customer sent one back) is taken up to the due plus
+ * that credit: the credit steps aside (credit.service.ts) and becomes the
+ * customer's to pay back from the credit note, so the cash is all recorded.
  */
 export async function receivePaymentTx(
   tx: Tx,
@@ -98,15 +107,31 @@ export async function receivePaymentTx(
       },
     });
     if (!order) throw new AppError("NOT_FOUND", "Order not found.");
-    assertAllowed(canReceiveOnOrder(order));
-    const due = order.total.minus(order.paidAmount);
+    // A website order's return credit can step aside for money paid on it (see above).
+    const returnCredit = order.partyId ? money(0) : await returnCreditOnOrder(tx, order.id);
+    const piecesOut = order.status === "RETURNED" ? await deliveredPieces(tx, order.id) : 0;
+    assertAllowed(
+      canReceiveOnOrder({ ...order, paidAmount: order.paidAmount.minus(returnCredit) }, piecesOut),
+    );
+    const due = Prisma.Decimal.max(order.total.minus(order.paidAmount), 0);
     const invoice = order.invoice && order.invoice.status !== "VOID" ? order.invoice : null;
     partyId = order.partyId;
     isAdvance = !invoice;
     label = order.number;
-    if (amount.gt(due)) {
+    if (amount.gt(due) && returnCredit.gt(0) && amount.lte(due.plus(returnCredit))) {
+      await releaseReturnCreditTx(
+        tx,
+        ctx,
+        order.id,
+        amount.minus(due),
+        `Money paid on ${order.number} (${amount.toFixed(2)}) takes the place of the return credit: it is left to pay back`,
+      );
+    } else if (amount.gt(due)) {
       if (!input.extra || !order.partyId || !invoice) {
-        throw new AppError("VALIDATION", `Only ${due.toFixed(2)} is due on ${order.number}.`);
+        throw new AppError(
+          "VALIDATION",
+          `Only ${due.plus(returnCredit).toFixed(2)} is due on ${order.number}.`,
+        );
       }
       // On the buyer's account: this order first, then (when asked) their older dues.
       const older =

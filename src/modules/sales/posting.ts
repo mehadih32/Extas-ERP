@@ -4,6 +4,7 @@ import type { Db } from "@/lib/db-types";
 import { ensureControlAccounts } from "@/modules/accounts/control-accounts";
 import { postJournalEntry } from "@/modules/accounts/journal.service";
 import { ensureWalkInParty } from "@/modules/parties/walk-in";
+import { closedWithNoSale } from "@/modules/sales/rules";
 import { invoiceStatusFor, money, ZERO } from "@/modules/sales/totals";
 
 /*
@@ -56,19 +57,34 @@ export async function heldOnProforma(db: Db, proformaId: string) {
   return money(agg._sum.amount ?? 0).minus(await refundedOn(db, { proformaId }));
 }
 
-/** Re-totals what has been paid against an order and its invoice. */
+/** Pieces delivered on an order (its delivery challans). */
+export async function deliveredPieces(db: Db, orderId: string) {
+  const agg = await db.deliveryChallanItem.aggregate({
+    where: { challan: { orderId } },
+    _sum: { quantity: true },
+  });
+  return agg._sum.quantity ?? 0;
+}
+
+/**
+ * Re-totals what has been paid against an order and its invoice. Nothing is
+ * due on an order closed with no sale (cancelled, or back undelivered).
+ */
 export async function refreshOrderPayments(tx: Tx, orderId: string) {
   const order = await tx.salesOrder.findUniqueOrThrow({
     where: { id: orderId },
     include: { invoice: true },
   });
   const paid = await heldOnOrder(tx, orderId);
+  const noSale = closedWithNoSale(
+    order.status,
+    order.status === "RETURNED" ? await deliveredPieces(tx, order.id) : 0,
+  );
   await tx.salesOrder.update({
     where: { id: order.id },
     data: {
       paidAmount: paid,
-      dueAmount:
-        order.status === "CANCELLED" ? ZERO : Prisma.Decimal.max(order.total.minus(paid), ZERO),
+      dueAmount: noSale ? ZERO : Prisma.Decimal.max(order.total.minus(paid), ZERO),
     },
   });
   if (order.invoice && order.invoice.status !== "VOID") {

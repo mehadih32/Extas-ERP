@@ -283,7 +283,11 @@ paths:
         bank. BKASH, NAGAD and CARD need their transaction id (reference). The same order, method and
         reference twice is refused (409 PAYMENT_EXISTS), and so is a second COD of the same amount sent
         without a reference (send its own reference, such as the courier's invoice, if it is new money).
-        An order whose parcel came back undelivered takes no money (409 ORDER_LOCKED).
+        Send one remittance always with the same reference, or always without one: a COD sent once
+        without and once with a reference is taken as two payments. An order whose parcel came back
+        undelivered takes no money (409 ORDER_LOCKED). Money collected before a return was recorded
+        (the full COD, a prepaid bKash synced late) is taken up to the due plus the return's credit on
+        the order; that much of the credit is then left for Accounts to pay back in the ERP.
       operationId: createPayment
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"

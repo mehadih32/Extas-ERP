@@ -7,6 +7,7 @@ import { salesHref } from "@/components/sales/labels";
 import { CONTROL_ACCOUNTS } from "@/modules/accounts/control-accounts";
 import { billsOutOfStepIn } from "@/modules/accounts/supplier-settlement";
 import { projectCostSummaries } from "@/modules/production/project-costs";
+import { closedWithNoSale } from "@/modules/sales/rules";
 
 import type { Check, CheckContext, FieldChange } from "../types";
 import {
@@ -175,6 +176,8 @@ type OrderRow = {
   dueAmount: Prisma.Decimal;
   lines: Prisma.Decimal;
   held: Prisma.Decimal;
+  /** Pieces delivered on its challans. */
+  delivered: Prisma.Decimal | number;
   invoiceId: string | null;
   invoiceNumber: string | null;
   invoiceStatus: string | null;
@@ -196,7 +199,10 @@ async function salesTotals(ctx: CheckContext) {
              + COALESCE((SELECT SUM(c.amount) FROM "CreditAllocation" c
                           WHERE c."orderId" = so.id AND c."releasedAt" IS NULL), 0)
              - COALESCE((SELECT SUM(r.amount) FROM "Refund" r
-                          WHERE r."orderId" = so.id AND r."voidedAt" IS NULL), 0) AS held
+                          WHERE r."orderId" = so.id AND r."voidedAt" IS NULL), 0) AS held,
+               COALESCE((SELECT SUM(dci.quantity) FROM "DeliveryChallanItem" dci
+                          JOIN "DeliveryChallan" dc ON dc.id = dci."challanId"
+                          WHERE dc."orderId" = so.id), 0) AS delivered
         FROM "SalesOrder" so
         WHERE so."companyId" = ${companyId}
       )
@@ -208,9 +214,11 @@ async function salesTotals(ctx: CheckContext) {
       WHERE o.subtotal <> o.lines
          OR o.total <> o.subtotal - o.discount + o."shippingCharge" + o.tax
          OR o."paidAmount" <> o.held
-         OR o."dueAmount" <> CASE WHEN o.status = 'CANCELLED' THEN 0 ELSE GREATEST(o.total - o.held, 0) END
+         -- Closed with no sale (sales/rules.ts closedWithNoSale): cancelled, or back undelivered.
+         OR o."dueAmount" <> CASE WHEN o.status = 'CANCELLED' OR (o.status = 'RETURNED' AND o.delivered <= 0)
+                                  THEN 0 ELSE GREATEST(o.total - o.held, 0) END
          OR (o.status <> 'CANCELLED' AND o.held > o.total)
-         OR (o.status = 'CANCELLED' AND o.held <> 0)
+         OR ((o.status = 'CANCELLED' OR (o.status = 'RETURNED' AND o.delivered <= 0)) AND o.held <> 0)
          OR (inv.id IS NOT NULL AND inv.status <> 'VOID'::"InvoiceStatus" AND (
                inv.total <> o.total OR inv."paidAmount" <> o.held
                OR inv."dueAmount" <> GREATEST(inv.total - o.held, 0)
@@ -265,6 +273,8 @@ async function salesTotals(ctx: CheckContext) {
     const held = dec(o.held);
     const total = dec(o.total);
     const cancelled = o.status === "CANCELLED";
+    // Closed with no sale: cancelled, or a website parcel back undelivered (nothing is due).
+    const noSale = closedWithNoSale(o.status, Number(o.delivered));
     const live = o.invoiceId !== null && o.invoiceStatus !== "VOID";
     const lines = dec(o.lines);
     const formula = dec(o.subtotal)
@@ -297,16 +307,18 @@ async function salesTotals(ctx: CheckContext) {
       });
     }
 
-    // Money held on it: never more than its total, and none on a cancelled order.
-    if (held.isNegative() || (!cancelled && held.gt(total)) || (cancelled && !held.isZero())) {
+    // Money held on it: never more than its total, and none on an order closed with no sale.
+    if (held.isNegative() || (!cancelled && held.gt(total)) || (noSale && !held.isZero())) {
       items.push({
         id: `held-${o.id}`,
         severity: "IMPORTANT",
         title: cancelled
           ? `অর্ডার ${o.number} বাতিল, কিন্তু এর উপর এখনো ${amount(held)} টাকা ধরা আছে`
-          : held.isNegative()
-            ? `অর্ডার ${o.number}-এ যা পাওয়া গেছে তার চেয়ে বেশি ফেরত দেওয়া হয়েছে (${amount(held)})`
-            : `অর্ডার ${o.number}-এর মোট ${amount(total)}, কিন্তু এর উপর ${amount(held)} টাকা পাওয়া গেছে`,
+          : noSale && !held.isZero()
+            ? `অর্ডার ${o.number} ডেলিভারি ছাড়াই ফেরত এসেছে, কিন্তু এর উপর এখনো ${amount(held)} টাকা ধরা আছে`
+            : held.isNegative()
+              ? `অর্ডার ${o.number}-এ যা পাওয়া গেছে তার চেয়ে বেশি ফেরত দেওয়া হয়েছে (${amount(held)})`
+              : `অর্ডার ${o.number}-এর মোট ${amount(total)}, কিন্তু এর উপর ${amount(held)} টাকা পাওয়া গেছে`,
         href,
         place: o.number,
         why: "অর্ডারে যা পাওয়া গেছে (পেমেন্ট আর ব্যবহার করা ক্রেডিট থেকে রিফান্ড বাদে) তা কখনো মোটের বেশি হয় না, আর অর্ডার বাতিল হলে সব টাকা ফেরত, ক্রেডিট বা চার্জ হিসেবে মিটিয়ে দেওয়া হয়। না হলে ক্রেতার টাকা ভুল জায়গায় আটকে থাকে।",
@@ -344,7 +356,7 @@ async function salesTotals(ctx: CheckContext) {
     }
 
     // What is paid and due on the order and its invoice: copies of the money held on it.
-    const due = cancelled ? ZERO : Prisma.Decimal.max(total.minus(held), ZERO);
+    const due = noSale ? ZERO : Prisma.Decimal.max(total.minus(held), ZERO);
     const changes: FieldChange[] = [
       {
         model: "SalesOrder",

@@ -117,6 +117,8 @@ services:
       PUSH_PROVIDER: ${PUSH_PROVIDER:-}
       PAYOUT_PROVIDER: ${PAYOUT_PROVIDER:-}
       GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-}
+      # Stock and product webhooks to the online shops (CN-005): on unless deploy/.env says off.
+      ECOMMERCE_WEBHOOKS: ${ECOMMERCE_WEBHOOKS:-on}
     volumes:
       - ${DATA_DIR:-/srv/extras-erp}/uploads:/data/uploads
       - ${DATA_DIR:-/srv/extras-erp}/backups:/data/backups

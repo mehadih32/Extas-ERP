@@ -1,7 +1,9 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 
+import { asksForPin, PinField } from "@/components/ai/pin-prompt";
 import { Field } from "@/components/forms/field";
 import { FormDialog } from "@/components/sales/dialogs";
 import { Input } from "@/components/ui/input";
@@ -9,13 +11,21 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import type { ActionError } from "@/lib/result";
 import type { ShopView } from "@/modules/ecommerce/screens.service";
+import { pinNeededFor } from "@/modules/ecommerce/shop-pin";
 import { createShopAction, updateShopAction } from "@/server/actions/ecommerce.actions";
 
 import { PLATFORM_OPTIONS } from "./shop-labels";
 
 type Warehouse = { id: string; name: string; isDefault: boolean };
 
-/** The form's fields as the service takes them: the allow-list one address per line. */
+/** The allow-list box as a list: one address per line, empty lines left out. */
+const ipLines = (text: string) =>
+  text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+/** The form's fields as the service takes them (the PIN only when it is asked for). */
 function readForm(form: FormData) {
   const text = (name: string) => String(form.get(name) ?? "").trim();
   return {
@@ -23,11 +33,9 @@ function readForm(form: FormData) {
     name: text("name"),
     warehouseId: text("warehouseId"),
     webhookUrl: text("webhookUrl"),
-    ipAllowList: text("ipAllowList")
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter(Boolean),
+    ipAllowList: ipLines(text("ipAllowList")),
     rateLimitPerMinute: text("rateLimitPerMinute") || "120",
+    ...(form.has("pin") ? { pin: text("pin") } : {}),
   };
 }
 
@@ -45,7 +53,9 @@ function withListErrors(error: ActionError | undefined): ActionError | undefined
 /**
  * "Add online shop" and "Edit": the platform, the shop's name, the company (the
  * one you are working in, not changeable), the warehouse it sells from, its
- * webhook address, an optional IP allow-list and its requests a minute.
+ * webhook address, an optional IP allow-list and its requests a minute. In
+ * "Edit", a new webhook URL or an address taken off the allow-list asks for the
+ * owner's PIN (the field shows as soon as the change is made).
  */
 export function ShopFormDialog({
   shop,
@@ -62,6 +72,14 @@ export function ShopFormDialog({
   const router = useRouter();
   const adding = !shop;
   const defaultWarehouse = shop?.warehouseId ?? warehouses.find((w) => w.isDefault)?.id ?? "";
+  const [webhookText, setWebhookText] = useState(shop?.webhookUrl ?? "");
+  const [ipText, setIpText] = useState(shop?.ipAllowList.join("\n") ?? "");
+  // The server asked for it (a change this screen did not foresee): show the field too.
+  const [pinAsked, setPinAsked] = useState(false);
+  const pinFor = shop
+    ? pinNeededFor(shop, { webhookUrl: webhookText.trim() || null, ipAllowList: ipLines(ipText) })
+    : null;
+  const askPin = !adding && (pinAsked || pinFor !== null);
 
   return (
     <FormDialog
@@ -86,7 +104,10 @@ export function ShopFormDialog({
           return undefined;
         }
         const result = await updateShopAction(shop.id, input);
-        if (!result.ok) return withListErrors(result.error);
+        if (!result.ok) {
+          if (asksForPin(result.error)) setPinAsked(true);
+          return withListErrors(result.error);
+        }
         router.refresh();
         onClose();
         return undefined;
@@ -156,6 +177,7 @@ export function ShopFormDialog({
               type="url"
               inputMode="url"
               defaultValue={shop?.webhookUrl ?? ""}
+              onChange={(event) => setWebhookText(event.target.value)}
               placeholder="https://shop.example.com/erp/webhooks"
               maxLength={500}
               autoComplete="off"
@@ -172,6 +194,7 @@ export function ShopFormDialog({
               name="ipAllowList"
               rows={3}
               defaultValue={shop?.ipAllowList.join("\n") ?? ""}
+              onChange={(event) => setIpText(event.target.value)}
               placeholder="203.0.113.7"
               className="font-mono"
             />
@@ -192,6 +215,13 @@ export function ShopFormDialog({
               defaultValue={shop?.rateLimitPerMinute ?? 120}
             />
           </Field>
+          {askPin && (
+            <PinField
+              id="shop-pin"
+              error={fieldError("pin") ?? fieldError("pinNotSet")}
+              hint="A new webhook URL, or an address taken off the IP allow-list, needs your PIN."
+            />
+          )}
         </>
       )}
     </FormDialog>

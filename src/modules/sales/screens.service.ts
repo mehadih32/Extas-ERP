@@ -33,7 +33,7 @@ import {
 import { getOrder, listOrders, listPackers } from "@/modules/sales/order.service";
 import { prisma } from "@/lib/prisma";
 import { chequeFigures, listCheques } from "@/modules/sales/cheque.service";
-import { creditPosition } from "@/modules/sales/credit.service";
+import { creditPosition, returnCreditOnOrder } from "@/modules/sales/credit.service";
 import { getPaymentReceipt, listPayments } from "@/modules/sales/payment.service";
 import { getProforma, listProformas } from "@/modules/sales/proforma.service";
 import { getQuotation, listQuotations } from "@/modules/sales/quotation.service";
@@ -615,7 +615,7 @@ type RefundLine = {
   voidedAt: Date | null;
 };
 
-function presentRefunds(
+export function presentRefunds(
   ctx: CompanyContext,
   refunds: RefundLine[],
   from: Parameters<typeof canVoidRefund>[1],
@@ -1367,6 +1367,10 @@ export async function getInvoiceScreen(ctx: CompanyContext, invoiceId: string) {
     taxId?: string | null;
   };
   const open = OPEN_INVOICE.includes(doc.status);
+  // A website order's return credit steps aside for money paid on it (as on the order page).
+  const returnCredit =
+    order.partyId || doc.status === "VOID" ? money(0) : await returnCreditOnOrder(prisma, order.id);
+  const orderDue = order.total.minus(order.paidAmount);
   return {
     invoice: {
       id: doc.id,
@@ -1448,7 +1452,15 @@ export async function getInvoiceScreen(ctx: CompanyContext, invoiceId: string) {
         : null,
     },
     can: {
-      receive: access.receive && open && canReceiveOnOrder(order, delivered).ok,
+      receive:
+        access.receive &&
+        (open || returnCredit.gt(0)) &&
+        canReceiveOnOrder({ ...order, paidAmount: order.paidAmount.minus(returnCredit) }, delivered)
+          .ok,
+      /** The most a payment may be when a website return's credit pays part of the due. */
+      receiveUpTo: returnCredit.gt(0)
+        ? fixed((orderDue.gt(0) ? orderDue : money(0)).plus(returnCredit))
+        : null,
       void: access.voidInvoice && voidVerdict.ok,
       /** Record goods coming back on it (Accounts). */
       makeReturn:

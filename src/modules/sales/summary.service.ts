@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 
 import { dayRange } from "@/lib/dates";
 import type { CompanyContext } from "@/modules/auth/context";
+import { SALE_ORDERS } from "@/modules/sales/rules";
 import { salesSummarySchema } from "@/modules/sales/schemas";
 
 /** "YYYY-MM-DD" for today in the company's timezone. */
@@ -12,7 +13,8 @@ function todayIn(timeZone: string) {
 /**
  * Sales figures for the dashboard ("Today's Sales") and the sales overview:
  * invoiced sales, orders by channel, money collected (and paid back to buyers)
- * and dues still open. Defaults to today in company time.
+ * and dues still open. Defaults to today in company time. Orders closed with no
+ * sale (cancelled, or back undelivered: SALE_ORDERS) are left out.
  */
 export async function getSalesSummary(ctx: CompanyContext, raw: unknown = {}) {
   const q = salesSummarySchema.parse(raw);
@@ -36,13 +38,13 @@ export async function getSalesSummary(ctx: CompanyContext, raw: unknown = {}) {
       _count: { _all: true },
     }),
     ctx.db.salesOrder.aggregate({
-      where: { status: { not: "CANCELLED" }, orderDate: range },
+      where: { ...SALE_ORDERS, orderDate: range },
       _sum: { total: true },
       _count: { _all: true },
     }),
     ctx.db.salesOrder.groupBy({
       by: ["channel"],
-      where: { status: { not: "CANCELLED" }, orderDate: range },
+      where: { ...SALE_ORDERS, orderDate: range },
       _sum: { total: true },
       _count: { _all: true },
     }),

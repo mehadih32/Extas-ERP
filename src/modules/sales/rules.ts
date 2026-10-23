@@ -323,6 +323,15 @@ export function closedWithNoSale(status: string, deliveredPieces: number): boole
   return status === "CANCELLED" || (status === "RETURNED" && deliveredPieces <= 0);
 }
 
+/** closedWithNoSale as a query: orders that are a sale (not cancelled, not back undelivered). */
+export const SALE_ORDERS: Prisma.SalesOrderWhereInput = {
+  status: { not: "CANCELLED" },
+  NOT: {
+    status: "RETURNED",
+    deliveryChallans: { none: { items: { some: { quantity: { gt: 0 } } } } },
+  },
+};
+
 /** Money comes in on an order that is not closed with no sale, up to what is due. */
 export function canReceiveOnOrder(
   o: Pick<OrderState, "number" | "status"> & { total: Amount; paidAmount: Amount },

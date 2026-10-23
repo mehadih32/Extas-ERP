@@ -1,17 +1,30 @@
 import { Prisma } from "@prisma/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
+// The credit note's "Void" button calls a Server Action: it reads the sign-in cookie.
+const browser = vi.hoisted(() => ({ cookies: new Map<string, string>() }));
+vi.mock("next/headers", () => ({
+  cookies: async () => ({
+    get: (name: string) =>
+      browser.cookies.has(name) ? { name, value: browser.cookies.get(name)! } : undefined,
+    set: (name: string, value: string) => void browser.cookies.set(name, value),
+    delete: (name: string) => void browser.cookies.delete(name),
+  }),
+  headers: async () => new Headers(),
+}));
+vi.mock("next/cache", () => ({ revalidatePath: () => undefined, revalidateTag: () => undefined }));
 
 import { POST as postAdSpend } from "@/app/api/v1/ecommerce/ad-spend/route";
 import { PATCH as patchOrder } from "@/app/api/v1/ecommerce/orders/[externalOrderId]/route";
 import { POST as postPayment } from "@/app/api/v1/ecommerce/payments/route";
 import { POST as postReturn } from "@/app/api/v1/ecommerce/returns/route";
+import { SESSION_COOKIE } from "@/lib/auth/session-cookie";
 import { localDay, startOfDayInZone } from "@/lib/dates";
 import { readOnly } from "@/lib/read-only";
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import { ensureControlAccounts } from "@/modules/accounts/control-accounts";
+import { createSession } from "@/modules/auth/session.service";
 import * as reports from "@/modules/accounts/reports.service";
 import { DATA_CHECKS } from "@/modules/bug-guard/checks/data";
 import { buildDocument } from "@/modules/documents/builders";
@@ -27,6 +40,7 @@ import * as receipts from "@/modules/sales/payment.service";
 import * as refunds from "@/modules/sales/refund.service";
 import * as returnScreens from "@/modules/sales/return-screens.service";
 import * as returns from "@/modules/sales/return.service";
+import { voidRefundAction } from "@/server/actions/sales.actions";
 
 import { callShop, giveKey, type Shop, setupShop, shopUserOf } from "./ecommerce-helpers";
 import { resetDb } from "./helpers";
@@ -1155,6 +1169,24 @@ run("E-commerce API: a website return's credit (CN-005 review)", () => {
     });
     expect(screen.can.void).toBe(false);
     expect(screen.notes.void).toContain("paid back");
+    // The credit note lists the refund with its voucher and its void, as the order page does.
+    expect(screen.paidBack).toEqual([
+      expect.objectContaining({
+        id: first.id,
+        number: first.number,
+        kind: "CASH",
+        amount: "1000.00",
+        method: "BKASH",
+        voided: false,
+        can: { void: true },
+      }),
+    ]);
+    // Without the right to pay money back there is nothing to void.
+    const viewer = await returnScreens.getSalesReturnScreen(
+      { ...shop.accounts, can: (key: string) => key !== "accounts.payments.record" },
+      returnId,
+    );
+    expect(viewer.paidBack[0]!.can.void).toBe(false);
     const blocked = await expectAppError(
       returns.voidSalesReturn(shop.accounts, returnId, { reason: "Recorded by mistake" }),
       "CONFLICT",
@@ -1204,7 +1236,16 @@ run("E-commerce API: a website return's credit (CN-005 review)", () => {
 
     // Voiding both refunds puts the credit back; then the return can be voided.
     await refunds.voidRefund(shop.accounts, rest.id, { reason: "Recorded by mistake" });
-    await refunds.voidRefund(shop.accounts, first.id, { reason: "Recorded by mistake" });
+    // The first one through the same Server Action the credit note's "Void" button calls.
+    const { token } = await createSession(shop.accounts.user.id, shop.accounts.company.id);
+    browser.cookies.set(SESSION_COOKIE, token);
+    const voided = await voidRefundAction(first.id, { reason: "Recorded by mistake" });
+    expect(voided.ok).toBe(true);
+    const listed = (await returnScreens.getSalesReturnScreen(shop.accounts, returnId)).paidBack;
+    expect(listed.map((r) => [r.number, r.voided, r.can.void])).toEqual([
+      [first.number, true, false],
+      [rest.number, true, false],
+    ]);
     expect((await returnScreens.getSalesReturnScreen(shop.accounts, returnId)).can.void).toBe(true);
     await returns.voidSalesReturn(shop.accounts, returnId, { reason: "Recorded by mistake" });
     expect(await orderMoney(order.id)).toMatchObject({ paid: "2900.00", due: "0.00" });
@@ -1377,6 +1418,57 @@ run("E-commerce API: a website return's credit (CN-005 review)", () => {
     });
     expect(await orderMoney(order.id)).toMatchObject({ paid: "2900.00", due: "0.00" });
     await expectBooksOk(shop);
+  });
+
+  it("clears a cheque above the due but within the return credit, and the invoice page offers it", async () => {
+    const order = await websiteOrder(shop, "WEB-3008", [[navyM, 2]], { deliver: true });
+    const ret = await returnOne("WEB-3008");
+    const invoice = await prisma.invoice.findFirstOrThrow({ where: { orderId: order.id } });
+    const { getInvoiceScreen } = await import("@/modules/sales/screens.service");
+    const page = await getInvoiceScreen(shop.accounts, invoice.id);
+    expect(page.can.receive).toBe(true);
+    expect(page.can.receiveUpTo).toBe("2900.00");
+    const cheques = await import("@/modules/sales/cheque.service");
+    const cheque = await cheques.recordCheque(shop.accounts, {
+      orderId: order.id,
+      amount: 2900,
+      chequeNo: "CHQ-1001",
+    });
+    await cheques.clearCheque(shop.accounts, cheque.id, {});
+    expect(await orderMoney(order.id)).toMatchObject({ paid: "2900.00", due: "0.00" });
+    const screen = await returnScreens.getSalesReturnScreen(shop.accounts, ret.body.erpReturnId);
+    expect(screen.walkInCredit).toMatchObject({ usedOnInvoice: "0.00", left: "1450.00" });
+    // Once the cash covers it all, the invoice page takes nothing more.
+    const after = await getInvoiceScreen(shop.accounts, invoice.id);
+    expect(after.can.receive).toBe(false);
+    expect(after.can.receiveUpTo).toBeNull();
+    await expectBooksOk(shop);
+  });
+
+  it("leaves an order back undelivered out of the order value and the channel figures", async () => {
+    await websiteOrder(shop, "WEB-3009", [[navyM, 1]]);
+    await websiteOrder(shop, "WEB-3010", [[navyM, 2]], { deliver: true });
+    const back = await callShop<{ externalOrderId: string }>(shop, patchOrder, {
+      method: "PATCH",
+      path: "/orders/WEB-3009",
+      body: { status: "RETURNED", reason: "Customer not at home" },
+      params: { externalOrderId: "WEB-3009" },
+    });
+    expect(back.status).toBe(200);
+    // Every piece of the delivered one coming back still counts: it was a sale.
+    await callShop(shop, postReturn, {
+      path: "/returns",
+      body: {
+        externalOrderId: "WEB-3010",
+        reason: "Size problem",
+        items: [{ sku: navyM, quantity: 2, qc: "GOOD" }],
+      },
+    });
+    const { getSalesSummary } = await import("@/modules/sales/summary.service");
+    const summary = await getSalesSummary(shop.owner);
+    expect(summary.orderValue).toBe("2900.00");
+    expect(summary.orderCount).toBe(1);
+    expect(summary.byChannel).toEqual([{ channel: "WEBSITE", orders: 1, value: "2900.00" }]);
   });
 
   it("takes the shop's own return id once: 409 RETURN_EXISTS, also when two come at once", async () => {

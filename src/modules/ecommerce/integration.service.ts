@@ -6,7 +6,7 @@ import { encryptSecret } from "@/lib/crypto";
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
-import { requirePin } from "@/modules/ai/settings.service";
+import { PIN_CHECKED, requirePin } from "@/modules/ai/settings.service";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 
@@ -161,7 +161,12 @@ export const pinSchema = z.object({ pin: z.string().max(20).optional() });
  */
 const webhooksFromNow = () => {
   const now = new Date();
-  return { stockSentTo: now, variantsSentTo: now, webhooksStartedAt: now };
+  return {
+    stockSentTo: now,
+    variantsSentTo: now,
+    webhooksStartedAt: now,
+    webhooksPausedUntil: null,
+  };
 };
 
 async function checkWarehouse(ctx: CompanyContext, warehouseId: string) {
@@ -182,11 +187,23 @@ async function findIntegration(ctx: CompanyContext, id: string) {
   return integration;
 }
 
-/** Adds a shop to this company (no key yet: "Generate key" makes one). */
-export async function createIntegration(ctx: CompanyContext, raw: unknown, meta?: RequestMeta) {
+/**
+ * Adds a shop to this company (no key yet: "Generate key" makes one). With a
+ * webhook URL it needs the PIN: the shop's product changes, costs included,
+ * go there. `proof` is for server code that already checked it (sample data).
+ */
+export async function createIntegration(
+  ctx: CompanyContext,
+  raw: unknown,
+  meta?: RequestMeta,
+  proof?: typeof PIN_CHECKED,
+) {
   assertCanManageShops(ctx);
   const input = integrationSchema.parse(raw);
+  const { pin } = pinSchema.parse(raw);
   await checkWarehouse(ctx, input.warehouseId);
+  // An allow-list on a new shop only narrows who may call (from any address): no PIN.
+  if (input.webhookUrl) await requirePin(ctx, proof ?? pin, "add a shop with a webhook URL");
   const integration = await ctx.db.salesChannelIntegration.create({
     data: {
       companyId: ctx.company.id,

@@ -2,6 +2,7 @@ import { vi } from "vitest";
 
 import { encryptSecret } from "@/lib/crypto";
 import { prisma } from "@/lib/prisma";
+import { PIN_CHECKED } from "@/modules/ai/settings.service";
 import { createIntegration } from "@/modules/ecommerce/integration.service";
 import { apiKeyHint, apiKeyRef, newApiKey, newWebhookSecret } from "@/modules/ecommerce/keys";
 import { signedHeaders } from "@/modules/ecommerce/signature";
@@ -72,11 +73,16 @@ export async function setupShop(name = "Extas") {
     variants.find((v) => v.style.code === style && v.color.name === color && v.size.name === size)!
       .sku;
 
-  const integration = await createIntegration(owner, {
-    name: "Extas web shop",
-    warehouseId: warehouse.id,
-    webhookUrl: "https://shop.example.com/erp/webhooks",
-  });
+  const integration = await createIntegration(
+    owner,
+    {
+      name: "Extas web shop",
+      warehouseId: warehouse.id,
+      webhookUrl: "https://shop.example.com/erp/webhooks",
+    },
+    undefined,
+    PIN_CHECKED,
+  );
   const { apiKey, webhookSecret } = await giveKey(integration.id);
   return {
     company,

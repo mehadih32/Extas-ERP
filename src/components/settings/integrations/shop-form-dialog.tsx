@@ -53,10 +53,10 @@ function withListErrors(error: ActionError | undefined): ActionError | undefined
 /**
  * "Add online shop" and "Edit": the platform, the shop's name, the company (the
  * one you are working in, not changeable), the warehouse it sells from, its
- * webhook address, an optional IP allow-list and its requests a minute. In
- * "Edit", a new webhook URL, or an allow-list that lets more addresses call (a
- * new address added, or the list emptied), asks for the owner's PIN (the field
- * shows as soon as the change is made).
+ * webhook address, an optional IP allow-list and its requests a minute. The
+ * owner's PIN is asked (the field shows as soon as the change is made) to add a
+ * shop with a webhook URL, and in "Edit" for a new webhook URL or an allow-list
+ * that lets more addresses call (a new address added, or the list emptied).
  */
 export function ShopFormDialog({
   shop,
@@ -77,10 +77,12 @@ export function ShopFormDialog({
   const [ipText, setIpText] = useState(shop?.ipAllowList.join("\n") ?? "");
   // The server asked for it (a change this screen did not foresee): show the field too.
   const [pinAsked, setPinAsked] = useState(false);
-  const pinFor = shop
-    ? pinNeededFor(shop, { webhookUrl: webhookText.trim() || null, ipAllowList: ipLines(ipText) })
-    : null;
-  const askPin = !adding && (pinAsked || pinFor !== null);
+  // A new shop starts with no webhook URL and an empty list: only a URL needs the PIN.
+  const pinFor = pinNeededFor(shop ?? { webhookUrl: null, ipAllowList: [] }, {
+    webhookUrl: webhookText.trim() || null,
+    ipAllowList: ipLines(ipText),
+  });
+  const askPin = pinAsked || pinFor !== null;
 
   return (
     <FormDialog
@@ -99,7 +101,10 @@ export function ShopFormDialog({
         const input = readForm(form);
         if (adding) {
           const result = await createShopAction(input);
-          if (!result.ok) return withListErrors(result.error);
+          if (!result.ok) {
+            if (asksForPin(result.error)) setPinAsked(true);
+            return withListErrors(result.error);
+          }
           router.push(`/settings/integrations/ecommerce/${result.data.id}`);
           onClose();
           return undefined;
@@ -220,7 +225,11 @@ export function ShopFormDialog({
             <PinField
               id="shop-pin"
               error={fieldError("pin") ?? fieldError("pinNotSet")}
-              hint="A new webhook URL, a new address on the IP allow-list or an emptied list needs your PIN."
+              hint={
+                adding
+                  ? "A shop with a webhook URL needs your PIN: its product changes go there."
+                  : "A new webhook URL, a new address on the IP allow-list or an emptied list needs your PIN."
+              }
             />
           )}
         </>

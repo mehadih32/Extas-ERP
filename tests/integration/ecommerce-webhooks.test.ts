@@ -1,6 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
+// The owner's bot alarms: counted, never sent anywhere.
+const pushes = vi.hoisted(() => ({ sent: [] as unknown[] }));
+vi.mock("@/modules/ai/bot/send-push", () => ({
+  sendPush: async (_companyId: string, push: unknown) => {
+    pushes.sent.push(push);
+  },
+}));
 // No real name is ever looked up: each test says what the shop's name resolves to.
 const dns = vi.hoisted(() => ({ addresses: ["93.184.216.34"] as string[] }));
 vi.mock("node:dns", async (importOriginal) => {
@@ -90,7 +97,7 @@ vi.mock("node:https", async (importOriginal) => {
 import { lookup as dnsLookup } from "node:dns";
 
 import { prisma } from "@/lib/prisma";
-import { setPin } from "@/modules/ai/settings.service";
+import { PIN_CHECKED, setPin } from "@/modules/ai/settings.service";
 import { purgeShopLogs } from "@/modules/ecommerce/housekeeping";
 import * as integrations from "@/modules/ecommerce/integration.service";
 import { getShop, listShops } from "@/modules/ecommerce/screens.service";
@@ -107,7 +114,7 @@ import {
 import { runHousekeeping } from "@/modules/housekeeping/scheduler";
 import * as matrix from "@/modules/inventory/matrix.service";
 import * as styles from "@/modules/inventory/style.service";
-import { retryDelayMs } from "@/modules/jobs/queue";
+import { enqueueJob, retryDelayMs } from "@/modules/jobs/queue";
 import { runDueJobs } from "@/modules/jobs/worker";
 import { reserveStock } from "@/modules/sales/stock-ops";
 
@@ -454,7 +461,7 @@ run("E-commerce webhooks: ERP to shop (CN-005)", () => {
         status: "RECEIVED",
         attempts: 2,
         responseStatus: null,
-        error: "The shop did not answer within 10 seconds.",
+        error: "The shop did not answer within 5 seconds.",
       },
     ]);
 
@@ -519,7 +526,8 @@ run("E-commerce webhooks: ERP to shop (CN-005)", () => {
     ]) {
       await prisma.salesChannelIntegration.update({
         where: { id: shop.integration.id },
-        data: { webhookUrl: address },
+        // A paused shop would not try at all: each address is tried here.
+        data: { webhookUrl: address, webhooksPausedUntil: null },
       });
       await prisma.backgroundJob.updateMany({ data: { runAfter: new Date(0) } });
       await runDueJobs();
@@ -530,7 +538,7 @@ run("E-commerce webhooks: ERP to shop (CN-005)", () => {
     dns.addresses = ["93.184.216.34"];
     await prisma.salesChannelIntegration.update({
       where: { id: shop.integration.id },
-      data: { webhookUrl: "https://shop.example.com/erp/webhooks" },
+      data: { webhookUrl: "https://shop.example.com/erp/webhooks", webhooksPausedUntil: null },
     });
     await prisma.backgroundJob.updateMany({ data: { runAfter: new Date(0) } });
     await runDueJobs();
@@ -589,6 +597,80 @@ run("E-commerce webhooks: ERP to shop (CN-005)", () => {
       error: "The shop's webhook address could not be found (DNS).",
     });
     expect(sent).toHaveLength(1);
+  });
+
+  it("pauses a shop that does not answer, so an owner's alarm never waits behind it", async () => {
+    let answer: "hang" | "ok" = "hang";
+    const { sent } = mockShop(() => {
+      if (answer === "hang") throw new DOMException("The operation timed out.", "AbortError");
+      return ok();
+    });
+    pushes.sent = [];
+    const navyM = shop.sku("EX-PL-001", "Navy", "M");
+    await reserve(shop, navyS, 1);
+    await reserve(shop, navyM, 1);
+    await scanShopChanges();
+    // An alarm (a failed backup) queued after the shop's two webhooks.
+    await enqueueJob(prisma, {
+      kind: "ai.bot.push",
+      companyId: shop.company.id,
+      payload: { kind: "text", text: "The backup failed.", alarm: true },
+    });
+
+    // The first job of the tick is the alarm, before any webhook.
+    expect(await runDueJobs(1)).toBe(1);
+    expect(pushes.sent).toHaveLength(1);
+    expect(sent).toHaveLength(0);
+
+    // One try for the shop: it hangs, the shop is paused, its other webhook is not tried.
+    expect(await runDueJobs()).toBe(1);
+    expect(sent).toHaveLength(1);
+    const paused = (
+      await prisma.salesChannelIntegration.findUniqueOrThrow({
+        where: { id: shop.integration.id },
+      })
+    ).webhooksPausedUntil!;
+    expect(paused.getTime()).toBeGreaterThan(Date.now() + 20_000);
+    const events = await outgoing(shop);
+    expect(events.map((e) => e.attempts).sort()).toEqual([0, 1]);
+    const waiting = await prisma.backgroundJob.findFirstOrThrow({
+      where: { kind: "ecommerce.webhook.send", attempts: 0 },
+    });
+    expect(waiting.runAfter.getTime()).toBe(paused.getTime());
+
+    // A change while paused waits for the pause too.
+    await later();
+    await reserve(shop, shop.sku("EX-PL-001", "White", "L"), 1);
+    expect((await scanShopChanges()).events).toBe(1);
+    expect(await runDueJobs()).toBe(0);
+
+    // A webhook due anyway (queued another way) is put back, its try not counted.
+    await prisma.backgroundJob.update({
+      where: { id: waiting.id },
+      data: { runAfter: new Date(0) },
+    });
+    expect(await runDueJobs()).toBe(1);
+    expect(sent).toHaveLength(1);
+    expect(
+      await prisma.backgroundJob.findUniqueOrThrow({ where: { id: waiting.id } }),
+    ).toMatchObject({ status: "QUEUED", attempts: 0, runAfter: paused });
+
+    // After the wait the shop answers: one try ends the pause and the rest go.
+    answer = "ok";
+    expect(await runDueJobs(20, () => new Date(Date.now() + 60_000))).toBe(3);
+    expect(sent).toHaveLength(4);
+    expect((await outgoing(shop)).map((e) => e.status)).toEqual([
+      "PROCESSED",
+      "PROCESSED",
+      "PROCESSED",
+    ]);
+    expect(
+      (
+        await prisma.salesChannelIntegration.findUniqueOrThrow({
+          where: { id: shop.integration.id },
+        })
+      ).webhooksPausedUntil,
+    ).toBeNull();
   });
 
   it("skips an event when the shop was switched off, or a newer change of the SKU replaces it", async () => {
@@ -681,6 +763,34 @@ run("E-commerce webhooks: ERP to shop (CN-005)", () => {
       signedHeaders(shop.webhookSecret, raw, new Date(Date.now() - 6 * 60_000)),
     );
     expect(mockShopReceive(shop.webhookSecret, raw, stale)).toMatchObject({ status: 401 });
+  });
+
+  it("sends no test from a restore drill or standby copy, and a good test ends a pause", async () => {
+    const { sent } = mockShop();
+    const standby = await import("@/modules/backups/standby");
+    for (const which of ["onDrill", "onStandby"] as const) {
+      const spy = vi.spyOn(standby, which).mockResolvedValue(true);
+      await expect(sendTestEvent(shop.owner, shop.integration.id)).rejects.toMatchObject({
+        code: "CONFLICT",
+        message: expect.stringContaining("sends nothing to the shop"),
+      });
+      spy.mockRestore();
+    }
+    expect(sent).toHaveLength(0);
+    expect(await outgoing(shop)).toHaveLength(0);
+
+    // Paused shop: a test the shop answers brings its waiting webhooks forward.
+    await reserve(shop, navyS, 1);
+    await scanShopChanges();
+    const until = new Date(Date.now() + 3_600_000);
+    await prisma.salesChannelIntegration.update({
+      where: { id: shop.integration.id },
+      data: { webhooksPausedUntil: until },
+    });
+    await prisma.backgroundJob.updateMany({ data: { runAfter: until } });
+    expect(await sendTestEvent(shop.owner, shop.integration.id)).toMatchObject({ ok: true });
+    expect(await runDueJobs()).toBe(1);
+    expect(sent).toHaveLength(2);
   });
 
   it("asks for a key before a test, and lets only shop managers send one", async () => {
@@ -945,5 +1055,36 @@ run("E-commerce webhooks: ERP to shop (CN-005)", () => {
     await expect(
       edit({ webhookUrl: "https://shop.example.com/v3/webhooks" }),
     ).rejects.toMatchObject({ code: "VALIDATION", details: { pinNotSet: expect.any(Array) } });
+  });
+
+  it("asks for the PIN to add a shop with a webhook URL, not for one without", async () => {
+    await setPin(shop.owner, { pin: PIN });
+    const base = { name: "Second shop", warehouseId: shop.warehouse.id };
+    const withUrl = { ...base, webhookUrl: "https://second.example.com/hooks" };
+    await expect(integrations.createIntegration(shop.owner, withUrl)).rejects.toMatchObject({
+      code: "VALIDATION",
+      message: "Give your PIN to add a shop with a webhook URL.",
+      details: { pin: expect.any(Array) },
+    });
+    await expect(
+      integrations.createIntegration(shop.owner, { ...withUrl, pin: "0000" }),
+    ).rejects.toMatchObject({ code: "VALIDATION", details: { pin: ["The PIN is not right"] } });
+    expect(await prisma.salesChannelIntegration.count()).toBe(1);
+    const made = await integrations.createIntegration(shop.owner, { ...withUrl, pin: PIN });
+    expect(made.webhookUrl).toBe(withUrl.webhookUrl);
+    // No URL, an allow-list only (it narrows who may call): no PIN.
+    const plain = await integrations.createIntegration(shop.owner, {
+      ...base,
+      name: "Third shop",
+      ipAllowList: ["::FFFF:203.0.113.7"],
+    });
+    expect(plain.ipAllowList).toEqual(["203.0.113.7"]);
+    // Server code that already checked it (the demo's sample shop) passes the proof.
+    await integrations.createIntegration(
+      shop.owner,
+      { ...withUrl, name: "Sample shop" },
+      undefined,
+      PIN_CHECKED,
+    );
   });
 });

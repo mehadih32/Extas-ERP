@@ -501,6 +501,7 @@ run("the permission matrix", () => {
       "accounts.payments.record",
       "company.members.manage",
       "company.roles.manage",
+      "integrations.ecommerce.manage",
     ]);
     expect((await listTeam(env.ownerCtx)).lockedPermissions).toEqual([]);
   });

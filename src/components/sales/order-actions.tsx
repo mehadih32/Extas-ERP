@@ -234,6 +234,7 @@ export function OrderActions({
         <ReceivePaymentDialog
           target={{ orderId: o.id, label: o.number }}
           due={o.due}
+          most={can.receiveUpTo ?? undefined}
           extraAllowed={can.receiveExtra}
           currency={currency}
           today={today}

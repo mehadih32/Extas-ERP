@@ -1,4 +1,4 @@
-import { Prisma } from "@prisma/client";
+import { Prisma, type ReturnItemQcStatus, type StockGrade } from "@prisma/client";
 
 import { dayRange, localDay, startOfDayInZone } from "@/lib/dates";
 import type { Db } from "@/lib/db-types";
@@ -6,7 +6,7 @@ import { AppError } from "@/lib/errors";
 import { nextDocumentNumber } from "@/lib/numbering";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
-import { lockRow } from "@/lib/row-lock";
+import { lockRow, lockRows } from "@/lib/row-lock";
 import { assertAllowed } from "@/lib/verdict";
 import { ensureControlAccounts } from "@/modules/accounts/control-accounts";
 import { postJournalEntry, reverseJournalEntry } from "@/modules/accounts/journal.service";
@@ -14,12 +14,22 @@ import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { letterhead } from "@/modules/companies/letterhead";
 import { canSeeFinancials } from "@/modules/dashboard/access";
+import {
+  gradeCost,
+  gradeCostData,
+  gradeKey,
+  onHandByGrade,
+  removeAtCost,
+} from "@/modules/inventory/costs";
+import { receiveAtCostTx } from "@/modules/inventory/stock.service";
 import { recordPartyActivity } from "@/modules/parties/party.service";
-import { creditPosition, lockBuyerCredit } from "@/modules/sales/credit.service";
+import { allocateTx, creditPosition, lockBuyerCredit } from "@/modules/sales/credit.service";
 import { deliveredByVariant } from "@/modules/sales/documents.service";
+import { ledgerPartyId, refreshOrderPayments } from "@/modules/sales/posting";
 import { canReturnOnInvoice, canVoidSalesReturn, statusAfterReturns } from "@/modules/sales/rules";
 import {
   listSalesReturnsSchema,
+  type ReturnQc,
   salesReturnSchema,
   voidSalesReturnSchema,
 } from "@/modules/sales/schemas";
@@ -44,6 +54,27 @@ import { money, returnTotals, ZERO } from "@/modules/sales/totals";
  * back) and its invoice can no longer be voided or its order cancelled while
  * a return stands. Voiding a return undoes all of it while the buyer has not
  * used the credit.
+ *
+ * A piece checked on its way back (QC, `qc` per item: the e-commerce API's
+ * returns, CN-005) can instead go back into stock in the order's warehouse at
+ * the cost it left at, re-weighting that grade's average cost: GOOD into
+ * sellable A-grade stock, B_GRADE into B-grade stock. Its cost goes back to
+ * Inventory rather than Inventory Loss:
+ *   Dr Inventory        restocked pieces' cost
+ *   Dr Inventory Loss   damaged pieces' cost
+ *        Cr Cost of Goods Sold
+ * Voiding such a return takes those pieces back out while they are still
+ * there (not sold or promised to an order), and refuses with the reason
+ * otherwise. Without `qc` every piece is DAMAGED, as above.
+ *
+ * A website return (`walkInCredit`, a sale without a buyer) has no buyer
+ * account to use its credit on later, so the credit at once pays what its
+ * own invoice still has due (a CreditAllocation from the return): an unpaid
+ * COD order then owes only for the pieces kept. What is left over (the shop
+ * had taken the money already) stays on the Walk-in customers account until
+ * Accounts pays it back from the credit note's page ("Pay back the credit",
+ * refund.service.ts). Voiding the return releases that allocation, and waits
+ * until any refund of its credit is voided first.
  */
 
 type Tx = Prisma.TransactionClient;
@@ -67,6 +98,31 @@ const variantLabel = {
     size: { select: { name: true, sortOrder: true } },
   },
 } as const;
+
+/** Where each QC result sends its pieces (grade null: to Damage & QC Rejects). */
+const QC_DESTINATION: Record<ReturnQc, { status: ReturnItemQcStatus; grade: StockGrade | null }> = {
+  GOOD: { status: "MOVED_TO_MAIN_STOCK", grade: "A_GRADE" },
+  B_GRADE: { status: "MOVED_TO_B_GRADE", grade: "B_GRADE" },
+  DAMAGED: { status: "MOVED_TO_BAD_STOCK", grade: null },
+};
+
+/** A return item's QC result, from its status (old returns' pieces all went to the rejects). */
+export function qcOf(status: ReturnItemQcStatus): ReturnQc {
+  if (status === "MOVED_TO_MAIN_STOCK") return "GOOD";
+  if (status === "MOVED_TO_B_GRADE") return "B_GRADE";
+  return "DAMAGED";
+}
+
+/** "2 pcs back in stock, 1 pcs to Damage & QC Rejects" */
+export function destinationText(pieces: Record<ReturnQc, number>) {
+  return [
+    pieces.GOOD > 0 ? `${pieces.GOOD} pcs back in stock` : null,
+    pieces.B_GRADE > 0 ? `${pieces.B_GRADE} pcs to B-grade stock` : null,
+    pieces.DAMAGED > 0 ? `${pieces.DAMAGED} pcs to Damage & QC Rejects` : null,
+  ]
+    .filter(Boolean)
+    .join(", ");
+}
 
 /**
  * Where an order's invoice lines stand for returns: per line what was billed,
@@ -157,10 +213,53 @@ function returnInstant(ctx: CompanyContext, day: string | undefined, today: stri
   return !day || day === today ? new Date() : startOfDayInZone(day, ctx.company.timezone);
 }
 
-/** Records a sales return against an invoice (Accounts). Returns the credit note. */
-export async function createSalesReturn(ctx: CompanyContext, raw: unknown, meta?: RequestMeta) {
+/**
+ * A website return's credit (a sale without a buyer): what of it paid its own
+ * invoice, what Accounts paid back, and what is left to pay back.
+ */
+export async function walkInReturnCredit(db: Db | Tx, ret: { id: string; amount: Prisma.Decimal }) {
+  const [allocated, refunded] = await Promise.all([
+    db.creditAllocation.aggregate({
+      where: { salesReturnId: ret.id, releasedAt: null },
+      _sum: { amount: true },
+    }),
+    db.refund.aggregate({
+      where: { salesReturnId: ret.id, voidedAt: null },
+      _sum: { amount: true },
+    }),
+  ]);
+  const usedOnInvoice = money(allocated._sum.amount ?? 0);
+  const paidBack = money(refunded._sum.amount ?? 0);
+  return {
+    usedOnInvoice,
+    paidBack,
+    left: Prisma.Decimal.max(money(ret.amount).minus(usedOnInvoice).minus(paidBack), ZERO),
+  };
+}
+
+/**
+ * Records a sales return against an invoice (Accounts). Returns the credit note.
+ * `walkInCredit` (the e-commerce API only) takes a return on a sale without a
+ * buyer: its credit pays its own invoice's due first, the rest stays on the
+ * Walk-in customers account. `integrationId` and `externalReturnId` keep the
+ * shop's own id for it (one return per id and shop).
+ */
+export async function createSalesReturn(
+  ctx: CompanyContext,
+  raw: unknown,
+  meta?: RequestMeta,
+  options: { walkInCredit?: boolean; integrationId?: string; externalReturnId?: string } = {},
+) {
   const input = salesReturnSchema.parse(raw);
   assertCanRecordReturns(ctx);
+  if (input.items.some((item) => (item.qc ?? "DAMAGED") !== "DAMAGED")) {
+    if (!ctx.can("sales.returns.qc")) {
+      throw new AppError(
+        "FORBIDDEN",
+        "Only someone who checks returned goods (QC) can put returned pieces back into stock.",
+      );
+    }
+  }
   const companyId = ctx.company.id;
   const tz = ctx.company.timezone;
   const found = await ctx.db.invoice.findUnique({
@@ -193,11 +292,12 @@ export async function createSalesReturn(ctx: CompanyContext, raw: unknown, meta?
         subtotal: true,
         discount: true,
         tax: true,
+        customerName: true,
         party: { select: { name: true, code: true } },
       },
     });
     const position = await returnPosition(tx, order.id);
-    assertAllowed(canReturnOnInvoice(invoice, order, position));
+    assertAllowed(canReturnOnInvoice(invoice, order, position, options));
     if (!order.warehouseId) throw new AppError("CONFLICT", "The order has no warehouse.");
     if (input.returnDate && input.returnDate < localDay(invoice.issueDate, tz)) {
       throw new AppError(
@@ -207,19 +307,29 @@ export async function createSalesReturn(ctx: CompanyContext, raw: unknown, meta?
       );
     }
 
-    // One entry per invoice line, in the order asked for.
+    // One entry per invoice line, in the order asked for, with its pieces by QC result.
     const lineOf = new Map(position.lines.map((l) => [l.id, l]));
-    const wanted = new Map<string, number>();
+    const wanted = new Map<string, Array<{ qc: ReturnQc; take: number; note: string | null }>>();
     input.items.forEach((item, i) => {
       if (!lineOf.has(item.orderItemId)) {
         throw new AppError("VALIDATION", `Line ${i + 1} is not on ${invoice.number}.`, {
           [`items.${i}.orderItemId`]: ["Choose a line of this invoice"],
         });
       }
-      wanted.set(item.orderItemId, (wanted.get(item.orderItemId) ?? 0) + item.quantity);
+      const qc = item.qc ?? "DAMAGED";
+      const parts = wanted.get(item.orderItemId) ?? [];
+      const same = parts.find((p) => p.qc === qc);
+      if (same) {
+        same.take += item.quantity;
+        same.note ??= item.qcNote ?? null;
+      } else {
+        parts.push({ qc, take: item.quantity, note: item.qcNote ?? null });
+      }
+      wanted.set(item.orderItemId, parts);
     });
-    const picked = [...wanted].map(([id, take]) => {
+    const picked = [...wanted].map(([id, parts]) => {
       const line = lineOf.get(id)!;
+      const take = parts.reduce((s, p) => s + p.take, 0);
       if (take > line.returnable) {
         const i = input.items.findIndex((item) => item.orderItemId === id);
         throw new AppError(
@@ -230,7 +340,7 @@ export async function createSalesReturn(ctx: CompanyContext, raw: unknown, meta?
           { [`items.${i}.quantity`]: [`At most ${line.returnable}`] },
         );
       }
-      return { line, take };
+      return { line, take, parts };
     });
     const pieces = picked.reduce((s, p) => s + p.take, 0);
     const totals = returnTotals({
@@ -245,8 +355,25 @@ export async function createSalesReturn(ctx: CompanyContext, raw: unknown, meta?
       earlier: position.earlier,
       last: position.returned + pieces >= position.ordered,
     });
-    const costs = picked.map(({ line, take }) => money(line.unitCost.times(take)));
-    const costValue = costs.reduce((a, b) => a.plus(b), ZERO);
+    // Each line's credit shared over its QC results by pieces (the last takes what is left).
+    const rows = picked.flatMap(({ line, take, parts }, i) => {
+      const lineAmount = totals.amounts[i]!;
+      let left = lineAmount;
+      return parts.map((part, j) => {
+        const amount =
+          j === parts.length - 1 ? left : money(lineAmount.times(part.take).dividedBy(take));
+        left = left.minus(amount);
+        return { line, ...part, amount, cost: money(line.unitCost.times(part.take)) };
+      });
+    });
+    const costValue = rows.reduce((a, r) => a.plus(r.cost), ZERO);
+    const writtenOff = rows
+      .filter((r) => r.qc === "DAMAGED")
+      .reduce((a, r) => a.plus(r.cost), ZERO);
+    const restockedValue = costValue.minus(writtenOff);
+    const piecesBy: Record<ReturnQc, number> = { GOOD: 0, B_GRADE: 0, DAMAGED: 0 };
+    for (const r of rows) piecesBy[r.qc] += r.take;
+    const buyerName = order.party?.name ?? order.customerName ?? "a walk-in customer";
     const date = returnInstant(ctx, input.returnDate, today);
     const number = await nextDocumentNumber(tx, companyId, "SALES_RETURN", date);
     const now = new Date();
@@ -270,27 +397,82 @@ export async function createSalesReturn(ctx: CompanyContext, raw: unknown, meta?
         amount: totals.total,
         costValue,
         createdById: ctx.user.id,
+        integrationId: options.integrationId ?? null,
+        externalReturnId: options.externalReturnId ?? null,
         items: {
-          create: picked.map(({ line, take }, i) => ({
+          create: rows.map(({ line, take, qc, note, amount }) => ({
             variantId: line.variantId,
             orderItemId: line.id,
             quantity: take,
             unitPrice: line.priceBilled,
-            amount: totals.amounts[i]!,
+            amount,
             unitCost: line.unitCost,
-            qcStatus: "MOVED_TO_BAD_STOCK" as const,
-            qtyBadStock: take,
+            qcStatus: QC_DESTINATION[qc].status,
+            qtyBadStock: qc === "DAMAGED" ? take : 0,
+            qtyRestocked: qc === "DAMAGED" ? 0 : take,
+            qcNote: note,
             inspectedById: ctx.user.id,
             inspectedAt: now,
           })),
         },
       },
-      include: { items: { select: { id: true, orderItemId: true } } },
+      include: { items: { select: { id: true, orderItemId: true, qcStatus: true } } },
     });
+    const itemOf = new Map(created.items.map((i) => [`${i.orderItemId}:${i.qcStatus}`, i.id]));
+    const itemIdOf = (r: (typeof rows)[number]) =>
+      itemOf.get(`${r.line.id}:${QC_DESTINATION[r.qc].status}`)!;
 
-    // In from the buyer, out to Damage & QC Rejects at the cost the pieces left at.
-    const itemOf = new Map(created.items.map((i) => [i.orderItemId, i.id]));
-    for (const [i, { line, take }] of picked.entries()) {
+    // Checked good or B-grade: back into that grade's stock at the cost they left at,
+    // re-weighting its average (every SKU locked first, in a fixed order).
+    const restock = rows.filter((r) => r.qc !== "DAMAGED");
+    await lockRows(
+      tx,
+      "ProductVariant",
+      restock.map((r) => r.line.variantId),
+    );
+    for (const r of restock) {
+      const grade = QC_DESTINATION[r.qc].grade!;
+      const variant = await tx.productVariant.findUniqueOrThrow({
+        where: { id: r.line.variantId },
+        select: { id: true, sku: true, avgCost: true, bGradeAvgCost: true },
+      });
+      const onHand = await tx.stockBalance.aggregate({
+        where: { variantId: variant.id, grade },
+        _sum: { quantity: true },
+      });
+      const key = { variantId: variant.id, warehouseId: order.warehouseId, grade };
+      await tx.stockBalance.upsert({
+        where: { variantId_warehouseId_grade: key },
+        create: { ...key, companyId, quantity: r.take },
+        update: { quantity: { increment: r.take } },
+      });
+      const movement = await tx.stockMovement.create({
+        data: {
+          ...key,
+          companyId,
+          type: "RETURN_RESTOCK",
+          quantity: r.take,
+          unitCost: r.line.unitCost,
+          referenceType: "SalesReturnItem",
+          referenceId: itemIdOf(r),
+          note: `${number} from ${invoice.number}${grade === "B_GRADE" ? " (B-grade)" : ""}`,
+          createdById: ctx.user.id,
+        },
+      });
+      await receiveAtCostTx(tx, ctx, {
+        variant,
+        grade,
+        onHand: onHand._sum.quantity ?? 0,
+        average: gradeCost(variant, grade),
+        quantity: r.take,
+        unitCost: r.line.unitCost,
+        movementId: movement.id,
+      });
+    }
+
+    // Damaged: in from the buyer, out to Damage & QC Rejects at the cost the pieces left at.
+    for (const r of rows.filter((row) => row.qc === "DAMAGED")) {
+      const { line, take } = r;
       const key = {
         companyId,
         variantId: line.variantId,
@@ -315,10 +497,10 @@ export async function createSalesReturn(ctx: CompanyContext, raw: unknown, meta?
           variantId: line.variantId,
           quantity: take,
           unitCost: line.unitCost,
-          lossValue: costs[i]!,
+          lossValue: r.cost,
           source: "RETURN_QC",
           reason: `Sales return ${number} (${invoice.number}): ${input.reason}`,
-          salesReturnItemId: itemOf.get(line.id) ?? null,
+          salesReturnItemId: itemIdOf(r),
         },
       });
       await tx.stockMovement.create({
@@ -340,7 +522,7 @@ export async function createSalesReturn(ctx: CompanyContext, raw: unknown, meta?
         ? await postJournalEntry(tx, {
             companyId,
             date,
-            description: `Sales return ${number} from ${order.party?.name ?? "a buyer"} on ${invoice.number}: ${pieces} pcs — ${input.reason}`,
+            description: `Sales return ${number} from ${buyerName} on ${invoice.number}: ${pieces} pcs — ${input.reason}`,
             sourceType: "RETURN",
             sourceId: created.id,
             postedById: ctx.user.id,
@@ -353,13 +535,22 @@ export async function createSalesReturn(ctx: CompanyContext, raw: unknown, meta?
               { accountId: acc.VAT_PAYABLE, debit: totals.tax, memo: "VAT on the goods returned" },
               {
                 accountId: acc.RECEIVABLE,
-                partyId: invoice.partyId,
+                partyId: await ledgerPartyId(tx, companyId, invoice.partyId),
                 credit: totals.total,
                 memo: `Credit note ${memo}`,
               },
+              ...(restockedValue.gt(0)
+                ? [
+                    {
+                      accountId: acc.INVENTORY,
+                      debit: restockedValue,
+                      memo: "Returned pieces back in stock",
+                    },
+                  ]
+                : []),
               {
                 accountId: acc.INVENTORY_LOSS,
-                debit: costValue,
+                debit: writtenOff,
                 memo: "Returned pieces to Damage & QC Rejects",
               },
               { accountId: acc.COGS, credit: costValue, memo },
@@ -371,6 +562,25 @@ export async function createSalesReturn(ctx: CompanyContext, raw: unknown, meta?
         where: { id: created.id },
         data: { journalEntryId: journal.id },
       });
+    }
+    // A website sale's credit pays what its own invoice still has due (the order is
+    // locked above; no buyer's credit is involved, so no buyer lock is needed).
+    let usedOnInvoice = ZERO;
+    if (options.walkInCredit && !invoice.partyId && totals.total.gt(0)) {
+      const paid = await tx.salesOrder.findUniqueOrThrow({
+        where: { id: order.id },
+        select: { total: true, paidAmount: true },
+      });
+      const due = Prisma.Decimal.max(paid.total.minus(paid.paidAmount), ZERO);
+      usedOnInvoice = Prisma.Decimal.min(totals.total, due);
+      if (usedOnInvoice.gt(0)) {
+        await allocateTx(tx, ctx, {
+          partyId: await ledgerPartyId(tx, companyId, null),
+          salesReturnId: created.id,
+          items: [{ orderId: order.id, amount: usedOnInvoice }],
+          limit: usedOnInvoice,
+        });
+      }
     }
     await tx.salesOrder.update({
       where: { id: order.id },
@@ -390,16 +600,19 @@ export async function createSalesReturn(ctx: CompanyContext, raw: unknown, meta?
         action: "CREATE",
         entityType: "SalesReturn",
         entityId: created.id,
-        summary: `Sales return ${number} on ${invoice.number}: ${pieces} pcs to Damage & QC Rejects, ${totals.total.toFixed(2)} credited to ${order.party?.name ?? "the buyer"} — ${input.reason}`,
+        summary: `Sales return ${number} on ${invoice.number}: ${destinationText(piecesBy)}, ${totals.total.toFixed(2)} credited to ${order.party?.name ?? (invoice.partyId ? "the buyer" : "Walk-in customers")} — ${input.reason}`,
         after: {
-          lines: picked.map(({ line, take }, i) => ({
+          lines: rows.map(({ line, take, qc, amount }) => ({
             sku: line.variant.sku,
             quantity: take,
-            amount: totals.amounts[i]!.toFixed(2),
+            amount: amount.toFixed(2),
+            ...(qc === "DAMAGED" ? {} : { qc }),
           })),
           discount: totals.discount.toFixed(2),
           tax: totals.tax.toFixed(2),
           credited: totals.total.toFixed(2),
+          ...(usedOnInvoice.gt(0) ? { usedOnInvoice: usedOnInvoice.toFixed(2) } : {}),
+          ...(options.externalReturnId ? { externalReturnId: options.externalReturnId } : {}),
         },
       },
       tx,
@@ -450,11 +663,90 @@ export async function returnCredit(
   return { position, spent: position.credit.lt(ret.amount) && spentSince.gt(0) };
 }
 
+/** The stock movements that put a return's checked pieces back into stock (none for old returns). */
+async function restockMovesOf(db: Db | Tx, itemIds: string[]) {
+  if (itemIds.length === 0) return [];
+  return db.stockMovement.findMany({
+    where: { referenceType: "SalesReturnItem", referenceId: { in: itemIds }, quantity: { gt: 0 } },
+    select: {
+      id: true,
+      variantId: true,
+      warehouseId: true,
+      grade: true,
+      quantity: true,
+      unitCost: true,
+      referenceId: true,
+      lotId: true,
+      variant: { select: { sku: true } },
+    },
+    orderBy: [{ variantId: "asc" }, { grade: "asc" }, { id: "asc" }],
+  });
+}
+
+/**
+ * Pieces a return put back into stock that are no longer there to take out
+ * again (sold, or promised to an order), per SKU and grade. Empty when voiding
+ * can take them all back.
+ */
+export async function restockShortfall(db: Db | Tx, itemIds: string[]) {
+  const moves = await restockMovesOf(db, itemIds);
+  const need = new Map<
+    string,
+    { sku: string; grade: StockGrade; warehouseId: string; came: number }
+  >();
+  for (const m of moves) {
+    const key = `${m.variantId}:${m.warehouseId}:${m.grade}`;
+    const entry = need.get(key) ?? {
+      sku: m.variant.sku,
+      grade: m.grade,
+      warehouseId: m.warehouseId,
+      came: 0,
+    };
+    entry.came += m.quantity;
+    need.set(key, entry);
+  }
+  if (need.size === 0) return [];
+  const balances = await db.stockBalance.findMany({
+    where: {
+      OR: [...need.keys()].map((key) => {
+        const [variantId, warehouseId, grade] = key.split(":") as [string, string, StockGrade];
+        return { variantId, warehouseId, grade };
+      }),
+    },
+    select: { variantId: true, warehouseId: true, grade: true, quantity: true, reserved: true },
+  });
+  const freeOf = new Map(
+    balances.map((b) => [
+      `${b.variantId}:${b.warehouseId}:${b.grade}`,
+      Math.max(b.quantity - b.reserved, 0),
+    ]),
+  );
+  return [...need]
+    .map(([key, n]) => ({ ...n, free: freeOf.get(key) ?? 0 }))
+    .filter((n) => n.free < n.came);
+}
+
+/** Why a return whose restocked pieces are gone cannot be voided, in plain words. */
+export function restockShortfallMessage(
+  number: string,
+  short: Awaited<ReturnType<typeof restockShortfall>>,
+) {
+  const what = short
+    .map(
+      (s) =>
+        `${s.sku}: ${s.came} pcs came back into ${s.grade === "B_GRADE" ? "B-grade" : "sellable"} stock, only ${s.free} are still there and not promised to an order`,
+    )
+    .join("; ");
+  return `${number} cannot be voided: some pieces it put back into stock have been sold or promised since (${what}). Bring the stock back first, or leave the return as it is.`;
+}
+
 /**
  * Voids a return recorded by mistake, while the buyer has not spent its
  * credit: its entry is reversed, its pieces leave Damage & QC Rejects (they
  * are back with the buyer: opposite stock movements, its rejects lines kept
- * and marked void, nothing deleted) and the order's status follows.
+ * and marked void, nothing deleted) and the order's status follows. Pieces it
+ * put back into stock are taken out again at the cost they came in at (the
+ * grade's average put back), only while they are all still there.
  */
 export async function voidSalesReturn(
   ctx: CompanyContext,
@@ -481,6 +773,31 @@ export async function voidSalesReturn(
       include: { items: { select: { id: true } } },
     });
     assertAllowed(canVoidSalesReturn(ret));
+    // A website return's credit paid back by Accounts comes back to it only by voiding that refund.
+    const paidBack = await tx.refund.findMany({
+      where: { salesReturnId: ret.id, voidedAt: null },
+      select: { number: true },
+      orderBy: { number: "asc" },
+    });
+    if (paidBack.length > 0) {
+      throw new AppError(
+        "CONFLICT",
+        `Credit from ${ret.number} was paid back on ${paidBack.map((r) => r.number).join(", ")}. Void that refund first, then the return.`,
+      );
+    }
+    const itemIds = ret.items.map((i) => i.id);
+    const restocked = await restockMovesOf(tx, itemIds);
+    if (restocked.length > 0) {
+      await lockRows(
+        tx,
+        "ProductVariant",
+        restocked.map((m) => m.variantId),
+      );
+      const short = await restockShortfall(tx, itemIds);
+      if (short.length > 0) {
+        throw new AppError("CONFLICT", restockShortfallMessage(ret.number, short));
+      }
+    }
     if (ret.partyId && ret.amount.gt(0)) {
       const { position, spent } = await returnCredit(tx, companyId, {
         ...ret,
@@ -533,6 +850,83 @@ export async function voidSalesReturn(
         },
       });
     }
+    // Restocked pieces leave their grade's stock again at the cost they came in at.
+    const variantIds = [...new Set(restocked.map((m) => m.variantId))];
+    const onHand = await onHandByGrade(tx, variantIds);
+    let cameIn = ZERO;
+    let takenOut = ZERO;
+    for (const m of restocked) {
+      const costsNow = await tx.productVariant.findUniqueOrThrow({
+        where: { id: m.variantId },
+        select: { avgCost: true, bGradeAvgCost: true },
+      });
+      const key = gradeKey(m.variantId, m.grade);
+      const unitCost = m.unitCost ?? ZERO;
+      const out = removeAtCost(
+        onHand.get(key) ?? 0,
+        gradeCost(costsNow, m.grade),
+        m.quantity,
+        unitCost,
+      );
+      onHand.set(key, (onHand.get(key) ?? 0) - m.quantity);
+      cameIn = cameIn.plus(money(unitCost.times(m.quantity)));
+      takenOut = takenOut.plus(out.removed);
+      await tx.productVariant.update({
+        where: { id: m.variantId },
+        data: gradeCostData(m.grade, out.average),
+      });
+      const taken = await tx.$executeRaw`
+        UPDATE "StockBalance"
+        SET quantity = quantity - ${m.quantity}, "updatedAt" = NOW()
+        WHERE "variantId" = ${m.variantId} AND "warehouseId" = ${m.warehouseId}
+          AND grade = ${m.grade}::"StockGrade" AND quantity - reserved >= ${m.quantity}`;
+      if (taken === 0) {
+        throw new AppError(
+          "CONFLICT",
+          `${m.variant.sku}'s stock changed while voiding ${ret.number}. Try again.`,
+        );
+      }
+      await tx.stockMovement.create({
+        data: {
+          companyId,
+          variantId: m.variantId,
+          warehouseId: m.warehouseId,
+          grade: m.grade,
+          type: "RETURN_RESTOCK",
+          quantity: -m.quantity,
+          unitCost: m.unitCost,
+          referenceType: "SalesReturnItem",
+          referenceId: m.referenceId,
+          lotId: m.lotId,
+          note: `Void of ${ret.number}: ${reason}`,
+          createdById: ctx.user.id,
+        },
+      });
+    }
+    // Stock that came and went at other costs since can leave the pieces worth more or
+    // less than they came back at; the books follow the stock value.
+    const difference = cameIn.minus(money(takenOut));
+    if (!difference.isZero()) {
+      const acc = await ensureControlAccounts(companyId, tx);
+      const amount = difference.abs();
+      const memo = ret.number;
+      await postJournalEntry(tx, {
+        companyId,
+        description: `Stock value difference on voiding sales return ${ret.number}`,
+        sourceType: "RETURN",
+        sourceId: ret.id,
+        postedById: ctx.user.id,
+        lines: difference.gt(0)
+          ? [
+              { accountId: acc.INVENTORY, debit: amount, memo },
+              { accountId: acc.INVENTORY_LOSS, credit: amount, memo },
+            ]
+          : [
+              { accountId: acc.INVENTORY_LOSS, debit: amount, memo },
+              { accountId: acc.INVENTORY, credit: amount, memo },
+            ],
+      });
+    }
     await tx.badStockEntry.updateMany({
       where: { id: { in: entries.map((e) => e.id) } },
       data: { voidedAt: now, voidReason: `Sales return ${ret.number} voided: ${reason}` },
@@ -541,6 +935,15 @@ export async function voidSalesReturn(
       where: { id: ret.id },
       data: { voidedAt: now, voidReason: reason },
     });
+    // The credit it put against its own invoice comes off again: that much is due once more.
+    const released = await tx.creditAllocation.updateMany({
+      where: { salesReturnId: ret.id, releasedAt: null },
+      data: {
+        releasedAt: now,
+        releaseReason: `Sales return ${ret.number} voided: ${reason}`.slice(0, 500),
+      },
+    });
+    if (released.count > 0) await refreshOrderPayments(tx, ret.orderId);
     const position = await returnPosition(tx, ret.orderId);
     const order = await tx.salesOrder.findUniqueOrThrow({
       where: { id: ret.orderId },
@@ -559,7 +962,11 @@ export async function voidSalesReturn(
         action: "STATUS_CHANGE",
         entityType: "SalesReturn",
         entityId: ret.id,
-        summary: `Voided sales return ${ret.number} (${ret.amount.toFixed(2)} credit, ${entries.length} rejects line(s) marked void): ${reason}`,
+        summary: `Voided sales return ${ret.number} (${ret.amount.toFixed(2)} credit, ${entries.length} rejects line(s) marked void${
+          restocked.length > 0
+            ? `, ${restocked.reduce((s, m) => s + m.quantity, 0)} restocked pcs taken back out`
+            : ""
+        }): ${reason}`,
       },
       tx,
     );
@@ -599,7 +1006,7 @@ export async function listSalesReturns(ctx: CompanyContext, raw: unknown = {}) {
       voidedAt: true,
       party: { select: { id: true, code: true, name: true } },
       invoice: { select: { id: true, number: true } },
-      order: { select: { id: true, number: true } },
+      order: { select: { id: true, number: true, customerName: true } },
       items: { select: { quantity: true } },
     },
     orderBy: [{ receivedAt: "desc" }, { id: "desc" }],
@@ -642,7 +1049,16 @@ export async function getSalesReturn(ctx: CompanyContext, returnId: string) {
           dueAmount: true,
         },
       },
-      order: { select: { id: true, number: true, status: true } },
+      order: {
+        select: {
+          id: true,
+          number: true,
+          status: true,
+          customerName: true,
+          customerPhone: true,
+          shippingAddress: true,
+        },
+      },
       warehouse: { select: { id: true, name: true } },
       createdBy: { select: { id: true, name: true } },
       items: {
@@ -652,6 +1068,7 @@ export async function getSalesReturn(ctx: CompanyContext, returnId: string) {
           unitPrice: true,
           amount: true,
           unitCost: true,
+          qcStatus: true,
           variant: variantLabel,
           badStockEntry: { select: { id: true, lossValue: true } },
         },

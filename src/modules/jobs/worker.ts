@@ -3,6 +3,8 @@ import {
   type ClaimOnly,
   claimNextJob,
   completeJob,
+  DeferJob,
+  deferJob,
   failJob,
   requeueStaleJobs,
 } from "@/modules/jobs/queue";
@@ -32,6 +34,10 @@ async function runOne(now: Date, only?: ClaimOnly): Promise<boolean> {
     await handler(job);
     await completeJob(job);
   } catch (error) {
+    if (error instanceof DeferJob) {
+      await deferJob(job, error.until);
+      return true;
+    }
     const state = await failJob(job, error);
     console.error(`[jobs] ${job.kind} ${job.id} failed (try ${job.attempts}, ${state})`, error);
     if (state === "FAILED") {

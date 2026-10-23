@@ -24,6 +24,7 @@ import {
   weekText,
 } from "@/modules/bug-guard/bot-texts";
 import { SECRET_PATTERNS, SECURITY_CHECKS, secretIn } from "@/modules/bug-guard/checks/security";
+import { apiKeyHint, newApiKey, newWebhookSecret } from "@/modules/ecommerce/keys";
 import { describePlan, planProblem } from "@/modules/bug-guard/corrections";
 import { plainMessage } from "@/modules/bug-guard/server-errors";
 import { defaultSchedule, settingsSchema, TIMEZONE } from "@/modules/bug-guard/settings.service";
@@ -311,6 +312,13 @@ describe("What goes to Claude Code and into the log", () => {
       "GitHub token",
     );
     expect(secretIn("PO-2026-00012 total 125000")).toBeNull();
+    // An online shop's key and webhook secret, as "Generate key" makes them; not their hint.
+    const shopKey = newApiKey();
+    expect(secretIn(`here is the key ${shopKey} for the site`)).toBe("Online shop API key");
+    expect(secretIn(`secret: ${newWebhookSecret()}`)).toBe("Online shop webhook secret");
+    expect(
+      secretIn(`Rotated the API key of the online shop "Web" (${apiKeyHint(shopKey)})`),
+    ).toBeNull();
   });
 
   it("counts a form as half done only for real fields of a form that saves", () => {

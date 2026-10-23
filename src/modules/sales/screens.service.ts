@@ -33,7 +33,7 @@ import {
 import { getOrder, listOrders, listPackers } from "@/modules/sales/order.service";
 import { prisma } from "@/lib/prisma";
 import { chequeFigures, listCheques } from "@/modules/sales/cheque.service";
-import { creditPosition } from "@/modules/sales/credit.service";
+import { creditPosition, returnCreditOnOrder } from "@/modules/sales/credit.service";
 import { getPaymentReceipt, listPayments } from "@/modules/sales/payment.service";
 import { getProforma, listProformas } from "@/modules/sales/proforma.service";
 import { getQuotation, listQuotations } from "@/modules/sales/quotation.service";
@@ -615,7 +615,7 @@ type RefundLine = {
   voidedAt: Date | null;
 };
 
-function presentRefunds(
+export function presentRefunds(
   ctx: CompanyContext,
   refunds: RefundLine[],
   from: Parameters<typeof canVoidRefund>[1],
@@ -931,7 +931,9 @@ export async function getOrderScreen(ctx: CompanyContext, orderId: string) {
         id: true,
         amount: true,
         createdAt: true,
+        salesReturnId: true,
         payment: { select: { id: true, number: true } },
+        salesReturn: { select: { id: true, number: true } },
       },
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     }),
@@ -967,6 +969,10 @@ export async function getOrderScreen(ctx: CompanyContext, orderId: string) {
     }),
   ]);
   const due = order.total.minus(order.paidAmount);
+  // A website order's return credit steps aside for money paid for the same pieces.
+  const returnCredit = order.partyId
+    ? money(0)
+    : credits.filter((c) => c.salesReturnId !== null).reduce((s, c) => s.plus(c.amount), money(0));
   const returns = presentReturns(returnRows, tz);
   const standing = returns.filter((r) => !r.voided).length;
 
@@ -1047,17 +1053,21 @@ export async function getOrderScreen(ctx: CompanyContext, orderId: string) {
         paidOn: localDay(p.paymentDate, tz),
         isAdvance: p.isAdvance,
       })),
-      refunds: presentRefunds(ctx, order.refunds, { order }),
+      refunds: presentRefunds(ctx, order.refunds, { order, deliveredPieces: delivered }),
       /** Sales returns (credit notes) on its invoice, void ones too. */
       returns,
       /** Production projects started from it or from its proforma. */
       production: presentProduction(production, tz),
-      /** The buyer's credit (advance balance) put against this order's invoice. */
+      /**
+       * Credit put against this order's invoice: the buyer's advance balance, or
+       * (creditNote set) a website return's credit paying its own invoice.
+       */
       credits: credits.map((c) => ({
         id: c.id,
         amount: fixed(c.amount),
         usedOn: localDay(c.createdAt, tz),
         payment: c.payment,
+        creditNote: c.salesReturn,
       })),
       cheques: cheques.map((c) => ({
         id: c.id,
@@ -1085,7 +1095,17 @@ export async function getOrderScreen(ctx: CompanyContext, orderId: string) {
         )
       : null,
     can: {
-      receive: access.receive && canReceiveOnOrder(order).ok,
+      receive:
+        access.receive &&
+        canReceiveOnOrder({ ...order, paidAmount: order.paidAmount.minus(returnCredit) }, delivered)
+          .ok,
+      /**
+       * A website order whose return credit pays part of the due: money received may be up
+       * to this (the credit then becomes the customer's to pay back); null otherwise.
+       */
+      receiveUpTo: returnCredit.gt(0)
+        ? fixed((due.gt(0) ? due : money(0)).plus(returnCredit))
+        : null,
       /** Money above the due may be kept as the buyer's advance balance (invoiced, named buyer). */
       receiveExtra: access.receive && invoice !== null && order.partyId !== null,
       useCredit:
@@ -1352,6 +1372,10 @@ export async function getInvoiceScreen(ctx: CompanyContext, invoiceId: string) {
     taxId?: string | null;
   };
   const open = OPEN_INVOICE.includes(doc.status);
+  // A website order's return credit steps aside for money paid on it (as on the order page).
+  const returnCredit =
+    order.partyId || doc.status === "VOID" ? money(0) : await returnCreditOnOrder(prisma, order.id);
+  const orderDue = order.total.minus(order.paidAmount);
   return {
     invoice: {
       id: doc.id,
@@ -1422,6 +1446,7 @@ export async function getInvoiceScreen(ctx: CompanyContext, invoiceId: string) {
         usedOn: localDay(c.date, tz),
         amount: fixed(c.amount),
         paymentNumber: c.paymentNumber,
+        creditNote: c.creditNote,
       })),
       previous: doc.previous
         ? {
@@ -1433,7 +1458,15 @@ export async function getInvoiceScreen(ctx: CompanyContext, invoiceId: string) {
         : null,
     },
     can: {
-      receive: access.receive && open && canReceiveOnOrder(order).ok,
+      receive:
+        access.receive &&
+        (open || returnCredit.gt(0)) &&
+        canReceiveOnOrder({ ...order, paidAmount: order.paidAmount.minus(returnCredit) }, delivered)
+          .ok,
+      /** The most a payment may be when a website return's credit pays part of the due. */
+      receiveUpTo: returnCredit.gt(0)
+        ? fixed((orderDue.gt(0) ? orderDue : money(0)).plus(returnCredit))
+        : null,
       void: access.voidInvoice && voidVerdict.ok,
       /** Record goods coming back on it (Accounts). */
       makeReturn:
@@ -1519,6 +1552,8 @@ function presentRefundRow(r: ListedRefund, tz: string) {
     buyer: partyOf(r.party),
     order: r.order,
     proforma: r.proforma,
+    /** A website return's credit paid back (CN-005). */
+    salesReturn: r.salesReturn,
   };
 }
 

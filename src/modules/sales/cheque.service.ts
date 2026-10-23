@@ -8,7 +8,7 @@ import { lockRow } from "@/lib/row-lock";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { assertNotWalkIn } from "@/modules/parties/walk-in";
-import { openDuesOf } from "@/modules/sales/credit.service";
+import { openDuesOf, returnCreditOnOrder } from "@/modules/sales/credit.service";
 import { assertCanRecordReceipts, receivePaymentTx } from "@/modules/sales/payment.service";
 import { assertProofFile } from "@/modules/sales/proof.service";
 import { isClosedProforma } from "@/modules/sales/rules";
@@ -130,6 +130,7 @@ async function lockPending(tx: Tx, ctx: CompanyContext, chequeId: string) {
           total: true,
           paidAmount: true,
           status: true,
+          partyId: true,
           invoice: { select: { status: true } },
         },
       },
@@ -223,7 +224,11 @@ export async function clearCheque(
           };
       if (cheque.order) {
         const o = cheque.order;
-        const due = o.total.minus(o.paidAmount);
+        // A website order's return credit steps aside for money paid on it, as for any
+        // receipt (payment.service.ts checks it again under the order's lock).
+        const due = o.total
+          .minus(o.paidAmount)
+          .plus(o.partyId ? 0 : await returnCreditOnOrder(tx, o.id));
         const live = o.status !== "CANCELLED" && due.gt(0);
         const invoiced = o.invoice !== null && o.invoice.status !== "VOID";
         if (live && amount.lte(due)) target = { orderId: o.id };

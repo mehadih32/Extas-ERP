@@ -210,7 +210,11 @@ export default async function InvoicePage({ params }: { params: Promise<{ invoic
                       <p className="text-[0.8125rem] text-muted-foreground">
                         {[
                           formatDay(c.usedOn),
-                          c.paymentNumber ? `from ${c.paymentNumber}` : "advance balance",
+                          c.creditNote
+                            ? `from credit note ${c.creditNote.number}`
+                            : c.paymentNumber
+                              ? `from ${c.paymentNumber}`
+                              : "advance balance",
                         ].join(" · ")}
                       </p>
                     </div>

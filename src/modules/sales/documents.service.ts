@@ -669,6 +669,8 @@ export async function getInvoiceDocument(ctx: CompanyContext, invoiceId: string)
       amount: true,
       createdAt: true,
       payment: { select: { number: true, invoiceId: true, createdAt: true } },
+      // A website return's credit paying its own invoice: named by its credit note.
+      salesReturn: { select: { id: true, number: true } },
     },
   });
   // With the previous due on the bill: what the money taken with it paid of the older dues.
@@ -761,6 +763,7 @@ export async function getInvoiceDocument(ctx: CompanyContext, invoiceId: string)
       amount: c.amount,
       date: c.createdAt,
       paymentNumber: c.payment?.number ?? null,
+      creditNote: c.salesReturn,
     })),
     /** Set when the invoice carries the buyer's previous due ("Total payable"). */
     previous,

@@ -20,6 +20,8 @@ export const JOB_HANDLERS: Record<JobKind, () => Promise<JobHandler>> = {
   "ai.skill.test": async () => (await import("@/modules/ai/skills.service")).runSkillTestJob,
   "ai.bot.incoming": async () => (await import("@/modules/ai/bot/incoming")).runBotIncomingJob,
   "ai.bot.push": async () => (await import("@/modules/ai/bot/push")).runBotPushJob,
+  "ecommerce.webhook.send": async () =>
+    (await import("@/modules/ecommerce/webhooks")).runWebhookSendJob,
 };
 
 export function isJobKind(kind: string): kind is JobKind {

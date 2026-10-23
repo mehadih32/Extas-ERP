@@ -634,16 +634,19 @@ async function sourceLink(
     case "REFUND": {
       const refund = await ctx.db.refund.findUnique({
         where: { id: sourceId },
-        select: { number: true, orderId: true, proformaId: true },
+        select: { number: true, orderId: true, proformaId: true, salesReturnId: true },
       });
       if (!refund) return null;
+      // A website return's credit paid back opens its credit note.
       const href = !sales
         ? null
         : refund.orderId
           ? `/sales/orders/${refund.orderId}`
           : refund.proformaId
             ? `/sales/proformas/${refund.proformaId}`
-            : null;
+            : refund.salesReturnId
+              ? `/sales/returns/${refund.salesReturnId}`
+              : null;
       return { title: `Refund ${refund.number}`, href };
     }
     case "RETURN": {

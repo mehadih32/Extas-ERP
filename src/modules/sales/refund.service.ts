@@ -16,7 +16,9 @@ import type { CompanyContext } from "@/modules/auth/context";
 import { letterhead } from "@/modules/companies/letterhead";
 import { assertNotWalkIn } from "@/modules/parties/walk-in";
 import { startProductionIfAdvancePaid } from "@/modules/sales/payment.service";
+import { walkInReturnCredit } from "@/modules/sales/return.service";
 import {
+  deliveredPieces,
   heldOnOrder,
   heldOnProforma,
   ledgerPartyId,
@@ -44,6 +46,10 @@ import { money, ZERO } from "@/modules/sales/totals";
  * On the buyer's account, its credit (payments on account, CREDIT refunds):
  *   CASH                          Dr Receivable (buyer)        Cr Cash / Bank / Wallet
  *   FORFEIT                       Dr Receivable (buyer)        Cr Other Income
+ * A website return's credit its own invoice did not use (`salesReturnId`, a
+ * sale without a buyer: the shop had taken the money already) is paid back
+ * the same way, from the Walk-in customers account, up to what is left of it.
+ * It is not money held on the order, so the order's paid amount stays.
  *
  * What an order or proforma holds (its paid amount) is what was received on it
  * less its refunds that are not void; cancelling one that still holds money
@@ -59,6 +65,7 @@ export type RefundRequest = {
   orderId?: string;
   proformaId?: string;
   partyId?: string;
+  salesReturnId?: string;
   amount: Prisma.Decimal.Value;
   reason: string;
   method?: PaymentMethod;
@@ -148,6 +155,50 @@ export async function refundBuyerTx(
     assertWithinHeld(amount, held, proforma.number);
     partyId = proforma.partyId;
     label = `proforma ${proforma.number}`;
+  } else if (input.salesReturnId) {
+    // Same lock order as recording and voiding a return: its order, then the return.
+    const peek = await tx.salesReturn.findFirst({
+      where: { id: input.salesReturnId, companyId },
+      select: { id: true, orderId: true },
+    });
+    if (!peek) throw new AppError("NOT_FOUND", "Sales return not found.");
+    await lockRow(tx, "SalesOrder", peek.orderId);
+    await lockRow(tx, "SalesReturn", peek.id);
+    const ret = await tx.salesReturn.findUniqueOrThrow({
+      where: { id: peek.id },
+      select: {
+        id: true,
+        number: true,
+        amount: true,
+        partyId: true,
+        voidedAt: true,
+        order: { select: { number: true } },
+      },
+    });
+    if (ret.voidedAt) throw new AppError("CONFLICT", `${ret.number} is void.`);
+    if (ret.partyId) {
+      throw new AppError(
+        "VALIDATION",
+        `The credit from ${ret.number} is on the buyer's account: refund it from there.`,
+      );
+    }
+    const { left } = await walkInReturnCredit(tx, ret);
+    if (left.lte(0)) {
+      throw new AppError(
+        "CONFLICT",
+        `No credit from ${ret.number} is left to pay back: it paid what was due on ${ret.order.number}, or was paid back already.`,
+      );
+    }
+    if (amount.gt(left)) {
+      throw new AppError(
+        "VALIDATION",
+        `Only ${left.toFixed(2)} of the credit from ${ret.number} is left to pay back.`,
+        { amount: [`At most ${left.toFixed(2)}`] },
+      );
+    }
+    partyId = null;
+    label = `sales return ${ret.number} (order ${ret.order.number})`;
+    fromAdvance = false;
   } else {
     if (input.kind === "CREDIT") {
       throw new AppError("VALIDATION", "This money is already credit on the buyer's account.");
@@ -196,6 +247,7 @@ export async function refundBuyerTx(
       partyId,
       orderId: input.orderId ?? null,
       proformaId: input.proformaId ?? null,
+      salesReturnId: input.salesReturnId ?? null,
       amount,
       refundDate,
       method: input.kind === "CASH" ? (input.method ?? "CASH") : null,
@@ -278,9 +330,18 @@ export async function voidRefund(
   const companyId = ctx.company.id;
   await prisma.$transaction(
     async (tx) => {
-      // Locks in the same order as refunding: the order or proforma, the buyer, the refund.
+      // Locks in the same order as refunding: the order or proforma (or the sales return's
+      // order and the return), the buyer, the refund.
       if (found.orderId) await lockRow(tx, "SalesOrder", found.orderId);
       else if (found.proformaId) await lockRow(tx, "ProformaInvoice", found.proformaId);
+      else if (found.salesReturnId) {
+        const ret = await tx.salesReturn.findUniqueOrThrow({
+          where: { id: found.salesReturnId },
+          select: { id: true, orderId: true },
+        });
+        await lockRow(tx, "SalesOrder", ret.orderId);
+        await lockRow(tx, "SalesReturn", ret.id);
+      }
       if (found.partyId) await lockRow(tx, "Party", found.partyId);
       await lockRow(tx, "Refund", found.id);
       const refund = await tx.refund.findFirstOrThrow({ where: { id: found.id, companyId } });
@@ -294,7 +355,8 @@ export async function voidRefund(
         !order && refund.proformaId
           ? await tx.proformaInvoice.findUniqueOrThrow({ where: { id: refund.proformaId } })
           : null;
-      assertAllowed(canVoidRefund(refund, { order, proforma }));
+      const piecesOut = order ? await deliveredPieces(tx, order.id) : 0;
+      assertAllowed(canVoidRefund(refund, { order, deliveredPieces: piecesOut, proforma }));
 
       if (order) {
         const held = await heldOnOrder(tx, order.id);
@@ -376,6 +438,7 @@ export async function listRefunds(ctx: CompanyContext, raw: unknown = {}) {
       account: { select: { id: true, code: true, name: true } },
       order: { select: { id: true, number: true } },
       proforma: { select: { id: true, number: true } },
+      salesReturn: { select: { id: true, number: true } },
     },
     orderBy: [{ refundDate: "desc" }, { id: "desc" }],
     take: take + 1,
@@ -419,6 +482,21 @@ export async function getRefund(ctx: CompanyContext, refundId: string) {
         },
       },
       proforma: { select: { id: true, number: true, status: true, total: true } },
+      salesReturn: {
+        select: {
+          id: true,
+          number: true,
+          order: {
+            select: {
+              id: true,
+              number: true,
+              customerName: true,
+              customerPhone: true,
+              shippingAddress: true,
+            },
+          },
+        },
+      },
       account: { select: { id: true, code: true, name: true } },
       createdBy: { select: { id: true, name: true } },
     },

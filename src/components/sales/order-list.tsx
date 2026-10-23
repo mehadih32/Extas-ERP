@@ -50,7 +50,7 @@ export function OrderList({
             badges={
               <>
                 {order.hasForceOverride && <OverrideBadge />}
-                <OrderBadge status={order.status} />
+                <OrderBadge status={order.status} channel={order.channel} />
               </>
             }
             title={buyerName(order.buyer, order.customerName)}
@@ -92,7 +92,7 @@ export function OrderList({
                   <RowLink href={salesHref.order(order.id)}>{order.number}</RowLink>
                   <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[0.8125rem] text-muted-foreground">
                     <span>{formatDay(order.orderedOn)}</span>
-                    <OrderBadge status={order.status} />
+                    <OrderBadge status={order.status} channel={order.channel} />
                     {order.hasForceOverride && <OverrideBadge />}
                   </div>
                 </TableCell>

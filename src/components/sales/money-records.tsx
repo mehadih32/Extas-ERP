@@ -43,6 +43,8 @@ type CreditLine = {
   amount: string;
   usedOn: string;
   payment: { id: string; number: string } | null;
+  /** A website return's credit paying its own invoice. */
+  creditNote: { id: string; number: string } | null;
 };
 
 type ChequeLine = {
@@ -60,7 +62,8 @@ type ChequeLine = {
  * used on it and the cheques taken for it. Every receipt opens its page; a
  * refund prints its voucher, and Accounts can void one recorded by mistake
  * while the money is still on the record (refund.can.void). A pending cheque
- * is listed but not counted until it clears.
+ * is listed but not counted until it clears. A website return's credit note
+ * lists the refunds that paid its credit back the same way (`title`).
  */
 export function MoneyRecords({
   payments,
@@ -69,6 +72,8 @@ export function MoneyRecords({
   cheques = [],
   currency,
   empty,
+  title = "Payments",
+  headingId = "payments-heading",
 }: {
   payments: PaymentLine[];
   refunds: RefundLine[];
@@ -77,12 +82,15 @@ export function MoneyRecords({
   currency: string;
   /** What shows when nothing was paid yet. */
   empty: string;
+  /** The panel's heading ("Payments"; "Paid back" on a credit note). */
+  title?: string;
+  headingId?: string;
 }) {
   const [voiding, setVoiding] = useState<RefundLine | null>(null);
   const [notice, setNotice] = useState<string>();
 
   return (
-    <Panel title="Payments" id="payments-heading">
+    <Panel title={title} id={headingId}>
       {notice && (
         <div className="mt-4">
           <FormAlert tone="success">{notice}</FormAlert>
@@ -127,7 +135,14 @@ export function MoneyRecords({
                 <p className="text-sm font-medium">Credit used</p>
                 <p className="text-[0.8125rem] text-muted-foreground">
                   {formatDay(c.usedOn)} ·{" "}
-                  {c.payment ? (
+                  {c.creditNote ? (
+                    <Link
+                      href={salesHref.salesReturn(c.creditNote.id)}
+                      className="text-primary underline-offset-4 hover:underline"
+                    >
+                      from credit note {c.creditNote.number}
+                    </Link>
+                  ) : c.payment ? (
                     <Link
                       href={salesHref.payment(c.payment.id)}
                       className="text-primary underline-offset-4 hover:underline"

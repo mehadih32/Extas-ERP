@@ -1,0 +1,990 @@
+openapi: 3.1.0
+info:
+  title: Extas ERP e-commerce API
+  version: 1.0.0
+  summary: The ERP side of contract CN-005 (20 Oct 2026) between Extas ERP and an online shop.
+  description: |
+    The ERP is the master: the shop pushes business documents (orders, payments, shipments, returns,
+    ad spend) and reads the catalog and stock; it never sends journal lines. One integration is one
+    shop in one ERP company, and the company always comes from the API key, never from a body.
+
+    **Keys.** Each integration has its own API key, made in the ERP under Settings > Integrations >
+    E-commerce ("Generate key", which needs the owner's PIN). The key and the webhook secret are shown
+    once; the ERP keeps only the key's SHA-256 and the secret sealed. "Rotate key" makes a new pair and
+    stops the old one at once; "Revoke key" stops the key.
+
+    **Signing (both directions).** A request with a body carries
+    `X-Extas-Signature: sha256=<lowercase hex HMAC-SHA256 of the raw body, keyed with the webhook secret>`
+    and `X-Extas-Timestamp: <Unix time in seconds>`. Requests whose timestamp is more than 5 minutes from
+    the ERP's clock are refused. GET requests may be signed (HMAC of the empty body) and are checked when
+    they are. The ERP signs its webhooks to the shop the same way.
+
+    **Idempotency.** Every POST needs an `Idempotency-Key` header (1-200 visible ASCII characters; a UUID
+    is ideal). The ERP keeps the first answer (2xx and 4xx) for each key: a repeat of the same request gets
+    it back with `Idempotent-Replayed: true` and nothing runs twice; the same key with a different request
+    is refused (422 IDEMPOTENCY_KEY_REUSED); while the first is still running a repeat gets 409
+    IDEMPOTENCY_IN_PROGRESS. A 5xx answer is not kept, so the request can be repeated with the same key.
+    PATCH honours the header when it is sent.
+
+    **Limits.** HTTPS only. A rate limit per integration (120 requests a minute unless the owner sets
+    another; 429 with Retry-After), an optional IP allow-list, bodies up to 512 KB. Every call is logged.
+
+    **Errors** are always `{ "error": { "code", "message", "details" } }`.
+
+    **Webhooks to the shop** (`variant.changed`, `stock.changed`, and `ping` from "Send test") are POSTed
+    to the shop webhook URL saved in the integration, signed as above, with `X-Extas-Event` (the type) and
+    `X-Extas-Delivery` (the event id, the same on every retry). A 2xx answer within 5 seconds counts as
+    delivered; anything else is retried with growing waits for up to 24 hours. Every event is in the
+    integration's webhook log. The shop should also poll `updatedSince` every few minutes so a missed
+    webhook never leaves stock wrong.
+servers:
+  - url: https://erp.extasbd.com/api/v1/ecommerce
+    description: Live
+  - url: https://demo.extasbd.com/api/v1/ecommerce
+    description: Demo (practice data)
+security:
+  - apiKey: []
+tags:
+  - name: Health
+  - name: Catalog
+  - name: Stock
+  - name: Orders
+  - name: Payments
+  - name: Shipments
+  - name: Returns
+  - name: Marketing
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: Whether the key works, and whose it is
+      operationId: getHealth
+      responses:
+        "200":
+          description: The key is valid.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, company, integration, serverTime]
+                properties:
+                  ok: { type: boolean, const: true }
+                  company:
+                    type: object
+                    required: [name]
+                    properties:
+                      name: { type: string }
+                  integration:
+                    type: object
+                    required: [id, name, platform]
+                    properties:
+                      id: { type: string }
+                      name: { type: string }
+                      platform:
+                        {
+                          type: string,
+                          enum: [CUSTOM_WEBSITE, SHOPIFY, WOOCOMMERCE, FACEBOOK_SHOP, OTHER],
+                        }
+                      warehouseId: { type: [string, "null"] }
+                  serverTime: { type: string, format: date-time }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /catalog/variants:
+    get:
+      tags: [Catalog]
+      summary: Variants (style, colour, size) with prices and whether they are for sale
+      description: |
+        Every variant of the company, inactive ones too (`active: false`). Page through with `cursor`
+        until `nextCursor` is null. With `updatedSince` only the variants (or their styles) changed after
+        that time come back: poll it every few minutes as the fallback for `variant.changed`.
+      operationId: listVariants
+      parameters:
+        - $ref: "#/components/parameters/UpdatedSince"
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: A page of variants.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, nextCursor]
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/CatalogVariant" } }
+                  nextCursor: { type: [string, "null"] }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "422": { $ref: "#/components/responses/Validation" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /stock:
+    get:
+      tags: [Stock]
+      summary: Sellable (A-grade) stock per SKU per warehouse
+      description: |
+        One row per SKU per warehouse that has a stock record. Reservations for confirmed orders change
+        `reserved` and `updatedAt`, so `updatedSince` catches them too.
+      operationId: listStock
+      parameters:
+        - $ref: "#/components/parameters/UpdatedSince"
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - name: warehouseId
+          in: query
+          description: Only this warehouse (one of the company's).
+          schema: { type: string }
+      responses:
+        "200":
+          description: A page of stock rows.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, nextCursor]
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/StockRow" } }
+                  nextCursor: { type: [string, "null"] }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/Validation" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /stock/{sku}:
+    get:
+      tags: [Stock]
+      summary: Live stock of one SKU (the checkout's final check)
+      operationId: getStock
+      parameters:
+        - name: sku
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: The SKU's stock.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [sku, active, available, warehouses]
+                properties:
+                  sku: { type: string }
+                  active: { type: boolean }
+                  available:
+                    type: integer
+                    description: Available in the integration's own warehouse (0 when it holds none).
+                  warehouses: { type: array, items: { $ref: "#/components/schemas/StockRow" } }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /orders:
+    post:
+      tags: [Orders]
+      summary: Take a website order (reserves its stock)
+      description: |
+        Makes a sales order with channel WEBSITE and status CONFIRMED for a walk-in customer, in the
+        integration's warehouse, at the shop's own prices, and reserves its stock. No invoice yet: it is
+        issued when the order is delivered. If any SKU is short, nothing is saved and the answer is 409
+        INSUFFICIENT_STOCK listing every short SKU. The same SKU twice is one line (same price needed).
+      operationId: createOrder
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/Signature"
+        - $ref: "#/components/parameters/Timestamp"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateOrder" }
+      responses:
+        "201":
+          description: The order was taken.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+        "400": { $ref: "#/components/responses/IdempotencyKeyRequired" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "409":
+          description: |
+            INSUFFICIENT_STOCK (details.shortSkus), ORDER_EXISTS (this externalOrderId was taken
+            already; details.erpOrderId, details.erpOrderNumber), NO_WAREHOUSE, or IDEMPOTENCY_IN_PROGRESS.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              examples:
+                short:
+                  value:
+                    error:
+                      code: INSUFFICIENT_STOCK
+                      message: "Not enough stock for EX-PL-001-NAV-M: nothing was reserved."
+                      details:
+                        shortSkus: [{ sku: EX-PL-001-NAV-M, requested: 12, available: 10 }]
+        "422":
+          description: |
+            VALIDATION (field details, or details.unknownSkus / details.inactiveSkus), or
+            IDEMPOTENCY_KEY_REUSED.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /orders/{externalOrderId}:
+    patch:
+      tags: [Orders]
+      summary: Move an order on (status) or edit it before packing
+      description: |
+        Status steps (sending the status it already has does nothing and answers 200):
+        - PROCESSING: from CONFIRMED.
+        - PACKED: from CONFIRMED or PROCESSING; makes the packing list.
+        - DELIVERED: issues the invoice (if there is none) and the delivery challan for what is left:
+          the stock leaves the warehouse and the ERP posts the sale and its cost.
+        - CANCELLED: frees the reserved stock. Refused after any delivery (409 USE_RETURNS) and while
+          money paid on the order is held (409 PAYMENT_HELD: Accounts settles it in the ERP).
+        - RETURNED: a parcel that came back undelivered: frees the reserved stock. After delivery use
+          POST /returns with the QC result per item (409 USE_RETURNS). Same PAYMENT_HELD rule.
+
+        Edits (items, shippingFee, codAmount, customer, shippingAddress, note) only while the order is
+        CONFIRMED or PROCESSING with no packing list, no delivery and no invoice (else 409 ORDER_LOCKED).
+        New items replace the old ones and redo the reservation (409 INSUFFICIENT_STOCK when short).
+        With both an edit and a status, the edit is saved first.
+      operationId: updateOrder
+      parameters:
+        - $ref: "#/components/parameters/ExternalOrderId"
+        - $ref: "#/components/parameters/OptionalIdempotencyKey"
+        - $ref: "#/components/parameters/Signature"
+        - $ref: "#/components/parameters/Timestamp"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateOrder" }
+      responses:
+        "200":
+          description: The order after the change.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: |
+            ORDER_LOCKED, INSUFFICIENT_STOCK (details.shortSkus), PAYMENT_HELD (details.held),
+            USE_RETURNS, or CONFLICT (a step the order's state does not allow, with the reason).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "422": { $ref: "#/components/responses/Validation" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /payments:
+    post:
+      tags: [Payments]
+      summary: Money the shop collected on an order
+      description: |
+        The ERP posts the journal itself: before the invoice the money is an advance, after it it pays
+        the receivable (walk-in customers). COD is courier cash, bKash and Nagad mobile wallets, card the
+        bank. BKASH, NAGAD and CARD need their transaction id (reference). The same order, method and
+        reference twice is refused (409 PAYMENT_EXISTS), and so is a second COD of the same amount sent
+        without a reference (send its own reference, such as the courier's invoice, if it is new money).
+        Send one remittance always with the same reference, or always without one: a COD sent once
+        without and once with a reference is taken as two payments. An order whose parcel came back
+        undelivered takes no money (409 ORDER_LOCKED). Money collected before a return was recorded
+        (the full COD, a prepaid bKash synced late) is taken up to the due plus the return's credit on
+        the order; that much of the credit is then left for Accounts to pay back in the ERP.
+      operationId: createPayment
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/Signature"
+        - $ref: "#/components/parameters/Timestamp"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [externalOrderId, amount, method]
+              properties:
+                externalOrderId: { type: string, maxLength: 100 }
+                amount: { $ref: "#/components/schemas/PositiveMoney" }
+                method: { $ref: "#/components/schemas/PaymentMethod" }
+                reference:
+                  {
+                    type: string,
+                    maxLength: 120,
+                    description: "TrxID, card or courier reference. Required for BKASH, NAGAD and CARD.",
+                  }
+                date:
+                  description: When it was received (now when left out); a day or a time, never in the future.
+                  oneOf:
+                    - { type: string, format: date }
+                    - { type: string, format: date-time }
+                note: { type: string, maxLength: 500 }
+      responses:
+        "201":
+          description: The payment was recorded and posted.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  [
+                    erpPaymentId,
+                    erpPaymentNumber,
+                    externalOrderId,
+                    amount,
+                    method,
+                    orderPaid,
+                    orderDue,
+                  ]
+                properties:
+                  erpPaymentId: { type: string }
+                  erpPaymentNumber: { type: string }
+                  externalOrderId: { type: string }
+                  amount: { type: number }
+                  method: { $ref: "#/components/schemas/PaymentMethod" }
+                  orderPaid: { type: number }
+                  orderDue: { type: number }
+        "400": { $ref: "#/components/responses/IdempotencyKeyRequired" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: |
+            PAYMENT_EXISTS (details.erpPaymentId), ORDER_LOCKED (it came back undelivered), or CONFLICT
+            (a cancelled order).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "422":
+          description: |
+            VALIDATION (more than is due, a future date, no reference for BKASH, NAGAD or CARD...), or
+            IDEMPOTENCY_KEY_REUSED.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /shipments:
+    post:
+      tags: [Shipments]
+      summary: A courier booking for an order
+      description: |
+        Records the courier and consignment. A CONFIRMED, PROCESSING or PACKED order becomes SHIPPED.
+        The stock leaves the warehouse when the order is delivered.
+      operationId: createShipment
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/Signature"
+        - $ref: "#/components/parameters/Timestamp"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [externalOrderId, courier, consignmentId]
+              properties:
+                externalOrderId: { type: string, maxLength: 100 }
+                courier: { type: string, maxLength: 60, examples: [Steadfast, Pathao, RedX] }
+                consignmentId: { type: string, maxLength: 100 }
+                trackingCode: { type: string, maxLength: 100 }
+                charge: { $ref: "#/components/schemas/Money" }
+                codAmount:
+                  allOf: [{ $ref: "#/components/schemas/Money" }]
+                  description: What the courier collects (the order's COD amount when left out).
+      responses:
+        "201":
+          description: The shipment was recorded.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  [erpShipmentId, externalOrderId, courier, consignmentId, status, orderStatus]
+                properties:
+                  erpShipmentId: { type: string }
+                  externalOrderId: { type: string }
+                  courier: { type: string }
+                  consignmentId: { type: string }
+                  status: { type: string, examples: [CREATED] }
+                  orderStatus: { type: string, examples: [SHIPPED] }
+        "400": { $ref: "#/components/responses/IdempotencyKeyRequired" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: SHIPMENT_EXISTS (details.erpShipmentId), or CONFLICT (a cancelled or returned order).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "422": { $ref: "#/components/responses/Validation" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /shipments/{consignmentId}/events:
+    post:
+      tags: [Shipments]
+      summary: A courier status event
+      description: |
+        The shipment takes the status of its latest event (by occurredAt). DELIVERED delivers the order
+        (as PATCH status DELIVERED); RETURNED before delivery frees the order's stock (as PATCH status
+        RETURNED); after delivery a return is only recorded and the shop sends POST /returns. The same
+        status at the same time is saved once. When the event is saved but the order cannot follow it,
+        the answer is still 201 with `orderError`.
+      operationId: createShipmentEvent
+      parameters:
+        - name: consignmentId
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/Signature"
+        - $ref: "#/components/parameters/Timestamp"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status, occurredAt]
+              properties:
+                status:
+                  type: string
+                  enum:
+                    [
+                      PICKED_UP,
+                      IN_TRANSIT,
+                      OUT_FOR_DELIVERY,
+                      DELIVERED,
+                      PARTIALLY_DELIVERED,
+                      RETURNED,
+                      CANCELLED,
+                    ]
+                  description: Any case; "picked", "in transit", "partial delivered" and "return" are understood too.
+                occurredAt: { type: string, format: date-time }
+                courierStatus:
+                  { type: string, maxLength: 100, description: "The courier's own words." }
+                note: { type: string, maxLength: 500 }
+      responses:
+        "201":
+          description: The event was recorded.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [erpShipmentId, consignmentId, status, orderStatus]
+                properties:
+                  erpShipmentId: { type: string }
+                  consignmentId: { type: string }
+                  status: { type: string }
+                  orderStatus: { type: string }
+                  orderError:
+                    type: object
+                    required: [code, message]
+                    properties:
+                      code: { type: string }
+                      message: { type: string }
+        "400": { $ref: "#/components/responses/IdempotencyKeyRequired" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/Validation" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /returns:
+    post:
+      tags: [Returns]
+      summary: Goods that came back after delivery, with the QC result per item
+      description: |
+        Only delivered pieces can come back. GOOD pieces go back into sellable stock and B_GRADE pieces
+        into B-grade stock (both at the cost they left at), DAMAGED ones to Damage & QC Rejects. The ERP
+        posts the credit note and its cost. The value first pays what the order's invoice still has due
+        (usedOnOrder: an unpaid COD order then owes only for what was kept, see orderDue); the rest
+        (toPayBack, money the shop had collected) stays on the walk-in customers' account for Accounts to
+        pay back in the ERP. The API never pays money out. externalReturnId, the shop's own id for the
+        return, is taken once per shop (409 RETURN_EXISTS).
+      operationId: createReturn
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/Signature"
+        - $ref: "#/components/parameters/Timestamp"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [externalOrderId, reason, items]
+              properties:
+                externalOrderId: { type: string, maxLength: 100 }
+                externalReturnId:
+                  {
+                    type: string,
+                    maxLength: 100,
+                    description: "The shop's own id for the return; one already used answers 409 RETURN_EXISTS.",
+                  }
+                reason: { type: string, minLength: 3, maxLength: 500 }
+                returnDate: { type: string, format: date, description: "Today when left out." }
+                items:
+                  type: array
+                  minItems: 1
+                  maxItems: 200
+                  items:
+                    type: object
+                    required: [sku, quantity, qc]
+                    properties:
+                      sku: { type: string }
+                      quantity: { type: integer, minimum: 1 }
+                      qc:
+                        {
+                          type: string,
+                          enum: [GOOD, B_GRADE, DAMAGED],
+                          description: "Any case; b-grade works too.",
+                        }
+                      note: { type: string, maxLength: 300 }
+      responses:
+        "201":
+          description: The return (credit note) was recorded.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  [
+                    erpReturnId,
+                    erpReturnNumber,
+                    externalOrderId,
+                    externalReturnId,
+                    credited,
+                    usedOnOrder,
+                    toPayBack,
+                    orderDue,
+                    orderStatus,
+                    items,
+                  ]
+                properties:
+                  erpReturnId: { type: string }
+                  erpReturnNumber: { type: string, examples: [CN-2026-00001] }
+                  externalOrderId: { type: string }
+                  externalReturnId: { type: [string, "null"] }
+                  credited: { type: number }
+                  usedOnOrder:
+                    { type: number, description: "Of the credit, what paid the order's due." }
+                  toPayBack:
+                    {
+                      type: number,
+                      description: "Of the credit, what Accounts pays back in the ERP.",
+                    }
+                  orderDue:
+                    { type: number, description: "What is still due on the order after it." }
+                  orderStatus: { type: string, examples: [PARTIALLY_RETURNED, RETURNED] }
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        sku: { type: string }
+                        quantity: { type: integer }
+                        qc: { type: string, enum: [GOOD, B_GRADE, DAMAGED] }
+        "400": { $ref: "#/components/responses/IdempotencyKeyRequired" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: |
+            RETURN_EXISTS (details.erpReturnId, erpReturnNumber), or CONFLICT (no invoice yet, nothing
+            delivered, a cancelled order), with the reason.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "422": { $ref: "#/components/responses/Validation" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /ad-spend:
+    post:
+      tags: [Marketing]
+      summary: One day's ad spend for one platform (and campaign)
+      description: |
+        A running daily total: sending the same day, platform and campaign again replaces that day's
+        figure (200, replaced true); a new one answers 201. Each shop (API key) keeps its own figures,
+        and ad spend entered in the ERP is never replaced.
+      operationId: recordAdSpend
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/Signature"
+        - $ref: "#/components/parameters/Timestamp"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [date, platform, amount]
+              properties:
+                date: { type: string, format: date }
+                platform: { type: string, enum: [FACEBOOK, INSTAGRAM, GOOGLE, TIKTOK, OTHER] }
+                amount: { $ref: "#/components/schemas/Money" }
+                campaign: { type: string, maxLength: 120 }
+      responses:
+        "200":
+          description: That day's figure was replaced.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdSpend" }
+        "201":
+          description: A new figure was recorded.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdSpend" }
+        "400": { $ref: "#/components/responses/IdempotencyKeyRequired" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "422": { $ref: "#/components/responses/Validation" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+webhooks:
+  stock.changed:
+    post:
+      summary: Sellable stock of a SKU changed in the shop's warehouse
+      description: |
+        One event per SKU per pass (about every minute), with the latest figures. Use data.updatedAt
+        to drop a delivery that arrives after a newer one.
+      parameters:
+        - { name: X-Extas-Event, in: header, required: true, schema: { type: string } }
+        - {
+            name: X-Extas-Delivery,
+            in: header,
+            required: true,
+            description: "The event id: the same on every retry.",
+            schema: { type: string },
+          }
+        - $ref: "#/components/parameters/Signature"
+        - $ref: "#/components/parameters/Timestamp"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, type, createdAt, data]
+              properties:
+                id: { type: string }
+                type: { type: string, const: stock.changed }
+                createdAt: { type: string, format: date-time }
+                data:
+                  $ref: "#/components/schemas/StockRow"
+      responses:
+        "2XX":
+          description: Received (answer within 5 seconds). Anything else is retried for up to 24 hours.
+  variant.changed:
+    post:
+      summary: A variant's price or active flag changed, or a new variant was made
+      description: |
+        The variant as GET /catalog/variants shows it, with isNew for a variant made since the last pass.
+      parameters:
+        - { name: X-Extas-Event, in: header, required: true, schema: { type: string } }
+        - {
+            name: X-Extas-Delivery,
+            in: header,
+            required: true,
+            description: "The event id: the same on every retry.",
+            schema: { type: string },
+          }
+        - $ref: "#/components/parameters/Signature"
+        - $ref: "#/components/parameters/Timestamp"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, type, createdAt, data]
+              properties:
+                id: { type: string }
+                type: { type: string, const: variant.changed }
+                createdAt: { type: string, format: date-time }
+                data:
+                  allOf:
+                    - $ref: "#/components/schemas/CatalogVariant"
+                    - type: object
+                      required: [isNew]
+                      properties:
+                        isNew: { type: boolean }
+      responses:
+        "2XX":
+          description: Received (answer within 5 seconds). Anything else is retried for up to 24 hours.
+  ping:
+    post:
+      summary: The "Send test" button in the ERP
+      description: |
+        Sent at once when someone presses "Send test" on the shop's page in the ERP.
+      parameters:
+        - { name: X-Extas-Event, in: header, required: true, schema: { type: string } }
+        - {
+            name: X-Extas-Delivery,
+            in: header,
+            required: true,
+            description: "The event id: the same on every retry.",
+            schema: { type: string },
+          }
+        - $ref: "#/components/parameters/Signature"
+        - $ref: "#/components/parameters/Timestamp"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, type, createdAt, data]
+              properties:
+                id: { type: string }
+                type: { type: string, const: ping }
+                createdAt: { type: string, format: date-time }
+                data:
+                  type: object
+                  properties:
+                    message: { type: string }
+                    shop: { type: string }
+                    company: { type: string }
+      responses:
+        "2XX":
+          description: Received (answer within 5 seconds). Anything else is retried for up to 24 hours.
+components:
+  securitySchemes:
+    apiKey:
+      type: http
+      scheme: bearer
+      description: The integration's API key (extas_sk_...), made under Settings > Integrations > E-commerce.
+  parameters:
+    UpdatedSince:
+      name: updatedSince
+      in: query
+      description: Only what changed after this time.
+      schema: { type: string, format: date-time }
+    Cursor:
+      name: cursor
+      in: query
+      description: The nextCursor of the previous page.
+      schema: { type: string }
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 500, default: 100 }
+    ExternalOrderId:
+      name: externalOrderId
+      in: path
+      required: true
+      description: The shop's own order id, as sent in POST /orders.
+      schema: { type: string }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 200 }
+    OptionalIdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      schema: { type: string, minLength: 1, maxLength: 200 }
+    Signature:
+      name: X-Extas-Signature
+      in: header
+      required: true
+      description: sha256=<hex HMAC-SHA256 of the raw body with the webhook secret>.
+      schema: { type: string, pattern: "^sha256=[0-9a-f]{64}$" }
+    Timestamp:
+      name: X-Extas-Timestamp
+      in: header
+      required: true
+      description: The time of the request in Unix seconds (at most 5 minutes off).
+      schema: { type: string, pattern: "^[0-9]+$" }
+  schemas:
+    Money:
+      type: number
+      minimum: 0
+      multipleOf: 0.01
+    PositiveMoney:
+      type: number
+      exclusiveMinimum: 0
+      multipleOf: 0.01
+    PaymentMethod:
+      type: string
+      enum: [COD, BKASH, NAGAD, CARD]
+      description: Any case (bKash, Nagad, card...).
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              examples:
+                - UNAUTHENTICATED
+                - HTTPS_REQUIRED
+                - IP_NOT_ALLOWED
+                - BAD_SIGNATURE
+                - STALE_TIMESTAMP
+                - IDEMPOTENCY_KEY_REQUIRED
+                - IDEMPOTENCY_KEY_REUSED
+                - IDEMPOTENCY_IN_PROGRESS
+                - RATE_LIMITED
+                - TOO_LARGE
+                - VALIDATION
+                - NOT_FOUND
+                - CONFLICT
+                - INSUFFICIENT_STOCK
+                - INTERNAL
+            message: { type: string }
+            details:
+              description: 'Field errors ({ "field": ["message"] }) or the code''s own details; errorId for INTERNAL.'
+    CatalogVariant:
+      type: object
+      required:
+        [sku, barcode, styleCode, styleName, color, size, retailPrice, avgCost, active, updatedAt]
+      properties:
+        sku: { type: string }
+        barcode: { type: [string, "null"] }
+        styleCode: { type: string }
+        styleName: { type: string }
+        color: { type: string }
+        size: { type: string }
+        retailPrice:
+          { type: number, description: "The variant's own retail price, else its style's." }
+        avgCost: { type: number }
+        active: { type: boolean, description: "For sale: the variant and its style are active." }
+        updatedAt: { type: string, format: date-time }
+    StockRow:
+      type: object
+      required: [sku, warehouseId, warehouseName, onHand, reserved, available, updatedAt]
+      properties:
+        sku: { type: string }
+        warehouseId: { type: string }
+        warehouseName: { type: string }
+        onHand: { type: integer }
+        reserved: { type: integer }
+        available: { type: integer, description: "onHand - reserved, never below 0." }
+        updatedAt: { type: string, format: date-time }
+    OrderItem:
+      type: object
+      required: [sku, quantity, unitPrice]
+      properties:
+        sku: { type: string, maxLength: 80 }
+        quantity: { type: integer, minimum: 1, maximum: 100000 }
+        unitPrice: { $ref: "#/components/schemas/Money" }
+        discount:
+          allOf: [{ $ref: "#/components/schemas/Money" }]
+          description: The discount on the whole line, not per piece.
+    Customer:
+      type: object
+      required: [name, phone]
+      properties:
+        name: { type: string, maxLength: 120 }
+        phone: { type: string, maxLength: 30 }
+    CreateOrder:
+      type: object
+      required: [externalOrderId, customer, shippingAddress, items, paymentMethod]
+      properties:
+        externalOrderId: { type: string, maxLength: 100, description: "Unique per integration." }
+        orderDate: { type: string, format: date-time }
+        customer: { $ref: "#/components/schemas/Customer" }
+        shippingAddress: { type: string, maxLength: 500 }
+        items:
+          {
+            type: array,
+            minItems: 1,
+            maxItems: 200,
+            items: { $ref: "#/components/schemas/OrderItem" },
+          }
+        shippingFee: { $ref: "#/components/schemas/Money" }
+        codAmount:
+          allOf: [{ $ref: "#/components/schemas/Money" }]
+          description: What the courier collects on delivery (0 when paid online).
+        paymentMethod: { $ref: "#/components/schemas/PaymentMethod" }
+        note: { type: string, maxLength: 1000 }
+    UpdateOrder:
+      type: object
+      minProperties: 1
+      properties:
+        status: { type: string, enum: [PROCESSING, PACKED, CANCELLED, DELIVERED, RETURNED] }
+        reason: { type: string, maxLength: 500, description: "Why it was cancelled or came back." }
+        items:
+          {
+            type: array,
+            minItems: 1,
+            maxItems: 200,
+            items: { $ref: "#/components/schemas/OrderItem" },
+          }
+        shippingFee: { $ref: "#/components/schemas/Money" }
+        codAmount: { $ref: "#/components/schemas/Money" }
+        customer: { $ref: "#/components/schemas/Customer" }
+        shippingAddress: { type: string, maxLength: 500 }
+        note: { type: string, maxLength: 1000 }
+    Order:
+      type: object
+      required:
+        [erpOrderId, erpOrderNumber, externalOrderId, status, total, paid, due, codAmount, items]
+      properties:
+        erpOrderId: { type: string }
+        erpOrderNumber: { type: string, examples: [SO-2026-00042] }
+        externalOrderId: { type: string }
+        status:
+          type: string
+          enum:
+            [
+              CONFIRMED,
+              PROCESSING,
+              PACKED,
+              SHIPPED,
+              DELIVERED,
+              PARTIALLY_RETURNED,
+              RETURNED,
+              CANCELLED,
+            ]
+        total: { type: number }
+        paid: { type: number }
+        due: { type: number }
+        codAmount: { type: number }
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              sku: { type: string }
+              quantity: { type: integer }
+              unitPrice: { type: number }
+              discount: { type: number }
+    AdSpend:
+      type: object
+      required: [erpAdSpendId, date, platform, campaign, amount, replaced]
+      properties:
+        erpAdSpendId: { type: string }
+        date: { type: string, format: date }
+        platform: { type: string }
+        campaign: { type: [string, "null"] }
+        amount: { type: number }
+        replaced: { type: boolean }
+  responses:
+    Unauthenticated:
+      description: |
+        UNAUTHENTICATED (no key, a wrong or revoked key, or the shop is switched off), BAD_SIGNATURE or
+        STALE_TIMESTAMP.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: HTTPS_REQUIRED or IP_NOT_ALLOWED.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: NOT_FOUND.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Validation:
+      description: VALIDATION, with the fields in details.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    IdempotencyKeyRequired:
+      description: IDEMPOTENCY_KEY_REQUIRED.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    RateLimited:
+      description: RATE_LIMITED; wait the Retry-After seconds.
+      headers:
+        Retry-After:
+          schema: { type: integer }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }

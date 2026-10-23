@@ -8,11 +8,15 @@ import {
   assertCanRecordReturns,
   getSalesReturn,
   listSalesReturns,
+  qcOf,
+  restockShortfall,
+  restockShortfallMessage,
   returnCredit,
   returnPosition,
+  walkInReturnCredit,
 } from "@/modules/sales/return.service";
-import { canReturnOnInvoice, canVoidSalesReturn } from "@/modules/sales/rules";
-import { salesAccess } from "@/modules/sales/screens.service";
+import { canReturnOnInvoice, canVoidSalesReturn, settleKinds } from "@/modules/sales/rules";
+import { presentRefunds, salesAccess } from "@/modules/sales/screens.service";
 import { money } from "@/modules/sales/totals";
 
 /*
@@ -36,8 +40,10 @@ function presentReturnRow(r: ListedReturn, tz: string) {
     reason: r.reason,
     voided: r.voidedAt !== null,
     buyer: r.party,
+    /** A sale without a buyer (a website order): the customer named on the order. */
+    customerName: r.party ? null : r.order.customerName,
     invoice: r.invoice!,
-    order: r.order,
+    order: { id: r.order.id, number: r.order.number },
   };
 }
 
@@ -69,8 +75,49 @@ export async function getSalesReturnScreen(ctx: CompanyContext, returnId: string
       ? await returnCredit(prisma, ctx.company.id, { ...r, partyId: r.partyId })
       : null;
   const position = credit?.position ?? null;
-  const creditUsed = live && credit !== null && credit.spent;
+  // A website return (no buyer): what its credit paid on its invoice, was paid back, is left.
+  const walkIn =
+    !r.partyId && (access.receive || access.openBuyer) ? await walkInReturnCredit(prisma, r) : null;
+  const paidBack = live && walkIn !== null && walkIn.paidBack.gt(0);
+  // The refunds that paid it back, each with its voucher and (Accounts) its void.
+  const refunds =
+    walkIn !== null
+      ? await ctx.db.refund.findMany({
+          where: { salesReturnId: r.id },
+          select: {
+            id: true,
+            number: true,
+            kind: true,
+            amount: true,
+            method: true,
+            refundDate: true,
+            reason: true,
+            voidedAt: true,
+          },
+          orderBy: [{ refundDate: "asc" }, { createdAt: "asc" }, { id: "asc" }],
+        })
+      : [];
+  const creditUsed = (live && credit !== null && credit.spent) || paidBack;
   const voidable = access.receive && canVoidSalesReturn(r).ok;
+  // Pieces it put back into stock must still be there to be taken out again.
+  const short =
+    voidable && !creditUsed
+      ? await restockShortfall(
+          prisma,
+          r.items.map((i) => i.id),
+        )
+      : [];
+  const writtenOff = r.items.reduce(
+    (sum, i) => sum.plus(i.badStockEntry?.lossValue ?? 0),
+    money(0),
+  );
+  const wentTo = { stock: 0, bGrade: 0, rejects: 0 };
+  for (const i of r.items) {
+    const qc = qcOf(i.qcStatus);
+    if (qc === "GOOD") wentTo.stock += i.quantity;
+    else if (qc === "B_GRADE") wentTo.bGrade += i.quantity;
+    else wentTo.rejects += i.quantity;
+  }
   return {
     salesReturn: {
       id: r.id,
@@ -80,6 +127,8 @@ export async function getSalesReturnScreen(ctx: CompanyContext, returnId: string
       notes: r.notes,
       voided: r.voidedAt ? { on: localDay(r.voidedAt, tz), reason: r.voidReason } : null,
       buyer: r.party,
+      /** A sale without a buyer (a website order): the customer named on the order. */
+      customerName: r.party ? null : r.order.customerName,
       invoice: {
         id: invoice.id,
         number: invoice.number,
@@ -100,14 +149,23 @@ export async function getSalesReturnScreen(ctx: CompanyContext, returnId: string
         quantity: i.quantity,
         unitPrice: fixed(i.unitPrice),
         amount: fixed(i.amount),
+        /** What its check found: GOOD back in stock, B_GRADE to B-grade stock, DAMAGED to the rejects. */
+        qc: qcOf(i.qcStatus),
       })),
       pieces: r.items.reduce((s, i) => s + i.quantity, 0),
+      /** Pieces back in sellable stock, in B-grade stock and in Damage & QC Rejects. */
+      wentTo,
       goods: fixed(r.goodsValue),
       discount: fixed(r.discount),
       tax: fixed(r.tax),
       total: fixed(r.amount),
-      /** What the pieces cost (moved to Damage & QC Rejects): only for people who see costs. */
+      /** What the pieces cost: only for people who see costs. */
       cost: access.seeCosts && r.costValue !== null ? fixed(r.costValue) : null,
+      /** What the pieces moved to Damage & QC Rejects cost (written off). */
+      writtenOff: access.seeCosts && r.costValue !== null ? fixed(writtenOff) : null,
+      /** What the pieces put back into stock (A or B grade) cost. */
+      restockedCost:
+        access.seeCosts && r.costValue !== null ? fixed(r.costValue.minus(writtenOff)) : null,
     },
     /** The buyer's unused credit now (null: not for this person). */
     buyerCredit: position ? fixed(position.credit) : null,
@@ -119,8 +177,18 @@ export async function getSalesReturnScreen(ctx: CompanyContext, returnId: string
       position && position.balance.gt(position.openDues)
         ? fixed(position.balance.minus(position.openDues))
         : null,
+    /** A website return's credit: used on its own invoice, paid back, and left to pay back. */
+    walkInCredit: walkIn
+      ? {
+          usedOnInvoice: fixed(walkIn.usedOnInvoice),
+          paidBack: fixed(walkIn.paidBack),
+          left: fixed(walkIn.left),
+        }
+      : null,
+    /** Refunds of a website return's credit (void ones too), as the order page lists refunds. */
+    paidBack: presentRefunds(ctx, refunds, {}),
     can: {
-      void: voidable && !creditUsed,
+      void: voidable && !creditUsed && short.length === 0,
       openBuyer: access.openBuyer && r.party !== null,
       /** Use the credit on the invoice's own order ("Use credit" on the order). */
       useCredit:
@@ -130,13 +198,20 @@ export async function getSalesReturnScreen(ctx: CompanyContext, returnId: string
         invoice.dueAmount.gt(0) &&
         position !== null &&
         position.credit.gt(0),
+      /** How a website return's credit left over may be paid back ("Pay back the credit"). */
+      payBackKinds:
+        live && walkIn !== null && walkIn.left.gt(0) ? settleKinds(ctx, { onAccount: false }) : [],
     },
     notes: {
       /** Why voiding, which this person could otherwise do, is not offered. */
       void:
-        voidable && creditUsed
-          ? `The buyer has used this credit (${fixed(position!.credit)} of ${fixed(r.amount)} is unused), so it can no longer be voided.`
-          : null,
+        voidable && paidBack
+          ? `${fixed(walkIn!.paidBack)} of this credit was paid back. Void that refund first to void the return.`
+          : voidable && creditUsed
+            ? `The buyer has used this credit (${fixed(position!.credit)} of ${fixed(r.amount)} is unused), so it can no longer be voided.`
+            : short.length > 0
+              ? restockShortfallMessage(r.number, short)
+              : null,
       /** Why less credit is unused than the return gave, though none was spent. */
       credit:
         live && credit !== null && !credit.spent && credit.position.credit.lt(r.amount)

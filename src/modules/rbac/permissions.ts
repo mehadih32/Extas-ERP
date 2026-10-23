@@ -30,6 +30,12 @@ export const PERMISSIONS = [
     description: "Create roles and edit their permissions",
   },
   { key: "audit.view", module: "SETTINGS", description: "View the audit trail / activity log" },
+  {
+    key: "integrations.ecommerce.manage",
+    module: "SETTINGS",
+    description:
+      "Connect online shops (e-commerce API): add them, make, rotate and revoke their keys",
+  },
   // Sales
   { key: "sales.view", module: "SALES", description: "View quotations, orders and invoices" },
   {

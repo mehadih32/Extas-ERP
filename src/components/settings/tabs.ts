@@ -14,7 +14,8 @@ export type SettingsTab = {
  * the team needs company.members.manage; the roles can be read with either team
  * permission (changing them needs company.roles.manage); the company details can
  * be read by everyone in the company (changing them needs company.settings);
- * everyone chooses their own look (Appearance); Backups is the platform owner's.
+ * the online shops (Integrations) need integrations.ecommerce.manage; everyone
+ * chooses their own look (Appearance); Backups is the platform owner's.
  */
 export const SETTINGS_TABS: readonly SettingsTab[] = [
   { href: "/settings/team", label: "Team", anyOf: ["company.members.manage"] },
@@ -24,6 +25,11 @@ export const SETTINGS_TABS: readonly SettingsTab[] = [
     anyOf: ["company.members.manage", "company.roles.manage"],
   },
   { href: "/settings/company", label: "Company", anyOf: [] },
+  {
+    href: "/settings/integrations",
+    label: "Integrations",
+    anyOf: ["integrations.ecommerce.manage"],
+  },
   { href: "/settings/appearance", label: "Appearance", anyOf: [] },
   { href: "/settings/backups", label: "Backups", anyOf: [], platformOwner: true },
 ];

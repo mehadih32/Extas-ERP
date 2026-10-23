@@ -2,10 +2,11 @@ import type { Instrumentation } from "next";
 
 /**
  * Runs once when the Next.js server starts. Starts the daily backup scheduler,
- * the reminder scheduler, the nightly housekeeping and the background job worker
- * in the Node.js server: each is on by default in production and off in
- * development and tests (set BACKUP_SCHEDULER, REMINDER_SCHEDULER,
- * HOUSEKEEPING_SCHEDULER or JOB_WORKER to on or off to choose).
+ * the reminder scheduler, the nightly housekeeping, the online shops' webhooks
+ * and the background job worker in the Node.js server: each is on by default in
+ * production and off in development and tests (set BACKUP_SCHEDULER,
+ * REMINDER_SCHEDULER, HOUSEKEEPING_SCHEDULER, ECOMMERCE_WEBHOOKS or JOB_WORKER to
+ * on or off to choose).
  */
 export async function register() {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
@@ -22,6 +23,10 @@ export async function register() {
   if (on(process.env.HOUSEKEEPING_SCHEDULER)) {
     const { startHousekeepingScheduler } = await import("@/modules/housekeeping/scheduler");
     startHousekeepingScheduler();
+  }
+  if (on(process.env.ECOMMERCE_WEBHOOKS)) {
+    const { startEcommerceWebhooks } = await import("@/modules/ecommerce/webhook-clock");
+    startEcommerceWebhooks();
   }
   if (on(process.env.JOB_WORKER)) {
     const { startJobWorker } = await import("@/modules/jobs/worker");

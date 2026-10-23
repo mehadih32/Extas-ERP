@@ -543,14 +543,20 @@ export const refundSchema = z
     proformaId: id.optional(),
     /** Credit on the buyer's account (payments on account, earlier CREDIT refunds). */
     partyId: id.optional(),
+    /** A website return's credit not used on its invoice (a sale without a buyer, CN-005). */
+    salesReturnId: id.optional(),
     amount: positiveMoney,
     reason: z.string().trim().min(3).max(500),
     ...settlement,
   })
   .superRefine((v, ctx) => {
-    const targets = [v.orderId, v.proformaId].filter(Boolean).length;
+    const targets = [v.orderId, v.proformaId, v.salesReturnId].filter(Boolean).length;
     if (targets > 1) {
-      ctx.addIssue({ code: "custom", path: ["orderId"], message: "Choose an order or a proforma" });
+      ctx.addIssue({
+        code: "custom",
+        path: ["orderId"],
+        message: "Choose an order, a proforma or a sales return",
+      });
     }
     if (targets === 0 && !v.partyId) {
       ctx.addIssue({ code: "custom", path: ["partyId"], message: "Choose a buyer or an order" });
@@ -579,10 +585,26 @@ export const salesSummarySchema = z.object({
 // --- Sales returns (credit notes) ----------------------------------------------------
 
 /** Pieces coming back on one invoice: its lines (order items) and how many of each. */
+/**
+ * What a returned piece's check found: GOOD goes back into sellable stock,
+ * B_GRADE into B-grade stock, DAMAGED to Damage & QC Rejects (the return
+ * screen's way, and the default).
+ */
+export const RETURN_QC = ["GOOD", "B_GRADE", "DAMAGED"] as const;
+export type ReturnQc = (typeof RETURN_QC)[number];
+
 export const salesReturnSchema = z.object({
   invoiceId: id,
   items: z
-    .array(z.object({ orderItemId: id, quantity: qty }))
+    .array(
+      z.object({
+        orderItemId: id,
+        quantity: qty,
+        /** Anything but DAMAGED needs sales.returns.qc (the e-commerce API sends it). */
+        qc: z.enum(RETURN_QC).optional(),
+        qcNote: optionalText(300),
+      }),
+    )
     .min(1, "Enter the pieces coming back")
     .max(500),
   reason: z.string().trim().min(3).max(500),

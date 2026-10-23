@@ -84,7 +84,7 @@ function PeekBody({ peek: o, currency }: { peek: OrderPeek; currency: string }) 
         </SheetTitle>
         <SheetDescription className="mt-1 text-sm break-words">{o.buyer}</SheetDescription>
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          <OrderBadge status={o.status} />
+          <OrderBadge status={o.status} channel={o.channel} />
           {o.invoice && <InvoiceBadge status={o.invoice.status} />}
           {o.hasForceOverride && <OverrideBadge />}
         </div>

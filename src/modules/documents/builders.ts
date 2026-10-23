@@ -46,7 +46,7 @@ import {
 import {
   CHANNEL_LABELS,
   INVOICE_STATUS_LABELS,
-  ORDER_STATUS_LABELS,
+  orderStatusLabel,
   QUOTATION_STATUS_LABELS,
   REFUND_KIND_LABELS,
 } from "@/components/sales/labels";
@@ -337,9 +337,17 @@ function paymentsTable(
   ];
 }
 
-/** The buyer's credit (advance balance) put against an invoice. */
+/**
+ * Credit put against an invoice: the buyer's advance balance (or the payment it
+ * came from), or a website return's credit paying its own invoice (its credit note).
+ */
 function creditsTable(
-  credits: Array<{ amount: Prisma.Decimal; date: Date; paymentNumber: string | null }>,
+  credits: Array<{
+    amount: Prisma.Decimal;
+    date: Date;
+    paymentNumber: string | null;
+    creditNote?: { number: string } | null;
+  }>,
   currency: string,
   timeZone: string,
 ): Block[] {
@@ -356,7 +364,11 @@ function creditsTable(
       rows: credits.map((c) => ({
         cells: [
           formatInstantDay(c.date, timeZone),
-          c.paymentNumber ? `Payment ${c.paymentNumber}` : "Advance balance",
+          c.creditNote
+            ? `Credit note ${c.creditNote.number}`
+            : c.paymentNumber
+              ? `Payment ${c.paymentNumber}`
+              : "Advance balance",
           money(c.amount, currency),
         ],
       })),
@@ -1265,18 +1277,22 @@ export async function refundDocument(
   const r = await getRefund(ctx, refundId);
   const tz = ctx.company.timezone;
   const currency = ctx.company.currency;
-  const { order, proforma } = r;
+  const { order, proforma, salesReturn } = r;
   const titles = REFUND_TITLES[r.kind];
+  // A website return's credit (CN-005) names the customer on the return's order.
+  const customer = order ?? salesReturn?.order;
   const buyer: PartyLike = r.party ?? {
-    name: order?.customerName ?? "Walk-in customer",
-    phone: order?.customerPhone,
-    address: order?.shippingAddress,
+    name: customer?.customerName ?? "Walk-in customer",
+    phone: customer?.customerPhone,
+    address: customer?.shippingAddress,
   };
   const from = proforma
     ? `the advance paid on proforma invoice ${proforma.number}`
     : order
       ? `the money paid on order ${order.number}`
-      : "credit on the buyer's account";
+      : salesReturn
+        ? `the credit from sales return ${salesReturn.number}`
+        : "credit on the buyer's account";
   const particulars =
     r.kind === "CASH"
       ? `Refund of ${from}`
@@ -1321,6 +1337,12 @@ export async function refundDocument(
           : []),
       ...(proforma ? [{ label: "Proforma no.", value: proforma.number }] : []),
       ...(order ? [{ label: "Order no.", value: order.number }] : []),
+      ...(salesReturn
+        ? [
+            { label: "Credit note no.", value: salesReturn.number },
+            { label: "Order no.", value: salesReturn.order.number },
+          ]
+        : []),
     ],
     parties: [{ heading: titles.heading, lines: partyLines(buyer) }],
     blocks: [
@@ -1386,7 +1408,20 @@ export async function salesReturnDocument(
   const tz = ctx.company.timezone;
   const currency = ctx.company.currency;
   const invoice = r.invoice!;
-  const buyer: PartyLike = r.party ?? { name: "Buyer" };
+  // A sale without a buyer profile (a website order) is credited to the customer it names.
+  const buyer: PartyLike = r.party ?? {
+    name: r.order.customerName ?? "Buyer",
+    phone: r.order.customerPhone,
+    address: r.order.shippingAddress,
+  };
+  // A website shop's checked return says where each piece went.
+  const restocked = r.items.some((item) => item.qcStatus !== "MOVED_TO_BAD_STOCK");
+  const place = (status: string) =>
+    status === "MOVED_TO_MAIN_STOCK"
+      ? "Back in stock"
+      : status === "MOVED_TO_B_GRADE"
+        ? "B-grade stock"
+        : "Damage & QC Rejects";
   const model = base(ctx, "SALES_RETURN", {
     title: "Credit Note",
     reference: r.number,
@@ -1417,7 +1452,7 @@ export async function salesReturnDocument(
             money(item.unitPrice, currency),
             money(item.amount, currency),
           ],
-          details: [item.variant.sku],
+          details: [restocked ? `${item.variant.sku} · ${place(item.qcStatus)}` : item.variant.sku],
         })),
       },
       {
@@ -1436,7 +1471,9 @@ export async function salesReturnDocument(
       ...textBlock("Notes", r.notes),
       {
         kind: "note",
-        text: `Credited at the prices billed on invoice ${invoice.number}. This credit stays on the buyer's account and counts against what they owe on later invoices.`,
+        text: r.partyId
+          ? `Credited at the prices billed on invoice ${invoice.number}. This credit stays on the buyer's account and counts against what they owe on later invoices.`
+          : `Credited at the prices billed on invoice ${invoice.number}. A sale without a buyer profile: the credit first pays what the invoice still had due, and the rest is paid back to the customer.`,
       },
       ...(r.voidedAt
         ? [{ kind: "note" as const, text: `Voided: ${r.voidReason ?? "no reason given"}` }]
@@ -2200,7 +2237,7 @@ export async function buyerProfileDocument(
           cells: [
             o.number,
             formatDay(o.orderedOn),
-            ORDER_STATUS_LABELS[o.status],
+            orderStatusLabel(o.status, o.channel),
             o.invoice
               ? `${o.invoice.number} (${o.invoice.isOverdue ? "Overdue" : INVOICE_STATUS_LABELS[o.invoice.status]})`
               : "Not invoiced",

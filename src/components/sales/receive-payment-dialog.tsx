@@ -264,6 +264,7 @@ export function paidSentence(
 export function ReceivePaymentDialog({
   target,
   due,
+  most,
   extraAllowed = false,
   currency,
   today,
@@ -273,6 +274,11 @@ export function ReceivePaymentDialog({
   target: ReceiveTarget;
   /** What is still to pay: the suggested amount (and the most, unless extra is allowed). */
   due?: string;
+  /**
+   * The most that can be received when it is more than the due: a website order whose
+   * return credit pays part of it (the credit then goes back to the customer).
+   */
+  most?: string;
   /** An invoiced order of a named buyer: more than the due is kept as advance balance. */
   extraAllowed?: boolean;
   currency: string;
@@ -325,7 +331,8 @@ export function ReceivePaymentDialog({
   const typed = readAmount(amountText);
   const amount = typeof typed === "number" ? typed : 0;
   const cheque = method === "CHEQUE";
-  const extra = !onAccount && due !== undefined && cents(amount) > cents(Number(due));
+  const limit = most ?? due;
+  const extra = !onAccount && limit !== undefined && cents(amount) > cents(Number(limit));
   const ready = dues.state === "ready" ? dues : null;
 
   return (
@@ -347,7 +354,7 @@ export function ReceivePaymentDialog({
         if (onAccount && !buyer) return problem({ partyId: "Choose the buyer who paid." });
         if (typed === "invalid") return problem({ amount: AMOUNT_HINT });
         if (typed === null || typed <= 0) return problem({ amount: "Enter the amount." });
-        if (extra && (!extraAllowed || cheque)) return problem({ amount: `At most ${due}.` });
+        if (extra && (!extraAllowed || cheque)) return problem({ amount: `At most ${limit}.` });
         const chequeNo = textOf(form, "chequeNo");
         if (cheque && !chequeNo) return problem({ chequeNo: "Enter the cheque number." });
         let allocation: { allocations?: AllocationLine[]; oldestFirst?: boolean } = {};

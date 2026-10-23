@@ -50,6 +50,7 @@ export const ACCESS_TREE: readonly AccessBranch[] = [
         leaf("company.roles.manage", "Create roles and change their permissions"),
       ]),
       leaf("company.settings", "Edit the company details and letterhead"),
+      leaf("integrations.ecommerce.manage", "Connect online shops and make their keys"),
       leaf("audit.view", "See the activity log"),
     ],
     "These let people manage the team, the roles and the company details. Someone who can manage roles can give any role every permission, so keep them for people you trust with the whole company.",

@@ -19,9 +19,11 @@ import { PERMISSIONS } from "@/modules/rbac/permissions";
 describe("the Sales lists' filters in the address bar", () => {
   it("reads only known choices and writes them back the same way", () => {
     const view = orderViewFrom({ q: " rahim ", status: "CONFIRMED", channel: "WEBSITE" });
-    // Website orders come with the integrations, so that filter is not offered yet.
-    expect(view).toEqual({ list: "orders", q: "rahim", status: "CONFIRMED", channel: undefined });
-    expect(salesListSearch(view)).toBe("?q=rahim&status=CONFIRMED");
+    // Website orders come from the online shops (CN-005).
+    expect(view).toEqual({ list: "orders", q: "rahim", status: "CONFIRMED", channel: "WEBSITE" });
+    expect(salesListSearch(view)).toBe("?q=rahim&status=CONFIRMED&channel=WEBSITE");
+    expect(orderViewFrom({ status: "SHIPPED" }).status).toBe("SHIPPED");
+    expect(orderViewFrom({ channel: "nonsense" }).channel).toBeUndefined();
     expect(isSalesFiltered(view)).toBe(true);
     expect(salesListSearch(clearedView(view))).toBe("");
     expect(orderViewFrom({ status: "nonsense" }).status).toBeUndefined();

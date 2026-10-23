@@ -8,8 +8,10 @@ import { BackLink } from "@/components/settings/back-link";
 import { InvoiceBadge, SalesReturnBadge } from "@/components/sales/badges";
 import { Fact, Panel, RecordHeader, Totals } from "@/components/sales/detail-bits";
 import { money, salesHref } from "@/components/sales/labels";
+import { MoneyRecords } from "@/components/sales/money-records";
 import { SalesNoAccess } from "@/components/sales/no-access";
 import { SalesReturnActions } from "@/components/sales/sales-return-actions";
+import { localDay } from "@/lib/dates";
 import { formatCount, formatDay } from "@/lib/display";
 import { getSalesReturnScreenAction } from "@/server/actions/sales.actions";
 import { requireCompanyPage } from "@/server/pages/guards";
@@ -17,6 +19,13 @@ import { requireCompanyPage } from "@/server/pages/guards";
 export const metadata: Metadata = { title: "Sales return" };
 
 const linkClass = "text-primary underline-offset-4 hover:underline";
+
+/** Where a checked piece went (a website shop's returns say it per item). */
+const QC_PLACE = {
+  GOOD: "Back in stock",
+  B_GRADE: "B-grade stock",
+  DAMAGED: "Damage & QC Rejects",
+} as const;
 
 /**
  * One sales return as its credit note (sales.view, like GET
@@ -48,7 +57,18 @@ export default async function SalesReturnPage({
   const screen = result.data;
   const { salesReturn: r } = screen;
   const currency = ctx.company.currency;
-  const buyer = r.buyer?.name ?? "Buyer removed";
+  const buyer = r.buyer?.name ?? r.customerName ?? "Buyer removed";
+  // A website shop's checked return can put pieces back into stock; the screen's own go to the rejects.
+  const restocked = r.wentTo.stock + r.wentTo.bGrade > 0;
+  const wentTo = [
+    r.wentTo.stock > 0 ? `${formatCount(r.wentTo.stock, currency)} pcs back in stock` : null,
+    r.wentTo.bGrade > 0 ? `${formatCount(r.wentTo.bGrade, currency)} pcs to B-grade stock` : null,
+    r.wentTo.rejects > 0
+      ? `${formatCount(r.wentTo.rejects, currency)} pcs to Damage & QC Rejects`
+      : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   return (
     <div className="grid grid-cols-1 gap-8 md:gap-10">
@@ -84,10 +104,17 @@ export default async function SalesReturnPage({
           <FormAlert tone="note">
             Voided on {formatDay(r.voided.on)}
             {r.voided.reason ? `: ${r.voided.reason}` : ""}. The credit was taken back and the
-            pieces left Damage &amp; QC Rejects. It is kept as a record.
+            pieces{" "}
+            {restocked ? "put back into stock were taken out again" : "left Damage & QC Rejects"}.
+            It is kept as a record.
           </FormAlert>
         )}
-        <SalesReturnActions key={r.id} screen={screen} currency={currency} />
+        <SalesReturnActions
+          key={r.id}
+          screen={screen}
+          currency={currency}
+          today={localDay(new Date(), ctx.company.timezone)}
+        />
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,8fr)_minmax(0,4fr)]">
@@ -106,7 +133,10 @@ export default async function SalesReturnPage({
                     <p className="font-medium break-words">
                       {line.style} · {line.color} · {line.size}
                     </p>
-                    <p className="text-[0.8125rem] text-muted-foreground">{line.sku}</p>
+                    <p className="text-[0.8125rem] break-words text-muted-foreground">
+                      {line.sku}
+                      {restocked ? ` · ${QC_PLACE[line.qc]}` : ""}
+                    </p>
                   </div>
                   <div className="shrink-0 text-right text-sm tabular-nums">
                     <p className="text-muted-foreground">
@@ -137,10 +167,16 @@ export default async function SalesReturnPage({
             <dl className="mt-4 grid gap-4 sm:grid-cols-2">
               <Fact label="Reason">{r.reason ?? "Not given"}</Fact>
               <Fact label="Pieces went to">
-                Damage &amp; QC Rejects{r.warehouse ? `, ${r.warehouse}` : ""}
+                {restocked ? wentTo : "Damage & QC Rejects"}
+                {r.warehouse ? `, ${r.warehouse}` : ""}
               </Fact>
               {r.cost !== null && (
-                <Fact label="Their cost (written off)">{money(r.cost, currency)}</Fact>
+                <Fact label="Their cost (written off)">
+                  {money(restocked ? (r.writtenOff ?? r.cost) : r.cost, currency)}
+                </Fact>
+              )}
+              {restocked && r.restockedCost !== null && (
+                <Fact label="Their cost (back in stock)">{money(r.restockedCost, currency)}</Fact>
               )}
               {r.recordedBy && <Fact label="Recorded by">{r.recordedBy}</Fact>}
               {r.notes && (
@@ -165,6 +201,9 @@ export default async function SalesReturnPage({
           >
             <dl className="mt-4 grid gap-4">
               <Fact label="Name">{r.buyer ? `${r.buyer.name} (${r.buyer.code})` : buyer}</Fact>
+              {!r.buyer && r.customerName && (
+                <Fact label="Account">Walk-in customers (a sale without a buyer profile)</Fact>
+              )}
               {r.buyer?.phone && <Fact label="Phone">{r.buyer.phone}</Fact>}
               {screen.buyerCredit !== null && (
                 <Fact label="Unused credit now">{money(screen.buyerCredit, currency)}</Fact>
@@ -172,7 +211,25 @@ export default async function SalesReturnPage({
               {screen.earlierBalance !== null && (
                 <Fact label="Still owed from before">{money(screen.earlierBalance, currency)}</Fact>
               )}
+              {screen.walkInCredit && !r.voided && (
+                <>
+                  <Fact label="Used on its invoice">
+                    {money(screen.walkInCredit.usedOnInvoice, currency)}
+                  </Fact>
+                  {screen.walkInCredit.paidBack !== "0.00" && (
+                    <Fact label="Paid back">{money(screen.walkInCredit.paidBack, currency)}</Fact>
+                  )}
+                  <Fact label="Left to pay back">{money(screen.walkInCredit.left, currency)}</Fact>
+                </>
+              )}
             </dl>
+            {screen.walkInCredit && !r.voided && (
+              <p className="mt-4 text-[0.8125rem] leading-relaxed text-muted-foreground">
+                A sale without a buyer profile has no account to keep credit on, so the credit first
+                pays what {r.invoice.number} still had due. What the shop had already collected is
+                left to pay back to the customer.
+              </p>
+            )}
             {screen.notes.credit && (
               <p className="mt-4 text-[0.8125rem] leading-relaxed text-muted-foreground">
                 {screen.notes.credit}
@@ -189,6 +246,16 @@ export default async function SalesReturnPage({
               </p>
             )}
           </Panel>
+          {screen.paidBack.length > 0 && (
+            <MoneyRecords
+              title="Paid back"
+              headingId="paid-back-heading"
+              payments={[]}
+              refunds={screen.paidBack}
+              currency={currency}
+              empty="Nothing was paid back yet."
+            />
+          )}
           <Panel title="Invoice" id="invoice-heading">
             <dl className="mt-4 grid grid-cols-2 gap-4">
               <Fact label="Number">

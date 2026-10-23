@@ -239,15 +239,20 @@ export function canCreateChallan(
  * Lines and charges change before anything has left the warehouse. With a live
  * invoice the edit revises that invoice under the same number (Smart Edit,
  * `revise`), which a fully paid invoice no longer allows; without `revise` the
- * invoice has to be voided first.
+ * invoice has to be voided first. A processing order is edited while nothing
+ * of it was delivered (a website order the shop is working on, CN-005).
+ * `beforePacking` (the online shops' API) also refuses a packed order.
  */
 export function canEditOrder(
-  o: OrderState & { warehouseId: string | null },
+  o: OrderState & { warehouseId: string | null; packingList?: { number: string } | null },
   deliveredPieces: number,
-  options: { revise?: boolean } = {},
+  options: { revise?: boolean; beforePacking?: boolean } = {},
 ): Verdict {
-  if (o.status !== "CONFIRMED" && o.status !== "PACKED") {
+  if (o.status !== "CONFIRMED" && o.status !== "PROCESSING" && o.status !== "PACKED") {
     return refuse("CONFLICT", `A ${lower(o.status)} order cannot be edited.`);
+  }
+  if (options.beforePacking && (o.status === "PACKED" || o.packingList)) {
+    return refuse("CONFLICT", "This order is packed already, so it can no longer be edited.");
   }
   const invoice = liveInvoice(o.invoice);
   if (invoice && !options.revise) {
@@ -277,6 +282,10 @@ export function canCancelOrder(
   options: { returnDelivered?: boolean } = {},
 ): Verdict {
   if (o.status === "CANCELLED") return refuse("CONFLICT", "This order is already cancelled.");
+  if (o.status === "RETURNED" && deliveredPieces <= 0) {
+    // A website parcel that came back undelivered (CN-005): its stock was freed then.
+    return refuse("CONFLICT", "This order came back undelivered; its stock is free already.");
+  }
   if (deliveredPieces > 0) {
     if (!options.returnDelivered) {
       return refuse("CONFLICT", "Goods on this order were delivered; record a return instead.");
@@ -304,11 +313,34 @@ export function canSetShipmentDate(o: Pick<OrderState, "status">): Verdict {
   );
 }
 
-/** Money comes in on an order that is not cancelled, up to what is due. */
+/**
+ * Closed with no sale: a cancelled order, or one that came back undelivered
+ * (a website parcel the courier returned: RETURNED with nothing delivered).
+ * Nothing is due on it and it takes no money. One place for the receipt,
+ * the paid and due figures (posting.ts) and Bug Guard's totals check.
+ */
+export function closedWithNoSale(status: string, deliveredPieces: number): boolean {
+  return status === "CANCELLED" || (status === "RETURNED" && deliveredPieces <= 0);
+}
+
+/** closedWithNoSale as a query: orders that are a sale (not cancelled, not back undelivered). */
+export const SALE_ORDERS: Prisma.SalesOrderWhereInput = {
+  status: { not: "CANCELLED" },
+  NOT: {
+    status: "RETURNED",
+    deliveryChallans: { none: { items: { some: { quantity: { gt: 0 } } } } },
+  },
+};
+
+/** Money comes in on an order that is not closed with no sale, up to what is due. */
 export function canReceiveOnOrder(
   o: Pick<OrderState, "number" | "status"> & { total: Amount; paidAmount: Amount },
+  deliveredPieces: number,
 ): Verdict {
   if (o.status === "CANCELLED") return refuse("CONFLICT", "This order is cancelled.");
+  if (closedWithNoSale(o.status, deliveredPieces)) {
+    return refuse("CONFLICT", `${o.number} came back undelivered, so nothing is owed on it.`);
+  }
   if (dec(o.total).minus(dec(o.paidAmount)).lte(0)) {
     return refuse("CONFLICT", `${o.number} is paid in full.`);
   }
@@ -390,12 +422,18 @@ export function settleKinds(
 
 /**
  * A refund recorded by mistake is voided while what it came off is still open:
- * not once that order or proforma is cancelled (or converted), nor while the
- * order is invoiced again. The service also checks the money still adds up.
+ * not once that order or proforma is cancelled (or converted), nor once the
+ * order came back undelivered (closed with no sale, like cancelled; pass the
+ * pieces delivered on it), nor while the order is invoiced again. The service
+ * also checks the money still adds up.
  */
 export function canVoidRefund(
   refund: { voidedAt: Date | null },
-  from: { order?: OrderState | null; proforma?: Pick<ProformaState, "number" | "status"> | null },
+  from: {
+    order?: OrderState | null;
+    deliveredPieces?: number;
+    proforma?: Pick<ProformaState, "number" | "status"> | null;
+  },
 ): Verdict {
   if (refund.voidedAt) return refuse("CONFLICT", "This refund is already void.");
   if (from.order) {
@@ -404,6 +442,12 @@ export function canVoidRefund(
       return refuse(
         "CONFLICT",
         `${order.number} is cancelled, so its refunds can no longer be voided.`,
+      );
+    }
+    if (closedWithNoSale(order.status, from.deliveredPieces ?? 0)) {
+      return refuse(
+        "CONFLICT",
+        `${order.number} came back undelivered, so its refunds can no longer be voided.`,
       );
     }
     const invoice = liveInvoice(order.invoice);
@@ -433,10 +477,15 @@ export function canReturnOnInvoice(
   invoice: InvoiceState & { partyId: string | null },
   order: Pick<OrderState, "status">,
   pieces: { delivered: number; returned: number },
+  /**
+   * A website shop's return (e-commerce API): its credit stays on the Walk-in
+   * customers account, which the shop settles with its customer itself.
+   */
+  options: { walkInCredit?: boolean } = {},
 ): Verdict {
   if (invoice.status === "VOID") return refuse("CONFLICT", `Invoice ${invoice.number} is void.`);
   if (order.status === "CANCELLED") return refuse("CONFLICT", "Its order is cancelled.");
-  if (!invoice.partyId) {
+  if (!invoice.partyId && !options.walkInCredit) {
     return refuse(
       "CONFLICT",
       "A walk-in sale has no buyer account to keep the credit on, so it takes no sales return.",

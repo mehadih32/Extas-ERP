@@ -54,7 +54,8 @@ export default async function SalesReturnsPage({
           </h2>
           <p className="mt-1 max-w-xl text-sm leading-relaxed text-muted-foreground">
             Goods buyers sent back, each on a credit note made from its invoice. The value goes to
-            the buyer&apos;s credit and the pieces to Damage &amp; QC Rejects.
+            the buyer&apos;s credit and the pieces to Damage &amp; QC Rejects, or back into stock
+            when the website shop&apos;s check found them good.
           </p>
         </div>
         {canRecord && (

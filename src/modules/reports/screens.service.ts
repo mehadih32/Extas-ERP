@@ -176,7 +176,7 @@ async function sourceLinks(
     salesView && ids("Refund").length
       ? ctx.db.refund.findMany({
           where: { id: { in: ids("Refund") } },
-          select: { id: true, orderId: true, proformaId: true },
+          select: { id: true, orderId: true, proformaId: true, salesReturnId: true },
         })
       : [],
     ctx.can("parties.ledger.view") && ids("Party").length
@@ -237,7 +237,9 @@ async function sourceLinks(
           ? to(sales.order(refund.orderId), "Open the order")
           : refund?.proformaId
             ? to(sales.proforma(refund.proformaId), "Open the proforma")
-            : null;
+            : refund?.salesReturnId
+              ? to(sales.salesReturn(refund.salesReturnId), "Open the sales return")
+              : null;
         break;
       }
       case "Party": {

@@ -1,6 +1,6 @@
 "use client";
 
-import { LockIcon, Undo2Icon } from "lucide-react";
+import { BanknoteIcon, LockIcon, Undo2Icon } from "lucide-react";
 import { useState } from "react";
 
 import { PrintDocumentButton } from "@/components/documents/print-button";
@@ -10,26 +10,31 @@ import { Button } from "@/components/ui/button";
 import type { SalesReturnScreen } from "@/modules/sales/return-screens.service";
 import { voidSalesReturnAction } from "@/server/actions/sales.actions";
 
-import { FormDialog, problem, ReasonField } from "./dialogs";
+import { FormDialog, problem, ReasonField, RefundDialog } from "./dialogs";
 import { money } from "./labels";
 
 /**
  * What can be done with a credit note: everyone who sees it prints it; Accounts
  * voids one recorded by mistake while the buyer has not used its credit
  * (screen.can.void), which takes the credit back and the pieces out of Damage
- * & QC Rejects.
+ * & QC Rejects. On a website return Accounts pays back the credit its invoice
+ * did not need (screen.can.payBackKinds).
  */
 export function SalesReturnActions({
   screen,
   currency,
+  today,
 }: {
   screen: SalesReturnScreen;
   currency: string;
+  today: string;
 }) {
   const [voiding, setVoiding] = useState(false);
+  const [payingBack, setPayingBack] = useState(false);
   const [notice, setNotice] = useState<string>();
   const { salesReturn: r, can, notes } = screen;
-  const buyer = r.buyer?.name ?? "the buyer";
+  const buyer = r.buyer?.name ?? r.customerName ?? "the buyer";
+  const restocked = r.wentTo.stock + r.wentTo.bGrade > 0;
 
   return (
     <div className="grid gap-4">
@@ -43,6 +48,17 @@ export function SalesReturnActions({
             errorTitle: "We could not make the credit note PDF",
           }}
         />
+        {can.payBackKinds.length > 0 && screen.walkInCredit && (
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full sm:w-auto"
+            onClick={() => setPayingBack(true)}
+          >
+            <BanknoteIcon aria-hidden />
+            Pay back the credit
+          </Button>
+        )}
         {can.void && (
           <Button
             type="button"
@@ -62,10 +78,24 @@ export function SalesReturnActions({
         </p>
       )}
       {notice && <FormAlert tone="success">{notice}</FormAlert>}
+      {payingBack && screen.walkInCredit && (
+        <RefundDialog
+          target={{ salesReturnId: r.id, label: r.number }}
+          kinds={can.payBackKinds}
+          held={screen.walkInCredit.left}
+          currency={currency}
+          today={today}
+          onDone={(message) => {
+            setNotice(message);
+            setPayingBack(false);
+          }}
+          onClose={() => setPayingBack(false)}
+        />
+      )}
       {voiding && (
         <FormDialog
           title={`Void sales return ${r.number}?`}
-          description={`Use this when it was recorded by mistake. The ${money(r.total, currency)} credit comes off ${buyer}'s account, the ${r.pieces} pcs leave Damage & QC Rejects, and the credit note stays on record marked void.`}
+          description={`Use this when it was recorded by mistake. The ${money(r.total, currency)} credit comes off ${buyer}'s account, ${restocked ? "the pieces put back into stock are taken out again (and any in Damage & QC Rejects leave it)" : `the ${r.pieces} pcs leave Damage & QC Rejects`}, and the credit note stays on record marked void.`}
           submitLabel="Void the return"
           pendingLabel="Voiding"
           destructive

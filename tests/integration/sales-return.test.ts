@@ -772,10 +772,20 @@ run("sales returns (credit notes)", () => {
         quantity: 1,
         unitPrice: "900.00",
         amount: "900.00",
+        qc: "DAMAGED",
       },
     ]);
+    expect(accounts.salesReturn.wentTo).toEqual({ stock: 0, bGrade: 0, rejects: 1 });
+    expect(accounts.salesReturn.writtenOff).toBe("500.00");
     expect(accounts.buyerCredit).toBe("833.33");
-    expect(accounts.can).toEqual({ void: true, openBuyer: true, useCredit: true });
+    expect(accounts.can).toEqual({
+      void: true,
+      openBuyer: true,
+      useCredit: true,
+      payBackKinds: [],
+    });
+    // A buyer's credit stays on their account: nothing to pay back from the credit note.
+    expect(accounts.walkInCredit).toBeNull();
     expect(accounts.salesReturn.cost).toBe("500.00");
     const seller = await returnScreens.getSalesReturnScreen(env.salesCtx, ret.id);
     expect(seller.can.void).toBe(false);
@@ -796,6 +806,7 @@ run("sales returns (credit notes)", () => {
         reason: "Stained",
         voided: false,
         buyer: { id: env.buyer.id, code: env.buyer.code, name: "Rahim Traders" },
+        customerName: null,
         invoice: { id: invoice.id, number: invoice.number },
         order: { id: order.id, number: order.number },
       },

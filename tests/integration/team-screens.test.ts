@@ -43,6 +43,7 @@ import {
   getCompanyDetailsAction,
   updateCompanyProfileAction,
 } from "@/server/actions/company.actions";
+import { listShopsAction } from "@/server/actions/ecommerce.actions";
 import {
   addMemberAction,
   changeMemberRoleAction,
@@ -427,6 +428,7 @@ run("team and roles screens offer exactly what the server allows", () => {
       "accounts.payments.record",
       "company.members.manage",
       "company.roles.manage",
+      "integrations.ecommerce.manage",
     ]);
     expect(asAdmin.lockedPermissions).toEqual([]);
     expect(asAdmin.grantableRoleIds).toContain(roles.ACCOUNTS);
@@ -542,6 +544,7 @@ run("team and roles screens offer exactly what the server allows", () => {
       const team = await getTeamAction();
       const roles = await getRolesAction();
       const details = await getCompanyDetailsAction();
+      const shops = await listShopsAction();
       if (!details.ok) throw new Error(`${who}: ${details.error.message}`);
       const { canEdit } = details.data;
       seen[who] = { team: team.ok, roles: roles.ok, canEdit };
@@ -556,13 +559,14 @@ run("team and roles screens offer exactly what the server allows", () => {
         ...(team.ok ? ["Team"] : []),
         ...(roles.ok ? ["Roles"] : []),
         "Company",
+        ...(shops.ok ? ["Integrations"] : []),
         "Appearance",
       ]);
       // /settings opens the first of them.
       expect(await redirectOf(SettingsPage()), who).toBe(tabs[0]!.href);
       // The menu shows Settings to people who can do something there.
       const inMenu = visibleNavItems([...ctx.permissions]).some((i) => i.href === "/settings");
-      expect(inMenu, who).toBe(team.ok || roles.ok || canEdit);
+      expect(inMenu, who).toBe(team.ok || roles.ok || canEdit || shops.ok);
 
       // Saving the company details works exactly for those offered the form.
       const saved = await updateCompanyProfileAction({ name: details.data.details.name });

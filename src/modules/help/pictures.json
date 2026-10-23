@@ -1922,7 +1922,7 @@
       "target": "API key"
     },
     "route": "/settings/integrations/ecommerce/[integrationId]",
-    "screen": "3c5115860a0c88e9",
+    "screen": "f1f342658dec5474",
     "guide": "ae51a675ac6d917f",
     "taken": "2026-10-23"
   },
@@ -1941,7 +1941,7 @@
       "target": "Webhook log"
     },
     "route": "/settings/integrations/ecommerce/[integrationId]",
-    "screen": "3c5115860a0c88e9",
+    "screen": "f1f342658dec5474",
     "guide": "f2f93934f1832e7d",
     "taken": "2026-10-23"
   },
@@ -3874,7 +3874,7 @@
       "target": "marks"
     },
     "route": "/sales/orders/[orderId]",
-    "screen": "24060cc35e348be2",
+    "screen": "e6ba40bee06e8173",
     "guide": "9f5fcc0f3f087755",
     "taken": "2026-10-23"
   },
@@ -3914,7 +3914,7 @@
       "target": "marks"
     },
     "route": "/sales/invoices",
-    "screen": "fa338521618338d4",
+    "screen": "f1b6a71f7fd8f4f6",
     "guide": "01cd1d31f75ebe21",
     "taken": "2026-10-23"
   },
@@ -4033,7 +4033,7 @@
       "target": "marks"
     },
     "route": "/sales/orders/[orderId]",
-    "screen": "24060cc35e348be2",
+    "screen": "e6ba40bee06e8173",
     "guide": "f4a0644a4da2a4a9",
     "taken": "2026-10-23"
   },

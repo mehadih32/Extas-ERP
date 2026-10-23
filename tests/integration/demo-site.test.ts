@@ -11,7 +11,8 @@ import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 
  * sample order for Mehedi 2.0 once, waiting for the owner's Approve, the v6.3
  * sample skill for the fabric expert once, waiting for its test, and the v6.4
  * sample tech pack from a buyer's brief once, not linked to a project, and the
- * v6.4.1 samples once: a record for each page a Help guide pictures.
+ * v6.4.1 samples once: a record for each page a Help guide pictures, and the
+ * CN-005 sample online shop once, which can never send anything.
  */
 vi.mock("next/cache", () => ({ revalidatePath: () => undefined, revalidateTag: () => undefined }));
 
@@ -25,6 +26,7 @@ import { getCosting } from "@/modules/costing/costing.service";
 import { listTechPacks } from "@/modules/production/tech-pack-register.service";
 import { getTechPackScreen } from "@/modules/production/tech-pack-screen.service";
 import { getCompliance } from "@/modules/compliance/compliance.service";
+import { getShop } from "@/modules/ecommerce/screens.service";
 import { getSystemAccess } from "@/modules/hr/login.service";
 import { getOrderScreen } from "@/modules/sales/screens.service";
 import { getTemplate } from "@/modules/templates/template.service";
@@ -32,11 +34,13 @@ import { getTemplate } from "@/modules/templates/template.service";
 import {
   assertDemoDatabase,
   loadFiveStylePoloDemo,
+  loadSampleShopDemo,
   loadV62SamplesDemo,
   loadV63SamplesDemo,
   loadV64TechPackDemo,
   loadV641SamplesDemo,
 } from "../../prisma/demo/load-demo";
+import { SAMPLE_SHOP } from "../../prisma/demo/cn005-shop";
 import { V63_SAMPLE_SKILL } from "../../prisma/demo/v63-samples";
 import { V64_SAMPLE_TECH_PACK } from "../../prisma/demo/v64-tech-pack";
 import {
@@ -320,4 +324,40 @@ run("The demo site's sample data", () => {
     await loadV641SamplesDemo(owner.id, company.id);
     expect(await getCompliance(ctx, licence.id)).toMatchObject({ status: "EXPIRED" });
   }, 120_000);
+
+  it("adds the sample online shop once, with a made-up key and logs, sending nothing", async () => {
+    vi.stubEnv("ENCRYPTION_KEY", "demo-encryption-key-0123456789");
+    const { company, roles } = await makeCompany("Extas");
+    const owner = await makeUser("owner@extras.test", { isSuperAdmin: true });
+    await addToCompany(owner.id, company.id, roles.SUPER_ADMIN);
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    onTestFinished(() => {
+      vi.unstubAllGlobals();
+    });
+
+    const loaded = await loadSampleShopDemo(owner.id, company.id);
+    expect(loaded).toMatchObject({ name: SAMPLE_SHOP });
+    const shop = await prisma.salesChannelIntegration.findFirstOrThrow({
+      where: { companyId: company.id, name: SAMPLE_SHOP },
+    });
+    // Its key was thrown away: only a hash, and a webhook address that never resolves.
+    expect(shop.apiKeyRef).toMatch(/^sha256:/);
+    expect(shop.webhookSecretRef).not.toBeNull();
+    expect(new URL(shop.webhookUrl!).hostname.endsWith(".example")).toBe(true);
+    const page = await getShop(await contextFor(owner.id, company.id), shop.id);
+    expect(page.shop).toMatchObject({ hasKey: true, isActive: true });
+    expect(page.webhooks.length).toBeGreaterThan(0);
+    expect(page.webhooks.map((w) => w.eventType)).toContain("ping");
+    expect(page.calls.map((c) => c.errorCode)).toContain("INSUFFICIENT_STOCK");
+    // No job: nothing queued to be sent.
+    expect(await prisma.backgroundJob.count({ where: { kind: "ecommerce.webhook.send" } })).toBe(0);
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    // Once: the second time it adds nothing.
+    expect(await loadSampleShopDemo(owner.id, company.id)).toBeNull();
+    expect(await prisma.salesChannelIntegration.count({ where: { companyId: company.id } })).toBe(
+      1,
+    );
+  });
 });

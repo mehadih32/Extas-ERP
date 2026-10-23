@@ -1967,6 +1967,8 @@ model SalesChannelIntegration {
   /// The newest stock and variant changes already sent to the shop (the webhook sender's place).
   stockSentTo        DateTime?
   variantsSentTo     DateTime?
+  /// When the webhooks (re)started from now: nothing changed before it is sent.
+  webhooksStartedAt  DateTime?
   /// The integration's own account: what the shop does is saved in its name.
   serviceUserId      String?
   createdById        String?

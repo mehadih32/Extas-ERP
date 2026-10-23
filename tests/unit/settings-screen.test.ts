@@ -20,12 +20,14 @@ import { MONEY_PERMISSIONS, PERMISSIONS } from "@/modules/rbac/permissions";
 const tabs = (permissions: string[]) => visibleSettingsTabs(permissions).map((t) => t.label);
 
 describe("the settings area", () => {
-  it("is in the menu for people who manage the team, the roles or the company", () => {
+  it("is in the menu for people who manage the team, the roles, the company or the online shops", () => {
     const hasSettings = (permissions: string[]) =>
       visibleNavItems(permissions).some((item) => item.href === "/settings");
     expect(hasSettings(["company.members.manage"])).toBe(true);
     expect(hasSettings(["company.roles.manage"])).toBe(true);
     expect(hasSettings(["company.settings"])).toBe(true);
+    // The online shops (Settings > Integrations, CN-005).
+    expect(hasSettings(["integrations.ecommerce.manage"])).toBe(true);
     expect(hasSettings(["sales.view", "accounts.view", "audit.view"])).toBe(false);
   });
 
@@ -36,7 +38,18 @@ describe("the settings area", () => {
     // The company details can be read by everyone in the company (GET /api/company),
     // and everyone chooses their own look.
     expect(tabs([])).toEqual(["Company", "Appearance"]);
-    expect(tabs(PERMISSIONS.map((p) => p.key))).toEqual(["Team", "Roles", "Company", "Appearance"]);
+    expect(tabs(["integrations.ecommerce.manage"])).toEqual([
+      "Company",
+      "Integrations",
+      "Appearance",
+    ]);
+    expect(tabs(PERMISSIONS.map((p) => p.key))).toEqual([
+      "Team",
+      "Roles",
+      "Company",
+      "Integrations",
+      "Appearance",
+    ]);
   });
 });
 

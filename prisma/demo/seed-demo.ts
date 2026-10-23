@@ -16,7 +16,9 @@
  *      once, not linked to a production project;
  *   7. and the v6.4.1 samples (./v641-samples.ts), each once: three wholesale
  *      orders for two buyers, two employees, an invoice pad template and a
- *      fire licence due for renewal, so every Help picture has its record.
+ *      fire licence due for renewal, so every Help picture has its record;
+ *   8. and the CN-005 sample online shop (./cn005-shop.ts), once, with a made-up
+ *      key, a few past webhooks and API calls; nothing is ever sent from it.
  * It stops, loading nothing, unless DEMO_SITE=on and the database is the demo's own.
  *   SEED_ADMIN_EMAIL          the owner's email
  *   DEMO_OWNER_PASSWORD_HASH  the owner's password hash on the live ERP
@@ -29,6 +31,7 @@ import { POLO_BATCH } from "./five-style-polo";
 import {
   assertDemoDatabase,
   loadFiveStylePoloDemo,
+  loadSampleShopDemo,
   loadTestBookingsDemo,
   loadV62SamplesDemo,
   loadV63SamplesDemo,
@@ -119,6 +122,17 @@ async function main() {
     );
   } catch (error) {
     console.error("! v6.4.1 samples: they could not all be made", error);
+  }
+
+  try {
+    const shop = await loadSampleShopDemo(owner.id, company.id);
+    console.log(
+      shop
+        ? `✓ CN-005 sample online shop "${shop.name}" with ${shop.webhooks} past webhooks`
+        : "✓ The sample online shop is there already",
+    );
+  } catch (error) {
+    console.error("! Sample online shop: it could not be made", error);
   }
 }
 

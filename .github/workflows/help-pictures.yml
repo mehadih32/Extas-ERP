@@ -124,6 +124,7 @@ jobs:
       BACKUP_SCHEDULER: "off"
       REMINDER_SCHEDULER: "off"
       HOUSEKEEPING_SCHEDULER: "off"
+      ECOMMERCE_WEBHOOKS: "off"
       JOB_WORKER: "off"
       NEXT_TELEMETRY_DISABLED: "1"
     steps:

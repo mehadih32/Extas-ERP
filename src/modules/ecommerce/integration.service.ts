@@ -281,15 +281,22 @@ export async function updateIntegration(
   return integration;
 }
 
-/** Switches a shop on or off: switched off, its key is refused until it is on again. */
+/**
+ * Switches a shop on or off: switched off, its key is refused until it is on
+ * again. Switching on needs the PIN (the same key works again at once);
+ * switching off needs none (it only takes access away).
+ */
 export async function setIntegrationActive(
   ctx: CompanyContext,
   id: string,
   isActive: boolean,
   meta?: RequestMeta,
+  raw: unknown = {},
 ) {
   assertCanManageShops(ctx);
+  const { pin } = pinSchema.parse(raw);
   const integration = await findIntegration(ctx, id);
+  if (isActive && !integration.isActive) await requirePin(ctx, pin, "switch the shop on");
   await ctx.db.salesChannelIntegration.update({
     where: { id: integration.id },
     data: { isActive, ...(isActive && !integration.isActive ? webhooksFromNow() : {}) },

@@ -44,7 +44,8 @@ import { ShopFormDialog } from "./shop-form-dialog";
 import { platformLabel, WEBHOOK_FILTER_OPTIONS, webhookState } from "./shop-labels";
 
 /*
- * One online shop (CN-005): its connection and switch, its API key ("Generate
+ * One online shop (CN-005): its connection and switch ("Switch on" asks the
+ * PIN: the key works again), its API key ("Generate
  * key" / "Rotate key" ask the PIN and show the key and secret once; "Revoke
  * key" asks first), what to give the shop, "Send test", the webhook log with a
  * filter by status, and the latest API calls. Tables on a laptop, cards on a
@@ -78,7 +79,7 @@ export function ShopScreen({ page }: { page: ShopPage }) {
 
   function switchOn() {
     startTransition(async () => {
-      const result = await setShopActiveAction(shop.id, true);
+      const result = await withPin((pin) => setShopActiveAction(shop.id, true, { pin }));
       setMessage(
         result.ok
           ? { tone: "success", text: "The shop is on: its key works again." }

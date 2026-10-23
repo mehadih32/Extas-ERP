@@ -521,6 +521,10 @@ export const SECRET_PATTERNS: Array<[string, RegExp]> = [
   ["Slack token", /\bxox[abpr]-[A-Za-z0-9-]{10,}/],
   ["Private key", /-----BEGIN [A-Z ]*PRIVATE KEY-----/],
   ["AWS key", /\bAKIA[0-9A-Z]{16}\b/],
+  // An online shop's API key or webhook secret (CN-005, ecommerce/keys.ts); its
+  // hint (the start and end with "…") is too short to match.
+  ["Online shop API key", /\bextas_sk_[A-Za-z0-9_-]{32,}/],
+  ["Online shop webhook secret", /\bextas_whsec_[A-Za-z0-9_-]{32,}/],
 ];
 
 /** The kind of secret a text holds, or null. */

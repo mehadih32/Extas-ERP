@@ -118,6 +118,31 @@ async function authenticate(request: Request, address: string | undefined) {
   return integration;
 }
 
+const tooLarge = () => fail(413, "TOO_LARGE", "The body is larger than 512 KB.");
+
+/**
+ * The body as text, read at most 512 KB far: a longer one (whatever its
+ * Content-Length said, or without one) is refused without reading the rest.
+ * Decoded as request.text() does (UTF-8, a leading BOM dropped).
+ */
+async function readBody(request: Request): Promise<string> {
+  if (!request.body) return "";
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > MAX_BODY_BYTES) {
+      await reader.cancel().catch(() => undefined);
+      throw tooLarge();
+    }
+    chunks.push(value);
+  }
+  return new TextDecoder().decode(Buffer.concat(chunks));
+}
+
 function checkSignature(request: Request, integration: ShopIntegration, rawBody: string) {
   const signature = request.headers.get(SIGNATURE_HEADER);
   const timestamp = request.headers.get(TIMESTAMP_HEADER);
@@ -284,11 +309,10 @@ export function ecommerceRoute<P = Record<string, never>>(
       if (request.headers.get("x-forwarded-proto")?.toLowerCase() === "http") {
         throw fail(403, "HTTPS_REQUIRED", "Call the API over https://.");
       }
-      const rawBody = await request.text();
-      if (Buffer.byteLength(rawBody) > MAX_BODY_BYTES) {
-        throw fail(413, "TOO_LARGE", "The body is larger than 512 KB.");
-      }
+      // The key first: a caller without one never makes the server read a body.
       integration = await authenticate(request, address);
+      const declared = Number(request.headers.get("content-length") ?? 0);
+      if (declared > MAX_BODY_BYTES) throw tooLarge();
       // Both written one way (shop-pin.ts), so "::ffff:203.0.113.7" is 203.0.113.7.
       if (
         integration.ipAllowList.length > 0 &&
@@ -306,6 +330,7 @@ export function ecommerceRoute<P = Record<string, never>>(
         }
         throw error;
       }
+      const rawBody = await readBody(request);
       checkSignature(request, integration, rawBody);
       const parsed = parseBody(rawBody);
 

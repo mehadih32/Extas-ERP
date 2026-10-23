@@ -328,11 +328,13 @@ run("E-commerce webhooks: ERP to shop (CN-005)", () => {
     await integrations.setIntegrationActive(shop.owner, shop.integration.id, false);
     expect(await scanShopChanges()).toEqual({ shops: 0, events: 0 });
     // Switched on again: it starts from then, not with what changed while it was off.
-    await integrations.setIntegrationActive(shop.owner, shop.integration.id, true);
+    await setPin(shop.owner, { pin: PIN });
+    await integrations.setIntegrationActive(shop.owner, shop.integration.id, true, undefined, {
+      pin: PIN,
+    });
     await later();
     expect((await scanShopChanges()).events).toBe(0);
 
-    await setPin(shop.owner, { pin: PIN });
     await integrations.updateIntegration(shop.owner, shop.integration.id, {
       name: "Extas web shop",
       warehouseId: shop.warehouse.id,

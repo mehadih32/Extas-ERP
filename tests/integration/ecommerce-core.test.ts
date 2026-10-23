@@ -72,13 +72,66 @@ run("E-commerce API: keys, signatures and idempotency (CN-005)", () => {
     expect(wrong.status).toBe(401);
     expect(wrong.body.error.code).toBe("UNAUTHENTICATED");
 
+    // Switching off needs no PIN; switching on (the same key works again) needs it.
     await integrations.setIntegrationActive(shop.owner, shop.integration.id, false);
     expect((await callShop(shop, health, { path: "/health" })).status).toBe(401);
-    await integrations.setIntegrationActive(shop.owner, shop.integration.id, true);
+    await setPin(shop.owner, { pin: "2468" });
+    await expect(
+      integrations.setIntegrationActive(shop.owner, shop.integration.id, true),
+    ).rejects.toMatchObject({
+      code: "VALIDATION",
+      message: "Give your PIN to switch the shop on.",
+    });
+    await expect(
+      integrations.setIntegrationActive(shop.owner, shop.integration.id, true, undefined, {
+        pin: "1111",
+      }),
+    ).rejects.toMatchObject({ details: { pin: ["The PIN is not right"] } });
+    expect((await callShop(shop, health, { path: "/health" })).status).toBe(401);
+    await integrations.setIntegrationActive(shop.owner, shop.integration.id, true, undefined, {
+      pin: "2468",
+    });
     expect((await callShop(shop, health, { path: "/health" })).status).toBe(200);
+    // Already on: nothing to ask.
+    await integrations.setIntegrationActive(shop.owner, shop.integration.id, true);
 
     await integrations.revokeKey(shop.owner, shop.integration.id);
     expect((await callShop(shop, health, { path: "/health" })).status).toBe(401);
+  });
+
+  it("checks the key before it reads a body, and refuses a body over 512 KB", async () => {
+    const big = "x".repeat(512 * 1024 + 1);
+    const post = (headers: Record<string, string>, body: string) =>
+      health(
+        new Request("https://erp.example.com/api/v1/ecommerce/health", {
+          method: "POST",
+          headers: { "content-type": "application/json", ...headers },
+          body,
+        }),
+        { params: Promise.resolve({}) },
+      );
+    // No key: refused before the body is read (its stream is never touched).
+    const unread = new Request("https://erp.example.com/api/v1/ecommerce/health", {
+      method: "POST",
+      headers: { "content-length": String(50 * 1024 * 1024) },
+      body: big,
+    });
+    const noKey = await health(unread, { params: Promise.resolve({}) });
+    expect(noKey.status).toBe(401);
+    expect(unread.bodyUsed).toBe(false);
+    // A key and a Content-Length over the limit: 413 without reading it either.
+    const declared = new Request("https://erp.example.com/api/v1/ecommerce/health", {
+      method: "POST",
+      headers: { authorization: `Bearer ${shop.apiKey}`, "content-length": String(600 * 1024) },
+      body: big,
+    });
+    const tooLong = await health(declared, { params: Promise.resolve({}) });
+    expect(tooLong.status).toBe(413);
+    expect(((await tooLong.json()) as { error: { code: string } }).error.code).toBe("TOO_LARGE");
+    expect(declared.bodyUsed).toBe(false);
+    // No Content-Length (or a wrong one): read only up to the limit, then 413.
+    const streamed = await post({ authorization: `Bearer ${shop.apiKey}` }, big);
+    expect(streamed.status).toBe(413);
   });
 
   it("slows down an address that keeps trying wrong keys", async () => {

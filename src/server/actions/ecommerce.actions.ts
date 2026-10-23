@@ -12,7 +12,7 @@ import { sendTestEvent } from "@/modules/ecommerce/webhooks";
 /*
  * Settings > Integrations > E-commerce (CN-005): the online shops. Everything
  * needs integrations.ecommerce.manage, here and again in the services. Making
- * or rotating a key also needs the PIN; its answer is the only time the key
+ * or rotating a key, and switching a shop on, also need the PIN; its answer is the only time the key
  * and the webhook secret are shown.
  */
 
@@ -51,13 +51,15 @@ export async function updateShopAction(id: string, input: unknown) {
   });
 }
 
-export async function setShopActiveAction(id: string, isActive: boolean) {
+/** Switch off, or Switch on (asks the PIN: the shop's key works again). */
+export async function setShopActiveAction(id: string, isActive: boolean, input: unknown = {}) {
   return runAction(async () => {
     await integrations.setIntegrationActive(
       await manager(),
       id,
       isActive === true,
       await getRequestMeta(),
+      input,
     );
     refresh(id);
     return null;

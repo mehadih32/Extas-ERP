@@ -489,7 +489,23 @@ run("E-commerce API: payments sent again (CN-005 review)", () => {
     expect(res.status).toBe(409);
     expect(res.body.error.code).toBe("ORDER_LOCKED");
     expect(res.body.error.message).toContain("undelivered");
+    // The ERP's own receipt refuses it too: closed with no sale, nothing is owed.
+    const order = await prisma.salesOrder.findFirstOrThrow({
+      where: { externalOrderId: "WEB-1103" },
+    });
+    const refused = await expectAppError(
+      receipts.receivePayment(shop.accounts, { orderId: order.id, amount: 100, method: "CASH" }),
+      "CONFLICT",
+    );
+    expect(refused.message).toContain("undelivered");
     expect(await prisma.payment.count()).toBe(0);
+    // Its due stays 0 when its payments are re-totalled, and Bug Guard finds nothing wrong.
+    const { refreshOrderPayments } = await import("@/modules/sales/posting");
+    await prisma.$transaction((tx) => refreshOrderPayments(tx, order.id));
+    expect(
+      (await prisma.salesOrder.findUniqueOrThrow({ where: { id: order.id } })).dueAmount.toFixed(2),
+    ).toBe("0.00");
+    await expectBooksOk(shop);
   });
 });
 
@@ -1249,6 +1265,31 @@ run("E-commerce API: a website return's credit (CN-005 review)", () => {
     expect(await walkInBalance(shop)).toBe("0.00");
     expect(await orderMoney(order.id)).toMatchObject({ paid: "2900.00", due: "0.00" });
     await expectBooksOk(shop);
+
+    // The refund's entry and its printed voucher open the credit note.
+    const paidBack = await prisma.refund.findFirstOrThrow({
+      where: { salesReturnId: ret.body.erpReturnId },
+    });
+    const { getJournalEntryScreen } = await import("@/modules/accounts/screens.service");
+    const entry = await getJournalEntryScreen(shop.owner, paidBack.journalEntryId!);
+    expect(entry.source?.href).toBe(`/sales/returns/${ret.body.erpReturnId}`);
+    await prisma.generatedDocument.create({
+      data: {
+        companyId: shop.company.id,
+        documentType: "REFUND_VOUCHER",
+        referenceType: "Refund",
+        referenceId: paidBack.id,
+        title: `Refund voucher ${paidBack.number}`,
+      },
+    });
+    const { listDocumentRows } = await import("@/modules/reports/screens.service");
+    const docs = await listDocumentRows(shop.owner, { type: "REFUND_VOUCHER" });
+    expect(docs.items.map((d) => d.source)).toEqual([
+      {
+        href: `/sales/returns/${encodeURIComponent(ret.body.erpReturnId)}`,
+        label: "Open the sales return",
+      },
+    ]);
   });
 
   it("takes a prepaid bKash synced after every piece came back", async () => {

@@ -17,6 +17,7 @@ import { recordPartyActivity } from "@/modules/parties/party.service";
 import { assertNotWalkIn } from "@/modules/parties/walk-in";
 import { createProjectFromProformaTx } from "@/modules/production/project.service";
 import {
+  deliveredPieces,
   ledgerPartyId,
   refreshOrderPayments,
   refreshProformaPayments,
@@ -108,8 +109,9 @@ export async function receivePaymentTx(
     if (!order) throw new AppError("NOT_FOUND", "Order not found.");
     // A website order's return credit can step aside for money paid on it (see above).
     const returnCredit = order.partyId ? money(0) : await returnCreditOnOrder(tx, order.id);
+    const piecesOut = order.status === "RETURNED" ? await deliveredPieces(tx, order.id) : 0;
     assertAllowed(
-      canReceiveOnOrder({ ...order, paidAmount: order.paidAmount.minus(returnCredit) }),
+      canReceiveOnOrder({ ...order, paidAmount: order.paidAmount.minus(returnCredit) }, piecesOut),
     );
     const due = Prisma.Decimal.max(order.total.minus(order.paidAmount), 0);
     const invoice = order.invoice && order.invoice.status !== "VOID" ? order.invoice : null;

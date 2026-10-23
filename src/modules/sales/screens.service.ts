@@ -1092,7 +1092,8 @@ export async function getOrderScreen(ctx: CompanyContext, orderId: string) {
     can: {
       receive:
         access.receive &&
-        canReceiveOnOrder({ ...order, paidAmount: order.paidAmount.minus(returnCredit) }).ok,
+        canReceiveOnOrder({ ...order, paidAmount: order.paidAmount.minus(returnCredit) }, delivered)
+          .ok,
       /**
        * A website order whose return credit pays part of the due: money received may be up
        * to this (the credit then becomes the customer's to pay back); null otherwise.
@@ -1447,7 +1448,7 @@ export async function getInvoiceScreen(ctx: CompanyContext, invoiceId: string) {
         : null,
     },
     can: {
-      receive: access.receive && open && canReceiveOnOrder(order).ok,
+      receive: access.receive && open && canReceiveOnOrder(order, delivered).ok,
       void: access.voidInvoice && voidVerdict.ok,
       /** Record goods coming back on it (Accounts). */
       makeReturn:

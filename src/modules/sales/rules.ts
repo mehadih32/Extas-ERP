@@ -313,11 +313,25 @@ export function canSetShipmentDate(o: Pick<OrderState, "status">): Verdict {
   );
 }
 
-/** Money comes in on an order that is not cancelled, up to what is due. */
+/**
+ * Closed with no sale: a cancelled order, or one that came back undelivered
+ * (a website parcel the courier returned: RETURNED with nothing delivered).
+ * Nothing is due on it and it takes no money. One place for the receipt,
+ * the paid and due figures (posting.ts) and Bug Guard's totals check.
+ */
+export function closedWithNoSale(status: string, deliveredPieces: number): boolean {
+  return status === "CANCELLED" || (status === "RETURNED" && deliveredPieces <= 0);
+}
+
+/** Money comes in on an order that is not closed with no sale, up to what is due. */
 export function canReceiveOnOrder(
   o: Pick<OrderState, "number" | "status"> & { total: Amount; paidAmount: Amount },
+  deliveredPieces: number,
 ): Verdict {
   if (o.status === "CANCELLED") return refuse("CONFLICT", "This order is cancelled.");
+  if (closedWithNoSale(o.status, deliveredPieces)) {
+    return refuse("CONFLICT", `${o.number} came back undelivered, so nothing is owed on it.`);
+  }
   if (dec(o.total).minus(dec(o.paidAmount)).lte(0)) {
     return refuse("CONFLICT", `${o.number} is paid in full.`);
   }

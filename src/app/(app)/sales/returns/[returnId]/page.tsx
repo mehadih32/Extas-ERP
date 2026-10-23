@@ -8,6 +8,7 @@ import { BackLink } from "@/components/settings/back-link";
 import { InvoiceBadge, SalesReturnBadge } from "@/components/sales/badges";
 import { Fact, Panel, RecordHeader, Totals } from "@/components/sales/detail-bits";
 import { money, salesHref } from "@/components/sales/labels";
+import { MoneyRecords } from "@/components/sales/money-records";
 import { SalesNoAccess } from "@/components/sales/no-access";
 import { SalesReturnActions } from "@/components/sales/sales-return-actions";
 import { localDay } from "@/lib/dates";
@@ -245,6 +246,16 @@ export default async function SalesReturnPage({
               </p>
             )}
           </Panel>
+          {screen.paidBack.length > 0 && (
+            <MoneyRecords
+              title="Paid back"
+              headingId="paid-back-heading"
+              payments={[]}
+              refunds={screen.paidBack}
+              currency={currency}
+              empty="Nothing was paid back yet."
+            />
+          )}
           <Panel title="Invoice" id="invoice-heading">
             <dl className="mt-4 grid grid-cols-2 gap-4">
               <Fact label="Number">

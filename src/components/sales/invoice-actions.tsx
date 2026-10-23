@@ -137,6 +137,7 @@ export function InvoiceActions({
         <ReceivePaymentDialog
           target={{ orderId: inv.order.id, label: inv.number }}
           due={inv.due}
+          most={can.receiveUpTo ?? undefined}
           extraAllowed={inv.buyer.id !== null}
           currency={currency}
           today={today}

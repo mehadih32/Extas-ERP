@@ -1461,7 +1461,7 @@ export async function salesReturnDocument(
         kind: "note",
         text: r.partyId
           ? `Credited at the prices billed on invoice ${invoice.number}. This credit stays on the buyer's account and counts against what they owe on later invoices.`
-          : `Credited at the prices billed on invoice ${invoice.number}. A sale without a buyer profile: the credit is kept on the Walk-in customers account.`,
+          : `Credited at the prices billed on invoice ${invoice.number}. A sale without a buyer profile: the credit first pays what the invoice still had due, and the rest is paid back to the customer.`,
       },
       ...(r.voidedAt
         ? [{ kind: "note" as const, text: `Voided: ${r.voidReason ?? "no reason given"}` }]

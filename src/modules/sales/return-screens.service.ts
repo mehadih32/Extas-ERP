@@ -16,7 +16,7 @@ import {
   walkInReturnCredit,
 } from "@/modules/sales/return.service";
 import { canReturnOnInvoice, canVoidSalesReturn, settleKinds } from "@/modules/sales/rules";
-import { salesAccess } from "@/modules/sales/screens.service";
+import { presentRefunds, salesAccess } from "@/modules/sales/screens.service";
 import { money } from "@/modules/sales/totals";
 
 /*
@@ -79,6 +79,24 @@ export async function getSalesReturnScreen(ctx: CompanyContext, returnId: string
   const walkIn =
     !r.partyId && (access.receive || access.openBuyer) ? await walkInReturnCredit(prisma, r) : null;
   const paidBack = live && walkIn !== null && walkIn.paidBack.gt(0);
+  // The refunds that paid it back, each with its voucher and (Accounts) its void.
+  const refunds =
+    walkIn !== null
+      ? await ctx.db.refund.findMany({
+          where: { salesReturnId: r.id },
+          select: {
+            id: true,
+            number: true,
+            kind: true,
+            amount: true,
+            method: true,
+            refundDate: true,
+            reason: true,
+            voidedAt: true,
+          },
+          orderBy: [{ refundDate: "asc" }, { createdAt: "asc" }, { id: "asc" }],
+        })
+      : [];
   const creditUsed = (live && credit !== null && credit.spent) || paidBack;
   const voidable = access.receive && canVoidSalesReturn(r).ok;
   // Pieces it put back into stock must still be there to be taken out again.
@@ -167,6 +185,8 @@ export async function getSalesReturnScreen(ctx: CompanyContext, returnId: string
           left: fixed(walkIn.left),
         }
       : null,
+    /** Refunds of a website return's credit (void ones too), as the order page lists refunds. */
+    paidBack: presentRefunds(ctx, refunds, {}),
     can: {
       void: voidable && !creditUsed && short.length === 0,
       openBuyer: access.openBuyer && r.party !== null,

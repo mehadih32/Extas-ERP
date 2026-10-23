@@ -208,7 +208,8 @@ overwrites a stored total or figure.
 ## 9. Decisions log (newest first)
 
 - 2026-10-23 (CN-005, e-commerce API): online shops call `/api/v1/ecommerce` with their own key (stored only as
-  a hash, shown once; making or changing a key, adding a shop with a webhook address or changing it, or letting more
+  a hash, shown once; making or changing a key, switching a shop back on, adding a shop with a webhook address or
+  changing it, or letting more
   addresses call (a new address on the IP allow-list, or emptying it) needs the PIN; only a Super Admin can give
   the right to connect online shops). Each
   shop acts through its own locked account `shop-<id>@shop.invalid`, which can never sign in or join a team. That

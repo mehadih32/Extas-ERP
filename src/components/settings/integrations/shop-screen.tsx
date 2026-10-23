@@ -48,7 +48,7 @@ import { platformLabel, WEBHOOK_FILTER_OPTIONS, webhookState } from "./shop-labe
  * key" / "Rotate key" ask the PIN and show the key and secret once; "Revoke
  * key" asks first), what to give the shop, "Send test", the webhook log with a
  * filter by status, and the latest API calls. Tables on a laptop, cards on a
- * phone (390, 768, 1366 and 1920 px).
+ * phone and a tablet (390, 768, 1366 and 1920 px).
  */
 
 type Message = { tone: "success" | "error" | "note"; text: string };
@@ -370,7 +370,7 @@ function WebhookLog({ page }: { page: ShopPage }) {
         </p>
       ) : (
         <>
-          <div className="mt-4 hidden md:block">
+          <div className="mt-4 hidden lg:block">
             <Table>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
@@ -412,7 +412,7 @@ function WebhookLog({ page }: { page: ShopPage }) {
               </TableBody>
             </Table>
           </div>
-          <ul className="mt-4 grid gap-3 md:hidden" aria-label="Webhook log">
+          <ul className="mt-4 grid gap-3 lg:hidden" aria-label="Webhook log">
             {rows.map((row) => {
               const state = webhookState(row);
               return (

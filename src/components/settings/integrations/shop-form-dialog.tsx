@@ -69,7 +69,7 @@ export function ShopFormDialog({
       description={
         adding
           ? "Connect the company's own website (or another shop) to the ERP. It gets its key after this, with “Generate key”."
-          : "Changes take effect at once. A new webhook URL hears about changes from now on."
+          : "Changes work at once. With a new webhook URL, the shop hears of changes from now on."
       }
       submitLabel={adding ? "Add the shop" : "Save changes"}
       pendingLabel={adding ? "Adding" : "Saving"}

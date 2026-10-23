@@ -437,11 +437,9 @@ export async function deliver(
   }
 }
 
-type EventRow = Prisma.WebhookEventGetPayload<{ include: { integration: true } }>;
-
 /** Ends an event without a try (processedAt: when it ended, for the housekeeping). */
 async function closeEvent(
-  event: Pick<EventRow, "id">,
+  event: { id: string },
   status: "IGNORED" | "FAILED",
   error: string,
   now: Date,
@@ -464,13 +462,14 @@ export async function runWebhookSendJob(job: BackgroundJob) {
   if (typeof eventId !== "string") return;
   const event = await prisma.webhookEvent.findUnique({
     where: { id: eventId },
-    include: { integration: true },
+    include: { integration: { include: { company: { select: { isActive: true } } } } },
   });
   if (!event || event.direction !== "OUTGOING" || event.status !== "RECEIVED") return;
   const now = new Date();
   const shop = event.integration;
-  if (!shop || !shop.isActive)
+  if (!shop || !shop.isActive || !shop.company.isActive) {
     return closeEvent(event, "IGNORED", "The shop is switched off.", now);
+  }
   if (!shop.webhookUrl) {
     return closeEvent(event, "IGNORED", "The shop has no webhook address.", now);
   }

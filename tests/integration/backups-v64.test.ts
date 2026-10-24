@@ -1057,9 +1057,11 @@ run("v6.4 backups", { timeout: 120_000 }, () => {
     it("is pinned to the running commit and the script's checksum, and holds no secret", async () => {
       expect((await backups.getBackupOverview()).newServer.command).toBeNull();
       await prepareHost(null);
-      await backups.setGoogleClient(owner, {
+      await setPin(ctx, { pin: PIN });
+      await backups.setGoogleClient(ctx, {
         clientId: "owner-client.apps.googleusercontent.com",
         clientSecret: "GOCSPX-the-owners-secret",
+        pin: PIN,
       });
       const { newServer } = await backups.getBackupOverview();
       // Four lines, each but the last ending in "&&": a PDF may copy them as one line or four.

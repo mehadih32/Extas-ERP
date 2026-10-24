@@ -445,9 +445,16 @@ export async function updateBackupConfig(who: Owner, raw: unknown, meta?: Reques
 // Google Drive connection
 // =============================================================================
 
-/** The owner's own Google Cloud client (Backups screen, "Google setup"). */
-export async function setGoogleClient(actor: Actor, raw: unknown, meta?: RequestMeta) {
+/**
+ * The owner's own Google Cloud client (Backups screen, "Use your own Google client
+ * (advanced)"), used instead of the one in the server's settings. It needs the PIN
+ * and tells the owner: a new client ends the Drive connection, and the restore guide
+ * then prints it for a new server.
+ */
+export async function setGoogleClient(who: Owner, raw: unknown, meta?: RequestMeta) {
   const input = googleClientSchema.parse(raw);
+  await lessSafe(who, input.pin, ["change the Google client for backups"]);
+  const actor = actorOf(who);
   const config = await getBackupConfig();
   const changed = config.googleClientId !== input.clientId;
   const updated = await prisma.backupConfig.update({
@@ -469,6 +476,9 @@ export async function setGoogleClient(actor: Actor, raw: unknown, meta?: Request
     entityId: config.id,
     summary: `Set the Google client for backups (${input.clientId})`,
   });
+  await tellLessSafe(who, [
+    `changed the Google client for backups to ${input.clientId}${changed && config.credentialsRef ? ", so Google Drive must be connected again" : ""}`,
+  ]);
   return presentConfig(updated);
 }
 

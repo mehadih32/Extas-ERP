@@ -199,14 +199,15 @@ Until the owner has connected Google Drive and set the recovery key, backups sta
 server, unlocked, and the Backups screen says so. To set it up (the Help Center has the
 same steps in Bengali, under Settings):
 
-1. **Google Cloud, once**: in the [Google Cloud console](https://console.cloud.google.com)
-   make a project, enable the **Google Drive API**, set up the **OAuth consent screen**
-   (External) with the one scope `drive.file`, and press **Publish app** so it is **In
-   production**: while it is in "Testing", Google ends the connection after 7 days. Then
-   under **Credentials** make an **OAuth client ID** of the type **TVs and Limited Input
-   devices**. Paste its ID and secret on the Backups screen ("Save the Google client").
-2. **Connect Google Drive** on the Backups screen: it shows a code to enter at
-   google.com/device on a phone. No web address needs to be registered with Google.
+1. **Extas's Google client, once per server** (an Extas maintainer, not the owner):
+   `sudo ./deploy/set-google-client.sh` puts Extas's one Google client in `deploy/.env`
+   (see "Google Drive backups: the Extas client" below). The owner never opens Google
+   Cloud. (An owner who wants their own Google Cloud client can still give it on the
+   Backups screen, under "Use your own Google client (advanced)", with the PIN.)
+2. **Connect Google Drive** on the Backups screen: it shows a code, with **Copy code** and
+   **Open Google** (google.com/device, on a computer or a phone). Sign in, enter the code,
+   press Allow; the screen notices by itself. No web address needs to be registered with
+   Google. If Google later ends the access, the screen asks to **Reconnect Google Drive**.
 3. **Set the recovery key** with the PIN.
 4. **Cloudflare (optional)**: a token that can only edit DNS for the domain, saved once on
    the Backups screen, so a restore points the web address at the new server by itself and
@@ -248,6 +249,44 @@ database), compares every table's row count and every file's checksum with the b
 manifest, checks every journal entry is balanced, and drops it. The result goes to the
 owner's inbox and Telegram. Without the key in Drive it checks the checksums only, unless
 the owner types the key in **Run drill now**.
+
+## Google Drive backups: the Extas client
+
+For Extas maintainers. Every Extas ERP server copies its backups to its owner's own Google
+Drive with **one Google client that Extas owns**, so no owner ever opens Google Cloud. It is
+the client the one restore command signs in with: the restore guide prints it under "Your
+restore details", and the restore puts it back in `deploy/.env` by itself. That is why it
+must be of the type **TVs and Limited Input devices** (the restore signs in with a code on
+a phone) and why it is never replaced by another kind of client.
+
+**Once, in Google Cloud** (an Extas Google account with 2-Step Verification, a second Extas
+owner on the project; no billing account, no free trial: if Google asks for billing, stop):
+
+1. Make the project **Extas ERP** and enable the **Google Drive API**.
+2. **OAuth consent screen**: External, app name Extas ERP, the one scope `drive.file`, then
+   **Publish app** (In production). In "Testing", Google ends every connection after 7 days.
+3. **Credentials** > **OAuth client ID** of the type **TVs and Limited Input devices**.
+4. For tests and the demo site, a separate project **Extas ERP Demo** with its own client
+   (the demo site does not read `deploy/.env`'s client: give the demo client on the demo's
+   Backups screen, "Use your own Google client (advanced)").
+5. Extas E-commerce uses a project and client of its own, never this one.
+
+**On each server** (once; after a restore nothing is needed):
+
+```bash
+cd /opt/extras-erp && sudo ./deploy/set-google-client.sh
+```
+
+It asks for the client ID and secret with hidden typing (never on the command line, in a
+log or on the screen), writes them in `deploy/.env`, restarts the ERP and locks the backups'
+copy of the settings again. Then the owner presses **Connect Google Drive**. Replacing a
+different client asks first: Google Drive then has to be connected again.
+
+Never put the client in GitHub (the repository is public, and Google's terms forbid
+credentials in open source). Google treats the secret of this kind of client as not truly
+secret (every owner's restore guide prints it); it gives no access to anyone's Drive
+without that person's own sign-in and Allow. Keep the consent screen published and the
+client in place: deleting it stops every server's Drive copies and every restore.
 
 ## Restoring a backup
 

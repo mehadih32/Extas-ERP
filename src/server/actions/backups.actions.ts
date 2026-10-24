@@ -10,6 +10,7 @@ import * as backups from "@/modules/backups/backup.service";
 import * as cloudflare from "@/modules/backups/cloudflare";
 import { setUpGitHubAlert } from "@/modules/backups/github-alert";
 import { listDriveBackups } from "@/modules/backups/drive-copies";
+import { driveStatus } from "@/modules/backups/drive-status";
 import * as keys from "@/modules/backups/recovery-key.service";
 import * as restores from "@/modules/backups/restore.service";
 import { drillNowSchema } from "@/modules/backups/schemas";
@@ -96,8 +97,17 @@ export const listDriveBackupsAction = async () =>
   });
 
 // Google Drive
+/** The owner's own Google client instead of the server's; needs the PIN. */
 export const setGoogleClientAction = async (input: unknown) =>
-  change(async () => backups.setGoogleClient(await owner(), input, await getRequestMeta()));
+  change(async () =>
+    backups.setGoogleClient(await ownerInCompany(), input, await getRequestMeta()),
+  );
+/** The Drive panel's live state: connected (with the free space), Reconnect, or not reached. */
+export const driveStatusAction = async () =>
+  runAction(async () => {
+    await owner();
+    return driveStatus();
+  });
 /** A code for the owner's phone (google.com/device). */
 export const startGoogleSignInAction = async () =>
   change(async () => backups.startGoogleSignIn(await owner(), await getRequestMeta()));

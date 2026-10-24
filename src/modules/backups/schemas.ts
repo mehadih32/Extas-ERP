@@ -60,7 +60,7 @@ export const listBackupRunsSchema = z.object({
   kind: z.enum(["BACKUP", "SAFETY_COPY", "TEST_RESTORE", "RESTORE"]).optional(),
 });
 
-/** The owner's Google Cloud client ("TVs and Limited Input devices"). */
+/** The owner's own Google Cloud client ("TVs and Limited Input devices"), instead of the server's. */
 export const googleClientSchema = z.object({
   clientId: z
     .string()
@@ -70,6 +70,8 @@ export const googleClientSchema = z.object({
       "A client ID ends in .apps.googleusercontent.com",
     ),
   clientSecret: z.string().trim().min(10, "Paste the client secret").max(200),
+  /** The PIN: a new client ends the Drive connection, so it makes backups less safe. */
+  pin: z.string().trim().max(20).optional(),
 });
 
 const pin = z.string().trim().max(20).optional();

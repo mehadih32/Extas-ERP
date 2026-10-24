@@ -32,11 +32,13 @@ import { reach } from "@/lib/reach";
 import { cn } from "@/lib/utils";
 import type { getBackupOverview, presentRun } from "@/modules/backups/backup.service";
 import type { DriveBackup } from "@/modules/backups/drive-copies";
+import type { DriveStatus } from "@/modules/backups/drive-status";
 import { keyStrength } from "@/modules/backups/key-words";
 import {
   checkGoogleSignInAction,
   clearCloudflareAction,
   disconnectGoogleDriveAction,
+  driveStatusAction,
   listDriveBackupsAction,
   recordServerDrillAction,
   requestRestoreAction,
@@ -106,7 +108,7 @@ export function BackupsScreen({ overview }: { overview: Overview }) {
       <StatusPanel overview={overview} notReady={notReady} setMessage={setMessage} />
       <SchedulePanel config={config} setMessage={setMessage} />
       <RecoveryKeyPanel config={config} setMessage={setMessage} />
-      <DrivePanel config={config} setMessage={setMessage} />
+      <DrivePanel config={config} locked={locked} setMessage={setMessage} />
       <CloudflarePanel config={config} setMessage={setMessage} />
       <GitHubAlertPanel config={config} githubRepo={overview.githubRepo} setMessage={setMessage} />
       <DriveBackupsPanel
@@ -1018,17 +1020,32 @@ function RecoveryKeyPanel({ config, setMessage }: PanelProps) {
 // Google Drive
 // =============================================================================
 
-function DrivePanel({ config, setMessage }: PanelProps) {
+function DrivePanel({ config, locked, setMessage }: PanelProps & { locked: boolean }) {
   const [pending, startTransition] = useTransition();
   const [code, setCode] = useState<{
     userCode: string;
     verificationUrl: string;
     interval: number;
   } | null>(null);
-  const [editing, setEditing] = useState(!config.googleDrive.available);
+  const [copied, setCopied] = useState(false);
+  const [ownClient, setOwnClient] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
+  const [status, setStatus] = useState<DriveStatus | null>(null);
+  const { connected, account } = config.googleDrive;
 
-  // While a code is shown, ask every few seconds whether the owner said yes on their phone.
+  // Once connected: is Google still letting the ERP in, and how much room is in the Drive?
+  useEffect(() => {
+    if (!connected) return;
+    let live = true;
+    void driveStatusAction().then((result) => {
+      if (live && result.ok) setStatus(result.data);
+    });
+    return () => {
+      live = false;
+    };
+  }, [connected, account]);
+
+  // While a code is shown, ask every few seconds whether the owner said yes at Google.
   useEffect(() => {
     if (!code) return;
     const timer = setInterval(
@@ -1041,6 +1058,7 @@ function DrivePanel({ config, setMessage }: PanelProps) {
         }
         if (result.data.status === "waiting") return;
         setCode(null);
+        if (result.data.status === "connected") setStatus(null);
         setMessage(
           result.data.status === "connected"
             ? {
@@ -1064,16 +1082,19 @@ function DrivePanel({ config, setMessage }: PanelProps) {
   const connect = () =>
     startTransition(async () => {
       const result = await startGoogleSignInAction();
-      if (result.ok) setCode(result.data);
-      else setMessage({ tone: "error", text: result.error.message });
+      if (result.ok) {
+        setCopied(false);
+        setCode(result.data);
+      } else setMessage({ tone: "error", text: result.error.message });
     });
+  const reconnect = connected && status?.state === "reconnect";
 
   return (
     <Panel
       title="Google Drive"
       id="backups-drive-heading"
       action={
-        config.googleDrive.connected ? (
+        connected ? (
           <Button
             type="button"
             size="sm"
@@ -1092,49 +1113,108 @@ function DrivePanel({ config, setMessage }: PanelProps) {
       }
     >
       <div className="mt-3 grid gap-3 text-sm">
-        {config.googleDrive.connected ? (
+        {connected ? (
           <p className="break-words">
-            Connected to{" "}
-            <span className="font-medium">
-              {config.googleDrive.account ?? "your Google account"}
-            </span>
-            . Backups go to the folder &quot;Extas ERP Backups&quot; in its Drive.
+            Connected to <span className="font-medium">{account ?? "your Google account"}</span>.
+            Backups go to the folder &quot;Extas ERP Backups&quot; in its Drive.
           </p>
         ) : (
           <p className="text-muted-foreground">
             Backups go to your own Google Drive, locked with your recovery key. The ERP can see only
-            the files it makes there.
+            the files it makes there. Use a Google account that no other Extas ERP server backs up
+            to.
           </p>
         )}
-        {code && (
-          <div className="grid gap-2 rounded-md border border-primary/40 bg-primary/5 p-4">
+        {!locked && (
+          <p className="flex items-start gap-2 text-amber-700 dark:text-amber-400">
+            <KeyRoundIcon aria-hidden className="mt-0.5 size-4 shrink-0" />
+            Set your recovery key first (above): backups go to Google Drive only once they are
+            locked with it.
+          </p>
+        )}
+        {status?.state === "connected" && status.freeBytes !== null && status.totalBytes && (
+          <p className="text-muted-foreground">
+            Free in this Drive: {size(status.freeBytes)} of {size(status.totalBytes)}.
+          </p>
+        )}
+        {connected && status?.state === "unreachable" && (
+          <p className="text-muted-foreground">
+            Google Drive could not be reached just now; the ERP tries again by itself.
+          </p>
+        )}
+        {reconnect && !code && (
+          <div className="grid gap-2 rounded-md border border-destructive/50 bg-destructive/5 p-4">
+            <p className="flex items-start gap-2 font-medium text-destructive">
+              <TriangleAlertIcon aria-hidden className="mt-0.5 size-4 shrink-0" />
+              Google ended the ERP&apos;s access to this Drive.
+            </p>
             <p>
-              On your phone, open{" "}
-              <a
-                className="font-medium underline"
-                href={code.verificationUrl}
-                target="_blank"
-                rel="noreferrer"
-              >
-                {code.verificationUrl.replace(/^https:\/\//, "")}
-              </a>{" "}
-              and enter this code:
+              The access was removed or ran out. New backups stay on this server until you
+              reconnect; they go to Drive within the hour after you do.
             </p>
-            <p className="font-mono text-2xl tracking-widest text-primary">{code.userCode}</p>
-            <p className="text-muted-foreground">
-              Then choose your Google account and allow access. This page notices by itself.
-            </p>
+            <div>
+              <Button type="button" size="sm" disabled={pending} onClick={connect}>
+                <RotateCcwIcon aria-hidden />
+                Reconnect Google Drive
+              </Button>
+            </div>
           </div>
         )}
-        {editing || !config.googleDrive.available ? (
-          <GoogleClientForm setMessage={setMessage} onDone={() => setEditing(false)} />
-        ) : (
+        {code && (
+          <div className="grid min-w-0 gap-3 rounded-md border border-primary/40 bg-primary/5 p-4">
+            <ol className="grid list-decimal gap-1 pl-5">
+              <li>Press Open Google (it opens in a new tab), or open the address on your phone.</li>
+              <li>Sign in to your own Google account and enter the code below.</li>
+              <li>Press Allow. This page notices by itself.</li>
+            </ol>
+            <p className="font-mono text-2xl tracking-widest break-all text-primary">
+              {code.userCode}
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  void navigator.clipboard?.writeText(code.userCode);
+                  setCopied(true);
+                }}
+              >
+                <CopyIcon aria-hidden />
+                {copied ? "Copied" : "Copy code"}
+              </Button>
+              <Button asChild size="sm">
+                <a href={code.verificationUrl} target="_blank" rel="noreferrer">
+                  <GlobeIcon aria-hidden />
+                  Open Google
+                </a>
+              </Button>
+              <span className="text-xs break-all text-muted-foreground">
+                {code.verificationUrl.replace(/^https:\/\//, "")}
+              </span>
+            </div>
+          </div>
+        )}
+        {config.googleDrive.available ? (
           <p className="break-all text-muted-foreground">
-            Google client: <span className="font-mono">{config.googleDrive.clientId}</span>{" "}
-            <button type="button" className="underline" onClick={() => setEditing(true)}>
-              Change
-            </button>
+            Google client: <span className="font-mono">{config.googleDrive.clientId}</span>
+            {config.googleDrive.setOnScreen ? " (your own)" : " (set up by Extas on this server)"}
           </p>
+        ) : (
+          <p className="text-muted-foreground">
+            Google Drive is not set up on this server yet. Ask Extas to set it up, or use your own
+            Google client below.
+          </p>
+        )}
+        <div>
+          <button type="button" className="text-left underline" onClick={() => setOwnClient(true)}>
+            {config.googleDrive.setOnScreen
+              ? "Change your own Google client (advanced)"
+              : "Use your own Google client (advanced)"}
+          </button>
+        </div>
+        {ownClient && (
+          <GoogleClientDialog setMessage={setMessage} onDone={() => setOwnClient(false)} />
         )}
       </div>
       {disconnecting && (
@@ -1152,6 +1232,7 @@ function DrivePanel({ config, setMessage }: PanelProps) {
             });
             if (!result.ok) return result.error;
             setDisconnecting(false);
+            setStatus(null);
             setMessage({
               tone: "note",
               text: "Google Drive is disconnected; backups stay on this server only.",
@@ -1170,60 +1251,72 @@ function DrivePanel({ config, setMessage }: PanelProps) {
   );
 }
 
-function GoogleClientForm({ setMessage, onDone }: { setMessage: SetMessage; onDone: () => void }) {
-  const [pending, startTransition] = useTransition();
-  const [errors, setErrors] = useState<Record<string, string[] | undefined>>({});
+function GoogleClientDialog({
+  setMessage,
+  onDone,
+}: {
+  setMessage: SetMessage;
+  onDone: () => void;
+}) {
   return (
-    <form
-      className="grid gap-3 rounded-md border p-4"
-      onSubmit={(event) => {
-        event.preventDefault();
-        const form = new FormData(event.currentTarget);
-        startTransition(async () => {
-          const result = await setGoogleClientAction({
-            clientId: form.get("clientId"),
-            clientSecret: form.get("clientSecret"),
-          });
-          if (result.ok) {
-            setErrors({});
-            setMessage({
-              tone: "success",
-              text: "The Google client is saved. Now press Connect Google Drive.",
-            });
-            onDone();
-          } else {
-            setErrors(result.error.fieldErrors ?? {});
-            setMessage({ tone: "error", text: result.error.message });
-          }
+    <FormDialog
+      title="Your own Google client"
+      description={
+        <>
+          Only if you want your own Google Cloud client instead of the one Extas set up: make one of
+          the type &quot;TVs and Limited Input devices&quot; and paste its ID and secret here. A new
+          client ends the Drive connection (connect again after), and the restore guide then prints
+          your client. The steps are in the{" "}
+          <Link className="underline" href="/help/settings/backups-google-setup">
+            Google setup guide
+          </Link>
+          .
+        </>
+      }
+      submitLabel="Save the Google client"
+      pendingLabel="Saving"
+      errorTitle="The Google client was not saved"
+      onClose={onDone}
+      onSubmit={async (form) => {
+        const result = await setGoogleClientAction({
+          clientId: form.get("clientId"),
+          clientSecret: form.get("clientSecret"),
+          pin: form.get("pin") || undefined,
+        });
+        if (!result.ok) return result.error;
+        onDone();
+        setMessage({
+          tone: "success",
+          text: "The Google client is saved. Now press Connect Google Drive.",
         });
       }}
     >
-      <p className="font-medium">Google setup (once)</p>
-      <p className="text-muted-foreground">
-        Make a Google Cloud client of the type &quot;TVs and Limited Input devices&quot; and paste
-        its ID and secret here. The steps are in the{" "}
-        <Link className="underline" href="/help/settings/backups-google-setup">
-          Google setup guide
-        </Link>
-        .
-      </p>
-      <Field id="google-client-id" label="Client ID" error={errors.clientId?.[0]}>
-        <Input
-          id="google-client-id"
-          name="clientId"
-          autoComplete="off"
-          placeholder="1234-abc.apps.googleusercontent.com"
-        />
-      </Field>
-      <Field id="google-client-secret" label="Client secret" error={errors.clientSecret?.[0]}>
-        <Input id="google-client-secret" name="clientSecret" type="password" autoComplete="off" />
-      </Field>
-      <div>
-        <Button type="submit" size="sm" disabled={pending}>
-          Save the Google client
-        </Button>
-      </div>
-    </form>
+      {(fieldError) => (
+        <>
+          <Field id="google-client-id" label="Client ID" error={fieldError("clientId")}>
+            <Input
+              id="google-client-id"
+              name="clientId"
+              autoComplete="off"
+              placeholder="1234-abc.apps.googleusercontent.com"
+            />
+          </Field>
+          <Field id="google-client-secret" label="Client secret" error={fieldError("clientSecret")}>
+            <Input
+              id="google-client-secret"
+              name="clientSecret"
+              type="password"
+              autoComplete="off"
+            />
+          </Field>
+          <PinField
+            id="google-client-pin"
+            error={fieldError("pin") ?? fieldError("pinNotSet")}
+            hint="Changing the Google client makes backups less safe until Drive is connected again."
+          />
+        </>
+      )}
+    </FormDialog>
   );
 }
 

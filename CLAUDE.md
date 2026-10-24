@@ -207,6 +207,17 @@ overwrites a stored total or figure.
 
 ## 9. Decisions log (newest first)
 
+- 2026-10-24 (Business, Retail and POS plan v6, approved, NOT built yet; start only when the owner says so): the
+  plan is now `docs/business-overview/plan-v6.md`, the website's part `site-changes-v6.md` and the owner's
+  answers `owner-notes-v6.md`; v6 replaces v5 where they differ. The ERP is a separate supplier to each shop: the
+  shop sees only its own buying price, never the ERP's cost or other prices. A shop is billed when the parcel
+  goes to the courier, at the price fixed when the order came. A shop goes on hold when it owes money and 30 days
+  pass after its last payment (any payment restarts the count); exchanges still go through during a hold.
+  Returns are checked within 5 days (reminders on days 5, 7 and 10). An exchange sends the new piece unbilled and,
+  when the old piece is approved, charges only the price difference; a late, missing or declined old piece bills
+  the new piece in full, and a piece from a refused exchange parcel that comes back damaged or missing is the
+  shop's loss. On the switch day, unpaid customer money on old website orders moves to the shop's account as
+  booked (past profit unchanged), and old pieces returned later are credited at the booked price.
 - 2026-10-24 (Business, Retail and POS plan v5, approved, NOT built yet; start only when the owner says so):
   the full plan is `docs/business-overview/plan-v5.md` (Bengali) and the website's part is
   `docs/business-overview/site-changes-v5.md`. Each retail shop is a special wholesale buyer in the buyer list

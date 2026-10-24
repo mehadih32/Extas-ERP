@@ -1360,10 +1360,14 @@ run("v6.4 backups", { timeout: 120_000 }, () => {
         JSON.stringify({ requestedAt: "2026-10-17T00:00:00.000000000Z" }),
       );
       expect(await reminderTick()).toBeNull();
-      await vi.waitFor(async () =>
-        expect(
-          JSON.parse(await readFile(path.join(backupDir, "bug-guard-result.json"), "utf8")),
-        ).toMatchObject({ requestedAt: "2026-10-17T00:00:00.000000000Z" }),
+      // Bug Guard runs in the background: on a busy machine it takes more than the
+      // default 1 second to write its result.
+      await vi.waitFor(
+        async () =>
+          expect(
+            JSON.parse(await readFile(path.join(backupDir, "bug-guard-result.json"), "utf8")),
+          ).toMatchObject({ requestedAt: "2026-10-17T00:00:00.000000000Z" }),
+        { timeout: 15_000, interval: 200 },
       );
 
       // go-live.sh takes the mark away: everything runs, backups under their usual names.

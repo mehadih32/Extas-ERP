@@ -68,6 +68,7 @@ main() {
   echo "Got the client secret (${#secret} characters)."
 
   earlier="$(setting GOOGLE_DRIVE_CLIENT_ID)"
+  earlier="${earlier//[\"\']/}"
   if [ -n "$earlier" ] && [ "$earlier" != "$id" ]; then
     echo "This server already has another Google client (ending in ...${earlier: -30})."
     echo "If Google Drive is connected with it, the Backups screen then asks to Reconnect Google Drive."
@@ -78,7 +79,7 @@ main() {
 
   write_google_client "$id" "$secret"
   say "Saved in deploy/.env. Restarting the ERP with it"
-  compose up -d --no-deps app >/dev/null
+  compose up -d --no-deps --no-build app >/dev/null
   wait_healthy app || die "the ERP did not come back healthy: see sudo ./deploy/logs.sh app"
   if ! lock_settings; then
     echo "Note: the copy of the settings in the backups is locked again at the next update."

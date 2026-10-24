@@ -5,7 +5,7 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { decryptSecret } from "@/lib/crypto";
+import { decryptSecret, encryptSecret } from "@/lib/crypto";
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import { setPin } from "@/modules/ai/settings.service";
@@ -209,6 +209,46 @@ run("Google Drive Connect with the central client (plan v5)", { timeout: 120_000
       expect(JSON.stringify(logged)).not.toContain(PIN);
     });
 
+    it("a sign-in that finishes while a no-PIN start waits on Google is not replaced by it", async () => {
+      // The owner's first Connect completes while another no-PIN start is asking Google.
+      const real = globalThis.fetch;
+      let once = true;
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+        if (once && String(url).includes("/device/code")) {
+          once = false;
+          const config = await getBackupConfig();
+          await prisma.backupConfig.update({
+            where: { id: config.id },
+            data: { credentialsRef: encryptSecret("owners-own-sign-in") },
+          });
+        }
+        return real(url, init);
+      });
+      const error = await expectAppError(startDriveConnect(ctx, {}), "VALIDATION");
+      expect(error.details?.pin).toBeTruthy();
+      const config = await getBackupConfig();
+      expect(config.googleDeviceRef).toBeNull();
+      expect(config.googleDeviceExpiresAt).toBeNull();
+      expect(decryptSecret(config.credentialsRef!)).toBe("owners-own-sign-in");
+    });
+
+    it("tells the owner when Drive is being connected again with the PIN", async () => {
+      await connectDrive();
+      await startDriveConnect(ctx, { pin: PIN });
+      expect(await inbox()).toContain("Google Drive is being connected again");
+      const sent = await prisma.notificationLog.findMany({ where: { userId: owner.userId } });
+      expect(JSON.stringify(sent)).not.toContain(PIN);
+    });
+
+    it("says plainly when this server has no Google client to connect with", async () => {
+      await connectDrive();
+      vi.stubEnv("GOOGLE_DRIVE_CLIENT_ID", "");
+      vi.stubEnv("GOOGLE_DRIVE_CLIENT_SECRET", "");
+      const error = await expectAppError(startDriveConnect(ctx, { pin: PIN }), "UNAVAILABLE");
+      expect(error.message).toMatch(/not set up on this server/);
+      expect(error.message).not.toMatch(/Google setup\)/);
+    });
+
     it("every request path starts a sign-in only through the PIN check", () => {
       const files: string[] = [];
       const walk = (dir: string) => {
@@ -218,10 +258,17 @@ run("Google Drive Connect with the central client (plan v5)", { timeout: 120_000
           else if (/\.tsx?$/.test(name)) files.push(full);
         }
       };
-      for (const dir of ["src/app", "src/server", "src/components", "src/modules/ai"]) {
-        walk(path.join(process.cwd(), dir));
-      }
-      const direct = files.filter((f) => /\bstartGoogleSignIn\(/.test(readFileSync(f, "utf8")));
+      walk(path.join(process.cwd(), "src"));
+      // Only the sign-in itself and the PIN check name it.
+      const allowed = [
+        "src/modules/backups/backup.service.ts",
+        "src/modules/backups/drive-connect.ts",
+      ];
+      const direct = files.filter(
+        (f) =>
+          !allowed.includes(path.relative(process.cwd(), f)) &&
+          /\bstartGoogleSignIn\b/.test(readFileSync(f, "utf8")),
+      );
       expect(direct.map((f) => path.relative(process.cwd(), f))).toEqual([]);
       for (const file of [
         "src/app/api/backups/google/connect/route.ts",

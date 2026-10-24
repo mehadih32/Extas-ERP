@@ -112,6 +112,8 @@ id='${ID}'; secret='${SECRET}'; write_google_client "$id" "$secret"`,
       .filter((l) => /\b(echo|say|die)\b.*\$(secret\b|\{secret\})/.test(l));
     expect(shown).toEqual([]);
     expect(text).toMatch(/printf 'GOOGLE_DRIVE_CLIENT_SECRET=%s\\n' "\$secret"/);
+    // It restarts the app from its image, never building one from the source here.
+    expect(text).toMatch(/compose up -d --no-deps --no-build app/);
     // Its main part runs only when the script is run, not when it is loaded.
     expect(text).toMatch(/if \[ "\$\{BASH_SOURCE\[0\]\}" = "\$0" \]; then\n {2}main "\$@"\nfi/);
   });

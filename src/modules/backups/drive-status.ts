@@ -30,6 +30,9 @@ export async function driveStatus(): Promise<DriveStatus> {
     // ended it: only a new Connect helps.
     if (error instanceof AppError) return { state: "reconnect" };
     if (error instanceof drive.DriveError && error.reconnect) return { state: "reconnect" };
+    // Google's sign-in refused this client (401: the sign-in was made with another
+    // client, as after deploy/set-google-client.sh, or the client is gone).
+    if (error instanceof drive.DriveError && error.status === 401) return { state: "reconnect" };
     return { state: "unreachable" };
   }
   // Signed in, but no Google client to use it with any more.

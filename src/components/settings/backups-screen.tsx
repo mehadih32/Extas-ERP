@@ -1030,6 +1030,7 @@ function DrivePanel({ config, locked, setMessage }: PanelProps & { locked: boole
   const [copied, setCopied] = useState(false);
   const [ownClient, setOwnClient] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
+  const [reconnecting, setReconnecting] = useState(false);
   const [status, setStatus] = useState<DriveStatus | null>(null);
   // Bumped after each Connect, so the state is read again even for the same account.
   const [signIns, setSignIns] = useState(0);
@@ -1131,8 +1132,8 @@ function DrivePanel({ config, locked, setMessage }: PanelProps & { locked: boole
         ) : (
           <p className="text-muted-foreground">
             Backups go to your own Google Drive, locked with your recovery key. The ERP can see only
-            the files it makes there. Use a Google account that no other Extas ERP server backs up
-            to.
+            the files it makes there. Give this ERP a Google account of its own, one that no other
+            Extas ERP server backs up to, so the backups of two servers never mix in one folder.
           </p>
         )}
         {!locked && (
@@ -1167,7 +1168,12 @@ function DrivePanel({ config, locked, setMessage }: PanelProps & { locked: boole
               after you do.
             </p>
             <div>
-              <Button type="button" size="sm" disabled={pending} onClick={connect}>
+              <Button
+                type="button"
+                size="sm"
+                disabled={pending}
+                onClick={() => setReconnecting(true)}
+              >
                 <RotateCcwIcon aria-hidden />
                 Reconnect Google Drive
               </Button>
@@ -1238,6 +1244,30 @@ function DrivePanel({ config, locked, setMessage }: PanelProps & { locked: boole
           <GoogleClientDialog setMessage={setMessage} onDone={() => setOwnClient(false)} />
         )}
       </div>
+      {reconnecting && (
+        <FormDialog
+          title="Reconnect Google Drive"
+          description="This replaces the ERP's Google sign-in, so it needs your PIN. Then sign in with the Google account this server backs up to."
+          submitLabel="Show the code"
+          pendingLabel="Asking Google"
+          errorTitle="Google Drive was not reconnected"
+          onClose={() => setReconnecting(false)}
+          onSubmit={async (form) => {
+            const result = await startGoogleSignInAction({ pin: form.get("pin") || undefined });
+            if (!result.ok) return result.error;
+            setReconnecting(false);
+            setCopied(false);
+            setCode(result.data);
+          }}
+        >
+          {(fieldError) => (
+            <PinField
+              id="drive-reconnect-pin"
+              error={fieldError("pin") ?? fieldError("pinNotSet")}
+            />
+          )}
+        </FormDialog>
+      )}
       {disconnecting && (
         <FormDialog
           destructive

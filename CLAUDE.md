@@ -214,8 +214,11 @@ overwrites a stored total or figure.
   Limited Input devices" (the client the restore guide prints and the restore signs in with), put
   on each server by an Extas maintainer with `deploy/set-google-client.sh`; no Web client, redirect
   or relay. Owners never open Google Cloud; their own client stays possible, with the PIN. One
-  Google account per ERP server. Real disaster recovery counts as working only after the real
-  Google test on a clean Ubuntu 24.04 VPS, with evidence.
+  dedicated Google account per ERP server, said on the Backups screen (no check across servers).
+  A new Google sign-in while Drive is connected (Reconnect, another account) needs the PIN,
+  checked on the server for every request path (`drive-connect.ts`); the first Connect needs
+  none. Real disaster recovery counts as working only after the real Google test on a clean
+  Ubuntu 24.04 VPS, with evidence.
 - 2026-10-23 (CN-005, e-commerce API): online shops call `/api/v1/ecommerce` with their own key (stored only as a
   hash, shown once; making or changing a key, switching a shop back on, adding a shop with a webhook address or
   changing it, or letting more addresses call (a new address on the IP allow-list, or emptying it) needs the PIN;

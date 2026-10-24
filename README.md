@@ -2440,8 +2440,7 @@ platform) only. Every download is recorded in the audit log.
 | `GET/PATCH /api/backups/settings`                                   | Schedule, retention, media, on/off, pg_dump check   |
 | `GET/POST /api/backups/runs`, `GET …/:id`                           | Backup history / back up now (202, poll for result) |
 | `GET /api/backups/runs/:id/download?file=database\|media\|manifest` | Download a file to a PC                             |
-| `GET /api/backups/google/connect`, `POST …/disconnect`              | Connect or disconnect Google Drive                  |
-| `GET /api/backups/google/callback`                                  | Where Google sends the owner back                   |
+| `POST/GET /api/backups/google/connect`, `POST …/disconnect`         | Connect (a code; PIN if connected) or disconnect    |
 
 **Server setup.**
 
@@ -2452,12 +2451,14 @@ platform) only. Every download is recorded in the audit log.
   whether `pg_dump` was found.
 - The schedule runs in production and not in development; set
   `BACKUP_SCHEDULER=on` or `off` to choose.
-- Google Drive: in Google Cloud console, enable the Google Drive API and create an OAuth
-  client of type "Web application" with the authorised redirect URI
-  `<APP_URL>/api/backups/google/callback`. Put its ID and secret in
-  `GOOGLE_DRIVE_CLIENT_ID` and `GOOGLE_DRIVE_CLIENT_SECRET`, and set `ENCRYPTION_KEY`
-  (`openssl rand -base64 32`), which seals the stored Google connection. The owner then
-  connects their Google account once. The app only sees the files it creates (the
+- Google Drive: an Extas maintainer puts Extas's one Google client (an OAuth client of
+  the type "TVs and Limited Input devices", the one the restore guide prints) in
+  `GOOGLE_DRIVE_CLIENT_ID` and `GOOGLE_DRIVE_CLIENT_SECRET` with
+  `sudo ./deploy/set-google-client.sh` (see [`deploy/README.md`](./deploy/README.md),
+  "Google Drive backups: the Extas client"); never a "Web application" client or a
+  redirect. `ENCRYPTION_KEY` (`openssl rand -base64 32`) seals the stored Google
+  connection. The owner then presses Connect Google Drive and enters a code at Google;
+  connecting again while connected needs the PIN. The app only sees the files it creates (the
   `drive.file` scope), and backups use that account's storage. Changing `ENCRYPTION_KEY`
   means connecting Google Drive again.
 

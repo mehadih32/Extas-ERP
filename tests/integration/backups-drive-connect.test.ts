@@ -1,3 +1,4 @@
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -12,6 +13,7 @@ import type { CompanyContext } from "@/modules/auth/context";
 import { getBackupConfig, googleClient } from "@/modules/backups/backup-core";
 import * as backups from "@/modules/backups/backup.service";
 import { disk } from "@/modules/backups/disk";
+import { startDriveConnect } from "@/modules/backups/drive-connect";
 import { sendUnsent } from "@/modules/backups/drive-copies";
 import { driveStatus } from "@/modules/backups/drive-status";
 import { downloadGuide } from "@/modules/backups/guide.service";
@@ -166,6 +168,69 @@ run("Google Drive Connect with the central client (plan v5)", { timeout: 120_000
       await connectDrive();
       await backups.setGoogleClient(ctx, { ...input, pin: PIN });
       expect((await getBackupConfig()).credentialsRef).not.toBeNull();
+    });
+  });
+
+  describe("connecting another Google account needs the PIN (owner's decision, 2026-10-24)", () => {
+    const deviceCodes = () => google.requests.filter((r) => r.includes("/device/code")).length;
+
+    it("the first Connect needs no PIN", async () => {
+      const code = await startDriveConnect(ctx, {});
+      expect(code.userCode).toBeTruthy();
+      expect((await backups.checkGoogleSignIn(owner)).status).toBe("connected");
+    });
+
+    it("while Drive is connected, a new sign-in is refused without the right PIN, and nothing starts", async () => {
+      await connectDrive();
+      const before = await getBackupConfig();
+      const asked = deviceCodes();
+      const without = await expectAppError(startDriveConnect(ctx, {}), "VALIDATION");
+      expect(without.details?.pin).toBeTruthy();
+      const wrong = await expectAppError(startDriveConnect(ctx, { pin: "1111" }), "VALIDATION");
+      expect(wrong.details?.pin).toEqual(["The PIN is not right"]);
+      // Outside a company there is no PIN to check: refused.
+      await expectAppError(startDriveConnect(owner, { pin: PIN }), "FORBIDDEN");
+      expect(deviceCodes()).toBe(asked);
+      const after = await getBackupConfig();
+      expect(after.googleDeviceRef).toBe(before.googleDeviceRef);
+      expect(after.credentialsRef).toBe(before.credentialsRef);
+    });
+
+    it("Reconnect after Google ended the access needs the PIN too, then connects again", async () => {
+      await connectDrive();
+      google.refreshTokens.clear();
+      expect(await driveStatus()).toEqual({ state: "reconnect" });
+      await expectAppError(startDriveConnect(ctx, {}), "VALIDATION");
+      const code = await startDriveConnect(ctx, { pin: PIN });
+      expect(code.userCode).toBeTruthy();
+      expect((await backups.checkGoogleSignIn(owner)).status).toBe("connected");
+      expect((await driveStatus()).state).toBe("connected");
+      const logged = await prisma.auditLog.findMany({ where: { entityType: "BackupConfig" } });
+      expect(JSON.stringify(logged)).not.toContain(PIN);
+    });
+
+    it("every request path starts a sign-in only through the PIN check", () => {
+      const files: string[] = [];
+      const walk = (dir: string) => {
+        for (const name of readdirSync(dir)) {
+          const full = path.join(dir, name);
+          if (statSync(full).isDirectory()) walk(full);
+          else if (/\.tsx?$/.test(name)) files.push(full);
+        }
+      };
+      for (const dir of ["src/app", "src/server", "src/components", "src/modules/ai"]) {
+        walk(path.join(process.cwd(), dir));
+      }
+      const direct = files.filter((f) => /\bstartGoogleSignIn\(/.test(readFileSync(f, "utf8")));
+      expect(direct.map((f) => path.relative(process.cwd(), f))).toEqual([]);
+      for (const file of [
+        "src/app/api/backups/google/connect/route.ts",
+        "src/server/actions/backups.actions.ts",
+      ]) {
+        expect(readFileSync(path.join(process.cwd(), file), "utf8")).toContain(
+          "startDriveConnect(",
+        );
+      }
     });
   });
 

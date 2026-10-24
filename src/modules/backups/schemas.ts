@@ -53,6 +53,8 @@ export const backupConfigSchema = z
 
 /** Disconnecting Google Drive needs the owner's PIN (G12). */
 export const disconnectDriveSchema = z.object({ pin: z.string().trim().max(20).optional() });
+/** Connecting again while Drive is connected replaces the sign-in: the PIN. */
+export const connectDriveSchema = z.object({ pin: z.string().trim().max(20).optional() });
 
 export const listBackupRunsSchema = z.object({
   cursor: z.string().optional(),

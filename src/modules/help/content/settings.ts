@@ -1421,79 +1421,78 @@ export const settingsHelp: HelpSection = {
     },
     {
       slug: "backups-google-setup",
-      title: "ব্যাকআপের জন্য Google-এর এককালীন সেটআপ যেভাবে করবেন",
+      title: "নিজের Google ক্লায়েন্ট দিয়ে ব্যাকআপ (অ্যাডভান্সড, সাধারণত লাগে না)",
       summary:
-        "Google Cloud-এ একবার একটি ক্লায়েন্ট বানানো, যাতে ERP শুধু নিজের বানানো ব্যাকআপ ফাইলগুলো আপনার Google Drive-এ রাখতে পারে।",
+        "সাধারণত Google Cloud-এ কিছুই করতে হয় না: Extas সার্ভারে নিজের Google ক্লায়েন্ট রেখে দেয়। শুধু নিজের Google Cloud ক্লায়েন্ট চাইলে এই গাইড, PIN দিয়ে।",
       keywords: [
         "google setup",
         "google cloud",
         "client id",
         "client secret",
+        "own client",
+        "advanced",
         "drive.file",
-        "in production",
         "tv client",
         "গুগল সেটআপ",
         "গুগল ড্রাইভ",
-        "ক্লায়েন্ট",
+        "নিজের ক্লায়েন্ট",
       ],
       routes: ["/settings/backups"],
       who: "শুধু প্ল্যাটফর্মের মালিক (সব কোম্পানির মালিক Super Admin)।",
       what: [
-        "“Settings” > “Backups” পাতার “Google Drive” অংশে এই কাজটি একবারই করতে হয়।",
-        "ERP যাতে আপনার নিজের Google Drive-এ ব্যাকআপ রাখতে পারে, তার জন্য Google Cloud-এ আপনার নামে একটি ক্লায়েন্ট বানাতে হয়।",
-        "ক্লায়েন্ট না থাকলে অংশটিতে “Google setup (once)” ফর্ম দেখায়: “Client ID” আর “Client secret” ঘর, আর “Save the Google client” বোতাম।",
-        "ক্লায়েন্ট সেভ হলে ফর্মের জায়গায় “Google client” লাইনে তার ID আর পাশে “Change” দেখায়, আর অংশের উপরে “Connect Google Drive” বোতাম আসে।",
+        "Google Drive-এ ব্যাকআপ রাখতে ERP-র একটি Google ক্লায়েন্ট লাগে। সাধারণত Extas সেটি সার্ভারে আগেই রেখে দেয়, তাই আপনাকে Google Cloud খুলতে হয় না: শুধু “Connect Google Drive” চাপুন (ব্যাকআপ চালু করার গাইড)।",
+        "“Google Drive” অংশের “Google client” লাইনে লেখা থাকে কোন ক্লায়েন্ট চলছে: Extas-এর হলে পাশে set up by Extas on this server, নিজের হলে your own।",
+        "নিজের Google Cloud ক্লায়েন্ট চাইলে “Use your own Google client (advanced)” চাপুন: “Your own Google client” জানালায় “Client ID”, “Client secret” আর “PIN” দিয়ে “Save the Google client” চাপুন।",
         "ক্লায়েন্টটি শুধু drive.file অনুমতি চায়: ERP Drive-এ নিজে যে ফাইল বানায় শুধু সেগুলো দেখতে পারে, আপনার Drive-এর অন্য কোনো ফাইল নয়।",
       ],
-      why: "সার্ভার একটি ভাড়া করা কম্পিউটার; তার ডিস্ক নষ্ট হতে পারে, Azure অ্যাকাউন্টে সমস্যা হতে পারে। তখন শুধু সার্ভারে রাখা ব্যাকআপও তার সঙ্গে হারায়। ধরুন বড় শিপমেন্টের সপ্তাহে সার্ভার বন্ধ হয়ে গেল, আর ইউরোপের বায়ারের 12,000 পিস পোলোর কমার্শিয়াল ইনভয়েস, প্যাকিং লিস্ট আর LC-র কাগজ সব ERP-তে: Drive-এ তালা দেওয়া কপি থাকলে নতুন সার্ভারে সব ফিরে আসে। এই সেটআপ একবার করলেই প্রতিটি ব্যাকআপ নিজে Drive-এ যায়, আর একই ক্লায়েন্ট দিয়ে নতুন সার্ভারও Drive থেকে ব্যাকআপ নামায়।",
+      why: "যে ক্লায়েন্ট দিয়ে ERP ব্যাকআপ Drive-এ রাখে, রিস্টোর গাইডের “Your restore details”-এ ঠিক সেটিই ছাপা থাকে, আর নতুন সার্ভার সেটি দিয়েই Drive থেকে ব্যাকআপ নামায়। তাই ক্লায়েন্ট বদলানো বড় ব্যাপার: Drive-এর সংযোগ কেটে যায়, আর পুরোনো গাইড দিয়ে নতুন ব্যাকআপ খোলে না। ধরুন কেউ আপনার সেশন চুরি করে নিজের ক্লায়েন্ট বসিয়ে দিল: শিপমেন্টের সপ্তাহে ব্যাকআপ চুপচাপ Drive-এ যাওয়া বন্ধ হতো। তাই ক্লায়েন্ট বদলাতে PIN লাগে, আর ইনবক্সে ও Telegram-এ বার্তা আসে।",
       steps: [
         {
-          text: "কম্পিউটারে console.cloud.google.com খুলে যে Google অ্যাকাউন্টে ব্যাকআপ রাখবেন সেটি দিয়ে ঢুকুন। উপরের প্রজেক্ট তালিকা থেকে নতুন প্রজেক্ট বানান, নাম দিন Extas ERP Backups।",
+          text: "আগে ভাবুন সত্যিই নিজের ক্লায়েন্ট লাগবে কি না। “Google client” লাইনে set up by Extas on this server লেখা থাকলে কিছু করার নেই: “Connect Google Drive” চাপলেই হয়।",
         },
         {
-          text: "বাম মেনুর APIs and Services > Library-তে গিয়ে Google Drive API খুঁজে Enable চাপুন।",
+          text: "নিজের ক্লায়েন্ট চাইলে কম্পিউটারে console.cloud.google.com-এ নিজের Google অ্যাকাউন্টে একটি প্রজেক্ট বানান, Google Drive API চালু করুন, OAuth consent screen-এ শুধু drive.file স্কোপ দিয়ে Publish app চেপে In production করুন। তারপর Credentials-এ “TVs and Limited Input devices” ধরনের OAuth client ID বানান।",
         },
         {
-          text: "APIs and Services > OAuth consent screen খুলুন। User type: External, অ্যাপের নাম Extas ERP, আপনার ইমেইল দিন। Scopes-এ শুধু একটি স্কোপ যোগ করুন: drive.file (অ্যাপ নিজে যে ফাইল বানায় শুধু সেগুলো)। এর বেশি কোনো স্কোপ দেবেন না।",
-        },
-        {
-          text: "একই পাতায় Publishing status-এ Publish app চেপে অ্যাপটিকে In production করুন। Testing অবস্থায় থাকলে Google 7 দিন পর সংযোগ কেটে দেয় এবং ব্যাকআপ Drive-এ যাওয়া বন্ধ হয়ে যায়।",
-        },
-        {
-          text: "APIs and Services > Credentials > Create credentials > OAuth client ID চাপুন। Application type হিসেবে “TVs and Limited Input devices” বেছে নিন, নাম দিন Extas ERP, তারপর Create চাপুন।",
-        },
-        {
-          text: "যে Client ID ও Client secret দেখাবে তা কপি করুন। ERP-তে “Settings” > “Backups” খুলে “Google Drive” অংশে “Client ID” ও “Client secret” ঘরে বসিয়ে “Save the Google client” চাপুন।",
+          text: "ERP-তে “Settings” > “Backups” খুলে “Google Drive” অংশে “Use your own Google client (advanced)” চাপুন। “Your own Google client” জানালায় “Client ID” আর “Client secret” বসান, “PIN” দিন, তারপর “Save the Google client” চাপুন।",
           image: {
             id: "backups-google-setup-1",
             caption:
-              "“Google Drive” অংশে “Client ID”, “Client secret” ও “Save the Google client” বোতাম",
+              "“Use your own Google client (advanced)” খুললে “Client ID”, “Client secret”, “PIN” ও “Save the Google client”",
           },
         },
         {
-          text: "সেভ হলে ফর্মটি সরে যায়, তার জায়গায় “Google client” লাইনে ক্লায়েন্টের ID দেখায়, আর অংশের উপরে “Connect Google Drive” বোতাম আসে। এবার ফোনে কোড দিয়ে Drive যুক্ত করুন; ধাপগুলো পরের গাইডে (ব্যাকআপ চালু করা) আছে।",
+          text: "সেভ হলে “Google client” লাইনে আপনার ক্লায়েন্টের ID আর your own দেখায়। নতুন ক্লায়েন্টে আগের সংযোগ চলে না, তাই আবার “Connect Google Drive” চাপুন। এরপর থেকে রিস্টোর গাইডে আপনার ক্লায়েন্টই ছাপা থাকে।",
         },
         {
-          text: "পরে অন্য ক্লায়েন্ট দিতে চাইলে “Google client” লাইনের পাশে “Change” চাপুন, নতুন “Client ID” ও “Client secret” দিয়ে “Save the Google client” চাপুন। ID বদলালে Google-এর আগের অনুমতি আর খাটে না: Drive-এর সংযোগ কেটে যায়, তাই আবার “Connect Google Drive” চাপুন।",
+          text: "পরে আবার বদলাতে “Change your own Google client (advanced)” চাপুন, নতুন ID, secret আর PIN দিয়ে “Save the Google client” চাপুন।",
         },
       ],
       tips: [
-        "অ্যাপ যাচাই (verification) চাইলে চিন্তা করবেন না: drive.file স্কোপের জন্য Google সাধারণত যাচাই চায় না। প্রথমবার সাইন ইনে “Google hasn't verified this app” লেখা এলে নিচের “Advanced” চাপুন, তারপর “Go to Extas ERP (unsafe)” চাপুন, তারপর “Continue”। অ্যাপটি আপনার নিজের, তাই এটি নিরাপদ।",
-        "এই একই ক্লায়েন্ট নতুন সার্ভারেও কাজে লাগে: “Download the restore guide” দিয়ে নামানো রিস্টোর গাইডে এর Client ID ও Client secret লেখা থাকে, নতুন সার্ভার সেগুলো জিজ্ঞেস করে। তাই ক্লায়েন্টটি মুছবেন না।",
-        "Client secret কাউকে পাঠাবেন না; এটি ERP-তে তালা দিয়ে রাখা হয় এবং আর পুরোটা দেখানো হয় না।",
+        "বেশিরভাগ ক্ষেত্রে নিজের ক্লায়েন্ট লাগে না। Extas-এর ক্লায়েন্টও শুধু drive.file চায়, আর আপনার Google অ্যাকাউন্টে আপনার অনুমতি ছাড়া কেউ ঢুকতে পারে না।",
+        "নিজের ক্লায়েন্ট দিলে সেটি Google Cloud থেকে মুছবেন না: রিস্টোর গাইড সেটিই দেখায়, মুছলে নতুন সার্ভার Drive-এ ঢুকতে পারে না।",
+        "Client secret কাউকে পাঠাবেন না; এটি ERP-তে তালা দিয়ে রাখা হয় এবং পাতায় আর কখনো দেখায় না।",
       ],
       fields: [
         {
-          label: "Google Drive",
-          text: "“Backups” পাতার এই অংশে Google ক্লায়েন্ট আর Drive-এর সংযোগ থাকে। ক্লায়েন্ট না থাকলে এখানে “Google setup (once)” ফর্ম দেখায়; ক্লায়েন্ট থাকলে উপরে “Connect Google Drive”, আর Drive যুক্ত হলে কোন Google অ্যাকাউন্টে যুক্ত তা আর “Disconnect”।",
+          label: "Google client",
+          text: "যে ক্লায়েন্ট চলছে তার ID (secret কখনো দেখায় না)। পাশে set up by Extas on this server মানে Extas-এর রাখা ক্লায়েন্ট; your own মানে আপনার দেওয়া।",
         },
         {
-          label: "Google setup (once)",
-          text: "ক্লায়েন্ট দেওয়ার ফর্ম, একবারই লাগে। Google Cloud-এ “TVs and Limited Input devices” ধরনের ক্লায়েন্ট বানিয়ে তার ID আর secret এখানে দিন।",
+          label: "Use your own Google client (advanced)",
+          text: "নিজের Google Cloud ক্লায়েন্ট দেওয়ার জানালা খোলে। সাধারণত লাগে না; না চাইলে জানালায় “Cancel” চাপুন।",
+        },
+        {
+          label: "Change your own Google client (advanced)",
+          text: "নিজের ক্লায়েন্ট আগে দেওয়া থাকলে এই নামে আসে: অন্য ক্লায়েন্ট দেওয়ার একই জানালা খোলে।",
+        },
+        {
+          label: "Your own Google client",
+          text: "জানালার শিরোনাম। এখানে “TVs and Limited Input devices” ধরনের ক্লায়েন্টের ID আর secret দিন।",
         },
         {
           label: "Google setup guide",
-          text: "ফর্মের লেখার ভেতরের লিংক: এই গাইডটিই খোলে, ধাপগুলো দেখতে।",
+          text: "জানালার লেখার ভেতরের লিংক: এই গাইডটিই খোলে।",
         },
         {
           label: "Client ID",
@@ -1505,24 +1504,17 @@ export const settingsHelp: HelpSection = {
         },
         {
           label: "Save the Google client",
-          text: "দুটি ঘর সেভ করে। ভুল থাকলে ঘরের নিচে বলে, কিছু সেভ হয় না। সেভ হলে উপরে সবুজ লেখায় বলে এবার “Connect Google Drive” চাপতে। অডিট লগে আপনার নামে থাকে।",
-        },
-        {
-          label: "Google client",
-          text: "সেভ করা ক্লায়েন্টের ID (secret কখনো দেখায় না), যাতে বুঝতে পারেন কোনটি চলছে।",
-        },
-        {
-          label: "Change",
-          text: "ক্লায়েন্টের ফর্ম আবার খোলে, নতুন ID আর secret দিতে (যেমন Google Cloud-এ নতুন ক্লায়েন্ট বানালে)। ID বদলালে Drive-এর সংযোগ কেটে যায়; আবার “Connect Google Drive” চাপুন।",
+          text: "PIN মিললে ক্লায়েন্ট সেভ করে, ইনবক্সে ও Telegram-এ Backups made less safe বার্তা পাঠায় আর অডিট লগে আপনার নামে রাখে। PIN না দিলে বা ভুল হলে কিছুই বদলায় না। সেভ হলে সবুজ লেখায় বলে এবার “Connect Google Drive” চাপতে।",
         },
       ],
-      next: "ক্লায়েন্ট সেভ হলে “Connect Google Drive” বোতাম আসে: ফোনে কোড দিয়ে Drive যুক্ত করুন, তারপর রিকভারি কী ঠিক করুন (পরের গাইড)। এরপর প্রতিটি তালা দেওয়া ব্যাকআপ Drive-এর “Extas ERP Backups” ফোল্ডারে যায়। একই ক্লায়েন্টের ID আর secret রিস্টোর গাইডের “Your restore details”-এ ছাপা থাকে: নতুন সার্ভার এ দিয়েই Drive-এ ঢোকে।",
+      next: "নতুন ক্লায়েন্ট সেভ হলে Drive-এর সংযোগ কেটে যায়: “Connect Google Drive” চেপে আবার যুক্ত করুন। এরপর প্রতিটি তালা দেওয়া ব্যাকআপ Drive-এর “Extas ERP Backups” ফোল্ডারে যায়, আর রিস্টোর গাইডের “Your restore details”-এ এই ক্লায়েন্টই ছাপা থাকে।",
       mistakes: [
-        "OAuth consent screen Testing অবস্থায় রেখে দেওয়া: 7 দিন পর সংযোগ কেটে যায়, ব্যাকআপ Drive-এ যাওয়া থামে। Publish app চেপে In production করুন।",
-        "ভুল ধরনের ক্লায়েন্ট (যেমন Web application) বানানো: ফোনে কোড দিয়ে সংযোগ কাজ করে না। “TVs and Limited Input devices” বাছুন।",
-        "drive.file ছাড়া বাড়তি স্কোপ দেওয়া: দরকার নেই, আর Google তখন যাচাই চাইতে পারে।",
-        "Google Cloud থেকে ক্লায়েন্ট মুছে ফেলা: তখন ব্যাকআপ Drive-এ যায় না, আর নতুন সার্ভারও Drive-এ ঢুকতে পারে না।",
+        "দরকার ছাড়াই নিজের ক্লায়েন্ট দেওয়া: Extas-এর ক্লায়েন্ট থাকলে এর কোনো দরকার নেই, আর ভুল হলে ব্যাকআপ Drive-এ যাওয়া থামে।",
+        "OAuth consent screen Testing অবস্থায় রেখে দেওয়া: 7 দিন পর সংযোগ কেটে যায়। Publish app চেপে In production করুন।",
+        "ভুল ধরনের ক্লায়েন্ট (যেমন Web application) বানানো: কোড দিয়ে সংযোগ আর রিস্টোর কোনোটাই কাজ করে না। “TVs and Limited Input devices” বাছুন।",
+        "নিজের ক্লায়েন্ট দেওয়ার পর পুরোনো রিস্টোর গাইড রেখে দেওয়া: নতুন গাইড নামিয়ে রাখুন (“Download the restore guide”), কারণ তাতে নতুন ক্লায়েন্ট ছাপা থাকে।",
       ],
+      shot: { open: "Use your own Google client (advanced)" },
     },
     {
       slug: "backups-drive-key",
@@ -1577,7 +1569,7 @@ export const settingsHelp: HelpSection = {
           text: "একই জানালায় “Keep my recovery key in Google Drive” টিক দেওয়া থাকে। চালু থাকলে আপনার কী Google Drive-এর ব্যাকআপ ফোল্ডারে রিস্টোর গাইডের ভেতরে থাকে, তাই নতুন সার্ভারে রিস্টোরের সময় কী নিজে থেকেই বসে যায়, টাইপ করতে হয় না। সেক্ষেত্রে ওই Google অ্যাকাউন্টে 2-Step Verification অবশ্যই চালু রাখুন।",
         },
         {
-          text: "“Google Drive” অংশে “Connect Google Drive” চাপুন। একটি কোড দেখাবে। ফোনে google.com/device খুলে কোডটি লিখুন, তারপর নিজের Google অ্যাকাউন্ট বেছে অনুমতি দিন। পাতাটি নিজেই বুঝে নেয়। কী ঠিক করার সময় Drive যুক্ত না থাকলে, পরে “Put my key in Google Drive” চেপে কী একবার লিখে দিন।",
+          text: "“Google Drive” অংশে “Connect Google Drive” চাপুন। একটি কোড দেখায়। “Copy code” চেপে কোডটি কপি করুন, তারপর “Open Google” চাপুন: নতুন ট্যাবে Google-এর পাতা খোলে (চাইলে ফোনে google.com/device খুলেও হয়)। নিজের Google অ্যাকাউন্টে ঢুকে কোডটি বসান আর অনুমতি দিন (Allow)। পাতাটি নিজেই বুঝে নেয় আর লেখে কোন অ্যাকাউন্টে যুক্ত হলো। Google Cloud-এ কিছু করতে হয় না। কী ঠিক করার সময় Drive যুক্ত না থাকলে, পরে “Put my key in Google Drive” চেপে কী একবার লিখে দিন।",
           image: {
             id: "backups-drive-key-3",
             caption: "ফোনে দেওয়ার জন্য Google সাইন-ইন কোড",
@@ -1609,6 +1601,9 @@ export const settingsHelp: HelpSection = {
         {
           text: "Drive-এর সংযোগ কাটতে “Google Drive” অংশে “Disconnect” চাপুন। “Disconnect Google Drive” জানালায় PIN দিয়ে আবার “Disconnect” চাপুন। Drive-এ থাকা ব্যাকআপ মোছে না, কিন্তু নতুন ব্যাকআপ তখন শুধু এই সার্ভারে থাকে, আর ইনবক্সে ও Telegram-এ Backups made less safe বার্তা আসে। আবার যুক্ত করতে “Connect Google Drive” চাপুন।",
         },
+        {
+          text: "Google যদি ERP-র অনুমতি শেষ করে দেয় (যেমন myaccount.google.com-এ কেউ অনুমতি সরিয়ে দিল, বা Extas সার্ভারের Google ক্লায়েন্ট বদলাল), “Google Drive” অংশে লাল ঘরে বলে Google ended the ERP's access to this Drive, সঙ্গে “Reconnect Google Drive” বোতাম। চাপুন, জানালায় PIN দিয়ে “Show the code” চাপুন, তারপর আগের মতো কোড দিয়ে অনুমতি দিন। এই সার্ভার যে Google অ্যাকাউন্টে ব্যাকআপ রাখে, সেটিতেই সাইন ইন করুন। এর মধ্যে নতুন ব্যাকআপ সার্ভারে থাকে, যুক্ত হওয়ার এক ঘণ্টার মধ্যে Drive-এ চলে যায়।",
+        },
       ],
       tips: [
         "প্রতিটি ব্যাকআপে সব থাকে: পুরো ডাটাবেস, আপলোড ও তৈরি করা সব ফাইল, সার্ভারের সব সেটিংস (তালা দেওয়া), আর ঠিক সেই সংস্করণের কোড। সঙ্গে একটি তালিকা থাকে: প্রতিটি টেবিলে কতগুলো রেকর্ড আর প্রতিটি ফাইলের চেকসাম, যাতে রিস্টোরের পর মিলিয়ে দেখা যায় সব ফিরেছে কি না।",
@@ -1618,6 +1613,8 @@ export const settingsHelp: HelpSection = {
         "ব্যাকআপ ব্যর্থ হলে, সময়মতো শুরু না হলে বা Drive-এ না গেলে ERP-র ইনবক্সে ও Telegram-এ সতর্কবার্তা আসে, একই সমস্যার জন্য একবারই। সব আবার ঠিক হলে Backups are working again বার্তা আসে।",
         "প্রতিটি ব্যাকআপের আগে ERP দেখে সার্ভারের ডিস্কে জায়গা আছে কি না: শেষ ব্যাকআপের দ্বিগুণ আর আরও 1 GB। না থাকলে ব্যাকআপটি বাদ যায় (আধা লেখা ব্যাকআপে ডিস্ক ভরে না), “Last backup”-এ Skipped লেখা আসে আর একবার সতর্কবার্তা আসে। জায়গা খালি করুন, যেমন “Keep on this server” কমিয়ে; পরের সময়ে ব্যাকআপ নিজে চলে। মাসিক মহড়াও একইভাবে জায়গা না থাকলে বাদ যায় আর জানায়।",
         "“Take my key out of Google Drive” শুধু ERP-র নিজের বানানো কী-র ফাইল মোছে আর গাইড কী ছাড়া নতুন করে বানায়; আপনার নিজের রাখা কোনো ফাইলে ERP হাত দেয় না।",
+        "Drive যুক্ত থাকলে “Google Drive” অংশে লেখা থাকে Drive-এ কত জায়গা খালি আছে (Google জানালে; সীমাহীন Drive-এ এই লাইন আসে না)। জায়গা কমে এলে Google-এ জায়গা খালি করুন বা “Keep in Google Drive for (days)” কমান।",
+        "প্রতিটি ERP সার্ভারের জন্য আলাদা একটি Google অ্যাকাউন্ট রাখুন, যেটিতে অন্য কোনো Extas ERP সার্ভার ব্যাকআপ রাখে না। দুটি সার্ভার একই অ্যাকাউন্টে রাখলে দুটোর ব্যাকআপ একই ফোল্ডারে মিশে যায়, রিস্টোরের সময় ভুল সার্ভারের ব্যাকআপ বেছে ফেলার ভয় থাকে, আর কোনটি কোন সার্ভারের তা বোঝা কঠিন হয়।",
       ],
       fields: [
         {
@@ -1790,7 +1787,7 @@ export const settingsHelp: HelpSection = {
         },
         {
           label: "PIN",
-          text: "যে কোম্পানিতে এখন কাজ করছেন তার PIN (4 থেকে 8 অঙ্ক)। কী ঠিক করা, বদলানো, আর Drive-এ রাখা বা সরানো, সবকটিতেই লাগে; ব্যাকআপ বন্ধ করা, Drive-এ কম দিন রাখা আর Drive-এর সংযোগ কাটাতেও লাগে। PIN ঠিক করা না থাকলে আগে “AI” > “System” > “Settings”-এ “Set a PIN” দিয়ে ঠিক করুন।",
+          text: "যে কোম্পানিতে এখন কাজ করছেন তার PIN (4 থেকে 8 অঙ্ক)। কী ঠিক করা, বদলানো, আর Drive-এ রাখা বা সরানো, সবকটিতেই লাগে; ব্যাকআপ বন্ধ করা, Drive-এ কম দিন রাখা, Drive-এর সংযোগ কাটা, যুক্ত থাকা Drive আবার যুক্ত করা (“Reconnect Google Drive”) আর নিজের Google ক্লায়েন্ট দেওয়া বা বদলাতেও লাগে। PIN ঠিক করা না থাকলে আগে “AI” > “System” > “Settings”-এ “Set a PIN” দিয়ে ঠিক করুন।",
         },
         {
           label: "Save the key",
@@ -1826,7 +1823,27 @@ export const settingsHelp: HelpSection = {
         },
         {
           label: "Connect Google Drive",
-          text: "Google ক্লায়েন্ট সেভ থাকলে আসে: একটি কোড দেখায়। ফোনে google.com/device খুলে কোডটি দিন, নিজের অ্যাকাউন্ট বেছে অনুমতি দিন; পাতা নিজেই বুঝে নেয় আর সবুজ লেখায় অ্যাকাউন্টের নাম দেখায়। কোডের মেয়াদ শেষ হলে আবার চাপতে বলে।",
+          text: "সার্ভারে Google ক্লায়েন্ট থাকলে আসে (সাধারণত Extas আগেই রেখে দেয়): একটি কোড দেখায়। Google-এর পাতায় কোডটি দিন, নিজের অ্যাকাউন্ট বেছে অনুমতি দিন; পাতা নিজেই বুঝে নেয় আর সবুজ লেখায় অ্যাকাউন্টের নাম দেখায়। কোডের মেয়াদ শেষ হলে আবার চাপতে বলে। ক্লায়েন্ট না থাকলে লেখা থাকে Google Drive is not set up on this server yet: তখন Extas-কে বলুন।",
+        },
+        {
+          label: "Copy code",
+          text: "কোড দেখানোর সময় আসে: কোডটি কপি করে, যাতে Google-এর পাতায় পেস্ট করা যায়। কপি হলে বোতামে “Copied” লেখা আসে।",
+        },
+        {
+          label: "Open Google",
+          text: "Google-এর কোড দেওয়ার পাতা (google.com/device) নতুন ট্যাবে খোলে। সেখানে নিজের অ্যাকাউন্টে ঢুকে কোড বসিয়ে অনুমতি দিন; ERP-র পাতা খোলাই রাখুন।",
+        },
+        {
+          label: "Reconnect Google Drive",
+          text: "Google অনুমতি শেষ করে দিলে লাল ঘরে আসে। চাপলে একই নামের জানালা খোলে: নতুন সাইন-ইন আগেরটির জায়গা নেয়, তাই PIN লাগে (অন্য কেউ যেন চুপচাপ ব্যাকআপ অন্য Google অ্যাকাউন্টে সরাতে না পারে), আর PIN মিললে ইনবক্সে ও Telegram-এ Google Drive is being connected again বার্তা আসে। অনুমতি দিলে আবার যুক্ত হয়, আর সার্ভারে জমে থাকা ব্যাকআপ এক ঘণ্টার মধ্যে Drive-এ যায়।",
+        },
+        {
+          label: "Show the code",
+          text: "“Reconnect Google Drive” জানালার বোতাম: PIN মিললে Google-এর কোড দেখায়। PIN না দিলে বা ভুল হলে কোড আসে না, আর আগের সংযোগ যেমন ছিল তেমন থাকে। না চাইলে “Cancel”।",
+        },
+        {
+          label: "Asking Google",
+          text: "“Show the code” চাপার পর বোতামে এই লেখা আসে: Google-এর কাছে কোড চাওয়া হচ্ছে। শেষ না হওয়া পর্যন্ত অপেক্ষা করুন।",
         },
         {
           label: "Disconnect",
@@ -1850,6 +1867,7 @@ export const settingsHelp: HelpSection = {
         "নিয়মিত ব্যাকআপের জন্য “On chosen dates” বাছা: শেষ তারিখের পর আর নিজে ব্যাকআপ হয় না। “Every day, or every few days” বা “Every few hours” বাছুন।",
         "“Back up on this schedule” এর টিক তুলে ভুলে যাওয়া: তখন নিজে ব্যাকআপ হয় না। “Next backup”-এ “Backups are switched off” দেখলে টিক দিয়ে “Save” চাপুন।",
         "PIN ঠিক না করে কী ঠিক করতে যাওয়া: কী সেভ হয় না। আগে “AI” > “System” > “Settings”-এ PIN ঠিক করুন।",
+        "রিকভারি কী ঠিক না করে শুধু Drive যুক্ত করে ভাবা ব্যাকআপ নিরাপদ: কী ছাড়া ব্যাকআপ Drive-এ যায় না। আগে কী ঠিক করুন; “Google Drive” অংশও তা মনে করিয়ে দেয়।",
       ],
     },
     {

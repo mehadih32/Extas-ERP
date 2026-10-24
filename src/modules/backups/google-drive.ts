@@ -219,6 +219,27 @@ export async function accountEmail(token: string): Promise<string | null> {
   return about.user?.emailAddress ?? null;
 }
 
+/**
+ * The account's Drive space in bytes: what is free and the whole. Both null when
+ * Google gives no limit (unlimited storage) or does not say.
+ */
+export async function storageQuota(
+  token: string,
+): Promise<{ freeBytes: number | null; totalBytes: number | null }> {
+  const about = await call<{ storageQuota?: { limit?: string; usage?: string } }>(
+    token,
+    `${api()}/about?fields=storageQuota(limit,usage)`,
+    { method: "GET" },
+    "Reading the Drive space failed",
+  );
+  const limit = Number(about.storageQuota?.limit);
+  const usage = Number(about.storageQuota?.usage ?? 0);
+  if (!Number.isFinite(limit) || limit <= 0 || !Number.isFinite(usage)) {
+    return { freeBytes: null, totalBytes: null };
+  }
+  return { freeBytes: Math.max(0, limit - usage), totalBytes: limit };
+}
+
 export async function createFolder(
   token: string,
   name: string,

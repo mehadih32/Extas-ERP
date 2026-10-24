@@ -9,7 +9,9 @@ import { requireCompany, requirePlatformSuperAdmin } from "@/modules/auth/contex
 import * as backups from "@/modules/backups/backup.service";
 import * as cloudflare from "@/modules/backups/cloudflare";
 import { setUpGitHubAlert } from "@/modules/backups/github-alert";
+import { startDriveConnect } from "@/modules/backups/drive-connect";
 import { listDriveBackups } from "@/modules/backups/drive-copies";
+import { driveStatus } from "@/modules/backups/drive-status";
 import * as keys from "@/modules/backups/recovery-key.service";
 import * as restores from "@/modules/backups/restore.service";
 import { drillNowSchema } from "@/modules/backups/schemas";
@@ -21,8 +23,8 @@ import { runTestRestore } from "@/modules/backups/test-restore";
  * data, so all of them are for the platform owner only. Downloads are plain
  * HTTP routes (/api/backups/...). The recovery key, the Cloudflare token,
  * Restore, and making the backups less safe (switching them off, fewer days in
- * Drive, disconnecting Drive) also need the company's PIN, so they run in the
- * company the owner is working in.
+ * Drive, disconnecting Drive, connecting it again over a sign-in) also need the
+ * company's PIN, so they run in the company the owner is working in.
  */
 
 const owner = async () => {
@@ -96,11 +98,21 @@ export const listDriveBackupsAction = async () =>
   });
 
 // Google Drive
+/** The owner's own Google client instead of the server's; needs the PIN. */
 export const setGoogleClientAction = async (input: unknown) =>
-  change(async () => backups.setGoogleClient(await owner(), input, await getRequestMeta()));
+  change(async () =>
+    backups.setGoogleClient(await ownerInCompany(), input, await getRequestMeta()),
+  );
+/** The Drive panel's live state: connected (with the free space), Reconnect, or not reached. */
+export const driveStatusAction = async () =>
+  runAction(async () => {
+    await owner();
+    return driveStatus();
+  });
 /** A code for the owner's phone (google.com/device). */
-export const startGoogleSignInAction = async () =>
-  change(async () => backups.startGoogleSignIn(await owner(), await getRequestMeta()));
+/** A new sign-in while Drive is connected (Reconnect, another account) needs the PIN. */
+export const startGoogleSignInAction = async (input?: unknown) =>
+  change(async () => startDriveConnect(await ownerInCompany(), input, await getRequestMeta()));
 /** Whether the owner said yes on their phone; connects Drive when they did. */
 export const checkGoogleSignInAction = async () =>
   change(async () => backups.checkGoogleSignIn(await owner(), await getRequestMeta()));

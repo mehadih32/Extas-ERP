@@ -216,6 +216,35 @@ run("Google Drive Connect with the central client (plan v5)", { timeout: 120_000
       expect(sent.driveError).toBeNull();
     });
 
+    it("asks to Reconnect when the server's Google client was changed under the sign-in", async () => {
+      await connectDrive();
+      // Google's answer to a sign-in made with another client (deploy/set-google-client.sh).
+      const real = globalThis.fetch;
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) =>
+        String(init?.body ?? "").includes("grant_type=refresh_token")
+          ? Response.json(
+              { error: "unauthorized_client", error_description: "Unauthorized" },
+              { status: 401 },
+            )
+          : real(url, init),
+      );
+      expect(await driveStatus()).toEqual({ state: "reconnect" });
+    });
+
+    it("asks to Reconnect when the saved sign-in can no longer be opened", async () => {
+      await connectDrive();
+      const config = await getBackupConfig();
+      // As after the server's ENCRYPTION_KEY changed.
+      vi.stubEnv("ENCRYPTION_KEY", "another-encryption-key-9876543210");
+      expect(await driveStatus()).toEqual({ state: "reconnect" });
+      vi.stubEnv("ENCRYPTION_KEY", "test-encryption-key-0123456789");
+      expect((await getBackupConfig()).credentialsRef).toBe(config.credentialsRef);
+      // And when no Google client is left to use it with.
+      vi.stubEnv("GOOGLE_DRIVE_CLIENT_ID", "");
+      vi.stubEnv("GOOGLE_DRIVE_CLIENT_SECRET", "");
+      expect(await driveStatus()).toEqual({ state: "reconnect" });
+    });
+
     it("is unreachable when Google cannot be reached, and nothing is changed", async () => {
       await connectDrive();
       vi.stubEnv("GOOGLE_OAUTH_BASE", "http://127.0.0.1:9");

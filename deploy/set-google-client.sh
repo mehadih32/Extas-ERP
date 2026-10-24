@@ -21,12 +21,14 @@ valid_client_secret() { [[ ${#1} -ge 10 && ${#1} -le 200 && "$1" =~ ^[A-Za-z0-9_
 
 # Writes the two settings into deploy/.env (replacing earlier ones), keeping its
 # other lines, its owner and its mode. Shell built-ins only: the values never become
-# a program's arguments.
-write_google_client() {
+# a program's arguments. It runs in a subshell, so the new file is made readable only
+# by root from its first byte (umask), and is removed if anything stops it.
+write_google_client() (
   local id="$1" secret="$2" new="$ENV_FILE.new" line
+  umask 077
+  trap 'rm -f "$new"' EXIT
   rm -f "$new"
-  (
-    umask 077
+  {
     while IFS= read -r line || [ -n "$line" ]; do
       case "$line" in
         GOOGLE_DRIVE_CLIENT_ID=* | GOOGLE_DRIVE_CLIENT_SECRET=*) ;;
@@ -35,11 +37,11 @@ write_google_client() {
     done <"$ENV_FILE"
     printf 'GOOGLE_DRIVE_CLIENT_ID=%s\n' "$id"
     printf 'GOOGLE_DRIVE_CLIENT_SECRET=%s\n' "$secret"
-  ) >"$new"
+  } >"$new"
   chown --reference="$ENV_FILE" "$new"
   chmod --reference="$ENV_FILE" "$new"
   mv -f "$new" "$ENV_FILE"
-}
+)
 
 ask_hidden() {
   local answer
@@ -82,6 +84,7 @@ main() {
     echo "Note: the copy of the settings in the backups is locked again at the next update."
   fi
   say "Done. On Settings > Backups, press Connect Google Drive (Reconnect if it asks)."
+  echo "If that screen says the Google client is (your own), the owner set one there: it is used instead of this one."
 }
 
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then

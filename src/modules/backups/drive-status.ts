@@ -1,6 +1,7 @@
 import { AppError } from "@/lib/errors";
 import { driveToken, getBackupConfig } from "@/modules/backups/backup-core";
 import * as drive from "@/modules/backups/google-drive";
+import { onDrill } from "@/modules/backups/standby";
 
 /*
  * The live state of the Google Drive connection, for the Backups screen's Google
@@ -17,17 +18,22 @@ export type DriveStatus =
   | { state: "unreachable" };
 
 export async function driveStatus(): Promise<DriveStatus> {
+  // A restore drill copy never uses Google Drive.
+  if (await onDrill()) return { state: "none" };
   const config = await getBackupConfig();
+  if (!config.credentialsRef) return { state: "none" };
   let token: string | null;
   try {
     token = await driveToken(config);
   } catch (error) {
-    // A restore drill copy never uses Google Drive.
-    if (error instanceof AppError) return { state: "none" };
+    // The sign-in cannot be opened (the server's ENCRYPTION_KEY changed) or Google
+    // ended it: only a new Connect helps.
+    if (error instanceof AppError) return { state: "reconnect" };
     if (error instanceof drive.DriveError && error.reconnect) return { state: "reconnect" };
     return { state: "unreachable" };
   }
-  if (!token) return { state: "none" };
+  // Signed in, but no Google client to use it with any more.
+  if (!token) return { state: "reconnect" };
   try {
     return { state: "connected", ...(await drive.storageQuota(token)) };
   } catch (error) {

@@ -1031,6 +1031,8 @@ function DrivePanel({ config, locked, setMessage }: PanelProps & { locked: boole
   const [ownClient, setOwnClient] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
   const [status, setStatus] = useState<DriveStatus | null>(null);
+  // Bumped after each Connect, so the state is read again even for the same account.
+  const [signIns, setSignIns] = useState(0);
   const { connected, account } = config.googleDrive;
 
   // Once connected: is Google still letting the ERP in, and how much room is in the Drive?
@@ -1043,7 +1045,7 @@ function DrivePanel({ config, locked, setMessage }: PanelProps & { locked: boole
     return () => {
       live = false;
     };
-  }, [connected, account]);
+  }, [connected, account, signIns]);
 
   // While a code is shown, ask every few seconds whether the owner said yes at Google.
   useEffect(() => {
@@ -1058,7 +1060,10 @@ function DrivePanel({ config, locked, setMessage }: PanelProps & { locked: boole
         }
         if (result.data.status === "waiting") return;
         setCode(null);
-        if (result.data.status === "connected") setStatus(null);
+        if (result.data.status === "connected") {
+          setStatus(null);
+          setSignIns((n) => n + 1);
+        }
         setMessage(
           result.data.status === "connected"
             ? {
@@ -1132,11 +1137,14 @@ function DrivePanel({ config, locked, setMessage }: PanelProps & { locked: boole
             locked with it.
           </p>
         )}
-        {status?.state === "connected" && status.freeBytes !== null && status.totalBytes && (
-          <p className="text-muted-foreground">
-            Free in this Drive: {size(status.freeBytes)} of {size(status.totalBytes)}.
-          </p>
-        )}
+        {connected &&
+          status?.state === "connected" &&
+          status.freeBytes !== null &&
+          Boolean(status.totalBytes) && (
+            <p className="text-muted-foreground">
+              Free in this Drive: {size(status.freeBytes)} of {size(status.totalBytes)}.
+            </p>
+          )}
         {connected && status?.state === "unreachable" && (
           <p className="text-muted-foreground">
             Google Drive could not be reached just now; the ERP tries again by itself.
@@ -1149,8 +1157,9 @@ function DrivePanel({ config, locked, setMessage }: PanelProps & { locked: boole
               Google ended the ERP&apos;s access to this Drive.
             </p>
             <p>
-              The access was removed or ran out. New backups stay on this server until you
-              reconnect; they go to Drive within the hour after you do.
+              The access was removed or ran out, or this server&apos;s Google client changed. New
+              backups stay on this server until you reconnect; they go to Drive within the hour
+              after you do.
             </p>
             <div>
               <Button type="button" size="sm" disabled={pending} onClick={connect}>
@@ -1175,9 +1184,16 @@ function DrivePanel({ config, locked, setMessage }: PanelProps & { locked: boole
                 type="button"
                 size="sm"
                 variant="outline"
-                onClick={() => {
-                  void navigator.clipboard?.writeText(code.userCode);
-                  setCopied(true);
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(code.userCode);
+                    setCopied(true);
+                  } catch {
+                    setMessage({
+                      tone: "error",
+                      text: "The code was not copied: type it at Google as shown.",
+                    });
+                  }
                 }}
               >
                 <CopyIcon aria-hidden />

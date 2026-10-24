@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -71,6 +71,21 @@ describe("deploy/set-google-client.sh", () => {
     );
     expect(statSync(env).mode & 0o777).toBe(0o600);
     expect(statSync(path.join(dir, ".env")).uid).toBe(process.getuid!());
+  });
+
+  it("never leaves the secret in a file others can read, even when it stops half way", async () => {
+    const env = path.join(dir, ".env");
+    await writeFile(env, "APP_DOMAIN=erp.extasbd.com\n", { mode: 0o600 });
+    // The new file's mode while it is written, and what is left when chown fails.
+    const done = await withScript(
+      `umask 022
+chown() { stat -c %a "$ENV_FILE.new"; return 1; }
+id='${ID}'; secret='${SECRET}'; write_google_client "$id" "$secret"`,
+    );
+    expect(done.code).not.toBe(0);
+    expect(done.stdout.trim()).toBe("600");
+    expect(existsSync(`${env}.new`)).toBe(false);
+    expect(readFileSync(env, "utf8")).toBe("APP_DOMAIN=erp.extasbd.com\n");
   });
 
   it("takes only a real client ID and secret, so nothing else reaches deploy/.env", async () => {

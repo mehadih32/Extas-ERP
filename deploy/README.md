@@ -280,7 +280,9 @@ cd /opt/extras-erp && sudo ./deploy/set-google-client.sh
 It asks for the client ID and secret with hidden typing (never on the command line, in a
 log or on the screen), writes them in `deploy/.env`, restarts the ERP and locks the backups'
 copy of the settings again. Then the owner presses **Connect Google Drive**. Replacing a
-different client asks first: Google Drive then has to be connected again.
+different client asks first: Google Drive then has to be connected again (the Backups screen
+asks to **Reconnect Google Drive**). If the Backups screen says the Google client is "(your
+own)", the owner set one there with the PIN, and that one is used instead of this one.
 
 Never put the client in GitHub (the repository is public, and Google's terms forbid
 credentials in open source). Google treats the secret of this kind of client as not truly

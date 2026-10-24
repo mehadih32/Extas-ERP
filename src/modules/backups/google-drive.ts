@@ -45,11 +45,13 @@ export class DriveError extends Error {
 
 async function failure(response: Response, what: string): Promise<DriveError> {
   let detail = response.statusText;
+  let code = "";
   try {
     const body = (await response.json()) as {
       error?: string | { message?: string };
       error_description?: string;
     };
+    if (typeof body.error === "string") code = body.error;
     detail =
       body.error_description ??
       (typeof body.error === "string" ? body.error : body.error?.message) ??
@@ -57,7 +59,13 @@ async function failure(response: Response, what: string): Promise<DriveError> {
   } catch {
     // Not JSON; keep the status text.
   }
-  const reconnect = detail === "invalid_grant" || /revoked|expired/i.test(detail);
+  // The sign-in ended (revoked, run out), or it was made with another Google client
+  // (the server's client was changed in deploy/.env): only a new Connect helps.
+  const reconnect =
+    code === "invalid_grant" ||
+    code === "unauthorized_client" ||
+    detail === "invalid_grant" ||
+    /revoked|expired/i.test(detail);
   return new DriveError(`${what}: ${detail} (HTTP ${response.status})`, response.status, reconnect);
 }
 

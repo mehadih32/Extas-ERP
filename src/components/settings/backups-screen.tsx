@@ -1039,9 +1039,14 @@ function DrivePanel({ config, locked, setMessage }: PanelProps & { locked: boole
   useEffect(() => {
     if (!connected) return;
     let live = true;
-    void driveStatusAction().then((result) => {
-      if (live && result.ok) setStatus(result.data);
-    });
+    void driveStatusAction()
+      .then((result) => {
+        if (live && result.ok) setStatus(result.data);
+      })
+      // No answer from the ERP itself: shown like Google not answering.
+      .catch(() => {
+        if (live) setStatus({ state: "unreachable" });
+      });
     return () => {
       live = false;
     };

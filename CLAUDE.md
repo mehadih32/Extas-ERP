@@ -207,6 +207,15 @@ overwrites a stored total or figure.
 
 ## 9. Decisions log (newest first)
 
+- 2026-10-24 (Business, Retail and POS plan v5, approved, NOT built yet; start only when the owner says so):
+  the full plan is `docs/business-overview/plan-v5.md` (Bengali) and the website's part is
+  `docs/business-overview/site-changes-v5.md`. Each retail shop is a special wholesale buyer in the buyer list
+  ("Extas Retail" first, Buyer 360 like any buyer) and buys at a shop price; the existing Dashboard stays
+  untouched and a new "Business" menu holds Overview, Retail (E-commerce and POS tabs), Returns and Retail stores.
+  Returns change money only when the owner checks a piece in the ERP: approved A-grade pieces come off the
+  shop's account at the price it paid; declined pieces (B or C grade, damaged, missing, wrong) stay on the
+  shop's account as its loss. Courier return lists and consignment IDs are recorded; unclear partial deliveries
+  go on Hold for the owner to tick. Unchecked returned pieces may go only to shops, never to wholesale.
 - 2026-10-24 (Drive backup plan v5): the one-command restore system is frozen (bootstrap.sh,
   restore-tool.py, restore.sh, restore-request.sh, setup-server.sh, the restore guide and the restore
   drill); the backup side adapts to it, never the reverse, and a change any of them seems to need

@@ -18,6 +18,7 @@ import {
   XIcon,
 } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 
 import { PinField } from "@/components/ai/pin-prompt";
@@ -25,6 +26,13 @@ import { useWhen } from "@/components/ai/when";
 import { Field, FormAlert } from "@/components/forms/field";
 import { type Tone, StatusBadge } from "@/components/sales/badges";
 import { Panel } from "@/components/sales/detail-bits";
+import {
+  BACKING_UP,
+  BACKUP_POLL_LIMIT_MS,
+  BACKUP_POLL_MS,
+  backupProgress,
+  backupSize as size,
+} from "@/modules/backups/progress";
 import { FormDialog } from "@/components/sales/dialogs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -85,13 +93,6 @@ const KIND: Record<string, string> = {
 
 const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
-export function size(bytes: number | null | undefined) {
-  if (bytes === null || bytes === undefined) return "";
-  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
-  if (bytes < 1024 ** 3) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-  return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
-}
-
 export function BackupsScreen({ overview }: { overview: Overview }) {
   const [message, setMessage] = useState<Message>();
   const { config } = overview;
@@ -134,7 +135,38 @@ function StatusPanel({
   const [pending, startTransition] = useTransition();
   const [drilling, setDrilling] = useState(false);
   const [recording, setRecording] = useState(false);
-  const { config, health } = overview;
+  const { config, health, lastRun } = overview;
+  const router = useRouter();
+  // The backup this screen waits for: one started with Back up now, or one already
+  // running when the page opened. The page is read again every few seconds until
+  // it is done (and in Google Drive, or known to stay on the server).
+  const [watching, setWatching] = useState<string | null>(() =>
+    lastRun && (lastRun.status === "QUEUED" || lastRun.status === "RUNNING") ? lastRun.id : null,
+  );
+  const watched = lastRun && lastRun.id === watching ? lastRun : null;
+  const progress = watched ? backupProgress(watched) : null;
+
+  // Until the watched backup is done (or for 30 minutes at most).
+  const keepAsking = watching !== null && !(progress?.done ?? false);
+  useEffect(() => {
+    if (!keepAsking) return;
+    const started = Date.now();
+    const timer = setInterval(() => {
+      if (Date.now() - started > BACKUP_POLL_LIMIT_MS) {
+        clearInterval(timer);
+        return;
+      }
+      router.refresh();
+    }, BACKUP_POLL_MS);
+    return () => clearInterval(timer);
+  }, [keepAsking, router]);
+
+  // The watched backup moved on: say where it stands.
+  const progressText = progress?.text;
+  const progressTone = progress?.done ? progress.tone : "note";
+  useEffect(() => {
+    if (progressText) setMessage({ tone: progressTone, text: progressText });
+  }, [progressText, progressTone, setMessage]);
   const good = health.level === "good";
   const Icon = good
     ? CircleCheckIcon
@@ -156,12 +188,10 @@ function StatusPanel({
                 const result = await runBackupNowAction();
                 setMessage(
                   result.ok
-                    ? {
-                        tone: "success",
-                        text: "Backing up now. It takes a few minutes; this page shows it when it is done.",
-                      }
+                    ? { tone: "success", text: BACKING_UP }
                     : { tone: "error", text: result.error.message },
                 );
+                if (result.ok) setWatching(result.data.id);
               })
             }
           >
@@ -210,7 +240,7 @@ function StatusPanel({
             <span className="block text-xs text-muted-foreground">{config.scheduleText}</span>
           </Fact>
           <Fact label="Last backup">
-            {overview.lastRun ? <RunLine run={overview.lastRun} when={when} /> : "None yet"}
+            {lastRun ? <RunLine run={lastRun} when={when} /> : "None yet"}
           </Fact>
           <Fact label="Last restore drill">
             {overview.lastTestRestore ? (

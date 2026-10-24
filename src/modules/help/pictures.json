@@ -806,32 +806,33 @@
       "target": "marks"
     },
     "route": "/settings/backups",
-    "screen": "c3812d295a97e317",
+    "screen": "cb3b8256fc78ea91",
     "guide": "284e480596e7ffe7",
     "taken": "2026-10-24"
   },
   "backups-drive-key": {
     "src": "/help/shots/backups-drive-key.webp",
     "width": 1280,
-    "height": 1600,
-    "marks": [1, 3, 5, 6, 7, 8, 11, 12],
+    "height": 1533,
+    "marks": [3, 4, 5, 6, 7, 8, 9, 11, 12],
     "labels": {
-      "1": "Backups",
-      "3": "Set your recovery key",
-      "5": "Connect Google Drive",
+      "3": "Recovery key",
+      "4": "Keep my recovery key in Google Drive",
+      "5": "Google Drive",
       "6": "Add a time",
       "7": "Save",
-      "8": "Back up now",
-      "11": "Recovery key",
-      "12": "Google Drive"
+      "8": "Last backup",
+      "9": "Change the recovery key",
+      "11": "Take my key out of Google Drive",
+      "12": "Disconnect"
     },
     "clip": {
-      "y": 189,
-      "height": 1600,
+      "y": 360,
+      "height": 1533,
       "target": "marks"
     },
     "route": "/settings/backups",
-    "screen": "c3812d295a97e317",
+    "screen": "cb3b8256fc78ea91",
     "guide": "9897a7a3e0e09020",
     "taken": "2026-10-24"
   },
@@ -849,7 +850,7 @@
       "target": "marks"
     },
     "route": "/settings/backups",
-    "screen": "c3812d295a97e317",
+    "screen": "cb3b8256fc78ea91",
     "guide": "0167dbb5b93d51c8",
     "taken": "2026-10-24"
   },
@@ -862,64 +863,63 @@
       "3": "Save the Google client"
     },
     "clip": {
-      "y": 1498,
+      "y": 1694,
       "height": 800,
       "target": "dialog"
     },
     "route": "/settings/backups",
-    "screen": "c3812d295a97e317",
+    "screen": "cb3b8256fc78ea91",
     "guide": "b9165d12936889d5",
     "taken": "2026-10-24"
   },
   "backups-new-server": {
     "src": "/help/shots/backups-new-server.webp",
     "width": 1280,
-    "height": 1600,
-    "marks": [1, 17, 31, 37, 38],
+    "height": 1569,
+    "marks": [1, 17, 31, 37, 39],
     "labels": {
       "1": "Download the restore guide",
       "17": "Save",
       "31": "Recovery key",
       "37": "Back up now",
-      "38": "Connect Google Drive"
+      "39": "Settings"
     },
     "clip": {
-      "y": 189,
-      "height": 1600,
+      "y": 0,
+      "height": 1569,
       "target": "marks"
     },
     "route": "/settings/backups",
-    "screen": "c3812d295a97e317",
+    "screen": "cb3b8256fc78ea91",
     "guide": "2abc5dddeca1e918",
     "taken": "2026-10-24"
   },
   "backups-restore": {
     "src": "/help/shots/backups-restore.webp",
     "width": 1280,
-    "height": 1574,
-    "marks": [1, 2, 4, 5, 6, 7],
+    "height": 1581,
+    "marks": [1, 2, 5, 6, 7],
     "labels": {
       "1": "Backups in Google Drive",
       "2": "Recovery key",
-      "4": "Run the monthly restore drill",
       "5": "Save",
       "6": "Download the restore guide",
       "7": "Restore on a new server"
     },
     "clip": {
-      "y": 1170,
-      "height": 1574,
+      "y": 1381,
+      "height": 1581,
       "target": "marks"
     },
     "route": "/settings/backups",
-    "screen": "c3812d295a97e317",
+    "screen": "cb3b8256fc78ea91",
     "guide": "d23f987fb10aefe1",
     "taken": "2026-10-24"
   },
   "backups-server-drill": {
     "src": "/help/shots/backups-server-drill.webp",
     "width": 1280,
-    "height": 1523,
+    "height": 1465,
     "marks": [6, 9, 11],
     "labels": {
       "6": "Save",
@@ -928,11 +928,11 @@
     },
     "clip": {
       "y": 0,
-      "height": 1523,
+      "height": 1465,
       "target": "marks"
     },
     "route": "/settings/backups",
-    "screen": "c3812d295a97e317",
+    "screen": "cb3b8256fc78ea91",
     "guide": "77076a5dc5a13c45",
     "taken": "2026-10-24"
   },
@@ -2658,6 +2658,26 @@
     "screen": "9e1c0973f79cb619",
     "guide": "0a0bc46bba6ca242",
     "taken": "2026-10-23"
+  },
+  "privacy-policy": {
+    "src": "/help/shots/privacy-policy.webp",
+    "width": 1280,
+    "height": 1236,
+    "marks": [1, 2, 3],
+    "labels": {
+      "1": "Privacy Policy",
+      "2": "Google Drive backups",
+      "3": "Removing access and deleting data"
+    },
+    "clip": {
+      "y": 0,
+      "height": 1236,
+      "target": "marks"
+    },
+    "route": "/privacy",
+    "screen": "9903928d0b7b041b",
+    "guide": "de09d14fc3e632f9",
+    "taken": "2026-10-24"
   },
   "production-action-log": {
     "src": "/help/shots/production-action-log.webp",

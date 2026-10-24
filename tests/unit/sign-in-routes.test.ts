@@ -83,6 +83,17 @@ describe("the proxy in front of the screens", () => {
     expect(passedOn(proxy(request("/", { method: "POST" })))).toBe(true);
   });
 
+  it("opens the privacy policy to anyone, and only that page", () => {
+    // Google links to it from the Google Drive sign-in screen, before anyone signs in.
+    expect(passedOn(proxy(request("/privacy")))).toBe(true);
+    expect(passedOn(proxy(request("/privacy", { method: "HEAD" })))).toBe(true);
+    for (const path of ["/privacy/x", "/privacy-policy", "/settings/backups", "/terms"]) {
+      const response = proxy(request(path));
+      expect(response.status, path).toBe(307);
+      expect(new URL(response.headers.get("location")!).pathname, path).toBe("/sign-in");
+    }
+  });
+
   it("renews the session cookie on each visit and tells the screen which page was asked for", () => {
     const response = proxy(request("/?period=this-month", { cookie: "token-1" }));
     expect(passedOn(response)).toBe(true);

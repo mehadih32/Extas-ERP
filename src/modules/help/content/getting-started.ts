@@ -144,6 +144,78 @@ export const gettingStartedHelp: HelpSection = {
       ],
     },
     {
+      slug: "privacy-policy",
+      title: "Privacy Policy পাতা: ERP কী রাখে আর Google Drive-এ কী করে",
+      summary:
+        "সাইন ইন ছাড়াই খোলা যায় এমন একটি পাতা, যেখানে লেখা আছে ERP কী তথ্য রাখে আর Google Drive ব্যাকআপে Google-এর কোন তথ্য ব্যবহার করে।",
+      keywords: [
+        "privacy",
+        "privacy policy",
+        "google",
+        "google drive",
+        "consent",
+        "data",
+        "প্রাইভেসি",
+        "গোপনীয়তা",
+        "তথ্য",
+        "নীতি",
+      ],
+      routes: ["/privacy"],
+      who: "সবাই, সাইন ইন ছাড়াই: Google-এর সাইন ইন পাতাও এর লিংক দেখায়।",
+      shot: { route: "/privacy" },
+      what: [
+        "“Privacy Policy” পাতা ঠিকানার শেষে /privacy লিখলে খোলে, সাইন ইন লাগে না।",
+        "এতে লেখা থাকে ERP কোন তথ্য রাখে, Google Drive ব্যাকআপে Google-এর কোন তথ্য ব্যবহার করে, কীভাবে সংযোগ বন্ধ করা যায় আর কার সাথে যোগাযোগ করতে হয়।",
+        "পাতার উপরে আর “Contact” অংশে কোম্পানির নাম, ইমেইল আর ওয়েবসাইট আসে কোম্পানির নিজের রেকর্ড থেকে (“Settings”-এ যা দেওয়া আছে)।",
+      ],
+      why: "Google Drive-এ ব্যাকআপ রাখতে ERP-র Google অ্যাপকে Google-এর কাছে প্রকাশ (Publish) করতে হয়, আর Google তার আগে একটি privacy policy পাতার লিংক চায়। প্রকাশ না করলে Google প্রতি 7 দিনে সংযোগ কেটে দেয়, আর ব্যাকআপ চুপচাপ Drive-এ যাওয়া বন্ধ হয়। ধরুন শিপমেন্টের সপ্তাহে সার্ভার নষ্ট হলো: Drive-এ গত রাতের ব্যাকআপ থাকলে এক দিনেই সব ফেরত আসে। এই পাতা থাকায় Google অ্যাপটি প্রকাশ করা যায়, আর বায়ার বা কর্মী কেউ জানতে চাইলে তাঁকেও এই লিংক দেওয়া যায়।",
+      steps: [
+        {
+          text: "ব্রাউজারে আপনার ERP-র ঠিকানার শেষে /privacy লিখে খুলুন (যেমন erp.extasbd.com/privacy)। “Privacy Policy” পাতা খুলবে, সাইন ইন ছাড়াই।",
+          image: {
+            id: "privacy-policy-1",
+            caption: "“Privacy Policy” পাতা: উপরে কোম্পানির নাম, নিচে একেক অংশে একেক বিষয়",
+          },
+        },
+        {
+          text: "“Google Drive backups” অংশে পড়ুন: ERP Google-এর কাছে শুধু drive.file অনুমতি চায়, মানে নিজে বানানো ফাইল ছাড়া Drive-এর আর কিছু দেখতে পারে না।",
+        },
+        {
+          text: "“Removing access and deleting data” অংশে আছে Drive-এর সংযোগ কীভাবে বন্ধ করবেন আর তথ্য মুছতে বা ঠিক করতে কার কাছে চাইবেন।",
+        },
+        {
+          text: "Google Cloud-এ অ্যাপ প্রকাশ করার সময় Application privacy policy link ঘরে এই পাতার পুরো লিংকটি দিন।",
+        },
+      ],
+      fields: [
+        {
+          label: "Privacy Policy",
+          text: "পাতার শিরোনাম। উপরে ছোট লেখায় কোম্পানির নাম, আর নিচে শেষ কবে বদলানো হয়েছে তার তারিখ।",
+        },
+        {
+          label: "Google Drive backups",
+          text: "Google থেকে ERP কী নেয়: অ্যাকাউন্টের ইমেইল, Drive-এ কতটা জায়গা খালি, আর নিজের বানানো ব্যাকআপ ফাইল। আর বলে, ব্যাকআপ আপলোডের আগেই তালা দেওয়া হয়।",
+        },
+        {
+          label: "Removing access and deleting data",
+          text: "সংযোগ বন্ধ করার দুই উপায়: ERP-তে “Settings” > “Backups” > “Disconnect”, অথবা Google অ্যাকাউন্টের Security থেকে। আর তথ্য দেখতে, ঠিক করতে বা মুছতে কার কাছে চাইবেন।",
+        },
+        {
+          label: "Contact",
+          text: "কোম্পানির নাম, আর রেকর্ডে থাকলে ইমেইল ও ওয়েবসাইট। কিছু না থাকলে শুধু নাম দেখায়।",
+        },
+      ],
+      tips: [
+        "কোম্পানির ইমেইল আর ওয়েবসাইট “Settings”-এ ঠিক রাখুন: এই পাতা সেখান থেকেই নেয়, আর Google-এর সাইন ইন পাতাও এই লিংক দেখায়।",
+        "পাতাটি সবার জন্য খোলা, কিন্তু এতে কোম্পানির নাম, ইমেইল আর ওয়েবসাইট ছাড়া কোনো ব্যবসার তথ্য দেখায় না।",
+      ],
+      mistakes: [
+        "Google Cloud-এ অন্য কোনো সাইটের privacy লিংক দেওয়া, যেটি পরে বন্ধ হয়ে যেতে পারে: লিংক কাজ না করলে Google অ্যাপটি আটকে দিতে পারে। ERP-র নিজের /privacy লিংক দিন।",
+        "শেষে /privacy ছাড়া শুধু ERP-র ঠিকানা দেওয়া: সেটি সাইন ইন পাতা খোলে, privacy policy নয়।",
+      ],
+      next: "লিংকটি Google Cloud-এ দিলে Google অ্যাপটি প্রকাশ (Publish app) করা যায়। তারপর “Settings” > “Backups”-এ “Connect Google Drive” চেপে Drive যুক্ত করুন।",
+    },
+    {
       slug: "change-password",
       title: "পাসওয়ার্ড বদলাবেন যেভাবে",
       summary:

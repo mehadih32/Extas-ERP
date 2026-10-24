@@ -8,6 +8,8 @@ export const ROUTES = {
   myHr: "/me",
   /** The terms of employment staff agree to before working in the app. */
   terms: "/terms",
+  /** The privacy policy: public, read before anyone signs in (Google links to it). */
+  privacy: "/privacy",
   /** The Help Center: the manual in Bengali. */
   help: "/help",
   /** Each person's look: Legacy or Modern. */

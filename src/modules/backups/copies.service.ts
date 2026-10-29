@@ -9,6 +9,7 @@ import type { RequestMeta } from "@/lib/request-meta";
 import type { CompanyContext } from "@/modules/auth/context";
 import { alertOwner, audit, getBackupConfig, googleClient } from "@/modules/backups/backup-core";
 import { copyAddressSchema } from "@/modules/backups/copy-address";
+import { onDrill, onStandby } from "@/modules/backups/standby";
 
 /*
  * Giving this server's Google client to sold copies of the ERP by a copy code
@@ -111,8 +112,27 @@ function secretMatches(secret: string, tokenHash: string | null) {
   return given.length === kept.length && timingSafeEqual(given, kept);
 }
 
-/** This server's own Google client (set on its Backups screen), or null. */
+/** How long the same code from the same address is answered again (a lost answer). */
+const SAME_ANSWER_MS = 15 * 60_000;
+
+/** Tells the owner without making the copy wait (a slow bot never loses its answer). */
+function tellOwner(auditSummary: string, entityId: string, title: string, text: string) {
+  void audit(null, undefined, {
+    action: "UPDATE",
+    entityType: "ErpCopy",
+    entityId,
+    summary: auditSummary,
+  })
+    .then(() => alertOwner(title, text))
+    .catch((error: unknown) => console.error("[copies] could not tell the owner", error));
+}
+
+/**
+ * This server's own Google client (set on its Backups screen), or null. Never on
+ * the demo site, a restore drill copy or a restored ERP waiting on standby.
+ */
 async function ownClient() {
+  if (process.env.DEMO_SITE === "on" || (await onDrill()) || (await onStandby())) return null;
   const config = await getBackupConfig();
   if (!config.googleClientId || !config.googleClientSecretRef || config.googleClientFrom) {
     return null;
@@ -129,11 +149,24 @@ export async function claimClient(raw: unknown, now: Date = new Date()) {
   const input = claimSchema.parse(raw);
   const client = await ownClient();
   if (!client) throw new AppError("FORBIDDEN", NO_CLIENT);
-  const copySecret = newSecret();
 
   if ("code" in input) {
+    const copySecret = newSecret();
     const copy = await prisma.erpCopy.findUnique({ where: { codeHash: hashText(input.code) } });
-    if (!copy || copy.claimedAt) throw new AppError("FORBIDDEN", BAD_CODE);
+    if (!copy) throw new AppError("FORBIDDEN", BAD_CODE);
+    if (copy.blockedAt) throw new AppError("FORBIDDEN", BLOCKED);
+    if (copy.claimedAt) {
+      // The same copy asking again soon after (its first answer was lost) gets it again.
+      const again =
+        copy.address === input.address && now.getTime() - copy.claimedAt.getTime() < SAME_ANSWER_MS;
+      if (!again) throw new AppError("FORBIDDEN", BAD_CODE);
+      const answered = await prisma.erpCopy.updateMany({
+        where: { id: copy.id, blockedAt: null, address: input.address },
+        data: { tokenHash: hashText(copySecret), lastSeenAt: now },
+      });
+      if (answered.count === 0) throw new AppError("FORBIDDEN", BAD_CODE);
+      return { copyId: copy.id, copySecret, ...client };
+    }
     if (copy.blockedAt) throw new AppError("FORBIDDEN", BLOCKED);
     if (copy.codeExpiresAt <= now) throw new AppError("FORBIDDEN", EXPIRED);
     // Only the first of two at once wins the code.
@@ -147,13 +180,9 @@ export async function claimClient(raw: unknown, now: Date = new Date()) {
       },
     });
     if (used.count === 0) throw new AppError("FORBIDDEN", BAD_CODE);
-    await audit(null, undefined, {
-      action: "UPDATE",
-      entityType: "ErpCopy",
-      entityId: copy.id,
-      summary: `The copy for ${copy.label} at ${input.address} used its copy code and got the Google client for backups`,
-    });
-    await alertOwner(
+    tellOwner(
+      `The copy for ${copy.label} at ${input.address} used its copy code and got the Google client for backups`,
+      copy.id,
       "A copy used its code",
       `The copy of the ERP for ${copy.label} at ${input.address} used its copy code and now backs up to its own Google Drive. You can Block it on the Backups screen.`,
     );
@@ -165,11 +194,12 @@ export async function claimClient(raw: unknown, now: Date = new Date()) {
     throw new AppError("FORBIDDEN", BAD_CODE);
   }
   if (copy.blockedAt) throw new AppError("FORBIDDEN", BLOCKED);
+  // The copy keeps its secret: a lost answer never leaves it with one that no longer works.
   await prisma.erpCopy.update({
     where: { id: copy.id },
-    data: { tokenHash: hashText(copySecret), address: input.address, lastSeenAt: now },
+    data: { address: input.address, lastSeenAt: now },
   });
-  return { copyId: copy.id, copySecret, ...client };
+  return { copyId: copy.id, copySecret: input.copySecret, ...client };
 }
 
 /**

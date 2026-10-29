@@ -31,8 +31,8 @@ import { onDrill } from "@/modules/backups/standby";
  * Any other answer, or none, changes nothing (a copy is never stopped because
  * the Extas ERP could not be reached).
  *
- * Where it asks: EXTAS_CLIENT_SOURCE (an empty value turns this off); in
- * production it is https://erp.extasbd.com when not set. Never on a restore
+ * Where it asks: https://erp.extasbd.com in production. EXTAS_CLIENT_SOURCE
+ * changes it for the tests and a test server (an empty value turns this off). Never on a restore
  * drill copy, the demo site, or the Extas ERP itself.
  */
 

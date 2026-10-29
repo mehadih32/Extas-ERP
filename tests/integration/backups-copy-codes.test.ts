@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { setPin } from "@/modules/ai/settings.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { getBackupConfig, googleClient } from "@/modules/backups/backup-core";
+import { setGoogleClient } from "@/modules/backups/backup.service";
 import {
   checkInCopy,
   claimClient,
@@ -93,17 +94,24 @@ run("copy codes for the Google client", { timeout: 60_000 }, () => {
     const got = await claimClient({ code: code.toLowerCase().replace(/-/g, " "), address: COPY });
     expect(got).toMatchObject({ clientId: OWN_ID, clientSecret: OWN_SECRET });
     await expectAppError(claimClient({ code, address: "https://other.example" }), "FORBIDDEN");
+    // The same copy asking again soon (its answer was lost) gets it again; later, never.
+    const lost = await claimClient({ code, address: COPY });
+    expect(lost.copyId).toBe(got.copyId);
+    await expectAppError(
+      claimClient({ code, address: COPY }, new Date(Date.now() + 16 * 60_000)),
+      "FORBIDDEN",
+    );
     const list = await listCopies();
     expect(list.copies[0]).toMatchObject({ state: "IN_USE", address: COPY });
-    // Its own name and secret get the client again (a new secret each time).
+    // Its own name and secret get the client again, and it keeps its secret.
     const again = await claimClient({
-      copyId: got.copyId,
-      copySecret: got.copySecret,
+      copyId: lost.copyId,
+      copySecret: lost.copySecret,
       address: COPY,
     });
-    expect(again.copySecret).not.toBe(got.copySecret);
+    expect(again.copySecret).toBe(lost.copySecret);
     await expectAppError(
-      claimClient({ copyId: got.copyId, copySecret: got.copySecret, address: COPY }),
+      claimClient({ copyId: got.copyId, copySecret: "wrong", address: COPY }),
       "FORBIDDEN",
     );
   });
@@ -146,6 +154,13 @@ run("copy codes for the Google client", { timeout: 60_000 }, () => {
     });
     expect((await listCopies()).canShare).toBe(false);
     await expectAppError(makeCopyCode(ctx, { label: "Rahim", pin: PIN }), "VALIDATION");
+  });
+
+  it("never gives its client on the demo site", async () => {
+    await ownClientSet();
+    const { code } = await makeCopyCode(ctx, { label: "Rahim", pin: PIN });
+    vi.stubEnv("DEMO_SITE", "on");
+    await expectAppError(claimClient({ code, address: COPY }), "FORBIDDEN");
   });
 
   describe("on a sold copy", () => {
@@ -230,6 +245,25 @@ run("copy codes for the Google client", { timeout: 60_000 }, () => {
         clientId: OWN_ID,
         clientSecret: OWN_SECRET,
       });
+    });
+
+    it("forgets the Extas link when the owner sets an own client, so a Block never removes it", async () => {
+      answer = { status: 200, body: { ok: true, data: given } };
+      await applyCopyCode(ctx, { code: "EXTAS-ABCD-EFGH-JKMN-PQRS-TVWX", pin: PIN });
+      await setGoogleClient(ctx, {
+        clientId: "rahim-own.apps.googleusercontent.com",
+        clientSecret: "GOCSPX-rahim",
+        pin: PIN,
+      });
+      const config = await getBackupConfig();
+      expect(config).toMatchObject({ googleClientFrom: null, copyId: null, copySecretRef: null });
+      calls.length = 0;
+      answer = { status: 200, body: { ok: true, data: { allowed: false } } };
+      await extasCheckIn(new Date(), { force: true });
+      expect(calls).toHaveLength(0);
+      expect(googleClient(await getBackupConfig())?.clientId).toBe(
+        "rahim-own.apps.googleusercontent.com",
+      );
     });
   });
 });

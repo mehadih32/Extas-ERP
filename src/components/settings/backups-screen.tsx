@@ -113,7 +113,9 @@ export function BackupsScreen({ overview }: { overview: Overview }) {
       <SchedulePanel config={config} setMessage={setMessage} />
       <RecoveryKeyPanel config={config} setMessage={setMessage} />
       <DrivePanel config={config} locked={locked} setMessage={setMessage} />
-      {overview.copies.canShare && <CopiesPanel copies={overview.copies} setMessage={setMessage} />}
+      {(overview.copies.canShare || overview.copies.copies.length > 0) && (
+        <CopiesPanel copies={overview.copies} setMessage={setMessage} />
+      )}
       <CloudflarePanel config={config} setMessage={setMessage} />
       <GitHubAlertPanel config={config} githubRepo={overview.githubRepo} setMessage={setMessage} />
       <DriveBackupsPanel
@@ -1485,17 +1487,20 @@ function CopiesPanel({
       title="Copies of this ERP"
       id="copies"
       action={
-        <Button type="button" size="sm" onClick={() => setMaking(true)}>
-          <PlusIcon aria-hidden />
-          Make a copy code
-        </Button>
+        copies.canShare && (
+          <Button type="button" size="sm" onClick={() => setMaking(true)}>
+            <PlusIcon aria-hidden />
+            Make a copy code
+          </Button>
+        )
       }
     >
       <div className="grid min-w-0 gap-3 text-sm">
         <p className="text-muted-foreground">
           When you sell a copy of the ERP, make a copy code for it and give the code to the buyer.
           They enter it once on their Backups screen, so their copy backs up to their own Google
-          Drive with your Google client. A code works once, for 30 days. Block stops a copy at once.
+          Drive with your Google client. A code works once, for 30 days. Block stops the code at
+          once and the copy at its next daily check-in.
         </p>
         <p>
           In use: {copies.counts.inUse} · Code not used yet: {copies.counts.waiting} · Blocked:{" "}

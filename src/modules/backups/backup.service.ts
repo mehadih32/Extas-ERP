@@ -467,6 +467,13 @@ export async function setGoogleClient(who: Owner, raw: unknown, meta?: RequestMe
     data: {
       googleClientId: input.clientId,
       googleClientSecretRef: encryptSecret(input.clientSecret),
+      // The owner's own client ends any link to an Extas ERP: a Block there never
+      // touches it, and the screen says "your own".
+      googleClientFrom: null,
+      copyId: null,
+      copySecretRef: null,
+      copyCheckedAt: null,
+      copyBlockedAt: null,
       // Google's access belongs to the client: a new client means signing in again.
       ...(changed && config.credentialsRef
         ? { credentialsRef: null, googleDriveAccount: null, googleDriveFolderId: null }

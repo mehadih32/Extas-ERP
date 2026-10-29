@@ -806,35 +806,33 @@
       "target": "marks"
     },
     "route": "/settings/backups",
-    "screen": "cb3b8256fc78ea91",
+    "screen": "51735e6ae80761f9",
     "guide": "284e480596e7ffe7",
-    "taken": "2026-10-24"
+    "taken": "2026-10-29"
   },
   "backups-drive-key": {
     "src": "/help/shots/backups-drive-key.webp",
     "width": 1280,
-    "height": 1533,
-    "marks": [3, 4, 5, 6, 7, 8, 9, 11, 12],
+    "height": 1600,
+    "marks": [1, 3, 5, 6, 7, 8, 11],
     "labels": {
-      "3": "Recovery key",
-      "4": "Keep my recovery key in Google Drive",
+      "1": "Backups",
+      "3": "Set your recovery key",
       "5": "Google Drive",
       "6": "Add a time",
       "7": "Save",
-      "8": "Last backup",
-      "9": "Change the recovery key",
-      "11": "Take my key out of Google Drive",
-      "12": "Disconnect"
+      "8": "Back up now",
+      "11": "Recovery key"
     },
     "clip": {
-      "y": 360,
-      "height": 1533,
+      "y": 217,
+      "height": 1600,
       "target": "marks"
     },
     "route": "/settings/backups",
-    "screen": "cb3b8256fc78ea91",
+    "screen": "51735e6ae80761f9",
     "guide": "9897a7a3e0e09020",
-    "taken": "2026-10-24"
+    "taken": "2026-10-29"
   },
   "backups-github-alert": {
     "src": "/help/shots/backups-github-alert.webp",
@@ -850,32 +848,33 @@
       "target": "marks"
     },
     "route": "/settings/backups",
-    "screen": "cb3b8256fc78ea91",
+    "screen": "51735e6ae80761f9",
     "guide": "0167dbb5b93d51c8",
-    "taken": "2026-10-24"
+    "taken": "2026-10-29"
   },
   "backups-google-setup": {
     "src": "/help/shots/backups-google-setup.webp",
     "width": 1280,
     "height": 800,
-    "marks": [3],
+    "marks": [2, 4],
     "labels": {
-      "3": "Save the Google client"
+      "2": "PIN",
+      "4": "Save the Google client"
     },
     "clip": {
-      "y": 1694,
+      "y": 1541,
       "height": 800,
       "target": "dialog"
     },
     "route": "/settings/backups",
-    "screen": "cb3b8256fc78ea91",
-    "guide": "b9165d12936889d5",
-    "taken": "2026-10-24"
+    "screen": "51735e6ae80761f9",
+    "guide": "ab148c67cbc46a72",
+    "taken": "2026-10-29"
   },
   "backups-new-server": {
     "src": "/help/shots/backups-new-server.webp",
     "width": 1280,
-    "height": 1569,
+    "height": 1600,
     "marks": [1, 17, 31, 37, 39],
     "labels": {
       "1": "Download the restore guide",
@@ -885,41 +884,42 @@
       "39": "Settings"
     },
     "clip": {
-      "y": 0,
-      "height": 1569,
+      "y": 38,
+      "height": 1600,
       "target": "marks"
     },
     "route": "/settings/backups",
-    "screen": "cb3b8256fc78ea91",
+    "screen": "51735e6ae80761f9",
     "guide": "2abc5dddeca1e918",
-    "taken": "2026-10-24"
+    "taken": "2026-10-29"
   },
   "backups-restore": {
     "src": "/help/shots/backups-restore.webp",
     "width": 1280,
-    "height": 1581,
-    "marks": [1, 2, 5, 6, 7],
+    "height": 1589,
+    "marks": [1, 2, 4, 5, 6, 7],
     "labels": {
       "1": "Backups in Google Drive",
       "2": "Recovery key",
+      "4": "Run the monthly restore drill",
       "5": "Save",
       "6": "Download the restore guide",
       "7": "Restore on a new server"
     },
     "clip": {
-      "y": 1381,
-      "height": 1581,
+      "y": 1198,
+      "height": 1589,
       "target": "marks"
     },
     "route": "/settings/backups",
-    "screen": "cb3b8256fc78ea91",
+    "screen": "51735e6ae80761f9",
     "guide": "d23f987fb10aefe1",
-    "taken": "2026-10-24"
+    "taken": "2026-10-29"
   },
   "backups-server-drill": {
     "src": "/help/shots/backups-server-drill.webp",
     "width": 1280,
-    "height": 1465,
+    "height": 1551,
     "marks": [6, 9, 11],
     "labels": {
       "6": "Save",
@@ -928,13 +928,13 @@
     },
     "clip": {
       "y": 0,
-      "height": 1465,
+      "height": 1551,
       "target": "marks"
     },
     "route": "/settings/backups",
-    "screen": "cb3b8256fc78ea91",
+    "screen": "51735e6ae80761f9",
     "guide": "77076a5dc5a13c45",
-    "taken": "2026-10-24"
+    "taken": "2026-10-29"
   },
   "change-password": {
     "src": "/help/shots/change-password.webp",

@@ -150,6 +150,8 @@ export function presentConfig(config: BackupConfig, now = new Date()) {
       /** The client's id, to show which one is in use (the secret is never shown). */
       clientId: client?.clientId ?? null,
       setOnScreen: Boolean(config.googleClientId),
+      /** The client came from the Extas ERP by a copy code (extas-client.ts). */
+      fromExtas: Boolean(config.googleClientFrom),
       connected: Boolean(config.credentialsRef),
       account: config.googleDriveAccount,
       folderId: config.googleDriveFolderId,
@@ -301,7 +303,10 @@ export async function getBackupOverview() {
     : null;
   const { drillInfo } = await import("@/modules/backups/standby");
   const { presentServerDrill } = await import("@/modules/backups/server-drill");
+  const { listCopies } = await import("@/modules/backups/copies.service");
   return {
+    /** Sold copies given this server's Google client by a copy code. */
+    copies: await listCopies(),
     githubRepo: github?.githubRepo ?? null,
     config: presentConfig(config),
     health: await backupHealth(config),

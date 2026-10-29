@@ -53,6 +53,8 @@ import {
   restoreStatusAction,
   runBackupNowAction,
   setCloudflareAction,
+  makeCopyCodeAction,
+  setCopyBlockedAction,
   setGoogleClientAction,
   setKeepKeyInDriveAction,
   setRecoveryKeyAction,
@@ -61,6 +63,7 @@ import {
   testCloudflareAction,
   testRestoreNowAction,
   updateBackupConfigAction,
+  applyCopyCodeAction,
 } from "@/server/actions/backups.actions";
 
 /*
@@ -110,6 +113,7 @@ export function BackupsScreen({ overview }: { overview: Overview }) {
       <SchedulePanel config={config} setMessage={setMessage} />
       <RecoveryKeyPanel config={config} setMessage={setMessage} />
       <DrivePanel config={config} locked={locked} setMessage={setMessage} />
+      {overview.copies.canShare && <CopiesPanel copies={overview.copies} setMessage={setMessage} />}
       <CloudflarePanel config={config} setMessage={setMessage} />
       <GitHubAlertPanel config={config} githubRepo={overview.githubRepo} setMessage={setMessage} />
       <DriveBackupsPanel
@@ -1059,6 +1063,7 @@ function DrivePanel({ config, locked, setMessage }: PanelProps & { locked: boole
   } | null>(null);
   const [copied, setCopied] = useState(false);
   const [ownClient, setOwnClient] = useState(false);
+  const [usingCode, setUsingCode] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
   const [reconnecting, setReconnecting] = useState(false);
   const [status, setStatus] = useState<DriveStatus | null>(null);
@@ -1255,23 +1260,72 @@ function DrivePanel({ config, locked, setMessage }: PanelProps & { locked: boole
         {config.googleDrive.available ? (
           <p className="break-all text-muted-foreground">
             Google client: <span className="font-mono">{config.googleDrive.clientId}</span>
-            {config.googleDrive.setOnScreen ? " (your own)" : " (set up by Extas on this server)"}
+            {config.googleDrive.fromExtas
+              ? " (from Extas, by a copy code)"
+              : config.googleDrive.setOnScreen
+                ? " (your own)"
+                : " (set up by Extas on this server)"}
           </p>
         ) : (
           <p className="text-muted-foreground">
-            Google Drive is not set up on this server yet. Ask Extas to set it up, or use your own
-            Google client below.
+            Google Drive is not set up on this server yet. Use the copy code Extas gave you, or your
+            own Google client below.
           </p>
         )}
-        <div>
+        <div className="flex flex-wrap gap-x-4 gap-y-1">
+          {!config.googleDrive.setOnScreen && (
+            <button
+              type="button"
+              className="text-left underline"
+              onClick={() => setUsingCode(true)}
+            >
+              Use a copy code
+            </button>
+          )}
           <button type="button" className="text-left underline" onClick={() => setOwnClient(true)}>
-            {config.googleDrive.setOnScreen
+            {config.googleDrive.setOnScreen && !config.googleDrive.fromExtas
               ? "Change your own Google client (advanced)"
               : "Use your own Google client (advanced)"}
           </button>
         </div>
         {ownClient && (
           <GoogleClientDialog setMessage={setMessage} onDone={() => setOwnClient(false)} />
+        )}
+        {usingCode && (
+          <FormDialog
+            title="Use a copy code"
+            description="Extas gives each copy of the ERP a code once. With it, this server backs up with Extas's Google client, so you never open Google Cloud. Then press Connect Google Drive and sign in with your own Google account."
+            submitLabel="Use the code"
+            pendingLabel="Asking Extas"
+            errorTitle="The copy code was not used"
+            onClose={() => setUsingCode(false)}
+            onSubmit={async (form) => {
+              const result = await applyCopyCodeAction({
+                code: form.get("code"),
+                pin: form.get("pin") || undefined,
+              });
+              if (!result.ok) return result.error;
+              setUsingCode(false);
+              setMessage({
+                tone: "success",
+                text: "The Google client from Extas is saved. Now press Connect Google Drive.",
+              });
+            }}
+          >
+            {(fieldError) => (
+              <>
+                <Field id="copy-code" label="Copy code" error={fieldError("code")}>
+                  <Input
+                    id="copy-code"
+                    name="code"
+                    autoComplete="off"
+                    placeholder="EXTAS-ABCD-EFGH-JKMN-PQRS-TVWX"
+                  />
+                </Field>
+                <PinField id="copy-code-pin" error={fieldError("pin") ?? fieldError("pinNotSet")} />
+              </>
+            )}
+          </FormDialog>
         )}
       </div>
       {reconnecting && (
@@ -1398,6 +1452,181 @@ function GoogleClientDialog({
         </>
       )}
     </FormDialog>
+  );
+}
+
+// =============================================================================
+// Copies of this ERP (copy codes, owner's decision 2026-10-29)
+// =============================================================================
+
+const COPY_STATE: Record<string, { text: string; tone: Tone }> = {
+  WAITING: { text: "Code not used yet", tone: "open" },
+  EXPIRED: { text: "Code too old", tone: "warn" },
+  IN_USE: { text: "In use", tone: "done" },
+  BLOCKED: { text: "Blocked", tone: "warn" },
+};
+
+function CopiesPanel({
+  copies,
+  setMessage,
+}: {
+  copies: Overview["copies"];
+  setMessage: SetMessage;
+}) {
+  const when = useWhen({ year: true });
+  const [making, setMaking] = useState(false);
+  const [made, setMade] = useState<{ code: string; codeExpiresAt: Date } | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [blocking, setBlocking] = useState<{ id: string; label: string; blocked: boolean } | null>(
+    null,
+  );
+  return (
+    <Panel
+      title="Copies of this ERP"
+      id="copies"
+      action={
+        <Button type="button" size="sm" onClick={() => setMaking(true)}>
+          <PlusIcon aria-hidden />
+          Make a copy code
+        </Button>
+      }
+    >
+      <div className="grid min-w-0 gap-3 text-sm">
+        <p className="text-muted-foreground">
+          When you sell a copy of the ERP, make a copy code for it and give the code to the buyer.
+          They enter it once on their Backups screen, so their copy backs up to their own Google
+          Drive with your Google client. A code works once, for 30 days. Block stops a copy at once.
+        </p>
+        <p>
+          In use: {copies.counts.inUse} · Code not used yet: {copies.counts.waiting} · Blocked:{" "}
+          {copies.counts.blocked}
+        </p>
+        {made && (
+          <div className="grid min-w-0 gap-2 rounded-md border border-primary/40 bg-primary/5 p-4">
+            <p>Give this code to the buyer. It is shown only now.</p>
+            <p className="font-mono text-xl tracking-wider break-all text-primary">{made.code}</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(made.code);
+                    setCopied(true);
+                  } catch {
+                    setMessage({ tone: "error", text: "The code was not copied: write it down." });
+                  }
+                }}
+              >
+                <CopyIcon aria-hidden />
+                {copied ? "Copied" : "Copy code"}
+              </Button>
+              <span className="text-xs text-muted-foreground">
+                Works until {when(made.codeExpiresAt)}
+              </span>
+            </div>
+          </div>
+        )}
+        {copies.copies.length === 0 ? (
+          <p className="text-muted-foreground">No copy codes yet.</p>
+        ) : (
+          <ul className="grid min-w-0 gap-2">
+            {copies.copies.map((c) => (
+              <li
+                key={c.id}
+                className="flex min-w-0 flex-wrap items-start justify-between gap-2 rounded-md border p-3"
+              >
+                <div className="grid min-w-0 gap-1">
+                  <p className="font-medium break-words">{c.label}</p>
+                  <StatusBadge tone={COPY_STATE[c.state]!.tone}>
+                    {COPY_STATE[c.state]!.text}
+                  </StatusBadge>
+                  {c.address && <p className="text-xs break-all">{c.address}</p>}
+                  <p className="text-xs text-muted-foreground">
+                    {c.state === "WAITING" || c.state === "EXPIRED"
+                      ? `Code works until ${when(c.codeExpiresAt)}`
+                      : `Last check-in: ${c.lastSeenAt ? when(c.lastSeenAt) : "not yet"} · Google Drive: ${c.driveConnected ? "connected" : "not connected"}`}
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() =>
+                    setBlocking({ id: c.id, label: c.label, blocked: c.state !== "BLOCKED" })
+                  }
+                >
+                  {c.state === "BLOCKED" ? "Unblock" : "Block"}
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      {making && (
+        <FormDialog
+          title="Make a copy code"
+          description="Write who the copy is for. The code is shown once: give it to the buyer."
+          submitLabel="Make the code"
+          pendingLabel="Making"
+          errorTitle="The copy code was not made"
+          onClose={() => setMaking(false)}
+          onSubmit={async (form) => {
+            const result = await makeCopyCodeAction({
+              label: form.get("label"),
+              pin: form.get("pin") || undefined,
+            });
+            if (!result.ok) return result.error;
+            setMaking(false);
+            setCopied(false);
+            setMade({ code: result.data.code, codeExpiresAt: result.data.codeExpiresAt });
+          }}
+        >
+          {(fieldError) => (
+            <>
+              <Field id="copy-label" label="Who it is for" error={fieldError("label")}>
+                <Input
+                  id="copy-label"
+                  name="label"
+                  autoComplete="off"
+                  placeholder="Rahim Fashions"
+                />
+              </Field>
+              <PinField id="copy-make-pin" error={fieldError("pin") ?? fieldError("pinNotSet")} />
+            </>
+          )}
+        </FormDialog>
+      )}
+      {blocking && (
+        <FormDialog
+          destructive={blocking.blocked}
+          title={blocking.blocked ? "Block this copy" : "Unblock this copy"}
+          description={
+            blocking.blocked
+              ? `${blocking.label}: the code stops working, and a copy in use stops sending new backups to Google Drive at its next daily check-in.`
+              : `${blocking.label}: the copy may use your Google client again.`
+          }
+          submitLabel={blocking.blocked ? "Block" : "Unblock"}
+          pendingLabel="Saving"
+          errorTitle="The copy was not changed"
+          onClose={() => setBlocking(null)}
+          onSubmit={async (form) => {
+            const result = await setCopyBlockedAction({
+              copyId: blocking.id,
+              blocked: blocking.blocked,
+              pin: form.get("pin") || undefined,
+            });
+            if (!result.ok) return result.error;
+            setBlocking(null);
+          }}
+        >
+          {(fieldError) => (
+            <PinField id="copy-block-pin" error={fieldError("pin") ?? fieldError("pinNotSet")} />
+          )}
+        </FormDialog>
+      )}
+    </Panel>
   );
 }
 

@@ -4714,6 +4714,47 @@ model BackupConfig {
   /// repository whose secrets the ERP filled in, and when. The values are never kept.
   githubAlertRepo     String?
   githubAlertAt       DateTime?
+  /// Sharing the Google client with sold copies (extas-client.ts, copies.service.ts).
+  /// On a copy: the address of the ERP the Google client came from (by a copy
+  /// code); null when the client was set here (or none), so a copy never gives it on.
+  googleClientFrom    String?
+  /// On a copy: its name and secret (sealed with ENCRYPTION_KEY) at that ERP, the
+  /// last daily check-in there, and when that ERP stopped its Drive backups (Block).
+  copyId              String?
+  copySecretRef       String?
+  copyCheckedAt       DateTime?
+  copyBlockedAt       DateTime?
+}
+
+/// A sold copy of the ERP that may take this server's Google client, by a
+/// one-time copy code the owner made for it (owner's decision, 2026-10-29).
+/// Platform-wide like BackupConfig, not a company's record: a copy is a whole
+/// other server, so it has no companyId and is not in TENANT_MODELS. Only the
+/// platform owner sees it (Settings > Backups). Never holds the copy's Google
+/// account or any of its data: a name, its web address and whether Drive is on.
+model ErpCopy {
+  id             String    @id @default(cuid())
+  /// Who the copy is for (the buyer or shop), as the owner typed it.
+  label          String
+  /// SHA-256 of the copy code (shown once; never stored).
+  codeHash       String    @unique
+  /// An unused code stops working after this.
+  codeExpiresAt  DateTime
+  /// When the copy used its code (null: not yet).
+  claimedAt      DateTime?
+  /// The copy's web address as it last said (origin only).
+  address        String?
+  /// SHA-256 of the copy's own secret, given at the claim (the copy keeps the secret).
+  tokenHash      String?   @unique
+  lastSeenAt     DateTime?
+  driveConnected Boolean   @default(false)
+  /// Blocked by the owner (PIN): the code and the copy's daily check-in answer "not allowed".
+  blockedAt      DateTime?
+  blockedById    String?
+  createdById    String?
+  createdAt      DateTime  @default(now())
+
+  @@index([address])
 }
 
 enum BackupScheduleMode {

@@ -8,6 +8,8 @@ import { runAction } from "@/lib/result";
 import { requireCompany, requirePlatformSuperAdmin } from "@/modules/auth/context";
 import * as backups from "@/modules/backups/backup.service";
 import * as cloudflare from "@/modules/backups/cloudflare";
+import { makeCopyCode, setCopyBlocked } from "@/modules/backups/copies.service";
+import { applyCopyCode } from "@/modules/backups/extas-client";
 import { setUpGitHubAlert } from "@/modules/backups/github-alert";
 import { startDriveConnect } from "@/modules/backups/drive-connect";
 import { listDriveBackups } from "@/modules/backups/drive-copies";
@@ -168,3 +170,13 @@ export const restoreStatusAction = async () =>
     await owner();
     return restores.restoreStatus();
   });
+
+/** "Make a copy code" for a sold copy of the ERP (PIN); the code is shown once. */
+export const makeCopyCodeAction = async (input: unknown) =>
+  change(async () => makeCopyCode(await ownerInCompany(), input, await getRequestMeta()));
+/** Block or Unblock a sold copy (PIN). */
+export const setCopyBlockedAction = async (input: unknown) =>
+  change(async () => setCopyBlocked(await ownerInCompany(), input, await getRequestMeta()));
+/** On a sold copy: "Use a copy code" from Extas for the Google client (PIN). */
+export const applyCopyCodeAction = async (input: unknown) =>
+  change(async () => applyCopyCode(await ownerInCompany(), input, await getRequestMeta()));

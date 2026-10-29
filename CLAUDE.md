@@ -207,6 +207,12 @@ overwrites a stored total or figure.
 
 ## 9. Decisions log (newest first)
 
+- 2026-10-29 (copy codes for sold copies): a sold copy of the ERP gets the Extas Google client only through a
+  one-time copy code the owner makes on the Extas ERP's Backups screen ("Copies of this ERP", with the PIN; only
+  where the client was set on screen, never one that came from another ERP). A code works once and for 30 days;
+  only its hash is stored. The copy enters it once ("Use a copy code", with the PIN) and keeps the client sealed;
+  it checks in daily, and Block (PIN) stops the code and, at the copy's next check-in, removes the client and its
+  Drive sign-in (no data or backup is deleted; local backups go on). Without a code nobody gets the client.
 - 2026-10-24 (Business, Retail and POS plan v6, approved, NOT built yet; start only when the owner says so): the
   plan is now `docs/business-overview/plan-v6.md`, the website's part `site-changes-v6.md` and the owner's
   answers `owner-notes-v6.md`; v6 replaces v5 where they differ. The ERP is a separate supplier to each shop: the

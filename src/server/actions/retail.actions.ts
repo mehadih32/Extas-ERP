@@ -135,6 +135,19 @@ export async function checkParcelAction(parcelId: string, input: unknown) {
   });
 }
 
+export async function undoDecisionAction(pieceId: string, input: unknown) {
+  return runAction(async () => {
+    const result = await returns.undoDecision(
+      await requireCompany(),
+      pieceId,
+      input,
+      await getRequestMeta(),
+    );
+    revalidatePath("/business/returns");
+    return result;
+  });
+}
+
 // Business > Shop stock (plan v6 sec 3 and 3a): the shops' reserve and "Buy ready stock".
 
 export async function shopStockPageAction() {

@@ -7644,6 +7644,8 @@ model RetailReturnPiece {
   reservedForLineId String?
   /// Approved by the packing check ("Checked, OK"): APPROVED_AT_PACKING for the site.
   atPacking         Boolean              @default(false)
+  /// Approved and put back on the shops' reserve (an undone approval takes it off again).
+  reservePutBack    Boolean              @default(false)
   /// The site's return.piece.decided event for the latest decision, and the one it reverses.
   eventId           String?
   reversesEventId   String?

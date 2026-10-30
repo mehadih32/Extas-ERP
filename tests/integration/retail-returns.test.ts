@@ -15,7 +15,12 @@ import { storeDashboard } from "@/modules/retail/dashboards.service";
 import { reverseJournalEntry } from "@/modules/accounts/journal.service";
 import { setPin } from "@/modules/ai/settings.service";
 import { getPartyBalance } from "@/modules/parties/ledger.service";
-import { checkParcel, resolveHold, returnsPage } from "@/modules/retail/returns.service";
+import {
+  checkParcel,
+  resolveHold,
+  returnsPage,
+  undoDecision,
+} from "@/modules/retail/returns.service";
 import * as stores from "@/modules/retail/stores.service";
 import { retailSiteWatch } from "@/modules/retail/site-watch";
 import { retailWatch } from "@/modules/retail/watch.service";
@@ -395,5 +400,64 @@ run("Retail store's returns (plan v6, part 2)", () => {
     await receivePayment(shop.accounts, { partyId: store.partyId, amount: 100, method: "CASH" });
     await retailSiteWatch();
     expect((await sent("account.released"))[0]!.data).toMatchObject({ balance: 1775 });
+  });
+
+  it("undoes a check made by mistake, with a reason and the PIN, by reversing entries", async () => {
+    await place("WEB-11");
+    await delivery("WEB-11", { status: "RETURNED" });
+    await handBack("RL-11", [{ consignmentId: "PTH-WEB-11", externalOrderId: "WEB-11" }]);
+    const parcel = (await returnsPage(shop.owner)).waiting[0]!;
+    const [a, b, c] = parcel.pieces;
+    const stockBefore = (await navyS()).quantity;
+    await checkParcel(shop.owner, parcel.id, {
+      decisions: [
+        { pieceId: a!.id, decision: "APPROVE" },
+        { pieceId: b!.id, decision: "APPROVE" },
+        { pieceId: c!.id, decision: "DECLINE", reason: "USED" },
+      ],
+    });
+    expect(await balance()).toBe(625);
+    const history = (await returnsPage(shop.owner)).history[0]!;
+    expect(history.pieces.every((x) => x.undoable)).toBe(true);
+
+    // A reason and the PIN; Accounts' right for an approval.
+    await expect(undoDecision(shop.owner, a!.id, { reason: "x", pin: PIN })).rejects.toThrow(
+      "Write why the decision is undone",
+    );
+    await expect(
+      undoDecision(shop.owner, a!.id, { reason: "Wrong piece", pin: "1111" }),
+    ).rejects.toThrow();
+
+    // The declined piece waits again; nothing else changes.
+    await undoDecision(shop.owner, c!.id, { reason: "It was not used", pin: PIN });
+    expect(await balance()).toBe(625);
+    // Undoing one approval takes back the credit it shared with the other piece.
+    expect(
+      await undoDecision(shop.owner, a!.id, { reason: "Stain found later", pin: PIN }),
+    ).toEqual({ pieces: 2 });
+    expect(await balance()).toBe(1875);
+    expect((await navyS()).quantity).toBe(stockBefore);
+    const page = await returnsPage(shop.owner);
+    expect(page.waiting[0]!.pieces.map((x) => x.status)).toEqual(["WAITING", "WAITING", "WAITING"]);
+    const voided = await prisma.salesReturn.findMany();
+    expect(voided.every((r) => r.voidedAt)).toBe(true);
+    // The site hears each correction, naming the event it reverses.
+    const decided = await sent("return.piece.decided");
+    const undone = decided.filter((e) => e.data.status === "WAITING");
+    expect(undone).toHaveLength(3);
+    const first = decided.find((e) => e.data.pieceId === a!.id && e.data.status === "APPROVED")!;
+    expect(undone.find((e) => e.data.pieceId === a!.id)!.data.reverses).toBe(first.id);
+    // Checked again, correctly this time.
+    await checkParcel(shop.owner, parcel.id, {
+      decisions: [
+        { pieceId: a!.id, decision: "DECLINE", reason: "STAIN_OR_DAMAGE" },
+        { pieceId: b!.id, decision: "APPROVE" },
+        { pieceId: c!.id, decision: "APPROVE" },
+      ],
+    });
+    expect(await balance()).toBe(625);
+    await expect(undoDecision(shop.owner, a!.id, { reason: "Again", pin: PIN })).resolves.toEqual({
+      pieces: 1,
+    });
   });
 });

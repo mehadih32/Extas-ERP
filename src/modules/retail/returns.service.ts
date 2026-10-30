@@ -12,10 +12,11 @@ import type { RequestMeta } from "@/lib/request-meta";
 import { runTransaction } from "@/lib/transaction";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
-import { createSalesReturn } from "@/modules/sales/return.service";
+import { requirePin } from "@/modules/ai/settings.service";
+import { createSalesReturn, voidSalesReturn } from "@/modules/sales/return.service";
 
 import { settleExchangePieces } from "./exchanges.service";
-import { putBackOnReserve } from "./reserve";
+import { putBackOnReserve, takeBackFromReserve } from "./reserve";
 import { shopEventTx } from "./shop-events";
 
 /*
@@ -245,6 +246,8 @@ function parcelView(p: ParcelRow, now: Date, checkDays: number) {
       /** Sent on a new order from Return stock: its check is the packing check. */
       reservedFor: x.reservedFor?.order.order.number ?? null,
       atPacking: x.atPacking,
+      /** A decision that "Undo the check" can take back (undoDecision). */
+      undoable: x.status !== "WAITING" && !x.atPacking && !x.reservedForLineId && !p.order.exchange,
     })),
   };
 }
@@ -624,14 +627,130 @@ async function creditApproved(
       data: { salesReturnId: credit.id },
     });
     // A shop's piece approved back is a shop's piece again (plan v6 sec 3a).
-    await putBackOnReserve(
+    const back = await putBackOnReserve(
       prisma,
       ctx.company.id,
       pieces.map((p) => p.retailOrderLineId),
     );
+    const onReserve = pieces.filter((_, i) => back[i]).map((p) => p.id);
+    if (onReserve.length > 0) {
+      await ctx.db.retailReturnPiece.updateMany({
+        where: { id: { in: onReserve } },
+        data: { reservePutBack: true },
+      });
+    }
   } catch (error) {
     throw new CreditedThen(error);
   }
+}
+
+const undoSchema = z.object({
+  reason: z
+    .string()
+    .trim()
+    .min(3, "Write why the decision is undone")
+    .max(300, "At most 300 characters"),
+  pin: z.string().optional(),
+});
+
+/**
+ * Undo a check decision made by mistake (site-changes 2.5.4, "Corrections"),
+ * with a reason and the owner's PIN. The piece waits for the check again.
+ * An approval is undone by voiding its sales return (a reversing entry, never
+ * a delete): that takes back every piece approved with it, so they all wait
+ * again, and pieces put back on the shops' reserve come off it. The site gets
+ * return.piece.decided with status WAITING and `reverses`. An exchange's
+ * pieces (their money settled through the exchange) and a piece passed at
+ * packing (it went out on a new order) cannot be undone.
+ */
+export async function undoDecision(
+  ctx: CompanyContext,
+  pieceId: string,
+  raw: unknown,
+  meta?: RequestMeta,
+) {
+  assertCanCheckReturns(ctx);
+  const input = undoSchema.parse(raw);
+  const piece = await ctx.db.retailReturnPiece.findUnique({
+    where: { id: pieceId },
+    include: {
+      variant: { select: { sku: true } },
+      parcel: { include: { order: { include: { exchange: { select: { number: true } } } } } },
+    },
+  });
+  if (!piece) throw new AppError("NOT_FOUND", "There is no such returned piece.");
+  if (piece.status === "WAITING") {
+    throw new AppError("CONFLICT", "This piece waits for the check: there is nothing to undo.");
+  }
+  if (piece.parcel.order.exchange) {
+    throw new AppError(
+      "CONFLICT",
+      `This piece came back on exchange ${piece.parcel.order.exchange.number}: its money settled through the exchange, so the check cannot be undone.`,
+    );
+  }
+  if (piece.atPacking || piece.reservedForLineId) {
+    throw new AppError(
+      "CONFLICT",
+      "This piece went out on a new order: its check cannot be undone.",
+    );
+  }
+  if (piece.status === "APPROVED" && !canApprove(ctx)) {
+    throw new AppError(
+      "FORBIDDEN",
+      "Undoing an approval takes back the store's credit: it needs Accounts' right to record money too.",
+    );
+  }
+  await requirePin(ctx, input.pin, "undo a return check");
+  // An approval: every piece credited on the same sales return comes back with it.
+  const together = piece.salesReturnId
+    ? await ctx.db.retailReturnPiece.findMany({ where: { salesReturnId: piece.salesReturnId } })
+    : [piece];
+  if (piece.salesReturnId) {
+    await voidSalesReturn(
+      ctx,
+      piece.salesReturnId,
+      { reason: `Retail return check undone: ${input.reason}` },
+      meta,
+    );
+  }
+  await prisma.$transaction(async (tx) => {
+    for (const p of together) {
+      if (p.reservePutBack) await takeBackFromReserve(tx, ctx.company.id, p.retailOrderLineId);
+    }
+    await tx.retailReturnPiece.updateMany({
+      where: { id: { in: together.map((p) => p.id) }, companyId: ctx.company.id },
+      data: {
+        status: "WAITING",
+        reason: null,
+        note: null,
+        decidedById: null,
+        decidedAt: null,
+        salesReturnId: null,
+        reservePutBack: false,
+      },
+    });
+    await tx.retailReturnParcel.update({
+      where: { id: piece.parcelId },
+      data: { state: "IN_RETURN_STOCK" },
+    });
+    await auditInCompany(
+      ctx,
+      meta,
+      {
+        action: "UPDATE",
+        entityType: "RetailReturnParcel",
+        entityId: piece.parcelId,
+        summary: `${piece.parcel.consignmentId}: check undone for ${together.length} piece(s) (${piece.variant.sku}${together.length > 1 ? " and the pieces approved with it" : ""}), they wait for the check again. Why: ${input.reason}`,
+      },
+      tx,
+    );
+  });
+  await piecesDecided(
+    ctx,
+    together.map((p) => p.id),
+    true,
+  );
+  return { pieces: together.length };
 }
 
 /**

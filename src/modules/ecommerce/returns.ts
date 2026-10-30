@@ -7,6 +7,7 @@ import { createSalesReturn, returnPosition } from "@/modules/sales/return.servic
 import { canReturnOnInvoice } from "@/modules/sales/rules";
 
 import { EcommerceApiError } from "./errors";
+import { goneForStore, retailStoreOf } from "./retail-mode";
 import { shopOrderOf } from "./payments";
 import type { ShopCall } from "./route";
 import { returnSchema } from "./schemas";
@@ -47,6 +48,12 @@ async function returnExists(call: ShopCall, externalReturnId: string) {
 }
 
 export async function recordShopReturn(call: ShopCall) {
+  if (await retailStoreOf(call)) {
+    throw goneForStore(
+      "POST /returns",
+      "send the courier's return list with POST /return-lists; the owner checks the pieces in the ERP.",
+    );
+  }
   const input = returnSchema.parse(call.body);
   const { ctx } = call;
   const externalReturnId = input.externalReturnId || undefined;

@@ -26,8 +26,17 @@ import {
 import { releaseStock } from "@/modules/sales/stock-ops";
 import { collectOrderLines } from "@/modules/sales/totals";
 
+import { storePrices } from "@/modules/retail/stores.service";
+
 import { amount, variantActive } from "./catalog.service";
 import { EcommerceApiError } from "./errors";
+import {
+  assertStoreNotOnHold,
+  assertStoreOpen,
+  goneForStore,
+  retailStoreOf,
+  type ShopStore,
+} from "./retail-mode";
 import type { ShopCall } from "./route";
 import {
   createOrderSchema,
@@ -81,8 +90,16 @@ const isUniqueClash = (error: unknown) =>
 export async function shopOrderOf(ctx: CompanyContext, orderId: string): Promise<ShopOrder> {
   const o = await ctx.db.salesOrder.findUniqueOrThrow({
     where: { id: orderId },
-    include: { items: { include: { variant: { select: { sku: true } } }, orderBy: { id: "asc" } } },
+    include: {
+      items: { include: { variant: { select: { sku: true } } }, orderBy: { id: "asc" } },
+      retailOrder: {
+        include: {
+          lines: { include: { variant: { select: { sku: true } } }, orderBy: { createdAt: "asc" } },
+        },
+      },
+    },
   });
+  const retail = o.retailOrder;
   return {
     erpOrderId: o.id,
     erpOrderNumber: o.number,
@@ -98,6 +115,21 @@ export async function shopOrderOf(ctx: CompanyContext, orderId: string): Promise
       unitPrice: amount(i.unitPrice),
       discount: amount(i.discount),
     })),
+    ...(retail
+      ? {
+          erpTotal: amount(retail.erpTotal),
+          billedAt: retail.billedAt?.toISOString() ?? null,
+          lines: retail.lines.map((l) => ({
+            lineId: l.lineId,
+            sku: l.variant.sku,
+            grade: l.grade,
+            quantity: l.quantity,
+            shopPrice: amount(l.shopPrice),
+            customerPrice: amount(l.customerPrice),
+            fromReturnStock: false,
+          })),
+        }
+      : {}),
   };
 }
 
@@ -291,6 +323,8 @@ export async function createShopOrder(call: Call, raw: unknown): Promise<ShopOrd
   const warehouseId = await shopWarehouse(call);
   const existing = await findShopOrder(call, input.externalOrderId);
   if (existing) throw orderExists(existing);
+  const store = await retailStoreOf(call);
+  if (store) return createStoreOrder(call, input, store, warehouseId);
   const lines = await resolveItems(ctx, input.items);
   const checked = await assertInStock(ctx, warehouseId, lines);
   const resolved: ResolvedLine[] = checked.map((l) => ({
@@ -341,6 +375,165 @@ export async function createShopOrder(call: Call, raw: unknown): Promise<ShopOrd
     }
     throw error;
   }
+}
+
+type CreateInput = ReturnType<typeof createOrderSchema.parse>;
+
+const round2 = (value: Prisma.Decimal) => value.toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
+
+/**
+ * POST /orders from a retail store's shop (plan v6 sec 9): a sale to the store
+ * (its buyer) at the store's own prices, fixed now and billed when the parcel
+ * leaves. The customer's prices are kept beside it for the store's reports
+ * only. Refused while the store is closed or on hold, and for a SKU with no
+ * shop price (never sold at 0).
+ */
+async function createStoreOrder(
+  call: Call,
+  input: CreateInput,
+  store: ShopStore,
+  warehouseId: string,
+): Promise<ShopOrder> {
+  const { ctx, integration, meta } = call;
+  assertStoreOpen(store);
+  await assertStoreNotOnHold(ctx, store);
+  const bGrade = input.items.filter((i) => i.grade === "B").map((i) => i.sku);
+  if (bGrade.length > 0) {
+    throw new EcommerceApiError(
+      422,
+      "VALIDATION",
+      `B-grade lines are not open in the ERP yet: ${[...new Set(bGrade)].join(", ")}.`,
+      { bGradeSkus: [...new Set(bGrade)] },
+    );
+  }
+  const siteLines = input.items.map((item, index) => ({
+    ...item,
+    lineId: item.lineId ?? `${input.externalOrderId}-${index + 1}`,
+  }));
+  const ids = siteLines.map((l) => l.lineId);
+  const twice = ids.filter((id, index) => ids.indexOf(id) !== index);
+  if (twice.length > 0) {
+    throw new EcommerceApiError(422, "VALIDATION", `Each lineId once: ${twice.join(", ")}.`, {
+      lineId: [...new Set(twice)],
+    });
+  }
+  const lines = await resolveItems(
+    ctx,
+    siteLines.map((l) => ({ sku: l.sku, quantity: l.quantity, unitPrice: 0, discount: 0 })),
+  );
+  const prices = await storePrices(
+    ctx,
+    store.id,
+    lines.map((l) => l.variantId),
+    "A",
+  );
+  const noPrice = lines.filter((l) => !prices.get(l.variantId)).map((l) => l.sku);
+  if (noPrice.length > 0) {
+    throw new EcommerceApiError(
+      409,
+      "NO_SHOP_PRICE",
+      `These SKUs have no shop price yet, so they are not for sale to this store: ${noPrice.join(", ")}.`,
+      { skus: noPrice },
+    );
+  }
+  const priced = lines.map((l) => ({ ...l, unitPrice: Number(prices.get(l.variantId)) }));
+  const checked = await assertInStock(ctx, warehouseId, priced);
+  const variantOf = new Map(lines.map((l) => [l.sku, l.variantId]));
+  const customerPriceOf = (l: (typeof siteLines)[number]) =>
+    l.customerPrice !== undefined
+      ? new Prisma.Decimal(l.customerPrice)
+      : round2(
+          new Prisma.Decimal(l.unitPrice).minus(new Prisma.Decimal(l.discount).div(l.quantity)),
+        );
+  const customerTotal = siteLines.reduce(
+    (sum, l) => sum.plus(customerPriceOf(l).times(l.quantity)),
+    new Prisma.Decimal(0),
+  );
+  try {
+    const orderId = await runTransaction(async (tx) => {
+      const order = await createOrderTx(
+        tx,
+        ctx,
+        {
+          channel: "WEBSITE",
+          partyId: store.partyId,
+          warehouseId,
+          orderDate: input.orderDate ? new Date(input.orderDate) : undefined,
+          lines: checked.map((l) => ({
+            variantId: l.variantId,
+            sku: l.sku,
+            styleId: l.styleId,
+            quantity: l.quantity,
+            unitPrice: new Prisma.Decimal(l.unitPrice),
+            discount: new Prisma.Decimal(0),
+            available: l.available,
+            short: false,
+          })),
+          charges: {},
+          customerName: input.customer.name,
+          customerPhone: input.customer.phone,
+          shippingAddress: input.shippingAddress,
+          notes: input.note ?? null,
+          integrationId: integration.id,
+          externalOrderId: input.externalOrderId,
+        },
+        meta,
+      );
+      await tx.retailOrder.create({
+        data: {
+          companyId: ctx.company.id,
+          storeId: store.id,
+          orderId: order.id,
+          erpTotal: order.total,
+          customerTotal,
+          deliveryCharge: input.deliveryCharge,
+          advancePaid: input.advancePaid,
+          lines: {
+            create: siteLines.map((l) => ({
+              companyId: ctx.company.id,
+              lineId: l.lineId,
+              variantId: variantOf.get(l.sku)!,
+              grade: l.grade,
+              quantity: l.quantity,
+              shopPrice: prices.get(variantOf.get(l.sku)!)!,
+              customerPrice: customerPriceOf(l),
+              comboId: l.comboId ?? null,
+            })),
+          },
+        },
+      });
+      return order.id;
+    }, TX_OPTIONS);
+    return await shopOrderOf(ctx, orderId);
+  } catch (error) {
+    if (isAppError(error, "INSUFFICIENT_STOCK")) {
+      throw await lostRace(ctx, warehouseId, priced, error);
+    }
+    if (isUniqueClash(error)) {
+      const saved = await findShopOrder(call, input.externalOrderId);
+      if (saved) throw orderExists(saved);
+    }
+    throw error;
+  }
+}
+
+/**
+ * Bills a retail store's order (plan v6 sec 1): the invoice to the store at the
+ * prices fixed on the order and the delivery challan (stock out, cost of goods),
+ * once, when the parcel leaves. False when it is not a store's order or was
+ * billed already.
+ */
+export async function billStoreOrderTx(
+  tx: Tx,
+  ctx: CompanyContext,
+  orderId: string,
+  meta?: RequestMeta,
+) {
+  const retail = await tx.retailOrder.findUnique({ where: { orderId } });
+  if (!retail || retail.billedAt) return false;
+  await deliverShopOrderTx(tx, ctx, orderId, meta);
+  await tx.retailOrder.update({ where: { id: retail.id }, data: { billedAt: new Date() } });
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -688,6 +881,8 @@ export async function updateShopOrder(
       reason: ["Send it with status CANCELLED or RETURNED"],
     });
   }
+  const retail = await call.ctx.db.retailOrder.findUnique({ where: { orderId: order.id } });
+  if (retail) return updateStoreOrder(call, order.id, retail, input, editing);
   if (editing) await editShopOrder(call, order.id, input);
   switch (input.status) {
     case undefined:
@@ -719,4 +914,52 @@ export async function updateShopOrder(
       break;
   }
   return shopOrderOf(call.ctx, order.id);
+}
+
+/**
+ * PATCH on a retail store's order: the status steps only (its lines and prices
+ * were fixed when it came). DELIVERED bills it when no shipment did; an order
+ * that never left can be cancelled or come back, and is then never billed;
+ * goods that left come back through POST /return-lists.
+ */
+async function updateStoreOrder(
+  call: Call,
+  orderId: string,
+  retail: { id: string; billedAt: Date | null },
+  input: UpdateInput,
+  editing: boolean,
+): Promise<ShopOrder> {
+  if (editing) {
+    throw new EcommerceApiError(
+      409,
+      "CONFLICT",
+      "A retail store's order keeps the lines and prices it came with: cancel it and send it again.",
+    );
+  }
+  switch (input.status) {
+    case undefined:
+      break;
+    case "PROCESSING":
+      await markProcessing(call, orderId);
+      break;
+    case "PACKED":
+      await markPacked(call, orderId);
+      break;
+    case "DELIVERED":
+      await runTransaction((tx) => billStoreOrderTx(tx, call.ctx, orderId, call.meta), TX_OPTIONS);
+      break;
+    case "CANCELLED":
+    case "RETURNED": {
+      if (retail.billedAt) {
+        throw goneForStore(
+          "Cancelling or returning an order that left",
+          "report the courier's result with PUT /orders/{externalOrderId}/delivery and the return with POST /return-lists.",
+        );
+      }
+      const current = await call.ctx.db.salesOrder.findUniqueOrThrow({ where: { id: orderId } });
+      if (current.status !== "CANCELLED") await cancelShopOrder(call, orderId, input.reason);
+      break;
+    }
+  }
+  return shopOrderOf(call.ctx, orderId);
 }

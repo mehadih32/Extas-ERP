@@ -140,6 +140,8 @@ model Company {
   retailStores           RetailStore[]
   retailPrices           RetailPrice[]
   retailPriceChanges     RetailPriceChange[]
+  retailOrders           RetailOrder[]
+  retailOrderLines       RetailOrderLine[]
   webhookEvents          WebhookEvent[]
   integrationApiCalls    IntegrationApiCall[]
   integrationIdempotency IntegrationIdempotency[]
@@ -750,6 +752,7 @@ model ProductVariant {
   challanItems      DeliveryChallanItem[]
   productionTargets ProductionTargetLine[]
   retailPrices      RetailPrice[]
+  retailOrderLines  RetailOrderLine[]
 
   @@unique([companyId, sku])
   @@unique([styleId, colorId, sizeId])
@@ -1621,6 +1624,7 @@ model SalesOrder {
   packedBy           Employee?                @relation("OrderPackedBy", fields: [packedById], references: [id], onDelete: SetNull)
   items              SalesOrderItem[]
   invoice            Invoice?
+  retailOrder        RetailOrder?
   packingList        PackingList?
   deliveryChallans   DeliveryChallan[]
   shipments          Shipment[]
@@ -7295,28 +7299,35 @@ enum RetailGrade {
 /// Buyer 360 live in one place. It buys at its own prices: a rule on the cost per
 /// grade, with hand prices on top (RetailPrice). Closing keeps its history.
 model RetailStore {
-  id            String           @id @default(cuid())
-  companyId     String
-  name          String
-  kind          RetailStoreKind  @default(ONLINE)
-  address       String?
-  phone         String?
+  id                String           @id @default(cuid())
+  companyId         String
+  name              String
+  kind              RetailStoreKind  @default(ONLINE)
+  address           String?
+  phone             String?
   /// The warehouse its goods go out from.
-  warehouseId   String?
+  warehouseId       String?
   /// Its buyer in the buyer list (made with the store).
-  partyId       String           @unique
+  partyId           String           @unique
   /// Its online shop connection (Settings > Integrations), with the shop's key.
-  integrationId String?          @unique
+  integrationId     String?          @unique
   /// A-grade rule on the A-grade cost: PERCENT or AMOUNT. Empty: only hand prices.
-  aRule         RetailPriceRule?
-  aValue        Decimal?         @db.Decimal(14, 4)
+  aRule             RetailPriceRule?
+  aValue            Decimal?         @db.Decimal(14, 4)
   /// B-grade rule on the B-grade cost (PERCENT or AMOUNT) or one price (FIXED).
-  bRule         RetailPriceRule?
-  bValue        Decimal?         @db.Decimal(14, 4)
-  closedAt      DateTime?
-  createdById   String?
-  createdAt     DateTime         @default(now())
-  updatedAt     DateTime         @updatedAt
+  bRule             RetailPriceRule?
+  bValue            Decimal?         @db.Decimal(14, 4)
+  closedAt          DateTime?
+  /// The 30-day hold lifted by the owner (PIN and a reason) until this time.
+  holdReleasedUntil DateTime?
+  holdReleaseReason String?
+  /// Returned pieces are checked within this many days of the courier handing them back.
+  checkDays         Int              @default(5)
+  /// An exchange's old piece must come back within this many days of the new parcel's delivery.
+  exchangeDays      Int              @default(4)
+  createdById       String?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
 
   company     Company                  @relation(fields: [companyId], references: [id], onDelete: Cascade)
   warehouse   Warehouse?               @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
@@ -7324,6 +7335,7 @@ model RetailStore {
   integration SalesChannelIntegration? @relation(fields: [integrationId], references: [id], onDelete: SetNull)
   prices      RetailPrice[]
   changes     RetailPriceChange[]
+  orders      RetailOrder[]
 
   @@unique([companyId, name])
   @@index([companyId])
@@ -7373,4 +7385,52 @@ model RetailPriceChange {
   store   RetailStore @relation(fields: [storeId], references: [id], onDelete: Cascade)
 
   @@index([storeId, changedAt])
+}
+
+/// A website order of a retail store (plan v6 sec 9): an ERP sale to the store
+/// at its shop prices, fixed when the order came. It is billed when the parcel
+/// leaves (billedAt). The customer's prices are kept only for the store's reports.
+model RetailOrder {
+  id             String    @id @default(cuid())
+  companyId      String
+  storeId        String
+  orderId        String    @unique
+  /// What the store owes the ERP for this order, at the shop prices fixed on it.
+  erpTotal       Decimal   @db.Decimal(14, 2)
+  /// What the customer was to pay for the pieces (the store's own figure).
+  customerTotal  Decimal   @default(0) @db.Decimal(14, 2)
+  deliveryCharge Decimal   @default(0) @db.Decimal(14, 2)
+  advancePaid    Decimal   @default(0) @db.Decimal(14, 2)
+  billedAt       DateTime?
+  createdAt      DateTime  @default(now())
+
+  company Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  store   RetailStore       @relation(fields: [storeId], references: [id])
+  order   SalesOrder        @relation(fields: [orderId], references: [id])
+  lines   RetailOrderLine[]
+
+  @@index([companyId, storeId])
+}
+
+/// One line of a store's website order as the site sent it (its own lineId):
+/// the shop price fixed for it and the customer's price per piece.
+model RetailOrderLine {
+  id            String      @id @default(cuid())
+  companyId     String
+  retailOrderId String
+  lineId        String
+  variantId     String
+  grade         RetailGrade @default(A)
+  quantity      Int
+  shopPrice     Decimal     @db.Decimal(14, 2)
+  customerPrice Decimal     @db.Decimal(14, 2)
+  comboId       String?
+  createdAt     DateTime    @default(now())
+
+  company Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  order   RetailOrder    @relation(fields: [retailOrderId], references: [id], onDelete: Cascade)
+  variant ProductVariant @relation(fields: [variantId], references: [id])
+
+  @@unique([retailOrderId, lineId])
+  @@index([companyId, variantId])
 }

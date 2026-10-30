@@ -43,6 +43,25 @@ export const pageQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(500).default(100),
 });
 
+/** GET /catalog/variants: also one style's SKUs (`styleCode`), for the site's "Import from ERP". */
+export const catalogQuerySchema = pageQuerySchema.extend({
+  styleCode: z.string().trim().min(1).max(60).optional(),
+});
+
+/** One SKU in a retail store's catalog: only the price the store buys at (plan v6 sec 2). */
+export type StoreCatalogVariant = {
+  sku: string;
+  barcode: string | null;
+  styleCode: string;
+  styleName: string;
+  color: string;
+  size: string;
+  grade: "A";
+  shopPrice: number;
+  active: boolean;
+  updatedAt: string;
+};
+
 export const stockQuerySchema = pageQuerySchema.extend({
   warehouseId: z.string().max(40).optional(),
 });
@@ -93,6 +112,14 @@ export const orderItemSchema = z.object({
   unitPrice: money,
   /** The discount on the whole line (not per piece). */
   discount: money.default(0),
+  /** A retail store's shop (plan v6): the site's own id for the line, e.g. "WEB-1043-3". */
+  lineId: z.string().trim().min(1).max(60).optional(),
+  /** The customer's price per piece after the combo split and discounts (the store's own figure). */
+  customerPrice: money.optional(),
+  /** The combo the piece is part of. */
+  comboId: z.string().trim().min(1).max(60).optional(),
+  /** "A" (the default) or "B" for B-grade stock. */
+  grade: z.enum(["A", "B"]).default("A"),
 });
 
 export const createOrderSchema = z.object({
@@ -110,6 +137,10 @@ export const createOrderSchema = z.object({
   codAmount: money.default(0),
   paymentMethod: upperEnum(SHOP_PAYMENT_METHODS),
   note: optionalText(1000),
+  /** A retail store's shop: what the customer was to pay for delivery (0 when free). */
+  deliveryCharge: money.default(0),
+  /** A retail store's shop: the customer's advance (bKash or another). */
+  advancePaid: money.default(0),
 });
 
 export const ORDER_STATUSES = [
@@ -147,6 +178,20 @@ export type ShopOrder = {
   due: number;
   codAmount: number;
   items: Array<{ sku: string; quantity: number; unitPrice: number; discount: number }>;
+  /** A retail store's order: what the store owes the ERP for it, fixed when it came. */
+  erpTotal?: number;
+  /** When the store was billed (the parcel left), or null. */
+  billedAt?: string | null;
+  /** A retail store's order: the site's lines with the shop price fixed for each. */
+  lines?: Array<{
+    lineId: string;
+    sku: string;
+    grade: "A" | "B";
+    quantity: number;
+    shopPrice: number;
+    customerPrice: number;
+    fromReturnStock: boolean;
+  }>;
 };
 
 /** details of the 409 INSUFFICIENT_STOCK answer to POST /orders (and an edit). */

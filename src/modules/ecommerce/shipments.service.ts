@@ -9,7 +9,12 @@ import type { CompanyContext } from "@/modules/auth/context";
 import { deliveredByVariant } from "@/modules/sales/documents.service";
 
 import { EcommerceApiError, toApiError } from "./errors";
-import { deliverShopOrder, returnUndeliveredTx, shopOrderOrNotFound } from "./orders.service";
+import {
+  billStoreOrderTx,
+  deliverShopOrder,
+  returnUndeliveredTx,
+  shopOrderOrNotFound,
+} from "./orders.service";
 import type { ShopCall } from "./route";
 import {
   shipmentEventSchema,
@@ -110,10 +115,12 @@ export async function createShipment(call: Call, raw: unknown): Promise<ShopShip
           codAmount: input.codAmount ?? current.codAmount ?? 0,
         },
       });
-      const orderStatus = BEFORE_SHIPPING.includes(current.status) ? "SHIPPED" : current.status;
+      let orderStatus = BEFORE_SHIPPING.includes(current.status) ? "SHIPPED" : current.status;
       if (orderStatus !== current.status) {
         await tx.salesOrder.update({ where: { id: order.id }, data: { status: orderStatus } });
       }
+      // A retail store's order is billed to the store when the parcel leaves (plan v6 sec 1).
+      if (await billStoreOrderTx(tx, ctx, order.id, meta)) orderStatus = "DELIVERED";
       await auditInCompany(
         ctx,
         meta,

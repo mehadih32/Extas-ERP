@@ -14,8 +14,10 @@ import { FormDialog } from "@/components/sales/dialogs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
-import type { StorePage } from "@/modules/retail/stores.service";
+import type { StoreAccount } from "@/modules/retail/account.service";
+import type { StorePage as StoreData } from "@/modules/retail/stores.service";
 import {
+  releaseHoldAction,
   removeHandPriceAction,
   setHandPriceAction,
   setPriceRulesAction,
@@ -30,8 +32,11 @@ import { StoreFormDialog } from "./store-form-dialog";
  * and every price change. Price changes ask for the owner's PIN.
  */
 
+type StorePage = StoreData & { account: StoreAccount };
+
 type Dialog =
   | { kind: "edit" }
+  | { kind: "hold" }
   | { kind: "close" }
   | { kind: "rules" }
   | { kind: "hand" }
@@ -106,6 +111,8 @@ export function StoreScreen({ page }: { page: StorePage }) {
           <Fact label="Phone">{store.phone ?? "Not given"}</Fact>
         </dl>
       </Panel>
+
+      <AccountPanel page={page} when={when} onLift={() => setDialog({ kind: "hold" })} />
 
       <Panel
         title="Price rules"
@@ -255,12 +262,110 @@ export function StoreScreen({ page }: { page: StorePage }) {
         />
       )}
       {dialog?.kind === "close" && <CloseDialog page={page} onClose={close} />}
+      {dialog?.kind === "hold" && <HoldDialog page={page} onClose={close} />}
       {dialog?.kind === "rules" && <RulesDialog page={page} onClose={close} />}
       {dialog?.kind === "hand" && <HandPriceDialog page={page} onClose={close} />}
       {dialog?.kind === "remove" && (
         <RemoveDialog id={dialog.id} label={dialog.label} storeId={store.id} onClose={close} />
       )}
     </div>
+  );
+}
+
+/**
+ * What the store owes the ERP and its 30-day hold (plan v6 sec 5): with money
+ * owed and no payment for 30 days, its new orders are refused until it pays,
+ * or the owner lifts the hold for a few days with the PIN and a reason.
+ */
+function AccountPanel({
+  page,
+  when,
+  onLift,
+}: {
+  page: StorePage;
+  when: ReturnType<typeof useWhen>;
+  onLift: () => void;
+}) {
+  const { account, currency, store } = page;
+  const hold = account.onHold
+    ? `On hold: ${account.reason}`
+    : account.releasedUntil
+      ? `Lifted until ${when(account.releasedUntil)}: ${account.releaseReason}`
+      : account.holdsOn
+        ? `Not on hold. Goes on hold on ${account.holdsOn} if no payment comes`
+        : "Not on hold";
+  return (
+    <Panel
+      title="Account"
+      id="store-account"
+      action={
+        page.canManage &&
+        account.onHold && (
+          <Button type="button" size="sm" variant="outline" onClick={onLift}>
+            Lift the hold
+          </Button>
+        )
+      }
+    >
+      <dl className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <Fact label="Balance">
+          {currency} {account.balance}
+        </Fact>
+        <Fact label="Waiting for check">
+          {currency} {account.waitingCheck}
+        </Fact>
+        <Fact label="Last payment">{account.lastPaymentAt ?? "None yet"}</Fact>
+        <Fact label="Hold">
+          <span className={account.onHold ? "text-destructive" : undefined}>{hold}</span>
+        </Fact>
+        <Fact label="Billed orders">{account.billedOrders}</Fact>
+        <Fact label="Statement">
+          <Link
+            href={`/parties/buyers/${store.buyer.id}/statement`}
+            className="text-primary hover:underline"
+          >
+            Open the statement
+          </Link>
+        </Fact>
+      </dl>
+    </Panel>
+  );
+}
+
+function HoldDialog({ page, onClose }: { page: StorePage; onClose: () => void }) {
+  const router = useRouter();
+  return (
+    <FormDialog
+      title="Lift the hold"
+      description="The store can send orders again for these days, even though it has not paid. It is saved with your name and the reason."
+      submitLabel="Lift it"
+      pendingLabel="Saving"
+      errorTitle="The hold was not lifted"
+      onClose={onClose}
+      onSubmit={async (form) => {
+        const result = await releaseHoldAction(page.store.id, {
+          reason: String(form.get("reason") ?? ""),
+          days: String(form.get("days") ?? "7"),
+          pin: String(form.get("pin") ?? ""),
+        });
+        if (!result.ok) return result.error;
+        router.refresh();
+        onClose();
+        return undefined;
+      }}
+    >
+      {(fieldError) => (
+        <>
+          <Field id="hold-reason" label="Reason" error={fieldError("reason")}>
+            <Input id="hold-reason" name="reason" maxLength={300} autoComplete="off" />
+          </Field>
+          <Field id="hold-days" label="For how many days" error={fieldError("days")}>
+            <Input id="hold-days" name="days" type="number" min={1} max={30} defaultValue={7} />
+          </Field>
+          <PinField id="hold-pin" error={fieldError("pin") ?? fieldError("pinNotSet")} />
+        </>
+      )}
+    </FormDialog>
   );
 }
 

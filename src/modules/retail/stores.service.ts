@@ -112,7 +112,7 @@ export const removeHandPriceSchema = z.object({ priceId: id, pin });
 
 export const previewSchema = z.object({ search: z.string().trim().max(60).optional() });
 
-async function storeOrThrow(ctx: CompanyContext, storeId: string) {
+export async function storeOrThrow(ctx: CompanyContext, storeId: string) {
   const store = await ctx.db.retailStore.findUnique({ where: { id: storeId } });
   if (!store) throw new AppError("NOT_FOUND", "There is no such store.");
   return store;

@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { getRequestMeta } from "@/lib/request-meta";
 import { runAction } from "@/lib/result";
 import { requireCompany } from "@/modules/auth/context";
+import * as account from "@/modules/retail/account.service";
 import * as stores from "@/modules/retail/stores.service";
 
 /*
@@ -23,7 +24,19 @@ export async function listStoresAction() {
 }
 
 export async function getStoreAction(id: string, query: unknown = {}) {
-  return runAction(async () => stores.getStore(await requireCompany(), id, query));
+  return runAction(async () => {
+    const ctx = await requireCompany();
+    const page = await stores.getStore(ctx, id, query);
+    return { ...page, account: await account.storeAccount(ctx, id) };
+  });
+}
+
+export async function releaseHoldAction(id: string, input: unknown) {
+  return runAction(async () => {
+    await account.releaseHold(await requireCompany(), id, input, await getRequestMeta());
+    refresh(id);
+    return null;
+  });
 }
 
 export async function createStoreAction(input: unknown) {

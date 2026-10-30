@@ -9,6 +9,7 @@ import * as account from "@/modules/retail/account.service";
 import * as returns from "@/modules/retail/returns.service";
 import * as shopStock from "@/modules/retail/shop-stock.service";
 import * as stores from "@/modules/retail/stores.service";
+import * as summaries from "@/modules/retail/summaries.service";
 
 /*
  * Business > Retail stores (plan v6). Seeing them needs retail.view or
@@ -29,7 +30,11 @@ export async function getStoreAction(id: string, query: unknown = {}) {
   return runAction(async () => {
     const ctx = await requireCompany();
     const page = await stores.getStore(ctx, id, query);
-    return { ...page, account: await account.storeAccount(ctx, id) };
+    return {
+      ...page,
+      account: await account.storeAccount(ctx, id),
+      books: await summaries.storeBooks(ctx, id),
+    };
   });
 }
 
@@ -138,5 +143,36 @@ export async function buyReadyStockAction(input: unknown) {
     revalidatePath("/business/shop-stock");
     revalidatePath("/business/stores", "layout");
     return { number: purchase.number };
+  });
+}
+
+// A store's own books (plan v6 sec 6 and 7): budget and sales target.
+
+export async function setBudgetAction(id: string, input: unknown) {
+  return runAction(async () => {
+    await summaries.setBudget(await requireCompany(), id, input, await getRequestMeta());
+    refresh(id);
+    return null;
+  });
+}
+
+export async function copyLastMonthBudgetAction(id: string, month: string) {
+  return runAction(async () => {
+    await summaries.copyLastMonthBudget(
+      await requireCompany(),
+      id,
+      String(month),
+      await getRequestMeta(),
+    );
+    refresh(id);
+    return null;
+  });
+}
+
+export async function setTargetAction(id: string, input: unknown) {
+  return runAction(async () => {
+    await summaries.setTarget(await requireCompany(), id, input, await getRequestMeta());
+    refresh(id);
+    return null;
   });
 }

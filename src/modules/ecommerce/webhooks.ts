@@ -66,7 +66,7 @@ const OVERLAP_MS = 5 * 60_000;
 /** Events are written this many at a time. */
 const CHUNK = 500;
 
-export const EVENT_TYPES = ["stock.changed", "variant.changed", "ping"] as const;
+export const EVENT_TYPES = ["stock.changed", "variant.changed", "summary.missing", "ping"] as const;
 export type EventType = (typeof EVENT_TYPES)[number];
 
 /** What the shop receives: the body of every webhook. */
@@ -102,7 +102,11 @@ const comparable = (data: unknown) => {
 // ---------------------------------------------------------------------------
 
 type Shop = SalesChannelIntegration;
-type Planned = { type: Exclude<EventType, "ping">; sku: string; data: StockRow | VariantChanged };
+type Planned = {
+  type: "stock.changed" | "variant.changed";
+  sku: string;
+  data: StockRow | VariantChanged;
+};
 
 /** A cursor that is still usable: set, not in the future, at most a day old. */
 const usable = (cursor: Date | null, now: Date) =>
@@ -280,6 +284,42 @@ export async function scanShop(shop: Shop, now: Date = new Date()): Promise<numb
     throw error;
   }
   return events.length;
+}
+
+/** Queues one webhook to a shop now (a retail store's summary.missing, plan v6 sec 6). */
+export async function queueShopEvent(
+  shop: Shop,
+  type: "summary.missing",
+  data: Prisma.InputJsonObject,
+  now: Date = new Date(),
+) {
+  const id = randomUUID();
+  const body: WebhookBody = { id, type, createdAt: now.toISOString(), data };
+  const paused =
+    shop.webhooksPausedUntil && shop.webhooksPausedUntil > now ? shop.webhooksPausedUntil : null;
+  await prisma.$transaction(async (tx) => {
+    await tx.webhookEvent.create({
+      data: {
+        id,
+        companyId: shop.companyId,
+        source: "ECOMMERCE",
+        direction: "OUTGOING",
+        integrationId: shop.id,
+        eventType: type,
+        payload: body as unknown as Prisma.InputJsonObject,
+        receivedAt: now,
+      },
+    });
+    await enqueueJobs(tx, [
+      {
+        kind: WEBHOOK_JOB,
+        companyId: shop.companyId,
+        payload: { eventId: id },
+        maxAttempts: WEBHOOK_MAX_ATTEMPTS,
+        ...(paused ? { runAfter: paused } : {}),
+      },
+    ]);
+  });
 }
 
 /** Every shop that is on, has a key and a webhook address: one pass each. */

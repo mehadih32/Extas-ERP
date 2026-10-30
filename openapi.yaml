@@ -31,7 +31,7 @@ info:
 
     **Errors** are always `{ "error": { "code", "message", "details" } }`.
 
-    **Webhooks to the shop** (`variant.changed`, `stock.changed`, and `ping` from "Send test") are POSTed
+    **Webhooks to the shop** (`variant.changed`, `stock.changed`, a retail store's `summary.missing`, and `ping` from "Send test") are POSTed
     to the shop webhook URL saved in the integration, signed as above, with `X-Extas-Event` (the type) and
     `X-Extas-Delivery` (the event id, the same on every retry). A 2xx answer within 5 seconds counts as
     delivered; anything else is retried with growing waits for up to 24 hours. Every event is in the
@@ -52,6 +52,7 @@ tags:
   - name: Payments
   - name: Shipments
   - name: Returns
+  - name: Retail
   - name: Marketing
 paths:
   /health:
@@ -971,6 +972,205 @@ paths:
               schema: { $ref: "#/components/schemas/Error" }
         "422": { $ref: "#/components/responses/Validation" }
         "429": { $ref: "#/components/responses/RateLimited" }
+  /daily-summaries/{date}:
+    put:
+      tags: [Retail]
+      summary: A retail store's totals for one day that is over
+      description: |
+        Only for a shop linked to a retail store (plan v6 sec 6). Send every day at 00:30 for the day
+        before, even with no sales (zeros). Sending a day again adds a version (the newest counts, the
+        owner sees what changed); the same body again changes nothing (`changed` false). A category the
+        site does not have yet goes in `incomplete` and is never read as 0; every other category must be
+        sent. `netProfit` is net sales + delivery charges - all costs, before fixed costs; the ERP checks
+        it (`checkedProfit`, `profitMatches`). Allowed `incomplete` keys: orders, sales, income,
+        deliveries, goods, returnLosses, packaging, delivery, paymentFees, accessories, ads, other,
+        customers.
+      operationId: putDailySummary
+      parameters:
+        - { name: date, in: path, required: true, schema: { type: string, format: date } }
+        - $ref: "#/components/parameters/OptionalIdempotencyKey"
+        - $ref: "#/components/parameters/Signature"
+        - $ref: "#/components/parameters/Timestamp"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [date, netProfit]
+              properties:
+                date: { type: string, format: date }
+                orders:
+                  type: object
+                  properties: { count: { type: integer }, pieces: { type: integer } }
+                sales:
+                  type: object
+                  properties:
+                    gross: { type: number }
+                    discounts: { type: number }
+                    customerReturns: { type: number }
+                    net: { type: number }
+                income:
+                  type: object
+                  properties: { deliveryCharges: { type: number } }
+                deliveries:
+                  type: object
+                  properties:
+                    delivered: { type: integer }
+                    failed: { type: integer }
+                    returned: { type: integer }
+                    codPending: { type: number }
+                costs:
+                  type: object
+                  properties:
+                    goods: { type: number }
+                    returnLosses: { type: number }
+                    packaging: { type: number }
+                    delivery: { type: number }
+                    paymentFees: { type: number }
+                    accessories: { type: number }
+                    ads:
+                      type: object
+                      properties:
+                        facebook: { type: number }
+                        instagram: { type: number }
+                        google: { type: number }
+                        tiktok: { type: number }
+                        other: { type: number }
+                    other: { type: number }
+                returns:
+                  type: object
+                  properties:
+                    handedBackPieces: { type: integer }
+                    approvedCredit: { type: number }
+                    waitingCheckValue: { type: number }
+                customers:
+                  type: object
+                  properties: { new: { type: integer }, returning: { type: integer } }
+                incomplete: { type: array, items: { type: string } }
+                netProfit: { type: number }
+      responses:
+        "200":
+          description: Kept.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  date: { type: string, format: date }
+                  version: { type: integer }
+                  receivedAt: { type: string, format: date-time }
+                  netProfit: { type: number }
+                  checkedProfit: { type: number }
+                  profitMatches: { type: boolean }
+                  incomplete: { type: array, items: { type: string } }
+                  changed: { type: boolean }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/Validation" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /daily-summaries:
+    get:
+      tags: [Retail]
+      summary: The days the ERP has, and the days still missing
+      description: |
+        The newest version of each day from `from` to `to` (at most 92 days; by default the 30 days up
+        to yesterday), and `missing`: the days with no summary from the store's first one up to
+        yesterday. Send the missing days at once.
+      operationId: listDailySummaries
+      parameters:
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+      responses:
+        "200":
+          description: The days.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  from: { type: string, format: date }
+                  to: { type: string, format: date }
+                  days:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        date: { type: string, format: date }
+                        version: { type: integer }
+                        receivedAt: { type: string, format: date-time }
+                        incomplete: { type: array, items: { type: string } }
+                        netProfit: { type: number }
+                  missing: { type: array, items: { type: string, format: date } }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/Validation" }
+  /fixed-costs/{month}:
+    put:
+      tags: [Retail]
+      summary: A retail store's fixed costs for a month
+      description: |
+        Salary, rent, utilities (electricity, water, internet) and other, sent whenever they change
+        (plan v6 sec 6a). Sending again adds a version; the same body again changes nothing. A month
+        not sent shows "not in yet" in the ERP, never 0. Do not put these in a daily summary.
+      operationId: putFixedCosts
+      parameters:
+        - {
+            name: month,
+            in: path,
+            required: true,
+            schema: { type: string, description: "YYYY-MM" },
+          }
+        - $ref: "#/components/parameters/OptionalIdempotencyKey"
+        - $ref: "#/components/parameters/Signature"
+        - $ref: "#/components/parameters/Timestamp"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [month, costs]
+              properties:
+                month: { type: string }
+                costs:
+                  type: object
+                  properties:
+                    salary: { type: number }
+                    rent: { type: number }
+                    utilities: { type: number }
+                    other: { type: number }
+                note: { type: string, maxLength: 300 }
+      responses:
+        "200":
+          description: Kept.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FixedCosts" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/Validation" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /fixed-costs:
+    get:
+      tags: [Retail]
+      summary: A retail store's fixed costs by month (the newest version of each)
+      operationId: listFixedCosts
+      parameters:
+        - { name: from, in: query, schema: { type: string, description: "YYYY-MM" } }
+        - { name: to, in: query, schema: { type: string, description: "YYYY-MM" } }
+      responses:
+        "200":
+          description: The months.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  months: { type: array, items: { $ref: "#/components/schemas/FixedCosts" } }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/Validation" }
   /ad-spend:
     post:
       tags: [Marketing]
@@ -1012,6 +1212,41 @@ paths:
         "422": { $ref: "#/components/responses/Validation" }
         "429": { $ref: "#/components/responses/RateLimited" }
 webhooks:
+  summary.missing:
+    post:
+      summary: A retail store's daily summaries the ERP does not have
+      description: |
+        From 01:00 (company time) the ERP sends this for the days still missing, again every hour
+        while any is missing (plan v6 sec 6). Send those days at once with PUT /daily-summaries/{date}.
+      parameters:
+        - { name: X-Extas-Event, in: header, required: true, schema: { type: string } }
+        - {
+            name: X-Extas-Delivery,
+            in: header,
+            required: true,
+            description: "The event id: the same on every retry.",
+            schema: { type: string },
+          }
+        - $ref: "#/components/parameters/Signature"
+        - $ref: "#/components/parameters/Timestamp"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, type, createdAt, data]
+              properties:
+                id: { type: string }
+                type: { type: string, const: summary.missing }
+                createdAt: { type: string, format: date-time }
+                data:
+                  type: object
+                  properties:
+                    dates: { type: array, items: { type: string, format: date } }
+      responses:
+        "2XX":
+          description: Received (answer within 5 seconds). Anything else is retried for up to 24 hours.
   stock.changed:
     post:
       summary: Sellable stock of a SKU changed in the shop's warehouse
@@ -1168,6 +1403,22 @@ components:
       description: The time of the request in Unix seconds (at most 5 minutes off).
       schema: { type: string, pattern: "^[0-9]+$" }
   schemas:
+    FixedCosts:
+      type: object
+      properties:
+        month: { type: string }
+        version: { type: integer }
+        costs:
+          type: object
+          properties:
+            salary: { type: number }
+            rent: { type: number }
+            utilities: { type: number }
+            other: { type: number }
+        total: { type: number }
+        note: { type: [string, "null"] }
+        receivedAt: { type: string, format: date-time }
+        changed: { type: boolean }
     Money:
       type: number
       minimum: 0

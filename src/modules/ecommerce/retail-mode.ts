@@ -50,3 +50,12 @@ export async function assertStoreNotOnHold(ctx: CompanyContext, store: ShopStore
 export function goneForStore(what: string, instead: string) {
   return new EcommerceApiError(410, "GONE", `${what} is closed for a retail store: ${instead}`);
 }
+
+/** The store this shop belongs to; a shop that is not a retail store gets 404. */
+export async function requireRetailStore(call: Call) {
+  const store = await retailStoreOf(call);
+  if (!store) {
+    throw new EcommerceApiError(404, "NOT_FOUND", "This shop is not a retail store in the ERP.");
+  }
+  return store;
+}

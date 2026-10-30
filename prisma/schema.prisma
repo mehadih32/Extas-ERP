@@ -151,6 +151,10 @@ model Company {
   retailReserves         RetailReserve[]
   readyStockPurchases    ReadyStockPurchase[]
   readyStockLines        ReadyStockLine[]
+  retailDailySummaries   RetailDailySummary[]
+  retailFixedCosts       RetailFixedCost[]
+  retailBudgets          RetailBudget[]
+  retailTargets          RetailTarget[]
   webhookEvents          WebhookEvent[]
   integrationApiCalls    IntegrationApiCall[]
   integrationIdempotency IntegrationIdempotency[]
@@ -7338,6 +7342,10 @@ model RetailStore {
   bRule             RetailPriceRule?
   bValue            Decimal?         @db.Decimal(14, 4)
   closedAt          DateTime?
+  /// The ERP last asked the site for missing daily summaries (summary.missing, at most hourly).
+  summaryAskedAt    DateTime?
+  /// The owner was last told about missing daily summaries on this day.
+  summaryAlertedOn  DateTime?        @db.Date
   /// The 30-day hold lifted by the owner (PIN and a reason) until this time.
   holdReleasedUntil DateTime?
   holdReleaseReason String?
@@ -7358,6 +7366,10 @@ model RetailStore {
   orders      RetailOrder[]
   returnLists RetailReturnList[]
   exchanges   RetailExchange[]
+  summaries   RetailDailySummary[]
+  fixedCosts  RetailFixedCost[]
+  budgets     RetailBudget[]
+  targets     RetailTarget[]
 
   @@unique([companyId, name])
   @@index([companyId])
@@ -7782,4 +7794,91 @@ model ReadyStockLine {
   variant  ProductVariant     @relation(fields: [variantId], references: [id])
 
   @@index([purchaseId])
+}
+
+/// One version of a retail store's day as its site sent it (plan v6 sec 6,
+/// PUT /daily-summaries/{date}). Sending a day again adds a version; the newest
+/// is the day's figure, the older ones show what changed.
+model RetailDailySummary {
+  id            String   @id @default(cuid())
+  companyId     String
+  storeId       String
+  date          DateTime @db.Date
+  version       Int
+  /// The body as sent (orders, sales, income, deliveries, costs, returns, customers).
+  payload       Json
+  /// The categories the site did not have yet: shown "not complete yet", never as 0.
+  incomplete    String[]
+  netProfit     Decimal  @db.Decimal(14, 2)
+  /// What the ERP gets from the same figures; the owner is warned when they differ.
+  checkedProfit Decimal  @db.Decimal(14, 2)
+  receivedAt    DateTime @default(now())
+
+  company Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  store   RetailStore @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, date, version])
+  @@index([companyId, date])
+}
+
+/// One version of a store's fixed costs for a month (PUT /fixed-costs/{month}).
+model RetailFixedCost {
+  id         String   @id @default(cuid())
+  companyId  String
+  storeId    String
+  /// YYYY-MM
+  month      String
+  version    Int
+  salary     Decimal  @default(0) @db.Decimal(14, 2)
+  rent       Decimal  @default(0) @db.Decimal(14, 2)
+  utilities  Decimal  @default(0) @db.Decimal(14, 2)
+  other      Decimal  @default(0) @db.Decimal(14, 2)
+  total      Decimal  @db.Decimal(14, 2)
+  note       String?
+  receivedAt DateTime @default(now())
+
+  company Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  store   RetailStore @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, month, version])
+}
+
+/// The owner's budget for a store's month, by line (plan v6 sec 7). An empty line is not budgeted.
+model RetailBudget {
+  id        String   @id @default(cuid())
+  companyId String
+  storeId   String
+  /// YYYY-MM
+  month     String
+  ads       Decimal? @db.Decimal(14, 2)
+  packaging Decimal? @db.Decimal(14, 2)
+  delivery  Decimal? @db.Decimal(14, 2)
+  salary    Decimal? @db.Decimal(14, 2)
+  other     Decimal? @db.Decimal(14, 2)
+  /// Lines the owner was already told went over 100% this month.
+  alerted   String[]
+  setById   String?
+  updatedAt DateTime @updatedAt
+
+  company Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  store   RetailStore @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, month])
+}
+
+/// The owner's sales target for a store's month (net sales, as the summaries count them).
+model RetailTarget {
+  id        String   @id @default(cuid())
+  companyId String
+  storeId   String
+  /// YYYY-MM
+  month     String
+  sales     Decimal  @db.Decimal(14, 2)
+  setById   String?
+  updatedAt DateTime @updatedAt
+
+  company Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  store   RetailStore @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, month])
 }

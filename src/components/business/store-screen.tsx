@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import type { StoreAccount } from "@/modules/retail/account.service";
+import type { StoreBooks as Books } from "@/modules/retail/summaries.service";
 import type { StorePage as StoreData } from "@/modules/retail/stores.service";
 import {
   releaseHoldAction,
@@ -24,6 +25,7 @@ import {
   setStoreClosedAction,
 } from "@/server/actions/retail.actions";
 
+import { StoreBooks } from "./store-books";
 import { StoreFormDialog } from "./store-form-dialog";
 
 /*
@@ -32,7 +34,7 @@ import { StoreFormDialog } from "./store-form-dialog";
  * and every price change. Price changes ask for the owner's PIN.
  */
 
-type StorePage = StoreData & { account: StoreAccount };
+type StorePage = StoreData & { account: StoreAccount; books: Books };
 
 type Dialog =
   | { kind: "edit" }
@@ -113,6 +115,13 @@ export function StoreScreen({ page }: { page: StorePage }) {
       </Panel>
 
       <AccountPanel page={page} when={when} onLift={() => setDialog({ kind: "hold" })} />
+
+      <StoreBooks
+        books={page.books}
+        storeId={store.id}
+        currency={currency}
+        canManage={page.canManage}
+      />
 
       <Panel
         title="Price rules"

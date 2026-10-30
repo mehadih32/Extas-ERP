@@ -6,6 +6,7 @@ import { retryWatchLabel, sendSafetyCopies, sendUnsent } from "@/modules/backups
 import { ensureLocalGuides, guideTick } from "@/modules/backups/guide.service";
 import { writeHostKey } from "@/modules/backups/recovery-key.service";
 import { recordRestoreResult } from "@/modules/backups/restore.service";
+import { extasCheckIn } from "@/modules/backups/extas-client";
 import { drillDueAt, previousRunAt, scheduleOf } from "@/modules/backups/schedule";
 import { onDrill, onStandby } from "@/modules/backups/standby";
 import { watchBackups } from "@/modules/backups/status";
@@ -98,6 +99,10 @@ export async function backupClock(now: Date = new Date()) {
   // The late-backup alert's label on the newest backup, when it could not be written.
   await retryWatchLabel(now.getTime()).catch((e: unknown) =>
     console.error("[backups] the newest backup in Drive was not labelled", e),
+  );
+  // A copy whose Google client came from Extas checks in once a day (extas-client.ts).
+  await extasCheckIn(now).catch((e: unknown) =>
+    console.error("[backups] the daily check-in with Extas failed", e),
   );
   if (await onStandby()) {
     // The guide on this server's disk (put in each backup) is still made.

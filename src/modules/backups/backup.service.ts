@@ -150,6 +150,8 @@ export function presentConfig(config: BackupConfig, now = new Date()) {
       /** The client's id, to show which one is in use (the secret is never shown). */
       clientId: client?.clientId ?? null,
       setOnScreen: Boolean(config.googleClientId),
+      /** The client came from the Extas ERP by a copy code (extas-client.ts). */
+      fromExtas: Boolean(config.googleClientFrom),
       connected: Boolean(config.credentialsRef),
       account: config.googleDriveAccount,
       folderId: config.googleDriveFolderId,
@@ -301,7 +303,10 @@ export async function getBackupOverview() {
     : null;
   const { drillInfo } = await import("@/modules/backups/standby");
   const { presentServerDrill } = await import("@/modules/backups/server-drill");
+  const { listCopies } = await import("@/modules/backups/copies.service");
   return {
+    /** Sold copies given this server's Google client by a copy code. */
+    copies: await listCopies(),
     githubRepo: github?.githubRepo ?? null,
     config: presentConfig(config),
     health: await backupHealth(config),
@@ -462,6 +467,13 @@ export async function setGoogleClient(who: Owner, raw: unknown, meta?: RequestMe
     data: {
       googleClientId: input.clientId,
       googleClientSecretRef: encryptSecret(input.clientSecret),
+      // The owner's own client ends any link to an Extas ERP: a Block there never
+      // touches it, and the screen says "your own".
+      googleClientFrom: null,
+      copyId: null,
+      copySecretRef: null,
+      copyCheckedAt: null,
+      copyBlockedAt: null,
       // Google's access belongs to the client: a new client means signing in again.
       ...(changed && config.credentialsRef
         ? { credentialsRef: null, googleDriveAccount: null, googleDriveFolderId: null }

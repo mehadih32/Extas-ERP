@@ -8,9 +8,12 @@ import { runAction } from "@/lib/result";
 import { requireCompany, requirePlatformSuperAdmin } from "@/modules/auth/context";
 import * as backups from "@/modules/backups/backup.service";
 import * as cloudflare from "@/modules/backups/cloudflare";
+import { makeCopyCode, setCopyBlocked } from "@/modules/backups/copies.service";
+import { applyCopyCode } from "@/modules/backups/extas-client";
 import { setUpGitHubAlert } from "@/modules/backups/github-alert";
 import { startDriveConnect } from "@/modules/backups/drive-connect";
 import { listDriveBackups } from "@/modules/backups/drive-copies";
+import { noticeWhenDone } from "@/modules/backups/manual-notice";
 import { driveStatus } from "@/modules/backups/drive-status";
 import * as keys from "@/modules/backups/recovery-key.service";
 import * as restores from "@/modules/backups/restore.service";
@@ -67,11 +70,17 @@ export const getBackupRunAction = async (runId: string) =>
     await owner();
     return backups.getBackupRun(runId);
   });
-/** Starts a backup now; it keeps running after this returns (poll the run for its result). */
+/**
+ * Starts a backup now; it keeps running after this returns (poll the run for its
+ * result). The person who pressed it is told in their inbox when it ends.
+ */
 export const runBackupNowAction = async () =>
-  change(async () =>
-    backups.runBackup({ trigger: "MANUAL", actor: await owner() }, await getRequestMeta()),
-  );
+  change(async () => {
+    const actor = await owner();
+    const run = await backups.runBackup({ trigger: "MANUAL", actor }, await getRequestMeta());
+    void noticeWhenDone(run.id, actor.userId);
+    return run;
+  });
 /**
  * Starts the restore drill into a temporary database now. The recovery key may
  * be typed for this drill only (it is never kept).
@@ -161,3 +170,13 @@ export const restoreStatusAction = async () =>
     await owner();
     return restores.restoreStatus();
   });
+
+/** "Make a copy code" for a sold copy of the ERP (PIN); the code is shown once. */
+export const makeCopyCodeAction = async (input: unknown) =>
+  change(async () => makeCopyCode(await ownerInCompany(), input, await getRequestMeta()));
+/** Block or Unblock a sold copy (PIN). */
+export const setCopyBlockedAction = async (input: unknown) =>
+  change(async () => setCopyBlocked(await ownerInCompany(), input, await getRequestMeta()));
+/** On a sold copy: "Use a copy code" from Extas for the Google client (PIN). */
+export const applyCopyCodeAction = async (input: unknown) =>
+  change(async () => applyCopyCode(await ownerInCompany(), input, await getRequestMeta()));

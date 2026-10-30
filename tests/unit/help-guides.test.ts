@@ -59,7 +59,7 @@ const BENGALI_DIGIT = /[০-৯]/;
  * The guides with no picture (shot.none), each saying why: what they are about
  * cannot be shown on a computer with the demo data. Adding one is a decision.
  */
-const NO_PICTURE = ["errors", "install-app", "location-lock", "my-hr-phone-app"];
+const NO_PICTURE = ["backups-copies", "errors", "install-app", "location-lock", "my-hr-phone-app"];
 
 /** The longest What given as one text; a longer one is written as points. */
 const WHAT_ONE_TEXT = 200;

@@ -207,6 +207,32 @@ overwrites a stored total or figure.
 
 ## 9. Decisions log (newest first)
 
+- 2026-10-29 (copy codes for sold copies): a sold copy of the ERP gets the Extas Google client only through a
+  one-time copy code the owner makes on the Extas ERP's Backups screen ("Copies of this ERP", with the PIN; only
+  where the client was set on screen, never one that came from another ERP). A code works once and for 30 days;
+  only its hash is stored. The copy enters it once ("Use a copy code", with the PIN) and keeps the client sealed;
+  it checks in daily, and Block (PIN) stops the code and, at the copy's next check-in, removes the client and its
+  Drive sign-in (no data or backup is deleted; local backups go on). Without a code nobody gets the client.
+- 2026-10-24 (Business, Retail and POS plan v6, approved, NOT built yet; start only when the owner says so): the
+  plan is now `docs/business-overview/plan-v6.md`, the website's part `site-changes-v6.md` and the owner's
+  answers `owner-notes-v6.md`; v6 replaces v5 where they differ. The ERP is a separate supplier to each shop: the
+  shop sees only its own buying price, never the ERP's cost or other prices. A shop is billed when the parcel
+  goes to the courier, at the price fixed when the order came. A shop goes on hold when it owes money and 30 days
+  pass after its last payment (any payment restarts the count); exchanges still go through during a hold.
+  Returns are checked within 5 days (reminders on days 5, 7 and 10). An exchange sends the new piece unbilled and,
+  when the old piece is approved, charges only the price difference; a late, missing or declined old piece bills
+  the new piece in full, and a piece from a refused exchange parcel that comes back damaged or missing is the
+  shop's loss. On the switch day, unpaid customer money on old website orders moves to the shop's account as
+  booked (past profit unchanged), and old pieces returned later are credited at the booked price.
+- 2026-10-24 (Business, Retail and POS plan v5, approved, NOT built yet; start only when the owner says so):
+  the full plan is `docs/business-overview/plan-v5.md` (Bengali) and the website's part is
+  `docs/business-overview/site-changes-v5.md`. Each retail shop is a special wholesale buyer in the buyer list
+  ("Extas Retail" first, Buyer 360 like any buyer) and buys at a shop price; the existing Dashboard stays
+  untouched and a new "Business" menu holds Overview, Retail (E-commerce and POS tabs), Returns and Retail stores.
+  Returns change money only when the owner checks a piece in the ERP: approved A-grade pieces come off the
+  shop's account at the price it paid; declined pieces (B or C grade, damaged, missing, wrong) stay on the
+  shop's account as its loss. Courier return lists and consignment IDs are recorded; unclear partial deliveries
+  go on Hold for the owner to tick. Unchecked returned pieces may go only to shops, never to wholesale.
 - 2026-10-24 (Drive backup plan v5): the one-command restore system is frozen (bootstrap.sh,
   restore-tool.py, restore.sh, restore-request.sh, setup-server.sh, the restore guide and the restore
   drill); the backup side adapts to it, never the reverse, and a change any of them seems to need

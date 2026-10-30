@@ -339,6 +339,7 @@ describe("who each guide is for", () => {
     "ai-full-check",
     "ai-bug-guard",
     "backups-google-setup",
+    "backups-copies",
     "backups-drive-key",
     "backups-cloudflare",
     "backups-restore",

@@ -9,6 +9,7 @@ import {
   googleClient,
 } from "@/modules/backups/backup-core";
 import * as backups from "@/modules/backups/backup.service";
+import { reclaimExtasClient } from "@/modules/backups/extas-client";
 import { connectDriveSchema } from "@/modules/backups/schemas";
 
 /*
@@ -27,11 +28,13 @@ export async function startDriveConnect(
   meta?: RequestMeta,
 ) {
   const { pin } = connectDriveSchema.parse(raw ?? {});
+  // A copy whose Google client came from Extas and was removed asks for it again.
+  await reclaimExtasClient();
   const config = await getBackupConfig();
   if (!googleClient(config)) {
     throw new AppError(
       "UNAVAILABLE",
-      "Google Drive is not set up on this server yet: ask Extas to set it up, or use your own Google client (advanced).",
+      "Google Drive is not set up on this server yet: use the copy code Extas gave you, or your own Google client (advanced).",
     );
   }
   const replacing = Boolean(config.credentialsRef);

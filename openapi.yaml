@@ -246,6 +246,9 @@ paths:
         CONFIRMED or PROCESSING with no packing list, no delivery and no invoice (else 409 ORDER_LOCKED).
         New items replace the old ones and redo the reservation (409 INSUFFICIENT_STOCK when short).
         With both an edit and a status, the edit is saved first.
+
+        A retail store's order: DELIVERED and RETURNED are closed (410 USE_DELIVERY_RESULT): send the
+        courier's result with PUT /orders/{externalOrderId}/delivery.
       operationId: updateOrder
       parameters:
         - $ref: "#/components/parameters/ExternalOrderId"
@@ -274,6 +277,11 @@ paths:
               schema: { $ref: "#/components/schemas/Error" }
         "422": { $ref: "#/components/responses/Validation" }
         "429": { $ref: "#/components/responses/RateLimited" }
+        "410":
+          description: USE_DELIVERY_RESULT (a retail store's DELIVERED or RETURNED) or GONE.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
   /orders/{externalOrderId}/lines/{lineId}:
     patch:
       tags: [Orders]
@@ -607,6 +615,11 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "422": { $ref: "#/components/responses/Validation" }
         "429": { $ref: "#/components/responses/RateLimited" }
+        "410":
+          description: GONE (a retail store reports the courier's result with PUT /orders/{externalOrderId}/delivery).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
   /returns:
     post:
       tags: [Returns]
@@ -1266,7 +1279,8 @@ paths:
       description: |
         A running daily total: sending the same day, platform and campaign again replaces that day's
         figure (200, replaced true); a new one answers 201. Each shop (API key) keeps its own figures,
-        and ad spend entered in the ERP is never replaced.
+        and ad spend entered in the ERP is never replaced. Closed for a retail store (410 GONE): its ads
+        go in the daily summary's costs.ads.
       operationId: recordAdSpend
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
@@ -1299,6 +1313,11 @@ paths:
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "422": { $ref: "#/components/responses/Validation" }
         "429": { $ref: "#/components/responses/RateLimited" }
+        "410":
+          description: GONE (a retail store sends its ads in the daily summary).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
 webhooks:
   summary.missing:
     post:

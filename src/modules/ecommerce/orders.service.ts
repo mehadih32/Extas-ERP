@@ -1235,10 +1235,14 @@ async function updateStoreOrder(
       await markPacked(call, orderId);
       break;
     case "DELIVERED":
-      await runTransaction((tx) => billStoreOrderTx(tx, call.ctx, orderId, call.meta), TX_OPTIONS);
-      break;
-    case "CANCELLED":
-    case "RETURNED": {
+    case "RETURNED":
+      // Retired for a retail store (site-changes 2.12): the courier's result has its own call.
+      throw new EcommerceApiError(
+        410,
+        "USE_DELIVERY_RESULT",
+        `${input.status} is closed for a retail store: report the courier's result with PUT /orders/{externalOrderId}/delivery.`,
+      );
+    case "CANCELLED": {
       if (retail.billedAt) {
         throw goneForStore(
           "Cancelling or returning an order that left",

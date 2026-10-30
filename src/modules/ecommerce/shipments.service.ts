@@ -9,6 +9,7 @@ import type { CompanyContext } from "@/modules/auth/context";
 import { deliveredByVariant } from "@/modules/sales/documents.service";
 
 import { EcommerceApiError, toApiError } from "./errors";
+import { goneForStore, retailStoreOf } from "./retail-mode";
 import {
   billStoreOrderTx,
   deliverShopOrder,
@@ -169,6 +170,12 @@ export async function addShipmentEvent(
   rawConsignmentId: string,
   raw: unknown,
 ): Promise<ShopShipmentEvent> {
+  if (await retailStoreOf(call)) {
+    throw goneForStore(
+      "POST /shipments/{consignmentId}/events",
+      "report the courier's result with PUT /orders/{externalOrderId}/delivery.",
+    );
+  }
   const consignmentId = consignmentIdSchema.parse(rawConsignmentId);
   const input = shipmentEventSchema.parse(raw);
   const { ctx, meta, integration } = call;

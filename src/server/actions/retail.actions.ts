@@ -7,6 +7,7 @@ import { runAction } from "@/lib/result";
 import { requireCompany } from "@/modules/auth/context";
 import * as account from "@/modules/retail/account.service";
 import * as returns from "@/modules/retail/returns.service";
+import * as shopStock from "@/modules/retail/shop-stock.service";
 import * as stores from "@/modules/retail/stores.service";
 
 /*
@@ -110,5 +111,32 @@ export async function checkParcelAction(parcelId: string, input: unknown) {
     await returns.checkParcel(await requireCompany(), parcelId, input, await getRequestMeta());
     revalidatePath("/business/returns");
     return null;
+  });
+}
+
+// Business > Shop stock (plan v6 sec 3 and 3a): the shops' reserve and "Buy ready stock".
+
+export async function shopStockPageAction() {
+  return runAction(async () => shopStock.shopStockPage(await requireCompany()));
+}
+
+export async function setReserveAction(input: unknown) {
+  return runAction(async () => {
+    await shopStock.setReserve(await requireCompany(), input, await getRequestMeta());
+    revalidatePath("/business/shop-stock");
+    return null;
+  });
+}
+
+export async function buyReadyStockAction(input: unknown) {
+  return runAction(async () => {
+    const purchase = await shopStock.buyReadyStock(
+      await requireCompany(),
+      input,
+      await getRequestMeta(),
+    );
+    revalidatePath("/business/shop-stock");
+    revalidatePath("/business/stores", "layout");
+    return { number: purchase.number };
   });
 }

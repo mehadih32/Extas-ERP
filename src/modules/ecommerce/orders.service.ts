@@ -33,6 +33,7 @@ import {
   OPEN_STATES,
   replacedLines,
 } from "@/modules/retail/exchanges.service";
+import { takeFromReserveTx } from "@/modules/retail/reserve";
 import { storePrices } from "@/modules/retail/stores.service";
 
 import { amount, variantActive } from "./catalog.service";
@@ -758,6 +759,7 @@ export async function billStoreOrderTx(
   if (!retail || retail.billedAt) return false;
   await assertLinesReadyTx(tx, ctx, retail.id);
   await deliverShopOrderTx(tx, ctx, orderId, meta);
+  await takeFromReserveTx(tx, ctx.company.id, retail.id);
   await tx.retailOrder.update({ where: { id: retail.id }, data: { billedAt: new Date() } });
   return true;
 }

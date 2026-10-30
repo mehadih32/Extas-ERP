@@ -113,7 +113,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
     href: "/business",
     label: "Business",
     icon: StoreIcon,
-    anyOf: ["retail.view", "retail.manage", "retail.returns"],
+    anyOf: ["retail.view", "retail.manage", "retail.returns", "retail.purchases"],
     phoneMore: true,
   },
   {

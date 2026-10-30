@@ -9,6 +9,7 @@ import type { CompanyContext } from "@/modules/auth/context";
 import { createSalesReturn } from "@/modules/sales/return.service";
 
 import { settleExchangePieces } from "./exchanges.service";
+import { putBackOnReserve } from "./reserve";
 
 /*
  * Business > Returns (plan v6 sec 8.4 to 8.8): the parcels retail stores sent
@@ -527,4 +528,10 @@ async function creditApproved(
     where: { id: { in: pieces.map((p) => p.id) } },
     data: { salesReturnId: credit.id },
   });
+  // A shop's piece approved back is a shop's piece again (plan v6 sec 3a).
+  await putBackOnReserve(
+    prisma,
+    ctx.company.id,
+    pieces.map((p) => p.retailOrderLineId),
+  );
 }

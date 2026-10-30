@@ -11,6 +11,7 @@ import { postJournalEntry, reverseJournalEntry } from "@/modules/accounts/journa
 import { auditInCompany, recordAudit } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { receiveAtCostTx } from "@/modules/inventory/stock.service";
+import { putBackOnReserve } from "@/modules/retail/reserve";
 
 /*
  * A retail store's exchanges (plan v6 sec 8.9, site-changes 2.10). The new
@@ -396,6 +397,11 @@ async function restockTx(
       ],
     });
   }
+  const piece = await tx.retailReturnPiece.findUniqueOrThrow({
+    where: { id: args.pieceId },
+    select: { retailOrderLineId: true },
+  });
+  await putBackOnReserve(tx, ctx.company.id, [piece.retailOrderLineId]);
 }
 
 /** The cost a piece of that SKU left the order at. */

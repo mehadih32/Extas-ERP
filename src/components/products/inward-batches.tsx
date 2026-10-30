@@ -23,6 +23,7 @@ import { HISTORY_PAGE_SIZE } from "./stock-history-view";
 const SOURCE_LABELS: Record<StockLotSource, string> = {
   OPENING: "Opening stock",
   PRODUCTION: "From production",
+  PURCHASE: "Bought ready",
 };
 
 const linkClass = "font-medium text-foreground underline-offset-4 hover:underline";

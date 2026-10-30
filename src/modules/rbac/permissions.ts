@@ -53,6 +53,12 @@ export const PERMISSIONS = [
     description:
       "Resolve Hold parcels and check the pieces retail stores send back (approving one also needs Accounts)",
   },
+  {
+    key: "retail.purchases",
+    module: "RETAIL",
+    description:
+      "Buy ready stock for the retail shops: the supplier's bill on credit (Due) and the pieces into stock (needs the PIN)",
+  },
   // Sales
   { key: "sales.view", module: "SALES", description: "View quotations, orders and invoices" },
   {

@@ -8,6 +8,7 @@ import { purgeOldPings } from "@/modules/hr/location.service";
 import { purgeOldJobs } from "@/modules/jobs/queue";
 import { refreshStatusesForCompany } from "@/modules/parties/dormant.service";
 import { billOverdueExchanges } from "@/modules/retail/exchanges.service";
+import { remindIdleReserves } from "@/modules/retail/shop-stock.service";
 import { purgeUnusedProofs } from "@/modules/sales/proof.service";
 import { purgeUnusedReferenceImages } from "@/modules/sales/reference-image.service";
 
@@ -80,6 +81,7 @@ export async function runHousekeeping(now: Date = new Date()) {
   const pingsRemoved = await purgeOldPings(now);
   const shopLogsCleared = await purgeShopLogs(now);
   const exchangesBilled = await billOverdueExchanges(now);
+  const reservesReminded = await remindIdleReserves(now);
   return {
     companies: companies.length,
     markedDormant,
@@ -92,6 +94,7 @@ export async function runHousekeeping(now: Date = new Date()) {
     pingsRemoved,
     shopLogsCleared,
     exchangesBilled,
+    reservesReminded,
   };
 }
 

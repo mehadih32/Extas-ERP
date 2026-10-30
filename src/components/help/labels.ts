@@ -16,6 +16,7 @@ import {
   ShieldCheckIcon,
   ShirtIcon,
   SpoolIcon,
+  StoreIcon,
   UsersRoundIcon,
 } from "lucide-react";
 
@@ -28,6 +29,7 @@ export function guideCount(count: number): string {
 export const HELP_ICONS: Record<string, LucideIcon> = {
   "getting-started": BookOpenIcon,
   dashboard: LayoutDashboardIcon,
+  business: StoreIcon,
   sales: ReceiptTextIcon,
   production: FactoryIcon,
   "tech-pack": ClipboardListIcon,

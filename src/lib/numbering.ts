@@ -39,6 +39,7 @@ export const DEFAULT_PREFIXES: Partial<Record<DocumentType, string>> = {
   ORDER_COSTING: "CST",
   AI_ORDER_RUN: "AO",
   TECH_PACK: "TP",
+  READY_STOCK_PURCHASE: "RSP",
 };
 
 /**

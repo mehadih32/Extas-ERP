@@ -251,6 +251,19 @@ const TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: "retail_figures",
+    description:
+      "The retail side's figures: one store's dashboard (by its name), or every store with the buying house (Overview) when no store is named.",
+    input_schema: {
+      type: "object",
+      properties: {
+        store: { type: "string", description: "The store's name, or empty for all." },
+        period: { type: "string", enum: ["today", "7d", "week", "month", "year", "all"] },
+      },
+      required: ["period"],
+    },
+  },
+  {
     name: "ai_cost",
     description: "What the AI cost over the last few days, by task and agent.",
     input_schema: {
@@ -364,6 +377,8 @@ async function runTool(turn: Turn, name: string, input: Record<string, unknown>)
       return orderStatus(turn, str(input.number).toUpperCase());
     case "costing_check":
       return costingAnswer(turn, str(input.number).toUpperCase() || null);
+    case "retail_figures":
+      return retailFigures(turn.ctx, str(input.store), str(input.period) || "month");
     case "ai_cost":
       return costSummary(turn, Math.min(Math.max(Number(input.days) || 7, 1), 90));
     case "report_pdf":
@@ -406,6 +421,31 @@ async function runTool(turn: Turn, name: string, input: Record<string, unknown>)
       return followUpCard(turn, str(input.buyer), str(input.due) || "+1", str(input.about) || null);
     default:
       return { text: "There is no such tool.", cards: [] };
+  }
+}
+
+/** The retail figures for the AI to answer from (read only; the services check who may see them). */
+async function retailFigures(ctx: CompanyContext, name: string, period: string): Promise<Reply> {
+  const { ecommercePage, overviewPage, storeDashboard } =
+    await import("@/modules/retail/dashboards.service");
+  const { canSeeFinancials } = await import("@/modules/dashboard/access");
+  try {
+    if (name) {
+      const store = await ctx.db.retailStore.findFirst({
+        where: { name: { contains: name, mode: "insensitive" } },
+        select: { id: true, name: true },
+      });
+      if (!store) return { text: `There is no store called ${name}.`, cards: [] };
+      const d = await storeDashboard(ctx, store.id, { period });
+      return { text: JSON.stringify({ store: store.name, ...d }).slice(0, 12_000), cards: [] };
+    }
+    const page = canSeeFinancials(ctx)
+      ? await overviewPage(ctx, { period })
+      : await ecommercePage(ctx, { period });
+    return { text: JSON.stringify(page).slice(0, 12_000), cards: [] };
+  } catch (error) {
+    if (error instanceof AppError) return { text: error.message, cards: [] };
+    throw error;
   }
 }
 

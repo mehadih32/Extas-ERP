@@ -14,6 +14,7 @@ import {
   ShirtIcon,
   SparklesIcon,
   SpoolIcon,
+  StoreIcon,
   UsersRoundIcon,
   WalletIcon,
 } from "lucide-react";
@@ -106,6 +107,15 @@ export const COMPLIANCE_KEYS: readonly PermissionKey[] = ["compliance.view", "co
 
 export const NAV_ITEMS: readonly NavItem[] = [
   { href: "/", label: "Dashboard", icon: LayoutDashboardIcon, anyOf: [] },
+  {
+    // The retail side (plan v6 sec 0): right under Dashboard. Retail stores and
+    // their prices.
+    href: "/business",
+    label: "Business",
+    icon: StoreIcon,
+    anyOf: ["retail.view", "retail.manage", "retail.returns", "retail.purchases"],
+    phoneMore: true,
+  },
   {
     // Orders, quotations, proforma invoices, invoices and payments
     // (components/sales/tabs.ts).

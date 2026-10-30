@@ -12,9 +12,11 @@ import { assertMayWrite } from "@/lib/read-only";
 import type { CompanyContext } from "@/modules/auth/context";
 import { DeferJob, enqueueJobs, retryDelayMs } from "@/modules/jobs/queue";
 
-import { catalogVariantOf, stockRowOf } from "./catalog.service";
+import { pricesOfStore } from "@/modules/retail/stores.service";
+
+import { catalogVariantOf, stockRowOf, storeCatalogVariantOf } from "./catalog.service";
 import { assertCanManageShops, privateAddress } from "./integration.service";
-import type { CatalogVariant, StockRow } from "./schemas";
+import type { CatalogVariant, StockRow, StoreCatalogVariant } from "./schemas";
 import {
   SIGNATURE_HEADER,
   signatureMatches,
@@ -66,14 +68,15 @@ const OVERLAP_MS = 5 * 60_000;
 /** Events are written this many at a time. */
 const CHUNK = 500;
 
-export const EVENT_TYPES = ["stock.changed", "variant.changed", "ping"] as const;
+export const EVENT_TYPES = ["stock.changed", "variant.changed", "summary.missing", "ping"] as const;
 export type EventType = (typeof EVENT_TYPES)[number];
 
 /** What the shop receives: the body of every webhook. */
 export type WebhookBody<T = unknown> = { id: string; type: EventType; createdAt: string; data: T };
 
 /** variant.changed's data: the variant as the catalog shows it, and whether it is new. */
-export type VariantChanged = CatalogVariant & { isNew: boolean };
+type ShopVariant = CatalogVariant | StoreCatalogVariant;
+export type VariantChanged = ShopVariant & { isNew: boolean };
 
 // ---------------------------------------------------------------------------
 // What is sent
@@ -102,7 +105,11 @@ const comparable = (data: unknown) => {
 // ---------------------------------------------------------------------------
 
 type Shop = SalesChannelIntegration;
-type Planned = { type: Exclude<EventType, "ping">; sku: string; data: StockRow | VariantChanged };
+type Planned = {
+  type: "stock.changed" | "variant.changed";
+  sku: string;
+  data: StockRow | VariantChanged;
+};
 
 /** A cursor that is still usable: set, not in the future, at most a day old. */
 const usable = (cursor: Date | null, now: Date) =>
@@ -163,15 +170,54 @@ async function stockChanges(shop: Shop, since: Date, now: Date): Promise<Planned
 
 async function variantChanges(shop: Shop, since: Date, now: Date): Promise<Planned[]> {
   const window = { gt: since, lte: now };
+  // A retail store's site hears only its own buying prices (plan v6): a
+  // change of the store's prices or rules is a change too, and the ERP's cost
+  // and price list are never sent.
+  const store = await prisma.retailStore.findFirst({
+    where: { companyId: shop.companyId, integrationId: shop.id },
+  });
+  const storeChanged = store ? store.updatedAt > since && store.updatedAt <= now : false;
   const variants = await prisma.productVariant.findMany({
     where: {
       companyId: shop.companyId,
-      OR: [{ updatedAt: window }, { style: { updatedAt: window } }],
+      ...(storeChanged
+        ? {}
+        : {
+            OR: [
+              { updatedAt: window },
+              { style: { updatedAt: window } },
+              ...(store
+                ? [
+                    {
+                      style: {
+                        retailPrices: {
+                          some: {
+                            storeId: store.id,
+                            OR: [{ setAt: window }, { removedAt: window }],
+                          },
+                        },
+                      },
+                    },
+                  ]
+                : []),
+            ],
+          }),
     },
     include: { style: true, color: true, size: true },
     orderBy: { updatedAt: "asc" },
   });
-  const rows = variants.map((variant) => ({ variant, row: catalogVariantOf(variant) }));
+  const prices = store
+    ? await pricesOfStore(
+        store,
+        variants.map((v) => v.id),
+        "A",
+      )
+    : null;
+  const rows = variants.flatMap((variant) => {
+    if (!prices) return [{ variant, row: catalogVariantOf(variant) as ShopVariant }];
+    const price = prices.get(variant.id);
+    return price ? [{ variant, row: storeCatalogVariantOf(variant, price) as ShopVariant }] : [];
+  });
   const sent = await lastSent(
     shop,
     "variant.changed",
@@ -280,6 +326,42 @@ export async function scanShop(shop: Shop, now: Date = new Date()): Promise<numb
     throw error;
   }
   return events.length;
+}
+
+/** Queues one webhook to a shop now (a retail store's summary.missing, plan v6 sec 6). */
+export async function queueShopEvent(
+  shop: Shop,
+  type: "summary.missing",
+  data: Prisma.InputJsonObject,
+  now: Date = new Date(),
+) {
+  const id = randomUUID();
+  const body: WebhookBody = { id, type, createdAt: now.toISOString(), data };
+  const paused =
+    shop.webhooksPausedUntil && shop.webhooksPausedUntil > now ? shop.webhooksPausedUntil : null;
+  await prisma.$transaction(async (tx) => {
+    await tx.webhookEvent.create({
+      data: {
+        id,
+        companyId: shop.companyId,
+        source: "ECOMMERCE",
+        direction: "OUTGOING",
+        integrationId: shop.id,
+        eventType: type,
+        payload: body as unknown as Prisma.InputJsonObject,
+        receivedAt: now,
+      },
+    });
+    await enqueueJobs(tx, [
+      {
+        kind: WEBHOOK_JOB,
+        companyId: shop.companyId,
+        payload: { eventId: id },
+        maxAttempts: WEBHOOK_MAX_ATTEMPTS,
+        ...(paused ? { runAfter: paused } : {}),
+      },
+    ]);
+  });
 }
 
 /** Every shop that is on, has a key and a webhook address: one pass each. */

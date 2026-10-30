@@ -77,8 +77,10 @@ describe("the menu with Sales in it", () => {
   const all = PERMISSIONS.map((p) => p.key);
 
   it("puts Sales second, for people who may see sales", () => {
+    // Business sits right under Dashboard (plan v6 sec 0), for those who may see it.
     expect(NAV_ITEMS.map((i) => i.href)).toEqual([
       "/",
+      "/business",
       "/sales",
       "/production",
       "/tech-packs",
@@ -112,8 +114,9 @@ describe("the menu with Sales in it", () => {
   it("keeps four sections on the phone's tab bar and moves the rest under More", () => {
     const everything = phoneTabs(visibleNavItems(all));
     expect(everything.tabs.map((i) => i.href)).toEqual(["/", "/sales", "/production", "/accounts"]);
-    // Tech Pack always sits under More on the phone (v6.4), first.
+    // Business and Tech Pack always sit under More on the phone (v6.4, plan v6).
     expect(everything.more.map((i) => i.href)).toEqual([
+      "/business",
       "/tech-packs",
       "/products",
       "/materials",

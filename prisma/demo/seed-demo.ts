@@ -18,7 +18,9 @@
  *      orders for two buyers, two employees, an invoice pad template and a
  *      fire licence due for renewal, so every Help picture has its record;
  *   8. and the CN-005 sample online shop (./cn005-shop.ts), once, with a made-up
- *      key, a few past webhooks and API calls; nothing is ever sent from it.
+ *      key, a few past webhooks and API calls; nothing is ever sent from it;
+ *   9. and the retail sample store "Extas Retail" (./retail-store.ts), once, with
+ *      its price rules and one hand price.
  * It stops, loading nothing, unless DEMO_SITE=on and the database is the demo's own.
  *   SEED_ADMIN_EMAIL          the owner's email
  *   DEMO_OWNER_PASSWORD_HASH  the owner's password hash on the live ERP
@@ -31,6 +33,7 @@ import { POLO_BATCH } from "./five-style-polo";
 import {
   assertDemoDatabase,
   loadFiveStylePoloDemo,
+  loadRetailStoreDemo,
   loadSampleShopDemo,
   loadTestBookingsDemo,
   loadV62SamplesDemo,
@@ -133,6 +136,17 @@ async function main() {
     );
   } catch (error) {
     console.error("! Sample online shop: it could not be made", error);
+  }
+
+  try {
+    const store = await loadRetailStoreDemo(owner.id, company.id);
+    console.log(
+      store
+        ? `✓ Retail sample store "${store.name}" with its price rules`
+        : "✓ The retail sample store is there already",
+    );
+  } catch (error) {
+    console.error("! Retail sample store: it could not be made", error);
   }
 }
 

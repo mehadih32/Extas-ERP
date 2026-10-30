@@ -19,7 +19,16 @@ export async function ecommerceWebhookTick(now: Date = new Date()) {
   try {
     const { onDrill, onStandby } = await import("@/modules/backups/standby");
     if ((await onDrill()) || (await onStandby())) return null;
-    return await scanShopChanges(now);
+    const events = await scanShopChanges(now);
+    // Retail stores' daily summaries: ask for missing days, tell the owner (plan v6 sec 6).
+    const { summaryGuards } = await import("@/modules/retail/summaries.service");
+    await summaryGuards(now).catch((error) =>
+      console.error("[retail] summary guard failed", error),
+    );
+    // The night summary of the stores, its alerts and the Saturday advice (plan v6 sec 13).
+    const { retailWatch } = await import("@/modules/retail/watch.service");
+    await retailWatch(now).catch((error) => console.error("[retail] night watch failed", error));
+    return events;
   } catch (error) {
     console.error("[ecommerce] webhook pass failed", error);
     return null;

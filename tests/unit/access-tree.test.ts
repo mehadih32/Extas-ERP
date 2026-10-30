@@ -69,8 +69,11 @@ describe("the access tree", () => {
 
   it("finds actions by their words, keeping the areas above them", () => {
     const found = searchTree(ACCESS_TREE, "ready stock");
-    expect(found.map((b) => (b as AccessBranch).id)).toEqual(["production"]);
-    expect(found.flatMap(leavesOf).map((l) => l.key)).toEqual(["production.bookings.market"]);
+    expect(found.map((b) => (b as AccessBranch).id)).toEqual(["business", "production"]);
+    expect(found.flatMap(leavesOf).map((l) => l.key)).toEqual([
+      "retail.purchases",
+      "production.bookings.market",
+    ]);
     // An area's name keeps everything in it.
     expect(
       searchTree(ACCESS_TREE, "payroll")

@@ -4,13 +4,18 @@ import type { CompanyContext } from "@/modules/auth/context";
 
 import { EcommerceApiError } from "./errors";
 import type { ShopCall } from "./route";
+import type { RetailStore } from "@prisma/client";
+
+import { storePrices } from "@/modules/retail/stores.service";
+
 import {
   type CatalogVariant,
+  catalogQuerySchema,
   type Page,
-  pageQuerySchema,
   skuSchema,
   type StockRow,
   stockQuerySchema,
+  type StoreCatalogVariant,
 } from "./schemas";
 
 /*
@@ -90,12 +95,32 @@ export function catalogVariantOf(v: VariantRow): CatalogVariant {
   };
 }
 
+/** A SKU as a retail store's site sees it: its own buying price, never the ERP's cost or prices. */
+export function storeCatalogVariantOf(
+  v: VariantRow,
+  price: Prisma.Decimal | number,
+): StoreCatalogVariant {
+  const updatedAt = v.updatedAt > v.style.updatedAt ? v.updatedAt : v.style.updatedAt;
+  return {
+    sku: v.sku,
+    barcode: v.barcode,
+    styleCode: v.style.code,
+    styleName: v.style.name,
+    color: v.color.name,
+    size: v.size.name,
+    grade: "A",
+    shopPrice: amount(price),
+    active: variantActive(v),
+    updatedAt: updatedAt.toISOString(),
+  };
+}
+
 /** GET /catalog/variants: every SKU of the company, inactive ones too (active: false). */
 export async function listCatalogVariants(
   ctx: CompanyContext,
   query: URLSearchParams,
 ): Promise<Page<CatalogVariant>> {
-  const q = pageQuerySchema.parse(fieldsOf(query));
+  const q = catalogQuerySchema.parse(fieldsOf(query));
   const after = decodeCursor(q.cursor);
   const since = q.updatedSince ? new Date(q.updatedSince) : undefined;
   const rows = await ctx.db.productVariant.findMany({
@@ -103,6 +128,7 @@ export async function listCatalogVariants(
       ...(since
         ? { OR: [{ updatedAt: { gt: since } }, { style: { updatedAt: { gt: since } } }] }
         : {}),
+      ...(q.styleCode ? { style: { code: q.styleCode } } : {}),
       ...(after ? { id: { gt: after } } : {}),
     },
     include: variantInclude,
@@ -110,6 +136,56 @@ export async function listCatalogVariants(
     take: q.limit + 1,
   });
   return pageOf(rows, q.limit, catalogVariantOf);
+}
+
+/**
+ * GET /catalog/variants for a retail store's shop (plan v6 sec 2): each SKU
+ * with only the store's own price, never the ERP's cost or price list. A SKU
+ * with no shop price is left out. `updatedSince` also finds SKUs whose price
+ * changed: a hand price on them, or the store's rules (then every SKU).
+ */
+export async function listStoreCatalog(
+  ctx: CompanyContext,
+  store: Pick<RetailStore, "id" | "updatedAt">,
+  query: URLSearchParams,
+): Promise<Page<StoreCatalogVariant>> {
+  const q = catalogQuerySchema.parse(fieldsOf(query));
+  const after = decodeCursor(q.cursor);
+  const since = q.updatedSince ? new Date(q.updatedSince) : undefined;
+  const priced = since
+    ? { storeId: store.id, OR: [{ setAt: { gt: since } }, { removedAt: { gt: since } }] }
+    : null;
+  const rows = await ctx.db.productVariant.findMany({
+    where: {
+      ...(since && priced && store.updatedAt <= since
+        ? {
+            OR: [
+              { updatedAt: { gt: since } },
+              { style: { updatedAt: { gt: since } } },
+              { style: { retailPrices: { some: priced } } },
+            ],
+          }
+        : {}),
+      ...(q.styleCode ? { style: { code: q.styleCode } } : {}),
+      ...(after ? { id: { gt: after } } : {}),
+    },
+    include: variantInclude,
+    orderBy: { id: "asc" },
+    take: q.limit + 1,
+  });
+  const more = rows.length > q.limit;
+  const kept = more ? rows.slice(0, q.limit) : rows;
+  const prices = await storePrices(
+    ctx,
+    store.id,
+    kept.map((v) => v.id),
+    "A",
+  );
+  const data = kept.flatMap((v): StoreCatalogVariant[] => {
+    const price = prices.get(v.id);
+    return price ? [storeCatalogVariantOf(v, price)] : [];
+  });
+  return { data, nextCursor: more ? encodeCursor(kept[kept.length - 1]!.id) : null };
 }
 
 const balanceInclude = {

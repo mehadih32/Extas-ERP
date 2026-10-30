@@ -480,14 +480,14 @@ An exchange is a customer swapping a piece they received for another (another si
    - The old piece counts as back on the courier's `handedBackAt` date, not the day the site sends the list.
 6. **Settlement.** The ERP settles the exchange as below, by the old piece's check.
 
-| What happens to the old piece            | What the ERP does with money                                                                                                                         | Event                |
-| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
-| Back in time and **approved**            | Only the difference: new price higher, it charges the extra as an "Exchange extra" line; lower, it gives an "Exchange adjustment"; the same, nothing | `exchange.settled`   |
-| Back in time and **declined**            | Bills the new piece at its full `shopPrice`. The old piece stays Retail's loss, with no credit                                                       | `exchange.billed`    |
-| **Not back** by the deadline             | Bills the new piece at its full `shopPrice`, the night after the deadline (01:00)                                                                    | `exchange.billed`    |
-| Back **after** the bill and approved     | Credits the old piece at the price Retail paid for it. The final figure is the same as an exchange on time                                           | `exchange.credited`  |
-| Back after the bill and declined         | Nothing more: the bill stands                                                                                                                        | none                 |
-| Customer **refused** the exchange parcel | The exchange is cancelled. No bill. The original order stays as it was                                                                               | `exchange.cancelled` |
+| What happens to the old piece            | What the ERP does with money                                                                                                                                                                   | Event                                     |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
+| Back in time and **approved**            | Only the difference: new price higher, it charges the extra as an "Exchange extra" line; lower, it gives an "Exchange adjustment"; the same, nothing                                           | `exchange.settled`                        |
+| Back in time and **declined**            | Bills the new piece at its full `shopPrice`. The old piece stays Retail's loss, with no credit                                                                                                 | `exchange.billed`                         |
+| **Not back** by the deadline             | Bills the new piece at its full `shopPrice`, the night after the deadline (nightly run, 03:30)                                                                                                 | `exchange.billed`                         |
+| Back **after** the bill and approved     | Credits the old piece at the price Retail paid for it. The final figure is the same as an exchange on time                                                                                     | `exchange.credited`                       |
+| Back after the bill and declined         | Nothing more: the bill stands                                                                                                                                                                  | none                                      |
+| Customer **refused** the exchange parcel | No bill while the new piece comes back by the same deadline. The original order stays as it was. Not back in time (lost, kept by the courier): the new piece is billed in full (owner, 30 Oct) | `exchange.billed` or `exchange.cancelled` |
 
 - **Prices.** The new piece's price is its `shopPrice` when the exchange order is placed. The old piece's price is what Retail paid for it.
 - **Exchange charges** (exchange fee, courier, delivery) are all Retail's own. They never reach the ERP. The difference the customer pays or gets back is also Retail's own business.
@@ -542,13 +542,15 @@ An exchange is a customer swapping a piece they received for another (another si
 
 - **The exchange parcel's delivery result** uses `PUT /orders/{exchangeOrderId}/delivery` like any order:
   - `DELIVERED` starts the deadline.
-  - `RETURNED` means the customer refused it: the exchange is cancelled (`exchange.cancelled`). The new piece comes back by the normal return path.
-  - `PARTIAL`, with the kept lines in `mark`, starts the deadline for the kept lines and cancels the rest.
+  - `RETURNED` means the customer refused it. The new piece must come back by the normal return path by the same deadline; nothing is billed while it does.
+  - `PARTIAL`, with the kept lines in `mark`, starts the deadline for the kept lines' old pieces and for the other lines' new pieces.
+  - Owner's rule (30 Oct): every piece that leaves the ERP is Retail's to pay unless it comes back and is approved, whatever happened to it (lost, not handed back by the courier, stolen).
   - The ERP ignores `collected` on an exchange order: the customer's money is Retail's own.
 - **The old piece** comes back on a courier return list as a parcel naming the **exchange order**: `{ "consignmentId": "...", "externalOrderId": "WEB-1043-X1" }`. The consignment may be the exchange parcel's or a separate pickup consignment; the ERP matches by the order.
 - **A refused exchange parcel coming back** goes the normal way, but nothing was billed for the new piece:
-  - approved: back to main stock, no money;
+  - approved: back to main stock, no money (`exchange.cancelled`);
   - declined (damaged, missing): billed to Retail at its `shopPrice` as Retail's loss (`exchange.billed`, reason `NEW_PIECE_DECLINED`) (owner: Q2).
+- **A refused new piece not back by the deadline** is billed at its full `shopPrice` the night after (`exchange.billed`). If it comes back later and is approved, that bill is credited (`exchange.credited`); declined, the bill stands.
 - **A late return with no matching consignment.**
   - The admin can tell the ERP by hand that the old piece arrived late: `POST /exchanges/{exchangeId}/late-return` with `{ "handedBackAt": "2026-11-12", "courier": "PATHAO", "returnListId": "RL-140", "consignmentId": null, "note": "came in a different lot" }`.
   - The ERP puts that piece on Hold for the owner to tick. Once ticked, it is checked and settled by the table above.

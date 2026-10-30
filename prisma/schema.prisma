@@ -137,6 +137,26 @@ model Company {
   creditAllocations      CreditAllocation[]
   cheques                Cheque[]
   integrations           SalesChannelIntegration[]
+  retailStores           RetailStore[]
+  retailPrices           RetailPrice[]
+  retailPriceChanges     RetailPriceChange[]
+  retailOrders           RetailOrder[]
+  retailOrderLines       RetailOrderLine[]
+  retailDeliveries       RetailDelivery[]
+  retailReturnLists      RetailReturnList[]
+  retailReturnParcels    RetailReturnParcel[]
+  retailReturnPieces     RetailReturnPiece[]
+  retailExchanges        RetailExchange[]
+  retailExchangeEvents   RetailExchangeEvent[]
+  retailReserves         RetailReserve[]
+  readyStockPurchases    ReadyStockPurchase[]
+  readyStockLines        ReadyStockLine[]
+  retailDailySummaries   RetailDailySummary[]
+  retailFixedCosts       RetailFixedCost[]
+  retailBudgets          RetailBudget[]
+  retailTargets          RetailTarget[]
+  retailYearReports      RetailYearReport[]
+  retailAlerts           RetailAlert[]
   webhookEvents          WebhookEvent[]
   integrationApiCalls    IntegrationApiCall[]
   integrationIdempotency IntegrationIdempotency[]
@@ -545,9 +565,11 @@ model FileAsset {
   checksum     String?
   createdAt    DateTime @default(now())
 
-  company    Company  @relation("CompanyFiles", fields: [companyId], references: [id], onDelete: Cascade)
-  uploadedBy User?    @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
-  logoOf     Company? @relation("CompanyLogo")
+  company          Company           @relation("CompanyFiles", fields: [companyId], references: [id], onDelete: Cascade)
+  uploadedBy       User?             @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+  logoOf           Company?          @relation("CompanyLogo")
+  storeLogoOf      RetailStore?      @relation("RetailStoreLogo")
+  retailYearReport RetailYearReport?
 
   stockIntakes        StockIntake[]
   complianceDocuments ComplianceDocument[]
@@ -666,15 +688,18 @@ model Style {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  company            Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  category           Category            @relation(fields: [categoryId], references: [id])
-  brand              Brand?              @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  company            Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  category           Category             @relation(fields: [categoryId], references: [id])
+  brand              Brand?               @relation(fields: [brandId], references: [id], onDelete: SetNull)
   variants           ProductVariant[]
   quotationItems     QuotationItem[]
   productionProjects ProductionProject[]
   costingStyles      OrderCostingStyle[]
   stockLots          StockLot[]
   techPacks          TechPack[]
+  retailPrices       RetailPrice[]
+  retailReserves     RetailReserve[]
+  readyPurchases     ReadyStockPurchase[]
 
   @@unique([companyId, code])
   @@index([companyId, categoryId])
@@ -745,6 +770,10 @@ model ProductVariant {
   packingListItems  PackingListItem[]
   challanItems      DeliveryChallanItem[]
   productionTargets ProductionTargetLine[]
+  retailPrices      RetailPrice[]
+  retailOrderLines  RetailOrderLine[]
+  retailReturns     RetailReturnPiece[]
+  readyStockLines   ReadyStockLine[]
 
   @@unique([companyId, sku])
   @@unique([styleId, colorId, sizeId])
@@ -804,6 +833,8 @@ model Warehouse {
   purchaseReturns      PurchaseReturn[]
   salesReturns         SalesReturn[]
   integrations         SalesChannelIntegration[]
+  retailStores         RetailStore[]
+  readyPurchases       ReadyStockPurchase[]
 
   @@unique([companyId, name])
 }
@@ -1402,6 +1433,7 @@ model Party {
   cheques              Cheque[]
   journalLines         JournalLine[]
   supplierBills        SupplierBill[]
+  readyPurchases       ReadyStockPurchase[]
   expenses             Expense[]
   rawMaterials         RawMaterial[]
   purchaseOrders       PurchaseOrder[]
@@ -1418,6 +1450,7 @@ model Party {
   fabricQuotes         FabricQuote[]        @relation("FabricQuoteSupplier")
   aiDrafts             AiDraft[]            @relation("AiDraftParty")
   aiFollowUps          AiFollowUp[]         @relation("AiFollowUpParty")
+  retailStore          RetailStore?
   campaignRecipients   CampaignRecipient[]
   generatedDocuments   GeneratedDocument[]
   projectSettlements   ProjectSettlement[]
@@ -1614,6 +1647,7 @@ model SalesOrder {
   packedBy           Employee?                @relation("OrderPackedBy", fields: [packedById], references: [id], onDelete: SetNull)
   items              SalesOrderItem[]
   invoice            Invoice?
+  retailOrder        RetailOrder?
   packingList        PackingList?
   deliveryChallans   DeliveryChallan[]
   shipments          Shipment[]
@@ -1992,6 +2026,7 @@ model SalesChannelIntegration {
   idempotencyKeys IntegrationIdempotency[]
   salesReturns    SalesReturn[]
   adSpend         AdSpend[]
+  retailStore     RetailStore?
 
   @@index([companyId])
 }
@@ -2810,6 +2845,7 @@ model SupplierBill {
   rawMaterialMovements RawMaterialMovement[]
   purchaseReturns      PurchaseReturn[]
   faults               SupplierFault[]
+  readyPurchase        ReadyStockPurchase?
 
   @@unique([companyId, number])
   @@index([supplierId])
@@ -5119,6 +5155,7 @@ enum StockMovementType {
 enum StockLotSource {
   OPENING
   PRODUCTION
+  PURCHASE // ready stock bought from a supplier (Business > Shop stock)
 }
 
 enum BadStockSource {
@@ -5685,6 +5722,8 @@ enum JournalSource {
   SUPPLIER_FAULT
   /// An adjusting entry Bug Guard posted with the owner's PIN (modules/bug-guard/corrections.ts).
   CORRECTION
+  /// A retail store's exchange: the new piece billed, or only the price difference (plan v6 sec 8.9).
+  RETAIL_EXCHANGE
 }
 
 enum AssetStatus {
@@ -5887,6 +5926,7 @@ enum DocumentType {
   ORDER_COSTING // an order's costing sheet before it is taken (CST-2026-00001)
   AI_ORDER_RUN // an order Mehedi 2.0 takes in and follows (AO-2026-00001)
   TECH_PACK // a tech pack, from a buyer's brief or a style in production (TP-2026-00001)
+  READY_STOCK_PURCHASE // ready stock bought for the shops (RSP-2026-00001)
 }
 
 enum TemplateFormat {
@@ -7257,4 +7297,635 @@ enum UsageKind {
   VIEW
   ABANDONED
   HELP_MISS
+}
+
+// =============================================================================
+// RETAIL STORES (Business, Retail and POS plan v6, part 1)
+// =============================================================================
+
+/// Online store or showroom.
+enum RetailStoreKind {
+  ONLINE
+  SHOWROOM
+}
+
+/// How a store's price is made: on top of the cost (a % or an amount), or one
+/// fixed price (B-grade only).
+enum RetailPriceRule {
+  PERCENT
+  AMOUNT
+  FIXED
+}
+
+enum RetailGrade {
+  A
+  B
+}
+
+/// A retail store: a special wholesale buyer of the ERP (plan v6 sec 1 and 4).
+/// It is also a buyer in the buyer list (partyId), so its account, statement and
+/// Buyer 360 live in one place. It buys at its own prices: a rule on the cost per
+/// grade, with hand prices on top (RetailPrice). Closing keeps its history.
+model RetailStore {
+  id                String           @id @default(cuid())
+  companyId         String
+  name              String
+  kind              RetailStoreKind  @default(ONLINE)
+  address           String?
+  phone             String?
+  /// The warehouse its goods go out from.
+  warehouseId       String?
+  /// Its buyer in the buyer list (made with the store).
+  partyId           String           @unique
+  /// Its online shop connection (Settings > Integrations), with the shop's key.
+  integrationId     String?          @unique
+  /// A-grade rule on the A-grade cost: PERCENT or AMOUNT. Empty: only hand prices.
+  aRule             RetailPriceRule?
+  aValue            Decimal?         @db.Decimal(14, 4)
+  /// B-grade rule on the B-grade cost (PERCENT or AMOUNT) or one price (FIXED).
+  bRule             RetailPriceRule?
+  bValue            Decimal?         @db.Decimal(14, 4)
+  closedAt          DateTime?
+  /// The ERP last asked the site for missing daily summaries (summary.missing, at most hourly).
+  summaryAskedAt    DateTime?
+  /// The owner was last told about missing daily summaries on this day.
+  summaryAlertedOn  DateTime?        @db.Date
+  /// The 30-day hold lifted by the owner (PIN and a reason) until this time.
+  holdReleasedUntil DateTime?
+  holdReleaseReason String?
+  /// Returned pieces are checked within this many days of the courier handing them back.
+  checkDays         Int              @default(5)
+  /// An exchange's old piece must come back within this many days of the new parcel's delivery.
+  exchangeDays      Int              @default(4)
+  /// The logo on the store's own pad (its reports), PNG or JPG.
+  logoFileId        String?          @unique
+  createdById       String?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  company     Company                  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  warehouse   Warehouse?               @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
+  party       Party                    @relation(fields: [partyId], references: [id])
+  integration SalesChannelIntegration? @relation(fields: [integrationId], references: [id], onDelete: SetNull)
+  prices      RetailPrice[]
+  changes     RetailPriceChange[]
+  orders      RetailOrder[]
+  returnLists RetailReturnList[]
+  exchanges   RetailExchange[]
+  summaries   RetailDailySummary[]
+  fixedCosts  RetailFixedCost[]
+  budgets     RetailBudget[]
+  targets     RetailTarget[]
+  yearReports RetailYearReport[]
+  alerts      RetailAlert[]
+  logoFile    FileAsset?               @relation("RetailStoreLogo", fields: [logoFileId], references: [id], onDelete: SetNull)
+
+  @@unique([companyId, name])
+  @@index([companyId])
+}
+
+/// A hand price for a store: on a style, a style's colour or one SKU, per grade.
+/// It wins over the store's rule (the narrowest one first). Taking it off keeps
+/// the row (removedAt); the history is in RetailPriceChange.
+model RetailPrice {
+  id          String      @id @default(cuid())
+  companyId   String
+  storeId     String
+  grade       RetailGrade
+  styleId     String
+  colorId     String?
+  variantId   String?
+  /// "S:<styleId>", "C:<styleId>:<colorId>" or "V:<variantId>": one live price per place.
+  scopeKey    String
+  price       Decimal     @db.Decimal(14, 2)
+  /// The cost when the price was set: a cost that moved since asks for a look.
+  costWhenSet Decimal     @default(0) @db.Decimal(14, 4)
+  setById     String?
+  setAt       DateTime    @default(now())
+  removedAt   DateTime?
+
+  company Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  store   RetailStore     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  style   Style           @relation(fields: [styleId], references: [id], onDelete: Cascade)
+  variant ProductVariant? @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  @@index([storeId, grade, scopeKey])
+  @@index([companyId, styleId])
+}
+
+/// Every change to a store's prices: who, when, what it was and what it is now.
+model RetailPriceChange {
+  id          String   @id @default(cuid())
+  companyId   String
+  storeId     String
+  what        String
+  before      String?
+  after       String?
+  changedById String?
+  changedAt   DateTime @default(now())
+
+  company Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  store   RetailStore @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([storeId, changedAt])
+}
+
+/// A website order of a retail store (plan v6 sec 9): an ERP sale to the store
+/// at its shop prices, fixed when the order came. It is billed when the parcel
+/// leaves (billedAt). The customer's prices are kept only for the store's reports.
+model RetailOrder {
+  id             String    @id @default(cuid())
+  companyId      String
+  storeId        String
+  orderId        String    @unique
+  /// What the store owes the ERP for this order, at the shop prices fixed on it.
+  erpTotal       Decimal   @db.Decimal(14, 2)
+  /// What the customer was to pay for the pieces (the store's own figure).
+  customerTotal  Decimal   @default(0) @db.Decimal(14, 2)
+  deliveryCharge Decimal   @default(0) @db.Decimal(14, 2)
+  advancePaid    Decimal   @default(0) @db.Decimal(14, 2)
+  billedAt       DateTime?
+  createdAt      DateTime  @default(now())
+
+  company     Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  store       RetailStore         @relation(fields: [storeId], references: [id])
+  order       SalesOrder          @relation(fields: [orderId], references: [id])
+  lines       RetailOrderLine[]
+  delivery    RetailDelivery?
+  parcel      RetailReturnParcel?
+  /// Set when this order is an exchange (plan v6 sec 8.9).
+  exchange    RetailExchange?     @relation("ExchangeOrder")
+  /// The exchanges made of this order's pieces.
+  exchangesOf RetailExchange[]    @relation("ExchangesOf")
+
+  @@index([companyId, storeId])
+}
+
+/// One line of a store's website order as the site sent it (its own lineId):
+/// the shop price fixed for it and the customer's price per piece.
+model RetailOrderLine {
+  id              String               @id @default(cuid())
+  companyId       String
+  retailOrderId   String
+  lineId          String
+  variantId       String
+  grade           RetailGrade          @default(A)
+  quantity        Int
+  shopPrice       Decimal              @db.Decimal(14, 2)
+  customerPrice   Decimal              @db.Decimal(14, 2)
+  comboId         String?
+  /// On an exchange order: the line (of the earlier order) whose piece this one replaces.
+  replacesLineId  String?
+  exchangeState   RetailExchangeState?
+  /// The day the exchange parcel was delivered, and the last day the old piece may come back.
+  deliveredOn     DateTime?            @db.Date
+  deadline        DateTime?            @db.Date
+  /// Pieces of this line taken from Return stock (main stock was out): checked at packing.
+  fromReturnStock Int                  @default(0)
+  /// A Return stock piece failed the packing check: the line waits for stock (or REPLACE, CANCEL).
+  waitingStock    Boolean              @default(false)
+  /// Pieces of this line taken from the shops' reserve when it was billed; an approved return puts them back.
+  fromReserve     Int                  @default(0)
+  /// Dropped by the site (PATCH .../lines/{lineId} CANCEL): never billed, kept for the history.
+  cancelledAt     DateTime?
+  cancelReason    String?
+  createdAt       DateTime             @default(now())
+
+  company        Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  order          RetailOrder           @relation(fields: [retailOrderId], references: [id], onDelete: Cascade)
+  variant        ProductVariant        @relation(fields: [variantId], references: [id])
+  pieces         RetailReturnPiece[]
+  replaces       RetailOrderLine?      @relation("ExchangeReplaces", fields: [replacesLineId], references: [id])
+  replacedBy     RetailOrderLine[]     @relation("ExchangeReplaces")
+  exchangeEvents RetailExchangeEvent[]
+  reservedPieces RetailReturnPiece[]   @relation("ReservedPieces")
+
+  @@unique([retailOrderId, lineId])
+  @@index([companyId, variantId])
+}
+
+enum RetailDeliveryStatus {
+  DELIVERED
+  PARTIAL
+  RETURNED
+}
+
+/// How sure the ERP is which pieces came back: one answer (GREEN), the count and
+/// value but not the colour or size (YELLOW), or unclear (ORANGE: the owner ticks).
+enum RetailMatch {
+  GREEN
+  YELLOW
+  ORANGE
+}
+
+/// A returned parcel: its pieces wait in Return stock, or the owner must tick
+/// them (HOLD); CHECKED when every piece is decided; MISSING when it never came.
+enum RetailParcelState {
+  HOLD
+  IN_RETURN_STOCK
+  CHECKED
+  MISSING
+}
+
+enum RetailPieceStatus {
+  WAITING
+  APPROVED
+  DECLINED
+}
+
+enum RetailDeclineReason {
+  B_GRADE
+  C_GRADE
+  STAIN_OR_DAMAGE
+  USED
+  NO_TAG
+  PIECE_MISSING
+  WRONG_ITEM
+  PARCEL_MISSING
+  OTHER
+}
+
+/// The courier's result for a store's order (plan v6 sec 8.2), as the site
+/// reported it last, and which pieces the ERP takes as kept and coming back.
+model RetailDelivery {
+  id             String               @id @default(cuid())
+  companyId      String
+  retailOrderId  String               @unique
+  status         RetailDeliveryStatus
+  courier        String
+  consignmentId  String
+  collected      Decimal              @db.Decimal(14, 2)
+  at             DateTime
+  /// The site's "Partial delivery" mark: the lineIds the customer kept, when staff ticked them.
+  markKept       Json?
+  discountGiven  Decimal              @default(0) @db.Decimal(14, 2)
+  phoneConfirmed Boolean              @default(false)
+  note           String?
+  match          RetailMatch
+  /// One RetailOrderLine id per piece coming back (the ERP's answer).
+  returning      Json
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  company Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  order   RetailOrder @relation(fields: [retailOrderId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+}
+
+/// A lot the courier handed back (plan v6 sec 8.3), e.g. RL-123.
+model RetailReturnList {
+  id           String   @id @default(cuid())
+  companyId    String
+  storeId      String
+  returnListId String
+  courier      String
+  /// The courier's date the parcels reached the merchant: every deadline counts from it.
+  handedBackAt DateTime
+  createdAt    DateTime @default(now())
+
+  company Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  store   RetailStore          @relation(fields: [storeId], references: [id])
+  parcels RetailReturnParcel[]
+
+  @@unique([storeId, returnListId])
+  @@index([companyId])
+}
+
+/// One returned parcel (one order) on a return list.
+model RetailReturnParcel {
+  id            String            @id @default(cuid())
+  companyId     String
+  listId        String
+  retailOrderId String            @unique
+  consignmentId String
+  /// The site's evidence: how many pieces its staff counted, and what they saw.
+  receivedCount Int?
+  note          String?
+  state         RetailParcelState
+  match         RetailMatch
+  resolvedById  String?
+  resolvedAt    DateTime?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  company Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  list    RetailReturnList    @relation(fields: [listId], references: [id], onDelete: Cascade)
+  order   RetailOrder         @relation(fields: [retailOrderId], references: [id])
+  pieces  RetailReturnPiece[]
+
+  @@index([companyId, state])
+}
+
+/// One returned piece: waiting in Return stock until the owner checks it.
+/// Approved: back in main stock and credited to the store at the price it
+/// paid (a sales return). Declined: the store's loss, no money changes.
+model RetailReturnPiece {
+  id                String               @id @default(cuid())
+  companyId         String
+  parcelId          String
+  retailOrderLineId String
+  variantId         String
+  /// The price the store paid for it.
+  price             Decimal              @db.Decimal(14, 2)
+  status            RetailPieceStatus    @default(WAITING)
+  reason            RetailDeclineReason?
+  note              String?
+  /// The piece in the parcel was another of the order's SKUs than expected.
+  differentPiece    Boolean              @default(false)
+  salesReturnId     String?
+  /// The new order line this unchecked piece was sent on (plan v6 sec 8.5).
+  reservedForLineId String?
+  /// Approved by the packing check ("Checked, OK"): APPROVED_AT_PACKING for the site.
+  atPacking         Boolean              @default(false)
+  decidedById       String?
+  decidedAt         DateTime?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  company     Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  parcel      RetailReturnParcel @relation(fields: [parcelId], references: [id], onDelete: Cascade)
+  line        RetailOrderLine    @relation(fields: [retailOrderLineId], references: [id])
+  variant     ProductVariant     @relation(fields: [variantId], references: [id])
+  reservedFor RetailOrderLine?   @relation("ReservedPieces", fields: [reservedForLineId], references: [id])
+
+  @@index([parcelId])
+  @@index([reservedForLineId])
+  @@index([companyId, status])
+}
+
+/// Where an exchange line stands (plan v6 sec 8.9, site-changes 2.10.5).
+enum RetailExchangeState {
+  WAITING_DELIVERY
+  WAITING_RETURN
+  RETURNED_WAITING_CHECK
+  SETTLED
+  BILLED
+  CREDITED
+  CANCELLED
+}
+
+enum RetailExchangeEventType {
+  SETTLED
+  BILLED
+  CREDITED
+  CANCELLED
+}
+
+/// An exchange: a store's new order that replaces pieces of an earlier one. The
+/// new pieces go out unbilled; money settles when the old pieces are checked.
+model RetailExchange {
+  id              String   @id @default(cuid())
+  companyId       String
+  storeId         String
+  /// EXG-YYYY-NNNNN
+  number          String
+  retailOrderId   String   @unique
+  ofRetailOrderId String
+  note            String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  company Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  store   RetailStore           @relation(fields: [storeId], references: [id])
+  order   RetailOrder           @relation("ExchangeOrder", fields: [retailOrderId], references: [id])
+  of      RetailOrder           @relation("ExchangesOf", fields: [ofRetailOrderId], references: [id])
+  events  RetailExchangeEvent[]
+
+  @@unique([companyId, number])
+  @@index([companyId, storeId])
+}
+
+/// Each money step of an exchange, one per piece (never edited: a reversed
+/// bill is a new event naming the one it reverses).
+model RetailExchangeEvent {
+  id             String                  @id @default(cuid())
+  companyId      String
+  exchangeId     String
+  lineId         String
+  type           RetailExchangeEventType
+  /// SETTLED: EXTRA, ADJUSTMENT or EVEN. BILLED: DEADLINE_PASSED, OLD_PIECE_DECLINED or NEW_PIECE_DECLINED.
+  kind           String?
+  amount         Decimal                 @db.Decimal(14, 2)
+  journalEntryId String?
+  reversesId     String?
+  createdAt      DateTime                @default(now())
+
+  company  Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  exchange RetailExchange  @relation(fields: [exchangeId], references: [id], onDelete: Cascade)
+  line     RetailOrderLine @relation(fields: [lineId], references: [id])
+
+  @@index([exchangeId])
+  @@index([companyId, createdAt])
+}
+
+/// Pieces of a style, or of one colour of it, held for the retail shops (plan v6 sec 3).
+/// One reserve for all shops: wholesale orders cannot take the stock below it, the shops
+/// can take all of it (each billed piece comes off it). A style has either one reserve for
+/// the whole style or reserves per colour. 60 days without a change, the ERP reminds.
+model RetailReserve {
+  id         String    @id @default(cuid())
+  companyId  String
+  styleId    String
+  /// Empty: the whole style.
+  colorId    String?
+  quantity   Int       @default(0)
+  note       String?
+  /// When it was last set or a shop last took from it.
+  activeAt   DateTime  @default(now())
+  remindedAt DateTime?
+  setById    String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  style   Style   @relation(fields: [styleId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, styleId])
+}
+
+enum ReadyStockPriceMode {
+  RULE // the shop's own price rule
+  FIXED // one price for the style at every shop
+  AT_COST // the shops buy it at cost (the ERP keeps no profit)
+}
+
+/// Ready stock bought from a supplier for the shops (plan v6 sec 3a): the pieces come into
+/// stock at cost (Finished Goods Inventory) and the supplier's bill is due (Supplier Due).
+/// Mistakes are put right with reversing entries, never by editing it.
+model ReadyStockPurchase {
+  id           String              @id @default(cuid())
+  companyId    String
+  /// RSP-YYYY-NNNNN
+  number       String
+  supplierId   String
+  billId       String              @unique
+  styleId      String
+  warehouseId  String
+  purchaseDate DateTime
+  supplierRef  String?
+  /// All its pieces are held for the shops (added to the reserve).
+  retailOnly   Boolean             @default(false)
+  priceMode    ReadyStockPriceMode @default(RULE)
+  fixedPrice   Decimal?            @db.Decimal(14, 2)
+  /// Transport and other costs on the bill, shared per piece into the cost.
+  extraCost    Decimal             @default(0) @db.Decimal(14, 2)
+  pieces       Int
+  totalAmount  Decimal             @db.Decimal(14, 2)
+  note         String?
+  createdById  String?
+  createdAt    DateTime            @default(now())
+
+  company   Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  supplier  Party            @relation(fields: [supplierId], references: [id])
+  bill      SupplierBill     @relation(fields: [billId], references: [id])
+  style     Style            @relation(fields: [styleId], references: [id])
+  warehouse Warehouse        @relation(fields: [warehouseId], references: [id])
+  lines     ReadyStockLine[]
+
+  @@unique([companyId, number])
+  @@index([companyId, purchaseDate])
+}
+
+model ReadyStockLine {
+  id         String  @id @default(cuid())
+  companyId  String
+  purchaseId String
+  variantId  String
+  quantity   Int
+  /// The supplier's price per piece.
+  unitPrice  Decimal @db.Decimal(14, 2)
+  /// The price with its share of the extra costs: what the piece cost.
+  unitCost   Decimal @db.Decimal(14, 4)
+
+  company  Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  purchase ReadyStockPurchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  variant  ProductVariant     @relation(fields: [variantId], references: [id])
+
+  @@index([purchaseId])
+}
+
+/// One version of a retail store's day as its site sent it (plan v6 sec 6,
+/// PUT /daily-summaries/{date}). Sending a day again adds a version; the newest
+/// is the day's figure, the older ones show what changed.
+model RetailDailySummary {
+  id            String   @id @default(cuid())
+  companyId     String
+  storeId       String
+  date          DateTime @db.Date
+  version       Int
+  /// The body as sent (orders, sales, income, deliveries, costs, returns, customers).
+  payload       Json
+  /// The categories the site did not have yet: shown "not complete yet", never as 0.
+  incomplete    String[]
+  netProfit     Decimal  @db.Decimal(14, 2)
+  /// What the ERP gets from the same figures; the owner is warned when they differ.
+  checkedProfit Decimal  @db.Decimal(14, 2)
+  receivedAt    DateTime @default(now())
+
+  company Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  store   RetailStore @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, date, version])
+  @@index([companyId, date])
+}
+
+/// One version of a store's fixed costs for a month (PUT /fixed-costs/{month}).
+model RetailFixedCost {
+  id         String   @id @default(cuid())
+  companyId  String
+  storeId    String
+  /// YYYY-MM
+  month      String
+  version    Int
+  salary     Decimal  @default(0) @db.Decimal(14, 2)
+  rent       Decimal  @default(0) @db.Decimal(14, 2)
+  utilities  Decimal  @default(0) @db.Decimal(14, 2)
+  other      Decimal  @default(0) @db.Decimal(14, 2)
+  total      Decimal  @db.Decimal(14, 2)
+  note       String?
+  receivedAt DateTime @default(now())
+
+  company Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  store   RetailStore @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, month, version])
+}
+
+/// The owner's budget for a store's month, by line (plan v6 sec 7). An empty line is not budgeted.
+model RetailBudget {
+  id        String   @id @default(cuid())
+  companyId String
+  storeId   String
+  /// YYYY-MM
+  month     String
+  ads       Decimal? @db.Decimal(14, 2)
+  packaging Decimal? @db.Decimal(14, 2)
+  delivery  Decimal? @db.Decimal(14, 2)
+  salary    Decimal? @db.Decimal(14, 2)
+  other     Decimal? @db.Decimal(14, 2)
+  /// Lines the owner was already told went over 100% this month.
+  alerted   String[]
+  setById   String?
+  updatedAt DateTime @updatedAt
+
+  company Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  store   RetailStore @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, month])
+}
+
+/// A note the ERP sent about the retail side (plan v6 sec 13): the night summary, an alert
+/// or the weekly analysis, kept so each goes once and can be read again.
+model RetailAlert {
+  id        String   @id @default(cuid())
+  companyId String
+  /// The store it is about; empty for the night summary of every store.
+  storeId   String?
+  /// NIGHT, SALES_FELL, RETURNS_UP, ROAS_FELL, HOLD_SOON, NEW_RETURNS, LYING, WEEKLY
+  kind      String
+  /// What makes it once: the day (and the store).
+  key       String
+  text      String
+  createdAt DateTime @default(now())
+
+  company Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  store   RetailStore? @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, kind, key])
+  @@index([companyId, createdAt])
+}
+
+/// A store's year-end summary (plan v6 sec 14, point 2): made by itself once the year is over, kept as a PDF.
+model RetailYearReport {
+  id        String   @id @default(cuid())
+  companyId String
+  storeId   String
+  year      Int
+  fileId    String   @unique
+  createdAt DateTime @default(now())
+
+  company Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  store   RetailStore @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  file    FileAsset   @relation(fields: [fileId], references: [id])
+
+  @@unique([storeId, year])
+  @@index([companyId])
+}
+
+/// The owner's sales target for a store's month (net sales, as the summaries count them).
+model RetailTarget {
+  id        String   @id @default(cuid())
+  companyId String
+  storeId   String
+  /// YYYY-MM
+  month     String
+  sales     Decimal  @db.Decimal(14, 2)
+  setById   String?
+  updatedAt DateTime @updatedAt
+
+  company Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  store   RetailStore @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, month])
 }

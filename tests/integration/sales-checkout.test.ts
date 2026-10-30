@@ -490,7 +490,8 @@ run("the Sales overview and quick view", () => {
     ]);
     expect(peek.invoice?.number).toMatch(/^INV-/);
     expect(peek.packingList).toMatch(/^PL-/);
-    expect(JSON.stringify(peek)).not.toMatch(/cost|margin/i);
+    // Field names only: a random id may hold the letters "cost".
+    expect(JSON.stringify(peek)).not.toMatch(/"[^"]*(cost|margin)[^"]*":/i);
 
     const other = await setup("Other Co");
     await expectAppError(overview.getOrderPeek(other.salesCtx, order.id), "NOT_FOUND");

@@ -966,7 +966,53 @@ class Writer {
         return this.sectionStart(block);
       case "parties":
         return this.partyBoxes(block.parties);
+      case "bars":
+        return this.bars(block);
     }
+  }
+
+  /** One or two series of bars (the company colour, then the accent), losses below the line. */
+  private bars(block: Extract<Block, { kind: "bars" }>) {
+    const height = 120;
+    this.ensure(13 + 14 + height + 22);
+    this.sectionTitle(block.title);
+    const colors = [this.primary, this.accent];
+    let lx = this.left;
+    block.series.forEach((name, i) => {
+      this.doc.rect(lx, this.y + 1, 7, 7).fill(colors[i]!);
+      lx += 10;
+      lx += this.line(name, lx, this.y, this.width / 2, { font: SANS, size: 7.4 }) + 14;
+    });
+    this.y += 14;
+    const values = block.rows.flatMap((r) => r.values);
+    const top = Math.max(1, ...values, 0);
+    const bottom = Math.min(0, ...values);
+    const scale = height / (top - bottom);
+    const zero = this.y + top * scale;
+    // At most a thick bar per row: one or two months never fill the page with one block.
+    const slot = Math.min(48, this.width / Math.max(1, block.rows.length));
+    const bar = Math.max(1, (slot - 4) / block.series.length);
+    block.rows.forEach((r, i) => {
+      r.values.forEach((v, k) => {
+        const h = Math.max(0.5, Math.abs(v) * scale);
+        const x = this.left + i * slot + 2 + k * bar;
+        this.doc.rect(x, v >= 0 ? zero - h : zero, Math.max(0.5, bar - 1), h).fill(colors[k]!);
+      });
+    });
+    this.rule(zero, MUTED, 0.4, this.left, this.width);
+    this.y += height + 4;
+    const first = block.rows[0]?.label ?? "";
+    const last = block.rows[block.rows.length - 1]?.label ?? "";
+    this.line(first, this.left, this.y, this.width / 2, { font: SANS, size: 7, color: MUTED });
+    if (block.rows.length > 1) {
+      this.line(last, this.left + this.width / 2, this.y, this.width / 2, {
+        font: SANS,
+        size: 7,
+        color: MUTED,
+        align: "right",
+      });
+    }
+    this.y += 18;
   }
 
   private sectionTitle(title: string) {

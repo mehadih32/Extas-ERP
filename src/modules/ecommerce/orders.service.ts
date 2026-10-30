@@ -26,8 +26,25 @@ import {
 import { releaseStock } from "@/modules/sales/stock-ops";
 import { collectOrderLines } from "@/modules/sales/totals";
 
+import {
+  cancelExchangeTx,
+  createExchangeTx,
+  ExchangeRefusal,
+  OPEN_STATES,
+  replacedLines,
+} from "@/modules/retail/exchanges.service";
+import { takeFromReserveTx } from "@/modules/retail/reserve";
+import { storePrices } from "@/modules/retail/stores.service";
+
 import { amount, variantActive } from "./catalog.service";
 import { EcommerceApiError } from "./errors";
+import {
+  assertStoreNotOnHold,
+  assertStoreOpen,
+  goneForStore,
+  retailStoreOf,
+  type ShopStore,
+} from "./retail-mode";
 import type { ShopCall } from "./route";
 import {
   createOrderSchema,
@@ -36,6 +53,7 @@ import {
   type ShopPaymentMethod,
   type ShortStock,
   updateOrderSchema,
+  lineActionSchema,
 } from "./schemas";
 
 /*
@@ -81,8 +99,20 @@ const isUniqueClash = (error: unknown) =>
 export async function shopOrderOf(ctx: CompanyContext, orderId: string): Promise<ShopOrder> {
   const o = await ctx.db.salesOrder.findUniqueOrThrow({
     where: { id: orderId },
-    include: { items: { include: { variant: { select: { sku: true } } }, orderBy: { id: "asc" } } },
+    include: {
+      items: { include: { variant: { select: { sku: true } } }, orderBy: { id: "asc" } },
+      retailOrder: {
+        include: {
+          lines: {
+            include: { variant: { select: { sku: true } }, replaces: true },
+            orderBy: [{ createdAt: "asc" }, { lineId: "asc" }],
+          },
+          exchange: true,
+        },
+      },
+    },
   });
+  const retail = o.retailOrder;
   return {
     erpOrderId: o.id,
     erpOrderNumber: o.number,
@@ -98,6 +128,41 @@ export async function shopOrderOf(ctx: CompanyContext, orderId: string): Promise
       unitPrice: amount(i.unitPrice),
       discount: amount(i.discount),
     })),
+    ...(retail
+      ? {
+          erpTotal: amount(retail.erpTotal),
+          billedAt: retail.billedAt?.toISOString() ?? null,
+          lines: retail.lines.map((l) => ({
+            lineId: l.lineId,
+            sku: l.variant.sku,
+            grade: l.grade,
+            quantity: l.quantity,
+            shopPrice: amount(l.shopPrice),
+            customerPrice: amount(l.customerPrice),
+            fromReturnStock: l.fromReturnStock > 0,
+            cancelled: l.cancelledAt !== null,
+            ...(l.replaces
+              ? {
+                  replacesLineId: l.replaces.lineId,
+                  replacedShopPrice: amount(l.replaces.shopPrice),
+                }
+              : {}),
+          })),
+          ...(retail.exchange
+            ? {
+                exchangeId: retail.exchange.number,
+                atRisk: amount(
+                  retail.lines
+                    .filter((l) => l.exchangeState && OPEN_STATES.includes(l.exchangeState))
+                    .reduce(
+                      (sum, l) => sum.plus(l.shopPrice.times(l.quantity)),
+                      new Prisma.Decimal(0),
+                    ),
+                ),
+              }
+            : {}),
+        }
+      : {}),
   };
 }
 
@@ -291,6 +356,8 @@ export async function createShopOrder(call: Call, raw: unknown): Promise<ShopOrd
   const warehouseId = await shopWarehouse(call);
   const existing = await findShopOrder(call, input.externalOrderId);
   if (existing) throw orderExists(existing);
+  const store = await retailStoreOf(call);
+  if (store) return createStoreOrder(call, input, store, warehouseId);
   const lines = await resolveItems(ctx, input.items);
   const checked = await assertInStock(ctx, warehouseId, lines);
   const resolved: ResolvedLine[] = checked.map((l) => ({
@@ -341,6 +408,363 @@ export async function createShopOrder(call: Call, raw: unknown): Promise<ShopOrd
     }
     throw error;
   }
+}
+
+type CreateInput = ReturnType<typeof createOrderSchema.parse>;
+
+const round2 = (value: Prisma.Decimal) => value.toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
+
+/**
+ * Main stock first; what a SKU is short of comes from Return stock's unchecked
+ * pieces in the same warehouse (plan v6 sec 8.5), checked at packing. Refused
+ * (409 INSUFFICIENT_STOCK, counting both) only when both together are short.
+ */
+async function stockOrReturnStock(ctx: CompanyContext, warehouseId: string, lines: ShopLine[]) {
+  const checked = await shortLines(ctx, warehouseId, lines);
+  const fromReturn = new Map<string, string[]>();
+  const short: ShortStock["shortSkus"] = [];
+  for (const line of checked) {
+    const missing = line.quantity - line.available;
+    if (missing <= 0) continue;
+    const pieces = await ctx.db.retailReturnPiece.findMany({
+      where: {
+        variantId: line.variantId,
+        status: "WAITING",
+        reservedForLineId: null,
+        parcel: { state: "IN_RETURN_STOCK", order: { order: { warehouseId } } },
+      },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      take: missing,
+      select: { id: true },
+    });
+    if (pieces.length < missing) {
+      short.push({
+        sku: line.sku,
+        requested: line.quantity,
+        available: line.available + pieces.length,
+      });
+    } else {
+      fromReturn.set(
+        line.variantId,
+        pieces.map((p) => p.id),
+      );
+    }
+  }
+  if (short.length > 0) throw insufficientStock(short);
+  return { checked, fromReturn };
+}
+
+/** The order's note for the packers: "Return stock: check before packing". */
+const returnStockNote = (
+  lines: Array<{ variantId: string; sku: string }>,
+  fromReturn: Map<string, string[]>,
+) =>
+  fromReturn.size === 0
+    ? null
+    : `Return stock: check before packing: ${lines
+        .filter((l) => fromReturn.has(l.variantId))
+        .map((l) => `${l.sku} x ${fromReturn.get(l.variantId)!.length}`)
+        .join(", ")}`;
+
+/** Ties the Return stock pieces to the order's lines (the first lines of each SKU). */
+async function reserveReturnPiecesTx(
+  tx: Tx,
+  retailOrderId: string,
+  fromReturn: Map<string, string[]>,
+) {
+  if (fromReturn.size === 0) return;
+  const lines = await tx.retailOrderLine.findMany({
+    where: { retailOrderId },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+  });
+  for (const [variantId, pieceIds] of fromReturn) {
+    const left = [...pieceIds];
+    for (const line of lines.filter((l) => l.variantId === variantId)) {
+      const take = left.splice(0, line.quantity);
+      if (take.length === 0) break;
+      const claimed = await tx.retailReturnPiece.updateMany({
+        where: { id: { in: take }, status: "WAITING", reservedForLineId: null },
+        data: { reservedForLineId: line.id },
+      });
+      if (claimed.count !== take.length) {
+        throw new AppError(
+          "INSUFFICIENT_STOCK",
+          "A Return stock piece was just taken by another order.",
+          {
+            [`stock.${variantId}`]: ["No longer available"],
+          },
+        );
+      }
+      await tx.retailOrderLine.update({
+        where: { id: line.id },
+        data: { fromReturnStock: take.length },
+      });
+    }
+  }
+}
+
+/** The ERP's own line on an exchange order, e.g. "Exchange of WEB-1043, line WEB-1043-2". */
+const exchangeNote = (of: string, lines: Array<{ replacesLineId?: string }>) =>
+  `Exchange of ${of}, line ${[...new Set(lines.map((l) => l.replacesLineId))].join(", ")}`;
+
+/** The order an exchange names and the lines it replaces, checked (site-changes 2.10.2). */
+async function exchangeOf(
+  call: Call,
+  exchange: NonNullable<CreateInput["exchange"]>,
+  lines: Array<{ lineId: string; replacesLineId?: string; quantity: number }>,
+) {
+  const of = await findShopOrder(call, exchange.ofExternalOrderId);
+  if (!of) {
+    throw new EcommerceApiError(
+      404,
+      "NOT_FOUND",
+      `Order ${exchange.ofExternalOrderId} is not this shop's.`,
+    );
+  }
+  try {
+    return await replacedLines(call.ctx, of.id, lines);
+  } catch (error) {
+    if (error instanceof ExchangeRefusal) {
+      throw new EcommerceApiError(error.status, error.code, error.message, error.details);
+    }
+    throw error;
+  }
+}
+
+/**
+ * POST /orders from a retail store's shop (plan v6 sec 9): a sale to the store
+ * (its buyer) at the store's own prices, fixed now and billed when the parcel
+ * leaves. The customer's prices are kept beside it for the store's reports
+ * only. Refused while the store is closed or on hold, and for a SKU with no
+ * shop price (never sold at 0).
+ */
+async function createStoreOrder(
+  call: Call,
+  input: CreateInput,
+  store: ShopStore,
+  warehouseId: string,
+): Promise<ShopOrder> {
+  const { ctx, integration, meta } = call;
+  assertStoreOpen(store);
+  // An exchange is not a new sale: it goes through while the store is on hold.
+  if (!input.exchange) await assertStoreNotOnHold(ctx, store);
+  const bGrade = input.items.filter((i) => i.grade === "B").map((i) => i.sku);
+  if (bGrade.length > 0) {
+    throw new EcommerceApiError(
+      422,
+      "VALIDATION",
+      `B-grade lines are not open in the ERP yet: ${[...new Set(bGrade)].join(", ")}.`,
+      { bGradeSkus: [...new Set(bGrade)] },
+    );
+  }
+  const siteLines = input.items.map((item, index) => ({
+    ...item,
+    lineId: item.lineId ?? `${input.externalOrderId}-${index + 1}`,
+  }));
+  const ids = siteLines.map((l) => l.lineId);
+  const twice = ids.filter((id, index) => ids.indexOf(id) !== index);
+  if (twice.length > 0) {
+    throw new EcommerceApiError(422, "VALIDATION", `Each lineId once: ${twice.join(", ")}.`, {
+      lineId: [...new Set(twice)],
+    });
+  }
+  const exchange = input.exchange ? await exchangeOf(call, input.exchange, siteLines) : null;
+  if (!exchange && siteLines.some((l) => l.replacesLineId)) {
+    throw new EcommerceApiError(422, "VALIDATION", "replacesLineId is only for an exchange order.");
+  }
+  const lines = await resolveItems(
+    ctx,
+    siteLines.map((l) => ({ sku: l.sku, quantity: l.quantity, unitPrice: 0, discount: 0 })),
+  );
+  const prices = await storePrices(
+    ctx,
+    store.id,
+    lines.map((l) => l.variantId),
+    "A",
+  );
+  const noPrice = lines.filter((l) => !prices.get(l.variantId)).map((l) => l.sku);
+  if (noPrice.length > 0) {
+    throw new EcommerceApiError(
+      409,
+      "NO_SHOP_PRICE",
+      `These SKUs have no shop price yet, so they are not for sale to this store: ${noPrice.join(", ")}.`,
+      { skus: noPrice },
+    );
+  }
+  // An exchange's new pieces go out at 0: their money settles when the old pieces are checked.
+  const priced = lines.map((l) => ({
+    ...l,
+    unitPrice: exchange ? 0 : Number(prices.get(l.variantId)),
+  }));
+  const { checked, fromReturn } = await stockOrReturnStock(ctx, warehouseId, priced);
+  const variantOf = new Map(lines.map((l) => [l.sku, l.variantId]));
+  const customerPriceOf = (l: (typeof siteLines)[number]) =>
+    l.customerPrice !== undefined
+      ? new Prisma.Decimal(l.customerPrice)
+      : round2(
+          new Prisma.Decimal(l.unitPrice).minus(new Prisma.Decimal(l.discount).div(l.quantity)),
+        );
+  const customerTotal = siteLines.reduce(
+    (sum, l) => sum.plus(customerPriceOf(l).times(l.quantity)),
+    new Prisma.Decimal(0),
+  );
+  try {
+    const orderId = await runTransaction(async (tx) => {
+      const order = await createOrderTx(
+        tx,
+        ctx,
+        {
+          channel: "WEBSITE",
+          partyId: store.partyId,
+          warehouseId,
+          orderDate: input.orderDate ? new Date(input.orderDate) : undefined,
+          lines: checked.map((l) => ({
+            variantId: l.variantId,
+            sku: l.sku,
+            styleId: l.styleId,
+            quantity: l.quantity,
+            unitPrice: new Prisma.Decimal(l.unitPrice),
+            discount: new Prisma.Decimal(0),
+            available: l.available,
+            // Pieces from Return stock are not in stock until the packing check passes them.
+            short: fromReturn.has(l.variantId),
+          })),
+          charges: {},
+          overrideReason:
+            fromReturn.size > 0 ? "Filled from Return stock: check before packing" : undefined,
+          customerName: input.customer.name,
+          customerPhone: input.customer.phone,
+          shippingAddress: input.shippingAddress,
+          notes:
+            [
+              exchange ? exchangeNote(input.exchange!.ofExternalOrderId, siteLines) : null,
+              returnStockNote(checked, fromReturn),
+              input.note,
+            ]
+              .filter(Boolean)
+              .join("\n") || null,
+          integrationId: integration.id,
+          externalOrderId: input.externalOrderId,
+        },
+        meta,
+      );
+      const retail = await tx.retailOrder.create({
+        data: {
+          companyId: ctx.company.id,
+          storeId: store.id,
+          orderId: order.id,
+          erpTotal: order.total,
+          customerTotal,
+          deliveryCharge: input.deliveryCharge,
+          advancePaid: input.advancePaid,
+          lines: {
+            create: siteLines.map((l) => ({
+              companyId: ctx.company.id,
+              lineId: l.lineId,
+              variantId: variantOf.get(l.sku)!,
+              grade: l.grade,
+              quantity: l.quantity,
+              shopPrice: prices.get(variantOf.get(l.sku)!)!,
+              customerPrice: customerPriceOf(l),
+              comboId: l.comboId ?? null,
+              ...(exchange
+                ? {
+                    replacesLineId: exchange.replaced.get(l.lineId)!.id,
+                    exchangeState: "WAITING_DELIVERY" as const,
+                  }
+                : {}),
+            })),
+          },
+        },
+      });
+      await reserveReturnPiecesTx(tx, retail.id, fromReturn);
+      if (exchange) {
+        await createExchangeTx(tx, ctx, {
+          storeId: store.id,
+          retailOrderId: retail.id,
+          ofRetailOrderId: exchange.of.id,
+          note: input.exchange?.note ?? null,
+        });
+      }
+      return order.id;
+    }, TX_OPTIONS);
+    return await shopOrderOf(ctx, orderId);
+  } catch (error) {
+    if (isAppError(error, "INSUFFICIENT_STOCK")) {
+      throw await lostRace(ctx, warehouseId, priced, error);
+    }
+    if (isUniqueClash(error)) {
+      const saved = await findShopOrder(call, input.externalOrderId);
+      if (saved) throw orderExists(saved);
+    }
+    throw error;
+  }
+}
+
+/**
+ * A store's order leaves only when every Return stock piece on it passed the
+ * packing check, and a line whose piece failed has stock again (or was
+ * replaced or cancelled by the site).
+ */
+async function assertLinesReadyTx(tx: Tx, ctx: CompanyContext, retailOrderId: string) {
+  const lines = await tx.retailOrderLine.findMany({
+    where: { retailOrderId, cancelledAt: null },
+    include: {
+      reservedPieces: { select: { status: true } },
+      variant: { select: { sku: true } },
+      order: { include: { order: { select: { warehouseId: true } } } },
+    },
+  });
+  const unchecked = lines.filter((l) => l.reservedPieces.some((p) => p.status === "WAITING"));
+  if (unchecked.length > 0) {
+    throw new EcommerceApiError(
+      409,
+      "RETURN_PIECE_NOT_CHECKED",
+      `Pieces from Return stock wait for the packing check: ${unchecked.map((l) => l.variant.sku).join(", ")}.`,
+      { lineIds: unchecked.map((l) => l.lineId) },
+    );
+  }
+  for (const line of lines.filter((l) => l.waitingStock)) {
+    const available = await availableByVariant(
+      ctx,
+      [line.variantId],
+      line.order.order.warehouseId ?? undefined,
+    );
+    if ((available.get(line.variantId) ?? 0) < 0) {
+      throw new EcommerceApiError(
+        409,
+        "LINE_SHORT",
+        `Line ${line.lineId} (${line.variant.sku}) waits for stock: wait, replace it or cancel it.`,
+        { lineId: line.lineId },
+      );
+    }
+    // Stock came: the line is filled.
+    await tx.retailOrderLine.update({ where: { id: line.id }, data: { waitingStock: false } });
+  }
+}
+
+/**
+ * Bills a retail store's order (plan v6 sec 1): the invoice to the store at the
+ * prices fixed on the order and the delivery challan (stock out, cost of goods),
+ * once, when the parcel leaves. False when it is not a store's order or was
+ * billed already.
+ */
+export async function billStoreOrderTx(
+  tx: Tx,
+  ctx: CompanyContext,
+  orderId: string,
+  meta?: RequestMeta,
+) {
+  // The order's lock first, so a retried or simultaneous bill waits and then
+  // finds it billed: the stock and the shops' reserve go out once.
+  await lockRow(tx, "SalesOrder", orderId);
+  const retail = await tx.retailOrder.findUnique({ where: { orderId } });
+  if (!retail || retail.billedAt) return false;
+  await assertLinesReadyTx(tx, ctx, retail.id);
+  await deliverShopOrderTx(tx, ctx, orderId, meta);
+  await takeFromReserveTx(tx, ctx.company.id, retail.id);
+  await tx.retailOrder.update({ where: { id: retail.id }, data: { billedAt: new Date() } });
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -688,6 +1112,8 @@ export async function updateShopOrder(
       reason: ["Send it with status CANCELLED or RETURNED"],
     });
   }
+  const retail = await call.ctx.db.retailOrder.findUnique({ where: { orderId: order.id } });
+  if (retail) return updateStoreOrder(call, order.id, retail, input, editing);
   if (editing) await editShopOrder(call, order.id, input);
   switch (input.status) {
     case undefined:
@@ -719,4 +1145,205 @@ export async function updateShopOrder(
       break;
   }
   return shopOrderOf(call.ctx, order.id);
+}
+
+/**
+ * PATCH on a retail store's order: the status steps only (its lines and prices
+ * were fixed when it came). DELIVERED bills it when no shipment did; an order
+ * that never left can be cancelled or come back, and is then never billed;
+ * goods that left come back through POST /return-lists.
+ */
+async function updateStoreOrder(
+  call: Call,
+  orderId: string,
+  retail: { id: string; billedAt: Date | null },
+  input: UpdateInput,
+  editing: boolean,
+): Promise<ShopOrder> {
+  if (editing) {
+    throw new EcommerceApiError(
+      409,
+      "CONFLICT",
+      "A retail store's order keeps the lines and prices it came with: cancel it and send it again.",
+    );
+  }
+  switch (input.status) {
+    case undefined:
+      break;
+    case "PROCESSING":
+      await markProcessing(call, orderId);
+      break;
+    case "PACKED":
+      await markPacked(call, orderId);
+      break;
+    case "DELIVERED":
+      await runTransaction((tx) => billStoreOrderTx(tx, call.ctx, orderId, call.meta), TX_OPTIONS);
+      break;
+    case "CANCELLED":
+    case "RETURNED": {
+      if (retail.billedAt) {
+        throw goneForStore(
+          "Cancelling or returning an order that left",
+          "report the courier's result with PUT /orders/{externalOrderId}/delivery and the return with POST /return-lists.",
+        );
+      }
+      const current = await call.ctx.db.salesOrder.findUniqueOrThrow({ where: { id: orderId } });
+      if (current.status !== "CANCELLED") await cancelShopOrder(call, orderId, input.reason);
+      await runTransaction((tx) => cancelExchangeTx(tx, call.ctx, retail.id), TX_OPTIONS);
+      break;
+    }
+  }
+  return shopOrderOf(call.ctx, orderId);
+}
+
+// ---------------------------------------------------------------------------
+// PATCH /orders/{externalOrderId}/lines/{lineId} (plan v6 sec 8.5, site-changes 2.3)
+// ---------------------------------------------------------------------------
+
+/**
+ * A retail store's line whose Return stock piece failed the packing check:
+ * WAIT (it fills when the SKU is in stock again), REPLACE (another SKU at its
+ * shop price today, checked for stock) or CANCEL (never billed; the line stays
+ * in the order's history as cancelled). Only before the order leaves.
+ */
+export async function updateStoreLine(
+  call: Call,
+  externalOrderId: string,
+  lineId: string,
+  raw: unknown,
+): Promise<ShopOrder> {
+  const input = lineActionSchema.parse(raw);
+  const { ctx, meta } = call;
+  const order = await shopOrderOrNotFound(call, externalOrderId);
+  const retail = await ctx.db.retailOrder.findUnique({
+    where: { orderId: order.id },
+    include: {
+      lines: { include: { variant: { select: { sku: true } } } },
+      exchange: true,
+    },
+  });
+  const line = retail?.lines.find((l) => l.lineId === lineId && !l.cancelledAt);
+  if (!retail || !line) {
+    throw new EcommerceApiError(404, "NOT_FOUND", `Line ${lineId} is not on this order.`);
+  }
+  if (retail.billedAt) {
+    throw goneForStore(
+      "Changing a line of an order that left",
+      "report the courier's result instead.",
+    );
+  }
+  if (!line.waitingStock) {
+    throw new EcommerceApiError(
+      409,
+      "CONFLICT",
+      `Line ${lineId} is not waiting: only a line whose Return stock piece failed the packing check changes.`,
+    );
+  }
+  if (input.action === "WAIT") return shopOrderOf(ctx, order.id);
+
+  const warehouseId = order.warehouseId!;
+  let replacement: { variantId: string; sku: string; price: Prisma.Decimal } | null = null;
+  if (input.action === "REPLACE") {
+    if (input.grade === "B") {
+      throw new EcommerceApiError(422, "VALIDATION", "B-grade lines are not open in the ERP yet.");
+    }
+    const [resolved] = await resolveItems(ctx, [
+      { sku: input.sku, quantity: line.quantity, unitPrice: 0, discount: 0 },
+    ]);
+    const price = (await storePrices(ctx, retail.storeId, [resolved!.variantId], "A")).get(
+      resolved!.variantId,
+    );
+    if (!price) {
+      throw new EcommerceApiError(409, "NO_SHOP_PRICE", `${input.sku} has no shop price yet.`, {
+        skus: [input.sku],
+      });
+    }
+    await assertInStock(ctx, warehouseId, [resolved!]);
+    replacement = { variantId: resolved!.variantId, sku: resolved!.sku, price };
+  }
+  const active = retail.lines
+    .filter((l) => !l.cancelledAt && !(input.action === "CANCEL" && l.id === line.id))
+    .map((l) =>
+      l.id === line.id && replacement
+        ? { ...l, variantId: replacement.variantId, shopPrice: replacement.price }
+        : l,
+    );
+  if (active.length === 0) {
+    await cancelShopOrder(call, order.id, input.action === "CANCEL" ? input.reason : undefined);
+  } else {
+    const byVariant = new Map<string, { quantity: number; unitPrice: number }>();
+    for (const l of active) {
+      const unitPrice = retail.exchange ? 0 : Number(l.shopPrice);
+      const now = byVariant.get(l.variantId);
+      byVariant.set(l.variantId, { quantity: (now?.quantity ?? 0) + l.quantity, unitPrice });
+    }
+    // Other lines may still hold the ERP's own Return stock reservation (beyond
+    // stock until their piece is checked): the ERP keeps that override, not the shop.
+    const system = {
+      ...ctx,
+      can: (key: Parameters<typeof ctx.can>[0]) => key === "sales.force_override" || ctx.can(key),
+    };
+    await updateOrder(
+      system,
+      order.id,
+      {
+        lines: [...byVariant].map(([variantId, l]) => ({
+          variantId,
+          quantity: l.quantity,
+          unitPrice: l.unitPrice,
+          discount: 0,
+        })),
+        forceOverride: { reason: "Filled from Return stock: check before packing" },
+      },
+      meta,
+      { beforePacking: true },
+    );
+  }
+  await runTransaction(async (tx) => {
+    await tx.retailOrderLine.update({
+      where: { id: line.id },
+      data:
+        input.action === "CANCEL"
+          ? { cancelledAt: new Date(), cancelReason: input.reason, waitingStock: false }
+          : {
+              variantId: replacement!.variantId,
+              shopPrice: replacement!.price,
+              waitingStock: false,
+              fromReturnStock: 0,
+            },
+    });
+    // A cancelled exchange line is a cancelled exchange of that piece: never billed.
+    if (retail.exchange && input.action === "CANCEL") {
+      await cancelExchangeTx(tx, ctx, retail.id, active.length === 0 ? undefined : [line.id]);
+    }
+    const lines = await tx.retailOrderLine.findMany({
+      where: { retailOrderId: retail.id, cancelledAt: null },
+    });
+    if (!retail.exchange) {
+      await tx.retailOrder.update({
+        where: { id: retail.id },
+        data: {
+          erpTotal: lines.reduce(
+            (sum, l) => sum.plus(l.shopPrice.times(l.quantity)),
+            new Prisma.Decimal(0),
+          ),
+        },
+      });
+    }
+    await auditInCompany(
+      ctx,
+      meta,
+      {
+        action: "UPDATE",
+        entityType: "RetailOrderLine",
+        entityId: line.id,
+        summary:
+          input.action === "CANCEL"
+            ? `${order.number}: line ${lineId} (${line.variant.sku}) cancelled by the site: ${input.reason}`
+            : `${order.number}: line ${lineId} replaced: was ${line.variant.sku} at ${line.shopPrice.toFixed(2)}, now ${replacement!.sku} at ${replacement!.price.toFixed(2)}`,
+      },
+      tx,
+    );
+  }, TX_OPTIONS);
+  return shopOrderOf(ctx, order.id);
 }

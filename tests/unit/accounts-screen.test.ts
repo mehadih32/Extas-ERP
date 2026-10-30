@@ -87,11 +87,12 @@ describe("Accounts in the menu, by role", () => {
     ]);
     expect(owner).toEqual([
       ["/", null],
+      ["/business", null],
       ["/sales", null],
-      ["/production", null],
+      ["/production", "md"],
       ["/tech-packs", "md"],
-      ["/accounts", "md"],
-      ["/products", "lg"],
+      ["/accounts", "lg"],
+      ["/products", "all"],
       ["/materials", "all"],
       ["/parties", "all"],
       ["/hr", "all"],

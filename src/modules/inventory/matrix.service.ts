@@ -71,6 +71,20 @@ export async function getStyleMatrix(
     variants.map((v) => v.id),
     options.warehouseId,
   );
+  // Returned pieces not checked yet (a retail store's Return stock, plan v6 sec 8.5): not in stock.
+  const unchecked = await ctx.db.retailReturnPiece.groupBy({
+    by: ["variantId"],
+    where: {
+      variantId: { in: variants.map((v) => v.id) },
+      status: "WAITING",
+      parcel: {
+        state: "IN_RETURN_STOCK",
+        ...(options.warehouseId ? { order: { order: { warehouseId: options.warehouseId } } } : {}),
+      },
+    },
+    _count: { _all: true },
+  });
+  const returnStock = new Map(unchecked.map((u) => [u.variantId, u._count._all]));
   const threshold = ctx.company.lowStockThreshold;
 
   const { colors, sizes } = matrixAxes(variants);
@@ -95,6 +109,7 @@ export async function getStyleMatrix(
         isActive: v.isActive,
         sizeId: size.id,
         ...s,
+        returnStock: returnStock.get(v.id) ?? 0,
         lowStock: v.isActive && s.available < threshold,
         retailPrice: (v.retailPrice ?? style.retailPrice).toFixed(2),
         wholesalePrice: (v.wholesalePrice ?? style.wholesalePrice).toFixed(2),

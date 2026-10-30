@@ -10,6 +10,7 @@ import { receivePaymentSchema } from "@/modules/sales/schemas";
 import { money } from "@/modules/sales/totals";
 
 import { EcommerceApiError } from "./errors";
+import { goneForStore, retailStoreOf } from "./retail-mode";
 import type { ShopCall } from "./route";
 import { paymentSchema, type ShopPaymentMethod } from "./schemas";
 
@@ -84,6 +85,12 @@ function receivedAt(date: string | undefined, timeZone: string) {
 }
 
 export async function recordShopPayment(call: ShopCall) {
+  if (await retailStoreOf(call)) {
+    throw goneForStore(
+      "POST /payments",
+      "the store pays the ERP on account and Accounts records it in the ERP (see GET /account).",
+    );
+  }
   const input = paymentSchema.parse(call.body);
   const { ctx } = call;
   const paymentDate = receivedAt(input.date, ctx.company.timezone);

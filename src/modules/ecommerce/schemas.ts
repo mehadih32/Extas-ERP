@@ -43,6 +43,25 @@ export const pageQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(500).default(100),
 });
 
+/** GET /catalog/variants: also one style's SKUs (`styleCode`), for the site's "Import from ERP". */
+export const catalogQuerySchema = pageQuerySchema.extend({
+  styleCode: z.string().trim().min(1).max(60).optional(),
+});
+
+/** One SKU in a retail store's catalog: only the price the store buys at (plan v6 sec 2). */
+export type StoreCatalogVariant = {
+  sku: string;
+  barcode: string | null;
+  styleCode: string;
+  styleName: string;
+  color: string;
+  size: string;
+  grade: "A";
+  shopPrice: number;
+  active: boolean;
+  updatedAt: string;
+};
+
 export const stockQuerySchema = pageQuerySchema.extend({
   warehouseId: z.string().max(40).optional(),
 });
@@ -93,6 +112,16 @@ export const orderItemSchema = z.object({
   unitPrice: money,
   /** The discount on the whole line (not per piece). */
   discount: money.default(0),
+  /** A retail store's shop (plan v6): the site's own id for the line, e.g. "WEB-1043-3". */
+  lineId: z.string().trim().min(1).max(60).optional(),
+  /** The customer's price per piece after the combo split and discounts (the store's own figure). */
+  customerPrice: money.optional(),
+  /** The combo the piece is part of. */
+  comboId: z.string().trim().min(1).max(60).optional(),
+  /** "A" (the default) or "B" for B-grade stock. */
+  grade: z.enum(["A", "B"]).default("A"),
+  /** On an exchange order: the lineId (of the order being exchanged) this piece replaces. */
+  replacesLineId: z.string().trim().min(1).max(60).optional(),
 });
 
 export const createOrderSchema = z.object({
@@ -110,6 +139,14 @@ export const createOrderSchema = z.object({
   codAmount: money.default(0),
   paymentMethod: upperEnum(SHOP_PAYMENT_METHODS),
   note: optionalText(1000),
+  /** A retail store's shop: what the customer was to pay for delivery (0 when free). */
+  deliveryCharge: money.default(0),
+  /** A retail store's shop: the customer's advance (bKash or another). */
+  advancePaid: money.default(0),
+  /** A retail store's exchange (plan v6 sec 8.9): the order whose pieces this one replaces. */
+  exchange: z
+    .object({ ofExternalOrderId: externalOrderIdSchema, note: optionalText(500) })
+    .optional(),
 });
 
 export const ORDER_STATUSES = [
@@ -147,6 +184,29 @@ export type ShopOrder = {
   due: number;
   codAmount: number;
   items: Array<{ sku: string; quantity: number; unitPrice: number; discount: number }>;
+  /** A retail store's order: what the store owes the ERP for it, fixed when it came. */
+  erpTotal?: number;
+  /** When the store was billed (the parcel left), or null. */
+  billedAt?: string | null;
+  /** A retail store's order: the site's lines with the shop price fixed for each. */
+  lines?: Array<{
+    lineId: string;
+    sku: string;
+    grade: "A" | "B";
+    quantity: number;
+    shopPrice: number;
+    customerPrice: number;
+    fromReturnStock: boolean;
+    /** Dropped by the site (never billed). */
+    cancelled: boolean;
+    /** On an exchange: the line it replaces and what the store paid for that piece. */
+    replacesLineId?: string;
+    replacedShopPrice?: number;
+  }>;
+  /** An exchange order (plan v6 sec 8.9). */
+  exchangeId?: string;
+  /** What would be billed if the old pieces do not come back. */
+  atRisk?: number;
 };
 
 /** details of the 409 INSUFFICIENT_STOCK answer to POST /orders (and an edit). */
@@ -291,3 +351,69 @@ export const adSpendSchema = z.object({
   amount: money,
   campaign: optionalText(120),
 });
+
+// ---------------------------------------------------------------------------
+// A retail store's returns (plan v6 sec 8, site-changes 2.5)
+// ---------------------------------------------------------------------------
+
+/** PUT /orders/{externalOrderId}/delivery: the courier's result. */
+export const deliveryResultSchema = z.object({
+  status: upperEnum(["DELIVERED", "PARTIAL", "RETURNED"] as const),
+  courier: text(60),
+  consignmentId: text(100),
+  /** What the courier collected from the customer. */
+  collected: money.default(0),
+  at: instant,
+  /** The site's "Partial delivery" mark, when its staff ticked the lines the customer kept. */
+  mark: z
+    .object({
+      keptLines: z.array(text(60)).max(200),
+      discountGiven: money.default(0),
+      phoneConfirmed: z.boolean().default(false),
+      note: optionalText(500),
+    })
+    .optional(),
+});
+
+/** POST /return-lists: a lot the courier handed back (returnListId is the idempotency key). */
+export const returnListSchema = z.object({
+  returnListId: text(60),
+  courier: text(60),
+  handedBackAt: day,
+  parcels: z
+    .array(
+      z.object({
+        consignmentId: text(100),
+        externalOrderId: externalOrderIdSchema,
+        receivedCount: z.number().int().min(0).max(10_000).optional(),
+        note: optionalText(500),
+      }),
+    )
+    .min(1)
+    .max(500),
+});
+
+/** GET /exchanges: pending (the default) or all, since a time. */
+export const exchangesQuerySchema = pageQuerySchema.extend({
+  status: z.enum(["pending", "all"]).default("pending"),
+});
+
+/** POST /exchanges/{exchangeId}/late-return: an old piece that came back on no matching consignment. */
+export const lateReturnSchema = z.object({
+  handedBackAt: day,
+  courier: text(60),
+  returnListId: z.string().trim().min(1).max(60).nullish(),
+  consignmentId: z.string().trim().min(1).max(100).nullish(),
+  note: optionalText(500),
+});
+
+/** PATCH /orders/{externalOrderId}/lines/{lineId}: a line whose Return stock piece failed the packing check. */
+export const lineActionSchema = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("WAIT") }),
+  z.object({
+    action: z.literal("REPLACE"),
+    sku: skuSchema,
+    grade: z.enum(["A", "B"]).default("A"),
+  }),
+  z.object({ action: z.literal("CANCEL"), reason: text(300) }),
+]);

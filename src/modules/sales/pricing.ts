@@ -3,6 +3,7 @@ import { Prisma, type SalesChannel } from "@prisma/client";
 import { AppError } from "@/lib/errors";
 import type { CompanyContext } from "@/modules/auth/context";
 import { availableByVariant } from "@/modules/inventory/stock.service";
+import { wholesaleCaps } from "@/modules/retail/reserve";
 import { collectOrderLines, type RequestedLine } from "@/modules/sales/totals";
 
 /** Channels sold at wholesale prices; the rest (shop, website, social) are retail. */
@@ -17,6 +18,8 @@ export type ResolvedLine = {
   discount: Prisma.Decimal;
   available: number;
   short: boolean;
+  /** Wholesale: the most this line may take without going into the shops' reserve. */
+  reserveCap?: number;
 };
 
 /**
@@ -45,6 +48,17 @@ export async function resolveOrderLines(
   const byId = new Map(variants.map((v) => [v.id, v]));
   const available = await availableByVariant(ctx, ids, warehouseId);
   const wholesale = WHOLESALE_CHANNELS.includes(channel);
+  const caps = wholesale
+    ? await wholesaleCaps(
+        ctx,
+        lines.flatMap((l) => {
+          const v = byId.get(l.variantId);
+          return v ? [{ ...l, styleId: v.styleId, colorId: v.colorId }] : [];
+        }),
+        warehouseId,
+        ownReserved,
+      )
+    : new Map<string, number>();
 
   return lines.map((line: RequestedLine) => {
     const v = byId.get(line.variantId);
@@ -69,7 +83,11 @@ export async function resolveOrderLines(
         `${v.sku} has no ${wholesale ? "wholesale" : "retail"} price; enter one.`,
       );
     }
-    const free = (available.get(v.id) ?? 0) + (ownReserved.get(v.id) ?? 0);
+    const reserveCap = caps.get(v.id);
+    const free = Math.min(
+      (available.get(v.id) ?? 0) + (ownReserved.get(v.id) ?? 0),
+      reserveCap ?? Infinity,
+    );
     return {
       variantId: v.id,
       sku: v.sku,
@@ -79,6 +97,7 @@ export async function resolveOrderLines(
       discount: new Prisma.Decimal(line.discount ?? 0),
       available: free,
       short: line.quantity > free,
+      ...(reserveCap !== undefined ? { reserveCap } : {}),
     };
   });
 }
@@ -92,6 +111,20 @@ export function assertStockOrOverride(
   lines: ResolvedLine[],
   forceOverride?: { reason: string },
 ) {
+  // The shops' reserve holds even against Force Allow (plan v6 sec 3).
+  const held = lines.filter((l) => l.reserveCap !== undefined && l.quantity > l.reserveCap);
+  if (held.length > 0) {
+    throw new AppError(
+      "INSUFFICIENT_STOCK",
+      `${held.map((l) => l.sku).join(", ")}: the rest of the stock is held for the retail shops.`,
+      Object.fromEntries(
+        held.map((l) => [
+          `stock.${l.sku}`,
+          [`Requested ${l.quantity}, ${l.reserveCap} left outside the shops' reserve`],
+        ]),
+      ),
+    );
+  }
   const short = lines.filter((l) => l.short);
   if (short.length === 0) return;
   if (!forceOverride) {

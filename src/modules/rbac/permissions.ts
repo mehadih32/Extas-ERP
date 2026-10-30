@@ -36,6 +36,29 @@ export const PERMISSIONS = [
     description:
       "Connect online shops (e-commerce API): add them, make, rotate and revoke their keys",
   },
+  // Business: retail stores (plan v6)
+  {
+    key: "retail.view",
+    module: "RETAIL",
+    description: "See the Business menu: retail stores and the prices they buy at",
+  },
+  {
+    key: "retail.manage",
+    module: "RETAIL",
+    description: "Add and edit retail stores and set their prices (prices need the PIN)",
+  },
+  {
+    key: "retail.returns",
+    module: "RETAIL",
+    description:
+      "Resolve Hold parcels and check the pieces retail stores send back (approving one also needs Accounts)",
+  },
+  {
+    key: "retail.purchases",
+    module: "RETAIL",
+    description:
+      "Buy ready stock for the retail shops: the supplier's bill on credit (Due) and the pieces into stock (needs the PIN)",
+  },
   // Sales
   { key: "sales.view", module: "SALES", description: "View quotations, orders and invoices" },
   {

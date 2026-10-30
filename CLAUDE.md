@@ -207,6 +207,10 @@ overwrites a stored total or figure.
 
 ## 9. Decisions log (newest first)
 
+- 2026-10-30 (retail leftovers): the website never sent real orders to the live ERP through the old link, so the
+  switch-over steps (moving old website orders, `GET /cost-of-goods`) are not built. B-grade order lines for the shops
+  come in a separate release with full checks of wholesale sales, because they change how every sale takes stock and
+  cost; until then a B-grade line answers 422.
 - 2026-10-30 (retail loss rule): every piece a shop takes from the ERP is the shop's to pay, whatever happens to it
   (lost, the courier never hands it back, stolen, taken by staff). Only a piece that comes back and is approved in the
   ERP's check comes off. So a refused exchange parcel's new piece not back by the exchange deadline is billed in full

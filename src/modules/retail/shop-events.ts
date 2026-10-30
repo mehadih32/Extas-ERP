@@ -29,7 +29,6 @@ export const RETAIL_EVENT_TYPES = [
   "account.hold",
   "account.released",
   "payment.recorded",
-  "switch.orders.moved",
 ] as const;
 export type RetailEventType = (typeof RETAIL_EVENT_TYPES)[number];
 

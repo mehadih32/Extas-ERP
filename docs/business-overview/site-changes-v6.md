@@ -86,6 +86,7 @@ The owner has decided on a new business model:
   - For a retail shop the ERP sends `shopPrice` and nothing else about money.
   - `retailPrice` (the ERP's own price list) and `avgCost` (the ERP's own cost) are no longer sent from the switch date. Stop reading them.
 - **B-grade lines** come as the same SKU with `grade: "B"`, their own `shopPrice` and their own stock.
+  - **Not open yet (owner, 30 October 2026):** they come in a later ERP release. Until then an order line with `grade: "B"` answers 422; keep B-grade listings switched off.
   - Sell them as separate listings, for example a "B-grade / outlet" section.
   - Skip them if the admin turns that off.
 - **Keep it in sync.**
@@ -669,6 +670,8 @@ An exchange is a customer swapping a piece they received for another (another si
 All of them will be in the final `openapi.yaml` that comes with the ERP build.
 
 ## 3. Switch-over
+
+> **Owner, 30 October 2026:** the website never sent real orders to the live ERP through the old link, so there are no old orders to move. Points 3 to 5 below (moving old orders, old returns, `GET /cost-of-goods`) are not built and not needed: start straight on the new rules.
 
 1. **Build and test against the demo ERP first,** with a demo shop key. Ask Mehadi for one, or the ERP session will make it on the demo site.
 2. **The ERP announces a switch date.** From that date the site uses the new rules: `shopPrice`, delivery results and return lists, exchanges, daily summaries, fixed costs, and no customer payments.

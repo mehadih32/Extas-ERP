@@ -1936,42 +1936,6 @@ webhooks:
       responses:
         "2XX":
           description: Received (answer within 5 seconds). Anything else is retried for up to 24 hours.
-  switch.orders.moved:
-    post:
-      summary: The old website orders the ERP moved to the store on the switch day
-      description: |
-        Only for a shop linked to a retail store. Each order with what moved: billed to the store at its shop prices (out with the courier), customer money moved to the store's account (advances and unpaid cash on delivery). Book the same on the site.
-      parameters:
-        - { name: X-Extas-Event, in: header, required: true, schema: { type: string } }
-        - {
-            name: X-Extas-Delivery,
-            in: header,
-            required: true,
-            description: "The event id: the same on every retry.",
-            schema: { type: string },
-          }
-        - $ref: "#/components/parameters/Signature"
-        - $ref: "#/components/parameters/Timestamp"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [id, type, createdAt, data]
-              properties:
-                id: { type: string }
-                type: { type: string, const: switch.orders.moved }
-                createdAt: { type: string, format: date-time }
-                data:
-                  type: object
-                  properties:
-                    eventId: { type: string }
-                    switchedAt: { type: string, format: date-time }
-                    orders: { type: array, items: { type: object } }
-      responses:
-        "2XX":
-          description: Received (answer within 5 seconds). Anything else is retried for up to 24 hours.
 components:
   securitySchemes:
     apiKey:

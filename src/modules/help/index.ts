@@ -15,6 +15,7 @@ import type { PermissionKey } from "@/modules/rbac/permissions";
 import { accountsHelp } from "./content/accounts";
 import { aiHelp } from "./content/ai";
 import { complianceHelp } from "./content/compliance";
+import { businessHelp } from "./content/business";
 import { dashboardHelp } from "./content/dashboard";
 import { gettingStartedHelp } from "./content/getting-started";
 import { helpCenterHelp } from "./content/help-center";
@@ -36,6 +37,7 @@ import type { HelpArticle, HelpSection } from "./types";
 export const HELP_SECTIONS: readonly HelpSection[] = [
   gettingStartedHelp,
   dashboardHelp,
+  businessHelp,
   salesHelp,
   productionHelp,
   techPackHelp,

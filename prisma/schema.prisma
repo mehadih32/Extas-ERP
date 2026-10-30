@@ -137,6 +137,9 @@ model Company {
   creditAllocations      CreditAllocation[]
   cheques                Cheque[]
   integrations           SalesChannelIntegration[]
+  retailStores           RetailStore[]
+  retailPrices           RetailPrice[]
+  retailPriceChanges     RetailPriceChange[]
   webhookEvents          WebhookEvent[]
   integrationApiCalls    IntegrationApiCall[]
   integrationIdempotency IntegrationIdempotency[]
@@ -675,6 +678,7 @@ model Style {
   costingStyles      OrderCostingStyle[]
   stockLots          StockLot[]
   techPacks          TechPack[]
+  retailPrices       RetailPrice[]
 
   @@unique([companyId, code])
   @@index([companyId, categoryId])
@@ -745,6 +749,7 @@ model ProductVariant {
   packingListItems  PackingListItem[]
   challanItems      DeliveryChallanItem[]
   productionTargets ProductionTargetLine[]
+  retailPrices      RetailPrice[]
 
   @@unique([companyId, sku])
   @@unique([styleId, colorId, sizeId])
@@ -804,6 +809,7 @@ model Warehouse {
   purchaseReturns      PurchaseReturn[]
   salesReturns         SalesReturn[]
   integrations         SalesChannelIntegration[]
+  retailStores         RetailStore[]
 
   @@unique([companyId, name])
 }
@@ -1418,6 +1424,7 @@ model Party {
   fabricQuotes         FabricQuote[]        @relation("FabricQuoteSupplier")
   aiDrafts             AiDraft[]            @relation("AiDraftParty")
   aiFollowUps          AiFollowUp[]         @relation("AiFollowUpParty")
+  retailStore          RetailStore?
   campaignRecipients   CampaignRecipient[]
   generatedDocuments   GeneratedDocument[]
   projectSettlements   ProjectSettlement[]
@@ -1992,6 +1999,7 @@ model SalesChannelIntegration {
   idempotencyKeys IntegrationIdempotency[]
   salesReturns    SalesReturn[]
   adSpend         AdSpend[]
+  retailStore     RetailStore?
 
   @@index([companyId])
 }
@@ -7257,4 +7265,112 @@ enum UsageKind {
   VIEW
   ABANDONED
   HELP_MISS
+}
+
+// =============================================================================
+// RETAIL STORES (Business, Retail and POS plan v6, part 1)
+// =============================================================================
+
+/// Online store or showroom.
+enum RetailStoreKind {
+  ONLINE
+  SHOWROOM
+}
+
+/// How a store's price is made: on top of the cost (a % or an amount), or one
+/// fixed price (B-grade only).
+enum RetailPriceRule {
+  PERCENT
+  AMOUNT
+  FIXED
+}
+
+enum RetailGrade {
+  A
+  B
+}
+
+/// A retail store: a special wholesale buyer of the ERP (plan v6 sec 1 and 4).
+/// It is also a buyer in the buyer list (partyId), so its account, statement and
+/// Buyer 360 live in one place. It buys at its own prices: a rule on the cost per
+/// grade, with hand prices on top (RetailPrice). Closing keeps its history.
+model RetailStore {
+  id            String           @id @default(cuid())
+  companyId     String
+  name          String
+  kind          RetailStoreKind  @default(ONLINE)
+  address       String?
+  phone         String?
+  /// The warehouse its goods go out from.
+  warehouseId   String?
+  /// Its buyer in the buyer list (made with the store).
+  partyId       String           @unique
+  /// Its online shop connection (Settings > Integrations), with the shop's key.
+  integrationId String?          @unique
+  /// A-grade rule on the A-grade cost: PERCENT or AMOUNT. Empty: only hand prices.
+  aRule         RetailPriceRule?
+  aValue        Decimal?         @db.Decimal(14, 4)
+  /// B-grade rule on the B-grade cost (PERCENT or AMOUNT) or one price (FIXED).
+  bRule         RetailPriceRule?
+  bValue        Decimal?         @db.Decimal(14, 4)
+  closedAt      DateTime?
+  createdById   String?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  company     Company                  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  warehouse   Warehouse?               @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
+  party       Party                    @relation(fields: [partyId], references: [id])
+  integration SalesChannelIntegration? @relation(fields: [integrationId], references: [id], onDelete: SetNull)
+  prices      RetailPrice[]
+  changes     RetailPriceChange[]
+
+  @@unique([companyId, name])
+  @@index([companyId])
+}
+
+/// A hand price for a store: on a style, a style's colour or one SKU, per grade.
+/// It wins over the store's rule (the narrowest one first). Taking it off keeps
+/// the row (removedAt); the history is in RetailPriceChange.
+model RetailPrice {
+  id          String      @id @default(cuid())
+  companyId   String
+  storeId     String
+  grade       RetailGrade
+  styleId     String
+  colorId     String?
+  variantId   String?
+  /// "S:<styleId>", "C:<styleId>:<colorId>" or "V:<variantId>": one live price per place.
+  scopeKey    String
+  price       Decimal     @db.Decimal(14, 2)
+  /// The cost when the price was set: a cost that moved since asks for a look.
+  costWhenSet Decimal     @default(0) @db.Decimal(14, 4)
+  setById     String?
+  setAt       DateTime    @default(now())
+  removedAt   DateTime?
+
+  company Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  store   RetailStore     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  style   Style           @relation(fields: [styleId], references: [id], onDelete: Cascade)
+  variant ProductVariant? @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  @@index([storeId, grade, scopeKey])
+  @@index([companyId, styleId])
+}
+
+/// Every change to a store's prices: who, when, what it was and what it is now.
+model RetailPriceChange {
+  id          String   @id @default(cuid())
+  companyId   String
+  storeId     String
+  what        String
+  before      String?
+  after       String?
+  changedById String?
+  changedAt   DateTime @default(now())
+
+  company Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  store   RetailStore @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([storeId, changedAt])
 }

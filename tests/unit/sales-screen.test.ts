@@ -83,6 +83,7 @@ describe("the menu with Sales in it", () => {
       "/production",
       "/tech-packs",
       "/accounts",
+      "/business",
       "/products",
       "/materials",
       "/parties",
@@ -115,6 +116,7 @@ describe("the menu with Sales in it", () => {
     // Tech Pack always sits under More on the phone (v6.4), first.
     expect(everything.more.map((i) => i.href)).toEqual([
       "/tech-packs",
+      "/business",
       "/products",
       "/materials",
       "/parties",

@@ -10,6 +10,7 @@ import * as costs from "@/modules/production/cost.service";
 import * as projects from "@/modules/production/project.service";
 
 import { loadSampleShop } from "./cn005-shop";
+import { loadRetailStore } from "./retail-store";
 import { POLO_BATCH, runFiveStylePolo, type SimulationManifest } from "./five-style-polo";
 import { loadTestBookings } from "./test-bookings";
 import { loadV62Samples } from "./v62-samples";
@@ -179,6 +180,16 @@ export async function loadSampleShopDemo(userId: string, companyId: string) {
   const { ctx, done } = await signIn(userId, companyId);
   try {
     return await loadSampleShop(ctx);
+  } finally {
+    await done();
+  }
+}
+
+/** The retail sample store "Extas Retail" (./retail-store.ts), made once as the owner. */
+export async function loadRetailStoreDemo(userId: string, companyId: string) {
+  const { ctx, done } = await signIn(userId, companyId);
+  try {
+    return await loadRetailStore(ctx);
   } finally {
     await done();
   }

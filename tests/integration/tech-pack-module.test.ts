@@ -882,10 +882,11 @@ run("Tech Pack as its own module", () => {
     const at = owner.findIndex((i) => i.href === "/tech-packs");
     expect(owner[at - 1]!.href).toBe("/production");
     expect(owner[at]!.label).toBe("Tech Pack");
-    // The phone's tab bar keeps its four; Tech Pack opens first under More.
+    // The phone's tab bar keeps its four; under More, Business (right under
+    // Dashboard, plan v6 sec 0) comes first and Tech Pack next.
     const phone = phoneTabs(owner);
     expect(phone.tabs.map((i) => i.href)).toEqual(["/", "/sales", "/production", "/accounts"]);
-    expect(phone.more[0]!.href).toBe("/tech-packs");
+    expect(phone.more.slice(0, 2).map((i) => i.href)).toEqual(["/business", "/tech-packs"]);
     expect([...phone.tabs, ...phone.more].map((i) => i.href).sort()).toEqual(
       owner.map((i) => i.href).sort(),
     );

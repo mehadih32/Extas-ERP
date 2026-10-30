@@ -112,7 +112,9 @@ run("Retail store's web orders (plan v6, part 2)", () => {
   });
 
   it("never bills an order cancelled before it leaves, and refuses edits of its lines", async () => {
-    expect((await post(order("WEB-1", [{ sku: navyS(), quantity: 1, unitPrice: 1450 }]))).status).toBe(201);
+    expect(
+      (await post(order("WEB-1", [{ sku: navyS(), quantity: 1, unitPrice: 1450 }]))).status,
+    ).toBe(201);
     const edit = await patch("WEB-1", { items: [{ sku: navyS(), quantity: 2, unitPrice: 1450 }] });
     expect(edit.status).toBe(409);
     const cancel = await patch("WEB-1", { status: "CANCELLED", reason: "customer cancelled" });
@@ -126,12 +128,16 @@ run("Retail store's web orders (plan v6, part 2)", () => {
     const noPrice = await post(order("WEB-2", [{ sku: tee, quantity: 1, unitPrice: 600 }]));
     expect(noPrice.status).toBe(409);
     expect(noPrice.body.error).toMatchObject({ code: "NO_SHOP_PRICE", details: { skus: [tee] } });
-    const bGrade = await post(order("WEB-3", [{ sku: navyS(), quantity: 1, unitPrice: 900, grade: "B" }]));
+    const bGrade = await post(
+      order("WEB-3", [{ sku: navyS(), quantity: 1, unitPrice: 900, grade: "B" }]),
+    );
     expect(bGrade.status).toBe(422);
     await stores.setStoreClosed(shop.owner, store.id, true);
     const closed = await post(order("WEB-4", [{ sku: navyS(), quantity: 1, unitPrice: 1450 }]));
     expect(closed.body.error.code).toBe("STORE_CLOSED");
-    expect(await prisma.salesOrder.count({ where: { integrationId: shop.integration.id } })).toBe(0);
+    expect(await prisma.salesOrder.count({ where: { integrationId: shop.integration.id } })).toBe(
+      0,
+    );
   });
 
   it("closes customer payments and the old returns for a store", async () => {
@@ -143,7 +149,11 @@ run("Retail store's web orders (plan v6, part 2)", () => {
     expect(pay.status).toBe(410);
     const ret = await callShop(shop, returnsRoute, {
       path: "/returns",
-      body: { externalOrderId: "WEB-5", reason: "size", items: [{ sku: navyS(), quantity: 1, qc: "GOOD" }] },
+      body: {
+        externalOrderId: "WEB-5",
+        reason: "size",
+        items: [{ sku: navyS(), quantity: 1, qc: "GOOD" }],
+      },
     });
     expect(ret.status).toBe(410);
   });
@@ -156,7 +166,9 @@ run("Retail store's web orders (plan v6, part 2)", () => {
     expect(rows[0]).toMatchObject({ grade: "A", shopPrice: 625 });
     expect(rows[0]).not.toHaveProperty("avgCost");
     expect(rows[0]).not.toHaveProperty("retailPrice");
-    const one = await callShop(shop, variantsRoute, { path: "/catalog/variants?styleCode=EX-TS-002" });
+    const one = await callShop(shop, variantsRoute, {
+      path: "/catalog/variants?styleCode=EX-TS-002",
+    });
     expect(one.body.data).toEqual([]);
   });
 
@@ -176,7 +188,9 @@ run("Retail store's web orders (plan v6, part 2)", () => {
 
     await expect(releaseHold(shop.owner, store.id, { reason: "paying Friday" })).rejects.toThrow();
     await releaseHold(shop.owner, store.id, { reason: "paying Friday", days: 3, pin: PIN });
-    expect((await post(order("WEB-7", [{ sku: navyM(), quantity: 1, unitPrice: 1450 }]))).status).toBe(201);
+    expect(
+      (await post(order("WEB-7", [{ sku: navyM(), quantity: 1, unitPrice: 1450 }]))).status,
+    ).toBe(201);
     await prisma.retailStore.update({ where: { id: store.id }, data: { holdReleasedUntil: null } });
 
     // Any payment starts the 30 days again.
@@ -184,7 +198,9 @@ run("Retail store's web orders (plan v6, part 2)", () => {
     account = await callShop(shop, accountRoute, { path: "/account" });
     expect(account.body.hold).toMatchObject({ onHold: false, daysSinceLastPayment: 0 });
     expect(account.body.balance).toBe(525);
-    expect((await post(order("WEB-8", [{ sku: navyM(), quantity: 1, unitPrice: 1450 }]))).status).toBe(201);
+    expect(
+      (await post(order("WEB-8", [{ sku: navyM(), quantity: 1, unitPrice: 1450 }]))).status,
+    ).toBe(201);
   });
 
   it("gives the store's bills and payments for a period", async () => {
@@ -192,7 +208,9 @@ run("Retail store's web orders (plan v6, part 2)", () => {
     await ship("WEB-9", "PTH-9");
     await receivePayment(shop.accounts, { partyId: store.partyId, amount: 1000, method: "CASH" });
     const today = new Date().toISOString().slice(0, 10);
-    const res = await callShop(shop, accountRoute, { path: `/account?from=2026-01-01&to=${today}` });
+    const res = await callShop(shop, accountRoute, {
+      path: `/account?from=2026-01-01&to=${today}`,
+    });
     expect(res.status, JSON.stringify(res.body)).toBe(200);
     expect(res.body.period).toMatchObject({
       openingBalance: 0,

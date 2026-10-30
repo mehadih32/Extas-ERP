@@ -12,7 +12,6 @@ import {
   type CatalogVariant,
   catalogQuerySchema,
   type Page,
-  pageQuerySchema,
   skuSchema,
   type StockRow,
   stockQuerySchema,

@@ -336,3 +336,44 @@ export const adSpendSchema = z.object({
   amount: money,
   campaign: optionalText(120),
 });
+
+// ---------------------------------------------------------------------------
+// A retail store's returns (plan v6 sec 8, site-changes 2.5)
+// ---------------------------------------------------------------------------
+
+/** PUT /orders/{externalOrderId}/delivery: the courier's result. */
+export const deliveryResultSchema = z.object({
+  status: upperEnum(["DELIVERED", "PARTIAL", "RETURNED"] as const),
+  courier: text(60),
+  consignmentId: text(100),
+  /** What the courier collected from the customer. */
+  collected: money.default(0),
+  at: instant,
+  /** The site's "Partial delivery" mark, when its staff ticked the lines the customer kept. */
+  mark: z
+    .object({
+      keptLines: z.array(text(60)).max(200),
+      discountGiven: money.default(0),
+      phoneConfirmed: z.boolean().default(false),
+      note: optionalText(500),
+    })
+    .optional(),
+});
+
+/** POST /return-lists: a lot the courier handed back (returnListId is the idempotency key). */
+export const returnListSchema = z.object({
+  returnListId: text(60),
+  courier: text(60),
+  handedBackAt: day,
+  parcels: z
+    .array(
+      z.object({
+        consignmentId: text(100),
+        externalOrderId: externalOrderIdSchema,
+        receivedCount: z.number().int().min(0).max(10_000).optional(),
+        note: optionalText(500),
+      }),
+    )
+    .min(1)
+    .max(500),
+});

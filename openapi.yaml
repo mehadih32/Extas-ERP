@@ -273,6 +273,81 @@ paths:
               schema: { $ref: "#/components/schemas/Error" }
         "422": { $ref: "#/components/responses/Validation" }
         "429": { $ref: "#/components/responses/RateLimited" }
+  /orders/{externalOrderId}/delivery:
+    put:
+      tags: [Returns]
+      summary: A retail store's courier result for one order (who kept what)
+      description: |
+        Only for a shop linked to a retail store in the ERP (plan v6, sec 8). Nothing here changes
+        money: the store keeps owing for every piece until the owner checks it in the ERP.
+        DELIVERED keeps every piece, RETURNED sends every piece back. PARTIAL uses the site's mark
+        (`mark.keptLines`) when its staff ticked the kept lines; without it the ERP works out the kept
+        pieces from `collected` (kept customer prices + a delivery charge of 0 to 200 - the advance,
+        give or take 20): GREEN one answer, YELLOW only the colour or size is open, ORANGE unclear (the
+        parcel goes on Hold when it comes back). An order with no shipment yet is billed now. The result
+        can be sent again until the courier hands the parcel back (then 409 ALREADY_HANDED_BACK).
+      operationId: recordDelivery
+      parameters:
+        - $ref: "#/components/parameters/ExternalOrderId"
+        - $ref: "#/components/parameters/OptionalIdempotencyKey"
+        - $ref: "#/components/parameters/Signature"
+        - $ref: "#/components/parameters/Timestamp"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status, courier, consignmentId, at]
+              properties:
+                status: { type: string, enum: [DELIVERED, PARTIAL, RETURNED] }
+                courier: { type: string, maxLength: 60 }
+                consignmentId: { type: string, maxLength: 100 }
+                collected: { type: number, minimum: 0, description: "What the courier collected." }
+                at: { type: string, format: date-time }
+                mark:
+                  type: object
+                  required: [keptLines]
+                  properties:
+                    keptLines: { type: array, maxItems: 200, items: { type: string } }
+                    discountGiven: { type: number, minimum: 0 }
+                    phoneConfirmed: { type: boolean }
+                    note: { type: string, maxLength: 500 }
+      responses:
+        "200":
+          description: The result and the pieces coming back.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [externalOrderId, status, identification, returningLines, billedAt]
+                properties:
+                  externalOrderId: { type: string }
+                  status: { type: string, enum: [DELIVERED, PARTIAL, RETURNED] }
+                  identification: { type: string, enum: [GREEN, YELLOW, ORANGE] }
+                  returningLines:
+                    type: [array, "null"]
+                    description: "Null for ORANGE."
+                    items:
+                      type: object
+                      properties:
+                        lineId: { type: string }
+                        quantity: { type: integer }
+                  billedAt: { type: [string, "null"], format: date-time }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: ALREADY_HANDED_BACK, or CONFLICT (the order came before the shop was a store).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "410":
+          description: GONE (the order was cancelled or returned before billing).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "422": { $ref: "#/components/responses/Validation" }
+        "429": { $ref: "#/components/responses/RateLimited" }
   /payments:
     post:
       tags: [Payments]
@@ -586,6 +661,157 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
+        "422": { $ref: "#/components/responses/Validation" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+    get:
+      tags: [Returns]
+      summary: A retail store's returned parcels and the owner's decision on each piece
+      description: |
+        Only for a shop linked to a retail store (404 otherwise). Poll with `updatedSince`: a parcel
+        comes back when it or any of its pieces changed. An APPROVED piece's `credit` (its shop price)
+        came off the store's account; a DECLINED piece stays the store's, with the reason.
+      operationId: listReturns
+      parameters:
+        - $ref: "#/components/parameters/UpdatedSince"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: The parcels, oldest change first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        returnListId: { type: string }
+                        courier: { type: string }
+                        handedBackAt: { type: string, format: date }
+                        consignmentId: { type: string }
+                        externalOrderId: { type: string }
+                        stage: { type: string }
+                        state: { type: string, enum: [HOLD, IN_RETURN_STOCK, CHECKED, MISSING] }
+                        identification: { type: string, enum: [GREEN, YELLOW, ORANGE] }
+                        updatedAt: { type: string, format: date-time }
+                        pieces:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              pieceId: { type: string }
+                              lineId: { type: string }
+                              sku: { type: string }
+                              status: { type: string, enum: [WAITING, APPROVED, DECLINED] }
+                              reason: { type: [string, "null"] }
+                              differentPiece: { type: boolean }
+                              credit: { type: number }
+                              decidedAt: { type: [string, "null"], format: date-time }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/Validation" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /return-lists:
+    post:
+      tags: [Returns]
+      summary: A lot of parcels a retail store's courier handed back
+      description: |
+        Only for a shop linked to a retail store. Each parcel is answered on its own: IN_RETURN_STOCK
+        (its pieces are known and wait for the owner's check), HOLD (unclear: the owner ticks the pieces
+        in the ERP) or REFUSED with a reason (NOT_OUR_ORDER, NOT_RETURNED, ALREADY_HANDED_BACK). Sending
+        the same list again gives the same answers. No money moves until the owner checks the pieces.
+      operationId: recordReturnList
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/Signature"
+        - $ref: "#/components/parameters/Timestamp"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [returnListId, courier, handedBackAt, parcels]
+              properties:
+                returnListId: { type: string, maxLength: 60 }
+                courier: { type: string, maxLength: 60 }
+                handedBackAt: { type: string, format: date }
+                parcels:
+                  type: array
+                  minItems: 1
+                  maxItems: 500
+                  items:
+                    type: object
+                    required: [consignmentId, externalOrderId]
+                    properties:
+                      consignmentId: { type: string, maxLength: 100 }
+                      externalOrderId: { type: string, maxLength: 100 }
+                      receivedCount: { type: integer, minimum: 0 }
+                      note: { type: string, maxLength: 500 }
+      responses:
+        "201":
+          description: Each parcel's answer.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [returnListId, parcels]
+                properties:
+                  returnListId: { type: string }
+                  parcels:
+                    type: array
+                    items:
+                      type: object
+                      required: [consignmentId, externalOrderId, result]
+                      properties:
+                        consignmentId: { type: string }
+                        externalOrderId: { type: string }
+                        result: { type: string, enum: [IN_RETURN_STOCK, HOLD, REFUSED] }
+                        reason:
+                          { type: string, enum: [NOT_OUR_ORDER, NOT_RETURNED, ALREADY_HANDED_BACK] }
+                        pieces:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              lineId: { type: string }
+                              sku: { type: string }
+        "400": { $ref: "#/components/responses/IdempotencyKeyRequired" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/Validation" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /account:
+    get:
+      tags: [Returns]
+      summary: What a retail store owes the ERP, its hold, and a period's statement
+      description: |
+        Only for a shop linked to a retail store (404 otherwise). `balance` is what the store owes;
+        `waitingCheck` is the value of returned pieces the owner has not checked yet. The store goes on
+        hold when it owes money and 30 days pass after its last payment; while on hold new orders answer
+        409 ACCOUNT_ON_HOLD. `from` and `to` (dates) choose the statement's period.
+      operationId: getAccount
+      parameters:
+        - { name: from, in: query, required: false, schema: { type: string, format: date } }
+        - { name: to, in: query, required: false, schema: { type: string, format: date } }
+      responses:
+        "200":
+          description: The store's account.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  balance: { type: number }
+                  waitingCheck: { type: number }
+                  hold: { type: object }
+                  period: { type: object }
+                  statement: { type: array, items: { type: object } }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "404": { $ref: "#/components/responses/NotFound" }
         "422": { $ref: "#/components/responses/Validation" }
         "429": { $ref: "#/components/responses/RateLimited" }
   /ad-spend:

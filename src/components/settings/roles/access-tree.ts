@@ -70,6 +70,7 @@ export const ACCESS_TREE: readonly AccessBranch[] = [
     branch("business.retail", "Retail stores", [
       leaf("retail.view", "See retail stores and their prices"),
       leaf("retail.manage", "Add and edit stores and set their prices"),
+      leaf("retail.returns", "Resolve Hold parcels and check returned pieces"),
     ]),
   ]),
   branch("stock", "Stock and raw materials", [

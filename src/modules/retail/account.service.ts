@@ -10,6 +10,8 @@ import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { getPartyBalance, getStatement } from "@/modules/parties/ledger.service";
 
+import { waitingCheckOf } from "./returns.service";
+
 import { assertCanManageStores, assertCanSeeStores, storeOrThrow } from "./stores.service";
 
 /*
@@ -45,13 +47,10 @@ async function paymentDays(ctx: CompanyContext, partyId: string) {
   return { lastPaymentAt: payment?.date ?? null, firstBillAt: bill?.date ?? null };
 }
 
-/** Returned pieces still waiting for the owner's check, at the price the store paid. */
-export async function waitingCheckOf(_ctx: CompanyContext, _storeId: string) {
-  return ZERO;
-}
-
-/** New exchange pieces not billed yet. */
-export async function exchangesAtRiskOf(_ctx: CompanyContext, _storeId: string) {
+/** New exchange pieces not billed yet (exchanges: plan v6 sec 8.9, not built yet). */
+export async function exchangesAtRiskOf(ctx: CompanyContext, storeId: string) {
+  void ctx;
+  void storeId;
   return ZERO;
 }
 

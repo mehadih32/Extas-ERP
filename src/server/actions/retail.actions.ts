@@ -6,6 +6,7 @@ import { getRequestMeta } from "@/lib/request-meta";
 import { runAction } from "@/lib/result";
 import { requireCompany } from "@/modules/auth/context";
 import * as account from "@/modules/retail/account.service";
+import * as returns from "@/modules/retail/returns.service";
 import * as stores from "@/modules/retail/stores.service";
 
 /*
@@ -88,6 +89,26 @@ export async function removeHandPriceAction(input: unknown, storeId: string) {
   return runAction(async () => {
     await stores.removeHandPrice(await requireCompany(), input, await getRequestMeta());
     refresh(storeId);
+    return null;
+  });
+}
+
+export async function returnsPageAction() {
+  return runAction(async () => returns.returnsPage(await requireCompany()));
+}
+
+export async function resolveHoldAction(parcelId: string, input: unknown) {
+  return runAction(async () => {
+    await returns.resolveHold(await requireCompany(), parcelId, input, await getRequestMeta());
+    revalidatePath("/business/returns");
+    return null;
+  });
+}
+
+export async function checkParcelAction(parcelId: string, input: unknown) {
+  return runAction(async () => {
+    await returns.checkParcel(await requireCompany(), parcelId, input, await getRequestMeta());
+    revalidatePath("/business/returns");
     return null;
   });
 }

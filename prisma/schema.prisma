@@ -142,6 +142,10 @@ model Company {
   retailPriceChanges     RetailPriceChange[]
   retailOrders           RetailOrder[]
   retailOrderLines       RetailOrderLine[]
+  retailDeliveries       RetailDelivery[]
+  retailReturnLists      RetailReturnList[]
+  retailReturnParcels    RetailReturnParcel[]
+  retailReturnPieces     RetailReturnPiece[]
   webhookEvents          WebhookEvent[]
   integrationApiCalls    IntegrationApiCall[]
   integrationIdempotency IntegrationIdempotency[]
@@ -753,6 +757,7 @@ model ProductVariant {
   productionTargets ProductionTargetLine[]
   retailPrices      RetailPrice[]
   retailOrderLines  RetailOrderLine[]
+  retailReturns     RetailReturnPiece[]
 
   @@unique([companyId, sku])
   @@unique([styleId, colorId, sizeId])
@@ -7336,6 +7341,7 @@ model RetailStore {
   prices      RetailPrice[]
   changes     RetailPriceChange[]
   orders      RetailOrder[]
+  returnLists RetailReturnList[]
 
   @@unique([companyId, name])
   @@index([companyId])
@@ -7404,10 +7410,12 @@ model RetailOrder {
   billedAt       DateTime?
   createdAt      DateTime  @default(now())
 
-  company Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  store   RetailStore       @relation(fields: [storeId], references: [id])
-  order   SalesOrder        @relation(fields: [orderId], references: [id])
-  lines   RetailOrderLine[]
+  company  Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  store    RetailStore         @relation(fields: [storeId], references: [id])
+  order    SalesOrder          @relation(fields: [orderId], references: [id])
+  lines    RetailOrderLine[]
+  delivery RetailDelivery?
+  parcel   RetailReturnParcel?
 
   @@index([companyId, storeId])
 }
@@ -7427,10 +7435,155 @@ model RetailOrderLine {
   comboId       String?
   createdAt     DateTime    @default(now())
 
-  company Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  order   RetailOrder    @relation(fields: [retailOrderId], references: [id], onDelete: Cascade)
-  variant ProductVariant @relation(fields: [variantId], references: [id])
+  company Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  order   RetailOrder         @relation(fields: [retailOrderId], references: [id], onDelete: Cascade)
+  variant ProductVariant      @relation(fields: [variantId], references: [id])
+  pieces  RetailReturnPiece[]
 
   @@unique([retailOrderId, lineId])
   @@index([companyId, variantId])
+}
+
+enum RetailDeliveryStatus {
+  DELIVERED
+  PARTIAL
+  RETURNED
+}
+
+/// How sure the ERP is which pieces came back: one answer (GREEN), the count and
+/// value but not the colour or size (YELLOW), or unclear (ORANGE: the owner ticks).
+enum RetailMatch {
+  GREEN
+  YELLOW
+  ORANGE
+}
+
+/// A returned parcel: its pieces wait in Return stock, or the owner must tick
+/// them (HOLD); CHECKED when every piece is decided; MISSING when it never came.
+enum RetailParcelState {
+  HOLD
+  IN_RETURN_STOCK
+  CHECKED
+  MISSING
+}
+
+enum RetailPieceStatus {
+  WAITING
+  APPROVED
+  DECLINED
+}
+
+enum RetailDeclineReason {
+  B_GRADE
+  C_GRADE
+  STAIN_OR_DAMAGE
+  USED
+  NO_TAG
+  PIECE_MISSING
+  WRONG_ITEM
+  PARCEL_MISSING
+  OTHER
+}
+
+/// The courier's result for a store's order (plan v6 sec 8.2), as the site
+/// reported it last, and which pieces the ERP takes as kept and coming back.
+model RetailDelivery {
+  id             String               @id @default(cuid())
+  companyId      String
+  retailOrderId  String               @unique
+  status         RetailDeliveryStatus
+  courier        String
+  consignmentId  String
+  collected      Decimal              @db.Decimal(14, 2)
+  at             DateTime
+  /// The site's "Partial delivery" mark: the lineIds the customer kept, when staff ticked them.
+  markKept       Json?
+  discountGiven  Decimal              @default(0) @db.Decimal(14, 2)
+  phoneConfirmed Boolean              @default(false)
+  note           String?
+  match          RetailMatch
+  /// One RetailOrderLine id per piece coming back (the ERP's answer).
+  returning      Json
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  company Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  order   RetailOrder @relation(fields: [retailOrderId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+}
+
+/// A lot the courier handed back (plan v6 sec 8.3), e.g. RL-123.
+model RetailReturnList {
+  id           String   @id @default(cuid())
+  companyId    String
+  storeId      String
+  returnListId String
+  courier      String
+  /// The courier's date the parcels reached the merchant: every deadline counts from it.
+  handedBackAt DateTime
+  createdAt    DateTime @default(now())
+
+  company Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  store   RetailStore          @relation(fields: [storeId], references: [id])
+  parcels RetailReturnParcel[]
+
+  @@unique([storeId, returnListId])
+  @@index([companyId])
+}
+
+/// One returned parcel (one order) on a return list.
+model RetailReturnParcel {
+  id            String            @id @default(cuid())
+  companyId     String
+  listId        String
+  retailOrderId String            @unique
+  consignmentId String
+  /// The site's evidence: how many pieces its staff counted, and what they saw.
+  receivedCount Int?
+  note          String?
+  state         RetailParcelState
+  match         RetailMatch
+  resolvedById  String?
+  resolvedAt    DateTime?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  company Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  list    RetailReturnList    @relation(fields: [listId], references: [id], onDelete: Cascade)
+  order   RetailOrder         @relation(fields: [retailOrderId], references: [id])
+  pieces  RetailReturnPiece[]
+
+  @@index([companyId, state])
+}
+
+/// One returned piece: waiting in Return stock until the owner checks it.
+/// Approved: back in main stock and credited to the store at the price it
+/// paid (a sales return). Declined: the store's loss, no money changes.
+model RetailReturnPiece {
+  id                String               @id @default(cuid())
+  companyId         String
+  parcelId          String
+  retailOrderLineId String
+  variantId         String
+  /// The price the store paid for it.
+  price             Decimal              @db.Decimal(14, 2)
+  status            RetailPieceStatus    @default(WAITING)
+  reason            RetailDeclineReason?
+  note              String?
+  /// The piece in the parcel was another of the order's SKUs than expected.
+  differentPiece    Boolean              @default(false)
+  salesReturnId     String?
+  decidedById       String?
+  decidedAt         DateTime?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  company Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  parcel  RetailReturnParcel @relation(fields: [parcelId], references: [id], onDelete: Cascade)
+  line    RetailOrderLine    @relation(fields: [retailOrderLineId], references: [id])
+  variant ProductVariant     @relation(fields: [variantId], references: [id])
+
+  @@index([parcelId])
+  @@index([companyId, status])
 }

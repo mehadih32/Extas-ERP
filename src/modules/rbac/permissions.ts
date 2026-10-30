@@ -47,6 +47,12 @@ export const PERMISSIONS = [
     module: "RETAIL",
     description: "Add and edit retail stores and set their prices (prices need the PIN)",
   },
+  {
+    key: "retail.returns",
+    module: "RETAIL",
+    description:
+      "Resolve Hold parcels and check the pieces retail stores send back (approving one also needs Accounts)",
+  },
   // Sales
   { key: "sales.view", module: "SALES", description: "View quotations, orders and invoices" },
   {

@@ -451,7 +451,7 @@ async function checkBudget(store: Store, month: string) {
 }
 
 /** In the inbox of the people who look after the stores, and on the bot as an alarm. */
-async function alarm(store: Store, subject: string, body: string) {
+export async function alarm(store: Store, subject: string, body: string) {
   const to = (await activeMembers(store.companyId)).filter(
     (m) => m.permissions.has("retail.manage") || m.permissions.has("retail.view"),
   );

@@ -9,6 +9,7 @@ import { fileFromForm } from "@/modules/files/file.service";
 import * as account from "@/modules/retail/account.service";
 import * as dashboards from "@/modules/retail/dashboards.service";
 import * as pad from "@/modules/retail/pad.service";
+import * as watch from "@/modules/retail/watch.service";
 import * as returns from "@/modules/retail/returns.service";
 import * as shopStock from "@/modules/retail/shop-stock.service";
 import * as stores from "@/modules/retail/stores.service";
@@ -212,4 +213,9 @@ export async function removeStoreLogoAction(storeId: string) {
     refresh(storeId);
     return null;
   });
+}
+
+/** "AI analysis" on a store's page: the AI's advice on the period shown. */
+export async function storeAnalysisAction(storeId: string, period: unknown = {}) {
+  return runAction(async () => watch.storeAnalysis(await requireCompany(), storeId, period));
 }

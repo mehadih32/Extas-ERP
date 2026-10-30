@@ -1,8 +1,13 @@
 "use client";
 
+import { SparklesIcon } from "lucide-react";
+import { useState } from "react";
+
 import { Amount, PrivacyProvider, PrivacyToggle } from "@/components/accounts/privacy";
 import { Fact, Panel } from "@/components/sales/detail-bits";
+import { Button } from "@/components/ui/button";
 import type { StoreDashboard as Dashboard } from "@/modules/retail/dashboards.service";
+import { storeAnalysisAction } from "@/server/actions/retail.actions";
 
 import { BigCard, money, More, PeriodPicker } from "./dashboard-bits";
 import { DownloadButton } from "./download-dialog";
@@ -172,6 +177,8 @@ export function StoreDashboard({
             </section>
           )}
 
+          <AiAnalysis storeId={storeId} period={d.period} />
+
           <More title="Best sellers and best customers">
             <div className="grid gap-6 md:grid-cols-2">
               <section aria-labelledby="dash-styles">
@@ -267,5 +274,57 @@ export function StoreHealth({
       <span aria-hidden className="mr-1.5 inline-block size-2.5 rounded-full bg-current" />
       <span className="font-medium">{label}</span>: {reasons.join("; ")}
     </p>
+  );
+}
+
+/** "AI analysis": the AI's advice on the period shown (plan v6 sec 13). Advice only. */
+function AiAnalysis({
+  storeId,
+  period,
+}: {
+  storeId: string;
+  period: { key: string; from: string; to: string };
+}) {
+  const [pending, setPending] = useState(false);
+  const [text, setText] = useState<string>();
+  const [error, setError] = useState<string>();
+  return (
+    <section aria-labelledby="dash-ai" className="grid gap-2">
+      <div className="flex flex-wrap items-center gap-3">
+        <h4 id="dash-ai" className="eyebrow">
+          Advice
+        </h4>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={pending}
+          onClick={async () => {
+            setPending(true);
+            const result = await storeAnalysisAction(
+              storeId,
+              period.key === "custom"
+                ? { from: period.from, to: period.to }
+                : { period: period.key },
+            );
+            setPending(false);
+            setText(result.ok ? result.data.text : undefined);
+            setError(result.ok ? undefined : result.error.message);
+          }}
+        >
+          <SparklesIcon aria-hidden />
+          {pending ? "Thinking" : "AI analysis"}
+        </Button>
+      </div>
+      {error && <p className="text-sm text-destructive">{error}</p>}
+      {text && (
+        <p className="rounded-md border p-3 text-sm whitespace-pre-line">
+          {text}
+          <span className="mt-2 block text-muted-foreground">
+            Advice only: nothing was changed.
+          </span>
+        </p>
+      )}
+    </section>
   );
 }

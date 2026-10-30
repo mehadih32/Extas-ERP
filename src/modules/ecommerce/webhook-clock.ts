@@ -25,6 +25,9 @@ export async function ecommerceWebhookTick(now: Date = new Date()) {
     await summaryGuards(now).catch((error) =>
       console.error("[retail] summary guard failed", error),
     );
+    // The night summary of the stores, its alerts and the Saturday advice (plan v6 sec 13).
+    const { retailWatch } = await import("@/modules/retail/watch.service");
+    await retailWatch(now).catch((error) => console.error("[retail] night watch failed", error));
     return events;
   } catch (error) {
     console.error("[ecommerce] webhook pass failed", error);

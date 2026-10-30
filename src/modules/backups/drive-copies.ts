@@ -44,6 +44,18 @@ export { type DriveBackup, type FetchedBackup, fetchBackup } from "@/modules/bac
 
 /** Safety copies kept in Drive. */
 const SAFETY_COPIES_KEPT = DRIVE_BACKUPS_KEPT;
+/** Another ERP whose newest backup in Drive is older than this is gone (see pruneBackups). */
+const SITE_GONE_MS = 30 * 86_400_000;
+
+/** This ERP's web address, as each of its backup folders in Drive says. */
+export function ownSite(): string | null {
+  try {
+    return new URL(process.env.APP_URL ?? "").hostname || null;
+  } catch {
+    return null;
+  }
+}
+
 /** A run not sent is tried again after this long. */
 const RETRY_MS = 60 * 60 * 1000;
 /** A safety copy is sent once deploy.sh has finished writing it. */
@@ -87,6 +99,8 @@ export async function sendToDrive(runId: string): Promise<BackupRun> {
         createdAt: manifest.createdAt,
         // The restore command never picks one by itself (deploy/restore-tool.py).
         ...(manifest.standby ? { standby: "yes" } : {}),
+        // Another ERP restored at a new address (--domain) may share this Drive folder.
+        ...(ownSite() ? { site: ownSite()! } : {}),
         ...nextLabel(config, run.kind, manifest.createdAt),
       })
     ).id;
@@ -362,7 +376,10 @@ export async function ensureKeysFile(config: BackupConfig, token: string, rootId
  * Drive yet); a safety copy's locked copy is kept for the retention period
  * while it waits for Drive. In Drive: the newest 3 checked backups and the newest
  * 3 safety copies, so a backup goes only once 3 newer ones are checked there; a
- * copy never checked goes after a day. A copy on standby after a restore shares the
+ * copy never checked goes after a day. Another ERP's backups in the same folder
+ * (one restored at a new address while this one still runs) keep their own newest
+ * 3, never pushed out by this ERP's; once that ERP has made none for 30 days, and
+ * this one has its 3, they go. A copy on standby after a restore shares the
  * Drive folder with the ERP in use: it removes only its own standby backups
  * there, by the same rules, never the ERP in use's backups or safety copies.
  */
@@ -378,12 +395,24 @@ export async function pruneBackups(config: BackupConfig, now = new Date()) {
     const dayAgo = new Date(now.getTime() - 86_400_000).toISOString();
     const checked = folders.filter((f) => f.checked);
     const backups = checked.filter((f) => f.kind === "BACKUP");
-    // Counted apart: a copy on standby's backups never push out the ERP in use's.
-    const newest = (standbyOnes: boolean) =>
-      backups.filter((f) => Boolean(f.standby) === standbyOnes).slice(0, DRIVE_BACKUPS_KEPT);
+    // Counted apart: a copy on standby's backups never push out the ERP in use's, nor
+    // another ERP's (by its address) this one's. Unlabelled ones count as this ERP's.
+    const mine = ownSite();
+    const siteOf = (f: (typeof backups)[number]) => f.site ?? mine;
+    const groups = new Map<string, typeof backups>();
+    for (const f of backups) {
+      const key = `${f.standby ? "standby" : "in use"} ${siteOf(f) ?? ""}`;
+      groups.set(key, [...(groups.get(key) ?? []), f]);
+    }
+    const myOwn = backups.filter((f) => !f.standby && siteOf(f) === mine).length;
+    const goneBefore = new Date(now.getTime() - SITE_GONE_MS).toISOString();
+    const kept = [...groups.values()].flatMap((group) => {
+      const other = siteOf(group[0]!) !== mine;
+      const gone = other && group[0]!.createdAt < goneBefore && myOwn >= DRIVE_BACKUPS_KEPT;
+      return gone ? [] : group.slice(0, DRIVE_BACKUPS_KEPT);
+    });
     const keep = new Set([
-      ...newest(false).map((f) => f.id),
-      ...newest(true).map((f) => f.id),
+      ...kept.map((f) => f.id),
       ...checked
         .filter((f) => f.kind === "SAFETY_COPY")
         .slice(0, SAFETY_COPIES_KEPT)

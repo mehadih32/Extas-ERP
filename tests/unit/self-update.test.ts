@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -116,6 +117,43 @@ describe("the server installs each merge by itself (self-update.sh)", () => {
     expect(await run()).toEqual([]);
     expect(await log()).toContain("checks failed");
     expect(await run()).toEqual([]);
+    // The checks run again and pass (review 2026-10-30): it is installed after all.
+    await checks("success");
+    expect(await run()).toEqual([newest]);
+  });
+
+  it("waits, using up no try, while an update or a screen restore holds the update lock", async () => {
+    const lock = path.join(root, "run", "extras-erp-update.lock");
+    await writeFile(lock, "");
+    const holder = exec("flock", [lock, "sleep", "3"]);
+    await new Promise((r) => setTimeout(r, 300));
+    expect(await run()).toEqual([]);
+    await expect(
+      readFile(path.join(data, "deploy-logs", "self-update.state"), "utf8"),
+    ).rejects.toThrow();
+    await holder;
+    expect(await run()).toEqual([newest]);
+  });
+
+  it("finds swapon and the other system tools under cron's short PATH (review 2026-10-30)", async () => {
+    await writeFile(
+      path.join(dir, "deploy", "auto-deploy.sh"),
+      `#!/bin/sh\nread -r c\necho "$PATH" >>${installed}\n`,
+    );
+    await exec("bash", [SCRIPT, dir], {
+      env: {
+        NODE_ENV: "test",
+        PATH: `${path.join(root, "bin")}:/usr/bin:/bin`,
+        EXTRAS_GIT_BASE: `file://${path.join(root, "remote")}`,
+        EXTRAS_RUN_DIR: path.join(root, "run"),
+      },
+    });
+    expect((await readFile(installed, "utf8")).split(":")).toEqual(
+      expect.arrayContaining(["/usr/sbin", "/sbin"]),
+    );
+    expect(readFileSync(path.join("deploy", "lib.sh"), "utf8")).toMatch(
+      /cron\.d\/extras-erp-self-update <<EOF\n#[^\n]*\nPATH=\/usr\/local\/sbin:\/usr\/local\/bin:\/usr\/sbin:\/usr\/bin:\/sbin:\/bin\n/,
+    );
   });
 
   it("does nothing on standby, on a drill copy, during a restore, or off main", async () => {

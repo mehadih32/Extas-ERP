@@ -173,7 +173,8 @@ places disagree, the newer instruction wins.
 - Checks and crawls on the live site never change data. Anything that writes is tested on the demo site or a
   copy.
 - Nothing is ever sent to a buyer or supplier, no money moves, no permission changes and nothing is merged or
-  deployed without the owner.
+  deployed without the owner. The one exception (the owner's decision, 2026-10-30): Claude merges its own PRs once
+  every check is green, and the server then installs them by itself.
 
 ## 7. Bug Guard (v6.4)
 
@@ -293,7 +294,7 @@ overwrites a stored total or figure.
 - 2026-10-18 (v6.4.2): a change to trims, collar or cuff after the tech pack is approved needs that part approved
   again by someone who approves tech packs; trims, collar and cuff bookings for that style wait for it, fabric
   bookings do not (section 3).
-- 2026-10-18 (v6.4.2): only the owner merges into `main`. Two rulesets on `main`, both active: "Protect main"
+- 2026-10-18 (v6.4.2, merging by Claude changed on 2026-10-30, see above): only the owner merges into `main`. Two rulesets on `main`, both active: "Protect main"
   with an empty Bypass list (pull request, the "Tests and build" check, no force pushes, no deletion) and
   "Restrict updates" in a ruleset of its own whose Bypass list holds only Repository admin (the owner). The ERP's
   Merge (the owner's token, with the PIN) and the owner on GitHub can merge; Claude Code's GitHub App and every

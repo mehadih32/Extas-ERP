@@ -838,6 +838,7 @@ install_self_update() {
   install -m 755 "$here/self-update.sh" /usr/local/sbin/extras-erp-self-update
   cat >/etc/cron.d/extras-erp-self-update <<EOF
 # Extas ERP (deploy.sh): installs each merge into main once GitHub's checks passed on it.
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 */5 * * * * root /usr/local/sbin/extras-erp-self-update $(dirname "$DEPLOY_DIR") >/dev/null 2>&1
 EOF
 }

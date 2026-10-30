@@ -764,6 +764,38 @@ run("v6.4 backups", { timeout: 120_000 }, () => {
       await pruneBackups(await backups.getBackupConfig());
       expect((await listDriveBackups()).items).toHaveLength(3);
     });
+
+    it("never lets another ERP at a new address push this one's backups out of Drive (review 2026-10-30)", async () => {
+      await connectDrive();
+      await setKey();
+      const before = process.env.APP_URL;
+      try {
+        // An ERP restored at a new address (--domain) while this one still runs.
+        process.env.APP_URL = "https://erp.newcompany.com";
+        const theirs = [];
+        for (let i = 0; i < 4; i += 1) theirs.push(await backUpNow());
+        process.env.APP_URL = "https://erp.extasbd.com";
+        const ours = [await backUpNow()];
+        let names = (await listDriveBackups()).items.map((x) => x.name);
+        // Each keeps its own newest 3: theirs never push ours out, nor ours theirs.
+        expect(names).toEqual(
+          expect.arrayContaining([...theirs.slice(1), ...ours].map((r) => r.name)),
+        );
+        expect(names).not.toContain(theirs[0]!.name);
+        for (let i = 0; i < 2; i += 1) ours.push(await backUpNow());
+        // That ERP made none for 30 days, and this one has its 3: theirs go.
+        for (const f of google.files.values()) {
+          if (f.appProperties.site === "erp.newcompany.com")
+            f.appProperties.createdAt = new Date(Date.now() - 31 * 86_400_000).toISOString();
+        }
+        const { pruneBackups } = await import("@/modules/backups/drive-copies");
+        await pruneBackups(await backups.getBackupConfig());
+        names = (await listDriveBackups()).items.map((x) => x.name);
+        expect(names.sort()).toEqual(ours.map((r) => r.name).sort());
+      } finally {
+        process.env.APP_URL = before;
+      }
+    });
   });
 
   describe("the backups folder in Drive (v6.4.1 review)", () => {

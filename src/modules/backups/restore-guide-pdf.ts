@@ -306,9 +306,11 @@ class GuideWriter {
     const lineGap = block ? block.size * 1.75 : 0;
     // The owner's own copy: the command carries the keys (keyedCommandLines).
     const note = this.t(
-      lines?.some((line) => line.includes("--keys"))
-        ? DETAILS_TEXT.keyedNote
-        : DETAILS_TEXT.commandNote,
+      !lines?.some((line) => line.includes("--keys"))
+        ? DETAILS_TEXT.commandNote
+        : this.details.personal?.recoveryKey
+          ? DETAILS_TEXT.keyedNote
+          : DETAILS_TEXT.keyedNoKeyNote,
     );
     const noteH = this.richHeight(note, inner, SMALL, SMALL_LINE);
     const facts = withFacts ? this.commandFacts() : [];

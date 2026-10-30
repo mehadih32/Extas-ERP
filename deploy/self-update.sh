@@ -15,6 +15,8 @@
 # and kept outside the program folder, so an ERP restored from an older backup
 # still updates itself. The newest 30 logs: DATA_DIR/deploy-logs.
 set -euo pipefail
+# cron runs with PATH=/usr/bin:/bin; the update needs swapon, mkswap and the like.
+export PATH="/usr/local/sbin:/usr/sbin:/sbin:$PATH"
 
 DIR="${1:-/opt/extras-erp}"
 API="${EXTRAS_GITHUB_API:-https://api.github.com}"
@@ -82,15 +84,22 @@ else:
 case "$verdict" in
   passed) ;;
   failed)
-    if [ "$tried" != "$want" ]; then
+    # Said once; asked again each run, so a re-run of the checks that passes still installs it.
+    told="$DATA/deploy-logs/self-update.checks-failed"
+    if [ "$(cat "$told" 2>/dev/null)" != "$want" ]; then
       log "${want:0:7}: GitHub's checks failed on it, so it is not installed."
-      printf '%s 3 %s\n' "$want" "$(date +%s)" >"$state"
+      printf '%s\n' "$want" >"$told"
     fi
     exit 0
     ;;
   *) exit 0 ;;
 esac
 
+# An update or a restore from the Backups screen is running (lib.sh's update lock):
+# next time, without using up a try.
+exec 8>>"$RUN/extras-erp-update.lock"
+flock -n 8 || exit 0
+exec 8>&-
 printf '%s %s %s\n' "$want" "$((tries + 1))" "$(date +%s)" >"$state"
 log "${want:0:7}: GitHub's checks passed; installing it."
 if printf '%s\n' "$want" | "$DIR/deploy/auto-deploy.sh" >/dev/null 2>&1; then

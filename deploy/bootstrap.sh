@@ -683,6 +683,8 @@ done
 # The keys that came with the command (read_keys), for this run only.
 if [ -n "$keys" ]; then
   [ -z "${RESTORE_ANSWERS:-}" ] || fail R32 "--keys cannot be used with an answers file."
+  # Left by a try that was killed (out of memory, kill -9): never kept past an hour.
+  find /run -maxdepth 1 -name 'extras-erp-restore-answers.*' -mmin +60 -delete 2>/dev/null || true
   KEYS_FILE="/run/extras-erp-restore-answers.$$"
   trap forget_keys EXIT
   read_keys "$KEYS_FILE"
@@ -911,6 +913,8 @@ fi
 
 step "Installing the ERP (building it takes about 10 to 20 minutes)"
 deployed=1
+# The code and the web address: a try with another address (--domain) installs again.
+[ -z "$code_now" ] || code_now="$code_now $(sed -n 's/^APP_DOMAIN=//p' "$env_file" | tail -n 1)"
 if [ -n "$code_now" ] && [ "$(cat "$done_dir/installed" 2>/dev/null)" = "$code_now" ] && erp_up; then
   note "Installed in the earlier try (version ${code_now:0:7}): not built again."
 else

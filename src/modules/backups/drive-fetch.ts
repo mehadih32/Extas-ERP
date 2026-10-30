@@ -42,6 +42,8 @@ export type DriveBackup = {
   format: number;
   /** Made by a restored copy while it waited on standby (backup.service.ts). */
   standby: boolean;
+  /** The web address of the ERP that made it (null: made before 2026-10-30). */
+  site: string | null;
 };
 
 export function presentBackup(folder: drive.DriveFile): DriveBackup {
@@ -57,6 +59,7 @@ export function presentBackup(folder: drive.DriveFile): DriveBackup {
     // v6.3 labelled no format: its backups were locked with its own key.
     format: labels.format ? Number(labels.format) : 2,
     standby: labels.standby === "yes",
+    site: labels.site ?? null,
   };
 }
 
